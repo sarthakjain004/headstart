@@ -75,6 +75,13 @@ from headstart.models import (  # one host rule, shared with the scrapers
 from headstart.scrapers import (
     jibe as _jibe,  # robots.txt rule + crawl delay, single source
 )
+from headstart.scrapers.adp import (  # request shapes + envelope parsers, single source
+    is_published,
+    languages_of,
+    listing_total,
+    listing_url,
+    locales_url,
+)
 from headstart.scrapers.clearcompany import (  # feed decode + req grouping, single source
     decode_hrm_bytes,
     feed_reqs,
@@ -350,6 +357,12 @@ _GATES = {
     # ceiling — 350 distinct tenants at concurrency 200 came back clean — so this is sized for the
     # sustained whole-pool case, not for the wall. No spacing: the clean pass used none.
     "applytojob.com": _HostGate(16, 0.0, "applytojob.com"),
+    # ADP Workforce Now: one fixed host, and F5 BigIP refuses the 201st request in a fixed
+    # 60-second window across every tenant, with a bare 429 and no Retry-After (measured
+    # 2026-09-23: rested runs at 5 and 8 req/s refused on exactly #201; 450 at 3 req/s clean).
+    # The auto-gate would find it only by being refused, at 10 req/s; this starts at 2.5 req/s,
+    # the scraper's own pacing. Not in `_SPANNING`: the host is exact, so the key already is.
+    "workforcenow.adp.com": _HostGate(16, 0.4, "workforcenow.adp.com"),
     # pinpointhq.com: sized like applytojob.com above. Paced load across distinct tenants ran clean
     # at 50 req/s for 60 s, but a 256-wide burst drew connection refusals that then held against
     # every tenant for minutes (see `_SPANNING`).
@@ -1815,7 +1828,7 @@ def _jibe_has_no_a_record(hostname):
 def p_jibe(t, u):
     # The Board is the client, read at `{client}.jibeapply.com`; `jibeapply.com` has no wildcard
     # DNS, so a label that does not resolve is a departed or invented client (101 of 1,244 pool
-    # labels; `zzzzqqq`). robots.txt is read first and honoured (ADR-0185): a disallowing host
+    # labels; `zzzzqqq`). robots.txt is read first and honoured (ADR-0189): a disallowing host
     # (carrefour) and an unreachable file are UNKNOWN, never read. The listing follows at the
     # host's `crawl-delay: 5`, and its `totalCount` is the count — it counts one row per
     # (requisition, language), so it can exceed the postings the scraper keeps. A 404 there is not
@@ -1856,6 +1869,58 @@ def p_jibe(t, u):
 
 
 _SF_PROBE_CAP = 256 * 1024  # capped stream: RMK RSS feeds trickle at ~30 KB/s
+
+
+def p_adp(t, u):
+    # A Board is a career center, `{cid}/{ccId}`. content-links answers first: a `cid` ADP does
+    # not know is a 404 (2 random GUIDs, a malformed one, a real one uppercased — measured
+    # 2026-09-23), and a `ccId` the client does not have is a 200 with `PublishedIndicator`
+    # false, where every real center measured (hiring or empty) states true. It also names the
+    # center's languages, and `lang` is a filter: a center posting only in `en_CA` lists nothing
+    # under `en_US`, in the same metaless envelope an empty Board returns. So the count is the
+    # sum of each language's `totalNumber` — a posting translated into two languages counts
+    # twice, which the `jobs >= 1` hiring cut does not mind. ~2 requests per live Board, paced
+    # by the seeded gate above.
+    #
+    # A DNS failure is UNKNOWN, never DEAD: every Board is on the one fixed host, so an
+    # unresolvable name says nothing about a tenant. Measured 2026-09-24: the local resolver
+    # failed `workforcenow.adp.com` mid-pass while the host kept answering, which the generic
+    # `status == "dns"` rule wrote down as dead Boards (breezy's lesson, ADR-0181).
+    cid, _, cc = t.partition("/")
+    status, body = _get(locales_url(cid, cc))
+    if status == "dns":
+        _note("dns-on-fixed-host")
+        return UNKNOWN, None
+    if status in (404, 410):
+        return DEAD, None
+    if status != 200:
+        return UNKNOWN, None
+    try:
+        links = json.loads(body)
+    except ValueError:
+        _note("body-unparseable")
+        return UNKNOWN, None
+    if not is_published(links):
+        return DEAD, None
+    total = 0
+    for lang in languages_of(links):
+        status, body = _get(listing_url(cid, cc, lang, skip=1, top=1))
+        # A center its client has closed to outsiders answers the listing with this 403 on
+        # every language — measured 2026-09-24 on 8 of 40 sampled pool centers the first pass
+        # left unknown (the other 32 were ADP-side 500s on both calls, genuinely unsettled).
+        # Nothing on it is public, so there is no Board to read.
+        if status == 403 and b"not allowed for external candidates" in body:
+            return DEAD, None
+        if status != 200:
+            if status in (404, 410):  # `_get` notes every other non-200 itself
+                _note(f"listing-http-{status}")
+            return UNKNOWN, None
+        try:
+            total += listing_total(json.loads(body))
+        except ValueError:
+            _note("body-unparseable")
+            return UNKNOWN, None
+    return LIVE, total
 
 
 def p_successfactors(t, u):
@@ -2364,6 +2429,7 @@ def p_taleo_enterprise(t, u):
 PROBES = {
     "greenhouse": p_greenhouse,
     "lever": p_lever,
+    "adp": p_adp,
     "ashby": p_ashby,
     "bamboohr": p_bamboohr,
     "breezy": p_breezy,

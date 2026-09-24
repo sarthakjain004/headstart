@@ -166,7 +166,7 @@ def test_an_unstated_salary_is_none():
 
 def test_a_posting_a_readable_icims_tenant_serves_is_dropped():
     """iCIMS's own scraper reads a tenant whose robots.txt allows its sitemap, and Jibe's `slug`
-    is that same requisition id, so the posting would serve twice (option A, ADR-0185). A
+    is that same requisition id, so the posting would serve twice (option A, ADR-0189). A
     disallowing tenant's posting is kept; so is one whose apply host is not iCIMS at all."""
     readable = {RM_TENANT: False, UHS_TENANT: True}
     jobs = _jobs(icims_readable=readable)

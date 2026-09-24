@@ -1,4 +1,4 @@
-# ADR-0185: A Jibe Board is a client, read under its own robots.txt, minus what iCIMS already serves
+# ADR-0189: A Jibe Board is a client, read under its own robots.txt, minus what iCIMS already serves
 
 **Status:** accepted · **Date:** 2026-09-24 · **Relates to:** [ADR-0001](0001-per-ats-slug-derivation.md) (a scraper's slug is its own to define), [ADR-0012](0012-liveness-ledger.md) (the ledger is the scrape list), [ADR-0053](0053-scope-eviction-on-scrape-outcome.md) and [ADR-0121](0121-a-negligible-shortfall-is-still-an-authoritative-list.md) (truncation), [ADR-0111](0111-duplicate-boards-resolve-the-board-surface.md) (alias ledger), [ADR-0114](0114-a-board-states-its-company-name-in-its-page-title.md) (the name comes off the board page), [ADR-0158](0158-jazzhr-and-jobvite-are-worth-their-storage.md) (the storage bar)
 

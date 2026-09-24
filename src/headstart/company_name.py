@@ -115,6 +115,12 @@ _JIBE_NAME = (
 )
 
 PATTERNS: dict[str, tuple[re.Pattern[str], ...]] = {
+    # adp: not a title at all. Workforce Now's page title is the literal "Recruitment" on every
+    # career center, and nothing a browser renders names the employer; its `client-features`
+    # JSON does, as `ClientName` (120 of 120 centers sampled 2026-09-23). `ADPScraper` reads that
+    # field and passes it through `from_title` for the guards below, so the pattern is the bare
+    # catch-all pyjamahr's is: the value is a field, not a wrapped slogan.
+    "adp": (re.compile(r"^(?P<name>.+)$"),),
     "ashby": (re.compile(r"^(?P<name>.+?)\s+Jobs$", re.IGNORECASE),),
     "eightfold": _CAREERS_WRAPPER,
     # gem: sampled 60 live board pages (2026-09-16) — no JS wall, real server-rendered HTML on a
@@ -245,6 +251,9 @@ _MAX_LEN = 60
 #: among them), and only an ATS with patterns can reach this test at all.
 #: ADR-0034 blocklists the Boards already known to be vendor-owned; this catches the rest.
 _VENDOR_ALIASES: dict[str, frozenset[str]] = {
+    # No ADP-named client was seen in 125 `ClientName`s; kept as the same precaution as
+    # taleo_enterprise's — the vendor runs its own payroll on its own platform.
+    "adp": frozenset({"adp", "automaticdataprocessing"}),
     "ashby": frozenset({"ashby", "ashbyhq"}),
     "eightfold": frozenset({"eightfold", "eightfoldai"}),
     "jibe": frozenset({"jibe", "jibeapply", "icims"}),

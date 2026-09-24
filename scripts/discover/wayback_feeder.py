@@ -48,7 +48,14 @@ socket.setdefaulttimeout(120)
 # tenant sits: `workday` reads it from the HOST (`acme.wd1.myworkdayjobs.com`), `workdaysite`
 # from the PATH (`wd1.myworkdaysite.com/recruiting/acme/Site`). Both emit the same identity.
 Style = Literal[
-    "sub", "host", "path", "workday", "workdaysite", "taleo_be", "taleo_enterprise"
+    "sub",
+    "host",
+    "path",
+    "workday",
+    "workdaysite",
+    "taleo_be",
+    "taleo_enterprise",
+    "adp",
 ]
 
 # An ATS that serves the same board from two hostnames. The value is the spelling the scraper
@@ -73,6 +80,21 @@ _LOCALE = re.compile(r"[a-z]{2}(-[A-Za-z]{2})?")
 # tenant. Rejected for *subdomain labels only*: `careers.smartrecruiters.com/www4` is a real live
 # Board whose slug is the path segment `www4`, so widening INFRA instead would have dropped it.
 _NUMBERED_WWW = re.compile(r"www\d+")
+# ADP Workforce Now's two Board coordinates: a lowercase client GUID and a career-center id
+# (`19000101_000001`, `9200471107142_2`, `2692115635_3566` — digits, an underscore, digits).
+_ADP_CID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
+_ADP_CCID = re.compile(r"\d+_\d+")
+#: Where an ADP Workforce Now career center lives — the one spelling every ADP discovery source
+#: (this module, `cc_miner`, `fingerprint_careers`, `mine_adp`) matches on. `adp.py` keeps its own
+#: copy only because `src/` cannot import from `scripts/`.
+ADP_HOST = "workforcenow.adp.com"
+ADP_PAGE_PATH = "mascsr/default/mdf/recruitment/recruitment.html"
+#: A career-center URL as it appears in any text, query included, up to whitespace, a quote, a
+#: bracket or a backslash; `extract` then keeps only `cid` and `ccId`.
+ADP_PAGE_URL = re.compile(
+    rf"https?://{re.escape(ADP_HOST)}/{re.escape(ADP_PAGE_PATH)}\?[^\s\"'<>\\]+",
+    re.IGNORECASE,
+)
 # The datacenter label of a *production* Workday host, per `WorkdayScraper._URL_PATTERN`.
 _WD_INSTANCE = re.compile(r"wd\d+")
 # Workday's own routes under a board host. Unlike `INFRA` these are not plausible board names —
@@ -259,6 +281,8 @@ def _with_style(style: Style, *hosts: str) -> tuple[tuple[str, Style], ...]:
 # An ATS's hosts share one dedupe set, keyed by `dedupe_key` rather than by the slug — see there
 # for why the label alone is the wrong identity outside `path` styles.
 ATS_HOSTS: dict[str, tuple[tuple[str, Style], ...]] = {
+    # One fixed host; the Board is two query values on its career-center page (see `extract`).
+    "adp": _with_style("adp", ADP_HOST),
     "ashby": _with_style("path", "jobs.ashbyhq.com"),
     # One host, no regional pods — checked live against Wayback CDX (2026-09-16): a
     # `matchType=domain` sweep filtered to `/careers` paths found 307 distinct
@@ -510,6 +534,23 @@ def extract(url: str, host: str, style: Style) -> tuple[str, str] | None:
         query = urllib.parse.urlencode((("org", org), ("cws", cws)))
         board = f"https://{seen_host}/{path}?{query}"
         return f"{org}:{cws}@{seen_host}/{path.split('/', 1)[0]}", board
+
+    if style == "adp":
+        # ADP Workforce Now keys a Board by two query values on one fixed host, `cid` (the
+        # client GUID) and `ccId` (the career center) — `adp.py` says why that pair and not
+        # `lang` is the identity. Only the career-center page names a Board; every other
+        # archived path on the host (login, static assets) names nobody.
+        if seen_host != host or path.lower() != ADP_PAGE_PATH:
+            return None
+        params = urllib.parse.parse_qs(query)
+        cid, cc = params.get("cid", [""])[0], params.get("ccId", [""])[0]
+        # The GUID is lowercase on every capture measured, and the API 404s an uppercased one.
+        if not _ADP_CID.fullmatch(cid) or not _ADP_CCID.fullmatch(cc):
+            return None
+        board = f"https://{host}/{path}?" + urllib.parse.urlencode(
+            (("cid", cid), ("ccId", cc))
+        )
+        return f"{cid}/{cc}", board
 
     if style == "taleo_enterprise":
         if not seen_host.endswith(".taleo.net"):

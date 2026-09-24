@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from headstart.ingest.board_operator import AGGREGATORS, SERVICES, classify
+from headstart.ingest.board_operator import AGGREGATORS, SERVICES, classify, tenant
 
 
 @pytest.mark.parametrize(
@@ -100,3 +100,23 @@ def test_entries_are_normalized_spellings() -> None:
     """
     for token in SERVICES | AGGREGATORS:
         assert token.isalnum() and token.islower(), token
+
+
+@pytest.mark.parametrize(
+    ("board", "expected"),
+    [
+        ("workday:accenture/AvanadeCareers", "accenture"),
+        (
+            "taleo_enterprise:https://hyatt.taleo.net/careersection/infosys_intl",
+            "hyatt.taleo.net",
+        ),
+        # A Taleo Business Edition host is a pod many companies share; the `org` is the company.
+        (
+            "taleo_be:https://phg.tbe.taleo.net/phg04/ats/careers/v2/searchResults?org=ALLETE&cws=43",
+            "ALLETE",
+        ),
+        ("greenhouse:acme", "acme"),
+    ],
+)
+def test_tenant_names_whose_board_it_is(board: str, expected: str) -> None:
+    assert tenant(board) == expected

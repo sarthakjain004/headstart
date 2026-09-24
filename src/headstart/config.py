@@ -49,7 +49,7 @@ EXCLUDED_BOARDS: frozenset[str] = frozenset(
         # `jobvite._MAX_PAGES` (10,000 at 50 a page = 200), whose comment calls the cap "not
         # a cap anyone is expected to reach".
         "jobvite:jvauto",
-        # Jibe clients that are not a board of openings (ADR-0185), each read 2026-09-24.
+        # Jibe clients that are not a board of openings (ADR-0189), each read 2026-09-24.
         # `fedex` lists 136,186 rows from `ats_code: fedex-prod-historical-jobs-feed` — page 1 is
         # 98 postings dated 2024 and 2 dated 2025 — and its board page redirects to an Okta SSO
         # login; its live openings are on FedEx's Workday Boards, which the workday ledger holds.
@@ -411,7 +411,7 @@ PARKED_BOARDS: frozenset[str] = frozenset(
         # `EndeavorItSolution9` at 158, four at 0-10); they are separate Boards, left alone here
         # because only this one is large enough to have been measured.
         "smartrecruiters:endeavoritsolution",
-        # Jibe clients whose every posting is on a Board another ledger already holds (ADR-0185),
+        # Jibe clients whose every posting is on a Board another ledger already holds (ADR-0189),
         # so each posting would serve twice under two ATS labels — the Phenom rule. Measured
         # 2026-09-24 by walking each client's whole listing and joining every `apply_url` host to
         # the ledgers: stjude 163 of 163 on `stjude.wd1.myworkdayjobs.com`, spglobal 292 of 292 on

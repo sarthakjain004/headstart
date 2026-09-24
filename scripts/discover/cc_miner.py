@@ -53,6 +53,7 @@ import time
 import urllib.parse
 
 import cc_data_host
+from wayback_feeder import ADP_HOST, ADP_PAGE_URL, extract
 
 CRAWL_ARG = sys.argv[1] if len(sys.argv) > 1 else None
 CSV = "data/discover/cc_ats_tenants.csv"
@@ -71,6 +72,15 @@ PACE = float(os.environ.get("CC_PACE") or 1.0)
 # "workday" = rebuilt board URL, "oracle" = careers host). Regional data centres are folded into
 # the target list and the regex alternations.
 ATS_PATTERNS = {
+    "adp": {
+        # ADP Workforce Now: one fixed host, and the Board is two query values on the
+        # career-center page — `cid` (client GUID) and `ccId` (career center). `lang`, `jobId`
+        # and `source` are per-visit noise; `tenant_from`'s `adp` kind drops them. The pattern
+        # captures the whole URL so the kind can parse the query in any key order.
+        "targets": [ADP_HOST],
+        "kind": "adp",
+        "patterns": [f"({ADP_PAGE_URL.pattern})"],
+    },
     "greenhouse": {
         "targets": [
             "boards.greenhouse.io",
@@ -540,6 +550,10 @@ def tenant_from(kind, match):
             return None
         board = f"https://{host}/{site}"
         return board, board  # canonical board URL (what slug_from reads)
+    if kind == "adp":
+        # The same reading every other ADP discovery source makes: `cid` + `ccId` out of the
+        # query, lowercase GUID only (the API 404s an uppercased one), everything else dropped.
+        return extract(match.group(1), ADP_HOST, "adp")
     if kind == "taleo_be":
         parsed = urllib.parse.urlsplit(match.group(1))
         query = urllib.parse.parse_qs(parsed.query)

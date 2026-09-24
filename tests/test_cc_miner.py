@@ -230,6 +230,31 @@ def test_jibe_reads_a_single_label_client_and_nothing_deeper(miner):
     assert sorted(hits) == ["costco", "petsmart", "uhs"]
 
 
+def test_adp_capture_keeps_cid_and_ccid_in_any_order_and_drops_the_rest(miner):
+    pattern = re.compile(miner.ATS_PATTERNS["adp"]["patterns"][0], re.IGNORECASE)
+    page = (
+        "https://workforcenow.adp.com/mascsr/default/mdf/recruitment/recruitment.html"
+    )
+    cid = "7d58836c-11dd-4415-9de0-63b918b88652"
+    board = f"{page}?cid={cid}&ccId=19000101_000001"
+    for capture in (
+        f"{page}?cid={cid}&ccId=19000101_000001&jobId=968476&source=IN&lang=en_US",
+        f"{page}?lang=en_CA&ccId=19000101_000001&cid={cid}",
+    ):
+        assert miner.tenant_from("adp", pattern.search(capture)) == (
+            f"{cid}/19000101_000001",
+            board,
+        )
+    # No career center, or a GUID the API would 404 (it is case-sensitive): nobody.
+    assert miner.tenant_from("adp", pattern.search(f"{page}?cid={cid}")) is None
+    assert (
+        miner.tenant_from(
+            "adp", pattern.search(f"{page}?cid={cid.upper()}&ccId=19000101_000001")
+        )
+        is None
+    )
+
+
 def test_cornerstone_pattern_keeps_career_site_urls_and_skips_the_lms(miner):
     """`{corp}.csod.com` hosts the vendor's LMS on the same label; only the recruiting career
     site names a Board, and an encoded share link must not capture `2f`."""

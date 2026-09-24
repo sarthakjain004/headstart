@@ -46,6 +46,7 @@ from __future__ import annotations
 
 import re
 from typing import Final, Literal
+from urllib.parse import parse_qs, urlsplit
 
 Operator = Literal["employer", "services", "aggregator"]
 
@@ -190,7 +191,7 @@ _TRAILING_DIGITS = re.compile(r"\d+$")
 _URLISH = re.compile(r"^https?://", re.IGNORECASE)
 
 
-def _tenant(board_key: str) -> str:
+def tenant(board_key: str) -> str:
     """The part of a board_key that names *whose* Board it is, without the site path.
 
     Deeper path segments name the career site, not the company, and an ATS lets a company name
@@ -198,8 +199,16 @@ def _tenant(board_key: str) -> str:
     reading the whole key labels **Hyatt** an Infosys board. The tenant is the Workday
     `{company}` before the site, or a URL's host, or the slug itself — and it still carries the
     real cases, since Avanade's Board is `accenture/AvanadeCareers`, whose tenant is Accenture.
+
+    Taleo Business Edition is the exception to "a URL's host": its host is a pod many companies
+    share (`phg.tbe.taleo.net`), and the company is the `org` its URL names. The company
+    directory (ADR-0185) groups Boards by this, so a pod read as a tenant would merge them.
     """
     slug = board_key.split(":", 1)[1] if ":" in board_key else board_key
+    if board_key.startswith("taleo_be:"):
+        org = parse_qs(urlsplit(slug).query).get("org")
+        if org:
+            return org[0]
     if _URLISH.match(slug):
         slug = slug.split("//", 1)[1]
     return slug.split("/", 1)[0]
@@ -243,7 +252,7 @@ def classify(board_key: str, company: str | None = None) -> Operator:
     direction: a services firm slipping through is a worse row, while an employer wrongly
     demoted is a job nobody sees.
     """
-    forms = _forms(_tenant(board_key)) | _forms(company or "")
+    forms = _forms(tenant(board_key)) | _forms(company or "")
     if forms & EXCEPTIONS:
         return "employer"
     if forms & AGGREGATORS:

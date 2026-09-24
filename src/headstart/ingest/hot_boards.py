@@ -53,12 +53,12 @@ from __future__ import annotations
 import argparse
 import collections
 import json
-import re
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any, Final
+from typing import Any
 
 from headstart import log
+from headstart.ingest.board_naming import board_names, display_name
 from headstart.ingest.board_operator import classify
 
 # `__spec__` as well as `__name__`, like every other module that doubles as a `python -m`
@@ -174,184 +174,6 @@ def read_stock_change(delta_dir: Path) -> tuple[collections.Counter, list[str]]:
                 moved[board] += delta
                 stamps.append(ts)
     return moved, stamps
-
-
-def board_names(db: Path, table_name: str) -> dict[str, str]:
-    """``board_key -> the company name its rows carry``, or an empty map if unreadable.
-
-    A display name is the whole point of a company leaderboard, but it is missing more often
-    than not: only ~20% of served rows sit on an ATS that resolves one (ADR-0114), so most
-    Boards fall back to their slug. Unreadable rather than fatal — a ranking of slugs is worse
-    than a ranking of names and better than no tab.
-
-    This does scan the whole table to name at most a few hundred displayed rows, which is worth
-    stating rather than hiding. It is affordable because of where it runs: `role_trends`, the
-    stage immediately before this one on the same merge VM, already reads every row *including
-    the 768-d vector column*. Two string columns over the same rows is strictly cheaper than a
-    step the run has just paid for. If this ever moves off that VM, revisit it.
-    """
-    try:
-        import lancedb
-
-        handle = lancedb.connect(str(db)).open_table(table_name)
-        rows = (
-            handle.search()
-            .select(["id", "company"])
-            .limit(handle.count_rows())
-            .to_arrow()
-        )
-    except Exception as exc:  # noqa: BLE001 - a missing or half-written table must not be fatal
-        _log.warning(
-            f"no company names for the hot list ({exc}); falling back to slugs"
-        )
-        return {}
-    names: dict[str, str] = {}
-    for job_id, company in zip(
-        rows["id"].to_pylist(), rows["company"].to_pylist(), strict=True
-    ):
-        if company:
-            names.setdefault(job_id.rsplit(":", 1)[0], company)
-    return names
-
-
-#: Host labels that name the *board* rather than the company, and so are never the answer.
-#: Vendor labels and TLDs sit here too: `micron.wd5.myworkdayjobs.com` and
-#: `lockheed.jobs.hr.cloud.sap` both have to reduce to their first real word.
-_LABEL_NOISE = frozenset(
-    {
-        "www",
-        "careers",
-        "career",
-        "jobs",
-        "job",
-        "apply",
-        "hire",
-        "hiring",
-        "talent",
-        "work",
-        "working",
-        "recruiting",
-        "recruitment",
-        "internal",
-        "internaljobs",
-        "external",
-        "search",
-        "inc",
-        "ltd",
-        "llc",
-        "corp",
-        "group",
-        "global",
-        "en",
-        "us",
-        # vendor hosts and the public suffixes behind them
-        "myworkdayjobs",
-        "icims",
-        "eightfold",
-        "zohorecruit",
-        "openings",
-        "taleo",
-        "tbe",
-        "oraclecloud",
-        "ocs",
-        "fa",
-        "sap",
-        "cloud",
-        "hr",
-        "wd",
-        "smartrecruiters",
-        "com",
-        "net",
-        "org",
-        "io",
-        "co",
-        "ai",
-        "in",
-        "eu",
-        "uk",
-        "de",
-        "ca",
-    }
-)
-_WD_POD = re.compile(r"^wd\d+$")  # micron.wd5.myworkdayjobs.com
-
-
-#: Hand-written names for Boards whose slug cannot produce one, keyed by board_key.
-#:
-#: Same principle as `board_operator`'s curated list and the same bounded scope: these are
-#: Boards seen at the *head of a lens*, where a wrong name is read by everyone. The slug simply
-#: does not carry the company — `workday:bah/BAH_Jobs` is Booz Allen Hamilton and
-#: `workday:globalhr/REC_RTX_Ext_Gateway` is RTX — and no derivation recovers that.
-#:
-#: It also does the work cross-ATS identity would: Lockheed Martin reaches the Expansion lens
-#: on **both** Eightfold and SuccessFactors, and before this map they ranked first and second
-#: as "Lockheed Martin" and "Lockheed". Mapping both to one name lets `_collapse_same_company`
-#: see them as one company. That is a display-level patch over a real gap — the index has no
-#: cross-ATS Board identity (`index_plan.evict_duplicate` groups *within* a Board) — so a pair
-#: not listed here still shows twice. Add pairs as the head of a lens surfaces them.
-DISPLAY_ALIASES: Final[dict[str, str]] = {
-    "eightfold:lockheedmartin.eightfold.ai": "Lockheed Martin",
-    "successfactors:lockheed.jobs.hr.cloud.sap": "Lockheed Martin",
-    "workday:globalhr/REC_RTX_Ext_Gateway": "RTX",
-    "workday:bah/BAH_Jobs": "Booz Allen Hamilton",
-    "workday:swa/external": "Southwest Airlines",
-    "workday:caci/external": "CACI",
-    "workday:gdit/External_Career_Site": "GDIT",
-    "workday:ngc/Northrop_Grumman_External_Site": "Northrop Grumman",
-    "successfactors:careers.hcltech.com": "HCLTech",
-    "successfactors:careers.capgemini.com": "Capgemini",
-    "successfactors:careers.wipro.com": "Wipro",
-    "successfactors:careers-inc.nttdata.com": "NTT Data",
-}
-
-
-def display_name(company: str, board: str) -> str:
-    """A name a person can read, without inventing one.
-
-    Four rows in five carry an ATS slug rather than a resolved company name (ADR-0114), and a
-    slug is very often a hostname — `careers.wipro.com`, `careers-inc.nttdata.com` — which on a
-    company leaderboard reads as a bug. (`www.amazon.jobs` was the stock example until the eight
-    Single source scrapers began declaring `BaseScraper.COMPANY`; they now arrive named, so this
-    function no longer has to rescue them.) This drops the labels of a host that name the board or the
-    vendor and keeps the first that names the company.
-
-    Picking the *first non-noise label* rather than the registrable domain is deliberate, and
-    both conventions appear in the data: `careers-inc.nttdata.com` puts the company second,
-    while `lockheed.jobs.hr.cloud.sap` puts it first. Taking the label before the public suffix
-    reads the latter as "Cloud"; taking the first label reads the former as "Careers-Inc".
-
-    It stops at tidying. `swa.wd1.myworkdayjobs.com/external` becomes "Swa" and not "Southwest
-    Airlines", because that expansion is not in the data and a leaderboard that guesses company
-    names is worse than one that shows an honest slug. Anything already mixed-case is returned
-    untouched, so `CI&T` and `HCLTech` survive.
-    """
-    alias = DISPLAY_ALIASES.get(board)
-    if alias:
-        return alias
-    stated = (company or "").strip()
-    if stated and stated != stated.lower():
-        return stated  # a real, cased company name — never re-case or trim it
-    # Everything below tidies a *slug*. The cased-name guard above must not reach it: a slug
-    # carries capitals of its own (`micron/External`), and treating those as a company name
-    # returned the raw slug, path and all.
-    name = stated or board.split(":", 1)[-1]
-    head = name.split("/", 1)[0]
-    if "." in head:
-        labels = [
-            label
-            for label in head.split(".")
-            if label and label not in _LABEL_NOISE and not _WD_POD.match(label)
-        ]
-        # A prefixed label still carries the company after its noise word (`careers-inc` ->
-        # `inc`, dropped above; `jobs-bylight` -> `bylight`).
-        for label in labels:
-            parts = [p for p in label.split("-") if p and p not in _LABEL_NOISE]
-            if parts:
-                head = "-".join(parts)
-                break
-        else:
-            head = labels[0] if labels else head
-    return head.replace("-", " ").replace("_", " ").strip().title() or name
 
 
 def _collapse_same_company(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:

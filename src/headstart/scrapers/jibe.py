@@ -3,7 +3,7 @@
 Jibe is iCIMS's career-site layer: an employer's branded careers site (``careers.costco.com``) is a
 Jibe site, and its postings come from the employer's ATS, usually an iCIMS tenant. Everything below
 was measured 2026-09-24 and is written up in ``docs/jibe/2026-09-24_api-jobs-measurement.md``; the
-decisions are ADR-0185.
+decisions are ADR-0189.
 
 **A Board is a Jibe client, and its id is the slug.** Every vanity site is one client's, and the
 client answers at ``{client}.jibeapply.com`` with the same ``/api/jobs`` (276 of 276 walked vanity
@@ -11,7 +11,7 @@ hosts gave the same ``totalCount`` there). A client with several vanity sites (R
 8) is one Board: each site's page adds a ``searchOverride`` filter, and without it the API returns
 the client's whole public set. So no override is sent.
 
-**robots.txt is honoured per host, strictly — a decision the user made (ADR-0185).** Every request
+**robots.txt is honoured per host, strictly — a decision the user made (ADR-0189).** Every request
 this module makes to a client host is at least :data:`CRAWL_DELAY` seconds after the previous one
 (``crawl-delay: 5`` on 1,138 of 1,143 client hosts), retries included, which is why the shared
 fetch's own retry ladder (backoff from 0.75 s) is switched off here. robots.txt is read once per
@@ -21,7 +21,7 @@ disallows ``/api/jobs`` (``carrefour`` does) is not read at all. No request is e
 backing ATS's own host except its robots.txt (below), and never to a posting's ``apply_url``.
 
 **iCIMS already covers a readable tenant, so its postings are dropped here (the user's option A,
-ADR-0185).** Each row's ``apply_url`` names its backing Board. 26.8% of pool rows sit on iCIMS
+ADR-0189).** Each row's ``apply_url`` names its backing Board. 26.8% of pool rows sit on iCIMS
 tenants whose robots.txt lets the sitemap-only iCIMS scraper read them, and Jibe's ``slug`` is that
 same requisition id, so serving them here would serve each posting twice. A posting is dropped only
 when its tenant's robots.txt is *known* to allow ``/sitemap.xml``; a tenant that disallows it
@@ -76,7 +76,7 @@ from headstart.models import Job, html_to_text, is_remote
 from headstart.scrapers.base import USER_AGENT, BaseScraper
 
 #: Seconds between two requests to one client host: `crawl-delay: 5` in the robots.txt of 1,138 of
-#: 1,143 resolving client hosts (the rest are not Boards). Honoured, never measured past (ADR-0185).
+#: 1,143 resolving client hosts (the rest are not Boards). Honoured, never measured past (ADR-0189).
 CRAWL_DELAY = 5.0
 #: The listing's page size ceiling: 100 answers 200, 101/150/200/250/500/1000 answer 422.
 PAGE_SIZE = 100
@@ -471,7 +471,7 @@ class JibeScraper(BaseScraper):
             self.telemetry["icims_covered"] = dropped
             self._log.info(
                 f"{self.board_key()}: dropped {dropped} posting(s) a readable iCIMS tenant "
-                f"already serves (ADR-0185)"
+                f"already serves (ADR-0189)"
             )
         return jobs
 

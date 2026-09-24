@@ -10392,7 +10392,7 @@ def test_every_wired_scraper_resolves_its_company(
     scraper = get_scraper(ats, slug, slug)
     scraper.resolve_company()
     assert scraper.company == expected
-    # jibe reads the host's robots.txt before any other request to it (ADR-0185); the fake
+    # jibe reads the host's robots.txt before any other request to it (ADR-0189); the fake
     # answers that with the same page, whose absent rules allow everything.
     if ats == "jibe":
         assert seen[0].endswith("/robots.txt")
@@ -10406,7 +10406,10 @@ def test_every_wired_scraper_resolves_its_company(
 #: listing pass (`TaleoEnterpriseScraper._last_title`) — so `_company` reads that shell
 #: directly instead, covered by `tests/test_taleo_enterprise.py`. It still needs the same
 #: vendor-alias coverage as every other wired ATS.
-_NO_BOARD_PAGE = {"taleo_enterprise"}
+#: adp has no page naming the employer either — its title is the literal "Recruitment" — so
+#: `ADPScraper.resolve_company` reads `ClientName` out of the `client-features` JSON instead,
+#: covered by `tests/test_adp.py`.
+_NO_BOARD_PAGE = {"taleo_enterprise", "adp"}
 
 
 def test_every_ats_with_patterns_has_a_scraper_that_offers_a_board_page():
