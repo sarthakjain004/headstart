@@ -54,7 +54,9 @@ discovery landing (#576) moved five more. Board totals belong in README and CONT
   second row. Match candidates through each scraper's `slug_from(tenant, url)` and `board_key` (the
   identity `scrapable_boards.load` uses), and write new rows in that ledger's majority form:
   Workday keys a Board as `{co}.wdN.myworkdayjobs.com/{site}`, Personio and Zoho as a bare label,
-  Taleo BE as `ORG:CWS@host/path`. `url` is the Board's public URL, never the probe's endpoint.
+  Taleo BE as `ORG:CWS@host/path`, Oracle as its pod host (the one ledger whose spelling
+  `check_liveness.py` does enforce: it respells a bare-label pool row to that host, #627). `url` is
+  the Board's public URL, never the probe's endpoint.
 - **Phenom carries only skins whose backing Board we do not already hold.** Phenom is a career-site
   skin over Workday, SuccessFactors, Taleo and others, and `index_plan.evict_duplicate` groups
   within a Board, so a skin over a Board we already scrape would serve every posting twice under

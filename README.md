@@ -126,7 +126,7 @@ Every *other* ATS serves the **ATS slug** in that field instead, so a row's `com
 either — four served rows in five carry a slug rather than a name, which is why `CompanyPrefs` is
 keyed by **board_key** and never by company name.
 
-The liveness pipeline has probed **304,983 ledger rows**: 187,173 live, 100,917 dead, 16,893 unknown
+The liveness pipeline has probed **304,519 ledger rows**: 187,173 live, 100,453 dead, 16,893 unknown
 — rows, not boards; they collapse to 180,541 Unique Boards once duplicate spellings of the same
 board are folded together (`CONTEXT.md` §Counting Boards).
 
@@ -178,7 +178,7 @@ flowchart TB
         D1["<b>discover</b><br/>Common Crawl · Wayback<br/>careers-page fingerprint"]
         D2["<b>merge</b><br/>union + dedupe per ATS"]
         D3["<b>validate</b><br/>liveness-probe each board"]
-        D4[("<b>liveness ledger</b><br/>187,173 live rows of 304,983<br/>git-tracked, authoritative")]
+        D4[("<b>liveness ledger</b><br/>187,173 live rows of 304,519<br/>git-tracked, authoritative")]
         D1 --> D2 --> D3 --> D4
     end
 
