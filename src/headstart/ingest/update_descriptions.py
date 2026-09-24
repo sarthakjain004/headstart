@@ -61,7 +61,8 @@ import argparse
 import gzip
 import hashlib
 import json
-from collections.abc import Iterator
+from collections.abc import Container, Iterator
+from datetime import date
 from pathlib import Path
 from typing import NamedTuple
 
@@ -72,7 +73,10 @@ from headstart.ingest import (
     PENDING_REDERIVE_PATH,
     REPO_ROOT,
     append_id_list,
+    held_refetch,
     observability,
+    read_id_list,
+    write_id_list,
 )
 
 _log = log.get(__name__, __spec__)
@@ -358,10 +362,13 @@ def held_ids(store_root: Path) -> set[str]:
     return ids
 
 
-def write_held_details(store_root: Path, out_path: Path) -> int:
+def write_held_details(
+    store_root: Path, out_path: Path, leave_out: Container[str] = frozenset()
+) -> int:
     """Publish every id the store holds text for — the scrape's detail skip-list (ADR-0050).
 
-    The detail pass has nothing left to learn for these Jobs, so the fetch is pure cost.
+    The detail pass has nothing left to learn for these Jobs, so the fetch is pure cost — except
+    for ``leave_out``, the held Jobs the ADR-0211 rotation wants fetched again to catch an edit.
     """
     out_path.parent.mkdir(parents=True, exist_ok=True)
     written = 0
@@ -370,11 +377,40 @@ def write_held_details(store_root: Path, out_path: Path) -> int:
         # collapsed per ATS, which is all the dedupe this needs, and holding one ATS's keys at a
         # time keeps the whole store's id set off the heap.
         for ats_dir in sorted(p for p in store_root.glob("*") if p.is_dir()):
-            seen = _ats_held_ids(ats_dir)
+            seen = _ats_held_ids(ats_dir) - set(leave_out)
             for job_id in seen:
                 dst.write(job_id + "\n")
             written += len(seen)
     return written
+
+
+def _corpus_rows(jobs_path: Path) -> Iterator[tuple[str, bool]]:
+    """``(Job id, carried fresh text)`` for one ATS's corpus, read before :func:`reconcile`
+    fills its empty rows from the store and the two can no longer be told apart."""
+    with jobs_path.open(encoding="utf-8") as fh:
+        for line in fh:
+            if line.strip():
+                job = json.loads(line)
+                yield job["id"], bool((job.get("description") or "").strip())
+
+
+def refetch_due(
+    store_root: Path, checked: dict[str, date], day: date
+) -> tuple[set[str], dict[str, date]]:
+    """The held Jobs the next scrape fetches again (ADR-0211), and the check ledger narrowed to
+    Jobs still held, so it never outgrows the store."""
+    due: set[str] = set()
+    kept: dict[str, date] = {}
+    for ats in sorted(held_refetch.ATSES):
+        held = _ats_held_ids(store_root / ats)
+        kept.update({i: checked[i] for i in held if i in checked})
+        ats_due = {i for i in held if held_refetch.is_due(i, checked, day)}
+        due |= ats_due
+        _log.info(
+            f"re-fetch rotation: {ats}: {len(ats_due):,} of {len(held):,} held descriptions due, "
+            f"left off the skip-list (every {held_refetch.PERIOD_DAYS} days, ADR-0211)"
+        )
+    return due, kept
 
 
 def compact(ats_dir: Path) -> int:
@@ -432,6 +468,16 @@ def main() -> int:
         help="per-Job change ledger: times a fetch replaced held text (ADR-0207)",
     )
     ap.add_argument(
+        "--checked",
+        default=str(held_refetch.CHECKED_PATH),
+        help="the ADR-0211 ledger: when a fetch last reached each held Job",
+    )
+    ap.add_argument(
+        "--refetch-due",
+        default=str(held_refetch.DUE_PATH),
+        help="the held Jobs the last skip-list left out; rewritten for the next scrape",
+    )
+    ap.add_argument(
         "--compact",
         action="store_true",
         help="fold each ATS's fragments into its base file and stop",
@@ -458,9 +504,14 @@ def main() -> int:
     _log.info(f"prior store: {len(embedded):,} already-embedded ids")
 
     changes = read_changes(Path(args.changes))
+    day = held_refetch.today()
+    checked = held_refetch.read_checked(Path(args.checked))
+    asked = read_id_list(Path(args.refetch_due))
     filled = learned = queued = unrecorded = replaced = reverted = 0
     for path in sorted(jobs.glob("*.jsonl")):
         ats = path.stem
+        if ats in held_refetch.ATSES:
+            held_refetch.record(checked, _corpus_rows(path), asked, day)
         done = reconcile(path, store / ats, changes)
         rederive = [i for i in done.rederive_ids if i in embedded]
         # Appended per ATS rather than accumulated and written once: the queue is what stops these
@@ -485,7 +536,10 @@ def main() -> int:
             f"{done.reverted:,} of them back to the text held before"
         )
     write_changes(Path(args.changes), changes)
-    held = write_held_details(store, Path(args.held_details))
+    due, checked = refetch_due(store, checked, day)
+    held = write_held_details(store, Path(args.held_details), leave_out=due)
+    write_id_list(Path(args.refetch_due), sorted(due))
+    held_refetch.write_checked(Path(args.checked), checked)
     _log.info(f"skip-list: {held:,} Jobs held")
     _log.info(f"re-derive queue: {queued:,} newly stored -> {args.pending_rederive}")
     if unrecorded:
