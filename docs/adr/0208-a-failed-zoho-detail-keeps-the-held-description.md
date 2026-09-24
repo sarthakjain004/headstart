@@ -3,8 +3,8 @@
 **Status:** accepted · **Date:** 2026-09-24 · **Relates to:**
 [ADR-0050](0050-persist-descriptions-across-runs.md) (the store restores held text into the
 corpus), [ADR-0089](0089-the-description-store-holds-text-not-verdicts.md),
-ADR-0207 (PR #638, which lands after this one: the served description follows changed text, so
-a flip would reach the table)
+[ADR-0207](0207-the-served-description-follows-the-posting.md) (the served description follows
+changed text, so a flip would reach the table)
 
 ## Context
 

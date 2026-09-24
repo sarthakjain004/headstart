@@ -8,7 +8,8 @@
 [ADR-0050](0050-persist-descriptions-across-runs.md) (measures the edit churn it left unmeasured),
 [ADR-0061](0061-refreshable-metadata.md), [ADR-0062](0062-drain-the-description-gap.md),
 [ADR-0089](0089-the-description-store-holds-text-not-verdicts.md),
-[ADR-0168](0168-delete-the-orphaned-blobs-dont-ask-for-them-to-be-collected.md)
+[ADR-0168](0168-delete-the-orphaned-blobs-dont-ask-for-them-to-be-collected.md),
+[ADR-0208](0208-a-failed-zoho-detail-keeps-the-held-description.md) (removes the Zoho flip first)
 
 ## Context
 
