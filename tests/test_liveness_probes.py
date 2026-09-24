@@ -1593,15 +1593,17 @@ def _host_the_scraper_reads(ats, tenant, url):
             target = search_request(company_from_row(ats, tenant, url).slug)[0]
         else:
             target = _scraper_url(ats, tenant, url)
-    except (
-        ValueError
-    ):  # e.g. 3,042 workday rows are a bare company name with no careers URL
+    # e.g. a workday row that is a bare company name with no careers URL
+    except ValueError:
         return None
     return urllib.parse.urlsplit(target).hostname
 
 
 @pytest.mark.parametrize(("ats", "tenant", "url"), _row_shapes())
 def test_every_probe_asks_the_host_its_scraper_reads(monkeypatch, ats, tenant, url):
+    """Hosts only, and only the first request. Where the slug is a path on one fixed host
+    (greenhouse, lever, gem, ...) this cannot see a probe that builds its path from the raw tenant;
+    the per-ATS URL tests above pin those. Later requests are fallbacks those tests pin too."""
     assert _first_host_asked(monkeypatch, ats, tenant, url) == _host_the_scraper_reads(
         ats, tenant, url
     )

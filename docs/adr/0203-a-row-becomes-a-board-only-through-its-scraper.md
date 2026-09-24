@@ -130,7 +130,9 @@ changed on none. Live A/B in one headless Chrome on 12 of the 50 rows (10 live, 
   ledger order puts `bun` ahead of `bun.fa.em2.oraclecloud.com`. Every served row would then say
   `bun` in place of the pod host. We have not decided this; issue #627 tracks it. Either drop
   the bare-label rows from `oracle.csv` before that refresh, since each duplicates a host row, or
-  accept the label.
+  accept the label. **Resolved 2026-09-25 (#627, PR #644): dropped.** All 464 went, and
+  `check_liveness` now lands an Oracle pool row only under a pod host (`oracle.is_pod_host`), so
+  neither the label nor a vanity careers host can land again.
 - A new copy of a Scraper fact outside the Scraper is now visible in review. A probe that asks
   anything other than `url()` carries a comment saying why.
 - `alias_key_of_landing` is the extension point for an ATS whose alias key is not a host. An ATS
