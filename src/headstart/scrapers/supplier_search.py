@@ -13,7 +13,8 @@ careers sites are read from ByteDance's own recruiting backend, the ``supplier``
 request without the header, or with ``bytedance``, is HTTP 400 ``invalid request`` on both. A
 malformed field names the same Go struct on both hosts (``BizListJobPostReq``). ADR-0139 still
 holds: each brand keeps its own ``ats``, registry entry, ledger row, ``COMPANY``, ``url_shape`` and
-``slug``, and each subclass states only its host, its ``website-path`` value and its public links.
+``slug``. Beyond that identity, a subclass states only its host, its ``website-path`` value and
+its public links.
 
 **The request body is the minimal one.** Each site's own client sends its own list of empty
 ``*_id_list`` filters, and the two lists differ; both hosts answered the TikTok list, the ByteDance
@@ -31,12 +32,15 @@ rest unread rather than raising, which would drop them for the run.
 **The walk steps by the rows each page returned and ends on an empty page or at ``count``.** No
 page short of the limit was seen before the last one in a full walk of either Board, and
 ``count`` never moved within a walk. A short page mid-walk therefore neither ends the walk nor
-opens a gap after it. The backend serves nothing once ``offset + limit`` passes 10,000 (0 rows,
-``count`` reported as 10,000), so :data:`_MAX_PAGES` stops the walk at exactly that window.
+opens a gap after it. The backend serves nothing once ``offset + limit`` passes 10,000: it
+answers 0 rows and reports ``count`` as 10,000, even for a request that overlaps real rows. So no
+request crosses :data:`_RESULT_WINDOW`, and a walk that reaches it is marked truncated whatever
+``count`` says.
 
 **The listing is the whole Job, with no posted date.** ``description`` and ``requirement`` are on
-every row, so there is no detail pass. No field of the payload carries a date of any kind, so
-``posted_at`` is always None. ``job_post_info`` (salary, level) is null on every sampled row of
+every row, in full (0 of 100 sampled ByteDance rows truncated or tagged, 2026-09-11), so there is
+no detail pass. No field of the payload carries a date of any kind (100 rows sampled per Board),
+so ``posted_at`` is always None. ``job_post_info`` (salary, level) is null on every sampled row of
 both Boards. ``job_subject`` is a campus-cohort label ("PhD Graduates - 2027 Start"), not a team,
 so it never stands in for ``department``.
 """
@@ -51,9 +55,9 @@ from headstart.scrapers.base import USER_AGENT, BaseScraper
 #: Both hosts served ``limit=1,000`` un-clamped (measured 2026-09-24). Paged anyway: an un-clamped
 #: limit today is not a contract, and the walk below survives a silent clamp.
 _PAGE_SIZE = 200
-#: 50 x 200 = 10,000, the backend's result window: past ``offset + limit = 10,000`` it answers 0
-#: rows and a ``count`` of 10,000. Reaching the cap means the Board did not end.
-_MAX_PAGES = 50
+#: The last row the backend serves: past ``offset + limit = 10,000`` it answers 0 rows and a
+#: ``count`` of 10,000 (measured 2026-09-24). A walk that reaches it did not see the Board end.
+_RESULT_WINDOW = 10_000
 
 
 class SupplierSearchScraper(BaseScraper):
@@ -70,7 +74,7 @@ class SupplierSearchScraper(BaseScraper):
         # is its own canonical identity.
         return self.slug
 
-    def _search_page(self, offset: int) -> dict[str, Any]:
+    def _search_page(self, offset: int, limit: int) -> dict[str, Any]:
         response = self._fetch(
             "POST",
             self.search_url,
@@ -80,7 +84,7 @@ class SupplierSearchScraper(BaseScraper):
                 "accept-language": "en-US",
                 "website-path": self.website_path,
             },
-            json={"keyword": "", "limit": _PAGE_SIZE, "offset": offset},
+            json={"keyword": "", "limit": limit, "offset": offset},
             timeout=30,
         )
         response.raise_for_status()
@@ -90,8 +94,11 @@ class SupplierSearchScraper(BaseScraper):
         posts: list[dict] = []
         total = 0
         offset = 0
-        for _ in range(_MAX_PAGES):
-            envelope = self._search_page(offset)
+        while offset < _RESULT_WINDOW:
+            # Never ask across the window: such a request answers 0 rows, which reads as the end.
+            envelope = self._search_page(
+                offset, min(_PAGE_SIZE, _RESULT_WINDOW - offset)
+            )
             code = envelope.get("code")
             if code != 0:
                 self.mark_truncated(
@@ -107,10 +114,11 @@ class SupplierSearchScraper(BaseScraper):
             offset += len(batch)
             if not batch or (total and offset >= total):
                 break
-        else:
+        # Near the window `count` itself may read 10,000, so reaching it is a verdict of its own.
+        if offset >= _RESULT_WINDOW:
             self.mark_truncated(
-                f"hit the {_MAX_PAGES}-page cap at {len(posts)} of {total or 'unknown'} "
-                "postings — the rest unread"
+                f"reached the {_RESULT_WINDOW:,}-row result window at {len(posts)} of "
+                f"{total or 'unknown'} postings — the rest is unreadable, not absent"
             )
         if total and len(posts) < total:
             self.mark_truncated_unless_negligible(
@@ -158,11 +166,16 @@ class SupplierSearchScraper(BaseScraper):
 
 
 def _english_name(node: Any) -> str | None:
-    """A named node's English label. ``i18n_name`` is the name in the requested locale, which the
-    ``accept-language: en-US`` header makes English, so it stands in when ``en_name`` is empty."""
+    """A named node's English label, stripped. ``i18n_name`` is the name in the requested locale,
+    which the ``accept-language: en-US`` header makes English, so it stands in when ``en_name`` is
+    missing or blank."""
     if not isinstance(node, dict):
         return None
-    return (node.get("en_name") or node.get("i18n_name") or "").strip() or None
+    for key in ("en_name", "i18n_name"):
+        name = (node.get(key) or "").strip()
+        if name:
+            return name
+    return None
 
 
 def _location(city_info: Any) -> str | None:

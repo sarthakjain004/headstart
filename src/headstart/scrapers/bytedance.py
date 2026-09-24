@@ -5,8 +5,8 @@ platform other companies rent (ADR-0139, CONTEXT.md's glossary). There is exactl
 header value and links lives in :mod:`headstart.scrapers.supplier_search` (ADR-0198).
 
 Adapted with reference to jobhive's ByteDance scraper (kalil0321/ats-scrapers, MIT); every fact
-below was re-measured live against the real endpoint on 2026-09-11 rather than trusted from it —
-full numbers in ``docs/bytedance/2026-09-11_api-measurement.md``.
+below was re-measured live against the real endpoint rather than trusted from it, on 2026-09-11
+unless it says otherwise — full numbers in ``docs/bytedance/2026-09-11_api-measurement.md``.
 
 **The public browse page has moved off ``jobs.bytedance.com``, but the API has not.**
 ``GET https://jobs.bytedance.com/en/position`` answers a bare 302 to
@@ -18,8 +18,8 @@ downloading those bundles and reading the minified API client (module ``61215`` 
 ``8321-22536180820e7ed8.js``), not by guessing.
 
 **The Board is ``website-path: en``.** Without the header the host answers HTTP 400 ``invalid
-request``, as it does for ``cn`` and ``bytedance``; ``en`` is the app's own default when no locale
-cookie is set. No auth cookie, Origin header, or Referer is needed; a bare ``curl`` with this
+request``, as it does for ``cn`` (2026-09-11) and ``bytedance`` (2026-09-24); ``en`` is the app's
+own default when no locale cookie is set. No auth cookie, Origin header, or Referer is needed; a bare ``curl`` with this
 repo's own User-Agent gets the same 200 a browser does.
 
 **One call reads the whole global board — no region looping.** With no location filter, the API
@@ -28,7 +28,7 @@ the US, Singapore, Malaysia, Thailand, the UAE, Hong Kong, the UK, Mexico and So
 ``data.count`` was **1,395** at measurement time and matched the number of ids returned exactly
 once every page had been read.
 
-**A ``GET {base}/job/posts/{id}`` route exists but is unused.** It is in the bundle's route table
+**A ``GET /api/v1/public/supplier/job/posts/{id}`` route exists but is unused.** It is in the bundle's route table
 (``JOB_DETAIL = "/job/posts/"``); probed live with a few plausible bodies, it answered
 ``{"code":-9000002,...,"message":"params is invalid"}`` on a 200. Every listed row already carries
 the description it would add.

@@ -72,7 +72,7 @@ returned 0 rows; `limit=5800` returned the last 101).
 **Record fields.** Across all 5,721 postings of both Boards: every location chain is 3 levels deep
 and has the shape ABC, AAA or AAB, never ABA; every `i18n_name` equals its `en_name`;
 `job_category.en_name` is on every row, so `job_subject` never stood in for `department`; every row
-has a `description` or `requirement`; every id is a string.
+has both a `description` and a `requirement`; every id is a string.
 
 ## Decision
 
@@ -80,7 +80,9 @@ has a `description` or `requirement`; every id is a string.
 subclasses.** `TikTokScraper` and `ByteDanceScraper` keep their modules, `ats` values, registry
 entries, ledger rows, `COMPANY`, `url_shape`, `slug`, `url()` and `job_url()`. Each also states two
 class attributes: `search_url` (its own host) and `website_path` (`tiktok`, `en`). The module is
-named for the API route both hosts serve, because no product name covers both brands.
+named for the API route both hosts serve, because no product name covers both brands. A
+brand-scoped name such as `bytedance_supplier` was considered and rejected: next to `bytedance.py`
+it would be a near-homograph (CLAUDE.md §3), and it would read as the ByteDance Board's alone.
 ADR-0139 rejected one dispatch key, not shared code, and still holds: this is one class tree, not
 one `ats`.
 
@@ -106,11 +108,18 @@ For each difference:
   is now sent to both hosts, which makes `i18n_name` English.
 - **`department` reads only `job_category`.** `job_subject` is a campus-cohort label ("PhD
   Graduates - 2027 Start"), not a team, and TikTok's fallback to it never fired.
+- **Every label is stripped.** Neither copy stripped `department` or `employment_type`. Stripping
+  them changed no measured row.
 
 The request becomes one shape: the minimal body; headers `User-Agent`, `Content-Type`,
-`accept-language: en-US` and `website-path`; page size 200 (ByteDance's). The page cap becomes 50
-pages, which is exactly the 10,000 window: a Board larger than that hits the cap, and the cap marks
-it truncated.
+`accept-language: en-US` and `website-path`; page size 200 (ByteDance's). **The page caps are
+replaced by the result window.** No request asks past row 10,000: the last page's limit is cut to
+fit, because a request crossing the window answers 0 rows and would read as the end. A walk that
+reaches row 10,000 is marked truncated whatever `count` says, because `count` itself may read
+10,000 there. A Board of exactly 10,000 postings would therefore be marked truncated when it is
+complete. That is the conservative error, and the largest Board today is 4,301. The window also
+holds under a silent clamp: pages of 50 still walk to row 10,000, where a page cap would stop at
+2,500.
 
 ## Proof that no Job changed
 
@@ -124,6 +133,11 @@ Jobs were compared field by field, ignoring `scraped_at`.
 
 The *before* run's raw postings were also parsed again with the new code. Every one of the 5,721
 Jobs came out identical. Neither run was truncated.
+
+After the review changes (the result window replaced the page caps), the merge-base classes and
+the merged ones ran back to back against the live Boards. TikTok had shrunk to 4,298 by then, and
+both read those 4,298; both read ByteDance's 1,420. No id appeared on one side only, and no Job
+differed.
 
 ## Alternatives considered
 
@@ -139,10 +153,10 @@ Jobs came out identical. Neither run was truncated.
 ## Consequences
 
 - TikTok's walk halves, from 44 requests to 22, because it now pages at 200.
-- A Board past 10,000 postings would hit the page cap and be marked truncated, not read short in
-  silence. The largest today is TikTok, at 4,301. One case is unmeasured: if `count` itself stops
-  at 10,000 for such a Board, the walk would end at `offset >= count` without a verdict. Neither
-  Board is within twice that size.
+- A Board past 10,000 postings is marked truncated at the window, not read short in silence. That
+  holds whether `count` states its real total or stops at 10,000; the second case is unmeasured,
+  and it is why reaching the window is a verdict of its own. Neither Board is within twice that
+  size: the largest today is TikTok, at 4,301.
 - A non-zero `code` on ByteDance is now an INFO truncation line instead of the traceback `harvest`
   prints for an unexpected exception. The Board's authority is decided the same way either way.
 - `tiktok.py`'s claim of "separate request shapes" and `bytedance.py`'s "`accept-language` is

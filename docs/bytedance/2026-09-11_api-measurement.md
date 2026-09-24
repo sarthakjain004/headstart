@@ -49,6 +49,9 @@ website-path: en
  "recruitment_id_list":[],"subject_id_list":[],"tag_id_list":[]}
 ```
 
+*(2026-09-24, ADR-0198: `accept-language` is no longer required, and `website-path` still is.
+Without `accept-language`, `i18n_name` comes back in Chinese.)*
+
 **Both headers are required, not cookie fallbacks.** A request missing `accept-language` or
 `website-path` returns `HTTP 400` with the plain-text body `invalid request` (no JSON at all —
 `.raise_for_status()` catches it cleanly). `"en-US"` / `"en"` are the app's own default values

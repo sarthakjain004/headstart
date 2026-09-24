@@ -50,7 +50,7 @@ normally.
 | `recruit_type.en_name` | `"Intern"` / `"Regular"` (employment type) | 100% |
 | `job_category.en_name` | department (`"Operations"`, `"Machine learning"`, `"R&D"`, …) | 100% |
 | `city_info` | nested `{en_name, parent: {en_name, parent: {...}}}` (city → region → country) | 100% |
-| `job_subject.en_name` | narrower team/family label | 35% |
+| `job_subject.en_name` | campus-cohort label ("PhD Graduates - 2027 Start"), not a team (re-read 2026-09-22) | 35% |
 | `job_post_info` (salary, level, expiry) | object, every sub-field | **0%** — null on every sampled row |
 | `department_info`, `tag_list`, `vacancies`, `process_type`, `channel_online_status` | — | **0%** — null on every sampled row |
 
@@ -114,7 +114,8 @@ an artifact of one lucky crawl. 43 full pages each, all short only on the final 
 page came back under 100 in either sweep, so the "a short page is not always the end" trap
 oracle.py's own docstring warns about (which this scraper's terminator does *not* independently
 guard against) has no live evidence against this ATS today — worth re-checking if a future sweep
-ever disagrees with itself.
+ever disagrees with itself. *(2026-09-24, ADR-0198: the shared walk no longer stops on a short
+page. It steps by the rows each page returned and ends only on an empty page or at `count`.)*
 
 **A different failure mode does have live evidence, and the scraper's first version missed it.**
 Probing a handful of malformed requests (not part of the ordinary crawl) found one that returns
