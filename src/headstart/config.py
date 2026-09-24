@@ -270,6 +270,70 @@ EXCLUDED_BOARDS: frozenset[str] = frozenset(
         "taleo_enterprise:https://pmg.taleo.net/careersection/m1",
         "taleo_enterprise:https://pmg.taleo.net/careersection/mobilecs_demo_al",
         "taleo_enterprise:https://pmg.taleo.net/careersection/qatestcs",
+        # Vendor and integration-partner sandboxes found by reading the served table's postings
+        # (titles, companies, posted dates) on 2026-09-24, each re-read live from its ATS's
+        # public listing the same day. Where the sandbox wears a real employer's name, that
+        # employer's real Board is a separate ledger row this does not touch.
+        #
+        # Greenhouse (boards-api): `builtinintegrationsandbox` names itself "BuiltIn Integration
+        # Sandbox"; it lists 0 postings live, but its 316 served rows are generated ("Cloud
+        # Solutions Architect - Job 50 9/16/2026, 12:04:29 PM") and only this removes them.
+        # `mergeapiintegrationsandbox` is "Merge API Integration Sandbox", 87 postings: "Account
+        # Executive (Automation Test)", "AI filed = No initially but then changed", "Eng Dog
+        # Walker", "Republish Test". `agodasandbox` is "Agoda Sandbox", 34 postings dated
+        # 2019-2026: "Agoda Homes Test", "2 Phenom CRM", "Campaign Marketing Analyst change";
+        # Agoda's real Board is `greenhouse:agoda`.
+        "greenhouse:agodasandbox",
+        "greenhouse:builtinintegrationsandbox",
+        "greenhouse:mergeapiintegrationsandbox",
+        # Jobvite (board pages, and a sample of detail pages' JSON-LD for dates): `onecoprd`
+        # ("Oneco 1 Careers") is Jobvite's release-QA tenant, 614 of 1,318 titles test-shaped:
+        # "2020-07 Release Testing", "Crash Test - Do not change", "10th_aug_4th". `li3` is
+        # "LinkedIn Test 3", 749 postings of numbered copies ("1000 - Content Producer",
+        # "TEST 1241 - Enterprise Sales Manager - Lynda.com", "Test 5 #DNP"). `deming` and
+        # `deminginc` are both "SC Demo Instance", the same 34 stock postings dated 2016-2017.
+        # `michaelcarrinotest` is "Michael Carrino Sandbox": "Brit's Test Job", "dfadfasdfa",
+        # "Implementation Manager - Sahana Demo".
+        "jobvite:deming",
+        "jobvite:deminginc",
+        "jobvite:li3",
+        "jobvite:michaelcarrinotest",
+        "jobvite:onecoprd",
+        # JazzHR (board page, detail JSON-LD `hiringOrganization`): `adptestcompanycp` is "ADP
+        # Test Company- CP", stock titles ("Advertising Sales Representative", "Art Director");
+        # `jobtarget` is "JobTarget - Demo", 46 postings: "Donkey Handler - JazzHr Integration Test
+        # Job", "testtttttttttttt", "Test Unnleash JazzHR".
+        "jazzhr:adptestcompanycp",
+        "jazzhr:jobtarget",
+        # Recruitee (offers API): `democompany` and `democompany3` both serve "KW Demo company"'s
+        # same 12 offers: "Test Tech Support (2)", "maltest", "aaa", "dsd", "Example offer 3".
+        "recruitee:democompany",
+        "recruitee:democompany3",
+        # SmartRecruiters (postings API, every page): `kombo` is the integrations vendor's test
+        # account, 62 of 156 titles test-shaped ("Test job 2", "QA Testing guru") beside
+        # "Superman", "Astronaut", "dr pepper drinker"; Kombo's real Board is `ashby:kombo`.
+        # `biogensandbox` is "Biogen SANDBOX", all 327 postings released in 2019 ("SIT-Test New
+        # Position", "UAT EH14 - Sr Manager, Strategic Sourcing G&A"). `rhaegalsandbox` is
+        # "Rhaegal - Arago Sandbox", a partner's sandbox of 561 postings, 65 test-shaped ("test
+        # publication", "[DEMO] Développeur Java", "Rhaegal Sandbox"); its plausible French ads
+        # apply into a sandbox, not to an employer. `joveosandbox` is "Joveo Sandbox" ("TESTING
+        # Jobad api", "Test MQ", "jojosiva", "French man"). `rebeccajdemo` is "RebeccaJ Demo",
+        # 23 postings from 2016-2018 ("Rocket Surgeon", "Rattlesnake Breeder", "SEEK Test Job").
+        # `angloamericansandbox1` is "Anglo American Sandbox" ("BNE TEST JOB 6 - Met Coal
+        # Apprenticeships", "Template (English): Mining Manager"). `piqc` is "Partners Internal
+        # Quality Control" ("Test Tanya", "Anastasiia's Test Job", "Taxi driver").
+        "smartrecruiters:angloamericansandbox1",
+        "smartrecruiters:biogensandbox",
+        "smartrecruiters:joveosandbox",
+        "smartrecruiters:kombo",
+        "smartrecruiters:piqc",
+        "smartrecruiters:rebeccajdemo",
+        "smartrecruiters:rhaegalsandbox",
+        # Zoho (careers page's embedded jobs): `zohocorp2.zohorecruit.com` is Zoho's own QA
+        # tenant. Its company name carries an XSS probe (`Zoho India ''>>"">>"> ... <img src=x
+        # onerror=alert(100)>`), as do 3 of its 28 titles; the rest read "Java Developer CRM Deal
+        # renmaed Director", "Accountant       oppoo", "job publish Kosovo", "test 3".
+        "zoho:zohocorp2.zohorecruit.com",
         # Blackstone's own test sites; the second is named for what it serves. Workday slugs
         # ARE the careers URL, so these keys are longer than the rest.
         "workday:https://blackstone.wd1.myworkdayjobs.com/marni_test_site",
