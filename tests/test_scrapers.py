@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from typing import ClassVar
 
 import pytest
+from fake_fetcher import FakeFetcher, FakeResponse
 
 from headstart import http
 from headstart.scrapers.personio import PersonioScraper
@@ -1068,30 +1069,29 @@ def test_smartrecruiters_parse_uses_function_when_department_is_null():
     assert job.department == "Information Technology"
 
 
-def test_smartrecruiters_tech_gate_reads_function_when_department_is_null(monkeypatch):
+def test_smartrecruiters_tech_gate_reads_function_when_department_is_null():
     """The gate and `parse` must reach the same verdict — both go through `_department_of`."""
-    monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", "0")
-    scraper = get_scraper("smartrecruiters", "acme")
-    scraper.have_details = frozenset()
+    from headstart.scrapers.smartrecruiters import SmartRecruitersScraper
+
     postings = [
         # vague title, no department, tech function -> rule 4 promotes it (gate must fetch it)
         {"id": "1", "name": "Associate", "function": {"label": "Engineering"}},
         # vague title, no department, non-tech function -> stays gated out
         {"id": "2", "name": "Associate", "function": {"label": "Retail"}},
     ]
-    monkeypatch.setattr(
-        scraper, "_get", lambda *a: json.dumps({"content": postings, "totalFound": 2})
-    )
-    fetched: list[str] = []
-    monkeypatch.setattr(
-        scraper,
-        "_job_detail",
-        lambda posting_id: fetched.append(posting_id) or {"description": "d"},
-    )
+
+    def route(method, url, kwargs):
+        if "/postings?" in url:
+            return FakeResponse(text=json.dumps({"content": postings, "totalFound": 2}))
+        return FakeResponse(text=json.dumps({"jobAd": {}}))
+
+    fetcher = FakeFetcher(route)
+    scraper = SmartRecruitersScraper("acme", fetcher=fetcher)
+    scraper.have_details = frozenset()
 
     scraper.fetch_raw()
 
-    assert fetched == ["1"]
+    assert [url.rsplit("/", 1)[1] for url in fetcher.urls()[1:]] == ["1"]
 
 
 def test_smartrecruiters_description_joins_requirement_sections():
@@ -1112,7 +1112,7 @@ def test_smartrecruiters_description_joins_requirement_sections():
             }
 
     scraper = get_scraper("smartrecruiters", "acme", "Acme")
-    text = scraper._extract_detail(_Resp())["description"]
+    text = scraper.read_detail({"id": "1"}, _Resp())["description"]
     assert "Build things" in text
     assert "5+ years of experience" in text  # qualifications must ride along
     assert "Perks" in text
@@ -1227,7 +1227,7 @@ def test_smartrecruiters_salary_from_native_compensation_block(compensation, exp
     )
 
 
-def test_smartrecruiters_extract_detail_reads_description_and_compensation_from_one_response():
+def test_smartrecruiters_read_detail_reads_description_and_compensation_from_one_response():
     """The compensation fix must cost zero extra requests: both fields come off the SAME
     posting-detail response the scraper already fetches for the description alone."""
     from headstart.scrapers.smartrecruiters import SmartRecruitersScraper
@@ -1249,7 +1249,7 @@ def test_smartrecruiters_extract_detail_reads_description_and_compensation_from_
                 },
             }
 
-    detail = SmartRecruitersScraper("acme")._extract_detail(_Resp())
+    detail = SmartRecruitersScraper("acme").read_detail({"id": "1"}, _Resp())
     assert detail == {
         "description": "<p>Build things</p>",
         "compensation": {
@@ -1261,7 +1261,7 @@ def test_smartrecruiters_extract_detail_reads_description_and_compensation_from_
     }
 
 
-def test_smartrecruiters_extract_detail_missing_compensation_is_none():
+def test_smartrecruiters_read_detail_missing_compensation_is_none():
     from headstart.scrapers.smartrecruiters import SmartRecruitersScraper
 
     class _Resp:
@@ -1271,14 +1271,14 @@ def test_smartrecruiters_extract_detail_missing_compensation_is_none():
         def json():
             return {"jobAd": {"sections": {"jobDescription": {"text": "<p>Role</p>"}}}}
 
-    detail = SmartRecruitersScraper("acme")._extract_detail(_Resp())
+    detail = SmartRecruitersScraper("acme").read_detail({"id": "1"}, _Resp())
     assert detail["compensation"] is None
 
 
 def test_detail_without_a_native_id_is_not_counted_as_attempted():
     scraper = get_scraper("smartrecruiters", "acme")
 
-    assert scraper._job_detail(None) is None
+    assert scraper.fetch_detail({"id": None}) is None
     scraper.report_detail_gaps([None], "details")
 
     assert scraper.telemetry["detail_jobs"] == 1
@@ -10631,31 +10631,38 @@ def test_workday_gates_details_and_pairs_them_back_by_the_right_posting(monkeypa
     assert scraper.truncated is None
 
 
-def test_smartrecruiters_gates_details_and_pairs_them_back(monkeypatch):
-    """The same trap at smartrecruiters' call site — `p["_detail"]` is what `parse` reads."""
-    monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", "0")
-    scraper = get_scraper("smartrecruiters", "acme")
-    scraper.have_details = frozenset()
+@pytest.mark.parametrize("async_fanout", ["1", "0"])
+def test_smartrecruiters_gates_details_and_pairs_them_back(monkeypatch, async_fanout):
+    """The same trap at smartrecruiters' call site — `p["_detail"]` is what `parse` reads —
+    on both transports, which now run one request description instead of two copies."""
+    from headstart.scrapers.smartrecruiters import SmartRecruitersScraper
+
+    monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", async_fanout)
     postings = [
         {"id": "1", "name": "Housekeeper"},
         {"id": "2", "name": "Backend Engineer"},
         {"id": "3", "name": "Chef"},
     ]
-    monkeypatch.setattr(
-        scraper, "_get", lambda *a: json.dumps({"content": postings, "totalFound": 3})
-    )
-    fetched: list[str] = []
 
-    def _detail(posting_id):
-        fetched.append(posting_id)
-        return {"description": f"body {posting_id}"}
+    def route(method, url, kwargs):
+        if "/postings?" in url:
+            return FakeResponse(text=json.dumps({"content": postings, "totalFound": 3}))
+        posting_id = url.rsplit("/", 1)[1]
+        sections = {"jobDescription": {"text": f"body {posting_id}"}}
+        return FakeResponse(text=json.dumps({"jobAd": {"sections": sections}}))
 
-    monkeypatch.setattr(scraper, "_job_detail", _detail)
+    fetcher = FakeFetcher(route)
+    scraper = SmartRecruitersScraper("acme", fetcher=fetcher)
+    scraper.have_details = frozenset()
     raw = scraper.fetch_raw()
 
-    assert fetched == ["2"], "only the tech posting cost a request"
+    detail_urls = fetcher.urls()[1:]
+    assert [url.rsplit("/", 1)[1] for url in detail_urls] == ["2"], (
+        "only the tech posting cost a request"
+    )
+    assert fetcher.requests[1].kwargs["headers"]["Accept"] == "application/json"
     by_id = {p["id"]: p["_detail"] for p in raw["content"]}
-    assert by_id["2"] == {"description": "body 2"}
+    assert by_id["2"] == {"description": "body 2", "compensation": None}
     assert by_id["1"] == {} and by_id["3"] == {}
 
 

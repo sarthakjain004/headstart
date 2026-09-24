@@ -20,9 +20,14 @@ import re
 from pathlib import Path
 
 import pytest
+from fake_fetcher import FakeFetcher, FakeResponse
 
 from headstart import http, salary
-from headstart.scrapers.clearcompany import _field, decode_hrm_bytes
+from headstart.scrapers.clearcompany import (
+    ClearCompanyScraper,
+    _field,
+    decode_hrm_bytes,
+)
 from headstart.scrapers.registry import detail_pass_atses, get_scraper
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -185,44 +190,32 @@ def test_a_closed_req_page_carries_no_posting_and_yields_no_description():
 # --------------------------------------------------------------------------- fetch_raw
 
 
-class _Resp:
-    """The slice of a curl_cffi Response the scraper reads."""
+def _serve(pages: dict[str, FakeResponse], slug: str = "kingarthurbaking"):
+    """A Scraper whose every request is answered from ``pages`` by URL, and the fake that
+    records what it was asked for; an unknown URL is refused like a dead host."""
 
-    def __init__(self, status: int, content: bytes):
-        self.status_code = status
-        self.content = content
+    def route(method, url, kwargs):
+        return pages.get(url) or http.RequestsError("Connection refused")
 
-    def raise_for_status(self) -> None:
-        if self.status_code >= 400:
-            raise http.RequestsError(f"HTTP Error {self.status_code}")
+    fetcher = FakeFetcher(route)
+    return ClearCompanyScraper(slug, fetcher=fetcher), fetcher
 
 
-def _serve(scraper, pages: dict[str, _Resp], requested: list[str]):
-    """Route `scraper._fetch` to recorded bytes, and run the fan-out inline."""
-
-    def fake_fetch(method, url, **kw):
-        requested.append(url)
-        if url in pages:
-            return pages[url]
-        raise http.RequestsError("Connection refused")
-
-    scraper._fetch = fake_fetch
-    scraper.fan_out_async = lambda items, fn, **kw: [scraper._detail(i) for i in items]
+def _bytes(status: int, content: bytes) -> FakeResponse:
+    return FakeResponse(status, content=content)
 
 
 def test_fetch_raw_reads_the_feed_bytes_and_every_detail_outside_the_pipeline():
     """Outside the pipeline (`have_details` None) the tech gate is off, so every req's detail
     page is fetched — and both surfaces arrive as cp1252 bytes, decoded before parsing."""
-    scraper = _scraper()
+    board = _scraper()
     xml = (FIXTURES / "clearcompany_kingarthurbaking.xml").read_bytes()
     page = (FIXTURES / "clearcompany_detail_kingarthurbaking_3813473.html").read_bytes()
-    requested: list[str] = []
-    _serve(
-        scraper,
-        {scraper.url(): _Resp(200, xml), scraper.job_url("3813473"): _Resp(200, page)},
-        requested,
+    scraper, fetcher = _serve(
+        {board.url(): _bytes(200, xml), board.job_url("3813473"): _bytes(200, page)}
     )
     raw = scraper.fetch_raw()
+    requested = fetcher.urls()
     assert requested[0] == "https://kingarthurbaking.hrmdirect.com/employment/xml.php"
     assert len(requested) == 4  # the feed, then one detail per req
     assert set(raw["details"]) == {"3813473"}
@@ -239,25 +232,23 @@ def test_the_tech_gate_is_exact_and_skips_every_non_tech_detail(monkeypatch):
     asks `filter_tech`'s own question. King Arthur's three reqs are all non-tech: armed, the gate
     fetches no detail, and all three Jobs still ship."""
     monkeypatch.delenv("HEADSTART_TECH_GATE", raising=False)
-    scraper = _scraper()
-    scraper.have_details = frozenset()
     xml = (FIXTURES / "clearcompany_kingarthurbaking.xml").read_bytes()
-    requested: list[str] = []
-    _serve(scraper, {scraper.url(): _Resp(200, xml)}, requested)
+    scraper, fetcher = _serve({_scraper().url(): _bytes(200, xml)})
+    scraper.have_details = frozenset()
     raw = scraper.fetch_raw()
-    assert requested == [scraper.url()]
+    assert fetcher.urls() == [scraper.url()]
     assert scraper.telemetry.get("tech_gated_details") == 3
     assert len(scraper.parse(raw, SCRAPED_AT)) == 3
 
 
-def test_a_closed_req_is_a_counted_detail_gap(monkeypatch):
-    scraper = _scraper()
+def test_a_closed_req_is_a_counted_detail_gap():
+    board = _scraper()
     xml = (FIXTURES / "clearcompany_kingarthurbaking.xml").read_bytes()
     closed = (FIXTURES / "clearcompany_detail_closed.html").read_bytes()
-    pages = {scraper.url(): _Resp(200, xml)}
+    pages = {board.url(): _bytes(200, xml)}
     for req in ("3781760", "3813473", "3804210"):
-        pages[scraper.job_url(req)] = _Resp(200, closed)
-    _serve(scraper, pages, [])
+        pages[board.job_url(req)] = _bytes(200, closed)
+    scraper, _fetcher = _serve(pages)
     raw = scraper.fetch_raw()
     assert raw["details"] == {}
     assert scraper.detail_losses["no posting"] == 3
@@ -266,15 +257,17 @@ def test_a_closed_req_is_a_counted_detail_gap(monkeypatch):
 def test_a_departed_tenant_raises_rather_than_reading_as_empty():
     """A departed or unknown tenant's xml.php is a 404 (51 of 51 measured); raising keeps it a
     failed Board instead of a Board that has nothing open."""
-    scraper = _scraper()
-    _serve(scraper, {scraper.url(): _Resp(404, b"<html>Not Found</html>")}, [])
+    scraper, _fetcher = _serve(
+        {_scraper().url(): _bytes(404, b"<html>Not Found</html>")}
+    )
     with pytest.raises(http.RequestsError):
         scraper.fetch_raw()
 
 
 def test_a_200_that_is_not_the_feed_is_an_unreadable_board(caplog):
-    scraper = _scraper()
-    _serve(scraper, {scraper.url(): _Resp(200, b"<html>maintenance</html>")}, [])
+    scraper, _fetcher = _serve(
+        {_scraper().url(): _bytes(200, b"<html>maintenance</html>")}
+    )
     with caplog.at_level("INFO"):
         raw = scraper.fetch_raw()
     assert scraper.parse(raw, SCRAPED_AT) == []
@@ -282,12 +275,11 @@ def test_a_200_that_is_not_the_feed_is_an_unreadable_board(caplog):
 
 
 def test_an_empty_live_board_is_the_feed_with_no_jobs_and_not_unreadable(caplog):
-    scraper = _scraper()
     empty = (
         b'<?xml version="1.0" encoding="UTF-8"?>\n<source>\n<publisher>HRM Direct</publisher>\n'
         b"<publisherurl>http:www.hrmdirect.com</publisherurl>\n</source>\n "
     )
-    _serve(scraper, {scraper.url(): _Resp(200, empty)}, [])
+    scraper, _fetcher = _serve({_scraper().url(): _bytes(200, empty)})
     with caplog.at_level("INFO"):
         raw = scraper.fetch_raw()
     assert scraper.parse(raw, SCRAPED_AT) == []
