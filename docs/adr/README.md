@@ -215,6 +215,7 @@ supersedes it and note the supersession in both.
 | [0216](0216-a-workday-board-is-named-by-its-postings-legal-entities.md) | A Workday Board is named by its postings' legal entities, checked against its own page | 2026-09-25 |
 | [0217](0217-a-board-is-named-by-what-its-postings-agree-on.md) | A Board is named by what its pages or postings agree on, where no Board page names it | 2026-09-25 |
 | [0218](0218-an-inactive-trakstar-account-is-gone.md) | An inactive Trakstar account is gone | 2026-09-25 |
+| [0219](0219-a-boards-row-is-elected-on-evidence-its-key-is-kept.md) | A Board's row is elected on evidence, and its key is kept | 2026-09-25 |
 
 *ADR-0037 was removed from the repository on 2026-09-24 by the owner's decision; its number is not
 reused.*

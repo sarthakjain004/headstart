@@ -11226,6 +11226,14 @@ _RESOLVE_ROWS = [
         "https://jobs.jobvite.com/barracuda-networks-inc/search",
     ),
     (
+        # The Candidate Experience root, titled with the default site's name.
+        "oracle",
+        "cbha.fa.us2.oraclecloud.com",
+        "Ricoh Careers",
+        "Ricoh",
+        "https://cbha.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/",
+    ),
+    (
         # The portal record's `name`, typed by the tenant — here with a wrapper around it.
         "keka",
         "skylarkdrones",
@@ -11303,6 +11311,14 @@ _RESOLVE_ROWS = [
         "Jobs at 7Learnings GmbH",
         "7Learnings GmbH",
         "https://7learnings.jobs.personio.de/?language=en",
+    ),
+    (
+        # The listing page, which iCIMS's template titles "Job Listings at {Name}".
+        "icims",
+        "careers-peraton.icims.com",
+        "Job Listings at Peraton",
+        "Peraton",
+        "https://careers-peraton.icims.com/jobs/search?ss=1&in_iframe=1",
     ),
     (
         # The client host's `/jobs` page; 200 of 1,116 clients title it "{Name} Careers".

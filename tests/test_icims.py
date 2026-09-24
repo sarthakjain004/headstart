@@ -456,3 +456,90 @@ def _ld_page(node: dict) -> str:
         + json.dumps({"@type": "JobPosting", "title": "T", **node})
         + "</script>"
     )
+
+
+# --- the Board's company name ---------------------------------------------------------------
+
+
+def test_the_board_page_is_the_listing_the_template_titles():
+    scraper = get_scraper("icims", "careers-peraton.icims.com")
+    assert scraper.board_page() == (
+        "https://careers-peraton.icims.com/jobs/search?ss=1&in_iframe=1"
+    )
+
+
+def test_a_job_page_states_its_hiring_organization():
+    page = _ld_page(
+        {"hiringOrganization": {"@type": "Organization", "name": " SYSTRA "}}
+    )
+    assert _ld_fields(page)["company"] == "SYSTRA"
+    assert _ld_fields(_ld_page({}))["company"] is None
+
+
+def _named(
+    *names: str | None, company: str | None = None, title: str = "Job Listings"
+) -> str:
+    """The Board's company once `fetch_raw` has read job pages stating ``names`` and
+    `resolve_company` has read a listing page titled ``title`` ("Job Listings" names no one)."""
+    pages = {str(i): name for i, name in enumerate(names)}
+    rows = "".join(
+        f"<url><loc>https://{_HOST}/jobs/{i}/x/job</loc></url>" for i in pages
+    )
+
+    def route(method, url, kwargs):
+        if url.endswith("/sitemap.xml"):
+            return FakeResponse(text=rows)
+        if "/jobs/search" in url:
+            return FakeResponse(text=f"<title>{title}</title>")
+        job_id = url.split("/jobs/")[1].split("/")[0]
+        org = {"hiringOrganization": {"name": pages[job_id]}} if pages[job_id] else {}
+        return FakeResponse(text=_ld_page(org))
+
+    scraper = get_scraper("icims", _HOST, company, fetcher=FakeFetcher(route))
+    scraper.fetch_raw()
+    scraper.resolve_company()
+    return scraper.company
+
+
+def test_the_hiring_organization_names_a_board_whose_title_did_not():
+    # careers-systra: its listing title is empty; nine in ten postings is the floor
+    assert _named(*["SYSTRA"] * 9, "Systra USA") == "SYSTRA"
+
+
+def test_postings_that_disagree_leave_the_slug():
+    # careers-emcorgroup: its subsidiaries each state their own name
+    assert _named(*["EMCOR Group"] * 8, "EMCOR Services", "Dynalectric") == _HOST
+
+
+def test_the_six_general_dynamics_hosts_agree():
+    """One tenant served under six hosts (careers-gdms, careers-c4s, cybercareers-gdms,
+    university-gd-ais, careers-gd-ais, cybercareers-gd-ais) must read one name. All six title
+    their listing the same, and the title outranks the pages' legal name."""
+    title = (
+        "Find a Job - General Dynamics Mission Systems Job Listings at General Dynamics "
+        "Mission Systems"
+    )
+    legal = "General Dynamics Mission Systems, Inc"
+    assert _named(legal, title=title) == "General Dynamics Mission Systems"
+
+
+def test_unavailable_states_nothing():
+    # six of 52 Boards state only the placeholder; it counts on neither side
+    assert _named("UNAVAILABLE", "UNAVAILABLE") == _HOST
+    assert _named("UNAVAILABLE", "Allan Myers", "Allan Myers") == "Allan Myers"
+
+
+def test_the_listing_title_outranks_the_postings():
+    # careers-unitedshore: the brand first, the user's call
+    assert _named("United Wholesale Mortgage", title="Job Listings at UWM") == "UWM"
+
+
+def test_a_title_naming_an_office_falls_through_to_the_postings():
+    # careers-abilegroup: "Job Listings at Abile Headquarters", pages "Abile Group, Inc."
+    title = "Job Listings at Abile Headquarters"
+    assert _named("Abile Group, Inc.", title=title) == "Abile Group, Inc."
+    assert _named("MACNY's Job Board") == _HOST
+
+
+def test_a_ledger_name_outranks_both():
+    assert _named("SYSTRA", company="Systra Group") == "Systra Group"

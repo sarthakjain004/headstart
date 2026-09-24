@@ -93,7 +93,7 @@ def test_a_board_title_yields_the_company_name(ats, title, slug, expected):
         # `from_title` would refuse them and only the pattern gate can be what does. Without
         # such a row, deleting that gate left the whole suite green.
         ("recruitee", "Careers at Red Baton", "redbaton"),
-        ("oracle", "Bachem", "sap"),
+        ("smartrecruiters", "Bachem", "sap"),
         ("workable", "Tata Motors", "tatamotors"),
         ("greenhouse", "Stripe", "stripe"),
         ("icims", "Careers at Anything", "pwc"),
@@ -118,6 +118,57 @@ def test_taleo_enterprise_has_no_catch_all_unlike_lever():
         from_title("taleo_enterprise", "Careers at Hospital Authority", "ha")
         == "Hospital Authority"
     )
+
+
+@pytest.mark.parametrize(
+    ("title", "expected"),
+    [
+        # the name part ends where a wrapper begins: the refusal reads the name, not the rest
+        ("SAM | Careers", "SAM"),
+        ("Intelligent Waves Apply", "Intelligent Waves"),
+        ("Karsun Solutions LLC Apply", "Karsun Solutions LLC"),
+        # "company" is a word in legal names; only a title that *is* the word is a page label
+        ("Factory Mutual Insurance Company", "Factory Mutual Insurance Company"),
+        ("Company", None),
+        # still refused: text naming a page rather than an employer
+        ("Reyes Holdings Talent Community Apply", None),
+        ("LLA Talent Community", None),
+        ("Careers Home Apply", None),
+        ("Home Apply", None),
+    ],
+)
+def test_jibe_titles(title, expected):
+    # client `/jobs` titles seen on the 2026-09-24 census
+    assert from_title("jibe", title, "demo") == expected
+
+
+@pytest.mark.parametrize(
+    ("title", "expected"),
+    [
+        ("Job Listings at Peraton", "Peraton"),
+        (
+            (
+                "Find a Job - General Dynamics Mission Systems Job Listings at General "
+                "Dynamics Mission Systems"
+            ),
+            "General Dynamics Mission Systems",
+        ),
+        ("Job Openings at TekSynap", "TekSynap"),
+        ("Job Opportunities at Latham &amp; Watkins LLP", "Latham & Watkins LLP"),
+        # a lowercase "the" is the template's; a capitalised one is the name's
+        (
+            "Job Listings at the Law School Admission Council",
+            "Law School Admission Council",
+        ),
+        ("Job Listings at The Squires Group", "The Squires Group"),
+        ("Offerte di lavoro presso Merlin Entertainments", None),
+        ("Docusign Careers", None),
+        ("Job Listings", None),
+    ],
+)
+def test_icims_listing_titles(title, expected):
+    # `/jobs/search?ss=1&in_iframe=1` titles on 52 Boards, 2026-09-24
+    assert from_title("icims", title, "careers-demo.icims.com") == expected
 
 
 def test_keka_reads_the_wrapper_it_shares_with_eightfold():

@@ -48,8 +48,9 @@ signature.
 
 Field mappings, each on the measured distribution (151,619 rows, 277 hosts):
   - ``company`` is the board page ``<title>`` via ``company_name`` (887 of 1,116 live clients
-    yield a name), else the slug. The per-row ``hiring_organization`` varies within 68 of 277
-    Boards (subsidiaries, brands) and is never used.
+    yield a name), else the ``hiring_organization`` :data:`_AGREEMENT` of the Board's rows state,
+    else the slug (ADR-0217). That field varies within 68 of 277 Boards (subsidiaries, brands),
+    which is why it needs the agreement and comes second.
   - ``location`` is ``full_location``, which already joins every place with "; " (part count =
     1 + ``additional_locations`` on 8,501 of 8,501 multi-location rows) — de-duplicated, since it
     repeats places. ``remote`` falls back to the location text: there is no remote field, and
@@ -71,7 +72,7 @@ from datetime import datetime
 from typing import Any
 from urllib.parse import urlencode, urljoin, urlsplit
 
-from headstart import http, salary
+from headstart import company_name, http, salary
 from headstart.fetcher import Fetcher
 from headstart.models import Job, html_to_text, is_remote
 from headstart.scrapers.base import USER_AGENT, BaseScraper
@@ -109,6 +110,13 @@ _TYPE_LABELS: dict[str, str] = {
     "CONTRACT_TO_HIRE": "Contract to Hire",
     "OTHER_EMPLOYMENT_TYPE": "Other",
 }
+
+#: How much of a client's rows must state one `hiring_organization` before it names the Board —
+#: below the title, which is the brand. Measured on the 28 Boards serving their slug on 2026-09-24:
+#: 22 state one name on every row, and the ones just under it are one company each (`fm` "FM" on
+#: 90%, `boafit` 91.7%); below them `kmbskonicaminolta` read 89.8% then 78.8% a day later
+#: (2026-09-25, left to the fallback), and `reyesholdings` 43%, five subsidiaries.
+_AGREEMENT = 0.85
 
 #: `salary_frequency` -> the bare unit `salary.from_field` annualises for jibe.
 _PERIODS: dict[str, str] = {"HOURLY": "HOUR", "WEEKLY": "WEEK", "YEARLY": "YEAR"}
@@ -226,6 +234,8 @@ class JibeScraper(BaseScraper):
         self._last_request: float | None = None
         # This Board's robots.txt answer (status, body), read once, before any other request.
         self._robots: tuple[int | None, str] | None = None
+        # The name the listing's rows agree on, read by `fetch_raw` (`_agreed_company`).
+        self._rows_company: str | None = None
 
     @staticmethod
     def slug_from(tenant: str, url: str) -> str:
@@ -244,6 +254,30 @@ class JibeScraper(BaseScraper):
 
     def board_page(self) -> str:
         return f"https://{self.host}/jobs"
+
+    def company_from_page(self, page: str | None) -> str | None:
+        """The title's name, unless it reads as an identifier: a client can title its page with
+        another client's id (`primowater` serves "primobrands"), which is no better than its own."""
+        name = super().company_from_page(page)
+        return None if company_name.looks_like_slug(name) else name
+
+    def resolve_company(self) -> None:
+        """The board page title's name, else the ``hiring_organization`` the rows `fetch_raw`
+        read agree on (ADR-0217): the brand first, both stated before the company is settled."""
+        super().resolve_company()
+        if company_name.looks_like_slug(self.company) and self._rows_company:
+            self.company = self._rows_company
+
+    def _agreed_company(self, rows: list[dict]) -> str | None:
+        """The ``hiring_organization`` :data:`_AGREEMENT` of the Board's rows state, or None.
+        Every row the listing read counts, the ones dropped for a readable iCIMS tenant too: they
+        are this client's postings all the same."""
+        agreed = company_name.agreed_name(
+            (row.get("hiring_organization") for row in rows), _AGREEMENT
+        )
+        # A field, so `from_field`'s guards: "iCIMS Talent Acquisition" (`customer0`, 20 of 20
+        # rows) is iCIMS hiring on its own client, not the vendor's branding standing in.
+        return company_name.from_field(self.ats, agreed)
 
     def robots_verdict_for(self, path: str) -> str:
         """This client host's robots.txt verdict on `path`, the file read on first use."""
@@ -443,6 +477,7 @@ class JibeScraper(BaseScraper):
             self.note_unreadable_board(f"robots.txt allowing {API_PATH}", "Disallow")
             return {"rows": [], "icims_readable": {}}
         rows = self._read_board()
+        self._rows_company = self._agreed_company(rows)
         tenants = sorted(
             {h for h in map(_apply_host, rows) if h.endswith(".icims.com")}
         )
