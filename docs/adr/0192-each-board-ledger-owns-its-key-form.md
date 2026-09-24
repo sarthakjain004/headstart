@@ -20,15 +20,19 @@ Four per-Board ledgers are read by the scrape planner, and they disagree about c
 | `ingest.board_failures` | verbatim `board_key_of(report key)` | lowercased, at the call site |
 
 Only the gap ledger said so in code, through its `key_for`. For the other three every caller had to
-remember which form to use: `scrape_plan` lowercased the quarantine set and the Board
-(`lower_key(board_identity(c))`), passed the raw identity to the value gate, and `pick_boards`
-looked scores up verbatim beside a gap lookup that folded. Getting it wrong fails silently, as a
+remember which form to use. After ADR-0191, `scrape_plan` lowercased the quarantine set itself
+(`lower_key(b)`) and compared `c.lowercase_identity`, passed `c.identity` to the value gate, and
+`pick_boards` looked scores up by `c.identity` beside a gap lookup that folded. Getting it wrong fails silently, as a
 lookup that misses.
 
 ## Decision
 
-1. **Every per-Board ledger module exposes `key_for(board)`**, the form its rows are compared in.
-   It takes a `ScrapableBoard` or a key already in hand (a `board_of` result, a stored row).
+1. **Every per-Board ledger module exposes `key_for(board)`**, the lookup form: what a Board is
+   compared as against that ledger's rows. For three of the four it is also the stored form;
+   `board_failures` stores verbatim and looks up folded (point 4). It takes a `ScrapableBoard` or
+   a key already in hand (a `board_of` result, a stored row). The key branch is an identity
+   function for the two verbatim ledgers and has no production caller there yet; it is kept so
+   all four take the same argument, and a key read from one ledger can be handed to another's.
    `board_cost` and `board_priority` return the identity verbatim, and a key passes through.
    `board_description_gap` and `board_failures` return it lowercased. Callers look a Board up
    through the ledger's `key_for` and no longer call `lower_key` or choose between `identity` and
@@ -49,8 +53,12 @@ lookup that misses.
      group into one row and change the seconds the packer reads. For the Scrapable Boards
      themselves, a folded lookup finds nothing the verbatim one misses (137,641 hits either way).
 
-   ADR-0096 already recorded that case is preserved in these two files. This change leaves that
-   policy where it was, and now each ledger states it.
+   ADR-0096 already recorded that case is preserved in these two files. The ADR-0023 amendment
+   depends on the same thing from the other side: `live_keep_set` and `plan_prune` keep the
+   ledger's own casing because it is the casing the next scrape emits, and that scrape writes the
+   priority and cost rows. `pick_boards`' comment on the 13,402-Board mismatch concerns the
+   `{ats}:{slug}` spelling, not case, and is unaffected. This change leaves the policy where it
+   was, and now each ledger states it.
 4. **`board_failures` stays verbatim on disk and folds in `key_for`.** `update` pairs its rows
    verbatim with the `board_of` keys of the same run, which is the ADR-0155 strict path. Only the
    planner's quarantine test folds (ADR-0049). Of its 1,018 rows, 6 are not lowercase, and none
@@ -73,6 +81,12 @@ one key does not make this redundant, for two reasons:
 The shard files also carry plain `{ats, slug, name}` for the same reason, so `scrape_run` still
 reads `CompanyRef`s.
 
+## Out of scope
+
+`unauthoritative_boards.json` and the keep-set are folded at their call sites too
+(`update_ledgers._on_unauthoritative_board`, `index`, `board_freshness`, `index_plan`). They are
+per-run sets that `index_plan` owns, not per-Board state ledgers, and they are left as they are.
+
 ## Deferred
 
 The 102 priority rows that only a folded lookup reaches are a real miss: those Boards have earned
@@ -82,10 +96,15 @@ the stored key), or rewrite the rows under the survivor's casing.
 
 ## Verification
 
-`scrape_plan` was run at ADR-0191's tip and at this change over the same HF state, with the shuffle
-seeded. The two runs produced the same ordered slice (20,000 Boards), the same Boards removed by
-quarantine, the same value-gate verdicts, identical shard files and `plan.json`, and identical log
-lines.
+`scrape_plan` was run at ADR-0191's tip (`3838b0d9`) and at this change over the same
+`data/state/*` pulled from HF on 2026-09-24, with `pick_boards`' shuffle seeded (20260924). Both
+runs loaded 153,216 Scrapable Boards and produced:
+
+- the same ordered 20,000-Board slice
+- the same 785 Boards removed by quarantine (910 quarantined, 125 on parole)
+- the same 27 value-gate verdicts
+- identical shard files and `plan.json`
+- identical log lines
 
 ## Consequences
 

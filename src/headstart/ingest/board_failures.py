@@ -87,8 +87,8 @@ class Failure(NamedTuple):
 
 
 def key_for(board: ScrapableBoard | str) -> str:
-    """The form a Board is compared in against this ledger: its identity, or a key it is handed,
-    lowercased (ADR-0192).
+    """The lookup form of a Board against this ledger: its identity, or a key it is handed,
+    lowercased (ADR-0192). Not the stored form, which stays verbatim.
 
     Rows are stored as :func:`~headstart.board_identity.board_key_of` spells them, and
     :func:`update` pairs them verbatim with ``board_of`` keys from the same run. Only the planner's

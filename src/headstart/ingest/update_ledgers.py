@@ -229,9 +229,9 @@ def _authoritative_scrape(
     every id those Boards emitted.
 
     Boards are keyed like the gap counts themselves — ``board_description_gap.key_for`` of
-    ``board_of`` — so the two pair
-    (ADR-0049). An id can only ever be emitted by the Board whose key prefixes it, so one flat id
-    set answers "did this Board re-emit it" exactly as a per-Board set would.
+    ``board_of`` — so the two pair (ADR-0049). An id can only ever be emitted by the Board whose key
+    prefixes it, so one flat id set answers "did this Board re-emit it" exactly as a per-Board set
+    would.
 
     A Board that wrote no lines is simply absent, whether it went unscraped this run or was
     truncated to nothing, and absence is what leaves an id counted.
