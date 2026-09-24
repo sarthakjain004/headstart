@@ -254,6 +254,7 @@ These guidelines are working if: fewer unnecessary changes in diffs, fewer rewri
   store, after the tech filter and before `embed_plan`), `update_ledgers` (four subcommands, invoked in
   this order: `priority`, `cost`, `failures`, `gap`), `embed_plan`, `embed_run`, `embed_merge`, `update_meta` (the ADR-0061
   metadata refresh, after the merge and before `sync`), `index` (`sync` then `prune --apply`),
+  `embed_prune` (the ADR-0190 store prune, after `prune`, dropping vectors no served row uses),
   `role_trends` (the ADR-0040 trends ledger, after prune), `hot_boards` (the actively-hiring
   ranking the "Hiring now" tab serves, strictly after `role_trends` because it reads that
   stage's Board-count snapshot and delta ledger), `company_directory` (the ADR-0185 Board →

@@ -857,6 +857,14 @@ jobs:
       - name: Prune dead-Board and duplicate rows
         if: needs.scrape-plan.outputs.run == 'true'
         run: python -m headstart.ingest.index prune --apply
+      - name: Drop the store's vectors of unserved Jobs (ADR-0190)
+        # After prune, so the table it keeps is final. Needs the corpus, whose ids it also keeps.
+        # Never fatal: it rewrites through tmp files (which the upload excludes), so a failure
+        # before the swap leaves the store as it was, and publication must not be skipped over a
+        # store that is merely larger. Skipped without the corpus, whose ids it must keep.
+        if: needs.scrape-plan.outputs.run == 'true' && steps.corpus.outcome == 'success'
+        continue-on-error: true
+        run: python -m headstart.ingest.embed_prune --apply
       - name: Append role-trend counts (ADR-0040)
         # Never fatal: the module itself no-ops with a warning when the centroid store hasn't
         # reached this runner (fit not shipped yet, or the join's state artifact was lost) —
@@ -959,7 +967,7 @@ jobs:
           python -m headstart.ingest.state_witness publish \
             || echo "::warning::could not publish the state witness; the prior one stands"
           publish embedding_store hf upload "$HF_DATASET" data/embeddings/jobs data/embeddings/jobs \
-            --repo-type dataset --commit-message "nightly: embedding store"
+            --repo-type dataset --exclude "*.tmp" --commit-message "nightly: embedding store"
           # Bank the embedding store first: if index construction fails, the next pipeline can
           # reuse this run's vectors while LanceDB publication fails closed (ADR-0129/ADR-0174).
           # This replaces indexes only; it does not compact/rewrite the 3.3 GB table.

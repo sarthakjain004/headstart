@@ -25,7 +25,7 @@ single most common way to go looking in the wrong log. One job runs many stages.
 | `scrape` (×N, ≤15) | `scrape_run` |
 | `join` | `scrape_join` → `filter_tech` → `update_descriptions` → `update_ledgers` ×4 → `embed_plan` |
 | `embed` (×N, ≤15) | `embed_run` |
-| `merge` | `embed_merge` → `update_meta` → `index sync` → `index prune` → `role_trends` → `hot_boards` → `company_directory` → embedding-store upload → `index refresh-indexes` → LanceDB upload |
+| `merge` | `embed_merge` → `update_meta` → `index sync` → `index prune` → `embed_prune` → `role_trends` → `hot_boards` → `company_directory` → embedding-store upload → `index refresh-indexes` → LanceDB upload |
 
 Everything runs from `src/headstart/ingest/`, invoked as `python -m headstart.ingest.<module>`.
 The authoritative sequence is `.github/workflows/pipeline.yml` — if this table and that file ever

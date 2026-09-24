@@ -188,6 +188,7 @@ supersedes it and note the supersession in both.
 | [0187](0187-a-workday-requisition-is-served-once-per-tenant.md) | A Workday requisition is served once per tenant, not once per site | 2026-09-24 |
 | [0188](0188-a-dedup-rule-change-is-a-trends-epoch.md) | A change to which rows count as duplicates is a Trends epoch | 2026-09-24 |
 | [0189](0189-a-jibe-board-is-a-client-read-under-its-own-robots-rules.md) | A Jibe Board is a client, read under its own robots.txt, minus what iCIMS already serves | 2026-09-24 |
+| [0190](0190-the-embedding-store-keeps-only-served-and-scraped-jobs.md) | The embedding store keeps only served and just-scraped Jobs | 2026-09-24 |
 
 *ADR-0037 was removed from the repository on 2026-09-24 by the owner's decision; its number is not
 reused.*
