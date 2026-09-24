@@ -1,13 +1,34 @@
-"""Ashby job-board scraper (api.ashbyhq.com)."""
+"""Ashby job-board scraper (api.ashbyhq.com).
+
+The company name is the public board's ``<title>``, "{Name} Jobs". A Board that hides its job
+page titles it "Jobs" alone (82 of 221 affected Boards, 2026-09-24), and for those the
+hosted-page app's own GraphQL lookup, ``organizationFromHostedJobsPageName``, names the
+organization: 24 of the 25 such Boards still listing postings. It agreed with the title on 60 of
+60 control Boards. That endpoint rate-limits a burst with 429 and ``Retry-After``, so lookups are
+spaced one second apart process-wide and a refusal rests them all.
+"""
 
 from __future__ import annotations
 
 import re
 from typing import Any
 
-from headstart import salary
+from headstart import company_name, http, salary
 from headstart.models import Job, html_to_text
 from headstart.scrapers.base import BaseScraper
+from headstart.scrapers.pacer import Pacer
+
+_GRAPHQL = "https://jobs.ashbyhq.com/api/non-user-graphql?op=ApiOrganizationFromHostedJobsPageName"
+#: The hosted-page app's own query, with the optional ``searchContext`` left out.
+_ORGANIZATION_QUERY = (
+    "query ApiOrganizationFromHostedJobsPageName($organizationHostedJobsPageName: String!) {"
+    " organization: organizationFromHostedJobsPageName("
+    "organizationHostedJobsPageName: $organizationHostedJobsPageName) { name } }"
+)
+_GRAPHQL_PACER = Pacer(1.0)
+#: A 429 is waited out and asked again this many times in all.
+_GRAPHQL_TRIES = 3
+_GRAPHQL_REST_S = 5.0
 
 
 def _remote(job: dict) -> bool | None:
@@ -120,8 +141,51 @@ class AshbyScraper(BaseScraper):
         """The public board, whose ``<title>`` is ``"{Name} Jobs"``.
 
         The posting API returns only ``apiVersion`` and ``jobs``, and a job carries no company
-        field either, so the name is not otherwise available (`headstart.company_name`)."""
+        field either; a Board that hides this page is named by the GraphQL lookup instead
+        (:meth:`company_from_page`)."""
         return f"https://jobs.ashbyhq.com/{self.slug}"
+
+    #: Process-wide, shared by every instance (module docstring).
+    graphql_pacer = _GRAPHQL_PACER
+
+    def company_from_page(self, page: str | None) -> str | None:
+        """The board title, else the organization the GraphQL lookup names (module docstring).
+
+        ``ashby:graphql`` has no vendor alias on purpose: this is the organization record, not a
+        page that falls back to the vendor's branding, and Ashby hires on Ashby (`ashby:ashby`,
+        whose title "Ashby Jobs" the title guard refuses)."""
+        return super().company_from_page(page) or company_name.from_field(
+            "ashby:graphql", self._graphql_organization()
+        )
+
+    def _graphql_organization(self) -> str | None:
+        body = {
+            "operationName": "ApiOrganizationFromHostedJobsPageName",
+            "variables": {"organizationHostedJobsPageName": self.slug},
+            "query": _ORGANIZATION_QUERY,
+        }
+        for _ in range(_GRAPHQL_TRIES):
+            self.graphql_pacer.wait()
+            try:
+                response = self._fetch_once(
+                    "POST", _GRAPHQL, accept="application/json", json=body
+                )
+            except http.RequestsError:
+                return None
+            if response.status_code == 429:
+                retry_after = response.headers.get("retry-after") or ""
+                self.graphql_pacer.rest(
+                    float(retry_after) if retry_after.isdigit() else _GRAPHQL_REST_S
+                )
+                continue
+            if response.status_code != 200:
+                return None
+            try:
+                organization = response.json()["data"]["organization"]["name"]
+            except (ValueError, KeyError, TypeError):  # not the answer's shape: no name
+                return None
+            return organization if isinstance(organization, str) else None
+        return None
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
         listed = raw.get("jobs")

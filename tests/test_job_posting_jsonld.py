@@ -18,6 +18,7 @@ import pytest
 
 from headstart.scrapers.job_posting_jsonld import (
     find_job_posting,
+    hiring_organization,
     job_location_text,
     job_posting_fields,
     jsonld_nodes,
@@ -283,3 +284,14 @@ def test_job_location_text(
     job_location: object, options: dict, expected: str | None
 ) -> None:
     assert job_location_text(job_location, **options) == expected
+
+
+def test_hiring_organization_is_read_in_both_shapes():
+    """A bare string on most jobvite tenants, an Organization object on others (zones)."""
+    assert hiring_organization("Barracuda Networks Inc.") == "Barracuda Networks Inc."
+    assert (
+        hiring_organization({"@type": "Organization", "name": "Zones LLC."})
+        == "Zones LLC."
+    )
+    assert hiring_organization(None) is None
+    assert hiring_organization("") is None

@@ -346,14 +346,3 @@ def test_location_drops_empty_and_repeated_segments():
         == "Germany"
     )
     assert _location({}) is None
-
-
-def test_hiring_organization_is_read_in_both_shapes():
-    from headstart.scrapers.jobvite import _organization
-
-    assert _organization("Barracuda Networks Inc.") == "Barracuda Networks Inc."
-    assert (
-        _organization({"@type": "Organization", "name": "Zones LLC."}) == "Zones LLC."
-    )
-    assert _organization(None) is None
-    assert _organization("") is None

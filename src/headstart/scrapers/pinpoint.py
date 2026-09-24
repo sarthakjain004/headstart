@@ -61,10 +61,10 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from headstart import salary
+from headstart import company_name, salary
 from headstart.models import Job, html_to_text
 from headstart.scrapers.base import USER_AGENT, BaseScraper, DetailLost, DetailRequest
-from headstart.scrapers.job_posting_jsonld import find_job_posting
+from headstart.scrapers.job_posting_jsonld import find_job_posting, hiring_organization
 
 #: The listing's body sections after `description`, in the order the posting page's own JSON-LD
 #: `description` lays them out, each under its tenant-chosen `{section}_header`.
@@ -132,14 +132,18 @@ def _uuid(item: dict) -> str:
 
 
 def _ld_fields(page: str) -> dict[str, Any] | None:
-    """`posted_at` and `country` from a posting page's JSON-LD `JobPosting`, or None when the
-    page carries none (a counted detail gap, not an error)."""
+    """`posted_at`, `country` and the hiring organization's name from a posting page's JSON-LD
+    `JobPosting`, or None when the page carries none (a counted detail gap, not an error)."""
     node = find_job_posting(page)
     if node is None:
         return None
     where = node.get("applicantLocationRequirements")
     country = where.get("name") if isinstance(where, dict) else None
-    return {"posted_at": node.get("datePosted") or None, "country": country}
+    return {
+        "posted_at": node.get("datePosted") or None,
+        "country": country,
+        "company": hiring_organization(node.get("hiringOrganization")),
+    }
 
 
 #: The posting page content-negotiates on `Accept`: the shared `_get`'s
@@ -170,6 +174,17 @@ class PinpointScraper(BaseScraper):
         (`company_name.PATTERNS["pinpoint"]`, ADR-0114)."""
         return f"https://{self.slug}.pinpointhq.com/"
 
+    #: A posting page's `hiringOrganization.name`, read by the detail pass (`_ld_fields`).
+    _posting_company: str | None = None
+
+    def company_from_page(self, page: str | None) -> str | None:
+        """The board title, else the hiring organization a posting page names — for a Board
+        whose title is the slug itself or whose board page is gone (6 of 10 affected Boards,
+        2026-09-24) while its postings still state who hires."""
+        return super().company_from_page(page) or company_name.from_field(
+            self.ats, self._posting_company
+        )
+
     def url(self) -> str:
         return f"https://{self.slug}.pinpointhq.com/postings.json"
 
@@ -190,6 +205,9 @@ class PinpointScraper(BaseScraper):
             what="posting pages",
             title_of=_title,
             department_of=_department,
+        )
+        self._posting_company = next(
+            (d["company"] for d in details.values() if d.get("company")), None
         )
         return {"data": listed, "details": details}
 
