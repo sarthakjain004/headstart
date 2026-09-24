@@ -19,12 +19,14 @@ from __future__ import annotations
 
 import html
 import re
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import parse_qs, urlencode, urljoin, urlsplit, urlunsplit
 
+from headstart.fetcher import Fetcher
 from headstart.models import Job, html_to_text, is_remote
-from headstart.scrapers.base import USER_AGENT, BaseScraper
+from headstart.scrapers.base import USER_AGENT, BaseScraper, DetailLost, DetailRequest
 
 _MAX_PAGES = 1_000
 _DETAIL_WORKERS = 16
@@ -224,9 +226,16 @@ class TaleoBEScraper(BaseScraper):
     )
     detail_workers = _DETAIL_WORKERS
     has_detail_pass = True
+    #: The thread path, measured faster (ADR-0167). Interleaved A/B of the Detail pass at width 16,
+    #: 2026-09-24, two rounds on each of three Boards (items/s, multiplexed vs threads): TMCAZ:38
+    #: 24.7 vs 36.6 and 25.2 vs 32.9; SAINTELIZABETH:45 33.3 vs 43.9 and 32.7 vs 44.3; YKHC:41
+    #: 22.0 vs 18.9 and 23.9 vs 29.1. Threads won 5 of 6 pairs; zero non-200s on either transport.
+    async_fanout = False
 
-    def __init__(self, slug: str, company: str | None = None) -> None:
-        super().__init__(slug, company)
+    def __init__(
+        self, slug: str, company: str | None = None, fetcher: Fetcher | None = None
+    ) -> None:
+        super().__init__(slug, company, fetcher=fetcher)
         # The liveness ledger may disambiguate two same-named career sites with a stable Taleo
         # suffix.  It is a Board identity, not the company name shown to job seekers.
         self.company = re.sub(r" \[Taleo [^]]+\]$", "", self.company)
@@ -327,34 +336,37 @@ class TaleoBEScraper(BaseScraper):
 
     def fetch_raw(self) -> Any:
         listed = self._listing()
-        details = self.fan_out(
-            listed, lambda item: self._detail(item["url"]), workers=self.detail_workers
+        # No tech gate: measured to lose tech postings here (ADR-0166, #510). No held-description
+        # skip either: the detail page also supplies the labels `parse` reads.
+        details = self.run_detail_pass(
+            listed, key_of=lambda item: item["id"], what="detail pages"
         )
-        self.report_detail_gaps(
-            [
-                detail if detail and detail.get("description") else None
-                for detail in details
-            ],
-            "detail pages",
-        )
-        return list(zip(listed, details))
+        return [(item, details.get(item["id"])) for item in listed]
 
-    def _detail(self, url: str | None) -> dict[str, str | None] | None:
-        if not url:
-            self.note_detail_unattempted("no detail URL")
-            return None
-        try:
-            page = self._get(url)
-        except Exception as exc:  # noqa: BLE001 - isolated detail failure; listing row is useful
-            self.note_detail_exception(exc)
-            return None
+    def detail_request(self, item: dict[str, str | None]) -> DetailRequest:
+        if not item["url"]:
+            raise DetailLost("no detail URL")
+        return DetailRequest(item["url"])
+
+    def report_detail_gaps(self, results: Sequence[Any], what: str) -> int:
+        """The gap line counts description *bodies*. A page that arrived without a readable one
+        is a loss like any other — until this was counted it was the only kind that recorded
+        nothing, since the fetch succeeded — but :meth:`read_detail` still returns it, because
+        its labels (location, department, salary) are real: YKHC's layout carries no body and
+        still states a location and department on 128 of 128 pages (measured 2026-09-24)."""
+        bodies: list[dict[str, str | None] | None] = []
+        for detail in results:
+            if detail is not None and not detail.get("description"):
+                self.note_detail_loss("200 without a parseable description body")
+            bodies.append(detail if detail and detail.get("description") else None)
+        return super().report_detail_gaps(bodies, what)
+
+    def read_detail(
+        self, item: dict[str, str | None], response: Any
+    ) -> dict[str, str | None]:
+        page = response.text
         labels = _labels(page)
         body = _description_html(page)
-        if not body:
-            # A 200 whose body we cannot read is a loss like any other, and until this existed it
-            # was the only kind that recorded nothing: the fetch succeeded, so no exception
-            # reached `note_detail_exception` and the cause map stayed empty.
-            self.note_detail_loss("200 without a parseable description body")
         date = _DATE_POSTED.search(page)
         return {
             "description": _text(body) if body else None,

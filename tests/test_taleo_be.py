@@ -1,6 +1,10 @@
 import re
 
+import pytest
+from fake_fetcher import FakeFetcher, FakeResponse
+
 from headstart.ingest.doc_prep import to_meta
+from headstart.scrapers.base import DEFAULT_REQUEST_HEADERS
 from headstart.scrapers.registry import SCRAPERS, get_scraper
 from headstart.scrapers.taleo_be import TaleoBEScraper, _posted_at, _workplace_remote
 
@@ -37,6 +41,21 @@ DETAIL_REMOTE = """<div class="well oracletaleocwsv2-job-description">
 <span>Primary Location</span><strong>Austin, TX</strong><span>Department</span><strong>Platform</strong>
 <span>Location Type</span><strong>Remote</strong></div>
 <div name="cwsJobDescription"><div><p>Build things.</p></div></div><section>"""
+
+
+def _served_board(
+    listing_pages: dict[str, str], detail: str | FakeResponse, company: str = "ICANN"
+) -> tuple[TaleoBEScraper, FakeFetcher]:
+    """A TBE Board whose listing pages a FakeFetcher answers by URL, and every other GET — each
+    detail page — with ``detail``."""
+
+    def route(method, url, kwargs):
+        if url in listing_pages:
+            return FakeResponse(text=listing_pages[url])
+        return detail if isinstance(detail, FakeResponse) else FakeResponse(text=detail)
+
+    fetcher = FakeFetcher(route)
+    return TaleoBEScraper(URL, company, fetcher=fetcher), fetcher
 
 
 def test_registry_and_ledger_url_slug():
@@ -76,8 +95,7 @@ def test_alias_key_uses_the_final_canonical_tbe_url(monkeypatch):
     assert "egress_group" not in seen and "egress_on" not in seen
 
 
-def test_pages_with_session_relative_next_and_parses_detail(monkeypatch):
-    scraper = TaleoBEScraper(URL, "ICANN")
+def test_pages_with_session_relative_next_and_parses_detail():
     pages = {
         URL: _listing(
             1,
@@ -88,13 +106,7 @@ def test_pages_with_session_relative_next_and_parses_detail(monkeypatch):
             2, "Systems Engineer"
         ),
     }
-
-    def get(url=None):
-        if url in pages:
-            return pages[url]
-        return DETAIL
-
-    monkeypatch.setattr(scraper, "_get", get)
+    scraper, _fetcher = _served_board(pages, DETAIL)
     jobs = scraper.fetch()
     assert [job.id.rsplit(":", 1)[-1] for job in jobs] == ["1", "2"]
     assert jobs[0].url == (
@@ -117,9 +129,8 @@ def test_pages_with_session_relative_next_and_parses_detail(monkeypatch):
     assert meta["salary_source"] == "field"
 
 
-def test_repeated_next_link_marks_truncated(monkeypatch):
-    scraper = TaleoBEScraper(URL)
-    monkeypatch.setattr(scraper, "_get", lambda url=None: _listing(1, "Engineer", URL))
+def test_repeated_next_link_marks_truncated():
+    scraper, _fetcher = _served_board({}, _listing(1, "Engineer", URL))
     assert len(scraper.fetch()) == 1
     assert scraper.truncated == "listing next link looped before the Board ended"
 
@@ -135,45 +146,30 @@ def test_workplace_remote_mapping():
     assert _workplace_remote("Some Unrecognized Value") is None
 
 
-def test_native_field_decides_when_location_gives_no_signal(monkeypatch):
+def test_native_field_decides_when_location_gives_no_signal():
     """A decisive native field wins even though the location string says nothing on its own."""
-    scraper = TaleoBEScraper(URL, "ICANN")
-
-    def get(url=None):
-        if url == URL:
-            return _listing(1, "Platform Engineer")
-        return DETAIL_REMOTE
-
-    monkeypatch.setattr(scraper, "_get", get)
+    scraper, _fetcher = _served_board(
+        {URL: _listing(1, "Platform Engineer")}, DETAIL_REMOTE
+    )
     jobs = scraper.fetch()
     assert jobs[0].location == "Austin, TX"
     assert jobs[0].remote is True
 
 
-def test_hybrid_native_field_falls_through_to_location_text(monkeypatch):
+def test_hybrid_native_field_falls_through_to_location_text():
     """Hybrid is not decisive on its own (matches workday._remote_from's convention), so the
     cascade falls through to the location string — same as a board stating no field at all."""
-    scraper = TaleoBEScraper(URL, "ICANN")
-
-    def get(url=None):
-        if url == URL:
-            return _listing(1, "Platform Engineer")
-        return DETAIL_HYBRID
-
-    monkeypatch.setattr(scraper, "_get", get)
+    scraper, _fetcher = _served_board(
+        {URL: _listing(1, "Platform Engineer")}, DETAIL_HYBRID
+    )
     jobs = scraper.fetch()
     assert jobs[0].location == "Denver, CO"
     assert jobs[0].remote is False  # "Denver, CO" carries no remote signal of its own
 
 
-def test_no_native_field_falls_back_to_is_remote(monkeypatch):
+def test_no_native_field_falls_back_to_is_remote():
     """A board that states no workplace field at all keeps the pre-existing behavior."""
-    scraper = TaleoBEScraper(URL, "ICANN")
-    monkeypatch.setattr(
-        scraper,
-        "_get",
-        lambda url=None: _listing(1, "Platform Engineer") if url == URL else DETAIL,
-    )
+    scraper, _fetcher = _served_board({URL: _listing(1, "Platform Engineer")}, DETAIL)
     jobs = scraper.fetch()
     assert jobs[0].location == "Los Angeles"
     assert jobs[0].remote is False  # unchanged from before this field existed
@@ -194,43 +190,35 @@ def _headed_listing(headers: list[str], fields: list[str]) -> str:
     </div><!--/.accordion-head-info --></div><!--/.accordion-block-->"""
 
 
-def _served(monkeypatch, listing: str) -> tuple[str | None, str | None]:
+def _served(listing: str) -> tuple[str | None, str | None]:
     """(location, department) served when the detail page states neither label."""
-    scraper = TaleoBEScraper(URL, "ICANN")
     bare = '<div name="cwsJobDescription"><p>Care.</p></div>'
-    monkeypatch.setattr(
-        scraper, "_get", lambda url=None: listing if url == URL else bare
-    )
+    scraper, _fetcher = _served_board({URL: listing}, bare)
     (job,) = scraper.fetch()
     return job.location, job.department
 
 
-def test_listing_columns_are_read_by_their_header_not_their_position(monkeypatch):
+def test_listing_columns_are_read_by_their_header_not_their_position():
     """Each tenant picks and orders its own card columns (live: HENRYMAYO, DSB, MBA)."""
     henrymayo = _headed_listing(
         ["Department", "Employment Status", "Shift Start/End Time"],
         ["Cardiology", "Per Diem", "6:30AM- 3:00PM"],
     )
-    assert _served(monkeypatch, henrymayo) == (None, "Cardiology")
+    assert _served(henrymayo) == (None, "Cardiology")
     dsb = _headed_listing(
         ["Post date", "Division", "Dept/branch"],
         ["17/06/2026", "Retail Banking", "Direct Channels"],
     )
-    assert _served(monkeypatch, dsb) == (None, "Direct Channels")
+    assert _served(dsb) == (None, "Direct Channels")
     mba = _headed_listing(["Location", "Department"], ["Washington, DC", "Research"])
-    assert _served(monkeypatch, mba) == ("Washington, DC", "Research")
+    assert _served(mba) == ("Washington, DC", "Research")
 
 
-def test_posted_at_falls_back_to_the_json_ld_date_posted(monkeypatch):
+def test_posted_at_falls_back_to_the_json_ld_date_posted():
     """No sampled tenant renders a "Date Posted" label; 9 of 15 state JSON-LD `datePosted`
     (live 2026-09-22), in the shape NBF1199 rid=11231 serves."""
-    scraper = TaleoBEScraper(URL, "ICANN")
     ld = '<script type="application/ld+json">{"datePosted" : "2026-08-12 00:00:00.0"}</script>'
-    monkeypatch.setattr(
-        scraper,
-        "_get",
-        lambda url=None: _listing(1, "Engineer") if url == URL else ld + DETAIL,
-    )
+    scraper, _fetcher = _served_board({URL: _listing(1, "Engineer")}, ld + DETAIL)
     assert scraper.fetch()[0].posted_at == "2026-08-12T00:00:00+00:00"
 
 
@@ -258,9 +246,8 @@ def test_pay_range_min_and_max_labels_are_joined():
     assert scraper._salary_field(labels) == "19.14 - 27.93"
 
 
-def test_custom_field_labels_match_despite_their_trailing_colon(monkeypatch):
+def test_custom_field_labels_match_despite_their_trailing_colon():
     """NBF1199 rid=11231 renders "Employment Type: " in a custom-field cell (live 2026-09-22)."""
-    scraper = TaleoBEScraper(URL, "ICANN")
     page = (
         '<div class="cws-V2-reqfieldcell-right"> Employment Type: </div>'
         '<div class="cws-V2-reqfieldcell-left"><strong>Full time</strong></div>'
@@ -268,11 +255,7 @@ def test_custom_field_labels_match_despite_their_trailing_colon(monkeypatch):
         '<div class="cws-V2-reqfieldcell-left"><strong>Remote</strong></div>'
         '<div name="cwsJobDescription"><p>Count.</p></div>'
     )
-    monkeypatch.setattr(
-        scraper,
-        "_get",
-        lambda url=None: _listing(1, "Accountant") if url == URL else page,
-    )
+    scraper, _fetcher = _served_board({URL: _listing(1, "Accountant")}, page)
     (job,) = scraper.fetch()
     assert job.employment_type == "Full time"
     assert job.remote is True
@@ -295,3 +278,64 @@ def test_posted_at_none_on_unparseable_input():
     assert _posted_at(None) is None
     assert _posted_at("") is None
     assert _posted_at("not a date") is None
+
+
+# The second live layout (YKHC, 2026-09-24): no `cwsJobDescription` anchor, but real labels.
+DETAIL_WITHOUT_BODY = """<div class="well oracletaleocwsv2-job-description">
+<span>Primary Location</span><strong>Bethel, AK</strong><span>Department</span><strong>Clinic</strong></div>"""
+
+
+def test_a_detail_page_without_a_body_keeps_its_labels_and_is_a_labelled_gap(caplog):
+    """YKHC's layout carries no description anchor on 128 of 128 pages yet states a location and
+    department on each (measured 2026-09-24): the Job keeps those, and the page still counts as
+    the gap it is, named, on the Board's one gap line."""
+    scraper, _fetcher = _served_board(
+        {URL: _listing(1, "Platform Engineer")}, DETAIL_WITHOUT_BODY
+    )
+
+    with caplog.at_level("INFO"):
+        (job,) = scraper.fetch()
+
+    assert (job.location, job.department, job.description) == (
+        "Bethel, AK",
+        "Clinic",
+        None,
+    )
+    assert scraper.telemetry["detail_losses"] == 1
+    assert (
+        "1/1 detail pages missing (200 without a parseable description body x1)"
+        in caplog.text
+    )
+
+
+def test_a_refused_detail_page_is_labelled_by_its_status_and_the_job_ships():
+    scraper, _fetcher = _served_board(
+        {URL: _listing(1, "Platform Engineer")}, FakeResponse(404, "gone")
+    )
+
+    (job,) = scraper.fetch()
+
+    assert job.title == "Platform Engineer"  # the listing row alone still makes the Job
+    assert job.description is None
+    assert scraper.detail_losses == {"HTTP 404": 1}
+
+
+def test_every_detail_request_rides_the_thread_path_with_the_default_headers(
+    monkeypatch,
+):
+    """`async_fanout = False` on a measurement (ADR-0167), and the request itself is exactly
+    the one `_get` always sent."""
+    monkeypatch.delenv("HEADSTART_ASYNC_FANOUT", raising=False)
+    scraper, fetcher = _served_board({URL: _listing(1, "Platform Engineer")}, DETAIL)
+    monkeypatch.setattr(
+        type(scraper),
+        "fan_out_async",
+        lambda *args, **kwargs: pytest.fail("the multiplexed path was taken"),
+    )
+
+    scraper.fetch()
+
+    detail_request = fetcher.requests[-1]
+    assert detail_request.url.endswith("viewRequisition?org=ICANN&cws=37&rid=1")
+    assert detail_request.kwargs["headers"] == dict(DEFAULT_REQUEST_HEADERS)
+    assert detail_request.kwargs["timeout"] == 30
