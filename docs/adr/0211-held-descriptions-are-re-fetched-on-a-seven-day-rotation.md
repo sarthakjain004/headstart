@@ -33,7 +33,11 @@ authoritative scrape at 2026-09-24 16:30Z):
 | Zwayam | 222 | 0.38 d | 4.99 d | 27.5% |
 
 **A live re-fetch** (2026-09-25): the scraper run on a real Board with a sample of its held Jobs
-taken off the skip-list, each fresh text compared with the held one.
+taken off the skip-list, each fresh text compared with the held one. Eightfold serves its search
+from replicas that disagree (ADR-0048's 2026-09-16 amendment), so the Eightfold differences were
+checked for a replica serving an older version. The same 15 softtek Jobs, fetched three more
+times: 10 matched the held text every time, the 5 that differed returned the same new text all
+three times, and no Job's text disagreed between fetches. They are edits, not replicas.
 
 | Board | re-fetched | same | different | empty |
 |---|---:|---:|---:|---:|
@@ -66,31 +70,49 @@ fetches their details like any unheld Job's. The rotation lives in
 `headstart.ingest.held_refetch`.
 
 - **A Job is due** once the last fetch that reached it is 7 days old, by a ledger in
-  `data/state/description_checked.tsv.gz` (`id`, UTC date). A Job the ledger does not know is due
-  only on its own day of the cycle, `(day + crc32(id)) % 7 == 0`. The first round after this ships
-  is spread over 7 days, and so is every round if the ledger is ever lost.
+  `data/state/description_checked.tsv.gz` (`id`, UTC hour). Hours, not days: the Jobs one run
+  fetched fall due together in one run 7 days later, so the load follows the fetches' own spread
+  instead of a whole day's worth falling due in the first run of a day.
+- **A Job the ledger does not know is seeded**, with a last-fetch hour spread over the past 7
+  days by its id's CRC, and written in. So the first round after this ships, or after the ledger
+  is ever lost, falls due about 1/168 of the held Jobs an hour. Once written, a due Job stays due
+  until a scrape reaches it, so a Board scraped late still gets every one of its Jobs checked.
 - **A fetch counts as a check whatever it returns.** The due set is published beside the skip-list
   (`data/state/refetch_due.txt`), so the next run knows which corpus rows were asked for. A due
   Job that came back empty keeps its held text (ADR-0050, ADR-0089) and waits another 7 days,
   so a posting whose detail always answers empty is not fetched on every scrape.
 - **The ledger is narrowed to held Jobs each run**, so it never outgrows the store: about 63,000
-  lines, under 1 MB gzipped.
+  lines, under 1 MB gzipped. A damaged ledger is logged and re-seeded, never fatal.
+- Cornerstone's detail falls back to the listing's text only when the job ad is a tenant
+  placeholder. That is the posting's own answer, the same on every fetch, not a failure; a failed
+  ad fetch yields no description, so the held text stays.
 
-**The per-run budget this implies**, at 27 runs a day:
+**The per-run budget this implies.** Runs came about every 53 minutes on 2026-09-24 (27 that
+day), so in steady state a run re-fetches the Jobs that fell due in the hour since the last one:
+about 1/190 of each ATS's held Jobs.
 
-| ATS | re-fetches a day | a run | today's detail requests a run |
-|---|---:|---:|---:|
-| ADP | 801 | ~30 | 493 |
-| Apple | 722 | ~27 | 4 |
-| Cornerstone | 311 | ~12 | 57 |
-| Eightfold | 6,441 | ~240, across ~11 shards | 47 |
-| Phenom | 715 | ~27 | 133 |
+| ATS | re-fetches a day | a run, steady state | a run after a day with no runs | today's detail requests a run |
+|---|---:|---:|---:|---:|
+| ADP | 801 | ~30 | 801 | 493 |
+| Apple | 722 | ~27 | 722 | 4 |
+| Cornerstone | 311 | ~12 | 311 | 57 |
+| Eightfold | 6,441 | ~240 over ~11 shards | 6,441, ~590 a shard | 47 |
+| Phenom | 715 | ~27 | 715 | 133 |
 
-ADP's 30 a run are spread over its shards and paced at 0.4 s each, well under F5's window.
-Eightfold's ~22 a shard is two orders of magnitude under the ~3,400 a shard the width-25 setting
-was sized for. A Board that is not scraped for 7 days re-fetches all of its held Jobs at once:
-that is the same request count as its first scrape, which the pass already absorbs, and every one
-of these Boards was scraped within a day except one Eightfold Board.
+There is no hard per-run cap. A stall piles due Jobs into the next run (the fourth column), and
+a Board not scraped for 7 days re-fetches all of its held Jobs at once. Both stay inside the
+measured limits:
+
+- ADP's requests are paced at 0.4 s process-wide, so even 801 cost about 5 minutes of one shard's
+  time and never exceed F5's window.
+- Eightfold's ~590 a shard is under the ~3,400 a shard its width-25 setting was sized for.
+- Apple, Cornerstone and Phenom have no measured limit.
+- A whole Board re-fetched at once is the request count of that Board's first scrape, which the
+  pass already absorbs. Every Board of these five was scraped within a day except one Eightfold
+  Board.
+
+A cap was considered and not taken: it would hold due Jobs of Boards not in the slice at the head
+of the queue and starve the rest.
 
 **Zwayam is left out.** Three reasons, each measured: its per-IP quota refuses from about 500
 cumulative requests; 27.5% of its Boards had not been scraped for more than a day, up to 5 days,
