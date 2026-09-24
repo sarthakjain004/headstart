@@ -62,7 +62,17 @@ def test_a_better_tier_beats_more_openings() -> None:
 
 
 def test_within_a_tier_more_openings_come_first() -> None:
-    """Two "Amazon"s: the real one's 9,214 openings put it above a one-posting collision."""
+    got = suggest(
+        "amazon",
+        [_company("Amazon Pay", 3), _company("Amazon Web Services", 900)],
+        limit=5,
+    )
+    assert [c.name for c in got] == ["Amazon Web Services", "Amazon Pay"]
+
+
+def test_one_suggestion_per_name_the_one_with_most_openings() -> None:
+    """Two "Amazon"s: the real one's 9,214 openings beat a one-posting collision, and a
+    mirror spelled with its legal form ("NVIDIA Corporation") is the same name."""
     got = suggest(
         "amazon",
         [
@@ -71,7 +81,25 @@ def test_within_a_tier_more_openings_come_first() -> None:
         ],
         limit=5,
     )
-    assert [c.key for c in got] == ["amazon:www.amazon.jobs", "trakstar:amazon"]
+    assert [c.key for c in got] == ["amazon:www.amazon.jobs"]
+    got = suggest(
+        "nvidia",
+        [
+            _company("Nvidia", 2043, key="workday:nvidia/NVIDIAExternalCareerSite"),
+            _company("NVIDIA Corporation", 2048, key="eightfold:jobs.nvidia.com"),
+        ],
+        limit=5,
+    )
+    assert [c.key for c in got] == ["eightfold:jobs.nvidia.com"]
+
+
+def test_a_collapsed_twin_does_not_take_a_slot() -> None:
+    companies = [_company("Acme", 5, key=f"greenhouse:acme{i}") for i in range(3)]
+    companies.append(_company("Acme Labs", 1))
+    assert [c.name for c in suggest("acme", companies, limit=2)] == [
+        "Acme",
+        "Acme Labs",
+    ]
 
 
 def test_limit_and_no_match() -> None:

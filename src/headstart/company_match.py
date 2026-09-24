@@ -109,7 +109,14 @@ def _one_edit(a: str, b: str) -> bool:
 
 
 def suggest(query: str, candidates: list[Candidate], limit: int) -> list[Candidate]:
-    """The best ``limit`` companies for ``query``: by tier, then most openings, then name."""
+    """The best ``limit`` companies for ``query``: by tier, then most openings, then name.
+
+    One suggestion per name: of the entries whose names normalize alike, only the one with the
+    most openings is offered. Most such twins are one employer's Boards on two ATSes, one
+    mirroring the other ("NVIDIA Corporation" on Eightfold, "Nvidia" on Workday), and the
+    directory cannot merge them because nothing but the name proves them one (ADR-0185). The
+    cost is a same-named different employer the list no longer offers.
+    """
     typed = normalize(query)
     ranked = []
     for candidate in candidates:
@@ -119,4 +126,11 @@ def suggest(query: str, candidates: list[Candidate], limit: int) -> list[Candida
                 (rank, -candidate.openings, candidate.name, candidate.key, candidate)
             )
     ranked.sort(key=lambda item: item[:4])
-    return [item[4] for item in ranked[:limit]]
+    # Equal words match at an equal tier, so the first of each name is its largest.
+    seen: set[tuple[str, ...]] = set()
+    kept = []
+    for *_, candidate in ranked:
+        if candidate.words not in seen:
+            seen.add(candidate.words)
+            kept.append(candidate)
+    return kept[:limit]

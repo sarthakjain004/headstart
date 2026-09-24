@@ -676,3 +676,12 @@ test('hiding a company from a Matches card takes it off the Matches list', async
     'the company just hidden is still listed on Matches');
   assert.ok(nodes['matches-results'].innerHTML.includes('GOODCO_JOB'));
 });
+
+test('a result card links its company into Trends by the Board its id names (ADR-0185)', () => {
+  const { t } = loadApp(() => []);
+  const html = t.jobCard(job('greenhouse:acme:123'), 0);
+  assert.match(html, /data-trend="greenhouse:acme"/);
+  assert.match(html, /data-trend-name="Acme"/);
+  assert.match(html, /aria-label="Hiring trend at Acme"/);
+  assert.ok(!t.jobCard(job('noboard'), 0).includes('data-trend='), 'no Board, no link');
+});

@@ -1905,13 +1905,9 @@ def test_bad_company_requests_are_refused(company_trends, query, status):
 
 def test_suggest_ranks_and_labels_companies(company_trends):
     d = company_trends.get("/companies/suggest?q=citi").get_json()
-    got = [(c["label"], c["openings"], c["boards"]) for c in d["companies"]]
-    # both Citis match exactly; more openings first, and each says which ATS it is
-    assert got == [
-        ("Citi (workday:citi/2)", 44, 1),
-        ("Citi (eightfold)", 3, 1),
-        ("Citi (workday:citibank/x)", 0, 1),
-    ]
+    got = [(c["key"], c["label"], c["openings"], c["boards"]) for c in d["companies"]]
+    # three Citis match exactly; only the one with the most openings is offered
+    assert got == [("workday:citi/2", "Citi", 44, 1)]
     assert company_trends.get("/companies/suggest?q=hpe").get_json()["companies"][0][
         "atses"
     ] == ["workday"]

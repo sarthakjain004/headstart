@@ -185,3 +185,29 @@ Board, which mirrors it. The alias now covers only the SuccessFactors Board (use
 that entry counts once. The Eightfold Board is its own entry, still named "Lockheed Martin"
 because it states that itself, and it is labelled by ATS if both are picked. Re-alias it once
 cross-ATS mirrors are parked.
+
+## Amendment (2026-09-24): the Trends tab picks, and suggests one entry per name
+
+The third PR is the UI. Four user decisions shape it, and one changes the matcher.
+
+- **One suggestion per name.** Of the directory entries whose names normalize alike, the picker
+  offers only the one with the most openings (user decision, over the Decision's "the user picks
+  both"). Most such twins are cross-ATS mirrors: on 2026-09-24 "NVIDIA Corporation" on Eightfold
+  (2,048 openings) and "Nvidia" on Workday (2,043) were one employer listed twice. The cost is a
+  real second Board or a different employer of the same name that the list no longer offers:
+  Schonfeld's SmartRecruiters Board and the smaller Workday "Citi" drop out. A link by Board key
+  still reaches any entry, and the directory itself is unchanged.
+- **Small picks open on one Total line.** "Break down by" gains Category, Total and, with two or
+  more picks, Company. Until the reader chooses, a set of picks with fewer than two categories at
+  the chart's indexing floor (5 openings) opens on Total, the category lines summed in the
+  browser, since those partition a pick's tech openings exactly. Share is withdrawn under a
+  top-level Company split, where each line is a whole company and reads 100%.
+- **The follow list is one option.** Followed companies are stored as Board keys, so an empty
+  query offers "Add the N companies you follow" rather than a list the page cannot name.
+- **No cap on picks.** Past eight, a Company split folds the rest into "Other", as categories do.
+
+Picks live in the hash (`#trends?company=…&by=…`), so a view can be shared and the "See trend"
+links on Hot-tab rows and search results land already picked. A search result's Board is
+`boardOf`'s guess from the job id (ADR-0049). 98.1% of the 514,163 served rows resolve exactly
+to a directory Board. The rest, and any other key the Space refuses, are dropped with a sentence
+under the picker rather than failing the chart.
