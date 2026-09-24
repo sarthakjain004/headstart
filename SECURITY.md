@@ -36,6 +36,6 @@ Out of scope:
 ## Secrets in this repository
 
 GitHub secret scanning and push protection are on. Test fixtures under `tests/fixtures/` are
-captures of vendors' public career pages, with vendor browser keys replaced by `REDACTED`. A string
+captures of vendors' public career pages, with vendor browser keys replaced by `REDACTED` placeholders. A string
 there that looks like a token is either a placeholder or one of those vendors' public client keys,
 not a credential for this project.

@@ -19,7 +19,8 @@ node --test tests/js/*.test.js  # the UI tests: Node 22+, no npm install
 ```
 
 A handful of test modules need the embedding stack (`torch`) or the browser driver (`pydoll`).
-They skip under `[dev]`, as they do in CI. Install `.[embed,scrape]` to run them too.
+They skip under `[dev]`, as they do in CI. Install `.[embed,scrape]` to run them too. The
+résumé editor's browser tests also need Playwright's Chromium (`playwright install chromium`).
 
 ## What a good change looks like
 
@@ -48,10 +49,10 @@ A new scraper is a `BaseScraper` subclass in `src/headstart/scrapers/{ats}.py`, 
    the live Space.
 2. Add a liveness ledger at `data/validate/liveness/{ats}.csv`. `load_active_companies` only reads
    ledgers, so without one the scrape plan never picks the ATS.
-3. Document what you measured about the provider under `docs/{ats}/`.
+3. Document what you measured about the ATS under `docs/{ats}/`.
 
 [`CLAUDE.md`](./CLAUDE.md) has the long form of these rules, including the traps each existing
-provider taught us, and [`.claude/skills/add-ats-scraper/`](./.claude/skills/add-ats-scraper/)
+ATS taught us, and [`.claude/skills/add-ats-scraper/`](./.claude/skills/add-ats-scraper/)
 walks a coding agent through the whole process.
 
 ## Where things go

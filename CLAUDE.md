@@ -373,8 +373,9 @@ These guidelines are working if: fewer unnecessary changes in diffs, fewer rewri
 Build a new ATS with the `add-ats-scraper` skill; it carries this step and the rest of the
 procedure. **Before any new ATS scraper's jobs ship — in the same PR that adds the scraper — run
 the `verify-search-filters` skill.** A new ATS is invisible to the harness until someone teaches it:
-its job-URL shape must be added to `scripts/eval/verify_filters.py`'s `URL_SHAPES` (derived from
-the scraper's `url=` construction and verified against the ATS's real routing, not assumed), and
+its job-URL shape must be declared as the scraper class's `url_shape` (derived from the scraper's
+`url=` construction and verified against the ATS's real routing, not assumed —
+`verify_filters.py`'s `URL_SHAPES` is built from it, ADR-0157), and
 the harness must run clean, including its coverage gate (`atses_without_shape` empty). This rule
 exists because eightfold, freshteam and successfactors all shipped serving jobs no check ever
 looked at, and the gap surfaced as a user-visible bad result rather than a red run.

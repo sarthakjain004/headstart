@@ -33,9 +33,10 @@ Semantic search over local embeddings, with the structured filters — years, sa
 employment type — left exactly where they belong: under your control, not inferred from a
 sentence.
 
-### 42 ATSes. One shape.
+### 34 ATSes. One shape.
 
-Greenhouse, Workday, Lever, Ashby, iCIMS, Oracle, Taleo, BambooHR, Phenom, and 33 more.
+Greenhouse, Workday, Lever, Ashby, iCIMS, Oracle, Taleo, BambooHR, Phenom, and 24 more, plus eight
+companies' own career sites.
 HeadStart finds which companies host boards on which ATS, checks that each board is alive,
 and normalizes every posting into a single `Job`. You never learn an ATS's name.
 
@@ -48,7 +49,8 @@ amended in place rather than quietly edited.
 ---
 
 It serves two ways: the **AI semantic-search layer** above, and **job alerts** — saved
-searches delivered by email or Telegram to signed-in accounts. Everything runs on free tiers (see *What this optimises for*, below).
+searches delivered by email or Telegram to signed-in accounts. Everything runs on free tiers
+(see *What this optimises for*, below).
 
 ## Why
 
@@ -483,8 +485,11 @@ python -m headstart.ingest.index sync            # incremental add/evict into th
 
 ## Run your own
 
-The pipeline, the Space and the alerts are all driven by GitHub Actions and one private Hugging
-Face dataset, so a fork needs its own dataset, its own Space and these settings:
+The pipeline, the Space and the alerts are driven by GitHub Actions and two private Hugging Face
+datasets (the index, and a separate one for Accounts and Subscriptions). A fork needs its own
+datasets, its own Space and these settings. One caveat: Hugging Face now puts creating a new
+Docker Space behind its paid PRO plan (`deploy-space.yml` targets an existing Space for that
+reason), so a fork's Space may not be free.
 
 | Where | Name | What for |
 |---|---|---|
@@ -494,13 +499,16 @@ Face dataset, so a fork needs its own dataset, its own Space and these settings:
 | Actions secret | `RESEND_API_KEY`, variable `ALERTS_SENDER` | email digests ([`docs/email-alerts.md`](./docs/email-alerts.md)) |
 | Actions secret | `TELEGRAM_BOT_TOKEN` | Telegram alerts ([`docs/telegram-alerts.md`](./docs/telegram-alerts.md)) |
 | Actions variable | `SPACE_URL` | the public URL of your Space |
-| Space secret | `SECRET_KEY`, `GOOGLE_CLIENT_ID` | session signing and Google sign-in (unset = no sign-in wall, no Account features) |
-| Space secret | `LLM_ROUTER_BASE`, `LLM_ROUTER_MODEL` | an OpenAI-compatible endpoint for résumé parsing (optional) |
+| Space secret | `HF_TOKEN`, `HF_DATASET` | read access to the index dataset; `HF_DATASET` defaults to this project's own (`deploy/hf-space/app.py`) |
+| Space secret | `SECRET_KEY`, `GOOGLE_CLIENT_ID` | session signing and Google sign-in; both unset = no sign-in wall |
+| Space secret | `SUBSCRIBERS_REPO`, `SUBSCRIBERS_TOKEN` | with sign-in on, turn on Accounts: saved searches, starred jobs, Profile, alerts |
+| Space secret | `LLM_ROUTER_BASE`, `LLM_ROUTER_MODEL`, `LITELLM_MASTER_KEY` | an OpenAI-compatible endpoint for résumé parsing (optional; unset = that one feature answers 503). `start.sh` can instead open an SSH tunnel to a private router (`OCI_SSH_KEY`, `LLM_ROUTER_SSH`) |
 
 Every alert and account feature is inert until its secrets are set. The dataset and Space ids are
 written into the workflows as `HF_DATASET` / `HF_SPACE` (`pipeline.yml`, `cleanup-index.yml`,
-`cluster-roles.yml`, `diff-role-assignments.yml`, `reclaim-dataset-storage.yml`) and as `repo_id`
-in `deploy-space.yml`; point those at your own. The auth model and failure modes are in
+`cluster-roles.yml`, `diff-role-assignments.yml`, `reclaim-dataset-storage.yml`), as `repo_id`
+in `deploy-space.yml`, and as `HF_DATASET`'s default in `deploy/hf-space/app.py`; point those at
+your own. The auth model and failure modes are in
 [`docs/agents/deployment.md`](./docs/agents/deployment.md).
 
 ## More
