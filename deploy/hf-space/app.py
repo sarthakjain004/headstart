@@ -265,6 +265,7 @@ _EPOCH_LABELS = (
     ("tech_filter_version", "tech filter changed"),
     ("derivations_version", "experience/salary extraction changed"),
     ("dedup_version", "duplicate removal changed"),
+    ("family_rules_fingerprint", "role family title rules changed"),
 )
 
 
@@ -1389,10 +1390,11 @@ def trends():
 
     ``epochs`` (ADR-0164) lists methodology boundaries within the requested window —
     ``{ts, changed}``, ``changed`` naming which of the role taxonomy, the family map, the tech
-    filter, the experience/salary extraction or the duplicate-removal rules (ADR-0188) moved at
-    that stamp. Unlike every other field above, it is **not** narrowed by ``ats`` or scoped to the
-    live centroid version: a refit is itself one of the things that can produce a boundary, so
-    hiding it there would hide the exact event most worth marking. A chart can draw a marker at
+    filter, the experience/salary extraction, the duplicate-removal rules (ADR-0188) or the family
+    title rules (ADR-0215) moved at that stamp. Unlike every other field above, it is **not**
+    narrowed by ``ats`` or scoped to the live series version: a refit or a new generation of title
+    rules is itself one of the things that can produce a boundary, so hiding it there would hide
+    the exact event most worth marking. A chart can draw a marker at
     each stamp so a level shift reads as "we changed how we count" rather than being mistaken
     for a hiring trend."""
     if not _TRENDS:
@@ -1440,7 +1442,7 @@ def trends():
         return jsonify(error="since/until/base must be ISO-8601"), 400
     ats = request.args.getlist("ats")
 
-    # ``_TRENDS`` is already pinned to the live centroid version at load time, so filtering here
+    # ``_TRENDS`` is already pinned to the live series version at load time, so filtering here
     # never has to worry about a stray row from a stale refit; only the requested window changes.
     base_stamp = None
     if coverage == "comparable" or company_of is not None:
@@ -1461,9 +1463,10 @@ def trends():
     if ats:
         trends_rows = [r for r in trends_rows if r["ats"] in ats]
 
-    # Epochs (ADR-0164) are their own timeline, independent of centroid version — a refit is
-    # itself one of the things that can produce a boundary row, so filtering by the live
-    # version would hide the exact event most worth marking. Only the requested window narrows it.
+    # Epochs (ADR-0164) are their own timeline, independent of the series version — a refit or a
+    # rules generation is itself one of the things that can produce a boundary row, so filtering
+    # by the live version would hide the exact event most worth marking. Only the requested window
+    # narrows it.
     epochs = _EPOCHS
     if since:
         epochs = [e for e in epochs if e["ts"] >= since]

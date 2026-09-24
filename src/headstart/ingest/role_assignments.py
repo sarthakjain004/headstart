@@ -1,10 +1,12 @@
 """Remember which family each served row was assigned to, and report the ones that moved.
 
-`role_trends` re-derives every row's family from its vector on every tick. Frozen centroids make
-that stable **for a given vector** — but not for a given *job*: ADR-0050's description backfill
-re-embeds rows, the new vector can fall nearer a different centroid, and the job silently changes
-family while keeping its `first_seen`. In the ledger that is indistinguishable from the old row
-closing and a new one opening somewhere else, so a family can appear to shed jobs it never lost.
+`role_trends` re-derives every row's family on every tick. Frozen centroids make that stable **for
+a given vector** — but not for a given *job*: ADR-0050's description backfill re-embeds rows, the
+new vector can fall nearer a different centroid, and the job silently changes family while keeping
+its `first_seen`. In the ledger that is indistinguishable from the old row closing and a new one
+opening somewhere else, so a family can appear to shed jobs it never lost. Since ADR-0215 title
+rules decide most rows before a centroid is consulted, so a re-embed moves only the rows no rule
+decides, and a retitled job can move too.
 
 That is not hypothetical. Over 2026-08-11..16 `software-engineering` fell 68,199 -> 67,294 while
 every other family rose; title-matched watch roles over the same window were flat (+0.2%), and at
@@ -22,8 +24,10 @@ Two files under ``data/state/``:
   ``role_assignments.parquet``  the current tick's ``id -> family`` (overwritten each run)
   ``role_reassignments.csv``    append-only ``ts,version,family_from,family_to,count``
 
-Version is the centroid version: a refit re-bases every assignment, so transitions must never be
-compared across versions.
+Version is the series version (`role_trends.series_version`): a centroid refit or a new generation
+of title rules re-bases every assignment, so transitions must never be compared across versions.
+The snapshot still stamps it under the key ``centroid_version``, the name it had when the two were
+the same number.
 """
 
 from __future__ import annotations
@@ -38,7 +42,7 @@ def load_previous(path: Path, version: int) -> dict[str, str] | None:
     """The previous tick's ``id -> family``, or None when there is nothing comparable.
 
     None (rather than an empty dict) for the first run, an unreadable file, a snapshot carrying no
-    version stamp, or one stamped with a different centroid version — all cases where "no
+    version stamp, or one stamped with a different series version — all cases where "no
     transitions" is the honest answer and an empty diff would be a lie that reads as "nothing
     moved". An **unstamped** snapshot is rejected for the same reason a mismatched one is: this
     guard exists precisely for files whose provenance cannot be vouched for, and one with no
@@ -60,7 +64,7 @@ def load_previous(path: Path, version: int) -> dict[str, str] | None:
 
 
 def save(path: Path, assignments: dict[str, str], version: int) -> None:
-    """Overwrite the snapshot with this tick's assignments, stamped with the centroid version."""
+    """Overwrite the snapshot with this tick's assignments, stamped with the series version."""
     import pyarrow as pa
     import pyarrow.parquet as pq
 

@@ -2,12 +2,14 @@
 """Append this run's role-group counts to the trends ledger (ADR-0040) — merge stage.
 
 Runs after ``index sync`` and ``index prune``, so it counts the **served stock**: every row
-still in the ``jobs`` table is assigned to its nearest frozen centroid, that cluster is mapped
-to a curated role family (``config/role_families.json``), the row is banded by the experience
+still in the ``jobs`` table gets a role family from its title rules (ADR-0215,
+:mod:`headstart.ingest.role_family_rules`), or, when no rule decides, from its nearest frozen
+centroid mapped through the curated ``config/role_families.json``. The row is banded by the experience
 columns the table already carries, and one ``(ts, version, family, band, ats, count)`` row per
 non-empty group is appended to ``data/state/role_trends.parquet`` — plus one unbanded, undecomposed
 ``(non-tech, all, all)`` diagnostic row. Series identity is ``(version, family)``; ``version``
-changes only on an explicit centroid refit (a re-base, ADR-0040). ``ats`` (ADR-0075) lets the
+changes only on a re-base — a centroid refit (ADR-0040) or a new generation of title rules
+(ADR-0215), see :func:`series_version`. ``ats`` (ADR-0075) lets the
 Trends tab filter by which ATS posted a run; a pre-ADR-0075 row carries ``ats='all'`` on
 migration, the same sentinel the diagnostic row itself always uses.
 
@@ -33,13 +35,19 @@ from __future__ import annotations
 
 import argparse
 import csv
+import functools
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import numpy as np
 
 from headstart import log, roles, tech_filter
-from headstart.ingest import REPO_ROOT, role_assignments, trends_epochs
+from headstart.ingest import (
+    REPO_ROOT,
+    role_assignments,
+    role_family_rules,
+    trends_epochs,
+)
 from headstart.ingest.doc_prep import DERIVATIONS_VERSION
 from headstart.ingest.index_plan import (
     DEDUP_VERSION,
@@ -87,6 +95,36 @@ _PRE_METRIC_COLUMNS = (
 NEW_WINDOW_DAYS = 7
 
 
+def series_version(centroid_version: int) -> int:
+    """The series identity every ledger here is stamped with (ADR-0040, ADR-0215).
+
+    A row's family depends on the centroids and, since ADR-0215, first on the title rules, so a
+    re-base of either starts new series. Before ADR-0215 this was the bare centroid version (the
+    ledgers hold 1 and 2). Only equality and order are ever read: the Space charts the newest
+    version, and every snapshot compares its stamp for equality. So the encoding only has to grow
+    whenever either part does, which it does while a rules generation stays under 1000.
+    """
+    return centroid_version * 1000 + role_family_rules.RULES_GENERATION
+
+
+@functools.cache
+def _rule_family(title: str | None) -> str | None:
+    """The title rules' family, memoised: served titles repeat (271,828 distinct among 514,163
+    rows in v654), and the rules cost ~66 µs a title, most of this step's time."""
+    return role_family_rules.classify(title).family
+
+
+def _family_of(
+    title: str | None, cluster: int, families: dict[int, str | None]
+) -> str | None:
+    """A row's family (ADR-0215): its title rules' verdict, else its nearest centroid's family.
+    None means non-tech, from either source."""
+    decided = _rule_family(title)
+    if decided is None:
+        return families[cluster]
+    return None if decided == roles.NON_TECH else decided
+
+
 def _board_keys(ids: list[str], ledger: Path) -> list[str]:
     """Resolve Job ids through the same Board identity index sync and prune use."""
     live = boards_by_canon(live_keep_set(ledger))
@@ -117,12 +155,13 @@ def count_groups(
     served row carries one, unlike ``first_seen`` there is no pre-existing-table case to guard.
 
     Watch roles (ADR-0051) are counted by title into the same structure under
-    ``watch:{name}``, independent of centroid assignment — a watched title counts even when
-    the embedding filed it elsewhere, because the pattern is the definition.
+    ``watch:{name}``, whatever family the row landed in — the pattern is the definition — but
+    only on tech rows (ADR-0215): the chart excludes non-tech, and a watch line counting a
+    grocery "Front End" clerk contradicted it.
 
-    Rows whose cluster maps to None are the tech filter's known creep (ADR-0017 is
-    recall-biased on purpose) — kept out of the role groups, but returned as one number so the
-    ledger carries a filter-health series (ADR-0040)."""
+    Non-tech rows are the tech filter's known creep (ADR-0017 is recall-biased on purpose) — kept
+    out of the role groups, but returned as one number so the ledger carries a filter-health
+    series (ADR-0040)."""
     # to_numpy on the (possibly chunked) vector column yields one array per row; stacking is
     # row-aligned with the other columns' to_pylist across chunk boundaries.
     vectors = np.stack(rows["vector"].to_numpy(zero_copy_only=False))
@@ -157,14 +196,14 @@ def count_groups(
     ):
         # ISO-8601 UTC on both sides, so string order is time order.
         is_new = bool(first) and first >= new_after
+        family = _family_of(title, int(cluster), families)
+        if family is None:
+            non_tech += 1
+            continue
         band = roles.band(years, title, etype)
         for role in watchlist:
             if role.matches(title):
                 bump(roles.WATCH_PREFIX + role.name, band, ats, is_new)
-        family = families[int(cluster)]
-        if family is None:
-            non_tech += 1
-            continue
         # Watch roles are deliberately absent here: they are title matches layered over the
         # taxonomy, so a row "moving" between them is a title edit, not a reassignment.
         assigned[job_id] = family
@@ -220,16 +259,16 @@ def count_board_groups(
         ids, clusters, min_years, titles, employment, seen, atses, boards, strict=True
     ):
         is_new = bool(first) and first >= new_after
-        band = roles.band(years, title, etype)
-        for role in watchlist:
-            if role.matches(title):
-                bump(board, roles.WATCH_PREFIX + role.name, band, ats, is_new)
-        family = families[int(cluster)]
+        family = _family_of(title, int(cluster), families)
         if family is None:
             non_tech += 1
             key = (board, "stock", roles.NON_TECH, "all", ats)
             board_counts[key] = board_counts.get(key, 0) + 1
             continue
+        band = roles.band(years, title, etype)
+        for role in watchlist:
+            if role.matches(title):
+                bump(board, roles.WATCH_PREFIX + role.name, band, ats, is_new)
         assigned[job_id] = family
         bump(board, family, band, ats, is_new)
     return counts, non_tech, assigned, board_counts
@@ -525,9 +564,9 @@ def main() -> int:
     try:
         centroids, manifest = roles.load(args.centroids)
         families = roles.load_families(args.families, manifest)
-        watchlist = roles.load_watchlist(
-            args.watchlist, {f for f in families.values() if f is not None}
-        )
+        family_names = {f for f in families.values() if f is not None}
+        role_family_rules.check_families(family_names)
+        watchlist = roles.load_watchlist(args.watchlist, family_names)
     except ValueError as exc:
         # An unusable taxonomy is a real defect, not a missing prerequisite — most likely a
         # refit shipped without re-curating the map, which ADR-0040 treats as routine. The
@@ -543,10 +582,13 @@ def main() -> int:
         return 0
     # Logged before the read, not after: pulling the 768-d vector column for the whole table is
     # the slow, memory-hungry part of this step, so it should not run unnarrated.
-    named = len({f for f in families.values() if f is not None})
+    version = series_version(manifest["version"])
+    # The "assigning N served rows to K families via C clusters" prefix is parsed by
+    # scripts/runlog/fanout_merge.py (tests/test_log_contract.py pins it); what follows is free.
     _log.info(
-        f"assigning {n} served rows to {named} families via {manifest['k']} clusters "
-        f"(centroid version {manifest['version']})"
+        f"assigning {n} served rows to {len(family_names)} families via {manifest['k']} "
+        f"clusters (centroid version {manifest['version']}), title rules first (generation "
+        f"{role_family_rules.RULES_GENERATION}, series version {version})"
     )
     # first_seen may be absent on a pre-ADR-0031 table; select() would raise on the missing
     # column, so ask only for what exists and let count_groups treat absence as "never new".
@@ -564,18 +606,16 @@ def main() -> int:
         counts, non_tech, assigned, board_counts = count_board_groups(
             rows, centroids, families, watchlist, new_after, boards
         )
-        previous, as_of = _load_board_counts(args.board_counts, manifest["version"])
-        previous = _recover_board_counts(
-            previous, as_of, args.board_deltas, manifest["version"]
-        )
+        previous, as_of = _load_board_counts(args.board_counts, version)
+        previous = _recover_board_counts(previous, as_of, args.board_deltas, version)
         changed = _append_board_deltas(
-            args.board_deltas, previous, board_counts, manifest["version"], ts
+            args.board_deltas, previous, board_counts, version, ts
         )
-        _save_board_counts(args.board_counts, board_counts, manifest["version"], ts)
+        _save_board_counts(args.board_counts, board_counts, version, ts)
     except (OSError, ValueError) as exc:
         _log.error(f"comparable Trends state unusable, no trends this run: {exc}")
         return 1
-    written = append_ledger(args.ledger, counts, non_tech, manifest["version"], ts)
+    written = append_ledger(args.ledger, counts, non_tech, version, ts)
     stock_top = sorted(
         ((k, c) for k, c in counts.items() if k[0] == "stock"), key=lambda kv: -kv[1]
     )[:5]
@@ -600,7 +640,7 @@ def main() -> int:
     # unrelated new posting — which is how a 622-row "software-engineering decline" turned out to
     # be largely redistribution. Diagnostic only: never fails the run.
     try:
-        previous = role_assignments.load_previous(args.assignments, manifest["version"])
+        previous = role_assignments.load_previous(args.assignments, version)
         moved = role_assignments.transitions(previous, assigned)
         # Snapshot BEFORE the ledger, deliberately. The ledger is append-only, so if the snapshot
         # write failed after appending, the next tick would diff against the stale snapshot and
@@ -608,13 +648,14 @@ def main() -> int:
         # are indistinguishable from real repeated moves. This order can instead lose one tick's
         # transitions, which under-reports once and stays truthful.
         had_snapshot = args.assignments.exists()
-        role_assignments.save(args.assignments, assigned, manifest["version"])
+        role_assignments.save(args.assignments, assigned, version)
         rows_written = role_assignments.append_ledger(
-            args.reassignments, moved, manifest["version"], ts
+            args.reassignments, moved, version, ts
         )
         if previous is None:
             why = (
-                "discarded the previous snapshot (unreadable, or a centroid refit re-based it)"
+                "discarded the previous snapshot (unreadable, or a re-base: a centroid refit "
+                "or a new generation of title rules)"
                 if had_snapshot
                 else "first snapshot"
             )
@@ -647,6 +688,7 @@ def main() -> int:
             ts,
             centroid_version=manifest["version"],
             family_map_fingerprint=roles.family_map_fingerprint(args.families),
+            family_rules_fingerprint=role_family_rules.fingerprint(),
             tech_filter_version=tech_filter.TECH_FILTER_VERSION,
             derivations_version=DERIVATIONS_VERSION,
             dedup_version=DEDUP_VERSION,

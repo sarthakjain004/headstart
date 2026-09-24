@@ -17,7 +17,7 @@ A company's line is the sum of its Boards' lines. A Board that has since closed 
 opening still has history in the ledger, and listing only the Boards hiring today would drop that
 history from its company. On 2026-09-24, 1,374 of the ledger's 34,203 Boards had no tech opening
 left, 79 of them under a company still hiring. So the directory lists every Board with a tech
-`stock` row at the live centroid version, which also lets a user pick a company that has
+`stock` row at the live series version, which also lets a user pick a company that has
 stopped hiring.
 
 A closed Board has no rows left in the served table to name it (913 of those 1,374), so its
@@ -90,11 +90,11 @@ _DB = REPO_ROOT / "data" / "lancedb"
 
 
 def ledger_boards(delta_dir: Path) -> set[str]:
-    """Every Board with a tech `stock` delta at the newest tick's centroid version.
+    """Every Board with a tech `stock` delta at the newest tick's series version.
 
-    Older versions are skipped because a refit re-bases every series (ADR-0040) and the Space
-    charts only the live one. `non-tech` has no series to chart, and `watch:` rows re-count Jobs
-    already counted in their family (ADR-0051).
+    Older versions are skipped because a refit or a new generation of title rules re-bases every
+    series (ADR-0040, ADR-0215) and the Space charts only the live one. `non-tech` has no series
+    to chart, and `watch:` rows re-count Jobs already counted in their family (ADR-0051).
     """
     import pyarrow.parquet as pq
 
