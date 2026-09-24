@@ -800,9 +800,9 @@ def test_parse_fills_the_profile_and_spends_a_read(sets_app, hub, monkeypatch):
 def test_a_second_parse_waits_out_the_first_rather_than_racing_the_cap(
     sets_app, hub, monkeypatch
 ):
-    # The counter is read before the router call and written after it, and the server is
-    # threaded — so without a guard, parallel parses all read the same count and all pass the
-    # cap, each spending a router call. One read in flight per Account closes that window.
+    # Pins the in-flight guard above `parse_resume` (`_PARSING`): while one Account's read is
+    # inside the router, a second read for the same Account is refused before it spends a
+    # router call, and a different Account is not held up.
     import json as _json
     import threading
 
@@ -817,21 +817,28 @@ def test_a_second_parse_waits_out_the_first_rather_than_racing_the_cap(
         return _json.dumps(_EXTRACTION)
 
     first, second = _signed_in(sets_app, monkeypatch), _signed_in(sets_app, monkeypatch)
+    other = _signed_in(sets_app, monkeypatch, email="ada@example.com")
     monkeypatch.setattr(sets_app.llm_router, "ask", ask)
     results = {}
-    t = threading.Thread(
-        target=lambda: results.setdefault(
-            "first",
-            first.post("/profile/parse", json={"text": "r"}, base_url=_HTTPS),
+
+    def first_read():
+        results["first"] = first.post(
+            "/profile/parse", json={"text": "r"}, base_url=_HTTPS
         )
-    )
+
+    t = threading.Thread(target=first_read)
     t.start()
     assert entered.wait(5)
     r = second.post("/profile/parse", json={"text": "r"}, base_url=_HTTPS)
+    elsewhere = other.post("/profile/parse", json={"text": "r"}, base_url=_HTTPS)
     release.set()
     t.join(5)
+    assert not t.is_alive()
     assert r.status_code == 429
-    assert len(calls) == 1  # the refused read never reached the router
+    assert elsewhere.status_code == 200
+    assert (
+        len(calls) == 2
+    )  # the first read and the other Account's — never the refused one
     assert results["first"].status_code == 200
     assert results["first"].json["parses_left"] == sets_app.MAX_PARSES - 1
     # …and once the first read finishes, the Account can read again.

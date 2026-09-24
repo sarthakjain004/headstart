@@ -573,13 +573,13 @@ def parse_resume():
             ), 429
         _PARSING.add(account)
     try:
-        return _parse_resume(email, store, account)
+        return _run_resume_read(email, store, account)
     finally:
         with _PARSING_LOCK:
             _PARSING.discard(account)
 
 
-def _parse_resume(email: str, store: Store, account: str):
+def _run_resume_read(email: str, store: Store, account: str):
     """The parse itself, run while this Account holds its slot in `_PARSING`."""
     used = _parses(store, account)
     if used is None:
