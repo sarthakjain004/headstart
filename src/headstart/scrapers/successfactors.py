@@ -123,7 +123,7 @@ _UNAVAILABLE_SHELL = re.compile(r'<[^>]*\bclass="jobErrMsg"')
 # empty read-only mapping rather than a bare `object()`, so a caller outside `fetch_raw` that
 # reads it as fields (`fetch_detail(...) or {}` in scripts/enrich/salary_sample.py) sees an
 # empty page and `parse` skips it, instead of failing on `.get`.
-_UNAVAILABLE: Mapping[str, Any] = MappingProxyType({})
+_CLOSED_POSTING: Mapping[str, Any] = MappingProxyType({})
 
 # /sitemal.xml — the Google-jobs RSS field surface (module docstring). Matched with simple,
 # non-nesting patterns rather than a general XML parser: every field it carries is a leaf element
@@ -492,7 +492,7 @@ class SuccessFactorsScraper(BaseScraper):
         # A page that says its posting is unavailable closes that id (module docstring): it is
         # not a Job, not a loss, and not the feed's to fill — the feed still lists it.
         open_listed = [
-            pair for pair in tech_listed if pages.get(pair[1]) is not _UNAVAILABLE
+            pair for pair in tech_listed if pages.get(pair[1]) is not _CLOSED_POSTING
         ]
         if len(open_listed) < len(tech_listed):
             _log.info(
@@ -563,12 +563,12 @@ class SuccessFactorsScraper(BaseScraper):
         for opposite responses.
 
         A title-less page carrying RMK's unavailable shell is neither: the posting is closed,
-        and :data:`_UNAVAILABLE` says so, for :meth:`fetch_raw` to drop rather than rescue.
+        and :data:`_CLOSED_POSTING` says so, for :meth:`fetch_raw` to drop rather than rescue.
         """
         fields = _titled_fields(response.text, pair[0])
         if fields is None:
             if _UNAVAILABLE_SHELL.search(response.text):
-                return _UNAVAILABLE
+                return _CLOSED_POSTING
             raise DetailLost("200 without a parseable title")
         return fields
 
