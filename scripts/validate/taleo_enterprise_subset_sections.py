@@ -7,7 +7,7 @@ tenant's sections serve some or all of the tenant's requisitions under one tenan
 15 times. `dedupe_boards.py` cannot see it: no section redirects to another.
 
 The signal is containment. A section whose full requisition set — every role, not only tech — is
-non-empty and contained in another live section's set of the same tenant (the section URL's host)
+non-empty and contained in the set of another section of the same tenant (the section URL's host)
 is buried onto a maximal section, which lists every req the buried one does, so no req is lost and
 the kept section's own job URLs are the ones served. The rules, all in `burials`:
 
@@ -52,13 +52,13 @@ SIGNAL = "subset-reqs"
 _WORKERS = 16
 
 
-def burials(sets: Mapping[str, Collection[str]]) -> dict[str, str]:
+def burials(reqs_by_section: Mapping[str, Collection[str]]) -> dict[str, str]:
     """``{buried section: kept section}`` for every section another one of its tenant contains.
 
-    ``sets`` maps a section's canonical URL to its full requisition ids. Pure, and deterministic in
+    ``reqs_by_section`` maps a section's canonical URL to its full requisition ids. Pure, and deterministic in
     its input alone: neither the mapping's order nor a previous run changes the answer."""
     tenants: dict[str, dict[str, frozenset[str]]] = defaultdict(dict)
-    for section, ids in sets.items():
+    for section, ids in reqs_by_section.items():
         if ids:
             tenants[urlsplit(section).hostname][section] = frozenset(ids)
     buried = {}
@@ -76,18 +76,18 @@ def burials(sets: Mapping[str, Collection[str]]) -> dict[str, str]:
     return buried
 
 
-def write_ledger(
-    ledger_dir: Path,
+def write_aliases(
+    liveness_dir: Path,
     reqs_of: Callable[[str], Collection[str]],
     checked_at: str,
 ) -> list[board_aliases.Alias]:
     """Read the section of every live, non-excluded row through ``reqs_of``, bury the subsets,
-    and replace the alias ledger beside ``ledger_dir`` with the result. A section whose read fails
+    and replace the alias ledger beside ``liveness_dir`` with the result. A section whose read fails
     (a request error, or a page the listing cannot parse) is left out, so it is neither buried nor
     kept for anything else; any other exception is a bug and propagates."""
     live = {
         TaleoEnterpriseScraper.slug_from(v.tenant, v.url)
-        for v in liveness.load(ledger_dir / f"{ATS}.csv").values()
+        for v in liveness.load(liveness_dir / f"{ATS}.csv").values()
         if v.status == liveness.LIVE
     }
     sections = {s for s in live if f"{ATS}:{s}".lower() not in EXCLUDED_BOARDS}
@@ -95,29 +95,29 @@ def write_ledger(
         f"{len(sections)} sections to read (live rows, less EXCLUDED_BOARDS)",
         flush=True,
     )
-    sets: dict[str, Collection[str]] = {}
+    reqs_by_section: dict[str, Collection[str]] = {}
     with ThreadPoolExecutor(_WORKERS) as pool:
         futures = {pool.submit(reqs_of, s): s for s in sorted(sections)}
         for n, future in enumerate(as_completed(futures), 1):
             section = futures[future]
             try:
-                sets[section] = future.result()
+                reqs_by_section[section] = future.result()
             except (http.RequestsError, ValueError) as exc:  # unreadable: never buried
                 print(
                     f"  [{n}/{len(futures)}] {section}: unreadable ({exc})", flush=True
                 )
                 continue
             print(
-                f"  [{n}/{len(futures)}] {section}: {len(sets[section])} reqs",
+                f"  [{n}/{len(futures)}] {section}: {len(reqs_by_section[section])} reqs",
                 flush=True,
             )
     aliases = [
         board_aliases.Alias(ATS, dup, keep, SIGNAL, keep, checked_at)
-        for dup, keep in sorted(burials(sets).items())
+        for dup, keep in sorted(burials(reqs_by_section).items())
     ]
-    board_aliases.write(board_aliases.path_for(ledger_dir, ATS), aliases)
+    board_aliases.write(board_aliases.path_for(liveness_dir, ATS), aliases)
     print(
-        f"read {len(sets)} of {len(sections)} sections; buried {len(aliases)} onto "
+        f"read {len(reqs_by_section)} of {len(sections)} sections; buried {len(aliases)} onto "
         f"{len({a.canonical for a in aliases})} kept sections",
         flush=True,
     )
@@ -132,7 +132,7 @@ def _reqs(section: str) -> set[str]:
 
 def main() -> None:
     today = datetime.now(UTC).date().isoformat()
-    for a in write_ledger(liveness.dir_for(ROOT), _reqs, today):
+    for a in write_aliases(liveness.dir_for(ROOT), _reqs, today):
         print(f"  bury {a.duplicate} -> {a.canonical}", flush=True)
 
 

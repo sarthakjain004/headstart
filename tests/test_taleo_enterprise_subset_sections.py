@@ -17,6 +17,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
 HDR = "https://hdr.taleo.net/careersection"
+BAE = "https://baesystems.taleo.net/careersection"
 
 
 @pytest.fixture(scope="module")
@@ -57,20 +58,18 @@ def test_a_chain_buries_every_link_onto_the_top_section(mod):
 def test_a_partial_overlap_keeps_both_sections(mod):
     """BAE's sections overlap without either containing the other (209 union vs 176 largest).
     Both stay; burying either would hide the reqs only it lists."""
-    bae = "https://baesystems.taleo.net/careersection"
-    assert mod.burials({f"{bae}/us": {"1", "2"}, f"{bae}/uk": {"2", "3"}}) == {}
+    assert mod.burials({f"{BAE}/us": {"1", "2"}, f"{BAE}/uk": {"2", "3"}}) == {}
 
 
 def test_a_section_under_two_overlapping_sections_goes_to_the_larger(mod):
-    bae = "https://baesystems.taleo.net/careersection"
     buried = mod.burials(
         {
-            f"{bae}/us": {"1", "2", "3"},
-            f"{bae}/uk": {"2", "4"},
-            f"{bae}/shared": {"2"},
+            f"{BAE}/us": {"1", "2", "3"},
+            f"{BAE}/uk": {"2", "4"},
+            f"{BAE}/shared": {"2"},
         }
     )
-    assert buried == {f"{bae}/shared": f"{bae}/us"}
+    assert buried == {f"{BAE}/shared": f"{BAE}/us"}
 
 
 def test_an_empty_section_is_never_buried(mod):
@@ -90,7 +89,7 @@ def test_the_same_reqs_on_two_tenants_are_not_a_subset(mod):
     )
 
 
-def _ledger(root: Path, sections: dict[str, str]) -> Path:
+def _liveness_dir(root: Path, sections: dict[str, str]) -> Path:
     """A liveness dir holding one taleo_enterprise row per ``{section: status}``."""
     liveness = root / "liveness"
     liveness.mkdir(parents=True)
@@ -107,15 +106,15 @@ def test_a_buried_section_that_gains_its_own_req_is_unburied(mod, tmp_path):
     rewrites the ledger from what it reads now, so nothing a past run concluded survives."""
     from headstart import board_aliases
 
-    liveness = _ledger(tmp_path, {f"{HDR}/ex": "live", f"{HDR}/int": "live"})
+    liveness = _liveness_dir(tmp_path, {f"{HDR}/ex": "live", f"{HDR}/int": "live"})
     reqs = {f"{HDR}/ex": {"1", "2"}, f"{HDR}/int": {"1"}}
-    mod.write_ledger(liveness, reqs.get, "2026-09-24")
+    mod.write_aliases(liveness, reqs.get, "2026-09-24")
     assert board_aliases.load_for(liveness, "taleo_enterprise") == {
         f"{HDR}/int": f"{HDR}/ex"
     }
 
     reqs[f"{HDR}/int"] = {"1", "3"}  # int now lists a req ex does not
-    mod.write_ledger(liveness, reqs.get, "2026-09-25")
+    mod.write_aliases(liveness, reqs.get, "2026-09-25")
     assert board_aliases.load_for(liveness, "taleo_enterprise") == {}
 
 
@@ -126,7 +125,7 @@ def test_only_sections_on_live_rows_are_read_and_oracles_demo_tenant_is_not(
     Assessment"), excluded in `config.EXCLUDED_BOARDS`. Its two sections mirror each other, so
     reading them would write an alias row for a Board that is never scraped anyway."""
     pmg = "https://pmg.taleo.net/careersection"
-    liveness = _ledger(
+    liveness = _liveness_dir(
         tmp_path,
         {
             f"{HDR}/ex": "live",
@@ -141,14 +140,14 @@ def test_only_sections_on_live_rows_are_read_and_oracles_demo_tenant_is_not(
         read.append(section)
         return {"1"}
 
-    assert mod.write_ledger(liveness, reqs_of, "2026-09-24") == []
+    assert mod.write_aliases(liveness, reqs_of, "2026-09-24") == []
     assert read == [f"{HDR}/ex"]
 
 
 def test_an_unreadable_section_is_neither_buried_nor_a_kept_section(mod, tmp_path):
     """edmonton's shells served no `portalNo` in one run and did 3.5 h later. A section with no
     known set is no evidence either way: it is not buried, and nothing is buried onto it."""
-    liveness = _ledger(
+    liveness = _liveness_dir(
         tmp_path, {f"{HDR}/all": "live", f"{HDR}/ex": "live", f"{HDR}/int": "live"}
     )
 
@@ -157,17 +156,17 @@ def test_an_unreadable_section_is_neither_buried_nor_a_kept_section(mod, tmp_pat
             raise ValueError("Career Section shell has no portalNo")
         return {"1", "2"} if section.endswith("/ex") else {"1"}
 
-    aliases = mod.write_ledger(liveness, reqs_of, "2026-09-24")
+    aliases = mod.write_aliases(liveness, reqs_of, "2026-09-24")
     assert {a.duplicate: a.canonical for a in aliases} == {f"{HDR}/int": f"{HDR}/ex"}
 
 
 def test_a_bug_in_the_read_is_not_taken_for_an_unreadable_section(mod, tmp_path):
     """Only a failed request or a malformed page counts as unreadable. Anything else is a bug,
     and filing it as one more unreadable section would hide it."""
-    liveness = _ledger(tmp_path, {f"{HDR}/ex": "live"})
+    liveness = _liveness_dir(tmp_path, {f"{HDR}/ex": "live"})
 
     def reqs_of(section):
         raise KeyError("id")
 
     with pytest.raises(KeyError):
-        mod.write_ledger(liveness, reqs_of, "2026-09-24")
+        mod.write_aliases(liveness, reqs_of, "2026-09-24")

@@ -28,8 +28,9 @@ Measured before deciding (2026-09-23/24):
 ## Decision
 
 **A section is an alias when its full live requisition set is non-empty and contained in the set
-of another live section of the same tenant.** It is buried in the ADR-0111 alias ledger,
-`data/validate/aliases/taleo_enterprise.csv`, with signal `subset-reqs`, onto a maximal section,
+of another section of the same tenant, both on live ledger rows.** It is buried in the ADR-0111
+alias ledger, `data/validate/aliases/taleo_enterprise.csv`, with signal `subset-reqs`, onto a
+maximal section,
 which lists every req the buried one does, so every served job URL still resolves. Kept
 sections' `board_key`s do not change. `load_active_companies` drops buried sections, and `prune`
 evicts their rows through the existing off-Board path; no new eviction machinery.
@@ -50,8 +51,8 @@ evicts their rows through the existing off-Board path; no new eviction machinery
 **The writer is `scripts/validate/taleo_enterprise_subset_sections.py`, outside
 `board_aliases.py`**, as ClearCompany's `shared-reqs` writer is (ADR-0182). `board_aliases.py`
 only loads the result. `dedupe_boards.py --apply` now refuses this ATS, because it would rewrite
-the file from redirects and erase every row. The script reads each live section's listing, 16
-sections at a time, and replaces the file.
+the file from redirects and erase every row. The script reads the listing of each section on a
+live row, 16 sections at a time, and replaces the file.
 
 **It runs by hand, after every refresh of `data/validate/liveness/taleo_enterprise.csv`.** The
 user decided this on 2026-09-24. It is the same footing as ClearCompany's writer and as the
@@ -95,10 +96,10 @@ live rows name (561 rows less pmg's two):
   would have been hidden for those hours.
 
 **A walk reads the same set every time, even when it is short of the stated total.** 390 of the
-557 sections read fewer unique ids than Taleo's own `totalCount` (the 340 multi-page ones read
-89.1% of it in total). Pages come back under their 25-row size with no id repeated (Daimler `ex`:
-446 over 20 pages against a stated 499), so the gap is rows Taleo counts but never lists, not
-pages lost. Twelve short, buried sections on twelve tenants were each read twice back to back:
+557 sections read fewer unique ids than Taleo's own `totalCount` (the 340 short multi-page ones
+read 89.1% of it in total). Pages come back under their 25-row size with no id repeated (Daimler
+`ex`: 446 over 20 pages against a stated 499), so the gap is rows Taleo counts but never lists,
+not pages lost. Twelve short, buried sections on twelve tenants were each read twice back to back:
 12 of 12 returned identical sets, among them `hdr/highway_bridges` (2,280 of 2,283),
 `hyatt/clearwater_internal` (3,230 of 3,333) and `aa308/ex_busop` (254 of 666). Twelve re-reads
 are evidence, not proof, but none showed a walk that was short by chance. A completeness check
@@ -159,7 +160,11 @@ the first 10 reqs, which is why containment is computed on the full listing.
   count before committing its ledger, and re-run if it is not near zero (29 of 559, then 2). A
   buried section that has since died fails its read the same way and returns to the scrape list on
   its stale `live` row until the prober next reaches it.
-- **A known cross-host duplicate this rule cannot see.** `pruitthealth.taleo.net` and
+- **Known cross-host duplicates this rule cannot see.** `pruitthealth.taleo.net` and
   `pruitthealthcareers.taleo.net` each have a section `2`, and both list the same 1,440 reqs
-  (measured 2026-09-24). A tenant is one host, so this signal never compares them, and no redirect
-  joins them either. Both stay scraped and served. It is out of scope here.
+  (measured 2026-09-24). Seven more host pairs have sections with identical sets in the second run:
+  daimler/tas-daimler (446), percepta/ttec (102), manpower/manpowergroup (87),
+  careerglobalhc/hyundaicapital (75), gb-corporation/ghabbour (62), aa010/elsewedyelectric (40)
+  and hkmu/ouhk. v654 serves 82 reqs on both hosts of these pairs. A tenant is one host, so this
+  signal never compares them, and no redirect joins them either; the 274 above counts same-host
+  duplicates only. Both sides stay scraped and served. It is out of scope here.

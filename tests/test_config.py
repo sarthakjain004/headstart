@@ -218,7 +218,9 @@ def test_excluded_boards_drop_oracles_taleo_demo_tenant(monkeypatch):
 
     assert pmg_sections() == set()
     monkeypatch.setattr(config, "EXCLUDED_BOARDS", frozenset())
-    assert len(pmg_sections()) == 2, "ledger no longer names pmg's two live sections"
+    assert len(pmg_sections()) == 2, (
+        "ledger no longer holds pmg's two sections on live rows"
+    )
 
 
 def test_load_active_companies_min_jobs(tmp_path):
