@@ -9961,21 +9961,38 @@ def test_zwayam_a_detail_that_answers_empty_keeps_the_listing_text():
     assert scraper.telemetry["detail_losses"] == 0
 
 
-@pytest.mark.parametrize("async_fanout", ["1", "0"])
 def test_zwayam_asks_for_the_company_id_once_and_only_when_a_detail_is_wanted(
-    monkeypatch, async_fanout
+    monkeypatch,
 ):
     """The config call is metered like every other request here, so it is made once per Board
     however many workers form requests at once — and not at all on a Board whose every row is
-    already held."""
+    already held. The config answer is slowed so the thread pool's workers really do overlap."""
+    import time
+
     from headstart.scrapers import zwayam as zwayam_module
 
-    monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", async_fanout)
+    monkeypatch.delenv("HEADSTART_ASYNC_FANOUT", raising=False)
+    monkeypatch.setattr(
+        zwayam_module.ZwayamScraper,
+        "fan_out_async",
+        lambda *args, **kwargs: pytest.fail("the multiplexed path was taken"),
+    )
     rows = [
         {"id": index, "jobTitle": "Backend Engineer", "jobUrl": f"job-{index}"}
         for index in range(40)
     ]
-    scraper, fetcher = _zwayam_served_board(rows, _zwayam_detail_text)
+
+    class _SlowConfig(FakeResponse):
+        def json(self):
+            time.sleep(0.05)
+            return super().json()
+
+    slow_config = _SlowConfig(
+        text=json.dumps({"responseObject": {"company": {"id": 4242}}})
+    )
+    scraper, fetcher = _zwayam_served_board(
+        rows, _zwayam_detail_text, config=slow_config
+    )
     scraper.fetch_raw()
     assert fetcher.urls().count(zwayam_module._CONFIG_API) == 1
     assert len(_zwayam_detail_bodies(fetcher)) == 40

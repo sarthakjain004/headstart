@@ -424,6 +424,15 @@ class ZwayamScraper(BaseScraper):
     #: measurements, and the ADR-0050 skip-list makes the full-corpus pass a one-time cost
     #: anyway. Whatever the width, no async fan-out: multiplexing cannot raise a server ceiling.
     detail_workers = 16
+    #: The thread path, which this pass has always taken — the transport is **not** measured
+    #: (ADR-0167 wants a measurement, and this records why there is none). An interleaved A/B
+    #: at width 16 was tried on 2026-09-24 (impetus.openings.co, careers.practo.com) and the
+    #: per-IP quota (`egress_fallback_on`) walled the detail path on both transports within
+    #: ~15-20 requests: multiplexed 21 of 32 then 13 of 32 details before HTTP 403, threads 15 of
+    #: 39. That shows the two equally correct under the wall, not which is faster; the two Taleo
+    #: origins measured the same day both ran slower multiplexed. Re-run the A/B from a fresh
+    #: egress before moving this pass off threads.
+    async_fanout = False
 
     def __init__(
         self, slug: str, company: str | None = None, fetcher: Fetcher | None = None
@@ -568,8 +577,7 @@ class ZwayamScraper(BaseScraper):
         """:meth:`_company_id`, called once per Board and only once the Detail pass forms its
         first request — the config call is metered like every other (``egress_fallback_on``), so
         a Board whose rows are all gated or already held never spends it. Locked because the
-        thread transport forms requests from several workers at once; on the multiplexed one the
-        first request blocks the event loop for this one call, before any other is in flight."""
+        thread transport (:attr:`async_fanout`) forms requests from several workers at once."""
         with self._company_id_lock:
             if self._board_company_id is _UNRESOLVED:
                 self._board_company_id = self._company_id()
