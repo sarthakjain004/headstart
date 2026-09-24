@@ -213,6 +213,7 @@ supersedes it and note the supersession in both.
 | [0212](0212-a-board-is-named-by-a-curated-stated-or-humanised-name-never-its-slug.md) | A Board is named by a curated, stated or humanised name, never by its slug | 2026-09-25 |
 | [0215](0215-a-title-rule-decides-a-role-family-before-the-centroid.md) | A title rule decides a role family before the centroid does | 2026-09-25 |
 | [0216](0216-a-workday-board-is-named-by-its-postings-legal-entities.md) | A Workday Board is named by its postings' legal entities, checked against its own page | 2026-09-25 |
+| [0217](0217-a-board-is-named-by-what-its-postings-agree-on.md) | A Board is named by what its pages or postings agree on, where no Board page names it | 2026-09-25 |
 | [0218](0218-an-inactive-trakstar-account-is-gone.md) | An inactive Trakstar account is gone | 2026-09-25 |
 | [0219](0219-a-boards-row-is-elected-on-evidence-its-key-is-kept.md) | A Board's row is elected on evidence, and its key is kept | 2026-09-25 |
 

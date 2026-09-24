@@ -57,6 +57,41 @@ def test_company_reads_the_second_title_tag_via_company_name_patterns():
     assert enterprise._company(shell, "drhorton") == "D.R. Horton"
 
 
+@pytest.mark.parametrize(
+    ("alt", "slug"),
+    [
+        # aa010 and elsewedyelectric: the alt text is the word itself
+        ("logo", "https://aa010.taleo.net/careersection/swd_external"),
+        # hdr: what is left is the tenant id, lowercase
+        ("hdr logo", "https://hdr.taleo.net/careersection/austin_tx"),
+    ],
+)
+def test_a_logo_alt_that_names_no_company_is_refused(alt, slug):
+    """Both served as the company on 2026-09-24 ("logo" on 3 Boards, 39 rows; "hdr", 259)."""
+    shell = (
+        f'<title>Job Search</title><title>Support</title><img alt="{alt}" src="x.png">'
+    )
+    assert enterprise._company(shell, slug) is None
+
+
+@pytest.mark.parametrize(
+    ("second_title", "expected"),
+    [
+        ("Job Search | HDR", "HDR"),
+        ("Job Search - Agnico Eagle", "Agnico Eagle"),
+        ("Student Jobs Search - Agnico Eagle", "Agnico Eagle"),
+        ("Find a Career - Textron", "Textron"),
+        # unwrapped: still refused, the reason this ATS has no catch-all
+        ("MOXA External Career Section", None),
+        ("BRAC Bank Recruiting", None),
+        ("Job Search", None),
+    ],
+)
+def test_the_section_title_wrappers(second_title, expected):
+    shell = f"<title>Job Search</title><title>{second_title}</title>"
+    assert enterprise._company(shell, "https://x.taleo.net/careersection/2") == expected
+
+
 def test_company_prefers_the_title_over_the_logo_when_both_are_present():
     shell = (
         "<title>Job Search</title><title>Valero - Careers</title>"
