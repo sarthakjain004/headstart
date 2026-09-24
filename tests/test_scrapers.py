@@ -11096,6 +11096,14 @@ _RESOLVE_ROWS = [
         "https://jobs.jobvite.com/barracuda-networks-inc/search",
     ),
     (
+        # The Candidate Experience root, titled with the default site's name.
+        "oracle",
+        "cbha.fa.us2.oraclecloud.com",
+        "Ricoh Careers",
+        "Ricoh",
+        "https://cbha.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/",
+    ),
+    (
         # The portal record's `name`, typed by the tenant — here with a wrapper around it.
         "keka",
         "skylarkdrones",
@@ -11240,6 +11248,11 @@ def test_every_wired_scraper_resolves_its_company(
 #: JSON-LD of one posting page per career site, covered by `tests/test_cornerstone.py`. trakstar
 #: reads its careers page in `fetch_raw` rather than through `board_page`, so the HTML fallback
 #: can reuse the one response (`TrakstarScraper._careers_page`).
+#: successfactors reads the name off the job pages its detail pass already fetched
+#: (`SuccessFactorsScraper._board_company`), covered beside its other tests above. taleo_be
+#: reads its RSS feed's channel title streamed, only as far as the title
+#: (`TaleoBEScraper.resolve_company`), covered by `tests/test_taleo_be.py`. Either may land
+#: before the other; an entry naming an ATS without patterns yet subtracts nothing.
 _NO_BOARD_PAGE = {
     "taleo_enterprise",
     "adp",
@@ -11247,6 +11260,8 @@ _NO_BOARD_PAGE = {
     "workday",
     "cornerstone",
     "trakstar",
+    "successfactors",
+    "taleo_be",
     # These three read the name off a response the scrape already fetches: darwinbox's
     # `companyinfo`, zwayam's config call and zoho's careers page — covered by their own tests.
     "darwinbox",

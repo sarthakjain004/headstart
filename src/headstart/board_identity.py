@@ -138,7 +138,7 @@ def _report_identity_failure(key: str, exc: Exception) -> None:
     """Name a Board that fell back, once, up to :data:`_IDENTITY_REPORT_CAP` distinct Boards.
 
     The fallback key is a *different* identity from the one the rest of the pipeline uses for this
-    Board — `scrapable_boards._dedupe_boards` collapses on it and `index prune` builds its
+    Board — `scrapable_boards._elect` collapses on it and `index prune` builds its
     keep-set from it — so a Board quietly landing here can be scraped under one name and pruned
     under another.
     Worth a line even though nothing is dropped.

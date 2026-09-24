@@ -2,9 +2,10 @@
 
 from pathlib import Path
 
-from headstart import config
+from headstart import config, liveness
 from headstart.config import PARKED_BOARDS
 from headstart.scrapable_boards import ScrapableBoard, is_excluded, load
+from headstart.scrapers.registry import SCRAPERS, company_from_row
 
 
 def _write_ledger(ledger, name, rows):
@@ -55,7 +56,7 @@ def test_load_maps_slug_and_filters(tmp_path):
 def test_parked_board_is_dropped_across_hosts_and_casings(tmp_path):
     """A park must survive every form the ledger carries the same Board in. Accenture sits on
     BOTH `wd3` and `wd103` and in two casings; keyed on one URL the park removes that row and
-    merely promotes another instance's row to be `_dedupe_boards`' survivor, so the Board keeps
+    merely promotes another instance's row to be `_elect`'s survivor, so the Board keeps
     being scraped while the entry looks effective. `board_key` is what collapses them."""
     ledger = tmp_path / "liveness"
     _write_ledger(
@@ -119,7 +120,7 @@ def test_excluded_boards_are_dropped_but_look_alikes_are_kept(tmp_path):
 
 def test_excluded_boards_match_regardless_of_slug_casing(tmp_path):
     """One entry must cover every casing the ledger carries — smartrecruiters lists the same
-    demo Board as both `Dev2` and `dev2`, and the pair survives `_dedupe_boards`."""
+    demo Board as both `Dev2` and `dev2`, and the pair survives `_elect`."""
     ledger = tmp_path / "liveness"
     _write_ledger(
         ledger,
@@ -208,3 +209,146 @@ def test_is_excluded_matches_any_casing_and_nothing_else():
     assert is_excluded("smartrecruiters", "Dev2")
     assert is_excluded("smartrecruiters", "dev2")
     assert not is_excluded("greenhouse", "stage")  # KKR's real Board, not a test tenant
+
+
+# --- electing a Board's representative row (ADR-0219) ---
+# Several ledger rows can name one Board. The verdict is the newest verified row's, the key keeps
+# today's lex-min casing, and the slug comes from the newest live row that carries that key.
+
+
+def test_a_newer_dead_row_takes_the_board_out(tmp_path):
+    """novozymes/novonesis_careers: live on 2026-07-03, dead under another spelling on 07-27, and
+    dead under both when re-probed 2026-09-25. Any-live-row-wins kept scraping it."""
+    ledger = tmp_path / "liveness"
+    _write_ledger(
+        ledger,
+        "workday.csv",
+        [
+            "workday,a,https://novozymes.wd103.myworkdayjobs.com/Novonesis_Careers,live,80,2026-07-03",
+            "workday,b,https://novozymes.wd103.myworkdayjobs.com/novonesis_careers,dead,,2026-07-27",
+        ],
+    )
+    assert load(ledger, min_jobs=0) == []
+
+
+def test_a_dead_row_from_the_same_day_as_a_live_one_keeps_the_board(tmp_path):
+    """The ledger dates a probe to the day, so a same-day `dead` is not newer. Re-probed
+    2026-09-25, all 45 such groups answered live (ADR-0219)."""
+    ledger = tmp_path / "liveness"
+    _write_ledger(
+        ledger,
+        "workday.csv",
+        [
+            "workday,a,https://lego.wd103.myworkdayjobs.com/LEGO_External,live,391,2026-07-03",
+            "workday,b,https://lego.wd3.myworkdayjobs.com/LEGO_External,dead,,2026-07-03",
+        ],
+    )
+    assert [b.slug for b in load(ledger, min_jobs=0)] == [
+        "https://lego.wd103.myworkdayjobs.com/LEGO_External"
+    ]
+
+
+def test_a_newer_unknown_row_never_overrides_a_live_one(tmp_path):
+    """A probe that earned no verdict is no evidence (#650's `*-wdN-*` display rows)."""
+    ledger = tmp_path / "liveness"
+    _write_ledger(
+        ledger,
+        "workday.csv",
+        [
+            "workday,a,https://target.wd5.myworkdayjobs.com/targetcareers,live,900,2026-07-03",
+            "workday,target-wd5-targetcareers,https://target.wd5.myworkdayjobs.com/targetcareers,unknown,,2026-08-28",
+        ],
+    )
+    assert len(load(ledger, min_jobs=0)) == 1
+
+
+def test_the_key_keeps_its_casing_when_a_newer_row_spells_it_otherwise(tmp_path):
+    """The key is the lex-min identity among live rows, the casing every served id carries.
+    Electing the newest row outright would re-key 1,652 Workday Boards (ADR-0219)."""
+    ledger = tmp_path / "liveness"
+    _write_ledger(
+        ledger,
+        "workday.csv",
+        [
+            "workday,a,https://3m.wd1.myworkdayjobs.com/Search,live,500,2026-07-03",
+            "workday,b,https://3m.wd1.myworkdayjobs.com/search,live,510,2026-09-20",
+        ],
+    )
+    (board,) = load(ledger, min_jobs=0)
+    assert board.identity == "workday:3m/Search"
+    assert board.slug == "https://3m.wd1.myworkdayjobs.com/Search"
+
+
+def test_the_slug_comes_from_the_newest_live_row_carrying_the_key(tmp_path):
+    """One site on two data centres: both rows carry the same key, and the newer one's pod is the
+    one fetched, not whichever the ledger lists first."""
+    ledger = tmp_path / "liveness"
+    _write_ledger(
+        ledger,
+        "workday.csv",
+        [
+            "workday,a,https://acronis.wd3.myworkdayjobs.com/acronis_careers,live,17,2026-07-03",
+            "workday,b,https://acronis.wd502.myworkdayjobs.com/acronis_careers,live,17,2026-08-14",
+        ],
+    )
+    (board,) = load(ledger, min_jobs=0)
+    assert board.slug == "https://acronis.wd502.myworkdayjobs.com/acronis_careers"
+    assert board.name == "b"
+
+
+def test_the_hiring_list_elects_the_same_row_as_the_scrapable_list(tmp_path):
+    """`min_jobs` reads the elected row's count, so it cannot promote another row: before,
+    filtering rows first made the curated feed fetch a different pod than the scrape."""
+    ledger = tmp_path / "liveness"
+    _write_ledger(
+        ledger,
+        "workday.csv",
+        [
+            "workday,a,https://eppendorf.wd3.myworkdayjobs.com/starlabcareers,live,4,2026-07-03",
+            "workday,b,https://eppendorf.wd502.myworkdayjobs.com/starlabcareers,live,0,2026-08-14",
+        ],
+    )
+    (scrapable,) = load(ledger, min_jobs=0)
+    assert scrapable.slug == "https://eppendorf.wd502.myworkdayjobs.com/starlabcareers"
+    assert load(ledger, min_jobs=1) == []
+
+
+def test_no_board_in_the_committed_ledger_changes_key():
+    """Against the real ledger: every Scrapable Board carries the lex-min identity among its live
+    rows, the key ADR-0023 elected and the index already uses. A rule that elected the newest row
+    outright re-keys 1,652 Workday Boards, and this is what would catch it."""
+    ledger = Path(__file__).resolve().parents[1] / "data" / "validate" / "liveness"
+    lex_min: dict[str, str] = {}
+    for csv_path in sorted(ledger.glob("*.csv")):
+        if csv_path.stem not in SCRAPERS:
+            continue
+        for v in liveness.load(csv_path).values():
+            if v.status == liveness.LIVE:
+                c = company_from_row(csv_path.stem, v.tenant, v.url)
+                board = ScrapableBoard(ats=c.ats, slug=c.slug, name=c.name)
+                key = board.lowercase_identity
+                lex_min[key] = min(lex_min.get(key, board.identity), board.identity)
+    changed = {
+        b.identity: lex_min[b.lowercase_identity]
+        for b in load(ledger, min_jobs=0)
+        if b.identity != lex_min[b.lowercase_identity]
+    }
+    assert not changed, (
+        f"{len(changed)} Boards re-keyed, e.g. {list(changed.items())[:3]}"
+    )
+
+
+def test_a_same_day_tie_keeps_the_row_the_ledger_lists_first(tmp_path):
+    """A probe date is the only evidence of recency, and a tie carries none. Re-probed 2026-09-25,
+    breaking ties on job count instead moved 51 Boards and picked the pod that answered on 11."""
+    ledger = tmp_path / "liveness"
+    _write_ledger(
+        ledger,
+        "workday.csv",
+        [
+            "workday,a,https://amadeus.wd502.myworkdayjobs.com/jobs,live,124,2026-07-03",
+            "workday,b,https://amadeus.wd3.myworkdayjobs.com/jobs,live,130,2026-07-03",
+        ],
+    )
+    (board,) = load(ledger, min_jobs=0)
+    assert board.slug == "https://amadeus.wd502.myworkdayjobs.com/jobs"

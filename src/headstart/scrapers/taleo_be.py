@@ -24,6 +24,7 @@ from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import parse_qs, urlencode, urljoin, urlsplit, urlunsplit
 
+from headstart import company_name
 from headstart.fetcher import Fetcher
 from headstart.models import Job, html_to_text, is_remote
 from headstart.scrapers.base import (
@@ -31,6 +32,7 @@ from headstart.scrapers.base import (
     DetailLost,
     DetailRequest,
     DetailWithoutDescription,
+    _head_of,
 )
 
 _MAX_PAGES = 1_000
@@ -152,6 +154,31 @@ def _div_close(page: str, start: int) -> re.Match[str] | None:
     # site footer and navigation into the job's description, and a description that is wrong is
     # worse for the embedding than one that is absent — the caller records a cause either way.
     return None
+
+
+#: A ledger row with no name carries the Board key instead, ``ORG:CWS@host/path`` — the form
+#: this ledger writes new rows in — and `looks_like_slug` does not read that shape as one. Not
+#: `company_name.is_identifier`: it also counts a curated name that equals the org code (ICANN,
+#: SEPAQ) as an identifier, and those Boards are named already.
+_BOARD_KEY_NAME = re.compile(r"^[A-Za-z0-9]+:\d+@\S+$")
+#: How much of the RSS feed is read for its channel ``<title>``, which comes first. The feed
+#: carries every posting's description after it, so it is cut here rather than read whole.
+_RSS_HEAD_BYTES = 8 * 1024
+#: ``(host, org)`` -> the name that org's feed states, once per process: a tenant's career sites
+#: all state their org's name (GATEWAYVENT's five, 2026-09-24), so its other Boards need no
+#: request. Only a name is kept; a feed that yields none is asked again by the next Board.
+_ORG_NAMES: dict[tuple[str, str], str] = {}
+
+
+def _rss_url(slug: str) -> str:
+    """The Board's RSS servlet, ``https://{host}/{inst}/ats/servlet/Rss?org=..&cws=..``."""
+    parts = urlsplit(slug)
+    inst = parts.path.strip("/").split("/")[0]
+    query = parse_qs(parts.query)
+    return (
+        f"https://{parts.netloc}/{inst}/ats/servlet/Rss?"
+        f"{urlencode({key: query[key][0] for key in ('org', 'cws') if query.get(key)})}"
+    )
 
 
 def _canonical(url: str) -> str:
@@ -282,6 +309,37 @@ class TaleoBEScraper(BaseScraper):
         # The liveness ledger may disambiguate two same-named career sites with a stable Taleo
         # suffix.  It is a Board identity, not the company name shown to job seekers.
         self.company = re.sub(r" \[Taleo [^]]+\]$", "", self.company)
+
+    def resolve_company(self) -> None:
+        """Name a Board whose ledger row carries no name from its RSS feed's channel title,
+        "{Name} Job Feed" or a localized form of it (`company_name`'s taleo_be patterns).
+
+        Not the career site's page title, which is the tenant's own heading and names no one on
+        most Boards. The feed is read only as far as its title, in one attempt that can never
+        wall the ATS, and every failure leaves ``self.company`` as it was. A posting's own
+        "Company:" field (:meth:`parse`) still outranks the Board's name.
+        """
+        if not (
+            _BOARD_KEY_NAME.match(self.company)
+            or company_name.looks_like_slug(self.company)
+        ):
+            return
+        parts = urlsplit(self.slug)
+        key = (parts.netloc, (parse_qs(parts.query).get("org") or [""])[0])
+        if key in _ORG_NAMES:
+            self.company = _ORG_NAMES[key]
+            return
+        try:
+            response = self._fetch_once(
+                "GET", _rss_url(self.slug), accept="application/rss+xml", stream=True
+            )
+            head = _head_of(response, _RSS_HEAD_BYTES)
+        except Exception:  # noqa: BLE001 - a display name is never worth failing a Board for
+            return
+        name = company_name.from_title(self.ats, company_name.title_of(head), self.slug)
+        if name:
+            _ORG_NAMES[key] = name
+            self.company = name
 
     @staticmethod
     def slug_from(tenant: str, url: str) -> str:

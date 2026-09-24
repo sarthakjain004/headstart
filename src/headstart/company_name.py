@@ -56,6 +56,8 @@ are: ``Careers | {Name}`` (D.R. Horton — note the observed double space around
 Wichita Public Schools USD 259, …). 30 of the 150 sampled Boards' second title tag matched one of
 these four and passed the safety checks below, with zero observed false positives; the rest —
 generic, vendor, unwrapped, or a shape none of the four models — correctly resolve to `None`.
+Two more wrappers came later, from the 43 Boards serving their URL on 2026-09-24 ("Job Search |
+HDR", "Find a Career - Textron"); the census still found no case for a bare catch-all.
 
 **Not titles.** darwinbox, zwayam, keka and bamboohr render their boards client-side, but each
 SPA loads a record that names the tenant: `from_field` reads darwinbox's, zwayam's and bamboohr's,
@@ -236,6 +238,40 @@ PATTERNS: dict[str, tuple[re.Pattern[str], ...]] = {
         re.compile(r"^Jobs\s+at\s+(?P<name>.+)$", re.IGNORECASE),
         re.compile(r"^(?P<name>.+)$"),
     ),
+    # oracle: the Candidate Experience root `/hcmUI/CandidateExperience/`, which redirects to the
+    # tenant's default site and titles it with the site's name. A census of the 796 Boards
+    # serving their host (2026-09-24) found a name wrapped in one of a few prefixes ("Careers at",
+    # "Jobs @", "Job Search |") or followed by a site label ("Career Site", "Candidate Experience
+    # site", "Talent Acquisition", "Recruitment", "Jobs") plus template noise ("Global",
+    # "External", "Minimal", "V2", "_EN"), or else bare ("Allegheny College"). The bare
+    # catch-all is safe here only because `OracleScraper.company_from_page` refuses the generic
+    # titles first; 724 of the 796 resolve (2026-09-25), and 7 more failed only on a transient
+    # TLS error.
+    "oracle": (
+        re.compile(
+            r"^(?:Careers?|Jobs?)\s*(?:@|at|\|)\s*(?P<name>.+?)$", re.IGNORECASE
+        ),
+        re.compile(r"^(?:Working|Job Listings)\s+at\s+(?P<name>.+?)$", re.IGNORECASE),
+        re.compile(r"^Job Search\s*\|\s*(?P<name>.+?)$", re.IGNORECASE),
+        re.compile(
+            r"^(?P<name>.+?)(?:\s*[-|_]\s*|\s+|_)"
+            r"(?:(?:Global|External|Professional|Experienced|Minimal(?:\s+Template)?|Contingent"
+            r"|Corporate|Main)[\s_]+)*"
+            r"(?:Candidate[\s_]+Experience(?:[\s_]+(?:External[\s_]+)?(?:site|page))?"
+            r"|Careers?(?:[\s_]+(?:Site|Sites|Section|Portal|Page|Website|Opportunities"
+            r"|Connection))?"
+            r"|Talent[\s_]+Acquisition(?:[\s_]+(?:Team|Site))?"
+            r"|Recruitment(?:[\s_]+Team)?"
+            r"|Job[\s_]+(?:Openings|Opportunities|Listings)|Jobs"
+            r"|Experience[\s_]+site|Candidate[\s_]+site|Jobs[\s_]+and[\s_]+Careers"
+            r"|Jobs[\s_]+Direct|e-Recruitment[\s_]+System|Contingent[\s_]+Portal"
+            r"|Staff[\s_]+Positions|Human[\s_]+Resources"
+            r"|Employee|Agents|People|Site|Portal|External|All[\s_]+Open[\s_]+Jobs|\(temp\)|NEW|EN|-)"
+            r"(?:(?:\s*-\s*|[\s_]+)(?:Minimal|New|English|EN|V\d+|\d{1,4}))*$",
+            re.IGNORECASE,
+        ),
+        re.compile(r"^(?P<name>.+)$"),
+    ),
     "ripplehire": (re.compile(r"^(?P<name>.+?)\s+Careers\s*\|", re.IGNORECASE),),
     "lever": (re.compile(r"^(?P<name>.+)$"),),
     # pyjamahr: the board page's <title> is the bare company name, with no wrapper at all —
@@ -255,6 +291,21 @@ PATTERNS: dict[str, tuple[re.Pattern[str], ...]] = {
     # before it varies ("Jobs at Reconomy  | Reconomy  Careers"). 38 of the 40 resolve; the two
     # that do not ("elfc", "scandiweb") are titles that are the slug itself.
     "pinpoint": (re.compile(r"^Jobs\s+at\s+(?P<name>.+?)\s*\|", re.IGNORECASE),),
+    # taleo_be: not a page title but its RSS servlet's channel title, "{Name} Job Feed", in the
+    # tenant's language on some ("Egov Select VZW functiefeed", "Feed lavoro PARFOIS", "Carga de
+    # puesto de Wagman, Inc.", "Flux d'offres d'emploi de SEPAQ"). `TaleoBEScraper.
+    # resolve_company` reads it. 30 of 37 Boards sampled 2026-09-24 state one; 5 state "Job Not
+    # Available", which no pattern matches, and 2 feeds loop on redirects.
+    "taleo_be": (
+        re.compile(
+            r"^(?P<name>.+?)\s+(?:Job Feed|functiefeed|fil d'emploi)$", re.IGNORECASE
+        ),
+        re.compile(
+            r"^(?:Feed lavoro|Feed de Cargo de|Carga de puesto de|Flux d'offres d'emploi de)"
+            r"\s+(?P<name>.+)$",
+            re.IGNORECASE,
+        ),
+    ),
     # phenom: `_CAREERS_WRAPPER` cannot be reused, because these titles carry a second clause
     # after a pipe or a colon ("Careers at Zelis | Zelis Jobs", "OmniCable Careers: Play to
     # Win") and its `$`-anchored non-greedy group would swallow the whole tail as the name.
@@ -269,13 +320,21 @@ PATTERNS: dict[str, tuple[re.Pattern[str], ...]] = {
     ),
     # taleo_enterprise: no catch-all here, unlike lever — a bare, unwrapped second title is
     # frequently vendor branding or marketing copy on this ATS (see the module docstring), so
-    # only the four wrappers actually observed to carry a name are matched. The first two are
+    # only wrappers actually observed to carry a name are matched. The first two are
     # this ATS's own (D.R. Horton's title has a double space around the pipe, which `\s*`
     # absorbs; Valero/IEEE end "{Name} - Careers"); the last two are `_CAREERS_WRAPPER`.
     "taleo_enterprise": (
         re.compile(r"^Careers?\s*\|\s*(?P<name>.+?)$", re.IGNORECASE),
         re.compile(r"^(?P<name>.+?)\s*-\s*Careers$", re.IGNORECASE),
         *_CAREERS_WRAPPER,
+        # Two more wrappers the 43 Boards serving their URL showed on 2026-09-24: "Job Search |
+        # HDR", "Student Jobs Search - Agnico Eagle", "Find a Career - Textron". Still no bare
+        # catch-all: the same census served "BRAC Bank Recruiting" and "MOXA External Career
+        # Section" unwrapped, which it would take as names.
+        re.compile(
+            r"^(?:Student\s+)?Jobs?\s+Search\s*[-|]\s*(?P<name>.+?)$", re.IGNORECASE
+        ),
+        re.compile(r"^Find a Career\s*-\s*(?P<name>.+?)$", re.IGNORECASE),
     ),
     # workday: not a title. `workday_company_name.board_name` reads a name out of the postings'
     # `hiringOrganization` values and the board page's og tags, then passes it here for the
@@ -385,6 +444,8 @@ _VENDOR_ALIASES: dict[str, frozenset[str]] = {
     "jibe": frozenset({"jibe", "jibeapply", "icims"}),
     "jobvite": frozenset({"jobvite"}),
     "keka": frozenset({"keka"}),
+    # Empty on purpose: Oracle hires on its own Recruiting Cloud (`eeho.fa.us2`, title "Oracle").
+    "oracle": frozenset(),
     "lever": frozenset({"lever"}),
     "ripplehire": frozenset({"ripplehire"}),
     # No vendor-branded gem board was observed in the 60-board sample — kept as the same
@@ -407,6 +468,8 @@ _VENDOR_ALIASES: dict[str, frozenset[str]] = {
     # matching any of the four shapes. Kept as a precaution: a themed board could plausibly
     # still leave the vendor's own name in a wrapper this ATS *does* match.
     "taleo_enterprise": frozenset({"taleo", "oracle", "oracletaleo"}),
+    # The same precaution as taleo_enterprise's.
+    "taleo_be": frozenset({"taleo", "oracle", "oracletaleo"}),
     # Empty on purpose, like adp_recruiting's: the name comes from a posting field, not a page
     # that can fall back to the vendor's branding, and Workday hires on its own platform
     # (`workday.wd5.myworkdayjobs.com/Workday`).

@@ -339,3 +339,102 @@ def test_every_detail_request_rides_the_thread_path_with_the_default_headers(
     assert detail_request.url.endswith("viewRequisition?org=ICANN&cws=37&rid=1")
     assert detail_request.kwargs["headers"] == dict(DEFAULT_REQUEST_HEADERS)
     assert detail_request.kwargs["timeout"] == 30
+
+
+# --- the Board's company name ---------------------------------------------------------------
+
+BOARD_KEY = "G94W9A:37@lde.tbe.taleo.net/lde01"
+KEYED_URL = (
+    "https://lde.tbe.taleo.net/lde01/ats/careers/v2/searchResults?org=G94W9A&cws=37"
+)
+
+
+class _Feed(FakeResponse):
+    """An RSS feed read in chunks; records how many it was asked for."""
+
+    def __init__(self, text: str, status_code: int = 200) -> None:
+        super().__init__(status_code, text)
+        self.chunks_read = 0
+
+    def iter_content(self):
+        for start in range(0, len(self.content), 1024):
+            self.chunks_read += 1
+            yield self.content[start : start + 1024]
+
+
+def _feed_board(feed: _Feed, url: str = KEYED_URL, company: str = BOARD_KEY):
+    seen: list[str] = []
+
+    def route(method, fetched, kwargs):
+        seen.append(fetched)
+        return feed
+
+    return TaleoBEScraper(url, company, fetcher=FakeFetcher(route)), seen
+
+
+def _rss(title: str, items: int = 0) -> str:
+    item = (
+        "<item><title>Engineer</title><description>"
+        + "x" * 2000
+        + "</description></item>"
+    )
+    return f"<rss><channel><title>{title}</title>{item * items}</channel></rss>"
+
+
+@pytest.fixture(autouse=True)
+def _no_cached_names(monkeypatch):
+    monkeypatch.setattr("headstart.scrapers.taleo_be._ORG_NAMES", {})
+
+
+@pytest.mark.parametrize(
+    ("channel_title", "expected"),
+    [
+        # channel titles live 2026-09-24
+        ("Nektar Therapeutics Job Feed", "Nektar Therapeutics"),
+        ("Egov Select VZW functiefeed", "Egov Select VZW"),
+        ("Feed lavoro PARFOIS", "PARFOIS"),
+        ("Feed de Cargo de PARFOIS", "PARFOIS"),
+        ("Carga de puesto de Wagman, Inc.", "Wagman, Inc."),
+        (
+            "Flux d&apos;offres d&apos;emploi de Arobas Personnel Inc.",
+            "Arobas Personnel Inc.",
+        ),
+        ("Defence Construction Canada fil d'emploi", "Defence Construction Canada"),
+        ("Job Not Available", BOARD_KEY),
+    ],
+)
+def test_an_unnamed_board_is_named_by_its_rss_channel_title(channel_title, expected):
+    scraper, seen = _feed_board(_Feed(_rss(channel_title)))
+    scraper.resolve_company()
+    assert scraper.company == expected
+    assert seen == ["https://lde.tbe.taleo.net/lde01/ats/servlet/Rss?org=G94W9A&cws=37"]
+
+
+def test_the_feed_is_read_only_as_far_as_its_title():
+    feed = _Feed(_rss("Nektar Therapeutics Job Feed", items=40))
+    scraper, _ = _feed_board(feed)
+    scraper.resolve_company()
+    assert scraper.company == "Nektar Therapeutics"
+    assert feed.chunks_read == 8  # 8 KB of an ~80 KB feed
+
+
+def test_a_named_board_makes_no_request():
+    scraper, seen = _feed_board(_Feed(_rss("Other Job Feed")), company="ICANN")
+    scraper.resolve_company()
+    assert scraper.company == "ICANN" and seen == []
+
+
+def test_an_orgs_other_boards_reuse_its_name():
+    first, _ = _feed_board(_Feed(_rss("Three Saints Bay, LLC Job Feed")))
+    first.resolve_company()
+    second, seen = _feed_board(
+        _Feed(_rss("unused")), url=KEYED_URL.replace("cws=37", "cws=46")
+    )
+    second.resolve_company()
+    assert second.company == "Three Saints Bay, LLC" and seen == []
+
+
+def test_a_failed_feed_leaves_the_board_key():
+    scraper, _ = _feed_board(_Feed("", status_code=404))
+    scraper.resolve_company()
+    assert scraper.company == BOARD_KEY

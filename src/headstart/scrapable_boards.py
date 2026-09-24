@@ -2,21 +2,22 @@
 (ADR-0191).
 
 "Is Board X scraped?" has one answer and it lives here. :func:`load` reads the liveness ledger
-(ADR-0012) and applies every reason a live row is not scraped, in the order the answer depends on:
+(ADR-0012) and applies every reason a Board is not scraped, in the order the answer depends on:
 
 1. an ATS with no registered scraper (warned) or in ``registry.DISABLED_ATS``;
-2. a row not ``live``, or under ``min_jobs``;
-3. a vendor test Board in ``config.EXCLUDED_BOARDS`` (:func:`is_excluded`, on the lowercased
+2. a vendor test Board in ``config.EXCLUDED_BOARDS`` (:func:`is_excluded`, on the lowercased
    ``ats:slug``);
-4. a Board buried as another's duplicate in the alias ledger (ADR-0111, on the lowercased slug);
-5. the ADR-0023 dedupe: rows naming one Board collapse to the lexicographically-smallest
-   identity, compared case-insensitively;
-6. a Board in ``config.PARKED_BOARDS``, on the lowercased identity the dedupe collapsed on.
+3. a Board buried as another's duplicate in the alias ledger (ADR-0111, on the lowercased slug);
+4. the election (:func:`_elect`, ADR-0023 as amended by ADR-0219): rows naming one Board, compared
+   case-insensitively, collapse to one; a Board with a ``dead`` row newer than its newest ``live`` row drops out;
+5. under ``min_jobs``, on the elected row's count;
+6. a Board in ``config.PARKED_BOARDS``, on the lowercased identity the election collapsed on.
 
-Steps 3 and 4 run before the dedupe and step 6 after it, and the difference matters: the first two
-are keyed on the slug, so they must see every spelling of a Board, and the park is keyed on the
-identity, so it must see the one survivor. Moving the park before the dedupe would drop one row and
-promote another spelling of the same Board to survivor.
+Steps 2 and 3 run before the election and step 6 after it, and the difference matters: the first
+two are keyed on the slug, so they must see every spelling of a Board, and the park is keyed on the
+identity, so it must see the one survivor. Moving the park before the election would drop one row
+and promote another spelling of the same Board to survivor. Step 5 runs after the election for the
+same reason: filtering rows first let the Hiring list elect a different row than the Scrapable one.
 
 Each :class:`ScrapableBoard` carries its identity (``board_identity``, ADR-0155's lenient form)
 and that identity lowercased, both computed when the Board is built. Before this module every
@@ -24,7 +25,7 @@ consumer re-derived them: ``scrape_plan`` called ``board_identity`` about eight 
 across the quarantine, the value gate, ``pick_boards`` and the shard sort.
 
 Two dedupes run here and they catch different things: the alias ledger is *semantic* (one company,
-two hostnames, no shared key to collapse on) and :func:`_dedupe_boards` is *syntactic* (one
+two hostnames, no shared key to collapse on) and :func:`_elect` is *syntactic* (one
 hostname, two spellings). Neither subsumes the other.
 """
 
@@ -34,7 +35,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from headstart import board_aliases, config, liveness, log
-from headstart.board_identity import board_identity, lower_key
+from headstart.board_identity import board_identity, board_key, lower_key
 from headstart.config import CompanyRef
 from headstart.scrapers.registry import DISABLED_ATS, SCRAPERS, company_from_row
 
@@ -64,6 +65,15 @@ class ScrapableBoard(CompanyRef):
         object.__setattr__(self, "lowercase_identity", lower_key(identity))
 
 
+#: One ledger row read as the Board it names: the unit :func:`_elect` groups and chooses among.
+Row = tuple[ScrapableBoard, liveness.Verdict]
+
+
+def _verdict_of(row: Row) -> liveness.Verdict:
+    _board, verdict = row
+    return verdict
+
+
 def is_excluded(ats: str, slug: str) -> bool:
     """Is this a vendor test Board in ``config.EXCLUDED_BOARDS``?
 
@@ -75,7 +85,7 @@ def is_excluded(ats: str, slug: str) -> bool:
 
 def load(ledger_dir: str | Path, *, min_jobs: int = 1) -> list[ScrapableBoard]:
     """The Scrapable Boards in the liveness ledger at ``ledger_dir`` (the module docstring has the
-    rules), keeping only those whose last probe counted at least ``min_jobs`` postings.
+    rules), keeping only those whose elected row last counted at least ``min_jobs`` postings.
 
     ``min_jobs=0`` is CONTEXT.md's **Scrapable Board** count and what the pipeline reads;
     the default ``min_jobs=1`` is the **Hiring Board** subset. Each scraper turns a ledger row's
@@ -84,7 +94,7 @@ def load(ledger_dir: str | Path, *, min_jobs: int = 1) -> list[ScrapableBoard]:
     ``config/companies.toml`` remains the small curated seed.
     """
     ledger_dir = Path(ledger_dir)
-    boards: list[ScrapableBoard] = []
+    rows: list[Row] = []
     for csv_path in sorted(ledger_dir.glob("*.csv")):
         scraper = SCRAPERS.get(csv_path.stem)
         if scraper is None:
@@ -100,45 +110,87 @@ def load(ledger_dir: str | Path, *, min_jobs: int = 1) -> list[ScrapableBoard]:
         if scraper.ats in DISABLED_ATS:
             continue  # deliberate (registry.DISABLED_ATS), so not worth a line
         # Boards this ATS publishes twice, buried in favour of their canonical (ADR-0111). Dropped
-        # here beside EXCLUDED_BOARDS because both are keyed on the slug; the *syntactic* dedupe
+        # here beside EXCLUDED_BOARDS because both are keyed on the slug; the *syntactic* election
         # below cannot do it, since two different hostnames share no `board_key` to collapse on.
         aliases = board_aliases.load_for(ledger_dir, scraper.ats)
         for verdict in liveness.load(csv_path).values():
-            if verdict.status != liveness.LIVE or (verdict.jobs or 0) < min_jobs:
-                continue
             company = company_from_row(scraper.ats, verdict.tenant, verdict.url)
             if (
                 is_excluded(company.ats, company.slug)
                 or company.slug.lower() in aliases
             ):
                 continue
-            boards.append(
-                ScrapableBoard(ats=company.ats, slug=company.slug, name=company.name)
-            )
-    return _drop_parked(_dedupe_boards(boards))
+            board = _board_of_row(company, verdict)
+            if board is not None:
+                rows.append((board, verdict))
+    elected = [
+        board for board, verdict in _elect(rows) if (verdict.jobs or 0) >= min_jobs
+    ]
+    return _drop_parked(elected)
 
 
 def _drop_parked(boards: list[ScrapableBoard]) -> list[ScrapableBoard]:
-    """Drop ``config.PARKED_BOARDS``, matched on the same identity :func:`_dedupe_boards`
-    collapses on so the two can never disagree about which Board an entry names."""
+    """Drop ``config.PARKED_BOARDS``, matched on the same identity :func:`_elect` collapses on
+    so the two can never disagree about which Board an entry names."""
     return [b for b in boards if b.lowercase_identity not in config.PARKED_BOARDS]
 
 
-def _dedupe_boards(boards: list[ScrapableBoard]) -> list[ScrapableBoard]:
-    """Collapse Boards that map to the same canonical key to one entry (ADR-0023).
+def _board_of_row(
+    company: CompanyRef, verdict: liveness.Verdict
+) -> ScrapableBoard | None:
+    """The Board a ledger row names, or None for a row that is not ``live`` and whose slug its
+    scraper cannot parse.
 
-    The ledger holds duplicate rows for one Board — differing only by slug casing (Workday sites
-    ``.../External`` vs ``.../external``) or by an equivalent tenant/url form that resolves to the
-    same ``board_key``. Left in, each variant is scraped and indexed separately, so one job lands in
-    the index two or three times. Keep the lexicographically-smallest ``board_key`` per canonical
-    (lowercased) key — this picks the Board that is actually scraped, and ``index_plan.plan_prune``
-    keeps the index row carrying *that* casing, so scrape and index agree. (Until 2026-08-11 the
-    prune instead kept the lex-min casing *present in the index*, which is a different population —
-    it includes casings that left the ledger — and the two disagreed permanently: ADR-0023's
-    amendment.)"""
-    best: dict[str, ScrapableBoard] = {}
-    for board in boards:
-        current = best.get(board.lowercase_identity)
-        if current is None or board.identity < current.identity:
-            best[board.lowercase_identity] = board
-    return list(best.values())
+    Every row takes part in the election, not only the live ones, because a newer ``dead`` row is
+    what takes a Board out. A live row that will not parse keeps ADR-0155's fallback identity, as
+    before. A dead or unknown one is skipped: it names no Board, so it cannot overrule one, and
+    Workday's ledger holds hundreds of dead rows with no url, each of which would otherwise reach
+    the fallback's warning on every load."""
+    if verdict.status != liveness.LIVE:
+        try:
+            board_key(company)  # only asks whether the slug parses
+        except Exception:  # noqa: BLE001 - an unparseable non-live row names no Board
+            return None
+    return ScrapableBoard(ats=company.ats, slug=company.slug, name=company.name)
+
+
+def _elect(
+    rows: list[Row],
+) -> list[Row]:
+    """One representative row per Board, for the Boards whose newest verdict is live (ADR-0219,
+    amending ADR-0023).
+
+    The ledger holds several rows for one Board: casing variants (Workday ``.../External`` vs
+    ``.../external``), a display slug beside a careers URL, or one site on two data centres. They
+    group on the lowercased identity, and three questions are answered separately:
+
+    - **Is the Board scraped?** Only if no ``dead`` row is newer than its newest ``live`` row.
+      ``unknown`` rows never count: a probe that earned no verdict is no evidence. A ``dead`` row
+      on the *same* day as a ``live`` one does not take the Board out: re-probed 2026-09-25, all
+      45 such groups answered live.
+    - **Under which key?** The lexicographically-smallest identity among its live rows, the rule
+      ADR-0023 has always used. It is the casing every served id already carries, so changing it
+      would re-key them.
+    - **From which row?** The newest live row carrying that key, and on a same-day tie the one
+      the ledger lists first, as before: a probe date is the only evidence of recency. Its slug
+      is what the scraper fetches and its job count is what ``min_jobs`` reads, so the Scrapable
+      and the Hiring lists elect the same row.
+    """
+    groups: dict[str, list[Row]] = {}
+    for board, verdict in rows:
+        groups.setdefault(board.lowercase_identity, []).append((board, verdict))
+    elected = []
+    for group in groups.values():
+        live = [(b, v) for b, v in group if v.status == liveness.LIVE]
+        if not live:
+            continue
+        newest_live = max(v.checked_at for _, v in live)
+        if any(
+            v.status == liveness.DEAD and v.checked_at > newest_live for _, v in group
+        ):
+            continue
+        key = min(b.identity for b, _ in live)
+        carriers = [(b, v) for b, v in live if b.identity == key]
+        # `max` keeps the first of equal dates, and `rows` is in ledger order.
+        elected.append(max(carriers, key=lambda row: _verdict_of(row).checked_at))
+    return elected

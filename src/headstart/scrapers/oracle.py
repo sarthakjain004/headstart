@@ -40,8 +40,10 @@ not include the key. Hence the per-Job detail pass and ``has_detail_pass``.
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
+from headstart import company_name
 from headstart.fetcher import Fetcher
 from headstart.models import Job, host_of, html_to_text, is_remote, requisition_of
 from headstart.scrapers.base import BaseScraper, DetailLost, DetailRequest
@@ -76,6 +78,28 @@ _DETAIL_WORKERS = 16
 #: is why the label is not consulted at all.
 _REMOTE_CODE = "ORA_REMOTE"
 _ON_SITE_CODE = "ORA_ON_SITE"
+
+#: A Candidate Experience title that names a page, not an employer — whole, before any pattern
+#: runs, and again after one strips a wrapper. Each was a title of one or more of the 796 Boards
+#: serving their host on 2026-09-24; "Candidate Experience site" alone was 36 of them.
+_PAGE_TITLE = re.compile(
+    r"^(?:candidate experience site|career site|global|student|all jobs|home page"
+    r"|page not found|none|external site|talent acquisition|hr|enterprise wide|join"
+    r"|global careers?|site kandidaatervaring|llp)$",
+    re.IGNORECASE,
+)
+#: Template words still in a name once its wrapper came off ("NemoursCareerSite", "Jobs onsemi",
+#: "Hill Minimal 112022", "UW Candidate Experience with Application Error Message", "Lazard Career
+#: Confidential", "Explore RH Careers"). Refused rather than trimmed: a doubtful name falls to the
+#: curated map, where a wrong one would be served.
+_LEFTOVER = re.compile(
+    r"career\s*site|candidate experience|minimal|^jobs\b|\bjobs$|error|confidential"
+    r"|^explore\b",
+    re.IGNORECASE,
+)
+#: The template writes the site name into ``<title>`` as a JavaScript string: ``\'``, ``\/`` and
+#: ``\uXXXX`` arrive literally ("Texas Children\'s Careers").
+_JS_UNICODE = re.compile(r"\\u([0-9A-Fa-f]{4})")
 
 
 def is_pod_host(slug: str) -> bool:
@@ -166,6 +190,27 @@ class OracleScraper(BaseScraper):
         # the ledger has no such entry and `scrapable_boards.load` can never build one. Guarding
         # it here would be error handling for a case that cannot arrive.
         return host_of(url) or tenant.strip().lower()
+
+    def board_page(self) -> str:
+        """The Candidate Experience root, which redirects to the tenant's default site and titles
+        it with the site's name. One GET per Board; a name is the one thing no listing or detail
+        payload states — ``LegalEmployer`` was null on all 108 detail payloads read from 40
+        Boards on 2026-09-25."""
+        return f"https://{self.slug}/hcmUI/CandidateExperience/"
+
+    def company_from_page(self, page: str | None) -> str | None:
+        """The site's name, JavaScript-unescaped, unless the title or what the wrapper left is
+        a page label (:data:`_PAGE_TITLE`, :data:`_LEFTOVER`)."""
+        title = company_name.title_of(page)
+        if title:
+            title = _JS_UNICODE.sub(lambda m: chr(int(m.group(1), 16)), title)
+            title = title.replace("\\'", "'").replace("\\/", "/")
+        if not title or _PAGE_TITLE.match(title):
+            return None
+        name = company_name.from_title(self.ats, title, self.slug)
+        if name and (_PAGE_TITLE.match(name) or _LEFTOVER.search(name)):
+            return None
+        return name
 
     def url(self) -> str:
         # No `siteNumber`: it filters the Board down to one site, and omitting it returns the
