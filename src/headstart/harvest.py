@@ -325,7 +325,13 @@ def scrape_all(
             # the try, so a Board that raised records a 0 indistinguishable from a Board that was
             # read cleanly and found empty. ADR-0145's value-gate veto turns that difference into
             # a 14-day exclusion, so the ledger has to carry it.
-            writer.record_cost(cost_key[key], seconds, n_fresh, errored=key in errors)
+            # ADR-0209: a Board whose Detail pass stalled spent that time waiting on an origin that
+            # landed nothing. It is not what the Board costs, and recording it prices a healthy
+            # Board out through the value gate for 14 days, so its previous row stands.
+            if not observations.get(key, {}).get("detail_stalled"):
+                writer.record_cost(
+                    cost_key[key], seconds, n_fresh, errored=key in errors
+                )
             if on_board is not None:
                 on_board(key, n_fresh, errors.get(key), seconds, truncated.get(key))
             if on_observation is not None:
