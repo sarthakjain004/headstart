@@ -59,9 +59,7 @@ _R = TypeVar("_R")
 #: shortfall through the unconditional :meth:`BaseScraper.mark_truncated`. That is a measured scope
 #: boundary, not an oversight — neither has had an excluded Board, so the gate would never fire for
 #: them. Convert them when a Board of theirs is actually observed coming back marginally short, as
-#: `icims` and `smartrecruiters` were on 2026-09-24 (runs `35971969417`..`35998606646`:
-#: `icims:securitycareers-alliedbarton` 1/9199 pages unreadable, `smartrecruiters:accorhotel`
-#: 6378 of 6379 read) and were converted then.
+#: `icims` and `smartrecruiters` were (ADR-0121's 2026-09-25 amendment).
 #:
 #: ADR-0053 shipped before ADR-0083 and has no tolerance: a Board one page short of complete
 #: leaves the eviction scope entirely, and that exclusion has **no drain**, so a Board short on

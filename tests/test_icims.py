@@ -412,14 +412,10 @@ def test_fetch_raw_reads_every_listed_page_and_names_each_loss(
 @pytest.mark.parametrize(
     ("lost", "authoritative"),
     [
-        (
-            1,
-            True,
-        ),  # 199/200 = 99.5%: the sitemap's own count measures it, ADR-0083 absorbs it
-        (
-            3,
-            False,
-        ),  # 197/200 = 98.5%: below MIN_AUTHORITATIVE_SHARE, the Board still leaves scope
+        # 199/200 = 99.5%: the sitemap's own count measures it, ADR-0083 absorbs it
+        pytest.param(1, True, id="99.5%-stays-authoritative"),
+        # 197/200 = 98.5%: below MIN_AUTHORITATIVE_SHARE, the Board still leaves scope
+        pytest.param(3, False, id="98.5%-truncates"),
     ],
 )
 def test_a_measured_detail_shortfall_is_tolerated_only_when_negligible(

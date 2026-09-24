@@ -10,10 +10,10 @@ can cost a shard on its first, uncosted run — the run ADR-0064's tech-per-minu
 see, because it only judges a board that already has a measurement (ADR-0077) — but its
 enforcement is commented out below for the initial rollout: shipping uncapped on purpose, to
 measure real cost/impact across a few pipeline runs before deciding a cap from data rather
-than from #202's projection a second time (#227). Trivially reversible — restore the two
+than from #202's projection a second time (#227). Trivially reversible — restore the three
 commented-out conditions in `fetch_raw` (the loop's cap check, and the cap-naming branch of
-its truncation message) to re-enable the 50-page cap — and route a capped read to the
-unconditional `mark_truncated`, since a cap is not a negligible shortfall (ADR-0121).
+its truncation message, with its `mark_truncated` branch for a capped read) to re-enable the
+50-page cap.
 
 The postings list has no description; a second pass fetches each posting's detail
 (GET .../postings/{id} -> jobAd.sections.jobDescription.text) in a bounded thread pool to
@@ -164,9 +164,9 @@ class SmartRecruitersScraper(BaseScraper):
         # loop, so naming it would mislabel a genuine short read as a cap hit — `cap_note` below
         # is `""` rather than the commented-out call above until the cap is re-enabled.
         # Against that exact total the shortfall is measured, so a negligible one is left to
-        # ADR-0083's grace period (ADR-0121) — measured 2026-09-24, `accorhotel` lost its eviction
-        # scope over 6378 of 6379. A cap hit is a hard cap, not noise: re-enabling the cap must
-        # also send `capped` reads to the unconditional `self.mark_truncated(why)`.
+        # ADR-0083's grace period (ADR-0121). A cap hit is a hard cap, not noise, so the third
+        # line to restore with the cap is its unconditional branch, ahead of the call below:
+        #     if capped: self.mark_truncated(why)
         total = data.get("totalFound") or 0
         cap_note = ""
         if total > len(postings):
