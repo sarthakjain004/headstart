@@ -4,6 +4,10 @@ Everything here rests on measurements taken live on 2026-09-07 against 380 board
 and the sweep scripts are in `experiment/icims-scraper/`. Three of those measurements shape the
 module more than the rest, and each is a trap this code is arranged to make hard to reintroduce.
 
+**The company name** is the only thing read off another page: the listing's title, "Job Listings
+at {Name}", one GET per Board (:meth:`ICIMSScraper.board_page`), else the ``hiringOrganization``
+the job pages already fetched agree on (ADR-0217).
+
 **One listing surface, not a cascade.** iCIMS boards expose two: `/sitemap.xml`, and the paginated
 `/jobs/search?ss=1&in_iframe=1&pr=N` HTML. Only the sitemap is used. On 380 boards, `robots.txt`
 predicted sitemap availability perfectly — every board declaring a `Sitemap:` line served one
@@ -51,7 +55,7 @@ import re
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
-from headstart import log
+from headstart import company_name, log
 from headstart.models import Job, host_of, html_to_text, is_remote
 from headstart.scrapers.base import USER_AGENT, BaseScraper, DetailLost, DetailRequest
 from headstart.scrapers.job_posting_jsonld import (
@@ -79,7 +83,29 @@ _LD_KEEP = frozenset(
         "baseSalary",
         "jobLocationType",
         "datePosted",
+        "hiringOrganization",
     }
+)
+
+#: What an unset JSON-LD field holds on this ATS (`job_location_text`'s placeholder too). As a
+#: `hiringOrganization` name it states nothing, so it counts on neither side of the agreement.
+_UNSET = "UNAVAILABLE"
+
+#: How much of a Board's postings must state one `hiringOrganization` before it names the Board.
+#: Measured over 52 Boards 2026-09-24: 42 stated one name on every sampled posting, 4 varied
+#: (subsidiaries — `careers-emcorgroup`, `careers-commonspirit`) and 6 stated only `UNAVAILABLE`.
+#: The census of 2026-09-25 (six pages from each of the 1,308 Boards serving a host) has a gap
+#: to put the floor in: of 1,168 Boards with two or more pages stating a name, 1,118 agreed on
+#: every page and the rest on at most five of six (83%).
+_AGREEMENT = 0.9
+
+#: A name naming an office or a hiring team rather than the employer — "Headquarters" (alone, on
+#: `careers-kdsda`), "Abile Headquarters", "RS&H Talent Acquisition", "T-Solutions Recruiting
+#: Team", "MACNY's Job Board", all served on 2026-09-25. Refused rather than trimmed, so a doubtful
+#: title falls through to the pages' `hiringOrganization` ("Abile Group, Inc.") or the curated map.
+_TEAM_LABEL = re.compile(
+    r"\b(?:headquarters|talent acquisition|recruiting team|career search agents|job board)\b",
+    re.IGNORECASE,
 )
 
 #: A fabricated `datePosted` carries sub-second milliseconds; a real one is midnight- or
@@ -139,6 +165,8 @@ class ICIMSScraper(BaseScraper):
     # The trailing anchor matters: an `in_iframe=1` link would be a serving bug, not a variant.
     url_shape = r"https://[^/]+/jobs/\d+/[^/]+/job$"
     has_detail_pass = True  # every indexable field lives on the job page (ADR-0050)
+    #: The name this Board's job pages agree on, read by `fetch_raw` (:func:`_agreed_company`).
+    _pages_company: str | None = None
     detail_workers = _DETAIL_WORKERS
     detail_streams = _DETAIL_WORKERS
 
@@ -191,7 +219,7 @@ class ICIMSScraper(BaseScraper):
                 len(listed),
                 f"{lost}/{len(listed)} job pages unreadable — those Jobs are listed but unbuilt",
             )
-        return [
+        items = [
             {
                 "id": job_id,
                 "url": url,
@@ -200,6 +228,28 @@ class ICIMSScraper(BaseScraper):
             }
             for job_id, url, lastmod in listed
         ]
+        self._pages_company = _agreed_company(items)
+        return items
+
+    def board_page(self) -> str:
+        """The listing page, titled "Job Listings at {Name}" (the name iCIMS's own template
+        writes). The brand, which the user chose before the legal name the job pages' JSON-LD
+        states ("UWM" against "United Wholesale Mortgage"); :meth:`resolve_company` falls back
+        to that where the title yields nothing. One GET per Board."""
+        return f"https://{self.slug}/jobs/search?ss=1&in_iframe=1"
+
+    def company_from_page(self, page: str | None) -> str | None:
+        """The listing title's name, unless it names an office or team (:data:`_TEAM_LABEL`)."""
+        name = super().company_from_page(page)
+        return None if name and _TEAM_LABEL.search(name) else name
+
+    def resolve_company(self) -> None:
+        """The listing title's name, else the ``hiringOrganization`` the job pages agree on
+        (ADR-0217) — both stated during the fetch, before the Board's company is settled. The
+        second costs nothing: `fetch_raw` read it off the pages its Detail pass already fetched."""
+        super().resolve_company()
+        if company_name.looks_like_slug(self.company) and self._pages_company:
+            self.company = self._pages_company
 
     def detail_request(self, row: tuple[str, str, str | None]) -> DetailRequest:
         return DetailRequest(_detail_url(row[1]), headers={"User-Agent": USER_AGENT})
@@ -331,7 +381,29 @@ def _ld_fields(page: str) -> dict[str, Any] | None:
         "department": kept.get("occupationalCategory"),
         "salary": _salary(kept.get("baseSalary")),
         "posted_at": _stated_date(kept.get("datePosted")),
+        "company": _org_name(kept.get("hiringOrganization")),
     }
+
+
+def _agreed_company(items: list[dict[str, Any]]) -> str | None:
+    """The ``hiringOrganization`` name :data:`_AGREEMENT` of these job pages state, through the
+    `company_name` guards, or None. `UNAVAILABLE` states nothing and counts on neither side."""
+    agreed = company_name.agreed_name(
+        (
+            name
+            for name in ((item.get("fields") or {}).get("company") for item in items)
+            if (name or "").upper() != _UNSET
+        ),
+        _AGREEMENT,
+    )
+    name = company_name.from_field("icims", agreed)
+    return None if name and _TEAM_LABEL.search(name) else name
+
+
+def _org_name(node: Any) -> str | None:
+    """``hiringOrganization.name``, stripped, or None where the node states none."""
+    name = node.get("name") if isinstance(node, dict) else None
+    return (name.strip() or None) if isinstance(name, str) else None
 
 
 def _classic_fields(page: str) -> dict[str, Any] | None:

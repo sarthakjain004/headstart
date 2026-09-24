@@ -128,10 +128,42 @@ def test_employment_type_is_relabelled():
     assert jobs["3713"].employment_type is None
 
 
-def test_company_is_never_the_rows_hiring_organization():
-    """`hiring_organization` varies within 68 of 277 Boards (subsidiaries, brands)."""
+def test_a_board_is_named_by_the_hiring_organization_its_rows_agree_on():
+    rows = [{**_row("3713"), "slug": str(i)} for i in range(9)]
+    rows.append({**_row("3713"), "slug": "9", "hiring_organization": "RM plc"})
     assert _row("3713")["hiring_organization"] == "RM Education Limited"
-    assert _jobs(slug="rmeducation")["3713"].company == "rmeducation"
+    assert JibeScraper("rmeducation")._agreed_company(rows) == "RM Education Limited"
+
+
+def test_icims_hiring_for_itself_is_named():
+    """`customer0` is iCIMS's own client: its rows all state "iCIMS Talent Acquisition" (20 of 20,
+    2026-09-24) and its title "Careers | ICIMS Careers" is refused. A vendor hiring on its own
+    platform is a real employer, the coordinator's call; the curated map can shorten it."""
+    rows = [{**_row("3713"), "hiring_organization": "iCIMS Talent Acquisition"}]
+    assert JibeScraper("customer0")._agreed_company(rows) == "iCIMS Talent Acquisition"
+
+
+def test_rows_that_disagree_state_no_name():
+    """`hiring_organization` varies within 68 of 277 Boards (subsidiaries, brands): the fixture's
+    ten rows come from nine clients, so no name reaches the agreement."""
+    assert JibeScraper("rmeducation")._agreed_company(_rows()) is None
+
+
+def test_a_lowercase_brand_the_rows_state_is_a_name():
+    """`flydubai` states its brand lowercase: a field is what the company typed (ADR-0212)."""
+    rows = [{**_row("3713"), "hiring_organization": "flydubai"}]
+    assert JibeScraper("flydubai")._agreed_company(rows) == "flydubai"
+
+
+def test_a_title_that_reads_as_an_identifier_is_not_a_name(clock):
+    """`primowater` titles its page "primobrands", another client's id."""
+    routes = _routes([_page([_row("3713")], 1)], slug="primowater")
+    routes[("primowater.jibeapply.com", "/jobs")] = [
+        (200, "<title>primobrands</title>")
+    ]
+    scraper, _ = _scraper(routes, clock, slug="primowater")
+    scraper.resolve_company()
+    assert scraper.company == "primowater"
 
 
 def test_a_stated_salary_reaches_extract_annualised():
@@ -498,7 +530,7 @@ def test_a_board_without_a_state_facet_is_split_by_category(clock, monkeypatch):
 
 def test_a_redirect_off_the_client_host_is_not_followed(clock):
     """regiscorp's board page redirects to `www.regiscorp.com/careers`, a host whose robots.txt
-    this Board never read: the redirect is left unfollowed and the humanised slug is the name."""
+    this Board never read: the redirect is left unfollowed, and the name comes from the rows."""
     routes = _routes(
         [_page([_row("3713")], 1)], icims={RM_TENANT: (200, ICIMS_DISALLOW)}
     )
@@ -513,7 +545,7 @@ def test_a_redirect_off_the_client_host_is_not_followed(clock):
     fetcher.fetch = lambda m, url, **kw: (
         off_host if url.endswith("/jobs") else real(m, url, **kw)
     )
-    assert scraper.fetch()[0].company == "Rmeducation"
+    assert scraper.fetch()[0].company == "RM Education Limited"
     assert not any("regiscorp" in url for _, url in fetcher.log)
 
 

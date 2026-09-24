@@ -108,11 +108,14 @@ import csv
 import functools
 import html
 import re
+from collections import Counter
+from collections.abc import Iterable
 from pathlib import Path
 
 from headstart.board_identity import tenant
 
 __all__ = [
+    "agreed_name",
     "brand_first",
     "curated",
     "curated_names",
@@ -141,10 +144,14 @@ _CAREERS_WRAPPER = (
 
 # A jibe title's name part where nothing else fences it: refuses text naming a page rather than an
 # employer ("Careers Home Apply", "Home Apply", "Explore Exciting Career Opportunities | Careers
-# Home", "Blackhawk Talent Network"), each observed on the 2026-09-24 client census.
+# Home", "Blackhawk Talent Network"), each observed on the 2026-09-24 client census. The refusal is
+# a tempered token, so it reads only the name it captures: an earlier lookahead scanned the whole
+# rest of the title, wrapper included, so "SAM | Careers" and "Intelligent Waves Apply" never
+# matched. "Company" is refused only as the name's first word ("Factory Mutual Insurance Company"
+# is a name; the bare title "Company" is not).
 _JIBE_NAME = (
-    r"(?P<name>(?!.*\b(?:careers?|jobs?|home|apply|about|search|page|opportunit\w*"
-    r"|company|talent|network|welcome)\b).+?)"
+    r"(?P<name>(?!company\b)(?:(?!\b(?:careers?|jobs?|home|apply|about|search|page"
+    r"|opportunit\w*|talent|network|welcome)\b).)+?)"
 )
 
 # gem's "{Name} Jobs" and "{Name} Opportunities" would otherwise read a page label's one
@@ -177,6 +184,20 @@ PATTERNS: dict[str, tuple[re.Pattern[str], ...]] = {
         ),
         re.compile(r"^(?P<name>.+?)\s+Open\s+Positions$", re.IGNORECASE),
         re.compile(_GEM_NOT_A_LABEL + r"(?P<name>.+?)\s+Jobs$", re.IGNORECASE),
+    ),
+    # icims: the listing page `/jobs/search?ss=1&in_iframe=1`, whose template titles it "Job
+    # Listings at {Name}" — sometimes after the tenant's own prefix ("Find a Job - General
+    # Dynamics Mission Systems Job Listings at General Dynamics Mission Systems"), and Openings or
+    # Opportunities on some. A lowercase "the" is the template's, a capitalised one the name's.
+    # 46 of 52 Boards sampled 2026-09-24 resolve; two of those name a parent or a site rather
+    # than the brand the postings state (`careers-abilegroup` "Abile Headquarters",
+    # `careers-avancecare` "Deerfield Management Companies"), the cost of brand-first.
+    "icims": (
+        re.compile(
+            r"^.*?\bJob\s+(?:Listings|Openings|Opportunities)\s+at\s+(?:(?-i:the)\s+)?"
+            r"(?P<name>.+)$",
+            re.IGNORECASE,
+        ),
     ),
     # jibe: the client host's `/jobs` page, 1,116 live clients sampled 2026-09-24. The titles are a
     # handful of wrappers — "{Name} Careers" (200), "{Name} Apply", "{Name} Job Search - Jobs",
@@ -417,6 +438,9 @@ _VENDOR_ALIASES: dict[str, frozenset[str]] = {
     # Darwinbox's own admin tenant states its product name.
     "darwinbox": frozenset({"darwinbox", "darwinboxadmin"}),
     "eightfold": frozenset({"eightfold", "eightfoldai"}),
+    # `unavailable`: what iCIMS writes into an unset field. The scraper already leaves it out of
+    # the `hiringOrganization` agreement; this keeps it out of a name too.
+    "icims": frozenset({"icims", "unavailable"}),
     "jibe": frozenset({"jibe", "jibeapply", "icims"}),
     "jobvite": frozenset({"jobvite"}),
     "keka": frozenset({"keka"}),
@@ -895,3 +919,18 @@ def settled(name: str, unresolved: str, board_key: str) -> str | None:
     if name.strip() and (name != unresolved or not is_identifier(name, board_key)):
         return name
     return humanised(board_key)
+
+
+def agreed_name(names: Iterable[str | None], share: float = 0.0) -> str | None:
+    """The name most of ``names`` state, when at least ``share`` of the stated ones agree on it.
+
+    For an ATS whose name source is a field each posting states rather than one Board page: the
+    Board is named once, by the name its postings agree on, and ``share`` is how much agreement
+    that ATS's measurement showed it needs. An empty or None entry states nothing and counts on
+    neither side. The result is raw — the caller still passes it through :func:`from_field`.
+    """
+    stated = Counter(name.strip() for name in names if name and name.strip())
+    if not stated:
+        return None
+    name, count = stated.most_common(1)[0]
+    return name if count >= share * stated.total() else None
