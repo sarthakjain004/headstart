@@ -163,6 +163,7 @@ DISPLAY_ALIASES: Final[dict[str, str]] = {
     # beside the Eightfold Board of that name, which one suggestion per name folds to one.
     "jibe:amd": "AMD",
     "successfactors:southasiacareers.deloitte.com": "Deloitte South Asia",
+    # The ledger holds this site under both casings (a casing duplicate), so both are named.
     "workday:ms/External": "Morgan Stanley",
     "workday:ms/external": "Morgan Stanley",
     "workday:ms/private": "Morgan Stanley",

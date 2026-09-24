@@ -232,3 +232,22 @@ def test_a_counting_change_and_the_run_after_it_are_not_hiring(tmp_path: Path) -
     moved, _ = hot_boards.read_stock_change(deltas, changes)
     assert moved["amazon:jobs"] == 15
     assert hot_boards.counting_changes(tmp_path / "missing.csv") == set()
+
+
+def test_a_change_with_no_tick_of_its_own_lands_on_the_next(tmp_path: Path) -> None:
+    """A skipped delta write: the change lands on the next tick and settles on the one after."""
+    deltas = tmp_path / "deltas"
+    deltas.mkdir()
+    for ts, delta in [
+        ("2026-09-17T12:00:00+00:00", 500),  # baseline
+        ("2026-09-17T13:00:00+00:00", 6),
+        ("2026-09-17T16:00:00+00:00", 300),  # lands here
+        ("2026-09-17T17:00:00+00:00", -400),  # settles here
+        ("2026-09-17T18:00:00+00:00", 9),
+    ]:
+        pq.write_table(
+            _deltas(ts, [("amazon:jobs", "stock", "se", delta)]),
+            deltas / f"{ts.replace(':', '-')}.parquet",
+        )
+    moved, _ = hot_boards.read_stock_change(deltas, {"2026-09-17T15:26:29+00:00"})
+    assert moved["amazon:jobs"] == 15

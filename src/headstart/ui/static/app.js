@@ -1796,14 +1796,20 @@ function verdictLines(d){
   if (!trendPicks.length || trendDrill || !d.series.length || !d.stamps.length) return [];
   const kind = viewKind(d);
   const counted = trendPicks.filter(p => !(d.uncounted || []).includes(p.key));
+  // Summed, a company joining lands with the other companies' ordinary change of that run
+  // inside its step, so the combined move is not quite the sum of each company's. Rather than
+  // headline a figure that is nearly right, the sentence points at the view that has each one.
+  if (kind !== 'company' && counted.length > 1)
+    return [{ name: `These ${counted.length} companies`, days: 0,
+      text: 'summed here — break down by Company for each one’s openings and move.' }];
   const lines = kind === 'company' ? d.series.slice(0, CHART_MAX).map(s => [s.label, s])
-    : [[counted.length === 1 ? (counted[0].label || 'This company') : `These ${counted.length} companies`,
+    : [[counted.length === 1 ? (counted[0].label || 'This company') : 'This company',
         kind === 'total' ? d.series[0] : { name: '__total__', points: sumPoints(d.series, d.stamps) }]];
   return lines.map(([name, s]) => ({ name, ...verdictOf(s, d) }));
 }
 // Under this many days of measurements a line names no direction and no tile headlines it:
 // AMD, counted for a few hours, was "Biggest riser +0.1%".
-const MIN_SPAN_DAYS = 2;
+const MIN_SPAN_DAYS = 3;
 function spanDays(s, d){
   const first = s.points.findIndex(v => v != null);
   return first < 0 ? 0 : (new Date(d.stamps[d.stamps.length - 1]) - new Date(d.stamps[first])) / 864e5;
@@ -1818,16 +1824,22 @@ function verdictOf(s, d){
   if (!m || days < MIN_SPAN_DAYS) move = 'too new to show a direction yet';
   else {
     const n = Math.round(m.change), pct = m.head ? m.change / m.head * 100 : 0;
-    const count = signedOpenings(n);
-    move = m.real < MOVER_FLOOR ? (n ? `${count} ${over}, too few to call a trend` : `unchanged ${over}`)
+    // A weekly rate is the figure a reader can hold ("about +77 a week"); the window's own
+    // length changes with the date range, a week does not.
+    const weekly = Math.round(m.change / days * 7);
+    const count = signedOpenings(n) + (weekly ? `, about ${weekly < 0 ? '−' : '+'}${Math.abs(weekly).toLocaleString()} a week` : '');
+    move = m.real < MOVER_FLOOR ? (n ? `${signedOpenings(n)} ${over}, too few to call a trend` : `unchanged ${over}`)
       : Math.abs(pct) < 2 ? `about flat ${over} (${pct < 0 ? '−' : '+'}${Math.abs(pct).toFixed(1)}%, ${count})`
       : `${pct > 0 ? 'up' : 'down'} ${Math.abs(pct).toFixed(1)}% ${over} (${count})`;
     // The part of the raw move that is not hiring, as a number. Google's Count line visibly
     // climbed 1,540 → 1,802 under "about flat (+3 openings)", and only a footnote said why.
-    const raw = headTail(s.points);
-    const other = raw ? Math.round(raw.tail - raw.head - m.change) : 0;
+    // Summed from the steps themselves: a difference of averages lost two-thirds of a jump in
+    // the last three runs, and all of what a cut line dropped.
+    let other = 0;
+    stepJumps(s.points, s).forEach(jump => { other += jump.lift ?? (jump.after - jump.before); });
+    other = Math.round(other);
     if (other && m.real >= MOVER_FLOOR)
-      move += `; the chart’s other ${signedOpenings(other)} came from counting changes and boards found later, not hiring`;
+      move += `; the chart’s other ${signedOpenings(other)} came in runs marked as counting changes or boards found later`;
   }
   return { text: `${now == null ? 'no' : Math.round(now).toLocaleString()} ${what}; ${move}.`, days };
 }
@@ -1846,11 +1858,9 @@ function drawVerdict(d){
   const days = firsts.length ? Math.round((new Date(last) - new Date(firsts[firsts.length - 1])) / 864e5)
     : Math.round(Math.max(...lines.map(l => l.days)));
   const counted = trendCoverage !== 'comparable' && datedPicks(dates, 'since');
-  const n = Math.max(1, days), span = `${n} day${n === 1 ? '' : 's'}`;
-  const newest = new Set(firsts).size > 1 ? ' for the newest' : '';
-  const early = days < 14 ? `${counted ? `HeadStart has counted ${counted}. That is ${span}${newest}` : `HeadStart has counted ${
-      trendPicks.length === 1 ? 'this company' : 'these companies'} for ${span}`} — read this as an early sign, not a trend.`
-    : counted ? `HeadStart has counted ${counted}; there is nothing before that.` : '';
+  const who = counted || (trendPicks.length === 1 ? 'this company' : 'these companies');
+  const early = `HeadStart has counted ${who}${days < 14
+    ? ' — too short to tell a trend from noise, so read this as an early sign.' : '; there is nothing before that.'}`;
   const tail = early ? `<p class="verdict-early">${esc(early)}</p>` : '';
   host.innerHTML = `<ul>${lines.map(l => `<li><b>${esc(l.name)}</b>: ${esc(l.text)}</li>`).join('')}</ul>${tail}`;
 }
@@ -1893,17 +1903,19 @@ function stepNotes(d){
     const text = `Counting changed here: ${e.changed.join(', ')}`;
     if (!picked){ notes.push({ i, text, found: false, epoch: true, withhold: false }); return; }
     const fields = e.fields || [];
-    const moves = fields.some(f => LINE_MOVING.includes(f)) || (bands && fields.includes('derivations_version'));
-    const dedup = !moves && touched.length > 0 && fields.includes('dedup_version');
-    if (i === 0 || !(moves || dedup)) return;
+    const linesMove = fields.some(f => LINE_MOVING.includes(f)) || (bands && fields.includes('derivations_version'));
+    const dedup = !linesMove && touched.length > 0 && fields.includes('dedup_version');
+    if (!(linesMove || dedup)) return;
     const companies = dedup ? touched : null;
-    notes.push({ i, text: `${text} — not hiring, so the jump it makes is left out of the lines it moves`,
+    // A change on the window's first run is already in every line's start; its settling run
+    // (below) is not.
+    if (i > 0) notes.push({ i, text: `${text} — not hiring, so the jump it makes is left out of the lines it moves`,
       found: false, epoch: true, withhold: true, companies });
     // A change can land over two runs — Amazon's Sep 17 filter change was +308 at its run and
     // −439 at the next, which left in read as hiring and turned Amazon from +1.2% to −2.9% —
     // so the run after it is left out too, at the cost of one run of ordinary change.
     if (i + 1 < d.stamps.length) notes.push({ i: i + 1, found: false, withhold: true, companies, settle: true,
-      text: 'The counting change one run earlier was still settling here, so this run’s jump is left out too' });
+      text: 'Left out: the run after a counting change, which can still be settling' });
   });
   (d.discovered || []).forEach(f => {
     const i = d.stamps.indexOf(f.ts); if (i < 0) return;
@@ -1940,7 +1952,6 @@ function datedPicks(dates, word){
   return dated.map(p => `${p.label || 'a company'} ${on(p)}`).join(', ');
 }
 
-// "at Stripe" / "at 3 companies": how the text around the chart names what the picks scope.
 // A company's history starts where HeadStart began counting it, so a preset longer than that
 // draws exactly what All draws. Those presets are disabled with the reason, not left to look
 // like three different answers (30 days, 90 days and All were one chart).
@@ -1965,14 +1976,18 @@ function drawTitle(){
     : 'Which tech roles are growing' + (pickPhrase() ? ' ' + pickPhrase() : '');
 }
 
+// "at Stripe" / "at 3 companies": how the text around the chart names what the picks scope.
 // The drilled family's name as the Space labels it, else its slug.
 function drillLabel(){
   return (trendRaw && trendRaw.family_label) || trendDrill || '';
 }
 
+// Only the picks the answer counts: under Comparable, "at 2 companies" sat over "1 company".
 function pickPhrase(){
-  const n = trendPicks.length;
-  return !n ? '' : n === 1 ? `at ${trendPicks[0].label || 'the picked company'}` : `at ${n} companies`;
+  const out = (trendData && trendData.uncounted) || [];
+  const picks = trendPicks.filter(p => !out.includes(p.key));
+  const n = picks.length;
+  return !n ? '' : n === 1 ? `at ${picks[0].label || 'the picked company'}` : `at ${n} companies`;
 }
 
 // The chart and the table view both need "the top CHART_MAX, plus Other" — one place computes
@@ -2065,6 +2080,7 @@ async function loadTrends(family){
   // and is left as a product call rather than smuggled in with a race fix.
   if (trendReq) trendReq.abort();
   const req = trendReq = new AbortController();
+  const push = picksPushed; picksPushed = false;   // this load's, whatever becomes of it
   const q = new URLSearchParams();
   // The roles split only exists for families that HAVE watched roles. Carrying a sticky
   // 'roles' into one that doesn't returns an empty series with its toggle hidden — nothing
@@ -2137,7 +2153,7 @@ async function loadTrends(family){
   const drilled = (family || null) !== trendDrill;
   trendRaw = payload; trendDrill = family || null;
   trendData = trendView(payload, trendDrill);
-  drawPicks(); applyUnitLocks(); writeTrendHash(drilled || picksPushed); picksPushed = false;
+  drawPicks(); applyUnitLocks(); writeTrendHash(drilled || push);
   drawTrends();
 }
 
@@ -2346,24 +2362,37 @@ function netOfSteps(levels, s){
     out[j] = cut ? null : levels[j] * scale + lift;
     const jump = jumps.get(j);
     if (!jump || cut) continue;
-    if (jump.additive) lift += scale * (jump.after - jump.before);
+    if (jump.additive) lift += scale * (jump.lift ?? (jump.after - jump.before));
     else if (jump.before > 0 && jump.after > 0) scale *= jump.after / jump.before;
-    else if (jump.after > 0) cut = true;
+    else cut = true;   // to or from zero: no ratio, so the line starts after it
   }
   return out;
 }
 // Where each withheld step lands on series `s` (a step on a gap lands on the next measured
 // point), with the level on either side of it: landing index -> {before, after}. The tooltip
 // states the size from here, and netOfSteps divides it out.
+// On a whole-company line under All openings, a found Board's size is known exactly (the
+// Space's `discovered.openings`), and lifting by it rather than by the run's whole jump keeps
+// that run's ordinary hiring in the line. Elsewhere (a category line, New) only the jump is known.
 function stepJumps(levels, s){
   const steps = new Map(), jumps = new Map();
-  stepsFor(s).forEach(n => steps.set(n.i, steps.get(n.i) || !!n.additive));
+  const whole = trendMetric === 'stock' && !!s && (s.name === '__total__'
+    || (!trendDrill && VIEWS[viewKind(trendData)].split === 'company'));
+  stepsFor(s).forEach(n => {
+    // A run carrying a counting change and a found Board together is scaled: the change
+    // re-sorts the whole line, and the found openings are then inside its ratio.
+    const at = steps.get(n.i) || { additive: true, size: 0, sized: true };
+    at.additive = at.additive && !!n.additive;
+    if (n.additive){ if (n.size == null) at.sized = false; else at.size += n.size; }
+    steps.set(n.i, at);
+  });
   if (!steps.size) return jumps;
   let last = null, pending = null;
   levels.forEach((v, j) => {
-    if (steps.has(j)) pending = (pending || false) || steps.get(j);
+    if (steps.has(j)) pending = pending || steps.get(j);
     if (v == null) return;
-    if (pending != null && last != null) jumps.set(j, { before: last, after: v, additive: pending });
+    if (pending && last != null) jumps.set(j, { before: last, after: v, additive: pending.additive,
+      lift: whole && pending.additive && pending.sized ? pending.size : null });
     pending = null;
     last = v;
   });
@@ -2725,11 +2754,12 @@ function drawTrends(){
   // Under a pick only the changes that move its lines are listed (stepNotes).
   const notes = notesOf(d);
   // Under a pick, a change marked where no drawn line moved ("jumped +0 here") explains nothing.
-  const moves = n => !trendPicks.length || drawn.some(s => {
+  const markerMoves = n => !trendPicks.length || drawn.some(s => {
+    if (!stepsFor(s).includes(n)) return false;
     const jump = stepJumps(s.points, s).get(n.i);
     return jump && Math.round(jump.after - jump.before) !== 0;
   });
-  notes.filter(n => n.epoch && moves(n)).forEach(n => {
+  notes.filter(n => n.epoch && markerMoves(n)).forEach(n => {
     const ex = x(n.i);
     svg += `<line class="epoch-marker" x1="${ex.toFixed(1)}" y1="${PAD_T}"
              x2="${ex.toFixed(1)}" y2="${H - PAD_B}"><title>${esc(n.text)}</title></line>`;
@@ -3068,7 +3098,9 @@ function positionHoverLayer(index, opts){
     const tw = tip.offsetWidth || 200;
     // On a phone a tooltip beside the crosshair covered the whole plot and clipped the axis, so
     // it sits under the chart there, where the crosshair and its dots stay in view.
-    if (wrapRect.width < 560){
+    const under = wrapRect.width < 560;
+    tip.classList.toggle('under', under);
+    if (under){
       tip.style.left = '0px';
       tip.style.top = (svgRect.height + 6) + 'px';
       return;
@@ -3473,7 +3505,7 @@ if (el('trends-co-q')){
     coTimer = setTimeout(() => suggestCompanies(q), SUGGEST_WAIT);
   });
   input.addEventListener('focus', () => { if (!input.value.trim()) openCoList(followedOption()); });
-  input.addEventListener('blur', () => closeCoList());
+  input.addEventListener('blur', () => { coEnterPending = false; closeCoList(); });
   input.addEventListener('keydown', e => {
     const n = coOptions.length;
     if (e.key === 'ArrowDown' && n){ e.preventDefault(); setCoActive((coActive + 1) % n); }
@@ -3484,7 +3516,7 @@ if (el('trends-co-q')){
     else if (e.key === 'Enter' && input.value.trim()){
       e.preventDefault(); clearTimeout(coTimer); coEnterPending = true; suggestCompanies(input.value.trim());
     }
-    else if (e.key === 'Escape'){ if (n) closeCoList(); else input.value = ''; }
+    else if (e.key === 'Escape'){ coEnterPending = false; if (n) closeCoList(); else input.value = ''; }
     else if (e.key === 'Backspace' && !input.value && trendPicks.length)
       setPicks(trendPicks.slice(0, -1));
   });

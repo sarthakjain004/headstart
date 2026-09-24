@@ -435,3 +435,20 @@ The fourth critic then found the netting itself was incomplete:
   - The requisition-level duplicate removal (another PR) will remove Eightfold rows gradually over
     several days. It will record them in `dedup_evictions.csv` so this chart can add them back
     per company.
+
+Its code review tightened the round:
+
+- Several picks summed (Category or Total) no longer get one combined figure. A company
+  joining the sum lands with the other companies' ordinary change of that run inside its step,
+  so the figure was near, not equal, to the sum of the companies' moves. The sentence points to
+  the Company breakdown instead.
+- On a whole-company line under All openings, a found Board lifts the history by its own size
+  (`discovered.openings`), so that run's other hiring stays in.
+- A run holding a counting change and a found Board together is scaled. A step to or from zero
+  starts the line. The "not hiring" figure is the sum of the step sizes.
+- "Too new" is under 3 days. The sentence adds a weekly rate ("about +77 a week"). It says
+  "HeadStart has counted Google since Sep 13", without day arithmetic.
+- A query alias matches only a company's exact name, so "facebook" no longer offers Metabase.
+- Hot drops a duplicate-removal run for every Board, while the chart drops it only at
+  companies it can touch. A Board list has no company to ask, so the two can differ by one run
+  of ordinary change there. A change whose own tick was skipped lands on the next tick.

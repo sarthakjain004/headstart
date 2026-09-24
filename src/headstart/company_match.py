@@ -107,7 +107,7 @@ def _near(typed: str, word: str) -> bool:
 
     A first-letter slip is rare in a name someone knows, and allowing it made "cisco" offer
     Discovery and Discord (2026-09-25 critique) — one substitution from "disco"."""
-    if len(typed) < _TYPO_MIN or not word or typed[0] != word[0]:
+    if len(typed) < _TYPO_MIN or typed[0] != word[0]:
         return False
     return _one_edit(typed, word) or _one_edit(typed, word[: len(typed)])
 
@@ -183,9 +183,12 @@ def suggest(query: str, candidates: list[Candidate], limit: int) -> list[Candida
     for candidate in candidates:
         rank = tier(typed, candidate.words)
         if also is not None:
-            # An alias hit ranks with the typed name's own prefix tier: "aws" means Amazon.
+            # An alias names one company, so only its exact name counts, ranked with the typed
+            # name's prefix tier: "aws" means Amazon. A prefix hit made "facebook" offer every
+            # name starting "meta" (Metabase, Metaview). A two-word alias may still match as a
+            # prefix, since "tata consultancy" is how "Tata Consultancy Services" begins.
             aliased = tier(also, candidate.words)
-            if aliased is not None and aliased <= 1:
+            if aliased == 0 or (aliased == 1 and len(also) > 1):
                 rank = 1 if rank is None else min(rank, 1)
         if rank is not None and not _is_test_tenant(candidate):
             ranked.append(

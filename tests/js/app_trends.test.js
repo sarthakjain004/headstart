@@ -921,7 +921,7 @@ test('the chart says where a company history starts', async () => {
   t.setPicks([{ key: 'greenhouse:acme', label: 'Acme' }]);
   await t.load(null);
   // Said once, in the company's own sentence block, rather than again above the chart.
-  assert.match(nodes['trends-verdict'].innerHTML, /HeadStart has counted Acme since Sep 13\. That is 7 days — read this as an early sign/);
+  assert.match(nodes['trends-verdict'].innerHTML, /HeadStart has counted Acme since Sep 13 — too short to tell a trend from noise/);
   assert.doesNotMatch(nodes['trends-empty'].textContent, /counted Acme/);
 });
 
@@ -1399,9 +1399,9 @@ test('each company gets a sentence: its openings and which way they moved', () =
   t.draw();
   const html = nodes['trends-verdict'].innerHTML;
   assert.equal(nodes['trends-verdict'].hidden, false);
-  assert.match(html, /<b>Acme<\/b>: 998 tech openings; about flat over 3 days \(−0\.1%, −1 opening\)\./);
-  assert.match(html, /<b>Beta<\/b>: 150 tech openings; up 50\.0% over 3 days \(\+50 openings\)\./);
-  assert.match(html, /HeadStart has counted these companies since Sep 13\. That is 3 days — read this as an early sign/);
+  assert.match(html, /<b>Acme<\/b>: 998 tech openings; about flat over 3 days \(−0\.1%, −1 opening, about −2 a week\)\./);
+  assert.match(html, /<b>Beta<\/b>: 150 tech openings; up 50\.0% over 3 days \(\+50 openings, about \+117 a week\)\./);
+  assert.match(html, /HeadStart has counted these companies since Sep 13 — too short to tell a trend from noise/);
 });
 
 test('the notes fit the view: no dashed line or reassignment caveat on whole companies', () => {
@@ -1484,7 +1484,7 @@ test('how long a company has been counted comes from its counting, not the windo
     { stamps: FOUR, series: [{ name: 'greenhouse:acme', label: 'Acme', points: [null, null, 100, 100], latest: 100 }],
       split_by: 'company', counted_since: { 'greenhouse:acme': FOUR[0] } }));
   t.draw();
-  assert.match(nodes['trends-verdict'].innerHTML, /since Sep 13\. That is 3 days/);
+  assert.match(nodes['trends-verdict'].innerHTML, /Acme<\/b>: 100 tech openings; too new to show a direction yet\./);
 });
 
 // ---- critique round 4 ------------------------------------------------------------------------
@@ -1518,7 +1518,7 @@ test('the sentence says how much of the chart’s move was not hiring', () => {
     discovered: [{ ts: FOUR[2], company: 'greenhouse:acme', boards: 3, openings: 200 }] });
   t.draw();
   assert.match(nodes['trends-verdict'].innerHTML,
-    /Acme<\/b>: 1,700 tech openings; about flat over 3 days \(\+0\.0%, \+0 openings\); the chart’s other \+200 openings came from counting changes and boards found later, not hiring\./);
+    /Acme<\/b>: 1,700 tech openings; about flat over 3 days \(\+0\.0%, \+0 openings\); the chart’s other \+200 openings came in runs marked as counting changes or boards found later\./);
 });
 
 test('compared company by company, the heading asks how hiring compares', () => {
@@ -1541,4 +1541,24 @@ test('Enter before the suggestions arrive picks the top one when they do', async
   await new Promise(resolve => setTimeout(resolve, 0));
   assert.deepEqual(t.picks().map(p => p.key), ['amazon:jobs']);
   assert.equal(input.value, '', 'cleared for the next name, not run on into it');
+});
+
+
+test('several picks summed get a pointer, not a figure that is nearly their sum', () => {
+  const { t, nodes } = loadApp();
+  t.setPicks([ACME, BETA]);
+  t.set({ ...picked({ a: [100, 110] }), stamps: STAMPS });
+  t.draw();
+  assert.match(nodes['trends-verdict'].innerHTML, /These 2 companies<\/b>: summed here — break down by Company/);
+});
+
+test('a found Board on a whole company line is lifted by its own size, keeping that run’s hiring', () => {
+  const { t } = loadApp();
+  t.setPicks([ACME, BETA]);
+  t.set(companies([['greenhouse:acme', 'Acme', [100, 100, 310, 310]], ['lever:beta', 'Beta', [50, 50, 50, 50]]],
+    { discovered: [{ ts: FOUR[2], company: 'greenhouse:acme', boards: 2, openings: 200 }] }));
+  t.setUnit('count', false);
+  const acme = t.data().series[0];
+  // 200 were found; the other 10 that run were hiring and stay in (by the run's jump, 210).
+  assert.deepEqual(t.netOfSteps(acme.points, acme), [300, 300, 310, 310]);
 });
