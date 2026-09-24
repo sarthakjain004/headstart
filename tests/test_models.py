@@ -90,7 +90,7 @@ def _job(**overrides):
 
 
 def test_job_unescapes_entities_in_title_and_company():
-    # Served 2026-09-24: 35 smartrecruiters titles and a pyjamahr company kept a literal entity.
+    # Served 2026-09-24: 56 titles (smartrecruiters, zwayam) and a pyjamahr company kept one.
     job = _job(
         title="IT Architect - Technical Process &amp; Compliance",
         company="Pitangent Analytics &amp; Software",
@@ -102,6 +102,8 @@ def test_job_unescapes_entities_in_title_and_company():
 def test_job_strips_company_whitespace():
     # 3,851 served rows carried a company with a trailing space ("Onware ").
     assert _job(company="  Onware \n").company == "Onware"
+    # Only the ends: the inside of a stated name is left as the Board wrote it.
+    assert _job(title=" Senior  Engineer ").title == "Senior  Engineer"
 
 
 def test_job_location_drops_tags_and_lists_lines():
@@ -115,3 +117,4 @@ def test_job_location_drops_tags_and_lists_lines():
     )
     assert _job(location="  Pune,   India ").location == "Pune, India"
     assert _job(location=" <br> ").location is None
+    assert _job(location="&lt;Remote&gt; &#x7c; UK").location == "<Remote> | UK"
