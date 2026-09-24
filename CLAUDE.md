@@ -102,7 +102,8 @@ discovery landing (#576) moved five more. Board totals belong in README and CONT
   site whose postings that Board already lists and would serve is buried in
   `data/validate/aliases/eightfold.csv` (signal `backing-reqs`), one row per backing Board. Nothing
   scrapes a buried site, so the script is the only thing that notices when its backing Board drops
-  out or it starts posting on its own. Candidates are its `BACKING` table; a new front enters there.
+  out or it starts posting on its own. Candidates are the pairs in `data/validate/eightfold_backing.csv`
+  (ADR-0210); a new front enters there.
   `dedupe_boards.py` refuses `--apply` for this ATS (ADR-0205).
 - **SuccessFactors holds RMK sites only.** `p_successfactors` accepts any `<urlset>`, so a corporate
   site or a Radancy career front probes `live`, and the scraper reads it as 0 jobs or as page titles
@@ -287,7 +288,7 @@ These guidelines are working if: fewer unnecessary changes in diffs, fewer rewri
   If you change what the pipeline runs, change it there and update `.github/workflows/pipeline.yml`
   to match. Don't add a pipeline stage to `scripts/`. Helper modules used *only* by the pipeline
   live there too (`binpack`, `board_failures`, `board_freshness`, `board_naming`, `board_operator`,
-  `derived_meta`, `doc_prep`, `index_plan`, `observability`, `role_assignments`, `shard_plan`,
+  `dedup_evictions`, `derived_meta`, `doc_prep`, `index_plan`, `observability`, `role_assignments`, `shard_plan`,
   `shard_speedup`, `trends_epochs`). Logic the curated-feed path (`python -m headstart` →
   `headstart.harvest`) also reaches stays in `headstart` proper (`harvest`, `board_cost`,
   `board_priority`, `corpus`), so the feed never imports from `ingest`.
