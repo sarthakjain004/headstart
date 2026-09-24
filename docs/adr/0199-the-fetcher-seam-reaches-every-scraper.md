@@ -119,6 +119,10 @@ opaque argument, and a fake ignores it.
   - `trakstar:turnkeyconsulting`: 34 Jobs from `fetch_raw` and 34 from `fetch_via_feed` both
     times, with the same ids. It made 2 requests (the jsapi page and the feed), and the request
     multiset was identical.
+
+  Both pairs were measured on `12d45409`, then again after rebasing onto ADR-0195's rewrite of the
+  retry loop (`2fb87776`). The second time, Workday had 110 Jobs and 117 requests, because the Board
+  had closed one posting, and both multisets were again identical.
 - **The bench now counts Workday's listing POSTs.** They used to bypass the fetcher it wrapped, so
   a Workday request count taken before this change is not comparable with one taken after it.
 - **A test can prove a request stays on the seam.** `tests/test_fetcher.py` replaces

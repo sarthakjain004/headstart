@@ -342,7 +342,7 @@ def test_a_401_that_survives_the_refresh_fails_the_board():
         else tenant_route(method, url, kwargs)
     )
     scraper = CornerstoneScraper("ama-assn", fetcher=fake)
-    with pytest.raises(http.RequestsError):
+    with pytest.raises(http.RequestsError, match="HTTP 401"):
         scraper.fetch_raw()
 
 
@@ -443,7 +443,7 @@ def test_a_refused_site_answer_fails_the_board_rather_than_walking_on():
     board = _boards()["ama-assn"]
     board["careersites"]["2"] = {"status": 403, "body": {}}
     fake = _FakeCsod("ama-assn", board)
-    with pytest.raises(http.RequestsError):
+    with pytest.raises(http.RequestsError, match="HTTP 403"):
         CornerstoneScraper("ama-assn", fetcher=fake).fetch_raw()
     assert _walked_sites(fake) == [1, 2]
 
@@ -506,7 +506,7 @@ def test_a_search_404_without_resource_not_found_fails_the_board():
     scraper = CornerstoneScraper(
         "ama-assn", fetcher=_Moved("ama-assn", _boards()["ama-assn"])
     )
-    with pytest.raises(http.RequestsError):
+    with pytest.raises(http.RequestsError, match="HTTP 404"):
         scraper.listing()
 
 
@@ -521,5 +521,5 @@ def test_resource_not_found_after_rows_were_read_fails_the_board():
             return super()._answer(method, url, kwargs)
 
     scraper = CornerstoneScraper("aak", fetcher=_GoneMidWalk(total=2345, served=2345))
-    with pytest.raises(http.RequestsError):
+    with pytest.raises(http.RequestsError, match="HTTP 404"):
         scraper.listing()
