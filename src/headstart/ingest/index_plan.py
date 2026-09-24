@@ -786,6 +786,14 @@ def _is_non_public(board: str) -> bool:
     return any(token in site for token in _NON_PUBLIC_SITE_TOKENS)
 
 
+#: Which rule took a duplicate row out, as :func:`plan_prune_by_rule` names it and the dedup
+#: eviction ledger records it (ADR-0206). ``index prune`` adds ``alias:{signal}`` for an off-Board
+#: row whose Board an alias ledger buries.
+CASE_VARIANT = "case-variant"
+WORKDAY_TENANT = "workday-tenant"
+BACKING_REQUISITION = "backing-requisition"
+
+
 def plan_prune(
     index_ids: Iterable[str],
     keep: set[str],
@@ -794,7 +802,26 @@ def plan_prune(
     requisitions: Mapping[str, str] | None = None,
     backing: Mapping[str, Iterable[str]] | None = None,
 ) -> tuple[list[str], list[str]]:
-    """Split index ids into ``(evict_off_board, evict_duplicate)``.
+    """``(evict_off_board, evict_duplicate)`` — :func:`plan_prune_by_rule` without the rules."""
+    off_board, rules = plan_prune_by_rule(
+        index_ids, keep, site_jobs=site_jobs, requisitions=requisitions, backing=backing
+    )
+    return off_board, list(rules)
+
+
+def plan_prune_by_rule(
+    index_ids: Iterable[str],
+    keep: set[str],
+    *,
+    site_jobs: dict[str, int] | None = None,
+    requisitions: Mapping[str, str] | None = None,
+    backing: Mapping[str, Iterable[str]] | None = None,
+) -> tuple[list[str], dict[str, str]]:
+    """Split index ids into ``(evict_off_board, {evict_duplicate: the rule that evicts it})``.
+
+    The rule is :data:`CASE_VARIANT` for a row another casing of its own Board keeps,
+    :data:`WORKDAY_TENANT` for one another site of its Workday tenant keeps (ADR-0187), and
+    :data:`BACKING_REQUISITION` for an Eightfold copy its backing Board keeps (ADR-0206).
 
     A change to what counts as a duplicate here bumps :data:`DEDUP_VERSION` (ADR-0188).
 
@@ -829,15 +856,18 @@ def plan_prune(
     index_ids = list(index_ids)
     copies = _backing_copies(index_ids, live, requisitions or {}, backing or {})
     groups, off_board = _by_group_and_board(index_ids, live, copies)
-    duplicate: list[str] = []
+    duplicate: dict[str, str] = {}
     for by_board in groups.values():
         kept_board = _survivor_board(by_board.keys(), site_jobs or {})
         for canon, ids in by_board.items():
             if canon != kept_board:
-                duplicate.extend(ids)
+                for i in ids:
+                    duplicate[i] = (
+                        BACKING_REQUISITION if i in copies else WORKDAY_TENANT
+                    )
             elif len(ids) > 1:
                 kept = next(
                     (i for i in ids if i.startswith(live[canon] + ":")), min(ids)
                 )
-                duplicate.extend(i for i in ids if i != kept)
+                duplicate.update((i, CASE_VARIANT) for i in ids if i != kept)
     return off_board, duplicate

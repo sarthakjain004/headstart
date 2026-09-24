@@ -15,6 +15,7 @@ from headstart.ingest.index_plan import (
     grace_period_counts,
     live_keep_set,
     plan_prune,
+    plan_prune_by_rule,
     plan_sync,
     read_unauthoritative_boards,
     resolve_board,
@@ -1198,6 +1199,39 @@ def test_a_copy_its_workday_tenant_serves_from_another_site_is_still_a_copy():
         backing=_BACKING,
     )
     assert dup == [f"{_EF}:1099"]
+
+
+def test_prune_names_the_rule_behind_each_duplicate():
+    """The dedup eviction ledger records which rule took each row out, so Trends can add
+    removals that were never closures back in (ADR-0206)."""
+    ids = [
+        f"{_EF}:1099",  # the Eightfold copy of R-100
+        f"{_SUB}:R-100",  # R-100 on the tenant's smaller site
+        f"{_MAIN}:R-100",  # the survivor
+        "workday:acme/EXTERNAL:R-200",  # a fossil casing of the survivor's Board
+        f"{_MAIN}:R-200",
+    ]
+    reqs = {f"{_EF}:1099": "R-100", f"{_MAIN}:R-100": "R-100"}
+    off, rules = plan_prune_by_rule(
+        ids,
+        {_EF, _MAIN, _SUB},
+        site_jobs=_SITE_JOBS,
+        requisitions=reqs,
+        backing=_BACKING,
+    )
+    assert off == []
+    assert rules == {
+        f"{_EF}:1099": "backing-requisition",
+        f"{_SUB}:R-100": "workday-tenant",
+        "workday:acme/EXTERNAL:R-200": "case-variant",
+    }
+    assert plan_prune(
+        ids,
+        {_EF, _MAIN, _SUB},
+        site_jobs=_SITE_JOBS,
+        requisitions=reqs,
+        backing=_BACKING,
+    ) == (off, list(rules))
 
 
 _COPY, _BACK = f"{_EF}:1099", f"{_MAIN}:R-100"
