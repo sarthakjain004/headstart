@@ -60,7 +60,7 @@ _Avoid_: reading an entry's Boards as additive where the index still holds both 
 A company's own web page that links to or embeds its Board; the input to careers-page discovery, distinct from the Board itself.
 
 **Slug**:
-The identifier that locates a Company within its ATS (`boards.greenhouse.io/{slug}`). Its form is ATS-specific — a bare label for most, a host for Zoho, a full URL for Workday. A Company's presence on an ATS is just its `(ATS, slug)`.
+The identifier that locates a Company within its ATS (`boards.greenhouse.io/{slug}`). Its form is ATS-specific — a bare label for most, a host for Zoho, a full URL for Workday. A Company's presence on an ATS is just its `(ATS, slug)`. Only the Scraper reads a slug off a ledger or pool row (`slug_from`, ADR-0001); `registry.company_from_row` is the one place a row becomes a `CompanyRef` (ADR-0203).
 _Avoid_: handle, id, key, **token** — Greenhouse's own API spells it `boards-api.greenhouse.io/v1/boards/{token}`, so it leaks in easily; the thing it names is still a Slug, and the thing it locates is a **Board**.
 
 **Scraper**:

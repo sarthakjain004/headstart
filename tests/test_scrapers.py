@@ -2815,8 +2815,8 @@ def test_workday_alias_key_is_none_when_unreachable(monkeypatch):
 
 
 def test_workday_alias_key_is_none_on_a_malformed_slug_not_a_crash(monkeypatch):
-    """`_parts()` raises `ValueError` on a slug `_URL_PATTERN` cannot parse, and the real caller,
-    `dedupe_boards.py`'s `probe_all`, reads this method's result from an unguarded
+    """`_parts()` raises `ValueError` on a slug `CAREERS_URL_PATTERN` cannot parse, and the real
+    caller, `dedupe_boards.py`'s `probe_all`, reads this method's result from an unguarded
     `future.result()` inside a `ThreadPoolExecutor` -- one malformed slug anywhere in a
     12,844-Board scan would abort the whole run on whichever Board happened to raise, not just
     mark that one unreachable. `alias_key` must never let that escape."""

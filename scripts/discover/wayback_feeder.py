@@ -95,7 +95,7 @@ ADP_PAGE_URL = re.compile(
     rf"https?://{re.escape(ADP_HOST)}/{re.escape(ADP_PAGE_PATH)}\?[^\s\"'<>\\]+",
     re.IGNORECASE,
 )
-# The datacenter label of a *production* Workday host, per `WorkdayScraper._URL_PATTERN`.
+# The datacenter label of a *production* Workday host, per `workday.CAREERS_URL_PATTERN`.
 _WD_INSTANCE = re.compile(r"wd\d+")
 # Workday's own routes under a board host. Unlike `INFRA` these are not plausible board names —
 # a real site is never called `refreshFacet` — so rejecting them costs nothing and they were 26
@@ -593,11 +593,11 @@ def extract(url: str, host: str, style: Style) -> tuple[str, str] | None:
     if style == "workday":
         # A Workday board is a *site* on a host, and `WorkdayScraper.slug_from` keeps the whole
         # careers URL because `url()` rebuilds `/wday/cxs/{company}/{site}/jobs` from it. Emitting
-        # the bare host would hand the scraper a slug its own `_URL_PATTERN` rejects, so the site
-        # segment has to survive — past any locale Wayback archived the board under.
+        # the bare host would hand the scraper a slug its own `CAREERS_URL_PATTERN` rejects, so the
+        # site segment has to survive — past any locale Wayback archived the board under.
         company, _, rest_host = seen_host.partition(".")
         instance = rest_host.split(".")[0]
-        # Mirror `WorkdayScraper._URL_PATTERN`'s `wd\d+` exactly. Wayback has archived plenty of
+        # Mirror `workday.CAREERS_URL_PATTERN`'s `wd\d+` exactly. Wayback has archived plenty of
         # `impl-wdN` hosts — Workday's implementation/preview tenants — and harvesting them hands
         # the scraper a slug it raises on, which a live round-trip caught and no replay could.
         if not _WD_INSTANCE.fullmatch(instance) or not valid(company):
@@ -615,7 +615,7 @@ def extract(url: str, host: str, style: Style) -> tuple[str, str] | None:
         # 108 Boards, 31 of them in no ledger, 12 of 14 sampled live (2,389 jobs).
         #
         # The emitted URL is the `myworkdayjobs.com` spelling, which is both what
-        # `WorkdayScraper._URL_PATTERN` accepts unchanged and what collapses this against the
+        # `workday.CAREERS_URL_PATTERN` accepts unchanged and what collapses this against the
         # same board harvested from the other domain.
         instance = seen_host.split(".")[0]
         if not _WD_INSTANCE.fullmatch(instance):

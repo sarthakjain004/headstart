@@ -43,7 +43,6 @@ from typing import Any
 
 from headstart import log, scrapable_boards
 from headstart.board_identity import board_key, board_of, lower_key
-from headstart.config import CompanyRef
 from headstart.corpus import iter_jobs
 from headstart.ingest.board_operator import tenant
 
@@ -120,10 +119,9 @@ def grace_period_counts(
       the scope before calling this (ADR-0053). Measured at 63–126 Boards per run
       (``docs/pipeline/2026-09-01_twelve-run-log-review.md``), so it is not a rounding error — and
       unlike the first cause it has no drain, which is what makes the total worth watching.
-    - The Board was scraped and emitted *zero jobs of any kind*, so it wrote no ids and
-      :func:`scraped_boards` never saw it (its own docstring says so; those rows are ADR-0023
-      prune's, not sync's). Rarer than the other two and pre-existing, but it is a Board that was
-      read — so reading this number as "Boards we did not get to" overstates that case.
+    - The Board raised, a 404 included, so it wrote no ids and is not in ``boards_ok`` either,
+      and :func:`scraped_boards` never saw it. A Board that scraped *clean* with zero jobs is no
+      longer a cause: ``scrape_join`` adds it from ``boards_ok``, so its rows evict in scope.
 
     What is *no longer* a cause is the ADR-0046 collapse guard capping a Board still in scope: an
     id whose Board was scraped, was in scope, and was absent again is now evicted, not carried.
@@ -459,14 +457,13 @@ def workday_site_jobs(ledger_dir: str | Path) -> dict[str, int]:
     harmless, and one whose URL will not parse is already reported by :func:`live_keep_set`.
     """
     from headstart import liveness
-    from headstart.scrapers.registry import SCRAPERS
+    from headstart.scrapers.registry import company_from_row
 
-    slug_from = SCRAPERS["workday"].slug_from
     jobs: dict[str, int] = {}
     for verdict in liveness.load(Path(ledger_dir) / "workday.csv").values():
         if verdict.status != liveness.LIVE:
             continue
-        company = CompanyRef(ats="workday", slug=slug_from(verdict.tenant, verdict.url))
+        company = company_from_row("workday", verdict.tenant, verdict.url)
         try:
             board = lower_key(board_key(company))
         except ValueError:
@@ -634,8 +631,9 @@ def scraped_boards(
     3. the corpus ids' Boards, when neither is available (a local sync with no full scrape on
        disk, or a unit test).
 
-    (A Board scraped that yields *zero* jobs of any kind writes no ids and so isn't covered by any
-    of them — that rarer case is handled by the dead/absent-Board prune, ADR-0023.)
+    (A Board scraped cleanly that yields *zero* jobs writes no ids, so only ``recorded`` covers
+    it: ``scrape_join`` adds the shard reports' ``boards_ok``. The other two sources miss it, and
+    prune does not catch it either, because a live Board with no postings stays in its keep-set.)
     """
     path = Path(scraped)
     if path.is_dir() and any(path.glob("*.jsonl")):

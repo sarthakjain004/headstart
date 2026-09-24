@@ -754,3 +754,55 @@ def test_run_detail_pass_over_nothing_records_no_batch_on_either_transport(monke
         )
         assert dict(details) == {} and details.missing == 0
     assert fanout_stats.stats() == {}
+
+
+class _Landed:
+    """A settled response that ended its redirects on ``url``."""
+
+    def __init__(self, url):
+        self.url = url
+
+    def close(self):
+        pass
+
+
+def test_default_alias_key_is_the_lowercased_landing_host(monkeypatch):
+    seen = {}
+
+    def fetch(method, url, **kwargs):
+        seen.update(kwargs, url=url)
+        return _Landed("https://Careers.Example.com/jobs?x=1")
+
+    monkeypatch.setattr(http, "fetch", fetch)
+    scraper = _StubScraper("acme")
+    assert scraper.alias_key() == "careers.example.com"
+    assert seen["url"] == scraper.url()
+    # It names its Board in the retry log and neither routes nor walls (ADR-0203).
+    assert seen["egress_board"] == scraper.board_key()
+    assert "egress_group" not in seen and "egress_on" not in seen
+
+
+def test_alias_key_of_landing_is_the_one_step_a_scraper_overrides(monkeypatch):
+    """The fetch stays the base's; only the key read off the landing URL changes."""
+
+    class _WholeUrlKeyed(_StubScraper):
+        @staticmethod
+        def alias_key_of_landing(landing_url):
+            return landing_url.upper()
+
+    monkeypatch.setattr(
+        http, "fetch", lambda *args, **kwargs: _Landed("https://x.example/a")
+    )
+    assert _WholeUrlKeyed("acme").alias_key() == "HTTPS://X.EXAMPLE/A"
+
+
+def test_alias_key_is_none_when_the_landing_url_cannot_be_read(monkeypatch):
+    class _Refusing(_StubScraper):
+        @staticmethod
+        def alias_key_of_landing(landing_url):
+            raise ValueError(f"not this ATS: {landing_url}")
+
+    monkeypatch.setattr(
+        http, "fetch", lambda *args, **kwargs: _Landed("https://elsewhere.example/")
+    )
+    assert _Refusing("acme").alias_key() is None

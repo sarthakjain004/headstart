@@ -48,7 +48,7 @@ from pathlib import Path
 
 from headstart.config import CompanyRef
 from headstart.harvest import scrape_all
-from headstart.scrapers.registry import SCRAPERS
+from headstart.scrapers.registry import SCRAPERS, company_from_row
 
 ROOT = Path(__file__).resolve().parents[2]
 MERGED = ROOT / "data" / "ats-tenants-merged"
@@ -67,23 +67,19 @@ def _load_rows(csv_path: Path) -> list[tuple[CompanyRef, int]]:
 
     A row whose slug can't be derived is skipped rather than sinking the whole selection.
     """
-    scraper = SCRAPERS[csv_path.stem]  # caller guarantees the ATS has a scraper
+    ats = csv_path.stem  # caller guarantees the ATS has a scraper
     out: list[tuple[CompanyRef, int]] = []
     try:
         with csv_path.open(newline="", encoding="utf-8") as f:
             for r in csv.DictReader(f):
-                tenant, url = r.get("tenant", ""), r.get("url", "")
                 try:
-                    slug = scraper.slug_from(tenant, url)
+                    company = company_from_row(
+                        ats, r.get("tenant", ""), r.get("url", "")
+                    )
                 except Exception:  # noqa: BLE001, S112 - a malformed row shouldn't crash the batch
                     continue
                 jobs = (r.get("jobs") or "").strip()
-                out.append(
-                    (
-                        CompanyRef(scraper.ats, slug, tenant),
-                        int(jobs) if jobs.isdigit() else 0,
-                    )
-                )
+                out.append((company, int(jobs) if jobs.isdigit() else 0))
     except (
         OSError,
         UnicodeDecodeError,
