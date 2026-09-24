@@ -64,11 +64,11 @@ SPA loads a record that names the tenant: `from_field` reads darwinbox's, zwayam
 and keka's pattern reads its own, because keka tenants typed page labels into it. freshteam's
 ``<title>`` is "Careers" everywhere, but its ``og:title`` names the company.
 
-**Absent, and why.** successfactors is the interesting exclusion: it does serve titles, but they
-are marketing copy in several languages with no shared wrapper — "Life@MOHH - people, culture,
-and values | MOHH", "Trabaja en Volaris", "Careers at Bachem" — so a pattern wide enough to catch
-the third mangles the first two. That is a quality bar, not a cost one, and no measurement will
-move it; what it needs is per-tenant evidence this module has no place to keep.
+**Absent, and why.** successfactors' *board* titles stay excluded: they are marketing copy in
+several languages with no shared wrapper — "Life@MOHH - people, culture, and values | MOHH",
+"Trabaja en Volaris", "Careers at Bachem" — so a pattern wide enough to catch the third mangles the
+first two. Its *job* pages turned out to be the source instead: each ends its title "| {Company}",
+and its entry below reads that (ADR-0217).
 
 **Workday** reads no title. Its board page is a client-rendered SPA whose ``og:title`` is correct
 on well under half of the boards that have one and otherwise junk this module's rules would happily
@@ -355,6 +355,16 @@ PATTERNS: dict[str, tuple[re.Pattern[str], ...]] = {
     # the name is the first clause. `TrakstarScraper` reads the page itself, on the request that
     # also tells an inactive account apart (see there), rather than through `board_page`.
     "trakstar": (re.compile(r"^(?P<name>.+?)\s+jobs\s*\|", re.IGNORECASE),),
+    # successfactors: a field, not a board title. Every RMK job page ends its `<title>` with
+    # "| {Company}" and most state it again as `hiringOrganization` microdata; the scraper already
+    # fetches those pages, cuts the name out, refuses the unconfigured values RMK falls back to
+    # (`SuccessFactorsScraper`'s `_page_company`) and passes the Board's modal one here. Some
+    # sites write their careers brand there ("Ingersoll Rand Careers", 13 of 1,469 Boards on
+    # 2026-09-24), which `_PAGE_LABEL` would refuse whole; the first pattern strips it.
+    "successfactors": (
+        re.compile(r"^(?P<name>.+?)\s+Careers$", re.IGNORECASE),
+        re.compile(r"^(?P<name>.+)$"),
+    ),
 }
 
 #: A separator still present after the wrapper came off means the title had a shape this does not
@@ -484,6 +494,9 @@ _VENDOR_ALIASES: dict[str, frozenset[str]] = {
     # Trakstar Hire was Recruiterbox before its rebrand, and a trial tenant still titles itself
     # "Recruiterbox jobs | …" (`trakstar:trial101`, 2026-09-24).
     "trakstar": frozenset({"trakstar", "trakstarhire", "recruiterbox"}),
+    # "BestRun" is SAP's demo company, left in the title suffix of unconfigured sites. Not "sap":
+    # SAP is a real employer (`jobs.sap.com`).
+    "successfactors": frozenset({"successfactors", "bestrun"}),
 }
 
 

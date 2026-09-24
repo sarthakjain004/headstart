@@ -75,7 +75,8 @@ def test_a_board_title_yields_the_company_name(ats, title, slug, expected):
             "Kraft Heinz Careers – Explore Careers. We're growing greatness.",
             "kraftheinz.eightfold.ai",
         ),
-        # an ATS with no measured shape has no patterns at all, so nothing is attempted
+        # a successfactors *board* title: marketing copy, refused on its separators (its name
+        # source is the job page's title suffix instead, ADR-0217)
         (
             "successfactors",
             "Life@MOHH - people, culture, and values | MOHH",

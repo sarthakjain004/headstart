@@ -1,6 +1,8 @@
 # ADR-0114: A Board states its company name in its page title — read it, don't infer it
 
 **Status:** accepted · **Date:** 2026-09-07 · **Amended by:**
+[ADR-0217](0217-a-board-is-named-by-what-its-postings-agree-on.md) (per-posting names where a
+Board's postings agree; successfactors named from its job pages) ·
 [ADR-0172](0172-a-single-source-scraper-declares-its-company.md) (on the Context's opening premise:
 `__init__` now does `self.COMPANY or company or slug`, so a Single source scraper's declared name
 outranks the caller-supplied one this ADR's fallback assumed);
