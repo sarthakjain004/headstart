@@ -25,6 +25,7 @@ from pathlib import Path
 from headstart import board_aliases, liveness
 from headstart.config import PARKED_BOARDS
 from headstart.scrapable_boards import (
+    Row,
     ScrapableBoard,
     _board_of_row,
     _elect,
@@ -37,8 +38,8 @@ ROOT = Path(__file__).resolve().parents[1]
 LEDGER = ROOT / "data" / "validate" / "liveness"
 
 
-def _ledger_rows() -> list[tuple[ScrapableBoard, liveness.Verdict]]:
-    """Every row naming a Board, every status: a newer `dead` row takes a Board out (ADR-0217)."""
+def _ledger_rows() -> list[Row]:
+    """Every row naming a Board, every status: a newer `dead` row takes a Board out (ADR-0219)."""
     out = []
     for path in sorted(LEDGER.glob("*.csv")):
         if path.stem not in SCRAPERS:
@@ -50,8 +51,8 @@ def _ledger_rows() -> list[tuple[ScrapableBoard, liveness.Verdict]]:
     return out
 
 
-def _dedupe(
-    rows: list[tuple[ScrapableBoard, liveness.Verdict]],
+def _elected_boards(
+    rows: list[Row],
 ) -> list[ScrapableBoard]:
     return [board for board, _ in _elect(rows)]
 
@@ -74,9 +75,9 @@ def _counts() -> dict[str, int]:
                 by_status[st] = by_status.get(st, 0) + 1
 
     rows = _ledger_rows()
-    unique = _dedupe(rows)
+    unique = _elected_boards(rows)
     # Two things separate Live row from Unique Board: duplicate spellings of one Board, and Boards
-    # whose newest verified row is `dead` (ADR-0217). The docs quote them apart.
+    # whose newest verified row is `dead` (ADR-0219). The docs quote them apart.
     live_groups = {c.lowercase_identity for c, v in rows if v.status == liveness.LIVE}
     # Boards buried as another Board's duplicate (ADR-0111). A stage of the funnel that neither
     # `EXCLUDED_BOARDS` nor the case-variant dedupe accounts for: it is keyed on evidence from
@@ -123,7 +124,8 @@ def _counts() -> dict[str, int]:
         # above. Both are real; each doc must be checked in the order it actually states.
         "excluded_before_dedupe": len(exclude_first_excluded),
         "dedupe_after_exclude": len(kept_live) - len(kept_groups),
-        "outvoted_after_exclude": len(kept_groups) - len(_dedupe(exclude_first_kept)),
+        "outvoted_after_exclude": len(kept_groups)
+        - len(_elected_boards(exclude_first_kept)),
         "parked": sum(1 for c in unaliased if c.lowercase_identity in PARKED_BOARDS),
         "Scrapable Board": len(load(LEDGER, min_jobs=0)),
         "Hiring Board": len(load(LEDGER, min_jobs=1)),

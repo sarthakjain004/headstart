@@ -8,7 +8,7 @@
 2. a vendor test Board in ``config.EXCLUDED_BOARDS`` (:func:`is_excluded`, on the lowercased
    ``ats:slug``);
 3. a Board buried as another's duplicate in the alias ledger (ADR-0111, on the lowercased slug);
-4. the election (:func:`_elect`, ADR-0023 as amended by ADR-0217): rows naming one Board, compared
+4. the election (:func:`_elect`, ADR-0023 as amended by ADR-0219): rows naming one Board, compared
    case-insensitively, collapse to one; a Board whose newest verified row is ``dead`` drops out;
 5. under ``min_jobs``, on the elected row's count;
 6. a Board in ``config.PARKED_BOARDS``, on the lowercased identity the election collapsed on.
@@ -65,6 +65,10 @@ class ScrapableBoard(CompanyRef):
         object.__setattr__(self, "lowercase_identity", lower_key(identity))
 
 
+#: One ledger row read as the Board it names: the unit :func:`_elect` groups and chooses among.
+Row = tuple[ScrapableBoard, liveness.Verdict]
+
+
 def is_excluded(ats: str, slug: str) -> bool:
     """Is this a vendor test Board in ``config.EXCLUDED_BOARDS``?
 
@@ -85,7 +89,7 @@ def load(ledger_dir: str | Path, *, min_jobs: int = 1) -> list[ScrapableBoard]:
     ``config/companies.toml`` remains the small curated seed.
     """
     ledger_dir = Path(ledger_dir)
-    rows: list[tuple[ScrapableBoard, liveness.Verdict]] = []
+    rows: list[Row] = []
     for csv_path in sorted(ledger_dir.glob("*.csv")):
         scraper = SCRAPERS.get(csv_path.stem)
         if scraper is None:
@@ -139,16 +143,16 @@ def _board_of_row(
     the fallback's warning on every load."""
     if verdict.status != liveness.LIVE:
         try:
-            board_key(company)
+            board_key(company)  # only asks whether the slug parses
         except Exception:  # noqa: BLE001 - an unparseable non-live row names no Board
             return None
     return ScrapableBoard(ats=company.ats, slug=company.slug, name=company.name)
 
 
 def _elect(
-    rows: list[tuple[ScrapableBoard, liveness.Verdict]],
-) -> list[tuple[ScrapableBoard, liveness.Verdict]]:
-    """One representative row per Board, for the Boards whose newest verdict is live (ADR-0217,
+    rows: list[Row],
+) -> list[Row]:
+    """One representative row per Board, for the Boards whose newest verdict is live (ADR-0219,
     amending ADR-0023).
 
     The ledger holds several rows for one Board: casing variants (Workday ``.../External`` vs
@@ -167,7 +171,7 @@ def _elect(
       is what the scraper fetches and its job count is what ``min_jobs`` reads, so the Scrapable
       and the Hiring lists elect the same row.
     """
-    groups: dict[str, list[tuple[ScrapableBoard, liveness.Verdict]]] = {}
+    groups: dict[str, list[Row]] = {}
     for board, verdict in rows:
         groups.setdefault(board.lowercase_identity, []).append((board, verdict))
     elected = []
@@ -181,6 +185,7 @@ def _elect(
         ):
             continue
         key = min(b.identity for b, _ in live)
-        carriers = [bv for bv in live if bv[0].identity == key]
-        elected.append(max(carriers, key=lambda bv: bv[1].checked_at))  # first of a tie
+        carriers = [(b, v) for b, v in live if b.identity == key]
+        # `max` keeps the first of equal dates, and `rows` is in ledger order.
+        elected.append(max(carriers, key=lambda row: row[1].checked_at))
     return elected

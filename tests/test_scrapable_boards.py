@@ -211,7 +211,7 @@ def test_is_excluded_matches_any_casing_and_nothing_else():
     assert not is_excluded("greenhouse", "stage")  # KKR's real Board, not a test tenant
 
 
-# --- electing a Board's representative row (ADR-0210) ---
+# --- electing a Board's representative row (ADR-0219) ---
 # Several ledger rows can name one Board. The verdict is the newest verified row's, the key keeps
 # today's lex-min casing, and the slug comes from the newest live row that carries that key.
 
@@ -233,7 +233,7 @@ def test_a_newer_dead_row_takes_the_board_out(tmp_path):
 
 def test_a_dead_row_from_the_same_day_as_a_live_one_keeps_the_board(tmp_path):
     """The ledger dates a probe to the day, so a same-day `dead` is not newer. Re-probed
-    2026-09-25, all 45 such groups answered live (ADR-0217)."""
+    2026-09-25, all 45 such groups answered live (ADR-0219)."""
     ledger = tmp_path / "liveness"
     _write_ledger(
         ledger,
@@ -264,7 +264,7 @@ def test_a_newer_unknown_row_never_overrides_a_live_one(tmp_path):
 
 def test_the_key_keeps_its_casing_when_a_newer_row_spells_it_otherwise(tmp_path):
     """The key is the lex-min identity among live rows, the casing every served id carries.
-    Electing the newest row outright would re-key 1,652 Workday Boards (ADR-0217)."""
+    Electing the newest row outright would re-key 1,652 Workday Boards (ADR-0219)."""
     ledger = tmp_path / "liveness"
     _write_ledger(
         ledger,

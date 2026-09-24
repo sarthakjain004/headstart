@@ -1,4 +1,4 @@
-# ADR-0217: A Board's row is elected on evidence, and its key is kept
+# ADR-0219: A Board's row is elected on evidence, and its key is kept
 
 **Status:** accepted · **Date:** 2026-09-25 · **Amends:**
 [ADR-0023](0023-prune-stale-and-duplicate-index-rows.md) (the representative row: lex-min over the
@@ -104,7 +104,8 @@ answered on only 11 of them.
 
 Nothing is lost when the data centre is wrong: `WorkdayScraper._resolve_instance` sweeps the data
 centres at scrape time, at the cost of a few extra POSTs. The fix that would make this evidence is
-in the prober: write the data centre that answered into the row's url. It is not done here.
+in the prober: write the data centre that answered into the row's url. It is not done here;
+[#661](https://github.com/sarthakjain004/headstart/issues/661) tracks it.
 
 ## Consequences
 
