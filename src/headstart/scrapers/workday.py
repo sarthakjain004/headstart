@@ -49,13 +49,13 @@ from urllib.parse import urlsplit, urlunsplit
 from headstart import fanout_stats, http, log
 from headstart.fetcher import Fetcher
 from headstart.models import Job, html_to_text, is_remote
+from headstart.scrapers import workday_company
 from headstart.scrapers.base import (
     USER_AGENT,
     BaseScraper,
     classify_exception,
     loss_breakdown,
 )
-from headstart.scrapers import workday_company
 from headstart.scrapers.job_posting_jsonld import jsonld_nodes
 
 _log = log.get(__name__)
@@ -182,7 +182,7 @@ def _extract_page_detail(response: Any) -> dict[str, Any] | None:
         "startDate": posting.get("datePosted"),
         "remoteType": posting.get("jobLocationType"),
         "timeType": _SCHEMA_EMPLOYMENT.get(employment, employment),
-        # The same legal entity the CXS detail states, for the Board's name (ADR-0209).
+        # The same legal entity the CXS detail states, for the Board's name (ADR-0210).
         "hiringOrganization": organization.get("name")
         if isinstance(organization, dict)
         else None,
@@ -985,7 +985,7 @@ class WorkdayScraper(BaseScraper):
         payload = response.json()
         info = payload.get("jobPostingInfo") or {}
         country = info.get("country")
-        # Beside `jobPostingInfo`, not inside it: the posting's legal entity (ADR-0209).
+        # Beside `jobPostingInfo`, not inside it: the posting's legal entity (ADR-0210).
         organization = payload.get("hiringOrganization")
         return {
             "description": info.get("jobDescription"),
@@ -1573,16 +1573,17 @@ class WorkdayScraper(BaseScraper):
         the Board's identity (``{co}.wdN.myworkdayjobs.com/{site}``, "External", "AVEVA_careers"),
         never its company, so no ledger value is worth keeping over a name.
 
-        A name on file wins and costs no request: `workday_company.recorded_name` reads the
-        curated map and the cascade's committed answers, the cache that keeps a Board's name the
-        same from run to run (ADR-0209). Otherwise one GET of the board page — one attempt that
-        can never wall the host, as the base method's — feeds `workday_company.board_name` with
-        the `hiringOrganization` values the detail pass already fetched. A Board that yields no
-        name keeps the one it had.
+        A curated name never reaches here: `BaseScraper.fetch` applies it and skips this call. A
+        name in the cascade's committed cache (`workday_company.resolved_name`) wins next and costs
+        no request; it is what keeps a Board's name the same from run to run (ADR-0210).
+        Otherwise one GET of the board page — one attempt that can never wall the host, as the
+        base method's — feeds `workday_company.board_name` with the `hiringOrganization` values
+        the detail pass already fetched. A Board that yields no name keeps the one it had, which
+        `company_name.settled` then humanises (ADR-0209).
         """
-        recorded = workday_company.recorded_name(self.board_key())
-        if recorded:
-            self.company = recorded
+        cached = workday_company.resolved_name(self.board_key())
+        if cached:
+            self.company = cached
             return
         try:
             response = self._fetch(

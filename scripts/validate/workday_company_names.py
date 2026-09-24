@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Write Workday's company-name cache: one resolved name per Board (ADR-0209).
+"""Write Workday's company-name cache: one resolved name per Board (ADR-0210).
 
 `WorkdayScraper.resolve_company` reads `data/validate/company_names/workday.csv` before it spends a
 request, so a Board on file keeps the same name from run to run. This script is what fills it. Per
@@ -49,7 +49,11 @@ def resolve(slug: str) -> tuple[str, str | None, str]:
     scraper._resolve_instance()  # a migrated tenant's own wdN host no longer answers
     tenant, _instance, site = scraper._parts()
     listing = scraper._post({}, 0, raise_gone=True) or {}
-    paths = [p["externalPath"] for p in listing.get("jobPostings") or [] if p.get("externalPath")]
+    paths = [
+        p["externalPath"]
+        for p in listing.get("jobPostings") or []
+        if p.get("externalPath")
+    ]
     details = [scraper._job_detail(path) for path in paths[:_DETAILS]]
     response = scraper._fetch(
         "GET", scraper.job_url(""), headers={"User-Agent": USER_AGENT}, timeout=30
@@ -70,7 +74,9 @@ def _read(path: Path) -> dict[str, dict[str, str]]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
-    parser.add_argument("--all", action="store_true", help="re-read Boards already on file")
+    parser.add_argument(
+        "--all", action="store_true", help="re-read Boards already on file"
+    )
     args = parser.parse_args()
 
     held = _read(OUT)
@@ -84,9 +90,10 @@ def main() -> None:
     OUT.parent.mkdir(parents=True, exist_ok=True)
     new_file = not OUT.exists()
     named = 0
-    with OUT.open("a", newline="", encoding="utf-8") as handle, ThreadPoolExecutor(
-        _WORKERS
-    ) as pool:
+    with (
+        OUT.open("a", newline="", encoding="utf-8") as handle,
+        ThreadPoolExecutor(_WORKERS) as pool,
+    ):
         writer = csv.DictWriter(handle, FIELDS)
         if new_file:
             writer.writeheader()
@@ -102,7 +109,12 @@ def main() -> None:
             if name:
                 named += 1
                 writer.writerow(
-                    {"board_key": key, "name": name, "source": source, "checked_at": today}
+                    {
+                        "board_key": key,
+                        "name": name,
+                        "source": source,
+                        "checked_at": today,
+                    }
                 )
                 handle.flush()
     # The appends above may repeat a Board `--all` re-read; the last row for a key is the newest.
@@ -111,7 +123,10 @@ def main() -> None:
         writer = csv.DictWriter(handle, FIELDS)
         writer.writeheader()
         writer.writerows(rows)
-    print(f"named {named} of {len(boards)}; {len(rows)} Boards on file -> {OUT}", flush=True)
+    print(
+        f"named {named} of {len(boards)}; {len(rows)} Boards on file -> {OUT}",
+        flush=True,
+    )
 
 
 if __name__ == "__main__":

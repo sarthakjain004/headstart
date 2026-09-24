@@ -119,6 +119,20 @@ def test_the_board_slug_vouches_when_the_page_says_nothing():
     )
 
 
+def test_a_brand_spelled_with_digits_is_a_proper_noun():
+    """8x8 carries no capital, so a capital-only check never vouched for it (2026-09-24)."""
+    entities = [
+        "8x8, Inc. (U.S)",
+        "8x8 UK Ltd.",
+        "8x8 International Philippine Branch Office",
+    ]
+    page = _page("Careers at 8x8", "what life at 8x8 is like")
+    assert board_name(entities, page, "8x8inc/8x8_External_Careers") == (
+        "8x8",
+        "hiringOrganization",
+    )
+
+
 def test_a_one_word_generic_run_is_never_a_name():
     entities = ["Health Partners Plans LLC"] * 3
     page = _page(None, "Health is our mission.")
@@ -146,8 +160,13 @@ def test_a_wrapped_og_title_names_a_board_with_no_entities():
 
 
 def test_an_og_description_opener_is_the_last_resort():
-    page = _page(None, "At Micro Focus, we provide our customers with enterprise software.")
-    assert board_name([], page, "microfocus/ACJobSite") == ("Micro Focus", "og:description")
+    page = _page(
+        None, "At Micro Focus, we provide our customers with enterprise software."
+    )
+    assert board_name([], page, "microfocus/ACJobSite") == (
+        "Micro Focus",
+        "og:description",
+    )
 
 
 def test_a_description_about_the_reader_names_nothing():

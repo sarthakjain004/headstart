@@ -75,7 +75,7 @@ did not carry — it does, beside ``jobPostingInfo``, on 140 of 140 Boards sampl
 value is the *per-posting* legal entity and varies **within a single Board** — nvidia alone returns
 "IL00 Mellanox Technologies, Ltd.", "IN01 NVIDIA Graphics Bengaluru" and "2100 NVIDIA USA" — so
 `headstart.scrapers.workday_company` cleans, checks and votes the values into one name, and only
-then calls `from_title` for the guards below (ADR-0209).
+then calls `from_title` for the guards below (ADR-0210).
 
 Every rule below rejects a shape that was actually observed. A title this cannot read leaves the
 Board unnamed, and `settled` then serves its `humanised` tenant rather than the raw slug (ADR-0212).
@@ -226,7 +226,7 @@ PATTERNS: dict[str, tuple[re.Pattern[str], ...]] = {
     ),
     # workday: not a title. `workday_company.board_name` reads a name out of the postings'
     # `hiringOrganization` values and the board page's og tags, then passes it here for the
-    # guards below, so the pattern is adp's bare catch-all (ADR-0209).
+    # guards below, so the pattern is adp's bare catch-all (ADR-0210).
     "workday": (re.compile(r"^(?P<name>.+)$"),),
 }
 

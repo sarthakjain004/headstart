@@ -1,4 +1,4 @@
-"""A Workday Board's company name, voted from its postings' legal entities (ADR-0209).
+"""A Workday Board's company name, voted from its postings' legal entities (ADR-0210).
 
 Workday names no company in its listing, and its board page is a client-rendered shell whose
 ``og:title`` is the company on well under half the Boards that carry one ("Careers", "Job
@@ -30,7 +30,7 @@ separator, no 60-character sentence.
 
 Measured on 2026-09-24 over 140 random affected Boards: 126 named (90%), 92% of an 80-Board
 holdout, 82% of multi-site tenants; about 86% of the names correct, 11% partial ("Johnson" for
-Johnson Controls), 2% wrong. The figures for the full 4,175-Board sweep are in ADR-0209.
+Johnson Controls), 2% wrong. Over the full 4,175-Board sweep: 86% of Boards named; ADR-0210 has the rest.
 
 **Per site, never per tenant.** A tenant's sites often host different companies —
 ``volarisgroup`` runs a site per acquired business, ``humana``'s ``centerwell`` site hires for
@@ -50,11 +50,8 @@ from pathlib import Path
 
 from headstart import company_name
 
-__all__ = ["CURATED_NAMES", "RESOLVED_NAMES", "board_name", "clean", "og", "recorded_name"]
+__all__ = ["RESOLVED_NAMES", "board_name", "clean", "og", "resolved_name"]
 
-#: Names chosen by hand from each Board's own careers pages, one ``board_key,name,evidence`` row
-#: per Board. An entry here outranks every other source.
-CURATED_NAMES = Path("config/company_names.csv")
 #: The cascade's own answers, one ``board_key,name,source,checked_at`` row per Board it named,
 #: written by ``scripts/validate/workday_company_names.py`` and committed. This is the per-Board
 #: cache: a Board on file keeps its name from run to run and costs no board-page request.
@@ -85,7 +82,7 @@ _LEGAL = re.compile(
 #: A trailing country, set off by a comma, a bracket, a spaced hyphen or a space — never a hyphen
 #: inside a name ("CBC/Radio-Canada") or a country "of" names ("Royal Bank of Canada").
 _COUNTRY = re.compile(
-    r"(?<!\sof)(?:(?:\s*[_,(]\s*|\s+-\s+|\s+)(?:united states|usa|us|uk|india|canada|italy"
+    r"(?<!\sof)(?:(?:\s*[_,(]\s*|\s+-\s+|\s+)(?:united states|usa|u\.s\.?|us|uk|india|canada|italy"
     r"|germany|france|singapore|china|japan|mexico|ireland|australia|philippines)\)?)+\s*$",
     re.IGNORECASE,
 )
@@ -130,21 +127,22 @@ _DESCRIPTION_OPENERS = (
 _NOT_A_SUBJECT = frozenset({"We", "Our", "This", "It"})
 
 
-def recorded_name(board_key: str) -> str | None:
-    """This Board's name on file — curated first, then the committed cache — or None.
+def resolved_name(board_key: str) -> str | None:
+    """This Board's name in the committed cache, or None.
 
     Matched case-insensitively, because the ledger spells one Workday site more than one way
-    (``/External`` and ``/external``) and both are the same Board.
+    (``/External`` and ``/external``) and both are the same Board. A curated name
+    (`company_name.curated`) is not read here: `BaseScraper.fetch` applies it before
+    `resolve_company` runs, and skips that call altogether.
     """
-    key = board_key.lower()
-    return _names_in(CURATED_NAMES).get(key) or _names_in(RESOLVED_NAMES).get(key)
+    return _names_in(RESOLVED_NAMES).get(board_key.lower())
 
 
 @functools.cache
 def _names_in(path: Path) -> dict[str, str]:
-    """``board_key -> name`` from one of the files above, read once; empty when it is absent.
+    """``board_key -> name`` from the cache file, read once; empty when it is absent.
 
-    Relative paths resolve against the repo root, which every pipeline job installs editable.
+    A relative path resolves against the repo root, which every pipeline job installs editable.
     """
     full = Path(__file__).resolve().parents[3] / path
     try:
@@ -193,7 +191,8 @@ def clean(entity: str | None) -> str:
 def _checked_run(name: str, prose: str, board_letters: str) -> str | None:
     """The longest leading run of ``name``'s words the Board itself vouches for, or None.
 
-    Vouching means the prose states the run as a proper noun (returned in the prose's casing), or
+    Vouching means the prose states the run as a proper noun — a capital or a digit in the prose's
+    own spelling ("8x8"), which is what is returned — or
     four or more of the run's letters sit inside the Board's ``{tenant}/{site}``. The run may start
     after words that are themselves codes the cleaning left ("AMC OU Ambarella"). A legal form the
     prose wrote after the name ("U-Haul co") is dropped from what is returned.
@@ -219,7 +218,7 @@ def _checked_run(name: str, prose: str, board_letters: str) -> str | None:
             for match in re.finditer(
                 r"(?<!\w)" + re.escape(phrase) + r"(?!\w)", prose, re.IGNORECASE
             ):
-                if any(c.isupper() for c in match.group(0)):
+                if any(c.isupper() or c.isdigit() for c in match.group(0)):
                     return _LEGAL.sub("", match.group(0))
             letters = re.sub(r"[^a-z]", "", phrase.lower())
             if len(letters) >= 4 and letters in board_letters:

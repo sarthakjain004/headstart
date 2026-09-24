@@ -2696,6 +2696,17 @@ def test_workday_detail_classes_reach_the_report_through_fetch_raw(monkeypatch, 
     assert "2 of 2 detail(s) failed mid-crawl (HTTP 404 x2)" in caplog.text
 
 
+@pytest.fixture
+def no_names_on_file(monkeypatch, tmp_path):
+    """Neither the curated map nor the committed Workday cache names these made-up Boards, so the
+    cascade itself is what a test observes, whatever the repo's own files come to hold."""
+    from headstart import company_name
+    from headstart.scrapers import workday_company
+
+    monkeypatch.setattr(company_name, "curated_names", dict)
+    monkeypatch.setattr(workday_company, "RESOLVED_NAMES", tmp_path / "absent.csv")
+
+
 def _workday_board(site: str, entities: list[str], page: str, *, cxs_detail=True):
     """A one-tenant Workday route: a listing of one posting per entity, each detail stating that
     entity (from the CXS API, or from the public page's JSON-LD when ``cxs_detail`` is False),
@@ -2737,6 +2748,7 @@ def _workday_board(site: str, entities: list[str], page: str, *, cxs_detail=True
     return f"{host}/{site}", route
 
 
+@pytest.mark.usefixtures("no_names_on_file")
 def test_workday_names_each_site_of_one_tenant_from_its_own_postings():
     """humana's main site and its CenterWell site are two companies (2026-09-24): one tenant,
     never one name."""
@@ -2763,6 +2775,7 @@ def test_workday_names_each_site_of_one_tenant_from_its_own_postings():
     assert {job.company for job in centerwell_jobs} == {"CenterWell"}
 
 
+@pytest.mark.usefixtures("no_names_on_file")
 def test_workday_names_a_board_from_the_json_ld_fallback_too():
     """A sub-site whose CXS details all 404 recovers them from the public page (ADR-0099); that
     page's JSON-LD states the same legal entity."""
@@ -2778,14 +2791,18 @@ def test_workday_names_a_board_from_the_json_ld_fallback_too():
     assert {job.company for job in jobs} == {"Humana"}
 
 
-def test_workday_keeps_its_ledger_name_when_nothing_names_the_board():
+@pytest.mark.usefixtures("no_names_on_file")
+def test_workday_falls_back_to_the_humanised_tenant_when_nothing_names_the_board():
+    """An office is not an employer, and the page says nothing: the ledger's identifier is never
+    served, and the policy's humanised tenant is (ADR-0209)."""
     from headstart.scrapers.workday import WorkdayScraper
 
     slug, route = _workday_board(
         "Humana_External_Career_Site", ["0090 CORP-Corporate Office"], "<html></html>"
     )
-    jobs = WorkdayScraper(slug, "humana-ledger", FakeFetcher(route)).fetch()
-    assert {job.company for job in jobs} == {"humana-ledger"}
+    ledger_name = "humana.wd5.myworkdayjobs.com/humana_external_career_site"
+    jobs = WorkdayScraper(slug, ledger_name, FakeFetcher(route)).fetch()
+    assert {job.company for job in jobs} == {"Humana"}
 
 
 def _names_file(tmp_path, name, header, rows):
@@ -2795,7 +2812,10 @@ def _names_file(tmp_path, name, header, rows):
 
 
 def test_workday_name_on_file_wins_and_skips_the_board_page(monkeypatch, tmp_path):
+    from headstart import company_name
     from headstart.scrapers import workday_company
+
+    monkeypatch.setattr(company_name, "curated_names", dict)
     from headstart.scrapers.workday import WorkdayScraper
 
     monkeypatch.setattr(
@@ -2818,20 +2838,12 @@ def test_workday_name_on_file_wins_and_skips_the_board_page(monkeypatch, tmp_pat
 
 
 def test_workday_curated_name_outranks_the_cascade_and_its_cache(monkeypatch, tmp_path):
+    from headstart import company_name
     from headstart.scrapers import workday_company
     from headstart.scrapers.workday import WorkdayScraper
 
     key = "workday:humana/Humana_External_Career_Site"
-    monkeypatch.setattr(
-        workday_company,
-        "CURATED_NAMES",
-        _names_file(
-            tmp_path,
-            "curated.csv",
-            "board_key,name,evidence",
-            [f"{key},Humana Inc.,og:description names Humana"],
-        ),
-    )
+    monkeypatch.setattr(company_name, "curated_names", lambda: {key: "Humana Inc."})
     monkeypatch.setattr(
         workday_company,
         "RESOLVED_NAMES",
@@ -2845,8 +2857,10 @@ def test_workday_curated_name_outranks_the_cascade_and_its_cache(monkeypatch, tm
     slug, route = _workday_board(
         "Humana_External_Career_Site", ["003 Humana Inc."], "<html></html>"
     )
-    jobs = WorkdayScraper(slug, "humana", FakeFetcher(route)).fetch()
+    fetcher = FakeFetcher(route)
+    jobs = WorkdayScraper(slug, "humana", fetcher).fetch()
     assert {job.company for job in jobs} == {"Humana Inc."}
+    assert slug not in fetcher.urls()
 
 
 def test_freshteam_parse():
