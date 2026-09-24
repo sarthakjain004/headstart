@@ -342,7 +342,7 @@ def test_bad_credential_is_401(auth_app, monkeypatch):
     assert r.status_code == 401
 
 
-def test_privacy_policy_is_reachable_signed_out(auth_app):
+def test_privacy_policy_is_public_and_linked_from_the_door(auth_app):
     # Google's OAuth consent screen needs a privacy-policy URL a stranger can open, so the
     # wall must not gate it. It points at the one canonical copy in the repository.
     client = auth_app.app.test_client()
