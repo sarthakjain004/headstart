@@ -102,20 +102,24 @@ from headstart.embedding_conventions import PROD_TABLE
 from headstart.ingest import (
     PENDING_UPGRADES_PATH,
     REPO_ROOT,
+    RUN_TS_ENV,  # noqa: F401 - re-exported for the tests that pin a run's stamp
     UNCONFIRMED_PATH,
     board_freshness,
+    dedup_evictions,
     observability,
     read_id_list,
+    run_ts,
     write_id_list,
 )
 from headstart.ingest.doc_prep import PLANNER_ONLY_FIELDS
 from headstart.ingest.index_plan import (
+    aliased_boards,
     apply_sync,
     boards_by_canon,
     grace_period_counts,
     in_predicate,
     live_keep_set,
-    plan_prune,
+    plan_prune_by_rule,
     plan_sync,
     read_unauthoritative_boards,
     resolve_board,
@@ -1021,13 +1025,14 @@ def prune(args: argparse.Namespace) -> int:
         # rolled-back table, rebuild it, and publish a fresh self-consistent record, laundering
         # the loss into the new base.
         return 1
-    off_board, duplicate = plan_prune(
+    off_board, rules = plan_prune_by_rule(
         index_ids,
         keep,
         site_jobs=workday_site_jobs(args.ledger),
         requisitions=requisitions,
         backing=eightfold_backing.load(),
     )
+    duplicate = list(rules)
     evict = off_board + duplicate
     _log.info(
         f"index: {len(index_ids)} rows | evict {len(evict)} "
@@ -1056,6 +1061,22 @@ def prune(args: argparse.Namespace) -> int:
     _log_ids("prune off-Board", off_board)
     _log_ids("prune duplicate", duplicate)
     apply_sync(table, [], evict)
+    if args.dedup_evictions:
+        # After the delete, so the ledger never records a removal the table did not make. A row on
+        # a Board an alias ledger buries left as off-Board, but its canonical Board serves the
+        # same posting, so for Trends it is a dedup too; any other off-Board row is not (ADR-0206).
+        live = boards_by_canon(keep)
+        buried = aliased_boards(args.ledger)
+        for job_id in off_board:
+            signal = buried.get(lower_key(resolve_board(job_id, live)))
+            if signal:
+                rules[job_id] = f"alias:{signal}"
+        dedup_evictions.append(
+            args.dedup_evictions,
+            run_ts().isoformat(timespec="seconds"),
+            rules,
+            lambda job_id: resolve_board(job_id, live),
+        )
     final = table.count_rows()
     write_base(args.db, final, "prune")
     _log.info(f"done: pruned {len(evict)} rows; table '{PROD_TABLE}' now holds {final}")
@@ -1360,6 +1381,12 @@ def main() -> int:
         "--ledger",
         default=str(_LEDGER),
         help="liveness ledger dir (default: data/validate/liveness)",
+    )
+    p_prune.add_argument(
+        "--dedup-evictions",
+        default=None,
+        help="append each dedup eviction to this ledger (ADR-0206); the pipeline passes "
+        "data/state/dedup_evictions.csv, and a run that does not publish data/state omits it",
     )
     p_prune.set_defaults(fn=prune)
 

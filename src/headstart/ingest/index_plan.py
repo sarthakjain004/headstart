@@ -552,6 +552,43 @@ def workday_site_jobs(ledger_dir: str | Path) -> dict[str, int]:
     return jobs
 
 
+def aliased_boards(ledger_dir: str | Path) -> dict[str, str]:
+    """``{lowercased Board key: signal}`` for every ledger Board an alias ledger buries.
+
+    A buried Board leaves the keep-set, so ``plan_prune`` evicts its rows as off-Board — but its
+    canonical Board serves the same postings, so for Trends that is a dedup, not a closure, and
+    ``index prune`` records it in the dedup eviction ledger as ``alias:{signal}`` (ADR-0206). The
+    rows are matched exactly as ``scrapable_boards.load`` skips them — each liveness row's slug
+    against the alias ledger's ``duplicate`` — whatever the row's status, since a buried Board
+    that later died still left through the alias.
+    """
+    import csv
+
+    from headstart import board_aliases, liveness
+    from headstart.scrapers.registry import company_from_row
+
+    out: dict[str, str] = {}
+    for path in sorted(board_aliases.path_for(ledger_dir, "").parent.glob("*.csv")):
+        with path.open(encoding="utf-8", newline="") as fh:
+            signals = {
+                row["duplicate"].lower(): row["signal"]
+                for row in csv.DictReader(fh)
+                if row.get("duplicate") and row.get("signal")
+            }
+        ledger = Path(ledger_dir) / path.name
+        if not signals or not ledger.exists():
+            continue
+        for verdict in liveness.load(ledger).values():
+            company = company_from_row(path.stem, verdict.tenant, verdict.url)
+            signal = signals.get(company.slug.lower())
+            if signal:
+                try:
+                    out[lower_key(board_key(company))] = signal
+                except ValueError:
+                    continue
+    return out
+
+
 def _live_board_end(job_id: str, live: dict[str, str]) -> int | None:
     """Index of the colon separating a live Board prefix from the native id, or None if the id is
     on no live Board.

@@ -63,7 +63,9 @@ path reaches them too, and the pipeline must not become a dependency of that.
 
 from __future__ import annotations
 
+import os
 from collections.abc import Iterable
+from datetime import UTC, datetime
 from pathlib import Path
 
 # src/headstart/ingest/__init__.py -> the repo root. Every stage reads and writes the repo's
@@ -106,6 +108,24 @@ PENDING_REDERIVE_PATH = REPO_ROOT / "data" / "state" / "pending_rederive.txt"
 # is derived fresh from the run's own scrape plus whatever it carries forward, so an id that has
 # reappeared, been pruned, or belongs to a Board that left the ledger is simply not written again.
 UNCONFIRMED_PATH = REPO_ROOT / "data" / "state" / "unconfirmed_ids.txt"
+
+# The ADR-0206 dedup eviction ledger: one row per (run, Board, rule) for every served row a dedup
+# rule took out, so Trends can add back removals that were never closures. Appended by
+# `index prune`; round-trips through the HF dataset with the rest of data/state.
+DEDUP_EVICTIONS_PATH = REPO_ROOT / "data" / "state" / "dedup_evictions.csv"
+
+#: The environment variable the pipeline sets once per merge job to this run's timestamp, so the
+#: steps that stamp a ledger — `index prune` and `role_trends` — stamp the same value.
+RUN_TS_ENV = "HEADSTART_RUN_TS"
+
+
+def run_ts() -> datetime:
+    """This run's one timestamp, to the second: :data:`RUN_TS_ENV` when the pipeline set it, else
+    now. `index prune` and `role_trends` run minutes apart, and a Trends reader joins the dedup
+    eviction ledger to the trends ledger on it (ADR-0206)."""
+    stated = os.environ.get(RUN_TS_ENV)
+    moment = datetime.fromisoformat(stated) if stated else datetime.now(UTC)
+    return moment.astimezone(UTC).replace(microsecond=0)
 
 
 def read_id_list(path: Path) -> set[str]:

@@ -1019,6 +1019,7 @@ def _prune_args(tmp_path, monkeypatch):
         ledger=str(tmp_path / "liveness"),
         apply=True,
         limit=None,
+        dedup_evictions=None,
     )
 
 
@@ -1097,12 +1098,58 @@ def test_prune_drops_the_eightfold_copy_once_both_rows_carry_the_requisition(
     assert set(_rows(tmp_path)) == {_BEHIND}
 
 
+def test_prune_records_each_dedup_eviction_under_its_rule_and_the_run_stamp(
+    tmp_path, monkeypatch
+):
+    """The dedup eviction ledger (ADR-0206): the Eightfold copy is recorded under its rule and
+    the run stamp `role_trends` will use; an off-Board row on a Board no alias ledger buries is an
+    ordinary eviction and is not recorded."""
+    dead = "greenhouse:gone:1"
+    _sync(tmp_path, monkeypatch, [_FRONT, _BEHIND, dead])
+    _pair_boards(monkeypatch)
+    _sync(
+        tmp_path,
+        monkeypatch,
+        [_FRONT, _BEHIND, dead],
+        meta_over={"requisition": "R-100"},
+    )
+    monkeypatch.setenv(idx.RUN_TS_ENV, "2026-09-25T06:00:00+00:00")
+    args = _prune_args_keeping_the_stub(tmp_path)
+    args.dedup_evictions = str(tmp_path / "state" / "dedup_evictions.csv")
+    assert idx.prune(args) == 0
+    assert set(_rows(tmp_path)) == {_BEHIND}
+    assert (tmp_path / "state" / "dedup_evictions.csv").read_text(encoding="utf-8") == (
+        "ts,board,count,rule\n"
+        "2026-09-25T06:00:00+00:00,eightfold:jobs.acme.com,1,backing-requisition\n"
+    )
+
+
+def test_prune_records_a_row_on_an_aliased_board_under_its_signal(
+    tmp_path, monkeypatch
+):
+    buried = "successfactors:arvestajobs.eu:7"
+    _sync(tmp_path, monkeypatch, [buried, "greenhouse:a:1"])
+    monkeypatch.setattr(
+        idx,
+        "aliased_boards",
+        lambda ledger: {"successfactors:arvestajobs.eu": "redirect"},
+    )
+    args = _prune_args(tmp_path, monkeypatch)
+    args.dedup_evictions = str(tmp_path / "dedup_evictions.csv")
+    monkeypatch.setenv(idx.RUN_TS_ENV, "2026-09-25T06:00:00+00:00")
+    assert idx.prune(args) == 0
+    assert (tmp_path / "dedup_evictions.csv").read_text(encoding="utf-8").splitlines()[
+        1
+    ] == ("2026-09-25T06:00:00+00:00,successfactors:arvestajobs.eu,1,alias:redirect")
+
+
 def _prune_args_keeping_the_stub(tmp_path):
     return argparse.Namespace(
         db=str(tmp_path / "db"),
         ledger=str(tmp_path / "liveness"),
         apply=True,
         limit=None,
+        dedup_evictions=None,
     )
 
 

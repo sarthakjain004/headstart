@@ -143,6 +143,7 @@ from types import ModuleType
 import pytest
 
 from headstart import log
+from headstart.ingest import RUN_TS_ENV
 
 _ROOT = Path(__file__).resolve().parents[1]
 _RUNLOG = _ROOT / "scripts" / "runlog"
@@ -1368,7 +1369,10 @@ def _index_prune(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     assert (
         index.prune(
             argparse.Namespace(
-                db="data/lancedb", ledger="data/validate/liveness", apply=True
+                db="data/lancedb",
+                ledger="data/validate/liveness",
+                apply=True,
+                dedup_evictions=None,
             )
         )
         == 0
@@ -1552,9 +1556,8 @@ def _trends(
     from headstart.ingest import role_assignments, role_trends
 
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(
-        role_trends, "datetime", _PinnedClock("2026-09-08T00:00:00+00:00")
-    )
+    # The tick's stamp is the run's (ADR-0206), which the pipeline pins through the environment.
+    monkeypatch.setenv(RUN_TS_ENV, "2026-09-08T00:00:00+00:00")
     _trends_taxonomy(tmp_path)
     served, assigned = _trends_rows()
     _served_table(Path("data/lancedb"), served if rows else [], _TRENDS_K)
@@ -1603,9 +1606,8 @@ def _trends_all_non_tech(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Non
     from headstart.ingest import role_trends
 
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(
-        role_trends, "datetime", _PinnedClock("2026-09-08T00:00:00+00:00")
-    )
+    # The tick's stamp is the run's (ADR-0206), which the pipeline pins through the environment.
+    monkeypatch.setenv(RUN_TS_ENV, "2026-09-08T00:00:00+00:00")
     _trends_taxonomy(tmp_path)
     served, _ = _trends_rows()
     non_tech = [r for r in served if r["vector"][_TRENDS_K - 1] == 1.0]

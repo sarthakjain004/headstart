@@ -33,13 +33,13 @@ from __future__ import annotations
 
 import argparse
 import csv
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import numpy as np
 
 from headstart import log, roles, tech_filter
-from headstart.ingest import REPO_ROOT, role_assignments, trends_epochs
+from headstart.ingest import REPO_ROOT, role_assignments, run_ts, trends_epochs
 from headstart.ingest.doc_prep import DERIVATIONS_VERSION
 from headstart.ingest.index_plan import (
     DEDUP_VERSION,
@@ -556,7 +556,8 @@ def main() -> int:
         columns.append("first_seen")
     rows = table.search().select(columns).limit(n).to_arrow()
 
-    now = datetime.now(UTC)
+    # The run's one stamp, which `index prune` also wrote its dedup evictions under (ADR-0206).
+    now = run_ts()
     ts = now.isoformat(timespec="seconds")
     new_after = (now - timedelta(days=NEW_WINDOW_DAYS)).isoformat(timespec="seconds")
     try:

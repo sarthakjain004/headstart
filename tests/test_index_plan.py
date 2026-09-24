@@ -10,6 +10,7 @@ import pytest
 
 from headstart.ingest.index_plan import (
     _live_board_end,
+    aliased_boards,
     apply_sync,
     boards_by_canon,
     grace_period_counts,
@@ -1232,6 +1233,27 @@ def test_prune_names_the_rule_behind_each_duplicate():
         requisitions=reqs,
         backing=_BACKING,
     ) == (off, list(rules))
+
+
+def test_aliased_boards_names_each_buried_board_with_its_signal(tmp_path):
+    """An off-Board eviction on a Board an alias ledger buries is a dedup, not a closure — the
+    canonical Board serves the same postings — so prune records it under `alias:{signal}`. The
+    keys are built exactly as `scrapable_boards.load` skips them: the ledger row's slug."""
+    ledger = tmp_path / "liveness"
+    ledger.mkdir()
+    (ledger / "successfactors.csv").write_text(
+        "ats,tenant,url,status,jobs,checked_at\n"
+        "successfactors,ArvestaJobs.eu,https://arvestajobs.eu,live,3,2026-09-06\n"
+        "successfactors,jobs.arvesta.eu,https://jobs.arvesta.eu,live,3,2026-09-06\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "aliases").mkdir()
+    (tmp_path / "aliases" / "successfactors.csv").write_text(
+        "ats,duplicate,canonical,signal,resolved_to,checked_at\n"
+        "successfactors,arvestajobs.eu,jobs.arvesta.eu,redirect,jobs.arvesta.eu,2026-09-06\n",
+        encoding="utf-8",
+    )
+    assert aliased_boards(ledger) == {"successfactors:arvestajobs.eu": "redirect"}
 
 
 _COPY, _BACK = f"{_EF}:1099", f"{_MAIN}:R-100"

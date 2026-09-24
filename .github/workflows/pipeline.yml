@@ -844,6 +844,11 @@ jobs:
         continue-on-error: true
         timeout-minutes: 35
         run: python -m headstart.ingest.update_meta --sweep-budget-seconds 600
+      - name: Stamp this run's time for the ledgers it writes (ADR-0206)
+        # One value for `index prune`'s dedup eviction ledger and `role_trends`' ledger, which run
+        # minutes apart: Trends joins the two on it to add back removals that were never closures.
+        if: needs.scrape-plan.outputs.run == 'true'
+        run: echo "HEADSTART_RUN_TS=$(date -u +%Y-%m-%dT%H:%M:%S+00:00)" >> "$GITHUB_ENV"
       - name: Sync the jobs table
         # `--scraped-boards` explicitly, because it has no default (ADR-0161): the file rides
         # `data/state` through the HF dataset, so a default would let any checkout holding a
@@ -855,8 +860,19 @@ jobs:
           python -m headstart.ingest.index sync
           --scraped-boards data/state/scraped_boards.json
       - name: Prune dead-Board and duplicate rows
+        # The dedup eviction ledger (ADR-0206) rides `data/state`, which only this run's corpus
+        # artifact brings and only then is published — so without it, prune still runs and the
+        # ledger is not written rather than written to a file nothing uploads.
         if: needs.scrape-plan.outputs.run == 'true'
-        run: python -m headstart.ingest.index prune --apply
+        env:
+          CORPUS: ${{ steps.corpus.outcome }}
+        run: |
+          if [ "$CORPUS" = "success" ]; then
+            python -m headstart.ingest.index prune --apply \
+              --dedup-evictions data/state/dedup_evictions.csv
+          else
+            python -m headstart.ingest.index prune --apply
+          fi
       - name: Drop the store's vectors of unserved Jobs (ADR-0190)
         # After prune, so the table it keeps is final. Needs the corpus, whose ids it also keeps.
         # Never fatal: it rewrites through tmp files (which the upload excludes), so a failure
