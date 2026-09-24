@@ -58,3 +58,14 @@ same way, since an aliased Board's history stays in the Board-delta ledger.
   counter's own comment says when to bump.
 - Series are marked, not corrected: the step is still drawn, with a marker saying why. Hiding it
   from deltas entirely would need `role_trends` to know why each row left, and was not chosen.
+
+## Amendment (2026-09-25, ADR-0210)
+
+Decision 3's premise — a dedup rule's removals land on the tick the marker sits on — no longer holds
+for every rule. ADR-0210's requisition rule removes an Eightfold row only once both it and its
+backing row carry a `requisition` stamp, and stamps arrive as each Board is re-scraped. Measured
+on v654 and the 2026-09-24 scrape cadence, 99.6% of its 10,296 removals land on the marker's tick
+and the rest within about a day. The marker is still stamped (`DEDUP_VERSION` 5), and every
+removal a dedup rule makes is now also recorded, per run, Board and rule, in
+`data/state/dedup_evictions.csv`, under the same `ts` `role_trends` stamps — so a Trends reader can
+add dedup removals back exactly, whenever they land, rather than lean on the marker's timing.

@@ -46,8 +46,12 @@ once, which narrows nothing and widens nothing.
      sites like ``.../External`` vs ``.../external`` produce ``company/External`` and ``company/external``
      Board keys, hence two ids for one job. Same lowercased Board + native id → keep one, drop the rest.
      A Workday requisition is grouped across its Workday tenant's sites instead, since a Workday
-     tenant posts one requisition to several of them under the same id (ADR-0187); sync applies
-     the same rule to the rows it adds, so what prune takes out is not re-added.
+     tenant posts one requisition to several of them under the same id (ADR-0187), and an
+     Eightfold career site's copy of a posting its backing Board serves, matched on the stored
+     `requisition`, joins that row's group (ADR-0210); sync applies the same rules to the rows it
+     adds, so what prune takes out is not re-added. With ``--dedup-evictions`` every row taken out
+     as a duplicate, or off-Board on a Board the alias ledger buries, is appended to the dedup
+     eviction ledger by rule.
 
   Planning lives in :mod:`headstart.ingest.index_plan`; this is the CLI that runs it against the table.
   The keep-set is the live ledger (enabled ATSes), each Board key exactly as its scraper's

@@ -80,7 +80,9 @@ which closes Jibe's hand-written row.
 Lumen, whose backing site is an internal careers site (the user's decision), and International
 SOS, which lists postings of its own. A new front enters by adding it there. Two scraper changes
 carry the ids through: SmartApply's shape keeps `ats_job_id`/`display_job_id` under the PCSX names,
-and the Taleo Enterprise listing row keeps `contestNo`. Neither is read by `parse`.
+and the Taleo Enterprise listing row keeps `contestNo`. Neither is read by `parse`. (Since
+ADR-0210 the table is the committed file `data/validate/eightfold_backing.csv`, which the script
+loads as `BACKING`, and `parse` stores both ids as `Job.requisition`.)
 
 ## Evidence
 
