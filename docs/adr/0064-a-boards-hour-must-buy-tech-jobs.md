@@ -174,21 +174,19 @@ its last scrape), 0.22 a minute on the score the gate reads, and never judged be
 15 minutes.
 
 The threshold stays 2 tech jobs a minute; only the floor moves. It is still read off a gap. In
-`board_cost.csv` and `board_priority.csv` as of 2026-09-24, restricted to rows measured within the
-14-day re-check window:
+`board_cost.csv` and `board_priority.csv` as of 2026-09-24, after run `36021294272`, restricted to
+rows measured within the 14-day re-check window:
 
-| measured cost | Boards | tech jobs / min |
+| measured cost | Boards | tech jobs / min, on the score the gate reads |
 |---|---|---|
-| 10-15 min | 3 | `jibe:petsmart` 0.22, `teamtailor:waymaneducation-1710232669` 1.17 (parked by ADR-0136), `jibe:ulta` 1.49 |
+| 10-15 min | 4 | `jibe:petsmart` 0.22, `jibe:greatclips` 0 (11,854 postings, no tech row), `teamtailor:waymaneducation-1710232669` 1.17 (parked by ADR-0136), `jibe:ulta` 2.08 |
 | 6-10 min | 4 | `oracle:hcbt` 26.4, `jibe:jcpenney` 3.3, `successfactors:careers.hcltech.com` 646, `smartrecruiters:SonsoftInc` 951 |
 
-On the score the gate reads, every Board between 10 and 15 minutes is under the threshold and every
-Board between 6 and 10 minutes is over it, so a 10-minute floor gates the first set and none of the
-second. **`jibe:ulta` is borderline, not cleanly under.** Jibe landed on 2026-09-23, so its EWMA
-score (15.4) is still warming toward its raw count: 22 tech jobs in 10.3 minutes is 2.13 a minute,
-just over the line. Gated now, it is out until its 14-day re-check, which judges it on a settled
-score. That is the same trade the gate made above 15 minutes, and it costs at most 22 tech jobs for
-two weeks.
+A 10-minute floor gates petsmart and greatclips, which sit far below the threshold. It gates no Board
+between 6 and 10 minutes. `jibe:ulta` sits on the line rather than in the gap. Jibe landed on
+2026-09-23, and ulta's EWMA score was 15.4 (1.49 a minute) on the first read. One run later it was
+21.4, which is 2.08 a minute, so the gate keeps it. It is the one Board whose verdict can flip
+between runs, and a flip costs at most its 22 tech jobs until the next re-check.
 
 The floor tracks shard wall time, not a fixed truth. If the slice grows until shards again run
 close to their budget, it can rise again. The right test is the one above: which Boards sit
