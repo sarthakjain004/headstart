@@ -172,14 +172,29 @@ It covers 176 hiring Boards and 6,377 postings.
   245 labels — the 244-label measurement sample above, plus `offers` (a vendor host).
 - **Wayback CDX** (`wayback_pages.py clearcompany`, 66 + clearcompany.com pages): 4,166 labels,
   3,936 of them new to the pool.
-- **Common Crawl, multi-index sweep: not measured.** `index.commoncrawl.org` answered every
-  request with an empty reply (curl 52) on 2026-09-23, so the planned sweep of the last ~3 years
-  of indexes was skipped. Its yield is unknown, not zero.
+- **Common Crawl, 33 indexes** (`CC-MAIN-2026-39` back to `CC-MAIN-2023-40`, every crawl of the
+  last three years). `index.commoncrawl.org` answered every request with an empty reply (curl 52)
+  on 2026-09-23, so the sweep read the same index files off `data.commoncrawl.org`
+  (`scripts/discover/cc_data_host.py`). It found 1,265 labels. Five are vendor hosts
+  (`careers-content`, `careers-performance`, `cc-client-cdn`, `learning-marketplace`, `offers`):
+  each answers 404 on the board and 400 on the feed, the same as an invented label. That leaves
+  1,260 labels. **79 are new to the pool**; the other 1,181 were already there from Wayback or the
+  one-index pass. Yield: 245 labels from the newest crawl, then 7 to 91 new per crawl (median about 25),
+  with no crawl adding zero. The 12 crawls from 2024 and 2023 still added 243.
 - No vendor roster exists: the TLS certificate is a wildcard (`crt.sh`: 7 names, all vendor)
   and DNS answers almost any label (the one NXDOMAIN in the pool is the vendor's `preview`). No
   upstream seed list exists.
 
-Pool: 4,181 labels. Ledger: 1,679 live (1,304 hiring, 61,043 postings), 2,474 dead, 28 unknown
+**The 79 Common Crawl labels (2026-09-24 fold):** 35 live (31 hiring, 1,076 postings), 43 dead,
+1 unknown (`apply`, which answers 200 with something other than a feed). After the alias re-run,
+10 of the 31 hiring labels are buried under an account the pool already held (496 postings).
+Two more, `hometownservices` and `martinventures`, are now the kept label of an account we already
+held; they replace `airassurance` and `reimaginecare`, which are buried in their place. The other
+19 are new accounts, with 495 postings. Accounts sharing reqs: 134 across 468 labels, 334 buried,
+up from 322. Scrapable hiring Boards: 1,001, up from 982, with 31,329 distinct postings, up from
+30,834.
+
+At first landing, before that fold, the figures were as follows. Pool: 4,181 labels. Ledger: 1,679 live (1,304 hiring, 61,043 postings), 2,474 dead, 28 unknown
 — labels answering 200 with something other than a feed (vendor infrastructure such as
 `cssstatic1`, `resume`, `talent`) and labels that time out, among them the behavioral-health
 account above. A spot check of 5 live and 5 dead rows against

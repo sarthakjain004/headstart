@@ -94,10 +94,14 @@ subdomain label, from either vendor host.
   (re-run after every ledger refresh), not by `dedupe_boards.py`: that resolves by redirect,
   finds nothing here, and so refuses `--apply` for this ATS rather than erase the file. It is
   the first *pairwise* alias signal, which `board_aliases.py`'s grouping never had to handle.
-- **Discovery.** Wayback (4,166 labels) plus one Common Crawl index (245: the 244-label sample
-  plus `offers`, a vendor host). The planned sweep of
-  the last ~3 years of Common Crawl indexes is **not measured**: `index.commoncrawl.org` answered
-  every request with an empty reply on 2026-09-23. Its yield is unknown, not zero.
+- **Discovery.** Wayback found 4,166 labels. Common Crawl was swept across 33 indexes
+  (`CC-MAIN-2023-40`..`2026-39`, read off `data.commoncrawl.org` because the index API was down),
+  which found 1,260 tenant labels once 5 vendor hosts are removed. 79 of them were new to the pool:
+  35 live, 31 hiring, 1,076 postings. After the alias re-run, 10 of those are buried as duplicates,
+  and 19 new accounts add 495 postings. Every crawl added labels: 245 from the newest, then 7 to 91
+  per crawl. The decision figures below predate this fold. Afterwards there are 1,001 scrapable
+  hiring Boards with 31,329 postings, and 334 buried labels (details in
+  `docs/clearcompany/2026-09-23_careers-surfaces-measurement.md`).
 
 ## Enable decision
 
