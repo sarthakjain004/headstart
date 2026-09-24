@@ -310,7 +310,7 @@ fails if this table drifts from it.
 | `ats` | string | `greenhouse`, `workday`, `ashby`, `darwinbox`, … |
 | `company` | string | the company's name where its Board states one (see *ATS coverage*, above); otherwise the ATS slug |
 | `title` | string | embedded, with the description |
-| `description` | string | the Job's description text, so the Keyword filter can match inside it (ADR-0104). **Nullable** — null on rows indexed before the column existed and on Jobs whose detail pass found nothing. Stored, not served: the API omits it |
+| `description` | string | the Job's description text, so the Keyword filter can match inside it (ADR-0104). Follows the posting: when a run fetches different text, the row is rewritten to serve it, while an empty fetch leaves it alone (ADR-0207). The `vector` is not re-embedded then, so it can encode an older revision. **Nullable** — null on rows indexed before the column existed and on Jobs whose detail pass found nothing. Stored, not served: the API omits it |
 | `description_stored` | bool | whether this row carries `description`; materialized and bitmap-indexed so coverage does not scan the text column (ADR-0173) |
 | `location` | string | raw ATS text; the India filter maps it via a gazetteer (ADR-0024) |
 | `country` | string | `"IN"` when `location` matches the India gazetteer's country-level rule, else null. Materialized so the India filter's whole-country case is a plain equality instead of a large regex alternation (ADR-0138) |
