@@ -120,10 +120,9 @@ def grace_period_counts(
       the scope before calling this (ADR-0053). Measured at 63–126 Boards per run
       (``docs/pipeline/2026-09-01_twelve-run-log-review.md``), so it is not a rounding error — and
       unlike the first cause it has no drain, which is what makes the total worth watching.
-    - The Board was scraped and emitted *zero jobs of any kind*, so it wrote no ids and
-      :func:`scraped_boards` never saw it (its own docstring says so; those rows are ADR-0023
-      prune's, not sync's). Rarer than the other two and pre-existing, but it is a Board that was
-      read — so reading this number as "Boards we did not get to" overstates that case.
+    - The Board raised, a 404 included, so it wrote no ids and is not in ``boards_ok`` either,
+      and :func:`scraped_boards` never saw it. A Board that scraped *clean* with zero jobs is no
+      longer a cause: ``scrape_join`` adds it from ``boards_ok``, so its rows evict in scope.
 
     What is *no longer* a cause is the ADR-0046 collapse guard capping a Board still in scope: an
     id whose Board was scraped, was in scope, and was absent again is now evicted, not carried.

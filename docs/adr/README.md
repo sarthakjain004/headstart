@@ -191,6 +191,7 @@ supersedes it and note the supersession in both.
 | [0190](0190-the-embedding-store-keeps-only-served-and-scraped-jobs.md) | The embedding store keeps only served and just-scraped Jobs | 2026-09-24 |
 | [0191](0191-one-module-answers-whether-a-board-is-scraped.md) | One module answers whether a Board is scraped | 2026-09-24 |
 | [0193](0193-one-module-per-materialized-search-filter.md) | One module per materialized Search filter | 2026-09-24 |
+| [0200](0200-a-board-scraped-empty-is-in-the-eviction-scope.md) | A Board scraped empty is in the eviction scope | 2026-09-24 |
 
 *ADR-0037 was removed from the repository on 2026-09-24 by the owner's decision; its number is not
 reused.*
