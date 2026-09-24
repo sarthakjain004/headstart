@@ -96,15 +96,19 @@ class Failure(NamedTuple):
     def quarantined(self) -> bool:
         return self.strikes >= QUARANTINE_AT
 
+    @property
+    def reconfirmed(self) -> bool:
+        return self.strikes > QUARANTINE_AT
+
 
 def key_for(board: ScrapableBoard | str) -> str:
     """The lookup form of a Board against this ledger: its identity, or a key it is handed,
     lowercased (ADR-0192). Not the stored form, which stays verbatim.
 
     Rows are stored as :func:`~headstart.board_identity.board_key_of` spells them, and
-    :func:`update` pairs them verbatim with ``board_of`` keys from the same run. Only the planner's
-    quarantine test folds, because the liveness ledger's casing and a Job id's need not agree
-    (ADR-0049).
+    :func:`update` pairs them verbatim with ``board_of`` keys from the same run. Only the lookups
+    against the liveness ledger fold — the planner's quarantine test and prune's keep-set
+    (ADR-0206) — because its casing and a Job id's need not agree (ADR-0049).
     """
     return lower_key(board) if isinstance(board, str) else board.lowercase_identity
 
@@ -149,8 +153,9 @@ def load(path: str | Path) -> dict[str, Failure]:
 
 def _void(board: str, row: Failure) -> bool:
     """Whether this verdict was struck before its ATS's scraper replaced the surface that struck
-    it (:data:`_VOID_BEFORE`). An unreadable stamp on such an ATS is void too: this module fails
-    open, so doubt must never keep a Board quarantined."""
+    it (:data:`_VOID_BEFORE`). An unreadable stamp on such an ATS is void too, including a naive
+    one, which cannot be compared with the tz-aware cutoff (every row :func:`update` writes is
+    tz-aware): this module fails open, so doubt must never keep a Board quarantined."""
     cutoff = _VOID_BEFORE.get(ats_of(board))
     if cutoff is None:
         return False
@@ -211,7 +216,7 @@ def reconfirmed(rows: dict[str, Failure]) -> set[str]:
     on 2026-09-19 quarantined the whole provider at exactly five strikes while its Boards stayed
     live (ADR-0170).
     """
-    return {board for board, row in rows.items() if row.strikes > QUARANTINE_AT}
+    return {board for board, row in rows.items() if row.reconfirmed}
 
 
 def paroled(rows: dict[str, Failure], now: str) -> set[str]:

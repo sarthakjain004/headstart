@@ -55,9 +55,11 @@ URLs, and the probe agrees — outside trakstar, every Board at 6+ strikes answe
 
 1. **`index prune` takes a Board out of its keep-set when `board_failures.reconfirmed` names it**
    (`strikes > QUARANTINE_AT`), matched through `lower_key`. Its rows then go as off-Board. A
-   first-time quarantine at exactly five strikes keeps its rows. A missing or unreadable ledger
-   evicts nothing: `cleanup-index` never fetches `data/state`, so its prune keeps every row, and
-   the pipeline's `merge` reads the ledger from the join's `corpus-state` artifact.
+   first-time quarantine at exactly five strikes keeps its rows. The ledger is read only from an
+   explicit `--board-failures`, never a default, like `sync`'s `--scraped-boards`: a local prune
+   must not evict against whatever ledger was last pulled. The pipeline's `merge` passes the
+   join's copy from the `corpus-state` artifact; `cleanup-index` passes nothing and never fetches
+   `data/state`, so its prune keeps every row. A missing or unreadable file evicts nothing.
 2. **`board_failures._VOID_BEFORE` maps an ATS to the instant its listing surface was replaced**,
    and `load` drops that ATS's rows struck before it. A dropped row reads as never struck: the
    Board is back in the slice, and its next save removes the row. The one entry is
@@ -97,3 +99,9 @@ no still-open posting is evicted.
   `cleared` — `load` never hands them to `update_ledgers failures`.
 - A row struck both before and after a cutoff keeps its earlier strikes, since the ledger stores
   only the last stamp. Harmless for trakstar, where no Board has been struck since.
+- The cutoff is the merge instant, but `last_seen_gone` is stamped at join time, so a run checked
+  out just before the merge and joined just after it would stamp an old-scraper verdict past the
+  cutoff. No trakstar row falls in that window (the latest, `heartlandretirementgroup`, is
+  2026-09-22T14:22:42Z, before the merge).
+- A stamp without a timezone is void too, not only one that will not parse: it cannot be compared
+  with the cutoff, and every row `update` writes carries one.

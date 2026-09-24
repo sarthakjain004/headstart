@@ -1003,7 +1003,8 @@ def _prune_args(tmp_path, monkeypatch):
 
 def _prune_with_failures(tmp_path, monkeypatch, failures: str | None) -> set[str]:
     """Prune a table holding one row per Board below, each Board in the keep-set, against a
-    consecutive-gone ledger (``None`` leaves it absent); return the ids that survive."""
+    consecutive-gone ledger (``None`` passes no ``--board-failures``); return the ids that
+    survive."""
     _sync(
         tmp_path,
         monkeypatch,
@@ -1025,7 +1026,9 @@ def _prune_with_failures(tmp_path, monkeypatch, failures: str | None) -> set[str
             | floor(ledger)
         ),
     )
-    if failures is not None:
+    if failures is None:
+        args.board_failures = None  # how `cleanup-index` runs it
+    else:
         Path(args.board_failures).write_text(
             "board,strikes,last_reason,last_seen_gone\n" + failures, encoding="utf-8"
         )
@@ -1053,8 +1056,8 @@ def test_prune_evicts_a_board_only_once_parole_reconfirms_it_gone(
 
 
 def test_prune_without_a_failures_ledger_evicts_nothing_for_it(tmp_path, monkeypatch):
-    """`cleanup-index` never fetches `data/state`, so its prune reads no ledger: that must keep
-    every row, not fail and not evict."""
+    """`cleanup-index` passes no `--board-failures` and never fetches `data/state`: its prune must
+    keep every row, not fail and not evict."""
     kept = _prune_with_failures(tmp_path, monkeypatch, None)
     assert len(kept) == 5
 

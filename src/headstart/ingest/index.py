@@ -144,7 +144,6 @@ _UNCONFIRMED = UNCONFIRMED_PATH
 # Written by scrape_join from the shard reports: the Boards whose scraped list is not authoritative
 # this run, which must not be evicted from just because they emitted a partial list (ADR-0053).
 _UNAUTHORITATIVE = REPO_ROOT / "data" / "state" / "unauthoritative_boards.json"
-_BOARD_FAILURES = REPO_ROOT / "data" / "state" / "board_failures.csv"
 
 _ADD_CHUNK = 2048  # rows per add batch — bounds peak memory and streams progress
 _TOP_UNCONFIRMED_BOARDS = (
@@ -985,18 +984,16 @@ def prune(args: argparse.Namespace) -> int:
     # A Board quarantined as gone (ADR-0058) is never scraped, so `sync` can never evict its rows,
     # and its liveness row still says live: its closed postings were served forever. Only a
     # verdict parole re-earned leaves the keep-set — a first-time quarantine can be one provider
-    # outage (ADR-0170, ADR-0206). A missing or unreadable ledger reads as empty and keeps rows.
-    gone = {
-        lower_key(board)
-        for board in board_failures.reconfirmed(
-            board_failures.load(args.board_failures)
-        )
+    # outage (ADR-0170, ADR-0206). No ledger given, or a missing one, evicts nothing.
+    failures = board_failures.load(args.board_failures) if args.board_failures else {}
+    gone_keys = {
+        board_failures.key_for(b) for b in board_failures.reconfirmed(failures)
     }
-    reconfirmed = {board for board in keep if lower_key(board) in gone}
-    if reconfirmed:
-        keep -= reconfirmed
+    evicted = {board for board in keep if board_failures.key_for(board) in gone_keys}
+    if evicted:
+        keep -= evicted
         _log.info(
-            f"keep-set: {len(reconfirmed)} Board(s) re-confirmed gone after parole leave it, "
+            f"keep-set: {len(evicted)} Board(s) re-confirmed gone after parole leave it, "
             f"{len(keep)} remain"
         )
     if len(keep) < _MIN_KEEP_BOARDS:
@@ -1352,9 +1349,10 @@ def main() -> int:
     )
     p_prune.add_argument(
         "--board-failures",
-        default=str(_BOARD_FAILURES),
-        help="consecutive-gone ledger; Boards parole re-confirmed gone are evicted (ADR-0206); "
-        "absent evicts nothing (default: data/state/board_failures.csv)",
+        help="data/state/board_failures.csv; Boards parole re-confirmed gone leave the keep-set "
+        "(ADR-0206). Deliberately NOT defaulted, like sync's --scraped-boards: that file rides "
+        "data/state through the HF dataset, so a default would let a local prune evict against "
+        "whatever ledger was last pulled. The merge job passes it; omitted, it evicts nothing",
     )
     p_prune.set_defaults(fn=prune)
 
