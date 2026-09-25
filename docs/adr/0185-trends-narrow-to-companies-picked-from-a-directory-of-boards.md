@@ -872,7 +872,9 @@ counting change out by ratio, the company line by openings.
 
 - **Every line takes a counting change out by openings** — the user's choice (2026-09-25) of
   sums that add up over ratio-true percentages. A category a refit halved now reads its change
-  against the pre-refit base (Google's software engineering: −11.8% where ratio gave −5.3%).
+  against its history shifted down to the new counting, not the old base (Google's software
+  engineering: −41 on a shifted 346, −11.8%, where the old base of 626 gives −6.5%; the wording
+  here said "the pre-refit base" until critic round 15 caught it).
   Ratio remains only where a shift would erase a line's start. On the 2026-09-25 state,
   Micron's Between row fell from +98 to +8 and Google's is gone.
 - **Every line leaves out the same runs; whether a change moved a line decides only whether it
