@@ -69,7 +69,9 @@ _log = log.get(__name__, __spec__)
 #: 5 — one row per posting across an Eightfold site and its backing Board, on ``requisition``
 #:     (ADR-0210). Its removals follow the stamps, which arrive as each Board is re-scraped, so they
 #:     spread over days after the marker rather than landing on it (ADR-0188's amendment).
-DEDUP_VERSION = 5
+#: 6 — one row per tenant and requisition extended to Taleo Enterprise, Taleo BE and ADP WFN
+#:     (ADR-0223).
+DEDUP_VERSION = 6
 
 
 @dataclass(frozen=True, slots=True)
