@@ -1514,7 +1514,7 @@ def _trends_taxonomy(tmp_path: Path, *, unlisted: bool = False) -> None:
                 "version": _TRENDS_VERSION,
                 "model": "stub",
                 "model_revision": "stub",
-                "row_vector": {"column": "vector", "model": MODEL, "dim": _TRENDS_K},
+                "row_vector": {"model": MODEL, "dim": _TRENDS_K},
                 "families": head_families,
                 "cutoff": 0.5,
             }

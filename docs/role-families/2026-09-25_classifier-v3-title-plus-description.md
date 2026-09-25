@@ -83,15 +83,16 @@ Non-tech on the uniform rows:
 | title + description vector | 0.803 | 0.868 |
 
 Against title only, the description vector fixed 17 uniform rows and broke 4. The fixes are
-titles whose industry decides them:
+titles whose description decides them:
 - "Systems Engineer" at a non-IT firm, which is non-tech;
 - a physical-security "Security Manager";
 - "Optimization Engineer";
 - "QA Manager", which is engineering-management.
 
 **What the vector is.** It is the served table's `vector` column: nomic-embed-text-v1.5 over the
-title plus cleaned description (ADR-0006). The exploratory candidates were added after the four
-pre-registered ones were seen, and the experiment log records it that way.
+title plus cleaned description (ADR-0006). The two description-vector candidates were added after
+the four pre-registered ones were seen, so they were exploratory: the 0.02 selection bar was set
+for the four.
 
 ## Serving cost
 
@@ -109,7 +110,8 @@ Measured on snapshot v654, 514,163 rows:
 **Training.** The trainer (`scripts/embed/train_role_family_classifier.py --version 3`) chose its
 settings by cross-validation over all 1,201 gold rows:
 - weight 20;
-- balanced priors, at 0.714 against 0.712 for the served-row mix;
+- balanced priors, at 0.714 against 0.712 for the served-row mix. The candidate cross-validated
+  above used the served-row mix, so the shipped head differs from it only in its bias shift;
 - cutoff 0.4, which on the uniform rows covered 0.928 at 0.810 accuracy on covered rows.
 
 **The test.** The sealed 400 rows were read once, after the protocol was written down:
@@ -125,7 +127,8 @@ Without abstaining, head v3 scores 0.795 and head v2 0.765.
 **The ship decision.** Paired, v3 − v2 is +0.030 [−0.005, +0.065]. The ship rule fixed in
 advance asked for at least +0.03 with the interval excluding 0, and **it was not met**. The owner
 shipped v3 anyway, because:
-- the cross-validation gave the same +0.030 on different rows, with an interval that excludes 0;
+- the cross-validation gave the same +0.030 on different rows, with an interval that excludes 0,
+  though for the served-row-prior variant of the same features;
 - the worst case is about half a point;
 - non-tech recall improves by five points.
 

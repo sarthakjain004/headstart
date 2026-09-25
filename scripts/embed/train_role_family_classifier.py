@@ -83,40 +83,30 @@ def _encode(titles: list[str]) -> np.ndarray:
     return role_family_classifier.encode(normalised, _MODEL, _MODEL_REVISION)
 
 
-def served_rows(table_dir: Path) -> pd.DataFrame:
-    """``id`` and ``title`` of every served row in the snapshot."""
+def served_table(table_dir: Path):
     import lancedb
 
-    table = lancedb.connect(str(table_dir)).open_table(PROD_TABLE)
-    return table.search().select(["id", "title"]).limit(table.count_rows()).to_pandas()
+    return lancedb.connect(str(table_dir)).open_table(PROD_TABLE)
 
 
-def row_vectors(table_dir: Path, ids: list[str]) -> np.ndarray:
-    """The served ``vector`` of each id, in order. Every id must be in the snapshot: a head
-    trained without a gold row's description would silently learn from less than it claims."""
-    import lancedb
-
-    table = lancedb.connect(str(table_dir)).open_table(PROD_TABLE)
+def row_vectors(table, ids: list[str]) -> np.ndarray:
+    """The served ``vector`` of each id, in order, from one pass over the table. Every id must be
+    in the snapshot: a head trained without a gold row's description would silently learn from
+    less than it claims."""
     wanted = {job_id: i for i, job_id in enumerate(ids)}
     out: np.ndarray | None = None
     found = 0
-    for batch in (
-        table.search()
-        .select(["id", "vector"])
-        .limit(table.count_rows())
-        .to_batches(65536)
-    ):
-        vectors = batch.column("vector").flatten().to_numpy().reshape(len(batch), -1)
+    for batch_ids, vectors in role_family_classifier.served_vector_batches(table):
         if out is None:
             out = np.zeros((len(ids), vectors.shape[1]), dtype=np.float32)
-        for j, job_id in enumerate(batch.column("id").to_pylist()):
+        for j, job_id in enumerate(batch_ids):
             if job_id in wanted:
                 out[wanted[job_id]] = vectors[j]
                 found += 1
     if found != len(wanted):
         raise SystemExit(
-            f"{len(wanted) - found} of {len(wanted)} rows are not in {table_dir}: train against "
-            "the snapshot the gold was drawn from"
+            f"{len(wanted) - found} of {len(wanted)} rows are not in the --table snapshot: train "
+            "against the snapshot the gold was drawn from"
         )
     return out
 
@@ -146,14 +136,16 @@ def silver_and_served_mix(
     served = pd.Series(
         [verdict_of.get(role_family_classifier.normalise(t)) for t in titles if t]
     ).dropna()
-    normalised = rows.assign(ntitle=rows.title.map(role_family_classifier.normalise))
-    one_row = (
+    normalised = rows.assign(
+        normalised_title=rows.title.map(role_family_classifier.normalise)
+    )
+    row_id_of_title = (
         normalised.sample(frac=1.0, random_state=seed)
-        .drop_duplicates("ntitle")
-        .set_index("ntitle")
+        .drop_duplicates("normalised_title")
+        .set_index("normalised_title")
         .id
     )
-    silver["id"] = silver.title.map(one_row)
+    silver["id"] = silver.title.map(row_id_of_title)
     print(
         f"silver: {len(silver)} titles from {len(labelled)} the rules decide; per family "
         f"{dict(Counter(silver.family))}",
@@ -183,8 +175,8 @@ def fit(
 
 
 def probabilities(model, shift: np.ndarray, x: np.ndarray) -> np.ndarray:
-    """What the shipped head computes: ``Head.probabilities`` with this model's weights and the
-    shifted bias."""
+    """What the shipped head computes (``Head.decide`` over its title and row parts, which together
+    are this model's weights) with the shifted bias."""
     return role_family_classifier.softmax(model.decision_function(x) + shift)
 
 
@@ -224,17 +216,27 @@ def main() -> int:
             )
             return 1
 
-    silver, served_mix = silver_and_served_mix(
-        served_rows(args.table), args.per_family, args.seed
+    table = served_table(args.table)
+    served = (
+        table.search().select(["id", "title"]).limit(table.count_rows()).to_pandas()
     )
+    silver, served_mix = silver_and_served_mix(served, args.per_family, args.seed)
     dev = pd.read_parquet(args.dev).reset_index(drop=True)
+    test = pd.read_parquet(args.test) if args.test is not None else None
+    # one pass over the table for every row vector the fit and the test read need
+    ids = (
+        silver.id.tolist()
+        + dev.id.tolist()
+        + ([] if test is None else test.id.tolist())
+    )
+    vectors = row_vectors(table, ids)
     silver_title, dev_title = (
         _encode(silver.title.tolist()),
         _encode(dev.title.tolist()),
     )
     title_dim = silver_title.shape[1]
-    silver_x = np.hstack([silver_title, row_vectors(args.table, silver.id.tolist())])
-    dev_x = np.hstack([dev_title, row_vectors(args.table, dev.id.tolist())])
+    silver_x = np.hstack([silver_title, vectors[: len(silver)]])
+    dev_x = np.hstack([dev_title, vectors[len(silver) : len(silver) + len(dev)]])
     silver_y, dev_y = silver.family.to_numpy(), dev.gold.to_numpy()
     folds = list(GroupKFold(n_splits=5).split(dev_x, dev_y, groups=dev.copy_key))
 
@@ -299,10 +301,9 @@ def main() -> int:
         model.intercept_ = np.delete(model.intercept_, drop)
         shift = np.delete(shift, drop)
 
-    if args.test is not None:
-        test = pd.read_parquet(args.test)
+    if test is not None:
         test_x = np.hstack(
-            [_encode(test.title.tolist()), row_vectors(args.table, test.id.tolist())]
+            [_encode(test.title.tolist()), vectors[len(silver) + len(dev) :]]
         )
         p = probabilities(model, shift, test_x)
         decided, truth = decide(p, classes, cutoff), test.gold.to_numpy()
@@ -328,7 +329,6 @@ def main() -> int:
                 "model": _MODEL,
                 "model_revision": _MODEL_REVISION,
                 "row_vector": {
-                    "column": "vector",
                     "model": ROW_VECTOR_MODEL,
                     "dim": int(silver_x.shape[1] - title_dim),
                 },

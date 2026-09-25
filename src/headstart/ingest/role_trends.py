@@ -113,8 +113,7 @@ _CLASSIFIER_SERIES_BASE = 3000
 def series_version(head_version: int) -> int:
     """The series identity every ledger here is stamped with (ADR-0040, ADR-0220).
 
-    A row's family is its title's verdict under one classifier head, so a new head starts new
-    series. Only equality and order are ever read: the Space stitches versions into one history
+    A row's family is one classifier head's verdict, so a new head starts new series. Only equality and order are ever read: the Space stitches versions into one history
     by their spans (ADR-0221), and every snapshot compares its stamp for equality. The base keeps
     every head's series above the older eras'."""
     return _CLASSIFIER_SERIES_BASE + head_version
@@ -505,22 +504,25 @@ def _save_board_counts(
     tmp.replace(path)
 
 
-def _row_logits(table, ids: list[str], head) -> np.ndarray:
-    """Each served row's row part of the head's logits (ADR-0224), aligned with ``ids``. Only
-    ``id`` and ``vector`` are read, in batches, and each batch shrinks to one logit per family."""
+def _served_row_logits(table, ids: list[str], head) -> np.ndarray:
+    """Each served row's row part of the head's logits (ADR-0224), aligned with ``ids``, one batch
+    at a time so each batch's vectors shrink to one logit per family. Raises ``ValueError`` when
+    ids repeat or the vectors do not cover the rows exactly: a row left unfilled would otherwise
+    be decided from uninitialised memory."""
     position = {job_id: i for i, job_id in enumerate(ids)}
+    if len(position) != len(ids):
+        raise ValueError(f"{len(ids) - len(position)} served ids repeat")
     out = np.empty((len(ids), len(head.families)), dtype=np.float32)
-    seen = 0
-    for batch in (
-        table.search().select(["id", "vector"]).limit(len(ids)).to_batches(65536)
-    ):
-        vectors = batch.column("vector").flatten().to_numpy().reshape(len(batch), -1)
-        out[[position[job_id] for job_id in batch.column("id").to_pylist()]] = (
-            head.row_logits(vectors)
-        )
-        seen += len(batch)
-    if seen != len(ids):
-        raise ValueError(f"read {seen} served vectors for {len(ids)} served rows")
+    filled = np.zeros(len(ids), dtype=bool)
+    for batch_ids, vectors in role_family_classifier.served_vector_batches(table):
+        try:
+            rows = [position[job_id] for job_id in batch_ids]
+        except KeyError as exc:
+            raise ValueError(f"served id {exc} has a vector but no row") from None
+        out[rows] = head.row_logits(vectors)
+        filled[rows] = True
+    if not filled.all():
+        raise ValueError(f"{int((~filled).sum())} served rows have no vector")
     return out
 
 
@@ -636,9 +638,12 @@ def main() -> int:
         )
         return 0
 
-    decided = role_family_classifier.decide_rows(
-        cache, head, titles, _row_logits(table, rows["id"].to_pylist(), head)
-    )
+    try:
+        row_logits = _served_row_logits(table, rows["id"].to_pylist(), head)
+    except ValueError as exc:
+        _log.error(f"role families undecidable, no trends this run: {exc}")
+        return 1
+    decided = role_family_classifier.decide_rows(cache, head, titles, row_logits)
     families = [None if family == roles.NON_TECH else family for family in decided]
 
     # The run's one stamp, which `index prune` also wrote its dedup evictions under (ADR-0210).

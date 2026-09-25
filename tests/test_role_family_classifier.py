@@ -52,7 +52,7 @@ def _head(tmp_path, cutoff=0.6, families=_FAMILIES, title_rows=None, row_dim=_RO
                 "version": 7,
                 "model": "stub",
                 "model_revision": "stub",
-                "row_vector": {"column": "vector", "model": "stub", "dim": _ROW_DIM},
+                "row_vector": {"model": "stub", "dim": _ROW_DIM},
                 "families": families,
                 "cutoff": cutoff,
             }
@@ -185,7 +185,7 @@ def test_an_unreadable_cache_starts_empty(tmp_path):
     assert rfc.load_cache(path, 7).title_logits == {}
 
 
-def test_fill_decides_only_missing_titles_and_saves_each_chunk(tmp_path, monkeypatch):
+def test_fill_encodes_only_missing_titles_and_saves_each_chunk(tmp_path, monkeypatch):
     calls: list[list[str]] = []
     _stub_encoder(monkeypatch, calls)
     monkeypatch.setattr(rfc, "_FILL_CHUNK", 2)

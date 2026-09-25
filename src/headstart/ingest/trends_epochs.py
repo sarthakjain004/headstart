@@ -13,7 +13,7 @@ count" from "conditions changed".
 
 A fifth, :data:`headstart.ingest.index_plan.DEDUP_VERSION` (ADR-0188), marks a change to which
 served rows count as duplicates: that removes rows that were served before, in one tick. A sixth
-column marks what decides a row's family from its title. It held the title rules' fingerprint
+column marks what decides a row's family. It held the title rules' fingerprint
 while they decided (ADR-0215) and holds the classifier head's version since ADR-0220, which
 renamed it ``family_classifier_version`` in place. Since then ``centroid_version`` reads
 ``none``: no centroid fit decides anything.

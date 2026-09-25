@@ -12,13 +12,14 @@ Because the head is linear, its logits split into a **title part** (``JobBERT(ti
 and a **row part** (``vector @ W_row + bias``). The title part is what costs an encoding, so
 ``role_trends`` caches it per normalised title in ``data/state`` and embeds only titles the cache
 has not seen under the current head; the row part is one matrix product over the served vectors
-each run. A new head starts with an empty cache, and the served table holds about 290,000 distinct
-titles, too many for one run. So each run spends a fixed time budget filling the cache, saving
+each run. A new head starts with an empty cache, and the served table holds roughly 270,000 to
+290,000 distinct titles, too many for one run. So each run spends a fixed time budget filling the cache, saving
 after every chunk, and ``role_trends`` counts nothing until the cache covers the table: Trends
 pauses for a few runs rather than charting a backlog as "unclassified".
 
 Copies of a posting share a title and nearly always a family; the description moves a row only
-where it contradicts its title (a "Systems Engineer" at a utility is non-tech). So a re-embedded
+where it contradicts its title (a "Systems Engineer" whose description is power-grid work is
+non-tech). So a re-embedded
 description can move a row, which the ADR-0057 transition ledger records.
 
 Everything the head decides is fixed by ``config/role_family_classifier/``: the manifest (title
@@ -177,6 +178,15 @@ def encode(titles: list[str], model: str, revision: str) -> np.ndarray:
     return vectors
 
 
+def served_vector_batches(table):
+    """``(ids, vectors)`` for each batch of the served table's ``id`` and ``vector`` columns: the
+    head's row input, read the same way for serving (``role_trends``) and training."""
+    reader = table.search().select(["id", "vector"]).limit(table.count_rows())
+    for batch in reader.to_batches(65536):
+        vectors = batch.column("vector").flatten().to_numpy().reshape(len(batch), -1)
+        yield batch.column("id").to_pylist(), vectors
+
+
 @dataclass
 class Cache:
     """``normalised title -> the head's title logits`` (one per family), valid for one head
@@ -258,7 +268,7 @@ def fill(
         cache.title_logits.update(zip(chunk, logits, strict=True))
         added += len(chunk)
         checkpoint(cache)
-        _log.info(f"classified {added}/{len(missing)} new titles")
+        _log.info(f"encoded {added}/{len(missing)} new titles")
     return added
 
 
@@ -282,7 +292,9 @@ def decide_rows(
     ]
     if known:
         rows = [i for i, _ in known]
-        decided = head.decide(np.stack([l for _, l in known]), row_logits[rows])
+        decided = head.decide(
+            np.stack([logits for _, logits in known]), row_logits[rows]
+        )
         for i, (family, _) in zip(rows, decided, strict=True):
             families[i] = family
     return families

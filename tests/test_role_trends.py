@@ -94,6 +94,7 @@ def _taxonomy(
     extra_families: tuple[str, ...] = (),
     row_weights: np.ndarray | None = None,
     row_model: str = EMBED_MODEL,
+    row_dim: int = _DIM,
 ) -> None:
     """The head (cutoff 0.6, so a one-hot title is placed and an ambiguous one is not) and the
     curated family list it must agree with. The row part is all zeros unless ``row_weights``."""
@@ -102,7 +103,7 @@ def _taxonomy(
         head / "head.npz",
         title_weights=np.eye(len(_HEAD_FAMILIES), dtype=np.float32) * 10,
         row_weights=(
-            np.zeros((len(_HEAD_FAMILIES), _DIM), dtype=np.float32)
+            np.zeros((len(_HEAD_FAMILIES), row_dim), dtype=np.float32)
             if row_weights is None
             else row_weights
         ),
@@ -114,7 +115,7 @@ def _taxonomy(
                 "version": 1,
                 "model": "stub",
                 "model_revision": "stub",
-                "row_vector": {"column": "vector", "model": row_model, "dim": _DIM},
+                "row_vector": {"model": row_model, "dim": row_dim},
                 "families": list(_HEAD_FAMILIES),
                 "cutoff": 0.6,
             }
@@ -653,7 +654,7 @@ def test_the_classifier_decides_each_family_and_watch_roles_count_tech_only(
         role_family_classifier, "encode", lambda t, m, r: encoded.append(t)
     )
     _run(tmp_path, monkeypatch)
-    assert encoded == []  # every title was already decided under this head
+    assert encoded == []  # every title was already encoded under this head
 
 
 def test_a_rows_description_vector_can_move_it_off_its_titles_family(
@@ -696,6 +697,43 @@ def test_a_head_trained_on_another_embedder_errors_visibly(
     ledger = _run(tmp_path, monkeypatch, expect=1)
     assert not ledger.exists()
     assert any("retrain the head" in r.getMessage() for r in caplog.records)
+
+
+def test_a_head_trained_on_another_vector_width_errors_visibly(
+    tmp_path, monkeypatch, caplog
+):
+    import logging
+
+    _taxonomy(tmp_path / "head", tmp_path / "families.json", row_dim=_DIM + 1)
+    _table(
+        tmp_path / "db",
+        [{"id": "a", "title": "Backend Dev", "vector": [1.0, 0.0, 0.0, 0.0]}],
+    )
+    caplog.set_level(logging.ERROR, logger="headstart.ingest.role_trends")
+    ledger = _run(tmp_path, monkeypatch, expect=1)
+    assert not ledger.exists()
+    assert any("retrain the head" in r.getMessage() for r in caplog.records)
+
+
+def test_repeated_served_ids_error_visibly_instead_of_deciding_garbage(
+    tmp_path, monkeypatch, caplog
+):
+    """Row vectors are matched to rows by id; a repeated id would leave one row's logits unset,
+    and that row would be decided from uninitialised memory. The run refuses instead."""
+    import logging
+
+    _taxonomy(tmp_path / "head", tmp_path / "families.json")
+    _table(
+        tmp_path / "db",
+        [
+            {"id": "a", "title": "Backend Dev", "vector": [1.0, 0.0, 0.0, 0.0]},
+            {"id": "a", "title": "Backend Dev", "vector": [1.0, 0.0, 0.0, 0.0]},
+        ],
+    )
+    caplog.set_level(logging.ERROR, logger="headstart.ingest.role_trends")
+    ledger = _run(tmp_path, monkeypatch, expect=1)
+    assert not ledger.exists()
+    assert any("ids repeat" in r.getMessage() for r in caplog.records)
 
 
 def test_trends_wait_while_a_new_heads_title_cache_warms_up(

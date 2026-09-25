@@ -3,7 +3,6 @@
   "model": "TechWolf/JobBERT-v2",
   "model_revision": "a480476925abdf9d97621e56aa38abbb572fe343",
   "row_vector": {
-    "column": "vector",
     "model": "nomic-ai/nomic-embed-text-v1.5",
     "dim": 768
   },
