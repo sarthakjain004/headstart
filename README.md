@@ -286,11 +286,11 @@ table in lockstep with the committed ledger:
 | --- | ---: | --- |
 | live rows in the ledger | 187,277 | a row, not a board — 6,632 of them are duplicate spellings |
 | − `registry.DISABLED_ATS` | −25,488 | all of it `join` |
-| − `config.EXCLUDED_BOARDS` | −176 | vendor test/sandbox/demo boards and one historical feed, confirmed by reading their postings |
+| − `excluded_and_parked.EXCLUDED_BOARDS` | −176 | vendor test/sandbox/demo boards and one historical feed, confirmed by reading their postings |
 | − alias ledger | −1,170 | one board under a second hostname or label, a career section or career site another of the same tenant already covers, or an Eightfold career site its backing ATS board already serves (ADR-0111, ADR-0182, ADR-0186, ADR-0202, ADR-0205, ADR-0222) |
 | − case-variant dedupe | −6,629 | `company/External` and `company/external` are one board (ADR-0023) |
 | − newer `dead` row | −4 | a board is read only if no `dead` row is newer than its newest `live` one; all 4 re-probed dead (ADR-0219) |
-| − `config.PARKED_BOARDS` | −13 | real boards withheld for now — five for scrape cost, two for near-duplicate spam, six Jibe clients whose every posting is on a Workday or Oracle board already held |
+| − `excluded_and_parked.PARKED_BOARDS` | −13 | real boards withheld for now — five for scrape cost, two for near-duplicate spam, six Jibe clients whose every posting is on a Workday or Oracle board already held |
 | = **Scrapable Board** | **153,797** | |
 
 That order matters: excluding before deduping reads −176 and −6,629, deduping first reads −173,

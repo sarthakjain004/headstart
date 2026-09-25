@@ -23,7 +23,7 @@ import re
 from pathlib import Path
 
 from headstart import board_aliases, liveness
-from headstart.config import PARKED_BOARDS
+from headstart.excluded_and_parked import PARKED_BOARDS
 from headstart.scrapable_boards import (
     Row,
     ScrapableBoard,
@@ -308,7 +308,7 @@ def test_every_derived_figure_is_current_at_every_site_that_quotes_it() -> None:
         # the Scrapable Board entry restates the chain it is the end of
         (
             "CONTEXT.md",
-            r"minus `registry\.DISABLED_ATS` \(−([\d,]+),.*?`config\.EXCLUDED_BOARDS` \(−([\d,]+) vendor test Boards\), the alias ledger \(−([\d,]+) Boards.*?`config\.PARKED_BOARDS` \(−([\d,]+)\)",
+            r"minus `registry\.DISABLED_ATS` \(−([\d,]+),.*?`excluded_and_parked\.EXCLUDED_BOARDS` \(−([\d,]+) vendor test Boards\), the alias ledger \(−([\d,]+) Boards.*?`excluded_and_parked\.PARKED_BOARDS` \(−([\d,]+)\)",
             (
                 truth["disabled"],
                 truth["excluded_after_dedupe"],

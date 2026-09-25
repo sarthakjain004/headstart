@@ -122,7 +122,7 @@ SCRAPERS: dict[str, type[BaseScraper]] = {
 #           at a measured 112 KB a page = ~10.7 GB, for 5.1% tech = ~5,098 tech Jobs.
 #   jobvite   748 Hiring Boards, 39,573 postings — **1.69x the 23,461 assumed** — so ~2.5-3.5 GB
 #           (was ~1.5-2) for 7.0% tech = ~2,770 tech Jobs (was ~1,640). Excludes jvauto, the
-#           vendor's own 10,000-posting automation tenant (config.EXCLUDED_BOARDS).
+#           vendor's own 10,000-posting automation tenant (excluded_and_parked.EXCLUDED_BOARDS).
 #
 # jazzhr lands on its old storage number by coincidence, not by being unchanged: it gained Boards
 # and lost jobs-per-Board, and the two cancelled. jobvite simply was not measured at full pool.

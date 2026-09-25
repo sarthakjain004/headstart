@@ -154,7 +154,7 @@ unique `board_key` count (or each duplicate is explained), and a spot check of 5
 account's whole feed (134 ClearCompany accounts over 468 labels), bury the extra labels in the
 alias ledger `data/validate/aliases/{ats}.csv` (ADR-0111), or every posting serves once per
 label, and commit whatever regenerates it. Pool vendor test tenants and
-load-test instances go in `config.EXCLUDED_BOARDS` (oracle's 78,431-posting load-test tenant,
+load-test instances go in `excluded_and_parked.EXCLUDED_BOARDS` (oracle's 78,431-posting load-test tenant,
 jobvite's `jvauto`).
 
 ## Docs

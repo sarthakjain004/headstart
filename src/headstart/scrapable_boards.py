@@ -5,13 +5,13 @@
 (ADR-0012) and applies every reason a Board is not scraped, in the order the answer depends on:
 
 1. an ATS with no registered scraper (warned) or in ``registry.DISABLED_ATS``;
-2. a vendor test Board in ``config.EXCLUDED_BOARDS`` (:func:`is_excluded`, on the lowercased
+2. a vendor test Board in ``excluded_and_parked.EXCLUDED_BOARDS`` (:func:`is_excluded`, on the lowercased
    ``ats:slug``);
 3. a Board buried as another's duplicate in the alias ledger (ADR-0111, on the lowercased slug);
 4. the election (:func:`_elect`, ADR-0023 as amended by ADR-0219): rows naming one Board, compared
    case-insensitively, collapse to one; a Board with a ``dead`` row newer than its newest ``live`` row drops out;
 5. under ``min_jobs``, on the elected row's count;
-6. a Board in ``config.PARKED_BOARDS``, on the lowercased identity the election collapsed on.
+6. a Board in ``excluded_and_parked.PARKED_BOARDS``, on the lowercased identity the election collapsed on.
 
 Steps 2 and 3 run before the election and step 6 after it, and the difference matters: the first
 two are keyed on the slug, so they must see every spelling of a Board, and the park is keyed on the
@@ -34,7 +34,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from headstart import board_aliases, config, liveness, log
+from headstart import board_aliases, excluded_and_parked, liveness, log
 from headstart.board_identity import board_identity, board_key, lower_key
 from headstart.config import CompanyRef
 from headstart.scrapers.registry import DISABLED_ATS, SCRAPERS, company_from_row
@@ -75,12 +75,12 @@ def _verdict_of(row: Row) -> liveness.Verdict:
 
 
 def is_excluded(ats: str, slug: str) -> bool:
-    """Is this a vendor test Board in ``config.EXCLUDED_BOARDS``?
+    """Is this a vendor test Board in ``excluded_and_parked.EXCLUDED_BOARDS``?
 
     Matched on the lowercased ``ats:slug``, so one entry covers every casing the ledger carries.
     The one predicate for a script that filters raw candidates the way :func:`load` does.
     """
-    return f"{ats}:{slug}".lower() in config.EXCLUDED_BOARDS
+    return f"{ats}:{slug}".lower() in excluded_and_parked.EXCLUDED_BOARDS
 
 
 def load(ledger_dir: str | Path, *, min_jobs: int = 1) -> list[ScrapableBoard]:
@@ -147,9 +147,9 @@ def load(ledger_dir: str | Path, *, min_jobs: int = 1) -> list[ScrapableBoard]:
 
 
 def _drop_parked(boards: list[ScrapableBoard]) -> list[ScrapableBoard]:
-    """Drop ``config.PARKED_BOARDS``, matched on the same identity :func:`_elect` collapses on
+    """Drop ``excluded_and_parked.PARKED_BOARDS``, matched on the same identity :func:`_elect` collapses on
     so the two can never disagree about which Board an entry names."""
-    return [b for b in boards if b.lowercase_identity not in config.PARKED_BOARDS]
+    return [b for b in boards if b.lowercase_identity not in excluded_and_parked.PARKED_BOARDS]
 
 
 def _board_of_row(

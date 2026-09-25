@@ -154,7 +154,7 @@ rows currently live in `ripplehire`.
 **Two mechanisms, and only one of them is code.** The pattern filter above ran in the one-off script
 that built the ledger, so it kept those hosts out of `zwayam.csv` in the first place — it is not a
 standing guard, and an earlier version of this page wrongly implied it was. What survives a re-run
-is `config.EXCLUDED_BOARDS`, which is where the two demo tenants that *did* reach the ledger
+is `excluded_and_parked.EXCLUDED_BOARDS`, which is where the two demo tenants that *did* reach the ledger
 (`testcompany.cluster3.openings.co`, 77 postings titled "TEDT"/"dsf"/"14 dec";
 `zhirematetest.openings.co`, "Test Job"/"Hi") are now listed. Anything found later belongs there
 too — confirmed by reading the board's content, never by the slug alone.

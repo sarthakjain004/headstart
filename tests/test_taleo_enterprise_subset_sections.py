@@ -122,7 +122,7 @@ def test_only_sections_on_live_rows_are_read_and_oracles_demo_tenant_is_not(
     mod, tmp_path
 ):
     """`pmg` is Oracle's own demo tenant ("Director of Finance (DEMO)", "TEST 2 EPredix
-    Assessment"), excluded in `config.EXCLUDED_BOARDS`. Its two sections mirror each other, so
+    Assessment"), excluded in `excluded_and_parked.EXCLUDED_BOARDS`. Its two sections mirror each other, so
     reading them would write an alias row for a Board that is never scraped anyway."""
     pmg = "https://pmg.taleo.net/careersection"
     liveness = _liveness_dir(

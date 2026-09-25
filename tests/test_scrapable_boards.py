@@ -2,8 +2,8 @@
 
 from pathlib import Path
 
-from headstart import config, liveness
-from headstart.config import PARKED_BOARDS
+from headstart import config, excluded_and_parked, liveness
+from headstart.excluded_and_parked import PARKED_BOARDS
 from headstart.scrapable_boards import ScrapableBoard, is_excluded, load
 from headstart.scrapers.registry import SCRAPERS, company_from_row
 
@@ -86,7 +86,7 @@ def test_parked_boards_name_a_live_board_and_are_dropped(monkeypatch):
         f"parked Boards still selectable: {sorted(PARKED_BOARDS & selected)}"
     )
 
-    monkeypatch.setattr(config, "PARKED_BOARDS", frozenset())
+    monkeypatch.setattr(excluded_and_parked, "PARKED_BOARDS", frozenset())
     unparked = {c.lowercase_identity for c in load(ledger, min_jobs=0)}
     assert PARKED_BOARDS <= unparked, (
         f"parked keys naming no live Board: {sorted(PARKED_BOARDS - unparked)}"
@@ -147,7 +147,7 @@ def test_excluded_boards_drops_walmart_non_workday_internal(monkeypatch):
     slugs = {c.slug.lower() for c in load(ledger, min_jobs=0) if c.ats == "workday"}
     assert key not in slugs
 
-    monkeypatch.setattr(config, "EXCLUDED_BOARDS", frozenset())
+    monkeypatch.setattr(excluded_and_parked, "EXCLUDED_BOARDS", frozenset())
     unexcluded_slugs = {
         c.slug.lower() for c in load(ledger, min_jobs=0) if c.ats == "workday"
     }
@@ -168,7 +168,7 @@ def test_excluded_boards_drop_oracles_taleo_demo_tenant(monkeypatch):
         }
 
     assert pmg_sections() == set()
-    monkeypatch.setattr(config, "EXCLUDED_BOARDS", frozenset())
+    monkeypatch.setattr(excluded_and_parked, "EXCLUDED_BOARDS", frozenset())
     assert len(pmg_sections()) == 2, (
         "ledger no longer holds pmg's two sections on live rows"
     )

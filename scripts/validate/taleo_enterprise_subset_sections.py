@@ -22,7 +22,7 @@ the kept section's own job URLs are the ones served. The rules, all in `burials`
 
 Reads every `live` row of the liveness ledger, including the sections the last run buried (the alias
 ledger leaves their liveness rows in place), so each run re-derives every verdict and a buried
-section that has since gained a req of its own comes back. `config.EXCLUDED_BOARDS` is skipped
+section that has since gained a req of its own comes back. `excluded_and_parked.EXCLUDED_BOARDS` is skipped
 (`scrapable_boards.is_excluded`). One listing walk per section, 16 sections at a time. Replaces the
 alias file, so re-run it after every refresh of `data/validate/liveness/taleo_enterprise.csv`.
 

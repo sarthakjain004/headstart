@@ -57,7 +57,7 @@ _log = log.get(__name__, __spec__)
 #: rows count as duplicates: a new grouping in :func:`plan_prune`, or a new alias-ledger signal
 #: (:mod:`headstart.board_aliases`), or an existing signal's first ledger for an ATS (ADR-0222).
 #: Don't bump it for a routine rewrite of an alias ledger that already exists, nor for a
-#: ``config.PARKED_BOARDS`` entry, which is a temporary hold rather than a duplicate rule. The
+#: ``excluded_and_parked.PARKED_BOARDS`` entry, which is a temporary hold rather than a duplicate rule. The
 #: marker lands on the step only because both routes remove rows through ``index prune``, which
 #: has no grace period; a dedup that instead stops emitting ids at scrape time would drain
 #: through ``sync``'s two-scrape grace (ADR-0083) and read as a slow decline after the marker, so

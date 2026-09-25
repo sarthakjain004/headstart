@@ -199,7 +199,7 @@ only page 1, so a real scrape must paginate.
    pace it. Cheapest, no new infrastructure.
 2. **Residential proxy** — needs a paid provider and a per-ATS proxy hook. Now looks like
    over-engineering unless volume proves the browser path cannot hold.
-3. **Park it** — `config.PARKED_BOARDS` until one of the above lands. Darwinbox currently spends
+3. **Park it** — `excluded_and_parked.PARKED_BOARDS` until one of the above lands. Darwinbox currently spends
    ~155 Boards of scrape budget and its share of the run's retries every two hours for near-zero
    yield, and its truncated scrapes left it Unauthoritative (ADR-0053; the ADR-0046 collapse
    guard this once named was removed by ADR-0101). Note the cost: a parked
