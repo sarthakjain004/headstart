@@ -379,21 +379,22 @@ EXCLUDED_BOARDS: frozenset[str] = frozenset(
         # (the match is on `slug_from`'s URL, not the `tenant` column, so only the URL's two
         # casings matter) — the lowercased key here covers both.
         "workday:https://walmart.wd5.myworkdayjobs.com/non-workdayinternal",
-        # Vendor demo tenants found by one normalized description served on 8 or more Boards of
-        # one ATS (served table v65, 2026-09-25), each read live the same day. A real employer's
-        # name below is a sales demo named after a prospect, not that employer's Board.
+        # Vendor demo tenants from a served-table audit (v65, 2026-09-25), each checked live the
+        # same day. BambooHR and Rippling were found by one normalized description served on 8 or
+        # more Boards of one ATS; the blocks below say where one was found another way. A real
+        # employer's name below is a sales demo named after a prospect, not that employer's Board.
         #
         # BambooHR's stock demo set, the one `bamboohr:implementation` above serves: "IT Security
-        # Engineer" in "Mayfaird, London, City of" (the misspelling is the tell; one description on
-        # 41 of these Boards), "Software Engineer" in "Sydney, NSW" (another on 40), "General
+        # Engineer" in "Mayfaird, London, City of" (misspelled on most; one description on 41 of
+        # these Boards), "Software Engineer" in "Sydney, NSW" (another on 40), "General
         # Application" in Lindon, UT (BambooHR's home), "Financial Analyst", "Marketing Manager",
         # "Account Executive". All 49 readable ones list that set, under prospect and partner demo
         # names ("BAT Demo Account", "KBS - Reseller Account", "Synthesia - Marketplace Account",
-        # "Brett Johnson Demo Company", "Your Company Name", "{{7*7}}"), and 21 of them, every
-        # big-brand slug (`walmart`, `leidos`, `popeyes`, `usi`) among them, answer `inTrial: true`
-        # in `careers/company-info`. A few add more of the same: `nook` placeholders ("Stuff goes
-        # here.", "Job description here") and a designer for "tools used by thousands of HR
-        # professionals" in Draper, UT; `seek` is "SEEK Test" ("Designer (youtube test)", "Job # 5
+        # "Brett Johnson Demo Company", "Your Company Name", "{{7*7}}"), and 21 of them, including
+        # `walmart`, `leidos`, `popeyes` and `usi`, answer `inTrial: true` in
+        # `careers/company-info`. A few add more of the same: `nook` placeholders ("Stuff goes
+        # here.", "Job description here") and a designer whose description names "tools used by
+        # thousands of HR professionals" and Draper, UT; `seek` is "SEEK Test" ("Designer (youtube test)", "Job # 5
         # LinkOut Only - No AwSK"); `bjdc` "Test", `sticks` "Tester". The other five (`acme`,
         # `alice`, `catalyst`, `omise`, `pmi`) now redirect to `settings/account/expired.php`,
         # lapsed trials, so their verdict rests on their indexed rows: the same stock set.
@@ -472,14 +473,14 @@ EXCLUDED_BOARDS: frozenset[str] = frozenset(
         # `testrcmsyncas002` is "RCMSYNCAS002 Test Site with updated Page Title b2111" ("RMK-RCM
         # job sync 2", "KirthiURLTest"). Both serve the same demo requisitions ("Database
         # Programmer", "Help Desk Manager", "IT Project Manager" in Boston and Denver). 6 served
-        # rows. Named in the same critique beside the BambooHR set, not found by the description
-        # signal.
+        # rows. Named by the same audit from their slugs and titles, not found by the shared
+        # description.
         "successfactors:testco12.jobs2web.com",
         "successfactors:testrcmsyncas002.jobs2web.com",
         # Workday's own demo tenant, Global Modern Services (`hiringOrganization` "500.1 Global
         # Modern Services, Inc. (USA)", url workday.com): "HRREC (IRISH TEA) ... (Do not use)",
-        # "Job Req 6220 Test", "Tester Conv5", and `TGS` repeating "QA Engineer-9"/"-10" across
-        # 20 European cities. Its shared description sits on 5 Boards, under the 8 used above,
+        # "Job Req 6220 Test", "Tester Conv5", and `tgs` repeating "QA Engineer-9"/"-10" across
+        # cities from Riga to Jakarta. Its shared description sits on 5 Boards, under the 8 above,
         # because every Board is one tenant's site. All seven sites; 106 served rows.
         "workday:https://super.wd103.myworkdayjobs.com/ext",
         "workday:https://super.wd103.myworkdayjobs.com/extdisform",
