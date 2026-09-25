@@ -572,3 +572,15 @@ def test_main_turns_a_torn_line_into_a_named_abort(tmp_path, monkeypatch, caplog
     assert errors[0].startswith(
         f"description store update aborted: {jobs_dir / 'lever.jsonl'} line 1: "
     )
+
+
+def test_a_value_error_that_is_not_a_torn_record_keeps_its_traceback(monkeypatch):
+    """Only a torn record is worded as an abort; any other ValueError is a bug, and `log.fail`
+    would have swallowed the stack that names its file and line."""
+
+    def buggy() -> int:
+        raise ValueError("a code bug, not a torn line")
+
+    monkeypatch.setattr(ud, "_update_store", buggy)
+    with pytest.raises(ValueError, match="a code bug"):
+        ud.main()

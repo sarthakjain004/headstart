@@ -43,6 +43,12 @@ class Unreadable(Exception):
     """
 
 
+def _frames(stderr: str | None) -> str:
+    """The ``at file:line`` frames of a Node stack, and nothing that could quote the record."""
+    lines = (stderr or "").splitlines()
+    return "\n".join(line for line in lines if line.strip().startswith("at "))[:2000]
+
+
 def read_document(document: dict[str, Any], view: str = "master") -> dict[str, Any]:
     """The facts about `document` as `view` reads it — ``"master"``, or a Tailoring's id or
     name. Raises :class:`Unreadable` when no reading can be produced."""
@@ -77,12 +83,13 @@ def read_document(document: dict[str, Any], view: str = "master") -> dict[str, A
     try:
         answer = json.loads(done.stdout)
     except ValueError as exc:
-        # Stderr's frames only, as for a fault below: the tool result alone reaches no log.
+        # The tool result alone reaches no log. Frames only: this is Node's own crash output,
+        # whose message line and source excerpt can quote the résumé.
         _log.warning(
             "inspect_document.js gave no JSON for document %s: exit %d %s",
             document.get("id"),
             done.returncode,
-            (done.stderr or "").strip()[:2000],
+            _frames(done.stderr),
         )
         # stderr, not stdout: a crash before the handler writes its JSON leaves the stack there.
         detail = (done.stderr or "").strip()[

@@ -599,3 +599,30 @@ def test_without_credentials_the_server_still_lists_its_tools_and_explains_itsel
     )
     assert called["result"]["isError"] is True
     assert "HEADSTART_ACCOUNT_EMAIL" in called["result"]["content"][0]["text"]
+
+
+def test_a_node_crash_logs_its_frames_but_never_the_message(monkeypatch, caplog):
+    """Node's own uncaught-crash output carries the message line and a source excerpt, either
+    of which can quote the résumé; only the `at file:line` frames may reach a log."""
+    from headstart.resume_mcp import inspection
+
+    crash = (
+        "/app/resume_document.js:12\n"
+        "  const x = 'Staff engineer at Initech';\n"
+        "TypeError: Cannot read properties of undefined (reading 'Initech')\n"
+        "    at render (/app/resume_document.js:12:9)\n"
+        "    at main (/app/inspect_document.js:180:5)\n"
+    )
+    monkeypatch.setattr(inspection.shutil, "which", lambda _: "/usr/bin/node")
+    monkeypatch.setattr(
+        inspection.subprocess,
+        "run",
+        lambda *a, **k: subprocess.CompletedProcess(a, 1, stdout="", stderr=crash),
+    )
+    with (
+        caplog.at_level("WARNING", logger=inspection.__name__),
+        pytest.raises(inspection.Unreadable),
+    ):
+        inspection.read_document({"id": "doc-1"})
+    assert "at render (/app/resume_document.js:12:9)" in caplog.text
+    assert "Initech" not in caplog.text

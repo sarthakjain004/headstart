@@ -526,3 +526,35 @@ def test_a_boards_arrival_is_not_hiring_and_a_board_counted_briefly_is_not_ranke
     )
     assert [r["board"] for r in lenses["expansion"]] == ["greenhouse:old"]
     assert counts["newly_discovered"] == 1
+
+
+def test_an_unreadable_previous_list_does_not_turn_an_empty_window_into_a_crash(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The previous list is read only to name it in the no-window line; a corrupt file there
+    once made a harmless "nothing to rank" exit 1 with an ERROR."""
+    deltas = tmp_path / "deltas"
+    deltas.mkdir()
+    pq.write_table(
+        _deltas("2026-09-13T12:00:00+00:00", [("greenhouse:acme", "stock", "se", 500)]),
+        deltas / "2026-09-13T12-00-00+00-00.parquet",
+    )
+    counts = tmp_path / "counts.parquet"
+    pq.write_table(_counts([("greenhouse:acme", "stock", "se", 500)]), counts)
+    out = tmp_path / "hot_boards.json"
+    out.write_text("{not json", encoding="utf-8")
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "hot_boards",
+            f"--board-counts={counts}",
+            f"--board-deltas={deltas}",
+            f"--out={out}",
+            f"--epochs={tmp_path / 'epochs.csv'}",
+            f"--db={tmp_path / 'db'}",
+        ],
+    )
+    with caplog.at_level("WARNING", logger="headstart.ingest.hot_boards"):
+        assert hot_boards.main() == 0
+    assert "previous hot list (unreadable: JSONDecodeError) stays served" in caplog.text
+    assert out.read_text(encoding="utf-8") == "{not json", "the output is not touched"

@@ -150,6 +150,11 @@ def _entries(ats_dir: Path) -> Iterator[tuple[str, str | None]]:
                     yield record["id"], text
 
 
+class TornRecord(ValueError):
+    """A line that is not JSON, named by file and line — the one abort :func:`main` words
+    itself. Its own type so any other ``ValueError`` (a bug) still ends with its traceback."""
+
+
 def _parse(line: str, path: Path, lineno: int) -> dict:
     """``json.loads`` that names the file and line it failed on. Still fatal — a torn record must
     not be read past — but a bare ``JSONDecodeError`` named neither, so the abort sent the reader
@@ -157,7 +162,7 @@ def _parse(line: str, path: Path, lineno: int) -> dict:
     try:
         return json.loads(line)
     except json.JSONDecodeError as exc:
-        raise ValueError(f"{path} line {lineno}: {exc}") from exc
+        raise TornRecord(f"{path} line {lineno}: {exc}") from exc
 
 
 def read_store(ats_dir: Path) -> dict[str, str]:
@@ -454,7 +459,7 @@ def main() -> int:
     log.context("update_descriptions")
     try:
         return _update_store()
-    except ValueError as exc:
+    except TornRecord as exc:
         # a torn line raises with its file:line; say so as an abort, not a bare traceback
         log.fail(_log, f"description store update aborted: {exc}")
 

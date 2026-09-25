@@ -31,6 +31,7 @@ from __future__ import annotations
 import logging
 import os
 import sys
+from collections.abc import Callable
 from importlib.machinery import ModuleSpec
 from typing import Any, NoReturn
 
@@ -94,6 +95,24 @@ def fail(logger: logging.Logger, message: str) -> NoReturn:
     the one shape every fatal pipeline abort shares."""
     logger.error(message)
     raise SystemExit(1)
+
+
+def run_or_fail(
+    logger: logging.Logger, main: Callable[[], int | None], crashed: str
+) -> NoReturn:
+    """Run a ``continue-on-error`` stage's ``main``; a crash becomes one ERROR, then exit 1.
+
+    Such a step leaves the job green whatever it raises, and the runner's own "exit code 1"
+    says only that *a* step failed — not which stage, nor what the run now serves stale. So
+    ``crashed`` says that ("hot_boards failed — the previous hot list stays served this run"),
+    and the traceback rides with it. ``SystemExit`` and ``KeyboardInterrupt`` are not
+    ``Exception``, so :func:`fail` and a Ctrl-C pass through untouched.
+    """
+    try:
+        raise SystemExit(main())
+    except Exception:
+        logger.exception(crashed)
+        raise SystemExit(1) from None
 
 
 def context(stage: str, **extra: Any) -> None:
@@ -173,7 +192,7 @@ class FirstOnly:
     on, so the stack is theirs by construction. Seven of the other eight report a *condition*
     rather than a caught exception; each is clean today, but for three different strengths of
     reason, and the difference matters more than the count. ADR-0039's 2026-09-09 amendment sets
-    them out — read it before adding another, because "clean by measurement" holds only for the
+    them out (its 2026-09-25 one updates the count) — read it before adding another, because "clean by measurement" holds only for the
     call graph as it is. The eighth, ``telegram_bot_api``'s failed send, sits after its
     ``except`` on purpose: a traceback ends in the bare ``{exc}`` its token-safe ``reason`` avoids.
 
