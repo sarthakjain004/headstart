@@ -112,7 +112,9 @@ def test_a_mirrored_pair_is_named_alike_without_sharing_an_alias() -> None:
 @pytest.mark.parametrize(
     "board",
     [
-        "workday:nvidia/NVIDIAExternalCareerSite",
+        # NVIDIA's own Workday site is curated now (#649 joins its mirror), so a Workday Board
+        # no curator has named stands in for it.
+        "workday:intel/External",
         "icims:careers-gd-ais.icims.com",
         "zwayam:careers.persistent.com",
         "lever:1password",

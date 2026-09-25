@@ -4,7 +4,9 @@
 #
 # An entry is also the company directory's cross-ATS identity (ADR-0185): Boards sharing a name
 # here are one company there, and their counts are summed. So a pair whose Boards mirror each
-# other must not share a name until the index keeps one copy. Lockheed Martin is that pair: its
+# other must not share a name until the index keeps one copy — as it now does for the Eightfold
+# pairs in data/validate/eightfold_backing.csv (#649), which are named below. Lockheed Martin is
+# still such a pair: its
 # Eightfold Board lists the same requisitions as its SuccessFactors one (1,248 of 1,249 distinct
 # titles, 2026-09-23), so only the SuccessFactors Board is here. The Eightfold one states
 # "Lockheed Martin" itself.
@@ -34,6 +36,15 @@ successfactors:southasiacareers.deloitte.com,Deloitte South Asia,"Deloitte's own
 workday:ms/External,Morgan Stanley,tenant page names Morgan Stanley (2026-09-25); casing duplicate of ms/external
 workday:ms/external,Morgan Stanley,tenant page names Morgan Stanley (2026-09-25)
 workday:ms/private,Morgan Stanley,tenant page names Morgan Stanley (2026-09-25)
+# Mirrored pairs joined once the index keeps one copy: #649 (DEDUP_VERSION 5) drops an Eightfold
+# row whose backing row is served (data/validate/eightfold_backing.csv pairs each one below), in
+# the pipeline run that rebuilds the directory with these names. Before, one Search card opened
+# "NVIDIA Corporation" and the next "Nvidia", two trends of ~2,045 (2026-09-25 critique).
+eightfold:jobs.nvidia.com,NVIDIA,eightfold_backing.csv: backed by workday:nvidia/nvidiaexternalcareersite (#649)
+workday:nvidia/NVIDIAExternalCareerSite,NVIDIA,backing Board of eightfold:jobs.nvidia.com (#649)
+eightfold:careers.micron.com,Micron,eightfold_backing.csv: backed by workday:micron/external (#649)
+workday:micron/External,Micron,backing Board of eightfold:careers.micron.com (#649)
+eightfold:morganstanley.eightfold.ai,Morgan Stanley,eightfold_backing.csv: backed by workday:ms/external and ms/private (#649)
 # Workday (ADR-0216): Boards the hiringOrganization cascade leaves unnamed, and big Boards it
 # names partially or wrongly, each read from the Board's own og tags, sidebar, approot and
 # posting text on 2026-09-24/25. The cascade's own answers are data/validate/company_names/workday.csv.

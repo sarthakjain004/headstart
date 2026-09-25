@@ -124,6 +124,9 @@ def _pull_index(attempts: int = 5) -> None:
                     # each served Job's role family (ADR-0057), so a Trends category can hand
                     # over to Search as exact ids — ~4 MB, absent until a run writes one
                     "data/state/role_assignments.parquet",
+                    # duplicate removals per run and Board (#649), so a company's line can leave
+                    # them out exactly — small, and absent until a run writes one
+                    "data/state/dedup_evictions.csv",
                 ],
                 token=os.environ.get("HF_TOKEN"),
             )
@@ -305,11 +308,41 @@ def _load_epochs(path: Path) -> list[dict]:
     return out
 
 
+def _load_evictions(path: Path) -> dict[str, list[tuple[str, int]]]:
+    """``board -> [(ts, rows removed)]`` from the duplicate-removal ledger (#649), or empty.
+
+    Its ``ts`` is the run's own stamp, the one role_trends writes, so a removal lands exactly
+    on a charted run. Rows removed as duplicates are not closures, and a company's line leaves
+    them out; the rule that removed them does not matter to that, so it is summed away."""
+    if not path.exists():
+        return {}
+    out: dict[str, Counter] = defaultdict(Counter)
+    try:
+        with path.open(encoding="utf-8", newline="") as fh:
+            for row in csv.DictReader(fh):
+                out[row["board"]][row["ts"]] += int(row["count"])
+    except (OSError, ValueError, KeyError, TypeError, csv.Error) as exc:
+        print(f"dedup evictions unreadable ({exc}); none left out", flush=True)
+        return {}
+    return {board: sorted(by_ts.items()) for board, by_ts in out.items()}
+
+
 _TRENDS = _load_trends(_STATE / "data" / "state" / "role_trends.parquet")
 _CONFIG = Path(__file__).parent / "config"  # copied in beside this app (ADR-0153)
 _WATCH = _watch_meta(_CONFIG / "role_watchlist.json")
 _FAMILY_LABELS = _family_labels(_CONFIG / "role_families.json")
 _EPOCHS = _load_epochs(_STATE / "data" / "state" / "trends_epochs.csv")
+# The seniority bands `headstart.roles.band` writes, as a reader says them: the Level view's
+# legend read "mid", "senior", "unspecified".
+_BAND_LABELS = {
+    "intern": "Internships",
+    "entry": "Entry level (0–1 yrs)",
+    "mid": "Mid level (2–4 yrs)",
+    "senior": "Senior (5–7 yrs)",
+    "staff": "Staff and above (8+ yrs)",
+    "unspecified": "Experience not stated",
+}
+_EVICTIONS = _load_evictions(_STATE / "data" / "state" / "dedup_evictions.csv")
 # A refit re-bases every series (ADR-0040), so never plot two versions on one axis: keep the
 # newest only. Older rows stay in the ledger, they just aren't charted.
 if _TRENDS:
@@ -1584,6 +1617,8 @@ def trends():
     def _series_label(name: str) -> str:
         if key == "company":
             return company_labels[name]
+        if key == "band":
+            return _BAND_LABELS.get(name, name)
         if name in _WATCH:
             return _WATCH[name]["label"]
         return _FAMILY_LABELS.get(name, name)
@@ -1642,7 +1677,13 @@ def trends():
             if (
                 openings <= 0
                 or at == len(stamps)
-                or at <= bisect_left(stamps, began[pick])
+                # the pick's line begins at its own first counted run: under `new`, where its
+                # first Board's hold ends, not where it arrived — the Sep 20 start of every
+                # line was marked as "boards found later"
+                or at
+                <= bisect_left(
+                    stamps, new_from[pick] if metric == "new" else began[pick]
+                )
             ):
                 continue
             bucket = found.setdefault((stamps[at], pick), [0, 0])
@@ -1686,7 +1727,28 @@ def trends():
             {"ts": ts, "company": pick, "boards": n, "openings": openings}
             for (ts, pick), (n, openings) in sorted(found.items())
         ],
+        # Duplicate rows removed from each pick's Boards, per charted run (#649). None under
+        # comparable coverage, whose cohort leaves out Boards found later, as `discovered` does.
+        # The ledger counts every removed row, `non-tech` among them, so a removal reads a few
+        # percent larger than the tech openings it took from a company's line.
+        evicted=_picks_evicted(counted, stamps) if coverage != "comparable" else [],
     )
+
+
+def _picks_evicted(counted: dict[str, str], stamps: list[str]) -> list[dict]:
+    """``[{ts, company, count}]``: each pick's duplicate removals at the charted run that shows
+    them — the first at or after the removal's own stamp, which is normally that stamp."""
+    if not stamps:
+        return []
+    at: Counter = Counter()
+    for board, pick in counted.items():
+        for ts, count in _EVICTIONS.get(board, ()):
+            k = bisect_left(stamps, ts)
+            if 0 < k < len(stamps) and count:
+                at[(stamps[k], pick)] += count
+    return [
+        {"ts": ts, "company": pick, "count": n} for (ts, pick), n in sorted(at.items())
+    ]
 
 
 def _company_json(key: str, label: str) -> dict:

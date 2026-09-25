@@ -505,7 +505,9 @@ textarea:focus{ border-color:var(--accent); }
   font-size:12px; padding:4px 10px; cursor:pointer; }
 .seg button + button{ border-left:1px solid var(--rule); }
 .seg button[aria-checked="true"]{ background:var(--raise-2); color:var(--ink-1); }
-.seg button:disabled{ cursor:not-allowed; color:var(--ink-3); }
+/* Visibly off, not only greyed text: the 30/90-day presets looked enabled when disabled. */
+.seg button:disabled{ cursor:not-allowed; color:var(--ink-3); opacity:.45; text-decoration:line-through; }
+.trends-verdict.loading, .trends-kpi.loading, .trends-note.loading, .chart-note.loading{ opacity:.55; transition:opacity .2s ease; }
 .trends{ padding:20px 22px; background:var(--raise); border:1px solid var(--rule);
   border-radius:var(--r-xl); }
 .trends-head{ display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; margin-bottom:12px; }

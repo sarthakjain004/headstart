@@ -30,12 +30,14 @@ the first run of the prototype behind this module.
 **A Board whose entire stock arrives inside the window was newly *discovered*, not newly
 hiring.** Over the whole ledger and an 8-day span that was 6,996 Boards, a fifth of it; scoped
 as this stage scopes it — the trailing 7 days, Boards at or above ``MIN_STOCK`` — it was 108 on
-2026-09-21. Either way they would own every lens. ADR-0143 exists for this confound; the
+2026-09-21 (both counted with non-tech rows, before this stage dropped them). Either way they
+would own every lens. ADR-0143 exists for this confound; the
 exclusion here is its Hot-tab-shaped equivalent, and its count ships in the artifact rather than
 being quietly applied.
 
 **``watch:`` families double-count** against centroid families (ADR-0051), so they are dropped
-from every total.
+from every total. ``non-tech`` is dropped too: the tab ranks tech hiring, and its rows link to a
+trend of tech openings.
 
 **``new`` is a rolling 7-day level, not per-tick inflow** (ADR-0051). It is read as a level and
 never summed across ticks. ``stock`` deltas *are* per-tick changes and are summed.
@@ -59,7 +61,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from headstart import log
+from headstart import log, roles
 from headstart.ingest.board_naming import board_names, display_name
 from headstart.ingest.board_operator import classify
 
@@ -109,6 +111,10 @@ NEWLY_FOUND_SHARE = 0.9
 WINDOW_DAYS = 7
 
 _WATCH = "watch:"  # headstart.roles.WATCH_PREFIX; double-counts (ADR-0051)
+# Hot counts tech roles only, as Trends and Search do: with the reserved non-tech family counted
+# in, Amazon's "open now" was 9,755 on Hot against 9,229 tech openings on the trend its row
+# links to.
+_NON_TECH = roles.NON_TECH
 
 
 def read_levels(path: Path) -> tuple[collections.Counter, collections.Counter]:
@@ -121,7 +127,7 @@ def read_levels(path: Path) -> tuple[collections.Counter, collections.Counter]:
     for board, metric, family, count in zip(
         table["board"], table["metric"], table["family"], table["count"], strict=True
     ):
-        if family.startswith(_WATCH):
+        if family.startswith(_WATCH) or family == _NON_TECH:
             continue
         (new if metric == "new" else stock)[board] += count
     return new, stock
@@ -217,7 +223,11 @@ def read_stock_change(
             table["ts"],
             strict=True,
         ):
-            if metric == "stock" and not family.startswith(_WATCH):
+            if (
+                metric == "stock"
+                and not family.startswith(_WATCH)
+                and family != _NON_TECH
+            ):
                 moved[board] += delta
                 stamps.append(ts)
     return moved, stamps

@@ -219,11 +219,14 @@ test('the Other row sums every series past CHART_MAX', () => {
   assert.equal(ct[1], '3.0k');
 });
 
-test('clicking a marked row opens the roles split it advertised', () => {
+test('the roles marker opens the roles it names; the row opens the levels that add up to it', () => {
   const { t } = loadApp();
   t.set(fixture(), null);
-  t.click('software-engineering');
+  t.click('software-engineering', 'roles');
   assert.equal(t.split(), 'roles');
+  t.set(fixture(), null);
+  t.click('software-engineering', 'bands');
+  assert.equal(t.split(), 'bands');
 });
 
 test('clicking a category without watched roles opens the experience bands', () => {
@@ -275,7 +278,7 @@ test('a charted row does issue a drill request', () => {
   t.click('software-engineering');
   assert.equal(fetches.length, 1);
   assert.match(fetches[0], /family=software-engineering/);
-  assert.match(fetches[0], /split=roles/);
+  assert.match(fetches[0], /split=bands/, 'a row opens the levels that add up to it');
 });
 
 test('the scope line names the drillable set when more rows are listed than charted', () => {
@@ -305,11 +308,11 @@ test('the split toggle un-hides for a family that has watched roles', () => {
 
 test('an unmeasured roles drill says so, rather than claiming nothing is tracked', () => {
   const { t, nodes } = loadApp();
-  // Reach the roles split the way a user does — by clicking the marked row — then land on the
-  // empty series the first post-deploy run produces, before `role_trends` has written any
-  // `watch:` rows.
+  // Reach the roles split the way a user does — by clicking the row's roles marker — then land
+  // on the empty series the first post-deploy run produces, before `role_trends` has written
+  // any `watch:` rows.
   t.set(fixture(), null);
-  t.click('software-engineering');
+  t.click('software-engineering', 'roles');
   t.set({ ...fixture(), series: [] }, 'software-engineering');
   t.draw();
   assert.match(nodes['trends-empty'].textContent, /have not been measured yet/);
@@ -1458,13 +1461,15 @@ test('the mover floor is held to the openings a line really started with', () =>
   assert.match(row(nodes['trends-legend'].innerHTML, 'a'), /↑ \+2 openings</);
 });
 
-test('a counting change off zero starts the line there', () => {
+test('a counting change is taken out by its size in openings, never scaled', () => {
   const { t } = loadApp();
   t.setPicks([ACME]);
-  t.set({ ...picked({}), stamps: FOUR, series: [], discovered: [],
-    epochs: [{ ts: FOUR[2], changed: ['tech filter changed'], fields: ['tech_filter_version'] }] });
-  // No ratio off zero, so nothing before the change is a level to adjust.
-  same(t.netOfSteps([0, 0, 40, 40]), [null, null, 40, 40]);
+  t.set({ ...picked({}), stamps: FIVE, series: [], discovered: [],
+    epochs: [{ ts: FIVE[2], changed: ['tech filter changed'], fields: ['tech_filter_version'] }] });
+  // Microsoft's architecture line: 5 → 4, a filter change to 58, then flat. Scaled by 14.5,
+  // the one real opening became −12; by openings it stays −1.
+  // The run after the change (58 → 59) settles and goes too: net [60, 59, 59, 59, 59].
+  same(t.netOfSteps([5, 4, 58, 59, 59]), [60, 59, 59, 59, 59]);
 });
 
 test('found openings off zero lift the line', () => {
@@ -1533,7 +1538,7 @@ test('the sentence says how much of the chart’s move was not hiring', () => {
     discovered: [{ ts: FOUR[2], company: 'greenhouse:acme', boards: 3, openings: 200 }] });
   t.draw();
   assert.match(nodes['trends-verdict'].innerHTML,
-    /Acme<\/b>: 1,700 tech openings; about flat over 3 days \(\+0\.0%, \+0 openings\); the chart’s other \+200 openings came in runs marked as counting changes or boards found later\./);
+    /Acme<\/b>: 1,700 tech openings; about flat over 3 days \(\+0\.0%, \+0 openings\); the chart’s other \+200 openings came in runs marked as counting changes, boards found later or duplicates removed\./);
 });
 
 test('compared company by company, the heading asks how hiring compares', () => {
@@ -1638,4 +1643,46 @@ test('without the Space’s category filter, the category ranks the jobs and no 
   const hash = new URLSearchParams(ctx.location.hash.split('?')[1]);
   assert.equal(hash.get('family'), null);
   assert.equal(hash.get('q'), 'Software Engineering');
+});
+
+
+// ---- duplicate removals, sized (#649) --------------------------------------------------------
+test('duplicate postings removed later are taken out of that company’s line, exactly', () => {
+  const { t } = loadApp();
+  t.setPicks([ACME, BETA]);
+  t.set(companies([['greenhouse:acme', 'Acme', [100, 100, 95, 96]], ['lever:beta', 'Beta', [50, 50, 50, 50]]],
+    { evicted: [{ ts: FOUR[2], company: 'greenhouse:acme', count: 7 }] }));
+  t.setUnit('count', false);
+  const [acme, beta] = t.data().series;
+  // 7 duplicates went; the other +2 that run was hiring and stays.
+  same(t.netOfSteps(acme.points, acme), [93, 93, 95, 96]);
+  same(t.netOfSteps(beta.points, beta), [50, 50, 50, 50]);
+});
+
+test('a category line does not guess where a company’s removals fell', () => {
+  const { t } = loadApp();
+  t.setPicks([ACME]);
+  t.set({ ...picked({}), stamps: FOUR, series: [], epochs: [], discovered: [],
+    evicted: [{ ts: FOUR[2], company: 'greenhouse:acme', count: 7 }] });
+  const line = { name: 'software-engineering', points: [100, 100, 95, 96] };
+  same(t.netOfSteps(line.points, line), [100, 100, 95, 96]);
+});
+
+test('inside a category no whole-company step is taken out at its size', () => {
+  const { t } = loadApp();
+  t.setPicks([ACME]);
+  t.set({ ...picked({}), stamps: FOUR, series: [], epochs: [], discovered: [],
+    evicted: [{ ts: FOUR[2], company: 'greenhouse:acme', count: 2045 }] }, 'ai-ml');
+  const sum = { name: '__total__', points: [300, 300, 290, 290] };
+  same(t.netOfSteps(sum.points, sum), [300, 300, 290, 290], 'a category is not the whole company');
+});
+
+test('a step larger than what came before it starts the line after it', () => {
+  const { t } = loadApp();
+  t.setPicks([ACME]);
+  t.set({ ...picked({}), stamps: FIVE, series: [], discovered: [],
+    epochs: [{ ts: FIVE[3], changed: ['tech filter changed'], fields: ['tech_filter_version'] }] });
+  // 30 → 150, then a −130 change: 150 adjusts to 20, but 30 − 130 is no level, so the line
+  // starts after it.
+  same(t.netOfSteps([30, 150, 150, 20, 20]), [null, 20, 20, 20, 20]);
 });
