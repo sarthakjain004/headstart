@@ -120,8 +120,8 @@ The two groups together are about 350 rows, 7% of what the redirect removes.
 
 ## Consequences
 
-- **Scrapable Board** falls 154,033 → 153,761 (−272) and **Hiring Board** 101,482 → 101,280
-  (−202). `index prune` evicts the buried Boards' rows through its existing off-Board path.
+- **Scrapable Board** falls 153,965 → 153,693 (−272) and **Hiring Board** 101,414 → 101,212
+  (−202), against the ledger at merge. `index prune` evicts the buried Boards' rows through its existing off-Board path.
 - **`DEDUP_VERSION` is not bumped in this change.** `index_plan`'s rule says not to bump it for
   an alias-ledger rewrite that applies an existing signal, and `redirect` was in version 1. Even
   so, the first `prune` removes about 5,265 rows in one tick, and ADR-0188 exists so that Trends
