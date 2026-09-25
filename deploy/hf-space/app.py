@@ -174,6 +174,21 @@ _NON_TECH = "non-tech"  # reserved diagnostic series — mirrors headstart.roles
 _NEW_WINDOW_DAYS = (
     7  # the `new` flow window — mirrors ingest.role_trends.NEW_WINDOW_DAYS
 )
+# The Board-delta ledger's level metrics. Since ADR-0222 a tick's file also carries that tick's
+# turnover, which is a count of jobs, not a change in a level. It mirrors
+# ingest.job_turnover.METRICS, and the marker mirrors ingest.job_turnover.UNSCOPED.
+_LEVEL_METRICS = ("stock", "new")
+_TURNOVER_METRICS = ("opened", "closed", "recounted_in", "recounted_out")
+_UNSCOPED = "unscoped"
+# What /trends serves per line: recounted as in less out, so opened − closed + recounted is the
+# line's change in openings on every run.
+_TURNOVER_KINDS = ("opened", "closed", "recounted")
+_TURNOVER_KIND_OF = {
+    "opened": ("opened", 1),
+    "closed": ("closed", 1),
+    "recounted_in": ("recounted", 1),
+    "recounted_out": ("recounted", -1),
+}
 
 
 def _load_trends(path: Path) -> list[dict]:
@@ -272,7 +287,8 @@ def _family_weights(rows: list[dict]) -> Counter[str]:
     """Openings per family over ``rows`` — how much of the data each name holds."""
     weights: Counter[str] = Counter()
     for row in rows:
-        weights[row["family"]] += row["count"]
+        if row["metric"] in _LEVEL_METRICS:
+            weights[row["family"]] += row["count"]
     return weights
 
 
@@ -521,6 +537,15 @@ def _board_arrivals(deltas: list[dict]) -> dict[str, tuple[str, int]]:
     return {board: (ts, arrived[board]) for board, ts in first.items()}
 
 
+def _turnover_by_board(deltas: list[dict]) -> dict[str, list[dict]]:
+    """Each Board's turnover rows and Unauthoritative markers from the delta ledger (ADR-0222)."""
+    out: dict[str, list[dict]] = defaultdict(list)
+    for row in deltas:
+        if row["metric"] in _TURNOVER_METRICS or row["metric"] == _UNSCOPED:
+            out[row["board"]].append(row)
+    return out
+
+
 def _new_holds(arrivals: dict[str, tuple[str, int]]) -> dict[str, str]:
     """When each Board may count toward `new`: its first tick plus the flow window (ADR-0185).
 
@@ -593,6 +618,13 @@ _BOARD_ARRIVALS = _board_arrivals(_TREND_DELTAS)
 _NEW_HOLD = _new_holds(_BOARD_ARRIVALS)
 # The first tick of the Board-delta ledger, before which no per-Board count exists.
 _LEDGER_START = min((ts for ts, _ in _BOARD_ARRIVALS.values()), default=None)
+# Each Board's turnover rows and markers (ADR-0222), and the first tick that booked any turnover:
+# a run before it measured none, which is a gap, not a zero.
+_TURNOVER = _turnover_by_board(_TREND_DELTAS)
+_TURNOVER_SINCE = min(
+    (r["ts"] for rows in _TURNOVER.values() for r in rows if r["metric"] != _UNSCOPED),
+    default=None,
+)
 # Email alerts (ADR-0035) — invite-only, so all three must be set before the panel appears:
 # the Google client id the sign-in button needs, and a token scoped to the Subscriptions
 # dataset alone (never the index token, which is read-only by design).
@@ -1484,7 +1516,9 @@ def _replay_span(
     """One version's rows at its own charted runs, from its deltas alone (see _replay_rows)."""
     by_stamp: dict[str, list[dict]] = defaultdict(list)
     for row in deltas:
-        if end is None or row["ts"] < end:
+        # Levels only: a tick's turnover rows (ADR-0222) are its own counts, served apart by
+        # _turnover_series, and summed here they would chart as ever-growing levels.
+        if (end is None or row["ts"] < end) and row["metric"] in _LEVEL_METRICS:
             by_stamp[row["ts"]].append(row)
     state: Counter[tuple[str, str, str, str, str]] = Counter()
     rows = []
@@ -1905,6 +1939,48 @@ def trends():
             bucket = found.setdefault((stamps[at], pick), [0, 0])
             bucket[0] += 1
             bucket[1] += openings
+    # Each line's turnover (ADR-0222): the jobs opened and closed that its net change is made
+    # of. Amazon read "+17" over a week in which it opened 914–1,532. Under a pick and on stock
+    # only, because a pick's lines are the ones read as a company's hiring. Not on the roles
+    # drill, whose watched roles re-count their family's jobs.
+    turnover_boards: dict[str, str] = {}
+    if (
+        company_of is not None
+        and metric == "stock"
+        and not (family and split == "roles")
+    ):
+        turnover_boards = {
+            board: pick
+            for board, pick in counted.items()
+            if base_stamp is None or _BOARD_ARRIVALS[board][0] <= base_stamp
+        }
+
+    def line_of(row: dict, pick: str) -> str | None:
+        held = rename.get(row["family"], row["family"])
+        if split == "company":
+            return pick if not family or held == family else None
+        if family:
+            return row["band"] if held == family else None
+        return held
+
+    if turnover_boards:
+        by_line = _turnover_series(
+            turnover_boards, stamps, line_of, [line["name"] for line in out]
+        )
+        for line in out:
+            line["turnover"] = by_line[line["name"]]
+    # Each pick's own turnover where its own line is served (`pick_series`), so a line summing
+    # several picks counts each pick's turnover over the runs its own netted line counts.
+    pick_turnover = (
+        _turnover_series(
+            turnover_boards,
+            stamps,
+            lambda row, pick: pick if line_of(row, pick) is not None else None,
+            list(pick_series),
+        )
+        if turnover_boards and pick_series
+        else {}
+    )
     # Which families have watched sub-roles, so the UI can offer the roles drill only there.
     # Under the names the data holds as well as the config's: the watchlist moved to the v3
     # families before their data landed, and the AI roles' drill vanished from "AI / Machine
@@ -1940,6 +2016,7 @@ def trends():
             for k in picked_keys
         ],
         pick_series=pick_series,
+        pick_turnover=pick_turnover,
         company_totals={
             k: [company_totals[k].get(ts) for ts in stamps] for k in picked_keys
         },
@@ -1959,7 +2036,59 @@ def trends():
         # The ledger counts every removed row, `non-tech` among them, so a removal reads a few
         # percent larger than the tech openings it took from a company's line.
         evicted=_picks_evicted(counted, stamps) if coverage != "comparable" else [],
+        # When turnover began (ADR-0222). A window that starts earlier has lines whose opened
+        # and closed cover only part of it, and the page says from when.
+        turnover_since=_TURNOVER_SINCE if turnover_boards else None,
+        # Per pick, its Boards whose closures went uncounted on some run in the window (ADR-0053).
+        closures_unseen=_closures_unseen(turnover_boards, stamps),
     )
+
+
+def _turnover_series(
+    boards: dict[str, str],
+    stamps: list[str],
+    line_of,
+    names,
+) -> dict[str, dict[str, list[int | None]]]:
+    """The turnover of each line in ``names`` at each charted run (ADR-0222): ``{line: {opened,
+    closed, recounted}}``, each list aligned to ``stamps``. ``recounted`` is in less out, so on
+    every run ``opened − closed + recounted`` is the line's change in openings. ``boards`` maps
+    the Boards in scope to their pick. ``line_of(row, pick)`` names the line a row belongs to, or
+    returns None to leave the row out.
+
+    A tick's turnover lands on the first charted run at or after it, because it counts what
+    happened since the run before. The first charted run is None: what landed there happened
+    before the window. So is every run before turnover began, since nothing measured it.
+    """
+    first = max(
+        bisect_left(stamps, _TURNOVER_SINCE) if _TURNOVER_SINCE else len(stamps), 1
+    )
+    blank = [None] * first + [0] * (len(stamps) - first)
+    lines = {name: {m: list(blank) for m in _TURNOVER_KINDS} for name in names}
+    for board, pick in boards.items():
+        for row in _TURNOVER.get(board, ()):
+            k = bisect_left(stamps, row["ts"])
+            line = lines.get(line_of(row, pick))
+            if row["metric"] == _UNSCOPED or not 0 < k < len(stamps) or line is None:
+                continue
+            kind, sign = _TURNOVER_KIND_OF[row["metric"]]
+            line[kind][k] = (line[kind][k] or 0) + sign * row["delta"]
+    return lines
+
+
+def _closures_unseen(boards: dict[str, str], stamps: list[str]) -> dict[str, int]:
+    """Per pick, how many of its Boards had a run inside the window whose scrape could not show
+    an absence (ADR-0053), so the closures on it went uncounted that run (ADR-0222)."""
+    seen: dict[str, set[str]] = defaultdict(set)
+    if not stamps:
+        return {}
+    for board, pick in boards.items():
+        if any(
+            r["metric"] == _UNSCOPED and stamps[0] < r["ts"] <= stamps[-1]
+            for r in _TURNOVER.get(board, ())
+        ):
+            seen[pick].add(board)
+    return {pick: len(found) for pick, found in seen.items()}
 
 
 def _picks_evicted(counted: dict[str, str], stamps: list[str]) -> list[dict]:

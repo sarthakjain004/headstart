@@ -107,7 +107,7 @@ function loadApp(fetchImpl) {
     + ' follow: boards => { myCompanies = { followed: boards, hidden: [] }; },'
     + ' followed: followedOption, openTrend: openCompanyTrend, chartedAndOther,'
     + ' unit: () => trendUnit, clickUnit: pickUnit, hash: trendHash, pick: setPicks, netOfSteps,'
-    + ' table: toggleTrendsTable,'
+    + ' table: toggleTrendsTable, hotMeasure: HOT_MEASURE,'
     + ' set: (d, drill) => { trendData = d; trendRaw = d; trendDrill = drill || null; } };'
     // Repaints are counted at the global binding, which is what loadTrends' own `drawTrends()`
     // call resolves — so this counts the real paints, not a copy of them.

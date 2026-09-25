@@ -3136,3 +3136,75 @@ def test_a_view_summing_picks_carries_each_picks_own_line(company_trends):
         assert sum(picks) == sum(summed)
     one = company_trends.get("/trends?company=workday:hpe/a").get_json()
     assert one["pick_series"] == {}, "one pick is its own sum"
+
+
+def _with_turnover(trends_app, monkeypatch, rows: list[dict]) -> None:
+    """The fixture's ledger plus turnover rows (ADR-0222), loaded as the Space loads them."""
+    deltas = trends_app._TREND_DELTAS + rows
+    monkeypatch.setattr(trends_app, "_TREND_DELTAS", deltas)
+    monkeypatch.setattr(trends_app, "_TURNOVER", trends_app._turnover_by_board(deltas))
+    monkeypatch.setattr(trends_app, "_TURNOVER_SINCE", _T2)
+
+
+_HPE_TURNOVER = [
+    _delta(_T1, "workday:hpe/a", 99, metric="opened"),  # before the window's first run
+    _delta(_T3, "workday:hpe/b", 2, metric="opened"),
+    _delta(_T3, "workday:hpe/b", 7, metric="closed"),
+    _delta(_T3, "workday:hpe/b", 1, family="ai-ml", metric="recounted_in"),
+    _delta(_T3, "workday:hpe/b", 1, family="ai-ml", metric="recounted_out"),
+    _delta(_T3, "workday:hpe/b", 1, family="all", metric="unscoped"),
+]
+
+
+def test_turnover_rows_leave_every_level_as_it_was(
+    company_trends, trends_app, monkeypatch
+):
+    """A tick's turnover rides its delta file (ADR-0222). Replayed as levels, 99 opened jobs
+    would have become 99 more openings on HPE's line."""
+    before = company_trends.get("/trends?company=workday:hpe/a").get_json()
+    _with_turnover(trends_app, monkeypatch, _HPE_TURNOVER)
+    after = company_trends.get("/trends?company=workday:hpe/a").get_json()
+    assert [s["points"] for s in after["series"]] == [
+        s["points"] for s in before["series"]
+    ]
+    assert after["totals"] == before["totals"]
+    hpe = {"workday:hpe/a": "hpe", "workday:hpe/b": "hpe"}
+    replayed, _ = trends_app._replay_rows(None, False, hpe)
+    assert {r["metric"] for r in replayed} == {"stock", "new"}
+    assert (
+        trends_app._family_weights(
+            [{"metric": "opened", "family": "ai-ml", "count": 99}]
+        )
+        == {}
+    )
+
+
+def test_each_line_carries_the_turnover_its_change_is_made_of(
+    company_trends, trends_app, monkeypatch
+):
+    """Opened and closed beside the net line, on every line of a pick (ADR-0222). The first run
+    is None, since what landed there happened before the window."""
+    _with_turnover(trends_app, monkeypatch, _HPE_TURNOVER)
+    d = company_trends.get("/trends?company=workday:hpe/a").get_json()
+    lines = {s["name"]: s["turnover"] for s in d["series"]}
+    assert lines["software-engineering"] == {
+        "opened": [None, 0, 2],
+        "closed": [None, 0, 7],
+        "recounted": [None, 0, 0],
+    }
+    assert lines["ai-ml"]["recounted"] == [None, 0, 0]
+    assert d["turnover_since"] == _T2
+    assert d["closures_unseen"] == {"workday:hpe/a": 1}
+    split = company_trends.get(
+        "/trends?split=company&company=workday:hpe/a&company=workday:citi/2"
+    ).get_json()
+    by_label = {s["label"]: s["turnover"]["opened"] for s in split["series"]}
+    assert by_label == {"Hpe": [None, 0, 2], "Citi": [None, 0, 0]}
+
+
+def test_no_turnover_off_openings(company_trends, trends_app, monkeypatch):
+    """Under `new` a line is a rolling level of fresh jobs, not a stock with a net change."""
+    _with_turnover(trends_app, monkeypatch, _HPE_TURNOVER)
+    d = company_trends.get("/trends?metric=new&company=workday:hpe/a").get_json()
+    assert all("turnover" not in s for s in d["series"])
+    assert d["closures_unseen"] == {}
