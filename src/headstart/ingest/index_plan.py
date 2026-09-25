@@ -329,8 +329,9 @@ def _backing_copies(
     The Eightfold row joins the backing row's group rather than both joining a group keyed on
     the requisition, because a backing Board can serve one requisition as several rows —
     Greenhouse posts per location, SuccessFactors per locale — and those stay per row. A Workday
-    backing Board is matched on its tenant, the group ADR-0187 already serves a requisition from,
-    so a copy the tenant serves from another site still counts.
+    or Taleo Enterprise backing Board is matched on its Tenant, the group ADR-0187 and ADR-0223
+    already serve a requisition from, so a copy the Tenant serves from another Board still counts;
+    a backing row is also found on its own Board, whatever its stamp looks like.
     """
     if not requisitions or not backing:
         return {}

@@ -93,7 +93,9 @@ Edition and ADP Workforce Now, enforced by the planners ADR-0187 built, in both 
 - **The Eightfold backing match widens with it.** A Taleo Enterprise backing Board is matched on
   its Tenant, as a Workday one already was (ADR-0210). A backing row is also still found on its
   own Board, so a `contestNo` with no digit (the stamp the lookup tests, where the grouping tests
-  `jobId`) matches as it did before. On v65 this removes nothing more.
+  `jobId`) matches as it did before. The same holds on Workday, where it never arises: a Workday
+  stamp is the native id itself, and no stamped row on v654 or v65 lacks a digit. On v65 this
+  removes nothing more.
 
 ## Evidence
 
@@ -111,7 +113,8 @@ The served table holds tech postings only, so a lost posting is a removed row wh
 row. There are none. Sync refuses all 1,120 copies, and a second prune removes nothing.
 
 **Workday is unchanged.** On served v654, which still held ADR-0187's duplicates, origin/main's
-planners and these remove the same 7,146 Workday rows under the same rule. On v65 neither removes a
+planners and these remove the same Workday rows under the same rule: 7,146 against the ledger at
+`0be9e1ac`, and 7,137 after #676 excluded vendor demo Boards. On v65 neither removes a
 Workday row. ADR-0187's tests pass unmodified.
 
 ## Consequences
