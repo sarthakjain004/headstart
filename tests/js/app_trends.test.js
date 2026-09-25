@@ -107,7 +107,7 @@ function loadApp(fetchImpl) {
     + ' follow: boards => { myCompanies = { followed: boards, hidden: [] }; },'
     + ' followed: followedOption, openTrend: openCompanyTrend, chartedAndOther,'
     + ' unit: () => trendUnit, clickUnit: pickUnit, hash: trendHash, pick: setPicks, netOfSteps,'
-    + ' table: toggleTrendsTable, hotMeasure: HOT_MEASURE, turnoverOf,'
+    + ' table: toggleTrendsTable, changeSizesOf, rowText, hotMeasure: HOT_MEASURE, turnoverOf,'
     + ' set: (d, drill) => { trendData = d; trendRaw = d; trendDrill = drill || null; } };'
     // Repaints are counted at the global binding, which is what loadTrends' own `drawTrends()`
     // call resolves — so this counts the real paints, not a copy of them.
@@ -595,7 +595,7 @@ test('a methodology epoch draws a marker at its matching stamp', () => {
   t.draw();
   const svg = nodes['trends-chart'].innerHTML;
   assert.match(svg, /class="epoch-marker"/);
-  assert.match(svg, /Counting changed here: tech filter changed/);
+  assert.match(svg, /Aug 13 06:00 tech filter changed/);
 });
 
 test('an epoch with no matching stamp draws nothing, and does not crash the chart', () => {
@@ -1089,7 +1089,7 @@ test('a Board found after a company began is marked where its backlog lands', as
   await t.load(null);
   const svg = nodes['trends-chart'].innerHTML;
   assert.match(svg, /class="found-marker"/);
-  assert.match(svg, /83 more boards of Acme found here: 1,048 tech openings across the company, already open/);
+  assert.match(svg, /83 more boards of Acme found/);
   assert.match(nodes['trends-foot'].textContent, /boards found later/, 'explained under the chart');
   assert.ok(!nodes['trends-kpi'].innerHTML.includes('Biggest'), 'a found Board is no riser');
 });
@@ -1200,7 +1200,7 @@ test('in a summed view, a pick counted from later marks where it joins and names
     counted_since: { 'workday:nvidia': STAMPS[0], 'workday:amd': STAMPS[1] } });
   t.setPicks(two);
   await t.load(null);
-  assert.match(nodes['trends-chart'].innerHTML, /Counting for AMD starts here/);
+  assert.match(nodes['trends-chart'].innerHTML, /counting for AMD starts/);
   assert.ok(!nodes['trends-kpi'].innerHTML.includes('Biggest'));
 });
 
@@ -1407,8 +1407,8 @@ test('each company gets a sentence: its openings and which way they moved', () =
   t.draw();
   const html = nodes['trends-verdict'].innerHTML;
   assert.equal(nodes['trends-verdict'].hidden, false);
-  assert.match(html, /<b>Acme<\/b>: 998 tech openings; about flat over 3 days \(−0\.2%, −2 openings, about −5 a week\)\./);
-  assert.match(html, /<b>Beta<\/b>: 150 tech openings; up 50\.0% over 3 days \(\+50 openings, about \+117 a week\)\./);
+  assert.match(html, /<b>Acme<\/b>: [^—<]*— 998 tech openings; about flat over 3 days \(−0\.2%, −2 openings, about −5 a week\)\./);
+  assert.match(html, /<b>Beta<\/b>: [^—<]*— 150 tech openings; up 50\.0% over 3 days \(\+50 openings, about \+117 a week\)\./);
   assert.match(html, /HeadStart has counted these companies since Sep 13 — too short to tell a trend from noise/);
 });
 
@@ -1518,7 +1518,7 @@ test('how long a company has been counted comes from its counting, not the windo
       split_by: 'company', counted_since: { 'greenhouse:acme': FOUR[0] } }));
   t.draw();
   // Counted since Sep 13, three days: it is the window that is short, not the company.
-  assert.match(nodes['trends-verdict'].innerHTML, /Acme<\/b>: 100 tech openings; \+0 openings over the last 24 hours — too short a window to call a direction\./);
+  assert.match(nodes['trends-verdict'].innerHTML, /Acme<\/b>: [^—<]*too short a window to tell — 100 tech openings; \+0 openings over the last 24 hours\./);
 });
 
 // ---- critique round 4 ------------------------------------------------------------------------
@@ -1552,7 +1552,7 @@ test('the sentence says how much of the chart’s move was not hiring', () => {
     discovered: [{ ts: FOUR[2], company: 'greenhouse:acme', boards: 3, openings: 200 }] });
   t.draw();
   assert.match(nodes['trends-verdict'].innerHTML,
-    /Acme<\/b>: 1,700 tech openings; about flat over 3 days \(\+0\.0%, \+0 openings\); not hiring: \+200 openings from boards found later\./);
+    /Acme<\/b>: [^—<]*— 1,700 tech openings; about flat over 3 days \(\+0\.0%, \+0 openings\)\.<details class="verdict-why"><summary>Not hiring: \+200 openings<\/summary>\+200 openings from boards found later\./);
 });
 
 test('compared company by company, the heading asks how hiring compares', () => {
@@ -1585,7 +1585,7 @@ test('several picks summed get their own sentence, the sum of each company’s',
   t.setUnit('count', false);
   t.draw();
   // It read only "summed here — break down by Company", no move and no direction.
-  assert.match(nodes['trends-verdict'].innerHTML, /These 2 companies<\/b>: 110 tech openings; up 10\.0% over 7 days/);
+  assert.match(nodes['trends-verdict'].innerHTML, /These 2 companies<\/b>: [^—<]*— 110 tech openings; up 10\.0% over 7 days/);
 });
 
 test('a found Board on a whole company line is lifted by its own size, keeping that run’s hiring', () => {
@@ -1736,7 +1736,7 @@ test('the sentence names each cause of the non-hiring move, with its size', () =
   t.setUnit('count', false);
   t.draw();
   assert.match(nodes['trends-verdict'].innerHTML,
-    /Acme<\/b>: 1,010 tech openings; up 1\.0% over 3 days \(\+10 openings[^)]*\); not hiring: −2,000 openings from duplicate postings removed\./);
+    /Acme<\/b>: [^—<]*— 1,010 tech openings; up 1\.0% over 3 days \(\+10 openings[^)]*\)\.<details class="verdict-why"><summary>Not hiring: −2,000 openings<\/summary>−2,000 openings from duplicate postings removed\./);
 });
 
 test('under New, a counting change is also taken out a week later, when its openings age out', () => {
@@ -1762,7 +1762,7 @@ test('a run with duplicates removed beside a counting change names each by its s
   t.draw();
   // The refit run moved −2,000: −2,041 duplicates, +41 from the family change beside them.
   assert.match(nodes['trends-verdict'].innerHTML,
-    /not hiring: −2,041 openings from duplicate postings removed, \+41 openings from a role family assignment change\./);
+    /<\/summary>−2,041 openings from duplicate postings removed, \+41 openings from a role family assignment change\./);
   // The removals have their own figure, so the change that made them is not named again.
   assert.doesNotMatch(nodes['trends-verdict'].innerHTML, /duplicate removal change/);
 });
@@ -1786,7 +1786,7 @@ test('the latest figure is one rule: a line now at none reads 0 in the tile and 
              { name: 'b', label: 'b', points: [83, 83, 83, null], latest: null }] });
   t.draw();
   assert.match(nodes['trends-kpi'].innerHTML, /<span class="kpi-value">100<\/span>/);
-  assert.match(nodes['trends-verdict'].innerHTML, /Acme<\/b>: 100 tech openings/);
+  assert.match(nodes['trends-verdict'].innerHTML, /Acme<\/b>: [^—<]*— 100 tech openings/);
 });
 
 test('a drill is titled for its category and its company', () => {
@@ -1912,7 +1912,7 @@ test('a rise over a duplicate-removal run is hiring, not a removal', () => {
   t.draw();
   const html = nodes['trends-verdict'].innerHTML;
   assert.match(html, /\+20 openings/);
-  assert.doesNotMatch(html, /not hiring/);
+  assert.doesNotMatch(html, /Not hiring/);
 });
 
 test('an older company with one run in the window has a short window, not a new company', () => {
@@ -1920,7 +1920,7 @@ test('an older company with one run in the window has a short window, not a new 
   t.setPicks([ACME]);
   t.set(companies([['greenhouse:acme', 'Acme', [null, null, null, 100]]], { counted_since: { 'greenhouse:acme': FOUR[0] } }));
   t.draw();
-  assert.match(nodes['trends-verdict'].innerHTML, /this window is too short to call a direction/);
+  assert.match(nodes['trends-verdict'].innerHTML, /too short a window to tell — 100 tech openings\./);
   assert.doesNotMatch(nodes['trends-verdict'].innerHTML, /too new/);
 });
 
@@ -1949,7 +1949,7 @@ test('markers on one day are drawn as one, titled with every change', () => {
   t.draw();
   const svg = nodes['trends-chart'].innerHTML;
   assert.equal((svg.match(/class="epoch-marker"/g) || []).length, 1);
-  assert.match(svg, /tech filter changed\nCounting changed here: role taxonomy refit/);
+  assert.match(svg, /Aug 13 00:00 tech filter changed\nAug 13 12:00 role taxonomy refit/, 'each change at its own time');
 });
 
 // ---- critique round 12 ------------------------------------------------------------------------
@@ -1967,20 +1967,21 @@ test('a whole company’s line takes a counting change out by openings, as Hot d
   assert.match(nodes['trends-verdict'].innerHTML, /\+100 openings from a tech filter change/);
 });
 
-test('folded sentences keep the first pick and the tiles’ movers in view, in pick order', () => {
+test('the five largest sentences stand, with the tiles’ riser, and the rest fold', () => {
   const { t, nodes } = loadApp();
-  const picks = ['a', 'b', 'c', 'd'].map(k => ({ key: `lever:${k}`, label: k.toUpperCase(), boardKeys: [`lever:${k}`] }));
-  t.setPicks(picks);
-  // Sized so the payload order (largest first) is D, C, B, A; D, the last pick, rises most and
-  // B falls most — so neither "the first three picks" nor "the three largest" is the answer.
-  t.set(companies([['lever:d', 'D', [400, 400, 400, 600]], ['lever:c', 'C', [200, 200, 200, 210]],
-                   ['lever:b', 'B', [150, 150, 150, 100]], ['lever:a', 'A', [100, 100, 100, 101]]]));
+  const keys = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
+  t.setPicks(keys.map(k => ({ key: `lever:${k}`, label: k.toUpperCase(), boardKeys: [`lever:${k}`] })));
+  // Largest first, as the payload orders them; G, the smallest, rises most, and F falls most.
+  t.set(companies(keys.map((k, n) => [`lever:${k}`, k.toUpperCase(),
+    k === 'g' ? [100, 100, 100, 200] : k === 'f' ? [300, 300, 300, 200] : k === 'h' ? [50, 50, 50, 50]
+      : [700 - n * 100, 700 - n * 100, 700 - n * 100, 700 - n * 100]])));
   t.setUnit('count', false);
   t.draw();
   const [shownPart, folded] = nodes['trends-verdict'].innerHTML.split('<details');
-  assert.deepEqual([...shownPart.matchAll(/<b>(\w)<\/b>/g)].map(m => m[1]), ['A', 'B', 'D']);
+  assert.deepEqual([...shownPart.matchAll(/<b>(\w)<\/b>/g)].map(m => m[1]), ['A', 'B', 'C', 'D', 'E', 'F', 'G'],
+    'five, then the faller F and the riser G kept in view');
   assert.match(folded, /1 more company/);
-  assert.match(folded, /<b>C<\/b>/);
+  assert.match(folded, /<b>H<\/b>/);
 });
 
 test('a category first seen inside the window reads as new, not flat', () => {
@@ -1999,7 +2000,7 @@ test('one opening is one opening', () => {
   t.setPicks([ACME]);
   t.set(companies([['greenhouse:acme', 'Acme', [1, 1, 1, 1]]]));
   t.draw();
-  assert.match(nodes['trends-verdict'].innerHTML, /Acme<\/b>: 1 tech opening;/);
+  assert.match(nodes['trends-verdict'].innerHTML, /Acme<\/b>: [^—<]*— 1 tech opening;/);
 });
 
 test('every marked line is listed under the chart, a merged day at its biggest jump', () => {
@@ -2014,8 +2015,11 @@ test('every marked line is listed under the chart, a merged day at its biggest j
   t.draw();
   const list = nodes['trends-changes'];
   assert.equal(list.hidden, false);
-  assert.match(list.innerHTML, /Marked changes in this window \(1\)/);
-  assert.match(list.innerHTML, /Sep 24 21:19/, 'at the run that moved 199, not the one that moved 1');
+  // Each change at its own time, sized so they sum to the day's +200: the 21:19 jump is the
+  // 21:19 change's own run, not the 18:00 change's settling run.
+  assert.match(list.innerHTML, /Marked changes in this window \(2\)/);
+  assert.match(list.innerHTML, /Sep 24 18:00<\/b>[^<]*— Acme \+1 opening</);
+  assert.match(list.innerHTML, /Sep 24 21:19<\/b>[^<]*— Acme \+199 openings/);
 });
 
 test('the roles view says what its lines are', () => {
@@ -2178,7 +2182,7 @@ test('the marked-changes list gives each change’s size on each line, and count
     epochs: [{ ts: FIVE[2], changed: ['tech filter changed'], fields: ['tech_filter_version'] }] }));
   t.setUnit('count', false);
   t.draw();
-  assert.match(nodes['trends-changes'].innerHTML, /Sep 15 00:00<\/b> Counting changed here: tech filter changed[^<]* — Acme \+40 openings/);
+  assert.match(nodes['trends-changes'].innerHTML, /Sep 15 00:00<\/b> tech filter changed — Acme \+40 openings/);
 });
 
 test('a window ending before counting began says so', () => {
@@ -2228,7 +2232,7 @@ test('a change named for a line is every change whose left-out runs moved it, si
     epochs: [{ ts: FIVE[2], changed: ['tech filter changed'], fields: ['tech_filter_version'] }] }));
   t.setUnit('count', false);
   t.draw();
-  assert.match(nodes['trends-verdict'].innerHTML, /not hiring: −3 openings from a tech filter change\./);
+  assert.match(nodes['trends-verdict'].innerHTML, /<\/summary>−3 openings from a tech filter change\./);
   assert.match(nodes['trends-changes'].innerHTML, /— Acme −3 openings/);
 });
 
@@ -2242,7 +2246,7 @@ test('the list gives a counting change without the duplicates removed on its run
   t.setUnit('count', false);
   t.draw();
   const list = nodes['trends-changes'].innerHTML;
-  assert.match(list, /Counting changed here[^<]*— NVIDIA −97 openings/, '−2,138 less the 2,041 removed');
+  assert.match(list, /duplicate removal changed, role family assignment changed — NVIDIA −97 openings/, '−2,138 less the 2,041 removed');
   assert.match(list, /duplicate postings of NVIDIA removed[^<]*— NVIDIA −2,041 openings/, 'its own size, not the run’s −2,138');
 });
 
@@ -2272,7 +2276,7 @@ test('a change landing one run late is still left out whole (Amazon’s Sep 17 s
     epochs: [{ ts: FIVE[2], changed: ['tech filter changed'], fields: ['tech_filter_version'] }] }));
   t.setUnit('count', false);
   t.draw();
-  assert.match(nodes['trends-verdict'].innerHTML, /not hiring: −400 openings from a tech filter change\./);
+  assert.match(nodes['trends-verdict'].innerHTML, /<\/summary>−400 openings from a tech filter change\./);
   assert.doesNotMatch(nodes['trends-verdict'].innerHTML, /down 80/);
 });
 
@@ -2306,7 +2310,7 @@ test('several picks in a drill leave an extraction change in the level total', (
   t.setUnit('count', false);
   t.draw();
   assert.match(nodes['trends-verdict'].innerHTML, /\+20 openings/);
-  assert.doesNotMatch(nodes['trends-verdict'].innerHTML, /not hiring/);
+  assert.doesNotMatch(nodes['trends-verdict'].innerHTML, /Not hiring/);
 });
 
 test('a marker names duplicate removal only where a pick can be touched', () => {
@@ -2317,7 +2321,7 @@ test('a marker names duplicate removal only where a pick can be touched', () => 
                  fields: ['dedup_version', 'family_classifier_version'] }] }));
   t.setUnit('count', false);
   t.draw();
-  assert.match(nodes['trends-chart'].innerHTML, /Counting changed here: role family assignment changed/);
+  assert.match(nodes['trends-chart'].innerHTML, /Sep 15 00:00 role family assignment changed/);
   assert.doesNotMatch(nodes['trends-chart'].innerHTML, /duplicate removal changed/);
 });
 
@@ -2331,6 +2335,136 @@ test('a breakdown change is a step Back can undo', () => {
   t.selectSplit('total');
   assert.equal(pushed.length, 1, 'a history entry, not a replace');
   assert.match(pushed[0], /by=total/);
+});
+
+// ---- critique round 15 ------------------------------------------------------------------------
+test('the marked-changes list sizes every line, Other and the whole company included, as the sentence does', () => {
+  const { t, nodes } = loadApp();
+  t.setPicks([ACME]);
+  // Nine categories, so the ninth is Other; a filter change moves each by +10 at FIVE[2].
+  const names = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i'];
+  t.set({ ...picked({}), stamps: FIVE, totals: [1e4, 1e4, 1e4, 1e4, 1e4], non_tech: [0, 0, 0, 0, 0],
+    series: names.map((n, k) => ({ name: n, label: n, points: [100 - k, 100 - k, 110 - k, 110 - k, 110 - k], latest: 110 - k })),
+    counted_since: { 'greenhouse:acme': FIVE[0] },
+    epochs: [{ ts: FIVE[2], changed: ['tech filter changed'], fields: ['tech_filter_version'] }] });
+  t.setUnit('count', false);
+  t.draw();
+  const list = nodes['trends-changes'].innerHTML;
+  assert.match(list, /tech filter changed — Acme \+90 openings, a \+10 openings/, 'the company first, then each line');
+  assert.match(list, /Other \(1 smaller categor[^)]*\) \+10 openings/, 'Other too');
+  assert.match(nodes['trends-verdict'].innerHTML, /<\/summary>\+90 openings from a tech filter change\./, 'the same +90');
+});
+
+test('a line a counting change sorted into existence is sized in the list by what it arrived with', () => {
+  const { t, nodes } = loadApp();
+  t.setPicks([ACME]);
+  t.set({ ...picked({}), stamps: FOUR, totals: [1e3, 1e3, 1e3, 1e3], non_tech: [0, 0, 0, 0],
+    series: [{ name: 'a', label: 'a', points: [100, 100, 84, 85], latest: 85 },
+             { name: 'web', label: 'web', points: [null, null, 16, 16], latest: 16 }],
+    counted_since: { 'greenhouse:acme': '2026-09-01T00:00:00+00:00' },
+    epochs: [{ ts: FOUR[2], changed: ['role family assignment changed'], fields: ['family_classifier_version'] }] });
+  t.setUnit('count', false);
+  t.draw();
+  // The change and its settling run: a −16 then +1; web arrives with 16; the company +1 in all.
+  assert.match(nodes['trends-changes'].innerHTML, /Acme \+1 opening, a −15 openings, web \+16 openings/);
+});
+
+test('the table caption names only the causes this view has', () => {
+  const { t, nodes } = loadApp();
+  t.setPicks([ACME, MICRON]);
+  // Two picks summed per category; a duplicate-removal change touches only Micron, so Acme's +30
+  // that run comes out of the summed category too: one company's step, nothing found or removed.
+  t.set({ ...picked({}, [{ key: 'greenhouse:acme', label: 'Acme' }, { key: 'eightfold:micron', label: 'Micron', board_keys: ['eightfold:micron'] }]),
+    stamps: FOUR, totals: [1e3, 1e3, 1e3, 1e3], non_tech: [0, 0, 0, 0],
+    series: [{ name: 'a', label: 'a', points: [100, 100, 130, 130], latest: 130 },
+             { name: 'b', label: 'b', points: [200, 200, 200, 200], latest: 200 }],
+    pick_series: { 'greenhouse:acme': [100, 100, 130, 130], 'eightfold:micron': [200, 200, 200, 200] },
+    counted_since: { 'greenhouse:acme': FOUR[0], 'eightfold:micron': FOUR[0] },
+    epochs: [{ ts: FOUR[2], changed: ['duplicate removal changed'], fields: ['dedup_version'] }] });
+  t.setUnit('count', false);
+  t.draw();
+  nodes['trends-error'] = Object.assign(fakeEl(), { hidden: true });
+  t.table(true);
+  const caption = nodes['trends-table'].innerHTML.split('</caption>')[0];
+  assert.match(caption, /one company’s own step taken out of every row it is summed into/);
+  assert.doesNotMatch(caption, /duplicates removed|boards found|scaled/);
+});
+
+test('each sentence opens with the answer in plain words', () => {
+  const { t, nodes } = loadApp();
+  t.setPicks([ACME]);
+  t.set(companies([['greenhouse:acme', 'Acme', [100, 100, 100, 120]]]));
+  t.setUnit('count', false);
+  t.draw();
+  assert.match(nodes['trends-verdict'].innerHTML, /<b>Acme<\/b>: growing — 120 tech openings; up 20\.0%/);
+});
+
+test('a tracked role’s jobs link tells Search what the trend counted', () => {
+  const { t, ctx, nodes } = loadApp();
+  t.setPicks([ACME]);
+  t.set(fixture(), null);
+  t.click('software-engineering', 'roles');
+  t.set({ ...picked({ 'watch:llm': [80, 84] }), stamps: STAMPS }, 'software-engineering');
+  t.draw();
+  const button = { dataset: { role: 'watch:llm', roleLabel: 'LLM / GenAI' }, closest: sel => sel === '[data-role]' ? button : null };
+  nodes['trends-legend'].listeners.click.forEach(fn => fn({ target: button }));
+  const hash = new URLSearchParams(ctx.location.hash.split('?')[1]);
+  assert.equal(hash.get('role'), 'llm');
+  assert.equal(hash.get('trend_n'), '84');
+});
+
+test('under New a duplicate-removal change is named as one, as under All openings', () => {
+  const { t, nodes } = loadApp();
+  t.setPicks([MICRON]);
+  t.metricSet('new');
+  t.set({ ...companies([['eightfold:micron', 'Micron', [50, 50, 30, 30, 30]]],
+    { stamps: FIVE, epochs: [{ ts: FIVE[2], changed: ['duplicate removal changed'], fields: ['dedup_version'] }] }), metric: 'new' });
+  t.setUnit('count', false);
+  t.draw();
+  assert.match(nodes['trends-verdict'].innerHTML, /<\/summary>−20 openings from a duplicate removal change\./);
+});
+
+
+// ---- round 15 review ------------------------------------------------------------------------------
+test('the tooltip sizes a change as the list does, its settling run included (Micron, Sep 17)', () => {
+  const { t, nodes } = loadApp();
+  t.setPicks([ACME]);
+  // +32 at the change's own run, −296 at its settling run: one change of −264.
+  t.set(companies([['greenhouse:acme', 'Acme', [1000, 1000, 1032, 736, 736]]], { stamps: FIVE,
+    epochs: [{ ts: FIVE[2], changed: ['tech filter changed'], fields: ['tech_filter_version'] }] }));
+  t.setUnit('count', false);
+  t.draw();
+  const sizes = t.changeSizesOf(t.data().series[0]);
+  assert.equal(sizes.get(2), -264);
+  assert.match(t.rowText({ value: 1032, change: sizes.get(2) }), /marked change −264/);
+  assert.match(nodes['trends-changes'].innerHTML, /Acme −264 openings/);
+});
+
+test('each lead word says the answer', () => {
+  const lead = points => {
+    const { t, nodes } = loadApp();
+    t.setPicks([ACME]);
+    t.set(companies([['greenhouse:acme', 'Acme', points]]));
+    t.setUnit('count', false);
+    t.draw();
+    return nodes['trends-verdict'].innerHTML.match(/<\/b>: ([^—]*) —/)[1];
+  };
+  assert.equal(lead([100, 100, 100, 80]), 'shrinking');
+  assert.equal(lead([100, 100, 100, 100]), 'holding steady');
+  assert.equal(lead([10, 10, 10, 60]), 'more openings');
+});
+
+test('Share’s table names what its figures are', () => {
+  const { t, nodes } = loadApp();
+  t.setPicks([ACME]);
+  t.set({ ...picked({ a: [100, 110], b: [50, 55] }), stamps: STAMPS });
+  t.setUnit('share', false);
+  t.draw();
+  nodes['trends-error'] = Object.assign(fakeEl(), { hidden: true });
+  t.table(true);
+  const html = nodes['trends-table'].innerHTML;
+  assert.match(html, /Share, relative change/);
+  assert.match(html, /All tech roles \(of all its openings\)/);
 });
 
 // ---- job turnover (ADR-0227) ------------------------------------------------------------------
@@ -2351,8 +2485,24 @@ test('a company sentence gives the jobs its net change is made of', () => {
   t.setPicks([ACME]);
   t.set(busyAcme());
   t.draw();
+  // #684's shape: the answer first, then the move, then what it is made of, in the main text.
   assert.match(nodes['trends-verdict'].innerHTML,
-    /<b>Acme<\/b>: 1,000 tech openings; [^<]* — about 500 opened, 490 closed, closures not counted on 1 board\./);
+    /<b>Acme<\/b>: holding steady — 1,000 tech openings; [^<]* — about 500 opened, 490 closed, closures not counted on 1 board\./);
+});
+
+test('turnover stays in the main text, never in the not-hiring disclosure', () => {
+  const { t, nodes } = loadApp();
+  t.setPicks([ACME]);
+  const d = busyAcme();
+  d.series[0].points = [1000, 1000, 1400, 1400];
+  d.series[0].latest = 1400;
+  t.set(d);
+  t.draw();
+  const html = nodes['trends-verdict'].innerHTML;
+  assert.match(html, /<details class="verdict-why">/, 'the tech-filter step is disclosed');
+  const [main, why] = html.split('<details class="verdict-why">');
+  assert.match(main, /about 500 opened, 490 closed/);
+  assert.doesNotMatch(why, /opened/);
 });
 
 test('a counting change on the window’s first run leaves no turnover out, as the Space’s index rule', () => {
