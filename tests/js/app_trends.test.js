@@ -2014,8 +2014,11 @@ test('every marked line is listed under the chart, a merged day at its biggest j
   t.draw();
   const list = nodes['trends-changes'];
   assert.equal(list.hidden, false);
-  assert.match(list.innerHTML, /Marked changes in this window \(1\)/);
-  assert.match(list.innerHTML, /Sep 24 21:19/, 'at the run that moved 199, not the one that moved 1');
+  // Each change at its own time, sized so they sum to the day's +200: the 21:19 jump is the
+  // 21:19 change's own run, not the 18:00 change's settling run.
+  assert.match(list.innerHTML, /Marked changes in this window \(2\)/);
+  assert.match(list.innerHTML, /Sep 24 18:00<\/b>[^<]*— Acme \+1 opening</);
+  assert.match(list.innerHTML, /Sep 24 21:19<\/b>[^<]*— Acme \+199 openings/);
 });
 
 test('the roles view says what its lines are', () => {
@@ -2178,7 +2181,7 @@ test('the marked-changes list gives each change’s size on each line, and count
     epochs: [{ ts: FIVE[2], changed: ['tech filter changed'], fields: ['tech_filter_version'] }] }));
   t.setUnit('count', false);
   t.draw();
-  assert.match(nodes['trends-changes'].innerHTML, /Sep 15 00:00<\/b> Counting changed here: tech filter changed[^<]* — Acme \+40 openings/);
+  assert.match(nodes['trends-changes'].innerHTML, /Sep 15 00:00<\/b> tech filter changed — Acme \+40 openings/);
 });
 
 test('a window ending before counting began says so', () => {
@@ -2242,7 +2245,7 @@ test('the list gives a counting change without the duplicates removed on its run
   t.setUnit('count', false);
   t.draw();
   const list = nodes['trends-changes'].innerHTML;
-  assert.match(list, /Counting changed here[^<]*— NVIDIA −97 openings/, '−2,138 less the 2,041 removed');
+  assert.match(list, /duplicate removal changed, role family assignment changed — NVIDIA −97 openings/, '−2,138 less the 2,041 removed');
   assert.match(list, /duplicate postings of NVIDIA removed[^<]*— NVIDIA −2,041 openings/, 'its own size, not the run’s −2,138');
 });
 

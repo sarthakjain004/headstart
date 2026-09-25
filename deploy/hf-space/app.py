@@ -1439,9 +1439,12 @@ def _replay_rows(
         # A base before per-Board counting began starts the cohort at the first run that
         # counted by Board: nothing earlier can be told apart, and answering "nothing" left a
         # 30-day window blank for a reader who only asked to hold coverage fixed (ADR-0185).
-        base_stamp = max(
-            (stamp for stamp in stamps if first_delta <= stamp <= base), default=None
-        ) or next((stamp for stamp in stamps if stamp >= first_delta), None)
+        # The first run at or after the asked start, as All coverage starts its window: taking the
+        # last run before it began Google's Sep 15–20 window one run earlier under Comparable, at
+        # 1,502 rather than 1,494, so the toggle moved a one-Board company's answer (+30 vs +38).
+        base_stamp = next(
+            (stamp for stamp in stamps if stamp >= max(base, first_delta)), None
+        ) or max((stamp for stamp in stamps if stamp >= first_delta), default=None)
         if base_stamp is None:
             return [], None
         # First seen over every version: a refit re-writes every Board at its first tick.

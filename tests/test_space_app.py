@@ -3136,3 +3136,24 @@ def test_a_view_summing_picks_carries_each_picks_own_line(company_trends):
         assert sum(picks) == sum(summed)
     one = company_trends.get("/trends?company=workday:hpe/a").get_json()
     assert one["pick_series"] == {}, "one pick is its own sum"
+
+
+def test_comparable_starts_its_window_where_all_coverage_does(company_trends):
+    """Under Comparable the cohort's base was the last run before the asked start, so Google's
+    Sep 15–20 window began one run earlier than under All coverage (1,502 against 1,494)."""
+    everything = company_trends.get("/trends?company=workday:hpe/a").get_json()
+    first, second = everything["stamps"][:2]
+    between = (
+        first[:11] + "12:34:56+00:00"
+        if first[:10] == second[:10]
+        else second[:10] + "T00:00:00+00:00"
+    )
+    assert first < between < second
+    between = between.replace("+", "%2B")  # "+" in a query string reads as a space
+    since = company_trends.get(
+        f"/trends?company=workday:hpe/a&since={between}"
+    ).get_json()
+    held = company_trends.get(
+        f"/trends?company=workday:hpe/a&coverage=comparable&base={between}"
+    ).get_json()
+    assert held["stamps"][0] == since["stamps"][0] == second
