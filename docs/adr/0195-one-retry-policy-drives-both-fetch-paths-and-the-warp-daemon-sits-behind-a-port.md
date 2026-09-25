@@ -24,7 +24,7 @@ through the blocking `proxy_for`, which froze the event loop under every rotatio
 **The WARP daemon had no seam.** `spare_egress` shells out (`warp-cli`, `sudo -n systemctl restart
 warp-svc`, `launchctl kickstart`), opens a SOCKS5 socket and reads Cloudflare's trace endpoint from
 private functions the policy called directly. A test that forgot to stub any of them reached the
-real machine: `tests/test_network_http.py` had to autouse-stub `rotate`, because unstubbed it restarted the
+real machine: `tests/test_http.py` had to autouse-stub `rotate`, because unstubbed it restarted the
 developer's real WARP daemon (pid 96855 -> 97119 during one test run).
 
 ## Options considered

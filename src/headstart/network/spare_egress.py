@@ -1199,7 +1199,7 @@ def _restart_daemon() -> bool:
 # policy in this module only through `_daemon`, one object with four operations. `WarpDaemon` is the
 # real one; `InMemoryEgressDaemon` touches nothing outside the process, and `tests/conftest.py`
 # installs one for every test, so no test can restart the machine's own WARP daemon by forgetting a
-# stub — which `tests/test_network_http.py` did, once, until an autouse stub on `rotate` papered over it
+# stub — which `tests/test_http.py` did, once, until an autouse stub on `rotate` papered over it
 # (pid 96855 -> 97119 during one test run).
 
 

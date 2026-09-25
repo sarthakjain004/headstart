@@ -313,7 +313,7 @@ preparation-progress reproductions remain in the [previous report](2026-09-12_sr
 [plan]: https://github.com/sarthakjain004/headstart/blob/129ca66615a3ec62b81cd363a3eb314a056b4fb6/src/headstart/ingest/index_plan.py#L122-L234
 [refresh]: https://github.com/sarthakjain004/headstart/blob/129ca66615a3ec62b81cd363a3eb314a056b4fb6/src/headstart/ingest/update_meta.py#L235-L325
 [base]: https://github.com/sarthakjain004/headstart/blob/129ca66615a3ec62b81cd363a3eb314a056b4fb6/src/headstart/scrapers/base.py#L151-L237
-[http]: https://github.com/sarthakjain004/headstart/blob/129ca66615a3ec62b81cd363a3eb314a056b4fb6/src/headstart/network/http.py#L1-L15
+[http]: https://github.com/sarthakjain004/headstart/blob/129ca66615a3ec62b81cd363a3eb314a056b4fb6/src/headstart/http.py#L1-L15
 [harvest]: https://github.com/sarthakjain004/headstart/blob/129ca66615a3ec62b81cd363a3eb314a056b4fb6/src/headstart/harvest.py#L64-L146
 [fetch]: https://github.com/sarthakjain004/headstart/blob/129ca66615a3ec62b81cd363a3eb314a056b4fb6/src/headstart/ingest/state_fetch.py#L402
 [witness]: https://github.com/sarthakjain004/headstart/blob/129ca66615a3ec62b81cd363a3eb314a056b4fb6/src/headstart/ingest/state_witness.py#L79

@@ -58,7 +58,7 @@ _ROOT = Path(__file__).resolve().parents[1] / "src" / "headstart"
 _SCRAPERS = _ROOT / "scrapers"
 _ALERTS = _ROOT / "alerts"
 _HARVEST = _ROOT / "harvest.py"
-_SPARE_EGRESS = _ROOT / "network/spare_egress.py"
+_SPARE_EGRESS = _ROOT / "network" / "spare_egress.py"
 _SEARCH = _ROOT / "search.py"
 
 #: Where *every* annotation-level site must be justified, because the repetition lives in the
@@ -90,7 +90,7 @@ _PER_ITEM_BY_CONSTRUCTION = [
     # parse point, and nothing but this list would notice it coming back.
     _SEARCH,
     # Per Board (a walled Board's fetch) and per chat respectively, with no loop to key on.
-    _ROOT / "network/browser_http.py",
+    _ROOT / "network" / "browser_http.py",
     _ROOT / "telegram_bot_api.py",
     # Once per résumé-parse request on the Space.
     _ROOT / "llm_router.py",

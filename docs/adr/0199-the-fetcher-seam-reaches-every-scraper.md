@@ -10,7 +10,7 @@ unchanged)
 ## Context
 
 ADR-0153 gave `BaseScraper.__init__` an optional `fetcher` so a test could inject a fake instead of
-monkeypatching `headstart.network.http`. It stopped short in four places, measured on `main` at
+monkeypatching `headstart.http`. It stopped short in four places, measured on `main` at
 `12d45409`:
 
 - **`registry.get_scraper` took no `fetcher`.** `scripts/bench/tech_gate_bench.py` built a
@@ -98,7 +98,7 @@ opaque argument, and a fake ignores it.
    each request with the fake clock, because its crawl-delay tests read the gaps between requests.
    `FakeBrowserFetcher` stays its own class, because it stands in for darwinbox's browser factory,
    a context manager behind a different seam, but it now answers with the shared `FakeResponse`.
-6. **Migrate when touched.** The existing monkeypatches of `headstart.network.http` stay: 93 `setattr`
+6. **Migrate when touched.** The existing monkeypatches of `headstart.http` stay: 93 `setattr`
    calls in 8 test files on `main`. `HTTPFetcher` still forwards to `http.fetch`/`fetch_async` by
    name, so they still work. A test that is rewritten for another reason moves to the shared fake;
    nothing is mass-rewritten.
@@ -112,7 +112,7 @@ opaque argument, and a fake ignores it.
   `http.DEFAULT_FETCHER`, because its `_fetch` rides the pooled session, so it clears the same jar
   as before. The bench's `_CountingFetcher` forwards the method too.
 - **No request changed.** One live Board per ATS was scraped before and after this change, and
-  every `(method, url, kwargs)` was recorded at `headstart.network.http`, which both paths reach:
+  every `(method, url, kwargs)` was recorded at `headstart.http`, which both paths reach:
   - `workday:blackline/BlackLineCareers`: 111 Jobs both times, with the same ids and the same
     fields apart from `scraped_at`. It made 118 requests (the instance probe, 6 listing POSTs of
     which 5 were async, and 111 details), and the request multiset was identical.

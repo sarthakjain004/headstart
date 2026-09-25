@@ -25,7 +25,7 @@ By 2026-09-25 that flat level held 43 files, and its names had stopped saying wh
   `experience` (the extractor) and reads as the same thing; `company_match` (the Trends picker's
   suggestions) sits beside `company_name` (a Board's served name) the same way.
 * Modules that answer one question were scattered: the five per-Board CSV ledgers shared a
-  `board_` prefix only in part (`liveness` did not), and the transport, the browser transport, the
+  `board_` prefix only in part (`liveness` did not), and the HTTP client, its browser twin, the
   seam over both and the spare egress had nothing grouping them at all.
 
 ADR-0028 also says logic the curated feed (`python -m headstart`) reaches stays in `headstart`
@@ -45,7 +45,7 @@ its name unless the name misled; a package supplies the context a short name lac
 | `jobs/` | One Job: its shape, and every field derived from its own text | `models` → `job`; `experience`; `salary`; `remote`; `tech_filter` → `tech_classifier` |
 | `search_filters/` | The Search-filter vocabulary: what the index materializes and what the compiler turns into a where-clause | `search_filter_compiler` → `compiler`; `employment_type_filter` → `employment_type`; `experience_filter` → `experience_ceiling`; `salary_known_filter` → `salary_known`; `india_filter` → `india`; `posted_date_guard`; `geo` → `india_gazetteer`; `fx` |
 | `search/` | The serving path the Space and the local dev server run | `search` → `job_search`; `facets`; `profile_extract` |
-| `trends/` | What Trends reads from its history | `trend_history` → `history`; `roles` → `role_taxonomy`; `version_spans`; `company_match` → `company_suggestions`; and ADR-0230's later modules |
+| `trends/` | What Trends reads from its history | `trend_history` → `history`; `trend_netting` → `netting`; `trend_history_migration` → `history_migration`; `hot_ranking`; `roles` → `role_taxonomy`; `company_match` → `company_suggestions` |
 
 Three modules move into packages that already exist: `telegram_bot_api` into `alerts/` (its only
 caller is `alerts.bot`), `corpus` into `ingest/` (only the run reads it, which is ADR-0028's own
@@ -71,7 +71,13 @@ already set (`test_alerts_store.py`), so `tests/` groups by package and a short 
 
 The layout lands one package per PR, each rewriting every reference in the same change (imports,
 `mock.patch` targets, workflows, the Space, docs and ADRs, per CLAUDE.md's naming rule), with no
-compatibility shims. `trends/` lands after ADR-0230's migration PRs, which are editing its modules.
+compatibility shims.
+
+A rewritten reference tells a reader where the code lives now, so the rewrite reaches past ADRs and
+dated docs too. Two kinds of text keep the old name, because they describe the tree as it was: a
+link pinned to a commit (`blob/<sha>/src/headstart/http.py`), and a sentence stating what was true
+of the tree at a stated time or commit ("measured on `main` at `12d45409`", "`tests/test_http.py`
+had to autouse-stub `rotate`"). The table above is the map from those names to today's.
 
 ## Consequences
 

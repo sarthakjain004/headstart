@@ -14,7 +14,7 @@ Workday's listing and Trakstar's feed ride it, and `Fetcher` gains `clear_cookie
 ## Context
 
 `BaseScraper.__init__(slug, company)` takes no fetcher parameter. Every scraper reaches HTTP
-through `headstart.network.http`, imported at module scope in ~20 scraper files and reached inside
+through `headstart.http`, imported at module scope in ~20 scraper files and reached inside
 `BaseScraper._get`/`_get_async`/`_fetch`/`_fetch_async` as a bare module reference. That module
 holds real, useful process-global state — a thread-local pooled session and a retry counter
 (ADR-0002) — which is not the problem; the problem is that nothing sits between a scraper and
