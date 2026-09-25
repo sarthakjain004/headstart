@@ -91,6 +91,8 @@
     "not_hiring": [
      {
       "change": "joined@workday:amd",
+      "kind": "pick_joined",
+      "label": "counting starts",
       "size": 355
      }
     ],
@@ -117,6 +119,8 @@
      "not_hiring": [
       {
        "change": "joined@workday:amd",
+       "kind": "pick_joined",
+       "label": "counting starts",
        "size": 350
       }
      ],
@@ -142,6 +146,8 @@
      "not_hiring": [
       {
        "change": "joined@workday:amd",
+       "kind": "pick_joined",
+       "label": "counting starts",
        "size": 5
       }
      ],
@@ -169,6 +175,8 @@
      "not_hiring": [
       {
        "change": "joined@workday:amd",
+       "kind": "pick_joined",
+       "label": "counting starts",
        "size": 355
       }
      ],
@@ -192,6 +200,7 @@
     "id": "joined@workday:amd",
     "kind": "pick_joined",
     "ts": "2026-09-20T00:00:00+00:00",
+    "label": "counting starts",
     "fields": [],
     "changed": [],
     "company": "workday:amd",

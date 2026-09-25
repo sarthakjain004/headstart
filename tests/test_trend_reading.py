@@ -1,4 +1,4 @@
-"""The Trends line reading (ADR-0232), checked at ``trend_reading.read_answer``.
+"""The Trends line reading (ADR-0233), checked at ``trend_reading.read_answer``.
 
 - **Golden readings** (``tests/fixtures/trend_readings/*.json``): every golden answer of
   ADR-0230 as ``{answer_input, reading}``. Each reads exactly as stored and passes the checker;
@@ -6,7 +6,7 @@
   equalities. After a deliberate rule change, rewrite them with
   ``WRITE_TREND_READINGS=1 pytest tests/test_trend_reading.py`` and read the diff.
 - **A change has one size in every window that holds it** (invariant 4), by re-reading each
-  golden over every narrower window.
+  golden over every window narrowed from either end.
 - **The checker catches each broken invariant**, so a passing reading is evidence.
 - **A history holding one duplicate removal**, read through ``TrendHistory``.
 """
@@ -16,14 +16,14 @@ from __future__ import annotations
 import copy
 import json
 import os
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
 
 from headstart.trend_netting import js_round, net_answer
 from headstart.trend_reading import (
-    GROWTH_COUNTED_TWICE,
-    GROWTH_SCALED_BY_A_CHANGE,
+    CauseKind,
     TrendWindow,
     check_reading,
     read_answer,
@@ -33,6 +33,7 @@ from headstart.trend_reading import (
 
 READINGS = Path(__file__).parent / "fixtures" / "trend_readings"
 GOLDEN = sorted(READINGS.glob("*.json"))
+_GROWTH = (CauseKind.GROWTH_COUNTED_TWICE, CauseKind.GROWTH_SCALED_BY_A_CHANGE)
 
 
 def _golden(name: str) -> dict:
@@ -52,20 +53,26 @@ def test_golden_reading_is_what_the_module_reads(path: Path) -> None:
     assert check_reading(golden["reading"]) == []
 
 
+def _netted_move(line: dict) -> int | None:
+    netted = [v for v in line["net"]["count"] if v is not None]
+    return js_round(netted[-1] - netted[0]) if len(netted) >= 2 else None
+
+
 @pytest.mark.parametrize("path", GOLDEN, ids=[p.stem for p in GOLDEN])
-def test_the_first_row_is_netted_as_net_answer_nets_it(path: Path) -> None:
-    """A company's line is netted exactly as before (decision 4): Hot must not move."""
+def test_the_first_row_and_each_category_read_their_netted_figure(path: Path) -> None:
+    """A company's line is netted exactly as before (decision 4): Hot must not move. A category
+    keeps its own netted figure too, where it was counted all through the window; the rows are
+    rounded together, so in general a row is its netted figure rounded down or up."""
     golden = json.loads(path.read_text(encoding="utf-8"))
-    total = golden["reading"]["total"]
-    if total is None:
-        return
-    netted = [
-        v
-        for v in net_answer(golden["answer_input"])["series_sum"]["net"]["count"]
-        if v is not None
-    ]
-    if len(netted) >= 2:
-        assert total["move"]["hiring"] == js_round(netted[-1] - netted[0])
+    reading = golden["reading"]
+    served = net_answer(golden["answer_input"])
+    if reading["total"] is not None and _netted_move(served["series_sum"]) is not None:
+        assert reading["total"]["move"]["hiring"] == _netted_move(served["series_sum"])
+    rows = {line["name"]: line["move"]["hiring"] for line in reading["lines"]}
+    for line in served["series"]:
+        whole_window = line["points"][0] is not None and line["points"][-1] is not None
+        if whole_window and _netted_move(line) is not None and line["name"] in rows:
+            assert rows[line["name"]] == _netted_move(line), line["name"]
 
 
 # ---- invariant 4: one size in every window -----------------------------------------------------
@@ -73,68 +80,101 @@ def test_the_first_row_is_netted_as_net_answer_nets_it(path: Path) -> None:
 _PER_RUN = ("totals", "non_tech")
 
 
-def _narrowed(answer: dict, first: int) -> dict:
-    """``answer`` over its runs from ``first`` on, as ``TrendHistory`` would answer that window."""
+def _narrowed(answer: dict, first: int, end: int) -> dict:
+    """``answer`` over its runs ``[first, end)``, as ``TrendHistory`` would answer that window."""
+    cut = slice(first, end)
     out = copy.deepcopy(answer)
-    out["stamps"] = answer["stamps"][first:]
+    out["stamps"] = answer["stamps"][cut]
     for key in _PER_RUN:
         if out.get(key):
-            out[key] = out[key][first:]
+            out[key] = out[key][cut]
     for line in out["series"]:
-        line["points"] = line["points"][first:]
+        line["points"] = line["points"][cut]
         if line.get("turnover"):
-            line["turnover"] = {m: v[first:] for m, v in line["turnover"].items()}
+            line["turnover"] = {m: v[cut] for m, v in line["turnover"].items()}
     for key in ("company_totals", "pick_series"):
-        out[key] = {k: v[first:] for k, v in (out.get(key) or {}).items()}
+        out[key] = {k: v[cut] for k, v in (out.get(key) or {}).items()}
     out["pick_parts"] = {
-        name: {k: v[first:] for k, v in parts.items()}
+        name: {k: v[cut] for k, v in parts.items()}
         for name, parts in (out.get("pick_parts") or {}).items()
     }
     out["pick_turnover"] = {
-        k: {m: v[first:] for m, v in t.items()}
+        k: {m: v[cut] for m, v in t.items()}
         for k, t in (out.get("pick_turnover") or {}).items()
     }
     return out
 
 
-def _sizes(reading: dict) -> dict[tuple[str, str], int]:
-    """Each (line, change) size the reading gives, the growth a window holds left out."""
-    kinds = {c["id"]: c["kind"] for c in reading["marked_changes"]}
+def _runs(change: dict, answer: dict) -> set[str] | None:
+    """The runs a change lands on in the full window: its own, a counting change's settling run
+    and, under New, a tech-filter change's week-later echo. None for a change whose own run is
+    outside the window, which no narrower window holds whole."""
+    stamps = answer["stamps"]
+    if change["ts"] not in stamps:
+        return None
+    i = stamps.index(change["ts"])
+    runs = {change["ts"]}
+    if change["kind"] == CauseKind.COUNTING:
+        runs |= set(stamps[i + 1 : i + 2])
+        if answer["metric"] == "new" and "tech_filter_version" in change["fields"]:
+            echo = datetime.fromisoformat(change["ts"]) + timedelta(
+                days=answer["new_window_days"]
+            )
+            runs |= {
+                next(
+                    (ts for ts in stamps if datetime.fromisoformat(ts) >= echo),
+                    change["ts"],
+                )
+            }
+    return runs
+
+
+def _sizes(reading: dict, with_growth: bool) -> dict[tuple[str, str], int]:
     out = {}
     for line in [*reading["lines"], *reading["company_lines"]]:
         for cause in line["move"]["not_hiring"]:
-            if kinds.get(cause["change"]) in (
-                GROWTH_COUNTED_TWICE,
-                GROWTH_SCALED_BY_A_CHANGE,
-            ):
-                continue
-            out[(line["name"], cause["change"])] = cause["size"]
+            if with_growth or cause["kind"] not in _GROWTH:
+                out[(line["name"], cause["change"])] = cause["size"]
     return out
 
 
-def _held(reading: dict, stamps: list[str]) -> set[str]:
-    """The changes a window holds whole: their own run inside it, after its first run."""
-    return {
-        c["id"]
-        for c in reading["marked_changes"]
-        if c["ts"] in stamps and stamps.index(c["ts"]) >= 1
-    }
+def _windows(n: int):
+    """Every window narrowed from one end or the other: ``[first, n)`` and ``[0, end)``."""
+    yield from ((first, n) for first in range(1, n - 1))
+    yield from ((0, end) for end in range(2, n))
 
 
 @pytest.mark.parametrize("path", GOLDEN, ids=[p.stem for p in GOLDEN])
 def test_a_change_has_one_size_in_every_window_that_holds_it(path: Path) -> None:
+    """Narrowed from either end, a window that holds a change's runs reads it at one size. The
+    growth a scaling took out is sized by the growth the window holds before it, so it is
+    compared only where the window cuts runs after every change and keeps all of that growth."""
     golden = json.loads(path.read_text(encoding="utf-8"))
     answer = golden["answer_input"]
     whole = golden["reading"]
-    sizes = _sizes(whole)
-    for first in range(1, len(answer["stamps"]) - 1):
-        narrow = _narrowed(answer, first)
+    runs = {c["id"]: _runs(c, answer) for c in whole["marked_changes"]}
+    for first, end in _windows(len(answer["stamps"])):
+        narrow = _narrowed(answer, first, end)
+        stamps = narrow["stamps"]
         reading = read_answer(narrow).to_json()
-        assert check_reading(reading) == [], first
-        held = _held(reading, narrow["stamps"]) & _held(whole, answer["stamps"])
-        for (line, change), size in _sizes(reading).items():
-            if change in held and (line, change) in sizes:
-                assert size == sizes[(line, change)], (first, line, change)
+        assert check_reading(reading) == [], (first, end)
+        held = {
+            change
+            for change, landing in runs.items()
+            if landing is not None
+            and landing <= set(stamps)
+            and stamps.index(whole_ts(whole, change)) >= 1
+        }
+        every_change_held = held == {c for c, landing in runs.items() if landing}
+        with_growth = first == 0 and every_change_held
+        sizes = _sizes(whole, with_growth)
+        for (line, change), size in _sizes(reading, with_growth).items():
+            if (change in held or with_growth) and (line, change) in sizes:
+                assert size == sizes[(line, change)], (first, end, line, change)
+
+
+def whole_ts(reading: dict, change: str) -> str:
+    return next(c["ts"] for c in reading["marked_changes"] if c["id"] == change)
 
 
 # ---- what the golden readings read ------------------------------------------------------------
@@ -167,7 +207,7 @@ def test_a_removal_has_one_size_and_the_growth_it_doubled_is_its_own_cause() -> 
 
 
 def test_the_marked_changes_sum_to_not_hiring() -> None:
-    """Micron's list summed −2,447 under a "Not hiring" of −2,378 (ADR-0232's context)."""
+    """Micron's list summed −2,447 under a "Not hiring" of −2,378 (ADR-0233's context)."""
     reading = _golden("change_before_a_removal_counts_at_the_scale_it_leaves")[
         "reading"
     ]
@@ -192,11 +232,29 @@ def test_the_categories_add_up_to_the_company_with_a_closing_row() -> None:
     hiring = {line["name"]: line["move"]["hiring"] for line in reading["lines"]}
     assert hiring == {"software-engineering": 20, "ai-ml": 0}
     closing = reading["breakdown"]["closing"]
-    assert closing["hiring"] == 40
+    assert (closing["start"], closing["latest"], closing["hiring"]) == (0, 0, 40)
+    assert [(c["kind"], c["size"]) for c in closing["not_hiring"]] == [
+        ("counting", -40)
+    ]
+    assert closing["turnover"] is None
     change = reading["lines"][0]["move"]["not_hiring"]
     assert [c["size"] for c in change] == [-120, 40], (
         "the refit at its size, then the growth"
     )
+    assert [c["label"] for c in change] == [
+        "role family assignment changed",
+        "growth rescaled by role family assignment changed",
+    ]
+
+
+def test_growth_rescaled_by_a_change_stands_on_that_changes_day() -> None:
+    """The erase guard's growth is a Marked change of its own, marked with its change."""
+    reading = _golden("whole_company_shift_that_would_erase_its_history_scales")[
+        "reading"
+    ]
+    kinds = {c["id"]: c["kind"] for c in reading["marked_changes"]}
+    assert sorted(kinds.values()) == ["counting", "growth_scaled_by_a_change"]
+    assert [sorted(d["changes"]) for d in reading["day_markers"]] == [sorted(kinds)]
 
 
 def test_with_no_pick_nothing_is_taken_out_and_changes_are_still_marked() -> None:
@@ -246,6 +304,25 @@ def test_the_checker_catches_rows_that_do_not_reach_the_first_row() -> None:
     assert any(v.startswith("breakdown:") for v in violations)
 
 
+def test_the_checker_catches_a_closing_row_that_is_not_one_figure() -> None:
+    def breaking(r):
+        closing = r["breakdown"]["closing"]
+        closing["not_hiring"][0]["kind"] = "growth_scaled_by_a_change"
+
+    violations = _broken(
+        "refit_moving_more_than_a_category_held_closes_the_table", breaking
+    )
+    assert any(v.startswith("closing row:") for v in violations)
+
+
+def test_the_checker_catches_a_change_no_day_marker_names() -> None:
+    def breaking(r):
+        r["day_markers"] = r["day_markers"][1:]
+
+    violations = _broken("duplicate_removal_scales_the_history_before_it", breaking)
+    assert any("named by 0 day markers" in v for v in violations)
+
+
 def test_the_checker_catches_a_share_netted_a_second_time() -> None:
     def breaking(r):
         r["company_lines"][0]["move"]["share"]["start"] *= 1.5
@@ -258,7 +335,9 @@ def test_the_checker_catches_something_taken_out_with_no_pick() -> None:
     def breaking(r):
         move = r["lines"][0]["move"]
         move["hiring"] -= 5
-        move["not_hiring"] = [{"change": "counting@x", "size": 5}]
+        move["not_hiring"] = [
+            {"change": "counting@x", "kind": "counting", "label": "x", "size": 5}
+        ]
 
     violations = _broken("index_marks_counting_changes_and_takes_nothing_out", breaking)
     assert any("no pick" in v for v in violations)
@@ -296,8 +375,11 @@ def test_a_removal_is_sized_in_tech_openings_not_the_rows_it_removed(history) ->
     reading = read_trends(history, TrendQuestion(companies=(removal_state.MICRO,)))
     assert reading.reconciles, reading.violations
     micro = reading.company_lines[0].move
-    causes = {c.change.split("@")[0]: c.size for c in micro.not_hiring}
-    assert causes == {"removed": -removal_state.REMOVED_TECH, "growth_counted_twice": 9}
+    causes = {c.kind: c.size for c in micro.not_hiring}
+    assert causes == {
+        CauseKind.DUPLICATES_REMOVED: -removal_state.REMOVED_TECH,
+        CauseKind.GROWTH_COUNTED_TWICE: 9,
+    }
     # 9 runs of +2 before it, halved; +2 on its run; 6 runs of +2 after it.
     assert micro.hiring == 9 + 2 + 12
 
@@ -313,13 +395,23 @@ def test_hot_reads_the_line_its_trend_opens(history) -> None:
         assert moves[key] == reading.company_lines[0].move
 
 
-def test_comparable_coverage_reads_its_cohorts_removal_as_all_coverage_does(
-    history,
+def test_comparable_coverage_takes_its_cohorts_removal_out_and_not_a_later_boards(
+    tmp_path: Path,
 ) -> None:
-    """Serving no removals under Comparable, Micron read +160 there against +83 under All."""
-    question = TrendQuestion(companies=(removal_state.MICRO,))
+    """Serving no removals under Comparable, Micron read +160 there against +83 under All.
+    Under Comparable the cohort Board's removal comes out; the later Board is not in the
+    cohort, and neither is its removal."""
+    removal_state.write(tmp_path, board_found_later=True)
+    history = TrendHistory.load(tmp_path, _NO_CONFIG)
     comparable = TrendQuestion(companies=(removal_state.MICRO,), coverage="comparable")
-    assert (
-        read_trends(history, comparable).company_lines[0].move
-        == read_trends(history, question).company_lines[0].move
-    )
+    reading = read_trends(history, comparable)
+    assert reading.reconciles, reading.violations
+    removed = {
+        c.change: c.size
+        for c in reading.company_lines[0].move.not_hiring
+        if c.kind == CauseKind.DUPLICATES_REMOVED
+    }
+    at = removal_state.TICKS[removal_state.REMOVAL]
+    assert removed == {
+        f"removed@{at}/{removal_state.MICRO}": -removal_state.REMOVED_TECH
+    }

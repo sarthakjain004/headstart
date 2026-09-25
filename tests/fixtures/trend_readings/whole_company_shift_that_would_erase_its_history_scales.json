@@ -95,10 +95,14 @@
      "not_hiring": [
       {
        "change": "counting@2026-09-15T00:00:00+00:00",
+       "kind": "counting",
+       "label": "tech filter changed",
        "size": -180
       },
       {
        "change": "growth_scaled_by_counting@2026-09-15T00:00:00+00:00",
+       "kind": "growth_scaled_by_a_change",
+       "label": "growth rescaled by tech filter changed",
        "size": 135
       }
      ],
@@ -126,10 +130,14 @@
      "not_hiring": [
       {
        "change": "counting@2026-09-15T00:00:00+00:00",
+       "kind": "counting",
+       "label": "tech filter changed",
        "size": -180
       },
       {
        "change": "growth_scaled_by_counting@2026-09-15T00:00:00+00:00",
+       "kind": "growth_scaled_by_a_change",
+       "label": "growth rescaled by tech filter changed",
        "size": 135
       }
      ],
@@ -151,6 +159,7 @@
     "id": "counting@2026-09-15T00:00:00+00:00",
     "kind": "counting",
     "ts": "2026-09-15T00:00:00+00:00",
+    "label": "tech filter changed",
     "fields": [
      "tech_filter_version"
     ],
@@ -167,6 +176,7 @@
     "id": "growth_scaled_by_counting@2026-09-15T00:00:00+00:00",
     "kind": "growth_scaled_by_a_change",
     "ts": "2026-09-15T00:00:00+00:00",
+    "label": "growth rescaled by tech filter changed",
     "fields": [],
     "changed": [],
     "company": null,
@@ -181,7 +191,8 @@
     "day": "2026-09-15",
     "at": "2026-09-15T00:00:00+00:00",
     "changes": [
-     "counting@2026-09-15T00:00:00+00:00"
+     "counting@2026-09-15T00:00:00+00:00",
+     "growth_scaled_by_counting@2026-09-15T00:00:00+00:00"
     ]
    }
   ],

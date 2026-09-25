@@ -114,6 +114,8 @@
      "not_hiring": [
       {
        "change": "counting@2026-09-15T00:00:00+00:00",
+       "kind": "counting",
+       "label": "duplicate removal changed",
        "size": -20
       }
      ],
@@ -161,6 +163,8 @@
      "not_hiring": [
       {
        "change": "counting@2026-09-15T00:00:00+00:00",
+       "kind": "counting",
+       "label": "duplicate removal changed",
        "size": -20
       }
      ],
@@ -202,6 +206,7 @@
     "id": "counting@2026-09-15T00:00:00+00:00",
     "kind": "counting",
     "ts": "2026-09-15T00:00:00+00:00",
+    "label": "duplicate removal changed",
     "fields": [
      "dedup_version"
     ],

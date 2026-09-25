@@ -153,6 +153,7 @@
     "id": "counting@2026-08-13T00:00:00+00:00",
     "kind": "counting",
     "ts": "2026-08-13T00:00:00+00:00",
+    "label": "tech filter changed",
     "fields": [],
     "changed": [
      "tech filter changed"
@@ -165,6 +166,7 @@
     "id": "counting@2026-08-13T12:00:00+00:00",
     "kind": "counting",
     "ts": "2026-08-13T12:00:00+00:00",
+    "label": "role taxonomy refit",
     "fields": [],
     "changed": [
      "role taxonomy refit"

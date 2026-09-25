@@ -25,7 +25,7 @@ rewrites it on disk.
 Netting happens in :meth:`TrendHistory.answer` (step 4), and the Hot tab ranks companies off
 :meth:`TrendHistory.company_moves`, which reads the same answers (step 5). ``trend_reading``
 reads the answer before netting (:meth:`TrendHistory.unnetted_answer`) into reconciled line
-readings (ADR-0232).
+readings (ADR-0233).
 """
 
 from __future__ import annotations
@@ -969,7 +969,7 @@ class TrendHistory:
 
     def unnetted_answer(self, question: TrendQuestion) -> dict:
         """Role counts over time (ADR-0040, ADR-0051), before any line is netted: what
-        :meth:`answer` nets and ``trend_reading`` reads (ADR-0232).
+        :meth:`answer` nets and ``trend_reading`` reads (ADR-0233).
 
         ``metric`` ``stock`` (default) is live openings; ``new`` is those first seen inside the
         flow window. Default view: one series per family, each point the family's total across
@@ -1385,8 +1385,7 @@ class TrendHistory:
             scope = {
                 board: pick
                 for board, pick in scope.items()
-                if board in self._board_arrivals
-                and self._board_arrivals[board][0] <= base_stamp
+                if self._in_cohort(board, base_stamp)
             }
         # With no pick the lines keep a counting change's jump, marked, but its turnover is not
         # hiring. The index leaves out, Board by Board, the runs each company's own line leaves
@@ -1504,15 +1503,14 @@ class TrendHistory:
             ],
             # Duplicate rows removed from each pick's Boards, per charted run (#649). Under
             # comparable coverage, from the cohort's Boards only: a Board found later is out of
-            # the cohort, but a removal on a cohort Board still halves what it counted (ADR-0232;
+            # the cohort, but a removal on a cohort Board still halves what it counted (ADR-0233;
             # serving none, Micron read +160 under Comparable and +83 under All). The ledger
             # counts every removed row, `non-tech` among them.
             "evicted": self._picks_evicted(
                 {
                     board: pick
                     for board, pick in counted.items()
-                    if base_stamp is None
-                    or self._board_arrivals[board][0] <= base_stamp
+                    if self._in_cohort(board, base_stamp)
                 },
                 stamps,
             ),
@@ -1776,8 +1774,7 @@ class TrendHistory:
                 boards = {
                     b: pick
                     for b, pick in boards.items()
-                    if b in self._board_arrivals
-                    and self._board_arrivals[b][0] <= base_stamp
+                    if self._in_cohort(b, base_stamp)
                 }
             opened = [
                 (r, pick)
@@ -1875,6 +1872,14 @@ class TrendHistory:
             ):
                 seen[pick].add(board)
         return {pick: len(found) for pick, found in seen.items()}
+
+    def _in_cohort(self, board: str, base_stamp: str | None) -> bool:
+        """Whether a comparable cohort based at ``base_stamp`` (ADR-0143) holds ``board``: a
+        Board first counted at or before the base. With no base, every Board is in scope."""
+        return base_stamp is None or (
+            board in self._board_arrivals
+            and self._board_arrivals[board][0] <= base_stamp
+        )
 
     def _picks_evicted(self, counted: dict[str, str], stamps: list[str]) -> list[dict]:
         """``[{ts, company, count}]``: each pick's duplicate removals at the charted run that

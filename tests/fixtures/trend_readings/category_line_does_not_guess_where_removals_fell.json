@@ -85,6 +85,8 @@
     "not_hiring": [
      {
       "change": "removed@2026-09-15T00:00:00+00:00/greenhouse:acme",
+      "kind": "duplicates_removed",
+      "label": "duplicate postings removed",
       "size": -7
      }
     ],
@@ -133,6 +135,8 @@
      "not_hiring": [
       {
        "change": "removed@2026-09-15T00:00:00+00:00/greenhouse:acme",
+       "kind": "duplicates_removed",
+       "label": "duplicate postings removed",
        "size": -7
       }
      ],
@@ -155,7 +159,9 @@
     "hiring": 7,
     "not_hiring": [
      {
-      "change": "removed@2026-09-15T00:00:00+00:00/greenhouse:acme",
+      "change": "moved_between_categories",
+      "kind": "counting",
+      "label": "moved between categories by a counting change",
       "size": -7
      }
     ],
@@ -170,6 +176,7 @@
     "id": "removed@2026-09-15T00:00:00+00:00/greenhouse:acme",
     "kind": "duplicates_removed",
     "ts": "2026-09-15T00:00:00+00:00",
+    "label": "duplicate postings removed",
     "fields": [],
     "changed": [],
     "company": "greenhouse:acme",

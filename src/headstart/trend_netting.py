@@ -172,6 +172,15 @@ class _Jump:
     notes: tuple[int, ...] = ()
 
 
+@dataclass(frozen=True)
+class _Scaling:
+    """A run that scales the history before it by ``ratio``: a company's duplicate removal
+    (``by_removal``), or a shift the erase guard scaled because it would go below zero."""
+
+    ratio: float
+    by_removal: bool
+
+
 @dataclass
 class _NetTrace:
     """How :func:`_net` took the steps out of one line, recorded for ``trend_reading`` to size
@@ -180,14 +189,14 @@ class _NetTrace:
     - ``scale``: each kept run -> the scale its netted value was read at (the removals and
       scaled shifts after it);
     - ``withheld``: each run a step lands on -> the openings the run gives up, before scaling;
-    - ``ratios``: each run that scales the history before it -> ``(ratio, "removal" | "guard")``;
+    - ``ratios``: each run that scales the history before it -> its :class:`_Scaling`;
     - ``jumps``: each run a step lands on -> its jump.
 
     A line summing several picks is traced pick by pick, by ``trend_reading``."""
 
     scale: dict[int, float] = field(default_factory=dict)
     withheld: dict[int, float] = field(default_factory=dict)
-    ratios: dict[int, tuple[float, str]] = field(default_factory=dict)
+    ratios: dict[int, _Scaling] = field(default_factory=dict)
     jumps: dict[int, _Jump] = field(default_factory=dict)
 
 
@@ -667,7 +676,7 @@ def _net(
             if j in dups:
                 scale *= dups[j]
                 if trace is not None:
-                    trace.ratios[j] = (dups[j], "removal")
+                    trace.ratios[j] = _Scaling(dups[j], by_removal=True)
             continue
         v = levels[j] * scale + lift
         if cut or v < 0:
@@ -688,7 +697,7 @@ def _net(
             if before is not None:
                 if jump and jump.lift is not None:
                     # A removal gives up its share of the line's tech openings, never the rows
-                    # it removed, which count non-tech ones too (ADR-0232 decision 3).
+                    # it removed, which count non-tech ones too (ADR-0233 decision 3).
                     removed = sum(
                         view.notes[k]["size"]
                         for k in jump.notes
@@ -703,7 +712,7 @@ def _net(
                 scale *= r
                 if trace is not None:
                     trace.withheld[j] = withheld
-                    trace.ratios[j] = (r, "removal")
+                    trace.ratios[j] = _Scaling(r, by_removal=True)
                 continue
         if not jump:
             continue
@@ -723,7 +732,7 @@ def _net(
             scale *= jump.after / jump.before
             if trace is not None:
                 trace.withheld[j] = jump.after - jump.before
-                trace.ratios[j] = (jump.after / jump.before, "guard")
+                trace.ratios[j] = _Scaling(jump.after / jump.before, by_removal=False)
         else:
             lift += shift
             if trace is not None:

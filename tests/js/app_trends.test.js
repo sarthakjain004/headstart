@@ -2387,7 +2387,7 @@ test('the roles view marks the changes that moved its roles', () => {
   assert.match(nodes['trends-changes'].innerHTML, /tech filter changed — watch:llm \+16 openings/);
 });
 
-/* Golden readings (tests/fixtures/trend_readings/, ADR-0232): the page's checkReading states the
+/* Golden readings (tests/fixtures/trend_readings/, ADR-0233): the page's checkReading states the
  * same equalities as headstart.trend_reading.check_reading, in the same words, over the same
  * files. pytest proves the Space reads exactly these; here the page agrees they reconcile, and
  * catches each broken invariant with the sentence the Python checker gives. */
@@ -2421,17 +2421,17 @@ test('the page catches each broken invariant with the checker\'s own sentence', 
   same(broken('index_marks_counting_changes_and_takes_nothing_out', r => {
     const move = r.lines[0].move;
     move.hiring -= 5;
-    move.not_hiring = [{ change: 'counting@x', size: 5 }];
+    move.not_hiring = [{ change: 'counting@x', kind: 'counting', label: 'x', size: 5 }];
   }), [
     'line software-engineering: its share at the start is not its netted count over the netted denominator',
     'line software-engineering: its percentage is not hiring over the netted start',
     'line software-engineering: with no pick, something was taken out',
   ]);
   same(broken('refit_moving_more_than_a_category_held_closes_the_table', r => {
-    r.breakdown.closing.hiring -= 1;
-    r.breakdown.closing.not_hiring[0].size += 1;
-  }), [
-    "breakdown: its rows' growth_scaled_by_counting@2026-09-15T00:00:00+00:00 add up to 1, its first row's is 0",
-    "breakdown: its rows' hiring add up to 59, its first row's is 60",
+    r.breakdown.closing.not_hiring[0].kind = 'growth_scaled_by_a_change';
+  }), ['closing row: it is not one figure moved between categories by a counting change']);
+  same(broken('duplicate_removal_scales_the_history_before_it', r => { r.day_markers = r.day_markers.slice(1); }), [
+    'marked change growth_counted_twice@2026-09-15T00:00:00+00:00/eightfold:micron: named by 0 day markers, not one',
+    'marked change removed@2026-09-15T00:00:00+00:00/eightfold:micron: named by 0 day markers, not one',
   ]);
 });

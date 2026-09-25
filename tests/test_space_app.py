@@ -1964,7 +1964,7 @@ def test_any_board_of_a_company_picks_the_whole_company(company_trends):
 
 
 def test_trends_serves_the_line_reading_beside_the_netted_fields(company_trends):
-    """ADR-0232 step 2: the reading rides beside the fields the page still reads, and its first
+    """ADR-0233 step 2: the reading rides beside the fields the page still reads, and its first
     row reads what the netted Total does."""
     d = company_trends.get("/trends?company=workday:hpe/b").get_json()
     assert "series_sum" in d and "notes" in d

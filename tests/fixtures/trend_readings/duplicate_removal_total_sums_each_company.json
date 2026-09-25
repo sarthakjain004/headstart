@@ -113,6 +113,8 @@
     "not_hiring": [
      {
       "change": "counting@2026-09-15T00:00:00+00:00",
+      "kind": "counting",
+      "label": "duplicate removal changed",
       "size": -50
      }
     ],
@@ -139,6 +141,8 @@
      "not_hiring": [
       {
        "change": "counting@2026-09-15T00:00:00+00:00",
+       "kind": "counting",
+       "label": "duplicate removal changed",
        "size": -20
       }
      ],
@@ -186,6 +190,8 @@
      "not_hiring": [
       {
        "change": "counting@2026-09-15T00:00:00+00:00",
+       "kind": "counting",
+       "label": "duplicate removal changed",
        "size": -50
       }
      ],
@@ -208,7 +214,9 @@
     "hiring": 30,
     "not_hiring": [
      {
-      "change": "counting@2026-09-15T00:00:00+00:00",
+      "change": "moved_between_categories",
+      "kind": "counting",
+      "label": "moved between categories by a counting change",
       "size": -30
      }
     ],
@@ -223,6 +231,7 @@
     "id": "counting@2026-09-15T00:00:00+00:00",
     "kind": "counting",
     "ts": "2026-09-15T00:00:00+00:00",
+    "label": "duplicate removal changed",
     "fields": [
      "dedup_version"
     ],

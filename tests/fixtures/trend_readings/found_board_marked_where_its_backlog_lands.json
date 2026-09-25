@@ -87,6 +87,8 @@
     "not_hiring": [
      {
       "change": "found@2026-09-20T00:00:00+00:00/greenhouse:acme",
+      "kind": "found_boards",
+      "label": "83 more boards found",
       "size": 1048
      }
     ],
@@ -113,6 +115,8 @@
      "not_hiring": [
       {
        "change": "found@2026-09-20T00:00:00+00:00/greenhouse:acme",
+       "kind": "found_boards",
+       "label": "83 more boards found",
        "size": 850
       }
      ],
@@ -138,6 +142,8 @@
      "not_hiring": [
       {
        "change": "found@2026-09-20T00:00:00+00:00/greenhouse:acme",
+       "kind": "found_boards",
+       "label": "83 more boards found",
        "size": 5
       }
      ],
@@ -165,6 +171,8 @@
      "not_hiring": [
       {
        "change": "found@2026-09-20T00:00:00+00:00/greenhouse:acme",
+       "kind": "found_boards",
+       "label": "83 more boards found",
        "size": 1048
       }
      ],
@@ -187,7 +195,9 @@
     "hiring": -193,
     "not_hiring": [
      {
-      "change": "found@2026-09-20T00:00:00+00:00/greenhouse:acme",
+      "change": "moved_between_categories",
+      "kind": "counting",
+      "label": "moved between categories by a counting change",
       "size": 193
      }
     ],
@@ -202,6 +212,7 @@
     "id": "found@2026-09-20T00:00:00+00:00/greenhouse:acme",
     "kind": "found_boards",
     "ts": "2026-09-20T00:00:00+00:00",
+    "label": "83 more boards found",
     "fields": [],
     "changed": [],
     "company": "greenhouse:acme",

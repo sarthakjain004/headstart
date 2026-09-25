@@ -91,6 +91,8 @@
     "not_hiring": [
      {
       "change": "counting@2026-09-20T00:00:00+00:00",
+      "kind": "counting",
+      "label": "tech filter changed",
       "size": 45
      }
     ],
@@ -117,6 +119,8 @@
      "not_hiring": [
       {
        "change": "counting@2026-09-20T00:00:00+00:00",
+       "kind": "counting",
+       "label": "tech filter changed",
        "size": 40
       }
      ],
@@ -142,6 +146,8 @@
      "not_hiring": [
       {
        "change": "counting@2026-09-20T00:00:00+00:00",
+       "kind": "counting",
+       "label": "tech filter changed",
        "size": 5
       }
      ],
@@ -169,6 +175,8 @@
      "not_hiring": [
       {
        "change": "counting@2026-09-20T00:00:00+00:00",
+       "kind": "counting",
+       "label": "tech filter changed",
        "size": 45
       }
      ],
@@ -192,6 +200,7 @@
     "id": "counting@2026-09-20T00:00:00+00:00",
     "kind": "counting",
     "ts": "2026-09-20T00:00:00+00:00",
+    "label": "tech filter changed",
     "fields": [
      "tech_filter_version"
     ],

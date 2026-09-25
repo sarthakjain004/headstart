@@ -104,10 +104,14 @@
      "not_hiring": [
       {
        "change": "counting@2026-09-24T18:00:00+00:00",
+       "kind": "counting",
+       "label": "duplicate removal changed",
        "size": 1
       },
       {
        "change": "counting@2026-09-24T21:19:00+00:00",
+       "kind": "counting",
+       "label": "role family assignment changed",
        "size": 199
       }
      ],
@@ -135,10 +139,14 @@
      "not_hiring": [
       {
        "change": "counting@2026-09-24T18:00:00+00:00",
+       "kind": "counting",
+       "label": "duplicate removal changed",
        "size": 1
       },
       {
        "change": "counting@2026-09-24T21:19:00+00:00",
+       "kind": "counting",
+       "label": "role family assignment changed",
        "size": 199
       }
      ],
@@ -160,6 +168,7 @@
     "id": "counting@2026-09-24T18:00:00+00:00",
     "kind": "counting",
     "ts": "2026-09-24T18:00:00+00:00",
+    "label": "duplicate removal changed",
     "fields": [
      "family_classifier_version"
     ],
@@ -176,6 +185,7 @@
     "id": "counting@2026-09-24T21:19:00+00:00",
     "kind": "counting",
     "ts": "2026-09-24T21:19:00+00:00",
+    "label": "role family assignment changed",
     "fields": [
      "family_classifier_version"
     ],

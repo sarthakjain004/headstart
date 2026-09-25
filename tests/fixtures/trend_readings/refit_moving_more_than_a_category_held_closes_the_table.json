@@ -140,10 +140,14 @@
      "not_hiring": [
       {
        "change": "counting@2026-09-15T00:00:00+00:00",
+       "kind": "counting",
+       "label": "role family assignment changed",
        "size": -120
       },
       {
        "change": "growth_scaled_by_counting@2026-09-15T00:00:00+00:00",
+       "kind": "growth_scaled_by_a_change",
+       "label": "growth rescaled by role family assignment changed",
        "size": 40
       }
      ],
@@ -169,6 +173,8 @@
      "not_hiring": [
       {
        "change": "counting@2026-09-15T00:00:00+00:00",
+       "kind": "counting",
+       "label": "role family assignment changed",
        "size": 120
       }
      ],
@@ -213,7 +219,9 @@
     "hiring": 40,
     "not_hiring": [
      {
-      "change": "growth_scaled_by_counting@2026-09-15T00:00:00+00:00",
+      "change": "moved_between_categories",
+      "kind": "counting",
+      "label": "moved between categories by a counting change",
       "size": -40
      }
     ],

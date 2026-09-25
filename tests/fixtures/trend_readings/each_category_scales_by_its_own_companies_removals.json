@@ -162,10 +162,14 @@
     "not_hiring": [
      {
       "change": "removed@2026-09-15T00:00:00+00:00/eightfold:micron",
+      "kind": "duplicates_removed",
+      "label": "duplicate postings removed",
       "size": -1050
      },
      {
       "change": "growth_counted_twice@2026-09-15T00:00:00+00:00/eightfold:micron",
+      "kind": "growth_counted_twice",
+      "label": "growth counted twice before the removal",
       "size": 50
      }
     ],
@@ -192,10 +196,14 @@
      "not_hiring": [
       {
        "change": "removed@2026-09-15T00:00:00+00:00/eightfold:micron",
+       "kind": "duplicates_removed",
+       "label": "duplicate postings removed",
        "size": -650
       },
       {
        "change": "growth_counted_twice@2026-09-15T00:00:00+00:00/eightfold:micron",
+       "kind": "growth_counted_twice",
+       "label": "growth counted twice before the removal",
        "size": 50
       }
      ],
@@ -221,6 +229,8 @@
      "not_hiring": [
       {
        "change": "removed@2026-09-15T00:00:00+00:00/eightfold:micron",
+       "kind": "duplicates_removed",
+       "label": "duplicate postings removed",
        "size": -400
       }
      ],
@@ -268,10 +278,14 @@
      "not_hiring": [
       {
        "change": "removed@2026-09-15T00:00:00+00:00/eightfold:micron",
+       "kind": "duplicates_removed",
+       "label": "duplicate postings removed",
        "size": -1050
       },
       {
        "change": "growth_counted_twice@2026-09-15T00:00:00+00:00/eightfold:micron",
+       "kind": "growth_counted_twice",
+       "label": "growth counted twice before the removal",
        "size": 50
       }
      ],
@@ -295,6 +309,7 @@
     "id": "growth_counted_twice@2026-09-15T00:00:00+00:00/eightfold:micron",
     "kind": "growth_counted_twice",
     "ts": "2026-09-15T00:00:00+00:00",
+    "label": "growth counted twice before the removal",
     "fields": [],
     "changed": [],
     "company": "eightfold:micron",
@@ -307,6 +322,7 @@
     "id": "removed@2026-09-15T00:00:00+00:00/eightfold:micron",
     "kind": "duplicates_removed",
     "ts": "2026-09-15T00:00:00+00:00",
+    "label": "duplicate postings removed",
     "fields": [],
     "changed": [],
     "company": "eightfold:micron",

@@ -148,6 +148,7 @@
     "id": "counting@2026-09-15T00:00:00+00:00",
     "kind": "counting",
     "ts": "2026-09-15T00:00:00+00:00",
+    "label": "tech filter changed",
     "fields": [],
     "changed": [
      "tech filter changed"

@@ -120,6 +120,8 @@
      "not_hiring": [
       {
        "change": "counting@2026-09-15T00:00:00+00:00",
+       "kind": "counting",
+       "label": "duplicate removal changed, role family assignment changed",
        "size": 20
       }
      ],
@@ -145,6 +147,8 @@
      "not_hiring": [
       {
        "change": "counting@2026-09-15T00:00:00+00:00",
+       "kind": "counting",
+       "label": "duplicate removal changed, role family assignment changed",
        "size": -20
       }
      ],
@@ -172,6 +176,8 @@
      "not_hiring": [
       {
        "change": "counting@2026-09-15T00:00:00+00:00",
+       "kind": "counting",
+       "label": "duplicate removal changed, role family assignment changed",
        "size": 20
       }
      ],
@@ -197,6 +203,8 @@
      "not_hiring": [
       {
        "change": "counting@2026-09-15T00:00:00+00:00",
+       "kind": "counting",
+       "label": "duplicate removal changed, role family assignment changed",
        "size": -20
       }
      ],
@@ -218,6 +226,7 @@
     "id": "counting@2026-09-15T00:00:00+00:00",
     "kind": "counting",
     "ts": "2026-09-15T00:00:00+00:00",
+    "label": "duplicate removal changed, role family assignment changed",
     "fields": [
      "dedup_version",
      "family_classifier_version"

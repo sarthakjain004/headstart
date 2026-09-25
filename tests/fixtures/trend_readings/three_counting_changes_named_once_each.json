@@ -106,10 +106,14 @@
      "not_hiring": [
       {
        "change": "counting@2026-09-15T00:00:00+00:00",
+       "kind": "counting",
+       "label": "role taxonomy refit",
        "size": 20
       },
       {
        "change": "counting@2026-09-17T00:00:00+00:00",
+       "kind": "counting",
+       "label": "tech filter changed, role family map edited",
        "size": 30
       }
      ],
@@ -137,10 +141,14 @@
      "not_hiring": [
       {
        "change": "counting@2026-09-15T00:00:00+00:00",
+       "kind": "counting",
+       "label": "role taxonomy refit",
        "size": 20
       },
       {
        "change": "counting@2026-09-17T00:00:00+00:00",
+       "kind": "counting",
+       "label": "tech filter changed, role family map edited",
        "size": 30
       }
      ],
@@ -162,6 +170,7 @@
     "id": "counting@2026-09-15T00:00:00+00:00",
     "kind": "counting",
     "ts": "2026-09-15T00:00:00+00:00",
+    "label": "role taxonomy refit",
     "fields": [
      "centroid_version"
     ],
@@ -178,6 +187,7 @@
     "id": "counting@2026-09-17T00:00:00+00:00",
     "kind": "counting",
     "ts": "2026-09-17T00:00:00+00:00",
+    "label": "tech filter changed, role family map edited",
     "fields": [
      "tech_filter_version",
      "family_map_fingerprint"

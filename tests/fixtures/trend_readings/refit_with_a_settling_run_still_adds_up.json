@@ -105,6 +105,8 @@
     "not_hiring": [
      {
       "change": "counting@2026-09-15T00:00:00+00:00",
+      "kind": "counting",
+      "label": "role family assignment changed",
       "size": 5
      }
     ],
@@ -131,6 +133,8 @@
      "not_hiring": [
       {
        "change": "counting@2026-09-15T00:00:00+00:00",
+       "kind": "counting",
+       "label": "role family assignment changed",
        "size": -19
       }
      ],
@@ -156,6 +160,8 @@
      "not_hiring": [
       {
        "change": "counting@2026-09-15T00:00:00+00:00",
+       "kind": "counting",
+       "label": "role family assignment changed",
        "size": 24
       }
      ],
@@ -183,6 +189,8 @@
      "not_hiring": [
       {
        "change": "counting@2026-09-15T00:00:00+00:00",
+       "kind": "counting",
+       "label": "role family assignment changed",
        "size": 5
       }
      ],
@@ -206,6 +214,7 @@
     "id": "counting@2026-09-15T00:00:00+00:00",
     "kind": "counting",
     "ts": "2026-09-15T00:00:00+00:00",
+    "label": "role family assignment changed",
     "fields": [
      "family_classifier_version"
     ],

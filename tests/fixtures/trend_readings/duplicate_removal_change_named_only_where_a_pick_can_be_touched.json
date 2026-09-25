@@ -93,6 +93,8 @@
      "not_hiring": [
       {
        "change": "counting@2026-09-15T00:00:00+00:00",
+       "kind": "counting",
+       "label": "role family assignment changed",
        "size": 30
       }
      ],
@@ -120,6 +122,8 @@
      "not_hiring": [
       {
        "change": "counting@2026-09-15T00:00:00+00:00",
+       "kind": "counting",
+       "label": "role family assignment changed",
        "size": 30
       }
      ],
@@ -141,6 +145,7 @@
     "id": "counting@2026-09-15T00:00:00+00:00",
     "kind": "counting",
     "ts": "2026-09-15T00:00:00+00:00",
+    "label": "role family assignment changed",
     "fields": [
      "dedup_version",
      "family_classifier_version"

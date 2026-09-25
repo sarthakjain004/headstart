@@ -103,10 +103,14 @@
      "not_hiring": [
       {
        "change": "removed@2026-09-15T00:00:00+00:00/eightfold:nvidia",
+       "kind": "duplicates_removed",
+       "label": "duplicate postings removed",
        "size": -2041
       },
       {
        "change": "counting@2026-09-15T00:00:00+00:00",
+       "kind": "counting",
+       "label": "duplicate removal changed, role family assignment changed",
        "size": -97
       }
      ],
@@ -134,10 +138,14 @@
      "not_hiring": [
       {
        "change": "removed@2026-09-15T00:00:00+00:00/eightfold:nvidia",
+       "kind": "duplicates_removed",
+       "label": "duplicate postings removed",
        "size": -2041
       },
       {
        "change": "counting@2026-09-15T00:00:00+00:00",
+       "kind": "counting",
+       "label": "duplicate removal changed, role family assignment changed",
        "size": -97
       }
      ],
@@ -159,6 +167,7 @@
     "id": "counting@2026-09-15T00:00:00+00:00",
     "kind": "counting",
     "ts": "2026-09-15T00:00:00+00:00",
+    "label": "duplicate removal changed, role family assignment changed",
     "fields": [
      "dedup_version",
      "family_classifier_version"
@@ -177,6 +186,7 @@
     "id": "removed@2026-09-15T00:00:00+00:00/eightfold:nvidia",
     "kind": "duplicates_removed",
     "ts": "2026-09-15T00:00:00+00:00",
+    "label": "duplicate postings removed",
     "fields": [],
     "changed": [],
     "company": "eightfold:nvidia",

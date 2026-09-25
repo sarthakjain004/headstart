@@ -86,6 +86,8 @@
     "not_hiring": [
      {
       "change": "found@2026-09-15T00:00:00+00:00/greenhouse:acme",
+      "kind": "found_boards",
+      "label": "3 more boards found",
       "size": 254
      }
     ],
@@ -112,6 +114,8 @@
      "not_hiring": [
       {
        "change": "found@2026-09-15T00:00:00+00:00/greenhouse:acme",
+       "kind": "found_boards",
+       "label": "3 more boards found",
        "size": 254
       }
      ],
@@ -139,6 +143,8 @@
      "not_hiring": [
       {
        "change": "found@2026-09-15T00:00:00+00:00/greenhouse:acme",
+       "kind": "found_boards",
+       "label": "3 more boards found",
        "size": 254
       }
      ],
@@ -162,6 +168,7 @@
     "id": "found@2026-09-15T00:00:00+00:00/greenhouse:acme",
     "kind": "found_boards",
     "ts": "2026-09-15T00:00:00+00:00",
+    "label": "3 more boards found",
     "fields": [],
     "changed": [],
     "company": "greenhouse:acme",
