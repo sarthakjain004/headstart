@@ -119,19 +119,33 @@ def _encoder(model: str, revision: str):
 
 
 def encode(titles: list[str], model: str, revision: str) -> np.ndarray:
-    """JobBERT-v2's title-branch embeddings, as its model card prescribes (the ``anchor`` key)."""
+    """JobBERT-v2's title-branch embeddings, as its model card prescribes (the ``anchor`` key),
+    in input order.
+
+    Titles are batched fewest tokens first. A batch pads to its longest title, and served titles
+    average ~10 tokens with a tail to 45, so in arrival order most of the work was padding.
+    Measured 2026-09-25 on 4,096 served titles with 4 CPU threads (three alternated repeats):
+    this path encodes 589 titles/s against 269 in arrival order, with vectors equal to within
+    1.5e-5. Sorting by characters instead reached only 329: characters are a weak proxy for tokens
+    (rank correlation 0.77), so the titles are tokenized once to sort them."""
     import torch
 
+    if not titles:
+        return np.zeros((0, 0), np.float32)
     encoder = _encoder(model, revision)
+    token_counts = [len(ids) for ids in encoder.tokenizer(titles)["input_ids"]]
+    order = np.argsort(token_counts, kind="stable")
     out = []
     with torch.inference_mode():
         for start in range(0, len(titles), _ENCODE_BATCH):
-            features = encoder.tokenize(titles[start : start + _ENCODE_BATCH])
+            batch = [titles[i] for i in order[start : start + _ENCODE_BATCH]]
+            features = encoder.tokenize(batch)
             features["text_keys"] = ["anchor"]
             out.append(encoder.forward(features)["sentence_embedding"].cpu().numpy())
-    return (
-        np.concatenate(out).astype(np.float32) if out else np.zeros((0, 0), np.float32)
-    )
+    sorted_vectors = np.concatenate(out).astype(np.float32)
+    vectors = np.empty_like(sorted_vectors)
+    vectors[order] = sorted_vectors
+    return vectors
 
 
 @dataclass

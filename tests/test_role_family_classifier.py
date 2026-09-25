@@ -2,8 +2,9 @@
 
 Contracts: the head abstains below its cutoff; a malformed head is refused; the title cache
 survives a round trip and is discarded under another head; filling decides only missing titles,
-saves after each chunk and stops on its time budget; and coverage counts served rows, not
-distinct titles. The encoder is stubbed, so no test downloads JobBERT.
+saves after each chunk and stops on its time budget; coverage counts served rows, not distinct
+titles; and encoding batches titles shortest first but returns vectors in input order. The
+encoder is stubbed, so no test downloads JobBERT.
 """
 
 from __future__ import annotations
@@ -62,6 +63,48 @@ def _stub_encoder(monkeypatch, calls=None):
         return np.array(rows, dtype=np.float32)
 
     monkeypatch.setattr(rfc, "encode", encode)
+
+
+def test_encode_batches_shortest_first_and_returns_input_order(monkeypatch):
+    torch = pytest.importorskip("torch")
+    batches = []
+
+    class Encoder:
+        def tokenizer(self, titles):
+            return {"input_ids": [t.split() for t in titles]}
+
+        def tokenize(self, titles):
+            batches.append(list(titles))
+            return {"titles": list(titles)}
+
+        def forward(self, features):
+            assert features["text_keys"] == ["anchor"]
+            rows = [[float(len(t)), float(ord(t[0]))] for t in features["titles"]]
+            return {"sentence_embedding": torch.tensor(rows)}
+
+    monkeypatch.setattr(rfc, "_encoder", lambda model, revision: Encoder())
+    monkeypatch.setattr(rfc, "_ENCODE_BATCH", 2)
+    # word count stands in for token count; "reliability engineer" is long in characters but
+    # short in words, so a character sort would misplace it
+    titles = [
+        "principal staff engineer",
+        "qa",
+        "reliability engineer",
+        "sre",
+        "senior it lead",
+    ]
+
+    vectors = rfc.encode(titles, "stub", "stub")
+
+    assert vectors.tolist() == [[len(t), ord(t[0])] for t in titles]
+    assert [t for batch in batches for t in batch] == [
+        "qa",
+        "sre",
+        "reliability engineer",
+        "principal staff engineer",
+        "senior it lead",
+    ]
+    assert rfc.encode([], "stub", "stub").shape == (0, 0)
 
 
 def test_normalise_is_the_cache_key():
