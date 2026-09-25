@@ -112,7 +112,7 @@ def test_save_is_atomic_leaving_no_partial_file(tmp_path):
     assert ra.load_previous(path, version=2) == {"a": "web-development"}
 
 
-def test_placements_round_trip_at_any_series_version(tmp_path):
+def test_placements_round_trip_at_any_head_version(tmp_path):
     """Turnover diffs ids, not families, so a new classifier head must not hide the previous
     tick from it the way it hides it from the transitions (ADR-0227)."""
     path = tmp_path / "role_assignments.parquet"
@@ -131,7 +131,8 @@ def test_a_snapshot_without_placements_gives_no_turnover(tmp_path):
     path = tmp_path / "role_assignments.parquet"
     pq.write_table(
         pa.table(
-            {"id": ["x"], "family": ["ai-ml"]}, metadata={b"centroid_version": b"2"}
+            {"id": ["x"], "family": ["ai-ml"]},
+            metadata={b"family_classifier_version": b"2"},
         ),
         path,
     )

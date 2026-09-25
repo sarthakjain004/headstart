@@ -56,8 +56,6 @@ here, and ``alerts`` is not the feed::
     shard_plan     The typed ``plan.json`` shapes (``ScrapePlan``, ``EmbedPlan``) and
                    ``shard_index``, shared by each half's plan/run pair (ADR-0154)
     shard_speedup  The measured fan-out speedup the makespan divides by (ADR-0054)
-    trends_epochs  Marks when a trends-affecting definition changed, not just the data
-                   (ADR-0164)
 
 Genuinely shared logic stays in ``headstart`` proper — ``harvest`` (the scrape engine),
 ``board_cost``, ``board_priority``, ``corpus`` — because ``python -m headstart``'s curated-feed
