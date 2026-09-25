@@ -676,7 +676,7 @@ function drawResultKind(q, shown){
     const counted = searched.scope && searched.scope.counted;
     node.textContent = `${scope}, ${order} \u2014 no search yet, so nothing is ranked. ` +
       'Describe a role above to rank by meaning.' + (counted
-        ? ` The trend counted ${counted.n.toLocaleString()} as of ${stampLabel(counted.at)} UTC; this list is what is open now, so the two differ by what opened or closed since.` : '');
+        ? ` The trend counted ${counted.n.toLocaleString()} as of ${stampLabel(counted.at)} UTC; this list is what is open now.` : '');
   }
 }
 
@@ -1684,7 +1684,7 @@ function readTrendHash(){
   const since = q.get('since'), until = q.get('until');
   const hotNet = Number(q.get('hot'));
   hotOrigin = q.get('hot_board') && since && Number.isFinite(hotNet) && q.get('hot') !== ''
-    ? { board: q.get('hot_board'), net: hotNet, since } : null;
+    ? { board: q.get('hot_board'), net: hotNet, since, built: q.get('hot_at') || null } : null;
   if (since || until){
     const local = v => { if (!v) return ''; const t = new Date(v + 'Z');
       return isNaN(t) ? '' : new Date(t - t.getTimezoneOffset() * 6e4).toISOString().slice(0, 16); };
@@ -1734,7 +1734,10 @@ function trendHash(){
     if (r.until) q.set('until', r.until.slice(0, 16));
   } else if (trendDays !== 'all') q.set('days', trendDays);
   if (trendCoverage !== 'all') q.set('coverage', trendCoverage);
-  if (hotOriginPick()){ q.set('hot', String(hotOrigin.net)); q.set('hot_board', hotOrigin.board); }
+  if (hotOriginPick()){
+    q.set('hot', String(hotOrigin.net)); q.set('hot_board', hotOrigin.board);
+    if (hotOrigin.built) q.set('hot_at', hotOrigin.built);
+  }
   return '#trends' + (q.size ? '?' + q : '');
 }
 function writeTrendHash(push){
@@ -1831,7 +1834,8 @@ function drawChangeList(d, list){
   host.hidden = !list.length;
   const sorted = list.slice().sort((a, b) => a.i - b.i);
   host.innerHTML = `<summary>Marked changes in this window (${sorted.length})</summary><ul>${sorted.map(g =>
-    `<li><b>${esc(stampLabel(d.stamps[g.i]))}</b> ${esc(g.texts.join(' · '))}</li>`).join('')}</ul>`;
+    `<li><b>${esc(stampLabel(d.stamps[g.i]))}</b> ${esc(g.texts.join(' · '))}${
+      g.sizes && g.sizes.length ? ` — ${esc(g.sizes.join(', '))}` : ''}</li>`).join('')}</ul>`;
 }
 
 // How Hot's figure reads on the trend its row opened, while the trend still shows Hot's week of
@@ -1855,12 +1859,11 @@ function hotNote(d){
   const m = trendMove({ name: '__total__', points: sumPoints(d.series, d.stamps) });
   if (!m) return '';
   const n = Math.round(m.change);
-  // Never silent when they differ: Hot's list is built by the pipeline, and one built before a
-  // change to how either leaves runs out can disagree with the trend until the next run.
+  // Never silent when they differ, and never a guessed reason: Hot's list is built once a run by
+  // the pipeline, so its build time is the fact a reader can weigh against this line's runs.
   return n === o.net
     ? `Hot’s ${figure} is this line’s change: both leave out the runs where HeadStart changed how it counts.`
-    : `Hot measured ${figure} on this board over the same week; this line reads ${signedOpenings(n)}. They leave out different runs around counting changes${
-      d.partial ? ', and this line drops runs where a board was read only partly' : ''}.`;
+    : `Hot measured ${figure} on this board over the same week${o.built ? `, in its list built ${stampLabel(o.built)} UTC` : ''}; this line reads ${signedOpenings(n)}.`;
 }
 
 // Picks this answer has nothing for, named with the reason, so the chart never shows fewer
@@ -1933,9 +1936,14 @@ function verdictLines(d){
         kind === 'total' ? d.series[0] : { name: '__total__', points: sumPoints(d.series, d.stamps) }]];
   return lines.map(([name, s, key]) => ({ name, key, ...verdictOf(s, d) }));
 }
-// A newest count older than this is said to be old: the pipeline counts every few hours, so
-// half a day without one means the counting has paused, not that nothing changed.
-const STALE_HOURS = 12;
+// How old the newest count may be before the page says so: four of the pipeline's own usual
+// gaps between runs (the median, about an hour on 2026-09-25), and never under three hours. A
+// flat twelve left the five-hour pause of a classifier warming up unsaid.
+function staleAfterHours(stamps){
+  const gaps = stamps.slice(1).map((ts, k) => (new Date(ts) - new Date(stamps[k])) / 36e5).sort((a, b) => a - b);
+  const median = gaps.length ? gaps[Math.floor(gaps.length / 2)] : 1;
+  return Math.max(3, 4 * median);
+}
 // Under this many days of measurements a line names no direction and no tile headlines it:
 // AMD, counted for a few hours, was "Biggest riser +0.1%".
 const MIN_SPAN_DAYS = 3;
@@ -2079,6 +2087,8 @@ const NEW_WINDOW_DAYS = 7;
 const LINE_MOVING = [
   'centroid_version', 'family_map_fingerprint', 'family_classifier_version', 'tech_filter_version',
 ];
+// Mirrored by hot_boards `_DEDUP_SIBLING_ATSES`/`_DEDUP_MIRROR_ATS`, so Hot leaves out the runs
+// this leaves out: change one, change the other.
 const DEDUP_ATSES = ['taleo_enterprise', 'workday'];
 // Eightfold Boards are aliased onto, or have their rows dropped against, the Board they
 // mirror on another ATS (#632, #649), so any pick holding one can step. That includes a
@@ -2699,7 +2709,15 @@ function netOfSteps(levels, s, only){
   // openings only: under Share every level is divided by the whole.
   const picks = summedPicks(s);
   if (picks && trendUnit !== 'share'){
-    const nets = picks.map(p => netOfSteps(p.points, p, only));
+    // Before a pick's first run its part of the sum holds at its first value: a company counted
+    // from a later date joins the sum as a step taken out by openings, as the join note took it
+    // out before — read as 0 there, NVIDIA's whole level landed in Total as hiring.
+    const nets = picks.map(p => {
+      const net = netOfSteps(p.points, p, only);
+      const first = net.find(v => v != null);
+      let seen = false;
+      return net.map(v => { if (v != null) seen = true; return seen ? v : first; });
+    });
     return levels.map((v, j) => v == null ? null
       : nets.some(n => n[j] != null) ? nets.reduce((sum, n) => sum + (n[j] || 0), 0) : null);
   }
@@ -2745,8 +2763,7 @@ function netOfSteps(levels, s, only){
 // Each pick's own line, when `s` sums several (the Space's `pick_series`), else null.
 function summedPicks(s){
   const d = trendData;
-  if (!s || s.pick || !d || !d.pick_series || Object.keys(d.pick_series).length < 2) return null;
-  if (!(s.name === '__total__' || viewKind(d) === 'total')) return null;
+  if (!s || s.pick || s.name !== '__total__' || !d || !d.pick_series || Object.keys(d.pick_series).length < 2) return null;
   return Object.entries(d.pick_series).map(([name, points]) => ({ name, points, pick: true }));
 }
 function isWholeLine(s){
@@ -2968,8 +2985,9 @@ function drawTrends(){
   // As of when: Search is live and the trend is not, and a ledger paused for hours (a new
   // classifier warming up, 2026-09-25) read as "right now" with nothing to say otherwise.
   const ageHours = runs ? (Date.now() - new Date(d.stamps[runs - 1])) / 36e5 : 0;
+  // Only for a window running to now: a custom range ending last week is old by choice.
   const asOf = !runs ? '' : ` · latest ${stampLabel(d.stamps[runs - 1])} UTC${
-    ageHours >= STALE_HOURS ? ` — ${Math.round(ageHours)} hours ago; no newer count has landed yet` : ''}`;
+    !trendRange().until && ageHours >= staleAfterHours(d.stamps) ? ` — ${Math.round(ageHours)} hours ago; no newer count has landed yet` : ''}`;
 
   // The legend is built BEFORE the plot, not after: it is a pure function of the series, and
   // the plot's height floor is measured off it (below). Built after, the first paint would
@@ -3168,11 +3186,9 @@ function drawTrends(){
   // Under a pick only the changes that move its lines are listed (stepNotes).
   const notes = notesOf(d);
   // Under a pick, a change marked where no drawn line moved ("jumped +0 here") explains nothing.
-  const markerMoves = n => !trendPicks.length || drawn.some(s => {
-    if (!stepsFor(s).includes(n)) return false;
-    const jump = stepJumps(s.points, s).get(n.i);
-    return jump && Math.round(jump.after - jump.before) !== 0;
-  });
+  // Under a pick, a change marked where no drawn line moved ("jumped +0 here") explains nothing;
+  // "moved" is the sentence's own test (stepMoved), so a marker and a named cause agree.
+  const markerMoves = n => !trendPicks.length || drawn.some(s => stepsFor(s).includes(n) && stepMoved(n, s));
   const marked = { epoch: false, found: false, list: [] };
   // One marker per day and kind over a window of days: four filter changes and their settling
   // runs on one day drew a comb of lines a pixel apart, whose titles no pointer could tell apart.
@@ -3193,16 +3209,27 @@ function drawTrends(){
     const groups = new Map();
     list.forEach(n => {
       const key = byDay ? stampLabel(d.stamps[n.i], true) : n.i;
-      if (!groups.has(key)) groups.set(key, { i: n.i, texts: [] });
+      if (!groups.has(key)) groups.set(key, { i: n.i, notes: [], texts: new Map() });
       const g = groups.get(key);
       if (movedAt(n.i) > movedAt(g.i)) g.i = n.i;
-      if (!g.texts.includes(n.text)) g.texts.push(n.text);
+      g.notes.push(n);
+      // Counted, not collapsed: three filter changes on one day listed as one entry beside a
+      // sentence naming three.
+      g.texts.set(n.text, (g.texts.get(n.text) || 0) + 1);
     });
     groups.forEach(g => {
-      marked.list.push({ i: g.i, texts: g.texts });
+      const texts = [...g.texts].map(([t, k]) => k > 1 ? `${t} (×${k})` : t);
+      // Each drawn line's size at these changes, their settling runs included — the figure the
+      // sentence's cause is made of (stepSize).
+      const sizes = !trendPicks.length ? [] : drawn.map(s => {
+        const own = g.notes.filter(n => stepsFor(s).includes(n));
+        const n = own.length ? stepSize(own, s) : 0;
+        return n ? `${s.label} ${signedOpenings(n)}` : '';
+      }).filter(Boolean);
+      marked.list.push({ i: g.i, texts, sizes });
       const gx = x(g.i).toFixed(1);
       svg += `<line class="${cls}" x1="${gx}" y1="${PAD_T}"
-               x2="${gx}" y2="${H - PAD_B}"><title>${esc(g.texts.join('\n'))}</title></line>`;
+               x2="${gx}" y2="${H - PAD_B}"><title>${esc(texts.join('\n'))}</title></line>`;
     });
   };
   const epochMarks = notes.filter(n => n.epoch && markerMoves(n));
@@ -3646,17 +3673,19 @@ function buildTrendsTable(){
   }).join('');
   // What makes the rows add up to the first: Google's categories summed to +15 of hiring under a
   // company row of −32, and a caption saying they "need not" was no answer to which is right.
-  // The company's own row is; the difference is openings a counting change moved between
-  // categories, each of which takes its step out by its own rule.
+  // The first row is; the difference is mostly openings a counting change moved between rows,
+  // each of which takes its step out by its own rule, and rows too new to read.
+  const [one, many] = kind === 'bands' ? ['level', 'levels'] : ['category', 'categories'];
+  const whose = trendPicks.length > 1 ? 'the companies’' : 'the company’s';
   let between = '';
   if (withTotal){
     const whole = hiringOpenings(total[0], lineMove(total[0]));
     const parts = rows.map(s => hiringOpenings(s, lineMove(s)) || 0).reduce((a, b) => a + b, 0);
     const gap = whole == null ? 0 : whole - parts;
-    if (gap) between = `<tr class="between"><th scope="row" title="The company row’s hiring less the rows’ sum: a counting change that moves openings from one ${kind === 'bands' ? 'level' : 'category'} to another is taken out of each by its own rule">Between ${kind === 'bands' ? 'levels' : 'categories'}</th>`
+    if (gap) between = `<tr class="between"><th scope="row" title="The first row’s hiring less the rows’ sum: openings a counting change moved from one ${one} to another, which each takes out by its own rule, and rows too new to read">Between ${many}</th>`
       + `<td></td><td></td><td class="${gap > 0 ? 'up' : 'down'}">${esc(signedOpenings(gap))}</td><td></td><td></td><td></td><td></td></tr>`;
   }
-  const note = withTotal ? `<caption>The first row is the company’s hiring. The ${kind === 'bands' ? 'levels' : 'categories'} add up to it with the last row: openings a counting change moved between them, which each one’s own figure leaves out by its own rule.</caption>` : '';
+  const note = withTotal ? `<caption>The first row is ${whose} hiring. The ${many} add up to it with the last row, which holds what no single ${one}’s figure does: mostly openings a counting change moved between them.</caption>` : '';
   return `${note}<thead>${head}</thead><tbody>${body}${between}</tbody>`;
 }
 
@@ -3746,9 +3775,7 @@ function countingChanges(s, dupNamed){
   const touches = n => n.touched.length > 0 && (!perCompany || n.touched.includes(s.name));
   // Only a change that moved this line, at its run or the run after: every company read "4 tech
   // filter changes" although Google's Sep 24 16:23 one moved it by nothing.
-  const jumps = stepJumps(s.points, s);
-  const landing = i => { let j = i; while (j < s.points.length && s.points[j] == null) j++; return j; };
-  const moved = n => [n.i, n.i + 1].some(i => { const jump = jumps.get(landing(i)); return jump && Math.round(jump.after - jump.before) !== 0; });
+  const moved = n => stepMoved(n, s);
   const seen = new Map();  // field -> the changes (their stamps) that moved it
   const echoes = new Set();  // the changes seen here only by their week-later echo under New
   stepsFor(s).filter(n => n.fields && noteKind(n) === 'counting' && moved(n)).forEach(n => n.fields.forEach(f => {
@@ -3767,6 +3794,25 @@ function countingChanges(s, dupNamed){
   if (lone) said.push(lone === 1 ? 'the week-later echo of an earlier tech filter change'
     : `the week-later echoes of ${lone} earlier tech filter changes`);
   return said.length === 1 ? said[0] : `${said.slice(0, -1).join(', ')} and ${said[said.length - 1]}`;
+}
+// The runs a withheld note moves line `s` at: where it lands (a step on a gap lands on the next
+// measured point), and, for a counting change, where its settling run lands.
+function stepRuns(n, s){
+  const landing = i => { let j = i; while (j < s.points.length && s.points[j] == null) j++; return j; };
+  return n.epoch && !n.echo ? [landing(n.i), landing(n.i + 1)] : [landing(n.i)];
+}
+// How many openings notes `ns` moved line `s` by, each run counted once.
+function stepSize(ns, s){
+  const jumps = stepJumps(s.points, s);
+  const runs = new Set(ns.flatMap(n => stepRuns(n, s)));
+  return Math.round([...runs].reduce((sum, j) => { const jump = jumps.get(j); return sum + (jump ? jump.after - jump.before : 0); }, 0));
+}
+// Whether a note moved line `s` at its own run — the one test the sentence, the markers and the
+// list share. Not at the run after: that one is left out in case the change is still settling,
+// and a move there is as likely ordinary hiring, or another change's own step.
+function stepMoved(n, s){
+  const jump = stepJumps(s.points, s).get(stepRuns(n, s)[0]);
+  return !!jump && Math.round(jump.after - jump.before) !== 0;
 }
 function countingMove(s){
   const raw = headTail(s.points), net = trendMove(s);
@@ -4176,7 +4222,10 @@ if (el('trends-co-roles')) el('trends-co-roles').addEventListener('click', () =>
     trendDrill ? 0 : nonTechAt(trendData),
     // Only where Search lists exactly what the trend counts: a whole company's tech openings, or
     // a category handed over by its ids.
-    trendData && (exact || !trendDrill) ? { n: size, at: trendData.stamps[trendData.stamps.length - 1] } : null);
+    // Not under New, a week's count Search does not list, nor under a source filter Search does
+    // not carry.
+    trendData && trendData.stamps.length && (exact || !trendDrill) && trendMetric === 'stock' && !trendAtsSelected()
+      ? { n: size, at: trendData.stamps[trendData.stamps.length - 1] } : null);
 });
 
 // "See trend" from a Hot-tab row or a search result (ADR-0185): the Board key the row already
@@ -4186,12 +4235,13 @@ if (el('trends-co-roles')) el('trends-co-roles').addEventListener('click', () =>
 // opened over All read "up 61.8%" for the same company.
 // Hot's figure for the row a trend was opened from, so the trend can say how the two relate.
 let hotOrigin = null;
-function openCompanyTrend(board, name, since, net){
+function openCompanyTrend(board, name, since, net, built){
   if (name) pickLabels.set(board, name);
   // Hot's figure rides in the link (readTrendHash reads it back), so a reload keeps the note.
   location.hash = '#trends?company=' + encodeURIComponent(board)
     + (since ? '&since=' + encodeURIComponent(since.slice(0, 16)) : '')
-    + (net != null && since ? `&hot=${encodeURIComponent(net)}&hot_board=${encodeURIComponent(board)}` : '');
+    + (net != null && since ? `&hot=${encodeURIComponent(net)}&hot_board=${encodeURIComponent(board)}` : '')
+    + (net != null && since && built ? `&hot_at=${encodeURIComponent(built.slice(0, 16))}` : '');
 }
 
 // Pointer tracking for the crosshair+tooltip lives on the SVG element itself, wired once: an
@@ -4217,7 +4267,11 @@ function readChartAt(e){
     });
     // A finger lands on a marker, not a run: a tap on Sep 24's marker read the 22:10 run beside
     // it, three pixels away on a phone. Within a fingertip of a marked run, that run.
-    if (e.pointerType === 'touch' || e.type === 'click'){
+    // A finger only: a mouse click beside a marker keeps the run its crosshair was showing.
+    // Safari's click has no pointerType, so a coarse pointer answers for it.
+    const coarse = e.pointerType === 'touch' || (!e.pointerType && typeof matchMedia === 'function'
+      && matchMedia('(pointer: coarse)').matches);
+    if (coarse){
       const reach = rect.width ? 12 / rect.width * lastGeom.W : 0;   // 12 CSS px, in SVG units
       const mark = (lastGeom.marks || []).map(j => [j, Math.abs(lastGeom.x(j) - svgX)])
         .filter(([, dist]) => dist <= reach).sort((a, b) => a[1] - b[1])[0];
@@ -4487,7 +4541,7 @@ function hotRow(r, i, lens){
         <button class="ghost hot-see" data-board="${esc(r.board)}" data-company="${esc(r.company)}">See roles</button>
         ${el('trends') ? `<button class="ghost hot-trend" data-trend="${esc(r.board)}"
           data-trend-name="${esc(r.company)}" data-trend-since="${esc((hotData.window || {}).base || (hotData.window || {}).from || '')}"
-          data-trend-net="${esc(String(r.net))}">See trend</button>` : ''}
+          data-trend-net="${esc(String(r.net))}" data-trend-built="${esc(hotData.generated_at || '')}">See trend</button>` : ''}
       </div>
     </li>`;
 }
@@ -4541,7 +4595,7 @@ if (el('hot-results')){
 document.addEventListener('click', async ev => {
   // "See trend", on a result card or a Hot-tab row — one handler for both, like the rest here.
   const trend = ev.target.closest('[data-trend]');
-  if (trend){ openCompanyTrend(trend.dataset.trend, trend.dataset.trendName, trend.dataset.trendSince, trend.dataset.trendNet); return; }
+  if (trend){ openCompanyTrend(trend.dataset.trend, trend.dataset.trendName, trend.dataset.trendSince, trend.dataset.trendNet, trend.dataset.trendBuilt); return; }
   const more = ev.target.closest('[data-more]');
   if (more){ expandCompany(more.closest('.more-row')); return; }
   const hide = ev.target.closest('[data-hide-company]');

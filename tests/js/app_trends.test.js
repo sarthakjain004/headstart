@@ -1883,7 +1883,8 @@ test('under New a filter change and its week-later echo are one change', () => {
   const days = Array.from({ length: 12 }, (_, k) => `2026-09-${String(k + 1).padStart(2, '0')}T00:00:00+00:00`);
   t.setPicks([ACME]);
   t.metricSet('new');
-  t.set({ ...companies([['greenhouse:acme', 'Acme', [100, 100, 150, 150, 150, 150, 150, 150, 110, 110, 110, 110]]],
+  // The change lands at its own run, and its echo a week on.
+  t.set({ ...companies([['greenhouse:acme', 'Acme', [100, 150, 150, 150, 150, 150, 150, 150, 110, 110, 110, 110]]],
     { stamps: days, counted_since: { 'greenhouse:acme': days[0] },
       epochs: [{ ts: days[1], changed: ['tech filter changed'], fields: ['tech_filter_version'] }] }), metric: 'new' });
   t.setUnit('count', false);
@@ -2125,18 +2126,53 @@ test('Total is the sum of the Company breakdown, each company’s steps out of i
   const { t, nodes } = loadApp();
   const two = [{ key: 'greenhouse:acme', label: 'Acme', boardKeys: ['greenhouse:acme'] },
                { key: 'eightfold:micron', label: 'Micron', boardKeys: ['eightfold:micron'] }];
-  t.setPicks(two);
-  // A duplicate-removal change touches only Micron (Eightfold). Summed whole, Acme's +30 that
-  // run came out with it.
+  // A duplicate-removal change touches only Micron (Eightfold); Acme hires +30 that run.
   const acme = [100, 100, 130, 130], micron = [200, 200, 150, 150];
-  t.set({ ...companies([['greenhouse:acme', 'Acme', acme], ['eightfold:micron', 'Micron', micron]]),
+  const epochs = [{ ts: FOUR[2], changed: ['duplicate removal changed'], fields: ['dedup_version'] }];
+  const moves = () => [...nodes['trends-legend'].innerHTML.matchAll(/([−+]\d+) openings?/g)].map(m => Number(m[1].replace('−', '-')));
+  t.setPicks(two);
+  t.setUnit('count', false);
+  t.set(companies([['greenhouse:acme', 'Acme', acme], ['eightfold:micron', 'Micron', micron]], { epochs }));
+  t.draw();
+  const breakdown = moves();
+  t.set({ ...companies([['greenhouse:acme', 'Acme', acme], ['eightfold:micron', 'Micron', micron]], { epochs }),
     split_by: 'family', total: true,
-    series: [{ name: '__total__', label: 'All', points: acme.map((v, j) => v + micron[j]), latest: 280 }],
-    pick_series: { 'greenhouse:acme': acme, 'eightfold:micron': micron },
-    epochs: [{ ts: FOUR[2], changed: ['duplicate removal changed'], fields: ['dedup_version'] }] });
+    series: [{ name: '__total__', label: 'All tech roles', points: acme.map((v, j) => v + micron[j]), latest: 280 }],
+    pick_series: { 'greenhouse:acme': acme, 'eightfold:micron': micron } });
+  t.draw();
+  assert.deepEqual(breakdown, [30, 0]);
+  assert.deepEqual(moves(), [30], 'Total is the breakdown’s sum; summed whole it read 0');
+});
+
+test('a pick counted from a later date joins Total as a step, not as hiring', () => {
+  const { t } = loadApp();
+  t.setPicks([{ key: 'greenhouse:acme', label: 'Acme', boardKeys: ['greenhouse:acme'] },
+              { key: 'workday:amd/x', label: 'AMD', boardKeys: ['workday:amd/x'] }]);
+  const acme = [100, 100, 100, 104], amd = [null, null, 500, 500];
+  t.set({ ...companies([['greenhouse:acme', 'Acme', acme]]), total: true,
+    series: [{ name: '__total__', label: 'All', points: [100, 100, 600, 604], latest: 604 }],
+    pick_series: { 'greenhouse:acme': acme, 'workday:amd/x': amd } });
+  same(t.netOfSteps([100, 100, 600, 604], t.data().series[0]), [600, 600, 600, 604]);
+});
+
+test('a window ending in the past gives its time, not an age', () => {
+  const { t, nodes } = loadApp();
+  t.setPicks([ACME]);
+  nodes['trends-until'] = Object.assign(fakeEl(), { value: '2026-09-16T00:00' });
+  t.set(companies([['greenhouse:acme', 'Acme', [100, 100, 100, 100]]]));
+  t.draw();
+  assert.match(nodes['trends-scope'].textContent, /latest Sep 16 00:00 UTC/);
+  assert.doesNotMatch(nodes['trends-scope'].textContent, /hours ago/);
+});
+
+test('the marked-changes list gives each change’s size on each line, and counts repeats', () => {
+  const { t, nodes } = loadApp();
+  t.setPicks([ACME]);
+  t.set(companies([['greenhouse:acme', 'Acme', [100, 100, 140, 140, 150]]], { stamps: FIVE,
+    epochs: [{ ts: FIVE[2], changed: ['tech filter changed'], fields: ['tech_filter_version'] }] }));
   t.setUnit('count', false);
   t.draw();
-  same(t.netOfSteps(acme.map((v, j) => v + micron[j]), t.data().series[0]), [250, 250, 280, 280]);
+  assert.match(nodes['trends-changes'].innerHTML, /Sep 15 00:00<\/b> Counting changed here: tech filter changed[^<]* — Acme \+40 openings/);
 });
 
 test('a window ending before counting began says so', () => {

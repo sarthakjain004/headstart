@@ -409,3 +409,26 @@ def test_duplicate_removal_leaves_out_only_the_boards_it_can_touch(
         "one Workday site has no sibling to lose rows to"
     )
     assert moved["workday:acme/a"] == 5 + 3, "the removal and its run after, left out"
+
+
+def test_an_emptied_site_still_makes_its_sibling_touched(tmp_path: Path) -> None:
+    """#603 can empty one of a Tenant's two Workday sites: it holds no stock now, but the ledger
+    has read it, and duplicate removal can still move the site beside it."""
+    deltas = tmp_path / "deltas"
+    deltas.mkdir()
+    pq.write_table(
+        _deltas(
+            "2026-09-21T00:00:00+00:00",
+            [
+                ("workday:acme/a", "stock", "se", 5),
+                ("workday:acme/b", "stock", "se", -9),
+            ],
+        ),
+        deltas / "2026-09-21T00-00-00+00-00.parquet",
+    )
+    now = {"workday:acme/a"}  # b emptied, so it is gone from the current counts
+    assert hot_boards.dedup_touches(now) == set()
+    assert hot_boards.dedup_touches(now | hot_boards.ledger_boards(deltas)) == {
+        "workday:acme/a",
+        "workday:acme/b",
+    }

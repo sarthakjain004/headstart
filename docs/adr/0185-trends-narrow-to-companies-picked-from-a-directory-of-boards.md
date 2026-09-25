@@ -846,3 +846,19 @@ promise, that Hot's figure is the trend's, broken on most single-Board rows with
 
 Not changed: making Total the default for one company (the user's rule); end labels for every
 line on a crowded chart; Back from a roles view returning to the levels view first.
+
+The review of that change corrected it:
+
+- Hot's rule reads every Board the delta ledger holds, not only those holding stock now, so a
+  Tenant's emptied Workday site still makes its sibling touched, and Tenants compare
+  case-blind. A pair joined only by a curated alias is still unseen by Hot: its stage runs
+  before the directory is built. When Hot and the trend differ, the note gives Hot's build time
+  (`hot_at`), not a guessed reason.
+- A pick counted from a later date holds at its first value in the pick-summed line, so it joins
+  Total as a step, not as hiring.
+- A change "moved" a line only at its own run. The sentence, the markers and the list share
+  that test, and the list gives each change's size on each drawn line, counting repeats.
+- The age warning follows the pipeline's own cadence (four median gaps, at least three hours),
+  and never shows under a range ending in the past. Search is told the trend's figure only
+  where it lists the same thing: All openings, no source filter.
+- A tap snaps to a marker only for a finger, not a mouse.

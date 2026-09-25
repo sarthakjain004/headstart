@@ -89,7 +89,7 @@ _STOCK_MOVING = (
 )
 #: Moves only the Boards it can touch (ADR-0186/0187, #632/#649): Eightfold's, and those of a
 #: Tenant with two or more Workday or Taleo Enterprise Boards — the Trends tab's own rule for a
-#: company (app.js `DEDUP_ATSES`, `MIRROR_ATS`).
+#: company (app.js `DEDUP_ATSES`, `MIRROR_ATS`). Change one, change the other.
 _DEDUP = "dedup_version"
 _DEDUP_SIBLING_ATSES = ("workday", "taleo_enterprise")
 _DEDUP_MIRROR_ATS = "eightfold"
@@ -158,7 +158,7 @@ def dedup_changes(path: Path) -> set[str]:
     )
 
 
-def _changed_ticks(path: Path, counts) -> set[str]:
+def _changed_ticks(path: Path, is_change) -> set[str]:
     if not path.exists():
         return set()
     with path.open(newline="", encoding="utf-8") as fh:
@@ -166,23 +166,24 @@ def _changed_ticks(path: Path, counts) -> set[str]:
     return {
         row["ts"]
         for prev, row in itertools.pairwise(rows)
-        if counts({col for col in row if row.get(col) != prev.get(col)} - {"ts"})
+        if is_change({col for col in row if row.get(col) != prev.get(col)} - {"ts"})
     }
 
 
 def dedup_touches(boards) -> set[str]:
     """The Boards duplicate removal can move: every Eightfold Board, and each Board of a Tenant
-    holding two or more Boards on one of the ATSes it dedupes within."""
+    holding two or more Boards on one of the ATSes it dedupes within. Tenants compare case-blind,
+    as the company directory joins them (`HPE`, `hpe`); a join by curated alias alone is not
+    seen here, since this stage runs before the directory is built."""
+    keyed = {b: (b.split(":", 1)[0], tenant(b).lower()) for b in boards}
     siblings = collections.Counter(
-        (ats, tenant(b))
-        for b in boards
-        if (ats := b.split(":", 1)[0]) in _DEDUP_SIBLING_ATSES
+        key for key in keyed.values() if key[0] in _DEDUP_SIBLING_ATSES
     )
     return {
         b
-        for b in boards
-        if (ats := b.split(":", 1)[0]) == _DEDUP_MIRROR_ATS
-        or (ats in _DEDUP_SIBLING_ATSES and siblings[(ats, tenant(b))] > 1)
+        for b, (ats, owner) in keyed.items()
+        if ats == _DEDUP_MIRROR_ATS
+        or (ats in _DEDUP_SIBLING_ATSES and siblings[(ats, owner)] > 1)
     }
 
 
@@ -298,6 +299,17 @@ def read_stock_change(
                 moved[board] += delta
                 stamps.append(ts)
     return moved, stamps
+
+
+def ledger_boards(delta_dir: Path) -> set[str]:
+    """Every Board the delta ledger has a row for."""
+    import pyarrow.parquet as pq
+
+    return {
+        board
+        for path in delta_dir.glob("*.parquet")
+        for board in pq.read_table(path, columns=["board"]).column("board").to_pylist()
+    }
 
 
 def window_base(delta_dir: Path, first: str) -> str | None:
@@ -436,7 +448,9 @@ def main() -> int:
         args.board_deltas,
         counting_changes(args.epochs),
         dedup_changes(args.epochs),
-        dedup_touches(stock.keys()),
+        # Every Board the ledger has read, not only those holding stock now: #603 can empty one of
+        # a Tenant's two Workday sites, and its sibling is still one duplicate removal can move.
+        dedup_touches(set(stock) | ledger_boards(args.board_deltas)),
     )
     if not stamps:
         # One delta file exists and it is the baseline. There is no measured change yet, and a
