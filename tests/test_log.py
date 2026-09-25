@@ -300,3 +300,36 @@ def test_context_names_the_run_and_carries_its_extras(monkeypatch, caplog):
         record.getMessage()
         == "stage=scrape_run run=32671773723 attempt=2 sha=674b067 shard=3"
     )
+
+
+def test_a_crashed_stage_logs_what_is_stale_with_its_traceback_and_exits_1(caplog):
+    """`run_logging_crash` fronts every `continue-on-error` pipeline stage: a crash must name the
+    stage's consequence and carry its stack, while a worded `fail` passes through untouched."""
+    logger = logging.getLogger("headstart.ingest.some_stage")
+
+    def crashes() -> int:
+        raise KeyError("a bug")
+
+    with (
+        caplog.at_level(logging.ERROR, logger=logger.name),
+        pytest.raises(SystemExit) as out,
+    ):
+        log.run_logging_crash(
+            logger, crashes, "some_stage failed — its ledger is stale"
+        )
+    assert out.value.code == 1
+    [record] = caplog.records
+    assert record.getMessage() == "some_stage failed — its ledger is stale"
+    assert record.exc_info and record.exc_info[0] is KeyError
+
+    caplog.clear()
+    with pytest.raises(SystemExit) as out:
+        log.run_logging_crash(
+            logger, lambda: log.fail(logger, "worded abort"), "unused"
+        )
+    assert out.value.code == 1
+    assert [r.getMessage() for r in caplog.records] == ["worded abort"]
+
+    with pytest.raises(SystemExit) as out:
+        log.run_logging_crash(logger, lambda: 0, "unused")
+    assert out.value.code == 0

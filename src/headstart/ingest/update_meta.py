@@ -778,15 +778,9 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    # The step is `continue-on-error`, so an unguarded exception would end in a green run with
-    # no annotation at all; one ERROR names it and says what is stale. SystemExit and
-    # KeyboardInterrupt are not `Exception`, so they pass through untouched.
-    try:
-        raise SystemExit(main())
-    except Exception:  # noqa: BLE001 - the one catch-all per entry point, logged and re-exited
-        _log.error(
-            "update_meta failed — the store's metadata was not refreshed this run, so Facts "
-            "and Derivations keep their previous values",
-            exc_info=True,
-        )
-        raise SystemExit(1) from None
+    log.run_logging_crash(
+        _log,
+        main,
+        "update_meta failed — the store's metadata was not refreshed this run, so Facts "
+        "and Derivations keep their previous values",
+    )
