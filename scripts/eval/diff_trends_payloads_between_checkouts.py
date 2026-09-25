@@ -116,7 +116,7 @@ class _Table:
     def to_list(self):
         return []
 
-    def count_rows(self, filter=None):  # noqa: A002 - LanceDB's own keyword
+    def count_rows(self, filter=None):
         return 0
 
 
@@ -178,7 +178,10 @@ def _serve(checkout: Path, state: Path, out: Path) -> None:
         "boot_seconds": round(time.perf_counter() - started, 2),
         "peak_rss_mb_after_boot": round(_peak_rss_mb(), 1),
     }
-    print(f"booted in {boot['boot_seconds']}s, peak RSS {boot['peak_rss_mb_after_boot']} MB", flush=True)
+    print(
+        f"booted in {boot['boot_seconds']}s, peak RSS {boot['peak_rss_mb_after_boot']} MB",
+        flush=True,
+    )
     client = app.app.test_client()
     with (out / "responses.jsonl").open("w", encoding="utf-8") as index:
         for name, path in _requests(_picks(state)):
@@ -187,11 +190,21 @@ def _serve(checkout: Path, state: Path, out: Path) -> None:
             seconds = round(time.perf_counter() - started, 2)
             (out / f"{name}.json").write_bytes(response.data)
             index.write(
-                json.dumps({"name": name, "path": path, "status": response.status_code, "seconds": seconds})
+                json.dumps(
+                    {
+                        "name": name,
+                        "path": path,
+                        "status": response.status_code,
+                        "seconds": seconds,
+                    }
+                )
                 + "\n"
             )
             index.flush()
-            print(f"  {name}: {response.status_code} in {seconds}s ({len(response.data):,} bytes)", flush=True)
+            print(
+                f"  {name}: {response.status_code} in {seconds}s ({len(response.data):,} bytes)",
+                flush=True,
+            )
     boot["peak_rss_mb_after_requests"] = round(_peak_rss_mb(), 1)
     (out / "boot.json").write_text(json.dumps(boot), encoding="utf-8")
 
@@ -203,7 +216,9 @@ def _leaf_differences(a, b) -> int:
     if isinstance(a, list) and isinstance(b, list):
         longer = max(len(a), len(b))
         return sum(
-            _leaf_differences(a[i] if i < len(a) else None, b[i] if i < len(b) else None)
+            _leaf_differences(
+                a[i] if i < len(a) else None, b[i] if i < len(b) else None
+            )
             for i in range(longer)
         )
     return 0 if a == b and type(a) is type(b) else 1
@@ -212,8 +227,18 @@ def _leaf_differences(a, b) -> int:
 def _run_side(label: str, checkout: Path, state: Path, out: Path) -> dict:
     print(f"== {label}: {checkout}", flush=True)
     env = {**os.environ, "PYTHONPATH": str(checkout / "src")}
-    subprocess.run(  # noqa: S603 - this script, run on its own arguments
-        [sys.executable, "-u", __file__, "--serve", str(checkout), "--state", str(state), "--out", str(out)],
+    subprocess.run(
+        [
+            sys.executable,
+            "-u",
+            __file__,
+            "--serve",
+            str(checkout),
+            "--state",
+            str(state),
+            "--out",
+            str(out),
+        ],
         env=env,
         check=True,
     )
@@ -221,11 +246,17 @@ def _run_side(label: str, checkout: Path, state: Path, out: Path) -> dict:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--state", type=Path, required=True, help="a directory holding data/state/")
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    ap.add_argument(
+        "--state", type=Path, required=True, help="a directory holding data/state/"
+    )
     ap.add_argument("--old", type=Path, help="the checkout before the change")
     ap.add_argument("--new", type=Path, help="the checkout with the change")
-    ap.add_argument("--out", type=Path, help="where the bodies go (default: beside --state)")
+    ap.add_argument(
+        "--out", type=Path, help="where the bodies go (default: beside --state)"
+    )
     ap.add_argument("--serve", type=Path, help=argparse.SUPPRESS)
     args = ap.parse_args()
     state = args.state.resolve()
@@ -243,18 +274,25 @@ def main() -> int:
     statuses = {
         label: {
             row["name"]: row
-            for row in map(json.loads, (out / label / "responses.jsonl").open(encoding="utf-8"))
+            for row in map(
+                json.loads, (out / label / "responses.jsonl").open(encoding="utf-8")
+            )
         }
         for label in sides
     }
     differing = 0
-    print("\nrequest | status old/new | seconds old/new | identical bytes | differing leaves", flush=True)
+    print(
+        "\nrequest | status old/new | seconds old/new | identical bytes | differing leaves",
+        flush=True,
+    )
     for name, path in _requests(_picks(state)):
         old_body = (out / "old" / f"{name}.json").read_bytes()
         new_body = (out / "new" / f"{name}.json").read_bytes()
         old_row, new_row = statuses["old"][name], statuses["new"][name]
         same = old_body == new_body and old_row["status"] == new_row["status"]
-        leaves = 0 if same else _leaf_differences(json.loads(old_body), json.loads(new_body))
+        leaves = (
+            0 if same else _leaf_differences(json.loads(old_body), json.loads(new_body))
+        )
         differing += not same
         print(
             f"{name} ({path}) | {old_row['status']}/{new_row['status']} | "
@@ -263,7 +301,9 @@ def main() -> int:
         )
     for label, boot in sides.items():
         print(f"{label}: {boot}", flush=True)
-    print(f"\n{differing} of {len(_requests(_picks(state)))} requests differ", flush=True)
+    print(
+        f"\n{differing} of {len(_requests(_picks(state)))} requests differ", flush=True
+    )
     return 1 if differing else 0
 
 

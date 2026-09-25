@@ -139,11 +139,13 @@ class TrendQuestion:
 
 
 class _Names:
-    """A list of names, each with a stable code, shared by every table the history encodes."""
+    """A list of names, each with a stable code, shared by every table the history encodes.
+    ``dtype`` holds every code: Boards run to tens of thousands, families and bands to tens."""
 
-    def __init__(self) -> None:
+    def __init__(self, dtype=np.int16) -> None:
         self.names: list[str] = []
         self._codes: dict[str, int] = {}
+        self._dtype = dtype
 
     def code(self, name: str) -> int:
         if name not in self._codes:
@@ -152,15 +154,20 @@ class _Names:
         return self._codes[name]
 
     def encode(self, column) -> np.ndarray:
-        """``column`` (an Arrow string column) as codes."""
-        encoded = column.dictionary_encode()
-        if hasattr(encoded, "combine_chunks"):
-            encoded = encoded.combine_chunks()
-        remap = np.array(
-            [self.code(name) for name in encoded.dictionary.to_pylist()],
-            dtype=np.int32,
-        )
-        return remap[encoded.indices.to_numpy(zero_copy_only=False)]
+        """``column`` (an Arrow string array or column, plain or dictionary-encoded) as
+        codes."""
+        import pyarrow as pa
+
+        parts = [np.zeros(0, dtype=self._dtype)]
+        for chunk in getattr(column, "chunks", [column]):
+            if not pa.types.is_dictionary(chunk.type):
+                chunk = chunk.dictionary_encode()
+            remap = np.array(
+                [self.code(name) for name in chunk.dictionary.to_pylist()],
+                dtype=self._dtype,
+            )
+            parts.append(remap[chunk.indices.to_numpy(zero_copy_only=False)])
+        return np.concatenate(parts)
 
     def ranks(self) -> np.ndarray:
         """Each code's position in name order."""
@@ -443,6 +450,46 @@ def _grouped(keys: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     return np.unique(keys, return_inverse=True)
 
 
+# Each column the history holds, and its type: a metric code is 0 for `new` and 1 for `stock`.
+_INDEX_TYPES = {
+    "tick": np.int32,
+    "metric": np.int8,
+    "family": np.int16,
+    "band": np.int16,
+    "ats": np.int16,
+    "count": np.int32,
+}
+_DELTA_TYPES = {
+    "tick": np.int32,
+    "board": np.int32,
+    "metric": np.int8,
+    "family": np.int16,
+    "band": np.int16,
+    "ats": np.int16,
+    "delta": np.int32,
+}
+
+
+def _columns(types: dict, **values: np.ndarray) -> dict[str, np.ndarray]:
+    """``values`` cast to ``types``' columns; a column not given is empty."""
+    return {
+        name: np.asarray(values.get(name, ()), dtype=kind)
+        for name, kind in types.items()
+    }
+
+
+def _metric_codes(column) -> np.ndarray:
+    """``column``'s metrics as codes: 0 for `new`, 1 for `stock`, and -1 for any other (a
+    tick's turnover and markers)."""
+    names = _Names()
+    codes = names.encode(column)
+    remap = np.array(
+        [_LEVEL_METRICS.index(n) if n in _LEVEL_METRICS else -1 for n in names.names],
+        dtype=np.int8,
+    )
+    return remap[codes] if len(remap) else codes.astype(np.int8)
+
+
 class TrendHistory:
     """Every Trends fact the Space serves, read once from ``data/state`` and ``config``.
 
@@ -456,18 +503,13 @@ class TrendHistory:
         self._families = _Names()
         self._bands = _Names()
         self._atses = _Names()
-        self._boards = _Names()
+        self._boards = _Names(np.int32)
         # The index's group counts at every tick, as the aggregate ledger holds them: the
-        # archive's own rows, then the replay's (`_replayed_index_levels`).
-        self._index = {
-            name: np.zeros(0, dtype=np.int64)
-            for name in ("tick", "metric", "family", "band", "ats", "count")
-        }
+        # archive's own rows, then the replay's (`_replayed_index_levels`). Codes and counts in
+        # the narrowest type that holds them: 6.6M rows on 2026-09-25.
+        self._index = _columns(_INDEX_TYPES)
         # Every Board delta of a level metric, in file order.
-        self._deltas = {
-            name: np.zeros(0, dtype=np.int64)
-            for name in ("tick", "board", "metric", "family", "band", "ats", "delta")
-        }
+        self._deltas = _columns(_DELTA_TYPES)
         self._new_measured: set[str] = set()
         self._live_version: int | None = None
         self._openings: Counter[str] = Counter()
@@ -513,7 +555,10 @@ class TrendHistory:
             fresh = cls()
             for name in ("_watch", "_family_labels", "_family_successor", "_evictions"):
                 setattr(fresh, name, getattr(history, name))
-            fresh._companies, fresh._company_of = history._companies, history._company_of
+            fresh._companies, fresh._company_of = (
+                history._companies,
+                history._company_of,
+            )
             history = fresh
         history._epochs = _counting_changes(
             _methodology_stamps(_epoch_ledger_rows(state_dir / _EPOCH_LEDGER), stamped)
@@ -524,23 +569,12 @@ class TrendHistory:
     def _read_ledgers(self, state_dir: Path) -> list[tuple[str, dict]]:
         """Read the tick files and the archive; returns each stamped tick's Methodology."""
         import pyarrow as pa
-        import pyarrow.parquet as pq
 
-        files = []
-        for path in sorted((state_dir / _DELTAS).glob("*.parquet")):
-            table = pq.read_table(path)
-            meta = table.schema.metadata or {}
-            ts = (meta.get(b"ts") or b"").decode()
-            if not ts and table.num_rows:
-                ts = table.column("ts")[0].as_py()
-            if not ts:
-                continue  # an empty file with no stamp names no tick
-            methodology = (
-                json.loads(meta[b"methodology"]) if b"methodology" in meta else None
-            )
-            files.append(
-                (ts, int(meta.get(b"centroid_version", b"-1")), methodology, table)
-            )
+        files = [
+            file
+            for path in sorted((state_dir / _DELTAS).glob("*.parquet"))
+            if (file := self._read_tick_file(path)) is not None
+        ]
         files.sort(key=lambda file: file[0])
         first_delta = files[0][0] if files else None
         archive_ticks, archive_versions = self._read_archive(
@@ -555,83 +589,142 @@ class TrendHistory:
         spans = version_spans.spans(zip(self._ticks, self._tick_versions.tolist()))
         # The version the newest runs are counted at: the last to begin, not the last read.
         self._live_version = spans[-1][0] if spans else None
-        if files:
-            columns = ["board", "metric", "family", "band", "ats", "delta"]
-            table = pa.concat_tables(
-                [file[3].select(columns) for file in files]
-            ).combine_chunks()
-            ticks = np.repeat(
-                np.arange(self._first_delta, len(self._ticks), dtype=np.int64),
-                [file[3].num_rows for file in files],
-            )
-            self._read_deltas(table, ticks)
-        self._index = self._join_index(self._index, self._replayed_index_levels())
+        levels = [columns for *_, columns, _ in files]
+        self._deltas = _columns(
+            _DELTA_TYPES,
+            tick=np.repeat(
+                np.arange(self._first_delta, len(self._ticks)),
+                [len(columns["board"]) for columns in levels],
+            ),
+            **{
+                name: np.concatenate([columns[name] for columns in levels])
+                for name in _DELTA_TYPES
+                if name != "tick" and levels
+            },
+        )
+        turnover: dict[str, list[dict]] = defaultdict(list)
+        unscoped: dict[str, list[dict]] = defaultdict(list)
+        for *_, others in files:
+            for row in others:
+                if row["metric"] in _TURNOVER_METRICS:
+                    turnover[row["board"]].append(row)
+                elif row["metric"] == _UNSCOPED:
+                    unscoped[row["board"]].append(row)
+        self._turnover = dict(turnover)
+        self._unscoped_markers = dict(unscoped)
+        replayed = self._replayed_index_levels()
+        self._index = {
+            name: np.concatenate([self._index[name], replayed[name]])
+            for name in self._index
+        }
         self._new_measured = {
             self._ticks[t]
             for t in np.unique(self._index["tick"][self._index["metric"] == 0]).tolist()
         }
-        return [(ts, methodology) for ts, _, methodology, _ in files if methodology]
+        pa.default_memory_pool().release_unused()
+        return [(ts, methodology) for ts, _, methodology, *_ in files if methodology]
+
+    def _read_tick_file(self, path: Path):
+        """One tick's file as ``(ts, series version, methodology or None, level columns, other
+        rows)``: its level deltas encoded, and its turnover and markers (ADR-0227) as rows. None
+        for an empty file that names no tick."""
+        import pyarrow.parquet as pq
+
+        table = pq.read_table(path)
+        meta = table.schema.metadata or {}
+        ts = (meta.get(b"ts") or b"").decode()
+        if not ts and table.num_rows:
+            ts = table.column("ts")[0].as_py()
+        if not ts:
+            return None
+        metric = _metric_codes(table["metric"])
+        levels = metric >= 0
+        columns = {
+            "board": self._boards.encode(table["board"])[levels],
+            "metric": metric[levels],
+            "family": self._families.encode(table["family"])[levels],
+            "band": self._bands.encode(table["band"])[levels],
+            "ats": self._atses.encode(table["ats"])[levels],
+            "delta": table["delta"].to_numpy()[levels],
+        }
+        others = table.filter(~levels).to_pylist() if not levels.all() else []
+        return (
+            ts,
+            int(meta.get(b"centroid_version", b"-1")),
+            json.loads(meta[b"methodology"]) if b"methodology" in meta else None,
+            columns,
+            others,
+        )
 
     def _read_archive(
         self, path: Path, first_delta: str | None
     ) -> tuple[list[str], list[int]]:
         """The aggregate's rows from before the delta ledger's first tick, as columns, each tick
         at the version its span was counted at (a stray row of another version is dropped, so
-        two versions never share a tick)."""
+        two versions never share a tick). Read a batch at a time: decoded whole, its 3.2M rows
+        cost the Space a few hundred MB that Arrow's allocator then keeps."""
+        import pyarrow as pa
         import pyarrow.compute as pc
         import pyarrow.parquet as pq
 
         if not path.exists():
             return [], []
-        filters = (
-            [("ts", "<", datetime.fromisoformat(first_delta))] if first_delta else None
-        )
-        table = pq.read_table(path, filters=filters)
-        if not table.num_rows:
+        before = datetime.fromisoformat(first_delta) if first_delta else None
+        file = pq.ParquetFile(path, read_dictionary=["metric", "family", "band", "ats"])
+        ts_column = file.schema_arrow.get_field_index("ts")
+        groups = []
+        for i in range(file.num_row_groups):
+            stats = file.metadata.row_group(i).column(ts_column).statistics
+            if (
+                before is None
+                or not (stats and stats.has_min_max)
+                or stats.min < before
+            ):
+                groups.append(i)
+        parts = []
+        for batch in file.iter_batches(batch_size=1 << 16, row_groups=groups):
+            if before is not None:
+                batch = batch.filter(
+                    pc.less(batch["ts"], pa.scalar(before, type=batch["ts"].type))
+                )
+            parts.append(
+                {
+                    "ts": batch["ts"].cast("int64").to_numpy(),
+                    "version": batch["version"].to_numpy(),
+                    "metric": _metric_codes(batch["metric"]),
+                    "family": self._families.encode(batch["family"]),
+                    "band": self._bands.encode(batch["band"]),
+                    "ats": self._atses.encode(batch["ats"]),
+                    "count": batch["count"].to_numpy(),
+                }
+            )
+        if not parts or not sum(len(part["ts"]) for part in parts):
             return [], []
-        instants = pc.unique(table["ts"]).sort()
-        ticks = [t.isoformat(timespec="seconds") for t in instants.to_pylist()]
-        tick = pc.index_in(table["ts"], value_set=instants).to_numpy()
-        version = table["version"].to_numpy()
-        pairs = np.unique(np.stack([tick, version], axis=1), axis=0).tolist()
-        spans = version_spans.spans((ticks[t], v) for t, v in pairs)
+        rows = {
+            name: np.concatenate([part[name] for part in parts]) for name in parts[0]
+        }
+        instants, tick = np.unique(rows["ts"], return_inverse=True)
+        ticks = [
+            datetime.fromtimestamp(ms / 1000, UTC).isoformat(timespec="seconds")
+            for ms in instants.tolist()
+        ]
+        # each (tick, version) pair once, as one number: the tick above, the version below
+        lowest = int(rows["version"].min())
+        pairs = np.unique(tick.astype(np.int64) << 32 | (rows["version"] - lowest))
+        spans = version_spans.spans(
+            (ticks[p >> 32], (p & 0xFFFFFFFF) + lowest) for p in pairs.tolist()
+        )
         versions = [version_spans.version_at(spans, ts) for ts in ticks]
-        keep = version == np.array(versions, dtype=np.int64)[tick]
-        metric = table["metric"].to_numpy(zero_copy_only=False)
-        self._index = {
-            "tick": tick[keep].astype(np.int64),
-            "metric": np.where(metric == "new", 0, 1)[keep],
-            "family": self._families.encode(table["family"])[keep],
-            "band": self._bands.encode(table["band"])[keep],
-            "ats": self._atses.encode(table["ats"])[keep],
-            "count": table["count"].to_numpy()[keep].astype(np.int64),
-        }
+        keep = rows["version"] == np.array(versions, dtype=np.int64)[tick]
+        self._index = _columns(
+            _INDEX_TYPES,
+            tick=tick[keep],
+            **{
+                name: rows[name][keep]
+                for name in ("metric", "family", "band", "ats", "count")
+            },
+        )
         return ticks, versions
-
-    def _read_deltas(self, table, ticks: np.ndarray) -> None:
-        """Keep the level deltas as columns, and each Board's turnover and markers as rows."""
-        metric = table["metric"].to_numpy(zero_copy_only=False)
-        levels = np.isin(metric, _LEVEL_METRICS)
-        self._deltas = {
-            "tick": ticks[levels],
-            "board": self._boards.encode(table["board"])[levels],
-            "metric": np.where(metric == "new", 0, 1)[levels],
-            "family": self._families.encode(table["family"])[levels],
-            "band": self._bands.encode(table["band"])[levels],
-            "ats": self._atses.encode(table["ats"])[levels],
-            "delta": table["delta"].to_numpy()[levels].astype(np.int64),
-        }
-        others = table.filter(~levels)
-        turnover: dict[str, list[dict]] = defaultdict(list)
-        unscoped: dict[str, list[dict]] = defaultdict(list)
-        for tick, row in zip(ticks[~levels].tolist(), others.to_pylist()):
-            row["ts"] = self._ticks[tick]
-            if row["metric"] in _TURNOVER_METRICS:
-                turnover[row["board"]].append(row)
-            elif row["metric"] == _UNSCOPED:
-                unscoped[row["board"]].append(row)
-        self._turnover = dict(turnover)
-        self._unscoped_markers = dict(unscoped)
 
     def _delta_spans(self) -> list[tuple[int, int]]:
         """Each version span of the delta ledger as ``(first tick, end tick)`` indices. Every
@@ -657,45 +750,68 @@ class TrendHistory:
         d = self._deltas
         non_tech = self._families.code(NON_TECH)
         every = self._bands.code("all"), self._atses.code("all")
-        ats = np.where(d["family"] == non_tech, every[1], d["ats"])
-        sizes = (2, len(self._families.names), len(self._bands.names), len(self._atses.names))
-        rank = [np.arange(2), self._families.ranks(), self._bands.ranks(), self._atses.ranks()]
-        # tech groups sort by name; non-tech after all of them, as the writer appends it
+        sizes = (
+            2,
+            len(self._families.names),
+            len(self._bands.names),
+            len(self._atses.names),
+        )
+        ranks = (
+            np.arange(2),
+            self._families.ranks(),
+            self._bands.ranks(),
+            self._atses.ranks(),
+        )
+        # Tech groups sort by name; non-tech, one row summed over every Board and ATS, sorts after
+        # all of them, as the writer appends it.
+        last = int(np.prod(sizes))
         ranked = np.ravel_multi_index(
-            (rank[0][d["metric"]], rank[1][d["family"]], rank[2][d["band"]], rank[3][ats]),
+            tuple(
+                rank[codes]
+                for rank, codes in zip(
+                    ranks, (d["metric"], d["family"], d["band"], d["ats"])
+                )
+            ),
             sizes,
         )
-        ranked = np.where(d["family"] == non_tech, np.prod(sizes), ranked)
-        out = []
+        ranked[d["family"] == non_tech] = last
+        parts = []
         for start, end in self._delta_spans():
             rows = (d["tick"] >= start) & (d["tick"] < end)
-            keys, inverse = _grouped(np.append(ranked[rows], np.prod(sizes)))
-            level = np.zeros((end - start, len(keys)), dtype=np.int64)
+            keys, inverse = _grouped(np.append(ranked[rows], last))
+            level = np.zeros((end - start, len(keys)), dtype=np.int32)
             np.add.at(level, (d["tick"][rows] - start, inverse[:-1]), d["delta"][rows])
-            level = level.cumsum(axis=0)
-            tick, key = np.nonzero((level > 0) | (keys == np.prod(sizes)))
-            out.append((tick + start, keys[key], level[tick, key]))
-        if not out:
-            return {name: np.zeros(0, dtype=np.int64) for name in self._index}
-        tick, key, count = (np.concatenate(part) for part in zip(*out))
-        tech = key < np.prod(sizes)
-        m, f, b, a = np.unravel_index(np.where(tech, key, 0), sizes)
-        by_rank = [np.argsort(r) for r in rank]
-        return {
-            "tick": tick,
-            "metric": np.where(tech, by_rank[0][m], 1),
-            "family": np.where(tech, by_rank[1][f], non_tech),
-            "band": np.where(tech, by_rank[2][b], every[0]),
-            "ats": np.where(tech, by_rank[3][a], every[1]),
-            "count": count,
-        }
-
-    @staticmethod
-    def _join_index(archive: dict, replayed: dict) -> dict[str, np.ndarray]:
-        return {
-            name: np.concatenate([archive[name], replayed[name]]).astype(np.int64)
-            for name in archive
-        }
+            np.cumsum(level, axis=0, out=level)
+            tick, key = np.nonzero((level > 0) | (keys == last))
+            # each group's own codes, decoded once per group rather than once per row
+            tech = keys < last
+            codes = [
+                np.argsort(rank)[part]
+                for rank, part in zip(
+                    ranks, np.unravel_index(np.where(tech, keys, 0), sizes)
+                )
+            ]
+            fixed = (1, non_tech, *every)
+            codes = [np.where(tech, c, value) for c, value in zip(codes, fixed)]
+            parts.append(
+                _columns(
+                    _INDEX_TYPES,
+                    tick=tick + start,
+                    metric=codes[0][key],
+                    family=codes[1][key],
+                    band=codes[2][key],
+                    ats=codes[3][key],
+                    count=level[tick, key],
+                )
+            )
+        return (
+            {
+                name: np.concatenate([part[name] for part in parts])
+                for name in _INDEX_TYPES
+            }
+            if parts
+            else _columns(_INDEX_TYPES)
+        )
 
     def _derive_board_facts(self) -> None:
         """Each Board's openings, arrival and `new` hold, the index's turnover, and the picker's
@@ -718,10 +834,7 @@ class TrendHistory:
         counted = tech_stock & live
         sums = np.bincount(d["board"][counted], d["delta"][counted], len(boards))
         self._openings = Counter(
-            {
-                boards[b]: int(sums[b])
-                for b in np.unique(d["board"][counted]).tolist()
-            }
+            {boards[b]: int(sums[b]) for b in np.unique(d["board"][counted]).tolist()}
         )
         # Each Board's first tick in the ledger, over every version, and the tech openings it
         # arrived with. Over every version: a refit re-writes every Board's stock at its first
@@ -949,7 +1062,9 @@ class TrendHistory:
         stamps = sorted({r["ts"] for r in stock})
         totals: dict[str, int] = {}
         for r in stock:
-            if not r["family"].startswith(WATCH_PREFIX):  # watch rows re-count family rows
+            if not r["family"].startswith(
+                WATCH_PREFIX
+            ):  # watch rows re-count family rows
                 totals[r["ts"]] = totals.get(r["ts"], 0) + r["count"]
 
         # Families by the names the data holds (ADR-0220). A retired family reads as its v3
@@ -1104,7 +1219,11 @@ class TrendHistory:
         # Each pick's own line under a view that sums several, so the page takes a company's
         # steps out of that company's part of the sum only.
         pick_series: dict[str, list[int | None]] = {}
-        if len(picked_keys) > 1 and key != "company" and not (family and split == "roles"):
+        if (
+            len(picked_keys) > 1
+            and key != "company"
+            and not (family and split == "roles")
+        ):
             per: dict[str, dict[str, int]] = {}
             for r in rows:
                 at = per.setdefault(r["company"], {})
@@ -1347,16 +1466,20 @@ class TrendHistory:
             sizes,
         )
         held = np.bincount(keys, minlength=int(np.prod(sizes)))
-        counts = np.zeros(len(held), dtype=np.int64)
-        np.add.at(counts, keys, index["count"][rows])
+        # summed as floats, exact for any count below 2**53
+        counts = np.bincount(keys, index["count"][rows], len(held)).astype(np.int64)
         present = np.nonzero(held)[0]
         tick, metric, family, band = np.unravel_index(present, sizes)
-        families = np.array(self._families.names, dtype=object)[
-            np.argsort(ranks[0])
-        ]
+        families = np.array(self._families.names, dtype=object)[np.argsort(ranks[0])]
         bands = np.array(self._bands.names, dtype=object)[np.argsort(ranks[1])]
         return [
-            {"ts": self._ticks[t + lo], "metric": _LEVEL_METRICS[m], "family": f, "band": b, "count": n}
+            {
+                "ts": self._ticks[t + lo],
+                "metric": _LEVEL_METRICS[m],
+                "family": f,
+                "band": b,
+                "count": n,
+            }
             for t, m, f, b, n in zip(
                 tick.tolist(),
                 metric.tolist(),
@@ -1421,7 +1544,9 @@ class TrendHistory:
             rows &= company >= 0
         if eligible is not None:
             allowed = np.zeros(len(boards), dtype=bool)
-            allowed[[self._boards._codes[b] for b in eligible if b in self._boards._codes]] = True
+            allowed[
+                [self._boards._codes[b] for b in eligible if b in self._boards._codes]
+            ] = True
             rows &= allowed[d["board"]]
         if ats:
             rows &= np.isin(d["ats"], self._ats_codes(ats))
@@ -1498,12 +1623,12 @@ class TrendHistory:
         )
         first_touch = np.full(len(keys), len(rows), dtype=np.int64)
         np.minimum.at(first_touch, inverse, rank)
-        level = np.zeros((end - start, len(keys)), dtype=np.int64)
-        touched = np.zeros((end - start, len(keys)), dtype=np.int64)
+        level = np.zeros((end - start, len(keys)), dtype=np.int32)
+        touched = np.zeros((end - start, len(keys)), dtype=np.int32)
         np.add.at(level, (applied - start, inverse), d["delta"][rows])
         np.add.at(touched, (applied - start, inverse), 1)
-        level = level.cumsum(axis=0)
-        touched = touched.cumsum(axis=0) > 0
+        np.cumsum(level, axis=0, out=level)
+        touched = np.cumsum(touched, axis=0, out=touched) > 0
         listed = np.argsort(first_touch)
         c, m, f, b = (a.tolist() for a in np.unravel_index(keys[listed], sizes))
         families, bands = self._families.names, self._bands.names
@@ -1573,7 +1698,9 @@ class TrendHistory:
                     values[k] = None
         return lines
 
-    def _closures_unseen(self, boards: dict[str, str], stamps: list[str]) -> dict[str, int]:
+    def _closures_unseen(
+        self, boards: dict[str, str], stamps: list[str]
+    ) -> dict[str, int]:
         """Per pick, how many of its Boards had a run inside the window whose scrape could not
         show an absence (ADR-0053), so the closures on it went uncounted that run (ADR-0227)."""
         seen: dict[str, set[str]] = defaultdict(set)
