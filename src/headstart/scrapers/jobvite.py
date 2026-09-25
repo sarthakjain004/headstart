@@ -77,6 +77,12 @@ the same reason (#179). ``hiringOrganization`` is polymorphic: a bare string on 
 ``MonetaryAmount`` that is *present but empty* on the large majority of postings; it is still read
 because when it is populated it is a real structured figure, and an empty one costs nothing.
 
+**The detail is read at ``/job/{id}?nl=1``, with redirects refused** (ADR-0231). The plain job page
+of a tenant that moved its career site 302s to that site, which renders no posting; ``?nl=1`` is
+the page Jobvite's embed widget frames and still answers 200 with it. A Job is built from its
+detail page or not at all: there is no listing-derived fallback, so a lost page is a labelled gap
+and a truncation mark, and the fix for one is in reading the page.
+
 ADR-0048's ``needs_detail`` skip-list is deliberately **not** consulted, unlike eightfold's and
 zwayam's. Those two skip the detail fetch for a Job whose description we already hold because
 their *listing* still supplies title, location and the rest; here the listing supplies an id and

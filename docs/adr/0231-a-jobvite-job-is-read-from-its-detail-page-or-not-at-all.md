@@ -1,4 +1,4 @@
-# ADR-0230: A Jobvite Job is read from its detail page or not at all
+# ADR-0231: A Jobvite Job is read from its detail page or not at all
 
 **Status:** accepted · **Date:** 2026-09-25 · **Relates to:**
 [ADR-0053](0053-scope-eviction-on-scrape-outcome.md) (the truncation
@@ -21,7 +21,10 @@ Measured on 2026-09-25, before deciding:
   `no posting on a 200`; none was a transport failure.
 * **Why.** Each Board has its own cause, and none is a page we cannot read.
   * `mini-circuits-review` writes `<h2 class="jv-header u-text-left">`; the fallback parser matched
-    the class exactly.
+    the class exactly. The sweep below found two more Boards with the same defect in another form,
+    missed by the pipeline logs only because neither was in those runs' slices: `nbbj-review`
+    renders the title as an `<h3 class="jv-header">` and `lordco-internal` as an `<h4>`, where the
+    parser matched `<h2>` only.
   * `wedgewood` moved its career site onto its own domain: the job page 302s there, the redirect
     was followed, and the destination renders no posting. The same page with `?nl=1` (the page
     Jobvite's embed widget frames) answers 200 with JSON-LD.
@@ -42,7 +45,9 @@ into reading the page:
 * The detail is requested as `/job/{id}?nl=1` with redirects refused, so a tenant that moved its
   career site is still read, and a page that still moves is labelled `HTTP 302` instead of being
   parsed as empty. The link a user follows stays the plain job page.
-* The fallback heading match takes `jv-header` as one class among others.
+* The fallback heading match takes `jv-header` as one class among others, at any heading level,
+  closed at the same level. Each page measured carries one `jv-header` heading, and it is the
+  title.
 * `jobvite:blackbear` joins `config.EXCLUDED_BOARDS` with the other vendor demos.
 
 Measured across the whole live pool before shipping: every live Board's listing, up to three ids
@@ -53,5 +58,5 @@ are in the PR that lands this.
 
 * A Board that starts losing pages is a parser or surface defect to find, not a gap to paper over,
   and it shows as a scope-excluded Board with a labelled cause on the merge log.
-* `?nl=1` doubles as the only route to the four tenants the module docstring records as having
-  moved their *listing* onto their own domain. Reading their listings that way is not done here.
+* The four tenants the module docstring records as having moved their *listing* onto their own
+  domain may be readable the same way (`/search?nl=1`). That is not measured and not done here.

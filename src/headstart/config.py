@@ -293,18 +293,16 @@ EXCLUDED_BOARDS: frozenset[str] = frozenset(
         # "TEST 1241 - Enterprise Sales Manager - Lynda.com", "Test 5 #DNP"). `deming` and
         # `deminginc` are both "SC Demo Instance", the same 34 stock postings dated 2016-2017.
         # `michaelcarrinotest` is "Michael Carrino Sandbox": "Brit's Test Job", "dfadfasdfa",
-        # "Implementation Manager - Sahana Demo".
+        # "Implementation Manager - Sahana Demo". `blackbear` (2026-09-25) is a sales demo: its
+        # postings' `og:title` names a different company each ("Chromalloy", "CFO Services",
+        # "Blackbear Manufacturing"), one carries "DO NOT EDIT - Steve T - Using for branded
+        # demo", and all 129 of its detail pages are an unrendered template with no posting.
+        "jobvite:blackbear",
         "jobvite:deming",
         "jobvite:deminginc",
         "jobvite:li3",
         "jobvite:michaelcarrinotest",
         "jobvite:onecoprd",
-        # `blackbear` (2026-09-25) is a sales-demo tenant: its postings' `og:title` names a
-        # different company each ("Chromalloy", "CFO Services", "Blackbear Manufacturing",
-        # "BlackBear Professional Services"), one carries "DO NOT EDIT - Steve T - Using for
-        # branded demo", and every one of its 129 detail pages is an unrendered template
-        # (`'${job.applyLinkUrl}'`) with no posting, so it has served no rows.
-        "jobvite:blackbear",
         # JazzHR (board page, detail JSON-LD `hiringOrganization`): `adptestcompanycp` is "ADP
         # Test Company- CP", stock titles ("Advertising Sales Representative", "Art Director");
         # `jobtarget` is "JobTarget - Demo", 46 postings: "Donkey Handler - JazzHr Integration Test

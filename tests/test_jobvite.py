@@ -417,6 +417,9 @@ def test_a_title_heading_at_another_level_still_names_the_posting(level):
     assert JobviteScraper._posting_of(page)["title"] == "Architectural Designer"
 
 
-def test_a_heading_closed_at_another_level_is_not_read_past():
-    page = '<h3 class="jv-header">Designer</h4><h3>Seattle</h3>'
-    assert JobviteScraper._posting_of(page)["title"] == "Designer"
+def test_the_title_heading_ends_at_its_own_level():
+    from headstart.scrapers.jobvite import _HTML_TITLE
+
+    page = '<h3 class="jv-header">Designer</h3><h4>Seattle</h4>'
+    assert _HTML_TITLE.search(page).group("title") == "Designer"
+    assert _HTML_TITLE.search('<h3 class="jv-header">Designer</h4>') is None
