@@ -101,15 +101,18 @@ def _pull_index(attempts: int = 5) -> None:
                 DATASET,
                 repo_type="dataset",
                 local_dir=_STATE,
-                # the trends ledger is ~3.4 MB of Parquet holding ~2.5M rows (ADR-0120 — it was
-                # 172 MB of CSV, and this download ran on every cold start), and matches nothing
-                # until the first pipeline run writes it — an absent pattern downloads nothing
-                # rather than failing
+                # An absent pattern downloads nothing rather than failing, so a state file a
+                # pipeline run has not written yet hides its panel.
                 allow_patterns=[
                     "data/lancedb/*",
+                    # the aggregate trends ledger (~9 MB), read only for its archive: the ticks
+                    # before the Board-delta ledger began on 2026-09-13, which nothing else holds
+                    # (ADR-0230). One Parquet file cannot be fetched in part.
                     "data/state/role_trends.parquet",
+                    # the Board-delta ledger, one file a tick: Trends' count history (ADR-0230)
                     "data/state/role_trend_board_deltas/*",
-                    # the methodology epochs the Trends chart marks (ADR-0164) — a few rows
+                    # the counting changes before the first tick whose file carries its own
+                    # methodology (ADR-0164, ADR-0230) — a few rows
                     "data/state/trends_epochs.csv",
                     # the hot list (hot_boards) — a few tens of KB, and absent until a run
                     # writes one, which hides the tab rather than failing the pull
