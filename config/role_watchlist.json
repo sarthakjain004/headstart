@@ -1,10 +1,10 @@
 {
-  "_comment": "Curated watch roles for the trends ledger (ADR-0051, amended by ADR-0052): roles worth their own trend line inside a family's drill. Matched on TITLE patterns (case-insensitive regex, so \\bSRE\\b-style capitals are cosmetic), so membership is explainable per Job and survives a centroid refit. `parent` is the role_families.json family whose drill the role appears under; headstart.roles.load_watchlist validates it exists. Since ADR-0215 each parent is the family most of the role's rows land in once title rules decide families (fullstack and frontend 73%/82% web-development, fde 69% software-engineering, each -by-title role its concept family), so a drill's 'tracked role inside X' caption describes most of the line. ADR-0051 scoped this to roles too small to earn a centroid; ADR-0052 widened it to the large domain roles too (backend, frontend, ...), which k-means cannot separate at any practical k because it splits SWE by seniority and phrasing rather than by domain. Watch roles RE-COUNT Jobs already counted in their family, corpus-wide by title rather than within the parent family - they are an overlay, never a partition, and are excluded from the share denominator. The `-by-title` suffix disambiguates the four roles whose concept ALSO exists as a top-level family (qa-test, security-engineering, devops, sre-platform): same idea, different population, so they must not share a name. Keep patterns precise: a loose pattern quietly inflates a series forever. Keep each parent within app.js's CHART_MAX (8) - beyond it a role greys out instead of plotting; tests/test_role_watchlist_config.py reads that constant so the two cannot drift.",
+  "_comment": "Curated watch roles for the trends ledger (ADR-0051, amended by ADR-0052): roles worth their own trend line inside a family's drill. Matched on TITLE patterns (case-insensitive regex, so \\bSRE\\b-style capitals are cosmetic), so membership is explainable per Job and survives a new classifier head. `parent` is the role_families.json family whose drill the role appears under; headstart.roles.load_watchlist validates it exists. Since ADR-0220 the parents are taxonomy-v3 families, and each role sits under the family its title means: full stack and backend under software-engineering, frontend under frontend-web, each -by-title role under its concept family, the AI roles under ai-ml-data-science. Java and Python are watch roles because a language is not a family on the one-axis list. ADR-0051 scoped this to roles too small to earn a centroid, and ADR-0052 widened it to the large domain roles the centroids could not separate (backend, frontend, ...); the centroids are retired (ADR-0220), and the roles stay as the facets a one-axis family list leaves out. Watch roles RE-COUNT Jobs already counted in their family, corpus-wide by title rather than within the parent family - they are an overlay, never a partition, and are excluded from the share denominator. The `-by-title` suffix disambiguates the four roles whose concept ALSO exists as a top-level family (qa-test, security, devops, sre-platform): same idea, different population, so they must not share a name. Keep patterns precise: a loose pattern quietly inflates a series forever. Keep each parent within app.js's CHART_MAX (8) - beyond it a role greys out instead of plotting; tests/test_role_watchlist_config.py reads that constant so the two cannot drift.",
   "roles": [
     {
       "name": "fullstack",
       "label": "Full Stack",
-      "parent": "web-development",
+      "parent": "software-engineering",
       "match": [
         "\\bfull[\\s-]?stack\\b"
       ]
@@ -43,7 +43,7 @@
     {
       "name": "frontend",
       "label": "Frontend",
-      "parent": "web-development",
+      "parent": "frontend-web",
       "match": [
         "\\bfront[\\s-]?end\\b"
       ]
@@ -51,7 +51,7 @@
     {
       "name": "security-by-title",
       "label": "Security (by title)",
-      "parent": "security-engineering",
+      "parent": "security",
       "match": [
         "\\bsecurity engineer",
         "\\bappsec\\b",
@@ -80,7 +80,7 @@
     {
       "name": "ai-engineer",
       "label": "AI Engineer",
-      "parent": "ai-ml",
+      "parent": "ai-ml-data-science",
       "match": [
         "\\bAI engineer\\b",
         "\\bapplied AI\\b"
@@ -89,7 +89,7 @@
     {
       "name": "ml-engineer",
       "label": "ML Engineer",
-      "parent": "ai-ml",
+      "parent": "ai-ml-data-science",
       "match": [
         "\\bmachine learning engineer\\b",
         "\\bML engineer\\b"
@@ -98,7 +98,7 @@
     {
       "name": "research-engineer",
       "label": "Research Engineer",
-      "parent": "ai-ml",
+      "parent": "ai-ml-data-science",
       "match": [
         "\\bresearch engineer\\b"
       ]
@@ -106,7 +106,7 @@
     {
       "name": "llm-genai",
       "label": "LLM / GenAI",
-      "parent": "ai-ml",
+      "parent": "ai-ml-data-science",
       "match": [
         "\\bLLM\\b",
         "\\bgenerative AI\\b",
@@ -117,7 +117,7 @@
     {
       "name": "research-scientist",
       "label": "Research Scientist",
-      "parent": "ai-ml",
+      "parent": "ai-ml-data-science",
       "match": [
         "\\bresearch scientist\\b",
         "\\bapplied scientist\\b"
@@ -126,7 +126,7 @@
     {
       "name": "computer-vision",
       "label": "Computer Vision",
-      "parent": "ai-ml",
+      "parent": "ai-ml-data-science",
       "match": [
         "\\bcomputer vision\\b"
       ]
@@ -134,12 +134,32 @@
     {
       "name": "mlops",
       "label": "MLOps",
-      "parent": "ai-ml",
+      "parent": "ai-ml-data-science",
       "match": [
         "\\bMLOps\\b",
         "\\bLLMOps\\b",
         "\\bML platform\\b",
         "\\bML infrastructure\\b"
+      ]
+    },
+    {
+      "name": "java",
+      "label": "Java",
+      "parent": "software-engineering",
+      "match": [
+        "\\bjava\\b(?!\\s*script)",
+        "\\bj2ee\\b",
+        "\\bspring boot\\b"
+      ]
+    },
+    {
+      "name": "python",
+      "label": "Python",
+      "parent": "software-engineering",
+      "match": [
+        "\\bpython\\b",
+        "\\bdjango\\b",
+        "\\bfastapi\\b"
       ]
     }
   ]

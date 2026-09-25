@@ -1929,20 +1929,20 @@ function drawVerdict(d){
 // (`company`, one pick; `companies`, several; neither, every line).
 //   - A counting change (ADR-0164) is listed on every chart with no pick. Under a pick it is
 //     listed only where it moves the lines, and taken out of them: a taxonomy refit, a
-//     family-map or family title-rule edit (ADR-0215) or a tech-filter change — measured,
-//     Wipro's "+74.7%" held about +25% from the Sep 17 filter step alone — an extraction change
-//     on a Level breakdown, whose lines it re-sorts, or duplicate removal (ADR-0188) at a pick it
-//     can touch: it parks copies within one Tenant's Boards, Taleo Enterprise sections and Workday
-//     sites, so only a pick holding several Boards there can step, and only that pick's line
-//     does. A change that cannot move a company's lines drew a marker there that explained
-//     nothing.
+//     family-list or family-assignment change (ADR-0215, ADR-0220) or a tech-filter change —
+//     measured, Wipro's "+74.7%" held about +25% from the Sep 17 filter step alone — an
+//     extraction change on a Level breakdown, whose lines it re-sorts, or duplicate removal
+//     (ADR-0188) at a pick it can touch: it parks copies within one Tenant's Boards, Taleo
+//     Enterprise sections and Workday sites, so only a pick holding several Boards there can
+//     step, and only that pick's line does. A change that cannot move a company's lines drew a
+//     marker there that explained nothing.
 //   - A Board found later lands its backlog at once (the Space's `discovered`).
 //   - In a view that sums several picks, one counted from a later date joins the sum at once:
 //     NVIDIA with AMD (counted from Sep 24) named "engineering-management +442.9%".
 // Keyed on the epoch's `fields`, never its display text. Only charted points (index > 0) count
 // as crossed: a change at the window's first point is already in every line's start.
 const LINE_MOVING = [
-  'centroid_version', 'family_map_fingerprint', 'family_rules_fingerprint', 'tech_filter_version',
+  'centroid_version', 'family_map_fingerprint', 'family_classifier_version', 'tech_filter_version',
 ];
 const DEDUP_ATSES = ['taleo_enterprise', 'workday'];
 // Eightfold Boards are aliased onto, or have their rows dropped against, the Board they

@@ -1,15 +1,12 @@
-"""Title rules that decide a served row's role family before its centroid is consulted (ADR-0215).
+"""Title rules that label served titles with their role family, to train the classifier (ADR-0220).
 
-The trends taxonomy used to file every row by its nearest frozen centroid alone (ADR-0040). Those
-centroids were fitted on embeddings of title *plus full description*, so employer boilerplate and
-industry decided the family as much as the role did. On 250 served Jobs drawn uniformly and
-hand-labelled after these rules were frozen (2026-09-25), nearest-centroid got 60.0% right; these
-rules first, with the centroid only for titles no rule decides, got 70.8%. The rules decided 75%
-of those Jobs, at 79.3% precision. Over 22,656 pairs of copies of one Job, the centroid
-put the two copies in different families 11.9% of the time and the rules-first order 2.7%.
-Every agency coder and job platform surveyed classifies the title first (``docs/role-families/``).
+These rules decided a row's family in the pipeline for one release (ADR-0215). Measured on the
+same held-out Jobs, a classifier trained on their verdicts did better than the rules themselves,
+so since ADR-0220 they are its **labelling functions**: ``train_role_family_classifier.py`` runs
+them over served titles and trains on what they decide. The pipeline never runs them.
 
-Shaped like :mod:`headstart.tech_filter` (ADR-0017, ADR-0068). For one title:
+Shaped like :mod:`headstart.tech_filter` (ADR-0017, ADR-0068), over the taxonomy-v3 families in
+``config/role_families.json``. For one title:
 
 1. every family cue that matches is collected with its precedence class, strength and position;
 2. a **negative** rule (a non-software discipline, trade, retail or sales word) decides
@@ -20,31 +17,18 @@ Shaped like :mod:`headstart.tech_filter` (ADR-0017, ADR-0068). For one title:
    support > specialty > language > cloud platform > web stack > level and architect > generic
    software. Within one class, the cue named first in the title wins, and a cloud-provider word
    outranks the stack and generic words ("Backend Engineer (AWS)" is cloud-infrastructure);
-4. nothing matched: no decision, and the caller falls back to the centroid.
+4. nothing matched: no decision, and the title is not a training example.
 
-The title only, never the department: a department names the org, not the role (ADR-0068), and a
-department tier decided 0.7% of rows at unmeasurable precision in the bake-off.
-
-Every decision names its tier and rule, so "why is this Job in data-engineering?" has an
-answer a person can check.
+The title only, never the department: a department names the org, not the role (ADR-0068).
 """
 
 from __future__ import annotations
 
-import hashlib
-import json
 import re
 from dataclasses import dataclass
 from typing import NamedTuple
 
 from headstart.roles import NON_TECH
-
-# Bumped by hand only for a rule change that moves enough rows to re-base every Trends series,
-# the way a centroid refit does (ADR-0040). The Trends chart plots only the newest series
-# version, so a bump restarts the chart. A routine edit (a counter-rule for a newly found false
-# match) is not a bump: `fingerprint()` changes by itself, and the epoch ledger marks that tick
-# (ADR-0164).
-RULES_GENERATION = 1
 
 # Precedence classes; lower wins.
 (
@@ -178,7 +162,7 @@ _CUES: tuple[_Cue, ...] = (
         strong=False,
     ),
     _cue(
-        "product-management",
+        "program-project-management",
         "technical-program-manager",
         _any_of(
             [
@@ -196,7 +180,7 @@ _CUES: tuple[_Cue, ...] = (
         strong=False,
     ),
     _cue(
-        "product-management",
+        "program-project-management",
         "program-project-manager",
         _any_of(
             [r"\b(program|project) manager\b", r"\bprogram lead\b", r"\bproject lead\b"]
@@ -243,7 +227,7 @@ _CUES: tuple[_Cue, ...] = (
         strong=False,
     ),
     _cue(
-        "security-engineering",
+        "security",
         "security",
         _any_word(
             [
@@ -366,8 +350,8 @@ _CUES: tuple[_Cue, ...] = (
         _SPECIALTY,
     ),
     _cue(
-        "data-science",
-        "data-science",
+        "ai-ml-data-science",
+        "data-science-titles",
         _any_of(
             [
                 r"data scien(ce|tist)",
@@ -381,8 +365,8 @@ _CUES: tuple[_Cue, ...] = (
     ),
     # "AI" names a company's product, not the role, in "AI-first"/"AI-powered"/... titles
     _cue(
-        "ai-ml",
-        "ai-ml",
+        "ai-ml-data-science",
+        "machine-learning-ai-titles",
         _any_of(
             [
                 r"machine learning",
@@ -409,8 +393,8 @@ _CUES: tuple[_Cue, ...] = (
         _SPECIALTY,
     ),
     _cue(
-        "data-analytics",
-        "data-analytics",
+        "data-analytics-bi",
+        "data-analytics-titles",
         _any_of(
             [
                 r"\bdata analy(st|tics)\b",
@@ -429,7 +413,7 @@ _CUES: tuple[_Cue, ...] = (
         _SPECIALTY,
     ),
     _cue(
-        "mobile-development",
+        "mobile",
         "mobile",
         _any_of(
             [
@@ -445,12 +429,23 @@ _CUES: tuple[_Cue, ...] = (
         _SPECIALTY,
     ),
     _cue(
-        "hardware-embedded",
-        "hardware-embedded",
+        "embedded-firmware",
+        "embedded-firmware",
         _any_of(
             [
                 r"\bfirmware\b",
                 r"\bembedded\b",
+                r"\bbios\b",
+                r"\bdriver(s)? (engineer|developer)\b",
+            ]
+        ),
+        _SPECIALTY,
+    ),
+    _cue(
+        "hardware-engineering",
+        "hardware",
+        _any_of(
+            [
                 r"\basic\b",
                 r"\bfpga\b",
                 r"\brtl\b",
@@ -472,15 +467,13 @@ _CUES: tuple[_Cue, ...] = (
                 r"\bpcb\b",
                 r"\belectronics?\b(?! technician)",
                 r"hardware (engineer|design|validation|test)",
-                r"\bbios\b",
                 r"\bsoc\b(?=.*\b(design|verification|architect)\b)",
-                r"\bdriver(s)? (engineer|developer)\b",
             ]
         ),
         _SPECIALTY,
     ),
     _cue(
-        "network-infrastructure",
+        "network-engineering",
         "network",
         _any_of(
             [
@@ -500,12 +493,24 @@ _CUES: tuple[_Cue, ...] = (
         _SPECIALTY,
     ),
     _cue(
-        "it-operations",
-        "it-operations",
+        "database-administration",
+        "database-administration",
         _any_of(
             [
-                r"\b(system|systems|sys|database|linux|unix|windows|wintel|server|storage|backup|vmware|citrix|exchange|m365|o365|office 365|active directory|middleware)\s?(administrator|admin|operations)\b",
-                r"\b(database|linux|unix|windows|wintel|server|storage|backup|vmware|citrix|exchange|m365|o365|middleware)\s?engineer\b",
+                r"\bdba\b",
+                r"\bdatabase (administrator|admin|administration|engineer|reliability engineer|operations)\b",
+                r"\b(oracle|sql server|postgres(ql)?|mysql|mongo(db)?|db2|sybase)\s?(dba|database administrator|administrator)\b",
+            ]
+        ),
+        _SPECIALTY,
+    ),
+    _cue(
+        "systems-administration-it-operations",
+        "systems-administration-titles",
+        _any_of(
+            [
+                r"\b(system|systems|sys|linux|unix|windows|wintel|server|storage|backup|vmware|citrix|exchange|m365|o365|office 365|active directory|middleware)\s?(administrator|admin|operations)\b",
+                r"\b(linux|unix|windows|wintel|server|storage|backup|vmware|citrix|exchange|m365|o365|middleware)\s?engineer\b",
                 r"\bactive directory\b",
                 r"\bentra( id)?\b",
                 r"\b(m365|o365|office 365)\b",
@@ -513,7 +518,6 @@ _CUES: tuple[_Cue, ...] = (
                 r"\bdatacenter\b",
                 r"\bit infra",
                 r"\bsystems? engineer\b(?=.*\b(windows|linux|unix|vmware|citrix|microsoft|wintel|server|infrastructure|kvm|virtuali[sz]ation)\b)",
-                r"\bdba\b",
                 r"\bsysadmin\b",
                 r"data cent(er|re) (technician|engineer|operations)",
                 r"\bdatacenter technician\b",
@@ -554,8 +558,8 @@ _CUES: tuple[_Cue, ...] = (
         _SUPPORT,
     ),
     _cue(
-        "enterprise-platform",
-        "enterprise-platform",
+        "enterprise-applications",
+        "enterprise-applications-titles",
         _any_of(
             [
                 r"\bsap\b",
@@ -619,20 +623,20 @@ _CUES: tuple[_Cue, ...] = (
     ),
     # languages: the first named decides
     _cue(
-        "java-development",
+        "software-engineering",
         "java",
         _any_of([r"\bjava(?!\s*script)", r"\bj2ee\b", r"\bspring boot\b"]),
         _LANGUAGE,
     ),
     _cue(
-        "python-development",
+        "software-engineering",
         "python",
         _any_of([r"\bpython\b", r"\bdjango\b", r"\bflask\b", r"\bfastapi\b"]),
         _LANGUAGE,
     ),
     _cue(
-        "web-development",
-        "web-language",
+        "software-engineering",
+        "backend-language",
         _any_of(
             [
                 r"\.net\b",
@@ -641,12 +645,23 @@ _CUES: tuple[_Cue, ...] = (
                 r"\basp\.net\b",
                 r"\bphp\b",
                 r"\blaravel\b",
+                r"\bnode(\.?js)?\b",
+                r"\bmern\b",
+                r"\bmean stack\b",
+            ]
+        ),
+        _LANGUAGE,
+    ),
+    _cue(
+        "frontend-web",
+        "frontend-language",
+        _any_of(
+            [
                 r"\bjavascript\b",
                 r"\btypescript\b",
                 r"\breact(\.?js)?\b",
                 r"\bangular(js)?\b",
                 r"\bvue(\.?js)?\b",
-                r"\bnode(\.?js)?\b",
                 r"\bnext\.?js\b",
                 r"\bwordpress\b",
                 r"\bdrupal\b",
@@ -655,8 +670,6 @@ _CUES: tuple[_Cue, ...] = (
                 r"\bmegento\b",
                 r"\baem\b",
                 r"adobe experience manager",
-                r"\bmern\b",
-                r"\bmean stack\b",
             ]
         ),
         _LANGUAGE,
@@ -685,12 +698,21 @@ _CUES: tuple[_Cue, ...] = (
     ),
     # web-stack words
     _cue(
-        "web-development",
-        "web-stack",
+        "software-engineering",
+        "full-stack",
         _any_of(
             [
                 r"full[\s-]?stack",
                 r"\bfullstack\b",
+            ]
+        ),
+        _WEB_STACK,
+    ),
+    _cue(
+        "frontend-web",
+        "frontend-stack",
+        _any_of(
+            [
                 r"front[\s-]?end (developer|engineer|software|web)",
                 r"\bfrontend\b",
                 r"\bweb (developer|development|engineer|designer)\b",
@@ -709,7 +731,7 @@ _CUES: tuple[_Cue, ...] = (
         strong=False,
     ),
     _cue(
-        "architecture",
+        "solutions-engineering",
         "presales-solutions-engineer",
         _any_of(
             [
@@ -717,13 +739,15 @@ _CUES: tuple[_Cue, ...] = (
                 r"\bsales engineer\b",
                 r"\bpre-?sales\b",
                 r"\bsolutions? consultant\b",
+                r"\bcustomer engineer\b",
+                r"\btechnical account manager\b",
             ]
         ),
         _LEVEL_AND_ARCHITECT,
         strong=False,
     ),
     _cue(
-        "tech-leadership",
+        "software-engineering",
         "tech-lead",
         _any_of(
             [
@@ -978,13 +1002,13 @@ _NEGATIVE: dict[str, re.Pattern] = {
 }
 
 
-# Every family some rule can name; `role_trends` checks the curated map defines each one.
+# Every family some rule can name; the trainer checks the curated list defines each one.
 FAMILIES = frozenset(cue.family for cue in _CUES)
 
 
 class Decision(NamedTuple):
     """One title's verdict. ``family`` is a family name, ``roles.NON_TECH``, or None when no rule
-    decided and the caller should fall back to the centroid."""
+    decided and the title is no training example."""
 
     family: str | None
     tier: (
@@ -1021,28 +1045,11 @@ def classify(title: str | None) -> Decision:
 
 
 def check_families(family_names: set[str]) -> None:
-    """Refuse rules that name a family the curated map lacks, the posture
-    :func:`headstart.roles.load_watchlist` takes: a rule for a family that doesn't exist would
-    file rows under a name no chart knows."""
+    """Refuse rules that name a family the curated list lacks: they would train the head to
+    decide a family ``role_trends`` refuses to count."""
     unknown = sorted(FAMILIES - family_names)
     if unknown:
         raise ValueError(
             f"family rules name {unknown}, which config/role_families.json does not define "
-            "(ADR-0215)"
+            "(ADR-0220)"
         )
-
-
-def fingerprint() -> str:
-    """A short digest over what the rules decide: every cue's family, pattern, precedence and
-    strength, and every negative rule. A rule edit changes it with nobody remembering to bump
-    anything, and ``trends_epochs`` marks the tick it first runs (ADR-0164). Cue and rule names
-    are left out: renaming one changes no verdict."""
-    meaning = {
-        "cues": [
-            (cue.family, cue.pattern.pattern, cue.rank, cue.strong) for cue in _CUES
-        ],
-        "negative": sorted(rx.pattern for rx in _NEGATIVE.values()),
-    }
-    return hashlib.sha256(
-        json.dumps(meaning, sort_keys=True).encode("utf-8")
-    ).hexdigest()[:12]

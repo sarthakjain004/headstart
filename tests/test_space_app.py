@@ -18,6 +18,7 @@ session cookie is `Secure` and the test client honours that over plain http.
 import csv
 import importlib.util
 import io
+import json
 import os
 import re
 import sys
@@ -2234,16 +2235,44 @@ def test_trends_epochs_name_a_dedup_change(epochs_trends_app, tmp_path):
     ]
 
 
-def test_trends_epochs_name_a_title_rules_change(epochs_trends_app, tmp_path):
-    """ADR-0215: title rules decide most rows' families, so their arrival, and any later rule
-    edit, moves Jobs between families in one tick and must be marked like a family-map edit.
-    The upgraded file gives every row before them the fingerprint ``none``."""
+def test_trends_epochs_name_a_family_assignment_change(epochs_trends_app, tmp_path):
+    """ADR-0215/ADR-0220: what decides a row's family from its title (the rules, then the
+    classifier head) moves Jobs between families in one tick, so it is marked like a family-map
+    edit. The upgraded file gives rows from before the title decided anything ``none``."""
     stamp = {
         "centroid_version": "2",
         "family_map_fingerprint": "aaa",
         "tech_filter_version": "2",
         "derivations_version": "13",
         "dedup_version": "1",
+    }
+    path = _write_epochs(
+        tmp_path,
+        [
+            {"ts": _T1, **stamp, "family_classifier_version": "none"},
+            {"ts": _T2, **stamp, "family_classifier_version": "2"},
+        ],
+    )
+    assert epochs_trends_app._load_epochs(path) == [
+        {
+            "ts": _T2,
+            "changed": ["role family assignment changed"],
+            "fields": ["family_classifier_version"],
+        }
+    ]
+
+
+def test_trends_epochs_read_the_title_column_under_its_old_name(
+    epochs_trends_app, tmp_path
+):
+    """Until the pipeline's first run under a new head rewrites the file, the column still has
+    its ADR-0215 name; it is read as the renamed column, label and field both."""
+    stamp = {
+        "centroid_version": "2",
+        "family_map_fingerprint": "aaa",
+        "tech_filter_version": "5",
+        "derivations_version": "15",
+        "dedup_version": "4",
     }
     path = _write_epochs(
         tmp_path,
@@ -2255,10 +2284,32 @@ def test_trends_epochs_name_a_title_rules_change(epochs_trends_app, tmp_path):
     assert epochs_trends_app._load_epochs(path) == [
         {
             "ts": _T2,
-            "changed": ["role family title rules changed"],
-            "fields": ["family_rules_fingerprint"],
+            "changed": ["role family assignment changed"],
+            "fields": ["family_classifier_version"],
         }
     ]
+
+
+def test_retired_families_keep_their_labels(epochs_trends_app, tmp_path):
+    """While a new head's title cache warms up, the Space still serves the older series, whose
+    families the curated list no longer names; `retired` keeps them readable."""
+    path = tmp_path / "role_families.json"
+    path.write_text(
+        json.dumps(
+            {
+                "families": [{"name": "frontend-web", "label": "Frontend & Web"}],
+                "retired": [
+                    {"name": "web-development", "label": "Web & .NET Development"}
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    labels = epochs_trends_app._family_labels(path)
+    assert labels == {
+        "frontend-web": "Frontend & Web",
+        "web-development": "Web & .NET Development",
+    }
 
 
 def test_trends_epochs_load_a_file_from_before_dedup_version(

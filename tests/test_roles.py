@@ -1,15 +1,22 @@
-"""Tests for the role-trend taxonomy seam (headstart.roles, ADR-0040).
+"""Tests for the role-trend taxonomy seam (headstart.roles, ADR-0040, ADR-0220).
 
-The banding and the centroid round-trip are the contract the one-off fit and the per-run
-trends step must both honor, so they're pinned here: band edges (incl. the intern override
-and the honest "unspecified"), cosine assignment, and save/load byte-fidelity.
+Pinned here: band edges (incl. the intern override and the honest "unspecified"), the family list
+refusing what would corrupt the ledger, and the family-list fingerprint moving only with the
+families themselves.
 """
+
+import json
+from pathlib import Path
 
 import pytest
 
-np = pytest.importorskip("numpy")  # CI's quality job installs base deps only
-
 from headstart import roles
+
+
+def _families(tmp_path, families, name="families.json"):
+    path = tmp_path / name
+    path.write_text(json.dumps({"families": families}), encoding="utf-8")
+    return path
 
 
 def test_band_edges():
@@ -34,211 +41,49 @@ def test_band_intern_overrides_years_and_title_wins():
     )  # not intern
 
 
-def test_assign_picks_nearest_centroid():
-    centroids = np.eye(3, dtype=np.float32)  # three orthogonal unit families
-    vectors = np.array(
-        [[0.9, 0.1, 0.0], [0.0, 0.2, 0.9], [0.1, 0.8, 0.1]], dtype=np.float32
-    )
-    assert roles.assign(vectors, centroids).tolist() == [0, 2, 1]
+def test_load_families_keeps_the_curated_order(tmp_path):
+    path = _families(tmp_path, [{"name": "qa-test"}, {"name": "software-engineering"}])
+    assert roles.load_families(path) == ["qa-test", "software-engineering"]
 
 
-def test_save_load_round_trip(tmp_path):
-    centroids = np.random.default_rng(0).random((4, 8)).astype(np.float32)
-    manifest = {"version": 1, "k": 4, "dim": 8, "clusters": []}
-    roles.save(tmp_path / "rc", centroids, manifest)
-    loaded, m = roles.load(tmp_path / "rc")
-    assert np.array_equal(loaded, centroids)
-    assert m["version"] == 1 and m["k"] == 4
-
-
-def _manifest(k=3, version=1):
-    return {"version": version, "k": k, "dim": 4}
-
-
-def _spec(tmp_path, spec):
-    import json
-
-    path = tmp_path / "families.json"
-    path.write_text(json.dumps(spec), encoding="utf-8")
-    return path
-
-
-def test_load_families_maps_clusters_and_marks_non_tech(tmp_path):
-    path = _spec(
-        tmp_path,
-        {
-            "centroid_version": 1,
-            "families": [{"name": "software-engineering", "clusters": [0, 1]}],
-            "non_tech": {"clusters": [2]},
-        },
-    )
-    assert roles.load_families(path, _manifest()) == {
-        0: "software-engineering",
-        1: "software-engineering",
-        2: None,  # non-tech: counted as a diagnostic, never charted
-    }
-
-
-def test_load_families_rejects_an_unmapped_cluster(tmp_path):
-    # the silent failure this guards: cluster 2's rows would vanish from every chart
-    path = _spec(
-        tmp_path,
-        {
-            "centroid_version": 1,
-            "families": [{"name": "software-engineering", "clusters": [0, 1]}],
-            "non_tech": {"clusters": []},
-        },
-    )
-    with pytest.raises(ValueError, match=r"unmapped"):
-        roles.load_families(path, _manifest())
-
-
-def test_load_families_rejects_a_stale_centroid_version(tmp_path):
-    # a map curated against another fit would label rows with the wrong fit's families
-    path = _spec(
-        tmp_path,
-        {
-            "centroid_version": 1,
-            "families": [{"name": "x", "clusters": [0, 1, 2]}],
-            "non_tech": {"clusters": []},
-        },
-    )
-    with pytest.raises(ValueError, match=r"centroid version"):
-        roles.load_families(path, _manifest(version=2))
-
-
-def test_load_families_rejects_a_double_mapped_cluster(tmp_path):
-    path = _spec(
-        tmp_path,
-        {
-            "centroid_version": 1,
-            "families": [
-                {"name": "a", "clusters": [0, 1]},
-                {"name": "b", "clusters": [1, 2]},
-            ],
-            "non_tech": {"clusters": []},
-        },
-    )
-    with pytest.raises(ValueError, match=r"mapped twice"):
-        roles.load_families(path, _manifest())
+def test_load_families_rejects_a_family_listed_twice(tmp_path):
+    path = _families(tmp_path, [{"name": "qa-test"}, {"name": "qa-test"}])
+    with pytest.raises(ValueError, match="twice"):
+        roles.load_families(path)
 
 
 def test_load_families_rejects_the_reserved_non_tech_name(tmp_path):
-    # a family so named would collide with the diagnostic series in the ledger
-    path = _spec(
+    path = _families(tmp_path, [{"name": roles.NON_TECH}])
+    with pytest.raises(ValueError, match="reserved"):
+        roles.load_families(path)
+
+
+def test_family_list_fingerprint_moves_with_the_families_not_their_wording(tmp_path):
+    base = _families(
+        tmp_path, [{"name": "qa-test", "label": "QA"}, {"name": "devops"}], "a.json"
+    )
+    reworded = _families(
         tmp_path,
-        {
-            "centroid_version": 1,
-            "families": [{"name": roles.NON_TECH, "clusters": [0, 1, 2]}],
-            "non_tech": {"clusters": []},
-        },
+        [
+            {"name": "devops", "definition": "delivery"},
+            {"name": "qa-test", "label": "Test"},
+        ],
+        "b.json",
     )
-    with pytest.raises(ValueError, match=r"reserved"):
-        roles.load_families(path, _manifest())
-
-
-def _spec_at(dirpath, spec):
-    """Like :func:`_spec`, but under a caller-chosen subdirectory, so two specs can coexist."""
-    import json
-
-    dirpath.mkdir()
-    path = dirpath / "families.json"
-    path.write_text(json.dumps(spec), encoding="utf-8")
-    return path
-
-
-def test_family_map_fingerprint_is_stable_across_equivalent_orderings(tmp_path):
-    # cluster/family list order is not meaningful; two files that map the same
-    # clusters to the same families must fingerprint identically
-    a = _spec_at(
-        tmp_path / "a",
-        {
-            "centroid_version": 1,
-            "families": [
-                {"name": "x", "clusters": [0, 1]},
-                {"name": "y", "clusters": [2]},
-            ],
-            "non_tech": {"clusters": [3]},
-        },
+    added = _families(
+        tmp_path,
+        [{"name": "qa-test"}, {"name": "devops"}, {"name": "mobile"}],
+        "c.json",
     )
-    b = _spec_at(
-        tmp_path / "b",
-        {
-            "centroid_version": 1,
-            "families": [
-                {"name": "y", "clusters": [2]},
-                {"name": "x", "clusters": [1, 0]},
-            ],
-            "non_tech": {"clusters": [3]},
-        },
+    assert roles.family_list_fingerprint(base) == roles.family_list_fingerprint(
+        reworded
     )
-    assert roles.family_map_fingerprint(a) == roles.family_map_fingerprint(b)
+    assert roles.family_list_fingerprint(base) != roles.family_list_fingerprint(added)
 
 
-def test_family_map_fingerprint_ignores_free_text(tmp_path):
-    # rewording a label/note is not a change to what the map counts
-    a = _spec_at(
-        tmp_path / "a",
-        {
-            "centroid_version": 1,
-            "families": [
-                {"name": "x", "label": "Old label", "clusters": [0], "note": "old"}
-            ],
-            "non_tech": {"clusters": []},
-        },
+def test_the_curated_family_list_loads():
+    """The shipped config itself: a broken list skips a pipeline tick, so it fails here first."""
+    names = roles.load_families(
+        Path(__file__).resolve().parent.parent / "config" / "role_families.json"
     )
-    b = _spec_at(
-        tmp_path / "b",
-        {
-            "centroid_version": 1,
-            "families": [
-                {"name": "x", "label": "New label", "clusters": [0], "note": "new"}
-            ],
-            "non_tech": {"clusters": []},
-        },
-    )
-    assert roles.family_map_fingerprint(a) == roles.family_map_fingerprint(b)
-
-
-def test_family_map_fingerprint_changes_when_a_cluster_moves_family(tmp_path):
-    a = _spec_at(
-        tmp_path / "a",
-        {
-            "centroid_version": 1,
-            "families": [{"name": "x", "clusters": [0, 1]}],
-            "non_tech": {"clusters": []},
-        },
-    )
-    b = _spec_at(
-        tmp_path / "b",
-        {
-            "centroid_version": 1,
-            "families": [{"name": "x", "clusters": [0]}],
-            "non_tech": {"clusters": [1]},
-        },
-    )
-    assert roles.family_map_fingerprint(a) != roles.family_map_fingerprint(b)
-
-
-def test_family_map_fingerprint_ignores_centroid_version(tmp_path):
-    # centroid_version is already its own separate signal in the caller's epoch tuple
-    # (ADR-0164) — folding it into this hash too would make every refit ALSO register as a
-    # "family map edited" event even when the curated content never changed, coupling two
-    # things the tuple exists to keep independently detectable.
-    a = _spec_at(
-        tmp_path / "a",
-        {
-            "centroid_version": 1,
-            "families": [{"name": "x", "clusters": [0]}],
-            "non_tech": {"clusters": []},
-        },
-    )
-    b = _spec_at(
-        tmp_path / "b",
-        {
-            "centroid_version": 2,
-            "families": [{"name": "x", "clusters": [0]}],
-            "non_tech": {"clusters": []},
-        },
-    )
-    assert roles.family_map_fingerprint(a) == roles.family_map_fingerprint(b)
+    assert "unclassified-tech" in names and "software-engineering" in names

@@ -22,7 +22,7 @@ def _stamp(**overrides):
         "tech_filter_version": 1,
         "derivations_version": 12,
         "dedup_version": 1,
-        "family_rules_fingerprint": "def456",
+        "family_classifier_version": 2,
     }
     base.update(overrides)
     return base
@@ -38,7 +38,7 @@ def test_first_stamp_always_writes(tmp_path):
         rows = list(csv.reader(fh))
     assert rows == [
         list(trends_epochs._COLUMNS),
-        ["2026-09-16T00:00:00+00:00", "1", "abc123", "1", "12", "1", "def456"],
+        ["2026-09-16T00:00:00+00:00", "1", "abc123", "1", "12", "1", "2"],
     ]
 
 
@@ -71,7 +71,7 @@ def test_a_changed_field_writes_a_new_row(tmp_path):
         "2",
         "12",
         "1",
-        "def456",
+        "2",
     ]
 
 
@@ -85,7 +85,7 @@ def test_every_field_can_trigger_a_row_independently(tmp_path):
     assert trends_epochs.append_if_changed(path, "t3", **_stamp(derivations_version=13))
     assert trends_epochs.append_if_changed(path, "t4", **_stamp(dedup_version=2))
     assert trends_epochs.append_if_changed(
-        path, "t5", **_stamp(dedup_version=2, family_rules_fingerprint="ghi789")
+        path, "t5", **_stamp(dedup_version=2, family_classifier_version=3)
     )
     with path.open(encoding="utf-8", newline="") as fh:
         rows = list(csv.reader(fh))
@@ -110,16 +110,19 @@ def test_a_malformed_file_heals_by_rebuilding_rather_than_appending_beneath_it(
     # would keep failing to parse a "previous" stamp and would write on every run forever
     assert rows == [
         list(trends_epochs._COLUMNS),
-        ["t0", "1", "abc123", "1", "12", "1", "def456"],
+        ["t0", "1", "abc123", "1", "12", "1", "2"],
     ]
 
 
-# A file from before ``dedup_version`` (ADR-0188) is also from before ``family_rules_fingerprint``.
+# A file from before ``dedup_version`` (ADR-0188) is also from before the sixth column.
 _HEADER_WITHOUT_DEDUP_VERSION = ",".join(trends_epochs._COLUMNS[:-2]) + "\n"
-_HEADER_WITHOUT_FAMILY_RULES = ",".join(trends_epochs._COLUMNS[:-1]) + "\n"
-# The rules column's value on rows written before it existed. A stamp carrying it is the same
-# methodology those rows had, which isolates the dedup upgrade from the rules boundary below.
-_NO_RULES = trends_epochs._FAMILY_RULES_AT_ADDITION
+_HEADER_WITHOUT_SIXTH_COLUMN = ",".join(trends_epochs._COLUMNS[:-1]) + "\n"
+_HEADER_WITH_RULES_ERA_NAME = (
+    ",".join((*trends_epochs._COLUMNS[:-1], "family_rules_fingerprint")) + "\n"
+)
+# The sixth column's value on rows written before it existed. A stamp carrying it is the same
+# methodology those rows had, which isolates the dedup upgrade from the title-decider boundary below.
+_ABSENT = trends_epochs.ABSENT
 
 
 def test_a_file_from_before_dedup_version_is_upgraded_not_rebuilt(tmp_path):
@@ -132,15 +135,15 @@ def test_a_file_from_before_dedup_version_is_upgraded_not_rebuilt(tmp_path):
         encoding="utf-8",
     )
     wrote = trends_epochs.append_if_changed(
-        path, "t2", **_stamp(family_rules_fingerprint=_NO_RULES)
+        path, "t2", **_stamp(family_classifier_version=_ABSENT)
     )
     assert wrote is False  # the same methodology as t1: an upgrade is not a boundary
     with path.open(encoding="utf-8", newline="") as fh:
         rows = list(csv.reader(fh))
     assert rows == [
         list(trends_epochs._COLUMNS),
-        ["t0", "1", "abc123", "1", "11", "1", _NO_RULES],
-        ["t1", "1", "abc123", "1", "12", "1", _NO_RULES],
+        ["t0", "1", "abc123", "1", "11", "1", _ABSENT],
+        ["t1", "1", "abc123", "1", "12", "1", _ABSENT],
     ]
     assert list(tmp_path.iterdir()) == [
         path
@@ -153,14 +156,14 @@ def test_a_dedup_change_on_an_upgraded_file_appends_after_the_old_rows(tmp_path)
         _HEADER_WITHOUT_DEDUP_VERSION + "t0,1,abc123,1,12\n", encoding="utf-8"
     )
     assert trends_epochs.append_if_changed(
-        path, "t1", **_stamp(dedup_version=2, family_rules_fingerprint=_NO_RULES)
+        path, "t1", **_stamp(dedup_version=2, family_classifier_version=_ABSENT)
     )
     with path.open(encoding="utf-8", newline="") as fh:
         rows = list(csv.reader(fh))
     assert rows == [
         list(trends_epochs._COLUMNS),
-        ["t0", "1", "abc123", "1", "12", "1", _NO_RULES],
-        ["t1", "1", "abc123", "1", "12", "2", _NO_RULES],
+        ["t0", "1", "abc123", "1", "12", "1", _ABSENT],
+        ["t1", "1", "abc123", "1", "12", "2", _ABSENT],
     ]
 
 
@@ -170,7 +173,7 @@ def test_title_rules_arriving_on_a_file_from_before_them_are_one_boundary(tmp_pa
     Space marks; the tick after it is not."""
     path = tmp_path / "trends_epochs.csv"
     path.write_text(
-        _HEADER_WITHOUT_FAMILY_RULES + "t0,2,abc123,1,12,1\n", encoding="utf-8"
+        _HEADER_WITHOUT_SIXTH_COLUMN + "t0,2,abc123,1,12,1\n", encoding="utf-8"
     )
     assert trends_epochs.append_if_changed(path, "t1", **_stamp(centroid_version=2))
     assert not trends_epochs.append_if_changed(path, "t2", **_stamp(centroid_version=2))
@@ -178,8 +181,29 @@ def test_title_rules_arriving_on_a_file_from_before_them_are_one_boundary(tmp_pa
         rows = list(csv.reader(fh))
     assert rows == [
         list(trends_epochs._COLUMNS),
-        ["t0", "2", "abc123", "1", "12", "1", _NO_RULES],
-        ["t1", "2", "abc123", "1", "12", "1", "def456"],
+        ["t0", "2", "abc123", "1", "12", "1", _ABSENT],
+        ["t1", "2", "abc123", "1", "12", "1", "2"],
+    ]
+
+
+def test_the_title_rules_column_is_renamed_in_place_keeping_its_values(tmp_path):
+    """ADR-0220: the sixth column held the title rules' fingerprint and now holds the classifier
+    head's version. Its old rows keep their values under the new name, and the head's first tick
+    is a boundary against them."""
+    path = tmp_path / "trends_epochs.csv"
+    path.write_text(
+        _HEADER_WITH_RULES_ERA_NAME + "t0,2,abc123,5,15,4,3b5cc5d9183c\n",
+        encoding="utf-8",
+    )
+    assert trends_epochs.append_if_changed(
+        path, "t1", **_stamp(centroid_version="none")
+    )
+    with path.open(encoding="utf-8", newline="") as fh:
+        rows = list(csv.reader(fh))
+    assert rows == [
+        list(trends_epochs._COLUMNS),
+        ["t0", "2", "abc123", "5", "15", "4", "3b5cc5d9183c"],
+        ["t1", "none", "abc123", "1", "12", "1", "2"],
     ]
 
 
@@ -190,13 +214,13 @@ def test_a_blank_line_in_an_old_file_is_not_upgraded_into_a_false_boundary(tmp_p
     )
     assert (
         trends_epochs.append_if_changed(
-            path, "t1", **_stamp(family_rules_fingerprint=_NO_RULES)
+            path, "t1", **_stamp(family_classifier_version=_ABSENT)
         )
         is False
     )
     with path.open(encoding="utf-8", newline="") as fh:
         assert list(csv.reader(fh))[1:] == [
-            ["t0", "1", "abc123", "1", "12", "1", _NO_RULES]
+            ["t0", "1", "abc123", "1", "12", "1", _ABSENT]
         ]
 
 

@@ -456,7 +456,7 @@ Note the raw corpus files under `data/jobs/` carry a few fields the served table
   `AI_Integration/`, `agents/` (issue tracker, triage, domain, deployment runbooks).
 - `.github/workflows/` — `pipeline.yml` (the 5-stage ingest), `pipeline-smoke.yml`, `ci.yml`
   (lint + format + tests), `alerts.yml` and `bot.yml` (email/Telegram alerts), `deploy-space.yml`,
-  `cleanup-index.yml`, `cluster-roles.yml`, `reclaim-dataset-storage.yml` and
+  `cleanup-index.yml`, `reclaim-dataset-storage.yml` and
   `squash-subscribers-history.yml`, two embed benchmarks (`embed-bench.yml` / `embed-threads.yml`),
   and a handful of one-off diagnostic probes.
 
@@ -521,7 +521,7 @@ reason), so a fork's Space may not be free.
 
 Every alert and account feature is inert until its secrets are set. The dataset and Space ids are
 written into the workflows as `HF_DATASET` / `HF_SPACE` (`pipeline.yml`, `cleanup-index.yml`,
-`cluster-roles.yml`, `diff-role-assignments.yml`, `reclaim-dataset-storage.yml`), as `repo_id`
+`reclaim-dataset-storage.yml`), as `repo_id`
 in `deploy-space.yml`, and as `HF_DATASET`'s default in `deploy/hf-space/app.py`; point those at
 your own. The auth model and failure modes are in
 [`docs/agents/deployment.md`](./docs/agents/deployment.md).

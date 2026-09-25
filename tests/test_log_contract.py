@@ -143,7 +143,7 @@ from types import ModuleType
 import pytest
 
 from headstart import log
-from headstart.ingest import RUN_TS_ENV, role_family_rules
+from headstart.ingest import RUN_TS_ENV
 
 _ROOT = Path(__file__).resolve().parents[1]
 _RUNLOG = _ROOT / "scripts" / "runlog"
@@ -1402,19 +1402,13 @@ _TRENDS_BANDS = (
 _TRENDS_ATSES = ("workday", "lever", "greenhouse", "ashby", "icims")
 #: Curated family names, one per cluster below `len(_TRENDS_FAMILIES)`; every higher cluster is
 #: non-tech. The first five are real families because they are the ones the `top:` sample names.
-#: Every family a title rule can name follows them, because `role_trends` refuses a map missing
-#: one (ADR-0215); placeholders make up the rest of a curated-scale count.
-_TRENDS_RULE_FAMILIES = sorted(
-    role_family_rules.FAMILIES - {"software-engineering", "devops"}
-)
 _TRENDS_FAMILIES = (
     "software-engineering",
     "data",
     "ml",
     "devops",
     "security",
-    *_TRENDS_RULE_FAMILIES,
-    *(f"family-{n:02d}" for n in range(5 + len(_TRENDS_RULE_FAMILIES), 41)),
+    *(f"family-{n:02d}" for n in range(5, 41)),
 )
 #: `(family index, ats index, extra rows)` — the groups that outweigh the one-row-per-group base,
 #: so `stock_top`'s ranking is decided by the counts rather than by a tie-break. The first clears
@@ -1450,8 +1444,9 @@ class _PinnedClock:
 def _trends_rows() -> tuple[list[dict], dict[str, str]]:
     """The served rows the trends fixtures count, and the `id -> family` they must produce.
 
-    Vectors are one-hot and the centroid store is the identity matrix, so a row's cluster is
-    stated rather than hoped for: `roles.assign` is a plain `argmax` of `vectors @ centroids.T`.
+    A row's title is ``role-<n>``, and the stubbed encoder (`_stub_title_encoder`) hands the
+    classifier head a one-hot vector for family ``n``, so each row's family is stated rather than
+    hoped for. A title past the families is non-tech.
     """
     rows: list[dict] = []
     assigned: dict[str, str] = {}
@@ -1474,8 +1469,7 @@ def _trends_rows() -> tuple[list[dict], dict[str, str]]:
                     _TRENDS_K,
                     vector=list(vector),
                     min_years=years,
-                    # A title no rule decides (ADR-0215), so the stated cluster is the family.
-                    title="engineer",
+                    title=f"role-{cluster}",
                     # Inside the ADR-0051 window the pinned clock puts this run in, so every
                     # served row is also a `new` row and both metrics carry a count.
                     first_seen="2026-09-07T00:00:00+00:00",
@@ -1494,33 +1488,54 @@ def _trends_rows() -> tuple[list[dict], dict[str, str]]:
     return rows, assigned
 
 
-def _trends_taxonomy(tmp_path: Path, *, unmapped: bool = False) -> None:
-    """Write the centroid store and the curated family map, in the paths a real run reads."""
+def _trends_taxonomy(tmp_path: Path, *, unlisted: bool = False) -> None:
+    """Write the classifier head and the curated family list, in the paths a real run reads.
+
+    The head knows every family plus non-tech and is confident on a one-hot title vector. With
+    ``unlisted`` the list omits the last family, which the head still decides."""
     import numpy as np
 
-    centroids = Path("data/state/role_centroids")
-    centroids.mkdir(parents=True, exist_ok=True)
-    np.eye(_TRENDS_K, dtype="float32").tofile(centroids / "centroids.f32")
-    (centroids / "manifest.json").write_text(
-        json.dumps({"k": _TRENDS_K, "dim": _TRENDS_K, "version": _TRENDS_VERSION}),
-        encoding="utf-8",
+    head_families = [*_TRENDS_FAMILIES, "non-tech"]
+    head = Path("config/role_family_classifier")
+    head.mkdir(parents=True, exist_ok=True)
+    np.savez(
+        head / "head.npz",
+        weights=np.eye(len(head_families), dtype="float32") * 10,
+        bias=np.zeros(len(head_families), dtype="float32"),
     )
-    families = Path("config/role_families.json")
-    families.parent.mkdir(parents=True, exist_ok=True)
-    non_tech = list(range(len(_TRENDS_FAMILIES), _TRENDS_K - int(unmapped)))
-    families.write_text(
+    (head / "manifest.json").write_text(
         json.dumps(
             {
-                "centroid_version": _TRENDS_VERSION,
-                "families": [
-                    {"name": name, "clusters": [n]}
-                    for n, name in enumerate(_TRENDS_FAMILIES)
-                ],
-                "non_tech": {"clusters": non_tech},
+                "version": _TRENDS_VERSION,
+                "model": "stub",
+                "model_revision": "stub",
+                "families": head_families,
+                "cutoff": 0.5,
             }
         ),
         encoding="utf-8",
     )
+    listed = [*_TRENDS_FAMILIES[: -1 if unlisted else None], "unclassified-tech"]
+    Path("config/role_families.json").write_text(
+        json.dumps({"families": [{"name": name} for name in listed]}), encoding="utf-8"
+    )
+
+
+def _stub_title_encoder(monkeypatch: pytest.MonkeyPatch) -> None:
+    """JobBERT is never downloaded here: ``role-<n>`` encodes to family ``n``'s one-hot vector."""
+    import numpy as np
+
+    from headstart.ingest import role_family_classifier
+
+    width = len(_TRENDS_FAMILIES) + 1  # the families, then non-tech
+
+    def encode(titles, model, revision):
+        rows = np.zeros((len(titles), width), dtype="float32")
+        for i, title in enumerate(titles):
+            rows[i, min(int(title.rsplit("-", 1)[1]), width - 1)] = 1.0
+        return rows
+
+    monkeypatch.setattr(role_family_classifier, "encode", encode)
 
 
 def _trends_argv() -> tuple[str, ...]:
@@ -1529,8 +1544,10 @@ def _trends_argv() -> tuple[str, ...]:
     return (
         "--db",
         "data/lancedb",
-        "--centroids",
-        "data/state/role_centroids",
+        "--classifier",
+        "config/role_family_classifier",
+        "--title-cache",
+        "data/state/role_title_families.parquet",
         "--families",
         "config/role_families.json",
         "--watchlist",
@@ -1557,7 +1574,7 @@ def _trends(
     previous: str = "none",
     rows: bool = True,
 ) -> None:
-    """One `role_trends` tick over a served table whose every row's cluster is stated, not hoped.
+    """One `role_trends` tick over a served table whose every row's family is stated, not hoped.
 
     `previous` picks which shape the `assignments:` line takes — `"none"` leaves no snapshot (the
     first-snapshot branch), `"same"` writes this tick's own assignment back (nothing moved), and
@@ -1572,6 +1589,7 @@ def _trends(
     # The tick's stamp is the run's (ADR-0210), which the pipeline pins through the environment.
     monkeypatch.setenv(RUN_TS_ENV, "2026-09-08T00:00:00+00:00")
     _trends_taxonomy(tmp_path)
+    _stub_title_encoder(monkeypatch)
     served, assigned = _trends_rows()
     _served_table(Path("data/lancedb"), served if rows else [], _TRENDS_K)
 
@@ -1590,8 +1608,8 @@ def _trends(
                     f"{_TRENDS_FAMILIES.index(family)}-2-"
                 ):
                     snapshot[job_id] = was[family]
-        # Stamped as role_trends stamps it: the series version, not the bare centroid version
-        # (ADR-0215), or the snapshot reads as a re-base and is discarded.
+        # Stamped as role_trends stamps it: the series version, not the head's own version
+        # (ADR-0220), or the snapshot reads as a re-base and is discarded.
         role_assignments.save(
             Path("data/state/role_assignments.parquet"),
             snapshot,
@@ -1626,6 +1644,7 @@ def _trends_all_non_tech(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Non
     # The tick's stamp is the run's (ADR-0210), which the pipeline pins through the environment.
     monkeypatch.setenv(RUN_TS_ENV, "2026-09-08T00:00:00+00:00")
     _trends_taxonomy(tmp_path)
+    _stub_title_encoder(monkeypatch)
     served, _ = _trends_rows()
     non_tech = [r for r in served if r["vector"][_TRENDS_K - 1] == 1.0]
     _served_table(Path("data/lancedb"), non_tech, _TRENDS_K)
@@ -1645,12 +1664,12 @@ def _trends_diff_skipped(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Non
 
 
 def _trends_empty_table(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """The served table exists and holds nothing — `np.stack` has no empty case."""
+    """The served table exists and holds nothing, so there is nothing to classify."""
     _trends(tmp_path, monkeypatch, rows=False)
 
 
-def _trends_no_centroids(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Neither the fit nor the curated map is on disk — the pre-run skip, at WARNING."""
+def _trends_no_classifier(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Neither the classifier head nor the family list is on disk — the pre-run skip, at WARNING."""
     pytest.importorskip("numpy")
     from headstart.ingest import role_trends
 
@@ -1659,14 +1678,14 @@ def _trends_no_centroids(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Non
 
 
 def _trends_bad_taxonomy(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """A refit shipped without re-curating the map: one cluster lands in no family at all."""
+    """A head that decides a family the curated list no longer names."""
     pytest.importorskip("lancedb")
     pytest.importorskip("numpy")
     pytest.importorskip("pyarrow")
     from headstart.ingest import role_trends
 
     monkeypatch.chdir(tmp_path)
-    _trends_taxonomy(tmp_path, unmapped=True)
+    _trends_taxonomy(tmp_path, unlisted=True)
     _served_table(Path("data/lancedb"), _trends_rows()[0], _TRENDS_K)
     monkeypatch.setattr(sys, "argv", [role_trends.__name__, *_trends_argv()])
     assert (
@@ -2382,13 +2401,13 @@ CONTRACT: tuple[Line, ...] = (
         consumer="fanout_merge.TRENDS_ASSIGNING",
         emitter=_TRENDS,
         body=(
-            "assigning 3472 served rows to 41 families via 120 clusters (centroid version 7), "
-            "title rules first (generation 1, series version 7001)"
+            "assigning 3472 served rows to 42 families by title (classifier head 7, series "
+            "version 3007)"
         ),
         why=(
-            "logged before the slow vector read, so a stalled step is not unnarrated. The family "
-            "and cluster counts are curated (`config/role_families.json`) and stay at their real "
-            "order of magnitude; the row count is the one a `{n:,}` could be added to"
+            "logged before the title classifier runs, so a stalled step is not unnarrated. The "
+            "family count is curated (`config/role_families.json`) and stays at its real order "
+            "of magnitude; the row count is the one a `{n:,}` could be added to"
         ),
         emit=_trends_first_snapshot,
         heavy=True,
@@ -2468,7 +2487,7 @@ CONTRACT: tuple[Line, ...] = (
             "data/state/role_assignments.parquet; transitions start next run"
         ),
         why=(
-            "reachable on any run, not just the first: a centroid refit re-bases the snapshot. "
+            "reachable on any run, not just the first: a new classifier head re-bases the snapshot. "
             "The path was FICTION — the body named `role_assignments.csv`, but the line prints "
             "`args.assignments`, and that snapshot is the `.parquet` `role_assignments.save` "
             "writes. The `.csv` beside it is the *transition* ledger, a different file"
@@ -2488,25 +2507,23 @@ CONTRACT: tuple[Line, ...] = (
         consumer="fanout_merge.TRENDS_SKIP_MISSING",
         emitter=_TRENDS,
         body=(
-            "skipping trends this run — missing data/state/role_centroids/manifest.json, "
-            "data/state/role_centroids/centroids.f32, config/role_families.json (fit centroids "
-            "with the cluster-roles workflow; the family map ships in git, ADR-0040)"
+            "skipping trends this run — missing config/role_family_classifier/manifest.json, "
+            "config/role_family_classifier/head.npz, config/role_families.json (the classifier "
+            "head and the family list ship in git, ADR-0220)"
         ),
         why=(
             "one of three distinct skip paths, matched on its own line rather than a substring. "
-            "FICTION: the body named `data/state/role_centroids.npz`, a file this project does "
-            "not have. `--centroids` is a *directory* and the guard names the three real paths it "
-            "stats — two inside that dir, plus the curated map, which go missing for different "
-            "reasons (one rides the state artifact, one ships in git)"
+            "`--classifier` is a *directory*, and the guard names the three real paths it stats: "
+            "the head's manifest and weights, and the curated family list"
         ),
-        emit=_trends_no_centroids,
+        emit=_trends_no_classifier,
         heavy=True,
     ),
     Line(
         consumer="fanout_merge.TRENDS_SKIP_EMPTY",
         emitter=_TRENDS,
         body="served table 'jobs' is empty — no trend rows this run",
-        why="the second skip path; `np.stack` has no empty case, so this returns before it",
+        why="the second skip path: an empty table returns before any title is classified",
         emit=_trends_empty_table,
         heavy=True,
     ),
@@ -2514,16 +2531,13 @@ CONTRACT: tuple[Line, ...] = (
         consumer="fanout_merge.TRENDS_SKIP_TAXONOMY",
         emitter=_TRENDS,
         body=(
-            "role taxonomy unusable, no trends this run: config/role_families.json leaves "
-            "cluster(s) [119] unmapped — every cluster must land in a family or in non_tech, or "
-            "its rows vanish from the chart"
+            "role taxonomy unusable, no trends this run: the classifier head decides "
+            "['family-40'], which the family list does not list"
         ),
         why=(
-            "the third: a real defect (a refit shipped without re-curating the map), so ERROR. "
-            "FICTION: the body read `3 families have no centroid`, which is backwards and is not "
-            "one of the five sentences `roles.load_families`/`load_watchlist` can raise — the "
-            "validated direction is a *cluster* with no family, because that is what silently "
-            "drops rows off the chart"
+            "the third: a real defect (a head trained for families the curated list no longer "
+            "names), so ERROR. The validated direction is a decided family with no list entry, "
+            "because that is what would count rows under a name no chart knows"
         ),
         emit=_trends_bad_taxonomy,
         heavy=True,

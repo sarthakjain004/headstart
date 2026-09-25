@@ -1,83 +1,45 @@
 {
-  "_comment": "Curated cluster -> role-family map for the trends ledger (ADR-0040). Keys on centroid_version: the cluster ids are meaningless against any other fit, so a refit re-curates this file. Every cluster of the fit must appear exactly once here or in non_tech - headstart.roles.load_families refuses to load otherwise, because an unmapped cluster would silently vanish from every chart. Cluster contents are in the fit's manifest.json (label + top_titles); the counts below are count_at_fit, kept as a sanity anchor for review. Since ADR-0215 this map decides only the rows headstart.ingest.role_family_rules leaves undecided (about a quarter of served rows); a row's title rules come first.",
-  "centroid_version": 2,
+  "_comment": "The Trends role families, taxonomy v3 (ADR-0220): one axis, what the Job does. Language, level and employer are never a family; Java/Python and named sub-roles are watch roles. The list was drawn from the occupation standards surveyed in docs/role-families/2026-09-24_family-assignment-methods-research.md; two blind labellers then labelled 570 Jobs against a finer list, and the one pair they could not tell apart (ML engineering vs data science, kappa 0.41) was merged. A Job's family comes from its title, through the classifier in config/role_family_classifier/; its manifest's families must all appear here. unclassified-tech is where the classifier puts a title it cannot place with confidence. non-tech is reserved for the diagnostic series and is not listed. `definition` is the labelling rubric's line for the family, kept here for reviewers. Labels can be reworded freely: the ledger stores names. `retired` keeps the display labels of the families before ADR-0220, so the Space can still name the older series it serves while a new head's title cache warms up; nothing counts into them any more.",
   "families": [
-    {
-      "name": "software-engineering",
-      "label": "Software Engineering (general)",
-      "clusters": [0, 7, 12, 13, 17, 21, 25, 30, 31, 34, 37, 38, 39, 41, 44, 48, 53, 63, 67, 71],
-      "note": "The catch-all for backend/frontend/fullstack/platform SWE titles that k-means split by seniority and phrasing rather than by domain. 71 is a location-boilerplate cluster ('Remote, Latin America') holding genuinely mixed tech roles; 48 is one Windows/Desktop posting replicated across ~30 cities."
-    },
-    {
-      "name": "web-development",
-      "label": "Web & .NET Development",
-      "clusters": [11],
-      "note": "Full Stack / .Net / Web / ServiceNow developer titles."
-    },
-    { "name": "java-development", "label": "Java Development", "clusters": [46] },
-    { "name": "python-development", "label": "Python Development", "clusters": [62] },
-    { "name": "mobile-development", "label": "Mobile Development", "clusters": [28] },
-    {
-      "name": "ai-ml",
-      "label": "AI / Machine Learning",
-      "clusters": [3, 51, 52],
-      "note": "51 is the startup-shaped cluster (Forward Deployed / GTM / Product Engineer alongside AI Engineer)."
-    },
-    { "name": "data-engineering", "label": "Data Engineering", "clusters": [55] },
-    { "name": "data-science", "label": "Data Science", "clusters": [60] },
-    { "name": "data-analytics", "label": "Data & Business Analytics", "clusters": [10] },
-    { "name": "security-engineering", "label": "Security Engineering", "clusters": [9] },
-    { "name": "devops", "label": "DevOps", "clusters": [58] },
-    {
-      "name": "sre-platform",
-      "label": "SRE & Platform Engineering",
-      "clusters": [2, 50]
-    },
-    { "name": "cloud-infrastructure", "label": "Cloud Infrastructure", "clusters": [22] },
-    { "name": "network-infrastructure", "label": "Network Infrastructure", "clusters": [32, 68] },
-    {
-      "name": "systems-engineering",
-      "label": "Systems Engineering",
-      "clusters": [56, 57, 70]
-    },
-    {
-      "name": "hardware-embedded",
-      "label": "Hardware, Firmware & Silicon",
-      "clusters": [5, 36, 59],
-      "note": "Firmware, ASIC/design verification, physical design. 36 mixes chip design with fab equipment maintenance."
-    },
-    { "name": "qa-test", "label": "QA & Test Engineering", "clusters": [1] },
-    { "name": "architecture", "label": "Solution & Enterprise Architecture", "clusters": [64] },
-    { "name": "engineering-management", "label": "Engineering Management", "clusters": [18] },
-    { "name": "tech-leadership", "label": "Tech Leads", "clusters": [23, 29] },
-    {
-      "name": "product-management",
-      "label": "Product & Technical Program Management",
-      "clusters": [20],
-      "note": "Mixed: Product Manager alongside founder/CTO and lead-scientist titles."
-    },
-    {
-      "name": "enterprise-platform",
-      "label": "SAP & Salesforce Platforms",
-      "clusters": [4, 26]
-    },
-    {
-      "name": "it-operations",
-      "label": "IT & Data Centre Operations",
-      "clusters": [16, 19, 24],
-      "note": "Sysadmin/DBA plus data-centre technicians — infrastructure operations, not software authoring."
-    },
-    { "name": "it-support", "label": "Technical Support", "clusters": [49] }
+    {"name": "software-engineering", "label": "Software Engineering", "definition": "Builds software: backend, full stack, general application development, language-named developers, SDE, Member of Technical Staff, game, graphics, compiler and performance engineers, Forward Deployed Engineers."},
+    {"name": "frontend-web", "label": "Frontend & Web", "definition": "Builds what runs in the browser or a website: front-end, UI and web developers, React/Angular/Vue, CMS sites."},
+    {"name": "mobile", "label": "Mobile", "definition": "iOS, Android, Flutter, React Native and other mobile app development."},
+    {"name": "embedded-firmware", "label": "Embedded & Firmware", "definition": "Software that runs on devices: firmware, embedded C/C++, RTOS, BSP, device drivers, automotive and avionics software."},
+    {"name": "hardware-engineering", "label": "Hardware & Silicon", "definition": "Designs or verifies computing hardware: ASIC/FPGA/RTL, design verification, physical design, analog/RF IC, PCB and board design, silicon validation."},
+    {"name": "qa-test", "label": "QA & Test", "definition": "Tests software: QA, test automation, SDET, manual and performance testing."},
+    {"name": "devops", "label": "DevOps", "definition": "Builds and runs delivery tooling: DevOps and DevSecOps, CI/CD, build and release, infrastructure as code."},
+    {"name": "sre-platform", "label": "SRE & Platform", "definition": "Keeps production software reliable and gives developers a platform: site reliability, platform and production engineering, observability."},
+    {"name": "cloud-infrastructure", "label": "Cloud Infrastructure", "definition": "Builds and runs cloud infrastructure on AWS, Azure or GCP: cloud engineers, architects and administrators, migration and operations."},
+    {"name": "security", "label": "Security", "definition": "Cybersecurity of any kind: security engineering and analysis, SOC, penetration testing, AppSec, IAM, GRC, incident response."},
+    {"name": "data-engineering", "label": "Data Engineering", "definition": "Moves and stores data for others to use: pipelines, ETL/ELT, data platforms and warehouses, analytics engineering, data architecture."},
+    {"name": "database-administration", "label": "Database Administration", "definition": "Runs databases: DBAs, database reliability, backup and performance tuning."},
+    {"name": "ai-ml-data-science", "label": "AI, ML & Data Science", "definition": "Builds ML/AI systems or models data to learn or predict: ML and AI engineers, MLOps, LLM and GenAI engineers, data scientists, applied and research scientists."},
+    {"name": "data-analytics-bi", "label": "Data Analytics & BI", "definition": "Reports on data: data, BI and reporting analysts, BI developers, business and systems analysts in IT or data contexts."},
+    {"name": "enterprise-applications", "label": "Enterprise Applications", "definition": "Configures or extends packaged business software: SAP, Salesforce, ServiceNow, Oracle applications, Workday, Dynamics and similar."},
+    {"name": "network-engineering", "label": "Network Engineering", "definition": "Builds and runs networks: network engineers and administrators, NOC, telecom and wireless networks."},
+    {"name": "systems-administration-it-operations", "label": "Systems Administration & IT Ops", "definition": "Runs IT systems: system administrators, Windows and Linux, M365 and Active Directory, endpoint management, data-centre operations."},
+    {"name": "it-support", "label": "IT Support", "definition": "Helps users with IT: help desk, desktop, service desk, technical and application support."},
+    {"name": "architecture", "label": "Architecture", "definition": "Designs systems across functions without one named function: solution, enterprise, technical and integration architects."},
+    {"name": "solutions-engineering", "label": "Solutions Engineering", "definition": "The technical side of selling or deploying a vendor's product: solutions, sales and pre-sales engineers, customer engineers, technical account managers."},
+    {"name": "systems-engineering", "label": "Systems Engineering", "definition": "Engineering of whole physical systems rather than software or IT: aerospace, defence, automotive and space systems engineering, MBSE, V&V."},
+    {"name": "product-management", "label": "Product Management", "definition": "Product managers and product owners of software or data products."},
+    {"name": "program-project-management", "label": "Program & Project Management", "definition": "Runs delivery: technical program and project managers, IT delivery managers, scrum masters, release managers."},
+    {"name": "engineering-management", "label": "Engineering Management", "definition": "Manages engineers or IT staff: engineering managers, directors and VPs of engineering, CTO, CIO, IT managers."},
+    {"name": "unclassified-tech", "label": "Unclassified tech", "definition": "Tech Jobs whose title the classifier cannot place with confidence."}
   ],
-  "non_tech": {
-    "_comment": "Excluded from the chart, counted into one (non-tech, all) ledger row per run as an ADR-0017 filter-health series. These are what the recall-biased tech filter lets through, and the clustering concentrates them.",
-    "clusters": [6, 8, 14, 15, 27, 33, 35, 40, 42, 43, 45, 47, 54, 61, 65, 66, 69],
-    "reasons": {
-      "industrial-and-manufacturing": [6, 8, 14, 27, 43, 47, 65, 66],
-      "civil-and-facilities": [33, 54, 61],
-      "field-service-and-maintenance": [15, 35],
-      "gig-and-data-entry": [40, 42],
-      "retail-and-business-ops": [45, 69]
-    }
-  }
+  "retired": [
+    {"name": "web-development", "label": "Web & .NET Development"},
+    {"name": "java-development", "label": "Java Development"},
+    {"name": "python-development", "label": "Python Development"},
+    {"name": "mobile-development", "label": "Mobile Development"},
+    {"name": "ai-ml", "label": "AI / Machine Learning"},
+    {"name": "data-science", "label": "Data Science"},
+    {"name": "data-analytics", "label": "Data & Business Analytics"},
+    {"name": "security-engineering", "label": "Security Engineering"},
+    {"name": "network-infrastructure", "label": "Network Infrastructure"},
+    {"name": "hardware-embedded", "label": "Hardware, Firmware & Silicon"},
+    {"name": "tech-leadership", "label": "Tech Leads"},
+    {"name": "enterprise-platform", "label": "SAP & Salesforce Platforms"},
+    {"name": "it-operations", "label": "IT & Data Centre Operations"}
+  ]
 }

@@ -176,7 +176,7 @@ _MIN_NAME_HITS = 3
 
 # --- role_trends -----------------------------------------------------------------------------
 TRENDS_ASSIGNING = re.compile(
-    r"\[role_trends\] assigning (\d+) served rows to (\d+) families via (\d+) clusters"
+    r"\[role_trends\] assigning (\d+) served rows to (\d+) families"
 )
 # `(.*)`, not `(.+)`: `stock_top` is a slice of a filtered comprehension, so a run where no
 # served row lands in a stock family renders `| top:  |` and a one-or-more group drops the whole
@@ -193,7 +193,7 @@ TRENDS_ASSIGNMENTS = re.compile(
     r"(\d+) transition rows(?: \| top: (.+))?"
 )
 # The other real, non-error shape `assignments:` takes: no PREVIOUS snapshot to diff against
-# (first run ever, or a centroid refit discarded it) — reachable on any run, not just the first.
+# (first run ever, or a re-base discarded it) — reachable on any run, not just the first.
 TRENDS_FIRST_SNAPSHOT = re.compile(
     r"\[role_trends\] assignments: (.+) — wrote (\d+) rows to \S+; transitions start next run"
 )
@@ -481,11 +481,8 @@ def role_trends_report(text: str) -> None:
     print("-- role_trends --", flush=True)
     a = TRENDS_ASSIGNING.search(text)
     if a:
-        n, families, clusters = a.groups()
-        print(
-            f"  assigning {n} served rows to {families} families via {clusters} clusters",
-            flush=True,
-        )
+        n, families = a.groups()
+        print(f"  assigning {n} served rows to {families} families", flush=True)
     ap = TRENDS_APPENDED.search(text)
     if ap:
         written, top, days, fresh = ap.groups()
