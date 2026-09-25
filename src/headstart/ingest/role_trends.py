@@ -880,7 +880,7 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    log.run_or_fail(
+    log.run_logging_crash(
         _log,
         main,
         "role_trends failed — no trend rows this run, and the Board ledgers hot_boards "

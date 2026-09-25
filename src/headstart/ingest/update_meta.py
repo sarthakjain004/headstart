@@ -778,7 +778,7 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    log.run_or_fail(
+    log.run_logging_crash(
         _log,
         main,
         "update_meta failed — the store's metadata was not refreshed this run, so Facts "

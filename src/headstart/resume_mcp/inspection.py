@@ -13,6 +13,7 @@ the base install runs.
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -43,10 +44,15 @@ class Unreadable(Exception):
     """
 
 
+# An indented `at …` line ending in `:line:col` — a V8 frame. A multi-line error message can
+# carry a line that merely starts with "at " (a résumé bullet), and that must not pass.
+_FRAME = re.compile(r"^\s+at .*:\d+:\d+\)?$")
+
+
 def _frames(stderr: str | None) -> str:
-    """The ``at file:line`` frames of a Node stack, and nothing that could quote the record."""
+    """The ``at file:line:col`` frames of a Node stack, and nothing that could quote the record."""
     lines = (stderr or "").splitlines()
-    return "\n".join(line for line in lines if line.strip().startswith("at "))[:2000]
+    return "\n".join(line for line in lines if _FRAME.match(line))[:2000]
 
 
 def read_document(document: dict[str, Any], view: str = "master") -> dict[str, Any]:
@@ -99,12 +105,13 @@ def read_document(document: dict[str, Any], view: str = "master") -> dict[str, A
     if isinstance(answer, dict) and answer.get("error"):
         # The script writes a stack to stderr only for a fault, never for a deliberate refusal
         # (a malformed record, no such version), so a non-empty stderr is a bug to look at.
-        # Its frames carry file:line, not the message, which can quote the résumé.
+        # Frames only, filtered here too rather than trusting the script's own filter: the
+        # message can quote the résumé.
         if done.stderr.strip():
             _log.warning(
                 "inspect_document.js failed for document %s: %s",
                 document.get("id"),
-                done.stderr.strip()[:2000],
+                _frames(done.stderr),
             )
         raise Unreadable(str(answer["error"]))
     return answer

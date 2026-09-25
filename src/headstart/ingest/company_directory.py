@@ -256,7 +256,7 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    log.run_or_fail(
+    log.run_logging_crash(
         _log,
         main,
         "company_directory failed — the previous company directory stays served this run",

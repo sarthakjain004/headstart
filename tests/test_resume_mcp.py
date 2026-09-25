@@ -610,6 +610,7 @@ def test_a_node_crash_logs_its_frames_but_never_the_message(monkeypatch, caplog)
         "/app/resume_document.js:12\n"
         "  const x = 'Staff engineer at Initech';\n"
         "TypeError: Cannot read properties of undefined (reading 'Initech')\n"
+        "  at Initech, led the payments team\n"
         "    at render (/app/resume_document.js:12:9)\n"
         "    at main (/app/inspect_document.js:180:5)\n"
     )

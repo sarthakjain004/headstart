@@ -97,21 +97,22 @@ def fail(logger: logging.Logger, message: str) -> NoReturn:
     raise SystemExit(1)
 
 
-def run_or_fail(
-    logger: logging.Logger, main: Callable[[], int | None], crashed: str
+def run_logging_crash(
+    logger: logging.Logger, main: Callable[[], int | None], stale_on_crash: str
 ) -> NoReturn:
     """Run a ``continue-on-error`` stage's ``main``; a crash becomes one ERROR, then exit 1.
 
     Such a step leaves the job green whatever it raises, and the runner's own "exit code 1"
     says only that *a* step failed — not which stage, nor what the run now serves stale. So
-    ``crashed`` says that ("hot_boards failed — the previous hot list stays served this run"),
-    and the traceback rides with it. ``SystemExit`` and ``KeyboardInterrupt`` are not
-    ``Exception``, so :func:`fail` and a Ctrl-C pass through untouched.
+    ``stale_on_crash`` says that ("hot_boards failed — the previous hot list stays served this run"),
+    and the traceback rides with it — unlike :func:`fail`, a worded abort that needs none.
+    ``SystemExit`` and ``KeyboardInterrupt`` are not ``Exception``, so :func:`fail` and a Ctrl-C
+    pass through untouched.
     """
     try:
         raise SystemExit(main())
     except Exception:
-        logger.exception(crashed)
+        logger.exception(stale_on_crash)
         raise SystemExit(1) from None
 
 
@@ -192,8 +193,8 @@ class FirstOnly:
     on, so the stack is theirs by construction. Seven of the other eight report a *condition*
     rather than a caught exception; each is clean today, but for three different strengths of
     reason, and the difference matters more than the count. ADR-0039's 2026-09-09 amendment sets
-    them out (its 2026-09-25 one updates the count) — read it before adding another, because "clean by measurement" holds only for the
-    call graph as it is. The eighth, ``telegram_bot_api``'s failed send, sits after its
+    them out (its 2026-09-25 one updates the count) — read it before adding another, because
+    "clean by measurement" holds only for the call graph as it is. The eighth, ``telegram_bot_api``'s failed send, sits after its
     ``except`` on purpose: a traceback ends in the bare ``{exc}`` its token-safe ``reason`` avoids.
 
     ``tests/test_log.py`` recomputes both figures from the source with ``ast`` rather than

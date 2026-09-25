@@ -322,7 +322,7 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    log.run_or_fail(
+    log.run_logging_crash(
         _log,
         main,
         "reclaim_storage failed — orphaned blobs were not deleted this run; usedStorage "

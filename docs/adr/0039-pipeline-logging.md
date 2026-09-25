@@ -289,15 +289,17 @@ above do not describe. The decision stands; this records what the seam now holds
   turn into a Job (no id, no title). Neither marks the Board truncated: whether an unread Board
   should leave the eviction scope is a per-ATS decision (ADR-0053/0121), made beside the line
   where the scraper knows, and #691 deliberately made none.
-- **`log.run_or_fail(logger, main, crashed)` is the entry point of every `continue-on-error`
-  stage** (`update_meta`, `embed_prune`, `hot_boards`, `company_directory`, `role_trends`,
-  `reclaim_storage`). Such a step leaves the job green whatever it raises, and the runner's own
-  exit-code line names neither the stage nor what it left stale; `crashed` says both and the
+- **`log.run_logging_crash(logger, main, stale_on_crash)` is the entry point of every stage
+  `pipeline.yml` runs `continue-on-error`** (`update_ledgers`, `update_meta`, `embed_prune`,
+  `hot_boards`, `company_directory`, `role_trends`, `reclaim_storage`). `cleanup-index.yml`'s
+  `continue-on-error` steps run stages the pipeline runs strictly, which end in their own
+  `log.fail`/`return 1` paths, so they are not wrapped. Such a step leaves the job green whatever it raises, and the runner's own
+  exit-code line names neither the stage nor what it left stale; `stale_on_crash` says both and the
   traceback rides with it. It sits beside `fail`: `fail` is a worded abort with no stack, this is
   an unexpected one with its stack.
 - **The annotation budget is checked on more of the package.** `browser_http`,
   `telegram_bot_api`, `llm_router`, `profile_extract` and `fx` join `test_log_levels`'
   per-item-by-construction list, since each runs once per walled Board, chat or Space request with
   no loop for the looped check to see. `scrape_run`'s three per-shard WARNINGs (budget kill,
-  deferred Boards, board-error digest) are INFO: up to 45 of a run's 50 annotations went on them,
+  deferred Boards, board-error digest) are INFO: up to 45 of a run's 50 annotations could go on them,
   and `scrape_join` warns once for the run.

@@ -133,7 +133,7 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    log.run_or_fail(
+    log.run_logging_crash(
         _log,
         main,
         "embed_prune failed — the store keeps its unserved vectors this run and uploads "

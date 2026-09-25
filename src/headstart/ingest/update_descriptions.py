@@ -460,7 +460,7 @@ def main() -> int:
     try:
         return _update_store()
     except TornRecord as exc:
-        # a torn line raises with its file:line; say so as an abort, not a bare traceback
+        # a torn record raises with its file:line; say so as an abort, not a bare traceback
         log.fail(_log, f"description store update aborted: {exc}")
 
 
