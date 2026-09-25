@@ -1127,6 +1127,83 @@ def test_site_jobs_reads_each_live_workday_site_from_the_ledger(tmp_path):
     }
 
 
+# --- one row per requisition across a Taleo or ADP Tenant's Boards (ADR-0223) -------------------
+# The same shape as Workday's, on three more ATSes: a Taleo Enterprise host's career sections, a
+# Taleo Business Edition org's career sites and an ADP Workforce Now client's career centers each
+# list one requisition under the same native id. Each entry is (the Board that keeps it, another
+# Board of the same Tenant, a Board of another Tenant). Only Workday sites carry a ledger job
+# count, so these tie on jobs and the smaller key keeps the requisition.
+
+_TBE = "taleo_be:https://phg.tbe.taleo.net/phg04/ats/careers/v2/searchResults"
+_ADP_CID = "010bf3a6-6a65-40e6-867b-0fdaf8595884"
+_TENANT_BOARDS = {
+    "taleo_enterprise": (
+        "taleo_enterprise:https://acme.taleo.net/careersection/1",
+        "taleo_enterprise:https://acme.taleo.net/careersection/10880",
+        "taleo_enterprise:https://other.taleo.net/careersection/1",
+    ),
+    "taleo_be": (
+        f"{_TBE}?org=ACME&cws=43",
+        f"{_TBE}?org=ACME&cws=44",
+        f"{_TBE}?org=OTHER&cws=43",
+    ),
+    "adp": (
+        f"adp:{_ADP_CID}/19000101_000001",
+        f"adp:{_ADP_CID}/9200287743430_2",
+        "adp:0154ae68-ab52-434c-afbd-28d2d498db37/19000101_000001",
+    ),
+}
+
+
+@pytest.mark.parametrize("ats", sorted(_TENANT_BOARDS))
+def test_prune_keeps_one_copy_of_a_tenants_requisition(ats):
+    kept, copy, _ = _TENANT_BOARDS[ats]
+    off, rules = plan_prune(
+        [f"{copy}:5706", f"{kept}:5706"], {kept, copy}, site_jobs=_SITE_JOBS
+    )
+    assert (off, rules) == ([], {f"{copy}:5706": "tenant-requisition"})
+
+
+@pytest.mark.parametrize("ats", sorted(_TENANT_BOARDS))
+def test_sync_does_not_re_add_a_copy_prune_took_out(ats):
+    """The churn ADR-0187 exists to prevent: every run's slice re-emits the other Board's copy,
+    and sync must refuse it while the kept Board serves the requisition."""
+    kept, copy, _ = _TENANT_BOARDS[ats]
+    plan = plan_sync(
+        {f"{kept}:5706"},
+        {f"{kept}:5706", f"{copy}:5706", f"{copy}:5707"},
+        {kept, copy},
+        boards_by_canon({kept, copy}),
+        set(),
+        site_jobs=_SITE_JOBS,
+    )
+    assert plan.add == frozenset({f"{copy}:5707"})
+    assert plan.refused == frozenset({f"{copy}:5706"})
+
+
+@pytest.mark.parametrize("ats", sorted(_TENANT_BOARDS))
+def test_another_tenants_board_with_the_same_id_is_not_a_copy(ats):
+    kept, _, other = _TENANT_BOARDS[ats]
+    ids = [f"{kept}:5706", f"{other}:5706"]
+    assert _prune(ids, {kept, other}, site_jobs=_SITE_JOBS) == ([], [])
+
+
+@pytest.mark.parametrize("ats", sorted(_TENANT_BOARDS))
+def test_a_native_id_with_no_digit_stays_per_board_on_every_tenant_ats(ats):
+    kept, copy, _ = _TENANT_BOARDS[ats]
+    ids = [f"{kept}:Texas", f"{copy}:Texas"]
+    assert _prune(ids, {kept, copy}, site_jobs=_SITE_JOBS) == ([], [])
+
+
+def test_a_taleo_internal_section_ranks_after_the_public_one():
+    """Taleo Enterprise names some internal career sections (`mp_internal`, `aicpa_internalcs`),
+    which ADR-0187's non-public tokens already read; here the internal key also sorts first."""
+    public = "taleo_enterprise:https://acme.taleo.net/careersection/ex"
+    internal = "taleo_enterprise:https://acme.taleo.net/careersection/cs_internal"
+    _, dup = _prune([f"{public}:5706", f"{internal}:5706"], {public, internal})
+    assert dup == [f"{internal}:5706"]
+
+
 # --- one row per posting across an Eightfold career site and its backing Board (ADR-0210) -------
 # An Eightfold career site fronts the company's real ATS, and each posting states that ATS's
 # requisition. Both Boards are scraped, so the posting was served twice under two ATS labels.
