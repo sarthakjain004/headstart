@@ -19,6 +19,7 @@ from types import SimpleNamespace
 import pytest
 from curl_cffi.requests.exceptions import HTTPError as CurlHTTPError
 
+from headstart.network import spare_egress as real_spare_egress
 from headstart.scrapers.registry import company_from_row, get_scraper
 from headstart.scrapers.workday import INSTANCES as WORKDAY_INSTANCES
 from headstart.scrapers.zwayam import search_request
@@ -527,6 +528,201 @@ def test_clearcompany_a_404_is_dead(monkeypatch):
 def test_clearcompany_inconclusive_answers_stay_unknown(monkeypatch, status, body):
     monkeypatch.setattr(cl, "_get", lambda url, headers=None: (status, body))
     assert cl.p_clearcompany("heartlandbehavior", "") == (cl.UNKNOWN, None)
+
+
+# --- peoplestrong: one POST settles it; the platform's own answers say dead ------------------------
+
+#: HAProxy's deny page, what a departed tenant's host answers on every path (65 pool labels).
+_PS_DENIED = (
+    b"<html><body><h1>403 Forbidden</h1>\nRequest forbidden by administrative rules.\n"
+    b"</body></html>\n"
+)
+#: What a host that is not a registered candidate portal answers (192 pool labels).
+_PS_UNREGISTERED = (
+    b'{"response":null,"messageCode":{"code":201,"messages":[{"message":"Inside getTpUrl'
+    b'(String url, String portalName) with url : abfrl.peoplestrong.com"}]}}'
+)
+
+
+def _ps_fetch(status, content=b"", calls=None, raises=None):
+    def _fetch(method, url, **kw):
+        if calls is not None:
+            calls.append((method, url, kw))
+        if raises is not None:
+            raise raises
+        return _Resp(status, content=content)
+
+    return _fetch
+
+
+def test_peoplestrong_a_registered_portal_is_live_with_its_total_in_one_request(
+    monkeypatch,
+):
+    """`totalRecords` is the whole Board's count whatever `limit` asks (35,732 of 35,732 read on
+    56 Boards), so `limit=1` settles it."""
+    calls: list = []
+    monkeypatch.setattr(
+        cl, "_fetch", _ps_fetch(200, b'{"totalRecords":1923,"response":[{}]}', calls)
+    )
+    assert cl.p_peoplestrong("HDFCErgoCareers", "") == (cl.LIVE, 1923)
+    [(method, url, kw)] = calls
+    assert method == "POST" and kw["json"] == {}
+    assert url.startswith(
+        "https://hdfcergocareers.peoplestrong.com/api/cp/rest/altone/cp/jobs/v1?"
+    )
+    assert "limit=1" in url
+
+
+def test_peoplestrong_a_registered_portal_with_nothing_open_is_live_and_empty(
+    monkeypatch,
+):
+    """Only a registered portal states a total at all: 47 pool labels answered `totalRecords: 0`."""
+    monkeypatch.setattr(
+        cl, "_fetch", _ps_fetch(200, b'{"totalRecords":0,"response":[]}')
+    )
+    assert cl.p_peoplestrong("careers-oppo", "") == (cl.LIVE, 0)
+
+
+def test_peoplestrong_an_unregistered_host_is_dead(monkeypatch):
+    """HRMS logins (`abfrl`), support hosts and an invented label all answer this envelope."""
+    monkeypatch.setattr(cl, "_fetch", _ps_fetch(200, _PS_UNREGISTERED))
+    assert cl.p_peoplestrong("abfrl", "") == (cl.DEAD, None)
+
+
+_PS_SPARE = "socks5h://127.0.0.1:40000"
+
+
+def _ps_pinned(direct, spare, calls=None):
+    """`http.fetch` for the two pinned confirming asks: `direct` when no proxy is given, `spare`
+    over the spare egress; each a (status, content) pair. Records the route each ask named."""
+
+    def fetch(method, url, **kw):
+        assert kw.get("egress_group") is None  # pinned: nothing may re-route it
+        proxies = kw.get("proxies")
+        if calls is not None:
+            calls.append(proxies)
+        status, content = spare if proxies else direct
+        return _Resp(status, content=content)
+
+    return fetch
+
+
+def _ps_denied_first(monkeypatch, direct, spare, calls=None, proxy=_PS_SPARE):
+    """The probe's first ask meets the deny page (over whichever route the group is on), and the
+    two confirming asks answer `direct` and `spare`."""
+    monkeypatch.setattr(cl, "_fetch", _ps_fetch(403, _PS_DENIED))
+    monkeypatch.setattr(cl.spare_egress, "proxy_url", lambda: proxy)
+    monkeypatch.setattr(cl.http, "fetch", _ps_pinned(direct, spare, calls))
+
+
+def test_peoplestrong_the_deny_page_from_two_addresses_is_dead(monkeypatch):
+    """Host-scoped (every path, any User-Agent), never seen on one of 103 registered portals, and
+    the hosts checked belong to companies that left: CitiusTech is on RippleHire now. A bare 403
+    trips no gate, so the same page served to our *address* would read the same way; the deny is
+    settled only when two named addresses, the direct route and the spare egress, both get it."""
+    calls: list = []
+    _ps_denied_first(monkeypatch, (403, _PS_DENIED), (403, _PS_DENIED), calls)
+    assert cl.p_peoplestrong("exlcareers", "") == (cl.DEAD, None)
+    assert calls == [None, {"http": _PS_SPARE, "https": _PS_SPARE}]
+
+
+def test_peoplestrong_a_deny_on_the_tunnel_is_checked_against_the_direct_route(
+    monkeypatch,
+):
+    """Once a 429 walls `peoplestrong.com`, the probe's first ask rides the spare egress; its
+    deny page must then be checked against the direct route, not asked of the tunnel twice."""
+    _ps_denied_first(
+        monkeypatch, (200, b'{"totalRecords":1394,"response":[{}]}'), (403, _PS_DENIED)
+    )
+    assert cl.p_peoplestrong("larsentoubrocareers", "") == (cl.LIVE, 1394)
+
+
+def test_peoplestrong_a_deny_our_address_alone_gets_is_read_from_the_other(monkeypatch):
+    """The deny page on our address but a real answer on the spare egress: our IP was refused, and
+    the Board is whatever the other address says."""
+    _ps_denied_first(
+        monkeypatch, (403, _PS_DENIED), (200, b'{"totalRecords":1394,"response":[{}]}')
+    )
+    assert cl.p_peoplestrong("larsentoubrocareers", "") == (cl.LIVE, 1394)
+
+
+def test_peoplestrong_an_unconfirmed_deny_stays_unknown(monkeypatch):
+    # No spare egress on this machine: one address's deny page is not a verdict.
+    _ps_denied_first(monkeypatch, (403, _PS_DENIED), (403, _PS_DENIED), proxy=None)
+    assert cl.p_peoplestrong("exlcareers", "") == (cl.UNKNOWN, None)
+    # The spare egress answered nothing: still unconfirmed.
+    monkeypatch.setattr(cl.spare_egress, "proxy_url", lambda: _PS_SPARE)
+
+    def tunnel_down(method, url, **kw):
+        if kw.get("proxies"):
+            raise cl.http.RequestsError("proxy connect failed")
+        return _Resp(403, content=_PS_DENIED)
+
+    monkeypatch.setattr(cl.http, "fetch", tunnel_down)
+    assert cl.p_peoplestrong("exlcareers", "") == (cl.UNKNOWN, None)
+
+
+def test_peoplestrong_pinned_asks_leave_on_their_named_routes_while_the_group_is_walled(
+    monkeypatch,
+):
+    """Through `http.fetch`'s real routing — only the transport session is stubbed — with
+    `peoplestrong.com` already walled, so its own ask rides the spare egress: the direct confirming
+    ask must still leave with no proxy and the spare one with the tunnel's, or both would come
+    from one address."""
+    sent: list = []
+
+    class Session:
+        def request(self, method, url, **kw):
+            sent.append(kw.get("proxies"))
+            return _Resp(403, content=_PS_DENIED)
+
+    monkeypatch.setattr(cl.http, "session", lambda: Session())
+    # The real module `http.fetch` routes through; the prober's own handle is stubbed file-wide.
+    monkeypatch.setattr(real_spare_egress, "_walled", {"peoplestrong.com"})
+    monkeypatch.setattr(real_spare_egress, "proxy_url", lambda: _PS_SPARE)
+    monkeypatch.setattr(cl.spare_egress, "proxy_url", lambda: _PS_SPARE)
+    monkeypatch.setattr(cl, "_fetch", _ps_fetch(403, _PS_DENIED))
+    assert cl.p_peoplestrong("exlcareers", "") == (cl.DEAD, None)
+    assert sent == [None, {"http": _PS_SPARE, "https": _PS_SPARE}]
+
+
+def test_peoplestrong_with_no_spare_egress_a_deny_asks_nothing_more(monkeypatch):
+    """No second address to ask: nothing another direct ask could settle."""
+    calls: list = []
+    _ps_denied_first(
+        monkeypatch, (403, _PS_DENIED), (403, _PS_DENIED), calls, proxy=None
+    )
+    assert cl.p_peoplestrong("exlcareers", "") == (cl.UNKNOWN, None)
+    assert calls == []
+
+
+def test_peoplestrong_anything_unmeasured_stays_unknown(monkeypatch):
+    # Another 403 body (the marketing host's) is not the measured deny page.
+    monkeypatch.setattr(cl, "_fetch", _ps_fetch(403, b"Request Forbidden"))
+    assert cl.p_peoplestrong("marketing", "") == (cl.UNKNOWN, None)
+    # PeopleStrong's LMS and helpdesk hosts answer HTML, not the portal API.
+    monkeypatch.setattr(cl, "_fetch", _ps_fetch(404, b"<!DOCTYPE html>"))
+    assert cl.p_peoplestrong("mylearning", "") == (cl.UNKNOWN, None)
+    monkeypatch.setattr(cl, "_fetch", _ps_fetch(200, b"<!DOCTYPE html>"))
+    assert cl.p_peoplestrong("altonestore", "") == (cl.UNKNOWN, None)
+    # The shared rate limit, a server error, the breaker.
+    monkeypatch.setattr(
+        cl, "_fetch", _ps_fetch(429, b'{"message":"API rate limit exceeded"}')
+    )
+    assert cl.p_peoplestrong("acme", "") == (cl.UNKNOWN, None)
+    monkeypatch.setattr(cl, "_fetch", _ps_fetch(503))
+    assert cl.p_peoplestrong("acme", "") == (cl.UNKNOWN, None)
+    monkeypatch.setattr(cl, "_fetch", lambda *a, **k: None)
+    assert cl.p_peoplestrong("acme", "") == (cl.UNKNOWN, None)
+
+
+def test_peoplestrong_a_dns_failure_is_never_a_verdict(monkeypatch):
+    """`*.peoplestrong.com` is a wildcard: every label resolves, so a lookup that fails is the
+    resolver's, not the tenant's."""
+    err = cl.http.RequestsError("Could not resolve host: acme.peoplestrong.com")
+    monkeypatch.setattr(cl, "_is_dns", lambda e: True)
+    monkeypatch.setattr(cl, "_fetch", _ps_fetch(0, raises=err))
+    assert cl.p_peoplestrong("acme", "") == (cl.UNKNOWN, None)
 
 
 # --- pyjamahr: an unknown slug answers 200 with count 0, so the board page settles a zero ------

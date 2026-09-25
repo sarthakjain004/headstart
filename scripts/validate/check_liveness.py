@@ -360,6 +360,11 @@ _SPANNING = (
     # drew 46 refusals and 71 timeouts. Paced, it is clean: 5, 10, 25 and 50 req/s for 60-120 s
     # each, zero refusals.
     "pinpointhq.com",
+    # peoplestrong.com: every candidate portal is `{label}.peoplestrong.com` behind one Kong
+    # gateway that meters 5,000 requests per calendar minute per client IP across every tenant
+    # and endpoint — `X-RateLimit-Remaining-minute` fell across four different hosts, including an
+    # invented one (2026-09-25). A refusal on one tenant is a refusal on all of them.
+    "peoplestrong.com",
 )
 _GATES = {
     # host: (max in-flight, seconds between request starts)
@@ -391,6 +396,10 @@ _GATES = {
     # at 50 req/s for 60 s, but a 256-wide burst drew connection refusals that then held against
     # every tenant for minutes (see `_SPANNING`).
     "pinpointhq.com": _HostGate(16, 0.0, "pinpointhq.com"),
+    # peoplestrong.com: 50 req/s is 3,000 a minute, under the 5,000 the gateway allows per IP
+    # across tenants (see `_SPANNING`); 10,555 requests at 81 req/s on average ran clean, so this
+    # leaves room for a scrape sharing the address.
+    "peoplestrong.com": _HostGate(16, 0.02, "peoplestrong.com"),
     # `jobs.jobvite.com` has no entry on purpose: one fixed host rather than a subdomain per
     # tenant, so the auto-gate below already keys it exactly, and it drew zero refusals even at
     # 432. A seeded gate for it would be configuration with no measurement behind it.
@@ -1830,6 +1839,110 @@ def _pinpoint_lands(base, path, has_postings):
     return None
 
 
+#: HAProxy's deny page, the whole body a departed PeopleStrong tenant's host answers.
+_PEOPLESTRONG_DENIED = b"Request forbidden by administrative rules."
+
+
+def p_peoplestrong(t, u):
+    """One POST of the portal's listing at `limit=1`; the platform's own answers settle it.
+
+    Measured 2026-09-25 over 423 pool labels on the wildcard `*.peoplestrong.com` zone:
+    a registered candidate portal states `totalRecords` (the whole Board's count — 0 on 47 empty
+    portals); a host that is not one answers 200 with `response: null` and code 201
+    "Inside getTpUrl(...)" (192 labels: HRMS logins, support hosts, an invented label); and a
+    departed tenant's host answers HAProxy's 93-byte deny page on every path and User-Agent
+    (65 labels, none of them among the 103 registered portals — CitiusTech's is on RippleHire
+    now). Anything else — PeopleStrong's LMS, helpdesk and alumni hosts answering HTML, another
+    403 body, the shared 429 — is not one of those and stays UNKNOWN. So does a DNS failure: on a
+    wildcard zone every label resolves, so a failed lookup is the resolver's.
+
+    The deny page is a bare 403, which trips no gate, so the same page served to our *address*
+    would read exactly like a departed tenant and write every Board dead. It is settled only when
+    two named addresses — the direct route and the spare egress, each pinned so that nothing can
+    re-route it — both get it; the first ask cannot be one of them, because once a 429 walls the
+    group it rides the spare egress already. A real answer from either is read instead, and with
+    no spare egress, or no answer from either, the row stays UNKNOWN.
+    """
+    url = _scraper_for_row("peoplestrong", t, u).url(limit=1)
+    r = _peoplestrong_ask(url)
+    if r is None or not _peoplestrong_denied(r):
+        return _peoplestrong_verdict(r)
+    proxy = spare_egress.proxy_url()
+    if proxy is None:  # no second address: nothing another ask could settle
+        _note("deny-unconfirmed")
+        return UNKNOWN, None
+    direct = _peoplestrong_ask_pinned(url, None)
+    other = _peoplestrong_ask_pinned(url, proxy)
+    if direct is None or other is None:
+        _note("deny-unconfirmed")
+        return UNKNOWN, None
+    if _peoplestrong_denied(direct) and _peoplestrong_denied(other):
+        return DEAD, None
+    _note("deny-one-address-only")
+    return _peoplestrong_verdict(other if _peoplestrong_denied(direct) else direct)
+
+
+def _peoplestrong_ask(url):
+    """The listing's response over the group's own route, or None (noted) when none came back."""
+    try:
+        r = _fetch("POST", url, json={}, headers={"User-Agent": UA})
+    except http.RequestsError as e:
+        _note("dns-wildcard" if _is_dns(e) else _net_reason(e))
+        return None
+    if r is None:  # breaker open -> transient
+        _note("breaker-open")
+    return r
+
+
+def _peoplestrong_ask_pinned(url, proxy):
+    """The listing's response over exactly one route — `proxy`, or direct when None — paced by the
+    host's gate but outside its egress group, so a walled group cannot move it."""
+    routed = {"proxies": {"http": proxy, "https": proxy}} if proxy else {}
+    gate = _gate_for(urllib.parse.urlsplit(url).netloc)
+    try:
+        return _through_gate(
+            gate,
+            lambda: http.fetch(
+                "POST",
+                url,
+                timeout=TIMEOUT,
+                verify=False,
+                attempts=_ATTEMPTS,
+                json={},
+                headers={"User-Agent": UA},
+                **routed,
+            ),
+        )
+    except http.RequestsError as e:
+        _note(_net_reason(e))
+        return None
+
+
+def _peoplestrong_denied(r):
+    return r.status_code == 403 and _PEOPLESTRONG_DENIED in r.content
+
+
+def _peoplestrong_verdict(r):
+    """What a listing response that is not the deny page says."""
+    if r is None:
+        return UNKNOWN, None
+    if r.status_code != 200:
+        _note(f"http-{r.status_code}")
+        return UNKNOWN, None
+    try:
+        body = json.loads(r.content)
+    except ValueError:
+        _note("body-unparseable")
+        return UNKNOWN, None
+    if isinstance(body, dict) and isinstance(body.get("totalRecords"), int):
+        return LIVE, body["totalRecords"]
+    code = (body.get("messageCode") or {}) if isinstance(body, dict) else {}
+    if code.get("code") == 201 and "getTpUrl" in str(code.get("messages")):
+        return DEAD, None
+    _note("body-unparseable")
+    return UNKNOWN, None
+
+
 def p_pyjamahr(t, u):
     # Two questions, cheapest first. The listing (`limit=1`, a ~200-byte envelope) says how many
     # postings the Board has, and a non-zero count is proof of a tenant. A zero is NOT proof of
@@ -2589,6 +2702,7 @@ PROBES = {
     "teamtailor": p_teamtailor,
     "rippling": p_rippling,
     "trakstar": p_trakstar,
+    "peoplestrong": p_peoplestrong,
     "personio": p_personio,
     "join": p_join,
     "freshteam": p_freshteam,

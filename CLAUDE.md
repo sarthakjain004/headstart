@@ -132,8 +132,7 @@ Evidence for the first two is in `docs/discovery/2026-09-23_indeed-sweep-landing
   Boards can land.
 - **TurboHire** — token flow: `/api/token/noauth` (needs Referer), then `POST
   /api/careerpagev2/filteredjobs?orgId={GUID}` (verified live 2026-07-21; Cleartrip, Flipkart, Ola).
-- **PeopleStrong** (Angular SPA XHR) and **Jobsoid** (`{slug}.jobsoid.com/api/v1/jobs`, low yield)
-  — opportunistic.
+- **Jobsoid** (`{slug}.jobsoid.com/api/v1/jobs`, low yield) — opportunistic.
 - Single-company unlocks, a manual slug each rather than a scraper: Skillate
   (`{slug}.skillate.com` — Zetwerk, Ola, Pristyn Care), Kula (`careers.kula.ai/{slug}` —
   Rocketlane), CareerSiteManager (`{slug}.careersitemanager.com` — Ecom Express), and Recruitee's
