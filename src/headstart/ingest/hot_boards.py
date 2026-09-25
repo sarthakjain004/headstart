@@ -14,9 +14,9 @@ growing.*
 The default: over the 7 days to 2026-09-21 Amazon opened **1,396** roles at a net change of
 **+20** — churn at a near-constant size rather than growth, which only this lens says.
 
-``volume`` — the roles opened across the window (ADR-0222's turnover), over the same runs
+``volume`` — the roles opened across the window (ADR-0227's turnover), over the same runs
 Expansion sums. *Where the most opportunity is right now.* Always led by the largest employers.
-Until ADR-0222 it was ``new``, the roles first seen in the last 7 days *and still open*. That
+Until ADR-0227 it was ``new``, the roles first seen in the last 7 days *and still open*. That
 missed a job opened and closed inside the week.
 
 ``rate`` — ``new`` as a share of the Board's open roles. *Who is moving fast for their size*,
@@ -204,7 +204,7 @@ def read_window_sum(
 ) -> tuple[collections.Counter, list[str]]:
     """Per-Board sum of one delta-ledger ``metric`` over the trailing window, and the tick stamps
     it covers. Under ``stock`` that is the net change. Under a turnover metric (``opened``,
-    ``closed``, ADR-0222) it is the jobs opened or closed over the same runs the net change sums.
+    ``closed``, ADR-0227) it is the jobs opened or closed over the same runs the net change sums.
 
     **The window is bounded to the same span as ``new``, and that is the point.** An unbounded
     sum grows by one run every run, so Expansion would quietly measure a longer period each
@@ -388,7 +388,7 @@ def rank(
 ) -> tuple[dict[str, list[dict[str, Any]]], dict[str, int]]:
     """The three lenses, plus the counts of what was ranked and what each exclusion removed.
 
-    ``opened`` and ``closed`` are the window's turnover (ADR-0222). Volume ranks by ``opened``,
+    ``opened`` and ``closed`` are the window's turnover (ADR-0227). Volume ranks by ``opened``,
     and every row carries both, because a net change alone read Amazon's week of 914–1,532
     openings as "+17". ``young`` are the Boards too new to rank (:func:`too_new`); they are
     counted with the newly discovered.
@@ -499,7 +499,7 @@ def main() -> int:
         "arrivals": arrivals,
     }
     moved, stamps = read_window_sum(args.board_deltas, **window_rules)
-    # The window's turnover (ADR-0222), over the same runs the net change sums, so a row's three
+    # The window's turnover (ADR-0227), over the same runs the net change sums, so a row's three
     # figures describe one stretch of time.
     opened, turnover_stamps = read_window_sum(
         args.board_deltas, **window_rules, metric=job_turnover.OPENED
@@ -532,7 +532,7 @@ def main() -> int:
             "from": min(stamps),
             "to": max(stamps),
             "base": window_base(args.board_deltas, min(stamps)),
-            # Turnover began with ADR-0222, so for its first week it covers less of the window
+            # Turnover began with ADR-0227, so for its first week it covers less of the window
             # than the net change does, and the tab says from when.
             "turnover_from": min(turnover_stamps, default=None),
         },

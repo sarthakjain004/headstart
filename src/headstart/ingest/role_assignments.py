@@ -24,7 +24,7 @@ Two files under ``data/state/``:
   ``role_reassignments.csv``    append-only ``ts,version,family_from,family_to,count``
 
 The Board, band and ATS columns, and the ``as_of`` stamp, are what job turnover diffs
-(ADR-0222, :mod:`headstart.ingest.job_turnover`). A job that left is booked under the key it had
+(ADR-0227, :mod:`headstart.ingest.job_turnover`). A job that left is booked under the key it had
 when it was last counted, so the snapshot has to remember that key.
 
 Version is the series version (`role_trends.series_version`): a new classifier head re-bases
@@ -113,7 +113,7 @@ def load_placements(path: Path) -> tuple[dict[str, Placement], str] | None:
 
     Not version-guarded, unlike :func:`load_previous`. A new classifier head changes which family
     a row is in, but not whether the id was served. Returns None for a missing, unreadable or
-    unstamped snapshot, or for one written before ADR-0222 added the placement columns. Turnover
+    unstamped snapshot, or for one written before ADR-0227 added the placement columns. Turnover
     then starts on the next tick, rather than reading the whole index as opened."""
     if not path.exists():
         return None

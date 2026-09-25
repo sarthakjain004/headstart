@@ -18,7 +18,7 @@ since the last tick (ADR-0057, :mod:`headstart.ingest.role_assignments`). Counti
 cannot tell a closure apart from a reassignment, and a retitled posting moves between families
 — so the transitions ride their own ledger rather than distorting this one.
 
-The same snapshot gives each tick's **turnover** (ADR-0222, :mod:`headstart.ingest.job_turnover`).
+The same snapshot gives each tick's **turnover** (ADR-0227, :mod:`headstart.ingest.job_turnover`).
 The ids that arrived since the last tick, and the ids that left, are booked as Opened, Closed or
 Recounted per Board, family, band and ATS. They go into the tick's Board-delta file as rows of
 their own metrics, beside the level changes, so a net change can be read with what made it.
@@ -230,7 +230,7 @@ def count_board_groups(
 ]:
     """Count the regular ledger and each Board's contribution in one pass. The third value is
     where each tech row was counted: :func:`count_groups`'s assignments, with the rest of the
-    row's Board-delta key beside its family (ADR-0222)."""
+    row's Board-delta key beside its family (ADR-0227)."""
     ids, min_years, titles, employment, atses, seen = _columns(rows)
     if len(boards) != len(ids):
         raise ValueError("Board identities must align with served rows")
@@ -415,7 +415,7 @@ def append_ledger(
 
 _BOARD_COUNT_COLUMNS = ("board", "metric", "family", "band", "ats", "count")
 # The delta ledger's level metrics: a Board's `stock` and `new` counts, whose deltas sum to a level.
-# A tick's file also holds rows that are not: that tick's turnover and markers (ADR-0222).
+# A tick's file also holds rows that are not: that tick's turnover and markers (ADR-0227).
 _LEVEL_METRICS = ("stock", "new")
 
 
@@ -450,7 +450,7 @@ def _recover_board_counts(
         ).encode():
             continue
         for row in table.to_pylist():
-            # A tick's file also carries its turnover and markers (ADR-0222), not levels.
+            # A tick's file also carries its turnover and markers (ADR-0227), not levels.
             if row["ts"] <= as_of or row["metric"] not in _LEVEL_METRICS:
                 continue
             key = tuple(row[k] for k in _BOARD_COUNT_COLUMNS[:-1])
@@ -475,7 +475,7 @@ def _append_board_deltas(
     ts: str,
     turnover: dict[job_turnover.Key, int],
 ) -> int:
-    """Write this tick's level changes, and its ``turnover`` (ADR-0222) as rows of their own
+    """Write this tick's level changes, and its ``turnover`` (ADR-0227) as rows of their own
     metrics, to one file. A turnover row carries its tick's count, not a change in a level."""
     import pyarrow as pa
     import pyarrow.parquet as pq
@@ -528,7 +528,7 @@ def _save_board_counts(
 
 def _counted_boards(path: Path) -> set[str]:
     """Every Board the previous tick counted any row of, at whatever series version: a Board
-    missing from it was found this tick, so its backlog is Recounted, not Opened (ADR-0222)."""
+    missing from it was found this tick, so its backlog is Recounted, not Opened (ADR-0227)."""
     import pyarrow.parquet as pq
 
     if not path.exists():
@@ -547,8 +547,8 @@ def _turnover_this_tick(
     unauthoritative_boards: Path,
 ) -> tuple[dict[job_turnover.Key, int], str | None]:
     """This tick's turnover and its Unauthoritative-Board markers, keyed like the delta ledger
-    (ADR-0222), and the stamp of the snapshot it diffed. ``first_seen`` covers every served row.
-    There is no turnover without a comparable snapshot: on the first tick after ADR-0222, and
+    (ADR-0227), and the stamp of the snapshot it diffed. ``first_seen`` covers every served row.
+    There is no turnover without a comparable snapshot: on the first tick after ADR-0227, and
     after an unreadable one."""
     turnover: dict[job_turnover.Key, int] = {}
     # One marker per Board whose scrape could not show an absence (ADR-0053): none of its
@@ -560,7 +560,7 @@ def _turnover_this_tick(
     loaded = role_assignments.load_placements(snapshot)
     if loaded is None:
         _log.info(
-            "turnover: no comparable snapshot, so opened and closed start next run (ADR-0222)"
+            "turnover: no comparable snapshot, so opened and closed start next run (ADR-0227)"
         )
         return turnover, None
     previous, previous_as_of = loaded
@@ -580,7 +580,7 @@ def _turnover_this_tick(
         f"turnover since {previous_as_of}: opened {totals[job_turnover.OPENED]}, closed "
         f"{totals[job_turnover.CLOSED]}, recounted +{totals[job_turnover.RECOUNTED_IN]} "
         f"−{totals[job_turnover.RECOUNTED_OUT]}; closures not counted on {len(turnover)} "
-        "Unauthoritative Board(s) (ADR-0222)"
+        "Unauthoritative Board(s) (ADR-0227)"
     )
     turnover.update(booked)
     return turnover, previous_as_of
@@ -602,7 +602,7 @@ def main() -> int:
     ap.add_argument("--assignments", type=Path, default=_ASSIGNMENTS)
     ap.add_argument("--reassignments", type=Path, default=_REASSIGNMENTS)
     ap.add_argument("--epochs", type=Path, default=_EPOCHS)
-    # sync's evictions not yet booked, and this run's Unauthoritative Boards (ADR-0222)
+    # sync's evictions not yet booked, and this run's Unauthoritative Boards (ADR-0227)
     ap.add_argument("--eviction-queue", type=Path, default=EVICTION_QUEUE_PATH)
     ap.add_argument(
         "--unauthoritative-boards", type=Path, default=UNAUTHORITATIVE_BOARDS_PATH
@@ -709,7 +709,7 @@ def main() -> int:
         )
         assigned = {job_id: p.family for job_id, p in placed.items()}
         # Read before the snapshot is overwritten below: the transitions diff it (ADR-0057), and
-        # so does this tick's turnover (ADR-0222).
+        # so does this tick's turnover (ADR-0227).
         previous_families = role_assignments.load_previous(args.assignments, version)
         had_snapshot = args.assignments.exists()
         turnover, booked_through = _turnover_this_tick(
@@ -726,7 +726,7 @@ def main() -> int:
         changed = _append_board_deltas(
             args.board_deltas, previous, board_counts, version, ts, turnover
         )
-        # The snapshot turnover diffs, and the level changes, must move together (ADR-0222):
+        # The snapshot turnover diffs, and the level changes, must move together (ADR-0227):
         # the tick's file without its snapshot would book this tick's turnover again next tick,
         # and the snapshot without the file would leave next tick's stock change covering two
         # ticks while its turnover covered one. So a failed snapshot takes the file back out.

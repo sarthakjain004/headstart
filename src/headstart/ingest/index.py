@@ -885,7 +885,7 @@ def sync(args: argparse.Namespace) -> int:
         f"evict {len(plan.delete)} -> net {listings - len(plan.delete):+d} rows"
     )
     # A repost is the same role under a new id, and it reads as one Opened and one Closed
-    # (ADR-0222). It is measured here and never corrected: this is the scrape where the old id
+    # (ADR-0227). It is measured here and never corrected: this is the scrape where the old id
     # goes missing as the new one arrives, a scrape before the old one is evicted.
     new_listings = plan.add - taken.keys()
     if new_listings:
@@ -903,7 +903,7 @@ def sync(args: argparse.Namespace) -> int:
         )
         _log.info(
             f"reposts: {matched} of {len(new_listings)} new listing(s) share a Board and title "
-            "with a posting missing from this scrape (ADR-0222)"
+            "with a posting missing from this scrape (ADR-0227)"
         )
     if plan.refused:
         fronts = sum(1 for job_id in plan.refused if ats_of(job_id) == "eightfold")
@@ -946,7 +946,7 @@ def sync(args: argparse.Namespace) -> int:
     _log_ids("evict", sorted(plan.delete))
 
     apply_sync(table, [], plan.delete)  # evictions first (chunked internally)
-    # The closures role_trends books as Closed (ADR-0222): these evictions, a posting's second
+    # The closures role_trends books as Closed (ADR-0227): these evictions, a posting's second
     # consecutive absence, and nothing else. A re-embedded Job deleted by `_take_upgrades` and not
     # re-added this run is no absence at all, and a prune here or in `cleanup-index` removes a
     # copy or a Board: both are Recounted. Appended after the delete, so the queue never names a
@@ -1404,7 +1404,7 @@ def main() -> int:
         "--eviction-queue",
         default=str(EVICTION_QUEUE_PATH),
         help="append every id this sync evicted, stamped with the run, for role_trends to book "
-        "as Closed (ADR-0222); published in the table's commit by index_publish",
+        "as Closed (ADR-0227); published in the table's commit by index_publish",
     )
     p_sync.add_argument(
         "--ledger",

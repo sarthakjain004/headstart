@@ -2333,7 +2333,7 @@ test('a breakdown change is a step Back can undo', () => {
   assert.match(pushed[0], /by=total/);
 });
 
-// ---- job turnover (ADR-0222) ------------------------------------------------------------------
+// ---- job turnover (ADR-0227) ------------------------------------------------------------------
 // Acme opens and closes about as many jobs as it holds: flat by net, busy by turnover. The Sep 15
 // tech-filter change lands 400 jobs that look newly posted, so its run and the run after it are
 // left out of opened and closed, exactly as they are out of the net change.

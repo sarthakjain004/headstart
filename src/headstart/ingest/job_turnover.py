@@ -1,8 +1,8 @@
 """Book every tech Job that arrived or left since the last tick as Opened, Closed or Recounted
-(ADR-0222).
+(ADR-0227).
 
 Trends showed only a company's net change, so a company that opened five jobs and closed five
-read flat. A probe of Sep 18–25 (ADR-0222) found Amazon at net +17 while it opened 914–1,532.
+read flat. A probe of Sep 18–25 (ADR-0227) found Amazon at net +17 while it opened 914–1,532.
 Those were ranges only because nothing recorded when an id arrived or left. `role_trends` now diffs
 last tick's served tech ids against this tick's, and this module decides what each difference was:
 

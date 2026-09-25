@@ -221,7 +221,7 @@ supersedes it and note the supersession in both.
 | [0222](0222-an-icims-portal-that-redirects-to-another-is-an-alias.md) | An iCIMS portal that redirects to another is an alias | 2026-09-25 |
 | [0223](0223-a-taleo-or-adp-requisition-is-served-once-per-tenant.md) | A Taleo or ADP requisition is served once per tenant, not once per Board | 2026-09-25 |
 | [0226](0226-zoho-throttle-redirect-walls-the-spare-egress.md) | Zoho's throttle redirect walls its egress group | 2026-09-25 |
-| [0222](0222-trends-record-each-boards-opened-and-closed-jobs-not-only-its-net.md) | Trends record each Board's opened and closed jobs, not only its net | 2026-09-25 |
+| [0227](0227-trends-record-each-boards-opened-and-closed-jobs-not-only-its-net.md) | Trends record each Board's opened and closed jobs, not only its net | 2026-09-25 |
 
 *ADR-0037 was removed from the repository on 2026-09-24 by the owner's decision; its number is not
 reused.*

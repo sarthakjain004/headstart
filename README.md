@@ -442,7 +442,7 @@ Note the raw corpus files under `data/jobs/` carry a few fields the served table
   subcommand of the same module but belongs to `cleanup-index`, not this run. Its pipeline-only helpers live here too:
   `binpack.py` (LPT packing), `doc_prep.py`, `index_plan.py`, `shard_plan.py`, `shard_speedup.py`,
   `derived_meta.py`, `board_failures.py` (ADR-0058), `board_freshness.py`, `role_assignments.py`
-  (ADR-0057), `job_turnover.py` (ADR-0222), `observability.py`, `state_fetch.py`, `state_guard.py`, `state_witness.py`.
+  (ADR-0057), `job_turnover.py` (ADR-0227), `observability.py`, `state_fetch.py`, `state_guard.py`, `state_witness.py`.
 - `scripts/` — tooling *outside* the run: `discover/`, `merge/`, `validate/`, `resolve/`,
   `scrape/` (one-off pulls), `filter/` (recall verification), `fetch/` (pull HF data down),
   `runlog/` (post-hoc analysis of a fan-out run's logs), plus `alerts/`, `bench/` (performance

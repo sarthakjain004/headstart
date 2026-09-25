@@ -113,7 +113,7 @@ PENDING_REDERIVE_PATH = REPO_ROOT / "data" / "state" / "pending_rederive.txt"
 UNCONFIRMED_PATH = REPO_ROOT / "data" / "state" / "unconfirmed_ids.txt"
 
 # Every id `index sync` evicted (ADR-0083), stamped with the run's `run_ts`, for `role_trends` to
-# book as Closed (ADR-0222, :mod:`headstart.ingest.job_turnover`). A row that leaves the table any
+# book as Closed (ADR-0227, :mod:`headstart.ingest.job_turnover`). A row that leaves the table any
 # other way — a prune in this run or in `cleanup-index`, a failed re-embed — is not here, and so is
 # booked as Recounted. Published in the table's own commit (`index_publish`), like the grace set:
 # the snapshot it is booked against rides the later `data/state` upload, and if that upload fails

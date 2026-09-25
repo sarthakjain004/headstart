@@ -174,7 +174,7 @@ _NON_TECH = "non-tech"  # reserved diagnostic series — mirrors headstart.roles
 _NEW_WINDOW_DAYS = (
     7  # the `new` flow window — mirrors ingest.role_trends.NEW_WINDOW_DAYS
 )
-# The Board-delta ledger's level metrics. Since ADR-0222 a tick's file also carries that tick's
+# The Board-delta ledger's level metrics. Since ADR-0227 a tick's file also carries that tick's
 # turnover, which is a count of jobs, not a change in a level. It mirrors
 # ingest.job_turnover.METRICS, and the marker mirrors ingest.job_turnover.UNSCOPED.
 _LEVEL_METRICS = ("stock", "new")
@@ -545,7 +545,7 @@ def _in_ats_scope(board: str, ats: list[str]) -> bool:
 
 def _rows_by_board(deltas: list[dict], metrics) -> dict[str, list[dict]]:
     """Each Board's delta rows of ``metrics``: its turnover, or its Unauthoritative markers
-    (ADR-0222)."""
+    (ADR-0227)."""
     out: dict[str, list[dict]] = defaultdict(list)
     for row in deltas:
         if row["metric"] in metrics:
@@ -575,7 +575,7 @@ def _dedup_touched(boards: list[str]) -> bool:
 
 def _index_turnover(by_board: dict[str, list[dict]], company_boards) -> list[dict]:
     """Every Board's turnover summed per tick, metric, family, band, ATS and whether duplicate
-    removal can move it (ADR-0222): what the Trends view with no company picked draws. A few
+    removal can move it (ADR-0227): what the Trends view with no company picked draws. A few
     hundred rows a tick where the per-Board rows run to thousands, so a request sums the index
     without walking every Board. ``company_boards(board)`` is every Board of the company holding
     ``board``, so `touched` follows the rule a company's own view leaves runs out by."""
@@ -687,7 +687,7 @@ _BOARD_ARRIVALS = _board_arrivals(_TREND_DELTAS)
 _NEW_HOLD = _new_holds(_BOARD_ARRIVALS)
 # The first tick of the Board-delta ledger, before which no per-Board count exists.
 _LEDGER_START = min((ts for ts, _ in _BOARD_ARRIVALS.values()), default=None)
-# Each Board's turnover and Unauthoritative markers (ADR-0222), the index's turnover summed over
+# Each Board's turnover and Unauthoritative markers (ADR-0227), the index's turnover summed over
 # every Board, and the first tick that booked any turnover: a run before it measured none, which
 # is a gap, not a zero.
 _TURNOVER = _rows_by_board(_TREND_DELTAS, _TURNOVER_METRICS)
@@ -1590,7 +1590,7 @@ def _replay_span(
     """One version's rows at its own charted runs, from its deltas alone (see _replay_rows)."""
     by_stamp: dict[str, list[dict]] = defaultdict(list)
     for row in deltas:
-        # Levels only: a tick's turnover rows (ADR-0222) are its own counts, served apart by
+        # Levels only: a tick's turnover rows (ADR-0227) are its own counts, served apart by
         # _turnover_series, and summed here they would chart as ever-growing levels.
         if (end is None or row["ts"] < end) and row["metric"] in _LEVEL_METRICS:
             by_stamp[row["ts"]].append(row)
@@ -2013,7 +2013,7 @@ def trends():
             bucket = found.setdefault((stamps[at], pick), [0, 0])
             bucket[0] += 1
             bucket[1] += openings
-    # Each line's turnover (ADR-0222): the jobs opened and closed that its net change is made
+    # Each line's turnover (ADR-0227): the jobs opened and closed that its net change is made
     # of. Amazon read "+17" over a week in which it opened 914–1,532. On every line of every view
     # on stock, the index's included, and summed from the same rows, so the index's is exactly
     # the sum of every company's. Not on the roles drill, whose watched roles re-count their
@@ -2134,7 +2134,7 @@ def trends():
         # The ledger counts every removed row, `non-tech` among them, so a removal reads a few
         # percent larger than the tech openings it took from a company's line.
         evicted=_picks_evicted(counted, stamps) if coverage != "comparable" else [],
-        # When turnover began (ADR-0222). A window that starts earlier has lines whose opened
+        # When turnover began (ADR-0227). A window that starts earlier has lines whose opened
         # and closed cover only part of it, and the page says from when.
         turnover_since=_TURNOVER_SINCE if with_turnover else None,
         # The runs the index's turnover leaves out for a counting change, so its sentence can
@@ -2153,7 +2153,7 @@ def _turnover_series(
     names,
     left_out: tuple[set[int], set[int]] = (set(), set()),
 ) -> dict[str, dict[str, list[int | None]]]:
-    """The turnover of each line in ``names`` at each charted run (ADR-0222): ``{line: {opened,
+    """The turnover of each line in ``names`` at each charted run (ADR-0227): ``{line: {opened,
     closed, recounted}}``, each list aligned to ``stamps``. ``recounted`` is in less out, so on
     every run ``opened − closed + recounted`` is the line's change in openings. ``rows`` pairs
     each turnover row in scope with its pick. ``line_of(row, pick)`` names the line a row belongs
@@ -2190,7 +2190,7 @@ def _turnover_series(
 
 def _closures_unseen(boards: dict[str, str], stamps: list[str]) -> dict[str, int]:
     """Per pick, how many of its Boards had a run inside the window whose scrape could not show
-    an absence (ADR-0053), so the closures on it went uncounted that run (ADR-0222)."""
+    an absence (ADR-0053), so the closures on it went uncounted that run (ADR-0227)."""
     seen: dict[str, set[str]] = defaultdict(set)
     if not stamps:
         return {}

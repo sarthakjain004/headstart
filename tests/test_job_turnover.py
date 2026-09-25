@@ -1,4 +1,4 @@
-"""Tests for job turnover (headstart.ingest.job_turnover, ADR-0222).
+"""Tests for job turnover (headstart.ingest.job_turnover, ADR-0227).
 
 The contract is one identity and the rules that keep it honest: for every Board-delta key, the
 change in stock between two ticks is opened − closed + recounted_in − recounted_out exactly, and

@@ -1,4 +1,4 @@
-# ADR-0222: Trends record each Board's opened and closed jobs, not only its net
+# ADR-0227: Trends record each Board's opened and closed jobs, not only its net
 
 **Status:** accepted · **Date:** 2026-09-25 · **Extends:**
 [ADR-0143](0143-trends-retain-board-deltas-for-arbitrary-comparable-cohorts.md) (the Board-delta

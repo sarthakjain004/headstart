@@ -108,7 +108,7 @@ def test_save_is_atomic_leaving_no_partial_file(tmp_path):
 
 def test_placements_round_trip_at_any_series_version(tmp_path):
     """Turnover diffs ids, not families, so a new classifier head must not hide the previous
-    tick from it the way it hides it from the transitions (ADR-0222)."""
+    tick from it the way it hides it from the transitions (ADR-0227)."""
     path = tmp_path / "role_assignments.parquet"
     placed = {"ats:board:1": ra.Placement("ats:board", "ai-ml", "senior", "ats")}
     ra.save(path, placed, 2, _AS_OF)
@@ -117,7 +117,7 @@ def test_placements_round_trip_at_any_series_version(tmp_path):
 
 
 def test_a_snapshot_without_placements_gives_no_turnover(tmp_path):
-    """A snapshot written before ADR-0222 has families only: diffing it would read every served
+    """A snapshot written before ADR-0227 has families only: diffing it would read every served
     row as having moved, so turnover waits a tick instead."""
     import pyarrow as pa
     import pyarrow.parquet as pq

@@ -1665,7 +1665,7 @@ def _trends_diff_skipped(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Non
         raise OSError(28, "No space left on device")
 
     # `transitions`, not `load_previous`: the snapshot is read before this tick's turnover
-    # overwrites it (ADR-0222), and `load_previous` already turns any failure into None.
+    # overwrites it (ADR-0227), and `load_previous` already turns any failure into None.
     monkeypatch.setattr(role_assignments, "transitions", _no_space)
     _trends(tmp_path, monkeypatch)
 

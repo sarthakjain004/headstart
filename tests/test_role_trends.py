@@ -167,7 +167,7 @@ def _run(tmp_path: Path, monkeypatch, expect: int = 0) -> Path:
             # Pinned too (ADR-0164): defaults to the repo's real data/state/trends_epochs.csv.
             "--epochs",
             str(tmp_path / "trends_epochs.csv"),
-            # Pinned too (ADR-0222): these default to the real eviction queue and scrape outcome.
+            # Pinned too (ADR-0227): these default to the real eviction queue and scrape outcome.
             "--eviction-queue",
             str(tmp_path / "eviction_queue.tsv"),
             "--unauthoritative-boards",
@@ -1028,7 +1028,7 @@ def _tick_rows(path: Path) -> list[dict]:
 
 
 def test_a_second_tick_books_turnover_beside_the_level_changes(tmp_path, monkeypatch):
-    """ADR-0222 end to end. The first tick writes the snapshot that turnover diffs. The second
+    """ADR-0227 end to end. The first tick writes the snapshot that turnover diffs. The second
     books a new posting as opened, an evicted one as closed, and a row that left any other way
     (here a prune, as `cleanup-index` makes) as recounted, plus one marker for an Unauthoritative
     Board. All of it goes in the tick's own delta file, the Board counts carry levels only, and
@@ -1093,7 +1093,7 @@ def test_a_second_tick_books_turnover_beside_the_level_changes(tmp_path, monkeyp
 
 
 def test_a_failed_snapshot_takes_the_ticks_file_back_out(tmp_path, monkeypatch):
-    """The tick's delta file and the snapshot turnover diffs move together (ADR-0222). The file
+    """The tick's delta file and the snapshot turnover diffs move together (ADR-0227). The file
     without its snapshot would book this tick's turnover again next tick."""
     from headstart.ingest import RUN_TS_ENV, role_assignments
 
@@ -1122,7 +1122,7 @@ def test_a_failed_snapshot_takes_the_ticks_file_back_out(tmp_path, monkeypatch):
 
 
 def test_recovering_board_counts_skips_a_ticks_turnover_rows(tmp_path):
-    """A tick's delta file carries its turnover too (ADR-0222). Replayed as level changes after
+    """A tick's delta file carries its turnover too (ADR-0227). Replayed as level changes after
     a failed counts save, an `opened` row would have become a Board count of its own."""
     deltas = tmp_path / "deltas"
     deltas.mkdir()

@@ -1645,7 +1645,7 @@ function sumPoints(list, stamps){
   return stamps.map((_, j) => list.some(s => s.points[j] != null)
     ? list.reduce((sum, s) => sum + (s.points[j] || 0), 0) : null);
 }
-// A summed line's turnover (ADR-0222): its lines' opened, closed and recounted, run by run,
+// A summed line's turnover (ADR-0227): its lines' opened, closed and recounted, run by run,
 // where any of them was measured. Undefined when none carries turnover.
 function sumTurnover(list, stamps){
   const parts = list.map(s => s.turnover).filter(Boolean);
@@ -1933,7 +1933,7 @@ function viewNotes(d){ return [comparableNote(d), companyNote(d)].filter(Boolean
 // under Comparable, "These 2 companies" was said of one.
 function verdictLines(d){
   if (!d.series.length || !d.stamps.length) return [];
-  // The index gets one sentence too: its turnover (ADR-0222), the figure a job hunter cannot read
+  // The index gets one sentence too: its turnover (ADR-0227), the figure a job hunter cannot read
   // off a chart of levels. Its net is the chart's own, counting changes marked rather than taken
   // out, so the sentence gives only the jobs opened and closed.
   if (!trendPicks.length){
@@ -1988,7 +1988,7 @@ function spanDays(s, d){
   const first = s.points.findIndex(v => v != null);
   return first < 0 ? 0 : (new Date(d.stamps[d.stamps.length - 1]) - new Date(d.stamps[first])) / 864e5;
 }
-// The jobs a line opened and closed across the window (ADR-0222). A net change alone read
+// The jobs a line opened and closed across the window (ADR-0227). A net change alone read
 // Amazon's week as "+17" while it opened 914–1,532. They are counted over exactly the runs the
 // line's hiring move counts. netOfSteps takes a step's whole jump out wherever its size is not
 // known (stepJumps' `lift`), so the turnover of every run inside that jump is left out too: a
@@ -2067,7 +2067,7 @@ function verdictOf(s, d){
   // counts" — the rest of the chart's move, by cause. It read "the chart's other +292 openings
   // came from outside hiring: +292 openings from…", twice the words for one figure, and
   // "outside hiring" read as hiring from outside.
-  // What the net change is made of (ADR-0222), before the part of the move that is not hiring.
+  // What the net change is made of (ADR-0227), before the part of the move that is not hiring.
   const phrase = turnoverPhrase(s, d);
   const counting = (phrase ? ` — ${phrase}` : '') + (other ? `; not hiring: ${causesOf(s, other)}` : '');
   if (!m || days < MIN_SPAN_DAYS){
@@ -3759,7 +3759,7 @@ function buildTrendsTable(){
     // Under Share the percentage is the share's own change, which can fall while openings rise.
     + `<th scope="col">${trendUnit === 'share' ? 'Share, change' : 'Hiring, %'}</th>`
     + '<th scope="col">Hiring, openings</th><th scope="col">Counting changes, openings</th>'
-    // What the hiring move is made of (ADR-0222), on the runs that move counts (turnoverOf).
+    // What the hiring move is made of (ADR-0227), on the runs that move counts (turnoverOf).
     + (withTurnover ? '<th scope="col">Opened</th><th scope="col">Closed</th>' : '')
     + '<th scope="col">Start, as counted</th><th scope="col">Min</th><th scope="col">Max</th></tr>';
   const turnoverCells = s => {
@@ -4630,7 +4630,7 @@ function hotLens(){
    ordered it rather than a single column that means something different on each tab. */
 // Tech roles on this one Board: a row is a Board, and its "See trend" opens the whole company,
 // whose other Boards the figures here do not include (HCLTech read −1,356 here, −605 there).
-// Opened and closed are the week's turnover (ADR-0222). The net figure alone read Amazon's week
+// Opened and closed are the week's turnover (ADR-0227). The net figure alone read Amazon's week
 // as "+17" while it opened 914–1,532. Rate divides `new7`, the jobs first seen this week and
 // still open, so its row leads with that count and gives the turnover after it.
 const HOT_MEASURE = {
@@ -4705,7 +4705,7 @@ function drawHotProvenance(){
   const hours = w.from && w.to ? (new Date(w.to) - new Date(w.from)) / 36e5 : null;
   const span = hours != null && hours < 72 ? `the last ${Math.max(1, Math.round(hours))} hours`
     : `${day(w.from)} to ${day(w.to)}`;
-  // Turnover began with ADR-0222, so for its first week it covers less than the net change does.
+  // Turnover began with ADR-0227, so for its first week it covers less than the net change does.
   const turnoverLate = w.turnover_from && w.from && w.turnover_from > w.from;
   const turnover = !w.turnover_from ? 'opened and closed are not counted yet'
     : turnoverLate ? `opened and closed are counted since ${day(w.turnover_from)}` : 'opened and closed over the same runs';

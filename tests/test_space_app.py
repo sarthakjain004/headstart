@@ -3139,7 +3139,7 @@ def test_a_view_summing_picks_carries_each_picks_own_line(company_trends):
 
 
 def _with_turnover(trends_app, monkeypatch, rows: list[dict]) -> None:
-    """The fixture's ledger plus turnover rows (ADR-0222), loaded as the Space loads them."""
+    """The fixture's ledger plus turnover rows (ADR-0227), loaded as the Space loads them."""
     deltas = trends_app._TREND_DELTAS + rows
     monkeypatch.setattr(trends_app, "_TREND_DELTAS", deltas)
     turnover = trends_app._rows_by_board(deltas, trends_app._TURNOVER_METRICS)
@@ -3175,7 +3175,7 @@ _HPE_TURNOVER = [
 def test_turnover_rows_leave_every_level_as_it_was(
     company_trends, trends_app, monkeypatch
 ):
-    """A tick's turnover rides its delta file (ADR-0222). Replayed as levels, 99 opened jobs
+    """A tick's turnover rides its delta file (ADR-0227). Replayed as levels, 99 opened jobs
     would have become 99 more openings on HPE's line."""
     before = company_trends.get("/trends?company=workday:hpe/a").get_json()
     _with_turnover(trends_app, monkeypatch, _HPE_TURNOVER)
@@ -3198,7 +3198,7 @@ def test_turnover_rows_leave_every_level_as_it_was(
 def test_each_line_carries_the_turnover_its_change_is_made_of(
     company_trends, trends_app, monkeypatch
 ):
-    """Opened and closed beside the net line, on every line of a pick (ADR-0222). The first run
+    """Opened and closed beside the net line, on every line of a pick (ADR-0227). The first run
     is None, since what landed there happened before the window."""
     _with_turnover(trends_app, monkeypatch, _HPE_TURNOVER)
     d = company_trends.get("/trends?company=workday:hpe/a").get_json()
@@ -3222,7 +3222,7 @@ def test_the_index_has_turnover_and_it_is_the_sum_of_every_companys(
     company_trends, trends_app, monkeypatch
 ):
     """With no company picked, every line carries turnover too, summed from the same Board rows,
-    so the index is exactly the sum over every company, run by run (ADR-0222). A found Board is
+    so the index is exactly the sum over every company, run by run (ADR-0227). A found Board is
     recounted in the index as in its company."""
     _with_turnover(trends_app, monkeypatch, _HPE_TURNOVER)
     index = company_trends.get("/trends").get_json()
@@ -3254,7 +3254,7 @@ def test_the_index_has_turnover_and_it_is_the_sum_of_every_companys(
 def test_the_index_shows_what_every_companys_view_shows_after_runs_are_left_out(
     company_trends, trends_app, monkeypatch
 ):
-    """The figures each view displays reconcile (ADR-0222): the index leaves out, Board by
+    """The figures each view displays reconcile (ADR-0227): the index leaves out, Board by
     Board, the runs a company's own line leaves out, so its opened and closed are the sum of
     what every company's view shows. A duplicate-removal change at the last run can move HPE
     (two Workday sites) and not Citi's one Workday site: HPE's turnover there is left out of the

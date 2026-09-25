@@ -285,7 +285,7 @@ These guidelines are working if: fewer unnecessary changes in diffs, fewer rewri
   state directories exist, so an empty fetch can be told apart from a first run. `state_guard`
   (ADR-0129) refuses a write to HF state that another workflow changed since it was read — `merge`
   and `cleanup-index` both record and verify through it. Another publishes inside a stage:
-  `index_publish` commits the LanceDB table, its ADR-0083 grace set and the ADR-0222 eviction queue in one HF commit
+  `index_publish` commits the LanceDB table, its ADR-0083 grace set and the ADR-0227 eviction queue in one HF commit
   in `merge`'s upload step, so they can never disagree. And one runs at the
   end of `merge` without being a stage either: `reclaim_storage` (ADR-0168) deletes the orphaned
   LFS blobs and verifies the quota actually fell — squashing history only makes them eligible for

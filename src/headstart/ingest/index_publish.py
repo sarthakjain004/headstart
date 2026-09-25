@@ -41,7 +41,7 @@ def publish(repo: str, token: str | None, root: Path = REPO_ROOT) -> None:
     )
     paths = list(files)
     # The grace set sync wrote for this table (ADR-0083), and the evictions it queued for Trends
-    # (ADR-0222): the queue must reach the Hub whenever the table does, or a failed `data/state`
+    # (ADR-0227): the queue must reach the Hub whenever the table does, or a failed `data/state`
     # upload would lose the closures this run made.
     beside = [
         p.relative_to(REPO_ROOT).as_posix()

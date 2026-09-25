@@ -195,7 +195,7 @@ def test_expansion_separates_growth_from_churn() -> None:
 
 def test_volume_ranks_by_the_weeks_opened_jobs_not_new() -> None:
     """`new` counts only what is still open, so a Board that opened and closed 300 jobs inside
-    the week read as quiet (ADR-0222)."""
+    the week read as quiet (ADR-0227)."""
     lenses, _ = _rank(
         new={"a:fast": 10, "b:slow": 50},
         stock={"a:fast": 400, "b:slow": 400},
@@ -208,7 +208,7 @@ def test_volume_ranks_by_the_weeks_opened_jobs_not_new() -> None:
 
 def test_turnover_is_summed_over_the_runs_the_net_change_sums(tmp_path: Path) -> None:
     """A counting change's run and the run after it are left out of opened and closed exactly
-    as they are out of the net change, so one row's figures cover the same runs (ADR-0222)."""
+    as they are out of the net change, so one row's figures cover the same runs (ADR-0227)."""
     deltas = tmp_path / "deltas"
     deltas.mkdir()
     ticks = [
