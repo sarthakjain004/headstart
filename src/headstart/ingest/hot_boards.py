@@ -61,7 +61,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from headstart import log, roles
+from headstart import log, roles, version_spans
 from headstart.ingest.board_naming import board_names, display_name
 from headstart.ingest.board_operator import classify
 
@@ -198,31 +198,34 @@ def read_stock_change(
         table = pq.read_table(path, columns=["ts"])
         stamps_in_file = table.column("ts").to_pylist()
         if stamps_in_file:
-            version = (table.schema.metadata or {}).get(b"centroid_version")
-            ticks.append((path, stamps_in_file[0], version))
+            version = (table.schema.metadata or {}).get(b"centroid_version", b"-1")
+            ticks.append((path, stamps_in_file[0], int(version)))
     if not ticks:
         return collections.Counter(), []
-    # Every version's ticks, less each version's first: a refit's first tick re-writes every
-    # Board's stock as a delta (a baseline), while every later tick of any version is a real
-    # change. Keeping the newest version alone left Hot a 4-hour window the morning after a
-    # refit, under a card that said "this week".
-    first_of: dict = {}
-    for _, ts, version in ticks:
-        first_of.setdefault(version, ts)
-    baselines = set(first_of.values())
-    ticks = [(path, ts) for path, ts, _ in ticks if ts not in baselines]
+    # Every span's ticks (headstart.version_spans, ADR-0221), less each span's first: a refit's
+    # first tick re-writes every Board's stock as a delta (a baseline), while every later tick of
+    # any version is a real change. Keeping the newest version alone left Hot a 4-hour window the
+    # morning after a refit, under a card that said "this week". A stray tick of a version other
+    # than its span's is dropped, as the Space drops it.
+    span_list = version_spans.spans((ts, version) for _, ts, version in ticks)
+    baselines = {start for _, start, _ in span_list}
+    # Counting changes are located on the ticks as written, baselines included: a refit's change
+    # is its baseline tick, and locating it after dropping that tick took out two later runs.
+    left_out: set[str] = set()
+    for change in changes:
+        k = next((k for k, (_, ts, _) in enumerate(ticks) if ts >= change), None)
+        if k is not None:
+            left_out.update(ts for _, ts, _ in ticks[k : k + 2])
+    ticks = [
+        (path, ts)
+        for path, ts, version in ticks
+        if ts not in baselines and version_spans.version_at(span_list, ts) == version
+    ]
     if not ticks:
         return collections.Counter(), []
     newest = max(ts for _, ts in ticks)
     cutoff = (datetime.fromisoformat(newest) - timedelta(days=WINDOW_DAYS)).isoformat()
 
-    # Each change lands on the first tick at or after it (one whose own delta write was skipped
-    # lands on the next), and settles on the tick after that.
-    left_out: set[str] = set()
-    for change in changes:
-        k = next((k for k, (_, ts) in enumerate(ticks) if ts >= change), None)
-        if k is not None:
-            left_out.update(ts for _, ts in ticks[k : k + 2])
     moved: collections.Counter = collections.Counter()
     stamps: list[str] = []
     for path, first_ts in ticks:

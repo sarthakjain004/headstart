@@ -26,10 +26,13 @@ the Space had thrown them away.
 
 ## Decision
 
-Versions are stitched into one history. Each version keeps its rows from its first tick up to
-the next version's first tick (`_stitch_versions`). Its Board deltas are replayed over that span
-from its own first tick (`_replay_rows` → `_replay_span`). A row a version wrote after the next
-one began is dropped, so two versions never share a tick.
+Versions are stitched into one history. A *span* is a run of consecutive ticks counted at one
+version (`headstart.version_spans`, shared by the Space and the Hot stage). A new span starts at
+a tick holding a version the running span has not seen, which is the refit's own tick. Each tick
+keeps the rows of its span's version (`_stitch_versions`), and each span's Board deltas are
+replayed from that span's first tick (`_replay_rows` → `_replay_span`). A stray row of another
+version is dropped, so two versions never share a tick. A version that returns after a newer one
+(a classifier head rolled back) is a new span with a fresh re-write, not a stop to the history.
 
 The refit tick is not hidden. It carries an epoch (ADR-0164), so the chart marks it. Under a
 company pick, the step it makes is taken out of the lines like any other counting change: by its
@@ -44,8 +47,13 @@ Two things are read across every version:
 
 The live version, whose counts are current, is the one that began last, not the last row read.
 
-`hot_boards` sums every version's ticks, except each version's first, which is a baseline
-re-write. It also leaves out counting changes, the refit's among them, with the run after each.
+`hot_boards` sums every span's ticks, except each span's first, which is a baseline re-write.
+It also leaves out counting changes, with the run after each, located on the ticks as written:
+the refit's change is its own baseline tick.
+
+A family-rules or taxonomy change is still taken out of a whole company's line, although a
+critic asked that it not be. Such a change can move rows to or from the non-tech family, so a
+company's tech total can step at it.
 
 ## Consequences
 

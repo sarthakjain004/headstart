@@ -320,3 +320,27 @@ def test_non_tech_rows_are_not_hot_hiring(tmp_path: Path) -> None:
         pq.write_table(_deltas(ts, rows), deltas / f"{ts.replace(':', '-')}.parquet")
     moved, _ = hot_boards.read_stock_change(deltas)
     assert moved["amazon:jobs"] == 5
+
+
+def test_a_refit_leaves_out_its_own_run_and_the_next_only(tmp_path: Path) -> None:
+    """The refit's change is its baseline tick; located after dropping that tick, it took out
+    two ordinary runs instead of one."""
+    deltas = tmp_path / "deltas"
+    deltas.mkdir()
+    ticks = [
+        ("2026-09-24T12:00:00+00:00", 2, 500),  # v2 baseline
+        ("2026-09-24T13:00:00+00:00", 2, 4),
+        (
+            "2026-09-24T21:19:12+00:00",
+            2001,
+            480,
+        ),  # the refit: v2001 baseline, a counting change
+        ("2026-09-24T22:00:00+00:00", 2001, 7),  # settling: left out
+        ("2026-09-24T23:00:00+00:00", 2001, 9),  # ordinary: kept
+    ]
+    for ts, version, delta in ticks:
+        table = _deltas(ts, [("amazon:jobs", "stock", "se", delta)])
+        table = table.replace_schema_metadata({"centroid_version": str(version)})
+        pq.write_table(table, deltas / f"{ts.replace(':', '-')}.parquet")
+    moved, _ = hot_boards.read_stock_change(deltas, {"2026-09-24T21:19:12+00:00"})
+    assert moved["amazon:jobs"] == 13

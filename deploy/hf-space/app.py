@@ -37,6 +37,7 @@ from headstart import (
     llm_router,
     profile_extract,
     search,
+    version_spans,
 )
 
 # alerts/__init__.py is empty on purpose, so importing it never pulls in the Digest or Resend
@@ -205,33 +206,22 @@ def _load_trends(path: Path) -> list[dict]:
 
 
 def _version_spans(rows: list[dict]) -> list[tuple[int, str, str | None]]:
-    """``(version, first ts, next version's first ts or None)``, in the order versions began.
-
-    A version is the ledger's ``centroid_version`` stamp; a refit or a family-rules edit starts
-    a new one, whose first tick re-writes every series from scratch (ADR-0040)."""
-    first: dict[int, str] = {}
-    for row in rows:
-        first[row["version"]] = min(first.get(row["version"], row["ts"]), row["ts"])
-    order = sorted(first.items(), key=lambda item: item[1])
-    return [
-        (version, start, order[k + 1][1] if k + 1 < len(order) else None)
-        for k, (version, start) in enumerate(order)
-    ]
+    """The ledger's version spans (`headstart.version_spans`, ADR-0221), read off ``rows``."""
+    return version_spans.spans((row["ts"], row["version"]) for row in rows)
 
 
 def _stitch_versions(rows: list[dict]) -> list[dict]:
     """Every version over its own span, so a refit is a step in one history, not its end.
 
     Keeping only the newest version threw the rest away: a family-rules refit at 2026-09-24
-    21:19 left every chart "8 measurements over 6 hours" the morning after. Each version's rows
-    are kept from its first tick up to the next version's first; the refit tick carries an epoch
-    (ADR-0164), which the chart marks and a company's line takes out as a counting change. A
-    row a version wrote after the next one began is dropped, so two versions never share a tick.
+    21:19 left every chart "8 measurements over 6 hours" the morning after. Each tick keeps the
+    rows of the version its span was counted at; the refit tick carries an epoch (ADR-0164),
+    which the chart marks and a company's line takes out as a counting change. A stray row of
+    another version is dropped, so two versions never share a tick, and a version that returns
+    after a newer one is a new span of its own rather than a stop to the history.
     """
-    ends = {version: end for version, _, end in _version_spans(rows)}
-    return [
-        r for r in rows if ends[r["version"]] is None or r["ts"] < ends[r["version"]]
-    ]
+    spans = _version_spans(rows)
+    return [r for r in rows if version_spans.version_at(spans, r["ts"]) == r["version"]]
 
 
 def _load_board_deltas(path: Path) -> list[dict]:
@@ -635,7 +625,7 @@ def _company_where(args) -> str | None:
     """
     scoped = search.with_extra(
         search.scoped_boards_clause(args),
-        search.scoped_family_clause(args, _FAMILY_IDS),
+        search.scoped_jobs_clause(args, _FAMILY_IDS),
     )
     gate = _account_gate()
     if not gate:
@@ -1375,7 +1365,7 @@ def _replay_rows(
     for version, start, end in _version_spans(_TREND_DELTAS):
         rows.extend(
             _replay_span(
-                [row for row in deltas if row["version"] == version],
+                [r for r in deltas if r["version"] == version and r["ts"] >= start],
                 {s for s in stamps if s >= start and (end is None or s < end)},
                 end,
                 base_stamp,
@@ -1756,7 +1746,7 @@ def trends():
     # Which families have watched sub-roles, so the UI can offer the roles drill only there.
     watch_parents = sorted({meta["parent"] for meta in _WATCH.values()})
     return jsonify(
-        version=_TRENDS[-1]["version"],
+        version=_LIVE_VERSION,
         coverage=coverage,
         base=base_stamp,
         metric=metric,

@@ -1537,7 +1537,7 @@ let trendPicks = [];
 // company is small (`autoTotal`) and Category otherwise, decided afresh whenever the picks
 // change (`stale`).
 const topSplit = { chosen: 'auto', autoTotal: false, stale: false };
-let trendRaw = null;              // the last /trends payload as served; trendData is what is drawn
+let trendRaw = null;              // the last /trends payload, partial reads dropped; trendData is what is drawn
 const pickLabels = new Map();     // board_key -> the name the link that picked it already showed
 
 const seriesColorAssignment = new Map();   // family/role name -> slot index, for what is drawn now
@@ -1783,17 +1783,18 @@ function companyNote(d){
 }
 
 // How the marked steps are drawn and counted, for the caption under the chart.
-function stepNote(d){
+// `marked`: which markers the chart actually drew (drawTrends), so no sentence here points at a
+// line that is not on it.
+function stepNote(d, marked){
   if (!trendPicks.length || !d.series.length) return '';
   const parts = [];
-  const notes = notesOf(d);
-  if (notes.some(n => n.found))
+  if (marked.found)
     parts.push('A solid grey vertical line marks openings that joined the count at once — boards found later, or a company counted from a later date — not hiring.');
   // Said only where a line carries a step and has a figure read off it: Zomato, with no
   // percentage, and a Count view, whose lines are real levels, both got the Change sentence.
   // Only where a step is marked on the chart ("Point at a marked line" over a chart with none
   // pointed at nothing) and a line has a percentage read net of it.
-  if (notes.some(n => n.epoch || n.found)
+  if ((marked.epoch || marked.found)
       && chartedAndOther(d).charted.some(s => stepsFor(s).length && lineMove(s).dl != null))
     parts.push(trendUnit === 'change'
       ? 'Lines and percentages leave out the jumps at marked lines, so they show hiring between them. Point at a marked line to see how big its jump was.'
@@ -1940,18 +1941,20 @@ function drawVerdict(d){
 // newest run has no next one to tell by, so a leap there stands until the next run. Returns how
 // many points were dropped.
 function dropPartialReads(series){
-  let dropped = 0;
+  const runs = new Set();
   series.forEach(s => {
     const at = s.points.map((v, j) => v == null ? -1 : j).filter(j => j >= 0);
+    // Judged against the last point kept, not the one just dropped: [26, 104, 26, 0] dropped
+    // the second 26 as well, reading the null it had just made as the level before it.
+    let prev = at.length ? s.points[at[0]] : null;
     for (let k = 1; k < at.length - 1; k++){
-      const prev = s.points[at[k - 1]], v = s.points[at[k]], next = s.points[at[k + 1]];
-      const off = Math.abs(v - prev), back = Math.abs(next - prev);
-      if (off >= Math.max(20, prev * 0.5) && back <= Math.max(1, prev * 0.1)){
-        s.points[at[k]] = null; dropped++;
-      }
+      const v = s.points[at[k]], next = s.points[at[k + 1]];
+      if (Math.abs(v - prev) >= Math.max(20, prev * 0.5) && Math.abs(next - prev) <= Math.max(1, prev * 0.1)){
+        s.points[at[k]] = null; runs.add(at[k]);
+      } else prev = v;
     }
   });
-  return dropped;
+  return runs.size;   // runs, not points: two lines leaping on one run is one partial read
 }
 
 // Every point in the window where lines move for a reason that is not hiring, each with the
@@ -2008,8 +2011,10 @@ function stepNotes(d){
     // A change can land over two runs — Amazon's Sep 17 filter change was +308 at its run and
     // −439 at the next, which left in read as hiring and turned Amazon from +1.2% to −2.9% —
     // so the run after it is left out too, at the cost of one run of ordinary change.
-    // Only for a change inside the window: at its first run the change is already in every
-    // line's start, and taking out the run after it cut an ordinary run (Amazon's real −7).
+    // Only for a change inside the window. At its first run the change's own jump is not on the
+    // chart, so its settling run cannot be told from an ordinary one; taking it out regardless
+    // cut Amazon's real −7 with no marker to say why. The cost: a change landing over two runs
+    // exactly at the window's start leaves its second half in.
     if (i > 0 && i + 1 < d.stamps.length) notes.push({ i: i + 1, found: false, withhold: true, companies, settle: true,
       text: 'Left out: the run after a counting change, which can still be settling' });
   });
@@ -2018,7 +2023,9 @@ function stepNotes(d){
     const who = (trendPicks.find(p => p.key === f.company) || {}).label || 'a picked company';
     // Found openings are added back, not scaled: they were open all along, so the history is
     // lifted by them rather than multiplied, and a sum of companies moves by the sum of their moves.
-    notes.push({ i, found: true, withhold: true, company: f.company, size: f.openings,
+    // A handful of found openings is left in the line, unmarked: a marker for one opening was
+    // furniture, and a step taken out with no marker was a change the reader could not see.
+    notes.push({ i, found: true, withhold: f.openings >= INDEX_BASE_FLOOR, company: f.company, size: f.openings,
       text: `${f.boards} more board${f.boards === 1 ? '' : 's'} of ${who} found here: `
         + `${f.openings.toLocaleString()} tech opening${f.openings === 1 ? '' : 's'} across the company, already open, arrive at once — not new hiring` });
   });
@@ -2029,7 +2036,8 @@ function stepNotes(d){
   if (trendMetric === 'stock') (d.evicted || []).forEach(e => {
     const i = d.stamps.indexOf(e.ts); if (i <= 0) return;
     const who = (trendPicks.find(p => p.key === e.company) || {}).label || 'a picked company';
-    notes.push({ i, found: false, withhold: true, company: e.company, size: -e.count, wholeOnly: true,
+    if (e.count < INDEX_BASE_FLOOR) return;   // likewise a handful of duplicates
+    notes.push({ i, found: false, evicted: true, withhold: true, company: e.company, size: -e.count, wholeOnly: true,
       text: `${e.count.toLocaleString()} duplicate posting${e.count === 1 ? '' : 's'} of ${who} removed here — the same jobs listed twice, not closures` });
   });
   // Not under comparable coverage: a pick counted after the cohort's base has no Boards in it.
@@ -2921,7 +2929,9 @@ function drawTrends(){
     const jump = stepJumps(s.points, s).get(n.i);
     return jump && Math.round(jump.after - jump.before) !== 0;
   });
+  const marked = { epoch: false, found: false };
   notes.filter(n => n.epoch && markerMoves(n)).forEach(n => {
+    marked.epoch = true;
     const ex = x(n.i);
     svg += `<line class="epoch-marker" x1="${ex.toFixed(1)}" y1="${PAD_T}"
              x2="${ex.toFixed(1)}" y2="${H - PAD_B}"><title>${esc(n.text)}</title></line>`;
@@ -2929,9 +2939,10 @@ function drawTrends(){
   // Boards of a pick that HeadStart found after its line began (ADR-0185). Each lands its
   // whole backlog at once — openings that were already open — so the step is marked where it
   // lands rather than left to read as hiring, the reason the Hot tab leaves new Boards out.
-  // A Board found with a handful of openings is still taken out of the line, but a marker for
-  // one opening (Salesforce's) is furniture.
-  notes.filter(n => n.found && !(n.size != null && n.size < INDEX_BASE_FLOOR)).forEach(n => {
+  // Found Boards and duplicate removals, each a step taken out of the lines it moves; below the
+  // floor neither is taken out, so neither is marked (a marker for one opening was furniture).
+  notes.filter(n => (n.found || n.evicted) && n.withhold).forEach(n => {
+    marked.found = true;
     const fx = x(n.i);
     svg += `<line class="found-marker" x1="${fx.toFixed(1)}" y1="${PAD_T}"
              x2="${fx.toFixed(1)}" y2="${H - PAD_B}"><title>${esc(n.text)}</title></line>`;
@@ -3093,7 +3104,7 @@ function drawTrends(){
           refShown ? ` The index grows as coverage does, and a run that adds a board lifts every line without a job having been posted — so read a ${
             trendDrill ? 'line' : 'category'} against the dashed line, which is ${pickScope().whole} on the same base.` : ''} Move the window and every line is re-based to the new start.`
       : 'Counts are live openings in the index, re-measured every pipeline run. The index itself grows as coverage does, which lifts every count.'));
-  const steps = stepNote(d);
+  const steps = stepNote(d, marked);
   if (steps) parts.push(steps);
   if (nt && trendMetric === 'stock') parts.push(`${nt.toLocaleString()} further ${nt === 1 ? 'row sits' : 'rows sit'} in non-tech categories and ${nt === 1 ? 'is' : 'are'} excluded here.`);
   // With nothing measured there is no line to explain, and the Change sentence named a start

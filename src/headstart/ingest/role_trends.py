@@ -112,9 +112,9 @@ def series_version(head_version: int) -> int:
     """The series identity every ledger here is stamped with (ADR-0040, ADR-0220).
 
     A row's family is its title's verdict under one classifier head, so a new head starts new
-    series. Only equality and order are ever read: the Space charts the newest version, and every
-    snapshot compares its stamp for equality. The base keeps every head's series above the older
-    eras'."""
+    series. Only equality and order are ever read: the Space stitches versions into one history
+    by their spans (ADR-0221), and every snapshot compares its stamp for equality. The base keeps
+    every head's series above the older eras'."""
     return _CLASSIFIER_SERIES_BASE + head_version
 
 
