@@ -150,6 +150,54 @@ def test_zoho_location_none_when_every_part_blank_or_junk():
     assert jobs[0].location is None
 
 
+def test_zoho_location_falls_back_to_a_tenant_defined_place_field():
+    """With City, State and Country all empty, a tenant's own place field is read — each shape
+    seen live 2026-09-25 (bceglobaltech's `Location`, exavalu's `Job_Location`,
+    wit-software's list-valued `Office_Location2`, iceberggroup's second address block)."""
+    records = [
+        {"id": "1", "Posting_Title": "A"},
+        {"id": "2", "Posting_Title": "B"},
+        {"id": "3", "Posting_Title": "C"},
+        {"id": "4", "Posting_Title": "D"},
+    ]
+    raw = {
+        "page": _page(records),
+        "details": {
+            "1": {"id": "1", "Location": "Bengaluru"},
+            "2": {"id": "2", "Job_Location": "USA/Canada"},
+            "3": {"id": "3", "Office_Location2": ["Portugal"]},
+            "4": {
+                "id": "4",
+                "City1": "Saint Paul",
+                "State1": "Minnesota",
+                "Country1": "United States",
+            },
+        },
+    }
+    jobs = get_scraper("zoho", "acme.zohorecruit.com").parse(raw, SCRAPED_AT)
+    assert [j.location for j in jobs] == [
+        "Bengaluru",
+        "USA/Canada",
+        "Portugal",
+        "Saint Paul, Minnesota, United States",
+    ]
+
+
+def test_zoho_location_prefers_city_state_country_and_ignores_non_place_fields():
+    """The standard fields win whenever they state anything. `Region` and
+    `Virtual_Staff_s_Country` are custom keys that name something other than where the job is
+    (be-consultancy-group's "Europe"; where a client's offshore staff sit), so a fully remote
+    posting carrying only those stays placeless — `remote` already says what it is."""
+    records = [
+        {"id": "1", "Posting_Title": "A", "City": "Pune", "Location": "Bengaluru"},
+        {"id": "2", "Posting_Title": "B", "Remote_Job": True, "Region": "Europe"},
+        {"id": "3", "Posting_Title": "C", "Virtual_Staff_s_Country": "Philippines"},
+    ]
+    jobs = get_scraper("zoho", "acme.zohorecruit.com").parse(_page(records), SCRAPED_AT)
+    assert [j.location for j in jobs] == ["Pune", None, None]
+    assert jobs[1].remote is True
+
+
 def test_zoho_parse_fills_description_from_details():
     # tenants that omit the Job_Description column get it from the detail pass
     records = [

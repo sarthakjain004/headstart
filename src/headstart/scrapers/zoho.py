@@ -165,6 +165,31 @@ def _zoho_location(
     return ", ".join(segments) or None
 
 
+#: Tenant-defined fields that state the posting's place, read in this order when City, State and
+#: Country are all empty. Measured live 2026-09-25 over the 3,571 still-listed postings the served
+#: table held no location for: 173 carry one of these (``Location`` 89, ``Job_Location`` 77,
+#: ``Office_Location2`` 4, a second ``City1``/``State1``/``Country1`` block 3). Other custom keys
+#: on those postings name something other than where the job is — ``Region`` ("Europe"),
+#: ``Preferred_Candidate_Region``, ``Virtual_Staff_s_Country`` (where a client's offshore staff
+#: sit), ``Location_Type`` ("Remote") — and are not read. The other 3,398 state no place at all;
+#: 3,436 of the 3,655 listed carry ``Remote_Job: true``, which already sets ``remote``.
+_CUSTOM_LOCATION_FIELDS = ("Location", "Job_Location", "Office_Location2")
+
+
+def _custom_location(record: dict) -> str | None:
+    """The first place a tenant-defined field states (:data:`_CUSTOM_LOCATION_FIELDS`), else its
+    ``City1``/``State1``/``Country1`` block. ``Office_Location2`` arrives as a list."""
+    for key in _CUSTOM_LOCATION_FIELDS:
+        value = record.get(key)
+        if isinstance(value, list):
+            value = ", ".join(str(v) for v in value if v)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return _zoho_location(
+        record.get("City1"), record.get("State1"), record.get("Country1")
+    )
+
+
 def _merge_detail(record: dict, detail: dict | None) -> dict:
     """The listing record, overlaid with the detail record's fields wherever the detail page
     returned a truthy value. The detail page is already fetched for every published job (see
@@ -402,7 +427,8 @@ class ZohoScraper(BaseScraper):
                     title=title,
                     location=_zoho_location(
                         d.get("City"), d.get("State"), d.get("Country")
-                    ),
+                    )
+                    or _custom_location(d),
                     remote=bool(d.get("Remote_Job")),
                     department=(d.get("Industry") or "").strip() or None,
                     url=self.job_url(jid, title),

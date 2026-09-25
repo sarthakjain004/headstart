@@ -53,7 +53,8 @@ on ``jobsearch.alstom.com`` (2,234/2,283). Not every tenant has it (``jobs.thyss
 404s).
 
 **It is a fallback, not a shortcut: its fields fill a Job only where that id's job page yielded
-none**, and it is fetched only when some page did. The page stays the authority because it states
+none**, and its ``location`` alone fills a page that read but stated no place. It is fetched only
+when some page yielded nothing or stated no place. The page stays the authority because it states
 a posting date and the feed never does (no item of 3,083 over three tenants, nor of 961 on
 ``jobs.sap.com``), while the page does on 8 of 9 tenants sampled 2026-09-22 — ``datePosted``
 microdata or a "Posting Start Date:" label (:func:`_csb_posted_at`); ``basf.jobs`` is the
@@ -80,6 +81,7 @@ from typing import Any
 from urllib.parse import unquote
 
 from headstart import company_name, log
+from headstart.country_codes import ISO_ALPHA2_NAMES
 from headstart.jobs.job import Job, html_to_text, is_remote, requisition_of
 from headstart.network import http
 from headstart.network.fetcher import Fetcher
@@ -547,14 +549,33 @@ class SuccessFactorsScraper(BaseScraper):
                 f"{len(tech_listed)} "
                 "job pages say the posting is not available — dropped as closed"
             )
-        # /sitemal.xml (module docstring): the fallback for a page that yielded nothing, fetched
-        # only when one did. The page stays the authority — it states the posting date the feed
+        # /sitemal.xml (module docstring): the fallback for a page that yielded nothing. The page
+        # stays the authority — it states the posting date the feed
         # never does — and `listed` stays the sole id authority; this only ever fills fields.
-        sitemal_fields = self._sitemal_fields() if unread else {}
+        # It also fills `location` alone on a page that read but stated none: some tenants render
+        # the place as an unlabelled span no parser can anchor on, while the feed states it on
+        # every item (careers.hcltech.com, 2026-09-25: 3,146 of 4,226 served rows had no location,
+        # and the feed carried one on all 10,829 items).
+        placeless = sum(
+            1
+            for _, job_id in open_listed
+            if job_id in pages and not pages[job_id].get("location")
+        )
+        sitemal_fields = self._sitemal_fields() if unread or placeless else {}
         fields = [
-            pages[job_id] if job_id in pages else sitemal_fields.get(job_id)
+            _with_feed_location(pages[job_id], sitemal_fields.get(job_id))
+            if job_id in pages
+            else sitemal_fields.get(job_id)
             for _, job_id in open_listed
         ]
+        if placeless:
+            placed = placeless - sum(
+                1 for page in fields if page is not None and not page.get("location")
+            )
+            _log.info(
+                f"{self.board_key()}: sitemal.xml placed {placed} of {placeless} job pages "
+                "that stated no location"
+            )
         lost = sum(1 for page in fields if page is None)
         if lost < unread:
             _log.info(
@@ -809,9 +830,34 @@ def _sitemal_items(text: str) -> dict[str, dict[str, Any]]:
         fields[job_id] = {
             "title": _strip_location_suffix(title, location),
             "description": description,
-            "location": location,
+            "location": _feed_location(location),
         }
     return fields
+
+
+def _feed_location(location: str | None) -> str | None:
+    """A ``g:location`` value as a place a search can find. The feed mostly states a bare ISO
+    alpha-2 code (``IN`` on 8,643 of careers.hcltech.com's 10,829 items, 2026-09-25) or a city
+    and code (``Taguig, PH``). Neither a search for "india" nor the India tag reads a code, so a
+    final two-letter segment becomes its country name. Segments with no letter at all are feed
+    junk (``#, LN, CN, _`` on careers.te.com, ``83, DK``, ``PT, 1990-266``) and are dropped."""
+    if not location:
+        return None
+    segments = [s.strip() for s in location.split(",")]
+    segments = [s for s in segments if any(c.isalpha() for c in s)]
+    if segments and len(segments[-1]) == 2 and segments[-1].isupper():
+        segments[-1] = ISO_ALPHA2_NAMES.get(segments[-1], segments[-1])
+    return ", ".join(segments) or None
+
+
+def _with_feed_location(
+    page: dict[str, Any], feed: dict[str, Any] | None
+) -> dict[str, Any]:
+    """A read page's fields, with the feed's location where the page stated none. The page stays
+    the authority on every other field (module docstring)."""
+    if page.get("location") or not feed or not feed.get("location"):
+        return page
+    return {**page, "location": feed["location"]}
 
 
 def _job_functions_from(text: str) -> dict[str, str]:
