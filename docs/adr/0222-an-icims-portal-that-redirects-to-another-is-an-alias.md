@@ -20,7 +20,8 @@ for iCIMS.
 
 ## Decision
 
-**A live iCIMS Board whose sitemap redirects to another live iCIMS Board is buried onto it**, in
+**An iCIMS Board on a Live row whose sitemap redirects to another Board on a Live row is buried
+onto it**, in
 `data/validate/aliases/icims.csv` with signal `redirect`. This is ADR-0111 as shipped: the default
 `alias_key` fits because an iCIMS slug is a host, and the survivor is the redirect's target, so no
 cluster needs an election. No code changes.
@@ -35,7 +36,8 @@ cluster needs an election. No code changes.
 
 ## Evidence
 
-Measured 2026-09-25 against the committed ledger's 4,166 live iCIMS Boards:
+Measured 2026-09-25 against the Boards on the committed iCIMS ledger's 4,166 Live rows (4,166
+distinct slugs):
 
 - **Two full scans about an hour apart gave the same answer.** Both found 230 clusters and 272
   Boards to bury, pair for pair. Critique #1 had counted the same 272 in 230 clusters on
@@ -45,10 +47,10 @@ Measured 2026-09-25 against the committed ledger's 4,166 live iCIMS Boards:
   sitemap answered 200, landed on the survivor's host, and listed exactly the survivor's job-id
   set. 200 of these sets were non-empty, 39,546 postings in all (every role, not only tech). No
   buried Board lists a posting its survivor does not.
-- **54 Boards resolved to a host outside the ledger's live iCIMS set** and are reported only
+- **54 Boards resolved to a host on no Live row of the iCIMS ledger** and are reported only
   (`migrated`, ADR-0111). Some redirect to the customer's own site (`careers-gdit` →
   `www.gdit.com`), some to another ATS (five Mimecast portals → Workday), and some to an iCIMS
-  host the ledger does not hold as live. Scraping these returns the target's list or nothing, and
+  host the ledger holds on no Live row. Scraping these returns the target's list or nothing, and
   that list has no other copy, so none is buried.
 
 Projected onto served v65 (518,846 rows, 20,480 iCIMS), opened read-only:
@@ -65,8 +67,11 @@ Three tech postings had no copy on their survivor in v65. None is a posting the 
   anyway.
 - `careers-virginpulse` 4849 → `careers-personifyhealth`, and `careers-trnty` 3441 →
   `careers-ricardo`: posted 2026-09-24, after the survivor was last read. Both are on the
-  survivor's sitemap today, so its next scrape serves them. Both survivors were read on
-  2026-09-24 (`board_cost.csv`), so the gap is one scrape of the survivor.
+  survivor's sitemap today, so its next scrape serves them. Until then they are not served:
+  `prune` evicts the buried copy with no grace period. The gap can last several runs. Both
+  survivors rank outside the 6,000-Board Head (`board_priority.csv`, 2026-09-25:
+  `careers-ricardo` 7,111th, `careers-personifyhealth` 8,505th), so each waits for the random
+  Tail to pick it.
 
 ## What this does not catch
 
@@ -76,9 +81,24 @@ pairs by shared descriptions. The redirect clusters join 125 of them and miss 59
 - **28 Boards** whose served job ids sit inside a sibling portal's, about **270 served rows**.
   Examples: `uscareers-fujifilm` against `uscareershub-fujifilm` (59 of 59), `careersus-shure` and
   `careers-shure` against `careershub-shure`, and `careers-wyn` against `careers2-wyn`.
-- **20 partial-overlap pairs** sharing 78 served rows (`jobs-bylight` with `jobs-metova` and
-  `jobs-cesi`, `careers-quanta` with `careers2-quanta`, Atlassian's regional portals). These stay
-  unaliased by rule: burying either side would hide the postings only it lists.
+- **20 partial-overlap pairs** sharing 78 served rows. These stay unaliased by rule: burying either
+  side would hide the postings only it lists. Each pair below is shared ids / ids on each side,
+  on served v65:
+  - `jobs-bylight` with `jobs-metova`, and with `jobs-cesi`: 15 / 81, 18 each.
+  - `careers-eastpennmanufacturing` with `careersnavitas-eastpennmanufacturing`: 5 / 19, 6.
+  - `careers-cis` with `careers-darkbladesystems`: 4 / 10, 7.
+  - `careers-chemtradelogistics` with `careers2-chemtradelogistics`: 4 / 5, 6.
+  - `externalhourly-highgate` with `externalmanagement-highgate`: 3 / 38, 15.
+  - `careers-steeldynamics` with `careers-newmillennium` (3 / 10, 8) and with
+    `careers-aluminumdynamics` (3 / 10, 10).
+  - `careers-en-nortal` with `career-eu-nortal` and with `career-de-nortal`: 3 / 31, 7 each.
+  - `corporatecareers-{aus,alliedbarton}` with `securitycareers-{aus,alliedbarton}`: 4 pairs,
+    2 / 29, 76 each.
+  - `careers-quanta` with `careers2-quanta`: 2 / 51, 245.
+  - `careers-melaleuca` with `studentcareers-melaleuca`: 2 / 8, 3.
+  - `careers-davidsonhospitality` with `management-davidsonhospitality`: 2 / 36, 11.
+  - `globalcareers-atlassian` with `careers-apac-atlassian` (2 / 23, 34), `careers-americas`
+    (2 / 23, 63) and `campus-americas` (2 / 23, 5).
 
 A native-id containment writer like Taleo's `subset-reqs` could catch the first group, but it is
 **not built**, for two reasons:
@@ -90,6 +110,10 @@ A native-id containment writer like Taleo's `subset-reqs` could catch the first 
 - **The only customer key found is undocumented.** It is the `hashed=` value on the listing
   page's links. On 2026-09-25 it agreed within each of 8 same-customer portal groups and differed
   across 6 other customers, but nobody has measured whether it stays stable over time.
+- **The host's customer suffix is not enough either.** Grouping by it would catch Fujifilm,
+  Shure, Wyn and East Penn, but it is a guess made from the spelling of the host. It would also
+  miss containments across differently named hosts of one company: `teamwork-ovg` sits inside
+  `careers-comcast-spectacor`, and `careers-gocs` inside `careers-gilbaneco`.
 
 The two groups together are about 350 rows, 7% of what the redirect removes.
 
@@ -97,8 +121,10 @@ The two groups together are about 350 rows, 7% of what the redirect removes.
 
 - **Scrapable Board** falls 154,033 → 153,761 (−272) and **Hiring Board** 101,482 → 101,280
   (−202). `index prune` evicts the buried Boards' rows through its existing off-Board path.
-- **`DEDUP_VERSION` is not bumped in this change.** ADR-0188 asks for a Trends epoch when about
-  5,265 rows leave, and the bump happens at merge.
+- **`DEDUP_VERSION` is not bumped in this change.** `index_plan`'s rule says not to bump it for
+  an alias-ledger rewrite that applies an existing signal, and `redirect` was in version 1. Even
+  so, the first `prune` removes about 5,265 rows in one tick, and ADR-0188 exists so that Trends
+  does not read a step of that size as a hiring drop. Whether to mark it is left to the merge.
 - **Jibe loses nothing.** Jibe drops a posting whose iCIMS apply host lets the sitemap be read,
   whether or not that host is held (ADR-0189). A posting on a buried host is still served, because
   the host's survivor lists the same id.
