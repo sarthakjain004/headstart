@@ -28,6 +28,7 @@ from datetime import UTC
 import lancedb
 
 from headstart import roles, tech_filter
+from headstart.embedding_conventions import MODEL as EMBED_MODEL
 from headstart.embedding_conventions import PROD_TABLE
 from headstart.ingest import index_plan, role_family_classifier, role_trends
 from headstart.ingest.doc_prep import DERIVATIONS_VERSION
@@ -60,9 +61,10 @@ def _table(db_dir: Path, rows: list[dict]) -> None:
 
 
 # The classifier head the tests run (ADR-0220): three trained families, confident on a one-hot
-# title vector. Tests still state each row's family through its `vector`, as they did when a
-# nearest centroid decided it: `_table` records that choice against the row's title, and the stub
-# encoder below hands the head the matching one-hot vector.
+# title vector, with a row part that reads nothing unless a test gives it weights (ADR-0224).
+# Tests still state each row's family through its `vector`, as they did when a nearest centroid
+# decided it: `_table` records that choice against the row's title, and the stub encoder below
+# hands the head the matching one-hot vector.
 _HEAD_FAMILIES = ("software-engineering", "ai-ml-data-science", roles.NON_TECH)
 _FAMILY_OF_TITLE: dict[str, str] = {}
 _AMBIGUOUS = "ambiguous"  # a title the head cannot place: it lands in unclassified-tech
@@ -87,14 +89,24 @@ def _stub_title_encoder(monkeypatch):
 
 
 def _taxonomy(
-    head: Path, families_path: Path, extra_families: tuple[str, ...] = ()
+    head: Path,
+    families_path: Path,
+    extra_families: tuple[str, ...] = (),
+    row_weights: np.ndarray | None = None,
+    row_model: str = EMBED_MODEL,
+    row_dim: int = _DIM,
 ) -> None:
     """The head (cutoff 0.6, so a one-hot title is placed and an ambiguous one is not) and the
-    curated family list it must agree with."""
+    curated family list it must agree with. The row part is all zeros unless ``row_weights``."""
     head.mkdir(parents=True, exist_ok=True)
     np.savez(
         head / "head.npz",
-        weights=np.eye(len(_HEAD_FAMILIES), dtype=np.float32) * 10,
+        title_weights=np.eye(len(_HEAD_FAMILIES), dtype=np.float32) * 10,
+        row_weights=(
+            np.zeros((len(_HEAD_FAMILIES), row_dim), dtype=np.float32)
+            if row_weights is None
+            else row_weights
+        ),
         bias=np.zeros(len(_HEAD_FAMILIES), dtype=np.float32),
     )
     (head / "manifest.json").write_text(
@@ -103,6 +115,7 @@ def _taxonomy(
                 "version": 1,
                 "model": "stub",
                 "model_revision": "stub",
+                "row_vector": {"model": row_model, "dim": row_dim},
                 "families": list(_HEAD_FAMILIES),
                 "cutoff": 0.6,
             }
@@ -640,13 +653,92 @@ def test_the_classifier_decides_each_family_and_watch_roles_count_tech_only(
     assert {r["version"] for r in written} == {role_trends.series_version(1)}
 
     cache = role_family_classifier.load_cache(tmp_path / "title_cache.parquet", 1)
-    assert len(cache.decisions) == 4
+    assert len(cache.title_logits) == 4
     encoded = []
     monkeypatch.setattr(
         role_family_classifier, "encode", lambda t, m, r: encoded.append(t)
     )
     _run(tmp_path, monkeypatch)
-    assert encoded == []  # every title was already decided under this head
+    assert encoded == []  # every title was already encoded under this head
+
+
+def test_a_rows_description_vector_can_move_it_off_its_titles_family(
+    tmp_path, monkeypatch
+):
+    """ADR-0224: two copies of one title, one whose served vector reads as non-tech. The title
+    part is shared; the row part decides the second, and only the first is assigned a family."""
+    row_weights = np.zeros((len(_HEAD_FAMILIES), _DIM), dtype=np.float32)
+    row_weights[_HEAD_FAMILIES.index(roles.NON_TECH), 3] = 30.0
+    _taxonomy(tmp_path / "head", tmp_path / "families.json", row_weights=row_weights)
+    _table(
+        tmp_path / "db",
+        [
+            {"id": "it", "title": "Systems Engineer", "vector": [1.0, 0.0, 0.0, 0.0]},
+            {"id": "grid", "title": "Systems Engineer", "vector": [1.0, 0.0, 0.0, 1.0]},
+        ],
+    )
+    ledger = _run(tmp_path, monkeypatch)
+
+    rows = {(r["metric"], r["family"]): r["count"] for r in _rows(ledger)}
+    assert rows[("stock", "software-engineering")] == 1
+    assert rows[("stock", roles.NON_TECH)] == 1
+    snapshot = pq.read_table(tmp_path / "role_assignments.parquet").to_pylist()
+    assert {r["id"] for r in snapshot} == {"it"}
+
+
+def test_a_head_trained_on_another_embedder_errors_visibly(
+    tmp_path, monkeypatch, caplog
+):
+    """The row part learned one embedder's vectors; fed another's it would still answer
+    confidently, so the run refuses instead (ADR-0224)."""
+    import logging
+
+    _taxonomy(tmp_path / "head", tmp_path / "families.json", row_model="other/embedder")
+    _table(
+        tmp_path / "db",
+        [{"id": "a", "title": "Backend Dev", "vector": [1.0, 0.0, 0.0, 0.0]}],
+    )
+    caplog.set_level(logging.ERROR, logger="headstart.ingest.role_trends")
+    ledger = _run(tmp_path, monkeypatch, expect=1)
+    assert not ledger.exists()
+    assert any("retrain the head" in r.getMessage() for r in caplog.records)
+
+
+def test_a_head_trained_on_another_vector_width_errors_visibly(
+    tmp_path, monkeypatch, caplog
+):
+    import logging
+
+    _taxonomy(tmp_path / "head", tmp_path / "families.json", row_dim=_DIM + 1)
+    _table(
+        tmp_path / "db",
+        [{"id": "a", "title": "Backend Dev", "vector": [1.0, 0.0, 0.0, 0.0]}],
+    )
+    caplog.set_level(logging.ERROR, logger="headstart.ingest.role_trends")
+    ledger = _run(tmp_path, monkeypatch, expect=1)
+    assert not ledger.exists()
+    assert any("retrain the head" in r.getMessage() for r in caplog.records)
+
+
+def test_repeated_served_ids_error_visibly_instead_of_deciding_garbage(
+    tmp_path, monkeypatch, caplog
+):
+    """Row vectors are matched to rows by id; a repeated id would leave one row's logits unset,
+    and that row would be decided from uninitialised memory. The run refuses instead."""
+    import logging
+
+    _taxonomy(tmp_path / "head", tmp_path / "families.json")
+    _table(
+        tmp_path / "db",
+        [
+            {"id": "a", "title": "Backend Dev", "vector": [1.0, 0.0, 0.0, 0.0]},
+            {"id": "a", "title": "Backend Dev", "vector": [1.0, 0.0, 0.0, 0.0]},
+        ],
+    )
+    caplog.set_level(logging.ERROR, logger="headstart.ingest.role_trends")
+    ledger = _run(tmp_path, monkeypatch, expect=1)
+    assert not ledger.exists()
+    assert any("ids repeat" in r.getMessage() for r in caplog.records)
 
 
 def test_trends_wait_while_a_new_heads_title_cache_warms_up(
@@ -907,11 +999,7 @@ def test_count_groups_returns_assignments_excluding_non_tech_and_watch_roles():
     taxonomy — a row "moving" between those is a title edit, not a reassignment. Either one
     leaking into the snapshot would manufacture transitions out of nothing.
     """
-    family_of = {
-        "Backend Engineer": "software-engineering",
-        "ML Engineer": "ai-ml-data-science",
-        "Data Entry Clerk": None,  # non-tech
-    }.get
+    families = ["software-engineering", "ai-ml-data-science", None]  # None: non-tech
     watchlist = (
         roles.load_watchlist_from_spec(  # type: ignore[attr-defined]
             {
@@ -968,7 +1056,7 @@ def test_count_groups_returns_assignments_excluding_non_tech_and_watch_roles():
         ),
     )
     _counts, non_tech, assigned = role_trends.count_groups(
-        rows, family_of, watchlist, "2026-01-01T00:00:00+00:00"
+        rows, families, watchlist, "2026-01-01T00:00:00+00:00"
     )
     assert non_tech == 1
     assert assigned == {

@@ -108,3 +108,7 @@ docs/launch/
 
 # Recruiting-contact research notes — kept local, out of the public repo.
 docs/hr-contacts/
+
+# The full JobBERT role-family history (every method tried, how, and its numbers) — the owner's
+# local working record; ADR-0220/0224 and docs/role-families/ carry the public account.
+docs/role-families/jobbert-integration-history.md

@@ -1,8 +1,8 @@
 """Role-trend taxonomy seam (ADR-0040, ADR-0051, ADR-0220): the curated family list, the
 seniority bands, and the watchlist of named roles tracked by title.
 
-Since ADR-0220 a Job's family comes from its title through a trained classifier
-(:mod:`headstart.ingest.role_family_classifier`); this module holds what the pipeline and the
+Since ADR-0220 a Job's family comes from a trained classifier over its title, and since ADR-0224
+its description vector too (:mod:`headstart.ingest.role_family_classifier`); this module holds what the pipeline and the
 Space must agree on around it. The family list lives in ``config/role_families.json``, curated
 and in git, where each family has a display label and a one-line definition.
 

@@ -18,7 +18,13 @@ import re
 from typing import Any
 
 from headstart import company_name, http, salary
-from headstart.models import Job, epoch_ms_to_iso, html_to_text, is_remote
+from headstart.models import (
+    Job,
+    epoch_ms_to_iso,
+    html_to_text,
+    is_remote,
+    requisition_of,
+)
 from headstart.scrapers.base import BaseScraper
 from headstart.scrapers.job_posting_jsonld import find_job_posting, hiring_organization
 
@@ -450,6 +456,9 @@ class LeverScraper(BaseScraper):
                     description=_description(j),
                     employment_type=categories.get("commitment"),
                     salary=self._salary_field(j.get("salaryRange")),
+                    # What an Eightfold site in front of this Board states as `atsJobId`
+                    # (ADR-0210).
+                    requisition=requisition_of(j["id"]),
                 )
             )
         return jobs

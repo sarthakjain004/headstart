@@ -224,6 +224,16 @@ def test_lever_parse():
     assert j.salary == "80000-110000 USD per-year-salary"
 
 
+def test_lever_requisition_is_the_posting_id():
+    """What an Eightfold site in front of this Board states as `atsJobId` (ADR-0210): Tinder's
+    site states the Lever posting's own id (27 of 27 matched live, 2026-09-25)."""
+    jobs = get_scraper("lever", "palantir", "Palantir").parse(
+        _load("lever_palantir.json"), SCRAPED_AT
+    )
+    assert [j.requisition for j in jobs] == [j.id.rsplit(":", 1)[1] for j in jobs]
+    assert jobs[0].requisition == "0bbfd4f4-41ff-4ec6-b73f-5200efd5d4d3"
+
+
 def test_lever_location_joins_all_locations_and_recovers_hidden_india():
     # Real posting, captured live 2026-08-25: lever:spreetail:9fcfd96f-141e-4dfe-b670-
     # eb872164abe0 ("Business Solutions Analyst"). categories.location alone is "Manila";

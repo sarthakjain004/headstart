@@ -29,8 +29,8 @@ class Job:
     experience: str | None = None  # e.g. "3-5 Years", "Mid-Senior level"
     employment_type: str | None = None  # e.g. "Full-time", "Intern", "Contract"
     salary: str | None = None
-    # The ATS's own requisition id as it states it (ADR-0210), stated by the six ATSes a served row
-    # can be matched across: an Eightfold career site's posting names its backing Board's
+    # The ATS's own requisition id as it states it (ADR-0210), stated by the eight ATSes a served
+    # row can be matched across: an Eightfold career site's posting names its backing Board's
     # requisition, and a row on that Board carries the same id. None on every other ATS; the store
     # keeps it only on the paired Boards (`doc_prep.stored_facts`).
     requisition: str | None = None

@@ -1,8 +1,9 @@
 """Remember which family each served row was assigned to, and report the ones that moved.
 
 `role_trends` re-derives every row's family on every tick. A job can change family while keeping
-its `first_seen`: under centroids a re-embedded description moved it (ADR-0050), and since
-ADR-0220, when the family is the title's verdict, a retitled posting does. In the ledger that is
+its `first_seen`: under centroids a re-embedded description moved it (ADR-0050), since ADR-0220 a
+retitled posting does, and since ADR-0224, whose head reads the description vector too, a
+re-described one can again. In the ledger that is
 indistinguishable from the old row closing and a new one opening somewhere else, so a family can
 appear to shed jobs it never lost.
 

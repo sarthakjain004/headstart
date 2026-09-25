@@ -74,7 +74,7 @@ from urllib.parse import urlencode, urljoin, urlsplit
 
 from headstart import company_name, http, salary
 from headstart.fetcher import Fetcher
-from headstart.models import Job, html_to_text, is_remote
+from headstart.models import Job, html_to_text, is_remote, requisition_of
 from headstart.scrapers.base import USER_AGENT, BaseScraper
 
 #: Seconds between two requests to one client host: `crawl-delay: 5` in the robots.txt of 1,138 of
@@ -513,6 +513,9 @@ class JibeScraper(BaseScraper):
                         row.get("employment_type"), row.get("employment_type") or None
                     ),
                     salary=self._salary_field(row),
+                    # What an Eightfold site in front of this Board states as `atsJobId`
+                    # (ADR-0210).
+                    requisition=requisition_of(native_id),
                 )
             )
         if dropped:
