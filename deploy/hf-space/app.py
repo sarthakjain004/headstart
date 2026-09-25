@@ -224,7 +224,13 @@ def _family_labels(path: Path) -> dict[str, str]:
     if not path.exists():
         return {}
     spec = json.loads(path.read_text(encoding="utf-8"))
-    return {f["name"]: f.get("label", f["name"]) for f in spec["families"]}
+    # `retired` names the families before ADR-0220, whose series the Space still serves until a
+    # new head's title cache is warm and the first series under it lands.
+    families = [
+        *spec.get("retired", []),
+        *spec["families"],
+    ]  # a listed family's label wins
+    return {f["name"]: f.get("label", f["name"]) for f in families}
 
 
 _WATCH_PREFIX = "watch:"  # mirrors headstart.roles.WATCH_PREFIX (ADR-0051)
@@ -271,7 +277,7 @@ _EPOCH_LABELS = (
     ("tech_filter_version", "tech filter changed"),
     ("derivations_version", "experience/salary extraction changed"),
     ("dedup_version", "duplicate removal changed"),
-    ("family_rules_fingerprint", "role family title rules changed"),
+    ("family_classifier_version", "role family assignment changed"),
 )
 
 
@@ -285,6 +291,11 @@ def _load_epochs(path: Path) -> list[dict]:
         return []
     with path.open(encoding="utf-8", newline="") as fh:
         rows = list(csv.DictReader(fh))
+    for row in rows:
+        # The sixth column's name before ADR-0220 renamed it in place; the pipeline rewrites the
+        # header on its first run under a new head, and this reads a file from before that.
+        if "family_rules_fingerprint" in row:
+            row["family_classifier_version"] = row.pop("family_rules_fingerprint")
     out = []
     for previous, row in zip([None, *rows], rows):
         if previous is None:

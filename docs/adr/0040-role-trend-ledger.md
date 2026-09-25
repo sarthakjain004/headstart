@@ -10,7 +10,9 @@ per run, tiny forever" below no longer describes the ledger · **Amended by:**
 at 50.3x compression the file no longer needs one · **Amended by:**
 [ADR-0215](0215-a-title-rule-decides-a-role-family-before-the-centroid.md) — title rules decide a
 row's family first and the nearest centroid only where no rule does; the ledger's `version` is a
-series version that a new rules generation re-bases, as a refit does
+series version that a new rules generation re-bases, as a refit does · **Amended by:**
+[ADR-0220](0220-a-trained-title-classifier-decides-a-role-family.md) — a one-axis family list, each
+row's family decided by a trained title classifier; the centroids are retired
 
 ## Context
 

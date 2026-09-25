@@ -4,7 +4,7 @@ Contracts: served rows are counted into (metric, family, band) groups with non-t
 apart; `new` counts only rows first seen inside the flow window; watched roles are counted by
 title in addition to their family; a pre-ADR-0120 CSV ledger of any of its three shapes is
 folded into the Parquet ledger without losing a row; the ledger accumulates run over run; and
-every degenerate input (missing centroids, missing family map, empty table, zero-byte or torn
+every degenerate input (missing classifier head, missing family list, empty table, zero-byte or torn
 CSV) exits without writing garbage — trends must never sink a run that already scraped and
 embedded, nor silently look healthy while accruing nothing.
 """
@@ -29,7 +29,7 @@ import lancedb
 
 from headstart import roles, tech_filter
 from headstart.embedding_conventions import PROD_TABLE
-from headstart.ingest import index_plan, role_family_rules, role_trends
+from headstart.ingest import index_plan, role_family_classifier, role_trends
 from headstart.ingest.doc_prep import DERIVATIONS_VERSION
 
 _DIM = 4
@@ -50,53 +50,74 @@ def _table(db_dir: Path, rows: list[dict]) -> None:
     # Every served row carries an ats; tests that don't care which get one shared default so
     # their (family, band) assertions still map to exactly one row (ADR-0075).
     rows = [{"ats": "greenhouse", **r} for r in rows]
+    for r in rows:
+        if r.get("vector") is not None and r.get("title"):
+            family = _HEAD_FAMILIES[int(np.argmax(r["vector"][: len(_HEAD_FAMILIES)]))]
+            _FAMILY_OF_TITLE[role_family_classifier.normalise(r["title"])] = family
     lancedb.connect(db_dir).create_table(
         PROD_TABLE, pa.Table.from_pylist(rows, schema=schema)
     )
 
 
-# Every other family a title rule can name (ADR-0215): the map must define each, or
-# `role_family_rules.check_families` refuses to run.
-_RULE_ONLY_FAMILIES = sorted(
-    role_family_rules.FAMILIES - {"software-engineering", "data-science"}
-)
+# The classifier head the tests run (ADR-0220): three trained families, confident on a one-hot
+# title vector. Tests still state each row's family through its `vector`, as they did when a
+# nearest centroid decided it: `_table` records that choice against the row's title, and the stub
+# encoder below hands the head the matching one-hot vector.
+_HEAD_FAMILIES = ("software-engineering", "ai-ml-data-science", roles.NON_TECH)
+_FAMILY_OF_TITLE: dict[str, str] = {}
+_AMBIGUOUS = "ambiguous"  # a title the head cannot place: it lands in unclassified-tech
 
 
-def _centroids(store: Path, families_path: Path) -> None:
-    """Three orthogonal clusters + the curated map: 0,1 are tech families, 2 is non-tech.
+@pytest.fixture(autouse=True)
+def _stub_title_encoder(monkeypatch):
+    """JobBERT is never downloaded in tests: a title encodes to its family's one-hot vector."""
+    _FAMILY_OF_TITLE.clear()
 
-    Each family only a title rule reaches gets a zero centroid of its own, which no test vector
-    can be nearest to, so the vector-driven cases still land in clusters 0-2."""
-    k = 3 + len(_RULE_ONLY_FAMILIES)
-    centroids = np.zeros((k, _DIM), dtype=np.float32)
-    centroids[:3] = np.eye(3, _DIM, dtype=np.float32)
-    roles.save(
-        store,
-        centroids,
-        {
-            "version": 1,
-            "k": k,
-            "dim": _DIM,
-            "clusters": [{"id": i, "label": f"raw {i}"} for i in range(k)],
-        },
+    def encode(titles, model, revision):
+        rows = []
+        for title in titles:
+            family = _FAMILY_OF_TITLE.get(title, "software-engineering")
+            if family == _AMBIGUOUS:
+                rows.append([1.0] * len(_HEAD_FAMILIES))
+            else:
+                rows.append([float(family == f) for f in _HEAD_FAMILIES])
+        return np.array(rows, dtype=np.float32)
+
+    monkeypatch.setattr(role_family_classifier, "encode", encode)
+
+
+def _taxonomy(
+    head: Path, families_path: Path, extra_families: tuple[str, ...] = ()
+) -> None:
+    """The head (cutoff 0.6, so a one-hot title is placed and an ambiguous one is not) and the
+    curated family list it must agree with."""
+    head.mkdir(parents=True, exist_ok=True)
+    np.savez(
+        head / "head.npz",
+        weights=np.eye(len(_HEAD_FAMILIES), dtype=np.float32) * 10,
+        bias=np.zeros(len(_HEAD_FAMILIES), dtype=np.float32),
     )
-    families_path.parent.mkdir(parents=True, exist_ok=True)
-    families_path.write_text(
+    (head / "manifest.json").write_text(
         json.dumps(
             {
-                "centroid_version": 1,
-                "families": [
-                    {"name": "software-engineering", "clusters": [0]},
-                    {"name": "data-science", "clusters": [1]},
-                    *(
-                        {"name": name, "clusters": [3 + i]}
-                        for i, name in enumerate(_RULE_ONLY_FAMILIES)
-                    ),
-                ],
-                "non_tech": {"clusters": [2]},
+                "version": 1,
+                "model": "stub",
+                "model_revision": "stub",
+                "families": list(_HEAD_FAMILIES),
+                "cutoff": 0.6,
             }
         ),
         encoding="utf-8",
+    )
+    families_path.parent.mkdir(parents=True, exist_ok=True)
+    listed = [
+        "software-engineering",
+        "ai-ml-data-science",
+        *extra_families,
+        "unclassified-tech",
+    ]
+    families_path.write_text(
+        json.dumps({"families": [{"name": name} for name in listed]}), encoding="utf-8"
     )
 
 
@@ -119,8 +140,10 @@ def _run(tmp_path: Path, monkeypatch) -> Path:
             "role_trends",
             "--db",
             str(tmp_path / "db"),
-            "--centroids",
-            str(tmp_path / "rc"),
+            "--classifier",
+            str(tmp_path / "head"),
+            "--title-cache",
+            str(tmp_path / "title_cache.parquet"),
             "--families",
             str(tmp_path / "families.json"),
             "--ledger",
@@ -151,10 +174,10 @@ def _run(tmp_path: Path, monkeypatch) -> Path:
 
 
 def test_counts_rows_by_family_and_band_and_isolates_non_tech(tmp_path, monkeypatch):
-    _centroids(tmp_path / "rc", tmp_path / "families.json")
-    x = [1.0, 0.0, 0.0, 0.0]  # -> cluster 0, family software-engineering
-    y = [0.0, 1.0, 0.0, 0.0]  # -> cluster 1, family data-science
-    z = [0.0, 0.0, 1.0, 0.0]  # -> cluster 2, NON-TECH
+    _taxonomy(tmp_path / "head", tmp_path / "families.json")
+    x = [1.0, 0.0, 0.0, 0.0]  # -> software-engineering
+    y = [0.0, 1.0, 0.0, 0.0]  # -> ai-ml-data-science
+    z = [0.0, 0.0, 1.0, 0.0]  # -> non-tech
     _table(
         tmp_path / "db",
         [
@@ -192,19 +215,20 @@ def test_counts_rows_by_family_and_band_and_isolates_non_tech(tmp_path, monkeypa
 
     rows = {(r["family"], r["band"]): r["count"] for r in _rows(ledger)}
     assert rows[("software-engineering", "senior")] == 2  # 5 and 6 years band together
-    assert rows[("data-science", "intern")] == 1
+    assert rows[("ai-ml-data-science", "intern")] == 1
     # the non-tech row is the diagnostic: one unbanded number, never a chart series
     assert rows[("non-tech", "all")] == 1
-    assert ("data-science", "mid") not in rows  # only non-empty groups
+    assert ("ai-ml-data-science", "mid") not in rows  # only non-empty groups
 
 
 def test_a_tick_records_one_epoch_row_then_stays_quiet_while_unchanged(
     tmp_path, monkeypatch
 ):
-    """End-to-end (ADR-0164): the real centroid version, family-map fingerprint, tech-filter
-    version and derivations version all reach the epoch file through main() unchanged, and a
-    second tick with nothing different writes no second row."""
-    _centroids(tmp_path / "rc", tmp_path / "families.json")
+    """End-to-end (ADR-0164): the centroid column's `none`, the family-list fingerprint, the
+    tech-filter, derivations and dedup versions and the classifier head's version all reach the
+    epoch file through main() unchanged, and a second tick with nothing different writes no second
+    row."""
+    _taxonomy(tmp_path / "head", tmp_path / "families.json")
     _table(
         tmp_path / "db",
         [
@@ -228,14 +252,16 @@ def test_a_tick_records_one_epoch_row_then_stays_quiet_while_unchanged(
         tech_filter_version,
         derivations_version,
         dedup_version,
-        family_rules_fingerprint,
+        family_classifier_version,
     ) = rows[1]
-    assert centroid_version == "1"  # the fit's own version, not the series version
+    assert centroid_version == "none"  # no centroid fit decides anything (ADR-0220)
     assert fingerprint  # a real hash, not asserting its exact value
     assert tech_filter_version == str(tech_filter.TECH_FILTER_VERSION)
     assert derivations_version == str(DERIVATIONS_VERSION)
     assert dedup_version == str(index_plan.DEDUP_VERSION)
-    assert family_rules_fingerprint == role_family_rules.fingerprint()
+    assert (
+        family_classifier_version == "1"
+    )  # the head's own version, not the series version
 
     _run(tmp_path, monkeypatch)  # nothing about the taxonomy or the code changed
     rows_again = list(csv.reader(epochs.open(encoding="utf-8", newline="")))
@@ -247,7 +273,7 @@ def test_a_tick_is_stamped_with_the_run_stamp_prune_used(tmp_path, monkeypatch):
     `ts`, so Trends joins a removal to the tick it happened in."""
     from headstart.ingest import RUN_TS_ENV
 
-    _centroids(tmp_path / "rc", tmp_path / "families.json")
+    _taxonomy(tmp_path / "head", tmp_path / "families.json")
     _table(
         tmp_path / "db",
         [
@@ -272,7 +298,7 @@ def test_ats_becomes_its_own_column_and_splits_same_family_band_rows(
     """ADR-0075: two rows in the same (family, band) but different ats each get their own
     ledger row, and the non-tech diagnostic is always ats='all' — never split, same as it's
     never banded."""
-    _centroids(tmp_path / "rc", tmp_path / "families.json")
+    _taxonomy(tmp_path / "head", tmp_path / "families.json")
     x = [1.0, 0.0, 0.0, 0.0]  # -> software-engineering
     z = [0.0, 0.0, 1.0, 0.0]  # -> NON-TECH
     _table(
@@ -313,7 +339,7 @@ def test_ats_becomes_its_own_column_and_splits_same_family_band_rows(
 
 
 def test_ledger_accumulates_rows_across_runs(tmp_path, monkeypatch):
-    _centroids(tmp_path / "rc", tmp_path / "families.json")
+    _taxonomy(tmp_path / "head", tmp_path / "families.json")
     _table(
         tmp_path / "db",
         [
@@ -338,22 +364,21 @@ def test_ledger_accumulates_rows_across_runs(tmp_path, monkeypatch):
     assert len(rows) == 4  # (one stock group + the non-tech diagnostic) per run
 
 
-def test_missing_centroid_store_degrades_to_noop(tmp_path, monkeypatch, caplog):
+def test_missing_classifier_head_degrades_to_noop(tmp_path, monkeypatch, caplog):
     import logging
 
     caplog.set_level(logging.WARNING, logger="headstart.ingest.role_trends")
-    ledger = _run(tmp_path, monkeypatch)  # no _centroids(), no table — must not matter
+    ledger = _run(tmp_path, monkeypatch)  # no _taxonomy(), no table — must not matter
     assert not ledger.exists()
     assert any("skipping trends" in r.getMessage() for r in caplog.records)
 
 
-def test_missing_family_map_degrades_to_noop(tmp_path, monkeypatch, caplog):
-    """The centroids ride the HF state artifact but the map ships in git, so they go missing
-    for different reasons — and the workflow step is continue-on-error, which would turn an
-    unguarded FileNotFoundError into a green run that never accrues a row."""
+def test_missing_family_list_degrades_to_noop(tmp_path, monkeypatch, caplog):
+    """The workflow step is continue-on-error, which would turn an unguarded FileNotFoundError
+    into a green run that never accrues a row."""
     import logging
 
-    _centroids(tmp_path / "rc", tmp_path / "families.json")
+    _taxonomy(tmp_path / "head", tmp_path / "families.json")
     (tmp_path / "families.json").unlink()
     _table(
         tmp_path / "db",
@@ -374,10 +399,9 @@ def test_missing_family_map_degrades_to_noop(tmp_path, monkeypatch, caplog):
 
 
 def test_empty_served_table_degrades_to_noop(tmp_path, monkeypatch, caplog):
-    # np.stack has no empty case, so an empty table must be caught before the count
     import logging
 
-    _centroids(tmp_path / "rc", tmp_path / "families.json")
+    _taxonomy(tmp_path / "head", tmp_path / "families.json")
     _table(tmp_path / "db", [])
     caplog.set_level(logging.WARNING, logger="headstart.ingest.role_trends")
     ledger = _run(tmp_path, monkeypatch)
@@ -385,18 +409,26 @@ def test_empty_served_table_degrades_to_noop(tmp_path, monkeypatch, caplog):
     assert any("is empty" in r.getMessage() for r in caplog.records)
 
 
-def test_stale_family_map_errors_visibly_instead_of_silently(
+def test_a_head_deciding_an_unlisted_family_errors_visibly_instead_of_silently(
     tmp_path, monkeypatch, caplog
 ):
-    """A refit shipped without re-curating the map is routine (ADR-0040). The workflow step is
-    continue-on-error, so an unguarded ValueError would crash into a green run with no
+    """A head trained for families the curated list no longer names (ADR-0220). The workflow
+    step is continue-on-error, so an unguarded ValueError would crash into a green run with no
     annotation — it must surface as ERROR (an ::error:: under Actions) and exit non-zero."""
     import logging
 
-    _centroids(tmp_path / "rc", tmp_path / "families.json")
-    spec = json.loads((tmp_path / "families.json").read_text())
-    spec["centroid_version"] = 99  # the map now describes a different fit
-    (tmp_path / "families.json").write_text(json.dumps(spec), encoding="utf-8")
+    _taxonomy(tmp_path / "head", tmp_path / "families.json")
+    (tmp_path / "families.json").write_text(
+        json.dumps(
+            {
+                "families": [
+                    {"name": "software-engineering"},
+                    {"name": "unclassified-tech"},
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
     _table(
         tmp_path / "db",
         [
@@ -417,8 +449,10 @@ def test_stale_family_map_errors_visibly_instead_of_silently(
             "role_trends",
             "--db",
             str(tmp_path / "db"),
-            "--centroids",
-            str(tmp_path / "rc"),
+            "--classifier",
+            str(tmp_path / "head"),
+            "--title-cache",
+            str(tmp_path / "title_cache.parquet"),
             "--families",
             str(tmp_path / "families.json"),
             "--ledger",
@@ -437,16 +471,16 @@ def test_stale_family_map_errors_visibly_instead_of_silently(
     assert any("taxonomy unusable" in r.getMessage() for r in caplog.records)
 
 
-def test_half_landed_centroid_store_degrades_to_noop(tmp_path, monkeypatch, caplog):
-    # manifest without vectors: roles.load would crash on the missing file
+def test_half_landed_classifier_head_degrades_to_noop(tmp_path, monkeypatch, caplog):
+    # manifest without weights: Head() would crash on the missing file
     import logging
 
-    _centroids(tmp_path / "rc", tmp_path / "families.json")
-    (tmp_path / "rc" / "centroids.f32").unlink()
+    _taxonomy(tmp_path / "head", tmp_path / "families.json")
+    (tmp_path / "head" / "head.npz").unlink()
     caplog.set_level(logging.WARNING, logger="headstart.ingest.role_trends")
     ledger = _run(tmp_path, monkeypatch)
     assert not ledger.exists()
-    assert any("centroids.f32" in r.getMessage() for r in caplog.records)
+    assert any("head.npz" in r.getMessage() for r in caplog.records)
 
 
 def _watchlist(tmp_path: Path, roles_spec: list[dict]) -> None:
@@ -462,7 +496,7 @@ def test_new_metric_counts_only_rows_first_seen_inside_the_window(
     A row without a stamp (pre-ADR-0031) is stock but never new — absence of evidence."""
     from datetime import datetime, timedelta
 
-    _centroids(tmp_path / "rc", tmp_path / "families.json")
+    _taxonomy(tmp_path / "head", tmp_path / "families.json")
     now = datetime.now(UTC)
     fresh = (now - timedelta(days=1)).isoformat(timespec="seconds")
     stale = (now - timedelta(days=30)).isoformat(timespec="seconds")
@@ -503,11 +537,10 @@ def test_new_metric_counts_only_rows_first_seen_inside_the_window(
     assert rows[("new", "software-engineering", "mid")] == 1  # only the 1-day-old row
 
 
-def test_watch_role_counts_by_title_regardless_of_cluster(tmp_path, monkeypatch):
-    """The pattern is the definition (ADR-0051): an FDE posting counts under watch:fde even
-    when the embedding filed it in a general cluster — that smear across clusters is exactly
-    why a ~1% role needs a watchlist rather than a centroid of its own."""
-    _centroids(tmp_path / "rc", tmp_path / "families.json")
+def test_watch_role_counts_by_title_regardless_of_family(tmp_path, monkeypatch):
+    """The pattern is the definition (ADR-0051): an FDE posting counts under watch:fde whatever
+    family the classifier gave it."""
+    _taxonomy(tmp_path / "head", tmp_path / "families.json")
     _watchlist(
         tmp_path,
         [
@@ -519,13 +552,8 @@ def test_watch_role_counts_by_title_regardless_of_cluster(tmp_path, monkeypatch)
             }
         ],
     )
-    x = [1.0, 0.0, 0.0, 0.0]  # cluster 0 -> software-engineering
-    y = [
-        0.0,
-        1.0,
-        0.0,
-        0.0,
-    ]  # cluster 1 -> data-science: a "mis-filed" FDE still counts
+    x = [1.0, 0.0, 0.0, 0.0]  # -> software-engineering
+    y = [0.0, 1.0, 0.0, 0.0]  # -> ai-ml-data-science: an FDE filed there still counts
     _table(
         tmp_path / "db",
         [
@@ -559,55 +587,97 @@ def test_watch_role_counts_by_title_regardless_of_cluster(tmp_path, monkeypatch)
     assert rows[("stock", "watch:fde", "senior")] == 1
     # the watched rows still count in their assigned families — the watchlist observes, never moves
     assert rows[("stock", "software-engineering", "mid")] == 2
-    assert rows[("stock", "data-science", "senior")] == 1
+    assert rows[("stock", "ai-ml-data-science", "senior")] == 1
 
 
-def test_title_rules_decide_before_the_centroid_and_watch_roles_count_tech_only(
+def test_the_classifier_decides_each_family_and_watch_roles_count_tech_only(
     tmp_path, monkeypatch
 ):
-    """ADR-0215: a title rule outranks the nearest centroid in both directions (a tech title on a
-    non-tech vector, a non-tech title on a tech vector), a title no rule decides falls back to
-    the centroid, a watch role skips a row that ended up non-tech, and every ledger row carries
-    the series version rather than the bare centroid version."""
-    _centroids(tmp_path / "rc", tmp_path / "families.json")
+    """ADR-0220: a row's family is its title's verdict under the classifier head, a title the
+    head cannot place is counted as unclassified-tech, a watch role skips a row the head called
+    non-tech, every ledger row carries the head's series version, and the next run reuses the
+    title cache instead of encoding again."""
+    _taxonomy(tmp_path / "head", tmp_path / "families.json")
     _watchlist(
         tmp_path,
         [
             {
                 "name": "frontend",
                 "label": "Frontend",
-                "parent": "web-development",
+                "parent": "software-engineering",
                 "match": ["\\bfront[\\s-]?end\\b"],
             }
         ],
     )
-    x = [1.0, 0.0, 0.0, 0.0]  # cluster 0 -> software-engineering
-    y = [0.0, 1.0, 0.0, 0.0]  # cluster 1 -> data-science
-    z = [0.0, 0.0, 1.0, 0.0]  # cluster 2 -> non-tech
+    x = [1.0, 0.0, 0.0, 0.0]  # -> software-engineering
+    y = [0.0, 1.0, 0.0, 0.0]  # -> ai-ml-data-science
+    z = [0.0, 0.0, 1.0, 0.0]  # -> non-tech
     _table(
         tmp_path / "db",
         [
-            {"id": "a", "title": "Senior Data Engineer", "vector": x},
-            {"id": "b", "title": "Frontend Engineer", "vector": z},
-            {"id": "c", "title": "Front End Clerk", "vector": x},
-            {"id": "d", "title": "Engineer II", "vector": y},
+            {"id": "a", "title": "Frontend Engineer", "vector": x},
+            {"id": "b", "title": "ML Engineer", "vector": y},
+            {"id": "c", "title": "Front End Clerk", "vector": z},
+            # a vector like every served row; the head is told below it cannot place this title
+            {"id": "d", "title": "Vague Title", "vector": [0.0, 0.0, 0.0, 1.0]},
         ],
     )
+    _FAMILY_OF_TITLE["vague title"] = _AMBIGUOUS
     ledger = _run(tmp_path, monkeypatch)
 
     written = _rows(ledger)
     rows = {(r["metric"], r["family"]): r["count"] for r in written}
-    assert rows[("stock", "data-engineering")] == 1  # the title, not cluster 0
-    assert rows[("stock", "web-development")] == 1  # the title, not non-tech cluster 2
-    assert rows[("stock", "data-science")] == 1  # no rule: cluster 1 decides
-    assert ("stock", "software-engineering") not in rows
-    assert rows[("stock", "non-tech")] == 1  # the clerk, by a negative rule
+    assert rows[("stock", "software-engineering")] == 1
+    assert rows[("stock", "ai-ml-data-science")] == 1
+    assert rows[("stock", "unclassified-tech")] == 1  # the head could not place it
+    assert rows[("stock", "non-tech")] == 1  # the clerk
     assert rows[("stock", "watch:frontend")] == 1  # the engineer; the clerk is not tech
     assert {r["version"] for r in written} == {role_trends.series_version(1)}
 
+    cache = role_family_classifier.load_cache(tmp_path / "title_cache.parquet", 1)
+    assert len(cache.decisions) == 4
+    encoded = []
+    monkeypatch.setattr(
+        role_family_classifier, "encode", lambda t, m, r: encoded.append(t)
+    )
+    _run(tmp_path, monkeypatch)
+    assert encoded == []  # every title was already decided under this head
+
+
+def test_trends_wait_while_a_new_heads_title_cache_warms_up(
+    tmp_path, monkeypatch, caplog
+):
+    """A new head starts with an empty cache. A run whose budget cannot cover the served titles
+    fills what it can and counts nothing, rather than charting the backlog as unclassified."""
+    import logging
+
+    _taxonomy(tmp_path / "head", tmp_path / "families.json")
+    _table(
+        tmp_path / "db",
+        [{"id": "a", "title": "Backend Dev", "vector": [1.0, 0.0, 0.0, 0.0]}],
+    )
+    epochs = tmp_path / "trends_epochs.csv"
+    epochs.write_text(
+        "ts,centroid_version,family_map_fingerprint,tech_filter_version,"
+        "derivations_version,dedup_version,family_rules_fingerprint\n"
+        "2026-09-24T21:19:12+00:00,2,f,5,15,4,3b5cc5d9183c\n",
+        encoding="utf-8",
+    )
+    caplog.set_level(logging.WARNING, logger="headstart.ingest.role_trends")
+    monkeypatch.setattr(role_trends, "_CLASSIFY_BUDGET_SECONDS", -1.0)
+    ledger = _run(tmp_path, monkeypatch)
+    assert not ledger.exists()
+    assert any("warming up" in r.getMessage() for r in caplog.records)
+    # the epoch file is in its current shape even though the run counted nothing
+    assert (
+        epochs.read_text(encoding="utf-8")
+        .splitlines()[0]
+        .endswith("family_classifier_version")
+    )
+
 
 def test_watchlist_with_unknown_parent_errors_visibly(tmp_path, monkeypatch, caplog):
-    _centroids(tmp_path / "rc", tmp_path / "families.json")
+    _taxonomy(tmp_path / "head", tmp_path / "families.json")
     _watchlist(
         tmp_path,
         [{"name": "fde", "parent": "no-such-family", "match": ["fde"]}],
@@ -633,8 +703,10 @@ def test_watchlist_with_unknown_parent_errors_visibly(tmp_path, monkeypatch, cap
             "role_trends",
             "--db",
             str(tmp_path / "db"),
-            "--centroids",
-            str(tmp_path / "rc"),
+            "--classifier",
+            str(tmp_path / "head"),
+            "--title-cache",
+            str(tmp_path / "title_cache.parquet"),
             "--families",
             str(tmp_path / "families.json"),
             "--ledger",
@@ -666,7 +738,7 @@ def test_pre_metric_csv_is_folded_into_the_parquet_ledger(tmp_path, monkeypatch)
         "2026-08-11T00:00:00+00:00,2,non-tech,all,3\n",
         encoding="utf-8",
     )
-    _centroids(tmp_path / "rc", tmp_path / "families.json")
+    _taxonomy(tmp_path / "head", tmp_path / "families.json")
     x = [1.0, 0.0, 0.0, 0.0]
     _table(
         tmp_path / "db",
@@ -709,7 +781,7 @@ def test_pre_ats_csv_is_folded_into_the_parquet_ledger(tmp_path, monkeypatch):
         "2026-08-11T00:00:00+00:00,2,new,software-engineering,mid,4\n",
         encoding="utf-8",
     )
-    _centroids(tmp_path / "rc", tmp_path / "families.json")
+    _taxonomy(tmp_path / "head", tmp_path / "families.json")
     x = [1.0, 0.0, 0.0, 0.0]
     _table(
         tmp_path / "db",
@@ -749,7 +821,7 @@ def test_current_shape_csv_is_folded_into_the_parquet_ledger(tmp_path, monkeypat
         "2026-08-11T00:00:00+00:00,2,new,ai-ml,senior,lever,4\n",
         encoding="utf-8",
     )
-    _centroids(tmp_path / "rc", tmp_path / "families.json")
+    _taxonomy(tmp_path / "head", tmp_path / "families.json")
     _table(
         tmp_path / "db",
         [
@@ -803,7 +875,7 @@ def test_a_zero_byte_legacy_csv_does_not_sink_the_run(tmp_path, monkeypatch):
     a killed run leaves the previous ledger intact, never a 0-byte one."""
     ledger = tmp_path / "role_trends.parquet"
     ledger.with_suffix(".csv").touch()
-    _centroids(tmp_path / "rc", tmp_path / "families.json")
+    _taxonomy(tmp_path / "head", tmp_path / "families.json")
     _table(
         tmp_path / "db",
         [
@@ -830,12 +902,11 @@ def test_count_groups_returns_assignments_excluding_non_tech_and_watch_roles():
     taxonomy — a row "moving" between those is a title edit, not a reassignment. Either one
     leaking into the snapshot would manufacture transitions out of nothing.
     """
-    centroids = np.eye(3, _DIM, dtype=np.float32)
-    families = {
-        0: "software-engineering",
-        1: "ai-ml",
-        2: None,
-    }  # 2 is the non-tech cluster
+    family_of = {
+        "Backend Engineer": "software-engineering",
+        "ML Engineer": "ai-ml-data-science",
+        "Data Entry Clerk": None,  # non-tech
+    }.get
     watchlist = (
         roles.load_watchlist_from_spec(  # type: ignore[attr-defined]
             {
@@ -847,7 +918,7 @@ def test_count_groups_returns_assignments_excluding_non_tech_and_watch_roles():
                     }
                 ]
             },
-            {"software-engineering", "ai-ml"},
+            {"software-engineering", "ai-ml-data-science"},
         )
         if hasattr(roles, "load_watchlist_from_spec")
         else []
@@ -892,10 +963,13 @@ def test_count_groups_returns_assignments_excluding_non_tech_and_watch_roles():
         ),
     )
     _counts, non_tech, assigned = role_trends.count_groups(
-        rows, centroids, families, watchlist, "2026-01-01T00:00:00+00:00"
+        rows, family_of, watchlist, "2026-01-01T00:00:00+00:00"
     )
     assert non_tech == 1
-    assert assigned == {"ats:b:tech": "software-engineering", "ats:b:ai": "ai-ml"}
+    assert assigned == {
+        "ats:b:tech": "software-engineering",
+        "ats:b:ai": "ai-ml-data-science",
+    }
     assert not any(k.startswith(roles.WATCH_PREFIX) for k in assigned.values())
 
 
@@ -910,7 +984,7 @@ def test_top_line_distinguishes_two_atses_sharing_a_family_and_band(
     repo has already been burned on double-counting. The ledger was always right (ADR-0075); only
     the label was ambiguous.
     """
-    _centroids(tmp_path / "rc", tmp_path / "families.json")
+    _taxonomy(tmp_path / "head", tmp_path / "families.json")
     x = [1.0, 0.0, 0.0, 0.0]
     _table(
         tmp_path / "db",

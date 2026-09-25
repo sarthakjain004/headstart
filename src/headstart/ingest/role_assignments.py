@@ -1,12 +1,10 @@
 """Remember which family each served row was assigned to, and report the ones that moved.
 
-`role_trends` re-derives every row's family on every tick. Frozen centroids make that stable **for
-a given vector** — but not for a given *job*: ADR-0050's description backfill re-embeds rows, the
-new vector can fall nearer a different centroid, and the job silently changes family while keeping
-its `first_seen`. In the ledger that is indistinguishable from the old row closing and a new one
-opening somewhere else, so a family can appear to shed jobs it never lost. Since ADR-0215 title
-rules decide most rows before a centroid is consulted, so a re-embed moves only the rows no rule
-decides, and a retitled job can move too.
+`role_trends` re-derives every row's family on every tick. A job can change family while keeping
+its `first_seen`: under centroids a re-embedded description moved it (ADR-0050), and since
+ADR-0220, when the family is the title's verdict, a retitled posting does. In the ledger that is
+indistinguishable from the old row closing and a new one opening somewhere else, so a family can
+appear to shed jobs it never lost.
 
 That is not hypothetical. Over 2026-08-11..16 `software-engineering` fell 68,199 -> 67,294 while
 every other family rose; title-matched watch roles over the same window were flat (+0.2%), and at
@@ -24,8 +22,8 @@ Two files under ``data/state/``:
   ``role_assignments.parquet``  the current tick's ``id -> family`` (overwritten each run)
   ``role_reassignments.csv``    append-only ``ts,version,family_from,family_to,count``
 
-Version is the series version (`role_trends.series_version`): a centroid refit or a new generation
-of title rules re-bases every assignment, so transitions must never be compared across versions.
+Version is the series version (`role_trends.series_version`): a new classifier head re-bases
+every assignment, so transitions must never be compared across versions.
 The snapshot still stamps it under the key ``centroid_version``, the name it had when the two were
 the same number.
 """

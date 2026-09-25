@@ -35,7 +35,7 @@ would own every lens. ADR-0143 exists for this confound; the
 exclusion here is its Hot-tab-shaped equivalent, and its count ships in the artifact rather than
 being quietly applied.
 
-**``watch:`` families double-count** against centroid families (ADR-0051), so they are dropped
+**``watch:`` families double-count** against the families (ADR-0051), so they are dropped
 from every total. ``non-tech`` is dropped too: the tab ranks tech hiring, and its rows link to a
 trend of tech openings.
 
@@ -77,13 +77,13 @@ _BOARD_DELTAS = REPO_ROOT / "data" / "state" / "role_trend_board_deltas"
 _OUT = REPO_ROOT / "data" / "state" / "hot_boards.json"
 # role_trends' methodology boundaries (ADR-0164), written by the stage just before this one
 _EPOCHS = REPO_ROOT / "data" / "state" / "trends_epochs.csv"
-# The epoch columns whose change moves a Board's stock: a refit, a family-map or family
-# title-rule edit (ADR-0215), a tech-filter change or duplicate removal. An extraction change
-# (derivations) moves no count.
+# The epoch columns whose change moves a Board's stock: a centroid refit (before ADR-0220), a
+# family-list or family-assignment change (ADR-0215, ADR-0220), a tech-filter change or duplicate
+# removal. An extraction change (derivations) moves no count.
 _STOCK_MOVING = (
     "centroid_version",
     "family_map_fingerprint",
-    "family_rules_fingerprint",
+    "family_classifier_version",
     "tech_filter_version",
     "dedup_version",
 )
@@ -169,8 +169,8 @@ def read_stock_change(
     copy would mistake its oldest present tick for the baseline and lose one real measurement.
 
     **Only the newest tick's ``centroid_version`` is summed** (ADR-0040/ADR-0143). The stamp holds
-    the series version (ADR-0215). A refit or a new generation of title rules finds no Board
-    counts at its own version, so `role_trends` writes that version a fresh baseline of
+    the series version (ADR-0220). A new series — a centroid refit once, a new classifier head
+    now — finds no Board counts at its own version, so `role_trends` writes that version a fresh baseline of
     every Board's stock; summed across versions it made every Board "newly discovered" for a week.
     The same by-position rule drops the current version's first tick as its baseline.
 

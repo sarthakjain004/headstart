@@ -2,21 +2,21 @@
 """Append this run's role-group counts to the trends ledger (ADR-0040) — merge stage.
 
 Runs after ``index sync`` and ``index prune``, so it counts the **served stock**: every row
-still in the ``jobs`` table gets a role family from its title rules (ADR-0215,
-:mod:`headstart.ingest.role_family_rules`), or, when no rule decides, from its nearest frozen
-centroid mapped through the curated ``config/role_families.json``. The row is banded by the experience
-columns the table already carries, and one ``(ts, version, family, band, ats, count)`` row per
-non-empty group is appended to ``data/state/role_trends.parquet`` — plus one unbanded, undecomposed
-``(non-tech, all, all)`` diagnostic row. Series identity is ``(version, family)``; ``version``
-changes only on a re-base — a centroid refit (ADR-0040) or a new generation of title rules
-(ADR-0215), see :func:`series_version`. ``ats`` (ADR-0075) lets the
-Trends tab filter by which ATS posted a run; a pre-ADR-0075 row carries ``ats='all'`` on
+still in the ``jobs`` table gets a role family from its title, through the classifier head in
+``config/role_family_classifier/`` (ADR-0220, :mod:`headstart.ingest.role_family_classifier`), and
+titles already decided under that head come from a cache kept in ``data/state``. The row is banded
+by the experience columns the table already carries, and one ``(ts, version, family, band, ats,
+count)`` row per non-empty group is appended to ``data/state/role_trends.parquet`` — plus one
+unbanded, undecomposed ``(non-tech, all, all)`` diagnostic row. Series identity is ``(version,
+family)``; ``version`` changes only on a re-base, a new classifier head (see
+:func:`series_version`). ``ats`` (ADR-0075) lets the Trends tab filter by which ATS posted a
+run; a pre-ADR-0075 row carries ``ats='all'`` on
 migration, the same sentinel the diagnostic row itself always uses.
 
 It also records which family each row landed in and reports the rows that **changed** family
 since the last tick (ADR-0057, :mod:`headstart.ingest.role_assignments`). Counting stock alone
-cannot tell a closure apart from a reassignment, and re-embedding (ADR-0050) moves real jobs
-between families — so the transitions ride their own ledger rather than distorting this one.
+cannot tell a closure apart from a reassignment, and a retitled posting moves between families
+— so the transitions ride their own ledger rather than distorting this one.
 
 The ledger is **Parquet, not CSV** (ADR-0120). It is append-only but the merge job re-uploads
 it whole every run, so its on-disk size is a per-run upload cost: measured on the real ledger,
@@ -24,9 +24,10 @@ zstd + dictionary encoding took 172,537,804 bytes of CSV to 3,430,805 — 50.3x 
 storage budget CLAUDE.md names as this workflow's binding constraint. A pre-ADR-0120 CSV
 ledger sitting beside it is read once and folded in, so no history is lost on the cutover.
 
-Degrades rather than dies: without the centroid store or the family map on disk (the fit
-hasn't shipped, or the join's state artifact was lost) it logs a warning and exits 0 — trends
-must never sink a run that already scraped and embedded successfully.
+Degrades rather than dies: without the classifier head or the family list on disk it logs a
+warning and exits 0, and while a new head's title cache is still warming up it fills the cache
+and counts nothing — trends must never sink a run that already scraped and embedded
+successfully.
 
 Run: python -m headstart.ingest.role_trends
 """
@@ -35,17 +36,15 @@ from __future__ import annotations
 
 import argparse
 import csv
-import functools
+from collections.abc import Callable
 from datetime import datetime, timedelta
 from pathlib import Path
-
-import numpy as np
 
 from headstart import log, roles, tech_filter
 from headstart.ingest import (
     REPO_ROOT,
     role_assignments,
-    role_family_rules,
+    role_family_classifier,
     run_ts,
     trends_epochs,
 )
@@ -60,8 +59,16 @@ from headstart.ingest.index_plan import (
 _log = log.get(__name__, __spec__)
 
 _DB = REPO_ROOT / "data" / "lancedb"
-_CENTROIDS = REPO_ROOT / "data" / "state" / "role_centroids"
-_FAMILIES = REPO_ROOT / "config" / "role_families.json"  # curated, in git (ADR-0040)
+_FAMILIES = REPO_ROOT / "config" / "role_families.json"  # curated, in git (ADR-0220)
+# the trained head and its manifest, in git; a new head is a new version (ADR-0220)
+_CLASSIFIER = REPO_ROOT / "config" / "role_family_classifier"
+# normalised title -> family under the current head, carried between runs in the state artifact
+_TITLE_CACHE = REPO_ROOT / "data" / "state" / "role_title_families.parquet"
+# Encoding time one run may spend filling the cache: a few thousand new titles take well under a
+# minute, and a new head's ~270k-title backlog fills over a few runs instead of timing one out.
+_CLASSIFY_BUDGET_SECONDS = 720.0
+# Trends counts nothing until this share of served rows has a decided title (a new head's warm-up).
+_MIN_TITLE_COVERAGE = 0.99
 _WATCHLIST = REPO_ROOT / "config" / "role_watchlist.json"  # curated, in git (ADR-0051)
 _LEDGER = REPO_ROOT / "data" / "state" / "role_trends.parquet"
 _BOARD_LEDGER = REPO_ROOT / "data" / "validate" / "liveness"
@@ -96,34 +103,19 @@ _PRE_METRIC_COLUMNS = (
 NEW_WINDOW_DAYS = 7
 
 
-def series_version(centroid_version: int) -> int:
-    """The series identity every ledger here is stamped with (ADR-0040, ADR-0215).
-
-    A row's family depends on the centroids and, since ADR-0215, first on the title rules, so a
-    re-base of either starts new series. Before ADR-0215 this was the bare centroid version (the
-    ledgers hold 1 and 2). Only equality and order are ever read: the Space charts the newest
-    version, and every snapshot compares its stamp for equality. So the encoding only has to grow
-    whenever either part does, which it does while a rules generation stays under 1000.
-    """
-    return centroid_version * 1000 + role_family_rules.RULES_GENERATION
+# Series versions before ADR-0220 were 1 and 2 (centroid fits) and 2001 (title rules over
+# centroid 2). A classifier head's series sit above all of them.
+_CLASSIFIER_SERIES_BASE = 3000
 
 
-@functools.cache
-def _rule_family(title: str | None) -> str | None:
-    """The title rules' family, memoised: served titles repeat (271,828 distinct among 514,163
-    rows in v654), and the rules cost ~66 µs a title, most of this step's time."""
-    return role_family_rules.classify(title).family
+def series_version(head_version: int) -> int:
+    """The series identity every ledger here is stamped with (ADR-0040, ADR-0220).
 
-
-def _family_of(
-    title: str | None, cluster: int, families: dict[int, str | None]
-) -> str | None:
-    """A row's family (ADR-0215): its title rules' verdict, else its nearest centroid's family.
-    None means non-tech, from either source."""
-    decided = _rule_family(title)
-    if decided is None:
-        return families[cluster]
-    return None if decided == roles.NON_TECH else decided
+    A row's family is its title's verdict under one classifier head, so a new head starts new
+    series. Only equality and order are ever read: the Space charts the newest version, and every
+    snapshot compares its stamp for equality. The base keeps every head's series above the older
+    eras'."""
+    return _CLASSIFIER_SERIES_BASE + head_version
 
 
 def _board_keys(ids: list[str], ledger: Path) -> list[str]:
@@ -132,10 +124,28 @@ def _board_keys(ids: list[str], ledger: Path) -> list[str]:
     return [resolve_board(job_id, live) for job_id in ids]
 
 
+def _columns(rows) -> tuple[list, ...]:
+    """The served columns the counts read, row-aligned. ``first_seen`` is absent when the table
+    predates ADR-0031; those rows are stock, never new."""
+    titles = rows["title"].to_pylist()
+    seen = (
+        rows["first_seen"].to_pylist()
+        if "first_seen" in rows.schema.names
+        else [None] * len(titles)
+    )
+    return (
+        rows["id"].to_pylist(),
+        rows["min_years"].to_pylist(),
+        titles,
+        rows["employment_type"].to_pylist(),
+        rows["ats"].to_pylist(),
+        seen,
+    )
+
+
 def count_groups(
     rows,
-    centroids,
-    families: dict[int, str | None],
+    family_of: Callable[[str | None], str | None],
     watchlist: list[roles.WatchRole],
     new_after: str,
 ) -> tuple[dict[tuple[str, str, str, str], int], int, dict[str, str]]:
@@ -148,8 +158,8 @@ def count_groups(
     Two metrics per group (ADR-0051): ``stock`` — every live row — and ``new`` — the subset
     whose ``first_seen`` is at or after ``new_after``. Stock answers "how big is this field";
     new answers "is it hiring this week", and the two disagree exactly where it matters (a
-    large family can be barely posting). ``first_seen`` survives an ADR-0050 re-embed, so an
-    upgraded vector does not read as a fresh opening; rows predating ADR-0031 carry no stamp
+    large family can be barely posting). ``first_seen`` survives an ADR-0050 re-embed, so a
+    re-embedded row does not read as a fresh opening; rows predating ADR-0031 carry no stamp
     and are never "new", which under-counts the first week after that ADR and nothing after.
 
     ``ats`` (ADR-0075) lets a Trends request narrow its scope to a chosen set of ATSes — every
@@ -163,22 +173,7 @@ def count_groups(
     Non-tech rows are the tech filter's known creep (ADR-0017 is recall-biased on purpose) — kept
     out of the role groups, but returned as one number so the ledger carries a filter-health
     series (ADR-0040)."""
-    # to_numpy on the (possibly chunked) vector column yields one array per row; stacking is
-    # row-aligned with the other columns' to_pylist across chunk boundaries.
-    vectors = np.stack(rows["vector"].to_numpy(zero_copy_only=False))
-    clusters = roles.assign(vectors, centroids)
-    ids = rows["id"].to_pylist()
-    min_years = rows["min_years"].to_pylist()
-    titles = rows["title"].to_pylist()
-    employment = rows["employment_type"].to_pylist()
-    atses = rows["ats"].to_pylist()
-    # Absent when the table predates ADR-0031; those rows are stock, never new.
-    seen = (
-        rows["first_seen"].to_pylist()
-        if "first_seen" in rows.schema.names
-        else [None] * len(titles)
-    )
-
+    ids, min_years, titles, employment, atses, seen = _columns(rows)
     counts: dict[tuple[str, str, str, str], int] = {}
     assigned: dict[str, str] = {}
 
@@ -192,12 +187,12 @@ def count_groups(
             )
 
     non_tech = 0
-    for job_id, cluster, years, title, etype, first, ats in zip(
-        ids, clusters, min_years, titles, employment, seen, atses, strict=True
+    for job_id, years, title, etype, first, ats in zip(
+        ids, min_years, titles, employment, seen, atses, strict=True
     ):
         # ISO-8601 UTC on both sides, so string order is time order.
         is_new = bool(first) and first >= new_after
-        family = _family_of(title, int(cluster), families)
+        family = family_of(title)
         if family is None:
             non_tech += 1
             continue
@@ -214,8 +209,7 @@ def count_groups(
 
 def count_board_groups(
     rows,
-    centroids,
-    families: dict[int, str | None],
+    family_of: Callable[[str | None], str | None],
     watchlist: list[roles.WatchRole],
     new_after: str,
     boards: list[str],
@@ -225,19 +219,8 @@ def count_board_groups(
     dict[str, str],
     dict[tuple[str, str, str, str, str], int],
 ]:
-    """Count the regular ledger and each Board's contribution in one assignment pass."""
-    vectors = np.stack(rows["vector"].to_numpy(zero_copy_only=False))
-    clusters = roles.assign(vectors, centroids)
-    ids = rows["id"].to_pylist()
-    min_years = rows["min_years"].to_pylist()
-    titles = rows["title"].to_pylist()
-    employment = rows["employment_type"].to_pylist()
-    atses = rows["ats"].to_pylist()
-    seen = (
-        rows["first_seen"].to_pylist()
-        if "first_seen" in rows.schema.names
-        else [None] * len(titles)
-    )
+    """Count the regular ledger and each Board's contribution in one pass."""
+    ids, min_years, titles, employment, atses, seen = _columns(rows)
     if len(boards) != len(ids):
         raise ValueError("Board identities must align with served rows")
     counts: dict[tuple[str, str, str, str], int] = {}
@@ -256,11 +239,11 @@ def count_board_groups(
             board_key = (board, *key)
             board_counts[board_key] = board_counts.get(board_key, 0) + 1
 
-    for job_id, cluster, years, title, etype, first, ats, board in zip(
-        ids, clusters, min_years, titles, employment, seen, atses, boards, strict=True
+    for job_id, years, title, etype, first, ats, board in zip(
+        ids, min_years, titles, employment, seen, atses, boards, strict=True
     ):
         is_new = bool(first) and first >= new_after
-        family = _family_of(title, int(cluster), families)
+        family = family_of(title)
         if family is None:
             non_tech += 1
             key = (board, "stock", roles.NON_TECH, "all", ats)
@@ -525,7 +508,8 @@ def main() -> int:
     log.context("role_trends")
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--db", default=str(_DB))
-    ap.add_argument("--centroids", type=Path, default=_CENTROIDS)
+    ap.add_argument("--classifier", type=Path, default=_CLASSIFIER)
+    ap.add_argument("--title-cache", type=Path, default=_TITLE_CACHE)
     ap.add_argument("--families", type=Path, default=_FAMILIES)
     ap.add_argument("--watchlist", type=Path, default=_WATCHLIST)
     ap.add_argument("--ledger", type=Path, default=_LEDGER)
@@ -537,24 +521,21 @@ def main() -> int:
     ap.add_argument("--epochs", type=Path, default=_EPOCHS)
     args = ap.parse_args()
 
-    # Both inputs are checked, not just the centroids: the map ships in git while the
-    # centroids ride the state artifact, so they go missing for different reasons — and the
-    # step is `continue-on-error`, which would turn an unguarded FileNotFoundError into a
-    # green run that silently never accrues a row.
+    # The step is `continue-on-error`, which would turn an unguarded FileNotFoundError into a
+    # green run that silently never accrues a row, so every input is checked up front.
     missing = [
         str(p)
         for p in (
-            args.centroids / "manifest.json",
-            args.centroids
-            / "centroids.f32",  # a half-landed store must not reach roles.load
+            args.classifier / "manifest.json",
+            args.classifier / "head.npz",
             args.families,
         )
         if not p.exists()
     ]
     if missing:
         _log.warning(
-            f"skipping trends this run — missing {', '.join(missing)} (fit centroids with "
-            "the cluster-roles workflow; the family map ships in git, ADR-0040)"
+            f"skipping trends this run — missing {', '.join(missing)} (the classifier head and "
+            "the family list ship in git, ADR-0220)"
         )
         return 0
 
@@ -563,41 +544,69 @@ def main() -> int:
     from headstart.embedding_conventions import PROD_TABLE
 
     try:
-        centroids, manifest = roles.load(args.centroids)
-        families = roles.load_families(args.families, manifest)
-        family_names = {f for f in families.values() if f is not None}
-        role_family_rules.check_families(family_names)
-        watchlist = roles.load_watchlist(args.watchlist, family_names)
+        family_names = roles.load_families(args.families)
+        head = role_family_classifier.Head(args.classifier)
+        head.check_families(family_names)
+        # Rewritten here, before any warm-up return, so this job's later stages and the Space read
+        # the epoch file in its current shape from the first run under a new head on.
+        trends_epochs.upgrade_older_header(args.epochs)
+        watchlist = roles.load_watchlist(args.watchlist, set(family_names))
     except ValueError as exc:
-        # An unusable taxonomy is a real defect, not a missing prerequisite — most likely a
-        # refit shipped without re-curating the map, which ADR-0040 treats as routine. The
-        # workflow step is `continue-on-error`, so without this it would crash into a green
-        # run with no annotation at all; ERROR + exit 1 makes it visible and still non-fatal.
+        # An unusable taxonomy is a real defect, not a missing prerequisite. The workflow step is
+        # `continue-on-error`, so without this it would crash into a green run with no annotation
+        # at all; ERROR + exit 1 makes it visible and still non-fatal.
         _log.error(f"role taxonomy unusable, no trends this run: {exc}")
         return 1
 
     table = lancedb.connect(args.db).open_table(PROD_TABLE)
     n = table.count_rows()
-    if not n:  # nothing to count, and np.stack has no empty case
+    if not n:
         _log.warning(f"served table '{PROD_TABLE}' is empty — no trend rows this run")
         return 0
-    # Logged before the read, not after: pulling the 768-d vector column for the whole table is
-    # the slow, memory-hungry part of this step, so it should not run unnarrated.
-    version = series_version(manifest["version"])
-    # The "assigning N served rows to K families via C clusters" prefix is parsed by
+    version = series_version(head.version)
+    # The "assigning N served rows to K families" prefix is parsed by
     # scripts/runlog/fanout_merge.py (tests/test_log_contract.py pins it); what follows is free.
     _log.info(
-        f"assigning {n} served rows to {len(family_names)} families via {manifest['k']} "
-        f"clusters (centroid version {manifest['version']}), title rules first (generation "
-        f"{role_family_rules.RULES_GENERATION}, series version {version})"
+        f"assigning {n} served rows to {len(family_names)} families by title (classifier "
+        f"head {head.version}, series version {version})"
     )
     # first_seen may be absent on a pre-ADR-0031 table; select() would raise on the missing
     # column, so ask only for what exists and let count_groups treat absence as "never new".
     # ats carries no such case — every served row has had one since before this table existed.
-    columns = ["id", "vector", "min_years", "title", "employment_type", "ats"]
+    columns = ["id", "min_years", "title", "employment_type", "ats"]
     if "first_seen" in table.schema.names:
         columns.append("first_seen")
     rows = table.search().select(columns).limit(n).to_arrow()
+
+    titles = rows["title"].to_pylist()
+    cache = role_family_classifier.load_cache(args.title_cache, head.version)
+    try:
+        added = role_family_classifier.fill(
+            cache,
+            head,
+            titles,
+            _CLASSIFY_BUDGET_SECONDS,
+            lambda filled: role_family_classifier.save_cache(args.title_cache, filled),
+        )
+    except Exception as exc:  # noqa: BLE001 - a failed fill keeps what the cache already holds
+        _log.error(f"title classifier failed: {type(exc).__name__}: {exc}")
+        added = 0
+    covered = role_family_classifier.coverage(cache, titles)
+    _log.info(
+        f"title cache: {added} titles classified this run; {covered:.1%} of served rows decided"
+    )
+    if covered < _MIN_TITLE_COVERAGE:
+        # A new head starts with an empty cache. Counting now would chart every undecided title
+        # as unclassified-tech and then read its decision next run as hiring, so Trends waits.
+        _log.warning(
+            f"classifier warming up: {covered:.1%} of served rows have a decided title, "
+            f"{_MIN_TITLE_COVERAGE:.0%} needed — no trend rows this run"
+        )
+        return 0
+
+    def family_of(title: str | None) -> str | None:
+        family = role_family_classifier.family(cache, title)
+        return None if family == roles.NON_TECH else family
 
     # The run's one stamp, which `index prune` also wrote its dedup evictions under (ADR-0210).
     now = run_ts()
@@ -606,7 +615,7 @@ def main() -> int:
     try:
         boards = _board_keys(rows["id"].to_pylist(), args.board_ledger)
         counts, non_tech, assigned, board_counts = count_board_groups(
-            rows, centroids, families, watchlist, new_after, boards
+            rows, family_of, watchlist, new_after, boards
         )
         previous, as_of = _load_board_counts(args.board_counts, version)
         previous = _recover_board_counts(previous, as_of, args.board_deltas, version)
@@ -656,8 +665,8 @@ def main() -> int:
         )
         if previous is None:
             why = (
-                "discarded the previous snapshot (unreadable, or a re-base: a centroid refit "
-                "or a new generation of title rules)"
+                "discarded the previous snapshot (unreadable, or a re-base: a new classifier "
+                "head)"
                 if had_snapshot
                 else "first snapshot"
             )
@@ -680,17 +689,17 @@ def main() -> int:
     except Exception as exc:  # noqa: BLE001 - a diagnostic must never sink a good run
         _log.warning(f"assignment diff skipped: {type(exc).__name__}: {exc}")
 
-    # Which methodology moved since the last tick, if any (ADR-0164) — a re-curated family map,
-    # a tech-filter, derivations or dedup version bump (ADR-0188) each change what a count means
-    # without a centroid refit, and none of them leave any other mark on this ledger. Diagnostic
-    # only: never fails the run.
+    # Which methodology moved since the last tick, if any (ADR-0164) — a new classifier head, an
+    # edited family list, or a tech-filter, derivations or dedup version bump (ADR-0188) each
+    # change what a count means, and only the head leaves any other mark on this ledger.
+    # Diagnostic only: never fails the run.
     try:
         wrote_epoch = trends_epochs.append_if_changed(
             args.epochs,
             ts,
-            centroid_version=manifest["version"],
-            family_map_fingerprint=roles.family_map_fingerprint(args.families),
-            family_rules_fingerprint=role_family_rules.fingerprint(),
+            centroid_version=trends_epochs.ABSENT,  # no centroid fit decides anything
+            family_map_fingerprint=roles.family_list_fingerprint(args.families),
+            family_classifier_version=head.version,
             tech_filter_version=tech_filter.TECH_FILTER_VERSION,
             derivations_version=DERIVATIONS_VERSION,
             dedup_version=DEDUP_VERSION,

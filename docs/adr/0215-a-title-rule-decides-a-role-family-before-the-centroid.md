@@ -1,6 +1,7 @@
 # ADR-0215: A title rule decides a role family before the centroid does
 
-**Status:** accepted · **Date:** 2026-09-25 · **Amends:** [ADR-0040](0040-role-trend-ledger.md)
+**Status:** superseded by [ADR-0220](0220-a-trained-title-classifier-decides-a-role-family.md) (a
+trained title classifier over a one-axis family list) · **Date:** 2026-09-25 · **Amends:** [ADR-0040](0040-role-trend-ledger.md)
 (how a row gets its family, and what re-bases a series) and
 [ADR-0051](0051-trends-as-share-flow-and-watched-roles.md) (a watched role counts tech rows only) ·
 **Relates to:**

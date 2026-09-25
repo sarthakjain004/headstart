@@ -7,7 +7,9 @@ domain roles (Backend, Frontend, …) that k-means cannot separate at any practi
 **Amended by:** [ADR-0120](0120-the-trends-ledger-is-parquet-not-csv.md) — the ledger these rows
 are written to is Parquet, not CSV; the `metric` axis this ADR added is unchanged ·
 **Amended by:** [ADR-0215](0215-a-title-rule-decides-a-role-family-before-the-centroid.md) — a
-watched role counts only rows whose family is tech, no longer every title match
+watched role counts only rows whose family is tech, no longer every title match · **Amended by:**
+[ADR-0220](0220-a-trained-title-classifier-decides-a-role-family.md) — watch roles sit under the
+v3 families, and Java and Python are watch roles
 
 ## Context
 

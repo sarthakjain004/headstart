@@ -47,8 +47,9 @@ _log = log.get(__name__, __spec__)
 WITNESS_PATH = "data/state/published_dirs.json"
 
 # The roots the pipeline's `merge` job uploads, and the only things this witness speaks about.
-# `data/state/role_centroids` is deliberately absent: `cluster-roles.yml` writes it on its own
-# schedule, so a run that never touches it must not be read as having lost it.
+# `data/state/role_centroids` is deliberately absent: the retired `cluster-roles.yml` wrote it on
+# its own schedule (ADR-0220 retired both), so a run that never touches it must not be read as
+# having lost it.
 ROOTS: tuple[str, ...] = (
     "data/descriptions",
     "data/embeddings/jobs",
@@ -130,8 +131,9 @@ def speaks_for(patterns: list[str]) -> bool:
 
     Asked before the download, not after: `unwitnessed` would abstain anyway, but only having
     already fetched — and that fetch can raise on an unreachable Hub, failing a run the witness
-    was never going to have an opinion about. `cluster-roles.yml` is the live case: it pairs the
-    embedding store with `data/state/role_centroids/*`, which is deliberately not a recorded root.
+    was never going to have an opinion about. `cluster-roles.yml` was the case, until ADR-0220
+    retired it: it paired the embedding store with `data/state/role_centroids/*`, which is
+    deliberately not a recorded root.
     """
     return bool({pattern_root(p) for p in patterns} & set(ROOTS))
 

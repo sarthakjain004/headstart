@@ -35,7 +35,7 @@ scrape = ["pydoll-python"]
 # Semantic-search stack (ADR-0005). nomic-embed-text-v1.5 runs on this; einops is
 # required by nomic's custom modeling code; langdetect gates the English-only corpus.
 # scikit-learn arrives transitively via sentence-transformers; named because
-# scripts/embed/cluster_roles.py imports it directly (ADR-0040).
+# scripts/embed/train_role_family_classifier.py imports it directly (ADR-0220).
 #
 # transformers is capped because nomic's *remote* modeling code — which `trust_remote_code`
 # fetches from the Hub, not from here — calls `get_extended_attention_mask`, and newer

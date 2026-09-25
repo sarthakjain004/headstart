@@ -2,7 +2,9 @@
 
 **Status:** accepted · **Date:** 2026-09-16 · **Extends:** [ADR-0040](0040-role-trend-ledger.md)
 (the centroid `version` this generalises), [ADR-0057](0057-record-family-assignments-and-report-reassignment.md)
-(the reassignment ledger whose confusion this closes one more instance of)
+(the reassignment ledger whose confusion this closes one more instance of) · **Amended by:**
+[ADR-0220](0220-a-trained-title-classifier-decides-a-role-family.md) — the sixth column is
+`family_classifier_version`, renamed in place from `family_rules_fingerprint`
 
 ## Context
 

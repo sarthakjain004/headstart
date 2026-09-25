@@ -478,7 +478,7 @@ def test_an_empty_listing_a_witness_contradicts_fails_closed(
 def test_a_witness_that_claims_nothing_relevant_lets_the_run_proceed(
     hub, monkeypatch, tmp_path
 ) -> None:
-    """`cluster-roles.yml` writes the centroids on its own schedule, so the witness abstains on
+    """The retired `cluster-roles.yml` wrote the centroids on its own schedule, so the witness abstains on
     them and this fetch keeps the behaviour it had before ADR-0095."""
     _empty_hub(hub, monkeypatch, tmp_path)
     _witness(hub, tmp_path, ["data/state", "data/lancedb"])
@@ -531,7 +531,7 @@ def test_one_surviving_root_does_not_hide_a_wiped_sibling(
 def test_a_root_the_witness_abstains_on_is_not_even_downloaded(
     hub, monkeypatch, tmp_path
 ) -> None:
-    """`cluster-roles.yml` pairs the store with `data/state/role_centroids/*`, which is not a
+    """The retired `cluster-roles.yml` paired the store with `data/state/role_centroids/*`, which is not a
     recorded root. Fetching the witness only to abstain would let an unreachable Hub fail a run
     the witness was never going to have an opinion about."""
     _empty_hub(hub, monkeypatch, tmp_path)

@@ -58,7 +58,7 @@ def test_the_witness_lives_where_an_existing_upload_already_carries_it() -> None
 
 
 def test_the_witness_does_not_speak_for_the_centroids(tmp_path: Path) -> None:
-    """`cluster-roles.yml` writes `data/state/role_centroids` on its own schedule, so a pipeline
+    """The retired `cluster-roles.yml` wrote `data/state/role_centroids` on its own schedule, so a pipeline
     run that never touches it must not be read as having lost it."""
     assert "data/state/role_centroids" not in sw.ROOTS
     assert sw.unwitnessed(["data/state/role_centroids/*"], {"data/state"}) == []

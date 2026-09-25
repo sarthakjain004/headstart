@@ -95,8 +95,8 @@ _DB = REPO_ROOT / "data" / "lancedb"
 def ledger_boards(delta_dir: Path) -> set[str]:
     """Every Board with a tech `stock` delta at the newest tick's series version.
 
-    Older versions are skipped because a refit or a new generation of title rules re-bases every
-    series (ADR-0040, ADR-0215) and the Space charts only the live one. `non-tech` has no series
+    Older versions are skipped because a new classifier head re-bases every series (ADR-0040,
+    ADR-0220) and the Space charts only the live one. `non-tech` has no series
     to chart, and `watch:` rows re-count Jobs already counted in their family (ADR-0051).
     """
     import pyarrow.parquet as pq

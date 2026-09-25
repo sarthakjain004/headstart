@@ -47,6 +47,8 @@ config/*
 !config/fx_rates.json
 !config/role_families.json
 !config/role_watchlist.json
+# The trained role-family classifier head: its manifest and ~100 KB of weights (ADR-0220).
+!config/role_family_classifier/
 # The hand-curated Board -> company name map (ADR-0212).
 !config/company_names.csv
 

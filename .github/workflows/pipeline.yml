@@ -761,8 +761,10 @@ jobs:
     # budget here at all before 2026-09-15, when one ran the *job* out of its 63-minute ceiling at
     # 59m35s into the step, taking `sync`/`prune`/`role_trends`/the HF upload down with it even
     # though the step is `continue-on-error` — the step just never got its own timeout to make
-    # that matter. See that step's comment for where 35 min comes from.
-    timeout-minutes: 98
+    # that matter. See that step's comment for where 35 min comes from. Raised 98 -> 118 for
+    # `Append role-trend counts`, whose own cap is 20 min (ADR-0220): the title classifier spends
+    # up to 12 min of it encoding while a new head's title cache warms up.
+    timeout-minutes: 118
     outputs:
       compact_due: ${{ steps.compaction.outputs.due }}
     steps:
@@ -882,12 +884,24 @@ jobs:
         if: needs.scrape-plan.outputs.run == 'true' && steps.corpus.outcome == 'success'
         continue-on-error: true
         run: python -m headstart.ingest.embed_prune --apply
-      - name: Append role-trend counts (ADR-0040)
-        # Never fatal: the module itself no-ops with a warning when the centroid store hasn't
-        # reached this runner (fit not shipped yet, or the join's state artifact was lost) —
-        # trends must not sink a run that already scraped and embedded successfully.
+      - name: Cache the title-classifier model (ADR-0220)
+        # JobBERT-v2 (~450 MB) at the revision the head's manifest pins; the key names it, so a
+        # new revision is a new entry rather than a stale hit.
         if: needs.scrape-plan.outputs.run == 'true'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/huggingface/hub
+          key: hf-model-jobbert-v2-a480476925ab
+      - name: Append role-trend counts (ADR-0040)
+        # Never fatal: the module itself no-ops with a warning when the classifier head or the
+        # family list is missing, and counts nothing while a new head's title cache warms up —
+        # trends must not sink a run that already scraped and embedded successfully. The cap is
+        # a cold model download (~450 MB), the classifier's 12-minute encoding budget and the
+        # count (ADR-0220). Skipped without the corpus artifact: the title cache rides it, and a
+        # fill here would encode into a cache the skipped `data/state` upload never publishes.
+        if: needs.scrape-plan.outputs.run == 'true' && steps.corpus.outcome == 'success'
         continue-on-error: true
+        timeout-minutes: 20
         run: python -m headstart.ingest.role_trends
       - name: Rank the actively-hiring Boards
         # Strictly after role_trends: it reads that stage's Board-count snapshot and delta
@@ -1024,9 +1038,9 @@ jobs:
           # `bash -e` stops here and the new witness is simply never published, leaving the prior
           # one — which names roots the dataset still holds. Uploaded first, it would name a root
           # whose upload then failed, and an over-claiming witness fails every later fetch closed.
-          # `--exclude role_centroids/*`: `cluster-roles.yml` owns those files (ADR-0095). The join's
-          # `data/state/*` fetch still brings them here for role_trends to read, but republishing
-          # that join-time copy reverted any refit that landed while this run was in flight.
+          # `--exclude role_centroids/*`: the retired centroid store (ADR-0220) stays on the dataset
+          # as it was. The join's `data/state/*` fetch still brings it here, and nothing on this
+          # runner may republish or change it.
           publish pipeline_state hf upload "$HF_DATASET" data/state data/state \
             --repo-type dataset --exclude "role_centroids/*" \
             --commit-message "nightly: board priority + published-dirs witness"
