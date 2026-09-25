@@ -28,18 +28,18 @@
     {"name": "unclassified-tech", "label": "Unclassified tech", "definition": "Tech Jobs whose title the classifier cannot place with confidence."}
   ],
   "retired": [
-    {"name": "web-development", "label": "Web & .NET Development"},
-    {"name": "java-development", "label": "Java Development"},
-    {"name": "python-development", "label": "Python Development"},
-    {"name": "mobile-development", "label": "Mobile Development"},
-    {"name": "ai-ml", "label": "AI / Machine Learning"},
-    {"name": "data-science", "label": "Data Science"},
-    {"name": "data-analytics", "label": "Data & Business Analytics"},
-    {"name": "security-engineering", "label": "Security Engineering"},
-    {"name": "network-infrastructure", "label": "Network Infrastructure"},
-    {"name": "hardware-embedded", "label": "Hardware, Firmware & Silicon"},
-    {"name": "tech-leadership", "label": "Tech Leads"},
-    {"name": "enterprise-platform", "label": "SAP & Salesforce Platforms"},
-    {"name": "it-operations", "label": "IT & Data Centre Operations"}
+    {"name": "web-development", "label": "Web & .NET Development", "successor": "frontend-web"},
+    {"name": "java-development", "label": "Java Development", "successor": "software-engineering"},
+    {"name": "python-development", "label": "Python Development", "successor": "software-engineering"},
+    {"name": "mobile-development", "label": "Mobile Development", "successor": "mobile"},
+    {"name": "ai-ml", "label": "AI / Machine Learning", "successor": "ai-ml-data-science"},
+    {"name": "data-science", "label": "Data Science", "successor": "ai-ml-data-science"},
+    {"name": "data-analytics", "label": "Data & Business Analytics", "successor": "data-analytics-bi"},
+    {"name": "security-engineering", "label": "Security Engineering", "successor": "security"},
+    {"name": "network-infrastructure", "label": "Network Infrastructure", "successor": "network-engineering"},
+    {"name": "hardware-embedded", "label": "Hardware, Firmware & Silicon", "successor": "embedded-firmware"},
+    {"name": "tech-leadership", "label": "Tech Leads", "successor": "engineering-management"},
+    {"name": "enterprise-platform", "label": "SAP & Salesforce Platforms", "successor": "enterprise-applications"},
+    {"name": "it-operations", "label": "IT & Data Centre Operations", "successor": "systems-administration-it-operations"}
   ]
 }

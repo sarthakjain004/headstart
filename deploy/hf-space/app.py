@@ -238,6 +238,43 @@ def _load_board_deltas(path: Path) -> list[dict]:
     return rows
 
 
+def _family_successors(path: Path) -> dict[str, str]:
+    """Each retired family's v3 successor (ADR-0220), from `retired` in the curated map: the
+    data carries the old names until the new classifier's series lands, and links made before
+    carry them after."""
+    if not path.exists():
+        return {}
+    spec = json.loads(path.read_text(encoding="utf-8"))
+    return {
+        f["name"]: f["successor"] for f in spec.get("retired", []) if f.get("successor")
+    }
+
+
+def _family_weights(rows: list[dict]) -> Counter[str]:
+    """Openings per family over ``rows`` — how much of the data each name holds."""
+    weights: Counter[str] = Counter()
+    for row in rows:
+        weights[row["family"]] += row["count"]
+    return weights
+
+
+def _resolve_family(family: str | None, present: Counter[str]) -> str | None:
+    """``family`` as the data holds it: itself, its successor, or its largest predecessor there
+    (``present`` counts rows per family) — "AI, ML & Data Science" before its data lands reads
+    as "AI / Machine Learning", not as its smaller half, Data Science."""
+    if not family or family in present:
+        return family
+    successor = _FAMILY_SUCCESSOR.get(family)
+    if successor in present:
+        return successor
+    older = [
+        old
+        for old, new in _FAMILY_SUCCESSOR.items()
+        if new == family and old in present
+    ]
+    return max(older, key=lambda old: present[old]) if older else family
+
+
 def _family_labels(path: Path) -> dict[str, str]:
     """Display names, from the curated map under config/ (ADR-0040). The ledger stores slugs
     so a label can be reworded without breaking a series; this resolves them."""
@@ -362,6 +399,7 @@ _TRENDS = _load_trends(_STATE / "data" / "state" / "role_trends.parquet")
 _CONFIG = Path(__file__).parent / "config"  # copied in beside this app (ADR-0153)
 _WATCH = _watch_meta(_CONFIG / "role_watchlist.json")
 _FAMILY_LABELS = _family_labels(_CONFIG / "role_families.json")
+_FAMILY_SUCCESSOR = _family_successors(_CONFIG / "role_families.json")
 _EPOCHS = _load_epochs(_STATE / "data" / "state" / "trends_epochs.csv")
 # The seniority bands `headstart.roles.band` writes, as a reader says them: the Level view's
 # legend read "mid", "senior", "unspecified".
@@ -1566,7 +1604,14 @@ def trends():
     # narrows it.
     epochs = _EPOCHS
     if since:
-        epochs = [e for e in epochs if e["ts"] >= since]
+        # Under New a change a week before the window still echoes inside it (its openings age
+        # out of "new" there), so its epoch comes along for the page to mark that echo.
+        earliest = since
+        if metric == "new":
+            earliest = (
+                datetime.fromisoformat(since) - timedelta(days=_NEW_WINDOW_DAYS)
+            ).isoformat(timespec="seconds")
+        epochs = [e for e in epochs if e["ts"] >= earliest]
     if until:
         epochs = [e for e in epochs if e["ts"] <= until]
 
@@ -1581,6 +1626,27 @@ def trends():
     for r in stock:
         if not r["family"].startswith(_WATCH_PREFIX):  # watch rows re-count family rows
             totals[r["ts"]] = totals.get(r["ts"], 0) + r["count"]
+
+    # A family asked for by a name the data does not hold — an old link after the v3 families
+    # (ADR-0220), or a new one before their data lands — reads as the name it does hold.
+    # Families by the names the data holds (ADR-0220). A retired family reads as its v3
+    # successor wherever the successor has data in this scope, so a window spanning the switch
+    # draws one line — "AI / Machine Learning" becoming "AI, ML & Data Science" — not two that
+    # stop and start. Weighed in openings, so "the larger" means more jobs, not more rows.
+    present = _family_weights(trends_rows)
+    rename = {old: new for old, new in _FAMILY_SUCCESSOR.items() if new in present}
+    if rename.keys() & present.keys():
+        trends_rows = [
+            {**r, "family": rename[r["family"]]} if r["family"] in rename else r
+            for r in trends_rows
+        ]
+        present = _family_weights(trends_rows)
+    family = _resolve_family(family, present)
+
+    # A watched role's parent as the data holds it: its v3 parent, or while that has no data,
+    # the retired family it resolves to — "ai-ml", not its smaller sibling "data-science".
+    def parent_of(meta: dict) -> str | None:
+        return _resolve_family(meta["parent"], present)
 
     rows = [
         r for r in trends_rows if r["metric"] == metric and r["family"] != _NON_TECH
@@ -1599,7 +1665,7 @@ def trends():
         key = "company"
     elif family and split == "roles":
         # The family's watched sub-roles (ADR-0051), each its own series.
-        wanted = {n for n, meta in _WATCH.items() if meta["parent"] == family}
+        wanted = {n for n, meta in _WATCH.items() if parent_of(meta) == family}
         rows = [r for r in rows if r["family"] in wanted]
         key = "family"
     elif family:
@@ -1744,7 +1810,12 @@ def trends():
             bucket[0] += 1
             bucket[1] += openings
     # Which families have watched sub-roles, so the UI can offer the roles drill only there.
-    watch_parents = sorted({meta["parent"] for meta in _WATCH.values()})
+    # Under the names the data holds as well as the config's: the watchlist moved to the v3
+    # families before their data landed, and the AI roles' drill vanished from "AI / Machine
+    # Learning" with it.
+    watch_parents = sorted(
+        {parent for meta in _WATCH.values() if (parent := parent_of(meta))}
+    )
     return jsonify(
         version=_LIVE_VERSION,
         coverage=coverage,
@@ -1756,6 +1827,7 @@ def trends():
         non_tech=[non_tech.get(ts) for ts in stamps],
         split_by=key,
         # The drilled family's display name, so a cold link into a drill can name it.
+        family=family,  # as resolved (_resolve_family), which the page adopts
         family_label=_FAMILY_LABELS.get(family, family) if family else None,
         watch_parents=watch_parents,
         epochs=epochs,

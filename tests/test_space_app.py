@@ -2903,3 +2903,102 @@ def test_a_refit_is_a_step_in_one_history_not_its_end(trends_app, monkeypatch):
     assert d["stamps"] == [_T1, _T2, _T3]
     assert d["series"][0]["points"] == [10, 12, 15]
     assert d["counted_since"] == {"workday:hpe/a": _T1}
+
+
+_REPO_FAMILIES = Path(__file__).resolve().parents[1] / "config" / "role_families.json"
+
+
+def test_every_retired_family_names_a_current_successor(trends_app):
+    spec = json.loads(_REPO_FAMILIES.read_text(encoding="utf-8"))
+    current = {f["name"] for f in spec["families"]}
+    successors = trends_app._family_successors(_REPO_FAMILIES)
+    assert set(successors) == {f["name"] for f in spec["retired"]}
+    assert set(successors.values()) <= current
+
+
+def test_a_family_is_read_by_the_name_the_data_holds(trends_app, monkeypatch):
+    """ADR-0220 renamed families; old links and new config meet the data by either name."""
+    from collections import Counter
+
+    monkeypatch.setattr(
+        trends_app, "_FAMILY_SUCCESSOR", trends_app._family_successors(_REPO_FAMILIES)
+    )
+    resolve = trends_app._resolve_family
+    assert resolve("ai-ml", Counter({"ai-ml": 3, "devops": 1})) == "ai-ml"
+    assert resolve("ai-ml", Counter({"ai-ml-data-science": 5})) == "ai-ml-data-science"
+    assert (
+        resolve("security", Counter({"security-engineering": 2}))
+        == "security-engineering"
+    )
+    # two predecessors hold data: the larger answers for the new name
+    assert (
+        resolve("ai-ml-data-science", Counter({"ai-ml": 9, "data-science": 4}))
+        == "ai-ml"
+    )
+    assert resolve(None, Counter()) is None
+
+
+def test_watched_roles_follow_a_family_by_either_name(trends_app, monkeypatch):
+    """The watchlist moved to v3 parents before their data landed; the AI drill must survive.
+    It stays under AI / Machine Learning, not under Data Science as well."""
+    monkeypatch.setattr(
+        trends_app, "_FAMILY_SUCCESSOR", trends_app._family_successors(_REPO_FAMILIES)
+    )
+    monkeypatch.setattr(
+        trends_app,
+        "_WATCH",
+        {"watch:llm-genai": {"label": "LLM / GenAI", "parent": "ai-ml-data-science"}},
+    )
+    rows = [
+        {
+            "ts": _T1,
+            "version": 2,
+            "metric": "stock",
+            "family": family,
+            "band": "all",
+            "ats": "x",
+            "count": n,
+        }
+        for family, n in [("ai-ml", 30), ("data-science", 10), ("watch:llm-genai", 8)]
+    ]
+    monkeypatch.setattr(trends_app, "_TRENDS", rows)
+    client = trends_app.app.test_client()
+    top = client.get("/trends").get_json()
+    assert top["watch_parents"] == ["ai-ml"]
+    drill = client.get("/trends?family=ai-ml&split=roles").get_json()
+    assert [s["name"] for s in drill["series"]] == ["watch:llm-genai"]
+    none = client.get("/trends?family=data-science&split=roles").get_json()
+    assert none["series"] == []
+
+
+def test_a_retired_family_reads_as_its_successor_once_that_has_data(
+    trends_app, monkeypatch
+):
+    """A window spanning the switch draws one line, not one that stops and one that starts."""
+    monkeypatch.setattr(
+        trends_app, "_FAMILY_SUCCESSOR", trends_app._family_successors(_REPO_FAMILIES)
+    )
+    rows = [
+        {
+            "ts": ts,
+            "version": v,
+            "metric": "stock",
+            "family": family,
+            "band": "all",
+            "ats": "x",
+            "count": n,
+        }
+        for ts, v, family, n in [
+            (_T1, 2, "ai-ml", 30),
+            (_T2, 2, "ai-ml", 31),
+            (_T3, 3001, "ai-ml-data-science", 40),
+        ]
+    ]
+    monkeypatch.setattr(trends_app, "_TRENDS", rows)
+    client = trends_app.app.test_client()
+    top = client.get("/trends").get_json()
+    assert [(s["name"], s["points"]) for s in top["series"]] == [
+        ("ai-ml-data-science", [30, 31, 40])
+    ]
+    old_link = client.get("/trends?family=ai-ml").get_json()
+    assert old_link["family"] == "ai-ml-data-science"

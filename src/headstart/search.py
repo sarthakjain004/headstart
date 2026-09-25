@@ -31,7 +31,6 @@ from headstart import (
     india_filter,
     log,
     posted_date_guard,
-    roles,
     salary_known_filter,
 )
 from headstart.embedding_conventions import encode_query
@@ -242,14 +241,14 @@ MAX_FAMILY_IDS = 5000
 def scoped_jobs_clause(
     args, family_ids: Mapping[str, Sequence[str]] | None
 ) -> str | None:
-    """The Jobs a Trends hand-off names beside ``board=``, or None: one role family's
-    (``family=``), or the company's tech roles (``tech=1``).
+    """The Jobs a Trends hand-off names beside ``board=``: one role family's (``family=``), or
+    None.
 
     Search has no family column; the family of each served Job is the pipeline's own
     ``role_assignments`` snapshot (ADR-0057), the same assignment the Trends counts are made
     of. So a trend's category hands over as exact ids — "243 AI roles at Google" in Trends
     opens as Google's AI roles in Search, where a semantic query alone ranked all 1,856 Google
-    jobs — and a whole company as every Job but those the assignment calls non-tech. Only with
+    jobs. Only with
     ``board=``: a family across the whole index is a Trends view, not a search. A category past
     :data:`MAX_FAMILY_IDS` is refused as an invalid filter rather than widened.
     """
@@ -262,13 +261,6 @@ def scoped_jobs_clause(
         if len(ids) > MAX_FAMILY_IDS:
             raise ValueError(f"at most {MAX_FAMILY_IDS} jobs in one category hand-off")
         return _ids_in_clause(ids) if ids else "id IN ('')"
-    # `tech=1`: the company's tech roles, as its trend counts them — every served Job but those
-    # the assignment puts in the reserved non-tech family. "See its open roles" listed 1,854
-    # under a Google trend of 1,800. Past the bound the few non-tech rows simply stay.
-    if args.get("tech") in ("1", "true"):
-        ids = _ids_on_boards(family_ids.get(roles.NON_TECH, ()), boards)
-        if ids and len(ids) <= MAX_FAMILY_IDS:
-            return f"NOT ({_ids_in_clause(ids)})"
     return None
 
 

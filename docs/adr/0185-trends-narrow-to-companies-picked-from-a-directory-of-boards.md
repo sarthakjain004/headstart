@@ -606,3 +606,66 @@ rest of the round:
   - A "request this company" path.
   - Junk names in the directory ("& 04 Woodward").
   - Hot's "new" is still a Board-level rolling count, not the company's netted figure.
+
+### A critic's eighth round (2026-09-25): 5/10, after the stitch
+
+The history held across the refit: Google's all-roles total was 1,849 on both sides, and every
+sentence, line and table agreed. What remained:
+
+- **Under New, a counting change is taken out twice: where it lands and a week later.**
+  - The openings a change adds read as new at once, then stop reading as new when they age out
+    of the 7-day window.
+  - That second drop read as NVIDIA "down 45.1%", and as an unmarked −19,600 across the index,
+    at the first run a week after the Sep 17 filter change.
+  - Under New, each change now carries an echo marker at its window's end.
+- **The sentence names each cause, with its size.** "The chart's other −1,811 openings came from
+  outside hiring: −2,041 openings as duplicate postings were removed, +230 openings from changes
+  in how HeadStart counts". A run holding several kinds of step gives each known size to its kind
+  and the rest to counting changes. The solid-marker note names duplicate removals when they are
+  drawn.
+- **Families by either name (ADR-0220).**
+  - The watchlist moved to the v3 families (`ai-ml-data-science`, …) before their data landed,
+    so "AI / Machine Learning" lost its roles drill.
+  - The Space now maps each retired family to its successor (`_FAMILY_SUCCESSOR`):
+    - Watched roles follow a family by either name, while the new name has no data of its own.
+    - A link by either name reads as the one the data holds; for a new name, that is its largest
+      predecessor.
+    - The page adopts the name the Space resolved.
+- **"See its open roles" lists tech roles only.**
+  - The role-assignment snapshot leaves the classifier's non-tech Jobs out.
+  - Non-tech is therefore the served ids the snapshot does not hold (`search.unassigned_ids`),
+    read once at boot.
+  - `tech=1` had matched nothing: Google read 1,800 in Trends against 1,854 in Search.
+- **The latest run's figure, not the last measured.** The tile, the sentence and the legend read
+  a category now at none as 0. Syms' tile read "227" beside a sentence of 144.
+- **Smaller.**
+  - The legend's "too few to index" is now "started under 5".
+  - Hot states its net-change window in hours when short ("the last 6 hours").
+  - Titles fit every drill ("Tracked roles in AI / Machine Learning at Google"), and a chart with
+    no counted pick still names its picks.
+- **Not changed:** an exact company name still ranks first ("Infosys", 4 openings, above its
+  larger subsidiaries), as a test states.
+
+Its code review changed the round:
+
+- **"See its open roles" explains the non-tech gap instead of filtering it out.**
+  - Filtering needed the served ids, read through `to_lance()`. That needs `pylance`, which the
+    Space does not install, so the exclusion was dead there.
+  - Filtering on "served but unassigned" would also hide every job indexed since the
+    assignment snapshot, which happens during a classifier warm-up (ADR-0220).
+  - So Search now says how many of its jobs the trend leaves out as non-tech. That figure is each
+    company's whole total less its tech openings, carried in the hand-off (`aside=`).
+- **The echo under New is for tech-filter changes only.** A refit or a duplicate removal adds no
+  newly-seen postings, so nothing ages out a week later. A change up to a week before the window
+  now comes with it, and the index chart marks the echo too.
+- **Retired families name their successor in `config/role_families.json`**, the one source,
+  not a map in the Space.
+  - A retired family reads as its successor wherever the successor has data in scope, so a window
+    spanning the switch draws one line.
+  - Family sizes are weighed in openings.
+  - A watched role's parent resolves to the name the data holds, so the AI roles sit under
+    "AI / Machine Learning" only, not under Data Science as well.
+- **The causes add up exactly.** A known size is given to its kind only on a whole company's
+  line, and counting changes are the total less the named parts.
+- **One rule for a line's latest figure** (`latestOf`), shared by the tile, the sentence and the
+  legend.
