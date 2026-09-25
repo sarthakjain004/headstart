@@ -1,0 +1,172 @@
+{
+ "description": "With no pick the index keeps a counting change's jump, marked, and its turnover arrives with those runs already left out.",
+ "answer_input": {
+  "stamps": [
+   "2026-09-13T00:00:00+00:00",
+   "2026-09-14T00:00:00+00:00",
+   "2026-09-15T00:00:00+00:00",
+   "2026-09-16T00:00:00+00:00"
+  ],
+  "series": [
+   {
+    "name": "a",
+    "label": "a",
+    "points": [
+     900,
+     900,
+     1300,
+     1300
+    ],
+    "latest": 1300,
+    "turnover": {
+     "opened": [
+      null,
+      50,
+      null,
+      null
+     ],
+     "closed": [
+      null,
+      40,
+      null,
+      null
+     ],
+     "recounted": [
+      null,
+      0,
+      null,
+      null
+     ]
+    }
+   }
+  ],
+  "epochs": [
+   {
+    "ts": "2026-09-15T00:00:00+00:00",
+    "changed": [
+     "tech filter changed"
+    ],
+    "fields": [
+     "tech_filter_version"
+    ]
+   }
+  ],
+  "turnover_since": "2026-09-13T00:00:00+00:00",
+  "closures_unseen": {
+   "": 3
+  },
+  "turnover_left_out": [
+   "2026-09-15T00:00:00+00:00",
+   "2026-09-16T00:00:00+00:00"
+  ],
+  "metric": "stock",
+  "coverage": "all",
+  "new_window_days": 7,
+  "family": null,
+  "split_by": "family",
+  "companies": [],
+  "discovered": [],
+  "evicted": [],
+  "pick_series": {},
+  "pick_parts": {},
+  "pick_turnover": {},
+  "counted_since": {},
+  "totals": [
+   10000,
+   10000,
+   10000,
+   10000
+  ],
+  "non_tech": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "watch_parents": [],
+  "uncounted": [],
+  "company_totals": {}
+ },
+ "reading": {
+  "window": {
+   "from": "2026-09-13T00:00:00+00:00",
+   "to": "2026-09-16T00:00:00+00:00"
+  },
+  "picked": false,
+  "total": {
+   "name": "__total__",
+   "label": "",
+   "estimated": false,
+   "move": {
+    "start": 900,
+    "latest": 1300,
+    "hiring": 400,
+    "not_hiring": [],
+    "percent": 44.44444444444444,
+    "percent_withheld": null,
+    "turnover": {
+     "opened": 50,
+     "closed": 40
+    },
+    "share": {
+     "start": 9.0,
+     "latest": 13.0,
+     "denominator_start": 10000,
+     "denominator_latest": 10000
+    }
+   }
+  },
+  "lines": [
+   {
+    "name": "a",
+    "label": "a",
+    "estimated": false,
+    "move": {
+     "start": 900,
+     "latest": 1300,
+     "hiring": 400,
+     "not_hiring": [],
+     "percent": 44.44444444444444,
+     "percent_withheld": null,
+     "turnover": {
+      "opened": 50,
+      "closed": 40
+     },
+     "share": {
+      "start": 9.0,
+      "latest": 13.0,
+      "denominator_start": 10000,
+      "denominator_latest": 10000
+     }
+    }
+   }
+  ],
+  "company_lines": [],
+  "breakdown": null,
+  "marked_changes": [
+   {
+    "id": "counting@2026-09-15T00:00:00+00:00",
+    "kind": "counting",
+    "ts": "2026-09-15T00:00:00+00:00",
+    "fields": [],
+    "changed": [
+     "tech filter changed"
+    ],
+    "company": null,
+    "boards": null,
+    "sizes": {}
+   }
+  ],
+  "day_markers": [
+   {
+    "day": "2026-09-15",
+    "at": "2026-09-15T00:00:00+00:00",
+    "changes": [
+     "counting@2026-09-15T00:00:00+00:00"
+    ]
+   }
+  ],
+  "reconciles": true,
+  "violations": []
+ }
+}

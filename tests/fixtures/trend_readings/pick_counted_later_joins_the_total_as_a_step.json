@@ -1,0 +1,223 @@
+{
+ "description": "AMD, counted from a later date, joins the sum with 500 openings: not hiring.",
+ "answer_input": {
+  "stamps": [
+   "2026-09-13T00:00:00+00:00",
+   "2026-09-14T00:00:00+00:00",
+   "2026-09-15T00:00:00+00:00",
+   "2026-09-16T00:00:00+00:00"
+  ],
+  "series": [
+   {
+    "name": "a",
+    "label": "a",
+    "points": [
+     100,
+     100,
+     600,
+     604
+    ],
+    "latest": 604
+   }
+  ],
+  "counted_since": {
+   "greenhouse:acme": "2026-09-13T00:00:00+00:00",
+   "workday:amd/x": "2026-09-15T00:00:00+00:00"
+  },
+  "pick_series": {
+   "greenhouse:acme": [
+    100,
+    100,
+    100,
+    104
+   ],
+   "workday:amd/x": [
+    null,
+    null,
+    500,
+    500
+   ]
+  },
+  "metric": "stock",
+  "coverage": "all",
+  "new_window_days": 7,
+  "family": null,
+  "split_by": "family",
+  "companies": [
+   {
+    "key": "greenhouse:acme",
+    "label": "Acme",
+    "board_keys": [
+     "greenhouse:acme"
+    ],
+    "atses": [
+     "greenhouse"
+    ]
+   },
+   {
+    "key": "workday:amd/x",
+    "label": "AMD",
+    "board_keys": [
+     "workday:amd/x"
+    ],
+    "atses": [
+     "workday"
+    ]
+   }
+  ],
+  "epochs": [],
+  "discovered": [],
+  "evicted": [],
+  "pick_parts": {},
+  "pick_turnover": {},
+  "totals": [
+   10000,
+   10000,
+   10000,
+   10000
+  ],
+  "non_tech": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "watch_parents": [],
+  "uncounted": [],
+  "company_totals": {}
+ },
+ "reading": {
+  "window": {
+   "from": "2026-09-13T00:00:00+00:00",
+   "to": "2026-09-16T00:00:00+00:00"
+  },
+  "picked": true,
+  "total": {
+   "name": "__total__",
+   "label": "",
+   "estimated": false,
+   "move": {
+    "start": 100,
+    "latest": 604,
+    "hiring": 4,
+    "not_hiring": [
+     {
+      "change": "joined@workday:amd/x",
+      "size": 500
+     }
+    ],
+    "percent": 0.6666666666666667,
+    "percent_withheld": null,
+    "turnover": null,
+    "share": {
+     "start": 6.0,
+     "latest": 6.04,
+     "denominator_start": 10000,
+     "denominator_latest": 10000
+    }
+   }
+  },
+  "lines": [
+   {
+    "name": "a",
+    "label": "a",
+    "estimated": false,
+    "move": {
+     "start": 100,
+     "latest": 604,
+     "hiring": 4,
+     "not_hiring": [
+      {
+       "change": "joined@workday:amd/x",
+       "size": 500
+      }
+     ],
+     "percent": 0.6666666666666667,
+     "percent_withheld": null,
+     "turnover": null,
+     "share": {
+      "start": 6.0,
+      "latest": 6.04,
+      "denominator_start": 10000,
+      "denominator_latest": 10000
+     }
+    }
+   }
+  ],
+  "company_lines": [
+   {
+    "name": "greenhouse:acme",
+    "label": "Acme",
+    "estimated": false,
+    "move": {
+     "start": 100,
+     "latest": 104,
+     "hiring": 4,
+     "not_hiring": [],
+     "percent": 4.0,
+     "percent_withheld": null,
+     "turnover": null,
+     "share": {
+      "start": 1.0,
+      "latest": 1.04,
+      "denominator_start": 10000,
+      "denominator_latest": 10000
+     }
+    }
+   },
+   {
+    "name": "workday:amd/x",
+    "label": "AMD",
+    "estimated": false,
+    "move": {
+     "start": 0,
+     "latest": 500,
+     "hiring": 0,
+     "not_hiring": [
+      {
+       "change": "joined@workday:amd/x",
+       "size": 500
+      }
+     ],
+     "percent": null,
+     "percent_withheld": "a window under 3 days",
+     "turnover": null,
+     "share": {
+      "start": 5.0,
+      "latest": 5.0,
+      "denominator_start": 10000,
+      "denominator_latest": 10000
+     }
+    }
+   }
+  ],
+  "breakdown": {
+   "closing": null
+  },
+  "marked_changes": [
+   {
+    "id": "joined@workday:amd/x",
+    "kind": "pick_joined",
+    "ts": "2026-09-15T00:00:00+00:00",
+    "fields": [],
+    "changed": [],
+    "company": "workday:amd/x",
+    "boards": null,
+    "sizes": {
+     "workday:amd/x": 500
+    }
+   }
+  ],
+  "day_markers": [
+   {
+    "day": "2026-09-15",
+    "at": "2026-09-15T00:00:00+00:00",
+    "changes": [
+     "joined@workday:amd/x"
+    ]
+   }
+  ],
+  "reconciles": true,
+  "violations": []
+ }
+}

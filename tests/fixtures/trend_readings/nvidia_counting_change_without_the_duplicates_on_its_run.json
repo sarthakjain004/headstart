@@ -1,0 +1,202 @@
+{
+ "description": "NVIDIA: 2,041 duplicate postings removed on the run of a duplicate-removal and family change; the change is −97.",
+ "answer_input": {
+  "stamps": [
+   "2026-09-13T00:00:00+00:00",
+   "2026-09-14T00:00:00+00:00",
+   "2026-09-15T00:00:00+00:00",
+   "2026-09-16T00:00:00+00:00",
+   "2026-09-17T00:00:00+00:00"
+  ],
+  "series": [
+   {
+    "name": "eightfold:nvidia",
+    "label": "NVIDIA",
+    "points": [
+     4000,
+     4000,
+     1862,
+     1862,
+     1900
+    ],
+    "latest": 1900
+   }
+  ],
+  "evicted": [
+   {
+    "ts": "2026-09-15T00:00:00+00:00",
+    "company": "eightfold:nvidia",
+    "count": 2041
+   }
+  ],
+  "epochs": [
+   {
+    "ts": "2026-09-15T00:00:00+00:00",
+    "changed": [
+     "duplicate removal changed",
+     "role family assignment changed"
+    ],
+    "fields": [
+     "dedup_version",
+     "family_classifier_version"
+    ]
+   }
+  ],
+  "metric": "stock",
+  "coverage": "all",
+  "new_window_days": 7,
+  "family": null,
+  "split_by": "company",
+  "companies": [
+   {
+    "key": "eightfold:nvidia",
+    "label": "NVIDIA",
+    "board_keys": [
+     "eightfold:nvidia"
+    ],
+    "atses": [
+     "eightfold"
+    ]
+   }
+  ],
+  "discovered": [],
+  "pick_series": {},
+  "pick_parts": {},
+  "pick_turnover": {},
+  "counted_since": {
+   "eightfold:nvidia": "2026-09-13T00:00:00+00:00"
+  },
+  "totals": [
+   10000,
+   10000,
+   10000,
+   10000,
+   10000
+  ],
+  "non_tech": [
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "watch_parents": [],
+  "uncounted": [],
+  "company_totals": {}
+ },
+ "reading": {
+  "window": {
+   "from": "2026-09-13T00:00:00+00:00",
+   "to": "2026-09-17T00:00:00+00:00"
+  },
+  "picked": true,
+  "total": null,
+  "lines": [
+   {
+    "name": "eightfold:nvidia",
+    "label": "NVIDIA",
+    "estimated": false,
+    "move": {
+     "start": 4000,
+     "latest": 1900,
+     "hiring": 38,
+     "not_hiring": [
+      {
+       "change": "removed@2026-09-15T00:00:00+00:00/eightfold:nvidia",
+       "size": -2041
+      },
+      {
+       "change": "counting@2026-09-15T00:00:00+00:00",
+       "size": -97
+      }
+     ],
+     "percent": 2.0408163265306123,
+     "percent_withheld": null,
+     "turnover": null,
+     "share": {
+      "start": 18.62,
+      "latest": 19.0,
+      "denominator_start": 10000,
+      "denominator_latest": 10000
+     }
+    }
+   }
+  ],
+  "company_lines": [
+   {
+    "name": "eightfold:nvidia",
+    "label": "NVIDIA",
+    "estimated": false,
+    "move": {
+     "start": 4000,
+     "latest": 1900,
+     "hiring": 38,
+     "not_hiring": [
+      {
+       "change": "removed@2026-09-15T00:00:00+00:00/eightfold:nvidia",
+       "size": -2041
+      },
+      {
+       "change": "counting@2026-09-15T00:00:00+00:00",
+       "size": -97
+      }
+     ],
+     "percent": 2.0408163265306123,
+     "percent_withheld": null,
+     "turnover": null,
+     "share": {
+      "start": 18.62,
+      "latest": 19.0,
+      "denominator_start": 10000,
+      "denominator_latest": 10000
+     }
+    }
+   }
+  ],
+  "breakdown": null,
+  "marked_changes": [
+   {
+    "id": "counting@2026-09-15T00:00:00+00:00",
+    "kind": "counting",
+    "ts": "2026-09-15T00:00:00+00:00",
+    "fields": [
+     "dedup_version",
+     "family_classifier_version"
+    ],
+    "changed": [
+     "duplicate removal changed",
+     "role family assignment changed"
+    ],
+    "company": null,
+    "boards": null,
+    "sizes": {
+     "eightfold:nvidia": -97
+    }
+   },
+   {
+    "id": "removed@2026-09-15T00:00:00+00:00/eightfold:nvidia",
+    "kind": "duplicates_removed",
+    "ts": "2026-09-15T00:00:00+00:00",
+    "fields": [],
+    "changed": [],
+    "company": "eightfold:nvidia",
+    "boards": null,
+    "sizes": {
+     "eightfold:nvidia": -2041
+    }
+   }
+  ],
+  "day_markers": [
+   {
+    "day": "2026-09-15",
+    "at": "2026-09-15T00:00:00+00:00",
+    "changes": [
+     "counting@2026-09-15T00:00:00+00:00",
+     "removed@2026-09-15T00:00:00+00:00/eightfold:nvidia"
+    ]
+   }
+  ],
+  "reconciles": true,
+  "violations": []
+ }
+}

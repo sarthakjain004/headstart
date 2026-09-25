@@ -35,6 +35,8 @@ from headstart import (
     profile_extract,
     search,
     trend_history,
+    trend_netting,
+    trend_reading,
 )
 
 # alerts/__init__.py is empty on purpose, so importing it never pulls in the Digest or Resend
@@ -1073,7 +1075,8 @@ def delete_resume(doc_id: str):
 @app.route("/trends")
 def trends():
     """Role counts over time (ADR-0040, ADR-0051), answered by ``headstart.trend_history``
-    (ADR-0230), whose ``TrendHistory.answer`` documents every parameter and field.
+    (ADR-0230), whose ``TrendHistory.unnetted_answer`` documents every parameter and field, with
+    every line netted (``trend_netting``) and its ``reading`` beside them (ADR-0232).
 
     ``?metric=`` ``stock`` or ``new``; ``?family=`` with ``&split=`` ``bands``, ``roles`` or
     ``company``; ``?since=`` / ``?until=`` / ``?base=`` (ISO-8601); ``?coverage=`` ``all`` or
@@ -1093,11 +1096,33 @@ def trends():
         ats=tuple(args.getlist("ats")),
     )
     try:
-        return jsonify(_HISTORY.answer(question))
+        answer = _HISTORY.unnetted_answer(question)
     except trend_history.TrendsUnavailable as exc:
         return jsonify(error=str(exc)), 503
     except ValueError as exc:
         return jsonify(error=str(exc)), 400
+    payload = trend_netting.net_answer(answer)
+    payload["reading"] = _trend_reading(answer, question)
+    return jsonify(payload)
+
+
+def _trend_reading(answer: dict, question: trend_history.TrendQuestion) -> dict | None:
+    """The answer's line reading (ADR-0232), served beside the fields the page still reads.
+
+    A reading that does not reconcile is served all the same, saying so, and logged. Until the
+    page reads it (ADR-0232 step 3) a reading that fails outright costs only itself: None."""
+    try:
+        reading = trend_reading.read_answer(answer)
+    except Exception as exc:  # noqa: BLE001 - the page does not read it yet
+        print(f"trends reading failed ({type(exc).__name__}: {exc})", flush=True)
+        return None
+    if not reading.reconciles:
+        print(
+            f"trends reading does not reconcile for {question}: "
+            + "; ".join(reading.violations[:5]),
+            flush=True,
+        )
+    return reading.to_json()
 
 
 @app.route("/companies/suggest")

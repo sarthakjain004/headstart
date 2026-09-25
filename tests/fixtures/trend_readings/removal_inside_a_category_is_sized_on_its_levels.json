@@ -1,0 +1,253 @@
+{
+ "description": "Micron's levels in one category, every job listed twice until half are removed.",
+ "answer_input": {
+  "stamps": [
+   "2026-09-13T00:00:00+00:00",
+   "2026-09-14T00:00:00+00:00",
+   "2026-09-15T00:00:00+00:00",
+   "2026-09-16T00:00:00+00:00"
+  ],
+  "series": [
+   {
+    "name": "mid",
+    "label": "mid",
+    "points": [
+     1200,
+     1300,
+     650,
+     660
+    ],
+    "latest": 660
+   },
+   {
+    "name": "senior",
+    "label": "senior",
+    "points": [
+     800,
+     800,
+     400,
+     400
+    ],
+    "latest": 400
+   }
+  ],
+  "company_totals": {
+   "eightfold:micron": [
+    2000,
+    2100,
+    1050,
+    1060
+   ]
+  },
+  "evicted": [
+   {
+    "ts": "2026-09-15T00:00:00+00:00",
+    "company": "eightfold:micron",
+    "count": 1050
+   }
+  ],
+  "metric": "stock",
+  "coverage": "all",
+  "new_window_days": 7,
+  "family": "ai-ml",
+  "split_by": "band",
+  "companies": [
+   {
+    "key": "eightfold:micron",
+    "label": "Micron",
+    "board_keys": [
+     "eightfold:micron"
+    ],
+    "atses": [
+     "eightfold"
+    ]
+   }
+  ],
+  "epochs": [],
+  "discovered": [],
+  "pick_series": {},
+  "pick_parts": {},
+  "pick_turnover": {},
+  "counted_since": {
+   "eightfold:micron": "2026-09-13T00:00:00+00:00"
+  },
+  "totals": [
+   10000,
+   10000,
+   10000,
+   10000
+  ],
+  "non_tech": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "watch_parents": [],
+  "uncounted": []
+ },
+ "reading": {
+  "window": {
+   "from": "2026-09-13T00:00:00+00:00",
+   "to": "2026-09-16T00:00:00+00:00"
+  },
+  "picked": true,
+  "total": {
+   "name": "__total__",
+   "label": "",
+   "estimated": true,
+   "move": {
+    "start": 2000,
+    "latest": 1060,
+    "hiring": 60,
+    "not_hiring": [
+     {
+      "change": "removed@2026-09-15T00:00:00+00:00/eightfold:micron",
+      "size": -1050
+     },
+     {
+      "change": "growth_counted_twice@2026-09-15T00:00:00+00:00/eightfold:micron",
+      "size": 50
+     }
+    ],
+    "percent": 6.0,
+    "percent_withheld": null,
+    "turnover": null,
+    "share": {
+     "start": 20.0,
+     "latest": 10.6,
+     "denominator_start": 5000,
+     "denominator_latest": 10000
+    }
+   }
+  },
+  "lines": [
+   {
+    "name": "mid",
+    "label": "mid",
+    "estimated": true,
+    "move": {
+     "start": 1200,
+     "latest": 660,
+     "hiring": 60,
+     "not_hiring": [
+      {
+       "change": "removed@2026-09-15T00:00:00+00:00/eightfold:micron",
+       "size": -650
+      },
+      {
+       "change": "growth_counted_twice@2026-09-15T00:00:00+00:00/eightfold:micron",
+       "size": 50
+      }
+     ],
+     "percent": 10.0,
+     "percent_withheld": null,
+     "turnover": null,
+     "share": {
+      "start": 12.0,
+      "latest": 6.6000000000000005,
+      "denominator_start": 5000,
+      "denominator_latest": 10000
+     }
+    }
+   },
+   {
+    "name": "senior",
+    "label": "senior",
+    "estimated": true,
+    "move": {
+     "start": 800,
+     "latest": 400,
+     "hiring": 0,
+     "not_hiring": [
+      {
+       "change": "removed@2026-09-15T00:00:00+00:00/eightfold:micron",
+       "size": -400
+      }
+     ],
+     "percent": 0.0,
+     "percent_withheld": null,
+     "turnover": null,
+     "share": {
+      "start": 8.0,
+      "latest": 4.0,
+      "denominator_start": 5000,
+      "denominator_latest": 10000
+     }
+    }
+   }
+  ],
+  "company_lines": [
+   {
+    "name": "eightfold:micron",
+    "label": "Micron, ai-ml",
+    "estimated": true,
+    "move": {
+     "start": 2000,
+     "latest": 1060,
+     "hiring": 60,
+     "not_hiring": [
+      {
+       "change": "removed@2026-09-15T00:00:00+00:00/eightfold:micron",
+       "size": -1050
+      },
+      {
+       "change": "growth_counted_twice@2026-09-15T00:00:00+00:00/eightfold:micron",
+       "size": 50
+      }
+     ],
+     "percent": 6.0,
+     "percent_withheld": null,
+     "turnover": null,
+     "share": {
+      "start": 20.0,
+      "latest": 10.6,
+      "denominator_start": 5000,
+      "denominator_latest": 10000
+     }
+    }
+   }
+  ],
+  "breakdown": {
+   "closing": null
+  },
+  "marked_changes": [
+   {
+    "id": "growth_counted_twice@2026-09-15T00:00:00+00:00/eightfold:micron",
+    "kind": "growth_counted_twice",
+    "ts": "2026-09-15T00:00:00+00:00",
+    "fields": [],
+    "changed": [],
+    "company": "eightfold:micron",
+    "boards": null,
+    "sizes": {
+     "eightfold:micron": 50
+    }
+   },
+   {
+    "id": "removed@2026-09-15T00:00:00+00:00/eightfold:micron",
+    "kind": "duplicates_removed",
+    "ts": "2026-09-15T00:00:00+00:00",
+    "fields": [],
+    "changed": [],
+    "company": "eightfold:micron",
+    "boards": null,
+    "sizes": {
+     "eightfold:micron": -1050
+    }
+   }
+  ],
+  "day_markers": [
+   {
+    "day": "2026-09-15",
+    "at": "2026-09-15T00:00:00+00:00",
+    "changes": [
+     "growth_counted_twice@2026-09-15T00:00:00+00:00/eightfold:micron",
+     "removed@2026-09-15T00:00:00+00:00/eightfold:micron"
+    ]
+   }
+  ],
+  "reconciles": true,
+  "violations": []
+ }
+}

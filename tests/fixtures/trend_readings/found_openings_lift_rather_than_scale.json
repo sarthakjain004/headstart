@@ -1,0 +1,75 @@
+{
+ "description": "Scaled, the +10 of real growth before the find became +28; lifted, it stays +10.",
+ "answer_input": {
+  "stamps": [
+   "2026-09-13T00:00:00+00:00",
+   "2026-09-14T00:00:00+00:00",
+   "2026-09-15T00:00:00+00:00",
+   "2026-09-16T00:00:00+00:00"
+  ],
+  "totals": [
+   100,
+   110,
+   310,
+   320
+  ],
+  "discovered": [
+   {
+    "ts": "2026-09-15T00:00:00+00:00",
+    "company": "greenhouse:acme",
+    "boards": 2,
+    "openings": 200
+   }
+  ],
+  "metric": "stock",
+  "coverage": "all",
+  "new_window_days": 7,
+  "family": null,
+  "split_by": "family",
+  "companies": [
+   {
+    "key": "greenhouse:acme",
+    "label": "Acme",
+    "board_keys": [
+     "greenhouse:acme"
+    ],
+    "atses": [
+     "greenhouse"
+    ]
+   }
+  ],
+  "series": [],
+  "epochs": [],
+  "evicted": [],
+  "pick_series": {},
+  "pick_parts": {},
+  "pick_turnover": {},
+  "counted_since": {
+   "greenhouse:acme": "2026-09-13T00:00:00+00:00"
+  },
+  "non_tech": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "watch_parents": [],
+  "uncounted": [],
+  "company_totals": {}
+ },
+ "reading": {
+  "window": {
+   "from": "2026-09-13T00:00:00+00:00",
+   "to": "2026-09-16T00:00:00+00:00"
+  },
+  "picked": true,
+  "total": null,
+  "lines": [],
+  "company_lines": [],
+  "breakdown": null,
+  "marked_changes": [],
+  "day_markers": [],
+  "reconciles": true,
+  "violations": []
+ }
+}

@@ -1,0 +1,136 @@
+{
+ "description": "Removing duplicates cannot add openings, so +20 at its run is hiring.",
+ "answer_input": {
+  "stamps": [
+   "2026-09-13T00:00:00+00:00",
+   "2026-09-14T00:00:00+00:00",
+   "2026-09-15T00:00:00+00:00",
+   "2026-09-16T00:00:00+00:00",
+   "2026-09-17T00:00:00+00:00"
+  ],
+  "series": [
+   {
+    "name": "eightfold:micron",
+    "label": "Micron",
+    "points": [
+     50,
+     50,
+     70,
+     70,
+     70
+    ],
+    "latest": 70
+   }
+  ],
+  "epochs": [
+   {
+    "ts": "2026-09-15T00:00:00+00:00",
+    "changed": [
+     "duplicate removal changed"
+    ],
+    "fields": [
+     "dedup_version"
+    ]
+   }
+  ],
+  "metric": "new",
+  "coverage": "all",
+  "new_window_days": 7,
+  "family": null,
+  "split_by": "company",
+  "companies": [
+   {
+    "key": "eightfold:micron",
+    "label": "Micron",
+    "board_keys": [
+     "eightfold:micron"
+    ],
+    "atses": [
+     "eightfold"
+    ]
+   }
+  ],
+  "discovered": [],
+  "evicted": [],
+  "pick_series": {},
+  "pick_parts": {},
+  "pick_turnover": {},
+  "counted_since": {
+   "eightfold:micron": "2026-09-13T00:00:00+00:00"
+  },
+  "totals": [
+   10000,
+   10000,
+   10000,
+   10000,
+   10000
+  ],
+  "non_tech": [
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "watch_parents": [],
+  "uncounted": [],
+  "company_totals": {}
+ },
+ "reading": {
+  "window": {
+   "from": "2026-09-13T00:00:00+00:00",
+   "to": "2026-09-17T00:00:00+00:00"
+  },
+  "picked": true,
+  "total": null,
+  "lines": [
+   {
+    "name": "eightfold:micron",
+    "label": "Micron",
+    "estimated": false,
+    "move": {
+     "start": 50,
+     "latest": 70,
+     "hiring": 20,
+     "not_hiring": [],
+     "percent": 40.0,
+     "percent_withheld": null,
+     "turnover": null,
+     "share": {
+      "start": 0.5,
+      "latest": 0.7000000000000001,
+      "denominator_start": 10000,
+      "denominator_latest": 10000
+     }
+    }
+   }
+  ],
+  "company_lines": [
+   {
+    "name": "eightfold:micron",
+    "label": "Micron",
+    "estimated": false,
+    "move": {
+     "start": 50,
+     "latest": 70,
+     "hiring": 20,
+     "not_hiring": [],
+     "percent": 40.0,
+     "percent_withheld": null,
+     "turnover": null,
+     "share": {
+      "start": 0.5,
+      "latest": 0.7000000000000001,
+      "denominator_start": 10000,
+      "denominator_latest": 10000
+     }
+    }
+   }
+  ],
+  "breakdown": null,
+  "marked_changes": [],
+  "day_markers": [],
+  "reconciles": true,
+  "violations": []
+ }
+}

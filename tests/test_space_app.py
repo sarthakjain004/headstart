@@ -35,7 +35,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 
-from headstart import trend_history, trend_netting
+from headstart import trend_history, trend_netting, trend_reading
 from headstart.llm_router import RouterUnavailable
 
 pytest.importorskip("flask")  # in [dev] so this runs in CI; guards a bare env
@@ -1961,6 +1961,21 @@ def test_any_board_of_a_company_picks_the_whole_company(company_trends):
     assert d["companies"][0]["openings"] == 13  # 11 + 2, no non-tech
     # the share denominator is the picked company's own total, non-tech included
     assert d["totals"] == [24, 25, 20]
+
+
+def test_trends_serves_the_line_reading_beside_the_netted_fields(company_trends):
+    """ADR-0232 step 2: the reading rides beside the fields the page still reads, and its first
+    row reads what the netted Total does."""
+    d = company_trends.get("/trends?company=workday:hpe/b").get_json()
+    assert "series_sum" in d and "notes" in d
+    reading = d["reading"]
+    assert reading["reconciles"] and reading["violations"] == []
+    assert trend_reading.check_reading(reading) == []
+    netted = [v for v in d["series_sum"]["net"]["count"] if v is not None]
+    total = reading["total"]["move"]
+    assert (total["start"], total["latest"]) == (17, 13)
+    assert total["hiring"] == trend_netting.js_round(netted[-1] - netted[0])
+    assert [line["name"] for line in reading["company_lines"]] == ["workday:hpe/a"]
 
 
 def test_split_by_company_draws_a_line_per_pick_and_tells_twins_apart(company_trends):

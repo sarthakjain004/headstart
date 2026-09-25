@@ -1,0 +1,231 @@
+{
+ "description": "Wipro's Sep 24 in miniature: a refit moves 120 of Software Engineering's jobs out when it held 100 at the start. The erase guard scales that category, so its earlier +50 reads +10, and the categories reach the company's +60 only with a closing row of +40.",
+ "answer_input": {
+  "stamps": [
+   "2026-09-13T00:00:00+00:00",
+   "2026-09-14T00:00:00+00:00",
+   "2026-09-15T00:00:00+00:00",
+   "2026-09-16T00:00:00+00:00",
+   "2026-09-17T00:00:00+00:00",
+   "2026-09-18T00:00:00+00:00"
+  ],
+  "series": [
+   {
+    "name": "software-engineering",
+    "label": "Software Engineering",
+    "points": [
+     100,
+     150,
+     30,
+     30,
+     40,
+     40
+    ],
+    "latest": 40
+   },
+   {
+    "name": "ai-ml",
+    "label": "AI / Machine Learning",
+    "points": [
+     50,
+     50,
+     170,
+     170,
+     170,
+     170
+    ],
+    "latest": 170
+   }
+  ],
+  "epochs": [
+   {
+    "ts": "2026-09-15T00:00:00+00:00",
+    "changed": [
+     "role family assignment changed"
+    ],
+    "fields": [
+     "family_classifier_version"
+    ]
+   }
+  ],
+  "metric": "stock",
+  "coverage": "all",
+  "new_window_days": 7,
+  "family": null,
+  "split_by": "family",
+  "companies": [
+   {
+    "key": "successfactors:careers.wipro.com",
+    "label": "Wipro",
+    "board_keys": [
+     "successfactors:careers.wipro.com"
+    ],
+    "atses": [
+     "successfactors"
+    ]
+   }
+  ],
+  "discovered": [],
+  "evicted": [],
+  "pick_series": {},
+  "pick_parts": {},
+  "pick_turnover": {},
+  "counted_since": {
+   "successfactors:careers.wipro.com": "2026-09-13T00:00:00+00:00"
+  },
+  "totals": [
+   150,
+   200,
+   200,
+   200,
+   210,
+   210
+  ],
+  "non_tech": [
+   0,
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "watch_parents": [],
+  "uncounted": [],
+  "company_totals": {
+   "successfactors:careers.wipro.com": [
+    150,
+    200,
+    200,
+    200,
+    210,
+    210
+   ]
+  }
+ },
+ "reading": {
+  "window": {
+   "from": "2026-09-13T00:00:00+00:00",
+   "to": "2026-09-18T00:00:00+00:00"
+  },
+  "picked": true,
+  "total": {
+   "name": "__total__",
+   "label": "",
+   "estimated": false,
+   "move": {
+    "start": 150,
+    "latest": 210,
+    "hiring": 60,
+    "not_hiring": [],
+    "percent": 40.0,
+    "percent_withheld": null,
+    "turnover": null,
+    "share": {
+     "start": 100.0,
+     "latest": 100.0,
+     "denominator_start": 150,
+     "denominator_latest": 210
+    }
+   }
+  },
+  "lines": [
+   {
+    "name": "software-engineering",
+    "label": "Software Engineering",
+    "estimated": false,
+    "move": {
+     "start": 100,
+     "latest": 40,
+     "hiring": 20,
+     "not_hiring": [
+      {
+       "change": "counting@2026-09-15T00:00:00+00:00",
+       "size": -120
+      },
+      {
+       "change": "growth_scaled_by_counting@2026-09-15T00:00:00+00:00",
+       "size": 40
+      }
+     ],
+     "percent": 100.0,
+     "percent_withheld": null,
+     "turnover": null,
+     "share": {
+      "start": 13.333333333333334,
+      "latest": 19.047619047619047,
+      "denominator_start": 150,
+      "denominator_latest": 210
+     }
+    }
+   },
+   {
+    "name": "ai-ml",
+    "label": "AI / Machine Learning",
+    "estimated": false,
+    "move": {
+     "start": 50,
+     "latest": 170,
+     "hiring": 0,
+     "not_hiring": [
+      {
+       "change": "counting@2026-09-15T00:00:00+00:00",
+       "size": 120
+      }
+     ],
+     "percent": 0.0,
+     "percent_withheld": null,
+     "turnover": null,
+     "share": {
+      "start": 113.33333333333333,
+      "latest": 80.95238095238095,
+      "denominator_start": 150,
+      "denominator_latest": 210
+     }
+    }
+   }
+  ],
+  "company_lines": [
+   {
+    "name": "successfactors:careers.wipro.com",
+    "label": "Wipro",
+    "estimated": false,
+    "move": {
+     "start": 150,
+     "latest": 210,
+     "hiring": 60,
+     "not_hiring": [],
+     "percent": 40.0,
+     "percent_withheld": null,
+     "turnover": null,
+     "share": {
+      "start": 100.0,
+      "latest": 100.0,
+      "denominator_start": 150,
+      "denominator_latest": 210
+     }
+    }
+   }
+  ],
+  "breakdown": {
+   "closing": {
+    "start": 0,
+    "latest": 0,
+    "hiring": 40,
+    "not_hiring": [
+     {
+      "change": "growth_scaled_by_counting@2026-09-15T00:00:00+00:00",
+      "size": -40
+     }
+    ],
+    "percent": null,
+    "percent_withheld": "a closing row has no start",
+    "turnover": null,
+    "share": null
+   }
+  },
+  "marked_changes": [],
+  "day_markers": [],
+  "reconciles": true,
+  "violations": []
+ }
+}

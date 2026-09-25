@@ -1,0 +1,149 @@
+{
+ "description": "NVIDIA's 2,045 removals would overshoot its AI/ML 300: a drill's line keeps them.",
+ "answer_input": {
+  "stamps": [
+   "2026-09-13T00:00:00+00:00",
+   "2026-09-14T00:00:00+00:00",
+   "2026-09-15T00:00:00+00:00",
+   "2026-09-16T00:00:00+00:00"
+  ],
+  "series": [
+   {
+    "name": "mid",
+    "label": "mid",
+    "points": [
+     300,
+     300,
+     290,
+     290
+    ],
+    "latest": 290
+   }
+  ],
+  "evicted": [
+   {
+    "ts": "2026-09-15T00:00:00+00:00",
+    "company": "greenhouse:acme",
+    "count": 2045
+   }
+  ],
+  "metric": "stock",
+  "coverage": "all",
+  "new_window_days": 7,
+  "family": "ai-ml",
+  "split_by": "band",
+  "companies": [
+   {
+    "key": "greenhouse:acme",
+    "label": "Acme",
+    "board_keys": [
+     "greenhouse:acme"
+    ],
+    "atses": [
+     "greenhouse"
+    ]
+   }
+  ],
+  "epochs": [],
+  "discovered": [],
+  "pick_series": {},
+  "pick_parts": {},
+  "pick_turnover": {},
+  "counted_since": {
+   "greenhouse:acme": "2026-09-13T00:00:00+00:00"
+  },
+  "totals": [
+   10000,
+   10000,
+   10000,
+   10000
+  ],
+  "non_tech": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "watch_parents": [],
+  "uncounted": [],
+  "company_totals": {}
+ },
+ "reading": {
+  "window": {
+   "from": "2026-09-13T00:00:00+00:00",
+   "to": "2026-09-16T00:00:00+00:00"
+  },
+  "picked": true,
+  "total": {
+   "name": "__total__",
+   "label": "",
+   "estimated": false,
+   "move": {
+    "start": 300,
+    "latest": 290,
+    "hiring": -10,
+    "not_hiring": [],
+    "percent": -3.3333333333333335,
+    "percent_withheld": null,
+    "turnover": null,
+    "share": {
+     "start": 3.7712130735386546,
+     "latest": 2.9000000000000004,
+     "denominator_start": 7955,
+     "denominator_latest": 10000
+    }
+   }
+  },
+  "lines": [
+   {
+    "name": "mid",
+    "label": "mid",
+    "estimated": false,
+    "move": {
+     "start": 300,
+     "latest": 290,
+     "hiring": -10,
+     "not_hiring": [],
+     "percent": -3.3333333333333335,
+     "percent_withheld": null,
+     "turnover": null,
+     "share": {
+      "start": 3.7712130735386546,
+      "latest": 2.9000000000000004,
+      "denominator_start": 7955,
+      "denominator_latest": 10000
+     }
+    }
+   }
+  ],
+  "company_lines": [
+   {
+    "name": "greenhouse:acme",
+    "label": "Acme, ai-ml",
+    "estimated": false,
+    "move": {
+     "start": 300,
+     "latest": 290,
+     "hiring": -10,
+     "not_hiring": [],
+     "percent": -3.3333333333333335,
+     "percent_withheld": null,
+     "turnover": null,
+     "share": {
+      "start": 3.7712130735386546,
+      "latest": 2.9000000000000004,
+      "denominator_start": 7955,
+      "denominator_latest": 10000
+     }
+    }
+   }
+  ],
+  "breakdown": {
+   "closing": null
+  },
+  "marked_changes": [],
+  "day_markers": [],
+  "reconciles": true,
+  "violations": []
+ }
+}

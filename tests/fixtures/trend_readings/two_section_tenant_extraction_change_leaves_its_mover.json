@@ -1,0 +1,175 @@
+{
+ "description": "An extraction change moves levels, not a company's categories.",
+ "answer_input": {
+  "stamps": [
+   "2026-09-13T00:00:00+00:00",
+   "2026-09-20T00:00:00+00:00"
+  ],
+  "series": [
+   {
+    "name": "a",
+    "label": "a",
+    "points": [
+     50,
+     90
+    ],
+    "latest": 90
+   },
+   {
+    "name": "b",
+    "label": "b",
+    "points": [
+     40,
+     45
+    ],
+    "latest": 45
+   }
+  ],
+  "epochs": [
+   {
+    "ts": "2026-09-20T00:00:00+00:00",
+    "changed": [
+     "experience/salary extraction changed"
+    ],
+    "fields": [
+     "derivations_version"
+    ]
+   }
+  ],
+  "metric": "stock",
+  "coverage": "all",
+  "new_window_days": 7,
+  "family": null,
+  "split_by": "family",
+  "companies": [
+   {
+    "key": "taleo_enterprise:hdr/1",
+    "label": "HDR",
+    "board_keys": [
+     "taleo_enterprise:hdr/1",
+     "taleo_enterprise:hdr/2"
+    ],
+    "atses": [
+     "taleo_enterprise"
+    ]
+   }
+  ],
+  "discovered": [],
+  "evicted": [],
+  "pick_series": {},
+  "pick_parts": {},
+  "pick_turnover": {},
+  "counted_since": {
+   "taleo_enterprise:hdr/1": "2026-09-13T00:00:00+00:00"
+  },
+  "totals": [
+   10000,
+   10000
+  ],
+  "non_tech": [
+   0,
+   0
+  ],
+  "watch_parents": [],
+  "uncounted": [],
+  "company_totals": {}
+ },
+ "reading": {
+  "window": {
+   "from": "2026-09-13T00:00:00+00:00",
+   "to": "2026-09-20T00:00:00+00:00"
+  },
+  "picked": true,
+  "total": {
+   "name": "__total__",
+   "label": "",
+   "estimated": false,
+   "move": {
+    "start": 90,
+    "latest": 135,
+    "hiring": 45,
+    "not_hiring": [],
+    "percent": 50.0,
+    "percent_withheld": null,
+    "turnover": null,
+    "share": {
+     "start": 0.8999999999999999,
+     "latest": 1.35,
+     "denominator_start": 10000,
+     "denominator_latest": 10000
+    }
+   }
+  },
+  "lines": [
+   {
+    "name": "a",
+    "label": "a",
+    "estimated": false,
+    "move": {
+     "start": 50,
+     "latest": 90,
+     "hiring": 40,
+     "not_hiring": [],
+     "percent": 80.0,
+     "percent_withheld": null,
+     "turnover": null,
+     "share": {
+      "start": 0.5,
+      "latest": 0.8999999999999999,
+      "denominator_start": 10000,
+      "denominator_latest": 10000
+     }
+    }
+   },
+   {
+    "name": "b",
+    "label": "b",
+    "estimated": false,
+    "move": {
+     "start": 40,
+     "latest": 45,
+     "hiring": 5,
+     "not_hiring": [],
+     "percent": 12.5,
+     "percent_withheld": null,
+     "turnover": null,
+     "share": {
+      "start": 0.4,
+      "latest": 0.44999999999999996,
+      "denominator_start": 10000,
+      "denominator_latest": 10000
+     }
+    }
+   }
+  ],
+  "company_lines": [
+   {
+    "name": "taleo_enterprise:hdr/1",
+    "label": "HDR",
+    "estimated": false,
+    "move": {
+     "start": 90,
+     "latest": 135,
+     "hiring": 45,
+     "not_hiring": [],
+     "percent": 50.0,
+     "percent_withheld": null,
+     "turnover": null,
+     "share": {
+      "start": 0.8999999999999999,
+      "latest": 1.35,
+      "denominator_start": 10000,
+      "denominator_latest": 10000
+     }
+    }
+   }
+  ],
+  "breakdown": {
+   "closing": null
+  },
+  "marked_changes": [],
+  "day_markers": [],
+  "reconciles": true,
+  "violations": []
+ }
+}

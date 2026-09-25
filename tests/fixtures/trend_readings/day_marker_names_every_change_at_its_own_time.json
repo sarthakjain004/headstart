@@ -1,0 +1,205 @@
+{
+ "description": "A filter change and a family-assignment change on one day.",
+ "answer_input": {
+  "stamps": [
+   "2026-09-20T00:00:00+00:00",
+   "2026-09-24T11:32:00+00:00",
+   "2026-09-24T16:23:00+00:00",
+   "2026-09-24T21:19:00+00:00",
+   "2026-09-27T00:00:00+00:00"
+  ],
+  "series": [
+   {
+    "name": "greenhouse:acme",
+    "label": "Acme",
+    "points": [
+     100,
+     91,
+     89,
+     99,
+     99
+    ],
+    "latest": 99
+   }
+  ],
+  "epochs": [
+   {
+    "ts": "2026-09-24T11:32:00+00:00",
+    "changed": [
+     "tech filter changed"
+    ],
+    "fields": [
+     "tech_filter_version"
+    ]
+   },
+   {
+    "ts": "2026-09-24T21:19:00+00:00",
+    "changed": [
+     "role family assignment changed"
+    ],
+    "fields": [
+     "family_classifier_version"
+    ]
+   }
+  ],
+  "metric": "stock",
+  "coverage": "all",
+  "new_window_days": 7,
+  "family": null,
+  "split_by": "company",
+  "companies": [
+   {
+    "key": "greenhouse:acme",
+    "label": "Acme",
+    "board_keys": [
+     "greenhouse:acme"
+    ],
+    "atses": [
+     "greenhouse"
+    ]
+   }
+  ],
+  "discovered": [],
+  "evicted": [],
+  "pick_series": {},
+  "pick_parts": {},
+  "pick_turnover": {},
+  "counted_since": {
+   "greenhouse:acme": "2026-09-20T00:00:00+00:00"
+  },
+  "totals": [
+   10000,
+   10000,
+   10000,
+   10000,
+   10000
+  ],
+  "non_tech": [
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "watch_parents": [],
+  "uncounted": [],
+  "company_totals": {}
+ },
+ "reading": {
+  "window": {
+   "from": "2026-09-20T00:00:00+00:00",
+   "to": "2026-09-27T00:00:00+00:00"
+  },
+  "picked": true,
+  "total": null,
+  "lines": [
+   {
+    "name": "greenhouse:acme",
+    "label": "Acme",
+    "estimated": false,
+    "move": {
+     "start": 100,
+     "latest": 99,
+     "hiring": 0,
+     "not_hiring": [
+      {
+       "change": "counting@2026-09-24T11:32:00+00:00",
+       "size": -11
+      },
+      {
+       "change": "counting@2026-09-24T21:19:00+00:00",
+       "size": 10
+      }
+     ],
+     "percent": 0.0,
+     "percent_withheld": null,
+     "turnover": null,
+     "share": {
+      "start": 0.9900000000000001,
+      "latest": 0.9900000000000001,
+      "denominator_start": 10000,
+      "denominator_latest": 10000
+     }
+    }
+   }
+  ],
+  "company_lines": [
+   {
+    "name": "greenhouse:acme",
+    "label": "Acme",
+    "estimated": false,
+    "move": {
+     "start": 100,
+     "latest": 99,
+     "hiring": 0,
+     "not_hiring": [
+      {
+       "change": "counting@2026-09-24T11:32:00+00:00",
+       "size": -11
+      },
+      {
+       "change": "counting@2026-09-24T21:19:00+00:00",
+       "size": 10
+      }
+     ],
+     "percent": 0.0,
+     "percent_withheld": null,
+     "turnover": null,
+     "share": {
+      "start": 0.9900000000000001,
+      "latest": 0.9900000000000001,
+      "denominator_start": 10000,
+      "denominator_latest": 10000
+     }
+    }
+   }
+  ],
+  "breakdown": null,
+  "marked_changes": [
+   {
+    "id": "counting@2026-09-24T11:32:00+00:00",
+    "kind": "counting",
+    "ts": "2026-09-24T11:32:00+00:00",
+    "fields": [
+     "tech_filter_version"
+    ],
+    "changed": [
+     "tech filter changed"
+    ],
+    "company": null,
+    "boards": null,
+    "sizes": {
+     "greenhouse:acme": -11
+    }
+   },
+   {
+    "id": "counting@2026-09-24T21:19:00+00:00",
+    "kind": "counting",
+    "ts": "2026-09-24T21:19:00+00:00",
+    "fields": [
+     "family_classifier_version"
+    ],
+    "changed": [
+     "role family assignment changed"
+    ],
+    "company": null,
+    "boards": null,
+    "sizes": {
+     "greenhouse:acme": 10
+    }
+   }
+  ],
+  "day_markers": [
+   {
+    "day": "2026-09-24",
+    "at": "2026-09-24T21:19:00+00:00",
+    "changes": [
+     "counting@2026-09-24T11:32:00+00:00",
+     "counting@2026-09-24T21:19:00+00:00"
+    ]
+   }
+  ],
+  "reconciles": true,
+  "violations": []
+ }
+}

@@ -1,0 +1,332 @@
+{
+ "description": "Micron listed every job twice until half its list is removed; Acme is counted once.",
+ "answer_input": {
+  "stamps": [
+   "2026-09-13T00:00:00+00:00",
+   "2026-09-14T00:00:00+00:00",
+   "2026-09-15T00:00:00+00:00",
+   "2026-09-16T00:00:00+00:00"
+  ],
+  "series": [
+   {
+    "name": "a",
+    "label": "a",
+    "points": [
+     1300,
+     1400,
+     760,
+     770
+    ],
+    "latest": 770
+   },
+   {
+    "name": "b",
+    "label": "b",
+    "points": [
+     850,
+     850,
+     450,
+     460
+    ],
+    "latest": 460
+   }
+  ],
+  "pick_series": {
+   "greenhouse:acme": [
+    150,
+    150,
+    160,
+    170
+   ],
+   "eightfold:micron": [
+    2000,
+    2100,
+    1050,
+    1060
+   ]
+  },
+  "pick_parts": {
+   "a": {
+    "greenhouse:acme": [
+     100,
+     100,
+     110,
+     110
+    ],
+    "eightfold:micron": [
+     1200,
+     1300,
+     650,
+     660
+    ]
+   },
+   "b": {
+    "greenhouse:acme": [
+     50,
+     50,
+     50,
+     60
+    ],
+    "eightfold:micron": [
+     800,
+     800,
+     400,
+     400
+    ]
+   }
+  },
+  "company_totals": {
+   "greenhouse:acme": [
+    150,
+    150,
+    160,
+    170
+   ],
+   "eightfold:micron": [
+    2000,
+    2100,
+    1050,
+    1060
+   ]
+  },
+  "evicted": [
+   {
+    "ts": "2026-09-15T00:00:00+00:00",
+    "company": "eightfold:micron",
+    "count": 1050
+   }
+  ],
+  "metric": "stock",
+  "coverage": "all",
+  "new_window_days": 7,
+  "family": null,
+  "split_by": "family",
+  "companies": [
+   {
+    "key": "greenhouse:acme",
+    "label": "Acme",
+    "board_keys": [
+     "greenhouse:acme"
+    ],
+    "atses": [
+     "greenhouse"
+    ]
+   },
+   {
+    "key": "eightfold:micron",
+    "label": "Micron",
+    "board_keys": [
+     "eightfold:micron"
+    ],
+    "atses": [
+     "eightfold"
+    ]
+   }
+  ],
+  "epochs": [],
+  "discovered": [],
+  "pick_turnover": {},
+  "counted_since": {
+   "greenhouse:acme": "2026-09-13T00:00:00+00:00",
+   "eightfold:micron": "2026-09-13T00:00:00+00:00"
+  },
+  "totals": [
+   10000,
+   10000,
+   10000,
+   10000
+  ],
+  "non_tech": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "watch_parents": [],
+  "uncounted": []
+ },
+ "reading": {
+  "window": {
+   "from": "2026-09-13T00:00:00+00:00",
+   "to": "2026-09-16T00:00:00+00:00"
+  },
+  "picked": true,
+  "total": {
+   "name": "__total__",
+   "label": "",
+   "estimated": false,
+   "move": {
+    "start": 2150,
+    "latest": 1230,
+    "hiring": 80,
+    "not_hiring": [
+     {
+      "change": "removed@2026-09-15T00:00:00+00:00/eightfold:micron",
+      "size": -1050
+     },
+     {
+      "change": "growth_counted_twice@2026-09-15T00:00:00+00:00/eightfold:micron",
+      "size": 50
+     }
+    ],
+    "percent": 6.956521739130435,
+    "percent_withheld": null,
+    "turnover": null,
+    "share": {
+     "start": 100.0,
+     "latest": 12.3,
+     "denominator_start": 1150,
+     "denominator_latest": 10000
+    }
+   }
+  },
+  "lines": [
+   {
+    "name": "a",
+    "label": "a",
+    "estimated": true,
+    "move": {
+     "start": 1300,
+     "latest": 770,
+     "hiring": 70,
+     "not_hiring": [
+      {
+       "change": "removed@2026-09-15T00:00:00+00:00/eightfold:micron",
+       "size": -650
+      },
+      {
+       "change": "growth_counted_twice@2026-09-15T00:00:00+00:00/eightfold:micron",
+       "size": 50
+      }
+     ],
+     "percent": 10.0,
+     "percent_withheld": null,
+     "turnover": null,
+     "share": {
+      "start": 60.86956521739131,
+      "latest": 7.7,
+      "denominator_start": 1150,
+      "denominator_latest": 10000
+     }
+    }
+   },
+   {
+    "name": "b",
+    "label": "b",
+    "estimated": true,
+    "move": {
+     "start": 850,
+     "latest": 460,
+     "hiring": 10,
+     "not_hiring": [
+      {
+       "change": "removed@2026-09-15T00:00:00+00:00/eightfold:micron",
+       "size": -400
+      }
+     ],
+     "percent": 2.2222222222222223,
+     "percent_withheld": null,
+     "turnover": null,
+     "share": {
+      "start": 39.130434782608695,
+      "latest": 4.6,
+      "denominator_start": 1150,
+      "denominator_latest": 10000
+     }
+    }
+   }
+  ],
+  "company_lines": [
+   {
+    "name": "greenhouse:acme",
+    "label": "Acme",
+    "estimated": false,
+    "move": {
+     "start": 150,
+     "latest": 170,
+     "hiring": 20,
+     "not_hiring": [],
+     "percent": 13.333333333333334,
+     "percent_withheld": null,
+     "turnover": null,
+     "share": {
+      "start": 13.043478260869565,
+      "latest": 1.7000000000000002,
+      "denominator_start": 1150,
+      "denominator_latest": 10000
+     }
+    }
+   },
+   {
+    "name": "eightfold:micron",
+    "label": "Micron",
+    "estimated": false,
+    "move": {
+     "start": 2000,
+     "latest": 1060,
+     "hiring": 60,
+     "not_hiring": [
+      {
+       "change": "removed@2026-09-15T00:00:00+00:00/eightfold:micron",
+       "size": -1050
+      },
+      {
+       "change": "growth_counted_twice@2026-09-15T00:00:00+00:00/eightfold:micron",
+       "size": 50
+      }
+     ],
+     "percent": 6.0,
+     "percent_withheld": null,
+     "turnover": null,
+     "share": {
+      "start": 86.95652173913044,
+      "latest": 10.6,
+      "denominator_start": 1150,
+      "denominator_latest": 10000
+     }
+    }
+   }
+  ],
+  "breakdown": {
+   "closing": null
+  },
+  "marked_changes": [
+   {
+    "id": "growth_counted_twice@2026-09-15T00:00:00+00:00/eightfold:micron",
+    "kind": "growth_counted_twice",
+    "ts": "2026-09-15T00:00:00+00:00",
+    "fields": [],
+    "changed": [],
+    "company": "eightfold:micron",
+    "boards": null,
+    "sizes": {
+     "eightfold:micron": 50
+    }
+   },
+   {
+    "id": "removed@2026-09-15T00:00:00+00:00/eightfold:micron",
+    "kind": "duplicates_removed",
+    "ts": "2026-09-15T00:00:00+00:00",
+    "fields": [],
+    "changed": [],
+    "company": "eightfold:micron",
+    "boards": null,
+    "sizes": {
+     "eightfold:micron": -1050
+    }
+   }
+  ],
+  "day_markers": [
+   {
+    "day": "2026-09-15",
+    "at": "2026-09-15T00:00:00+00:00",
+    "changes": [
+     "growth_counted_twice@2026-09-15T00:00:00+00:00/eightfold:micron",
+     "removed@2026-09-15T00:00:00+00:00/eightfold:micron"
+    ]
+   }
+  ],
+  "reconciles": true,
+  "violations": []
+ }
+}

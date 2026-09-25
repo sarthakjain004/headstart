@@ -3762,6 +3762,82 @@ function countingChange(s){
   return n ? esc(signedOpenings(n)) : '—';
 }
 
+// Every way a line reading (the Space's `reading`, ADR-0232) breaks its invariants, as sentences;
+// empty when it reconciles. The same equalities as `headstart.trend_reading.check_reading`, in
+// the same words, run by the node tests over the same golden readings, so neither side can drift.
+// Not drawn from yet: the page reads the reading from ADR-0232 step 3.
+//   1. every line: latest − start = hiring + Σ not hiring;
+//   2. a company line's Not hiring is its Marked changes, change by change;
+//   3. a breakdown's rows, with its closing row (which starts and ends at 0), add up to its first
+//      row, field by field;
+//   5. share is the netted count over the netted denominator, and the percentage hiring over the
+//      netted start, neither netted a second time;
+//   6. with no pick nothing is taken out.
+// (4, one size in every window, is stated by the tests over narrower windows.) Plus: every count
+// is a whole number, and no change is one the reading could not name.
+function checkReading(reading){
+  const out = [];
+  const changes = new Map((reading.marked_changes || []).map(c => [c.id, c]));
+  const same = (a, b) => (a == null || b == null) ? a == null && b == null
+    : Math.abs(a - b) <= Math.max(1e-9 * Math.max(Math.abs(a), Math.abs(b)), 1e-9);
+  const lines = [['first row', reading.total],
+    ...(reading.lines || []).map(r => [`line ${r.name}`, r]),
+    ...(reading.company_lines || []).map(r => [`company line ${r.name}`, r])];
+  const moves = lines.filter(([, r]) => r).map(([where, r]) => [where, r.move]);
+  const breakdown = reading.breakdown;
+  if (breakdown && breakdown.closing) moves.push(['closing row', breakdown.closing]);
+  for (const [where, m] of moves){
+    const counts = [m.start, m.latest, m.hiring, ...m.not_hiring.map(c => c.size),
+      ...(m.turnover ? [m.turnover.opened, m.turnover.closed] : [])];
+    if (counts.some(n => !Number.isInteger(n))){ out.push(`${where}: a count is not a whole number`); continue; }
+    const named = m.not_hiring.reduce((sum, c) => sum + c.size, 0);
+    if (m.latest - m.start !== m.hiring + named)
+      out.push(`${where}: latest − start is ${m.latest - m.start}, hiring + not hiring is ${m.hiring + named}`);
+    m.not_hiring.filter(c => c.change.startsWith('unexplained@'))
+      .forEach(c => out.push(`${where}: ${c.size} openings of not hiring have no named cause`));
+    const nettedStart = m.latest - m.hiring;
+    if (m.share){
+      const den = m.share.denominator_start, latest = m.share.denominator_latest;
+      if (!same(m.share.start, den ? nettedStart / den * 100 : null))
+        out.push(`${where}: its share at the start is not its netted count over the netted denominator`);
+      if (!same(m.share.latest, latest ? m.latest / latest * 100 : null))
+        out.push(`${where}: its latest share is not its count over the denominator`);
+    }
+    if (m.percent != null && (nettedStart <= 0 || !same(m.percent, m.hiring / nettedStart * 100)))
+      out.push(`${where}: its percentage is not hiring over the netted start`);
+    if (!reading.picked && (m.not_hiring.length || m.hiring !== m.latest - m.start))
+      out.push(`${where}: with no pick, something was taken out`);
+  }
+  if (reading.picked) (reading.company_lines || []).forEach(line => {
+    const causes = new Map(line.move.not_hiring.map(c => [c.change, c.size]));
+    const listed = [...changes.values()].filter(c => line.name in c.sizes);
+    if (causes.size !== listed.length || listed.some(c => causes.get(c.id) !== c.sizes[line.name]))
+      out.push(`company line ${line.name}: its Not hiring is not its Marked changes`);
+  });
+  if (breakdown && reading.total){
+    const total = reading.total.move;
+    const rows = (reading.lines || []).map(r => r.move);
+    if (breakdown.closing){
+      if (breakdown.closing.start || breakdown.closing.latest) out.push('closing row: it does not start and end at 0');
+      rows.push(breakdown.closing);
+    }
+    const fields = m => {
+      const f = { start: m.start, latest: m.latest, hiring: m.hiring };
+      m.not_hiring.forEach(c => { f[c.change] = (f[c.change] || 0) + c.size; });
+      if (m.turnover){ f.opened = m.turnover.opened; f.closed = m.turnover.closed; }
+      return f;
+    };
+    const want = fields(total), summed = {};
+    rows.forEach(m => Object.entries(fields(m)).forEach(([k, v]) => { summed[k] = (summed[k] || 0) + v; }));
+    [...new Set([...Object.keys(want), ...Object.keys(summed)])].sort().forEach(k => {
+      if ((k === 'opened' || k === 'closed') && !total.turnover) return;
+      if ((want[k] || 0) !== (summed[k] || 0))
+        out.push(`breakdown: its rows' ${k} add up to ${summed[k] || 0}, its first row's is ${want[k] || 0}`);
+    });
+  }
+  return out;
+}
+
 // The whole time grid, one column per measurement — behind a disclosure because 471 columns
 // is a data dump, not a table view, and only some readers want it.
 function buildTrendsFull(){

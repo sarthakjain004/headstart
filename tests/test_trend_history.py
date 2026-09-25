@@ -23,6 +23,7 @@ import pytest
 pa = pytest.importorskip("pyarrow")
 pq = pytest.importorskip("pyarrow.parquet")
 
+import duplicate_removal_trends_state
 import old_layout_trends_state
 
 from headstart import roles, trend_history, trend_netting
@@ -234,6 +235,32 @@ def test_a_tick_recorded_onto_the_older_layout_counts_against_its_migration(tmp_
     assert trend_history.record_tick(state, ts, now, {}, _methodology(3)) == 1
     assert trend_history.board_levels(state) == (ts, now)
     assert TrendHistory.load(state, _NO_CONFIG).ticks[-1] == ts
+
+
+def test_comparable_coverage_serves_the_removals_on_its_cohorts_boards(tmp_path):
+    """A Board found later is out of a comparable cohort, but a removal on a cohort Board
+    still halves what it counted (ADR-0232). Serving none, Micron read +160 under Comparable
+    and +83 under All."""
+    duplicate_removal_trends_state.write(tmp_path)
+    history = TrendHistory.load(tmp_path, _NO_CONFIG)
+    micro = (duplicate_removal_trends_state.MICRO,)
+    every = history.unnetted_answer(TrendQuestion(companies=micro))["evicted"]
+    cohort = history.unnetted_answer(
+        TrendQuestion(companies=micro, coverage="comparable")
+    )["evicted"]
+    assert (
+        cohort
+        == every
+        == [
+            {
+                "ts": duplicate_removal_trends_state.TICKS[
+                    duplicate_removal_trends_state.REMOVAL
+                ],
+                "company": duplicate_removal_trends_state.MICRO,
+                "count": duplicate_removal_trends_state.REMOVED_ROWS,
+            }
+        ]
+    )
 
 
 def test_an_unreadable_ledger_is_an_empty_history(tmp_path):
