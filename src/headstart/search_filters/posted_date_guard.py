@@ -5,7 +5,7 @@
 ``posted_within`` window, the ``posted_after``/``posted_before`` range and the posted-date sort —
 ANDs in the guard ``posted_at LIKE '____-__-__%'``. ADR-0173 materialized that verdict as
 ``posted_at_comparable``. The column, the Python verdict the index writes, the SQL an old table is
-migrated with, and the guard :func:`headstart.search_filter_compiler.build_filter` compiles live here; the date
+migrated with, and the guard :func:`headstart.search_filters.compiler.build_filter` compiles live here; the date
 clauses themselves stay with the compiler, which shares their date arithmetic with ``first_seen``.
 It is a guard rather than a filter, which is why the module is not called ``posted_date_filter``.
 """

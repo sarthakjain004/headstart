@@ -59,7 +59,7 @@ _SCRAPERS = _ROOT / "scrapers"
 _ALERTS = _ROOT / "alerts"
 _HARVEST = _ROOT / "harvest.py"
 _SPARE_EGRESS = _ROOT / "network" / "spare_egress.py"
-_SEARCH = _ROOT / "search.py"
+_SEARCH = _ROOT / "serving" / "job_search.py"
 
 #: Where *every* annotation-level site must be justified, because the repetition lives in the
 #: caller rather than in a loop the file shows. Two packages and two modules, each with its own
@@ -82,7 +82,7 @@ _PER_ITEM_BY_CONSTRUCTION = [
     *sorted(_ALERTS.glob("*.py")),
     _HARVEST,
     _SPARE_EGRESS,
-    # `search.py` runs once per HTTP request on the deployed Space, so every line in it is
+    # `job_search.py` runs once per HTTP request on the deployed Space, so every line in it is
     # per-item by construction and none of it is lexically looped — the loop rule cannot see it.
     # It is here because this is where the worst regression of the whole overhaul happened: a
     # filter-drop warning re-entered by `facets.counts` once per facet option cost 58 records a
@@ -94,9 +94,9 @@ _PER_ITEM_BY_CONSTRUCTION = [
     _ROOT / "telegram_bot_api.py",
     # Once per résumé-parse request on the Space.
     _ROOT / "llm_router.py",
-    _ROOT / "profile_extract.py",
+    _ROOT / "serving" / "profile_extract.py",
     # Once per process by its cache, but reached from every Space request and every shard.
-    _ROOT / "fx.py",
+    _ROOT / "search_filters" / "fx.py",
 ]
 
 #: Every spelling a logger has in this package — the receiver a matched ``.warning``/``.error``
@@ -125,14 +125,14 @@ _ALLOWED: dict[str, str] = {
         "with no `headstart` to import the seam from. The absent arm never reaches here — it "
         "returns at DEBUG, because a signed-in Account with no Saved set is the common path."
     ),
-    "search.py:load_family_ids": (
+    "serving/job_search.py:load_family_ids": (
         "Bound: once per process — the Space and the local renderer each call it at boot, "
         "never per request or per Board. WARNING because the Space's `lastResort` carries "
         "nothing below it, and an unreadable role-assignment snapshot silently turns the "
         "Trends category hand-off off (ADR-0185)."
     ),
-    "search.py:_warn_unknown_filters": (
-        "Bound: at most 6 per HTTP request (ats, employment_type, india, salary_currency, kw_in, sort), and not against the annotation quota at all — `search.py` "
+    "serving/job_search.py:_warn_unknown_filters": (
+        "Bound: at most 6 per HTTP request (ats, employment_type, india, salary_currency, kw_in, sort), and not against the annotation quota at all — `job_search.py` "
         "runs only in the deployed Space, which calls no `log.setup()`, so these render through "
         "`logging.lastResort` as bare stderr lines and no `::warning::` is ever produced. The "
         "budget that binds here is request volume, and this is the site that once cost 58 "
@@ -142,7 +142,7 @@ _ALLOWED: dict[str, str] = {
         "same reason: `lastResort` carries WARNING and above only, so INFO here is invisible "
         "in the one deployment that serves users."
     ),
-    "search.py:__init__": (
+    "serving/job_search.py:__init__": (
         "Bound: 1 per process, at most four lines: (1) which schema columns are dark and "
         "which acceleration flags are unmaterialized, so an un-migrated table cannot silently "
         "ignore `seen_within`/`salary` or answer on the slow raw clause with no record; (2) the "
@@ -151,13 +151,13 @@ _ALLOWED: dict[str, str] = {
         "unconverted and such a bracket is dropped. Same "
         "`lastResort` reasoning as above: WARNING or invisible."
     ),
-    "search.py:facets": (
+    "serving/job_search.py:facets": (
         "Fires only when an uncached facet strip exceeds `SLOW_SEARCH_MS` (2 s) — the strip is "
         "~46 counts, the Space's most expensive request, so a lost acceleration flag shows up "
         "here first. Shapes only, never keyword text (ADR-0032). Space-only, so never an "
         "annotation."
     ),
-    "search.py:scoped_jobs_clause": (
+    "serving/job_search.py:scoped_jobs_clause": (
         "Bound: 1 per call, and it is called once per /search or /facets request (app.py's "
         "`_company_where`). Six mutually exclusive branches: a hand-off with no `board=` "
         "(ignored), a role with no watchlist loaded or no watch pattern (scope widened), a "
@@ -167,26 +167,26 @@ _ALLOWED: dict[str, str] = {
         "`%.40r`-clipped. "
         "Space-only: no annotations exist there, and `lastResort` shows WARNING and above only."
     ),
-    "search.py:run": (
+    "serving/job_search.py:run": (
         "Fires only when an uncached request exceeds `SLOW_SEARCH_MS` (2 s), so rare by "
         "construction. Shapes only (path, encode_ms, indexed, page, k, sort, has-query, "
         "extra_where, where-clause length), never query text "
         "(ADR-0032). Space-only, so never an annotation."
     ),
-    "profile_extract.py:_reply_json": (
+    "serving/profile_extract.py:_reply_json": (
         "Bound: at most 1 per `extract()` call, i.e. per POST /profile — every branch raises "
         "right after its line (no text / no JSON / unparseable / not an object). Shapes and "
         "sizes only, never reply text. Space-only, so never an annotation."
     ),
-    "profile_extract.py:extract": (
+    "serving/profile_extract.py:extract": (
         "Bound: at most 1 per call — either no role sentence survived the scrub (then "
         "EmptyExtraction) or the scrub removed N chars, never both. Counts only. Space-only."
     ),
-    "fx.py:_no_conversion": (
+    "search_filters/fx.py:_no_conversion": (
         "Bound: once per process — `table()` caches its answer; only an explicit `path=` "
         "(tests and tools) bypasses the cache."
     ),
-    "fx.py:table": (
+    "search_filters/fx.py:table": (
         "The unusable-rates line, once per process under the same cache as `_no_conversion`."
     ),
     "llm_router.py:ask": (

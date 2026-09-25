@@ -10,7 +10,7 @@ from pathlib import Path
 
 import lancedb
 
-from headstart.employment_type_filter import RULES
+from headstart.search_filters.employment_type_filter import RULES
 
 
 def _set_fingerprint(table, where: str) -> tuple[int, str]:

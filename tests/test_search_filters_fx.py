@@ -1,4 +1,4 @@
-"""The salary bracket's rate table — `headstart.fx` (ADR-0117).
+"""The salary bracket's rate table — `headstart.search_filters.fx` (ADR-0117).
 
 The regression this file exists for: the module computed its candidate paths at import with a
 hardcoded `parents[2]`, which is fine in the repo (`src/headstart/fx.py`) and raises `IndexError`
@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from headstart import fx
+from headstart.search_filters import fx
 
 REPO = Path(__file__).resolve().parents[1]
 
@@ -56,7 +56,7 @@ def test_the_table_loads_from_a_two_ancestor_path(monkeypatch, tmp_path):
 def test_the_flat_copy_beside_the_module_wins_over_the_repo_config():
     """The Space has no `config/`; the table sits beside the module. Nearest first."""
     assert fx._candidates()[0].name == "fx_rates.json"
-    assert fx._candidates()[0].parent.name == "headstart"
+    assert fx._candidates()[0].parent == Path(fx.__file__).resolve().parent
 
 
 def test_an_unreadable_table_is_none_rather_than_an_exception(tmp_path):
@@ -120,7 +120,7 @@ def test_the_swallowed_read_leaves_a_record_naming_its_consequence(tmp_path, cap
     """
     bad = tmp_path / "fx_rates.json"
     bad.write_text("{ not json")
-    with caplog.at_level(logging.WARNING, logger="headstart.fx"):
+    with caplog.at_level(logging.WARNING, logger="headstart.search_filters.fx"):
         assert fx.table(path=bad) is None
 
     assert len(caplog.records) == 1
@@ -133,7 +133,7 @@ def test_the_swallowed_read_leaves_a_record_naming_its_consequence(tmp_path, cap
 def test_a_missing_table_is_named_without_a_traceback(monkeypatch, tmp_path, caplog):
     monkeypatch.setattr(fx, "_candidates", lambda: (tmp_path / "fx_rates.json",))
     monkeypatch.setattr(fx, "_CACHE", False)
-    with caplog.at_level(logging.WARNING, logger="headstart.fx"):
+    with caplog.at_level(logging.WARNING, logger="headstart.search_filters.fx"):
         assert fx.table() is None
     (record,) = caplog.records
     assert record.getMessage().startswith("fx_rates.json not found on any known path")
@@ -172,7 +172,7 @@ def test_a_refused_table_says_which_shape_refused_it(tmp_path, caplog, payload, 
     """
     f = tmp_path / "fx_rates.json"
     f.write_text(json.dumps(payload))
-    with caplog.at_level(logging.WARNING, logger="headstart.fx"):
+    with caplog.at_level(logging.WARNING, logger="headstart.search_filters.fx"):
         assert fx.table(path=f) is None
 
     assert len(caplog.records) == 1, (
@@ -194,7 +194,7 @@ def test_a_healthy_table_says_nothing(tmp_path, caplog):
             {"as_of": "2024-06-01", "base": "USD", "rates": {"USD": 1.0, "INR": 83.0}}
         )
     )
-    with caplog.at_level(logging.DEBUG, logger="headstart.fx"):
+    with caplog.at_level(logging.DEBUG, logger="headstart.search_filters.fx"):
         assert fx.table(path=f) is not None
     assert caplog.records == []
 
@@ -208,7 +208,7 @@ def test_a_dropped_rate_names_the_currency_it_silences(tmp_path, caplog):
             {"as_of": "x", "base": "USD", "rates": {"USD": 1.0, "INR": 0, "EUR": -2}}
         )
     )
-    with caplog.at_level(logging.WARNING, logger="headstart.fx"):
+    with caplog.at_level(logging.WARNING, logger="headstart.search_filters.fx"):
         t = fx.table(path=f)
     assert t is not None and set(t["rates"]) == {"USD"}  # still up, per the test above
 

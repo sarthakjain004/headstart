@@ -28,8 +28,8 @@ import lancedb
 import numpy as np
 
 import headstart.ingest.index as idx
-from headstart import employment_type_filter
 from headstart.ingest import RUN_TS_ENV
+from headstart.search_filters import employment_type_filter
 
 _DIM = 4
 

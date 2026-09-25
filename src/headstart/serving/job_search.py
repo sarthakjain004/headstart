@@ -1,7 +1,7 @@
 """The one serving-path search implementation both UIs run (ADR-0042).
 
-It compiles filters through :mod:`headstart.search_filter_compiler` (the reference Search-filter
-compiler), counts Facets through :mod:`headstart.facets`, and shares the embedding conventions —
+It compiles filters through :mod:`headstart.search_filters.compiler` (the reference Search-filter
+compiler), counts Facets through :mod:`headstart.serving.facets`, and shares the embedding conventions —
 model id, task prefixes, table name, encoder — with the pipeline through
 :mod:`headstart.embedding_conventions` (ADR-0194).
 
@@ -23,19 +23,18 @@ from threading import Lock
 from typing import Any
 from urllib.parse import urlsplit
 
-from headstart import (
+from headstart import log
+from headstart.embedding_conventions import encode_query
+from headstart.search_filters import (
     employment_type_filter,
     experience_filter,
-    facets,
     fx,
-    geo,
     india_filter,
-    log,
+    india_gazetteer,
     posted_date_guard,
     salary_known_filter,
 )
-from headstart.embedding_conventions import encode_query
-from headstart.search_filter_compiler import (
+from headstart.search_filters.compiler import (
     KEYWORD_DEFAULT_SCOPE,
     KEYWORD_SCOPES,
     SALARY_DEFAULT_CURRENCY,
@@ -46,6 +45,7 @@ from headstart.search_filter_compiler import (
     build_filter,
     with_extra,
 )
+from headstart.serving import facets
 
 # In the Space nothing calls `setup()` (ADR-0153's app.py boots straight into serving), which
 # is why the one boot line below is a WARNING — `logging.lastResort` carries WARNING and above
@@ -184,7 +184,7 @@ def _int_arg(args: Mapping[str, str]) -> Callable[[str], int | None]:
 def request_account_clause(
     args: Mapping[str, str], followed: Collection[str], hidden: Collection[str]
 ) -> str | None:
-    """:func:`~headstart.search_filter_compiler.account_clause` for one request, ``mine`` read
+    """:func:`~headstart.search_filters.compiler.account_clause` for one request, ``mine`` read
     off its query string (ADR-0171).
 
     Both apps call this with their own Account's lists — the Space from the signed-in Account's
@@ -206,7 +206,7 @@ def scoped_boards_clause(args) -> str | None:
     How a company's trend hands over to its jobs: by the directory's Board keys rather than a
     company-name substring, which misses aliased names ("RTX" from ``globalhr`` rows) and merges
     same-named employers. Kept out of :class:`SearchFilters` for the reason
-    :func:`~headstart.search_filter_compiler.board_clause` gives: a hand-off, not a control a
+    :func:`~headstart.search_filters.compiler.board_clause` gives: a hand-off, not a control a
     Saved Set should freeze. Too many keys is a :class:`ValueError`, which both routes answer as
     an invalid filter.
     """
@@ -381,14 +381,13 @@ def _canonical_url(ats: str | None, url: str | None, job_id: str | None) -> str 
     it, and a caller that forgot to pass it would silently keep serving the dead link.
 
     Stays here, hardcoding ``"darwinbox"``/``"recruitee"``, rather than becoming a
-    ``canonical_url`` hook on ``DarwinboxScraper``/``RecruiteeScraper`` (ADR-0153): this module
-    is deployed to the HF Space as a flat standalone file (``deploy-space.yml`` copies only
-    ``search.py`` and a short list of siblings, never ``headstart.scrapers``, which pulls in
-    ``curl_cffi`` and the network-fetch stack the served app has no use for) — importing the
-    scraper registry here would break the deployed app's import graph for a repair this narrow.
+    ``canonical_url`` hook on ``DarwinboxScraper``/``RecruiteeScraper`` (ADR-0153): the HF Space
+    installs the whole package but not ``curl_cffi`` (``deploy/hf-space/requirements.txt``), which
+    ``headstart.scrapers`` imports through ``headstart.network.http`` along with the network-fetch
+    stack the served app has no use for — importing the scraper registry here would break the deployed app's import graph for a repair this narrow.
     What ADR-0153 *does* close: this function's two rewrites are pinned to
     ``DarwinboxScraper.url_shape``/``RecruiteeScraper.url_shape`` by
-    ``tests/test_search.py::test_canonical_url_rewrites_match_the_scrapers_own_url_shape`` — a
+    ``tests/test_serving_job_search.py::test_canonical_url_rewrites_match_the_scrapers_own_url_shape`` — a
     repair whose output stops matching its scraper's declared shape fails CI, which is the
     structural check this repo-side test can give without shipping scraper code to the Space.
     """
@@ -412,7 +411,7 @@ def _warn_unknown_filters(
     and a stale bookmark must not 500.
 
     It lives here rather than beside the drop in :func:`build_filter` because that compiler is
-    re-entered once per facet option: :func:`headstart.facets.counts` recompiles one request's
+    re-entered once per facet option: :func:`headstart.serving.facets.counts` recompiles one request's
     kwargs 32 times, so a line on the drop itself came out **58 times** for a single
     ``?ats=bogus&etype=bogus`` — unauthenticated, user-controlled amplification, ~29 lines per
     bad parameter from any crawler with a stale link. :meth:`JobSearch.parse_filters` parses a
@@ -431,8 +430,12 @@ def _warn_unknown_filters(
         _log.warning(
             "filter dropped: employment_type %.40r is not a known value", etype
         )
-    # `geo.where`'s own lookup order: the whole country, a region, else a city.
-    if india and india not in (india_filter.WHOLE_COUNTRY, *geo.REGIONS, *geo.CITIES):
+    # `india_gazetteer.where`'s own lookup order: the whole country, a region, else a city.
+    if india and india not in (
+        india_filter.WHOLE_COUNTRY,
+        *india_gazetteer.REGIONS,
+        *india_gazetteer.CITIES,
+    ):
         _log.warning("filter dropped: india %.40r is not a known place", india)
     # `build_filter`'s bracket fallback: an unserved currency is re-scoped to the default, and
     # with the default unserved too the bracket compiles to nothing. Only once a bound is set —
@@ -502,7 +505,7 @@ class JobSearch:
 
     The table's runtime facts live in one place, :attr:`capabilities` — an
     :class:`IndexCapabilities` (ADR-0149) learned once here, handed as-is to :func:`build_filter`
-    and :func:`headstart.facets.counts`, and read field by field by the UI adapters for the
+    and :func:`headstart.serving.facets.counts`, and read field by field by the UI adapters for the
     Board dropdown, the "first seen" control and the rest (ADR-0194). A test that needs a
     different table swaps the whole object with :func:`dataclasses.replace`.
     """
@@ -525,7 +528,7 @@ class JobSearch:
         # scope until it does rather than 500ing on it.
         has_description = "description" in names
         # The materialized India-filter column (ADR-0138), same rule again: until a table has
-        # synced since, `build_filter` falls back to `geo.where("india")`'s slower-but-correct
+        # synced since, `build_filter` falls back to `india_gazetteer.where("india")`'s slower-but-correct
         # regex alternation rather than erroring on a column that isn't there yet.
         has_country = india_filter.has_column(names)
         self.capabilities = IndexCapabilities(
@@ -681,7 +684,7 @@ class JobSearch:
         counts at all, because a wrong number is trusted where a missing one is not.
 
         Returns only the user-settable vocabulary (ADR-0149) — :attr:`capabilities` carries
-        this table's own runtime facts separately, so a caller (:mod:`headstart.facets`, most
+        this table's own runtime facts separately, so a caller (:mod:`headstart.serving.facets`, most
         of all) can vary one without rebuilding the other.
         """
 
@@ -733,7 +736,7 @@ class JobSearch:
     def facets(
         self, args: Mapping[str, str], *, extra_where: str | None = None
     ) -> dict[str, Any]:
-        """Per-option result counts for these filters — see :mod:`headstart.facets`.
+        """Per-option result counts for these filters — see :mod:`headstart.serving.facets`.
 
         ``extra_where`` is the same Account clause :meth:`run` takes, and passing it here is not
         optional: the UI prints ``facets.total`` as "Showing 1-N of TOTAL", so counting without
@@ -879,7 +882,7 @@ class JobSearch:
             # and page 2 with no tiebreaker, zero recurred with one). `id` is unique per row,
             # so it breaks every tie deterministically. Plain dicts, not `lancedb.query.
             # ColumnOrdering` instances — lancedb's pydantic layer coerces either (verified
-            # 2026-08-20), and a dict keeps `search.py` importable without lancedb installed
+            # 2026-08-20), and a dict keeps `job_search.py` importable without lancedb installed
             # (the quality job's `.[dev]` extra omits it — lancedb only ships in `.[embed]`).
             # Do NOT add this ordering to the query branch above — passing any explicit
             # `order_by` alongside a vector search was measured to override ranking by
@@ -1060,7 +1063,7 @@ class JobSearch:
         unknown bucket to hand-wave. Compiled through :func:`build_filter` rather than a
         hand-written clause so "new" means here exactly what it means in the Search rail.
 
-        One :meth:`count_rows` — measured at 4–6 ms in `headstart.facets`.
+        One :meth:`count_rows` — measured at 4–6 ms in `headstart.serving.facets`.
         """
         if not self.capabilities.has_first_seen:
             return None
@@ -1087,7 +1090,7 @@ class JobSearch:
         confidence, and two attempts to count the split were both wrong; see ADR-0113.
 
         Costs one :meth:`count_rows` for the total plus one per field — six in all, not five.
-        `headstart.facets` measured that primitive at 4–6 ms against a 316,606-row table,
+        `headstart.serving.facets` measured that primitive at 4–6 ms against a 316,606-row table,
         so the whole panel is cheaper than a single ranked search — and it is cached per
         process anyway: a new index arrives with a Space restart, never under a running one.
 

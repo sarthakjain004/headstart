@@ -38,13 +38,13 @@ _DEFAULT_BASE = "https://imposeidon-headstart-search.hf.space"
 _REPORT_DIR = _ROOT / "data" / "eval" / "filter_checks"
 
 sys.path.insert(0, str(_ROOT / "src"))
-from headstart import geo
 from headstart.scrapers.registry import DISABLED_ATS, SCRAPERS
+from headstart.search_filters import india_gazetteer
 
 # Deliberately OUTSIDE the repo: this is a live credential for a real account, and a file
 # in the tree is one `git add` away from being published.
 _SESSION_FILE = Path.home() / ".headstart_session"
-# The page-size ceiling the serving path enforces (search.JobSearch's `max_k`), so a crafted
+# The page-size ceiling the serving path enforces (job_search.JobSearch's `max_k`), so a crafted
 # `k` can't dump the table. Asserted here, which means changing it there fails this run —
 # correct: a page-size change should be deliberate.
 _MAX_K = 100
@@ -169,8 +169,8 @@ def _day_between(value: str | None, start: str | None, end: str | None) -> bool:
 def _india_ok(place: str, location: str | None) -> bool:
     """A place-filtered row must really name that place.
 
-    Checked against the gazetteer's alias DATA (``geo.CITIES``/``REGIONS``/``STATES``)
-    rather than by re-reading ``geo.where``'s SQL — a check built from the clause it is
+    Checked against the gazetteer's alias DATA (``india_gazetteer.CITIES``/``REGIONS``/``STATES``)
+    rather than by re-reading ``india_gazetteer.where``'s SQL — a check built from the clause it is
     checking would rubber-stamp a broken clause. Also asserts the gazetteer's own
     documented traps stay out: Surat must not return Surat Thani, and country-level India
     must not return Indiana.
@@ -179,16 +179,16 @@ def _india_ok(place: str, location: str | None) -> bool:
     if place == "india":
         if (
             "indiana" in loc
-        ):  # the carve-out geo.where spells out; the trap the filter must not fall into
+        ):  # the carve-out india_gazetteer.where spells out; the trap the filter must not fall into
             return False
-        pools = [("india",), *geo.CITIES.values(), geo.STATES]
-    elif place in geo.REGIONS:
-        pools = [geo.CITIES[c] for c in geo.REGIONS[place]]
+        pools = [("india",), *india_gazetteer.CITIES.values(), india_gazetteer.STATES]
+    elif place in india_gazetteer.REGIONS:
+        pools = [india_gazetteer.CITIES[c] for c in india_gazetteer.REGIONS[place]]
     else:
-        pools = [geo.CITIES.get(place, (place,))]
+        pools = [india_gazetteer.CITIES.get(place, (place,))]
     if not any(alias in loc for pool in pools for alias in pool):
         return False
-    return not any(bad in loc for bad in geo.EXCLUDE.get(place, ()))
+    return not any(bad in loc for bad in india_gazetteer.EXCLUDE.get(place, ()))
 
 
 def _row_ok(row: dict) -> bool:

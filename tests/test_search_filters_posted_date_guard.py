@@ -1,6 +1,6 @@
 import sqlite3
 
-from headstart import posted_date_guard
+from headstart.search_filters import posted_date_guard
 
 
 def test_clause_prefers_the_flag_and_falls_back_to_the_shape_guard():

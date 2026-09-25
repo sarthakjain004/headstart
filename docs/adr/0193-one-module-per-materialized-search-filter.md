@@ -78,7 +78,7 @@ failing that, by the smallest interface, then recorded here.
 - **Country's value is written through `derived_meta`, not `_served_meta`.** `country` reaches the
   table through the embedding store's meta and `update_meta`'s sweep (ADR-0138), not as a
   served-only flag. `country_meta` and `update_meta`'s sweep now take the column name, and
-  `country_meta` the value, from `india_filter`. `geo.where`/`geo.classify` stay in `headstart.geo`, which owns the gazetteer both of them read.
+  `country_meta` the value, from `india_filter`. `india_gazetteer.where`/`india_gazetteer.classify` stay in `headstart.search_filters.india_gazetteer`, which owns the gazetteer both of them read.
 - **`description_stored` stays where it was.** It is the Keyword filter's coverage presence flag
   (ADR-0104), not a Search filter; only the coverage counts read it
   (`facets._with_description`, `JobSearch.coverage`).

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Measure what BITMAP/BTREE scalar indexes buy the served query paths.
 
-Runs the three shapes :meth:`headstart.search.JobSearch.run` issues — a filtered browse, a
+Runs the three shapes :meth:`headstart.serving.job_search.JobSearch.run` issues — a filtered browse, a
 filtered vector page, and the sorted 2,000-row window — plus a bare filtered count, against a
 spread of filter selectivities. Measures each with no index, creates the scalar indexes, and
 measures again.
@@ -24,7 +24,7 @@ from pathlib import Path
 
 import lancedb
 
-from headstart.search import RESULT_COLUMNS
+from headstart.serving.job_search import RESULT_COLUMNS
 
 # (label, where-clause, which columns the clause could use an index on)
 FILTERS: list[tuple[str, str | None, str]] = [

@@ -91,9 +91,9 @@ def test_every_staged_directory_is_copied_into_the_image():
 # The four modules that carried a `try: from headstart import X / except ImportError:` (or,
 # for logging, a `logging.getLogger` stand-in) shim until ADR-0156.
 _FORMERLY_SHIMMED = {
-    "search.py": REPO / "src" / "headstart" / "search.py",
-    "facets.py": REPO / "src" / "headstart" / "facets.py",
-    "fx.py": REPO / "src" / "headstart" / "fx.py",
+    "serving/job_search.py": REPO / "src" / "headstart" / "serving" / "job_search.py",
+    "serving/facets.py": REPO / "src" / "headstart" / "serving" / "facets.py",
+    "search_filters/fx.py": REPO / "src" / "headstart" / "search_filters" / "fx.py",
     "alerts/store.py": REPO / "src" / "headstart" / "alerts" / "store.py",
 }
 

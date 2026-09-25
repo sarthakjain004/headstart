@@ -8,6 +8,9 @@
 [ADR-0193](0193-one-module-per-materialized-search-filter.md),
 [ADR-0194](0194-job-search-absorbs-what-its-adapters-copy.md),
 [ADR-0230](0230-trends-keeps-one-board-delta-history-and-decides-rules-when-reading-it.md)
+· **Superseded in part by:** [ADR-0235](0235-where-the-package-layout-keeps-a-name-and-what-its-rewrites-leave-alone.md)
+(the names of `tech_filter`, the four Search-filter modules and the serving path, and the text a
+rewrite leaves alone)
 
 ## Context
 
@@ -93,6 +96,8 @@ had to autouse-stub `rotate`"). The table above is the map from those names to t
   `boards/cost_ledger.py`) are reached from the feed.
 
 ## Amendment (2026-09-25): `tech_filter` keeps its name, and what a rewrite leaves alone
+
+*Superseded by [ADR-0235](0235-where-the-package-layout-keeps-a-name-and-what-its-rewrites-leave-alone.md) (2026-09-26), which carries it forward.*
 
 Made while landing the `jobs/` step (#722), after the reviews of #719 and #722.
 

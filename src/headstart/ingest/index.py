@@ -95,15 +95,7 @@ import lancedb
 import numpy as np
 import pyarrow as pa
 
-from headstart import (
-    eightfold_backing,
-    employment_type_filter,
-    experience_filter,
-    india_filter,
-    log,
-    posted_date_guard,
-    salary_known_filter,
-)
+from headstart import eightfold_backing, log
 from headstart.board_identity import ats_of, lower_key
 from headstart.corpus import iter_jobs
 from headstart.embedding_conventions import PROD_TABLE
@@ -139,6 +131,13 @@ from headstart.ingest.index_plan import (
     workday_site_jobs,
 )
 from headstart.ingest.update_descriptions import read_store
+from headstart.search_filters import (
+    employment_type_filter,
+    experience_filter,
+    india_filter,
+    posted_date_guard,
+    salary_known_filter,
+)
 
 _log = log.get(__name__, __spec__)
 
@@ -178,7 +177,7 @@ _FIRST_SEEN_FIELD = pa.field("first_seen", pa.string())
 _DESCRIPTION_FIELD = pa.field("description", pa.string())
 _DESCRIPTION_STORED_FIELD = pa.field("description_stored", pa.bool_())
 # "IN" when `location` matches the India gazetteer's country-level rule, else null (ADR-0138).
-# Materializes `geo.where("india")`'s query-time regex alternation so the India filter's
+# Materializes `india_gazetteer.where("india")`'s query-time regex alternation so the India filter's
 # whole-country case can use a plain equality instead. Held as a module constant for the same
 # reason `_FIRST_SEEN_FIELD`/`_DESCRIPTION_FIELD` are: `_schema` and `sync`'s migration both need it.
 _COUNTRY_FIELD = pa.field(india_filter.COLUMN, pa.string())

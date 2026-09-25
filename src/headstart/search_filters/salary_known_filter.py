@@ -3,7 +3,7 @@
 ``salary_known`` mirrors ``min_salary_annual IS NOT NULL`` — the reconciled ADR-0082 salary, Tier 1
 or Tier 2 — so a bitmap index can answer the switch without a null scan. The column, the Python
 verdict the index writes, the SQL an old table is migrated with, and the clause
-:func:`headstart.search_filter_compiler.build_filter` and the Data tab's coverage count compile all live here.
+:func:`headstart.search_filters.compiler.build_filter` and the Data tab's coverage count compile all live here.
 The salary *bracket* is not materialized and stays with the compiler.
 """
 

@@ -20,11 +20,11 @@ from pathlib import Path
 import pytest
 from fake_fetcher import FakeFetcher, FakeResponse
 
-from headstart.employment_type_filter import flags
 from headstart.jobs import experience
 from headstart.scrapers import peoplestrong
 from headstart.scrapers.pacer import Pacer
 from headstart.scrapers.peoplestrong import PeopleStrongScraper
+from headstart.search_filters.employment_type_filter import flags
 
 FIXTURES = Path(__file__).parent / "fixtures"
 BMW = "careers-bmwtechworks"

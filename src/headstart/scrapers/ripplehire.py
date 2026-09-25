@@ -46,7 +46,7 @@ def _location(j: dict) -> str | None:
     ``locations`` is the city field — 2,613 distinct values fleet-wide (Mumbai, Bangalore,
     Chennai). ``jobLocation`` is a coarse country picker — 34 distinct values (India, IND, USA).
     The old code read ``jobLocation or locations``, so on the 34.76% of jobs carrying both, the
-    country won and the city — the only thing a ``geo.where(city)`` filter can match — was
+    country won and the city — the only thing a ``india_gazetteer.where(city)`` filter can match — was
     silently dropped (experiment/location-audit-2026-08-25/ripplehire.md, live-verified
     2026-08-25 across all 55 boards / 18,659 jobs: 33.21% served the wrong grain, 24.99% matched
     no city filter at all despite naming a real gazetteer city).

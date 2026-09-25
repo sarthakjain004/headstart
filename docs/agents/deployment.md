@@ -27,8 +27,8 @@ the full corpus must never land anywhere public (including git history).
 
 **Serving — public Docker Space `imPoseidon/headstart-search`**, live at
 `https://imposeidon-headstart-search.hf.space`. Built from `deploy/hf-space/` (Dockerfile, app.py,
-start.sh, requirements.txt, README.md with the Space frontmatter; `geo.py`, `llm_router.py` and
-`resume_query.py` are copied in from `src/headstart/` by deploy-space.yml) — the repo is the single
+start.sh, requirements.txt, README.md with the Space frontmatter; deploy-space.yml copies in the whole `src/headstart`
+package and `config/`, ADR-0156) — the repo is the single
 source of truth; never edit the Space's files on the Hub directly. The container boots via
 `start.sh`: a **best-effort** SSH tunnel to the llm-router first (serves only `/resume-to-query`;
 failure costs that endpoint a 503, never the boot — ADR-0032), then the app, which
@@ -86,8 +86,8 @@ for `ci.yml`/`bot.yml`/`deploy-space.yml`); a workflow-level `concurrency: group
 (`cancel-in-progress: false`) serializes whole runs so two never race on the dataset. The monolith
 `ingest.scrape_run`/`embed_run --resume` paths are retained for local/single-job runs (see below).
 
-`.github/workflows/deploy-space.yml` (`deploy-space`): pushes `deploy/hf-space/` (plus
-`src/headstart/geo.py`, copied in — ADR-0024) to the Space on any main push touching those paths
+`.github/workflows/deploy-space.yml` (`deploy-space`): pushes `deploy/hf-space/` (plus the
+whole `src/headstart` package and `config/`, copied in — ADR-0156) to the Space on any main push touching those paths
 (plus manual dispatch). **Never let tooling call `create_repo` on the Space** — HF now answers
 Docker-Space create attempts with a `402 Payment Required` (new free Docker Spaces are PRO-only;
 ours predates the policy and keeps running). The `hf upload` CLI pre-creates and so 402s; use

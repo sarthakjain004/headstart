@@ -6,7 +6,7 @@ scrapes ~60 ATS platforms and publishes a daily hosted snapshot (no auth) at
 `https://storage.stapply.ai/jobhive/v1/manifest.json`. Its scraper roster includes several
 platforms HeadStart has no scraper for. Rather than sampling those platforms live ourselves,
 this reads their already-scraped, full per-ATS job data and applies HeadStart's own gates —
-`headstart.jobs.tech_filter.is_tech` and `headstart.geo.classify` — to see what fraction would
+`headstart.jobs.tech_filter.is_tech` and `headstart.search_filters.india_gazetteer.classify` — to see what fraction would
 actually be tech roles and how much of that is India, two numbers for weighing the next scraper
 to build (CLAUDE.md's build list).
 
@@ -31,8 +31,8 @@ import pyarrow.parquet as pq
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
-from headstart.geo import classify as geo_classify
 from headstart.jobs.tech_filter import is_tech
+from headstart.search_filters.india_gazetteer import classify as gazetteer_classify
 
 MANIFEST_URL = "https://storage.stapply.ai/jobhive/v1/manifest.json"
 UA = "headstart-eval/0.1"
@@ -173,7 +173,9 @@ def analyze(ats: str, path: Path) -> dict:
     tech_mask = pd.Series(
         [is_tech(t, d) for t, d in zip(titles, depts)], index=df.index
     )
-    india_mask = pd.Series([geo_classify(loc) == "IN" for loc in locs], index=df.index)
+    india_mask = pd.Series(
+        [gazetteer_classify(loc) == "IN" for loc in locs], index=df.index
+    )
 
     tech_titles = df.loc[tech_mask, "title"].dropna().head(5).tolist()
     india_titles = df.loc[india_mask, "title"].dropna().head(5).tolist()

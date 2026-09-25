@@ -1,4 +1,4 @@
-"""Tests for the Search-filter compiler, `headstart.search_filter_compiler` (ADR-0031, ADR-0149, ADR-0194).
+"""Tests for the Search-filter compiler, `headstart.search_filters.compiler` (ADR-0031, ADR-0149, ADR-0194).
 
 The builders are the one place user input reaches the LanceDB where-clause, so their
 validation (whitelists, re-serialization, escaping) is worth locking down: `build_filter`
@@ -10,13 +10,15 @@ from __future__ import annotations
 
 import pytest
 
-from headstart.employment_type_filter import RULES as EMPLOYMENT_TYPE_RULES
-from headstart.search_filter_compiler import (
+from headstart.search_filters.compiler import (
     IndexCapabilities,
     SearchFilters,
     account_clause,
     board_clause,
     build_filter,
+)
+from headstart.search_filters.employment_type_filter import (
+    RULES as EMPLOYMENT_TYPE_RULES,
 )
 
 # `IndexCapabilities`'s field names — used below to route a `_clause`/`_bracket` override into
@@ -131,39 +133,43 @@ def test_the_term_cap_lands_on_the_raw_term_so_it_cannot_split_an_escape_pair():
     )
 
 
-def test_india_expands_via_geo():
+def test_india_expands_via_the_gazetteer():
     """The India control expands through the gazetteer rather than matching its value literally.
 
-    Asserted as delegation to `geo.where` rather than by looking for a substring of the compiled
-    clause: how that clause is built is `geo`'s business — it moved from 267 `LIKE`s to 10
+    Asserted as delegation to `india_gazetteer.where` rather than by looking for a substring of the compiled
+    clause: how that clause is built is `india_gazetteer`'s business — it moved from 267 `LIKE`s to 10
     `regexp_like`s without changing a single matched row — and a test that reads its internals
     fails on that kind of change while catching none of what it is here to catch. City/region
     values are unaffected by `has_country` (ADR-0138) — only the top-level "india" value ever
     takes the materialized-column path, see the tests below.
     """
-    from headstart import geo
+    from headstart.search_filters import india_gazetteer
 
     clause = _clause(india="bengaluru")
     assert clause is not None
-    assert clause == geo.where("bengaluru")
-    assert _clause(india="bengaluru", has_country=True) == geo.where("bengaluru")
+    assert clause == india_gazetteer.where("bengaluru")
+    assert _clause(india="bengaluru", has_country=True) == india_gazetteer.where(
+        "bengaluru"
+    )
     assert _clause(india="not-a-place") is None
 
 
 def test_india_country_level_uses_the_materialized_column_when_available():
     """ADR-0138: once the table carries `country`, the whole-country case uses a plain equality
-    instead of `geo.where("india")`'s regex alternation."""
+    instead of `india_gazetteer.where("india")`'s regex alternation."""
     assert _clause(india="india", has_country=True) == "country = 'IN'"
 
 
-def test_india_country_level_falls_back_to_geo_without_the_column():
+def test_india_country_level_falls_back_to_the_gazetteer_without_the_column():
     """Dark-until-migrated (ADR-0138): forgetting `has_country`, or a table that hasn't synced
-    it yet, falls back to the slower-but-correct `geo.where()` path — never errors, never
+    it yet, falls back to the slower-but-correct `india_gazetteer.where()` path — never errors, never
     changes which rows match."""
-    from headstart import geo
+    from headstart.search_filters import india_gazetteer
 
-    assert _clause(india="india", has_country=False) == geo.where("india")
-    assert _clause(india="india") == geo.where("india")  # has_country defaults False
+    assert _clause(india="india", has_country=False) == india_gazetteer.where("india")
+    assert _clause(india="india") == india_gazetteer.where(
+        "india"
+    )  # has_country defaults False
 
 
 def test_keyword_defaults_to_the_title_scope():
@@ -225,7 +231,7 @@ def test_a_scope_without_a_keyword_filters_nothing():
 
 
 def test_keyword_scope_options_come_from_the_map_in_order_with_labels_and_needs():
-    from headstart.search_filter_compiler import KEYWORD_SCOPES, keyword_scope_options
+    from headstart.search_filters.compiler import KEYWORD_SCOPES, keyword_scope_options
 
     options = keyword_scope_options()
     assert [v for v, _, _ in options] == list(KEYWORD_SCOPES)  # same order as the map
@@ -420,7 +426,7 @@ def test_an_inclusive_upper_bound_compares_below_the_next_day():
     hold date-or-datetime strings and '2026-08-10T12:00' sorts above '2026-08-10'. Leap years
     come from `date` itself, and running off the calendar is a 400 like any other bad date.
     """
-    from headstart.search_filter_compiler import _next_day
+    from headstart.search_filters.compiler import _next_day
 
     assert _next_day("2026-08-10") == "2026-08-11"
     assert _next_day("2026-12-31") == "2027-01-01"
@@ -456,7 +462,7 @@ def test_a_usd_bracket_also_matches_the_same_money_in_other_currencies():
     # …and the same money is asked for in the others, at whatever the committed table says.
     # Derived from the table rather than hardcoded: a rate refresh is a routine two-line edit
     # (ADR-0117), and a test that pins 83.0 turns every refresh into a failing build.
-    from headstart import fx
+    from headstart.search_filters import fx
 
     rate = fx.table()["rates"]["INR"]
     assert "salary_currency = 'INR'" in where
@@ -467,7 +473,7 @@ def test_a_usd_bracket_also_matches_the_same_money_in_other_currencies():
 def test_a_converted_bound_rounds_outward_so_a_boundary_job_is_never_dropped():
     """The ceiling goes UP, never down — a job sitting exactly on the user's bound must survive
     the arithmetic. Asserted against the table's own rate so a refresh cannot break it."""
-    from headstart import fx
+    from headstart.search_filters import fx
 
     rate = fx.table()["rates"]["INR"]
     where = _bracket(salary_currency="USD", salary_max=200_000)
@@ -491,7 +497,7 @@ def test_a_currency_with_no_rate_is_left_out_rather_than_compared_at_one_to_one(
 
 def test_without_a_rate_table_the_bracket_falls_back_to_one_currency(monkeypatch):
     """Degrading to the older, narrower answer is recoverable; a wrong one is not."""
-    from headstart import fx
+    from headstart.search_filters import fx
 
     monkeypatch.setattr(fx, "table", lambda: None)
     where = _bracket(salary_currency="USD", salary_min=100_000)
