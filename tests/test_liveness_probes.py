@@ -319,13 +319,24 @@ def test_workday_hinted_instance_live(monkeypatch):
 
 
 def test_workday_migrated_recovered_on_sweep(monkeypatch):
-    # hinted wd3 422s; the DC sweep finds the tenant live on wd103
+    # hinted wd3 422s; the DC sweep finds the tenant live on wd103, and says so (#661)
     monkeypatch.setattr(
         cl, "_post", _workday_post_stub(live_instance="wd103", total=2000)
     )
     assert cl.p_workday("acme", "https://acme.wd3.myworkdayjobs.com/careers") == (
         cl.LIVE,
         2000,
+        "https://acme.wd103.myworkdayjobs.com/careers",
+    )
+
+
+def test_workday_answering_url_keeps_the_rows_own_spelling(monkeypatch):
+    # #661: only the wdN changes; the site's casing and a query string stay, so the Board's key
+    # (company/site, casing included) is the one the row already carried
+    monkeypatch.setattr(cl, "_post", _workday_post_stub(live_instance="wd5"))
+    url = "https://Acme.wd1.myworkdayjobs.com/External?source=web"
+    assert cl.p_workday("acme.wd1.myworkdayjobs.com/External", url)[2] == (
+        "https://Acme.wd5.myworkdayjobs.com/External?source=web"
     )
 
 

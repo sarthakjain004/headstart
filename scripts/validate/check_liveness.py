@@ -1200,7 +1200,8 @@ def _hinted_first(hinted, choices):
     return (hinted, *(choice for choice in choices if choice != hinted))
 
 
-# --- per-ATS probes: return (verdict, jobs) ---
+# --- per-ATS probes: return (verdict, jobs), or (verdict, jobs, url) when the Board answered at
+# another url than the row's, which the ledger then records (`p_workday`, #661) ---
 # Each reads the Board through `_scraper_for_row`/`_slug_of`, except `p_eightfold`, which ADR-0203
 # left as it was. Where a probe asks a different URL than the scraper's `url()` (a smaller page,
 # no descriptions), it says why beside it.
@@ -1525,11 +1526,17 @@ def p_workday(t, u):
         return total, status
 
     # Probe the hinted DC, then sweep the rest (tenant may have migrated). Any 200 -> LIVE, found.
+    # A DC other than the hinted one comes back as the row's new url, so `checked_at` dates the DC
+    # as well as the Board and ADR-0219's newest-row rule elects one that answers (#661). Only the
+    # url: the tenant keys the ledger, and respelling it would land a second row for the Board.
+    hinted = m.group("instance")
     statuses = []
-    for inst in _hinted_first(m.group("instance"), _WD_INSTANCES):
+    for inst in _hinted_first(hinted, _WD_INSTANCES):
         total, status = probe(inst)
-        if total is not None:
+        if total is not None and inst == hinted:
             return LIVE, total
+        if total is not None:
+            return LIVE, total, u[: m.start("instance")] + inst + u[m.end("instance") :]
         statuses.append(status)
     # No DC served it live. DEAD only if *every* probe conclusively said "not here"; a single
     # inconclusive probe (timeout/dns/5xx) leaves a live instance unruled-out -> UNKNOWN. This makes
@@ -2725,7 +2732,8 @@ def main():
                 verdict, jobs = DEAD, None
             else:
                 try:
-                    verdict, jobs = PROBES[ats](tenant, url)
+                    verdict, jobs, *answered = PROBES[ats](tenant, url)
+                    url = answered[0] if answered else url
                 except Exception as e:  # noqa: BLE001
                     _note(f"probe-raised-{type(e).__name__}")
                     verdict, jobs = UNKNOWN, None
