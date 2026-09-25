@@ -113,7 +113,7 @@ from collections.abc import Iterable
 from pathlib import Path
 
 from headstart import log
-from headstart.board_identity import tenant
+from headstart.boards.board_identity import tenant
 
 _log = log.get(__name__)
 

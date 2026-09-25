@@ -30,7 +30,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
-from headstart import board_aliases, liveness
+from headstart.boards import alias_ledger, liveness_ledger
 from headstart.network import http
 from headstart.scrapers.base import USER_AGENT
 from headstart.scrapers.clearcompany import decode_hrm_bytes, feed_reqs
@@ -85,9 +85,9 @@ def _parallel(fn, labels):
 
 
 def main() -> None:
-    ledger = liveness.load(liveness.dir_for(ROOT) / f"{ATS}.csv")
+    ledger = liveness_ledger.load(liveness_ledger.dir_for(ROOT) / f"{ATS}.csv")
     hiring = sorted(
-        v.tenant for v in ledger.values() if v.status == liveness.LIVE and v.jobs
+        v.tenant for v in ledger.values() if v.status == liveness_ledger.LIVE and v.jobs
     )
     print(f"{len(hiring)} hiring labels", flush=True)
     sets = {k: v for k, v in _parallel(_reqs, hiring).items() if v}
@@ -121,12 +121,12 @@ def main() -> None:
             labels, key=lambda x: (divisions[x] is not None, divisions[x] or 0, x)
         )
         aliases += [
-            board_aliases.Alias(ATS, label, keep, "shared-reqs", keep, today)
+            alias_ledger.Alias(ATS, label, keep, "shared-reqs", keep, today)
             for label in labels
             if label != keep
         ]
-    out = board_aliases.path_for(liveness.dir_for(ROOT), ATS)
-    board_aliases.write(out, aliases)
+    out = alias_ledger.path_for(liveness_ledger.dir_for(ROOT), ATS)
+    alias_ledger.write(out, aliases)
     print(f"wrote {len(aliases)} buried labels to {out.relative_to(ROOT)}", flush=True)
 
 

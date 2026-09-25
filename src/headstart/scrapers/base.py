@@ -18,7 +18,8 @@ from functools import cached_property
 from types import MappingProxyType
 from typing import Any, TypeVar
 
-from headstart import company_name, log
+from headstart import log
+from headstart.boards import company_name
 from headstart.jobs.job import Job
 from headstart.jobs.tech_filter import is_tech
 from headstart.network import fanout_stats, http
@@ -766,7 +767,7 @@ class BaseScraper(ABC):
         the same default-here-override-there shape as :meth:`board_key` and :meth:`slug_from`.
 
         **The default's return value must be comparable to this ATS's own ``slug``, and for the
-        default that means the slug has to BE a host.** ``board_aliases.resolve`` decides a Board
+        default that means the slug has to BE a host.** ``alias_ledger.resolve`` decides a Board
         is a duplicate by asking whether the key is itself a live slug, so on an ATS whose slug is
         not a hostname — Workday's is a whole careers URL, Zoho's a careers host with a path —
         every key falls outside the live set and the entire ledger comes back labelled
@@ -779,7 +780,7 @@ class BaseScraper(ABC):
         unexamined one.
 
         None when the probe failed: an unreachable Board has earned no verdict, and
-        ``board_aliases.resolve`` reports it rather than grouping it. Note that ``fetch`` settles
+        ``alias_ledger.resolve`` reports it rather than grouping it. Note that ``fetch`` settles
         4xx/5xx rather than raising (:class:`~headstart.network.fetcher.Fetcher`'s contract, kept from
         ``http.fetch``), so a Board whose own host answers 503 records itself, not
         None — which reads as "nothing points away from it" and leaves it unburied. That is the
@@ -944,7 +945,7 @@ class BaseScraper(ABC):
     def board_page(self) -> str | None:
         """The page that states this Board's company name — its ``<title>`` unless
         :meth:`company_from_page` reads it elsewhere — or None for an ATS with no such page.
-        Overridden by the scrapers `headstart.company_name` has evidence for; for everything else
+        Overridden by the scrapers `headstart.boards.company_name` has evidence for; for everything else
         :meth:`fetch` serves the Board's humanised tenant (ADR-0212)."""
         return None
 

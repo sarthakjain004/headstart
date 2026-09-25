@@ -7,8 +7,8 @@ import logging
 
 import pytest
 
-from headstart import corpus
-from headstart.corpus import iter_jobs
+from headstart.ingest import corpus
+from headstart.ingest.corpus import iter_jobs
 
 
 def _write(path, jobs):
@@ -48,7 +48,7 @@ def test_duplicate_ids_are_counted_and_reported_per_file(tmp_path, caplog):
     )
     (tmp_path / "ats_b.jsonl").write_text('{"id": "b:1"}\n', encoding="utf-8")
 
-    with caplog.at_level(logging.INFO, logger="headstart.corpus"):
+    with caplog.at_level(logging.INFO, logger="headstart.ingest.corpus"):
         rows = list(corpus._read_jsonl_dir(tmp_path))
 
     assert [r["id"] for r in rows] == ["a:1", "a:2", "b:1"]

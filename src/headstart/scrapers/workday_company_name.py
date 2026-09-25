@@ -48,7 +48,8 @@ from collections import Counter
 from collections.abc import Iterable
 from pathlib import Path
 
-from headstart import company_name, log
+from headstart import log
+from headstart.boards import company_name
 
 __all__ = ["RESOLVED_NAMES", "board_name", "clean", "resolved_name"]
 

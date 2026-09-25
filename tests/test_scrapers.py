@@ -2730,7 +2730,7 @@ def test_workday_detail_classes_reach_the_report_through_fetch_raw(monkeypatch, 
 def no_names_on_file(monkeypatch, tmp_path):
     """Neither the curated map nor the committed Workday cache names these made-up Boards, so the
     cascade itself is what a test observes, whatever the repo's own files come to hold."""
-    from headstart import company_name
+    from headstart.boards import company_name
     from headstart.scrapers import workday_company_name
 
     monkeypatch.setattr(company_name, "curated_names", dict)
@@ -2842,7 +2842,7 @@ def _names_file(tmp_path, name, header, rows):
 
 
 def test_workday_name_on_file_wins_and_skips_the_board_page(monkeypatch, tmp_path):
-    from headstart import company_name
+    from headstart.boards import company_name
     from headstart.scrapers import workday_company_name
 
     monkeypatch.setattr(company_name, "curated_names", dict)
@@ -2868,7 +2868,7 @@ def test_workday_name_on_file_wins_and_skips_the_board_page(monkeypatch, tmp_pat
 
 
 def test_workday_curated_name_outranks_the_cascade_and_its_cache(monkeypatch, tmp_path):
-    from headstart import company_name
+    from headstart.boards import company_name
     from headstart.scrapers import workday_company_name
     from headstart.scrapers.workday import WorkdayScraper
 
@@ -11243,7 +11243,7 @@ def test_workday_detail_break_off_applies_to_the_async_path_too(monkeypatch):
     assert classes[_BROKEN_OFF] == 4
 
 
-# ── the Board's company name, not its slug (headstart.company_name) ──────────────────
+# ── the Board's company name, not its slug (headstart.boards.company_name) ──────────────────
 
 
 def _titled(title: str, status: int = 200):
@@ -11488,7 +11488,7 @@ def test_every_ats_with_patterns_has_a_scraper_that_offers_a_board_page():
     Without this, adding a seventh ATS to one side and not the other is silent, and the test above
     keeps the name "every" while covering less than every.
     """
-    from headstart.company_name import _VENDOR_ALIASES, PATTERNS
+    from headstart.boards.company_name import _VENDOR_ALIASES, PATTERNS
     from headstart.scrapers.base import BaseScraper
     from headstart.scrapers.registry import SCRAPERS
 
@@ -12204,7 +12204,7 @@ def test_zwayam_config_calls_share_one_process_wide_pacer():
 def test_a_curated_board_spends_no_request_on_a_name_source(monkeypatch):
     """A curated name overrides every source (ADR-0212), so a scraper that would spend a request
     on one — zwayam's paced config call, cornerstone's posting pages — asks first."""
-    from headstart import company_name
+    from headstart.boards import company_name
     from headstart.scrapers.bamboohr import BambooHRScraper
 
     scraper = BambooHRScraper("cintel")

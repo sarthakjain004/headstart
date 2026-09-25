@@ -10,7 +10,7 @@ The signal is containment. A section whose full requisition set — every role, 
 non-empty and contained in the set of another section of the same tenant (the section URL's host)
 is buried onto a maximal section, which lists every req the buried one does, so no req is lost and
 the kept section's own job URLs are the ones served. The rules, all in `burials` (which delegates to
-`board_aliases.bury_contained`):
+`alias_ledger.bury_contained`):
 
 - **Chains collapse to the top.** A ⊂ B ⊂ C buries A and B onto C.
 - **Mirrors keep one**, the lowest section URL, so the same sets always elect the same section.
@@ -22,7 +22,7 @@ the kept section's own job URLs are the ones served. The rules, all in `burials`
 
 Reads every `live` row of the liveness ledger, including the sections the last run buried (the alias
 ledger leaves their liveness rows in place), so each run re-derives every verdict and a buried
-section that has since gained a req of its own comes back. `config.EXCLUDED_BOARDS` is skipped
+section that has since gained a req of its own comes back. `excluded_and_parked.EXCLUDED_BOARDS` is skipped
 (`scrapable_boards.is_excluded`). One listing walk per section, 16 sections at a time. Replaces the
 alias file, so re-run it after every refresh of `data/validate/liveness/taleo_enterprise.csv`.
 
@@ -41,7 +41,7 @@ from urllib.parse import urlsplit
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
-from headstart import board_aliases, liveness, scrapable_boards
+from headstart.boards import alias_ledger, liveness_ledger, scrapable_boards
 from headstart.network import http
 from headstart.scrapers.taleo_enterprise import TaleoEnterpriseScraper
 
@@ -56,9 +56,9 @@ def burials(reqs_by_section: Mapping[str, Collection[str]]) -> dict[str, str]:
     """``{buried section: kept section}`` for every section another one of its tenant contains.
 
     ``reqs_by_section`` maps a section's canonical URL to its full requisition ids; the tenant is
-    the URL's host. The election is `board_aliases.bury_contained`, shared with ADP Recruiting
+    the URL's host. The election is `alias_ledger.bury_contained`, shared with ADP Recruiting
     Management's (ADR-0202)."""
-    return board_aliases.bury_contained(
+    return alias_ledger.bury_contained(
         reqs_by_section, lambda section: urlsplit(section).hostname
     )
 
@@ -67,15 +67,15 @@ def write_aliases(
     liveness_dir: Path,
     reqs_of: Callable[[str], Collection[str]],
     checked_at: str,
-) -> list[board_aliases.Alias]:
+) -> list[alias_ledger.Alias]:
     """Read the section of every live, non-excluded row through ``reqs_of``, bury the subsets,
     and replace the alias ledger beside ``liveness_dir`` with the result. A section whose read fails
     (a request error, or a page the listing cannot parse) is left out, so it is neither buried nor
     kept for anything else; any other exception is a bug and propagates."""
     live = {
         TaleoEnterpriseScraper.slug_from(v.tenant, v.url)
-        for v in liveness.load(liveness_dir / f"{ATS}.csv").values()
-        if v.status == liveness.LIVE
+        for v in liveness_ledger.load(liveness_dir / f"{ATS}.csv").values()
+        if v.status == liveness_ledger.LIVE
     }
     sections = {s for s in live if not scrapable_boards.is_excluded(ATS, s)}
     print(
@@ -99,10 +99,10 @@ def write_aliases(
                 flush=True,
             )
     aliases = [
-        board_aliases.Alias(ATS, dup, keep, SIGNAL, keep, checked_at)
+        alias_ledger.Alias(ATS, dup, keep, SIGNAL, keep, checked_at)
         for dup, keep in sorted(burials(reqs_by_section).items())
     ]
-    board_aliases.write(board_aliases.path_for(liveness_dir, ATS), aliases)
+    alias_ledger.write(alias_ledger.path_for(liveness_dir, ATS), aliases)
     print(
         f"read {len(reqs_by_section)} of {len(sections)} sections; buried {len(aliases)} onto "
         f"{len({a.canonical for a in aliases})} kept sections",
@@ -119,7 +119,7 @@ def _reqs(section: str) -> set[str]:
 
 def main() -> None:
     today = datetime.now(UTC).date().isoformat()
-    for a in write_aliases(liveness.dir_for(ROOT), _reqs, today):
+    for a in write_aliases(liveness_ledger.dir_for(ROOT), _reqs, today):
         print(f"  bury {a.duplicate} -> {a.canonical}", flush=True)
 
 

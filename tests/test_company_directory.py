@@ -7,7 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from headstart import company_name, trend_history
+from headstart import trend_history
+from headstart.boards import company_name
 from headstart.ingest import company_directory
 
 pa = pytest.importorskip("pyarrow")

@@ -5,13 +5,13 @@
 (ADR-0012) and applies every reason a Board is not scraped, in the order the answer depends on:
 
 1. an ATS with no registered scraper (warned) or in ``registry.DISABLED_ATS``;
-2. a vendor test Board in ``config.EXCLUDED_BOARDS`` (:func:`is_excluded`, on the lowercased
+2. a vendor test Board in ``excluded_and_parked.EXCLUDED_BOARDS`` (:func:`is_excluded`, on the lowercased
    ``ats:slug``);
 3. a Board buried as another's duplicate in the alias ledger (ADR-0111, on the lowercased slug);
 4. the election (:func:`_elect`, ADR-0023 as amended by ADR-0219): rows naming one Board, compared
    case-insensitively, collapse to one; a Board with a ``dead`` row newer than its newest ``live`` row drops out;
 5. under ``min_jobs``, on the elected row's count;
-6. a Board in ``config.PARKED_BOARDS``, on the lowercased identity the election collapsed on.
+6. a Board in ``excluded_and_parked.PARKED_BOARDS``, on the lowercased identity the election collapsed on.
 
 Steps 2 and 3 run before the election and step 6 after it, and the difference matters: the first
 two are keyed on the slug, so they must see every spelling of a Board, and the park is keyed on the
@@ -34,9 +34,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from headstart import board_aliases, config, liveness, log
-from headstart.board_identity import board_identity, board_key, lower_key
-from headstart.config import CompanyRef
+from headstart import log
+from headstart.boards import alias_ledger, excluded_and_parked, liveness_ledger
+from headstart.boards.board_identity import board_identity, board_key, lower_key
+from headstart.boards.company_ref import CompanyRef
 from headstart.scrapers.registry import DISABLED_ATS, SCRAPERS, company_from_row
 
 _log = log.get(__name__)
@@ -44,7 +45,7 @@ _log = log.get(__name__)
 
 @dataclass(frozen=True, slots=True)
 class ScrapableBoard(CompanyRef):
-    """A :class:`~headstart.config.CompanyRef` resolved to its Board identity.
+    """A :class:`~headstart.boards.company_ref.CompanyRef` resolved to its Board identity.
 
     A subclass, so it goes wherever a ``CompanyRef`` does (``get_scraper``, ``harvest``, the shard
     files). Both identity fields are computed from ``ats`` and ``slug`` on construction and cannot
@@ -66,21 +67,21 @@ class ScrapableBoard(CompanyRef):
 
 
 #: One ledger row read as the Board it names: the unit :func:`_elect` groups and chooses among.
-Row = tuple[ScrapableBoard, liveness.Verdict]
+Row = tuple[ScrapableBoard, liveness_ledger.Verdict]
 
 
-def _verdict_of(row: Row) -> liveness.Verdict:
+def _verdict_of(row: Row) -> liveness_ledger.Verdict:
     _board, verdict = row
     return verdict
 
 
 def is_excluded(ats: str, slug: str) -> bool:
-    """Is this a vendor test Board in ``config.EXCLUDED_BOARDS``?
+    """Is this a vendor test Board in ``excluded_and_parked.EXCLUDED_BOARDS``?
 
     Matched on the lowercased ``ats:slug``, so one entry covers every casing the ledger carries.
     The one predicate for a script that filters raw candidates the way :func:`load` does.
     """
-    return f"{ats}:{slug}".lower() in config.EXCLUDED_BOARDS
+    return f"{ats}:{slug}".lower() in excluded_and_parked.EXCLUDED_BOARDS
 
 
 def load(ledger_dir: str | Path, *, min_jobs: int = 1) -> list[ScrapableBoard]:
@@ -113,8 +114,8 @@ def load(ledger_dir: str | Path, *, min_jobs: int = 1) -> list[ScrapableBoard]:
         # Boards this ATS publishes twice, buried in favour of their canonical (ADR-0111). Dropped
         # here beside EXCLUDED_BOARDS because both are keyed on the slug; the *syntactic* election
         # below cannot do it, since two different hostnames share no `board_key` to collapse on.
-        aliases = board_aliases.load_for(ledger_dir, scraper.ats)
-        for verdict in liveness.load(csv_path).values():
+        aliases = alias_ledger.load_for(ledger_dir, scraper.ats)
+        for verdict in liveness_ledger.load(csv_path).values():
             read += 1
             company = company_from_row(scraper.ats, verdict.tenant, verdict.url)
             if is_excluded(company.ats, company.slug):
@@ -147,13 +148,17 @@ def load(ledger_dir: str | Path, *, min_jobs: int = 1) -> list[ScrapableBoard]:
 
 
 def _drop_parked(boards: list[ScrapableBoard]) -> list[ScrapableBoard]:
-    """Drop ``config.PARKED_BOARDS``, matched on the same identity :func:`_elect` collapses on
+    """Drop ``excluded_and_parked.PARKED_BOARDS``, matched on the same identity :func:`_elect` collapses on
     so the two can never disagree about which Board an entry names."""
-    return [b for b in boards if b.lowercase_identity not in config.PARKED_BOARDS]
+    return [
+        b
+        for b in boards
+        if b.lowercase_identity not in excluded_and_parked.PARKED_BOARDS
+    ]
 
 
 def _board_of_row(
-    company: CompanyRef, verdict: liveness.Verdict
+    company: CompanyRef, verdict: liveness_ledger.Verdict
 ) -> ScrapableBoard | None:
     """The Board a ledger row names, or None for a row that is not ``live`` and whose slug its
     scraper cannot parse.
@@ -163,7 +168,7 @@ def _board_of_row(
     before. A dead or unknown one is skipped: it names no Board, so it cannot overrule one, and
     Workday's ledger holds hundreds of dead rows with no url, each of which would otherwise reach
     the fallback's warning on every load."""
-    if verdict.status != liveness.LIVE:
+    if verdict.status != liveness_ledger.LIVE:
         try:
             board_key(company)  # only asks whether the slug parses
         except Exception:  # noqa: BLE001 - an unparseable non-live row names no Board
@@ -198,12 +203,13 @@ def _elect(
         groups.setdefault(board.lowercase_identity, []).append((board, verdict))
     elected = []
     for group in groups.values():
-        live = [(b, v) for b, v in group if v.status == liveness.LIVE]
+        live = [(b, v) for b, v in group if v.status == liveness_ledger.LIVE]
         if not live:
             continue
         newest_live = max(v.checked_at for _, v in live)
         if any(
-            v.status == liveness.DEAD and v.checked_at > newest_live for _, v in group
+            v.status == liveness_ledger.DEAD and v.checked_at > newest_live
+            for _, v in group
         ):
             continue
         key = min(b.identity for b, _ in live)

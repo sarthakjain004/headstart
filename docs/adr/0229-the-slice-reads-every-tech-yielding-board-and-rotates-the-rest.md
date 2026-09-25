@@ -74,7 +74,7 @@ Three paths look at a Board without stamping it, so the rotation re-picks it eve
 right for a Board a shard's time budget never reached. It is wasteful but rare for a Board whose
 Detail pass stalled, since ADR-0209 keeps that Board's old cost row (45 stall lines across all 15
 shards on run `36133540276`). And a Board whose scraper cannot be constructed records 0 seconds,
-which `board_cost.update` skips; none of the 153,695 Scrapable Boards did on 2026-09-25. Separately,
+which `cost_ledger.update` skips; none of the 153,695 Scrapable Boards did on 2026-09-25. Separately,
 the head now seats every Board with a positive score, and a score only decays when the Board returns
 jobs. So 1,181 Boards whose last complete scrape found none hold stale scores and a head seat every
 run. They cost 17.6 serial minutes, 0.3% of the Slice. The stall and the stale scores are left for a

@@ -55,7 +55,7 @@ import re
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
-from headstart import company_name
+from headstart.boards import company_name
 from headstart.jobs.job import Job, host_of, html_to_text, is_remote
 from headstart.scrapers.base import USER_AGENT, BaseScraper, DetailLost, DetailRequest
 from headstart.scrapers.job_posting_jsonld import (

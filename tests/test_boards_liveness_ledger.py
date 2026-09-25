@@ -6,8 +6,8 @@ from datetime import date
 
 import pytest
 
-from headstart import liveness
-from headstart.liveness import DEAD, LIVE, UNKNOWN, Verdict, needs_probe
+from headstart.boards import liveness_ledger
+from headstart.boards.liveness_ledger import DEAD, LIVE, UNKNOWN, Verdict, needs_probe
 
 _TODAY = date(2026, 7, 2)
 
@@ -40,15 +40,15 @@ def test_ledger_round_trip(tmp_path):
             "2026-07-02",
         ),
     ]
-    liveness.write(path, rows)
-    back = liveness.load(path)
+    liveness_ledger.write(path, rows)
+    back = liveness_ledger.load(path)
     assert back["stripe"] == rows[0]  # jobs stays an int
     assert back["deadco"].jobs is None  # blank jobs -> None
     assert back["hazy"].status == UNKNOWN
 
 
 def test_load_missing_file_is_empty(tmp_path):
-    assert liveness.load(tmp_path / "nope.csv") == {}
+    assert liveness_ledger.load(tmp_path / "nope.csv") == {}
 
 
 def test_needs_probe_new_board():
@@ -71,7 +71,11 @@ def test_needs_probe_unknown_ttl():
 
 def test_unknown_ttl_is_far_shorter_than_dead():
     """It means "ask again soon", not "settled" — guard against it drifting toward dead's 90d."""
-    assert liveness.UNKNOWN_TTL_DAYS < liveness.LIVE_TTL_DAYS < liveness.DEAD_TTL_DAYS
+    assert (
+        liveness_ledger.UNKNOWN_TTL_DAYS
+        < liveness_ledger.LIVE_TTL_DAYS
+        < liveness_ledger.DEAD_TTL_DAYS
+    )
 
 
 def test_needs_probe_live_ttl():
@@ -102,4 +106,4 @@ def test_a_malformed_row_names_its_ledger_and_line(tmp_path):
         encoding="utf-8",
     )
     with pytest.raises(ValueError, match=r"x\.csv:3: "):
-        liveness.load(path)
+        liveness_ledger.load(path)

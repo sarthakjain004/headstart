@@ -14,8 +14,9 @@ import logging
 import urllib.error
 import urllib.request
 
-from headstart import log, telegram_bot_api
-from headstart.telegram_bot_api import TelegramClient
+from headstart import log
+from headstart.alerts import telegram_bot_api
+from headstart.alerts.telegram_bot_api import TelegramClient
 
 _TOKEN = "123456:AAHnotarealtokennotarealtokennotare"
 _CHAT = "987654321"
@@ -43,7 +44,7 @@ def test_a_failed_send_names_its_cause_and_never_the_token(monkeypatch, caplog):
     monkeypatch.setattr(
         telegram_bot_api, "_SEND_FAILURE", log.FirstOnly(telegram_bot_api._log)
     )
-    with caplog.at_level(logging.WARNING, logger="headstart.telegram_bot_api"):
+    with caplog.at_level(logging.WARNING, logger="headstart.alerts.telegram_bot_api"):
         TelegramClient(_TOKEN).send_message(_CHAT, "hello")
 
     assert len(caplog.records) == 1
@@ -62,7 +63,7 @@ def test_failed_sends_cost_one_annotation_and_carry_no_traceback(monkeypatch, ca
     monkeypatch.setattr(
         telegram_bot_api, "_SEND_FAILURE", log.FirstOnly(telegram_bot_api._log)
     )
-    with caplog.at_level(logging.INFO, logger="headstart.telegram_bot_api"):
+    with caplog.at_level(logging.INFO, logger="headstart.alerts.telegram_bot_api"):
         for _ in range(3):
             TelegramClient(_TOKEN).send_message(_CHAT, "hello")
 

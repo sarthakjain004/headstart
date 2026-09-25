@@ -40,7 +40,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
-from headstart import board_aliases, liveness
+from headstart.boards import alias_ledger, liveness_ledger
 from headstart.scrapers.registry import SCRAPERS, company_from_row
 
 #: Probe width. These are one cheap header-only GET each against ~2,200 distinct hosts, so the
@@ -126,7 +126,7 @@ def main() -> int:
         )
     # And a row nobody's script writes (Jibe's hand-written `shared-listing`): refuse on content.
     # The map above stays because it also refuses before its writer has created the file.
-    existing = board_aliases.path_for(liveness.dir_for(ROOT), args.ats)
+    existing = alias_ledger.path_for(liveness_ledger.dir_for(ROOT), args.ats)
     if args.apply and existing.exists():
         with existing.open(newline="", encoding="utf-8") as fh:
             foreign = {row["signal"] for row in csv.DictReader(fh)} - {"redirect"}
@@ -140,14 +140,14 @@ def main() -> int:
     if scraper_cls is None:
         raise SystemExit(f"no scraper for ats {args.ats!r}")
 
-    ledger_dir = liveness.dir_for(ROOT)
+    ledger_dir = liveness_ledger.dir_for(ROOT)
     ledger_path = ledger_dir / f"{args.ats}.csv"
-    ledger = liveness.load(ledger_path)
+    ledger = liveness_ledger.load(ledger_path)
     live = sorted(
         {
             company_from_row(args.ats, v.tenant, v.url).slug
             for v in ledger.values()
-            if v.status == liveness.LIVE
+            if v.status == liveness_ledger.LIVE
         }
     )
     # `--limit` bounds what is PROBED, never what counts as live. Truncating the membership set
@@ -157,7 +157,7 @@ def main() -> int:
     print(f"{args.ats}: probing {len(probe)} of {len(live)} live Board(s)", flush=True)
 
     keys = probe_all(scraper_cls, probe)
-    resolution = board_aliases.resolve(
+    resolution = alias_ledger.resolve(
         keys,
         live,
         signal="redirect",
@@ -175,7 +175,7 @@ def main() -> int:
         for dup in c.duplicates:
             print(f"       bury {dup}", flush=True)
 
-    by_reason: dict[str, list[board_aliases.Moved]] = defaultdict(list)
+    by_reason: dict[str, list[alias_ledger.Moved]] = defaultdict(list)
     for m in resolution.moved:
         by_reason[m.reason].append(m)
     if by_reason:
@@ -196,7 +196,7 @@ def main() -> int:
     # cannot use the default `alias_key`: every key it returns falls outside the live slug set, so
     # every Board is labelled `migrated` and the ledger comes back empty. That is a silent wrong
     # answer, not an error, so say it out loud rather than letting a clean-looking zero stand.
-    migrated = counts.get(board_aliases.MIGRATED, 0)
+    migrated = counts.get(alias_ledger.MIGRATED, 0)
     if probe and migrated > len(probe) // 2:
         print(
             f"\nWARNING: {migrated} of {len(probe)} probed Boards resolved outside the ledger. "
@@ -206,7 +206,7 @@ def main() -> int:
             flush=True,
         )
 
-    out = board_aliases.path_for(ledger_dir, args.ats)
+    out = alias_ledger.path_for(ledger_dir, args.ats)
     if not args.apply:
         print(
             f"\n(dry run — pass --apply to write {out.relative_to(ROOT)})", flush=True
@@ -214,7 +214,7 @@ def main() -> int:
         return 0
 
     today = datetime.now(UTC).date().isoformat()
-    board_aliases.write(out, board_aliases.aliases_of(resolution, args.ats, today))
+    alias_ledger.write(out, alias_ledger.aliases_of(resolution, args.ats, today))
     print(f"\nwrote {buried} alias row(s) -> {out.relative_to(ROOT)}", flush=True)
     return 0
 

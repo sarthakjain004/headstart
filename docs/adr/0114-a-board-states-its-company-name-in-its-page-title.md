@@ -30,7 +30,7 @@ of Boards.
 Read the name from the Board's own page `<title>`, for the ATSes that state it there uniformly
 enough to strip — and for no others.
 
-`headstart.company_name` holds the per-ATS patterns and the rejection rules;
+`headstart.boards.company_name` holds the per-ATS patterns and the rejection rules;
 `BaseScraper.resolve_company()` fetches the page named by a new `board_page()` hook and applies
 them, between `fetch_raw()` and `parse()` in `fetch()`. `parse` stays pure, which is what keeps the
 parse tests running against recorded fixtures.

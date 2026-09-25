@@ -291,7 +291,7 @@ def main() -> int:
     store = Store(repo, token)
     registry = registry_store.load(repo, token)
 
-    from headstart.telegram_bot_api import TelegramClient
+    from headstart.alerts.telegram_bot_api import TelegramClient
 
     replies: list[tuple[str, str]] = []
     updates = TelegramClient(bot_token).get_updates(offset=registry.offset)

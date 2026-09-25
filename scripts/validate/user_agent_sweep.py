@@ -54,7 +54,7 @@ import time
 from pathlib import Path
 
 import headstart.scrapers as scrapers_pkg
-from headstart.config import CompanyRef
+from headstart.boards.company_ref import CompanyRef
 from headstart.scrapers import registry
 from headstart.scrapers.base import USER_AGENT as CURRENT
 

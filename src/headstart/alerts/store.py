@@ -38,7 +38,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from headstart import log
-from headstart.board_identity import lower_key
+from headstart.boards.board_identity import lower_key
 
 from .access import normalize
 

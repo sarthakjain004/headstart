@@ -30,7 +30,7 @@ from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parents[1] / "src" / "headstart"
 _SCRAPERS = _ROOT / "scrapers"
-_HARVEST = _ROOT / "harvest.py"
+_HARVEST = _ROOT / "scrapers" / "harvest.py"
 
 #: ``"<file>:<function>"`` -> why that WARNING is bounded to at most one per run.
 #:

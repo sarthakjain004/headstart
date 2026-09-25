@@ -24,7 +24,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT / "src"))
-from headstart import liveness  # needs src on sys.path first
+from headstart.boards import liveness_ledger  # needs src on sys.path first
 
 POOL = ROOT / "data" / "ats-tenants-merged"
 ACTIVE = POOL / "active"
@@ -36,7 +36,7 @@ def _mtime_date(path: Path) -> str:
 
 def main() -> int:
     force = "--force" in sys.argv[1:]
-    ledger_dir = liveness.dir_for(ROOT)
+    ledger_dir = liveness_ledger.dir_for(ROOT)
     ledger_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"{'ATS':<18}{'live':>7}{'dead':>7}{'total':>8}")
@@ -50,15 +50,15 @@ def main() -> int:
             continue
 
         live_date = _mtime_date(active_csv)
-        verdicts: dict[str, liveness.Verdict] = {}
+        verdicts: dict[str, liveness_ledger.Verdict] = {}
         with active_csv.open(encoding="utf-8") as f:
             for r in csv.DictReader(f):
                 jobs = (r.get("jobs") or "").strip()
-                verdicts[r["tenant"]] = liveness.Verdict(
+                verdicts[r["tenant"]] = liveness_ledger.Verdict(
                     ats=ats,
                     tenant=r["tenant"],
                     url=r.get("url", ""),
-                    status=liveness.LIVE,
+                    status=liveness_ledger.LIVE,
                     jobs=int(jobs) if jobs else None,
                     checked_at=live_date,
                 )
@@ -77,18 +77,18 @@ def main() -> int:
                 tenant = tenant.strip()
                 if not tenant or tenant in verdicts:
                     continue
-                verdicts[tenant] = liveness.Verdict(
+                verdicts[tenant] = liveness_ledger.Verdict(
                     ats=ats,
                     tenant=tenant,
                     url=pool_url.get(tenant, ""),
-                    status=liveness.DEAD,
+                    status=liveness_ledger.DEAD,
                     jobs=None,
                     checked_at=dead_date,
                 )
 
-        liveness.write(out, verdicts.values())
-        live = sum(1 for v in verdicts.values() if v.status == liveness.LIVE)
-        dead = sum(1 for v in verdicts.values() if v.status == liveness.DEAD)
+        liveness_ledger.write(out, verdicts.values())
+        live = sum(1 for v in verdicts.values() if v.status == liveness_ledger.LIVE)
+        dead = sum(1 for v in verdicts.values() if v.status == liveness_ledger.DEAD)
         print(f"{ats:<18}{live:>7}{dead:>7}{len(verdicts):>8}")
 
     print(

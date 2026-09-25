@@ -42,7 +42,7 @@ from pathlib import Path
 import numpy as np
 
 from headstart import company_match, trend_netting
-from headstart.board_identity import ats_of
+from headstart.boards.board_identity import ats_of
 from headstart.roles import BAND_LABELS, NON_TECH, WATCH_PREFIX
 
 # The `new` flow window (ADR-0051), in days: how long a found Board's backlog is held out of

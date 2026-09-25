@@ -72,7 +72,7 @@ from datetime import datetime
 from typing import Any
 from urllib.parse import urlencode, urljoin, urlsplit
 
-from headstart import company_name
+from headstart.boards import company_name
 from headstart.jobs import salary
 from headstart.jobs.job import Job, html_to_text, is_remote, requisition_of
 from headstart.network import http

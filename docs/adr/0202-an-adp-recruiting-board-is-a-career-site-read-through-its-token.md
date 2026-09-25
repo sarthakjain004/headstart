@@ -30,7 +30,7 @@ each in that morning's dump, 751 each at the afternoon's alias run). `index_plan
 site whose whole posting set is non-empty and contained in another site of the same `orgoid` is
 buried in `data/validate/aliases/adp_recruiting.csv` under Taleo Enterprise's `subset-reqs`
 signal (ADR-0186). `scripts/validate/adp_recruiting_subset_sites.py` walks every live site and
-elects through `board_aliases.bury_contained`, the election Taleo Enterprise's script now shares.
+elects through `alias_ledger.bury_contained`, the election Taleo Enterprise's script now shares.
 On 2026-09-24 it buried 131 of 990 live sites, holding 3,601 of 87,181 postings, onto 41 kept
 sites. `clientName` is per client, so a buried site's postings keep their company name. Sites
 that only partly overlap both stay, as ADP Workforce Now's overlapping career centers do

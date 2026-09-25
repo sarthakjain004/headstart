@@ -183,7 +183,7 @@ def test_a_verdict_earned_before_its_scraper_was_replaced_is_void(tmp_path):
 
 def test_key_for_lowercases_a_board_and_a_stored_key_alike():
     """ADR-0192: rows keep `board_key_of`'s casing; the quarantine test compares folded."""
-    from headstart.scrapable_boards import ScrapableBoard
+    from headstart.boards.scrapable_boards import ScrapableBoard
 
     board = ScrapableBoard("workday", "https://Acme.wd1.myworkdayjobs.com/External")
     assert bf.key_for(board) == bf.key_for("workday:Acme/External")

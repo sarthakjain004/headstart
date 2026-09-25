@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from headstart.config import CompanyRef
+from headstart.boards.company_ref import CompanyRef
 from headstart.scrapers.registry import DISABLED_ATS, SCRAPERS, company_from_row
 
 

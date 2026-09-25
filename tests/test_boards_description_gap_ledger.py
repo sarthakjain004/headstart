@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from headstart.board_description_gap import load, save
+from headstart.boards.description_gap_ledger import load, save
 
 TODAY = "2026-08-18"
 
@@ -64,8 +64,8 @@ def test_empty_ledger_writes_only_a_header(tmp_path):
 
 def test_key_for_lowercases_a_board_and_a_key_alike():
     """ADR-0192: the ledger owns its folding, so a Board and the key a Job id yields pair."""
-    from headstart.board_description_gap import key_for
-    from headstart.scrapable_boards import ScrapableBoard
+    from headstart.boards.description_gap_ledger import key_for
+    from headstart.boards.scrapable_boards import ScrapableBoard
 
     board = ScrapableBoard("workday", "https://Acme.wd1.myworkdayjobs.com/External")
     assert key_for(board) == key_for("workday:Acme/External") == "workday:acme/external"

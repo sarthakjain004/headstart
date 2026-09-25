@@ -291,10 +291,11 @@ These guidelines are working if: fewer unnecessary changes in diffs, fewer rewri
   If you change what the pipeline runs, change it there and update `.github/workflows/pipeline.yml`
   to match. Don't add a pipeline stage to `scripts/`. Helper modules used *only* by the pipeline
   live there too (`binpack`, `board_failures`, `board_freshness`, `board_naming`, `board_operator`,
-  `dedup_evictions`, `derived_meta`, `doc_prep`, `index_plan`, `job_turnover`, `observability`,
-  `role_assignments`, `role_family_classifier`, `shard_plan`, `shard_speedup`). Logic the curated-feed path (`python -m headstart` → `headstart.harvest`)
-  also reaches stays in `headstart` proper (`harvest`, `board_cost`, `board_priority`,
-  `corpus`), so the feed never imports from `ingest`.
+  `corpus`, `dedup_evictions`, `derived_meta`, `doc_prep`, `index_plan`, `job_turnover`,
+  `observability`, `role_assignments`, `role_family_classifier`, `shard_plan`, `shard_speedup`).
+  Logic the curated-feed path (`python -m headstart` → `headstart.scrapers.harvest`) also reaches
+  stays outside `ingest` — the scrape engine in `scrapers/harvest.py` and the `boards/` modules it
+  reads (ADR-0232) — so the feed never imports from `ingest`.
 - `scripts/` is for everything *outside* that run — R&D, discovery, and one-off ops tooling —
   organized by stage: `discover/` (find ATS tenants), `merge/` (union/dedupe lists), `validate/`
   (liveness), `resolve/` (company → ats:slug), `scrape/` (one-off/local pulls), `fetch/` (pull HF

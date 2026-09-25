@@ -1,6 +1,6 @@
 """How much faster a scrape shard runs than the sum of its Boards' measured seconds (ADR-0054).
 
-``scrape_plan`` packs on measured per-Board seconds (:mod:`headstart.board_cost`, ADR-0027) and
+``scrape_plan`` packs on measured per-Board seconds (:mod:`headstart.boards.cost_ledger`, ADR-0027) and
 predicted the makespan as the packed **sum** — a shard's serial time. But ``harvest.scrape_all``
 runs a shard's Boards through a thread pool, so the wall clock is that sum divided by whatever
 concurrency the run actually achieves. Predicting serial against a parallel shard overstated every
@@ -27,7 +27,7 @@ Two things the ratio must not be built from, both of which make it lie:
   and silences the budget warning in the one situation it exists for.
   :func:`ratios_from_reports` drops them on ``killed_by_budget``.
 
-Same shape as :mod:`headstart.board_priority` and :mod:`headstart.board_cost` deliberately: an
+Same shape as :mod:`headstart.boards.priority_ledger` and :mod:`headstart.boards.cost_ledger` deliberately: an
 EWMA, an ISO stamp, a missing file degrading to old behavior, riding the same HF state round-trip.
 One row, not one per Board — this measures the *fan-out*, not any Board.
 
@@ -65,7 +65,7 @@ class Speedup:
     """The learned fan-out speedup, and the run that last moved it.
 
     ``shards`` and ``updated_at`` are not read by the planner — they are there so a human reading
-    the ledger can tell a one-run estimate from a settled one, the same way ``board_priority``
+    the ledger can tell a one-run estimate from a settled one, the same way ``priority_ledger``
     carries ``last_tech_jobs`` beside its score.
     """
 

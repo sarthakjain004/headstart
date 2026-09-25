@@ -5,7 +5,8 @@ import logging
 import pytest
 from fake_fetcher import FakeFetcher, FakeResponse
 
-from headstart import company_name, log
+from headstart import log
+from headstart.boards import company_name
 from headstart.jobs.job import Job
 from headstart.network import fanout_stats, http
 from headstart.scrapers import base
@@ -16,6 +17,7 @@ from headstart.scrapers.base import (
     DetailRequest,
     DetailWithoutDescription,
 )
+from headstart.scrapers.registry import SCRAPERS
 
 
 class _StubScraper(BaseScraper):
@@ -1243,4 +1245,22 @@ def test_note_unread_rows_speaks_only_when_a_row_went_unread(caplog):
     assert caplog.records[0].getMessage() == (
         "stub:acme: 2 of 5 listed row(s) carried no id — "
         "those postings are listed but unread"
+    )
+
+
+def test_slug_from_default_and_overrides():
+    # default: the bare tenant label; zoho: careers host; workday: full careers URL
+    assert (
+        SCRAPERS["greenhouse"].slug_from(
+            "stripe", "https://boards.greenhouse.io/stripe"
+        )
+        == "stripe"
+    )
+    assert (
+        SCRAPERS["zoho"].slug_from("01da", "https://01da.zohorecruit.eu")
+        == "01da.zohorecruit.eu"
+    )
+    assert (
+        SCRAPERS["workday"].slug_from("3m/x", "https://3m.wd1.myworkdayjobs.com/x/")
+        == "https://3m.wd1.myworkdayjobs.com/x"
     )

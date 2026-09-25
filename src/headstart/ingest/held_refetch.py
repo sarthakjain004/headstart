@@ -35,7 +35,7 @@ from pathlib import Path
 from typing import NamedTuple
 
 from headstart import log
-from headstart.board_identity import ats_of
+from headstart.boards.board_identity import ats_of
 
 _log = log.get(__name__, __spec__)
 

@@ -27,7 +27,7 @@ from collections import Counter
 from pathlib import Path
 
 from headstart import log
-from headstart.board_identity import board_key_of
+from headstart.boards.board_identity import board_key_of
 from headstart.ingest import (
     REPO_ROOT,
     UNAUTHORITATIVE_BOARDS_PATH,
@@ -74,7 +74,7 @@ def write_unauthoritative_boards(
     is keyed by ``board_key()`` (ADR-0049). Those differ wherever a slug is not the Board tail:
     Workday's slug is the whole careers URL, so ``workday:https://x.wd1.myworkdayjobs.com/Site``
     has to become ``workday:x/Site`` or the lookup silently never matches. Rows that will not
-    resolve (:func:`headstart.board_identity.board_key_of` returns ``None``) are dropped with a
+    resolve (:func:`headstart.boards.board_identity.board_key_of` returns ``None``) are dropped with a
     warning rather than written through unconverted, which would look like protection while
     providing none.
 
@@ -124,7 +124,7 @@ def write_scraped_boards(boards: set[str], path: Path) -> None:
     that is exactly what the scope is compared against (ADR-0049) — the ledger both halves resolve
     against is committed to git, so the join and the merge read the same one. A Board that scraped
     clean with zero jobs has no id to resolve, so it is added from the shard reports' ``boards_ok``
-    through :func:`~headstart.board_identity.board_key_of` — the ``board_key()`` its ids would
+    through :func:`~headstart.boards.board_identity.board_key_of` — the ``board_key()`` its ids would
     carry, so the two sources agree.
 
     Always writes, even when the union covered nothing: ``data/state`` round-trips through the HF

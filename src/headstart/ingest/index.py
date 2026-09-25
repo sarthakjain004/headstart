@@ -95,9 +95,9 @@ import lancedb
 import numpy as np
 import pyarrow as pa
 
-from headstart import eightfold_backing, log
-from headstart.board_identity import ats_of, lower_key
-from headstart.corpus import iter_jobs
+from headstart import log
+from headstart.boards import eightfold_backing
+from headstart.boards.board_identity import ats_of, lower_key
 from headstart.embedding_conventions import PROD_TABLE
 from headstart.ingest import (
     EVICTION_QUEUE_PATH,
@@ -114,6 +114,7 @@ from headstart.ingest import (
     run_ts,
     write_id_list,
 )
+from headstart.ingest.corpus import iter_jobs
 from headstart.ingest.doc_prep import PLANNER_ONLY_FIELDS
 from headstart.ingest.index_plan import (
     alias_rules,

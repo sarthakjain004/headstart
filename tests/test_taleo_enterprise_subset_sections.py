@@ -104,25 +104,25 @@ def _liveness_dir(root: Path, sections: dict[str, str]) -> Path:
 def test_a_buried_section_that_gains_its_own_req_is_unburied(mod, tmp_path):
     """The run re-reads the sections the last run buried — they are still live rows — and
     rewrites the ledger from what it reads now, so nothing a past run concluded survives."""
-    from headstart import board_aliases
+    from headstart.boards import alias_ledger
 
     liveness = _liveness_dir(tmp_path, {f"{HDR}/ex": "live", f"{HDR}/int": "live"})
     reqs = {f"{HDR}/ex": {"1", "2"}, f"{HDR}/int": {"1"}}
     mod.write_aliases(liveness, reqs.get, "2026-09-24")
-    assert board_aliases.load_for(liveness, "taleo_enterprise") == {
+    assert alias_ledger.load_for(liveness, "taleo_enterprise") == {
         f"{HDR}/int": f"{HDR}/ex"
     }
 
     reqs[f"{HDR}/int"] = {"1", "3"}  # int now lists a req ex does not
     mod.write_aliases(liveness, reqs.get, "2026-09-25")
-    assert board_aliases.load_for(liveness, "taleo_enterprise") == {}
+    assert alias_ledger.load_for(liveness, "taleo_enterprise") == {}
 
 
 def test_only_sections_on_live_rows_are_read_and_oracles_demo_tenant_is_not(
     mod, tmp_path
 ):
     """`pmg` is Oracle's own demo tenant ("Director of Finance (DEMO)", "TEST 2 EPredix
-    Assessment"), excluded in `config.EXCLUDED_BOARDS`. Its two sections mirror each other, so
+    Assessment"), excluded in `excluded_and_parked.EXCLUDED_BOARDS`. Its two sections mirror each other, so
     reading them would write an alias row for a Board that is never scraped anyway."""
     pmg = "https://pmg.taleo.net/careersection"
     liveness = _liveness_dir(

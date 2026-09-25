@@ -15,7 +15,7 @@ import json
 import logging
 from pathlib import Path
 
-from headstart import board_description_gap
+from headstart.boards import description_gap_ledger
 from headstart.ingest import board_failures as bf
 from headstart.ingest.update_ledgers import failures, gap
 
@@ -185,7 +185,7 @@ def test_gap_counts_only_rows_the_store_has_not_settled(tmp_path):
         ],
         settled={"greenhouse": ["greenhouse:acme:2"]},
     )
-    assert board_description_gap.load(path) == {
+    assert description_gap_ledger.load(path) == {
         "greenhouse:acme": 2,
         "lever:beta": 1,
     }
@@ -200,7 +200,9 @@ def test_gap_keys_workday_the_way_the_slice_looks_it_up(tmp_path):
         meta_rows=[{"id": f"workday:{_WORKDAY_URL}:REQ-1", "ats": "workday"}],
         settled={"greenhouse": ["unrelated"]},
     )
-    assert list(board_description_gap.load(path)) == [f"workday:{_WORKDAY_URL}".lower()]
+    assert list(description_gap_ledger.load(path)) == [
+        f"workday:{_WORKDAY_URL}".lower()
+    ]
 
 
 def test_gap_folds_case_variant_boards_into_one_row(tmp_path):
@@ -215,7 +217,7 @@ def test_gap_folds_case_variant_boards_into_one_row(tmp_path):
         ],
         settled={"greenhouse": ["unrelated"]},
     )
-    assert board_description_gap.load(path) == {
+    assert description_gap_ledger.load(path) == {
         "workday:ngc/northrop_grumman_external_site": 2
     }
 
@@ -231,7 +233,7 @@ def test_gap_skips_a_disabled_ats(tmp_path):
         ],
         settled={"greenhouse": ["unrelated"]},
     )
-    assert board_description_gap.load(path) == {"ashby:real": 1}
+    assert description_gap_ledger.load(path) == {"ashby:real": 1}
 
 
 def test_gap_skips_an_id_its_own_board_scraped_without_re_emitting(tmp_path):
@@ -249,7 +251,7 @@ def test_gap_skips_an_id_its_own_board_scraped_without_re_emitting(tmp_path):
         settled={"greenhouse": ["unrelated"]},
         scraped={"lever": ["lever:jobgether:live"]},
     )
-    assert board_description_gap.load(path) == {
+    assert description_gap_ledger.load(path) == {
         "lever:jobgether": 1,
         "greenhouse:elsewhere": 1,
     }
@@ -269,7 +271,7 @@ def test_gap_keeps_the_ids_of_a_board_whose_scrape_was_not_authoritative(tmp_pat
         scraped={"lever": ["lever:jobgether:live"]},
         unauthoritative={"lever:jobgether": "HTTPError: HTTP Error 429: "},
     )
-    assert board_description_gap.load(path) == {"lever:jobgether": 2}
+    assert description_gap_ledger.load(path) == {"lever:jobgether": 2}
 
 
 def test_gap_protects_an_unauthoritative_board_whose_ids_carry_a_colon(tmp_path):
@@ -287,7 +289,7 @@ def test_gap_protects_an_unauthoritative_board_whose_ids_carry_a_colon(tmp_path)
         scraped={"workday": [f"{_WORKDAY_BOARD}:REQ: 229"]},
         unauthoritative={_WORKDAY_BOARD: "truncated: HTTP Error 429: "},
     )
-    assert board_description_gap.load(path) == {f"{_WORKDAY_BOARD}:req".lower(): 2}
+    assert description_gap_ledger.load(path) == {f"{_WORKDAY_BOARD}:req".lower(): 2}
 
 
 def test_gap_reports_the_drain_and_not_only_the_level(tmp_path, caplog):
@@ -298,7 +300,7 @@ def test_gap_reports_the_drain_and_not_only_the_level(tmp_path, caplog):
     `left`, not `settled`: a row also leaves this count when it is reclassified unreachable or its
     row leaves the store, and the line must not claim a description arrived for it."""
     ledger = tmp_path / "board_description_gap.csv"
-    board_description_gap.save(
+    description_gap_ledger.save(
         ledger, {"greenhouse:drains": 2, "greenhouse:frozen": 1}, today="2026-09-15"
     )
     with caplog.at_level(logging.INFO):
@@ -326,7 +328,7 @@ def test_gap_top_boards_carry_their_own_movement(tmp_path, caplog):
     across every run, which took a hand diff of five logs to see. A Board that settled nothing
     says `(+0)` on its own line."""
     ledger = tmp_path / "board_description_gap.csv"
-    board_description_gap.save(ledger, {"greenhouse:frozen": 2}, today="2026-09-15")
+    description_gap_ledger.save(ledger, {"greenhouse:frozen": 2}, today="2026-09-15")
     with caplog.at_level(logging.INFO):
         _gap_run(
             tmp_path,
@@ -390,7 +392,7 @@ def test_gap_drops_a_board_that_is_not_scrapable(tmp_path):
         settled={"greenhouse": ["unrelated"]},
         liveness=_liveness(tmp_path, {"greenhouse": ["live-one"]}),
     )
-    assert board_description_gap.load(path) == {"greenhouse:live-one": 1}
+    assert description_gap_ledger.load(path) == {"greenhouse:live-one": 1}
 
 
 def test_gap_reclassifies_nothing_when_the_liveness_dir_is_missing(tmp_path, caplog):
@@ -403,7 +405,7 @@ def test_gap_reclassifies_nothing_when_the_liveness_dir_is_missing(tmp_path, cap
             meta_rows=[{"id": "greenhouse:acme:1", "ats": "greenhouse"}],
             settled={"greenhouse": ["unrelated"]},
         )
-    assert board_description_gap.load(path) == {"greenhouse:acme": 1}
+    assert description_gap_ledger.load(path) == {"greenhouse:acme": 1}
     assert any("lists no Scrapable Board" in m for m in caplog.messages), (
         caplog.messages
     )
@@ -413,7 +415,7 @@ def test_an_empty_prior_ledger_is_not_a_prior_of_zero(tmp_path, caplog):
     """A header-only ledger reaches `load` as `{}`, which subtracts to "the whole backlog arrived
     this run" — a spike that never happened. It takes the same branch as an absent file."""
     ledger = tmp_path / "board_description_gap.csv"
-    board_description_gap.save(ledger, {}, today="2026-09-15")
+    description_gap_ledger.save(ledger, {}, today="2026-09-15")
     with caplog.at_level(logging.INFO):
         _gap_run(
             tmp_path,
@@ -429,14 +431,14 @@ def test_a_missing_store_leaves_the_ledger_alone(tmp_path):
     """The failure that would otherwise mark every Board gap-ful: the join fetches the store on
     `|| echo ::warning::`, so an empty store means a lost download, not a settled corpus."""
     ledger = tmp_path / "board_description_gap.csv"
-    board_description_gap.save(ledger, {"greenhouse:prior": 7}, today="2026-08-17")
+    description_gap_ledger.save(ledger, {"greenhouse:prior": 7}, today="2026-08-17")
     _gap_run(
         tmp_path,
         meta_rows=[{"id": "greenhouse:acme:1", "ats": "greenhouse"}],
         settled={},
         ledger=ledger,
     )
-    assert board_description_gap.load(ledger) == {"greenhouse:prior": 7}
+    assert description_gap_ledger.load(ledger) == {"greenhouse:prior": 7}
 
 
 def test_no_meta_yet_writes_nothing(tmp_path):

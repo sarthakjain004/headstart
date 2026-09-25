@@ -87,7 +87,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
-from headstart import liveness
+from headstart.boards import liveness_ledger
 from headstart.scrapers.registry import company_from_row
 
 LIVE, DEAD, UNKNOWN = "live", "dead", "unknown"
@@ -286,7 +286,7 @@ async def _probe(tab, spec: dict, slug: str) -> tuple[str, int | None]:
 
 
 async def _run(
-    ats: str, rows: list[liveness.Verdict], tabs: int
+    ats: str, rows: list[liveness_ledger.Verdict], tabs: int
 ) -> dict[str, tuple[str, int | None]]:
     """Probe every row through one browser, ``tabs`` at a time. Results keyed by tenant."""
     from pydoll.browser.chromium import Chrome
@@ -308,7 +308,7 @@ async def _run(
         await browser.start()
         gate = asyncio.Semaphore(tabs)
 
-        async def one(row: liveness.Verdict) -> None:
+        async def one(row: liveness_ledger.Verdict) -> None:
             nonlocal done
             async with gate:
                 tab = await browser.new_tab()
@@ -369,8 +369,8 @@ def main() -> int:
         )
         return 2
 
-    path = liveness.path_for(args.root, args.ats)
-    ledger = liveness.load(path)
+    path = liveness_ledger.path_for(args.root, args.ats)
+    ledger = liveness_ledger.load(path)
     if not ledger:
         print(f"no ledger at {path}", flush=True)
         return 1
@@ -381,7 +381,7 @@ def main() -> int:
     rows = [
         v
         for v in ledger.values()
-        if v.status == args.status and liveness.needs_probe(v, today)
+        if v.status == args.status and liveness_ledger.needs_probe(v, today)
     ][: args.limit]
     if not rows:
         print(
@@ -429,10 +429,10 @@ def main() -> int:
     today_iso = today.isoformat()
     for tenant, (status, jobs) in settled.items():
         old = ledger[tenant]
-        ledger[tenant] = liveness.Verdict(
+        ledger[tenant] = liveness_ledger.Verdict(
             old.ats, old.tenant, old.url, status, jobs, today_iso
         )
-    liveness.write(path, ledger.values())
+    liveness_ledger.write(path, ledger.values())
     print(f"wrote {path} ({len(ledger)} rows, {len(settled)} re-probed)", flush=True)
     return 0
 

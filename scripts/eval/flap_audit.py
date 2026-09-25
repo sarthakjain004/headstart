@@ -109,7 +109,7 @@ def _parse(path: Path) -> dict[str, set[str]]:
 
 def _board(job_id: str) -> str:
     """Board guess for grouping stats — the ``{ats}:{slug}`` prefix (see
-    ``headstart.board_identity.board_of``; self-comparing use only, so the guess pairs with
+    ``headstart.boards.board_identity.board_of``; self-comparing use only, so the guess pairs with
     itself)."""
     return job_id.rsplit(":", 1)[0]
 

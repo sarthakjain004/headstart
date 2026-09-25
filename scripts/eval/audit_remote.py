@@ -38,7 +38,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import UTC, datetime
 from pathlib import Path
 
-from headstart import scrapable_boards
+from headstart.boards import scrapable_boards
 from headstart.jobs.job import is_remote
 from headstart.scrapers.registry import SCRAPERS, get_scraper
 

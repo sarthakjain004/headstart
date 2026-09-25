@@ -539,7 +539,7 @@ def test_a_failed_name_lookup_leaves_the_slug(monkeypatch):
 
 
 def test_the_vendor_name_is_never_served_as_the_employer():
-    from headstart import company_name
+    from headstart.boards import company_name
 
     assert company_name.from_field("adp", "ADP") is None
     assert company_name.from_field("adp", "Automatic Data Processing") is None

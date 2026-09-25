@@ -61,7 +61,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from headstart import company_name
+from headstart.boards import company_name
 from headstart.jobs import salary
 from headstart.jobs.job import Job, html_to_text
 from headstart.scrapers.base import USER_AGENT, BaseScraper, DetailLost, DetailRequest

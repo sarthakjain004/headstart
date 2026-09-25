@@ -11,7 +11,7 @@ are therefore NOT checked here and cannot be: **Scraped Board** (`data/state/boa
 **Scored Board** (`data/state/board_priority.csv`) live only on HF and move every run, with no
 commit to hang an assertion on. They carry a measured-on date in the glossary instead.
 
-No `importorskip`: this needs stdlib plus `headstart.scrapable_boards`, so unlike
+No `importorskip`: this needs stdlib plus `headstart.boards.scrapable_boards`, so unlike
 `test_readme_schema.py` it actually runs in CI rather than skipping and reading green.
 """
 
@@ -22,9 +22,9 @@ import functools
 import re
 from pathlib import Path
 
-from headstart import board_aliases, liveness
-from headstart.config import PARKED_BOARDS
-from headstart.scrapable_boards import (
+from headstart.boards import alias_ledger, liveness_ledger
+from headstart.boards.excluded_and_parked import PARKED_BOARDS
+from headstart.boards.scrapable_boards import (
     Row,
     ScrapableBoard,
     _board_of_row,
@@ -44,7 +44,7 @@ def _ledger_rows() -> list[Row]:
     for path in sorted(LEDGER.glob("*.csv")):
         if path.stem not in SCRAPERS:
             continue
-        for v in liveness.load(path).values():
+        for v in liveness_ledger.load(path).values():
             board = _board_of_row(company_from_row(path.stem, v.tenant, v.url), v)
             if board is not None:
                 out.append((board, v))
@@ -63,7 +63,7 @@ def _counts() -> dict[str, int]:
 
     Cached: several tests want it and it re-reads 20 CSVs each time (~1.3s a call).
     """
-    # Counted off the raw lines, not `liveness.load()`'s tenant-keyed dict. The glossary defines a
+    # Counted off the raw lines, not `liveness_ledger.load()`'s tenant-keyed dict. The glossary defines a
     # Ledger row as one LINE, and CLAUDE.md's own "duplicate boards" section says these ledgers
     # routinely hold more than one row per board — a dict would collapse exactly those and
     # under-report the number this entry exists to name.
@@ -78,12 +78,14 @@ def _counts() -> dict[str, int]:
     unique = _elected_boards(rows)
     # Two things separate Live row from Unique Board: duplicate spellings of one Board, and Boards
     # with a `dead` row newer than their newest `live` row (ADR-0219). The docs quote them apart.
-    live_groups = {c.lowercase_identity for c, v in rows if v.status == liveness.LIVE}
+    live_groups = {
+        c.lowercase_identity for c, v in rows if v.status == liveness_ledger.LIVE
+    }
     # Boards buried as another Board's duplicate (ADR-0111). A stage of the funnel that neither
     # `EXCLUDED_BOARDS` nor the case-variant dedupe accounts for: it is keyed on evidence from
     # outside the ledger, so without it the components stop summing to Scrapable Board.
     alias = {
-        ats: board_aliases.load_for(LEDGER, ats) for ats in {c.ats for c, _ in rows}
+        ats: alias_ledger.load_for(LEDGER, ats) for ats in {c.ats for c, _ in rows}
     }
 
     def is_alias(c: ScrapableBoard) -> bool:
@@ -100,7 +102,7 @@ def _counts() -> dict[str, int]:
     exclude_first_excluded = [
         c
         for c, v in enabled_rows
-        if v.status == liveness.LIVE and is_excluded(c.ats, c.slug)
+        if v.status == liveness_ledger.LIVE and is_excluded(c.ats, c.slug)
     ]
     # Every status is kept here, unlike the list above: the election reads `dead` rows too.
     exclude_first_kept = [
@@ -108,7 +110,7 @@ def _counts() -> dict[str, int]:
         for c, v in enabled_rows
         if not is_excluded(c.ats, c.slug) and not is_alias(c)
     ]
-    kept_live = [c for c, v in exclude_first_kept if v.status == liveness.LIVE]
+    kept_live = [c for c, v in exclude_first_kept if v.status == liveness_ledger.LIVE]
     kept_groups = {c.lowercase_identity for c in kept_live}
     return {
         "Ledger row": sum(by_status.values()),
@@ -147,14 +149,14 @@ def counts() -> dict[str, int]:
 def _scraped_not_unique(unique: set[str]) -> int | None:
     """Scraped Boards no longer in the live set, or ``None`` when the cost ledger is not here.
 
-    Read through `board_cost.load()`, never the raw CSV: the loader owns the row -> key contract,
+    Read through `cost_ledger.load()`, never the raw CSV: the loader owns the row -> key contract,
     so this figure follows the ledger's own definition of a key instead of re-deriving one here.
     That was load-bearing across ADR-0096's migration — the loader re-keyed legacy `{ats}:{slug}`
     rows, so the figure held steady while the file rewrote itself. The migration completed
     2026-09-09 and the loader now reads the key verbatim, which leaves the contract as the reason.
     Case folding is the caller's, below; the loader does not do it.
     """
-    from headstart.board_cost import load as load_cost
+    from headstart.boards.cost_ledger import load as load_cost
 
     path = LEDGER.parent.parent / "state" / "board_cost.csv"
     if not path.exists():
@@ -308,7 +310,7 @@ def test_every_derived_figure_is_current_at_every_site_that_quotes_it() -> None:
         # the Scrapable Board entry restates the chain it is the end of
         (
             "CONTEXT.md",
-            r"minus `registry\.DISABLED_ATS` \(−([\d,]+),.*?`config\.EXCLUDED_BOARDS` \(−([\d,]+) vendor test Boards\), the alias ledger \(−([\d,]+) Boards.*?`config\.PARKED_BOARDS` \(−([\d,]+)\)",
+            r"minus `registry\.DISABLED_ATS` \(−([\d,]+),.*?`excluded_and_parked\.EXCLUDED_BOARDS` \(−([\d,]+) vendor test Boards\), the alias ledger \(−([\d,]+) Boards.*?`excluded_and_parked\.PARKED_BOARDS` \(−([\d,]+)\)",
             (
                 truth["disabled"],
                 truth["excluded_after_dedupe"],

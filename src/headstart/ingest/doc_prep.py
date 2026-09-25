@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import re
 
-from headstart import eightfold_backing
+from headstart.boards import eightfold_backing
 from headstart.embedding_conventions import DOC_PREFIX
 from headstart.ingest.derived_meta import derive
 

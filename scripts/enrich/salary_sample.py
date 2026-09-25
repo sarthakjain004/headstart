@@ -66,8 +66,8 @@ from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from headstart import scrapable_boards
-from headstart.config import CompanyRef
+from headstart.boards import scrapable_boards
+from headstart.boards.company_ref import CompanyRef
 from headstart.jobs.job import Job
 from headstart.scrapers import registry
 from headstart.scrapers.base import USER_AGENT, BaseScraper
@@ -138,7 +138,7 @@ def _sample_boards(ats: str, n: int, seed: int) -> list[CompanyRef]:
 def _candidates_without_ledger(ats: str) -> list[CompanyRef]:
     """Fallback for an ATS with no liveness ledger at all (:data:`CANDIDATES_DIR`'s own
     docstring) — reads the raw candidate-tenant discovery file directly, applying the same
-    :data:`~headstart.config.EXCLUDED_BOARDS` filter :func:`scrapable_boards.load` would.
+    :data:`~headstart.boards.excluded_and_parked.EXCLUDED_BOARDS` filter :func:`scrapable_boards.load` would.
     Unlike that function, this does NOT itself check liveness — for a population this small
     (dozens, not thousands), the caller's own per-board fetch during sampling already is
     the liveness check, so a candidate that turns out dead simply errors there, same as any

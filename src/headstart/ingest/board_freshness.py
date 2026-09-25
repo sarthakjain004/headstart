@@ -15,7 +15,7 @@ from datetime import datetime
 from pathlib import Path
 
 from headstart import log
-from headstart.board_identity import ats_of, lower_key
+from headstart.boards.board_identity import ats_of, lower_key
 from headstart.ingest.index_plan import resolve_board
 
 _log = log.get(__name__)

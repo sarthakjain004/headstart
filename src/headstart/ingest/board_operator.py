@@ -50,7 +50,7 @@ from __future__ import annotations
 import re
 from typing import Final, Literal
 
-from headstart.board_identity import tenant
+from headstart.boards.board_identity import tenant
 
 Operator = Literal["employer", "services", "aggregator"]
 

@@ -15,9 +15,9 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 import headstart.ingest.scrape_plan as ps
-from headstart.board_identity import board_identity
+from headstart.boards.board_identity import board_identity
+from headstart.boards.scrapable_boards import ScrapableBoard
 from headstart.ingest import board_failures as bf
-from headstart.scrapable_boards import ScrapableBoard
 
 
 def test_coldstart_cost_weights_detail_fetchers():
@@ -160,7 +160,7 @@ def _cost(seconds: float, day: str = "2026-08-18", jobs: int = 1):
     is vetoed outright. Every fixture here that is *about* the score/seconds ratio wants a Board
     that did return something, so 1 is the neutral default and 0 has to be asked for.
     """
-    from headstart.board_cost import BoardCost
+    from headstart.boards.cost_ledger import BoardCost
 
     return BoardCost(seconds=seconds, jobs=jobs, updated_at=day)
 
@@ -433,7 +433,7 @@ def test_a_zero_yield_board_under_the_floor_is_still_left_alone():
 
 def test_an_incomplete_measurement_cannot_gate_a_board_it_never_read():
     """The way this veto could have evicted healthy giants — closed at the ledger, and pinned here
-    through the REAL `board_cost.update` rather than a hand-built row.
+    through the REAL `cost_ledger.update` rather than a hand-built row.
 
     An earlier version of this test asserted the safety property against a `BoardCost` it
     constructed itself, so it passed without the ledger doing anything and would have passed on
@@ -444,7 +444,7 @@ def test_an_incomplete_measurement_cannot_gate_a_board_it_never_read():
 
     Both incomplete outcomes now leave the count alone, so both survive the gate on their ratio.
     """
-    from headstart.board_cost import BoardCost, ShardCost, update
+    from headstart.boards.cost_ledger import BoardCost, ShardCost, update
 
     prev = {
         "workday:walmart": BoardCost(
@@ -481,7 +481,7 @@ def test_a_board_with_no_known_yield_is_judged_on_its_ratio_not_vetoed():
     veto must not fire on it — that would turn one bad first run into a fortnight's exclusion — so
     it falls through to ADR-0064's ratio exactly as before this change.
     """
-    from headstart.board_cost import BoardCost
+    from headstart.boards.cost_ledger import BoardCost
 
     unknown = {
         "workday:new": BoardCost(seconds=1200.0, jobs=None, updated_at="2026-09-07")
@@ -573,7 +573,7 @@ def test_gate_counts_the_days_of_a_timestamped_cost_row():
 def test_main_rotates_the_unscored_tail_oldest_first(tmp_path, monkeypatch):
     """The planner hands the cost ledger's last-look stamps to `pick_boards` (ADR-0229), so a
     Slice smaller than the unscored set takes the Boards read longest ago."""
-    from headstart import board_cost
+    from headstart.boards import cost_ledger
 
     # 30 Boards for 5 slots: a random draw lands on the 5 oldest once in ~142,000 plans.
     boards = [ScrapableBoard("lever", f"b{i}", f"B{i}") for i in range(30)]
@@ -581,7 +581,7 @@ def test_main_rotates_the_unscored_tail_oldest_first(tmp_path, monkeypatch):
         ps.scrapable_boards, "load", lambda ledger, min_jobs=0: list(boards)
     )
     cost = tmp_path / "board_cost.csv"
-    board_cost.save(
+    cost_ledger.save(
         cost,
         {
             f"lever:b{i}": _cost(1.0, f"2026-09-25T00:{i:02d}:00+00:00")
@@ -621,17 +621,17 @@ def test_main_rotates_the_unscored_tail_oldest_first(tmp_path, monkeypatch):
 
 def _plan_scored_boards(tmp_path, monkeypatch, n_boards, max_boards):
     """Plan ``n_boards`` Scored Boards (distinct scores) under ``--max-boards max_boards``."""
-    from headstart import board_priority
+    from headstart.boards import priority_ledger
 
     boards = [ScrapableBoard("lever", f"b{i}", f"B{i}") for i in range(n_boards)]
     monkeypatch.setattr(
         ps.scrapable_boards, "load", lambda ledger, min_jobs=0: list(boards)
     )
     priority = tmp_path / "board_priority.csv"
-    board_priority.save(
+    priority_ledger.save(
         priority,
         {
-            f"lever:b{i}": board_priority.BoardPriority(100.0 - i, 5, "2026-09-25")
+            f"lever:b{i}": priority_ledger.BoardPriority(100.0 - i, 5, "2026-09-25")
             for i in range(n_boards)
         },
     )
@@ -663,7 +663,7 @@ def test_main_names_scored_boards_the_head_cannot_hold(tmp_path, monkeypatch, ca
     """The head holds every Scored Board only while they fit (ADR-0229). Past the cap the
     lowest-scored join the Tail, and the plan says so rather than letting the
     "every tech-yielding Board every run" promise lapse unseen."""
-    from headstart.board_priority import head_slots
+    from headstart.boards.priority_ledger import head_slots
 
     with caplog.at_level("WARNING"):
         _plan_scored_boards(tmp_path, monkeypatch, n_boards=20, max_boards=10)

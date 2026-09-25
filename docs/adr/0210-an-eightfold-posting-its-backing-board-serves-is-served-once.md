@@ -56,7 +56,7 @@ Every Eightfold posting states its backing ATS's requisition, and #632 measured 
    backing Board is Oracle, else `atsJobId`, read from the pairs file below. A posting read through
    the sitemap fallback states neither, and stays null.
 3. **The pairs are a committed file, `data/validate/eightfold_backing.csv`**, read through one
-   module, `headstart.eightfold_backing.load()` — `{Eightfold slug: backing Board keys}`, several
+   module, `headstart.boards.eightfold_backing.load()` — `{Eightfold slug: backing Board keys}`, several
    allowed, Lumen out (the user's decision). It *is* ADR-0205's `BACKING` table, moved out of the
    script rather than written by it: the script now loads it as its candidates, and `index
    sync`/`prune` and the Eightfold scraper read the same file. One source, three readers — the

@@ -53,7 +53,7 @@ user's decisions of 2026-09-24):
 
 **Cross-ATS and multi-canonical rows need no format change.** `canonical` holds the backing
 Board's lowercased `board_key`, `ats` prefix included, and a Board with several backing Boards has
-one row per backing Board. `board_aliases.load` keeps one canonical per duplicate, and every
+one row per backing Board. `alias_ledger.load` keeps one canonical per duplicate, and every
 consumer only tests membership.
 
 **The six `_EIGHTFOLD_ALIAS_LOSERS` join the ledger** as candidates backed by their winner
@@ -63,7 +63,7 @@ liveness rows are `dead` and stay so, because `check_liveness` skips a buried Bo
 (ADR-0111). **The hand list stays**, because the ledger does not fully replace it: its verdict needs
 a whole read of the pair and the list's does not. Both runs of 2026-09-24 missed qualcomm (a short
 sweep of `careers.qualcomm.com`, then a failed connection), and a loser out of the ledger would be
-re-probed after `liveness.DEAD_TTL_DAYS`, found live, and scraped as a duplicate until the next
+re-probed after `liveness_ledger.DEAD_TTL_DAYS`, found live, and scraped as a duplicate until the next
 clean run. Retiring the list needs the writer to keep a loser's burial through an unread run, a
 rule this ADR does not make.
 

@@ -57,7 +57,7 @@ from pathlib import Path
 _ROOT = Path(__file__).resolve().parents[1] / "src" / "headstart"
 _SCRAPERS = _ROOT / "scrapers"
 _ALERTS = _ROOT / "alerts"
-_HARVEST = _ROOT / "harvest.py"
+_HARVEST = _ROOT / "scrapers" / "harvest.py"
 _SPARE_EGRESS = _ROOT / "network" / "spare_egress.py"
 _SEARCH = _ROOT / "serving" / "job_search.py"
 
@@ -91,7 +91,7 @@ _PER_ITEM_BY_CONSTRUCTION = [
     _SEARCH,
     # Per Board (a walled Board's fetch) and per chat respectively, with no loop to key on.
     _ROOT / "network" / "browser_http.py",
-    _ROOT / "telegram_bot_api.py",
+    _ROOT / "alerts" / "telegram_bot_api.py",
     # Once per résumé-parse request on the Space.
     _ROOT / "llm_router.py",
     _ROOT / "serving" / "profile_extract.py",
@@ -203,15 +203,15 @@ _ALLOWED: dict[str, str] = {
         "install subresource blocking warns with its traceback, every later one logs at INFO — "
         "one broken pydoll command API fails every walled Board the browser serves, not one."
     ),
-    "telegram_bot_api.py:<module>": (
+    "alerts/telegram_bot_api.py:<module>": (
         "`_SEND_FAILURE`, a module-level `log.FirstOnly`: the first failed send per process "
         "warns, the rest log at INFO — a Telegram outage fails every chat, not one."
     ),
-    "harvest.py:scrape_all": (
+    "scrapers/harvest.py:scrape_all": (
         "Bounded by `log.FirstOnly` to the FIRST non-transport Board failure per run (the rest "
         "log at INFO). A parse break is systemic — `KeyError: 'title'` raises on every Board of "
         "an ATS — so one stack and one annotation say what broke while `errors` says how far it "
-        "reached. Same helper as config.py's board_identity and index_plan.py's keep-set guard."
+        "reached. Same helper as board_identity.py's board_identity and index_plan.py's keep-set guard."
     ),
     "scrapers/base.py:<module>": (
         "`_UNEXPECTED`, the module-level `log.FirstOnly` that `fan_out`'s and `_gather_async`'s "
@@ -303,7 +303,7 @@ _ALLOWED: dict[str, str] = {
 #: and deliberately small: the check that feeds it only flags sites lexically inside a loop, so an
 #: entry here is a claim that this particular loop cannot run away.
 _LOOPED_OK: dict[str, str] = {
-    "scrapable_boards.py:load": (
+    "boards/scrapable_boards.py:load": (
         "Bounded by the ledger directory: one iteration per committed liveness CSV, 28 of them, "
         "and the line fires only for a stem with no registered scraper. A whole ledger silently "
         "dropped is precisely the anomaly worth an annotation, and 28 is the ceiling even if "

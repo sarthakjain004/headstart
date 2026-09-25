@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from headstart import company_name
+from headstart.boards import company_name
 from headstart.ingest import board_naming
 
 

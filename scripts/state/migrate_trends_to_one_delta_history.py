@@ -75,7 +75,7 @@ os.environ.setdefault("HF_HUB_DISABLE_XET", "1")
 import pyarrow.parquet as pq
 
 from headstart import log, roles, trend_history_migration
-from headstart.board_identity import ats_of
+from headstart.boards.board_identity import ats_of
 from headstart.trend_history import (
     ARCHIVE,
     ARCHIVE_COLUMNS,

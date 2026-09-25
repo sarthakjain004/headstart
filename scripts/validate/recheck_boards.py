@@ -35,7 +35,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from check_liveness import PROBES  # needs the paths above first
 
-from headstart import liveness
+from headstart.boards import liveness_ledger
 
 LEDGER = ROOT / "data" / "validate" / "liveness"
 
@@ -55,7 +55,7 @@ def resolve(ids: list[str]) -> tuple[list[tuple[str, str, str]], list[str]]:
             unknown.append(f"{jid} (no probe for {ats!r})")
             continue
         if ats not in ledgers:
-            ledgers[ats] = liveness.load(LEDGER / f"{ats}.csv")
+            ledgers[ats] = liveness_ledger.load(LEDGER / f"{ats}.csv")
         row = ledgers[ats].get(slug)
         if row is None:
             unknown.append(f"{jid} (not in the {ats} ledger)")

@@ -86,7 +86,7 @@ IPv6 address), while live and unregistered hosts answered the same on both. `peo
 `_SPANNING` and gated at 50 req/s.
 
 **The vendor's demo tenant is excluded.** `candidate.peoplestrong.com` serves 314–315 postings of
-test data ("Test Job 1909", every code `BOS/…`) and is in `config.EXCLUDED_BOARDS`.
+test data ("Test Job 1909", every code `BOS/…`) and is in `excluded_and_parked.EXCLUDED_BOARDS`.
 
 **The ATS lands active.** A run reads about 45 MB of listing (35,709 rows at ~1.3 KB) and 15 MB of
 tech details (1,964 at 7.7 KB): about 31 KB per tech Job against ADR-0158's ~2 MB bar.

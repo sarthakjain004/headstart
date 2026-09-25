@@ -30,7 +30,7 @@ Six places outside the function re-implemented parts of the filter:
 
 ## Decision
 
-1. **A module named for the concept, `headstart.scrapable_boards`.** CONTEXT.md already names what
+1. **A module named for the concept, `headstart.boards.scrapable_boards`.** CONTEXT.md already names what
    the function returns: a **Scrapable Board** (`min_jobs=0`), or its **Hiring Board** subset
    (`min_jobs=1`, the default). `load(ledger_dir, *, min_jobs=1)` applies every rule in its fixed
    order, and the module docstring states that order and why it matters. `config` keeps
@@ -51,16 +51,16 @@ Six places outside the function re-implemented parts of the filter:
    shard path reads plain `CompanyRef`s and never meets a `ScrapableBoard`.
 3. **Consumers read the stored identity.** `scrape_plan` (quarantine, value gate, slice count, cost
    keys, shard sort), `pick_boards` and its gap quota, `scrape_run`'s monolith path and
-   `board_description_gap.key_for` take a `ScrapableBoard`. After this change `board_identity` has
+   `description_gap_ledger.key_for` take a `ScrapableBoard`. After this change `board_identity` has
    two callers: `ScrapableBoard` and `harvest`'s cost-key map. `index_plan.live_keep_set` keeps its
    own strict `board_key` call: it must drop a Board whose slug will not parse rather than keep the
    fallback key (ADR-0155), and the stored identity cannot say which case it holds.
 4. **One predicate for scripts, `is_excluded(ats, slug)`.** It is the only filter step a raw
    candidate list can apply on its own. The alias ledger is already its own interface
-   (`board_aliases.load_for`), and the dedupe and the park need identities.
+   (`alias_ledger.load_for`), and the dedupe and the park need identities.
 5. **`EXCLUDED_BOARDS` and `PARKED_BOARDS` stay in `config`**, where CONTEXT.md, README's funnel and
    `tests/test_board_counts.py`'s sentence regexes name them. The module reads them as
-   `config.EXCLUDED_BOARDS`/`config.PARKED_BOARDS` at call time, so the tests that patch them on
+   `excluded_and_parked.EXCLUDED_BOARDS`/`excluded_and_parked.PARKED_BOARDS` at call time, so the tests that patch them on
    `config` still do what they say.
 
 ## Which re-implementations moved

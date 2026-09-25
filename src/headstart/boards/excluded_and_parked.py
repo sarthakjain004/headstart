@@ -1,18 +1,7 @@
-"""Loading the configured list of companies to scrape."""
+"""The Boards a run never scrapes although their rows are Live: vendor test Boards
+(`EXCLUDED_BOARDS`) and real Boards withheld for now (`PARKED_BOARDS`)."""
 
 from __future__ import annotations
-
-import tomllib
-from dataclasses import dataclass
-from pathlib import Path
-
-
-@dataclass(frozen=True, slots=True)
-class CompanyRef:
-    ats: str
-    slug: str
-    name: str | None = None
-
 
 # Vendor test and sandbox Boards. They are live, they look like they are hiring, and their
 # postings are fabricated — RippleHire's own QA/UAT tenants, a SmartRecruiters demo board,
@@ -651,12 +640,3 @@ PARKED_BOARDS: frozenset[str] = frozenset(
         "jibe:marriott",
     }
 )
-
-
-def load_companies(path: str | Path) -> list[CompanyRef]:
-    with open(path, "rb") as f:
-        data = tomllib.load(f)
-    return [
-        CompanyRef(ats=entry["ats"], slug=entry["slug"], name=entry.get("name"))
-        for entry in data.get("company", [])
-    ]

@@ -33,7 +33,7 @@ against a fresh one (needed it, per ADR-0049).
 
 ## Decision
 
-**One module, `headstart.board_identity`**, in `headstart` proper (not `ingest/`) because the
+**One module, `headstart.boards.board_identity`**, in `headstart` proper (not `ingest/`) because the
 curated-feed path (`harvest.py`) needs it and that path may not import from `ingest`
 (ADR-0028's layering). It owns both directions:
 

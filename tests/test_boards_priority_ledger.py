@@ -2,7 +2,7 @@ import random
 
 import pytest
 
-from headstart.board_priority import (
+from headstart.boards.priority_ledger import (
     TAIL_FRAC,
     BoardPriority,
     head_slots,
@@ -11,7 +11,7 @@ from headstart.board_priority import (
     save,
     update,
 )
-from headstart.scrapable_boards import ScrapableBoard
+from headstart.boards.scrapable_boards import ScrapableBoard
 
 TODAY = "2026-07-06"
 
@@ -113,7 +113,7 @@ def test_pick_boards_scores_workday_and_personio_by_their_board_key():
     their rows. 13,402 boards (20.1% of the scrape list) are keyed that way; against a local
     ledger snapshot 4,611 of them had actually earned a score and were reading 0.0, reachable
     only through the random exploration tail."""
-    from headstart.scrapable_boards import ScrapableBoard
+    from headstart.boards.scrapable_boards import ScrapableBoard
 
     workday = ScrapableBoard(
         ats="workday", slug="https://x.wd1.myworkdayjobs.com/Careers", name="X"
@@ -246,7 +246,7 @@ def test_absent_gap_ledger_leaves_the_slice_byte_identical():
 
 def test_key_for_keeps_the_casing_its_scraper_builds():
     """ADR-0192: a folded lookup would score Boards the verbatim one misses and change the slice."""
-    from headstart.board_priority import key_for
+    from headstart.boards.priority_ledger import key_for
 
     board = ScrapableBoard("workday", "https://Acme.wd1.myworkdayjobs.com/External")
     assert key_for(board) == "workday:Acme/External"

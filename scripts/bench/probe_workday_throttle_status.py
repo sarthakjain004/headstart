@@ -191,7 +191,7 @@ def collect_paths(scraper: WorkdayScraper, want: int) -> tuple[list[str], int | 
     is the failure mode this probe most needs to avoid.
 
     Named as its neighbour ``probe_workday_detail.py`` names it. Deliberately *not* ``harvest``:
-    ``headstart.harvest`` is the curated-feed entry point, and a near-synonym for a different
+    ``headstart.scrapers.harvest`` is the curated-feed entry point, and a near-synonym for a different
     thing is the naming failure CLAUDE.md §3 calls out by name.
     """
     paths: list[str] = []

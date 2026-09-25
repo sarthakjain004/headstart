@@ -5,10 +5,11 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from headstart import log, scrapable_boards
-from headstart.config import load_companies
-from headstart.harvest import build_feed, scrape_all, write_feed
+from headstart import log
+from headstart.boards import scrapable_boards
+from headstart.boards.company_ref import load_companies
 from headstart.jobs.tech_filter import filter_jobs
+from headstart.scrapers.harvest import build_feed, scrape_all, write_feed
 
 _log = log.get(__name__, __spec__)
 

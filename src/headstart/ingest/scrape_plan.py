@@ -41,16 +41,16 @@ from collections.abc import Mapping
 from datetime import UTC, datetime
 from pathlib import Path
 
-from headstart import (
-    board_cost,
-    board_description_gap,
-    board_priority,
-    log,
+from headstart import log
+from headstart.boards import (
+    cost_ledger,
+    description_gap_ledger,
+    priority_ledger,
     scrapable_boards,
 )
-from headstart.board_cost import BoardCost, costs_for
-from headstart.board_cost import load as load_cost_ledger
-from headstart.board_priority import load_scores, pick_boards
+from headstart.boards.cost_ledger import BoardCost, costs_for
+from headstart.boards.cost_ledger import load as load_cost_ledger
+from headstart.boards.priority_ledger import load_scores, pick_boards
 from headstart.ingest import (
     HELD_DETAILS_PATH,
     REPO_ROOT,
@@ -141,7 +141,7 @@ def _gated_boards(
 ) -> dict[str, float]:
     """Boards whose measured hour buys too little tech to be worth a shard's makespan.
 
-    One key per Board — `board_cost.key_for`, equal to `board_priority.key_for` — reads both ledgers
+    One key per Board — `cost_ledger.key_for`, equal to `priority_ledger.key_for` — reads both ledgers
     since ADR-0096. It used to take a *pair*, because the cost ledger was keyed `{ats}:{slug}` and
     the priority ledger by `board_key`, and reading one with the other's key is what left every
     Workday board unscored (ADR-0049). Returns ``{board_key: tech per minute}`` — the number, not
@@ -152,10 +152,10 @@ def _gated_boards(
     reputation before it ever had a record of its own.
 
     That includes the score itself. ``scores`` is a *carried* priority-ledger value — a scrape
-    that yields zero jobs writes no priority row to decay it (``board_priority.update``: a Board
+    that yields zero jobs writes no priority row to decay it (``priority_ledger.update``: a Board
     absent from the snapshot carries its row unchanged), so a Board whose real yield has
     collapsed to zero can keep a stale non-zero score forever. ``BoardCost.jobs`` has no such
-    hole: ``board_cost.update`` overwrites it unconditionally for every Board this run actually
+    hole: ``cost_ledger.update`` overwrites it unconditionally for every Board this run actually
     measured, whether it yielded anything or not. So a measured zero there is trusted over the
     score outright — the one incident this is written for (2026-09-07) is a Board that cleared
     the gate 3x over on a four-day-stale score while its own cost row said 0 jobs, every run, for
@@ -178,7 +178,7 @@ def _gated_boards(
         # Units are safe without reinterpreting the threshold: tech jobs are a subset of all jobs,
         # so a scrape that found **no** jobs found no tech ones either.
         #
-        # What makes the veto safe is that `board_cost` now says whether a 0 is a *finding*. It
+        # What makes the veto safe is that `cost_ledger` now says whether a 0 is a *finding*. It
         # used to mean four things — a real empty Board, a raise, a first-ever budget kill, and a
         # scrape whose every id was a duplicate — because `harvest` records `n_fresh = 0`
         # regardless of outcome. An errored or unfinished run no longer overwrites a known count,
@@ -345,12 +345,12 @@ def main() -> int:
     # would still have taken a slot from something that would have been scraped.
     cost_rows = load_cost_ledger(Path(args.cost))
     gated = _gated_boards(
-        [board_cost.key_for(c) for c in companies],
+        [cost_ledger.key_for(c) for c in companies],
         cost_rows,
         scores,
     )
     if gated:
-        companies = [c for c in companies if board_cost.key_for(c) not in gated]
+        companies = [c for c in companies if cost_ledger.key_for(c) not in gated]
         # Named, every run, not just counted. This gate removes work on purpose, and the only
         # way that stays honest is if the list is in front of whoever reads the run — a Board
         # gated in error is invisible everywhere else, because nothing downstream misses it.
@@ -377,13 +377,13 @@ def main() -> int:
             f"{_GATE_FLOOR_S / 60:.0f} min for under {_GATE_MIN_TECH_PER_MIN:.0f} tech "
             f"jobs/min — " + log.named_sample([_why(k, d) for k, d in worst])
         )
-    unsettled = board_description_gap.load(Path(args.gap))
+    unsettled = description_gap_ledger.load(Path(args.gap))
     # The head holds every Scored Board only while they fit (ADR-0229). Past that, the
     # lowest-scored overflow joins the Tail and waits its turn by its last look like any
     # unscored Board, which nothing downstream would notice, so it is named here.
-    overflow = board_priority.head_overflow(companies, scores, args.max_boards)
+    overflow = priority_ledger.head_overflow(companies, scores, args.max_boards)
     if overflow:
-        head_cap = board_priority.head_slots(args.max_boards)
+        head_cap = priority_ledger.head_slots(args.max_boards)
         _log.warning(
             f"head: {head_cap + overflow:,} Scored Boards for {head_cap:,} head slots; the "
             f"lowest-scored {overflow:,} join the Tail (ADR-0229)"
@@ -397,13 +397,13 @@ def main() -> int:
         last_looked={key: row.updated_at for key, row in cost_rows.items()},
     )
     n = len(companies)
-    priority = sum(1 for c in companies if board_priority.is_scored(c, scores))
+    priority = sum(1 for c in companies if priority_ledger.is_scored(c, scores))
     # Boards in the slice that hold unsettled descriptions — deliberately NOT reported as "the
     # quota picked N". A gap Board also reaches the slice through the head or the Tail
     # on its own, so a count phrased as quota fill would claim picks the reservation did not
     # make. What the ledger still tells us honestly is the backlog.
     gap_in_slice = sum(
-        1 for c in companies if board_description_gap.key_for(c) in unsettled
+        1 for c in companies if description_gap_ledger.key_for(c) in unsettled
     )
     _log.info(
         f"slice: {n} boards ({priority} priority + {n - priority} exploration); "
@@ -436,7 +436,7 @@ def main() -> int:
     # 2026-08-28 — cost written by `harvest` under `{ats}:{slug}`, priority from `board_identity.board_of`
     # under `board_key()` — and conflating them is what left every Workday and Personio board
     # unscored (ADR-0049). The fix was to make them agree, not to keep pairing them up.
-    keys = [board_cost.key_for(c) for c in companies]
+    keys = [cost_ledger.key_for(c) for c in companies]
     measured = bool(cost_rows)  # branch once; every later format choice reads this
     if measured:
         costs = costs_for(keys, cost_rows)
@@ -449,7 +449,7 @@ def main() -> int:
         )
     else:
         costs = [
-            _coldstart_cost(c.ats, scores.get(board_priority.key_for(c), 0.0))
+            _coldstart_cost(c.ats, scores.get(priority_ledger.key_for(c), 0.0))
             for c in companies
         ]
         sizing_total, sizing_target = float(n), float(args.target_boards)
@@ -472,7 +472,7 @@ def main() -> int:
     for k in range(m):
         # priority-desc within a shard: a time-boxed shard scrapes its highest-value boards first
         shard_boards[k].sort(
-            key=lambda i: scores.get(board_priority.key_for(companies[i]), 0.0),
+            key=lambda i: scores.get(priority_ledger.key_for(companies[i]), 0.0),
             reverse=True,
         )
         path = out_dir / f"shard-{k}.jsonl"

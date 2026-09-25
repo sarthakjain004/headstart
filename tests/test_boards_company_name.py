@@ -3,7 +3,7 @@
 Every case that *drives* a rule is a real title observed while sampling live Boards
 (`experiment/company-display-name/`, gitignored) — including the two that talked the first draft
 of `from_title` out of a rule it had wrong. Sample sizes differ by ATS and are recorded in
-`headstart.company_name`, which is the single source for them — the first pass was 30 Boards each,
+`headstart.boards.company_name`, which is the single source for them — the first pass was 30 Boards each,
 and every row has since been re-measured larger.
 
 Some *counter*-cases are invented ("Acme | Careers", "acme.io", "Lever Industries Jobs"). That is
@@ -15,8 +15,8 @@ from __future__ import annotations
 
 import pytest
 
-from headstart import company_name
-from headstart.company_name import (
+from headstart.boards import company_name
+from headstart.boards.company_name import (
     brand_first,
     curated,
     from_field,
@@ -752,7 +752,7 @@ def test_title_fallback_sources_take_the_field_path():
 
 
 def test_agreed_name_is_the_most_stated_name():
-    from headstart.company_name import agreed_name
+    from headstart.boards.company_name import agreed_name
 
     assert (
         agreed_name(["FM", None, "FM", "", "Factory Mutual Insurance Company"]) == "FM"
@@ -762,7 +762,7 @@ def test_agreed_name_is_the_most_stated_name():
 
 def test_agreed_name_refuses_a_board_whose_postings_disagree():
     # reyesholdings (jibe, 2026-09-24): its subsidiaries, the largest on 43% of rows
-    from headstart.company_name import agreed_name
+    from headstart.boards.company_name import agreed_name
 
     names = (
         ["Reyes Beverage Group"] * 279
@@ -779,7 +779,7 @@ def test_a_missing_curated_map_says_so_once(caplog, monkeypatch, tmp_path):
     )
     company_name.curated_names.cache_clear()
     try:
-        with caplog.at_level("INFO", logger="headstart.company_name"):
+        with caplog.at_level("INFO", logger="headstart.boards.company_name"):
             assert company_name.curated_names() == {}
             assert company_name.curated_names() == {}
     finally:
