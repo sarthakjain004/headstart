@@ -40,8 +40,9 @@ OUT = DATA / "ats-tenants-merged"
 GLOBAL = {"greenhouse", "lever", "ashby", "workday"}
 # dropped freshteam (Freshworks sunset, renewals end 2026-03), greythr (HR/payroll login
 # portals, not public job boards), jobsoid (active but non-tech SMB tenants; tech cos migrated
-# off), and peoplestrong (candidate portals are login-walled .jsf; can't read public jobs) —
-# all useless for tech-role coverage.
+# off), and peoplestrong — all useless for tech-role coverage. peoplestrong's reason, "candidate
+# portals are login-walled", was wrong: those were HRMS login hosts, its portals are public
+# (ADR-0234), and its pool is now built by the Wayback and Common Crawl mergers instead.
 ATSES = [
     "zoho",
     "darwinbox",

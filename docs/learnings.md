@@ -521,7 +521,9 @@ Web- + probe-confirmed reasons:
   return **0 live jobs** (migrated off). Useless for the project's tech-role scope specifically.
 - **peoplestrong** — candidate portals are **login-walled** (`abfrl` -> `secureSloginRedirect.jsf`,
   `aavashrms` -> `altLogin.jsf`); can't read jobs without auth. Broad hire-to-exit HCM skewed to
-  non-tech (logistics/retail/manufacturing). Kept **ripplehire** though — its `/candidate/` portal
+  non-tech (logistics/retail/manufacturing). *Superseded 2026-09-25 (ADR-0234): `abfrl` and
+  `aavashrms` are HRMS login hosts, not candidate portals; the portals (`abfrlcareers`, …) are
+  public, and PeopleStrong now has a scraper.* Kept **ripplehire** though — its `/candidate/` portal
   is token-public (no login) and its tenants are IT-heavy (LTIMindtree, Mphasis, UST, Tata Steel).
 
 General lesson: a provider's **wayback/CC tenant count is not a measure of live, in-scope value**

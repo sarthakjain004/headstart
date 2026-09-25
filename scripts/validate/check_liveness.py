@@ -397,7 +397,7 @@ _GATES = {
     # every tenant for minutes (see `_SPANNING`).
     "pinpointhq.com": _HostGate(16, 0.0, "pinpointhq.com"),
     # peoplestrong.com: 50 req/s is 3,000 a minute, under the 5,000 the gateway allows per IP
-    # across tenants (see `_SPANNING`); 85 req/s ran 10,555 requests clean, so this leaves room
+    # across tenants (see `_SPANNING`); 71 req/s sustained ran 10,555 requests clean, so this leaves room
     # for a scrape sharing the address.
     "peoplestrong.com": _HostGate(16, 0.02, "peoplestrong.com"),
     # `jobs.jobvite.com` has no entry on purpose: one fixed host rather than a subdomain per
@@ -1839,6 +1839,10 @@ def _pinpoint_lands(base, path, has_postings):
     return None
 
 
+#: HAProxy's deny page, the whole body a departed PeopleStrong tenant's host answers.
+_PEOPLESTRONG_DENIED = b"Request forbidden by administrative rules."
+
+
 def p_peoplestrong(t, u):
     """One POST of the portal's listing at `limit=1`; the platform's own answers settle it.
 
@@ -1847,45 +1851,68 @@ def p_peoplestrong(t, u):
     portals); a host that is not one answers 200 with `response: null` and code 201
     "Inside getTpUrl(...)" (192 labels: HRMS logins, support hosts, an invented label); and a
     departed tenant's host answers HAProxy's 93-byte deny page on every path and User-Agent
-    (65 labels, none of them among the 94 registered portals — CitiusTech's is on RippleHire
+    (65 labels, none of them among the 103 registered portals — CitiusTech's is on RippleHire
     now). Anything else — PeopleStrong's LMS, helpdesk and alumni hosts answering HTML, another
     403 body, the shared 429 — is not one of those and stays UNKNOWN. So does a DNS failure: on a
     wildcard zone every label resolves, so a failed lookup is the resolver's.
 
     The deny page is a bare 403, which trips no gate, so the same page served to our *address*
     would read exactly like a departed tenant and write every Board dead. It is settled only when
-    a second address, the spare egress, gets it too; a real answer there is read instead, and with
-    no spare egress to ask, the row stays UNKNOWN.
+    two named addresses — the direct route and the spare egress, each pinned so that nothing can
+    re-route it — both get it; the first ask cannot be one of them, because once a 429 walls the
+    group it rides the spare egress already. A real answer from either is read instead, and with
+    no spare egress, or no answer from either, the row stays UNKNOWN.
     """
-    scraper = _scraper_for_row("peoplestrong", t, u)
-    url = (
-        f"https://{scraper.slug}.peoplestrong.com/api/cp/rest/altone/cp/jobs/v1"
-        "?offset=0&limit=1"
-    )
+    url = _scraper_for_row("peoplestrong", t, u).url(limit=1)
     r = _peoplestrong_ask(url)
     if r is None or not _peoplestrong_denied(r):
         return _peoplestrong_verdict(r)
     proxy = spare_egress.proxy_url()
-    if proxy is None:
+    direct = _peoplestrong_ask_pinned(url, None)
+    other = _peoplestrong_ask_pinned(url, proxy) if proxy else None
+    if direct is None or other is None:
         _note("deny-unconfirmed")
         return UNKNOWN, None
-    other = _peoplestrong_ask(url, proxies={"http": proxy, "https": proxy})
-    if other is not None and _peoplestrong_denied(other):
+    if _peoplestrong_denied(direct) and _peoplestrong_denied(other):
         return DEAD, None
-    _note("deny-our-address-only")
-    return _peoplestrong_verdict(other)
+    _note("deny-one-address-only")
+    return _peoplestrong_verdict(other if _peoplestrong_denied(direct) else direct)
 
 
-def _peoplestrong_ask(url, **kw):
-    """The listing's response, or None (noted) when none came back."""
+def _peoplestrong_ask(url):
+    """The listing's response over the group's own route, or None (noted) when none came back."""
     try:
-        r = _fetch("POST", url, json={}, headers={"User-Agent": UA}, **kw)
+        r = _fetch("POST", url, json={}, headers={"User-Agent": UA})
     except http.RequestsError as e:
         _note("dns-wildcard" if _is_dns(e) else _net_reason(e))
         return None
     if r is None:  # breaker open -> transient
         _note("breaker-open")
     return r
+
+
+def _peoplestrong_ask_pinned(url, proxy):
+    """The listing's response over exactly one route — `proxy`, or direct when None — paced by the
+    host's gate but outside its egress group, so a walled group cannot move it."""
+    routed = {"proxies": {"http": proxy, "https": proxy}} if proxy else {}
+    gate = _gate_for(urllib.parse.urlsplit(url).netloc)
+    try:
+        return _through_gate(
+            gate,
+            lambda: http.fetch(
+                "POST",
+                url,
+                timeout=TIMEOUT,
+                verify=False,
+                attempts=_ATTEMPTS,
+                json={},
+                headers={"User-Agent": UA},
+                **routed,
+            ),
+        )
+    except http.RequestsError as e:
+        _note(_net_reason(e))
+        return None
 
 
 def _peoplestrong_denied(r):
@@ -1911,10 +1938,6 @@ def _peoplestrong_verdict(r):
         return DEAD, None
     _note("body-unparseable")
     return UNKNOWN, None
-
-
-#: HAProxy's deny page, the whole body a departed PeopleStrong tenant's host answers.
-_PEOPLESTRONG_DENIED = b"Request forbidden by administrative rules."
 
 
 def p_pyjamahr(t, u):

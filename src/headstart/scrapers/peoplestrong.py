@@ -36,8 +36,9 @@ IP across every tenant and endpoint (``X-RateLimit-Remaining-minute`` fell acros
 hosts) and refuses the rest with a bare 429, no Retry-After. Every request therefore waits on one
 process-wide :class:`~headstart.scrapers.pacer.Pacer` and a 429 rests the whole process to the
 window's end, as ADR-0180 does for ADP — here in the transport itself (:meth:`_fetch`), so the
-base class's Detail pass runs unchanged on either transport. Measured: 85 req/s (4,268/minute) ran
-10,555 requests clean; a burst past 5,000 in a minute drew the 429.
+base class's Detail pass runs unchanged on either transport. Measured: 16 threads ran 10,555 requests
+in 130 s with no refusal (4,268 in the one full minute, 71 req/s); 32 threads spent the 5,000 in
+~33 s and drew the 429.
 
 Mapped as measured:
   - ``location``: ``locationHierarchyComplete``, one place per posting, as a comma list in the
@@ -55,7 +56,7 @@ Not mapped, on purpose:
     sets ``ctcMaxRendered`` (365 of 35,732 postings), bare, with no currency or period and in
     mixed units ("800000-1000000" beside "23-37"). A figure the employer does not publish stays
     unpublished; the description's own figures still reach Tier 2.
-  - ``company``: nothing names the employer — ``urlinfo.title`` is empty on 90 of 94 registered
+  - ``company``: nothing names the employer — ``urlinfo.title`` is empty on 100 of 104 live
     portals — so the label, which is readable ("hdfcergocareers"), stays the name.
 """
 
@@ -176,8 +177,10 @@ class PeopleStrongScraper(BaseScraper):
     def _base(self) -> str:
         return f"https://{self.slug}{_HOST_SUFFIX}{_API}"
 
-    def url(self, offset: int = 0) -> str:
-        return f"{self._base}/jobs/v1?offset={offset}&limit={_PAGE_SIZE}"
+    def url(self, offset: int = 0, limit: int = _PAGE_SIZE) -> str:
+        """The listing request; the liveness probe asks `limit=1`, since `totalRecords` states
+        the whole Board's count whatever the page size."""
+        return f"{self._base}/jobs/v1?offset={offset}&limit={limit}"
 
     def job_url(self, native_id: str) -> str:
         return f"https://{self.slug}{_HOST_SUFFIX}/job/detail/{native_id}"
@@ -297,7 +300,7 @@ class PeopleStrongScraper(BaseScraper):
         jobs: list[Job] = []
         for row in raw.get("rows") or []:
             native_id = _native_id(row)
-            d = details.get(native_id) or {}
+            detail = details.get(native_id) or {}
             location = _location(row)
             jobs.append(
                 Job(
@@ -311,9 +314,9 @@ class PeopleStrongScraper(BaseScraper):
                     url=self.job_url(native_id),
                     posted_at=row.get("jobPostedDate") or None,
                     scraped_at=scraped_at,
-                    description=html_to_text(d.get("jobDescription")),
+                    description=html_to_text(detail.get("jobDescription")),
                     experience=row.get("expRange") or None,
-                    employment_type=_employment_type(d),
+                    employment_type=_employment_type(detail),
                 )
             )
         return jobs

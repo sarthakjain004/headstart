@@ -83,7 +83,7 @@ EXCLUDED_BOARDS: frozenset[str] = frozenset(
         "pinpoint:joe-testing",
         "pinpoint:myinterviewdemo",
         # PeopleStrong's own demo tenant, read 2026-09-25: `candidate.peoplestrong.com` titles
-        # itself "Candidate portal" and serves 314 postings, every job code `BOS/…`, titled
+        # itself "Candidate portal" and serves 314 postings (315 at the ledger run), every job code `BOS/…`, titled
         # "Test Job 1909", "sdfghj sdfg", "Excel Job patch 17sep" under org units "Company test"
         # and "Company Y". Left in, 26 of them pass the tech filter.
         "peoplestrong:candidate",

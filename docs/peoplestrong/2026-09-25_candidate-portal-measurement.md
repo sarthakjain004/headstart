@@ -6,7 +6,8 @@ dropped PeopleStrong because its "candidate portals are login-walled", and CLAUD
 "Angular SPA XHR" to reverse-engineer. The portals are an Angular SPA, but the API it calls is public
 and needs no session. The decisions are ADR-0234.
 
-Sample: a census of **423 pool labels** (Wayback, Common Crawl, GitHub code search, local captures),
+Sample: a census of **423 pool labels** (Wayback, Common Crawl, GitHub code search, local captures;
+the pool reached 426 once the oldest Common Crawl indexes were swept, and the ledger run probed all 426),
 then a full read of **all 56 hiring Boards**: every listing page and every posting's detail,
 **35,732 postings**, zero failures. About 90,000 requests in total. The run record and captures stay
 local (`experiment/peoplestrong-portal/`); every number a reader needs is below.
@@ -26,6 +27,8 @@ is the URL, the API key and the discovery key at once.
 - **One company can run several portals** (`sobha-careers` and `sobhalimited-careers` are two
   Sobha entities). Each is its own Board: no job code appears on two Boards (§8).
 - **Native ids never contain `:`.** Job codes contain only letters, digits, `/` and `-`.
+- **Discovery emits one spelling.** All 426 pool labels (Wayback, Common Crawl, GitHub, local
+  captures) are lowercase `[a-z0-9-]`, none a host or URL; `slug_from` lowercases anyway.
 
 ## 2. The listing: public, 99 rows a page
 
@@ -54,6 +57,10 @@ The largest Board is Muthoot Fincorp (`mpgcareers`) at 16,315 postings.
 The page renders the API's response as-is (`this.joblist = r.response`), and `requisitionStatus` was
 `OPEN` on all 35,732 postings, so no rows are served that the board hides.
 
+**The listing carries no description.** A row has the title, code, dates, place path, org unit,
+`expRange` and skill keywords (85.7%); its `role` and `roleType` text fields were null or a label on
+every one of 35,732 rows. The description exists only on the detail (§4).
+
 **No other surface.** `robots.txt` and `sitemap.xml` return the SPA shell or a 404, and page routes
 (`/job/joblist`) return HTTP 404 around the SPA shell, so page status says nothing.
 
@@ -75,13 +82,13 @@ One `POST jobs/v1?limit=1` per label, over 423 labels:
   wrong" for these hosts.
 - **The HAProxy 403** is host-scoped. It's the same for our User-Agent and a browser's, on `/`,
   on page routes and on the API, from the same Imperva edge IP as live tenants. It never appeared on
-  any of the 94 registered portals. The hosts checked belong to companies that left: CitiusTech is
+  any of the 103 registered portals. The hosts checked belong to companies that left: CitiusTech is
   live on RippleHire (64 jobs in our ledger), Wayback last saw `exlcareers` in May 2024 and
   `tatapowercareers` in May 2022, and `careers-bounce` was already a 404 in 2022. Over the spare
   egress (Cloudflare WARP, a different IPv6 address), `exlcareers`, `tatapowercareers`, `citiustech`
   and `careers-bounce` got the same deny page, while `larsentoubrocareers` (1,392) and `abfrl` (the
   201 envelope) answered as they did directly. The prober reads the page as DEAD, matched on its
-  exact text, only when the spare egress confirms it: a bare 403 trips no prober gate, so an
+  exact text, only when a pinned direct ask and a pinned spare-egress ask both get it: a bare 403 trips no prober gate, so an
   IP-wide block serving the same page must not read as a departed tenant. A different 403 body
   (the marketing host's "Request Forbidden") stays UNKNOWN.
 - **Empty is stable.** All 47 empty portals, re-fetched three times each (141 fetches), stayed 0.
@@ -98,6 +105,22 @@ GET .../cp/job/{code with "/" as "_"}/v2?part=basic,organisational,descriprion,w
 That is the part list the job page itself requests. `descriprion` is the API's own spelling. The
 upstream implementation that found the API's text "incomplete" and rendered pages instead was asking
 `part=basic` alone.
+
+Per `Job` field, the share of 35,732 postings each surface fills:
+
+| `Job` field | listing | detail |
+| --- | --- | --- |
+| title | 100% (`jobTitle`) | 100% (`jobTitle`, equal on every posting) |
+| department | 100% (`organizationUnit`) | 0% (`departmentHierarchy`) |
+| location | 100% (`locationHierarchyComplete`) | 99.9% |
+| posted_at | 100% (`jobPostedDate`) | 100% (`CandidatePortalStartDate`, equal on every posting) |
+| experience | 97.5% (`expRange`) | 97.1% (`maximumExp`) |
+| description | — | 99.8% (`jobDescription`) |
+| employment_type | — | 91.5% (`employmentType`) |
+| salary | 48.2% (`CTCRange`) | 64.0% (`maxSalary`, non-zero) |
+| remote | — | 0% (`Onsite`) |
+
+Other detail fields:
 
 | field (detail) | share of 35,732 |
 | --- | --- |
@@ -137,9 +160,11 @@ segments dropped; `geo.classify` reads both shapes as India.
 **Experience.** The listing's `expRange` ("8-14 years", 97.5%) equals the detail's min–max and is
 already the shape `experience.from_field` reads.
 
-**Dates are real.** `jobPostedDate` is the portal start date (equal on 35,732 of 35,732), and 0 of
-35,732 listed postings are past their own `jobClosureDate`. Ages run long: median 94 days, 90th
-percentile 644, max 1,444. Boards keep evergreen requisitions open for years.
+**Dates are real.** 243 postings on three Boards, fetched twice 8 s apart, carried identical
+`jobPostedDate` and `jobClosureDate` both times; the dates are date-only, so a fabricated "now" would
+read as today on every posting. `jobPostedDate` is the portal start date (equal on 35,732 of 35,732),
+and 0 of 35,732 listed postings are past their own `jobClosureDate`. Ages run long: median 94 days,
+90th percentile 644, max 1,444. Boards keep evergreen requisitions open for years.
 
 **Employment type.** `Permanent` 31,105, blank 3,045, `On Roll` 397, `Employee` 320, `Full Time`
 291, `Direct Overseas Hire` 141, `Contract` 102, `Regular` 45, and a long tail. `employment_type_
@@ -158,7 +183,7 @@ publish stays unpublished, pyjamahr's rule. The description's own figures still 
 regardless: it is a plain fact about the job, not a sensitive figure (a decision recorded in the ADR).
 
 **Company name.** Nothing names the employer at Board level: `urlinfo.title` is empty or null on 90
-of 94 registered portals (the rest read "Candidate portal", "Infra-Careers", "PeopleStrong-Careers").
+of 104 live portals (the rest read "Candidate portal" twice, "Infra-Careers", "PeopleStrong-Careers").
 Each posting's `organizationUnitComplete` starts with a legal entity, but that can be a subsidiary
 ("NOVERRA HOSPITALITY PRIVATE LIMITED" on Lodha's Board) and needs the detail pass. The label is
 readable ("hdfcergocareers"), so it stays the name.
@@ -171,7 +196,8 @@ readable ("hdfcergocareers"), so it stays the name.
 `Remaining-minute` counter fell by one per request **across four different hosts**, including an
 invented one, and across endpoints (`jobs/v1`, `urlinfo`). So it is one budget per client IP for the
 whole platform. It is a fixed calendar-minute window: Remaining reset to 4,999 at each UTC minute.
-At 16 threads (85 req/s, 4,268 a minute), 10,555 requests ran with no refusal. At 32 threads, the
+At 16 threads, 10,555 requests ran in 130 s with no refusal: 81 req/s on average, and 4,268 in the
+one full minute measured (71 req/s). At 32 threads, the
 5,000 were spent in ~33 s and the rest got **429 `{"message":"API rate limit exceeded"}`** with
 Remaining 0 and no Retry-After. The scraper spaces request starts process-wide at 16 ms (3,750 a
 minute), and on a 429 rests the whole process to the window's end. The prober gates
