@@ -730,3 +730,27 @@ Its code review tightened the round:
   - An opened fold stays open across redraws.
   - The range note says "at the earliest" for picks counted from different dates.
   - "google deepmind" finds Google.
+
+### A critic's tenth round (2026-09-25): 6.5/10
+
+The arithmetic was judged trustworthy: every sentence adds up, companies agree across views, and
+every hand-off to Search matches to the job. What remained was making each figure explain
+itself:
+
+- **The cause names its changes.** "+290 openings from 4 tech filter changes and a role family
+  assignment change" replaces "changes in how HeadStart counts". A duplicate-removal change is
+  named only for a pick it can touch. Under New, a duplicates part can never add openings; a
+  positive one belongs to that run's ordinary change.
+- **A short window states its change.** Over an older company's hours-long window, the sentence
+  and legend give the change in openings: "+4 openings over the last 5 hours — too short a
+  window to call a direction". Before, every Hot trend read "too short to show a direction",
+  so Hot's figure could never be checked where it links. Hot's window line sits above its list,
+  and the Space fills the window's `base` from its own ledger until `hot_boards` publishes one.
+- **The table heads a company's categories with its total**, with a note that each category is
+  read against its own history, so the categories need not sum to it. Google's categories
+  summed to +15 against the company's −30, with nothing saying why.
+- **A v3 family asked for before its data lands is all of its predecessors together.** Before,
+  it resolved to the larger one only, and Data Science's 58 dropped silently. An unknown family
+  says "No category called …" (`family_known`), not "no openings counted".
+- **Under Share, a small line shows no change.** A change in openings beside a share mixed two
+  units.

@@ -3012,3 +3012,54 @@ def test_a_stock_series_a_run_leaves_out_is_at_zero_there(trends_app):
     assert held([None, 3, None], None) == [None, 3, None], (
         "so does the chart with no pick"
     )
+
+
+def test_a_v3_family_before_its_data_is_all_its_predecessors(trends_app, monkeypatch):
+    """AI, ML & Data Science reads as AI / Machine Learning plus Data Science, not the larger."""
+    monkeypatch.setattr(
+        trends_app, "_FAMILY_SUCCESSOR", trends_app._family_successors(_REPO_FAMILIES)
+    )
+    rows = [
+        {
+            "ts": _T1,
+            "version": 2,
+            "metric": "stock",
+            "family": family,
+            "band": band,
+            "ats": "x",
+            "count": n,
+        }
+        for family, band, n in [
+            ("ai-ml", "mid", 30),
+            ("data-science", "mid", 10),
+            ("devops", "mid", 5),
+        ]
+    ]
+    monkeypatch.setattr(trends_app, "_TRENDS", rows)
+    client = trends_app.app.test_client()
+    d = client.get("/trends?family=ai-ml-data-science").get_json()
+    assert d["family"] == "ai-ml-data-science" and d["family_known"] is True
+    assert [s["points"] for s in d["series"]] == [[40]]
+    unknown = client.get("/trends?family=nonsense-family").get_json()
+    assert unknown["family_known"] is False
+
+
+def test_hot_names_the_run_its_window_is_measured_from(trends_app, monkeypatch):
+    monkeypatch.setattr(
+        trends_app, "_HOT", {"window": {"from": _T2, "to": _T3}, "lenses": {}}
+    )
+    rows = [
+        {
+            "ts": ts,
+            "version": 2,
+            "metric": "stock",
+            "family": "se",
+            "band": "all",
+            "ats": "x",
+            "count": 1,
+        }
+        for ts in (_T1, _T2, _T3)
+    ]
+    monkeypatch.setattr(trends_app, "_TRENDS", rows)
+    d = trends_app.app.test_client().get("/hot").get_json()
+    assert d["window"]["base"] == _T1

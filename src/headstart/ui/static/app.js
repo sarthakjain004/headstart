@@ -1889,9 +1889,7 @@ function verdictOf(s, d){
   // under a 2-day custom range was called "too new".
   // A company line is judged by its own counting, a summed line by its youngest company's:
   // NewCo beside Google read "this window is too short" off Google's date.
-  const all = countedSince(d);
-  const began = countedSince(d, s.name) || all[all.length - 1];
-  const young = !began || (new Date(d.stamps[d.stamps.length - 1]) - new Date(began)) / 864e5 < MIN_SPAN_DAYS;
+  const young = isYoung(s, d);
   let move;
   const other = countingMove(s) || 0;
   // "; not hiring: −2,041 from duplicate postings removed, +230 from changes in how HeadStart
@@ -1899,8 +1897,12 @@ function verdictOf(s, d){
   // came from outside hiring: +292 openings from…", twice the words for one figure, and
   // "outside hiring" read as hiring from outside.
   const counting = other ? `; not hiring: ${causesOf(s, other)}` : '';
-  if (!m || days < MIN_SPAN_DAYS)
-    move = (young ? 'too new to show a direction yet' : 'this window is too short to show a direction') + counting;
+  if (!m || days < MIN_SPAN_DAYS){
+    const hours = Math.max(1, Math.round(days * 24));
+    const span = days < 1.5 ? `over the last ${hours} hour${hours === 1 ? '' : 's'}` : over;
+    move = young || !m ? 'too new to show a direction yet' + counting
+      : `${signedOpenings(Math.round(m.change))} ${span} — too short a window to call a direction${counting}`;
+  }
   else {
     const n = Math.round(m.change), pct = m.head ? m.change / m.head * 100 : 0;
     // A weekly rate is the figure a reader can hold ("about +77 a week"); the window's own
@@ -2025,7 +2027,7 @@ function stepNotes(d){
     if (trendMetric === 'new' && (e.fields || []).includes('tech_filter_version')){
       const echo = new Date(new Date(e.ts).getTime() + NEW_WINDOW_DAYS * 864e5);
       const k = d.stamps.findIndex(ts => new Date(ts) >= echo);
-      if (k > 0) notes.push({ i: k, found: false, epoch: true, withhold: picked,
+      if (k > 0) notes.push({ i: k, found: false, epoch: true, withhold: picked, changed: ['tech filter changed'],
         text: `A week after a counting change (${e.changed.join(', ')}): the openings it let in stop counting as new here — not hiring` });
     }
     const i = d.stamps.indexOf(e.ts); if (i < 0) return;
@@ -2043,6 +2045,9 @@ function stepNotes(d){
     // (below) is not.
     if (i > 0) notes.push({ i, text: `${text} — not hiring, so the jump it makes is left out of the lines it moves`,
       found: false, epoch: true, withhold: true, companies, bandsOnly,
+      // What changed, as far as it can move these lines: a duplicate-removal change beside a
+      // refit is no cause at a pick it cannot touch (Google's +290 named one).
+      changed: e.changed.filter((c, k) => fields[k] !== 'dedup_version' || touched.length > 0),
       dedupOnly: fields.length === 1 && fields[0] === 'dedup_version' });
     // A change can land over two runs — Amazon's Sep 17 filter change was +308 at its run and
     // −439 at the next, which left in read as hiring and turned Amazon from +1.2% to −2.9% —
@@ -2135,7 +2140,8 @@ function drawTitle(){
   const where = pickPhrase(), several = countedPicks().length > 1;
   const kind = trendData ? viewKind(trendData) : null;
   el('trends-title').textContent =
-    kind === 'drillCompany' && several ? `How ${drillLabel()} hiring compares ${where}`
+    trendDrill && trendRaw && trendRaw.family_known === false ? `No category called “${trendDrill}”`
+    : kind === 'drillCompany' && several ? `How ${drillLabel()} hiring compares ${where}`
     : kind === 'roles' ? `Tracked roles in ${drillLabel()}${where ? ' ' + where : ''}`
     : trendDrill && where ? `How ${drillLabel()} hiring is moving ${where}`
     : !trendDrill && several && topSplitNow() === 'company' ? `How tech hiring compares ${where}`
@@ -2513,22 +2519,34 @@ const MOVER_FLOOR = 20;
 // The legend's and the table's figure for a line: its percentage, or under the floor its
 // change in openings (`count`), which is what a reader can actually weigh.
 function lineMove(s){
-  // Under MIN_SPAN_DAYS a line has no direction to state, in the legend as in the sentence:
-  // "too new to show a direction" sat beside "↑ +1.5%".
-  if (trendData && spanDays(s, trendData) < MIN_SPAN_DAYS) return { tooNew: true };
+  // Under MIN_SPAN_DAYS of a young company a line has no direction to state, in the legend as
+  // in the sentence: "too new to show a direction" sat beside "↑ +1.5%". A short window over an
+  // older company states its change in openings, as the sentence does — Hot's "+18" had to be
+  // checkable on the trend its row opens.
   const m = trendMove(s);
-  if (m && m.real < MOVER_FLOOR) return { count: Math.round(m.change) };
+  if (trendData && spanDays(s, trendData) < MIN_SPAN_DAYS)
+    return isYoung(s, trendData) || !m ? { tooNew: true } : { count: Math.round(m.change) };
+  // Under Share a small line's change in openings is another unit beside shares, so it shows none.
+  if (m && m.real < MOVER_FLOOR) return trendUnit === 'share' ? { small: true } : { count: Math.round(m.change) };
   return { dl: trendDelta(s.points, s) };
+}
+// Whether HeadStart has counted the line's company (a summed line: its youngest) for under
+// MIN_SPAN_DAYS, as against the window being short.
+function isYoung(s, d){
+  const all = countedSince(d);
+  const began = countedSince(d, s.name) || all[all.length - 1];
+  return !began || (new Date(d.stamps[d.stamps.length - 1]) - new Date(began)) / 864e5 < MIN_SPAN_DAYS;
 }
 // A count has no dead band: one opening either way is a direction, where deltaClass reads
 // ±1 as flat because it was written for percentages.
 function moveClass(mv){
-  if (mv.tooNew) return 'flat';
+  if (mv.tooNew || mv.small) return 'flat';
   if (mv.count == null) return deltaClass(mv.dl);
   return mv.count > 0 ? 'up' : mv.count < 0 ? 'down' : 'flat';
 }
 function moveText(mv){
   if (mv.tooNew) return 'too new';
+  if (mv.small) return '—';
   if (mv.count == null) return deltaText(mv.dl);
   const n = mv.count;
   return `${n > 0 ? '↑' : n < 0 ? '↓' : '→'} ${signedOpenings(n)}`;
@@ -3142,6 +3160,9 @@ function drawTrends(){
       // roles ARE tracked here: the watchlist is config, the rows are measurements, and between
       // a deploy and the next pipeline run the first exists without the second.
       ? 'These roles have not been measured yet — they appear after the next pipeline run.'
+      : trendDrill && trendRaw && trendRaw.family_known === false
+      // A name the data holds no category by, said as such, not as "no openings counted".
+      ? `HeadStart has no category called “${trendDrill}”. Go back to all categories to pick one.`
       : trendPicks.length && !d.series.length
       ? (trendMetric === 'new'
         // The Space holds a found Board's first week out of `new`: its backlog is not hiring.
@@ -3394,6 +3415,7 @@ function applyEmphasis(){
 // The row header both tables share — a line-key plus the label, so a reader who is here
 // BECAUSE the light-mode chart's contrast sent them can still tell which line is which.
 function tableRowHead(s){
+  if (s.name === '__total__') return `<th scope="row"><b>${esc(s.label)}</b></th>`;
   const isOther = s.name === '__other__';
   const slot = isOther ? 'other' : seriesColorAssignment.get(s.name);
   return `<th scope="row">${swatchHtml(isOther ? 'var(--ink-3)' : seriesColor(slot), slot)}${esc(s.label)}</th>`;
@@ -3412,13 +3434,19 @@ function buildTrendsTable(){
     + '<th scope="col">Change, hiring only</th><th scope="col">Counting changes, openings</th>'
     + '<th scope="col">Start, as counted</th><th scope="col">Min</th><th scope="col">Max</th></tr>';
   const cell = v => `<td>${v == null ? '—' : esc(fmtLevel(v))}</td>`;
-  const body = rows.map(s => {
+  // Under a pick, the company's own line heads the table, so a reader summing the categories has
+  // the figure they are checking against — and the note says why the sum need not reach it.
+  const kind = viewKind(d);
+  const withTotal = trendPicks.length && (kind === 'families' || kind === 'bands') && rows.length > 1;
+  const total = withTotal ? [{ name: '__total__', label: kind === 'bands' ? `All of ${drillLabel()}` : 'All tech roles',
+    points: sumPoints(d.series, d.stamps) }] : [];
+  const body = [...total, ...rows].map(s => {
     const vals = s.points.map((v, j) => levelValue(v, j, s)).filter(v => v != null);
     const mv = lineMove(s);
     // The latest run's figure, as the legend reads it: a category emptied by a refit read its
     // last count before (Syms' systems engineering, 46 in the table beside 0 in the legend).
     const now = latestOf(s);
-    return `<tr${s.name === '__other__' ? ' class="other"' : ''}>` + tableRowHead(s)
+    return `<tr${s.name === '__other__' ? ' class="other"' : s.name === '__total__' ? ' class="total"' : ''}>` + tableRowHead(s)
       + cell(now == null ? null : levelValue(now, s.points.length - 1, s))
       + `<td class="${moveClass(mv)}">${moveText(mv)}${hiringOpenings(s, mv)}</td>`
       + `<td>${countingChange(s)}</td>`
@@ -3426,7 +3454,8 @@ function buildTrendsTable(){
       + cell(vals.length ? Math.min(...vals) : null)
       + cell(vals.length ? Math.max(...vals) : null) + '</tr>';
   }).join('');
-  return `<thead>${head}</thead><tbody>${body}</tbody>`;
+  const note = withTotal ? `<caption>Each ${kind === 'bands' ? 'level' : 'category'} is read against its own history, so their hiring figures need not add up to the first row's: a counting change that moved openings between them is taken out of each one separately.</caption>` : '';
+  return `${note}<thead>${head}</thead><tbody>${body}</tbody>`;
 }
 
 // How many openings a line's marked steps moved it, as counted: the chart's move less the
@@ -3470,14 +3499,32 @@ function causesOf(s, total){
   const raw = change(new Set());
   const noDup = change(new Set(['duplicates']));
   const noFound = change(new Set(['duplicates', 'found']));
-  const duplicates = Math.round(raw - noDup), found = Math.round(noDup - noFound);
+  // Removing duplicates cannot add openings: a positive part there is the ordinary change of
+  // the run it landed on, and counts with the rest ("+1 from duplicate postings removed").
+  let duplicates = Math.round(raw - noDup);
+  if (duplicates > 0) duplicates = 0;
+  const found = Math.round(noDup - noFound);
   const counting = total - duplicates - found;
   const parts = [
     duplicates && `${signedOpenings(duplicates)} from duplicate postings removed`,
     found && `${signedOpenings(found)} from boards found later`,
-    counting && `${signedOpenings(counting)} from changes in how HeadStart counts`,
+    counting && `${signedOpenings(counting)} from ${countingChanges(s)}`,
   ].filter(Boolean);
   return parts.join(', ');
+}
+// Which counting changes a line carries, named and counted: "4 tech-filter changes and a role
+// family change". "Changes in how HeadStart counts" left a +290 for Google with nothing to
+// check it against.
+function countingChanges(s){
+  const tally = new Map();
+  stepsFor(s).filter(n => n.epoch && n.changed && noteKind(n) === 'counting').forEach(n =>
+    n.changed.forEach(c => tally.set(c, (tally.get(c) || 0) + 1)));
+  if (!tally.size) return 'changes in how HeadStart counts';
+  const said = [...tally].map(([c, k]) => {
+    const what = c.replace(/ changed$/, '');
+    return k === 1 ? `a ${what} change` : `${k} ${what} changes`;
+  });
+  return said.length === 1 ? said[0] : `${said.slice(0, -1).join(', ')} and ${said[said.length - 1]}`;
 }
 function countingMove(s){
   const raw = headTail(s.points), net = trendMove(s);

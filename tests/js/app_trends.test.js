@@ -1515,7 +1515,7 @@ test('how long a company has been counted comes from its counting, not the windo
       split_by: 'company', counted_since: { 'greenhouse:acme': FOUR[0] } }));
   t.draw();
   // Counted since Sep 13, three days: it is the window that is short, not the company.
-  assert.match(nodes['trends-verdict'].innerHTML, /Acme<\/b>: 100 tech openings; this window is too short to show a direction\./);
+  assert.match(nodes['trends-verdict'].innerHTML, /Acme<\/b>: 100 tech openings; \+0 openings over the last 24 hours — too short a window to call a direction\./);
 });
 
 // ---- critique round 4 ------------------------------------------------------------------------
@@ -1757,7 +1757,7 @@ test('a run with duplicates removed beside a counting change names each by its s
   t.draw();
   // The refit run moved −2,000: −2,041 duplicates, +41 from the family change beside them.
   assert.match(nodes['trends-verdict'].innerHTML,
-    /not hiring: −2,041 openings from duplicate postings removed, \+41 openings from changes in how HeadStart counts/);
+    /not hiring: −2,041 openings from duplicate postings removed, \+41 openings from a duplicate removal change and a role family assignment change/);
 });
 
 
@@ -1801,4 +1801,27 @@ test('a tracked role hands over to Search as that role', () => {
   assert.equal(hash.get('role'), 'llm-genai');
   assert.equal(hash.get('family_label'), 'LLM / GenAI');
   assert.equal(hash.get('family'), null);
+});
+
+
+test('the table heads a company\'s categories with its own total, and says why they need not sum', () => {
+  const { t, nodes } = loadApp();
+  t.setPicks([ACME]);
+  t.set({ ...picked({ a: [100, 110], b: [50, 55] }), stamps: STAMPS });
+  t.setUnit('count', false);
+  t.draw();
+  nodes['trends-error'] = Object.assign(fakeEl(), { hidden: true });
+  t.table(true);
+  const html = nodes['trends-table'].innerHTML;
+  assert.match(html, /<caption>Each category is read against its own history/);
+  assert.match(html, /<tr class="total"><th scope="row"><b>All tech roles<\/b><\/th><td>165<\/td>/);
+});
+
+test('an unknown category says so', () => {
+  const { t, nodes } = loadApp();
+  t.setPicks([ACME]);
+  t.set({ ...picked({}), series: [], family_known: false }, 'nonsense-family');
+  t.draw();
+  assert.equal(nodes['trends-title'].textContent, 'No category called “nonsense-family”');
+  assert.match(nodes['trends-empty'].textContent, /HeadStart has no category called “nonsense-family”/);
 });

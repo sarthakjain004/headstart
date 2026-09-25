@@ -756,6 +756,13 @@ def hot_companies():
     """
     if not _HOT:
         return jsonify({"error": "no hot list on this deployment yet"}), 503
+    window = _HOT.get("window") or {}
+    if window.get("from") and not window.get("base"):
+        # A list written before `hot_boards` published its base: the run before the window's
+        # first change, read off the same ledger, so a row's trend covers its figure.
+        before = [row["ts"] for row in _TRENDS if row["ts"] < window["from"]]
+        if before:
+            return jsonify({**_HOT, "window": {**window, "base": max(before)}})
     return jsonify(_HOT)
 
 
@@ -1657,6 +1664,17 @@ def trends():
     # stop and start. Weighed in openings, so "the larger" means more jobs, not more rows.
     present = _family_weights(trends_rows)
     rename = {old: new for old, new in _FAMILY_SUCCESSOR.items() if new in present}
+    # A v3 name asked for before its data lands reads as all of its predecessors together:
+    # "AI, ML & Data Science" is AI / Machine Learning and Data Science, and reading it as the
+    # larger alone dropped Data Science's 58 at Google without a word.
+    if family and family not in present:
+        rename.update(
+            {
+                old: family
+                for old, new in _FAMILY_SUCCESSOR.items()
+                if new == family and old in present
+            }
+        )
     if rename.keys() & present.keys():
         trends_rows = [
             {**r, "family": rename[r["family"]]} if r["family"] in rename else r
@@ -1857,6 +1875,9 @@ def trends():
         split_by=key,
         # The drilled family's display name, so a cold link into a drill can name it.
         family=family,  # as resolved (_resolve_family), which the page adopts
+        # Whether that family holds anything in scope, so an unknown name reads as unknown
+        # rather than as "no openings counted" at the company.
+        family_known=bool(family) and family in present,
         family_label=_FAMILY_LABELS.get(family, family) if family else None,
         watch_parents=watch_parents,
         epochs=epochs,
