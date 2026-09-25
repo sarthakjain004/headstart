@@ -363,3 +363,72 @@ def test_the_window_base_is_the_run_before_its_first_change(tmp_path: Path) -> N
         == "2026-09-24T11:00:00+00:00"
     )
     assert hot_boards.window_base(deltas, "2026-09-24T10:00:00+00:00") is None
+
+
+def test_duplicate_removal_leaves_out_only_the_boards_it_can_touch(
+    tmp_path: Path,
+) -> None:
+    """Hot read Google −27 where its trend, which keeps a duplicate-removal run at a Board that
+    change cannot touch, read −42 (2026-09-25). Two Workday sites of one Tenant can lose rows to
+    each other there; Google's one Board cannot."""
+    deltas = tmp_path / "deltas"
+    deltas.mkdir()
+    boards = ["google:careers", "workday:acme/a", "workday:acme/b", "workday:solo/x"]
+    ticks = [
+        ("2026-09-20T00:00:00+00:00", 0),  # the baseline
+        ("2026-09-21T00:00:00+00:00", 5),
+        ("2026-09-22T00:00:00+00:00", -40),  # duplicate removal changed here
+        ("2026-09-22T06:00:00+00:00", 7),  # its run after
+        ("2026-09-23T00:00:00+00:00", 3),
+    ]
+    for ts, delta in ticks:
+        pq.write_table(
+            _deltas(ts, [(b, "stock", "se", delta) for b in boards]),
+            deltas / f"{ts.replace(':', '-')}.parquet",
+        )
+    epochs = tmp_path / "trends_epochs.csv"
+    epochs.write_text(
+        "ts,centroid_version,family_map_fingerprint,tech_filter_version,"
+        "derivations_version,dedup_version\n"
+        "2026-09-20T00:00:00+00:00,2,f,5,15,3\n"
+        "2026-09-22T00:00:00+00:00,2,f,5,15,4\n",
+        encoding="utf-8",
+    )
+    assert hot_boards.counting_changes(epochs) == set()
+    assert hot_boards.dedup_changes(epochs) == {"2026-09-22T00:00:00+00:00"}
+    touched = hot_boards.dedup_touches(boards + ["eightfold:micron"])
+    assert touched == {"workday:acme/a", "workday:acme/b", "eightfold:micron"}
+    moved, _ = hot_boards.read_stock_change(
+        deltas,
+        hot_boards.counting_changes(epochs),
+        hot_boards.dedup_changes(epochs),
+        touched,
+    )
+    assert moved["google:careers"] == 5 - 40 + 7 + 3, "an ordinary run it keeps"
+    assert moved["workday:solo/x"] == -25, (
+        "one Workday site has no sibling to lose rows to"
+    )
+    assert moved["workday:acme/a"] == 5 + 3, "the removal and its run after, left out"
+
+
+def test_an_emptied_site_still_makes_its_sibling_touched(tmp_path: Path) -> None:
+    """#603 can empty one of a Tenant's two Workday sites: it holds no stock now, but the ledger
+    has read it, and duplicate removal can still move the site beside it."""
+    deltas = tmp_path / "deltas"
+    deltas.mkdir()
+    pq.write_table(
+        _deltas(
+            "2026-09-21T00:00:00+00:00",
+            [
+                ("workday:acme/a", "stock", "se", 5),
+                ("workday:acme/b", "stock", "se", -9),
+            ],
+        ),
+        deltas / "2026-09-21T00-00-00+00-00.parquet",
+    )
+    now = {"workday:acme/a"}  # b emptied, so it is gone from the current counts
+    assert hot_boards.dedup_touches(now) == set()
+    assert hot_boards.dedup_touches(now | hot_boards.ledger_boards(deltas)) == {
+        "workday:acme/a",
+        "workday:acme/b",
+    }

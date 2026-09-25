@@ -1816,8 +1816,27 @@ test('the table heads a company\'s categories with its own total, and says why t
   nodes['trends-error'] = Object.assign(fakeEl(), { hidden: true });
   t.table(true);
   const html = nodes['trends-table'].innerHTML;
-  assert.match(html, /<caption>Each category is read against its own history/);
+  assert.match(html, /<caption>The first row is the company’s hiring\. The categories add up to it with the last row/);
   assert.match(html, /<tr class="total"><th scope="row"><b>All tech roles<\/b><\/th><td>165<\/td>/);
+  assert.doesNotMatch(html, /class="between"/, 'nothing between them when they add up');
+});
+
+test('a row between the categories makes them add up to the company', () => {
+  const { t, nodes } = loadApp();
+  t.setPicks([ACME]);
+  // a hires 20, then a refit moves 24 of its openings to b. The company hires +20; a, scaled at
+  // the refit, reads +16 and b +0, so 4 openings sit between them.
+  t.set({ ...picked({}), stamps: FOUR, totals: [1e3, 1e3, 1e3, 1e3], non_tech: [0, 0, 0, 0],
+    series: [{ name: 'a', label: 'a', points: [100, 120, 96, 96], latest: 96 },
+             { name: 'b', label: 'b', points: [50, 50, 74, 74], latest: 74 }],
+    counted_since: { 'greenhouse:acme': FOUR[0] },
+    epochs: [{ ts: FOUR[2], changed: ['role family assignment changed'], fields: ['family_classifier_version'] }] });
+  t.setUnit('count', false);
+  t.draw();
+  nodes['trends-error'] = Object.assign(fakeEl(), { hidden: true });
+  t.table(true);
+  const html = nodes['trends-table'].innerHTML;
+  assert.match(html, /<tr class="between"><th scope="row"[^>]*>Between categories<\/th><td><\/td><td><\/td><td class="up">\+4 openings<\/td>/);
 });
 
 test('an unknown category says so', () => {
@@ -1864,7 +1883,8 @@ test('under New a filter change and its week-later echo are one change', () => {
   const days = Array.from({ length: 12 }, (_, k) => `2026-09-${String(k + 1).padStart(2, '0')}T00:00:00+00:00`);
   t.setPicks([ACME]);
   t.metricSet('new');
-  t.set({ ...companies([['greenhouse:acme', 'Acme', [100, 100, 150, 150, 150, 150, 150, 150, 110, 110, 110, 110]]],
+  // The change lands at its own run, and its echo a week on.
+  t.set({ ...companies([['greenhouse:acme', 'Acme', [100, 150, 150, 150, 150, 150, 150, 150, 110, 110, 110, 110]]],
     { stamps: days, counted_since: { 'greenhouse:acme': days[0] },
       epochs: [{ ts: days[1], changed: ['tech filter changed'], fields: ['tech_filter_version'] }] }), metric: 'new' });
   t.setUnit('count', false);
@@ -2025,4 +2045,142 @@ test('a trend opened from Hot says how Hot’s figure reads on it', () => {
   t.setPicks([{ ...bosch, boardKeys: ['greenhouse:bosch'] }]);
   t.draw();
   assert.match(nodes['trends-empty'].textContent, /Hot’s \+440 net tech roles is this line’s change/);
+});
+
+// ---- critique round 13 ------------------------------------------------------------------------
+test('a trend opened from Hot keeps Hot’s figure in its link and states both when they differ', () => {
+  const { t, nodes } = loadApp();
+  t.openTrend('google:careers', 'Google', '2026-09-13T00:00:00+00:00', '-27');
+  t.readHash();
+  const google = { key: 'google:careers', label: 'Google', boardKeys: ['google:careers'] };
+  t.setPicks([google]);
+  t.set(companies([['google:careers', 'Google', [100, 90, 80, 58]]]));
+  t.draw();
+  assert.match(nodes['trends-empty'].textContent,
+    /Hot measured −27 net tech roles on this board over the same week; this line reads −42 openings\./);
+  assert.match(t.hash(), /hot=-27&hot_board=google%3Acareers/, 'a reload keeps it');
+});
+
+test('the scope line says as of when, and how old a paused count is', () => {
+  const { t, nodes } = loadApp();
+  t.setPicks([ACME]);
+  t.set(companies([['greenhouse:acme', 'Acme', [100, 100, 100, 100]]]));
+  t.draw();
+  assert.match(nodes['trends-scope'].textContent, /latest Sep 16 00:00 UTC — \d+ hours ago; no newer count has landed yet/);
+});
+
+test('a hand-off tells Search what the trend counted, and when', () => {
+  const { t, ctx, nodes } = loadApp();
+  t.setPicks([ACME]);
+  t.set({ ...picked({ a: [90, 100] }), stamps: STAMPS, company_totals: { 'greenhouse:acme': [100, 108] } });
+  nodes['trends-co-roles'].fire('click');
+  const hash = new URLSearchParams(ctx.location.hash.split('?')[1]);
+  assert.equal(hash.get('trend_n'), '100');
+  assert.equal(hash.get('trend_at'), STAMPS[1]);
+});
+
+test('a counting change that did not move a line is not named for it', () => {
+  const { t, nodes } = loadApp();
+  t.setPicks([ACME]);
+  // Two filter changes; only the second moves Acme.
+  t.set(companies([['greenhouse:acme', 'Acme', [100, 100, 100, 100, 160]]], { stamps: FIVE, epochs: [
+    { ts: FIVE[1], changed: ['tech filter changed'], fields: ['tech_filter_version'] },
+    { ts: FIVE[4], changed: ['tech filter changed'], fields: ['tech_filter_version'] }] }));
+  t.setUnit('count', false);
+  t.draw();
+  assert.match(nodes['trends-verdict'].innerHTML, /\+60 openings from a tech filter change\./);
+});
+
+test('under New, an echo whose change fell before the window is named as an echo', () => {
+  const { t, nodes } = loadApp();
+  const days = Array.from({ length: 12 }, (_, k) => `2026-09-${String(k + 10).padStart(2, '0')}T00:00:00+00:00`);
+  t.setPicks([ACME]);
+  t.metricSet('new');
+  // The change at Sep 11 12:00 sits before the window's second run; its echo lands Sep 19.
+  t.set({ ...companies([['greenhouse:acme', 'Acme', [150, 150, 150, 150, 150, 150, 150, 150, 150, 110, 110, 110]]],
+    { stamps: days, counted_since: { 'greenhouse:acme': days[0] },
+      epochs: [{ ts: '2026-09-11T12:00:00+00:00', changed: ['tech filter changed'], fields: ['tech_filter_version'] }] }), metric: 'new' });
+  t.setUnit('count', false);
+  t.draw();
+  assert.match(nodes['trends-verdict'].innerHTML, /−40 openings from the week-later echo of an earlier tech filter change\./);
+});
+
+test('a category sorted in by a counting change reads so, and its openings count as that change', () => {
+  const { t, nodes } = loadApp();
+  t.setPicks([ACME]);
+  t.set({ ...picked({}), stamps: FOUR, totals: [1e3, 1e3, 1e3, 1e3], non_tech: [0, 0, 0, 0],
+    series: [{ name: 'a', label: 'a', points: [100, 100, 84, 85], latest: 85 },
+             { name: 'web', label: 'web', points: [null, null, 16, 16], latest: 16 }],
+    counted_since: { 'greenhouse:acme': '2026-09-01T00:00:00+00:00' },
+    epochs: [{ ts: FOUR[2], changed: ['role family assignment changed'], fields: ['family_classifier_version'] }] });
+  t.setUnit('count', false);
+  t.draw();
+  assert.match(row(nodes['trends-legend'].innerHTML, 'web'), /sorted in by a counting change, Sep 15/);
+  nodes['trends-error'] = Object.assign(fakeEl(), { hidden: true });
+  t.table(true);
+  const web = nodes['trends-table'].innerHTML.split('</tr>').find(r => />web</.test(r));
+  assert.match(web, /<td>\+16 openings<\/td>/, 'its 16 arrived by the change');
+});
+
+test('Total is the sum of the Company breakdown, each company’s steps out of its own part', () => {
+  const { t, nodes } = loadApp();
+  const two = [{ key: 'greenhouse:acme', label: 'Acme', boardKeys: ['greenhouse:acme'] },
+               { key: 'eightfold:micron', label: 'Micron', boardKeys: ['eightfold:micron'] }];
+  // A duplicate-removal change touches only Micron (Eightfold); Acme hires +30 that run.
+  const acme = [100, 100, 130, 130], micron = [200, 200, 150, 150];
+  const epochs = [{ ts: FOUR[2], changed: ['duplicate removal changed'], fields: ['dedup_version'] }];
+  const moves = () => [...nodes['trends-legend'].innerHTML.matchAll(/([−+]\d+) openings?/g)].map(m => Number(m[1].replace('−', '-')));
+  t.setPicks(two);
+  t.setUnit('count', false);
+  t.set(companies([['greenhouse:acme', 'Acme', acme], ['eightfold:micron', 'Micron', micron]], { epochs }));
+  t.draw();
+  const breakdown = moves();
+  t.set({ ...companies([['greenhouse:acme', 'Acme', acme], ['eightfold:micron', 'Micron', micron]], { epochs }),
+    split_by: 'family', total: true,
+    series: [{ name: '__total__', label: 'All tech roles', points: acme.map((v, j) => v + micron[j]), latest: 280 }],
+    pick_series: { 'greenhouse:acme': acme, 'eightfold:micron': micron } });
+  t.draw();
+  assert.deepEqual(breakdown, [30, 0]);
+  assert.deepEqual(moves(), [30], 'Total is the breakdown’s sum; summed whole it read 0');
+});
+
+test('a pick counted from a later date joins Total as a step, not as hiring', () => {
+  const { t } = loadApp();
+  t.setPicks([{ key: 'greenhouse:acme', label: 'Acme', boardKeys: ['greenhouse:acme'] },
+              { key: 'workday:amd/x', label: 'AMD', boardKeys: ['workday:amd/x'] }]);
+  const acme = [100, 100, 100, 104], amd = [null, null, 500, 500];
+  t.set({ ...companies([['greenhouse:acme', 'Acme', acme]]), total: true,
+    series: [{ name: '__total__', label: 'All', points: [100, 100, 600, 604], latest: 604 }],
+    pick_series: { 'greenhouse:acme': acme, 'workday:amd/x': amd } });
+  same(t.netOfSteps([100, 100, 600, 604], t.data().series[0]), [600, 600, 600, 604]);
+});
+
+test('a window ending in the past gives its time, not an age', () => {
+  const { t, nodes } = loadApp();
+  t.setPicks([ACME]);
+  nodes['trends-until'] = Object.assign(fakeEl(), { value: '2026-09-16T00:00' });
+  t.set(companies([['greenhouse:acme', 'Acme', [100, 100, 100, 100]]]));
+  t.draw();
+  assert.match(nodes['trends-scope'].textContent, /latest Sep 16 00:00 UTC/);
+  assert.doesNotMatch(nodes['trends-scope'].textContent, /hours ago/);
+});
+
+test('the marked-changes list gives each change’s size on each line, and counts repeats', () => {
+  const { t, nodes } = loadApp();
+  t.setPicks([ACME]);
+  t.set(companies([['greenhouse:acme', 'Acme', [100, 100, 140, 140, 150]]], { stamps: FIVE,
+    epochs: [{ ts: FIVE[2], changed: ['tech filter changed'], fields: ['tech_filter_version'] }] }));
+  t.setUnit('count', false);
+  t.draw();
+  assert.match(nodes['trends-changes'].innerHTML, /Sep 15 00:00<\/b> Counting changed here: tech filter changed[^<]* — Acme \+40 openings/);
+});
+
+test('a window ending before counting began says so', () => {
+  const { t, nodes } = loadApp();
+  t.setPicks([ACME]);
+  nodes['trends-until'] = Object.assign(fakeEl(), { value: '2026-09-01T00:00' });
+  t.set({ ...companies([]), stamps: [], series: [], uncounted: ['greenhouse:acme'],
+    counted_since: { 'greenhouse:acme': FOUR[0] }, ledger_start: FOUR[0] });
+  t.draw();
+  assert.match(nodes['trends-empty'].textContent, /This window ends before HeadStart began counting companies, on Sep 13/);
 });

@@ -812,3 +812,53 @@ hand-offs a reader leans on, and what the page shows first:
 
 Deferred again, with the three above: making Total the default for one company. It would
 override the user's rule that categories are the default wherever two clear the floor.
+
+### A critic's twelfth round (2026-09-25): 5/10
+
+The critic found the numbers careful but not reconciled across views, and the round's main
+promise, that Hot's figure is the trend's, broken on most single-Board rows with nothing said:
+
+- **Hot and the trend leave out the same runs.** Hot dropped a duplicate-removal change's run
+  from every Board; the trend drops it only for companies the change can touch. Measured on
+  the Sep 18 → Sep 25 window, Hot's sum under the trend's rule equals the trend for every
+  single-Board row tried (Google −42, Amazon +17, Wipro +213, HCLTech −1,282, Apple +14; Hot had
+  −27, +58, +208, −1,280, +16). `hot_boards` now leaves those runs out only for the Boards it
+  can touch (`dedup_touches`: every Eightfold Board, and each Board of a Tenant with two or more
+  Workday or Taleo Enterprise Boards, the trend's rule for a company). Hot's figures move at the
+  next pipeline run. Until then, and wherever they still differ, the trend states both figures;
+  Hot's figure rides in the link (`hot`, `hot_board`) so a reload keeps the note.
+- **As of when.** The scope line names the newest count's time, and says how old it is past 12
+  hours: the ledger paused for five hours while a new classifier warmed up, and the page read as
+  "right now". A hand-off to Search carries the trend's figure and time (`trend_n`, `trend_at`),
+  and Search says the two differ by what opened or closed since.
+- **Views reconcile.** A line summing several picks is the sum of each pick's own netted line
+  (the Space's `pick_series`), so Total equals the Company breakdown: summed whole, five
+  companies read +362 against their breakdown's +306. A company's table ends with a "Between
+  categories" row, so its categories add up to its own row: Google's summed to +15 under −32.
+- **A counting change is named only where it moved the line**, at its run or the run after, and
+  a week-later echo whose change fell before the window is named as an echo.
+- **A category sorted in by a counting change says so** ("sorted in by a counting change,
+  Sep 24") and its arriving openings are in the counting-changes column, where it read "new since
+  Sep 24" as if hired.
+- **Smaller:** a tap within 12px of a marker reads the marker's run; the Count legend's Other
+  row is in openings too; a week-long window gives no weekly rate beside its own change; a
+  window ending before counting began names the date.
+
+Not changed: making Total the default for one company (the user's rule); end labels for every
+line on a crowded chart; Back from a roles view returning to the levels view first.
+
+The review of that change corrected it:
+
+- Hot's rule reads every Board the delta ledger holds, not only those holding stock now, so a
+  Tenant's emptied Workday site still makes its sibling touched, and Tenants compare
+  case-blind. A pair joined only by a curated alias is still unseen by Hot: its stage runs
+  before the directory is built. When Hot and the trend differ, the note gives Hot's build time
+  (`hot_at`), not a guessed reason.
+- A pick counted from a later date holds at its first value in the pick-summed line, so it joins
+  Total as a step, not as hiring.
+- A change "moved" a line only at its own run. The sentence, the markers and the list share
+  that test, and the list gives each change's size on each drawn line, counting repeats.
+- The age warning follows the pipeline's own cadence (four median gaps, at least three hours),
+  and never shows under a range ending in the past. Search is told the trend's figure only
+  where it lists the same thing: All openings, no source filter.
+- A tap snaps to a marker only for a finger, not a mouse.
