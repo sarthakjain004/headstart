@@ -28,18 +28,12 @@ import time
 from collections import Counter
 from pathlib import Path
 
-from headstart import (
-    board_priority,
-    fanout_stats,
-    http,
-    log,
-    scrapable_boards,
-    spare_egress,
-)
+from headstart import board_priority, log, scrapable_boards
 from headstart.board_priority import load_scores, pick_boards
 from headstart.config import CompanyRef
 from headstart.harvest import scrape_all
 from headstart.ingest import HELD_DETAILS_PATH, REPO_ROOT, observability, shard_plan
+from headstart.network import fanout_stats, http, spare_egress
 
 _LEDGER = REPO_ROOT / "data" / "validate" / "liveness"
 _JOBS_DIR = REPO_ROOT / "data" / "jobs"

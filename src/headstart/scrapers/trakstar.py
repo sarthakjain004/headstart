@@ -103,8 +103,9 @@ import xml.etree.ElementTree as ET
 from typing import Any
 from urllib.parse import quote
 
-from headstart import http, log
+from headstart import log
 from headstart.models import Job, html_to_text, is_remote
+from headstart.network import http
 from headstart.scrapers.base import (
     USER_AGENT,
     BaseScraper,

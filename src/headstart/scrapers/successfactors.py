@@ -79,9 +79,10 @@ from types import MappingProxyType
 from typing import Any
 from urllib.parse import unquote
 
-from headstart import company_name, http, log
-from headstart.fetcher import Fetcher
+from headstart import company_name, log
 from headstart.models import Job, html_to_text, is_remote, requisition_of
+from headstart.network import http
+from headstart.network.fetcher import Fetcher
 from headstart.scrapers.base import (
     USER_AGENT,
     BaseScraper,

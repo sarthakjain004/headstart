@@ -488,7 +488,7 @@ shard's per-origin budget is spent") — direct evidence of it, not an inference
 
 Two things were tried to get past it while it was up, per this task's instruction to route around
 the wall via a real browser rather than the sudo-gated WARP rotation — **neither worked**:
-- **`headstart.browser_http`** (this repo's real-Chrome-via-CDP transport, built for darwinbox's
+- **`headstart.network.browser_http`** (this repo's real-Chrome-via-CDP transport, built for darwinbox's
   Cloudflare wall) — navigated the tab to a walled `/careers` URL and still got the 405 CAPTCHA
   page back. Expected on reflection: that transport deliberately blocks all `.js` requests on every
   tab (`_install_blocking`, `docs/darwinbox/cloudflare-wall.md` — darwinbox's wall renders nothing

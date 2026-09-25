@@ -21,7 +21,7 @@ record, at two users. Per-record paths make writes disjoint by construction.
 instead of growing a second one. It is a hash: the address itself never appears in a path.
 
 The four HF calls are module-level functions so tests can replace them the way
-`tests/test_http.py` replaces its session; everything above them is pure.
+`tests/test_network_http.py` replaces its session; everything above them is pure.
 """
 
 from __future__ import annotations

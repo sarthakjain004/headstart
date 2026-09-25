@@ -9,7 +9,7 @@ of the eight boards that ADR names.
 https://jobs.uber.com/`` 301s to ``/en/jobs/``; a bare request to the listing API
 (``/api/jobs/search/``) answers Cloudflare's own "Just a moment..." challenge page (HTTP 403,
 ``cf-mitigated: challenge``) to a stock ``curl``/``python-requests`` client. It does **not** answer
-that way to this repo's own ``headstart.http.fetch`` — that module already runs every request
+that way to this repo's own ``headstart.network.http.fetch`` — that module already runs every request
 through a ``curl_cffi`` session with ``impersonate="chrome"`` (its own module docstring: "Chrome
 impersonation lets the same client handle both plain JSON APIs and the TLS-fingerprinted boards").
 Verified live 2026-09-11 with the plain :meth:`BaseScraper._get` (``headstart/0.1`` UA, no Referer,

@@ -31,7 +31,7 @@ Three failures look similar and need opposite responses. Diagnose before reachin
 | Connection refused, `code=000`, TCP reset | IP-level block | Rotate the egress IP |
 
 **Challenges.** `curl_cffi` is already HeadStart's only base dependency — added because Darwinbox
-sits behind Cloudflare TLS fingerprinting — and `src/headstart/http.py` wraps it. It impersonates a
+sits behind Cloudflare TLS fingerprinting — and `src/headstart/network/http.py` wraps it. It impersonates a
 real browser's TLS/JA3 signature and defeats most fingerprint blocks alone. Reach for `cloudscraper`
 only after it fails. Keep either out of the base `dependencies` list: CI installs base deps only, so
 a new import there breaks the quality job. Note the requirement in the script's docstring instead.

@@ -21,7 +21,7 @@ sys.path.insert(0, str(ROOT / "scripts" / "validate"))
 @pytest.fixture(scope="module")
 def mod():
     """Import the script by path — `scripts/` is not a package, and it pulls in
-    `headstart.http`, so this is skipped wherever that import cannot be satisfied."""
+    `headstart.network.http`, so this is skipped wherever that import cannot be satisfied."""
     pytest.importorskip("curl_cffi")
     spec = importlib.util.spec_from_file_location(
         "dedupe_eightfold_aliases",

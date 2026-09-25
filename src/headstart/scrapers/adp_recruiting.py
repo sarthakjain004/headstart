@@ -60,8 +60,9 @@ import re
 from typing import Any
 from urllib.parse import quote, urlencode
 
-from headstart import employment_type_filter, http
+from headstart import employment_type_filter
 from headstart.models import Job, html_to_text, is_remote
+from headstart.network import http
 from headstart.scrapers.base import (
     USER_AGENT,
     BaseScraper,

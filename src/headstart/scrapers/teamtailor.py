@@ -45,8 +45,9 @@ import json
 import xml.etree.ElementTree as ET
 from typing import Any
 
-from headstart import http, salary
+from headstart import salary
 from headstart.models import Job, html_to_text, is_remote
+from headstart.network import http
 from headstart.scrapers.base import BaseScraper
 
 #: Items per page the feed serves. A full page means there is probably another.

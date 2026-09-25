@@ -56,9 +56,9 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
 
-from headstart.browser_http import BrowserFetcher
-from headstart.fetcher import Fetcher
 from headstart.models import Job, html_to_text, is_remote
+from headstart.network.browser_http import BrowserFetcher
+from headstart.network.fetcher import Fetcher
 from headstart.scrapers.base import USER_AGENT, BaseScraper, classify_exception
 
 _PAGE_SIZE = 100  # server caps each page at 100 regardless of the requested limit
@@ -121,10 +121,10 @@ class DarwinboxScraper(BaseScraper):
         browser_fetcher: Callable[[str], BrowserFetcher] = BrowserFetcher,
     ) -> None:
         """``browser_fetcher`` is the factory this scraper opens once it hits the Cloudflare
-        wall — one :class:`~headstart.browser_http.BrowserFetcher` per Board, since clearance is
+        wall — one :class:`~headstart.network.browser_http.BrowserFetcher` per Board, since clearance is
         per-origin (module docstring, ADR-0056). Defaults to the real adapter (ADR-0153); a test
         can inject a fake with the same ``(page_url) -> context manager`` shape without
-        monkeypatching ``headstart.browser_http`` at all."""
+        monkeypatching ``headstart.network.browser_http`` at all."""
         super().__init__(slug, company, fetcher=fetcher)
         self._browser_fetcher = browser_fetcher
 

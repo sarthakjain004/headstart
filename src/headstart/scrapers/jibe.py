@@ -72,9 +72,10 @@ from datetime import datetime
 from typing import Any
 from urllib.parse import urlencode, urljoin, urlsplit
 
-from headstart import company_name, http, salary
-from headstart.fetcher import Fetcher
+from headstart import company_name, salary
 from headstart.models import Job, html_to_text, is_remote, requisition_of
+from headstart.network import http
+from headstart.network.fetcher import Fetcher
 from headstart.scrapers.base import USER_AGENT, BaseScraper
 
 #: Seconds between two requests to one client host: `crawl-delay: 5` in the robots.txt of 1,138 of

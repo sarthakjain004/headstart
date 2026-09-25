@@ -34,7 +34,7 @@ nothing.
 
 **Escalate to a real browser per walled board, inside the existing scraper.** Three parts:
 
-1. **`headstart/browser_http.py`** — the browser twin of `http.py`, a deep module whose whole
+1. **`headstart/network/browser_http.py`** — the browser twin of `http.py`, a deep module whose whole
    interface is `origin(page_url)` yielding `post_json`/`get_json`. Behind it: one headful Chrome
    per process, lazily started with a launch retry (probe legs died at startup 2/9 under xvfb), a
    dedicated asyncio loop thread so harvest's worker threads call it synchronously, a
@@ -94,7 +94,7 @@ nothing.
   for every other ATS.
 - Chrome startup flakiness is now a production concern; the launch retry covers it, and a board
   whose escalation still fails surfaces the browser's error rather than a misleading TLD error.
-- `tests/test_browser_http.py` exercises the module through a fake Chrome behind the
+- `tests/test_network_browser_http.py` exercises the module through a fake Chrome behind the
   `_chrome_factory` seam; the darwinbox routing tests stub `browser_http.origin`, and the
   wall-detection stubs use real `curl_cffi` Responses so the 403 predicate is tested against the
   exception production actually raises (the no-op-fix class the #137 review caught).

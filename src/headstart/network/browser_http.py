@@ -348,7 +348,7 @@ def origin(page_url: str):
 
 
 class _FetchResult:
-    """The slice of ``curl_cffi``'s ``Response`` surface a :class:`headstart.fetcher.Fetcher`
+    """The slice of ``curl_cffi``'s ``Response`` surface a :class:`headstart.network.fetcher.Fetcher`
     caller needs — ``.status_code``, ``.json()``, ``.raise_for_status()`` — so a scraper can
     treat a browser answer exactly like a curl one."""
 
@@ -366,9 +366,9 @@ class _FetchResult:
 
 
 class BrowserFetcher:
-    """A :class:`headstart.fetcher.Fetcher` backed by one warmed tab on one origin (ADR-0056,
+    """A :class:`headstart.network.fetcher.Fetcher` backed by one warmed tab on one origin (ADR-0056,
     deepened for ADR-0153). Implements ``fetch`` only — a browser tab is one session, not a
-    multiplexed pool, and nothing calls its async half (see ``headstart.fetcher``'s module
+    multiplexed pool, and nothing calls its async half (see ``headstart.network.fetcher``'s module
     docstring) — and only for requests inside the origin it was opened on: every darwinbox
     tenant is its own subdomain, so one instance never needs to cover two. It leaves
     ``clear_cookies`` (ADR-0199) unimplemented too: the tab's cookies are the clearance its
@@ -410,7 +410,7 @@ class BrowserFetcher:
 
         Takes no egress binding, headers or timeout, and refuses them rather than dropping them
         (ADR-0204): the tab has one origin and its own network stack, so the spare egress cannot
-        route it, and a :class:`~headstart.fetcher.BoardFetcher` never wraps it — darwinbox calls
+        route it, and a :class:`~headstart.network.fetcher.BoardFetcher` never wraps it — darwinbox calls
         it directly for the walled path only. It used to accept and silently drop any keyword,
         which is exactly how a request loses its egress binding without anyone noticing.
         """

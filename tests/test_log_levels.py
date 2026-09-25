@@ -58,7 +58,7 @@ _ROOT = Path(__file__).resolve().parents[1] / "src" / "headstart"
 _SCRAPERS = _ROOT / "scrapers"
 _ALERTS = _ROOT / "alerts"
 _HARVEST = _ROOT / "harvest.py"
-_SPARE_EGRESS = _ROOT / "spare_egress.py"
+_SPARE_EGRESS = _ROOT / "network" / "spare_egress.py"
 _SEARCH = _ROOT / "search.py"
 
 #: Where *every* annotation-level site must be justified, because the repetition lives in the
@@ -90,7 +90,7 @@ _PER_ITEM_BY_CONSTRUCTION = [
     # parse point, and nothing but this list would notice it coming back.
     _SEARCH,
     # Per Board (a walled Board's fetch) and per chat respectively, with no loop to key on.
-    _ROOT / "browser_http.py",
+    _ROOT / "network" / "browser_http.py",
     _ROOT / "telegram_bot_api.py",
     # Once per résumé-parse request on the Space.
     _ROOT / "llm_router.py",
@@ -198,7 +198,7 @@ _ALLOWED: dict[str, str] = {
         "type, HTTP status, the URLError's cause type and elapsed seconds only — the error text "
         "can name the private router host."
     ),
-    "browser_http.py:<module>": (
+    "network/browser_http.py:<module>": (
         "`_BLOCKING_FAILURE`, a module-level `log.FirstOnly`: the first failure per process to "
         "install subresource blocking warns with its traceback, every later one logs at INFO — "
         "one broken pydoll command API fails every walled Board the browser serves, not one."
@@ -276,7 +276,7 @@ _ALLOWED: dict[str, str] = {
         "but the Space is not GitHub Actions and `log._Formatter` renders an annotation only "
         "there — so that path spends no budget and this one is bounded by the run."
     ),
-    "spare_egress.py:<module>": (
+    "network/spare_egress.py:<module>": (
         "`_TUNNEL_LOST` and `_WARP_OFF`, the two `log.FirstOnly` instances every broken-WARP "
         "line reports through, so the ceiling is two annotations per shard process. The "
         "population being bounded is *requests*, not processes: `rotate` runs once per walled "
@@ -290,7 +290,7 @@ _ALLOWED: dict[str, str] = {
         "by this file's loop rule — they are two hops from their caller with no loop in this "
         "module to key on — which is why the total check is what has to cover them."
     ),
-    "spare_egress.py:reset": (
+    "network/spare_egress.py:reset": (
         "Zero emissions. `reset` re-*arms* the two instances by rebuilding them; it never "
         "reports through them, and these are sites at all only because `_annotation_sites` "
         "counts a `log.FirstOnly` construction as one. It is a test seam with no caller in "

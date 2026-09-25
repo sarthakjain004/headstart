@@ -17,7 +17,7 @@ from types import SimpleNamespace
 import pytest
 from fake_fetcher import FakeFetcher, FakeResponse
 
-from headstart import http
+from headstart.network import http
 from headstart.scrapers.jobvite import JobviteScraper, total_of
 from headstart.scrapers.registry import get_scraper
 

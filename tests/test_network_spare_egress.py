@@ -1,4 +1,4 @@
-"""Tests for the spare-egress lifecycle (headstart.spare_egress).
+"""Tests for the spare-egress lifecycle (headstart.network.spare_egress).
 
 Every path here is a *degradation* path, which is the point: this module sits on the scrape's
 critical path and its whole contract is that a missing, unregistered or broken WARP costs the run
@@ -18,7 +18,7 @@ import time
 
 import pytest
 
-from headstart import spare_egress
+from headstart.network import spare_egress
 
 
 @pytest.fixture(autouse=True)
@@ -318,7 +318,7 @@ def test_report_is_empty_when_nothing_walled():
 def test_mark_walled_says_it_once_per_group(caplog):
     import logging
 
-    caplog.set_level(logging.INFO, logger="headstart.spare_egress")
+    caplog.set_level(logging.INFO, logger="headstart.network.spare_egress")
     spare_egress.mark_walled("eightfold", 403)
     spare_egress.mark_walled("eightfold", 405)
     assert len(caplog.records) == 1  # the second Board must not re-announce the wall
@@ -331,7 +331,7 @@ def test_mark_walled_does_not_spend_an_annotation(caplog):
     """
     import logging
 
-    caplog.set_level(logging.DEBUG, logger="headstart.spare_egress")
+    caplog.set_level(logging.DEBUG, logger="headstart.network.spare_egress")
     spare_egress.mark_walled("workday", 429)
     assert [r.levelno for r in caplog.records] == [logging.INFO]
 
@@ -404,7 +404,7 @@ def test_unavailable_spare_egress_warns_rather_than_whispers(monkeypatch, caplog
     would sit under the scrape's own output unread."""
     import logging
 
-    caplog.set_level(logging.WARNING, logger="headstart.spare_egress")
+    caplog.set_level(logging.WARNING, logger="headstart.network.spare_egress")
     _stub(monkeypatch, lambda argv: FileNotFoundError("warp-cli"))
     assert spare_egress.proxy_url() is None
     assert any("unavailable" in r.getMessage() for r in caplog.records)
@@ -754,7 +754,7 @@ def test_a_trace_with_no_ip_names_its_body_once(monkeypatch, caplog):
         text = "<html>captive portal</html>"
 
     monkeypatch.setattr(spare_egress._rq, "get", lambda *a, **kw: _Resp())
-    caplog.set_level("INFO", logger="headstart.spare_egress")
+    caplog.set_level("INFO", logger="headstart.network.spare_egress")
 
     assert spare_egress.rotate() is True
     assert spare_egress.rotate() is True

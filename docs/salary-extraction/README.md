@@ -40,13 +40,13 @@ reader can also open `workday.md` alone and get everything about workday specifi
    different companies/instances, not one tenant's own rate limit. Spare egress is automatic:
    every fetch goes through the scraper's own `_get()`/`_post()`/`_job_detail()`, which already
    carries `egress_fallback_on`, so an ATS with it set (workday: `{429}`) transparently falls back
-   to `headstart.spare_egress`'s WARP route the same way the real pipeline does — never build a
+   to `headstart.network.spare_egress`'s WARP route the same way the real pipeline does — never build a
    new adapter that calls `http.fetch` directly, that silently skips it.
    **Local operational note** (doesn't apply to CI): running a sample that actually triggers the
    fallback dials this machine's own registered WARP client and leaves it connected afterward —
    `systemctl`-based rotation doesn't exist on macOS, so it's one alternate route per process, not
    full rotation. A connected local client left running when the test suite runs next can make
-   `tests/test_spare_egress.py`'s tight cooldown-timing tests flake (a real network round-trip
+   `tests/test_network_spare_egress.py`'s tight cooldown-timing tests flake (a real network round-trip
    through a real listening proxy takes measurably longer than the fast-failing one those tests
    are timed against) — `warp-cli --accept-tos disconnect` before running tests if a sample was
    just run.

@@ -5,8 +5,9 @@ import logging
 import pytest
 from fake_fetcher import FakeFetcher, FakeResponse
 
-from headstart import company_name, fanout_stats, http, log
+from headstart import company_name, log
 from headstart.models import Job
+from headstart.network import fanout_stats, http
 from headstart.scrapers import base
 from headstart.scrapers.base import (
     DEFAULT_REQUEST_HEADERS,
@@ -218,7 +219,7 @@ def test_fan_out_async_narrows_once_this_scrapers_egress_group_has_walled(monkey
     out exactly as wide as one it was still serving — 4 of 15 shards on run 32249345870 took 80%
     of its 94,110 rate-limit retries that way (#195). The clamp keys on the group the Board fetcher binds, so
     it reaches only the scrapers whose requests carry one."""
-    from headstart import spare_egress
+    from headstart.network import spare_egress
 
     seen = _spy_concurrency(monkeypatch)
     monkeypatch.delenv("HEADSTART_H2_STREAMS", raising=False)

@@ -36,7 +36,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / "src"))
 
-from headstart.http import fetch
+from headstart.network.http import fetch
 from headstart.scrapers.base import USER_AGENT
 from headstart.scrapers.zoho import ZohoScraper
 

@@ -26,7 +26,8 @@ its stored bytes (ADR-0168).
 
 **Dry run by default.** `--apply` deletes every file still present in one commit. It is not
 reversible: the merge job super-squashes the dataset every run, so there is no prior revision to
-restore from. It is idempotent, so re-run it if a file comes back; one already gone is skipped.
+restore from. It is not idempotent: check 3 needs every retired file present, so a run that
+finds some already gone refuses rather than deleting the rest.
 
 Usage:
     python scripts/state/retire_superseded_trends_files.py            # report only

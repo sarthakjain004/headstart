@@ -8,7 +8,7 @@ empty `egress_on`, so it is routed over the spare egress yet nothing ever *marks
 
 from __future__ import annotations
 
-from headstart import http
+from headstart.network import http
 from headstart.scrapers.zwayam import ZwayamScraper
 
 

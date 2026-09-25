@@ -21,7 +21,7 @@ import sys
 import time
 from collections import Counter
 
-from headstart import http
+from headstart.network import http
 from headstart.scrapers.base import USER_AGENT
 from headstart.scrapers.workday import WorkdayScraper
 

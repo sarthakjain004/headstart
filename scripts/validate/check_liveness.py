@@ -35,7 +35,7 @@ dependencies so CI's quality job (base deps only) stays green — the checker de
 original curl_cffi-only behaviour when it's absent.
 
 A 429 that would otherwise ban a host for the rest of the run tries a different egress address
-first (`_ban_or_rotate`), through `headstart.spare_egress` — the same Cloudflare-WARP fallback the
+first (`_ban_or_rotate`), through `headstart.network.spare_egress` — the same Cloudflare-WARP fallback the
 scrape uses (ADR-0063), which already carries the per-platform daemon recipe and the coalescing.
 Ordinary 429s still just ease the pace; only the bottom rung rotates, and only when the refusal
 came from the host we actually asked. Degrades to the old ban when WARP isn't reachable.
@@ -63,12 +63,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT / "src"))
-from headstart import (  # needs src on sys.path first
-    board_aliases,
-    http,
-    liveness,
-    spare_egress,
-)
+from headstart import board_aliases, liveness  # needs src on sys.path first
+from headstart.network import http, spare_egress
 from headstart.scrapers import (
     adp_recruiting as _adp_recruiting,  # request shapes + headers, single source
 )
@@ -887,7 +883,7 @@ def _fresh_egress(gate, status=429):
 
     Two rungs, the same pair `http.fetch` climbs: a gate still on the direct route is *moved onto*
     the spare egress, which is already a different address; one refused there rotates the tunnel to
-    another. `headstart.spare_egress` owns both, and owning them is the point — the daemon recipe
+    another. `headstart.network.spare_egress` owns both, and owning them is the point — the daemon recipe
     (`launchctl kickstart -k` on macOS, `systemctl restart warp-svc` on Linux, each under
     `sudo -n`), the SOCKS5 readiness handshake, the cooldown, and the coalescing that keeps
     hundreds of liveness workers meeting one wall to a single restart are all already solved there.

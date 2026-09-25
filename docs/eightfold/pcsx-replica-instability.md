@@ -200,7 +200,7 @@ policy — `/api/apply/v2/*` always hard-403s non-browser clients, HTML surfaces
 fetch. That was wrong, and worth recording *why* it was wrong: the 405 this project actually hit
 (commit fixing #121, "405 was what Eightfold's edge returned once its per-origin budget was
 spent") is the **same shared rate-limiter** described above, not a separate per-route tier —
-`http.fetch` already retries 403/405/429 as bot-wall blips (`headstart/http.py`, ADR-0047), and
+`http.fetch` already retries 403/405/429 as bot-wall blips (`headstart/network/http.py`, ADR-0047), and
 honours `Retry-After`, so production scrapers never observed a raw first-attempt block; it was
 silently absorbed. Direct, unwrapped probes on 2026-08-16 (bypassing the retry layer) found:
 

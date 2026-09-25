@@ -32,7 +32,7 @@ breaker's whole contribution there is to convert a recoverable situation into a 
 **A 429 that would ban a host tries the refusal from a different egress address first.** The
 pacing ladder is untouched — an ordinary 429 still eases, because easing is what a real rate limit
 responds to and a rotation is not free. Only the bottom rung changes: before `trip`, ask
-`headstart.spare_egress` for a different address, and ban only if one cannot be had.
+`headstart.network.spare_egress` for a different address, and ban only if one cannot be had.
 
 Reusing the scrape's spare egress rather than building a second one is most of the value. It
 already owns the per-platform daemon recipe (`launchctl kickstart -k` on macOS,
