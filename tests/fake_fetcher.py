@@ -15,7 +15,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-from headstart import http
+from headstart.network import http
 
 
 class FakeResponse:
@@ -58,7 +58,7 @@ Route = Callable[[str, str, dict[str, Any]], "FakeResponse | Exception"]
 
 
 class FakeFetcher:
-    """A :class:`headstart.fetcher.Fetcher` whose answers come from ``route``."""
+    """A :class:`headstart.network.fetcher.Fetcher` whose answers come from ``route``."""
 
     def __init__(self, route: Route) -> None:
         self.route = route

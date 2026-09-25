@@ -366,7 +366,7 @@ def test_an_empty_board_is_not_reported_as_unreadable(monkeypatch):
 
 
 def test_gem_refuses_its_own_ats_sandboxes(monkeypatch):
-    from headstart import http
+    from headstart.network import http
     from headstart.scrapers.gem import GemScraper
 
     page = SimpleNamespace(

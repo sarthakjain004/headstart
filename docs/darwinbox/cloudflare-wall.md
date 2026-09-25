@@ -171,7 +171,7 @@ saving. And revoke it they did: on the 2026-08-15 probe run that variant regress
 3/6, every `.com` board answering `HTTP 403 THE WALL`, while the navigate-first shape held. Keep
 it out of production entirely.
 
-**Shipped** as ADR-0056: `headstart/browser_http.py` (the transport) + the wall route in
+**Shipped** as ADR-0056: `headstart/network/browser_http.py` (the transport) + the wall route in
 `DarwinboxScraper.fetch_raw` — curl first, browser on the wall, `parse` untouched.
 
 **Now measured at production scale.** 155 Boards, four runs, no escalation (above); ~10 Boards on

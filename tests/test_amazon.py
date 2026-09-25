@@ -18,7 +18,7 @@ import json
 import logging
 from pathlib import Path
 
-from headstart import http
+from headstart.network import http
 from headstart.scrapers.amazon import (
     AmazonScraper,
     _full_description,

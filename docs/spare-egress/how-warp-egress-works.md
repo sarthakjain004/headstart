@@ -1,6 +1,6 @@
 # How WARP egress works: colos, address families, and why the pool looked shallow
 
-Background for anyone reading `headstart.spare_egress` or wondering why a rotation did or didn't
+Background for anyone reading `headstart.network.spare_egress` or wondering why a rotation did or didn't
 get a fresh IP. Written 2026-08-27, after a local sweep appeared to be capped at three addresses
 and turned out not to be.
 
@@ -97,5 +97,5 @@ give me" is meaningless without saying which address family was measured.**
 - A host with no AAAA record (measured: `api.lever.co`, Workday's `*.myworkdayjobs.com`) still
   egresses IPv4 and still draws from the shallow pool. For those, rotation genuinely is limited and
   pacing is the better lever.
-- `headstart.spare_egress.proxy_url()` returns `socks5h://` for these reasons. Do not "simplify" it
+- `headstart.network.spare_egress.proxy_url()` returns `socks5h://` for these reasons. Do not "simplify" it
   back.

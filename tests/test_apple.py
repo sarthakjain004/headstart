@@ -17,8 +17,8 @@ from typing import Any
 import pytest
 from fake_fetcher import FakeFetcher, FakeResponse, Route
 
-from headstart import fanout_stats
 from headstart.models import html_to_text
+from headstart.network import fanout_stats
 from headstart.scrapers.apple import _SEARCH_URL, AppleScraper
 from headstart.scrapers.registry import get_scraper
 

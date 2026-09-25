@@ -1,4 +1,4 @@
-"""Tests for the browser transport (src/headstart/browser_http.py, ADR-0056).
+"""Tests for the browser transport (src/headstart/network/browser_http.py, ADR-0056).
 
 Everything runs against a fake Chrome injected through the module's ``_chrome_factory`` seam —
 no pydoll, no display, CI-safe. The module is process-global (one Chrome, one loop), so each
@@ -11,7 +11,7 @@ import logging
 
 import pytest
 
-from headstart import browser_http as bh
+from headstart.network import browser_http as bh
 
 
 class _FakeResponse:

@@ -10,7 +10,7 @@ from typing import ClassVar
 import pytest
 from fake_fetcher import FakeFetcher, FakeResponse
 
-from headstart import fanout_stats, http
+from headstart.network import fanout_stats, http
 from headstart.scrapers.pacer import Pacer
 from headstart.scrapers.personio import PersonioScraper
 from headstart.scrapers.registry import get_scraper
@@ -1980,7 +1980,7 @@ def test_darwinbox_wall_routes_to_the_browser_on_the_walled_tld(monkeypatch):
     """
     from contextlib import contextmanager
 
-    import headstart.browser_http as bh
+    import headstart.network.browser_http as bh
 
     _darwinbox_curl_wall(monkeypatch)
     listing = _load("darwinbox_licious.json")
@@ -2010,7 +2010,7 @@ def test_darwinbox_browser_route_paginates_full_pages(monkeypatch):
     """A full first page keeps fetching until a short batch, exactly like the curl path."""
     from contextlib import contextmanager
 
-    import headstart.browser_http as bh
+    import headstart.network.browser_http as bh
     import headstart.scrapers.darwinbox as db
 
     _darwinbox_curl_wall(monkeypatch)
@@ -2032,7 +2032,7 @@ def test_darwinbox_browser_route_marks_a_measured_shortfall(monkeypatch):
     own check at all, so it needs its own (issue #549)."""
     from contextlib import contextmanager
 
-    import headstart.browser_http as bh
+    import headstart.network.browser_http as bh
 
     _darwinbox_curl_wall(monkeypatch)
     fake = _FakeDarwinboxPage([[{"id": "only"}]], job_counts=10)
@@ -2417,7 +2417,7 @@ def test_workday_detail_gap_names_what_the_failures_actually_were(monkeypatch, c
     import asyncio
     from collections import Counter
 
-    from headstart import http
+    from headstart.network import http
     from headstart.scrapers.workday import WorkdayScraper
 
     # The 404 detail now costs a second fetch — its public-page fallback (ADR-0099). That page
@@ -2476,7 +2476,7 @@ def test_workday_detail_gap_records_a_raised_request(monkeypatch):
     import asyncio
     from collections import Counter
 
-    from headstart import http
+    from headstart.network import http
     from headstart.scrapers.workday import WorkdayScraper
 
     async def fake_fetch_async(session, method, url, **kw):
@@ -2653,7 +2653,7 @@ def test_workday_detail_classes_always_account_for_every_loss(monkeypatch, caplo
     import asyncio
     from collections import Counter
 
-    from headstart import http
+    from headstart.network import http
     from headstart.scrapers.workday import WorkdayScraper
 
     async def fake_fetch_async(session, method, url, **kw):
@@ -2692,7 +2692,7 @@ def test_workday_detail_classes_reach_the_report_through_fetch_raw(monkeypatch, 
 
     Every other test here calls `_job_detail_async` and `_report_detail_losses` directly, so
     dropping the `classes` argument from the `fan_out_async` lambda left them all passing."""
-    from headstart import http
+    from headstart.network import http
     from headstart.scrapers.workday import WorkdayScraper
 
     scraper = WorkdayScraper("https://acme.wd1.myworkdayjobs.com/careers", "Acme")
@@ -2948,7 +2948,7 @@ class _FakeResp:
 
 
 def _workday_fetch_stub(live_instance):
-    """Stub headstart.http.fetch: 200 only for the CXS URL on `live_instance`, else 422."""
+    """Stub headstart.network.http.fetch: 200 only for the CXS URL on `live_instance`, else 422."""
 
     def fetch(method, url, **kwargs):
         return _FakeResp(200 if f".{live_instance}." in url else 422)
@@ -2957,7 +2957,7 @@ def _workday_fetch_stub(live_instance):
 
 
 def test_workday_keeps_instance_when_hinted_serves(monkeypatch):
-    monkeypatch.setattr("headstart.http.fetch", _workday_fetch_stub("wd3"))
+    monkeypatch.setattr("headstart.network.http.fetch", _workday_fetch_stub("wd3"))
     s = get_scraper("workday", "https://acme.wd3.myworkdayjobs.com/careers", "Acme")
     s._resolve_instance()
     assert s._instance is None  # hinted instance served it -> no sweep, URL unchanged
@@ -2966,7 +2966,7 @@ def test_workday_keeps_instance_when_hinted_serves(monkeypatch):
 
 def test_workday_follows_migrated_instance(monkeypatch):
     # tenant migrated wd3 -> wd103; hinted 422s, sweep finds wd103
-    monkeypatch.setattr("headstart.http.fetch", _workday_fetch_stub("wd103"))
+    monkeypatch.setattr("headstart.network.http.fetch", _workday_fetch_stub("wd103"))
     s = get_scraper("workday", "https://acme.wd3.myworkdayjobs.com/careers", "Acme")
     s._resolve_instance()
     assert s._instance == "wd103"
@@ -2977,7 +2977,7 @@ def test_workday_job_url_follows_the_resolved_instance(monkeypatch):
     """The served link follows the pod that serves the Board (ADR-0157's 2026-09-23
     amendment): on netflix's stale wd1 a job page 500s while wd108 serves it, so a link pinned
     to the slug's own pod was dead for every posting on the Board."""
-    monkeypatch.setattr("headstart.http.fetch", _workday_fetch_stub("wd108"))
+    monkeypatch.setattr("headstart.network.http.fetch", _workday_fetch_stub("wd108"))
     s = get_scraper(
         "workday", "https://netflix.wd1.myworkdayjobs.com/netflix", "Netflix"
     )
@@ -2990,7 +2990,7 @@ def test_workday_job_url_follows_the_resolved_instance(monkeypatch):
 
 def test_workday_leaves_instance_when_none_serves(monkeypatch):
     # gone everywhere (422 on all DCs) -> keep hinted; crawl yields nothing
-    monkeypatch.setattr("headstart.http.fetch", _workday_fetch_stub("nowhere"))
+    monkeypatch.setattr("headstart.network.http.fetch", _workday_fetch_stub("nowhere"))
     s = get_scraper("workday", "https://gone.wd3.myworkdayjobs.com/careers", "Gone")
     s._resolve_instance()
     assert s._instance is None
@@ -3017,7 +3017,7 @@ def test_workday_alias_key_fetches_the_public_page_not_the_cxs_api(monkeypatch):
         seen["url"] = url
         return _AliasResp(url)
 
-    monkeypatch.setattr("headstart.http.fetch", fetch)
+    monkeypatch.setattr("headstart.network.http.fetch", fetch)
     get_scraper(
         "workday", "https://acme.wd3.myworkdayjobs.com/careers", "Acme"
     ).alias_key()
@@ -3029,7 +3029,7 @@ def test_workday_alias_key_fetches_the_public_page_not_the_cxs_api(monkeypatch):
 def test_workday_alias_key_resolves_to_itself_when_nothing_redirects(monkeypatch):
     # the measured shape for 384 of 400 sampled Boards (2026-09-11): no redirect at all
     monkeypatch.setattr(
-        "headstart.http.fetch", lambda method, url, **kw: _AliasResp(url)
+        "headstart.network.http.fetch", lambda method, url, **kw: _AliasResp(url)
     )
     s = get_scraper("workday", "https://acme.wd3.myworkdayjobs.com/careers", "Acme")
     assert s.alias_key() == "https://acme.wd3.myworkdayjobs.com/careers"
@@ -3037,7 +3037,7 @@ def test_workday_alias_key_resolves_to_itself_when_nothing_redirects(monkeypatch
 
 def test_workday_alias_key_follows_a_real_redirect(monkeypatch):
     monkeypatch.setattr(
-        "headstart.http.fetch",
+        "headstart.network.http.fetch",
         lambda method, url, **kw: _AliasResp(
             "https://acme.wd3.myworkdayjobs.com/NewCareers"
         ),
@@ -3055,7 +3055,7 @@ def test_workday_alias_key_strips_the_tombstone_query_string(monkeypatch):
 
     tombstone = "https://community.workday.com/maintenance-page?d=3&s=1&e=1&o="
     monkeypatch.setattr(
-        "headstart.http.fetch", lambda method, url, **kw: _AliasResp(tombstone)
+        "headstart.network.http.fetch", lambda method, url, **kw: _AliasResp(tombstone)
     )
     s = get_scraper("workday", "https://gone.wd3.myworkdayjobs.com/careers", "Gone")
     key = s.alias_key()
@@ -3068,7 +3068,7 @@ def test_workday_alias_key_is_none_when_unreachable(monkeypatch):
     def fetch(method, url, **kw):
         raise TimeoutError("no route")
 
-    monkeypatch.setattr("headstart.http.fetch", fetch)
+    monkeypatch.setattr("headstart.network.http.fetch", fetch)
     s = get_scraper("workday", "https://acme.wd3.myworkdayjobs.com/careers", "Acme")
     assert s.alias_key() is None
 
@@ -3083,7 +3083,7 @@ def test_workday_alias_key_is_none_on_a_malformed_slug_not_a_crash(monkeypatch):
     def fetch(method, url, **kw):
         raise AssertionError("must not be reached: _parts() should have failed first")
 
-    monkeypatch.setattr("headstart.http.fetch", fetch)
+    monkeypatch.setattr("headstart.network.http.fetch", fetch)
     s = get_scraper("workday", "not-a-careers-url", "Acme")
     assert s.alias_key() is None
 
@@ -3168,7 +3168,7 @@ def test_workday_paginate_narrows_its_fan_out_once_the_origin_has_walled(monkeyp
     simply never saturated: the same fake, same offsets, walled and not."""
     import asyncio
 
-    from headstart import spare_egress
+    from headstart.network import spare_egress
     from headstart.scrapers import workday as workday_mod
     from headstart.scrapers.workday import WorkdayScraper
 
@@ -3207,7 +3207,7 @@ def test_workday_paginate_absorbs_a_retry_exhausted_page_mid_crawl(monkeypatch, 
     board, exactly like a mid-crawl 404 — it must not discard the pages that did arrive (#194:
     the bigger the board, the more page requests, so raising here killed the boards worth most).
     Same shape as the 404 test above, with the failing page raising instead of returning None."""
-    from headstart import http
+    from headstart.network import http
     from headstart.scrapers.workday import WorkdayScraper
 
     s = WorkdayScraper("https://acme.wd1.myworkdayjobs.com/ext")
@@ -3236,7 +3236,7 @@ def test_workday_paginate_shows_every_cause_with_no_cap(monkeypatch, caplog):
     a 5th+ cause just vanished, with not even a sized tail to say so. It now formats through
     `loss_breakdown` directly, so every cause shows and the two formatters can't drift apart
     again the way `_failure_class` already had to be unified out of existence once."""
-    from headstart import http
+    from headstart.network import http
     from headstart.scrapers import workday as workday_mod
     from headstart.scrapers.workday import WorkdayScraper
 
@@ -3280,7 +3280,7 @@ def test_workday_paginate_raises_when_most_pages_fail_mid_crawl(monkeypatch):
     preserve rows for a query we barely read — so it still fails outright, as every mid-crawl
     error did before #194. The premise this test used to carry — that a *single* non-404 error
     fails the crawl — is what #194 changed."""
-    from headstart import http
+    from headstart.network import http
     from headstart.scrapers.workday import WorkdayScraper
 
     s = WorkdayScraper("https://acme.wd1.myworkdayjobs.com/ext")
@@ -3324,7 +3324,7 @@ def test_workday_paginate_raises_without_reading_a_404_majority_as_gone(monkeypa
 def test_workday_paginate_sync_absorbs_a_retry_exhausted_page_mid_crawl(monkeypatch):
     """The kill switch (ADR-0016) may change how the pages are fetched; it must not change how
     much of a struggling board survives."""
-    from headstart import http
+    from headstart.network import http
     from headstart.scrapers.workday import WorkdayScraper
 
     monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", "0")
@@ -3344,7 +3344,7 @@ def test_workday_paginate_sync_absorbs_a_retry_exhausted_page_mid_crawl(monkeypa
 
 
 def test_workday_paginate_sync_raises_when_most_pages_fail_mid_crawl(monkeypatch):
-    from headstart import http
+    from headstart.network import http
     from headstart.scrapers.workday import WorkdayScraper
 
     monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", "0")
@@ -8452,7 +8452,7 @@ def test_workday_400_does_not_wall_the_group(monkeypatch):
     429 in the same walk still needs it. Driven through `http.fetch` with Workday's own opt-in
     set rather than by asserting the constant, so it fails if the wiring stops matching.
     """
-    from headstart import spare_egress
+    from headstart.network import spare_egress
     from headstart.scrapers.workday import WorkdayScraper
 
     monkeypatch.setattr(spare_egress, "proxy_url", lambda: "socks5://127.0.0.1:40000")
@@ -9682,7 +9682,7 @@ def test_workday_no_longer_retries_a_400_anywhere(monkeypatch):
     answers 422, which `TRANSIENT` already excludes, so the sweep still fails fast)."""
     import asyncio
 
-    from headstart import http
+    from headstart.network import http
     from headstart.scrapers.workday import WorkdayScraper
 
     seen: list[tuple[str, frozenset]] = []
@@ -9734,7 +9734,7 @@ def test_workday_instance_resolution_never_retries_a_400(monkeypatch):
     fast on the real wrong-centre answer. A 400 there would be a stale session cookie, and
     retrying one re-sends it; the fix belongs in the detail pass (`_detail_from_cookie_retry`),
     not in a data-centre probe that would spend 54 requests learning nothing."""
-    from headstart import http
+    from headstart.network import http
     from headstart.scrapers.workday import WorkdayScraper
 
     seen: list[frozenset] = []
@@ -9776,7 +9776,7 @@ def test_workday_detail_passes_opt_into_the_spare_egress(monkeypatch):
     """
     import asyncio
 
-    from headstart import http
+    from headstart.network import http
     from headstart.scrapers.workday import WorkdayScraper
 
     seen: list[tuple[str, str | None]] = []
@@ -10838,7 +10838,7 @@ def test_workday_detail_404_falls_back_to_the_public_page(monkeypatch):
     import asyncio
     from collections import Counter
 
-    from headstart import http
+    from headstart.network import http
     from headstart.scrapers.workday import _PAGE_RECOVERED, WorkdayScraper
 
     page_html = (
@@ -10897,7 +10897,7 @@ def test_workday_detail_404_with_a_dead_page_still_counts_the_loss(monkeypatch):
     exactly as before this fallback existed: None, counted under HTTP 404."""
     from collections import Counter
 
-    from headstart import http
+    from headstart.network import http
     from headstart.scrapers.workday import WorkdayScraper
 
     class _R:
@@ -10922,7 +10922,7 @@ def test_workday_detail_400_does_not_touch_the_public_page(monkeypatch):
     meaning — earns the second request."""
     from collections import Counter
 
-    from headstart import http
+    from headstart.network import http
     from headstart.scrapers.workday import WorkdayScraper
 
     urls: list[str] = []
@@ -11029,7 +11029,7 @@ def test_workday_detail_pass_breaks_off_after_consecutive_settled_5xx(
     import logging
     from collections import Counter
 
-    from headstart import http
+    from headstart.network import http
     from headstart.scrapers.workday import _BROKEN_OFF, _DETAIL_BREAK_STREAK
 
     calls = []
@@ -11070,7 +11070,7 @@ def test_workday_a_recovered_detail_resets_the_5xx_streak(monkeypatch):
     counter starts over — a board with interleaved successes is a lossy pass, not an episode."""
     from collections import Counter
 
-    from headstart import http
+    from headstart.network import http
     from headstart.scrapers.workday import _DETAIL_BREAK_STREAK
 
     n = {"i": 0}
@@ -11105,7 +11105,7 @@ def test_workday_400s_do_not_trip_the_5xx_breaker(monkeypatch):
     pure 400 storm never trips it, and the pass keeps attempting every detail."""
     from collections import Counter
 
-    from headstart import http
+    from headstart.network import http
     from headstart.scrapers.workday import _DETAIL_BREAK_STREAK
 
     calls = []
@@ -11141,7 +11141,7 @@ def test_workday_detail_break_off_applies_to_the_async_path_too(monkeypatch):
     import asyncio
     from collections import Counter
 
-    from headstart import http
+    from headstart.network import http
     from headstart.scrapers.workday import _BROKEN_OFF, _DETAIL_BREAK_STREAK
 
     calls = []
@@ -11352,7 +11352,7 @@ def test_every_wired_scraper_resolves_its_company(
     `RippleHireScraper.board_page` then reached the branch and turned ripplehire resolution off
     with the whole suite green. The URL is asserted too.
     """
-    from headstart import http
+    from headstart.network import http
 
     seen: list[str] = []
 
@@ -11452,7 +11452,7 @@ def test_the_title_fetch_is_one_attempt_and_never_walls_its_ats(monkeypatch):
     routes every other Board of the ATS onto the spare egress — while `egress_group` stays, so it
     still *rides* the fallback once the ATS is walled (ADR-0063).
     """
-    from headstart import http
+    from headstart.network import http
 
     captured: dict = {}
 
@@ -11472,7 +11472,7 @@ def test_the_title_fetch_is_one_attempt_and_never_walls_its_ats(monkeypatch):
 def test_resolve_company_costs_nothing_for_an_ats_without_a_board_page(monkeypatch):
     """Every ATS with no measured title shape keeps its slug AND makes no extra request —
     the whole change is inert for them."""
-    from headstart import http
+    from headstart.network import http
     from headstart.scrapers.greenhouse import GreenhouseScraper
 
     # Records rather than raises. `resolve_company` catches every exception, so a raising stub
@@ -11490,7 +11490,7 @@ def test_resolve_company_costs_nothing_for_an_ats_without_a_board_page(monkeypat
 def test_a_name_from_the_ledger_outranks_the_board_title(monkeypatch):
     """A Board whose ledger row already names the company is left alone, and not even fetched:
     the curated name is better evidence than a page title."""
-    from headstart import http
+    from headstart.network import http
     from headstart.scrapers.ashby import AshbyScraper
 
     calls: list[str] = []
@@ -11505,7 +11505,7 @@ def test_a_name_from_the_ledger_outranks_the_board_title(monkeypatch):
 def test_a_failed_title_fetch_leaves_the_company_untouched(monkeypatch):
     """A display name is never worth failing a Board for, so every error path degrades to today's
     behaviour rather than raising out of `fetch`."""
-    from headstart import http
+    from headstart.network import http
     from headstart.scrapers.lever import LeverScraper
 
     def _raise(*a, **k):
@@ -11518,7 +11518,7 @@ def test_a_failed_title_fetch_leaves_the_company_untouched(monkeypatch):
 
 
 def test_a_non_200_board_page_leaves_the_company_untouched(monkeypatch):
-    from headstart import http
+    from headstart.network import http
     from headstart.scrapers.lever import LeverScraper
 
     monkeypatch.setattr(http, "fetch", lambda *a, **k: _titled("Not Found", status=404))
@@ -11532,7 +11532,7 @@ def test_the_title_fetch_does_not_go_through_the_get_override(monkeypatch):
     `Response` where the base returns `.text` — so `resolve_company` uses the shared fetch seam
     directly. Routing it through `_get` fed a `Response` to the title parser and broke every
     eightfold Board; the suite passed, and only a live end-to-end run caught it."""
-    from headstart import http
+    from headstart.network import http
     from headstart.scrapers.eightfold import EightfoldScraper
 
     monkeypatch.setattr(http, "fetch", lambda *a, **k: _titled("Careers at Vodafone"))
@@ -11546,7 +11546,7 @@ def test_fetch_resolves_the_company_before_parsing(monkeypatch):
     they all stayed green when the call was deleted from `fetch` — the served Jobs would have
     carried the slug again with nothing red. This drives `fetch` end to end instead.
     """
-    from headstart import http
+    from headstart.network import http
     from headstart.scrapers.ashby import AshbyScraper
 
     monkeypatch.setattr(http, "fetch", lambda *a, **k: _titled("1Password Jobs"))
@@ -11947,7 +11947,7 @@ def test_eightfold_smartapply_to_pcsx_shape_carries_the_requisition_ids():
 def test_a_board_page_that_names_no_one_says_so(monkeypatch, caplog):
     """`resolve_company` was silent on every failure, so a Board serving its slug could not be
     told apart from one whose page was refused, unrecognised or never asked."""
-    from headstart import http
+    from headstart.network import http
     from headstart.scrapers.lever import LeverScraper
 
     monkeypatch.setattr(http, "fetch", lambda *a, **k: _titled("Not Found", status=404))
@@ -11958,7 +11958,7 @@ def test_a_board_page_that_names_no_one_says_so(monkeypatch, caplog):
 
 
 def test_a_board_page_that_raises_says_so(monkeypatch, caplog):
-    from headstart import http
+    from headstart.network import http
     from headstart.scrapers.lever import LeverScraper
 
     def _raise(*a, **k):
@@ -11987,7 +11987,7 @@ def test_adopt_company_keeps_a_real_name_and_logs_a_refusal(caplog):
 
 def test_freshteam_streams_only_the_head_of_its_page_and_closes_it(monkeypatch):
     """The og:title sits in the first ~3 KB of a page that runs to 1.7 MB (`abnhire`)."""
-    from headstart import http
+    from headstart.network import http
     from headstart.scrapers.freshteam import FreshteamScraper
 
     head = '<head><meta property="og:title" content= "Careers - KreditBee" /></head>'
@@ -12023,7 +12023,7 @@ def test_freshteam_streams_only_the_head_of_its_page_and_closes_it(monkeypatch):
 
 
 def test_freshteam_closes_a_streamed_page_that_is_not_a_200(monkeypatch):
-    from headstart import http
+    from headstart.network import http
     from headstart.scrapers.freshteam import FreshteamScraper
 
     response = _StatedPage("<html>502</html>", status_code=502)
@@ -12073,8 +12073,8 @@ def test_an_inactive_trakstar_account_raises_as_gone_before_reading_the_api(
     """The API still lists an inactive account's openings and every link it names 404s
     (`nowfloats1`, 2026-09-24), so the Board must fail as gone — the shape ADR-0058 counts —
     rather than serve those postings or return a quiet empty list."""
-    from headstart import http
     from headstart.ingest.board_failures import is_gone
+    from headstart.network import http
 
     scraper = get_scraper("trakstar", "nowfloats1")
     monkeypatch.setattr(
@@ -12145,7 +12145,7 @@ def test_a_curated_board_spends_no_request_on_a_name_source(monkeypatch):
 
 
 def test_a_name_reader_that_raises_leaves_the_board_as_it_was(monkeypatch, caplog):
-    from headstart import http
+    from headstart.network import http
     from headstart.scrapers.lever import LeverScraper
 
     monkeypatch.setattr(http, "fetch", lambda *a, **k: _titled("Acme"))
@@ -12171,7 +12171,7 @@ def _page_answer(status: int, text: str = "", headers: dict | None = None):
 def test_lever_asks_the_eu_board_page_for_an_eu_board(monkeypatch):
     """An EU Board's page is on jobs.eu.lever.co; asking jobs.lever.co 404s, which left every EU
     Board on its slug (57 affected Boards, 2026-09-24)."""
-    from headstart import http
+    from headstart.network import http
     from headstart.scrapers.lever import LeverScraper
 
     seen: list[str] = []
@@ -12196,7 +12196,7 @@ def test_lever_asks_the_eu_board_page_for_an_eu_board(monkeypatch):
 def test_lever_reads_a_posting_only_when_the_board_page_is_gone(monkeypatch):
     """`veeva`'s board page 404s while its postings still answer with JSON-LD; a board page that
     answered with a refused title (`schmidt-entities` serves "jobs") is not second-guessed."""
-    from headstart import http
+    from headstart.network import http
     from headstart.scrapers.lever import LeverScraper
 
     posting = (
@@ -12229,7 +12229,7 @@ def _ashby_graphql(name: str | None) -> str:
 def test_ashby_names_a_hidden_board_from_its_organization_record(monkeypatch):
     """A Board that hides its job page titles it "Jobs" alone; the hosted-page app's own GraphQL
     lookup names the organization (24 of 25 such live Boards, 2026-09-24)."""
-    from headstart import http
+    from headstart.network import http
     from headstart.scrapers.ashby import AshbyScraper
 
     posted: list[dict] = []
@@ -12251,7 +12251,7 @@ def test_ashby_names_a_hidden_board_from_its_organization_record(monkeypatch):
 
 
 def test_ashby_asks_no_graphql_when_the_title_names_the_board(monkeypatch):
-    from headstart import http
+    from headstart.network import http
     from headstart.scrapers.ashby import AshbyScraper
 
     methods: list[str] = []
@@ -12270,7 +12270,7 @@ def test_ashby_asks_no_graphql_when_the_title_names_the_board(monkeypatch):
 def test_ashby_is_named_ashby_on_its_own_board(monkeypatch):
     """The title guard refuses "Ashby Jobs" as the vendor's branding; the organization record is
     no such fallback, and Ashby hires on Ashby."""
-    from headstart import http
+    from headstart.network import http
     from headstart.scrapers.ashby import AshbyScraper
 
     def _fetch(method, url, **kwargs):
@@ -12286,7 +12286,7 @@ def test_ashby_is_named_ashby_on_its_own_board(monkeypatch):
 
 
 def test_ashby_waits_out_a_graphql_429_and_asks_again(monkeypatch):
-    from headstart import http
+    from headstart.network import http
     from headstart.scrapers.ashby import AshbyScraper
 
     answers = [
@@ -12317,7 +12317,7 @@ def _pcsx_page(title: str, branding: dict) -> str:
 def test_eightfold_reads_the_brand_when_the_title_is_a_slogan(monkeypatch):
     """Kraft Heinz titles its page with a slogan no wrapper reads; the same page's config names
     it. A microsite's own branding names a subsidiary and is never read."""
-    from headstart import http
+    from headstart.network import http
     from headstart.scrapers.eightfold import EightfoldScraper
 
     page = _pcsx_page(

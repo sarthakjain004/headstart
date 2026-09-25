@@ -18,7 +18,7 @@ the work, and because rotation is supply-capped by our own cooldown at ~0.4% of 
 
 Every rotation that was *permitted* produced a fresh working SOCKS5 listener — 2,030 of them
 across three runs, zero failures. The other 99.6% were refused by `_ROTATION_COOLDOWN = 20.0`
-(`src/headstart/spare_egress.py`), which books them as `throttled`.
+(`src/headstart/network/spare_egress.py`), which books them as `throttled`.
 
 Rotation ran flat-out against that floor for the whole scrape window, not in bursts:
 

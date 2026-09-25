@@ -164,7 +164,7 @@ directory works as `headstart.alerts` in the repo and as a top-level `alerts` on
 **I/O is injected as plain callables, not adapter classes.** `shortlist` and `digest` are pure
 functions over data; everything that touches the network is passed in, exactly as
 `resume_query.query_for(text, ask=llm_router.ask)` already does in the Space's own request path, and
-faked in tests with `monkeypatch.setattr` as `tests/test_http.py` does. The repo has no `conftest.py`
+faked in tests with `monkeypatch.setattr` as `tests/test_network_http.py` does. The repo has no `conftest.py`
 and no mocking library, so formal adapters for four seams would introduce an idiom nothing else here
 uses — and `identity` and `mail` have exactly one real implementation each, which is a hypothetical
 seam, not a real one.

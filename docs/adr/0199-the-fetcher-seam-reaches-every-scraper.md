@@ -10,7 +10,7 @@ unchanged)
 ## Context
 
 ADR-0153 gave `BaseScraper.__init__` an optional `fetcher` so a test could inject a fake instead of
-monkeypatching `headstart.http`. It stopped short in four places, measured on `main` at
+monkeypatching `headstart.network.http`. It stopped short in four places, measured on `main` at
 `12d45409`:
 
 - **`registry.get_scraper` took no `fetcher`.** `scripts/bench/tech_gate_bench.py` built a
@@ -28,7 +28,7 @@ monkeypatching `headstart.http`. It stopped short in four places, measured on `m
   that the reset happened.
 
 Tests grew five separate fakes because there was no shared one: `FakeFetcher` and
-`FakeBrowserFetcher` in `test_fetcher.py`, `_FakeFetcher` in `test_bamboohr.py`, `_Fetcher` in
+`FakeBrowserFetcher` in `test_network_fetcher.py`, `_FakeFetcher` in `test_bamboohr.py`, `_Fetcher` in
 `test_jibe.py`, and `_FakeCsod` plus four subclasses in `test_cornerstone.py`. There were also four
 fake Response classes.
 
@@ -42,7 +42,7 @@ fake Response classes.
   the curl_cffi `KeyError` on an unknown domain would leak to every caller, and the protocol would
   promise a whole cookie API that nothing uses.
 - **(c) Leave the reset on `http.session()`.** An injected fake then still clears the real pooled
-  jar, and a test cannot see the reset without monkeypatching `headstart.http`. That is the gap
+  jar, and a test cannot see the reset without monkeypatching `headstart.network.http`. That is the gap
   this ADR closes.
 
 **Decision: (a).** `HTTPFetcher.clear_cookies` clears the calling thread's `http.session()` jar,
@@ -76,7 +76,7 @@ opaque argument, and a fake ignores it.
 1. `get_scraper(ats, slug, company, *, have_details=None, fetcher=None)` passes `fetcher` to the
    constructor. The bench injects its counting fetcher there instead of overwriting `_fetcher`.
 2. All nine `__init__` overrides accept `fetcher: Fetcher | None = None` and pass it to
-   `super().__init__`. `tests/test_fetcher.py` checks every registered ATS.
+   `super().__init__`. `tests/test_network_fetcher.py` checks every registered ATS.
 3. `Fetcher` gains `clear_cookies(domain: str | None = None) -> None`, and Workday's two resets and
    Cornerstone's reset go through `self._fetcher`. The resets on Workday's per-pass
    `AsyncSession` jar stay as they were, because that jar belongs to the session and not to the
@@ -88,7 +88,7 @@ opaque argument, and a fake ignores it.
    returns a `FakeResponse` or an exception, and records each request as a
    `FakeRequest(method, url, kwargs)`. This change adds `clear_cookies`, which records each reset
    in `cookie_clears`. Migrated to it:
-   - the `test_fetcher.py` fake, which becomes a dict-backed route;
+   - the `test_network_fetcher.py` fake, which becomes a dict-backed route;
    - the `test_bamboohr.py` fake, which becomes a route that answers every request the same way;
    - the `test_cornerstone.py` fake, where `_FakeCsod` is now a `FakeFetcher` whose four
      specialised subclasses override the route instead of `fetch`, and whose cookie test reads
@@ -98,7 +98,7 @@ opaque argument, and a fake ignores it.
    each request with the fake clock, because its crawl-delay tests read the gaps between requests.
    `FakeBrowserFetcher` stays its own class, because it stands in for darwinbox's browser factory,
    a context manager behind a different seam, but it now answers with the shared `FakeResponse`.
-6. **Migrate when touched.** The existing monkeypatches of `headstart.http` stay: 93 `setattr`
+6. **Migrate when touched.** The existing monkeypatches of `headstart.network.http` stay: 93 `setattr`
    calls in 8 test files on `main`. `HTTPFetcher` still forwards to `http.fetch`/`fetch_async` by
    name, so they still work. A test that is rewritten for another reason moves to the shared fake;
    nothing is mass-rewritten.
@@ -112,7 +112,7 @@ opaque argument, and a fake ignores it.
   `http.DEFAULT_FETCHER`, because its `_fetch` rides the pooled session, so it clears the same jar
   as before. The bench's `_CountingFetcher` forwards the method too.
 - **No request changed.** One live Board per ATS was scraped before and after this change, and
-  every `(method, url, kwargs)` was recorded at `headstart.http`, which both paths reach:
+  every `(method, url, kwargs)` was recorded at `headstart.network.http`, which both paths reach:
   - `workday:blackline/BlackLineCareers`: 111 Jobs both times, with the same ids and the same
     fields apart from `scraped_at`. It made 118 requests (the instance probe, 6 listing POSTs of
     which 5 were async, and 111 details), and the request multiset was identical.
@@ -125,7 +125,7 @@ opaque argument, and a fake ignores it.
   had closed one posting, and both multisets were again identical.
 - **The bench now counts Workday's listing POSTs.** They used to bypass the fetcher it wrapped, so
   a Workday request count taken before this change is not comparable with one taken after it.
-- **A test can prove a request stays on the seam.** `tests/test_fetcher.py` replaces
+- **A test can prove a request stays on the seam.** `tests/test_network_fetcher.py` replaces
   `http.fetch`, `http.fetch_async` and `http.session` with functions that raise, then runs
   Workday's `fetch_raw` and Trakstar's feed on the shared fake. Pointing Workday's listing, its
   cookie reset and Trakstar's feed back at the module global fails four of those tests.

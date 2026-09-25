@@ -11,7 +11,7 @@ target into one, so any miner keyed on host targets (``cc_miner.ATS_PATTERNS``) 
 :func:`capture_urls` returns every captured URL in that range for one crawl.
 
 When the data host answers 429 or 503 (S3's SlowDown), requests move to the spare egress
-(``headstart.spare_egress``, the WARP SOCKS proxy) and rotate it on repeated refusals, then go
+(``headstart.network.spare_egress``, the WARP SOCKS proxy) and rotate it on repeated refusals, then go
 back to direct after :data:`PROXY_HOLD` seconds.
 """
 
@@ -25,7 +25,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from curl_cffi import requests
 
-from headstart import spare_egress
+from headstart.network import spare_egress
 
 DATA = "https://data.commoncrawl.org"
 UA = "HeadStart-discovery/0.1 (ATS board discovery)"

@@ -12,7 +12,7 @@ depend on a browser upstream — both on `cloakbrowser`, a stealth-patched Chrom
 (`scrapers/_cloakbrowser.py:1-32`), plus the **Evomi residential proxy** for Tesla from a
 datacenter IP (`tesla.py:15-19`). `_browserbase.py` (paid SaaS) is wired for the same two as an
 alternative path but both currently prefer cloakbrowser; avature is the only live Browserbase user.
-**uber** uses `httpcloak` TLS impersonation (`uber.py:70`) — free, and our `headstart.http`
+**uber** uses `httpcloak` TLS impersonation (`uber.py:70`) — free, and our `headstart.network.http`
 curl_cffi transport already clears the same Cloudflare wall. amazon/apple/google/tiktok/bytedance
 are plain HTTP on both sides.
 

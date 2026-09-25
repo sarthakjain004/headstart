@@ -25,7 +25,7 @@ from urllib.parse import urlsplit
 import pytest
 from fake_fetcher import FakeFetcher, FakeResponse
 
-from headstart import http
+from headstart.network import http
 from headstart.scrapers.cornerstone import CornerstoneScraper
 
 FIXTURES = Path(__file__).parent / "fixtures"

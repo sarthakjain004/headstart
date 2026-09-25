@@ -41,9 +41,10 @@ from __future__ import annotations
 import re
 from typing import Any, ClassVar
 
-from headstart import company_name, http
-from headstart.fetcher import Fetcher
+from headstart import company_name
 from headstart.models import Job, host_of, html_to_text
+from headstart.network import http
+from headstart.network.fetcher import Fetcher
 from headstart.scrapers.base import (
     USER_AGENT,
     BaseScraper,

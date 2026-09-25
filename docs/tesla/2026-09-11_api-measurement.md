@@ -61,7 +61,7 @@ full-catalog listing).
 `fetch_raw()` never issues an HTTP request. It drives one headful Chrome, navigates once to the
 careers search page, and reads the body of *that page's own* first-load call to the state
 endpoint straight off the CDP `Network` domain. This is a different contract from
-`headstart.browser_http.origin()` (navigate, then explicitly `get_json`/`post_json` on the warmed
+`headstart.network.browser_http.origin()` (navigate, then explicitly `get_json`/`post_json` on the warmed
 tab) — that explicit-request half is exactly what step 2 above shows failing — so `tesla.py`
 keeps its own minimal, single-purpose Chrome lifecycle rather than bending the shared one to a
 second shape for a single caller.

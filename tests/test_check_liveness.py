@@ -134,7 +134,7 @@ _URL = "https://apply.workable.com/api/v1/widget/accounts/acme"
 
 
 class _FakeEgress:
-    """Stands in for `headstart.spare_egress` — no daemon restarted, no socket opened.
+    """Stands in for `headstart.network.spare_egress` — no daemon restarted, no socket opened.
 
     Defaults to *unavailable*, which is a machine with no WARP and therefore the ladder exactly as
     it behaved before rotation existed. Tests that want an egress opt in, so the ones that do not

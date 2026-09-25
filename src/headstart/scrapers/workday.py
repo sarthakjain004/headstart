@@ -46,9 +46,10 @@ from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
-from headstart import fanout_stats, http, log
-from headstart.fetcher import Fetcher
+from headstart import log
 from headstart.models import Job, html_to_text, is_remote
+from headstart.network import fanout_stats, http
+from headstart.network.fetcher import Fetcher
 from headstart.scrapers import workday_company_name
 from headstart.scrapers.base import (
     MIN_AUTHORITATIVE_SHARE,
@@ -1625,7 +1626,7 @@ class WorkdayScraper(BaseScraper):
     ) -> tuple[int, http.RequestsError | None]:
         """Fetch every offset in ``offsets`` concurrently over one shared ``AsyncSession``,
         bounded to at most ``_PAGE_STREAMS`` in flight — narrower once the origin has walled this
-        shard (:func:`~headstart.spare_egress.stream_width`) — and return how many pages came back
+        shard (:func:`~headstart.network.spare_egress.stream_width`) — and return how many pages came back
         short together with the first request error that made one (None when only 404s did).
 
         Not a call to :meth:`fan_out_async`: that method's per-item contract swallows *every*
@@ -1654,7 +1655,7 @@ class WorkdayScraper(BaseScraper):
 
         # Recorded against the width in force. Listing pages are the widest, longest-lived fan-out
         # in the run and the one the clamp actually moves, so this is the site whose two operating
-        # points are worth comparing (`headstart.fanout_stats`).
+        # points are worth comparing (`headstart.network.fanout_stats`).
         with fanout_stats.batch("workday pages", width) as item_done:
             async with AsyncSession(impersonate="chrome") as session:
 

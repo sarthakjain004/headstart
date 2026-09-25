@@ -3,7 +3,7 @@ import json
 import pytest
 from fake_fetcher import FakeFetcher, FakeResponse
 
-from headstart import http
+from headstart.network import http
 from headstart.scrapers import taleo_enterprise as enterprise
 from headstart.scrapers.taleo_enterprise import TaleoEnterpriseScraper
 

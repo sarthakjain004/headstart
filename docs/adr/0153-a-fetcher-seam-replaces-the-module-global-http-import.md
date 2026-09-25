@@ -14,7 +14,7 @@ Workday's listing and Trakstar's feed ride it, and `Fetcher` gains `clear_cookie
 ## Context
 
 `BaseScraper.__init__(slug, company)` takes no fetcher parameter. Every scraper reaches HTTP
-through `headstart.http`, imported at module scope in ~20 scraper files and reached inside
+through `headstart.network.http`, imported at module scope in ~20 scraper files and reached inside
 `BaseScraper._get`/`_get_async`/`_fetch`/`_fetch_async` as a bare module reference. That module
 holds real, useful process-global state — a thread-local pooled session and a retry counter
 (ADR-0002) — which is not the problem; the problem is that nothing sits between a scraper and
@@ -37,7 +37,7 @@ comments on exactly this failure mode without fixing it (the two-client situatio
 to make the omission visible in a type signature).
 
 Tests reached around all of this four structurally incompatible ways: monkeypatching
-`headstart.http`'s module attributes with hand-rolled response doubles, monkeypatching a
+`headstart.network.http`'s module attributes with hand-rolled response doubles, monkeypatching a
 scraper's own `_get`, monkeypatching `fan_out`/`fan_out_async` themselves, or reconstructing
 `fetch_raw`'s output by hand from a fixture without touching the network at all
 (`tests/test_icims.py`'s `_raw_from_fixture`). No test could simply pass a fake fetcher in.
@@ -65,7 +65,7 @@ positionally. Nothing found while building this needed (b).
 
 ## Decision
 
-**`headstart.fetcher.Fetcher`** is a `typing.Protocol` with two methods:
+**`headstart.network.fetcher.Fetcher`** is a `typing.Protocol` with two methods:
 
 ```python
 class Fetcher(Protocol):
@@ -91,7 +91,7 @@ instance `BaseScraper.__init__` resolves to when no `fetcher` is passed.
 None = None`, stored as `self._fetcher` and resolved to `http.DEFAULT_FETCHER` when `None`. Every
 method that used to call `http.fetch`/`http.fetch_async` directly — `_get`, `_get_async`,
 `_fetch`, `_fetch_async`, and `alias_key`'s own probe request — now calls `self._fetcher.fetch`/
-`self._fetcher.fetch_async` instead. `import headstart.http` stays in `base.py` for exactly one
+`self._fetcher.fetch_async` instead. `import headstart.network.http` stays in `base.py` for exactly one
 reason: resolving that default.
 
 ### `browser_http`, deepened to satisfy the same shape
@@ -108,7 +108,7 @@ answers carry, so `DarwinboxScraper` can write its walled path in the same shape
 This is honestly a **partial** `Fetcher`: `BrowserFetcher` implements `fetch` only. A browser tab
 is one session, not a multiplexed pool, and darwinbox's escalation is entirely synchronous — no
 code path ever needs `fetch_async` on it, so adding one would be exactly the unnatural shape this
-ADR's brief warned against manufacturing. `headstart/fetcher.py`'s module docstring states this
+ADR's brief warned against manufacturing. `headstart/network/fetcher.py`'s module docstring states this
 in prose rather than in the type system: this repo runs no type checker in CI, so `Fetcher` is a
 documented contract, not an enforced one, and a fake used only for a scraper's synchronous path
 is free to leave `fetch_async` unimplemented as long as nothing calls it.
@@ -121,7 +121,7 @@ other scraper needs exactly one. `_fetch_raw_browser` no longer imports `browser
 inside the method; it calls `self._browser_fetcher(page_url)` and, inside that `with` block,
 `browser.fetch("POST", api, json=body)` — line-for-line the same shape `_alljobs`'s curl path
 already uses. A test can now inject a fake for *either* one (or both at once) without
-monkeypatching `headstart.http` or `headstart.browser_http`; `tests/test_fetcher.py` proves it
+monkeypatching `headstart.network.http` or `headstart.network.browser_http`; `tests/test_network_fetcher.py` proves it
 for the unwalled path, the walled-escalation path, and two ordinary-HTTP scrapers (greenhouse,
 icims).
 
@@ -165,7 +165,7 @@ bug to fix.
 - **A scraper can now be tested by injecting a fake fetcher at construction**, proven for one
   plain single-fetch board (greenhouse), the sitemap-plus-per-job-detail-pass pattern shared by
   icims/successfactors/meta (icims), and the browser adapter on both its paths (darwinbox) — see
-  `tests/test_fetcher.py`. This is additive: none of the four pre-existing faking techniques were
+  `tests/test_network_fetcher.py`. This is additive: none of the four pre-existing faking techniques were
   migrated or removed, only shown to no longer be the only option.
 - **`self._fetcher` is per-instance, not per-thread.** `HTTPFetcher` itself carries no state (it
   forwards to the thread-local session `http.py` already manages), so this changes nothing about
