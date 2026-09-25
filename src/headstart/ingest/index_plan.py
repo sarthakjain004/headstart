@@ -73,7 +73,9 @@ _log = log.get(__name__, __spec__)
 #: 6 — one row per tenant and requisition extended to Taleo Enterprise, Taleo BE and ADP WFN
 #:     (ADR-0223).
 #: 7 — iCIMS redirect aliases, 270 Boards (ADR-0222).
-DEDUP_VERSION = 7
+#: 8 — the Eightfold fronts the first pairs file left out: 25 pairs across 22 fronts
+#:     (ADR-0210's amendment).
+DEDUP_VERSION = 8
 
 
 @dataclass(frozen=True, slots=True)

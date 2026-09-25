@@ -15,11 +15,13 @@ that lists its postings, and a site may have several. Three readers, one file:
 - ``EightfoldScraper`` reads which ATS backs its Board, because the posting states that ATS's
   requisition under a field that depends on it (Oracle's is ``displayJobId``).
 
-Found by content on served index v654 (2026-09-23): pairs of Boards on two ATSes sharing exact
-descriptions. A new front enters by adding a row. Lumen is left out by the user's decision (its
-backing site is an internal careers site), and so is International SOS (postings of its own).
-The rows whose backing Board is itself an Eightfold site are a company's second site (#154), the
-hand-frozen ``check_liveness._EIGHTFOLD_ALIAS_LOSERS``.
+Found by content on served index v654 (2026-09-23), pairs of Boards on two ATSes sharing exact
+descriptions, and completed on v65 (2026-09-25) with every other front whose backing Board we
+hold, whatever the share: the row-level rule removes only a posting both Boards carry, so a front
+that also posts on its own belongs here too. A new front enters by adding a row. Lumen is left out
+by the user's decision (its backing site is an internal careers site). The rows whose backing
+Board is itself an Eightfold site are a company's second site (#154), the hand-frozen
+``check_liveness._EIGHTFOLD_ALIAS_LOSERS``.
 """
 
 from __future__ import annotations

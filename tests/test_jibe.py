@@ -78,6 +78,12 @@ def test_a_row_becomes_a_job_linked_on_the_client_host():
     assert re.fullmatch(JibeScraper.url_shape, job.url)
 
 
+def test_the_requisition_is_the_native_id():
+    """What an Eightfold site in front of this Board states as `atsJobId` (ADR-0210): AARP's site
+    states the row's `slug` (15 of 15 matched live, 2026-09-25)."""
+    assert _jobs(slug="rmeducation")["3713"].requisition == "3713"
+
+
 def test_a_posting_served_in_two_languages_is_one_job_in_english():
     """`totalCount` counts one row per (requisition, language): flyporter serves 5262 as fr-ca
     first and en-us second. One Job per `slug`, its English row whichever comes first."""

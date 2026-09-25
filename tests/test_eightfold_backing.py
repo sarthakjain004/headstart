@@ -25,7 +25,7 @@ def test_a_site_with_several_backing_boards_keeps_them_all_in_order(tmp_path):
     }
 
 
-def test_the_committed_pairs_name_only_the_six_atses_that_state_a_requisition():
+def test_the_committed_pairs_name_only_the_atses_that_state_a_requisition():
     """A backing Board on any other ATS would never carry a `requisition`, so its pair could
     never match; the file and the scrapers that fill the column must agree."""
     pairs = eightfold_backing.load()
@@ -37,9 +37,11 @@ def test_the_committed_pairs_name_only_the_six_atses_that_state_a_requisition():
         "greenhouse",
         "taleo_enterprise",
         "successfactors",
+        "lever",
+        "jibe",
     }
     assert "lumen.eightfold.ai" not in pairs  # the user's decision (ADR-0205)
-    assert len(pairs) == 39
+    assert len(pairs) == 61
 
 
 _PAIRS = {
@@ -68,3 +70,21 @@ def test_a_requisition_is_kept_only_on_a_board_the_pairs_name(
     other would rewrite its served row for nothing."""
     monkeypatch.setattr(eightfold_backing, "load", lambda: _PAIRS)
     assert eightfold_backing.in_scope(job_id) is stamped
+
+
+@pytest.mark.parametrize(
+    "job_id",
+    [
+        "eightfold:lockheedmartin.eightfold.ai:996476164742",
+        "successfactors:lockheed.jobs.hr.cloud.sap:1417942600",
+        "oracle:efds.fa.em5.oraclecloud.com:60884",
+        "workday:gsknch/GSKCareers:543292",  # the ledger's casing
+        "workday:astrazeneca/Alexion:R-260444",  # another site of a paired tenant
+        "lever:matchgroup:61e35c3c-3156-4760-a088-4a3765e37f8e",
+        "jibe:aarp:7348",
+    ],
+)
+def test_served_ids_of_the_fronts_added_2026_09_25_are_in_scope(job_id):
+    """Real v65 ids of pairs the band had left out (ADR-0210's 2026-09-25 amendment): a pair
+    whose Board ids fall outside `in_scope` would be stamped on one side only and never match."""
+    assert eightfold_backing.in_scope(job_id)
