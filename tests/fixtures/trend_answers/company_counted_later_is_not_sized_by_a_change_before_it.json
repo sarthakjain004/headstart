@@ -1,0 +1,393 @@
+{
+ "description": "Zomato, first counted at [3], is not sized by the Sep 15 filter change before it.",
+ "unnetted": {
+  "stamps": [
+   "2026-09-13T00:00:00+00:00",
+   "2026-09-14T00:00:00+00:00",
+   "2026-09-15T00:00:00+00:00",
+   "2026-09-16T00:00:00+00:00",
+   "2026-09-17T00:00:00+00:00"
+  ],
+  "series": [
+   {
+    "name": "greenhouse:acme",
+    "label": "Acme",
+    "points": [
+     100,
+     100,
+     110,
+     110,
+     110
+    ],
+    "latest": 110
+   },
+   {
+    "name": "lever:zomato",
+    "label": "Zomato",
+    "points": [
+     null,
+     null,
+     null,
+     2,
+     2
+    ],
+    "latest": 2
+   }
+  ],
+  "counted_since": {
+   "greenhouse:acme": "2026-09-13T00:00:00+00:00",
+   "lever:zomato": "2026-09-16T00:00:00+00:00"
+  },
+  "epochs": [
+   {
+    "ts": "2026-09-15T00:00:00+00:00",
+    "changed": [
+     "tech filter changed"
+    ],
+    "fields": [
+     "tech_filter_version"
+    ]
+   }
+  ],
+  "metric": "stock",
+  "coverage": "all",
+  "new_window_days": 7,
+  "family": null,
+  "split_by": "company",
+  "companies": [
+   {
+    "key": "greenhouse:acme",
+    "label": "Acme",
+    "board_keys": [
+     "greenhouse:acme"
+    ],
+    "atses": [
+     "greenhouse"
+    ]
+   },
+   {
+    "key": "lever:zomato",
+    "label": "Zomato",
+    "board_keys": [
+     "lever:zomato"
+    ],
+    "atses": [
+     "lever"
+    ]
+   }
+  ],
+  "discovered": [],
+  "evicted": [],
+  "pick_series": {},
+  "pick_parts": {},
+  "pick_turnover": {},
+  "totals": [
+   10000,
+   10000,
+   10000,
+   10000,
+   10000
+  ],
+  "non_tech": [
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "watch_parents": [],
+  "uncounted": [],
+  "company_totals": {}
+ },
+ "served": {
+  "stamps": [
+   "2026-09-13T00:00:00+00:00",
+   "2026-09-14T00:00:00+00:00",
+   "2026-09-15T00:00:00+00:00",
+   "2026-09-16T00:00:00+00:00",
+   "2026-09-17T00:00:00+00:00"
+  ],
+  "series": [
+   {
+    "name": "greenhouse:acme",
+    "label": "Acme",
+    "points": [
+     100,
+     100,
+     110,
+     110,
+     110
+    ],
+    "latest": 110,
+    "net": {
+     "count": [
+      110,
+      110,
+      110,
+      110,
+      110
+     ],
+     "share": [
+      1.0999999999999999,
+      1.0999999999999999,
+      1.0999999999999999,
+      1.0999999999999999,
+      1.0999999999999999
+     ]
+    },
+    "steps": [
+     {
+      "note": 0,
+      "size": 10,
+      "moved": true
+     },
+     {
+      "note": 1,
+      "size": 0,
+      "moved": false
+     }
+    ],
+    "jumps": [
+     {
+      "i": 2,
+      "size": 10
+     },
+     {
+      "i": 3,
+      "size": 0
+     }
+    ],
+    "causes": {
+     "duplicates": 0,
+     "found": 0
+    },
+    "hiring_turnover": null,
+    "born_by_change": false
+   },
+   {
+    "name": "lever:zomato",
+    "label": "Zomato",
+    "points": [
+     null,
+     null,
+     null,
+     2,
+     2
+    ],
+    "latest": 2,
+    "net": {
+     "count": [
+      null,
+      null,
+      null,
+      2,
+      2
+     ],
+     "share": [
+      null,
+      null,
+      null,
+      0.02,
+      0.02
+     ]
+    },
+    "steps": [
+     {
+      "note": 0,
+      "size": 0,
+      "moved": false
+     },
+     {
+      "note": 1,
+      "size": 0,
+      "moved": false
+     }
+    ],
+    "jumps": [],
+    "causes": {
+     "duplicates": 0,
+     "found": 0
+    },
+    "hiring_turnover": null,
+    "born_by_change": false
+   }
+  ],
+  "counted_since": {
+   "greenhouse:acme": "2026-09-13T00:00:00+00:00",
+   "lever:zomato": "2026-09-16T00:00:00+00:00"
+  },
+  "epochs": [
+   {
+    "ts": "2026-09-15T00:00:00+00:00",
+    "changed": [
+     "tech filter changed"
+    ],
+    "fields": [
+     "tech_filter_version"
+    ]
+   }
+  ],
+  "metric": "stock",
+  "coverage": "all",
+  "new_window_days": 7,
+  "family": null,
+  "split_by": "company",
+  "companies": [
+   {
+    "key": "greenhouse:acme",
+    "label": "Acme",
+    "board_keys": [
+     "greenhouse:acme"
+    ],
+    "atses": [
+     "greenhouse"
+    ]
+   },
+   {
+    "key": "lever:zomato",
+    "label": "Zomato",
+    "board_keys": [
+     "lever:zomato"
+    ],
+    "atses": [
+     "lever"
+    ]
+   }
+  ],
+  "discovered": [],
+  "evicted": [],
+  "pick_series": {},
+  "pick_parts": {},
+  "pick_turnover": {},
+  "totals": [
+   10000,
+   10000,
+   10000,
+   10000,
+   10000
+  ],
+  "non_tech": [
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "watch_parents": [],
+  "uncounted": [],
+  "company_totals": {},
+  "partial": 0,
+  "series_sum": {
+   "name": "__total__",
+   "points": [
+    100,
+    100,
+    110,
+    112,
+    112
+   ],
+   "turnover": null,
+   "net": {
+    "count": [
+     112,
+     112,
+     112,
+     112,
+     112
+    ],
+    "share": [
+     1.1199999999999999,
+     1.1199999999999999,
+     1.1199999999999999,
+     1.1199999999999999,
+     1.1199999999999999
+    ]
+   },
+   "steps": [
+    {
+     "note": 0,
+     "size": 12,
+     "moved": true
+    },
+    {
+     "note": 1,
+     "size": 2,
+     "moved": true
+    }
+   ],
+   "jumps": [
+    {
+     "i": 2,
+     "size": 10
+    },
+    {
+     "i": 3,
+     "size": 2
+    }
+   ],
+   "causes": {
+    "duplicates": 0,
+    "found": 0
+   },
+   "hiring_turnover": null,
+   "born_by_change": false
+  },
+  "totals_net": [
+   10000,
+   10000,
+   10000,
+   10000,
+   10000
+  ],
+  "notes": [
+   {
+    "i": 2,
+    "kind": "counting",
+    "epoch": true,
+    "echo": false,
+    "settle": false,
+    "found": false,
+    "evicted": false,
+    "join": false,
+    "withhold": true,
+    "company": null,
+    "companies": null,
+    "size": null,
+    "boards": null,
+    "fields": [
+     "tech_filter_version"
+    ],
+    "changed": [
+     "tech filter changed"
+    ],
+    "source": "2026-09-15T00:00:00+00:00",
+    "touched": [],
+    "bands_only": false,
+    "dedup_only": false,
+    "whole_only": false
+   },
+   {
+    "i": 3,
+    "kind": "counting",
+    "epoch": false,
+    "echo": false,
+    "settle": true,
+    "found": false,
+    "evicted": false,
+    "join": false,
+    "withhold": true,
+    "company": null,
+    "companies": null,
+    "size": null,
+    "boards": null,
+    "fields": [],
+    "changed": [],
+    "source": null,
+    "touched": [],
+    "bands_only": false,
+    "dedup_only": false,
+    "whole_only": false
+   }
+  ]
+ }
+}

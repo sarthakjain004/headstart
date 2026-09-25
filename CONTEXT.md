@@ -291,7 +291,7 @@ _Avoid_: **Search filter** — that names a deterministic where-clause over the 
 
 **Opened** (ADR-0227):
 A tech **Job** that arrived in the **Search index** since the previous `role_trends` tick: an id new to the tick's snapshot, whose `first_seen` is after that tick, on a **Board** the tick already counted. Booked per Board, family, band and ATS in the tick's Board-delta file (`metric=opened`), so a net change can be read with what made it. A lower bound: a Job opened and closed between two scrapes of its Board is in no count.
-_Avoid_: reading `new` as Opened. `new` is a level: the Jobs first seen in the last 7 days *and still open*, backlog of a found Board included. ADR-0230 redefines `new` as Opened summed over the trailing 7 days; until that migration step ships, the two differ.
+_Avoid_: reading a `new` point from before its switch as Opened. `new` is Opened summed over the trailing 7 days (ADR-0230), from the first **Tick** whose whole week has Opened facts (an answer's `new_inflow_from`). Before that tick `new` is the level it always was, the Jobs first seen in the last 7 days *and still open*, a found Board's backlog included, and the chart marks the switch as a **Counting change**.
 
 **Closed** (ADR-0227):
 A tech Job that left the Search index since the previous tick through `index sync`'s **Eviction** — its second consecutive absence (**Unconfirmed**), so a closure lands one scrape of its Board after the posting went. Sync queues each eviction, stamped with its run, in `data/state/eviction_queue.tsv`, which rides the table's own commit; `role_trends` books only a queued id as Closed. An **Unauthoritative Board** evicts nothing, so its closures go uncounted that tick; the tick's file marks each such Board (`metric=unscoped`) and Trends says on how many.
@@ -322,7 +322,7 @@ A tick where a **Methodology** stamp moved, so its step in a line is a change in
 _Avoid_: calling it a data change — the Jobs may be the same; the rules that count them moved.
 
 **Netting** (ADR-0185, ADR-0230):
-Taking out of a line's change the steps that are not hiring — **Counting change**s, **Found Board**s' backlogs and dedup removals — so what is left reads as hiring. Decided today in the Trends tab's JavaScript and, separately, in `hot_boards`; ADR-0230 moves the one rule into `trend_history.answer`, decided when the history is read and never stored.
+Taking out of a line's change the steps that are not hiring — **Counting change**s, **Found Board**s' backlogs and dedup removals — so what is left reads as hiring. Decided once, by `trend_netting` inside `trend_history.answer`, when the history is read (ADR-0230); the Trends tab draws each line's `net` and `steps` as it is given them. `hot_boards` keeps its own copy until Hot is ranked from the same history.
 _Avoid_: storing a netted figure — the rule has changed in most of ADR-0185's rounds, so a stored net would go stale with it.
 
 ### Accounts

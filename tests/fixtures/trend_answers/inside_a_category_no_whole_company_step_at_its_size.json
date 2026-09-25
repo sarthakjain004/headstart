@@ -1,0 +1,224 @@
+{
+ "description": "NVIDIA's 2,045 removals would overshoot its AI/ML 300: a drill's line keeps them.",
+ "unnetted": {
+  "stamps": [
+   "2026-09-13T00:00:00+00:00",
+   "2026-09-14T00:00:00+00:00",
+   "2026-09-15T00:00:00+00:00",
+   "2026-09-16T00:00:00+00:00"
+  ],
+  "series": [
+   {
+    "name": "mid",
+    "label": "mid",
+    "points": [
+     300,
+     300,
+     290,
+     290
+    ],
+    "latest": 290
+   }
+  ],
+  "evicted": [
+   {
+    "ts": "2026-09-15T00:00:00+00:00",
+    "company": "greenhouse:acme",
+    "count": 2045
+   }
+  ],
+  "metric": "stock",
+  "coverage": "all",
+  "new_window_days": 7,
+  "family": "ai-ml",
+  "split_by": "band",
+  "companies": [
+   {
+    "key": "greenhouse:acme",
+    "label": "Acme",
+    "board_keys": [
+     "greenhouse:acme"
+    ],
+    "atses": [
+     "greenhouse"
+    ]
+   }
+  ],
+  "epochs": [],
+  "discovered": [],
+  "pick_series": {},
+  "pick_parts": {},
+  "pick_turnover": {},
+  "counted_since": {
+   "greenhouse:acme": "2026-09-13T00:00:00+00:00"
+  },
+  "totals": [
+   10000,
+   10000,
+   10000,
+   10000
+  ],
+  "non_tech": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "watch_parents": [],
+  "uncounted": [],
+  "company_totals": {}
+ },
+ "served": {
+  "stamps": [
+   "2026-09-13T00:00:00+00:00",
+   "2026-09-14T00:00:00+00:00",
+   "2026-09-15T00:00:00+00:00",
+   "2026-09-16T00:00:00+00:00"
+  ],
+  "series": [
+   {
+    "name": "mid",
+    "label": "mid",
+    "points": [
+     300,
+     300,
+     290,
+     290
+    ],
+    "latest": 290,
+    "net": {
+     "count": [
+      300,
+      300,
+      290,
+      290
+     ],
+     "share": [
+      3,
+      3,
+      2.9000000000000004,
+      2.9000000000000004
+     ]
+    },
+    "steps": [],
+    "jumps": [],
+    "causes": {
+     "duplicates": 0,
+     "found": 0
+    },
+    "hiring_turnover": null,
+    "born_by_change": false
+   }
+  ],
+  "evicted": [
+   {
+    "ts": "2026-09-15T00:00:00+00:00",
+    "company": "greenhouse:acme",
+    "count": 2045
+   }
+  ],
+  "metric": "stock",
+  "coverage": "all",
+  "new_window_days": 7,
+  "family": "ai-ml",
+  "split_by": "band",
+  "companies": [
+   {
+    "key": "greenhouse:acme",
+    "label": "Acme",
+    "board_keys": [
+     "greenhouse:acme"
+    ],
+    "atses": [
+     "greenhouse"
+    ]
+   }
+  ],
+  "epochs": [],
+  "discovered": [],
+  "pick_series": {},
+  "pick_parts": {},
+  "pick_turnover": {},
+  "counted_since": {
+   "greenhouse:acme": "2026-09-13T00:00:00+00:00"
+  },
+  "totals": [
+   10000,
+   10000,
+   10000,
+   10000
+  ],
+  "non_tech": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "watch_parents": [],
+  "uncounted": [],
+  "company_totals": {},
+  "partial": 0,
+  "series_sum": {
+   "name": "__total__",
+   "points": [
+    300,
+    300,
+    290,
+    290
+   ],
+   "turnover": null,
+   "net": {
+    "count": [
+     300,
+     300,
+     290,
+     290
+    ],
+    "share": [
+     3,
+     3,
+     2.9000000000000004,
+     2.9000000000000004
+    ]
+   },
+   "steps": [],
+   "jumps": [],
+   "causes": {
+    "duplicates": 0,
+    "found": 0
+   },
+   "hiring_turnover": null,
+   "born_by_change": false
+  },
+  "totals_net": [
+   10000,
+   10000,
+   10000,
+   10000
+  ],
+  "notes": [
+   {
+    "i": 2,
+    "kind": "duplicates",
+    "epoch": false,
+    "echo": false,
+    "settle": false,
+    "found": false,
+    "evicted": true,
+    "join": false,
+    "withhold": true,
+    "company": "greenhouse:acme",
+    "companies": null,
+    "size": -2045,
+    "boards": null,
+    "fields": [],
+    "changed": [],
+    "source": null,
+    "touched": [],
+    "bands_only": false,
+    "dedup_only": false,
+    "whole_only": true
+   }
+  ]
+ }
+}

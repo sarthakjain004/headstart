@@ -1,0 +1,358 @@
+{
+ "description": "A family-assignment change sorts 16 existing openings into a new category, web.",
+ "unnetted": {
+  "stamps": [
+   "2026-09-13T00:00:00+00:00",
+   "2026-09-14T00:00:00+00:00",
+   "2026-09-15T00:00:00+00:00",
+   "2026-09-16T00:00:00+00:00"
+  ],
+  "series": [
+   {
+    "name": "a",
+    "label": "a",
+    "points": [
+     100,
+     100,
+     84,
+     85
+    ],
+    "latest": 85
+   },
+   {
+    "name": "web",
+    "label": "web",
+    "points": [
+     null,
+     null,
+     16,
+     16
+    ],
+    "latest": 16
+   }
+  ],
+  "counted_since": {
+   "greenhouse:acme": "2026-09-01T00:00:00+00:00"
+  },
+  "epochs": [
+   {
+    "ts": "2026-09-15T00:00:00+00:00",
+    "changed": [
+     "role family assignment changed"
+    ],
+    "fields": [
+     "family_classifier_version"
+    ]
+   }
+  ],
+  "metric": "stock",
+  "coverage": "all",
+  "new_window_days": 7,
+  "family": null,
+  "split_by": "family",
+  "companies": [
+   {
+    "key": "greenhouse:acme",
+    "label": "Acme",
+    "board_keys": [
+     "greenhouse:acme"
+    ],
+    "atses": [
+     "greenhouse"
+    ]
+   }
+  ],
+  "discovered": [],
+  "evicted": [],
+  "pick_series": {},
+  "pick_parts": {},
+  "pick_turnover": {},
+  "totals": [
+   10000,
+   10000,
+   10000,
+   10000
+  ],
+  "non_tech": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "watch_parents": [],
+  "uncounted": [],
+  "company_totals": {}
+ },
+ "served": {
+  "stamps": [
+   "2026-09-13T00:00:00+00:00",
+   "2026-09-14T00:00:00+00:00",
+   "2026-09-15T00:00:00+00:00",
+   "2026-09-16T00:00:00+00:00"
+  ],
+  "series": [
+   {
+    "name": "a",
+    "label": "a",
+    "points": [
+     100,
+     100,
+     84,
+     85
+    ],
+    "latest": 85,
+    "net": {
+     "count": [
+      85,
+      85,
+      85,
+      85
+     ],
+     "share": [
+      0.8500000000000001,
+      0.8500000000000001,
+      0.8500000000000001,
+      0.8500000000000001
+     ]
+    },
+    "steps": [
+     {
+      "note": 0,
+      "size": -15,
+      "moved": true
+     },
+     {
+      "note": 1,
+      "size": 1,
+      "moved": true
+     }
+    ],
+    "jumps": [
+     {
+      "i": 2,
+      "size": -16
+     },
+     {
+      "i": 3,
+      "size": 1
+     }
+    ],
+    "causes": {
+     "duplicates": 0,
+     "found": 0
+    },
+    "hiring_turnover": null,
+    "born_by_change": false
+   },
+   {
+    "name": "web",
+    "label": "web",
+    "points": [
+     null,
+     null,
+     16,
+     16
+    ],
+    "latest": 16,
+    "net": {
+     "count": [
+      null,
+      null,
+      16,
+      16
+     ],
+     "share": [
+      null,
+      null,
+      0.16,
+      0.16
+     ]
+    },
+    "steps": [
+     {
+      "note": 0,
+      "size": 16,
+      "moved": false
+     },
+     {
+      "note": 1,
+      "size": 0,
+      "moved": false
+     }
+    ],
+    "jumps": [
+     {
+      "i": 3,
+      "size": 0
+     }
+    ],
+    "causes": {
+     "duplicates": 0,
+     "found": 0
+    },
+    "hiring_turnover": null,
+    "born_by_change": true
+   }
+  ],
+  "counted_since": {
+   "greenhouse:acme": "2026-09-01T00:00:00+00:00"
+  },
+  "epochs": [
+   {
+    "ts": "2026-09-15T00:00:00+00:00",
+    "changed": [
+     "role family assignment changed"
+    ],
+    "fields": [
+     "family_classifier_version"
+    ]
+   }
+  ],
+  "metric": "stock",
+  "coverage": "all",
+  "new_window_days": 7,
+  "family": null,
+  "split_by": "family",
+  "companies": [
+   {
+    "key": "greenhouse:acme",
+    "label": "Acme",
+    "board_keys": [
+     "greenhouse:acme"
+    ],
+    "atses": [
+     "greenhouse"
+    ]
+   }
+  ],
+  "discovered": [],
+  "evicted": [],
+  "pick_series": {},
+  "pick_parts": {},
+  "pick_turnover": {},
+  "totals": [
+   10000,
+   10000,
+   10000,
+   10000
+  ],
+  "non_tech": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "watch_parents": [],
+  "uncounted": [],
+  "company_totals": {},
+  "partial": 0,
+  "series_sum": {
+   "name": "__total__",
+   "points": [
+    100,
+    100,
+    100,
+    101
+   ],
+   "turnover": null,
+   "net": {
+    "count": [
+     101,
+     101,
+     101,
+     101
+    ],
+    "share": [
+     1.01,
+     1.01,
+     1.01,
+     1.01
+    ]
+   },
+   "steps": [
+    {
+     "note": 0,
+     "size": 1,
+     "moved": true
+    },
+    {
+     "note": 1,
+     "size": 1,
+     "moved": true
+    }
+   ],
+   "jumps": [
+    {
+     "i": 2,
+     "size": 0
+    },
+    {
+     "i": 3,
+     "size": 1
+    }
+   ],
+   "causes": {
+    "duplicates": 0,
+    "found": 0
+   },
+   "hiring_turnover": null,
+   "born_by_change": false
+  },
+  "totals_net": [
+   10000,
+   10000,
+   10000,
+   10000
+  ],
+  "notes": [
+   {
+    "i": 2,
+    "kind": "counting",
+    "epoch": true,
+    "echo": false,
+    "settle": false,
+    "found": false,
+    "evicted": false,
+    "join": false,
+    "withhold": true,
+    "company": null,
+    "companies": null,
+    "size": null,
+    "boards": null,
+    "fields": [
+     "family_classifier_version"
+    ],
+    "changed": [
+     "role family assignment changed"
+    ],
+    "source": "2026-09-15T00:00:00+00:00",
+    "touched": [],
+    "bands_only": false,
+    "dedup_only": false,
+    "whole_only": false
+   },
+   {
+    "i": 3,
+    "kind": "counting",
+    "epoch": false,
+    "echo": false,
+    "settle": true,
+    "found": false,
+    "evicted": false,
+    "join": false,
+    "withhold": true,
+    "company": null,
+    "companies": null,
+    "size": null,
+    "boards": null,
+    "fields": [],
+    "changed": [],
+    "source": null,
+    "touched": [],
+    "bands_only": false,
+    "dedup_only": false,
+    "whole_only": false
+   }
+  ]
+ }
+}

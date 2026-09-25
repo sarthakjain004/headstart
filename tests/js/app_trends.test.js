@@ -110,7 +110,7 @@ function loadApp(fetchImpl) {
     + ' suggest: suggestCompanies, choose: chooseCo, options: () => coOptions,'
     + ' follow: boards => { myCompanies = { followed: boards, hidden: [] }; },'
     + ' followed: followedOption, openTrend: openCompanyTrend, chartedAndOther,'
-    + ' unit: () => trendUnit, clickUnit: pickUnit, hash: trendHash, pick: setPicks, netOfSteps,'
+    + ' unit: () => trendUnit, clickUnit: pickUnit, hash: trendHash, pick: setPicks,'
     + ' table: toggleTrendsTable, tooltipNotes, geom: () => lastGeom, hotMeasure: HOT_MEASURE, turnoverOf,'
     + ' set: (d, drill) => { trendData = d; trendRaw = d; trendDrill = drill || null; } };'
     // Repaints are counted at the global binding, which is what loadTrends' own `drawTrends()`
@@ -593,13 +593,11 @@ test('a short history with no ATS filter keeps the generic pipeline-is-new messa
 
 test('a methodology epoch draws a marker at its matching stamp', () => {
   const { t, nodes } = loadApp();
-  const f = fixture();
-  f.epochs = [{ ts: f.stamps[1], changed: ['tech filter changed'] }];
-  t.set(f, null);
+  t.set(golden('index_marks_counting_changes_and_takes_nothing_out'), null);
   t.draw();
   const svg = nodes['trends-chart'].innerHTML;
   assert.match(svg, /class="epoch-marker"/);
-  assert.match(svg, /Aug 13 06:00 tech filter changed/);
+  assert.match(svg, /Aug 13 00:00 tech filter changed/);
 });
 
 test('an epoch with no matching stamp draws nothing, and does not crash the chart', () => {
@@ -772,6 +770,26 @@ function answering(ctx, body, status = 200) {
       json: () => Promise.resolve(typeof body === 'function' ? body(asked.length) : body) });
   };
   return asked;
+}
+
+/* Golden answers (tests/fixtures/trend_answers/, ADR-0230): answers as the Space serves them,
+ * every line netted by headstart.trend_netting. pytest proves the Python rule serves exactly
+ * these, so the page is tested on what it will be given rather than on hand-written netting. */
+const ANSWERS = path.join(__dirname, '..', 'fixtures', 'trend_answers');
+function golden(name) {
+  return JSON.parse(fs.readFileSync(path.join(ANSWERS, `${name}.json`), 'utf8')).served;
+}
+/** The picks a golden answer was asked about, as the page holds them after a load. */
+function picksOf(d) {
+  return d.companies.map(c => ({ key: c.key, label: c.label, boardKeys: c.board_keys, atses: c.atses }));
+}
+/** Show a golden answer as the page would after asking for it: its picks, measure and drill. */
+function showGolden(t, name, extra) {
+  const d = { ...golden(name), ...extra };
+  t.setPicks(picksOf(d));
+  t.metricSet(d.metric);
+  t.set(d, d.family);
+  return d;
 }
 
 test('picks go to /trends as repeated company params', async () => {
@@ -1087,8 +1105,7 @@ test('a company counted from later than the ledger says when its own line begins
 
 test('a Board found after a company began is marked where its backlog lands', async () => {
   const { t, ctx, nodes } = loadApp();
-  answering(ctx, { ...picked({ a: [50, 900], b: [40, 45] }),
-    discovered: [{ ts: STAMPS[1], company: 'greenhouse:acme', boards: 83, openings: 1048 }] });
+  answering(ctx, golden('found_board_marked_where_its_backlog_lands'));
   t.setPicks([{ key: 'greenhouse:acme', label: 'Acme' }]);
   await t.load(null);
   const svg = nodes['trends-chart'].innerHTML;
@@ -1140,22 +1157,18 @@ test('a name with no match says the board may be unread or named otherwise', asy
 
 test('duplicate removal and a tech-filter change withhold a company mover; extraction does not', async () => {
   const { t, ctx, nodes } = loadApp();
-  const epoch = (changed, field) => [{ ts: STAMPS[1], changed: [changed], fields: [field] }];
-  const hdr = [{ key: 'taleo_enterprise:hdr/1', label: 'HDR', board_keys: ['taleo_enterprise:hdr/1', 'taleo_enterprise:hdr/2'],
-    atses: ['taleo_enterprise'] }];
-  answering(ctx, { ...picked({ a: [50, 90], b: [40, 45] }, hdr), epochs: epoch('duplicate removal changed', 'dedup_version') });
+  answering(ctx, golden('two_section_tenant_duplicate_removal_withholds_its_mover'));
   t.setPicks([{ key: 'taleo_enterprise:hdr/1', label: 'HDR' }]);
   await t.load(null);
   assert.ok(!nodes['trends-kpi'].innerHTML.includes('Biggest'));
-  answering(ctx, { ...picked({ a: [50, 90], b: [40, 45] }, hdr), epochs: epoch('tech filter changed', 'tech_filter_version') });
+  answering(ctx, golden('two_section_tenant_filter_change_withholds_its_mover'));
   await t.load(null);
   assert.ok(!nodes['trends-kpi'].innerHTML.includes('Biggest'), 'Wipro’s +74.7% held a +25% filter step');
-  answering(ctx, { ...picked({ a: [50, 90], b: [40, 45] }, hdr),
-    epochs: epoch('experience/salary extraction changed', 'derivations_version') });
+  answering(ctx, golden('two_section_tenant_extraction_change_leaves_its_mover'));
   await t.load(null);
   assert.ok(nodes['trends-kpi'].innerHTML.includes('Biggest riser'), 'extraction moves levels, not these lines');
   // a one-Board company has no copies for duplicate removal to take
-  answering(ctx, { ...picked({ a: [50, 90], b: [40, 45] }), epochs: epoch('duplicate removal changed', 'dedup_version') });
+  answering(ctx, golden('one_board_company_duplicate_removal_leaves_its_mover'));
   t.setPicks([{ key: 'greenhouse:acme', label: 'Acme' }]);
   await t.load(null);
   assert.ok(nodes['trends-kpi'].innerHTML.includes('Biggest riser'));
@@ -1199,10 +1212,8 @@ test('a view survives its link: drill, unit, measure, window and coverage ride t
 
 test('in a summed view, a pick counted from later marks where it joins and names no mover', async () => {
   const { t, ctx, nodes } = loadApp();
-  const two = [{ key: 'workday:nvidia', label: 'NVIDIA' }, { key: 'workday:amd', label: 'AMD' }];
-  answering(ctx, { ...picked({ a: [50, 400], b: [40, 45] }, two),
-    counted_since: { 'workday:nvidia': STAMPS[0], 'workday:amd': STAMPS[1] } });
-  t.setPicks(two);
+  answering(ctx, golden('pick_counted_later_marks_where_it_joins'));
+  t.setPicks([{ key: 'workday:nvidia', label: 'NVIDIA' }, { key: 'workday:amd', label: 'AMD' }]);
   await t.load(null);
   assert.match(nodes['trends-chart'].innerHTML, /counting for AMD starts/);
   assert.ok(!nodes['trends-kpi'].innerHTML.includes('Biggest'));
@@ -1261,13 +1272,7 @@ test('percentages leave out a marked step; the plotted line keeps it', async () 
   const { t, ctx, nodes } = loadApp();
   // Five runs; a tech-filter change at the third doubles the line, the run after it settles
   // (also left out), and the last run grows 10%.
-  const stamps = ['2026-09-13T00:00:00+00:00', '2026-09-14T00:00:00+00:00',
-                  '2026-09-15T00:00:00+00:00', '2026-09-16T00:00:00+00:00', '2026-09-17T00:00:00+00:00'];
-  answering(ctx, { ...picked({ a: [100, 100, 200, 200, 220], b: [100, 100, 100, 100, 100] }),
-    stamps, totals: [1e4, 1e4, 1e4, 1e4, 1e4], non_tech: [0, 0, 0, 0, 0],
-    series: [{ name: 'a', label: 'A', points: [100, 100, 200, 200, 220], latest: 220 },
-             { name: 'b', label: 'B', points: [100, 100, 100, 100, 100], latest: 100 }],
-    epochs: [{ ts: stamps[2], changed: ['tech filter changed'], fields: ['tech_filter_version'] }] });
+  answering(ctx, golden('tech_filter_doubles_one_category'));
   t.setPicks([{ key: 'greenhouse:acme', label: 'Acme' }]);
   await t.load(null);
   t.setUnit('count', false);
@@ -1298,14 +1303,8 @@ test('under New, the tab says from when openings count as new', async () => {
 
 test('under a Company breakdown, one company’s found Board nets only its own line', async () => {
   const { t, ctx, nodes } = loadApp();
-  const stamps = ['2026-09-13T00:00:00+00:00', '2026-09-14T00:00:00+00:00',
-                  '2026-09-15T00:00:00+00:00', '2026-09-16T00:00:00+00:00'];
   const two = [{ key: 'greenhouse:acme', label: 'Acme' }, { key: 'lever:beta', label: 'Beta' }];
-  answering(ctx, { ...picked({}, two), split_by: 'company', stamps, totals: [1e4, 1e4, 1e4, 1e4],
-    non_tech: [0, 0, 0, 0],
-    series: [{ name: 'greenhouse:acme', label: 'Acme', points: [100, 100, 300, 300], latest: 300 },
-             { name: 'lever:beta', label: 'Beta', points: [100, 100, 150, 150], latest: 150 }],
-    discovered: [{ ts: stamps[2], company: 'greenhouse:acme', boards: 3, openings: 200 }] });
+  answering(ctx, golden('found_board_nets_only_its_own_company'));
   t.setPicks(two);
   t.selectSplit('company');
   await new Promise(resolve => setTimeout(resolve, 0));
@@ -1315,17 +1314,6 @@ test('under a Company breakdown, one company’s found Board nets only its own l
   const legend = nodes['trends-legend'].innerHTML;
   assert.match(row(legend, 'greenhouse:acme'), /→ \+0 openings/, 'Acme’s jump was its found Boards');
   assert.match(row(legend, 'lever:beta'), /\+50 openings/, 'Beta’s real growth that run is kept');
-});
-
-test('a step on a gap lands on the line’s next point', () => {
-  const { t, ctx } = loadApp();
-  void ctx;
-  const stamps = ['a', 'b', 'c', 'd'];
-  t.set({ ...picked({}), stamps, series: [], discovered: [],
-    epochs: [{ ts: 'b', changed: ['tech filter changed'], fields: ['tech_filter_version'] }] });
-  t.setPicks([{ key: 'greenhouse:acme', label: 'Acme' }]);
-  // Adjusted backwards: the latest value stays real, the history before the step is scaled.
-  same(t.netOfSteps([100, null, 200, 220]), [200, null, 200, 220]);
 });
 
 
@@ -1345,9 +1333,7 @@ const BETA = { key: 'lever:beta', label: 'Beta', boardKeys: ['lever:beta'] };
 
 test('under Change the plotted line is the one its percentage is read from', () => {
   const { t } = loadApp();
-  t.setPicks([ACME, BETA]);
-  t.set(companies([['greenhouse:acme', 'Acme', [100, 100, 300, 300]], ['lever:beta', 'Beta', [100, 100, 150, 150]]],
-    { discovered: [{ ts: FOUR[2], company: 'greenhouse:acme', boards: 3, openings: 200 }] }));
+  showGolden(t, 'found_board_nets_only_its_own_company');
   t.setUnit('change', false);
   const [acme, beta] = t.data().series;
   // Google's line ended at 117 over a legend reading −0.2%: the found Boards are not drawn now.
@@ -1357,9 +1343,7 @@ test('under Change the plotted line is the one its percentage is read from', () 
 
 test('duplicate removal is taken out only of the pick it can touch', () => {
   const { t } = loadApp();
-  t.setPicks([{ ...ACME, key: 'workday:acme/a', boardKeys: ['workday:acme/a', 'workday:acme/b'] }, BETA]);
-  t.set(companies([['workday:acme/a', 'Acme', [100, 100, 80, 80]], ['lever:beta', 'Beta', [100, 100, 80, 80]]],
-    { epochs: [{ ts: FOUR[2], changed: ['duplicate removal changed'], fields: ['dedup_version'] }] }));
+  showGolden(t, 'duplicate_removal_touches_only_a_two_site_tenant');
   t.setUnit('change', false);
   const [acme, beta] = t.data().series;
   same(t.seriesValues(acme), [100, 100, 100, 100]);
@@ -1371,18 +1355,14 @@ test('duplicate removal needs two sites of one Tenant, as Hot and the Space read
   // Duplicate removal parks copies among one Tenant's sites (ADR-0186/0187). A company holding
   // two Tenants' Workday sites has nothing to deduplicate, so its fall is its own.
   const { t } = loadApp();
-  t.setPicks([{ ...ACME, key: 'workday:acme/a', boardKeys: ['workday:acme/a', 'workday:other/b'] }]);
-  t.set(companies([['workday:acme/a', 'Acme', [100, 100, 80, 80]]],
-    { epochs: [{ ts: FOUR[2], changed: ['duplicate removal changed'], fields: ['dedup_version'] }] }));
+  showGolden(t, 'duplicate_removal_needs_two_sites_of_one_tenant');
   t.setUnit('change', false);
   same(t.seriesValues(t.data().series[0]), [100, 100, 80, 80]);
 });
 
 test('under Count a marked step breaks the line instead of drawing a climb', () => {
   const { t, nodes } = loadApp();
-  t.setPicks([ACME, BETA]);
-  t.set(companies([['greenhouse:acme', 'Acme', [100, 100, 300, 300]], ['lever:beta', 'Beta', [100, 100, 150, 150]]],
-    { discovered: [{ ts: FOUR[2], company: 'greenhouse:acme', boards: 3, openings: 200 }] }));
+  showGolden(t, 'found_board_nets_only_its_own_company');
   t.setUnit('count', false);
   t.draw();
   const path = name => (nodes['trends-chart'].innerHTML.match(
@@ -1466,48 +1446,12 @@ test('under a pick, a counting change that cannot move its lines is not marked',
 // ---- code review of the third round -----------------------------------------------------
 test('the mover floor is held to the openings a line really started with', () => {
   const { t, nodes } = loadApp();
-  t.setPicks([ACME]);
   // 12 openings, then a found Board doubles it: adjusted, the head reads 24 and cleared 20.
-  t.set({ ...picked({}), stamps: FOUR, totals: [1e3, 1e3, 1e3, 1e3], non_tech: [0, 0, 0, 0],
-    series: [{ name: 'a', label: 'a', points: [12, 12, 24, 26], latest: 26 }],
-    discovered: [{ ts: FOUR[2], company: 'greenhouse:acme', boards: 1, openings: 12 }] });
+  showGolden(t, 'found_board_doubles_a_small_line');
   t.setUnit('count', false);
   t.draw();
   // Net [24, 24, 24, 26]: two openings, and no percentage off a line that started at 12.
   assert.match(row(nodes['trends-legend'].innerHTML, 'a'), /↑ \+2 openings</);
-});
-
-test('a counting change off a small base is taken out by openings, not scaled', () => {
-  const { t } = loadApp();
-  t.setPicks([ACME]);
-  t.set({ ...picked({}), stamps: FIVE, series: [], discovered: [],
-    epochs: [{ ts: FIVE[2], changed: ['tech filter changed'], fields: ['tech_filter_version'] }] });
-  // Microsoft's architecture line: 5 → 4, a filter change to 58, then flat. Scaled by 14.5,
-  // the one real opening became −12; by openings it stays −1.
-  // The run after the change (58 → 59) settles and goes too, by ratio (both sides ≥ 20):
-  // net ≈ [60, 59, 59, 59, 59] — one opening lost, not twelve.
-  same(t.netOfSteps([5, 4, 58, 59, 59]).map(Math.round), [60, 59, 59, 59, 59]);
-});
-
-test('a refit that halves a large category comes out by openings, so categories add up (Google SWE)', () => {
-  const { t } = loadApp();
-  t.setPicks([ACME]);
-  t.set({ ...picked({}), stamps: FIVE, series: [], discovered: [],
-    epochs: [{ ts: FIVE[2], changed: ['role family assignment changed'], fields: ['family_classifier_version'] }] });
-  // 628 → 595 (−33 openings), then halved at the refit. By openings the −33 stays −33 and the
-  // categories add up to the company (the user's choice, 2026-09-25), at the cost of reading it
-  // against the pre-refit base: −11.8% here, where ratio gave −5.3%.
-  const net = t.netOfSteps([628, 595, 304, 304, 304]);
-  same(net.map(v => Math.round(v)), [337, 304, 304, 304, 304]);
-});
-
-test('found openings off zero lift the line', () => {
-  const { t } = loadApp();
-  t.setPicks([ACME]);
-  t.set({ ...picked({}), stamps: FOUR, series: [], epochs: [],
-    discovered: [{ ts: FOUR[2], company: 'greenhouse:acme', boards: 1, openings: 40 }] });
-  // Found openings were open all along: the history is lifted by them.
-  same(t.netOfSteps([0, 0, 40, 42]), [40, 40, 40, 42]);
 });
 
 test('a pick the ATS selection drops is told so, even under Comparable', () => {
@@ -1539,32 +1483,9 @@ test('how long a company has been counted comes from its counting, not the windo
 // ---- critique round 4 ------------------------------------------------------------------------
 const FIVE = [...FOUR, '2026-09-17T00:00:00+00:00'];
 
-test('a counting change that lands over two runs is left out whole (Amazon, Sep 17)', () => {
-  const { t } = loadApp();
-  t.setPicks([ACME]);
-  t.set({ ...picked({}), stamps: FIVE, series: [], discovered: [],
-    epochs: [{ ts: FIVE[2], changed: ['tech filter changed'], fields: ['tech_filter_version'] }] });
-  const net = t.netOfSteps([9000, 9000, 9308, 8869, 8880]).map(v => Math.round(v));
-  // +308 at the change and −439 the run after were one change; only the last +11 is hiring.
-  same(net, [8869, 8869, 8869, 8869, 8880]);
-});
-
-test('found openings lift the history rather than scale it, so a sum moves by its parts', () => {
-  const { t } = loadApp();
-  t.setPicks([ACME]);
-  t.set({ ...picked({}), stamps: FOUR, series: [], epochs: [],
-    discovered: [{ ts: FOUR[2], company: 'greenhouse:acme', boards: 2, openings: 200 }] });
-  // Scaled, the +10 of real growth before the find became +28; lifted, it stays +10.
-  same(t.netOfSteps([100, 110, 310, 320]), [300, 310, 310, 320]);
-});
-
 test('the sentence says how much of the chart’s move was not hiring', () => {
   const { t, nodes } = loadApp();
-  t.setPicks([ACME]);
-  t.set({ ...picked({}), stamps: FOUR, split_by: 'family', totals: [1e4, 1e4, 1e4, 1e4], non_tech: [0, 0, 0, 0],
-    series: [{ name: 'a', label: 'a', points: [1000, 1000, 1200, 1200], latest: 1200 },
-             { name: 'b', label: 'b', points: [500, 500, 500, 500], latest: 500 }],
-    discovered: [{ ts: FOUR[2], company: 'greenhouse:acme', boards: 3, openings: 200 }] });
+  showGolden(t, 'found_board_on_a_category_line');
   t.draw();
   assert.match(nodes['trends-verdict'].innerHTML,
     /Acme<\/b>: [^—<]*— 1,700 tech openings; about flat over 3 days \(\+0\.0%, \+0 openings\)\.<details class="verdict-why"><summary>Not hiring: \+200 openings<\/summary>\+200 openings from boards found later\./);
@@ -1603,23 +1524,10 @@ test('several picks summed get their own sentence, the sum of each company’s',
   assert.match(nodes['trends-verdict'].innerHTML, /These 2 companies<\/b>: [^—<]*— 110 tech openings; up 10\.0% over 7 days/);
 });
 
-test('a found Board on a whole company line is lifted by its own size, keeping that run’s hiring', () => {
-  const { t } = loadApp();
-  t.setPicks([ACME, BETA]);
-  t.set(companies([['greenhouse:acme', 'Acme', [100, 100, 310, 310]], ['lever:beta', 'Beta', [50, 50, 50, 50]]],
-    { discovered: [{ ts: FOUR[2], company: 'greenhouse:acme', boards: 2, openings: 200 }] }));
-  t.setUnit('count', false);
-  const acme = t.data().series[0];
-  // 200 were found; the other 10 that run were hiring and stay in (by the run's jump, 210).
-  same(t.netOfSteps(acme.points, acme), [300, 300, 310, 310]);
-});
-
 
 test('duplicate removal is taken out of an Eightfold-only company too (Micron Technology)', () => {
   const { t } = loadApp();
-  t.setPicks([{ key: 'eightfold:careers.micron.com', label: 'Micron Technology', boardKeys: ['eightfold:careers.micron.com'] }, BETA]);
-  t.set(companies([['eightfold:careers.micron.com', 'Micron Technology', [1887, 1887, 20, 20]], ['lever:beta', 'Beta', [100, 100, 80, 80]]],
-    { epochs: [{ ts: FOUR[2], changed: ['duplicate removal changed'], fields: ['dedup_version'] }] }));
+  showGolden(t, 'micron_eightfold_only_company_steps_at_duplicate_removal');
   t.setUnit('change', false);
   const [micron, beta] = t.data().series;
   same(t.seriesValues(micron), [100, 100, 100, 100]);
@@ -1678,52 +1586,10 @@ test('without the Space’s category filter, the category ranks the jobs and no 
 
 
 // ---- duplicate removals, sized (#649) --------------------------------------------------------
-test('duplicate postings removed later are taken out of that company’s line, exactly', () => {
-  const { t } = loadApp();
-  t.setPicks([ACME, BETA]);
-  t.set(companies([['greenhouse:acme', 'Acme', [100, 100, 95, 96]], ['lever:beta', 'Beta', [50, 50, 50, 50]]],
-    { evicted: [{ ts: FOUR[2], company: 'greenhouse:acme', count: 7 }] }));
-  t.setUnit('count', false);
-  const [acme, beta] = t.data().series;
-  // 7 duplicates went; the other +2 that run was hiring and stays.
-  same(t.netOfSteps(acme.points, acme), [93, 93, 95, 96]);
-  same(t.netOfSteps(beta.points, beta), [50, 50, 50, 50]);
-});
-
-test('a category line does not guess where a company’s removals fell', () => {
-  const { t } = loadApp();
-  t.setPicks([ACME]);
-  t.set({ ...picked({}), stamps: FOUR, series: [], epochs: [], discovered: [],
-    evicted: [{ ts: FOUR[2], company: 'greenhouse:acme', count: 7 }] });
-  const line = { name: 'software-engineering', points: [100, 100, 95, 96] };
-  same(t.netOfSteps(line.points, line), [100, 100, 95, 96]);
-});
-
-test('inside a category no whole-company step is taken out at its size', () => {
-  const { t } = loadApp();
-  t.setPicks([ACME]);
-  t.set({ ...picked({}), stamps: FOUR, series: [], epochs: [], discovered: [],
-    evicted: [{ ts: FOUR[2], company: 'greenhouse:acme', count: 2045 }] }, 'ai-ml');
-  const sum = { name: '__total__', points: [300, 300, 290, 290] };
-  same(t.netOfSteps(sum.points, sum), [300, 300, 290, 290], 'a category is not the whole company');
-});
-
-test('a step larger than what came before it starts the line after it', () => {
-  const { t } = loadApp();
-  t.setPicks([ACME]);
-  t.set({ ...picked({}), stamps: FIVE, series: [], discovered: [],
-    epochs: [{ ts: FIVE[3], changed: ['tech filter changed'], fields: ['tech_filter_version'] }] });
-  // 30 → 150, then a change to 5 (too small for a ratio): 150 adjusts to 5, but 30 − 145 is
-  // no level, so the line starts after it.
-  same(t.netOfSteps([30, 150, 150, 5, 5]), [null, 5, 5, 5, 5]);
-});
-
 
 test('a leap one run puts straight back is a partial read, not hiring', async () => {
   const { t, ctx, nodes } = loadApp();
-  answering(ctx, { ...picked({}), stamps: FOUR, totals: [1e3, 1e3, 1e3, 1e3], non_tech: [0, 0, 0, 0],
-    series: [{ name: 'a', label: 'a', points: [26, 104, 26, 27], latest: 27 },
-             { name: 'b', label: 'b', points: [100, 110, 120, 130], latest: 130 }] });
+  answering(ctx, golden('partial_read_put_straight_back'));
   t.setPicks([ACME]);
   await t.load(null);
   same(t.data().series.find(x => x.name === 'a').points, [26, null, 26, 27]);
@@ -1733,9 +1599,7 @@ test('a leap one run puts straight back is a partial read, not hiring', async ()
 
 test('a partial read is judged against the last point kept, and counted per run', async () => {
   const { t, ctx, nodes } = loadApp();
-  answering(ctx, { ...picked({}), stamps: FOUR, totals: [1e3, 1e3, 1e3, 1e3], non_tech: [0, 0, 0, 0],
-    series: [{ name: 'a', label: 'a', points: [26, 104, 26, 0], latest: 0 },
-             { name: 'b', label: 'b', points: [40, 90, 40, 41], latest: 41 }] });
+  answering(ctx, golden('partial_read_judged_against_the_last_point_kept'));
   t.setPicks([ACME]);
   await t.load(null);
   same(t.data().series.find(x => x.name === 'a').points, [26, null, 26, 0], 'the 26 after the leap is real');
@@ -1745,34 +1609,16 @@ test('a partial read is judged against the last point kept, and counted per run'
 
 test('the sentence names each cause of the non-hiring move, with its size', () => {
   const { t, nodes } = loadApp();
-  t.setPicks([ACME, BETA]);
-  t.set(companies([['greenhouse:acme', 'Acme', [3000, 3000, 1000, 1010]], ['lever:beta', 'Beta', [50, 50, 50, 50]]],
-    { evicted: [{ ts: FOUR[2], company: 'greenhouse:acme', count: 2000 }] }));
+  showGolden(t, 'duplicate_postings_removed_named_as_the_cause');
   t.setUnit('count', false);
   t.draw();
   assert.match(nodes['trends-verdict'].innerHTML,
     /Acme<\/b>: [^—<]*— 1,010 tech openings; up 1\.0% over 3 days \(\+10 openings[^)]*\)\.<details class="verdict-why"><summary>Not hiring: −2,000 openings<\/summary>−2,000 openings from duplicate postings removed\./);
 });
 
-test('under New, a counting change is also taken out a week later, when its openings age out', () => {
-  const { t } = loadApp();
-  t.metricSet('new');
-  t.setPicks([ACME]);
-  const stamps = ['2026-09-16T00:00:00+00:00', '2026-09-17T15:26:29+00:00', '2026-09-20T00:00:00+00:00',
-                  '2026-09-24T15:32:00+00:00', '2026-09-25T00:00:00+00:00'];
-  t.set({ ...picked({}), metric: 'new', stamps, series: [], discovered: [],
-    epochs: [{ ts: stamps[1], changed: ['tech filter changed'], fields: ['tech_filter_version'] }] });
-  // +50 at the change (and its settling run), −50 a week on as those openings age out.
-  same(t.netOfSteps([100, 150, 150, 100, 100]), [100, 100, 100, 100, 100]);
-});
-
 test('a run with duplicates removed beside a counting change names each by its size', () => {
   const { t, nodes } = loadApp();
-  t.setPicks([{ key: 'eightfold:jobs.nvidia.com', label: 'NVIDIA', boardKeys: ['eightfold:jobs.nvidia.com'] }, BETA]);
-  t.set(companies([['eightfold:jobs.nvidia.com', 'NVIDIA', [3900, 3900, 1900, 1900, 1880]], ['lever:beta', 'Beta', [50, 50, 50, 50, 50]]],
-    { stamps: FIVE, evicted: [{ ts: FIVE[2], company: 'eightfold:jobs.nvidia.com', count: 2041 }],
-      epochs: [{ ts: FIVE[2], changed: ['duplicate removal changed', 'role family assignment changed'],
-                 fields: ['dedup_version', 'family_classifier_version'] }] }));
+  showGolden(t, 'nvidia_duplicates_beside_a_counting_change');
   t.setUnit('count', false);
   t.draw();
   // The refit run moved −2,000: −2,041 duplicates, +41 from the family change beside them.
@@ -1841,14 +1687,9 @@ test('the table heads a company\'s categories with its own total, and says why t
 
 test('a refit that moves openings between categories leaves them adding up to the company', () => {
   const { t, nodes } = loadApp();
-  t.setPicks([ACME]);
   // a hires 20, then a refit moves 24 of its openings to b. The company hires +20; by openings a
   // reads +20 and b +0, so nothing sits between them. (Scaled, a read +16: a +4 "Between" row.)
-  t.set({ ...picked({}), stamps: FOUR, totals: [1e3, 1e3, 1e3, 1e3], non_tech: [0, 0, 0, 0],
-    series: [{ name: 'a', label: 'a', points: [100, 120, 96, 96], latest: 96 },
-             { name: 'b', label: 'b', points: [50, 50, 74, 74], latest: 74 }],
-    counted_since: { 'greenhouse:acme': FOUR[0] },
-    epochs: [{ ts: FOUR[2], changed: ['role family assignment changed'], fields: ['family_classifier_version'] }] });
+  showGolden(t, 'refit_moves_openings_between_categories');
   t.setUnit('count', false);
   t.draw();
   nodes['trends-error'] = Object.assign(fakeEl(), { hidden: true });
@@ -1874,10 +1715,7 @@ const MICRON = { key: 'eightfold:micron', label: 'Micron', boardKeys: ['eightfol
 
 test('a duplicate-removal change is named only on the line of a pick it can touch', () => {
   const { t, nodes } = loadApp();
-  t.setPicks([ACME, MICRON]);
-  t.set(companies([['greenhouse:acme', 'Acme', [100, 100, 120, 120, 120]], ['eightfold:micron', 'Micron', [100, 100, 80, 80, 80]]],
-    { stamps: FIVE, epochs: [{ ts: FIVE[2], changed: ['duplicate removal changed', 'role family assignment changed'],
-                               fields: ['dedup_version', 'family_classifier_version'] }] }));
+  showGolden(t, 'duplicate_removal_change_named_on_the_touched_pick_only');
   t.setUnit('count', false);
   t.draw();
   const [acme, micron] = nodes['trends-verdict'].innerHTML.split('</li>');
@@ -1887,11 +1725,7 @@ test('a duplicate-removal change is named only on the line of a pick it can touc
 
 test('counting changes are named in words that read, and counted once each', () => {
   const { t, nodes } = loadApp();
-  t.setPicks([ACME]);
-  t.set(companies([['greenhouse:acme', 'Acme', [100, 100, 120, 120, 150]]],
-    { stamps: FIVE, epochs: [
-      { ts: FIVE[2], changed: ['role taxonomy refit'], fields: ['centroid_version'] },
-      { ts: FIVE[4], changed: ['tech filter changed', 'role family map edited'], fields: ['tech_filter_version', 'family_map_fingerprint'] }] }));
+  showGolden(t, 'three_counting_changes_named_once_each');
   t.setUnit('count', false);
   t.draw();
   assert.match(nodes['trends-verdict'].innerHTML,
@@ -1900,13 +1734,8 @@ test('counting changes are named in words that read, and counted once each', () 
 
 test('under New a filter change and its week-later echo are one change', () => {
   const { t, nodes } = loadApp();
-  const days = Array.from({ length: 12 }, (_, k) => `2026-09-${String(k + 1).padStart(2, '0')}T00:00:00+00:00`);
-  t.setPicks([ACME]);
-  t.metricSet('new');
   // The change lands at its own run, and its echo a week on.
-  t.set({ ...companies([['greenhouse:acme', 'Acme', [100, 150, 150, 150, 150, 150, 150, 150, 110, 110, 110, 110]]],
-    { stamps: days, counted_since: { 'greenhouse:acme': days[0] },
-      epochs: [{ ts: days[1], changed: ['tech filter changed'], fields: ['tech_filter_version'] }] }), metric: 'new' });
+  showGolden(t, 'new_filter_change_and_its_echo_are_one_change');
   t.setUnit('count', false);
   t.draw();
   const html = nodes['trends-verdict'].innerHTML;
@@ -1916,12 +1745,9 @@ test('under New a filter change and its week-later echo are one change', () => {
 
 test('a rise over a duplicate-removal run is hiring, not a removal', () => {
   const { t, nodes } = loadApp();
-  t.setPicks([MICRON]);
-  t.metricSet('new');
   // Under New a duplicate-removal change has no size; removing duplicates cannot add openings,
   // so the +20 at its run is that run's hiring.
-  t.set({ ...companies([['eightfold:micron', 'Micron', [50, 50, 70, 70, 70]]],
-    { stamps: FIVE, epochs: [{ ts: FIVE[2], changed: ['duplicate removal changed'], fields: ['dedup_version'] }] }), metric: 'new' });
+  showGolden(t, 'new_rise_over_a_duplicate_removal_run_is_hiring');
   t.setUnit('count', false);
   t.draw();
   const html = nodes['trends-verdict'].innerHTML;
@@ -1953,13 +1779,7 @@ test('under Share a small line is no tile riser, and a short window gives no ope
 
 test('markers on one day are drawn as one, titled with every change', () => {
   const { t, nodes } = loadApp();
-  const f = fixture();
-  f.stamps = ['2026-08-10T00:00:00+00:00', '2026-08-13T00:00:00+00:00', '2026-08-13T06:00:00+00:00',
-              '2026-08-13T12:00:00+00:00', '2026-08-16T00:00:00+00:00'];
-  f.totals = [1e5, 1e5, 1e5, 1e5, 1e5]; f.non_tech = [0, 0, 0, 0, 0];
-  f.series = f.series.map(s => ({ ...s, points: [1, 2, 3, 4, 5].map(() => s.points[0]) }));
-  f.epochs = [{ ts: f.stamps[1], changed: ['tech filter changed'] }, { ts: f.stamps[3], changed: ['role taxonomy refit'] }];
-  t.set(f, null);
+  t.set(golden('index_marks_counting_changes_and_takes_nothing_out'), null);
   t.draw();
   const svg = nodes['trends-chart'].innerHTML;
   assert.equal((svg.match(/class="epoch-marker"/g) || []).length, 1);
@@ -1969,10 +1789,8 @@ test('markers on one day are drawn as one, titled with every change', () => {
 // ---- critique round 12 ------------------------------------------------------------------------
 test('a whole company’s line takes a counting change out by openings, as Hot does', () => {
   const { t, nodes } = loadApp();
-  t.setPicks([ACME]);
   // A +100 filter change at FIVE[2] and its settling run; hiring +10, +20 either side of them.
-  t.set(companies([['greenhouse:acme', 'Acme', [100, 110, 210, 210, 230]]],
-    { stamps: FIVE, epochs: [{ ts: FIVE[2], changed: ['tech filter changed'], fields: ['tech_filter_version'] }] }));
+  showGolden(t, 'whole_company_line_takes_a_filter_change_out_by_openings');
   t.setUnit('count', false);
   t.draw();
   // Scaled, the history before the step doubled and the line read +50; Hot sums the runs
@@ -2019,12 +1837,7 @@ test('one opening is one opening', () => {
 
 test('every marked line is listed under the chart, a merged day at its biggest jump', () => {
   const { t, nodes } = loadApp();
-  const stamps = ['2026-09-20T00:00:00+00:00', '2026-09-24T18:00:00+00:00', '2026-09-24T21:19:00+00:00',
-                  '2026-09-25T06:00:00+00:00', '2026-09-27T00:00:00+00:00'];
-  t.setPicks([ACME]);
-  t.set(companies([['greenhouse:acme', 'Acme', [100, 101, 300, 300, 305]]], { stamps,
-    epochs: [{ ts: stamps[1], changed: ['duplicate removal changed'], fields: ['family_classifier_version'] },
-             { ts: stamps[2], changed: ['role family assignment changed'], fields: ['family_classifier_version'] }] }));
+  showGolden(t, 'two_changes_on_one_day_each_own_their_run');
   t.setUnit('count', false);
   t.draw();
   const list = nodes['trends-changes'];
@@ -2046,16 +1859,6 @@ test('the roles view says what its lines are', () => {
   assert.match(nodes['trends-verdict'].innerHTML, /roles tracked by their titles inside this category/);
 });
 
-
-test('a whole company’s shift that would erase its history scales instead', () => {
-  const { t } = loadApp();
-  t.setPicks([ACME]);
-  t.set(companies([['greenhouse:acme', 'Acme', [50, 200, 20, 20, 22]]],
-    { stamps: FIVE, epochs: [{ ts: FIVE[2], changed: ['tech filter changed'], fields: ['tech_filter_version'] }] }));
-  // Shifted by −180, the 50 went below zero and the line lost its start without a word.
-  same(t.netOfSteps([50, 200, 20, 20, 22], { name: '__total__', points: [50, 200, 20, 20, 22] })
-    .map(v => Math.round(v)), [5, 20, 20, 20, 22]);
-});
 
 test('a trend opened from Hot says how Hot’s figure reads on it', () => {
   const { t, nodes } = loadApp();
@@ -2105,11 +1908,8 @@ test('a hand-off tells Search what the trend counted, and when', () => {
 
 test('a counting change that did not move a line is not named for it', () => {
   const { t, nodes } = loadApp();
-  t.setPicks([ACME]);
   // Two filter changes; only the second moves Acme.
-  t.set(companies([['greenhouse:acme', 'Acme', [100, 100, 100, 100, 160]]], { stamps: FIVE, epochs: [
-    { ts: FIVE[1], changed: ['tech filter changed'], fields: ['tech_filter_version'] },
-    { ts: FIVE[4], changed: ['tech filter changed'], fields: ['tech_filter_version'] }] }));
+  showGolden(t, 'two_filter_changes_only_one_moves_the_line');
   t.setUnit('count', false);
   t.draw();
   assert.match(nodes['trends-verdict'].innerHTML, /\+60 openings from a tech filter change\./);
@@ -2117,13 +1917,8 @@ test('a counting change that did not move a line is not named for it', () => {
 
 test('under New, an echo whose change fell before the window is named as an echo', () => {
   const { t, nodes } = loadApp();
-  const days = Array.from({ length: 12 }, (_, k) => `2026-09-${String(k + 10).padStart(2, '0')}T00:00:00+00:00`);
-  t.setPicks([ACME]);
-  t.metricSet('new');
   // The change at Sep 11 12:00 sits before the window's second run; its echo lands Sep 19.
-  t.set({ ...companies([['greenhouse:acme', 'Acme', [150, 150, 150, 150, 150, 150, 150, 150, 150, 110, 110, 110]]],
-    { stamps: days, counted_since: { 'greenhouse:acme': days[0] },
-      epochs: [{ ts: '2026-09-11T12:00:00+00:00', changed: ['tech filter changed'], fields: ['tech_filter_version'] }] }), metric: 'new' });
+  showGolden(t, 'new_echo_of_a_change_before_the_window');
   t.setUnit('count', false);
   t.draw();
   assert.match(nodes['trends-verdict'].innerHTML, /−40 openings from the week-later echo of an earlier tech filter change\./);
@@ -2131,12 +1926,7 @@ test('under New, an echo whose change fell before the window is named as an echo
 
 test('a category sorted in by a counting change reads so, and its openings count as that change', () => {
   const { t, nodes } = loadApp();
-  t.setPicks([ACME]);
-  t.set({ ...picked({}), stamps: FOUR, totals: [1e3, 1e3, 1e3, 1e3], non_tech: [0, 0, 0, 0],
-    series: [{ name: 'a', label: 'a', points: [100, 100, 84, 85], latest: 85 },
-             { name: 'web', label: 'web', points: [null, null, 16, 16], latest: 16 }],
-    counted_since: { 'greenhouse:acme': '2026-09-01T00:00:00+00:00' },
-    epochs: [{ ts: FOUR[2], changed: ['role family assignment changed'], fields: ['family_classifier_version'] }] });
+  showGolden(t, 'category_sorted_in_by_a_counting_change');
   t.setUnit('count', false);
   t.draw();
   assert.match(row(nodes['trends-legend'].innerHTML, 'web'), /sorted in by a counting change, Sep 15/);
@@ -2148,35 +1938,17 @@ test('a category sorted in by a counting change reads so, and its openings count
 
 test('Total is the sum of the Company breakdown, each company’s steps out of its own part', () => {
   const { t, nodes } = loadApp();
-  const two = [{ key: 'greenhouse:acme', label: 'Acme', boardKeys: ['greenhouse:acme'] },
-               { key: 'eightfold:micron', label: 'Micron', boardKeys: ['eightfold:micron'] }];
   // A duplicate-removal change touches only Micron (Eightfold); Acme hires +30 that run.
-  const acme = [100, 100, 130, 130], micron = [200, 200, 150, 150];
-  const epochs = [{ ts: FOUR[2], changed: ['duplicate removal changed'], fields: ['dedup_version'] }];
   const moves = () => [...nodes['trends-legend'].innerHTML.matchAll(/([−+]\d+) openings?/g)].map(m => Number(m[1].replace('−', '-')));
-  t.setPicks(two);
+  showGolden(t, 'duplicate_removal_breakdown_by_company');
   t.setUnit('count', false);
-  t.set(companies([['greenhouse:acme', 'Acme', acme], ['eightfold:micron', 'Micron', micron]], { epochs }));
   t.draw();
   const breakdown = moves();
-  t.set({ ...companies([['greenhouse:acme', 'Acme', acme], ['eightfold:micron', 'Micron', micron]], { epochs }),
-    split_by: 'family', total: true,
-    series: [{ name: '__total__', label: 'All tech roles', points: acme.map((v, j) => v + micron[j]), latest: 280 }],
-    pick_series: { 'greenhouse:acme': acme, 'eightfold:micron': micron } });
+  const summed = golden('duplicate_removal_total_sums_each_company');
+  t.set({ ...summed, total: true, series: [{ ...summed.series_sum, label: 'All tech roles', latest: 280 }] });
   t.draw();
   assert.deepEqual(breakdown, [30, 0]);
   assert.deepEqual(moves(), [30], 'Total is the breakdown’s sum; summed whole it read 0');
-});
-
-test('a pick counted from a later date joins Total as a step, not as hiring', () => {
-  const { t } = loadApp();
-  t.setPicks([{ key: 'greenhouse:acme', label: 'Acme', boardKeys: ['greenhouse:acme'] },
-              { key: 'workday:amd/x', label: 'AMD', boardKeys: ['workday:amd/x'] }]);
-  const acme = [100, 100, 100, 104], amd = [null, null, 500, 500];
-  t.set({ ...companies([['greenhouse:acme', 'Acme', acme]]), total: true,
-    series: [{ name: '__total__', label: 'All', points: [100, 100, 600, 604], latest: 604 }],
-    pick_series: { 'greenhouse:acme': acme, 'workday:amd/x': amd } });
-  same(t.netOfSteps([100, 100, 600, 604], t.data().series[0]), [600, 600, 600, 604]);
 });
 
 test('a window ending in the past gives its time, not an age', () => {
@@ -2191,9 +1963,7 @@ test('a window ending in the past gives its time, not an age', () => {
 
 test('the marked-changes list gives each change’s size on each line, and counts repeats', () => {
   const { t, nodes } = loadApp();
-  t.setPicks([ACME]);
-  t.set(companies([['greenhouse:acme', 'Acme', [100, 100, 140, 140, 150]]], { stamps: FIVE,
-    epochs: [{ ts: FIVE[2], changed: ['tech filter changed'], fields: ['tech_filter_version'] }] }));
+  showGolden(t, 'filter_change_sized_in_the_marked_changes_list');
   t.setUnit('count', false);
   t.draw();
   assert.match(nodes['trends-changes'].innerHTML, /Sep 15 00:00<\/b> tech filter changed — Acme \+40 openings/);
@@ -2239,11 +2009,9 @@ test('a Hot row on a board counted for hours gets no week’s change beside it',
 
 test('a change named for a line is every change whose left-out runs moved it, sized in the list', () => {
   const { t, nodes } = loadApp();
-  t.setPicks([ACME]);
   // The change moved Acme by 0 at its run and −3 at its settling run, which is left out on every
   // line alike; so the sentence names it with that −3, and the list sizes it the same.
-  t.set(companies([['greenhouse:acme', 'Acme', [100, 100, 100, 97, 97]]], { stamps: FIVE,
-    epochs: [{ ts: FIVE[2], changed: ['tech filter changed'], fields: ['tech_filter_version'] }] }));
+  showGolden(t, 'change_whose_settling_run_alone_moved_the_line');
   t.setUnit('count', false);
   t.draw();
   assert.match(nodes['trends-verdict'].innerHTML, /<\/summary>−3 openings from a tech filter change\./);
@@ -2252,11 +2020,7 @@ test('a change named for a line is every change whose left-out runs moved it, si
 
 test('the list gives a counting change without the duplicates removed on its run', () => {
   const { t, nodes } = loadApp();
-  t.setPicks([{ key: 'eightfold:nvidia', label: 'NVIDIA', boardKeys: ['eightfold:nvidia'] }]);
-  t.set(companies([['eightfold:nvidia', 'NVIDIA', [4000, 4000, 1862, 1862, 1900]]], { stamps: FIVE,
-    evicted: [{ ts: FIVE[2], company: 'eightfold:nvidia', count: 2041 }],
-    epochs: [{ ts: FIVE[2], changed: ['duplicate removal changed', 'role family assignment changed'],
-               fields: ['dedup_version', 'family_classifier_version'] }] }));
+  showGolden(t, 'nvidia_counting_change_without_the_duplicates_on_its_run');
   t.setUnit('count', false);
   t.draw();
   const list = nodes['trends-changes'].innerHTML;
@@ -2284,10 +2048,8 @@ test('a window with no runs names the picks, not "0 companies"', () => {
 // ---- round 14 review ------------------------------------------------------------------------------
 test('a change landing one run late is still left out whole (Amazon’s Sep 17 shape)', () => {
   const { t, nodes } = loadApp();
-  t.setPicks([ACME]);
   // The filter change moved nothing at its own run and −400 at the next, its settling run.
-  t.set(companies([['greenhouse:acme', 'Acme', [500, 500, 500, 100, 100]]], { stamps: FIVE,
-    epochs: [{ ts: FIVE[2], changed: ['tech filter changed'], fields: ['tech_filter_version'] }] }));
+  showGolden(t, 'filter_change_landing_one_run_late');
   t.setUnit('count', false);
   t.draw();
   assert.match(nodes['trends-verdict'].innerHTML, /<\/summary>−400 openings from a tech filter change\./);
@@ -2296,13 +2058,8 @@ test('a change landing one run late is still left out whole (Amazon’s Sep 17 s
 
 test('a refit leaves a company’s categories adding up to it, settling run and all', () => {
   const { t, nodes } = loadApp();
-  t.setPicks([ACME]);
   // The refit moves 24 from a to b (the total holds); the run after, a hires 5.
-  t.set({ ...picked({}), stamps: FIVE, totals: [1e3, 1e3, 1e3, 1e3, 1e3], non_tech: [0, 0, 0, 0, 0],
-    series: [{ name: 'a', label: 'a', points: [100, 100, 76, 81, 81], latest: 81 },
-             { name: 'b', label: 'b', points: [50, 50, 74, 74, 74], latest: 74 }],
-    counted_since: { 'greenhouse:acme': FIVE[0] },
-    epochs: [{ ts: FIVE[2], changed: ['role family assignment changed'], fields: ['family_classifier_version'] }] });
+  showGolden(t, 'refit_with_a_settling_run_still_adds_up');
   t.setUnit('count', false);
   t.draw();
   nodes['trends-error'] = Object.assign(fakeEl(), { hidden: true });
@@ -2312,15 +2069,9 @@ test('a refit leaves a company’s categories adding up to it, settling run and 
 
 test('several picks in a drill leave an extraction change in the level total', () => {
   const { t, nodes } = loadApp();
-  t.setPicks([ACME, BETA]);
   // Beta's category rises 20 at a run where only experience extraction changed, which re-sorts
   // levels but never a category's total: that +20 is hiring.
-  t.set({ ...picked({}, [{ key: 'greenhouse:acme', label: 'Acme' }, { key: 'lever:beta', label: 'Beta' }]),
-    stamps: FIVE, totals: [1e3, 1e3, 1e3, 1e3, 1e3], non_tech: [0, 0, 0, 0, 0],
-    series: [{ name: 'mid', label: 'Mid', points: [150, 150, 170, 170, 170], latest: 170 }],
-    pick_series: { 'greenhouse:acme': [100, 100, 100, 100, 100], 'lever:beta': [50, 50, 70, 70, 70] },
-    counted_since: { 'greenhouse:acme': FIVE[0], 'lever:beta': FIVE[0] },
-    epochs: [{ ts: FIVE[2], changed: ['experience/salary extraction changed'], fields: ['derivations_version'] }] }, 'ai-ml');
+  showGolden(t, 'several_picks_in_a_drill_keep_an_extraction_change');
   t.setUnit('count', false);
   t.draw();
   assert.match(nodes['trends-verdict'].innerHTML, /\+20 openings/);
@@ -2329,10 +2080,7 @@ test('several picks in a drill leave an extraction change in the level total', (
 
 test('a marker names duplicate removal only where a pick can be touched', () => {
   const { t, nodes } = loadApp();
-  t.setPicks([ACME]);
-  t.set(companies([['greenhouse:acme', 'Acme', [100, 100, 130, 130]]],
-    { epochs: [{ ts: FOUR[2], changed: ['duplicate removal changed', 'role family assignment changed'],
-                 fields: ['dedup_version', 'family_classifier_version'] }] }));
+  showGolden(t, 'duplicate_removal_change_named_only_where_a_pick_can_be_touched');
   t.setUnit('count', false);
   t.draw();
   assert.match(nodes['trends-chart'].innerHTML, /Sep 15 00:00 role family assignment changed/);
@@ -2354,13 +2102,8 @@ test('a breakdown change is a step Back can undo', () => {
 // ---- critique round 15 ------------------------------------------------------------------------
 test('the marked-changes list sizes each change on the company alone, as the sentence totals it', () => {
   const { t, nodes } = loadApp();
-  t.setPicks([ACME]);
   // Nine categories, so the ninth is Other; a filter change moves each by +10 at FIVE[2].
-  const names = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i'];
-  t.set({ ...picked({}), stamps: FIVE, totals: [1e4, 1e4, 1e4, 1e4, 1e4], non_tech: [0, 0, 0, 0, 0],
-    series: names.map((n, k) => ({ name: n, label: n, points: [100 - k, 100 - k, 110 - k, 110 - k, 110 - k], latest: 110 - k })),
-    counted_since: { 'greenhouse:acme': FIVE[0] },
-    epochs: [{ ts: FIVE[2], changed: ['tech filter changed'], fields: ['tech_filter_version'] }] });
+  showGolden(t, 'nine_categories_one_folded_into_other');
   t.setUnit('count', false);
   t.draw();
   const list = nodes['trends-changes'].innerHTML;
@@ -2369,12 +2112,7 @@ test('the marked-changes list sizes each change on the company alone, as the sen
 });
 test('a category a counting change sorted into existence reads so, and the list gives the company’s size', () => {
   const { t, nodes } = loadApp();
-  t.setPicks([ACME]);
-  t.set({ ...picked({}), stamps: FOUR, totals: [1e3, 1e3, 1e3, 1e3], non_tech: [0, 0, 0, 0],
-    series: [{ name: 'a', label: 'a', points: [100, 100, 84, 85], latest: 85 },
-             { name: 'web', label: 'web', points: [null, null, 16, 16], latest: 16 }],
-    counted_since: { 'greenhouse:acme': '2026-09-01T00:00:00+00:00' },
-    epochs: [{ ts: FOUR[2], changed: ['role family assignment changed'], fields: ['family_classifier_version'] }] });
+  showGolden(t, 'category_sorted_in_by_a_counting_change');
   t.setUnit('count', false);
   t.draw();
   assert.match(row(nodes['trends-legend'].innerHTML, 'web'), /sorted in by a counting change, Sep 15/);
@@ -2406,10 +2144,7 @@ test('a tracked role’s jobs link tells Search what the trend counted', () => {
 
 test('under New a duplicate-removal change is named as one, as under All openings', () => {
   const { t, nodes } = loadApp();
-  t.setPicks([MICRON]);
-  t.metricSet('new');
-  t.set({ ...companies([['eightfold:micron', 'Micron', [50, 50, 30, 30, 30]]],
-    { stamps: FIVE, epochs: [{ ts: FIVE[2], changed: ['duplicate removal changed'], fields: ['dedup_version'] }] }), metric: 'new' });
+  showGolden(t, 'new_duplicate_removal_change_named_as_one');
   t.setUnit('count', false);
   t.draw();
   assert.match(nodes['trends-verdict'].innerHTML, /<\/summary>−20 openings from a duplicate removal change\./);
@@ -2419,10 +2154,8 @@ test('under New a duplicate-removal change is named as one, as under All opening
 // ---- round 15 review ------------------------------------------------------------------------------
 test('the crosshair on a marker says what the list says, the company’s size included (Micron, Sep 17)', () => {
   const { t, nodes } = loadApp();
-  t.setPicks([ACME]);
   // +32 at the change's own run, −296 at its settling run: one change of −264.
-  t.set(companies([['greenhouse:acme', 'Acme', [1000, 1000, 1032, 736, 736]]], { stamps: FIVE,
-    epochs: [{ ts: FIVE[2], changed: ['tech filter changed'], fields: ['tech_filter_version'] }] }));
+  showGolden(t, 'micron_filter_change_sized_with_its_settling_run');
   t.setUnit('count', false);
   t.draw();
   assert.deepEqual(t.tooltipNotes(t.geom(), 2), ['Sep 15 00:00 tech filter changed — Acme −264 openings']);
@@ -2431,12 +2164,7 @@ test('the crosshair on a marker says what the list says, the company’s size in
 
 test('a day’s marker names every change that day at its own time', () => {
   const { t } = loadApp();
-  const stamps = ['2026-09-20T00:00:00+00:00', '2026-09-24T11:32:00+00:00', '2026-09-24T16:23:00+00:00',
-                  '2026-09-24T21:19:00+00:00', '2026-09-27T00:00:00+00:00'];
-  t.setPicks([ACME]);
-  t.set(companies([['greenhouse:acme', 'Acme', [100, 91, 89, 99, 99]]], { stamps, epochs: [
-    { ts: stamps[1], changed: ['tech filter changed'], fields: ['tech_filter_version'] },
-    { ts: stamps[3], changed: ['role family assignment changed'], fields: ['family_classifier_version'] }] }));
+  showGolden(t, 'day_marker_names_every_change_at_its_own_time');
   t.setUnit('count', false);
   t.draw();
   const at = [...t.geom().changesAt.keys()];
@@ -2478,12 +2206,7 @@ test('Share’s table names what its figures are', () => {
 // tech-filter change lands 400 jobs that look newly posted, so its run and the run after it are
 // left out of opened and closed, exactly as they are out of the net change.
 function busyAcme(extra) {
-  const d = companies([['greenhouse:acme', 'Acme', [1000, 1000, 1000, 1000]]], {
-    epochs: [{ ts: FOUR[2], changed: ['tech filter changed'], fields: ['tech_filter_version'] }],
-    turnover_since: FOUR[0], closures_unseen: { 'greenhouse:acme': 1 }, ...extra });
-  d.series[0].turnover = { opened: [null, 500, 900, 110], closed: [null, 490, 505, 100],
-    recounted: [null, 0, 0, 0] };
-  return d;
+  return { ...golden('busy_company_turnover_leaves_out_a_filter_change'), ...extra };
 }
 
 test('a company sentence gives the jobs its net change is made of', () => {
@@ -2498,26 +2221,13 @@ test('a company sentence gives the jobs its net change is made of', () => {
 
 test('turnover stays in the main text, never in the not-hiring disclosure', () => {
   const { t, nodes } = loadApp();
-  t.setPicks([ACME]);
-  const d = busyAcme();
-  d.series[0].points = [1000, 1000, 1400, 1400];
-  d.series[0].latest = 1400;
-  t.set(d);
+  showGolden(t, 'busy_company_step_disclosed_turnover_kept');
   t.draw();
   const html = nodes['trends-verdict'].innerHTML;
   assert.match(html, /<details class="verdict-why">/, 'the tech-filter step is disclosed');
   const [main, why] = html.split('<details class="verdict-why">');
   assert.match(main, /about 500 opened, 490 closed/);
   assert.doesNotMatch(why, /opened/);
-});
-
-test('a counting change on the window’s first run leaves no turnover out, as the Space’s index rule', () => {
-  // Mirrors the Space's `_left_out_runs`: a change already in every line's start takes nothing
-  // out, not even its settling run (which cut Amazon's real −7).
-  const { t } = loadApp();
-  t.setPicks([ACME]);
-  t.set(busyAcme({ epochs: [{ ts: FOUR[0], changed: ['tech filter changed'], fields: ['tech_filter_version'] }] }));
-  same({ ...t.turnoverOf(t.data().series[0]) }, { opened: 1510, closed: 1095 });
 });
 
 test('turnover that began inside the window says from when', () => {
@@ -2541,33 +2251,13 @@ test('the table gives each line its opened and closed', () => {
   assert.match(html, /<td>500<\/td><td>490<\/td>/);
 });
 
-test('a found Board’s run keeps its turnover on a whole line and drops it on a category', () => {
-  // On the company's own line the found openings come out by their size, so that run's ordinary
-  // hiring, and its turnover, stay in. On a category line the whole run comes out, turnover too.
-  const { t } = loadApp();
-  t.setPicks([ACME]);
-  const found = [{ ts: FOUR[2], company: 'greenhouse:acme', boards: 1, openings: 200 }];
-  t.set(busyAcme({ epochs: [], discovered: found }));
-  same({ ...t.turnoverOf(t.data().series[0]) }, { opened: 1510, closed: 1095 });
-  t.set({ ...picked({}), stamps: FOUR, split_by: 'family', discovered: found,
-    totals: [1e4, 1e4, 1e4, 1e4], non_tech: [0, 0, 0, 0],
-    series: [{ name: 'a', label: 'a', points: [100, 100, 300, 300], latest: 300,
-      turnover: { opened: [null, 5, 9, 1], closed: [null, 4, 5, 1], recounted: [null, 0, 200, 0] } }] });
-  same({ ...t.turnoverOf(t.data().series[0]) }, { opened: 6, closed: 5 });
-});
-
 test('the index gets a hiring net from its turnover, and table columns too', () => {
   // The Space has already left the Sep 15 change's runs out (gaps), Board by Board, and names
   // them in `turnover_left_out`, which is what the sentence's closing clause rests on.
   const { t, nodes } = loadApp();
   t.setPicks([]);
-  const index = extra => ({ ...picked({}), companies: [], stamps: FOUR, totals: [1e4, 1e4, 1e4, 1e4],
-    non_tech: [0, 0, 0, 0], turnover_since: FOUR[0], closures_unseen: { '': 3 },
-    epochs: [{ ts: FOUR[2], changed: ['tech filter changed'], fields: ['tech_filter_version'] }],
-    series: [{ name: 'a', label: 'a', points: [900, 900, 1300, 1300], latest: 1300,
-      turnover: { opened: [null, 50, null, null], closed: [null, 40, null, null], recounted: [null, 0, null, null] } }],
-    ...extra });
-  t.set(index({ turnover_left_out: [FOUR[2], FOUR[3]] }));
+  const index = golden('index_turnover_with_a_counting_change_left_out');
+  t.set(index);
   t.setUnit('count', false);
   t.draw();
   assert.match(nodes['trends-verdict'].innerHTML,
@@ -2576,7 +2266,7 @@ test('the index gets a hiring net from its turnover, and table columns too', () 
   nodes['trends-error'] = Object.assign(fakeEl(), { hidden: true });
   t.table(true);
   assert.match(nodes['trends-table'].innerHTML, /<td>50<\/td><td>40<\/td>/);
-  t.set(index({ turnover_left_out: [], epochs: [], closures_unseen: {} }));
+  t.set({ ...index, turnover_left_out: [], epochs: [], notes: [], closures_unseen: {} });
   t.draw();
   assert.match(nodes['trends-verdict'].innerHTML, /about \+10 net from hiring — about 50 opened, 40 closed\./,
     'no counting change in the window, so nothing is said about one');
@@ -2591,34 +2281,12 @@ test('a Hot row shows the week’s opened and closed, and Volume leads with open
     'Rate divides new7, so its row leads with it');
 });
 
-test('a line summing picks counts each pick’s turnover over the runs its own line counts', () => {
-  // A duplicate-removal change can move only the Eightfold pick, so only its part of the sum
-  // leaves out that run and the run after; Acme's turnover there is still hiring.
-  const { t } = loadApp();
-  const MICRON = { key: 'eightfold:careers.micron.com', label: 'Micron', boardKeys: ['eightfold:careers.micron.com'] };
-  t.setPicks([ACME, MICRON]);
-  t.set({ ...picked({}, [{ key: ACME.key, label: 'Acme' }, { key: MICRON.key, label: 'Micron' }]),
-    stamps: FOUR, totals: [1e4, 1e4, 1e4, 1e4], non_tech: [0, 0, 0, 0],
-    epochs: [{ ts: FOUR[2], changed: ['duplicate removal changed'], fields: ['dedup_version'] }],
-    series: [{ name: 'mid', label: 'Mid', points: [300, 300, 280, 280], latest: 280 }],
-    pick_series: { [ACME.key]: [100, 100, 100, 100], [MICRON.key]: [200, 200, 180, 180] },
-    pick_turnover: {
-      [ACME.key]: { opened: [null, 10, 20, 30], closed: [null, 0, 0, 0], recounted: [null, 0, 0, 0] },
-      [MICRON.key]: { opened: [null, 1, 2, 3], closed: [null, 0, 0, 0], recounted: [null, 0, 0, 0] } },
-    counted_since: { [ACME.key]: FOUR[0], [MICRON.key]: FOUR[0] } }, 'ai-ml');
-  same({ ...t.turnoverOf({ name: '__total__', points: [300, 300, 280, 280] }) }, { opened: 61, closed: 0 });
-});
-
 // ---- critique round 16 ------------------------------------------------------------------------
 test('a duplicate removal scales the history before it, so doubled growth is halved (Micron)', () => {
   const { t, nodes } = loadApp();
-  const key = 'eightfold:micron';
-  t.setPicks([{ key, label: 'Micron', boardKeys: [key] }]);
-  // 1,000 real jobs listed twice (2,000); 50 real hires showed as +100; then the 1,050 copies are
+    // 1,000 real jobs listed twice (2,000); 50 real hires showed as +100; then the 1,050 copies are
   // removed, and 10 more are hired.
-  const pts = [2000, 2100, 1050, 1060];
-  t.set(companies([[key, 'Micron', pts]], { company_totals: { [key]: pts },
-    evicted: [{ ts: FOUR[2], company: key, count: 1050 }] }));
+showGolden(t, 'duplicate_removal_scales_the_history_before_it');
   t.setUnit('count', false);
   t.draw();
   const html = nodes['trends-verdict'].innerHTML;
@@ -2650,11 +2318,7 @@ test('a link’s values are read case-blind, as its company keys are', () => {
 
 test('a company counted from a later run is not sized by a change before it (Zomato’s phantom +2)', () => {
   const { t, nodes } = loadApp();
-  const zomato = { key: 'lever:zomato', label: 'Zomato', boardKeys: ['lever:zomato'] };
-  t.setPicks([ACME, zomato]);
-  t.set(companies([['greenhouse:acme', 'Acme', [100, 100, 110, 110, 110]], ['lever:zomato', 'Zomato', [null, null, null, 2, 2]]],
-    { stamps: FIVE, counted_since: { 'greenhouse:acme': FIVE[0], 'lever:zomato': FIVE[3] },
-      epochs: [{ ts: FIVE[2], changed: ['tech filter changed'], fields: ['tech_filter_version'] }] }));
+  showGolden(t, 'company_counted_later_is_not_sized_by_a_change_before_it');
   t.setUnit('count', false);
   t.draw();
   const list = nodes['trends-changes'].innerHTML;
@@ -2664,13 +2328,8 @@ test('a company counted from a later run is not sized by a change before it (Zom
 
 test('before a removal a change counts at the scale the removal leaves, and the list sums to the sentence', () => {
   const { t, nodes } = loadApp();
-  const key = 'eightfold:micron';
-  t.setPicks([{ key, label: 'Micron', boardKeys: [key] }]);
-  // A filter change adds 200 while every job is listed twice; then half the list is removed.
-  const pts = [2000, 2200, 2200, 1100, 1110];
-  t.set(companies([[key, 'Micron', pts]], { stamps: FIVE, company_totals: { [key]: pts },
-    evicted: [{ ts: FIVE[3], company: key, count: 1100 }],
-    epochs: [{ ts: FIVE[1], changed: ['tech filter changed'], fields: ['tech_filter_version'] }] }));
+    // A filter change adds 200 while every job is listed twice; then half the list is removed.
+showGolden(t, 'change_before_a_removal_counts_at_the_scale_it_leaves');
   t.setUnit('count', false);
   t.draw();
   const list = nodes['trends-changes'].innerHTML;
@@ -2683,16 +2342,8 @@ test('before a removal a change counts at the scale the removal leaves, and the 
 // ---- round 16 review ------------------------------------------------------------------------------
 test('a removal alone on its run leaves a company’s categories adding up to it', () => {
   const { t, nodes } = loadApp();
-  const key = 'eightfold:micron';
-  t.setPicks([{ key, label: 'Micron', boardKeys: [key] }]);
-  // Two categories, every job listed twice; a removal of half, alone on its run.
-  const a = [1200, 1300, 650, 660], b = [800, 800, 400, 400];
-  const whole = a.map((v, j) => v + b[j]);
-  t.set({ ...picked({}), stamps: FOUR, totals: [1e4, 1e4, 1e4, 1e4], non_tech: [0, 0, 0, 0],
-    series: [{ name: 'a', label: 'a', points: a, latest: 660 }, { name: 'b', label: 'b', points: b, latest: 400 }],
-    companies: [{ key, label: 'Micron', board_keys: [key], atses: ['eightfold'] }],
-    company_totals: { [key]: whole }, counted_since: { [key]: FOUR[0] },
-    evicted: [{ ts: FOUR[2], company: key, count: 1050 }] });
+    // Two categories, every job listed twice; a removal of half, alone on its run.
+showGolden(t, 'removal_alone_on_its_run_leaves_categories_adding_up');
   t.setUnit('count', false);
   t.draw();
   nodes['trends-error'] = Object.assign(fakeEl(), { hidden: true });
@@ -2706,15 +2357,10 @@ test('a removal alone on its run leaves a company’s categories adding up to it
 
 test('a change settling on a removal’s run is sized at that run’s own scale', () => {
   const { t, nodes } = loadApp();
-  const key = 'eightfold:micron';
-  t.setPicks([{ key, label: 'Micron', boardKeys: [key] }]);
-  // A filter change at [2] adds 200, then half the list is removed at [3], its settling run,
+    // A filter change at [2] adds 200, then half the list is removed at [3], its settling run,
   // where 50 more also land: the list must say +150 (+100 scaled, +50 at the removal's run), as
   // the sentence does; scaled whole it said +125.
-  const pts = [2000, 2000, 2200, 1150, 1160];
-  t.set(companies([[key, 'Micron', pts]], { stamps: FIVE, company_totals: { [key]: pts },
-    evicted: [{ ts: FIVE[3], company: key, count: 1100 }],
-    epochs: [{ ts: FIVE[2], changed: ['tech filter changed'], fields: ['tech_filter_version'] }] }));
+showGolden(t, 'change_settling_on_a_removal_run_is_sized_at_that_runs_scale');
   t.setUnit('count', false);
   t.draw();
   const list = nodes['trends-changes'].innerHTML;
@@ -2726,20 +2372,8 @@ test('a change settling on a removal’s run is sized at that run’s own scale'
 
 test('with several picks each category scales by its own companies’ removals and they add up to the Total', () => {
   const { t, nodes } = loadApp();
-  const MICRON = { key: 'eightfold:micron', label: 'Micron', boardKeys: ['eightfold:micron'] };
-  t.setPicks([ACME, MICRON]);
-  // Micron listed every job twice until half its list is removed at [2]; Acme is counted once.
-  const parts = { a: { [ACME.key]: [100, 100, 110, 110], [MICRON.key]: [1200, 1300, 650, 660] },
-                  b: { [ACME.key]: [50, 50, 50, 60], [MICRON.key]: [800, 800, 400, 400] } };
-  const sum = xs => xs[0].map((_, j) => xs.reduce((a, x) => a + x[j], 0));
-  const whole = key => sum([parts.a[key], parts.b[key]]);
-  t.set({ ...picked({}, [{ key: ACME.key, label: 'Acme' }, { key: MICRON.key, label: 'Micron' }]),
-    stamps: FOUR, totals: [1e4, 1e4, 1e4, 1e4], non_tech: [0, 0, 0, 0],
-    series: Object.entries(parts).map(([name, p]) => { const points = sum(Object.values(p)); return { name, label: name, points, latest: points[3] }; }),
-    pick_series: { [ACME.key]: whole(ACME.key), [MICRON.key]: whole(MICRON.key) }, pick_parts: parts,
-    company_totals: { [ACME.key]: whole(ACME.key), [MICRON.key]: whole(MICRON.key) },
-    counted_since: { [ACME.key]: FOUR[0], [MICRON.key]: FOUR[0] },
-    evicted: [{ ts: FOUR[2], company: MICRON.key, count: 1050 }] });
+    // Micron listed every job twice until half its list is removed at [2]; Acme is counted once.
+showGolden(t, 'each_category_scales_by_its_own_companies_removals');
   t.setUnit('count', false);
   t.draw();
   nodes['trends-error'] = Object.assign(fakeEl(), { hidden: true });
@@ -2753,15 +2387,7 @@ test('with several picks each category scales by its own companies’ removals a
 
 test('inside a category the marked removal is sized, so the list sums to the sentence', () => {
   const { t, nodes } = loadApp();
-  const key = 'eightfold:micron';
-  t.setPicks([{ key, label: 'Micron', boardKeys: [key] }]);
-  const mid = [1200, 1300, 650, 660], senior = [800, 800, 400, 400];
-  const whole = mid.map((v, j) => v + senior[j]);
-  t.set({ ...picked({}, [{ key, label: 'Micron' }]), split_by: 'band', stamps: FOUR,
-    totals: [1e4, 1e4, 1e4, 1e4], non_tech: [0, 0, 0, 0],
-    series: [{ name: 'mid', label: 'Mid', points: mid, latest: 660 }, { name: 'senior', label: 'Senior', points: senior, latest: 400 }],
-    company_totals: { [key]: whole }, counted_since: { [key]: FOUR[0] },
-    evicted: [{ ts: FOUR[2], company: key, count: 1050 }] }, 'ai-ml');
+  showGolden(t, 'removal_inside_a_category_is_sized_on_its_levels');
   t.setUnit('count', false);
   t.draw();
   const list = nodes['trends-changes'].innerHTML;
@@ -2787,9 +2413,7 @@ test('the roles view marks the changes that moved its roles', () => {
   t.setPicks([ACME]);
   t.set(fixture(), null);
   t.click('software-engineering', 'roles');
-  t.set({ ...picked({}), stamps: FOUR, totals: [1e3, 1e3, 1e3, 1e3], non_tech: [0, 0, 0, 0],
-    series: [{ name: 'watch:llm', label: 'watch:llm', points: [80, 80, 96, 96], latest: 96 }],
-    epochs: [{ ts: FOUR[2], changed: ['tech filter changed'], fields: ['tech_filter_version'] }] }, 'software-engineering');
+  showGolden(t, 'roles_view_marks_the_changes_that_moved_its_roles');
   t.draw();
   assert.match(nodes['trends-chart'].innerHTML, /class="epoch-marker"/);
   assert.match(nodes['trends-changes'].innerHTML, /tech filter changed — watch:llm \+16 openings/);

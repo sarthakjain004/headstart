@@ -24,7 +24,7 @@ import pytest
 pa = pytest.importorskip("pyarrow")
 pq = pytest.importorskip("pyarrow.parquet")
 
-from headstart import roles, trend_history
+from headstart import roles, trend_history, trend_netting
 from headstart.ingest import role_trends
 from headstart.trend_history import (
     TrendHistory,
@@ -398,12 +398,15 @@ def test_a_stock_series_a_run_leaves_out_is_at_zero_there():
 def test_the_space_and_the_hot_list_leave_out_the_same_runs_and_boards():
     """ADR-0227: the index's turnover (the Space) and Hot (hot_boards) leave out the same
     counting changes, and duplicate removal touches the same Boards, so the two never tell a
-    reader different figures for one week. Each keeps its own copy of the rule."""
+    reader different figures for one week. Hot keeps its own copy of the rule until ADR-0230
+    step 5 ranks it from the history; the Space's is trend_netting's."""
     from headstart.ingest import hot_boards
 
-    assert set(trend_history._LINE_MOVING) == set(hot_boards._STOCK_MOVING)
-    assert set(trend_history._DEDUP_ATSES) == set(hot_boards._DEDUP_SIBLING_ATSES)
-    assert trend_history._MIRROR_ATS == hot_boards._DEDUP_MIRROR_ATS
+    assert set(trend_netting.LINE_MOVING_FIELDS) == set(hot_boards._STOCK_MOVING)
+    assert set(trend_netting.DEDUP_SIBLING_ATSES) == set(
+        hot_boards._DEDUP_SIBLING_ATSES
+    )
+    assert trend_netting.DEDUP_MIRROR_ATS == hot_boards._DEDUP_MIRROR_ATS
     for boards in (
         ["workday:acme/a", "workday:acme/b"],
         ["workday:acme/a", "workday:other/b"],  # two Tenants: nothing to deduplicate
@@ -412,6 +415,73 @@ def test_the_space_and_the_hot_list_leave_out_the_same_runs_and_boards():
         ["eightfold:jobs.acme.com"],
         ["taleo_enterprise:acme/1", "taleo_enterprise:acme/2"],
     ):
-        assert trend_history._dedup_touched(boards) == bool(
+        assert trend_netting.dedup_touched(boards) == bool(
             hot_boards.dedup_touches(boards)
         ), boards
+
+
+def _write_opened_history(state: Path) -> None:
+    """One Board over 16 daily ticks: a 10-job backlog, then two jobs opened a day from day 3,
+    the first tick that books turnover (ADR-0227)."""
+    directory = state / "role_trend_board_deltas"
+    directory.mkdir(parents=True, exist_ok=True)
+    for day in range(16):
+        ts = _stamp(day)
+        grown = 10 if day == 0 else 2 if day >= 3 else 0
+        metrics = {"stock": grown, "new": grown, "opened": 2 if day >= 3 else 0}
+        rows = [
+            {
+                "ts": ts,
+                "board": "greenhouse:acme",
+                "metric": metric,
+                "family": "software-engineering",
+                "band": "mid",
+                "ats": "greenhouse",
+                "delta": delta,
+            }
+            for metric, delta in metrics.items()
+            if delta or metric == "stock"
+        ]
+        table = pa.Table.from_pylist(rows).replace_schema_metadata(
+            {b"centroid_version": b"3003", b"ts": ts.encode()}
+        )
+        pq.write_table(table, directory / f"{ts.replace(':', '-')}.parquet")
+    (state / "company_directory.json").write_text(
+        json.dumps({"companies": [{"name": "Acme", "boards": ["greenhouse:acme"]}]}),
+        encoding="utf-8",
+    )
+
+
+@pytest.mark.parametrize("companies", [(), ("greenhouse:acme",)])
+def test_new_becomes_the_week_of_opened_jobs_once_a_whole_week_has_them(
+    tmp_path, companies
+):
+    """ADR-0230 decision 5: `new` is the jobs Opened over the trailing week, from the first tick
+    whose whole week has Opened facts; before it, the level it always was. The switch is a
+    counting change of its own, marked where it lands."""
+    _write_opened_history(tmp_path)
+    history = TrendHistory.load(tmp_path, _NO_CONFIG)
+    answer = history.answer(TrendQuestion(metric="new", companies=companies))
+
+    # turnover began on day 3; day 10 is the first with a whole week
+    switch = _stamp(10)
+    assert answer["new_inflow_from"] == switch
+    points = answer["series"][0]["points"]
+    at = answer["stamps"].index(switch)
+    # Seven days of two opened jobs each, where the level had counted the backlog as new.
+    assert points[at:] == [14] * (len(points) - at)
+    assert points[at - 1] != 14
+    switched = [e for e in answer["epochs"] if e["ts"] == switch]
+    assert switched and switched[0]["fields"] == ["new_became_inflow"]
+    # answer() nets every line it serves, and a netted line ends on its measured latest value
+    for line in [*answer["series"], answer["series_sum"]]:
+        assert [v for v in line["net"]["count"] if v is not None][-1] == line["points"][
+            -1
+        ]
+
+
+def test_all_openings_carry_no_switch_of_new(tmp_path):
+    _write_opened_history(tmp_path)
+    answer = TrendHistory.load(tmp_path, _NO_CONFIG).answer(TrendQuestion())
+    assert answer["new_inflow_from"] is None
+    assert all("new_became_inflow" not in e["fields"] for e in answer["epochs"])

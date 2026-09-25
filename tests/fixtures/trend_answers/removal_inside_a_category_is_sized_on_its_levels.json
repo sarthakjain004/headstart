@@ -1,0 +1,300 @@
+{
+ "description": "Micron's levels in one category, every job listed twice until half are removed.",
+ "unnetted": {
+  "stamps": [
+   "2026-09-13T00:00:00+00:00",
+   "2026-09-14T00:00:00+00:00",
+   "2026-09-15T00:00:00+00:00",
+   "2026-09-16T00:00:00+00:00"
+  ],
+  "series": [
+   {
+    "name": "mid",
+    "label": "mid",
+    "points": [
+     1200,
+     1300,
+     650,
+     660
+    ],
+    "latest": 660
+   },
+   {
+    "name": "senior",
+    "label": "senior",
+    "points": [
+     800,
+     800,
+     400,
+     400
+    ],
+    "latest": 400
+   }
+  ],
+  "company_totals": {
+   "eightfold:micron": [
+    2000,
+    2100,
+    1050,
+    1060
+   ]
+  },
+  "evicted": [
+   {
+    "ts": "2026-09-15T00:00:00+00:00",
+    "company": "eightfold:micron",
+    "count": 1050
+   }
+  ],
+  "metric": "stock",
+  "coverage": "all",
+  "new_window_days": 7,
+  "family": "ai-ml",
+  "split_by": "band",
+  "companies": [
+   {
+    "key": "eightfold:micron",
+    "label": "Micron",
+    "board_keys": [
+     "eightfold:micron"
+    ],
+    "atses": [
+     "eightfold"
+    ]
+   }
+  ],
+  "epochs": [],
+  "discovered": [],
+  "pick_series": {},
+  "pick_parts": {},
+  "pick_turnover": {},
+  "counted_since": {
+   "eightfold:micron": "2026-09-13T00:00:00+00:00"
+  },
+  "totals": [
+   10000,
+   10000,
+   10000,
+   10000
+  ],
+  "non_tech": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "watch_parents": [],
+  "uncounted": []
+ },
+ "served": {
+  "stamps": [
+   "2026-09-13T00:00:00+00:00",
+   "2026-09-14T00:00:00+00:00",
+   "2026-09-15T00:00:00+00:00",
+   "2026-09-16T00:00:00+00:00"
+  ],
+  "series": [
+   {
+    "name": "mid",
+    "label": "mid",
+    "points": [
+     1200,
+     1300,
+     650,
+     660
+    ],
+    "latest": 660,
+    "net": {
+     "count": [
+      600,
+      650,
+      650,
+      660
+     ],
+     "share": [
+      12,
+      13,
+      6.5,
+      6.6000000000000005
+     ]
+    },
+    "steps": [
+     {
+      "note": 0,
+      "size": -600,
+      "moved": false
+     }
+    ],
+    "jumps": [],
+    "causes": {
+     "duplicates": -600,
+     "found": 0
+    },
+    "hiring_turnover": null,
+    "born_by_change": false
+   },
+   {
+    "name": "senior",
+    "label": "senior",
+    "points": [
+     800,
+     800,
+     400,
+     400
+    ],
+    "latest": 400,
+    "net": {
+     "count": [
+      400,
+      400,
+      400,
+      400
+     ],
+     "share": [
+      8,
+      8,
+      4,
+      4
+     ]
+    },
+    "steps": [
+     {
+      "note": 0,
+      "size": -400,
+      "moved": false
+     }
+    ],
+    "jumps": [],
+    "causes": {
+     "duplicates": -400,
+     "found": 0
+    },
+    "hiring_turnover": null,
+    "born_by_change": false
+   }
+  ],
+  "company_totals": {
+   "eightfold:micron": [
+    2000,
+    2100,
+    1050,
+    1060
+   ]
+  },
+  "evicted": [
+   {
+    "ts": "2026-09-15T00:00:00+00:00",
+    "company": "eightfold:micron",
+    "count": 1050
+   }
+  ],
+  "metric": "stock",
+  "coverage": "all",
+  "new_window_days": 7,
+  "family": "ai-ml",
+  "split_by": "band",
+  "companies": [
+   {
+    "key": "eightfold:micron",
+    "label": "Micron",
+    "board_keys": [
+     "eightfold:micron"
+    ],
+    "atses": [
+     "eightfold"
+    ]
+   }
+  ],
+  "epochs": [],
+  "discovered": [],
+  "pick_series": {},
+  "pick_parts": {},
+  "pick_turnover": {},
+  "counted_since": {
+   "eightfold:micron": "2026-09-13T00:00:00+00:00"
+  },
+  "totals": [
+   10000,
+   10000,
+   10000,
+   10000
+  ],
+  "non_tech": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "watch_parents": [],
+  "uncounted": [],
+  "partial": 0,
+  "series_sum": {
+   "name": "__total__",
+   "points": [
+    2000,
+    2100,
+    1050,
+    1060
+   ],
+   "turnover": null,
+   "net": {
+    "count": [
+     1000,
+     1050,
+     1050,
+     1060
+    ],
+    "share": [
+     20,
+     21,
+     10.5,
+     10.6
+    ]
+   },
+   "steps": [
+    {
+     "note": 0,
+     "size": -1000,
+     "moved": false
+    }
+   ],
+   "jumps": [],
+   "causes": {
+    "duplicates": -1000,
+    "found": 0
+   },
+   "hiring_turnover": null,
+   "born_by_change": false
+  },
+  "totals_net": [
+   10000,
+   10000,
+   10000,
+   10000
+  ],
+  "notes": [
+   {
+    "i": 2,
+    "kind": "duplicates",
+    "epoch": false,
+    "echo": false,
+    "settle": false,
+    "found": false,
+    "evicted": true,
+    "join": false,
+    "withhold": true,
+    "company": "eightfold:micron",
+    "companies": null,
+    "size": -1050,
+    "boards": null,
+    "fields": [],
+    "changed": [],
+    "source": null,
+    "touched": [],
+    "bands_only": false,
+    "dedup_only": false,
+    "whole_only": true
+   }
+  ]
+ }
+}

@@ -87,7 +87,10 @@ The review rejected two alternatives:
    - **Why no netting is needed.** Opened already excludes found Boards' backlogs, duplicates and
      reclassified rows, which ADR-0227 books as Recounted.
    - **Series boundary.** The inflow starts where ADR-0227's facts start and cannot be
-     backfilled. The switch is a counting change, and the old level series ends there.
+     backfilled. The switch is a counting change, and the old level series ends there. Step 4
+     puts it at the first tick whose whole trailing week has Opened facts, a week after they
+     begin, because a partial week would read as a ramp; the answer names that tick
+     (`new_inflow_from`).
    - **One rule for two surfaces.** The Volume lens already counts Opened over the same window,
      so `new` and Volume become one rule with one owner.
 6. **The aggregate's history from before 2026-09-13 stays in `data/state/`** as a 0.61 MB

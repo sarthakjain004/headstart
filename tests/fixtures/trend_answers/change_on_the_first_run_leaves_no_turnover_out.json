@@ -1,0 +1,276 @@
+{
+ "description": "A change already in every line's start takes nothing out, not even its settling run.",
+ "unnetted": {
+  "stamps": [
+   "2026-09-13T00:00:00+00:00",
+   "2026-09-14T00:00:00+00:00",
+   "2026-09-15T00:00:00+00:00",
+   "2026-09-16T00:00:00+00:00"
+  ],
+  "series": [
+   {
+    "name": "greenhouse:acme",
+    "label": "Acme",
+    "points": [
+     1000,
+     1000,
+     1000,
+     1000
+    ],
+    "latest": 1000,
+    "turnover": {
+     "opened": [
+      null,
+      500,
+      900,
+      110
+     ],
+     "closed": [
+      null,
+      490,
+      505,
+      100
+     ],
+     "recounted": [
+      null,
+      0,
+      0,
+      0
+     ]
+    }
+   }
+  ],
+  "epochs": [
+   {
+    "ts": "2026-09-13T00:00:00+00:00",
+    "changed": [
+     "tech filter changed"
+    ],
+    "fields": [
+     "tech_filter_version"
+    ]
+   }
+  ],
+  "turnover_since": "2026-09-13T00:00:00+00:00",
+  "metric": "stock",
+  "coverage": "all",
+  "new_window_days": 7,
+  "family": null,
+  "split_by": "company",
+  "companies": [
+   {
+    "key": "greenhouse:acme",
+    "label": "Acme",
+    "board_keys": [
+     "greenhouse:acme"
+    ],
+    "atses": [
+     "greenhouse"
+    ]
+   }
+  ],
+  "discovered": [],
+  "evicted": [],
+  "pick_series": {},
+  "pick_parts": {},
+  "pick_turnover": {},
+  "counted_since": {
+   "greenhouse:acme": "2026-09-13T00:00:00+00:00"
+  },
+  "totals": [
+   10000,
+   10000,
+   10000,
+   10000
+  ],
+  "non_tech": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "watch_parents": [],
+  "uncounted": [],
+  "company_totals": {}
+ },
+ "served": {
+  "stamps": [
+   "2026-09-13T00:00:00+00:00",
+   "2026-09-14T00:00:00+00:00",
+   "2026-09-15T00:00:00+00:00",
+   "2026-09-16T00:00:00+00:00"
+  ],
+  "series": [
+   {
+    "name": "greenhouse:acme",
+    "label": "Acme",
+    "points": [
+     1000,
+     1000,
+     1000,
+     1000
+    ],
+    "latest": 1000,
+    "turnover": {
+     "opened": [
+      null,
+      500,
+      900,
+      110
+     ],
+     "closed": [
+      null,
+      490,
+      505,
+      100
+     ],
+     "recounted": [
+      null,
+      0,
+      0,
+      0
+     ]
+    },
+    "net": {
+     "count": [
+      1000,
+      1000,
+      1000,
+      1000
+     ],
+     "share": [
+      10,
+      10,
+      10,
+      10
+     ]
+    },
+    "steps": [],
+    "jumps": [],
+    "causes": {
+     "duplicates": 0,
+     "found": 0
+    },
+    "hiring_turnover": {
+     "opened": 1510,
+     "closed": 1095
+    },
+    "born_by_change": false
+   }
+  ],
+  "epochs": [
+   {
+    "ts": "2026-09-13T00:00:00+00:00",
+    "changed": [
+     "tech filter changed"
+    ],
+    "fields": [
+     "tech_filter_version"
+    ]
+   }
+  ],
+  "turnover_since": "2026-09-13T00:00:00+00:00",
+  "metric": "stock",
+  "coverage": "all",
+  "new_window_days": 7,
+  "family": null,
+  "split_by": "company",
+  "companies": [
+   {
+    "key": "greenhouse:acme",
+    "label": "Acme",
+    "board_keys": [
+     "greenhouse:acme"
+    ],
+    "atses": [
+     "greenhouse"
+    ]
+   }
+  ],
+  "discovered": [],
+  "evicted": [],
+  "pick_series": {},
+  "pick_parts": {},
+  "pick_turnover": {},
+  "counted_since": {
+   "greenhouse:acme": "2026-09-13T00:00:00+00:00"
+  },
+  "totals": [
+   10000,
+   10000,
+   10000,
+   10000
+  ],
+  "non_tech": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "watch_parents": [],
+  "uncounted": [],
+  "company_totals": {},
+  "partial": 0,
+  "series_sum": {
+   "name": "__total__",
+   "points": [
+    1000,
+    1000,
+    1000,
+    1000
+   ],
+   "turnover": {
+    "opened": [
+     null,
+     500,
+     900,
+     110
+    ],
+    "closed": [
+     null,
+     490,
+     505,
+     100
+    ],
+    "recounted": [
+     null,
+     0,
+     0,
+     0
+    ]
+   },
+   "net": {
+    "count": [
+     1000,
+     1000,
+     1000,
+     1000
+    ],
+    "share": [
+     10,
+     10,
+     10,
+     10
+    ]
+   },
+   "steps": [],
+   "jumps": [],
+   "causes": {
+    "duplicates": 0,
+    "found": 0
+   },
+   "hiring_turnover": {
+    "opened": 1510,
+    "closed": 1095
+   },
+   "born_by_change": false
+  },
+  "totals_net": [
+   10000,
+   10000,
+   10000,
+   10000
+  ],
+  "notes": []
+ }
+}
