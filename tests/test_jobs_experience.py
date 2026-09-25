@@ -786,7 +786,7 @@ def test_seniority_leaves_the_rest_of_the_manager_vocabulary_alone():
 # --- the smallest stated requirement wins (ADR-0079, #163) ---------------------------------------
 # Which requirement a multi-requirement description reports used to be decided by position — the
 # leftmost match of the first matching pattern. It is now decided by value: the smallest floor,
-# because `search` filters `min_years <= your_years` and no candidate should lose a job they
+# because the Search filter keeps `min_years <= your_years` and no candidate should lose a job they
 # qualify for. Measured over the 339,192-description store: 39,208 answers move down (median -3,
 # mean -3.7), 977 appear where there were none, none is lost, and exactly one moves up.
 

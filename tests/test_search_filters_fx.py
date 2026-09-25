@@ -1,7 +1,7 @@
 """The salary bracket's rate table — `headstart.search_filters.fx` (ADR-0117).
 
 The regression this file exists for: the module computed its candidate paths at import with a
-hardcoded `parents[2]`, which is fine in the repo (`src/headstart/search_filters/fx.py`) and raises `IndexError`
+hardcoded `parents[2]`, which is fine in the repo (`src/headstart/fx.py`) and raises `IndexError`
 in the Space, where the same file is `/app/fx.py` and has only two ancestors. It took the live
 Space down with a `RUNTIME_ERROR` on the first deploy after ADR-0117, because the failure happened
 at *import* — before the guarded read that was supposed to make a missing table survivable.

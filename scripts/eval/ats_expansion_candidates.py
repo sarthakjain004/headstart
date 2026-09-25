@@ -32,7 +32,7 @@ import pyarrow.parquet as pq
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
 from headstart.jobs.tech_filter import is_tech
-from headstart.search_filters.india_gazetteer import classify as geo_classify
+from headstart.search_filters.india_gazetteer import classify as gazetteer_classify
 
 MANIFEST_URL = "https://storage.stapply.ai/jobhive/v1/manifest.json"
 UA = "headstart-eval/0.1"
@@ -173,7 +173,9 @@ def analyze(ats: str, path: Path) -> dict:
     tech_mask = pd.Series(
         [is_tech(t, d) for t, d in zip(titles, depts)], index=df.index
     )
-    india_mask = pd.Series([geo_classify(loc) == "IN" for loc in locs], index=df.index)
+    india_mask = pd.Series(
+        [gazetteer_classify(loc) == "IN" for loc in locs], index=df.index
+    )
 
     tech_titles = df.loc[tech_mask, "title"].dropna().head(5).tolist()
     india_titles = df.loc[india_mask, "title"].dropna().head(5).tolist()

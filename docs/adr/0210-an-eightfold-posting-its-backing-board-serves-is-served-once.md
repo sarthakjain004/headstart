@@ -38,7 +38,7 @@ Every Eightfold posting states its backing ATS's requisition, and #632 measured 
    requisition's `en_US` and `de_DE` pages carry one id. The column is a fact like `url`
    (`doc_prep.META_FIELDS`), so ADR-0061's facts pass stamps a row already held the next time its
    Board is scraped, and sync's metadata refresh carries it into the table. Nothing in the Space or
-   the search API reads it (`search.RESULT_COLUMNS` is an explicit projection).
+   the search API reads it (`job_search.RESULT_COLUMNS` is an explicit projection).
    **The store keeps it only on rows whose Board the pairs name** (the coordinator's decision for
    the user, 2026-09-25): every Eightfold site in the file, and every Board behind one — for
    Workday any site of the tenant. `eightfold_backing.in_scope` is the test, matched on the id's

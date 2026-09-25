@@ -86,8 +86,8 @@ for `ci.yml`/`bot.yml`/`deploy-space.yml`); a workflow-level `concurrency: group
 (`cancel-in-progress: false`) serializes whole runs so two never race on the dataset. The monolith
 `ingest.scrape_run`/`embed_run --resume` paths are retained for local/single-job runs (see below).
 
-`.github/workflows/deploy-space.yml` (`deploy-space`): pushes `deploy/hf-space/` (plus
-`src/headstart/search_filters/india_gazetteer.py`, copied in — ADR-0024) to the Space on any main push touching those paths
+`.github/workflows/deploy-space.yml` (`deploy-space`): pushes `deploy/hf-space/` (plus the
+whole `src/headstart` package and `config/`, copied in — ADR-0156) to the Space on any main push touching those paths
 (plus manual dispatch). **Never let tooling call `create_repo` on the Space** — HF now answers
 Docker-Space create attempts with a `402 Payment Required` (new free Docker Spaces are PRO-only;
 ours predates the policy and keeps running). The `hf upload` CLI pre-creates and so 402s; use

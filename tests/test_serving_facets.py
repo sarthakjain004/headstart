@@ -430,22 +430,29 @@ def test_the_account_clause_narrows_the_blocking_answer_too():
     assert out["blocking"] == "ats"
 
 
-def test_facets_never_imports_the_serving_path():
+def test_facets_never_imports_job_search():
     """`job_search.py` imports this module at the top (ADR-0194), so an import back would be a cycle.
 
     Both compile through `headstart.search_filters.compiler`, so the counts and the ranked list they
     describe still share one compiler. That shared compiler is what the old deferred import in
-    `JobSearch.facets` protected, and reaching it no longer means importing `search`.
+    `JobSearch.facets` protected, and reaching it no longer means importing `job_search`.
     """
     import ast
 
     tree = ast.parse(Path(facets.__file__).read_text(encoding="utf-8"))
+    package = facets.__name__.rpartition(".")[0]
     imported = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             imported |= {alias.name for alias in node.names}
         elif isinstance(node, ast.ImportFrom):
-            imported.add(node.module)
-            if node.module and node.module.split(".")[0] == "headstart":
-                imported |= {f"{node.module}.{alias.name}" for alias in node.names}
+            module = node.module or ""
+            if (
+                node.level
+            ):  # `from . import job_search`, `from .job_search import JobSearch`
+                base = package.rsplit(".", node.level - 1)[0]
+                module = f"{base}.{module}" if module else base
+            imported.add(module)
+            if module.split(".")[0] == "headstart":
+                imported |= {f"{module}.{alias.name}" for alias in node.names}
     assert "headstart.serving.job_search" not in imported

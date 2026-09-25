@@ -18,7 +18,7 @@ ADR-0079):
 
 * **The smallest stated requirement wins**, so :func:`_scan` collects every surviving match and
   selects; it must not return the first one it finds. A description stating several is read at its
-  most permissive, because `search` filters `min_years <= your_years` and the alternatives are as
+  most permissive, because the Search filter keeps `min_years <= your_years` and the alternatives are as
   often a cheaper *path* to the same job ("12+ years, or 10+ with a PhD") as an extra demand.
 * **Ranges are tried before single values**, because a single-value pattern will otherwise match at
   a range's ceiling and report it as the floor ("2-4 years" served as 4+).

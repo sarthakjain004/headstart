@@ -218,6 +218,10 @@ _Avoid_: category filter, keyword filter — it is a role classifier, not a taxo
 The embedded, deduped set of Jobs the semantic query runs against — the corpus the AI search actually serves. Built from the **Tech subset** (`data/jobs/tech/{ats}.jsonl`) and kept current by **Eviction**. Distinct from the **Feed** (the dashboard's assembled JSON) and from the **eval benchmark** — a frozen, labelled slice of Jobs used to *measure* search quality, deliberately held stable and *not* the live served corpus.
 _Avoid_: database, vector store — those name the storage, not the served set.
 
+**Serving path** (ADR-0194, ADR-0235):
+The code that answers a person's request on the Space or the local dev server: the ranked search over the **Search index**, its **Facet** counts, and turning a **Résumé** into a **Profile**. The pipeline writes what it reads but never depends on it.
+_Avoid_: search module — the **Search filter** vocabulary is shared with the pipeline and is not part of it; the Space — the deployment it runs in, not the code.
+
 **Eviction**:
 Removing a Job from the **Search index** once its posting has closed, so a stale opening can never be a search result. Keyed on the fresh scrape: a Job whose id is absent from its Board's latest scrape is gone — but only where that scrape is authoritative. Its *scope* is the set of **Board**s the run's **full** scrape covered, not the **Tech subset**'s — a Board that was scraped and dropped to zero tech Jobs must still shed its closed postings. That set is derived once, by `scrape_join`, and travels to the merge stage as `data/state/scraped_boards.json` rather than as the ~9 GB of records it was derived from (ADR-0161). An **Unauthoritative Board** is subtracted from the scope outright, so nothing on it is ever evicted that run (ADR-0053). One absence is no longer enough on its own: an id missing from its Board's latest scrape becomes **Unconfirmed** and is only evicted if the *next* scrape of that Board misses it too (ADR-0083). The freshness counterpart to embedding newly-seen Jobs.
 

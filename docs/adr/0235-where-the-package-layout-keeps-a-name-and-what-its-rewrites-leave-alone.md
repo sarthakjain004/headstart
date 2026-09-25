@@ -3,7 +3,7 @@
 **Status:** accepted · **Date:** 2026-09-26 · **Supersedes in part:**
 [ADR-0232](0232-the-shared-library-is-grouped-into-packages-by-the-question-each-module-answers.md)
 (four rows of its table, its paragraph on the text that keeps an old name, and its 2026-09-25
-amendment, which moves here)
+amendment)
 
 ## Context
 
@@ -33,11 +33,10 @@ must not touch:
 |---|---|---|---|
 | `tech_filter` | `jobs/tech_classifier.py` | `jobs/tech_filter.py` | CONTEXT.md's **Tech filter**; `jobs/` and `ingest/` tell it apart from the `filter_tech` stage |
 | `employment_type_filter`, `experience_filter`, `salary_known_filter`, `india_filter` | suffix dropped (`india`, …, `experience_ceiling`) | `search_filters/{name}_filter.py` | a module never shares a name with the field it filters |
-| `search`, `facets`, `profile_extract` | `search/` | `serving/` (`serving/job_search.py`, …) | "serving path" is ADR-0042's and ADR-0194's term for this code, and no package or test prefix overlaps `search_filters` |
+| `search`, `facets`, `profile_extract` | `search/` | `serving/` (`serving/job_search.py`, …) | CONTEXT.md's **Serving path**, ADR-0042's and ADR-0194's term for this code; no package or test prefix overlaps `search_filters` |
 
-Two modules added since ADR-0232 get homes by its rule: `country_codes` moves to
-`scrapers/country_codes.py`, since its only readers are the Lever and SuccessFactors scrapers, and
-`trend_reading` moves to `trends/line_reading.py`, CONTEXT.md's **Line reading**.
+A module added to the top level after ADR-0232 is placed by the same rule, in the PR that moves
+it, and that PR records its home in README §Layout.
 
 **What a rewrite leaves alone.** A rewrite updates code, comments, living docs and ADRs, except
 where the text describes the tree as it was:
@@ -49,13 +48,14 @@ where the text describes the tree as it was:
   `git log <sha>..<sha> -- <path>` range, including one that wraps a comment line. CLAUDE.md's
   `DERIVATIONS_VERSION` citations are such ranges;
 * a sentence stating what was true at a stated time, commit or version: an ADR's account of how
-  the tree stood when it was written (the ten ADRs from 0020 to 0194 that cite `search.py`'s old
-  contents keep them), and a version-history entry such as `doc_prep.py`'s `v8:` or `v9:`.
+  the tree stood when it was written (an ADR citing what `search.py` held keeps `search.py`), and a
+  version-history entry such as `doc_prep.py`'s `v8:` or `v9:`.
 
 ## Consequences
 
-* ADR-0232 carries a note pointing here, and its 2026-09-25 amendment is removed from it, not
-  repeated. Its table still maps every other module.
+* ADR-0232 carries a note pointing here, and its 2026-09-25 amendment stays in it, marked
+  superseded. Its table still maps every other module.
 * `search_filters/` stutters (`search_filters/india_filter.py`), which is the price of a module
   name no local variable can shadow.
-* #722 had rewritten `doc_prep.py`'s `v8:` entry; #725 restores it with the `v9:` entry.
+* #722 had rewritten `doc_prep.py`'s `v8:` entry; #725 restores it, and its `v9:` entry keeps
+  `headstart.geo`.

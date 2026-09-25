@@ -12,7 +12,7 @@ shape this mirrors), [ADR-0104](0104-a-keyword-filter-with-a-scope-map-and-a-sto
 
 ## Context
 
-The search API's India filter (`build_filter(india="india")`) compiles to `india_gazetteer.where("india")` —
+The search API's India filter (`build_filter(india="india")`) compiles to `geo.where("india")` —
 a 3,068-character `regexp_like` alternation over the free-text `location` column, built fresh on
 every request. Measured unindexed (`experiment/lancedb-scalar-index/LOG.md`, 2026-09-07 session):
 `count_rows` 352.6ms, vector page 1,338.1ms — 7–13x every other filter cost measured in that
