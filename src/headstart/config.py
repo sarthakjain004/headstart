@@ -379,6 +379,107 @@ EXCLUDED_BOARDS: frozenset[str] = frozenset(
         # (the match is on `slug_from`'s URL, not the `tenant` column, so only the URL's two
         # casings matter) — the lowercased key here covers both.
         "workday:https://walmart.wd5.myworkdayjobs.com/non-workdayinternal",
+        # Vendor demo tenants found by one description served on many Boards of one ATS (served
+        # table v65, 2026-09-25), each re-read live the same day. A real employer on the list
+        # below would be a sales demo named after a prospect, not that employer's Board.
+        #
+        # BambooHR's stock demo set: "IT Security Engineer" in "Mayfaird, London, City of" (the
+        # misspelling is the tell; one description on 41 of these Boards), "Software Engineer" in
+        # "Sydney, NSW" (another on 40), "General Application" in Lindon, UT (BambooHR's home),
+        # "Financial Analyst", "Marketing Manager", "Account Executive". 49 of the 54 list only
+        # that set, under prospect and partner demo names ("BAT Demo Account", "KBS - Reseller
+        # Account", "Synthesia - Marketplace Account", "Your Company Name", "{{7*7}}"); `walmart`,
+        # `leidos`, `popeyes`, `usi` and the like are named demos, not those employers' Boards.
+        # `nook` adds placeholders ("Stuff goes here.", "Job description here") and a designer for
+        # "tools used by thousands of HR professionals" in Draper, UT; `seek` is "SEEK Test"
+        # ("Designer (youtube test)", "Job # 5 LinkOut Only - No AwSK"). The other five (`acme`,
+        # `alice`, `catalyst`, `omise`, `pmi`) now redirect to `settings/account/expired.php`,
+        # lapsed trials whose indexed rows are the same stock set. 104 served rows.
+        "bamboohr:acme",
+        "bamboohr:ailabs",
+        "bamboohr:aix",
+        "bamboohr:alice",
+        "bamboohr:batdemo",
+        "bamboohr:bjdc",
+        "bamboohr:caseys",
+        "bamboohr:catalyst",
+        "bamboohr:chauffeur",
+        "bamboohr:clair",
+        "bamboohr:college",
+        "bamboohr:connecteam",
+        "bamboohr:court",
+        "bamboohr:demogorgon",
+        "bamboohr:dubz",
+        "bamboohr:echonorth",
+        "bamboohr:emissary",
+        "bamboohr:examplecompany",
+        "bamboohr:foundever",
+        "bamboohr:greta",
+        "bamboohr:ihop",
+        "bamboohr:iri",
+        "bamboohr:jadenknightondemo",
+        "bamboohr:january",
+        "bamboohr:jdsc",
+        "bamboohr:kbs",
+        "bamboohr:kusi",
+        "bamboohr:leidos",
+        "bamboohr:lyla",
+        "bamboohr:macaw",
+        "bamboohr:mpls",
+        "bamboohr:nnu",
+        "bamboohr:nook",
+        "bamboohr:omise",
+        "bamboohr:pmi",
+        "bamboohr:popeyes",
+        "bamboohr:privilege",
+        "bamboohr:queen",
+        "bamboohr:ramonabrowndemo",
+        "bamboohr:scc",
+        "bamboohr:seek",
+        "bamboohr:shawna",
+        "bamboohr:steelers",
+        "bamboohr:sticks",
+        "bamboohr:supademo",
+        "bamboohr:synthesia",
+        "bamboohr:talentlms",
+        "bamboohr:tested",
+        "bamboohr:toolbox",
+        "bamboohr:usi",
+        "bamboohr:walmart",
+        "bamboohr:workflows",
+        "bamboohr:yakka",
+        "bamboohr:zaxbys",
+        # Rippling: one unfilled template ("Describe the role and team the candidate will be
+        # joining") on 12 Boards. Five are demos: `umbrella` is "Umbrella Corp (DEMO)" in Raccoon
+        # City ("123123", "Internal Job"); `kt` ("Test", "Test1", "HHH") and `abc` wear generated
+        # company names ("Tucker, Hull and Gallegos", "Williams-Sheppard"); the two
+        # `dunder-mifflin{uuid}` sandboxes are "Bubba Gump Shrimp Co." ("lovb test") and
+        # "Primestage Productions", some of whose postings say "About Williams-Sheppard". The
+        # other seven are real employers that left the template on one posting; they stay.
+        "rippling:abc",
+        "rippling:dunder-mifflin2b318e3b-60f0-4d80-98c0-8f70fa8cccf6",
+        "rippling:dunder-mifflin845a6671-e3ae-4be6-ab4e-b06beb1cf02a",
+        "rippling:kt",
+        "rippling:umbrella",
+        # SAP's own RMK test sites. `testco12` titles itself "page title changed" and lists
+        # "Formatting Test", "Horbach Footer Link Test", "Post-Deployment-B1111";
+        # `testrcmsyncas002` is "RCMSYNCAS002 Test Site with updated Page Title b2111" ("RMK-RCM
+        # job sync 2", "KirthiURLTest"). Both serve the same demo requisitions ("Database
+        # Programmer", "Help Desk Manager", "IT Project Manager" in Boston and Denver).
+        "successfactors:testco12.jobs2web.com",
+        "successfactors:testrcmsyncas002.jobs2web.com",
+        # Workday's own demo tenant, Global Modern Services (`hiringOrganization` "500.1 Global
+        # Modern Services, Inc. (USA)", url workday.com): "HRREC (IRISH TEA) ... (Do not use)",
+        # "Job Req 6220 Test", "Tester Conv5", and `TGS` repeating "QA Engineer-9"/"-10" across
+        # 20 European cities. Found at 5 Boards, under the 8 the signal uses, because every Board
+        # is one tenant's site. All seven sites.
+        "workday:https://super.wd103.myworkdayjobs.com/ext",
+        "workday:https://super.wd103.myworkdayjobs.com/extdisform",
+        "workday:https://super.wd103.myworkdayjobs.com/glt",
+        "workday:https://super.wd103.myworkdayjobs.com/gms",
+        "workday:https://super.wd103.myworkdayjobs.com/search",
+        "workday:https://super.wd103.myworkdayjobs.com/tgs",
+        "workday:https://super.wd103.myworkdayjobs.com/wdd",
     }
 )
 
