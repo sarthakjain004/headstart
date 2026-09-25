@@ -147,7 +147,12 @@ class _Names:
         self._codes: dict[str, int] = {}
         self._dtype = dtype
 
+    def get(self, name: str) -> int | None:
+        """``name``'s code, or None when no table holds it."""
+        return self._codes.get(name)
+
     def code(self, name: str) -> int:
+        """``name``'s code, given one if it has none yet."""
         if name not in self._codes:
             self._codes[name] = len(self.names)
             self.names.append(name)
@@ -445,11 +450,6 @@ def _norm_stamp(raw: str) -> str:
     return dt.astimezone(UTC).isoformat(timespec="seconds")
 
 
-def _grouped(keys: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    """``(distinct keys, each row's position among them)``."""
-    return np.unique(keys, return_inverse=True)
-
-
 # Each column the history holds, and its type: a metric code is 0 for `new` and 1 for `stock`.
 _INDEX_TYPES = {
     "tick": np.int32,
@@ -534,9 +534,15 @@ class TrendHistory:
     @classmethod
     def load(cls, state_dir: Path, config_dir: Path) -> TrendHistory:
         """Read the history under ``state_dir`` (``data/state``) and the taxonomy under
-        ``config_dir``. Never raises: a missing or unreadable ledger is an empty history, and the
-        tab stays dark rather than taking the Space down at boot."""
+        ``config_dir``. A missing or unreadable ledger is an empty history, never an error: the
+        tab stays dark rather than taking the Space down at boot. The company directory and the
+        dedup evictions degrade the same way on their own."""
         history = cls()
+        try:
+            stamped = history._read_ledgers(state_dir)
+        except Exception as exc:  # noqa: BLE001 - an unreadable history darkens the tab only
+            print(f"trend history unreadable ({type(exc).__name__}: {exc})", flush=True)
+            history, stamped = cls(), []
         history._watch = watched_roles(config_dir / "role_watchlist.json")
         history._family_labels = _family_labels(config_dir / "role_families.json")
         history._family_successor = family_successors(config_dir / "role_families.json")
@@ -547,19 +553,6 @@ class TrendHistory:
             for key, entry in history._companies.items()
             for board in entry["boards"]
         }
-        try:
-            stamped = history._read_ledgers(state_dir)
-        except Exception as exc:  # noqa: BLE001 - an unreadable history darkens the tab only
-            print(f"trend history unreadable ({type(exc).__name__}: {exc})", flush=True)
-            stamped = []
-            fresh = cls()
-            for name in ("_watch", "_family_labels", "_family_successor", "_evictions"):
-                setattr(fresh, name, getattr(history, name))
-            fresh._companies, fresh._company_of = (
-                history._companies,
-                history._company_of,
-            )
-            history = fresh
         history._epochs = _counting_changes(
             _methodology_stamps(_epoch_ledger_rows(state_dir / _EPOCH_LEDGER), stamped)
         )
@@ -778,7 +771,9 @@ class TrendHistory:
         parts = []
         for start, end in self._delta_spans():
             rows = (d["tick"] >= start) & (d["tick"] < end)
-            keys, inverse = _grouped(np.append(ranked[rows], last))
+            keys, inverse = np.unique(
+                np.append(ranked[rows], last), return_inverse=True
+            )
             level = np.zeros((end - start, len(keys)), dtype=np.int32)
             np.add.at(level, (d["tick"][rows] - start, inverse[:-1]), d["delta"][rows])
             np.cumsum(level, axis=0, out=level)
@@ -1439,7 +1434,7 @@ class TrendHistory:
 
     def _ats_codes(self, ats: list[str]) -> np.ndarray:
         return np.array(
-            [self._atses.code(name) for name in ats if name in self._atses.names],
+            [code for name in ats if (code := self._atses.get(name)) is not None],
             dtype=np.int64,
         )
 
@@ -1538,14 +1533,14 @@ class TrendHistory:
             code_of = {key: i for i, key in enumerate(companies)}
             of_board = np.full(len(boards), -1, dtype=np.int64)
             for board, key in company_of.items():
-                if board in self._boards._codes:
-                    of_board[self._boards._codes[board]] = code_of[key]
+                if (code := self._boards.get(board)) is not None:
+                    of_board[code] = code_of[key]
             company = of_board[d["board"]]
             rows &= company >= 0
         if eligible is not None:
             allowed = np.zeros(len(boards), dtype=bool)
             allowed[
-                [self._boards._codes[b] for b in eligible if b in self._boards._codes]
+                [code for b in eligible if (code := self._boards.get(b)) is not None]
             ] = True
             rows &= allowed[d["board"]]
         if ats:
@@ -1555,8 +1550,8 @@ class TrendHistory:
         # backlog has aged out and what lands is real inflow (ADR-0185).
         hold = np.full(len(boards), -1, dtype=np.int64)
         for board, ts in self._new_hold.items():
-            if board in self._boards._codes:
-                hold[self._boards._codes[board]] = bisect_left(stamps, ts)
+            if (code := self._boards.get(board)) is not None:
+                hold[code] = bisect_left(stamps, ts)
         lo, hi = self._window(since, until)
         first = max(bisect_left(stamps, base_stamp), lo)
         out: list[dict] = []
@@ -1615,11 +1610,12 @@ class TrendHistory:
             len(self._families.names),
             len(self._bands.names),
         )
-        keys, inverse = _grouped(
+        keys, inverse = np.unique(
             np.ravel_multi_index(
                 (company[rows], d["metric"][rows], d["family"][rows], d["band"][rows]),
                 sizes,
-            )
+            ),
+            return_inverse=True,
         )
         first_touch = np.full(len(keys), len(rows), dtype=np.int64)
         np.minimum.at(first_touch, inverse, rank)
