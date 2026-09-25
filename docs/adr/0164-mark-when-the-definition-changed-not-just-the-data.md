@@ -19,7 +19,7 @@ change what a family/band count *means*, with nothing recording when they did:
   map's own content changed. A re-curation shows up in `role_reassignments.csv` (ADR-0057) as a
   burst of transitions timed to the edit — which looks **identical** to organic re-embedding
   drift, the exact confusion that ledger exists to resolve.
-- **`headstart.jobs.tech_filter` has no version at all.** Widening or narrowing a pattern changes
+- **`headstart.tech_filter` has no version at all.** Widening or narrowing a pattern changes
   which jobs enter the served index, and therefore every downstream count, with zero record of
   when. This project is actively iterating on that filter (the description-recall analysis that
   immediately preceded this ADR recommends widening several patterns), so this is not a

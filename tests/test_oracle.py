@@ -97,7 +97,7 @@ def test_slug_from_prefers_the_url_host_over_a_non_host_tenant():
 
 
 def test_slug_from_strips_a_query_string_off_the_url():
-    """Goes through `models.host_of` rather than a local split. That shared definition exists
+    """Goes through `jobs.job.host_of` rather than a local split. That shared definition exists
     because the scraper, the liveness prober and the ledger repair must agree, and the one time
     they did not, a query string surviving into the slug recorded 312 Personio boards live with
     zero jobs.

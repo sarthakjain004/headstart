@@ -4,7 +4,7 @@
 Scrapers set ``Job.remote`` three different ways (location-string ``is_remote``, an ATS-native
 flag, or both), so this samples N random *live* boards for one ATS, scrapes them, and triangulates
 each job's shipped ``remote`` against two independent signals — what the location string alone says
-(``models.is_remote``) and what the description text says — to surface *candidates* for a human to
+(``jobs.job.is_remote``) and what the description text says — to surface *candidates* for a human to
 read and judge. It does not decide correctness; keyword hits are leads, not verdicts.
 
 Two modes:

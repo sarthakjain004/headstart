@@ -33,7 +33,7 @@ Every Eightfold posting states its backing ATS's requisition, and #632 measured 
    six scrapers at first — eightfold, workday, oracle, greenhouse, taleo_enterprise,
    successfactors — and lever and jibe since the 2026-09-25 amendment,
    from the fields above; every other ATS writes null. Stored as the ATS states it, normalised
-   just enough to compare: `models.requisition_of` makes it trimmed text (Greenhouse states a
+   just enough to compare: `jobs.job.requisition_of` makes it trimmed text (Greenhouse states a
    number), and SuccessFactors keeps only the id before the first `-` of `internalId`, so a
    requisition's `en_US` and `de_DE` pages carry one id. The column is a fact like `url`
    (`doc_prep.META_FIELDS`), so ADR-0061's facts pass stamps a row already held the next time its

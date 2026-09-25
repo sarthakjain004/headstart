@@ -39,7 +39,7 @@ large retail boards, and they are not the population a cap truncates.
 
 Re-sampled on the right population — 40 boards drawn at random from the 218 live boards over 500
 postings, each probed at **offset 500, the first page a 5-page cap would drop**, classified with
-`headstart.jobs.tech_filter.is_tech` (the pipeline's own gate):
+`headstart.tech_filter.is_tech` (the pipeline's own gate):
 
 > **457 tech / 3,233 postings = 14.1%.** Tail-weighted across those boards: **10.4%.**
 
