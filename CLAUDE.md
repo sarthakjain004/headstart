@@ -67,6 +67,11 @@ discovery landing (#576) moved five more. Board totals belong in README and CONT
 - **iCIMS holds tenant hosts only.** Every live row has a hyphen in its tenant label; single-word
   `{customer}.icims.com` hosts are vendor infrastructure (`docs/icims/`) or recruiter logins
   (#576). A vanity career site on Jibe, iCIMS's own career-site layer, is not an iCIMS tenant.
+- **iCIMS: re-run `scripts/validate/dedupe_boards.py --ats icims --apply` after every refresh of
+  its ledger.** Many of a customer's portals redirect their sitemap to its main portal, so the
+  scraper reads the same postings twice under two hosts. The scan rewrites
+  `data/validate/aliases/icims.csv` with `redirect` rows only. That makes `--apply` safe for this
+  ATS. It is the only thing that notices when a buried portal stops redirecting (ADR-0222).
 - **Jibe lands a vanity career site as its client id, and parks clients on Boards already held.**
   A Board is `{client}.jibeapply.com`; resolve a vanity host (`careers.costco.com`) to its client
   with `scripts/discover/mine_jibe.py --vanity`, which reads the rows' `client_code`, else the

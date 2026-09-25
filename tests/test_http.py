@@ -331,6 +331,28 @@ def test_wall_marks_the_group_and_routes_the_retry(monkeypatch):
     }
 
 
+def test_zohos_throttle_redirect_walls_and_the_retry_rides_the_spare_egress(
+    monkeypatch,
+):
+    """Zoho's settings end to end: an unfollowed 302 (the .com throttle) walls the group and is
+    retried, and the retry leaves from the spare egress, a different client IP."""
+    from headstart.scrapers import zoho
+
+    _warp(monkeypatch)
+    calls = _stub(monkeypatch, [302, 200])
+    response = http.fetch(
+        "GET",
+        "u",
+        egress_group="zoho",
+        egress_on=zoho.ZohoScraper.egress_fallback_on,
+        retry_on=zoho._THROTTLE_RETRY_ON,
+        allow_redirects=False,
+    )
+    assert response.status_code == 200
+    assert http.spare_egress.walled_groups() == frozenset({"zoho"})
+    assert _proxied(calls) == [False, True]
+
+
 def test_a_later_request_starts_on_the_spare_egress(monkeypatch):
     # the point of keying on the ATS rather than the Board: the second Board must not have to
     # rediscover the wall by spending its own three attempts
