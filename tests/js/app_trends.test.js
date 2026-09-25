@@ -892,7 +892,7 @@ test('a pick the directory does not hold is dropped with a sentence, and the res
   t.setPicks([{ key: 'greenhouse:acme', label: 'Acme' }, { key: 'workday:ghost', label: 'Ghost' }]);
   await t.load(null);
   same(asked[1].getAll('company'), ['greenhouse:acme']);
-  assert.match(nodes['trends-co-note'].textContent, /No trend for Ghost yet/);
+  assert.match(nodes['trends-co-note'].textContent, /HeadStart has no trend for Ghost: it isn’t in the company directory\./);
   assert.equal(nodes['trends-error'].hidden, true);
 });
 
@@ -1268,8 +1268,9 @@ test('percentages leave out a marked step; the plotted line keeps it', async () 
   await t.load(null);
   t.setUnit('count', false);
   t.draw();
-  // Net [200, 200, 200, 200, 220]: first to last is +10.0%, where the raw line read +120%.
-  assert.match(row(nodes['trends-legend'].innerHTML, 'a'), /\+10\.0%/, 'the doubling was the filter');
+  // Net [200, 200, 200, 200, 220]: first to last is +20 openings (+10.0%), where the raw line
+  // read +120 (+120%). Under Count the legend gives it in openings.
+  assert.match(row(nodes['trends-legend'].innerHTML, 'a'), /\+20 openings/, 'the doubling was the filter');
 });
 
 test('a small count gets whole-number ticks', () => {
@@ -1308,8 +1309,8 @@ test('under a Company breakdown, one company’s found Board nets only its own l
   t.setUnit('count', false);
   t.draw();
   const legend = nodes['trends-legend'].innerHTML;
-  assert.match(row(legend, 'greenhouse:acme'), /\+0\.0%|→/, 'Acme’s jump was its found Boards');
-  assert.match(row(legend, 'lever:beta'), /\+50\.0%/, 'Beta’s real growth that run is kept');
+  assert.match(row(legend, 'greenhouse:acme'), /→ \+0 openings/, 'Acme’s jump was its found Boards');
+  assert.match(row(legend, 'lever:beta'), /\+50 openings/, 'Beta’s real growth that run is kept');
 });
 
 test('a step on a gap lands on the line’s next point', () => {
@@ -1619,7 +1620,7 @@ test('the table names what its change leaves out, and the counting changes add u
   nodes['trends-error'] = Object.assign(fakeEl(), { hidden: true });   // no failed load showing
   t.table(true);
   const html = nodes['trends-table'].innerHTML;
-  assert.match(html, /Change, hiring only<\/th><th scope="col">Counting changes, openings<\/th><th scope="col">Start, as counted/);
+  assert.match(html, /Hiring, %<\/th><th scope="col">Hiring, openings<\/th><th scope="col">Counting changes, openings<\/th><th scope="col">Start, as counted/);
   assert.match(html, /\+254 openings/);
 });
 
@@ -1923,4 +1924,105 @@ test('markers on one day are drawn as one, titled with every change', () => {
   const svg = nodes['trends-chart'].innerHTML;
   assert.equal((svg.match(/class="epoch-marker"/g) || []).length, 1);
   assert.match(svg, /tech filter changed\nCounting changed here: role taxonomy refit/);
+});
+
+// ---- critique round 12 ------------------------------------------------------------------------
+test('a whole company’s line takes a counting change out by openings, as Hot does', () => {
+  const { t, nodes } = loadApp();
+  t.setPicks([ACME]);
+  // A +100 filter change at FIVE[2] and its settling run; hiring +10, +20 either side of them.
+  t.set(companies([['greenhouse:acme', 'Acme', [100, 110, 210, 210, 230]]],
+    { stamps: FIVE, epochs: [{ ts: FIVE[2], changed: ['tech filter changed'], fields: ['tech_filter_version'] }] }));
+  t.setUnit('count', false);
+  t.draw();
+  // Scaled, the history before the step doubled and the line read +50; Hot sums the runs
+  // outside the change: +10 + 20 = +30.
+  assert.match(nodes['trends-verdict'].innerHTML, /\(\+30 openings/);
+  assert.match(nodes['trends-verdict'].innerHTML, /\+100 openings from a tech filter change/);
+});
+
+test('folded sentences keep the first pick and the tiles’ movers in view, in pick order', () => {
+  const { t, nodes } = loadApp();
+  const picks = ['a', 'b', 'c', 'd'].map(k => ({ key: `lever:${k}`, label: k.toUpperCase(), boardKeys: [`lever:${k}`] }));
+  t.setPicks(picks);
+  // Sized so the payload order (largest first) is D, C, B, A; D, the last pick, rises most and
+  // B falls most — so neither "the first three picks" nor "the three largest" is the answer.
+  t.set(companies([['lever:d', 'D', [400, 400, 400, 600]], ['lever:c', 'C', [200, 200, 200, 210]],
+                   ['lever:b', 'B', [150, 150, 150, 100]], ['lever:a', 'A', [100, 100, 100, 101]]]));
+  t.setUnit('count', false);
+  t.draw();
+  const [shownPart, folded] = nodes['trends-verdict'].innerHTML.split('<details');
+  assert.deepEqual([...shownPart.matchAll(/<b>(\w)<\/b>/g)].map(m => m[1]), ['A', 'B', 'D']);
+  assert.match(folded, /1 more company/);
+  assert.match(folded, /<b>C<\/b>/);
+});
+
+test('a category first seen inside the window reads as new, not flat', () => {
+  const { t, nodes } = loadApp();
+  t.setPicks([ACME]);
+  t.set({ ...picked({ old: [50, 50], arch: [null, 32] }), stamps: STAMPS,
+    counted_since: { 'greenhouse:acme': '2026-09-01T00:00:00+00:00' } });
+  t.setUnit('count', false);
+  t.draw();
+  assert.match(row(nodes['trends-legend'].innerHTML, 'arch'), /new since Sep 20/);
+  assert.doesNotMatch(row(nodes['trends-legend'].innerHTML, 'arch'), /\+0/);
+});
+
+test('one opening is one opening', () => {
+  const { t, nodes } = loadApp();
+  t.setPicks([ACME]);
+  t.set(companies([['greenhouse:acme', 'Acme', [1, 1, 1, 1]]]));
+  t.draw();
+  assert.match(nodes['trends-verdict'].innerHTML, /Acme<\/b>: 1 tech opening;/);
+});
+
+test('every marked line is listed under the chart, a merged day at its biggest jump', () => {
+  const { t, nodes } = loadApp();
+  const stamps = ['2026-09-20T00:00:00+00:00', '2026-09-24T18:00:00+00:00', '2026-09-24T21:19:00+00:00',
+                  '2026-09-25T06:00:00+00:00', '2026-09-27T00:00:00+00:00'];
+  t.setPicks([ACME]);
+  t.set(companies([['greenhouse:acme', 'Acme', [100, 101, 300, 300, 305]]], { stamps,
+    epochs: [{ ts: stamps[1], changed: ['duplicate removal changed'], fields: ['family_classifier_version'] },
+             { ts: stamps[2], changed: ['role family assignment changed'], fields: ['family_classifier_version'] }] }));
+  t.setUnit('count', false);
+  t.draw();
+  const list = nodes['trends-changes'];
+  assert.equal(list.hidden, false);
+  assert.match(list.innerHTML, /Marked changes in this window \(1\)/);
+  assert.match(list.innerHTML, /Sep 24 21:19/, 'at the run that moved 199, not the one that moved 1');
+});
+
+test('the roles view says what its lines are', () => {
+  const { t, nodes } = loadApp();
+  t.setPicks([ACME]);
+  t.set(fixture(), null);
+  t.click('software-engineering', 'roles');
+  t.set({ ...picked({ 'watch:llm': [10, 12] }), stamps: STAMPS, family: 'ai-ml' }, 'ai-ml');
+  t.draw();
+  assert.match(nodes['trends-verdict'].innerHTML, /roles tracked by their titles inside this category/);
+});
+
+
+test('a whole company’s shift that would erase its history scales instead', () => {
+  const { t } = loadApp();
+  t.setPicks([ACME]);
+  t.set(companies([['greenhouse:acme', 'Acme', [50, 200, 20, 20, 22]]],
+    { stamps: FIVE, epochs: [{ ts: FIVE[2], changed: ['tech filter changed'], fields: ['tech_filter_version'] }] }));
+  // Shifted by −180, the 50 went below zero and the line lost its start without a word.
+  same(t.netOfSteps([50, 200, 20, 20, 22], { name: '__total__', points: [50, 200, 20, 20, 22] })
+    .map(v => Math.round(v)), [5, 20, 20, 20, 22]);
+});
+
+test('a trend opened from Hot says how Hot’s figure reads on it', () => {
+  const { t, nodes } = loadApp();
+  t.openTrend('greenhouse:bosch', 'Bosch', '2026-09-13T00:00:00+00:00', '440');
+  t.readHash();
+  const bosch = { key: 'greenhouse:bosch', label: 'Bosch', boardKeys: ['greenhouse:bosch', 'lever:bosch'] };
+  t.setPicks([bosch]);
+  t.set(companies([['greenhouse:bosch', 'Bosch', [100, 200, 300, 540]]]));
+  t.draw();
+  assert.match(nodes['trends-empty'].textContent, /Hot’s \+440 net tech roles is one of Bosch’s 2 boards; this line sums all of them\./);
+  t.setPicks([{ ...bosch, boardKeys: ['greenhouse:bosch'] }]);
+  t.draw();
+  assert.match(nodes['trends-empty'].textContent, /Hot’s \+440 net tech roles is this line’s change/);
 });

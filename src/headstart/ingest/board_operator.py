@@ -23,9 +23,11 @@ Foundever at 0.20, and Jobs for Lebanon, an actual job board, at 0.04. The thing
 separates them is what the company *does*, which none of those features observes.
 
 So the scope is deliberately the head of one ranked list rather than the whole index. Measured
-2026-09-21 against the Expansion lens over its 7-day window, **the entries this file ships**
-flag 79% of the net growth in the top 20 rows, 62% of the top 50 and 48% of the top 100 —
-decreasing, because the tail is endless. Those figures move with the list and must be
+2026-09-25 against the Expansion lens over its 7-day window (Sep 18 → Sep 25), **the entries
+this file ships** flag 86% of the net growth in the top 20 rows, 72% of the top 50 and 61% of
+the top 100 — decreasing, because the tail is endless; the list before that day's ten
+additions flagged 59/49/42 on the same window (79/62/48 on 2026-09-21's). Those figures move
+with the list and must be
 re-measured when names are added: the 45-entry draft in the research doc measured 73/52/40, and
 quoting a number that describes a list nobody shipped is exactly the kind of borrowed fact this
 repo has been caught by before. Method:
@@ -161,6 +163,21 @@ SERVICES: Final[frozenset[str]] = frozenset(
         "apexsystems",
         "modis",
         "experis",
+        # Adjudicated from Hot's employer-labelled head on 2026-09-25, each by its own postings:
+        # client IT contracts (USM, Atria, TecTammina, Jobsbridge, Idealforce's numbered
+        # requisitions), warehouse temps (Stem Xpert), Gulf placements (VAMS: "…for Qatar"),
+        # and local-job agencies (Squircle: "Female Accountant @ Vanasthalipuram"; Endeavor;
+        # Weblee: "PVT BANKS RECRUITING").
+        "squircleitconsultingservicespvtltd",
+        "endeavoritsolution",
+        "usm2",  # the slug: "usm" alone is also the University of Southern Mississippi
+        "atriagroupllc",
+        "tectammina",
+        "stemxpert",
+        "jobsbridge",
+        "idealforcellc",
+        "vams",
+        "webleetechnologies",
         # Talent marketplaces and placement programmes that post on behalf of others
         "eworgmbh",
         "simera",

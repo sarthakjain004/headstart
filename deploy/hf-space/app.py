@@ -276,6 +276,12 @@ def _family_weights(rows: list[dict]) -> Counter[str]:
     return weights
 
 
+def _predecessors(family: str, successors: dict[str, str]) -> list[str]:
+    """The retired families whose successor is ``family`` (ADR-0220): one step, as the Trends
+    rename takes it, so Search's category and the Trends line for it sum the same names."""
+    return [old for old, new in successors.items() if new == family]
+
+
 def _resolve_family(family: str | None, present: Counter[str]) -> str | None:
     """``family`` as the data holds it: itself, its successor, or its largest predecessor there
     (``present`` counts rows per family) — "AI, ML & Data Science" before its data lands reads
@@ -285,11 +291,7 @@ def _resolve_family(family: str | None, present: Counter[str]) -> str | None:
     successor = _FAMILY_SUCCESSOR.get(family)
     if successor in present:
         return successor
-    older = [
-        old
-        for old, new in _FAMILY_SUCCESSOR.items()
-        if new == family and old in present
-    ]
+    older = [old for old in _predecessors(family, _FAMILY_SUCCESSOR) if old in present]
     return max(older, key=lambda old: present[old]) if older else family
 
 
@@ -557,8 +559,27 @@ def _company_atses(entry: dict) -> list[str]:
     return sorted({ats_of(board) for board in entry["boards"]})
 
 
-_FAMILY_IDS = search.load_family_ids(
-    _STATE / "data" / "state" / "role_assignments.parquet"
+def _with_predecessors(
+    family_ids: dict[str, list[str]] | None, successors: dict[str, str]
+) -> dict[str, list[str]] | None:
+    """``family_ids`` with each family also holding its predecessors' ids (ADR-0220), sorted
+    as ``load_family_ids`` sorts them — the families a Trends line for it sums. Search took the
+    name as written: "AI, ML & Data Science 410" at Google opened as 0 jobs, and Engineering
+    Management's 152 as 131, without the 21 still assigned to Tech Leadership."""
+    if family_ids is None:
+        return None
+    out = dict(family_ids)
+    for family in set(successors.values()):
+        names = [family, *_predecessors(family, successors)]
+        pools = [family_ids[name] for name in names if name in family_ids]
+        if pools and (len(pools) > 1 or family not in family_ids):
+            out[family] = sorted((i for pool in pools for i in pool), key=str.lower)
+    return out
+
+
+_FAMILY_IDS = _with_predecessors(
+    search.load_family_ids(_STATE / "data" / "state" / "role_assignments.parquet"),
+    _FAMILY_SUCCESSOR,
 )
 _COMPANIES = _load_directory(_STATE / "data" / "state" / "company_directory.json")
 _COMPANY_OF = {
@@ -1680,8 +1701,8 @@ def trends():
         rename.update(
             {
                 old: family
-                for old, new in _FAMILY_SUCCESSOR.items()
-                if new == family and old in present
+                for old in _predecessors(family, _FAMILY_SUCCESSOR)
+                if old in present
             }
         )
     if rename.keys() & present.keys():
