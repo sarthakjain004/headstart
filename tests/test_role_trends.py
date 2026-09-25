@@ -61,7 +61,7 @@ def _table(db_dir: Path, rows: list[dict]) -> None:
 
 
 # The classifier head the tests run (ADR-0220): three trained families, confident on a one-hot
-# title vector, with a row part that reads nothing unless a test gives it weights (ADR-0222).
+# title vector, with a row part that reads nothing unless a test gives it weights (ADR-0224).
 # Tests still state each row's family through its `vector`, as they did when a nearest centroid
 # decided it: `_table` records that choice against the row's title, and the stub encoder below
 # hands the head the matching one-hot vector.
@@ -659,7 +659,7 @@ def test_the_classifier_decides_each_family_and_watch_roles_count_tech_only(
 def test_a_rows_description_vector_can_move_it_off_its_titles_family(
     tmp_path, monkeypatch
 ):
-    """ADR-0222: two copies of one title, one whose served vector reads as non-tech. The title
+    """ADR-0224: two copies of one title, one whose served vector reads as non-tech. The title
     part is shared; the row part decides the second, and only the first is assigned a family."""
     row_weights = np.zeros((len(_HEAD_FAMILIES), _DIM), dtype=np.float32)
     row_weights[_HEAD_FAMILIES.index(roles.NON_TECH), 3] = 30.0
@@ -684,7 +684,7 @@ def test_a_head_trained_on_another_embedder_errors_visibly(
     tmp_path, monkeypatch, caplog
 ):
     """The row part learned one embedder's vectors; fed another's it would still answer
-    confidently, so the run refuses instead (ADR-0222)."""
+    confidently, so the run refuses instead (ADR-0224)."""
     import logging
 
     _taxonomy(tmp_path / "head", tmp_path / "families.json", row_model="other/embedder")

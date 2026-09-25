@@ -4,7 +4,7 @@
 Runs after ``index sync`` and ``index prune``, so it counts the **served stock**: every row
 still in the ``jobs`` table gets a role family from its title and its served description
 ``vector``, through the classifier head in ``config/role_family_classifier/`` (ADR-0220,
-ADR-0222, :mod:`headstart.ingest.role_family_classifier`), and titles already encoded under that
+ADR-0224, :mod:`headstart.ingest.role_family_classifier`), and titles already encoded under that
 head come from a cache kept in ``data/state``. The row is banded
 by the experience columns the table already carries, and one ``(ts, version, family, band, ats,
 count)`` row per non-empty group is appended to ``data/state/role_trends.parquet`` — plus one
@@ -506,7 +506,7 @@ def _save_board_counts(
 
 
 def _row_logits(table, ids: list[str], head) -> np.ndarray:
-    """Each served row's row part of the head's logits (ADR-0222), aligned with ``ids``. Only
+    """Each served row's row part of the head's logits (ADR-0224), aligned with ``ids``. Only
     ``id`` and ``vector`` are read, in batches, and each batch shrinks to one logit per family."""
     position = {job_id: i for i, job_id in enumerate(ids)}
     out = np.empty((len(ids), len(head.families)), dtype=np.float32)
@@ -592,7 +592,7 @@ def main() -> int:
         _log.error(
             f"role taxonomy unusable, no trends this run: the head was trained on "
             f"{head.row_vector_dim}-wide {head.row_vector_model} vectors, the served table holds "
-            f"{row_width}-wide {EMBED_MODEL} ones — retrain the head (ADR-0222)"
+            f"{row_width}-wide {EMBED_MODEL} ones — retrain the head (ADR-0224)"
         )
         return 1
     version = series_version(head.version)

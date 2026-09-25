@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Train the role-family classifier head the pipeline serves (ADR-0220, ADR-0222). A deliberate,
+"""Train the role-family classifier head the pipeline serves (ADR-0220, ADR-0224). A deliberate,
 one-off fit.
 
 The head is a logistic regression over two inputs side by side: the JobBERT-v2 title embedding

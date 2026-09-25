@@ -1,5 +1,5 @@
 """A served row's role family, from its title and its description, by a trained classifier
-(ADR-0220, ADR-0222).
+(ADR-0220, ADR-0224).
 
 The head is linear over two inputs. The title is embedded with JobBERT-v2's title ("anchor")
 branch, a model trained to place job titles that name the same occupation near each other. The

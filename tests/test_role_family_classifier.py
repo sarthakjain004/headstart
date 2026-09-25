@@ -1,5 +1,5 @@
 """Tests for the classifier that decides a row's role family from its title and its served
-description vector (ADR-0220, ADR-0222).
+description vector (ADR-0220, ADR-0224).
 
 Contracts: the head adds a row's title part and row part and abstains below its cutoff; the row
 part alone can move a row whose title says otherwise; a malformed head is refused; the title
@@ -144,7 +144,7 @@ def test_the_head_decides_and_abstains_below_its_cutoff(tmp_path):
 
 
 def test_the_row_part_moves_a_row_its_title_alone_would_misfile(tmp_path):
-    """ADR-0222: the same software title, with a description that reads as non-tech."""
+    """ADR-0224: the same software title, with a description that reads as non-tech."""
     head = _head(tmp_path)
     titles = head.title_logits(np.array([[1.0, 0, 0], [1.0, 0, 0]], np.float32))
     rows = head.row_logits(np.array([[1.0, 0.0], _NON_TECH_ROW], np.float32))

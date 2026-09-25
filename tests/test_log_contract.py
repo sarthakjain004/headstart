@@ -1492,7 +1492,7 @@ def _trends_taxonomy(tmp_path: Path, *, unlisted: bool = False) -> None:
     """Write the classifier head and the curated family list, in the paths a real run reads.
 
     The head knows every family plus non-tech and is confident on a one-hot title vector; its row
-    part (ADR-0222) reads the served table's `_TRENDS_K`-wide vectors with all-zero weights, so a
+    part (ADR-0224) reads the served table's `_TRENDS_K`-wide vectors with all-zero weights, so a
     title alone decides. With ``unlisted`` the list omits the last family, which the head still
     decides."""
     import numpy as np
