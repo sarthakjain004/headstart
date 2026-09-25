@@ -227,6 +227,7 @@ supersedes it and note the supersession in both.
 | [0229](0229-the-slice-reads-every-tech-yielding-board-and-rotates-the-rest.md) | The Slice reads every tech-yielding Board and rotates the rest oldest-first | 2026-09-25 |
 | [0230](0230-trends-keeps-one-board-delta-history-and-decides-rules-when-reading-it.md) | Trends keeps one Board-delta history, and decides its rules when reading it | 2026-09-25 |
 | [0231](0231-a-jobvite-job-is-read-from-its-detail-page-or-not-at-all.md) | A Jobvite Job is read from its detail page or not at all | 2026-09-25 |
+| [0232](0232-trends-serves-reconciled-line-readings-and-the-page-only-formats.md) | Trends serves reconciled line readings, and the page only formats | 2026-09-25 |
 
 *ADR-0037 was removed from the repository on 2026-09-24 by the owner's decision; its number is not
 reused.*
