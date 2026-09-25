@@ -1639,7 +1639,7 @@ function buildOtherSeries(rest){
   const denoms = rest.every(s => s.denoms)
     ? sumPoints(rest.map(s => ({ points: s.denoms })), trendData.stamps) : undefined;
   return { name: '__other__', label: `Other (${rest.length} smaller ${noun})`, points, latest, denoms,
-    turnover: sumTurnover(rest) };
+    turnover: sumTurnover(rest, trendData.stamps) };
 }
 function sumPoints(list, stamps){
   return stamps.map((_, j) => list.some(s => s.points[j] != null)
@@ -1647,11 +1647,10 @@ function sumPoints(list, stamps){
 }
 // A summed line's turnover (ADR-0222): its lines' opened, closed and recounted, run by run,
 // where any of them was measured. Undefined when none carries turnover.
-function sumTurnover(list){
+function sumTurnover(list, stamps){
   const parts = list.map(s => s.turnover).filter(Boolean);
   if (!parts.length) return undefined;
-  const add = m => parts[0][m].map((_, j) => parts.some(t => t[m][j] != null)
-    ? parts.reduce((sum, t) => sum + (t[m][j] || 0), 0) : null);
+  const add = m => sumPoints(parts.map(t => ({ points: t[m] })), stamps);
   return { opened: add('opened'), closed: add('closed'), recounted: add('recounted') };
 }
 
@@ -1665,7 +1664,7 @@ function trendView(raw, family){
   if (family || !trendPicks.length || topSplitNow() !== 'total' || !raw.series.length) return raw;
   const latest = raw.series.filter(s => s.latest != null);
   return { ...raw, total: true, series: [{ name: '__total__', label: 'All tech roles',
-    points: sumPoints(raw.series, raw.stamps), turnover: sumTurnover(raw.series),
+    points: sumPoints(raw.series, raw.stamps), turnover: sumTurnover(raw.series, raw.stamps),
     latest: latest.length ? latest.reduce((sum, s) => sum + s.latest, 0) : null }] };
 }
 function topSplitNow(){
@@ -1938,10 +1937,17 @@ function verdictLines(d){
   // off a chart of levels. Its net is the chart's own, counting changes marked rather than taken
   // out, so the sentence gives only the jobs opened and closed.
   if (!trendPicks.length){
-    const whole = { name: '__total__', points: sumPoints(d.series, d.stamps), turnover: sumTurnover(d.series) };
-    const phrase = turnoverPhrase(whole, d);
-    return phrase ? [{ name: viewKind(d) === 'bands' ? drillLabel() : 'All tech roles', days: 0,
-      text: `${phrase}, runs where HeadStart changed how it counts left out.` }] : [];
+    const whole = { name: '__total__', points: sumPoints(d.series, d.stamps), turnover: sumTurnover(d.series, d.stamps) };
+    const t = turnoverOf(whole);
+    if (!t) return [];
+    // Its net is the hiring one, opened less closed; recounted jobs are not hiring. The chart's
+    // own lines keep a counting change's jump, marked, so this sentence says when the figures
+    // leave one out.
+    const net = t.opened - t.closed;
+    const left = (d.turnover_left_out || []).length
+      ? ', runs where HeadStart changed how it counts left out' : '';
+    return [{ name: viewKind(d) === 'bands' ? drillLabel() : 'All tech roles', days: 0,
+      text: `about ${net < 0 ? '−' : '+'}${aboutCount(Math.abs(net))} net from hiring — ${turnoverPhrase(whole, d)}${left}.` }];
   }
   const kind = viewKind(d);
   const counted = trendPicks.filter(p => !(d.uncounted || []).includes(p.key));
@@ -1957,7 +1963,7 @@ function verdictLines(d){
   // Several picks summed: the sum of each company's own netted line (the Space's `pick_series`),
   // so the move is exactly the Company breakdown's total. It read only "summed here — break down
   // by Company", no move and no direction.
-  const whole = { name: '__total__', points: sumPoints(d.series, d.stamps), turnover: sumTurnover(d.series) };
+  const whole = { name: '__total__', points: sumPoints(d.series, d.stamps), turnover: sumTurnover(d.series, d.stamps) };
   const who = counted.length === 1 ? counted[0].label || 'This company' : `These ${counted.length} companies`;
   if (kind === 'bands') return [{ name: `${who} · ${drillLabel()}`, ...verdictOf(whole, d) }];
   if (kind !== 'company' && counted.length > 1)
@@ -2002,16 +2008,10 @@ function turnoverOf(s){
   }
   const t = s && s.turnover;
   if (!t || trendMetric !== 'stock') return null;
+  // With no pick the Space has already left those runs out, Board by Board, as each company's
+  // own line would (its `turnover_left_out`): they arrive as gaps.
   const left = new Set();
-  if (!trendPicks.length){
-    // The index's lines keep a counting change's jump, marked, but its turnover is still not
-    // hiring: the runs a pick's line would leave out for it are left out of the index's count,
-    // a change and its settling run.
-    const bands = viewKind(trendData) === 'bands';
-    notesOf(trendData).filter(n => n.epoch && !n.echo && n.i > 0 && (n.fields || [])
-      .some(f => LINE_MOVING.includes(f) || (bands && f === 'derivations_version')))
-      .forEach(n => { left.add(n.i); left.add(n.i + 1); });
-  } else {
+  if (trendPicks.length){
     const jumps = stepJumps(s.points, s);
     let last = -1;
     s.points.forEach((v, j) => {
@@ -2028,22 +2028,17 @@ function turnoverOf(s){
   });
   return seen ? { opened, closed } : null;
 }
-// "about 1,500": two significant figures from 100 up, since every flow is a lower bound (a job
-// opened and closed between two scrapes of its Board is in neither).
+// "about 1,500": two significant figures from 100 up, since every turnover count is a lower
+// bound (a job opened and closed between two scrapes of its Board is in neither).
 function aboutCount(n){
   if (n < 100) return String(n);
   const step = 10 ** (Math.floor(Math.log10(n)) - 1);
   return (Math.round(n / step) * step).toLocaleString();
 }
-// " — about 1,500 opened, 1,500 closed". It adds from when, if turnover began inside the
-// window. It also adds how many of the line's Boards had a run whose closures went uncounted
-// (ADR-0053): their scrape could not show an absence, so the line can read as opening more than
-// it closed.
-function turnoverText(s, d){
-  const phrase = turnoverPhrase(s, d);
-  return phrase ? ` — ${phrase}` : '';
-}
-// "about 1,500 opened, 1,500 closed", with from when and the uncounted closures (turnoverText).
+// "about 1,500 opened, 1,500 closed", or '' with no turnover. It adds from when, if turnover
+// began inside the window. It also adds how many of the line's Boards had a run whose closures
+// went uncounted (ADR-0053): their scrape could not show an absence, so the line can read as
+// opening more than it closed.
 function turnoverPhrase(s, d){
   const t = turnoverOf(s);
   if (!t) return '';
@@ -2073,7 +2068,8 @@ function verdictOf(s, d){
   // came from outside hiring: +292 openings from…", twice the words for one figure, and
   // "outside hiring" read as hiring from outside.
   // What the net change is made of (ADR-0222), before the part of the move that is not hiring.
-  const counting = turnoverText(s, d) + (other ? `; not hiring: ${causesOf(s, other)}` : '');
+  const phrase = turnoverPhrase(s, d);
+  const counting = (phrase ? ` — ${phrase}` : '') + (other ? `; not hiring: ${causesOf(s, other)}` : '');
   if (!m || days < MIN_SPAN_DAYS){
     const hours = Math.max(1, Math.round(days * 24));
     const span = days < 1.5 ? `over the last ${hours} hour${hours === 1 ? '' : 's'}` : over;
@@ -3778,7 +3774,7 @@ function buildTrendsTable(){
   const kind = viewKind(d);
   const withTotal = trendPicks.length && (kind === 'families' || kind === 'bands') && rows.length > 1;
   const total = withTotal ? [{ name: '__total__', label: kind === 'bands' ? `All of ${drillLabel()}` : 'All tech roles',
-    points: sumPoints(d.series, d.stamps), turnover: sumTurnover(d.series) }] : [];
+    points: sumPoints(d.series, d.stamps), turnover: sumTurnover(d.series, d.stamps) }] : [];
   const body = [...total, ...rows].map(s => {
     const vals = s.points.map((v, j) => levelValue(v, j, s)).filter(v => v != null);
     const mv = lineMove(s);
@@ -4635,15 +4631,15 @@ function hotLens(){
 // Tech roles on this one Board: a row is a Board, and its "See trend" opens the whole company,
 // whose other Boards the figures here do not include (HCLTech read −1,356 here, −605 there).
 // Opened and closed are the week's turnover (ADR-0222). The net figure alone read Amazon's week
-// as "+17" while it opened 914–1,532. `new7`, the jobs first seen this week and still open, is
-// what Rate still divides.
+// as "+17" while it opened 914–1,532. Rate divides `new7`, the jobs first seen this week and
+// still open, so its row leads with that count and gives the turnover after it.
 const HOT_MEASURE = {
   expansion: r => ({ big: (r.net > 0 ? '+' : '') + r.net, unit: 'net tech roles on this board', sub:
     `${r.opened ?? 0} opened · ${r.closed ?? 0} closed this week · ${r.stock} open now` }),
   volume:    r => ({ big: String(r.opened ?? 0), unit: 'tech roles opened this week', sub:
     `${r.closed ?? 0} closed · ${r.net >= 0 ? '+' : ''}${r.net} net · ${r.stock} open on this board` }),
   rate:      r => ({ big: r.rate + '%', unit: 'of its board is new', sub:
-    `${r.opened ?? 0} opened · ${r.closed ?? 0} closed this week · ${r.stock} open now` }),
+    `${r.new7} new and still open of ${r.stock} · ${r.opened ?? 0} opened · ${r.closed ?? 0} closed this week` }),
 };
 
 function drawHot(){

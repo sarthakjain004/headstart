@@ -2391,22 +2391,30 @@ test('a found Board’s run keeps its turnover on a whole line and drops it on a
   same({ ...t.turnoverOf(t.data().series[0]) }, { opened: 6, closed: 5 });
 });
 
-test('the index gets a turnover sentence and table columns too', () => {
+test('the index gets a hiring net from its turnover, and table columns too', () => {
+  // The Space has already left the Sep 15 change's runs out (gaps), Board by Board, and names
+  // them in `turnover_left_out`, which is what the sentence's closing clause rests on.
   const { t, nodes } = loadApp();
   t.setPicks([]);
-  t.set({ ...picked({}), companies: [], stamps: FOUR, totals: [1e4, 1e4, 1e4, 1e4], non_tech: [0, 0, 0, 0],
-    turnover_since: FOUR[0], closures_unseen: { '': 3 },
+  const index = extra => ({ ...picked({}), companies: [], stamps: FOUR, totals: [1e4, 1e4, 1e4, 1e4],
+    non_tech: [0, 0, 0, 0], turnover_since: FOUR[0], closures_unseen: { '': 3 },
     epochs: [{ ts: FOUR[2], changed: ['tech filter changed'], fields: ['tech_filter_version'] }],
     series: [{ name: 'a', label: 'a', points: [900, 900, 1300, 1300], latest: 1300,
-      turnover: { opened: [null, 50, 450, 40], closed: [null, 40, 50, 30], recounted: [null, 0, 0, 0] } }] });
+      turnover: { opened: [null, 50, null, null], closed: [null, 40, null, null], recounted: [null, 0, null, null] } }],
+    ...extra });
+  t.set(index({ turnover_left_out: [FOUR[2], FOUR[3]] }));
   t.setUnit('count', false);
   t.draw();
   assert.match(nodes['trends-verdict'].innerHTML,
-    /<b>All tech roles<\/b>: about 50 opened, 40 closed, closures not counted on 3 boards, runs where HeadStart changed how it counts left out\./);
+    /<b>All tech roles<\/b>: about \+10 net from hiring — about 50 opened, 40 closed, closures not counted on 3 boards, runs where HeadStart changed how it counts left out\./);
   assert.doesNotMatch(nodes['trends-verdict'].innerHTML, /HeadStart has counted/);
   nodes['trends-error'] = Object.assign(fakeEl(), { hidden: true });
   t.table(true);
   assert.match(nodes['trends-table'].innerHTML, /<td>50<\/td><td>40<\/td>/);
+  t.set(index({ turnover_left_out: [], epochs: [], closures_unseen: {} }));
+  t.draw();
+  assert.match(nodes['trends-verdict'].innerHTML, /about \+10 net from hiring — about 50 opened, 40 closed\./,
+    'no counting change in the window, so nothing is said about one');
 });
 
 test('a Hot row shows the week’s opened and closed, and Volume leads with opened', () => {
@@ -2414,6 +2422,8 @@ test('a Hot row shows the week’s opened and closed, and Volume leads with open
   const amazon = { net: -3, opened: 1396, closed: 1399, stock: 9081, new7: 1300, rate: 14 };
   assert.equal(t.hotMeasure.volume(amazon).big, '1396');
   assert.match(t.hotMeasure.expansion(amazon).sub, /1396 opened · 1399 closed this week/);
+  assert.match(t.hotMeasure.rate(amazon).sub, /^1300 new and still open of 9081 · 1396 opened/,
+    'Rate divides new7, so its row leads with it');
 });
 
 test('a line summing picks counts each pick’s turnover over the runs its own line counts', () => {

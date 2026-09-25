@@ -48,18 +48,24 @@ pins it. The module is named for **turnover**, because "flow" is already ADR-005
   any series version (`load_placements`), because a new classifier head changes families, not
   which ids were served. A snapshot written before this ADR has no placements, so turnover starts
   on the tick after the first one that writes them.
-- The tick's delta file and the snapshot move together. The file is written first, and a failed
-  snapshot write deletes it again. The file without its snapshot would book this tick's turnover
+- The tick's delta file and the snapshot move together. The file is written first, and any
+  failure of the snapshot write deletes it again. The file without its snapshot would book this tick's turnover
   again next tick; the snapshot without the file would leave next tick's stock change covering
   two ticks while its turnover covers one. Only a process killed between the two writes can break
   the identity for a tick.
-- **Closed is positive evidence.** `index sync` appends every id it evicts, and any re-embedded
-  Job that left the corpus, to `data/state/evicted_ids.txt`. `role_trends` books a departed id as
-  Closed only if it is in that queue, then clears it. Every other departure is Recounted. That
-  covers a prune in the pipeline, and also one in `cleanup-index`, which runs between pipeline
-  runs, fetches no `data/state` and so could hand nothing over. The queue rides `data/state`, so a
-  run where `role_trends` skipped carries its closures to the next. A stale id in it is harmless:
-  it counts only when it leaves the snapshot, and it already has.
+- **Closed is positive evidence.** `index sync` appends every id it evicts, stamped with the
+  run, to `data/state/eviction_queue.tsv`. Only evictions count: a re-embedded Job that got no
+  vector this run is not re-added, but it was never absent from its Board. `role_trends` books a
+  departed id as Closed only if it is queued. Every other departure is Recounted. That covers a
+  prune in the pipeline, and one in `cleanup-index`, which runs between pipeline runs and fetches
+  no `data/state`, so it could hand nothing over.
+- **The queue is published with the table.** `index_publish` puts it in the same HF commit as
+  the LanceDB table and the grace set. The snapshot `role_trends` diffs rides the later
+  `data/state` upload. If that upload fails after the table's commit lands, the next tick diffs
+  the older snapshot against a table missing this run's evictions. So `role_trends` never clears
+  the queue: it drops only the entries stamped at or before the snapshot it diffed, which the
+  tick that wrote that snapshot already booked. A queue published without this run's entries
+  would have read them as Recounted. A test pins that this run's entries stay.
 - One user decision was that `prune` would hand over the ids it removes. That was built first,
   then replaced by the eviction queue, which is exact on the same keys and also covers
   `cleanup-index`.
@@ -89,9 +95,8 @@ under a pick, and the index's with no pick. The roles drill gets none, because i
 re-count their family's jobs.
 
 - **Where each view's rows come from.** A pick sums its own Boards' turnover rows. The index sums
-  `_INDEX_TURNOVER`: every Board's rows summed once, at load, per tick, metric, family, band and
-  ATS. It is built from the same rows, so the index is exactly the sum of every company's
-  turnover, run by run, and a test pins that. It is not written into the role_trends ledger:
+  `_INDEX_TURNOVER`: every Board's rows summed once, at load, per tick, metric, family, band, ATS
+  and whether duplicate removal can move the Board's company. It is built from the same rows. It is not written into the role_trends ledger:
   summing rows already loaded costs no pipeline change and no storage, and it cannot disagree
   with the per-company figures. Under comparable coverage the index sums the cohort's own Boards.
 - **Where counts land.** Each tick's counts land on the first charted run at or after it. The
@@ -102,20 +107,35 @@ re-count their family's jobs.
 - **Which runs are left out.** The page sums a line's turnover over exactly the runs its hiring
   move counts. Wherever `netOfSteps` takes a step's whole jump out (a counting change and its
   settling run; a found Board on a category line), it leaves out the turnover of every run inside
-  that jump. A step of known size keeps the run's ordinary hiring, and so keeps its turnover. The
-  index's lines keep a counting change's jump, marked, but its turnover still leaves out the runs
-  a pick's line would.
+  that jump. A step of known size keeps the run's ordinary hiring, and so keeps its turnover.
+  The index's lines keep a counting change's jump, marked. The Space leaves its turnover out
+  Board by Board instead, by the rule a company's own line follows (`_left_out_runs`): a
+  line-moving counting change leaves out its run and the one after everywhere, and a
+  duplicate-removal change only on the Boards of a company it can move (app.js's pick rule,
+  mirrored). The runs arrive as gaps, `turnover_left_out` names them, and a test pins that the
+  index's displayed opened and closed equal the sum of what every company's view displays.
+- **Duplicate handovers.** When duplicate removal changes, a requisition can move to a sibling
+  site: the old row closes and the sibling's copy arrives with a fresh `first_seen`. On the run
+  of a duplicate-removal change and the run after it, the Boards it can move are left out of the
+  turnover wherever they are read (Hot's `dedup_touches`, the page's pick rule, the index's
+  touched rows), as they are left out of the net. A handover outside those runs, when a survivor
+  closes on one site while a sibling still lists it, still reads as one closed and one opened.
+  Matching it exactly needs each requisition's history across runs, which nothing keeps.
 - **What the page shows.** The company sentence reads "… (+17 openings) — about 1,500 opened,
-  1,500 closed, closures not counted on 1 board". The index sentence reads "All tech roles: about
-  N opened, M closed, … runs where HeadStart changed how it counts left out". The index's net is
-  the chart's own, with counting changes marked rather than taken out, so its sentence gives only
-  the turnover. The table gains Opened and Closed columns in every view. The legend shows none
-  under a pick or without one.
+  1,500 closed, closures not counted on 1 board". The index sentence gives its hiring net, opened
+  less closed, with recounted jobs out of it: "All tech roles: about +10 net from hiring — about
+  50 opened, 40 closed". It adds "runs where HeadStart changed how it counts left out" only when
+  such a run is inside the window. The table gains Opened and Closed columns in every view. The
+  legend shows none, with a pick or without one (the owner's decision).
 
 **Hot.** Every row carries the window's `opened` and `closed`. These are summed over the same runs
-as its net change, with the same counting-change exclusions (`read_window_sum`). The Volume lens
-ranks by `opened` instead of `new7`. Rate still divides `new7`, the jobs first seen this week and
-still open. `window.turnover_from` says when turnover began inside the window.
+as its net change, with the same counting-change exclusions (`read_window_sum`). Each Board's
+arrival, its first tick in the ledger, is left out of its net and its opened: Sphinixusa,
+counted from Sep 23, ranked second at "+250 net" off the backlog it landed with. A Board counted
+for under three days is not ranked, as its trend calls it too new (app.js `MIN_SPAN_DAYS`). The
+Volume lens ranks by `opened` instead of `new7`. Rate still divides `new7`, the jobs first seen
+this week and still open, so its row leads with that count. `window.turnover_from` says when
+turnover began inside the window.
 
 ## Options not taken
 

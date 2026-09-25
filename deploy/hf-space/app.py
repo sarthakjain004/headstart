@@ -537,6 +537,12 @@ def _board_arrivals(deltas: list[dict]) -> dict[str, tuple[str, int]]:
     return {board: (ts, arrived[board]) for board, ts in first.items()}
 
 
+def _in_ats_scope(board: str, ats: list[str]) -> bool:
+    """Whether ``board`` is inside a Trends request's ATS selection (ADR-0075); no selection
+    means every ATS."""
+    return not ats or ats_of(board) in ats
+
+
 def _rows_by_board(deltas: list[dict], metrics) -> dict[str, list[dict]]:
     """Each Board's delta rows of ``metrics``: its turnover, or its Unauthoritative markers
     (ADR-0222)."""
@@ -547,19 +553,66 @@ def _rows_by_board(deltas: list[dict], metrics) -> dict[str, list[dict]]:
     return out
 
 
-def _index_turnover(by_board: dict[str, list[dict]]) -> list[dict]:
-    """Every Board's turnover summed per tick, metric, family, band and ATS (ADR-0222): what the
-    Trends view with no company picked draws. A few hundred rows a tick where the per-Board rows
-    run to thousands, so a request sums the index without walking every Board. The same rows
-    summed, so the index is exactly the sum of every company's turnover."""
-    summed: Counter[tuple[str, str, str, str, str]] = Counter()
-    for rows in by_board.values():
+# Mirrors app.js DEDUP_ATSES and MIRROR_ATS (and hot_boards' `dedup_touches`): the Boards a
+# duplicate-removal change can move. Change one, change the others.
+_DEDUP_ATSES = ("taleo_enterprise", "workday")
+_MIRROR_ATS = "eightfold"
+# Mirrors app.js LINE_MOVING: the counting changes that move every line they reach.
+_LINE_MOVING = (
+    "centroid_version",
+    "family_map_fingerprint",
+    "family_classifier_version",
+    "tech_filter_version",
+)
+
+
+def _dedup_touched(boards: list[str]) -> bool:
+    """Whether duplicate removal can move a company holding ``boards``: two or more Boards on an
+    ATS it dedupes within, or any Eightfold Board. The page's rule for a pick (app.js)."""
+    atses = [ats_of(board) for board in boards]
+    return _MIRROR_ATS in atses or any(atses.count(a) > 1 for a in _DEDUP_ATSES)
+
+
+def _index_turnover(by_board: dict[str, list[dict]], company_boards) -> list[dict]:
+    """Every Board's turnover summed per tick, metric, family, band, ATS and whether duplicate
+    removal can move it (ADR-0222): what the Trends view with no company picked draws. A few
+    hundred rows a tick where the per-Board rows run to thousands, so a request sums the index
+    without walking every Board. ``company_boards(board)`` is every Board of the company holding
+    ``board``, so `touched` follows the rule a company's own view leaves runs out by."""
+    summed: Counter[tuple[str, str, str, str, str, bool]] = Counter()
+    for board, rows in by_board.items():
+        touched = _dedup_touched(company_boards(board))
         for r in rows:
-            summed[(r["ts"], r["metric"], r["family"], r["band"], r["ats"])] += r[
-                "delta"
-            ]
-    fields = ("ts", "metric", "family", "band", "ats")
+            key = (r["ts"], r["metric"], r["family"], r["band"], r["ats"], touched)
+            summed[key] += r["delta"]
+    fields = ("ts", "metric", "family", "band", "ats", "touched")
     return [{**dict(zip(fields, key)), "delta": n} for key, n in summed.items()]
+
+
+def _left_out_runs(
+    epochs: list[dict], stamps: list[str], bands: bool
+) -> tuple[set[int], set[int]]:
+    """The charted runs a company's whole line leaves out of its hiring, as app.js `stepNotes`
+    and `netOfSteps` do: ``(for every Board, for a Board duplicate removal can move)``. A counting
+    change that moves lines, and on a levels view an extraction change, leaves out its run and
+    the run after it everywhere. A duplicate-removal change alone does so only where it can move
+    a Board. A change on the window's first run is already in every line's start."""
+    every: set[int] = set()
+    touched: set[int] = set()
+    for epoch in epochs:
+        if epoch["ts"] not in stamps:
+            continue
+        i = stamps.index(epoch["ts"])
+        fields = epoch.get("fields", [])
+        moves = any(f in _LINE_MOVING for f in fields) or (
+            bands and "derivations_version" in fields
+        )
+        runs = {j for j in (i, i + 1) if 0 < j < len(stamps)}
+        if moves:
+            every |= runs
+        elif "dedup_version" in fields:
+            touched |= runs
+    return every, touched
 
 
 def _new_holds(arrivals: dict[str, tuple[str, int]]) -> dict[str, str]:
@@ -639,7 +692,12 @@ _LEDGER_START = min((ts for ts, _ in _BOARD_ARRIVALS.values()), default=None)
 # is a gap, not a zero.
 _TURNOVER = _rows_by_board(_TREND_DELTAS, _TURNOVER_METRICS)
 _UNSCOPED_MARKERS = _rows_by_board(_TREND_DELTAS, (_UNSCOPED,))
-_INDEX_TURNOVER = _index_turnover(_TURNOVER)
+_INDEX_TURNOVER = _index_turnover(
+    _TURNOVER,
+    lambda board: (
+        _COMPANIES[_COMPANY_OF[board]]["boards"] if board in _COMPANY_OF else [board]
+    ),
+)
 _TURNOVER_SINCE = min((r["ts"] for r in _INDEX_TURNOVER), default=None)
 # Email alerts (ADR-0035) — invite-only, so all three must be set before the panel appears:
 # the Google client id the sign-in button needs, and a token scoped to the Subscriptions
@@ -1842,7 +1900,7 @@ def trends():
     counted = {
         board: pick
         for board, pick in (company_of or {}).items()
-        if board in _BOARD_ARRIVALS and not (ats and ats_of(board) not in ats)
+        if board in _BOARD_ARRIVALS and _in_ats_scope(board, ats)
     }
     began: dict[str, str] = {}
     new_from: dict[
@@ -1970,7 +2028,7 @@ def trends():
         scope = {
             board: ""
             for board in _TURNOVER.keys() | _UNSCOPED_MARKERS.keys()
-            if not (ats and ats_of(board) not in ats)
+            if _in_ats_scope(board, ats)
         }
     if scope is not None and base_stamp is not None:
         scope = {
@@ -1978,14 +2036,17 @@ def trends():
             for board, pick in scope.items()
             if board in _BOARD_ARRIVALS and _BOARD_ARRIVALS[board][0] <= base_stamp
         }
+    # With no pick the lines keep a counting change's jump, marked, but its turnover is not
+    # hiring. The index leaves out, Board by Board, the runs each company's own line leaves out,
+    # so the index's opened and closed are the sum of what every company's view shows.
+    left_out: tuple[set[int], set[int]] = (set(), set())
     if scope is None:
         turnover_rows = [
             (row, "") for row in _INDEX_TURNOVER if not ats or row["ats"] in ats
         ]
+        left_out = _left_out_runs(epochs, stamps, bool(family))
         unscoped = {
-            board: ""
-            for board in _UNSCOPED_MARKERS
-            if not (ats and ats_of(board) not in ats)
+            board: "" for board in _UNSCOPED_MARKERS if _in_ats_scope(board, ats)
         }
     else:
         turnover_rows = [
@@ -2006,7 +2067,7 @@ def trends():
     pick_turnover: dict[str, dict[str, list[int | None]]] = {}
     if with_turnover:
         by_line = _turnover_series(
-            turnover_rows, stamps, line_of, [line["name"] for line in out]
+            turnover_rows, stamps, line_of, [line["name"] for line in out], left_out
         )
         for line in out:
             line["turnover"] = by_line[line["name"]]
@@ -2076,6 +2137,9 @@ def trends():
         # When turnover began (ADR-0222). A window that starts earlier has lines whose opened
         # and closed cover only part of it, and the page says from when.
         turnover_since=_TURNOVER_SINCE if with_turnover else None,
+        # The runs the index's turnover leaves out for a counting change, so its sentence can
+        # say so only when one is inside the window. Empty under a pick, whose page decides.
+        turnover_left_out=[stamps[k] for k in sorted(left_out[0] | left_out[1])],
         # Per pick ("" for the index), its Boards whose closures went uncounted on some run in the
         # window (ADR-0053).
         closures_unseen=_closures_unseen(unscoped, stamps) if with_turnover else {},
@@ -2087,6 +2151,7 @@ def _turnover_series(
     stamps: list[str],
     line_of,
     names,
+    left_out: tuple[set[int], set[int]] = (set(), set()),
 ) -> dict[str, dict[str, list[int | None]]]:
     """The turnover of each line in ``names`` at each charted run (ADR-0222): ``{line: {opened,
     closed, recounted}}``, each list aligned to ``stamps``. ``recounted`` is in less out, so on
@@ -2097,7 +2162,11 @@ def _turnover_series(
     A tick's turnover lands on the first charted run at or after it, because it counts what
     happened since the run before. The first charted run is None: what landed there happened
     before the window. So is every run before turnover began, since nothing measured it.
+
+    ``left_out`` is :func:`_left_out_runs`' pair: runs None on every line, and runs where a row
+    duplicate removal can move (``touched``) is not counted.
     """
+    every, touched = left_out
     first = max(
         bisect_left(stamps, _TURNOVER_SINCE) if _TURNOVER_SINCE else len(stamps), 1
     )
@@ -2108,8 +2177,14 @@ def _turnover_series(
         line = lines.get(line_of(row, pick))
         if not 0 < k < len(stamps) or line is None:
             continue
+        if k in every or (row.get("touched") and k in touched):
+            continue
         kind, sign = _TURNOVER_KIND_OF[row["metric"]]
         line[kind][k] = (line[kind][k] or 0) + sign * row["delta"]
+    for line in lines.values():
+        for values in line.values():
+            for k in every:
+                values[k] = None
     return lines
 
 

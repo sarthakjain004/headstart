@@ -294,7 +294,7 @@ A tech **Job** that arrived in the **Search index** since the previous `role_tre
 _Avoid_: reading `new` as Opened. `new` is a level: the Jobs first seen in the last 7 days *and still open*, backlog of a found Board included.
 
 **Closed** (ADR-0222):
-A tech Job that left the Search index since the previous tick through `index sync`'s **Eviction** — its second consecutive absence (**Unconfirmed**), so a closure lands one scrape of its Board after the posting went. Sync queues each eviction in `data/state/evicted_ids.txt`, and `role_trends` books only a queued id as Closed. An **Unauthoritative Board** evicts nothing, so its closures go uncounted that tick; the tick's file marks each such Board (`metric=unscoped`) and Trends says on how many.
+A tech Job that left the Search index since the previous tick through `index sync`'s **Eviction** — its second consecutive absence (**Unconfirmed**), so a closure lands one scrape of its Board after the posting went. Sync queues each eviction, stamped with its run, in `data/state/eviction_queue.tsv`, which rides the table's own commit; `role_trends` books only a queued id as Closed. An **Unauthoritative Board** evicts nothing, so its closures go uncounted that tick; the tick's file marks each such Board (`metric=unscoped`) and Trends says on how many.
 _Avoid_: counting a `prune` removal as Closed — a duplicate is still served from another Board.
 
 **Recounted** (ADR-0222):

@@ -3149,8 +3149,13 @@ def _with_turnover(trends_app, monkeypatch, rows: list[dict]) -> None:
         "_UNSCOPED_MARKERS",
         trends_app._rows_by_board(deltas, ("unscoped",)),
     )
+    boards_of = {
+        b: e["boards"] for e in trends_app._COMPANIES.values() for b in e["boards"]
+    }
     monkeypatch.setattr(
-        trends_app, "_INDEX_TURNOVER", trends_app._index_turnover(turnover)
+        trends_app,
+        "_INDEX_TURNOVER",
+        trends_app._index_turnover(turnover, lambda b: boards_of.get(b, [b])),
     )
     monkeypatch.setattr(trends_app, "_TURNOVER_SINCE", _T2)
 
@@ -3244,6 +3249,48 @@ def test_the_index_has_turnover_and_it_is_the_sum_of_every_companys(
     assert all(
         v in (None, 0) for s in lever["series"] for v in s["turnover"]["opened"]
     ), "an ATS filter narrows the index's turnover"
+
+
+def test_the_index_shows_what_every_companys_view_shows_after_runs_are_left_out(
+    company_trends, trends_app, monkeypatch
+):
+    """The figures each view displays reconcile (ADR-0222): the index leaves out, Board by
+    Board, the runs a company's own line leaves out, so its opened and closed are the sum of
+    what every company's view shows. A duplicate-removal change at the last run can move HPE
+    (two Workday sites) and not Citi's one Workday site: HPE's turnover there is left out of the
+    index as of HPE's line, Citi's stays in both."""
+    _with_turnover(trends_app, monkeypatch, _HPE_TURNOVER)
+    epoch = {
+        "ts": _T3,
+        "changed": ["duplicate removal changed"],
+        "fields": ["dedup_version"],
+    }
+    monkeypatch.setattr(trends_app, "_EPOCHS", [epoch])
+    index = company_trends.get("/trends").get_json()
+    assert index["turnover_left_out"] == [_T3]
+
+    def shown(lines, left=()):
+        return {
+            kind: sum(
+                v
+                for t in lines
+                for j, v in enumerate(t[kind])
+                if j > 0 and v is not None and j not in left
+            )
+            for kind in ("opened", "closed")
+        }
+
+    in_index = shown([s["turnover"] for s in index["series"]])
+    every = "&".join(f"company={key}" for key in trends_app._COMPANIES)
+    split = company_trends.get(f"/trends?split=company&{every}").get_json()
+    by_company = {"opened": 0, "closed": 0}
+    for s in split["series"]:
+        # The page's rule for a pick's own line: a duplicate-removal change leaves out its run
+        # (and the run after) only where the pick holds Boards it can move.
+        touched = trends_app._dedup_touched(trends_app._COMPANIES[s["name"]]["boards"])
+        for kind, n in shown([s["turnover"]], {2} if touched else ()).items():
+            by_company[kind] += n
+    assert in_index == by_company == {"opened": 5, "closed": 0}
 
 
 def test_no_turnover_off_openings(company_trends, trends_app, monkeypatch):
