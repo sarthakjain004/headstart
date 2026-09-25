@@ -17,7 +17,7 @@ import json
 import os
 import threading
 import time
-from bisect import bisect_left
+from bisect import bisect_left, bisect_right
 from collections import Counter, defaultdict
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
@@ -299,8 +299,25 @@ _INDEX_SCOPES: dict[tuple, tuple] = {}
 _INDEX_SCOPES_KEPT = 16
 
 
+_LEDGER_STAMPS: tuple = (None, [])
+
+
 def _index_scope_key(since, until, ats, family) -> tuple:
-    """The one spelling of an index scope, for the warm-up at load and every request."""
+    """The one spelling of an index scope, for the warm-up at load and every request.
+
+    A window is spelled by the ledger runs it holds, not the instants asked: the 7/30/90-day
+    presets ask for now − N to the second, so keyed on the instant no two requests ever met
+    (review of #690). A bound past every run is no bound."""
+    global _LEDGER_STAMPS
+    if _LEDGER_STAMPS[0] is not _TRENDS:
+        _LEDGER_STAMPS = (_TRENDS, sorted({r["ts"] for r in _TRENDS}))
+    stamps = _LEDGER_STAMPS[1]
+    if since is not None:
+        at = bisect_left(stamps, since)
+        since = None if at == 0 else stamps[at] if at < len(stamps) else since
+    if until is not None:
+        at = bisect_right(stamps, until)
+        until = None if at == len(stamps) else stamps[at - 1] if at else until
     return (since, until, tuple(sorted(ats)), family)
 
 
@@ -2028,20 +2045,40 @@ def trends():
     # out of that company's part of the sum only: summed whole, five companies' Total read +362
     # of hiring where their Company breakdown summed to +306 (2026-09-25).
     pick_series: dict[str, list[int | None]] = {}
+    # And each pick's part of every category or level line, so a company's steps and duplicate
+    # removals come out of its own part of a category too: without them NVIDIA and Micron's
+    # categories summed +73 against their Total of +40 (review of #690).
+    pick_parts: dict[str, dict[str, list[int | None]]] = {}
     if len(picked_keys) > 1 and key != "company" and not (family and split == "roles"):
-        per: dict[str, dict[str, int]] = {}
-        for r in rows:
-            at = per.setdefault(r["company"], {})
-            at[r["ts"]] = at.get(r["ts"], 0) + r["count"]
-        pick_series = {
-            k: _held_at_zero(
+
+        def pick_line(points: dict[str, int], k: str) -> list[int | None]:
+            return _held_at_zero(
                 [
                     value_at(points, ts, new_from.get(k) if metric == "new" else None)
                     for ts in stamps
                 ],
                 metric,
             )
-            for k, points in per.items()
+
+        per: dict[str, dict[str, int]] = {}
+        per_part: dict[str, dict[str, dict[str, int]]] = {}
+        for r in rows:
+            at = per.setdefault(r["company"], {})
+            at[r["ts"]] = at.get(r["ts"], 0) + r["count"]
+            at = per_part.setdefault(r[key], {}).setdefault(r["company"], {})
+            at[r["ts"]] = at.get(r["ts"], 0) + r["count"]
+        pick_series = {k: pick_line(points, k) for k, points in per.items()}
+        # A part is 0, not unmeasured, wherever its company is counted: a company's first AI/ML
+        # opening is hiring, where a company's own first run is a join.
+        pick_parts = {
+            name: {
+                k: [
+                    0 if v is None and whole is not None else v
+                    for v, whole in zip(pick_line(points, k), pick_series[k])
+                ]
+                for k, points in parts.items()
+            }
+            for name, parts in per_part.items()
         }
     # Each pick's own denominator, so a line split by company is a share of *that* company.
     company_totals: dict[str, dict[str, int]] = {k: {} for k in picked_keys}
@@ -2191,6 +2228,7 @@ def trends():
             for k in picked_keys
         ],
         pick_series=pick_series,
+        pick_parts=pick_parts,
         pick_turnover=pick_turnover,
         company_totals={
             k: [company_totals[k].get(ts) for ts in stamps] for k in picked_keys

@@ -2014,7 +2014,7 @@ function spanDays(s, d){
 // sums each pick's own netted line. Null when no run in the window measured turnover.
 function turnoverOf(s){
   const picks = summedPicks(s);
-  if (picks){
+  if (picks && picks[0].pick){
     const parts = picks.map(p => turnoverOf({ ...p, turnover: (trendData.pick_turnover || {})[p.name] }))
       .filter(Boolean);
     return parts.length ? { opened: parts.reduce((sum, p) => sum + p.opened, 0),
@@ -2873,7 +2873,8 @@ function dupRatios(key){
   const out = new Map();
   if (!totals || trendMetric !== 'stock') return out;
   const removed = new Map();   // one run's removals are one removal: summed, then one ratio
-  (d.evicted || []).filter(e => e.company === key).forEach(e => {
+  // A handful of duplicates is left as it is, as its note leaves it (stepNotes).
+  (d.evicted || []).filter(e => e.company === key && e.count >= INDEX_BASE_FLOOR).forEach(e => {
     const j = d.stamps.indexOf(e.ts);
     if (j > 0) removed.set(j, (removed.get(j) || 0) + e.count);
   });
@@ -2888,14 +2889,21 @@ function levelBefore(values, j){
   let k = j - 1; while (k >= 0 && values[k] == null) k--;
   return k >= 0 ? values[k] : null;
 }
-// Whose removals scale line `s`: its own company's, for a company's line or any line inside one
-// company's view; none for a line summing several companies (its parts scale, summedPicks).
-function dupRatiosFor(s){
-  if (!s || trendUnit === 'share' || !trendData) return new Map();
+// The one company line `s` counts: its own, for a company's line, a company's part of a
+// summed line, or any line inside one company's view; null for a line summing several (its
+// parts are each one company's, summedPicks).
+function lineCompany(s){
+  if (!s || !trendData) return null;
+  if (s.company) return s.company;
   // (The drill by company is a `split: 'company'` view too.)
-  if (s.pick || (VIEWS[viewKind(trendData)].split === 'company' && trendPicks.some(p => p.key === s.name))) return dupRatios(s.name);
-  if (trendPicks.length === 1 && !summedPicks(s)) return dupRatios(trendPicks[0].key);
-  return new Map();
+  if (s.pick || (VIEWS[viewKind(trendData)].split === 'company' && trendPicks.some(p => p.key === s.name))) return s.name;
+  if (trendPicks.length === 1 && !summedPicks(s)) return trendPicks[0].key;
+  return null;
+}
+// Whose removals scale line `s`: its own company's (lineCompany).
+function dupRatiosFor(s){
+  const key = trendUnit === 'share' ? null : lineCompany(s);
+  return key ? dupRatios(key) : new Map();
 }
 
 function netOfSteps(levels, s, only, omit){
@@ -2968,11 +2976,18 @@ function netOfSteps(levels, s, only, omit){
 // whole jump keeps the run's ordinary hiring in the line.
 // A line that is a whole company's tech openings under All openings: the Total, or a company's
 // line at the top level. Only these can take out a step whose size is known per company.
-// Each pick's own line, when `s` sums several (the Space's `pick_series`), else null.
+// Each pick's own part of `s` when it sums several (the Space's `pick_series` for the Total,
+// `pick_parts` for a category or level), else null. A category took the removals of no
+// company: NVIDIA and Micron's categories summed +73 against a Total of +40 (review of #690).
 function summedPicks(s){
   const d = trendData;
-  if (!s || s.pick || s.name !== '__total__' || !d || !d.pick_series || Object.keys(d.pick_series).length < 2) return null;
-  return Object.entries(d.pick_series).map(([name, points]) => ({ name, points, pick: true }));
+  if (!s || s.pick || s.company || !d) return null;
+  if (s.name === '__total__')
+    return d.pick_series && Object.keys(d.pick_series).length >= 2
+      ? Object.entries(d.pick_series).map(([name, points]) => ({ name, points, pick: true })) : null;
+  const parts = d.pick_parts && d.pick_parts[s.name];
+  return parts && Object.keys(parts).length >= 2
+    ? Object.entries(parts).map(([company, points]) => ({ name: s.name, company, points })) : null;
 }
 function isWholeLine(s){
   // Never inside a category: a drill's summed line is one category, which a whole company's
@@ -3045,7 +3060,9 @@ function stepsFor(s, omit){
     .filter(n => n.withhold && !(n.wholeOnly && !whole)
       && !(n.bandsOnly && (!s || s.name === '__total__' || s.pick))   // a pick's line is its total
       && !(perCompany && ((n.company && s.name !== n.company)
-      || (n.companies && !n.companies.includes(s.name)))));
+      || (n.companies && !n.companies.includes(s.name))))
+      && !(s && s.company && ((n.company && n.company !== s.company)
+      || (n.companies && !n.companies.includes(s.company)))));
 }
 
 // "Aug 12 09:00" from an ISO stamp — enough to anchor the axis without a timezone lecture.
@@ -4062,7 +4079,7 @@ function changeSizeExact(n, s){
   // against a refit that took the whole run out anyway); any other change is its jump at the
   // scale the removals after it leave (Sep 17's filter change counts half at Micron).
   const dups = dupRatiosFor(s);
-  if (n.evicted && dups.has(n.i) && stepsFor(s).includes(n)){
+  if (n.evicted && dups.has(n.i) && n.company === lineCompany(s)){
     const onlyDups = new Set(['duplicates']);
     const moveOf = omit => { const e = headTail(netOfSteps(s.points, s, onlyDups, omit)); return e ? e.tail - e.head : 0; };
     return moveOf(n) - moveOf(null);

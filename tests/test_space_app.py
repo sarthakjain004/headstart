@@ -25,7 +25,7 @@ import sys
 import types
 from contextlib import contextmanager
 from dataclasses import replace
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from urllib.parse import quote
 
@@ -3138,6 +3138,27 @@ def test_a_view_summing_picks_carries_each_picks_own_line(company_trends):
     assert one["pick_series"] == {}, "one pick is its own sum"
 
 
+def test_a_category_summing_picks_carries_each_picks_own_part(company_trends):
+    """NVIDIA and Micron's categories summed +73 against their Total of +40: a category took no
+    company's duplicate removals. Each pick's part of every category lets the page scale a
+    company's part by its own removals, and the parts are the category."""
+    d = company_trends.get(
+        "/trends?company=workday:hpe/a&company=eightfold:citi.eightfold.ai"
+    ).get_json()
+    lines = {s["name"]: s["points"] for s in d["series"]}
+    assert set(d["pick_parts"]) == set(lines)
+    for name, parts in d["pick_parts"].items():
+        for j, v in enumerate(lines[name]):
+            got = [p[j] for p in parts.values() if p[j] is not None]
+            assert sum(got) == (v or 0), (name, j)
+        for company, part in parts.items():
+            # 0 wherever its company is counted: a first opening there is hiring, not a join.
+            for v, whole in zip(part, d["pick_series"][company]):
+                assert (v is None) == (whole is None), (name, company)
+    one = company_trends.get("/trends?company=workday:hpe/a").get_json()
+    assert one["pick_parts"] == {}
+
+
 def _with_turnover(trends_app, monkeypatch, rows: list[dict]) -> None:
     """The fixture's ledger plus turnover rows (ADR-0227), loaded as the Space loads them."""
     deltas = trends_app._TREND_DELTAS + rows
@@ -3407,6 +3428,28 @@ def test_the_index_scope_is_worked_out_once_and_answers_the_same(
     client.get("/trends")
     key = trends_app._index_scope_key(None, None, [], None)
     assert trends_app._INDEX_SCOPES[key][0] is trends_app._TRENDS
+
+
+def test_a_window_is_one_scope_whatever_instant_inside_a_run_gap_asks(
+    trends_app, monkeypatch
+):
+    """The 7/30/90-day presets ask for now − N to the second, so keyed on the instant no two
+    requests ever met the memo. Keyed on the runs a window holds, they do."""
+    monkeypatch.setattr(trends_app, "_INDEX_SCOPES", {})
+    stamps = sorted({r["ts"] for r in trends_app._TRENDS})
+    assert len(stamps) >= 3
+    at = datetime.fromisoformat(stamps[1])
+    early, late = (
+        (at - timedelta(seconds=s)).isoformat(timespec="seconds") for s in (2, 1)
+    )
+    assert stamps[0] < early < late < stamps[1]
+    client = trends_app.app.test_client()
+    first = client.get("/trends", query_string={"since": early}).get_json()
+    assert client.get("/trends", query_string={"since": late}).get_json() == first
+    assert len(trends_app._INDEX_SCOPES) == 1
+    # A bound that leaves out no run is no bound: the whole ledger's scope.
+    key = trends_app._index_scope_key(stamps[0], stamps[-1], [], None)
+    assert key == trends_app._index_scope_key(None, None, [], None)
 
 
 def test_the_index_default_is_worked_out_at_load_under_the_requests_own_key(trends_app):

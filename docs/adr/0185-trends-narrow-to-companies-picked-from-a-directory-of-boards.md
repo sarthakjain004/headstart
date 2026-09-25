@@ -964,3 +964,10 @@ and **simplify** (2026-09-25):
 - **Smaller:** the refused pick's chart clears before the retry; the index's whole-ledger passes
   are worked out once per scope (warm: 0.65 s, from 2.6 s, locally) and its default view at load;
   link values read case-blind; a multi-Board Hot note gives the line's own figure.
+- **Review of #690:** with several picks, the Space also sends each pick's part of every
+  category and level (`pick_parts`), and a category nets and scales part by part, as the Total
+  does: NVIDIA and Micron's categories summed +73 against their Total of +40, and now +37 (the
+  rest is rounding). Inside a category a company's removal is sized in "Marked changes", so the
+  NVIDIA Hardware list sums to its sentence (−1,988). The index scope is keyed on the runs a
+  window holds, so the 7/30/90-day presets reuse it; removals under five openings scale nothing,
+  as they mark nothing.

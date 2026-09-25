@@ -2720,6 +2720,53 @@ test('a change settling on a removal’s run is sized at that run’s own scale'
   assert.match(list, /tech filter changed — Micron \+150 openings/);
 });
 
+test('with several picks each category scales by its own companies’ removals and they add up to the Total', () => {
+  const { t, nodes } = loadApp();
+  const MICRON = { key: 'eightfold:micron', label: 'Micron', boardKeys: ['eightfold:micron'] };
+  t.setPicks([ACME, MICRON]);
+  // Micron listed every job twice until half its list is removed at [2]; Acme is counted once.
+  const parts = { a: { [ACME.key]: [100, 100, 110, 110], [MICRON.key]: [1200, 1300, 650, 660] },
+                  b: { [ACME.key]: [50, 50, 50, 60], [MICRON.key]: [800, 800, 400, 400] } };
+  const sum = xs => xs[0].map((_, j) => xs.reduce((a, x) => a + x[j], 0));
+  const whole = key => sum([parts.a[key], parts.b[key]]);
+  t.set({ ...picked({}, [{ key: ACME.key, label: 'Acme' }, { key: MICRON.key, label: 'Micron' }]),
+    stamps: FOUR, totals: [1e4, 1e4, 1e4, 1e4], non_tech: [0, 0, 0, 0],
+    series: Object.entries(parts).map(([name, p]) => { const points = sum(Object.values(p)); return { name, label: name, points, latest: points[3] }; }),
+    pick_series: { [ACME.key]: whole(ACME.key), [MICRON.key]: whole(MICRON.key) }, pick_parts: parts,
+    company_totals: { [ACME.key]: whole(ACME.key), [MICRON.key]: whole(MICRON.key) },
+    counted_since: { [ACME.key]: FOUR[0], [MICRON.key]: FOUR[0] },
+    evicted: [{ ts: FOUR[2], company: MICRON.key, count: 1050 }] });
+  t.setUnit('count', false);
+  t.draw();
+  nodes['trends-error'] = Object.assign(fakeEl(), { hidden: true });
+  t.table(true);
+  const cells = name => nodes['trends-table'].innerHTML.split('</tr>').find(r => r.includes(`>${name}<`));
+  // Acme +10 in each; Micron's 50 + 10 real hires all in a. Unscaled, a read +120.
+  assert.match(cells('All tech roles'), /<td class="up">\+80 openings<\/td>/);
+  assert.match(cells('a'), /<td class="up">\+70 openings<\/td>/);
+  assert.match(cells('b'), /<td class="up">\+10 openings<\/td>/);
+});
+
+test('inside a category the marked removal is sized, so the list sums to the sentence', () => {
+  const { t, nodes } = loadApp();
+  const key = 'eightfold:micron';
+  t.setPicks([{ key, label: 'Micron', boardKeys: [key] }]);
+  const mid = [1200, 1300, 650, 660], senior = [800, 800, 400, 400];
+  const whole = mid.map((v, j) => v + senior[j]);
+  t.set({ ...picked({}, [{ key, label: 'Micron' }]), split_by: 'band', stamps: FOUR,
+    totals: [1e4, 1e4, 1e4, 1e4], non_tech: [0, 0, 0, 0],
+    series: [{ name: 'mid', label: 'Mid', points: mid, latest: 660 }, { name: 'senior', label: 'Senior', points: senior, latest: 400 }],
+    company_totals: { [key]: whole }, counted_since: { [key]: FOUR[0] },
+    evicted: [{ ts: FOUR[2], company: key, count: 1050 }] }, 'ai-ml');
+  t.setUnit('count', false);
+  t.draw();
+  const list = nodes['trends-changes'].innerHTML;
+  const said = nodes['trends-verdict'].innerHTML.match(/Not hiring: ([−+][\d,]+) opening/);
+  assert.ok(said, nodes['trends-verdict'].innerHTML);
+  const total = [...list.matchAll(/— Micron, ai-ml ([−+][\d,]+) opening/g)].reduce((a, m) => a + Number(m[1].replace('−', '-').replace(',', '')), 0);
+  assert.equal(total, Number(said[1].replace('−', '-').replace(',', '')), list);
+});
+
 test('a refused pick takes its chart and sentence with it', async () => {
   const { t, ctx, nodes } = loadApp();
   t.setPicks([ACME]);
