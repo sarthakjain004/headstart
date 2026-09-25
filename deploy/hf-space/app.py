@@ -292,10 +292,28 @@ def _family_weights(rows: list[dict]) -> Counter[str]:
     return weights
 
 
-#: `_trend_scope` results for the index (no pick, All coverage), by the scope asked and the
-#: identity of the data it reads: the ledger is fixed until the next restart.
+#: `_trend_scope` results for the index (no pick, All coverage), by the scope asked: the
+#: ledger is fixed until the next restart. Each holds the ledger it was built from, and is used
+#: only while that is still the ledger in memory — an id alone can be reused once freed.
 _INDEX_SCOPES: dict[tuple, tuple] = {}
 _INDEX_SCOPES_KEPT = 16
+
+
+def _index_scope_key(since, until, ats, family) -> tuple:
+    """The one spelling of an index scope, for the warm-up at load and every request."""
+    return (since, until, tuple(sorted(ats)), family)
+
+
+def _index_scope(trends_rows: list[dict], key: tuple, family: str | None) -> tuple:
+    """`_trend_scope` for the index, from memory when this ledger's scope is already worked out."""
+    held = _INDEX_SCOPES.get(key)
+    if held is not None and held[0] is _TRENDS and held[1] is _FAMILY_SUCCESSOR:
+        return held[2]
+    scope = _trend_scope(trends_rows, family)
+    if len(_INDEX_SCOPES) >= _INDEX_SCOPES_KEPT and key not in _INDEX_SCOPES:
+        _INDEX_SCOPES.pop(next(iter(_INDEX_SCOPES)))
+    _INDEX_SCOPES[key] = (_TRENDS, _FAMILY_SUCCESSOR, scope)
+    return scope
 
 
 def _trend_scope(trends_rows: list[dict], family: str | None) -> tuple:
@@ -497,9 +515,7 @@ _EVICTIONS = _load_evictions(_STATE / "data" / "state" / "dedup_evictions.csv")
 _TRENDS = _stitch_versions(_TRENDS)
 # The index's default view (every run, every source, no family) worked out at load, so the first
 # reader of the tab does not wait the whole-ledger passes out.
-_INDEX_SCOPES[(id(_TRENDS), id(_FAMILY_SUCCESSOR), None, None, (), None)] = (
-    _trend_scope(_TRENDS, None)
-)
+_index_scope(_TRENDS, _index_scope_key(None, None, [], None), None)
 _TREND_DELTAS = _load_board_deltas(
     _STATE / "data" / "state" / "role_trend_board_deltas"
 )
@@ -1865,18 +1881,11 @@ def trends():
     # non-tech, the family weights and the retired-name rename — is one step (_trend_scope),
     # computed once per scope for the whole index: over ~2.5M ledger rows it was most of an
     # index request's 3 s locally and 8–10 s on the Space (critic round 15).
-    scope_key = (
-        (id(_TRENDS), id(_FAMILY_SUCCESSOR), since, until, tuple(sorted(ats)), family)
+    scope = (
+        _index_scope(trends_rows, _index_scope_key(since, until, ats, family), family)
         if company_of is None and coverage == "all"
-        else None
+        else _trend_scope(trends_rows, family)
     )
-    scope = _INDEX_SCOPES.get(scope_key) if scope_key else None
-    if scope is None:
-        scope = _trend_scope(trends_rows, family)
-        if scope_key:
-            if len(_INDEX_SCOPES) >= _INDEX_SCOPES_KEPT:
-                _INDEX_SCOPES.pop(next(iter(_INDEX_SCOPES)))
-            _INDEX_SCOPES[scope_key] = scope
     trends_rows, stock, stamps, totals, non_tech, present, rename = scope
     family = _resolve_family(family, present)
 

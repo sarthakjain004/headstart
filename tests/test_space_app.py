@@ -3401,3 +3401,16 @@ def test_the_index_scope_is_worked_out_once_and_answers_the_same(
     assert client.get("/trends").get_json() == first
     client.get("/trends?company=workday:hpe/a")
     assert len(trends_app._INDEX_SCOPES) == 1, "a pick's scope is never kept"
+    # A new ledger in memory never reads the old one's scope, whatever ids it is given: the
+    # entry is rebuilt from, and holds, the ledger now in memory.
+    monkeypatch.setattr(trends_app, "_TRENDS", list(trends_app._TRENDS))
+    client.get("/trends")
+    key = trends_app._index_scope_key(None, None, [], None)
+    assert trends_app._INDEX_SCOPES[key][0] is trends_app._TRENDS
+
+
+def test_the_index_default_is_worked_out_at_load_under_the_requests_own_key(trends_app):
+    """The warm-up and a request spell the scope once (`_index_scope_key`), so the first reader
+    of the tab after a restart reads it from memory rather than missing it."""
+    key = trends_app._index_scope_key(None, None, [], None)
+    assert key in trends_app._INDEX_SCOPES
