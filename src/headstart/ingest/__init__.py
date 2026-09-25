@@ -60,8 +60,8 @@ here, and ``alerts`` is not the feed::
     shard_speedup  The measured fan-out speedup the makespan divides by (ADR-0054)
 
 Shared logic the curated feed also reaches stays outside this package — the scrape engine
-``scrapers.harvest`` and the Board-cost ledger ``boards.cost_ledger`` (ADR-0232) — because the
-pipeline must not become a dependency of ``python -m headstart``.
+``scrapers.harvest`` and the ``boards`` modules it reads (ADR-0232) — because the pipeline must
+not become a dependency of ``python -m headstart``.
 """
 
 from __future__ import annotations

@@ -175,7 +175,7 @@ Enumerating one pair in full (38 pages, every posting, zero duplicate ids) gave 
 **16.1% shared**, not 0%.
 
 **The rule it nearly justified was wrong for a second, independent reason**, and the repo had
-already written that one down. `company_ref.py`'s `EXCLUDED_BOARDS` says:
+already written that one down. `config.py`'s `EXCLUDED_BOARDS` says:
 
 > Every entry was confirmed by READING that Board's own postings, never from the shape of its slug.
 > That distinction is the whole point: a slug-pattern rule would also have dropped
@@ -201,7 +201,7 @@ moment the finding got written up.
 
 **3. Grep the repo for the rule before inventing one.** The content-over-slug standard, the
 counter-examples, and a decision on one of the exact hosts in question were all already in
-`company_ref.py`. The review proposed the rule that comment exists to forbid.
+`config.py`. The review proposed the rule that comment exists to forbid.
 
 Corrected in `docs/pipeline/2026-09-10_five-run-log-review.md` §4. What survived is narrower and
 differently shaped: those boards are genuinely staler (median posting age 233 days against 7 on a

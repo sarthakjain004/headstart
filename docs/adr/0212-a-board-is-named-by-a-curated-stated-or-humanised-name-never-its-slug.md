@@ -111,6 +111,6 @@ facet naming 734 of 796 hosts.
 - `board_identity.tenant` accepts only `http(s)://` while `company_name.without_scheme` strips any
   scheme. They stay two rules: `tenant` decides directory grouping, and changing it regroups
   companies, which is outside this change.
-- Fifteen test Boards found by the research go to `config.EXCLUDED_BOARDS`, each read live on
+- Fifteen test Boards found by the research go to `excluded_and_parked.EXCLUDED_BOARDS`, each read live on
   2026-09-25: BambooHR `implementation` and `whitmansandbox`, four Gem integration sandboxes,
   Jobvite `halogen-customer-support`, and eight SAP SuccessFactors demo tenants `ace19xx`.

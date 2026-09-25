@@ -211,7 +211,7 @@ _ALLOWED: dict[str, str] = {
         "Bounded by `log.FirstOnly` to the FIRST non-transport Board failure per run (the rest "
         "log at INFO). A parse break is systemic — `KeyError: 'title'` raises on every Board of "
         "an ATS — so one stack and one annotation say what broke while `errors` says how far it "
-        "reached. Same helper as company_ref.py's board_identity and index_plan.py's keep-set guard."
+        "reached. Same helper as board_identity.py's board_identity and index_plan.py's keep-set guard."
     ),
     "scrapers/base.py:<module>": (
         "`_UNEXPECTED`, the module-level `log.FirstOnly` that `fan_out`'s and `_gather_async`'s "

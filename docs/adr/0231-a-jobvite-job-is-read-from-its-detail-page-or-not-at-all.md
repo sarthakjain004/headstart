@@ -48,7 +48,7 @@ into reading the page:
 * The fallback heading match takes `jv-header` as one class among others, at any heading level,
   closed at the same level. Each page measured carries one `jv-header` heading, and it is the
   title.
-* `jobvite:blackbear` joins `config.EXCLUDED_BOARDS` with the other vendor demos.
+* `jobvite:blackbear` joins `excluded_and_parked.EXCLUDED_BOARDS` with the other vendor demos.
 
 Measured across the whole live pool before shipping (2026-09-25): every one of the ledger's 1,079
 live Jobvite rows, up to three listed ids each, each page fetched and parsed both ways, the

@@ -72,7 +72,7 @@ rule says to re-run after *every* refresh. A newly opened section is already bou
 way: nothing finds it until the next ledger refresh.
 
 `pmg.taleo.net`, Oracle's own demo tenant ("Director of Finance (DEMO)", "TEST 2 EPredix
-Assessment", read 2026-09-24), is added to `config.EXCLUDED_BOARDS`, all four of its sections.
+Assessment", read 2026-09-24), is added to `excluded_and_parked.EXCLUDED_BOARDS`, all four of its sections.
 
 ## Evidence
 

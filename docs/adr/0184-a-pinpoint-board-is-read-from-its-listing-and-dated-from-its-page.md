@@ -67,7 +67,7 @@ date it reads does not exist on any of 13,419 listing rows.
    was clean.
 
 6. **It ships active.** The committed ledger holds 1,477 rows: 827 live, 648 dead, 2 unknown.
-   After six confirmed test tenants go into `config.EXCLUDED_BOARDS`, 674 Hiring Boards remain,
+   After six confirmed test tenants go into `excluded_and_parked.EXCLUDED_BOARDS`, 674 Hiring Boards remain,
    with 18,449 postings. A full walk is 140.7 MB of listings plus 2,234 tech pages × 131.9 KB
    (294.7 MB). That is **~435 MB for 2,234 tech Jobs, ~195 KB per tech Job**, about a tenth of
    ADR-0158's ~2 MB bar.

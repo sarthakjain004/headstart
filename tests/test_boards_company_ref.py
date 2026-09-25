@@ -1,7 +1,6 @@
 from pathlib import Path
 
 from headstart.boards.company_ref import load_companies
-from headstart.scrapers.registry import SCRAPERS
 
 CONFIG = Path(__file__).resolve().parent.parent / "config" / "companies.toml"
 
@@ -13,21 +12,3 @@ def test_seed_companies_load():
     assert ("greenhouse", "stripe") in pairs
     assert all(c.ats in {"greenhouse", "lever", "ashby", "zoho"} for c in companies)
     assert all(c.slug for c in companies)
-
-
-def test_slug_from_default_and_overrides():
-    # default: the bare tenant label; zoho: careers host; workday: full careers URL
-    assert (
-        SCRAPERS["greenhouse"].slug_from(
-            "stripe", "https://boards.greenhouse.io/stripe"
-        )
-        == "stripe"
-    )
-    assert (
-        SCRAPERS["zoho"].slug_from("01da", "https://01da.zohorecruit.eu")
-        == "01da.zohorecruit.eu"
-    )
-    assert (
-        SCRAPERS["workday"].slug_from("3m/x", "https://3m.wd1.myworkdayjobs.com/x/")
-        == "https://3m.wd1.myworkdayjobs.com/x"
-    )

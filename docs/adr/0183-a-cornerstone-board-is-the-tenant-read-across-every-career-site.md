@@ -55,7 +55,7 @@ requisition is often posted to several of them.
    544 Hiring Boards have a slug of four characters or fewer, some recognisable (`bbva`, `otis`,
    `iata`, `upmc`) and many not — listed in full under Consequences.
 7. **It lands active.** The ledger holds 544 Hiring Boards and 54,838 postings once seven vendor
-   demo/sandbox corps (379 postings) go to `config.EXCLUDED_BOARDS`. A run fetches the listing for
+   demo/sandbox corps (379 postings) go to `excluded_and_parked.EXCLUDED_BOARDS`. A run fetches the listing for
    every posting (~2.1 KB each: 2,106,187 bytes for a 1,000-row page) and a job ad only for the
    tech ones (p50 8.2 KB, mean 10.0 KB). At 6.7% tech that is ~3,674 tech Jobs for listings of
    54,838 × 2.1 KB ≈ 115 MB, ads of 3,674 × 10.0 KB ≈ 37 MB, and pages and site answers of 544

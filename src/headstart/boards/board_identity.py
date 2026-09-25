@@ -1,9 +1,9 @@
 """Which Board does this belong to — the one place that answers it, in both directions.
 
 Before this module the answer was reimplemented independently at five call sites
-(:mod:`headstart.boards.company_ref`, :mod:`headstart.ingest.board_failures`,
+(:mod:`headstart.config`, :mod:`headstart.ingest.board_failures`,
 :mod:`headstart.ingest.scrape_join`, :mod:`headstart.ingest.index_plan`,
-:mod:`headstart.scrapers.harvest`), with three different policies for what to do when a slug won't parse
+:mod:`headstart.harvest`), with three different policies for what to do when a slug won't parse
 — a silent fallback key, a dropped-and-``None``, and a dropped-and-warned. That divergence was
 never a design choice; it was five people solving the same problem without a shared name for it.
 Two directions, both here:

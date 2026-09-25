@@ -2,7 +2,8 @@
 
 **Status:** accepted · **Date:** 2026-09-26 · **Supersedes in part:**
 [ADR-0232](0232-the-shared-library-is-grouped-into-packages-by-the-question-each-module-answers.md)
-(two rows of its `boards/` table)
+(two rows of its `boards/` table, and its test naming for a module moving into a package that
+already exists)
 
 ## Context
 
@@ -22,6 +23,11 @@ both planned names in that trap:
 Both move into `boards/` under their own names: `boards/board_identity.py` (ADR-0155's "board
 identity") and `boards/scrapable_boards.py` (CONTEXT.md's **Scrapable Board**). The rest of the
 `boards/` table stands.
+
+A module moving into a package that already exists takes that package's test naming: `alerts/`
+names its tests `test_alerts_{module}.py`, so `telegram_bot_api`'s become
+`test_alerts_telegram_bot_api.py`, while `ingest/` and `scrapers/` name theirs after the bare module
+(`test_scrape_plan.py`, `test_adp.py`), so `test_corpus.py` and `test_harvest.py` keep their names.
 
 ## Consequences
 

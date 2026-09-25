@@ -11,7 +11,7 @@
 · **Superseded in part by:** [ADR-0235](0235-where-the-package-layout-keeps-a-name-and-what-its-rewrites-leave-alone.md)
 (the names of `tech_filter`, the four Search-filter modules and the serving path, and the text a
 rewrite leaves alone) and [ADR-0236](0236-board-identity-and-scrapable-boards-keep-their-names-inside-boards.md)
-(`board_identity` and `scrapable_boards` keep their names)
+(`board_identity` and `scrapable_boards` keep their names; test naming in existing packages)
 
 ## Context
 

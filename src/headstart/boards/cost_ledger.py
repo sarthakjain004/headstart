@@ -79,7 +79,7 @@ def shard_row(
     return f"{board_key},{seconds:.3f},{jobs},{int(unfinished)},{int(errored)}\n"
 
 
-# EWMA weight on this run's seconds. Lower than board_priority's 0.7 because wall time carries
+# EWMA weight on this run's seconds. Lower than priority_ledger's 0.7 because wall time carries
 # runner and network noise a tech-job count doesn't; this is the knob if shards still straggle.
 CURRENT_WEIGHT = 0.5
 FALLBACK_SECONDS = 5.0  # last resort: no measurement anywhere, not even for the ATS
