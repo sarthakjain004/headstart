@@ -17,7 +17,7 @@ import json
 import os
 import threading
 import time
-from bisect import bisect_left
+from bisect import bisect_left, bisect_right
 from collections import Counter, defaultdict
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
@@ -292,6 +292,85 @@ def _family_weights(rows: list[dict]) -> Counter[str]:
     return weights
 
 
+#: `_trend_scope` results for the index (no pick, All coverage), by the scope asked: the
+#: ledger is fixed until the next restart. Each holds the ledger it was built from, and is used
+#: only while that is still the ledger in memory — an id alone can be reused once freed.
+_INDEX_SCOPES: dict[tuple, tuple] = {}
+_INDEX_SCOPES_KEPT = 16
+
+
+_LEDGER_STAMPS: tuple = (None, [])
+
+
+def _index_scope_key(since, until, ats, family) -> tuple:
+    """The one spelling of an index scope, for the warm-up at load and every request.
+
+    A window is spelled by the ledger runs it holds, not the instants asked: the 7/30/90-day
+    presets ask for now − N to the second, so keyed on the instant no two requests ever met
+    (review of #690). A bound past every run is no bound."""
+    global _LEDGER_STAMPS
+    if _LEDGER_STAMPS[0] is not _TRENDS:
+        _LEDGER_STAMPS = (_TRENDS, sorted({r["ts"] for r in _TRENDS}))
+    stamps = _LEDGER_STAMPS[1]
+    if since is not None:
+        at = bisect_left(stamps, since)
+        since = None if at == 0 else stamps[at] if at < len(stamps) else since
+    if until is not None:
+        at = bisect_right(stamps, until)
+        until = None if at == len(stamps) else stamps[at - 1] if at else until
+    return (since, until, tuple(sorted(ats)), family)
+
+
+def _index_scope(trends_rows: list[dict], key: tuple, family: str | None) -> tuple:
+    """`_trend_scope` for the index, from memory when this ledger's scope is already worked out."""
+    held = _INDEX_SCOPES.get(key)
+    if held is not None and held[0] is _TRENDS and held[1] is _FAMILY_SUCCESSOR:
+        return held[2]
+    scope = _trend_scope(trends_rows, family)
+    if len(_INDEX_SCOPES) >= _INDEX_SCOPES_KEPT and key not in _INDEX_SCOPES:
+        _INDEX_SCOPES.pop(next(iter(_INDEX_SCOPES)))
+    _INDEX_SCOPES[key] = (_TRENDS, _FAMILY_SUCCESSOR, scope)
+    return scope
+
+
+def _trend_scope(trends_rows: list[dict], family: str | None) -> tuple:
+    """The scope's rows with retired families renamed, and what every view reads off them:
+    ``(rows, stock, stamps, totals, non_tech, present, rename)``."""
+    stock = [r for r in trends_rows if r["metric"] == "stock"]
+    stamps = sorted({r["ts"] for r in stock})
+    totals: dict[str, int] = {}
+    non_tech: dict[str, int] = {}
+    for r in stock:
+        if not r["family"].startswith(_WATCH_PREFIX):  # watch rows re-count family rows
+            totals[r["ts"]] = totals.get(r["ts"], 0) + r["count"]
+        if r["family"] == _NON_TECH:
+            non_tech[r["ts"]] = non_tech.get(r["ts"], 0) + r["count"]
+    # Families by the names the data holds (ADR-0220). A retired family reads as its v3
+    # successor wherever the successor has data in this scope, so a window spanning the switch
+    # draws one line — "AI / Machine Learning" becoming "AI, ML & Data Science" — not two that
+    # stop and start. Weighed in openings, so "the larger" means more jobs, not more rows.
+    present = _family_weights(trends_rows)
+    rename = {old: new for old, new in _FAMILY_SUCCESSOR.items() if new in present}
+    # A v3 name asked for before its data lands reads as all of its predecessors together:
+    # "AI, ML & Data Science" is AI / Machine Learning and Data Science, and reading it as the
+    # larger alone dropped Data Science's 58 at Google without a word.
+    if family and family not in present:
+        rename.update(
+            {
+                old: family
+                for old in _predecessors(family, _FAMILY_SUCCESSOR)
+                if old in present
+            }
+        )
+    if rename.keys() & present.keys():
+        trends_rows = [
+            {**r, "family": rename[r["family"]]} if r["family"] in rename else r
+            for r in trends_rows
+        ]
+        present = _family_weights(trends_rows)
+    return trends_rows, stock, stamps, totals, non_tech, present, rename
+
+
 def _predecessors(family: str, successors: dict[str, str]) -> list[str]:
     """The retired families whose successor is ``family`` (ADR-0220): one step, as the Trends
     rename takes it, so Search's category and the Trends line for it sum the same names."""
@@ -451,6 +530,9 @@ _BAND_LABELS = {
 }
 _EVICTIONS = _load_evictions(_STATE / "data" / "state" / "dedup_evictions.csv")
 _TRENDS = _stitch_versions(_TRENDS)
+# The index's default view (every run, every source, no family) worked out at load, so the first
+# reader of the tab does not wait the whole-ledger passes out.
+_index_scope(_TRENDS, _index_scope_key(None, None, [], None), None)
 _TREND_DELTAS = _load_board_deltas(
     _STATE / "data" / "state" / "role_trend_board_deltas"
 )
@@ -1812,38 +1894,16 @@ def trends():
     # count_board_groups assigns every row exactly once, which is what makes share
     # coverage-immune — an index (or an ATS selection) that grew 1.5% overnight moves every
     # count but no share (ADR-0051, scope extended to ATS by ADR-0075).
-    stock = [r for r in trends_rows if r["metric"] == "stock"]
-    stamps = sorted({r["ts"] for r in stock})
-    totals: dict[str, int] = {}
-    for r in stock:
-        if not r["family"].startswith(_WATCH_PREFIX):  # watch rows re-count family rows
-            totals[r["ts"]] = totals.get(r["ts"], 0) + r["count"]
-
-    # A family asked for by a name the data does not hold — an old link after the v3 families
-    # (ADR-0220), or a new one before their data lands — reads as the name it does hold.
-    # Families by the names the data holds (ADR-0220). A retired family reads as its v3
-    # successor wherever the successor has data in this scope, so a window spanning the switch
-    # draws one line — "AI / Machine Learning" becoming "AI, ML & Data Science" — not two that
-    # stop and start. Weighed in openings, so "the larger" means more jobs, not more rows.
-    present = _family_weights(trends_rows)
-    rename = {old: new for old, new in _FAMILY_SUCCESSOR.items() if new in present}
-    # A v3 name asked for before its data lands reads as all of its predecessors together:
-    # "AI, ML & Data Science" is AI / Machine Learning and Data Science, and reading it as the
-    # larger alone dropped Data Science's 58 at Google without a word.
-    if family and family not in present:
-        rename.update(
-            {
-                old: family
-                for old in _predecessors(family, _FAMILY_SUCCESSOR)
-                if old in present
-            }
-        )
-    if rename.keys() & present.keys():
-        trends_rows = [
-            {**r, "family": rename[r["family"]]} if r["family"] in rename else r
-            for r in trends_rows
-        ]
-        present = _family_weights(trends_rows)
+    # Every pass over the scope's rows that a pick does not change — the share denominator,
+    # non-tech, the family weights and the retired-name rename — is one step (_trend_scope),
+    # computed once per scope for the whole index: over ~2.5M ledger rows it was most of an
+    # index request's 3 s locally and 8–10 s on the Space (critic round 15).
+    scope = (
+        _index_scope(trends_rows, _index_scope_key(since, until, ats, family), family)
+        if company_of is None and coverage == "all"
+        else _trend_scope(trends_rows, family)
+    )
+    trends_rows, stock, stamps, totals, non_tech, present, rename = scope
     family = _resolve_family(family, present)
 
     # A watched role's parent as the data holds it: its v3 parent, or while that has no data,
@@ -1985,29 +2045,45 @@ def trends():
     # out of that company's part of the sum only: summed whole, five companies' Total read +362
     # of hiring where their Company breakdown summed to +306 (2026-09-25).
     pick_series: dict[str, list[int | None]] = {}
+    # And each pick's part of every category or level line, so a company's steps and duplicate
+    # removals come out of its own part of a category too: without them NVIDIA and Micron's
+    # categories summed +73 against their Total of +40 (review of #690).
+    pick_parts: dict[str, dict[str, list[int | None]]] = {}
     if len(picked_keys) > 1 and key != "company" and not (family and split == "roles"):
-        per: dict[str, dict[str, int]] = {}
-        for r in rows:
-            at = per.setdefault(r["company"], {})
-            at[r["ts"]] = at.get(r["ts"], 0) + r["count"]
-        pick_series = {
-            k: _held_at_zero(
+
+        def pick_line(points: dict[str, int], k: str) -> list[int | None]:
+            return _held_at_zero(
                 [
                     value_at(points, ts, new_from.get(k) if metric == "new" else None)
                     for ts in stamps
                 ],
                 metric,
             )
-            for k, points in per.items()
+
+        per: dict[str, dict[str, int]] = {}
+        per_part: dict[str, dict[str, dict[str, int]]] = {}
+        for r in rows:
+            at = per.setdefault(r["company"], {})
+            at[r["ts"]] = at.get(r["ts"], 0) + r["count"]
+            at = per_part.setdefault(r[key], {}).setdefault(r["company"], {})
+            at[r["ts"]] = at.get(r["ts"], 0) + r["count"]
+        pick_series = {k: pick_line(points, k) for k, points in per.items()}
+        # A part is 0, not unmeasured, wherever its company is counted: a company's first AI/ML
+        # opening is hiring, where a company's own first run is a join.
+        pick_parts = {
+            name: {
+                k: [
+                    0 if v is None and whole is not None else v
+                    for v, whole in zip(pick_line(points, k), pick_series[k])
+                ]
+                for k, points in parts.items()
+            }
+            for name, parts in per_part.items()
         }
-    non_tech: dict[str, int] = {}
-    for row in stock:
-        if row["family"] == _NON_TECH:
-            non_tech[row["ts"]] = non_tech.get(row["ts"], 0) + row["count"]
     # Each pick's own denominator, so a line split by company is a share of *that* company.
     company_totals: dict[str, dict[str, int]] = {k: {} for k in picked_keys}
-    for row in stock:
-        if company_of and not row["family"].startswith(_WATCH_PREFIX):
+    for row in stock if company_of else ():
+        if not row["family"].startswith(_WATCH_PREFIX):
             at = company_totals[row["company"]]
             at[row["ts"]] = at.get(row["ts"], 0) + row["count"]
     # Boards of a pick found after its line began: each lands its tech openings at once, openings
@@ -2152,6 +2228,7 @@ def trends():
             for k in picked_keys
         ],
         pick_series=pick_series,
+        pick_parts=pick_parts,
         pick_turnover=pick_turnover,
         company_totals={
             k: [company_totals[k].get(ts) for ts in stamps] for k in picked_keys

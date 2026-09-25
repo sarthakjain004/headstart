@@ -873,7 +873,9 @@ counting change out by ratio, the company line by openings.
 
 - **Every line takes a counting change out by openings** — the user's choice (2026-09-25) of
   sums that add up over ratio-true percentages. A category a refit halved now reads its change
-  against the pre-refit base (Google's software engineering: −11.8% where ratio gave −5.3%).
+  against its history shifted down to the new counting, not the old base (Google's software
+  engineering: −41 on a shifted 346, −11.8%, where the old base of 626 gives −6.5%; the wording
+  here said "the pre-refit base" until critic round 15 caught it).
   Ratio remains only where a shift would erase a line's start. On the 2026-09-25 state,
   Micron's Between row fell from +98 to +8 and Google's is gone.
 - **Every line leaves out the same runs; whether a change moved a line decides only whether it
@@ -931,3 +933,42 @@ can size them.
 
 Handed to the gross-flows PR (#679), which rewrites `hot_boards`: Hot ranked a Board counted
 for two days second by its arrival.
+
+### A critic's fifteenth round (2026-09-25): 6/10
+
+The fourth round in a row at 5–6.5. Each round's fixes kept the sums whole, and each critic found a
+new place where two of the page's many readings of one change disagreed. The user chose to fix
+and **simplify** (2026-09-25):
+
+- **A duplicate removal scales the history before it** (`dupRatios`), by the company's served
+  jobs after over before, and its own run comes out whole. Every posting of a doubled Board,
+  and every hire, was counted twice before the removal: lifted, Micron's growth on its doubled
+  list stayed double (+160, "Biggest riser"); scaled it reads +83. The user's choice; refits and
+  filter changes still come out by openings. A category of one company scales by its company's
+  ratio, so categories still add up; a line summing several companies scales through each.
+- **"Marked changes" sizes each change on the company alone**, in the sentence's order: a
+  removal by what it does with only removals taken out, any other change at the scale the
+  removals after it leave, the entries of a line rounded together so they sum to its total.
+  On the 2026-09-25 state: Google +292, Micron −2,378 (−1,975 of it the removal), Stripe +6. A
+  change moving no line by a whole opening is not listed. Per-category sizes are gone: a
+  category sized beside its company read "NVIDIA −63, Hardware −2,138".
+- **The crosshair on a day's marker names every change that day**, each at its own time with the
+  company's size, as the list does; the per-row size in the tooltip is gone.
+- **A line's birth belongs only to the change on its own run** (or the run after), never to one
+  that reaches it across empty runs, and a company's first run is when counting began: Sep 17's
+  filter change claimed Stripe's Sep 24 "Web & .NET", and Zomato a phantom +2.
+- **The table's caption no longer apportions a gap**: with one rule on every line the rows add
+  up to the first but for rounding, and the apportioning sentence was unreadable.
+- **Words:** a category's % after a refit reads against its history shifted down to the new
+  counting, as the code always did (this ADR said "the pre-refit base"); Comparable says its
+  base moved only when the window starts before counting by board began.
+- **Smaller:** the refused pick's chart clears before the retry; the index's whole-ledger passes
+  are worked out once per scope (warm: 0.65 s, from 2.6 s, locally) and its default view at load;
+  link values read case-blind; a multi-Board Hot note gives the line's own figure.
+- **Review of #690:** with several picks, the Space also sends each pick's part of every
+  category and level (`pick_parts`), and a category nets and scales part by part, as the Total
+  does: NVIDIA and Micron's categories summed +73 against their Total of +40, and now +37 (the
+  rest is rounding). Inside a category a company's removal is sized in "Marked changes", so the
+  NVIDIA Hardware list sums to its sentence (−1,988). The index scope is keyed on the runs a
+  window holds, so the 7/30/90-day presets reuse it; removals under five openings scale nothing,
+  as they mark nothing.
