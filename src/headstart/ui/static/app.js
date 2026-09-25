@@ -1956,6 +1956,8 @@ function staleAfterHours(stamps){
   const median = gaps.length ? gaps[Math.floor(gaps.length / 2)] : 1;
   return Math.max(3, 4 * median);
 }
+// How many company sentences stand above the chart before the rest fold.
+const VERDICTS_SHOWN = 5;
 // Under this many days of measurements a line names no direction and no tile headlines it:
 // AMD, counted for a few hours, was "Biggest riser +0.1%".
 const MIN_SPAN_DAYS = 3;
@@ -1981,15 +1983,20 @@ function verdictOf(s, d){
   // counts" — the rest of the chart's move, by cause. It read "the chart's other +292 openings
   // came from outside hiring: +292 openings from…", twice the words for one figure, and
   // "outside hiring" read as hiring from outside.
-  const counting = other ? `; not hiring: ${causesOf(s, other)}` : '';
+  // Said on a line of its own, under the answer: 40 words of counting causes led every sentence
+  // and buried "is Google hiring more or fewer engineers" (critic round 14).
+  const detail = other ? `Not hiring: ${causesOf(s, other)}.` : '';
+  // The answer in a word or two, before any figure.
+  let lead;
   if (!m || days < MIN_SPAN_DAYS){
     const hours = Math.max(1, Math.round(days * 24));
     const span = days < 1.5 ? `over the last ${hours} hour${hours === 1 ? '' : 's'}` : over;
     // An older company with one run in the window has no change to give; it is the window
     // that is short, not the company that is new.
-    move = young ? 'too new to show a direction yet' + counting
-      : !m ? `this window is too short to call a direction${counting}`
-      : `${signedOpenings(Math.round(m.change))} ${span} — too short a window to call a direction${counting}`;
+    lead = young ? 'too new to tell' : 'too short a window to tell';
+    move = young ? 'too new to show a direction yet'
+      : !m ? 'this window is too short to call a direction'
+      : `${signedOpenings(Math.round(m.change))} ${span} — too short a window to call a direction`;
   }
   else {
     const n = Math.round(m.change), pct = m.head ? m.change / m.head * 100 : 0;
@@ -2003,15 +2010,15 @@ function verdictOf(s, d){
     move = m.real < MOVER_FLOOR ? (n ? `${signedOpenings(n)} ${over}, too few to call a trend` : `unchanged ${over}`)
       : Math.abs(shown(pct)) < FLAT_PCT ? `about flat ${over} (${pct < 0 ? '−' : '+'}${Math.abs(pct).toFixed(1)}%, ${count})`
       : `${pct > 0 ? 'up' : 'down'} ${Math.abs(pct).toFixed(1)}% ${over} (${count})`;
-    // The part of the chart's move that is not hiring, as the difference between the chart's
-    // own move and the hiring one, so the two figures add up to what the chart shows. Google's
-    // Count line climbed 1,540 → 1,802 under "about flat (+3 openings)" with only a footnote
-    // saying why.
-    // Under the floor too, or the parts stop adding up to the chart: Paytm's "−11" sat over a
-    // line that went 14 → 6.
-    move += counting;
+    const newer = trendMetric === 'new';
+    lead = m.real < MOVER_FLOOR ? (n > 0 ? 'a few more openings' : n < 0 ? 'a few fewer openings' : 'unchanged')
+      : Math.abs(shown(pct)) < FLAT_PCT ? 'holding steady'
+      : pct > 0 ? (newer ? 'opening more new roles' : 'growing') : (newer ? 'opening fewer new roles' : 'shrinking');
   }
-  return { text: `${now == null ? 'no' : Math.round(now).toLocaleString()} ${what}; ${move}.`, days };
+  // The part of the chart's move that is not hiring, as the difference between the chart's own
+  // move and the hiring one, so the two figures add up to what the chart shows (Google's Count
+  // line climbed 1,540 → 1,802 under "about flat (+3 openings)" with only a footnote saying why).
+  return { text: `${lead} — ${now == null ? 'no' : Math.round(now).toLocaleString()} ${what}; ${move}.`, detail, days };
 }
 function drawVerdict(d){
   const host = el('trends-verdict'); if (!host) return;
@@ -2035,17 +2042,13 @@ function drawVerdict(d){
     ? ` — too short to tell a trend from noise, so read this as an early sign.${month ? ` A month of counting arrives ${month}.` : ''}`
     : '; there is nothing before that.'}`;
   const tail = early ? `<p class="verdict-early">${esc(early)}</p>` : '';
-  // A few sentences, then the rest folded: four companies' took twelve lines above the chart,
-  // more than a phone's screen. In pick order, not by size, with the first pick and the lines
-  // the tiles headline kept out of the fold: the tile read "Biggest riser Microsoft" while
-  // Microsoft's sentence, and Google's, the first pick, were folded under "3 more companies".
-  const item = l => `<li><b>${esc(l.name)}</b>: ${esc(l.text)}</li>`;
-  const order = trendPicks.map(p => p.key);
-  const rank = l => { const k = order.indexOf(l.key); return k < 0 ? order.length : k; };
-  lines.sort((a, b) => rank(a) - rank(b));
+  // Up to five sentences in the legend's order (largest first), then the rest folded, keeping
+  // any company the tiles headline in view. Two at a time in pick order hid Amazon, the largest
+  // of five picks, and Microsoft, the second riser, under "2 more companies" (critic round 14).
+  const item = l => `<li><b>${esc(l.name)}</b>: ${esc(l.text)}${l.detail ? `<span class="verdict-why">${esc(l.detail)}</span>` : ''}</li>`;
   const { riser, faller } = tileMovers(d, chartedAndOther(d).charted);
-  const unfolded = new Set([lines[0], ...lines.filter(l => l.key && [riser, faller].some(m => m && m.name === l.key))]);
-  if (unfolded.size < 2 && lines[1]) unfolded.add(lines[1]);
+  const unfolded = new Set(lines.slice(0, VERDICTS_SHOWN));
+  lines.filter(l => l.key && [riser, faller].some(m => m && m.name === l.key)).forEach(l => unfolded.add(l));
   const shownLines = lines.filter(l => unfolded.has(l)), more = lines.filter(l => !unfolded.has(l));
   // A redraw (a legend toggle) rebuilds this; an opened fold stays open.
   const wasOpen = !!(host.querySelector && host.querySelector('details[open]'));
@@ -3681,7 +3684,8 @@ function buildTrendsTable(){
   // named and the steps get a column of their own: 764 → 1,018 beside "−0.2%" read as a bug.
   const head = `<tr><th scope="col">${VIEWS[viewKind(d)].column}</th><th scope="col">Latest</th>`
     // Under Share the percentage is the share's own change, which can fall while openings rise.
-    + `<th scope="col">${trendUnit === 'share' ? 'Share, change' : 'Hiring, %'}</th>`
+    // "Share, change +6.2%" did not say whether that was points or a relative change.
+    + `<th scope="col">${trendUnit === 'share' ? 'Share, relative change' : 'Hiring, %'}</th>`
     + '<th scope="col">Hiring, openings</th><th scope="col">Counting changes, openings</th>'
     + '<th scope="col">Start, as counted</th><th scope="col">Min</th><th scope="col">Max</th></tr>';
   const cell = v => `<td>${v == null ? '—' : esc(fmtLevel(v))}</td>`;
@@ -3689,7 +3693,10 @@ function buildTrendsTable(){
   // the figure they are checking against — and the note says why the sum need not reach it.
   const kind = viewKind(d);
   const withTotal = trendPicks.length && (kind === 'families' || kind === 'bands') && rows.length > 1;
-  const total = withTotal ? [{ name: '__total__', label: kind === 'bands' ? `All of ${drillLabel()}` : 'All tech roles',
+  // Under Share the first row is a share of every opening the company has, non-tech included:
+  // "All tech roles 97%" read as an error without it.
+  const total = withTotal ? [{ name: '__total__', label: (kind === 'bands' ? `All of ${drillLabel()}` : 'All tech roles')
+    + (trendUnit === 'share' ? ' (of all its openings)' : ''),
     points: sumPoints(d.series, d.stamps) }] : [];
   const body = [...total, ...rows].map(s => {
     const vals = s.points.map((v, j) => levelValue(v, j, s)).filter(v => v != null);
@@ -3796,7 +3803,9 @@ function causesOf(s, total){
   const found = Math.round(noDup - noFound);
   const counting = total - duplicates - found;
   const parts = [
-    duplicates && `${signedOpenings(duplicates)} from duplicate postings removed`,
+    // Named as what it was: removals sized per Board, or under New a duplicate-removal change,
+    // which All openings named "3 duplicate removal changes" and New "duplicate postings removed".
+    duplicates && `${signedOpenings(duplicates)} from ${dupCause(s)}`,
     found && `${signedOpenings(found)} from boards found later`,
     // With the removals given their own figure, the change that made them is not named again.
     counting && `${signedOpenings(counting)} from ${countingChanges(s, duplicates !== 0)}`,
@@ -3902,6 +3911,13 @@ function listLines(d){
   const counted = trendPicks.filter(p => !(d.uncounted || []).includes(p.key));
   const label = counted.length === 1 ? counted[0].label || 'This company' : `These ${counted.length} companies`;
   return [{ name: '__total__', label: kind === 'bands' ? `${label}, ${drillLabel()}` : label, points: sumPoints(d.series, d.stamps) }, ...shown];
+}
+// The duplicates part of a line's move, named by what made it.
+function dupCause(s){
+  const steps = stepsFor(s).filter(n => noteKind(n) === 'duplicates' && stepMoved(n, s));
+  if (steps.some(n => n.evicted)) return 'duplicate postings removed';
+  const changes = new Set(steps.filter(n => n.dedupOnly && !n.settle).map(n => n.source)).size;
+  return changes > 1 ? `${changes} duplicate removal changes` : 'a duplicate removal change';
 }
 function countingMove(s){
   const raw = headTail(s.points), net = trendMove(s);
@@ -4426,9 +4442,15 @@ if (el('trends-legend')) {
     // Google had no way to those 84 (the Space's `role=`).
     const jobs = e.target.closest('[data-role]');
     if (jobs){
+      // With the trend's own count and time, as the company and category hand-offs carry: Google's
+      // LLM/GenAI read 84 here and 82 in Search with nothing to say why.
+      const line = trendData && trendData.series.find(s => s.name === jobs.dataset.role);
+      const n = line && latestOf(line);
       searchCompany(trendPicks.flatMap(p => p.boardKeys || []),
         trendPicks.length === 1 ? trendPicks[0].label : trendPicks.map(p => p.label).join(', '),
-        '', { role: jobs.dataset.role.replace(/^watch:/, ''), label: jobs.dataset.roleLabel });
+        '', { role: jobs.dataset.role.replace(/^watch:/, ''), label: jobs.dataset.roleLabel }, 0,
+        n != null && trendMetric === 'stock' && !trendAtsSelected() && trendData.stamps.length
+          ? { n: Math.round(n), at: trendData.stamps[trendData.stamps.length - 1] } : null);
       return;
     }
     const row = e.target.closest('.row[data-name]');

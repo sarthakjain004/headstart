@@ -892,3 +892,32 @@ counting change out by ratio, the company line by openings.
   a tap off the plot and wraps its names; Back from a pick returns to no picks, and a breakdown
   change is a history entry; the stale-count note says Search can be newer; a window with no
   runs names the picks; a marker names duplicate removal only where a pick can be touched.
+
+### A critic's fourteenth round (2026-09-25): 6/10
+
+Sums reconciled everywhere the critic checked; the three views of a counting change did not.
+The marker tooltip gave a change's own run (Micron's Sep 17: +32), the "Marked changes" list its
+run and settling run (−264), and the list left out Other and lines a change sorted into
+existence, so Google's list summed to +170 under a sentence of +292.
+
+- **One size for a marked change** (`changeSize`), used by the tooltip, the list and the
+  sentence: its left-out runs, each run owned by one change (a run that is another change's own
+  run is not this one's settling run), plus the openings a line arrived with when the change
+  sorted it into existence. The list gives each change on its own, at its own time, sized on the
+  whole company first and then on every line, Other included. On the 2026-09-25 state each
+  company's list total equals its sentence: Google +292, Micron −2,455, Stripe +6.
+- **The caption names only the causes present** (a line the erase guard scaled, a company's own
+  step in a summed row, removals or found Boards, rows too new), or rounding.
+- **Comparable starts where All coverage does**: its cohort base is the first run at or after
+  the asked start, not the last before it, which moved a one-Board company's answer.
+- **The answer comes first**: each sentence opens with a plain lead ("growing", "shrinking",
+  "holding steady", "too new to tell"), and the not-hiring causes sit on a line of their own.
+  Up to five sentences stand in the legend's order, with the tiles' riser and faller kept in
+  view; the rest fold.
+- **Smaller:** the roles "jobs" link tells Search the trend's count and time; the custom range
+  says it is local time; the phone tooltip takes its own place under the chart, with room for
+  names; Share's table says "relative change" and "(of all its openings)"; company keys compare
+  case-blind; a duplicates part is named by its cause under every measure.
+
+Handed to the gross-flows PR (#679), which rewrites `hot_boards`: Hot ranked a Board counted
+for two days second by its arrival.

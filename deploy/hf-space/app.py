@@ -1611,6 +1611,14 @@ def trends():
     if picked:
         if not _COMPANIES:
             return jsonify(error="no company directory on this deployment yet"), 503
+        # Board keys compare case-blind, as the directory joins them: a hand-typed
+        # `company=GOOGLE:careers.google.com` was "not in the company directory".
+        if any(board not in _COMPANY_OF for board in picked):
+            folded = {board.lower(): board for board in _COMPANY_OF}
+            picked = [
+                board if board in _COMPANY_OF else folded.get(board.lower(), board)
+                for board in picked
+            ]
         unknown = [board for board in picked if board not in _COMPANY_OF]
         if unknown:
             return jsonify(error=f"unknown company: {', '.join(unknown)}"), 400
