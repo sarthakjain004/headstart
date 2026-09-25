@@ -3293,6 +3293,40 @@ def test_the_index_shows_what_every_companys_view_shows_after_runs_are_left_out(
     assert in_index == by_company == {"opened": 5, "closed": 0}
 
 
+@pytest.mark.parametrize(
+    ("epoch_ts", "fields", "query", "left_out"),
+    [
+        # A tech-filter change on the middle run: its run and the run after, everywhere.
+        (_T2, ["tech_filter_version"], "", [_T2, _T3]),
+        # On the window's first run it is already in every line's start: nothing is left out,
+        # as app.js leaves nothing out there (its settling run cut Amazon's real −7).
+        (_T1, ["tech_filter_version"], "", []),
+        # The index under comparable coverage is still the index: the same runs come out.
+        (_T3, ["dedup_version"], "?coverage=comparable", [_T3]),
+    ],
+)
+def test_the_index_leaves_out_the_runs_a_companys_line_leaves_out(
+    company_trends, trends_app, monkeypatch, epoch_ts, fields, query, left_out
+):
+    """The Space's rule for the index mirrors the page's for a pick's line (ADR-0227), whatever
+    the change, wherever it lands, and under comparable coverage too."""
+    _with_turnover(trends_app, monkeypatch, _HPE_TURNOVER)
+    epoch = {"ts": epoch_ts, "changed": ["a change"], "fields": fields}
+    monkeypatch.setattr(trends_app, "_EPOCHS", [epoch])
+    index = company_trends.get(f"/trends{query}").get_json()
+    assert index["turnover_left_out"] == left_out
+    opened = [
+        sum(s["turnover"]["opened"][j] or 0 for s in index["series"])
+        for j in range(len(index["stamps"]))
+    ]
+    everywhere = "dedup_version" not in fields
+    for j, ts in enumerate(index["stamps"]):
+        if ts in left_out and everywhere:
+            assert all(s["turnover"]["opened"][j] is None for s in index["series"]), ts
+    if query:  # comparable: HPE's run-3 turnover is out, Citi's one-site Board's stays
+        assert opened[2] == 5
+
+
 def test_no_turnover_off_openings(company_trends, trends_app, monkeypatch):
     """Under `new` a line is a rolling level of fresh jobs, not a stock with a net change."""
     _with_turnover(trends_app, monkeypatch, _HPE_TURNOVER)

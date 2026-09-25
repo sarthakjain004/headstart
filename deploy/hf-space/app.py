@@ -568,6 +568,11 @@ _LINE_MOVING = (
 )
 
 
+def _company_boards(board: str) -> list[str]:
+    """Every Board of the directory company holding ``board``, or ``board`` alone."""
+    return _COMPANIES[_COMPANY_OF[board]]["boards"] if board in _COMPANY_OF else [board]
+
+
 def _dedup_touched(boards: list[str]) -> bool:
     """Whether duplicate removal can move a company holding ``boards``: two or more Boards on an
     ATS it dedupes within, or any Eightfold Board. The page's rule for a pick (app.js)."""
@@ -602,14 +607,16 @@ def _left_out_runs(
     every: set[int] = set()
     touched: set[int] = set()
     for epoch in epochs:
-        if epoch["ts"] not in stamps:
+        # A change on the window's first run is already in every line's start, and its settling
+        # run cannot be told from an ordinary one there (app.js: it cut Amazon's real −7).
+        if epoch["ts"] not in stamps[1:]:
             continue
         i = stamps.index(epoch["ts"])
         fields = epoch.get("fields", [])
         moves = any(f in _LINE_MOVING for f in fields) or (
             bands and "derivations_version" in fields
         )
-        runs = {j for j in (i, i + 1) if 0 < j < len(stamps)}
+        runs = {j for j in (i, i + 1) if j < len(stamps)}
         if moves:
             every |= runs
         elif "dedup_version" in fields:
@@ -694,12 +701,7 @@ _LEDGER_START = min((ts for ts, _ in _BOARD_ARRIVALS.values()), default=None)
 # is a gap, not a zero.
 _TURNOVER = _rows_by_board(_TREND_DELTAS, _TURNOVER_METRICS)
 _UNSCOPED_MARKERS = _rows_by_board(_TREND_DELTAS, (_UNSCOPED,))
-_INDEX_TURNOVER = _index_turnover(
-    _TURNOVER,
-    lambda board: (
-        _COMPANIES[_COMPANY_OF[board]]["boards"] if board in _COMPANY_OF else [board]
-    ),
-)
+_INDEX_TURNOVER = _index_turnover(_TURNOVER, _company_boards)
 _TURNOVER_SINCE = min((r["ts"] for r in _INDEX_TURNOVER), default=None)
 # Email alerts (ADR-0035) — invite-only, so all three must be set before the panel appears:
 # the Google client id the sign-in button needs, and a token scoped to the Subscriptions
@@ -2042,17 +2044,24 @@ def trends():
     # hiring. The index leaves out, Board by Board, the runs each company's own line leaves out,
     # so the index's opened and closed are the sum of what every company's view shows.
     left_out: tuple[set[int], set[int]] = (set(), set())
+    if company_of is None:
+        left_out = _left_out_runs(epochs, stamps, bool(family))
     if scope is None:
         turnover_rows = [
             (row, "") for row in _INDEX_TURNOVER if not ats or row["ats"] in ats
         ]
-        left_out = _left_out_runs(epochs, stamps, bool(family))
         unscoped = {
             board: "" for board in _UNSCOPED_MARKERS if _in_ats_scope(board, ats)
         }
     else:
+        # A comparable cohort with no pick is still the index: each row says whether duplicate
+        # removal can move its Board's company, as `_INDEX_TURNOVER`'s rows do.
+        touched = {
+            board: company_of is None and _dedup_touched(_company_boards(board))
+            for board in scope
+        }
         turnover_rows = [
-            (row, pick)
+            ({**row, "touched": touched[board]}, pick)
             for board, pick in scope.items()
             for row in _TURNOVER.get(board, ())
         ]

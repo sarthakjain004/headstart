@@ -2355,6 +2355,15 @@ test('a company sentence gives the jobs its net change is made of', () => {
     /<b>Acme<\/b>: 1,000 tech openings; [^<]* — about 500 opened, 490 closed, closures not counted on 1 board\./);
 });
 
+test('a counting change on the window’s first run leaves no turnover out, as the Space’s index rule', () => {
+  // Mirrors the Space's `_left_out_runs`: a change already in every line's start takes nothing
+  // out, not even its settling run (which cut Amazon's real −7).
+  const { t } = loadApp();
+  t.setPicks([ACME]);
+  t.set(busyAcme({ epochs: [{ ts: FOUR[0], changed: ['tech filter changed'], fields: ['tech_filter_version'] }] }));
+  same({ ...t.turnoverOf(t.data().series[0]) }, { opened: 1510, closed: 1095 });
+});
+
 test('turnover that began inside the window says from when', () => {
   const { t, nodes } = loadApp();
   t.setPicks([ACME]);
