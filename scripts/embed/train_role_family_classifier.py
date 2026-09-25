@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
-"""Train the role-family classifier head the pipeline serves (ADR-0220). A deliberate, one-off fit.
+"""Train the role-family classifier head the pipeline serves (ADR-0220, ADR-0224). A deliberate,
+one-off fit.
 
-The head is a logistic regression over JobBERT-v2 title embeddings (the encoder the pipeline runs,
-through ``role_family_classifier.encode``), trained on two kinds of label:
+The head is a logistic regression over two inputs side by side: the JobBERT-v2 title embedding
+(the encoder the pipeline runs, through ``role_family_classifier.encode``) and the row's served
+description ``vector``, read from the ``--table`` snapshot. It is trained on two kinds of label:
 
 - **silver**: distinct served titles the title rules (``role_family_title_rules.py``, beside this
-  script) decide, at most ``--per-family`` per family. The rules are labelling functions here,
-  not the answer, and the head generalises past the titles they decide;
+  script) decide, at most ``--per-family`` per family, each with the vector of one served row that
+  carries the title. The rules are labelling functions here, not the answer, and the head
+  generalises past the titles they decide;
 - **dev gold**: Jobs labelled by hand against the taxonomy rubric, given weight ``w``.
 
 Two things are chosen by 5-fold cross-validation over dev gold, grouped by copy (company and
@@ -22,13 +25,16 @@ to covering ``--min-coverage`` of them.
 
 ``--test`` is read once, after every choice is fixed, and only to report.
 
-Writes ``config/role_family_classifier/manifest.json`` and ``head.npz``. A new head needs a new
+Writes ``config/role_family_classifier/manifest.json`` and ``head.npz``, the weights split into the
+title part and the row-vector part the pipeline adds together. A new head needs a new
 ``--version``: every Trends series re-bases on it, and the pipeline's title cache is discarded.
 
-Run: python scripts/embed/train_role_family_classifier.py --titles T --dev D [--test X] --version N
-  --titles  parquet, ``title`` per served row: silver is drawn from it and the priors measured on it
-  --dev     parquet with ``title``, ``gold``, ``copy_key`` and ``sample_source`` (``uniform``/other)
-  --test    parquet with ``title`` and ``gold``
+Run: python scripts/embed/train_role_family_classifier.py --table DB --dev D [--test X] --version N
+  --table   a LanceDB directory holding the served ``jobs`` table the gold was drawn from: silver,
+            the priors and every row vector come from it
+  --dev     parquet with ``id``, ``title``, ``gold``, ``copy_key`` and ``sample_source``
+            (``uniform``/other)
+  --test    parquet with ``id``, ``title`` and ``gold``
 """
 
 from __future__ import annotations
@@ -46,6 +52,8 @@ import pandas as pd
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "src"))
 from headstart import roles
+from headstart.embedding_conventions import MODEL as ROW_VECTOR_MODEL
+from headstart.embedding_conventions import PROD_TABLE
 from headstart.ingest import role_family_classifier
 from headstart.roles import NON_TECH
 
@@ -75,17 +83,48 @@ def _encode(titles: list[str]) -> np.ndarray:
     return role_family_classifier.encode(normalised, _MODEL, _MODEL_REVISION)
 
 
+def served_table(table_dir: Path):
+    import lancedb
+
+    return lancedb.connect(str(table_dir)).open_table(PROD_TABLE)
+
+
+def row_vectors(table, ids: list[str]) -> np.ndarray:
+    """The served ``vector`` of each id, in order, from one pass over the table. Every id must be
+    in the snapshot: a head trained without a gold row's description would silently learn from
+    less than it claims."""
+    wanted = {job_id: i for i, job_id in enumerate(ids)}
+    out: np.ndarray | None = None
+    found = 0
+    for batch_ids, vectors in role_family_classifier.served_vector_batches(table):
+        if out is None:
+            out = np.zeros((len(ids), vectors.shape[1]), dtype=np.float32)
+        for j, job_id in enumerate(batch_ids):
+            if job_id in wanted:
+                out[wanted[job_id]] = vectors[j]
+                found += 1
+    if found != len(wanted):
+        raise SystemExit(
+            f"{len(wanted) - found} of {len(wanted)} rows are not in the --table snapshot: train "
+            "against the snapshot the gold was drawn from"
+        )
+    return out
+
+
 def silver_and_served_mix(
-    titles: pd.Series, per_family: int, seed: int
+    rows: pd.DataFrame, per_family: int, seed: int
 ) -> tuple[pd.DataFrame, pd.Series]:
-    """Silver titles capped per family, and the rules' verdict mix over served rows (the priors)."""
+    """Silver titles capped per family, each with the ``id`` of one random served row carrying
+    it (for its vector), and the rules' verdict mix over served rows (the priors)."""
+    titles = rows.title
     rules = _title_rules()
     rules.check_families(
         set(roles.load_families(REPO_ROOT / "config" / "role_families.json"))
     )
     verdict_of = {
         t: rules.classify(t).family
-        for t in {role_family_classifier.normalise(t) for t in titles if t}
+        # sorted: a set's order changes per process, and it decides which titles the draw keeps
+        for t in sorted({role_family_classifier.normalise(t) for t in titles if t})
     }
     labelled = pd.DataFrame(verdict_of.items(), columns=["title", "family"]).dropna()
     silver = (
@@ -97,6 +136,16 @@ def silver_and_served_mix(
     served = pd.Series(
         [verdict_of.get(role_family_classifier.normalise(t)) for t in titles if t]
     ).dropna()
+    normalised = rows.assign(
+        normalised_title=rows.title.map(role_family_classifier.normalise)
+    )
+    row_id_of_title = (
+        normalised.sample(frac=1.0, random_state=seed)
+        .drop_duplicates("normalised_title")
+        .set_index("normalised_title")
+        .id
+    )
+    silver["id"] = silver.title.map(row_id_of_title)
     print(
         f"silver: {len(silver)} titles from {len(labelled)} the rules decide; per family "
         f"{dict(Counter(silver.family))}",
@@ -126,8 +175,8 @@ def fit(
 
 
 def probabilities(model, shift: np.ndarray, x: np.ndarray) -> np.ndarray:
-    """What the shipped head computes: ``Head.probabilities`` with this model's weights and the
-    shifted bias."""
+    """What the shipped head computes (``Head.decide`` over its title and row parts, which together
+    are this model's weights) with the shifted bias."""
     return role_family_classifier.softmax(model.decision_function(x) + shift)
 
 
@@ -145,7 +194,7 @@ def main() -> int:
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    ap.add_argument("--titles", type=Path, required=True)
+    ap.add_argument("--table", type=Path, required=True)
     ap.add_argument("--dev", type=Path, required=True)
     ap.add_argument("--test", type=Path)
     ap.add_argument("--version", type=int, required=True)
@@ -167,13 +216,27 @@ def main() -> int:
             )
             return 1
 
-    silver, served_mix = silver_and_served_mix(
-        pd.read_parquet(args.titles, columns=["title"]).title,
-        args.per_family,
-        args.seed,
+    table = served_table(args.table)
+    served = (
+        table.search().select(["id", "title"]).limit(table.count_rows()).to_pandas()
     )
+    silver, served_mix = silver_and_served_mix(served, args.per_family, args.seed)
     dev = pd.read_parquet(args.dev).reset_index(drop=True)
-    silver_x, dev_x = _encode(silver.title.tolist()), _encode(dev.title.tolist())
+    test = pd.read_parquet(args.test) if args.test is not None else None
+    # one pass over the table for every row vector the fit and the test read need
+    ids = (
+        silver.id.tolist()
+        + dev.id.tolist()
+        + ([] if test is None else test.id.tolist())
+    )
+    vectors = row_vectors(table, ids)
+    silver_title, dev_title = (
+        _encode(silver.title.tolist()),
+        _encode(dev.title.tolist()),
+    )
+    title_dim = silver_title.shape[1]
+    silver_x = np.hstack([silver_title, vectors[: len(silver)]])
+    dev_x = np.hstack([dev_title, vectors[len(silver) : len(silver) + len(dev)]])
     silver_y, dev_y = silver.family.to_numpy(), dev.gold.to_numpy()
     folds = list(GroupKFold(n_splits=5).split(dev_x, dev_y, groups=dev.copy_key))
 
@@ -238,9 +301,11 @@ def main() -> int:
         model.intercept_ = np.delete(model.intercept_, drop)
         shift = np.delete(shift, drop)
 
-    if args.test is not None:
-        test = pd.read_parquet(args.test)
-        p = probabilities(model, shift, _encode(test.title.tolist()))
+    if test is not None:
+        test_x = np.hstack(
+            [_encode(test.title.tolist()), vectors[len(silver) + len(dev) :]]
+        )
+        p = probabilities(model, shift, test_x)
         decided, truth = decide(p, classes, cutoff), test.gold.to_numpy()
         covered = decided != role_family_classifier.UNCLASSIFIED
         print(
@@ -253,7 +318,8 @@ def main() -> int:
     _HEAD_DIR.mkdir(parents=True, exist_ok=True)
     np.savez(
         _HEAD_DIR / "head.npz",
-        weights=model.coef_.astype(np.float32),
+        title_weights=model.coef_[:, :title_dim].astype(np.float32),
+        row_weights=model.coef_[:, title_dim:].astype(np.float32),
         bias=(model.intercept_ + shift).astype(np.float32),
     )
     (_HEAD_DIR / "manifest.json").write_text(
@@ -262,6 +328,10 @@ def main() -> int:
                 "version": args.version,
                 "model": _MODEL,
                 "model_revision": _MODEL_REVISION,
+                "row_vector": {
+                    "model": ROW_VECTOR_MODEL,
+                    "dim": int(silver_x.shape[1] - title_dim),
+                },
                 "families": classes,
                 "cutoff": cutoff,
                 "trained_on": {
