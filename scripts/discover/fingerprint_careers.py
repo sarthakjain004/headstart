@@ -1982,7 +1982,7 @@ def cmd_verify(args) -> None:
             if row["ats"] not in probes:
                 row["verification"] = "no-liveness-probe"
                 return row
-            verdict, jobs = probes[row["ats"]](row["tenant"], row["verify_url"])
+            verdict, jobs, *_ = probes[row["ats"]](row["tenant"], row["verify_url"])
         except Exception as exc:  # noqa: BLE001
             row["verification"] = f"listing-unreachable:{type(exc).__name__}"
             return row

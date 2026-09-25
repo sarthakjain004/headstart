@@ -1533,9 +1533,9 @@ def p_workday(t, u):
     statuses = []
     for inst in _hinted_first(hinted, _WD_INSTANCES):
         total, status = probe(inst)
-        if total is not None and inst == hinted:
-            return LIVE, total
         if total is not None:
+            if inst == hinted:
+                return LIVE, total
             return LIVE, total, u[: m.start("instance")] + inst + u[m.end("instance") :]
         statuses.append(status)
     # No DC served it live. DEAD only if *every* probe conclusively said "not here"; a single
@@ -2732,8 +2732,8 @@ def main():
                 verdict, jobs = DEAD, None
             else:
                 try:
-                    verdict, jobs, *answered = PROBES[ats](tenant, url)
-                    url = answered[0] if answered else url
+                    verdict, jobs, *answering_url = PROBES[ats](tenant, url)
+                    url = answering_url[0] if answering_url else url
                 except Exception as e:  # noqa: BLE001
                     _note(f"probe-raised-{type(e).__name__}")
                     verdict, jobs = UNKNOWN, None
