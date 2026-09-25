@@ -325,6 +325,10 @@ _Avoid_: calling it a data change — the Jobs may be the same; the rules that c
 Taking out of a line's change the steps that are not hiring — **Counting change**s, **Found Board**s' backlogs and dedup removals — so what is left reads as hiring. Decided once, by `trend_netting` inside `trend_history.answer`, when the history is read (ADR-0230); the Trends tab draws each line's `net` and `steps` as it is given them, and the Hot tab reads its figures off the same answers.
 _Avoid_: storing a netted figure — the rule has changed in most of ADR-0185's rounds, so a stored net would go stale with it.
 
+**Line reading** (ADR-0233):
+What a Trends line reports over a window, whole and reconciled: its start and latest openings, its hiring move, and its "Not hiring" split into named causes — each **Counting change**, **Found Board**s, duplicate postings removed, and growth counted twice before a removal — so that latest − start is exactly hiring plus those causes. A line's Marked changes are its causes; a breakdown's rows add up to its first row, with a closing row when a counting change reassigned more jobs than a category held.
+_Avoid_: reading a line's move off its points — the points include the steps that are not hiring.
+
 ### Accounts
 
 **Account** (ADR-0042):
