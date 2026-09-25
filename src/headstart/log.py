@@ -104,8 +104,8 @@ def run_logging_crash(
 
     Such a step leaves the job green whatever it raises, and the runner's own "exit code 1"
     says only that *a* step failed — not which stage, nor what the run now serves stale. So
-    ``stale_on_crash`` says that ("hot_boards failed — the previous hot list stays served this run"),
-    and the traceback rides with it — unlike :func:`fail`, a worded abort that needs none.
+    ``stale_on_crash`` says that ("company_directory failed — the previous company directory
+    stays served this run"), and the traceback rides with it — unlike :func:`fail`, a worded abort that needs none.
     ``SystemExit`` and ``KeyboardInterrupt`` are not ``Exception``, so :func:`fail` and a Ctrl-C
     pass through untouched.
     """
