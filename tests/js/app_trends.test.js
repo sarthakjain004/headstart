@@ -112,6 +112,7 @@ function loadApp(fetchImpl) {
     + ' followed: followedOption, openTrend: openCompanyTrend, chartedAndOther,'
     + ' unit: () => trendUnit, clickUnit: pickUnit, hash: trendHash, pick: setPicks,'
     + ' table: toggleTrendsTable, tooltipNotes, geom: () => lastGeom, hotMeasure: HOT_MEASURE, hotFollowed, turnoverOf,'
+    + ' drawHot, setHotData: d => { hotData = d; },'
     + ' set: (d, drill) => { trendData = d; trendRaw = d; trendDrill = drill || null; } };'
     // Repaints are counted at the global binding, which is what loadTrends' own `drawTrends()`
     // call resolves — so this counts the real paints, not a copy of them.
@@ -2044,6 +2045,57 @@ test('a breakdown change is a step Back can undo', () => {
   assert.match(pushed[0], /by=total/);
 });
 
+/** Changes the Trends range the way a reader does, letting each load land, and records every
+ *  history entry the page pushes. `settleLoads` waits out the load a control started, which
+ *  takes a few ticks (fetch, its json, the draw), where the file's `settle` waits one. */
+async function rangeChangePushes(changeTheRange){
+  const { t, ctx, nodes } = loadApp();
+  const settleLoads = async () => {
+    for (let tick = 0; tick < 5; tick++) await new Promise(resolve => setTimeout(resolve, 0));
+  };
+  await settleLoads();   // the page's own loads first
+  ctx.fetch = () => Promise.resolve({ ok: true,
+    json: () => Promise.resolve({ ...picked({ a: [100, 110] }), stamps: STAMPS }) });
+  const pushed = [];
+  ctx.history = { pushState: (_, __, h) => { pushed.push(h); ctx.location.hash = h; },
+                  replaceState: (_, __, h) => { ctx.location.hash = h; } };
+  ctx.location.hash = '#trends?company=greenhouse%3Aacme';
+  t.setPicks([ACME]);
+  t.set({ ...picked({ a: [100, 110] }), stamps: STAMPS });
+  await changeTheRange(nodes, settleLoads);
+  return pushed;
+}
+test('a range preset is a step Back can undo', async () => {
+  const sevenDays = { dataset: { days: '7' }, getAttribute: () => 'false' };
+  const pushed = await rangeChangePushes(async (nodes, settleLoads) => {
+    nodes['trends-range'].listeners.click[0]({ target: { closest: () => sevenDays } });
+    await settleLoads();
+  });
+  assert.equal(pushed.length, 1, 'a history entry, not a replace: Back skipped the picks before it');
+  assert.match(pushed[0], /days=7/);
+});
+test('a typed range is a step Back can undo', async () => {
+  const pushed = await rangeChangePushes(async (nodes, settleLoads) => {
+    nodes['trends-since'].value = '2026-09-18T00:00';
+    nodes['trends-since'].fire('change');
+    await settleLoads();
+  });
+  assert.equal(pushed.length, 1, 'a history entry, not a replace');
+  assert.match(pushed[0], /since=2026-09-1\dT/);
+});
+test('clearing the range is a step Back can undo', async () => {
+  const pushed = await rangeChangePushes(async (nodes, settleLoads) => {
+    nodes['trends-since'].value = '2026-09-18T00:00';
+    nodes['trends-since'].fire('change');
+    await settleLoads();
+    nodes['trends-since'].value = '';
+    nodes['trends-range-clear'].fire('click');
+    await settleLoads();
+  });
+  assert.equal(pushed.length, 2, 'the typed range and then its clearing, each an entry');
+  assert.doesNotMatch(pushed[1], /since=/);
+});
+
 // ---- critique round 15 ------------------------------------------------------------------------
 test('the marked-changes list sizes each change on the company alone, as the sentence totals it', () => {
   const { t, nodes } = loadApp();
@@ -2224,6 +2276,41 @@ test('a Hot row shows the week’s opened and closed, and Volume leads with open
   assert.match(t.hotMeasure.expansion(amazon).sub, /1396 opened · 1399 closed this week/);
   assert.match(t.hotMeasure.rate(amazon).sub, /^1396 opened of 9081 open now/,
     'Rate divides the week’s opened jobs by the openings now, so its row leads with those');
+});
+
+test('a Hot row says nothing of opened and closed when they were not counted, and a counted 0 reads 0', () => {
+  // A row whose turnover was not counted carries opened and closed as null (hot_ranking); read as
+  // 0, Bosch said "0 opened · 0 closed this week" beside "+442 net".
+  const { t, ctx, nodes } = loadApp();
+  ctx.document.querySelector = selector => selector.includes('hot-lens') ? { value: 'expansion' } : null;
+  const row = (key, company, opened) => ({ key, company, boards: [key], atses: ['greenhouse'], operator: 'employer',
+    stock: 2100, net: 442, opened, closed: opened, rate: opened == null ? null : 0 });
+  t.setHotData({ window: { from: '2026-09-18T06:04:28+00:00', to: '2026-09-25T05:15:02+00:00',
+    turnover_from: '2026-09-18T06:04:28+00:00' },
+    lenses: { expansion: [row('greenhouse:bosch', 'Bosch', null), row('greenhouse:quiet', 'Quiet', 0)], volume: [], rate: [] },
+    counts: {} });
+  t.drawHot();
+  const [bosch, quiet] = nodes['hot-results'].innerHTML.split('</li>');
+  assert.match(bosch, /\+442/);
+  assert.match(bosch, /2100 open now/);
+  assert.doesNotMatch(bosch, /opened|closed/);
+  assert.match(quiet, /0 opened · 0 closed this week/, 'a measured quiet week is a real 0');
+});
+
+test('Volume says opened is not counted yet rather than that nothing qualified', () => {
+  // Volume and Rate rank by opened, and hot_ranking keeps only a positive figure, so before
+  // turnover is counted both lenses arrive empty. "Nothing qualified" blamed the companies.
+  const { t, ctx, nodes } = loadApp();
+  ctx.document.querySelector = selector => selector.includes('hot-lens') ? { value: 'volume' } : null;
+  t.setHotData({ window: { from: '2026-09-18T06:04:28+00:00', to: '2026-09-25T05:15:02+00:00', turnover_from: null },
+    lenses: { expansion: [], volume: [], rate: [] }, counts: {} });
+  t.drawHot();
+  assert.match(nodes['hot-results'].innerHTML, /not counted yet/);
+  assert.doesNotMatch(nodes['hot-results'].innerHTML, /Nothing qualified/);
+  t.setHotData({ window: { turnover_from: '2026-09-18T06:04:28+00:00' },
+    lenses: { expansion: [], volume: [], rate: [] }, counts: {} });
+  t.drawHot();
+  assert.match(nodes['hot-results'].innerHTML, /Nothing qualified/, 'counted and still empty is a real empty');
 });
 
 test('a trend opened from Hot carries the company and Hot’s base, and nothing to reconcile', () => {

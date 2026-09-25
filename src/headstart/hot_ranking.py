@@ -103,8 +103,11 @@ def rank(
                 "opened": move.opened,
                 "closed": move.closed,
                 # Percent rather than a fraction: it is a display value, and rounding it here
-                # keeps every consumer from inventing its own precision.
-                "rate": round(100 * move.opened / open_now),
+                # keeps every consumer from inventing its own precision. None, as opened is,
+                # where the company's turnover was not counted.
+                "rate": None
+                if move.opened is None
+                else round(100 * move.opened / open_now),
             }
         )
     # Ties break on the key, so the same history always ranks the same list.
@@ -136,6 +139,7 @@ def rank(
 
 
 def _top(candidates: list[dict[str, Any]], figure: str) -> list[dict[str, Any]]:
-    """The ``TOP_N`` candidates with a positive ``figure``, largest first."""
-    positive = [row for row in candidates if row[figure] > 0]
+    """The ``TOP_N`` candidates with a positive ``figure``, largest first; a figure that was
+    not counted (None) ranks nowhere."""
+    positive = [row for row in candidates if (row[figure] or 0) > 0]
     return sorted(positive, key=lambda row: (-row[figure], row["key"]))[:TOP_N]
