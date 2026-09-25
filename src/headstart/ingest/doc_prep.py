@@ -306,7 +306,7 @@ def build_doc(job: dict) -> str:
 # rows: their raw keka string carries no period word, which `_period_multiplier` reads as annual
 # (x1), so it needed no bump.
 # v16: `geo.py` tags a location that is exactly "IN" (any case) as India — `IN_EXACT`, one
-# behavioral commit on top of the v15 bump at `5a6d653c` (`git log 5a6d653c..e4fa4e41 --
+# behavioral commit on top of the v15 bump at `5a6d653c` (`git log 5a6d653c..79ca6738 --
 # src/headstart/geo.py`, subject "Tag a bare IN location as India", in case it lands squashed).
 # `location` itself is unchanged on those rows, so `refresh_row`'s fact resync never reaches them;
 # only this sweep does. Measured old vs new `classify()` on every row of the served table pulled
