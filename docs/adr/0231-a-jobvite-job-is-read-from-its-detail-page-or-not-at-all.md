@@ -50,9 +50,20 @@ into reading the page:
   title.
 * `jobvite:blackbear` joins `config.EXCLUDED_BOARDS` with the other vendor demos.
 
-Measured across the whole live pool before shipping: every live Board's listing, up to three ids
-each, fetched both ways (today's request and the `?nl=1` one) and parsed both ways. The figures
-are in the PR that lands this.
+Measured across the whole live pool before shipping (2026-09-25): every one of the ledger's 1,079
+live Jobvite rows, up to three listed ids each, each page fetched and parsed both ways, the
+`origin/main` request and parser against this change's. 737 Boards listed at least one job, giving
+2,028 detail pages (15 listings timed out on the probe's own 30 s bound, and 3 now redirect off
+Jobvite, as the module docstring records for such tenants).
+
+* **No page got worse.** All 2,013 pages that parsed before parse after, with the same title,
+  description length, department and location on every one.
+* **12 pages now parse that did not**, on six Boards: `mini-circuits-review`, `nbbj-review` and
+  `lordco-internal` (heading), and `wedgewood`, `council-advisors` and `g100-companies` (a job
+  page that redirected off Jobvite).
+* **The only pages that still fail are `blackbear`'s**, the excluded demo.
+* The fallback parser read 283 of the pages, on 100 Boards. Every one but 6 carried exactly one
+  `jv-header` heading (3 carried none, 3 carried two), and none of the 283 changed its answer.
 
 ## Consequences
 
