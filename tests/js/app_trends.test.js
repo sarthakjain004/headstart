@@ -111,7 +111,7 @@ function loadApp(fetchImpl) {
     + ' follow: boards => { myCompanies = { followed: boards, hidden: [] }; },'
     + ' followed: followedOption, openTrend: openCompanyTrend, chartedAndOther,'
     + ' unit: () => trendUnit, clickUnit: pickUnit, hash: trendHash, pick: setPicks,'
-    + ' table: toggleTrendsTable, tooltipNotes, geom: () => lastGeom, hotMeasure: HOT_MEASURE, turnoverOf,'
+    + ' table: toggleTrendsTable, tooltipNotes, geom: () => lastGeom, hotMeasure: HOT_MEASURE, hotFollowed, turnoverOf,'
     + ' set: (d, drill) => { trendData = d; trendRaw = d; trendDrill = drill || null; } };'
     // Repaints are counted at the global binding, which is what loadTrends' own `drawTrends()`
     // call resolves — so this counts the real paints, not a copy of them.
@@ -1859,35 +1859,7 @@ test('the roles view says what its lines are', () => {
   assert.match(nodes['trends-verdict'].innerHTML, /roles tracked by their titles inside this category/);
 });
 
-
-test('a trend opened from Hot says how Hot’s figure reads on it', () => {
-  const { t, nodes } = loadApp();
-  t.openTrend('greenhouse:bosch', 'Bosch', '2026-09-13T00:00:00+00:00', '440');
-  t.readHash();
-  const bosch = { key: 'greenhouse:bosch', label: 'Bosch', boardKeys: ['greenhouse:bosch', 'lever:bosch'] };
-  t.setPicks([bosch]);
-  t.set(companies([['greenhouse:bosch', 'Bosch', [100, 200, 300, 540]]]));
-  t.draw();
-  assert.match(nodes['trends-empty'].textContent, /Hot’s \+440 net tech roles is one of Bosch’s 2 boards; this line sums all of them and reads \+440 openings\./);
-  t.setPicks([{ ...bosch, boardKeys: ['greenhouse:bosch'] }]);
-  t.draw();
-  assert.match(nodes['trends-empty'].textContent, /Hot’s \+440 net tech roles is this line’s change/);
-});
-
 // ---- critique round 13 ------------------------------------------------------------------------
-test('a trend opened from Hot keeps Hot’s figure in its link and states both when they differ', () => {
-  const { t, nodes } = loadApp();
-  t.openTrend('google:careers', 'Google', '2026-09-13T00:00:00+00:00', '-27');
-  t.readHash();
-  const google = { key: 'google:careers', label: 'Google', boardKeys: ['google:careers'] };
-  t.setPicks([google]);
-  t.set(companies([['google:careers', 'Google', [100, 90, 80, 58]]]));
-  t.draw();
-  assert.match(nodes['trends-empty'].textContent,
-    /Hot measured −27 net tech roles on this board over the same week; this line reads −42 openings\./);
-  assert.match(t.hash(), /hot=-27&hot_board=google%3Acareers/, 'a reload keeps it');
-});
-
 test('the scope line says as of when, and how old a paused count is', () => {
   const { t, nodes } = loadApp();
   t.setPicks([ACME]);
@@ -1980,33 +1952,6 @@ test('a window ending before counting began says so', () => {
 });
 
 // ---- critique round 14 ------------------------------------------------------------------------
-test('Hot’s build time rides in UTC, whatever zone the reader is in', () => {
-  // A reader in India: sliced to wall time and read back as local, the 11:14 UTC build read 05:44.
-  const zone = process.env.TZ; process.env.TZ = 'Asia/Kolkata';
-  try {
-    const { t, nodes } = loadApp();
-    t.openTrend('google:careers', 'Google', '2026-09-13T00:00:00+00:00', '-27', '2026-09-25T11:14:00+00:00');
-    t.readHash();
-    t.setPicks([{ key: 'google:careers', label: 'Google', boardKeys: ['google:careers'] }]);
-    t.set(companies([['google:careers', 'Google', [100, 90, 80, 58]]]));
-    t.draw();
-    assert.match(nodes['trends-empty'].textContent, /in its list built Sep 25 11:14 UTC/);
-  } finally {
-    if (zone === undefined) delete process.env.TZ; else process.env.TZ = zone;
-  }
-});
-
-test('a Hot row on a board counted for hours gets no week’s change beside it', () => {
-  const { t, nodes } = loadApp();
-  t.openTrend('adp:sitime', 'SiTime', '2026-09-13T00:00:00+00:00', '59');
-  t.readHash();
-  t.setPicks([{ key: 'adp:sitime', label: 'SiTime', boardKeys: ['adp:sitime'] }]);
-  t.set(companies([['adp:sitime', 'SiTime', [null, null, 70, 70]]], { counted_since: { 'adp:sitime': FOUR[2] } }));
-  t.draw();
-  assert.match(nodes['trends-empty'].textContent, /Hot’s \+59 net tech roles is its board’s first days, counted since Sep 15/);
-  assert.doesNotMatch(nodes['trends-empty'].textContent, /reads \+0/);
-});
-
 test('a change named for a line is every change whose left-out runs moved it, sized in the list', () => {
   const { t, nodes } = loadApp();
   // The change moved Acme by 0 at its run and −3 at its settling run, which is left out on every
@@ -2274,11 +2219,33 @@ test('the index gets a hiring net from its turnover, and table columns too', () 
 
 test('a Hot row shows the week’s opened and closed, and Volume leads with opened', () => {
   const { t } = loadApp();
-  const amazon = { net: -3, opened: 1396, closed: 1399, stock: 9081, new7: 1300, rate: 14 };
+  const amazon = { net: -3, opened: 1396, closed: 1399, stock: 9081, rate: 15 };
   assert.equal(t.hotMeasure.volume(amazon).big, '1396');
   assert.match(t.hotMeasure.expansion(amazon).sub, /1396 opened · 1399 closed this week/);
-  assert.match(t.hotMeasure.rate(amazon).sub, /^1300 new and still open of 9081 · 1396 opened/,
-    'Rate divides new7, so its row leads with it');
+  assert.match(t.hotMeasure.rate(amazon).sub, /^1396 opened of 9081 open now/,
+    'Rate divides the week’s opened jobs by the openings now, so its row leads with those');
+});
+
+test('a trend opened from Hot carries the company and Hot’s base, and nothing to reconcile', () => {
+  // A Hot row is the whole company, ranked from the same history (ADR-0230): the trend from
+  // Hot's base moves by exactly the row's net, so the link carries no figure to compare.
+  const { t, nodes } = loadApp();
+  t.openTrend('greenhouse:bosch', 'Bosch', '2026-09-13T00:00:00+00:00');
+  t.readHash();
+  t.setPicks([{ key: 'greenhouse:bosch', label: 'Bosch', boardKeys: ['greenhouse:bosch', 'lever:bosch'] }]);
+  t.set(companies([['greenhouse:bosch', 'Bosch', [100, 200, 300, 540]]]));
+  t.draw();
+  assert.doesNotMatch(nodes['trends-empty'].textContent, /Hot/);
+  assert.match(t.hash(), /^#trends\?company=greenhouse%3Abosch&since=2026-09-13T00%3A00$/);
+});
+
+test('a Hot row reads Following only once every Board of its company is followed', () => {
+  const { t } = loadApp();
+  const boeing = { boards: ['workday:boeing/Eng', 'workday:boeing/EXTERNAL_CAREERS'] };
+  t.follow(['workday:boeing/eng']);
+  assert.equal(t.hotFollowed(boeing), false, 'one Board followed before ADR-0230 is not the company');
+  t.follow(['workday:boeing/eng', 'workday:boeing/external_careers']);
+  assert.equal(t.hotFollowed(boeing), true, 'folded, as board_clause compares');
 });
 
 // ---- critique round 16 ------------------------------------------------------------------------

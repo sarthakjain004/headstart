@@ -39,21 +39,21 @@ ATS); a board_key is only its string name. Before ADR-0155 five call sites each 
 string independently, with three different opinions about a slug that wouldn't parse.
 
 **Operator** (ADR-0171):
-Who runs a Board — the `employer` itself, a `services` firm (IT services, consulting, staffing, BPO) placing people with its clients, or an `aggregator` re-posting other companies' postings. A curated label (`ingest/board_operator.py`) applied only to the Boards the Hot list displays, never a property of every Board: the measurement behind it says no cheap rule separates a services firm from an employer (F1 52.7, and it demotes Cerebras).
+Who runs a Board — the `employer` itself, a `services` firm (IT services, consulting, staffing, BPO) placing people with its clients, or an `aggregator` re-posting other companies' postings. A curated list (`ingest/board_operator.py`), not a classifier: the measurement behind it says no cheap rule separates a services firm from an employer (F1 52.7, and it demotes Cerebras), so a Board on no list is an `employer`. `company_directory` labels each **Company directory** entry with it (aggregator if any of its Boards is, else services if any is), and the Hot list shows the label (ADR-0230).
 _Avoid_: reading `services` as a judgement on the company — Capgemini employs its own engineers; the label says its postings are client placements, which is a different thing for a job hunter.
 
 **Lens** (ADR-0171):
-One of the three questions "actively hiring" can mean, each ranking the same Boards differently: **Expansion** (net change in open roles — who is growing), **Volume** (roles **Opened** in the rolling 7-day window, over the same runs Expansion sums — since ADR-0227; before it, roles first seen in the window and still open), **Rate** (roles first seen in the window and still open, as a share of the Board's open roles). Amazon opened 1,396 roles in one measured week at a net change of −3, which is why these are three lenses and not one number.
-_Avoid_: "hot" as a measure. `hot` is the internal name of the ranking — the stage
-(`ingest/hot_boards`), its artifact and its route — while **Hiring now** is what the tab is
-called in the UI. Neither is a value a row can hold; a row holds a lens figure and an Operator.
+One of the three questions "actively hiring" can mean, each ranking the same **Company directory** entries differently (ADR-0230; single Boards before it): **Expansion** (net change in open roles, **Netting** applied — who is growing), **Volume** (roles **Opened** in the rolling 7-day window, over the same runs Expansion sums — since ADR-0227; before it, roles first seen in the window and still open), **Rate** (roles Opened in the window as a share of the company's open roles — since ADR-0230; before it, roles first seen in the window and still open). Amazon opened 1,396 roles in one measured week at a net change of −3, which is why these are three lenses and not one number.
+_Avoid_: "hot" as a measure. `hot` is the internal name of the ranking — its module
+(`headstart/hot_ranking`, run at Space boot) and its route — while **Hiring now** is what the tab
+is called in the UI. Neither is a value a row can hold; a row holds a lens figure and an Operator.
 
 **Followed / Hidden Board** (ADR-0171):
-A Board an Account has chosen to see more or less of, held as a `CompanyPrefs` record keyed by **board_key** — never by company name, which is a display value (ADR-0212), not an identity. Hidden Boards are excluded from every search; followed ones are what the "only companies I follow" control narrows to. The two lists are disjoint by construction, and they are Account state rather than a Search filter, so a **Saved Set** never freezes them.
+A Board an Account has chosen to see more or less of, held as a `CompanyPrefs` record keyed by **board_key** — never by company name, which is a display value (ADR-0212), not an identity. Hidden Boards are excluded from every search; followed ones are what the "only companies I follow" control narrows to. Following or hiding one Board follows or hides every Board of its **Company directory** entry (ADR-0230), so the lists still hold Board keys while the gesture is a company's. The two lists are disjoint by construction, and they are Account state rather than a Search filter, so a **Saved Set** never freezes them.
 _Avoid_: "blocked" or "muted" — a hidden Board is still scraped, still indexed and still served to everyone else; only this Account stops seeing it.
 
 **Company directory** (ADR-0185):
-The list of companies the Trends tab can be filtered to, each naming the **Board**s it owns — `data/state/company_directory.json`, written by `ingest/company_directory` from every Board the ADR-0143 delta ledger has counted. An entry is a **Company** only as far as the data proves it: two Boards join when they share a **Tenant** (casing duplicates included) or a curated alias, never because their names match — measured, a matching name joined different startups across four ATSes. So one employer on two ATSes with no alias is two entries under one name. It holds names and Boards, no counts; counts come from the delta ledger.
+The list of companies the Trends tab can be filtered to and the Hot list ranks (ADR-0230), each naming the **Board**s it owns and its **Operator** — `data/state/company_directory.json`, written by `ingest/company_directory` from every Board the ADR-0143 delta ledger has counted. An entry is a **Company** only as far as the data proves it: two Boards join when they share a **Tenant** (casing duplicates included) or a curated alias, never because their names match — measured, a matching name joined different startups across four ATSes. So one employer on two ATSes with no alias is two entries under one name, on the Hot list as in the picker. It holds names, Boards and Operators, no counts; counts come from the delta ledger.
 _Avoid_: reading an entry's Boards as additive where the index still holds both copies of a requisition — one Company's Boards on two ATSes can mirror each other, which is why a curated alias is withheld from such a pair.
 
 **Careers page**:
@@ -322,7 +322,7 @@ A tick where a **Methodology** stamp moved, so its step in a line is a change in
 _Avoid_: calling it a data change — the Jobs may be the same; the rules that count them moved.
 
 **Netting** (ADR-0185, ADR-0230):
-Taking out of a line's change the steps that are not hiring — **Counting change**s, **Found Board**s' backlogs and dedup removals — so what is left reads as hiring. Decided once, by `trend_netting` inside `trend_history.answer`, when the history is read (ADR-0230); the Trends tab draws each line's `net` and `steps` as it is given them. `hot_boards` keeps its own copy until Hot is ranked from the same history.
+Taking out of a line's change the steps that are not hiring — **Counting change**s, **Found Board**s' backlogs and dedup removals — so what is left reads as hiring. Decided once, by `trend_netting` inside `trend_history.answer`, when the history is read (ADR-0230); the Trends tab draws each line's `net` and `steps` as it is given them, and the Hot tab reads its figures off the same answers.
 _Avoid_: storing a netted figure — the rule has changed in most of ADR-0185's rounds, so a stored net would go stale with it.
 
 ### Accounts

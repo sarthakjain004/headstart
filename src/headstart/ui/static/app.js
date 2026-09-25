@@ -1784,9 +1784,6 @@ function readTrendHash(){
   trendCoverage = lower('coverage') === 'comparable' ? 'comparable' : 'all';
   // A custom range rides in the link as UTC minutes; the fields show them in local time.
   const since = q.get('since'), until = q.get('until');
-  const hotNet = Number(q.get('hot'));
-  hotOrigin = q.get('hot_board') && since && Number.isFinite(hotNet) && q.get('hot') !== ''
-    ? { board: q.get('hot_board'), net: hotNet, since, built: q.get('hot_at') || null } : null;
   if (since || until){
     const local = v => { if (!v) return ''; const t = new Date(v + 'Z');
       return isNaN(t) ? '' : new Date(t - t.getTimezoneOffset() * 6e4).toISOString().slice(0, 16); };
@@ -1836,10 +1833,6 @@ function trendHash(){
     if (r.until) q.set('until', r.until.slice(0, 16));
   } else if (trendDays !== 'all') q.set('days', trendDays);
   if (trendCoverage !== 'all') q.set('coverage', trendCoverage);
-  if (hotOriginPick()){
-    q.set('hot', String(hotOrigin.net)); q.set('hot_board', hotOrigin.board);
-    if (hotOrigin.built) q.set('hot_at', hotOrigin.built);
-  }
   return '#trends' + (q.size ? '?' + q : '');
 }
 function writeTrendHash(push){
@@ -1898,11 +1891,9 @@ function companyNote(d){
     const counted = datedPicks(d.counted_since, 'since');
     if (counted) parts.push(`HeadStart has counted ${counted}; there is nothing before that.`);
   }
+  if (d.partial) parts.push(`${d.partial} run${d.partial === 1 ? '' : 's'} where a board was read only partly — a leap one run put straight back — ${d.partial === 1 ? 'is' : 'are'} left out of the lines.`);
   // Under New, every Board's first week is held out by the Space (its backlog reads as new), so
   // a line begins a week after counting did and must say why.
-  const hot = hotNote(d);
-  if (hot) parts.push(hot);
-  if (d.partial) parts.push(`${d.partial} run${d.partial === 1 ? '' : 's'} where a board was read only partly — a leap one run put straight back — ${d.partial === 1 ? 'is' : 'are'} left out of the lines.`);
   const fresh = trendMetric === 'new' && datedPicks(d.new_counted_from, 'from');
   if (fresh) parts.push(`New openings count for ${fresh}: a board's first week reads its whole backlog as new, so none counts before then.`);
   return parts.filter(Boolean).join(' ');
@@ -1940,44 +1931,6 @@ function drawChangeList(d, list){
   host.innerHTML = `<summary>Marked changes in this window (${sorted.length})</summary><ul>${sorted.map(g =>
     `<li><b>${esc(stampLabel(d.stamps[g.i]))}</b> ${esc(g.label)}${
       g.sizes && g.sizes.length ? ` — ${esc(g.sizes.join(', '))}` : ''}</li>`).join('')}</ul>`;
-}
-
-// How Hot's figure reads on the trend its row opened, while the trend still shows Hot's week of
-// that company's openings. A Hot row is one Board and its trend the whole company: Bosch Group
-// read +440 on Hot and +442 here, from a second Board nothing on the page named.
-// The pick Hot's row opened, while the view still shows Hot's week of that one company.
-function hotOriginPick(){
-  const o = hotOrigin;
-  // Both in UTC minutes: the link carries Hot's base as that, and the range field reads it back.
-  if (!o || trendMetric !== 'stock' || (trendRange().since || '').slice(0, 16) !== o.since || trendPicks.length !== 1) return null;
-  const pick = trendPicks[0];
-  // Hot's `boschgroup`, the directory's `BoschGroup`
-  return (pick.boardKeys || [pick.key]).some(b => b.toLowerCase() === o.board.toLowerCase()) ? pick : null;
-}
-function hotNote(d){
-  const pick = hotOriginPick(); if (!pick) return '';
-  const o = hotOrigin, boards = pick.boardKeys || [pick.key];
-  const figure = `${o.net < 0 ? '−' : '+'}${Math.abs(o.net).toLocaleString()} net tech roles`;
-  const line = seriesSum(d);
-  // With the line's own figure beside it, so the two can be read against each other: Bosch's note
-  // said its +440 was one of two boards and never what the line read.
-  if (boards.length > 1){
-    const whole = trendMove(line);
-    return `Hot’s ${figure} is one of ${pick.label || 'this company'}’s ${boards.length} boards; this line sums all of them${
-      whole ? ` and reads ${signedOpenings(Math.round(whole.change))}` : ''}.`;
-  }
-  // A Board counted for hours has no week of its own here: SiTime read "too new" in its sentence
-  // beside "this line reads +0 openings" under Hot's +59.
-  const began = countedSince(d)[0];
-  if (isYoung(line, d)) return `Hot’s ${figure} is its board’s first days${began ? `, counted since ${stampLabel(began, true)}` : ''}: too new for this line to give a week’s change.`;
-  const m = trendMove(line);
-  if (!m) return '';
-  const n = Math.round(m.change);
-  // Never silent when they differ, and never a guessed reason: Hot's list is built once a run by
-  // the pipeline, so its build time is the fact a reader can weigh against this line's runs.
-  return n === o.net
-    ? `Hot’s ${figure} is this line’s change: both leave out the runs where HeadStart changed how it counts.`
-    : `Hot measured ${figure} on this board over the same week${o.built ? `, in its list built ${stampLabel(/Z$/.test(o.built) ? o.built : o.built + 'Z')} UTC` : ''}; this line reads ${signedOpenings(n)}.`;
 }
 
 // Picks this answer has nothing for, named with the reason, so the chart never shows fewer
@@ -4218,18 +4171,13 @@ if (el('trends-co-roles')) el('trends-co-roles').addEventListener('click', () =>
 // carries is a pick, and the name it already shows labels the chip until the Space answers.
 // A link replaces the picks rather than adding to them — it asks about this one company.
 // From the Hot tab, over Hot's own window: its "+25" was measured over hours, and a trend
-// opened over All read "up 61.8%" for the same company.
-// Hot's figure for the row a trend was opened from, so the trend can say how the two relate.
-let hotOrigin = null;
-function openCompanyTrend(board, name, since, net, built){
+// opened over All read "up 61.8%" for the same company. A Hot row is the whole company and its
+// figures come from the same history as the trend (ADR-0230), so the trend from Hot's base moves
+// by exactly the row's net and needs no note reconciling the two.
+function openCompanyTrend(board, name, since){
   if (name) pickLabels.set(board, name);
-  // Hot's figure rides in the link (readTrendHash reads it back), so a reload keeps the note.
   location.hash = '#trends?company=' + encodeURIComponent(board)
-    + (since ? '&since=' + encodeURIComponent(since.slice(0, 16)) : '')
-    + (net != null && since ? `&hot=${encodeURIComponent(net)}&hot_board=${encodeURIComponent(board)}` : '')
-    // UTC minutes marked as UTC: `hot_boards` writes the build time in UTC, and read back as
-    // local wall time it gave 05:44 in India and 18:14 in Los Angeles for an 11:14 build.
-    + (net != null && since && built ? `&hot_at=${encodeURIComponent(built.slice(0, 16) + 'Z')}` : '');
+    + (since ? '&since=' + encodeURIComponent(since.slice(0, 16)) : '');
 }
 
 // Pointer tracking for the crosshair+tooltip lives on the SVG element itself, wired once: an
@@ -4446,16 +4394,17 @@ if (el('matches-controls')){
   });
 }
 
-/* ---- "Hiring now" (hot_boards): a pre-ranked leaderboard of the Boards opening roles.
+/* ---- "Hiring now" (hot_ranking): a ranked leaderboard of the companies opening roles.
 
-   The whole artifact arrives in one fetch — three lenses of at most 100 rows — so switching
-   lens or revealing staffing firms is a re-render, never a round trip. It is a pipeline
-   product read from a static file, so it is fetched once per visit and not re-polled. ---- */
+   The whole ranking arrives in one fetch — three lenses of at most 100 rows — so switching
+   lens or revealing staffing firms is a re-render, never a round trip. The Space ranks it once
+   at boot, from the history it just loaded (ADR-0230), so it is fetched once per visit and not
+   re-polled. ---- */
 let hotData = null;
 
 const HOT_OPERATOR = {
-  services: { label: 'staffing / services', hint: 'This board belongs to an IT services or staffing firm, so most roles are placements with its clients rather than jobs at the company itself.' },
-  aggregator: { label: 'job board', hint: 'This board re-posts other companies’ jobs. The employer behind a given role is somebody else.' },
+  services: { label: 'staffing / services', hint: 'This company is an IT services or staffing firm, so most roles are placements with its clients rather than jobs at the company itself.' },
+  aggregator: { label: 'job board', hint: 'This company re-posts other companies’ jobs. The employer behind a given role is somebody else.' },
 };
 
 async function loadHot(){
@@ -4464,7 +4413,7 @@ async function loadHot(){
     const r = await fetch('/hot');
     if (!r.ok){
       if (r.status !== 503) logFail('GET', '/hot', r.status);
-      // 503 is "no run has written one", which is a different thing from a failure and is the
+      // 503 is "no history to rank yet", which is a different thing from a failure and is the
       // only case the tab can be opened in without data.
       el('hot-msg').textContent = r.status === 503
         ? 'No ranking yet — the next pipeline run will build one.'
@@ -4486,19 +4435,29 @@ function hotLens(){
 /* The number that *is* the ranking, per lens, plus how to say it. Each lens leads with its own
    measure and prints the other two small, so a row can be read against the question that
    ordered it rather than a single column that means something different on each tab. */
-// Tech roles on this one Board: a row is a Board, and its "See trend" opens the whole company,
-// whose other Boards the figures here do not include (HCLTech read −1,356 here, −605 there).
+// Tech roles at the whole company, every Board of it, as the trend its "See trend" opens counts
+// them (ADR-0230): as one Board, HCLTech read −1,356 here and −605 there.
 // Opened and closed are the week's turnover (ADR-0227). The net figure alone read Amazon's week
-// as "+17" while it opened 914–1,532. Rate divides `new7`, the jobs first seen this week and
-// still open, so its row leads with that count and gives the turnover after it.
+// as "+17" while it opened 914–1,532. Rate divides the week's opened jobs by the openings now,
+// so its row leads with that share and gives the counts after it.
 const HOT_MEASURE = {
-  expansion: r => ({ big: (r.net > 0 ? '+' : '') + r.net, unit: 'net tech roles on this board', sub:
-    `${r.opened ?? 0} opened · ${r.closed ?? 0} closed this week · ${r.stock} open now` }),
-  volume:    r => ({ big: String(r.opened ?? 0), unit: 'tech roles opened this week', sub:
-    `${r.closed ?? 0} closed · ${r.net >= 0 ? '+' : ''}${r.net} net · ${r.stock} open on this board` }),
-  rate:      r => ({ big: r.rate + '%', unit: 'of its board is new', sub:
-    `${r.new7} new and still open of ${r.stock} · ${r.opened ?? 0} opened · ${r.closed ?? 0} closed this week` }),
+  expansion: r => ({ big: (r.net > 0 ? '+' : '') + r.net, unit: 'net tech roles', sub:
+    `${r.opened} opened · ${r.closed} closed this week · ${r.stock} open now` }),
+  volume:    r => ({ big: String(r.opened), unit: 'tech roles opened this week', sub:
+    `${r.closed} closed · ${r.net >= 0 ? '+' : ''}${r.net} net · ${r.stock} open now` }),
+  rate:      r => ({ big: r.rate + '%', unit: 'opened this week, as a share of its open roles', sub:
+    `${r.opened} opened of ${r.stock} open now · ${r.closed} closed this week` }),
 };
+
+// Whether every Board of the row's company is followed. Following one follows them all
+// (ADR-0230), so a company followed Board by Board before that reads "Follow" until it is whole.
+// Lowercased both sides, like `board_clause`: the index holds Board keys that differ only in
+// casing, and an exact check would offer "Follow" on a Board already being followed.
+function hotFollowed(r){
+  const on = new Set((myCompanies.followed || []).map(b => b.toLowerCase()));
+  return r.boards.every(b => on.has(b.toLowerCase()));
+}
+const hotRowOf = key => Object.values(hotData.lenses).flat().find(r => r.key === key);
 
 function drawHot(){
   if (!hotData) return;
@@ -4523,10 +4482,8 @@ function drawHot(){
 function hotRow(r, i, lens){
   const m = HOT_MEASURE[lens](r);
   const op = HOT_OPERATOR[r.operator];
-  // Lowercased both sides, like `board_clause` — the index holds Board keys that differ only
-  // in casing, and an exact check would offer "Follow" on a Board already being followed.
-  const followed = (myCompanies.followed || []).some(
-    b => b.toLowerCase() === (r.board || '').toLowerCase());
+  const followed = hotFollowed(r);
+  const boards = r.boards.length === 1 ? 'board' : `${r.boards.length} boards`;
   // The rank is decorative — the list is already ordered and screen readers announce <ol>
   // position — so it is hidden from the accessibility tree rather than read out twice.
   return `
@@ -4535,7 +4492,7 @@ function hotRow(r, i, lens){
       <div class="hot-who">
         <div class="hot-name">${esc(r.company)}</div>
         <div class="hot-tags">
-          <span class="src" title="Read directly from this company’s ${esc(r.ats)} board">via ${esc(r.ats)}</span>
+          <span class="src" title="Read directly from this company’s ${esc(r.atses.join(' and '))} ${boards}">via ${esc(r.atses.join(', '))}</span>
           ${op ? `<span class="tag flag" title="${esc(op.hint)}">${esc(op.label)}</span>` : ''}
         </div>
       </div>
@@ -4545,12 +4502,11 @@ function hotRow(r, i, lens){
         <span class="hot-sub">${esc(m.sub)}</span>
       </div>
       <div class="hot-actions">
-        ${CAN_COMPANIES ? `<button class="ghost hot-track" data-track="${esc(r.board)}"
+        ${CAN_COMPANIES ? `<button class="ghost hot-track" data-track="${esc(r.key)}"
           aria-pressed="${followed}">${followed ? 'Following' : 'Follow'}</button>` : ''}
-        <button class="ghost hot-see" data-board="${esc(r.board)}" data-company="${esc(r.company)}">See roles</button>
-        ${el('trends') ? `<button class="ghost hot-trend" data-trend="${esc(r.board)}"
-          data-trend-name="${esc(r.company)}" data-trend-since="${esc((hotData.window || {}).base || (hotData.window || {}).from || '')}"
-          data-trend-net="${esc(String(r.net))}" data-trend-built="${esc(hotData.generated_at || '')}">See trend</button>` : ''}
+        <button class="ghost hot-see" data-hot-key="${esc(r.key)}">See roles</button>
+        ${el('trends') ? `<button class="ghost hot-trend" data-trend="${esc(r.key)}"
+          data-trend-name="${esc(r.company)}" data-trend-since="${esc((hotData.window || {}).base || '')}">See trend</button>` : ''}
       </div>
     </li>`;
 }
@@ -4570,8 +4526,8 @@ function drawHotProvenance(){
   el('hot-provenance').textContent =
     `Net change measured over ${span}; ${turnover}. ${x.ranked ?? 0} companies ranked; ` +
     `${x.below_min_stock ?? 0} with fewer than ${x.min_stock ?? '?'} open tech roles and ` +
-    `${x.newly_discovered ?? 0} ` +
-    `boards we had only just discovered were left out.`;
+    `${x.too_new ?? 0} ` +
+    `we had only just begun counting were left out.`;
 }
 
 /* One delegated listener for the whole panel, like the sets strip — never an inline handler
@@ -4584,12 +4540,9 @@ if (el('hot-results')){
     const track = ev.target.closest('[data-track]');
     if (track){
       track.disabled = true;
-      const board = track.dataset.track;
-      // Folded, like `hotRow` and `board_clause` — an exact check here left the button
-      // showing "Following" and then posting `follow` again, so it never cleared.
-      const on = (myCompanies.followed || []).some(
-        b => b.toLowerCase() === board.toLowerCase());
-      if ((await setCompany(board, on ? 'clear' : 'follow')).ok) drawHot();
+      // The Space widens the one Board posted to every Board of its company (ADR-0230).
+      const on = hotFollowed(hotRowOf(track.dataset.track));
+      if ((await setCompany(track.dataset.track, on ? 'clear' : 'follow')).ok) drawHot();
       else track.disabled = false;
       return;
     }
@@ -4598,7 +4551,8 @@ if (el('hot-results')){
     // Hand the company to Search rather than filtering here: Search already owns the filter
     // vocabulary, the ranking and the job card, and a second place that lists jobs would be a
     // second place to keep them consistent.
-    searchCompany([btn.dataset.board], btn.dataset.company);
+    const row = hotRowOf(btn.dataset.hotKey);
+    searchCompany(row.boards, row.company);
   });
 }
 
@@ -4608,7 +4562,7 @@ if (el('hot-results')){
 document.addEventListener('click', async ev => {
   // "See trend", on a result card or a Hot-tab row — one handler for both, like the rest here.
   const trend = ev.target.closest('[data-trend]');
-  if (trend){ openCompanyTrend(trend.dataset.trend, trend.dataset.trendName, trend.dataset.trendSince, trend.dataset.trendNet, trend.dataset.trendBuilt); return; }
+  if (trend){ openCompanyTrend(trend.dataset.trend, trend.dataset.trendName, trend.dataset.trendSince); return; }
   const more = ev.target.closest('[data-more]');
   if (more){ expandCompany(more.closest('.more-row')); return; }
   const hide = ev.target.closest('[data-hide-company]');
@@ -4629,7 +4583,10 @@ document.addEventListener('click', async ev => {
 function drawMyCompanies(){
   const box = el('my-companies');
   if (!box) return;
-  const n = (myCompanies.hidden || []).length;
+  // Companies, not Boards: hiding one hides every Board of its company (ADR-0230), so Boeing's
+  // twelve would read as "12 companies". The Space counts them; the local renderer has no
+  // directory, so there each Board is its own.
+  const n = myCompanies.hidden_companies ?? (myCompanies.hidden || []).length;
   box.innerHTML = n
     ? `${n} ${n === 1 ? 'company' : 'companies'} hidden from your results ` +
       `<button class="linkish" id="unhide-all">show them again</button>`

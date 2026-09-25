@@ -883,6 +883,6 @@ if __name__ == "__main__":
     log.run_logging_crash(
         _log,
         main,
-        "role_trends failed — no trend rows this run, and the Board ledgers hot_boards "
-        "and company_directory read may be a tick stale",
+        "role_trends failed — no trend rows this run, and the Board ledgers "
+        "company_directory and the Space's Hot ranking read may be a tick stale",
     )

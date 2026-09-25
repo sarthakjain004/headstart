@@ -701,29 +701,29 @@ def test_absent_is_separated_from_an_unreachable_hub():
 
 def test_following_a_hidden_board_unhides_it() -> None:
     """The lists must stay disjoint, or a filter both requires and excludes the same rows."""
-    prefs = st.CompanyPrefs.blank("a" * 16).with_board("greenhouse:acme", "hide")
+    prefs = st.CompanyPrefs.blank("a" * 16).with_boards(["greenhouse:acme"], "hide")
     assert prefs.hidden == ("greenhouse:acme",)
-    prefs = prefs.with_board("greenhouse:acme", "follow")
+    prefs = prefs.with_boards(["greenhouse:acme"], "follow")
     assert prefs.followed == ("greenhouse:acme",)
     assert prefs.hidden == ()
 
 
 def test_clear_removes_from_both() -> None:
-    prefs = st.CompanyPrefs.blank("a" * 16).with_board("lever:x", "follow")
-    assert prefs.with_board("lever:x", "clear").followed == ()
+    prefs = st.CompanyPrefs.blank("a" * 16).with_boards(["lever:x"], "follow")
+    assert prefs.with_boards(["lever:x"], "clear").followed == ()
 
 
 def test_following_the_same_board_twice_does_not_duplicate_it() -> None:
     prefs = st.CompanyPrefs.blank("a" * 16)
     for _ in range(3):
-        prefs = prefs.with_board("ashby:acme", "follow")
+        prefs = prefs.with_boards(["ashby:acme"], "follow")
     assert prefs.followed == ("ashby:acme",)
 
 
 def test_the_cap_bounds_the_list_on_write() -> None:
     prefs = st.CompanyPrefs.blank("a" * 16)
     for n in range(st.MAX_COMPANIES + 10):
-        prefs = prefs.with_board(f"greenhouse:c{n}", "follow")
+        prefs = prefs.with_boards([f"greenhouse:c{n}"], "follow")
     assert len(prefs.followed) == st.MAX_COMPANIES
     assert prefs.followed[-1] == f"greenhouse:c{st.MAX_COMPANIES + 9}", "newest kept"
 
@@ -750,7 +750,7 @@ def test_a_record_that_lists_a_board_twice_is_read_disjoint() -> None:
 
 
 def test_the_cap_drops_the_oldest_so_callers_must_detect_the_trim():
-    """`with_board` trims silently, which is what the /companies routes have to detect.
+    """`with_boards` trims silently, which is what the /companies routes have to detect.
 
     The trim drops the OLDEST entry, so the new Board always lands. Both "is it in the list
     afterwards?" and "is the list at the cap afterwards?" therefore fail to detect it — the
@@ -760,11 +760,11 @@ def test_the_cap_drops_the_oldest_so_callers_must_detect_the_trim():
     """
     prefs = st.CompanyPrefs.blank("a" * 16)
     for n in range(st.MAX_COMPANIES):
-        prefs = prefs.with_board(f"greenhouse:c{n}", "follow")
+        prefs = prefs.with_boards([f"greenhouse:c{n}"], "follow")
     assert len(prefs.followed) == st.MAX_COMPANIES
     assert "greenhouse:c0" in prefs.followed, "the cap is reached, nothing trimmed yet"
 
-    full = prefs.with_board("greenhouse:one-too-many", "follow")
+    full = prefs.with_boards(["greenhouse:one-too-many"], "follow")
     assert "greenhouse:one-too-many" in full.followed, "the new entry lands..."
     assert "greenhouse:c0" not in full.followed, (
         "...and the OLDEST is what silently went"
@@ -780,8 +780,8 @@ def test_a_differently_cased_key_is_the_same_board():
     """
     prefs = (
         st.CompanyPrefs.blank("a" * 16)
-        .with_board("workday:Micron/External", "follow")
-        .with_board("workday:micron/external", "hide")
+        .with_boards(["workday:Micron/External"], "follow")
+        .with_boards(["workday:micron/external"], "hide")
     )
     assert prefs.followed == ()
     assert prefs.hidden == ("workday:micron/external",)
@@ -802,19 +802,38 @@ def test_a_record_written_with_mixed_casing_is_folded_on_read():
 def test_would_evict_is_what_the_routes_ask_before_writing():
     """Both /companies mirrors ask the record, so they cannot answer differently at the limit."""
     prefs = st.CompanyPrefs.blank("a" * 16)
-    assert prefs.would_evict("greenhouse:acme", "follow") is False
+    assert prefs.would_evict(["greenhouse:acme"], "follow") is False
     for n in range(st.MAX_COMPANIES):
-        prefs = prefs.with_board(f"greenhouse:c{n}", "follow")
-    assert prefs.would_evict("greenhouse:new", "follow") is True, (
+        prefs = prefs.with_boards([f"greenhouse:c{n}"], "follow")
+    assert prefs.would_evict(["greenhouse:new"], "follow") is True, (
         "a new Board at the cap"
     )
-    assert prefs.would_evict("greenhouse:c5", "follow") is False, (
+    assert prefs.would_evict(["greenhouse:c5"], "follow") is False, (
         "already listed — a no-op"
     )
-    assert prefs.would_evict("GREENHOUSE:C5", "follow") is False, (
+    assert prefs.would_evict(["GREENHOUSE:C5"], "follow") is False, (
         "...whatever its casing"
     )
-    assert prefs.would_evict("greenhouse:new", "hide") is False, (
+    assert prefs.would_evict(["greenhouse:new"], "hide") is False, (
         "the other list is empty"
     )
-    assert prefs.would_evict("greenhouse:new", "clear") is False, "clear never adds"
+    assert prefs.would_evict(["greenhouse:new"], "clear") is False, "clear never adds"
+
+
+def test_a_company_is_followed_and_hidden_whole():
+    """ADR-0230: the gesture is a company's, so all of its Boards move in one write."""
+    boeing = ["workday:boeing/EXTERNAL_CAREERS", "workday:boeing/Eng"]
+    prefs = st.CompanyPrefs.blank("a" * 16).with_boards(boeing, "follow")
+    assert prefs.followed == ("workday:boeing/external_careers", "workday:boeing/eng")
+    prefs = prefs.with_boards(boeing, "hide")
+    assert (prefs.followed, len(prefs.hidden)) == ((), 2), "the lists stay disjoint"
+
+
+def test_would_evict_counts_every_board_a_company_adds():
+    """Each Board alone fits under the cap; the company's Boards together do not."""
+    prefs = st.CompanyPrefs.blank("a" * 16)
+    for n in range(st.MAX_COMPANIES - 1):
+        prefs = prefs.with_boards([f"greenhouse:c{n}"], "follow")
+    company = ["workday:boeing/a", "workday:boeing/b"]
+    assert prefs.would_evict(company[:1], "follow") is False
+    assert prefs.would_evict(company, "follow") is True

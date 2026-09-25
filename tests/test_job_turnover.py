@@ -62,7 +62,7 @@ def test_a_new_posting_on_a_counted_board_is_opened_and_an_evicted_one_closed():
 
 def test_a_found_boards_backlog_is_recounted_not_opened():
     """A Board the previous tick never counted lands its whole stock at once: already open, not
-    hiring. Hot had to exclude 108 such Boards in one week for the same reason (hot_boards)."""
+    hiring. Hot had to exclude 108 such Boards in one week for the same reason (ADR-0171)."""
     found = Placement("lever:newco", "software-engineering", "mid", "lever")
     assert _by_metric(_turnover({}, {"a": found, "b": found})) == {RECOUNTED_IN: 2}
 

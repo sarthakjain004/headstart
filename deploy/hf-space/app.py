@@ -30,6 +30,7 @@ from headstart import (
     facets,
     fx,
     geo,
+    hot_ranking,
     llm_router,
     profile_extract,
     search,
@@ -114,11 +115,9 @@ def _pull_index(attempts: int = 5) -> None:
                     # the counting changes before the first tick whose file carries its own
                     # methodology (ADR-0164, ADR-0230) — a few rows
                     "data/state/trends_epochs.csv",
-                    # the hot list (hot_boards) — a few tens of KB, and absent until a run
-                    # writes one, which hides the tab rather than failing the pull
-                    "data/state/hot_boards.json",
-                    # the Trends company picker's directory (ADR-0185) — ~2 MB, and absent
-                    # until a run writes one, which hides the picker rather than failing
+                    # the Company directory (ADR-0185) the Trends picker searches and the Hot
+                    # tab ranks (ADR-0230) — ~2 MB, and absent until a run writes one, which
+                    # hides both rather than failing the pull
                     "data/state/company_directory.json",
                     # each served Job's role family (ADR-0057), so a Trends category can hand
                     # over to Search as exact ids — ~4 MB, absent until a run writes one
@@ -177,41 +176,34 @@ _WATCH = trend_history.watched_roles(_CONFIG / "role_watchlist.json")
 _FAMILY_SUCCESSOR = trend_history.family_successors(_CONFIG / "role_families.json")
 
 
-def _load_hot(path: Path) -> dict:
-    """The pre-ranked hot list (``headstart.ingest.hot_boards``), or ``{}`` until it exists.
+def _rank_hot(history: trend_history.TrendHistory) -> dict:
+    """The Hot tab's ranking (``headstart.hot_ranking``, ADR-0230), or ``{}`` to keep it dark.
 
-    Read once at startup and served as-is. The ranking is a pipeline product, not a query: the
-    ledgers behind it are tens of megabytes and the answer only changes when a run does, so
-    re-deriving it per request would buy nothing and cost the Space its memory headroom.
-
-    Empty on a deployment whose pipeline has not written it yet — the tab is then hidden rather
-    than shown broken, the same dark-until-ready shape the Trends tab uses.
+    Ranked once at boot from the history just loaded, so it can never be stale against the ticks
+    the Trends tab serves, and served as-is: the answer only changes when a run does, and the
+    Space restarts after every run. Dark rather than broken when there is nothing to rank yet,
+    and when the directory predates the Operator (ADR-0171): ranked without it, every staffing
+    firm would read as an employer until the next run wrote one. Never fatal: Search is the
+    product, and a ranking that fails costs this one tab.
     """
-    if not path.exists():
+    companies = history.companies
+    if not companies or any("operator" not in entry for entry in companies.values()):
         return {}
+    started = time.monotonic()
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        # A half-written artifact must not take the Space down at import, which is the failure
-        # mode `_pull_index` already exists to prevent for the index itself.
+        ranked = hot_ranking.rank(history, companies)
+    except Exception as exc:  # noqa: BLE001 - a ranking failure darkens Hot only
+        print(f"hot ranking failed ({type(exc).__name__}: {exc})", flush=True)
         return {}
+    print(
+        f"hot ranking: {ranked.get('counts', {}).get('ranked', 0)} companies ranked "
+        f"in {time.monotonic() - started:.1f}s",
+        flush=True,
+    )
+    return ranked
 
 
-def _with_window_base(hot: dict, ticks: tuple[str, ...]) -> dict:
-    """``hot`` with its window's base filled in when ``hot_boards`` wrote none: the last tick
-    before the window's first change, from the Trends history — the runs a row's "See trend"
-    charts — so a row's trend covers its figure. Once at load: both inputs are fixed until the
-    next restart."""
-    window = hot.get("window") or {}
-    if not window.get("from") or window.get("base"):
-        return hot
-    before = [ts for ts in ticks if ts < window["from"]]
-    return {**hot, "window": {**window, "base": max(before)}} if before else hot
-
-
-_HOT = _with_window_base(
-    _load_hot(_STATE / "data" / "state" / "hot_boards.json"), _HISTORY.ticks
-)
+_HOT = _rank_hot(_HISTORY)
 
 
 def _with_predecessors(
@@ -388,6 +380,30 @@ def search_jobs():
         return jsonify({"error": "invalid filter"}), 400
 
 
+# Each Board's company as every Board of its Company directory entry, keyed case-blind as the
+# follow and hide lists compare Boards. Follow and Hide act on a whole company (ADR-0230).
+_COMPANY_BOARDS = {
+    board.lower(): tuple(entry["boards"])
+    for entry in _HISTORY.companies.values()
+    for board in entry["boards"]
+}
+
+
+def _company_boards(board: str) -> tuple[str, ...]:
+    """Every Board of the company holding ``board``, or ``board`` alone when no entry holds it."""
+    return _COMPANY_BOARDS.get(board.lower(), (board,))
+
+
+def _companies_json(prefs) -> dict:
+    """The lists as the page reads them, with how many companies the hidden Boards make up: a
+    hidden company is all of its Boards, so Boeing's twelve would read "12 companies hidden"."""
+    return {
+        "followed": list(prefs.followed),
+        "hidden": list(prefs.hidden),
+        "hidden_companies": len({_company_boards(b) for b in prefs.hidden}),
+    }
+
+
 @app.route("/companies")
 def list_companies():
     """The Account's followed and hidden Boards."""
@@ -395,14 +411,14 @@ def list_companies():
     if not gate:
         return jsonify({"error": "accounts are not configured here"}), 503
     email, store = gate
-    prefs = store.get_companies(subscription_id(email))
-    return jsonify({"followed": list(prefs.followed), "hidden": list(prefs.hidden)})
+    return jsonify(_companies_json(store.get_companies(subscription_id(email))))
 
 
 @app.route("/companies", methods=["POST"])
 def set_company():
-    """Follow, hide, or clear one Board. The whole record is rewritten, so the two lists
-    cannot drift apart — `CompanyPrefs.with_board` keeps them disjoint."""
+    """Follow, hide, or clear the company one Board belongs to: every Board of its Company
+    directory entry (ADR-0230). The whole record is rewritten, so the two lists cannot drift
+    apart — `CompanyPrefs.with_boards` keeps them disjoint."""
     gate = _account_gate()
     if not gate:
         return jsonify({"error": "accounts are not configured here"}), 503
@@ -416,18 +432,17 @@ def set_company():
         ), 400
     account = subscription_id(email)
     current = store.get_companies(account)
-    if current.would_evict(board, action):
-        return jsonify(
-            {"error": f"at most {MAX_COMPANIES} companies in each list"}
-        ), 409
-    prefs = current.with_board(board, action)
+    boards = _company_boards(board)
+    if current.would_evict(boards, action):
+        return jsonify({"error": f"at most {MAX_COMPANIES} boards in each list"}), 409
+    prefs = current.with_boards(boards, action)
     store.put_companies(prefs)
-    return jsonify({"followed": list(prefs.followed), "hidden": list(prefs.hidden)})
+    return jsonify(_companies_json(prefs))
 
 
 @app.route("/hot")
 def hot_companies():
-    """The pre-ranked actively-hiring list, or 503 until the pipeline has written one.
+    """The actively-hiring companies ranked at boot (``_rank_hot``), or 503 with nothing ranked.
 
     Served whole rather than paged or filtered server-side: it is three lenses of at most 100
     rows each, so the lens switch and the "show staffing" toggle are instant in the browser and

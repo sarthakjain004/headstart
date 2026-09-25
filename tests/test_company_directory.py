@@ -235,8 +235,12 @@ def test_the_file_names_boards_and_carries_no_counts(
     assert out.read_bytes() == first
     assert json.loads(first) == {
         "companies": [
-            {"name": "Acme", "boards": ["greenhouse:acme"]},
-            {"name": "Acmecorp", "boards": ["workday:acmecorp/ACJobSite"]},
+            {"name": "Acme", "boards": ["greenhouse:acme"], "operator": "employer"},
+            {
+                "name": "Acmecorp",
+                "boards": ["workday:acmecorp/ACJobSite"],
+                "operator": "employer",
+            },
         ]
     }
 
@@ -301,5 +305,38 @@ def test_a_closed_board_keeps_its_previous_name(
     )
     assert _run(monkeypatch, deltas, out, {"greenhouse:other": "Other"}) == 0
     assert json.loads(out.read_text(encoding="utf-8"))["companies"] == [
-        {"name": "Acme Corp", "boards": ["greenhouse:acmecorp"]}
+        {"name": "Acme Corp", "boards": ["greenhouse:acmecorp"], "operator": "employer"}
     ]
+
+
+@pytest.mark.parametrize(
+    ("boards", "names", "operator"),
+    [
+        (["lever:jobgether"], {"lever:jobgether": "Jobgether"}, "aggregator"),
+        # Wipro's Board names the operator in its host, not in any stated name.
+        (["successfactors:careers.wipro.com"], {}, "services"),
+        # Hyatt's Taleo section is named infosys_intl; the Tenant is read, not the whole key.
+        (
+            ["taleo_enterprise:https://hyatt.taleo.net/careersection/infosys_intl"],
+            {
+                "taleo_enterprise:https://hyatt.taleo.net/careersection/infosys_intl": "Hyatt"
+            },
+            "employer",
+        ),
+    ],
+)
+def test_each_company_carries_its_operator(
+    boards: list[str], names: dict[str, str], operator: str
+) -> None:
+    """The Hot tab labels a company row with it (ADR-0171, ADR-0230)."""
+    (entry,) = company_directory.companies(set(boards), names)
+    assert entry["operator"] == operator
+
+
+def test_one_board_that_reposts_makes_the_company_an_aggregator(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    aliases = {"greenhouse:acme": "Acme", "lever:jobgether": "Acme"}
+    monkeypatch.setattr(company_name, "curated_names", lambda: aliases)
+    (entry,) = company_directory.companies({"greenhouse:acme", "lever:jobgether"}, {})
+    assert entry["operator"] == "aggregator"
