@@ -128,6 +128,7 @@
     "steps_at": [
      2
     ],
+    "index_base": 1000.0,
     "arrived_by": null
    }
   ],
@@ -171,6 +172,7 @@
     },
     "netted": [],
     "steps_at": [],
+    "index_base": null,
     "arrived_by": null
    }
   ],
@@ -219,6 +221,9 @@
    10000,
    10000
   ],
+  "openings": 1060,
+  "served_jobs": 1060,
+  "non_tech_jobs": 0,
   "reconciles": true,
   "violations": []
  }

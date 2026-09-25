@@ -691,56 +691,48 @@ test('a category that drops off and comes back reclaims the colour it had', () =
 
 /* Both of these shipped and were caught by review, not by a test — so they get one each. */
 
+// Each line's index base is the reading's (`index_base`): one rule, in Python, for the chart, the
+// legend, the tiles and the Change lock.
+function indexBases() {
+  const loaded = loadApp();
+  loaded.t.set(golden('index_bases_read_off_the_first_count'), null);
+  loaded.t.setUnit('change', false);
+  const line = name => loaded.t.data().series.find(s => s.name === name);
+  return { ...loaded, line };
+}
+
 test('a series measured at zero early is not indexed off a later point', () => {
-  const { t } = loadApp();
-  const f = fixture();
+  const { t, line } = indexBases();
   // A real measurement of zero, then growth. `find(v => v)` skipped the zero and indexed off
   // the 5, so the first point plotted at 0/5*100 = 0, the line spiked to 800, and the axis
   // stretched to 0-800 — crushing every other series into a few pixels.
-  const zero = { name: 'zerostart', label: 'zerostart', points: [0, 0, 5, 10, 20, 40], latest: 40 };
-  t.set({ ...f, series: [zero, ...f.series], stamps: [1, 2, 3, 4, 5, 6].map(String),
-          totals: [100, 100, 100, 100, 100, 100] }, null);
-  t.setUnit('change', false);
-  const vals = t.seriesValues(zero);
+  const vals = t.seriesValues(line('zerostart'));
   assert.ok(vals.every(v => v === null),
     `a base below the floor must yield no line, got ${JSON.stringify(vals)}`);
   // Not just "all null" — that outcome is also what the floor produces, so assert the base
-  // SELECTION too. The bug picked 5 (the first truthy value) and plotted point 0 at 0/5*100.
-  const high = { name: 'high', label: 'high', points: [0, 0, 50, 100], latest: 100 };
-  t.set({ ...f, series: [high, ...f.series], stamps: ['1', '2', '3', '4'],
-          totals: [100, 100, 100, 100] }, null);
-  same(t.seriesValues(high), [null, null, null, null],
+  // SELECTION too. The bug picked 50 (the first truthy value) and plotted point 0 at 0/50*100.
+  same(t.seriesValues(line('high')), [null, null, null, null, null, null],
     'a measured zero is the base, so this series has none — it must not index off the 50');
 });
 
 test('a tile never headlines a series the chart refuses to draw', () => {
-  const { t, nodes } = loadApp();
-  const f = fixture();
+  const { t, nodes, line } = indexBases();
   // Base 4 is under the floor, but the mean of the first three (4+20+30)/3 = 18 is over it —
   // so the chart drew a gap while the tile read "Biggest riser +233.3%". Two gates, two
   // different quantities.
-  const low = { name: 'low', label: 'low', points: [4, 20, 30, 40], latest: 40 };
-  t.set({ ...f, series: [low, ...f.series], stamps: ['1', '2', '3', '4'],
-          totals: [100, 100, 100, 100] }, null);
-  t.setUnit('change', false);
-  assert.equal(t.hasIndexBase(low), false);
+  assert.equal(t.hasIndexBase(line('low')), false);
   t.draw();
   assert.ok(!nodes['trends-kpi'].innerHTML.includes('>low<'),
     'a series with no index base must not appear in a KPI tile');
 });
 
 test('a healthy series indexes its RAW COUNT to 100, not its share', () => {
-  const { t } = loadApp();
-  const f = fixture();
-  const ok = { name: 'ok', label: 'ok', points: [8, 9, 12, 16], latest: 16 };
+  const { t, line } = indexBases();
   // `totals` MUST vary. With a flat denominator, index-of-count and index-of-share are the
   // same numbers, so the test cannot fail if share-indexing came back — and indexing the count
   // was an explicit product decision (ADR-0119), which makes it exactly the thing to pin.
-  // Doubling the denominator halves every share: index-of-share would be [100, 75, 75, 67].
-  t.set({ ...f, series: [ok, ...f.series], stamps: ['1', '2', '3', '4'],
-          totals: [100, 150, 200, 300] }, null);
-  t.setUnit('change', false);
-  same(t.seriesValues(ok).map(Math.round), [100, 113, 150, 200],
+  // Doubling the denominator halves every share: index-of-share would be [100, 75, 75, 67, …].
+  same(t.seriesValues(line('ok')).map(Math.round), [100, 113, 150, 200, 200, 200],
     'the base is the count, so a growing denominator must not move the line');
 });
 
@@ -1077,13 +1069,13 @@ test('past eight picks, Company folds the rest into Other, a share of their own 
 
 test('a company too small to index is drawn in counts, and Change comes back for a big one', async () => {
   const { t, ctx, nodes } = loadApp();
-  let body = picked({ a: [3, 3], b: [1, 1] });
+  let body = golden('pick_too_small_to_index');
   ctx.fetch = () => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(body) });
   t.setPicks([{ key: 'greenhouse:acme', label: 'Acme' }]);
   await t.load(null);
   assert.equal(t.unit(), 'count', 'a Total of 4 openings has no index base');
   assert.match(nodes['trends-unit-static'].textContent, /Change is off here/);
-  body = picked({ a: [50, 60], b: [40, 45] });
+  body = golden('company_categories_under_its_total');
   t.setPicks([{ key: 'greenhouse:big', label: 'Big' }]);
   await t.load(null);
   assert.equal(t.unit(), 'change', 'the reader’s unit returns once the view can show it');
@@ -1568,7 +1560,7 @@ test('a custom range rides in the link and checks no preset', () => {
 test('a drilled category hands over to Search as that category', () => {
   const { t, ctx, nodes } = loadApp();
   t.setPicks([{ ...ACME, boardKeys: ['greenhouse:acme'] }]);
-  t.set({ ...picked({}), family_label: 'AI / Machine Learning' }, 'ai-ml');
+  t.set({ ...golden('drilled_category_at_one_pick'), family_label: 'AI / Machine Learning' }, 'ai-ml');
   ctx.window.CFG.family_handoff = true; ctx.window.CFG.max_family_ids = 5000;
   nodes['trends-co-roles'].fire('click');
   const hash = new URLSearchParams(ctx.location.hash.split('?')[1]);
@@ -1626,8 +1618,7 @@ test('a run with duplicates removed beside a counting change names each by its s
 test('Search says how many of its jobs the trend leaves out as non-tech', () => {
   const { t, ctx, nodes } = loadApp();
   t.setPicks([ACME]);
-  t.set({ ...picked({ a: [90, 100] }), stamps: STAMPS,
-    company_totals: { 'greenhouse:acme': [100, 108] } });
+  t.set(golden('company_with_non_tech_jobs_set_aside'));
   nodes['trends-co-roles'].fire('click');
   const hash = new URLSearchParams(ctx.location.hash.split('?')[1]);
   assert.equal(hash.get('aside'), '8', '108 served, 100 tech');
@@ -1857,7 +1848,7 @@ test('the scope line says as of when, and how old a paused count is', () => {
 test('a hand-off tells Search what the trend counted, and when', () => {
   const { t, ctx, nodes } = loadApp();
   t.setPicks([ACME]);
-  t.set({ ...picked({ a: [90, 100] }), stamps: STAMPS, company_totals: { 'greenhouse:acme': [100, 108] } });
+  t.set(golden('company_with_non_tech_jobs_set_aside'));
   nodes['trends-co-roles'].fire('click');
   const hash = new URLSearchParams(ctx.location.hash.split('?')[1]);
   assert.equal(hash.get('trend_n'), '100');
@@ -1879,7 +1870,8 @@ test('under New, an echo whose change fell before the window is dated by that ch
   showGolden(t, 'new_echo_of_a_change_before_the_window');
   t.setUnit('count', false);
   t.draw();
-  assert.match(nodes['trends-verdict'].innerHTML, /<summary>Not hiring: −40 openings<\/summary><ul><li>Sep 11 [^<]*: −40 openings<\/li><\/ul>/);
+  assert.match(nodes['trends-verdict'].innerHTML,
+    /<summary>Not hiring: −40 openings<\/summary><ul><li>Sep 19 the week-later echo of the Sep 11 tech filter change: −40 openings<\/li><\/ul>/);
 });
 
 test('a category sorted in by a counting change reads so, and its openings count as that change', () => {
@@ -2114,7 +2106,7 @@ test('a tracked role’s jobs link tells Search what the trend counted', () => {
   t.setPicks([ACME]);
   t.set(fixture(), null);
   t.click('software-engineering', 'roles');
-  t.set({ ...picked({ 'watch:llm': [80, 84] }), stamps: STAMPS }, 'software-engineering');
+  t.set(golden('tracked_role_in_a_category'), 'software-engineering');
   t.draw();
   const button = { dataset: { role: 'watch:llm', roleLabel: 'LLM / GenAI' }, closest: sel => sel === '[data-role]' ? button : null };
   nodes['trends-legend'].listeners.click.forEach(fn => fn({ target: button }));
@@ -2532,6 +2524,40 @@ test('the page catches each broken invariant with the checker\'s own sentence', 
       'other row: its latest is not the folded lines\' added together', 'other row: its hiring is not the folded lines\' added together']);
   same(broken('index_folds_the_categories_past_eight_into_other', r => { r.other = null; }),
     ['other row: missing with 2 lines past the first 8']);
+  // What the code review of #726 added.
+  same(broken('micron_filter_change_sized_with_its_settling_run', r => {
+    r.marked_changes[0].label = 'tech_filter_version';
+    r.company_lines[0].move.not_hiring[0].label = 'tech_filter_version';
+  }), ["label 'tech_filter_version': it is a field id, not words"]);
+  assert.ok(broken('percentage_withheld_off_a_netted_start_under_five', r => {
+    const interns = r.lines.find(l => l.name === 'interns');
+    interns.index_base = interns.netted[0] = 4;
+  }).includes('line interns: its index base is not a first netted count of 5 or more'));
+  same(broken('duplicate_removal_scales_the_history_before_it', r => { r.openings += 1; r.non_tech_jobs += 1; }),
+    ["openings: not every line's latest added together", 'non-tech jobs: not the served jobs less the openings']);
+});
+
+test('the closing row gives one figure, in the hiring column', () => {
+  // The owner's call: "moved between categories by a counting change: +40", not a +40 beside
+  // a −40 that read as two figures.
+  const { nodes } = drawGolden('refit_moving_more_than_a_category_held_closes_the_table');
+  const closing = nodes['trends-table'].innerHTML.split('</tr>').find(r => /<tr class="closing">/.test(r));
+  const cells = [...closing.matchAll(/<td[^>]*>([^<]*)<\/td>/g)].map(m => m[1]);
+  same(cells.filter(c => c !== '—'), ['+40 openings']);
+  assert.equal(cells[2], '+40 openings');
+});
+
+test('under Share a share\'s change is given off any share but a zero one', () => {
+  const shareMove = name => {
+    const { t, nodes } = loadApp();
+    showGolden(t, name);
+    t.setUnit('share', false);
+    t.draw();
+    return row(nodes['trends-legend'].innerHTML, 'interns').match(/<span class="dl[^"]*"[^>]*>([^<]*)</)[1];
+  };
+  // 0.4% of the company becoming 1.8%: a share's change, though off 4 openings Count gives none.
+  assert.equal(shareMove('percentage_withheld_off_a_netted_start_under_five'), '↑ +350.0%');
+  assert.equal(shareMove('share_change_withheld_off_a_share_of_zero_at_the_start'), '—');
 });
 
 /* ---- every golden reading, drawn (ADR-0233 step 3) ----------------------------------------------
@@ -2617,8 +2643,12 @@ test('over every golden reading, a breakdown\'s rows sum to its first row, the c
     same(figures(rows[first]), [total.latest, total.hiring, total.not_hiring_total, total.start], `${name}: the first row is the reading's`);
     const summed = rows.filter((_, k) => k !== first).map(figures)
       .reduce((sum, f) => sum.map((v, k) => v + f[k]), [0, 0, 0, 0]);
-    same(summed, figures(rows[first]), `${name}: the rows sum to the first row`);
-    assert.equal(/<tr class="closing">/.test(html), !!(d.reading.breakdown && d.reading.breakdown.closing), name);
+    const closing = d.reading.breakdown && d.reading.breakdown.closing;
+    assert.equal(/<tr class="closing">/.test(html), !!closing, name);
+    // The closing row is one figure, in the hiring column; its Not hiring cell is left blank.
+    const wanted = figures(rows[first]);
+    if (closing) summed[2] += closing.not_hiring_total;
+    same(summed, wanted, `${name}: the rows sum to the first row`);
     checked += 1;
   }
   assert.ok(checked >= 10, checked);
@@ -2656,7 +2686,7 @@ test('the table says its rows add up only where the reading reconciles', () => {
     t.table(true);
     return nodes['trends-table'].innerHTML.match(/<caption>([^<]*)<\/caption>/)[1];
   };
-  assert.equal(caption(() => {}), 'The first row is the company’s hiring; the categories below and the closing row add up to it.');
+  assert.equal(caption(() => {}), 'The first row is the company’s hiring; the categories below and the closing row add up to its hiring.');
   assert.equal(caption(d => { d.reading.lines[0].move.hiring += 1; }), 'The first row is the company’s hiring.');
 });
 

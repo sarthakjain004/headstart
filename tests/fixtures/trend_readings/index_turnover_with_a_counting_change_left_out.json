@@ -127,6 +127,7 @@
     1300
    ],
    "steps_at": [],
+   "index_base": 900,
    "arrived_by": null,
    "points": [
     900,
@@ -170,6 +171,7 @@
      1300
     ],
     "steps_at": [],
+    "index_base": 900,
     "arrived_by": null
    }
   ],
@@ -206,6 +208,9 @@
    10000,
    10000
   ],
+  "openings": 1300,
+  "served_jobs": null,
+  "non_tech_jobs": null,
   "reconciles": true,
   "violations": []
  }

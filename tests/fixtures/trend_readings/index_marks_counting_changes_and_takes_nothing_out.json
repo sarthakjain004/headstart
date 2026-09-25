@@ -115,6 +115,7 @@
     49700
    ],
    "steps_at": [],
+   "index_base": 49000,
    "arrived_by": null,
    "points": [
     49000,
@@ -156,6 +157,7 @@
      40600
     ],
     "steps_at": [],
+    "index_base": 40000,
     "arrived_by": null
    },
    {
@@ -189,6 +191,7 @@
      9100
     ],
     "steps_at": [],
+    "index_base": 9000,
     "arrived_by": null
    }
   ],
@@ -240,6 +243,9 @@
    100000,
    100000
   ],
+  "openings": 49700,
+  "served_jobs": null,
+  "non_tech_jobs": null,
   "reconciles": true,
   "violations": []
  }

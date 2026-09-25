@@ -1616,6 +1616,9 @@ const CHART_MAX = 8;        // matches the 8-slot validated categorical palette;
 // The kinds of Marked change that are a counting change, drawn as a dashed marker; every other
 // kind moved openings into or out of the count at once, drawn solid (trend_reading.CauseKind).
 const COUNTING_KINDS = new Set(['counting', 'growth_scaled_by_a_change']);
+// A raw field id in a label ("tech_filter_version"): words never have an underscore in them
+// (trend_reading._FIELD_ID).
+const FIELD_ID = /\b[a-z0-9]+(?:_[a-z0-9]+)+\b/;
 // Picked companies (ADR-0185), in the order they were added. `key` is any board_key of a
 // directory entry, which is all `/trends?company=` needs; `label` is null until an answer names
 // it, because a pick that arrives by link or from the follow list carries only a key.
@@ -1744,11 +1747,11 @@ function topSplitNow(){
 // Fewer than two categories big enough to index is a set of picks the category view cannot
 // show: its legend would be "not indexed" rows over one line or none. The median Board holds
 // three tech openings (ADR-0185), so for a single pick this is the usual case, not the edge.
+// Decided off the reading's index bases; with no reading, the Space's own default, Category.
 function fewIndexable(raw){
-  return raw.series.filter(startsIndexable).length < 2;
+  const lines = raw.reading && raw.reading.lines;
+  return !!lines && lines.filter(line => line.index_base != null).length < 2;
 }
-// Whether a line's first measured count reaches the Change floor (INDEX_BASE_FLOOR).
-const startsIndexable = s => (s.points.find(v => v != null) ?? 0) >= INDEX_BASE_FLOOR;
 
 // Picks live in the hash (`#trends?company=…&by=…`), so a view can be shared and a Hot-tab row
 // or a search result can link straight into it. A bare `#trends` — the tab strip's own link —
@@ -2525,24 +2528,14 @@ function levelValue(v, j, s){
 // zero or missing cannot be indexed at all and is drawn as a gap rather than as a spike.
 const INDEX_BASE_FLOOR = 5;   // openings; below this an index is arithmetic, not a reading
 
-// The one place that decides a series' index base, so the chart, the legend and the KPI tiles
-// cannot disagree about it. They did: the chart gated on the first measured level while the
-// percentage gated on the mean of the first three, so [4, 20, 30, ...] was drawn as a gap and
-// labelled "not indexed" in the legend while the tile above it read "Biggest riser +233.3%".
-// Returns null when there is no usable base.
-// The floor is read off the real first count, the base off the netted one (nettedOf), so the
-// index line is the same shape the percentage beside it is read from.
+// A series' index base, as the reading decides it (its `index_base`, ADR-0233): the first count
+// of its netted line, where that and its first count as counted reach INDEX_BASE_FLOOR; else
+// null, and the line is not indexed. The chart, the legend, the tiles and the Change lock all read
+// it here, so they cannot disagree: the chart once gated on the first level while the percentage
+// gated on a mean of three, drawing a gap under a tile reading "Biggest riser +233.3%".
 function indexBase(s){
-  const first = s.points.map((v, j) => levelValue(v, j, s)).find(v => v != null);
-  if (first == null || first < INDEX_BASE_FLOOR) return null;
-  return nettedOf(s).find(v => v != null);
-}
-// A line with its marked steps taken out, as the reading netted it (ADR-0233), in openings.
-// Adjusted backwards, the way a price history is adjusted: the latest value stays the real one.
-// A line the reading does not carry is drawn as counted.
-function nettedOf(s){
   const line = lineReading(s);
-  return line && line.netted && line.netted.length ? line.netted : s.points;
+  return line ? line.index_base : null;
 }
 
 // Under Share and Count the plot draws the real levels, which a reader reads off the axis, and
@@ -2558,7 +2551,9 @@ function seriesValues(s){
   // under the floor is no base: two openings would turn one posting into +50%.
   const base = indexBase(s);
   if (base == null) return level.map(() => null);
-  return nettedOf(s).map(v => (v == null ? null : v / base * 100));
+  // The line with its marked steps taken out, as the reading netted it, adjusted backwards the
+  // way a price history is: the latest value stays the real one.
+  return lineReading(s).netted.map(v => (v == null ? null : v / base * 100));
 }
 
 // Whether a series can be indexed in the current window — the legend uses this to say why a
@@ -3265,14 +3260,11 @@ function buildKpis(d, charted, measured){
   // "Biggest riser +233.3%" — the same tile class the floor was added to stop.
   // One Total line has no rival to rise or fall against; its own movement is in its legend row.
   const kind = viewKind(d);
-  // Summed from the series, NOT `totals - non_tech`: the ledger writes non_tech under the STOCK
-  // metric only, so that subtraction reports the stock figure whatever the Measure says —
-  // measured against this payload, 266,008 under a "New this week" label whose series sum to
-  // 31,143. The sum agrees with the subtraction exactly on stock, where both are defined.
-  const openings = d.series.reduce((sum, s) => {
-    const last = latestOf(s);
-    return sum + (last || 0);
-  }, 0);
+  // Every line's latest openings added together, as the reading gives it (`openings`), NOT
+  // `totals - non_tech`: the ledger writes non_tech under the STOCK metric only, so that
+  // subtraction reported the stock figure whatever the Measure said (266,008 under a "New this
+  // week" label whose lines held 31,143).
+  const openings = d.reading ? d.reading.openings : null;
   const tiles = [];
   // Each mover tile has to earn its own name: on "New this week" every category is falling, so
   // the top of the range is a -39.2% and calling it the biggest riser would be a lie the tile
@@ -3283,7 +3275,7 @@ function buildKpis(d, charted, measured){
   if (d.series.length) tiles.push({
     label: trendDrill ? (trendSplit === 'roles' ? 'Openings in tracked roles' : 'Openings in this category')
       : trendMetric === 'new' ? 'New tech openings' : 'Tech openings',
-    value: openings.toLocaleString(), note: measured });
+    value: openings == null ? '—' : openings.toLocaleString(), note: measured });
   const { tracked } = VIEWS[kind];
   if (tracked) tiles.push({ label: tracked, value: String(d.series.length) });
   if (!tiles.length) return false;
@@ -3489,38 +3481,24 @@ function buildTrendsTable(){
   // the categories took out and the company line counts, one figure, so the rows add up.
   const closing = withTotal && reading.breakdown && reading.breakdown.closing;
   const closingRow = closing ? `<tr class="closing"><th scope="row">Moved between categories by a counting change</th>`
-    + dash + dash + openings(closing.hiring) + openings(closing.not_hiring_total)
+    // One figure, in the hiring column: the rows took it out as a counting change's and the
+    // company line counts it, and saying so twice read as two figures (the owner's call).
+    + dash + dash + openings(closing.hiring) + dash
     + (withTurnover ? dash + dash : '') + dash + dash + dash + '</tr>' : '';
   const many = kind === 'bands' ? 'levels' : 'categories';
   const whose = trendPicks.length > 1 ? 'the companies’' : 'the company’s';
   // The rows are said to add up only where the reading's checks say they do. Opened and closed
   // are counted line by line (a category leaves out a Found Board's run the company counts), so
   // they are never said to.
+  // With a closing row only the hiring is said to add up: that row gives one figure (its Not
+  // hiring cell is blank), so the other columns of the rows do not reach the first row's.
   const addsUp = !problemsOf(reading).length
-    ? `; the ${many} below${closing ? ' and the closing row' : ''} add up to it` : '';
+    ? `; the ${many} below${closing ? ' and the closing row add up to its hiring' : ' add up to it'}` : '';
   const note = withTotal ? `<caption>The first row is ${whose} hiring${addsUp}.${
     withTurnover ? ' Opened and closed are counted line by line, so they need not add up.' : ''}</caption>` : '';
   return `${note}<thead>${head}</thead><tbody>${body}${closingRow}</tbody>`;
 }
 
-// How many of the picks' served jobs the classifier sets aside as non-tech at the latest run:
-// each company's whole total less its tech openings.
-function nonTechAt(d){
-  if (!d || !d.company_totals) return 0;
-  const whole = Object.values(d.company_totals).reduce((sum, t) => sum + (t[t.length - 1] || 0), 0);
-  const tech = d.series.reduce((sum, s) => sum + (latestOf(s) || 0), 0);
-  return Math.max(0, whole - tech);
-}
-
-// A line's figure at the latest run. The Space leaves a stock series' point empty where a run
-// counted none of it, so a line with earlier counts reads 0 there — one rule for the tile and the
-// hand-off to Search.
-function latestOf(s){
-  // A line built here from the reading (a Total) carries its `latest`; else its last point is it.
-  const last = s.latest !== undefined ? s.latest : s.points[s.points.length - 1];
-  if (last != null) return last;
-  return trendMetric === 'stock' && s.points.some(v => v != null) ? 0 : null;
-}
 
 // One unit per column: "↑ +6.8%" and "+12 openings" in one column read as two scales for one
 // question. A line under the floor has no percentage worth printing ("—", with the reason); a
@@ -3575,6 +3553,21 @@ function markedText(item){
 function checkReading(reading){
   const out = [];
   const changes = new Map((reading.marked_changes || []).map(c => [c.id, c]));
+  const labels = [...changes.values()].map(c => c.label).concat(
+    [reading.total, reading.other, ...(reading.lines || []), ...(reading.company_lines || [])]
+      .filter(Boolean).flatMap(r => r.move.not_hiring.map(c => c.label)));
+  [...new Set(labels.filter(label => FIELD_ID.test(label)))].sort()
+    .forEach(label => out.push(`label '${label}': it is a field id, not words`));
+  [reading.total, ...(reading.lines || [])].filter(r => r && r.index_base != null).forEach(r => {
+    const first = r.netted.find(v => v != null);
+    if (r.index_base < INDEX_BASE_FLOOR || r.index_base !== first)
+      out.push(`line ${r.name}: its index base is not a first netted count of ${INDEX_BASE_FLOOR} or more`);
+  });
+  const linesNow = (reading.lines || []).reduce((sum, r) => sum + r.move.latest, 0);
+  if ((reading.openings || 0) !== linesNow) out.push("openings: not every line's latest added together");
+  const served = reading.served_jobs;
+  if ((reading.non_tech_jobs ?? null) !== (served == null ? null : Math.max(0, served - linesNow)))
+    out.push('non-tech jobs: not the served jobs less the openings');
   const same = (a, b) => (a == null || b == null) ? a == null && b == null
     : Math.abs(a - b) <= Math.max(1e-9 * Math.max(Math.abs(a), Math.abs(b)), 1e-9);
   const lines = [['first row', reading.total],
@@ -3609,7 +3602,8 @@ function checkReading(reading){
       if (!same(m.share.latest, latest ? m.latest / latest * 100 : null))
         out.push(`${where}: its latest share is not its count over the denominator`);
       const start = m.share.start, now = m.share.latest;
-      const change = m.percent != null && start && now != null ? (now - start) / start * 100 : null;
+      const change = m.span_days >= MIN_SPAN_DAYS && m.start >= MOVER_FLOOR && start && now != null
+        ? (now - start) / start * 100 : null;
       if (!same(m.share.percent, change))
         out.push(`${where}: its share's change is not its latest share over its start`);
     }
@@ -3792,7 +3786,7 @@ function shareLock(){
 function changeLock(){
   if (!trendData) return '';
   const { charted } = chartedAndOther(trendData);
-  return !charted.length || charted.some(startsIndexable) ? ''
+  return !charted.length || charted.some(s => indexBase(s) != null) ? ''
     : `Change is off here — no line starts with ${INDEX_BASE_FLOOR} or more openings to index against, so counts are shown.`;
 }
 // A lock moves the reader off a unit only while it holds: the unit they chose is kept in
@@ -4055,18 +4049,19 @@ if (el('trends-co-roles')) el('trends-co-roles').addEventListener('click', () =>
   const name = trendDrill ? drillLabel() : null;
   const kind = trendData ? viewKind(trendData) : null;
   // The category's size, to keep inside the Space's cap: its levels add up to it; a watched-roles
-  // view counts only a few titles, so the picks' whole totals bound it from above instead.
-  const latest = list => list.reduce((sum, v) => sum + (v || 0), 0);
-  const size = !trendData ? Infinity : kind === 'roles'
-    ? latest(Object.values(trendData.company_totals || {}).map(t => t[t.length - 1]))
-    : latest(trendData.series.map(s => s.latest));
+  // view counts only a few titles, so the picks' whole totals bound it from above instead. Both
+  // are the reading's (`openings`, `served_jobs`).
+  const reading = trendData && trendData.reading;
+  const size = !reading ? Infinity : kind === 'roles' ? reading.served_jobs ?? Infinity : reading.openings;
   const exact = trendDrill && CFG.family_handoff && size <= (CFG.max_family_ids || 0);
   searchCompany(trendPicks.flatMap(p => p.boardKeys || []),
     trendPicks.length === 1 ? trendPicks[0].label : trendPicks.map(p => p.label).join(', '),
     // "Software Engineering (general)" asks for "(general)" too; the qualifier is not a role.
     trendDrill && !exact ? name.replace(/\s*\(.*\)\s*$/, '') : '',
     exact ? { family: trendDrill, label: name } : null,
-    trendDrill ? 0 : nonTechAt(trendData),
+    // How many of the picks' served jobs the tech filter sets aside, which Search says it leaves
+    // out: the reading's `non_tech_jobs`.
+    trendDrill || !reading ? 0 : reading.non_tech_jobs || 0,
     // Only where Search lists exactly what the trend counts: a whole company's tech openings, or
     // a category handed over by its ids.
     // Not under New, a week's count Search does not list, nor under a source filter Search does
@@ -4184,8 +4179,8 @@ if (el('trends-legend')) {
     if (jobs){
       // With the trend's own count and time, as the company and category hand-offs carry: Google's
       // LLM/GenAI read 84 here and 82 in Search with nothing to say why.
-      const line = trendData && trendData.series.find(s => s.name === jobs.dataset.role);
-      const n = line && latestOf(line);
+      const line = trendData && lineReading({ name: jobs.dataset.role });
+      const n = line && line.move.latest;
       searchCompany(trendPicks.flatMap(p => p.boardKeys || []),
         trendPicks.length === 1 ? trendPicks[0].label : trendPicks.map(p => p.label).join(', '),
         '', { role: jobs.dataset.role.replace(/^watch:/, ''), label: jobs.dataset.roleLabel }, 0,

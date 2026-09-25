@@ -122,9 +122,9 @@
      "hiring": 0,
      "not_hiring": [
       {
-       "change": "counting@2026-09-11T12:00:00+00:00",
+       "change": "echo@2026-09-11T12:00:00+00:00",
        "kind": "counting",
-       "label": "tech_filter_version",
+       "label": "the week-later echo of the Sep 11 tech filter change",
        "size": -40
       }
      ],
@@ -159,6 +159,7 @@
     "steps_at": [
      9
     ],
+    "index_base": 110,
     "arrived_by": null
    }
   ],
@@ -174,9 +175,9 @@
      "hiring": 0,
      "not_hiring": [
       {
-       "change": "counting@2026-09-11T12:00:00+00:00",
+       "change": "echo@2026-09-11T12:00:00+00:00",
        "kind": "counting",
-       "label": "tech_filter_version",
+       "label": "the week-later echo of the Sep 11 tech filter change",
        "size": -40
       }
      ],
@@ -196,16 +197,17 @@
     },
     "netted": [],
     "steps_at": [],
+    "index_base": null,
     "arrived_by": null
    }
   ],
   "breakdown": null,
   "marked_changes": [
    {
-    "id": "counting@2026-09-11T12:00:00+00:00",
+    "id": "echo@2026-09-11T12:00:00+00:00",
     "kind": "counting",
-    "ts": "2026-09-11T12:00:00+00:00",
-    "label": "tech_filter_version",
+    "ts": "2026-09-19T00:00:00+00:00",
+    "label": "the week-later echo of the Sep 11 tech filter change",
     "fields": [
      "tech_filter_version"
     ],
@@ -222,7 +224,7 @@
     "day": "2026-09-19",
     "at": "2026-09-19T00:00:00+00:00",
     "changes": [
-     "counting@2026-09-11T12:00:00+00:00"
+     "echo@2026-09-11T12:00:00+00:00"
     ]
    }
   ],
@@ -240,6 +242,9 @@
    10000,
    10000
   ],
+  "openings": 110,
+  "served_jobs": null,
+  "non_tech_jobs": null,
   "reconciles": true,
   "violations": []
  }

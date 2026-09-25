@@ -92,6 +92,7 @@
     180
    ],
    "steps_at": [],
+   "index_base": 130,
    "arrived_by": null,
    "points": [
     130,
@@ -127,6 +128,7 @@
      150
     ],
     "steps_at": [],
+    "index_base": 100,
     "arrived_by": null
    },
    {
@@ -157,6 +159,7 @@
      30
     ],
     "steps_at": [],
+    "index_base": 30,
     "arrived_by": null
    }
   ],
@@ -187,6 +190,7 @@
     },
     "netted": [],
     "steps_at": [],
+    "index_base": null,
     "arrived_by": null
    }
   ],
@@ -199,6 +203,9 @@
    1000,
    1000
   ],
+  "openings": 180,
+  "served_jobs": null,
+  "non_tech_jobs": null,
   "reconciles": true,
   "violations": []
  }

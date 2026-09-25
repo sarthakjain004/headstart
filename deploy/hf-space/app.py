@@ -16,6 +16,7 @@ import json
 import os
 import threading
 import time
+import traceback
 from dataclasses import replace
 from datetime import timedelta
 from pathlib import Path
@@ -1101,25 +1102,32 @@ def trends():
         return jsonify(error=str(exc)), 503
     except ValueError as exc:
         return jsonify(error=str(exc)), 400
-    reading = _trend_reading(answer, question)
-    return jsonify(trend_reading.trends_payload(answer, reading))
+    return jsonify(_trends_payload(answer, question))
 
 
-def _trend_reading(
-    answer: dict, question: trend_history.TrendQuestion
-) -> trend_reading.TrendReading:
-    """The answer's line reading (ADR-0233), which holds every figure the page shows.
+def _trends_payload(answer: dict, question: trend_history.TrendQuestion) -> dict:
+    """The answer with its line reading (ADR-0233), which holds every figure the page shows.
 
-    A reading that does not reconcile is served all the same, saying so, and logged
-    (decision 6); the page says its figures do not fully reconcile."""
-    reading = trend_reading.read_answer(answer)
+    A reading is never an error (decision 6). One that does not reconcile is served all the
+    same, saying so, and logged; one that cannot be read at all is served as null with why,
+    logged with its traceback. Either way the page draws the lines and says its figures do not
+    fully reconcile, rather than the tab failing."""
+    try:
+        payload, reading = trend_reading.trends_payload(answer)
+    except Exception as exc:  # noqa: BLE001 - a reading that fails costs its figures only
+        error = f"{type(exc).__name__}: {exc}"
+        print(
+            f"trends reading failed for {question}: {error}\n{traceback.format_exc()}",
+            flush=True,
+        )
+        return trend_reading.unread_trends_payload(answer, error)
     if not reading.reconciles:
         print(
             f"trends reading does not reconcile for {question}: "
             + "; ".join(reading.violations[:5]),
             flush=True,
         )
-    return reading
+    return payload
 
 
 @app.route("/companies/suggest")

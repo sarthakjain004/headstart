@@ -151,6 +151,7 @@
     85000
    ],
    "steps_at": [],
+   "index_base": 85000,
    "arrived_by": null,
    "points": [
     85000,
@@ -186,6 +187,7 @@
      40000
     ],
     "steps_at": [],
+    "index_base": 40000,
     "arrived_by": null
    },
    {
@@ -216,6 +218,7 @@
      9000
     ],
     "steps_at": [],
+    "index_base": 9000,
     "arrived_by": null
    },
    {
@@ -246,6 +249,7 @@
      8000
     ],
     "steps_at": [],
+    "index_base": 8000,
     "arrived_by": null
    },
    {
@@ -276,6 +280,7 @@
      7000
     ],
     "steps_at": [],
+    "index_base": 7000,
     "arrived_by": null
    },
    {
@@ -306,6 +311,7 @@
      6000
     ],
     "steps_at": [],
+    "index_base": 6000,
     "arrived_by": null
    },
    {
@@ -336,6 +342,7 @@
      5000
     ],
     "steps_at": [],
+    "index_base": 5000,
     "arrived_by": null
    },
    {
@@ -366,6 +373,7 @@
      4000
     ],
     "steps_at": [],
+    "index_base": 4000,
     "arrived_by": null
    },
    {
@@ -396,6 +404,7 @@
      3000
     ],
     "steps_at": [],
+    "index_base": 3000,
     "arrived_by": null
    },
    {
@@ -426,6 +435,7 @@
      2000
     ],
     "steps_at": [],
+    "index_base": 2000,
     "arrived_by": null
    },
    {
@@ -456,6 +466,7 @@
      1000
     ],
     "steps_at": [],
+    "index_base": 1000,
     "arrived_by": null
    }
   ],
@@ -484,6 +495,7 @@
    },
    "netted": [],
    "steps_at": [],
+   "index_base": null,
    "arrived_by": null
   },
   "company_lines": [],
@@ -494,6 +506,9 @@
    100000,
    100000
   ],
+  "openings": 85000,
+  "served_jobs": null,
+  "non_tech_jobs": null,
   "reconciles": true,
   "violations": []
  }

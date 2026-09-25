@@ -1,10 +1,10 @@
 {
- "description": "Under Share a category that started under 20 openings is no riser; the big one is.",
+ "description": "One pick inside a category of 60 openings: small enough to hand over to Search by ids.",
  "answer_input": {
   "metric": "stock",
   "coverage": "all",
   "new_window_days": 7,
-  "family": null,
+  "family": "ai-ml",
   "epochs": [],
   "discovered": [],
   "stamps": [
@@ -12,7 +12,7 @@
    "2026-09-20T00:00:00+00:00"
   ],
   "watch_parents": [],
-  "split_by": "family",
+  "split_by": "band",
   "totals": [
    1000,
    1000
@@ -23,22 +23,22 @@
   ],
   "series": [
    {
-    "name": "small",
-    "label": "small",
+    "name": "senior",
+    "label": "senior",
     "points": [
-     10,
-     19
+     30,
+     35
     ],
-    "latest": 19
+    "latest": 35
    },
    {
-    "name": "big",
-    "label": "big",
+    "name": "mid",
+    "label": "mid",
     "points": [
-     100,
-     120
+     20,
+     25
     ],
-    "latest": 120
+    "latest": 25
    }
   ],
   "companies": [
@@ -69,97 +69,97 @@
    "label": "",
    "estimated": false,
    "move": {
-    "start": 110,
-    "latest": 139,
-    "hiring": 29,
+    "start": 50,
+    "latest": 60,
+    "hiring": 10,
     "not_hiring": [],
     "not_hiring_total": 0,
-    "percent": 26.36363636363636,
+    "percent": 20.0,
     "percent_withheld": null,
     "span_days": 7.0,
-    "per_week": 29,
+    "per_week": 10,
     "turnover": null,
     "share": {
-     "start": 11.0,
-     "latest": 13.900000000000002,
+     "start": 5.0,
+     "latest": 6.0,
      "denominator_start": 1000,
      "denominator_latest": 1000,
-     "percent": 26.363636363636385
+     "percent": 20.0
     }
    },
    "netted": [
-    110,
-    139
+    50,
+    60
    ],
    "steps_at": [],
-   "index_base": 110,
+   "index_base": 50,
    "arrived_by": null,
    "points": [
-    110,
-    139
+    50,
+    60
    ]
   },
   "lines": [
    {
-    "name": "small",
-    "label": "small",
+    "name": "senior",
+    "label": "senior",
     "estimated": false,
     "move": {
-     "start": 10,
-     "latest": 19,
-     "hiring": 9,
+     "start": 30,
+     "latest": 35,
+     "hiring": 5,
      "not_hiring": [],
      "not_hiring_total": 0,
-     "percent": null,
-     "percent_withheld": "under 20 openings at the start",
+     "percent": 16.666666666666664,
+     "percent_withheld": null,
      "span_days": 7.0,
-     "per_week": 9,
+     "per_week": 5,
      "turnover": null,
      "share": {
-      "start": 1.0,
-      "latest": 1.9,
+      "start": 3.0,
+      "latest": 3.5000000000000004,
       "denominator_start": 1000,
       "denominator_latest": 1000,
-      "percent": null
+      "percent": 16.666666666666682
      }
     },
     "netted": [
-     10,
-     19
+     30,
+     35
     ],
     "steps_at": [],
-    "index_base": 10,
+    "index_base": 30,
     "arrived_by": null
    },
    {
-    "name": "big",
-    "label": "big",
+    "name": "mid",
+    "label": "mid",
     "estimated": false,
     "move": {
-     "start": 100,
-     "latest": 120,
-     "hiring": 20,
+     "start": 20,
+     "latest": 25,
+     "hiring": 5,
      "not_hiring": [],
      "not_hiring_total": 0,
-     "percent": 20.0,
+     "percent": 25.0,
      "percent_withheld": null,
      "span_days": 7.0,
-     "per_week": 20,
+     "per_week": 5,
      "turnover": null,
      "share": {
-      "start": 10.0,
-      "latest": 12.0,
+      "start": 2.0,
+      "latest": 2.5,
       "denominator_start": 1000,
       "denominator_latest": 1000,
-      "percent": 20.0
+      "percent": 25.0
      }
     },
     "netted": [
-     100,
-     120
+     20,
+     25
     ],
     "steps_at": [],
-    "index_base": 100,
+    "index_base": 20,
     "arrived_by": null
    }
   ],
@@ -167,25 +167,25 @@
   "company_lines": [
    {
     "name": "greenhouse:acme",
-    "label": "Acme",
+    "label": "Acme, ai-ml",
     "estimated": false,
     "move": {
-     "start": 110,
-     "latest": 139,
-     "hiring": 29,
+     "start": 50,
+     "latest": 60,
+     "hiring": 10,
      "not_hiring": [],
      "not_hiring_total": 0,
-     "percent": 26.36363636363636,
+     "percent": 20.0,
      "percent_withheld": null,
      "span_days": 7.0,
-     "per_week": 29,
+     "per_week": 10,
      "turnover": null,
      "share": {
-      "start": 11.0,
-      "latest": 13.900000000000002,
+      "start": 5.0,
+      "latest": 6.0,
       "denominator_start": 1000,
       "denominator_latest": 1000,
-      "percent": 26.363636363636385
+      "percent": 20.0
      }
     },
     "netted": [],
@@ -203,7 +203,7 @@
    1000,
    1000
   ],
-  "openings": 139,
+  "openings": 60,
   "served_jobs": null,
   "non_tech_jobs": null,
   "reconciles": true,

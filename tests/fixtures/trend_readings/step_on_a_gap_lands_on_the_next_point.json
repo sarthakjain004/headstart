@@ -74,6 +74,9 @@
   "marked_changes": [],
   "day_markers": [],
   "reference": [],
+  "openings": 0,
+  "served_jobs": null,
+  "non_tech_jobs": null,
   "reconciles": true,
   "violations": []
  }

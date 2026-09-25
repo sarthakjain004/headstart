@@ -1,10 +1,10 @@
 {
- "description": "Under Share a category that started under 20 openings is no riser; the big one is.",
+ "description": "A tracked role inside a category, 84 now: the count its jobs link hands Search.",
  "answer_input": {
   "metric": "stock",
   "coverage": "all",
   "new_window_days": 7,
-  "family": null,
+  "family": "software-engineering",
   "epochs": [],
   "discovered": [],
   "stamps": [
@@ -23,22 +23,13 @@
   ],
   "series": [
    {
-    "name": "small",
-    "label": "small",
+    "name": "watch:llm",
+    "label": "watch:llm",
     "points": [
-     10,
-     19
+     80,
+     84
     ],
-    "latest": 19
-   },
-   {
-    "name": "big",
-    "label": "big",
-    "points": [
-     100,
-     120
-    ],
-    "latest": 120
+    "latest": 84
    }
   ],
   "companies": [
@@ -53,7 +44,12 @@
     ]
    }
   ],
-  "company_totals": {},
+  "company_totals": {
+   "greenhouse:acme": [
+    900,
+    950
+   ]
+  },
   "counted_since": {
    "greenhouse:acme": "2026-09-13T00:00:00+00:00"
   }
@@ -69,123 +65,92 @@
    "label": "",
    "estimated": false,
    "move": {
-    "start": 110,
-    "latest": 139,
-    "hiring": 29,
+    "start": 80,
+    "latest": 84,
+    "hiring": 4,
     "not_hiring": [],
     "not_hiring_total": 0,
-    "percent": 26.36363636363636,
+    "percent": 5.0,
     "percent_withheld": null,
     "span_days": 7.0,
-    "per_week": 29,
+    "per_week": 4,
     "turnover": null,
     "share": {
-     "start": 11.0,
-     "latest": 13.900000000000002,
+     "start": 8.0,
+     "latest": 8.4,
      "denominator_start": 1000,
      "denominator_latest": 1000,
-     "percent": 26.363636363636385
+     "percent": 5.000000000000004
     }
    },
    "netted": [
-    110,
-    139
+    80,
+    84
    ],
    "steps_at": [],
-   "index_base": 110,
+   "index_base": 80,
    "arrived_by": null,
    "points": [
-    110,
-    139
+    80,
+    84
    ]
   },
   "lines": [
    {
-    "name": "small",
-    "label": "small",
+    "name": "watch:llm",
+    "label": "watch:llm",
     "estimated": false,
     "move": {
-     "start": 10,
-     "latest": 19,
-     "hiring": 9,
+     "start": 80,
+     "latest": 84,
+     "hiring": 4,
      "not_hiring": [],
      "not_hiring_total": 0,
-     "percent": null,
-     "percent_withheld": "under 20 openings at the start",
-     "span_days": 7.0,
-     "per_week": 9,
-     "turnover": null,
-     "share": {
-      "start": 1.0,
-      "latest": 1.9,
-      "denominator_start": 1000,
-      "denominator_latest": 1000,
-      "percent": null
-     }
-    },
-    "netted": [
-     10,
-     19
-    ],
-    "steps_at": [],
-    "index_base": 10,
-    "arrived_by": null
-   },
-   {
-    "name": "big",
-    "label": "big",
-    "estimated": false,
-    "move": {
-     "start": 100,
-     "latest": 120,
-     "hiring": 20,
-     "not_hiring": [],
-     "not_hiring_total": 0,
-     "percent": 20.0,
+     "percent": 5.0,
      "percent_withheld": null,
      "span_days": 7.0,
-     "per_week": 20,
+     "per_week": 4,
      "turnover": null,
      "share": {
-      "start": 10.0,
-      "latest": 12.0,
+      "start": 8.0,
+      "latest": 8.4,
       "denominator_start": 1000,
       "denominator_latest": 1000,
-      "percent": 20.0
+      "percent": 5.000000000000004
      }
     },
     "netted": [
-     100,
-     120
+     80,
+     84
     ],
     "steps_at": [],
-    "index_base": 100,
+    "index_base": 80,
     "arrived_by": null
    }
   ],
   "other": null,
   "company_lines": [
    {
-    "name": "greenhouse:acme",
-    "label": "Acme",
+    "name": "watch:llm",
+    "label": "watch:llm",
     "estimated": false,
     "move": {
-     "start": 110,
-     "latest": 139,
-     "hiring": 29,
+     "start": 80,
+     "latest": 84,
+     "hiring": 4,
      "not_hiring": [],
      "not_hiring_total": 0,
-     "percent": 26.36363636363636,
+     "percent": 5.0,
      "percent_withheld": null,
      "span_days": 7.0,
-     "per_week": 29,
+     "per_week": 4,
      "turnover": null,
      "share": {
-      "start": 11.0,
-      "latest": 13.900000000000002,
+      "start": 8.0,
+      "latest": 8.4,
       "denominator_start": 1000,
       "denominator_latest": 1000,
-      "percent": 26.363636363636385
+      "percent": 5.000000000000004
      }
     },
     "netted": [],
@@ -194,18 +159,16 @@
     "arrived_by": null
    }
   ],
-  "breakdown": {
-   "closing": null
-  },
+  "breakdown": null,
   "marked_changes": [],
   "day_markers": [],
   "reference": [
    1000,
    1000
   ],
-  "openings": 139,
-  "served_jobs": null,
-  "non_tech_jobs": null,
+  "openings": 84,
+  "served_jobs": 950,
+  "non_tech_jobs": 866,
   "reconciles": true,
   "violations": []
  }

@@ -250,6 +250,7 @@
      700
     ],
     "steps_at": [],
+    "index_base": 700,
     "arrived_by": null
    },
    {
@@ -282,6 +283,7 @@
      600
     ],
     "steps_at": [],
+    "index_base": 600,
     "arrived_by": null
    },
    {
@@ -314,6 +316,7 @@
      500
     ],
     "steps_at": [],
+    "index_base": 500,
     "arrived_by": null
    },
    {
@@ -346,6 +349,7 @@
      400
     ],
     "steps_at": [],
+    "index_base": 400,
     "arrived_by": null
    },
    {
@@ -378,6 +382,7 @@
      300
     ],
     "steps_at": [],
+    "index_base": 300,
     "arrived_by": null
    },
    {
@@ -410,6 +415,7 @@
      200
     ],
     "steps_at": [],
+    "index_base": 300,
     "arrived_by": null
    },
    {
@@ -442,6 +448,7 @@
      200
     ],
     "steps_at": [],
+    "index_base": 100,
     "arrived_by": null
    },
    {
@@ -474,6 +481,7 @@
      50
     ],
     "steps_at": [],
+    "index_base": 50,
     "arrived_by": null
    }
   ],
@@ -504,6 +512,7 @@
     },
     "netted": [],
     "steps_at": [],
+    "index_base": null,
     "arrived_by": null
    },
    {
@@ -531,6 +540,7 @@
     },
     "netted": [],
     "steps_at": [],
+    "index_base": null,
     "arrived_by": null
    },
    {
@@ -558,6 +568,7 @@
     },
     "netted": [],
     "steps_at": [],
+    "index_base": null,
     "arrived_by": null
    },
    {
@@ -585,6 +596,7 @@
     },
     "netted": [],
     "steps_at": [],
+    "index_base": null,
     "arrived_by": null
    },
    {
@@ -612,6 +624,7 @@
     },
     "netted": [],
     "steps_at": [],
+    "index_base": null,
     "arrived_by": null
    },
    {
@@ -639,6 +652,7 @@
     },
     "netted": [],
     "steps_at": [],
+    "index_base": null,
     "arrived_by": null
    },
    {
@@ -666,6 +680,7 @@
     },
     "netted": [],
     "steps_at": [],
+    "index_base": null,
     "arrived_by": null
    },
    {
@@ -693,6 +708,7 @@
     },
     "netted": [],
     "steps_at": [],
+    "index_base": null,
     "arrived_by": null
    }
   ],
@@ -705,6 +721,9 @@
    10000,
    10000
   ],
+  "openings": 2950,
+  "served_jobs": null,
+  "non_tech_jobs": null,
   "reconciles": true,
   "violations": []
  }

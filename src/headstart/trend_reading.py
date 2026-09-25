@@ -35,15 +35,17 @@ and a breakdown's rows (with one closing row where they fall short) sum to its f
 from __future__ import annotations
 
 import math
+import re
 from collections import Counter, defaultdict
 from collections.abc import Iterable
 from dataclasses import asdict, dataclass, replace
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import StrEnum
 from itertools import pairwise
 
 from headstart import trend_netting
 from headstart.trend_netting import (
+    _DEDUP,
     _TOTAL,
     _birth_note,
     _count_jumps,
@@ -99,14 +101,16 @@ _DRAWN_DECIMALS = 2
 # The Other row's name, as the page names it.
 _OTHER = "__other__"
 
-# The answer's pieces the reading nets and the page never reads: each pick's own line, part and
-# turnover, the duplicate removals, and the Boards found later.
-_READ_BY_THE_READING_ONLY = (
+# The answer's pieces the reading reads and the page never does: each pick's own line, part and
+# turnover, the duplicate removals, the Boards found later, and the Methodology changes. Each
+# line's run-by-run `turnover` stays off too.
+_ANSWER_FIELDS_THE_PAGE_NEVER_READS = (
     "pick_series",
     "pick_parts",
     "pick_turnover",
     "evicted",
     "discovered",
+    "epochs",
 )
 
 # The closing row's one cause (decision 4), a counting change's reassignment between categories
@@ -115,6 +119,9 @@ MOVED_BETWEEN_CATEGORIES = "moved_between_categories"
 
 # Amounts under this are float noise, not openings.
 _NOISE = 1e-6
+
+# A raw field id in a label ("tech_filter_version"): words never have an underscore in them.
+_FIELD_ID = re.compile(r"\b[a-z0-9]+(?:_[a-z0-9]+)+\b")
 
 
 # ---- the reading -----------------------------------------------------------------------------
@@ -147,8 +154,8 @@ class Cause:
 class Share:
     """A line as a share of its denominator, at the window's start and now. The start is the
     netted count over the netted denominator, each netted once (ADR-0233 decision 2).
-    ``percent`` is the share's own change, latest over start, None where the line's percentage
-    is withheld."""
+    ``percent`` is the share's own change, latest over start, None over a window under
+    MIN_SPAN_DAYS, from under MOVER_FLOOR openings, or off a share of 0 at the start."""
 
     start: float | None
     latest: float | None
@@ -188,10 +195,12 @@ class LineReading:
     What the page draws of it: ``netted``, its counts run by run with its steps taken out,
     adjusted backwards so the latest stays the real one (the Change plot indexes it); and
     ``steps_at``, the runs a step lands on, where a line drawn in counts or shares breaks.
-    ``points`` are its counts run by run where no answer series carries them: the first row's.
-    ``arrived_by`` is what a line that began inside the window arrived by, a counting change
-    sorting openings into it or a pick joining; None where it began with the window, or arrived
-    by hiring."""
+    ``index_base`` is what the Change plot divides ``netted`` by, its first netted count; None
+    where the line's first count or that base is under INDEX_BASE_FLOOR, and the line is not
+    indexed at all. ``points`` are its counts run by run where no answer series carries them:
+    the first row's. ``arrived_by`` is what a line that began inside the window arrived by, a
+    counting change sorting openings into it or a pick joining; None where it began with the
+    window, or arrived by hiring."""
 
     name: str
     label: str
@@ -199,6 +208,7 @@ class LineReading:
     estimated: bool = False
     netted: tuple[float | None, ...] = ()
     steps_at: tuple[int, ...] = ()
+    index_base: float | None = None
     arrived_by: CauseKind | None = None
     points: tuple[int | None, ...] | None = None
 
@@ -240,8 +250,11 @@ class TrendReading:
     or inside a drill its part of the category. ``closing`` is the breakdown's closing row, the
     openings a counting change moved between categories; ``breakdown`` says whether ``lines``
     add up to ``total`` at all. ``reference`` is the share denominator netted run by run, the
-    Change plot's dashed line. A reading that fails :func:`check_reading` is still served,
-    with ``violations`` (ADR-0233 decision 6)."""
+    Change plot's dashed line. ``openings`` is every line's latest openings added together (the
+    tile, and the count a hand-off to Search names); under a pick, ``served_jobs`` is every job
+    the picks serve at the latest run, non-tech included, and ``non_tech_jobs`` those the tech
+    filter sets aside. A reading that fails :func:`check_reading` is still served, with
+    ``violations`` (ADR-0233 decision 6)."""
 
     window: tuple[str, str] | None
     picked: bool
@@ -254,6 +267,9 @@ class TrendReading:
     day_markers: tuple[DayMarker, ...]
     other: LineReading | None = None
     reference: tuple[float | None, ...] = ()
+    openings: int = 0
+    served_jobs: int | None = None
+    non_tech_jobs: int | None = None
     violations: tuple[str, ...] = ()
 
     @property
@@ -278,6 +294,7 @@ class TrendReading:
                 "move": move(r.move),
                 "netted": list(r.netted),
                 "steps_at": list(r.steps_at),
+                "index_base": r.index_base,
                 "arrived_by": r.arrived_by,
             }
             if r.points is not None:
@@ -313,6 +330,9 @@ class TrendReading:
                 for d in self.day_markers
             ],
             "reference": list(self.reference),
+            "openings": self.openings,
+            "served_jobs": self.served_jobs,
+            "non_tech_jobs": self.non_tech_jobs,
             "reconciles": self.reconciles,
             "violations": list(self.violations),
         }
@@ -354,19 +374,43 @@ def read_company_moves(
     return moves
 
 
-def trends_payload(answer: dict, reading: TrendReading) -> dict:
-    """What ``/trends`` serves (ADR-0233 decision 7): ``answer`` as the page draws it, its
-    partial reads dropped, with ``reading``, which holds every figure the page shows. The pieces
-    only the reading nets stay off the wire."""
-    drawn, _ = _viewed(answer)
-    payload = {k: v for k, v in drawn.items() if k not in _READ_BY_THE_READING_ONLY}
-    payload["reading"] = reading.to_json()
+def trends_payload(answer: dict) -> tuple[dict, TrendReading]:
+    """What ``/trends`` serves (ADR-0233 decision 7), and the reading in it: ``answer`` as the
+    page draws it, its partial reads dropped, with its reading, which holds every figure the page
+    shows. What only the reading reads stays off the wire.
+
+    Shaped here rather than in the Space because the points the page draws must be the ones the
+    reading was read from: the answer is viewed once, and both come from that one view."""
+    drawn, view = _viewed(answer)
+    reading = _read_viewed(drawn, view)
+    return _served(drawn, reading.to_json()), reading
+
+
+def unread_trends_payload(answer: dict, error: str) -> dict:
+    """What ``/trends`` serves when the reading could not be read at all (ADR-0233 decision 6):
+    the answer with ``reading`` null and ``reading_error`` saying why, so the page draws its lines
+    and says its figures do not reconcile. Its partial reads stay in: dropping them is part of
+    the viewing that may be what failed."""
+    return {**_served(answer, None), "reading_error": error}
+
+
+def _served(answer: dict, reading: dict | None) -> dict:
+    payload = {
+        k: v for k, v in answer.items() if k not in _ANSWER_FIELDS_THE_PAGE_NEVER_READS
+    }
+    payload["series"] = [
+        {k: v for k, v in line.items() if k != "turnover"} for line in answer["series"]
+    ]
+    payload["reading"] = reading
     return payload
 
 
 def read_answer(answer: dict) -> TrendReading:
     """The reading of one answer as ``TrendHistory.unnetted_answer`` builds it. Pure."""
-    answer, view = _viewed(answer)
+    return _read_viewed(*_viewed(answer))
+
+
+def _read_viewed(answer: dict, view: _View) -> TrendReading:
     stamps = view.stamps
     if not stamps or not answer["series"]:
         reading = TrendReading(
@@ -491,11 +535,17 @@ class _Reader:
         )
         # Marked changes are sized on these; nothing draws them, so they carry no drawing.
         company = [
-            replace(r, netted=(), steps_at=(), points=None)
+            replace(r, netted=(), steps_at=(), index_base=None, points=None)
             for r in self._company_lines(total, rows, origin)
         ]
         marked = self._marked_changes(company)
         lines = tuple(r for r in rows if r is not None)
+        openings = sum(r.move.latest for r in lines)
+        served = (
+            sum(t[-1] or 0 for t in self.company_totals.values())
+            if view.picked and self.company_totals
+            else None
+        )
         reading = TrendReading(
             window=(stamps[0], stamps[-1]),
             picked=view.picked,
@@ -507,7 +557,10 @@ class _Reader:
             marked_changes=marked,
             day_markers=self._day_markers(marked, series),
             other=self._other(lines[LINES_CHARTED:]),
-            reference=_drawn(self._netted_denominator(total_line)),
+            reference=_rounded_for_drawing(self._netted_denominator(total_line)),
+            openings=openings,
+            served_jobs=served,
+            non_tech_jobs=max(0, served - openings) if served is not None else None,
         )
         return replace(reading, violations=tuple(check_reading(reading.to_json())))
 
@@ -671,6 +724,7 @@ class _Reader:
     ) -> LineReading | None:
         if exact is None:
             return None
+        netted = _rounded_for_drawing(_net(self.view, line.points, line, None, True))
         return LineReading(
             name=line.name,
             label=label,
@@ -678,8 +732,9 @@ class _Reader:
                 line, exact, hiring, self._round_to_openings(exact, hiring)
             ),
             estimated=exact.estimated,
-            netted=_drawn(_net(self.view, line.points, line, None, True)),
+            netted=netted,
             steps_at=tuple(sorted(_count_jumps(self.view, line))),
+            index_base=_index_base(line.points, netted),
             arrived_by=exact.arrived_by,
         )
 
@@ -840,12 +895,37 @@ class _Reader:
             )
             n = self.notes[k]
         source = n["source"] or stamps[n["i"]]
+        lone_echo = n["echo"] and not any(
+            m["epoch"] and not m["echo"] and m["source"] == source for m in self.notes
+        )
+        if lone_echo:
+            # Under New, the week-later echo of a change whose own run the window does not hold:
+            # marked on its own, at its own run, and said as the echo it is.
+            change = f"echo@{source}"
+            self._register(
+                change,
+                CauseKind.COUNTING,
+                stamps[n["i"]],
+                f"the week-later echo of the {_day(source)} "
+                + " and ".join(_words(f)[1] for f in n["fields"]),
+                fields=tuple(n["fields"]),
+                changed=tuple(n["changed"]),
+            )
+            return change
         change = f"counting@{source}"
+        # Under a pick, a duplicate-removal change is named only where a pick can be touched,
+        # as the note's own `changed` is: Google's marker read "duplicate removal changed",
+        # which moved nothing at Google.
+        named = [
+            f
+            for f in n["fields"]
+            if f != _DEDUP or not self.view.picked or n["touched"]
+        ]
         self._register(
             change,
             CauseKind.COUNTING,
             source,
-            ", ".join(n["changed"] or n["fields"]),
+            ", ".join(_words(f)[0] for f in named) or ", ".join(n["changed"]),
             fields=tuple(n["fields"]),
             changed=tuple(n["changed"]),
         )
@@ -1222,14 +1302,20 @@ def _line_move(
         den_start, den_latest = denominators
         at_start = netted_start / den_start * 100 if den_start else None
         now = latest / den_latest * 100 if den_latest else None
+        # A share's own change has no INDEX_BASE_FLOOR: a category's share off 4 openings of a
+        # company's 1,000 is still a share. Only a zero share at the start has none.
+        shares_change = (
+            span_days >= MIN_SPAN_DAYS
+            and start >= MOVER_FLOOR
+            and bool(at_start)
+            and now is not None
+        )
         share = Share(
             start=at_start,
             latest=now,
             denominator_start=den_start,
             denominator_latest=den_latest,
-            percent=(now - at_start) / at_start * 100
-            if percent is not None and at_start and now is not None
-            else None,
+            percent=(now - at_start) / at_start * 100 if shares_change else None,
         )
     return LineMove(
         start=start,
@@ -1248,9 +1334,49 @@ def _line_move(
     )
 
 
-def _drawn(values) -> tuple[float | None, ...]:
+def _rounded_for_drawing(values) -> tuple[float | None, ...]:
     """Values a line is drawn from, to _DRAWN_DECIMALS: a shape, not counts."""
     return tuple(None if v is None else round(v, _DRAWN_DECIMALS) for v in values)
+
+
+def _index_base(points, netted: tuple[float | None, ...]) -> float | None:
+    """What the Change plot divides a line's netted counts by: its first netted count, where
+    both that and its first count as counted reach INDEX_BASE_FLOOR; else None, not indexed.
+    Off two openings one posting reads +50%, and off a netted base of 0 or less nothing reads."""
+    first = next((v for v in points if v is not None), None)
+    base = next((v for v in netted if v is not None), None)
+    if first is None or first < INDEX_BASE_FLOOR or base is None:
+        return None
+    return base if base >= INDEX_BASE_FLOOR else None
+
+
+def _words(field: str) -> tuple[str, str]:
+    """A Methodology field in words, as a change and as a noun. A field with no words keeps its
+    id, which :func:`check_reading` refuses, so a new field cannot reach a reader unnamed."""
+    return trend_netting.METHODOLOGY_WORDS.get(field, (field, field))
+
+
+_MONTHS = (
+    "Jan",
+    "Feb",
+    "Mar",
+    "Apr",
+    "May",
+    "Jun",
+    "Jul",
+    "Aug",
+    "Sep",
+    "Oct",
+    "Nov",
+    "Dec",
+)
+
+
+def _day(ts: str) -> str:
+    """ "Sep 17" from an ISO stamp, in UTC, as the page's stampLabel dates a day."""
+    at = datetime.fromisoformat(ts)
+    at = at.astimezone(UTC) if at.tzinfo else at
+    return f"{_MONTHS[at.month - 1]} {at.day}"
 
 
 # ---- the invariants --------------------------------------------------------------------------
@@ -1280,10 +1406,45 @@ def check_reading(reading: dict) -> list[str]:
     Plus: every count is a whole number; a line's "Not hiring" total is its causes' sum; its
     weekly rate is its hiring over the days it was counted, withheld under MIN_SPAN_DAYS; its
     turnover's net is opened less closed; the Other row is the lines past LINES_CHARTED added
-    together; no change is one the reading could not name; and every Marked change is named by
-    exactly one day marker."""
+    together; a line's index base, where given, is its first netted count and at least
+    INDEX_BASE_FLOOR; ``openings`` is every line's latest added together, and ``non_tech_jobs``
+    the served jobs less those; no change is one the reading could not name; no label is a raw
+    field id; and every Marked change is named by exactly one day marker."""
     out: list[str] = []
     changes = {c["id"]: c for c in reading.get("marked_changes") or []}
+    labels = [
+        *(c["label"] for c in changes.values()),
+        *(
+            cause["label"]
+            for r in [
+                reading.get("total"),
+                reading.get("other"),
+                *(reading.get("lines") or []),
+                *(reading.get("company_lines") or []),
+            ]
+            if r
+            for cause in r["move"]["not_hiring"]
+        ),
+    ]
+    for label in sorted({x for x in labels if _FIELD_ID.search(x)}):
+        out.append(f"label {label!r}: it is a field id, not words")
+    for r in [reading.get("total"), *(reading.get("lines") or [])]:
+        base = r and r.get("index_base")
+        if base is not None:
+            first = next((v for v in r["netted"] if v is not None), None)
+            if base < INDEX_BASE_FLOOR or not _same(base, first):
+                out.append(
+                    f"line {r['name']}: its index base is not a first netted count of "
+                    f"{INDEX_BASE_FLOOR} or more"
+                )
+    lines_now = [r["move"]["latest"] for r in reading.get("lines") or []]
+    if reading.get("openings", 0) != sum(lines_now):
+        out.append("openings: not every line's latest added together")
+    served = reading.get("served_jobs")
+    if reading.get("non_tech_jobs") != (
+        max(0, served - sum(lines_now)) if served is not None else None
+    ):
+        out.append("non-tech jobs: not the served jobs less the openings")
     lines = [
         ("first row", reading.get("total")),
         *((f"line {r['name']}", r) for r in reading.get("lines") or []),
@@ -1354,7 +1515,10 @@ def check_reading(reading: dict) -> list[str]:
             start, now = share["start"], share["latest"]
             change = (
                 (now - start) / start * 100
-                if m["percent"] is not None and start and now is not None
+                if m["span_days"] >= MIN_SPAN_DAYS
+                and m["start"] >= MOVER_FLOOR
+                and start
+                and now is not None
                 else None
             )
             if not _same(share["percent"], change):

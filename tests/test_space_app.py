@@ -1974,6 +1974,7 @@ _OFF_THE_WIRE = (
     "pick_turnover",
     "evicted",
     "discovered",
+    "epochs",
 )
 _OFF_EACH_LINE = (
     "net",
@@ -1982,6 +1983,7 @@ _OFF_EACH_LINE = (
     "causes",
     "hiring_turnover",
     "born_by_change",
+    "turnover",
 )
 
 
@@ -2041,6 +2043,27 @@ def test_a_reading_that_does_not_reconcile_is_served_saying_so(
     assert d["reading"]["violations"] == ["a violation"]
     assert d["reading"]["total"]["move"]["latest"] == 13
     assert "trends reading does not reconcile" in capsys.readouterr().out
+
+
+def test_a_reading_that_cannot_be_read_is_served_as_null_with_why(
+    company_trends, monkeypatch, capsys
+):
+    """ADR-0233 decision 6: a reading is never an error. The lines are still served, the reading
+    null with the exception's text, and the Space logs it with its traceback."""
+
+    def failing(answer):
+        raise ZeroDivisionError("a reading that divides by nothing")
+
+    monkeypatch.setattr(trend_reading, "_read_viewed", lambda *a: failing(a))
+    response = company_trends.get("/trends?company=workday:hpe/b")
+    assert response.status_code == 200
+    d = response.get_json()
+    assert d["reading"] is None
+    assert d["reading_error"] == "ZeroDivisionError: a reading that divides by nothing"
+    assert [s["name"] for s in d["series"]] == ["software-engineering", "ai-ml"]
+    logged = capsys.readouterr().out
+    assert "trends reading failed" in logged
+    assert "Traceback (most recent call last)" in logged
 
 
 def test_split_by_company_draws_a_line_per_pick_and_tells_twins_apart(company_trends):
@@ -2361,7 +2384,14 @@ def epochs_trends_app(tmp_path_factory):
 
 
 def test_trends_epochs_drops_the_baseline_and_names_what_moved(epochs_trends_app):
-    d = epochs_trends_app.app.test_client().get("/trends").get_json()
+    client = epochs_trends_app.app.test_client()
+    served = client.get("/trends").get_json()
+    assert "epochs" not in served, "the reading marks them; the page never read them"
+    assert [c["label"] for c in served["reading"]["marked_changes"]] == [
+        "tech filter changed",
+        "role family map edited, experience/salary extraction changed",
+    ]
+    d = _answer(client, "")
     assert d["epochs"] == [
         {
             "ts": _T2,
@@ -2381,7 +2411,7 @@ def test_trends_epochs_drops_the_baseline_and_names_what_moved(epochs_trends_app
 
 def test_trends_epochs_are_narrowed_by_since_and_until(epochs_trends_app):
     client = epochs_trends_app.app.test_client()
-    d = client.get(f"/trends?since={quote(_T3)}").get_json()
+    d = _answer(client, f"since={quote(_T3)}")
     assert d["epochs"] == [
         {
             "ts": _T3,
@@ -2392,7 +2422,7 @@ def test_trends_epochs_are_narrowed_by_since_and_until(epochs_trends_app):
             "fields": ["family_map_fingerprint", "derivations_version"],
         }
     ]
-    d = client.get(f"/trends?until={quote(_T2)}").get_json()
+    d = _answer(client, f"until={quote(_T2)}")
     assert d["epochs"] == [
         {
             "ts": _T2,
@@ -2440,7 +2470,7 @@ def test_trends_epochs_name_a_family_assignment_change(tmp_path):
 def test_trends_epochs_are_not_narrowed_by_ats(epochs_trends_app):
     """Unlike every other field in the response, epochs is a methodology timeline, not scoped
     to an ATS selection — a tech-filter or family-map change did not happen "for" one ATS."""
-    d = epochs_trends_app.app.test_client().get("/trends?ats=greenhouse").get_json()
+    d = _answer(epochs_trends_app.app.test_client(), "ats=greenhouse")
     assert len(d["epochs"]) == 2
 
 
@@ -3284,7 +3314,12 @@ def test_each_line_carries_the_turnover_its_change_is_made_of(
     """Opened and closed beside the net line, on every line of a pick (ADR-0227). The first run
     is None, since what landed there happened before the window."""
     _with_turnover(trends_app, monkeypatch, tmp_path, _HPE_TURNOVER)
-    d = company_trends.get("/trends?company=workday:hpe/a").get_json()
+    served = company_trends.get("/trends?company=workday:hpe/a").get_json()
+    assert not any("turnover" in s for s in served["series"])
+    shown = {r["name"]: r["move"]["turnover"] for r in served["reading"]["lines"]}
+    assert shown["software-engineering"] == {"opened": 2, "closed": 7, "net": -5}
+    assert served["turnover_since"] == _T2
+    d = _answer(company_trends, "company=workday:hpe/a")
     lines = {s["name"]: s["turnover"] for s in d["series"]}
     assert lines["software-engineering"] == {
         "opened": [None, 0, 2],
@@ -3294,9 +3329,9 @@ def test_each_line_carries_the_turnover_its_change_is_made_of(
     assert lines["ai-ml"]["recounted"] == [None, 0, 0]
     assert d["turnover_since"] == _T2
     assert d["closures_unseen"] == {"workday:hpe/a": 1}
-    split = company_trends.get(
-        "/trends?split=company&company=workday:hpe/a&company=workday:citi/2"
-    ).get_json()
+    split = _answer(
+        company_trends, "split=company&company=workday:hpe/a&company=workday:citi/2"
+    )
     by_label = {s["label"]: s["turnover"]["opened"] for s in split["series"]}
     assert by_label == {"Hpe": [None, 0, 2], "Citi": [None, 0, 5]}
 
@@ -3308,7 +3343,7 @@ def test_the_index_has_turnover_and_it_is_the_sum_of_every_companys(
     so the index is exactly the sum over every company, run by run (ADR-0227). A found Board is
     recounted in the index as in its company."""
     _with_turnover(trends_app, monkeypatch, tmp_path, _HPE_TURNOVER)
-    index = company_trends.get("/trends").get_json()
+    index = _answer(company_trends, "")
     turnover = {s["name"]: s["turnover"] for s in index["series"]}
     assert turnover["software-engineering"] == {
         "opened": [None, 0, 7],
@@ -3317,7 +3352,7 @@ def test_the_index_has_turnover_and_it_is_the_sum_of_every_companys(
     }
     assert index["closures_unseen"] == {"": 1}
     every = "&".join(f"company={key}" for key in _COMPANY_DIRECTORY)
-    companies = company_trends.get(f"/trends?split=company&{every}").get_json()
+    companies = _answer(company_trends, f"split=company&{every}")
     for kind in ("opened", "closed", "recounted"):
         by_run = [
             sum(s["turnover"][kind][j] or 0 for s in companies["series"])
@@ -3328,7 +3363,7 @@ def test_the_index_has_turnover_and_it_is_the_sum_of_every_companys(
             for j in range(len(index["stamps"]))
         ]
         assert by_run == in_index, kind
-    lever = company_trends.get("/trends?ats=lever").get_json()
+    lever = _answer(company_trends, "ats=lever")
     assert all(
         v in (None, 0) for s in lever["series"] for v in s["turnover"]["opened"]
     ), "an ATS filter narrows the index's turnover"
@@ -3349,7 +3384,7 @@ def test_the_index_shows_what_every_companys_view_shows_after_runs_are_left_out(
         "fields": ["dedup_version"],
     }
     monkeypatch.setattr(trends_app._HISTORY, "_epochs", [epoch])
-    index = company_trends.get("/trends").get_json()
+    index = _answer(company_trends, "")
     assert index["turnover_left_out"] == [_T3]
 
     def shown(lines, left=()):
@@ -3365,7 +3400,7 @@ def test_the_index_shows_what_every_companys_view_shows_after_runs_are_left_out(
 
     in_index = shown([s["turnover"] for s in index["series"]])
     every = "&".join(f"company={key}" for key in _COMPANY_DIRECTORY)
-    split = company_trends.get(f"/trends?split=company&{every}").get_json()
+    split = _answer(company_trends, f"split=company&{every}")
     by_company = {"opened": 0, "closed": 0}
     for s in split["series"]:
         # The page's rule for a pick's own line: a duplicate-removal change leaves out its run
@@ -3374,6 +3409,10 @@ def test_the_index_shows_what_every_companys_view_shows_after_runs_are_left_out(
         for kind, n in shown([s["turnover"]], {2} if touched else ()).items():
             by_company[kind] += n
     assert in_index == by_company == {"opened": 5, "closed": 0}
+    # And the page shows the index's the same, off its reading's first row.
+    served = company_trends.get("/trends").get_json()
+    turnover = served["reading"]["total"]["move"]["turnover"]
+    assert {k: turnover[k] for k in ("opened", "closed")} == in_index
 
 
 @pytest.mark.parametrize(
@@ -3396,7 +3435,7 @@ def test_the_index_leaves_out_the_runs_a_companys_line_leaves_out(
     _with_turnover(trends_app, monkeypatch, tmp_path, _HPE_TURNOVER)
     epoch = {"ts": epoch_ts, "changed": ["a change"], "fields": fields}
     monkeypatch.setattr(trends_app._HISTORY, "_epochs", [epoch])
-    index = company_trends.get(f"/trends{query}").get_json()
+    index = _answer(company_trends, query.lstrip("?"))
     assert index["turnover_left_out"] == left_out
     opened = [
         sum(s["turnover"]["opened"][j] or 0 for s in index["series"])
@@ -3413,7 +3452,7 @@ def test_the_index_leaves_out_the_runs_a_companys_line_leaves_out(
 def test_no_turnover_off_openings(company_trends, trends_app, monkeypatch, tmp_path):
     """Under `new` a line is a rolling level of fresh jobs, not a stock with a net change."""
     _with_turnover(trends_app, monkeypatch, tmp_path, _HPE_TURNOVER)
-    d = company_trends.get("/trends?metric=new&company=workday:hpe/a").get_json()
+    d = _answer(company_trends, "metric=new&company=workday:hpe/a")
     assert all("turnover" not in s for s in d["series"])
     assert d["closures_unseen"] == {}
 
