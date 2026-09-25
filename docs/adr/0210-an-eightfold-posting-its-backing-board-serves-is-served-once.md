@@ -30,8 +30,8 @@ Every Eightfold posting states its backing ATS's requisition, and #632 measured 
 ## Decision
 
 1. **`Job.requisition` and a nullable `requisition` string column on the served table.** Filled by
-   six scrapers only — eightfold, workday, oracle, greenhouse, taleo_enterprise, successfactors
-   (and lever and jibe since the 2026-09-25 amendment) —
+   six scrapers at first — eightfold, workday, oracle, greenhouse, taleo_enterprise,
+   successfactors — and lever and jibe since the 2026-09-25 amendment,
    from the fields above; every other ATS writes null. Stored as the ATS states it, normalised
    just enough to compare: `models.requisition_of` makes it trimmed text (Greenhouse states a
    number), and SuccessFactors keeps only the id before the first `-` of `internalId`, so a

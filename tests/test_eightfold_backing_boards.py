@@ -190,7 +190,8 @@ def test_lumen_is_not_a_candidate(mod):
 
 
 def test_a_backing_board_on_an_ats_with_no_reader_is_unread(mod):
-    """Lever and Jibe back a pair (Tinder, AARP) but have no reader here, so their Eightfold
-    sites are never aliased; the row-level rule (ADR-0210) still serves each shared posting once."""
+    """Lever and Jibe back a pair (Tinder, AARP) but have no reader here. An unread backing Board
+    earns no verdict (`_refusal`), so their Eightfold sites stay off the alias ledger; the row-level
+    rule (ADR-0210) still serves each shared posting once."""
     assert mod.read_board("lever", "matchgroup") is None
     assert mod.read_board("jibe", "aarp") is None
