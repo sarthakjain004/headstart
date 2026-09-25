@@ -146,8 +146,17 @@ def test_a_name_that_differs_by_a_trailing_word_is_another_employer() -> None:
 def test_a_query_alias_finds_the_company_by_the_name_people_use() -> None:
     companies = [
         Candidate(key="amazon:jobs", name="Amazon", words=("amazon",), openings=9000),
-        Candidate(key="oracle:jpmc", name="Jpmc", words=("jpmc",), openings=1718),
+        Candidate(
+            key="oracle:jpmc",
+            name="JPMorgan Chase",
+            words=("jpmorgan", "chase"),
+            openings=1718,
+        ),
+        Candidate(
+            key="x:chasetech", name="Chasetech", words=("chasetech",), openings=1
+        ),
         Candidate(key="gh:awsome", name="Awsome", words=("awsome",), openings=3),
     ]
     assert [c.key for c in suggest("aws", companies, 5)] == ["amazon:jobs", "gh:awsome"]
     assert [c.key for c in suggest("JP Morgan", companies, 5)] == ["oracle:jpmc"]
+    assert suggest("chase", companies, 5)[0].key == "oracle:jpmc"

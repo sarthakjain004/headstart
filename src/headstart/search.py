@@ -31,6 +31,7 @@ from headstart import (
     india_filter,
     log,
     posted_date_guard,
+    roles,
     salary_known_filter,
 )
 from headstart.embedding_conventions import encode_query
@@ -238,33 +239,52 @@ def load_family_ids(path: Path) -> dict[str, list[str]] | None:
 MAX_FAMILY_IDS = 5000
 
 
-def scoped_family_clause(
+def scoped_jobs_clause(
     args, family_ids: Mapping[str, Sequence[str]] | None
 ) -> str | None:
-    """The Jobs of the handed-over Boards in one role family (``family=``), or None.
+    """The Jobs a Trends hand-off names beside ``board=``, or None: one role family's
+    (``family=``), or the company's tech roles (``tech=1``).
 
     Search has no family column; the family of each served Job is the pipeline's own
     ``role_assignments`` snapshot (ADR-0057), the same assignment the Trends counts are made
     of. So a trend's category hands over as exact ids — "243 AI roles at Google" in Trends
     opens as Google's AI roles in Search, where a semantic query alone ranked all 1,856 Google
-    jobs. Only with ``board=``: a family across the whole index is a Trends view, not a search.
-    Past :data:`MAX_FAMILY_IDS` it is refused as an invalid filter rather than widened.
+    jobs — and a whole company as every Job but those the assignment calls non-tech. Only with
+    ``board=``: a family across the whole index is a Trends view, not a search. A category past
+    :data:`MAX_FAMILY_IDS` is refused as an invalid filter rather than widened.
     """
     family = (args.get("family") or "").strip()
     boards = sorted({b.lower() + ":" for b in args.getlist("board") if b.strip()})
-    if not family or not boards or family_ids is None:
+    if not boards or family_ids is None:
         return None
-    pool = family_ids.get(family, ())
+    if family:
+        ids = _ids_on_boards(family_ids.get(family, ()), boards)
+        if len(ids) > MAX_FAMILY_IDS:
+            raise ValueError(f"at most {MAX_FAMILY_IDS} jobs in one category hand-off")
+        return _ids_in_clause(ids) if ids else "id IN ('')"
+    # `tech=1`: the company's tech roles, as its trend counts them — every served Job but those
+    # the assignment puts in the reserved non-tech family. "See its open roles" listed 1,854
+    # under a Google trend of 1,800. Past the bound the few non-tech rows simply stay.
+    if args.get("tech") in ("1", "true"):
+        ids = _ids_on_boards(family_ids.get(roles.NON_TECH, ()), boards)
+        if ids and len(ids) <= MAX_FAMILY_IDS:
+            return f"NOT ({_ids_in_clause(ids)})"
+    return None
+
+
+def _ids_on_boards(pool: Sequence[str], prefixes: list[str]) -> list[str]:
+    """The ids in ``pool`` (sorted case-folded) that fall on one of the Board ``prefixes``."""
     ids: list[str] = []
-    for prefix in boards:
+    for prefix in prefixes:
         at = bisect_left(pool, prefix, key=str.lower)
         while at < len(pool) and pool[at].lower().startswith(prefix):
             ids.append(pool[at])
             at += 1
-    if len(ids) > MAX_FAMILY_IDS:
-        raise ValueError(f"at most {MAX_FAMILY_IDS} jobs in one category hand-off")
-    if not ids:
-        return "id IN ('')"
+    return ids
+
+
+def _ids_in_clause(ids: list[str]) -> str:
+    """``id IN (…)`` over ``ids``, each quote doubled."""
     return "id IN (" + ", ".join("'" + i.replace("'", "''") + "'" for i in ids) + ")"
 
 

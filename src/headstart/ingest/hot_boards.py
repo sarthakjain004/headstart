@@ -61,7 +61,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from headstart import log, roles
+from headstart import log, roles, version_spans
 from headstart.ingest.board_naming import board_names, display_name
 from headstart.ingest.board_operator import classify
 
@@ -168,11 +168,15 @@ def read_stock_change(
     writes the directory, so the directory is complete. A caller reading a partially fetched
     copy would mistake its oldest present tick for the baseline and lose one real measurement.
 
-    **Only the newest tick's ``centroid_version`` is summed** (ADR-0040/ADR-0143). The stamp holds
-    the series version (ADR-0220). A new series — a centroid refit once, a new classifier head
-    now — finds no Board counts at its own version, so `role_trends` writes that version a fresh baseline of
-    every Board's stock; summed across versions it made every Board "newly discovered" for a week.
-    The same by-position rule drops the current version's first tick as its baseline.
+    **Each version's first tick is dropped, and every other tick of every version summed**
+    (ADR-0040/ADR-0143, ADR-0221). The stamp holds the series version (ADR-0220). A new series
+    — a centroid refit once, a new classifier head now — finds no Board counts at its own
+    version, so `role_trends` writes that version a fresh baseline of every Board's stock;
+    summed, it made every Board "newly discovered" for a week. Summing the newest version alone
+    instead left a 4-hour window the morning after a refit, under a card that says "this week".
+    A tick is a Board's stock change whatever version counted it, so the others are summed; the
+    baseline tick is itself a counting change, and its run and the next are left out with the
+    others (``changes``).
 
     The returned stamps describe the window actually measured, never the window intended — a tab
     claiming a week over two days of data would be a lie the data can already tell.
@@ -194,24 +198,37 @@ def read_stock_change(
         table = pq.read_table(path, columns=["ts"])
         stamps_in_file = table.column("ts").to_pylist()
         if stamps_in_file:
-            version = (table.schema.metadata or {}).get(b"centroid_version")
-            ticks.append((path, stamps_in_file[0], version))
+            version = (table.schema.metadata or {}).get(b"centroid_version", b"-1")
+            ticks.append((path, stamps_in_file[0], int(version)))
     if not ticks:
         return collections.Counter(), []
-    ticks = [t[:2] for t in ticks if t[2] == ticks[-1][2]]
+    # Every span's ticks (headstart.version_spans, ADR-0221), less each span's first: a refit's
+    # first tick re-writes every Board's stock as a delta (a baseline), while every later tick of
+    # any version is a real change. Keeping the newest version alone left Hot a 4-hour window the
+    # morning after a refit, under a card that said "this week". A stray tick of a version other
+    # than its span's is dropped, as the Space drops it.
+    span_list = version_spans.spans((ts, version) for _, ts, version in ticks)
+    baselines = {start for _, start, _ in span_list}
+    # Counting changes are located on the ticks as written, baselines included: a refit's change
+    # is its baseline tick, and locating it after dropping that tick took out two later runs.
+    left_out: set[str] = set()
+    for change in changes:
+        k = next((k for k, (_, ts, _) in enumerate(ticks) if ts >= change), None)
+        if k is not None:
+            left_out.update(ts for _, ts, _ in ticks[k : k + 2])
+    ticks = [
+        (path, ts)
+        for path, ts, version in ticks
+        if ts not in baselines and version_spans.version_at(span_list, ts) == version
+    ]
+    if not ticks:
+        return collections.Counter(), []
     newest = max(ts for _, ts in ticks)
     cutoff = (datetime.fromisoformat(newest) - timedelta(days=WINDOW_DAYS)).isoformat()
 
-    # Each change lands on the first tick at or after it (one whose own delta write was skipped
-    # lands on the next), and settles on the tick after that.
-    left_out: set[str] = set()
-    for change in changes:
-        k = next((k for k, (_, ts) in enumerate(ticks) if ts >= change), None)
-        if k is not None:
-            left_out.update(ts for _, ts in ticks[k : k + 2])
     moved: collections.Counter = collections.Counter()
     stamps: list[str] = []
-    for path, first_ts in ticks[1:]:
+    for path, first_ts in ticks:
         if first_ts < cutoff or first_ts in left_out:
             continue
         table = pq.read_table(path).to_pydict()

@@ -1062,7 +1062,7 @@ def test_a_category_hands_over_as_the_ids_trends_counted() -> None:
     """`family=` beside `board=` names the Boards' Jobs in that family, and nothing else."""
     from werkzeug.datastructures import MultiDict
 
-    from headstart.search import MAX_FAMILY_IDS, scoped_family_clause
+    from headstart.search import MAX_FAMILY_IDS, scoped_jobs_clause
 
     ids = {
         "ai-ml": sorted(
@@ -1072,19 +1072,34 @@ def test_a_category_hands_over_as_the_ids_trends_counted() -> None:
         "devops": ["google:careers.google.com:4"],
     }
     args = MultiDict([("board", "google:careers.google.com"), ("family", "ai-ml")])
-    assert scoped_family_clause(args, ids) == (
+    assert scoped_jobs_clause(args, ids) == (
         "id IN ('google:careers.google.com:1', 'Google:careers.google.com:2')"
     )
     bare = MultiDict([("family", "ai-ml")])
-    assert scoped_family_clause(bare, ids) is None, "only beside a company's Boards"
+    assert scoped_jobs_clause(bare, ids) is None, "only beside a company's Boards"
     other = MultiDict(
         [("board", "google:careers.google.com"), ("family", "data-science")]
     )
-    assert scoped_family_clause(other, ids) == "id IN ('')"
-    assert scoped_family_clause(args, None) is None, "no snapshot, no filter"
+    assert scoped_jobs_clause(other, ids) == "id IN ('')"
+    assert scoped_jobs_clause(args, None) is None, "no snapshot, no filter"
     quoted = {"ai-ml": ["b:o'k:1"]}
     q = MultiDict([("board", "b:o'k"), ("family", "ai-ml")])
-    assert scoped_family_clause(q, quoted) == "id IN ('b:o''k:1')"
+    assert scoped_jobs_clause(q, quoted) == "id IN ('b:o''k:1')"
     many = {"ai-ml": [f"b:x:{i:05d}" for i in range(MAX_FAMILY_IDS + 1)]}
     with pytest.raises(ValueError):
-        scoped_family_clause(MultiDict([("board", "b:x"), ("family", "ai-ml")]), many)
+        scoped_jobs_clause(MultiDict([("board", "b:x"), ("family", "ai-ml")]), many)
+
+
+def test_a_company_hands_over_its_tech_roles_only() -> None:
+    """`tech=1` leaves out the Boards' Jobs the assignment calls non-tech, as the trend does."""
+    from werkzeug.datastructures import MultiDict
+
+    from headstart.search import scoped_jobs_clause
+
+    ids = {"non-tech": ["google:careers.google.com:9", "x:y:1"]}
+    args = MultiDict([("board", "google:careers.google.com"), ("tech", "1")])
+    assert scoped_jobs_clause(args, ids) == (
+        "NOT (id IN ('google:careers.google.com:9'))"
+    )
+    plain = MultiDict([("board", "google:careers.google.com")])
+    assert scoped_jobs_clause(plain, ids) is None
