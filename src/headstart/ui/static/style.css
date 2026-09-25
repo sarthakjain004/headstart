@@ -848,6 +848,8 @@ textarea:focus{ border-color:var(--accent); }
   font-variant-numeric:normal; position:sticky; left:0; background:var(--raise); }
 /* Other gets the rule the legend gives it, in the table too. */
 .trends-table tr.other th, .trends-table tr.other td{ border-top:1px solid var(--rule-2); }
+.trends-table tr.total th, .trends-table tr.total td{ border-bottom:1px solid var(--rule-2); }
+.trends-table caption{ caption-side:bottom; text-align:left; padding-top:8px; font-size:12px; color:var(--ink-3); }
 /* The full time grid, behind a disclosure: 471 columns is a data dump, not a table view. */
 .trends-full{ margin-top:14px; border-top:1px solid var(--rule); padding-top:8px; }
 .trends-full > summary{ cursor:pointer; font-size:11.5px; color:var(--ink-3); list-style:none;

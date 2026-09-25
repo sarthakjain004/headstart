@@ -436,7 +436,23 @@ _TRENDS = _stitch_versions(_TRENDS)
 _TREND_DELTAS = _load_board_deltas(
     _STATE / "data" / "state" / "role_trend_board_deltas"
 )
-_HOT = _load_hot(_STATE / "data" / "state" / "hot_boards.json")
+
+
+def _with_window_base(hot: dict, trends: list[dict]) -> dict:
+    """``hot`` with its window's base filled in when ``hot_boards`` wrote none: the last run
+    before the window's first change, read off the Trends ledger — the runs a row's "See trend"
+    charts — so a row's trend covers its figure. Once at load: both inputs are fixed until the
+    next restart, and the scan is over every ledger row."""
+    window = hot.get("window") or {}
+    if not window.get("from") or window.get("base"):
+        return hot
+    before = [row["ts"] for row in trends if row["ts"] < window["from"]]
+    return {**hot, "window": {**window, "base": max(before)}} if before else hot
+
+
+_HOT = _with_window_base(
+    _load_hot(_STATE / "data" / "state" / "hot_boards.json"), _TRENDS
+)
 
 
 def _load_directory(path: Path) -> dict[str, dict]:
@@ -1657,6 +1673,17 @@ def trends():
     # stop and start. Weighed in openings, so "the larger" means more jobs, not more rows.
     present = _family_weights(trends_rows)
     rename = {old: new for old, new in _FAMILY_SUCCESSOR.items() if new in present}
+    # A v3 name asked for before its data lands reads as all of its predecessors together:
+    # "AI, ML & Data Science" is AI / Machine Learning and Data Science, and reading it as the
+    # larger alone dropped Data Science's 58 at Google without a word.
+    if family and family not in present:
+        rename.update(
+            {
+                old: family
+                for old, new in _FAMILY_SUCCESSOR.items()
+                if new == family and old in present
+            }
+        )
     if rename.keys() & present.keys():
         trends_rows = [
             {**r, "family": rename[r["family"]]} if r["family"] in rename else r
@@ -1857,6 +1884,10 @@ def trends():
         split_by=key,
         # The drilled family's display name, so a cold link into a drill can name it.
         family=family,  # as resolved (_resolve_family), which the page adopts
+        # Whether HeadStart has that family at all, so an unknown name reads as unknown rather
+        # than as "no openings counted" at the company. Not "holds rows in scope": `present` is
+        # already narrowed to the picks and the window, where a real family can be empty.
+        family_known=bool(family) and (family in present or family in _FAMILY_LABELS),
         family_label=_FAMILY_LABELS.get(family, family) if family else None,
         watch_parents=watch_parents,
         epochs=epochs,
