@@ -62,6 +62,7 @@ from pathlib import Path
 from typing import Any
 
 from headstart import log, roles, version_spans
+from headstart.board_identity import tenant
 from headstart.ingest.board_naming import board_names, display_name
 from headstart.ingest.board_operator import classify
 
@@ -85,8 +86,13 @@ _STOCK_MOVING = (
     "family_map_fingerprint",
     "family_classifier_version",
     "tech_filter_version",
-    "dedup_version",
 )
+#: Moves only the Boards it can touch (ADR-0186/0187, #632/#649): Eightfold's, and those of a
+#: Tenant with two or more Workday or Taleo Enterprise Boards — the Trends tab's own rule for a
+#: company (app.js `DEDUP_ATSES`, `MIRROR_ATS`).
+_DEDUP = "dedup_version"
+_DEDUP_SIBLING_ATSES = ("workday", "taleo_enterprise")
+_DEDUP_MIRROR_ATS = "eightfold"
 _DB = REPO_ROOT / "data" / "lancedb"
 
 #: Rows kept per lens. Enough to scroll, small enough that the artifact stays a few tens of KB
@@ -136,9 +142,23 @@ def read_levels(path: Path) -> tuple[collections.Counter, collections.Counter]:
 def counting_changes(path: Path) -> set[str]:
     """The ticks where a stock-moving epoch column changed (ADR-0164), or none without a file.
 
-    The first row is where recording began, not a change. Duplicate removal is dropped for
-    every Board, where the Trends chart drops it only at companies it can touch: a Board-level
-    list has no company to ask, and the cost is one run of ordinary change."""
+    The first row is where recording began, not a change. A tick where only duplicate removal
+    changed is not here but in :func:`dedup_changes`, since it moves only some Boards."""
+    return _changed_ticks(path, lambda moved: bool(moved & set(_STOCK_MOVING)))
+
+
+def dedup_changes(path: Path) -> set[str]:
+    """The ticks where duplicate removal, and nothing else that moves stock, changed.
+
+    Left out only for the Boards it can touch (:func:`dedup_touches`). Left out for every
+    Board, it took a run of ordinary hiring out of each other one: Hot read Google −27 and
+    Amazon +58 where the trends their rows open, which keep that run, read −42 and +17."""
+    return _changed_ticks(
+        path, lambda moved: moved & {*_STOCK_MOVING, _DEDUP} == {_DEDUP}
+    )
+
+
+def _changed_ticks(path: Path, counts) -> set[str]:
     if not path.exists():
         return set()
     with path.open(newline="", encoding="utf-8") as fh:
@@ -146,12 +166,31 @@ def counting_changes(path: Path) -> set[str]:
     return {
         row["ts"]
         for prev, row in itertools.pairwise(rows)
-        if any(row.get(col) != prev.get(col) for col in _STOCK_MOVING)
+        if counts({col for col in row if row.get(col) != prev.get(col)} - {"ts"})
+    }
+
+
+def dedup_touches(boards) -> set[str]:
+    """The Boards duplicate removal can move: every Eightfold Board, and each Board of a Tenant
+    holding two or more Boards on one of the ATSes it dedupes within."""
+    siblings = collections.Counter(
+        (ats, tenant(b))
+        for b in boards
+        if (ats := b.split(":", 1)[0]) in _DEDUP_SIBLING_ATSES
+    )
+    return {
+        b
+        for b in boards
+        if (ats := b.split(":", 1)[0]) == _DEDUP_MIRROR_ATS
+        or (ats in _DEDUP_SIBLING_ATSES and siblings[(ats, tenant(b))] > 1)
     }
 
 
 def read_stock_change(
-    delta_dir: Path, changes: set[str] | frozenset[str] = frozenset()
+    delta_dir: Path,
+    changes: set[str] | frozenset[str] = frozenset(),
+    dedup: set[str] | frozenset[str] = frozenset(),
+    touched: set[str] | frozenset[str] = frozenset(),
 ) -> tuple[collections.Counter, list[str]]:
     """Net per-Board stock change over the trailing window, and the tick stamps it covers.
 
@@ -185,7 +224,9 @@ def read_stock_change(
     and the one after it are left out: a tech-filter change can land over two runs — Amazon's
     Sep 17 change was +308 at its tick and −439 at the next — and Hot then called Amazon "+532
     net roles" while its "See trend" link, which leaves the change out, read it falling. The
-    cost is one ordinary run of real change per counting change.
+    cost is one ordinary run of real change per counting change. A duplicate-removal change
+    (``dedup``, from :func:`dedup_changes`) is left out, with its run after, only for the Boards
+    it can move (``touched``) — the runs the Trends chart leaves out of the line a row opens.
     """
     import pyarrow.parquet as pq
 
@@ -209,13 +250,21 @@ def read_stock_change(
     # than its span's is dropped, as the Space drops it.
     span_list = version_spans.spans((ts, version) for _, ts, version in ticks)
     baselines = {start for _, start, _ in span_list}
+
     # Counting changes are located on the ticks as written, baselines included: a refit's change
     # is its baseline tick, and locating it after dropping that tick took out two later runs.
-    left_out: set[str] = set()
-    for change in changes:
-        k = next((k for k, (_, ts, _) in enumerate(ticks) if ts >= change), None)
-        if k is not None:
-            left_out.update(ts for _, ts, _ in ticks[k : k + 2])
+    def runs_of(found: set[str] | frozenset[str]) -> set[str]:
+        out: set[str] = set()
+        for change in found:
+            k = next((k for k, (_, ts, _) in enumerate(ticks) if ts >= change), None)
+            if k is not None:
+                out.update(ts for _, ts, _ in ticks[k : k + 2])
+        return out
+
+    left_out = runs_of(changes)
+    # A duplicate-removal change, with its run after, only for the Boards it can move
+    # (``touched``, from :func:`dedup_touches`).
+    left_out_touched = runs_of(dedup)
     ticks = [
         (path, ts)
         for path, ts, version in ticks
@@ -244,6 +293,7 @@ def read_stock_change(
                 metric == "stock"
                 and not family.startswith(_WATCH)
                 and family != _NON_TECH
+                and not (first_ts in left_out_touched and board in touched)
             ):
                 moved[board] += delta
                 stamps.append(ts)
@@ -382,7 +432,12 @@ def main() -> int:
     from headstart.embedding_conventions import PROD_TABLE
 
     new, stock = read_levels(args.board_counts)
-    moved, stamps = read_stock_change(args.board_deltas, counting_changes(args.epochs))
+    moved, stamps = read_stock_change(
+        args.board_deltas,
+        counting_changes(args.epochs),
+        dedup_changes(args.epochs),
+        dedup_touches(stock.keys()),
+    )
     if not stamps:
         # One delta file exists and it is the baseline. There is no measured change yet, and a
         # lens built on the baseline would rank every Board as newly created.

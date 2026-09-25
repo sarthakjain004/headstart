@@ -1848,6 +1848,25 @@ def trends():
         )
     ]
     out.sort(key=lambda s: -(s["latest"] or 0))
+    # Each pick's own line under a view that sums several, so the page takes a company's steps
+    # out of that company's part of the sum only: summed whole, five companies' Total read +362
+    # of hiring where their Company breakdown summed to +306 (2026-09-25).
+    pick_series: dict[str, list[int | None]] = {}
+    if len(picked_keys) > 1 and key != "company" and not (family and split == "roles"):
+        per: dict[str, dict[str, int]] = {}
+        for r in rows:
+            at = per.setdefault(r["company"], {})
+            at[r["ts"]] = at.get(r["ts"], 0) + r["count"]
+        pick_series = {
+            k: _held_at_zero(
+                [
+                    value_at(points, ts, new_from.get(k) if metric == "new" else None)
+                    for ts in stamps
+                ],
+                metric,
+            )
+            for k, points in per.items()
+        }
     non_tech: dict[str, int] = {}
     for row in stock:
         if row["family"] == _NON_TECH:
@@ -1920,6 +1939,7 @@ def trends():
             }
             for k in picked_keys
         ],
+        pick_series=pick_series,
         company_totals={
             k: [company_totals[k].get(ts) for ts in stamps] for k in picked_keys
         },

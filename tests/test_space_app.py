@@ -3120,3 +3120,19 @@ def test_every_category_hands_search_the_jobs_its_trend_counts(trends_app, monke
             ).request.args
             clause = search.scoped_jobs_clause(args, family_ids)
             assert len(re.findall(r"'x:[^']*'", clause)) == trend, family
+
+
+def test_a_view_summing_picks_carries_each_picks_own_line(company_trends):
+    """Five companies' Total read +362 of hiring where their Company breakdown summed to +306:
+    summed whole, one company's step came out with every company's change that run. Each pick's
+    own line lets the page take a step out of its company's part only."""
+    d = company_trends.get(
+        "/trends?company=workday:hpe/a&company=eightfold:citi.eightfold.ai"
+    ).get_json()
+    assert set(d["pick_series"]) == {"workday:hpe/a", "eightfold:citi.eightfold.ai"}
+    for j in range(len(d["stamps"])):
+        summed = [s["points"][j] for s in d["series"] if s["points"][j] is not None]
+        picks = [p[j] for p in d["pick_series"].values() if p[j] is not None]
+        assert sum(picks) == sum(summed)
+    one = company_trends.get("/trends?company=workday:hpe/a").get_json()
+    assert one["pick_series"] == {}, "one pick is its own sum"
