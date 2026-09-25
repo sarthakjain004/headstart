@@ -129,3 +129,28 @@ The migration is the design review's §9, one shippable PR per step, each throug
 - **Rules are decided on read.** That makes a netting change a code change with golden answers
   (`tests/fixtures/trend_answers/`), not a data migration.
 - **Until step 4, no new Trends rule is written outside `trend_history`.**
+
+## Step 6, as built (2026-09-25)
+
+The writer switch and the rewrite of the stored history are separate acts: the code merges first,
+and the owner runs the one-off rewrite (`scripts/state/migrate_trends_to_one_delta_history.py`)
+later, with the pipeline's chain paused. Four calls follow from that, or were made on the way:
+
+- **The code reads both layouts until the rewrite runs.** `headstart.trend_history_migration`
+  rewrites the older layout in memory exactly as the script rewrites it on disk, and the script
+  calls the same functions, so the reader and the rewrite cannot disagree. The step-6 writer's
+  first ticks land beside the older files and count against that same history. Measured on the
+  2026-09-25 state: the Space's 23 fixed Trends requests answer identically on the older layout and
+  on its rewrite. Once the rewrite and the retirement have run, the module, the script, the
+  Space's two download patterns for the retired files and the older-layout test fixtures go.
+- **The archive is named for what it precedes.** `role_trend_index_deltas_before_board_deltas.parquet`,
+  not `..._before_2026-09-13`: two of its 615 ticks fall on 2026-09-13, before 12:00:39, when
+  per-Board counting began. It lists its ticks in its metadata, since a tick where nothing moved
+  index-wide has no rows.
+- **`centroid_version` is not carried.** It read 2 on every epoch row, and the head that followed
+  moves `family_classifier_version` on the same tick, so dropping it loses no boundary; the script
+  refuses if it ever would. The payload's `version` field goes with the series versions: no page
+  read it.
+- **`role_assignments.parquet` is stamped with the classifier head's version** under
+  `family_classifier_version`, not a series version under `centroid_version`. The first snapshot
+  after the switch reads as not comparable once, which skips one tick of reassignment counts.

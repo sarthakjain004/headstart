@@ -222,6 +222,20 @@ def test_an_older_layout_reads_as_its_migration_stores_it(tmp_path):
         assert before.answer(question) == after.answer(question)
 
 
+def test_a_tick_recorded_onto_the_older_layout_counts_against_its_migration(tmp_path):
+    """The step-6 writer runs before the one-off migration: its first ticks land beside files
+    in the older layout, and must count against the history the migration will store."""
+    old = old_layout_trends_state
+    state = old.write(tmp_path / "old")
+    _, before = trend_history.board_levels(state)
+    assert before == old.LEVELS[old.T[5]][1]
+    now = {**before, (old.ACME, "stock", "software", "mid"): 6}
+    ts = "2026-09-16T00:00:00+00:00"
+    assert trend_history.record_tick(state, ts, now, {}, _methodology(3)) == 1
+    assert trend_history.board_levels(state) == (ts, now)
+    assert TrendHistory.load(state, _NO_CONFIG).ticks[-1] == ts
+
+
 def test_an_unreadable_ledger_is_an_empty_history(tmp_path):
     directory = tmp_path / "role_trend_board_deltas"
     directory.mkdir()

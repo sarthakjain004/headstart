@@ -306,15 +306,15 @@ One pipeline run's measurement of the served stock, stamped with the run's `ts` 
 _Avoid_: "run" when you mean the measurement — a run that skips `role_trends` (a stand-down, a warm-up) is a run with no tick.
 
 **Board delta** (ADR-0143, ADR-0227):
-One tick's change in one **Board**'s count for one `(metric, family, band, ats)` group, kept in `data/state/role_trend_board_deltas/`, one file per tick. Replaying the deltas reproduces every count the aggregate trends ledger holds (314 of 314 ticks since 2026-09-13, zero mismatches), which is why ADR-0230 makes this ledger Trends' one stored count history. Since ADR-0227 a delta file also books **Opened**, **Closed** and **Recounted**.
-_Avoid_: calling the aggregate `role_trends.parquet` the history — it is a sum of these, kept only until ADR-0230's migration retires it.
+One tick's change in one **Board**'s count for one `(metric, family, band)` group, kept in `data/state/role_trend_board_deltas/`, one file per tick; the Board's ATS is its board_key's prefix. Replaying the deltas reproduced every count the aggregate trends ledger held (929 of 929 ticks, zero mismatches, with the ticks before 2026-09-13 in an index-wide archive), which is why ADR-0230 makes this ledger Trends' one stored count history. A new classifier head is one more delta, not a baseline. Since ADR-0227 a delta file also books **Opened**, **Closed** and **Recounted**.
+_Avoid_: calling the aggregate `role_trends.parquet` the history — it was a sum of these, and ADR-0230 step 6 retires it.
 
 **Found Board**:
 A **Board** whose first **Board delta** lands its whole existing backlog at once, because the index started counting it, not because it hired. Its arrival is **Recounted**, never **Opened**, and a Trends line leaves it out of the net change.
 _Avoid_: reading a found Board's first tick as growth.
 
 **Methodology** (ADR-0164, ADR-0230):
-What decides what a count means: the family list, the classifier head, the tech filter, the derivations and the dedup rules, each with its own version stamp. Recorded today as a row in `trends_epochs.csv` when a stamp moves; under ADR-0230 it travels in every tick's delta file.
+What decides what a count means: the family list, the classifier head, the tech filter, the derivations and the dedup rules, each with its own version stamp. It travels in every tick's delta file (ADR-0230); `trends_epochs.csv`, which recorded a row only where a stamp moved, retired with step 6.
 _Avoid_: `centroid_version` — the key still carries a series version, but no centroid decides anything since ADR-0220.
 
 **Counting change** (ADR-0164, ADR-0188):
