@@ -55,6 +55,18 @@ def family_list_fingerprint(path: Path) -> str:
     ).hexdigest()[:12]
 
 
+# Each band `band` writes, as a reader says it: the Trends Level view's legend read "mid",
+# "senior", "unspecified".
+BAND_LABELS = {
+    "intern": "Internships",
+    "entry": "Entry level (0–1 yrs)",
+    "mid": "Mid level (2–4 yrs)",
+    "senior": "Senior (5–7 yrs)",
+    "staff": "Staff and above (8+ yrs)",
+    "unspecified": "Experience not stated",
+}
+
+
 def band(min_years: int | None, title: str | None, employment_type: str | None) -> str:
     """The seniority band for one row, from fields the served table already carries."""
     if _INTERN.search(title or "") or _INTERN.search(employment_type or ""):

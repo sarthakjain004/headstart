@@ -313,3 +313,105 @@ def test_the_module_keeps_no_copy_of_the_reserved_names():
     """NON_TECH and WATCH_PREFIX have one home, `headstart.roles` (ADR-0230)."""
     assert trend_history.NON_TECH is roles.NON_TECH
     assert trend_history.WATCH_PREFIX is roles.WATCH_PREFIX
+
+
+# ---- the taxonomy, directory and rule copies the answers read (moved from the Space's tests)
+
+_REPO_FAMILIES = Path(__file__).resolve().parents[1] / "config" / "role_families.json"
+
+
+def test_load_directory_keys_each_company_by_its_first_board(tmp_path):
+    path = tmp_path / "company_directory.json"
+    path.write_text(
+        '{"companies": [{"name": "Hpe", "boards": ["workday:hpe/a", "workday:hpe/b"]}]}',
+        encoding="utf-8",
+    )
+    assert list(trend_history._load_directory(path)) == ["workday:hpe/a"]
+    path.write_text("{half-written", encoding="utf-8")
+    assert trend_history._load_directory(path) == {}
+    assert trend_history._load_directory(tmp_path / "absent.json") == {}
+
+
+def test_retired_families_keep_their_labels(tmp_path):
+    """While a new head's title cache warms up, the Space still serves the older series, whose
+    families the curated list no longer names; `retired` keeps them readable."""
+    path = tmp_path / "role_families.json"
+    path.write_text(
+        json.dumps(
+            {
+                "families": [{"name": "frontend-web", "label": "Frontend & Web"}],
+                "retired": [
+                    {"name": "web-development", "label": "Web & .NET Development"}
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    labels = trend_history._family_labels(path)
+    assert labels == {
+        "frontend-web": "Frontend & Web",
+        "web-development": "Web & .NET Development",
+    }
+
+
+def test_every_retired_family_names_a_current_successor():
+    spec = json.loads(_REPO_FAMILIES.read_text(encoding="utf-8"))
+    current = {f["name"] for f in spec["families"]}
+    successors = trend_history.family_successors(_REPO_FAMILIES)
+    assert set(successors) == {f["name"] for f in spec["retired"]}
+    assert set(successors.values()) <= current
+
+
+def test_a_family_is_read_by_the_name_the_data_holds(monkeypatch):
+    """ADR-0220 renamed families; old links and new config meet the data by either name."""
+    from collections import Counter
+
+    successors = trend_history.family_successors(_REPO_FAMILIES)
+
+    def resolve(family, present):
+        return trend_history._resolve_family(family, present, successors)
+
+    assert resolve("ai-ml", Counter({"ai-ml": 3, "devops": 1})) == "ai-ml"
+    assert resolve("ai-ml", Counter({"ai-ml-data-science": 5})) == "ai-ml-data-science"
+    assert (
+        resolve("security", Counter({"security-engineering": 2}))
+        == "security-engineering"
+    )
+    # two predecessors hold data: the larger answers for the new name
+    assert (
+        resolve("ai-ml-data-science", Counter({"ai-ml": 9, "data-science": 4}))
+        == "ai-ml"
+    )
+    assert resolve(None, Counter()) is None
+
+
+def test_a_stock_series_a_run_leaves_out_is_at_zero_there():
+    """Emptied by a refit, a category reads 0, so its drop is booked, not hidden in a gap."""
+    held = trend_history._held_at_zero
+    assert held([None, 46, 46, None, None], "stock") == [None, 46, 46, 0, 0]
+    assert held([None, 3, None], "new") == [None, 3, None], "new keeps its own rule"
+    assert held([None, 3, None], None) == [None, 3, None], (
+        "so does the chart with no pick"
+    )
+
+
+def test_the_space_and_the_hot_list_leave_out_the_same_runs_and_boards():
+    """ADR-0227: the index's turnover (the Space) and Hot (hot_boards) leave out the same
+    counting changes, and duplicate removal touches the same Boards, so the two never tell a
+    reader different figures for one week. Each keeps its own copy of the rule."""
+    from headstart.ingest import hot_boards
+
+    assert set(trend_history._LINE_MOVING) == set(hot_boards._STOCK_MOVING)
+    assert set(trend_history._DEDUP_ATSES) == set(hot_boards._DEDUP_SIBLING_ATSES)
+    assert trend_history._MIRROR_ATS == hot_boards._DEDUP_MIRROR_ATS
+    for boards in (
+        ["workday:acme/a", "workday:acme/b"],
+        ["workday:acme/a", "workday:other/b"],  # two Tenants: nothing to deduplicate
+        ["workday:ACME/a", "workday:acme/b"],  # one Tenant, compared case-blind
+        ["workday:acme/a", "greenhouse:acme"],
+        ["eightfold:jobs.acme.com"],
+        ["taleo_enterprise:acme/1", "taleo_enterprise:acme/2"],
+    ):
+        assert trend_history._dedup_touched(boards) == bool(
+            hot_boards.dedup_touches(boards)
+        ), boards

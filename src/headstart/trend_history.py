@@ -40,7 +40,7 @@ import numpy as np
 
 from headstart import company_match, version_spans
 from headstart.board_identity import ats_of, tenant
-from headstart.roles import NON_TECH, WATCH_PREFIX
+from headstart.roles import BAND_LABELS, NON_TECH, WATCH_PREFIX
 
 # The `new` flow window (ADR-0051), in days: how long a found Board's backlog is held out of
 # `new`, and how far a `new` view's counting changes echo. The pipeline counts `new` over the
@@ -90,17 +90,6 @@ _METHODOLOGY_COLUMNS = (
     ("dedup_version", "dedup_version"),
     ("family_classifier_version", "family_classifier_version"),
 )
-
-# The seniority bands `headstart.roles.band` writes, as a reader says them: the Level view's
-# legend read "mid", "senior", "unspecified".
-_BAND_LABELS = {
-    "intern": "Internships",
-    "entry": "Entry level (0–1 yrs)",
-    "mid": "Mid level (2–4 yrs)",
-    "senior": "Senior (5–7 yrs)",
-    "staff": "Staff and above (8+ yrs)",
-    "unspecified": "Experience not stated",
-}
 
 # Mirrors app.js DEDUP_ATSES and MIRROR_ATS, and hot_boards' `_DEDUP_SIBLING_ATSES` and
 # `_DEDUP_MIRROR_ATS`: the Boards a duplicate-removal change can move. Change one, change them all;
@@ -1175,7 +1164,7 @@ class TrendHistory:
             if key == "company":
                 return company_labels[name]
             if key == "band":
-                return _BAND_LABELS.get(name, name)
+                return BAND_LABELS.get(name, name)
             if name in self._watch:
                 return self._watch[name]["label"]
             return self._family_labels.get(name, name)
