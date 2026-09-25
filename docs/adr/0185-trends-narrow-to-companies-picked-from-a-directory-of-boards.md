@@ -862,3 +862,33 @@ The review of that change corrected it:
   and never shows under a range ending in the past. Search is told the trend's figure only
   where it lists the same thing: All openings, no source filter.
 - A tap snaps to a marker only for a finger, not a mouse.
+
+### A critic's thirteenth round (2026-09-25): 6/10
+
+Total now equals the Company breakdown and the hand-offs hold, but the table's "Between
+categories" row carried most of some headlines: Micron's categories summed to +62 under a
+company +160, Google's to +15 under −32. The cause was two netting rules: categories took a
+counting change out by ratio, the company line by openings.
+
+- **Every line takes a counting change out by openings** — the user's choice (2026-09-25) of
+  sums that add up over ratio-true percentages. A category a refit halved now reads its change
+  against the pre-refit base (Google's software engineering: −11.8% where ratio gave −5.3%).
+  Ratio remains only where a shift would erase a line's start. On the 2026-09-25 state,
+  Micron's Between row fell from +98 to +8 and Google's is gone.
+- **Every line leaves out the same runs; whether a change moved a line decides only whether it
+  is named there.** A change counts as having moved a line if its own run or its settling run
+  did, so every opening the sentence gives to counting changes is named, and the list sizes each
+  named change the same way. Dropping a change from the lines it did not move, tried first, made
+  a company keep a settling run its categories left out, a gap neither rule could name, and read
+  a change landing one run late as hiring (review of #675). The list gives removals and found
+  Boards their own size, and a counting change's size without them.
+- **What the categories leave of the company's hiring is said in the caption, with its causes,
+  never put in the hiring column.**
+- **Hot's build time is carried in UTC** (it read 05:44 in India and 18:14 in Los Angeles for an
+  11:14 build), and a Hot row on a Board counted for hours says so instead of "+0".
+- **Summed views get a sentence**: several picks under Total, or in a drill, read their move
+  like one company, since Total is now exactly the breakdown's sum.
+- **Smaller:** a move under half an opening has no arrow; the phone tooltip closes on scroll or
+  a tap off the plot and wraps its names; Back from a pick returns to no picks, and a breakdown
+  change is a history entry; the stale-count note says Search can be newer; a window with no
+  runs names the picks; a marker names duplicate removal only where a pick can be touched.
