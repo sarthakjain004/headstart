@@ -238,6 +238,50 @@ def _load_board_deltas(path: Path) -> list[dict]:
     return rows
 
 
+# The families ADR-0220 retired, and the v3 family each became: the data carries the old names
+# until the new classifier's series lands, and links made before carry them after.
+_FAMILY_SUCCESSOR = {
+    "ai-ml": "ai-ml-data-science",
+    "data-science": "ai-ml-data-science",
+    "security-engineering": "security",
+    "web-development": "frontend-web",
+    "mobile-development": "mobile",
+    "data-analytics": "data-analytics-bi",
+    "network-infrastructure": "network-engineering",
+    "hardware-embedded": "embedded-firmware",
+    "it-operations": "systems-administration-it-operations",
+    "enterprise-platform": "enterprise-applications",
+    "java-development": "software-engineering",
+    "python-development": "software-engineering",
+    "tech-leadership": "engineering-management",
+}
+
+
+def _resolve_family(family: str | None, present: Counter[str]) -> str | None:
+    """``family`` as the data holds it: itself, its successor, or its largest predecessor there
+    (``present`` counts rows per family) — "AI, ML & Data Science" before its data lands reads
+    as "AI / Machine Learning", not as its smaller half, Data Science."""
+    if not family or family in present:
+        return family
+    successor = _FAMILY_SUCCESSOR.get(family)
+    if successor in present:
+        return successor
+    older = [
+        old
+        for old, new in _FAMILY_SUCCESSOR.items()
+        if new == family and old in present
+    ]
+    return max(older, key=lambda old: present[old]) if older else family
+
+
+def _retired_labels(path: Path) -> dict[str, str]:
+    """Display names of the retired families (ADR-0220), which the data still carries."""
+    if not path.exists():
+        return {}
+    spec = json.loads(path.read_text(encoding="utf-8"))
+    return {f["name"]: f.get("label", f["name"]) for f in spec.get("retired", [])}
+
+
 def _family_labels(path: Path) -> dict[str, str]:
     """Display names, from the curated map under config/ (ADR-0040). The ledger stores slugs
     so a label can be reworded without breaking a series; this resolves them."""
@@ -362,6 +406,7 @@ _TRENDS = _load_trends(_STATE / "data" / "state" / "role_trends.parquet")
 _CONFIG = Path(__file__).parent / "config"  # copied in beside this app (ADR-0153)
 _WATCH = _watch_meta(_CONFIG / "role_watchlist.json")
 _FAMILY_LABELS = _family_labels(_CONFIG / "role_families.json")
+_RETIRED_LABELS = _retired_labels(_CONFIG / "role_families.json")
 _EPOCHS = _load_epochs(_STATE / "data" / "state" / "trends_epochs.csv")
 # The seniority bands `headstart.roles.band` writes, as a reader says them: the Level view's
 # legend read "mid", "senior", "unspecified".
@@ -486,6 +531,16 @@ def _company_atses(entry: dict) -> list[str]:
 _FAMILY_IDS = search.load_family_ids(
     _STATE / "data" / "state" / "role_assignments.parquet"
 )
+# The snapshot leaves out the Jobs the classifier calls non-tech, so they are the served ids it
+# does not hold — read off the table once, so "See its open roles" can list tech roles only.
+if _FAMILY_IDS is not None:
+    try:
+        _FAMILY_IDS[_NON_TECH] = search.unassigned_ids(
+            _table.to_lance().to_table(columns=["id"]).column("id").to_pylist(),
+            _FAMILY_IDS,
+        )
+    except Exception as exc:  # noqa: BLE001 — a missing lance reader must not stop boot
+        print(f"served ids unreadable ({exc}); non-tech not left out", flush=True)
 _COMPANIES = _load_directory(_STATE / "data" / "state" / "company_directory.json")
 _COMPANY_OF = {
     board: key for key, entry in _COMPANIES.items() for board in entry["boards"]
@@ -1582,6 +1637,17 @@ def trends():
         if not r["family"].startswith(_WATCH_PREFIX):  # watch rows re-count family rows
             totals[r["ts"]] = totals.get(r["ts"], 0) + r["count"]
 
+    # A family asked for by a name the data does not hold — an old link after the v3 families
+    # (ADR-0220), or a new one before their data lands — reads as the name it does hold.
+    present = Counter(r["family"] for r in trends_rows)
+    family = _resolve_family(family, present)
+
+    # The v3 name a family in the data answers to, only while that name has no data of its own:
+    # `java-development`'s successor is `software-engineering`, which is not the same drill.
+    def successor(name: str | None) -> str | None:
+        new = _FAMILY_SUCCESSOR.get(name or "")
+        return new if new and new not in present else None
+
     rows = [
         r for r in trends_rows if r["metric"] == metric and r["family"] != _NON_TECH
     ]
@@ -1599,7 +1665,11 @@ def trends():
         key = "company"
     elif family and split == "roles":
         # The family's watched sub-roles (ADR-0051), each its own series.
-        wanted = {n for n, meta in _WATCH.items() if meta["parent"] == family}
+        wanted = {
+            n
+            for n, meta in _WATCH.items()
+            if meta["parent"] in (family, successor(family))
+        }
         rows = [r for r in rows if r["family"] in wanted]
         key = "family"
     elif family:
@@ -1744,7 +1814,13 @@ def trends():
             bucket[0] += 1
             bucket[1] += openings
     # Which families have watched sub-roles, so the UI can offer the roles drill only there.
-    watch_parents = sorted({meta["parent"] for meta in _WATCH.values()})
+    # Under the names the data holds as well as the config's: the watchlist moved to the v3
+    # families before their data landed, and the AI roles' drill vanished from "AI / Machine
+    # Learning" with it.
+    parents = {meta["parent"] for meta in _WATCH.values()}
+    watch_parents = sorted(
+        parents | {old for old in _FAMILY_SUCCESSOR if successor(old) in parents}
+    )
     return jsonify(
         version=_LIVE_VERSION,
         coverage=coverage,
@@ -1756,7 +1832,10 @@ def trends():
         non_tech=[non_tech.get(ts) for ts in stamps],
         split_by=key,
         # The drilled family's display name, so a cold link into a drill can name it.
-        family_label=_FAMILY_LABELS.get(family, family) if family else None,
+        family=family,  # as resolved (_resolve_family), which the page adopts
+        family_label=_FAMILY_LABELS.get(family, _RETIRED_LABELS.get(family, family))
+        if family
+        else None,
         watch_parents=watch_parents,
         epochs=epochs,
         # With its Board keys, so the chart can hand a pick to Search by Board (ADR-0185).

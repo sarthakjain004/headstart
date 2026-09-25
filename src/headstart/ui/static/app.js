@@ -1789,7 +1789,8 @@ function stepNote(d, marked){
   if (!trendPicks.length || !d.series.length) return '';
   const parts = [];
   if (marked.found)
-    parts.push('A solid grey vertical line marks openings that joined the count at once — boards found later, or a company counted from a later date — not hiring.');
+    parts.push(`A solid grey vertical line marks openings that joined or left the count at once — ${
+      notesOf(d).some(n => n.evicted && n.withhold) ? 'duplicate postings removed, ' : ''}boards found later, or a company counted from a later date — not hiring.`);
   // Said only where a line carries a step and has a figure read off it: Zomato, with no
   // percentage, and a Count view, whose lines are real levels, both got the Change sentence.
   // Only where a step is marked on the chart ("Point at a marked line" over a chart with none
@@ -1871,7 +1872,9 @@ function spanDays(s, d){
   return first < 0 ? 0 : (new Date(d.stamps[d.stamps.length - 1]) - new Date(d.stamps[first])) / 864e5;
 }
 function verdictOf(s, d){
-  const now = [...s.points].reverse().find(v => v != null);
+  // The latest run's figure, not the last one measured: a category now at none kept its old
+  // count in the tile (Syms "227" beside a sentence of 144).
+  const now = s.points[s.points.length - 1] ?? (s.points.some(v => v != null) ? 0 : null);
   const days = spanDays(s, d);
   const over = `over ${Math.round(days)} days`;
   const what = trendMetric === 'new' ? 'tech openings first seen in the last 7 days' : 'tech openings';
@@ -1885,8 +1888,7 @@ function verdictOf(s, d){
   const young = !began || (new Date(d.stamps[d.stamps.length - 1]) - new Date(began)) / 864e5 < MIN_SPAN_DAYS;
   let move;
   const other = countingMove(s) || 0;
-  const counting = other
-    ? `; the chart’s other ${signedOpenings(other)} came in runs marked as counting changes, boards found later or duplicates removed` : '';
+  const counting = other ? `; the chart’s other ${signedOpenings(other)} ${causesOf(s, other)}` : '';
   if (!m || days < MIN_SPAN_DAYS)
     move = (young ? 'too new to show a direction yet' : 'this window is too short to show a direction') + counting;
   else {
@@ -1975,6 +1977,8 @@ function dropPartialReads(series){
 //     NVIDIA with AMD (counted from Sep 24) named "engineering-management +442.9%".
 // Keyed on the epoch's `fields`, never its display text. Only charted points (index > 0) count
 // as crossed: a change at the window's first point is already in every line's start.
+// Mirrors role_trends.NEW_WINDOW_DAYS: how long a posting counts as new.
+const NEW_WINDOW_DAYS = 7;
 const LINE_MOVING = [
   'centroid_version', 'family_map_fingerprint', 'family_classifier_version', 'tech_filter_version',
 ];
@@ -2008,6 +2012,15 @@ function stepNotes(d){
     // (below) is not.
     if (i > 0) notes.push({ i, text: `${text} — not hiring, so the jump it makes is left out of the lines it moves`,
       found: false, epoch: true, withhold: true, companies });
+    // Under New a change counts twice: the openings it adds read as new at once, and read as
+    // no longer new a week later, when they age out of the window. That second drop read as
+    // NVIDIA's "down 45.1%" and the index's unmarked −19,600.
+    if (trendMetric === 'new'){
+      const echo = new Date(new Date(e.ts).getTime() + NEW_WINDOW_DAYS * 864e5).toISOString();
+      const k = d.stamps.findIndex(ts => ts >= echo.replace('.000Z', '+00:00'));
+      if (k > 0) notes.push({ i: k, found: false, epoch: true, withhold: true, companies,
+        text: `A week after a counting change (${e.changed.join(', ')}): the openings it added stop counting as new here — not hiring` });
+    }
     // A change can land over two runs — Amazon's Sep 17 filter change was +308 at its run and
     // −439 at the next, which left in read as hiring and turned Amazon from +1.2% to −2.9% —
     // so the run after it is left out too, at the cost of one run of ordinary change.
@@ -2098,7 +2111,8 @@ function drawTitle(){
   const kind = trendData ? viewKind(trendData) : null;
   el('trends-title').textContent =
     kind === 'drillCompany' && several ? `How ${drillLabel()} hiring compares ${where}`
-    : trendDrill && where && !several && kind !== 'roles' ? `How ${drillLabel()} hiring is moving ${where}`
+    : kind === 'roles' ? `Tracked roles in ${drillLabel()}${where ? ' ' + where : ''}`
+    : trendDrill && where ? `How ${drillLabel()} hiring is moving ${where}`
     : !trendDrill && several && topSplitNow() === 'company' ? `How tech hiring compares ${where}`
     : !trendDrill && where && topSplitNow() === 'total' ? `How tech hiring is moving ${where}`
     : 'Which tech roles are growing' + (where ? ' ' + where : '');
@@ -2116,7 +2130,8 @@ function countedPicks(){
   return trendPicks.filter(p => !out.includes(p.key));
 }
 function pickPhrase(){
-  const picks = countedPicks(), n = picks.length;
+  // With none counted (a window before counting began) the picks still name the chart.
+  const picks = countedPicks().length ? countedPicks() : trendPicks, n = picks.length;
   return !n ? '' : n === 1 ? `at ${picks[0].label || 'the picked company'}` : `at ${n} companies`;
 }
 // When HeadStart began counting the picks this answer counts, earliest first — or one pick's
@@ -2293,6 +2308,9 @@ async function loadTrends(family){
   if (topSplit.stale && !family && payload.split_by === 'family' && payload.series.length){
     topSplit.autoTotal = fewIndexable(payload); topSplit.stale = false;
   }
+  // The family as the Space read it: an old link's name, or a new name before its data lands,
+  // arrives as the one the data holds (ADR-0220's renames).
+  if (family && payload.family) family = payload.family;
   const drilled = (family || null) !== trendDrill;
   trendRaw = payload; trendDrill = family || null;
   if (trendPicks.length && payload.metric !== 'new') payload.partial = dropPartialReads(payload.series);
@@ -2543,8 +2561,10 @@ function stepJumps(levels, s){
   const steps = new Map(), jumps = new Map();
   const whole = isWholeLine(s);
   stepsFor(s).forEach(n => {
-    const at = steps.get(n.i) || { size: 0, sized: true };
-    if (n.size == null) at.sized = false; else at.size += n.size;
+    const at = steps.get(n.i) || { size: 0, sized: true, kinds: new Set(), known: { duplicates: 0, found: 0 } };
+    const kind = n.evicted ? 'duplicates' : n.found ? 'found' : 'counting';
+    if (n.size == null) at.sized = false; else { at.size += n.size; at.known[kind] += n.size; }
+    at.kinds.add(kind);
     steps.set(n.i, at);
   });
   if (!steps.size) return jumps;
@@ -2552,10 +2572,14 @@ function stepJumps(levels, s){
   levels.forEach((v, j) => {
     if (steps.has(j)){
       const at = steps.get(j);
-      pending = pending ? { size: pending.size + at.size, sized: pending.sized && at.sized } : { ...at };
+      pending = pending ? { size: pending.size + at.size, sized: pending.sized && at.sized,
+                            kinds: new Set([...pending.kinds, ...at.kinds]),
+                            known: { duplicates: pending.known.duplicates + at.known.duplicates,
+                                     found: pending.known.found + at.known.found } }
+        : { ...at, kinds: new Set(at.kinds), known: { ...at.known } };
     }
     if (v == null) return;
-    if (pending && last != null) jumps.set(j, { before: last, after: v,
+    if (pending && last != null) jumps.set(j, { before: last, after: v, kinds: pending.kinds, known: pending.known,
       lift: whole && pending.sized ? pending.size : null });
     pending = null;
     last = v;
@@ -2744,7 +2768,9 @@ function drawTrends(){
     const c = seriesColor(slot);
     const mv = lineMove(s);
     const j = d.stamps.length - 1;
-    const latest = s.latest == null ? null : levelValue(s.latest, j, s);
+    // A line with earlier counts and none at the latest run is at zero there, not unknown.
+    const latest = s.latest == null ? (trendPicks.length && s.points.some(v => v != null) ? 0 : null)
+      : levelValue(s.latest, j, s);
     // Mark the categories that hold named roles, so the by-role drill is DISCOVERABLE from the
     // top level. Without it the split toggle only appears after drilling in, which means the
     // one place that advertises the feature is the one place you reach by already knowing it
@@ -2762,7 +2788,7 @@ function drawTrends(){
       >${swatchHtml(c, slot)}
       <span class="nm" title="${esc(s.label)}">${esc(s.label)}</span>
       <span class="ct">${latest == null ? '—' : fmtCompact(latest)}</span>
-      ${noBase ? '<span class="dl flat" title="Too few openings at the start of this window to index">too few to index</span>'
+      ${noBase ? '<span class="dl flat" title="Under 5 openings at the start of this window, too few to index against">started under 5</span>'
                : `<span class="dl ${moveClass(mv)}"${mv.count != null ? ' title="Too few openings for a percentage to mean much, so the change in openings"' : ''}>${moveText(mv)}</span>`}
       ${hasRoles ? '<span class="drill" role="img" aria-label="has tracked roles" title="Opens the named roles tracked inside this category">▸ roles</span>' : ''}</span>
       <button class="vis" type="button" data-hide="${esc(s.name)}" aria-pressed="${off}"
@@ -3175,7 +3201,7 @@ function buildKpis(d, charted, measured){
   // measured against this payload, 266,008 under a "New this week" label whose series sum to
   // 31,143. The sum agrees with the subtraction exactly on stock, where both are defined.
   const openings = d.series.reduce((sum, s) => {
-    const last = s.latest != null ? s.latest : [...s.points].reverse().find(v => v != null);
+    const last = s.latest;
     return sum + (last || 0);
   }, 0);
   const tiles = [];
@@ -3360,6 +3386,29 @@ function buildTrendsTable(){
 function hiringOpenings(s, mv){
   const m = mv.dl != null && trendMove(s);
   return m ? ` (${esc(signedOpenings(Math.round(m.change)).replace(/ openings?$/, ''))})` : '';
+}
+// What the non-hiring part of a line's move was, by cause and size, from the steps taken out of
+// it: "−2,041 duplicate postings removed, +230 from counting changes". The payload knew NVIDIA's
+// −1,811 was mostly one duplicate removal; the sentence named three possible causes and none.
+// A run holding two kinds of step is named by both, with one size.
+function causesOf(s, other){
+  const by = { duplicates: 0, found: 0, counting: 0 };
+  // A run holding several kinds gives each known size to its kind (NVIDIA's refit run removed
+  // 2,041 duplicates beside a family change) and the rest of the jump to counting changes.
+  stepJumps(s.points, s).forEach(j => {
+    const size = j.lift ?? (j.after - j.before);
+    if (j.kinds.size === 1){ by[[...j.kinds][0]] += size; return; }
+    by.duplicates += j.known.duplicates;
+    by.found += j.known.found;
+    by.counting += size - j.known.duplicates - j.known.found;
+  });
+  const parts = [
+    by.duplicates && `${signedOpenings(Math.round(by.duplicates))} as duplicate postings were removed`,
+    by.found && `${signedOpenings(Math.round(by.found))} from boards found later or companies joining the count`,
+    by.counting && `${signedOpenings(Math.round(by.counting))} from changes in how HeadStart counts`,
+  ].filter(Boolean);
+  return parts.length ? `came from outside hiring: ${parts.join(', ')}`
+    : `came in runs marked as counting changes (${signedOpenings(other)})`;
 }
 function countingMove(s){
   const raw = headTail(s.points), net = trendMove(s);
@@ -4055,8 +4104,13 @@ function hotRow(r, i, lens){
 function drawHotProvenance(){
   const w = hotData.window || {}, x = hotData.counts || {};
   const day = s => (s || '').slice(0, 10);
+  // Its net change is over this window, which can be hours after a refit — say so in hours
+  // then, beside rows that print "opened this week".
+  const hours = w.from && w.to ? (new Date(w.to) - new Date(w.from)) / 36e5 : null;
+  const span = hours != null && hours < 72 ? `the last ${Math.max(1, Math.round(hours))} hours`
+    : `${day(w.from)} to ${day(w.to)}`;
   el('hot-provenance').textContent =
-    `Measured ${day(w.from)} to ${day(w.to)}. ${x.ranked ?? 0} companies ranked; ` +
+    `Net change measured over ${span}; "opened this week" is the last 7 days. ${x.ranked ?? 0} companies ranked; ` +
     `${x.below_min_stock ?? 0} with fewer than ${x.min_stock ?? '?'} open tech roles and ` +
     `${x.newly_discovered ?? 0} ` +
     `boards we had only just discovered were left out.`;

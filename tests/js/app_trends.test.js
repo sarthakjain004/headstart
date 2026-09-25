@@ -1538,7 +1538,7 @@ test('the sentence says how much of the chart’s move was not hiring', () => {
     discovered: [{ ts: FOUR[2], company: 'greenhouse:acme', boards: 3, openings: 200 }] });
   t.draw();
   assert.match(nodes['trends-verdict'].innerHTML,
-    /Acme<\/b>: 1,700 tech openings; about flat over 3 days \(\+0\.0%, \+0 openings\); the chart’s other \+200 openings came in runs marked as counting changes, boards found later or duplicates removed\./);
+    /Acme<\/b>: 1,700 tech openings; about flat over 3 days \(\+0\.0%, \+0 openings\); the chart’s other \+200 openings came from outside hiring: \+200 openings from boards found later or companies joining the count\./);
 });
 
 test('compared company by company, the heading asks how hiring compares', () => {
@@ -1709,4 +1709,41 @@ test('a partial read is judged against the last point kept, and counted per run'
   await t.load(null);
   same(t.data().series.find(x => x.name === 'a').points, [26, null, 26, 0], 'the 26 after the leap is real');
   assert.match(nodes['trends-empty'].textContent, /1 run where a board was read only partly/);
+});
+
+
+test('the sentence names each cause of the non-hiring move, with its size', () => {
+  const { t, nodes } = loadApp();
+  t.setPicks([ACME, BETA]);
+  t.set(companies([['greenhouse:acme', 'Acme', [3000, 3000, 1000, 1010]], ['lever:beta', 'Beta', [50, 50, 50, 50]]],
+    { evicted: [{ ts: FOUR[2], company: 'greenhouse:acme', count: 2000 }] }));
+  t.setUnit('count', false);
+  t.draw();
+  assert.match(nodes['trends-verdict'].innerHTML,
+    /Acme<\/b>: 1,010 tech openings; up 1\.0% over 3 days \(\+10 openings[^)]*\); the chart’s other −2,000 openings came from outside hiring: −2,000 openings as duplicate postings were removed\./);
+});
+
+test('under New, a counting change is also taken out a week later, when its openings age out', () => {
+  const { t } = loadApp();
+  t.metricSet('new');
+  t.setPicks([ACME]);
+  const stamps = ['2026-09-16T00:00:00+00:00', '2026-09-17T15:26:29+00:00', '2026-09-20T00:00:00+00:00',
+                  '2026-09-24T15:32:00+00:00', '2026-09-25T00:00:00+00:00'];
+  t.set({ ...picked({}), metric: 'new', stamps, series: [], discovered: [],
+    epochs: [{ ts: stamps[1], changed: ['tech filter changed'], fields: ['tech_filter_version'] }] });
+  // +50 at the change (and its settling run), −50 a week on as those openings age out.
+  same(t.netOfSteps([100, 150, 150, 100, 100]), [100, 100, 100, 100, 100]);
+});
+
+test('a run with duplicates removed beside a counting change names each by its size', () => {
+  const { t, nodes } = loadApp();
+  t.setPicks([{ key: 'eightfold:jobs.nvidia.com', label: 'NVIDIA', boardKeys: ['eightfold:jobs.nvidia.com'] }, BETA]);
+  t.set(companies([['eightfold:jobs.nvidia.com', 'NVIDIA', [3900, 3900, 1900, 1900, 1880]], ['lever:beta', 'Beta', [50, 50, 50, 50, 50]]],
+    { stamps: FIVE, evicted: [{ ts: FIVE[2], company: 'eightfold:jobs.nvidia.com', count: 2041 }],
+      epochs: [{ ts: FIVE[2], changed: ['duplicate removal changed'], fields: ['dedup_version'] }] }));
+  t.setUnit('count', false);
+  t.draw();
+  // The run moved −2,000: −2,041 duplicates, +41 from the counting change beside them.
+  assert.match(nodes['trends-verdict'].innerHTML,
+    /−2,041 openings as duplicate postings were removed, \+41 openings from changes in how HeadStart counts/);
 });

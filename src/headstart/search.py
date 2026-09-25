@@ -233,6 +233,15 @@ def load_family_ids(path: Path) -> dict[str, list[str]] | None:
     return out
 
 
+def unassigned_ids(
+    served: list[str], family_ids: Mapping[str, Sequence[str]]
+) -> list[str]:
+    """The served ids no family holds — the Jobs the classifier calls non-tech, which the
+    role-assignment snapshot leaves out — sorted case-folded, as ``load_family_ids`` sorts."""
+    held = {job_id for ids in family_ids.values() for job_id in ids}
+    return sorted((i for i in served if i not in held), key=str.lower)
+
+
 #: The most Jobs a ``family=`` hand-off names by id. Amazon's largest category measured 1,018
 #: (2026-09-25); the page hands a category over only under this bound (``CFG.max_family_ids``)
 #: and ranks by its name past it, so the clause never silently widens to every job.

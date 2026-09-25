@@ -29,6 +29,7 @@ from headstart.search import (
     request_account_clause,
     scoped_boards_clause,
     scoped_jobs_clause,
+    unassigned_ids,
 )
 from headstart.search_filter_compiler import (
     KEYWORD_DEFAULT_SCOPE,
@@ -151,6 +152,10 @@ _LOCAL_COMPANIES = CompanyPrefs.blank("local")
 
 # A Trends category's Jobs by id, from a local pull of the role-assignment snapshot if any.
 _FAMILY_IDS = load_family_ids(_REPO / "data" / "state" / "role_assignments.parquet")
+if _FAMILY_IDS is not None:  # the Space's non-tech ids, from the same served table
+    _FAMILY_IDS["non-tech"] = unassigned_ids(
+        _table.to_lance().to_table(columns=["id"]).column("id").to_pylist(), _FAMILY_IDS
+    )
 
 
 def _company_where(args) -> str | None:

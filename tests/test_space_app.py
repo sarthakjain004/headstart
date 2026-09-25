@@ -2903,3 +2903,59 @@ def test_a_refit_is_a_step_in_one_history_not_its_end(trends_app, monkeypatch):
     assert d["stamps"] == [_T1, _T2, _T3]
     assert d["series"][0]["points"] == [10, 12, 15]
     assert d["counted_since"] == {"workday:hpe/a": _T1}
+
+
+def test_a_family_is_read_by_the_name_the_data_holds(trends_app):
+    """ADR-0220 renamed families; old links and new config meet the data by either name."""
+    from collections import Counter
+
+    resolve = trends_app._resolve_family
+    assert resolve("ai-ml", Counter({"ai-ml": 3, "devops": 1})) == "ai-ml"
+    assert resolve("ai-ml", Counter({"ai-ml-data-science": 5})) == "ai-ml-data-science"
+    assert (
+        resolve("security", Counter({"security-engineering": 2}))
+        == "security-engineering"
+    )
+    # two predecessors hold data: the larger answers for the new name
+    assert (
+        resolve("ai-ml-data-science", Counter({"ai-ml": 9, "data-science": 4}))
+        == "ai-ml"
+    )
+    assert resolve(None, Counter()) is None
+
+
+def test_served_jobs_no_family_holds_are_non_tech():
+    from headstart.search import unassigned_ids
+
+    held = {"ai-ml": ["b:x:1"], "devops": ["b:x:3"]}
+    assert unassigned_ids(["b:x:1", "B:x:2", "b:x:3", "a:y:9"], held) == [
+        "a:y:9",
+        "B:x:2",
+    ]
+
+
+def test_watched_roles_follow_a_family_by_either_name(trends_app, monkeypatch):
+    """The watchlist moved to v3 parents before their data landed; the AI drill must survive."""
+    monkeypatch.setattr(
+        trends_app,
+        "_WATCH",
+        {"watch:llm-genai": {"label": "LLM / GenAI", "parent": "ai-ml-data-science"}},
+    )
+    rows = [
+        {
+            "ts": _T1,
+            "version": 2,
+            "metric": "stock",
+            "family": family,
+            "band": "all",
+            "ats": "x",
+            "count": n,
+        }
+        for family, n in [("ai-ml", 30), ("watch:llm-genai", 8)]
+    ]
+    monkeypatch.setattr(trends_app, "_TRENDS", rows)
+    client = trends_app.app.test_client()
+    top = client.get("/trends").get_json()
+    assert "ai-ml" in top["watch_parents"]
+    drill = client.get("/trends?family=ai-ml&split=roles").get_json()
+    assert [s["name"] for s in drill["series"]] == ["watch:llm-genai"]
