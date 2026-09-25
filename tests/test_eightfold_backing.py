@@ -25,7 +25,7 @@ def test_a_site_with_several_backing_boards_keeps_them_all_in_order(tmp_path):
     }
 
 
-def test_the_committed_pairs_name_only_the_six_atses_that_state_a_requisition():
+def test_the_committed_pairs_name_only_the_atses_that_state_a_requisition():
     """A backing Board on any other ATS would never carry a `requisition`, so its pair could
     never match; the file and the scrapers that fill the column must agree."""
     pairs = eightfold_backing.load()
@@ -37,9 +37,11 @@ def test_the_committed_pairs_name_only_the_six_atses_that_state_a_requisition():
         "greenhouse",
         "taleo_enterprise",
         "successfactors",
+        "lever",
+        "jibe",
     }
     assert "lumen.eightfold.ai" not in pairs  # the user's decision (ADR-0205)
-    assert len(pairs) == 39
+    assert len(pairs) == 61
 
 
 _PAIRS = {

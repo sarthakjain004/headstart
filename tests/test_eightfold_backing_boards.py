@@ -182,8 +182,15 @@ def test_the_ledger_is_rewritten_each_run_and_a_winner_it_buried_can_come_back(
     }
 
 
-def test_lumen_and_international_sos_are_not_candidates(mod):
-    """The user kept Lumen (its backing site is an internal careers site), and International SOS
-    lists postings no other Board does."""
+def test_lumen_is_not_a_candidate(mod):
+    """The user kept Lumen (its backing site is an internal careers site). International SOS is
+    a candidate since ADR-0210's 2026-09-25 amendment: the postings it lists alone keep it off the
+    alias ledger (rule 1), and the ones its backing Board serves are served once."""
     assert "lumen.eightfold.ai" not in mod.BACKING
-    assert "internationalsos.eightfold.ai" not in mod.BACKING
+
+
+def test_a_backing_board_on_an_ats_with_no_reader_is_unread(mod):
+    """Lever and Jibe back a pair (Tinder, AARP) but have no reader here, so their Eightfold
+    sites are never aliased; the row-level rule (ADR-0210) still serves each shared posting once."""
+    assert mod.read_board("lever", "matchgroup") is None
+    assert mod.read_board("jibe", "aarp") is None
