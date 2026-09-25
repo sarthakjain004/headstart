@@ -49,7 +49,10 @@ reported that one as needing "session/payload cracking").
 | `limit=100`, `500`, `1000`, `2000`, `5000` | **99** |
 | `offset=5&limit=10` vs `offset=0` | starts at row 5 (a row offset, not a page) |
 
-So `limit` clamps silently at 99, and `offset` counts rows from 0. A walk at 99 per page, stepping
+So `limit` clamps silently at 99, and `offset` counts rows from 0. Neither is a filter, and no other
+parameter is sent: the page's own default request carries an empty body and no query filters (its
+band, grade and `filterTO` fields are all unset), and that request read 56 of 56 hiring Boards
+whole. There is no language, site or locale parameter to get wrong. A walk at 99 per page, stepping
 by the rows read and ending on a short page, read HDFC ERGO whole twice (1,923 of 1,923 unique over
 20 pages) and every one of the 56 hiring Boards whole (stated `totalRecords` = rows read, 56 of 56).
 The largest Board is Muthoot Fincorp (`mpgcareers`) at 16,315 postings.
@@ -88,8 +91,9 @@ One `POST jobs/v1?limit=1` per label, over 423 labels:
   egress (Cloudflare WARP, a different IPv6 address), `exlcareers`, `tatapowercareers`, `citiustech`
   and `careers-bounce` got the same deny page, while `larsentoubrocareers` (1,392) and `abfrl` (the
   201 envelope) answered as they did directly. The prober reads the page as DEAD, matched on its
-  exact text, only when a pinned direct ask and a pinned spare-egress ask both get it: a bare 403 trips no prober gate, so an
-  IP-wide block serving the same page must not read as a departed tenant. A different 403 body
+  exact text, only when a pinned direct ask and a pinned spare-egress ask both get it: a bare 403
+  trips no prober gate, so an IP-wide block serving the same page must not read as a departed
+  tenant. A different 403 body
   (the marketing host's "Request Forbidden") stays UNKNOWN.
 - **Empty is stable.** All 47 empty portals, re-fetched three times each (141 fetches), stayed 0.
 - **A user's click lands.** `https://{label}.peoplestrong.com/job/detail/{code}` answers a browser
@@ -182,7 +186,7 @@ publish stays unpublished, pyjamahr's rule. The description's own figures still 
 `employmentType` is gated the same way (`employmentTypeRendered`, 20,516 postings) but is served
 regardless: it is a plain fact about the job, not a sensitive figure (a decision recorded in the ADR).
 
-**Company name.** Nothing names the employer at Board level: `urlinfo.title` is empty or null on 90
+**Company name.** Nothing names the employer at Board level: `urlinfo.title` is empty or null on 100
 of 104 live portals (the rest read "Candidate portal" twice, "Infra-Careers", "PeopleStrong-Careers").
 Each posting's `organizationUnitComplete` starts with a legal entity, but that can be a subsidiary
 ("NOVERRA HOSPITALITY PRIVATE LIMITED" on Lodha's Board) and needs the detail pass. The label is
@@ -196,9 +200,19 @@ readable ("hdfcergocareers"), so it stays the name.
 `Remaining-minute` counter fell by one per request **across four different hosts**, including an
 invented one, and across endpoints (`jobs/v1`, `urlinfo`). So it is one budget per client IP for the
 whole platform. It is a fixed calendar-minute window: Remaining reset to 4,999 at each UTC minute.
-At 16 threads, 10,555 requests ran in 130 s with no refusal: 81 req/s on average, and 4,268 in the
-one full minute measured (71 req/s). At 32 threads, the
-5,000 were spent in ~33 s and the rest got **429 `{"message":"API rate limit exceeded"}`** with
+A ramp on one tenant, 48 requests at each width, all answered 200:
+
+| threads | req/s | median latency |
+| --- | --- | --- |
+| 1 | 5.1 | 0.14 s |
+| 4 | 26.0 | 0.14 s |
+| 16 | 74.2 | 0.15 s |
+| 32 | 101.3 | 0.20 s |
+
+The limit is a per-minute count, not a width, so the ramp's short bursts cannot find it and 64 or
+128 threads were not run: they only reach the same count sooner. Sustained, at 16 threads, 10,555
+requests ran in 130 s with no refusal: 81 req/s on average, and 4,268 in the one full minute
+measured (71 req/s). At 32 threads, the 5,000 were spent in ~33 s and the rest got **429 `{"message":"API rate limit exceeded"}`** with
 Remaining 0 and no Retry-After. The scraper spaces request starts process-wide at 16 ms (3,750 a
 minute), and on a 429 rests the whole process to the window's end. The prober gates
 `peoplestrong.com` at 50 req/s.

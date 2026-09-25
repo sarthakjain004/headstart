@@ -19,6 +19,7 @@ from types import SimpleNamespace
 import pytest
 from curl_cffi.requests.exceptions import HTTPError as CurlHTTPError
 
+from headstart.network import spare_egress as real_spare_egress
 from headstart.scrapers.registry import company_from_row, get_scraper
 from headstart.scrapers.workday import INSTANCES as WORKDAY_INSTANCES
 from headstart.scrapers.zwayam import search_request
@@ -659,6 +660,40 @@ def test_peoplestrong_an_unconfirmed_deny_stays_unknown(monkeypatch):
 
     monkeypatch.setattr(cl.http, "fetch", tunnel_down)
     assert cl.p_peoplestrong("exlcareers", "") == (cl.UNKNOWN, None)
+
+
+def test_peoplestrong_pinned_asks_leave_on_their_named_routes_while_the_group_is_walled(
+    monkeypatch,
+):
+    """Through `http.fetch`'s real routing — only the transport session is stubbed — with
+    `peoplestrong.com` already walled, so its own ask rides the spare egress: the direct confirming
+    ask must still leave with no proxy and the spare one with the tunnel's, or both would come
+    from one address."""
+    sent: list = []
+
+    class Session:
+        def request(self, method, url, **kw):
+            sent.append(kw.get("proxies"))
+            return _Resp(403, content=_PS_DENIED)
+
+    monkeypatch.setattr(cl.http, "session", lambda: Session())
+    # The real module `http.fetch` routes through; the prober's own handle is stubbed file-wide.
+    monkeypatch.setattr(real_spare_egress, "_walled", {"peoplestrong.com"})
+    monkeypatch.setattr(real_spare_egress, "proxy_url", lambda: _PS_SPARE)
+    monkeypatch.setattr(cl.spare_egress, "proxy_url", lambda: _PS_SPARE)
+    monkeypatch.setattr(cl, "_fetch", _ps_fetch(403, _PS_DENIED))
+    assert cl.p_peoplestrong("exlcareers", "") == (cl.DEAD, None)
+    assert sent == [None, {"http": _PS_SPARE, "https": _PS_SPARE}]
+
+
+def test_peoplestrong_with_no_spare_egress_a_deny_asks_nothing_more(monkeypatch):
+    """No second address to ask: nothing another direct ask could settle."""
+    calls: list = []
+    _ps_denied_first(
+        monkeypatch, (403, _PS_DENIED), (403, _PS_DENIED), calls, proxy=None
+    )
+    assert cl.p_peoplestrong("exlcareers", "") == (cl.UNKNOWN, None)
+    assert calls == []
 
 
 def test_peoplestrong_anything_unmeasured_stays_unknown(monkeypatch):

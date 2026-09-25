@@ -8,7 +8,8 @@ PeopleStrong sat on CLAUDE.md's build list as "Angular SPA XHR — opportunistic
 `docs/learnings.md` (2026-06-21) had dropped it from discovery because its "candidate portals are
 login-walled". Measuring the live platform before building
 (`docs/peoplestrong/2026-09-25_candidate-portal-measurement.md`: a 423-label census, then every
-listing row and every detail of all 56 hiring Boards, 35,732 postings) replaced both premises.
+listing row and every detail of all 56 hiring Boards the census found, the vendor's demo tenant
+among them, 35,732 postings) replaced both premises.
 
 1. **The portals are public.** Each candidate portal, `{label}.peoplestrong.com`, is served by an
    API on its own host that needs no session: `POST .../cp/jobs/v1` with an empty body lists the
@@ -68,34 +69,34 @@ the job rather than a figure the employer chose not to publish. **Company name**
 nothing names the employer at Board level.
 
 **The alias key is the label the portal names itself** (`urlinfo`'s `url`), a key in the slug's own
-space, so `dedupe_boards.py` compares like with like. It equalled the label on 104 of 104 live Boards.
+space, so `dedupe_boards.py` compares like with like. It equalled the label on 104 of 104 live
+Boards.
 
 **Liveness.** One `POST jobs/v1?limit=1`: `totalRecords` is LIVE with that count (0 included), the
-201 `getTpUrl` envelope is DEAD, and anything else is UNKNOWN (another 403 body, the vendor's LMS and
-helpdesk hosts answering HTML, 429, 5xx, and any DNS failure on the wildcard zone). HAProxy's exact
-deny body is DEAD **only when two pinned addresses both get it**: a direct ask and a spare-egress
-ask, each sent outside the host's egress group so nothing can re-route it. A bare 403 trips no
-prober gate, so the same page served to our IP would otherwise write every Board dead. The probe's
-first ask cannot count as one of the two: once a 429 walls the group, it already rides the spare
-egress (the code review of #724 caught the first draft asking that address twice). A real answer
-from either pinned address is read instead; with no spare egress, or no answer, the row stays
-UNKNOWN. Measured:
-four departed hosts denied both our address and WARP's (a different Cloudflare IPv6 address), while
-live and unregistered hosts answered the same on both. `peoplestrong.com` is in `_SPANNING` and gated
-at 50 req/s.
+201 `getTpUrl` envelope is DEAD, and anything else is UNKNOWN (another 403 body, the vendor's LMS
+and helpdesk hosts answering HTML, 429, 5xx, and any DNS failure on the wildcard zone). HAProxy's
+exact deny body is DEAD **only when two pinned addresses both get it**: a direct ask and a spare-
+egress ask, each sent outside the host's egress group so nothing can re-route it. A bare 403 trips
+no prober gate, so the same page served to our IP would otherwise write every Board dead. The
+probe's first ask cannot count as one of the two: once a 429 walls the group, it already rides the
+spare egress (the code review of #724 caught the first draft asking that address twice). A real
+answer from either pinned address is read instead; with no spare egress, or no answer, the row stays
+UNKNOWN. Measured: four departed hosts denied both our address and WARP's (a different Cloudflare
+IPv6 address), while live and unregistered hosts answered the same on both. `peoplestrong.com` is in
+`_SPANNING` and gated at 50 req/s.
 
-**The vendor's demo tenant is excluded.** `candidate.peoplestrong.com` serves 314–315 postings of test
-data ("Test Job 1909", every code `BOS/…`) and is in `config.EXCLUDED_BOARDS`.
+**The vendor's demo tenant is excluded.** `candidate.peoplestrong.com` serves 314–315 postings of
+test data ("Test Job 1909", every code `BOS/…`) and is in `config.EXCLUDED_BOARDS`.
 
-**The ATS lands active.** A run reads about 45 MB of listing (35,725 rows at ~1.3 KB) and 15 MB of
+**The ATS lands active.** A run reads about 45 MB of listing (35,709 rows at ~1.3 KB) and 15 MB of
 tech details (1,964 at 7.7 KB): about 31 KB per tech Job against ADR-0158's ~2 MB bar.
 
 **Discovery**, over 426 pool labels: Wayback's CDX index for `*.peoplestrong.com` named 396 (265
 found nowhere else); Common Crawl, 35 crawls back to CC-MAIN-2023-40, named 148 (16 only there);
 GitHub code search 9 and local captures 5 more. Certificate transparency names none: the zone
-carries a wildcard certificate. The ledger holds 104 live (57 hiring, 35,725 postings; 56 and 35,410 once the demo tenant is
-excluded), 263 dead and 59 unknown. The census covered the first 423 labels; the ledger run probed
-all 426.
+carries a wildcard certificate. The ledger holds 104 live (57 hiring, 35,709 postings; 56 and 35,393
+once the demo tenant is excluded), 263 dead and 59 unknown. The census covered the first 423 labels;
+the ledger run probed all 426.
 
 ## Alternatives considered
 
@@ -111,8 +112,8 @@ all 426.
 - **Treat the HAProxy 403 as DEAD on one address.** Rejected: a bare 403 trips no prober gate, so
   an IP-wide block serving the same page would write the whole ledger dead, and DEAD persists for
   its TTL (the jazzhr pass in #463 wrote 2,740). Never observed in ~90,000 requests, where overload
-  drew Kong's 429 every time, but unobserved is not excluded; confirming from a second address
-  costs one request per departed tenant per pass.
+  drew Kong's 429 every time, but unobserved is not excluded; confirming costs two pinned requests
+  per denied label per pass (about 130 over the 65), and none where no spare egress exists.
 - **Keep the multiplexed detail path and raise its width.** Measured: width does not move it past
   the session's connection cap on an edge that allows no reuse.
 - **Hand-compose the detail pass around the pacer, as ADP does.** Rejected: one `_fetch` override
@@ -121,7 +122,7 @@ all 426.
 
 ## Consequences
 
-- 56 hiring PeopleStrong Boards (35,410 postings at the ledger run; 1,964 tech on the measured set)
+- 56 hiring PeopleStrong Boards (35,393 postings at the ledger run; 1,964 tech on the measured set)
   join the scrape list; the demo tenant's 315 stay out. The largest is Muthoot Fincorp at 16,315
   postings, 51 of them tech.
 - Every PeopleStrong request in a process shares one pacer, and the platform's budget is per IP,

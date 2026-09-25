@@ -397,8 +397,8 @@ _GATES = {
     # every tenant for minutes (see `_SPANNING`).
     "pinpointhq.com": _HostGate(16, 0.0, "pinpointhq.com"),
     # peoplestrong.com: 50 req/s is 3,000 a minute, under the 5,000 the gateway allows per IP
-    # across tenants (see `_SPANNING`); 71 req/s sustained ran 10,555 requests clean, so this leaves room
-    # for a scrape sharing the address.
+    # across tenants (see `_SPANNING`); 10,555 requests at 81 req/s on average ran clean, so this
+    # leaves room for a scrape sharing the address.
     "peoplestrong.com": _HostGate(16, 0.02, "peoplestrong.com"),
     # `jobs.jobvite.com` has no entry on purpose: one fixed host rather than a subdomain per
     # tenant, so the auto-gate below already keys it exactly, and it drew zero refusals even at
@@ -1868,8 +1868,11 @@ def p_peoplestrong(t, u):
     if r is None or not _peoplestrong_denied(r):
         return _peoplestrong_verdict(r)
     proxy = spare_egress.proxy_url()
+    if proxy is None:  # no second address: nothing another ask could settle
+        _note("deny-unconfirmed")
+        return UNKNOWN, None
     direct = _peoplestrong_ask_pinned(url, None)
-    other = _peoplestrong_ask_pinned(url, proxy) if proxy else None
+    other = _peoplestrong_ask_pinned(url, proxy)
     if direct is None or other is None:
         _note("deny-unconfirmed")
         return UNKNOWN, None

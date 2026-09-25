@@ -83,9 +83,9 @@ EXCLUDED_BOARDS: frozenset[str] = frozenset(
         "pinpoint:joe-testing",
         "pinpoint:myinterviewdemo",
         # PeopleStrong's own demo tenant, read 2026-09-25: `candidate.peoplestrong.com` titles
-        # itself "Candidate portal" and serves 314 postings (315 at the ledger run), every job code `BOS/…`, titled
-        # "Test Job 1909", "sdfghj sdfg", "Excel Job patch 17sep" under org units "Company test"
-        # and "Company Y". Left in, 26 of them pass the tech filter.
+        # itself "Candidate portal" and serves 314 postings (315 at the ledger run), every job
+        # code `BOS/…`, titled "Test Job 1909", "sdfghj sdfg", "Excel Job patch 17sep" under org
+        # units "Company test" and "Company Y". Left in, 26 of them pass the tech filter.
         "peoplestrong:candidate",
         # Zwayam's own demo/QA tenants, confirmed by reading their board content on 2026-08-27
         # rather than inferred from the slug — the same bar the darwinbox entries below were held

@@ -36,9 +36,9 @@ IP across every tenant and endpoint (``X-RateLimit-Remaining-minute`` fell acros
 hosts) and refuses the rest with a bare 429, no Retry-After. Every request therefore waits on one
 process-wide :class:`~headstart.scrapers.pacer.Pacer` and a 429 rests the whole process to the
 window's end, as ADR-0180 does for ADP — here in the transport itself (:meth:`_fetch`), so the
-base class's Detail pass runs unchanged on either transport. Measured: 16 threads ran 10,555 requests
-in 130 s with no refusal (4,268 in the one full minute, 71 req/s); 32 threads spent the 5,000 in
-~33 s and drew the 429.
+base class's Detail pass runs unchanged on either transport. Measured: 16 threads ran 10,555
+requests in 130 s with no refusal (81 req/s on average; 4,268 in the one full minute, 71 req/s);
+32 threads spent the 5,000 in ~33 s and drew the 429.
 
 Mapped as measured:
   - ``location``: ``locationHierarchyComplete``, one place per posting, as a comma list in the
