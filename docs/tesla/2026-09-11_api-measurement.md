@@ -94,10 +94,11 @@ above) returns `id`, `title`, `department`, `jobFamily`, `location`, `state`, `c
 `jobRequirements`/`jobCompensationAndBenefits` (HTML), `applicationType`, `timeType`,
 `subWorkerType`, `url`, `applyUrl`, `postUntilDate`. Real content — but reaching it costs a full
 browser navigation per job, not a cheap JSON `GET` the way every other detail-pass ATS in this
-repo works. At 8,105 postings that's thousands of navigations every run, which doesn't fit a
-nightly pipeline's time budget. `has_detail_pass` is `False` and `Job.description` is `None` for
-every Tesla row in this version — a deliberate scope cut, documented so it's revisited
-deliberately rather than silently, not an oversight.
+repo works. That was the reading on 2026-09-11 and it is superseded: on 2026-09-22 and
+2026-09-25 a tab that had navigated to one job page fetched other ids with in-page `fetch()`, 200 on
+every id of batches up to 50, while a batch of 100 drew 403 on 69 ids and got the IP refused
+(ADR-0228, issue #553). `has_detail_pass` is now `True`; the module docstring carries the
+mechanism; the raw captures are kept locally, not committed.
 
 ## Sample size
 
