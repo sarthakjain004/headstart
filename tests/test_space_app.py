@@ -3070,3 +3070,46 @@ def test_hot_names_the_run_its_window_is_measured_from(trends_app, monkeypatch):
     # A base `hot_boards` published is kept as written.
     written = {"window": {"from": _T2, "to": _T3, "base": _T2}}
     assert trends_app._with_window_base(written, rows) == written
+
+
+def test_every_category_hands_search_the_jobs_its_trend_counts(trends_app, monkeypatch):
+    """For each category a trend can show, Search's id set is the size of the trend's count —
+    old names, new names and merged names alike (AI, ML & Data Science opened as 0 jobs)."""
+    from headstart import search
+
+    successors = trends_app._family_successors(_REPO_FAMILIES)
+    labels = trends_app._family_labels(_REPO_FAMILIES)
+    monkeypatch.setattr(trends_app, "_FAMILY_SUCCESSOR", successors)
+    monkeypatch.setattr(trends_app, "_FAMILY_LABELS", labels)
+    # The data mid-transition: every retired name still assigned, and a few new ones too.
+    held = [*successors, "engineering-management", "software-engineering", "devops"]
+    counts = {name: k + 1 for k, name in enumerate(held)}
+    monkeypatch.setattr(
+        trends_app,
+        "_TRENDS",
+        [
+            {
+                "ts": _T1,
+                "version": 2,
+                "metric": "stock",
+                "family": name,
+                "band": "mid",
+                "ats": "x",
+                "count": n,
+            }
+            for name, n in counts.items()
+        ],
+    )
+    family_ids = trends_app._with_predecessors(
+        {name: [f"x:{name}:{i}" for i in range(n)] for name, n in counts.items()},
+        successors,
+    )
+    client = trends_app.app.test_client()
+    for family in sorted(set(successors.values()) | set(held)):
+        d = client.get(f"/trends?family={family}").get_json()
+        trend = sum(s["points"][-1] or 0 for s in d["series"])
+        args = trends_app.app.test_request_context(
+            f"/search?board=x&family={d['family']}"
+        ).request.args
+        clause = search.scoped_jobs_clause(args, family_ids)
+        assert len(re.findall(r"'x:[^']*'", clause)) == trend, family

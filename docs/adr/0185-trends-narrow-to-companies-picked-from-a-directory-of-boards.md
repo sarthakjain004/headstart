@@ -773,3 +773,36 @@ growers in this category" ranking (per-company counts by category), a location f
 location dimension in `role_trends`), and hiding non-tech jobs in Search (the Space cannot
 filter by a Job-id set without pylance; Search states the non-tech count instead). Each is a
 pipeline and schema change, weighed on its own.
+
+### A critic's eleventh round (2026-09-25): 6.5/10
+
+The critic found the sentences exact and each line's causes its own. What failed were the two
+hand-offs a reader leans on, and what the page shows first:
+
+- **Search counts a category as Trends does.** Trends sums a family's predecessors (ADR-0220)
+  and Search took the name as written: "AI, ML & Data Science 410" at Google opened as 0 jobs,
+  and Engineering Management's 152 as 131, without the 21 still assigned to Tech Leadership. The
+  Space's family→ids map now gives each family its predecessors' ids too, and a test holds every
+  configured family's trend count equal to its Search id count.
+- **A whole company's line takes a counting change out by openings, never by ratio.** A change
+  moves jobs into or out of a company's tech openings; it does not re-sort a share of them, so
+  the history before it is shifted, not multiplied. The ratio rule stays for category lines,
+  where a refit does re-sort a share. Hot leaves the same runs out of its sum, so its figure and
+  the trend its row opens are now the same number: measured on the Sep 18 → Sep 25 window,
+  Squircle's trend read +513 against Hot's +459 before, and +459 after; 5 of 6 rows agree to the
+  opening, the sixth by the second Board its company holds.
+- **A merged day marker sits on the run that moved most**, not the day's first: Google with
+  Micron's Sep 24 marker sat on an 18:00 run that moved one opening, beside the 21:19 run that
+  moved 2,199. Every marker is also listed as text under the chart ("Marked changes"), the only
+  way to them on a phone.
+- **The sentences keep the first pick and the tiles' riser and faller in view**, in pick order;
+  the rest fold. The tile read "Biggest riser Microsoft" over a fold that hid Microsoft.
+- **A category first seen inside the window reads "new since Sep 24"**, not "→ +0 openings".
+  The legend gives a small line's change in openings, as the table does, where it read "started
+  under 5". The roles view says what its lines are, an unknown company says it is not in the
+  directory rather than "yet", and one opening is one opening.
+- **Ten placement operators Hot called employers are labelled services** (ADR-0171's curated
+  list), each adjudicated from its own postings.
+
+Deferred again, with the three above: making Total the default for one company. It would
+override the user's rule that categories are the default wherever two clear the floor.

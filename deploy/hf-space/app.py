@@ -557,8 +557,32 @@ def _company_atses(entry: dict) -> list[str]:
     return sorted({ats_of(board) for board in entry["boards"]})
 
 
-_FAMILY_IDS = search.load_family_ids(
-    _STATE / "data" / "state" / "role_assignments.parquet"
+def _with_predecessors(
+    family_ids: dict[str, list[str]] | None, successors: dict[str, str]
+) -> dict[str, list[str]] | None:
+    """``family_ids`` with each family also holding its predecessors' ids (ADR-0220), sorted
+    as ``load_family_ids`` sorts them — the families a Trends line for it sums. Search took the
+    name as written: "AI, ML & Data Science 410" at Google opened as 0 jobs, and Engineering
+    Management's 152 as 131, without the 21 still assigned to Tech Leadership."""
+    if family_ids is None:
+        return None
+    out = dict(family_ids)
+    for family in set(successors.values()):
+        names, frontier = {family}, {family}
+        while frontier:  # an old name's own predecessors too, however many heads back
+            frontier = {
+                old for old, new in successors.items() if new in frontier
+            } - names
+            names |= frontier
+        pools = [family_ids[name] for name in sorted(names) if name in family_ids]
+        if pools and (len(pools) > 1 or family not in family_ids):
+            out[family] = sorted((i for pool in pools for i in pool), key=str.lower)
+    return out
+
+
+_FAMILY_IDS = _with_predecessors(
+    search.load_family_ids(_STATE / "data" / "state" / "role_assignments.parquet"),
+    _FAMILY_SUCCESSOR,
 )
 _COMPANIES = _load_directory(_STATE / "data" / "state" / "company_directory.json")
 _COMPANY_OF = {

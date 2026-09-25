@@ -120,3 +120,24 @@ def test_entries_are_normalized_spellings() -> None:
 )
 def test_tenant_names_whose_board_it_is(board: str, expected: str) -> None:
     assert tenant(board) == expected
+
+
+def test_hots_placement_agencies_are_services_and_their_near_names_are_not():
+    """Adjudicated 2026-09-25 from Hot's employer-labelled head, each by its own postings."""
+    assert classify("smartrecruiters:usm2", "USM") == "services"
+    assert (
+        classify("smartrecruiters:EndeavorItSolution9", "Endeavor it solution")
+        == "services"
+    )
+    assert (
+        classify(
+            "smartrecruiters:squircleitconsultingservicespvtltd",
+            "Squircle IT Consulting Services Pvt. Ltd",
+        )
+        == "services"
+    )
+    # "usm" alone is a university's slug; only USM's own SmartRecruiters slug is listed.
+    assert (
+        classify("workday:usm/careers", "University of Southern Mississippi")
+        == "employer"
+    )

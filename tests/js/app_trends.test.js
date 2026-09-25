@@ -892,7 +892,7 @@ test('a pick the directory does not hold is dropped with a sentence, and the res
   t.setPicks([{ key: 'greenhouse:acme', label: 'Acme' }, { key: 'workday:ghost', label: 'Ghost' }]);
   await t.load(null);
   same(asked[1].getAll('company'), ['greenhouse:acme']);
-  assert.match(nodes['trends-co-note'].textContent, /No trend for Ghost yet/);
+  assert.match(nodes['trends-co-note'].textContent, /HeadStart has no trend for Ghost: it isn’t in the company directory\./);
   assert.equal(nodes['trends-error'].hidden, true);
 });
 
@@ -1923,4 +1923,79 @@ test('markers on one day are drawn as one, titled with every change', () => {
   const svg = nodes['trends-chart'].innerHTML;
   assert.equal((svg.match(/class="epoch-marker"/g) || []).length, 1);
   assert.match(svg, /tech filter changed\nCounting changed here: role taxonomy refit/);
+});
+
+// ---- critique round 12 ------------------------------------------------------------------------
+test('a whole company’s line takes a counting change out by openings, as Hot does', () => {
+  const { t, nodes } = loadApp();
+  t.setPicks([ACME]);
+  // A +100 filter change at FIVE[2] and its settling run; hiring +10, +20 either side of them.
+  t.set(companies([['greenhouse:acme', 'Acme', [100, 110, 210, 210, 230]]],
+    { stamps: FIVE, epochs: [{ ts: FIVE[2], changed: ['tech filter changed'], fields: ['tech_filter_version'] }] }));
+  t.setUnit('count', false);
+  t.draw();
+  // Scaled, the history before the step doubled and the line read +50; Hot sums the runs
+  // outside the change: +10 + 20 = +30.
+  assert.match(nodes['trends-verdict'].innerHTML, /\(\+30 openings/);
+  assert.match(nodes['trends-verdict'].innerHTML, /\+100 openings from a tech filter change/);
+});
+
+test('folded sentences keep the first pick and the tiles’ movers in view, in pick order', () => {
+  const { t, nodes } = loadApp();
+  const picks = ['a', 'b', 'c', 'd'].map(k => ({ key: `lever:${k}`, label: k.toUpperCase(), boardKeys: [`lever:${k}`] }));
+  t.setPicks(picks);
+  // Sized so the payload order (largest first) is D, C, B, A; C rises most, B falls most.
+  t.set(companies([['lever:d', 'D', [400, 400, 400, 404]], ['lever:c', 'C', [200, 200, 200, 300]],
+                   ['lever:b', 'B', [150, 150, 150, 100]], ['lever:a', 'A', [100, 100, 100, 101]]]));
+  t.setUnit('count', false);
+  t.draw();
+  const [shownPart, folded] = nodes['trends-verdict'].innerHTML.split('<details');
+  assert.deepEqual([...shownPart.matchAll(/<b>(\w)<\/b>/g)].map(m => m[1]), ['A', 'B', 'C']);
+  assert.match(folded, /1 more company/);
+  assert.match(folded, /<b>D<\/b>/);
+});
+
+test('a category first seen inside the window reads as new, not flat', () => {
+  const { t, nodes } = loadApp();
+  t.setPicks([ACME]);
+  t.set({ ...picked({ old: [50, 50], arch: [null, 32] }), stamps: STAMPS,
+    counted_since: { 'greenhouse:acme': '2026-09-01T00:00:00+00:00' } });
+  t.setUnit('count', false);
+  t.draw();
+  assert.match(row(nodes['trends-legend'].innerHTML, 'arch'), /new since Sep 20/);
+  assert.doesNotMatch(row(nodes['trends-legend'].innerHTML, 'arch'), /\+0/);
+});
+
+test('one opening is one opening', () => {
+  const { t, nodes } = loadApp();
+  t.setPicks([ACME]);
+  t.set(companies([['greenhouse:acme', 'Acme', [1, 1, 1, 1]]]));
+  t.draw();
+  assert.match(nodes['trends-verdict'].innerHTML, /Acme<\/b>: 1 tech opening;/);
+});
+
+test('every marked line is listed under the chart, a merged day at its biggest jump', () => {
+  const { t, nodes } = loadApp();
+  const stamps = ['2026-09-20T00:00:00+00:00', '2026-09-24T18:00:00+00:00', '2026-09-24T21:19:00+00:00',
+                  '2026-09-25T06:00:00+00:00', '2026-09-27T00:00:00+00:00'];
+  t.setPicks([ACME]);
+  t.set(companies([['greenhouse:acme', 'Acme', [100, 101, 300, 300, 305]]], { stamps,
+    epochs: [{ ts: stamps[1], changed: ['duplicate removal changed'], fields: ['family_classifier_version'] },
+             { ts: stamps[2], changed: ['role family assignment changed'], fields: ['family_classifier_version'] }] }));
+  t.setUnit('count', false);
+  t.draw();
+  const list = nodes['trends-changes'];
+  assert.equal(list.hidden, false);
+  assert.match(list.innerHTML, /Marked changes in this window \(1\)/);
+  assert.match(list.innerHTML, /Sep 24 21:19/, 'at the run that moved 199, not the one that moved 1');
+});
+
+test('the roles view says what its lines are', () => {
+  const { t, nodes } = loadApp();
+  t.setPicks([ACME]);
+  t.set(fixture(), null);
+  t.click('software-engineering', 'roles');
+  t.set({ ...picked({ 'watch:llm': [10, 12] }), stamps: STAMPS, family: 'ai-ml' }, 'ai-ml');
+  t.draw();
+  assert.match(nodes['trends-verdict'].innerHTML, /roles tracked by their titles inside this category/);
 });
