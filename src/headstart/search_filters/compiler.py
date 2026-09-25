@@ -5,8 +5,8 @@
 The Account's follow/hide clause (ADR-0171) is built here too, beside it, because both escape
 their input through the same LIKE rules and every caller must narrow the same way.
 
-Split out of :mod:`headstart.search` (ADR-0194) so :mod:`headstart.facets` and
-:mod:`headstart.search` both import the compiler and neither imports the other. Each
+Split out of :mod:`headstart.search` (ADR-0194) so :mod:`headstart.serving.facets` and
+:mod:`headstart.serving.job_search` both import the compiler and neither imports the other. Each
 materialized Search filter's own facts live in its module (ADR-0193); this compiler calls them.
 """
 
@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from typing import NamedTuple
 
-from headstart import (
+from headstart.search_filters import (
     employment_type_filter,
     experience_filter,
     fx,
@@ -105,7 +105,7 @@ class IndexCapabilities:
     """Runtime facts about the currently-open Search index (ADR-0149) — never a user choice.
 
     Learned once per process in :meth:`JobSearch.__init__` (two full-table scans plus a schema
-    check) and handed to :func:`build_filter` and :func:`headstart.facets.counts` as one object,
+    check) and handed to :func:`build_filter` and :func:`headstart.serving.facets.counts` as one object,
     in place of the loose keyword arguments both used to take. ``atses``, ``has_first_seen``
     and ``has_min_salary_annual`` carry no default: forgetting one used to silently drop the ATS
     whitelist, or turn ADR-0035's exact Watermark cutoff into no clause at all, so a caller that
@@ -271,7 +271,7 @@ def _ago(**window: int) -> datetime:
     739,865 days (17,756,755 hours) walks ``datetime`` below year 1 — one past the last that
     lands on 0001-01-01, and both creep by a day each day as ``now`` moves — and a magnitude past 999,999,999
     days breaks ``timedelta`` itself — in both directions, since a negative window that large
-    runs off the far end instead. Converted here rather than clamped in the query-string int reader in :mod:`headstart.search`, which
+    runs off the far end instead. Converted here rather than clamped in the query-string int reader in :mod:`headstart.serving.job_search`, which
     is shared with ``k``, ``page`` and the salary bounds and has no business knowing what a date
     can hold; here it matches ``_next_day``'s identical treatment further down and also covers the facet
     counts, which call :func:`build_filter` directly rather than through the parse step.

@@ -60,7 +60,6 @@ import re
 from typing import Any
 from urllib.parse import quote, urlencode
 
-from headstart import employment_type_filter
 from headstart.jobs.job import Job, html_to_text, is_remote
 from headstart.network import http
 from headstart.scrapers.base import (
@@ -69,6 +68,7 @@ from headstart.scrapers.base import (
     DetailLost,
     DetailRequest,
 )
+from headstart.search_filters import employment_type_filter
 
 _SITE_HOST = "https://myjobs.adp.com"
 _SITE = f"{_SITE_HOST}/public/staffing/v1/career-site"

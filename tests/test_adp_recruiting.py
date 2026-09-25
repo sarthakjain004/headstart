@@ -367,7 +367,7 @@ def test_a_walk_short_of_the_stated_count_is_marked_truncated(monkeypatch):
 
 
 def test_an_abbreviated_work_level_is_labelled_for_the_filter():
-    from headstart import employment_type_filter
+    from headstart.search_filters import employment_type_filter
 
     cases = {
         "PT 129 or Less Hours": "Part-time (PT 129 or Less Hours)",

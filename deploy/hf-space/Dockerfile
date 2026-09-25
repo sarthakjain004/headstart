@@ -31,8 +31,8 @@ RUN python -c "from sentence_transformers import SentenceTransformer; \
 # `headstart` (ADR-0153) is a real Python package here, not a hand-curated file list: this
 # COPY brings in the WHOLE src/headstart tree (deploy-space.yml stages it beside this
 # Dockerfile first, since the Space's own repo — not the monorepo — is the build context).
-# app.py imports it exactly like `scripts/ui/serve.py` does (`from headstart import search,
-# facets, ...`), and the UI's templates/static, previously synced as their own COPY lines,
+# app.py imports it exactly like `scripts/ui/serve.py` does (`from headstart.serving import
+# facets, job_search`), and the UI's templates/static, previously synced as their own COPY lines,
 # ride inside it at headstart/ui/ — app.py locates them via `Path(headstart.__file__)`.
 # `config/` (fx_rates.json, role_families.json, role_watchlist.json) is the same story: one
 # directory copy instead of three individually-named files that had to be kept in step with

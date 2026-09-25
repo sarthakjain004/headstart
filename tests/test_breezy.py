@@ -19,9 +19,9 @@ import json
 import re
 from pathlib import Path
 
-from headstart import employment_type_filter
 from headstart.scrapers.breezy import BreezyScraper
 from headstart.scrapers.registry import get_scraper
+from headstart.search_filters import employment_type_filter
 
 FIXTURES = Path(__file__).parent / "fixtures"
 SCRAPED_AT = "2026-01-01T00:00:00+00:00"

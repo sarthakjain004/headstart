@@ -12,7 +12,7 @@ shape this mirrors), [ADR-0104](0104-a-keyword-filter-with-a-scope-map-and-a-sto
 
 ## Context
 
-The search API's India filter (`build_filter(india="india")`) compiles to `geo.where("india")` —
+The search API's India filter (`build_filter(india="india")`) compiles to `india_gazetteer.where("india")` —
 a 3,068-character `regexp_like` alternation over the free-text `location` column, built fresh on
 every request. Measured unindexed (`experiment/lancedb-scalar-index/LOG.md`, 2026-09-07 session):
 `count_rows` 352.6ms, vector page 1,338.1ms — 7–13x every other filter cost measured in that
@@ -40,14 +40,14 @@ The tradeoff this ADR accepts in exchange — a fix to the gazetteer reaching al
 only on the next sweep, not instantly — is not new to this codebase. It is exactly the cost
 `DERIVATIONS_VERSION` already imposes on `experience.py` and `salary.py`: a fix to either doesn't
 reach an already-embedded row until a version-bump sweep runs (CLAUDE.md's own documented, accepted
-rule). This ADR gives `geo.py`'s country-level rule that same tradeoff, for the country-level case
-only — `geo.where()` itself is unchanged, and every other caller (city/region filtering, `/facets`,
+rule). This ADR gives `india_gazetteer.py`'s country-level rule that same tradeoff, for the country-level case
+only — `india_gazetteer.where()` itself is unchanged, and every other caller (city/region filtering, `/facets`,
 any future consumer) keeps its existing instant reach.
 
 ## Decision
 
 Materialize a nullable `country` column — `"IN"` | null — via a new function,
-`headstart.geo.classify(location: str | None) -> str | None`. It replicates `where("india")`'s
+`headstart.search_filters.india_gazetteer.classify(location: str | None) -> str | None`. It replicates `where("india")`'s
 exact rule (the country substring minus `INDIA_EXCLUDE`; the `IND_FORMS` positions minus
 `IND_EXCLUDE`; the subdivision tail; every city alias; every state name) in pure Python rather than
 compiled regex, because every alternative `where()` ORs together is itself a substring, prefix,
@@ -56,7 +56,7 @@ nothing about *what* matches). `classify()` reads the exact same `CITIES`/`STATE
 `SUBDIVISIONS`/`EXCLUDE`/`IND_EXCLUDE`/`INDIA_EXCLUDE` constants `where()` does, so a future data
 edit (a new alias, a new exclusion) reaches both paths without a second change. The two can still
 drift if the rule's *shape* changes (a new part added to `where()`'s composition) — that risk is
-closed by `tests/test_geo.py::test_classify_agrees_with_the_country_level_rule_on_every_oracle_row`,
+closed by `tests/test_search_filters_india_gazetteer.py::test_classify_agrees_with_the_country_level_rule_on_every_oracle_row`,
 which asserts agreement on every real location string in the module's own trap/recall oracle, not
 by the shared-constants argument alone.
 
@@ -68,11 +68,11 @@ raw ATS field a resync could silently revert to, since it is a pure function of 
 (itself already a fact, resynced every run) — so, unlike `remote`, it needs no exclusion from
 `FACT_FIELDS` and no held-description branch at all.
 
-`build_filter()` prefers `country = 'IN'` over `geo.where(india)` only for the literal top-level
+`build_filter()` prefers `country = 'IN'` over `india_gazetteer.where(india)` only for the literal top-level
 `"india"` value (the exact sentinel `where()` itself uses for "whole country," as opposed to a
 `CITIES`/`REGIONS` key), gated on a `has_country` dark-until-migrated flag mirroring
 `has_first_seen`/`has_min_salary_annual`/`has_description`. Every city or region place
-(`"bengaluru"`, `"delhi ncr"`, …) keeps the unchanged `geo.where()` path unconditionally — only the
+(`"bengaluru"`, `"delhi ncr"`, …) keeps the unchanged `india_gazetteer.where()` path unconditionally — only the
 country-level alternation was ever measured as expensive; individual city clauses are far smaller
 and were never flagged.
 
@@ -90,10 +90,10 @@ instead so a future country tag needs no second schema migration — it currentl
 
 ## Consequences
 
-- **The accepted lag.** A future `geo.py` alias or rule fix reaches the served `country` column
+- **The accepted lag.** A future `india_gazetteer.py` alias or rule fix reaches the served `country` column
   only on the next `DERIVATIONS_VERSION` sweep + `index sync`, not instantly — the exact property
   ADR-0086 called the "standing advantage" of query-time matching, now deliberately given up for
-  the country-level case. `geo.where()` itself is untouched and un-deprecated: city/region
+  the country-level case. `india_gazetteer.where()` itself is untouched and un-deprecated: city/region
   filtering keeps instant reach, and any caller that still needs the always-fresh regex can use it.
 - **No bespoke backfill command, unlike `description` (ADR-0104).** `description`'s true value
   (raw text) was never stored in `meta.jsonl` — only a `has_description` bit was — so backfilling
@@ -101,7 +101,7 @@ instead so a future country tag needs no second schema migration — it currentl
   true value *is* fully computed into `meta.jsonl` by the sweep, so `index.py`'s existing,
   unconditional `_refresh_metadata()` compare-and-rewrite loop backfills it automatically on the
   first ordinary `sync` after the sweep — the same mechanism salary's own v3 bump already relied on.
-- `tests/test_geo.py`'s trap/recall oracle becomes the shared correctness gate for both
+- `tests/test_search_filters_india_gazetteer.py`'s trap/recall oracle becomes the shared correctness gate for both
   `where("india")` and `classify()` — a future regression in either path that the other doesn't
   share now surfaces as a real disagreement between the fast path and the fallback, not just a
   silent one.

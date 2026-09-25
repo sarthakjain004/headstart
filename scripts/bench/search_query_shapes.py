@@ -12,7 +12,7 @@ from pathlib import Path
 import lancedb
 import numpy as np
 
-from headstart.search import ANN_NPROBES, ANN_REFINE_FACTOR, RESULT_COLUMNS
+from headstart.serving.job_search import ANN_NPROBES, ANN_REFINE_FACTOR, RESULT_COLUMNS
 
 FILTERS = {
     "ats": "ats = 'greenhouse'",

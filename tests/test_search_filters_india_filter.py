@@ -1,10 +1,10 @@
-from headstart import geo, india_filter
+from headstart.search_filters import india_filter, india_gazetteer
 
 
 def test_only_the_whole_country_uses_the_materialized_column():
     assert india_filter.clause("india", True) == "country = 'IN'"
-    assert india_filter.clause("india", False) == geo.where("india")
-    assert india_filter.clause("bengaluru", True) == geo.where("bengaluru")
+    assert india_filter.clause("india", False) == india_gazetteer.where("india")
+    assert india_filter.clause("bengaluru", True) == india_gazetteer.where("bengaluru")
 
 
 def test_an_unknown_place_compiles_to_nothing():

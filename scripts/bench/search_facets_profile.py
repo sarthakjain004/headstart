@@ -11,8 +11,8 @@ from pathlib import Path
 
 import lancedb
 
-from headstart import facets
-from headstart.search import JobSearch
+from headstart.serving import facets
+from headstart.serving.job_search import JobSearch
 
 
 def main() -> int:

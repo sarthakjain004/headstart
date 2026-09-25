@@ -199,7 +199,7 @@ def build_doc(job: dict) -> str:
 # not occur in real postings: verified against 526 local LPA-bearing records with zero
 # disagreements between old and new.
 #
-# v8: added `headstart.jobs.remote.extract` — the JD-supersedes-field overlay described above. Not a
+# v8: added `headstart.remote.extract` — the JD-supersedes-field overlay described above. Not a
 # fix to an existing derivation; a new fourth family sharing this counter for the first time
 # (ADR-0118). Measured against the live served table (335,543 rows) joined to the full
 # description store (493,629 JDs, 98.1% coverage): AT LEAST 7,439 already-indexed rows have

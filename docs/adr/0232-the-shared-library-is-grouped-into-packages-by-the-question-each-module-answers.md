@@ -8,6 +8,9 @@
 [ADR-0193](0193-one-module-per-materialized-search-filter.md),
 [ADR-0194](0194-job-search-absorbs-what-its-adapters-copy.md),
 [ADR-0230](0230-trends-keeps-one-board-delta-history-and-decides-rules-when-reading-it.md)
+· **Superseded in part by:** [ADR-0235](0235-where-the-package-layout-keeps-a-name-and-what-its-rewrites-leave-alone.md)
+(the names of `tech_filter`, the four Search-filter modules and the serving path, and the text a
+rewrite leaves alone)
 
 ## Context
 
@@ -91,25 +94,3 @@ had to autouse-stub `rotate`"). The table above is the map from those names to t
 * ADR-0028's list of modules the curated feed reaches is superseded by the measurement above: of
   the four, only `harvest` (now `scrapers/harvest.py`) and `board_cost` (now
   `boards/cost_ledger.py`) are reached from the feed.
-
-## Amendment (2026-09-25): `tech_filter` keeps its name, and what a rewrite leaves alone
-
-Made while landing the `jobs/` step (#722), after the reviews of #719 and #722.
-
-* **`tech_filter` keeps its name**; the table's `tech_filter` → `tech_classifier` does not happen.
-  It is CONTEXT.md's **Tech filter**, and CLAUDE.md names a module in the glossary's vocabulary.
-  It and the stage `ingest/filter_tech` stay a near-homograph, which their packages, `jobs/` and
-  `ingest/`, now tell apart.
-* **What keeps the name it was written with.** This replaces the paragraph above on the two kinds
-  of text that keep an old name. A rewrite updates code, comments, living docs and ADRs, except
-  where the text describes the tree as it was:
-  * dated records: any doc whose file name starts with a date, every `LOG.md`,
-    `docs/code-review/`, `docs/upstream-comparison/`, and the pass logs in
-    `docs/salary-extraction/` (every file but its `README.md`);
-  * a link pinned to a commit (`blob/<sha>/…`), and a `git log <sha>..<sha> -- <path>` range,
-    which finds nothing under a path that did not exist across those commits. CLAUDE.md's
-    `DERIVATIONS_VERSION` citations are such ranges;
-  * inside an ADR, a sentence stating what was true at a stated time, commit or version
-    ("measured on `main` at `12d45409`", "(`TECH_FILTER_VERSION` 3)").
-
-  #722 restores the ten dated records #719 had rewritten, so the rule holds from the first step.

@@ -1,6 +1,12 @@
 import sqlite3
 
-from headstart.experience_filter import CEILINGS, MIGRATION_SQL, clause, column, flags
+from headstart.search_filters.experience_filter import (
+    CEILINGS,
+    MIGRATION_SQL,
+    clause,
+    column,
+    flags,
+)
 
 
 def test_flags_keep_unknown_experience_eligible():

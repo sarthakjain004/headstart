@@ -3,7 +3,7 @@
 Pulls the LanceDB ``jobs`` table from the private HF dataset at startup (HF_TOKEN Space
 secret), loads the nomic encoder (baked into the image), and serves the shared UI — the
 templates and static files under ``headstart.ui`` — over the shared search path,
-``search.JobSearch`` (ADR-0042). The local dev server (``scripts/ui/serve.py``) is a thin
+``job_search.JobSearch`` (ADR-0042). The local dev server (``scripts/ui/serve.py``) is a thin
 adapter over the same two modules, so nothing here is duplicated there any more. Both import
 ``headstart`` the same way: the Space installs it as a real package rather than laying its
 modules down flat (ADR-0153), so there is exactly one import path to keep in sync.
@@ -27,13 +27,8 @@ from huggingface_hub import snapshot_download
 import headstart  # only for headstart.__file__, to locate ui/ beside this package (ADR-0153)
 from headstart import (
     embedding_conventions,
-    facets,
-    fx,
-    geo,
     hot_ranking,
     llm_router,
-    profile_extract,
-    search,
     trend_history,
     trend_netting,
     trend_reading,
@@ -59,10 +54,12 @@ from headstart.alerts.store import (
     is_resume_id,
     subscription_id,
 )
-from headstart.search_filter_compiler import (
+from headstart.search_filters import fx, india_gazetteer
+from headstart.search_filters.compiler import (
     KEYWORD_DEFAULT_SCOPE,
     keyword_scope_options,
 )
+from headstart.serving import facets, job_search, profile_extract
 
 DATASET = os.environ.get("HF_DATASET", "imPoseidon/headstart-index")
 _STATE = Path("/app/state")
@@ -157,8 +154,8 @@ _table = lancedb.connect(_STATE / "data" / "lancedb").open_table(
     embedding_conventions.PROD_TABLE
 )
 # The whole query path — parse, whitelist, rank, project — lives behind this one object
-# (search.JobSearch); its startup scan supplies the ATS dropdown and the first_seen flag.
-_searcher = search.JobSearch(_model, _table)
+# (job_search.JobSearch); its startup scan supplies the ATS dropdown and the first_seen flag.
+_searcher = job_search.JobSearch(_model, _table)
 # The first page always browses with no filters and asks for the matching facet strip. Build both
 # from this process's freshly-opened table before accepting traffic; every pipeline publication
 # restarts the Space, so a new table necessarily gets new caches.
@@ -226,7 +223,7 @@ def _with_predecessors(
 
 
 _FAMILY_IDS = _with_predecessors(
-    search.load_family_ids(_STATE / "data" / "state" / "role_assignments.parquet"),
+    job_search.load_family_ids(_STATE / "data" / "state" / "role_assignments.parquet"),
     _FAMILY_SUCCESSOR,
 )
 # Email alerts (ADR-0035) — invite-only, so all three must be set before the panel appears:
@@ -354,9 +351,9 @@ def _company_where(args) -> str | None:
     (ADR-0185), and ``family=`` beside it to one role family of theirs. Neither needs an
     Account, so both apply with accounts off as well.
     """
-    scoped = search.with_extra(
-        search.scoped_boards_clause(args),
-        search.scoped_jobs_clause(
+    scoped = job_search.with_extra(
+        job_search.scoped_boards_clause(args),
+        job_search.scoped_jobs_clause(
             args, _FAMILY_IDS, {n: m["match"] for n, m in _WATCH.items()}
         ),
     )
@@ -365,8 +362,8 @@ def _company_where(args) -> str | None:
         return scoped
     email, store = gate
     prefs = store.get_companies(subscription_id(email))
-    return search.with_extra(
-        scoped, search.request_account_clause(args, prefs.followed, prefs.hidden)
+    return job_search.with_extra(
+        scoped, job_search.request_account_clause(args, prefs.followed, prefs.hidden)
     )
 
 
@@ -1243,14 +1240,14 @@ def index():
             "fx": fx.table(),
             # The most Boards one Search hand-off may name, so the Trends tab can say so
             # rather than send a request the route refuses.
-            "max_scoped_boards": search.MAX_SCOPED_BOARDS,
+            "max_scoped_boards": job_search.MAX_SCOPED_BOARDS,
             # Whether a Trends category can hand over as its exact Jobs, and up to how many.
             "family_handoff": _FAMILY_IDS is not None,
-            "max_family_ids": search.MAX_FAMILY_IDS,
+            "max_family_ids": job_search.MAX_FAMILY_IDS,
         },
         njobs=f"{_table.count_rows():,}",
         atses=capabilities.atses,
-        india_opts=geo.dropdown_options(),
+        india_opts=india_gazetteer.dropdown_options(),
         has_first_seen=capabilities.has_first_seen,
         # the Keyword filter (ADR-0104): its scopes from the one map, and whether the served
         # table carries the description column yet — description-bearing scopes are disabled
@@ -1271,7 +1268,7 @@ def index():
         # claim on the date let a deployment with no comparable currencies still promise it.
         fx_as_of=fx.as_of(),
         fx_converts=_searcher.salary_bracket_converts,
-        # the recency dropdowns, from the same tuples headstart.facets counts (ADR-0084)
+        # the recency dropdowns, from the same tuples headstart.serving.facets counts (ADR-0084)
         seen_opts=facets.SEEN_OPTIONS,
         posted_opts=facets.POSTED_OPTIONS,
         repo=_REPO,  # the Data tab's "check any of it" links (ADR-0113)

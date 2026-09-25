@@ -1,5 +1,5 @@
 """The Job derivation cascade (ADR-0061, ADR-0146): the four field-extractors —
-``headstart.jobs.experience``, ``headstart.jobs.salary``, ``headstart.geo``, ``headstart.jobs.remote`` — composed
+``headstart.jobs.experience``, ``headstart.jobs.salary``, ``headstart.search_filters.india_gazetteer``, ``headstart.jobs.remote`` — composed
 into the *derived* subset of a Job's served meta columns: ``remote``, ``country``,
 ``min_years``/``max_years``/``experience_source``, and
 ``min_salary_annual``/``max_salary_annual``/``salary_currency``/``salary_source``.
@@ -22,12 +22,12 @@ from a description it no longer has re-readable.
 
 from __future__ import annotations
 
-from headstart import india_filter
 from headstart.jobs.experience import ExperienceSpan
 from headstart.jobs.experience import extract as extract_experience
 from headstart.jobs.remote import extract as extract_remote
 from headstart.jobs.salary import SalarySpan
 from headstart.jobs.salary import extract as extract_salary
+from headstart.search_filters import india_filter
 
 
 def experience_fields(span: ExperienceSpan | None) -> dict:
@@ -67,8 +67,8 @@ def salary_meta(salary: str | None, description: str | None, ats: str | None) ->
 
 
 def country_meta(location: str | None) -> dict:
-    """``headstart.geo.classify`` as its one served meta key (ADR-0138), named and valued by
-    :mod:`headstart.india_filter`, the Search filter that reads it (ADR-0193)."""
+    """``headstart.search_filters.india_gazetteer.classify`` as its one served meta key (ADR-0138), named and valued by
+    :mod:`headstart.search_filters.india_filter`, the Search filter that reads it (ADR-0193)."""
     return {india_filter.COLUMN: india_filter.country(location)}
 
 

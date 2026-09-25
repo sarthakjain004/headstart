@@ -99,7 +99,7 @@ def _already_kept(name_lower: str, kept: list[str]) -> bool:
 def _location(job: dict) -> str | None:
     """Every place the posting names, not just its headline string.
 
-    The served location *is* the filter substrate — ``geo.where()`` matches substrings of it
+    The served location *is* the filter substrate — ``india_gazetteer.where()`` matches substrings of it
     (ADR-0024) — so a place absent from this string is
     unfilterable, however well the record knows it. Measured 2026-08-25 over 884 live Boards /
     16,138 Jobs: **79.43% ship a location omitting a populated component of their own

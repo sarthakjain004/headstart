@@ -1,4 +1,4 @@
-"""Tests for the Search tab's facet counts (headstart.facets, issue #275).
+"""Tests for the Search tab's facet counts (headstart.serving.facets, issue #275).
 
 Contracts: a facet's own constraint is lifted before its options are counted, so the numbers
 answer "what would I get if I switched" rather than repeating the current total; every other
@@ -14,18 +14,18 @@ from pathlib import Path
 
 import pytest
 
-from headstart import facets
-from headstart.search_filter_compiler import (
+from headstart.search_filters.compiler import (
     IndexCapabilities,
     SearchFilters,
     build_filter,
 )
+from headstart.serving import facets
 
 
 class _CountingTable:
     """A table that answers `count_rows` from a rule, and records every clause it was asked.
 
-    Counting real rows is `test_search.py`'s job; what matters here is *which where-clause*
+    Counting real rows is `test_serving_job_search.py`'s job; what matters here is *which where-clause*
     each option was counted with, since that is the whole contract.
     """
 
@@ -431,9 +431,9 @@ def test_the_account_clause_narrows_the_blocking_answer_too():
 
 
 def test_facets_never_imports_the_serving_path():
-    """`search.py` imports this module at the top (ADR-0194), so an import back would be a cycle.
+    """`job_search.py` imports this module at the top (ADR-0194), so an import back would be a cycle.
 
-    Both compile through `headstart.search_filter_compiler`, so the counts and the ranked list they
+    Both compile through `headstart.search_filters.compiler`, so the counts and the ranked list they
     describe still share one compiler. That shared compiler is what the old deferred import in
     `JobSearch.facets` protected, and reaching it no longer means importing `search`.
     """
@@ -446,6 +446,6 @@ def test_facets_never_imports_the_serving_path():
             imported |= {alias.name for alias in node.names}
         elif isinstance(node, ast.ImportFrom):
             imported.add(node.module)
-            if node.module == "headstart":
-                imported |= {f"headstart.{alias.name}" for alias in node.names}
-    assert "headstart.search" not in imported
+            if node.module and node.module.split(".")[0] == "headstart":
+                imported |= {f"{node.module}.{alias.name}" for alias in node.names}
+    assert "headstart.serving.job_search" not in imported

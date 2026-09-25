@@ -2,7 +2,7 @@
 
 Everything the filter restated across modules lives here once: the ceilings the Facet offers and
 their labels, the four ``experience_at_most_{N}`` columns, the Python verdict the index writes,
-the SQL an old table is migrated with, and the clause :func:`headstart.search_filter_compiler.build_filter`
+the SQL an old table is migrated with, and the clause :func:`headstart.search_filters.compiler.build_filter`
 compiles — the flag column where it can, the legacy ``min_years`` comparison where it cannot.
 """
 

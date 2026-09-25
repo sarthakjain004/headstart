@@ -2,12 +2,12 @@
 """How good is the India location filter, measured against the served LanceDB table.
 
 The filter matches ``location`` against every alias as a substring, expanded from
-:mod:`headstart.geo` (ADR-0024). It has three independent failure modes and they need three
+:mod:`headstart.search_filters.india_gazetteer` (ADR-0024). It has three independent failure modes and they need three
 different kinds of evidence, so this reports them separately rather than as one accuracy score:
 
 **Field health** — a row with no location, or a placeless one ("Remote", "N/A"), can never match
 any place filter however good the gazetteer is. That is a ceiling on recall owned by the
-*scrapers*, not by ``geo``, which is why it is broken out per ATS.
+*scrapers*, not by ``india_gazetteer``, which is why it is broken out per ATS.
 
 **Recall** — India rows the filter does not match, and the hardest of the three to measure
 honestly. It cannot be judged against the gazetteer's own terms: the filter is already
@@ -41,17 +41,19 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO / "src"))
 
-from headstart import geo
+from headstart.search_filters import india_gazetteer
 
 # Word-boundary "india", used ONLY to size the substring bleed below - never as the filter's
 # own test, which is a plain substring and deliberately so ("IN_India_WFH" has no word boundary
 # around india yet is plainly an India row).
 _INDIA_WORD = re.compile(r"\bindia\b")
 
-# The subdivision tail comes straight from geo. A private copy lived here and had ALREADY
-# drifted - 35 entries against geo's 40, missing every ISO code added in the same PR - so
+# The subdivision tail comes straight from india_gazetteer. A private copy lived here and had ALREADY
+# drifted - 35 entries against india_gazetteer's 40, missing every ISO code added in the same PR - so
 # ', TG, IN' rows were invisible to this probe. Sourcing it removes the drift by construction.
-_STATE_IN = re.compile(r",\s*(" + "|".join(geo.SUBDIVISIONS) + r")\s*,\s*in\.?\s*$")
+_STATE_IN = re.compile(
+    r",\s*(" + "|".join(india_gazetteer.SUBDIVISIONS) + r")\s*,\s*in\.?\s*$"
+)
 _IND_A3 = re.compile(r"\bind\b")  # ISO alpha-3; no US collision, unlike bare "IN"
 _TRAILING_IN = re.compile(r",\s*in\.?\s*$")
 
@@ -146,9 +148,9 @@ def _fold(text: str) -> str:
 def _like(pattern: str):
     """A SQL LIKE pattern as a Python predicate, so the model cannot drift from the clause.
 
-    ``%`` is the only wildcard these clauses use. Building the predicates FROM ``geo``'s own
+    ``%`` is the only wildcard these clauses use. Building the predicates FROM ``india_gazetteer``'s own
     constants rather than restating them is the whole point: an earlier version of this file
-    hardcoded its own copy of the term list, and when ``geo`` grew three clauses (ADR-0086) the
+    hardcoded its own copy of the term list, and when ``india_gazetteer`` grew three clauses (ADR-0086) the
     copy silently stopped describing the filter — caught only because
     :func:`verify_model_against_sql` refuses to continue on a mismatch.
     """
@@ -157,42 +159,46 @@ def _like(pattern: str):
 
 
 def india_clauses() -> list[tuple[str, object]]:
-    """Exactly what ``geo.where("india")`` tests, as predicates over ``lower(location)``.
+    """Exactly what ``india_gazetteer.where("india")`` tests, as predicates over ``lower(location)``.
 
-    Every term comes from ``geo`` itself. The structure still has to be restated here, and four
+    Every term comes from ``india_gazetteer`` itself. The structure still has to be restated here, and four
     details of it change the answer:
 
-    * the country term is a plain SUBSTRING carrying its own :data:`geo.INDIA_EXCLUDE` guards
+    * the country term is a plain SUBSTRING carrying its own :data:`india_gazetteer.INDIA_EXCLUDE` guards
       (``indiana``, ``indian head``, …) — not a word-boundary test, which would lose
       ``IN_India_WFH``;
-    * ISO alpha-3 ``IND`` matches only in :data:`geo.IND_FORMS` positions, guarded by
-      :data:`geo.IND_EXCLUDE` because ``IND`` is also Indianapolis's IATA code;
-    * a city can carry :data:`geo.EXCLUDE` exclusion guards ("surat" minus "surat thani");
-    * :data:`geo.REGIONS` is *not* part of it — its values are city keys, not alias substrings,
+    * ISO alpha-3 ``IND`` matches only in :data:`india_gazetteer.IND_FORMS` positions, guarded by
+      :data:`india_gazetteer.IND_EXCLUDE` because ``IND`` is also Indianapolis's IATA code;
+    * a city can carry :data:`india_gazetteer.EXCLUDE` exclusion guards ("surat" minus "surat thani");
+    * :data:`india_gazetteer.REGIONS` is *not* part of it — its values are city keys, not alias substrings,
       and ``where("india")`` already iterates every city.
 
     Order matters only for attribution (first match names the row), never for the verdict.
     """
-    ind_forms = [_like(f) for f in geo.IND_FORMS]
+    ind_forms = [_like(f) for f in india_gazetteer.IND_FORMS]
     out: list[tuple[str, object]] = [
         (
             "india",
-            lambda s: "india" in s and not any(b in s for b in geo.INDIA_EXCLUDE),
+            lambda s: (
+                "india" in s and not any(b in s for b in india_gazetteer.INDIA_EXCLUDE)
+            ),
         ),
         (
             "IND",
             lambda s: (
                 (s == "ind" or any(f(s) for f in ind_forms))
-                and not any(b in s for b in geo.IND_EXCLUDE)
+                and not any(b in s for b in india_gazetteer.IND_EXCLUDE)
             ),
         ),
         (
             "subdivision",
-            lambda s: any(s.endswith(f", {c}, in") for c in geo.SUBDIVISIONS),
+            lambda s: any(
+                s.endswith(f", {c}, in") for c in india_gazetteer.SUBDIVISIONS
+            ),
         ),
     ]
-    for city, aliases in geo.CITIES.items():
-        bad = geo.EXCLUDE.get(city, ())
+    for city, aliases in india_gazetteer.CITIES.items():
+        bad = india_gazetteer.EXCLUDE.get(city, ())
         out.append(
             (
                 city,
@@ -201,7 +207,7 @@ def india_clauses() -> list[tuple[str, object]]:
                 ),
             )
         )
-    out.append(("state", lambda s: any(st in s for st in geo.STATES)))
+    out.append(("state", lambda s: any(st in s for st in india_gazetteer.STATES)))
     return out
 
 
@@ -243,7 +249,7 @@ def verify_model_against_sql(
 ) -> None:
     """Assert the Python model returns exactly what the production SQL clause returns.
 
-    Everything downstream is a claim about ``geo.where("india")``, so the model standing in for
+    Everything downstream is a claim about ``india_gazetteer.where("india")``, so the model standing in for
     it has to be measured equal to it, not argued equal to it — and this is the one line that
     can do that, since LanceDB will execute the real clause. A divergence here (a diacritic the
     Python ``in`` handles differently from SQL ``LIKE``, say) would invalidate every number
@@ -252,13 +258,13 @@ def verify_model_against_sql(
     import lancedb
 
     t = lancedb.connect(db).open_table(table)
-    n_sql = t.count_rows(filter=geo.where("india"))
+    n_sql = t.count_rows(filter=india_gazetteer.where("india"))
     n_py = sum(1 for loc, _ in rows if matches(_lower(loc), clauses))
     verdict = "agree" if n_sql == n_py else f"DISAGREE by {abs(n_sql - n_py):,}"
     print(f"model check: SQL {n_sql:,} vs python {n_py:,} -> {verdict}\n", flush=True)
     if n_sql != n_py:
         raise SystemExit(
-            "the audit's model does not reproduce geo.where('india'); fix it first"
+            "the audit's model does not reproduce india_gazetteer.where('india'); fix it first"
         )
 
 
@@ -309,16 +315,16 @@ def report_recall(unmatched: list[tuple[str | None, str]]) -> None:
     """India rows the filter misses, probed with country-tag signals.
 
     **These probes are no longer independent of the filter.** ADR-0086 moved the ``IND`` and
-    ``City, ST, IN`` signals *into* ``geo``, so the buckets built on them are now largely inside
+    ``City, ST, IN`` signals *into* ``india_gazetteer``, so the buckets built on them are now largely inside
     the thing being audited and read near zero by construction — the same trap that made an
     earlier version of this file print a meaningless 100.00%. They are kept because near-zero is
     now the useful reading: it is a regression check on ADR-0086, not a recall measurement.
 
-    A probe hit that the filter rejects via :data:`geo.IND_EXCLUDE` or :data:`geo.INDIA_EXCLUDE`
+    A probe hit that the filter rejects via :data:`india_gazetteer.IND_EXCLUDE` or :data:`india_gazetteer.INDIA_EXCLUDE`
     is **not** a miss — it is a guard doing its job (the airport-code string, "Grayslake, Ind").
     Counting those as misses would report the fix as a defect, so they get their own bucket.
     """
-    guards = tuple(geo.IND_EXCLUDE) + tuple(geo.INDIA_EXCLUDE)
+    guards = tuple(india_gazetteer.IND_EXCLUDE) + tuple(india_gazetteer.INDIA_EXCLUDE)
     buckets: dict[str, Counter[str]] = defaultdict(Counter)
     for loc, _ in unmatched:
         s_low = _lower(loc)
@@ -363,7 +369,7 @@ def report_recall(unmatched: list[tuple[str | None, str]]) -> None:
     )
 
 
-# The collisions geo.py's own docstring names as knowingly accepted. Each is (canonical place,
+# The collisions india_gazetteer.py's own docstring names as knowingly accepted. Each is (canonical place,
 # the foreign string that collides). They are the highest-prior false positives in the whole
 # design and were previously asserted negligible without ever being counted.
 _ACCEPTED_COLLISIONS = (
@@ -376,14 +382,15 @@ _ACCEPTED_COLLISIONS = (
 
 
 def report_accepted_collisions(rows: list[tuple[str | None, str]]) -> None:
-    """Count what geo.py's knowingly-accepted collisions actually cost today.
+    """Count what india_gazetteer.py's knowingly-accepted collisions actually cost today.
 
-    ``geo.py`` lists these as "accepted as negligible for a tech-jobs corpus". Negligible is a
+    ``india_gazetteer.py`` lists these as "accepted as negligible for a tech-jobs corpus". Negligible is a
     quantity, so it should be a measured one - and it is cheap to measure, since each collision
     has a naming signature (the other country or US state) that the India row will not carry.
     """
     print(
-        "\n-- geo.py's knowingly-accepted collisions, actually counted --", flush=True
+        "\n-- india_gazetteer.py's knowingly-accepted collisions, actually counted --",
+        flush=True,
     )
     total = 0
     for place, marker in _ACCEPTED_COLLISIONS:
@@ -415,7 +422,7 @@ def report_precision(
             place
             and place not in ("india", "state")
             and "india" not in low
-            and not any(s in low for s in geo.STATES)
+            and not any(s in low for s in india_gazetteer.STATES)
         ):
             alias_only[place] += 1
             examples[place][loc] += 1

@@ -220,7 +220,7 @@ const payLabel = r => {
    — the server could not read the table either — means nothing is converted here, which is the
    same fail-safe direction `fx.table()` takes. ---- */
 const FX = CFG.fx || null;
-// Rates are units-per-base, so the base cancels — the mirror of headstart.fx.convert.
+// Rates are units-per-base, so the base cancels — the mirror of headstart.search_filters.fx.convert.
 const fxConvert = (amount, frm, to) => {
   const rates = (FX && FX.rates) || {};
   const a = rates[(frm || '').toUpperCase()], b = rates[(to || '').toUpperCase()];
@@ -497,7 +497,7 @@ function clearAll(){
 }
 
 // Pagination (ADR-0074): fixed page size, capped page count — matches the server's own
-// `max_k`/`max_page` clamp in headstart.search.JobSearch, so a click here never asks for
+// `max_k`/`max_page` clamp in headstart.serving.job_search.JobSearch, so a click here never asks for
 // something the server would silently clamp anyway.
 const PAGE_SIZE = 20;
 const MAX_PAGE = 20;
@@ -754,7 +754,7 @@ function drawSortNote(){
 
 // When a search returns nothing, name the one filter that costs the most rather than telling
 // the user to go and guess. `blocking` is the server's own answer: the active filter whose
-// removal recovers the most results (headstart.facets), so the advice is measured, not guessed.
+// removal recovers the most results (headstart.serving.facets), so the advice is measured, not guessed.
 function whyNothing(facets){
   const key = facets && facets.blocking;
   if (!key) return 'Try loosening a filter, or describe the role more broadly.';

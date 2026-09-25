@@ -23,7 +23,7 @@ later" becomes a config change.
 
 Ingest: a loader script loads the store into the table. Query: a search script pre-filters on
 metadata then ranks by cosine. (Both were side-corpus-only scripts, since removed; the production
-path is `headstart.ingest.index` and `headstart.search`, ADR-0014/ADR-0019.)
+path is `headstart.ingest.index` and `headstart.serving.job_search`, ADR-0014/ADR-0019.)
 
 ## Rejected alternatives
 

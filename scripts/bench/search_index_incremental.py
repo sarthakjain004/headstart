@@ -12,7 +12,7 @@ from pathlib import Path
 import lancedb
 import numpy as np
 
-from headstart.search import ANN_NPROBES, ANN_REFINE_FACTOR
+from headstart.serving.job_search import ANN_NPROBES, ANN_REFINE_FACTOR
 
 
 def _bytes(path: Path) -> int:

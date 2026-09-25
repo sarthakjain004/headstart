@@ -12,7 +12,7 @@ three places that cannot see each other:
    the literal `f"{self.ats}:{self.slug}:{native_id}"`. The other four (`workday`, `personio`,
    `taleo_be`, `taleo_enterprise`) already override `board_key()` for reasons specific to how
    that ATS names a Board, but still hand-wrote the id concatenation separately from it.
-2. `src/headstart/search.py`'s `_rehost_recruitee`/`_canonical_url` repair two of those same
+2. `src/headstart/serving/job_search.py`'s `_rehost_recruitee`/`_canonical_url` repair two of those same
    URLs again, at serve time, because the scraper's own construction is sometimes wrong on
    already-stored rows (a pre-fix Darwinbox link, a Recruitee row on a dead vanity domain).
 3. `scripts/eval/verify_filters.py`'s `URL_SHAPES` re-derived each ATS's shape a third time, by
@@ -95,7 +95,7 @@ and a short named list of siblings; `headstart.scrapers` is never among them, an
 the repair through `registry.SCRAPERS[ats].canonical_url(...)` at request time would either break
 the deployed Space's import graph or force shipping 35 scraper modules into an app that serves
 LanceDB rows and calls no ATS. What the ADR *does* close is the silent-drift risk: a new
-repo-side test, `tests/test_search.py::test_canonical_url_rewrites_match_the_scrapers_own_url_shape`,
+repo-side test, `tests/test_serving_job_search.py::test_canonical_url_rewrites_match_the_scrapers_own_url_shape`,
 runs a synthetic pre-fix URL for each ATS `_canonical_url` special-cases through the repair and
 asserts the output matches that scraper's own `url_shape` — the drift the runtime hook would have
 caught structurally is instead caught in CI, in the repo, where both modules are importable and

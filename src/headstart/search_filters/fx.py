@@ -43,8 +43,8 @@ def _candidates() -> tuple[Path, ...]:
 
     Two layouts, one module: `config/fx_rates.json` in the repo, and `/app/config/fx_rates.json`
     in the Space image (ADR-0153 installs `headstart` as a package at `/app/headstart`, so this
-    module resolves to `/app/headstart/fx.py`, and `/app/config` is still two levels up). Walked
-    rather than indexed, and computed lazily rather than at import: an earlier flat-file layout
+    module resolves to `/app/headstart/search_filters/fx.py`, and `/app/config` is three levels up).
+    Walked rather than indexed, and computed lazily rather than at import: an earlier flat-file layout
     put this module directly at `/app/fx.py`, whose path had only two ancestors, so a hardcoded
     `parents[2]` raised `IndexError` **at import time** — before the guarded read below could
     fall back — and took the whole Space down with it. Nothing here may raise on a path
