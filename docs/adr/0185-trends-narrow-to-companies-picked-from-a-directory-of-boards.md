@@ -157,7 +157,7 @@ A few get worse, where a site said more than its Tenant: "Samsung_Careers" becom
 
 The second of the three PRs puts the directory behind two routes in the Space.
 
-- **`/companies/suggest?q=&limit=`** ranks directory entries with `headstart.company_match`,
+- **`/companies/suggest?q=&limit=`** ranks directory entries with `headstart.trends.company_suggestions`,
   the tiers the Decision names. Each suggestion carries its current tech openings, which the
   Space sums from the delta ledger it already loads, and its Board count and ATSes. Two picked
   entries with the same name are labelled with their ATSes.

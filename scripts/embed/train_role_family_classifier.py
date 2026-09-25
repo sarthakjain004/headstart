@@ -51,11 +51,11 @@ import pandas as pd
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "src"))
-from headstart import roles
 from headstart.embedding_conventions import MODEL as ROW_VECTOR_MODEL
 from headstart.embedding_conventions import PROD_TABLE
 from headstart.ingest import role_family_classifier
-from headstart.roles import NON_TECH
+from headstart.trends import role_taxonomy
+from headstart.trends.role_taxonomy import NON_TECH
 
 _MODEL = "TechWolf/JobBERT-v2"
 _MODEL_REVISION = (
@@ -119,7 +119,7 @@ def silver_and_served_mix(
     titles = rows.title
     rules = _title_rules()
     rules.check_families(
-        set(roles.load_families(REPO_ROOT / "config" / "role_families.json"))
+        set(role_taxonomy.load_families(REPO_ROOT / "config" / "role_families.json"))
     )
     verdict_of = {
         t: rules.classify(t).family

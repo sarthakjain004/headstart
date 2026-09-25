@@ -1,5 +1,5 @@
 """Tests for reading the Trends history's older layout as ADR-0230 step 6's
-(`headstart.trend_history_migration`), which the migration script writes and the reader replays.
+(`headstart.trends.history_migration`), which the migration script writes and the reader replays.
 """
 
 from __future__ import annotations
@@ -12,7 +12,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 
-from headstart import trend_history_migration as migration
+from headstart.trends import history_migration as migration
 
 
 @pytest.fixture

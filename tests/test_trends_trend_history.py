@@ -1,4 +1,4 @@
-"""Tests for ``headstart.trend_history`` (ADR-0230), Trends' one owner of its history.
+"""Tests for ``headstart.trends.trend_history`` (ADR-0230), Trends' one owner of its history.
 
 The Space's ``/trends`` answers are pinned by ``tests/test_space_app.py``; this file pins what
 the history must hold for those answers to be right:
@@ -26,10 +26,10 @@ pq = pytest.importorskip("pyarrow.parquet")
 import duplicate_removal_trends_state
 import old_layout_trends_state
 
-from headstart import roles, trend_history, trend_netting
-from headstart import trend_history_migration as migration
 from headstart.ingest import role_trends
-from headstart.trend_history import (
+from headstart.trends import history_migration as migration
+from headstart.trends import netting, role_taxonomy, trend_history
+from headstart.trends.trend_history import (
     TrendHistory,
     TrendQuestion,
     TrendsUnavailable,
@@ -57,7 +57,9 @@ def _served(jobs: list[dict]):
     )
 
 
-_BACKEND = roles.WatchRole("backend", "Backend", "software-engineering", [r"backend"])
+_BACKEND = role_taxonomy.WatchRole(
+    "backend", "Backend", "software-engineering", [r"backend"]
+)
 
 # Every Job ever served; each tick below serves some of them, some under another family.
 _JOBS = {
@@ -131,7 +133,7 @@ def _write_ticks(state: Path) -> dict[str, tuple[dict, dict]]:
         )
         turnover = _TURNOVER if days == 7 else {}
         trend_history.record_tick(state, ts, board_counts, turnover, _methodology(head))
-        index = {**counts, ("stock", roles.NON_TECH, "all", "all"): non_tech}
+        index = {**counts, ("stock", role_taxonomy.NON_TECH, "all", "all"): non_tech}
         recorded[ts] = (board_counts, index)
     return recorded
 
@@ -149,7 +151,7 @@ def test_the_replay_gives_back_every_recorded_tick(tmp_path):
     files = sorted((tmp_path / trend_history.DELTAS).glob("*.parquet"))
     assert len(files) == len(_TICKS)
     assert min(pq.read_table(file).num_rows for file in files) == 0
-    assert recorded[_stamp(3)][1][("stock", roles.NON_TECH, "all", "all")] == 0
+    assert recorded[_stamp(3)][1][("stock", role_taxonomy.NON_TECH, "all", "all")] == 0
 
 
 def test_a_new_head_is_one_more_delta_not_a_baseline(tmp_path):
@@ -307,9 +309,9 @@ def test_a_bad_question_is_a_value_error_naming_what_is_wrong(
 
 
 def test_the_module_keeps_no_copy_of_the_reserved_names():
-    """NON_TECH and WATCH_PREFIX have one home, `headstart.roles` (ADR-0230)."""
-    assert trend_history.NON_TECH is roles.NON_TECH
-    assert trend_history.WATCH_PREFIX is roles.WATCH_PREFIX
+    """NON_TECH and WATCH_PREFIX have one home, `headstart.trends.role_taxonomy` (ADR-0230)."""
+    assert trend_history.NON_TECH is role_taxonomy.NON_TECH
+    assert trend_history.WATCH_PREFIX is role_taxonomy.WATCH_PREFIX
 
 
 # ---- the taxonomy, directory and rule copies the answers read (moved from the Space's tests)
@@ -406,7 +408,7 @@ def test_a_stock_series_a_run_leaves_out_is_at_zero_there():
 def test_duplicate_removal_touches_a_company_by_its_boards(boards, touched):
     """ADR-0227: the Boards duplicate removal can move. Hot kept a copy of this rule, pinned
     here to trend_netting's, until ADR-0230 ranked it from the history; now it has none."""
-    assert trend_netting.dedup_touched(boards) is touched
+    assert netting.dedup_touched(boards) is touched
 
 
 def _write_opened_history(state: Path) -> None:

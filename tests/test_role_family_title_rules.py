@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from headstart import roles
+from headstart.trends import role_taxonomy
 
 _REPO = Path(__file__).resolve().parent.parent
 
@@ -71,7 +71,7 @@ def test_a_title_cue_decides_its_family(title, family, tier):
     ],
 )
 def test_a_negative_rule_decides_non_tech(title, rule):
-    assert rules.classify(title) == (roles.NON_TECH, "negative", rule)
+    assert rules.classify(title) == (role_taxonomy.NON_TECH, "negative", rule)
 
 
 @pytest.mark.parametrize("title", ["Engineer II", "", None])
@@ -82,7 +82,7 @@ def test_a_title_naming_nothing_is_no_training_example(title):
 def test_every_family_a_rule_names_is_on_the_curated_list():
     """The trainer's own check, held in CI too, so a rule naming a new family fails here."""
     rules.check_families(
-        set(roles.load_families(_REPO / "config" / "role_families.json"))
+        set(role_taxonomy.load_families(_REPO / "config" / "role_families.json"))
     )
 
 

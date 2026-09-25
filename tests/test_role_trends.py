@@ -25,13 +25,13 @@ from datetime import UTC
 
 import lancedb
 
-from headstart import roles, trend_history
 from headstart.embedding_conventions import MODEL as EMBED_MODEL
 from headstart.embedding_conventions import PROD_TABLE
 from headstart.ingest import RUN_TS_ENV, index_plan, role_family_classifier, role_trends
 from headstart.ingest.doc_prep import DERIVATIONS_VERSION
 from headstart.jobs import tech_filter
-from headstart.trend_history import TrendHistory
+from headstart.trends import role_taxonomy, trend_history
+from headstart.trends.trend_history import TrendHistory
 
 _DIM = 4
 
@@ -71,7 +71,7 @@ def _table(db_dir: Path, rows: list[dict]) -> None:
 # Tests still state each row's family through its `vector`, as they did when a nearest centroid
 # decided it: `_table` records that choice against the row's title, and the stub encoder below
 # hands the head the matching one-hot vector.
-_HEAD_FAMILIES = ("software-engineering", "ai-ml-data-science", roles.NON_TECH)
+_HEAD_FAMILIES = ("software-engineering", "ai-ml-data-science", role_taxonomy.NON_TECH)
 _FAMILY_OF_TITLE: dict[str, str] = {}
 _AMBIGUOUS = "ambiguous"  # a title the head cannot place: it lands in unclassified-tech
 
@@ -630,7 +630,7 @@ def test_a_rows_description_vector_can_move_it_off_its_titles_family(
     """ADR-0224: two copies of one title, one whose served vector reads as non-tech. The title
     part is shared; the row part decides the second, and only the first is assigned a family."""
     row_weights = np.zeros((len(_HEAD_FAMILIES), _DIM), dtype=np.float32)
-    row_weights[_HEAD_FAMILIES.index(roles.NON_TECH), 3] = 30.0
+    row_weights[_HEAD_FAMILIES.index(role_taxonomy.NON_TECH), 3] = 30.0
     _taxonomy(tmp_path / "head", tmp_path / "families.json", row_weights=row_weights)
     _table(
         tmp_path / "db",
@@ -643,7 +643,7 @@ def test_a_rows_description_vector_can_move_it_off_its_titles_family(
 
     rows = {(r["metric"], r["family"]): r["count"] for r in _rows(ledger)}
     assert rows[("stock", "software-engineering")] == 1
-    assert rows[("stock", roles.NON_TECH)] == 1
+    assert rows[("stock", role_taxonomy.NON_TECH)] == 1
     snapshot = pq.read_table(tmp_path / "role_assignments.parquet").to_pylist()
     assert {r["id"] for r in snapshot} == {"greenhouse:tests:it"}
 
@@ -785,7 +785,7 @@ def test_count_board_groups_places_rows_excluding_non_tech_and_watch_roles(tmp_p
         tmp_path,
         [{"name": "backend", "parent": "software-engineering", "match": ["backend"]}],
     )
-    watchlist = roles.load_watchlist(
+    watchlist = role_taxonomy.load_watchlist(
         tmp_path / "watchlist.json", {"software-engineering", "ai-ml-data-science"}
     )
     assert watchlist, "the watch role this test is about must actually be watched"
@@ -837,9 +837,9 @@ def test_count_board_groups_places_rows_excluding_non_tech_and_watch_roles(tmp_p
         "ats:b:tech": "software-engineering",
         "ats:b:ai": "ai-ml-data-science",
     }
-    assert not any(k.startswith(roles.WATCH_PREFIX) for k in assigned.values())
+    assert not any(k.startswith(role_taxonomy.WATCH_PREFIX) for k in assigned.values())
     # the watch role was counted, just never placed
-    assert any(key[1] == roles.WATCH_PREFIX + "backend" for key in counts)
+    assert any(key[1] == role_taxonomy.WATCH_PREFIX + "backend" for key in counts)
 
 
 def test_top_line_distinguishes_two_atses_sharing_a_family_and_band(
@@ -997,7 +997,7 @@ def test_every_tick_writes_one_file_stamped_with_how_it_was_counted(
     assert metadata[b"ts"] == b"2026-09-25T06:00:00+00:00"
     assert b"centroid_version" not in metadata  # no series versions (ADR-0230)
     assert json.loads(metadata[b"methodology"]) == {
-        "family_list_fingerprint": roles.family_list_fingerprint(
+        "family_list_fingerprint": role_taxonomy.family_list_fingerprint(
             tmp_path / "families.json"
         ),
         "family_classifier_version": 1,

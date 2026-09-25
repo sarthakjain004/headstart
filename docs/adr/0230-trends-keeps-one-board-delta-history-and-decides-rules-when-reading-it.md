@@ -64,7 +64,7 @@ The review rejected two alternatives:
    A re-base is stored as an ordinary delta. The aggregate ledger, the Board-count snapshot and
    `trends_epochs.csv` become derived and then retire. `role_assignments.parquet` stays, as the
    id-level state that turnover (ADR-0227) needs.
-2. **One module owns reading and answering: `headstart/trend_history.py`,** in `headstart` proper,
+2. **One module owns reading and answering: `headstart/trends/trend_history.py`,** in `headstart` proper,
    so the pipeline and the Space share it. Its interface has four calls:
    - `record_tick` writes a tick;
    - `TrendHistory.load` reads the history;
@@ -136,7 +136,7 @@ The writer switch and the rewrite of the stored history are separate acts: the c
 and the owner runs the one-off rewrite (`scripts/state/migrate_trends_to_one_delta_history.py`)
 later, with the pipeline's chain paused. Four calls follow from that, or were made on the way:
 
-- **The code reads both layouts until the rewrite runs.** `headstart.trend_history_migration`
+- **The code reads both layouts until the rewrite runs.** `headstart.trends.history_migration`
   rewrites the older layout in memory exactly as the script rewrites it on disk, and the script
   calls the same functions, so the reader and the rewrite cannot disagree. The step-6 writer's
   first ticks land beside the older files and count against that same history. Measured on the

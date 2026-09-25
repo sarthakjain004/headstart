@@ -43,7 +43,7 @@ from typing import TYPE_CHECKING, Any
 from headstart.boards.board_identity import ats_of
 
 if TYPE_CHECKING:
-    from headstart.trend_history import TrendHistory
+    from headstart.trends.trend_history import TrendHistory
 
 #: Rows kept per lens. Enough to scroll, small enough that the companies on it can be adjudicated
 #: by hand, the stated way to extend `ingest.board_operator` beyond its curated head.
@@ -63,9 +63,9 @@ def rank(
     """The ``/hot`` payload: ``{window, lenses, counts}``, or ``{}`` when there is no measured
     window yet, which keeps the tab dark rather than ranking nothing.
 
-    ``history`` is a :class:`headstart.trend_history.TrendHistory`, read through
-    :meth:`~headstart.trend_history.TrendHistory.openings` and
-    :meth:`~headstart.trend_history.TrendHistory.company_moves`. ``directory`` is the Company
+    ``history`` is a :class:`headstart.trends.trend_history.TrendHistory`, read through
+    :meth:`~headstart.trends.trend_history.TrendHistory.openings` and
+    :meth:`~headstart.trends.trend_history.TrendHistory.company_moves`. ``directory`` is the Company
     directory, ``{company key: {name, boards, operator}}``.
 
     Every candidate company is scored once and the three lenses sort the same rows, so a company

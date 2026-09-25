@@ -326,7 +326,7 @@ A tick where a **Methodology** stamp moved, so its step in a line is a change in
 _Avoid_: calling it a data change — the Jobs may be the same; the rules that count them moved.
 
 **Netting** (ADR-0185, ADR-0230):
-Taking out of a line's change the steps that are not hiring — **Counting change**s, **Found Board**s' backlogs and dedup removals — so what is left reads as hiring. Decided once, by `trend_netting` inside `trend_history.answer`, when the history is read (ADR-0230); the Trends tab draws each line's `net` and `steps` as it is given them, and the Hot tab reads its figures off the same answers.
+Taking out of a line's change the steps that are not hiring — **Counting change**s, **Found Board**s' backlogs and dedup removals — so what is left reads as hiring. Decided once, by `netting` inside `trend_history.answer`, when the history is read (ADR-0230); the Trends tab draws each line's `net` and `steps` as it is given them, and the Hot tab reads its figures off the same answers.
 _Avoid_: storing a netted figure — the rule has changed in most of ADR-0185's rounds, so a stored net would go stale with it.
 
 **Line reading** (ADR-0233):

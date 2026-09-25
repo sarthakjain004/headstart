@@ -7,7 +7,7 @@ still in the ``jobs`` table gets a role family from its title and its served des
 ADR-0224, :mod:`headstart.ingest.role_family_classifier`), and titles already encoded under that
 head come from a cache kept in ``data/state``. The row is banded by the experience columns the
 table already carries, and counted per Board into ``(metric, family, band)`` groups, with
-non-tech as one ``(stock, non-tech, all)`` group a Board. :func:`headstart.trend_history.record_tick`
+non-tech as one ``(stock, non-tech, all)`` group a Board. :func:`headstart.trends.trend_history.record_tick`
 writes the tick as one file of the Board-delta ledger: each group's change since the last tick,
 and the tick's **Methodology** (the family list, the classifier head, the tech filter, the
 derivations and the dedup rules). A new classifier head is a delta like any other tick; the tick
@@ -39,7 +39,7 @@ from pathlib import Path
 
 import numpy as np
 
-from headstart import log, roles, trend_history
+from headstart import log
 from headstart.ingest import (
     EVICTION_QUEUE_PATH,
     REPO_ROOT,
@@ -59,6 +59,7 @@ from headstart.ingest.index_plan import (
 )
 from headstart.ingest.role_assignments import Placement
 from headstart.jobs import tech_filter
+from headstart.trends import role_taxonomy, trend_history
 
 _log = log.get(__name__, __spec__)
 
@@ -108,7 +109,7 @@ def _columns(rows) -> tuple[list, ...]:
 def count_board_groups(
     rows,
     families: list[str | None],
-    watchlist: list[roles.WatchRole],
+    watchlist: list[role_taxonomy.WatchRole],
     new_after: str,
     boards: list[str],
 ) -> tuple[
@@ -175,13 +176,13 @@ def count_board_groups(
         is_new = bool(first) and first >= new_after
         if family is None:
             non_tech += 1
-            key = (board, "stock", roles.NON_TECH, "all")
+            key = (board, "stock", role_taxonomy.NON_TECH, "all")
             board_counts[key] = board_counts.get(key, 0) + 1
             continue
-        band = roles.band(years, title, etype)
+        band = role_taxonomy.band(years, title, etype)
         for role in watchlist:
             if role.matches(title):
-                bump(board, roles.WATCH_PREFIX + role.name, band, ats, is_new)
+                bump(board, role_taxonomy.WATCH_PREFIX + role.name, band, ats, is_new)
         placed[job_id] = Placement(board, family, band, ats)
         bump(board, family, band, ats, is_new)
     return counts, non_tech, placed, board_counts
@@ -301,10 +302,10 @@ def main() -> int:
     from headstart.embedding_conventions import PROD_TABLE
 
     try:
-        family_names = roles.load_families(args.families)
+        family_names = role_taxonomy.load_families(args.families)
         head = role_family_classifier.Head(args.classifier)
         head.check_families(family_names)
-        watchlist = roles.load_watchlist(args.watchlist, set(family_names))
+        watchlist = role_taxonomy.load_watchlist(args.watchlist, set(family_names))
     except ValueError as exc:
         # An unusable taxonomy is a real defect, not a missing prerequisite. The workflow step is
         # `continue-on-error`, so without this it would crash into a green run with no annotation
@@ -376,14 +377,16 @@ def main() -> int:
         _log.error(f"role families undecidable, no trends this run: {exc}")
         return 1
     decided = role_family_classifier.decide_rows(cache, head, titles, row_logits)
-    families = [None if family == roles.NON_TECH else family for family in decided]
+    families = [
+        None if family == role_taxonomy.NON_TECH else family for family in decided
+    ]
 
     # The run's one stamp, which `index prune` also wrote its dedup evictions under (ADR-0210).
     now = run_ts()
     # How this tick counts (ADR-0164, ADR-0230), carried by the tick's own file: a tick whose
     # Methodology differs from the one before it is a counting change.
     methodology = trend_history.Methodology(
-        family_list_fingerprint=roles.family_list_fingerprint(args.families),
+        family_list_fingerprint=role_taxonomy.family_list_fingerprint(args.families),
         family_classifier_version=head.version,
         tech_filter_version=tech_filter.TECH_FILTER_VERSION,
         derivations_version=DERIVATIONS_VERSION,

@@ -13,9 +13,9 @@ counts, the lines past the page's eighth added together (its Other row), and the
 denominator netted run by run (the dashed line). :func:`trends_payload` is what ``/trends``
 serves: the answer as the page draws it, with its reading.
 
-The netting rule is ``trend_netting``'s, used here as the private implementation: a company's
+The netting rule is ``netting``'s, used here as the private implementation: a company's
 line is netted exactly as ``net_answer`` nets it, so its hiring figure is today's. What this
-module adds is the split of the rest, read off how ``trend_netting._net`` took each step out
+module adds is the split of the rest, read off how ``netting._net`` took each step out
 (its ``_NetTrace``), pair of runs by pair of runs:
 
 - a run a step lands on gives up its ``withheld`` openings, at their own size, never scaled: a
@@ -43,8 +43,8 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from itertools import pairwise
 
-from headstart import trend_netting
-from headstart.trend_netting import (
+from headstart.trends import netting
+from headstart.trends.netting import (
     _DEDUP,
     _TOTAL,
     _birth_note,
@@ -361,7 +361,7 @@ def read_company_moves(
     """Hot's figures: each company's own line over ``window``, the move the trend its "See
     trend" link opens reads (ADR-0233 decision 1). A company with nothing counted in the window
     is left out."""
-    from headstart.trend_history import TrendQuestion
+    from headstart.trends.trend_history import TrendQuestion
 
     moves = {}
     for key in keys:
@@ -484,9 +484,9 @@ class _Reader:
         ]
         total_line = _Line(
             _TOTAL,
-            trend_netting._sum_points([line.points for line in series], len(stamps)),
+            netting._sum_points([line.points for line in series], len(stamps)),
             turnover={
-                metric: trend_netting._sum_points(
+                metric: netting._sum_points(
                     [part[metric] for part in parts], len(stamps)
                 )
                 for metric in ("opened", "closed", "recounted")
@@ -1353,7 +1353,7 @@ def _index_base(points, netted: tuple[float | None, ...]) -> float | None:
 def _words(field: str) -> tuple[str, str]:
     """A Methodology field in words, as a change and as a noun. A field with no words keeps its
     id, which :func:`check_reading` refuses, so a new field cannot reach a reader unnamed."""
-    return trend_netting.METHODOLOGY_WORDS.get(field, (field, field))
+    return netting.METHODOLOGY_WORDS.get(field, (field, field))
 
 
 _MONTHS = (

@@ -588,7 +588,7 @@ def from_title(ats: str, title: str | None, slug: str) -> str | None:
     # precisely the improvement being sought. It did: ashby scored 0/12 until this was narrowed.
     if text == slug:
         return None
-    # Letters only, no legal form dropped: not `company_match.normalize` (see its `_LEGAL`).
+    # Letters only, no legal form dropped: not `company_suggestions.normalize` (see its `_LEGAL`).
     if re.sub(r"[^a-z]", "", text.lower()) in _VENDOR_ALIASES.get(ats, frozenset()):
         return None
     if _PLACEHOLDER.search(text):
@@ -727,7 +727,7 @@ def curated(board_key: str) -> str | None:
 #: Host labels that name the *board* rather than the company, and so are never the answer.
 #: Vendor labels and TLDs sit here too: `micron.wd5.myworkdayjobs.com` and
 #: `lockheed.jobs.hr.cloud.sap` both have to reduce to their first real word. Its few legal
-#: words are not `company_match._LEGAL`, which says why the two lists stay apart.
+#: words are not `company_suggestions._LEGAL`, which says why the two lists stay apart.
 LABEL_NOISE = frozenset(
     {
         "www",

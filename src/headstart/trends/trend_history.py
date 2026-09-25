@@ -19,11 +19,11 @@ Until ``scripts/state/migrate_trends_to_one_delta_history.py`` has rewritten the
 (ADR-0230 step 6), the dataset holds them in the layout before this one: re-bases stored as
 baselines, the Methodology of older ticks in ``trends_epochs.csv``, and the archive only inside
 the aggregate ledger ``role_trends.parquet``. The reader and the writer read that layout through
-:mod:`headstart.trend_history_migration`, which rewrites it in memory exactly as the script
+:mod:`headstart.trends.history_migration`, which rewrites it in memory exactly as the script
 rewrites it on disk.
 
 Netting happens in :meth:`TrendHistory.answer` (step 4), and the Hot tab ranks companies off
-:meth:`TrendHistory.company_moves`, which reads the same answers (step 5). ``trend_reading``
+:meth:`TrendHistory.company_moves`, which reads the same answers (step 5). ``line_reading``
 reads the answer before netting (:meth:`TrendHistory.unnetted_answer`) into reconciled line
 readings (ADR-0233).
 """
@@ -41,9 +41,9 @@ from pathlib import Path
 
 import numpy as np
 
-from headstart import company_match, trend_netting
 from headstart.boards.board_identity import ats_of
-from headstart.roles import BAND_LABELS, NON_TECH, WATCH_PREFIX
+from headstart.trends import company_suggestions, netting
+from headstart.trends.role_taxonomy import BAND_LABELS, NON_TECH, WATCH_PREFIX
 
 # The `new` flow window (ADR-0051), in days: how long a found Board's backlog is held out of
 # `new`, and how far a `new` view's counting changes echo. The pipeline counts `new` over the
@@ -78,9 +78,9 @@ _DIRECTORY = "company_directory.json"
 
 # Each Methodology field under the name the payload's `epochs[].fields` gives it, which is the
 # retired epoch ledger's column name (ADR-0164), and what a chart says when it moves: its words
-# in `trend_netting.METHODOLOGY_WORDS`, the one home of every Trends label.
+# in `netting.METHODOLOGY_WORDS`, the one home of every Trends label.
 _EPOCH_LABELS = tuple(
-    (field, trend_netting.METHODOLOGY_WORDS[field][0])
+    (field, netting.METHODOLOGY_WORDS[field][0])
     for field in (
         "family_map_fingerprint",
         "tech_filter_version",
@@ -465,7 +465,7 @@ def _tick_tables(state_dir: Path) -> list:
     migration rewrites it on disk."""
     import pyarrow.parquet as pq
 
-    from headstart import trend_history_migration as migration
+    from headstart.trends import history_migration as migration
 
     paths = sorted((state_dir / DELTAS).glob("*.parquet"))
     tables = [pq.read_table(path) for path in paths]
@@ -480,7 +480,7 @@ def _archive_table(state_dir: Path, before: str | None):
     when neither exists."""
     import pyarrow.parquet as pq
 
-    from headstart import trend_history_migration as migration
+    from headstart.trends import history_migration as migration
 
     if (state_dir / ARCHIVE).exists():
         return pq.read_table(state_dir / ARCHIVE)
@@ -597,7 +597,7 @@ class TrendHistory:
         self._evictions: dict[str, list[tuple[str, int]]] = {}
         self._companies: dict[str, dict] = {}
         self._company_of: dict[str, str] = {}
-        self._candidates: list[company_match.Candidate] = []
+        self._candidates: list[company_suggestions.Candidate] = []
         self._watch: dict[str, dict[str, str]] = {}
         self._family_labels: dict[str, str] = {}
         self._family_successor: dict[str, str] = {}
@@ -854,10 +854,10 @@ class TrendHistory:
             at = bisect_left(self._ticks, full)
             self._new_inflow_from = self._ticks[at] if at < len(self._ticks) else None
         self._candidates = [
-            company_match.Candidate(
+            company_suggestions.Candidate(
                 key=key,
                 name=entry["name"],
-                words=tuple(company_match.normalize(entry["name"])),
+                words=tuple(company_suggestions.normalize(entry["name"])),
                 openings=self._company_openings(entry),
             )
             for key, entry in self._companies.items()
@@ -915,7 +915,7 @@ class TrendHistory:
         """Directory companies matching ``query`` for the Trends company picker (ADR-0185), best
         first, each with its tech openings now and Board count, labelled apart from any other
         of the same name among them."""
-        found = company_match.suggest(query, self._candidates, limit)
+        found = company_suggestions.suggest(query, self._candidates, limit)
         labels = self._company_labels([candidate.key for candidate in found])
         return [self._company_json(c.key, labels[c.key]) for c in found]
 
@@ -950,7 +950,7 @@ class TrendHistory:
             netted = [v for v in line["net"]["count"] if v is not None]
             turnover = line["hiring_turnover"] or {"opened": None, "closed": None}
             moves[key] = CompanyMove(
-                net=trend_netting.js_round(netted[-1] - netted[0]) if netted else 0,
+                net=netting.js_round(netted[-1] - netted[0]) if netted else 0,
                 opened=turnover["opened"],
                 closed=turnover["closed"],
                 counted_since=answer["counted_since"][key],
@@ -968,13 +968,13 @@ class TrendHistory:
 
     def answer(self, question: TrendQuestion) -> dict:
         """:meth:`unnetted_answer` with every line netted, once (ADR-0230 decision 3): what Hot
-        reads (:meth:`company_moves`) until it reads ``trend_reading.read_company_moves``
+        reads (:meth:`company_moves`) until it reads ``line_reading.read_company_moves``
         (ADR-0233 step 4). ``/trends`` serves the line reading instead."""
-        return trend_netting.net_answer(self.unnetted_answer(question))
+        return netting.net_answer(self.unnetted_answer(question))
 
     def unnetted_answer(self, question: TrendQuestion) -> dict:
         """Role counts over time (ADR-0040, ADR-0051), before any line is netted: what
-        :meth:`answer` nets and ``trend_reading`` reads (ADR-0233).
+        :meth:`answer` nets and ``line_reading`` reads (ADR-0233).
 
         ``metric`` ``stock`` (default) is live openings; ``new`` is those first seen inside the
         flow window. Default view: one series per family, each point the family's total across
@@ -1111,11 +1111,9 @@ class TrendHistory:
                     {
                         "ts": inflow_from,
                         "changed": [
-                            trend_netting.METHODOLOGY_WORDS[
-                                trend_netting.NEW_BECAME_INFLOW
-                            ][0]
+                            netting.METHODOLOGY_WORDS[netting.NEW_BECAME_INFLOW][0]
                         ],
-                        "fields": [trend_netting.NEW_BECAME_INFLOW],
+                        "fields": [netting.NEW_BECAME_INFLOW],
                     },
                 ],
                 key=lambda e: e["ts"],
@@ -1400,7 +1398,7 @@ class TrendHistory:
         # hiring. The index leaves out, Board by Board, the runs each company's own line leaves
         # out, so the index's opened and closed are the sum of what every company's view shows.
         left_out: tuple[set[int], set[int]] = (
-            trend_netting.left_out_runs(epochs, stamps, key == "band")
+            netting.left_out_runs(epochs, stamps, key == "band")
             if company_of is None
             else (set(), set())
         )
@@ -1839,7 +1837,7 @@ class TrendHistory:
         happened since the run before. The first charted run is None: what landed there happened
         before the window. So is every run before turnover began, since nothing measured it.
 
-        ``left_out`` is :func:`trend_netting.left_out_runs`' pair: runs None on every line, and runs where a
+        ``left_out`` is :func:`netting.left_out_runs`' pair: runs None on every line, and runs where a
         row duplicate removal can move (``touched``) is not counted.
         """
         every, touched = left_out
@@ -1913,7 +1911,7 @@ class TrendHistory:
             if board in self._company_of
             else [board]
         )
-        return trend_netting.dedup_touched(boards)
+        return netting.dedup_touched(boards)
 
     def _company_openings(self, entry: dict) -> int:
         return sum(self._openings[board] for board in entry["boards"])

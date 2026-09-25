@@ -17,7 +17,7 @@ import json
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from headstart import roles, trend_history
+from headstart.trends import role_taxonomy, trend_history
 
 MICRO = "eightfold:careers.micro.com"
 BETA = "greenhouse:beta"
@@ -44,7 +44,7 @@ def write(state: Path, board_found_later: bool = False) -> None:
     for k, ts in enumerate(TICKS):
         levels = {
             (MICRO, "stock", "software-engineering", "mid"): micro_tech(k),
-            (MICRO, "stock", roles.NON_TECH, "all"): 20 if k < REMOVAL else 10,
+            (MICRO, "stock", role_taxonomy.NON_TECH, "all"): 20 if k < REMOVAL else 10,
             (BETA, "stock", "software-engineering", "mid"): 50 + k,
         }
         if board_found_later and k >= FOUND_LATER:

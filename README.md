@@ -416,8 +416,9 @@ Note the raw corpus files under `data/jobs/` carry a few fields the served table
 
 - `src/headstart/` — shared library, used by both the pipeline and the curated feed:
   `scrapers/` (47 per-ATS + `base`/`registry`, the scrape engine `harvest.py`, and
-  `country_codes.py`, the ISO table two scrapers read), `roles.py`, and `llm_router.py`, the one
-  seam every LLM call goes through.
+  `country_codes.py`, the ISO table two scrapers read), `llm_router.py`, the one seam every LLM
+  call goes through, `embedding_conventions.py`, the model and prefixes the index and the query
+  share, and `log.py`.
 - `src/headstart/boards/` — which Boards exist, which get scraped, and how each is keyed and named
   (ADR-0232): `board_identity.py` (ADR-0155), `scrapable_boards.py` (which Boards a run may
   scrape, ADR-0191), `excluded_and_parked.py` (the Live Boards it never scrapes), `company_ref.py`,
@@ -443,6 +444,12 @@ Note the raw corpus files under `data/jobs/` carry a few fields the served table
 - `src/headstart/serving/` — the serving path the Space and the local dev server run:
   `job_search.py` (`JobSearch`, ADR-0042), `facets.py` (ADR-0084) and `profile_extract.py` (Résumé
   to Profile, ADR-0041).
+- `src/headstart/trends/` — what Trends reads from its history (ADR-0230, ADR-0233):
+  `trend_history.py` (the one reader of the Board-delta history), `netting.py` (**Netting**),
+  `line_reading.py` (the **Line reading** each chart draws), `hot_ranking.py` (the Hot tab's
+  ranking), `role_taxonomy.py` (the role families, seniority bands and watchlist, ADR-0040),
+  `company_suggestions.py` (the company picker's candidates, ADR-0185) and
+  `history_migration.py` (the pre-ADR-0230 layout, read as today's).
 - `src/headstart/ui/` — the templates and static assets the Space serves.
 - `src/headstart/alerts/` — job alerts plus the signed-in per-account records: `store`
   (Subscriptions, Saved sets, Saved jobs, Profiles), `registry`, `access` (invite allowlist),

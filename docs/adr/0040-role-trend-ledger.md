@@ -36,7 +36,7 @@ purpose:
   sampled-silhouette sweep unless fixed. Labels start as deterministic token names and get
   polished (by hand or the llm-router) before the ledger ships. The contract the fit and the
   pipeline must agree on — centroid-store load/save, assignment, banding — lives once in
-  `headstart/roles.py` (the `doc_prep` pattern); the script keeps only the one-off fit.
+  `headstart/trends/role_taxonomy.py` (the `doc_prep` pattern); the script keeps only the one-off fit.
 - **Seniority band = the experience columns the table already carries.** `min_years` /
   `experience_source` are written by the ADR-0009/0018 cascade at embed time; the trends step
   only bands them (unspecified / intern / entry 0–1 / mid 2–4 / senior 5–7 / staff 8+, intern

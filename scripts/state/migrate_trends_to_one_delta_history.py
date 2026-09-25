@@ -74,16 +74,17 @@ os.environ.setdefault("HF_HUB_DISABLE_XET", "1")
 
 import pyarrow.parquet as pq
 
-from headstart import log, roles, trend_history_migration
+from headstart import log
 from headstart.boards.board_identity import ats_of
-from headstart.trend_history import (
+from headstart.trends import history_migration, role_taxonomy
+from headstart.trends.history_migration import AGGREGATE, EPOCHS
+from headstart.trends.trend_history import (
     ARCHIVE,
     ARCHIVE_COLUMNS,
     DELTAS,
     LEVEL_METRICS,
     TICK_COLUMNS,
 )
-from headstart.trend_history_migration import AGGREGATE, EPOCHS
 
 REPO = "imPoseidon/headstart-index"
 STATE = "data/state"
@@ -115,21 +116,21 @@ def migrate(source: Path, out: Path) -> Migration:
         raise ValueError(f"{source / DELTAS}: no tick files")
     tables = [pq.read_table(path) for path in paths]
     name_of = {
-        trend_history_migration.tick_stamp(table): path.name
+        history_migration.tick_stamp(table): path.name
         for table, path in zip(tables, paths, strict=True)
     }
     if len(name_of) != len(paths):
         raise ValueError(f"{source / DELTAS}: two files hold one tick")
     print(f"read {len(tables)} tick file(s); rewriting re-bases", flush=True)
-    ticks, rebased = trend_history_migration.rewritten_ticks(tables, source / EPOCHS)
+    ticks, rebased = history_migration.rewritten_ticks(tables, source / EPOCHS)
     (out / DELTAS).mkdir(parents=True)
     for table in ticks:
-        name = name_of[trend_history_migration.tick_stamp(table)]
+        name = name_of[history_migration.tick_stamp(table)]
         pq.write_table(table, out / DELTAS / name, compression="zstd")
     print(f"wrote {len(ticks)} tick file(s); building the archive", flush=True)
-    archive = trend_history_migration.archive_from_aggregate(
+    archive = history_migration.archive_from_aggregate(
         source / AGGREGATE,
-        before=trend_history_migration.tick_stamp(ticks[0]),
+        before=history_migration.tick_stamp(ticks[0]),
         epochs=source / EPOCHS,
     )
     pq.write_table(archive, out / ARCHIVE, compression="zstd", use_dictionary=True)
@@ -164,7 +165,7 @@ def written_ticks(directory: Path) -> list[tuple[str, list[tuple], dict]]:
 
 def _index_key(board: str, metric: str, family: str, band: str) -> IndexKey:
     """Where a Board's row sums in the aggregate: non-tech as one row across every ATS."""
-    if family == roles.NON_TECH:
+    if family == role_taxonomy.NON_TECH:
         return (metric, family, _NOT_SPLIT, _NOT_SPLIT)
     return (metric, family, band, ats_of(board))
 
@@ -244,7 +245,7 @@ def verify(migrated: Path, source: Path) -> Verification:
         _bump(expected_boards, tuple(key), count)
     result.board_count_keys = len(expected_boards)
 
-    aggregate = trend_history_migration.aggregate_ticks(source / AGGREGATE)
+    aggregate = history_migration.aggregate_ticks(source / AGGREGATE)
     pending = next(aggregate, None)
     last_aggregate_tick = ""
 
@@ -292,7 +293,7 @@ def verify(migrated: Path, source: Path) -> Verification:
         for (_, before), (ts, after) in pairwise(methodologies)
         if before != after and ts <= last_aggregate_tick
     ]
-    epochs = trend_history_migration.read_epochs(source / EPOCHS)
+    epochs = history_migration.read_epochs(source / EPOCHS)
     result.epoch_boundaries = [row["ts"] for row in epochs[1:]]
     return result
 

@@ -7,9 +7,9 @@ from pathlib import Path
 
 import pytest
 
-from headstart import trend_history
 from headstart.boards import company_name
 from headstart.ingest import company_directory
+from headstart.trends import trend_history
 
 pa = pytest.importorskip("pyarrow")
 pq = pytest.importorskip("pyarrow.parquet")

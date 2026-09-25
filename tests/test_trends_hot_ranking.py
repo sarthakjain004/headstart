@@ -15,8 +15,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from headstart import hot_ranking, trend_history
-from headstart.trend_netting import js_round
+from headstart.trends import hot_ranking, trend_history
+from headstart.trends.netting import js_round
 
 _CONFIG = Path(__file__).resolve().parents[1] / "config"
 
