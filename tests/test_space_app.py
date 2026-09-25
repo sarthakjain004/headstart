@@ -22,7 +22,9 @@ import json
 import os
 import re
 import sys
+import tempfile
 import types
+from collections import defaultdict
 from contextlib import contextmanager
 from dataclasses import replace
 from datetime import datetime, timedelta
@@ -33,6 +35,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 
+from headstart import trend_history
 from headstart.llm_router import RouterUnavailable
 
 pytest.importorskip("flask")  # in [dev] so this runs in CI; guards a bare env
@@ -1442,7 +1445,12 @@ _T1, _T2, _T3 = (
 
 
 def _write_trends(state: Path, lines: list[str]) -> None:
-    rows = list(csv.DictReader(io.StringIO("\n".join(lines) + "\n")))
+    _write_ledger(state, list(csv.DictReader(io.StringIO("\n".join(lines) + "\n"))))
+
+
+def _write_ledger(state: Path, rows: list[dict]) -> None:
+    """The aggregate trends ledger holding ``rows``; the history reads only its ticks before the
+    Board-delta ledger's first (the archive)."""
     table = pa.table(
         {
             "ts": pa.array(
@@ -1460,6 +1468,67 @@ def _write_trends(state: Path, lines: list[str]) -> None:
     out = state / "data" / "state" / "role_trends.parquet"
     out.parent.mkdir(parents=True, exist_ok=True)
     pq.write_table(table, out)
+
+
+# The Space image copies config/ beside app.py and a checkout has none there, so the app's import
+# reads no family labels or watched roles; a test gives the history the taxonomy it needs.
+_SPACE_CONFIG = APP.parent / "config"
+_DELTA_COLUMNS = ("ts", "board", "metric", "family", "band", "ats")
+
+
+def _write_board_deltas(state: Path, deltas: list[dict], ledger: list[dict]) -> None:
+    """The Board-delta ledger as role_trends writes it since ADR-0230 step 2: one file a tick,
+    its series version under ``centroid_version``, empty when nothing moved. So a ledger tick at
+    or after the first delta's that no delta names is written as an empty file."""
+    if not deltas:
+        return
+    directory = state / "data" / "state" / "role_trend_board_deltas"
+    directory.mkdir(parents=True, exist_ok=True)
+    by_tick: dict[str, list[dict]] = defaultdict(list)
+    for row in deltas:
+        by_tick[row["ts"]].append(row)
+    version_of = {row["ts"]: row["version"] for row in ledger}
+    first = min(by_tick)
+    for ts in sorted({*by_tick, *(t for t in version_of if t >= first)}):
+        rows = by_tick.get(ts, [])
+        versions = {row["version"] for row in rows} or {version_of[ts]}
+        assert len(versions) == 1, f"a tick is counted at one version: {ts}"
+        schema = pa.schema(
+            [(name, pa.string()) for name in _DELTA_COLUMNS] + [("delta", pa.int64())],
+            metadata={
+                b"centroid_version": str(versions.pop()).encode(),
+                b"ts": ts.encode(),
+            },
+        )
+        table = pa.table(
+            {name: [row[name] for row in rows] for name in (*_DELTA_COLUMNS, "delta")},
+            schema=schema,
+        )
+        pq.write_table(table, directory / f"{ts.replace(':', '-')}.parquet")
+
+
+def _trend_history(
+    root: Path,
+    *,
+    ledger=(),
+    deltas=(),
+    companies: dict | None = None,
+    config: Path = _SPACE_CONFIG,
+) -> trend_history.TrendHistory:
+    """A TrendHistory loaded as the Space loads one, from state files written from ``ledger``
+    (aggregate rows), ``deltas`` (Board-delta rows) and the company directory. Each call writes a
+    state of its own under ``root``."""
+    state = Path(tempfile.mkdtemp(dir=root))
+    ledger = list(ledger)
+    if ledger:
+        _write_ledger(state, ledger)
+    _write_board_deltas(state, list(deltas), ledger)
+    if companies is not None:
+        (state / "data" / "state").mkdir(parents=True, exist_ok=True)
+        (state / "data" / "state" / "company_directory.json").write_text(
+            json.dumps({"companies": list(companies.values())}), encoding="utf-8"
+        )
+    return trend_history.TrendHistory.load(state / "data" / "state", config)
 
 
 def _trends_csv(state: Path) -> None:
@@ -1498,19 +1567,19 @@ def _write_epochs(state: Path, rows: list[dict]) -> Path:
 
 @pytest.fixture(scope="module")
 def trends_app(tmp_path_factory):
-    """The app with a trends ledger. `_STATE` is the hardcoded `/app/state`, so the CSV can't
-    ride the snapshot stub — instead the module's own loader is pointed at the fixture file
-    after import, which still exercises the real parsing (metric default included)."""
+    """The app with a trends ledger. `_STATE` is the hardcoded `/app/state`, so the ledger can't
+    ride the snapshot stub — instead the history is loaded from the fixture's state after
+    import, which still exercises the real parsing (metric default included)."""
     state = tmp_path_factory.mktemp("state")
     _trends_csv(state)
     # The wall pinned OFF explicitly ("" is falsy in _AUTH_ON): module-scoped fixtures from
     # earlier in this file hold their env until teardown, so without this the trends app can
     # inherit a live wall depending on test order and answer every request 401.
     with _space_app(state, env={"SECRET_KEY": "", "GOOGLE_CLIENT_ID": ""}) as module:
-        module._TRENDS = module._load_trends(
-            state / "data" / "state" / "role_trends.parquet"
+        module._HISTORY = trend_history.TrendHistory.load(
+            state / "data" / "state", _SPACE_CONFIG
         )
-        module._WATCH = {
+        module._HISTORY._watch = {
             "watch:fde": {
                 "label": "Forward Deployed Engineer",
                 "parent": "software-engineering",
@@ -1538,7 +1607,7 @@ def test_trends_new_metric_distinguishes_zero_from_not_measured(trends_app):
 
 
 def test_trends_comparable_coverage_keeps_only_boards_known_at_the_base(
-    trends_app, monkeypatch
+    trends_app, monkeypatch, tmp_path
 ):
     ledger = [
         {
@@ -1594,8 +1663,9 @@ def test_trends_comparable_coverage_keeps_only_boards_known_at_the_base(
             "delta": -1,
         },
     ]
-    monkeypatch.setattr(trends_app, "_TRENDS", ledger)
-    monkeypatch.setattr(trends_app, "_TREND_DELTAS", deltas)
+    monkeypatch.setattr(
+        trends_app, "_HISTORY", _trend_history(tmp_path, ledger=ledger, deltas=deltas)
+    )
     d = (
         trends_app.app.test_client()
         .get(f"/trends?coverage=comparable&base={quote(_T1)}")
@@ -1606,7 +1676,7 @@ def test_trends_comparable_coverage_keeps_only_boards_known_at_the_base(
 
 
 def test_trends_comparable_base_can_be_an_unchanged_measurement(
-    trends_app, monkeypatch
+    trends_app, monkeypatch, tmp_path
 ):
     ledger = [
         {
@@ -1642,8 +1712,9 @@ def test_trends_comparable_base_can_be_an_unchanged_measurement(
             "delta": 1,
         },
     ]
-    monkeypatch.setattr(trends_app, "_TRENDS", ledger)
-    monkeypatch.setattr(trends_app, "_TREND_DELTAS", deltas)
+    monkeypatch.setattr(
+        trends_app, "_HISTORY", _trend_history(tmp_path, ledger=ledger, deltas=deltas)
+    )
     d = (
         trends_app.app.test_client()
         .get(f"/trends?coverage=comparable&base={quote(_T2)}")
@@ -1655,8 +1726,8 @@ def test_trends_comparable_base_can_be_an_unchanged_measurement(
 
 
 @pytest.fixture
-def comparable_history(trends_app, monkeypatch):
-    def install(stamps, changes):
+def comparable_history(trends_app, monkeypatch, tmp_path):
+    def install(stamps, changes, later=()):
         group = {
             "version": 2,
             "metric": "stock",
@@ -1666,27 +1737,32 @@ def comparable_history(trends_app, monkeypatch):
         }
         monkeypatch.setattr(
             trends_app,
-            "_TRENDS",
-            [{**group, "ts": stamp, "count": 1} for stamp in stamps],
-        )
-        monkeypatch.setattr(
-            trends_app,
-            "_TREND_DELTAS",
-            [
-                {**group, "ts": stamp, "board": "early", "delta": change}
-                for stamp, change in changes
-            ],
+            "_HISTORY",
+            _trend_history(
+                tmp_path,
+                ledger=[{**group, "ts": stamp, "count": 1} for stamp in stamps],
+                deltas=[
+                    {**group, "ts": stamp, "board": board, "delta": change}
+                    for board, stamp, change in [
+                        *(("early", stamp, change) for stamp, change in changes),
+                        *later,
+                    ]
+                ],
+            ),
         )
         return trends_app.app.test_client()
 
     return install
 
 
-def test_comparable_replays_delta_without_aggregate_measurement(comparable_history):
+def test_comparable_charts_every_tick_the_delta_ledger_holds(comparable_history):
+    """Every tick writes its own delta file (ADR-0230), so the delta ledger names the ticks
+    after the archive, and a tick the aggregate missed is charted like any other. Until step 3
+    the aggregate named them, and this read [_T1, _T3] with _T2's delta folded into _T3."""
     client = comparable_history([_T1, _T3], [(_T1, 10), (_T2, 5)])
     data = client.get("/trends?coverage=comparable").get_json()
-    assert data["stamps"] == [_T1, _T3]
-    assert data["series"][0]["points"] == [10, 15]
+    assert data["stamps"] == [_T1, _T2, _T3]
+    assert data["series"][0]["points"] == [10, 15, 15]
 
 
 def test_comparable_default_starts_at_supported_history(comparable_history):
@@ -1706,10 +1782,7 @@ def test_comparable_default_starts_at_supported_history(comparable_history):
 def test_comparable_implicit_base_is_independent_of_since(
     comparable_history, trends_app, since
 ):
-    client = comparable_history([_T1, _T2, _T3], [(_T2, 10)])
-    trends_app._TREND_DELTAS.append(
-        {**trends_app._TREND_DELTAS[0], "ts": _T3, "board": "later", "delta": 50}
-    )
+    client = comparable_history([_T1, _T2, _T3], [(_T2, 10)], [("later", _T3, 50)])
     data = client.get(f"/trends?coverage=comparable&since={quote(since)}").get_json()
     assert data["base"] == _T2
     assert data["stamps"] == [stamp for stamp in [_T2, _T3] if stamp >= since]
@@ -1750,90 +1823,93 @@ def _delta(ts, board, delta, family="software-engineering", metric="stock"):
     }
 
 
-@pytest.fixture
-def company_trends(trends_app, monkeypatch):
-    """Three companies over the delta ledger (ADR-0185). HPE is one Tenant split into two
-    Workday sites, and two unrelated employers are both called "Citi"."""
-    ledger = [
-        {
-            "ts": stamp,
-            "version": 2,
-            "metric": "stock",
-            "family": "software-engineering",
-            "band": "mid",
-            "ats": "workday",
-            "count": 1,
-        }
-        for stamp in (_T1, _T2, _T3)
-    ] + [
-        {
-            "ts": stamp,
-            "version": 2,
-            "metric": "new",
-            "family": "software-engineering",
-            "band": "mid",
-            "ats": "workday",
-            "count": 1,
-        }
-        for stamp in (_T2, _T3)
-    ]
-    deltas = [
-        _delta(_T2, "workday:hpe/a", 2, metric="new"),
-        _delta(_T1, "workday:hpe/a", 10),
-        _delta(_T1, "workday:hpe/b", 5),
-        _delta(_T1, "workday:hpe/b", 2, family="ai-ml"),
-        _delta(_T1, "workday:hpe/b", 7, family="non-tech"),
-        _delta(_T1, "workday:citi/2", 40),
-        _delta(_T2, "workday:hpe/a", 1),
-        _delta(_T2, "eightfold:citi.eightfold.ai", 3),  # first seen at T2
-        _delta(_T3, "workday:hpe/b", -5),
-        _delta(_T3, "workday:citi/2", 4),
-    ]
-    companies = {
-        "workday:hpe/a": {"name": "Hpe", "boards": ["workday:hpe/a", "workday:hpe/b"]},
-        "workday:citi/2": {"name": "Citi", "boards": ["workday:citi/2"]},
-        "eightfold:citi.eightfold.ai": {
-            "name": "Citi",
-            "boards": ["eightfold:citi.eightfold.ai"],
-        },
-        # a third "Citi", on the same ATS as the first: its ATS cannot tell them apart
-        "workday:citibank/x": {"name": "Citi", "boards": ["workday:citibank/x"]},
+# Three companies over the delta ledger (ADR-0185). HPE is one Tenant split into two Workday
+# sites, and two unrelated employers are both called "Citi".
+_COMPANY_LEDGER = [
+    {
+        "ts": stamp,
+        "version": 2,
+        "metric": "stock",
+        "family": "software-engineering",
+        "band": "mid",
+        "ats": "workday",
+        "count": 1,
     }
-    openings = trends_app._board_openings(deltas, 2)
-    monkeypatch.setattr(trends_app, "_TRENDS", ledger)
-    monkeypatch.setattr(trends_app, "_TREND_DELTAS", deltas)
-    monkeypatch.setattr(trends_app, "_COMPANIES", companies)
-    monkeypatch.setattr(
-        trends_app,
-        "_COMPANY_OF",
-        {b: k for k, e in companies.items() for b in e["boards"]},
+    for stamp in (_T1, _T2, _T3)
+] + [
+    {
+        "ts": stamp,
+        "version": 2,
+        "metric": "new",
+        "family": "software-engineering",
+        "band": "mid",
+        "ats": "workday",
+        "count": 1,
+    }
+    for stamp in (_T2, _T3)
+]
+_COMPANY_DELTAS = [
+    _delta(_T2, "workday:hpe/a", 2, metric="new"),
+    _delta(_T1, "workday:hpe/a", 10),
+    _delta(_T1, "workday:hpe/b", 5),
+    _delta(_T1, "workday:hpe/b", 2, family="ai-ml"),
+    _delta(_T1, "workday:hpe/b", 7, family="non-tech"),
+    _delta(_T1, "workday:citi/2", 40),
+    _delta(_T2, "workday:hpe/a", 1),
+    _delta(_T2, "eightfold:citi.eightfold.ai", 3),  # first seen at T2
+    _delta(_T3, "workday:hpe/b", -5),
+    _delta(_T3, "workday:citi/2", 4),
+]
+_COMPANY_DIRECTORY = {
+    "workday:hpe/a": {"name": "Hpe", "boards": ["workday:hpe/a", "workday:hpe/b"]},
+    "workday:citi/2": {"name": "Citi", "boards": ["workday:citi/2"]},
+    "eightfold:citi.eightfold.ai": {
+        "name": "Citi",
+        "boards": ["eightfold:citi.eightfold.ai"],
+    },
+    # a third "Citi", on the same ATS as the first: its ATS cannot tell them apart
+    "workday:citibank/x": {"name": "Citi", "boards": ["workday:citibank/x"]},
+}
+
+
+def _company_history(
+    trends_app, monkeypatch, tmp_path, deltas=_COMPANY_DELTAS, hold=False
+):
+    """The three companies' history, served by the app: ``deltas`` with the fixture's ledger and
+    directory, with no `new` hold unless ``hold``."""
+    history = _trend_history(
+        tmp_path,
+        ledger=_COMPANY_LEDGER,
+        deltas=deltas,
+        companies=_COMPANY_DIRECTORY,
     )
-    monkeypatch.setattr(trends_app, "_OPENINGS", openings)
-    monkeypatch.setattr(
-        trends_app, "_CANDIDATES", trends_app._build_candidates(companies, openings)
-    )
-    arrivals = trends_app._board_arrivals(deltas)
-    monkeypatch.setattr(trends_app, "_BOARD_ARRIVALS", arrivals)
     # No holds by default: the fixture's runs span two days, inside every Board's first week.
     # The hold has its own tests below.
-    monkeypatch.setattr(trends_app, "_NEW_HOLD", {})
-    monkeypatch.setattr(
-        trends_app, "_LEDGER_START", min(ts for ts, _ in arrivals.values())
-    )
+    if not hold:
+        history._new_hold = {}
+    monkeypatch.setattr(trends_app, "_HISTORY", history)
+    return history
+
+
+@pytest.fixture
+def company_trends(trends_app, monkeypatch, tmp_path):
+    """Three companies over the delta ledger (ADR-0185). HPE is one Tenant split into two
+    Workday sites, and two unrelated employers are both called "Citi"."""
+    _company_history(trends_app, monkeypatch, tmp_path)
     return trends_app.app.test_client()
 
 
-def test_board_openings_count_tech_stock_only(trends_app):
+def test_board_openings_count_tech_stock_only(trends_app, tmp_path):
     """`non-tech` is no opening, `watch:` re-counts a family, `new` is not stock."""
     deltas = [
-        _delta(_T1, "a", 5),
-        _delta(_T1, "a", 9, family="non-tech"),
-        _delta(_T1, "a", 3, family="watch:fde"),
-        _delta(_T1, "a", 4, metric="new"),
-        _delta(_T2, "a", -2),
-        {**_delta(_T2, "a", 100), "version": 1},  # a stale refit
+        {**_delta(_T1, "a", 100), "version": 1},  # a stale refit
+        _delta(_T2, "a", 5),
+        _delta(_T2, "a", 9, family="non-tech"),
+        _delta(_T2, "a", 3, family="watch:fde"),
+        _delta(_T2, "a", 4, metric="new"),
+        _delta(_T3, "a", -2),
     ]
-    assert trends_app._board_openings(deltas, 2)["a"] == 3
+    assert _trend_history(tmp_path, deltas=deltas).openings()["a"] == 3
 
 
 def test_any_board_of_a_company_picks_the_whole_company(company_trends):
@@ -1938,22 +2014,10 @@ def test_suggest_ranks_and_labels_companies(company_trends):
 
 
 def test_no_directory_answers_503(trends_app, monkeypatch):
-    monkeypatch.setattr(trends_app, "_COMPANIES", {})
+    monkeypatch.setattr(trends_app._HISTORY, "_companies", {})
     client = trends_app.app.test_client()
     assert client.get("/companies/suggest?q=a").status_code == 503
     assert client.get("/trends?company=workday:hpe/a").status_code == 503
-
-
-def test_load_directory_keys_each_company_by_its_first_board(tmp_path, trends_app):
-    path = tmp_path / "company_directory.json"
-    path.write_text(
-        '{"companies": [{"name": "Hpe", "boards": ["workday:hpe/a", "workday:hpe/b"]}]}',
-        encoding="utf-8",
-    )
-    assert list(trends_app._load_directory(path)) == ["workday:hpe/a"]
-    path.write_text("{half-written", encoding="utf-8")
-    assert trends_app._load_directory(path) == {}
-    assert trends_app._load_directory(tmp_path / "absent.json") == {}
 
 
 def test_trends_rejects_unknown_coverage(trends_app):
@@ -2077,10 +2141,10 @@ def ats_trends_app(tmp_path_factory):
     state = tmp_path_factory.mktemp("ats-state")
     _ats_trends_csv(state)
     with _space_app(state, env={"SECRET_KEY": "", "GOOGLE_CLIENT_ID": ""}) as module:
-        module._TRENDS = module._load_trends(
-            state / "data" / "state" / "role_trends.parquet"
+        module._HISTORY = trend_history.TrendHistory.load(
+            state / "data" / "state", _SPACE_CONFIG
         )
-        module._WATCH = {}
+        module._HISTORY._watch = {}
         yield module
 
 
@@ -2159,11 +2223,8 @@ def epochs_trends_app(tmp_path_factory):
         ],
     )
     with _space_app(state, env={"SECRET_KEY": "", "GOOGLE_CLIENT_ID": ""}) as module:
-        module._TRENDS = module._load_trends(
-            state / "data" / "state" / "role_trends.parquet"
-        )
-        module._EPOCHS = module._load_epochs(
-            state / "data" / "state" / "trends_epochs.csv"
+        module._HISTORY = trend_history.TrendHistory.load(
+            state / "data" / "state", _SPACE_CONFIG
         )
         yield module
 
@@ -2210,6 +2271,11 @@ def test_trends_epochs_are_narrowed_by_since_and_until(epochs_trends_app):
     ]
 
 
+def _epochs_of(path: Path) -> list[dict]:
+    """The counting changes a history marks from the epoch ledger at ``path`` alone."""
+    return trend_history.TrendHistory.load(path.parent, _SPACE_CONFIG)._epochs
+
+
 def test_trends_epochs_name_a_dedup_change(epochs_trends_app, tmp_path):
     """A dedup-rule change removes served duplicates in one tick, which reads as a hiring drop
     unless it is marked."""
@@ -2226,7 +2292,7 @@ def test_trends_epochs_name_a_dedup_change(epochs_trends_app, tmp_path):
             {"ts": _T2, **stamp, "dedup_version": "2"},
         ],
     )
-    assert epochs_trends_app._load_epochs(path) == [
+    assert _epochs_of(path) == [
         {
             "ts": _T2,
             "changed": ["duplicate removal changed"],
@@ -2253,7 +2319,7 @@ def test_trends_epochs_name_a_family_assignment_change(epochs_trends_app, tmp_pa
             {"ts": _T2, **stamp, "family_classifier_version": "2"},
         ],
     )
-    assert epochs_trends_app._load_epochs(path) == [
+    assert _epochs_of(path) == [
         {
             "ts": _T2,
             "changed": ["role family assignment changed"],
@@ -2281,35 +2347,13 @@ def test_trends_epochs_read_the_title_column_under_its_old_name(
             {"ts": _T2, **stamp, "family_rules_fingerprint": "3b5cc5d9183c"},
         ],
     )
-    assert epochs_trends_app._load_epochs(path) == [
+    assert _epochs_of(path) == [
         {
             "ts": _T2,
             "changed": ["role family assignment changed"],
             "fields": ["family_classifier_version"],
         }
     ]
-
-
-def test_retired_families_keep_their_labels(epochs_trends_app, tmp_path):
-    """While a new head's title cache warms up, the Space still serves the older series, whose
-    families the curated list no longer names; `retired` keeps them readable."""
-    path = tmp_path / "role_families.json"
-    path.write_text(
-        json.dumps(
-            {
-                "families": [{"name": "frontend-web", "label": "Frontend & Web"}],
-                "retired": [
-                    {"name": "web-development", "label": "Web & .NET Development"}
-                ],
-            }
-        ),
-        encoding="utf-8",
-    )
-    labels = epochs_trends_app._family_labels(path)
-    assert labels == {
-        "frontend-web": "Frontend & Web",
-        "web-development": "Web & .NET Development",
-    }
 
 
 def test_trends_epochs_load_a_file_from_before_dedup_version(
@@ -2334,7 +2378,7 @@ def test_trends_epochs_load_a_file_from_before_dedup_version(
             },
         ],
     )
-    assert epochs_trends_app._load_epochs(path) == [
+    assert _epochs_of(path) == [
         {
             "ts": _T2,
             "changed": ["tech filter changed"],
@@ -2673,35 +2717,40 @@ def test_the_door_and_the_app_share_one_palette():
             )
 
 
-def test_board_arrivals_are_a_boards_first_tick_and_its_tech_stock_then(trends_app):
+def test_board_arrivals_are_a_boards_first_tick_and_its_tech_stock_then(
+    trends_app, tmp_path
+):
     deltas = [
-        _delta(_T1, "a", 5),
-        _delta(_T1, "a", 9, family="non-tech"),
-        _delta(_T2, "a", 1),
-        _delta(_T2, "b", 3),
+        {**_delta(_T1, "a", 5), "version": 1},
+        {**_delta(_T1, "a", 9, family="non-tech"), "version": 1},
         {
             **_delta(_T1, "b", 100),
             "version": 1,
         },  # an earlier version's first tick counts
+        _delta(_T2, "a", 6),  # the refit re-writes every Board
+        _delta(_T2, "b", 3),
     ]
     # Over every version: a refit re-writes each Board at its first tick, and reading arrivals
     # off the newest version made every Board "found" there.
-    assert trends_app._board_arrivals(deltas) == {"a": (_T1, 5), "b": (_T1, 100)}
+    arrivals = _trend_history(tmp_path, deltas=deltas)._board_arrivals
+    assert arrivals == {"a": (_T1, 5), "b": (_T1, 100)}
 
 
 def test_a_board_found_after_its_company_began_is_marked(company_trends, monkeypatch):
     """Both Citi Boards as one entry: the Eightfold one arrives at T2 with 3 openings."""
-    app_module = company_trends.application.view_functions["trends"].__globals__
+    history = company_trends.application.view_functions["trends"].__globals__[
+        "_HISTORY"
+    ]
     one = {
         "workday:citi/2": {
             "name": "Citi",
             "boards": ["workday:citi/2", "eightfold:citi.eightfold.ai"],
         }
     }
-    monkeypatch.setitem(app_module, "_COMPANIES", one)
-    monkeypatch.setitem(
-        app_module,
-        "_COMPANY_OF",
+    monkeypatch.setattr(history, "_companies", one)
+    monkeypatch.setattr(
+        history,
+        "_company_of",
         {b: "workday:citi/2" for b in one["workday:citi/2"]["boards"]},
     )
     d = company_trends.get("/trends?company=workday:citi/2").get_json()
@@ -2726,19 +2775,21 @@ def test_a_single_boards_first_tick_starts_its_line_and_is_not_marked(company_tr
 def test_a_board_that_brought_no_tech_openings_is_not_marked(
     company_trends, monkeypatch
 ):
-    app_module = company_trends.application.view_functions["trends"].__globals__
+    history = company_trends.application.view_functions["trends"].__globals__[
+        "_HISTORY"
+    ]
     one = {
         "workday:hpe/a": {"name": "Hpe", "boards": ["workday:hpe/a", "workday:hpe/new"]}
     }
-    monkeypatch.setitem(app_module, "_COMPANIES", one)
-    monkeypatch.setitem(
-        app_module,
-        "_COMPANY_OF",
+    monkeypatch.setattr(history, "_companies", one)
+    monkeypatch.setattr(
+        history,
+        "_company_of",
         {b: "workday:hpe/a" for b in one["workday:hpe/a"]["boards"]},
     )
-    arrivals = dict(app_module["_BOARD_ARRIVALS"])
+    arrivals = dict(history._board_arrivals)
     arrivals["workday:hpe/new"] = (_T2, 0)  # its first tick held only non-tech
-    monkeypatch.setitem(app_module, "_BOARD_ARRIVALS", arrivals)
+    monkeypatch.setattr(history, "_board_arrivals", arrivals)
     d = company_trends.get("/trends?company=workday:hpe/a").get_json()
     assert d["discovered"] == []
 
@@ -2759,21 +2810,19 @@ def test_search_narrows_to_the_boards_a_trend_hands_over(app):
     assert client.get("/facets?" + many).status_code == 400
 
 
-def test_a_found_boards_backlog_waits_out_the_new_window(company_trends, monkeypatch):
+def test_a_found_boards_backlog_waits_out_the_new_window(
+    company_trends, trends_app, monkeypatch, tmp_path
+):
     """Eightfold's Citi Board is found at T2; its first-week `new` is its backlog, not hiring."""
-    app_module = company_trends.application.view_functions["trends"].__globals__
-    deltas = app_module["_TREND_DELTAS"] + [
+    deltas = _COMPANY_DELTAS + [
         _delta(_T2, "eightfold:citi.eightfold.ai", 3, metric="new")
     ]
-    monkeypatch.setitem(app_module, "_TREND_DELTAS", deltas)
-    monkeypatch.setitem(
-        app_module, "_NEW_HOLD", app_module["_new_holds"](app_module["_BOARD_ARRIVALS"])
-    )
+    history = _company_history(trends_app, monkeypatch, tmp_path, deltas, hold=True)
     held = company_trends.get(
         "/trends?company=eightfold:citi.eightfold.ai&metric=new"
     ).get_json()
     assert held["series"] == []  # nothing new yet: the three were its backlog
-    monkeypatch.setitem(app_module, "_NEW_HOLD", {})
+    monkeypatch.setattr(history, "_new_hold", {})
     counted = company_trends.get(
         "/trends?company=eightfold:citi.eightfold.ai&metric=new"
     ).get_json()
@@ -2781,18 +2830,22 @@ def test_a_found_boards_backlog_waits_out_the_new_window(company_trends, monkeyp
     assert held["ledger_start"] == _T1
 
 
-def test_every_board_waits_out_the_new_window_from_its_first_tick(trends_app):
-    holds = trends_app._new_holds(
-        {"a": ("2026-09-13T00:00:00+00:00", 5), "b": ("2026-09-20T06:00:00+00:00", 3)}
-    )
+def test_every_board_waits_out_the_new_window_from_its_first_tick(trends_app, tmp_path):
+    holds = _trend_history(
+        tmp_path,
+        deltas=[
+            _delta("2026-09-13T00:00:00+00:00", "a", 5),
+            _delta("2026-09-20T06:00:00+00:00", "b", 3),
+        ],
+    )._new_hold
     # the first tick's baseline waits too: the ledger's first week reads every backlog as new
     assert holds == {"a": "2026-09-20T00:00:00+00:00", "b": "2026-09-27T06:00:00+00:00"}
 
 
-def test_new_counts_from_each_picks_own_first_week(company_trends, monkeypatch):
-    app_module = company_trends.application.view_functions["trends"].__globals__
-    holds = app_module["_new_holds"](app_module["_BOARD_ARRIVALS"])
-    monkeypatch.setitem(app_module, "_NEW_HOLD", holds)
+def test_new_counts_from_each_picks_own_first_week(
+    company_trends, trends_app, monkeypatch, tmp_path
+):
+    holds = _company_history(trends_app, monkeypatch, tmp_path, hold=True)._new_hold
     d = company_trends.get(
         "/trends?company=workday:hpe/a&company=eightfold:citi.eightfold.ai"
     ).get_json()
@@ -2804,9 +2857,11 @@ def test_new_counts_from_each_picks_own_first_week(company_trends, monkeypatch):
 
 def test_a_held_week_is_a_gap_not_a_zero(company_trends, monkeypatch):
     """Before a pick's `new` counts, its line is unmeasured: a 0 drew a surge at the release."""
-    app_module = company_trends.application.view_functions["trends"].__globals__
-    monkeypatch.setitem(
-        app_module, "_NEW_HOLD", {"workday:hpe/a": _T3, "workday:hpe/b": _T3}
+    history = company_trends.application.view_functions["trends"].__globals__[
+        "_HISTORY"
+    ]
+    monkeypatch.setattr(
+        history, "_new_hold", {"workday:hpe/a": _T3, "workday:hpe/b": _T3}
     )
     d = company_trends.get(
         "/trends?metric=new&split=company&company=workday:hpe/a&company=workday:citi/2"
@@ -2837,7 +2892,9 @@ def test_picks_a_view_leaves_out_are_named(company_trends):
 
 def test_duplicate_removals_are_named_per_pick(company_trends, monkeypatch, tmp_path):
     """#649's ledger, summed across rules and Boards, at the charted run that shows it."""
-    app_module = company_trends.application.view_functions["trends"].__globals__
+    history = company_trends.application.view_functions["trends"].__globals__[
+        "_HISTORY"
+    ]
     ledger = tmp_path / "dedup_evictions.csv"
     ledger.write_text(
         "ts,board,count,rule\n"
@@ -2847,7 +2904,7 @@ def test_duplicate_removals_are_named_per_pick(company_trends, monkeypatch, tmp_
         f"{_T3},workday:citi/2,2,alias:mirror\n",
         encoding="utf-8",
     )
-    monkeypatch.setitem(app_module, "_EVICTIONS", app_module["_load_evictions"](ledger))
+    monkeypatch.setattr(history, "_evictions", trend_history._load_evictions(ledger))
     d = company_trends.get(
         "/trends?split=company&company=workday:hpe/a&company=workday:citi/2"
     ).get_json()
@@ -2855,10 +2912,12 @@ def test_duplicate_removals_are_named_per_pick(company_trends, monkeypatch, tmp_
         {"ts": _T2, "company": "workday:hpe/a", "count": 7},
         {"ts": _T3, "company": "workday:citi/2", "count": 2},
     ]
-    assert app_module["_load_evictions"](tmp_path / "missing.csv") == {}
+    assert trend_history._load_evictions(tmp_path / "missing.csv") == {}
 
 
-def test_a_refit_is_a_step_in_one_history_not_its_end(trends_app, monkeypatch):
+def test_a_refit_is_a_step_in_one_history_not_its_end(
+    trends_app, monkeypatch, tmp_path
+):
     """Version 2 runs T1–T2; a refit starts version 2001 at T3 with every Board re-written."""
     ledger = [
         {
@@ -2872,11 +2931,15 @@ def test_a_refit_is_a_step_in_one_history_not_its_end(trends_app, monkeypatch):
         }
         for ts, v, n in [(_T1, 2, 10), (_T2, 2, 12), (_T3, 2001, 15), (_T3, 2, 99)]
     ]
-    stitched = trends_app._stitch_versions(ledger)
-    assert [(r["ts"], r["version"]) for r in stitched] == [
-        (_T1, 2),
-        (_T2, 2),
-        (_T3, 2001),
+    stitched = _trend_history(tmp_path, ledger=ledger)
+    assert [
+        (ts, count)
+        for ts in stitched.ticks
+        for count in stitched.index_counts(ts).values()
+    ] == [
+        (_T1, 10),
+        (_T2, 12),
+        (_T3, 15),
     ], "an old version's row after the refit is dropped"
     deltas = [
         {**_delta(_T1, "workday:hpe/a", 10), "version": 2},
@@ -2887,14 +2950,11 @@ def test_a_refit_is_a_step_in_one_history_not_its_end(trends_app, monkeypatch):
         },  # the refit's full re-write
     ]
     companies = {"workday:hpe/a": {"name": "Hpe", "boards": ["workday:hpe/a"]}}
-    monkeypatch.setattr(trends_app, "_TRENDS", stitched)
-    monkeypatch.setattr(trends_app, "_TREND_DELTAS", deltas)
-    monkeypatch.setattr(trends_app, "_COMPANIES", companies)
-    monkeypatch.setattr(trends_app, "_COMPANY_OF", {"workday:hpe/a": "workday:hpe/a"})
-    monkeypatch.setattr(
-        trends_app, "_BOARD_ARRIVALS", trends_app._board_arrivals(deltas)
+    history = _trend_history(
+        tmp_path, ledger=ledger, deltas=deltas, companies=companies
     )
-    monkeypatch.setattr(trends_app, "_NEW_HOLD", {})
+    history._new_hold = {}
+    monkeypatch.setattr(trends_app, "_HISTORY", history)
     d = (
         trends_app.app.test_client()
         .get("/trends?company=workday:hpe/a&split=company")
@@ -2908,47 +2968,11 @@ def test_a_refit_is_a_step_in_one_history_not_its_end(trends_app, monkeypatch):
 _REPO_FAMILIES = Path(__file__).resolve().parents[1] / "config" / "role_families.json"
 
 
-def test_every_retired_family_names_a_current_successor(trends_app):
-    spec = json.loads(_REPO_FAMILIES.read_text(encoding="utf-8"))
-    current = {f["name"] for f in spec["families"]}
-    successors = trends_app._family_successors(_REPO_FAMILIES)
-    assert set(successors) == {f["name"] for f in spec["retired"]}
-    assert set(successors.values()) <= current
-
-
-def test_a_family_is_read_by_the_name_the_data_holds(trends_app, monkeypatch):
-    """ADR-0220 renamed families; old links and new config meet the data by either name."""
-    from collections import Counter
-
-    monkeypatch.setattr(
-        trends_app, "_FAMILY_SUCCESSOR", trends_app._family_successors(_REPO_FAMILIES)
-    )
-    resolve = trends_app._resolve_family
-    assert resolve("ai-ml", Counter({"ai-ml": 3, "devops": 1})) == "ai-ml"
-    assert resolve("ai-ml", Counter({"ai-ml-data-science": 5})) == "ai-ml-data-science"
-    assert (
-        resolve("security", Counter({"security-engineering": 2}))
-        == "security-engineering"
-    )
-    # two predecessors hold data: the larger answers for the new name
-    assert (
-        resolve("ai-ml-data-science", Counter({"ai-ml": 9, "data-science": 4}))
-        == "ai-ml"
-    )
-    assert resolve(None, Counter()) is None
-
-
-def test_watched_roles_follow_a_family_by_either_name(trends_app, monkeypatch):
+def test_watched_roles_follow_a_family_by_either_name(
+    trends_app, monkeypatch, tmp_path
+):
     """The watchlist moved to v3 parents before their data landed; the AI drill must survive.
     It stays under AI / Machine Learning, not under Data Science as well."""
-    monkeypatch.setattr(
-        trends_app, "_FAMILY_SUCCESSOR", trends_app._family_successors(_REPO_FAMILIES)
-    )
-    monkeypatch.setattr(
-        trends_app,
-        "_WATCH",
-        {"watch:llm-genai": {"label": "LLM / GenAI", "parent": "ai-ml-data-science"}},
-    )
     rows = [
         {
             "ts": _T1,
@@ -2961,7 +2985,12 @@ def test_watched_roles_follow_a_family_by_either_name(trends_app, monkeypatch):
         }
         for family, n in [("ai-ml", 30), ("data-science", 10), ("watch:llm-genai", 8)]
     ]
-    monkeypatch.setattr(trends_app, "_TRENDS", rows)
+    history = _trend_history(tmp_path, ledger=rows)
+    history._family_successor = trend_history.family_successors(_REPO_FAMILIES)
+    history._watch = {
+        "watch:llm-genai": {"label": "LLM / GenAI", "parent": "ai-ml-data-science"}
+    }
+    monkeypatch.setattr(trends_app, "_HISTORY", history)
     client = trends_app.app.test_client()
     top = client.get("/trends").get_json()
     assert top["watch_parents"] == ["ai-ml"]
@@ -2972,12 +3001,9 @@ def test_watched_roles_follow_a_family_by_either_name(trends_app, monkeypatch):
 
 
 def test_a_retired_family_reads_as_its_successor_once_that_has_data(
-    trends_app, monkeypatch
+    trends_app, monkeypatch, tmp_path
 ):
     """A window spanning the switch draws one line, not one that stops and one that starts."""
-    monkeypatch.setattr(
-        trends_app, "_FAMILY_SUCCESSOR", trends_app._family_successors(_REPO_FAMILIES)
-    )
     rows = [
         {
             "ts": ts,
@@ -2994,7 +3020,9 @@ def test_a_retired_family_reads_as_its_successor_once_that_has_data(
             (_T3, 3001, "ai-ml-data-science", 40),
         ]
     ]
-    monkeypatch.setattr(trends_app, "_TRENDS", rows)
+    history = _trend_history(tmp_path, ledger=rows)
+    history._family_successor = trend_history.family_successors(_REPO_FAMILIES)
+    monkeypatch.setattr(trends_app, "_HISTORY", history)
     client = trends_app.app.test_client()
     top = client.get("/trends").get_json()
     assert [(s["name"], s["points"]) for s in top["series"]] == [
@@ -3004,24 +3032,10 @@ def test_a_retired_family_reads_as_its_successor_once_that_has_data(
     assert old_link["family"] == "ai-ml-data-science"
 
 
-def test_a_stock_series_a_run_leaves_out_is_at_zero_there(trends_app):
-    """Emptied by a refit, a category reads 0, so its drop is booked, not hidden in a gap."""
-    held = trends_app._held_at_zero
-    assert held([None, 46, 46, None, None], "stock") == [None, 46, 46, 0, 0]
-    assert held([None, 3, None], "new") == [None, 3, None], "new keeps its own rule"
-    assert held([None, 3, None], None) == [None, 3, None], (
-        "so does the chart with no pick"
-    )
-
-
-def test_a_v3_family_before_its_data_is_all_its_predecessors(trends_app, monkeypatch):
+def test_a_v3_family_before_its_data_is_all_its_predecessors(
+    trends_app, monkeypatch, tmp_path
+):
     """AI, ML & Data Science reads as AI / Machine Learning plus Data Science, not the larger."""
-    monkeypatch.setattr(
-        trends_app, "_FAMILY_SUCCESSOR", trends_app._family_successors(_REPO_FAMILIES)
-    )
-    monkeypatch.setattr(
-        trends_app, "_FAMILY_LABELS", trends_app._family_labels(_REPO_FAMILIES)
-    )
     rows = [
         {
             "ts": _T1,
@@ -3038,7 +3052,10 @@ def test_a_v3_family_before_its_data_is_all_its_predecessors(trends_app, monkeyp
             ("devops", "mid", 5),
         ]
     ]
-    monkeypatch.setattr(trends_app, "_TRENDS", rows)
+    history = _trend_history(tmp_path, ledger=rows)
+    history._family_successor = trend_history.family_successors(_REPO_FAMILIES)
+    history._family_labels = trend_history._family_labels(_REPO_FAMILIES)
+    monkeypatch.setattr(trends_app, "_HISTORY", history)
     client = trends_app.app.test_client()
     d = client.get("/trends?family=ai-ml-data-science").get_json()
     assert d["family"] == "ai-ml-data-science" and d["family_known"] is True
@@ -3063,24 +3080,25 @@ def test_hot_names_the_run_its_window_is_measured_from(trends_app, monkeypatch):
         }
         for ts in (_T1, _T2, _T3)
     ]
+    ticks = tuple(sorted({row["ts"] for row in rows}))
     hot = {"window": {"from": _T2, "to": _T3}, "lenses": {}}
-    monkeypatch.setattr(trends_app, "_HOT", trends_app._with_window_base(hot, rows))
+    monkeypatch.setattr(trends_app, "_HOT", trends_app._with_window_base(hot, ticks))
     d = trends_app.app.test_client().get("/hot").get_json()
     assert d["window"]["base"] == _T1
     # A base `hot_boards` published is kept as written.
     written = {"window": {"from": _T2, "to": _T3, "base": _T2}}
-    assert trends_app._with_window_base(written, rows) == written
+    assert trends_app._with_window_base(written, ticks) == written
 
 
-def test_every_category_hands_search_the_jobs_its_trend_counts(trends_app, monkeypatch):
+def test_every_category_hands_search_the_jobs_its_trend_counts(
+    trends_app, monkeypatch, tmp_path
+):
     """For each category a trend can show, Search's id set is the size of the trend's count —
     old names, new names and merged names alike (AI, ML & Data Science opened as 0 jobs)."""
     from headstart import search
 
-    successors = trends_app._family_successors(_REPO_FAMILIES)
-    labels = trends_app._family_labels(_REPO_FAMILIES)
-    monkeypatch.setattr(trends_app, "_FAMILY_SUCCESSOR", successors)
-    monkeypatch.setattr(trends_app, "_FAMILY_LABELS", labels)
+    successors = trend_history.family_successors(_REPO_FAMILIES)
+    labels = trend_history._family_labels(_REPO_FAMILIES)
     # The data mid-transition: every retired name still assigned, and a few new ones too; then
     # a scope holding only some of a family's predecessors (Data Science, not AI / ML).
     everything = [
@@ -3091,10 +3109,9 @@ def test_every_category_hands_search_the_jobs_its_trend_counts(trends_app, monke
     ]
     for held in (everything, [n for n in everything if n != "ai-ml"]):
         counts = {name: k + 1 for k, name in enumerate(held)}
-        monkeypatch.setattr(
-            trends_app,
-            "_TRENDS",
-            [
+        history = _trend_history(
+            tmp_path,
+            ledger=[
                 {
                     "ts": _T1,
                     "version": 2,
@@ -3107,6 +3124,9 @@ def test_every_category_hands_search_the_jobs_its_trend_counts(trends_app, monke
                 for name, n in counts.items()
             ],
         )
+        history._family_successor = successors
+        history._family_labels = labels
+        monkeypatch.setattr(trends_app, "_HISTORY", history)
         family_ids = trends_app._with_predecessors(
             {name: [f"x:{name}:{i}" for i in range(n)] for name, n in counts.items()},
             successors,
@@ -3159,28 +3179,12 @@ def test_a_category_summing_picks_carries_each_picks_own_part(company_trends):
     assert one["pick_parts"] == {}
 
 
-def _with_turnover(trends_app, monkeypatch, rows: list[dict]) -> None:
+def _with_turnover(trends_app, monkeypatch, tmp_path, rows: list[dict]) -> None:
     """The fixture's ledger plus turnover rows (ADR-0227), loaded as the Space loads them."""
-    deltas = trends_app._TREND_DELTAS + rows
-    monkeypatch.setattr(trends_app, "_TREND_DELTAS", deltas)
-    turnover = trends_app._rows_by_board(deltas, trends_app._TURNOVER_METRICS)
-    monkeypatch.setattr(trends_app, "_TURNOVER", turnover)
-    monkeypatch.setattr(
-        trends_app,
-        "_UNSCOPED_MARKERS",
-        trends_app._rows_by_board(deltas, ("unscoped",)),
+    history = _company_history(
+        trends_app, monkeypatch, tmp_path, _COMPANY_DELTAS + rows
     )
-    boards_of = {
-        b: e["boards"] for e in trends_app._COMPANIES.values() for b in e["boards"]
-    }
-    monkeypatch.setattr(
-        trends_app,
-        "_INDEX_TURNOVER",
-        trends_app._index_turnover(
-            turnover, lambda b: trends_app._dedup_touched(boards_of.get(b, [b]))
-        ),
-    )
-    monkeypatch.setattr(trends_app, "_TURNOVER_SINCE", _T2)
+    history._turnover_since = _T2
 
 
 _HPE_TURNOVER = [
@@ -3196,22 +3200,22 @@ _HPE_TURNOVER = [
 
 
 def test_turnover_rows_leave_every_level_as_it_was(
-    company_trends, trends_app, monkeypatch
+    company_trends, trends_app, monkeypatch, tmp_path
 ):
     """A tick's turnover rides its delta file (ADR-0227). Replayed as levels, 99 opened jobs
     would have become 99 more openings on HPE's line."""
     before = company_trends.get("/trends?company=workday:hpe/a").get_json()
-    _with_turnover(trends_app, monkeypatch, _HPE_TURNOVER)
+    _with_turnover(trends_app, monkeypatch, tmp_path, _HPE_TURNOVER)
     after = company_trends.get("/trends?company=workday:hpe/a").get_json()
     assert [s["points"] for s in after["series"]] == [
         s["points"] for s in before["series"]
     ]
     assert after["totals"] == before["totals"]
     hpe = {"workday:hpe/a": "hpe", "workday:hpe/b": "hpe"}
-    replayed, _ = trends_app._replay_rows(None, False, hpe)
+    replayed, _ = trends_app._HISTORY._replay_rows(None, False, hpe, [], None, None)
     assert {r["metric"] for r in replayed} == {"stock", "new"}
     assert (
-        trends_app._family_weights(
+        trend_history._family_weights(
             [{"metric": "opened", "family": "ai-ml", "count": 99}]
         )
         == {}
@@ -3219,11 +3223,11 @@ def test_turnover_rows_leave_every_level_as_it_was(
 
 
 def test_each_line_carries_the_turnover_its_change_is_made_of(
-    company_trends, trends_app, monkeypatch
+    company_trends, trends_app, monkeypatch, tmp_path
 ):
     """Opened and closed beside the net line, on every line of a pick (ADR-0227). The first run
     is None, since what landed there happened before the window."""
-    _with_turnover(trends_app, monkeypatch, _HPE_TURNOVER)
+    _with_turnover(trends_app, monkeypatch, tmp_path, _HPE_TURNOVER)
     d = company_trends.get("/trends?company=workday:hpe/a").get_json()
     lines = {s["name"]: s["turnover"] for s in d["series"]}
     assert lines["software-engineering"] == {
@@ -3242,12 +3246,12 @@ def test_each_line_carries_the_turnover_its_change_is_made_of(
 
 
 def test_the_index_has_turnover_and_it_is_the_sum_of_every_companys(
-    company_trends, trends_app, monkeypatch
+    company_trends, trends_app, monkeypatch, tmp_path
 ):
     """With no company picked, every line carries turnover too, summed from the same Board rows,
     so the index is exactly the sum over every company, run by run (ADR-0227). A found Board is
     recounted in the index as in its company."""
-    _with_turnover(trends_app, monkeypatch, _HPE_TURNOVER)
+    _with_turnover(trends_app, monkeypatch, tmp_path, _HPE_TURNOVER)
     index = company_trends.get("/trends").get_json()
     turnover = {s["name"]: s["turnover"] for s in index["series"]}
     assert turnover["software-engineering"] == {
@@ -3256,7 +3260,7 @@ def test_the_index_has_turnover_and_it_is_the_sum_of_every_companys(
         "recounted": [None, 3, 0],
     }
     assert index["closures_unseen"] == {"": 1}
-    every = "&".join(f"company={key}" for key in trends_app._COMPANIES)
+    every = "&".join(f"company={key}" for key in _COMPANY_DIRECTORY)
     companies = company_trends.get(f"/trends?split=company&{every}").get_json()
     for kind in ("opened", "closed", "recounted"):
         by_run = [
@@ -3275,20 +3279,20 @@ def test_the_index_has_turnover_and_it_is_the_sum_of_every_companys(
 
 
 def test_the_index_shows_what_every_companys_view_shows_after_runs_are_left_out(
-    company_trends, trends_app, monkeypatch
+    company_trends, trends_app, monkeypatch, tmp_path
 ):
     """The figures each view displays reconcile (ADR-0227): the index leaves out, Board by
     Board, the runs a company's own line leaves out, so its opened and closed are the sum of
     what every company's view shows. A duplicate-removal change at the last run can move HPE
     (two Workday sites) and not Citi's one Workday site: HPE's turnover there is left out of the
     index as of HPE's line, Citi's stays in both."""
-    _with_turnover(trends_app, monkeypatch, _HPE_TURNOVER)
+    _with_turnover(trends_app, monkeypatch, tmp_path, _HPE_TURNOVER)
     epoch = {
         "ts": _T3,
         "changed": ["duplicate removal changed"],
         "fields": ["dedup_version"],
     }
-    monkeypatch.setattr(trends_app, "_EPOCHS", [epoch])
+    monkeypatch.setattr(trends_app._HISTORY, "_epochs", [epoch])
     index = company_trends.get("/trends").get_json()
     assert index["turnover_left_out"] == [_T3]
 
@@ -3304,13 +3308,13 @@ def test_the_index_shows_what_every_companys_view_shows_after_runs_are_left_out(
         }
 
     in_index = shown([s["turnover"] for s in index["series"]])
-    every = "&".join(f"company={key}" for key in trends_app._COMPANIES)
+    every = "&".join(f"company={key}" for key in _COMPANY_DIRECTORY)
     split = company_trends.get(f"/trends?split=company&{every}").get_json()
     by_company = {"opened": 0, "closed": 0}
     for s in split["series"]:
         # The page's rule for a pick's own line: a duplicate-removal change leaves out its run
         # (and the run after) only where the pick holds Boards it can move.
-        touched = trends_app._dedup_touched(trends_app._COMPANIES[s["name"]]["boards"])
+        touched = trend_history._dedup_touched(_COMPANY_DIRECTORY[s["name"]]["boards"])
         for kind, n in shown([s["turnover"]], {2} if touched else ()).items():
             by_company[kind] += n
     assert in_index == by_company == {"opened": 5, "closed": 0}
@@ -3329,13 +3333,13 @@ def test_the_index_shows_what_every_companys_view_shows_after_runs_are_left_out(
     ],
 )
 def test_the_index_leaves_out_the_runs_a_companys_line_leaves_out(
-    company_trends, trends_app, monkeypatch, epoch_ts, fields, query, left_out
+    company_trends, trends_app, monkeypatch, tmp_path, epoch_ts, fields, query, left_out
 ):
     """The Space's rule for the index mirrors the page's for a pick's line (ADR-0227), whatever
     the change, wherever it lands, and under comparable coverage too."""
-    _with_turnover(trends_app, monkeypatch, _HPE_TURNOVER)
+    _with_turnover(trends_app, monkeypatch, tmp_path, _HPE_TURNOVER)
     epoch = {"ts": epoch_ts, "changed": ["a change"], "fields": fields}
-    monkeypatch.setattr(trends_app, "_EPOCHS", [epoch])
+    monkeypatch.setattr(trends_app._HISTORY, "_epochs", [epoch])
     index = company_trends.get(f"/trends{query}").get_json()
     assert index["turnover_left_out"] == left_out
     opened = [
@@ -3350,34 +3354,12 @@ def test_the_index_leaves_out_the_runs_a_companys_line_leaves_out(
         assert opened[2] == 5
 
 
-def test_no_turnover_off_openings(company_trends, trends_app, monkeypatch):
+def test_no_turnover_off_openings(company_trends, trends_app, monkeypatch, tmp_path):
     """Under `new` a line is a rolling level of fresh jobs, not a stock with a net change."""
-    _with_turnover(trends_app, monkeypatch, _HPE_TURNOVER)
+    _with_turnover(trends_app, monkeypatch, tmp_path, _HPE_TURNOVER)
     d = company_trends.get("/trends?metric=new&company=workday:hpe/a").get_json()
     assert all("turnover" not in s for s in d["series"])
     assert d["closures_unseen"] == {}
-
-
-def test_the_space_and_the_hot_list_leave_out_the_same_runs_and_boards(trends_app):
-    """ADR-0227: the index's turnover (the Space) and Hot (hot_boards) leave out the same
-    counting changes, and duplicate removal touches the same Boards, so the two never tell a
-    reader different figures for one week. Each keeps its own copy of the rule."""
-    from headstart.ingest import hot_boards
-
-    assert set(trends_app._LINE_MOVING) == set(hot_boards._STOCK_MOVING)
-    assert set(trends_app._DEDUP_ATSES) == set(hot_boards._DEDUP_SIBLING_ATSES)
-    assert trends_app._MIRROR_ATS == hot_boards._DEDUP_MIRROR_ATS
-    for boards in (
-        ["workday:acme/a", "workday:acme/b"],
-        ["workday:acme/a", "workday:other/b"],  # two Tenants: nothing to deduplicate
-        ["workday:ACME/a", "workday:acme/b"],  # one Tenant, compared case-blind
-        ["workday:acme/a", "greenhouse:acme"],
-        ["eightfold:jobs.acme.com"],
-        ["taleo_enterprise:acme/1", "taleo_enterprise:acme/2"],
-    ):
-        assert trends_app._dedup_touched(boards) == bool(
-            hot_boards.dedup_touches(boards)
-        ), boards
 
 
 def test_comparable_starts_its_window_where_all_coverage_does(company_trends):
@@ -3410,33 +3392,11 @@ def test_a_company_key_is_found_whatever_its_case(company_trends):
     assert [c["key"] for c in d["companies"]] == [c["key"] for c in lower["companies"]]
 
 
-def test_the_index_scope_is_worked_out_once_and_answers_the_same(
-    trends_app, monkeypatch
-):
-    """The index's whole-ledger passes were most of its 8–10 s on the Space; a second request for
-    the same scope reads them from memory and answers exactly as the first did."""
-    monkeypatch.setattr(trends_app, "_INDEX_SCOPES", {})
-    client = trends_app.app.test_client()
-    first = client.get("/trends").get_json()
-    assert len(trends_app._INDEX_SCOPES) == 1
-    assert client.get("/trends").get_json() == first
-    client.get("/trends?company=workday:hpe/a")
-    assert len(trends_app._INDEX_SCOPES) == 1, "a pick's scope is never kept"
-    # A new ledger in memory never reads the old one's scope, whatever ids it is given: the
-    # entry is rebuilt from, and holds, the ledger now in memory.
-    monkeypatch.setattr(trends_app, "_TRENDS", list(trends_app._TRENDS))
-    client.get("/trends")
-    key = trends_app._index_scope_key(None, None, [], None)
-    assert trends_app._INDEX_SCOPES[key][0] is trends_app._TRENDS
-
-
-def test_a_window_is_one_scope_whatever_instant_inside_a_run_gap_asks(
-    trends_app, monkeypatch
-):
-    """The 7/30/90-day presets ask for now − N to the second, so keyed on the instant no two
-    requests ever met the memo. Keyed on the runs a window holds, they do."""
-    monkeypatch.setattr(trends_app, "_INDEX_SCOPES", {})
-    stamps = sorted({r["ts"] for r in trends_app._TRENDS})
+def test_a_window_is_one_scope_whatever_instant_inside_a_run_gap_asks(trends_app):
+    """The 7/30/90-day presets ask for now − N to the second; any instant between the same two
+    runs holds the same runs, so it answers the same (#690, whose memo keyed on the runs a window
+    holds; the index is now read from columns and needs none)."""
+    stamps = list(trends_app._HISTORY.ticks)
     assert len(stamps) >= 3
     at = datetime.fromisoformat(stamps[1])
     early, late = (
@@ -3446,14 +3406,3 @@ def test_a_window_is_one_scope_whatever_instant_inside_a_run_gap_asks(
     client = trends_app.app.test_client()
     first = client.get("/trends", query_string={"since": early}).get_json()
     assert client.get("/trends", query_string={"since": late}).get_json() == first
-    assert len(trends_app._INDEX_SCOPES) == 1
-    # A bound that leaves out no run is no bound: the whole ledger's scope.
-    key = trends_app._index_scope_key(stamps[0], stamps[-1], [], None)
-    assert key == trends_app._index_scope_key(None, None, [], None)
-
-
-def test_the_index_default_is_worked_out_at_load_under_the_requests_own_key(trends_app):
-    """The warm-up and a request spell the scope once (`_index_scope_key`), so the first reader
-    of the tab after a restart reads it from memory rather than missing it."""
-    key = trends_app._index_scope_key(None, None, [], None)
-    assert key in trends_app._INDEX_SCOPES
