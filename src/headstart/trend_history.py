@@ -1203,17 +1203,18 @@ class TrendHistory:
         # Each pick's own line under a view that sums several, so the page takes a company's
         # steps out of that company's part of the sum only.
         pick_series: dict[str, list[int | None]] = {}
+        # And each pick's part of every category or level line, so a company's steps and
+        # duplicate removals come out of its own part of a category too: without them NVIDIA and
+        # Micron's categories summed +73 against their Total of +40 (review of #690).
+        pick_parts: dict[str, dict[str, list[int | None]]] = {}
         if (
             len(picked_keys) > 1
             and key != "company"
             and not (family and split == "roles")
         ):
-            per: dict[str, dict[str, int]] = {}
-            for r in rows:
-                at = per.setdefault(r["company"], {})
-                at[r["ts"]] = at.get(r["ts"], 0) + r["count"]
-            pick_series = {
-                k: _held_at_zero(
+
+            def pick_line(points: dict[str, int], k: str) -> list[int | None]:
+                return _held_at_zero(
                     [
                         value_at(
                             points, ts, new_from.get(k) if metric == "new" else None
@@ -1222,7 +1223,26 @@ class TrendHistory:
                     ],
                     metric,
                 )
-                for k, points in per.items()
+
+            per: dict[str, dict[str, int]] = {}
+            per_part: dict[str, dict[str, dict[str, int]]] = {}
+            for r in rows:
+                at = per.setdefault(r["company"], {})
+                at[r["ts"]] = at.get(r["ts"], 0) + r["count"]
+                at = per_part.setdefault(r[key], {}).setdefault(r["company"], {})
+                at[r["ts"]] = at.get(r["ts"], 0) + r["count"]
+            pick_series = {k: pick_line(points, k) for k, points in per.items()}
+            # A part is 0, not unmeasured, wherever its company is counted: a company's first
+            # AI/ML opening is hiring, where a company's own first run is a join.
+            pick_parts = {
+                name: {
+                    k: [
+                        0 if v is None and whole is not None else v
+                        for v, whole in zip(pick_line(points, k), pick_series[k])
+                    ]
+                    for k, points in parts.items()
+                }
+                for name, parts in per_part.items()
             }
         non_tech: dict[str, int] = {}
         for row in stock:
@@ -1378,6 +1398,7 @@ class TrendHistory:
                 for k in picked_keys
             ],
             "pick_series": pick_series,
+            "pick_parts": pick_parts,
             "pick_turnover": pick_turnover,
             "company_totals": {
                 k: [company_totals[k].get(ts) for ts in stamps] for k in picked_keys

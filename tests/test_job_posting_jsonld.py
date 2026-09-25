@@ -18,6 +18,7 @@ import pytest
 
 from headstart.scrapers.job_posting_jsonld import (
     find_job_posting,
+    has_unparseable_jsonld,
     hiring_organization,
     job_location_text,
     job_posting_fields,
@@ -295,3 +296,14 @@ def test_hiring_organization_is_read_in_both_shapes():
     )
     assert hiring_organization(None) is None
     assert hiring_organization("") is None
+
+
+def test_has_unparseable_jsonld_tells_a_broken_block_from_no_block():
+    """`find_job_posting` answers None for both; a reader needs the difference for its label."""
+    broken = '<script type="application/ld+json">{"@type": "JobPosting",</script>'
+    assert find_job_posting(broken) is None
+    assert has_unparseable_jsonld(broken)
+    assert not has_unparseable_jsonld("<html><body>no JSON-LD</body></html>")
+    assert not has_unparseable_jsonld(
+        f'<script type="application/ld+json">{json.dumps(POSTING)}</script>'
+    )

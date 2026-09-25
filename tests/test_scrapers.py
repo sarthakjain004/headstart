@@ -6490,7 +6490,7 @@ def test_eightfold_counts_the_held_details_against_what_the_tech_gate_let_throug
     caplog,
 ):
     """The held skip keeps its own line, and a posting the gate dropped is not "already held"."""
-    caplog.set_level(logging.INFO, logger="headstart.scrapers.eightfold")
+    caplog.set_level(logging.DEBUG, logger="headstart.scrapers.eightfold")
     scraper, _fetcher = _eightfold_board(have_details={"eightfold:acme.eightfold.ai:1"})
 
     scraper._api_records(
@@ -6502,6 +6502,7 @@ def test_eightfold_counts_the_held_details_against_what_the_tech_gate_let_throug
         ],
     )
 
+    assert scraper.telemetry["detail_held"] == 1
     assert "fetched 1/2 descriptions (1 already held)" in caplog.text
 
 
@@ -9856,7 +9857,7 @@ def test_successfactors_listing_surfaces_go_through_the_retry_seam(monkeypatch):
     """ADR-0047: retry and Retry-After live in `http.fetch`, not the raw pooled session.
 
     Both listing surfaces called `http.session().request(...)` directly, so a 429 settled on the
-    first try — and `_fetch_sitemap` maps a non-200 to ("other", "", None), so a throttled read
+    first try — and `_fetch_sitemap` mapped a non-200 to ("other", "", None), so a throttled read
     presented as an empty Board and `index sync` evicted its rows. Pinned by making the raw
     session unusable: anything still bypassing the seam raises.
     """

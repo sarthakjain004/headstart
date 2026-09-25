@@ -166,6 +166,28 @@ def test_chrome_launch_is_retried_then_reported(monkeypatch):
     assert len(attempts) == bh._LAUNCH_ATTEMPTS
 
 
+def test_each_failed_launch_names_its_cause(monkeypatch, caplog):
+    """harvest prints only the final RuntimeError, so each attempt's cause must be in the log,
+    and the last one in that error's own text."""
+
+    class _DiesOnStart(_FakeChrome):
+        async def start(self):
+            raise OSError("xvfb had a bad day")
+
+    monkeypatch.setattr(bh, "_chrome_factory", _DiesOnStart)
+    monkeypatch.setattr(bh, "_browser", None)
+    with (
+        caplog.at_level(logging.INFO, logger="headstart"),
+        pytest.raises(RuntimeError, match="last: OSError: xvfb had a bad day"),
+        bh.origin("https://acme.darwinbox.in/careers"),
+    ):
+        pass
+    failed = [r for r in caplog.records if "chrome launch attempt" in r.message]
+    assert len(failed) == bh._LAUNCH_ATTEMPTS
+    assert all(r.levelno == logging.INFO for r in failed)
+    assert "OSError: xvfb had a bad day" in failed[0].message
+
+
 def test_a_failed_launch_reaps_its_process_and_temp_dir(monkeypatch):
     """Each failed attempt must kill its own Chrome process and remove its own temp profile dir
     before the next attempt starts — otherwise a leaked process and dir sit until Python's own
@@ -245,10 +267,11 @@ def test_a_reap_that_itself_fails_leaves_a_record(monkeypatch, caplog):
     """The reap's own failure is the very "Directory not empty" race its comment predicts, and
     a bare `pass` made the one symptom the code names unreportable.
 
-    DEBUG rather than WARNING on purpose: the reap runs once per launch attempt on the per-Board
+    INFO rather than WARNING on purpose: the reap runs once per launch attempt on the per-Board
     path, and under Actions a WARNING is a 10-per-step annotation quota (ADR-0039), not a
-    severity. `exc_info` is what makes the record worth having — the OSError's own errno is the
-    difference between a raced temp dir and a dead process manager.
+    severity. The first record's `exc_info` is what makes it worth having — the OSError's own
+    errno is the difference between a raced temp dir and a dead process manager — and the rest
+    restate that fault, so they carry none.
     """
 
     class _WontClean(_FakeTempDirManager):
@@ -265,8 +288,9 @@ def test_a_reap_that_itself_fails_leaves_a_record(monkeypatch, caplog):
 
     monkeypatch.setattr(bh, "_chrome_factory", _DiesOnStart)
     monkeypatch.setattr(bh, "_browser", None)
+    monkeypatch.setattr(bh, "_teardown_traced", False)
     with (
-        caplog.at_level(logging.DEBUG, logger="headstart"),
+        caplog.at_level(logging.INFO, logger="headstart"),
         pytest.raises(RuntimeError, match="failed to start"),
         bh.origin("https://acme.darwinbox.in/careers"),
     ):
@@ -274,7 +298,8 @@ def test_a_reap_that_itself_fails_leaves_a_record(monkeypatch, caplog):
 
     reaps = [r for r in caplog.records if "reaping a failed Chrome launch" in r.message]
     assert len(reaps) == bh._LAUNCH_ATTEMPTS
-    assert all(r.levelno == logging.DEBUG and r.exc_info for r in reaps)
+    assert all(r.levelno == logging.INFO for r in reaps)
+    assert [bool(r.exc_info) for r in reaps] == [True] + [False] * (len(reaps) - 1)
 
 
 @pytest.mark.parametrize("nav_fails", [False, True])
@@ -285,8 +310,10 @@ def test_a_tab_that_will_not_close_leaves_a_record(
 
     A tab that will not close is how `_TAB_WIDTH` leaks — the slot comes back either way, but
     the tab does not — so the failure has to be recoverable from a verbose run rather than
-    swallowed. DEBUG for the reason the reap above gives: once per walled Board.
+    swallowed. INFO for the reason the reap above gives: once per walled Board.
     """
+
+    monkeypatch.setattr(bh, "_teardown_traced", False)
 
     async def _wont_close(self):
         raise RuntimeError("the tab is wedged")
@@ -299,7 +326,7 @@ def test_a_tab_that_will_not_close_leaves_a_record(
 
         monkeypatch.setattr(_FakeTab, "go_to", _boom)
 
-    with caplog.at_level(logging.DEBUG, logger="headstart"):
+    with caplog.at_level(logging.INFO, logger="headstart"):
         if nav_fails:
             with (
                 pytest.raises(TimeoutError),
@@ -317,4 +344,25 @@ def test_a_tab_that_will_not_close_leaves_a_record(
     )
     closes = [r for r in caplog.records if r.message == expected]
     assert len(closes) == 1
-    assert closes[0].levelno == logging.DEBUG and closes[0].exc_info
+    assert closes[0].levelno == logging.INFO and closes[0].exc_info
+
+
+def test_a_broken_blocking_install_warns_once_then_informs(monkeypatch, caplog):
+    """Every Board rides the same broken install, so only the first costs an annotation — but the
+    later ones still leave a line, so the log shows how far the slowdown reached."""
+    import asyncio
+
+    class _NoNetworkEvents:
+        async def enable_network_events(self):
+            raise RuntimeError("pydoll API drifted")
+
+    monkeypatch.setattr(bh, "_BLOCKING_FAILURE", bh.log.FirstOnly(bh._log))
+    with caplog.at_level(logging.INFO, logger=bh._log.name):
+        for _ in range(3):
+            asyncio.run(bh._install_blocking(_NoNetworkEvents()))
+    levels = [r.levelname for r in caplog.records]
+    assert levels == ["WARNING", "INFO", "INFO"]
+    assert caplog.records[0].exc_info is not None
+    assert all(
+        "subresource blocking unavailable" in r.getMessage() for r in caplog.records
+    )

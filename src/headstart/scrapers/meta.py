@@ -106,8 +106,12 @@ class MetaScraper(BaseScraper):
         return self.slug
 
     def fetch_raw(self) -> Any:
-        listed = _sitemap_rows(self._get())
+        xml = self._get()
+        listed = _sitemap_rows(xml)
         if not listed:
+            self.note_unreadable_board(
+                "job <loc>s in the sitemap urlset", f"{len(xml)} bytes: {xml[:40]!r}"
+            )
             return []
         pages = self.run_detail_pass(
             listed, key_of=lambda row: row[0], what="detail fields"
@@ -176,6 +180,11 @@ class MetaScraper(BaseScraper):
                     employment_type=fields.get("employment_type"),
                 )
             )
+        self.note_unread_rows(
+            len(raw) - len(jobs),
+            len(raw),
+            "without a readable detail page (no title from it)",
+        )
         return jobs
 
     def _salary_field(self, raw: Any) -> str | None:

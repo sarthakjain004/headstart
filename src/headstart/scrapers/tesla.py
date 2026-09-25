@@ -188,8 +188,10 @@ _route: str | None = None
 class TeslaWalled(Exception):
     """The origin refused this route: a 403/429, or a page that never answered."""
 
-    def __init__(self, status: int) -> None:
-        super().__init__(f"the origin answered {status}")
+    def __init__(self, status: int, message: str | None = None) -> None:
+        # `message` for a wall read from silence: `status` still drives the egress logic, but
+        # the text must not claim an answer the origin never gave.
+        super().__init__(message or f"the origin answered {status}")
         self.status = status
 
 
@@ -308,7 +310,9 @@ def _read_state_json() -> dict[str, Any]:
             except TimeoutError:
                 # A refused IP gets a hard 403 page whose own state call never fires (measured
                 # 2026-09-25), so silence is the wall's usual shape here, not a slow load.
-                raise TeslaWalled(403) from None
+                raise TeslaWalled(
+                    403, f"no state call within {_STATE_WAIT_S}s (read as a wall)"
+                ) from None
             if seen.get("status") in _WALL_STATUSES:
                 raise TeslaWalled(seen["status"])
             if seen.get("status") != 200:
@@ -403,6 +407,11 @@ def _read_batch(urls: Sequence[str], page_url: str) -> list[dict[str, Any]]:
             await navigate()
         rows = await evaluate()
         if _mostly_refused(rows):
+            # Otherwise silent: a lapse the second navigation cures leaves no other trace.
+            _log.info(
+                f"{sum(r['s'] != 200 for r in rows)} of {len(rows)} in a batch refused without a "
+                "wall status — tab trust lapsed, navigating again"
+            )
             await navigate()
             rows = await evaluate()
             if _mostly_refused(rows):
@@ -565,6 +574,9 @@ class TeslaScraper(BaseScraper):
                     employment_type=types.get(str(entry.get("y"))),
                 )
             )
+        self.note_unread_rows(
+            len(listings) - len(jobs), len(listings), "with no id/title"
+        )
         return jobs
 
     def _salary_field(self, raw: Any) -> str | None:

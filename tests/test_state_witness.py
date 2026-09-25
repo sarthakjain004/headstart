@@ -32,6 +32,15 @@ def test_publish_records_only_roots_that_hold_files(tmp_path: Path) -> None:
     assert sw.publish(tmp_path) == ["data/lancedb", "data/state"]
 
 
+def test_publish_names_the_roots_it_left_out(tmp_path: Path, caplog) -> None:
+    _populate(tmp_path, "data/state/board_priority.csv")
+    with caplog.at_level("INFO", logger=sw.__name__):
+        sw.publish(tmp_path)
+    assert caplog.messages[-1].endswith(
+        "; omitted: data/descriptions data/embeddings/jobs data/lancedb"
+    )
+
+
 def test_publish_round_trips_through_the_file_it_writes(tmp_path: Path) -> None:
     _populate(tmp_path, "data/embeddings/jobs/meta.jsonl")
     sw.publish(tmp_path)
@@ -175,3 +184,11 @@ def test_published_roots_parses_what_publish_wrote(monkeypatch, tmp_path: Path) 
     sw.publish(tmp_path)
     _stub_hub(monkeypatch, lambda *a, **k: str(tmp_path / sw.WITNESS_PATH))
     assert sw.published_roots("repo", None) == {"data/state"}
+
+
+def test_a_malformed_witness_names_its_file(monkeypatch, tmp_path: Path) -> None:
+    witness = tmp_path / "published_dirs.json"
+    witness.write_text('{"not_dirs": []}', encoding="utf-8")
+    _stub_hub(monkeypatch, lambda *a, **k: str(witness))
+    with pytest.raises(ValueError, match=sw.WITNESS_PATH):
+        sw.published_roots("repo", None)

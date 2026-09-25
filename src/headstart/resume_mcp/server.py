@@ -22,10 +22,15 @@ from __future__ import annotations
 
 import json
 import sys
+import time
 from typing import Any, TextIO
 
+from .. import log
 from .account import Account, Unconfigured, open_account
 from .inspection import Unreadable, read_document, render
+
+#: stderr only (headstart.log's handler), so a diagnostic line never lands in the protocol.
+_log = log.get(__name__, __spec__)
 
 NAME = "headstart-resume"
 VERSION = "1.0.0"
@@ -285,16 +290,41 @@ def handle(
         return _result(request_id, {"tools": TOOLS})
     if method == "tools/call":
         params = message.get("params") or {}
+        args = (params.get("arguments") or {}) if isinstance(params, dict) else None
+        if not isinstance(args, dict):
+            # Type names only: the malformed value may carry résumé text.
+            _log.info(
+                "tools/call refused: params %s, arguments %s",
+                type(params).__name__,
+                type(args).__name__,
+            )
+            return _error(request_id, -32602, "invalid params")
         if isinstance(account, Unconfigured):
             return _result(request_id, _text(str(account), failed=True))
+        name = params.get("name")
+        started = time.monotonic()
+        outcome = "error"
         try:
-            text = call(account, params.get("name"), params.get("arguments") or {})
+            text = call(account, name, args)
+            outcome = "ok"
         except ToolFailure as exc:
+            outcome = "refused"
             return _result(request_id, _text(str(exc), failed=True))
         except Exception as exc:  # noqa: BLE001 — a traceback down stdio is a dead server
+            # The client gets one sentence; the stack goes to stderr. Argument names only —
+            # their values are document ids and version names, and may be résumé wording.
+            _log.error("tool %s failed (args %s)", name, sorted(args), exc_info=True)
             return _result(
                 request_id,
                 _text(f"{type(exc).__name__}: {exc}", failed=True),
+            )
+        finally:
+            # No values: the outcome is the only trace a refusal leaves on stderr.
+            _log.debug(
+                "tool %s -> %s in %.0fms",
+                name,
+                outcome,
+                (time.monotonic() - started) * 1000,
             )
         return _result(request_id, _text(text))
     return _error(request_id, -32601, f"method not found: {method}")
@@ -310,19 +340,42 @@ def serve(stdin: TextIO, stdout: TextIO, account: Account | Unconfigured) -> Non
         try:
             message = json.loads(line)
         except ValueError as exc:
+            # Length only, as below: the line may carry résumé text.
+            _log.info("unparseable JSON-RPC line dropped: length %d", len(line))
             reply: dict[str, Any] | None = _error(None, -32700, f"parse error: {exc}")
         else:
-            reply = handle(message, account) if isinstance(message, dict) else None
+            if isinstance(message, dict):
+                try:
+                    reply = handle(message, account)
+                except Exception:  # noqa: BLE001 — one bad request must not end the session
+                    # The method name only; the message may carry résumé text.
+                    _log.error(
+                        "request %s failed", message.get("method"), exc_info=True
+                    )
+                    reply = _error(message.get("id"), -32603, "internal error")
+            else:
+                # Type and size only: the message itself may carry résumé text. INFO, not
+                # WARNING: this is per message, and ADR-0039 bounds annotations per loop.
+                _log.info(
+                    "non-object JSON-RPC message dropped: %s of length %d",
+                    type(message).__name__,
+                    len(line),
+                )
+                reply = _error(None, -32600, "invalid request: not a JSON object")
         if reply is not None:
             stdout.write(json.dumps(reply) + "\n")
             stdout.flush()
 
 
 def main() -> None:
+    # headstart.log writes to stderr, never stdout: stdout is the protocol, and one stray
+    # line closes the session.
+    log.setup()
     try:
         account: Account | Unconfigured = open_account()
+        # The hashed subscription id, never the address it is derived from.
+        _log.info("%s %s serving account %s", NAME, VERSION, account.id)
     except Unconfigured as exc:
-        # stderr, never stdout: stdout is the protocol, and one stray line closes the session.
-        print(f"{NAME}: {exc}", file=sys.stderr, flush=True)
+        _log.warning("%s: %s", NAME, exc)
         account = exc
     serve(sys.stdin, sys.stdout, account)

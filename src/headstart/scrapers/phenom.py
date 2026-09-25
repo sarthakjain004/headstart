@@ -44,7 +44,13 @@ from typing import Any, ClassVar
 from headstart import company_name, http
 from headstart.fetcher import Fetcher
 from headstart.models import Job, host_of, html_to_text
-from headstart.scrapers.base import USER_AGENT, BaseScraper, DetailLost, DetailRequest
+from headstart.scrapers.base import (
+    USER_AGENT,
+    BaseScraper,
+    DetailLost,
+    DetailRequest,
+    DetailWithoutDescription,
+)
 
 #: Rows per listing call. The endpoint clamps anything larger to 500 without saying so.
 _PAGE_SIZE = 500
@@ -195,13 +201,25 @@ class PhenomScraper(BaseScraper):
                 timeout=30,
                 allow_redirects=True,
             )
-        except http.RequestsError:
+        except http.RequestsError as exc:
             # The listing POST below does not need the prefix, so a failed probe costs link
             # accuracy on this Board, not its postings. Keep the probe default and carry on
-            # rather than failing a Board whose jobs are perfectly readable.
+            # rather than failing a Board whose jobs are perfectly readable — but say so: a
+            # wrong prefix serves links that answer 200 and show nothing.
+            self._log.info(
+                f"{self.board_key()}: locale probe raised {type(exc).__name__} — "
+                f"building links on {cc}/{lang}"
+            )
             return cc, lang
-        match = _PREFIX_RE.match(str(getattr(response, "url", "") or ""))
-        return (match.group(1), match.group(2)) if match else (cc, lang)
+        landed = str(getattr(response, "url", "") or "")
+        match = _PREFIX_RE.match(landed)
+        if not match:
+            self._log.info(
+                f"{self.board_key()}: locale probe landed on {landed[:80]} — "
+                f"building links on {cc}/{lang}"
+            )
+            return cc, lang
+        return match.group(1), match.group(2)
 
     # --- listing ----------------------------------------------------------------------------
 
@@ -271,12 +289,15 @@ class PhenomScraper(BaseScraper):
             size = min(_PAGE_SIZE, _RESULT_WINDOW - start - 1)
             if size <= 0:
                 break
-            body = (
-                self._widgets(self._search_payload(start, size)).get("refineSearch")
-            ) or {}
+            widgets = self._widgets(self._search_payload(start, size))
+            body = widgets.get("refineSearch") or {}
             page = ((body.get("data") or {}).get("jobs")) or []
             if total is None:
                 total = body.get("totalHits")
+                if not body:
+                    self.note_unreadable_board(
+                        "a `refineSearch` widget", f"keys {sorted(widgets)[:5]}"
+                    )
             if not page:
                 break
             for job in page:
@@ -335,7 +356,7 @@ class PhenomScraper(BaseScraper):
             options={"json": self._detail_payload(str(row["jobId"]))},
         )
 
-    def read_detail(self, row: dict, response: Any) -> dict:
+    def read_detail(self, row: dict, response: Any) -> dict | DetailWithoutDescription:
         """The one posting in a detail response.
 
         An unknown id is **not** a 404 and not an empty list — it is a 200 whose envelope simply
@@ -347,6 +368,9 @@ class PhenomScraper(BaseScraper):
         job = ((body.get("jobDetail") or {}).get("data") or {}).get("job")
         if not job:
             raise DetailLost("no job on a 200")
+        if not job.get("description"):
+            # Kept for the fields the detail states beside it; a gap for the description.
+            return DetailWithoutDescription(job, "200 without description")
         return job
 
     def fetch_raw(self) -> Any:

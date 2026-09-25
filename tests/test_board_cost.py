@@ -8,6 +8,10 @@ of a shard's torn final row.
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta
+
+import pytest
+
 from headstart.board_cost import (
     BoardCost,
     ShardCost,
@@ -80,6 +84,16 @@ def test_read_shard_rows_skips_a_torn_final_line(tmp_path):
         "board,seconds,jobs,unfinished\nlever:a,12.5,3,0\nworkday:b,", encoding="utf-8"
     )
     assert read_shard_rows(p) == {"lever:a": ShardCost(12.5, 3, False)}
+
+
+def test_read_shard_rows_says_how_many_rows_it_skipped(tmp_path, caplog):
+    p = tmp_path / "board_cost.csv"
+    p.write_text(
+        "board,seconds,jobs,unfinished\nlever:a,x,3,0\nworkday:b,", encoding="utf-8"
+    )
+    with caplog.at_level("INFO", logger="headstart.board_cost"):
+        assert read_shard_rows(p) == {}
+    assert f"{p}: skipped 2 torn/malformed cost row(s)" in caplog.messages
 
 
 def test_read_shard_rows_reads_a_fragment_written_before_the_unfinished_column(
@@ -160,7 +174,7 @@ def test_an_errored_scrape_does_not_erase_the_last_known_job_count():
     rows = update(
         prev,
         {"workday:big": ShardCost(seconds=1200.0, jobs=0, errored=True)},
-        today="2026-09-07",
+        looked_at="2026-09-07",
     )
     assert rows["workday:big"].jobs == 4321  # the count survives
     assert (
@@ -177,7 +191,7 @@ def test_a_board_whose_only_measurement_failed_has_no_known_yield():
     rows = update(
         {},
         {"workday:new": ShardCost(seconds=1200.0, jobs=0, errored=True)},
-        today="2026-09-07",
+        looked_at="2026-09-07",
     )
     assert rows["workday:new"].jobs is None
 
@@ -191,7 +205,7 @@ def test_a_first_ever_budget_kill_also_leaves_the_yield_unknown():
     rows = update(
         {},
         {"workday:giant": ShardCost(seconds=3300.0, jobs=0, unfinished=True)},
-        today="2026-09-07",
+        looked_at="2026-09-07",
     )
     assert rows["workday:giant"].jobs is None
     assert rows["workday:giant"].seconds == 3300.0
@@ -258,3 +272,29 @@ def test_key_for_keeps_the_casing_its_scraper_builds():
     assert board_cost.key_for(board) == "workday:Acme/External"
     assert board_cost.key_for("workday:Acme/External") == "workday:Acme/External"
     assert board_cost.key_for(board) == board_priority.key_for(board)
+
+
+def test_a_malformed_row_names_its_ledger_and_line(tmp_path):
+    path = tmp_path / "board_cost.csv"
+    path.write_text(
+        "board,seconds,jobs,updated_at\nx:a,1.0,2,2026-09-01\nx:b,slow,2,2026-09-01\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match=r"board_cost\.csv:3: "):
+        load(path)
+
+
+def test_update_stamps_the_run_to_the_second_not_the_day():
+    """The Slice's Tail is ordered by this stamp (ADR-0229), and ~26 runs share a day.
+
+    A bare date cannot tell this morning's look from tonight's, so the tail would fall back to a
+    random draw among every Board looked at today — the long gaps the rotation exists to remove.
+    """
+    stamp = update({}, {"workday:acme": ShardCost(120.0, 300)})[
+        "workday:acme"
+    ].updated_at
+    parsed = datetime.fromisoformat(stamp)
+    assert "T" in stamp, f"{stamp!r} is a day, not a moment"
+    assert parsed.utcoffset() == timedelta(0), (
+        "stamped in UTC, so stamps sort as strings"
+    )

@@ -46,10 +46,10 @@ The run is a **download → mutate → upload cycle** over the dataset, parallel
 `HF_TOKEN` secret so the whole run is a green no-op until it is set:
 
 1. **`scrape-plan`** (1 job) — download the priority ledger (`data/state/*`), select this run's slice from
-   the committed liveness ledger ordered by board priority (tech-history boards first + a randomly-rotated
-   exploration tail, capped at `--max-boards` 20000 — 70% priority head / 30% exploration; ADR-0022), then **LPT-bin-pack the selected boards**
+   the committed liveness ledger ordered by board priority (tech-history boards first + a Tail
+   rotated oldest look first, capped at `--max-boards` 80000 — 70% priority head / 30% Tail; ADR-0022, ADR-0229), then **LPT-bin-pack the selected boards**
    into ≤15 cost-balanced shards (`ingest.scrape_plan`). Emits a per-shard board list + a matrix.
-2. **`scrape`** (matrix, ≤15 shards) — each shard runs `ingest.scrape_run --assignment` (`timeout 60m`)
+2. **`scrape`** (matrix, ≤15 shards) — each shard runs `ingest.scrape_run --assignment` (`timeout 75m`)
    over *only its boards*, streaming to a shard-scoped `data/jobs/shard-{k}/{ats}.jsonl` fragment. One
    runner per shard = one IP at the monolith's worker count, so per-host load is unchanged (ADR-0026).
    `fail-fast: false`; a timed-out shard banks its partial fragment.

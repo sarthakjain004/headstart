@@ -125,9 +125,10 @@ def grace_period_counts(
     reach the same branch here, because all three mean the Board is absent from ``scraped_boards``
     and this function cannot tell them apart:
 
-    - The id's Board was not in this run's slice at all. Only ~20,000 are — under a quarter of the
-      Scrapable Boards — so this dominates a healthy set and is entirely benign; the streak simply
-      did not advance.
+    - The id's Board was not in this run's slice at all: value-gated, quarantined, or unscored
+      and waiting its turn in the Tail. Since ADR-0229 seats every Scored Board in the
+      head, that is rarer for an indexed Job than it was, and it is entirely benign; the streak
+      simply did not advance.
     - The Board *was* scraped but came back Unauthoritative, so ``index sync`` subtracted it from
       the scope before calling this (ADR-0053). Measured at 63–126 Boards per run
       (``docs/pipeline/2026-09-01_twelve-run-log-review.md``), so it is not a rounding error — and
@@ -214,7 +215,7 @@ def plan_sync(
     for it.
 
     The unit is *scrapes of that Board*, not runs, and that distinction is the whole point: only
-    ~20,000 Boards, under a quarter of the Scrapable Boards, are in any run's slice, and
+    ~80,000 Boards, about half of the Scrapable Boards, are in any run's slice, and
     ``index sync`` already keeps
     Unauthoritative Boards out of ``scraped_boards`` (ADR-0053) — so a Board this run did not
     read is no evidence either way. Its ids keep their previous state rather than being counted
@@ -269,10 +270,9 @@ def plan_sync(
     if grace_on:
         # An id whose Board this run did not scrape keeps the state it had: no evidence arrived,
         # so its streak neither advances nor resets. Without this the set would be rebuilt from
-        # the slice alone and a Board's ids would silently reset every run it sat out — with
-        # ~20,000 Boards scraped per run — under a quarter of the Scrapable Boards — so most
-        # ids would never reach a second absence
-        # and the grace period would never evict anything.
+        # the slice alone and a Board's ids would silently reset every run it sat out, so a
+        # Board outside the slice — value-gated, quarantined, or waiting in the Tail —
+        # could never reach a second absence, and its ids could never be evicted.
         #
         # Carried forward only while the Board is *still live*, which bounds the set. A Board
         # that leaves the ledger is never scraped again, so its entries would otherwise persist
@@ -584,6 +584,7 @@ def aliased_boards(ledger_dir: str | Path) -> dict[str, str]:
     from headstart.scrapers.registry import company_from_row
 
     out: dict[str, str] = {}
+    unkeyed: list[str] = []
     for ledger in sorted(Path(ledger_dir).glob("*.csv")):
         signals = board_aliases.signals_for(ledger_dir, ledger.stem)
         if not signals:
@@ -595,7 +596,13 @@ def aliased_boards(ledger_dir: str | Path) -> dict[str, str]:
                 try:
                     out[lower_key(board_key(company))] = signal
                 except ValueError:
-                    continue
+                    unkeyed.append(f"{ledger.stem}:{company.slug}")
+    # Said, because each one's prune is then booked as off-Board rather than `alias:{signal}`.
+    if unkeyed:
+        _log.info(
+            f"{len(unkeyed)} buried Board(s) have no board_key, so their prune books as "
+            f"off-Board: {log.named_sample(unkeyed)}"
+        )
     return out
 
 
@@ -764,12 +771,18 @@ def scraped_boards(
     """
     path = Path(scraped)
     if path.is_dir() and any(path.glob("*.jsonl")):
-        return {resolve_board(job["id"], live) for job in iter_jobs(path)}
-    if recorded is not None:
-        from_join = read_scraped_boards(recorded)
-        if from_join is not None:
-            return from_join
-    return {resolve_board(job_id, live) for job_id in corpus_ids}
+        boards = {resolve_board(job["id"], live) for job in iter_jobs(path)}
+        source = f"the full scrape under {path}"
+    elif (
+        recorded is not None
+        and (from_join := read_scraped_boards(recorded)) is not None
+    ):
+        boards, source = from_join, f"scrape_join's record {recorded}"
+    else:
+        boards = {resolve_board(job_id, live) for job_id in corpus_ids}
+        source = "the corpus ids (no full scrape and no record)"
+    _log.info(f"eviction scope: {len(boards)} Boards from {source}")
+    return boards
 
 
 #: The ATSes whose native id is a requisition id every Board of one **Tenant** shares, so a

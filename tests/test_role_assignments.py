@@ -9,6 +9,7 @@ a corrupt snapshot that must degrade rather than sink the run.
 from __future__ import annotations
 
 import csv
+import logging
 
 import pytest
 
@@ -87,10 +88,15 @@ def test_an_unstamped_snapshot_is_not_treated_as_comparable(tmp_path):
     assert ra.load_previous(path, version=2) is None
 
 
-def test_a_corrupt_snapshot_degrades_instead_of_raising(tmp_path):
+def test_a_corrupt_snapshot_degrades_instead_of_raising(tmp_path, caplog):
     path = tmp_path / "role_assignments.parquet"
     path.write_bytes(b"not a parquet file")
-    assert ra.load_previous(path, version=2) is None
+    with caplog.at_level(logging.WARNING, logger="headstart.ingest.role_assignments"):
+        assert ra.load_previous(path, version=2) is None
+        assert ra.load_placements(path) is None
+    # Said, with its traceback: the caller cannot tell "unreadable" from a re-base on its own.
+    assert [r.exc_info is not None for r in caplog.records] == [True, True]
+    assert "unreadable" in caplog.records[0].getMessage()
 
 
 def test_missing_snapshot_is_not_an_error(tmp_path):

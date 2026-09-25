@@ -5,7 +5,7 @@ import logging
 import pytest
 from fake_fetcher import FakeFetcher, FakeResponse
 
-from headstart import company_name, fanout_stats, http
+from headstart import company_name, fanout_stats, http, log
 from headstart.models import Job
 from headstart.scrapers import base
 from headstart.scrapers.base import (
@@ -154,7 +154,7 @@ def _spy_concurrency(monkeypatch):
     """Replace _gather_async with a no-network spy; returns the dict the width lands in."""
     seen = {}
 
-    def spy(items, f, concurrency, default, item_done=None):
+    def spy(items, f, concurrency, default, item_done=None, what=None):
         seen["concurrency"] = concurrency
 
         async def _noop():
@@ -1118,3 +1118,128 @@ def test_run_detail_pass_labels_a_batch_that_raises_and_carries_on():
     assert sorted(details) == ["a1", "a2", "c1"]
     assert details.missing == 2
     assert sum(scraper.detail_losses.values()) == 2
+
+
+def _fresh_unexpected(monkeypatch):
+    """A fresh `_UNEXPECTED` bound: it is module-level, so another test may have spent it."""
+    monkeypatch.setattr(
+        base, "_UNEXPECTED", log.FirstOnly(logging.getLogger(base.__name__))
+    )
+
+
+def _raise_for(item):
+    if item == "bug":
+        raise KeyError("title")
+    if item == "refused":
+        raise http.RequestsError("503")
+    return item
+
+
+def test_fan_out_reports_a_bug_with_its_traceback_but_not_a_refused_request(
+    monkeypatch, caplog
+):
+    """A parse bug swallowed into `default` used to leave only an `unlabelled xN` count."""
+    _fresh_unexpected(monkeypatch)
+    caplog.set_level(logging.INFO, logger=base.__name__)
+    results = BaseScraper.fan_out(
+        ["ok", "bug", "refused", "bug"], _raise_for, workers=1, what="stub:acme"
+    )
+    assert results == ["ok", None, None, None]
+    assert [r.levelno for r in caplog.records] == [logging.WARNING, logging.INFO]
+    assert caplog.records[0].exc_info[0] is KeyError
+    assert "stub:acme: unexpected KeyError" in caplog.records[0].getMessage()
+    # The rest are one tally for the call, not one line per item.
+    assert caplog.records[1].getMessage() == (
+        "stub:acme: 2 unexpected exception(s) in fan-out items (KeyError x2)"
+    )
+
+
+def test_fan_out_says_a_systemic_bug_once_per_call_not_once_per_item(
+    monkeypatch, caplog
+):
+    _fresh_unexpected(monkeypatch)
+    caplog.set_level(logging.INFO, logger=base.__name__)
+    BaseScraper.fan_out(["bug"] * 50, _raise_for, workers=4, what="stub:acme")
+    BaseScraper.fan_out(["bug"] * 50, _raise_for, workers=4, what="stub:acme")
+    # Per call: its first item's report (WARNING only the first time ever) and one tally.
+    assert [r.levelno for r in caplog.records] == [
+        logging.WARNING,
+        logging.INFO,
+        logging.INFO,
+        logging.INFO,
+    ]
+
+
+def test_fan_out_async_reports_a_bug_under_the_board_key(monkeypatch, caplog):
+    _fresh_unexpected(monkeypatch)
+    caplog.set_level(logging.INFO, logger=base.__name__)
+
+    async def fn(_session, item):
+        return _raise_for(item)
+
+    results = _StubScraper("acme").fan_out_async(["ok", "bug", "refused"], fn)
+    assert results == ["ok", None, None]
+    assert len(caplog.records) == 1
+    assert caplog.records[0].levelno == logging.WARNING
+    assert "stub:acme: unexpected KeyError" in caplog.records[0].getMessage()
+
+
+def test_read_detail_reports_a_bug_but_not_an_unparseable_body(monkeypatch, caplog):
+    """Both stay labelled losses; only the one that is not a body's shape names its line."""
+    _fresh_unexpected(monkeypatch)
+    caplog.set_level(logging.INFO, logger=base.__name__)
+    scraper = _StubScraper("acme")
+    monkeypatch.setattr(
+        scraper,
+        "read_detail",
+        lambda item, response: json.loads(item) if item == "<html>" else {}[item],
+    )
+    ok = FakeResponse(status_code=200, text="")
+    assert scraper._read_detail_outcome("<html>", ok) is None
+    assert scraper._read_detail_outcome("title", ok) is None
+    assert scraper.detail_losses == {"JSONDecodeError": 1, "KeyError": 1}
+    assert len(caplog.records) == 1
+    assert caplog.records[0].exc_info[0] is KeyError
+    assert (
+        "stub:acme: unexpected KeyError reading a detail"
+        in caplog.records[0].getMessage()
+    )
+    # A second one of the same type on the Board is counted, not said again.
+    assert scraper._read_detail_outcome("title", ok) is None
+    assert scraper.detail_losses["KeyError"] == 2
+    assert len(caplog.records) == 1
+
+
+def test_a_detail_batch_that_raises_a_bug_is_reported_once_per_board(
+    monkeypatch, caplog
+):
+    """The batch catch-all labelled a bug as a loss and named neither file nor line."""
+    _fresh_unexpected(monkeypatch)
+    caplog.set_level(logging.INFO, logger=base.__name__)
+
+    def answer(ids):
+        raise KeyError("title")
+
+    scraper = _batch_scraper(answer)
+    scraper.run_detail_pass(
+        [{"id": i} for i in ("a1", "a2", "b1")],
+        key_of=lambda row: row.get("id"),
+        what="pages",
+    )
+
+    reports = [r for r in caplog.records if "in a detail batch" in r.getMessage()]
+    assert [r.levelno for r in reports] == [logging.WARNING]  # two batches, one report
+    assert reports[0].exc_info[0] is KeyError
+    assert scraper.detail_losses == {"KeyError": 3}
+
+
+def test_note_unread_rows_speaks_only_when_a_row_went_unread(caplog):
+    caplog.set_level(logging.INFO, logger="headstart.scrapers.stub")
+    scraper = _StubScraper("acme")
+    scraper.note_unread_rows(0, 5, "carried no id")
+    assert caplog.records == []
+    scraper.note_unread_rows(2, 5, "carried no id")
+    assert caplog.records[0].getMessage() == (
+        "stub:acme: 2 of 5 listed row(s) carried no id — "
+        "those postings are listed but unread"
+    )

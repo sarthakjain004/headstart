@@ -26,6 +26,7 @@ from urllib.parse import unquote, urlencode, urlsplit, urlunsplit
 from headstart import company_name, salary
 from headstart.models import Job, html_to_text, is_remote, requisition_of
 from headstart.scrapers.base import (
+    MIN_AUTHORITATIVE_SHARE,
     USER_AGENT,
     BaseScraper,
     DetailLost,
@@ -422,6 +423,13 @@ class TaleoEnterpriseScraper(BaseScraper):
             # page-count upper bound, not authoritative evidence of missing requisitions.
             self.telemetry["stated_total"] = total
             self.telemetry["unique_jobs"] = len(seen)
+            if len(seen) < total * MIN_AUTHORITATIVE_SHARE:
+                # Logged rather than truncated, as oracle does with its inflated counter: the
+                # total is only an upper bound (TTEC's complete walk lands here), but a gap this
+                # wide is worth watching.
+                self._log.info(
+                    f"{self.board_key()}: read {len(seen)} of a stated {total} requisitions"
+                )
         return listed
 
     def detail_request(self, item: dict[str, Any]) -> DetailRequest:
@@ -441,7 +449,15 @@ class TaleoEnterpriseScraper(BaseScraper):
 
     def fetch_raw(self) -> Any:
         shell = self._get()
-        self.company = _company(shell, self.slug) or self.company
+        name = _company(shell, self.slug)
+        if name:
+            self.company = name
+        else:
+            # The base resolver's line; this ATS names its Board from the shell instead.
+            self._log.info(
+                f"{self.board_key()}: no company name — the career-section shell answered "
+                "200 and stated none this ATS accepts"
+            )
         listed = self._listing(shell)
         # No tech gate: measured to lose tech postings here (ADR-0166, #510). No held-description
         # skip either: the detail page also supplies the fields `parse` prefers to the listing's.

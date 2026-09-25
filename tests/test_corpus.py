@@ -55,3 +55,9 @@ def test_duplicate_ids_are_counted_and_reported_per_file(tmp_path, caplog):
     logged = " ".join(r.getMessage() for r in caplog.records)
     assert "ats_a.jsonl dropped 1 duplicate id(s)" in logged
     assert "ats_b.jsonl" not in logged, "a file with no duplicates must stay quiet"
+
+
+def test_a_malformed_line_names_its_file_and_line(tmp_path):
+    (tmp_path / "x.jsonl").write_text('{"id": "x:a:1"}\n{"id": "x:a:2"\n', "utf-8")
+    with pytest.raises(ValueError, match=r"x\.jsonl:2: "):
+        list(iter_jobs(tmp_path))

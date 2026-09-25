@@ -108,6 +108,12 @@ class SupplierSearchScraper(BaseScraper):
                     f"({len(posts)} postings read so far)"
                 )
                 break
+            if envelope.get("data") is None and offset == 0:
+                # Code 0 with no `data` object is a shape this parser does not know; without
+                # this it reads exactly like a Board with nothing open.
+                self.note_unreadable_board(
+                    "a `data` object", f"code {code} with keys {sorted(envelope)[:5]}"
+                )
             data = envelope.get("data") or {}
             batch = data.get("job_post_list") or []
             total = data.get("count") or total
@@ -157,6 +163,7 @@ class SupplierSearchScraper(BaseScraper):
                     employment_type=_english_name(post.get("recruit_type")),
                 )
             )
+        self.note_unread_rows(len(raw) - len(jobs), len(raw), "with no id/title")
         return jobs
 
     def _salary_field(self, raw: Any) -> str | None:

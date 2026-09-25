@@ -11,6 +11,7 @@ once, and a first run with nothing to compare against.
 from __future__ import annotations
 
 import csv
+import logging
 
 from headstart.ingest import trends_epochs
 
@@ -112,6 +113,17 @@ def test_a_malformed_file_heals_by_rebuilding_rather_than_appending_beneath_it(
         list(trends_epochs._COLUMNS),
         ["t0", "1", "abc123", "1", "12", "1", "2"],
     ]
+
+
+def test_a_rebuild_warns_with_the_boundary_rows_it_discards(tmp_path, caplog):
+    """The rebuild erases every boundary the Space marks, so it must not happen silently."""
+    path = tmp_path / "trends_epochs.csv"
+    path.write_text("not,the,right,header\n1,2,3,4\n5,6,7,8\n", encoding="utf-8")
+    with caplog.at_level(logging.WARNING, logger="headstart.ingest.trends_epochs"):
+        trends_epochs.append_if_changed(path, "t0", **_stamp())
+    (record,) = caplog.records
+    assert record.levelno == logging.WARNING
+    assert "discarding 2 recorded boundary row(s)" in record.getMessage()
 
 
 # A file from before ``dedup_version`` (ADR-0188) is also from before the sixth column.

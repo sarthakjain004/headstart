@@ -46,16 +46,21 @@ import urllib.parse
 from datetime import UTC, datetime
 from typing import Any, NamedTuple
 
-from headstart import company_name, eightfold_backing, http, log
+from headstart import company_name, eightfold_backing, http
 from headstart.models import Job, html_to_text, is_remote, requisition_of
-from headstart.scrapers.base import USER_AGENT, BaseScraper, DetailLost, DetailRequest
+from headstart.scrapers.base import (
+    USER_AGENT,
+    BaseScraper,
+    DetailLost,
+    DetailRequest,
+    DetailWithoutDescription,
+)
 from headstart.scrapers.job_posting_jsonld import (
     find_job_posting,
+    has_unparseable_jsonld,
     job_location_text,
     job_posting_fields,
 )
-
-_log = log.get(__name__)
 
 _DETAIL_WORKERS = 6  # sync-path detail fetches; bounded since they hit one host
 # Async-path multiplexing width, below the shared default of 100 (ADR-0047). Eightfold's edge
@@ -219,7 +224,7 @@ class EightfoldScraper(BaseScraper):
         # arrived and did not carry what was wanted — and collapsing them onto "no group id on
         # the careers page" / "the PCSX API did not answer" sends an operator hunting a page
         # rewrite for what was a connection error.
-        _log.info(
+        self._log.info(
             f"{self.board_key()}: falling back to the sitemap — {self._fallback_reason}"
         )
         return self._sitemap_records()
@@ -285,10 +290,16 @@ class EightfoldScraper(BaseScraper):
             self._fallback_reason = f"the PCSX API returned {first.status_code}"
             return None
         try:
-            data = first.json().get("data") or {}
+            body = first.json()
+            data = body.get("data") or {}
         except ValueError:
             self._fallback_reason = "the PCSX API answered 200 with an unparseable body"
             return None
+        if "data" not in body:
+            # Read below as a Board with nothing open; say it was not read.
+            self.note_unreadable_board(
+                "a PCSX search envelope with data", f"keys {sorted(body)}"
+            )
         total = int(data.get("count") or 0)
         seen: dict[str, dict[str, Any]] = {}
         for pos in data.get("positions") or []:
@@ -331,7 +342,7 @@ class EightfoldScraper(BaseScraper):
                 # a fleet mostly converging on sweep 3 is one bad run away from falling short,
                 # while one mostly converging on sweep 2 has real headroom.
                 if sweep:
-                    _log.info(
+                    self._log.info(
                         f"{self.board_key()}: converged on sweep {sweep + 1} of {_MAX_SWEEPS} "
                         f"({pages} page(s), {len(seen)} of {total}) — the earlier sweep(s) missed "
                         f"{total - before} posting(s) a differently-ordered replica then dealt"
@@ -404,6 +415,12 @@ class EightfoldScraper(BaseScraper):
                 "the SmartApply API answered 200 with an unparseable body"
             )
             return None
+        if "count" not in data or "positions" not in data:
+            # As the PCSX guard in `_api_search`: a zero-result answer still states both
+            # (albemarle, 2026-09-25), so their absence is a moved envelope, not an empty Board.
+            self.note_unreadable_board(
+                "a SmartApply envelope with positions", f"keys {sorted(data)}"
+            )
         total = int(data.get("count") or 0)
         seen: dict[str, dict[str, Any]] = {}
         for pos in data.get("positions") or []:
@@ -504,8 +521,11 @@ class EightfoldScraper(BaseScraper):
         # it: what it requested, against what the gate let through.
         requested = self.telemetry["detail_jobs"]
         tech = len(positions) - self.telemetry.get("tech_gated_details", 0)
+        # Into the shard report's observations, and DEBUG rather than INFO: the skip fires on
+        # nearly every Board every run, so an INFO line was one per Board saying nothing new.
+        self.telemetry["detail_held"] = tech - requested
         if requested < tech:
-            _log.info(
+            self._log.debug(
                 f"{self.board_key()}: fetched {requested}/{tech} descriptions "
                 f"({tech - requested} already held)"
             )
@@ -555,20 +575,24 @@ class EightfoldScraper(BaseScraper):
 
         This ATS's edge answers a spent per-origin budget with 403/405/429 (ADR-0063) and its API
         can answer 200 with a body that will not parse; the label on each loss is what tells the
-        two apart. A ``position_details`` answer with no description is ``""``, not a loss — see
-        :func:`_description_of` on why an empty description means only that the request
-        completed. On the sitemap fallback the page *is* the Job, and that fallback is taken
+        two apart. A ``position_details`` answer with no description is kept as ``""`` but counted
+        as a gap on the line — see :func:`_description_of` on why it says nothing about whether the
+        posting has one, only that this answer did not carry it. On the sitemap fallback the page *is* the Job, and that fallback is taken
         exactly when the API is refusing us — the run where "was it refused or was it
         unreadable?" is the whole question.
         """
         if isinstance(item, str):
             fields = _jobposting(response.text)
             if fields is None:
+                if has_unparseable_jsonld(response.text):
+                    raise DetailLost("unparseable JSON-LD on a 200")
                 raise DetailLost("no JobPosting JSON-LD on a 200")
             return fields
         description = _description_of(response)
         if description is None:
             raise DetailLost("unparseable body on a 200")
+        if not description:
+            return DetailWithoutDescription("", "no jobDescription on a 200")
         return description
 
     # --- fallback 2: sitemap -> per-job JSON-LD -----------------------------------------------
@@ -641,17 +665,28 @@ class EightfoldScraper(BaseScraper):
                     f"HTTP {cr.status_code} on child sitemap {child} — "
                     "its postings were not listed"
                 )
+        if not found:
+            # The last-resort surface answered 200 and still listed nothing: say what it held,
+            # so an emptied Board and a sitemap whose shape moved can be told apart.
+            self.note_unreadable_board(
+                "job URLs in the sitemap",
+                f"{r.text.count('<loc>')} <loc>s, {len(children)} child sitemaps, "
+                f"{len(r.text)} bytes",
+            )
         return _dedupe(found)
 
     # --- shared parse -------------------------------------------------------------------------
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
         jobs: list[Job] = []
+        untitled = 0
         for item in raw:
             fields = item.get("fields") or {}
             title = (fields.get("title") or "").strip()
             position_id = item.get("id")
             if not title or not position_id:
+                # A detail that never arrived is already in the gap line; count only the rest.
+                untitled += bool(item.get("fields"))
                 continue  # unreadable / no id — nothing to key the job by
             location = fields.get("location")
             remote = fields.get("remote")
@@ -674,6 +709,7 @@ class EightfoldScraper(BaseScraper):
                     requisition=fields.get("requisition"),
                 )
             )
+        self.note_unread_rows(untitled, len(raw), "had a posting with no title or id")
         return jobs
 
     def _salary_field(self, raw: Any) -> str | None:

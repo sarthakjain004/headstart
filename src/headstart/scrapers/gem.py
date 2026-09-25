@@ -262,6 +262,13 @@ class GemScraper(BaseScraper):
         self, batch: list[str], results: list[Any]
     ) -> dict[str, dict[str, Any]]:
         out: dict[str, dict[str, Any]] = {}
+        short = "short batch answer"
+        if not isinstance(results, list):
+            # A GraphQL `{"errors": ...}` envelope instead of one answer per request.
+            results, short = [], "GraphQL errors envelope"
+        # Ids the answer ran out before are labelled here, not left `unlabelled` in the gap line.
+        for _ in batch[len(results) :]:
+            self.note_detail_loss(short)
         for native_id, result in zip(batch, results, strict=False):
             detail = ((result or {}).get("data") or {}).get("oatsExternalJobPosting")
             if detail:
@@ -333,7 +340,11 @@ class GemScraper(BaseScraper):
                 )
             else:
                 batch_results = self.fan_out(
-                    batches, self._detail_batch, workers=self.detail_workers, default={}
+                    batches,
+                    self._detail_batch,
+                    workers=self.detail_workers,
+                    default={},
+                    what=self.board_key(),
                 )
             for d in batch_results:
                 details.update(d or {})
@@ -347,9 +358,11 @@ class GemScraper(BaseScraper):
         listed = raw.get("jobs") or []
         details = raw.get("details") or {}
         jobs: list[Job] = []
+        unkeyed = 0
         for row in listed:
             native_id = str(row.get("extId") or "")
             if not native_id:
+                unkeyed += 1
                 continue
             detail = details.get(native_id) or {}
             job_obj = row.get("job") or {}
@@ -382,6 +395,7 @@ class GemScraper(BaseScraper):
                     salary=self._salary_field(detail),
                 )
             )
+        self.note_unread_rows(unkeyed, len(listed), "carried no extId")
         return jobs
 
     def _salary_field(self, raw: Any) -> str | None:

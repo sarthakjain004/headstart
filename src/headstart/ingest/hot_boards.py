@@ -204,6 +204,7 @@ def read_window_sum(
     touched: set[str] | frozenset[str] = frozenset(),
     metric: str = "stock",
     arrivals: dict[str, str] | None = None,
+    tally: dict[str, int] | None = None,
 ) -> tuple[collections.Counter, list[str]]:
     """Per-Board sum of one delta-ledger ``metric`` over the trailing window, and the tick stamps
     it covers. Under ``stock`` that is the net change. Under a turnover metric (``opened``,
@@ -242,6 +243,9 @@ def read_window_sum(
     cost is one ordinary run of real change per counting change. A duplicate-removal change
     (``dedup``, from :func:`dedup_changes`) is left out, with its run after, only for the Boards
     it can move (``touched``) — the runs the Trends chart leaves out of the line a row opens.
+
+    ``tally``, when given, is filled with how many ticks were read and why each dropped one was
+    dropped, so a caller left with no stamps can say which rule emptied the window.
     """
     import pyarrow.parquet as pq
 
@@ -280,15 +284,26 @@ def read_window_sum(
     # A duplicate-removal change, with its run after, only for the Boards it can move
     # (``touched``, from :func:`dedup_touches`).
     left_out_touched = runs_of(dedup)
+    read = len(ticks)
+    n_baselines = sum(ts in baselines for _, ts, _ in ticks)
     ticks = [
         (path, ts)
         for path, ts, version in ticks
         if ts not in baselines and version_spans.version_at(span_list, ts) == version
     ]
+    if tally is not None:
+        tally.update(
+            ticks=read,
+            baselines=n_baselines,
+            stray=read - n_baselines - len(ticks),
+            left_out=0,
+        )
     if not ticks:
         return collections.Counter(), []
     newest = max(ts for _, ts in ticks)
     cutoff = (datetime.fromisoformat(newest) - timedelta(days=WINDOW_DAYS)).isoformat()
+    if tally is not None:
+        tally["left_out"] = sum(ts >= cutoff and ts in left_out for _, ts in ticks)
 
     moved: collections.Counter = collections.Counter()
     stamps: list[str] = []
@@ -493,6 +508,11 @@ def main() -> int:
     # The runs and Board ticks every lens leaves out, whichever metric it sums: a counting
     # change and the run after it, a duplicate-removal change on the Boards it can move, and each
     # Board's own arrival.
+    if not args.epochs.exists():
+        # Said here, once, rather than in each of the two readers below that fall back to none.
+        _log.info(
+            f"epochs file {args.epochs} missing — counting and dedup changes not excluded"
+        )
     window_rules = {
         "changes": counting_changes(args.epochs),
         "dedup": dedup_changes(args.epochs),
@@ -501,7 +521,8 @@ def main() -> int:
         "touched": dedup_touches(set(stock) | set(arrivals)),
         "arrivals": arrivals,
     }
-    moved, stamps = read_window_sum(args.board_deltas, **window_rules)
+    tally: dict[str, int] = {}
+    moved, stamps = read_window_sum(args.board_deltas, **window_rules, tally=tally)
     # The window's turnover (ADR-0227), over the same runs the net change sums, so a row's three
     # figures describe one stretch of time.
     opened, turnover_stamps = read_window_sum(
@@ -511,10 +532,19 @@ def main() -> int:
         args.board_deltas, **window_rules, metric=job_turnover.CLOSED
     )
     if not stamps:
-        # One delta file exists and it is the baseline. There is no measured change yet, and a
-        # lens built on the baseline would rank every Board as newly created.
+        # No measured change is left to rank: only baselines exist yet, or every in-window tick
+        # was left out. A lens built on a baseline would rank every Board as newly created. The
+        # output is not touched, so the previous list stays served — which the line says.
+        previous = "none"
+        if args.out.exists():
+            previous = json.loads(args.out.read_text(encoding="utf-8")).get(
+                "generated_at", "undated"
+            )
         _log.warning(
-            "only the baseline delta tick exists — no measured window, no hot list"
+            f"no measured change in the window: {tally.get('ticks', 0)} tick(s) in "
+            f"{args.board_deltas}, {tally.get('baselines', 0)} span baseline(s), "
+            f"{tally.get('stray', 0)} of a stray version, {tally.get('left_out', 0)} left out as "
+            f"counting changes — the previous hot list ({previous}) stays served"
         )
         return 0
     lenses, counts = rank(
@@ -550,8 +580,24 @@ def main() -> int:
         f"{counts['services']} services and {counts['aggregator']} aggregators labelled "
         f"across the window {payload['window']['from']} -> {payload['window']['to']}"
     )
+    _log.info(
+        f"hot list: {counts['unnamed']} unnamed and {counts['below_min_stock']} below "
+        f"{counts['min_stock']} open roles excluded | lenses: "
+        + ", ".join(f"{lens} {len(rows)}" for lens, rows in lenses.items())
+        + f" | {len(window_rules['changes'])} counting-change tick(s) left out"
+    )
     return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    # The step is `continue-on-error`, so an unguarded exception would end in a green run with
+    # no annotation at all; one ERROR names it and says what is stale. SystemExit and
+    # KeyboardInterrupt are not `Exception`, so they pass through untouched.
+    try:
+        raise SystemExit(main())
+    except Exception:  # noqa: BLE001 - the one catch-all per entry point, logged and re-exited
+        _log.error(
+            "hot_boards failed — the previous hot list stays served this run",
+            exc_info=True,
+        )
+        raise SystemExit(1) from None

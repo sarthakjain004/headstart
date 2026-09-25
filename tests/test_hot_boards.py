@@ -134,8 +134,10 @@ def test_only_a_baseline_means_no_measured_window(tmp_path: Path) -> None:
         _deltas("2026-09-13T12:00:00+00:00", [("greenhouse:acme", "stock", "se", 500)]),
         deltas / "2026-09-13T12-00-00+00-00.parquet",
     )
-    moved, stamps = hot_boards.read_window_sum(deltas)
+    tally: dict[str, int] = {}
+    moved, stamps = hot_boards.read_window_sum(deltas, tally=tally)
     assert not stamps and not moved
+    assert tally == {"ticks": 1, "baselines": 1, "stray": 0, "left_out": 0}
 
 
 def _rank(

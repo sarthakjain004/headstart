@@ -62,6 +62,7 @@ from headstart.scrapers.base import (
     BaseScraper,
     DetailLost,
     DetailRequest,
+    DetailWithoutDescription,
 )
 
 _DETAIL_WORKERS = 8
@@ -140,6 +141,10 @@ class SmartRecruitersScraper(BaseScraper):
         # both). The detail pass multiplexes over one HTTP/2 connection by default (ADR-0016); a
         # failed fetch leaves ``_detail`` empty.
         data = json.loads(self._get())
+        if "content" not in data:
+            # Even an unknown slug answers `"content": []` (measured 2026-09-25), so a payload
+            # without the key is one this parser did not recognise, not an empty Board.
+            self.note_unreadable_board("a `content` list", f"keys {sorted(data)[:5]}")
         batch = data.get("content") or []
         postings = list(batch)
         page = 1
@@ -198,7 +203,9 @@ class SmartRecruitersScraper(BaseScraper):
             headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
         )
 
-    def read_detail(self, posting: dict[str, Any], response: Any) -> dict[str, Any]:
+    def read_detail(
+        self, posting: dict[str, Any], response: Any
+    ) -> dict[str, Any] | DetailWithoutDescription:
         """The posting-detail fields ``parse()`` needs: the jobAd sections concatenated into raw
         HTML, and the native ``compensation`` block (min/max/currency/period — populated on
         10.48% of postings, unread until this pass; see
@@ -215,10 +222,14 @@ class SmartRecruitersScraper(BaseScraper):
             (sections.get(k) or {}).get("text")
             for k in ("jobDescription", "qualifications", "additionalInformation")
         ]
-        return {
+        fields = {
             "description": "\n".join(p for p in parts if p) or None,
             "compensation": payload.get("compensation") or None,
         }
+        if not fields["description"]:
+            # Kept for the compensation block; a gap for the description.
+            return DetailWithoutDescription(fields, "200 without jobAd sections")
+        return fields
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
         jobs: list[Job] = []

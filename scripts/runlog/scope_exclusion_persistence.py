@@ -9,10 +9,11 @@ postings are served indefinitely. One run against one run is an anecdote — the
 prompted this file moved in opposite directions (1,276 rows then 813) while the individual Boards
 underneath barely moved at all.
 
-**Persistence is the number that matters, not the run total.** Each run scrapes only ~20,000 of
-the Scrapable Boards, so the total swings with whichever Boards happened to be in the slice. A
-Board's *streak* — how many runs in this window excluded it — survives that, and a streak equal
-to the window is the failure mode ADR-0053's Consequences section predicted and left unbounded.
+**Persistence is the number that matters, not the run total.** Each run scrapes only part of the
+Scrapable Boards (~20,000 until ADR-0229, ~80,000 since), so the total swings with whichever Boards
+happened to be in the slice. A Board's *streak* — how many runs in this window excluded it —
+survives that, and a streak equal to the window is the failure mode ADR-0053's Consequences section
+predicted and left unbounded.
 
 **Read the denominator carefully: it is runs, not scrapes of that Board.** CLAUDE.md is explicit
 that the unit for a Board-level claim is a *scrape of that Board*, and this harness cannot supply

@@ -152,6 +152,11 @@ class FreshteamScraper(BaseScraper):
                 "the widget's jobs.json object", f"a bare {type(data).__name__}"
             )
             return {}
+        if "jobs" not in data:
+            # An empty Board still answers `{"jobs": []}` (2 of 2 at jobs=0, 2026-09-25).
+            self.note_unreadable_board(
+                "a jobs list in the widget's jobs.json", f"keys {sorted(data)}"
+            )
         return data
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:

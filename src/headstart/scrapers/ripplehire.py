@@ -111,6 +111,9 @@ class RippleHireScraper(BaseScraper):
         response.raise_for_status()
         m = CAREERS_TOKEN.search(response.url)
         if not m:
+            self.note_unreadable_board(
+                "a redirect to /candidate/?token=", f"landed on {response.url[:60]}"
+            )
             return []
         token = m.group(1)
         api = self.search_url()
@@ -133,13 +136,35 @@ class RippleHireScraper(BaseScraper):
                 }
             )
             body = urllib.parse.urlencode({"careerSiteUrlParams": params, "lang": "en"})
-            data = self._fetch(
+            response = self._fetch(
                 "POST",
                 api,
                 data=body,
                 headers=headers,
                 timeout=30,
-            ).json()
+            )
+            try:
+                data = response.json()
+            except ValueError:
+                # A non-JSON body (a 5xx/403 HTML page) already fails the Board; raise it as
+                # the HTTP error it is so the log names the status, not a JSONDecodeError. A
+                # JSON error body still reaches the `jobVoList` lines below, as before.
+                response.raise_for_status()
+                raise
+            if page == 0:
+                # Kept from the first page: a page that ends the walk may be an error body with
+                # no `totalJobCount`, and testing the shortfall against it reads `< 0`.
+                total = data.get("totalJobCount", 0)
+                if "jobVoList" not in data:
+                    self.note_unreadable_board(
+                        "a `jobVoList`",
+                        f"HTTP {response.status_code}, keys {sorted(data)[:5]}",
+                    )
+            elif "jobVoList" not in data:
+                self._log.info(
+                    f"{self.board_key()}: page {page} answered {response.status_code} "
+                    f"with no jobVoList — read {len(jobs)} of {total}"
+                )
             batch = data.get("jobVoList") or []
             jobs.extend(batch)
             page += 1
@@ -150,6 +175,14 @@ class RippleHireScraper(BaseScraper):
             # would show ~100, not 7,716. Left unguarded for the same reason as sensehq: no live
             # evidence of the failure mode to fix against.
             if len(batch) < _PAGE_SIZE or len(jobs) >= data.get("totalJobCount", 0):
+                if len(jobs) < total and "jobVoList" in data:
+                    # A short page ended the walk below the stated total. A line, not
+                    # `mark_truncated`: whether that shortfall costs eviction scope is not
+                    # a logging decision.
+                    self._log.info(
+                        f"{self.board_key()}: read {len(jobs)} of "
+                        f"{total} listed — a short page ended the walk"
+                    )
                 break
         else:
             # Reached only by exhausting the cap — every natural end breaks above. Whatever

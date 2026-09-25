@@ -15,6 +15,7 @@ The robots.txt bodies below are the real ones, verbatim. Every assertion pins so
 from __future__ import annotations
 
 import json
+import logging
 import re
 from itertools import pairwise
 from pathlib import Path
@@ -443,6 +444,16 @@ def test_an_empty_page_ends_the_walk_and_a_shortfall_is_measured(clock):
     assert len(small.fetch()) == 199 and small.truncated is None
     large, _ = _scraper(_routes(_paged(_synthetic(150), total=300)), clock)
     assert len(large.fetch()) == 150 and large.truncated
+
+
+def test_a_moved_envelope_is_said_to_be_unread_not_empty(clock, caplog):
+    """An empty Board still states `jobs` and `totalCount` (3 of 3 live, 2026-09-25)."""
+    caplog.set_level(logging.INFO, logger="headstart.scrapers.jibe")
+    empty, _ = _scraper(_routes(_paged([])), clock)
+    assert empty.fetch() == [] and "read no jobs" not in caplog.text
+    moved, _ = _scraper(_routes(lambda q: (200, {"results": []})), clock)
+    assert moved.fetch() == []
+    assert "read no jobs — expected an /api/jobs envelope" in caplog.text
 
 
 def test_a_repeated_page_under_the_window_size_is_the_window(clock):

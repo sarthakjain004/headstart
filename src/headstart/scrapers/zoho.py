@@ -244,6 +244,15 @@ class ZohoScraper(BaseScraper):
         # independent of any extraction bug. User decision 2026-08-24: pay the bandwidth cost
         # (detail pages are ~1.7MB each) for full Salary coverage rather than leave the gap.
         page = self._get()
+        if not JOBS_INPUT.search(page):
+            # `_records` reads this as an empty Board. The same throttle shell the detail pages
+            # can serve (`_detail_record_of`) is worth naming apart from an unrecognised page.
+            self.note_unreadable_board(
+                'the id="jobs" <input>',
+                "the throttle shell"
+                if _THROTTLE_SHELL in page
+                else f"{len(page)} bytes without it",
+            )
         ids = [
             r["id"]
             for r in self._records(page)
@@ -256,6 +265,13 @@ class ZohoScraper(BaseScraper):
         details = self.run_detail_pass(
             ids, key_of=lambda job_id: job_id, what="detail pages"
         )
+        if self._unavailable_ids:
+            # The gap line counts these as lost details; this says they are closures, the way
+            # successfactors reports its own. Accounting is unchanged.
+            _log.info(
+                f"{self.board_key()}: {len(self._unavailable_ids)} of {len(ids)} job pages "
+                "say the posting is not available — dropped as closed"
+            )
         return {
             "page": page,
             "details": details,
@@ -345,7 +361,8 @@ class ZohoScraper(BaseScraper):
             # has no drain.
             _log.info(
                 f"{self.board_key()}: {len(records)} records, at or over the ~{_EMBED_CEILING} "
-                "widget ceiling — anything past it is unread, not absent"
+                "widget ceiling — the Board stays authoritative, so sync reads anything past "
+                "it as absent"
             )
 
         company = self._board_company(page)

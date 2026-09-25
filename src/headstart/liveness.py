@@ -83,17 +83,22 @@ def load(path: str | Path) -> dict[str, Verdict]:
         return out
     rows = 0
     with path.open(encoding="utf-8") as f:
-        for r in csv.DictReader(f):
+        reader = csv.DictReader(f)
+        for r in reader:
             rows += 1
             jobs = (r.get("jobs") or "").strip()
-            out[r["tenant"]] = Verdict(
-                ats=r["ats"],
-                tenant=r["tenant"],
-                url=r.get("url", ""),
-                status=r.get("status") or UNKNOWN,
-                jobs=int(jobs) if jobs else None,
-                checked_at=r.get("checked_at", ""),
-            )
+            try:
+                out[r["tenant"]] = Verdict(
+                    ats=r["ats"],
+                    tenant=r["tenant"],
+                    url=r.get("url", ""),
+                    status=r.get("status") or UNKNOWN,
+                    jobs=int(jobs) if jobs else None,
+                    checked_at=r.get("checked_at", ""),
+                )
+            except (KeyError, ValueError) as exc:
+                # A bare `invalid literal for int()` names neither ledger nor row.
+                raise ValueError(f"{path}:{reader.line_num}: {exc!r}") from exc
     if rows > len(out):
         _log.info(
             f"{path.name}: {rows - len(out)} duplicate tenant row(s) collapsed "

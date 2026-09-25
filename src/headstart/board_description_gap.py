@@ -57,8 +57,13 @@ def load(path: str | Path) -> dict[str, int]:
         return {}
     rows: Counter[str] = Counter()
     with path.open(newline="", encoding="utf-8") as fh:
-        for row in csv.DictReader(fh):
-            rows[key_for(row["board"])] += int(row["unsettled"])
+        reader = csv.DictReader(fh)
+        for row in reader:
+            try:
+                rows[key_for(row["board"])] += int(row["unsettled"])
+            except (KeyError, TypeError, ValueError) as exc:
+                # A bare parse error names neither the ledger nor the row that broke it.
+                raise ValueError(f"{path}:{reader.line_num}: {exc!r}") from exc
     return dict(rows)
 
 

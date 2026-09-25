@@ -180,6 +180,8 @@ def main() -> int:
 
     prior, degraded = _prior_rows(Path(args.prior_meta))
     scores = load_scores(Path(args.priority))
+    # An empty ledger is not an error — ordering just degrades to corpus order — so say it here.
+    _log.info(f"priority: {len(scores)} Board scores from {args.priority}")
     _log.info(
         f"prior store: {len(prior)} embedded ids ({len(degraded)} without a description)"
     )

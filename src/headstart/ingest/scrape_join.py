@@ -104,7 +104,7 @@ def write_unauthoritative_boards(
     if unresolved:
         _log.warning(
             f"{len(unresolved)} unauthoritative Board(s) could not be resolved to a board_key and "
-            f"are NOT protected from eviction this run: {sorted(unresolved)[:10]}"
+            f"are NOT protected from eviction this run: {log.named_sample(sorted(unresolved))}"
         )
     _log.info(f"recorded {len(unauthoritative)} unauthoritative Board(s) -> {path}")
     return unauthoritative
@@ -210,10 +210,16 @@ def main() -> int:
         with (out / ats_file).open("w", encoding="utf-8") as dst:
             for src in sources:
                 with src.open(encoding="utf-8") as s:
-                    for line in s:
+                    for lineno, line in enumerate(s, 1):
                         if line.strip():
                             dst.write(line if line.endswith("\n") else line + "\n")
-                            boards.add(resolve_board(json.loads(line)["id"], live))
+                            try:
+                                job_id = json.loads(line)["id"]
+                            except (json.JSONDecodeError, KeyError, TypeError) as exc:
+                                # Still fatal — a torn fragment must not join — but named, so
+                                # the abort says which shard's file and line to open.
+                                log.fail(_log, f"{src} line {lineno}: {exc!r}")
+                            boards.add(resolve_board(job_id, live))
                             n += 1
         total += n
         _log.info(f"{ats_file}: {n} lines from {len(sources)} shard(s)")
@@ -225,11 +231,21 @@ def main() -> int:
     # through `board_key_of`, it is the prefix the Board's own ids carry. A truncated Board is in
     # `boards_ok` too, and `index sync` drops it again as unauthoritative (ADR-0053).
     # A Board that answered 404 raised, so it is in `errors`, not `boards_ok`, and stays out.
+    unresolved: list[str] = []
     for report in reports:
         for key in report.boards_ok:
             board = board_key_of(key)
-            if board is not None:
+            if board is None:
+                unresolved.append(key)
+            else:
                 boards.add(board)
+    if unresolved:
+        # Named: these Boards stay out of the eviction scope, so their closed postings are
+        # served until the key resolves — a count alone gives nothing to go and fix.
+        _log.info(
+            f"{len(unresolved)} boards_ok key(s) did not resolve to a board_key and were not "
+            f"added to the scraped-Board scope: {log.named_sample(sorted(unresolved))}"
+        )
     # Before the telemetry below, like the unauthoritative-Board write: this is the eviction
     # signal, and an empty file is the honest record of a run that joined nothing.
     write_scraped_boards(boards, Path(args.scraped_boards))
@@ -265,12 +281,22 @@ def _update_speedup(reports: list[ShardReport], path: Path) -> None:
         stored = shard_speedup.load(path)
         blended = shard_speedup.blend(stored.ratio, ratios)
         shard_speedup.save(path, blended, len(ratios))
-        _log.info(
-            f"fan-out speedup: {blended:.2f}x "
-            f"(was {stored.ratio:.2f}x, {len(ratios)} shard(s) this run)"
-        )
+        # `blend` drops ratios under MIN_RATIO; count what it kept, or an all-dropped run
+        # reads as a real update
+        usable = sum(r >= shard_speedup.MIN_RATIO for r in ratios)
+        if not usable:
+            _log.info(
+                f"fan-out speedup: unchanged at {stored.ratio:.2f}x — all {len(ratios)} "
+                f"shard ratio(s) this run fell below {shard_speedup.MIN_RATIO}x and were dropped"
+            )
+        else:
+            _log.info(
+                f"fan-out speedup: {blended:.2f}x (was {stored.ratio:.2f}x, {usable} usable "
+                f"shard(s) this run, {len(ratios) - usable} below "
+                f"{shard_speedup.MIN_RATIO}x dropped)"
+            )
     except Exception as exc:  # noqa: BLE001 - telemetry must never sink the join
-        _log.warning(f"could not update the speedup ledger: {exc}")
+        _log.warning(f"could not update the speedup ledger: {exc}", exc_info=True)
 
 
 def _report_shards(
@@ -287,11 +313,31 @@ def _report_shards(
     can be added up; ``main`` reads them once and hands them to both consumers.
     """
     if not reports:
+        if health is not None and health.expected_report_count:
+            # The worst outcome this stage can have, and it used to leave only the INFO below:
+            # no `boards_ok`, no unauthoritative Boards, and no verdict line on the run page.
+            _log.warning(
+                f"no shard reports arrived (0/{health.expected_report_count}) — fresh coverage "
+                "unavailable; "
+                + (
+                    "no job lines either, so the eviction scope is empty and sync evicts nothing"
+                    if not lines
+                    else f"{lines} job lines joined, but no Board is marked unauthoritative, so "
+                    "sync will evict against any truncated Board's partial list"
+                )
+            )
         _log.info(
             "no shard reports — nothing to aggregate (older shards, or a local run)"
         )
         return
     health = health or observability.ScrapeHealth.from_reports(reports)
+    if health.report_count < health.expected_report_count:
+        # The verdict line counts the shortfall; this names it. Shards are `shard-{k}`, k from 0.
+        arrived = {r.shard for r in reports}
+        missing = [
+            str(k) for k in range(health.expected_report_count) if str(k) not in arrived
+        ]
+        _log.info(f"missing shard reports: {log.named_sample(missing)}")
 
     killed = [r for r in reports if r.killed_by_budget]
     deferred = sum(r.undone for r in reports)
@@ -328,16 +374,16 @@ def _report_shards(
     if killed:
         # An annotation, not an info line: a shard that ran out of time silently deferred work,
         # and that is the single fact most worth seeing on the run page.
-        _log.warning(
-            f"{len(killed)} shard(s) hit the time budget, deferring {deferred} boards: "
-            + ", ".join(str(r.shard or "?") for r in killed)
-        )
         # Which Boards, across the whole fan-out. The shard names its own, but the run page is
         # where a Board that keeps being deferred becomes visible as a pattern rather than as
         # one shard's bad luck — and a name is what turns "a shard was killed" into a fix.
+        # Folded into the one annotation rather than a second: this step's budget is ten.
         lost = [b for r in killed for b in r.deferred]
-        if lost:
-            _log.warning("deferred boards: " + log.named_sample(lost))
+        _log.warning(
+            f"{len(killed)} shard(s) hit the time budget, deferring {deferred} boards: "
+            + ", ".join(str(r.shard or "?") for r in killed)
+            + (f"; deferred boards: {log.named_sample(lost)}" if lost else "")
+        )
     if errors:
         # Classified and with a denominator, not a bare count. "N board errors across 15 shards"
         # cannot say whether the run met throttling, dead hosts, or a parse bug, nor on which
@@ -370,8 +416,10 @@ def _report_shards(
     )
     if distinct_ips:
         _log.info(
-            f"egress: {len(distinct_ips)} distinct address(es) across {len(reports)} shards"
-            f" ({', '.join(distinct_ips)}), colos {', '.join(distinct_colos) or '?'}"
+            # Sampled: the full set ran to ~1,100 addresses, ~15 KB on one line every run.
+            f"egress: {len(distinct_ips)} distinct address(es) across {len(reports)} shards, "
+            f"colos {log.named_sample(distinct_colos) or '?'}; "
+            f"e.g. {log.named_sample(distinct_ips)}"
         )
     observability.summary(
         "Scrape fan-out",

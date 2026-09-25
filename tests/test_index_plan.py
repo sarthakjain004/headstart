@@ -6,6 +6,8 @@ case-variant dedup, and the board_key mapping the keep-set is built in.
 
 from __future__ import annotations
 
+import logging
+
 import pytest
 
 from headstart.ingest.index_plan import (
@@ -477,7 +479,7 @@ def test_reappearing_clears_the_streak():
 
 
 def test_an_unscraped_board_is_no_evidence_and_carries_its_ids_forward():
-    """Only ~20k Boards — under a quarter of the Scrapable Boards — are in a run's slice, and an
+    """Only ~80k Boards — about half of the Scrapable Boards — are in a run's slice, and an
     Unauthoritative Board is kept out of `scraped_boards` too (ADR-0053). Neither is evidence:
     the ids must keep their state, or a Board sitting out a run would silently reset and never
     reach a second absence."""
@@ -782,6 +784,16 @@ def test_a_corrupt_recorded_scope_falls_back_instead_of_scoping_on_garbage(tmp_p
 
     recorded.write_text("{not json", encoding="utf-8")
     assert scraped_boards(recorded, tmp_path / "jobs", {"ats:a:1"}, {}) == {"ats:a"}
+
+
+def test_the_eviction_scope_names_the_source_it_came_from(tmp_path, caplog):
+    """Three sources answer one question, and a fallback reads exactly like the real thing
+    unless the log says which one answered."""
+    with caplog.at_level(logging.INFO, logger="headstart.ingest.index_plan"):
+        scraped_boards(None, tmp_path / "absent", {"ats:a:1"}, {})
+    assert caplog.messages == [
+        "eviction scope: 1 Boards from the corpus ids (no full scrape and no record)"
+    ]
 
 
 def test_no_recorded_scope_and_no_records_keeps_the_corpus_id_fallback(tmp_path):

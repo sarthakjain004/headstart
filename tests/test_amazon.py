@@ -15,8 +15,10 @@ board with zero measured overlap — is in `docs/amazon/2026-09-11_api-measureme
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 
+from headstart import http
 from headstart.scrapers.amazon import (
     AmazonScraper,
     _full_description,
@@ -344,3 +346,40 @@ def test_a_materially_short_walk_is_marked_truncated(monkeypatch):
     monkeypatch.setattr(scraper, "async_fanout_enabled", lambda: False)
     scraper.fetch_raw()
     assert scraper.truncated and "1 of 300" in scraper.truncated
+
+
+def test_an_empty_business_category_facet_is_named_as_unread(monkeypatch, caplog):
+    """No facet means no tasks and no stated total, so nothing else would flag the empty walk."""
+    caplog.set_level(logging.INFO, logger="headstart.scrapers.amazon")
+    scraper = _scraper()
+    monkeypatch.setattr(
+        scraper, "_get", lambda url=None: json.dumps({"facets": {"other_facet": []}})
+    )
+    assert scraper._categories() == {}
+    assert "read no jobs — expected a business_category facet" in caplog.text
+    assert "other_facet" in caplog.text
+
+
+def test_lost_listing_pages_are_tallied_into_the_truncation_reason(monkeypatch):
+    """ "read 9181 of 22577" alone could not say whether pages were walled or refused."""
+    scraper = _scraper()
+    monkeypatch.setattr(scraper, "_categories", lambda: {"a": 400})
+    bodies = {
+        0: json.dumps({"jobs": [{"id_icims": "1", "title": "X"}]}),
+        100: "<html><title>Server Busy</title></html>",
+        200: json.dumps({"error": "Cannot return more than 10000 results at once"}),
+    }
+
+    def get(url=None):
+        offset = int(url.split("offset=")[1].split("&")[0])
+        if offset == 300:
+            raise http.RequestsError("refused")
+        return bodies[offset]
+
+    monkeypatch.setattr(scraper, "_get", get)
+    monkeypatch.setattr(scraper, "async_fanout_enabled", lambda: False)
+    scraper.fetch_raw()
+    lost = scraper.truncated.split("; ", 1)[1]
+    assert lost.startswith("3 of 4 listing pages lost (")
+    for cause in ("CAPTCHA HTML on a 200 x1", "error body x1", "RequestException x1"):
+        assert cause in lost

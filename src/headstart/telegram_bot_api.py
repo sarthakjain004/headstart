@@ -23,6 +23,7 @@ from headstart.alerts.store import chat_subscription_id
 from headstart.alerts.telegram import reason
 
 _log = log.get(__name__)
+_SEND_FAILURE = log.FirstOnly(_log)
 
 
 class TelegramClient:
@@ -52,6 +53,7 @@ class TelegramClient:
                 "sendMessage",
                 {"chat_id": chat_id, "text": text, "disable_web_page_preview": True},
             )
+            return
         except Exception as exc:  # noqa: BLE001
             # An anomaly the run survives, per ADR-0039's level policy — the send is
             # swallowed so one blocked chat cannot abort polling, and WARNING is what makes
@@ -66,6 +68,10 @@ class TelegramClient:
             # `reason` also reads the body, which is where Telegram's own `description` and
             # `retry_after` are, so this line gains the cause it never had. `HTTPError.filename`
             # and `.url` DO carry the token and must never be logged.
-            _log.warning(
-                f"send to {chat_subscription_id(chat_id)} failed: {reason(exc)}"
-            )
+            failure = reason(exc)
+        # Bounded (`_SEND_FAILURE`): one blocked chat per send, so one WARNING per process and
+        # INFO after. Reported *outside* the `except` so `FirstOnly` attaches no traceback — its
+        # last line is `{exc}`, the very rendering `reason` is here to avoid.
+        _SEND_FAILURE.report(
+            f"send to {chat_subscription_id(chat_id)} failed: {failure}"
+        )

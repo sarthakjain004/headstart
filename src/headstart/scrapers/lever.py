@@ -25,7 +25,7 @@ from headstart.models import (
     is_remote,
     requisition_of,
 )
-from headstart.scrapers.base import BaseScraper
+from headstart.scrapers.base import BaseScraper, classify_exception
 from headstart.scrapers.job_posting_jsonld import find_job_posting, hiring_organization
 
 #: Lever's two instances, global first — the order a scrape asks them in. Public: the liveness
@@ -406,7 +406,12 @@ class LeverScraper(BaseScraper):
             return super().company_from_page(page)
         try:
             response = self._fetch_once("GET", self._first_posting)
-        except http.RequestsError:
+        except http.RequestsError as exc:
+            # Said here: base's own line after this names only the board page's answer.
+            self._log.info(
+                f"{self.board_key()}: no company name — posting fallback raised "
+                f"{classify_exception(exc)}"
+            )
             return None
         posting = (
             find_job_posting(response.text) if response.status_code == 200 else None

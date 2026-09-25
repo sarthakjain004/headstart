@@ -113,8 +113,17 @@ def update(
                 "attempted_this_observation": board in excluded,
             }
         )
+    # Always said, so a quiet run and a lost history file can be told apart from the log
+    _log.info(
+        f"withheld freshness: {len(history)} Board(s) tracked "
+        f"({'prior history read' if path.exists() else f'no prior history at {path}'}), "
+        f"{len(unresolved)} still withheld, {sum(b in live for b in excluded)} excluded this run"
+    )
     for ats, totals in sorted(by_ats.items()):
-        _log.info(f"withheld freshness {ats}: {totals}")
+        _log.info(
+            f"withheld freshness {ats}: "
+            + " ".join(f"{field}={value}" for field, value in totals.items())
+        )
 
     report = {"observed_at": observed_at, "ats": by_ats, "boards": boards}
     state_dir.mkdir(parents=True, exist_ok=True)

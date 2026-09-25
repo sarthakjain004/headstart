@@ -65,6 +65,8 @@
       const parsed = raw ? JSON.parse(raw) : [];
       return Array.isArray(parsed) ? parsed : [];
     } catch (err) {
+      /* The error's name only: a JSON.parse message quotes the text, and this text is résumés. */
+      console.warn('[resume] the saved-résumé index is unreadable:', err && err.name);
       /* A corrupt index must not take the documents with it. Returning [] here loses the
          listing, not the résumés — each one is its own key and `get` still finds it. */
       return [];
@@ -84,6 +86,7 @@
       const raw = this._s.getItem(DOC + id);
       return raw ? JSON.parse(raw) : null;
     } catch (err) {
+      console.warn('[resume] saved résumé', id, 'is unreadable:', err && err.name);
       return null;
     }
   };
@@ -100,6 +103,7 @@
          keystroke that triggered it looks fine, and the work is gone at the next reload. The
          caller is told so the editor can say so. */
       const quota = err && /quota|exceeded/i.test(String(err.name) + String(err.message));
+      console.warn('[resume] saving', doc.id, 'to this browser failed:', err && err.name);
       return { ok: false, reason: quota ? 'quota' : 'unavailable', error: err };
     }
   };

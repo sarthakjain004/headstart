@@ -63,30 +63,28 @@ def _fragment_dirs(root: Path) -> list[Path]:
     )
 
 
-def _good_meta_lines(meta_path: Path) -> list[str]:
-    """Meta lines up to the first unparseable one — a shard killed mid-batch leaves a partial tail.
+def _good_meta_lines(meta_path: Path) -> tuple[list[str], int]:
+    """Meta lines up to the first unparseable one — a shard killed mid-batch leaves a partial tail
+    — and how many records were dropped from there to the end of the file.
 
-    Says how much it dropped, because every caller acts on the answer without re-checking it: the
-    merge trims the fragment's vectors to match, and :func:`_reconcile_store` rewrites the store.
-    A shortfall that goes unsaid is a Job silently absent from the served index for a run.
+    Returns the drop rather than reporting it, because every caller acts on the answer without
+    re-checking it (the merge trims the fragment's vectors to match, :func:`_reconcile_store`
+    rewrites the store) and each says it at the level its own scope warrants: a torn prior store
+    is one run's anomaly, a torn fragment is one of up to fifteen. A shortfall that goes unsaid is
+    a Job silently absent from the served index for a run.
     """
     good: list[str] = []
     with meta_path.open(encoding="utf-8") as fh:
-        for lineno, line in enumerate(fh, start=1):
+        for line in fh:
             s = line.rstrip("\n")
             if not s:
                 continue
             try:
                 json.loads(s)
             except json.JSONDecodeError:
-                dropped = 1 + sum(1 for rest in fh if rest.strip())
-                _log.warning(
-                    f"{meta_path}: unparseable metadata at line {lineno} — dropping {dropped} "
-                    "record(s) from there to end of file"
-                )
-                break
+                return good, 1 + sum(1 for rest in fh if rest.strip())
             good.append(s)
-    return good
+    return good, 0
 
 
 def _reconcile_store(meta_path: Path, vec_path: Path, dim: int | None) -> int:
@@ -94,8 +92,13 @@ def _reconcile_store(meta_path: Path, vec_path: Path, dim: int | None) -> int:
     state). Returns its row count; truncates a too-long vector tail, fails on a too-short one."""
     if not meta_path.exists():
         return 0
-    good = _good_meta_lines(meta_path)
+    good, dropped = _good_meta_lines(meta_path)
     n = len(good)
+    if dropped:
+        _log.warning(
+            f"prior store: unparseable metadata in {meta_path} — dropping {dropped} record(s) "
+            "from there to end of file"
+        )
     if n < sum(1 for line in meta_path.open(encoding="utf-8") if line.strip()):
         meta_path.write_text(
             "".join(s + "\n" for s in good), encoding="utf-8"
@@ -121,18 +124,13 @@ def _reconcile_store(meta_path: Path, vec_path: Path, dim: int | None) -> int:
     return n
 
 
-def _fragment_ids(frags: list[Path]) -> set[str]:
-    """Every id carried by the fragments that arrived — the ids a drop can safely be paired with.
+def _fragment_losses(frag: Path) -> tuple[int, int]:
+    """``(failed, unattempted)`` Docs the shard that wrote ``frag`` recorded in its manifest.
 
-    Reads only up to each fragment's last fully-parseable meta line, the same truncation the
-    merge itself applies, so an id in a shard's half-written tail is not counted as having
-    arrived when its vector will not be appended.
-    """
-    return {
-        json.loads(line)["id"]
-        for f in frags
-        for line in _good_meta_lines(f / "meta.jsonl")
-    }
+    A fragment from before ``embed_run`` wrote the two fields carries neither, and reads as
+    ``(0, 0)`` — the same silence it had then."""
+    manifest = json.loads((frag / "manifest.json").read_text(encoding="utf-8"))
+    return int(manifest.get("failed") or 0), int(manifest.get("unattempted") or 0)
 
 
 def evict_ids(meta_path: Path, vec_path: Path, dim: int, ids: set[str]) -> int:
@@ -220,6 +218,44 @@ def main() -> int:
 
     frag_root = Path(args.fragments)
     frags = _fragment_dirs(frag_root) if frag_root.exists() else []
+    # Each fragment's meta read once, up to its last fully-parseable line — the same truncation
+    # the merge applies, so an id in a half-written tail is not counted as having arrived when
+    # its vector will not be appended. Read once because two passes use it (the upgrade drop and
+    # the merge), and reading it per pass reported every torn tail twice.
+    good_by_frag: dict[Path, list[str]] = {}
+    torn: list[str] = []
+    torn_records = 0
+    for f in frags:
+        good_by_frag[f], dropped = _good_meta_lines(f / "meta.jsonl")
+        if dropped:
+            _log.info(f"{f.name}: dropped {dropped} torn record(s)")
+            torn.append(f.name)
+            torn_records += dropped
+    if torn:
+        _log.warning(
+            f"{len(torn)} fragment(s) had torn tails, {torn_records} record(s) dropped: "
+            + log.named_sample(torn)
+        )
+    # A shard's own log is the only place its failed and unattempted Docs used to be counted, and
+    # a shard writes no step summary — so one line here names every shard that lost Docs.
+    losses = []
+    for f in frags:
+        if not (f / "manifest.json").exists():
+            # The shard was killed before its commit marker — routinely `timeout` ending its
+            # time budget — so what it banked merges but what it never reached is uncounted.
+            losses.append(
+                f"{f.name} (no manifest — stopped before finishing, e.g. its time budget; "
+                f"{len(good_by_frag[f])} rows banked, unattempted unknown)"
+            )
+            continue
+        failed, unattempted = _fragment_losses(f)
+        if failed or unattempted:
+            losses.append(f"{f.name} ({failed} failed, {unattempted} unattempted)")
+    if losses:
+        _log.warning(
+            "embed shards lost Docs, which are re-planned next run: "
+            + log.named_sample(losses)
+        )
 
     # dim: prior store first, else the first fragment that has a manifest.
     dim = _dim_from_manifest(store)
@@ -229,6 +265,13 @@ def main() -> int:
         dim = _dim_from_manifest(f)
 
     upgrades = Path(args.evict_ids)
+    # `embed_plan` writes the list on every run, even empty, so with fragments to merge its
+    # absence is lost state: an upgraded Job would merge its fresh row beside the stale one.
+    if frags and not upgrades.exists():
+        _log.warning(
+            f"upgrade list missing at {upgrades} — embed_plan always writes it; any Job "
+            "re-embedded this run keeps its stale vector beside the fresh one"
+        )
     if dim is not None and upgrades.exists():
         upgrade_ids = read_id_list(upgrades)
         # An upgrade is a *replace*: drop the stale vector, merge the fresh one. Only the ids
@@ -243,7 +286,10 @@ def main() -> int:
         # And `embed` is `fail-fast: false` with a `continue-on-error` download, so 14 of 15
         # fragments is an ordinary outcome that would leak the same bug at a fifteenth the scale.
         # An id held back keeps its old vector and stays on the next run's upgrade list.
-        stale = upgrade_ids & _fragment_ids(frags)
+        arrived = {
+            json.loads(line)["id"] for good in good_by_frag.values() for line in good
+        }
+        stale = upgrade_ids & arrived
         held = len(upgrade_ids) - len(stale)
         if stale:
             dropped = evict_ids(meta_path, vec_path, dim, stale)
@@ -290,7 +336,7 @@ def main() -> int:
             fdim = _dim_from_manifest(f) or dim
             if fdim is None:
                 log.fail(_log, f"fragment {f} has no manifest and no dim is known")
-            good = _good_meta_lines(f / "meta.jsonl")
+            good = good_by_frag[f]
             nrows = len(good)
             want = nrows * fdim * _FLOAT_BYTES
             raw = (f / "embeddings.f32").read_bytes()

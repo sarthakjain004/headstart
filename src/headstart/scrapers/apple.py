@@ -198,21 +198,31 @@ class AppleScraper(BaseScraper):
         scaled down: nothing here needs Eightfold's multi-sweep reconciliation, since the
         shortfall this could cause is bounded by the dedup itself, not by the pages missed."""
         seen: dict[str, dict] = {}
-        total = 0
+        total = listed = unkeyed = 0
         for page in range(1, _MAX_PAGES + 1):
             res = self._search_page(page)
             batch = res.get("searchResults") or []
+            if page == 1 and not batch and not res.get("totalRecords"):
+                # A moved envelope reads downstream exactly like an empty Board (google.py
+                # guards the same shape on its page 1).
+                self.note_unreadable_board(
+                    "searchResults on page 1", f"keys {sorted(res)}"
+                )
             total = res.get("totalRecords") or total
+            listed += len(batch)
             for row in batch:
                 native_id = row.get("id")
                 if native_id:
                     seen[native_id] = row
+                else:
+                    unkeyed += 1
             if len(batch) < _PAGE_SIZE:
                 break
         else:
             self.mark_truncated(
                 f"hit the {_MAX_PAGES}-page cap at {len(seen)} postings — the rest unread"
             )
+        self.note_unread_rows(unkeyed, listed, "carried no id")
         if total and len(seen) < total:
             self.mark_truncated_unless_negligible(
                 len(seen),
@@ -303,10 +313,12 @@ class AppleScraper(BaseScraper):
         items = raw.get("searchResults") or []
         details = raw.get("details") or {}
         jobs: list[Job] = []
+        untitled = 0
         for item in items:
             native_id = item.get("id")
             title = (item.get("postingTitle") or "").strip()
             if not native_id or not title:
+                untitled += 1
                 continue
             detail = details.get(native_id) or {}
             jobs.append(
@@ -325,6 +337,7 @@ class AppleScraper(BaseScraper):
                     employment_type=self._employment_type(item),
                 )
             )
+        self.note_unread_rows(untitled, len(items), "carried no id or title")
         return jobs
 
     def _salary_field(self, raw: Any) -> str | None:

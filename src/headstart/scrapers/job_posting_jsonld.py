@@ -74,6 +74,18 @@ def find_job_posting(page: str) -> dict[str, Any] | None:
     return next(jsonld_nodes(page, "JobPosting"), None)
 
 
+def has_unparseable_jsonld(page: str) -> bool:
+    """Whether ``page`` carries a JSON-LD block that does not parse — which
+    :func:`jsonld_nodes` skips, so a reader whose :func:`find_job_posting` came back None can
+    tell a page with no JSON-LD from one whose JSON-LD it could not read."""
+    for block in _JSONLD_BLOCK.findall(page):
+        try:
+            json.loads(block, strict=False)
+        except ValueError:
+            return True
+    return False
+
+
 def hiring_organization(value: Any) -> str | None:
     """``hiringOrganization`` as a name. It is a bare string on some tenants and an
     ``{"@type": "Organization", "name": …}`` object on others, so both are read."""

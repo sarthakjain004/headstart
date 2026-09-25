@@ -45,6 +45,7 @@ import logging
 import multiprocessing
 import os
 import re
+import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
@@ -807,12 +808,15 @@ def _filter_file(pair: tuple[Path, Path]) -> tuple[str, int, int]:
         src.open(encoding="utf-8") as fin,
         dst.open("w", encoding="utf-8") as fout,
     ):
-        for line in fin:
+        for lineno, line in enumerate(fin, 1):
             line = line.strip()
             if not line:
                 continue
             total += 1
-            job = json.loads(line)
+            try:
+                job = json.loads(line)
+            except ValueError as exc:
+                raise ValueError(f"{src}:{lineno}: malformed JSON ({exc})") from exc
             if is_tech(job.get("title"), job.get("department")):
                 fout.write(json.dumps(job, ensure_ascii=False) + "\n")
                 kept += 1
@@ -821,7 +825,11 @@ def _filter_file(pair: tuple[Path, Path]) -> tuple[str, int, int]:
 
 
 def filter_jobs(
-    src_dir: str | Path, dst_dir: str | Path, *, workers: int | None = None
+    src_dir: str | Path,
+    dst_dir: str | Path,
+    *,
+    workers: int | None = None,
+    logger: logging.Logger | None = None,
 ) -> dict[str, tuple[int, int]]:
     """Filter every ``{src_dir}/{ats}.jsonl`` down to its tech rows in ``{dst_dir}/{ats}.jsonl``.
 
@@ -865,8 +873,13 @@ def filter_jobs(
     Python's own multiprocessing docs warn about for a multi-threaded parent. Forcing spawn avoids
     it unconditionally, for every caller, rather than relying on a caller-specific safety argument
     that a future caller could quietly invalidate.
+
+    ``logger``, when given, gets one INFO line per file as it lands — this stage sits ~185 s on
+    ``join``'s critical path, and ``report`` speaks only once every file is done. Worded so
+    ``scripts/runlog/fanout_corpus.py``'s per-ATS table regex never reads it as a table row.
     """
     src_dir, dst_dir = Path(src_dir), Path(dst_dir)
+    started = time.monotonic()
     dst_dir.mkdir(parents=True, exist_ok=True)
     # Largest first: an LPT schedule. `report` sorts, so completion order never reaches the log.
     pairs = sorted(
@@ -876,11 +889,26 @@ def filter_jobs(
     )
     if workers is None:
         workers = os.cpu_count() or 1
+    if logger:
+        # A run killed before its first file lands still says what it started with.
+        megabytes = sum(src.stat().st_size for src, _ in pairs) / 1e6
+        logger.info(
+            f"filtering {len(pairs)} files ({megabytes:.0f} MB) across "
+            f"{max(1, min(workers, len(pairs)))} worker(s)"
+        )
     stats: dict[str, tuple[int, int]] = {}
+
+    def landed(ats: str, kept: int, total: int) -> None:
+        stats[ats] = (kept, total)
+        if logger:
+            logger.info(
+                f"filtered {ats}: {kept}/{total} kept, "
+                f"{time.monotonic() - started:.1f}s elapsed ({len(stats)}/{len(pairs)} files)"
+            )
+
     if workers <= 1 or len(pairs) <= 1:
         for pair in pairs:
-            ats, kept, total = _filter_file(pair)
-            stats[ats] = (kept, total)
+            landed(*_filter_file(pair))
         return stats
     ctx = multiprocessing.get_context("spawn")
     with ProcessPoolExecutor(
@@ -889,10 +917,9 @@ def filter_jobs(
         futures = [pool.submit(_filter_file, pair) for pair in pairs]
         # Results collected as each file lands, not blocking on the slowest submitted first
         # (a plain `pool.map` would preserve submission order and wait on shard 0 even if shard 3
-        # finishes first). `report` still logs only once, at the end, same as before this change.
+        # finishes first), so each file's progress line lands as soon as the file does.
         for future in as_completed(futures):
-            ats, kept, total = future.result()
-            stats[ats] = (kept, total)
+            landed(*future.result())
     return stats
 
 
@@ -942,14 +969,14 @@ def report(
     else:
         # A zero-row run used to be near-silent: the table printed its header and stopped, which
         # is a hard shape to notice in a green log. Everything downstream reads this corpus, so
-        # say it plainly. Not an abort — this stage does not own that call.
-        logger.error(f"no rows at all reached the tech filter -> {dst_dir} is empty")
+        # say it plainly. Not an abort — this stage does not own that call, so WARNING, not ERROR.
+        logger.warning(f"no rows at all reached the tech filter -> {dst_dir} is empty")
 
 
 def filter_jobs_and_report(
     src_dir: str | Path, dst_dir: str | Path, logger: logging.Logger
 ) -> dict[str, tuple[int, int]]:
     """``filter_jobs`` plus its run report (see ``report``) — what ``filter_tech.main()`` runs."""
-    stats = filter_jobs(src_dir, dst_dir)
+    stats = filter_jobs(src_dir, dst_dir, logger=logger)
     report(stats, dst_dir, logger)
     return stats

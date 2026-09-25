@@ -12,7 +12,7 @@ left all 13,714 Workday and Personio boards permanently unscored). Since ADR-009
 and joining them silently produced nonsense for exactly those two ATSes. The file
 rides the pipeline's HF-dataset state round-trip; it deliberately does NOT live in the
 embedding store dir, which is regenerable and gets wiped by evictions — this history must
-survive them. A missing file degrades every consumer to the old behavior (pure shuffle,
+survive them. A missing file degrades every consumer to the old behavior (no priority head,
 corpus order).
 """
 
@@ -31,11 +31,42 @@ if TYPE_CHECKING:
 
 FIELDS = ("board", "score", "last_tech_jobs", "updated_at")
 CURRENT_WEIGHT = 0.7  # EWMA weight on the night's tech count (the rest on history)
-EXPLORE_FRAC = 0.7  # slice share reserved for random exploration of unscored boards
-GAP_FRAC = (
-    0.05  # share of that exploration tail reserved for the description gap (ADR-0062)
-)
+# The Slice's share for its Tail, which explores the unscored Boards in rotation (ADR-0229). The
+# head gets the other 70%, which at an 80,000-Board slice holds every Scrapable Scored Board.
+TAIL_FRAC = 0.3
+GAP_FRAC = 0.05  # share of the Tail reserved for the description gap (ADR-0062)
 PRUNE_BELOW = 0.05  # decayed rows below this drop out (~3 zero-tech scrapes)
+
+
+def head_slots(max_boards: int, tail_frac: float = TAIL_FRAC) -> int:
+    """The most Scored Boards a ``max_boards`` slice gives its head; the Tail gets the rest."""
+    return max_boards - round(max_boards * tail_frac)
+
+
+def is_scored(board: ScrapableBoard, scores: Mapping[str, float]) -> bool:
+    """Whether ``board`` is a Scored Board, i.e. competes for the head."""
+    return scores.get(key_for(board), 0.0) > 0.0
+
+
+def _takes_every_board(max_boards: int, n_boards: int) -> bool:
+    """A cap of 0, or one at least as big as the list, leaves no Tail: the slice is every Board."""
+    return not max_boards or max_boards >= n_boards
+
+
+def head_overflow(
+    boards: list[ScrapableBoard],
+    scores: Mapping[str, float],
+    max_boards: int,
+    tail_frac: float = TAIL_FRAC,
+) -> int:
+    """How many Scored Boards the head cannot seat, which join the Tail (ADR-0229).
+
+    0 when the slice takes every Board, since :func:`pick_boards` then has no Tail to fill.
+    """
+    if _takes_every_board(max_boards, len(boards)):
+        return 0
+    scored = sum(1 for c in boards if is_scored(c, scores))
+    return max(0, scored - head_slots(max_boards, tail_frac))
 
 
 def key_for(board: ScrapableBoard | str) -> str:
@@ -61,12 +92,17 @@ def load(path: str | Path) -> dict[str, BoardPriority]:
         return {}
     rows: dict[str, BoardPriority] = {}
     with path.open(newline="", encoding="utf-8") as fh:
-        for row in csv.DictReader(fh):
-            rows[row["board"]] = BoardPriority(
-                score=float(row["score"]),
-                last_tech_jobs=int(row["last_tech_jobs"]),
-                updated_at=row["updated_at"],
-            )
+        reader = csv.DictReader(fh)
+        for row in reader:
+            try:
+                rows[row["board"]] = BoardPriority(
+                    score=float(row["score"]),
+                    last_tech_jobs=int(row["last_tech_jobs"]),
+                    updated_at=row["updated_at"],
+                )
+            except (KeyError, TypeError, ValueError) as exc:
+                # A bare parse error names neither the ledger nor the row that broke it.
+                raise ValueError(f"{path}:{reader.line_num}: {exc!r}") from exc
     return rows
 
 
@@ -158,24 +194,33 @@ def pick_boards(
     scores: Mapping[str, float],
     max_boards: int,
     *,
-    explore_frac: float = EXPLORE_FRAC,
+    tail_frac: float = TAIL_FRAC,
     unsettled: Mapping[str, int] | None = None,
     gap_frac: float = GAP_FRAC,
+    last_looked: Mapping[str, str] | None = None,
     rng: random.Random | None = None,
 ) -> list[ScrapableBoard]:
-    """The run's slice: scored boards first (score desc), a gap quota, then random exploration.
+    """The run's slice: scored boards first (score desc), a gap quota, then the Tail.
 
-    The head gets ``max_boards - round(max_boards * explore_frac)`` slots of scored boards
-    (stable sort over a shuffle = random tiebreak); the exploration tail fills the rest from
-    the remaining boards. A short scored list rolls its unused head slots into exploration.
-    With no scores (bootstrap) or ``max_boards=0`` semantics this degrades to the previous
-    behavior: pure shuffle + cap, or every board (scored-first when scores exist).
+    The head gets ``head_slots(max_boards, tail_frac)`` slots of scored boards (stable sort over
+    a shuffle = random tiebreak); the Tail fills the rest from the remaining boards. A short
+    scored list rolls its unused head slots into the Tail.
+    With no scores (bootstrap) the head is empty and the Tail takes the whole cap, in rotation
+    order when ``last_looked`` is given and shuffled otherwise. ``max_boards=0`` returns every
+    board, scored first.
 
     ``unsettled`` is the ADR-0062 description-gap ledger, ``{board: Jobs whose description we
-    have never settled}``. When given, ``round(tail * gap_frac)`` of the *exploration* slots are
-    reserved for those Boards — the priority head is never touched, because a random exploration
-    pick is strictly worse than a Board we already know is worth visiting. It self-cancels: an
+    have never settled}``. When given, ``round(tail * gap_frac)`` of the *Tail's* slots are
+    reserved for those Boards — the priority head is never touched, because a Tail pick is
+    strictly worse than a Board we already know is worth visiting. It self-cancels: an
     empty or absent ledger reserves nothing and the slice is byte-identical to before.
+
+    ``last_looked`` is ``{board: when a run last looked at it}``, the cost ledger's ``updated_at``
+    (ADR-0229). When given, the Tail is a **rotation**: the Boards looked at longest ago go first,
+    and a Board with no stamp at all goes before any. A random draw re-picked some Boards run
+    after run while others waited 11 days; the rotation reads every unscored Board within
+    ``ceil(unscored / tail)`` runs. Stamps are UTC ISO strings, so they order as strings, and a
+    bare date from before ADR-0229 sorts as the start of its day. Absent, the Tail stays random.
     """
     rng = rng or random.Random()
     shuffled = list(boards)
@@ -193,27 +238,31 @@ def pick_boards(
     # rides HF, so treat this as indicative) 4,611 of them held a row — 3,784 Workday, 827
     # Personio — every one scoring 0.0 whatever it had earned, reachable only through the random
     # exploration tail. No board loses a score from this change; 4,611 regain one.
-    known = [c for c in shuffled if scores.get(key_for(c), 0.0) > 0.0]
+    known = [c for c in shuffled if is_scored(c, scores)]
     # Sorting an empty list is a no-op, so the bootstrap case (no ledger yet) falls through the
     # same path rather than returning early. It has to: the gap quota is reserved out of the
-    # exploration slots, and an early return skipped it entirely whenever nothing was scored —
+    # Tail's slots, and an early return skipped it entirely whenever nothing was scored —
     # which is exactly the state a fresh or lost priority ledger leaves behind.
     known.sort(
         key=lambda c: scores[key_for(c)], reverse=True
     )  # stable: shuffle breaks ties
 
-    if not max_boards or max_boards >= len(boards):
-        rest = [c for c in shuffled if scores.get(key_for(c), 0.0) <= 0.0]
+    if _takes_every_board(max_boards, len(boards)):
+        rest = [c for c in shuffled if not is_scored(c, scores)]
         return known + rest
 
-    head = known[: max_boards - round(max_boards * explore_frac)]
+    head = known[: head_slots(max_boards, tail_frac)]
     head_set = {c.identity for c in head}
-    explore_slots = max_boards - len(head)
+    tail_slots = max_boards - len(head)
     gap = (
-        _gap_picks(shuffled, unsettled, head_set, round(explore_slots * gap_frac))
+        _gap_picks(shuffled, unsettled, head_set, round(tail_slots * gap_frac))
         if unsettled
         else []
     )
     picked = head_set | {c.identity for c in gap}
-    tail = [c for c in shuffled if c.identity not in picked][: explore_slots - len(gap)]
+    rest = [c for c in shuffled if c.identity not in picked]
+    if last_looked is not None:
+        # Stable over the shuffle, so the Boards one run stamped together still tie at random.
+        rest.sort(key=lambda c: last_looked.get(key_for(c), ""))
+    tail = rest[: tail_slots - len(gap)]
     return head + gap + tail

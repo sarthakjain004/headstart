@@ -93,6 +93,11 @@ _log = log.get(__name__, __spec__)
 DEFAULT_FILE = "data/.write_guard.json"
 
 
+class UnidentifiedBlob(RuntimeError):
+    """The Hub listed a file with no ``blob_id``. Its own class so ``main`` can annotate this
+    fatal refusal without re-annotating a Hub failure ``retry_hub`` already reported."""
+
+
 def _under(repo: str, prefix: str, token: str | None) -> dict[str, str]:
     """``{repo-relative path: blob id}`` for every file under ``prefix``, from one Hub request."""
     prefix = prefix.rstrip("/") + "/"
@@ -108,7 +113,7 @@ def _under(repo: str, prefix: str, token: str | None) -> dict[str, str]:
             # Refused rather than skipped or defaulted. A file whose content we cannot identify
             # is a file whose change we cannot detect, and silently dropping it from the map
             # would make the digest stable across exactly the edit it is meant to catch.
-            raise RuntimeError(
+            raise UnidentifiedBlob(
                 f"Hub listed {name} without a blob_id — refusing to fingerprint content "
                 "it will not identify"
             )
@@ -179,7 +184,15 @@ def verify(path: Path, repo: str, prefix: str, token: str | None) -> int:
             f"no recorded base at {path} — refusing to upload {prefix} unverified"
         )
         return 1
-    before = json.loads(path.read_text())
+    try:
+        before = json.loads(path.read_text())
+    except json.JSONDecodeError as exc:
+        # Fail closed, like a missing base — and annotated, rather than a bare traceback.
+        _log.error(
+            f"recorded base at {path} is unreadable ({exc}) — refusing to upload {prefix} "
+            "unverified"
+        )
+        return 1
     now = fingerprint(repo, prefix, token)
     if (before.get("repo"), before.get("prefix")) != (now["repo"], now["prefix"]):
         # Recorded against something else. Comparing the two digests would be meaningless in both
@@ -235,7 +248,10 @@ def main() -> int:
         ap.error("no dataset repo — set HF_DATASET")
     token = os.environ.get("HF_TOKEN")
     run = record if args.action == "record" else verify
-    return run(Path(args.file), repo, args.prefix, token)
+    try:
+        return run(Path(args.file), repo, args.prefix, token)
+    except UnidentifiedBlob as exc:
+        log.fail(_log, f"state_guard {args.action} {args.prefix}: {exc}")
 
 
 if __name__ == "__main__":

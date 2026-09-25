@@ -118,3 +118,12 @@ def test_the_prediction_lands_near_the_real_2026_08_14_run():
     """Run 31738892152: 120.8 min packed, 29.9 min slowest Board, 42.6 min actual."""
     predicted = shard_speedup.predict_minutes(120.8, floor_minutes=29.9, ratio=2.86)
     assert predicted == pytest.approx(42.2, abs=0.5)  # was 120.8 — a 3x over-prediction
+
+
+def test_load_corrupt_file_says_it_read_as_cold(tmp_path, caplog):
+    """Otherwise the join's "was 1.00x" reads as a measurement."""
+    path = tmp_path / "shard_speedup.csv"
+    path.write_text("speedup,shards,updated_at\nnot-a-number,3,2026-08-14\n")
+    with caplog.at_level("INFO", logger=shard_speedup.__name__):
+        shard_speedup.load(path)
+    assert f"{path} unreadable" in caplog.text

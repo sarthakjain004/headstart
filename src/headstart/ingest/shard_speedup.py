@@ -44,7 +44,10 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
+from headstart import log
 from headstart.ingest.observability import ShardReport
+
+_log = log.get(__name__)
 
 FIELDS = ("speedup", "shards", "updated_at")
 CURRENT_WEIGHT = 0.5  # EWMA weight on this run (the rest on history)
@@ -85,9 +88,11 @@ def load(path: str | Path) -> Speedup:
             int(row["shards"]),
             row["updated_at"],
         )
-    except (KeyError, ValueError, StopIteration, OSError):
+    except (KeyError, ValueError, StopIteration, OSError) as exc:
         # A corrupt ledger must not sink the planner: the whole run depends on it, and the cost
-        # of ignoring one bad file is a single run predicted the old way.
+        # of ignoring one bad file is a single run predicted the old way. Said, though: the join
+        # then logs "was 1.00x" as if that were measured.
+        _log.info(f"{path} unreadable ({exc!r}); speedup reads as cold {DEFAULT}x")
         return cold
 
 

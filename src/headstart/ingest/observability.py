@@ -40,6 +40,11 @@ from headstart.board_identity import ats_of
 
 _log = log.get(__name__)
 
+# One annotation per process for each artifact write, not one per call: the same full disk or
+# read-only path fails every write after the first, and `summary` runs several times per stage.
+_summary_write_failed = log.FirstOnly(_log)
+_scrape_health_write_failed = log.FirstOnly(_log)
+
 _SHARD_REPORT = "_shard_report.json"
 _LOSS_FIELDS = (
     "listing_pages",
@@ -56,7 +61,13 @@ _LOSS_FIELDS = (
 
 
 class PreparationProgress:
-    """Bounded progress for corpus preparation before encoding begins."""
+    """Bounded progress for corpus preparation before encoding begins.
+
+    Throttled by time alone. A count trigger (every 500 scanned) fired hundreds of times in
+    seconds, because most of the corpus is already embedded and skips in microseconds; the
+    caller's own closing line carries the final totals."""
+
+    _EVERY_SECONDS = 10
 
     def __init__(self, logger) -> None:
         self._log = logger
@@ -64,7 +75,7 @@ class PreparationProgress:
 
     def report(self, scanned: int, prepared: int, already: int, dropped: int) -> None:
         now = time.monotonic()
-        if not scanned or (scanned % 500 and now - self._last < 5):
+        if not scanned or now - self._last < self._EVERY_SECONDS:
             return
         self._last = now
         self._log.info(
@@ -264,15 +275,29 @@ class ScrapeHealth:
 
     @classmethod
     def from_reports(
-        cls, reports: list[ShardReport], expected_reports: int | None = None
+        cls,
+        reports: list[ShardReport],
+        expected_reports: int | None = None,
+        *,
+        quiet: bool = False,
     ) -> ScrapeHealth:
+        """Aggregate shard reports into one verdict; a malformed field is kept out and named.
+
+        ``quiet`` reports malformed fields at INFO, as :func:`read_shards` does: a shard reading
+        its own report would otherwise warn once per shard, and the join warns for the run."""
         coverage: dict[str, Counter[str]] = defaultdict(Counter)
         losses: dict[str, Counter[str]] = defaultdict(Counter)
         causes: Counter[tuple[str, str, str]] = Counter()
         cause_boards: dict[tuple[str, str, str], set[str]] = defaultdict(set)
-        malformed_reports = 0
+        malformed_shards: list[str] = []
+        # `shard:where` for each coercion, so the one warning names the field and not just "?"
+        malformed_fields: list[str] = []
         for report in reports:
+            shard = str(report.shard or "?")
             malformed = report.malformed
+            if malformed:
+                # `from_json` records only that something was coerced, not which field
+                malformed_fields.append(f"{shard}:report")
             for key in report.boards_ok:
                 coverage[ats_of(key)]["successful"] += 1
             for key in report.errors:
@@ -282,6 +307,7 @@ class ScrapeHealth:
             for board, observation in report.observations.items():
                 if not isinstance(observation, dict):
                     malformed = True
+                    malformed_fields.append(f"{shard}:{board}")
                     continue
                 ats = ats_of(board)
                 for field in _LOSS_FIELDS:
@@ -289,6 +315,7 @@ class ScrapeHealth:
                         losses[ats][field] += int(observation.get(field) or 0)
                     except (TypeError, ValueError):
                         malformed = True
+                        malformed_fields.append(f"{shard}:{board}.{field}")
                 for kind, field in (
                     ("listing", "listing_loss_causes"),
                     ("detail", "detail_loss_causes"),
@@ -296,6 +323,7 @@ class ScrapeHealth:
                     cause_map = observation.get(field) or {}
                     if not isinstance(cause_map, dict):
                         malformed = True
+                        malformed_fields.append(f"{shard}:{board}.{field}")
                         continue
                     for cause, count in cause_map.items():
                         key = (kind, ats, str(cause))
@@ -303,13 +331,17 @@ class ScrapeHealth:
                             causes[key] += int(count)
                         except (TypeError, ValueError):
                             malformed = True
+                            malformed_fields.append(f"{shard}:{board}.{field}")
                             continue
                         cause_boards[key].add(str(board))
-            malformed_reports += int(malformed)
+            if malformed:
+                malformed_shards.append(shard)
+        malformed_reports = len(malformed_shards)
         if malformed_reports:
-            _log.warning(
+            (_log.info if quiet else _log.warning)(
                 f"{malformed_reports} shard report(s) carried malformed scrape-health fields; "
-                "valid fields were kept and fresh coverage is marked degraded"
+                "valid fields were kept and fresh coverage is marked degraded: "
+                + log.named_sample(malformed_fields)
             )
         expected = max(len(reports), expected_reports or len(reports))
         return cls(
@@ -366,10 +398,11 @@ class ScrapeHealth:
         """Whether this run's coverage is bad enough to be worth saying so.
 
         **Graded, not a zero threshold.** This was ``any(failed or partial)`` until 2026-09-16,
-        which over ~20,000 Boards and 31 ATSes is always true: it read DEGRADED on 7 of 7 runs
-        sampled across four days, and would have printed the identical word on 2026-09-12 when
-        Workday failed 80.8% of its Board attempts and tech output fell ~87.7%. An alarm that is
-        always on cannot raise one, and this is the pipeline's only run-level coverage verdict.
+        which over a ~20,000-Board slice (80,000 since ADR-0229) and 31 ATSes is always true: it
+        read DEGRADED on 7 of 7 runs sampled across four days, and would have printed the identical
+        word on 2026-09-12 when Workday failed 80.8% of its Board attempts and tech output fell
+        ~87.7%. An alarm that is always on cannot raise one, and this is the pipeline's only
+        run-level coverage verdict.
 
         Incomplete or malformed shard telemetry still degrades unconditionally — that is a
         different failure from a noisy scrape, and it has no share to grade.
@@ -501,7 +534,9 @@ def write_scrape_health(path: Path, health: ScrapeHealth) -> None:
             json.dumps(health.to_dict(), indent=1, sort_keys=True), encoding="utf-8"
         )
     except OSError as exc:
-        _log.warning(f"could not write scrape health: {exc}")
+        _scrape_health_write_failed.report(
+            f"could not write scrape health to {path}: {exc}"
+        )
 
 
 def summary(title: str, lines: list[str]) -> None:
@@ -517,7 +552,9 @@ def summary(title: str, lines: list[str]) -> None:
         with open(path, "a", encoding="utf-8") as fh:
             fh.write(body)
     except OSError as exc:
-        _log.warning(f"could not write the step summary: {exc}")
+        _summary_write_failed.report(
+            f"could not write the step summary to {path}: {exc}"
+        )
 
 
 def write_shard(outdir: Path, report: ShardReport) -> None:
@@ -530,14 +567,21 @@ def write_shard(outdir: Path, report: ShardReport) -> None:
         outdir.mkdir(parents=True, exist_ok=True)
         (outdir / _SHARD_REPORT).write_text(report.to_json(), encoding="utf-8")
     except OSError as exc:
-        _log.warning(f"could not write the shard report: {exc}")
+        # INFO: this runs once per shard *process*, so a FirstOnly would still warn per shard.
+        # The join says it run-level — a missing report degrades its coverage verdict, which
+        # warns.
+        _log.info(f"could not write the shard report to {outdir}: {exc}")
 
 
-def read_shards(fragments: Path) -> list[ShardReport]:
+def read_shards(fragments: Path, *, quiet: bool = False) -> list[ShardReport]:
     """Every shard report under ``fragments``, newest-run-first order not guaranteed.
 
     A missing or corrupt report is skipped with a warning rather than raising: the join's job
-    is to union job data, and it must not die because a shard's telemetry did."""
+    is to union job data, and it must not die because a shard's telemetry did.
+
+    ``quiet`` reports the same skips at INFO, for a second reader in the same job: the join has
+    already annotated them, and a second copy spends budget restating one fault."""
+    report_skip = _log.info if quiet else _log.warning
     out: list[ShardReport] = []
     unreadable: list[str] = []
     wrong_shape: list[str] = []
@@ -557,12 +601,12 @@ def read_shards(fragments: Path) -> list[ShardReport]:
         # is an annotation under Actions, capped at 10 per step — so the per-shard form could
         # spend the join's whole budget reporting that telemetry was missing, and bury the
         # join's own errors doing it. The names still ride, via `log.named_sample`.
-        _log.warning(
+        report_skip(
             f"{len(unreadable)} shard report(s) unreadable, so their telemetry is missing "
             f"from this run's totals: {log.named_sample(unreadable)}"
         )
     if wrong_shape:
-        _log.warning(
+        report_skip(
             f"{len(wrong_shape)} shard report(s) were valid JSON but not objects and were "
             f"skipped: {log.named_sample(wrong_shape)}"
         )

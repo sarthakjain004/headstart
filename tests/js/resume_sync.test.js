@@ -240,6 +240,38 @@ test('a refused push keeps BOTH copies and never picks a winner', () => {
   });
 });
 
+/** `fakeRepo` whose writes a full browser refuses, as LocalStorageRepository answers one. */
+function fullRepo(docs) {
+  const repo = fakeRepo(docs);
+  repo.save = () => ({ ok: false, reason: 'quota' });
+  return repo;
+}
+
+test('a conflict this browser could not store says so, never "both copies kept"', () => {
+  const theirs = aDoc({ rev: 9, name: 'written on the desktop' });
+  const mine = aDoc({ rev: 1, name: 'written on the laptop' });
+  const { sync, messages } = loadSync({
+    repository: fullRepo([mine]), live: () => mine,
+    answers: [{ status: 409, body: { error: 'changed elsewhere', stored: theirs } }],
+  });
+  sync.note(mine);
+  return sync.flush('save').then(() => {
+    assert.ok(!messages.some(m => /both copies kept/.test(m.text)), JSON.stringify(messages));
+    assert.ok(messages.some(m => m.sticky && /not kept in this browser/.test(m.text)), JSON.stringify(messages));
+  });
+});
+
+test('an accepted push this browser could not store says so rather than "Saved"', () => {
+  const { sync, messages } = loadSync({
+    repository: fullRepo([aDoc({ rev: 4 })]), answers: [{ status: 200, body: { ok: true, rev: 5 } }],
+  });
+  sync.note(aDoc({ rev: 4 }));
+  return sync.flush('save').then(() => {
+    assert.ok(!messages.some(m => m.text === 'Saved to your account.'), JSON.stringify(messages));
+    assert.ok(messages.some(m => m.sticky && /not kept in this browser/.test(m.text)), JSON.stringify(messages));
+  });
+});
+
 test('after a conflict, what was typed during the refused push is not pushed again', () => {
   /* That edit is already in the copy kept aside, and the document now open IS the account's.
      Left dirty, the heartbeat pushed the pre-conflict document at its old revision, was refused
@@ -597,5 +629,22 @@ test('the listing is what a browser that has never seen these résumés reads', 
   return sync.refresh().then(state => {
     assert.equal(state, 'ready');
     assert.deepEqual(sync.rows(), rows);
+  });
+});
+
+test('a 200 whose body will not parse is unconfirmed, not a stored revision', () => {
+  const doc = aDoc({ sync: true, rev: 0 });
+  const wire = { calls: [], request: () => Promise.resolve({
+    status: 200, json: () => Promise.reject(new SyntaxError('Unexpected token')) }) };
+  const warned = [];
+  const { sync, repository, messages, ctx } = loadSync({ docs: [doc], live: () => doc, wire });
+  ctx.console = { ...console, warn: (...a) => warned.push(a.join(' ')) };
+  sync.note(doc);
+  return sync.flush('save').then(() => {
+    assert.equal(repository.get(doc.id).rev, 0, 'an unreadable answer recorded a revision');
+    assert.equal(sync.status().at, null, 'an unreadable answer counted as a save');
+    assert.ok(sync.status().error);
+    assert.ok(messages.some(m => m.sticky && /Not confirmed/.test(m.text)), JSON.stringify(messages));
+    assert.deepEqual(warned, ['[api] PUT /resumes/rmfk3n2abcd 200 unreadable body']);
   });
 });

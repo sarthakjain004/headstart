@@ -31,10 +31,13 @@ from pathlib import Path
 from statistics import median
 from typing import TYPE_CHECKING
 
+from headstart import log
 from headstart.board_identity import ats_of
 
 if TYPE_CHECKING:
     from headstart.scrapable_boards import ScrapableBoard
+
+_log = log.get(__name__)
 
 FIELDS = ("board", "seconds", "jobs", "updated_at")
 # The per-shard file a scrape writes (pipeline.JobWriter.record_cost) and read_shard_rows reads.
@@ -105,12 +108,13 @@ class BoardCost:
     # cannot rest on a value with four meanings. The same empty-CSV-field idea the liveness
     # ledger already uses for an unknown count.
     jobs: int | None
-    # ISO date of the last run that *looked at* this Board — which is what `_GATE_RECHECK_DAYS`
-    # wants, since a failed look is still a look. Note it no longer dates `jobs`: an errored or
-    # unfinished run refreshes this and the seconds while carrying the count forward, so a row can
-    # pair today's date with a count from days ago. That is the intended trade — a stale count is
-    # better than a 0 that means "we never found out" — but it means this date must not be read as
-    # the age of the yield.
+    # UTC ISO timestamp of the last run that *looked at* this Board — which is what
+    # `_GATE_RECHECK_DAYS` wants, since a failed look is still a look, and what the Slice's
+    # Tail orders by (ADR-0229). Rows written before that ADR hold a bare date. Note it
+    # no longer dates `jobs`: an errored or unfinished run refreshes this and the seconds while
+    # carrying the count forward, so a row can pair today's stamp with a count from days ago.
+    # That is the intended trade — a stale count is better than a 0 that means "we never found
+    # out" — but it means this stamp must not be read as the age of the yield.
     updated_at: str
 
 
@@ -134,12 +138,17 @@ def load(path: str | Path) -> dict[str, BoardCost]:
         return {}
     rows: dict[str, BoardCost] = {}
     with path.open(newline="", encoding="utf-8") as fh:
-        for row in csv.DictReader(fh):
-            rows[row["board"]] = BoardCost(
-                seconds=float(row["seconds"]),
-                jobs=int(row["jobs"]) if row["jobs"] not in ("", None) else None,
-                updated_at=row["updated_at"],
-            )
+        reader = csv.DictReader(fh)
+        for row in reader:
+            try:
+                rows[row["board"]] = BoardCost(
+                    seconds=float(row["seconds"]),
+                    jobs=int(row["jobs"]) if row["jobs"] not in ("", None) else None,
+                    updated_at=row["updated_at"],
+                )
+            except (KeyError, TypeError, ValueError) as exc:
+                # A bare parse error names neither the ledger nor the row that broke it.
+                raise ValueError(f"{path}:{reader.line_num}: {exc!r}") from exc
     return rows
 
 
@@ -178,6 +187,7 @@ def read_shard_rows(path: str | Path) -> dict[str, ShardCost]:
     if not path.exists():
         return {}
     out: dict[str, ShardCost] = {}
+    skipped = 0
     with path.open(newline="", encoding="utf-8") as fh:
         reader = csv.DictReader(fh)
         # Whether the *file* has the column, not whether a row does. A row missing it means two
@@ -192,6 +202,7 @@ def read_shard_rows(path: str | Path) -> dict[str, ShardCost]:
                 flag = row.get("unfinished")
                 errored = row.get("errored")
                 if (has_flag and flag is None) or (has_errored and errored is None):
+                    skipped += 1
                     continue  # torn tail row
                 out[row["board"]] = ShardCost(
                     seconds=float(row["seconds"]),
@@ -200,7 +211,12 @@ def read_shard_rows(path: str | Path) -> dict[str, ShardCost]:
                     errored=bool(int(errored or 0)),
                 )
             except (TypeError, ValueError):
+                skipped += 1
                 continue  # half-written tail row
+    if (
+        skipped
+    ):  # expected only on a shard killed mid-write; anything else is a bad fragment
+        _log.info(f"{path}: skipped {skipped} torn/malformed cost row(s)")
     return out
 
 
@@ -209,7 +225,7 @@ def update(
     measured: Mapping[str, ShardCost],
     *,
     current_weight: float = CURRENT_WEIGHT,
-    today: str | None = None,
+    looked_at: str | None = None,
 ) -> dict[str, BoardCost]:
     """Blend this run's measured seconds into the ledger.
 
@@ -234,7 +250,8 @@ def update(
     previous value it writes **None**: a Board whose only measurement failed has no known yield,
     and saying so is the whole reason ADR-0145's veto can be trusted.
     """
-    today = today or datetime.now(UTC).strftime("%Y-%m-%d")
+    # To the second, not the day: ~26 runs share a day, and the rotation must tell them apart.
+    looked_at = looked_at or datetime.now(UTC).isoformat(timespec="seconds")
     rows = dict(prev)
     for board, now in measured.items():
         if (
@@ -248,7 +265,9 @@ def update(
         known_jobs = before.jobs if before else None
         if now.unfinished:
             floor = max(now.seconds, before.seconds) if before else now.seconds
-            rows[board] = BoardCost(seconds=floor, jobs=known_jobs, updated_at=today)
+            rows[board] = BoardCost(
+                seconds=floor, jobs=known_jobs, updated_at=looked_at
+            )
             continue
         blended = (
             now.seconds
@@ -258,7 +277,7 @@ def update(
         rows[board] = BoardCost(
             seconds=blended,
             jobs=known_jobs if now.errored else now.jobs,
-            updated_at=today,
+            updated_at=looked_at,
         )
     return rows
 

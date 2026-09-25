@@ -422,7 +422,8 @@ def test_an_unknown_id_returns_none_rather_than_raising():
 
     And the empty answer is labelled, not merely counted: a Board whose ids have all gone stale
     and a Board the pod is refusing produce the same number of gaps."""
-    answers_by_id = {"7": {"items": [{"Id": "7"}]}, "8": {"items": []}}
+    described = {"Id": "7", "ExternalDescriptionStr": "<p>Build things.</p>"}
+    answers_by_id = {"7": {"items": [described]}, "8": {"items": []}}
 
     def route(method: str, url: str, kwargs: dict) -> FakeResponse:
         requisition_id = _requisition_id_in(url)
@@ -433,7 +434,7 @@ def test_an_unknown_id_returns_none_rather_than_raising():
     )
     assert scraper.fetch_detail({"Id": "8"}) is None
     assert scraper.detail_losses == Counter({"no items on a 200": 1})
-    assert scraper.fetch_detail({"Id": "7"}) == {"Id": "7"}
+    assert scraper.fetch_detail({"Id": "7"}) == described
     assert scraper.detail_losses == Counter({"no items on a 200": 1})
 
 
@@ -534,6 +535,34 @@ def test_the_tolerated_gap_is_logged_with_both_numbers(caplog):
     assert "served 27 of a stated 600" in logged
     assert scraper.board_key() in logged
     assert scraper.truncated is None
+
+
+def test_a_later_page_with_no_items_is_not_read_as_the_counter_over_stating(caplog):
+    """An `items`-less body mid-walk is an unread page, not ADR-0169's empty end page, so the
+    line naming the counter as inflated must not fire for it."""
+    first = json.dumps(
+        {
+            "items": [
+                {
+                    "TotalJobsCount": 450,
+                    "requisitionList": [{"Id": i, "Title": "t"} for i in range(200)],
+                }
+            ]
+        }
+    )
+
+    def route(method: str, url: str, kwargs: dict) -> FakeResponse:
+        if "/recruitingCEJobRequisitions?" in url:
+            return FakeResponse(text=first if "offset=0" in url else '{"error": 1}')
+        return FakeResponse(text=json.dumps({"items": []}))
+
+    scraper = OracleScraper(HOST, "Effx", fetcher=FakeFetcher(route))
+    with caplog.at_level(logging.INFO, logger="headstart.scrapers.oracle"):
+        scraper.fetch_raw()
+    logged = " ".join(r.getMessage() for r in caplog.records)
+    assert "page at offset 200 carried no `items` (keys ['error'])" in logged
+    assert "walk stopped at 200 of 450" in logged
+    assert "over-states" not in logged
 
 
 # --- the Board's company name ---------------------------------------------------------------

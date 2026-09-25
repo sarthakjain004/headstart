@@ -77,6 +77,12 @@ the same reason (#179). ``hiringOrganization`` is polymorphic: a bare string on 
 ``MonetaryAmount`` that is *present but empty* on the large majority of postings; it is still read
 because when it is populated it is a real structured figure, and an empty one costs nothing.
 
+**The detail is read at ``/job/{id}?nl=1``, with redirects refused** (ADR-0231). The plain job page
+of a tenant that moved its career site 302s to that site, which renders no posting; ``?nl=1`` is
+the page Jobvite's embed widget frames and still answers 200 with it. A Job is built from its
+detail page or not at all: there is no listing-derived fallback, so a lost page is a labelled gap
+and a truncation mark, and the fix for one is in reading the page.
+
 ADR-0048's ``needs_detail`` skip-list is deliberately **not** consulted, unlike eightfold's and
 zwayam's. Those two skip the detail fetch for a Job whose description we already hold because
 their *listing* still supplies title, location and the rest; here the listing supplies an id and
@@ -94,15 +100,14 @@ ADR-0023's duplicate-prune case, so nothing is done about it here beyond saying 
 
 from __future__ import annotations
 
+import math
 import re
 from typing import Any
 
-from headstart import http, log
+from headstart import http
 from headstart.models import Job, html_to_text, is_remote
 from headstart.scrapers.base import USER_AGENT, BaseScraper, DetailLost, DetailRequest
 from headstart.scrapers.job_posting_jsonld import find_job_posting, hiring_organization
-
-_log = log.get(__name__)
 
 #: Detail pages are 40-110 KB each and every one hits the same origin, so the fan-out stays
 #: narrow. Also the async stream width (``BaseScraper.fan_out_async``).
@@ -112,6 +117,8 @@ _DETAIL_WORKERS = 6
 #: so this is ~3.5x headroom; it exists so a ``next`` link that ever pointed at itself could not
 #: spin forever, not as a cap anyone is expected to reach.
 _MAX_PAGES = 200
+#: Postings per ``/search`` page (module docstring), so a stated total implies a page count.
+_PAGE_SIZE = 50
 
 _JOB_ID = r"[A-Za-z0-9]+"
 #: The ``jv-pagination-next`` anchor, which is how the walk advances. Attribute order varies by
@@ -124,8 +131,14 @@ _NUMBER = re.compile(r"[\d,]+")
 
 #: The rendered job title. Read only up to its first nested tag: one template (agscareer) puts
 #: the location inside this heading as a ``<br><h3>Canada</h3>``, and stripping tags first turned
-#: "Account Executive- Slots" into "Account Executive- Slots Canada".
-_HTML_TITLE = re.compile(r'<h2 class="jv-header">(.*?)</h2>', re.DOTALL)
+#: "Account Executive- Slots" into "Account Executive- Slots Canada". Neither the class list nor
+#: the level is fixed: mini-circuits-review writes ``<h2 class="jv-header u-text-left">``,
+#: nbbj-review ``<h3>`` and lordco-internal ``<h4>``, and matching only ``<h2 class="jv-header">``
+#: lost every page of all three (2026-09-25). Each page carries one ``jv-header``, the title.
+_HTML_TITLE = re.compile(
+    r'<(?P<level>h[1-6]) class="(?:[^"]* )?jv-header(?: [^"]*)?">(?P<title>.*?)</(?P=level)>',
+    re.DOTALL,
+)
 _HTML_META = re.compile(r'<p class="jv-job-detail-meta">(.*?)</p>', re.DOTALL)
 #: The description container's *opening* tag; its extent is found by depth-counting
 #: :data:`_DIV_TAG` (as taleo_be does). Ending at the first ``</div>`` followed by ``<div`` cut
@@ -285,6 +298,24 @@ class JobviteScraper(BaseScraper):
             # `new == 0` also stops the walk: a next link that returned nothing new is either the
             # end or a loop, and either way there is nothing further to read.
             if not match or not new:
+                if stated and not ids:
+                    self.note_unreadable_board(
+                        f"job links matching /{self.slug}/job/{{id}}",
+                        f"none on a page whose counter states {stated}",
+                    )
+                elif match:
+                    self._log.info(
+                        f"{self.board_key()}: next link offered on page {pages} but it added "
+                        f"no ids — walk stopped at {len(ids)} of {stated}"
+                    )
+                elif stated and pages < math.ceil(stated / _PAGE_SIZE):
+                    # A template change that stops `_NEXT` matching would otherwise serve page 0
+                    # alone as the whole Board, with nothing in the log to say so.
+                    self._log.info(
+                        f"{self.board_key()}: walk ended with no next link on page {pages} of "
+                        f"the {math.ceil(stated / _PAGE_SIZE)} the counter implies — {len(ids)} of "
+                        f"{stated} ids read"
+                    )
                 return ids
             href = match.group(1)
             url = (
@@ -293,11 +324,8 @@ class JobviteScraper(BaseScraper):
                 else f"https://jobs.jobvite.com{href}"
             )
         self.mark_truncated(
-            f"stopped at the {_MAX_PAGES}-page cap with a next link still offered"
-        )
-        _log.info(
-            f"{self.board_key()}: hit the {_MAX_PAGES}-page walk cap after {len(ids)} postings "
-            f"(the board's own counter stated {stated})"
+            f"stopped at the {_MAX_PAGES}-page cap after {len(ids)} postings with a next link "
+            f"still offered (the board's own counter stated {stated})"
         )
         return ids
 
@@ -319,7 +347,7 @@ class JobviteScraper(BaseScraper):
         title = _HTML_TITLE.search(page)
         if not title:
             return None
-        heading = title.group(1)
+        heading = title.group("title")
         text = html_to_text(heading.split("<", 1)[0]) or html_to_text(heading)
         posting: dict[str, Any] = {"title": text}
         description = _description_html(page)
@@ -338,9 +366,14 @@ class JobviteScraper(BaseScraper):
         return posting
 
     def detail_request(self, job_id: str) -> DetailRequest:
+        # `?nl=1` is the page Jobvite's embed widget frames. A tenant that moved its career site
+        # onto its own domain 302s the plain job page there (wedgewood, 2026-09-25), where no
+        # posting is rendered; the `nl=1` page still answers 200 with the posting. Redirects are
+        # refused so any that remain are labelled `HTTP 302`, not misread as an empty page.
         return DetailRequest(
-            self.job_url(job_id),
+            f"{self.job_url(job_id)}?nl=1",
             headers={"User-Agent": USER_AGENT, "Accept": "text/html"},
+            options={"allow_redirects": False},
         )
 
     def read_detail(self, job_id: str, response: Any) -> dict:

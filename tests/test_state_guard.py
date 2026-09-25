@@ -217,3 +217,12 @@ def test_verify_retries_too_not_only_record(tmp_path, monkeypatch):
     monkeypatch.setattr(sg, "_siblings", flaky)
     assert sg.verify(guard, REPO, "data/lancedb", None) == 0
     assert calls["n"] == 2
+
+
+def test_an_unreadable_base_fails_closed_with_an_annotation(tmp_path, caplog):
+    """A torn fingerprint used to escape as a bare JSONDecodeError traceback."""
+    base = tmp_path / "guard.json"
+    base.write_text("{not json", encoding="utf-8")
+    with caplog.at_level("ERROR"):
+        assert sg.verify(base, "repo", "data/lancedb", None) == 1
+    assert "is unreadable" in caplog.text

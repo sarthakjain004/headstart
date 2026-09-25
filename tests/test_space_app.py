@@ -27,7 +27,7 @@ import types
 from collections import defaultdict
 from contextlib import contextmanager
 from dataclasses import replace
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from urllib.parse import quote
 
@@ -3158,6 +3158,27 @@ def test_a_view_summing_picks_carries_each_picks_own_line(company_trends):
     assert one["pick_series"] == {}, "one pick is its own sum"
 
 
+def test_a_category_summing_picks_carries_each_picks_own_part(company_trends):
+    """NVIDIA and Micron's categories summed +73 against their Total of +40: a category took no
+    company's duplicate removals. Each pick's part of every category lets the page scale a
+    company's part by its own removals, and the parts are the category."""
+    d = company_trends.get(
+        "/trends?company=workday:hpe/a&company=eightfold:citi.eightfold.ai"
+    ).get_json()
+    lines = {s["name"]: s["points"] for s in d["series"]}
+    assert set(d["pick_parts"]) == set(lines)
+    for name, parts in d["pick_parts"].items():
+        for j, v in enumerate(lines[name]):
+            got = [p[j] for p in parts.values() if p[j] is not None]
+            assert sum(got) == (v or 0), (name, j)
+        for company, part in parts.items():
+            # 0 wherever its company is counted: a first opening there is hiring, not a join.
+            for v, whole in zip(part, d["pick_series"][company]):
+                assert (v is None) == (whole is None), (name, company)
+    one = company_trends.get("/trends?company=workday:hpe/a").get_json()
+    assert one["pick_parts"] == {}
+
+
 def _with_turnover(trends_app, monkeypatch, tmp_path, rows: list[dict]) -> None:
     """The fixture's ledger plus turnover rows (ADR-0227), loaded as the Space loads them."""
     history = _company_history(
@@ -3369,3 +3390,19 @@ def test_a_company_key_is_found_whatever_its_case(company_trends):
     # Answered under the directory's own key, which the page adopts for its picks.
     lower = company_trends.get("/trends?company=workday:hpe/a").get_json()
     assert [c["key"] for c in d["companies"]] == [c["key"] for c in lower["companies"]]
+
+
+def test_a_window_is_one_scope_whatever_instant_inside_a_run_gap_asks(trends_app):
+    """The 7/30/90-day presets ask for now − N to the second; any instant between the same two
+    runs holds the same runs, so it answers the same (#690, whose memo keyed on the runs a window
+    holds; the index is now read from columns and needs none)."""
+    stamps = list(trends_app._HISTORY.ticks)
+    assert len(stamps) >= 3
+    at = datetime.fromisoformat(stamps[1])
+    early, late = (
+        (at - timedelta(seconds=s)).isoformat(timespec="seconds") for s in (2, 1)
+    )
+    assert stamps[0] < early < late < stamps[1]
+    client = trends_app.app.test_client()
+    first = client.get("/trends", query_string={"since": early}).get_json()
+    assert client.get("/trends", query_string={"since": late}).get_json() == first

@@ -65,6 +65,7 @@ function fakeEl() {
  * alone passes either way, because 'bands' is also the fallback. */
 function loadApp(fetchImpl) {
   const nodes = {};
+  const logged = [];
   const fetches = [];
   const ctx = {
     document: {
@@ -80,7 +81,10 @@ function loadApp(fetchImpl) {
     // app.js reads its config off `window.CFG`, so tests set flags there.
     window: { addEventListener() {}, location: { hash: '' }, CFG: {} },
     location: { hash: '' },
-    console, CFG: {}, URLSearchParams, Date, Math, isNaN, setTimeout, clearTimeout,
+    // Recorded, not printed: app.js reports every failed request, and the stub fetches fail most
+    // of the page-load ones on purpose.
+    console: { log: console.log, warn: (...a) => logged.push(a), error: (...a) => logged.push(a) },
+    CFG: {}, URLSearchParams, Date, Math, isNaN, setTimeout, clearTimeout,
     // loadTrends cancels its own previous request, so app.js does not evaluate without this.
     // Node's real one, not a stub: the abort tests below need a signal that genuinely fires.
     AbortController,
@@ -107,7 +111,7 @@ function loadApp(fetchImpl) {
     + ' follow: boards => { myCompanies = { followed: boards, hidden: [] }; },'
     + ' followed: followedOption, openTrend: openCompanyTrend, chartedAndOther,'
     + ' unit: () => trendUnit, clickUnit: pickUnit, hash: trendHash, pick: setPicks, netOfSteps,'
-    + ' table: toggleTrendsTable, changeSizesOf, rowText, hotMeasure: HOT_MEASURE, turnoverOf,'
+    + ' table: toggleTrendsTable, tooltipNotes, geom: () => lastGeom, hotMeasure: HOT_MEASURE, turnoverOf,'
     + ' set: (d, drill) => { trendData = d; trendRaw = d; trendDrill = drill || null; } };'
     // Repaints are counted at the global binding, which is what loadTrends' own `drawTrends()`
     // call resolves — so this counts the real paints, not a copy of them.
@@ -1831,9 +1835,8 @@ test('the table heads a company\'s categories with its own total, and says why t
   nodes['trends-error'] = Object.assign(fakeEl(), { hidden: true });
   t.table(true);
   const html = nodes['trends-table'].innerHTML;
-  assert.match(html, /<caption>The first row is the company’s hiring, and the categories add up to it/);
+  assert.match(html, /<caption>The first row is the company’s hiring; the categories below add up to it/);
   assert.match(html, /<tr class="total"><th scope="row"><b>All tech roles<\/b><\/th><td>165<\/td>/);
-  assert.doesNotMatch(html, /class="between"/, 'nothing between them when they add up');
 });
 
 test('a refit that moves openings between categories leaves them adding up to the company', () => {
@@ -2062,7 +2065,7 @@ test('a trend opened from Hot says how Hot’s figure reads on it', () => {
   t.setPicks([bosch]);
   t.set(companies([['greenhouse:bosch', 'Bosch', [100, 200, 300, 540]]]));
   t.draw();
-  assert.match(nodes['trends-empty'].textContent, /Hot’s \+440 net tech roles is one of Bosch’s 2 boards; this line sums all of them\./);
+  assert.match(nodes['trends-empty'].textContent, /Hot’s \+440 net tech roles is one of Bosch’s 2 boards; this line sums all of them and reads \+440 openings\./);
   t.setPicks([{ ...bosch, boardKeys: ['greenhouse:bosch'] }]);
   t.draw();
   assert.match(nodes['trends-empty'].textContent, /Hot’s \+440 net tech roles is this line’s change/);
@@ -2304,7 +2307,7 @@ test('a refit leaves a company’s categories adding up to it, settling run and 
   t.draw();
   nodes['trends-error'] = Object.assign(fakeEl(), { hidden: true });
   t.table(true);
-  assert.match(nodes['trends-table'].innerHTML, /<caption>The first row is the company’s hiring, and the categories add up to it\.<\/caption>/);
+  assert.match(nodes['trends-table'].innerHTML, /<caption>The first row is the company’s hiring; the categories below add up to it\.<\/caption>/);
 });
 
 test('several picks in a drill leave an extraction change in the level total', () => {
@@ -2349,7 +2352,7 @@ test('a breakdown change is a step Back can undo', () => {
 });
 
 // ---- critique round 15 ------------------------------------------------------------------------
-test('the marked-changes list sizes every line, Other and the whole company included, as the sentence does', () => {
+test('the marked-changes list sizes each change on the company alone, as the sentence totals it', () => {
   const { t, nodes } = loadApp();
   t.setPicks([ACME]);
   // Nine categories, so the ninth is Other; a filter change moves each by +10 at FIVE[2].
@@ -2361,12 +2364,10 @@ test('the marked-changes list sizes every line, Other and the whole company incl
   t.setUnit('count', false);
   t.draw();
   const list = nodes['trends-changes'].innerHTML;
-  assert.match(list, /tech filter changed — Acme \+90 openings, a \+10 openings/, 'the company first, then each line');
-  assert.match(list, /Other \(1 smaller categor[^)]*\) \+10 openings/, 'Other too');
-  assert.match(nodes['trends-verdict'].innerHTML, /<\/summary>\+90 openings from a tech filter change\./, 'the same +90');
+  assert.match(list, /tech filter changed — Acme \+90 openings<\/li>/, 'the company alone, no category beside it');
+  assert.match(nodes['trends-verdict'].innerHTML, /Not hiring: \+90 openings/, 'the same +90');
 });
-
-test('a line a counting change sorted into existence is sized in the list by what it arrived with', () => {
+test('a category a counting change sorted into existence reads so, and the list gives the company’s size', () => {
   const { t, nodes } = loadApp();
   t.setPicks([ACME]);
   t.set({ ...picked({}), stamps: FOUR, totals: [1e3, 1e3, 1e3, 1e3], non_tech: [0, 0, 0, 0],
@@ -2376,31 +2377,10 @@ test('a line a counting change sorted into existence is sized in the list by wha
     epochs: [{ ts: FOUR[2], changed: ['role family assignment changed'], fields: ['family_classifier_version'] }] });
   t.setUnit('count', false);
   t.draw();
-  // The change and its settling run: a −16 then +1; web arrives with 16; the company +1 in all.
-  assert.match(nodes['trends-changes'].innerHTML, /Acme \+1 opening, a −15 openings, web \+16 openings/);
+  assert.match(row(nodes['trends-legend'].innerHTML, 'web'), /sorted in by a counting change, Sep 15/);
+  // The company moved 0 at the change and +1 at its settling run.
+  assert.match(nodes['trends-changes'].innerHTML, /role family assignment changed — Acme \+1 opening<\/li>/);
 });
-
-test('the table caption names only the causes this view has', () => {
-  const { t, nodes } = loadApp();
-  t.setPicks([ACME, MICRON]);
-  // Two picks summed per category; a duplicate-removal change touches only Micron, so Acme's +30
-  // that run comes out of the summed category too: one company's step, nothing found or removed.
-  t.set({ ...picked({}, [{ key: 'greenhouse:acme', label: 'Acme' }, { key: 'eightfold:micron', label: 'Micron', board_keys: ['eightfold:micron'] }]),
-    stamps: FOUR, totals: [1e3, 1e3, 1e3, 1e3], non_tech: [0, 0, 0, 0],
-    series: [{ name: 'a', label: 'a', points: [100, 100, 130, 130], latest: 130 },
-             { name: 'b', label: 'b', points: [200, 200, 200, 200], latest: 200 }],
-    pick_series: { 'greenhouse:acme': [100, 100, 130, 130], 'eightfold:micron': [200, 200, 200, 200] },
-    counted_since: { 'greenhouse:acme': FOUR[0], 'eightfold:micron': FOUR[0] },
-    epochs: [{ ts: FOUR[2], changed: ['duplicate removal changed'], fields: ['dedup_version'] }] });
-  t.setUnit('count', false);
-  t.draw();
-  nodes['trends-error'] = Object.assign(fakeEl(), { hidden: true });
-  t.table(true);
-  const caption = nodes['trends-table'].innerHTML.split('</caption>')[0];
-  assert.match(caption, /one company’s own step taken out of every row it is summed into/);
-  assert.doesNotMatch(caption, /duplicates removed|boards found|scaled/);
-});
-
 test('each sentence opens with the answer in plain words', () => {
   const { t, nodes } = loadApp();
   t.setPicks([ACME]);
@@ -2437,7 +2417,7 @@ test('under New a duplicate-removal change is named as one, as under All opening
 
 
 // ---- round 15 review ------------------------------------------------------------------------------
-test('the tooltip sizes a change as the list does, its settling run included (Micron, Sep 17)', () => {
+test('the crosshair on a marker says what the list says, the company’s size included (Micron, Sep 17)', () => {
   const { t, nodes } = loadApp();
   t.setPicks([ACME]);
   // +32 at the change's own run, −296 at its settling run: one change of −264.
@@ -2445,12 +2425,27 @@ test('the tooltip sizes a change as the list does, its settling run included (Mi
     epochs: [{ ts: FIVE[2], changed: ['tech filter changed'], fields: ['tech_filter_version'] }] }));
   t.setUnit('count', false);
   t.draw();
-  const sizes = t.changeSizesOf(t.data().series[0]);
-  assert.equal(sizes.get(2), -264);
-  assert.match(t.rowText({ value: 1032, change: sizes.get(2) }), /marked change −264/);
+  assert.deepEqual(t.tooltipNotes(t.geom(), 2), ['Sep 15 00:00 tech filter changed — Acme −264 openings']);
   assert.match(nodes['trends-changes'].innerHTML, /Acme −264 openings/);
 });
 
+test('a day’s marker names every change that day at its own time', () => {
+  const { t } = loadApp();
+  const stamps = ['2026-09-20T00:00:00+00:00', '2026-09-24T11:32:00+00:00', '2026-09-24T16:23:00+00:00',
+                  '2026-09-24T21:19:00+00:00', '2026-09-27T00:00:00+00:00'];
+  t.setPicks([ACME]);
+  t.set(companies([['greenhouse:acme', 'Acme', [100, 91, 89, 99, 99]]], { stamps, epochs: [
+    { ts: stamps[1], changed: ['tech filter changed'], fields: ['tech_filter_version'] },
+    { ts: stamps[3], changed: ['role family assignment changed'], fields: ['family_classifier_version'] }] }));
+  t.setUnit('count', false);
+  t.draw();
+  const at = [...t.geom().changesAt.keys()];
+  assert.equal(at.length, 1, 'one marker for the day');
+  const notes = t.tooltipNotes(t.geom(), at[0]);
+  assert.equal(notes.length, 2);
+  assert.match(notes[0], /^Sep 24 11:32 tech filter changed — Acme −11 openings$/);
+  assert.match(notes[1], /^Sep 24 21:19 role family assignment changed — Acme \+10 openings$/);
+});
 test('each lead word says the answer', () => {
   const lead = points => {
     const { t, nodes } = loadApp();
@@ -2612,4 +2607,190 @@ test('a line summing picks counts each pick’s turnover over the runs its own l
       [MICRON.key]: { opened: [null, 1, 2, 3], closed: [null, 0, 0, 0], recounted: [null, 0, 0, 0] } },
     counted_since: { [ACME.key]: FOUR[0], [MICRON.key]: FOUR[0] } }, 'ai-ml');
   same({ ...t.turnoverOf({ name: '__total__', points: [300, 300, 280, 280] }) }, { opened: 61, closed: 0 });
+});
+
+// ---- critique round 16 ------------------------------------------------------------------------
+test('a duplicate removal scales the history before it, so doubled growth is halved (Micron)', () => {
+  const { t, nodes } = loadApp();
+  const key = 'eightfold:micron';
+  t.setPicks([{ key, label: 'Micron', boardKeys: [key] }]);
+  // 1,000 real jobs listed twice (2,000); 50 real hires showed as +100; then the 1,050 copies are
+  // removed, and 10 more are hired.
+  const pts = [2000, 2100, 1050, 1060];
+  t.set(companies([[key, 'Micron', pts]], { company_totals: { [key]: pts },
+    evicted: [{ ts: FOUR[2], company: key, count: 1050 }] }));
+  t.setUnit('count', false);
+  t.draw();
+  const html = nodes['trends-verdict'].innerHTML;
+  assert.match(html, /\(\+60 openings/, '50 + 10 real hires; lifted, it read +110');
+  assert.match(html, /Not hiring: −1,000 openings/);
+  assert.match(nodes['trends-changes'].innerHTML, /duplicate postings of Micron removed — Micron −1,000 openings/,
+    'the list sizes the removal by what it does to the line, so it sums to the sentence');
+});
+
+test('Comparable says its base moved only when the window starts before counting by board', () => {
+  const { t, nodes } = loadApp();
+  t.setPicks([ACME]);
+  t.coverageSet('comparable');
+  // Asked from before the run the cohort starts at, but after counting by board began: the
+  // window starts at the first run inside it, and nothing was moved.
+  nodes['trends-since'] = Object.assign(fakeEl(), { value: '2026-09-13T12:00' });
+  t.set({ ...companies([['greenhouse:acme', 'Acme', [100, 100, 100, 100]]]), base: FOUR[1], ledger_start: FOUR[0] });
+  t.draw();
+  assert.doesNotMatch(nodes['trends-empty'].textContent, /the first run it counted by board/);
+});
+
+test('a link’s values are read case-blind, as its company keys are', () => {
+  const { t, ctx } = loadApp();
+  ctx.location.hash = '#trends?company=greenhouse%3Aacme&by=TOTAL&unit=COUNT';
+  t.readHash();
+  assert.equal(t.top(), 'total');
+  assert.equal(t.unit(), 'count');
+});
+
+test('a company counted from a later run is not sized by a change before it (Zomato’s phantom +2)', () => {
+  const { t, nodes } = loadApp();
+  const zomato = { key: 'lever:zomato', label: 'Zomato', boardKeys: ['lever:zomato'] };
+  t.setPicks([ACME, zomato]);
+  t.set(companies([['greenhouse:acme', 'Acme', [100, 100, 110, 110, 110]], ['lever:zomato', 'Zomato', [null, null, null, 2, 2]]],
+    { stamps: FIVE, counted_since: { 'greenhouse:acme': FIVE[0], 'lever:zomato': FIVE[3] },
+      epochs: [{ ts: FIVE[2], changed: ['tech filter changed'], fields: ['tech_filter_version'] }] }));
+  t.setUnit('count', false);
+  t.draw();
+  const list = nodes['trends-changes'].innerHTML;
+  assert.match(list, /tech filter changed — Acme \+10 openings<\/li>/);
+  assert.doesNotMatch(list, /Zomato/, 'its first run is when counting began, not a change');
+});
+
+test('before a removal a change counts at the scale the removal leaves, and the list sums to the sentence', () => {
+  const { t, nodes } = loadApp();
+  const key = 'eightfold:micron';
+  t.setPicks([{ key, label: 'Micron', boardKeys: [key] }]);
+  // A filter change adds 200 while every job is listed twice; then half the list is removed.
+  const pts = [2000, 2200, 2200, 1100, 1110];
+  t.set(companies([[key, 'Micron', pts]], { stamps: FIVE, company_totals: { [key]: pts },
+    evicted: [{ ts: FIVE[3], company: key, count: 1100 }],
+    epochs: [{ ts: FIVE[1], changed: ['tech filter changed'], fields: ['tech_filter_version'] }] }));
+  t.setUnit('count', false);
+  t.draw();
+  const list = nodes['trends-changes'].innerHTML;
+  assert.match(list, /tech filter changed — Micron \+100 openings/, 'its 200 were 100 real jobs');
+  assert.match(list, /duplicate postings of Micron removed — Micron −1,000 openings/);
+  assert.match(nodes['trends-verdict'].innerHTML, /Not hiring: −900 openings/);
+});
+
+
+// ---- round 16 review ------------------------------------------------------------------------------
+test('a removal alone on its run leaves a company’s categories adding up to it', () => {
+  const { t, nodes } = loadApp();
+  const key = 'eightfold:micron';
+  t.setPicks([{ key, label: 'Micron', boardKeys: [key] }]);
+  // Two categories, every job listed twice; a removal of half, alone on its run.
+  const a = [1200, 1300, 650, 660], b = [800, 800, 400, 400];
+  const whole = a.map((v, j) => v + b[j]);
+  t.set({ ...picked({}), stamps: FOUR, totals: [1e4, 1e4, 1e4, 1e4], non_tech: [0, 0, 0, 0],
+    series: [{ name: 'a', label: 'a', points: a, latest: 660 }, { name: 'b', label: 'b', points: b, latest: 400 }],
+    companies: [{ key, label: 'Micron', board_keys: [key], atses: ['eightfold'] }],
+    company_totals: { [key]: whole }, counted_since: { [key]: FOUR[0] },
+    evicted: [{ ts: FOUR[2], company: key, count: 1050 }] });
+  t.setUnit('count', false);
+  t.draw();
+  nodes['trends-error'] = Object.assign(fakeEl(), { hidden: true });
+  t.table(true);
+  const cells = name => nodes['trends-table'].innerHTML.split('</tr>').find(r => r.includes(`>${name}<`));
+  // 50 real hires in a and 10 after: +60 in all, +60 in a, 0 in b.
+  assert.match(cells('All tech roles'), /<td class="up">\+60 openings<\/td>/);
+  assert.match(cells('a'), /<td class="up">\+60 openings<\/td>/);
+  assert.match(cells('b'), /<td class="flat">\+0 openings<\/td>/);
+});
+
+test('a change settling on a removal’s run is sized at that run’s own scale', () => {
+  const { t, nodes } = loadApp();
+  const key = 'eightfold:micron';
+  t.setPicks([{ key, label: 'Micron', boardKeys: [key] }]);
+  // A filter change at [2] adds 200, then half the list is removed at [3], its settling run,
+  // where 50 more also land: the list must say +150 (+100 scaled, +50 at the removal's run), as
+  // the sentence does; scaled whole it said +125.
+  const pts = [2000, 2000, 2200, 1150, 1160];
+  t.set(companies([[key, 'Micron', pts]], { stamps: FIVE, company_totals: { [key]: pts },
+    evicted: [{ ts: FIVE[3], company: key, count: 1100 }],
+    epochs: [{ ts: FIVE[2], changed: ['tech filter changed'], fields: ['tech_filter_version'] }] }));
+  t.setUnit('count', false);
+  t.draw();
+  const list = nodes['trends-changes'].innerHTML;
+  const total = [...list.matchAll(/— Micron ([−+][\d,]+) opening/g)].reduce((a, m) => a + Number(m[1].replace('−', '-').replace(',', '')), 0);
+  const said = nodes['trends-verdict'].innerHTML.match(/Not hiring: ([−+][\d,]+) opening/)[1];
+  assert.equal(total, Number(said.replace('−', '-').replace(',', '')), 'the list sums to the sentence');
+  assert.match(list, /tech filter changed — Micron \+150 openings/);
+});
+
+test('with several picks each category scales by its own companies’ removals and they add up to the Total', () => {
+  const { t, nodes } = loadApp();
+  const MICRON = { key: 'eightfold:micron', label: 'Micron', boardKeys: ['eightfold:micron'] };
+  t.setPicks([ACME, MICRON]);
+  // Micron listed every job twice until half its list is removed at [2]; Acme is counted once.
+  const parts = { a: { [ACME.key]: [100, 100, 110, 110], [MICRON.key]: [1200, 1300, 650, 660] },
+                  b: { [ACME.key]: [50, 50, 50, 60], [MICRON.key]: [800, 800, 400, 400] } };
+  const sum = xs => xs[0].map((_, j) => xs.reduce((a, x) => a + x[j], 0));
+  const whole = key => sum([parts.a[key], parts.b[key]]);
+  t.set({ ...picked({}, [{ key: ACME.key, label: 'Acme' }, { key: MICRON.key, label: 'Micron' }]),
+    stamps: FOUR, totals: [1e4, 1e4, 1e4, 1e4], non_tech: [0, 0, 0, 0],
+    series: Object.entries(parts).map(([name, p]) => { const points = sum(Object.values(p)); return { name, label: name, points, latest: points[3] }; }),
+    pick_series: { [ACME.key]: whole(ACME.key), [MICRON.key]: whole(MICRON.key) }, pick_parts: parts,
+    company_totals: { [ACME.key]: whole(ACME.key), [MICRON.key]: whole(MICRON.key) },
+    counted_since: { [ACME.key]: FOUR[0], [MICRON.key]: FOUR[0] },
+    evicted: [{ ts: FOUR[2], company: MICRON.key, count: 1050 }] });
+  t.setUnit('count', false);
+  t.draw();
+  nodes['trends-error'] = Object.assign(fakeEl(), { hidden: true });
+  t.table(true);
+  const cells = name => nodes['trends-table'].innerHTML.split('</tr>').find(r => r.includes(`>${name}<`));
+  // Acme +10 in each; Micron's 50 + 10 real hires all in a. Unscaled, a read +120.
+  assert.match(cells('All tech roles'), /<td class="up">\+80 openings<\/td>/);
+  assert.match(cells('a'), /<td class="up">\+70 openings<\/td>/);
+  assert.match(cells('b'), /<td class="up">\+10 openings<\/td>/);
+});
+
+test('inside a category the marked removal is sized, so the list sums to the sentence', () => {
+  const { t, nodes } = loadApp();
+  const key = 'eightfold:micron';
+  t.setPicks([{ key, label: 'Micron', boardKeys: [key] }]);
+  const mid = [1200, 1300, 650, 660], senior = [800, 800, 400, 400];
+  const whole = mid.map((v, j) => v + senior[j]);
+  t.set({ ...picked({}, [{ key, label: 'Micron' }]), split_by: 'band', stamps: FOUR,
+    totals: [1e4, 1e4, 1e4, 1e4], non_tech: [0, 0, 0, 0],
+    series: [{ name: 'mid', label: 'Mid', points: mid, latest: 660 }, { name: 'senior', label: 'Senior', points: senior, latest: 400 }],
+    company_totals: { [key]: whole }, counted_since: { [key]: FOUR[0] },
+    evicted: [{ ts: FOUR[2], company: key, count: 1050 }] }, 'ai-ml');
+  t.setUnit('count', false);
+  t.draw();
+  const list = nodes['trends-changes'].innerHTML;
+  const said = nodes['trends-verdict'].innerHTML.match(/Not hiring: ([−+][\d,]+) opening/);
+  assert.ok(said, nodes['trends-verdict'].innerHTML);
+  const total = [...list.matchAll(/— Micron, ai-ml ([−+][\d,]+) opening/g)].reduce((a, m) => a + Number(m[1].replace('−', '-').replace(',', '')), 0);
+  assert.equal(total, Number(said[1].replace('−', '-').replace(',', '')), list);
+});
+
+test('a refused pick takes its chart and sentence with it', async () => {
+  const { t, ctx, nodes } = loadApp();
+  t.setPicks([ACME]);
+  t.set(companies([['greenhouse:acme', 'Acme', [100, 100, 100, 120]]]));
+  t.draw();
+  assert.match(nodes['trends-verdict'].innerHTML, /Acme/);
+  answering(ctx, { error: 'unknown company: greenhouse:acme' }, 400);
+  await t.load(null);
+  assert.equal(nodes['trends-verdict'].innerHTML, '', 'no sentence left for a company that is gone');
+});
+
+test('the roles view marks the changes that moved its roles', () => {
+  const { t, nodes } = loadApp();
+  t.setPicks([ACME]);
+  t.set(fixture(), null);
+  t.click('software-engineering', 'roles');
+  t.set({ ...picked({}), stamps: FOUR, totals: [1e3, 1e3, 1e3, 1e3], non_tech: [0, 0, 0, 0],
+    series: [{ name: 'watch:llm', label: 'watch:llm', points: [80, 80, 96, 96], latest: 96 }],
+    epochs: [{ ts: FOUR[2], changed: ['tech filter changed'], fields: ['tech_filter_version'] }] }, 'software-engineering');
+  t.draw();
+  assert.match(nodes['trends-chart'].innerHTML, /class="epoch-marker"/);
+  assert.match(nodes['trends-changes'].innerHTML, /tech filter changed — watch:llm \+16 openings/);
 });

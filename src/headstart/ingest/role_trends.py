@@ -394,6 +394,13 @@ def _load_board_counts(
                 raise ValueError(f"{path}: unexpected Board-count schema")
             for row in table.to_pylist():
                 counts[tuple(row[k] for k in _BOARD_COUNT_COLUMNS[:-1])] = row["count"]
+        else:
+            # Said, because the consequence is silent otherwise: every Board's level starts from
+            # zero, so this tick's deltas are the whole stock rather than a change.
+            old = (metadata.get(b"centroid_version") or b"none").decode()
+            _log.info(
+                f"board counts: snapshot at v{old}, not v{version} — this tick is a baseline"
+            )
     return counts, as_of
 
 
@@ -402,22 +409,31 @@ def _recover_board_counts(
 ) -> dict[tuple[str, ...], int]:
     import pyarrow.parquet as pq
 
+    replayed = 0
     for path in sorted(directory.glob("*.parquet")):
         table = pq.read_table(path)
         if (table.schema.metadata or {}).get(b"centroid_version") != str(
             version
         ).encode():
             continue
+        counted = False
         for row in table.to_pylist():
             # A tick's file also carries its turnover and markers (ADR-0227), not levels.
             if row["ts"] <= as_of or row["metric"] not in _LEVEL_METRICS:
                 continue
+            counted = True
             key = tuple(row[k] for k in _BOARD_COUNT_COLUMNS[:-1])
             value = counts.get(key, 0) + row["delta"]
             if value:
                 counts[key] = value
             else:
                 counts.pop(key, None)
+        replayed += counted
+    if replayed:
+        _log.info(
+            f"board counts: replayed {replayed} tick(s) past {as_of or 'no snapshot'} "
+            "(a previous save was lost)"
+        )
     return counts
 
 
@@ -530,9 +546,7 @@ def _turnover_this_tick(
         turnover[job_turnover.unscoped_marker(live.get(lowered, lowered))] = 1
     loaded = role_assignments.load_placements(snapshot)
     if loaded is None:
-        _log.info(
-            "turnover: no comparable snapshot, so opened and closed start next run (ADR-0227)"
-        )
+        # `load_placements` has already said which reason, and that turnover waits a tick.
         return turnover, None
     previous, previous_as_of = loaded
     booked = job_turnover.turnover(
@@ -682,7 +696,9 @@ def main() -> int:
             lambda filled: role_family_classifier.save_cache(args.title_cache, filled),
         )
     except Exception as exc:  # noqa: BLE001 - a failed fill keeps what the cache already holds
-        _log.error(f"title classifier failed: {type(exc).__name__}: {exc}")
+        _log.warning(
+            f"title classifier failed: {type(exc).__name__}: {exc}", exc_info=True
+        )
         added = 0
     covered = role_family_classifier.coverage(cache, titles)
     _log.info(
@@ -764,9 +780,18 @@ def main() -> int:
         # Entries the published snapshot already covers are dropped, never this run's: see
         # `job_turnover.drop_evictions_through`. After the snapshot, so a failed save keeps them.
         if booked_through is not None:
-            job_turnover.drop_evictions_through(args.eviction_queue, booked_through)
+            dropped, kept = job_turnover.drop_evictions_through(
+                args.eviction_queue, booked_through
+            )
+            _log.info(
+                f"eviction queue: dropped {dropped} booked through {booked_through}, "
+                f"{kept} carried forward"
+            )
     except (OSError, ValueError) as exc:
-        _log.error(f"comparable Trends state unusable, no trends this run: {exc}")
+        _log.error(
+            f"comparable Trends state unusable, no trends this run: {exc}",
+            exc_info=True,
+        )
         return 1
     written = append_ledger(args.ledger, counts, non_tech, version, ts)
     stock_top = sorted(
@@ -827,7 +852,9 @@ def main() -> int:
                 )
             )
     except Exception as exc:  # noqa: BLE001 - a diagnostic must never sink a good run
-        _log.warning(f"assignment diff skipped: {type(exc).__name__}: {exc}")
+        _log.warning(
+            f"assignment diff skipped: {type(exc).__name__}: {exc}", exc_info=True
+        )
 
     # Which methodology moved since the last tick, if any (ADR-0164) — a new classifier head, an
     # edited family list, or a tech-filter, derivations or dedup version bump (ADR-0188) each
@@ -848,9 +875,20 @@ def main() -> int:
         if wrote_epoch:
             _log.info(f"epochs: methodology boundary recorded @ {ts} -> {args.epochs}")
     except Exception as exc:  # noqa: BLE001 - a diagnostic must never sink a good run
-        _log.warning(f"epoch stamp skipped: {type(exc).__name__}: {exc}")
+        _log.warning(f"epoch stamp skipped: {type(exc).__name__}: {exc}", exc_info=True)
     return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    # The step is `continue-on-error`, so an unguarded exception would end in a green run with
+    # no annotation at all; one ERROR names it and says what is stale. SystemExit and
+    # KeyboardInterrupt are not `Exception`, so they pass through untouched.
+    try:
+        raise SystemExit(main())
+    except Exception:  # noqa: BLE001 - the one catch-all per entry point, logged and re-exited
+        _log.error(
+            "role_trends failed — no trend rows this run, and the Board ledgers hot_boards "
+            "and company_directory read may be a tick stale",
+            exc_info=True,
+        )
+        raise SystemExit(1) from None

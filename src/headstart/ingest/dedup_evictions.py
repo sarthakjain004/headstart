@@ -41,12 +41,12 @@ def append(
     ts: str,
     rules: Mapping[str, str],
     board_of: Callable[[str], str],
-) -> None:
+) -> int:
     """Append this run's ``{evicted id: rule}`` to the ledger at ``path``, one row per Board and
-    rule, sorted. Writes nothing when nothing was evicted."""
+    rule, sorted, and return how many rows. Writes nothing when nothing was evicted."""
     counts = Counter((board_of(job_id), rule) for job_id, rule in rules.items())
     if not counts:
-        return
+        return 0
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     buffer = io.StringIO(newline="")
@@ -63,3 +63,4 @@ def append(
     except BaseException:
         Path(tmp).unlink(missing_ok=True)
         raise
+    return len(counts)

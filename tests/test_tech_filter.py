@@ -331,21 +331,22 @@ def test_report_warns_on_an_ats_that_contributed_zero_rows(caplog):
     )  # never in this run's slice at all — no file, no mention
 
 
-def test_report_errors_when_the_whole_corpus_is_zero(caplog):
-    """Every ATS in the slice scraped nothing: the corpus-wide zero gets its own ERROR line, on
+def test_report_warns_when_the_whole_corpus_is_zero(caplog):
+    """Every ATS in the slice scraped nothing: the corpus-wide zero gets its own WARNING line, on
     top of (not instead of) the per-ATS zero WARNING — the two questions ("is this ATS broken"
-    and "is the whole run broken") are answered separately, and no TOTAL line fires."""
+    and "is the whole run broken") are answered separately, and no TOTAL line fires. WARNING,
+    not ERROR: ERROR is an abort (ADR-0039), and this stage does not abort on it."""
     logger = logging.getLogger("test_tech_filter.report")
     stats = {"jazzhr": (0, 0), "jobvite": (0, 0)}
     with caplog.at_level(logging.INFO):
         report(stats, "data/jobs/tech", logger)
-    errors = [r.getMessage() for r in caplog.records if r.levelno == logging.ERROR]
-    assert errors == [
-        "no rows at all reached the tech filter -> data/jobs/tech is empty"
-    ]
+    assert not any(r.levelno >= logging.ERROR for r in caplog.records)
     warnings = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
-    assert len(warnings) == 1
+    assert len(warnings) == 2
     assert "jazzhr" in warnings[0] and "jobvite" in warnings[0]
+    assert warnings[1] == (
+        "no rows at all reached the tech filter -> data/jobs/tech is empty"
+    )
     infos = [r.getMessage() for r in caplog.records if r.levelno == logging.INFO]
     assert not any(m.startswith("TOTAL") for m in infos)
 
@@ -378,6 +379,18 @@ def test_filter_jobs_and_report_filters_then_reports(tmp_path, caplog):
     assert (tmp_path / "tech" / "greenhouse.jsonl").exists()
     infos = [r.getMessage() for r in caplog.records if r.levelno == logging.INFO]
     assert any(m.startswith("TOTAL") for m in infos)
+    # one progress line per file as it lands (tests/test_log_contract.py keeps it unparsed)
+    (progress,) = [m for m in infos if m.startswith("filtered ")]
+    assert progress.startswith("filtered greenhouse: 1/2 kept, ")
+    assert progress.endswith("(1/1 files)")
+
+
+def test_a_malformed_line_names_its_file_and_line(tmp_path):
+    src = tmp_path / "jobs"
+    src.mkdir()
+    (src / "lever.jsonl").write_text('{"title": "SRE"}\n\n{oops\n', encoding="utf-8")
+    with pytest.raises(ValueError, match=r"lever\.jsonl:3: malformed JSON"):
+        filter_jobs(src, tmp_path / "tech", workers=1)
 
 
 def test_hiring_department_is_not_a_tech_department():

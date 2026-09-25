@@ -48,9 +48,11 @@ from collections import Counter
 from collections.abc import Iterable
 from pathlib import Path
 
-from headstart import company_name
+from headstart import company_name, log
 
 __all__ = ["RESOLVED_NAMES", "board_name", "clean", "resolved_name"]
+
+_log = log.get(__name__)
 
 #: The cascade's own answers, one ``board_key,name,source,checked_at`` row per Board it named,
 #: written by ``scripts/validate/workday_company_names.py`` and committed. This is the per-Board
@@ -152,7 +154,12 @@ def _names_in(path: Path) -> dict[str, str]:
                 for row in csv.DictReader(handle)
                 if (row.get("name") or "").strip()
             }
-    except OSError:
+    except OSError as exc:
+        # Once per process (`functools.cache`): without the file every Board falls back to a
+        # request, and nothing else says why.
+        _log.info(
+            f"no name cache at {path} ({type(exc).__name__}) — naming every Board live"
+        )
         return {}
 
 

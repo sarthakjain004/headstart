@@ -67,6 +67,7 @@ import argparse
 import gzip
 import hashlib
 import json
+import time
 from collections.abc import Iterator
 from collections.abc import Set as AbstractSet
 from pathlib import Path
@@ -139,14 +140,24 @@ def _entries(ats_dir: Path) -> Iterator[tuple[str, str | None]]:
     """
     for path in _fragments(ats_dir):
         with gzip.open(path, "rt", encoding="utf-8") as fh:
-            for line in fh:
+            for lineno, line in enumerate(fh, 1):
                 line = line.strip()
                 if line:
-                    record = json.loads(line)
+                    record = _parse(line, path, lineno)
                     text = record.get("description")
                     if not isinstance(text, str) or not text.strip():
                         text = None
                     yield record["id"], text
+
+
+def _parse(line: str, path: Path, lineno: int) -> dict:
+    """``json.loads`` that names the file and line it failed on. Still fatal — a torn record must
+    not be read past — but a bare ``JSONDecodeError`` named neither, so the abort sent the reader
+    hunting through every fragment and corpus file of the run."""
+    try:
+        return json.loads(line)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"{path} line {lineno}: {exc}") from exc
 
 
 def read_store(ats_dir: Path) -> dict[str, str]:
@@ -199,17 +210,22 @@ def read_changes(path: Path) -> dict[str, ChangeRecord]:
     if not path.exists():
         return {}
     ledger: dict[str, ChangeRecord] = {}
+    malformed = 0
     try:
         with gzip.open(path, "rt", encoding="utf-8") as fh:
             for line in fh:
                 fields = line.rstrip("\n").split("\t")
                 if len(fields) == 3 and fields[1].isdigit():
                     ledger[fields[0]] = ChangeRecord(int(fields[1]), fields[2])
+                else:
+                    malformed += 1
     except (OSError, EOFError, UnicodeDecodeError) as exc:
         _log.warning(
             f"{path} is unreadable ({exc}); change counts start again from zero"
         )
         return {}
+    if malformed:
+        _log.info(f"{path}: skipped {malformed} malformed line(s)")
     return ledger
 
 
@@ -269,11 +285,11 @@ def reconcile(
     # uses, so a crash mid-write leaves an orphan file rather than a half-written corpus.
     tmp = jobs_path.with_suffix(".jsonl.tmp")
     with jobs_path.open(encoding="utf-8") as fh, tmp.open("w", encoding="utf-8") as out:
-        for line in fh:
+        for lineno, line in enumerate(fh, 1):
             line = line.strip()
             if not line:
                 continue
-            job = json.loads(line)
+            job = _parse(line, jobs_path, lineno)
             job_id = job["id"]
             fresh = (job.get("description") or "").strip()
             if fresh:
@@ -329,10 +345,10 @@ def _embedded_ids(meta_path: Path) -> set[str]:
     if not meta_path.exists():
         return ids
     with meta_path.open(encoding="utf-8") as fh:
-        for line in fh:
+        for lineno, line in enumerate(fh, 1):
             line = line.strip()
             if line:
-                ids.add(json.loads(line)["id"])
+                ids.add(_parse(line, meta_path, lineno)["id"])
     return ids
 
 
@@ -396,9 +412,9 @@ def _corpus_rows(jobs_path: Path) -> Iterator[held_refetch.CorpusRow]:
     """One ATS's corpus as the rotation reads it, before :func:`reconcile` fills its empty rows
     from the store and a fetched text can no longer be told apart from a restored one."""
     with jobs_path.open(encoding="utf-8") as fh:
-        for line in fh:
+        for lineno, line in enumerate(fh, 1):
             if line.strip():
-                job = json.loads(line)
+                job = _parse(line, jobs_path, lineno)
                 yield held_refetch.CorpusRow(
                     job["id"], bool((job.get("description") or "").strip())
                 )
@@ -436,6 +452,14 @@ def compact(ats_dir: Path) -> int:
 def main() -> int:
     log.setup()
     log.context("update_descriptions")
+    try:
+        return _update_store()
+    except ValueError as exc:
+        # a torn line raises with its file:line; say so as an abort, not a bare traceback
+        log.fail(_log, f"description store update aborted: {exc}")
+
+
+def _update_store() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--jobs", default=str(_JOBS), help="tech corpus dir")
     ap.add_argument("--store", default=str(_STORE), help="description store dir")
@@ -477,8 +501,20 @@ def main() -> int:
     store = Path(args.store)
 
     if args.compact:
-        for ats_dir in sorted(p for p in store.glob("*") if p.is_dir()):
-            _log.info(f"{ats_dir.name}: compacted to {compact(ats_dir):,} rows")
+        started = time.monotonic()
+        ats_dirs = sorted(p for p in store.glob("*") if p.is_dir())
+        if not ats_dirs:
+            _log.info(f"compact: no ATS dirs under {store} — nothing to compact")
+            return 0
+        kept = 0
+        for ats_dir in ats_dirs:
+            rows = compact(ats_dir)
+            kept += rows
+            _log.info(f"{ats_dir.name}: compacted to {rows:,} rows")
+        _log.info(
+            f"compact: {kept:,} rows across {len(ats_dirs)} ATS dir(s) in "
+            f"{time.monotonic() - started:.0f}s"
+        )
         return 0
 
     jobs = Path(args.jobs)
@@ -491,6 +527,10 @@ def main() -> int:
     # is "learned", which is tens of thousands per run. Left unfiltered the queue is never small,
     # and a non-empty queue makes the merge load the whole ~1 GB description store every run rather
     # than only on a sweep.
+    if not Path(args.prior_meta).exists():
+        _log.info(
+            f"no embedding metadata at {args.prior_meta} — nothing will be queued to re-derive"
+        )
     embedded = _embedded_ids(Path(args.prior_meta))
     _log.info(f"prior store: {len(embedded):,} already-embedded ids")
 

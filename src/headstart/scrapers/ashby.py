@@ -15,7 +15,7 @@ from typing import Any
 
 from headstart import company_name, http, salary
 from headstart.models import Job, html_to_text
-from headstart.scrapers.base import BaseScraper
+from headstart.scrapers.base import BaseScraper, classify_exception
 from headstart.scrapers.pacer import Pacer
 
 _GRAPHQL = "https://jobs.ashbyhq.com/api/non-user-graphql?op=ApiOrganizationFromHostedJobsPageName"
@@ -170,21 +170,42 @@ class AshbyScraper(BaseScraper):
                 response = self._fetch_once(
                     "POST", _GRAPHQL, accept="application/json", json=body
                 )
-            except http.RequestsError:
+            except http.RequestsError as exc:
+                self._log.info(
+                    f"{self.board_key()}: no company name — GraphQL raised "
+                    f"{classify_exception(exc)}"
+                )
                 return None
             if response.status_code == 429:
                 retry_after = response.headers.get("retry-after") or ""
-                self.graphql_pacer.rest(
+                rest_s = (
                     float(retry_after) if retry_after.isdigit() else _GRAPHQL_REST_S
                 )
+                self._log.info(
+                    f"{self.board_key()}: 429 on {_GRAPHQL} — resting every Ashby GraphQL "
+                    f"request {rest_s:.0f}s"
+                )
+                self.graphql_pacer.rest(rest_s)
                 continue
             if response.status_code != 200:
+                self._log.info(
+                    f"{self.board_key()}: no company name — GraphQL answered "
+                    f"{response.status_code}"
+                )
                 return None
             try:
                 organization = response.json()["data"]["organization"]["name"]
             except (ValueError, KeyError, TypeError):  # not the answer's shape: no name
+                self._log.info(
+                    f"{self.board_key()}: no company name — GraphQL answered 200 with no "
+                    "organization name"
+                )
                 return None
             return organization if isinstance(organization, str) else None
+        self._log.info(
+            f"{self.board_key()}: no company name — GraphQL still 429 after "
+            f"{_GRAPHQL_TRIES} tries"
+        )
         return None
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:

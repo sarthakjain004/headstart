@@ -439,3 +439,19 @@ def test_zoho_labels_a_throttle_redirect_that_never_cleared() -> None:
 
     assert [j.title for j in jobs] == ["Open Role"]  # a throttle is not a closure
     assert scraper.detail_losses == {_THROTTLE_LOSS: 1}
+
+
+def test_a_listing_served_as_the_throttle_shell_is_named_not_read_as_empty(caplog):
+    """The detail pages' throttle shell can answer the listing too; without the jobs input it
+    reads as an empty Board, so the line names which page came back."""
+    shell = (
+        f"<html><body>{'Sorry, ' + 'this page is currently unavailable.'}</body></html>"
+    )
+    fetcher = FakeFetcher(lambda method, url, kwargs: FakeResponse(text=shell))
+    scraper = get_scraper("zoho", "acme.zohorecruit.com", fetcher=fetcher)
+
+    with caplog.at_level("INFO", logger="headstart"):
+        raw = scraper.fetch_raw()
+
+    assert scraper.parse(raw, SCRAPED_AT) == []
+    assert 'expected the id="jobs" <input>, got the throttle shell' in caplog.text

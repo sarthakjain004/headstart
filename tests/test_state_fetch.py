@@ -455,6 +455,27 @@ def test_no_witness_still_bootstraps_a_genuine_first_run(
     assert sf.fetch_state("repo", ["data/state/*"], token=None) == 0
 
 
+def test_a_bootstrap_says_why_once(hub, monkeypatch, tmp_path, caplog) -> None:
+    """The first-run decision used to leave only `fetched 0 file(s)`, which reads like any
+    healthy fetch; it now warns once, naming the patterns and what the witness said."""
+    _empty_hub(hub, monkeypatch, tmp_path)
+    with caplog.at_level("INFO"):
+        assert sf.fetch_state("repo", ["data/state/*"], token=None) == 0
+    assert [r.getMessage() for r in caplog.records if r.levelname == "WARNING"] == [
+        "no remote files match data/state/*; witness absent — proceeding as a first run"
+    ]
+
+
+def test_a_bootstrap_on_a_root_the_witness_claims_nothing_about(
+    hub, monkeypatch, tmp_path, caplog
+) -> None:
+    _empty_hub(hub, monkeypatch, tmp_path)
+    _witness(hub, tmp_path, ["data/lancedb"])
+    with caplog.at_level("INFO"):
+        assert sf.fetch_state("repo", ["data/state/*"], token=None) == 0
+    assert "witness does not claim them — proceeding as a first run" in caplog.text
+
+
 def test_an_empty_listing_a_witness_contradicts_fails_closed(
     hub, monkeypatch, tmp_path, caplog
 ) -> None:
@@ -987,3 +1008,17 @@ def test_fetch_says_which_commit_it_listed_even_when_it_then_fails(
     with caplog.at_level("INFO"):
         assert sf.fetch_state("repo", ["data/state/*"], token=None) == 1
     assert any(r.message.startswith("dataset commit: ") for r in caplog.records)
+
+
+def test_download_reports_progress_not_one_line_per_file(
+    hub, tmp_path: Path, monkeypatch, caplog
+) -> None:
+    """A lancedb pull is hundreds of small files; one INFO each buried the fetch's own story."""
+    monkeypatch.setattr(sf, "_fetch_whole", lambda url, dest, size, headers: None)
+    siblings = [
+        type("S", (), {"rfilename": f"f{i}.txt", "size": 500_000})() for i in range(20)
+    ]
+    with caplog.at_level("INFO", logger=sf.__name__):
+        sf._download("repo", siblings, {s.rfilename for s in siblings}, None, tmp_path)
+    assert len(caplog.records) == 10
+    assert caplog.records[-1].getMessage() == "  20/20 small files, 10.0 MB"

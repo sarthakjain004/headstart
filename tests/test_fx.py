@@ -130,6 +130,16 @@ def test_the_swallowed_read_leaves_a_record_naming_its_consequence(tmp_path, cap
     assert "falls back to one currency" in message  # and what it costs
 
 
+def test_a_missing_table_is_named_without_a_traceback(monkeypatch, tmp_path, caplog):
+    monkeypatch.setattr(fx, "_candidates", lambda: (tmp_path / "fx_rates.json",))
+    monkeypatch.setattr(fx, "_CACHE", False)
+    with caplog.at_level(logging.WARNING, logger="headstart.fx"):
+        assert fx.table() is None
+    (record,) = caplog.records
+    assert record.getMessage().startswith("fx_rates.json not found on any known path")
+    assert not record.exc_info
+
+
 @pytest.mark.parametrize(
     "payload, names",
     [

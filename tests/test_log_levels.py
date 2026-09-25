@@ -89,6 +89,14 @@ _PER_ITEM_BY_CONSTRUCTION = [
     # request, driven by a URL parameter. That was fixed by hoisting the check to the single
     # parse point, and nothing but this list would notice it coming back.
     _SEARCH,
+    # Per Board (a walled Board's fetch) and per chat respectively, with no loop to key on.
+    _ROOT / "browser_http.py",
+    _ROOT / "telegram_bot_api.py",
+    # Once per résumé-parse request on the Space.
+    _ROOT / "llm_router.py",
+    _ROOT / "profile_extract.py",
+    # Once per process by its cache, but reached from every Space request and every shard.
+    _ROOT / "fx.py",
 ]
 
 #: Every spelling a logger has in this package — the receiver a matched ``.warning``/``.error``
@@ -124,26 +132,93 @@ _ALLOWED: dict[str, str] = {
         "Trends category hand-off off (ADR-0185)."
     ),
     "search.py:_warn_unknown_filters": (
-        "Bound: 2 per HTTP request, and not against the annotation quota at all — `search.py` "
+        "Bound: at most 6 per HTTP request (ats, employment_type, india, salary_currency, kw_in, sort), and not against the annotation quota at all — `search.py` "
         "runs only in the deployed Space, which calls no `log.setup()`, so these render through "
         "`logging.lastResort` as bare stderr lines and no `::warning::` is ever produced. The "
         "budget that binds here is request volume, and this is the site that once cost 58 "
         "records a request: `facets.counts` re-entered `build_filter` once per facet option, "
         "driven by a URL parameter, unauthenticated. Hoisting the check to `parse_filters` — "
-        "the single parse point — made it 2. WARNING rather than INFO is deliberate for the "
+        "the single parse point — made it at most 6 (one per parameter it checks). WARNING rather than INFO is deliberate for the "
         "same reason: `lastResort` carries WARNING and above only, so INFO here is invisible "
         "in the one deployment that serves users."
     ),
     "search.py:__init__": (
-        "Bound: 1 per process. The boot line naming which schema columns are dark, so an "
-        "un-migrated table cannot silently ignore every `seen_within` filter and `salary` sort "
-        "with no record. Same `lastResort` reasoning as above: WARNING or invisible."
+        "Bound: 1 per process, at most four lines: (1) which schema columns are dark and "
+        "which acceleration flags are unmaterialized, so an un-migrated table cannot silently "
+        "ignore `seen_within`/`salary` or answer on the slow raw clause with no record; (2) the "
+        "ATS/currency whitelist scan capped below `count_rows()`; (3) served currencies with no "
+        "fx rate; (4) USD not served, so a salary sort with no served currency asked is "
+        "unconverted and such a bracket is dropped. Same "
+        "`lastResort` reasoning as above: WARNING or invisible."
+    ),
+    "search.py:facets": (
+        "Fires only when an uncached facet strip exceeds `SLOW_SEARCH_MS` (2 s) — the strip is "
+        "~46 counts, the Space's most expensive request, so a lost acceleration flag shows up "
+        "here first. Shapes only, never keyword text (ADR-0032). Space-only, so never an "
+        "annotation."
+    ),
+    "search.py:scoped_jobs_clause": (
+        "Bound: 1 per call, and it is called once per /search or /facets request (app.py's "
+        "`_company_where`). Six mutually exclusive branches: a hand-off with no `board=` "
+        "(ignored), a role with no watchlist loaded or no watch pattern (scope widened), a "
+        "family with no role "
+        "assignments loaded (widened), an unknown family (zero results), a category past "
+        "`MAX_FAMILY_IDS` (refused). Values come from the query string, so they are "
+        "`%.40r`-clipped. "
+        "Space-only: no annotations exist there, and `lastResort` shows WARNING and above only."
+    ),
+    "search.py:run": (
+        "Fires only when an uncached request exceeds `SLOW_SEARCH_MS` (2 s), so rare by "
+        "construction. Shapes only (path, encode_ms, indexed, page, k, sort, has-query, "
+        "extra_where, where-clause length), never query text "
+        "(ADR-0032). Space-only, so never an annotation."
+    ),
+    "profile_extract.py:_reply_json": (
+        "Bound: at most 1 per `extract()` call, i.e. per POST /profile — every branch raises "
+        "right after its line (no text / no JSON / unparseable / not an object). Shapes and "
+        "sizes only, never reply text. Space-only, so never an annotation."
+    ),
+    "profile_extract.py:extract": (
+        "Bound: at most 1 per call — either no role sentence survived the scrub (then "
+        "EmptyExtraction) or the scrub removed N chars, never both. Counts only. Space-only."
+    ),
+    "fx.py:_no_conversion": (
+        "Bound: once per process — `table()` caches its answer; only an explicit `path=` "
+        "(tests and tools) bypasses the cache."
+    ),
+    "fx.py:table": (
+        "The unusable-rates line, once per process under the same cache as `_no_conversion`."
+    ),
+    "llm_router.py:ask": (
+        "Bound: at most one per résumé-parse request (the router unavailable, or a completion "
+        "truncated at `max_tokens` — exclusive outcomes of one call), capped per Account by "
+        "`MAX_PARSES`. Space-only, which calls no `log.setup()`, so it renders via `lastResort` "
+        "and is never an annotation; WARNING because `lastResort` shows nothing lower and the "
+        "Space's 503 (or a fragment served as a whole answer) is otherwise silent. Exception "
+        "type, HTTP status, the URLError's cause type and elapsed seconds only — the error text "
+        "can name the private router host."
+    ),
+    "browser_http.py:<module>": (
+        "`_BLOCKING_FAILURE`, a module-level `log.FirstOnly`: the first failure per process to "
+        "install subresource blocking warns with its traceback, every later one logs at INFO — "
+        "one broken pydoll command API fails every walled Board the browser serves, not one."
+    ),
+    "telegram_bot_api.py:<module>": (
+        "`_SEND_FAILURE`, a module-level `log.FirstOnly`: the first failed send per process "
+        "warns, the rest log at INFO — a Telegram outage fails every chat, not one."
     ),
     "harvest.py:scrape_all": (
         "Bounded by `log.FirstOnly` to the FIRST non-transport Board failure per run (the rest "
         "log at INFO). A parse break is systemic — `KeyError: 'title'` raises on every Board of "
         "an ATS — so one stack and one annotation say what broke while `errors` says how far it "
         "reached. Same helper as config.py's board_identity and index_plan.py's keep-set guard."
+    ),
+    "scrapers/base.py:<module>": (
+        "`_UNEXPECTED`, the module-level `log.FirstOnly` that `fan_out`'s and `_gather_async`'s "
+        "catch-alls and `_read_detail_outcome`'s generic arm report a non-routine exception "
+        "(not OSError/JSONDecodeError) through: the FIRST per shard process warns with its "
+        "traceback, the rest are INFO. Module-level because every Board builds its own scraper; "
+        "without it a parse bug read only as `unlabelled xN` / `KeyError xN`."
     ),
     "scrapers/workday.py:<module>": (
         "`_DETAIL_LOSS_OVER_SHARE`, the module-level `log.FirstOnly` that `_report_detail_losses` "
@@ -234,25 +309,22 @@ _LOOPED_OK: dict[str, str] = {
         "dropped is precisely the anomaly worth an annotation, and 28 is the ceiling even if "
         "every scraper were renamed at once."
     ),
-    "ingest/embed_merge.py:_good_meta_lines": (
-        "Fires at most once: the `break` on the next line ends the scan. The loop is how it "
-        "finds the first unparseable metadata line, not how often it can report one."
-    ),
     "ingest/embed_run.py:_reconcile": (
         "Fires at most once: the `break` below it ends the scan, and the `dropped` count in "
         "the line is the whole tail it is about to discard. The loop is how it finds the first "
-        "unparseable metadata line, not how often it can report one — the same shape as "
-        "embed_merge.py's `_good_meta_lines` above."
+        "unparseable metadata line, not how often it can report one."
     ),
-    "ingest/embed_run.py:_encode_groups": (
-        "The wedged-allocator stop, guarded by `consec_failed >= 64` and followed by "
-        "`wedged = True`, which ends the walk — one line per run. The per-batch failure beside "
-        "it is the unbounded one, and that goes through `_BATCH_FAILURE` (`log.FirstOnly`)."
+    "resume_mcp/server.py:serve": (
+        "The Résumé MCP server's stdio loop (ADR-0137) runs on a user's machine under an MCP "
+        "client, never under Actions, so no annotation budget applies. The ERROR fires only "
+        "when `handle()` itself raises — a bug, not a per-request outcome — and it keeps the "
+        "session alive with a -32603 reply instead of killing the server."
     ),
     "ingest/state_fetch.py:fetch_state": (
-        "Bounded by the retry ladder itself: the loop is the retries, capped by the attempt "
-        "budget and the Hub-advised window, so the count is a handful per stage and each line "
-        "reports a different wait. A state fetch that is retrying IS the stage's headline."
+        "Fires at most once per fetch: `first_run_noted` guards the first-run bootstrap "
+        "warning, so the retry loop around it cannot repeat it. The per-attempt retry line is "
+        "INFO, like `retry_hub`'s wait — a Hub outage would otherwise restate one fault ~20 "
+        "times a run; the final ABORT carries the reason."
     ),
 }
 

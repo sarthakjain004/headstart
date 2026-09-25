@@ -82,6 +82,18 @@ def test_405_is_counted_apart_from_403(monkeypatch):
     assert stats["403-wall"] == 1
 
 
+def test_retries_are_counted_by_board_where_the_caller_names_one(monkeypatch):
+    """The per-Board tally says where a shard spent its retries; an unnamed request adds none."""
+    http.reset_retry_stats()
+    _stub(monkeypatch, [429, 503, 200])
+    http.fetch("GET", "u", egress_board="lever:acme")
+    _stub(monkeypatch, [503, 200])
+    http.fetch("GET", "u")
+    assert http.retry_stats_by_board() == {"lever:acme": 2}
+    http.reset_retry_stats()
+    assert http.retry_stats_by_board() == {}
+
+
 def test_a_network_error_is_never_classified_by_digits_in_its_message(monkeypatch):
     """Retry classes come from the status, never from the message text.
 
@@ -104,6 +116,23 @@ def test_a_network_error_is_never_classified_by_digits_in_its_message(monkeypatc
     assert stats["network"] == 4, stats
     assert "405-wall" not in stats  # "port 40500" must not read as a 405 bot-wall
     assert list(stats) == ["network"], stats  # no digit landed in any status bucket
+
+
+def test_exhausted_counts_only_requests_that_retried_and_still_gave_up(monkeypatch):
+    """A request whose last attempt is still refused counts once, by that attempt's reason;
+    one that recovers, or never retried, does not."""
+    http.reset_retry_stats()
+    _stub(monkeypatch, [429, 429, 429])
+    assert http.fetch("GET", "u").status_code == 429
+    _stub(monkeypatch, [http.RequestsError("reset")] * 3)
+    with pytest.raises(http.RequestsError):
+        http.fetch("GET", "u")
+    _stub(monkeypatch, [503, 200])
+    http.fetch("GET", "u")
+    _stub(monkeypatch, [503])
+    http.fetch("GET", "u", attempts=1)
+    assert http.exhausted_stats() == {"429-ratelimit": 1, "network": 1}
+    assert http.retry_stats()["429-ratelimit"] == 2  # the pinned counter is unchanged
 
 
 def test_does_not_retry_400_by_default(monkeypatch):

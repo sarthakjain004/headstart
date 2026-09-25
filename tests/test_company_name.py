@@ -771,3 +771,19 @@ def test_agreed_name_refuses_a_board_whose_postings_disagree():
     )
     assert agreed_name(names, 0.85) is None
     assert agreed_name(["FM"] * 9 + ["Factory Mutual"], 0.85) == "FM"
+
+
+def test_a_missing_curated_map_says_so_once(caplog, monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        company_name, "__file__", str(tmp_path / "pkg" / "company_name.py")
+    )
+    company_name.curated_names.cache_clear()
+    try:
+        with caplog.at_level("INFO", logger="headstart.company_name"):
+            assert company_name.curated_names() == {}
+            assert company_name.curated_names() == {}
+    finally:
+        company_name.curated_names.cache_clear()
+    (line,) = [r.getMessage() for r in caplog.records]
+    assert line.startswith("company_names.csv not found on ")
+    assert line.endswith("candidate paths — curated names off")

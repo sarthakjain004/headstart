@@ -236,6 +236,9 @@ class BambooHRScraper(BaseScraper):
                         "department": departments.get(m.group("id")),
                     }
                 )
+        self.note_unread_rows(
+            len(matches) - len(candidates), len(matches), "carried no title link"
+        )
         details = self.run_detail_pass(
             candidates,
             key_of=lambda candidate: candidate["id"],

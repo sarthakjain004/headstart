@@ -21,6 +21,9 @@ from headstart.ingest.job_turnover import (
     OPENED,
     RECOUNTED_IN,
     RECOUNTED_OUT,
+    drop_evictions_through,
+    queue_evictions,
+    queued_evictions,
     reposts,
     turnover,
 )
@@ -156,3 +159,11 @@ def test_reposts_match_a_new_id_to_a_missing_one_by_board_and_title():
     absent = {"old-1": ("greenhouse:acme", "senior backend engineer")}
     assert reposts(arrived, absent) == 1
     assert reposts(arrived, {}) == 0
+
+
+def test_dropping_booked_evictions_reports_what_it_dropped_and_kept(tmp_path):
+    queue = tmp_path / "eviction_queue.tsv"
+    queue_evictions(queue, "2026-09-24T00:00:00+00:00", ["a", "b"])
+    queue_evictions(queue, "2026-09-25T00:00:00+00:00", ["c"])
+    assert drop_evictions_through(queue, "2026-09-24T00:00:00+00:00") == (2, 1)
+    assert queued_evictions(queue) == {"c": "2026-09-25T00:00:00+00:00"}
