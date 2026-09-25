@@ -307,8 +307,10 @@ def test_an_unreadable_detail_page_marks_the_board_truncated(monkeypatch, async_
         "https://jobs.jobvite.com/acme/search": FakeResponse(
             text=_listing(jobs=("a", "b"), total=2)
         ),
-        detail + "a": FakeResponse(text='<h2 class="jv-header">Staff Engineer</h2>'),
-        detail + "b": FakeResponse(404),
+        detail + "a?nl=1": FakeResponse(
+            text='<h2 class="jv-header">Staff Engineer</h2>'
+        ),
+        detail + "b?nl=1": FakeResponse(404),
     }
     fetcher = FakeFetcher(lambda method, url, kwargs: pages[url])
     scraper = JobviteScraper("acme", fetcher=fetcher)
@@ -346,3 +348,78 @@ def test_location_drops_empty_and_repeated_segments():
         == "Germany"
     )
     assert _location({}) is None
+
+
+def test_a_heading_with_more_classes_than_jv_header_still_names_the_posting():
+    """mini-circuits-review writes `<h2 class="jv-header u-text-left">`; the exact-class match
+    read none of its 54 pages (2026-09-25) and the Board was scope-excluded every run."""
+    page = (
+        '<h2 class="jv-header u-text-left">\n  Automation Systems Engineer II\n</h2>'
+        '<div class="jv-job-detail-description" ng-non-bindable><p>Build test rigs.</p></div>'
+    )
+    posting = JobviteScraper._posting_of(page)
+    assert posting["title"] == "Automation Systems Engineer II"
+    assert "Build test rigs." in posting["description"]
+
+
+def test_a_class_merely_containing_jv_header_is_not_the_heading():
+    assert JobviteScraper._posting_of('<h2 class="jv-header-logo">Acme</h2>') is None
+
+
+@pytest.mark.parametrize("async_fanout", ["1", "0"])
+def test_a_tenant_whose_job_page_redirects_off_jobvite_is_read_through_nl1(
+    monkeypatch, async_fanout
+):
+    """wedgewood 302s `/job/{id}` onto its own domain, where no posting is rendered; the
+    `?nl=1` page the embed widget frames still answers 200 with it (2026-09-25). Redirects stay
+    refused, so a page that still moves is labelled rather than parsed as empty."""
+    monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", async_fanout)
+    detail = "https://jobs.jobvite.com/acme/job/"
+    moved = FakeResponse(
+        302, headers={"Location": "https://www.acme.example/careers/?p=job/a&nl=1"}
+    )
+    pages = {
+        "https://jobs.jobvite.com/acme/search": FakeResponse(
+            text=_listing(jobs=("a", "b"), total=2)
+        ),
+        detail + "a": moved,
+        detail + "a?nl=1": FakeResponse(
+            text='<h2 class="jv-header">Staff Engineer</h2>'
+        ),
+        detail + "b": moved,
+        detail + "b?nl=1": moved,
+    }
+    fetcher = FakeFetcher(lambda method, url, kwargs: pages[url])
+    scraper = JobviteScraper("acme", fetcher=fetcher)
+
+    raw = scraper.fetch_raw()
+
+    assert raw["postings"] == {"a": {"title": "Staff Engineer"}}
+    assert scraper.detail_losses == {"HTTP 302": 1}
+    detail_requests = [r for r in fetcher.requests if "/job/" in r.url]
+    assert sorted(r.url for r in detail_requests) == [
+        detail + "a?nl=1",
+        detail + "b?nl=1",
+    ]
+    assert all(r.kwargs["allow_redirects"] is False for r in detail_requests)
+
+
+def test_the_served_job_link_stays_the_plain_page():
+    # `?nl=1` is only how the detail is read; the link a user follows is the normal job page.
+    assert JobviteScraper("acme").job_url("a") == "https://jobs.jobvite.com/acme/job/a"
+
+
+@pytest.mark.parametrize("level", ["h3", "h4"])
+def test_a_title_heading_at_another_level_still_names_the_posting(level):
+    """nbbj-review renders the title as an `<h3 class="jv-header">`, lordco-internal as an
+    `<h4>`; an `<h2>`-only match read none of their pages (2026-09-25)."""
+    page = f'<{level} class="jv-header">\n  Architectural Designer\n</{level}>'
+    assert JobviteScraper._posting_of(page)["title"] == "Architectural Designer"
+
+
+def test_the_title_heading_ends_at_its_own_level():
+    from headstart.scrapers.jobvite import _HTML_TITLE
+
+    page = '<h3 class="jv-header">Designer</h3><h4>Seattle</h4>'
+    assert _HTML_TITLE.search(page).group("title") == "Designer"
+    assert _HTML_TITLE.search('<h3 class="jv-header">Designer</h4>') is None

@@ -119,7 +119,7 @@ python -c "from headstart.board_cost import load; print(len({k.lower() for k in 
 ```
 Count distinct keys, never lines — both files carry case-variants.
 
-Two rules resolve most of it. **"live" describes a _row_, not a Board** — a sentence saying "live boards" is ambiguous by construction, because 6,632 live rows are duplicate spellings of a Board counted elsewhere. And **the subtractions depend on the order you apply them**: `EXCLUDED_BOARDS` removes 174 Boards from the raw live rows but only **171** from the deduped set, because three of them were themselves duplicate spellings. The chain below dedupes *first*; the README's funnel excludes first and so reads −174 / −6,629. Both reconcile; neither is quotable without saying which order it used.
+Two rules resolve most of it. **"live" describes a _row_, not a Board** — a sentence saying "live boards" is ambiguous by construction, because 6,632 live rows are duplicate spellings of a Board counted elsewhere. And **the subtractions depend on the order you apply them**: `EXCLUDED_BOARDS` removes 175 Boards from the raw live rows but only **172** from the deduped set, because three of them were themselves duplicate spellings. The chain below dedupes *first*; the README's funnel excludes first and so reads −175 / −6,629. Both reconcile; neither is quotable without saying which order it used.
 
 **Ledger row** — 304,519:
 One line in a `data/validate/liveness/{ats}.csv`. Includes `dead` and `unknown`. Never a Board count; a raw `wc -l` overstates by however many duplicates exist.
@@ -131,11 +131,11 @@ _Avoid_: "live Boards" for this number — that is the phrase this section exist
 **Unique Board** — 180,537:
 Live rows collapsed to one entry per canonical `board_key` (ADR-0023) — the distinct Boards we know exist — less the 4 Boards with a `dead` row newer than their newest `live` row (ADR-0219). **Scrapable Board** and **Hiring Board** are subsets of it; nothing in that chain removes a duplicate, only Boards we choose not to read. The two *history* counts at the end are **not** subsets: 949 Scraped Boards are absent from it (measured 2026-09-25; `board_cost.csv` is HF-backed, so CI skips this figure), because a Board read months ago may have gone Dead since and left the live set.
 
-**Scrapable Board** — 153,695:
-A Unique Board a run may actually pick: minus `registry.DISABLED_ATS` (−25,488, all of it `join`), `config.EXCLUDED_BOARDS` (−171 vendor test Boards), the alias ledger (−1,170 Boards published under a second hostname or label, Taleo career sections and ADP Recruiting Management career sites whose every posting another section or site of the same tenant already lists, or Eightfold career sites whose backing ATS Board already serves them, ADR-0111, ADR-0182, ADR-0186, ADR-0202, ADR-0205 and ADR-0222) and `config.PARKED_BOARDS` (−13). Computed by `scrapable_boards.load(min_jobs=0)` (ADR-0191, the one place that decides whether a Board is scraped) — which applies these in the *other* order, excluding before it dedupes, and lands on the same figure. The right default answer to "how many Boards do we have".
-_Avoid_: calling this "unique" — the 26,842 Boards between it and Unique Board are real and distinct, deliberately skipped rather than deduplicated. The alias subtraction is the one exception, and it is small: those 1,170 serve no posting a kept Board does not — one Board reached by more than one name, a Taleo career section or ADP Recruiting Management career site whose every posting another of its tenant already lists, or an Eightfold career site whose backing ATS Board lists its postings and serves every tech one (a distinct Board, but a redundant one).
+**Scrapable Board** — 153,694:
+A Unique Board a run may actually pick: minus `registry.DISABLED_ATS` (−25,488, all of it `join`), `config.EXCLUDED_BOARDS` (−172 vendor test Boards), the alias ledger (−1,170 Boards published under a second hostname or label, Taleo career sections and ADP Recruiting Management career sites whose every posting another section or site of the same tenant already lists, or Eightfold career sites whose backing ATS Board already serves them, ADR-0111, ADR-0182, ADR-0186, ADR-0202, ADR-0205 and ADR-0222) and `config.PARKED_BOARDS` (−13). Computed by `scrapable_boards.load(min_jobs=0)` (ADR-0191, the one place that decides whether a Board is scraped) — which applies these in the *other* order, excluding before it dedupes, and lands on the same figure. The right default answer to "how many Boards do we have".
+_Avoid_: calling this "unique" — the 26,843 Boards between it and Unique Board are real and distinct, deliberately skipped rather than deduplicated. The alias subtraction is the one exception, and it is small: those 1,170 serve no posting a kept Board does not — one Board reached by more than one name, a Taleo career section or ADP Recruiting Management career site whose every posting another of its tenant already lists, or an Eightfold career site whose backing ATS Board lists its postings and serves every tech one (a distinct Board, but a redundant one).
 
-**Hiring Board** — 101,214:
+**Hiring Board** — 101,213:
 A Scrapable Board with at least one open posting (`scrapable_boards.load(min_jobs=1)`, the function's default). The other 52,481 are live but empty.
 
 **Slice** — 80,000:
@@ -291,7 +291,7 @@ _Avoid_: **Search filter** — that names a deterministic where-clause over the 
 
 **Opened** (ADR-0227):
 A tech **Job** that arrived in the **Search index** since the previous `role_trends` tick: an id new to the tick's snapshot, whose `first_seen` is after that tick, on a **Board** the tick already counted. Booked per Board, family, band and ATS in the tick's Board-delta file (`metric=opened`), so a net change can be read with what made it. A lower bound: a Job opened and closed between two scrapes of its Board is in no count.
-_Avoid_: reading `new` as Opened. `new` is a level: the Jobs first seen in the last 7 days *and still open*, backlog of a found Board included.
+_Avoid_: reading `new` as Opened. `new` is a level: the Jobs first seen in the last 7 days *and still open*, backlog of a found Board included. ADR-0230 redefines `new` as Opened summed over the trailing 7 days; until that migration step ships, the two differ.
 
 **Closed** (ADR-0227):
 A tech Job that left the Search index since the previous tick through `index sync`'s **Eviction** — its second consecutive absence (**Unconfirmed**), so a closure lands one scrape of its Board after the posting went. Sync queues each eviction, stamped with its run, in `data/state/eviction_queue.tsv`, which rides the table's own commit; `role_trends` books only a queued id as Closed. An **Unauthoritative Board** evicts nothing, so its closures go uncounted that tick; the tick's file marks each such Board (`metric=unscoped`) and Trends says on how many.
@@ -300,6 +300,30 @@ _Avoid_: counting a `prune` removal as Closed — a duplicate is still served fr
 **Recounted** (ADR-0227):
 Every arrival or departure that is not hiring: a found Board's backlog, a row `index prune` removed as a duplicate or off-Board (in the pipeline or in `cleanup-index`), a served row the classifier moved into or out of tech, and a row whose family, band or Board key changed. Booked in (`recounted_in`) and out (`recounted_out`) so that, per key and tick, the stock change is exactly Opened − Closed + Recounted. A tech-filter change is the one recount it cannot see — its Jobs arrive looking newly posted — so readers leave its run and the run after out of the turnover, as they do of the net change.
 _Avoid_: calling the three together "flows" — ADR-0051 already calls `new` the flow metric. Say **turnover**, the name of the module that books them (`ingest/job_turnover`).
+
+**Tick** (ADR-0040, ADR-0230):
+One pipeline run's measurement of the served stock, stamped with the run's `ts` (`HEADSTART_RUN_TS`, which `index prune` and `role_trends` share). Every Trends number belongs to a tick; a series is a sequence of ticks at one series version. Under ADR-0230 every tick writes exactly one **Board delta** file, even when nothing moved.
+_Avoid_: "run" when you mean the measurement — a run that skips `role_trends` (a stand-down, a warm-up) is a run with no tick.
+
+**Board delta** (ADR-0143, ADR-0227):
+One tick's change in one **Board**'s count for one `(metric, family, band, ats)` group, kept in `data/state/role_trend_board_deltas/`, one file per tick. Replaying the deltas reproduces every count the aggregate trends ledger holds (314 of 314 ticks since 2026-09-13, zero mismatches), which is why ADR-0230 makes this ledger Trends' one stored count history. Since ADR-0227 a delta file also books **Opened**, **Closed** and **Recounted**.
+_Avoid_: calling the aggregate `role_trends.parquet` the history — it is a sum of these, kept only until ADR-0230's migration retires it.
+
+**Found Board**:
+A **Board** whose first **Board delta** lands its whole existing backlog at once, because the index started counting it, not because it hired. Its arrival is **Recounted**, never **Opened**, and a Trends line leaves it out of the net change.
+_Avoid_: reading a found Board's first tick as growth.
+
+**Methodology** (ADR-0164, ADR-0230):
+What decides what a count means: the family list, the classifier head, the tech filter, the derivations and the dedup rules, each with its own version stamp. Recorded today as a row in `trends_epochs.csv` when a stamp moves; under ADR-0230 it travels in every tick's delta file.
+_Avoid_: `centroid_version` — the key still carries a series version, but no centroid decides anything since ADR-0220.
+
+**Counting change** (ADR-0164, ADR-0188):
+A tick where a **Methodology** stamp moved, so its step in a line is a change in how the index counts, not hiring. Trends marks it on the chart and nets it out of a line's change.
+_Avoid_: calling it a data change — the Jobs may be the same; the rules that count them moved.
+
+**Netting** (ADR-0185, ADR-0230):
+Taking out of a line's change the steps that are not hiring — **Counting change**s, **Found Board**s' backlogs and dedup removals — so what is left reads as hiring. Decided today in the Trends tab's JavaScript and, separately, in `hot_boards`; ADR-0230 moves the one rule into `trend_history.answer`, decided when the history is read and never stored.
+_Avoid_: storing a netted figure — the rule has changed in most of ADR-0185's rounds, so a stored net would go stale with it.
 
 ### Accounts
 
