@@ -1363,6 +1363,17 @@ test('duplicate removal is taken out only of the pick it can touch', () => {
   same(t.seriesValues(beta), [100, 100, 80, 80]);
 });
 
+test('duplicate removal needs two sites of one Tenant, as Hot and the Space read it', () => {
+  // Duplicate removal parks copies among one Tenant's sites (ADR-0186/0187). A company holding
+  // two Tenants' Workday sites has nothing to deduplicate, so its fall is its own.
+  const { t } = loadApp();
+  t.setPicks([{ ...ACME, key: 'workday:acme/a', boardKeys: ['workday:acme/a', 'workday:other/b'] }]);
+  t.set(companies([['workday:acme/a', 'Acme', [100, 100, 80, 80]]],
+    { epochs: [{ ts: FOUR[2], changed: ['duplicate removal changed'], fields: ['dedup_version'] }] }));
+  t.setUnit('change', false);
+  same(t.seriesValues(t.data().series[0]), [100, 100, 80, 80]);
+});
+
 test('under Count a marked step breaks the line instead of drawing a climb', () => {
   const { t, nodes } = loadApp();
   t.setPicks([ACME, BETA]);

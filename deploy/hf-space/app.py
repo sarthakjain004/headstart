@@ -60,7 +60,7 @@ from headstart.alerts.store import (
     is_resume_id,
     subscription_id,
 )
-from headstart.board_identity import ats_of
+from headstart.board_identity import ats_of, tenant
 from headstart.search_filter_compiler import (
     KEYWORD_DEFAULT_SCOPE,
     keyword_scope_options,
@@ -574,21 +574,33 @@ def _company_boards(board: str) -> list[str]:
 
 
 def _dedup_touched(boards: list[str]) -> bool:
-    """Whether duplicate removal can move a company holding ``boards``: two or more Boards on an
-    ATS it dedupes within, or any Eightfold Board. The page's rule for a pick (app.js)."""
-    atses = [ats_of(board) for board in boards]
-    return _MIRROR_ATS in atses or any(atses.count(a) > 1 for a in _DEDUP_ATSES)
+    """Whether duplicate removal can move a company holding ``boards``: any Eightfold Board, or
+    two or more Boards of one Tenant on an ATS it dedupes within (ADR-0186/0187). Tenants compare
+    case-blind, as hot_boards' `dedup_touches` compares them, and as the page's rule for a pick."""
+    sites = Counter(
+        (ats_of(board), tenant(board).lower())
+        for board in boards
+        if ats_of(board) in _DEDUP_ATSES
+    )
+    return any(ats_of(board) == _MIRROR_ATS for board in boards) or any(
+        n > 1 for n in sites.values()
+    )
 
 
-def _index_turnover(by_board: dict[str, list[dict]], company_boards) -> list[dict]:
+def _company_dedup_touched(board: str) -> bool:
+    """Whether duplicate removal can move the directory company holding ``board``."""
+    return _dedup_touched(_company_boards(board))
+
+
+def _index_turnover(by_board: dict[str, list[dict]], touched_of) -> list[dict]:
     """Every Board's turnover summed per tick, metric, family, band, ATS and whether duplicate
     removal can move it (ADR-0227): what the Trends view with no company picked draws. A few
     hundred rows a tick where the per-Board rows run to thousands, so a request sums the index
-    without walking every Board. ``company_boards(board)`` is every Board of the company holding
-    ``board``, so `touched` follows the rule a company's own view leaves runs out by."""
+    without walking every Board. ``touched_of(board)`` says whether duplicate removal can move the
+    company holding ``board``, the rule a company's own view leaves runs out by."""
     summed: Counter[tuple[str, str, str, str, str, bool]] = Counter()
     for board, rows in by_board.items():
-        touched = _dedup_touched(company_boards(board))
+        touched = touched_of(board)
         for r in rows:
             key = (r["ts"], r["metric"], r["family"], r["band"], r["ats"], touched)
             summed[key] += r["delta"]
@@ -607,8 +619,6 @@ def _left_out_runs(
     every: set[int] = set()
     touched: set[int] = set()
     for epoch in epochs:
-        # A change on the window's first run is already in every line's start, and its settling
-        # run cannot be told from an ordinary one there (app.js: it cut Amazon's real −7).
         if epoch["ts"] not in stamps[1:]:
             continue
         i = stamps.index(epoch["ts"])
@@ -701,7 +711,7 @@ _LEDGER_START = min((ts for ts, _ in _BOARD_ARRIVALS.values()), default=None)
 # is a gap, not a zero.
 _TURNOVER = _rows_by_board(_TREND_DELTAS, _TURNOVER_METRICS)
 _UNSCOPED_MARKERS = _rows_by_board(_TREND_DELTAS, (_UNSCOPED,))
-_INDEX_TURNOVER = _index_turnover(_TURNOVER, _company_boards)
+_INDEX_TURNOVER = _index_turnover(_TURNOVER, _company_dedup_touched)
 _TURNOVER_SINCE = min((r["ts"] for r in _INDEX_TURNOVER), default=None)
 # Email alerts (ADR-0035) — invite-only, so all three must be set before the panel appears:
 # the Google client id the sign-in button needs, and a token scoped to the Subscriptions
@@ -2054,9 +2064,11 @@ def trends():
     # With no pick the lines keep a counting change's jump, marked, but its turnover is not
     # hiring. The index leaves out, Board by Board, the runs each company's own line leaves out,
     # so the index's opened and closed are the sum of what every company's view shows.
-    left_out: tuple[set[int], set[int]] = (set(), set())
-    if company_of is None:
-        left_out = _left_out_runs(epochs, stamps, bool(family))
+    left_out: tuple[set[int], set[int]] = (
+        _left_out_runs(epochs, stamps, bool(family))
+        if company_of is None
+        else (set(), set())
+    )
     if scope is None:
         turnover_rows = [
             (row, "") for row in _INDEX_TURNOVER if not ats or row["ats"] in ats
@@ -2067,15 +2079,19 @@ def trends():
     else:
         # A comparable cohort with no pick is still the index: each row says whether duplicate
         # removal can move its Board's company, as `_INDEX_TURNOVER`'s rows do.
-        touched = {
-            board: company_of is None and _dedup_touched(_company_boards(board))
-            for board in scope
-        }
-        turnover_rows = [
-            ({**row, "touched": touched[board]}, pick)
-            for board, pick in scope.items()
-            for row in _TURNOVER.get(board, ())
-        ]
+        if company_of is None:
+            touched = {board: _company_dedup_touched(board) for board in scope}
+            turnover_rows = [
+                ({**row, "touched": touched[board]}, pick)
+                for board, pick in scope.items()
+                for row in _TURNOVER.get(board, ())
+            ]
+        else:
+            turnover_rows = [
+                (row, pick)
+                for board, pick in scope.items()
+                for row in _TURNOVER.get(board, ())
+            ]
         unscoped = scope
 
     def line_of(row: dict, pick: str) -> str | None:

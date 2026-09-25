@@ -111,9 +111,21 @@ re-count their family's jobs.
   The index's lines keep a counting change's jump, marked. The Space leaves its turnover out
   Board by Board instead, by the rule a company's own line follows (`_left_out_runs`): a
   line-moving counting change leaves out its run and the one after everywhere, and a
-  duplicate-removal change only on the Boards of a company it can move (app.js's pick rule,
-  mirrored). The runs arrive as gaps, `turnover_left_out` names them, and a test pins that the
-  index's displayed opened and closed equal the sum of what every company's view displays.
+  duplicate-removal change only on the Boards of a company it can move: two or more sites of
+  one Tenant on Workday or Taleo Enterprise, compared case-blind, or any Eightfold Board. That
+  Tenant rule is the one app.js, the Space and Hot's `dedup_touches` all apply, and a test pins
+  that the Space and Hot agree on it. The runs arrive as gaps, and `turnover_left_out` names
+  them. A test pins that the index's displayed opened and closed equal the sum over every
+  company's whole line.
+- **Where the index and the companies can differ, bounded.** The equality holds for whole lines.
+  A company's category line can also drop a run the index keeps. That happens where a Board of
+  that company was found and its size is unknown there, or where the page dropped a partial
+  read. The found backlog itself is already Recounted, so what differs is that run's ordinary
+  turnover in that one category. On a levels view, an extraction change leaves out its run and
+  the run after on every level line, the index's and each company's. A company's levels
+  sentence reads its total, which keeps them, while the index's sentence sums its level lines
+  and says those runs are left out. An extraction change re-sorts levels and never opens or
+  closes a job, so only that ordinary hiring differs.
 - **Duplicate handovers.** When duplicate removal changes, a requisition can move to a sibling
   site: the old row closes and the sibling's copy arrives with a fresh `first_seen`. On the run
   of a duplicate-removal change and the run after it, the Boards it can move are left out of the

@@ -83,7 +83,8 @@ _OUT = REPO_ROOT / "data" / "state" / "hot_boards.json"
 _EPOCHS = REPO_ROOT / "data" / "state" / "trends_epochs.csv"
 # The epoch columns whose change moves a Board's stock: a centroid refit (before ADR-0220), a
 # family-list or family-assignment change (ADR-0215, ADR-0220), a tech-filter change or duplicate
-# removal. An extraction change (derivations) moves no count.
+# removal. An extraction change (derivations) moves no count. Mirrored by app.js `LINE_MOVING`
+# and the Space's `_LINE_MOVING` (ADR-0227).
 _STOCK_MOVING = (
     "centroid_version",
     "family_map_fingerprint",
@@ -93,7 +94,7 @@ _STOCK_MOVING = (
 #: Moves only the Boards it can touch (ADR-0186/0187, #632/#649): Eightfold's, and those of a
 #: Tenant with two or more Workday or Taleo Enterprise Boards — the Trends tab's own rule for a
 #: company (app.js `DEDUP_ATSES`, `MIRROR_ATS`), and the Space's for the index's turnover
-#: (`_DEDUP_ATSES`, `_MIRROR_ATS`, `_LINE_MOVING`, ADR-0227). Change one, change them all;
+#: (`_DEDUP_ATSES`, `_MIRROR_ATS`, ADR-0227). Change one, change them all;
 #: tests/test_space_app.py pins that the Space and this module agree.
 _DEDUP = "dedup_version"
 _DEDUP_SIBLING_ATSES = ("workday", "taleo_enterprise")

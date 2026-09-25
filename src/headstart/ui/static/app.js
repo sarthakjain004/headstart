@@ -2196,24 +2196,34 @@ const NEW_WINDOW_DAYS = 7;
 const LINE_MOVING = [
   'centroid_version', 'family_map_fingerprint', 'family_classifier_version', 'tech_filter_version',
 ];
-// Mirrored by hot_boards `_DEDUP_SIBLING_ATSES`/`_DEDUP_MIRROR_ATS`, so Hot leaves out the runs
-// this leaves out: change one, change the other.
+// Mirrored by hot_boards `_DEDUP_SIBLING_ATSES`/`_DEDUP_MIRROR_ATS` and the Space's
+// `_DEDUP_ATSES`/`_MIRROR_ATS` (ADR-0227), so Hot and the index leave out the runs this leaves
+// out: change one, change them all.
 const DEDUP_ATSES = ['taleo_enterprise', 'workday'];
 // Eightfold Boards are aliased onto, or have their rows dropped against, the Board they
 // mirror on another ATS (#632, #649), so any pick holding one can step. That includes a
 // directory entry that is only the Eightfold Board ("Micron Technology"): #649 drops almost
 // all of its rows on one run, which left in would read as the company collapsing.
 const MIRROR_ATS = 'eightfold';
+// Whose Board a key names, case-blind: the host or first path segment after the ATS, as
+// `board_identity.tenant` reads it for the ATSes duplicate removal works on.
+function boardTenant(key){
+  const slug = key.slice(key.indexOf(':') + 1).replace(/^[a-z]+:\/\//i, '');
+  return slug.split('/')[0].toLowerCase();
+}
 function stepNotes(d){
   const notes = [];
   const picked = trendPicks.length > 0;
   const bands = viewKind(d) === 'bands';
   // Duplicate removal parks copies among one Tenant's Boards, so a pick it can touch holds two
-  // or more Boards on one of those ATSes — not one there and one elsewhere.
+  // or more Boards of one Tenant on one of those ATSes — not two Tenants' sites, and not one
+  // there and one elsewhere.
   const touched = trendPicks.filter(p => {
     const keys = p.boardKeys || [];
-    return DEDUP_ATSES.some(a => keys.filter(k => k.startsWith(a + ':')).length > 1)
-      || keys.some(k => k.startsWith(MIRROR_ATS + ':'));
+    return DEDUP_ATSES.some(a => {
+      const tenants = keys.filter(k => k.startsWith(a + ':')).map(boardTenant);
+      return new Set(tenants).size < tenants.length;
+    }) || keys.some(k => k.startsWith(MIRROR_ATS + ':'));
   }).map(p => p.key);
   (d.epochs || []).forEach(e => {
     // Under New a tech-filter change counts twice: the openings it lets in read as new at once,

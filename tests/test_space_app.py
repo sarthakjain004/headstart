@@ -3155,7 +3155,9 @@ def _with_turnover(trends_app, monkeypatch, rows: list[dict]) -> None:
     monkeypatch.setattr(
         trends_app,
         "_INDEX_TURNOVER",
-        trends_app._index_turnover(turnover, lambda b: boards_of.get(b, [b])),
+        trends_app._index_turnover(
+            turnover, lambda b: trends_app._dedup_touched(boards_of.get(b, [b]))
+        ),
     )
     monkeypatch.setattr(trends_app, "_TURNOVER_SINCE", _T2)
 
@@ -3346,6 +3348,8 @@ def test_the_space_and_the_hot_list_leave_out_the_same_runs_and_boards(trends_ap
     assert trends_app._MIRROR_ATS == hot_boards._DEDUP_MIRROR_ATS
     for boards in (
         ["workday:acme/a", "workday:acme/b"],
+        ["workday:acme/a", "workday:other/b"],  # two Tenants: nothing to deduplicate
+        ["workday:ACME/a", "workday:acme/b"],  # one Tenant, compared case-blind
         ["workday:acme/a", "greenhouse:acme"],
         ["eightfold:jobs.acme.com"],
         ["taleo_enterprise:acme/1", "taleo_enterprise:acme/2"],

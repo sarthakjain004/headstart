@@ -48,8 +48,9 @@ METRICS = (OPENED, CLOSED, RECOUNTED_IN, RECOUNTED_OUT)
 #: so its absences were not read and none of its closures could be counted that tick.
 UNSCOPED = "unscoped"
 
-#: What a marker row carries where a turnover row carries a family and a band: it counts a Board.
-ALL = "all"
+#: The ledger's sentinel for a dimension a row is not split by (the non-tech diagnostic's band,
+#: a marker's family and band): the value it has always written there.
+NOT_SPLIT = "all"
 
 
 class Key(NamedTuple):
@@ -64,7 +65,7 @@ class Key(NamedTuple):
 
 def unscoped_marker(board: str) -> Key:
     """The marker row for a Board whose scrape could not show an absence this tick."""
-    return Key(board, UNSCOPED, ALL, ALL, ats_of(board))
+    return Key(board, UNSCOPED, NOT_SPLIT, NOT_SPLIT, ats_of(board))
 
 
 def turnover(
