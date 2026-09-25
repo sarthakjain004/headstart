@@ -9,7 +9,8 @@ are written to is Parquet, not CSV; the `metric` axis this ADR added is unchange
 **Amended by:** [ADR-0215](0215-a-title-rule-decides-a-role-family-before-the-centroid.md) — a
 watched role counts only rows whose family is tech, no longer every title match · **Amended by:**
 [ADR-0220](0220-a-trained-title-classifier-decides-a-role-family.md) — watch roles sit under the
-v3 families, and Java and Python are watch roles
+v3 families, and Java and Python are watch roles · **Amended by:**
+[ADR-0230](0230-trends-keeps-one-board-delta-history-and-decides-rules-when-reading-it.md) — `new` becomes an inflow, the Opened Jobs of the trailing seven days
 
 ## Context
 
