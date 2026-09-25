@@ -29,8 +29,8 @@ counts — see ADR-0024's 2026-09-06 amendment, which cut that clause from 267 `
 :class:`ThreadPoolExecutor` because LanceDB's counting happens in Rust with the GIL released, so
 the wall cost is roughly the slowest count rather than their sum.
 
-Exposed as one function, :func:`counts`, which takes the parsed :class:`headstart.search_filter_compiler.
-SearchFilters` and the table's :class:`headstart.search_filter_compiler.IndexCapabilities` (ADR-0149) and returns
+Exposed as one function, :func:`counts`, which takes the parsed :class:`headstart.search_filters.compiler.
+SearchFilters` and the table's :class:`headstart.search_filters.compiler.IndexCapabilities` (ADR-0149) and returns
 every number the UI needs. Splitting the two is what keeps the per-option rebuild below cheap to
 reason about: every one of the ~46 counts varies only ``filters``, through
 :func:`dataclasses.replace`, while ``capabilities`` — the ATS/currency whitelists and which
@@ -44,8 +44,12 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from typing import Any
 
-from headstart import employment_type_filter, experience_filter, salary_known_filter
-from headstart.search_filter_compiler import (
+from headstart.search_filters import (
+    employment_type_filter,
+    experience_filter,
+    salary_known_filter,
+)
+from headstart.search_filters.compiler import (
     KEYWORD_DEFAULT_SCOPE,
     KEYWORD_SCOPES,
     IndexCapabilities,
@@ -98,8 +102,8 @@ def counts(
 ) -> dict[str, Any]:
     """Every facet's per-option count, plus the total, for one request's filters.
 
-    ``filters`` is :meth:`headstart.search.JobSearch.parse_filters` output and ``capabilities``
-    is :attr:`headstart.search.JobSearch.capabilities` (ADR-0149) — shared with the ranked search
+    ``filters`` is :meth:`headstart.serving.job_search.JobSearch.parse_filters` output and ``capabilities``
+    is :attr:`headstart.serving.job_search.JobSearch.capabilities` (ADR-0149) — shared with the ranked search
     precisely so the count and the list it counts can never describe different queries. Together
     they describe the request's own controls; the query never reaches here, because a count is
     decided by the where-clause alone. ``extra_where`` is the one further input — the Account's
@@ -251,7 +255,7 @@ NEVER_BLOCKING = frozenset(
         # `applyProfile()` sweep wholesale — would have one tab blanking another's controls, and
         # `first_seen_after` is machine-set by the alerts run and has no input at all. If the Search
         # tab ever grows its own range controls, drop them from here in the same change;
-        # `tests/test_facets.py` fails on a filter that is in neither this set nor those maps.
+        # `tests/test_serving_facets.py` fails on a filter that is in neither this set nor those maps.
         "posted_after",
         "posted_before",
         "seen_after",

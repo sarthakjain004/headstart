@@ -1,29 +1,29 @@
 """The India Search filter (``india``) and its materialized ``country`` column (ADR-0138, ADR-0193).
 
-The filter takes a canonical place from the India gazetteer (:mod:`headstart.geo`): "india"
+The filter takes a canonical place from the India gazetteer (:mod:`headstart.search_filters.india_gazetteer`): "india"
 itself, a region, or a city. Only the whole-country case is materialized — ``country = 'IN'``
-replaces the ~3 KB ``regexp_like`` alternation :func:`headstart.geo.where` builds — and a city or
+replaces the ~3 KB ``regexp_like`` alternation :func:`headstart.search_filters.india_gazetteer.where` builds — and a city or
 region keeps the gazetteer clause, whatever the table carries. The column, the value the index
 writes (:func:`country`, filled through ``ingest.derived_meta``, since the embedding store's meta
-carries it), and the clause :func:`headstart.search_filter_compiler.build_filter` compiles live here. The matching
-itself stays in :mod:`headstart.geo`, where ``where`` and ``classify`` read the same constants.
+carries it), and the clause :func:`headstart.search_filters.compiler.build_filter` compiles live here. The matching
+itself stays in :mod:`headstart.search_filters.india_gazetteer`, where ``where`` and ``classify`` read the same constants.
 """
 
 from __future__ import annotations
 
 from collections.abc import Collection
 
-from headstart import geo
+from headstart.search_filters import india_gazetteer
 
 COLUMN = "country"
-#: The sentinel :func:`headstart.geo.where` uses for the whole country, as opposed to a
+#: The sentinel :func:`headstart.search_filters.india_gazetteer.where` uses for the whole country, as opposed to a
 #: region or city key.
 WHOLE_COUNTRY = "india"
 
 
 def country(location: str | None) -> str | None:
     """The served ``country`` value for one row's raw location: ``"IN"`` or None."""
-    return geo.classify(location)
+    return india_gazetteer.classify(location)
 
 
 def has_column(schema_names: Collection[str]) -> bool:
@@ -37,4 +37,5 @@ def clause(place: str, materialized: bool) -> str | None:
     """
     if place == WHOLE_COUNTRY and materialized:
         return f"{COLUMN} = 'IN'"
-    return geo.where(place)  # canonical-place lookup — unknown values are ignored
+    # Canonical-place lookup: unknown values are ignored.
+    return india_gazetteer.where(place)

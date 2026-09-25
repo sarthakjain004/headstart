@@ -18,7 +18,7 @@ from search_table import (
     _load_vector,
 )
 
-from headstart.search import JobSearch
+from headstart.serving.job_search import JobSearch
 
 
 def _clear_response_caches(searcher: JobSearch) -> None:

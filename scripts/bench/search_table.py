@@ -16,7 +16,7 @@ from typing import Any
 import lancedb
 import numpy as np
 
-from headstart.search import JobSearch
+from headstart.serving.job_search import JobSearch
 
 SEARCH_CASES: tuple[tuple[str, dict[str, str]], ...] = (
     ("browse", {}),

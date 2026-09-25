@@ -2,7 +2,7 @@
 
 `JobSearch` is exercised through its interface with a fake encoder and table — no model
 load, so all of this runs in the standard test env. The where-clause builders it compiles
-through are tested in `test_search_filter_compiler.py` (ADR-0194).
+through are tested in `test_search_filters_compiler.py` (ADR-0194).
 """
 
 from __future__ import annotations
@@ -13,7 +13,8 @@ from dataclasses import replace
 
 import pytest
 
-from headstart.search import (
+from headstart.search_filters.compiler import account_clause, build_filter
+from headstart.serving.job_search import (
     FACET_CACHE_SIZE,
     QUERY_VECTOR_CACHE_SIZE,
     RESULT_COLUMNS,
@@ -21,7 +22,6 @@ from headstart.search import (
     JobSearch,
     request_account_clause,
 )
-from headstart.search_filter_compiler import account_clause, build_filter
 
 # ---- JobSearch: through its interface, with fakes ----
 
@@ -140,7 +140,7 @@ def test_an_unknown_filter_value_is_warned_about_once_per_request(caplog):
     # user-controlled, unauthenticated log volume from any crawler holding a stale link. The
     # parse happens once; the compile happens ~30 times, and only the parse may speak.
     searcher, _ = _searcher()
-    with caplog.at_level(logging.WARNING, logger="headstart.search"):
+    with caplog.at_level(logging.WARNING, logger="headstart.serving.job_search"):
         caplog.clear()  # the constructor's own dark-column line is not what is counted here
         filters = searcher.parse_filters({"ats": "bogus", "etype": "bogus"})
         for _ in range(30):
@@ -152,7 +152,7 @@ def test_an_unknown_filter_value_is_warned_about_once_per_request(caplog):
 
 def test_an_unknown_india_place_is_warned_about_and_a_known_one_is_not(caplog):
     searcher, _ = _searcher()
-    with caplog.at_level(logging.WARNING, logger="headstart.search"):
+    with caplog.at_level(logging.WARNING, logger="headstart.serving.job_search"):
         caplog.clear()
         searcher.parse_filters({"india": "bengaluru"})
         searcher.parse_filters({"india": "india"})
@@ -166,12 +166,13 @@ def test_an_unknown_india_place_is_warned_about_and_a_known_one_is_not(caplog):
 def test_boot_names_unmaterialized_flags_a_capped_whitelist_and_unpriced_currencies(
     caplog, monkeypatch
 ):
-    from headstart import fx, search
+    from headstart.search_filters import fx
+    from headstart.serving import job_search
 
-    monkeypatch.setattr(search, "WHITELIST_SCAN_ROWS", 0)
+    monkeypatch.setattr(job_search, "WHITELIST_SCAN_ROWS", 0)
     monkeypatch.setattr(fx, "table", lambda: {"rates": {"USD": 1.0}})
     table = _priced(_Table([{**_ROW, "salary_currency": "XYZ"}]))
-    with caplog.at_level(logging.WARNING, logger="headstart.search"):
+    with caplog.at_level(logging.WARNING, logger="headstart.serving.job_search"):
         JobSearch(_Model(), table)
     lines = [r.getMessage() for r in caplog.records]
     assert "slow path (unmaterialized): employment_type flags" in lines[0]
@@ -180,11 +181,11 @@ def test_boot_names_unmaterialized_flags_a_capped_whitelist_and_unpriced_currenc
 
 
 def test_a_slow_search_is_named_by_shape_never_by_query(caplog, monkeypatch):
-    from headstart import search
+    from headstart.serving import job_search
 
-    monkeypatch.setattr(search, "SLOW_SEARCH_MS", -1)
+    monkeypatch.setattr(job_search, "SLOW_SEARCH_MS", -1)
     searcher, _ = _searcher()
-    with caplog.at_level(logging.WARNING, logger="headstart.search"):
+    with caplog.at_level(logging.WARNING, logger="headstart.serving.job_search"):
         caplog.clear()
         searcher.run({"q": "secret words"})
     (line,) = [r.getMessage() for r in caplog.records]
@@ -203,7 +204,7 @@ def test_a_bracket_re_scoped_or_dropped_by_currency_is_said_once(caplog):
             searcher.capabilities, currencies=currencies, has_min_salary_annual=True
         )
         searcher.capabilities = caps
-        with caplog.at_level(logging.WARNING, logger="headstart.search"):
+        with caplog.at_level(logging.WARNING, logger="headstart.serving.job_search"):
             caplog.clear()
             searcher.parse_filters({"salary_currency": "INR"})  # no bound: no bracket
             searcher.parse_filters({"salary_min": "5", "salary_currency": "INR"})
@@ -221,7 +222,7 @@ def test_a_bracket_re_scoped_or_dropped_by_currency_is_said_once(caplog):
 
 def test_an_unknown_keyword_scope_or_sort_is_warned_about(caplog):
     searcher, _ = _searcher()
-    with caplog.at_level(logging.WARNING, logger="headstart.search"):
+    with caplog.at_level(logging.WARNING, logger="headstart.serving.job_search"):
         caplog.clear()
         searcher.parse_filters({"kw_in": "bogus"})  # no keyword: the scope is moot
         searcher.parse_filters({"kw": "go", "kw_in": "title", "sort": "posted"})
@@ -234,7 +235,7 @@ def test_an_unknown_keyword_scope_or_sort_is_warned_about(caplog):
 
 
 def test_facets_cache_the_filter_set_not_the_semantic_query(monkeypatch):
-    from headstart import facets
+    from headstart.serving import facets
 
     calls = []
 
@@ -255,7 +256,7 @@ def test_facets_cache_the_filter_set_not_the_semantic_query(monkeypatch):
 
 
 def test_facet_cache_keeps_account_clauses_separate(monkeypatch):
-    from headstart import facets
+    from headstart.serving import facets
 
     calls = []
 
@@ -272,12 +273,11 @@ def test_facet_cache_keeps_account_clauses_separate(monkeypatch):
 
 
 def test_facet_cache_expires_so_recency_counts_keep_moving(monkeypatch):
-    from headstart import facets
-    from headstart import search as search_module
+    from headstart.serving import facets, job_search
 
     now = [100.0]
     calls = []
-    monkeypatch.setattr(search_module.time, "monotonic", lambda: now[0])
+    monkeypatch.setattr(job_search.time, "monotonic", lambda: now[0])
     monkeypatch.setattr(
         facets,
         "counts",
@@ -294,10 +294,10 @@ def test_facet_cache_expires_so_recency_counts_keep_moving(monkeypatch):
 
 
 def test_empty_query_pages_are_cached_and_expire(monkeypatch):
-    from headstart import search as search_module
+    from headstart.serving import job_search
 
     now = [100.0]
-    monkeypatch.setattr(search_module.time, "monotonic", lambda: now[0])
+    monkeypatch.setattr(job_search.time, "monotonic", lambda: now[0])
     searcher, table = _searcher()
     table.search_calls = 0  # ignore constructor capability scans
     first = searcher.run({})
@@ -335,7 +335,7 @@ def test_semantic_vector_is_reused_across_filter_and_page_changes():
 
 
 def test_warm_uses_the_same_normalized_key_as_the_first_browser_request(monkeypatch):
-    from headstart import facets
+    from headstart.serving import facets
 
     monkeypatch.setattr(
         facets, "counts", lambda *_args, **_kwargs: {"total": 1, "facets": {}}
@@ -431,8 +431,8 @@ def test_run_moves_recruitee_links_onto_the_tenant_host():
 def test_canonical_url_rewrites_match_the_scrapers_own_url_shape():
     """Ties ``_canonical_url``'s two hardcoded rewrites to the scrapers they repair for (ADR-0157).
 
-    ``search.py`` is deployed to the HF Space as a flat standalone file with no
-    ``headstart.scrapers`` alongside it (see ``_canonical_url``'s own docstring), so the
+    The HF Space has no ``curl_cffi``, so ``headstart.scrapers`` does not import there (see
+    ``_canonical_url``'s own docstring), and the
     rewrites can't call through to ``DarwinboxScraper``/``RecruiteeScraper`` at runtime — this
     test is the structural check instead: it runs here, in the repo, where both modules are
     importable, and fails if either scraper's declared shape and this function's repaired
@@ -442,7 +442,7 @@ def test_canonical_url_rewrites_match_the_scrapers_own_url_shape():
 
     from headstart.scrapers.darwinbox import DarwinboxScraper
     from headstart.scrapers.recruitee import RecruiteeScraper
-    from headstart.search import _canonical_url
+    from headstart.serving.job_search import _canonical_url
 
     darwinbox_repaired = _canonical_url(
         "darwinbox",
@@ -460,7 +460,7 @@ def test_canonical_url_rewrites_match_the_scrapers_own_url_shape():
 
 
 def test_recruitee_rewrite_leaves_alone_what_it_cannot_rebuild():
-    from headstart.search import _rehost_recruitee
+    from headstart.serving.job_search import _rehost_recruitee
 
     jid = "recruitee:transperfect:1"
     # already canonical
@@ -702,7 +702,7 @@ def test_run_passes_ranges_and_rejects_garbage():
 
 
 def test_sort_is_whitelisted_to_a_column():
-    from headstart.search import SORT_COLUMNS
+    from headstart.serving.job_search import SORT_COLUMNS
 
     assert SORT_COLUMNS == {
         "posted": "posted_at",
@@ -760,7 +760,7 @@ def test_a_ranked_salary_sort_compares_across_currencies_in_one(monkeypatch):
     currency with the ADR-0117 rates; a currency with no rate cannot be compared, so it sorts
     with the unpriced rows rather than being taken 1:1.
     """
-    from headstart import fx
+    from headstart.search_filters import fx
 
     monkeypatch.setattr(
         fx, "table", lambda: {"rates": {"USD": 1.0, "INR": 80.0, "EUR": 0.9}}
@@ -1016,7 +1016,7 @@ def test_the_response_reads_only_columns_the_projection_asked_for():
     import ast
     import inspect
 
-    from headstart.search import RESULT_COLUMNS, JobSearch
+    from headstart.serving.job_search import RESULT_COLUMNS, JobSearch
 
     tree = ast.parse(inspect.getsource(JobSearch.run).lstrip())
     read: set[str] = set()
@@ -1056,7 +1056,7 @@ def test_the_two_sort_paths_break_ties_in_opposite_directions():
     """
     import inspect
 
-    from headstart.search import JobSearch
+    from headstart.serving.job_search import JobSearch
 
     src = inspect.getsource(JobSearch.run)
     assert 'return (missing if value is None else value, r.get("id") or "")' in src
@@ -1121,7 +1121,7 @@ def test_request_account_clause_reads_mine_from_the_query_string():
 def test_salary_bracket_converts_only_where_two_served_currencies_carry_a_rate(
     monkeypatch,
 ):
-    from headstart import fx
+    from headstart.search_filters import fx
 
     searcher, _ = _searcher()
     monkeypatch.setattr(fx, "table", lambda: {"rates": {"USD": 1.0, "INR": 80.0}})
@@ -1148,7 +1148,7 @@ def test_a_category_hands_over_as_the_ids_trends_counted() -> None:
     """`family=` beside `board=` names the Boards' Jobs in that family, and nothing else."""
     from werkzeug.datastructures import MultiDict
 
-    from headstart.search import MAX_FAMILY_IDS, scoped_jobs_clause
+    from headstart.serving.job_search import MAX_FAMILY_IDS, scoped_jobs_clause
 
     ids = {
         "ai-ml": sorted(
@@ -1179,7 +1179,7 @@ def test_a_category_hands_over_as_the_ids_trends_counted() -> None:
 def test_a_tracked_role_hands_over_by_its_own_title_patterns() -> None:
     from werkzeug.datastructures import MultiDict
 
-    from headstart.search import scoped_jobs_clause
+    from headstart.serving.job_search import scoped_jobs_clause
 
     patterns = {"watch:llm-genai": [r"\bLLM\b", r"\bGenAI\b"], "watch:odd": ["o'k"]}
     args = MultiDict([("board", "google:careers.google.com"), ("role", "llm-genai")])
@@ -1197,10 +1197,10 @@ def test_a_tracked_role_hands_over_by_its_own_title_patterns() -> None:
 def test_a_hand_off_that_widens_or_empties_says_so(caplog) -> None:
     from werkzeug.datastructures import MultiDict
 
-    from headstart.search import MAX_FAMILY_IDS, scoped_jobs_clause
+    from headstart.serving.job_search import MAX_FAMILY_IDS, scoped_jobs_clause
 
     board = ("board", "b:x")
-    with caplog.at_level(logging.WARNING, logger="headstart.search"):
+    with caplog.at_level(logging.WARNING, logger="headstart.serving.job_search"):
         scoped_jobs_clause(MultiDict([board, ("role", "nope")]), None, {})
         scoped_jobs_clause(
             MultiDict([board, ("role", "nope")]), None, {"watch:odd": ["x"]}
@@ -1228,9 +1228,9 @@ def test_a_hand_off_that_widens_or_empties_says_so(caplog) -> None:
 
 
 def test_a_missing_role_assignment_snapshot_is_named_at_boot(caplog, tmp_path) -> None:
-    from headstart.search import load_family_ids
+    from headstart.serving.job_search import load_family_ids
 
     missing = tmp_path / "role_assignments.parquet"
-    with caplog.at_level(logging.WARNING, logger="headstart.search"):
+    with caplog.at_level(logging.WARNING, logger="headstart.serving.job_search"):
         assert load_family_ids(missing) is None
     assert str(missing) in caplog.records[0].getMessage()

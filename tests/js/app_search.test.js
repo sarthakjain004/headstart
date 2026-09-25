@@ -555,7 +555,7 @@ test('the "N hidden" note counts the page on screen, not every row drawn this se
 
 // ── The bracket's cross-currency labels (ADR-0117) ───────────────────────────────────────────
 
-/** The rate table as index() puts it on CFG — the same object `headstart.fx.table()` returns. */
+/** The rate table as index() puts it on CFG — the same object `headstart.search_filters.fx.table()` returns. */
 const FX = { fx: { base: 'USD', as_of: '2024-06-01', rates: { USD: 1.0, INR: 83.0 } } };
 const inrJob = () => job('a', { salary: null, min_salary_annual: 2800000,
                                 max_salary_annual: 4200000, salary_currency: 'INR' });

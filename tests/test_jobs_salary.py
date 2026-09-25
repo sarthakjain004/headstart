@@ -1974,8 +1974,8 @@ def test_currency_for_symbol_names_a_bare_dollar_by_the_callers_policy():
 def test_every_currency_salary_can_emit_has_an_fx_rate():
     # The salary bracket leaves out a currency config/fx_rates.json has no rate for (ADR-0117),
     # so a currency this module emits without one would silently drop its Jobs from the bracket.
-    from headstart import fx
     from headstart.jobs import salary
+    from headstart.search_filters import fx
 
     emittable = {*salary._CURRENCY_CODES.split("|"), *salary._SYMBOL_CURRENCY.values()}
     assert emittable - fx.table()["rates"].keys() == set()

@@ -7,7 +7,7 @@ import hashlib
 
 import pytest
 
-from headstart.geo import (
+from headstart.search_filters.india_gazetteer import (
     CITIES,
     DROPDOWN,
     EXCLUDE,

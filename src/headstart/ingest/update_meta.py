@@ -71,7 +71,7 @@ from pathlib import Path
 from time import monotonic
 from typing import Any, NamedTuple
 
-from headstart import india_filter, log
+from headstart import log
 from headstart.ingest import (
     PENDING_REDERIVE_PATH,
     REPO_ROOT,
@@ -90,6 +90,7 @@ from headstart.ingest.update_descriptions import read_store
 from headstart.jobs.experience import from_field, from_seniority
 from headstart.jobs.salary import from_field as salary_from_field
 from headstart.scrapers import registry
+from headstart.search_filters import india_filter
 
 _log = log.get(__name__, __spec__)
 

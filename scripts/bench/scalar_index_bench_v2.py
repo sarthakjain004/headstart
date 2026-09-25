@@ -4,7 +4,7 @@
 Three methodology properties this script is built around, each closing a way a naive version of
 this kind of bench reports a misleading number:
 
-1. **Real filter strings.** Every clause is produced by :func:`headstart.search_filter_compiler.build_filter`
+1. **Real filter strings.** Every clause is produced by :func:`headstart.search_filters.compiler.build_filter`
    itself, not hand-written SQL — so ``max_years`` compiles to its actual
    ``(min_years <= N OR min_years IS NULL)`` shape, not a bare ``<=`` a hand-written clause
    would use, and every filter measured here is provably the one `/search` actually issues.
@@ -30,12 +30,12 @@ from pathlib import Path
 import lancedb
 import numpy as np
 
-from headstart.search import RESULT_COLUMNS
-from headstart.search_filter_compiler import (
+from headstart.search_filters.compiler import (
     IndexCapabilities,
     SearchFilters,
     build_filter,
 )
+from headstart.serving.job_search import RESULT_COLUMNS
 
 # name -> SearchFilters kwargs, chosen to mirror real UI filter combinations
 FILTER_CASES: list[tuple[str, dict]] = [
@@ -56,7 +56,7 @@ FILTER_CASES: list[tuple[str, dict]] = [
     ("location LIKE bangalore (LIKE, control)", {"location": "bangalore"}),
     # ADR-0138: the country-level case is what the materialized `country` column targets —
     # `has_country` (below) picks the fast `country = 'IN'` path when the table carries it,
-    # falling back to `geo.where("india")`'s regex alternation otherwise. The city-level case is
+    # falling back to `india_gazetteer.where("india")`'s regex alternation otherwise. The city-level case is
     # the control proving the scoping is right: it should cost the same either way, since only
     # the country-level alternation was ever measured as expensive.
     ("india=india (country-level)", {"india": "india"}),

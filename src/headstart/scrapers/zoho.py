@@ -141,7 +141,7 @@ def _zoho_location(
 ) -> str | None:
     """``City, State, Country`` for the served ``location`` — replaces the old ``City or (State,
     Country)`` fallback, which discarded a real Country on 85.69% of jobs (13,759/16,056) whenever
-    City was present, 168 of them invisible to ``headstart.geo.where("india")`` as a result
+    City was present, 168 of them invisible to ``headstart.search_filters.india_gazetteer.where("india")`` as a result
     (audit: experiment/location-audit-2026-08-25/zoho.md).
 
     Joined raw, then re-split on comma and de-duped/filtered per segment — the same technique

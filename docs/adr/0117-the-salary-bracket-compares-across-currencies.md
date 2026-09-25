@@ -38,7 +38,7 @@ untouched, and a rate change alters which rows match rather than what any row *s
 
 ### The rates are committed and dated, never fetched
 
-`config/fx_rates.json` carries `as_of` beside the numbers; `headstart.fx` reads it; the rail prints
+`config/fx_rates.json` carries `as_of` beside the numbers; `headstart.search_filters.fx` reads it; the rail prints
 the date next to the control. A live lookup was rejected on three counts: it puts a third-party
 call on the search path, it fails invisibly when that call does, and it makes the same query on the
 same data return different results to two users at the same moment.

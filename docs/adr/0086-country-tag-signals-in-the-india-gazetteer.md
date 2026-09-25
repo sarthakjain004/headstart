@@ -85,7 +85,7 @@ column, on the same sweep-lag terms `DERIVATIONS_VERSION` already imposes on eve
 field), while leaving this ADR's query-time design, and its instant reach, unchanged for city and
 region filtering.
 
-`tests/test_geo.py` carries the new rows and traps in its existing table-driven form. Proven
+`tests/test_search_filters_india_gazetteer.py` carries the new rows and traps in its existing table-driven form. Proven
 against the pre-fix clause: it fails **8 missed + 5 false positives**, and passes clean after.
 
 Two things this deliberately does **not** do. It does not add the tail towns the audit found by

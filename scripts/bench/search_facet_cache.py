@@ -12,7 +12,7 @@ from pathlib import Path
 import lancedb
 from search_table import FACET_CASES, _FixedEncoder, _load_vector
 
-from headstart.search import JobSearch
+from headstart.serving.job_search import JobSearch
 
 
 def main() -> int:

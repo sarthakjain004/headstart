@@ -1,13 +1,13 @@
 """The Space app's wall and routes — `deploy/hf-space/app.py` (ADR-0035, ADR-0042).
 
-The filter/search logic itself lives in `headstart.search` and is tested in
-`tests/test_search.py`; what's left here is what only the app owns — the sign-in wall and
+The filter/search logic itself lives in `headstart.serving.job_search` and is tested in
+`tests/test_serving_job_search.py`; what's left here is what only the app owns — the sign-in wall and
 the wiring — which had no coverage anywhere, because `deploy/` sits outside `testpaths`
 and importing the app pulls in a model download, a SentenceTransformer and a LanceDB
 table. So the heavy ML/network deps are stubbed in `sys.modules` and the module is loaded
 from its path — the same importlib trick `tests/test_check_liveness.py` uses for
-`scripts/`. Everything else app.py imports (`headstart.search`, `.facets`, `.fx`, `.geo`,
-`.profile_extract`, `.alerts.*`) is the real package: the Space installs `headstart` rather
+`scripts/`. Everything else app.py imports (`headstart.serving.*`, `headstart.search_filters.*`,
+`headstart.alerts.*`) is the real package: the Space installs `headstart` rather
 than laying its modules down flat (ADR-0153), so app.py imports it exactly the way this
 test file and `scripts/ui/serve.py` already did, and there is nothing left to fake for it —
 only `llm_router.ask` is defaulted off below, so a router-less test environment doesn't
@@ -165,7 +165,7 @@ def _space_app(state, env=None):
         ),
     }
     # Only the ML/network deps above are faked. Everything app.py imports from `headstart`
-    # (facets, fx, geo, profile_extract, search, alerts.*) is the real package (ADR-0153), so
+    # (serving.*, search_filters.*, alerts.*) is the real package (ADR-0153), so
     # there is nothing left to substitute for it — the wiring under test is real end to end.
     saved = {name: sys.modules.get(name) for name in stubs}
     saved_env = {key: os.environ.get(key) for key in (env or {})}
@@ -293,7 +293,7 @@ def test_wall_off_keeps_the_page_open(app):
     client = app.app.test_client()
     assert b"jobs indexed" in client.get("/").data
     # An empty query browses (ADR-0074) rather than returning nothing — asserting a real
-    # response came back is enough here; the browse behavior itself is test_search.py's job.
+    # response came back is enough here; the browse behavior itself is test_serving_job_search.py's job.
     assert len(client.get("/search?q=").json) == 2
     assert client.get("/me").json == {"auth": False, "email": None}
     # Not a 500: clearing a NullSession raises, so the route must refuse first.
@@ -2682,7 +2682,7 @@ def test_the_page_hands_the_browser_the_rate_table_and_its_date(app):
     and the Data tab prints it in prose as well."""
     import json
 
-    from headstart import fx
+    from headstart.search_filters import fx
 
     page = app.app.test_client().get("/").data.decode()
     cfg = json.loads(re.search(r"window\.CFG = (.*?);</script>", page).group(1))
@@ -2875,15 +2875,15 @@ def test_a_board_that_brought_no_tech_openings_is_not_marked(
 
 def test_search_narrows_to_the_boards_a_trend_hands_over(app):
     """`board=` scopes /search and /facets to one company's Boards, accounts or not."""
-    from headstart import search
+    from headstart.serving import job_search
 
     args = app.app.test_request_context(
         "/search?board=workday:citi/2&board=eightfold:x"
     ).request.args
-    assert search.scoped_boards_clause(args) == (
+    assert job_search.scoped_boards_clause(args) == (
         "(lower(id) LIKE 'eightfold:x:%' OR lower(id) LIKE 'workday:citi/2:%')"
     )
-    many = "&".join(f"board=b{i}" for i in range(search.MAX_SCOPED_BOARDS + 1))
+    many = "&".join(f"board=b{i}" for i in range(job_search.MAX_SCOPED_BOARDS + 1))
     client = app.app.test_client()
     assert client.get("/search?" + many).status_code == 400
     assert client.get("/facets?" + many).status_code == 400
@@ -3181,7 +3181,7 @@ def test_every_category_hands_search_the_jobs_its_trend_counts(
 ):
     """For each category a trend can show, Search's id set is the size of the trend's count —
     old names, new names and merged names alike (AI, ML & Data Science opened as 0 jobs)."""
-    from headstart import search
+    from headstart.serving import job_search
 
     successors = trend_history.family_successors(_REPO_FAMILIES)
     labels = trend_history._family_labels(_REPO_FAMILIES)
@@ -3224,7 +3224,7 @@ def test_every_category_hands_search_the_jobs_its_trend_counts(
             args = trends_app.app.test_request_context(
                 f"/search?board=x&family={d['family']}"
             ).request.args
-            clause = search.scoped_jobs_clause(args, family_ids)
+            clause = job_search.scoped_jobs_clause(args, family_ids)
             assert len(re.findall(r"'x:[^']*'", clause)) == trend, family
 
 

@@ -1,7 +1,7 @@
 """Local dev UI — a thin adapter over the same modules the HF Space app serves (ADR-0042).
 
 Renders the shared templates/static from ``src/headstart/ui`` and answers ``/search``
-through the shared ``headstart.search.JobSearch``, against the local LanceDB copy of the
+through the shared ``headstart.serving.job_search.JobSearch``, against the local LanceDB copy of the
 ``jobs`` table. No sign-in wall, no alerts, no résumé panel, no trends and no Hot tab — those
 need Space secrets or state; the page simply renders without them, which is also what a Space
 with no secrets shows.
@@ -18,10 +18,16 @@ import lancedb
 from flask import Flask, jsonify, render_template, request
 
 import headstart
-from headstart import facets, fx, geo
 from headstart.alerts.store import MAX_COMPANIES, CompanyPrefs
 from headstart.embedding_conventions import PROD_TABLE, load_encoder
-from headstart.search import (
+from headstart.search_filters import fx, india_gazetteer
+from headstart.search_filters.compiler import (
+    KEYWORD_DEFAULT_SCOPE,
+    keyword_scope_options,
+    with_extra,
+)
+from headstart.serving import facets
+from headstart.serving.job_search import (
     MAX_FAMILY_IDS,
     MAX_SCOPED_BOARDS,
     JobSearch,
@@ -29,11 +35,6 @@ from headstart.search import (
     request_account_clause,
     scoped_boards_clause,
     scoped_jobs_clause,
-)
-from headstart.search_filter_compiler import (
-    KEYWORD_DEFAULT_SCOPE,
-    keyword_scope_options,
-    with_extra,
 )
 
 _REPO = Path(__file__).resolve().parents[2]
@@ -89,7 +90,7 @@ def index():
         auth_on=False,  # the local renderer has no sign-in, so nothing is stored
         njobs=f"{_table.count_rows():,}",
         atses=capabilities.atses,
-        india_opts=geo.dropdown_options(),
+        india_opts=india_gazetteer.dropdown_options(),
         has_first_seen=capabilities.has_first_seen,
         # the "Highest salary" sort option — dark until the ADR-0082 columns exist on the
         # served table, the same rule app.py and JobSearch.run apply to the value the control
@@ -104,7 +105,7 @@ def index():
         # claim on the date let a deployment with no comparable currencies still promise it.
         fx_as_of=fx.as_of(),
         fx_converts=_searcher.salary_bracket_converts,
-        # the recency dropdowns, from the same tuples headstart.facets counts (ADR-0084)
+        # the recency dropdowns, from the same tuples headstart.serving.facets counts (ADR-0084)
         seen_opts=facets.SEEN_OPTIONS,
         posted_opts=facets.POSTED_OPTIONS,
         # ADR-0104's scope map, as the Space passes it. Without these three the rail still

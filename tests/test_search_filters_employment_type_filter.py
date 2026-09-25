@@ -1,4 +1,4 @@
-from headstart.employment_type_filter import RULES, clause, flags
+from headstart.search_filters.employment_type_filter import RULES, clause, flags
 
 
 def test_flags_preserve_the_existing_overlapping_substring_rules():

@@ -67,7 +67,7 @@ The search design is a **hybrid split made explicit at the UI**: you apply struc
 yourself, *and separately* type a natural-language query describing only the role. Filters drive
 a deterministic where-clause; the query drives the embedding. `/search` takes `remote`,
 `has_salary`, `max_years`, `ats`, `etype`, `india`, `location`, `company`, `posted_within`,
-`seen_within`, and explicit date bounds — all compiled by `search_filter_compiler.build_filter`, which rejects
+`seen_within`, and explicit date bounds — all compiled by `search_filters.compiler.build_filter`, which rejects
 unparseable input with a 400 rather than silently ignoring it.
 
 - **Embeddings:** `nomic-embed-text-v1.5`, 768-dim, L2-normalized, over `title + cleaned
@@ -351,7 +351,7 @@ fails if this table drifts from it.
 | `vector` | list\<float32\>[768] | `title + cleaned description`, L2-normalized |
 
 **Two columns look like candidates for removal, on a careful read of every consumer** —
-filters, sorts, the API projection (`search.RESULT_COLUMNS`), and the internal re-derivation
+filters, sorts, the API projection (`job_search.RESULT_COLUMNS`), and the internal re-derivation
 logic in `update_meta.py` — none of which read `max_years` or `department` off this table today.
 Both are still written and stored on every row. This is a finding, not a change: dropping either
 is a live schema change against a deployed table and API, worth its own ADR and a deliberate
@@ -416,12 +416,11 @@ Note the raw corpus files under `data/jobs/` carry a few fields the served table
 
 - `src/headstart/` — shared library, used by both the pipeline and the curated feed:
   `scrapers/` (47 per-ATS + `base`/`registry`), `config.py`, `scrapable_boards.py` (which Boards a
-  run may scrape, ADR-0191), `harvest.py` (the scrape engine), `liveness.py`, `corpus.py`, `geo.py`,
-  `company_name.py` (ADR-0114, ADR-0212), `search.py` (shared embed/search constants + filter builder),
-  `facets.py` (ADR-0084), `board_priority.py` (ADR-0022), `board_cost.py` (measured scrape
-  seconds, ADR-0027), `board_aliases.py`, `board_identity.py`, `board_description_gap.py`,
-  `roles.py`, `profile_extract.py`, `fx.py`, and `llm_router.py`, the one seam every LLM call
-  goes through; plus `telegram_bot_api.py`, the polling client the enrolment bot uses.
+  run may scrape, ADR-0191), `harvest.py` (the scrape engine), `liveness.py`, `corpus.py`,
+  `company_name.py` (ADR-0114, ADR-0212), `board_priority.py` (ADR-0022), `board_cost.py`
+  (measured scrape seconds, ADR-0027), `board_aliases.py`, `board_identity.py`,
+  `board_description_gap.py`, `roles.py`, and `llm_router.py`, the one seam every LLM call goes
+  through; plus `telegram_bot_api.py`, the polling client the enrolment bot uses.
 - `src/headstart/network/` — how a request leaves the machine (ADR-0232): `http.py`, the pooled
   reliable-fetch client; `browser_http.py`, its browser twin, for hosts that admit a genuine Chrome
   and nothing else; `fetcher.py`, the seam both sit behind; `spare_egress.py`, a second network
@@ -432,6 +431,15 @@ Note the raw corpus files under `data/jobs/` carry a few fields the served table
   (the `Job` record and the normalizers a scraper builds one with), `experience.py` (ADR-0009),
   `salary.py` (ADR-0082), `remote.py` (ADR-0118), and `tech_filter.py`, the **Tech filter**
   (ADR-0017).
+- `src/headstart/search_filters/` — the Search-filter vocabulary (ADR-0193, ADR-0232): `compiler.py`
+  (`build_filter`, a request's filters as a LanceDB where-clause), one module per materialized
+  filter (`employment_type_filter.py`, `experience_filter.py`, `salary_known_filter.py`,
+  `india_filter.py`, and `posted_date_guard.py`), `india_gazetteer.py` (the India place
+  gazetteer, ADR-0024) and `fx.py` (the salary bracket's dated rates, ADR-0117). The run imports
+  it to write the materialized columns, so the serving path is a separate package.
+- `src/headstart/serving/` — the serving path the Space and the local dev server run:
+  `job_search.py` (`JobSearch`, ADR-0042), `facets.py` (ADR-0084) and `profile_extract.py` (Résumé
+  to Profile, ADR-0041).
 - `src/headstart/ui/` — the templates and static assets the Space serves.
 - `src/headstart/alerts/` — job alerts plus the signed-in per-account records: `store`
   (Subscriptions, Saved sets, Saved jobs, Profiles), `registry`, `access` (invite allowlist),

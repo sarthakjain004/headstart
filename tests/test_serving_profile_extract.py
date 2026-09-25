@@ -1,4 +1,4 @@
-"""Tests for the Résumé→Profile extraction (headstart.profile_extract, ADR-0041).
+"""Tests for the Résumé→Profile extraction (headstart.serving.profile_extract, ADR-0041).
 
 The contract under test is the search design's: the ``query`` sentence names a role and
 nothing else. The scrub is the load-bearing piece — the prompt *asks* the model to omit
@@ -14,7 +14,7 @@ import json
 
 import pytest
 
-from headstart import profile_extract as pe
+from headstart.serving import profile_extract as pe
 
 _RESUME = "Jane Doe. Senior backend engineer at Acme. Python, Go, Kafka. B.Tech 2018."
 
@@ -80,7 +80,7 @@ def test_reply_that_is_not_json_raises_empty_extraction():
 
 def test_scrub_removes_years_and_salary_from_the_query_only(caplog):
     raw = "backend engineer, 7+ years of experience, ₹30 LPA, Kafka"
-    with caplog.at_level("WARNING", logger="headstart.profile_extract"):
+    with caplog.at_level("WARNING", logger="headstart.serving.profile_extract"):
         out = pe.extract(_RESUME, ask=_reply(query=raw))
     assert out["query"] == "backend engineer, Kafka"
     assert out["years"] == 7  # the fact keeps what the sentence must not
@@ -92,7 +92,7 @@ def test_scrub_removes_years_and_salary_from_the_query_only(caplog):
 
 
 def test_a_clean_query_or_mere_tidying_is_not_called_drift(caplog):
-    with caplog.at_level("WARNING", logger="headstart.profile_extract"):
+    with caplog.at_level("WARNING", logger="headstart.serving.profile_extract"):
         pe.extract(_RESUME, ask=_reply(query='"backend engineer, Kafka."'))
     assert not caplog.records
 
@@ -189,7 +189,7 @@ def test_each_empty_extraction_names_its_shape_but_no_content(caplog, reply, sha
     # app.py answers every one of these with the same 502 and spends the user's cap on it, so
     # the log is the only place that says which failure it was — by shape, never by text.
     with (
-        caplog.at_level("WARNING", logger="headstart.profile_extract"),
+        caplog.at_level("WARNING", logger="headstart.serving.profile_extract"),
         pytest.raises(pe.EmptyExtraction),
     ):
         pe.extract(_RESUME, ask=lambda prompt: reply)

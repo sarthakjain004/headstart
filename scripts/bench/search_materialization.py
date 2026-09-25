@@ -15,9 +15,11 @@ import lancedb
 import numpy as np
 from lancedb.index import Bitmap, BTree, Fm
 
-from headstart import fx
-from headstart.employment_type_filter import RULES as EMPLOYMENT_TYPE_RULES
-from headstart.search import RESULT_COLUMNS
+from headstart.search_filters import fx
+from headstart.search_filters.employment_type_filter import (
+    RULES as EMPLOYMENT_TYPE_RULES,
+)
+from headstart.serving.job_search import RESULT_COLUMNS
 
 
 def _salary_case(column: str) -> str:

@@ -18,7 +18,7 @@ its hits were *Indianapolis*), and typing either city spelling missed the other 
 
 ## Decision
 
-A **hardcoded India gazetteer expanded at query time** — `src/headstart/geo.py`: canonical city →
+A **hardcoded India gazetteer expanded at query time** — `src/headstart/search_filters/india_gazetteer.py`: canonical city →
 observed alias substrings (variants, real typos, metro localities), a state list, region bundles
 (Delhi NCR), and `where(place)` building the LIKE OR-chain. The Space UI grows an **India dropdown**
 (all India + top ~24 cities); the selected canonical is whitelisted against the gazetteer — free
@@ -37,9 +37,9 @@ Why this shape:
 
 **Every alias must be unambiguous as a substring of any world location string.** The raw inventory
 map was contaminated (Salt Lake City, UT counted as Kolkata via "salt lake"), so aliases are vetted,
-with traps recorded in `geo.py`'s docstring ("wai" ⊂ taiwan, "verna" ⊂ Governador Valadares,
+with traps recorded in `india_gazetteer.py`'s docstring ("wai" ⊂ taiwan, "verna" ⊂ Governador Valadares,
 "punjab" is also Pakistani, …) and NOT-LIKE guards where a good alias has one collision ("surat"
-vs "Surat Thani"; "kalyan" vs Pune's "Kalyani Nagar"). Tests (`tests/test_geo.py`) run the real
+vs "Surat Thani"; "kalyan" vs Pune's "Kalyani Nagar"). Tests (`tests/test_search_filters_india_gazetteer.py`) run the real
 clauses against a LanceDB table seeded with every trap.
 
 The gazetteer stays a **dependency-free single file**: unit-tested in `src/headstart`, copied by
@@ -90,7 +90,7 @@ every city, including both cities that carry collision guards. 70/70 identical.
 That was a one-time migration check, and `experiment/` is gitignored, so it is not a standing
 guard: reproduce it by loading `git show <this-sha>~1:src/headstart/geo.py` beside the current
 module and comparing `{row["id"] for row in table.search().where(clause).select(["id"])}` for each
-place. The standing guard is `tests/test_geo.py`, which runs both the clause and every vetted
+place. The standing guard is `tests/test_search_filters_india_gazetteer.py`, which runs both the clause and every vetted
 substring trap against a real LanceDB table.
 
 Two escapes are now load-bearing where one was before: aliases are `re.escape`d so their own

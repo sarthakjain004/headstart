@@ -7,7 +7,7 @@ recent family added to the cascade)
 
 ## Context
 
-Four field-extractors — `headstart.jobs.experience`, `headstart.jobs.salary`, `headstart.geo`,
+Four field-extractors — `headstart.jobs.experience`, `headstart.jobs.salary`, `headstart.search_filters.india_gazetteer`,
 `headstart.jobs.remote` — derive a Job's `remote`, `country`,
 `min_years`/`max_years`/`experience_source` and
 `min_salary_annual`/`max_salary_annual`/`salary_currency`/`salary_source` columns. Two callers run
@@ -85,7 +85,7 @@ that split (facts vs. derivations, ADR-0061) and this keeps it.
 
 ## Consequences
 
-- `doc_prep.py` no longer imports `headstart.jobs.experience`/`headstart.geo`/`headstart.jobs.remote`/
+- `doc_prep.py` no longer imports `headstart.jobs.experience`/`headstart.search_filters.india_gazetteer`/`headstart.jobs.remote`/
   `headstart.jobs.salary` directly; `update_meta.py` keeps direct imports only for the tiers its
   no-held-text fallback calls itself (`from_field`, `from_seniority`, salary's `from_field`).
 - `tests/test_derived_meta.py` is new: it asserts `to_meta(job)` and `refresh_row`'s cold-start
@@ -100,7 +100,7 @@ that split (facts vs. derivations, ADR-0061) and this keeps it.
   (CLAUDE.md): if a reviewer disagrees, that discipline says the version comment must cite the
   exact commit range and the measured effect, neither of which a "no functional change" refactor
   has to offer.
-- `headstart.geo.classify`'s docstring, which named `doc_prep.to_meta` as the direct caller of
+- `headstart.search_filters.india_gazetteer.classify`'s docstring, which named `doc_prep.to_meta` as the direct caller of
   `classify`, now names `derived_meta.country_meta` — the caller is one hop further away.
 - CONTEXT.md gains a **Derivation cascade** glossary entry (§Pipeline scheduling and sharding),
   distinguishing this four-family composition from the _tiered_ fallback inside one extractor

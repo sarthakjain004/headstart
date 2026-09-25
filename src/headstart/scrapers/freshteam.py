@@ -24,7 +24,7 @@ the tenant's registered office and is routinely a different country for a remote
 preferred list was India/Vietnam/Ukraine/Poland). So it *replaces* the branch join for ``location``
 whenever present, rather than being appended to it — appending would keep the wrong country
 alongside the right one, which is worse than either alone for the substring location filter
-(``geo.where``, ADR-0024).
+(``india_gazetteer.where``, ADR-0024).
 
 ``job_type`` maps to ``employment_type`` via :data:`_JOB_TYPE_LABELS`, resolved 2026-08-25 against
 48 real job pages (schema.org ``JobPosting`` JSON-LD + the rendered "Work Type" line), 6 distinct

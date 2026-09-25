@@ -15,7 +15,7 @@ from flask import Flask, jsonify, render_template, request
 from playwright.sync_api import expect, sync_playwright
 from werkzeug.serving import make_server
 
-from headstart.search_filter_compiler import (
+from headstart.search_filters.compiler import (
     KEYWORD_DEFAULT_SCOPE,
     keyword_scope_options,
 )

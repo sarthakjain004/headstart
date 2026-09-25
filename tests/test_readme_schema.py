@@ -38,7 +38,7 @@ def test_readme_documents_every_column_in_order():
 
 
 def test_documented_schema_covers_the_search_result_projection():
-    from headstart.search import RESULT_COLUMNS
+    from headstart.serving.job_search import RESULT_COLUMNS
 
     assert set(RESULT_COLUMNS) <= set(_documented_columns())
 

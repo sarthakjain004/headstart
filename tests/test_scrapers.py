@@ -238,7 +238,7 @@ def test_lever_location_joins_all_locations_and_recovers_hidden_india():
     # Real posting, captured live 2026-08-25: lever:spreetail:9fcfd96f-141e-4dfe-b670-
     # eb872164abe0 ("Business Solutions Analyst"). categories.location alone is "Manila";
     # allLocations also carries Bogota/India/Karachi. Before this fix, the India location was
-    # invisible to geo.where("india") — the served string never contained "India" at all.
+    # invisible to india_gazetteer.where("india") — the served string never contained "India" at all.
     raw = [
         {
             "id": "9fcfd96f-141e-4dfe-b670-eb872164abe0",
@@ -389,7 +389,7 @@ def test_lever_location_country_recognizes_usa_short_form():
 
 
 def test_ashby_location_keeps_every_place_the_record_names():
-    """The served location IS the filter substrate — `geo.where()` matches substrings of it
+    """The served location IS the filter substrate — `india_gazetteer.where()` matches substrings of it
     (ADR-0024) — so a place absent from this string is unfilterable however well the record
     knows it. Measured 2026-08-25 over 884 live Boards / 16,138 Jobs: 69.55% shipped no country
     at all, 79.43% omitted some populated component of their own address, and 17.5% had a
@@ -1778,7 +1778,7 @@ def test_ripplehire_location_joins_city_and_country():
     34-value country picker. The old `jobLocation or locations` served the coarser value and
     silently dropped the city on every job carrying both — 33.21% of the corpus, live-verified
     2026-08-25 (experiment/location-audit-2026-08-25/ripplehire.md). The fix joins both, so a
-    `geo.where(city)` filter can still match."""
+    `india_gazetteer.where(city)` filter can still match."""
     from headstart.scrapers import ripplehire as rh
 
     jobs = rh.RippleHireScraper("acme").parse(
