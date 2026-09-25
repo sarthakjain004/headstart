@@ -546,4 +546,8 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    log.run_logging_crash(
+        _log,
+        main,
+        "update_ledgers failed — this step's ledger keeps its previous rows this run",
+    )
