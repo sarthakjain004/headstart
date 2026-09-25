@@ -398,10 +398,11 @@ class ScrapeHealth:
         """Whether this run's coverage is bad enough to be worth saying so.
 
         **Graded, not a zero threshold.** This was ``any(failed or partial)`` until 2026-09-16,
-        which over ~20,000 Boards and 31 ATSes is always true: it read DEGRADED on 7 of 7 runs
-        sampled across four days, and would have printed the identical word on 2026-09-12 when
-        Workday failed 80.8% of its Board attempts and tech output fell ~87.7%. An alarm that is
-        always on cannot raise one, and this is the pipeline's only run-level coverage verdict.
+        which over a ~20,000-Board slice (80,000 since ADR-0229) and 31 ATSes is always true: it
+        read DEGRADED on 7 of 7 runs sampled across four days, and would have printed the identical
+        word on 2026-09-12 when Workday failed 80.8% of its Board attempts and tech output fell
+        ~87.7%. An alarm that is always on cannot raise one, and this is the pipeline's only
+        run-level coverage verdict.
 
         Incomplete or malformed shard telemetry still degrades unconditionally — that is a
         different failure from a noisy scrape, and it has no share to grade.

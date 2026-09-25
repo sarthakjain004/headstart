@@ -77,6 +77,12 @@ the same reason (#179). ``hiringOrganization`` is polymorphic: a bare string on 
 ``MonetaryAmount`` that is *present but empty* on the large majority of postings; it is still read
 because when it is populated it is a real structured figure, and an empty one costs nothing.
 
+**The detail is read at ``/job/{id}?nl=1``, with redirects refused** (ADR-0231). The plain job page
+of a tenant that moved its career site 302s to that site, which renders no posting; ``?nl=1`` is
+the page Jobvite's embed widget frames and still answers 200 with it. A Job is built from its
+detail page or not at all: there is no listing-derived fallback, so a lost page is a labelled gap
+and a truncation mark, and the fix for one is in reading the page.
+
 ADR-0048's ``needs_detail`` skip-list is deliberately **not** consulted, unlike eightfold's and
 zwayam's. Those two skip the detail fetch for a Job whose description we already hold because
 their *listing* still supplies title, location and the rest; here the listing supplies an id and
@@ -125,8 +131,14 @@ _NUMBER = re.compile(r"[\d,]+")
 
 #: The rendered job title. Read only up to its first nested tag: one template (agscareer) puts
 #: the location inside this heading as a ``<br><h3>Canada</h3>``, and stripping tags first turned
-#: "Account Executive- Slots" into "Account Executive- Slots Canada".
-_HTML_TITLE = re.compile(r'<h2 class="jv-header">(.*?)</h2>', re.DOTALL)
+#: "Account Executive- Slots" into "Account Executive- Slots Canada". Neither the class list nor
+#: the level is fixed: mini-circuits-review writes ``<h2 class="jv-header u-text-left">``,
+#: nbbj-review ``<h3>`` and lordco-internal ``<h4>``, and matching only ``<h2 class="jv-header">``
+#: lost every page of all three (2026-09-25). Each page carries one ``jv-header``, the title.
+_HTML_TITLE = re.compile(
+    r'<(?P<level>h[1-6]) class="(?:[^"]* )?jv-header(?: [^"]*)?">(?P<title>.*?)</(?P=level)>',
+    re.DOTALL,
+)
 _HTML_META = re.compile(r'<p class="jv-job-detail-meta">(.*?)</p>', re.DOTALL)
 #: The description container's *opening* tag; its extent is found by depth-counting
 #: :data:`_DIV_TAG` (as taleo_be does). Ending at the first ``</div>`` followed by ``<div`` cut
@@ -335,7 +347,7 @@ class JobviteScraper(BaseScraper):
         title = _HTML_TITLE.search(page)
         if not title:
             return None
-        heading = title.group(1)
+        heading = title.group("title")
         text = html_to_text(heading.split("<", 1)[0]) or html_to_text(heading)
         posting: dict[str, Any] = {"title": text}
         description = _description_html(page)
@@ -354,9 +366,14 @@ class JobviteScraper(BaseScraper):
         return posting
 
     def detail_request(self, job_id: str) -> DetailRequest:
+        # `?nl=1` is the page Jobvite's embed widget frames. A tenant that moved its career site
+        # onto its own domain 302s the plain job page there (wedgewood, 2026-09-25), where no
+        # posting is rendered; the `nl=1` page still answers 200 with the posting. Redirects are
+        # refused so any that remain are labelled `HTTP 302`, not misread as an empty page.
         return DetailRequest(
-            self.job_url(job_id),
+            f"{self.job_url(job_id)}?nl=1",
             headers={"User-Agent": USER_AGENT, "Accept": "text/html"},
+            options={"allow_redirects": False},
         )
 
     def read_detail(self, job_id: str, response: Any) -> dict:

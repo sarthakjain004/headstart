@@ -1124,15 +1124,18 @@ def test_prune_evicts_a_board_only_once_parole_reconfirms_it_gone(
 ):
     """A quarantined Board is never scraped, so `sync` never evicts its rows, and its liveness row
     still says live, so prune kept them: 910 quarantined Boards served 6,004 rows on 2026-09-24.
-    But a first-time quarantine (5 strikes) is not evidence enough — a zwayam outage quarantined
-    the whole provider at exactly 5 while its Boards stayed live (ADR-0170). Only a verdict parole
-    re-earned a week later (6+) evicts (ADR-0206), matched case-insensitively (ADR-0049)."""
+    But a first-time quarantine (QUARANTINE_AT strikes) is not evidence enough — a zwayam outage
+    quarantined the whole provider at exactly that count while its Boards stayed live (ADR-0170).
+    Only a verdict parole re-earned a week later (one strike more) evicts (ADR-0206), matched
+    case-insensitively (ADR-0049)."""
+    from headstart.ingest.board_failures import QUARANTINE_AT
+
     gone = "HTTPError: HTTP Error 404: ,2026-09-23T17:47:04+00:00\n"
     kept = _prune_with_failures(
         tmp_path,
         monkeypatch,
-        f"greenhouse:RECONFIRMED,6,{gone}"
-        f"greenhouse:outage,5,{gone}"
+        f"greenhouse:RECONFIRMED,{QUARANTINE_AT + 1},{gone}"
+        f"greenhouse:outage,{QUARANTINE_AT},{gone}"
         f"greenhouse:flaky,2,{gone}",
     )
     assert kept == {"greenhouse:a:1", "greenhouse:outage:1", "greenhouse:flaky:1"}

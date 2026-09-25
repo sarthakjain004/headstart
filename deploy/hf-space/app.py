@@ -1809,9 +1809,9 @@ def trends():
 
     # Stamps and the share denominator come from `trends_rows` (since/until/ats-narrowed, but
     # not the family/metric drill): total(ts) is every family + non-tech IN THAT SCOPE, since
-    # count_groups assigns every row exactly once, which is what makes share coverage-immune —
-    # an index (or an ATS selection) that grew 1.5% overnight moves every count but no share
-    # (ADR-0051, scope extended to ATS by ADR-0075).
+    # count_board_groups assigns every row exactly once, which is what makes share
+    # coverage-immune — an index (or an ATS selection) that grew 1.5% overnight moves every
+    # count but no share (ADR-0051, scope extended to ATS by ADR-0075).
     stock = [r for r in trends_rows if r["metric"] == "stock"]
     stamps = sorted({r["ts"] for r in stock})
     totals: dict[str, int] = {}
@@ -1878,7 +1878,7 @@ def trends():
         rows = [r for r in rows if not r["family"].startswith(_WATCH_PREFIX)]
         key = "family"
 
-    # Stamps where the `new` metric was recorded at all. `count_groups` writes only non-empty
+    # Stamps where the `new` metric was recorded at all. `count_board_groups` writes only non-empty
     # groups, so on such a stamp a series with no row genuinely saw zero fresh openings —
     # whereas a stamp with no `new` rows anywhere is one this metric did not yet exist for.
     # That second case is an inference from row presence, not a recorded fact: a run where
@@ -1962,7 +1962,7 @@ def trends():
             "label": _series_label(name),
             # None (not 0) where a run has no row for this series: a gap is "not measured",
             # and plotting it as zero would invent a crash that never happened. The "new"
-            # metric refines that: count_groups writes only non-empty groups, so on a stamp
+            # metric refines that: count_board_groups writes only non-empty groups, so on a stamp
             # where new WAS measured (any new row exists), a missing series row genuinely
             # means zero fresh openings; a stamp with no new rows at all predates ADR-0051
             # and stays a gap.

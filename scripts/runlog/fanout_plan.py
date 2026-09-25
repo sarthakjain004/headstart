@@ -12,8 +12,9 @@ the 9 min even share", the actual run confirming a straggler is not a new findin
 
 1. **Slice composition** (`scrape_plan` only) — `slice: N boards (P priority + E exploration); G
    hold unsettled descriptions, out of U gap boards (J jobs) still to drain`. `P` boards are ranked
-   by measured tech yield; `E` is random exploration filling out the target. A scrape that looks
-   thin on a specific ATS may just be this run's exploration draw, not a regression — check this
+   by measured tech yield; `E` (logged as `exploration`) is the Tail filling out the target,
+   oldest look first since ADR-0229 (a random draw before it). A scrape that looks thin on a
+   specific ATS may just be which Boards this run's Tail reached, not a regression — check this
    line before calling a per-ATS drop real (the same caution `fanout_corpus.py` already gives for
    comparing two runs).
 2. **Cost-ledger coverage** — `cost: measured seconds for H/N boards (L in ledger); rest estimated
@@ -39,7 +40,7 @@ the 9 min even share", the actual run confirming a straggler is not a new findin
    after the fact — compare them: a plan-predicted floor that didn't show up as the actual floor
    means something changed between plan and run (a Board that failed fast, an egress problem that
    slowed everything evenly instead of one item).
-5. **The budget-exceeded warning** — `predicted makespan ~M min exceeds the 60 min shard budget —
+5. **The budget-exceeded warning** — `predicted makespan ~M min exceeds the 75 min shard budget —
    shards matching their prediction will bank partials`. This is an advance warning of budget kills,
    printed before any shard has run. If `fanout_errors.py` then shows 0 kills, the run beat its own
    prediction (worth knowing, not just silently good).

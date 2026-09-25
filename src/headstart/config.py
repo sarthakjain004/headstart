@@ -293,7 +293,11 @@ EXCLUDED_BOARDS: frozenset[str] = frozenset(
         # "TEST 1241 - Enterprise Sales Manager - Lynda.com", "Test 5 #DNP"). `deming` and
         # `deminginc` are both "SC Demo Instance", the same 34 stock postings dated 2016-2017.
         # `michaelcarrinotest` is "Michael Carrino Sandbox": "Brit's Test Job", "dfadfasdfa",
-        # "Implementation Manager - Sahana Demo".
+        # "Implementation Manager - Sahana Demo". `blackbear` (2026-09-25) is a sales demo: its
+        # postings' `og:title` names a different company each ("Chromalloy", "CFO Services",
+        # "Blackbear Manufacturing"), one carries "DO NOT EDIT - Steve T - Using for branded
+        # demo", and all 129 of its detail pages are an unrendered template with no posting.
+        "jobvite:blackbear",
         "jobvite:deming",
         "jobvite:deminginc",
         "jobvite:li3",
@@ -515,7 +519,8 @@ PARKED_BOARDS: frozenset[str] = frozenset(
         # sequential requests against a Board no per-board budget bounds. It finished in none of
         # the three runs of 2026-08-13 (03:36 / 06:53 / 08:48 UTC), and because a running thread
         # cannot be cancelled, `scrape_all`'s shutdown then outlived the 6 min between the 60m
-        # inner budget and the 66m step timeout — failing the whole shard, not just this Board.
+        # inner budget and the 66m step timeout (75m and 81m since ADR-0229, the same 6 min) —
+        # failing the whole shard, not just this Board.
         # Un-park once a per-board deadline bounds it.
         "workday:accenture/accenturecareers",
         # 1,162 postings, real and un-fabricated — unlike Accenture above this board finishes

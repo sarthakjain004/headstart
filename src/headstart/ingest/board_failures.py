@@ -53,10 +53,14 @@ if TYPE_CHECKING:
 
 _log = log.get(__name__)
 
-# Consecutive gone-runs before a Board leaves the scrape slice. Five rather than two because a
-# Board only ages when it is actually scraped, and the exploration tail re-selects a given Board
-# roughly one run in four — so five strikes is weeks of agreement, not an afternoon's blip.
-QUARANTINE_AT = 5
+# Consecutive gone-runs before a Board leaves the scrape slice. A Board only ages when it is
+# actually scraped, so this counts its own scrapes, and what it means in time depends on how often
+# the Slice reads it. Five was set when the exploration tail re-selected a Board roughly one run
+# in four, i.e. weeks of agreement. ADR-0229 reads every Scored Board every run, which would make
+# five ~5 hours: short enough for an outage, and zwayam's live cohort sat at exactly five
+# (ADR-0170). Twenty is ~a day of consecutive 404s for a Board read every run and ~3 days for one
+# in the Tail. A dead Board costs ~0.1 s a scrape, so the slower quarantine is cheap.
+QUARANTINE_AT = 20
 
 # Days a gone-verdict stands before the Board is re-admitted for one run to re-earn it (ADR-0162).
 #
@@ -66,7 +70,8 @@ QUARANTINE_AT = 5
 # for all 757 together — ``data/state/board_cost.csv``, 2026-09-16), because it dies on the
 # listing request. So the fortnight there buys something real and would only be cargo-culted here.
 #
-# At 7 days and ~24 runs/day the re-admitted pool is ~31 Boards — 0.16% of a 20,000-Board slice —
+# At 7 days and ~24 runs/day the re-admitted pool is ~31 Boards — 0.16% of the 20,000-Board slice
+# this was sized against, 0.04% of ADR-0229's 80,000 —
 # against a measured 23 of 757 quarantined Boards that answer 200 today, **12 of them serving 264
 # tech postings** (5,593 raw, but ADR-0017's gate is what decides what reaches users). Not one day:
 # that is 5,299 requests a week instead of 757, at origins that have already said 404 five times,
@@ -249,9 +254,9 @@ def paroled(rows: dict[str, Failure], now: str) -> set[str]:
     simply restamps its row and serves another :data:`PAROLE_DAYS`.
 
     Re-admitted is not scraped. ``pick_boards`` still has to choose the Board, and an unscored one
-    goes into the random exploration tail, which selected at p = 0.144 when this was measured
-    (14,000 explore slots over a 97,254-Board tail pool). So a parole cohort drains over several
-    runs rather than being probed in one — expect roughly one in seven of it per run.
+    goes into the Tail, which takes the Boards looked at longest ago first (ADR-0229). A
+    paroled Board has not been looked at since quarantine took it out of the slice, so it sorts
+    near the front and a parole cohort is usually probed on its next run.
 
     A Board whose re-probe fails some *other* way (timeout, TLS, 429) is neither gone nor
     produced, so its row is untouched and it stays paroled until a verdict arrives. That is the

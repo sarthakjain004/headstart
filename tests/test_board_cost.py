@@ -8,6 +8,8 @@ of a shard's torn final row.
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta
+
 import pytest
 
 from headstart.board_cost import (
@@ -172,7 +174,7 @@ def test_an_errored_scrape_does_not_erase_the_last_known_job_count():
     rows = update(
         prev,
         {"workday:big": ShardCost(seconds=1200.0, jobs=0, errored=True)},
-        today="2026-09-07",
+        looked_at="2026-09-07",
     )
     assert rows["workday:big"].jobs == 4321  # the count survives
     assert (
@@ -189,7 +191,7 @@ def test_a_board_whose_only_measurement_failed_has_no_known_yield():
     rows = update(
         {},
         {"workday:new": ShardCost(seconds=1200.0, jobs=0, errored=True)},
-        today="2026-09-07",
+        looked_at="2026-09-07",
     )
     assert rows["workday:new"].jobs is None
 
@@ -203,7 +205,7 @@ def test_a_first_ever_budget_kill_also_leaves_the_yield_unknown():
     rows = update(
         {},
         {"workday:giant": ShardCost(seconds=3300.0, jobs=0, unfinished=True)},
-        today="2026-09-07",
+        looked_at="2026-09-07",
     )
     assert rows["workday:giant"].jobs is None
     assert rows["workday:giant"].seconds == 3300.0
@@ -280,3 +282,19 @@ def test_a_malformed_row_names_its_ledger_and_line(tmp_path):
     )
     with pytest.raises(ValueError, match=r"board_cost\.csv:3: "):
         load(path)
+
+
+def test_update_stamps_the_run_to_the_second_not_the_day():
+    """The Slice's Tail is ordered by this stamp (ADR-0229), and ~26 runs share a day.
+
+    A bare date cannot tell this morning's look from tonight's, so the tail would fall back to a
+    random draw among every Board looked at today — the long gaps the rotation exists to remove.
+    """
+    stamp = update({}, {"workday:acme": ShardCost(120.0, 300)})[
+        "workday:acme"
+    ].updated_at
+    parsed = datetime.fromisoformat(stamp)
+    assert "T" in stamp, f"{stamp!r} is a day, not a moment"
+    assert parsed.utcoffset() == timedelta(0), (
+        "stamped in UTC, so stamps sort as strings"
+    )

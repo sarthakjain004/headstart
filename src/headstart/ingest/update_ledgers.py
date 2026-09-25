@@ -34,7 +34,7 @@ Board unchanged.
 **gap** runs after ``update_descriptions``, and is the one ledger read from the *stored* corpus
 rather than this run's: it counts, per Board, the embedded Jobs whose description the ADR-0050
 store has never settled. Those Jobs' derived columns cannot be repaired without the text, so the
-next run's ``scrape_plan`` reserves part of its exploration tail for the Boards holding them
+next run's ``scrape_plan`` reserves part of its Tail for the Boards holding them
 (ADR-0062). Recomputed from scratch every run, so it empties itself as the gap closes. Three
 classes are counted *unreachable* rather than unsettled: rows on a disabled ATS, rows on a Board
 that is not **Scrapable** (CONTEXT.md §Counting Boards — no slice can contain it, ADR-0163), and

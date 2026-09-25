@@ -460,7 +460,7 @@ def test_an_incomplete_measurement_cannot_gate_a_board_it_never_read():
             # killed by the shard's time budget mid-fetch
             "workday:target": ShardCost(seconds=3600.0, jobs=0, unfinished=True),
         },
-        today="2026-08-18",
+        looked_at="2026-08-18",
     )
     assert after["workday:walmart"].jobs == 15476
     assert after["workday:target"].jobs == 9000
@@ -561,3 +561,124 @@ def test_a_stale_quarantine_is_re_admitted_for_one_run(tmp_path, monkeypatch, ca
         r.message for r in caplog.records if r.message.startswith("quarantine:")
     )
     assert "1 re-admitted on parole, of 2 quarantined" in line
+
+
+def test_gate_counts_the_days_of_a_timestamped_cost_row():
+    """The cost ledger stamps a full timestamp since ADR-0229; the gate's re-check still counts
+    whole days, and the rows written before it (bare dates) keep reading the same."""
+    assert ps._days_since("2026-09-10T23:59:59+00:00", "2026-09-24") == 14.0
+    assert ps._days_since("2026-09-10", "2026-09-24") == 14.0
+
+
+def test_main_rotates_the_unscored_tail_oldest_first(tmp_path, monkeypatch):
+    """The planner hands the cost ledger's last-look stamps to `pick_boards` (ADR-0229), so a
+    Slice smaller than the unscored set takes the Boards read longest ago."""
+    from headstart import board_cost
+
+    # 30 Boards for 5 slots: a random draw lands on the 5 oldest once in ~142,000 plans.
+    boards = [ScrapableBoard("lever", f"b{i}", f"B{i}") for i in range(30)]
+    monkeypatch.setattr(
+        ps.scrapable_boards, "load", lambda ledger, min_jobs=0: list(boards)
+    )
+    cost = tmp_path / "board_cost.csv"
+    board_cost.save(
+        cost,
+        {
+            f"lever:b{i}": _cost(1.0, f"2026-09-25T00:{i:02d}:00+00:00")
+            for i in range(30)
+        },
+    )
+    out = tmp_path / "assignments"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "scrape_plan",
+            "--priority",
+            str(tmp_path / "none.csv"),
+            "--cost",
+            str(cost),
+            "--failures",
+            str(tmp_path / "nofailures.csv"),
+            "--gap",
+            str(tmp_path / "nogap.csv"),
+            "--out-dir",
+            str(out),
+            "--max-boards",
+            "5",
+            "--max-shards",
+            "1",
+        ],
+    )
+    assert ps.main() == 0
+
+    planned = {
+        f"{rec['ats']}:{rec['slug']}"
+        for rec in map(json.loads, (out / "shard-0.jsonl").read_text().splitlines())
+    }
+    assert planned == {f"lever:b{i}" for i in range(5)}
+
+
+def _plan_scored_boards(tmp_path, monkeypatch, n_boards, max_boards):
+    """Plan ``n_boards`` Scored Boards (distinct scores) under ``--max-boards max_boards``."""
+    from headstart import board_priority
+
+    boards = [ScrapableBoard("lever", f"b{i}", f"B{i}") for i in range(n_boards)]
+    monkeypatch.setattr(
+        ps.scrapable_boards, "load", lambda ledger, min_jobs=0: list(boards)
+    )
+    priority = tmp_path / "board_priority.csv"
+    board_priority.save(
+        priority,
+        {
+            f"lever:b{i}": board_priority.BoardPriority(100.0 - i, 5, "2026-09-25")
+            for i in range(n_boards)
+        },
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "scrape_plan",
+            "--priority",
+            str(priority),
+            "--cost",
+            str(tmp_path / "nocost.csv"),
+            "--failures",
+            str(tmp_path / "nofailures.csv"),
+            "--gap",
+            str(tmp_path / "nogap.csv"),
+            "--out-dir",
+            str(tmp_path / "assignments"),
+            "--max-boards",
+            str(max_boards),
+            "--max-shards",
+            "1",
+        ],
+    )
+    assert ps.main() == 0
+
+
+def test_main_names_scored_boards_the_head_cannot_hold(tmp_path, monkeypatch, caplog):
+    """The head holds every Scored Board only while they fit (ADR-0229). Past the cap the
+    lowest-scored join the Tail, and the plan says so rather than letting the
+    "every tech-yielding Board every run" promise lapse unseen."""
+    from headstart.board_priority import head_slots
+
+    with caplog.at_level("WARNING"):
+        _plan_scored_boards(tmp_path, monkeypatch, n_boards=20, max_boards=10)
+
+    cap = head_slots(10)
+    assert f"head: 20 Scored Boards for {cap} head slots" in caplog.text
+    assert f"the lowest-scored {20 - cap} join the Tail" in caplog.text
+
+
+def test_a_slice_that_takes_every_board_reports_no_head_overflow(
+    tmp_path, monkeypatch, caplog
+):
+    """`pick_boards` returns every Board once the slice is at least as big as the list, so there
+    is no Tail for Scored Boards to overflow into and nothing to warn about."""
+    with caplog.at_level("WARNING"):
+        _plan_scored_boards(tmp_path, monkeypatch, n_boards=10, max_boards=10)
+
+    assert "head:" not in caplog.text

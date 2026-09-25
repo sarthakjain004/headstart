@@ -168,11 +168,12 @@ def test_a_verdict_earned_before_its_scraper_was_replaced_is_void(tmp_path):
     postings on 2026-09-24), so a verdict the old scraper earned says nothing about the Board.
     Only trakstar's own rows are voided, and only those struck before the cutoff."""
     path = tmp_path / "board_failures.csv"
+    reconfirmed = bf.QUARANTINE_AT + 1
     path.write_text(
         "board,strikes,last_reason,last_seen_gone\n"
-        "trakstar:twonice,6,HTTPError: HTTP Error 404: ,2026-09-22T15:07:26+00:00\n"
-        "trakstar:gone,6,HTTPError: HTTP Error 404: ,2026-09-22T15:07:27+00:00\n"
-        "greenhouse:gone,6,HTTPError: HTTP Error 404: ,2026-09-17T00:00:00+00:00\n",
+        f"trakstar:twonice,{reconfirmed},HTTPError: HTTP Error 404: ,2026-09-22T15:07:26+00:00\n"
+        f"trakstar:gone,{reconfirmed},HTTPError: HTTP Error 404: ,2026-09-22T15:07:27+00:00\n"
+        f"greenhouse:gone,{reconfirmed},HTTPError: HTTP Error 404: ,2026-09-17T00:00:00+00:00\n",
         encoding="utf-8",
     )
     rows = bf.load(path)

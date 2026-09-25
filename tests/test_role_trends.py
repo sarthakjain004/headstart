@@ -30,7 +30,7 @@ import lancedb
 from headstart import roles, tech_filter
 from headstart.embedding_conventions import MODEL as EMBED_MODEL
 from headstart.embedding_conventions import PROD_TABLE
-from headstart.ingest import index_plan, role_family_classifier, role_trends
+from headstart.ingest import RUN_TS_ENV, index_plan, role_family_classifier, role_trends
 from headstart.ingest.doc_prep import DERIVATIONS_VERSION
 
 _DIM = 4
@@ -260,6 +260,7 @@ def test_a_tick_records_one_epoch_row_then_stays_quiet_while_unchanged(
         ],
     )
     epochs = tmp_path / "trends_epochs.csv"
+    monkeypatch.setenv(RUN_TS_ENV, "2026-09-25T05:00:00+00:00")
     _run(tmp_path, monkeypatch)
     rows = list(csv.reader(epochs.open(encoding="utf-8", newline="")))
     assert len(rows) == 2  # header + exactly one boundary
@@ -281,6 +282,7 @@ def test_a_tick_records_one_epoch_row_then_stays_quiet_while_unchanged(
         family_classifier_version == "1"
     )  # the head's own version, not the series version
 
+    monkeypatch.setenv(RUN_TS_ENV, "2026-09-25T06:00:00+00:00")
     _run(tmp_path, monkeypatch)  # nothing about the taxonomy or the code changed
     rows_again = list(csv.reader(epochs.open(encoding="utf-8", newline="")))
     assert rows_again == rows
@@ -370,7 +372,9 @@ def test_ledger_accumulates_rows_across_runs(tmp_path, monkeypatch):
             }
         ],
     )
+    monkeypatch.setenv(RUN_TS_ENV, "2026-09-25T05:00:00+00:00")
     ledger = _run(tmp_path, monkeypatch)
+    monkeypatch.setenv(RUN_TS_ENV, "2026-09-25T06:00:00+00:00")
     _run(tmp_path, monkeypatch)  # second run appends
 
     rows = _rows(ledger)
@@ -641,6 +645,7 @@ def test_the_classifier_decides_each_family_and_watch_roles_count_tech_only(
         ],
     )
     _FAMILY_OF_TITLE["vague title"] = _AMBIGUOUS
+    monkeypatch.setenv(RUN_TS_ENV, "2026-09-25T05:00:00+00:00")
     ledger = _run(tmp_path, monkeypatch)
 
     written = _rows(ledger)
@@ -658,6 +663,7 @@ def test_the_classifier_decides_each_family_and_watch_roles_count_tech_only(
     monkeypatch.setattr(
         role_family_classifier, "encode", lambda t, m, r: encoded.append(t)
     )
+    monkeypatch.setenv(RUN_TS_ENV, "2026-09-25T06:00:00+00:00")
     _run(tmp_path, monkeypatch)
     assert encoded == []  # every title was already encoded under this head
 
@@ -992,7 +998,7 @@ def test_a_zero_byte_legacy_csv_does_not_sink_the_run(tmp_path, monkeypatch):
     assert len(rows) == 2  # the one group + the non-tech diagnostic
 
 
-def test_count_groups_returns_assignments_excluding_non_tech_and_watch_roles():
+def test_count_board_groups_places_rows_excluding_non_tech_and_watch_roles(tmp_path):
     """The third return value feeds ADR-0057's transition diff, so what it omits is load-bearing.
 
     Non-tech rows carry no family to compare, and watch roles are title matches layered over the
@@ -1000,22 +1006,14 @@ def test_count_groups_returns_assignments_excluding_non_tech_and_watch_roles():
     leaking into the snapshot would manufacture transitions out of nothing.
     """
     families = ["software-engineering", "ai-ml-data-science", None]  # None: non-tech
-    watchlist = (
-        roles.load_watchlist_from_spec(  # type: ignore[attr-defined]
-            {
-                "roles": [
-                    {
-                        "name": "backend",
-                        "parent": "software-engineering",
-                        "pattern": "backend",
-                    }
-                ]
-            },
-            {"software-engineering", "ai-ml-data-science"},
-        )
-        if hasattr(roles, "load_watchlist_from_spec")
-        else []
+    _watchlist(
+        tmp_path,
+        [{"name": "backend", "parent": "software-engineering", "match": ["backend"]}],
     )
+    watchlist = roles.load_watchlist(
+        tmp_path / "watchlist.json", {"software-engineering", "ai-ml-data-science"}
+    )
+    assert watchlist, "the watch role this test is about must actually be watched"
 
     rows = pa.Table.from_pylist(
         [
@@ -1055,15 +1053,18 @@ def test_count_groups_returns_assignments_excluding_non_tech_and_watch_roles():
             ]
         ),
     )
-    _counts, non_tech, assigned = role_trends.count_groups(
-        rows, families, watchlist, "2026-01-01T00:00:00+00:00"
+    counts, non_tech, placed, _board_counts = role_trends.count_board_groups(
+        rows, families, watchlist, "2026-01-01T00:00:00+00:00", ["ats:b"] * 3
     )
     assert non_tech == 1
+    assigned = {job_id: placement.family for job_id, placement in placed.items()}
     assert assigned == {
         "ats:b:tech": "software-engineering",
         "ats:b:ai": "ai-ml-data-science",
     }
     assert not any(k.startswith(roles.WATCH_PREFIX) for k in assigned.values())
+    # the watch role was counted, just never placed
+    assert any(key[1] == roles.WATCH_PREFIX + "backend" for key in counts)
 
 
 def test_top_line_distinguishes_two_atses_sharing_a_family_and_band(
@@ -1178,6 +1179,47 @@ def test_a_second_tick_books_turnover_beside_the_level_changes(tmp_path, monkeyp
     assert queue.read_text(encoding="utf-8") == (
         "2026-09-25T06:00:00+00:00\tgreenhouse:acme:closes\n"
     )
+
+
+def test_every_tick_writes_one_file_stamped_with_how_it_was_counted(
+    tmp_path, monkeypatch
+):
+    """ADR-0230: a tick that moved nothing still writes its Board-delta file, empty, so the
+    directory holds one file per tick; every file names its tick and its methodology."""
+    _taxonomy(tmp_path / "head", tmp_path / "families.json")
+    _table(
+        tmp_path / "db",
+        [
+            {
+                "id": "greenhouse:acme:1",
+                "title": "Backend Dev",
+                "vector": [1.0, 0.0, 0.0, 0.0],
+            }
+        ],
+    )
+    for ts in ("2026-09-25T05:00:00+00:00", "2026-09-25T06:00:00+00:00"):
+        monkeypatch.setenv(RUN_TS_ENV, ts)
+        _run(tmp_path, monkeypatch)
+
+    files = sorted((tmp_path / "board_deltas").glob("*.parquet"))
+    assert [f.name for f in files] == [
+        "2026-09-25T05-00-00+00-00.parquet",
+        "2026-09-25T06-00-00+00-00.parquet",
+    ]
+    unchanged = pq.read_table(files[1])
+    assert unchanged.num_rows == 0
+    metadata = unchanged.schema.metadata
+    assert metadata[b"ts"] == b"2026-09-25T06:00:00+00:00"
+    assert metadata[b"centroid_version"] == str(role_trends.series_version(1)).encode()
+    assert json.loads(metadata[b"methodology"]) == {
+        "family_list_fingerprint": roles.family_list_fingerprint(
+            tmp_path / "families.json"
+        ),
+        "family_classifier_version": 1,
+        "tech_filter_version": tech_filter.TECH_FILTER_VERSION,
+        "derivations_version": DERIVATIONS_VERSION,
+        "dedup_version": index_plan.DEDUP_VERSION,
+    }
 
 
 def test_a_failed_snapshot_takes_the_ticks_file_back_out(tmp_path, monkeypatch):

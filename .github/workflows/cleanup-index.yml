@@ -180,7 +180,7 @@ jobs:
         # Opt-in, and off by default, because it is a whole-table rewrite: every row it fills
         # costs that row's ~25 KB vector to rewrite, and the column itself is ~690 MB against a
         # 1,155 MB table. `sync` cannot do this job — it fills descriptions from the run's
-        # ~20,000-Board corpus slice, so a row whose Board sat out the slice is unreachable from
+        # ~80,000-Board corpus slice, so a row whose Board sat out the slice is unreachable from
         # there. This reads the ADR-0050 store instead, which holds text regardless of slice.
         # Measured on synthetic tables at 0.11 s per 1,000 rows, so ~330k rows is well inside this
         # job's budget; the cost is storage, not time.
