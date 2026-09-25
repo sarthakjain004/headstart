@@ -189,7 +189,7 @@ def count_board_groups(
 
     Non-tech rows are the tech filter's known creep (ADR-0017 is recall-biased on purpose) — kept
     out of the role groups, but returned as one number so the ledger carries a filter-health
-    series (ADR-0040)."""
+    series (ADR-0040), and counted per Board under ``(non-tech, all)`` in ``board_counts``."""
     ids, min_years, titles, employment, atses, seen = _columns(rows)
     if len(boards) != len(ids):
         raise ValueError("Board identities must align with served rows")
@@ -212,6 +212,7 @@ def count_board_groups(
     for job_id, years, title, etype, first, ats, board, family in zip(
         ids, min_years, titles, employment, seen, atses, boards, families, strict=True
     ):
+        # ISO-8601 UTC on both sides, so string order is time order.
         is_new = bool(first) and first >= new_after
         if family is None:
             non_tech += 1
@@ -463,9 +464,9 @@ def _append_board_deltas(
     path = _delta_path(directory, ts)
     if path.exists():
         raise ValueError(f"{path}: a Board delta already exists for this measurement")
-    columns = [[ts] * len(changed), *([row[i] for row in changed] for i in range(6))]
+    rows = [(ts, *row) for row in changed]
     table = pa.table(
-        dict(zip((name for name, _ in _DELTA_SCHEMA), columns, strict=True)),
+        {name: [row[i] for row in rows] for i, (name, _) in enumerate(_DELTA_SCHEMA)},
         schema=pa.schema(
             [(name, pa.type_for_alias(kind)) for name, kind in _DELTA_SCHEMA],
             metadata={
@@ -662,8 +663,8 @@ def main() -> int:
         f"(classifier head {head.version}, series version {version})"
     )
     # first_seen may be absent on a pre-ADR-0031 table; select() would raise on the missing
-    # column, so ask only for what exists and let count_board_groups treat absence as "never
-    # new".
+    # column, so ask only for what exists and let count_board_groups treat absence as
+    # "never new".
     # ats carries no such case — every served row has had one since before this table existed.
     columns = ["id", "min_years", "title", "employment_type", "ats"]
     if "first_seen" in table.schema.names:
@@ -709,7 +710,7 @@ def main() -> int:
     # How this tick counts (ADR-0164, ADR-0230): the stamps the epoch ledger compares, carried by
     # the tick's own Board-delta file too, so a reader needs no second file to learn them.
     methodology: dict[str, int | str] = {
-        "family_map_fingerprint": roles.family_list_fingerprint(args.families),
+        "family_list_fingerprint": roles.family_list_fingerprint(args.families),
         "family_classifier_version": head.version,
         "tech_filter_version": tech_filter.TECH_FILTER_VERSION,
         "derivations_version": DERIVATIONS_VERSION,
@@ -837,7 +838,12 @@ def main() -> int:
             args.epochs,
             ts,
             centroid_version=trends_epochs.ABSENT,  # no centroid fit decides anything
-            **methodology,
+            # the epoch column keeps its older name for the family-list fingerprint
+            family_map_fingerprint=methodology["family_list_fingerprint"],
+            family_classifier_version=methodology["family_classifier_version"],
+            tech_filter_version=methodology["tech_filter_version"],
+            derivations_version=methodology["derivations_version"],
+            dedup_version=methodology["dedup_version"],
         )
         if wrote_epoch:
             _log.info(f"epochs: methodology boundary recorded @ {ts} -> {args.epochs}")

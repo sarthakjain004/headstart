@@ -1809,9 +1809,9 @@ def trends():
 
     # Stamps and the share denominator come from `trends_rows` (since/until/ats-narrowed, but
     # not the family/metric drill): total(ts) is every family + non-tech IN THAT SCOPE, since
-    # count_board_groups assigns every row exactly once, which is what makes share coverage-immune —
-    # an index (or an ATS selection) that grew 1.5% overnight moves every count but no share
-    # (ADR-0051, scope extended to ATS by ADR-0075).
+    # count_board_groups assigns every row exactly once, which is what makes share
+    # coverage-immune — an index (or an ATS selection) that grew 1.5% overnight moves every
+    # count but no share (ADR-0051, scope extended to ATS by ADR-0075).
     stock = [r for r in trends_rows if r["metric"] == "stock"]
     stamps = sorted({r["ts"] for r in stock})
     totals: dict[str, int] = {}

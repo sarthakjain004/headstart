@@ -998,7 +998,7 @@ def test_a_zero_byte_legacy_csv_does_not_sink_the_run(tmp_path, monkeypatch):
     assert len(rows) == 2  # the one group + the non-tech diagnostic
 
 
-def test_count_board_groups_places_rows_excluding_non_tech_and_watch_roles():
+def test_count_board_groups_places_rows_excluding_non_tech_and_watch_roles(tmp_path):
     """The third return value feeds ADR-0057's transition diff, so what it omits is load-bearing.
 
     Non-tech rows carry no family to compare, and watch roles are title matches layered over the
@@ -1006,22 +1006,14 @@ def test_count_board_groups_places_rows_excluding_non_tech_and_watch_roles():
     leaking into the snapshot would manufacture transitions out of nothing.
     """
     families = ["software-engineering", "ai-ml-data-science", None]  # None: non-tech
-    watchlist = (
-        roles.load_watchlist_from_spec(  # type: ignore[attr-defined]
-            {
-                "roles": [
-                    {
-                        "name": "backend",
-                        "parent": "software-engineering",
-                        "pattern": "backend",
-                    }
-                ]
-            },
-            {"software-engineering", "ai-ml-data-science"},
-        )
-        if hasattr(roles, "load_watchlist_from_spec")
-        else []
+    _watchlist(
+        tmp_path,
+        [{"name": "backend", "parent": "software-engineering", "match": ["backend"]}],
     )
+    watchlist = roles.load_watchlist(
+        tmp_path / "watchlist.json", {"software-engineering", "ai-ml-data-science"}
+    )
+    assert watchlist, "the watch role this test is about must actually be watched"
 
     rows = pa.Table.from_pylist(
         [
@@ -1061,7 +1053,7 @@ def test_count_board_groups_places_rows_excluding_non_tech_and_watch_roles():
             ]
         ),
     )
-    _counts, non_tech, placed, _board_counts = role_trends.count_board_groups(
+    counts, non_tech, placed, _board_counts = role_trends.count_board_groups(
         rows, families, watchlist, "2026-01-01T00:00:00+00:00", ["ats:b"] * 3
     )
     assert non_tech == 1
@@ -1071,6 +1063,8 @@ def test_count_board_groups_places_rows_excluding_non_tech_and_watch_roles():
         "ats:b:ai": "ai-ml-data-science",
     }
     assert not any(k.startswith(roles.WATCH_PREFIX) for k in assigned.values())
+    # the watch role was counted, just never placed
+    assert any(key[1] == roles.WATCH_PREFIX + "backend" for key in counts)
 
 
 def test_top_line_distinguishes_two_atses_sharing_a_family_and_band(
@@ -1192,8 +1186,6 @@ def test_every_tick_writes_one_file_stamped_with_how_it_was_counted(
 ):
     """ADR-0230: a tick that moved nothing still writes its Board-delta file, empty, so the
     directory holds one file per tick; every file names its tick and its methodology."""
-    from headstart.ingest import RUN_TS_ENV
-
     _taxonomy(tmp_path / "head", tmp_path / "families.json")
     _table(
         tmp_path / "db",
@@ -1220,7 +1212,7 @@ def test_every_tick_writes_one_file_stamped_with_how_it_was_counted(
     assert metadata[b"ts"] == b"2026-09-25T06:00:00+00:00"
     assert metadata[b"centroid_version"] == str(role_trends.series_version(1)).encode()
     assert json.loads(metadata[b"methodology"]) == {
-        "family_map_fingerprint": roles.family_list_fingerprint(
+        "family_list_fingerprint": roles.family_list_fingerprint(
             tmp_path / "families.json"
         ),
         "family_classifier_version": 1,
