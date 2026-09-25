@@ -131,7 +131,7 @@ def _rows(ledger: Path) -> list[dict]:
     return out
 
 
-def _run(tmp_path: Path, monkeypatch) -> Path:
+def _run(tmp_path: Path, monkeypatch, expect: int = 0) -> Path:
     ledger = tmp_path / "role_trends.parquet"
     monkeypatch.setattr(
         sys,
@@ -168,13 +168,13 @@ def _run(tmp_path: Path, monkeypatch) -> Path:
             "--epochs",
             str(tmp_path / "trends_epochs.csv"),
             # Pinned too (ADR-0222): these default to this run's real prune and scrape hand-offs.
-            "--pruned-ids",
-            str(tmp_path / "pruned_ids.txt"),
+            "--evicted",
+            str(tmp_path / "evicted_ids.txt"),
             "--unauthoritative-boards",
             str(tmp_path / "unauthoritative_boards.json"),
         ],
     )
-    assert role_trends.main() == 0
+    assert role_trends.main() == expect
     return ledger
 
 
@@ -1029,9 +1029,10 @@ def _tick_rows(path: Path) -> list[dict]:
 
 def test_a_second_tick_books_turnover_beside_the_level_changes(tmp_path, monkeypatch):
     """ADR-0222 end to end. The first tick writes the snapshot that turnover diffs. The second
-    books a new posting as opened, an evicted one as closed, a pruned duplicate as recounted,
-    and one marker for an Unauthoritative Board. All of it goes in the tick's own delta file,
-    and the Board counts carry levels only."""
+    books a new posting as opened, an evicted one as closed, and a row that left any other way
+    (here a prune, as `cleanup-index` makes) as recounted, plus one marker for an Unauthoritative
+    Board. All of it goes in the tick's own delta file, the Board counts carry levels only, and
+    the booked evictions leave the queue."""
     from headstart.ingest import RUN_TS_ENV
 
     _taxonomy(tmp_path / "head", tmp_path / "families.json")
@@ -1062,7 +1063,8 @@ def test_a_second_tick_books_turnover_beside_the_level_changes(tmp_path, monkeyp
         tmp_path / "db",
         [row("stays", early), row("opens", "2026-09-25T05:30:00+00:00")],
     )
-    (tmp_path / "pruned_ids.txt").write_text("greenhouse:acme:dup\n", encoding="utf-8")
+    queue = tmp_path / "evicted_ids.txt"
+    queue.write_text("greenhouse:acme:closes\n", encoding="utf-8")
     (tmp_path / "unauthoritative_boards.json").write_text(
         json.dumps({"greenhouse:acme": "truncated"}), encoding="utf-8"
     )
@@ -1078,6 +1080,35 @@ def test_a_second_tick_books_turnover_beside_the_level_changes(tmp_path, monkeyp
     assert stock == flows["opened"] - flows["closed"] - flows["recounted_out"]
     counts = pq.read_table(tmp_path / "board_counts.parquet").to_pylist()
     assert {r["metric"] for r in counts} <= {"stock", "new"}
+    assert queue.read_text(encoding="utf-8") == ""
+
+
+def test_a_failed_snapshot_takes_the_ticks_file_back_out(tmp_path, monkeypatch):
+    """The tick's delta file and the snapshot turnover diffs move together (ADR-0222). The file
+    without its snapshot would book this tick's turnover again next tick."""
+    from headstart.ingest import RUN_TS_ENV, role_assignments
+
+    _taxonomy(tmp_path / "head", tmp_path / "families.json")
+    _table(
+        tmp_path / "db",
+        [
+            {
+                "id": "greenhouse:acme:1",
+                "title": "Backend Dev",
+                "employment_type": None,
+                "min_years": 5,
+                "vector": [1.0, 0.0, 0.0, 0.0],
+            }
+        ],
+    )
+
+    def _no_space(*_args, **_kwargs):
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(role_assignments, "save", _no_space)
+    monkeypatch.setenv(RUN_TS_ENV, "2026-09-25T05:00:00+00:00")
+    _run(tmp_path, monkeypatch, expect=1)
+    assert not list((tmp_path / "board_deltas").glob("*.parquet"))
 
 
 def test_recovering_board_counts_skips_a_ticks_flow_rows(tmp_path):

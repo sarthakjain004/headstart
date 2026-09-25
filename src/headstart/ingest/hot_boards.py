@@ -199,7 +199,7 @@ def read_window_sum(
 ) -> tuple[collections.Counter, list[str]]:
     """Per-Board sum of one delta-ledger ``metric`` over the trailing window, and the tick stamps
     it covers. Under ``stock`` that is the net change. Under a turnover metric (``opened``,
-    ``closed``, ADR-0222) it is the jobs that flowed, over the same runs the net change sums.
+    ``closed``, ADR-0222) it is the jobs opened or closed over the same runs the net change sums.
 
     **The window is bounded to the same span as ``new``, and that is the point.** An unbounded
     sum grows by one run every run, so Expansion would quietly measure a longer period each
@@ -460,7 +460,7 @@ def main() -> int:
     from headstart.embedding_conventions import PROD_TABLE
 
     new, stock = read_levels(args.board_counts)
-    left_out = (
+    window_rules = (
         args.board_deltas,
         counting_changes(args.epochs),
         dedup_changes(args.epochs),
@@ -468,11 +468,11 @@ def main() -> int:
         # a Tenant's two Workday sites, and its sibling is still one duplicate removal can move.
         dedup_touches(set(stock) | ledger_boards(args.board_deltas)),
     )
-    moved, stamps = read_window_sum(*left_out)
+    moved, stamps = read_window_sum(*window_rules)
     # The window's turnover (ADR-0222), over the same runs the net change sums, so a row's three
     # figures describe one stretch of time.
-    opened, flow_stamps = read_window_sum(*left_out, metric=job_turnover.OPENED)
-    closed, _ = read_window_sum(*left_out, metric=job_turnover.CLOSED)
+    opened, turnover_stamps = read_window_sum(*window_rules, metric=job_turnover.OPENED)
+    closed, _ = read_window_sum(*window_rules, metric=job_turnover.CLOSED)
     if not stamps:
         # One delta file exists and it is the baseline. There is no measured change yet, and a
         # lens built on the baseline would rank every Board as newly created.
@@ -494,7 +494,7 @@ def main() -> int:
             "base": window_base(args.board_deltas, min(stamps)),
             # Turnover began with ADR-0222, so for its first week it covers less of the window
             # than the net change does, and the tab says from when.
-            "flows_from": min(flow_stamps, default=None),
+            "turnover_from": min(turnover_stamps, default=None),
         },
         "lenses": lenses,
         "counts": counts,

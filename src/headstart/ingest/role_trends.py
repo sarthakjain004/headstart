@@ -47,7 +47,7 @@ from pathlib import Path
 
 from headstart import log, roles, tech_filter
 from headstart.ingest import (
-    PRUNED_IDS_PATH,
+    EVICTED_IDS_PATH,
     REPO_ROOT,
     job_turnover,
     read_id_list,
@@ -55,6 +55,7 @@ from headstart.ingest import (
     role_family_classifier,
     run_ts,
     trends_epochs,
+    write_id_list,
 )
 from headstart.ingest.doc_prep import DERIVATIONS_VERSION
 from headstart.ingest.index_plan import (
@@ -417,7 +418,7 @@ def append_ledger(
 
 _BOARD_COUNT_COLUMNS = ("board", "metric", "family", "band", "ats", "count")
 # The delta ledger's level metrics: a Board's `stock` and `new` counts, whose deltas sum to a level.
-# A tick's file also holds rows that are not: that tick's flows and markers (ADR-0222).
+# A tick's file also holds rows that are not: that tick's turnover and markers (ADR-0222).
 _LEVEL_METRICS = ("stock", "new")
 
 
@@ -452,7 +453,7 @@ def _recover_board_counts(
         ).encode():
             continue
         for row in table.to_pylist():
-            # A tick's file also carries its flows and markers (ADR-0222), which are not levels.
+            # A tick's file also carries its turnover and markers (ADR-0222), not levels.
             if row["ts"] <= as_of or row["metric"] not in _LEVEL_METRICS:
                 continue
             key = tuple(row[k] for k in _BOARD_COUNT_COLUMNS[:-1])
@@ -464,16 +465,21 @@ def _recover_board_counts(
     return counts
 
 
+def _delta_path(directory: Path, ts: str) -> Path:
+    """The Board-delta file of the tick stamped ``ts``."""
+    return directory / f"{ts.replace(':', '-').replace('+00:00', 'Z')}.parquet"
+
+
 def _append_board_deltas(
     directory: Path,
     previous: dict[tuple[str, ...], int],
     current: dict[tuple[str, ...], int],
     version: int,
     ts: str,
-    flows: dict[tuple[str, ...], int],
+    turnover: dict[job_turnover.Key, int],
 ) -> int:
-    """Write this tick's level changes, and its ``flows`` (ADR-0222) as rows of their own
-    metrics, to one file. ``flows`` rows carry their tick's count, not a change in a level."""
+    """Write this tick's level changes, and its ``turnover`` (ADR-0222) as rows of their own
+    metrics, to one file. A turnover row carries its tick's count, not a change in a level."""
     import pyarrow as pa
     import pyarrow.parquet as pq
 
@@ -481,11 +487,11 @@ def _append_board_deltas(
         (*key, current.get(key, 0) - previous.get(key, 0))
         for key in sorted(previous.keys() | current.keys())
         if current.get(key, 0) != previous.get(key, 0)
-    ] + [(*key, n) for key, n in sorted(flows.items())]
+    ] + [(*key, n) for key, n in sorted(turnover.items())]
     if not changed:
         return 0
     directory.mkdir(parents=True, exist_ok=True)
-    path = directory / f"{ts.replace(':', '-').replace('+00:00', 'Z')}.parquet"
+    path = _delta_path(directory, ts)
     if path.exists():
         raise ValueError(f"{path}: a Board delta already exists for this measurement")
     table = pa.table(
@@ -533,51 +539,49 @@ def _counted_boards(path: Path) -> set[str]:
     return set(pq.read_table(path, columns=["board"]).column("board").to_pylist())
 
 
-def _flows_this_tick(
+def _turnover_this_tick(
     args: argparse.Namespace,
-    ids: list[str],
-    first_seen: list[str | None],
+    first_seen: dict[str, str | None],
     placed: dict[str, Placement],
     live: dict[str, str],
-) -> dict[tuple[str, ...], int]:
+) -> dict[job_turnover.Key, int]:
     """This tick's turnover and its Unauthoritative-Board markers, keyed like the delta ledger
-    (ADR-0222). There is no turnover without a comparable snapshot, which happens on the first
-    tick after ADR-0222 and after an unreadable one."""
-    flows: dict[tuple[str, ...], int] = {}
+    (ADR-0222). ``first_seen`` covers every served row. There is no turnover without a
+    comparable snapshot: on the first tick after ADR-0222, and after an unreadable one."""
+    turnover: dict[job_turnover.Key, int] = {}
     # One marker per Board whose scrape could not show an absence (ADR-0053): none of its
     # closures counts this tick, and the Space says so rather than let it read as all opening.
     for lowered in read_unauthoritative_boards(args.unauthoritative_boards):
         board = live.get(lowered, lowered)
         key = (board, job_turnover.UNSCOPED, "all", "all", board.split(":", 1)[0])
-        flows[key] = 1
+        turnover[key] = 1
     snapshot = role_assignments.load_placements(args.assignments)
     if snapshot is None:
         _log.info(
             "turnover: no comparable snapshot, so opened and closed start next run (ADR-0222)"
         )
-        return flows
+        return turnover
     previous, previous_as_of = snapshot
-    turned = job_turnover.turnover(
+    booked = job_turnover.turnover(
         previous,
         placed,
         previous_as_of=previous_as_of,
-        first_seen=dict(zip(ids, first_seen, strict=True)),
+        first_seen=first_seen,
         counted_boards=_counted_boards(args.board_counts),
-        served=set(ids),
-        pruned=read_id_list(args.pruned_ids),
+        evicted=read_id_list(args.evicted),
     )
     totals = {
-        metric: sum(n for key, n in turned.items() if key[1] == metric)
+        metric: sum(n for key, n in booked.items() if key[1] == metric)
         for metric in job_turnover.METRICS
     }
     _log.info(
         f"turnover since {previous_as_of}: opened {totals[job_turnover.OPENED]}, closed "
         f"{totals[job_turnover.CLOSED]}, recounted +{totals[job_turnover.RECOUNTED_IN]} "
-        f"−{totals[job_turnover.RECOUNTED_OUT]}; closures not counted on {len(flows)} "
+        f"−{totals[job_turnover.RECOUNTED_OUT]}; closures not counted on {len(turnover)} "
         "Unauthoritative Board(s) (ADR-0222)"
     )
-    flows.update(turned)
-    return flows
+    turnover.update(booked)
+    return turnover
 
 
 def main() -> int:
@@ -596,8 +600,8 @@ def main() -> int:
     ap.add_argument("--assignments", type=Path, default=_ASSIGNMENTS)
     ap.add_argument("--reassignments", type=Path, default=_REASSIGNMENTS)
     ap.add_argument("--epochs", type=Path, default=_EPOCHS)
-    # this run's prune removals and Unauthoritative Boards, for turnover (ADR-0222)
-    ap.add_argument("--pruned-ids", type=Path, default=PRUNED_IDS_PATH)
+    # sync's evictions not yet booked, and this run's Unauthoritative Boards (ADR-0222)
+    ap.add_argument("--evicted", type=Path, default=EVICTED_IDS_PATH)
     ap.add_argument(
         "--unauthoritative-boards", type=Path, default=_UNAUTHORITATIVE_BOARDS
     )
@@ -696,7 +700,7 @@ def main() -> int:
     new_after = (now - timedelta(days=NEW_WINDOW_DAYS)).isoformat(timespec="seconds")
     try:
         live = boards_by_canon(live_keep_set(args.board_ledger))
-        ids = rows["id"].to_pylist()
+        ids, *_, first_seen = _columns(rows)
         boards = _board_keys(ids, live)
         counts, non_tech, placed, board_counts = count_board_groups(
             rows, family_of, watchlist, new_after, boards
@@ -706,17 +710,28 @@ def main() -> int:
         # so does this tick's turnover (ADR-0222).
         previous_families = role_assignments.load_previous(args.assignments, version)
         had_snapshot = args.assignments.exists()
-        flows = _flows_this_tick(args, ids, _columns(rows)[5], placed, live)
-        # The snapshot before the delta file (ADR-0222). Turnover is a diff against it, so a
-        # snapshot left stale after this tick's flows were written would book them again on the
-        # next tick. This order can lose one tick's flows instead, which under-reports once.
-        role_assignments.save(args.assignments, placed, version, ts)
+        turnover = _turnover_this_tick(
+            args, dict(zip(ids, first_seen, strict=True)), placed, live
+        )
         previous, as_of = _load_board_counts(args.board_counts, version)
         previous = _recover_board_counts(previous, as_of, args.board_deltas, version)
         changed = _append_board_deltas(
-            args.board_deltas, previous, board_counts, version, ts, flows
+            args.board_deltas, previous, board_counts, version, ts, turnover
         )
+        # The snapshot turnover diffs, and the level changes, must move together (ADR-0222):
+        # the tick's file without its snapshot would book this tick's turnover again next tick,
+        # and the snapshot without the file would leave next tick's stock change covering two
+        # ticks while its turnover covered one. So a failed snapshot takes the file back out.
+        try:
+            role_assignments.save(args.assignments, placed, version, ts)
+        except OSError:
+            _delta_path(args.board_deltas, ts).unlink(missing_ok=True)
+            raise
         _save_board_counts(args.board_counts, board_counts, version, ts)
+        # Booked, so cleared. After the snapshot: a queue cleared before it would lose closures
+        # if the snapshot then failed. An id left in it by a failure here is harmless, because
+        # an id is booked only when it leaves the snapshot, and it already has.
+        write_id_list(args.evicted, ())
     except (OSError, ValueError) as exc:
         _log.error(f"comparable Trends state unusable, no trends this run: {exc}")
         return 1
@@ -745,8 +760,7 @@ def main() -> int:
     # unrelated new posting — which is how a 622-row "software-engineering decline" turned out to
     # be largely redistribution. Diagnostic only: never fails the run.
     try:
-        previous = previous_families
-        moved = role_assignments.transitions(previous, assigned)
+        moved = role_assignments.transitions(previous_families, assigned)
         # The snapshot was written above, BEFORE this ledger, deliberately. The ledger is
         # append-only, so if the snapshot write failed after appending, the next tick would diff
         # against the stale snapshot and append the same transitions again — silently inflating
@@ -756,7 +770,7 @@ def main() -> int:
         rows_written = role_assignments.append_ledger(
             args.reassignments, moved, version, ts
         )
-        if previous is None:
+        if previous_families is None:
             why = (
                 "discarded the previous snapshot (unreadable, or a re-base: a new classifier "
                 "head)"

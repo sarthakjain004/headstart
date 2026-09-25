@@ -143,6 +143,8 @@ def _sync(
             # reads as an empty set — so a first absence is withheld here exactly as it would be
             # in a real cold start. Tests that need an eviction to land run sync twice.
             unconfirmed=str(tmp_path / "unconfirmed_ids.txt"),
+            # Pinned too (ADR-0222): sync's closures, queued for role_trends to book.
+            evicted=str(tmp_path / "evicted_ids.txt"),
         )
     )
 
@@ -843,6 +845,23 @@ def test_the_grace_period_round_trips_across_two_runs(tmp_path, monkeypatch):
     assert (tmp_path / "unconfirmed_ids.txt").read_text().split() == []
 
 
+def test_sync_queues_what_it_evicted_for_role_trends_to_book_as_closed(
+    tmp_path, monkeypatch
+):
+    """Only an eviction is a closure (ADR-0222), so sync queues exactly those, across runs until
+    role_trends clears them: a run where role_trends skipped keeps its closures."""
+    queue = tmp_path / "evicted_ids.txt"
+    _sync(tmp_path, monkeypatch, ["greenhouse:a:1", "greenhouse:a:2", "greenhouse:a:3"])
+    _sync(tmp_path, monkeypatch, ["greenhouse:a:1", "greenhouse:a:3"])
+    assert not queue.exists() or queue.read_text() == "", (
+        "a first absence is no closure"
+    )
+    _sync(tmp_path, monkeypatch, ["greenhouse:a:1"])
+    assert queue.read_text().split() == ["greenhouse:a:2"]
+    _sync(tmp_path, monkeypatch, ["greenhouse:a:1"])
+    assert queue.read_text().split() == ["greenhouse:a:2", "greenhouse:a:3"]
+
+
 def test_a_posting_that_reappears_is_never_evicted(tmp_path, monkeypatch):
     """The measured false-eviction shape: absent once, back the next scrape. Under the old
     evict-on-first-absence rule this lost a live posting every time it happened."""
@@ -1043,13 +1062,10 @@ def _prune_args(tmp_path, monkeypatch):
         limit=None,
         board_failures=str(tmp_path / "board_failures.csv"),
         dedup_evictions=None,
-        pruned_ids=None,
     )
 
 
-def _prune_with_failures(
-    tmp_path, monkeypatch, failures: str | None, pruned_ids: Path | None = None
-) -> set[str]:
+def _prune_with_failures(tmp_path, monkeypatch, failures: str | None) -> set[str]:
     """Prune a table holding one row per Board below, each Board in the keep-set, against a
     consecutive-gone ledger (``None`` passes no ``--board-failures``); return the ids that
     survive."""
@@ -1065,7 +1081,6 @@ def _prune_with_failures(
         ],
     )
     args = _prune_args(tmp_path, monkeypatch)
-    args.pruned_ids = pruned_ids and str(pruned_ids)
     floor = idx.live_keep_set
     monkeypatch.setattr(
         idx,
@@ -1102,20 +1117,6 @@ def test_prune_evicts_a_board_only_once_parole_reconfirms_it_gone(
         f"greenhouse:flaky,2,{gone}",
     )
     assert kept == {"greenhouse:a:1", "greenhouse:outage:1", "greenhouse:flaky:1"}
-
-
-def test_prune_hands_every_id_it_removed_to_role_trends(tmp_path, monkeypatch):
-    """None of prune's removals is a posting that closed, so role_trends books them as
-    Recounted, which it can do only if it knows them (ADR-0222)."""
-    gone = "HTTPError: HTTP Error 404: ,2026-09-23T17:47:04+00:00\n"
-    handoff = tmp_path / "run" / "pruned_ids.txt"
-    _prune_with_failures(
-        tmp_path, monkeypatch, f"greenhouse:RECONFIRMED,6,{gone}", handoff
-    )
-    assert handoff.read_text(encoding="utf-8").split() == [
-        "greenhouse:reconfirmed:1",
-        "greenhouse:reconfirmed:2",
-    ]
 
 
 def test_prune_without_a_failures_ledger_evicts_nothing_for_it(tmp_path, monkeypatch):
@@ -1253,7 +1254,6 @@ def _prune_args_keeping_the_stub(tmp_path):
         limit=None,
         board_failures=None,
         dedup_evictions=None,
-        pruned_ids=None,
     )
 
 

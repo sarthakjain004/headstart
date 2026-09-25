@@ -1204,6 +1204,7 @@ def _index_paths(**over: object) -> argparse.Namespace:
         upgrades="data/state/pending_upgrades.txt",
         unauthoritative_boards="data/state/unauthoritative_boards.json",
         unconfirmed="data/state/unconfirmed_ids.txt",
+        evicted="data/state/evicted_ids.txt",
         **over,
     )
 
@@ -1379,7 +1380,6 @@ def _index_prune(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
                 apply=True,
                 board_failures="data/state/board_failures.csv",
                 dedup_evictions=None,
-                pruned_ids=None,
             )
         )
         == 0

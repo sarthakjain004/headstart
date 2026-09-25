@@ -108,9 +108,11 @@ from headstart.board_identity import ats_of, lower_key
 from headstart.corpus import iter_jobs
 from headstart.embedding_conventions import PROD_TABLE
 from headstart.ingest import (
+    EVICTED_IDS_PATH,
     PENDING_UPGRADES_PATH,
     REPO_ROOT,
     UNCONFIRMED_PATH,
+    append_id_list,
     board_failures,
     board_freshness,
     dedup_evictions,
@@ -945,6 +947,16 @@ def sync(args: argparse.Namespace) -> int:
     _log_ids("evict", sorted(plan.delete))
 
     apply_sync(table, [], plan.delete)  # evictions first (chunked internally)
+    # The closures role_trends books as Closed (ADR-0222): these evictions, and any re-embedded
+    # Job that left the corpus, which `_take_upgrades` deleted and nothing re-adds. A row that
+    # leaves any other way, such as a prune here or in `cleanup-index`, is Recounted instead.
+    # Appended after the delete, so the queue never names a row the table still holds. It is
+    # cleared by the role_trends tick that books it, so a run where that stage skipped carries its
+    # closures to the next.
+    append_id_list(
+        Path(args.evicted),
+        sorted(plan.delete | (taken.keys() - fresh)),
+    )
 
     # One stamp for the whole run: every Job added here arrived in the same scrape, and
     # `sync` is the only place rows are ever added, so each row is stamped exactly once. A Job that
@@ -1113,10 +1125,6 @@ def prune(args: argparse.Namespace) -> int:
             {**rules, **alias_rules(off_board, live, aliased_boards(args.ledger))},
             lambda job_id: resolve_board(job_id, live),
         )
-    if args.pruned_ids:
-        # After the delete, like the ledger above: role_trends books these as Recounted, and an id
-        # the table still held would not be a removal at all (ADR-0222).
-        write_id_list(Path(args.pruned_ids), evict)
     final = table.count_rows()
     write_base(args.db, final, "prune")
     _log.info(f"done: pruned {len(evict)} rows; table '{PROD_TABLE}' now holds {final}")
@@ -1396,6 +1404,12 @@ def main() -> int:
         "consecutive one; read and rewritten each run (the ADR-0083 grace period)",
     )
     p_sync.add_argument(
+        "--evicted",
+        default=str(EVICTED_IDS_PATH),
+        help="append every id this sync evicted, for role_trends to book as Closed and clear "
+        "(ADR-0222)",
+    )
+    p_sync.add_argument(
         "--ledger",
         default=str(_LEDGER),
         help="liveness ledger dir, for resolving ids to live Boards (default: data/validate/liveness)",
@@ -1427,13 +1441,6 @@ def main() -> int:
         default=None,
         help="append each dedup eviction to this ledger (ADR-0210); the pipeline passes "
         "data/state/dedup_evictions.csv, and a run that does not publish data/state omits it",
-    )
-    p_prune.add_argument(
-        "--pruned-ids",
-        default=None,
-        help="write every id this prune removed, duplicates and off-Board alike, so role_trends "
-        "books them as Recounted rather than Closed (ADR-0222); the pipeline passes "
-        "data/run/pruned_ids.txt",
     )
     p_prune.set_defaults(fn=prune)
 

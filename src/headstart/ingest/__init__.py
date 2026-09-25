@@ -112,12 +112,11 @@ PENDING_REDERIVE_PATH = REPO_ROOT / "data" / "state" / "pending_rederive.txt"
 # reappeared, been pruned, or belongs to a Board that left the ledger is simply not written again.
 UNCONFIRMED_PATH = REPO_ROOT / "data" / "state" / "unconfirmed_ids.txt"
 
-# The ids `index prune` removed this run as duplicates or off-Board (ADR-0222). `role_trends`
-# books them as Recounted, not Closed, because none of them is a posting that closed. The file
-# is a hand-off between two steps of one merge job, so it lives under data/run/, which no upload
-# takes, rather than under data/state/. A copy left over from an earlier run does no harm: its
-# ids left the table then, so they count only where the tick after that run never ran.
-PRUNED_IDS_PATH = REPO_ROOT / "data" / "run" / "pruned_ids.txt"
+# The ids `index sync` evicted (ADR-0083) and `role_trends` has not yet booked as Closed
+# (ADR-0222). Sync appends to it and the role_trends tick that books it clears it, so a run where
+# role_trends skipped carries its closures to the next. A row that leaves the table any other way,
+# a prune in this run or in `cleanup-index`, is not here, and so is booked as Recounted.
+EVICTED_IDS_PATH = REPO_ROOT / "data" / "state" / "evicted_ids.txt"
 
 # How many times a fetch replaced each Job's held description, and a hash of the text it held
 # before the last replacement (ADR-0207). Written by `update_descriptions`, rewritten in full each

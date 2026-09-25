@@ -868,8 +868,6 @@ jobs:
         # The dedup eviction ledger (ADR-0210) rides `data/state` too, and is published only when
         # this run's corpus artifact arrived — so without it prune still runs, and the ledger is
         # not written rather than written to a file nothing uploads.
-        # --pruned-ids hands every id it removes to role_trends two steps on, which books them as
-        # Recounted rather than Closed (ADR-0222). Under data/run/, which no upload takes.
         if: needs.scrape-plan.outputs.run == 'true'
         env:
           CORPUS: ${{ steps.corpus.outcome }}
@@ -877,8 +875,7 @@ jobs:
           ledger=()
           [ "$CORPUS" = "success" ] && ledger=(--dedup-evictions data/state/dedup_evictions.csv)
           python -m headstart.ingest.index prune --apply \
-            --board-failures data/state/board_failures.csv \
-            --pruned-ids data/run/pruned_ids.txt "${ledger[@]}"
+            --board-failures data/state/board_failures.csv "${ledger[@]}"
       - name: Drop the store's vectors of unserved Jobs (ADR-0190)
         # After prune, so the table it keeps is final. Needs the corpus, whose ids it also keeps.
         # Never fatal: it rewrites through tmp files (which the upload excludes), so a failure
