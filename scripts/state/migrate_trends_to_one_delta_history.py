@@ -59,25 +59,22 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import csv
 import json
 import os
 import subprocess
 import sys
 import tempfile
 from collections.abc import Iterator
-from dataclasses import dataclass, field, replace
-from datetime import UTC, datetime
+from dataclasses import dataclass, field
 from itertools import pairwise
 from pathlib import Path
 
 # Never over Xet: it dies silently mid-transfer (see CLAUDE.md). Set before huggingface_hub loads.
 os.environ.setdefault("HF_HUB_DISABLE_XET", "1")
 
-import pyarrow as pa
 import pyarrow.parquet as pq
 
-from headstart import log, roles
+from headstart import log, roles, trend_history_migration
 from headstart.board_identity import ats_of
 
 REPO = "imPoseidon/headstart-index"
@@ -88,297 +85,13 @@ AGGREGATE = "role_trends.parquet"
 BOARD_COUNTS = "role_trend_board_counts.parquet"
 EPOCHS = "trends_epochs.csv"
 
-# The metrics whose deltas sum to a level. A tick file's other rows (ADR-0227's turnover and
-# markers) are counts of that tick, and pass through unchanged.
-LEVEL_METRICS = ("stock", "new")
-# The old layout's series-version key, misnamed since ADR-0220 (design §3.4, D3).
-_SERIES_KEY = b"centroid_version"
+LEVEL_METRICS = trend_history_migration.LEVEL_METRICS
+TICK_COLUMNS = trend_history_migration.TICK_COLUMNS
 # The aggregate's one undecomposed row per tick: non-tech, unbanded and across every ATS.
 _NOT_SPLIT = "all"
 
 Key = tuple[str, str, str, str]  # (board, metric, family, band)
-Row = tuple[str, str, str, str, int]  # a Key and its delta
 IndexKey = tuple[str, str, str, str]  # (metric, family, band, ats)
-
-
-@dataclass
-class Tick:
-    """One tick's file: its rows, and how it was counted."""
-
-    ts: str
-    name: str  # the file's name, kept so the rewrite replaces it in place
-    rows: list[Row]
-    methodology: dict | None
-    series_version: str | None  # the old layout's; None once in the new layout
-
-
-def read_tick(path: Path) -> Tick:
-    """One tick file, in either layout. The old one carries the series version in its metadata,
-    and `ts` and `ats` columns; the new one carries `ts` and `methodology` in its metadata."""
-    table = pq.read_table(path)
-    metadata = table.schema.metadata or {}
-    columns = {name: table[name].to_pylist() for name in table.schema.names}
-    rows = list(
-        zip(
-            columns["board"],
-            columns["metric"],
-            columns["family"],
-            columns["band"],
-            columns["delta"],
-            strict=True,
-        )
-    )
-    stamped = metadata.get(b"methodology")
-    methodology = json.loads(stamped) if stamped else None
-    if _SERIES_KEY not in metadata:
-        return Tick(metadata[b"ts"].decode(), path.name, rows, methodology, None)
-    stamps = set(columns["ts"]) | (
-        {metadata[b"ts"].decode()} if b"ts" in metadata else set()
-    )
-    if len(stamps) != 1:
-        raise ValueError(
-            f"{path.name}: expected one tick stamp, found {sorted(stamps)}"
-        )
-    wrong = sum(
-        1
-        for board, ats in zip(columns["board"], columns["ats"])
-        if ats_of(board) != ats
-    )
-    if wrong:
-        raise ValueError(
-            f"{path.name}: {wrong} row(s) carry an `ats` that is not their board_key's prefix, "
-            "so dropping the column would lose it"
-        )
-    return Tick(
-        stamps.pop(), path.name, rows, methodology, metadata[_SERIES_KEY].decode()
-    )
-
-
-def read_ticks(directory: Path) -> list[Tick]:
-    ticks = sorted(
-        (read_tick(path) for path in directory.glob("*.parquet")), key=lambda t: t.ts
-    )
-    if len({t.ts for t in ticks}) != len(ticks):
-        raise ValueError(f"{directory}: two files hold one tick")
-    return ticks
-
-
-def _apply(counts: dict[Key, int], rows: list[Row]) -> None:
-    """Add level ``rows`` to ``counts``, keeping only keys that are not zero."""
-    for board, metric, family, band, delta in rows:
-        key = (board, metric, family, band)
-        value = counts.get(key, 0) + delta
-        if value:
-            counts[key] = value
-        else:
-            counts.pop(key, None)
-
-
-def without_rebases(ticks: list[Tick]) -> tuple[list[Tick], list[str]]:
-    """Every tick as a change against the tick before it, and the stamps of the re-bases rewritten.
-
-    The old writer counted each tick against the sum of every earlier delta **at the tick's own
-    series version** (`_load_board_counts` plus `_recover_board_counts`). So the level at a tick
-    is that per-version sum, whatever the order of versions. A tick whose version differs from the
-    tick before it is a re-base, and becomes that level less the level before it."""
-    level: dict[Key, int] = {}
-    by_version: dict[str, dict[Key, int]] = {}
-    out: list[Tick] = []
-    rebased: list[str] = []
-    previous: Tick | None = None
-    for tick in ticks:
-        if tick.series_version is None:
-            _apply(level, [r for r in tick.rows if r[1] in LEVEL_METRICS])
-            out.append(tick)
-        else:
-            if previous is not None and previous.series_version is None:
-                # The new writer counts against this history's replay, so an old-layout tick
-                # after it would be read against the wrong base. Only a reverted writer does this.
-                raise ValueError(
-                    f"{tick.ts}: an old-layout tick after a new-layout one"
-                )
-            levels = [r for r in tick.rows if r[1] in LEVEL_METRICS]
-            others = [r for r in tick.rows if r[1] not in LEVEL_METRICS]
-            counts = by_version.setdefault(tick.series_version, {})
-            _apply(counts, levels)
-            if previous is not None and previous.series_version != tick.series_version:
-                levels = [
-                    (*key, counts.get(key, 0) - level.get(key, 0))
-                    for key in sorted(counts.keys() | level.keys())
-                    if counts.get(key, 0) != level.get(key, 0)
-                ]
-                rebased.append(tick.ts)
-            _apply(level, levels)
-            out.append(replace(tick, rows=levels + others, series_version=None))
-        previous = tick
-    return out, rebased
-
-
-_EPOCH_COLUMNS = (
-    "ts",
-    "centroid_version",
-    "family_map_fingerprint",
-    "tech_filter_version",
-    "derivations_version",
-    "dedup_version",
-    "family_classifier_version",
-)
-
-
-def read_epochs(path: Path) -> list[dict[str, str]]:
-    """`trends_epochs.csv`'s rows, oldest first, in its current shape only: the pipeline upgrades
-    an older header on every run, so another shape means the file is not what this expects."""
-    with path.open(encoding="utf-8", newline="") as fh:
-        reader = csv.DictReader(fh)
-        if tuple(reader.fieldnames or ()) != _EPOCH_COLUMNS:
-            raise ValueError(f"{path.name}: unexpected header {reader.fieldnames}")
-        rows = list(reader)
-    if not rows or [r["ts"] for r in rows] != sorted(r["ts"] for r in rows):
-        raise ValueError(f"{path.name}: expected rows, oldest first")
-    return rows
-
-
-def epoch_in_force(epochs: list[dict[str, str]], ts: str) -> dict[str, str]:
-    """The epoch row a tick was counted under: the last one at or before it, or the first one for
-    a tick before any, which the Space reads as a baseline rather than a boundary."""
-    found = epochs[0]
-    for row in epochs:
-        if row["ts"] > ts:
-            break
-        found = row
-    return found
-
-
-def methodology_of(row: dict[str, str]) -> dict[str, int | str]:
-    """An epoch row as the tick metadata #688 writes: its keys, and its integers as integers.
-    The classifier column holds text before the classifier head: `none` in the centroid era and
-    the title rules' fingerprint under series 2001."""
-    classifier = row["family_classifier_version"]
-    return {
-        "family_list_fingerprint": row["family_map_fingerprint"],
-        "family_classifier_version": int(classifier)
-        if classifier.isdigit()
-        else classifier,
-        "tech_filter_version": int(row["tech_filter_version"]),
-        "derivations_version": int(row["derivations_version"]),
-        "dedup_version": int(row["dedup_version"]),
-    }
-
-
-def with_methodology(ticks: list[Tick], epochs: list[dict[str, str]]) -> list[Tick]:
-    """Every tick with its methodology: its own when it has one, else its epoch row's.
-
-    Refuses when the epoch rows it reads disagree on `centroid_version`, the one column the
-    metadata drops, since dropping it would then erase a boundary."""
-    used: list[dict[str, str]] = []
-    out: list[Tick] = []
-    for tick in ticks:
-        if tick.methodology is None:
-            row = epoch_in_force(epochs, tick.ts)
-            used.append(row)
-            tick = replace(tick, methodology=methodology_of(row))
-        out.append(tick)
-    centroid = {row["centroid_version"] for row in used}
-    if len(centroid) > 1:
-        raise ValueError(
-            f"centroid_version moves between epoch rows ({sorted(centroid)})"
-        )
-    return out
-
-
-def _codes(column: pa.ChunkedArray) -> tuple[object, list[str]]:
-    encoded = column.combine_chunks().dictionary_encode()
-    return encoded.indices.to_numpy(), encoded.dictionary.to_pylist()
-
-
-def aggregate_ticks(path: Path) -> Iterator[tuple[str, dict[IndexKey, int]]]:
-    """The aggregate ledger's non-zero groups at each tick, oldest first.
-
-    One tick at a time, never one dict per row: as per-row dicts this file held 4.75 GB in the
-    Space (design §4). Strings are dictionary-encoded, so each distinct one exists once."""
-    import numpy as np
-
-    table = pq.read_table(
-        path, columns=["ts", "metric", "family", "band", "ats", "count"]
-    )
-    stamps = table["ts"].combine_chunks().cast(pa.int64()).to_numpy()
-    counts = table["count"].to_numpy()
-    codes = [_codes(table[name]) for name in ("metric", "family", "band", "ats")]
-    order = np.argsort(stamps, kind="stable")
-    ordered = stamps[order]
-    starts = np.flatnonzero(np.r_[True, ordered[1:] != ordered[:-1]]).tolist()
-    for start, end in zip(starts, [*starts[1:], len(ordered)], strict=True):
-        rows = order[start:end]
-        keys = zip(
-            *(
-                map(names.__getitem__, indices[rows].tolist())
-                for indices, names in codes
-            ),
-            strict=True,
-        )
-        level: dict[IndexKey, int] = {}
-        for key, n in zip(keys, counts[rows].tolist(), strict=True):
-            level[key] = level.get(key, 0) + n
-        ts = datetime.fromtimestamp(int(ordered[start]) / 1000, UTC).isoformat(
-            timespec="seconds"
-        )
-        yield ts, {key: n for key, n in level.items() if n}
-
-
-def index_archive(aggregate: Path, before: str) -> tuple[list[tuple], list[str]]:
-    """The aggregate's ticks before ``before`` as index-wide group deltas, the first against
-    nothing, and the stamps of those ticks."""
-    rows: list[tuple] = []
-    ticks: list[str] = []
-    previous: dict[IndexKey, int] = {}
-    for ts, level in aggregate_ticks(aggregate):
-        if ts >= before:
-            break
-        rows.extend(
-            (ts, *key, level.get(key, 0) - previous.get(key, 0))
-            for key in sorted(level.keys() | previous.keys())
-            if level.get(key, 0) != previous.get(key, 0)
-        )
-        ticks.append(ts)
-        previous = level
-    return rows, ticks
-
-
-def _metadata(methodology: dict, ts: str | None = None) -> dict[bytes, bytes]:
-    out = {b"methodology": json.dumps(methodology, sort_keys=True).encode()}
-    if ts is not None:
-        out[b"ts"] = ts.encode()
-    return out
-
-
-def _table(
-    names: tuple[str, ...], rows: list[tuple], metadata: dict[bytes, bytes]
-) -> pa.Table:
-    columns = list(zip(*rows, strict=True)) if rows else [()] * len(names)
-    schema = pa.schema(
-        [(name, pa.int64() if name == "delta" else pa.string()) for name in names],
-        metadata=metadata,
-    )
-    return pa.table(dict(zip(names, map(list, columns), strict=True)), schema=schema)
-
-
-def write_tick(directory: Path, tick: Tick) -> None:
-    """One tick's file in the new layout, under its old name so the upload replaces it."""
-    table = _table(
-        ("board", "metric", "family", "band", "delta"),
-        tick.rows,
-        _metadata(tick.methodology or {}, tick.ts),
-    )
-    directory.mkdir(parents=True, exist_ok=True)
-    pq.write_table(table, directory / tick.name, compression="zstd")
-
-
-def write_archive(path: Path, rows: list[tuple], methodology: dict) -> None:
-    table = _table(
-        ("ts", "metric", "family", "band", "ats", "delta"), rows, _metadata(methodology)
-    )
-    path.parent.mkdir(parents=True, exist_ok=True)
-    pq.write_table(table, path, compression="zstd", use_dictionary=True)
 
 
 @dataclass
@@ -392,34 +105,57 @@ class Migration:
 
 
 def migrate(source: Path, out: Path) -> Migration:
-    """Write ``source``'s Trends state (a `data/state` directory) to ``out`` in the new layout:
-    every tick file under ``out/role_trend_board_deltas/``, and the archive beside it."""
-    ticks = read_ticks(source / DELTAS)
-    if not ticks:
+    """Write ``source``'s Trends state (a `data/state` directory) to ``out`` in the step-6
+    layout: every tick file under ``out/role_trend_board_deltas/``, under its old name so the
+    upload replaces it, and the archive beside it."""
+    paths = sorted((source / DELTAS).glob("*.parquet"))
+    if not paths:
         raise ValueError(f"{source / DELTAS}: no tick files")
-    epochs = read_epochs(source / EPOCHS)
-    migrated, rebased = without_rebases(ticks)
-    migrated = with_methodology(migrated, epochs)
-    for tick in migrated:
-        write_tick(out / DELTAS, tick)
-    archive_rows, archive_ticks = index_archive(source / AGGREGATE, before=ticks[0].ts)
-    in_force = {
-        json.dumps(methodology_of(epoch_in_force(epochs, ts))) for ts in archive_ticks
+    tables = [pq.read_table(path) for path in paths]
+    name_of = {
+        trend_history_migration.tick_stamp(table): path.name
+        for table, path in zip(tables, paths, strict=True)
     }
-    if len(in_force) > 1:
-        raise ValueError(
-            f"the archive's ticks span {len(in_force)} methodologies, not one"
-        )
-    archived = json.loads(in_force.pop()) if in_force else methodology_of(epochs[0])
-    write_archive(out / ARCHIVE, archive_rows, archived)
+    if len(name_of) != len(paths):
+        raise ValueError(f"{source / DELTAS}: two files hold one tick")
+    ticks, rebased = trend_history_migration.rewritten_ticks(tables, source / EPOCHS)
+    (out / DELTAS).mkdir(parents=True)
+    for table in ticks:
+        name = name_of[trend_history_migration.tick_stamp(table)]
+        pq.write_table(table, out / DELTAS / name, compression="zstd")
+    archive = trend_history_migration.archive_from_aggregate(
+        source / AGGREGATE,
+        before=trend_history_migration.tick_stamp(ticks[0]),
+        epochs=source / EPOCHS,
+    )
+    pq.write_table(archive, out / ARCHIVE, compression="zstd", use_dictionary=True)
     return Migration(
         ticks=len(ticks),
-        rows_before=sum(len(t.rows) for t in ticks),
-        rows_after=sum(len(t.rows) for t in migrated),
+        rows_before=sum(table.num_rows for table in tables),
+        rows_after=sum(table.num_rows for table in ticks),
         rebased=rebased,
-        archive_ticks=len(archive_ticks),
-        archive_rows=len(archive_rows),
+        archive_ticks=len(set(archive["ts"].to_pylist())),
+        archive_rows=archive.num_rows,
     )
+
+
+def written_ticks(directory: Path) -> list[tuple[str, list[tuple], dict]]:
+    """Each tick file under ``directory`` as ``(ts, rows, methodology)``, oldest first. Read
+    here, apart from the migration's own reading, so the check does not share what it checks.
+    Raises ValueError on a file not in the step-6 layout."""
+    out = []
+    for path in directory.glob("*.parquet"):
+        table = pq.read_table(path)
+        metadata = table.schema.metadata or {}
+        if tuple(table.schema.names) != TICK_COLUMNS or b"methodology" not in metadata:
+            raise ValueError(f"{path.name}: not in the step-6 layout")
+        rows = list(
+            zip(*(table[name].to_pylist() for name in TICK_COLUMNS), strict=True)
+        )
+        out.append(
+            (metadata[b"ts"].decode(), rows, json.loads(metadata[b"methodology"]))
+        )
+    return sorted(out, key=lambda tick: tick[0])
 
 
 def _index_key(board: str, metric: str, family: str, band: str) -> IndexKey:
@@ -489,9 +225,7 @@ def verify(migrated: Path, source: Path) -> Verification:
     """Replay the new-layout files in ``migrated`` and compare them with what ``source`` holds
     of the same facts: the Board-count snapshot, the aggregate at every tick, and the epochs."""
     result = Verification()
-    ticks = read_ticks(migrated / DELTAS)
-    if any(t.series_version is not None for t in ticks):
-        raise ValueError(f"{migrated / DELTAS}: holds an old-layout tick")
+    ticks = written_ticks(migrated / DELTAS)
     snapshot = pq.read_table(source / BOARD_COUNTS)
     result.board_counts_as_of = (
         (snapshot.schema.metadata or {}).get(b"as_of", b"").decode()
@@ -507,7 +241,7 @@ def verify(migrated: Path, source: Path) -> Verification:
         _bump(expected_boards, tuple(key), count)
     result.board_count_keys = len(expected_boards)
 
-    aggregate = aggregate_ticks(source / AGGREGATE)
+    aggregate = trend_history_migration.aggregate_ticks(source / AGGREGATE)
     pending = next(aggregate, None)
     last_aggregate_tick = ""
 
@@ -536,15 +270,15 @@ def verify(migrated: Path, source: Path) -> Verification:
 
     boards: dict[Key, int] = {}
     index = {}
-    for tick in ticks:
-        for board, metric, family, band, delta in tick.rows:
+    for ts, rows, methodology in ticks:
+        for board, metric, family, band, delta in rows:
             if metric in LEVEL_METRICS:
                 _bump(boards, (board, metric, family, band), delta)
                 _bump(index, _index_key(board, metric, family, band), delta)
-        compare(tick.ts, index)
-        if tick.ts == result.board_counts_as_of:
+        compare(ts, index)
+        if ts == result.board_counts_as_of:
             result.board_count_keys_differing = _differing(boards, expected_boards)
-        methodologies.append((tick.ts, tick.methodology or {}))
+        methodologies.append((ts, methodology))
     while pending is not None:
         result.aggregate_ticks += 1
         pending = next(aggregate, None)
@@ -555,7 +289,8 @@ def verify(migrated: Path, source: Path) -> Verification:
         for (_, before), (ts, after) in pairwise(methodologies)
         if before != after and ts <= last_aggregate_tick
     ]
-    result.epoch_boundaries = [row["ts"] for row in read_epochs(source / EPOCHS)[1:]]
+    epochs = trend_history_migration.read_epochs(source / EPOCHS)
+    result.epoch_boundaries = [row["ts"] for row in epochs[1:]]
     return result
 
 
