@@ -1226,3 +1226,5 @@ textarea:focus{ border-color:var(--accent); }
 .trends-changes{ margin-top:10px; font-size:12.5px; color:var(--ink-2); }
 .trends-changes ul{ margin:6px 0 0; padding-left:18px; }
 .trends-changes li{ margin:3px 0; }
+/* On a phone the tooltip's names wrap rather than cut: "Engineer… Manage…" read as nothing. */
+@media (max-width:560px){ .trends-tooltip .tt-name{ white-space:normal; } }

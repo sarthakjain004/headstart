@@ -1474,14 +1474,16 @@ test('a counting change off a small base is taken out by openings, not scaled', 
   same(t.netOfSteps([5, 4, 58, 59, 59]).map(Math.round), [60, 59, 59, 59, 59]);
 });
 
-test('a refit that halves a large category comes out by ratio (Google SWE)', () => {
+test('a refit that halves a large category comes out by openings, so categories add up (Google SWE)', () => {
   const { t } = loadApp();
   t.setPicks([ACME]);
   t.set({ ...picked({}), stamps: FIVE, series: [], discovered: [],
     epochs: [{ ts: FIVE[2], changed: ['role family assignment changed'], fields: ['family_classifier_version'] }] });
-  // 628 → 595 (−5.3%), then halved at the refit: by openings it read −11.8%; by ratio −5.3%.
+  // 628 → 595 (−33 openings), then halved at the refit. By openings the −33 stays −33 and the
+  // categories add up to the company (the user's choice, 2026-09-25), at the cost of reading it
+  // against the pre-refit base: −11.8% here, where ratio gave −5.3%.
   const net = t.netOfSteps([628, 595, 304, 304, 304]);
-  same(net.map(v => Math.round(v)), [321, 304, 304, 304, 304]);
+  same(net.map(v => Math.round(v)), [337, 304, 304, 304, 304]);
 });
 
 test('found openings off zero lift the line', () => {
@@ -1576,12 +1578,14 @@ test('Enter before the suggestions arrive picks the top one when they do', async
 });
 
 
-test('several picks summed get a pointer, not a figure that is nearly their sum', () => {
+test('several picks summed get their own sentence, the sum of each company’s', () => {
   const { t, nodes } = loadApp();
   t.setPicks([ACME, BETA]);
   t.set({ ...picked({ a: [100, 110] }), stamps: STAMPS });
+  t.setUnit('count', false);
   t.draw();
-  assert.match(nodes['trends-verdict'].innerHTML, /These 2 companies<\/b>: summed here — break down by Company/);
+  // It read only "summed here — break down by Company", no move and no direction.
+  assert.match(nodes['trends-verdict'].innerHTML, /These 2 companies<\/b>: 110 tech openings; up 10\.0% over 7 days/);
 });
 
 test('a found Board on a whole company line is lifted by its own size, keeping that run’s hiring', () => {
@@ -1816,16 +1820,16 @@ test('the table heads a company\'s categories with its own total, and says why t
   nodes['trends-error'] = Object.assign(fakeEl(), { hidden: true });
   t.table(true);
   const html = nodes['trends-table'].innerHTML;
-  assert.match(html, /<caption>The first row is the company’s hiring\. The categories add up to it with the last row/);
+  assert.match(html, /<caption>The first row is the company’s hiring, and the categories add up to it/);
   assert.match(html, /<tr class="total"><th scope="row"><b>All tech roles<\/b><\/th><td>165<\/td>/);
   assert.doesNotMatch(html, /class="between"/, 'nothing between them when they add up');
 });
 
-test('a row between the categories makes them add up to the company', () => {
+test('a refit that moves openings between categories leaves them adding up to the company', () => {
   const { t, nodes } = loadApp();
   t.setPicks([ACME]);
-  // a hires 20, then a refit moves 24 of its openings to b. The company hires +20; a, scaled at
-  // the refit, reads +16 and b +0, so 4 openings sit between them.
+  // a hires 20, then a refit moves 24 of its openings to b. The company hires +20; by openings a
+  // reads +20 and b +0, so nothing sits between them. (Scaled, a read +16: a +4 "Between" row.)
   t.set({ ...picked({}), stamps: FOUR, totals: [1e3, 1e3, 1e3, 1e3], non_tech: [0, 0, 0, 0],
     series: [{ name: 'a', label: 'a', points: [100, 120, 96, 96], latest: 96 },
              { name: 'b', label: 'b', points: [50, 50, 74, 74], latest: 74 }],
@@ -1836,7 +1840,9 @@ test('a row between the categories makes them add up to the company', () => {
   nodes['trends-error'] = Object.assign(fakeEl(), { hidden: true });
   t.table(true);
   const html = nodes['trends-table'].innerHTML;
-  assert.match(html, /<tr class="between"><th scope="row"[^>]*>Between categories<\/th><td><\/td><td><\/td><td class="up">\+4 openings<\/td>/);
+  assert.doesNotMatch(html, /class="between"/);
+  const a = html.split('</tr>').find(r => />a</.test(r));
+  assert.match(a, /<td class="up">\+20 openings<\/td>/);
 });
 
 test('an unknown category says so', () => {
@@ -2066,7 +2072,7 @@ test('the scope line says as of when, and how old a paused count is', () => {
   t.setPicks([ACME]);
   t.set(companies([['greenhouse:acme', 'Acme', [100, 100, 100, 100]]]));
   t.draw();
-  assert.match(nodes['trends-scope'].textContent, /latest Sep 16 00:00 UTC — \d+ hours ago; no newer count has landed yet/);
+  assert.match(nodes['trends-scope'].textContent, /latest Sep 16 00:00 UTC — \d+ hours ago: the pipeline has written no newer count/);
 });
 
 test('a hand-off tells Search what the trend counted, and when', () => {
@@ -2183,4 +2189,74 @@ test('a window ending before counting began says so', () => {
     counted_since: { 'greenhouse:acme': FOUR[0] }, ledger_start: FOUR[0] });
   t.draw();
   assert.match(nodes['trends-empty'].textContent, /This window ends before HeadStart began counting companies, on Sep 13/);
+});
+
+// ---- critique round 14 ------------------------------------------------------------------------
+test('Hot’s build time rides in UTC, whatever zone the reader is in', () => {
+  // A reader in India: sliced to wall time and read back as local, the 11:14 UTC build read 05:44.
+  const zone = process.env.TZ; process.env.TZ = 'Asia/Kolkata';
+  try {
+    const { t, nodes } = loadApp();
+    t.openTrend('google:careers', 'Google', '2026-09-13T00:00:00+00:00', '-27', '2026-09-25T11:14:00+00:00');
+    t.readHash();
+    t.setPicks([{ key: 'google:careers', label: 'Google', boardKeys: ['google:careers'] }]);
+    t.set(companies([['google:careers', 'Google', [100, 90, 80, 58]]]));
+    t.draw();
+    assert.match(nodes['trends-empty'].textContent, /in its list built Sep 25 11:14 UTC/);
+  } finally {
+    if (zone === undefined) delete process.env.TZ; else process.env.TZ = zone;
+  }
+});
+
+test('a Hot row on a board counted for hours gets no week’s change beside it', () => {
+  const { t, nodes } = loadApp();
+  t.openTrend('adp:sitime', 'SiTime', '2026-09-13T00:00:00+00:00', '59');
+  t.readHash();
+  t.setPicks([{ key: 'adp:sitime', label: 'SiTime', boardKeys: ['adp:sitime'] }]);
+  t.set(companies([['adp:sitime', 'SiTime', [null, null, 70, 70]]], { counted_since: { 'adp:sitime': FOUR[2] } }));
+  t.draw();
+  assert.match(nodes['trends-empty'].textContent, /Hot’s \+59 net tech roles is its board’s first days, counted since Sep 15/);
+  assert.doesNotMatch(nodes['trends-empty'].textContent, /reads \+0/);
+});
+
+test('a counting change that did not move a line leaves its settling run in that line', () => {
+  const { t, nodes } = loadApp();
+  t.setPicks([ACME]);
+  // The change moved Acme by 0 at its run; the run after is ordinary −3, not the change's.
+  t.set(companies([['greenhouse:acme', 'Acme', [100, 100, 100, 97, 97]]], { stamps: FIVE,
+    epochs: [{ ts: FIVE[2], changed: ['tech filter changed'], fields: ['tech_filter_version'] }] }));
+  t.setUnit('count', false);
+  t.draw();
+  assert.match(nodes['trends-verdict'].innerHTML, /Acme<\/b>: 97 tech openings; down 3\.0% over 4 days \(−3 openings/);
+  assert.doesNotMatch(nodes['trends-verdict'].innerHTML, /not hiring/);
+});
+
+test('the list gives a counting change without the duplicates removed on its run', () => {
+  const { t, nodes } = loadApp();
+  t.setPicks([{ key: 'eightfold:nvidia', label: 'NVIDIA', boardKeys: ['eightfold:nvidia'] }]);
+  t.set(companies([['eightfold:nvidia', 'NVIDIA', [4000, 4000, 1862, 1862, 1900]]], { stamps: FIVE,
+    evicted: [{ ts: FIVE[2], company: 'eightfold:nvidia', count: 2041 }],
+    epochs: [{ ts: FIVE[2], changed: ['duplicate removal changed', 'role family assignment changed'],
+               fields: ['dedup_version', 'family_classifier_version'] }] }));
+  t.setUnit('count', false);
+  t.draw();
+  const list = nodes['trends-changes'].innerHTML;
+  assert.match(list, /Counting changed here[^<]*— NVIDIA −97 openings/, '−2,138 less the 2,041 removed');
+  assert.match(list, /2,041/);
+});
+
+test('a move under half an opening has no arrow', () => {
+  const { t, nodes } = loadApp();
+  t.setPicks([ACME]);
+  t.set({ ...picked({ big: [100, 150], tiny: [30, 30] }), stamps: STAMPS });
+  t.draw();
+  assert.match(row(nodes['trends-legend'].innerHTML, 'tiny'), /→ \+0 openings/);
+});
+
+test('a window with no runs names the picks, not "0 companies"', () => {
+  const { t, nodes } = loadApp();
+  t.setPicks([ACME, BETA]);
+  t.set({ ...companies([]), stamps: [], series: [] });
+  t.draw();
+  assert.doesNotMatch(nodes['trends-scope'].textContent, /0 companies/);
 });

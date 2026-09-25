@@ -27,6 +27,12 @@ function showTab(name){
   if (name === 'search' && readSearchHash()) go();
   if (name === 'hot' && el('hot-results') && !hotData) loadHot();
   if (name === 'trends' && el('trends')){
+    // Back onto a bare `#trends` is a view with no picks; the tab strip's own bare link keeps
+    // them. One Back after picking Google landed on `#trends` and the kept pick wrote itself
+    // straight back, so the press did nothing.
+    const bare = location.hash.indexOf('?') < 0;
+    if (bare && !viaTabStrip && trendPicks.length){ replacePicks([]); loadTrends(null); viaTabStrip = false; return; }
+    viaTabStrip = false;
     const linked = readTrendHash();
     if (linked || !trendData) loadTrends(linked ? linked.family : null);
     else writeTrendHash();   // the tab strip's bare `#trends` gets the view back, for sharing
@@ -43,6 +49,9 @@ function showTab(name){
   if (name === 'resume' && window.ResumeEditor) ResumeEditor.shown();
 }
 window.addEventListener('hashchange', () => showTab(currentTab()));
+// Whether the hash change about to land came from the tab strip's own link (showTab).
+let viaTabStrip = false;
+document.addEventListener('click', e => { if (e.target.closest && e.target.closest('.tabs [data-tab]')) viaTabStrip = true; }, true);
 
 /* ---- The Data tab's coverage counts (ADR-0113). Fetched on first open, never on page load:
    the tab is a minority of visits and the counts, though cheap, are not free on the first one.
@@ -1856,14 +1865,18 @@ function hotNote(d){
   const figure = `${o.net < 0 ? '−' : '+'}${Math.abs(o.net).toLocaleString()} net tech roles`;
   if (boards.length > 1)
     return `Hot’s ${figure} is one of ${pick.label || 'this company'}’s ${boards.length} boards; this line sums all of them.`;
-  const m = trendMove({ name: '__total__', points: sumPoints(d.series, d.stamps) });
+  const line = { name: '__total__', points: sumPoints(d.series, d.stamps) };
+  // A Board counted for hours has no week of its own here: SiTime read "too new" in its sentence
+  // beside "this line reads +0 openings" under Hot's +59.
+  if (isYoung(line, d)) return `Hot’s ${figure} is its board’s first days, counted since ${stampLabel(countedSince(d)[0], true)}: too new for this line to give a week’s change.`;
+  const m = trendMove(line);
   if (!m) return '';
   const n = Math.round(m.change);
   // Never silent when they differ, and never a guessed reason: Hot's list is built once a run by
   // the pipeline, so its build time is the fact a reader can weigh against this line's runs.
   return n === o.net
     ? `Hot’s ${figure} is this line’s change: both leave out the runs where HeadStart changed how it counts.`
-    : `Hot measured ${figure} on this board over the same week${o.built ? `, in its list built ${stampLabel(o.built)} UTC` : ''}; this line reads ${signedOpenings(n)}.`;
+    : `Hot measured ${figure} on this board over the same week${o.built ? `, in its list built ${stampLabel(o.built + 'Z')} UTC` : ''}; this line reads ${signedOpenings(n)}.`;
 }
 
 // Picks this answer has nothing for, named with the reason, so the chart never shows fewer
@@ -1920,17 +1933,14 @@ function verdictLines(d){
   if (kind === 'roles')
     return [{ name: `${counted.length === 1 ? counted[0].label || 'This company' : `These ${counted.length} companies`} · ${drillLabel()}`,
       days: 0, text: 'roles tracked by their titles inside this category. A job can match more than one, so they need not add up to the category — its levels view has the category’s total and move.' }];
-  if (kind === 'bands')
-    return counted.length === 1 ? [{ name: `${counted[0].label || 'This company'} · ${drillLabel()}`,
-      ...verdictOf({ name: '__total__', points: sumPoints(d.series, d.stamps) }, d) }]
-      : [{ name: `These ${counted.length} companies · ${drillLabel()}`, days: 0,
-           text: 'summed here — break down by Company for each one’s openings and move.' }];
-  // Summed, a company joining lands with the other companies' ordinary change of that run
-  // inside its step, so the combined move is not quite the sum of each company's. Rather than
-  // headline a figure that is nearly right, the sentence points at the view that has each one.
+  // Several picks summed: the sum of each company's own netted line (the Space's `pick_series`),
+  // so the move is exactly the Company breakdown's total. It read only "summed here — break down
+  // by Company", no move and no direction.
+  const whole = { name: '__total__', points: sumPoints(d.series, d.stamps) };
+  const who = counted.length === 1 ? counted[0].label || 'This company' : `These ${counted.length} companies`;
+  if (kind === 'bands') return [{ name: `${who} · ${drillLabel()}`, ...verdictOf(whole, d) }];
   if (kind !== 'company' && counted.length > 1)
-    return [{ name: `These ${counted.length} companies`, days: 0,
-      text: 'summed here — break down by Company for each one’s openings and move.' }];
+    return [{ name: who, ...verdictOf(kind === 'total' ? d.series[0] : whole, d) }];
   const lines = kind === 'company' ? d.series.slice(0, CHART_MAX).map(s => [s.label, s, s.name])
     : [[counted.length === 1 ? (counted[0].label || 'This company') : 'This company',
         kind === 'total' ? d.series[0] : { name: '__total__', points: sumPoints(d.series, d.stamps) }]];
@@ -2121,9 +2131,12 @@ function stepNotes(d){
         text: `A week after a counting change (${e.changed.join(', ')}): the openings it let in stop counting as new here — not hiring` });
     }
     const i = d.stamps.indexOf(e.ts); if (i < 0) return;
-    const text = `Counting changed here: ${e.changed.join(', ')}`;
-    if (!picked){ notes.push({ i, text, found: false, epoch: true, withhold: false }); return; }
     const fields = e.fields || [];
+    // Under picks, a duplicate-removal change is named only where a pick can be touched: Google's
+    // marker read "duplicate removal changed", which moved nothing at Google.
+    const said = e.changed.filter((c, k) => !picked || fields[k] !== 'dedup_version' || touched.length > 0);
+    const text = `Counting changed here: ${said.join(', ')}`;
+    if (!picked){ notes.push({ i, text, found: false, epoch: true, withhold: false }); return; }
     const linesMove = fields.some(f => LINE_MOVING.includes(f)) || (bands && fields.includes('derivations_version'));
     const dedup = !linesMove && touched.length > 0 && fields.includes('dedup_version');
     if (!(linesMove || dedup)) return;
@@ -2145,7 +2158,7 @@ function stepNotes(d){
     // chart, so its settling run cannot be told from an ordinary one; taking it out regardless
     // cut Amazon's real −7 with no marker to say why. The cost: a change landing over two runs
     // exactly at the window's start leaves its second half in.
-    if (i > 0 && i + 1 < d.stamps.length) notes.push({ i: i + 1, found: false, withhold: true, companies, settle: true, bandsOnly,
+    if (i > 0 && i + 1 < d.stamps.length) notes.push({ i: i + 1, found: false, withhold: true, companies, settle: true, settles: i, bandsOnly,
       dedupOnly: fields.length === 1 && fields[0] === 'dedup_version',
       text: 'Left out: the run after a counting change, which can still be settling' });
   });
@@ -2623,6 +2636,9 @@ function lineMove(s){
     return !m || trendUnit === 'share' ? { small: true, short: true } : { count: Math.round(m.change), short: true };
   }
   if (m && m.real < MOVER_FLOOR) return trendUnit === 'share' ? { small: true } : { count: Math.round(m.change) };
+  // A change under half an opening has no direction: Micron's Engineering Management read
+  // "↑ +1.7%" beside "+0 openings", a quarter-opening off a netted base of 15.
+  if (m && trendUnit !== 'share' && Math.round(m.change) === 0) return { count: 0 };
   return { dl: trendDelta(s.points, s) };
 }
 // A legend row's move. Under Count the plot is in openings, so every row's move is too, the
@@ -2687,17 +2703,18 @@ function signedOpenings(n){
 // all along. Wipro's "+74.7%" carried +500 and +258 openings landing on two tech-filter markers;
 // Google with BAE Systems "+1170.2%" was BAE joining the sum.
 //
-// By ratio where both sides of a step hold RATIO_FLOOR openings or more, by openings where
-// either is smaller. A refit that halves a category re-sorts a share of it, so its history is
-// halved too: taken out by openings, Google's software-engineering loss of 33 (−5.3%) was
-// measured against the halved base and read "−11.8%". A small side has no ratio worth trusting:
-// Microsoft's architecture line went 4 → 58 at a filter change, and scaled ×14.5 its one lost
-// opening read −12. A known size (found openings, duplicates removed) always comes out by
-// openings. The floor is judged in openings, whatever the unit drawn: under Share every level
-// sits under 20 and every step came out by openings.
+// By openings, on every line: the history before a step is shifted by the step's size, never
+// scaled. Categories were once taken out by ratio (a refit re-sorts a share of a category), and
+// their hiring then did not add up to the company's: Micron's categories summed to +62 under a
+// company +160, Google's to +15 under −32, the gap filed as "Between categories" (critic round
+// 13). The user chose sums that add up over ratio-true percentages (2026-09-25): a category a
+// refit halved now reads its percentage against the pre-refit base (Google's software
+// engineering read −11.8% where ratio gave −5.3%).
 //
-// A history a step would push below zero cannot be adjusted — the step took out more than was
-// there before it — so the line starts after that step instead of inventing a zero base.
+// The one exception is a shift that would push the history below zero — a change from 200 to 20
+// after growth from 50 — which scales instead, where both sides hold RATIO_FLOOR openings, so the
+// change cannot erase the line's start. Where it cannot scale either, the line starts after that
+// step instead of inventing a zero base.
 //
 // The Change plot draws these levels and every percentage is read off them, so the line and its
 // number cannot disagree. With no pick there are no such steps, so the index chart is unchanged.
@@ -2726,13 +2743,8 @@ function netOfSteps(levels, s, only){
   // The same steps read off the openings themselves, for the floor.
   const counts = s && s.points && levels !== s.points ? stepJumps(s.points, s, only) : jumps;
   const out = levels.slice();
-  // A whole company's line is shifted, not scaled: a counting change moves jobs into or out of
-  // its tech openings, it does not re-sort a share of them. Scaled, Squircle read +513 where
-  // Hot, which leaves those runs out of its sum, read +459 on the trend Hot's own row opens;
-  // shifted, the two are one sum for a company of one Board (measured 2026-09-25). Unless the
-  // shift would take its history below zero — a change from 200 to 20 after growth from 50 —
-  // where scaling keeps the history the shift would erase.
-  const mayScale = !isWholeLine(s);
+  // Shifted, a company's line and Hot's sum are one figure for a company of one Board: scaled,
+  // Squircle read +513 where Hot read +459 (measured 2026-09-25).
   let lowest = Infinity;
   const lowestBefore = levels.map(v => { const at = lowest; if (v != null) lowest = Math.min(lowest, v); return at; });
   let scale = 1, lift = 0, cut = false;
@@ -2747,7 +2759,7 @@ function netOfSteps(levels, s, only){
     const known = jump.kinds.has('found') || jump.kinds.has('duplicates');
     const shift = scale * (jump.lift ?? (jump.after - jump.before));
     const erases = lowestBefore[j] * scale + lift + shift < 0;
-    if ((mayScale || erases) && jump.lift == null && !known && size.before >= RATIO_FLOOR && size.after >= RATIO_FLOOR)
+    if (erases && jump.lift == null && !known && size.before >= RATIO_FLOOR && size.after >= RATIO_FLOOR)
       scale *= jump.after / jump.before;
     else lift += shift;
   }
@@ -2831,7 +2843,19 @@ function stepsFor(s){
   return notesOf(trendData)
     .filter(n => n.withhold && !(n.wholeOnly && !whole) && !(n.bandsOnly && (!s || s.name === '__total__'))
       && !(perCompany && ((n.company && s.name !== n.company)
-      || (n.companies && !n.companies.includes(s.name)))));
+      || (n.companies && !n.companies.includes(s.name))))
+      // A counting change that did not move this line at its own run is no step of this line,
+      // nor is its settling run: Stripe's sentence named one filter change while its settling
+      // runs, left out, moved it −1 and −3 more, so the list and the sentence disagreed.
+      && !((n.epoch || n.settle) && s && s.points && ownJump(n.settle ? n.settles : n.i, s) === 0));
+}
+// The line's change at run `i` in openings, rounded (a step on a gap lands on the next measured
+// point), or null where the line has no point on either side of it.
+function ownJump(i, s){
+  let j = i; while (j < s.points.length && s.points[j] == null) j++;
+  let k = Math.min(i, j) - 1; while (k >= 0 && s.points[k] == null) k--;
+  if (j >= s.points.length || k < 0) return null;
+  return Math.round(s.points[j] - s.points[k]);
 }
 
 // "Aug 12 09:00" from an ISO stamp — enough to anchor the axis without a timezone lecture.
@@ -2987,7 +3011,7 @@ function drawTrends(){
   const ageHours = runs ? (Date.now() - new Date(d.stamps[runs - 1])) / 36e5 : 0;
   // Only for a window running to now: a custom range ending last week is old by choice.
   const asOf = !runs ? '' : ` · latest ${stampLabel(d.stamps[runs - 1])} UTC${
-    !trendRange().until && ageHours >= staleAfterHours(d.stamps) ? ` — ${Math.round(ageHours)} hours ago; no newer count has landed yet` : ''}`;
+    !trendRange().until && ageHours >= staleAfterHours(d.stamps) ? ` — ${Math.round(ageHours)} hours ago: the pipeline has written no newer count, though Search, which reads the job list itself, can be newer` : ''}`;
 
   // The legend is built BEFORE the plot, not after: it is a pure function of the series, and
   // the plot's height floor is measured off it (below). Built after, the first paint would
@@ -3329,7 +3353,10 @@ function drawTrends(){
   // into Other otherwise — so this no longer needs a "top N of M" caveat. The drill's way out
   // is the breadcrumb above, not a sentence at the end of this line.
   const where = at ? ` ${at}` : '';
-  el('trends-scope').textContent = view.scope(d.series.length, where, measured + asOf);
+  // No runs in the window: say so under the picked chips, not "0 companies · 0 measurements".
+  el('trends-scope').textContent = !runs && trendPicks.length
+    ? `${trendPicks.length} compan${trendPicks.length === 1 ? 'y' : 'ies'} picked · no measurements in this window`
+    : view.scope(d.series.length, where, measured + asOf);
   // The SVG's own name for itself, written from the same facts. It was a fixed "Open roles over
   // time by category" in the template, which stayed that after every Measure, Unit, ATS and
   // drill change — right in exactly one state and stale in every other.
@@ -3673,8 +3700,8 @@ function buildTrendsTable(){
   }).join('');
   // What makes the rows add up to the first: Google's categories summed to +15 of hiring under a
   // company row of −32, and a caption saying they "need not" was no answer to which is right.
-  // The first row is; the difference is mostly openings a counting change moved between rows,
-  // each of which takes its step out by its own rule, and rows too new to read.
+  // The first row is. With every line netted by openings the rows add up, so the row shows only
+  // what cannot: rows too new to read, and a step scaled so it would not erase a line's start.
   const [one, many] = kind === 'bands' ? ['level', 'levels'] : ['category', 'categories'];
   const whose = trendPicks.length > 1 ? 'the companies’' : 'the company’s';
   let between = '';
@@ -3682,10 +3709,10 @@ function buildTrendsTable(){
     const whole = hiringOpenings(total[0], lineMove(total[0]));
     const parts = rows.map(s => hiringOpenings(s, lineMove(s)) || 0).reduce((a, b) => a + b, 0);
     const gap = whole == null ? 0 : whole - parts;
-    if (gap) between = `<tr class="between"><th scope="row" title="The first row’s hiring less the rows’ sum: openings a counting change moved from one ${one} to another, which each takes out by its own rule, and rows too new to read">Between ${many}</th>`
+    if (gap) between = `<tr class="between"><th scope="row" title="The first row’s hiring less the rows’ sum: ${many} too new to read, or a counting change scaled so it would not erase a ${one}’s start">Between ${many}</th>`
       + `<td></td><td></td><td class="${gap > 0 ? 'up' : 'down'}">${esc(signedOpenings(gap))}</td><td></td><td></td><td></td><td></td></tr>`;
   }
-  const note = withTotal ? `<caption>The first row is ${whose} hiring. The ${many} add up to it with the last row, which holds what no single ${one}’s figure does: mostly openings a counting change moved between them.</caption>` : '';
+  const note = withTotal ? `<caption>The first row is ${whose} hiring, and the ${many} add up to it${between ? ' with the last row, which holds what no single row can read' : ''}.</caption>` : '';
   return `${note}<thead>${head}</thead><tbody>${body}${between}</tbody>`;
 }
 
@@ -3801,11 +3828,18 @@ function stepRuns(n, s){
   const landing = i => { let j = i; while (j < s.points.length && s.points[j] == null) j++; return j; };
   return n.epoch && !n.echo ? [landing(n.i), landing(n.i + 1)] : [landing(n.i)];
 }
-// How many openings notes `ns` moved line `s` by, each run counted once.
+// How many openings notes `ns` moved line `s` by, each run counted once. A run holding other
+// steps of known size (duplicates removed, Boards found) leaves those out: NVIDIA's list gave its
+// counting change −2,138 beside "2,041 duplicate postings removed", the one inside the other.
 function stepSize(ns, s){
   const jumps = stepJumps(s.points, s);
   const runs = new Set(ns.flatMap(n => stepRuns(n, s)));
-  return Math.round([...runs].reduce((sum, j) => { const jump = jumps.get(j); return sum + (jump ? jump.after - jump.before : 0); }, 0));
+  const others = stepsFor(s).filter(n => !ns.includes(n) && n.size != null && isWholeLine(s));
+  return Math.round([...runs].reduce((sum, j) => {
+    const jump = jumps.get(j); if (!jump) return sum;
+    const known = others.filter(n => stepRuns(n, s)[0] === j).reduce((a, n) => a + n.size, 0);
+    return sum + (jump.after - jump.before) - known;
+  }, 0));
 }
 // Whether a note moved line `s` at its own run — the one test the sentence, the markers and the
 // list share. Not at the run after: that one is left out in case the change is still settling,
@@ -3986,9 +4020,11 @@ function trendSplitSelect(v){
   // Company is a different request.
   const refetch = v === 'company' || topSplitNow() === 'company';
   topSplit.chosen = v;
-  if (refetch || !trendRaw){ loadTrends(null); return; }
+  // A breakdown is a view a reader can step back out of: Company → Total → Category added no
+  // history entry, so Back skipped all three.
+  if (refetch || !trendRaw){ picksPushed = true; loadTrends(null); return; }
   trendData = trendView(trendRaw, null);
-  writeTrendHash(); applyUnitLocks();
+  writeTrendHash(true); applyUnitLocks();
   drawTrends();
 }
 // A preset and a custom bound are two spellings of the same window, so setting either clears
@@ -4241,7 +4277,10 @@ function openCompanyTrend(board, name, since, net, built){
   location.hash = '#trends?company=' + encodeURIComponent(board)
     + (since ? '&since=' + encodeURIComponent(since.slice(0, 16)) : '')
     + (net != null && since ? `&hot=${encodeURIComponent(net)}&hot_board=${encodeURIComponent(board)}` : '')
-    + (net != null && since && built ? `&hot_at=${encodeURIComponent(built.slice(0, 16))}` : '');
+    // In UTC minutes, like `since`: sliced off a local-offset stamp it read as 05:44 UTC in IST
+    // and 18:14 UTC in Los Angeles for an 11:14 build.
+    + (net != null && since && built && !isNaN(new Date(built))
+      ? `&hot_at=${encodeURIComponent(new Date(built).toISOString().slice(0, 16))}` : '');
 }
 
 // Pointer tracking for the crosshair+tooltip lives on the SVG element itself, wired once: an
@@ -4253,6 +4292,12 @@ if (el('trends-chart')) {
   // finger keeps the reading up rather than clearing it the instant it appeared.
   el('trends-chart').addEventListener('click', e => readChartAt(e));
   el('trends-chart').addEventListener('pointerleave', e => { if (e.pointerType !== 'touch') positionHoverLayer(null); });
+  // A tapped reading stays until the finger moves on: a scroll, or a tap anywhere off the plot.
+  // It stuck over the "Marked changes" list after scrolling to it, covering its entries.
+  window.addEventListener('scroll', () => { if (hoverIndex != null) positionHoverLayer(null); }, { passive: true });
+  document.addEventListener('click', e => {
+    if (hoverIndex != null && !e.target.closest('#trends-chart')) positionHoverLayer(null);
+  });
 }
 // The stamp nearest a pointer's x, read into the crosshair and tooltip.
 function readChartAt(e){
