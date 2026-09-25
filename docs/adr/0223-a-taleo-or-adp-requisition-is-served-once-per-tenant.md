@@ -91,9 +91,9 @@ Edition and ADP Workforce Now, enforced by the planners ADR-0187 built, in both 
   `workday-tenant`, so its rows in `data/state/dedup_evictions.csv` stay comparable across this
   change.
 - **The Eightfold backing match widens with it.** A Taleo Enterprise backing Board is matched on
-  its Tenant, as a Workday one already was (ADR-0210). A `requisition` with no digit is matched per
-  Board, so it misses a Tenant-grouped row and the copy stays served; it is never removed wrongly.
-  On v65 this removes nothing more.
+  its Tenant, as a Workday one already was (ADR-0210). A backing row is also still found on its
+  own Board, so a `contestNo` with no digit (the stamp the lookup tests, where the grouping tests
+  `jobId`) matches as it did before. On v65 this removes nothing more.
 
 ## Evidence
 
@@ -116,8 +116,10 @@ Workday row. ADR-0187's tests pass unmodified.
 
 ## Consequences
 
-- **A new grouping, so `DEDUP_VERSION` goes from 5 to 6** (ADR-0188). It is bumped when this
-  merges, not in this change. The first prune removes the 1,120 rows at once. They are recorded in
+- **A new grouping, so `DEDUP_VERSION` goes from 5 to 6** (ADR-0188). The bump is made by the
+  session that merges this, in the merge itself, so the rule and the Trends marker ship in one
+  deploy; it is left out of this branch because other dedup branches are in flight against the
+  same counter. The first prune removes the 1,120 rows at once. They are recorded in
   the dedup eviction ledger under `tenant-requisition`.
 - **An internal section the tokens miss can still keep a requisition.** Incumbent-wins decides
   every requisition after the cleanup, and only a token triggers displacement. So a new requisition

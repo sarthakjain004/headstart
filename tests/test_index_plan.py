@@ -1295,6 +1295,29 @@ def test_a_copy_its_workday_tenant_serves_from_another_site_is_still_a_copy():
     assert dup == [f"{_EF}:1099"]
 
 
+_TALEO_1, _TALEO_2 = _TENANT_BOARDS["taleo_enterprise"][:2]
+
+
+@pytest.mark.parametrize(
+    ("backing_board", "contest_no"),
+    [
+        (_TALEO_2, "MEA02075"),  # served from another section of the Tenant (ADR-0223)
+        (_TALEO_1, "ENG-A"),  # a stamp with no digit still matches on the named section
+    ],
+)
+def test_a_copy_its_taleo_tenant_serves_is_still_a_copy(backing_board, contest_no):
+    """The Taleo Enterprise row is grouped on its Tenant by its native `jobId`, while the
+    Eightfold row carries the section's `contestNo`; both shapes must still find the backing row."""
+    reqs = {f"{_EF}:1099": contest_no, f"{backing_board}:5706": contest_no}
+    _, dup = _prune(
+        [f"{_EF}:1099", f"{backing_board}:5706"],
+        {_EF, _TALEO_1, _TALEO_2},
+        requisitions=reqs,
+        backing={"jobs.acme.com": (_TALEO_1,)},
+    )
+    assert dup == [f"{_EF}:1099"]
+
+
 def test_prune_names_the_rule_behind_each_duplicate():
     """The dedup eviction ledger records which rule took each row out, so Trends can add
     removals that were never closures back in (ADR-0210)."""

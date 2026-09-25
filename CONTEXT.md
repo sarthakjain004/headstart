@@ -81,7 +81,7 @@ place it's declared.
 The employer listed on an ATS, behind a Board; a `CompanyRef` (`ats`, `slug`, `name`) is the reference that tells the scrape step which Board to read.
 
 **Tenant** (ADR-0185):
-The customer an ATS hosts, which may hold several **Board**s: Workday's `{company}` across its sites, a Taleo Enterprise host across its career sections, a Taleo Business Edition `org` across its `cws` sites; on most ATSes it is simply the **Slug**. Usually one **Company**'s, but a holding group's Tenant can carry its portfolio companies' Boards, and a Company on two ATSes has two Tenants.
+The customer an ATS hosts, which may hold several **Board**s: Workday's `{company}` across its sites, a Taleo Enterprise host across its career sections, a Taleo Business Edition `org` across its `cws` sites, an ADP Workforce Now client `cid` across its career centers (ADR-0223); on most ATSes it is simply the **Slug**. Usually one **Company**'s, but a holding group's Tenant can carry its portfolio companies' Boards, and a Company on two ATSes has two Tenants.
 _Avoid_: "account" — that is a signed-in person (**Account**); reading the ledgers' `tenant` column as a Tenant — that column holds one Board's slug spelling, site included.
 
 **Requisition** (ADR-0187, ADR-0210):

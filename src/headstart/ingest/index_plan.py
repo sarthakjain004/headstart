@@ -353,9 +353,11 @@ def _backing_copies(
         if board in by_slug:
             fronts.append((job_id, board, requisition))
         else:
-            held[group[0], requisition] = min(
-                group, held.get((group[0], requisition), group)
-            )
+            # Held under its own Board as well as its group: a Taleo Enterprise row is grouped on
+            # its Tenant by its native `jobId`, while the lookup below tests the stamped
+            # `contestNo`, so a `contestNo` with no digit still finds the row on its own Board.
+            for key in {(group[0], requisition), (board, requisition)}:
+                held[key] = min(group, held.get(key, group))
     copies: dict[str, tuple[str, str]] = {}
     for job_id, board, requisition in fronts:
         found = [
@@ -849,7 +851,9 @@ def _is_non_public(board: str) -> bool:
 
 
 #: Which rule took a duplicate row out, as :func:`plan_prune` names it and the dedup
-#: eviction ledger records it (ADR-0210); :func:`alias_rules` adds ``alias:{signal}``.
+#: eviction ledger records it (ADR-0210); :func:`alias_rules` adds ``alias:{signal}``. One
+#: Tenant rule covers every ATS in :data:`_TENANT_REQUISITION_ATSES`, but Workday's removals keep
+#: the name they had before ADR-0223, so ``tenant-requisition`` is Taleo's and ADP's alone.
 CASE_VARIANT = "case-variant"
 WORKDAY_TENANT = "workday-tenant"
 TENANT_REQUISITION = "tenant-requisition"
@@ -931,7 +935,7 @@ def plan_prune(
                         BACKING_REQUISITION
                         if i in copies
                         else WORKDAY_TENANT
-                        if canon.startswith("workday:")
+                        if ats_of(canon) == "workday"
                         else TENANT_REQUISITION
                     )
             elif len(ids) > 1:

@@ -855,9 +855,8 @@ def sync(args: argparse.Namespace) -> int:
     # Tenant's Boards (ADR-0223), and per posting across an Eightfold site and its backing Board
     # (ADR-0210), decided here as well as in prune so a copy prune took out is never added back.
     # The re-embedded rows just taken out are passed back as `replaced`: they are still the
-    # requisition's incumbent. The stamps come from the store,
-    # which `update_meta` has just refreshed, so a row is judged on the same value the refresh
-    # below writes into the table.
+    # requisition's incumbent. The stamps come from the store, which `update_meta` has just
+    # refreshed, so a row is judged on the same value the refresh below writes into the table.
     plan = plan_sync(
         index_ids,
         fresh,
