@@ -1268,8 +1268,9 @@ test('percentages leave out a marked step; the plotted line keeps it', async () 
   await t.load(null);
   t.setUnit('count', false);
   t.draw();
-  // Net [200, 200, 200, 200, 220]: first to last is +10.0%, where the raw line read +120%.
-  assert.match(row(nodes['trends-legend'].innerHTML, 'a'), /\+10\.0%/, 'the doubling was the filter');
+  // Net [200, 200, 200, 200, 220]: first to last is +20 openings (+10.0%), where the raw line
+  // read +120 (+120%). Under Count the legend gives it in openings.
+  assert.match(row(nodes['trends-legend'].innerHTML, 'a'), /\+20 openings/, 'the doubling was the filter');
 });
 
 test('a small count gets whole-number ticks', () => {
@@ -1308,8 +1309,8 @@ test('under a Company breakdown, one company’s found Board nets only its own l
   t.setUnit('count', false);
   t.draw();
   const legend = nodes['trends-legend'].innerHTML;
-  assert.match(row(legend, 'greenhouse:acme'), /\+0\.0%|→/, 'Acme’s jump was its found Boards');
-  assert.match(row(legend, 'lever:beta'), /\+50\.0%/, 'Beta’s real growth that run is kept');
+  assert.match(row(legend, 'greenhouse:acme'), /→ \+0 openings/, 'Acme’s jump was its found Boards');
+  assert.match(row(legend, 'lever:beta'), /\+50 openings/, 'Beta’s real growth that run is kept');
 });
 
 test('a step on a gap lands on the line’s next point', () => {
@@ -1619,7 +1620,7 @@ test('the table names what its change leaves out, and the counting changes add u
   nodes['trends-error'] = Object.assign(fakeEl(), { hidden: true });   // no failed load showing
   t.table(true);
   const html = nodes['trends-table'].innerHTML;
-  assert.match(html, /Change, hiring only<\/th><th scope="col">Counting changes, openings<\/th><th scope="col">Start, as counted/);
+  assert.match(html, /Hiring, %<\/th><th scope="col">Hiring, openings<\/th><th scope="col">Counting changes, openings<\/th><th scope="col">Start, as counted/);
   assert.match(html, /\+254 openings/);
 });
 
@@ -1944,15 +1945,16 @@ test('folded sentences keep the first pick and the tiles’ movers in view, in p
   const { t, nodes } = loadApp();
   const picks = ['a', 'b', 'c', 'd'].map(k => ({ key: `lever:${k}`, label: k.toUpperCase(), boardKeys: [`lever:${k}`] }));
   t.setPicks(picks);
-  // Sized so the payload order (largest first) is D, C, B, A; C rises most, B falls most.
-  t.set(companies([['lever:d', 'D', [400, 400, 400, 404]], ['lever:c', 'C', [200, 200, 200, 300]],
+  // Sized so the payload order (largest first) is D, C, B, A; D, the last pick, rises most and
+  // B falls most — so neither "the first three picks" nor "the three largest" is the answer.
+  t.set(companies([['lever:d', 'D', [400, 400, 400, 600]], ['lever:c', 'C', [200, 200, 200, 210]],
                    ['lever:b', 'B', [150, 150, 150, 100]], ['lever:a', 'A', [100, 100, 100, 101]]]));
   t.setUnit('count', false);
   t.draw();
   const [shownPart, folded] = nodes['trends-verdict'].innerHTML.split('<details');
-  assert.deepEqual([...shownPart.matchAll(/<b>(\w)<\/b>/g)].map(m => m[1]), ['A', 'B', 'C']);
+  assert.deepEqual([...shownPart.matchAll(/<b>(\w)<\/b>/g)].map(m => m[1]), ['A', 'B', 'D']);
   assert.match(folded, /1 more company/);
-  assert.match(folded, /<b>D<\/b>/);
+  assert.match(folded, /<b>C<\/b>/);
 });
 
 test('a category first seen inside the window reads as new, not flat', () => {
@@ -1998,4 +2000,29 @@ test('the roles view says what its lines are', () => {
   t.set({ ...picked({ 'watch:llm': [10, 12] }), stamps: STAMPS, family: 'ai-ml' }, 'ai-ml');
   t.draw();
   assert.match(nodes['trends-verdict'].innerHTML, /roles tracked by their titles inside this category/);
+});
+
+
+test('a whole company’s shift that would erase its history scales instead', () => {
+  const { t } = loadApp();
+  t.setPicks([ACME]);
+  t.set(companies([['greenhouse:acme', 'Acme', [50, 200, 20, 20, 22]]],
+    { stamps: FIVE, epochs: [{ ts: FIVE[2], changed: ['tech filter changed'], fields: ['tech_filter_version'] }] }));
+  // Shifted by −180, the 50 went below zero and the line lost its start without a word.
+  same(t.netOfSteps([50, 200, 20, 20, 22], { name: '__total__', points: [50, 200, 20, 20, 22] })
+    .map(v => Math.round(v)), [5, 20, 20, 20, 22]);
+});
+
+test('a trend opened from Hot says how Hot’s figure reads on it', () => {
+  const { t, nodes } = loadApp();
+  t.openTrend('greenhouse:bosch', 'Bosch', '2026-09-13T00:00:00+00:00', '440');
+  t.readHash();
+  const bosch = { key: 'greenhouse:bosch', label: 'Bosch', boardKeys: ['greenhouse:bosch', 'lever:bosch'] };
+  t.setPicks([bosch]);
+  t.set(companies([['greenhouse:bosch', 'Bosch', [100, 200, 300, 540]]]));
+  t.draw();
+  assert.match(nodes['trends-empty'].textContent, /Hot’s \+440 net tech roles is one of Bosch’s 2 boards; this line sums all of them\./);
+  t.setPicks([{ ...bosch, boardKeys: ['greenhouse:bosch'] }]);
+  t.draw();
+  assert.match(nodes['trends-empty'].textContent, /Hot’s \+440 net tech roles is this line’s change/);
 });

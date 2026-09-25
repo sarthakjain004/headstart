@@ -787,19 +787,25 @@ hand-offs a reader leans on, and what the page shows first:
 - **A whole company's line takes a counting change out by openings, never by ratio.** A change
   moves jobs into or out of a company's tech openings; it does not re-sort a share of them, so
   the history before it is shifted, not multiplied. The ratio rule stays for category lines,
-  where a refit does re-sort a share. Hot leaves the same runs out of its sum, so its figure and
-  the trend its row opens are now the same number: measured on the Sep 18 → Sep 25 window,
-  Squircle's trend read +513 against Hot's +459 before, and +459 after; 5 of 6 rows agree to the
-  opening, the sixth by the second Board its company holds.
+  where a refit does re-sort a share. Hot leaves the same runs out of its sum, so for a company
+  of one Board its figure and the trend its row opens are the same number: measured on the
+  Sep 18 → Sep 25 window, Squircle's trend read +513 against Hot's +459 before, and +459 after.
+  A Hot row is one Board and its trend the whole company, so a company of several Boards
+  differs by its other Boards (Bosch Group, +440 against +442); the trend says so, and says
+  when the figures agree, while it still shows Hot's week. Only Hot's net figure has a trend
+  twin: "opened this week" and the new share are not stock. A shift that would take a
+  company's history below zero scales instead, so the change cannot erase the line's start.
 - **A merged day marker sits on the run that moved most**, not the day's first: Google with
   Micron's Sep 24 marker sat on an 18:00 run that moved one opening, beside the 21:19 run that
   moved 2,199. Every marker is also listed as text under the chart ("Marked changes"), the only
   way to them on a phone.
 - **The sentences keep the first pick and the tiles' riser and faller in view**, in pick order;
   the rest fold. The tile read "Biggest riser Microsoft" over a fold that hid Microsoft.
-- **A category first seen inside the window reads "new since Sep 24"**, not "→ +0 openings".
-  The legend gives a small line's change in openings, as the table does, where it read "started
-  under 5". The roles view says what its lines are, an unknown company says it is not in the
+- **A category first seen inside the window reads "new since Sep 24"**, not "→ +0 openings"
+  (under All openings; under New a line also starts where a Board's first-week hold ends).
+- **One unit per column.** The table's hiring change is two columns, a percentage and openings;
+  under Count the legend gives every row in openings, as the plot is drawn. It read "↑ +6.8%"
+  beside "↑ +12 openings", and "started under 5" beside the table's "+3 openings". The roles view says what its lines are, an unknown company says it is not in the
   directory rather than "yet", and one opening is one opening.
 - **Ten placement operators Hot called employers are labelled services** (ADR-0171's curated
   list), each adjudicated from its own postings.

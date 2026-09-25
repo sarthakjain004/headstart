@@ -3081,35 +3081,42 @@ def test_every_category_hands_search_the_jobs_its_trend_counts(trends_app, monke
     labels = trends_app._family_labels(_REPO_FAMILIES)
     monkeypatch.setattr(trends_app, "_FAMILY_SUCCESSOR", successors)
     monkeypatch.setattr(trends_app, "_FAMILY_LABELS", labels)
-    # The data mid-transition: every retired name still assigned, and a few new ones too.
-    held = [*successors, "engineering-management", "software-engineering", "devops"]
-    counts = {name: k + 1 for k, name in enumerate(held)}
-    monkeypatch.setattr(
-        trends_app,
-        "_TRENDS",
-        [
-            {
-                "ts": _T1,
-                "version": 2,
-                "metric": "stock",
-                "family": name,
-                "band": "mid",
-                "ats": "x",
-                "count": n,
-            }
-            for name, n in counts.items()
-        ],
-    )
-    family_ids = trends_app._with_predecessors(
-        {name: [f"x:{name}:{i}" for i in range(n)] for name, n in counts.items()},
-        successors,
-    )
-    client = trends_app.app.test_client()
-    for family in sorted(set(successors.values()) | set(held)):
-        d = client.get(f"/trends?family={family}").get_json()
-        trend = sum(s["points"][-1] or 0 for s in d["series"])
-        args = trends_app.app.test_request_context(
-            f"/search?board=x&family={d['family']}"
-        ).request.args
-        clause = search.scoped_jobs_clause(args, family_ids)
-        assert len(re.findall(r"'x:[^']*'", clause)) == trend, family
+    # The data mid-transition: every retired name still assigned, and a few new ones too; then
+    # a scope holding only some of a family's predecessors (Data Science, not AI / ML).
+    everything = [
+        *successors,
+        "engineering-management",
+        "software-engineering",
+        "devops",
+    ]
+    for held in (everything, [n for n in everything if n != "ai-ml"]):
+        counts = {name: k + 1 for k, name in enumerate(held)}
+        monkeypatch.setattr(
+            trends_app,
+            "_TRENDS",
+            [
+                {
+                    "ts": _T1,
+                    "version": 2,
+                    "metric": "stock",
+                    "family": name,
+                    "band": "mid",
+                    "ats": "x",
+                    "count": n,
+                }
+                for name, n in counts.items()
+            ],
+        )
+        family_ids = trends_app._with_predecessors(
+            {name: [f"x:{name}:{i}" for i in range(n)] for name, n in counts.items()},
+            successors,
+        )
+        client = trends_app.app.test_client()
+        for family in sorted(set(successors.values()) | set(held)):
+            d = client.get(f"/trends?family={family}").get_json()
+            trend = sum(s["points"][-1] or 0 for s in d["series"])
+            args = trends_app.app.test_request_context(
+                f"/search?board=x&family={d['family']}"
+            ).request.args
+            clause = search.scoped_jobs_clause(args, family_ids)
+            assert len(re.findall(r"'x:[^']*'", clause)) == trend, family
