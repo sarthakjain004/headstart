@@ -1538,7 +1538,7 @@ test('the sentence says how much of the chart’s move was not hiring', () => {
     discovered: [{ ts: FOUR[2], company: 'greenhouse:acme', boards: 3, openings: 200 }] });
   t.draw();
   assert.match(nodes['trends-verdict'].innerHTML,
-    /Acme<\/b>: 1,700 tech openings; about flat over 3 days \(\+0\.0%, \+0 openings\); the chart’s other \+200 openings came in runs marked as counting changes or boards found later\./);
+    /Acme<\/b>: 1,700 tech openings; about flat over 3 days \(\+0\.0%, \+0 openings\); the chart’s other \+200 openings came in runs marked as counting changes, boards found later or duplicates removed\./);
 });
 
 test('compared company by company, the heading asks how hiring compares', () => {
@@ -1666,4 +1666,23 @@ test('a category line does not guess where a company’s removals fell', () => {
     evicted: [{ ts: FOUR[2], company: 'greenhouse:acme', count: 7 }] });
   const line = { name: 'software-engineering', points: [100, 100, 95, 96] };
   same(t.netOfSteps(line.points, line), [100, 100, 95, 96]);
+});
+
+test('inside a category no whole-company step is taken out at its size', () => {
+  const { t } = loadApp();
+  t.setPicks([ACME]);
+  t.set({ ...picked({}), stamps: FOUR, series: [], epochs: [], discovered: [],
+    evicted: [{ ts: FOUR[2], company: 'greenhouse:acme', count: 2045 }] }, 'ai-ml');
+  const sum = { name: '__total__', points: [300, 300, 290, 290] };
+  same(t.netOfSteps(sum.points, sum), [300, 300, 290, 290], 'a category is not the whole company');
+});
+
+test('a step larger than what came before it starts the line after it', () => {
+  const { t } = loadApp();
+  t.setPicks([ACME]);
+  t.set({ ...picked({}), stamps: FIVE, series: [], discovered: [],
+    epochs: [{ ts: FIVE[3], changed: ['tech filter changed'], fields: ['tech_filter_version'] }] });
+  // 30 → 150, then a −130 change: 150 adjusts to 20, but 30 − 130 is no level, so the line
+  // starts after it.
+  same(t.netOfSteps([30, 150, 150, 20, 20]), [null, 20, 20, 20, 20]);
 });

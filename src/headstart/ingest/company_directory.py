@@ -44,8 +44,11 @@ over the ledger's 34,203 Boards on 2026-09-24:
   under one `org` (15 orgs). Ignoring case also folds ADR-0023's stale casing duplicates
   (`smartrecruiters:AbhiBus` and `smartrecruiters:abhibus`: 267 pairs).
 - **A curated alias** (`config/company_names.csv`, ADR-0212) is the one cross-ATS identity anyone
-  has asserted, and it is withheld from a pair whose Boards mirror each other: Lockheed
-  Martin's Eightfold Board is its own entry, because summed with SuccessFactors it counts twice.
+  has asserted, and it is withheld from a pair whose Boards mirror each other while the index
+  serves both copies: Lockheed Martin's Eightfold Board is its own entry, because summed with
+  SuccessFactors it counts twice. A pair the index keeps one copy of may share one: NVIDIA,
+  Micron and Morgan Stanley, whose Eightfold rows #649 drops against their Workday Boards
+  (`data/validate/eightfold_backing.csv`).
 
 A Tenant is usually one employer but not always. A holding group's Tenant carries its portfolio
 companies' sites (`workday:volarisgroup` has 26 Boards), which then appear as the group: one

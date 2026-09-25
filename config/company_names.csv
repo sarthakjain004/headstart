@@ -4,7 +4,9 @@
 #
 # An entry is also the company directory's cross-ATS identity (ADR-0185): Boards sharing a name
 # here are one company there, and their counts are summed. So a pair whose Boards mirror each
-# other must not share a name until the index keeps one copy. Lockheed Martin is that pair: its
+# other must not share a name until the index keeps one copy — as it now does for the Eightfold
+# pairs in data/validate/eightfold_backing.csv (#649), which are named below. Lockheed Martin is
+# still such a pair: its
 # Eightfold Board lists the same requisitions as its SuccessFactors one (1,248 of 1,249 distinct
 # titles, 2026-09-23), so only the SuccessFactors Board is here. The Eightfold one states
 # "Lockheed Martin" itself.

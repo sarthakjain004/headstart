@@ -30,7 +30,8 @@ the first run of the prototype behind this module.
 **A Board whose entire stock arrives inside the window was newly *discovered*, not newly
 hiring.** Over the whole ledger and an 8-day span that was 6,996 Boards, a fifth of it; scoped
 as this stage scopes it — the trailing 7 days, Boards at or above ``MIN_STOCK`` — it was 108 on
-2026-09-21. Either way they would own every lens. ADR-0143 exists for this confound; the
+2026-09-21 (both counted with non-tech rows, before this stage dropped them). Either way they
+would own every lens. ADR-0143 exists for this confound; the
 exclusion here is its Hot-tab-shaped equivalent, and its count ships in the artifact rather than
 being quietly applied.
 
@@ -60,7 +61,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from headstart import log
+from headstart import log, roles
 from headstart.ingest.board_naming import board_names, display_name
 from headstart.ingest.board_operator import classify
 
@@ -110,10 +111,10 @@ NEWLY_FOUND_SHARE = 0.9
 WINDOW_DAYS = 7
 
 _WATCH = "watch:"  # headstart.roles.WATCH_PREFIX; double-counts (ADR-0051)
-# The tech filter's reject pile (role_trends' reserved family). Hot counts tech roles only, as
-# Trends and Search do: counted in, Amazon's "open now" was 9,755 on Hot against 9,229 tech
-# openings on the trend its row links to.
-_NON_TECH = "non-tech"
+# Hot counts tech roles only, as Trends and Search do: with the reserved non-tech family counted
+# in, Amazon's "open now" was 9,755 on Hot against 9,229 tech openings on the trend its row
+# links to.
+_NON_TECH = roles.NON_TECH
 
 
 def read_levels(path: Path) -> tuple[collections.Counter, collections.Counter]:

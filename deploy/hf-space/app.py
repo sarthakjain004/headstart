@@ -321,7 +321,7 @@ def _load_evictions(path: Path) -> dict[str, list[tuple[str, int]]]:
         with path.open(encoding="utf-8", newline="") as fh:
             for row in csv.DictReader(fh):
                 out[row["board"]][row["ts"]] += int(row["count"])
-    except (OSError, ValueError, KeyError) as exc:
+    except (OSError, ValueError, KeyError, TypeError, csv.Error) as exc:
         print(f"dedup evictions unreadable ({exc}); none left out", flush=True)
         return {}
     return {board: sorted(by_ts.items()) for board, by_ts in out.items()}
@@ -1727,8 +1727,11 @@ def trends():
             {"ts": ts, "company": pick, "boards": n, "openings": openings}
             for (ts, pick), (n, openings) in sorted(found.items())
         ],
-        # Duplicate rows removed from each pick's Boards, per charted run (#649).
-        evicted=_picks_evicted(counted, stamps),
+        # Duplicate rows removed from each pick's Boards, per charted run (#649). None under
+        # comparable coverage, whose cohort leaves out Boards found later, as `discovered` does.
+        # The ledger counts every removed row, `non-tech` among them, so a removal reads a few
+        # percent larger than the tech openings it took from a company's line.
+        evicted=_picks_evicted(counted, stamps) if coverage != "comparable" else [],
     )
 
 

@@ -553,3 +553,22 @@ The Space ran #665 (repo and runtime sha 952b419c, built from f35041b6). What ch
   - It does not fold that company's rows into "18 more at Google".
   - A full first page says "counting the rest…" until the slow total arrives.
 - **Disabled presets look disabled,** and the reason is shown under the controls.
+
+Its code review tightened the round:
+
+- **Whole-company sizes stay off category lines.** A drill's summed line is one category, so a
+  company's found openings or duplicate removals are never taken out of it at their size.
+- **A step larger than what came before it starts the line after it,** rather than clamping the
+  history to a zero base, which broke the percentage and the index.
+- **No `evicted` under Comparable coverage,** whose cohort leaves out Boards found later.
+  Removals count every row, non-tech included, so they read a few percent larger than the tech
+  openings they took.
+- **Hot names what it counts.** Its figures are "tech roles on this board", because a row is one
+  Board and its "See trend" opens the whole company.
+- **The Role view's button says "See all its … roles"**, since it hands over the whole category,
+  not only the tracked roles its tile counts.
+- **Smaller:**
+  - The sentence names duplicate removals among the non-hiring runs, and states the counting
+    part even when a company is too new to show a direction.
+  - The chart note dims with the rest.
+  - Search's "counting the rest…" shows the real page range, and is dropped if the total fails.

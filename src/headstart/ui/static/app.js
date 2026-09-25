@@ -595,7 +595,7 @@ async function fetchPage(){
     el('n').textContent = page === 1 ? '0 results' : '';
     drawPager(0, null);
   } else {
-    drawCount(rows.length, null);
+    drawCount(rows.length, undefined);   // the total is still coming
     draw(rows);
     drawPager(rows.length, null);
   }
@@ -662,10 +662,12 @@ function drawResultKind(q, shown){
 function drawCount(shown, facets){
   // Before the total lands (a cold /facets took 3–16s, measured), a full page says it is a
   // page of more: "20 results" there read as the answer to a count Trends had just given.
-  if (!facets || typeof facets.total !== 'number'){
-    el('n').textContent = shown === PAGE_SIZE ? `Showing 1–${shown}, counting the rest…`
-      : shown + ' result' + (shown===1?'':'s'); return; }
   const from = (page-1)*PAGE_SIZE + 1, to = (page-1)*PAGE_SIZE + shown;
+  if (!facets || typeof facets.total !== 'number'){
+    // Pending (undefined) says so; failed (null) says only what is on the page, for good.
+    el('n').textContent = facets === undefined && shown === PAGE_SIZE
+      ? `Showing ${from.toLocaleString()}–${to.toLocaleString()}, counting the rest…`
+      : shown + ' result' + (shown===1?'':'s'); return; }
   el('n').textContent = `Showing ${from.toLocaleString()}–${to.toLocaleString()} of ` +
     `${facets.total.toLocaleString()} matching your filters`;
 }
@@ -1871,7 +1873,11 @@ function verdictOf(s, d){
   const began = countedSince(d, s.name) || all[all.length - 1];
   const young = !began || (new Date(d.stamps[d.stamps.length - 1]) - new Date(began)) / 864e5 < MIN_SPAN_DAYS;
   let move;
-  if (!m || days < MIN_SPAN_DAYS) move = young ? 'too new to show a direction yet' : 'this window is too short to show a direction';
+  const other = countingMove(s) || 0;
+  const counting = other
+    ? `; the chart’s other ${signedOpenings(other)} came in runs marked as counting changes, boards found later or duplicates removed` : '';
+  if (!m || days < MIN_SPAN_DAYS)
+    move = (young ? 'too new to show a direction yet' : 'this window is too short to show a direction') + counting;
   else {
     const n = Math.round(m.change), pct = m.head ? m.change / m.head * 100 : 0;
     // A weekly rate is the figure a reader can hold ("about +77 a week"); the window's own
@@ -1886,11 +1892,9 @@ function verdictOf(s, d){
     // own move and the hiring one, so the two figures add up to what the chart shows. Google's
     // Count line climbed 1,540 → 1,802 under "about flat (+3 openings)" with only a footnote
     // saying why.
-    const other = countingMove(s) || 0;
     // Under the floor too, or the parts stop adding up to the chart: Paytm's "−11" sat over a
     // line that went 14 → 6.
-    if (other)
-      move += `; the chart’s other ${signedOpenings(other)} came in runs marked as counting changes or boards found later`;
+    move += counting;
   }
   return { text: `${now == null ? 'no' : Math.round(now).toLocaleString()} ${what}; ${move}.`, days };
 }
@@ -2208,7 +2212,7 @@ async function loadTrends(family){
   // with it, which read as the new company's for the length of the round trip.
   if (trendData){
     if (el('trends')) el('trends').setAttribute('aria-busy', 'true');
-    ['trends-verdict', 'trends-kpi', 'trends-empty'].forEach(id => { if (el(id)) el(id).classList.add('loading'); });
+    dimAnswer(true);
   }
   // The outcome is decided first and acted on second, so there is ONE place a response may
   // touch the panel and one abort check guarding it. Reading the body is inside the try
@@ -2280,7 +2284,7 @@ function dropRefusedPicks({ status, error }){
 // reachable, and Retry replays the exact same request `loadTrends` just made.
 function showTrendsError(msg){
   setTrendsBusy(false);
-  ['trends-verdict', 'trends-kpi', 'trends-empty'].forEach(id => { if (el(id)) el(id).classList.remove('loading'); });
+  dimAnswer(false);
   if (el('trends-viz')){ el('trends-viz').classList.remove('loading'); el('trends-viz').hidden = true; }
   // Everything that describes data goes with the data. The tiles, the table and the "how to
   // read this" block used to survive a failed fetch, so a panel with no chart still carried
@@ -2297,9 +2301,12 @@ function showTrendsError(msg){
   if (el('trends-void')) el('trends-void').hidden = false;
   if (el('trends-error')){ el('trends-error').hidden = false; el('trends-error-msg').textContent = msg; }
 }
+// Everything that states the answer in words, dimmed together while a new one is fetched.
+const ANSWER_TEXT = ['trends-verdict', 'trends-kpi', 'trends-empty', 'trends-chart-note'];
+function dimAnswer(on){ ANSWER_TEXT.forEach(id => { if (el(id)) el(id).classList.toggle('loading', on); }); }
 function hideTrendsError(){
   setTrendsBusy(false);
-  ['trends-verdict', 'trends-kpi', 'trends-empty'].forEach(id => { if (el(id)) el(id).classList.remove('loading'); });
+  dimAnswer(false);
   if (el('trends-error')) el('trends-error').hidden = true;
   if (el('trends-void')) el('trends-void').hidden = true;
   if (el('trends-chart-note')) el('trends-chart-note').hidden = false;
@@ -2451,7 +2458,8 @@ function signedOpenings(n){
 // By openings, never by ratio. Scaling the history by a step's ratio multiplied whatever moved
 // before it: Microsoft's architecture line went 5 → 4, a filter change took it to 58, and a ×14.5
 // scale turned that one opening into "−12 openings" that never happened. Added back, it is −1.
-// A history pushed below zero by a large drop is held at zero.
+// A history a step would push below zero cannot be adjusted — the step took out more than was
+// there before it — so the line starts after that step instead of inventing a zero base.
 //
 // The Change plot draws these levels and every percentage is read off them, so the line and its
 // number cannot disagree. With no pick there are no such steps, so the index chart is unchanged.
@@ -2459,10 +2467,12 @@ function netOfSteps(levels, s){
   const jumps = stepJumps(levels, s);
   if (!jumps.size) return levels;
   const out = levels.slice();
-  let lift = 0;
+  let lift = 0, cut = false;
   for (let j = levels.length - 1; j >= 0; j--){
     if (levels[j] == null) continue;
-    out[j] = Math.max(0, levels[j] + lift);
+    const v = levels[j] + lift;
+    if (cut || v < 0){ cut = true; out[j] = null; continue; }
+    out[j] = v;
     const jump = jumps.get(j);
     if (jump) lift += jump.lift ?? (jump.after - jump.before);
   }
@@ -2477,8 +2487,10 @@ function netOfSteps(levels, s){
 // A line that is a whole company's tech openings under All openings: the Total, or a company's
 // line at the top level. Only these can take out a step whose size is known per company.
 function isWholeLine(s){
-  return trendMetric === 'stock' && !!s && (s.name === '__total__'
-    || (!trendDrill && VIEWS[viewKind(trendData)].split === 'company'));
+  // Never inside a category: a drill's summed line is one category, which a whole company's
+  // found openings or removals would overshoot (NVIDIA's 2,045 removals against its AI/ML 300).
+  return trendMetric === 'stock' && !!s && !trendDrill
+    && (s.name === '__total__' || VIEWS[viewKind(trendData)].split === 'company');
 }
 function stepJumps(levels, s){
   const steps = new Map(), jumps = new Map();
@@ -3541,6 +3553,7 @@ function drawPicks(){
     // AI / Machine Learning leads to Google's AI roles first rather than to every Google job.
     const its = trendPicks.length > 1 ? 'their' : 'its';
     roles.textContent = roles.disabled ? `Too many boards to list at once (${boards.length}) — remove a company`
+      : trendDrill && trendSplit === 'roles' ? `See all ${its} ${drillLabel()} roles`
       : trendDrill ? `See ${its} ${drillLabel()} roles` : `See ${its} open roles`;
   }
   // Source offers only the picks' ATSes: one no pick is on answers with an empty chart. Hidden,
@@ -3923,11 +3936,13 @@ function hotLens(){
 /* The number that *is* the ranking, per lens, plus how to say it. Each lens leads with its own
    measure and prints the other two small, so a row can be read against the question that
    ordered it rather than a single column that means something different on each tab. */
+// Tech roles on this one Board: a row is a Board, and its "See trend" opens the whole company,
+// whose other Boards the figures here do not include (HCLTech read −1,356 here, −605 there).
 const HOT_MEASURE = {
-  expansion: r => ({ big: (r.net > 0 ? '+' : '') + r.net, unit: 'net roles', sub:
+  expansion: r => ({ big: (r.net > 0 ? '+' : '') + r.net, unit: 'net tech roles on this board', sub:
     `${r.new7} opened this week · ${r.stock} open now` }),
-  volume:    r => ({ big: String(r.new7), unit: 'opened this week', sub:
-    `${r.stock} open now · ${r.net >= 0 ? '+' : ''}${r.net} net` }),
+  volume:    r => ({ big: String(r.new7), unit: 'tech roles opened this week', sub:
+    `${r.stock} open on this board · ${r.net >= 0 ? '+' : ''}${r.net} net` }),
   rate:      r => ({ big: r.rate + '%', unit: 'of its board is new', sub:
     `${r.new7} opened this week · ${r.stock} open now` }),
 };
@@ -3991,7 +4006,7 @@ function drawHotProvenance(){
   const day = s => (s || '').slice(0, 10);
   el('hot-provenance').textContent =
     `Measured ${day(w.from)} to ${day(w.to)}. ${x.ranked ?? 0} companies ranked; ` +
-    `${x.below_min_stock ?? 0} with fewer than ${x.min_stock ?? '?'} open roles and ` +
+    `${x.below_min_stock ?? 0} with fewer than ${x.min_stock ?? '?'} open tech roles and ` +
     `${x.newly_discovered ?? 0} ` +
     `boards we had only just discovered were left out.`;
 }
