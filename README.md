@@ -170,7 +170,7 @@ check that runs.
 storage and minutes bound the architecture directly — why compaction runs on its own schedule
 instead of inside every ingest cycle, why embedding shards across many VMs, and why a run takes a
 bounded slice of boards rather than scraping exhaustively (weighted toward high-yield boards, with
-a random tail so a newly-productive board can never starve).
+a rotating tail so a newly-productive board can never starve).
 
 ## How it works
 
@@ -191,7 +191,7 @@ flowchart TB
     subgraph P["② Ingest &nbsp;·&nbsp; GitHub Actions, back-to-back &nbsp;·&nbsp; ADR-0025 / ADR-0026"]
         direction LR
         P1["<b>scrape-plan</b><br/>1 VM<br/>pick a board slice, LPT pack"]
-        P2["<b>scrape</b><br/>≤15 VMs · 60m budget<br/>45 enabled scrapers → fragments"]
+        P2["<b>scrape</b><br/>≤15 VMs · 75m budget<br/>45 enabled scrapers → fragments"]
         P3["<b>join</b><br/>1 VM<br/>union · tech-filter · descriptions<br/>ledgers · plan embed"]
         P4["<b>embed</b><br/>≤15 VMs · 180m budget<br/>nomic on CPU → fragments"]
         P5["<b>merge</b><br/>1 VM · single writer<br/>concat · meta refresh · sync · prune · trends · hot · index"]
@@ -298,7 +298,8 @@ because three excluded boards were themselves duplicates. Both land on 153,694.
 
 Of those, **101,213 are currently hiring** — the 52,481 live-but-empty boards are skipped as having
 nothing to read. A run takes a bounded slice and splits it between a scored head (top boards by a
-sticky measure of tech-job yield) and a random exploration tail drawn from everything else, so
+sticky measure of tech-job yield, large enough to hold every board that yields tech) and a tail
+that rotates through everything else, the boards looked at longest ago first, so
 newly-productive boards can never starve and eviction keeps working on boards outside the head.
 A small reserved slice specifically targets boards holding jobs whose descriptions were never
 successfully captured, so the years-of-experience extraction on those can eventually be repaired.

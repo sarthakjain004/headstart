@@ -15,11 +15,12 @@ name: nightly-pipeline
 #
 # Time budget (sized 2026-07-25 against measured run 30131376268 — see
 # docs/AI_Integration/embedding-throughput.md for the arithmetic):
-#   expected ~171 min, worst case 358 min (sum of job timeouts). The `concurrency` group below
-#   queues cycles rather than racing them, so a successor that already exists starts the instant
-#   this run ends. What SUPPLIES that successor is the `chain` job, not the cron: GitHub stopped
-#   delivering this repo's scheduled events reliably on 2026-08-26 (ADR-0093, superseding ADR-0071
-#   on mechanism only). See the note at the cron for the measurement.
+#   expected ~171 min, worst case 505 min (sum of the chained jobs' timeouts, after ADR-0229). The
+#   `concurrency` group below queues cycles rather than racing them, so a successor that already
+#   exists starts the instant this run ends. What SUPPLIES that successor is the `chain` job, not
+#   the cron: GitHub stopped delivering this repo's scheduled events reliably on 2026-08-26
+#   (ADR-0093, superseding ADR-0071 on mechanism only). See the note at the cron for the
+#   measurement.
 # Every stage timeout is one of two kinds, and they are set on opposite principles:
 #   - scrape / embed BANK PARTIAL WORK, so their inner `timeout Nm ... || echo` is a *work budget*
 #     sized at ~3x the balanced makespan. Truncation is cheap and deliberate: the fragment uploads
@@ -98,26 +99,21 @@ on:
     inputs:
       max_boards:
         description: boards to scrape this run (0 = every Scrapable Board)
-        # 20000 Boards, under a quarter of the **Scrapable Boards** — `scrape_plan` selects with
+        # 80000 Boards, about half the **Scrapable Boards** — `scrape_plan` selects with
         # `min_jobs=0`, so that is the count to compare against, not the **Hiring Board** subset
         # (CONTEXT.md §Counting Boards, whose figures a test keeps current). Recount
         # after any liveness sweep rather than trusting this line (it read 52,925 until 2026-08-11):
         #   python -c "from headstart.scrapable_boards import load as f; \
         #     print(len(f('data/validate/liveness', min_jobs=0)))"
-        # pick_boards splits this **30/70**
-        # (EXPLORE_FRAC=0.7, board_priority.py): the top 6,000 scored Boards plus a 14,000-Board
-        # random tail. Flipped from 70/30 on 2026-07-27 to work through the unscraped backlog —
-        # measured against both HF state ledgers (board_priority ∪ board_cost = 49,449 Boards ever
-        # scraped, keyed through each scraper's slug_from), 8,068 Scrapable Boards had never been
-        # scraped, 4,187 of them Workday. NB the 14,000 tail exceeds that backlog, so once it is
-        # cleared the tail is ordinary random resampling, not exploration.
-        # Trade-off: the scored head shrinks 14,000 -> 6,000, so top-yield Boards are revisited
-        # less often per run. That slows Eviction (a Job only leaves the index when its Board is
-        # re-scraped and the posting is gone), partly offset by the back-to-back cadence.
-        # Sizing: that slice carries ~59k more tech postings than the old 8,000, i.e. ~39k new
-        # Docs/run, ~126 min of embed across 15 shards at the post-pin-fix 2.89 s/Doc. Overshoot
-        # is safe — the embed shards bank whatever finished and the rest rolls into the next run.
-        default: "20000"
+        # pick_boards splits this **70/30** (TAIL_FRAC=0.3, board_priority.py): a head of up to
+        # 56,000 **Scored Boards**, which held every Scrapable one (43,327 on 2026-09-25), then a
+        # Tail that rotates through the rest oldest look first, so each is read every ~3.2 runs
+        # on average and 4 at most (ADR-0229). It replaced a 20,000 slice whose 6,000-Board head left
+        # ~37k tech-yielding Boards to a random draw, some unread for 11 days.
+        # Sizing, from the HF cost ledger on 2026-09-25: ~5,100 serial min of scrape, ~25 min a
+        # shard at the ledger's 13.8x fan-out speedup, and ~3.2M scraped lines into the join
+        # (~1.9M at 20,000). New Docs grow with new postings, not Boards, so embed barely moves.
+        default: "80000"
       chained:
         # Set by the `chain` job below and by `cleanup-index.yml`'s `handback`, never by hand.
         # It marks a run as part of the self-sustaining hand-off, so an ad-hoc manual dispatch —
@@ -253,7 +249,7 @@ jobs:
         id: plan
         if: steps.gate.outputs.run == 'true'
         run: |
-          python -m headstart.ingest.scrape_plan --max-boards "${{ github.event.inputs.max_boards || '20000' }}"
+          python -m headstart.ingest.scrape_plan --max-boards "${{ github.event.inputs.max_boards || '80000' }}"
           python - <<'PY' >> "$GITHUB_OUTPUT"
           import json
           plan = json.load(open("data/scrape/assignments/plan.json"))
@@ -283,11 +279,11 @@ jobs:
       actions: read
     if: needs.scrape-plan.outputs.run == 'true' && needs.scrape-plan.outputs.count != '0'
     runs-on: ubuntu-latest
-    # inner 60m -> scrape step 66m -> job: 66m + the WARP step's own 8m cap + ~5m for setup,
+    # inner 75m -> scrape step 81m -> job: 81m + the WARP step's own 8m cap + ~5m for setup,
     # checkout, pip, board download and fragment upload. The WARP slice is counted explicitly
     # because on 2026-08-18 it silently consumed the whole 6m slack this comment used to promise
     # to the upload (run 32157275202, five shards lost).
-    timeout-minutes: 79
+    timeout-minutes: 94
     strategy:
       fail-fast: false
       max-parallel: 15
@@ -497,9 +493,10 @@ jobs:
           echo "::error::shard ${{ matrix.shard }} never got its board list"
           exit 1
       - name: Scrape the shard (time-budgeted — a banked partial is safe, its boards re-plan next run)
-        # 60m, down from the monolith's inherited 140m: at 20,000 Boards a balanced shard is ~13
-        # min, so this is ~4.5x headroom and still caps the straggler (run 30131376268 had one
-        # shard run 20 min against a 2 min median — 5.2x — while the cost model rated them equal).
+        # 75m, down from the monolith's inherited 140m: at 80,000 Boards a balanced shard is
+        # predicted at ~25 min (ADR-0229), so this is the header's ~3x work budget and still caps
+        # the straggler (run 30131376268 had one shard run 20 min against a 2 min median — 5.2x —
+        # while the cost model rated them equal).
         # Partial harvests are safe by design: `JobWriter` flushes per Board, eviction only touches
         # Boards present in the join (ADR-0014), and `|| echo` banks what finished so the step
         # still exits 0 and the upload below runs.
@@ -514,13 +511,13 @@ jobs:
           # for a kill; anything else is a genuine failure and must surface. The fragment is
           # uploaded by an `always()` step either way, so failing here loses no banked work,
           # and `fail-fast: false` keeps the other shards running.
-          timeout 60m xvfb-run -a python -m headstart.ingest.scrape_run \
+          timeout 75m xvfb-run -a python -m headstart.ingest.scrape_run \
             --assignment "data/scrape/assignments/shard-${{ matrix.shard }}.jsonl" \
             --outdir "data/jobs/shard-${{ matrix.shard }}" \
             || { rc=$?; [ "$rc" -eq 124 ] \
                  && echo "scrape time budget reached — banking partial fragment" \
                  || { echo "::error::scrape shard exited $rc — a crash, not the time budget"; exit "$rc"; }; }
-        timeout-minutes: 66
+        timeout-minutes: 81
       - name: Upload the shard fragment
         # always(): the guard above absorbs the inner time budget (exit 124) and fails the step on
         # anything else, so this is the belt to that braces — on either exit, and if the *step*
@@ -540,10 +537,11 @@ jobs:
     needs: [scrape-plan, scrape]
     if: always() && needs.scrape-plan.outputs.run == 'true'
     runs-on: ubuntu-latest
-    # ~13 min at 20k Boards: ~90s fixed + ~3.9e-4 s/scraped line, plus embed_plan's tokenize +
-    # English gate, which scale with *new Docs* (9,708 -> ~39,000) not lines. 3x that estimate,
-    # because join banks nothing and every scrape fragment flows through it.
-    timeout-minutes: 40
+    # ~22 min at 80k Boards (ADR-0229): ~90s fixed + ~3.9e-4 s/scraped line over ~3.2M lines,
+    # plus embed_plan's tokenize + English gate, which scale with *new Docs*, not lines. The same
+    # model said ~14 min at 20k and the job measured 10-11. ~3.4x that estimate, inside the
+    # header's 3-4x, because join banks nothing and every scrape fragment flows through it.
+    timeout-minutes: 75
     outputs:
       count: ${{ steps.plan.outputs.count || '0' }}
       shards: ${{ steps.plan.outputs.shards || '[]' }}
@@ -624,14 +622,14 @@ jobs:
         continue-on-error: true
         run: python -m headstart.ingest.update_ledgers cost
       - name: Update board failures ledger (consecutive-gone quarantine)
-        # Tracks Boards that answered 404/410 on consecutive scrapes; at 5 strikes scrape-plan
+        # Tracks Boards that answered 404/410 on consecutive scrapes; at 20 strikes scrape-plan
         # stops re-scraping them. Rides data/state like the other ledgers. Never fatal: a missed
         # update costs one run of memory, and quarantine fails open on a missing file.
         continue-on-error: true
         run: python -m headstart.ingest.update_ledgers failures
       - name: Update board description-gap ledger (ADR-0062)
         # Counts, per Board, the embedded Jobs whose description the store has never settled —
-        # the Boards the next run's scrape-plan reserves part of its exploration tail for. Must
+        # the Boards the next run's scrape-plan reserves part of its Tail for. Must
         # run AFTER update_descriptions, so this run's newly-stored text is already excluded.
         # Never fatal, like the other two: a missing ledger only costs one run of backfill pace.
         continue-on-error: true

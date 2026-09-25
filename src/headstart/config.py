@@ -519,7 +519,8 @@ PARKED_BOARDS: frozenset[str] = frozenset(
         # sequential requests against a Board no per-board budget bounds. It finished in none of
         # the three runs of 2026-08-13 (03:36 / 06:53 / 08:48 UTC), and because a running thread
         # cannot be cancelled, `scrape_all`'s shutdown then outlived the 6 min between the 60m
-        # inner budget and the 66m step timeout — failing the whole shard, not just this Board.
+        # inner budget and the 66m step timeout (75m and 81m since ADR-0229, the same 6 min) —
+        # failing the whole shard, not just this Board.
         # Un-park once a per-board deadline bounds it.
         "workday:accenture/accenturecareers",
         # 1,162 postings, real and un-fabricated — unlike Accenture above this board finishes

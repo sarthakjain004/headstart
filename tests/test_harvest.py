@@ -416,13 +416,13 @@ def test_a_kill_mid_harvest_abandons_the_queue_instead_of_draining_it(
 def test_shutdown_does_not_wait_for_a_board_still_in_flight(monkeypatch, tmp_path):
     """The straggler that killed three shards on 2026-08-13.
 
-    When the time budget fires, `scrape_all`'s `finally` used to call `shutdown(wait=True)`,
-    which blocks on any Board already running — you cannot cancel a Python thread. A
-    SuccessFactors board trickling its RSS feed under a 300s read timeout outlasted the 6 min of
-    slack between the 60m budget and the 66m step timeout, so the runner was killed before
-    anything was reported, and a shard that reports nothing takes the whole run's embed stage
-    with it. The in-flight result is discarded either way — the loop that would have written it
-    has already exited — so waiting bought teardown, not work.
+    When the time budget fires, `scrape_all`'s `finally` used to call `shutdown(wait=True)`, which
+    blocks on any Board already running — you cannot cancel a Python thread. A SuccessFactors board
+    trickling its RSS feed under a 300s read timeout outlasted the 6 min of slack between the 60m
+    budget and the 66m step timeout (75m and 81m since ADR-0229), so the runner was killed before
+    anything was reported, and a shard that reports nothing takes the whole run's embed stage with
+    it. The in-flight result is discarded either way — the loop that would have written it has
+    already exited — so waiting bought teardown, not work.
     """
     import threading
 

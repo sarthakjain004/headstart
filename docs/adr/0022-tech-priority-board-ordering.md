@@ -1,6 +1,9 @@
 # ADR-0022: Tech-priority board ordering — EWMA ledger, priority-first slices
 
 - Status: Accepted
+- Amended by [ADR-0229](0229-the-slice-reads-every-tech-yielding-board-and-rotates-the-rest.md)
+  (70/30 again, after a 2026-07-27 flip to 30/70, and the tail is an oldest-first rotation
+  rather than a random draw)
 - Date: 2026-07-06
 - Builds on [ADR-0020](0020-free-tier-deployment.md) (the nightly slice + state round-trip) and
   the time-budgeted steps added after it; ordering feeds [ADR-0014](0014-search-index-ingestion-and-freshness.md)
