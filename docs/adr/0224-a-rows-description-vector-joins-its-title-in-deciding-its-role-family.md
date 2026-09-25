@@ -45,8 +45,9 @@ metric is accuracy on the 431 uniform-drawn rows, with no abstain:
 | LoRA-fine-tuned JobBERT, title only | 0.742 |
 | LoRA-fine-tuned JobBERT, title plus department | 0.759 |
 
-None cleared the pre-registered +0.02 margin. Fine-tuning fits the rules' silver errors as
-readily as it fits gold, and the regularised linear head smooths them over.
+None cleared the pre-registered +0.02 margin. A likely reason fine-tuning did not help, not
+measured: the encoder fits the rules' silver errors as readily as it fits gold, where the
+regularised linear head smooths them over.
 
 Then the errors that needed the description were tried directly, exploratorily, since this was
 not in the pre-registered set. The served row's own `vector` (nomic, title plus cleaned
