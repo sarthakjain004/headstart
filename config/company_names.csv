@@ -45,6 +45,16 @@ workday:nvidia/NVIDIAExternalCareerSite,NVIDIA,backing Board of eightfold:jobs.n
 eightfold:careers.micron.com,Micron,eightfold_backing.csv: backed by workday:micron/external (#649)
 workday:micron/External,Micron,backing Board of eightfold:careers.micron.com (#649)
 eightfold:morganstanley.eightfold.ai,Morgan Stanley,eightfold_backing.csv: backed by workday:ms/external and ms/private (#649)
+# One employer's separate Boards, no posting in common (titles compared on the served table,
+# 2026-09-25), so joined they count each job once. Picking "Paytm" showed 9 openings, above a
+# "Paytm Payments Services Limited" of 77 (2026-09-25 critique).
+lever:paytm,Paytm,Lever board titled "Paytm"; no title shared with the other Paytm Boards
+lever:paytmpayments,Paytm,"Lever board titled ""Paytm Payments Services"", a Paytm company; no shared title"
+ripplehire:paytm,Paytm,RippleHire tenant paytm (Paytm Payments Services Limited); no shared title
+trakstar:razorpay,Razorpay,Trakstar tenant razorpay; no title shared with the Greenhouse Board
+greenhouse:razorpaysoftwareprivatelimited,Razorpay,Razorpay Software Private Limited's Greenhouse Board; no shared title
+smartrecruiters:Infosys2,Infosys,SmartRecruiters company Infosys; no title shared with trakstar:infosys
+trakstar:infosys,Infosys,Trakstar tenant infosys; no title shared with smartrecruiters:Infosys2
 # Workday (ADR-0216): Boards the hiringOrganization cascade leaves unnamed, and big Boards it
 # names partially or wrongly, each read from the Board's own og tags, sidebar, approot and
 # posting text on 2026-09-24/25. The cascade's own answers are data/validate/company_names/workday.csv.

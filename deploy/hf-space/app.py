@@ -250,6 +250,22 @@ def _family_successors(path: Path) -> dict[str, str]:
     }
 
 
+def _held_at_zero(values: list[int | None], metric: str) -> list[int | None]:
+    """A stock series at 0, not unmeasured, at every charted run after it first appears.
+
+    Every charted run measured stock, and the ledgers write only non-empty groups, so a series
+    absent from a run held none there. Left as gaps, a category a refit emptied showed its last
+    count as its latest and never booked the drop — Syms' systems engineering read 46 in the
+    table beside 0 in the legend. `new` keeps its own rule (``value_at``)."""
+    if metric != "stock":
+        return values
+    out, seen = [], False
+    for value in values:
+        seen = seen or value is not None
+        out.append(0 if seen and value is None else value)
+    return out
+
+
 def _family_weights(rows: list[dict]) -> Counter[str]:
     """Openings per family over ``rows`` — how much of the data each name holds."""
     weights: Counter[str] = Counter()
@@ -1763,10 +1779,13 @@ def trends():
             # where new WAS measured (any new row exists), a missing series row genuinely
             # means zero fresh openings; a stamp with no new rows at all predates ADR-0051
             # and stays a gap.
-            "points": [value_at(points, ts, counts_from(name)) for ts in stamps],
-            "latest": value_at(points, stamps[-1], counts_from(name))
-            if stamps
-            else None,
+            "points": (
+                values := _held_at_zero(
+                    [value_at(points, ts, counts_from(name)) for ts in stamps],
+                    metric,
+                )
+            ),
+            "latest": values[-1] if stamps else None,
         }
         for name, points in series.items()
     ]

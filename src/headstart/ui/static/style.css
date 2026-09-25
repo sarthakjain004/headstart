@@ -829,7 +829,14 @@ textarea:focus{ border-color:var(--accent); }
 .trends-table-wrap{ margin-top:14px; min-width:0; }
 /* Both tables scroll inside their own box. Six nowrap columns do not fit 294px of phone and
    the page must never be the thing that scrolls sideways. */
-.trends-scroll{ overflow-x:auto; }
+/* Scrolls sideways on a phone, and says so: a fading edge where there is more to the right, the
+   "local" background riding the content so it clears once the reader has scrolled to the end
+   (the table was cut at "CHANGE, HIR…" with no sign it moved). */
+.trends-scroll{ overflow-x:auto;
+  background:linear-gradient(to left, var(--raise), var(--raise)) right / 24px 100% no-repeat local,
+             linear-gradient(to left, color-mix(in srgb, var(--ink) 12%, transparent), transparent) right / 16px 100% no-repeat scroll; }
+.trends-verdict .verdict-more{ margin-top:3px; }
+.trends-verdict .verdict-more > summary{ cursor:pointer; font-size:12.5px; color:var(--ink-3); }
 .trends-table{ width:100%; border-collapse:collapse; font-size:12.5px; }
 .trends-table th, .trends-table td{ padding:7px 10px; text-align:right; border-bottom:1px solid var(--rule);
   font-variant-numeric:tabular-nums; white-space:nowrap; }

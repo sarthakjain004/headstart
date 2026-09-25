@@ -164,6 +164,10 @@ QUERY_ALIASES: dict[str, str] = {
     "google deepmind": "deepmind",
     "alphabet": "google",
     "tcs": "tata consultancy",
+    # Brands whose jobs sit on a parent's Board: Google's own board lists YouTube's and
+    # DeepMind's openings under those names (59 and 38, 2026-09-25).
+    "youtube": "google",
+    "deepmind": "google",
 }
 
 

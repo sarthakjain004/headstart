@@ -1889,7 +1889,11 @@ function verdictOf(s, d){
   const young = !began || (new Date(d.stamps[d.stamps.length - 1]) - new Date(began)) / 864e5 < MIN_SPAN_DAYS;
   let move;
   const other = countingMove(s) || 0;
-  const counting = other ? `; the chart’s other ${signedOpenings(other)} ${causesOf(s, other)}` : '';
+  // "; not hiring: −2,041 from duplicate postings removed, +230 from changes in how HeadStart
+  // counts" — the rest of the chart's move, by cause. It read "the chart's other +292 openings
+  // came from outside hiring: +292 openings from…", twice the words for one figure, and
+  // "outside hiring" read as hiring from outside.
+  const counting = other ? `; not hiring: ${causesOf(s, other)}` : '';
   if (!m || days < MIN_SPAN_DAYS)
     move = (young ? 'too new to show a direction yet' : 'this window is too short to show a direction') + counting;
   else {
@@ -1934,7 +1938,12 @@ function drawVerdict(d){
     ? ` — too short to tell a trend from noise, so read this as an early sign.${month ? ` A month of counting arrives ${month}.` : ''}`
     : '; there is nothing before that.'}`;
   const tail = early ? `<p class="verdict-early">${esc(early)}</p>` : '';
-  host.innerHTML = `<ul>${lines.map(l => `<li><b>${esc(l.name)}</b>: ${esc(l.text)}</li>`).join('')}</ul>${tail}`;
+  // Two sentences, then the rest folded: four companies' took twelve lines above the chart,
+  // more than a phone's screen.
+  const item = l => `<li><b>${esc(l.name)}</b>: ${esc(l.text)}</li>`;
+  const more = lines.slice(2);
+  host.innerHTML = `<ul>${lines.slice(0, 2).map(item).join('')}</ul>${more.length
+    ? `<details class="verdict-more"><summary>${more.length} more compan${more.length === 1 ? 'y' : 'ies'}</summary><ul>${more.map(item).join('')}</ul></details>` : ''}${tail}`;
 }
 
 // A run where one line leaps and the next run puts it straight back is a partial read of a
@@ -2020,10 +2029,14 @@ function stepNotes(d){
     const dedup = !linesMove && touched.length > 0 && fields.includes('dedup_version');
     if (!(linesMove || dedup)) return;
     const companies = dedup ? touched : null;
+    // An extraction change re-sorts a category's levels, never its total: the drill's own
+    // sentence took it out anyway and read −6.8% against the category row's −6.3%.
+    const bandsOnly = !fields.some(f => LINE_MOVING.includes(f) || f === 'dedup_version');
     // A change on the window's first run is already in every line's start; its settling run
     // (below) is not.
     if (i > 0) notes.push({ i, text: `${text} — not hiring, so the jump it makes is left out of the lines it moves`,
-      found: false, epoch: true, withhold: true, companies });
+      found: false, epoch: true, withhold: true, companies, bandsOnly,
+      dedupOnly: fields.length === 1 && fields[0] === 'dedup_version' });
     // A change can land over two runs — Amazon's Sep 17 filter change was +308 at its run and
     // −439 at the next, which left in read as hiring and turned Amazon from +1.2% to −2.9% —
     // so the run after it is left out too, at the cost of one run of ordinary change.
@@ -2031,7 +2044,7 @@ function stepNotes(d){
     // chart, so its settling run cannot be told from an ordinary one; taking it out regardless
     // cut Amazon's real −7 with no marker to say why. The cost: a change landing over two runs
     // exactly at the window's start leaves its second half in.
-    if (i > 0 && i + 1 < d.stamps.length) notes.push({ i: i + 1, found: false, withhold: true, companies, settle: true,
+    if (i > 0 && i + 1 < d.stamps.length) notes.push({ i: i + 1, found: false, withhold: true, companies, settle: true, bandsOnly,
       text: 'Left out: the run after a counting change, which can still be settling' });
   });
   (d.discovered || []).forEach(f => {
@@ -2531,18 +2544,28 @@ function signedOpenings(n){
 //
 // The Change plot draws these levels and every percentage is read off them, so the line and its
 // number cannot disagree. With no pick there are no such steps, so the index chart is unchanged.
+// By ratio where both sides of a step are substantial, by openings where either is small. A
+// refit that halves a category re-sorts a share of it, so its history is halved too: taken
+// out by openings, Google's software-engineering loss of 33 (−5.3%) was measured against the
+// halved base and read "−11.8%". A small side has no ratio worth trusting: Microsoft's
+// architecture line went 4 → 58 at a filter change, and scaled ×14.5 its one lost opening read
+// −12. A known size (found openings, duplicates removed) always comes out by openings.
 function netOfSteps(levels, s){
   const jumps = stepJumps(levels, s);
   if (!jumps.size) return levels;
   const out = levels.slice();
-  let lift = 0, cut = false;
+  let scale = 1, lift = 0, cut = false;
   for (let j = levels.length - 1; j >= 0; j--){
     if (levels[j] == null) continue;
-    const v = levels[j] + lift;
+    const v = levels[j] * scale + lift;
     if (cut || v < 0){ cut = true; out[j] = null; continue; }
     out[j] = v;
     const jump = jumps.get(j);
-    if (jump) lift += jump.lift ?? (jump.after - jump.before);
+    if (!jump) continue;
+    const known = jump.kinds.has('found') || jump.kinds.has('duplicates');
+    if (jump.lift == null && !known && jump.before >= MOVER_FLOOR && jump.after >= MOVER_FLOOR)
+      scale *= jump.after / jump.before;
+    else lift += scale * (jump.lift ?? (jump.after - jump.before));
   }
   return out;
 }
@@ -2565,7 +2588,9 @@ function stepJumps(levels, s){
   const whole = isWholeLine(s);
   stepsFor(s).forEach(n => {
     const at = steps.get(n.i) || { size: 0, sized: true, kinds: new Set(), known: { duplicates: 0, found: 0 } };
-    const kind = n.evicted ? 'duplicates' : n.found ? 'found' : 'counting';
+    // A duplicate-removal change is duplicates under either measure: under New, where no
+    // `evicted` sizes come, NVIDIA's −231 read "changes in how HeadStart counts".
+    const kind = n.evicted || n.dedupOnly ? 'duplicates' : n.found ? 'found' : 'counting';
     if (n.size == null) at.sized = false; else { at.size += n.size; at.known[kind] += n.size; }
     at.kinds.add(kind);
     steps.set(n.i, at);
@@ -2606,7 +2631,8 @@ function stepsFor(s){
   const perCompany = !!s && VIEWS[viewKind(trendData)].split === 'company';
   const whole = isWholeLine(s);
   return notesOf(trendData)
-    .filter(n => n.withhold && !(n.wholeOnly && !whole) && !(perCompany && ((n.company && s.name !== n.company)
+    .filter(n => n.withhold && !(n.wholeOnly && !whole) && !(n.bandsOnly && s && s.name === '__total__')
+      && !(perCompany && ((n.company && s.name !== n.company)
       || (n.companies && !n.companies.includes(s.name)))));
 }
 
@@ -2780,7 +2806,8 @@ function drawTrends(){
     const off = hiddenSeries.has(s.name);
     // A family too small at the window's start to index has no line, so the row says why
     // rather than leaving a swatch pointing at nothing.
-    const noBase = !hasIndexBase(s);
+    // "Too new" first: Zomato's row read "started under 5" beside a sentence saying too new.
+    const noBase = !hasIndexBase(s) && !mv.tooNew;
     // data-name + the delegated listener below, NOT an inline onclick: esc() is HTML-entity
     // escaping, and inside onclick="...'${name}'..." the parser decodes entities back
     // before the JS parses — a name with a quote would break out of the string.
@@ -3369,8 +3396,11 @@ function buildTrendsTable(){
   const body = rows.map(s => {
     const vals = s.points.map((v, j) => levelValue(v, j, s)).filter(v => v != null);
     const mv = lineMove(s);
+    // The latest run's figure, as the legend reads it: a category emptied by a refit read its
+    // last count before (Syms' systems engineering, 46 in the table beside 0 in the legend).
+    const now = latestOf(s);
     return `<tr${s.name === '__other__' ? ' class="other"' : ''}>` + tableRowHead(s)
-      + cell(vals.length ? vals[vals.length - 1] : null)
+      + cell(now == null ? null : levelValue(now, s.points.length - 1, s))
       + `<td class="${moveClass(mv)}">${moveText(mv)}${hiringOpenings(s, mv)}</td>`
       + `<td>${countingChange(s)}</td>`
       + cell(vals.length ? vals[0] : null)
@@ -3404,7 +3434,8 @@ function latestOf(s){
 
 // A percentage's own size in openings, so a table row adds up: "+1.0% (+19)".
 function hiringOpenings(s, mv){
-  const m = mv.dl != null && trendMove(s);
+  // Not beside a share: "↓ −2.7% (+1)" read as a contradiction.
+  const m = mv.dl != null && trendUnit !== 'share' && trendMove(s);
   return m ? ` (${esc(signedOpenings(Math.round(m.change)).replace(/ openings?$/, ''))})` : '';
 }
 // What the non-hiring part of a line's move was, by cause and size, from the steps taken out of
@@ -3426,11 +3457,11 @@ function causesOf(s, total){
   const duplicates = Math.round(by.duplicates), found = Math.round(by.found);
   const counting = total - duplicates - found;
   const parts = [
-    duplicates && `${signedOpenings(duplicates)} as duplicate postings were removed`,
-    found && `${signedOpenings(found)} from boards found later or companies joining the count`,
+    duplicates && `${signedOpenings(duplicates)} from duplicate postings removed`,
+    found && `${signedOpenings(found)} from boards found later`,
     counting && `${signedOpenings(counting)} from changes in how HeadStart counts`,
   ].filter(Boolean);
-  return `came from outside hiring: ${parts.join(', ')}`;
+  return parts.join(', ');
 }
 function countingMove(s){
   const raw = headTail(s.points), net = trendMove(s);
@@ -3668,7 +3699,10 @@ function drawPicks(){
   const roles = el('trends-co-roles');
   if (roles){
     const cap = CFG.max_scoped_boards || Infinity;
-    roles.hidden = !trendPicks.length || trendPicks.some(p => !p.boardKeys);
+    // Not inside a category the answer has nothing in: an unknown `family=` offered "See its
+    // nonsense-family roles".
+    roles.hidden = !trendPicks.length || trendPicks.some(p => !p.boardKeys)
+      || (!!trendDrill && !!trendData && !trendData.series.length);
     roles.disabled = boards.length > cap;
     // Inside a category the link names it and hands its name to Search as the query, so Google ›
     // AI / Machine Learning leads to Google's AI roles first rather than to every Google job.
@@ -3838,9 +3872,12 @@ if (el('trends-co-roles')) el('trends-co-roles').addEventListener('click', () =>
 // "See trend" from a Hot-tab row or a search result (ADR-0185): the Board key the row already
 // carries is a pick, and the name it already shows labels the chip until the Space answers.
 // A link replaces the picks rather than adding to them — it asks about this one company.
-function openCompanyTrend(board, name){
+// From the Hot tab, over Hot's own window: its "+25" was measured over hours, and a trend
+// opened over All read "up 61.8%" for the same company.
+function openCompanyTrend(board, name, since){
   if (name) pickLabels.set(board, name);
-  location.hash = '#trends?company=' + encodeURIComponent(board);
+  location.hash = '#trends?company=' + encodeURIComponent(board)
+    + (since ? '&since=' + encodeURIComponent(since.slice(0, 16)) : '');
 }
 
 // Pointer tracking for the crosshair+tooltip lives on the SVG element itself, wired once: an
@@ -4118,7 +4155,7 @@ function hotRow(r, i, lens){
           aria-pressed="${followed}">${followed ? 'Following' : 'Follow'}</button>` : ''}
         <button class="ghost hot-see" data-board="${esc(r.board)}" data-company="${esc(r.company)}">See roles</button>
         ${el('trends') ? `<button class="ghost hot-trend" data-trend="${esc(r.board)}"
-          data-trend-name="${esc(r.company)}">See trend</button>` : ''}
+          data-trend-name="${esc(r.company)}" data-trend-since="${esc((hotData.window || {}).from || '')}">See trend</button>` : ''}
       </div>
     </li>`;
 }
@@ -4172,7 +4209,7 @@ if (el('hot-results')){
 document.addEventListener('click', async ev => {
   // "See trend", on a result card or a Hot-tab row — one handler for both, like the rest here.
   const trend = ev.target.closest('[data-trend]');
-  if (trend){ openCompanyTrend(trend.dataset.trend, trend.dataset.trendName); return; }
+  if (trend){ openCompanyTrend(trend.dataset.trend, trend.dataset.trendName, trend.dataset.trendSince); return; }
   const more = ev.target.closest('[data-more]');
   if (more){ expandCompany(more.closest('.more-row')); return; }
   const hide = ev.target.closest('[data-hide-company]');
