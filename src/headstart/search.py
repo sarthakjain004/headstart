@@ -286,6 +286,11 @@ def scoped_jobs_clause(
                 role,
             )
     if not boards:
+        if family or role:
+            _log.warning(
+                "scope widened: %s given without board=; ignored",
+                "family=" if family else "role=",
+            )
         return None
     if family_ids is None:
         if family:
@@ -300,6 +305,11 @@ def scoped_jobs_clause(
             _log.warning("family %.40r is not a known family; zero results", family)
         ids = _ids_on_boards(family_ids.get(family, ()), boards)
         if len(ids) > MAX_FAMILY_IDS:
+            # The page hands over only under its own cap, so this is the page and the server
+            # disagreeing, not a user typo — and the route answers a bare 400 that says neither.
+            _log.warning(
+                "category hand-off refused: %d ids > %d", len(ids), MAX_FAMILY_IDS
+            )
             raise ValueError(f"at most {MAX_FAMILY_IDS} jobs in one category hand-off")
         return _ids_in_clause(ids) if ids else "id IN ('')"
     return None
@@ -606,6 +616,13 @@ class JobSearch:
             _log.warning(
                 f"served currencies with no fx rate: {log.named_sample(unpriced)}"
             )
+        if caps.currencies and SALARY_DEFAULT_CURRENCY not in caps.currencies:
+            # `run` converts a salary sort to the asked currency or the default; with neither served
+            # it falls back to raw cross-currency ordering (the ADR-0178 "INR above USD" shape).
+            _log.warning(
+                "salary sort unconverted unless a served currency is asked: "
+                f"{SALARY_DEFAULT_CURRENCY} not among served currencies"
+            )
 
     @property
     def salary_bracket_converts(self) -> bool:
@@ -697,12 +714,22 @@ class JobSearch:
         )
         if cached is not None:
             return cached
+        started = time.monotonic()
         counted = facets.counts(
             self._table,
             filters,
             self.capabilities,
             extra_where=extra_where,
         )
+        elapsed_ms = (time.monotonic() - started) * 1000
+        if elapsed_ms > SLOW_SEARCH_MS:
+            # The strip is ~46 counts, the most expensive request the Space serves; shapes only,
+            # never the keyword text (ADR-0032).
+            _log.warning(
+                f"slow facets {elapsed_ms:.0f} ms: blocking={counted.get('blocking') is not None} "
+                f"india={bool(filters.india)} kw_scope={filters.kw_in} "
+                f"extra_where={extra_where is not None}"
+            )
         _cache_put(
             self._facet_cache,
             self._facet_cache_lock,

@@ -372,6 +372,19 @@ def scrape_all(
         # above, which has already exited. So everything in this snapshot needs its floor.
         with in_flight_lock:
             unfinished = sorted(in_flight.items())
+        if unfinished:
+            # The deferred list downstream mixes these with Boards that never started, in
+            # assignment order and capped, so the Board that ate the shard is rarely in it.
+            # Oldest start first: the longest-running Board is the likeliest culprit.
+            now = time.monotonic()
+            burned = [
+                f"{key} {now - started_at:.0f}s"
+                for key, started_at in sorted(unfinished, key=lambda kv: kv[1])
+            ]
+            _log.info(
+                f"killed mid-fetch: {len(unfinished)} board(s) — "
+                + log.named_sample(burned)
+            )
         for key, started_at in unfinished:
             writer.record_cost(
                 cost_key.get(key, key),

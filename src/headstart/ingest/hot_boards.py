@@ -493,6 +493,11 @@ def main() -> int:
     # The runs and Board ticks every lens leaves out, whichever metric it sums: a counting
     # change and the run after it, a duplicate-removal change on the Boards it can move, and each
     # Board's own arrival.
+    if not args.epochs.exists():
+        # Said here, once, rather than in each of the two readers below that fall back to none.
+        _log.info(
+            f"epochs file {args.epochs} missing — counting and dedup changes not excluded"
+        )
     window_rules = {
         "changes": counting_changes(args.epochs),
         "dedup": dedup_changes(args.epochs),
@@ -560,4 +565,14 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    # The step is `continue-on-error`, so an unguarded exception would end in a green run with
+    # no annotation at all; one ERROR names it and says what is stale. SystemExit and
+    # KeyboardInterrupt are not `Exception`, so they pass through untouched.
+    try:
+        raise SystemExit(main())
+    except Exception:  # noqa: BLE001 - the one catch-all per entry point, logged and re-exited
+        _log.error(
+            "hot_boards failed — the previous hot list stays served this run",
+            exc_info=True,
+        )
+        raise SystemExit(1) from None

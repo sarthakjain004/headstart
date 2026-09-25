@@ -212,10 +212,10 @@ async function onCred(resp){
       headers:{'Content-Type':'application/json'},
       body: JSON.stringify({ credential: resp.credential }) });
     if (r.ok){ location.reload(); return; }
-    console.warn('[api] POST /auth/google', r.status);
+    console.warn('[api]', 'POST', '/auth/google', r.status);   // app.js's logFail format
     const d = await r.json().catch(() => ({}));
     msg.textContent = d.error || ('Sign-in failed (' + r.status + ')');
-  }catch(e){ console.error('[api] POST /auth/google', e); msg.textContent = 'That request didn\'t go through. Try again.'; }
+  }catch(e){ console.error('[api]', 'POST', '/auth/google', 'no response', e); msg.textContent = 'That request didn\'t go through. Try again.'; }
 }
 function initSignin(){
   // Never render Google's button in a frame: it looks clickable and then stalls.

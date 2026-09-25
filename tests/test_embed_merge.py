@@ -90,6 +90,54 @@ def test_merge_reconciles_a_timed_out_fragment(tmp_path):
     assert set(_store_ids(store)) == {"prior:1", "ok:1", "ok:2"}
 
 
+def test_torn_fragments_warn_once_for_the_step_not_once_per_read(tmp_path, caplog):
+    """Each fragment's meta is read once and used twice (the upgrade drop and the merge), and
+    the torn tails cost one summary WARNING between them — not one per fragment per pass."""
+    store = tmp_path / "store"
+    _write_store(store, ["prior:1"])
+    frags = tmp_path / "frags"
+    _write_store(frags / "shard-0", ["a:1"], extra_vec_rows=1, bad_tail=True)
+    _write_store(frags / "shard-1", ["b:1"], extra_vec_rows=1, bad_tail=True)
+    upgrades = tmp_path / "upgrades.txt"
+    upgrades.write_text("a:1\n", encoding="utf-8")
+
+    with caplog.at_level("INFO", logger="headstart.ingest.embed_merge"):
+        _run_with_upgrades(store, frags, upgrades)
+
+    warnings = [r.getMessage() for r in caplog.records if r.levelname == "WARNING"]
+    assert warnings == [
+        "2 fragment(s) had torn tails, 2 record(s) dropped: shard-0, shard-1"
+    ]
+    assert (
+        sum("dropped 1 torn record(s)" in r.getMessage() for r in caplog.records) == 2
+    )
+    _assert_consistent(store, 3)
+
+
+def test_shard_losses_from_the_manifests_are_named_in_one_warning(tmp_path, caplog):
+    store = tmp_path / "store"
+    _write_store(store, ["prior:1"])
+    frags = tmp_path / "frags"
+    _write_store(frags / "shard-0", ["a:1"])
+    _write_store(frags / "shard-1", ["b:1"])  # a pre-field manifest reads as no loss
+    manifest = frags / "shard-0" / "manifest.json"
+    manifest.write_text(
+        json.dumps({"dim": _DIM, "count": 1, "failed": 64, "unattempted": 210}),
+        encoding="utf-8",
+    )
+
+    with caplog.at_level("INFO", logger="headstart.ingest.embed_merge"):
+        _run(store, frags)
+
+    warnings = [r.getMessage() for r in caplog.records if r.levelname == "WARNING"]
+    assert warnings == [
+        (
+            "embed shards lost Docs, which are re-planned next run: "
+            "shard-0 (64 failed, 210 unattempted)"
+        )
+    ]
+
+
 def test_merge_first_run_no_prior_store(tmp_path):
     store = tmp_path / "store"  # does not exist yet
     frags = tmp_path / "frags"

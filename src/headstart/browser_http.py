@@ -122,6 +122,18 @@ async def _install_blocking(tab) -> None:
             )
 
 
+# Teardown failures (a reap, a tab close) are per walled Board, so INFO, never an annotation
+# (ADR-0039) — but a tab that will not close is how `_TAB_WIDTH` leaks, so they must show at
+# CI's level. The first carries its traceback; later ones repeat the same fault, so one line each.
+_teardown_traced = False
+
+
+def _trace_teardown_failure(message: str) -> None:
+    global _teardown_traced
+    _log.info(message, exc_info=not _teardown_traced)
+    _teardown_traced = True
+
+
 class BrowserHTTPError(Exception):
     """A non-2xx answer from an in-page fetch. Carries the status like an HTTP error would."""
 
@@ -207,10 +219,8 @@ def _ensure_started() -> None:
                     browser._browser_process_manager.stop_process()
                     browser._temp_directory_manager.cleanup()
                 except BaseException:  # noqa: BLE001 - already failing; don't mask the cause
-                    # DEBUG, not WARNING: this is per-Board, and an annotation is a quota
-                    # (ADR-0039). The reap is the thing whose failure the comment above
-                    # predicts, so it must at least be recoverable from a verbose run.
-                    _log.debug("reaping a failed Chrome launch raised", exc_info=True)
+                    # The reap is the thing whose failure the comment above predicts.
+                    _trace_teardown_failure("reaping a failed Chrome launch raised")
                 raise
             return browser
 
@@ -251,8 +261,8 @@ def shutdown() -> None:
     if browser is not None and _loop is not None:
         try:
             _run(browser.__aexit__(None, None, None), timeout=15)
-        except Exception:  # noqa: BLE001, S110 - shutdown must never mask the run's real outcome
-            pass
+        except Exception:  # noqa: BLE001 - shutdown must never mask the run's real outcome
+            _log.info("browser transport: shutdown raised", exc_info=True)
 
 
 class _Page:
@@ -283,7 +293,9 @@ class _Page:
             except Exception as exc:  # client-side fault; one stated retry
                 if attempt == 2:
                     raise
-                _log.debug(
+                # INFO: a retry that then succeeds leaves no other trace, and a pydoll drift
+                # would show here first, as a rising count of these.
+                _log.info(
                     "%s%s: in-page fetch attempt 1/2 raised %r; retrying",
                     self._base,
                     path,
@@ -322,9 +334,8 @@ def origin(page_url: str):
                 try:
                     await tab.close()
                 except BaseException:  # noqa: BLE001 - already failing; don't mask the cause
-                    # DEBUG for the reason the reap above gives: once per walled Board.
-                    _log.debug(
-                        "closing the tab of a failed navigation raised", exc_info=True
+                    _trace_teardown_failure(
+                        "closing the tab of a failed navigation raised"
                     )
             _gate.release()
             raise
@@ -342,9 +353,7 @@ def origin(page_url: str):
         try:
             _run(_close(tab), timeout=15)
         except Exception:  # noqa: BLE001 - a tab that won't close must not fail the board
-            # DEBUG for the reason the reap above gives: once per walled Board. A tab that
-            # will not close is also how `_TAB_WIDTH` leaks, so it must leave a trace.
-            _log.debug("closing a finished board's tab raised", exc_info=True)
+            _trace_teardown_failure("closing a finished board's tab raised")
 
 
 class _FetchResult:

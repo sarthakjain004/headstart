@@ -180,6 +180,11 @@ class MetaScraper(BaseScraper):
                     employment_type=fields.get("employment_type"),
                 )
             )
+        if dropped := len(raw) - len(jobs):
+            self._log.info(
+                f"{self.board_key()}: parse dropped {dropped} of {len(raw)} rows "
+                "with no id/title"
+            )
         return jobs
 
     def _salary_field(self, raw: Any) -> str | None:

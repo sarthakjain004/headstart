@@ -1036,6 +1036,11 @@ def _observe_egress_ip() -> None:
     if not ip:
         with _rotation_lock:
             _egress_ips["unreadable"] += 1
+            first = _egress_ips["unreadable"] == 1
+        if first:  # as above: only a line can say what the body held instead
+            _log.info(
+                f"spare egress: trace has no ip= ({body[:120]!r}) — address not recorded"
+            )
         return
     colo = fields.get("colo", "?")
     # `warp=off` means the trace did not travel the tunnel, so the address is the direct one and

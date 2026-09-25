@@ -59,3 +59,23 @@ def test_a_missing_grace_set_publishes_the_table_alone(tmp_path, monkeypatch):
     assert [op.path_in_repo for op in commits[0]["operations"]] == [
         "data/lancedb/_index_base.json"
     ]
+
+
+def test_a_missing_grace_set_warns_and_the_success_line_names_only_what_went_up(
+    tmp_path, monkeypatch, caplog
+):
+    _capture(monkeypatch)
+    (tmp_path / "data/lancedb").mkdir(parents=True)
+    (tmp_path / "data/lancedb/_index_base.json").write_text("{}")
+    (tmp_path / "data/state").mkdir(parents=True)
+    (tmp_path / "data/state/eviction_queue.tsv").write_text("")
+
+    with caplog.at_level("INFO", logger="headstart.ingest.index_publish"):
+        index_publish.publish("owner/repo", None, tmp_path)
+
+    warnings = [r.getMessage() for r in caplog.records if r.levelname == "WARNING"]
+    assert len(warnings) == 1 and "unconfirmed_ids.txt absent" in warnings[0]
+    published = next(
+        r.getMessage() for r in caplog.records if "published" in r.getMessage()
+    )
+    assert "eviction_queue.tsv" in published and "unconfirmed" not in published

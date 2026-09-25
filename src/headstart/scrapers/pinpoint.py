@@ -198,7 +198,14 @@ class PinpointScraper(BaseScraper):
         # 16, each Board answering with its postings on its other fetches), and a Board read as
         # empty puts every one of its Jobs one absence from eviction (ADR-0083). A real empty
         # Board costs 11 bytes to confirm.
-        listed = self._listing() or self._listing()
+        listed = self._listing()
+        if not listed:
+            listed = self._listing()
+            if listed:
+                self._log.info(
+                    f"{self.board_key()}: first listing read was empty, the retry read "
+                    f"{len(listed)} postings"
+                )
         details = self.run_detail_pass(
             listed,
             key_of=_uuid,

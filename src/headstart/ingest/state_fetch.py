@@ -670,7 +670,9 @@ def fetch_state(repo: str, patterns: list[str], token: str | None) -> int:
                 )
                 break
             spent += wait
-            _log.warning(
+            # INFO, like `retry_hub`'s wait: in a Hub outage every attempt restates one fault, and
+            # the ABORT below is the one annotation that names it
+            _log.info(
                 f"state fetch attempt {attempt} failed ({reason}); retrying in {wait}s"
                 f"{' (Hub-advised)' if advised is not None else ''}"
             )

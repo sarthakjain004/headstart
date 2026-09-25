@@ -200,6 +200,10 @@ class PyjamaHRScraper(BaseScraper):
         url = self.url()
         for _ in range(_MAX_PAGES):
             data = json.loads(self._get(url))
+            if not items and "results" not in data:
+                self.note_unreadable_board(
+                    "a `results` list", f"keys {sorted(data)[:5]}"
+                )
             count = data.get("count") or count
             items.extend(data.get("results") or [])
             url = data.get("next")

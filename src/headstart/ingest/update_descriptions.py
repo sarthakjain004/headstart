@@ -67,6 +67,7 @@ import argparse
 import gzip
 import hashlib
 import json
+import time
 from collections.abc import Iterator
 from collections.abc import Set as AbstractSet
 from pathlib import Path
@@ -344,10 +345,10 @@ def _embedded_ids(meta_path: Path) -> set[str]:
     if not meta_path.exists():
         return ids
     with meta_path.open(encoding="utf-8") as fh:
-        for line in fh:
+        for lineno, line in enumerate(fh, 1):
             line = line.strip()
             if line:
-                ids.add(json.loads(line)["id"])
+                ids.add(_parse(line, meta_path, lineno)["id"])
     return ids
 
 
@@ -411,9 +412,9 @@ def _corpus_rows(jobs_path: Path) -> Iterator[held_refetch.CorpusRow]:
     """One ATS's corpus as the rotation reads it, before :func:`reconcile` fills its empty rows
     from the store and a fetched text can no longer be told apart from a restored one."""
     with jobs_path.open(encoding="utf-8") as fh:
-        for line in fh:
+        for lineno, line in enumerate(fh, 1):
             if line.strip():
-                job = json.loads(line)
+                job = _parse(line, jobs_path, lineno)
                 yield held_refetch.CorpusRow(
                     job["id"], bool((job.get("description") or "").strip())
                 )
@@ -492,8 +493,20 @@ def main() -> int:
     store = Path(args.store)
 
     if args.compact:
-        for ats_dir in sorted(p for p in store.glob("*") if p.is_dir()):
-            _log.info(f"{ats_dir.name}: compacted to {compact(ats_dir):,} rows")
+        started = time.monotonic()
+        ats_dirs = sorted(p for p in store.glob("*") if p.is_dir())
+        if not ats_dirs:
+            _log.info(f"compact: no ATS dirs under {store} — nothing to compact")
+            return 0
+        kept = 0
+        for ats_dir in ats_dirs:
+            rows = compact(ats_dir)
+            kept += rows
+            _log.info(f"{ats_dir.name}: compacted to {rows:,} rows")
+        _log.info(
+            f"compact: {kept:,} rows across {len(ats_dirs)} ATS dir(s) in "
+            f"{time.monotonic() - started:.0f}s"
+        )
         return 0
 
     jobs = Path(args.jobs)

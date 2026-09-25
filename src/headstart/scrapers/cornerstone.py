@@ -280,6 +280,10 @@ class CornerstoneScraper(BaseScraper):
                 # The corp has no search index behind its career site, and the page itself
                 # lists no openings (module docstring): an empty site. Any other 404 — and this
                 # one past page 1, where rows were already read — raises.
+                self._log.info(
+                    f"{self.board_key()}: site {site} search answered 404 ResourceNotFound — "
+                    "read as an empty site"
+                )
                 return rows
             response.raise_for_status()
             data = response.json()["data"]
@@ -383,6 +387,10 @@ class CornerstoneScraper(BaseScraper):
             if isinstance(stated, str) and stated.strip():
                 self.adopt_company(stated)
                 return
+        self._log.info(
+            f"{self.board_key()}: no company name — {len(first_per_site)} posting page(s) "
+            "stated no HiringOrganization"
+        )
 
     async def _ad_async(self, session: Any, row: dict) -> str | None:
         """The job ad's HTML ("" when the tenant left it empty), or None when it failed."""
@@ -408,7 +416,13 @@ class CornerstoneScraper(BaseScraper):
         except http.RequestsError as exc:
             self.note_detail_exception(exc)
             return None
-        fields = json.loads(response.content)["data"][0]["items"][0]["fields"]
+        try:
+            fields = json.loads(response.content)["data"][0]["items"][0]["fields"]
+        except (KeyError, IndexError, TypeError, ValueError):
+            # Labelled here rather than left to the fan-out's catch-all, which would count it
+            # `unlabelled` and name neither the ad nor the shape.
+            self.note_detail_loss("no ad fields on a 200")
+            return None
         return fields.get("ad") or ""
 
     # ---------------------------------------------------------------- parsing

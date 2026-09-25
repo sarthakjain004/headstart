@@ -111,6 +111,12 @@ class JoinScraper(BaseScraper):
                 )
                 break
             items.extend(data.get("items") or [])
+            if page == 1 and "pagination" not in data:
+                # Read as a one-page Board below; said, since a moved key would look the same.
+                self._log.info(
+                    f"{self.board_key()}: page 1 answered with no pagination — "
+                    f"{len(items)} jobs read as the whole Board"
+                )
             if page >= (data.get("pagination") or {}).get("pageCount", 1):
                 break
             page += 1

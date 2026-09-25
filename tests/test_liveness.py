@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from datetime import date
 
+import pytest
+
 from headstart import liveness
 from headstart.liveness import DEAD, LIVE, UNKNOWN, Verdict, needs_probe
 
@@ -89,3 +91,15 @@ def test_needs_probe_dead_ttl():
 def test_needs_probe_unparseable_date_is_stale():
     v = Verdict("x", "t", "u", LIVE, 5, "")
     assert needs_probe(v, _TODAY) is True
+
+
+def test_a_malformed_row_names_its_ledger_and_line(tmp_path):
+    path = tmp_path / "x.csv"
+    path.write_text(
+        "ats,tenant,url,status,jobs,checked_at\n"
+        "x,a,u,live,3,2026-09-01\n"
+        "x,b,u,live,three,2026-09-01\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match=r"x\.csv:3: "):
+        liveness.load(path)

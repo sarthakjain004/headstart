@@ -703,13 +703,19 @@ def sync(args: argparse.Namespace) -> int:
     # stays transient.
     unauthoritative = read_unauthoritative_boards(args.unauthoritative_boards)
     # Said either way: an empty mapping reads the same whether none was short or the file never
-    # arrived, and only the second leaves every Board unprotected.
-    _log.info(
-        f"scope: {len(unauthoritative)} Unauthoritative Board(s) read from "
-        f"{args.unauthoritative_boards}"
-        if Path(args.unauthoritative_boards).exists()
-        else f"scope: {args.unauthoritative_boards} missing — no Board protected from eviction"
-    )
+    # arrived, and only the second leaves every Board unprotected. Missing is a WARNING because
+    # scrape_join writes the file on every run, even empty — so its absence is lost state, the
+    # same way read_scraped_boards treats its own sibling file.
+    if Path(args.unauthoritative_boards).exists():
+        _log.info(
+            f"scope: {len(unauthoritative)} Unauthoritative Board(s) read from "
+            f"{args.unauthoritative_boards}"
+        )
+    else:
+        _log.warning(
+            f"unauthoritative-Board record missing at {args.unauthoritative_boards} — "
+            "scrape_join always writes it; no Board is protected from eviction this run"
+        )
     excluded = {b for b in boards if lower_key(b) in unauthoritative}
     if excluded:
         boards -= excluded
@@ -1070,6 +1076,20 @@ def prune(args: argparse.Namespace) -> int:
         board_failures.key_for(b) for b in board_failures.reconfirmed(failures)
     }
     evicted = {board for board in keep if board_failures.key_for(board) in gone_keys}
+    # Said every run, apart from the pinned keep-set line: without it a missing ledger and a run
+    # where no Board was re-confirmed gone read the same.
+    if args.board_failures and Path(args.board_failures).exists():
+        _log.info(
+            f"board failures: {len(failures)} entries from {args.board_failures}, "
+            f"{len(gone_keys)} re-confirmed gone"
+        )
+    else:
+        where = (
+            f"{args.board_failures} missing"
+            if args.board_failures
+            else "no ledger given"
+        )
+        _log.info(f"board failures: {where} — no parole evictions this run")
     if evicted:
         keep -= evicted
         _log.info(

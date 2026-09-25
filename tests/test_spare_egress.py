@@ -741,6 +741,29 @@ def test_an_unreadable_trace_never_fails_the_rotation(monkeypatch):
     assert spare_egress.egress_ips()["unreadable"] == 1
 
 
+def test_a_trace_with_no_ip_names_its_body_once(monkeypatch, caplog):
+    """The exception branch already says why on its first occurrence; a body with no `ip=` was
+    tallied silently, leaving nothing to say what the endpoint answered instead."""
+    spare_egress.reset()
+    spare_egress._proxy = "socks5://127.0.0.1:40000"
+    spare_egress._resolved = True
+    _rotating(monkeypatch)
+    monkeypatch.setattr(spare_egress, "_ROTATION_COOLDOWN", 0.0)
+
+    class _Resp:
+        text = "<html>captive portal</html>"
+
+    monkeypatch.setattr(spare_egress._rq, "get", lambda *a, **kw: _Resp())
+    caplog.set_level("INFO", logger="headstart.spare_egress")
+
+    assert spare_egress.rotate() is True
+    assert spare_egress.rotate() is True
+    assert spare_egress.egress_ips()["unreadable"] == 2
+    lines = [r for r in caplog.records if "trace has no ip=" in r.getMessage()]
+    assert len(lines) == 1 and "captive portal" in lines[0].getMessage()
+    assert lines[0].levelname == "INFO"
+
+
 def test_a_direct_response_from_the_trace_is_not_recorded_as_an_egress_address(
     monkeypatch,
 ):

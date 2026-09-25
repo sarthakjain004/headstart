@@ -449,7 +449,15 @@ class TaleoEnterpriseScraper(BaseScraper):
 
     def fetch_raw(self) -> Any:
         shell = self._get()
-        self.company = _company(shell, self.slug) or self.company
+        name = _company(shell, self.slug)
+        if name:
+            self.company = name
+        else:
+            # The base resolver's line; this ATS names its Board from the shell instead.
+            self._log.info(
+                f"{self.board_key()}: no company name — the career-section shell answered "
+                "200 and stated none this ATS accepts"
+            )
         listed = self._listing(shell)
         # No tech gate: measured to lose tech postings here (ADR-0166, #510). No held-description
         # skip either: the detail page also supplies the fields `parse` prefers to the listing's.

@@ -92,6 +92,8 @@ _PER_ITEM_BY_CONSTRUCTION = [
     # Per Board (a walled Board's fetch) and per chat respectively, with no loop to key on.
     _ROOT / "browser_http.py",
     _ROOT / "telegram_bot_api.py",
+    # Once per résumé-parse request on the Space.
+    _ROOT / "llm_router.py",
 ]
 
 #: Every spelling a logger has in this package — the receiver a matched ``.warning``/``.error``
@@ -138,23 +140,39 @@ _ALLOWED: dict[str, str] = {
         "in the one deployment that serves users."
     ),
     "search.py:__init__": (
-        "Bound: 1 per process, at most three lines: (1) which schema columns are dark and "
+        "Bound: 1 per process, at most four lines: (1) which schema columns are dark and "
         "which acceleration flags are unmaterialized, so an un-migrated table cannot silently "
         "ignore `seen_within`/`salary` or answer on the slow raw clause with no record; (2) the "
         "ATS/currency whitelist scan capped below `count_rows()`; (3) served currencies with no "
-        "fx rate. Same `lastResort` reasoning as above: WARNING or invisible."
+        "fx rate; (4) USD not served, so a salary sort cannot convert by default. Same "
+        "`lastResort` reasoning as above: WARNING or invisible."
+    ),
+    "search.py:facets": (
+        "Fires only when an uncached facet strip exceeds `SLOW_SEARCH_MS` (2 s) — the strip is "
+        "~46 counts, the Space's most expensive request, so a lost acceleration flag shows up "
+        "here first. Shapes only, never keyword text (ADR-0032). Space-only, so never an "
+        "annotation."
     ),
     "search.py:scoped_jobs_clause": (
         "Bound: 1 per call, and it is called once per /search or /facets request (app.py's "
-        "`_company_where`). Three mutually exclusive branches: a role with no watch pattern "
-        "(scope widened), a family with no role assignments loaded (widened), an unknown family "
-        "(zero results). Values come from the query string, so they are `%.40r`-clipped. "
+        "`_company_where`). Five mutually exclusive branches: a hand-off with no `board=` "
+        "(ignored), a role with no watch pattern (scope widened), a family with no role "
+        "assignments loaded (widened), an unknown family (zero results), a category past "
+        "`MAX_FAMILY_IDS` (refused). Values come from the query string, so they are "
+        "`%.40r`-clipped. "
         "Space-only: no annotations exist there, and `lastResort` shows WARNING and above only."
     ),
     "search.py:run": (
         "Fires only when an uncached request exceeds `SLOW_SEARCH_MS` (2 s), so rare by "
         "construction. Shapes only (sort, has-query, where-clause length), never query text "
         "(ADR-0032). Space-only, so never an annotation."
+    ),
+    "llm_router.py:ask": (
+        "Bound: once per résumé-parse request, capped per Account by `MAX_PARSES`. Space-only, "
+        "which calls no `log.setup()`, so it renders via `lastResort` and is never an "
+        "annotation; WARNING because `lastResort` shows nothing lower and the Space's 503 is "
+        "otherwise silent. Exception type and HTTP status only — the error text can name the "
+        "private router host."
     ),
     "browser_http.py:_install_blocking": (
         "Bound: 1 per process by the `_blocking_failed` flag — the first failure to install "
@@ -266,25 +284,16 @@ _LOOPED_OK: dict[str, str] = {
         "dropped is precisely the anomaly worth an annotation, and 28 is the ceiling even if "
         "every scraper were renamed at once."
     ),
-    "ingest/embed_merge.py:_good_meta_lines": (
-        "Fires at most once: the `break` on the next line ends the scan. The loop is how it "
-        "finds the first unparseable metadata line, not how often it can report one."
-    ),
     "ingest/embed_run.py:_reconcile": (
         "Fires at most once: the `break` below it ends the scan, and the `dropped` count in "
         "the line is the whole tail it is about to discard. The loop is how it finds the first "
-        "unparseable metadata line, not how often it can report one — the same shape as "
-        "embed_merge.py's `_good_meta_lines` above."
-    ),
-    "ingest/embed_run.py:_encode_groups": (
-        "The wedged-allocator stop, guarded by `consec_failed >= 64` and followed by "
-        "`wedged = True`, which ends the walk — one line per run. The per-batch failure beside "
-        "it is the unbounded one, and that goes through `_BATCH_FAILURE` (`log.FirstOnly`)."
+        "unparseable metadata line, not how often it can report one."
     ),
     "ingest/state_fetch.py:fetch_state": (
-        "Bounded by the retry ladder itself: the loop is the retries, capped by the attempt "
-        "budget and the Hub-advised window, so the count is a handful per stage and each line "
-        "reports a different wait. A state fetch that is retrying IS the stage's headline."
+        "Fires at most once per fetch: `first_run_noted` guards the first-run bootstrap "
+        "warning, so the retry loop around it cannot repeat it. The per-attempt retry line is "
+        "INFO, like `retry_hub`'s wait — a Hub outage would otherwise restate one fault ~20 "
+        "times a run; the final ABORT carries the reason."
     ),
 }
 

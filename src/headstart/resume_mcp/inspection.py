@@ -66,12 +66,24 @@ def read_document(document: dict[str, Any], view: str = "master") -> dict[str, A
     except FileNotFoundError as exc:  # `which` said yes and exec still failed
         raise Unreadable(f"`node` could not be run: {exc}") from exc
     except subprocess.TimeoutExpired as exc:
+        _log.warning(
+            "inspect_document.js timed out after %ss for document %s",
+            TIMEOUT_S,
+            document.get("id"),
+        )
         raise Unreadable(
             f"reading the document took longer than {TIMEOUT_S}s and was stopped"
         ) from exc
     try:
         answer = json.loads(done.stdout)
     except ValueError as exc:
+        # Stderr's frames only, as for a fault below: the tool result alone reaches no log.
+        _log.warning(
+            "inspect_document.js gave no JSON for document %s: exit %d %s",
+            document.get("id"),
+            done.returncode,
+            (done.stderr or "").strip()[:2000],
+        )
         # stderr, not stdout: a crash before the handler writes its JSON leaves the stack there.
         detail = (done.stderr or "").strip()[
             :500

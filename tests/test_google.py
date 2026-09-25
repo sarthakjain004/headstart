@@ -342,3 +342,34 @@ def test_parse_still_reads_the_pre_pagination_fixture_shape():
     jobs = _scraper().parse(_page1()["jobs"], SCRAPED_AT)
     assert len(jobs) == 2
     assert all(j.title for j in jobs)
+
+
+def test_a_later_page_with_no_ds1_is_named_in_the_shortfall(monkeypatch):
+    """Read as an empty page, as before — but tallied, so the shortfall is not blamed on the
+    count moving during the walk."""
+    fake = _FakePages(total_ids=45, total_stated=45)
+
+    def no_ds1_on_page_3(url=None):
+        page = _page_of(url)
+        return "<html>no data here</html>" if page == 3 else fake.page_body(page)
+
+    scraper = _scraper()
+    monkeypatch.setattr(scraper, "_get", no_ds1_on_page_3)
+    assert len(scraper.fetch_raw()) == 40
+    assert "1 page(s) lost (no ds:1 on a 200 x1)" in scraper.truncated
+
+
+def test_postings_mostly_without_a_description_suggest_the_layout_moved(caplog):
+    caplog.set_level("INFO", logger="headstart.scrapers.google")
+    jobs = _scraper().parse([[str(i), f"job {i}"] for i in range(5)], SCRAPED_AT)
+    assert len(jobs) == 5
+    assert (
+        "google:careers.google.com: 5/5 postings with no description — ds:1 layout may have "
+        "moved" in caplog.text
+    )
+
+
+def test_described_postings_log_nothing(caplog):
+    caplog.set_level("INFO", logger="headstart.scrapers.google")
+    _scraper().parse(_page1()["jobs"], SCRAPED_AT)
+    assert "no description" not in caplog.text

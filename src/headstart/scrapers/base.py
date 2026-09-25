@@ -127,6 +127,9 @@ _ROUTINE_FAILURES = (OSError, json.JSONDecodeError)
 #: count, which names neither file nor line. The first one per shard process warns with its
 #: traceback; the rest inform. Module-level because every Board builds its own scraper.
 _UNEXPECTED = log.FirstOnly(log.get(__name__))
+#: Where a fan-out's tally of its unexpected items is said (the static :meth:`fan_out` has no
+#: Board logger).
+_log = log.get(__name__)
 
 
 def classify_exception(exc: Exception) -> str:
@@ -195,6 +198,15 @@ def loss_breakdown(losses: Counter[str], missing: int) -> str:
 DEFAULT_REQUEST_HEADERS: Mapping[str, str] = MappingProxyType(
     {"User-Agent": USER_AGENT, "Accept": "application/json, text/html"}
 )
+
+
+def _report_unexpected_tally(what: str, unexpected: Counter[str]) -> None:
+    """One line for a fan-out's unexpected items past the first, which alone was reported."""
+    if sum(unexpected.values()) > 1:
+        _log.info(
+            f"{what}: {sum(unexpected.values())} unexpected exception(s) in fan-out items "
+            f"({', '.join(f'{name} x{n}' for name, n in unexpected.most_common())})"
+        )
 
 
 def _head_of(response: Any, size: int) -> str | None:
@@ -633,7 +645,8 @@ class BaseScraper(ABC):
         skipped = len(items) - len(kept)
         if skipped:
             self.telemetry["tech_gated_details"] = skipped
-            self._log.info(
+            # DEBUG: routine on every gated Board, and the shard report already carries the count.
+            self._log.debug(
                 f"{self.board_key()}: skipping {skipped}/{len(items)} non-tech detail "
                 f"fetches (ADR-0017 gate)"
             )
@@ -1081,6 +1094,7 @@ class BaseScraper(ABC):
         results: list[_R | None] = [default] * len(items)
         if not items:
             return results
+        unexpected: Counter[str] = Counter()
         with ThreadPoolExecutor(max_workers=workers) as pool:
             futures = {pool.submit(fn, item): i for i, item in enumerate(items)}
             for future in as_completed(futures):
@@ -1089,10 +1103,15 @@ class BaseScraper(ABC):
                     results[index] = future.result()
                 except Exception as exc:  # noqa: BLE001 - one item's failure must not sink the batch
                     if not isinstance(exc, _ROUTINE_FAILURES):
-                        _UNEXPECTED.report(
-                            f"{what}: unexpected {type(exc).__name__} in a fan-out item"
-                        )
+                        # The call's first only: a systemic bug raises on every item, and the
+                        # rest are tallied onto one line below.
+                        if not unexpected:
+                            _UNEXPECTED.report(
+                                f"{what}: unexpected {type(exc).__name__} in a fan-out item"
+                            )
+                        unexpected[type(exc).__name__] += 1
                     results[index] = default
+        _report_unexpected_tally(what, unexpected)
         return results
 
     def fan_out_async(
@@ -1163,6 +1182,8 @@ class BaseScraper(ABC):
 
         sem = asyncio.Semaphore(concurrency)
         results: list[_R | None] = [default] * len(items)
+        # One event-loop thread writes this, so it needs no lock.
+        unexpected: Counter[str] = Counter()
         async with AsyncSession(impersonate="chrome") as session:
 
             async def one(index: int, item: _T) -> None:
@@ -1174,14 +1195,18 @@ class BaseScraper(ABC):
                         results[index] = await fn(session, item)
                     except Exception as exc:  # noqa: BLE001 - one item's failure must not sink the batch
                         if not isinstance(exc, _ROUTINE_FAILURES):
-                            _UNEXPECTED.report(
-                                f"{what}: unexpected {type(exc).__name__} in a fan-out item"
-                            )
+                            # As in `fan_out`: the call's first only, the rest tallied below.
+                            if not unexpected:
+                                _UNEXPECTED.report(
+                                    f"{what}: unexpected {type(exc).__name__} in a fan-out item"
+                                )
+                            unexpected[type(exc).__name__] += 1
                         results[index] = default
                     finally:
                         item_done(time.monotonic() - started)
 
             await asyncio.gather(*(one(i, item) for i, item in enumerate(items)))
+        _report_unexpected_tally(what, unexpected)
         return results
 
     def detail_request(self, item: Any) -> DetailRequest:
@@ -1454,7 +1479,11 @@ class BaseScraper(ABC):
         except DetailLost as lost:
             self.note_detail_loss(lost.cause)
         except Exception as exc:  # noqa: BLE001 - an unreadable body is a labelled loss
-            if not isinstance(exc, _ROUTINE_FAILURES):
+            # The Board's first of each type only: the gap line counts the rest by type.
+            if (
+                not isinstance(exc, _ROUTINE_FAILURES)
+                and not self.detail_losses[classify_exception(exc)]
+            ):
                 _UNEXPECTED.report(
                     f"{self.board_key()}: unexpected {type(exc).__name__} reading a detail"
                 )

@@ -213,6 +213,11 @@ def board_key_of(report_key: str) -> str | None:
                     f"{report_key}: board_key() failed ({type(exc).__name__}: {exc}) — "
                     "dropped from the board_key-keyed ledger"
                 )
+            elif len(_KEY_OF_FAILURES_SEEN) == _IDENTITY_REPORT_CAP + 1:
+                _log.info(
+                    f"further board_key_of() failures not named ({_IDENTITY_REPORT_CAP} "
+                    "shown) — each still dropped from the board_key-keyed ledger"
+                )
         return None
 
 

@@ -105,7 +105,13 @@ from urllib.parse import quote
 
 from headstart import http, log
 from headstart.models import Job, html_to_text, is_remote
-from headstart.scrapers.base import USER_AGENT, BaseScraper, DetailLost, DetailRequest
+from headstart.scrapers.base import (
+    USER_AGENT,
+    BaseScraper,
+    DetailLost,
+    DetailRequest,
+    classify_exception,
+)
 from headstart.scrapers.job_posting_jsonld import find_job_posting
 
 _log = log.get(__name__)
@@ -181,6 +187,9 @@ class TrakstarScraper(BaseScraper):
     #: Why the last :meth:`_api_page` was None, for :meth:`_api_listing`'s fallback line; None
     #: where the answer was the expected 400 for a tenant with no jsapi board.
     _api_failure: str | None = None
+    #: Why the last :meth:`_fetch_feed` was None — a status or an exception class — for the
+    #: capped-Board line in :meth:`fetch_raw`.
+    _feed_failure: str | None = None
 
     def url(self) -> str:
         return f"https://{self.slug}.hire.trakstar.com/"
@@ -233,10 +242,14 @@ class TrakstarScraper(BaseScraper):
                         )
                     return None
                 self.mark_truncated(
-                    f"jsapi page at offset {offset} failed — {len(objects)} postings read, "
-                    "the rest unread"
+                    f"jsapi page at offset {offset} failed ({self._api_failure or 'HTTP 400'})"
+                    f" — {len(objects)} postings read, the rest unread"
                 )
                 return objects
+            if offset == 0 and "objects" not in page:
+                self.note_unreadable_board(
+                    "a jsapi page with `objects`", f"keys {sorted(page)[:5]}"
+                )
             meta = page.get("meta") or {}
             total = meta.get("total")
             batch = page.get("objects") or []
@@ -264,9 +277,17 @@ class TrakstarScraper(BaseScraper):
         :meth:`board_page`: the HTML fallback in :meth:`fetch_raw` reuses this same response."""
         try:
             response = self._fetch_once("GET", self.url())
-        except http.RequestsError:
-            return None
-        return response.text if response.status_code == 200 else None
+        except http.RequestsError as exc:
+            failure = classify_exception(exc)
+        else:
+            if response.status_code == 200:
+                return response.text
+            failure = f"HTTP {response.status_code}"
+        _log.info(
+            f"{self.board_key()}: careers page unread ({failure}) — inactive-account check "
+            "and name skipped"
+        )
+        return None
 
     def fetch_raw(self) -> Any:
         page = self._careers_page()
@@ -301,6 +322,11 @@ class TrakstarScraper(BaseScraper):
             # fetching pages whose Jobs we're about to discard in favor of the feed's.
             feed_xml = self._fetch_feed()
             feed_items = _feed_items(feed_xml) if feed_xml is not None else None
+            feed_failure = (
+                f"unreachable ({self._feed_failure})"
+                if feed_xml is None
+                else "did not parse"
+            )
             if feed_items is not None:
                 _log.info(
                     f"{self.board_key()}: {len(codes)} cards rendered, capped — RSS feed "
@@ -321,8 +347,8 @@ class TrakstarScraper(BaseScraper):
                     "unreachable"
                 )
             _log.info(
-                f"{self.board_key()}: {len(codes)} cards, capped, and the RSS feed is "
-                "unreachable — keeping the capped HTML list"
+                f"{self.board_key()}: {len(codes)} cards, capped, and the RSS feed "
+                f"{feed_failure} — keeping the capped HTML list"
             )
         # Each job page's JSON-LD JobPosting (description + datePosted), fetched concurrently
         # (bounded); a failed page is simply absent. The detail pages sit behind DataDome, so the
@@ -351,6 +377,7 @@ class TrakstarScraper(BaseScraper):
         knowingtechnologies) is NOT this case — it's real feed text, still returned here; the "no
         jobs" vs. "no feed" distinction is made one layer up, in :func:`_feed_items`/
         ``fetch_via_feed``, never collapsed into a single ``None`` at this layer."""
+        self._feed_failure = None
         try:
             response = self._fetch(
                 "GET",
@@ -358,9 +385,11 @@ class TrakstarScraper(BaseScraper):
                 timeout=30,
                 headers={"User-Agent": USER_AGENT},
             )
-        except http.RequestsError:
+        except http.RequestsError as exc:
+            self._feed_failure = classify_exception(exc)
             return None
         if response.status_code != 200:
+            self._feed_failure = f"HTTP {response.status_code}"
             return None
         return response.text
 
@@ -413,9 +442,15 @@ class TrakstarScraper(BaseScraper):
         if isinstance(raw, dict) and "api_items" in raw:
             # fetch_raw() reached jsapi.recruiterbox.com successfully — already-complete Job
             # dicts, no HTML card and no per-job detail fetch involved.
-            return _jobs_from_api(
+            jobs = _jobs_from_api(
                 self.ats, self.slug, self.company, raw["api_items"], scraped_at
             )
+            if dropped := len(raw["api_items"]) - len(jobs):
+                _log.info(
+                    f"{self.board_key()}: parse dropped {dropped} of "
+                    f"{len(raw['api_items'])} rows with no id/title"
+                )
+            return jobs
         if isinstance(raw, dict) and "feed_items" in raw:
             # fetch_raw() already swapped in the RSS feed's full list for a capped Board (see
             # its own comment above) — these came from _feed_items(), already-complete job

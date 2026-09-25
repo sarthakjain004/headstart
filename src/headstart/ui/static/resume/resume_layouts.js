@@ -893,6 +893,10 @@
     return out;
   }
 
+  /* The rules run on every keystroke, so a check that throws is said once per session, not once
+     per pass. Keyed by layout too: two layouts can each carry a rule with the same id. */
+  const failedChecks = new Set();
+
   /** Run a Layout's own rules over a document. Pure — no DOM — so the rule set can be tested
    *  as data rather than by reading a panel, which is how the Headless Headhunter checks are
    *  pinned against the guide's own worked example.
@@ -939,7 +943,8 @@
       try {
         found = rule.check(doc, api) || [];
       } catch (err) {
-        console.error('[resume] check', rule.id, 'failed', err);
+        const key = layout.id + ':' + rule.id;
+        if (!failedChecks.has(key)) { failedChecks.add(key); console.error('[resume] check', rule.id, 'failed', err); }
         found = [{ level: 'note', nodeId: null, message: 'This check could not run.' }];
       }
       for (const f of found) out.push(Object.assign({ rule: rule.label, ruleId: rule.id }, f));

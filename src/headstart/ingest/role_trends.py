@@ -431,6 +431,13 @@ def _load_board_counts(
                 raise ValueError(f"{path}: unexpected Board-count schema")
             for row in table.to_pylist():
                 counts[tuple(row[k] for k in _BOARD_COUNT_COLUMNS[:-1])] = row["count"]
+        else:
+            # Said, because the consequence is silent otherwise: every Board's level starts from
+            # zero, so this tick's deltas are the whole stock rather than a change.
+            old = (metadata.get(b"centroid_version") or b"none").decode()
+            _log.info(
+                f"board counts: snapshot at v{old}, not v{version} — this tick is a baseline"
+            )
     return counts, as_of
 
 
@@ -439,22 +446,31 @@ def _recover_board_counts(
 ) -> dict[tuple[str, ...], int]:
     import pyarrow.parquet as pq
 
+    replayed = 0
     for path in sorted(directory.glob("*.parquet")):
         table = pq.read_table(path)
         if (table.schema.metadata or {}).get(b"centroid_version") != str(
             version
         ).encode():
             continue
+        counted = False
         for row in table.to_pylist():
             # A tick's file also carries its turnover and markers (ADR-0227), not levels.
             if row["ts"] <= as_of or row["metric"] not in _LEVEL_METRICS:
                 continue
+            counted = True
             key = tuple(row[k] for k in _BOARD_COUNT_COLUMNS[:-1])
             value = counts.get(key, 0) + row["delta"]
             if value:
                 counts[key] = value
             else:
                 counts.pop(key, None)
+        replayed += counted
+    if replayed:
+        _log.info(
+            f"board counts: replayed {replayed} tick(s) past {as_of or 'no snapshot'} "
+            "(a previous save was lost)"
+        )
     return counts
 
 
@@ -866,4 +882,15 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    # The step is `continue-on-error`, so an unguarded exception would end in a green run with
+    # no annotation at all; one ERROR names it and says what is stale. SystemExit and
+    # KeyboardInterrupt are not `Exception`, so they pass through untouched.
+    try:
+        raise SystemExit(main())
+    except Exception:  # noqa: BLE001 - the one catch-all per entry point, logged and re-exited
+        _log.error(
+            "role_trends failed — no trend rows this run, and the Board ledgers hot_boards "
+            "and company_directory read may be a tick stale",
+            exc_info=True,
+        )
+        raise SystemExit(1) from None

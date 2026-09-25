@@ -169,7 +169,7 @@ class FirstOnly:
     and not a per-frame one — the same rule ``logging``'s own ``exc_info=True`` follows. So a
     site with no exception anywhere gets a bare line rather than logging's ``NoneType: None``,
     but a site reached from inside an *unrelated* ``except``, however many frames up, attaches
-    that unrelated stack. 12 of the 20 call sites are lexically inside the ``except`` they report
+    that unrelated stack. 14 of the 22 call sites are lexically inside the ``except`` they report
     on, so the stack is theirs by construction. Seven of the other eight report a *condition*
     rather than a caught exception; each is clean today, but for three different strengths of
     reason, and the difference matters more than the count. ADR-0039's 2026-09-09 amendment sets

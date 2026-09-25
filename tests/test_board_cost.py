@@ -8,6 +8,8 @@ of a shard's torn final row.
 
 from __future__ import annotations
 
+import pytest
+
 from headstart.board_cost import (
     BoardCost,
     ShardCost,
@@ -268,3 +270,13 @@ def test_key_for_keeps_the_casing_its_scraper_builds():
     assert board_cost.key_for(board) == "workday:Acme/External"
     assert board_cost.key_for("workday:Acme/External") == "workday:Acme/External"
     assert board_cost.key_for(board) == board_priority.key_for(board)
+
+
+def test_a_malformed_row_names_its_ledger_and_line(tmp_path):
+    path = tmp_path / "board_cost.csv"
+    path.write_text(
+        "board,seconds,jobs,updated_at\nx:a,1.0,2,2026-09-01\nx:b,slow,2,2026-09-01\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match=r"board_cost\.csv:3: "):
+        load(path)

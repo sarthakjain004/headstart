@@ -14,16 +14,17 @@ from headstart.ingest import observability
 from headstart.ingest.observability import ScrapeHealth
 
 
-def test_preparation_progress_reports_every_five_seconds_or_500_jobs(
-    caplog, monkeypatch
-):
+def test_preparation_progress_reports_at_most_every_ten_seconds(caplog, monkeypatch):
     import logging
 
     caplog.set_level(logging.INFO)
-    clock = iter([0.0, 1.0, 5.0])
+    # 500 scanned used to trigger a line on its own; only elapsed time does now
+    clock = iter([0.0, 1.0, 2.0, 10.0])
     monkeypatch.setattr(observability.time, "monotonic", lambda: next(clock))
     progress = observability.PreparationProgress(logging.getLogger("headstart.test"))
     progress.report(1, 1, 0, 0)
+    progress.report(500, 1, 0, 0)
+    assert not caplog.records
     progress.report(3, 1, 1, 1)
     assert (
         "scanned 3, prepared 1, already 1, non-English 1" in caplog.records[-1].message
@@ -244,6 +245,27 @@ def test_scrape_health_keeps_valid_fields_from_a_malformed_report(caplog):
     assert health.degraded
     assert "2 malformed" in health.verdict_line()
     assert "2 shard report(s) carried malformed" in caplog.text
+    # names the coerced fields, not only "?" per shard
+    assert "?:workday:a.detail_jobs" in caplog.text
+    assert "?:workday:a.detail_loss_causes" in caplog.text
+
+
+def test_scrape_health_quiet_reports_malformed_fields_at_info(caplog):
+    import logging
+
+    caplog.set_level(logging.INFO)
+    observability.ScrapeHealth.from_reports(
+        [
+            observability.ShardReport(
+                shard="3", observations={"workday:a": {"detail_jobs": "x"}}
+            )
+        ],
+        quiet=True,
+    )
+
+    [record] = [r for r in caplog.records if "malformed" in r.message]
+    assert record.levelno == logging.INFO
+    assert "3:workday:a.detail_jobs" in record.message
 
 
 def test_every_loss_cause_is_reported_with_its_count():

@@ -56,6 +56,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import time
 from collections import Counter
 from datetime import UTC, datetime
 from pathlib import Path
@@ -155,11 +156,13 @@ def failures(args: argparse.Namespace) -> int:
     # `harvest` as "BrowserHTTPError: HTTP 404: ..." — a genuine 404 that never matches the
     # pattern, because `_GONE` looks for "HTTP Error 404" and this says "HTTP 404".
     examined = 0
+    unresolved = 0
     unmatched: Counter[str] = Counter()
     for report in reports:
         for key, reason in report.errors.items():
             board = board_key_of(key)
             if board is None:
+                unresolved += 1
                 continue
             examined += 1
             if board_failures.is_gone(str(reason)):
@@ -175,7 +178,9 @@ def failures(args: argparse.Namespace) -> int:
         # quarantine forever
         for key in report.boards_ok:
             board = board_key_of(key)
-            if board is not None:
+            if board is None:
+                unresolved += 1
+            else:
                 alive.add(board)
     # `board_of` yields the board_key shape the ids were built from, so both sides of the
     # update pair in the same key space (ADR-0049). The union with boards_ok is belt and
@@ -202,6 +207,11 @@ def failures(args: argparse.Namespace) -> int:
         f"(+{len(quarantined - was)} new, -{len(was - quarantined)} released) -> "
         f"{args.ledger}"
     )
+    if unresolved:
+        # Its own line: `failures:` is pinned, and a clause that vanishes at zero would break it.
+        _log.info(
+            f"  {unresolved} report key(s) did not resolve to a board_key and were not counted"
+        )
     if unmatched:
         # Info, not warning: most of these are ordinary live failures (timeouts, 429s) that
         # *should* not be gone-strikes. It is the shape of the list that diagnoses a matcher gap —
@@ -268,6 +278,9 @@ def gap(args: argparse.Namespace) -> int:
         _log.warning(f"gap: no {args.meta} yet — nothing embedded, so no gap to record")
         return 0
 
+    # Both reads below take minutes on a real run (the store is ~1 GB gz, and the jobs are the
+    # pre-filter set), so each says what it read and how long it took before the summary.
+    started = time.monotonic()
     held = held_ids(args.descriptions)
     if not held:
         # Written for the join's old warn-only fetch of the description store, which now fails
@@ -280,6 +293,10 @@ def gap(args: argparse.Namespace) -> int:
             "leaving the ledger as it is"
         )
         return 0
+    _log.info(
+        f"read {len(held):,} held id(s) from {args.descriptions} in "
+        f"{time.monotonic() - started:.0f}s"
+    )
 
     # CONTEXT.md's **Scrapable Board** — `scrapable_boards.load(min_jobs=0)`, the same call and
     # the same `min_jobs` `scrape_plan` makes, keyed the way the gap quota keys them.
@@ -304,7 +321,12 @@ def gap(args: argparse.Namespace) -> int:
         )
 
     unauthoritative = read_unauthoritative_boards(args.unauthoritative_boards)
+    started = time.monotonic()
     scraped, emitted = _authoritative_scrape(args.jobs, unauthoritative)
+    _log.info(
+        f"read {len(emitted):,} authoritatively scraped Job id(s) on {len(scraped):,} Board(s) "
+        f"from {args.jobs} in {time.monotonic() - started:.0f}s"
+    )
 
     counts: Counter[str] = Counter()
     # The unsettled Jobs whose Board this run did attempt and could not read authoritatively.

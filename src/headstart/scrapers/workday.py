@@ -1400,6 +1400,10 @@ class WorkdayScraper(BaseScraper):
                     "none of that slice's postings were read"
                 )
             return
+        if not depth and "total" not in first and "jobPostings" not in first:
+            self.note_unreadable_board(
+                "a listing with `total`/`jobPostings`", f"keys {sorted(first)[:5]}"
+            )
         total = int(first.get("total", 0))
         # Postings this slice handed over, before any dedup — for the shortfall line below.
         read = 0
@@ -1735,6 +1739,13 @@ class WorkdayScraper(BaseScraper):
         )
         if name:
             self.company = name
+        else:
+            # The base resolver's line, which this override replaces (ADR-0114).
+            _log.info(
+                f"{self.board_key()}: no company name — board page "
+                f"{'read' if page is not None else 'unread'} and neither it nor the "
+                "postings stated one this ATS accepts"
+            )
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
         company, _instance, _site = self._parts()

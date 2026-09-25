@@ -520,7 +520,8 @@ class JibeScraper(BaseScraper):
             )
         if dropped:
             self.telemetry["icims_covered"] = dropped
-            self._log.info(
+            # DEBUG: routine per Board, and the shard report already carries the count.
+            self._log.debug(
                 f"{self.board_key()}: dropped {dropped} posting(s) a readable iCIMS tenant "
                 f"already serves (ADR-0189)"
             )

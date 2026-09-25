@@ -265,6 +265,13 @@ class ZohoScraper(BaseScraper):
         details = self.run_detail_pass(
             ids, key_of=lambda job_id: job_id, what="detail pages"
         )
+        if self._unavailable_ids:
+            # The gap line counts these as lost details; this says they are closures, the way
+            # successfactors reports its own. Accounting is unchanged.
+            _log.info(
+                f"{self.board_key()}: {len(self._unavailable_ids)} of {len(ids)} job pages "
+                "say the posting is not available — dropped as closed"
+            )
         return {
             "page": page,
             "details": details,

@@ -136,13 +136,28 @@ class RippleHireScraper(BaseScraper):
                 }
             )
             body = urllib.parse.urlencode({"careerSiteUrlParams": params, "lang": "en"})
-            data = self._fetch(
+            response = self._fetch(
                 "POST",
                 api,
                 data=body,
                 headers=headers,
                 timeout=30,
-            ).json()
+            )
+            data = response.json()
+            if page == 0:
+                # Kept from the first page: a page that ends the walk may be an error body with
+                # no `totalJobCount`, and testing the shortfall against it reads `< 0`.
+                total = data.get("totalJobCount", 0)
+                if "jobVoList" not in data:
+                    self.note_unreadable_board(
+                        "a `jobVoList`",
+                        f"HTTP {response.status_code}, keys {sorted(data)[:5]}",
+                    )
+            elif "jobVoList" not in data:
+                self._log.info(
+                    f"{self.board_key()}: page {page} answered {response.status_code} "
+                    f"with no jobVoList — read {len(jobs)} of {total}"
+                )
             batch = data.get("jobVoList") or []
             jobs.extend(batch)
             page += 1
@@ -153,13 +168,13 @@ class RippleHireScraper(BaseScraper):
             # would show ~100, not 7,716. Left unguarded for the same reason as sensehq: no live
             # evidence of the failure mode to fix against.
             if len(batch) < _PAGE_SIZE or len(jobs) >= data.get("totalJobCount", 0):
-                if len(jobs) < data.get("totalJobCount", 0):
+                if len(jobs) < total and "jobVoList" in data:
                     # A short page ended the walk below the stated total. A line, not
                     # `mark_truncated`: whether that shortfall costs eviction scope is not
                     # a logging decision.
                     self._log.info(
                         f"{self.board_key()}: read {len(jobs)} of "
-                        f"{data['totalJobCount']} listed — a short page ended the walk"
+                        f"{total} listed — a short page ended the walk"
                     )
                 break
         else:

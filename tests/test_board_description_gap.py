@@ -7,6 +7,8 @@ first run writes one, and the state the slice must fall back to once the gap dra
 
 from __future__ import annotations
 
+import pytest
+
 from headstart.board_description_gap import load, save
 
 TODAY = "2026-08-18"
@@ -67,3 +69,13 @@ def test_key_for_lowercases_a_board_and_a_key_alike():
 
     board = ScrapableBoard("workday", "https://Acme.wd1.myworkdayjobs.com/External")
     assert key_for(board) == key_for("workday:Acme/External") == "workday:acme/external"
+
+
+def test_a_malformed_row_names_its_ledger_and_line(tmp_path):
+    path = tmp_path / "gap.csv"
+    path.write_text(
+        "board,unsettled,updated_at\nx:a,1,2026-09-01\nx:b,many,2026-09-01\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match=r"gap\.csv:3: "):
+        load(path)

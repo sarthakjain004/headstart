@@ -122,7 +122,13 @@ from urllib.parse import quote
 from headstart import log, salary
 from headstart.fetcher import Fetcher
 from headstart.models import Job, host_of, html_to_text, is_remote
-from headstart.scrapers.base import USER_AGENT, BaseScraper, DetailLost, DetailRequest
+from headstart.scrapers.base import (
+    USER_AGENT,
+    BaseScraper,
+    DetailLost,
+    DetailRequest,
+    classify_exception,
+)
 from headstart.scrapers.pacer import Pacer
 
 _log = log.get(__name__)
@@ -538,7 +544,7 @@ class ZwayamScraper(BaseScraper):
         except Exception as exc:  # noqa: BLE001 - a link prefix must not fail the Board
             fallback = self._fallback_link_base()
             _log.info(
-                f"{self.board_key()}: homepage unread ({type(exc).__name__}), "
+                f"{self.board_key()}: homepage unread ({classify_exception(exc)}), "
                 f"assuming {fallback}"
             )
             return fallback
@@ -589,7 +595,9 @@ class ZwayamScraper(BaseScraper):
                 name if isinstance(name, str) else None,
             )
         except Exception as exc:  # noqa: BLE001 - a lost detail pass must not fail the Board
-            _log.info(f"{self.board_key()}: config call failed ({type(exc).__name__})")
+            _log.info(
+                f"{self.board_key()}: config call failed ({classify_exception(exc)})"
+            )
             return None, None
 
     def _config_once_per_board(self) -> tuple[int | None, str | None]:
@@ -651,6 +659,11 @@ class ZwayamScraper(BaseScraper):
                 # A hostname that is not a registered Board answers 200 with data: null (and a
                 # body code of 200 — `_page` raised otherwise). Nothing to scrape, and not an
                 # error — the ledger simply holds a host that no longer is.
+                if not rows:
+                    self.note_unreadable_board(
+                        "a `data` object",
+                        "code 200 with data: null — host not a registered Board",
+                    )
                 break
             total = data.get("totalCount", total)
             batch = [

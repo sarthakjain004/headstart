@@ -55,6 +55,9 @@
      number that phrase became. It is a floor between heartbeat pushes, not a timer that fires on
      its own: an idle document reaches it and does nothing, because nothing is dirty. */
   const MIN_INTERVAL = 180000;
+  /* A conflict whose copies this browser refused to store (it is full): the words are only in
+     the open editor now, so the user is told to take a backup before anything else. */
+  const NOT_KEPT = 'Edited elsewhere — a copy was not kept in this browser, download a backup.';
 
   /** What `list` and the popover need from a document, without its words. Same projection the
    *  server makes, so a local row and an account row are the same shape. */
@@ -107,11 +110,13 @@
   Sync.prototype._call = function (url, init) {
     if (!this._request) { this._state = 'off'; return Promise.resolve({ state: 'off' }); }
     const method = (init && init.method) || 'GET';
+    /* app.js's `logFail` format, written out here because this file also runs under node. */
+    const path = String(url).split('?')[0];
     return this._request(url, init).then(response => {
       /* 401 and 503 are states (signed out, feature off), not faults; anything else refused is
          said in the console with its status — never the body, which is a résumé. */
       if (response.status >= 400 && response.status !== 401 && response.status !== 503)
-        console.warn('[api]', method, url, response.status);
+        console.warn('[api]', method, path, response.status);
       if (response.status === 401) { this._state = 'signed-out'; return { state: 'signed-out' }; }
       if (response.status === 503) { this._state = 'off'; return { state: 'off' }; }
       return response.json().then(
@@ -124,7 +129,7 @@
         return result;
       });
     }, err => {
-      console.error('[api]', method, url, 'no response', err);
+      if (!(err && err.name === 'AbortError')) console.error('[api]', method, path, 'no response', err);
       /* The state moves too, and that is not bookkeeping: a rejected request left `_state` at
          whatever the last ANSWERED one set, so a tab that went offline mid-session kept saying
          `ready` — and every control keyed on that state kept offering a round trip nothing was
@@ -353,11 +358,12 @@
        failed push claiming a revision the server never saw, and every later push refused. */
     const mine = this._current(doc);
     mine.rev = (result.body && result.body.rev) || candidate.rev;
-    this._save(mine);
+    const kept = this._save(mine).ok;
     this._lastPush = this._now();
     this._rows = this._rows.filter(r => r.id !== mine.id).concat([summarise(mine)]);
     this._onChange();
-    if (reason === 'switched on' || reason === 'save') this._onMessage('Saved to your account.');
+    if (!kept) this._onMessage('Saved to your account, but not kept in this browser — download a backup.', true);
+    else if (reason === 'switched on' || reason === 'save') this._onMessage('Saved to your account.');
     return doc;
   };
 
@@ -379,8 +385,8 @@
     mine.name = (doc.name || 'Untitled résumé') + ' (this device)';
     mine.sync = false;   // the copy is this browser's; it does not race for the same slot
     mine.rev = 0;
-    this._save(mine);
-    this._save(stored);
+    const keptMine = this._save(mine).ok;
+    const kept = this._save(stored).ok && keptMine;
     this._rows = this._rows.filter(r => r.id !== stored.id).concat([summarise(stored)]);
     /* The document about to be open IS the account copy, byte for byte, so the status line must
        say so. Leaving "not saved — conflict" up would be describing the copy that just moved out
@@ -390,7 +396,7 @@
     /* Short on purpose. The bar is a one-line status strip beside Download, and a paragraph in
        it reflows the whole band; the explanation belongs in the Résumés list, which now holds
        exactly two rows — the account's, and this device's with its name saying so. */
-    this._onMessage('Edited elsewhere — both copies kept, see Résumés.', true);
+    this._onMessage(kept ? 'Edited elsewhere — both copies kept, see Résumés.' : NOT_KEPT, true);
     this._onAdopt(stored, mine);
     /* After the adopt, which can note the outgoing document once more on its way out. Whatever
        was queued for this id is in the copy just kept aside; pushed, it carried the old `rev`,
@@ -399,7 +405,7 @@
     /* The adopt's flush can also have SAVED that outgoing document under the account copy's id,
        so a reload would open the local words at the old `rev`. They are in `mine`; put the
        account's back. */
-    this._save(stored);
+    if (!this._save(stored).ok && kept) this._onMessage(NOT_KEPT, true);
     this._onChange();
     return null;
   };
@@ -412,8 +418,9 @@
     return (this._repo && this._repo.get(doc.id)) || doc;
   };
 
+  /** The repository's own answer, so a refused write (a full browser) is said, never assumed. */
   Sync.prototype._save = function (doc) {
-    if (this._repo) this._repo.save(doc);
+    return this._repo ? this._repo.save(doc) : { ok: true };
   };
 
   root.ResumeSync = {

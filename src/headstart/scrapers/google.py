@@ -86,6 +86,11 @@ _PAGE_WORKERS = 10
 #: Ceiling on pages fetched. The board measured at 171 pages (3,414 postings) 2026-09-11; this
 #: gives ~4x headroom before a runaway page count is treated as a hard cap rather than walked.
 _MAX_PAGES = 400
+#: The loss label for a later page that answered 200 without its ``ds:1`` block.
+_NO_DS1 = "no ds:1 on a 200"
+#: Above this share of postings with no description, the layout is suspected rather than the
+#: postings (see ``parse``).
+_UNDESCRIBED_SHARE = 0.2
 
 _DS1_MARKER = "AF_initDataCallback({key: 'ds:1'"
 _DS1_END = ");</script>"
@@ -230,8 +235,14 @@ class GoogleScraper(BaseScraper):
         (ADR-0139's per-scraper call, not the base default's redirect-following)."""
         return self.slug
 
-    def _fetch_page(self, page: int) -> list[list[Any]]:
+    def _fetch_page(
+        self, page: int, losses: Counter[str] | None = None
+    ) -> list[list[Any]]:
         data = _ds1_data(self._get(self._page_url(page)))
+        if data is None and losses is not None:
+            # Read as an empty page either way; tallied so the shortfall names the lost page
+            # instead of being blamed on the count moving during the walk.
+            losses[_NO_DS1] += 1
         jobs = _field(data, 0)
         return jobs if isinstance(jobs, list) else []
 
@@ -260,7 +271,7 @@ class GoogleScraper(BaseScraper):
 
         def page_or_loss(page: int) -> list[list[Any]] | None:
             try:
-                return self._fetch_page(page)
+                return self._fetch_page(page, page_losses)
             except http.RequestsError as exc:
                 page_losses[classify_exception(exc)] += 1
                 return None
@@ -293,13 +304,15 @@ class GoogleScraper(BaseScraper):
         # end, capped by _MAX_PAGES so unbounded growth can't loop forever.
         while last_page_size >= _PAGE_SIZE and last_page < _MAX_PAGES:
             last_page += 1
-            batch = self._fetch_page(last_page)
+            batch = self._fetch_page(last_page, page_losses)
             _merge_into(seen, batch)
             last_page_size = len(batch)
         if last_page_size >= _PAGE_SIZE and last_page >= _MAX_PAGES:
             self.mark_truncated(
                 f"hit the {_MAX_PAGES}-page cap at {len(seen)} postings — the rest unread"
             )
+        # A page that answered 200 without its ds:1 block is lost too, not a failed fetch.
+        failed_pages += page_losses[_NO_DS1]
         if total:
             self.mark_truncated_unless_negligible(
                 len(seen),
@@ -308,7 +321,7 @@ class GoogleScraper(BaseScraper):
                 "and its count moves during a multi-page walk, same as any page lost to a "
                 "per-page fetch failure"
                 + (
-                    f"; {failed_pages} fan-out page(s) failed"
+                    f"; {failed_pages} page(s) lost"
                     + loss_breakdown(page_losses, failed_pages)
                     if failed_pages
                     else ""
@@ -318,6 +331,7 @@ class GoogleScraper(BaseScraper):
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
         jobs: list[Job] = []
+        undescribed = 0
         for item in raw or []:
             if not isinstance(item, list):
                 continue
@@ -341,6 +355,15 @@ class GoogleScraper(BaseScraper):
                     description=_description(item),
                     employment_type=None,  # the enum field found has no decoded label anywhere
                 )
+            )
+            undescribed += jobs[-1].description is None
+        # Positional fields fail silently when an index moves (module docstring). 0 of 100
+        # postings across five live pages lacked a description on 2026-09-25, so a share this
+        # large is the layout, not the postings.
+        if jobs and undescribed > len(jobs) * _UNDESCRIBED_SHARE:
+            self._log.info(
+                f"{self.board_key()}: {undescribed}/{len(jobs)} postings with no description "
+                "— ds:1 layout may have moved"
             )
         return jobs
 

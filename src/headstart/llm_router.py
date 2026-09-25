@@ -28,6 +28,10 @@ import os
 import urllib.error
 import urllib.request
 
+from headstart import log
+
+_log = log.get(__name__)
+
 # Measured against the live router (2026-08-02, the résumé prompt): a normal completion takes
 # 2-5s, but provider fallback can stretch one to 79.6s — which sat over the old 60s ceiling and
 # surfaced as 503s. One generation, no streaming.
@@ -68,4 +72,9 @@ def ask(prompt: str) -> str:
             reply = json.load(resp)
         return reply["choices"][0]["message"]["content"]
     except Exception as exc:  # every failure mode maps to the same caller answer
+        # The Space answers 503 without a word, so this is the only trace of why; WARNING
+        # because its `lastResort` shows nothing lower. Type and status only: the exception
+        # text can carry the router's host, which is private.
+        status = f" {exc.code}" if isinstance(exc, urllib.error.HTTPError) else ""
+        _log.warning("llm router unavailable: %s%s", type(exc).__name__, status)
         raise RouterUnavailable(f"{type(exc).__name__}: {exc}") from exc

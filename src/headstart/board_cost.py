@@ -137,12 +137,17 @@ def load(path: str | Path) -> dict[str, BoardCost]:
         return {}
     rows: dict[str, BoardCost] = {}
     with path.open(newline="", encoding="utf-8") as fh:
-        for row in csv.DictReader(fh):
-            rows[row["board"]] = BoardCost(
-                seconds=float(row["seconds"]),
-                jobs=int(row["jobs"]) if row["jobs"] not in ("", None) else None,
-                updated_at=row["updated_at"],
-            )
+        reader = csv.DictReader(fh)
+        for row in reader:
+            try:
+                rows[row["board"]] = BoardCost(
+                    seconds=float(row["seconds"]),
+                    jobs=int(row["jobs"]) if row["jobs"] not in ("", None) else None,
+                    updated_at=row["updated_at"],
+                )
+            except (KeyError, TypeError, ValueError) as exc:
+                # A bare parse error names neither the ledger nor the row that broke it.
+                raise ValueError(f"{path}:{reader.line_num}: {exc!r}") from exc
     return rows
 
 

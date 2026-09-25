@@ -262,6 +262,12 @@ class GemScraper(BaseScraper):
         self, batch: list[str], results: list[Any]
     ) -> dict[str, dict[str, Any]]:
         out: dict[str, dict[str, Any]] = {}
+        if not isinstance(results, list):
+            # A GraphQL `{"errors": ...}` envelope instead of one answer per request.
+            results = []
+        # Ids the answer ran out before are labelled here, not left `unlabelled` in the gap line.
+        for _ in batch[len(results) :]:
+            self.note_detail_loss("short batch answer")
         for native_id, result in zip(batch, results, strict=False):
             detail = ((result or {}).get("data") or {}).get("oatsExternalJobPosting")
             if detail:

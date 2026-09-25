@@ -656,6 +656,14 @@ class EightfoldScraper(BaseScraper):
                     f"HTTP {cr.status_code} on child sitemap {child} — "
                     "its postings were not listed"
                 )
+        if not found:
+            # The last-resort surface answered 200 and still listed nothing: say what it held,
+            # so an emptied Board and a sitemap whose shape moved can be told apart.
+            self.note_unreadable_board(
+                "job URLs in the sitemap",
+                f"{r.text.count('<loc>')} <loc>s, {len(children)} child sitemaps, "
+                f"{len(r.text)} bytes",
+            )
         return _dedupe(found)
 
     # --- shared parse -------------------------------------------------------------------------

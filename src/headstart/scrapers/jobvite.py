@@ -94,6 +94,7 @@ ADR-0023's duplicate-prune case, so nothing is done about it here beyond saying 
 
 from __future__ import annotations
 
+import math
 import re
 from typing import Any
 
@@ -110,6 +111,8 @@ _DETAIL_WORKERS = 6
 #: so this is ~3.5x headroom; it exists so a ``next`` link that ever pointed at itself could not
 #: spin forever, not as a cap anyone is expected to reach.
 _MAX_PAGES = 200
+#: Postings per ``/search`` page (module docstring), so a stated total implies a page count.
+_PAGE_SIZE = 50
 
 _JOB_ID = r"[A-Za-z0-9]+"
 #: The ``jv-pagination-next`` anchor, which is how the walk advances. Attribute order varies by
@@ -292,6 +295,14 @@ class JobviteScraper(BaseScraper):
                     self._log.info(
                         f"{self.board_key()}: next link offered on page {pages} but it added "
                         f"no ids — walk stopped at {len(ids)} of {stated}"
+                    )
+                elif stated and pages < math.ceil(stated / _PAGE_SIZE):
+                    # A template change that stops `_NEXT` matching would otherwise serve page 0
+                    # alone as the whole Board, with nothing in the log to say so.
+                    self._log.info(
+                        f"{self.board_key()}: walk ended with no next link on page {pages} of "
+                        f"the {math.ceil(stated / _PAGE_SIZE)} the counter implies — {len(ids)} of "
+                        f"{stated} ids read"
                     )
                 return ids
             href = match.group(1)

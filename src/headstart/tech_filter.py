@@ -889,6 +889,13 @@ def filter_jobs(
     )
     if workers is None:
         workers = os.cpu_count() or 1
+    if logger:
+        # A run killed before its first file lands still says what it started with.
+        megabytes = sum(src.stat().st_size for src, _ in pairs) / 1e6
+        logger.info(
+            f"filtering {len(pairs)} files ({megabytes:.0f} MB) across "
+            f"{max(1, min(workers, len(pairs)))} worker(s)"
+        )
     stats: dict[str, tuple[int, int]] = {}
 
     def landed(ats: str, kept: int, total: int) -> None:

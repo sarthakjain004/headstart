@@ -86,3 +86,20 @@ def test_exactly_one_attempt_on_failure(monkeypatch):
     with pytest.raises(llm_router.RouterUnavailable):
         llm_router.ask("hello")
     assert len(calls) == 1
+
+
+def test_failure_logs_type_and_status_but_never_the_host(monkeypatch, caplog):
+    """The Space's 503 says nothing, so this line is the only trace of why — and the error text
+    it leaves out names the private router host."""
+
+    def fake_urlopen(req, timeout=None):
+        raise urllib.error.HTTPError(req.full_url, 502, "Bad Gateway", {}, None)
+
+    monkeypatch.setenv("LLM_ROUTER_BASE", "http://router.internal:4000/v1")
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    with pytest.raises(llm_router.RouterUnavailable):
+        llm_router.ask("hello")
+    assert [r.getMessage() for r in caplog.records] == [
+        "llm router unavailable: HTTPError 502"
+    ]
+    assert caplog.records[0].levelname == "WARNING"

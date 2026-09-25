@@ -231,11 +231,19 @@ def main() -> int:
     # through `board_key_of`, it is the prefix the Board's own ids carry. A truncated Board is in
     # `boards_ok` too, and `index sync` drops it again as unauthoritative (ADR-0053).
     # A Board that answered 404 raised, so it is in `errors`, not `boards_ok`, and stays out.
+    unresolved = 0
     for report in reports:
         for key in report.boards_ok:
             board = board_key_of(key)
-            if board is not None:
+            if board is None:
+                unresolved += 1
+            else:
                 boards.add(board)
+    if unresolved:
+        _log.info(
+            f"{unresolved} boards_ok key(s) did not resolve to a board_key and were not "
+            "added to the scraped-Board scope"
+        )
     # Before the telemetry below, like the unauthoritative-Board write: this is the eviction
     # signal, and an empty file is the honest record of a run that joined nothing.
     write_scraped_boards(boards, Path(args.scraped_boards))
@@ -271,10 +279,20 @@ def _update_speedup(reports: list[ShardReport], path: Path) -> None:
         stored = shard_speedup.load(path)
         blended = shard_speedup.blend(stored.ratio, ratios)
         shard_speedup.save(path, blended, len(ratios))
-        _log.info(
-            f"fan-out speedup: {blended:.2f}x "
-            f"(was {stored.ratio:.2f}x, {len(ratios)} shard(s) this run)"
-        )
+        # `blend` drops ratios under MIN_RATIO; count what it kept, or an all-dropped run
+        # reads as a real update
+        usable = sum(r >= shard_speedup.MIN_RATIO for r in ratios)
+        if not usable:
+            _log.info(
+                f"fan-out speedup: unchanged at {stored.ratio:.2f}x — all {len(ratios)} "
+                f"shard ratio(s) this run fell below {shard_speedup.MIN_RATIO}x and were dropped"
+            )
+        else:
+            _log.info(
+                f"fan-out speedup: {blended:.2f}x (was {stored.ratio:.2f}x, {usable} usable "
+                f"shard(s) this run, {len(ratios) - usable} below "
+                f"{shard_speedup.MIN_RATIO}x dropped)"
+            )
     except Exception as exc:  # noqa: BLE001 - telemetry must never sink the join
         _log.warning(f"could not update the speedup ledger: {exc}", exc_info=True)
 

@@ -1148,6 +1148,26 @@ def test_fan_out_reports_a_bug_with_its_traceback_but_not_a_refused_request(
     assert [r.levelno for r in caplog.records] == [logging.WARNING, logging.INFO]
     assert caplog.records[0].exc_info[0] is KeyError
     assert "stub:acme: unexpected KeyError" in caplog.records[0].getMessage()
+    # The rest are one tally for the call, not one line per item.
+    assert caplog.records[1].getMessage() == (
+        "stub:acme: 2 unexpected exception(s) in fan-out items (KeyError x2)"
+    )
+
+
+def test_fan_out_says_a_systemic_bug_once_per_call_not_once_per_item(
+    monkeypatch, caplog
+):
+    _fresh_unexpected(monkeypatch)
+    caplog.set_level(logging.INFO, logger=base.__name__)
+    BaseScraper.fan_out(["bug"] * 50, _raise_for, workers=4, what="stub:acme")
+    BaseScraper.fan_out(["bug"] * 50, _raise_for, workers=4, what="stub:acme")
+    # Per call: its first item's report (WARNING only the first time ever) and one tally.
+    assert [r.levelno for r in caplog.records] == [
+        logging.WARNING,
+        logging.INFO,
+        logging.INFO,
+        logging.INFO,
+    ]
 
 
 def test_fan_out_async_reports_a_bug_under_the_board_key(monkeypatch, caplog):
@@ -1184,3 +1204,7 @@ def test_read_detail_reports_a_bug_but_not_an_unparseable_body(monkeypatch, capl
         "stub:acme: unexpected KeyError reading a detail"
         in caplog.records[0].getMessage()
     )
+    # A second one of the same type on the Board is counted, not said again.
+    assert scraper._read_detail_outcome("title", ok) is None
+    assert scraper.detail_losses["KeyError"] == 2
+    assert len(caplog.records) == 1

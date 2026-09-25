@@ -267,6 +267,18 @@ def test_a_counter_with_no_job_links_is_named_as_unread(monkeypatch, caplog):
     assert "counter states 5" in caplog.text
 
 
+def test_a_walk_ending_short_of_the_counter_says_so(monkeypatch, caplog):
+    """A template change that stops the next link matching would serve page 0 as the Board."""
+    caplog.set_level(logging.INFO, logger="headstart.scrapers.jobvite")
+    base = "https://jobs.jobvite.com/acme/search"
+    _responses(monkeypatch, {base: (200, _listing(jobs=("a", "b"), total=120), None)})
+    assert JobviteScraper("acme")._listing_ids() == ["a", "b"]
+    assert (
+        "jobvite:acme: walk ended with no next link on page 1 of the 3 the counter implies "
+        "— 2 of 120 ids read" in caplog.text
+    )
+
+
 def test_an_empty_board_is_no_postings_not_an_error(monkeypatch):
     """33 of the 434 live boards serve a 200 with no postings and no counter. That is a live
     Board hiring nobody, and it must parse as zero Jobs rather than raise."""

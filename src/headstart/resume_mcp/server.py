@@ -322,6 +322,8 @@ def serve(stdin: TextIO, stdout: TextIO, account: Account | Unconfigured) -> Non
         try:
             message = json.loads(line)
         except ValueError as exc:
+            # Length only, as below: the line may carry résumé text.
+            _log.info("unparseable JSON-RPC line dropped: length %d", len(line))
             reply: dict[str, Any] | None = _error(None, -32700, f"parse error: {exc}")
         else:
             if isinstance(message, dict):
@@ -346,6 +348,8 @@ def main() -> None:
     log.setup()
     try:
         account: Account | Unconfigured = open_account()
+        # The hashed subscription id, never the address it is derived from.
+        _log.info("%s %s serving account %s", NAME, VERSION, account.id)
     except Unconfigured as exc:
         _log.warning("%s: %s", NAME, exc)
         account = exc

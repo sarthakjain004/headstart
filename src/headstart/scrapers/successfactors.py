@@ -82,7 +82,13 @@ from urllib.parse import unquote
 from headstart import company_name, http, log
 from headstart.fetcher import Fetcher
 from headstart.models import Job, html_to_text, is_remote, requisition_of
-from headstart.scrapers.base import USER_AGENT, BaseScraper, DetailLost, DetailRequest
+from headstart.scrapers.base import (
+    USER_AGENT,
+    BaseScraper,
+    DetailLost,
+    DetailRequest,
+    classify_exception,
+)
 from headstart.scrapers.job_posting_jsonld import find_job_posting, job_posting_fields
 
 _log = log.get(__name__)
@@ -161,6 +167,9 @@ class SuccessFactorsScraper(BaseScraper):
     """SuccessFactors RMK scraper — ``slug`` is the board's vanity host."""
 
     ats = "successfactors"
+    #: Why the last :meth:`_sitemal_fields` came back empty, for the rescue line in
+    #: :meth:`fetch_raw`.
+    _sitemal_failure: str | None = None
     # scraper passes through RMK sitemap URLs: /job/{slug}/{id}/ on per-tenant vanity hosts
     # (jobs.bt.com, careers.capgemini.com, jobs.turbo.co.th — no common host to anchor on)
     url_shape = r"https://[^/]+/job/.+/\d+/?"
@@ -398,7 +407,8 @@ class SuccessFactorsScraper(BaseScraper):
                 timeout=_RSS_TIMEOUT,
                 stream=True,
             )
-        except http.RequestsError:
+        except http.RequestsError as exc:
+            self._sitemal_failure = classify_exception(exc)
             return {}
         chunks: list[bytes] = []
         size = 0
@@ -413,8 +423,11 @@ class SuccessFactorsScraper(BaseScraper):
         finally:
             response.close()
         if response.status_code != 200:
+            self._sitemal_failure = f"HTTP {response.status_code}"
             return {}
-        return _sitemal_items(b"".join(chunks).decode("utf-8", "replace"))
+        items = _sitemal_items(b"".join(chunks).decode("utf-8", "replace"))
+        self._sitemal_failure = None if items else "no readable items"
+        return items
 
     def fetch_raw(self) -> Any:
         # Each of the three surfaces hands back *why* its list came up short, and the truncation
@@ -527,7 +540,8 @@ class SuccessFactorsScraper(BaseScraper):
         ]
         if len(open_listed) < len(tech_listed):
             _log.info(
-                f"{self.slug}: {len(tech_listed) - len(open_listed)} of {len(tech_listed)} "
+                f"{self.board_key()}: {len(tech_listed) - len(open_listed)} of "
+                f"{len(tech_listed)} "
                 "job pages say the posting is not available — dropped as closed"
             )
         # /sitemal.xml (module docstring): the fallback for a page that yielded nothing, fetched
@@ -541,8 +555,14 @@ class SuccessFactorsScraper(BaseScraper):
         lost = sum(1 for page in fields if page is None)
         if lost < unread:
             _log.info(
-                f"{self.slug}: sitemal.xml filled {unread - lost} of {unread} unreadable "
-                "job pages"
+                f"{self.board_key()}: sitemal.xml filled {unread - lost} of {unread} "
+                "unreadable job pages"
+            )
+        elif unread:
+            _log.info(
+                f"{self.board_key()}: sitemal.xml rescue unavailable "
+                f"({self._sitemal_failure or 'none of the unread ids listed'}) — {unread} "
+                "pages stay unread"
             )
         if lost:
             # Every field comes from the job page (or its fallback), so `parse` drops a Job

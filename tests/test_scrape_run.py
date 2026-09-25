@@ -125,6 +125,36 @@ def test_report_survives_the_time_budget_and_still_writes_its_numbers(tmp_path, 
     assert report["board_seconds"]["max"] == 1.5
 
 
+def test_report_still_writes_the_shard_report_when_telemetry_raises(
+    tmp_path, caplog, monkeypatch
+):
+    """`_report` runs in a `finally`: a telemetry bug must not stop the shard report the join
+    reads, nor turn a budget kill into a raise — and it logs at INFO, once per shard."""
+    caplog.set_level(logging.INFO, logger="headstart.ingest.scrape_run")
+
+    def broken() -> list[str]:
+        raise RuntimeError("telemetry bug")
+
+    monkeypatch.setattr(scrape_run.spare_egress, "report", broken)
+    progress = scrape_run._Progress(assigned=1)
+    progress.on_board("lever:a", 1, None, 2.0)
+
+    scrape_run._report(
+        progress,
+        tmp_path,
+        elapsed=60.0,
+        predicted=None,
+        serial=None,
+        killed=True,
+        shard="4",
+    )
+
+    report = json.loads((tmp_path / "_shard_report.json").read_text())
+    assert (report["shard"], report["killed_by_budget"]) == ("4", True)
+    [failed] = [r for r in caplog.records if "telemetry failed" in r.getMessage()]
+    assert failed.levelno == logging.INFO and failed.exc_info
+
+
 def test_report_carries_short_lists_into_the_shard_report(tmp_path):
     """The last hop before the join: a Board reported short by its scraper has to reach
     ``_shard_report.json``, beside the errors, or the signal dies on this runner (ADR-0053).

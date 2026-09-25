@@ -21,6 +21,10 @@ import json
 import re
 from pathlib import Path
 
+from headstart import log
+
+_log = log.get(__name__)
+
 _INTERN = re.compile(r"\bintern(ship)?\b|\btrainee\b", re.IGNORECASE)
 
 NON_TECH = "non-tech"  # the reserved family: counted as a diagnostic, never charted
@@ -105,6 +109,9 @@ def load_watchlist(path: Path, family_names: set[str]) -> list[WatchRole]:
     Missing file is an empty list, not an error: the watchlist is optional by design.
     """
     if not path.exists():
+        # Optional, but its absence removes every `watch:*` series from the trends ledger from
+        # this tick on — which would otherwise read as those roles leaving the market.
+        _log.info(f"watchlist {path} absent — no watch roles this run")
         return []
     spec = json.loads(path.read_text(encoding="utf-8"))
     watched: list[WatchRole] = []

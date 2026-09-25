@@ -570,6 +570,11 @@ class TeslaScraper(BaseScraper):
                     employment_type=types.get(str(entry.get("y"))),
                 )
             )
+        if dropped := len(listings) - len(jobs):
+            self._log.info(
+                f"{self.board_key()}: parse dropped {dropped} of {len(listings)} rows "
+                "with no id/title"
+            )
         return jobs
 
     def _salary_field(self, raw: Any) -> str | None:

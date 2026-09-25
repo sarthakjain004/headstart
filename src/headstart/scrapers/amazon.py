@@ -253,6 +253,13 @@ class AmazonScraper(BaseScraper):
         expected = sum(categories.values())
         if expected:
             lost = sum(self._page_losses.values()) + pages.count(None)
+            if lost and self.truncated is not None:
+                # The offset ceiling already spoke and `mark_truncated` keeps only the first
+                # reason, so the call below would drop this breakdown unlogged.
+                self._log.info(
+                    f"{self.board_key()}: {lost} of {len(tasks)} listing pages lost"
+                    + loss_breakdown(self._page_losses, lost)
+                )
             self.mark_truncated_unless_negligible(
                 len(seen),
                 expected,

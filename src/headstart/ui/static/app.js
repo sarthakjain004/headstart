@@ -92,13 +92,14 @@ async function loadCoverage(){
   // none of these fields yet" \u2014 a false claim, on the one page whose subject is not making any.
   const fail = '<p class="aside">Couldn\u2019t reach the index to count just now. ' +
     'Reload to try again \u2014 no figure is better than a guessed one.</p>';
+  let r;
   try{
-    const r = await fetch('/coverage');
+    r = await fetch('/coverage');
     if (!r.ok){ logFail('GET', '/coverage', r.status); box.innerHTML = fail; return; }
     const d = await r.json();
     if (!d || typeof d.total !== 'number' || !d.fields) throw new Error('shape');
     coverage = d;
-  }catch(e){ logFail('GET', '/coverage', 0, e); box.innerHTML = fail; return; }
+  }catch(e){ logFail('GET', '/coverage', r ? r.status : 0, e); box.innerHTML = fail; return; }
   const total = coverage.total;
   // One count per field against the one total \u2014 the server used to repeat `total` on every
   // field, which is one number said five times and five chances for them to disagree.
@@ -603,7 +604,7 @@ async function fetchPage(){
   // Fired together, not one after the other: the counts depend only on the filters, never on
   // the query, so they neither wait for the ranking nor make the user wait for them.
   const facetsPromise = fetch('/facets?'+p)
-    .then(r => { if (!r.ok) logFail('GET', '/facets', r.status); return r.json(); })
+    .then(r => { if (!r.ok){ logFail('GET', '/facets', r.status); return null; } return r.json(); })
     .catch(e => { logFail('GET', '/facets', 0, e); return null; });
   facetsPromise.then(facets => { if (request === searchRequest) applyFacets(facets); });
   drawSortNote();
@@ -1003,7 +1004,7 @@ async function setCompany(board, action){
   const status = r ? r.status : 0;
   const error = (d && d.error) || (status ? `Couldn't update that company (status ${status})`
     : 'Couldn\'t update that company — the request didn\'t go through.');
-  console.warn('[api] POST /companies', action, board, status, error);
+  if (r) logFail('POST', '/companies', status);   // a refusal or unreadable body; a drop logged above
   starMsg(error);
   return { ok: false, status, error };
 }
@@ -1322,11 +1323,12 @@ function starMsg(text){
 }
 
 async function loadSaved(){
+  let r;
   try{
-    const r = await fetch('/saved');
+    r = await fetch('/saved');
     if (!r.ok){ logFail('GET', '/saved', r.status); starMsg('Couldn\'t load your saved jobs.'); return; }
     mySaved = await r.json();
-  }catch(e){ logFail('GET', '/saved', 0, e); starMsg('Couldn\'t load your saved jobs.'); return; }
+  }catch(e){ logFail('GET', '/saved', r ? r.status : 0, e); starMsg('Couldn\'t load your saved jobs.'); return; }
   savedByJob.clear();
   mySaved.forEach(j => savedByJob.set(j.job_id, j));
   renderSaved();
@@ -1475,11 +1477,12 @@ function readProfileForm(){
 
 async function loadProfile(){
   const msg = el('profile-msg');
+  let r;
   try{
-    const r = await fetch('/profile');
+    r = await fetch('/profile');
     if (!r.ok){ logFail('GET', '/profile', r.status); msg.textContent = 'Couldn\'t load your profile.'; return; }
     fillProfileForm(await r.json());
-  }catch(e){ logFail('GET', '/profile', 0, e); msg.textContent = 'Couldn\'t load your profile.'; }
+  }catch(e){ logFail('GET', '/profile', r ? r.status : 0, e); msg.textContent = 'Couldn\'t load your profile.'; }
 }
 
 async function saveProfile(){
@@ -1554,8 +1557,9 @@ async function onGoogleCredential(resp){
   const q = el('q').value.trim();
   if (!q){ msg.textContent = 'Type the role you want first.'; return; }
   msg.textContent = 'Subscribing…';
+  let r;
   try {
-    const r = await fetch('/subscribe', {
+    r = await fetch('/subscribe', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({ credential: resp.credential, query: q, filters: currentFilters() })
     });
@@ -1563,7 +1567,7 @@ async function onGoogleCredential(resp){
     if (!r.ok) logFail('POST', '/subscribe', r.status);
     msg.textContent = r.ok ? ('Subscribed — digests go to ' + data.email)
                            : (data.error || ('Failed (' + r.status + ')'));
-  } catch(e){ logFail('POST', '/subscribe', 0, e); msg.textContent = 'That request didn\'t go through. Try again.'; }
+  } catch(e){ logFail('POST', '/subscribe', r ? r.status : 0, e); msg.textContent = 'That request didn\'t go through. Try again.'; }
 }
 /* ---- role trends (ADR-0040/0051). The ledger is one count per (metric, family, band) per
    pipeline run; this draws a line per series and ranks them by size. Two measures ("All
@@ -2571,17 +2575,17 @@ async function loadTrends(family){
   // because an abort mid-download rejects r.json() exactly as it rejects the fetch — which
   // also closes a hole that was already there: a malformed 200 body used to reject nowhere at
   // all, leaving the panel dimmed for good instead of saying anything.
-  let payload, err, refused;
+  let payload, err, refused, r;
   try {
-    const r = await fetch('/trends' + (q.size ? '?' + q : ''), { signal: req.signal });
+    r = await fetch('/trends' + (q.size ? '?' + q : ''), { signal: req.signal });
     if (r.ok) payload = await r.json();
     else if (trendPicks.length && (r.status === 400 || r.status === 503))
       refused = { status: r.status, error: ((await r.json().catch(() => null)) || {}).error || '' };
     else err = r.status === 401
       ? 'Your session expired — sign in again to see trends.'
       : 'Trends didn’t load. Try again.';
-    if (!r.ok) console.warn('[trends] GET /trends', r.status, refused ? refused.error : '');
-  } catch(e){ logFail('GET', '/trends', 0, e); err = 'That request didn’t go through.'; }
+    if (!r.ok) logFail('GET', '/trends', r.status);
+  } catch(e){ logFail('GET', '/trends', r ? r.status : 0, e); err = 'That request didn’t go through.'; }
   // Cancelled by a newer request, which now owns the panel: say nothing, paint nothing. An
   // abort lands in the catch above like a dropped connection, and reporting it would put
   // "that request didn't go through" over a render that is about to be replaced anyway.
@@ -4432,12 +4436,12 @@ function chooseCo(i){
 async function suggestCompanies(q){
   if (coReq) coReq.abort();
   const req = coReq = new AbortController();
-  let found = null, missing = false;
+  let found = null, missing = false, r;
   try {
-    const r = await fetch('/companies/suggest?' + new URLSearchParams({ q }), { signal: req.signal });
+    r = await fetch('/companies/suggest?' + new URLSearchParams({ q }), { signal: req.signal });
     if (r.ok) found = (await r.json()).companies || [];
     else { missing = r.status === 503 || r.status === 404; logFail('GET', '/companies/suggest', r.status); }
-  } catch(e){ logFail('GET', '/companies/suggest', 0, e); /* reported below, unless a newer query replaced this one */ }
+  } catch(e){ logFail('GET', '/companies/suggest', r ? r.status : 0, e); /* reported below, unless a newer query replaced this one */ }
   if (req.signal.aborted) return;
   const picked = pickedKeys();
   const options = (found || []).filter(c => !picked.has(c.key.toLowerCase())).map(company => ({ company }));

@@ -188,109 +188,130 @@ def _report(
     reaching the join matters more than its telemetry.
     """
     deferred = deferred or []
-    spread = observability.percentiles(progress.seconds)
-    retries = http.retry_stats()
-    actual_min = elapsed / 60
-    # INFO, not WARNING: each of these three fires once per *shard*, so fifteen shards would spend
-    # up to 45 of the run's 50 annotations on them (ADR-0039). The join already warns run-level.
-    if killed:
-        _log.info(
-            f"time budget reached after {actual_min:.1f} min — banking a partial fragment; "
-            f"{progress.done}/{progress.assigned} boards done, {progress.undone} deferred "
-            "to the next run"
-        )
-        # Which Boards, not just how many. A count sends the next person to diff the assignment
-        # artifact against the fragment's cost rows to learn which Board ate the shard — that is
-        # how `workday:dollartree/dollartreeus` was found on 2026-08-18, and it should have been
-        # one log line. Capped: a shard killed early defers hundreds and the list is then noise.
-        if deferred:
-            _log.info("deferred: " + log.named_sample(deferred))
-    if progress.errors:
-        _log.info(
-            f"{len(progress.errors)} board errors: {observability.error_summary(progress.errors)}"
-        )
-    if retries:
-        _log.info(
-            "retries: "
-            + ", ".join(f"{why} {n}" for why, n in sorted(retries.items()))
-            + f" (total {sum(retries.values())})"
-        )
-    # Kept off the pinned `retries:` line: a request that gave up is not one more retry, and
-    # folding it in would inflate that line's total (scripts/runlog/fanout_retries.py).
-    exhausted = http.exhausted_stats()
-    if exhausted:
-        _log.info(
-            "retry budget exhausted: "
-            + ", ".join(f"{why} {n}" for why, n in sorted(exhausted.items()))
-        )
-    # Which ATSes cost this shard its Origin budget, and what the spare egress recovered for them
-    # (ADR-0063). Reported for the same reason the retry classes are: without it a shard that
-    # routed everything successfully and one whose proxy carried nothing log identically, and
-    # "did the fallback work?" is the only question this feature has.
-    egress = spare_egress.report()
-    # What each fan-out width actually bought. The ADR-0078 clamp already runs some Boards at the
-    # ceiling and some at 12, so this is the only place the two are comparable — and
-    # `stream_width`'s own docstring says 12 has never been re-measured.
-    widths = fanout_stats.report()
-    health = observability.ScrapeHealth.from_reports(
-        [
-            observability.ShardReport(
-                boards_ok=progress.boards_ok,
-                errors=progress.errors,
-                truncated=progress.truncated,
-                observations=progress.observations,
+    # Defaults the shard report falls back to if the telemetry below raises.
+    spread: dict[str, float] = {}
+    retries: dict[str, int] = {}
+    try:
+        spread = observability.percentiles(progress.seconds)
+        retries = http.retry_stats()
+        actual_min = elapsed / 60
+        # INFO, not WARNING: each of these three fires once per *shard*, so fifteen shards would
+        # spend up to 45 of the run's 50 annotations on them (ADR-0039). The join already warns
+        # run-level.
+        if killed:
+            _log.info(
+                f"time budget reached after {actual_min:.1f} min — banking a partial fragment; "
+                f"{progress.done}/{progress.assigned} boards done, {progress.undone} deferred "
+                "to the next run"
             )
-        ]
-    )
-    coverage = health.coverage_line()
-    losses = health.loss_lines()
-    # Both are routine per-run measurement, so both are info. They were warnings only to force a
-    # GitHub annotation, which is a quota and not a level: 10 per step, 50 per job, and fifteen
-    # shards each claiming several of them starve the errors the annotations exist for. The step
-    # summary below is the surface that was actually wanted — uncapped and on the run page.
-    for line in egress + widths:
-        _log.info(line)
-    if coverage:
-        _log.info("Board coverage by ATS: " + coverage)
-        _log.info(health.verdict_line())
-    for line in losses:
-        _log.info(line)
-    ratio = (
-        f" | predicted {predicted:.1f} min, actual/predicted {actual_min / predicted:.2f}x"
-        if predicted
-        else ""
-    )
-    _log.info(
-        f"done: {progress.jobs} jobs from {progress.done} boards in {elapsed:0.0f}s "
-        f"({len(progress.errors)} board errors) | board seconds {spread}{ratio}"
-    )
-    observability.summary(
-        f"Scrape shard {shard}" if shard else "Scrape",
-        [
-            (
-                f"- **{progress.jobs:,}** jobs from {progress.done}/{progress.assigned} "
-                f"boards in {actual_min:.1f} min{ratio}"
-            ),
-            f"- {len(progress.errors)} board errors"
-            + (
-                f": {observability.error_summary(progress.errors)}"
-                if progress.errors
-                else ""
-            ),
-            f"- **{len(deferred)} deferred** (time budget reached)"
-            if killed
-            else f"- **aborted** by {aborted}"
-            if aborted
-            else "- finished within the time budget",
-            f"- board seconds {spread}",
-        ]
-        + (
-            [f"- **{health.verdict_line()}**", f"- Board coverage by ATS: {coverage}"]
-            if coverage
-            else []
+            # Which Boards, not just how many. A count sends the next person to diff the
+            # assignment artifact against the fragment's cost rows to learn which Board ate the
+            # shard — that is how `workday:dollartree/dollartreeus` was found on 2026-08-18, and
+            # it should have been one log line. Capped: a shard killed early defers hundreds and
+            # the list is then noise.
+            if deferred:
+                _log.info("deferred: " + log.named_sample(deferred))
+        if progress.errors:
+            _log.info(
+                f"{len(progress.errors)} board errors: "
+                f"{observability.error_summary(progress.errors)}"
+            )
+        if retries:
+            _log.info(
+                "retries: "
+                + ", ".join(f"{why} {n}" for why, n in sorted(retries.items()))
+                + f" (total {sum(retries.values())})"
+            )
+        # Kept off the pinned `retries:` line: a request that gave up is not one more retry, and
+        # folding it in would inflate that line's total (scripts/runlog/fanout_retries.py).
+        exhausted = http.exhausted_stats()
+        if exhausted:
+            _log.info(
+                "retry budget exhausted: "
+                + ", ".join(f"{why} {n}" for why, n in sorted(exhausted.items()))
+            )
+        # Which ATSes cost this shard its Origin budget, and what the spare egress recovered for
+        # them (ADR-0063). Reported for the same reason the retry classes are: without it a shard
+        # that routed everything successfully and one whose proxy carried nothing log
+        # identically, and "did the fallback work?" is the only question this feature has.
+        egress = spare_egress.report()
+        # What each fan-out width actually bought. The ADR-0078 clamp already runs some Boards at
+        # the ceiling and some at 12, so this is the only place the two are comparable — and
+        # `stream_width`'s own docstring says 12 has never been re-measured.
+        widths = fanout_stats.report()
+        health = observability.ScrapeHealth.from_reports(
+            [
+                observability.ShardReport(
+                    shard=shard,
+                    boards_ok=progress.boards_ok,
+                    errors=progress.errors,
+                    truncated=progress.truncated,
+                    observations=progress.observations,
+                )
+            ],
+            # INFO here: every shard would warn for one systemic fault; the join warns once
+            quiet=True,
         )
-        + [f"- {line}" for line in losses + egress + widths],
-    )
+        coverage = health.coverage_line()
+        losses = health.loss_lines()
+        # Both are routine per-run measurement, so both are info. They were warnings only to force a
+        # GitHub annotation, which is a quota and not a level: 10 per step, 50 per job, and fifteen
+        # shards each claiming several of them starve the errors the annotations exist for. The step
+        # summary below is the surface that was actually wanted — uncapped and on the run page.
+        for line in egress + widths:
+            _log.info(line)
+        if coverage:
+            _log.info("Board coverage by ATS: " + coverage)
+            _log.info(health.verdict_line())
+        for line in losses:
+            _log.info(line)
+        ratio = (
+            f" | predicted {predicted:.1f} min, actual/predicted {actual_min / predicted:.2f}x"
+            if predicted
+            else ""
+        )
+        _log.info(
+            f"done: {progress.jobs} jobs from {progress.done} boards in {elapsed:0.0f}s "
+            f"({len(progress.errors)} board errors) | board seconds {spread}{ratio}"
+        )
+        observability.summary(
+            f"Scrape shard {shard}" if shard else "Scrape",
+            [
+                (
+                    f"- **{progress.jobs:,}** jobs from {progress.done}/{progress.assigned} "
+                    f"boards in {actual_min:.1f} min{ratio}"
+                ),
+                f"- {len(progress.errors)} board errors"
+                + (
+                    f": {observability.error_summary(progress.errors)}"
+                    if progress.errors
+                    else ""
+                ),
+                f"- **{len(deferred)} deferred** (time budget reached)"
+                if killed
+                else f"- **aborted** by {aborted}"
+                if aborted
+                else "- finished within the time budget",
+                f"- board seconds {spread}",
+            ]
+            + (
+                [
+                    f"- **{health.verdict_line()}**",
+                    f"- Board coverage by ATS: {coverage}",
+                ]
+                if coverage
+                else []
+            )
+            + [f"- {line}" for line in losses + egress + widths],
+        )
+    except Exception:  # noqa: BLE001 - telemetry must never cost the shard report
+        # INFO, not WARNING or FirstOnly: this is once per shard *process*, so either would
+        # annotate every shard for one bug. The traceback still names the line, and the shard
+        # report below must be written regardless — it is what the join reads.
+        _log.info(
+            f"shard {shard} telemetry failed; writing its shard report anyway",
+            exc_info=True,
+        )
     observability.write_shard(
         outdir,
         observability.ShardReport(
@@ -389,6 +410,11 @@ def main() -> int:
             f"no prediction: {Path(args.assignment).parent / 'plan.json'} missing or unreadable"
         )
     predicted = plan.predicted_minutes(shard) if plan else None
+    if plan and predicted is None:
+        _log.info(
+            f"no prediction for shard {shard} in {Path(args.assignment).parent / 'plan.json'} "
+            "(cold start or index out of range)"
+        )
     serial = plan.serial_minutes(shard) if plan else None
     _log.info(f"shard mix: {_ats_mix(companies)}")
     if predicted is not None:

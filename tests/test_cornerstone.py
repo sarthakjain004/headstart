@@ -311,6 +311,16 @@ def test_a_failed_job_ad_still_ships_the_job_without_a_description():
     assert scraper.truncated is None  # a missing field, not a missing posting
 
 
+def test_a_job_ad_with_no_fields_is_a_labelled_loss():
+    """A 200 whose body lacks `data[0].items[0].fields` is named, not counted `unlabelled`."""
+    fake = _FakeCsod("ama-assn", _boards()["ama-assn"])
+    fake.board["ads"]["2/4125"] = json.dumps({"data": []})
+    scraper = CornerstoneScraper("ama-assn", fetcher=fake)
+    jobs = _by_id(scraper.parse(scraper.fetch_raw(), SCRAPED_AT))
+    assert jobs["4125"].description is None
+    assert scraper.detail_losses == {"no ad fields on a 200": 1}
+
+
 def test_the_tech_gate_and_the_description_store_skip_job_ads(monkeypatch):
     """The gate is exact: no surface states a department and the ad's `title` equals the
     listing's (58 of 58), so `is_tech(title, None)` asks what `filter_tech` will ask. The ad

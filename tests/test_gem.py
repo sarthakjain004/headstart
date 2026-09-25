@@ -376,3 +376,20 @@ def test_gem_refuses_its_own_ats_sandboxes(monkeypatch):
     scraper = GemScraper("atssandboxyello-co")
     scraper.resolve_company()
     assert scraper.company == "atssandboxyello-co"
+
+
+def test_a_graphql_error_envelope_labels_every_id_in_the_batch():
+    """A `{"errors": ...}` answer is not one result per request; its ids are labelled, not
+    left `unlabelled` or raised into the fan-out's catch-all."""
+    scraper = _scraper()
+    assert scraper._apply_detail_results(["a", "b"], {"errors": []}) == {}
+    assert scraper.detail_losses == {"short batch answer": 2}
+
+
+def test_a_short_batch_answer_labels_the_ids_it_ran_out_before():
+    scraper = _scraper()
+    detail = {"data": {"oatsExternalJobPosting": {"id": "a"}}}
+    assert scraper._apply_detail_results(["a", "b", "c"], [detail]) == {
+        "a": {"id": "a"}
+    }
+    assert scraper.detail_losses == {"short batch answer": 2}

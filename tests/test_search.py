@@ -1156,7 +1156,7 @@ def test_a_tracked_role_hands_over_by_its_own_title_patterns() -> None:
 def test_a_hand_off_that_widens_or_empties_says_so(caplog) -> None:
     from werkzeug.datastructures import MultiDict
 
-    from headstart.search import scoped_jobs_clause
+    from headstart.search import MAX_FAMILY_IDS, scoped_jobs_clause
 
     board = ("board", "b:x")
     with caplog.at_level(logging.WARNING, logger="headstart.search"):
@@ -1164,6 +1164,12 @@ def test_a_hand_off_that_widens_or_empties_says_so(caplog) -> None:
         scoped_jobs_clause(MultiDict([board, ("family", "ai-ml")]), None)
         scoped_jobs_clause(MultiDict([board, ("family", "nope")]), {"ai-ml": []})
         scoped_jobs_clause(MultiDict([board, ("family", "ai-ml")]), {"ai-ml": []})
+        scoped_jobs_clause(MultiDict([("family", "ai-ml")]), {"ai-ml": []})
+        with pytest.raises(ValueError):
+            scoped_jobs_clause(
+                MultiDict([board, ("family", "ai-ml")]),
+                {"ai-ml": [f"b:x:{i}" for i in range(MAX_FAMILY_IDS + 1)]},
+            )
     assert [r.getMessage() for r in caplog.records] == [
         "scope widened: role 'nope' has no watch pattern; whole Board served",
         (
@@ -1171,6 +1177,8 @@ def test_a_hand_off_that_widens_or_empties_says_so(caplog) -> None:
             "whole Board served"
         ),
         "family 'nope' is not a known family; zero results",
+        "scope widened: family= given without board=; ignored",
+        f"category hand-off refused: {MAX_FAMILY_IDS + 1} ids > {MAX_FAMILY_IDS}",
     ]
 
 

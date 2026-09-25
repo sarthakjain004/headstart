@@ -344,6 +344,12 @@ class TaleoBEScraper(BaseScraper):
         if name:
             _ORG_NAMES[key] = name
             self.company = name
+        else:
+            # The base resolver's line, which this override replaces (ADR-0114).
+            self._log.info(
+                f"{self.board_key()}: no company name — {_rss_url(self.slug)} answered "
+                f"{response.status_code} and stated none this ATS accepts"
+            )
 
     @staticmethod
     def slug_from(tenant: str, url: str) -> str:
@@ -375,6 +381,7 @@ class TaleoBEScraper(BaseScraper):
         seen_pages: set[str] = set()
         seen_jobs: set[str] = set()
         listed: list[dict[str, str | None]] = []
+        blocks = unmatched = 0
         for _ in range(_MAX_PAGES):
             if page_url in seen_pages:
                 self.mark_truncated("listing next link looped before the Board ended")
@@ -394,8 +401,12 @@ class TaleoBEScraper(BaseScraper):
                 for m in _SORT_COLUMN.finditer(page)
             }
             for block in _BLOCK.findall(page):
+                blocks += 1
                 match = _JOB.search(block)
-                if not match or match.group("id") in seen_jobs:
+                if not match:
+                    unmatched += 1
+                    continue
+                if match.group("id") in seen_jobs:
                     continue
                 seen_jobs.add(match.group("id"))
                 fields_match = _HEAD_FIELDS.search(block)
@@ -428,10 +439,20 @@ class TaleoBEScraper(BaseScraper):
                 )
             next_match = NEXT_PAGE_LINK.search(page)
             if not next_match:
-                return listed
+                break  # skips the for-else below, like the `return` that stood here
             page_url = urljoin(page_url, html.unescape(next_match.group("href")))
         else:
             self.mark_truncated(f"hit the {_MAX_PAGES}-page cap at {len(listed)} jobs")
+        if blocks and unmatched == blocks:
+            self.note_unreadable_board(
+                "viewRequisition cards",
+                f"{blocks} accordion blocks, none with a viewRequisition link",
+            )
+        elif unmatched:
+            self._log.info(
+                f"{self.board_key()}: {unmatched} of {blocks} listing cards had no "
+                "viewRequisition link — skipped"
+            )
         return listed
 
     def fetch_raw(self) -> Any:

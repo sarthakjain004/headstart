@@ -466,7 +466,7 @@ def test_shutdown_does_not_wait_for_a_board_still_in_flight(monkeypatch, tmp_pat
 
 
 def test_a_board_still_running_at_the_kill_is_costed_for_what_it_burned(
-    monkeypatch, tmp_path
+    monkeypatch, tmp_path, caplog
 ):
     """The survivorship hole that let one Board kill a shard every run, forever.
 
@@ -498,6 +498,7 @@ def test_a_board_still_running_at_the_kill_is_costed_for_what_it_burned(
         return FakeScraper([make_job("x:quick:1")]) if slug == "quick" else _Blocking()
 
     monkeypatch.setattr(harvest, "get_scraper", fake_get)
+    caplog.set_level("INFO", logger="headstart.harvest")
 
     def on_board(key, jobs, error, seconds, truncated=None):
         if key.endswith(":quick"):
@@ -522,6 +523,11 @@ def test_a_board_still_running_at_the_kill_is_costed_for_what_it_burned(
     )
     assert monster.unfinished, "a bound must not reach the ledger as a measurement"
     assert not rows["x:quick"].unfinished
+    # ... and the log names the Board the kill caught, which the deferred list rarely does.
+    assert any(
+        r.getMessage().startswith("killed mid-fetch: 1 board(s) — x:monster ")
+        for r in caplog.records
+    )
 
 
 def test_a_clean_finish_costs_every_board_exactly_once(monkeypatch, tmp_path):

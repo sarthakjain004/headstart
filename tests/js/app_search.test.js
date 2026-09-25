@@ -79,7 +79,9 @@ function loadApp(respond, cfg = {}) {
     Event: class { constructor(type) { this.type = type; } },
     fetch: url => {
       fetches.push(String(url));
-      return Promise.resolve({ ok: String(url) === '/sets', json: () => Promise.resolve(respond(String(url))) });
+      // /facets answers OK too: a refused one is read as no counts at all, never as counts.
+      const ok = String(url) === '/sets' || String(url).startsWith('/facets');
+      return Promise.resolve({ ok, json: () => Promise.resolve(respond(String(url))) });
     },
   };
   ctx.globalThis = ctx;
@@ -193,7 +195,7 @@ test('a refused follow/hide says why on the status line, not just by re-enabling
   assert.strictEqual(res.ok, false);
   assert.strictEqual(res.status, 409);
   assert.strictEqual(nodes.n.textContent, 'at most 200 companies in each list');
-  assert.ok(logged.some(a => a[0] === '[api] POST /companies' && a.includes(409)), JSON.stringify(logged));
+  assert.ok(logged.some(a => a.join(' ') === '[api] POST /companies 409'), JSON.stringify(logged));
 });
 
 test('a refused rename says why, like the email toggle', async () => {

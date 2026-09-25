@@ -340,7 +340,8 @@ class PersonioScraper(BaseScraper):
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
         jobs: list[Job] = []
-        for pos in raw.findall("position"):
+        positions = raw.findall("position")
+        for pos in positions:
             jid = _text(pos, "id")
             if not jid:
                 continue
@@ -366,6 +367,11 @@ class PersonioScraper(BaseScraper):
                     employment_type=" / ".join(x for x in (etype, sched) if x) or None,
                     salary=self._salary_field(pos),
                 )
+            )
+        if dropped := len(positions) - len(jobs):
+            self._log.info(
+                f"{self.board_key()}: parse dropped {dropped} of {len(positions)} rows "
+                "with no id/title"
             )
         return jobs
 

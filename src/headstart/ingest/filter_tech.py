@@ -35,7 +35,11 @@ def main() -> int:
     if not args.src.is_dir():
         log.fail(_log, f"no source dir at {args.src}")
 
-    filter_jobs_and_report(args.src, args.dst, _log)
+    try:
+        filter_jobs_and_report(args.src, args.dst, _log)
+    except ValueError as exc:
+        # a torn line raises with its file:line; say so as an abort, not a bare traceback
+        log.fail(_log, f"tech filter aborted: {exc}")
     return 0
 
 
