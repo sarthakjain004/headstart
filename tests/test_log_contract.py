@@ -1010,7 +1010,7 @@ def _plan_measured(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     One Board (`greenhouse:giant`, 80 min) outweighs an even share of a slice that is otherwise
     all sub-second Boards, which is what makes the makespan floor and the budget warning fire
     together — that is not contrived, it is the shape of this pipeline's real cost distribution
-    (a handful of giants against ~20k Boards that answer in under a second).
+    (a handful of giants against ~80k Boards that answer in under a second).
 
     Determinism is bought with distinct costs, not with a seed: `pick_boards` shuffles, and LPT
     then deals items heaviest-first, so equal costs would make which Board lands on which shard —

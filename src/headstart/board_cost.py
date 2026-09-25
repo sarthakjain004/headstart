@@ -107,7 +107,7 @@ class BoardCost:
     jobs: int | None
     # UTC ISO timestamp of the last run that *looked at* this Board — which is what
     # `_GATE_RECHECK_DAYS` wants, since a failed look is still a look, and what the Slice's
-    # rotation tail orders by (ADR-0229). Rows written before that ADR hold a bare date. Note it
+    # Tail orders by (ADR-0229). Rows written before that ADR hold a bare date. Note it
     # no longer dates `jobs`: an errored or unfinished run refreshes this and the seconds while
     # carrying the count forward, so a row can pair today's stamp with a count from days ago.
     # That is the intended trade — a stale count is better than a 0 that means "we never found

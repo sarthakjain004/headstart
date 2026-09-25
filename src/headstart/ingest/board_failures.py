@@ -63,7 +63,8 @@ QUARANTINE_AT = 5
 # for all 757 together — ``data/state/board_cost.csv``, 2026-09-16), because it dies on the
 # listing request. So the fortnight there buys something real and would only be cargo-culted here.
 #
-# At 7 days and ~24 runs/day the re-admitted pool is ~31 Boards — 0.16% of a 20,000-Board slice —
+# At 7 days and ~24 runs/day the re-admitted pool is ~31 Boards — 0.16% of the 20,000-Board slice
+# this was sized against, 0.04% of ADR-0229's 80,000 —
 # against a measured 23 of 757 quarantined Boards that answer 200 today, **12 of them serving 264
 # tech postings** (5,593 raw, but ADR-0017's gate is what decides what reaches users). Not one day:
 # that is 5,299 requests a week instead of 757, at origins that have already said 404 five times,
@@ -234,7 +235,7 @@ def paroled(rows: dict[str, Failure], now: str) -> set[str]:
     simply restamps its row and serves another :data:`PAROLE_DAYS`.
 
     Re-admitted is not scraped. ``pick_boards`` still has to choose the Board, and an unscored one
-    goes into the rotation tail, which takes the Boards looked at longest ago first (ADR-0229). A
+    goes into the Tail, which takes the Boards looked at longest ago first (ADR-0229). A
     paroled Board has not been looked at since quarantine took it out of the slice, so it sorts
     near the front and a parole cohort is usually probed on its next run.
 

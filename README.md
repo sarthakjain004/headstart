@@ -191,7 +191,7 @@ flowchart TB
     subgraph P["② Ingest &nbsp;·&nbsp; GitHub Actions, back-to-back &nbsp;·&nbsp; ADR-0025 / ADR-0026"]
         direction LR
         P1["<b>scrape-plan</b><br/>1 VM<br/>pick a board slice, LPT pack"]
-        P2["<b>scrape</b><br/>≤15 VMs · 60m budget<br/>45 enabled scrapers → fragments"]
+        P2["<b>scrape</b><br/>≤15 VMs · 75m budget<br/>45 enabled scrapers → fragments"]
         P3["<b>join</b><br/>1 VM<br/>union · tech-filter · descriptions<br/>ledgers · plan embed"]
         P4["<b>embed</b><br/>≤15 VMs · 180m budget<br/>nomic on CPU → fragments"]
         P5["<b>merge</b><br/>1 VM · single writer<br/>concat · meta refresh · sync · prune · trends · hot · index"]

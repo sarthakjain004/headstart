@@ -1,8 +1,9 @@
 import random
 
 from headstart.board_priority import (
-    EXPLORE_FRAC,
+    TAIL_FRAC,
     BoardPriority,
+    head_slots,
     load,
     pick_boards,
     save,
@@ -70,8 +71,8 @@ def test_pick_boards_split_and_order():
     scores = {f"lever:c{i}": float(100 - i) for i in range(20)}
     picked = pick_boards(companies, scores, 10, rng=random.Random(7))
     assert len(picked) == 10
-    # head size follows EXPLORE_FRAC, so retuning the split doesn't invalidate this test
-    head_n = 10 - round(10 * EXPLORE_FRAC)
+    # head size follows TAIL_FRAC, so retuning the split doesn't invalidate this test
+    head_n = 10 - round(10 * TAIL_FRAC)
     head, tail = picked[:head_n], picked[head_n:]
     head_scores = [scores[f"lever:{c.slug}"] for c in head]
     assert head_scores == sorted(head_scores, reverse=True)  # score-desc head
@@ -145,12 +146,12 @@ def test_gap_quota_reserves_slots_from_the_exploration_tail():
         companies, scores, 40, unsettled=unsettled, gap_frac=0.5, rng=random.Random(7)
     )
 
-    # the head is capped by EXPLORE_FRAC but can hold no more than the scored Boards
-    head_n = min(len(scores), 40 - round(40 * EXPLORE_FRAC))
-    explore_slots = 40 - head_n
+    # the head is capped by head_slots but can hold no more than the Scored Boards
+    head_n = min(len(scores), head_slots(40))
+    tail_slots = 40 - head_n
     assert len(picked) == 40
     gap = [c for c in picked[head_n:] if f"lever:{c.slug}" in unsettled]
-    assert len(gap) >= round(explore_slots * 0.5)
+    assert len(gap) >= round(tail_slots * 0.5)
     assert len({c.slug for c in picked}) == 40  # the quota never double-picks
 
 
@@ -165,7 +166,7 @@ def test_gap_quota_leaves_the_priority_head_untouched():
     )
     without = pick_boards(companies, scores, 20, rng=random.Random(11))
 
-    head_n = min(len(scores), 20 - round(20 * EXPLORE_FRAC))
+    head_n = min(len(scores), head_slots(20))
     assert [c.slug for c in with_gap[:head_n]] == [c.slug for c in without[:head_n]], (
         "the quota comes out of exploration; a scored board must never lose its slot to it"
     )
@@ -284,7 +285,7 @@ def test_a_date_only_stamp_sorts_before_that_days_timestamps():
 
 
 def test_rotation_order_never_reorders_the_scored_head():
-    """The head is ordered by tech score alone; a recent look must not demote a top Board."""
+    """The head is ordered by score alone; a recent look must not demote a top Board."""
     companies = _companies(40)
     scores = {f"lever:c{i}": float(100 - i) for i in range(5)}
     last_looked = {f"lever:c{i}": "2026-09-25T10:00:00+00:00" for i in range(5)}

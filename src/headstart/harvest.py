@@ -347,7 +347,7 @@ def scrape_all(
         #
         # A Board already running cannot be cancelled — you cannot kill a Python thread — so
         # `wait=True` blocked on the slowest in-flight one, and a straggler could outlast the 6
-        # min of slack between the 60m budget and the 66m step timeout, taking the runner down
+        # min of slack between the 75m budget and the 81m step timeout, taking the runner down
         # before anything was reported (ADR-0053, amended). Not waiting is safe because those
         # results are discarded either way: the loop that would have written them has already
         # exited, and `JobWriter` is written only from that loop and flushed per Board, so no

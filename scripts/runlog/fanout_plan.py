@@ -12,8 +12,9 @@ the 9 min even share", the actual run confirming a straggler is not a new findin
 
 1. **Slice composition** (`scrape_plan` only) — `slice: N boards (P priority + E exploration); G
    hold unsettled descriptions, out of U gap boards (J jobs) still to drain`. `P` boards are ranked
-   by measured tech yield; `E` is random exploration filling out the target. A scrape that looks
-   thin on a specific ATS may just be this run's exploration draw, not a regression — check this
+   by measured tech yield; `E` (logged as `exploration`) is the Tail filling out the target,
+   oldest look first since ADR-0229 (a random draw before it). A scrape that looks thin on a
+   specific ATS may just be which Boards this run's Tail reached, not a regression — check this
    line before calling a per-ATS drop real (the same caution `fanout_corpus.py` already gives for
    comparing two runs).
 2. **Cost-ledger coverage** — `cost: measured seconds for H/N boards (L in ledger); rest estimated

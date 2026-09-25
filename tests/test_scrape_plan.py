@@ -607,13 +607,11 @@ def test_main_rotates_the_unscored_tail_oldest_first(tmp_path, monkeypatch):
     assert planned == {"lever:b0", "lever:b1"}
 
 
-def test_main_names_scored_boards_the_head_cannot_hold(tmp_path, monkeypatch, caplog):
-    """The head holds every scored Board only while they fit (ADR-0229). Past the cap the
-    lowest-scored fall to the rotation tail, and the plan says so rather than letting the
-    "every tech-yielding Board every run" promise lapse unseen."""
+def _plan_scored_boards(tmp_path, monkeypatch, n_boards, max_boards):
+    """Plan ``n_boards`` Scored Boards (distinct scores) under ``--max-boards max_boards``."""
     from headstart import board_priority
 
-    boards = [ScrapableBoard("lever", f"b{i}", f"B{i}") for i in range(10)]
+    boards = [ScrapableBoard("lever", f"b{i}", f"B{i}") for i in range(n_boards)]
     monkeypatch.setattr(
         ps.scrapable_boards, "load", lambda ledger, min_jobs=0: list(boards)
     )
@@ -621,11 +619,10 @@ def test_main_names_scored_boards_the_head_cannot_hold(tmp_path, monkeypatch, ca
     board_priority.save(
         priority,
         {
-            f"lever:b{i}": board_priority.BoardPriority(10.0 - i, 5, "2026-09-25")
-            for i in range(10)
+            f"lever:b{i}": board_priority.BoardPriority(100.0 - i, 5, "2026-09-25")
+            for i in range(n_boards)
         },
     )
-    out = tmp_path / "assignments"
     monkeypatch.setattr(
         sys,
         "argv",
@@ -640,16 +637,36 @@ def test_main_names_scored_boards_the_head_cannot_hold(tmp_path, monkeypatch, ca
             "--gap",
             str(tmp_path / "nogap.csv"),
             "--out-dir",
-            str(out),
+            str(tmp_path / "assignments"),
             "--max-boards",
-            "10",
+            str(max_boards),
             "--max-shards",
             "1",
         ],
     )
-    with caplog.at_level("WARNING"):
-        assert ps.main() == 0
+    assert ps.main() == 0
 
-    cap = board_priority.head_slots(10)
-    assert f"head: 10 scored Boards for {cap} head slots" in caplog.text
-    assert f"the lowest-scored {10 - cap} join the rotation tail" in caplog.text
+
+def test_main_names_scored_boards_the_head_cannot_hold(tmp_path, monkeypatch, caplog):
+    """The head holds every Scored Board only while they fit (ADR-0229). Past the cap the
+    lowest-scored join the Tail, and the plan says so rather than letting the
+    "every tech-yielding Board every run" promise lapse unseen."""
+    from headstart.board_priority import head_slots
+
+    with caplog.at_level("WARNING"):
+        _plan_scored_boards(tmp_path, monkeypatch, n_boards=20, max_boards=10)
+
+    cap = head_slots(10)
+    assert f"head: 20 Scored Boards for {cap} head slots" in caplog.text
+    assert f"the lowest-scored {20 - cap} join the Tail" in caplog.text
+
+
+def test_a_slice_that_takes_every_board_reports_no_head_overflow(
+    tmp_path, monkeypatch, caplog
+):
+    """`pick_boards` returns every Board once the slice is at least as big as the list, so there
+    is no Tail for Scored Boards to overflow into and nothing to warn about."""
+    with caplog.at_level("WARNING"):
+        _plan_scored_boards(tmp_path, monkeypatch, n_boards=10, max_boards=10)
+
+    assert "head:" not in caplog.text

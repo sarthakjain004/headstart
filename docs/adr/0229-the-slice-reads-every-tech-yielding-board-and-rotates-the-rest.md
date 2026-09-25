@@ -12,11 +12,12 @@ scrapes of a Board)
 ## Context
 
 A run scraped a 20,000-Board Slice out of 153,695 Scrapable Boards: a head of the 6,000
-top-scored Boards and a 14,000-Board tail drawn at random from everything else, reshuffled every
+top-scored Boards and a 14,000-Board Tail drawn at random from everything else, reshuffled every
 run with no memory of when a Board was last read. Measured on 2026-09-25 against the HF cost and
 priority ledgers, after the value gate's 33 Boards:
 
-- 43,327 Scrapable Boards held a tech score, but only 6,000 had a seat. The other ~37,000 had
+- 43,327 Scrapable Boards were Scored Boards (holding a priority score), but only 6,000 had a
+  seat. The other ~37,000 had
   the same ~9.5% chance per run as the 110,335 Boards with no score.
 - Sampling with replacement has a long tail. Reading 99% of the non-head Boards once took ~46
   runs (~42 h). The oldest last look was 11 days, and 25 tech-hiring Boards had gone 7+ days.
@@ -29,11 +30,11 @@ priority ledgers, after the value gate's 33 Boards:
 
 The Slice is 80,000 Boards (`--max-boards` and `pipeline.yml`'s default), split 70/30:
 
-- **Head:** up to 56,000 Scrapable Boards holding a tech score, score-descending, which today
-  is all 43,327 of them (`EXPLORE_FRAC` 0.7 → 0.3). If they outgrow the cap, the lowest-scored
-  overflow falls into the tail behind every unscored Board, and `scrape_plan` warns each run
-  that happens. ADR-0022 began at 70/30, and a 2026-07-27 flip to 30/70 drained a
-  never-scraped backlog that no longer exists.
+- **Head:** up to 56,000 Scored Boards, score-descending, which on 2026-09-25 is all 43,327
+  Scrapable ones (`EXPLORE_FRAC` 0.7 becomes `TAIL_FRAC` 0.3). If they outgrow the cap, the
+  lowest-scored overflow joins the Tail and waits its turn by its last look like any unscored
+  Board, and `scrape_plan` warns each run that happens. ADR-0022 began at 70/30, and a
+  2026-07-27 flip to 30/70 drained a never-scraped backlog that no longer exists.
 - **Tail:** the rest (~36,700), minus ADR-0062's gap quota, taken **oldest look first**.
   `pick_boards` takes `last_looked`, the cost ledger's `updated_at`. A Board with no row goes
   first, and one run's Boards tie at random. Each unscored Board is read every ~3 runs.
@@ -70,8 +71,10 @@ The unmeasured risk is the origins. Per run, Workday sees ~6,500 Boards instead 
 ~3,800 instead of ~900, and SmartRecruiters ~5,600 instead of ~1,500. Eightfold barely moves
 (78 → 95), which matters because its per-origin budget is the one that broke at ~79 (ADR-0063).
 The first run is the trial. Compare its shard `actual/predicted`, 429 and wall counts,
-Board-error rate and join time against run `36133540276`: 0.8% Board errors, 17 budgets spent,
-join 9.8 min. Roll back by reverting this change.
+Board-error rate, join time and merge's `sync` and `update_meta` steps against run
+`36133540276`: 0.8% Board errors, 17 budgets spent, join 9.8 min, `sync` 1.2 min and
+`update_meta` 0.9 min. Both merge steps scale with the corpus the join hands them. Roll back by
+reverting this change.
 
 ## Rejected alternatives
 
@@ -82,5 +85,5 @@ join 9.8 min. Roll back by reverting this change.
   (~22 min) becomes the latency floor. A posting would be searchable in ~60 min against ~70 here,
   for a rewrite of state ownership, batch merging and eviction scope. Worth revisiting once the
   index side is much faster.
-- **A 45k or 65k Slice.** Either is a smaller step. 45k leaves 2% of tech score to the rotation.
-  65k reads the unscored Boards every ~5 runs instead of ~3.
+- **A 45k or 65k Slice.** Either is a smaller step. 45k leaves 2% of the Scored Boards' score to
+  the Tail. 65k reads the unscored Boards every ~5 runs instead of ~3.

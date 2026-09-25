@@ -2,8 +2,8 @@
 """Plan the scrape fan-out — the scrape-planner of ADR-0026 (ADR-0025 Phase 2).
 
 Runs once, before the scrape matrix. It selects this run's board slice with ``pick_boards``:
-priority-first, then an exploration tail that rotates through the unscored Boards oldest look
-first (ADR-0229), capped at ``--max-boards``, with part of that tail reserved for Boards holding
+priority-first, then a Tail that rotates through the unscored Boards oldest look first
+(ADR-0229), capped at ``--max-boards``, with part of that Tail reserved for Boards holding
 unsettled descriptions (ADR-0062). It then splits the *selected* boards across a dynamic number of
 shards:
 
@@ -40,6 +40,7 @@ import shutil
 from collections.abc import Mapping
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from headstart import (
     board_cost,
@@ -60,6 +61,9 @@ from headstart.ingest import (
     shard_speedup,
 )
 from headstart.ingest.binpack import lpt_pack_capped, shard_count
+
+if TYPE_CHECKING:
+    from headstart.scrapable_boards import ScrapableBoard
 
 _log = log.get(__name__, __spec__)
 
@@ -192,6 +196,11 @@ def _gated_boards(
         if tech_per_min < _GATE_MIN_TECH_PER_MIN:
             gated[key] = tech_per_min
     return gated
+
+
+def _count_scored(boards: list[ScrapableBoard], scores: Mapping[str, float]) -> int:
+    """How many of ``boards`` are Scored Boards, the ones that compete for the head."""
+    return sum(1 for c in boards if scores.get(board_priority.key_for(c), 0.0) > 0.0)
 
 
 def _days_since(updated_at: str, today: str) -> float:
@@ -377,17 +386,16 @@ def main() -> int:
             f"jobs/min — " + log.named_sample([_why(k, d) for k, d in worst])
         )
     unsettled = board_description_gap.load(Path(args.gap))
-    # The head holds every scored Board only while they fit (ADR-0229). Past that, the
-    # lowest-scored overflow falls to the rotation tail behind every unscored Board, which nothing
-    # downstream would notice, so it is named here.
-    scored = sum(
-        1 for c in companies if scores.get(board_priority.key_for(c), 0.0) > 0.0
-    )
+    # The head holds every Scored Board only while they fit (ADR-0229). Past that, the
+    # lowest-scored overflow joins the Tail and waits its turn by its last look like any
+    # unscored Board, which nothing downstream would notice, so it is named here. Not when the
+    # slice takes every Board: `pick_boards` then has no tail to overflow into.
+    scored = _count_scored(companies, scores)
     head_cap = board_priority.head_slots(args.max_boards)
-    if args.max_boards and scored > head_cap:
+    if 0 < args.max_boards < len(companies) and scored > head_cap:
         _log.warning(
-            f"head: {scored:,} scored Boards for {head_cap:,} head slots; the lowest-scored "
-            f"{scored - head_cap:,} join the rotation tail (ADR-0229)"
+            f"head: {scored:,} Scored Boards for {head_cap:,} head slots; the lowest-scored "
+            f"{scored - head_cap:,} join the Tail (ADR-0229)"
         )
     companies = pick_boards(
         companies,
@@ -398,11 +406,9 @@ def main() -> int:
         last_looked={key: row.updated_at for key, row in cost_rows.items()},
     )
     n = len(companies)
-    priority = sum(
-        1 for c in companies if scores.get(board_priority.key_for(c), 0.0) > 0.0
-    )
+    priority = _count_scored(companies, scores)
     # Boards in the slice that hold unsettled descriptions — deliberately NOT reported as "the
-    # quota picked N". A gap Board also reaches the slice through the head or the rotation tail
+    # quota picked N". A gap Board also reaches the slice through the head or the Tail
     # on its own, so a count phrased as quota fill would claim picks the reservation did not
     # make. What the ledger still tells us honestly is the backlog.
     gap_in_slice = sum(

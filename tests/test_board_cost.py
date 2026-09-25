@@ -263,7 +263,7 @@ def test_key_for_keeps_the_casing_its_scraper_builds():
 
 
 def test_update_stamps_the_run_to_the_second_not_the_day():
-    """The Slice's rotation tail is ordered by this stamp (ADR-0229), and ~26 runs share a day.
+    """The Slice's Tail is ordered by this stamp (ADR-0229), and ~26 runs share a day.
 
     A bare date cannot tell this morning's look from tonight's, so the tail would fall back to a
     random draw among every Board looked at today — the long gaps the rotation exists to remove.

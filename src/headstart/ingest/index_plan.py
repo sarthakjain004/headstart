@@ -125,9 +125,10 @@ def grace_period_counts(
     reach the same branch here, because all three mean the Board is absent from ``scraped_boards``
     and this function cannot tell them apart:
 
-    - The id's Board was not in this run's slice at all. Only ~80,000 are — about half of the
-      Scrapable Boards — so this dominates a healthy set and is entirely benign; the streak simply
-      did not advance.
+    - The id's Board was not in this run's slice at all: value-gated, quarantined, or unscored
+      and waiting its turn in the Tail. Since ADR-0229 seats every Scored Board in the
+      head, that is rarer for an indexed Job than it was, and it is entirely benign; the streak
+      simply did not advance.
     - The Board *was* scraped but came back Unauthoritative, so ``index sync`` subtracted it from
       the scope before calling this (ADR-0053). Measured at 63–126 Boards per run
       (``docs/pipeline/2026-09-01_twelve-run-log-review.md``), so it is not a rounding error — and
@@ -269,10 +270,9 @@ def plan_sync(
     if grace_on:
         # An id whose Board this run did not scrape keeps the state it had: no evidence arrived,
         # so its streak neither advances nor resets. Without this the set would be rebuilt from
-        # the slice alone and a Board's ids would silently reset every run it sat out — with
-        # ~80,000 Boards scraped per run — about half of the Scrapable Boards — so most
-        # ids would never reach a second absence
-        # and the grace period would never evict anything.
+        # the slice alone and a Board's ids would silently reset every run it sat out, so a
+        # Board outside the slice — value-gated, quarantined, or waiting in the Tail —
+        # could never reach a second absence, and its ids could never be evicted.
         #
         # Carried forward only while the Board is *still live*, which bounds the set. A Board
         # that leaves the ledger is never scraped again, so its entries would otherwise persist
