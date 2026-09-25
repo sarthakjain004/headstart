@@ -28,7 +28,12 @@ from pathlib import Path
 
 from headstart import log
 from headstart.board_identity import board_key_of
-from headstart.ingest import REPO_ROOT, observability, shard_speedup
+from headstart.ingest import (
+    REPO_ROOT,
+    UNAUTHORITATIVE_BOARDS_PATH,
+    observability,
+    shard_speedup,
+)
 from headstart.ingest.index_plan import boards_by_canon, live_keep_set, resolve_board
 from headstart.ingest.observability import ShardReport
 
@@ -40,7 +45,6 @@ _SHARDS = (
 _OUT = REPO_ROOT / "data" / "jobs"
 # Under data/state because that is what rides the corpus-state artifact to the job running
 # `index sync` — the shard fragments themselves stop at this stage (ADR-0053).
-_UNAUTHORITATIVE = REPO_ROOT / "data" / "state" / "unauthoritative_boards.json"
 _SCRAPED_BOARDS = REPO_ROOT / "data" / "state" / "scraped_boards.json"
 _LEDGER = REPO_ROOT / "data" / "validate" / "liveness"
 _SPEEDUP = REPO_ROOT / "data" / "state" / "shard_speedup.csv"
@@ -145,7 +149,7 @@ def main() -> int:
     )
     ap.add_argument(
         "--unauthoritative-boards",
-        default=str(_UNAUTHORITATIVE),
+        default=str(UNAUTHORITATIVE_BOARDS_PATH),
         help="where to record the Boards whose scraped list is not authoritative, for `index "
         "sync` to exclude from the eviction scope "
         "(default: data/state/unauthoritative_boards.json)",

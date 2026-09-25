@@ -144,7 +144,7 @@ def _sync(
             # in a real cold start. Tests that need an eviction to land run sync twice.
             unconfirmed=str(tmp_path / "unconfirmed_ids.txt"),
             # Pinned too (ADR-0222): sync's closures, queued for role_trends to book.
-            evicted=str(tmp_path / "evicted_ids.txt"),
+            eviction_queue=str(tmp_path / "eviction_queue.tsv"),
         )
     )
 
@@ -848,18 +848,37 @@ def test_the_grace_period_round_trips_across_two_runs(tmp_path, monkeypatch):
 def test_sync_queues_what_it_evicted_for_role_trends_to_book_as_closed(
     tmp_path, monkeypatch
 ):
-    """Only an eviction is a closure (ADR-0222), so sync queues exactly those, across runs until
-    role_trends clears them: a run where role_trends skipped keeps its closures."""
-    queue = tmp_path / "evicted_ids.txt"
+    """Only an eviction is a closure (ADR-0222), so sync queues exactly those, stamped with the
+    run, across runs until role_trends drops them."""
+    from headstart.ingest import RUN_TS_ENV, job_turnover
+
+    queue = tmp_path / "eviction_queue.tsv"
+    monkeypatch.setenv(RUN_TS_ENV, "2026-09-25T05:00:00+00:00")
     _sync(tmp_path, monkeypatch, ["greenhouse:a:1", "greenhouse:a:2", "greenhouse:a:3"])
     _sync(tmp_path, monkeypatch, ["greenhouse:a:1", "greenhouse:a:3"])
-    assert not queue.exists() or queue.read_text() == "", (
-        "a first absence is no closure"
+    assert job_turnover.queued_evictions(queue) == {}, "a first absence is no closure"
+    monkeypatch.setenv(RUN_TS_ENV, "2026-09-25T06:00:00+00:00")
+    _sync(tmp_path, monkeypatch, ["greenhouse:a:1"])
+    assert job_turnover.queued_evictions(queue) == {
+        "greenhouse:a:2": "2026-09-25T06:00:00+00:00"
+    }
+    monkeypatch.setenv(RUN_TS_ENV, "2026-09-25T07:00:00+00:00")
+    _sync(tmp_path, monkeypatch, ["greenhouse:a:1"])
+    assert set(job_turnover.queued_evictions(queue)) == {
+        "greenhouse:a:2",
+        "greenhouse:a:3",
+    }
+
+
+def test_a_re_embed_left_unwritten_is_not_queued_as_a_closure(tmp_path, monkeypatch):
+    """`_take_upgrades` deletes a row being re-embedded. When no vector comes back this run the
+    row is not re-added, but that is no absence from its Board, so it is not Closed (ADR-0222)."""
+    _sync(tmp_path, monkeypatch, ["greenhouse:a:1", "greenhouse:a:2"])
+    monkeypatch.setattr(
+        idx, "_take_upgrades", lambda table, path: {"greenhouse:a:2": "2026-09-01"}
     )
     _sync(tmp_path, monkeypatch, ["greenhouse:a:1"])
-    assert queue.read_text().split() == ["greenhouse:a:2"]
-    _sync(tmp_path, monkeypatch, ["greenhouse:a:1"])
-    assert queue.read_text().split() == ["greenhouse:a:2", "greenhouse:a:3"]
+    assert not (tmp_path / "eviction_queue.tsv").exists()
 
 
 def test_a_posting_that_reappears_is_never_evicted(tmp_path, monkeypatch):

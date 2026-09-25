@@ -108,11 +108,11 @@ from headstart.board_identity import ats_of, lower_key
 from headstart.corpus import iter_jobs
 from headstart.embedding_conventions import PROD_TABLE
 from headstart.ingest import (
-    EVICTED_IDS_PATH,
+    EVICTION_QUEUE_PATH,
     PENDING_UPGRADES_PATH,
     REPO_ROOT,
+    UNAUTHORITATIVE_BOARDS_PATH,
     UNCONFIRMED_PATH,
-    append_id_list,
     board_failures,
     board_freshness,
     dedup_evictions,
@@ -157,7 +157,6 @@ _UPGRADES = PENDING_UPGRADES_PATH
 _UNCONFIRMED = UNCONFIRMED_PATH
 # Written by scrape_join from the shard reports: the Boards whose scraped list is not authoritative
 # this run, which must not be evicted from just because they emitted a partial list (ADR-0053).
-_UNAUTHORITATIVE = REPO_ROOT / "data" / "state" / "unauthoritative_boards.json"
 
 _ADD_CHUNK = 2048  # rows per add batch — bounds peak memory and streams progress
 _TOP_UNCONFIRMED_BOARDS = (
@@ -947,15 +946,13 @@ def sync(args: argparse.Namespace) -> int:
     _log_ids("evict", sorted(plan.delete))
 
     apply_sync(table, [], plan.delete)  # evictions first (chunked internally)
-    # The closures role_trends books as Closed (ADR-0222): these evictions, and any re-embedded
-    # Job that left the corpus, which `_take_upgrades` deleted and nothing re-adds. A row that
-    # leaves any other way, such as a prune here or in `cleanup-index`, is Recounted instead.
-    # Appended after the delete, so the queue never names a row the table still holds. It is
-    # cleared by the role_trends tick that books it, so a run where that stage skipped carries its
-    # closures to the next.
-    append_id_list(
-        Path(args.evicted),
-        sorted(plan.delete | (taken.keys() - fresh)),
+    # The closures role_trends books as Closed (ADR-0222): these evictions, a posting's second
+    # consecutive absence, and nothing else. A re-embedded Job deleted by `_take_upgrades` and not
+    # re-added this run is no absence at all, and a prune here or in `cleanup-index` removes a
+    # copy or a Board: both are Recounted. Appended after the delete, so the queue never names a
+    # row the table still holds.
+    job_turnover.queue_evictions(
+        Path(args.eviction_queue), run_ts().isoformat(timespec="seconds"), plan.delete
     )
 
     # One stamp for the whole run: every Job added here arrived in the same scrape, and
@@ -1386,7 +1383,7 @@ def main() -> int:
     )
     p_sync.add_argument(
         "--unauthoritative-boards",
-        default=str(_UNAUTHORITATIVE),
+        default=str(UNAUTHORITATIVE_BOARDS_PATH),
         help="JSON of Boards whose scraped list is not authoritative, written by scrape_join; "
         "they are dropped from the eviction scope (ADR-0053). Missing file means no Board is "
         "protected",
@@ -1404,10 +1401,10 @@ def main() -> int:
         "consecutive one; read and rewritten each run (the ADR-0083 grace period)",
     )
     p_sync.add_argument(
-        "--evicted",
-        default=str(EVICTED_IDS_PATH),
-        help="append every id this sync evicted, for role_trends to book as Closed and clear "
-        "(ADR-0222)",
+        "--eviction-queue",
+        default=str(EVICTION_QUEUE_PATH),
+        help="append every id this sync evicted, stamped with the run, for role_trends to book "
+        "as Closed (ADR-0222); published in the table's commit by index_publish",
     )
     p_sync.add_argument(
         "--ledger",

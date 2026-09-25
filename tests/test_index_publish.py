@@ -29,6 +29,11 @@ def test_table_and_grace_set_go_up_in_one_commit(tmp_path, monkeypatch):
     (tmp_path / "data/lancedb/_index_base.json").write_text("{}")
     (tmp_path / "data/state").mkdir(parents=True)
     (tmp_path / "data/state/unconfirmed_ids.txt").write_text("greenhouse:acme:1\n")
+    # ADR-0222: the evictions Trends books as Closed ride the table's commit too, so a failed
+    # `data/state` upload cannot lose them.
+    (tmp_path / "data/state/eviction_queue.tsv").write_text(
+        "2026-09-25T06:00:00+00:00\tx\n"
+    )
     (tmp_path / "data/state/board_priority.csv").write_text("not this one")
 
     index_publish.publish("owner/repo", None, tmp_path)
@@ -39,6 +44,7 @@ def test_table_and_grace_set_go_up_in_one_commit(tmp_path, monkeypatch):
     assert sorted(op.path_in_repo for op in commit["operations"]) == [
         "data/lancedb/_index_base.json",
         "data/lancedb/jobs.lance/data/0.lance",
+        "data/state/eviction_queue.tsv",
         "data/state/unconfirmed_ids.txt",
     ]
 

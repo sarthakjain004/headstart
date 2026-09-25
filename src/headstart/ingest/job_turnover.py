@@ -10,7 +10,7 @@ last tick's served tech ids against this tick's, and this module decides what ea
   already counted.
 - **Closed**: an id that left because ``index sync`` evicted it, which is its second consecutive
   absence (ADR-0083). A closure therefore lands one scrape of its Board after the posting went.
-  Sync queues its evictions (``EVICTED_IDS_PATH``), and nothing else is booked Closed.
+  Sync queues its evictions (``EVICTION_QUEUE_PATH``), and nothing else is booked Closed.
 - **Recounted**: every other arrival or departure, none of which is hiring. That covers a found
   Board's backlog; a row ``index prune`` removed as a duplicate or off-Board, in the pipeline or
   in ``cleanup-index``; a served row the classifier moved into or out of tech (an arrival with an
@@ -29,8 +29,9 @@ every count is a lower bound.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from collections.abc import Set as AbstractSet
+from pathlib import Path
 
 from headstart.ingest.role_assignments import Placement
 from headstart.ingest.role_family_classifier import normalise
@@ -85,6 +86,41 @@ def turnover(
         if job_id not in current:
             book(was, CLOSED if job_id in evicted else RECOUNTED_OUT)
     return booked
+
+
+def queue_evictions(path: Path, ts: str, ids: Iterable[str]) -> None:
+    """Append ``ids``, stamped ``ts`` (the run's), to the eviction queue at ``path``."""
+    lines = "".join(f"{ts}\t{job_id}\n" for job_id in sorted(ids))
+    if not lines:
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as fh:
+        fh.write(lines)
+
+
+def queued_evictions(path: Path) -> dict[str, str]:
+    """``{id: the run stamp that evicted it}`` from the queue; empty without one."""
+    if not path.exists():
+        return {}
+    queued: dict[str, str] = {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        ts, _, job_id = line.partition("\t")
+        if job_id:
+            queued[job_id] = max(ts, queued.get(job_id, ts))
+    return queued
+
+
+def drop_evictions_through(path: Path, booked_through: str) -> None:
+    """Keep only the entries stamped after ``booked_through``.
+
+    ``booked_through`` is the stamp of the snapshot this tick diffed. Every eviction up to it was
+    booked by the tick that wrote that snapshot, which is published. A newer one may not be: if
+    this run's ``data/state`` upload fails, the next tick diffs that same older snapshot again,
+    and needs this run's evictions to book them as Closed."""
+    kept = {i: ts for i, ts in queued_evictions(path).items() if ts > booked_through}
+    path.write_text(
+        "".join(f"{ts}\t{i}\n" for i, ts in sorted(kept.items())), encoding="utf-8"
+    )
 
 
 def reposts(

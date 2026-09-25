@@ -167,9 +167,9 @@ def _run(tmp_path: Path, monkeypatch, expect: int = 0) -> Path:
             # Pinned too (ADR-0164): defaults to the repo's real data/state/trends_epochs.csv.
             "--epochs",
             str(tmp_path / "trends_epochs.csv"),
-            # Pinned too (ADR-0222): these default to this run's real prune and scrape hand-offs.
-            "--evicted",
-            str(tmp_path / "evicted_ids.txt"),
+            # Pinned too (ADR-0222): these default to the real eviction queue and scrape outcome.
+            "--eviction-queue",
+            str(tmp_path / "eviction_queue.tsv"),
             "--unauthoritative-boards",
             str(tmp_path / "unauthoritative_boards.json"),
         ],
@@ -1032,7 +1032,7 @@ def test_a_second_tick_books_turnover_beside_the_level_changes(tmp_path, monkeyp
     books a new posting as opened, an evicted one as closed, and a row that left any other way
     (here a prune, as `cleanup-index` makes) as recounted, plus one marker for an Unauthoritative
     Board. All of it goes in the tick's own delta file, the Board counts carry levels only, and
-    the booked evictions leave the queue."""
+    the queue keeps only what the new snapshot does not yet cover."""
     from headstart.ingest import RUN_TS_ENV
 
     _taxonomy(tmp_path / "head", tmp_path / "families.json")
@@ -1063,8 +1063,12 @@ def test_a_second_tick_books_turnover_beside_the_level_changes(tmp_path, monkeyp
         tmp_path / "db",
         [row("stays", early), row("opens", "2026-09-25T05:30:00+00:00")],
     )
-    queue = tmp_path / "evicted_ids.txt"
-    queue.write_text("greenhouse:acme:closes\n", encoding="utf-8")
+    queue = tmp_path / "eviction_queue.tsv"
+    queue.write_text(
+        "2026-09-25T04:00:00+00:00\tgreenhouse:acme:long-gone\n"
+        "2026-09-25T06:00:00+00:00\tgreenhouse:acme:closes\n",
+        encoding="utf-8",
+    )
     (tmp_path / "unauthoritative_boards.json").write_text(
         json.dumps({"greenhouse:acme": "truncated"}), encoding="utf-8"
     )
@@ -1072,15 +1076,20 @@ def test_a_second_tick_books_turnover_beside_the_level_changes(tmp_path, monkeyp
     _run(tmp_path, monkeypatch)
 
     tick = _tick_rows(tmp_path / "board_deltas" / "2026-09-25T06-00-00+00-00.parquet")
-    flows = {
+    booked = {
         r["metric"]: r["delta"] for r in tick if r["metric"] not in ("stock", "new")
     }
-    assert flows == {"opened": 1, "closed": 1, "recounted_out": 1, "unscoped": 1}
+    assert booked == {"opened": 1, "closed": 1, "recounted_out": 1, "unscoped": 1}
     stock = sum(r["delta"] for r in tick if r["metric"] == "stock")
-    assert stock == flows["opened"] - flows["closed"] - flows["recounted_out"]
+    assert stock == booked["opened"] - booked["closed"] - booked["recounted_out"]
     counts = pq.read_table(tmp_path / "board_counts.parquet").to_pylist()
     assert {r["metric"] for r in counts} <= {"stock", "new"}
-    assert queue.read_text(encoding="utf-8") == ""
+    # The entry the diffed 05:00 snapshot already covered is dropped. This run's stays until a
+    # published snapshot covers it: if this run's `data/state` upload failed, the next tick
+    # would diff the 05:00 snapshot again and still book it as Closed.
+    assert queue.read_text(encoding="utf-8") == (
+        "2026-09-25T06:00:00+00:00\tgreenhouse:acme:closes\n"
+    )
 
 
 def test_a_failed_snapshot_takes_the_ticks_file_back_out(tmp_path, monkeypatch):
@@ -1102,18 +1111,19 @@ def test_a_failed_snapshot_takes_the_ticks_file_back_out(tmp_path, monkeypatch):
         ],
     )
 
-    def _no_space(*_args, **_kwargs):
-        raise OSError(28, "No space left on device")
+    def _unwritable(*_args, **_kwargs):
+        raise RuntimeError("a snapshot the writer refused")
 
-    monkeypatch.setattr(role_assignments, "save", _no_space)
+    monkeypatch.setattr(role_assignments, "save", _unwritable)
     monkeypatch.setenv(RUN_TS_ENV, "2026-09-25T05:00:00+00:00")
-    _run(tmp_path, monkeypatch, expect=1)
+    with pytest.raises(RuntimeError):  # any failure, not only an OSError
+        _run(tmp_path, monkeypatch)
     assert not list((tmp_path / "board_deltas").glob("*.parquet"))
 
 
-def test_recovering_board_counts_skips_a_ticks_flow_rows(tmp_path):
-    """A tick's delta file carries its flows too (ADR-0222). Replayed as level changes after a
-    failed counts save, an `opened` row would have become a Board count of its own."""
+def test_recovering_board_counts_skips_a_ticks_turnover_rows(tmp_path):
+    """A tick's delta file carries its turnover too (ADR-0222). Replayed as level changes after
+    a failed counts save, an `opened` row would have become a Board count of its own."""
     deltas = tmp_path / "deltas"
     deltas.mkdir()
     key = ("greenhouse:acme", "software-engineering", "senior", "greenhouse")
