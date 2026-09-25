@@ -133,6 +133,10 @@ class _Progress:
         self.boards_ok.append(key)
         if seconds >= _SLOW_BOARD_S:
             _log.info(f"slow board {key}: {jobs} jobs in {seconds:.0f}s")
+        elif not jobs:
+            # INFO, not DEBUG: a clean empty Board is the one outcome whose rows ADR-0083 evicts
+            # two scrapes later, and at DEBUG CI would carry no record of which Board it was.
+            _log.info(f"{key}: 0 jobs in {seconds:.1f}s (scraped clean, no postings)")
         else:
             _log.debug(f"{key}: {jobs} jobs in {seconds:.1f}s")
 
@@ -155,9 +159,15 @@ def _ats_mix(companies: list[CompanyRef], top: int = 4) -> str:
     return detail + (f", +{len(ranked) - top} more" if len(ranked) > top else "")
 
 
+class _BudgetKill(SystemExit):
+    """The budget's SIGTERM, told apart from any other exit: only this one is a kill. A shard
+    that crashed used to read as a clean finish in its own summary, because every `SystemExit`
+    counted as the budget and every other exception fell through to "finished"."""
+
+
 def _raise_on_term(signum: int, frame: object) -> None:
     """SIGTERM as an exception, so the shutdown path is ordinary Python and `finally` runs."""
-    raise SystemExit(f"signal {signum}")
+    raise _BudgetKill(f"signal {signum}")
 
 
 def _report(
@@ -169,8 +179,10 @@ def _report(
     killed: bool,
     shard: str | None = None,
     deferred: list[str] | None = None,
+    aborted: str | None = None,
 ) -> None:
-    """Everything this shard learned, on every exit path — clean finish or time budget.
+    """Everything this shard learned, on every exit path — clean finish, time budget, or an
+    abort (``aborted`` names the exception that ended it).
 
     Runs in a `finally`, so it must not raise: the shard's fragment is already on disk and
     reaching the join matters more than its telemetry.
@@ -179,8 +191,10 @@ def _report(
     spread = observability.percentiles(progress.seconds)
     retries = http.retry_stats()
     actual_min = elapsed / 60
+    # INFO, not WARNING: each of these three fires once per *shard*, so fifteen shards would spend
+    # up to 45 of the run's 50 annotations on them (ADR-0039). The join already warns run-level.
     if killed:
-        _log.warning(
+        _log.info(
             f"time budget reached after {actual_min:.1f} min — banking a partial fragment; "
             f"{progress.done}/{progress.assigned} boards done, {progress.undone} deferred "
             "to the next run"
@@ -190,9 +204,9 @@ def _report(
         # how `workday:dollartree/dollartreeus` was found on 2026-08-18, and it should have been
         # one log line. Capped: a shard killed early defers hundreds and the list is then noise.
         if deferred:
-            _log.warning("deferred: " + log.named_sample(deferred))
+            _log.info("deferred: " + log.named_sample(deferred))
     if progress.errors:
-        _log.warning(
+        _log.info(
             f"{len(progress.errors)} board errors: {observability.error_summary(progress.errors)}"
         )
     if retries:
@@ -200,6 +214,14 @@ def _report(
             "retries: "
             + ", ".join(f"{why} {n}" for why, n in sorted(retries.items()))
             + f" (total {sum(retries.values())})"
+        )
+    # Kept off the pinned `retries:` line: a request that gave up is not one more retry, and
+    # folding it in would inflate that line's total (scripts/runlog/fanout_retries.py).
+    exhausted = http.exhausted_stats()
+    if exhausted:
+        _log.info(
+            "retry budget exhausted: "
+            + ", ".join(f"{why} {n}" for why, n in sorted(exhausted.items()))
         )
     # Which ATSes cost this shard its Origin budget, and what the spare egress recovered for them
     # (ADR-0063). Reported for the same reason the retry classes are: without it a shard that
@@ -257,6 +279,8 @@ def _report(
             ),
             f"- **{len(deferred)} deferred** (time budget reached)"
             if killed
+            else f"- **aborted** by {aborted}"
+            if aborted
             else "- finished within the time budget",
             f"- board seconds {spread}",
         ]
@@ -360,6 +384,10 @@ def main() -> int:
         if args.assignment
         else None
     )
+    if args.assignment and plan is None:
+        _log.info(
+            f"no prediction: {Path(args.assignment).parent / 'plan.json'} missing or unreadable"
+        )
     predicted = plan.predicted_minutes(shard) if plan else None
     serial = plan.serial_minutes(shard) if plan else None
     _log.info(f"shard mix: {_ats_mix(companies)}")
@@ -376,6 +404,7 @@ def main() -> int:
 
     start = time.monotonic()
     killed = False
+    aborted = None
     try:
         scrape_all(
             companies,
@@ -385,8 +414,14 @@ def main() -> int:
             on_observation=progress.on_observation,
             have_details=have_details,
         )
-    except SystemExit:
+    except _BudgetKill:
         killed = True
+    except BaseException as exc:
+        # Fatal and once per shard, so an annotation is what it should cost. Re-raised: the step
+        # must go red, and the `finally` still banks what the shard did before it died.
+        aborted = f"{type(exc).__name__}: {exc}"
+        _log.error(f"shard {shard} aborted by {aborted}")
+        raise
     finally:
         # Assignment minus everything that reported back — the Boards this shard never finished,
         # in the order the planner listed them (priority-desc), so the first name is the most
@@ -403,6 +438,7 @@ def main() -> int:
             killed,
             shard,
             deferred,
+            aborted,
         )
     return _BUDGET_KILLED if killed else 0
 

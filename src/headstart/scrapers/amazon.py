@@ -44,9 +44,8 @@ requests in under 2 minutes, two consecutive full walks) instead got HTTP **200*
 body: Amazon's own CAPTCHA interstitial (``<title>Server Busy</title>``, a "Continue shopping"
 button posting to ``/errors_page/validateCaptcha``) in place of the JSON envelope on a large
 share of pages — silently starving that run to 9,181 of 22,577 real postings. ``_page``/
-``_page_async`` don't special-case this: ``json.loads`` on the HTML raises, the exception is
-caught by ``fan_out``/``fan_out_async``'s blanket handler the same as any other transport
-failure, and the page is counted lost — which is why :meth:`~BaseScraper.mark_truncated_unless_negligible`
+``_page_async`` don't retry this: the page is counted lost, labelled ``CAPTCHA HTML on a 200``
+in the truncation reason beside any transport failure's status — which is why :meth:`~BaseScraper.mark_truncated_unless_negligible`
 correctly flagged that run truncated (``read 9181 of 22577 postings``) rather than serving a
 silent partial board as complete. The wall cleared on its own within ~20 seconds with no code
 change — a lone, unhurried request right after the walk got a clean 200 JSON, and an isolated
@@ -85,12 +84,13 @@ from __future__ import annotations
 import json
 import re
 import urllib.parse
+from collections import Counter
 from datetime import datetime
 from typing import Any
 
 from headstart import http
 from headstart.models import Job, html_to_text, is_remote
-from headstart.scrapers.base import BaseScraper
+from headstart.scrapers.base import BaseScraper, classify_exception, loss_breakdown
 
 #: The API's own hard maximum for `result_limit`. 200 and above answer 200 with
 #: `{"error": "Result limit cannot be greater than 100"}` and no jobs.
@@ -162,6 +162,13 @@ class AmazonScraper(BaseScraper):
             if isinstance(entry, dict):
                 for name, count in entry.items():
                     out[name] = int(count or 0)
+        if not out:
+            # No facet means no tasks and no stated total, so the walk would return [] with no
+            # truncation check to catch it — ~22k postings read as an empty Board.
+            self.note_unreadable_board(
+                "a business_category facet",
+                f"none (keys: {sorted(data.get('facets') or {})})",
+            )
         return out
 
     @staticmethod
@@ -177,14 +184,11 @@ class AmazonScraper(BaseScraper):
     def _page(self, task: tuple[str, int]) -> list[dict]:
         category, offset = task
         try:
-            data = json.loads(
-                self._get(self._search_url(offset=offset, category=category))
-            )
-        except http.RequestsError:
+            body = self._get(self._search_url(offset=offset, category=category))
+        except http.RequestsError as exc:
+            self._page_losses[classify_exception(exc)] += 1
             return []
-        if data.get("error"):
-            return []
-        return data.get("jobs") or []
+        return self._jobs_of(body)
 
     async def _page_async(self, session: Any, task: tuple[str, int]) -> list[dict]:
         category, offset = task
@@ -192,10 +196,21 @@ class AmazonScraper(BaseScraper):
             body = await self._get_async(
                 session, self._search_url(offset=offset, category=category)
             )
-        except http.RequestsError:
+        except http.RequestsError as exc:
+            self._page_losses[classify_exception(exc)] += 1
             return []
-        data = json.loads(body)
+        return self._jobs_of(body)
+
+    def _jobs_of(self, body: str) -> list[dict]:
+        """One listing page's postings, or [] with the page's loss tallied for the truncation
+        reason — the CAPTCHA interstitial answers 200 with HTML (module docstring)."""
+        try:
+            data = json.loads(body)
+        except json.JSONDecodeError:
+            self._page_losses["CAPTCHA HTML on a 200"] += 1
+            return []
         if data.get("error"):
+            self._page_losses["error body"] += 1
             return []
         return data.get("jobs") or []
 
@@ -214,29 +229,41 @@ class AmazonScraper(BaseScraper):
                     "not absent"
                 )
             tasks.extend((category, offset) for offset in self._offsets_for(count))
+        # Why each lost listing page was lost, for the truncation reason below. A page that
+        # raised anything else comes back None and is counted `unlabelled`.
+        self._page_losses: Counter[str] = Counter()
         if self.async_fanout_enabled():
             pages = self.fan_out_async(
-                tasks, self._page_async, concurrency=_PAGE_WORKERS, default=[]
+                tasks, self._page_async, concurrency=_PAGE_WORKERS
             )
         else:
-            pages = self.fan_out(tasks, self._page, workers=_PAGE_WORKERS, default=[])
+            pages = self.fan_out(
+                tasks, self._page, workers=_PAGE_WORKERS, what=self.board_key()
+            )
         # Deduped defensively by native id, not because a job is known to carry more than one
         # business_category (measured: it doesn't — a full walk of one category matched its own
         # facet count exactly, with no drift) but because every other subdivided scraper here
         # dedupes rather than trusting the partition to be perfect on a live, moving board.
         seen: dict[str, dict] = {}
         for page in pages:
-            for job in page:
+            for job in page or []:
                 native_id = job.get("id_icims")
                 if native_id:
                     seen.setdefault(str(native_id), job)
         expected = sum(categories.values())
         if expected:
+            lost = sum(self._page_losses.values()) + pages.count(None)
             self.mark_truncated_unless_negligible(
                 len(seen),
                 expected,
                 f"read {len(seen)} of {expected} postings (summed over the "
-                "business_category facet) — the rest is unread, not absent",
+                "business_category facet) — the rest is unread, not absent"
+                + (
+                    f"; {lost} of {len(tasks)} listing pages lost"
+                    + loss_breakdown(self._page_losses, lost)
+                    if lost
+                    else ""
+                ),
             )
         return list(seen.values())
 

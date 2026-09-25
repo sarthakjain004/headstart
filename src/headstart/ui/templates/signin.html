@@ -212,9 +212,10 @@ async function onCred(resp){
       headers:{'Content-Type':'application/json'},
       body: JSON.stringify({ credential: resp.credential }) });
     if (r.ok){ location.reload(); return; }
+    console.warn('[api] POST /auth/google', r.status);
     const d = await r.json().catch(() => ({}));
     msg.textContent = d.error || ('Sign-in failed (' + r.status + ')');
-  }catch(e){ msg.textContent = 'That request didn\'t go through. Try again.'; }
+  }catch(e){ console.error('[api] POST /auth/google', e); msg.textContent = 'That request didn\'t go through. Try again.'; }
 }
 function initSignin(){
   // Never render Google's button in a frame: it looks clickable and then stalls.
@@ -223,7 +224,14 @@ function initSignin(){
   google.accounts.id.renderButton(document.getElementById('gbtn'),
     { theme:'outline', size:'large' });
 }
+// Blocked or dropped, Google's script left the gate an empty box with no reason given.
+function gsiFailed(){
+  console.error('[gsi] Google sign-in script failed to load');
+  if (EMBEDDED) return;   // the new-tab offer is already the message
+  document.getElementById('msg').textContent =
+    'Google sign-in didn\u2019t load \u2014 a content blocker may be stopping it. Allow accounts.google.com and reload.';
+}
 if (EMBEDDED) offerNewTab();   // before Google's script loads — the door is usable at once
 </script>
-<script src="https://accounts.google.com/gsi/client" async onload="initSignin()"></script>
+<script src="https://accounts.google.com/gsi/client" async onload="initSignin()" onerror="gsiFailed()"></script>
 </body></html>

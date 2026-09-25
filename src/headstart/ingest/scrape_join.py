@@ -104,7 +104,7 @@ def write_unauthoritative_boards(
     if unresolved:
         _log.warning(
             f"{len(unresolved)} unauthoritative Board(s) could not be resolved to a board_key and "
-            f"are NOT protected from eviction this run: {sorted(unresolved)[:10]}"
+            f"are NOT protected from eviction this run: {log.named_sample(sorted(unresolved))}"
         )
     _log.info(f"recorded {len(unauthoritative)} unauthoritative Board(s) -> {path}")
     return unauthoritative
@@ -210,10 +210,16 @@ def main() -> int:
         with (out / ats_file).open("w", encoding="utf-8") as dst:
             for src in sources:
                 with src.open(encoding="utf-8") as s:
-                    for line in s:
+                    for lineno, line in enumerate(s, 1):
                         if line.strip():
                             dst.write(line if line.endswith("\n") else line + "\n")
-                            boards.add(resolve_board(json.loads(line)["id"], live))
+                            try:
+                                job_id = json.loads(line)["id"]
+                            except (json.JSONDecodeError, KeyError, TypeError) as exc:
+                                # Still fatal — a torn fragment must not join — but named, so
+                                # the abort says which shard's file and line to open.
+                                log.fail(_log, f"{src} line {lineno}: {exc!r}")
+                            boards.add(resolve_board(job_id, live))
                             n += 1
         total += n
         _log.info(f"{ats_file}: {n} lines from {len(sources)} shard(s)")
@@ -270,7 +276,7 @@ def _update_speedup(reports: list[ShardReport], path: Path) -> None:
             f"(was {stored.ratio:.2f}x, {len(ratios)} shard(s) this run)"
         )
     except Exception as exc:  # noqa: BLE001 - telemetry must never sink the join
-        _log.warning(f"could not update the speedup ledger: {exc}")
+        _log.warning(f"could not update the speedup ledger: {exc}", exc_info=True)
 
 
 def _report_shards(
@@ -287,6 +293,19 @@ def _report_shards(
     can be added up; ``main`` reads them once and hands them to both consumers.
     """
     if not reports:
+        if health is not None and health.expected_report_count:
+            # The worst outcome this stage can have, and it used to leave only the INFO below:
+            # no `boards_ok`, no unauthoritative Boards, and no verdict line on the run page.
+            _log.warning(
+                f"no shard reports arrived (0/{health.expected_report_count}) — fresh coverage "
+                "unavailable; "
+                + (
+                    "no job lines either, so the eviction scope is empty and sync evicts nothing"
+                    if not lines
+                    else f"{lines} job lines joined, but no Board is marked unauthoritative, so "
+                    "sync will evict against any truncated Board's partial list"
+                )
+            )
         _log.info(
             "no shard reports — nothing to aggregate (older shards, or a local run)"
         )

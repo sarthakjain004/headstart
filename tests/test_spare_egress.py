@@ -11,6 +11,7 @@ daemon's commands install `WarpDaemon` only after stubbing them (`_stub`, `_rota
 `_flapping`); every other test runs on the in-memory daemon `tests/conftest.py` installs.
 """
 
+import asyncio
 import subprocess
 import threading
 import time
@@ -224,6 +225,25 @@ def test_a_daemon_that_restarts_but_does_not_come_back_re_arms_the_dial(monkeypa
     assert spare_egress.rotate() is False
     spare_egress.proxy_for("workday")
     assert daemon.calls.count("dial") == 2  # a later caller re-dials
+
+
+def test_a_route_lookup_that_outwaits_the_gate_is_counted(monkeypatch):
+    """A caller that gives up on a rotation still in progress rides the tunnel mid-restart; the
+    count is the only trace of it, on both route resolvers. (Not `_refuse_leaving_the_process`:
+    `asyncio.run` needs its own socketpair; the in-memory daemon is what keeps this local.)"""
+    monkeypatch.setattr(spare_egress, "_CONNECT_TIMEOUT", 0.01)
+    spare_egress.use_daemon(
+        spare_egress.InMemoryEgressDaemon("socks5h://127.0.0.1:40000")
+    )
+    spare_egress.mark_walled("workday", 429)
+    spare_egress._gate.clear()  # a rotation that never finishes
+    try:
+        spare_egress.proxy_for("workday")
+        asyncio.run(spare_egress.proxy_for_async("workday"))
+    finally:
+        spare_egress._gate.set()
+    assert spare_egress.rotations()["gate_timeout"] == 2
+    assert "gate_timeout 2" in "\n".join(spare_egress.report())
 
 
 # --- observability -------------------------------------------------------------------------------
@@ -975,7 +995,6 @@ def test_a_routine_rotation_is_not_an_annotation(monkeypatch, caplog):
     ] == []
     text = caplog.text
     assert "workday:acme/careers walled the current IP" in text
-    assert "rotating egress IP" in text
     assert "rotated to a fresh egress IP" in text
     assert "now egressing from 104.28.232.96" in text
 

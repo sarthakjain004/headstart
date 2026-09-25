@@ -764,12 +764,18 @@ def scraped_boards(
     """
     path = Path(scraped)
     if path.is_dir() and any(path.glob("*.jsonl")):
-        return {resolve_board(job["id"], live) for job in iter_jobs(path)}
-    if recorded is not None:
-        from_join = read_scraped_boards(recorded)
-        if from_join is not None:
-            return from_join
-    return {resolve_board(job_id, live) for job_id in corpus_ids}
+        boards = {resolve_board(job["id"], live) for job in iter_jobs(path)}
+        source = f"the full scrape under {path}"
+    elif (
+        recorded is not None
+        and (from_join := read_scraped_boards(recorded)) is not None
+    ):
+        boards, source = from_join, f"scrape_join's record {recorded}"
+    else:
+        boards = {resolve_board(job_id, live) for job_id in corpus_ids}
+        source = "the corpus ids (no full scrape and no record)"
+    _log.info(f"eviction scope: {len(boards)} Boards from {source}")
+    return boards
 
 
 #: The ATSes whose native id is a requisition id every Board of one **Tenant** shares, so a

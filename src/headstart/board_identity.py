@@ -116,6 +116,11 @@ _IDENTITY_REPORT_CAP = 10
 #: restated ~15x, this stops N Boards each buying an annotation.
 _IDENTITY_FAILURE = log.FirstOnly(_log)
 
+#: :func:`board_key_of`'s own copy of both bounds. Separate state, because a key dropped from a
+#: ledger and a Board re-keyed to its plain slug are different faults.
+_KEY_OF_FAILURES_SEEN: set[str] = set()
+_KEY_OF_FAILURE = log.FirstOnly(_log)
+
 
 def board_identity(company: CompanyRef) -> str:
     """The Board's canonical key: ``board_key`` where the scraper can build one, the plain
@@ -198,7 +203,16 @@ def board_key_of(report_key: str) -> str | None:
         return None
     try:
         return get_scraper(ats, slug).board_key()
-    except Exception:  # noqa: BLE001 - a malformed slug must not sink the caller
+    except Exception as exc:  # noqa: BLE001 - a malformed slug must not sink the caller
+        # Its callers count the drops but never the cause; name it, bounded the same two ways
+        # as `_report_identity_failure` (a capped distinct-key dedupe, one WARNING per process).
+        if report_key not in _KEY_OF_FAILURES_SEEN:
+            _KEY_OF_FAILURES_SEEN.add(report_key)
+            if len(_KEY_OF_FAILURES_SEEN) <= _IDENTITY_REPORT_CAP:
+                _KEY_OF_FAILURE.report(
+                    f"{report_key}: board_key() failed ({type(exc).__name__}: {exc}) — "
+                    "dropped from the board_key-keyed ledger"
+                )
         return None
 
 

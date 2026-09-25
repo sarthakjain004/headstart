@@ -550,6 +550,12 @@ def main() -> int:
         f"{counts['services']} services and {counts['aggregator']} aggregators labelled "
         f"across the window {payload['window']['from']} -> {payload['window']['to']}"
     )
+    _log.info(
+        f"hot list: {counts['unnamed']} unnamed and {counts['below_min_stock']} below "
+        f"{counts['min_stock']} open roles excluded | lenses: "
+        + ", ".join(f"{lens} {len(rows)}" for lens, rows in lenses.items())
+        + f" | {len(window_rules['changes'])} counting-change tick(s) left out"
+    )
     return 0
 
 

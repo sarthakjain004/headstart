@@ -106,7 +106,12 @@
    *  throwing: every caller here treats "the network did not work" as a state, not an error. */
   Sync.prototype._call = function (url, init) {
     if (!this._request) { this._state = 'off'; return Promise.resolve({ state: 'off' }); }
+    const method = (init && init.method) || 'GET';
     return this._request(url, init).then(response => {
+      /* 401 and 503 are states (signed out, feature off), not faults; anything else refused is
+         said in the console with its status — never the body, which is a résumé. */
+      if (response.status >= 400 && response.status !== 401 && response.status !== 503)
+        console.warn('[api]', method, url, response.status);
       if (response.status === 401) { this._state = 'signed-out'; return { state: 'signed-out' }; }
       if (response.status === 503) { this._state = 'off'; return { state: 'off' }; }
       return response.json().then(
@@ -118,7 +123,8 @@
         this._state = 'ready';
         return result;
       });
-    }, () => {
+    }, err => {
+      console.error('[api]', method, url, 'no response', err);
       /* The state moves too, and that is not bookkeeping: a rejected request left `_state` at
          whatever the last ANSWERED one set, so a tab that went offline mid-session kept saying
          `ready` — and every control keyed on that state kept offering a round trip nothing was

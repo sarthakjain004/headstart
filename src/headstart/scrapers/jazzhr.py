@@ -83,12 +83,10 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from headstart import http, log, salary
+from headstart import http, salary
 from headstart.models import Job, html_to_text, is_remote
 from headstart.scrapers.base import BaseScraper, DetailLost, DetailRequest
 from headstart.scrapers.job_posting_jsonld import find_job_posting, jsonld_nodes
-
-_log = log.get(__name__)
 
 #: Detail-pass width. Every tenant is a subdomain of one Cloudflare-fronted origin, so this is a
 #: bound on that origin rather than on a per-tenant host. 8 is the base default and is well inside
@@ -275,7 +273,7 @@ class JazzHRScraper(BaseScraper):
         # built on a guess is the one this repo has learned not to ship.
         unread = len(_ROW.findall(listing)) - len(rows)
         if unread > 0:
-            _log.info(
+            self._log.info(
                 f"{self.board_key()}: {unread} of {unread + len(rows)} listing row(s) carried "
                 "no posting link — those postings are listed but unread"
             )

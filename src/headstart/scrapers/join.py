@@ -82,6 +82,10 @@ class JoinScraper(BaseScraper):
         company = self._company()
         cid = company.get("id")
         if not cid:
+            self.note_unreadable_board(
+                "a company id in the careers page's __NEXT_DATA__",
+                f"company keys {sorted(company)}",
+            )
             return {"company": company, "items": [], "descriptions": {}}
         items: list[dict] = []
         page = 1
@@ -90,12 +94,15 @@ class JoinScraper(BaseScraper):
                 f"https://join.com/api/public/companies/{cid}/jobs"
                 f"?locale=en&page={page}&pageSize={_PAGE_SIZE}"
             )
-            data = self._fetch(
+            response = self._fetch(
                 "GET",
                 api,
                 headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
                 timeout=30,
-            ).json()
+            )
+            # An error page carries no `pagination`, which reads as the last page: raise instead.
+            response.raise_for_status()
+            data = response.json()
             if isinstance(data, list):
                 # The API's validation-error shape, not items. Whatever remained is unread, so
                 # this is a truncation too, not an end (ADR-0053).

@@ -139,14 +139,24 @@ def _entries(ats_dir: Path) -> Iterator[tuple[str, str | None]]:
     """
     for path in _fragments(ats_dir):
         with gzip.open(path, "rt", encoding="utf-8") as fh:
-            for line in fh:
+            for lineno, line in enumerate(fh, 1):
                 line = line.strip()
                 if line:
-                    record = json.loads(line)
+                    record = _parse(line, path, lineno)
                     text = record.get("description")
                     if not isinstance(text, str) or not text.strip():
                         text = None
                     yield record["id"], text
+
+
+def _parse(line: str, path: Path, lineno: int) -> dict:
+    """``json.loads`` that names the file and line it failed on. Still fatal — a torn record must
+    not be read past — but a bare ``JSONDecodeError`` named neither, so the abort sent the reader
+    hunting through every fragment and corpus file of the run."""
+    try:
+        return json.loads(line)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"{path} line {lineno}: {exc}") from exc
 
 
 def read_store(ats_dir: Path) -> dict[str, str]:
@@ -199,17 +209,22 @@ def read_changes(path: Path) -> dict[str, ChangeRecord]:
     if not path.exists():
         return {}
     ledger: dict[str, ChangeRecord] = {}
+    malformed = 0
     try:
         with gzip.open(path, "rt", encoding="utf-8") as fh:
             for line in fh:
                 fields = line.rstrip("\n").split("\t")
                 if len(fields) == 3 and fields[1].isdigit():
                     ledger[fields[0]] = ChangeRecord(int(fields[1]), fields[2])
+                else:
+                    malformed += 1
     except (OSError, EOFError, UnicodeDecodeError) as exc:
         _log.warning(
             f"{path} is unreadable ({exc}); change counts start again from zero"
         )
         return {}
+    if malformed:
+        _log.info(f"{path}: skipped {malformed} malformed line(s)")
     return ledger
 
 
@@ -269,11 +284,11 @@ def reconcile(
     # uses, so a crash mid-write leaves an orphan file rather than a half-written corpus.
     tmp = jobs_path.with_suffix(".jsonl.tmp")
     with jobs_path.open(encoding="utf-8") as fh, tmp.open("w", encoding="utf-8") as out:
-        for line in fh:
+        for lineno, line in enumerate(fh, 1):
             line = line.strip()
             if not line:
                 continue
-            job = json.loads(line)
+            job = _parse(line, jobs_path, lineno)
             job_id = job["id"]
             fresh = (job.get("description") or "").strip()
             if fresh:

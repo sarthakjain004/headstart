@@ -89,6 +89,9 @@ _PER_ITEM_BY_CONSTRUCTION = [
     # request, driven by a URL parameter. That was fixed by hoisting the check to the single
     # parse point, and nothing but this list would notice it coming back.
     _SEARCH,
+    # Per Board (a walled Board's fetch) and per chat respectively, with no loop to key on.
+    _ROOT / "browser_http.py",
+    _ROOT / "telegram_bot_api.py",
 ]
 
 #: Every spelling a logger has in this package — the receiver a matched ``.warning``/``.error``
@@ -124,26 +127,55 @@ _ALLOWED: dict[str, str] = {
         "Trends category hand-off off (ADR-0185)."
     ),
     "search.py:_warn_unknown_filters": (
-        "Bound: 2 per HTTP request, and not against the annotation quota at all — `search.py` "
+        "Bound: 3 per HTTP request (ats, employment_type, india), and not against the annotation quota at all — `search.py` "
         "runs only in the deployed Space, which calls no `log.setup()`, so these render through "
         "`logging.lastResort` as bare stderr lines and no `::warning::` is ever produced. The "
         "budget that binds here is request volume, and this is the site that once cost 58 "
         "records a request: `facets.counts` re-entered `build_filter` once per facet option, "
         "driven by a URL parameter, unauthenticated. Hoisting the check to `parse_filters` — "
-        "the single parse point — made it 2. WARNING rather than INFO is deliberate for the "
+        "the single parse point — made it 3 (one per filter it checks). WARNING rather than INFO is deliberate for the "
         "same reason: `lastResort` carries WARNING and above only, so INFO here is invisible "
         "in the one deployment that serves users."
     ),
     "search.py:__init__": (
-        "Bound: 1 per process. The boot line naming which schema columns are dark, so an "
-        "un-migrated table cannot silently ignore every `seen_within` filter and `salary` sort "
-        "with no record. Same `lastResort` reasoning as above: WARNING or invisible."
+        "Bound: 1 per process, at most three lines: (1) which schema columns are dark and "
+        "which acceleration flags are unmaterialized, so an un-migrated table cannot silently "
+        "ignore `seen_within`/`salary` or answer on the slow raw clause with no record; (2) the "
+        "ATS/currency whitelist scan capped below `count_rows()`; (3) served currencies with no "
+        "fx rate. Same `lastResort` reasoning as above: WARNING or invisible."
+    ),
+    "search.py:scoped_jobs_clause": (
+        "Bound: 1 per call, and it is called once per /search or /facets request (app.py's "
+        "`_company_where`). Three mutually exclusive branches: a role with no watch pattern "
+        "(scope widened), a family with no role assignments loaded (widened), an unknown family "
+        "(zero results). Values come from the query string, so they are `%.40r`-clipped. "
+        "Space-only: no annotations exist there, and `lastResort` shows WARNING and above only."
+    ),
+    "search.py:run": (
+        "Fires only when an uncached request exceeds `SLOW_SEARCH_MS` (2 s), so rare by "
+        "construction. Shapes only (sort, has-query, where-clause length), never query text "
+        "(ADR-0032). Space-only, so never an annotation."
+    ),
+    "browser_http.py:_install_blocking": (
+        "Bound: 1 per process by the `_blocking_failed` flag — the first failure to install "
+        "request blocking warns, every later Board rides the same unblocked browser silently."
+    ),
+    "telegram_bot_api.py:<module>": (
+        "`_SEND_FAILURE`, a module-level `log.FirstOnly`: the first failed send per process "
+        "warns, the rest log at INFO — a Telegram outage fails every chat, not one."
     ),
     "harvest.py:scrape_all": (
         "Bounded by `log.FirstOnly` to the FIRST non-transport Board failure per run (the rest "
         "log at INFO). A parse break is systemic — `KeyError: 'title'` raises on every Board of "
         "an ATS — so one stack and one annotation say what broke while `errors` says how far it "
         "reached. Same helper as config.py's board_identity and index_plan.py's keep-set guard."
+    ),
+    "scrapers/base.py:<module>": (
+        "`_UNEXPECTED`, the module-level `log.FirstOnly` that `fan_out`'s and `_gather_async`'s "
+        "catch-alls and `_read_detail_outcome`'s generic arm report a non-routine exception "
+        "(not OSError/JSONDecodeError) through: the FIRST per shard process warns with its "
+        "traceback, the rest are INFO. Module-level because every Board builds its own scraper; "
+        "without it a parse bug read only as `unlabelled xN` / `KeyError xN`."
     ),
     "scrapers/workday.py:<module>": (
         "`_DETAIL_LOSS_OVER_SHARE`, the module-level `log.FirstOnly` that `_report_detail_losses` "

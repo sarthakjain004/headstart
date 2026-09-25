@@ -229,8 +229,11 @@ class CornerstoneScraper(BaseScraper):
     def _refresh(self, stale: str) -> None:
         """Read a new token, unless a concurrent request already replaced `stale`."""
         with self._token_lock:
-            if self._token == stale:
-                self._read_context()
+            if self._token == stale and not self._read_context():
+                self._log.info(
+                    f"{self.board_key()}: token refresh read no context — keeping the "
+                    "stale token, so the retry will 401 again"
+                )
 
     def _call(self, method: str, url: str, *, tenant_host: bool, **kwargs: Any) -> Any:
         """One request with the token; on a 401, refresh it once and retry."""

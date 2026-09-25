@@ -7,8 +7,11 @@ sync sees the full scraped-Board set. Streaming concat; downstream dedups by id.
 from __future__ import annotations
 
 import json
+import logging
 import sys
 from pathlib import Path
+
+import pytest
 
 import headstart.ingest.scrape_join as js
 from headstart.ingest import observability
@@ -91,6 +94,38 @@ def test_join_no_shards_is_empty(tmp_path):
     out = tmp_path / "jobs"
     _run(tmp_path / "absent", out)
     assert list(out.glob("*.jsonl")) == []
+
+
+def test_a_run_whose_shard_reports_all_vanished_warns(caplog):
+    """Expected shards but no reports is the join's worst outcome, and it used to log only INFO."""
+    health = observability.ScrapeHealth.from_reports([], expected_reports=15)
+    with caplog.at_level(logging.INFO, logger="headstart.ingest.scrape_join"):
+        js._report_shards([], 0, 0, health)
+    warnings = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
+    assert warnings == [
+        (
+            "no shard reports arrived (0/15) — fresh coverage unavailable; no job lines either, "
+            "so the eviction scope is empty and sync evicts nothing"
+        )
+    ]
+
+
+def test_a_local_run_with_no_reports_stays_quiet(caplog):
+    with caplog.at_level(logging.INFO, logger="headstart.ingest.scrape_join"):
+        js._report_shards([], 0, 0, observability.ScrapeHealth.from_reports([]))
+    assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
+
+
+def test_a_malformed_fragment_line_names_its_file_and_line(tmp_path, caplog):
+    frags = tmp_path / "frags"
+    _shard(frags, 0, {"lever.jsonl": ['{"id":"lever:a:1"}', '{"id":']})
+    with (
+        caplog.at_level(logging.ERROR, logger="headstart.ingest.scrape_join"),
+        pytest.raises(SystemExit),
+    ):
+        _run(frags, tmp_path / "jobs")
+    (message,) = [r.getMessage() for r in caplog.records]
+    assert message.startswith(f"{frags / 'shard-0' / 'lever.jsonl'} line 2: ")
 
 
 def test_unauthoritative_boards_are_keyed_the_way_the_index_keys_boards(tmp_path):

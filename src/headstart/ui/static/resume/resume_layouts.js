@@ -939,6 +939,7 @@
       try {
         found = rule.check(doc, api) || [];
       } catch (err) {
+        console.error('[resume] check', rule.id, 'failed', err);
         found = [{ level: 'note', nodeId: null, message: 'This check could not run.' }];
       }
       for (const f of found) out.push(Object.assign({ rule: rule.label, ruleId: rule.id }, f));

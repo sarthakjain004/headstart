@@ -111,6 +111,9 @@ class RippleHireScraper(BaseScraper):
         response.raise_for_status()
         m = CAREERS_TOKEN.search(response.url)
         if not m:
+            self.note_unreadable_board(
+                "a redirect to /candidate/?token=", f"landed on {response.url[:60]}"
+            )
             return []
         token = m.group(1)
         api = self.search_url()
@@ -150,6 +153,14 @@ class RippleHireScraper(BaseScraper):
             # would show ~100, not 7,716. Left unguarded for the same reason as sensehq: no live
             # evidence of the failure mode to fix against.
             if len(batch) < _PAGE_SIZE or len(jobs) >= data.get("totalJobCount", 0):
+                if len(jobs) < data.get("totalJobCount", 0):
+                    # A short page ended the walk below the stated total. A line, not
+                    # `mark_truncated`: whether that shortfall costs eviction scope is not
+                    # a logging decision.
+                    self._log.info(
+                        f"{self.board_key()}: read {len(jobs)} of "
+                        f"{data['totalJobCount']} listed — a short page ended the walk"
+                    )
                 break
         else:
             # Reached only by exhausting the cap — every natural end breaks above. Whatever

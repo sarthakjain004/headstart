@@ -38,6 +38,11 @@ def main() -> None:
 
     # HEADSTART_RESUME=1 continues an interrupted harvest (append + skip already-done boards).
     resume = os.environ.get("HEADSTART_RESUME") == "1"
+    _log.info(
+        f"curated feed: {len(companies)} boards from "
+        f"{'the liveness ledger' if using_ledger else _CONFIG.name}"
+        f"{' (resuming)' if resume else ''}, dashboard feed {'on' if build_dashboard_feed else 'off'}"
+    )
 
     result = scrape_all(
         companies, jobs_dir=_JOBS_DIR, progress_every=200, resume=resume
@@ -54,6 +59,8 @@ def main() -> None:
             f"tech filter: kept {kept}/{total} ({100 * kept / total:.0f}% tech) "
             f"-> per-ATS JSONL under {_TECH_DIR}"
         )
+    else:
+        _log.info("tech filter: no jobs to filter")
 
     if build_dashboard_feed:
         feed = build_feed(_TECH_DIR, result.errors)
@@ -65,6 +72,12 @@ def main() -> None:
             f"-> full set under {_JOBS_DIR}, tech subset under {_TECH_DIR}"
         )
 
+    if result.truncated:
+        # A short list is not an error, but it is not the Board's whole list either (ADR-0053).
+        _log.info(
+            f"{len(result.truncated)} board(s) returned a short list: "
+            + log.named_sample(sorted(result.truncated))
+        )
     if result.errors:
         _log.info(f"{len(result.errors)} board(s) failed:")
         for key, message in list(result.errors.items())[:10]:

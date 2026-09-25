@@ -70,7 +70,12 @@ from typing import Any
 
 from headstart import salary
 from headstart.models import Job, html_to_text, is_remote
-from headstart.scrapers.base import BaseScraper, DetailLost, DetailRequest
+from headstart.scrapers.base import (
+    BaseScraper,
+    DetailLost,
+    DetailRequest,
+    DetailWithoutDescription,
+)
 
 _API = "https://api.pyjamahr.com/api/career/jobs/"
 _BOARD = "https://jobs.pyjamahr.com"
@@ -240,8 +245,12 @@ class PyjamaHRScraper(BaseScraper):
             raise DetailLost("no job id")
         return DetailRequest(f"{_API}{row['id']}/?company_slug={self.slug}")
 
-    def read_detail(self, row: dict, response: Any) -> dict:
-        return json.loads(response.text)
+    def read_detail(self, row: dict, response: Any) -> dict | DetailWithoutDescription:
+        detail = json.loads(response.text)
+        if not detail.get("description"):
+            # Kept for the date, job type and salary it states; a gap for the description.
+            return DetailWithoutDescription(detail, "200 without description")
+        return detail
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
         details = raw.get("details") or {}

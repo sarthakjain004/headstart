@@ -220,3 +220,17 @@ def test_fetch_raw_reads_every_listed_page_and_truncates_on_a_stale_entry(
     assert scraper.detail_losses == {"no JSON-LD on a 200": 1}
     assert scraper.truncated.startswith("1/3 job pages unreadable")
     assert len(scraper.parse(raw, _SCRAPED_AT)) == 2
+
+
+def test_a_sitemap_with_no_job_locs_says_so_before_returning_nothing(caplog):
+    """An empty or non-urlset sitemap reads as no jobs; the line is what tells it apart from a
+    Board with nothing open."""
+    fetcher = FakeFetcher(
+        lambda method, url, kwargs: FakeResponse(text="<html>moved</html>")
+    )
+    scraper = get_scraper("meta", _HOST, "Meta", fetcher=fetcher)
+
+    with caplog.at_level("INFO", logger="headstart"):
+        assert scraper.fetch_raw() == []
+
+    assert "read no jobs — expected job <loc>s in the sitemap urlset" in caplog.text

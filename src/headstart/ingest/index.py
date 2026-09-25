@@ -472,7 +472,10 @@ def _take_upgrades(table: Any, path: Path) -> dict[str, str | None]:
     taken = {r["id"]: r.get(_FIRST_SEEN_FIELD.name) for r in rows}
     apply_sync(table, [], list(taken))
     kept = sum(1 for v in taken.values() if v)
-    _log.info(f"upgrades: replacing {len(taken)} rows, {kept} keeping first_seen")
+    _log.info(
+        f"upgrades: {len(ids)} listed, replacing {len(taken)} rows, "
+        f"{kept} keeping first_seen"
+    )
     return taken
 
 
@@ -527,9 +530,11 @@ def _refresh_metadata(
     # references rather than copies: still well under the vector case, and bounded by the table.
     stale: dict[str, _Held] = {}  # its meta moved
     current: dict[str, _Held] = {}  # its meta matches; only its text can make it stale
+    storeless = 0
     for row in indexed:
         job_id = row["id"]
         index = row_of.get(job_id)
+        storeless += index is None
         if index is None or job_id in just_added:
             continue
         stored = _served_meta(metas[index])
@@ -553,6 +558,10 @@ def _refresh_metadata(
             edited[job_id] = kept
     filled = sum(1 for kept in edited.values() if kept.description is None)
     rewrite = [*stale.values(), *edited.values()]
+    if storeless:
+        _log.info(
+            f"metadata refresh: {storeless} served row(s) have no store row — left as-is"
+        )
 
     if not rewrite:
         _log.info("metadata refresh: table already matches the store")
@@ -693,6 +702,14 @@ def sync(args: argparse.Namespace) -> int:
     # truncation that reports nothing at all is caught only by the second — and only while it
     # stays transient.
     unauthoritative = read_unauthoritative_boards(args.unauthoritative_boards)
+    # Said either way: an empty mapping reads the same whether none was short or the file never
+    # arrived, and only the second leaves every Board unprotected.
+    _log.info(
+        f"scope: {len(unauthoritative)} Unauthoritative Board(s) read from "
+        f"{args.unauthoritative_boards}"
+        if Path(args.unauthoritative_boards).exists()
+        else f"scope: {args.unauthoritative_boards} missing — no Board protected from eviction"
+    )
     excluded = {b for b in boards if lower_key(b) in unauthoritative}
     if excluded:
         boards -= excluded
@@ -1018,7 +1035,12 @@ def sync(args: argparse.Namespace) -> int:
         csv.Error,
         zlib.error,
     ) as exc:
-        _log.warning("freshness telemetry unavailable (%s)", type(exc).__name__)
+        _log.warning(
+            "freshness telemetry unavailable (%s: %s) — board_freshness not updated this run",
+            type(exc).__name__,
+            exc,
+            exc_info=True,
+        )
     write_base(args.db, final, "sync")
     _log.info(f"done: table '{PROD_TABLE}' now holds {final} rows at {args.db}")
     observability.summary(
@@ -1117,12 +1139,20 @@ def prune(args: argparse.Namespace) -> int:
     if args.dedup_evictions:
         # After the delete, so the ledger never records a removal the table did not make.
         live = boards_by_canon(keep)
-        dedup_evictions.append(
+        dedup = {**rules, **alias_rules(off_board, live, aliased_boards(args.ledger))}
+        appended = dedup_evictions.append(
             args.dedup_evictions,
             run_ts().isoformat(timespec="seconds"),
-            {**rules, **alias_rules(off_board, live, aliased_boards(args.ledger))},
+            dedup,
             lambda job_id: resolve_board(job_id, live),
         )
+        if dedup:
+            by_rule = Counter(dedup.values()).most_common()
+            _log.info(
+                "dedup rules: "
+                + ", ".join(f"{rule} {n}" for rule, n in by_rule)
+                + f"; appended {appended} ledger row(s) to {args.dedup_evictions}"
+            )
     final = table.count_rows()
     write_base(args.db, final, "prune")
     _log.info(f"done: pruned {len(evict)} rows; table '{PROD_TABLE}' now holds {final}")

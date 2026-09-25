@@ -14,6 +14,8 @@ import sys
 from pathlib import Path
 from typing import ClassVar
 
+import pytest
+
 from headstart.ingest import scrape_run
 
 
@@ -256,13 +258,35 @@ def test_a_budget_kill_returns_the_sentinel_and_still_writes_its_report(
     """
 
     def killed(*_a, **_k):
-        raise SystemExit("signal 15")
+        scrape_run._raise_on_term(15, None)
 
     status = _run_main(tmp_path, monkeypatch, killed)
 
     assert status == scrape_run._BUDGET_KILLED
     report = json.loads((tmp_path / "frag" / "_shard_report.json").read_text())
     assert report["killed_by_budget"] is True
+
+
+def test_a_crash_is_not_a_budget_kill(tmp_path, monkeypatch, caplog):
+    """Only the budget's SIGTERM is a kill. Any other exception used to reach `_report` as a
+    clean finish, so a crashed shard's summary said "finished within the time budget"."""
+    caplog.set_level(logging.INFO, logger="headstart.ingest.scrape_run")
+    summary = tmp_path / "summary.md"
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary))
+
+    def crashed(*_a, **_k):
+        raise RuntimeError("boom")
+
+    with pytest.raises(RuntimeError):
+        _run_main(tmp_path, monkeypatch, crashed)
+
+    errors = [r for r in caplog.records if r.levelno == logging.ERROR]
+    assert [r.getMessage() for r in errors] == ["shard 0 aborted by RuntimeError: boom"]
+    report = json.loads((tmp_path / "frag" / "_shard_report.json").read_text())
+    assert report["killed_by_budget"] is False
+    text = summary.read_text()
+    assert "aborted** by RuntimeError: boom" in text
+    assert "finished within the time budget" not in text
 
 
 def test_a_clean_finish_returns_zero(tmp_path, monkeypatch):
@@ -410,7 +434,7 @@ def test_main_derives_the_deferred_list_from_the_assignment(tmp_path, monkeypatc
     so the shard needs no extra bookkeeping to say what it lost."""
 
     def killed(*_a, **_k):
-        raise SystemExit("signal 15")
+        scrape_run._raise_on_term(15, None)
 
     _run_main(tmp_path, monkeypatch, killed)
 
@@ -430,3 +454,18 @@ def test_main_defers_nothing_when_every_board_reported(tmp_path, monkeypatch):
 
     report = json.loads((tmp_path / "frag" / "_shard_report.json").read_text())
     assert report["deferred"] == []
+
+
+def test_a_clean_empty_board_is_named_at_info(caplog):
+    """Its rows evict two scrapes later (ADR-0083), so CI must record which Board read empty;
+    a Board with postings stays at DEBUG."""
+    caplog.set_level(logging.DEBUG, logger="headstart.ingest.scrape_run")
+    progress = scrape_run._Progress(assigned=2)
+    progress.on_board("greenhouse:quiet", jobs=0, error=None, seconds=1.0)
+    progress.on_board("greenhouse:busy", jobs=5, error=None, seconds=1.0)
+
+    by_level = {r.getMessage(): r.levelno for r in caplog.records}
+    assert by_level == {
+        "greenhouse:quiet: 0 jobs in 1.0s (scraped clean, no postings)": logging.INFO,
+        "greenhouse:busy: 5 jobs in 1.0s": logging.DEBUG,
+    }

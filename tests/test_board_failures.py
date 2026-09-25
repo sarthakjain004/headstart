@@ -9,6 +9,7 @@ alive.
 
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime, timedelta
 
 from headstart.ingest import board_failures as bf
@@ -186,3 +187,27 @@ def test_key_for_lowercases_a_board_and_a_stored_key_alike():
     board = ScrapableBoard("workday", "https://Acme.wd1.myworkdayjobs.com/External")
     assert bf.key_for(board) == bf.key_for("workday:Acme/External")
     assert bf.key_for(board) == "workday:acme/external"
+
+
+def test_an_unreadable_ledger_warns_and_reads_empty(tmp_path, caplog):
+    """Fail open, but not silently: an empty read returns every quarantined Board to the slice."""
+    path = tmp_path / "board_failures.csv"
+    path.mkdir()  # exists, but opening it raises OSError
+    with caplog.at_level(logging.INFO, logger=bf.__name__):
+        assert bf.load(path) == {}
+    assert [r.levelname for r in caplog.records] == ["WARNING"]
+    assert str(path) in caplog.records[0].getMessage()
+
+
+def test_torn_rows_are_counted(tmp_path, caplog):
+    path = tmp_path / "board_failures.csv"
+    path.write_text(
+        "board,strikes,last_reason,last_seen_gone\n"
+        "greenhouse:a,x,,\n"
+        "greenhouse:b,2,HTTP 404,2026-09-01T00:00:00+00:00\n",
+        encoding="utf-8",
+    )
+    with caplog.at_level(logging.INFO, logger=bf.__name__):
+        rows = bf.load(path)
+    assert list(rows) == ["greenhouse:b"]
+    assert caplog.messages == [f"{path}: skipped 1 torn row(s), 0 void verdict(s)"]

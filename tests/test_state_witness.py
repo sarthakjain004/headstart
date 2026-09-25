@@ -32,6 +32,15 @@ def test_publish_records_only_roots_that_hold_files(tmp_path: Path) -> None:
     assert sw.publish(tmp_path) == ["data/lancedb", "data/state"]
 
 
+def test_publish_names_the_roots_it_left_out(tmp_path: Path, caplog) -> None:
+    _populate(tmp_path, "data/state/board_priority.csv")
+    with caplog.at_level("INFO", logger=sw.__name__):
+        sw.publish(tmp_path)
+    assert caplog.messages[-1].endswith(
+        "; omitted: data/descriptions data/embeddings/jobs data/lancedb"
+    )
+
+
 def test_publish_round_trips_through_the_file_it_writes(tmp_path: Path) -> None:
     _populate(tmp_path, "data/embeddings/jobs/meta.jsonl")
     sw.publish(tmp_path)

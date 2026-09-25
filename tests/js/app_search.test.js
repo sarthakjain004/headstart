@@ -57,6 +57,7 @@ const job = (id, extra) => ({
  * (page, q) the same way the real server's pagination does. */
 function loadApp(respond, cfg = {}) {
   const nodes = {};
+  const logged = [];
   const fetches = [];
   // Recorded, like an element's: the capped-row controls are one delegated document listener.
   const docHandlers = {};
@@ -71,7 +72,10 @@ function loadApp(respond, cfg = {}) {
     // window carries it; the bare `CFG` global below is kept for any direct reference.
     window: { addEventListener() {}, location: { hash: '' }, CFG: cfg },
     location: { hash: '' },
-    console, CFG: cfg, URLSearchParams, Date, Math, isNaN, Number, Array,
+    // Recorded, not printed: app.js reports every failed request, and the stub fetches fail most
+    // of the page-load ones on purpose.
+    console: { log: console.log, warn: (...a) => logged.push(a), error: (...a) => logged.push(a) },
+    CFG: cfg, URLSearchParams, Date, Math, isNaN, Number, Array,
     Event: class { constructor(type) { this.type = type; } },
     fetch: url => {
       fetches.push(String(url));
@@ -82,9 +86,9 @@ function loadApp(respond, cfg = {}) {
   const src = fs.readFileSync(APP_JS, 'utf8')
     + '\n;globalThis.__t = { go, goToPage, loadSets, runSet, page: () => page, jobCard, savedRow,'
     + ' salStop, SALARY_STOPS, stops: () => SALARY_STOPS, sync: syncSalarySlider, slide: salSlide,'
-    + ' dismiss: dismissRow, dismissed, handleSetAction, searchCompany, dropFilter, readSearchHash };';
+    + ' dismiss: dismissRow, dismissed, handleSetAction, searchCompany, dropFilter, readSearchHash, setCompany };';
   vm.runInNewContext(src, ctx);
-  return { nodes, fetches, t: ctx.__t, ctx, docHandlers };
+  return { nodes, fetches, t: ctx.__t, ctx, docHandlers, logged };
 }
 
 /** The server's Keyword-filter scope map as index() puts it on CFG (ADR-0104). */
@@ -155,6 +159,62 @@ test('a refused email toggle stays on screen — the set re-run does not overwri
   await t.handleSetAction('email', 's1');
   await later(20);
   assert.strictEqual(nodes['matches-msg'].textContent, 'email alerts are invite-only — ask for access');
+});
+
+/** Answer `url` with `status` and `body` instead of the harness's own stub. */
+function refuse(ctx, match, status, body) {
+  const base = ctx.fetch;
+  ctx.fetch = (url, opts) => (match(String(url), opts)
+    ? Promise.resolve({ ok: false, status, json: () => Promise.resolve(body) })
+    : base(url, opts));
+}
+
+test('a refused set delete says so, keeps the set, and names the request in the console', async () => {
+  // The DELETE's response was never read, so a refusal reloaded the strip and the set just
+  // came back with nothing said.
+  const { nodes, t, ctx, logged } = loadApp(url => (url === '/sets'
+    ? [{ id: 's1', name: 'Backend', query: 'backend' }] : []));
+  ctx.window.confirm = () => true;
+  refuse(ctx, (url, opts) => opts && opts.method === 'DELETE', 503, { error: 'store down' });
+  await t.loadSets();
+  await new Promise(r => setTimeout(r, 0));
+  await t.handleSetAction('del', 's1');
+  await new Promise(r => setTimeout(r, 0));
+  assert.match(nodes['matches-msg'].textContent, /Couldn't delete that set \(status 503\)/);
+  assert.ok(logged.some(a => a.join(' ') === '[api] DELETE /sets/s1 503'), JSON.stringify(logged));
+});
+
+test('a refused follow/hide says why on the status line, not just by re-enabling', async () => {
+  const { nodes, t, ctx, logged } = loadApp(() => []);
+  refuse(ctx, url => url === '/companies', 409, { error: 'at most 200 companies in each list' });
+  await new Promise(r => setTimeout(r, 0));   // the load-time browse writes the same line
+  ctx.location.hash = '#search';              // the status line is the visible tab's
+  const res = await t.setCompany('greenhouse:acme', 'hide');
+  assert.strictEqual(res.ok, false);
+  assert.strictEqual(res.status, 409);
+  assert.strictEqual(nodes.n.textContent, 'at most 200 companies in each list');
+  assert.ok(logged.some(a => a[0] === '[api] POST /companies' && a.includes(409)), JSON.stringify(logged));
+});
+
+test('a refused rename says why, like the email toggle', async () => {
+  const { nodes, t, ctx } = loadApp(url => (url === '/sets'
+    ? [{ id: 's1', name: 'Backend', query: 'backend' }] : []));
+  ctx.window.prompt = () => 'Frontend';
+  refuse(ctx, (url, opts) => url === '/sets' && opts && opts.method === 'POST', 409, { error: 'name taken' });
+  await t.loadSets();
+  await new Promise(r => setTimeout(r, 0));
+  await t.handleSetAction('rename', 's1');
+  assert.strictEqual(nodes['matches-msg'].textContent, 'name taken');
+});
+
+test('a failed search logs its path and status, never the query text', async () => {
+  const { t, nodes, ctx, logged } = loadApp(() => []);
+  refuse(ctx, url => url.startsWith('/search?'), 503, { error: 'the index is loading' });
+  set(nodes, 'q', 'secret words');
+  await t.go();
+  assert.match(nodes.results.innerHTML, /the index is loading/);
+  assert.ok(logged.some(a => a.join(' ') === '[api] GET /search 503'), JSON.stringify(logged));
+  assert.ok(!JSON.stringify(logged).includes('secret'));
 });
 
 test('late facets cannot replace newer counts or release an old search render', async () => {

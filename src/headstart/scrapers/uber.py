@@ -126,6 +126,12 @@ class UberScraper(BaseScraper):
             total = data.get("totalJobs") or total
             batch = data.get("jobs") or []
             if len(batch) >= total:
+                if not batch and "totalJobs" not in data:
+                    # No jobs and no count is a payload shape this cannot read, not a measured
+                    # empty board, so it gets a line rather than reading as nothing open.
+                    self.note_unreadable_board(
+                        "a payload with `totalJobs`", f"keys {sorted(data)[:5]}"
+                    )
                 return batch
         if total:
             self.mark_truncated_unless_negligible(

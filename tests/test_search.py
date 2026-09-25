@@ -108,6 +108,9 @@ class _Table:
     def list_indices(self):
         return self.indices
 
+    def count_rows(self, filter=None):
+        return len(self.rows)
+
 
 _ROW = {
     "_distance": 0.25,
@@ -145,6 +148,48 @@ def test_an_unknown_filter_value_is_warned_about_once_per_request(caplog):
     assert len(caplog.records) == 2
     assert filters.ats == "bogus"  # still dropped by the compiler, unchanged
     assert build_filter(filters, searcher.capabilities) is None
+
+
+def test_an_unknown_india_place_is_warned_about_and_a_known_one_is_not(caplog):
+    searcher, _ = _searcher()
+    with caplog.at_level(logging.WARNING, logger="headstart.search"):
+        caplog.clear()
+        searcher.parse_filters({"india": "bengaluru"})
+        searcher.parse_filters({"india": "india"})
+        assert not caplog.records
+        searcher.parse_filters({"india": "atlantis"})
+    assert [r.getMessage() for r in caplog.records] == [
+        "filter dropped: india 'atlantis' is not a known place"
+    ]
+
+
+def test_boot_names_unmaterialized_flags_a_capped_whitelist_and_unpriced_currencies(
+    caplog, monkeypatch
+):
+    from headstart import fx, search
+
+    monkeypatch.setattr(search, "WHITELIST_SCAN_ROWS", 0)
+    monkeypatch.setattr(fx, "table", lambda: {"rates": {"USD": 1.0}})
+    table = _priced(_Table([{**_ROW, "salary_currency": "XYZ"}]))
+    with caplog.at_level(logging.WARNING, logger="headstart.search"):
+        JobSearch(_Model(), table)
+    lines = [r.getMessage() for r in caplog.records]
+    assert "slow path (unmaterialized): employment_type flags" in lines[0]
+    assert lines[1].startswith("ats/currency whitelists read 0 of 1 rows")
+    assert lines[2] == "served currencies with no fx rate: XYZ"
+
+
+def test_a_slow_search_is_named_by_shape_never_by_query(caplog, monkeypatch):
+    from headstart import search
+
+    monkeypatch.setattr(search, "SLOW_SEARCH_MS", -1)
+    searcher, _ = _searcher()
+    with caplog.at_level(logging.WARNING, logger="headstart.search"):
+        caplog.clear()
+        searcher.run({"q": "secret words"})
+    (line,) = [r.getMessage() for r in caplog.records]
+    assert line.startswith("slow search ") and "query=True" in line
+    assert "secret" not in line
 
 
 def test_facets_cache_the_filter_set_not_the_semantic_query(monkeypatch):
@@ -1106,3 +1151,33 @@ def test_a_tracked_role_hands_over_by_its_own_title_patterns() -> None:
     )
     unknown = MultiDict([("board", "b:x"), ("role", "nope")])
     assert scoped_jobs_clause(unknown, None, patterns) is None
+
+
+def test_a_hand_off_that_widens_or_empties_says_so(caplog) -> None:
+    from werkzeug.datastructures import MultiDict
+
+    from headstart.search import scoped_jobs_clause
+
+    board = ("board", "b:x")
+    with caplog.at_level(logging.WARNING, logger="headstart.search"):
+        scoped_jobs_clause(MultiDict([board, ("role", "nope")]), None, {})
+        scoped_jobs_clause(MultiDict([board, ("family", "ai-ml")]), None)
+        scoped_jobs_clause(MultiDict([board, ("family", "nope")]), {"ai-ml": []})
+        scoped_jobs_clause(MultiDict([board, ("family", "ai-ml")]), {"ai-ml": []})
+    assert [r.getMessage() for r in caplog.records] == [
+        "scope widened: role 'nope' has no watch pattern; whole Board served",
+        (
+            "scope widened: family 'ai-ml' asked with no role assignments loaded; "
+            "whole Board served"
+        ),
+        "family 'nope' is not a known family; zero results",
+    ]
+
+
+def test_a_missing_role_assignment_snapshot_is_named_at_boot(caplog, tmp_path) -> None:
+    from headstart.search import load_family_ids
+
+    missing = tmp_path / "role_assignments.parquet"
+    with caplog.at_level(logging.WARNING, logger="headstart.search"):
+        assert load_family_ids(missing) is None
+    assert str(missing) in caplog.records[0].getMessage()

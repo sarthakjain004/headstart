@@ -166,6 +166,28 @@ def test_chrome_launch_is_retried_then_reported(monkeypatch):
     assert len(attempts) == bh._LAUNCH_ATTEMPTS
 
 
+def test_each_failed_launch_names_its_cause(monkeypatch, caplog):
+    """harvest prints only the final RuntimeError, so each attempt's cause must be in the log,
+    and the last one in that error's own text."""
+
+    class _DiesOnStart(_FakeChrome):
+        async def start(self):
+            raise OSError("xvfb had a bad day")
+
+    monkeypatch.setattr(bh, "_chrome_factory", _DiesOnStart)
+    monkeypatch.setattr(bh, "_browser", None)
+    with (
+        caplog.at_level(logging.INFO, logger="headstart"),
+        pytest.raises(RuntimeError, match="last: OSError: xvfb had a bad day"),
+        bh.origin("https://acme.darwinbox.in/careers"),
+    ):
+        pass
+    failed = [r for r in caplog.records if "chrome launch attempt" in r.message]
+    assert len(failed) == bh._LAUNCH_ATTEMPTS
+    assert all(r.levelno == logging.INFO for r in failed)
+    assert "OSError: xvfb had a bad day" in failed[0].message
+
+
 def test_a_failed_launch_reaps_its_process_and_temp_dir(monkeypatch):
     """Each failed attempt must kill its own Chrome process and remove its own temp profile dir
     before the next attempt starts — otherwise a leaked process and dir sit until Python's own

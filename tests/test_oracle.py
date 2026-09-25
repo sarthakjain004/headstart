@@ -422,7 +422,8 @@ def test_an_unknown_id_returns_none_rather_than_raising():
 
     And the empty answer is labelled, not merely counted: a Board whose ids have all gone stale
     and a Board the pod is refusing produce the same number of gaps."""
-    answers_by_id = {"7": {"items": [{"Id": "7"}]}, "8": {"items": []}}
+    described = {"Id": "7", "ExternalDescriptionStr": "<p>Build things.</p>"}
+    answers_by_id = {"7": {"items": [described]}, "8": {"items": []}}
 
     def route(method: str, url: str, kwargs: dict) -> FakeResponse:
         requisition_id = _requisition_id_in(url)
@@ -433,7 +434,7 @@ def test_an_unknown_id_returns_none_rather_than_raising():
     )
     assert scraper.fetch_detail({"Id": "8"}) is None
     assert scraper.detail_losses == Counter({"no items on a 200": 1})
-    assert scraper.fetch_detail({"Id": "7"}) == {"Id": "7"}
+    assert scraper.fetch_detail({"Id": "7"}) == described
     assert scraper.detail_losses == Counter({"no items on a 200": 1})
 
 

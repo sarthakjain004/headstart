@@ -674,8 +674,6 @@ class ZwayamScraper(BaseScraper):
             # `mark_truncated` keeps the FIRST reason, so the page cap above still wins where it
             # fired — this is the shortfall that reaches `harvest` when it did not.
             self.mark_truncated(f"read {len(rows)} of {total} postings")
-        if self.truncated:
-            _log.info(f"{self.board_key()}: {self.truncated}")
         # Detail pass for every row the ADR-0050 store does not already hold text for: the
         # listing's own fields can be silently truncated (module docstring), so the detail is
         # the only text trusted as complete. Steady state, `needs_detail` prunes this to the
@@ -719,6 +717,7 @@ class ZwayamScraper(BaseScraper):
         rows = (raw or {}).get("rows") or []
         link_base = (raw or {}).get("link_base") or self._fallback_link_base()
         jobs: list[Job] = []
+        unlinked = 0
         for source in rows:
             native_id = source.get("id")
             title = (source.get("jobTitle") or "").strip()
@@ -729,8 +728,8 @@ class ZwayamScraper(BaseScraper):
             if not job_url:
                 # Unobserved: 0 of 16,427 rows across 19 Boards. The alternative — falling back
                 # to the Board root — would emit a link that no per-Job URL shape can match, so
-                # the row is dropped and logged instead of shipping an unverifiable link.
-                _log.info(f"{self.board_key()}: job {native_id} has no jobUrl, skipped")
+                # the row is dropped and counted instead of shipping an unverifiable link.
+                unlinked += 1
                 continue
             jobs.append(
                 Job(
@@ -769,6 +768,8 @@ class ZwayamScraper(BaseScraper):
                     salary=self._salary_field(source),
                 )
             )
+        if unlinked:
+            _log.info(f"{self.board_key()}: {unlinked} job(s) had no jobUrl, skipped")
         return jobs
 
     def _salary_field(self, raw: dict) -> str | None:

@@ -46,7 +46,12 @@ from typing import Any
 from headstart import company_name
 from headstart.fetcher import Fetcher
 from headstart.models import Job, host_of, html_to_text, is_remote, requisition_of
-from headstart.scrapers.base import BaseScraper, DetailLost, DetailRequest
+from headstart.scrapers.base import (
+    BaseScraper,
+    DetailLost,
+    DetailRequest,
+    DetailWithoutDescription,
+)
 
 #: The API's own maximum `limit`. Requesting more is silently clamped to it — 300, 500 and 1000
 #: all return 200 rows and echo `"limit": 200`.
@@ -250,7 +255,14 @@ class OracleScraper(BaseScraper):
         total = 0
         self._offset = 0
         for _ in range(_MAX_PAGES):
-            items = json.loads(self._get()).get("items") or []
+            payload = json.loads(self._get())
+            items = payload.get("items") or []
+            if not items and not reqs:
+                # An empty Board still answers one item (3 of 3 live-0 ledger Boards, 2026-09-25);
+                # no item at all is a payload this cannot read, so it gets a line before [].
+                self.note_unreadable_board(
+                    "an `items` list", f"keys {sorted(payload)[:5]}"
+                )
             first = items[0] if items else {}
             batch = first.get("requisitionList") or []
             # Keep the first non-zero total: later pages echo it, but a missing one must not
@@ -329,7 +341,9 @@ class OracleScraper(BaseScraper):
             f'recruitingCEJobRequisitionDetails?onlyData=true&expand=all&finder=ById;Id="{requisition["Id"]}"'
         )
 
-    def read_detail(self, requisition: dict, response: Any) -> dict:
+    def read_detail(
+        self, requisition: dict, response: Any
+    ) -> dict | DetailWithoutDescription:
         """The one requisition in a detail response.
 
         An unknown id is **not** a 404 — it answers 200 with ``items: []`` — so an empty list is a
@@ -341,6 +355,12 @@ class OracleScraper(BaseScraper):
         items = json.loads(response.text).get("items") or []
         if not items:
             raise DetailLost("no items on a 200")
+        if not items[0].get("ExternalDescriptionStr"):
+            # Kept for the employment type, department and remote the payload still states;
+            # counted as a gap for the description (ADR-0201).
+            return DetailWithoutDescription(
+                items[0], "200 without ExternalDescriptionStr"
+            )
         return items[0]
 
     def job_url(self, job_id: str) -> str:

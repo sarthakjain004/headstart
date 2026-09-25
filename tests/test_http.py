@@ -106,6 +106,23 @@ def test_a_network_error_is_never_classified_by_digits_in_its_message(monkeypatc
     assert list(stats) == ["network"], stats  # no digit landed in any status bucket
 
 
+def test_exhausted_counts_only_requests_that_retried_and_still_gave_up(monkeypatch):
+    """A request whose last attempt is still refused counts once, by that attempt's reason;
+    one that recovers, or never retried, does not."""
+    http.reset_retry_stats()
+    _stub(monkeypatch, [429, 429, 429])
+    assert http.fetch("GET", "u").status_code == 429
+    _stub(monkeypatch, [http.RequestsError("reset")] * 3)
+    with pytest.raises(http.RequestsError):
+        http.fetch("GET", "u")
+    _stub(monkeypatch, [503, 200])
+    http.fetch("GET", "u")
+    _stub(monkeypatch, [503])
+    http.fetch("GET", "u", attempts=1)
+    assert http.exhausted_stats() == {"429-ratelimit": 1, "network": 1}
+    assert http.retry_stats()["429-ratelimit"] == 2  # the pinned counter is unchanged
+
+
 def test_does_not_retry_400_by_default(monkeypatch):
     """A 400 stays settled for every caller that does not ask otherwise. It usually *is* a
     malformed request, and retrying one wastes the ladder against a host that will keep saying

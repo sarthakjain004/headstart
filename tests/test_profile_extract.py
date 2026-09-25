@@ -164,3 +164,25 @@ def test_router_errors_pass_through_untouched():
         Boom
     ):  # the route maps RouterUnavailable → 503; not this module's job
         pe.extract(_RESUME, ask=ask)
+
+
+@pytest.mark.parametrize(
+    "reply, shape",
+    [
+        (None, "reply is NoneType"),
+        ("Jane Doe, no braces here", "no JSON object"),
+        ('{"query": Jane Doe}', "unparseable JSON"),
+        (json.dumps({**_REPLY, "query": "10+ years"}), "no role sentence"),
+    ],
+)
+def test_each_empty_extraction_names_its_shape_but_no_content(caplog, reply, shape):
+    # app.py answers every one of these with the same 502 and spends the user's cap on it, so
+    # the log is the only place that says which failure it was — by shape, never by text.
+    with (
+        caplog.at_level("WARNING", logger="headstart.profile_extract"),
+        pytest.raises(pe.EmptyExtraction),
+    ):
+        pe.extract(_RESUME, ask=lambda prompt: reply)
+    (line,) = [r.getMessage() for r in caplog.records]
+    assert shape in line
+    assert "Jane" not in line and "years" not in line

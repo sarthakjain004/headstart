@@ -212,7 +212,14 @@ class PinpointScraper(BaseScraper):
         return {"data": listed, "details": details}
 
     def _listing(self) -> list[dict]:
-        return json.loads(self._get()).get("data") or []
+        payload = json.loads(self._get())
+        if "data" not in payload:
+            # The real empty Board answers `{"data":[]}`; no key at all is a shape this cannot
+            # read, so it gets a line before reading as nothing open.
+            self.note_unreadable_board(
+                "a payload with a `data` list", f"keys {sorted(payload)[:5]}"
+            )
+        return payload.get("data") or []
 
     def detail_request(self, item: dict) -> DetailRequest:
         return DetailRequest(self.job_url(_uuid(item)), headers=_PAGE_HEADERS)

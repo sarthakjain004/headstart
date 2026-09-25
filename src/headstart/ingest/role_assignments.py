@@ -40,6 +40,10 @@ import csv
 from pathlib import Path
 from typing import NamedTuple
 
+from headstart import log
+
+_log = log.get(__name__)
+
 _COLUMNS = ("ts", "version", "family_from", "family_to", "count")
 
 
@@ -73,7 +77,13 @@ def load_previous(path: Path, version: int) -> dict[str, str] | None:
         if stamped is None or stamped.decode() != str(version):
             return None  # a refit re-based everything; transitions are meaningless across it
         return dict(zip(table["id"].to_pylist(), table["family"].to_pylist()))
-    except Exception:  # noqa: BLE001 - a corrupt snapshot must not sink the run
+    except Exception as exc:  # noqa: BLE001 - a corrupt snapshot must not sink the run
+        _log.warning(
+            "role snapshot %s unreadable (%s) — no transitions this tick",
+            path,
+            type(exc).__name__,
+            exc_info=True,
+        )
         return None
 
 
@@ -131,7 +141,13 @@ def load_placements(path: Path) -> tuple[dict[str, Placement], str] | None:
             for job_id, *values in zip(table["id"].to_pylist(), *columns, strict=True)
         }
         return placed, as_of
-    except Exception:  # noqa: BLE001 - a corrupt snapshot must not sink the run
+    except Exception as exc:  # noqa: BLE001 - a corrupt snapshot must not sink the run
+        _log.warning(
+            "role snapshot %s unreadable (%s) — no turnover this tick",
+            path,
+            type(exc).__name__,
+            exc_info=True,
+        )
         return None
 
 

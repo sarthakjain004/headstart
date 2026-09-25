@@ -306,6 +306,22 @@ def test_an_unknown_version_names_the_ones_that_exist(account):
     assert "Stripe backend" in str(failure.value)
 
 
+@pytest.mark.skipif(shutil.which("node") is None, reason="the reading needs node")
+def test_a_fault_in_the_reading_logs_its_frames_and_a_refusal_does_not(caplog):
+    """A refusal and a bug both reach the caller as one sentence; only the bug's stack is
+    logged, and it carries file:line frames without the message that can quote the record."""
+    from headstart.resume_mcp.inspection import Unreadable, read_document
+
+    with pytest.raises(Unreadable):
+        read_document({"id": "d1", "root": {"children": []}, "content": {}}, "nope")
+    assert not caplog.records
+    with pytest.raises(Unreadable):
+        read_document({"id": "d2", "root": {"children": [None]}, "content": {}})
+    [record] = caplog.records
+    assert "document d2" in record.getMessage()
+    assert "resume_document.js:" in record.getMessage()
+
+
 def test_without_node_the_reading_says_so_instead_of_guessing(account, monkeypatch):
     """No Python fallback reading: ADR-0137's decision is one implementation of the rule, and
     a second-best answer that quietly disagrees with the Résumé tab is what that refuses."""
@@ -397,6 +413,34 @@ def test_an_unexpected_crash_is_reported_rather_than_killing_the_session(
     assert "RuntimeError: hub down" in answer["result"]["content"][0]["text"]
 
 
+def test_an_unexpected_crash_logs_its_stack_and_argument_names_not_values(
+    account, monkeypatch, caplog
+):
+    """The client's one sentence names no file or line; stderr has to, or the bug is lost.
+    Argument values are document ids and version names — only their names are logged."""
+    monkeypatch.setattr(
+        acct.Account,
+        "document",
+        lambda self, _id: (_ for _ in ()).throw(RuntimeError("hub down")),
+    )
+    srv.handle(
+        {
+            "jsonrpc": "2.0",
+            "id": 6,
+            "method": "tools/call",
+            "params": {
+                "name": "get_resume",
+                "arguments": {"document_id": "secret-id-value"},
+            },
+        },
+        account,
+    )
+    [record] = [r for r in caplog.records if r.name == srv.__name__]
+    assert record.levelname == "ERROR" and record.exc_info is not None
+    assert "['document_id']" in record.getMessage()
+    assert "secret-id-value" not in record.getMessage()
+
+
 def test_a_real_client_handshake_over_a_real_subprocess():
     """The transport is hand-written (ADR-0137), so it is measured rather than reasoned about:
     a real `python -m headstart.resume_mcp`, real pipes, a real initialize/tools-list exchange.
@@ -445,6 +489,17 @@ def test_an_unparseable_line_is_answered_not_fatal(account):
     stdout = io.StringIO()
     srv.serve(io.StringIO("{not json\n"), stdout, account)
     assert json.loads(stdout.getvalue())["error"]["code"] == -32700
+
+
+def test_a_non_object_message_is_refused_and_logged_without_its_content(
+    account, caplog
+):
+    caplog.set_level("INFO", logger="headstart")
+    stdout = io.StringIO()
+    srv.serve(io.StringIO('["some resume text"]\n'), stdout, account)
+    reply = json.loads(stdout.getvalue())
+    assert reply["id"] is None and reply["error"]["code"] == -32600
+    assert "resume text" not in caplog.text and "list" in caplog.text
 
 
 # ---- no credentials -------------------------------------------------------------------

@@ -43,6 +43,10 @@ from collections.abc import Callable, Collection, Iterable, Mapping
 from dataclasses import astuple, dataclass
 from pathlib import Path
 
+from headstart import log
+
+_log = log.get(__name__)
+
 FIELDS = ("ats", "duplicate", "canonical", "signal", "resolved_to", "checked_at")
 
 #: Why a Board that moved is not a duplicate. Each needs a different action and none of them is
@@ -255,12 +259,19 @@ def _column(path: str | Path, column: str) -> dict[str, str]:
     path = Path(path)
     if not path.exists():
         return {}
+    out: dict[str, str] = {}
+    skipped = 0
     with open(path, newline="", encoding="utf-8") as fh:
-        return {
-            row["duplicate"].lower(): row[column]
-            for row in csv.DictReader(fh)
-            if row.get("duplicate") and row.get(column)
-        }
+        for row in csv.DictReader(fh):
+            if row.get("duplicate") and row.get(column):
+                out[row["duplicate"].lower()] = row[column]
+            else:
+                skipped += 1
+    # Every committed row carries both, so a skip is a hand-edit gone wrong — and a skipped row
+    # un-buries its duplicate, which is then scraped with nothing saying why.
+    if skipped:
+        _log.info(f"{path}: skipped {skipped} row(s) missing duplicate or {column}")
+    return out
 
 
 def write(path: str | Path, aliases: Iterable[Alias]) -> None:

@@ -80,6 +80,18 @@ def test_read_shards_skips_a_corrupt_report_rather_than_dying(tmp_path):
     assert [r.shard for r in observability.read_shards(tmp_path)] == ["0"]
 
 
+def test_a_second_reader_reports_skips_without_annotating(tmp_path, caplog):
+    """`update_ledgers failures` re-reads what the join already warned about, in the same job."""
+    bad = tmp_path / "shard-1"
+    bad.mkdir()
+    (bad / "_shard_report.json").write_text("{not json", encoding="utf-8")
+
+    with caplog.at_level("INFO", logger=observability.__name__):
+        assert observability.read_shards(tmp_path, quiet=True) == []
+    assert [r.levelname for r in caplog.records] == ["INFO"]
+    assert "shard-1" in caplog.text
+
+
 def test_shard_report_from_json_tolerates_missing_fields():
     """The tolerance every reader used to reimplement now lives in one place (ADR-0153): a
     report missing every optional field still parses, with sane zero/empty defaults."""

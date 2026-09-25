@@ -137,6 +137,10 @@ class TeamtailorScraper(BaseScraper):
             document = json.loads(self._get(f"{self.url()}{suffix}"))
             if page == 1:
                 feed = document
+                if "items" not in document:
+                    self.note_unreadable_board(
+                        "a JSON Feed with `items`", f"keys {sorted(document)[:5]}"
+                    )
             items = document.get("items") or []
             fresh = [i for i in items if i.get("id") not in seen]
             seen.update(i.get("id") for i in fresh)

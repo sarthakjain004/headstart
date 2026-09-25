@@ -205,7 +205,7 @@ class SuccessFactorsScraper(BaseScraper):
         the same reason :meth:`_search_job_urls` reports — ``fetch_raw`` decides which surface is
         the Board's answer (ADR-0053)."""
         # Through the retry seam, not the raw session: a 429/5xx here used to settle on the
-        # first try, and `_fetch_sitemap` maps a non-200 to ("other", "", None) — so a throttled
+        # first try, and `_fetch_sitemap` maps a non-200 to an empty text — so a throttled
         # fetch read as an empty Board and `index sync` evicted its rows (ADR-0047, ADR-0053).
         response = self._fetch(
             "GET",
@@ -232,7 +232,9 @@ class SuccessFactorsScraper(BaseScraper):
         finally:
             response.close()
         if response.status_code != 200:
-            return "other", "", None
+            # Neither urlset nor rss, so it lists nothing; the status is the kind so that
+            # `fetch_raw`'s surface line can say why.
+            return f"HTTP {response.status_code}", "", None
         text = b"".join(chunks).decode("utf-8", "replace")
         return (
             kind or _sitemap_kind(text),
@@ -373,7 +375,8 @@ class SuccessFactorsScraper(BaseScraper):
         finally:
             response.close()
         if response.status_code != 200:
-            return [], {}, None
+            # Reported for the surface line only: with nothing listed, no truncation is recorded.
+            return [], {}, f"HTTP {response.status_code}"
         text = b"".join(chunks).decode("utf-8", "replace")
         return (
             _job_urls_from(text, self.slug),
@@ -439,6 +442,7 @@ class SuccessFactorsScraper(BaseScraper):
         # surface is unknown; only `jobs.tetrapak.com` (module docstring's own `rss-stream`
         # example) was directly confirmed live to benefit — see :meth:`_rss_job_urls`.
         job_functions: dict[str, str] = {}
+        search_cut_short = rss_cut_short = None
         if listed and sitemap_cut_short:
             self.mark_truncated(sitemap_cut_short)
         if not listed:
@@ -470,10 +474,19 @@ class SuccessFactorsScraper(BaseScraper):
         # tenant's cost is decided here and nowhere else — the RSS stream is the patient last
         # resort — so without this line a board that takes 37 minutes for 7 jobs
         # (cbscorporation.jobs, 2026-08-12) leaves no evidence of why.
-        _log.info(
-            f"{self.slug}: {surface or 'nothing'} via sitemap {kind or 'unknown'} "
-            f"-> {len(listed)} job pages to fetch"
-        )
+        # Not on the common case — the urlset answering with postings — which is every Board,
+        # every run, and says nothing the cost ledger does not.
+        if surface != "sitemap-urlset":
+            fallbacks = (
+                f", search {search_cut_short or 'empty'}, "
+                f"rss {(rss_cut_short or 'empty') if kind == 'rss' else 'n/a'}"
+                if not listed
+                else ""
+            )
+            _log.info(
+                f"{self.board_key()}: {surface or 'nothing'} via sitemap "
+                f"{kind or 'unknown'}{fallbacks} -> {len(listed)} job pages to fetch"
+            )
         # The tech gate (ADR-0017), read off the URL's own slug plus — on `rss-stream` boards
         # only — the feed's own department, rather than the listing generally: unlike
         # eightfold's PCSX surface, the sitemap-urlset and search-pages surfaces carry no title

@@ -202,6 +202,12 @@ class AppleScraper(BaseScraper):
         for page in range(1, _MAX_PAGES + 1):
             res = self._search_page(page)
             batch = res.get("searchResults") or []
+            if page == 1 and not batch and not res.get("totalRecords"):
+                # A moved envelope reads downstream exactly like an empty Board (google.py
+                # guards the same shape on its page 1).
+                self.note_unreadable_board(
+                    "searchResults on page 1", f"keys {sorted(res)}"
+                )
             total = res.get("totalRecords") or total
             for row in batch:
                 native_id = row.get("id")

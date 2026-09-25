@@ -1780,7 +1780,8 @@
     try {
       const r = await fetch('/profile');
       if (r.ok) profile = await r.json();
-    } catch (err) { profile = null; }
+      else console.warn('[api] GET /profile', r.status);
+    } catch (err) { console.error('[api] GET /profile', err); profile = null; }
     if (!profile || profile.error) {
       note.textContent = 'No profile available here.';
       return;
@@ -2172,6 +2173,7 @@
         docListPaint();
         flashSaved('Imported.');
       } catch (err) {
+        console.error('[resume] import failed', err);
         /* `window.alert` was the last modal here. The bar already carries every other thing that
            went wrong, and `sticky` keeps this one up rather than fading after two seconds. */
         flashSaved(err.message || 'That file could not be read.', true);

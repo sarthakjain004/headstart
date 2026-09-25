@@ -78,7 +78,7 @@ def test_main_partitions_every_selected_board(tmp_path, monkeypatch):
     assert sorted(seen) == sorted(f"{c.ats}:{c.slug}" for c in boards)
 
 
-def test_main_empty_plan_when_no_boards(tmp_path, monkeypatch):
+def test_main_empty_plan_when_no_boards(tmp_path, monkeypatch, caplog):
     monkeypatch.setattr(ps.scrapable_boards, "load", lambda ledger, min_jobs=0: [])
     out = tmp_path / "assignments"
     monkeypatch.setattr(
@@ -92,7 +92,13 @@ def test_main_empty_plan_when_no_boards(tmp_path, monkeypatch):
             str(out),
         ],
     )
-    assert ps.main() == 0
+    with caplog.at_level("INFO"):
+        assert ps.main() == 0
+    assert [r.message for r in caplog.records if r.levelname == "WARNING"] == [
+        "empty slice: 0 Scrapable Boards, 0 quarantined, 0 gated — no shards planned"
+    ]
+    # Stated at zero too: an absent ledger and an empty one must both leave a line.
+    assert any(m.startswith("quarantine: skipped 0 of 0") for m in caplog.messages)
     assert json.loads((out / "plan.json").read_text()) == {
         "shards": [],
         "count": 0,
@@ -397,6 +403,8 @@ def test_floor_warning_compares_wall_clock_not_serial_minutes(
         f"floor {floor} min exceeds the {even_serial / 13.08:.2f} min even WALL share and must "
         f"be reported; warnings: {[r.message for r in caplog.records if r.levelname == 'WARNING']}"
     )
+    assert warnings[0].endswith(f"not the packing: {board_identity(boards[0])}")
+    assert "speedup: 13.08x (15 shards, updated 2026-09-08)" in caplog.messages
     reported_share = float(
         re.search(r"above the ([\d.]+) min even share", warnings[0]).group(1)
     )

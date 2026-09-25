@@ -32,6 +32,10 @@ from __future__ import annotations
 import csv
 from pathlib import Path
 
+from headstart import log
+
+_log = log.get(__name__)
+
 _COLUMNS = (
     "ts",
     "centroid_version",
@@ -102,6 +106,15 @@ def _read_state(path: Path) -> tuple[tuple[str, ...] | None, bool]:
         reader = csv.reader(fh)
         header = next(reader, None)
         if header != list(_COLUMNS):
+            # The rebuild truncates every recorded boundary the Space marks — say so once.
+            discarded = sum(1 for row in reader if row)
+            _log.warning(
+                "%s: header %s not recognised — rebuilding, discarding %d recorded "
+                "boundary row(s)",
+                path,
+                header,
+                discarded,
+            )
             return None, True
         last = None
         for row in reader:

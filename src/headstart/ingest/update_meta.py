@@ -475,6 +475,7 @@ class _ChunkResult(NamedTuple):
     sal_delta: Counter[str]
     country_delta: Counter[str]
     unswept: int
+    swept_without_text: int
 
 
 def _refresh_chunk(args: _ChunkArgs) -> _ChunkResult:
@@ -488,7 +489,7 @@ def _refresh_chunk(args: _ChunkArgs) -> _ChunkResult:
     exp_delta: Counter[str] = Counter()
     sal_delta: Counter[str] = Counter()
     country_delta: Counter[str] = Counter()
-    unswept = 0
+    unswept = swept_without_text = 0
     for meta in args.rows:
         sweep_row = args.sweep and meta.get(_ROW_VERSION, 0) < DERIVATIONS_VERSION
         row, fact_changed, derived_changed = refresh_row(
@@ -500,6 +501,7 @@ def _refresh_chunk(args: _ChunkArgs) -> _ChunkResult:
         )
         if sweep_row:
             row[_ROW_VERSION] = DERIVATIONS_VERSION
+            swept_without_text += meta["id"] not in args.descriptions
         unswept += row.get(_ROW_VERSION, 0) < DERIVATIONS_VERSION
         fact_hits += fact_changed
         derived_hits += derived_changed
@@ -537,6 +539,7 @@ def _refresh_chunk(args: _ChunkArgs) -> _ChunkResult:
         sal_delta,
         country_delta,
         unswept,
+        swept_without_text,
     )
 
 
@@ -628,7 +631,7 @@ def refresh(
     exp_delta: Counter[str] = Counter()
     sal_delta: Counter[str] = Counter()
     country_delta: Counter[str] = Counter()
-    unswept = 0
+    unswept = swept_without_text = 0
     deadline = monotonic() + sweep_budget_seconds if sweep else None
     # A sweep runs the full cascade on every row instead of a cheap fact-sync — measured ~230x
     # slower per row on the 2026-09-15 nightly (805,160 rows: ~15s fact-only vs. a sweep still not
@@ -669,6 +672,7 @@ def refresh(
                 sal_delta.update(chunk.sal_delta)
                 country_delta.update(chunk.country_delta)
                 unswept += chunk.unswept
+                swept_without_text += chunk.swept_without_text
                 if rows % _PROGRESS_ROWS == 0:
                     _log.info(f"  {rows} rows refreshed")
         tmp.replace(meta_path)
@@ -682,6 +686,13 @@ def refresh(
         f"{derived_hits} with changed derivations, "
         f"{backfilled} given a has_description they never had"
     )
+    if swept_without_text:
+        # Stamped at the new version all the same, from field and title only (`_KEEP` holds a
+        # description-sourced value) — so a lost ATS dir in the store reads here, not nowhere.
+        _log.info(
+            f"sweep: {swept_without_text} swept row(s) had no held description "
+            "(stamped without repair)"
+        )
     for label, counts in (("experience", exp_delta), ("salary", sal_delta)):
         if counts:
             _log.info(
@@ -724,6 +735,12 @@ def refresh(
         # remote queue intact, and every later join would re-fetch and re-append it forever.
         pending_rederive.write_text("", encoding="utf-8")
         _log.info(f"re-derive queue: cleared {len(pending)} consumed id(s)")
+        unheld = len(pending - descriptions.keys())
+        if unheld:
+            _log.info(
+                f"re-derive queue: {unheld} of {len(pending)} id(s) had no held description "
+                "(cleared without repair)"
+            )
     return 0
 
 

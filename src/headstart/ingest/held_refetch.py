@@ -71,19 +71,24 @@ def read_checked(path: Path) -> dict[str, datetime]:
     if not path.exists():
         return {}
     checked: dict[str, datetime] = {}
+    malformed = 0
     try:
         with gzip.open(path, "rt", encoding="utf-8") as fh:
             for line in fh:
                 fields = line.rstrip("\n").split("\t")
                 if len(fields) != 2:
+                    malformed += 1
                     continue
                 try:
                     checked[fields[0]] = datetime.fromisoformat(fields[1])
                 except ValueError:
+                    malformed += 1
                     continue
     except (OSError, EOFError, UnicodeDecodeError) as exc:
         _log.warning(f"{path} is unreadable ({exc}); re-seeding the rotation")
         return {}
+    if malformed:
+        _log.info(f"{path}: skipped {malformed} malformed line(s)")
     return checked
 
 

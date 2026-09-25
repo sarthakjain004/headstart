@@ -191,7 +191,7 @@ class EmbeddingStore:
                     # un-embedded forever and re-embed on every run. Loud, and with the count,
                     # because the file itself cannot tell the two cases apart afterwards.
                     dropped = 1 + sum(1 for _ in f)
-                    _log.error(
+                    _log.warning(
                         f"{self._meta_path}: unparseable metadata at line {lineno} — dropping "
                         f"{dropped} record(s) from there to end of file, and truncating "
                         f"{self._vec_path.name} to match"
@@ -420,6 +420,9 @@ def _run_assignment(
     _log.info(
         f"done: shard embedded {done} ({failed} failed) -> {outdir} ({count} vectors)"
     )
+    if unattempted := len(docs) - done - failed:
+        # A wedge stops the walk; the Docs after it were never tried — not failed, just unreached.
+        _log.info(f"not attempted: {unattempted} doc(s) after the allocator wedged")
 
 
 def main() -> None:

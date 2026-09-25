@@ -384,6 +384,10 @@ _DOWNLOAD_WORKERS = 6
 # would have fixed.
 _INNER_ATTEMPTS = 3
 _INNER_BACKOFF_S = 2.0
+# One entry per inner retry `_get_with_retry` absorbed, so `_download` can say how many blips the
+# fetch rode out — invisible otherwise, since a retry that succeeds leaves no other trace. A list
+# because `append` is atomic across the pool's threads.
+_inner_retries: list[str] = []
 
 
 def _get_with_retry(
@@ -404,6 +408,7 @@ def _get_with_retry(
         except (requests.RequestException, OSError) as exc:
             last = exc
             if attempt + 1 < _INNER_ATTEMPTS:
+                _inner_retries.append(type(exc).__name__)
                 time.sleep(_INNER_BACKOFF_S * (attempt + 1))
     raise last
 
@@ -432,7 +437,8 @@ def _fetch_whole(url: str, dest: Path, size: int, headers: dict[str, str]) -> No
     with open(tmp, "wb") as fh:
         fh.write(r.content)
     tmp.rename(dest)
-    _log.info(f"  landed {dest.name} ({len(r.content) / 1e6:.1f} MB)")
+    # DEBUG: one line per small file is hundreds on a lancedb pull; `_download` reports progress.
+    _log.debug(f"  landed {dest.name} ({len(r.content) / 1e6:.1f} MB)")
 
 
 def _chunk_path(dest: Path, i: int) -> Path:
@@ -520,9 +526,18 @@ def _download(
             hf_hub_url(repo, path, repo_type="dataset"), dest, sizes[path], headers
         )
 
+    _inner_retries.clear()
+    step = max(1, len(small) // 10)  # about ten progress lines, however many files
+    landed_bytes = 0
     with ThreadPoolExecutor(max_workers=_DOWNLOAD_WORKERS) as pool:
-        for fut in as_completed([pool.submit(fetch_small, p) for p in small]):
+        futures = {pool.submit(fetch_small, p): p for p in small}
+        for done, fut in enumerate(as_completed(futures), start=1):
             fut.result()
+            landed_bytes += sizes[futures[fut]]
+            if done % step == 0 or done == len(small):
+                _log.info(
+                    f"  {done}/{len(small)} small files, {landed_bytes / 1e6:.1f} MB"
+                )
 
     for path in big:
         dest = root / path
@@ -530,10 +545,15 @@ def _download(
         _fetch_ranged(
             hf_hub_url(repo, path, repo_type="dataset"), dest, sizes[path], headers
         )
+    if _inner_retries:
+        _log.info(f"  {len(_inner_retries)} inner retries absorbed")
 
 
 def fetch_state(repo: str, patterns: list[str], token: str | None) -> int:
     spent = 0  # seconds slept so far, against _WAIT_BUDGET
+    first_run_noted = (
+        False  # the bootstrap decision is announced once per fetch, not per attempt
+    )
     began = time.monotonic()  # the whole fetch, across every attempt and every wait
     for attempt in range(1, _ATTEMPTS + 1):
         started = time.monotonic()
@@ -567,10 +587,11 @@ def fetch_state(repo: str, patterns: list[str], token: str | None) -> int:
             # would need. A witness that cannot be READ is a different case — it raises, lands in
             # the handler below, and is retried like any other Hub failure.
             barren = [p for p in patterns if not remote_matches(listing, [p])]
+            witness = "does not cover them"
             if barren and state_witness.speaks_for(barren):
-                claimed = state_witness.unwitnessed(
-                    barren, state_witness.published_roots(repo, token)
-                )
+                roots = state_witness.published_roots(repo, token)
+                claimed = state_witness.unwitnessed(barren, roots)
+                witness = "absent" if roots is None else "does not claim them"
                 if claimed:
                     reason = (
                         f"the Hub lists no files under {' '.join(claimed)}, but "
@@ -579,6 +600,14 @@ def fetch_state(repo: str, patterns: list[str], token: str | None) -> int:
                         "first run"
                     )
                     break
+            if barren and not first_run_noted:
+                # The bootstrap decision, said out loud: until this line its only trace was a
+                # `fetched 0 file(s)`, which reads the same as a healthy fetch of nothing.
+                first_run_noted = True
+                _log.warning(
+                    f"no remote files match {' '.join(barren)}; witness {witness} — "
+                    "proceeding as a first run"
+                )
             _download(repo, siblings, wanted, token, REPO_ROOT)
             absent = absent_locally(wanted, REPO_ROOT)
             if not absent:

@@ -174,9 +174,14 @@ class AshbyScraper(BaseScraper):
                 return None
             if response.status_code == 429:
                 retry_after = response.headers.get("retry-after") or ""
-                self.graphql_pacer.rest(
+                rest_s = (
                     float(retry_after) if retry_after.isdigit() else _GRAPHQL_REST_S
                 )
+                self._log.info(
+                    f"{self.board_key()}: 429 on {_GRAPHQL} — resting every Ashby GraphQL "
+                    f"request {rest_s:.0f}s"
+                )
+                self.graphql_pacer.rest(rest_s)
                 continue
             if response.status_code != 200:
                 return None

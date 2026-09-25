@@ -178,6 +178,9 @@ class TrakstarScraper(BaseScraper):
     has_detail_pass = True  # per-Job fetch fills `description` (ADR-0050)
     # The thread path's width; the multiplexed one is pinned to the same number in `fetch_raw`.
     detail_workers = _DETAIL_WORKERS
+    #: Why the last :meth:`_api_page` was None, for :meth:`_api_listing`'s fallback line; None
+    #: where the answer was the expected 400 for a tenant with no jsapi board.
+    _api_failure: str | None = None
 
     def url(self) -> str:
         return f"https://{self.slug}.hire.trakstar.com/"
@@ -187,17 +190,24 @@ class TrakstarScraper(BaseScraper):
         short of a clean, parseable 200 — a 400 (this tenant has no board there, or the slug is
         wrong), a network failure, or a body that isn't JSON."""
         url = f"{_API_URL}?client_name={quote(self.slug)}&offset={offset}&limit={_API_LIMIT}"
+        self._api_failure = None
         try:
             response = self._fetch(
                 "GET", url, timeout=30, headers={"User-Agent": USER_AGENT}
             )
-        except http.RequestsError:
+        except http.RequestsError as exc:
+            self._api_failure = type(exc).__name__
             return None
         if response.status_code != 200:
+            if not (
+                response.status_code == 400 and "Invalid client name" in response.text
+            ):
+                self._api_failure = f"HTTP {response.status_code}"
             return None
         try:
             return json.loads(response.text)
         except ValueError:
+            self._api_failure = "a non-JSON body"
             return None
 
     def _api_listing(self) -> list[dict] | None:
@@ -216,6 +226,11 @@ class TrakstarScraper(BaseScraper):
             page = self._api_page(offset)
             if page is None:
                 if offset == 0:
+                    if self._api_failure:
+                        _log.info(
+                            f"{self.board_key()}: jsapi unavailable ({self._api_failure}) — "
+                            "HTML fallback"
+                        )
                     return None
                 self.mark_truncated(
                     f"jsapi page at offset {offset} failed — {len(objects)} postings read, "

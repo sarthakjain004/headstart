@@ -270,7 +270,7 @@ class ScrapeHealth:
         losses: dict[str, Counter[str]] = defaultdict(Counter)
         causes: Counter[tuple[str, str, str]] = Counter()
         cause_boards: dict[tuple[str, str, str], set[str]] = defaultdict(set)
-        malformed_reports = 0
+        malformed_shards: list[str] = []
         for report in reports:
             malformed = report.malformed
             for key in report.boards_ok:
@@ -305,11 +305,14 @@ class ScrapeHealth:
                             malformed = True
                             continue
                         cause_boards[key].add(str(board))
-            malformed_reports += int(malformed)
+            if malformed:
+                malformed_shards.append(str(report.shard or "?"))
+        malformed_reports = len(malformed_shards)
         if malformed_reports:
             _log.warning(
                 f"{malformed_reports} shard report(s) carried malformed scrape-health fields; "
-                "valid fields were kept and fresh coverage is marked degraded"
+                "valid fields were kept and fresh coverage is marked degraded: "
+                + log.named_sample(malformed_shards)
             )
         expected = max(len(reports), expected_reports or len(reports))
         return cls(
@@ -533,11 +536,15 @@ def write_shard(outdir: Path, report: ShardReport) -> None:
         _log.warning(f"could not write the shard report: {exc}")
 
 
-def read_shards(fragments: Path) -> list[ShardReport]:
+def read_shards(fragments: Path, *, quiet: bool = False) -> list[ShardReport]:
     """Every shard report under ``fragments``, newest-run-first order not guaranteed.
 
     A missing or corrupt report is skipped with a warning rather than raising: the join's job
-    is to union job data, and it must not die because a shard's telemetry did."""
+    is to union job data, and it must not die because a shard's telemetry did.
+
+    ``quiet`` reports the same skips at INFO, for a second reader in the same job: the join has
+    already annotated them, and a second copy spends budget restating one fault."""
+    report_skip = _log.info if quiet else _log.warning
     out: list[ShardReport] = []
     unreadable: list[str] = []
     wrong_shape: list[str] = []
@@ -557,12 +564,12 @@ def read_shards(fragments: Path) -> list[ShardReport]:
         # is an annotation under Actions, capped at 10 per step — so the per-shard form could
         # spend the join's whole budget reporting that telemetry was missing, and bury the
         # join's own errors doing it. The names still ride, via `log.named_sample`.
-        _log.warning(
+        report_skip(
             f"{len(unreadable)} shard report(s) unreadable, so their telemetry is missing "
             f"from this run's totals: {log.named_sample(unreadable)}"
         )
     if wrong_shape:
-        _log.warning(
+        report_skip(
             f"{len(wrong_shape)} shard report(s) were valid JSON but not objects and were "
             f"skipped: {log.named_sample(wrong_shape)}"
         )

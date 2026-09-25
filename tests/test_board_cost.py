@@ -82,6 +82,16 @@ def test_read_shard_rows_skips_a_torn_final_line(tmp_path):
     assert read_shard_rows(p) == {"lever:a": ShardCost(12.5, 3, False)}
 
 
+def test_read_shard_rows_says_how_many_rows_it_skipped(tmp_path, caplog):
+    p = tmp_path / "board_cost.csv"
+    p.write_text(
+        "board,seconds,jobs,unfinished\nlever:a,x,3,0\nworkday:b,", encoding="utf-8"
+    )
+    with caplog.at_level("INFO", logger="headstart.board_cost"):
+        assert read_shard_rows(p) == {}
+    assert f"{p}: skipped 2 torn/malformed cost row(s)" in caplog.messages
+
+
 def test_read_shard_rows_reads_a_fragment_written_before_the_unfinished_column(
     tmp_path,
 ):

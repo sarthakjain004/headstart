@@ -51,6 +51,7 @@ from headstart.fetcher import Fetcher
 from headstart.models import Job, html_to_text, is_remote
 from headstart.scrapers import workday_company_name
 from headstart.scrapers.base import (
+    MIN_AUTHORITATIVE_SHARE,
     USER_AGENT,
     BaseScraper,
     classify_exception,
@@ -315,6 +316,11 @@ _PAGE_RECOVERED = "recovered from the public page"
 # unconditionally the cookie one. Recovered details ride this label and are popped from the loss
 # tally exactly as `_PAGE_RECOVERED` is.
 _COOKIE_RECOVERED = "cookie-reset (recovered)"
+
+# A detail that answered 200 with no `jobDescription`: its other fields land, but the description
+# the pass exists for does not. Non-None, so `_report_detail_losses` pops it out of the loss tally
+# like the two recoveries above and gives it its own line.
+_NO_DESCRIPTION = "200 without jobDescription"
 
 # A 500-episode is the origin refusing a Board's details wholesale for minutes, and nothing
 # in-run beats it (ADR-0100): massgeneralbrigham lost 2,324 of 2,420 details to settled 500s
@@ -636,6 +642,10 @@ class WorkdayScraper(BaseScraper):
         for instance in INSTANCES:
             if instance != hinted and serves(instance):
                 self._instance = instance
+                # The ledger's URL names a data centre that no longer serves this Board.
+                _log.info(
+                    f"{self.board_key()}: served from {instance}, not the ledger's {hinted}"
+                )
                 return
         # Every data centre refused the probe, so the crawl below runs against the URL's own
         # instance knowing none of them answered. It is not marked truncated here: the first
@@ -1230,10 +1240,13 @@ class WorkdayScraper(BaseScraper):
         is left alone — rarer, and it lands in the ``unlabelled`` bucket rather than vanishing.
         """
         try:
-            return self._extract_detail(response)
+            detail = self._extract_detail(response)
         except ValueError:
             self._note_detail(classes, "unparseable")
             return None
+        if detail is not None and not detail["description"]:
+            self._note_detail(classes, _NO_DESCRIPTION)
+        return detail
 
     def _report_detail_losses(
         self, details: Sequence[Any], classes: Counter[str], titled_stubs: int
@@ -1303,6 +1316,12 @@ class WorkdayScraper(BaseScraper):
             _log.info(
                 f"{self.board_key()}: {cookie_recovered} detail(s) recovered by clearing a stale "
                 "session cookie after a 400 (ADR-0103)"
+            )
+        no_description = classes.pop(_NO_DESCRIPTION, 0)
+        if no_description:
+            _log.info(
+                f"{self.board_key()}: {no_description} detail(s) answered 200 without "
+                "jobDescription — their other fields landed, the description did not"
             )
         no_url = classes.pop(_NO_DETAIL_URL, 0)
         if no_url:
@@ -1382,8 +1401,17 @@ class WorkdayScraper(BaseScraper):
                 )
             return
         total = int(first.get("total", 0))
-        absorb(first.get("jobPostings") or [])
+        # Postings this slice handed over, before any dedup — for the shortfall line below.
+        read = 0
+
+        def counted(postings: list[dict]) -> None:
+            nonlocal read
+            read += len(postings)
+            absorb(postings)
+
+        counted(first.get("jobPostings") or [])
         if total <= _PAGE_LIMIT:
+            self._note_slice_shortfall(applied, read, total)
             return
 
         capped = total == _QUERY_TOTAL_CAP
@@ -1402,7 +1430,9 @@ class WorkdayScraper(BaseScraper):
                 "to split — postings past the cap were not read"
             )
         if facet is None:  # not capped, or capped with nothing left to split
-            self._paginate(applied, total, absorb)
+            lost_pages = self._paginate(applied, total, counted)
+            if not capped and not lost_pages:
+                self._note_slice_shortfall(applied, read, total)
             return
 
         param, values = facet
@@ -1426,7 +1456,24 @@ class WorkdayScraper(BaseScraper):
                     "none of that slice's postings were read"
                 )
 
-    def _paginate(self, applied: dict[str, list[str]], total: int, absorb) -> None:
+    def _note_slice_shortfall(
+        self, applied: dict[str, list[str]], read: int, total: int
+    ) -> None:
+        """One INFO line when a slice whose every page answered still handed over fewer postings
+        than its own first page stated — the shortfall no lost-page count can see.
+
+        Per slice, against that slice's own ``total``, so facet slices overlapping one another
+        cannot inflate or mask it. Counted before dedup, so a live index re-serving a row across a
+        page boundary can only hide a shortfall, never invent one; and only below
+        ``MIN_AUTHORITATIVE_SHARE``, since a Board's index moving by a posting or two mid-crawl is
+        routine. A line, not ``mark_truncated``: whether this costs eviction scope is a behaviour
+        decision, not a logging one."""
+        if read < total * MIN_AUTHORITATIVE_SHARE:
+            _log.info(
+                f"{self.board_key()}: {_slice_label(applied)} read {read} of {total} listed"
+            )
+
+    def _paginate(self, applied: dict[str, list[str]], total: int, absorb) -> int:
         """Page through offsets [20, total), fanned out over at most ``_PAGE_STREAMS`` concurrent
         streams (mirrors :meth:`fan_out_async`'s bounded-semaphore/shared-session shape, as its
         own small gather rather than a call to it — see :meth:`_paginate_async`). A page that
@@ -1442,10 +1489,12 @@ class WorkdayScraper(BaseScraper):
         (ADR-0016), already honoured by this file's own detail pass and five other scrapers'.
         Pagination staying async regardless would leave "stop all async requests to Workday"
         only half true, on what is now the *larger* share of that traffic.
+
+        Returns how many pages were lost, 0 when every one answered.
         """
         offsets = range(_PAGE_LIMIT, total, _PAGE_LIMIT)
         if not offsets:
-            return
+            return 0
         # What the failed pages actually were. `missing` alone cannot tell throttling from a
         # dead host from a mid-crawl 404, and that is the first question asked of every
         # short crawl — answering it previously meant opening the shard log and reading
@@ -1465,7 +1514,7 @@ class WorkdayScraper(BaseScraper):
             )
         missing -= self._second_pass(applied, retryable, absorb, classes)
         if not missing:
-            return
+            return 0
         # Page 1 is in the denominator because it is in hand: :meth:`_exhaust` fetched it before
         # calling this, and it is as much a page of ``total`` as the ones fanned out here.
         # Counting only ``offsets`` reads a 21-40 posting query — one page here, three of
@@ -1492,6 +1541,7 @@ class WorkdayScraper(BaseScraper):
         # `mark_truncated` logs this Board and `why` itself (2026-09-16), so the near-identical
         # line that used to sit here has gone rather than being printed twice per Board.
         self.mark_truncated(f"{shortfall} of {total} listed postings")
+        return missing
 
     def _second_pass(
         self,
@@ -1671,7 +1721,13 @@ class WorkdayScraper(BaseScraper):
                 marks_wall=False,
             )
             page = response.text if response.status_code == 200 else None
-        except Exception:  # noqa: BLE001 - a display name is never worth failing a Board for
+        except Exception as exc:  # noqa: BLE001 - a display name is never worth failing a Board for
+            # One of two sources, so the postings may still name the Board; say why this one
+            # had no say.
+            _log.info(
+                f"{self.board_key()}: board page {self.job_url('')} raised "
+                f"{type(exc).__name__} — naming from postings alone"
+            )
             page = None
         tenant, _instance, site = self._parts()
         name, _source = workday_company_name.board_name(

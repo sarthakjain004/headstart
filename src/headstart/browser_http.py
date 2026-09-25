@@ -33,6 +33,7 @@ import asyncio
 import atexit
 import json
 import threading
+import time
 from contextlib import contextmanager
 from typing import Any, Self
 from urllib.parse import urlsplit
@@ -214,19 +215,31 @@ def _ensure_started() -> None:
             return browser
 
         last: Exception | None = None
-        for _ in range(_LAUNCH_ATTEMPTS):
+        # INFO, not WARNING: at most _LAUNCH_ATTEMPTS lines per process, but a shard's harvest
+        # prints only the final RuntimeError, so without these the cause of each try is lost.
+        for attempt in range(1, _LAUNCH_ATTEMPTS + 1):
+            started = time.monotonic()
             try:
                 _browser = _run(_start(), timeout=60)
                 if not _atexit_registered:
                     atexit.register(shutdown)
                     _atexit_registered = True
+                _log.info(
+                    f"browser transport: Chrome up in {time.monotonic() - started:.1f}s "
+                    f"(attempt {attempt})"
+                )
                 return
             except BrowserUnavailable:
                 raise  # an install problem: retrying is theatre
             except Exception as exc:  # noqa: BLE001 - startup is the flaky part; retry it
                 last = exc
+                _log.info(
+                    f"chrome launch attempt {attempt}/{_LAUNCH_ATTEMPTS} failed after "
+                    f"{time.monotonic() - started:.1f}s: {type(exc).__name__}: {exc}"
+                )
         raise RuntimeError(
-            f"Chrome failed to start after {_LAUNCH_ATTEMPTS} attempts"
+            f"Chrome failed to start after {_LAUNCH_ATTEMPTS} attempts "
+            f"(last: {type(last).__name__}: {last})"
         ) from last
 
 
@@ -267,9 +280,15 @@ class _Page:
             try:
                 r = _run(_go(), timeout=_FETCH_TIMEOUT_S)
                 break
-            except Exception:  # client-side fault; one stated retry
+            except Exception as exc:  # client-side fault; one stated retry
                 if attempt == 2:
                     raise
+                _log.debug(
+                    "%s%s: in-page fetch attempt 1/2 raised %r; retrying",
+                    self._base,
+                    path,
+                    exc,
+                )
         if r.status_code != 200:
             raise BrowserHTTPError(r.status_code, r.text)
         return json.loads(r.text)

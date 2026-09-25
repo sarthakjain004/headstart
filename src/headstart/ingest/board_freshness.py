@@ -114,7 +114,10 @@ def update(
             }
         )
     for ats, totals in sorted(by_ats.items()):
-        _log.info(f"withheld freshness {ats}: {totals}")
+        _log.info(
+            f"withheld freshness {ats}: "
+            + " ".join(f"{field}={value}" for field, value in totals.items())
+        )
 
     report = {"observed_at": observed_at, "ats": by_ats, "boards": boards}
     state_dir.mkdir(parents=True, exist_ok=True)

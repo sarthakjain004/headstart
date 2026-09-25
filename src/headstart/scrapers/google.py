@@ -65,11 +65,13 @@ Full measurement and the field-index census: ``docs/google/2026-09-11_api-measur
 from __future__ import annotations
 
 import json
+from collections import Counter
 from datetime import UTC, datetime
 from typing import Any
 
+from headstart import http
 from headstart.models import Job, html_to_text, is_remote
-from headstart.scrapers.base import BaseScraper
+from headstart.scrapers.base import BaseScraper, classify_exception, loss_breakdown
 
 _LISTING_URL = "https://www.google.com/about/careers/applications/jobs/results"
 _JOB_URL = (
@@ -251,10 +253,25 @@ class GoogleScraper(BaseScraper):
         total = _field(first, 2)
         total = total if isinstance(total, int) else 0
         last_page, last_page_size = 1, len(first_jobs)
+        # Why each fan-out page failed, for the truncation reason below; a page that raised
+        # anything else is counted `unlabelled`.
+        page_losses: Counter[str] = Counter()
+        failed_pages = 0
+
+        def page_or_loss(page: int) -> list[list[Any]] | None:
+            try:
+                return self._fetch_page(page)
+            except http.RequestsError as exc:
+                page_losses[classify_exception(exc)] += 1
+                return None
+
         if total > len(seen):
             pages_needed = min(-(-total // _PAGE_SIZE), _MAX_PAGES)
             rest = list(range(2, pages_needed + 1))
-            fetched = self.fan_out(rest, self._fetch_page, workers=_PAGE_WORKERS)
+            fetched = self.fan_out(
+                rest, page_or_loss, workers=_PAGE_WORKERS, what=self.board_key()
+            )
+            failed_pages = fetched.count(None)
             for page, batch in zip(rest, fetched):
                 if batch is None:
                     # fan_out's own default on a raised exception, not a genuine short page —
@@ -289,7 +306,13 @@ class GoogleScraper(BaseScraper):
                 total,
                 f"read {len(seen)} of {total} postings stated on page 1 — the board is live "
                 "and its count moves during a multi-page walk, same as any page lost to a "
-                "per-page fetch failure",
+                "per-page fetch failure"
+                + (
+                    f"; {failed_pages} fan-out page(s) failed"
+                    + loss_breakdown(page_losses, failed_pages)
+                    if failed_pages
+                    else ""
+                ),
             )
         return list(seen.values())
 

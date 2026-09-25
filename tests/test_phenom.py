@@ -497,3 +497,20 @@ def test_the_prefix_is_read_off_the_url_the_board_redirects_to(monkeypatch):
         )(),
     )
     assert scraper._prefix() == ("global", "en")
+
+
+def test_a_probe_that_lands_off_any_prefix_says_which_default_it_built_on(
+    monkeypatch, caplog
+):
+    """A wrong prefix serves links that answer 200 and show nothing, so the fallback is named."""
+    scraper = _scraper()
+    monkeypatch.setattr(
+        scraper,
+        "_fetch",
+        lambda *a, **k: type("R", (), {"url": "https://jobs.tjx.com/"})(),
+    )
+    with caplog.at_level("INFO", logger="headstart"):
+        assert scraper._prefix() == ("us", "en")
+    assert "locale probe landed on https://jobs.tjx.com/ — building links on us/en" in (
+        caplog.text
+    )

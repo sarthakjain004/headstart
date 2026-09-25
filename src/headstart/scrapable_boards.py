@@ -95,6 +95,7 @@ def load(ledger_dir: str | Path, *, min_jobs: int = 1) -> list[ScrapableBoard]:
     """
     ledger_dir = Path(ledger_dir)
     rows: list[Row] = []
+    read = excluded = buried = unparseable = 0
     for csv_path in sorted(ledger_dir.glob("*.csv")):
         scraper = SCRAPERS.get(csv_path.stem)
         if scraper is None:
@@ -114,19 +115,35 @@ def load(ledger_dir: str | Path, *, min_jobs: int = 1) -> list[ScrapableBoard]:
         # below cannot do it, since two different hostnames share no `board_key` to collapse on.
         aliases = board_aliases.load_for(ledger_dir, scraper.ats)
         for verdict in liveness.load(csv_path).values():
+            read += 1
             company = company_from_row(scraper.ats, verdict.tenant, verdict.url)
-            if (
-                is_excluded(company.ats, company.slug)
-                or company.slug.lower() in aliases
-            ):
+            if is_excluded(company.ats, company.slug):
+                excluded += 1
+                continue
+            if company.slug.lower() in aliases:
+                buried += 1
                 continue
             board = _board_of_row(company, verdict)
-            if board is not None:
+            if board is None:
+                unparseable += 1
+            else:
                 rows.append((board, verdict))
-    elected = [
-        board for board, verdict in _elect(rows) if (verdict.jobs or 0) >= min_jobs
-    ]
-    return _drop_parked(elected)
+    winners = _elect(rows)
+    elected = [board for board, verdict in winners if (verdict.jobs or 0) >= min_jobs]
+    scrapable = _drop_parked(elected)
+    # Every reason a row did not become a Board, in the module docstring's order, so a list
+    # that shrank says which rule took it. `_elect`'s two outcomes are told apart by the group
+    # count: rows beyond one per identity collapsed, groups beyond the winners had no live row
+    # or a newer dead one.
+    groups = len({board.lowercase_identity for board, _ in rows})
+    _log.info(
+        f"scrapable boards: {len(scrapable)} from {read} ledger rows — "
+        f"excluded {excluded}, alias-buried {buried}, unparseable non-live {unparseable}, "
+        f"collapsed {len(rows) - groups}, no live or newer dead {groups - len(winners)}, "
+        f"under min_jobs={min_jobs} {len(winners) - len(elected)}, "
+        f"parked {len(elected) - len(scrapable)}"
+    )
+    return scrapable
 
 
 def _drop_parked(boards: list[ScrapableBoard]) -> list[ScrapableBoard]:

@@ -103,6 +103,10 @@ def session() -> _requests.Session:
 # question these answer ("is a provider degrading?") is a per-run one.
 _retries: Counter[str] = Counter()
 _retries_lock = threading.Lock()
+# Requests that retried and still gave up, by the reason of their *last* attempt: a retry count
+# alone cannot say whether the retries bought anything. Kept apart from `_retries` so the pinned
+# `retries:` line (scripts/runlog/fanout_retries.py) keeps counting what it always has.
+_exhausted: Counter[str] = Counter()
 
 
 def retry_stats() -> Counter[str]:
@@ -111,10 +115,22 @@ def retry_stats() -> Counter[str]:
         return Counter(_retries)
 
 
+def exhausted_stats() -> Counter[str]:
+    """A snapshot of requests that retried and still gave up, by reason, since the last reset."""
+    with _retries_lock:
+        return Counter(_exhausted)
+
+
 def reset_retry_stats() -> None:
     """Zero the counters — a stage calls this once so its totals describe its own work."""
     with _retries_lock:
         _retries.clear()
+        _exhausted.clear()
+
+
+def _note_exhausted(status: int | None) -> None:
+    with _retries_lock:
+        _exhausted[_retry_reason(status)] += 1
 
 
 # --- spare egress ------------------------------------------------------------------------------
@@ -366,6 +382,8 @@ def _retry_policy(
                 proxy is not None, generation, budget - attempts
             )
             if getattr(exc, "code", None) == _DNS or attempt == budget - 1:
+                if getattr(exc, "code", None) != _DNS and attempt > 0:
+                    _note_exhausted(None)
                 if proxied and egress_group is not None:
                     spare_egress.note_settled(egress_group, None, egress_on)
                 raise
@@ -406,6 +424,8 @@ def _retry_policy(
             )
             attempt += 1
             continue
+        if response.status_code in retry_on and attempt > 0:
+            _note_exhausted(response.status_code)  # the budget ran out still refused
         if proxied and egress_group is not None:
             spare_egress.note_settled(egress_group, response.status_code, egress_on)
         yield _Settled(response)

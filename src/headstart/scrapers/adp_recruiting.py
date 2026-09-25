@@ -318,7 +318,15 @@ class ADPRecruitingScraper(BaseScraper):
                 f"hit the {_MAX_PAGES}-page cap at {len(seen)} of {total} postings"
             )
             return rows, total or 0
-        if total and len(seen) < total:
+        if rows and not total:
+            # No `count` ends the walk after page 1 (`len(seen) >= 0`), so nothing past it is
+            # read. Said, not marked truncated: whether that should shield the Board from
+            # eviction, as `adp`'s `_walk` does, is a scope decision this line doesn't take.
+            self._log.info(
+                f"{self.board_key()}: {len(seen)} postings on a page with no stated count — "
+                "walk stopped after page 1"
+            )
+        elif total and len(seen) < total:
             self.mark_truncated_unless_negligible(
                 len(seen),
                 total,

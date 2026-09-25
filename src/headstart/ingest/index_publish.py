@@ -56,8 +56,10 @@ def publish(repo: str, token: str | None, root: Path = REPO_ROOT) -> None:
         ],
         commit_message="nightly: lancedb index + unconfirmed ids + eviction queue",
     )
+    size = sum((root / p).stat().st_size for p in paths)
     _log.info(
-        f"published {len(paths)} file(s): {_TABLE}/ + {', '.join(beside)} in one commit"
+        f"published {len(paths)} file(s), {size / 1e9:.2f} GB: {_TABLE}/ + "
+        f"{', '.join(beside)} in one commit"
     )
 
 

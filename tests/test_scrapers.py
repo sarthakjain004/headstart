@@ -9856,7 +9856,7 @@ def test_successfactors_listing_surfaces_go_through_the_retry_seam(monkeypatch):
     """ADR-0047: retry and Retry-After live in `http.fetch`, not the raw pooled session.
 
     Both listing surfaces called `http.session().request(...)` directly, so a 429 settled on the
-    first try — and `_fetch_sitemap` maps a non-200 to ("other", "", None), so a throttled read
+    first try — and `_fetch_sitemap` mapped a non-200 to ("other", "", None), so a throttled read
     presented as an empty Board and `index sync` evicted its rows. Pinned by making the raw
     session unusable: anything still bypassing the seam raises.
     """

@@ -334,7 +334,11 @@ class TaleoBEScraper(BaseScraper):
                 "GET", _rss_url(self.slug), accept="application/rss+xml", stream=True
             )
             head = _head_of(response, _RSS_HEAD_BYTES)
-        except Exception:  # noqa: BLE001 - a display name is never worth failing a Board for
+        except Exception as exc:  # noqa: BLE001 - a display name is never worth failing a Board for
+            self._log.info(
+                f"{self.board_key()}: no company name — {_rss_url(self.slug)} raised "
+                f"{type(exc).__name__}"
+            )
             return
         name = company_name.from_title(self.ats, company_name.title_of(head), self.slug)
         if name:
@@ -377,6 +381,14 @@ class TaleoBEScraper(BaseScraper):
                 break
             seen_pages.add(page_url)
             page = self._get(page_url)
+            if not listed and "oracletaleocwsv2-accordion-group" not in page:
+                # An empty Board still renders the (blockless) accordion group — 3 of 3 live-0
+                # ledger Boards, and both Boards with postings, 2026-09-25 — so a first page
+                # without it is one this cannot read.
+                self.note_unreadable_board(
+                    "an oracletaleocwsv2 accordion group",
+                    f"{len(page)} bytes without one",
+                )
             headers = {
                 int(m.group("n")): (_text(m.group("label")) or "").lower()
                 for m in _SORT_COLUMN.finditer(page)

@@ -26,6 +26,7 @@ from urllib.parse import unquote, urlencode, urlsplit, urlunsplit
 from headstart import company_name, salary
 from headstart.models import Job, html_to_text, is_remote, requisition_of
 from headstart.scrapers.base import (
+    MIN_AUTHORITATIVE_SHARE,
     USER_AGENT,
     BaseScraper,
     DetailLost,
@@ -422,6 +423,13 @@ class TaleoEnterpriseScraper(BaseScraper):
             # page-count upper bound, not authoritative evidence of missing requisitions.
             self.telemetry["stated_total"] = total
             self.telemetry["unique_jobs"] = len(seen)
+            if len(seen) < total * MIN_AUTHORITATIVE_SHARE:
+                # Logged rather than truncated, as oracle does with its inflated counter: the
+                # total is only an upper bound (TTEC's complete walk lands here), but a gap this
+                # wide is worth watching.
+                self._log.info(
+                    f"{self.board_key()}: read {len(seen)} of a stated {total} requisitions"
+                )
         return listed
 
     def detail_request(self, item: dict[str, Any]) -> DetailRequest:

@@ -14,6 +14,7 @@ import logging
 import urllib.error
 import urllib.request
 
+from headstart import log, telegram_bot_api
 from headstart.telegram_bot_api import TelegramClient
 
 _TOKEN = "123456:AAHnotarealtokennotarealtokennotare"
@@ -39,6 +40,9 @@ def test_a_failed_send_names_its_cause_and_never_the_token(monkeypatch, caplog):
     which is read once and then gone with the exception.
     """
     monkeypatch.setattr(urllib.request, "urlopen", _blocked)
+    monkeypatch.setattr(
+        telegram_bot_api, "_SEND_FAILURE", log.FirstOnly(telegram_bot_api._log)
+    )
     with caplog.at_level(logging.WARNING, logger="headstart.telegram_bot_api"):
         TelegramClient(_TOKEN).send_message(_CHAT, "hello")
 
@@ -49,3 +53,22 @@ def test_a_failed_send_names_its_cause_and_never_the_token(monkeypatch, caplog):
     assert _TOKEN not in message  # the credential
     assert "api.telegram.org" not in message  # and the URL that carries it
     assert _CHAT not in message  # the chat id stays hashed, as it already was
+
+
+def test_failed_sends_cost_one_annotation_and_carry_no_traceback(monkeypatch, caplog):
+    """One WARNING per process, INFO after; and no traceback, whose last line is the bare
+    `{exc}` that `reason` exists to avoid."""
+    monkeypatch.setattr(urllib.request, "urlopen", _blocked)
+    monkeypatch.setattr(
+        telegram_bot_api, "_SEND_FAILURE", log.FirstOnly(telegram_bot_api._log)
+    )
+    with caplog.at_level(logging.INFO, logger="headstart.telegram_bot_api"):
+        for _ in range(3):
+            TelegramClient(_TOKEN).send_message(_CHAT, "hello")
+
+    assert [r.levelno for r in caplog.records] == [
+        logging.WARNING,
+        logging.INFO,
+        logging.INFO,
+    ]
+    assert all(not r.exc_info for r in caplog.records)

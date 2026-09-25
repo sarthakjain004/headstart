@@ -200,7 +200,12 @@ def previous_names(path: Path) -> dict[str, str]:
     """
     try:
         entries = json.loads(path.read_text(encoding="utf-8"))["companies"]
-    except (OSError, ValueError, KeyError, TypeError):
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        if path.exists():
+            _log.info(
+                f"previous company directory {path} unreadable ({type(exc).__name__}) — "
+                "no names carried forward"
+            )
         return {}
     return {board: entry["name"] for entry in entries for board in entry["boards"]}
 
@@ -240,9 +245,11 @@ def main() -> int:
         encoding="utf-8",
     )
     multi = sum(1 for c in entries if len(c["boards"]) > 1)
+    unnamed = len(boards) - sum(len(c["boards"]) for c in entries)
     _log.info(
         f"company directory: {len(entries):,} companies over {len(boards):,} Boards, "
-        f"{multi:,} with more than one Board, {args.out.stat().st_size:,} bytes"
+        f"{multi:,} with more than one Board, {args.out.stat().st_size:,} bytes; "
+        f"{unnamed:,} Boards left out with no name"
     )
     return 0
 

@@ -42,7 +42,12 @@ class SenseHQScraper(BaseScraper):
         rows: list[dict] = []
         self._page = 0
         while True:
-            data = json.loads(self._get()).get("data") or {}
+            payload = json.loads(self._get())
+            data = payload.get("data") or {}
+            if not rows and "rows" not in data:
+                self.note_unreadable_board(
+                    "a payload with `data.rows`", f"keys {sorted(payload)[:5]}"
+                )
             batch = data.get("rows", [])
             rows.extend(batch)
             self._page += 1

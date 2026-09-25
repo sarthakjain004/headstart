@@ -142,7 +142,8 @@ def cost(args: argparse.Namespace) -> int:
 
 
 def failures(args: argparse.Namespace) -> int:
-    reports = observability.read_shards(args.fragments)
+    # Quiet: `scrape_join` read these same reports earlier in this job and annotated any skip.
+    reports = observability.read_shards(args.fragments, quiet=True)
     gone: dict[str, str] = {}
     alive: set[str] = set()
     # `is_gone` matches a literal "HTTP Error 404" in the reason text (board_failures._GONE), a

@@ -24,8 +24,12 @@ import json
 import sys
 from typing import Any, TextIO
 
+from .. import log
 from .account import Account, Unconfigured, open_account
 from .inspection import Unreadable, read_document, render
+
+#: stderr only (headstart.log's handler), so a diagnostic line never lands in the protocol.
+_log = log.get(__name__, __spec__)
 
 NAME = "headstart-resume"
 VERSION = "1.0.0"
@@ -292,6 +296,14 @@ def handle(
         except ToolFailure as exc:
             return _result(request_id, _text(str(exc), failed=True))
         except Exception as exc:  # noqa: BLE001 — a traceback down stdio is a dead server
+            # The client gets one sentence; the stack goes to stderr. Argument names only —
+            # their values are document ids and version names, and may be résumé wording.
+            _log.error(
+                "tool %s failed (args %s)",
+                params.get("name"),
+                sorted(params.get("arguments") or {}),
+                exc_info=True,
+            )
             return _result(
                 request_id,
                 _text(f"{type(exc).__name__}: {exc}", failed=True),
@@ -312,17 +324,29 @@ def serve(stdin: TextIO, stdout: TextIO, account: Account | Unconfigured) -> Non
         except ValueError as exc:
             reply: dict[str, Any] | None = _error(None, -32700, f"parse error: {exc}")
         else:
-            reply = handle(message, account) if isinstance(message, dict) else None
+            if isinstance(message, dict):
+                reply = handle(message, account)
+            else:
+                # Type and size only: the message itself may carry résumé text. INFO, not
+                # WARNING: this is per message, and ADR-0039 bounds annotations per loop.
+                _log.info(
+                    "non-object JSON-RPC message dropped: %s of length %d",
+                    type(message).__name__,
+                    len(line),
+                )
+                reply = _error(None, -32600, "invalid request: not a JSON object")
         if reply is not None:
             stdout.write(json.dumps(reply) + "\n")
             stdout.flush()
 
 
 def main() -> None:
+    # headstart.log writes to stderr, never stdout: stdout is the protocol, and one stray
+    # line closes the session.
+    log.setup()
     try:
         account: Account | Unconfigured = open_account()
     except Unconfigured as exc:
-        # stderr, never stdout: stdout is the protocol, and one stray line closes the session.
-        print(f"{NAME}: {exc}", file=sys.stderr, flush=True)
+        _log.warning("%s: %s", NAME, exc)
         account = exc
     serve(sys.stdin, sys.stdout, account)

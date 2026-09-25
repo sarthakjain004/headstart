@@ -271,6 +271,8 @@ def scrape_all(
     # the first carries a traceback and an annotation, the rest are INFO (see the branch below).
     unexpected = log.FirstOnly(_log)
     total, done = len(companies), 0
+    # The worker count is resolved here (`_default_workers`), so no caller can print it.
+    _log.info(f"scraping {total} boards with {workers} workers")
     start = time.monotonic()
     executor = ThreadPoolExecutor(max_workers=workers)
     try:
@@ -331,6 +333,11 @@ def scrape_all(
             if not observations.get(key, {}).get("detail_stalled"):
                 writer.record_cost(
                     cost_key[key], seconds, n_fresh, errored=key in errors
+                )
+            else:
+                _log.info(
+                    f"{key}: detail pass stalled — cost row left at its previous value "
+                    f"({seconds:.0f}s not recorded)"
                 )
             if on_board is not None:
                 on_board(key, n_fresh, errors.get(key), seconds, truncated.get(key))

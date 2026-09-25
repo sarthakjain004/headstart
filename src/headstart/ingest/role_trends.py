@@ -704,7 +704,9 @@ def main() -> int:
             lambda filled: role_family_classifier.save_cache(args.title_cache, filled),
         )
     except Exception as exc:  # noqa: BLE001 - a failed fill keeps what the cache already holds
-        _log.error(f"title classifier failed: {type(exc).__name__}: {exc}")
+        _log.warning(
+            f"title classifier failed: {type(exc).__name__}: {exc}", exc_info=True
+        )
         added = 0
     covered = role_family_classifier.coverage(cache, titles)
     _log.info(
@@ -773,7 +775,10 @@ def main() -> int:
         if booked_through is not None:
             job_turnover.drop_evictions_through(args.eviction_queue, booked_through)
     except (OSError, ValueError) as exc:
-        _log.error(f"comparable Trends state unusable, no trends this run: {exc}")
+        _log.error(
+            f"comparable Trends state unusable, no trends this run: {exc}",
+            exc_info=True,
+        )
         return 1
     written = append_ledger(args.ledger, counts, non_tech, version, ts)
     stock_top = sorted(
@@ -834,7 +839,9 @@ def main() -> int:
                 )
             )
     except Exception as exc:  # noqa: BLE001 - a diagnostic must never sink a good run
-        _log.warning(f"assignment diff skipped: {type(exc).__name__}: {exc}")
+        _log.warning(
+            f"assignment diff skipped: {type(exc).__name__}: {exc}", exc_info=True
+        )
 
     # Which methodology moved since the last tick, if any (ADR-0164) — a new classifier head, an
     # edited family list, or a tech-filter, derivations or dedup version bump (ADR-0188) each
@@ -854,7 +861,7 @@ def main() -> int:
         if wrote_epoch:
             _log.info(f"epochs: methodology boundary recorded @ {ts} -> {args.epochs}")
     except Exception as exc:  # noqa: BLE001 - a diagnostic must never sink a good run
-        _log.warning(f"epoch stamp skipped: {type(exc).__name__}: {exc}")
+        _log.warning(f"epoch stamp skipped: {type(exc).__name__}: {exc}", exc_info=True)
     return 0
 
 

@@ -13,6 +13,8 @@ import json
 import sys
 from datetime import UTC, datetime, timedelta
 
+import pytest
+
 from headstart.ingest import held_refetch
 from headstart.ingest import update_descriptions as ud
 
@@ -525,3 +527,20 @@ def test_a_re_fetch_that_comes_back_empty_keeps_the_held_text_and_waits_a_period
         "eightfold:acme:1": "Held."
     }
     assert "eightfold:acme:1" in _skip_list(tmp_path)
+
+
+def test_a_torn_corpus_line_names_its_file_and_line(tmp_path):
+    """Still fatal, but no longer a bare JSONDecodeError that names neither."""
+    jobs = tmp_path / "lever.jsonl"
+    jobs.write_text('{"id": "lever:a:1"}\n{"id": \n', encoding="utf-8")
+    with pytest.raises(ValueError, match=rf"{jobs} line 2: "):
+        ud.reconcile(jobs, tmp_path / "store" / "lever")
+
+
+def test_malformed_change_ledger_lines_are_counted(tmp_path, caplog):
+    path = tmp_path / "changes.tsv.gz"
+    with gzip.open(path, "wt", encoding="utf-8") as fh:
+        fh.write("lever:a:1\t2\tabc\ntorn\n")
+    with caplog.at_level("INFO", logger=ud.__name__):
+        assert list(ud.read_changes(path)) == ["lever:a:1"]
+    assert caplog.messages == [f"{path}: skipped 1 malformed line(s)"]

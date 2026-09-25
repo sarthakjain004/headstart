@@ -144,7 +144,13 @@ def publish(root: Path = REPO_ROOT) -> list[str]:
     path = root / WITNESS_PATH
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps({"dirs": dirs}, indent=2) + "\n", encoding="utf-8")
-    _log.info(f"witness: {len(dirs)} published dir(s) — {' '.join(dirs) or '(none)'}")
+    # The omitted roots too: an under-claim costs nothing, but it is the one thing a reader
+    # checking why a later fetch bootstrapped would want named.
+    omitted = [r for r in ROOTS if r not in dirs]
+    _log.info(
+        f"witness: {len(dirs)} published dir(s) — {' '.join(dirs) or '(none)'}"
+        + (f"; omitted: {' '.join(omitted)}" if omitted else "")
+    )
     return dirs
 
 

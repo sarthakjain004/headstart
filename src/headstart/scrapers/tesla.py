@@ -403,6 +403,11 @@ def _read_batch(urls: Sequence[str], page_url: str) -> list[dict[str, Any]]:
             await navigate()
         rows = await evaluate()
         if _mostly_refused(rows):
+            # Otherwise silent: a lapse the second navigation cures leaves no other trace.
+            _log.info(
+                f"{sum(r['s'] != 200 for r in rows)} of {len(rows)} in a batch refused without a "
+                "wall status — tab trust lapsed, navigating again"
+            )
             await navigate()
             rows = await evaluate()
             if _mostly_refused(rows):

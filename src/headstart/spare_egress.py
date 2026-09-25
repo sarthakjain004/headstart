@@ -297,7 +297,11 @@ def proxy_url() -> str | None:
             # either — a rotation that loses SOCKS5 clears `_resolved`, so a flapping daemon
             # re-announces every reconnection. What the run page loses, `report`'s "egress
             # addresses: N distinct ... via colo X" line already carries into the step summary.
-            _log.info(f"spare egress: connected in {took:.1f}s, routing via {_proxy}")
+            # The rotation recipe rides here, once per dial, not on every rotation's own line.
+            _log.info(
+                f"spare egress: connected in {took:.1f}s, routing via {_proxy}; rotates by "
+                f"{' '.join(_RESTART_COMMAND.get(sys.platform, ['unsupported']))}"
+            )
         else:
             _TUNNEL_LOST.report(
                 f"spare egress: unavailable after {took:.1f}s — every walled Board this run "
@@ -472,6 +476,7 @@ def report() -> list[str]:
                     "failed",
                     "throttled",
                     "abandoned",
+                    "gate_timeout",
                 )
                 if spins.get(why)
             )
@@ -567,7 +572,8 @@ def proxy_for(group: str | None) -> str | None:
         return None
     # Wait out an in-flight rotation rather than handing back a port the restart has taken away.
     # Bounded: if a rotation overruns, going direct beats blocking the whole shard behind it.
-    _gate.wait(timeout=_CONNECT_TIMEOUT)
+    if not _gate.wait(timeout=_CONNECT_TIMEOUT):
+        _note_gate_timeout()
     return proxy_url()
 
 
@@ -602,7 +608,17 @@ async def proxy_for_async(group: str | None) -> str | None:
     deadline = time.monotonic() + _CONNECT_TIMEOUT
     while not _gate.is_set() and time.monotonic() < deadline:
         await asyncio.sleep(_GATE_POLL)
+    if not _gate.is_set():
+        _note_gate_timeout()
     return await asyncio.to_thread(proxy_url)
+
+
+def _note_gate_timeout() -> None:
+    """Count a caller that stopped waiting on a rotation still in progress and took a route
+    mid-restart — the request `_drain` exists to protect, sent anyway."""
+    global _gate_timeouts
+    with _gate_timeouts_lock:
+        _gate_timeouts += 1
 
 
 #: Rotations are coalesced on a generation counter: sixteen worker threads meeting a walled spare
@@ -661,6 +677,11 @@ _inflight_cv = threading.Condition()
 #: max 9.19s (n=100).
 _DRAIN_CAP = 20.0
 _rotations: Counter[str] = Counter()
+#: Route lookups that gave up waiting on the gate (:func:`_note_gate_timeout`). Reported among
+#: the rotation counts, but behind its own lock: a timeout means a rotation still holds
+#: `_rotation_lock`, so reaching for that lock would block the very caller that just gave up.
+_gate_timeouts = 0
+_gate_timeouts_lock = threading.Lock()
 #: Every drain's measured wait in seconds, and how many of them ran out of cap. A list rather than
 #: a running max: the shard report prints the median beside the max, and a max alone cannot say
 #: whether one slow cohort or every rotation is paying. Bounded by the rotation count, which
@@ -920,10 +941,6 @@ def rotate(board: str | None = None, *, deadline: float | None = None) -> bool:
         if board:
             _log.info(f"spare egress: {board} walled the current IP — rotating")
         _gate.clear()  # peers stop firing at a port the restart is about to take away
-        _log.info(
-            "spare egress: rotating egress IP "
-            f"({' '.join(_RESTART_COMMAND.get(sys.platform, ['unsupported']))})"
-        )
         # The ones already on the wire are allowed to land first. Restarting under them is what
         # turned Workday's fanned-out listing pages into `curl: (56)` losses (see `_DRAIN_CAP`).
         _drain(_DRAIN_CAP)
@@ -1004,9 +1021,15 @@ def _observe_egress_ip() -> None:
         return
     try:
         body = _daemon.read_trace(proxy)
-    except Exception:  # noqa: BLE001 — telemetry must never fail a rotation
+    except Exception as exc:  # noqa: BLE001 — telemetry must never fail a rotation
         with _rotation_lock:
             _egress_ips["unreadable"] += 1
+            first = _egress_ips["unreadable"] == 1
+        if first:  # the tally says how often; only a line can say why
+            _log.info(
+                f"spare egress: trace unreadable ({type(exc).__name__}: {exc}) — "
+                "address not recorded"
+            )
         return
     fields = dict(line.split("=", 1) for line in body.splitlines() if "=" in line)
     ip = fields.get("ip", "")
@@ -1283,7 +1306,11 @@ def use_daemon(daemon: EgressDaemon) -> EgressDaemon:
 def rotations() -> Counter[str]:
     """Attempted/succeeded/failed rotation counts, for the shard report."""
     with _rotation_lock:
-        return Counter(_rotations)
+        counts = Counter(_rotations)
+    with _gate_timeouts_lock:
+        if _gate_timeouts:
+            counts["gate_timeout"] = _gate_timeouts
+    return counts
 
 
 def wait_deadline() -> float:
@@ -1314,6 +1341,7 @@ def reset() -> None:
         _inflight, \
         _drain_cap_seen, \
         _drains_capped, \
+        _gate_timeouts, \
         _TUNNEL_LOST, \
         _WARP_OFF
     # Both bounds are module-level, so without this the first test to trip one demotes it for
@@ -1334,6 +1362,8 @@ def reset() -> None:
         _drain_waits.clear()
         _drains_capped = 0
         _drain_cap_seen = 0.0
+    with _gate_timeouts_lock:
+        _gate_timeouts = 0
     with _rotation_lock:
         _rotations.clear()
         _rotation_causes.clear()

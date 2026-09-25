@@ -89,7 +89,8 @@ def main() -> int:
     # The table must be the one `prune` just left, or this would prune against a rolled-back one.
     if not check_base(args.db, len(served)):
         return 1
-    keep = served | {job["id"] for job in iter_jobs(args.source)}
+    corpus_ids = {job["id"] for job in iter_jobs(args.source)}
+    keep = served | corpus_ids
 
     with meta_path.open(encoding="utf-8") as fh:
         stored = [json.loads(line)["id"] for line in fh if line.strip()]
@@ -97,8 +98,8 @@ def main() -> int:
     by_ats = Counter(ats_of(job_id) for job_id in drop)
     ranked = ", ".join(f"{ats} {n}" for ats, n in by_ats.most_common(5))
     _log.info(
-        f"store: {len(stored)} vectors | {len(served)} served + corpus -> keep "
-        f"{len(stored) - len(drop)}, drop {len(drop)}"
+        f"store: {len(stored)} vectors | {len(served)} served + {len(corpus_ids)} corpus ids "
+        f"-> keep {len(stored) - len(drop)}, drop {len(drop)}"
         + (f" ({ranked})" if drop else "")
     )
     if not args.apply:

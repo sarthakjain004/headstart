@@ -76,3 +76,12 @@ def test_the_ledger_round_trips_and_a_damaged_one_never_fails_the_run(tmp_path):
     assert hr.read_checked(path) == {"eightfold:acme:1": AT}
     path.write_bytes(b"not gzip")
     assert hr.read_checked(path) == {}
+
+
+def test_malformed_ledger_lines_are_counted(tmp_path, caplog):
+    path = tmp_path / "checked.tsv.gz"
+    with gzip.open(path, "wt", encoding="utf-8") as fh:
+        fh.write("lever:a:1\t2026-09-01T00+00:00\nno-tab\nlever:a:2\tnot-a-date\n")
+    with caplog.at_level("INFO", logger=hr.__name__):
+        assert list(hr.read_checked(path)) == ["lever:a:1"]
+    assert caplog.messages == [f"{path}: skipped 2 malformed line(s)"]
