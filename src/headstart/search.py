@@ -252,19 +252,40 @@ def scoped_family_clause(
     """
     family = (args.get("family") or "").strip()
     boards = sorted({b.lower() + ":" for b in args.getlist("board") if b.strip()})
-    if not family or not boards or family_ids is None:
+    if not boards or family_ids is None:
         return None
-    pool = family_ids.get(family, ())
+    if family:
+        ids = _ids_on_boards(family_ids.get(family, ()), boards)
+        if len(ids) > MAX_FAMILY_IDS:
+            raise ValueError(f"at most {MAX_FAMILY_IDS} jobs in one category hand-off")
+        return _id_list(ids) if ids else "id IN ('')"
+    # `tech=1`: the company's tech roles, as its trend counts them — every served Job but those
+    # the assignment puts in the reserved non-tech family. "See its open roles" listed 1,854
+    # under a Google trend of 1,800. Past the bound the few non-tech rows simply stay.
+    if args.get("tech") in ("1", "true"):
+        ids = _ids_on_boards(family_ids.get(_NON_TECH_FAMILY, ()), boards)
+        if ids and len(ids) <= MAX_FAMILY_IDS:
+            return f"NOT ({_id_list(ids)})"
+    return None
+
+
+# role_trends' reserved family for what the tech filter kept but the taxonomy calls non-tech;
+# mirrors `headstart.roles.NON_TECH` without importing the role model into search.
+_NON_TECH_FAMILY = "non-tech"
+
+
+def _ids_on_boards(pool: Sequence[str], prefixes: list[str]) -> list[str]:
+    """The ids in ``pool`` (sorted case-folded) that fall on one of the Board ``prefixes``."""
     ids: list[str] = []
-    for prefix in boards:
+    for prefix in prefixes:
         at = bisect_left(pool, prefix, key=str.lower)
         while at < len(pool) and pool[at].lower().startswith(prefix):
             ids.append(pool[at])
             at += 1
-    if len(ids) > MAX_FAMILY_IDS:
-        raise ValueError(f"at most {MAX_FAMILY_IDS} jobs in one category hand-off")
-    if not ids:
-        return "id IN ('')"
+    return ids
+
+
+def _id_list(ids: list[str]) -> str:
     return "id IN (" + ", ".join("'" + i.replace("'", "''") + "'" for i in ids) + ")"
 
 

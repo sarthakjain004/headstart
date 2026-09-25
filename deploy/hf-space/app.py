@@ -204,6 +204,36 @@ def _load_trends(path: Path) -> list[dict]:
     ]
 
 
+def _version_spans(rows: list[dict]) -> list[tuple[int, str, str | None]]:
+    """``(version, first ts, next version's first ts or None)``, in the order versions began.
+
+    A version is the ledger's ``centroid_version`` stamp; a refit or a family-rules edit starts
+    a new one, whose first tick re-writes every series from scratch (ADR-0040)."""
+    first: dict[int, str] = {}
+    for row in rows:
+        first[row["version"]] = min(first.get(row["version"], row["ts"]), row["ts"])
+    order = sorted(first.items(), key=lambda item: item[1])
+    return [
+        (version, start, order[k + 1][1] if k + 1 < len(order) else None)
+        for k, (version, start) in enumerate(order)
+    ]
+
+
+def _stitch_versions(rows: list[dict]) -> list[dict]:
+    """Every version over its own span, so a refit is a step in one history, not its end.
+
+    Keeping only the newest version threw the rest away: a family-rules refit at 2026-09-24
+    21:19 left every chart "8 measurements over 6 hours" the morning after. Each version's rows
+    are kept from its first tick up to the next version's first; the refit tick carries an epoch
+    (ADR-0164), which the chart marks and a company's line takes out as a counting change. A
+    row a version wrote after the next one began is dropped, so two versions never share a tick.
+    """
+    ends = {version: end for version, _, end in _version_spans(rows)}
+    return [
+        r for r in rows if ends[r["version"]] is None or r["ts"] < ends[r["version"]]
+    ]
+
+
 def _load_board_deltas(path: Path) -> list[dict]:
     """Read the append-only Board-group deltas used for dynamic comparable coverage."""
     if not path.exists():
@@ -354,11 +384,7 @@ _BAND_LABELS = {
     "unspecified": "Experience not stated",
 }
 _EVICTIONS = _load_evictions(_STATE / "data" / "state" / "dedup_evictions.csv")
-# A refit re-bases every series (ADR-0040), so never plot two versions on one axis: keep the
-# newest only. Older rows stay in the ledger, they just aren't charted.
-if _TRENDS:
-    _live_version = max(r["version"] for r in _TRENDS)
-    _TRENDS = [r for r in _TRENDS if r["version"] == _live_version]
+_TRENDS = _stitch_versions(_TRENDS)
 _TREND_DELTAS = _load_board_deltas(
     _STATE / "data" / "state" / "role_trend_board_deltas"
 )
@@ -396,21 +422,23 @@ def _board_openings(deltas: list[dict], version: int | None) -> Counter[str]:
     return openings
 
 
-def _is_tech_stock(row: dict, version: int | None) -> bool:
-    """A delta row counting tech openings at the live version: `stock`, not `non-tech`, and not
-    a `watch:` row, which re-counts Jobs already counted in their family (ADR-0051)."""
+def _is_tech_stock(row: dict, version: int | None = None) -> bool:
+    """A delta row counting tech openings (at ``version``, when given): `stock`, not
+    `non-tech`, and not a `watch:` row, which re-counts Jobs already counted in their family
+    (ADR-0051)."""
     return (
-        row["version"] == version
+        (version is None or row["version"] == version)
         and row["metric"] == "stock"
         and row["family"] != _NON_TECH
         and not row["family"].startswith(_WATCH_PREFIX)
     )
 
 
-def _board_arrivals(
-    deltas: list[dict], version: int | None
-) -> dict[str, tuple[str, int]]:
-    """Each Board's first tick at the live version, and the tech openings it arrived with.
+def _board_arrivals(deltas: list[dict]) -> dict[str, tuple[str, int]]:
+    """Each Board's first tick in the ledger, over every version, and the tech openings it
+    arrived with. Over every version: a refit re-writes every Board's stock at its first tick,
+    and reading arrivals off the newest version alone made every Board "found" there, holding
+    all `new` openings for another week.
 
     A Board's first delta is its whole stock at once (ADR-0143), so a Board found after a
     company's line began lands in that line as one step (ADR-0185). Measured 2026-09-24: 254 of
@@ -418,11 +446,11 @@ def _board_arrivals(
     """
     first: dict[str, str] = {}
     for row in deltas:
-        if row["version"] == version and row["metric"] == "stock":
+        if row["metric"] == "stock":
             first[row["board"]] = min(first.get(row["board"], row["ts"]), row["ts"])
     arrived: Counter[str] = Counter()
     for row in deltas:
-        if _is_tech_stock(row, version) and row["ts"] == first[row["board"]]:
+        if _is_tech_stock(row) and row["ts"] == first[row["board"]]:
             arrived[row["board"]] += row["delta"]
     return {board: (ts, arrived[board]) for board, ts in first.items()}
 
@@ -472,10 +500,11 @@ _COMPANIES = _load_directory(_STATE / "data" / "state" / "company_directory.json
 _COMPANY_OF = {
     board: key for key, entry in _COMPANIES.items() for board in entry["boards"]
 }
-_LIVE_VERSION = _TRENDS[-1]["version"] if _TRENDS else None
+# The version the newest runs are counted at: the last to begin, not the last row read.
+_LIVE_VERSION = _version_spans(_TRENDS)[-1][0] if _TRENDS else None
 _OPENINGS = _board_openings(_TREND_DELTAS, _LIVE_VERSION)
 _CANDIDATES = _build_candidates(_COMPANIES, _OPENINGS)
-_BOARD_ARRIVALS = _board_arrivals(_TREND_DELTAS, _LIVE_VERSION)
+_BOARD_ARRIVALS = _board_arrivals(_TREND_DELTAS)
 _NEW_HOLD = _new_holds(_BOARD_ARRIVALS)
 # The first tick of the Board-delta ledger, before which no per-Board count exists.
 _LEDGER_START = min((ts for ts, _ in _BOARD_ARRIVALS.values()), default=None)
@@ -1309,12 +1338,9 @@ def _replay_rows(
 
     Returns the rows and the first measurement charted (the base, when ``comparable``).
     """
-    if not _TRENDS:
+    if not _TRENDS or not _TREND_DELTAS:
         return [], None
-    version = _TRENDS[-1]["version"]
-    deltas = [row for row in _TREND_DELTAS if row["version"] == version]
-    if not deltas:
-        return [], None
+    deltas = _TREND_DELTAS
     stamps = sorted({row["ts"] for row in _TRENDS})
     first_delta = min(row["ts"] for row in deltas)
     eligible: set[str] | None = None
@@ -1331,6 +1357,7 @@ def _replay_rows(
         ) or next((stamp for stamp in stamps if stamp >= first_delta), None)
         if base_stamp is None:
             return [], None
+        # First seen over every version: a refit re-writes every Board at its first tick.
         first: dict[str, str] = {}
         for row in deltas:
             if row["metric"] == "stock":
@@ -1342,12 +1369,38 @@ def _replay_rows(
             return [], None
     if company_of is not None:
         deltas = [row for row in deltas if row["board"] in company_of]
+    # Each version replays over its own span from its own first tick, which re-writes every
+    # Board's stock (ADR-0040), so the spans join into one history (_stitch_versions).
+    rows: list[dict] = []
+    for version, start, end in _version_spans(_TREND_DELTAS):
+        rows.extend(
+            _replay_span(
+                [row for row in deltas if row["version"] == version],
+                {s for s in stamps if s >= start and (end is None or s < end)},
+                end,
+                base_stamp,
+                eligible,
+                company_of,
+            )
+        )
+    return rows, base_stamp
+
+
+def _replay_span(
+    deltas: list[dict],
+    measurements: set[str],
+    end: str | None,
+    base_stamp: str,
+    eligible: set[str] | None,
+    company_of: dict[str, str] | None,
+) -> list[dict]:
+    """One version's rows at its own charted runs, from its deltas alone (see _replay_rows)."""
     by_stamp: dict[str, list[dict]] = defaultdict(list)
     for row in deltas:
-        by_stamp[row["ts"]].append(row)
+        if end is None or row["ts"] < end:
+            by_stamp[row["ts"]].append(row)
     state: Counter[tuple[str, str, str, str, str]] = Counter()
     rows = []
-    measurements = set(stamps)
     # A Board's first week in the ledger reads its whole backlog as `new`, so its `new` deltas
     # wait out the flow window and are applied once it has passed, when the backlog has aged out
     # and what lands is real inflow. The Hot tab leaves new Boards out for the same reason
@@ -1383,7 +1436,7 @@ def _replay_rows(
             }
             for (company, metric, family, band, ats), count in state.items()
         )
-    return rows, base_stamp
+    return rows
 
 
 @app.route("/trends")

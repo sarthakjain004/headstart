@@ -153,11 +153,12 @@ def _is_test_tenant(candidate: Candidate) -> bool:
 QUERY_ALIASES: dict[str, str] = {
     "aws": "amazon",
     "amazon web services": "amazon",
-    "jp morgan": "jpmc",
-    "jpmorgan": "jpmc",
-    "j p morgan": "jpmc",
-    "jpmorgan chase": "jpmc",
-    "chase": "jpmc",
+    # JPMorgan's Board is named "JPMorgan Chase" (config/company_names.csv); "chase" ranked a
+    # one-posting "Chasetechconsultantscom" above it while the alias still pointed at "jpmc".
+    "jp morgan": "jpmorgan chase",
+    "j p morgan": "jpmorgan chase",
+    "jpm": "jpmorgan chase",
+    "chase": "jpmorgan chase",
     "meta platforms": "meta",
     "facebook": "meta",
     "google deepmind": "deepmind",

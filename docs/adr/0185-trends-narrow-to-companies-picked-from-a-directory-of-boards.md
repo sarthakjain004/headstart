@@ -572,3 +572,37 @@ Its code review tightened the round:
     part even when a company is too new to show a direction.
   - The chart note dims with the rest.
   - Search's "counting the rest…" shows the real page range, and is dropped if the total fails.
+
+### A critic's seventh round (2026-09-25): 4/10, the morning after a refit
+
+The pipeline run carrying #666's data fixes landed. NVIDIA, Micron and Morgan Stanley became one
+company each, JPMorgan Chase got its name, and Hot went tech-only, as planned. But a family-rules
+refit at 2026-09-24 21:19 had started series version 2001. The Space charted the newest version
+only, so every history was reset to 6 hours. ADR-0221 stitches versions into one history. The
+rest of the round:
+
+- **A counting change on the window's first run no longer takes out the run after it.** It is
+  already in every line's start. Taking the next run out cut Amazon's real −7 and put "−12
+  counting changes" in the sentence with no marker on the chart.
+- **Under 3 days of measurements, a line shows no direction anywhere.** The legend and table
+  read "too new". The legend had shown "↑ +1.5%" beside a sentence saying "too new to show a
+  direction".
+- **A leap one run puts straight back is a partial read, not hiring.** Newyorklife went
+  26 → 104 → 26: "+292.3%" at the leap, and the table's maximum after it. The page now drops such
+  a point from company lines and says how many it dropped. The newest run has no next run to
+  judge it by, so a leap there stands until the next run. Hot ranks off the same ledger and
+  still cannot tell.
+- **"See its open roles" lists the company's tech roles** (`tech=1`), leaving out the Jobs the
+  assignment calls non-tech. Google read 1,800 in Trends against 1,854 in Search.
+- **Copy.**
+  - "Point at a marked line" appears only where a line is marked.
+  - "1 further row sits…"
+  - The "▸ roles" marker sits at the row's end, out of the path of a click on the name. Two row
+    clicks landed on it.
+  - The active tab scrolls into view on a phone.
+  - "chase" and "jp morgan" lead to JPMorgan Chase by its new name.
+- **Not fixed here:**
+  - A parent company's other Boards (IBM, TCS) are a coverage gap.
+  - A "request this company" path.
+  - Junk names in the directory ("& 04 Woodward").
+  - Hot's "new" is still a Board-level rolling count, not the company's netted figure.

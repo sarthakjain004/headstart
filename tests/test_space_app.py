@@ -1812,7 +1812,7 @@ def company_trends(trends_app, monkeypatch):
     monkeypatch.setattr(
         trends_app, "_CANDIDATES", trends_app._build_candidates(companies, openings)
     )
-    arrivals = trends_app._board_arrivals(deltas, 2)
+    arrivals = trends_app._board_arrivals(deltas)
     monkeypatch.setattr(trends_app, "_BOARD_ARRIVALS", arrivals)
     # No holds by default: the fixture's runs span two days, inside every Board's first week.
     # The hold has its own tests below.
@@ -2679,9 +2679,14 @@ def test_board_arrivals_are_a_boards_first_tick_and_its_tech_stock_then(trends_a
         _delta(_T1, "a", 9, family="non-tech"),
         _delta(_T2, "a", 1),
         _delta(_T2, "b", 3),
-        {**_delta(_T1, "b", 100), "version": 1},  # a stale refit is not an arrival
+        {
+            **_delta(_T1, "b", 100),
+            "version": 1,
+        },  # an earlier version's first tick counts
     ]
-    assert trends_app._board_arrivals(deltas, 2) == {"a": (_T1, 5), "b": (_T2, 3)}
+    # Over every version: a refit re-writes each Board at its first tick, and reading arrivals
+    # off the newest version made every Board "found" there.
+    assert trends_app._board_arrivals(deltas) == {"a": (_T1, 5), "b": (_T1, 100)}
 
 
 def test_a_board_found_after_its_company_began_is_marked(company_trends, monkeypatch):
@@ -2851,3 +2856,50 @@ def test_duplicate_removals_are_named_per_pick(company_trends, monkeypatch, tmp_
         {"ts": _T3, "company": "workday:citi/2", "count": 2},
     ]
     assert app_module["_load_evictions"](tmp_path / "missing.csv") == {}
+
+
+def test_a_refit_is_a_step_in_one_history_not_its_end(trends_app, monkeypatch):
+    """Version 2 runs T1–T2; a refit starts version 2001 at T3 with every Board re-written."""
+    ledger = [
+        {
+            "ts": ts,
+            "version": v,
+            "metric": "stock",
+            "family": "software-engineering",
+            "band": "mid",
+            "ats": "workday",
+            "count": n,
+        }
+        for ts, v, n in [(_T1, 2, 10), (_T2, 2, 12), (_T3, 2001, 15), (_T3, 2, 99)]
+    ]
+    stitched = trends_app._stitch_versions(ledger)
+    assert [(r["ts"], r["version"]) for r in stitched] == [
+        (_T1, 2),
+        (_T2, 2),
+        (_T3, 2001),
+    ], "an old version's row after the refit is dropped"
+    deltas = [
+        {**_delta(_T1, "workday:hpe/a", 10), "version": 2},
+        {**_delta(_T2, "workday:hpe/a", 2), "version": 2},
+        {
+            **_delta(_T3, "workday:hpe/a", 15),
+            "version": 2001,
+        },  # the refit's full re-write
+    ]
+    companies = {"workday:hpe/a": {"name": "Hpe", "boards": ["workday:hpe/a"]}}
+    monkeypatch.setattr(trends_app, "_TRENDS", stitched)
+    monkeypatch.setattr(trends_app, "_TREND_DELTAS", deltas)
+    monkeypatch.setattr(trends_app, "_COMPANIES", companies)
+    monkeypatch.setattr(trends_app, "_COMPANY_OF", {"workday:hpe/a": "workday:hpe/a"})
+    monkeypatch.setattr(
+        trends_app, "_BOARD_ARRIVALS", trends_app._board_arrivals(deltas)
+    )
+    monkeypatch.setattr(trends_app, "_NEW_HOLD", {})
+    d = (
+        trends_app.app.test_client()
+        .get("/trends?company=workday:hpe/a&split=company")
+        .get_json()
+    )
+    assert d["stamps"] == [_T1, _T2, _T3]
+    assert d["series"][0]["points"] == [10, 12, 15]
+    assert d["counted_since"] == {"workday:hpe/a": _T1}

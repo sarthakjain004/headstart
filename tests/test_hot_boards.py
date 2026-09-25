@@ -107,13 +107,14 @@ def test_the_window_is_bounded_so_it_cannot_outgrow_the_new_metric(
 def test_a_refit_segments_the_window_by_centroid_version(tmp_path: Path) -> None:
     """A refit starts a new version with its own full-stock baseline (ADR-0040/ADR-0143).
 
-    Summed across versions, that baseline reads as every Board having just been discovered.
+    Summed, that baseline reads as every Board having just been discovered, so each version's
+    first tick is dropped; the real changes on either side of the refit are summed.
     """
     deltas = tmp_path / "deltas"
     deltas.mkdir()
     ticks = [
         ("2026-09-20T12:00:00+00:00", 2, 500),  # v2 baseline
-        ("2026-09-21T12:00:00+00:00", 2, 5),  # v2 change: an older version, not summed
+        ("2026-09-21T12:00:00+00:00", 2, 5),  # v2 change: still a change in stock
         ("2026-09-22T12:00:00+00:00", 3, 505),  # the refit's v3 baseline
         ("2026-09-23T12:00:00+00:00", 3, 3),
     ]
@@ -122,8 +123,8 @@ def test_a_refit_segments_the_window_by_centroid_version(tmp_path: Path) -> None
         table = table.replace_schema_metadata({"centroid_version": str(version)})
         pq.write_table(table, deltas / f"{ts.replace(':', '-')}.parquet")
     moved, stamps = hot_boards.read_stock_change(deltas)
-    assert moved["greenhouse:acme"] == 3
-    assert stamps == ["2026-09-23T12:00:00+00:00"]
+    assert moved["greenhouse:acme"] == 8
+    assert stamps == ["2026-09-21T12:00:00+00:00", "2026-09-23T12:00:00+00:00"]
 
 
 def test_only_a_baseline_means_no_measured_window(tmp_path: Path) -> None:

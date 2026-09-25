@@ -168,11 +168,15 @@ def read_stock_change(
     writes the directory, so the directory is complete. A caller reading a partially fetched
     copy would mistake its oldest present tick for the baseline and lose one real measurement.
 
-    **Only the newest tick's ``centroid_version`` is summed** (ADR-0040/ADR-0143). The stamp holds
-    the series version (ADR-0220). A new series — a centroid refit once, a new classifier head
-    now — finds no Board counts at its own version, so `role_trends` writes that version a fresh baseline of
-    every Board's stock; summed across versions it made every Board "newly discovered" for a week.
-    The same by-position rule drops the current version's first tick as its baseline.
+    **Each version's first tick is dropped, and every other tick of every version summed**
+    (ADR-0040/ADR-0143, ADR-0221). The stamp holds the series version (ADR-0220). A new series
+    — a centroid refit once, a new classifier head now — finds no Board counts at its own
+    version, so `role_trends` writes that version a fresh baseline of every Board's stock;
+    summed, it made every Board "newly discovered" for a week. Summing the newest version alone
+    instead left a 4-hour window the morning after a refit, under a card that says "this week".
+    A tick is a Board's stock change whatever version counted it, so the others are summed; the
+    baseline tick is itself a counting change, and its run and the next are left out with the
+    others (``changes``).
 
     The returned stamps describe the window actually measured, never the window intended — a tab
     claiming a week over two days of data would be a lie the data can already tell.
@@ -198,7 +202,17 @@ def read_stock_change(
             ticks.append((path, stamps_in_file[0], version))
     if not ticks:
         return collections.Counter(), []
-    ticks = [t[:2] for t in ticks if t[2] == ticks[-1][2]]
+    # Every version's ticks, less each version's first: a refit's first tick re-writes every
+    # Board's stock as a delta (a baseline), while every later tick of any version is a real
+    # change. Keeping the newest version alone left Hot a 4-hour window the morning after a
+    # refit, under a card that said "this week".
+    first_of: dict = {}
+    for _, ts, version in ticks:
+        first_of.setdefault(version, ts)
+    baselines = set(first_of.values())
+    ticks = [(path, ts) for path, ts, _ in ticks if ts not in baselines]
+    if not ticks:
+        return collections.Counter(), []
     newest = max(ts for _, ts in ticks)
     cutoff = (datetime.fromisoformat(newest) - timedelta(days=WINDOW_DAYS)).isoformat()
 
@@ -211,7 +225,7 @@ def read_stock_change(
             left_out.update(ts for _, ts in ticks[k : k + 2])
     moved: collections.Counter = collections.Counter()
     stamps: list[str] = []
-    for path, first_ts in ticks[1:]:
+    for path, first_ts in ticks:
         if first_ts < cutoff or first_ts in left_out:
             continue
         table = pq.read_table(path).to_pydict()

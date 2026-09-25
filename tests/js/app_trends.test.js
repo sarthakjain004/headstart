@@ -1686,3 +1686,16 @@ test('a step larger than what came before it starts the line after it', () => {
   // starts after it.
   same(t.netOfSteps([30, 150, 150, 20, 20]), [null, 20, 20, 20, 20]);
 });
+
+
+test('a leap one run puts straight back is a partial read, not hiring', async () => {
+  const { t, ctx, nodes } = loadApp();
+  answering(ctx, { ...picked({}), stamps: FOUR, totals: [1e3, 1e3, 1e3, 1e3], non_tech: [0, 0, 0, 0],
+    series: [{ name: 'a', label: 'a', points: [26, 104, 26, 27], latest: 27 },
+             { name: 'b', label: 'b', points: [100, 110, 120, 130], latest: 130 }] });
+  t.setPicks([ACME]);
+  await t.load(null);
+  same(t.data().series.find(x => x.name === 'a').points, [26, null, 26, 27]);
+  same(t.data().series.find(x => x.name === 'b').points, [100, 110, 120, 130], 'steady growth is kept');
+  assert.match(nodes['trends-empty'].textContent, /1 run where a board was read only partly/);
+});
