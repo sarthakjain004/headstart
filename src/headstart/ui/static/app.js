@@ -3933,22 +3933,24 @@ function trendSplitSelect(v){
 // A preset and a custom bound are two spellings of the same window, so setting either clears
 // the other — a segment reading "30 days" beside a request that used a typed date is a lie the
 // reader has no way to spot.
+// A window is a view a reader can step back out of, like a breakdown: replaced in place, Back
+// from "7 days" over NVIDIA and Micron skipped the Micron pick and landed on NVIDIA alone.
 trendSeg('trends-range', 'days', v => {
   trendDays = v;
   ['trends-since', 'trends-until'].forEach(id => { if (el(id)) el(id).value = ''; });
-  loadTrends(trendDrill);
+  picksPushed = true; loadTrends(trendDrill);
 });
 ['trends-since', 'trends-until'].forEach(id => {
   // A typed range is neither preset, so none stays checked: "All" lit over Sep 18–21 was a lie.
   if (el(id)) el(id).addEventListener('change', () => {
     const any = ['trends-since', 'trends-until'].some(f => el(f) && el(f).value);
-    setRangePreset(any ? 'custom' : 'all'); loadTrends(trendDrill);
+    setRangePreset(any ? 'custom' : 'all'); picksPushed = true; loadTrends(trendDrill);
   });
 });
 if (el('trends-range-clear')) el('trends-range-clear').addEventListener('click', () => {
   ['trends-since', 'trends-until'].forEach(id => { if (el(id)) el(id).value = ''; });
   setRangePreset('all');
-  loadTrends(trendDrill);
+  picksPushed = true; loadTrends(trendDrill);
 });
 if (el('trends-back')) el('trends-back').addEventListener('click', () => { trendSplit = 'bands'; loadTrends(null); });
 if (el('trends-retry')) el('trends-retry').addEventListener('click', () => loadTrends(trendDrill));
@@ -4440,9 +4442,13 @@ function hotLens(){
 // Opened and closed are the week's turnover (ADR-0227). The net figure alone read Amazon's week
 // as "+17" while it opened 914–1,532. Rate divides the week's opened jobs by the openings now,
 // so its row leads with that share and gives the counts after it.
+// Before turnover is counted every row carries opened and closed as 0, so Expansion says
+// nothing of them then: "0 opened · 0 closed this week" beside "+442 net" stated a week nobody
+// measured. Volume and Rate need no such case: they rank only a positive opened.
 const HOT_MEASURE = {
-  expansion: r => ({ big: (r.net > 0 ? '+' : '') + r.net, unit: 'net tech roles', sub:
-    `${r.opened} opened · ${r.closed} closed this week · ${r.stock} open now` }),
+  expansion: (r, turnoverCounted) => ({ big: (r.net > 0 ? '+' : '') + r.net, unit: 'net tech roles',
+    sub: turnoverCounted ? `${r.opened} opened · ${r.closed} closed this week · ${r.stock} open now`
+      : `${r.stock} open now` }),
   volume:    r => ({ big: String(r.opened), unit: 'tech roles opened this week', sub:
     `${r.closed} closed · ${r.net >= 0 ? '+' : ''}${r.net} net · ${r.stock} open now` }),
   rate:      r => ({ big: r.rate + '%', unit: 'opened this week, as a share of its open roles', sub:
@@ -4457,6 +4463,7 @@ function hotFollowed(r){
   const on = new Set((myCompanies.followed || []).map(b => b.toLowerCase()));
   return r.boards.every(b => on.has(b.toLowerCase()));
 }
+const hotTurnoverCounted = () => Boolean((hotData.window || {}).turnover_from);
 const hotRowOf = key => Object.values(hotData.lenses).flat().find(r => r.key === key);
 
 function drawHot(){
@@ -4472,15 +4479,16 @@ function drawHot(){
     : (showAll ? '' : 'nothing filtered on this view');
 
   if (!rows.length){
-    el('hot-results').innerHTML =
-      '<li class="hot-empty">Nothing qualified on this view. Try another measure, or show staffing firms.</li>';
+    el('hot-results').innerHTML = lens !== 'expansion' && !hotTurnoverCounted()
+      ? '<li class="hot-empty">Opened jobs are not counted yet, so this measure has nothing to rank yet. Growing ranks without them.</li>'
+      : '<li class="hot-empty">Nothing qualified on this view. Try another measure, or show staffing firms.</li>';
     return;
   }
   el('hot-results').innerHTML = rows.map((r, i) => hotRow(r, i, lens)).join('');
 }
 
 function hotRow(r, i, lens){
-  const m = HOT_MEASURE[lens](r);
+  const m = HOT_MEASURE[lens](r, hotTurnoverCounted());
   const op = HOT_OPERATOR[r.operator];
   const followed = hotFollowed(r);
   const boards = r.boards.length === 1 ? 'board' : `${r.boards.length} boards`;
