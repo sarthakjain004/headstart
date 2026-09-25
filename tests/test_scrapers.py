@@ -5508,7 +5508,7 @@ def test_successfactors_sitemal_items_reads_title_description_location():
         "987746301": {
             "title": "Senior Engineer (m/w/d)",  # trailing "(location)" stripped
             "description": "Build things.",
-            "location": "Ludwigshafen am Rhein, DE",
+            "location": "Ludwigshafen am Rhein, Germany",  # the code, as a name
         }
     }
 
@@ -5539,6 +5539,27 @@ def test_successfactors_sitemal_items_has_no_date_or_employment_type():
     assert "posted_at" not in fields
     assert "employment_type" not in fields
     assert "remote" not in fields
+
+
+def test_successfactors_feed_location_names_a_country_code_and_drops_junk():
+    """`g:location` is mostly a bare ISO alpha-2 code (careers.hcltech.com: `IN` on 8,643 of
+    10,829 items, 2026-09-25), which neither a search for "india" nor the India tag reads. The
+    junk segments are real feed values (careers.te.com, careers.sunotec-group.com,
+    careers.casais.pt)."""
+    from headstart.scrapers.successfactors import _feed_location
+
+    assert _feed_location("IN") == "India"
+    assert _feed_location("Taguig, PH") == "Taguig, Philippines"
+    assert _feed_location("#, LN, CN, _") == "LN, China"
+    assert _feed_location("83, DK") == "Denmark"
+    assert _feed_location("PT, 1990-266") == "Portugal"
+    assert _feed_location("Toronto, ON, CA, M5J 2V5") == "Toronto, ON, Canada"
+    # already a name, or not a code: kept as it is
+    assert _feed_location("Georgia, United States") == "Georgia, United States"
+    assert _feed_location("Bangalore, India") == "Bangalore, India"
+    assert _feed_location("Pune, Mh") == "Pune, Mh"
+    assert _feed_location("_") is None
+    assert _feed_location(None) is None
 
 
 def test_successfactors_strip_location_suffix():
@@ -5575,7 +5596,9 @@ def test_successfactors_fetch_raw_reads_every_page_even_where_sitemal_covers_it(
     def dated_page(url):
         fetched.append(url)
         return FakeResponse(
-            text=_successfactors_job_page("T", posted="Tue Aug 25 00:00:00 UTC 2026")
+            text=_successfactors_job_page(
+                "T", posted="Tue Aug 25 00:00:00 UTC 2026", location="Heidenheim"
+            )
         )
 
     scraper = _successfactors_board(
@@ -5650,6 +5673,49 @@ def test_successfactors_fetch_raw_rescues_only_an_unreadable_page_from_sitemal(
     )
 
 
+def test_successfactors_fetch_raw_places_a_read_page_that_states_no_location(
+    monkeypatch,
+):
+    """A page that reads but renders its place as an unlabelled span (careers.hcltech.com:
+    3,146 of 4,226 served rows placeless, 2026-09-25) takes the feed's location, and only that:
+    the page stays the authority on every other field, and a page's own location is never
+    replaced."""
+    scraper = _successfactors_board(
+        monkeypatch,
+        sitemap=(
+            "urlset",
+            "".join(
+                f"<loc>https://careers.voith.com/job/Engineer/{i}/</loc>"
+                for i in (1, 2, 3)
+            ),
+            None,
+        ),
+        search=([], None, None),
+        rss=([], {}, None),
+        sitemal={
+            "1": {"title": "Feed title", "description": "feed", "location": "India"},
+            "2": {"title": "Feed title", "description": "feed", "location": "India"},
+        },
+        job_page=lambda url: FakeResponse(
+            text={
+                "/1/": _successfactors_job_page("Page title"),
+                "/2/": _successfactors_job_page("Page title", location="Chennai"),
+                "/3/": _successfactors_job_page("Page title"),
+            }[url[-3:]]
+        ),
+    )
+
+    raw = scraper.fetch_raw()
+
+    by_id = {item["id"]: item["fields"] for item in raw}
+    assert by_id["1"]["location"] == "India"  # filled from the feed
+    assert by_id["1"]["title"] == "Page title"  # the page still wins everything else
+    assert by_id["1"].get("description") != "feed"
+    assert by_id["2"]["location"] == "Chennai"  # the page's own place is kept
+    assert by_id["3"]["location"] is None  # the feed has no item for it
+    assert scraper.truncated is None  # a placeless page is not a loss
+
+
 def test_successfactors_fetch_raw_drops_a_page_that_says_the_posting_is_unavailable(
     monkeypatch,
 ):
@@ -5710,7 +5776,7 @@ def test_successfactors_unavailable_page_alone_does_not_fetch_sitemal(monkeypatc
         job_page=lambda url: FakeResponse(
             text=_successfactors_unavailable_page()
             if url.endswith("/2/")
-            else _successfactors_job_page()
+            else _successfactors_job_page(location="Heidenheim")
         ),
     )
     sitemal_reads: list[int] = []
@@ -7225,12 +7291,17 @@ def test_oracle_offset_ceiling_truncates_however_complete_the_read_looks(monkeyp
     assert s.truncated and "no offset past" in s.truncated
 
 
-def _successfactors_job_page(title="Engineer", posted=None):
+def _successfactors_job_page(title="Engineer", posted=None, location=None):
     """A CSB-rendered job page: the microdata title `_csb_title` reads and, when given, the
     ``datePosted`` microdata `_csb_posted_at` reads, in the Java ``Date.toString`` form the pages
-    write it in."""
+    write it in, and the ``addressLocality`` microdata `_csb_location` falls back to."""
     date = f'<meta itemprop="datePosted" content="{posted}">' if posted else ""
-    return f'<html><body><span itemprop="title">{title}</span>{date}</body></html>'
+    place = (
+        f'<meta itemprop="addressLocality" content="{location}">' if location else ""
+    )
+    return (
+        f'<html><body><span itemprop="title">{title}</span>{date}{place}</body></html>'
+    )
 
 
 def _successfactors_unavailable_page():
@@ -7525,7 +7596,7 @@ def test_successfactors_search_shortfall_takes_the_adr_0121_tolerance(
 
     def serve_search_and_job_pages(method, url, kwargs):
         if "startrow=" not in url:
-            return FakeResponse(text=_successfactors_job_page())
+            return FakeResponse(text=_successfactors_job_page(location="Heidenheim"))
         startrow = int(url.rsplit("startrow=", 1)[1])
         return FakeResponse(
             text=_labelled_search_page(
