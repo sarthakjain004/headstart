@@ -1,17 +1,15 @@
-"""Tests for the trends-ledger step (headstart.ingest.role_trends, ADR-0040/ADR-0051).
+"""Tests for the Trends tick step (headstart.ingest.role_trends, ADR-0040/ADR-0051/ADR-0230).
 
 Contracts: served rows are counted into (metric, family, band) groups with non-tech held
 apart; `new` counts only rows first seen inside the flow window; watched roles are counted by
-title in addition to their family; a pre-ADR-0120 CSV ledger of any of its three shapes is
-folded into the Parquet ledger without losing a row; the ledger accumulates run over run; and
-every degenerate input (missing classifier head, missing family list, empty table, zero-byte or torn
-CSV) exits without writing garbage — trends must never sink a run that already scraped and
-embedded, nor silently look healthy while accruing nothing.
+title in addition to their family; each run records one tick of the history, and the history
+accumulates tick over tick; and every degenerate input (missing classifier head, missing family
+list, empty table) exits without writing garbage — trends must never sink a run that already
+scraped and embedded, nor silently look healthy while accruing nothing.
 """
 
 from __future__ import annotations
 
-import csv
 import json
 import sys
 from pathlib import Path
@@ -27,11 +25,12 @@ from datetime import UTC
 
 import lancedb
 
-from headstart import roles, tech_filter
+from headstart import roles, tech_filter, trend_history
 from headstart.embedding_conventions import MODEL as EMBED_MODEL
 from headstart.embedding_conventions import PROD_TABLE
 from headstart.ingest import RUN_TS_ENV, index_plan, role_family_classifier, role_trends
 from headstart.ingest.doc_prep import DERIVATIONS_VERSION
+from headstart.trend_history import TrendHistory
 
 _DIM = 4
 
@@ -51,6 +50,12 @@ def _table(db_dir: Path, rows: list[dict]) -> None:
     # Every served row carries an ats; tests that don't care which get one shared default so
     # their (family, band) assertions still map to exactly one row (ADR-0075).
     rows = [{"ats": "greenhouse", **r} for r in rows]
+    # A served id names its Board (`{ats}:{board}:{native}`), whose prefix is the row's ATS; a
+    # test that names a bare id gets one Board of its row's ATS (ADR-0230 reads the ATS off it).
+    rows = [
+        {**r, "id": r["id"] if ":" in r["id"] else f"{r['ats']}:tests:{r['id']}"}
+        for r in rows
+    ]
     for r in rows:
         if r.get("vector") is not None and r.get("title"):
             family = _HEAD_FAMILIES[int(np.argmax(r["vector"][: len(_HEAD_FAMILIES)]))]
@@ -134,18 +139,26 @@ def _taxonomy(
     )
 
 
-def _rows(ledger: Path) -> list[dict]:
-    """The Parquet ledger's rows as dicts, with `ts` rendered to the stamp string the
-    assertions below compare against (ADR-0120 stores it as a real timestamp)."""
-    table = pq.read_table(ledger)
-    out = table.to_pylist()
-    for r in out:
-        r["ts"] = r["ts"].isoformat(timespec="seconds")
-    return out
+def _rows(state: Path) -> list[dict]:
+    """The index-wide counts at every tick the history under ``state`` holds, one row a group,
+    as the aggregate ledger held them before ADR-0230."""
+    history = TrendHistory.load(state, Path(__file__).parent / "no-trends-config")
+    return [
+        {
+            "ts": ts,
+            "metric": metric,
+            "family": family,
+            "band": band,
+            "ats": ats,
+            "count": n,
+        }
+        for ts in history.ticks
+        for (metric, family, band, ats), n in history.index_counts(ts).items()
+    ]
 
 
 def _run(tmp_path: Path, monkeypatch, expect: int = 0) -> Path:
-    ledger = tmp_path / "role_trends.parquet"
+    state = tmp_path / "state"
     monkeypatch.setattr(
         sys,
         "argv",
@@ -159,14 +172,10 @@ def _run(tmp_path: Path, monkeypatch, expect: int = 0) -> Path:
             str(tmp_path / "title_cache.parquet"),
             "--families",
             str(tmp_path / "families.json"),
-            "--ledger",
-            str(ledger),
+            "--state",
+            str(state),
             "--board-ledger",
             str(tmp_path / "liveness"),
-            "--board-counts",
-            str(tmp_path / "board_counts.parquet"),
-            "--board-deltas",
-            str(tmp_path / "board_deltas"),
             # Pinned into tmp_path: it defaults to the repo's real config/role_watchlist.json,
             # and these tests must control exactly which roles are watched.
             "--watchlist",
@@ -177,9 +186,6 @@ def _run(tmp_path: Path, monkeypatch, expect: int = 0) -> Path:
             str(tmp_path / "role_assignments.parquet"),
             "--reassignments",
             str(tmp_path / "role_reassignments.csv"),
-            # Pinned too (ADR-0164): defaults to the repo's real data/state/trends_epochs.csv.
-            "--epochs",
-            str(tmp_path / "trends_epochs.csv"),
             # Pinned too (ADR-0227): these default to the real eviction queue and scrape outcome.
             "--eviction-queue",
             str(tmp_path / "eviction_queue.tsv"),
@@ -188,7 +194,7 @@ def _run(tmp_path: Path, monkeypatch, expect: int = 0) -> Path:
         ],
     )
     assert role_trends.main() == expect
-    return ledger
+    return state
 
 
 def test_counts_rows_by_family_and_band_and_isolates_non_tech(tmp_path, monkeypatch):
@@ -239,55 +245,6 @@ def test_counts_rows_by_family_and_band_and_isolates_non_tech(tmp_path, monkeypa
     assert ("ai-ml-data-science", "mid") not in rows  # only non-empty groups
 
 
-def test_a_tick_records_one_epoch_row_then_stays_quiet_while_unchanged(
-    tmp_path, monkeypatch
-):
-    """End-to-end (ADR-0164): the centroid column's `none`, the family-list fingerprint, the
-    tech-filter, derivations and dedup versions and the classifier head's version all reach the
-    epoch file through main() unchanged, and a second tick with nothing different writes no second
-    row."""
-    _taxonomy(tmp_path / "head", tmp_path / "families.json")
-    _table(
-        tmp_path / "db",
-        [
-            {
-                "id": "a",
-                "title": "Backend Dev",
-                "employment_type": None,
-                "min_years": 5,
-                "vector": [1.0, 0.0, 0.0, 0.0],
-            }
-        ],
-    )
-    epochs = tmp_path / "trends_epochs.csv"
-    monkeypatch.setenv(RUN_TS_ENV, "2026-09-25T05:00:00+00:00")
-    _run(tmp_path, monkeypatch)
-    rows = list(csv.reader(epochs.open(encoding="utf-8", newline="")))
-    assert len(rows) == 2  # header + exactly one boundary
-    (
-        _,
-        centroid_version,
-        fingerprint,
-        tech_filter_version,
-        derivations_version,
-        dedup_version,
-        family_classifier_version,
-    ) = rows[1]
-    assert centroid_version == "none"  # no centroid fit decides anything (ADR-0220)
-    assert fingerprint  # a real hash, not asserting its exact value
-    assert tech_filter_version == str(tech_filter.TECH_FILTER_VERSION)
-    assert derivations_version == str(DERIVATIONS_VERSION)
-    assert dedup_version == str(index_plan.DEDUP_VERSION)
-    assert (
-        family_classifier_version == "1"
-    )  # the head's own version, not the series version
-
-    monkeypatch.setenv(RUN_TS_ENV, "2026-09-25T06:00:00+00:00")
-    _run(tmp_path, monkeypatch)  # nothing about the taxonomy or the code changed
-    rows_again = list(csv.reader(epochs.open(encoding="utf-8", newline="")))
-    assert rows_again == rows
-
-
 def test_a_tick_is_stamped_with_the_run_stamp_prune_used(tmp_path, monkeypatch):
     """ADR-0210: the dedup eviction ledger `index prune` writes and this ledger carry the same
     `ts`, so Trends joins a removal to the tick it happened in."""
@@ -307,9 +264,8 @@ def test_a_tick_is_stamped_with_the_run_stamp_prune_used(tmp_path, monkeypatch):
         ],
     )
     monkeypatch.setenv(RUN_TS_ENV, "2026-09-25T06:00:00+00:00")
-    ledger = _run(tmp_path, monkeypatch)
-    stamps = {str(ts) for ts in pq.read_table(ledger).column("ts").to_pylist()}
-    assert stamps == {"2026-09-25 06:00:00+00:00"}
+    state = _run(tmp_path, monkeypatch)
+    assert {r["ts"] for r in _rows(state)} == {"2026-09-25T06:00:00+00:00"}
 
 
 def test_ats_becomes_its_own_column_and_splits_same_family_band_rows(
@@ -378,12 +334,12 @@ def test_ledger_accumulates_rows_across_runs(tmp_path, monkeypatch):
     _run(tmp_path, monkeypatch)  # second run appends
 
     rows = _rows(ledger)
-    # Parquet has no repeated header to guard against, so what matters is that the second
-    # run's rows are ADDED to the first's rather than replacing them — the property the old
-    # single-header assertion was really protecting. (Both runs can share a stamp: they land
-    # inside the same second, so the stamp is not what distinguishes them.)
-    assert [f.name for f in pq.read_schema(ledger)] == list(role_trends._COLUMNS)
-    assert len(rows) == 4  # (one stock group + the non-tech diagnostic) per run
+    # The second run's tick is ADDED to the first's rather than replacing it.
+    assert len(rows) == 4  # (one stock group + the non-tech diagnostic) per tick
+    assert {r["ts"] for r in rows} == {
+        "2026-09-25T05:00:00+00:00",
+        "2026-09-25T06:00:00+00:00",
+    }
 
 
 def test_missing_classifier_head_degrades_to_noop(tmp_path, monkeypatch, caplog):
@@ -463,7 +419,7 @@ def test_a_head_deciding_an_unlisted_family_errors_visibly_instead_of_silently(
             }
         ],
     )
-    ledger = tmp_path / "role_trends.parquet"
+    ledger = tmp_path / "state"
     monkeypatch.setattr(
         sys,
         "argv",
@@ -477,7 +433,7 @@ def test_a_head_deciding_an_unlisted_family_errors_visibly_instead_of_silently(
             str(tmp_path / "title_cache.parquet"),
             "--families",
             str(tmp_path / "families.json"),
-            "--ledger",
+            "--state",
             str(ledger),
             # Pinned even though this path errors before writing (ADR-0057): the isolation
             # must not depend on the error path staying an error path.
@@ -655,7 +611,6 @@ def test_the_classifier_decides_each_family_and_watch_roles_count_tech_only(
     assert rows[("stock", "unclassified-tech")] == 1  # the head could not place it
     assert rows[("stock", "non-tech")] == 1  # the clerk
     assert rows[("stock", "watch:frontend")] == 1  # the engineer; the clerk is not tech
-    assert {r["version"] for r in written} == {role_trends.series_version(1)}
 
     cache = role_family_classifier.load_cache(tmp_path / "title_cache.parquet", 1)
     assert len(cache.title_logits) == 4
@@ -689,7 +644,7 @@ def test_a_rows_description_vector_can_move_it_off_its_titles_family(
     assert rows[("stock", "software-engineering")] == 1
     assert rows[("stock", roles.NON_TECH)] == 1
     snapshot = pq.read_table(tmp_path / "role_assignments.parquet").to_pylist()
-    assert {r["id"] for r in snapshot} == {"it"}
+    assert {r["id"] for r in snapshot} == {"greenhouse:tests:it"}
 
 
 def test_a_head_trained_on_another_embedder_errors_visibly(
@@ -759,24 +714,11 @@ def test_trends_wait_while_a_new_heads_title_cache_warms_up(
         tmp_path / "db",
         [{"id": "a", "title": "Backend Dev", "vector": [1.0, 0.0, 0.0, 0.0]}],
     )
-    epochs = tmp_path / "trends_epochs.csv"
-    epochs.write_text(
-        "ts,centroid_version,family_map_fingerprint,tech_filter_version,"
-        "derivations_version,dedup_version,family_rules_fingerprint\n"
-        "2026-09-24T21:19:12+00:00,2,f,5,15,4,3b5cc5d9183c\n",
-        encoding="utf-8",
-    )
     caplog.set_level(logging.WARNING, logger="headstart.ingest.role_trends")
     monkeypatch.setattr(role_trends, "_CLASSIFY_BUDGET_SECONDS", -1.0)
     ledger = _run(tmp_path, monkeypatch)
     assert not ledger.exists()
     assert any("warming up" in r.getMessage() for r in caplog.records)
-    # the epoch file is in its current shape even though the run counted nothing
-    assert (
-        epochs.read_text(encoding="utf-8")
-        .splitlines()[0]
-        .endswith("family_classifier_version")
-    )
 
 
 def test_watchlist_with_unknown_parent_errors_visibly(tmp_path, monkeypatch, caplog):
@@ -798,7 +740,7 @@ def test_watchlist_with_unknown_parent_errors_visibly(tmp_path, monkeypatch, cap
             }
         ],
     )
-    ledger = tmp_path / "role_trends.parquet"
+    ledger = tmp_path / "state"
     monkeypatch.setattr(
         sys,
         "argv",
@@ -812,7 +754,7 @@ def test_watchlist_with_unknown_parent_errors_visibly(tmp_path, monkeypatch, cap
             str(tmp_path / "title_cache.parquet"),
             "--families",
             str(tmp_path / "families.json"),
-            "--ledger",
+            "--state",
             str(ledger),
             "--watchlist",
             str(tmp_path / "watchlist.json"),
@@ -828,174 +770,6 @@ def test_watchlist_with_unknown_parent_errors_visibly(tmp_path, monkeypatch, cap
         role_trends.main() == 1
     )  # visible error, non-fatal to the run (continue-on-error)
     assert not ledger.exists()
-
-
-def test_pre_metric_csv_is_folded_into_the_parquet_ledger(tmp_path, monkeypatch):
-    """The ledger predates the metric AND ats columns and is append-only on HF, so the
-    migration happens where the appends do — old rows become metric=stock, ats=all exactly,
-    never a guess."""
-    ledger = tmp_path / "role_trends.parquet"
-    ledger.with_suffix(".csv").write_text(
-        "ts,version,family,band,count\n"
-        "2026-08-11T00:00:00+00:00,2,software-engineering,mid,10\n"
-        "2026-08-11T00:00:00+00:00,2,non-tech,all,3\n",
-        encoding="utf-8",
-    )
-    _taxonomy(tmp_path / "head", tmp_path / "families.json")
-    x = [1.0, 0.0, 0.0, 0.0]
-    _table(
-        tmp_path / "db",
-        [
-            {
-                "id": "a",
-                "title": "Dev",
-                "employment_type": None,
-                "min_years": 3,
-                "vector": x,
-            }
-        ],
-    )
-    _run(tmp_path, monkeypatch)
-
-    rows = _rows(ledger)
-    assert [f.name for f in pq.read_schema(ledger)] == list(role_trends._COLUMNS)
-    assert rows[0] == {
-        "ts": "2026-08-11T00:00:00+00:00",
-        "version": 2,
-        "metric": "stock",
-        "family": "software-engineering",
-        "band": "mid",
-        "ats": "all",
-        "count": 10,
-    }
-    # every row — folded-in and freshly appended alike — lands on the one schema
-    assert all(
-        r["metric"] in ("stock", "new") and isinstance(r["count"], int) for r in rows
-    )
-
-
-def test_pre_ats_csv_is_folded_into_the_parquet_ledger(tmp_path, monkeypatch):
-    """A ledger already on the ADR-0051 six-column shape (has metric, not ats) gets only
-    ats=all stamped — the metric it already carries is trusted, not re-derived."""
-    ledger = tmp_path / "role_trends.parquet"
-    ledger.with_suffix(".csv").write_text(
-        "ts,version,metric,family,band,count\n"
-        "2026-08-11T00:00:00+00:00,2,stock,software-engineering,mid,10\n"
-        "2026-08-11T00:00:00+00:00,2,new,software-engineering,mid,4\n",
-        encoding="utf-8",
-    )
-    _taxonomy(tmp_path / "head", tmp_path / "families.json")
-    x = [1.0, 0.0, 0.0, 0.0]
-    _table(
-        tmp_path / "db",
-        [
-            {
-                "id": "a",
-                "title": "Dev",
-                "employment_type": None,
-                "min_years": 3,
-                "vector": x,
-            }
-        ],
-    )
-    _run(tmp_path, monkeypatch)
-
-    rows = _rows(ledger)
-    assert [f.name for f in pq.read_schema(ledger)] == list(role_trends._COLUMNS)
-    assert [
-        (r["metric"], r["family"], r["band"], r["ats"], r["count"]) for r in rows[:2]
-    ] == [
-        ("stock", "software-engineering", "mid", "all", 10),
-        ("new", "software-engineering", "mid", "all", 4),
-    ]
-    assert all(r["ats"] for r in rows)  # folded-in and freshly-appended rows alike
-
-
-def test_current_shape_csv_is_folded_into_the_parquet_ledger(tmp_path, monkeypatch):
-    """The seven-column CSV is the shape the real HF ledger is in, so this is the branch the
-    production cutover actually takes — the other two migrate shapes that were already gone.
-
-    Its rows carry over verbatim: `ats` is whatever the row said, not the `all` sentinel the
-    older shapes get stamped with."""
-    ledger = tmp_path / "role_trends.parquet"
-    ledger.with_suffix(".csv").write_text(
-        "ts,version,metric,family,band,ats,count\n"
-        "2026-08-11T00:00:00+00:00,2,stock,software-engineering,mid,greenhouse,10\n"
-        "2026-08-11T00:00:00+00:00,2,new,ai-ml,senior,lever,4\n",
-        encoding="utf-8",
-    )
-    _taxonomy(tmp_path / "head", tmp_path / "families.json")
-    _table(
-        tmp_path / "db",
-        [
-            {
-                "id": "a",
-                "title": "Dev",
-                "employment_type": None,
-                "min_years": 3,
-                "vector": [1.0, 0.0, 0.0, 0.0],
-            }
-        ],
-    )
-    _run(tmp_path, monkeypatch)
-
-    rows = _rows(ledger)
-    assert [f.name for f in pq.read_schema(ledger)] == list(role_trends._COLUMNS)
-    # both carried rows, then this run's group + the non-tech diagnostic
-    assert len(rows) == 4
-    assert [
-        (r["metric"], r["family"], r["band"], r["ats"], r["count"]) for r in rows[:2]
-    ] == [
-        ("stock", "software-engineering", "mid", "greenhouse", 10),
-        ("new", "ai-ml", "senior", "lever", 4),
-    ]
-
-
-def test_a_torn_legacy_csv_row_fails_loudly_rather_than_shifting_columns(tmp_path):
-    """The pre-ADR-0120 writer appended without a temp-file rename, so a killed run could leave
-    a truncated final line. Folding that in must not quietly produce a mis-shaped table.
-
-    It does not: the short row makes `zip(*rows)` yield fewer than seven columns, and the
-    unpack raises. Pinned as a test because it is the reason `_legacy_rows` needs no arity
-    check of its own — the guard already exists, one layer down."""
-    csv_ledger = tmp_path / "role_trends.csv"
-    csv_ledger.write_text(
-        "ts,version,metric,family,band,ats,count\n"
-        "2026-08-11T00:00:00+00:00,2,stock,software-engineering,mid,all,10\n"
-        "2026-08-11T00:00:00+00:00,2,stock,ai-ml\n",
-        encoding="utf-8",
-    )
-    with pytest.raises(ValueError, match="not enough values to unpack"):
-        role_trends._to_table(role_trends._legacy_rows(csv_ledger))
-
-
-def test_a_zero_byte_legacy_csv_does_not_sink_the_run(tmp_path, monkeypatch):
-    """A pre-ADR-0120 run killed between `open("a")` and its first write left a 0-byte CSV,
-    and that file still arrives from HF. It has no header to read, so folding it in must
-    yield nothing rather than raising StopIteration on the empty reader.
-
-    The Parquet ledger itself has no such case: it is written to a temp file and renamed, so
-    a killed run leaves the previous ledger intact, never a 0-byte one."""
-    ledger = tmp_path / "role_trends.parquet"
-    ledger.with_suffix(".csv").touch()
-    _taxonomy(tmp_path / "head", tmp_path / "families.json")
-    _table(
-        tmp_path / "db",
-        [
-            {
-                "id": "a",
-                "title": "Dev",
-                "employment_type": None,
-                "min_years": 3,
-                "vector": [1.0, 0.0, 0.0, 0.0],
-            }
-        ],
-    )
-    _run(tmp_path, monkeypatch)
-
-    rows = _rows(ledger)
-    assert [f.name for f in pq.read_schema(ledger)] == list(role_trends._COLUMNS)
-    assert len(rows) == 2  # the one group + the non-tech diagnostic
 
 
 def test_count_board_groups_places_rows_excluding_non_tech_and_watch_roles(tmp_path):
@@ -1120,8 +894,8 @@ def test_a_second_tick_books_turnover_beside_the_level_changes(tmp_path, monkeyp
     """ADR-0227 end to end. The first tick writes the snapshot that turnover diffs. The second
     books a new posting as opened, an evicted one as closed, and a row that left any other way
     (here a prune, as `cleanup-index` makes) as recounted, plus one marker for an Unauthoritative
-    Board. All of it goes in the tick's own delta file, the Board counts carry levels only, and
-    the queue keeps only what the new snapshot does not yet cover."""
+    Board. All of it goes in the tick's own delta file, the replayed levels carry levels only,
+    and the queue keeps only what the new snapshot does not yet cover."""
     from headstart.ingest import RUN_TS_ENV
 
     _taxonomy(tmp_path / "head", tmp_path / "families.json")
@@ -1142,7 +916,12 @@ def test_a_second_tick_books_turnover_beside_the_level_changes(tmp_path, monkeyp
     )
     monkeypatch.setenv(RUN_TS_ENV, "2026-09-25T05:00:00+00:00")
     _run(tmp_path, monkeypatch)
-    first = _tick_rows(tmp_path / "board_deltas" / "2026-09-25T05-00-00+00-00.parquet")
+    first = _tick_rows(
+        tmp_path
+        / "state"
+        / "role_trend_board_deltas"
+        / "2026-09-25T05-00-00+00-00.parquet"
+    )
     assert {r["metric"] for r in first} == {"stock", "new"}, (
         "no snapshot to diff yet, so the first tick books no turnover"
     )
@@ -1164,15 +943,20 @@ def test_a_second_tick_books_turnover_beside_the_level_changes(tmp_path, monkeyp
     monkeypatch.setenv(RUN_TS_ENV, "2026-09-25T06:00:00+00:00")
     _run(tmp_path, monkeypatch)
 
-    tick = _tick_rows(tmp_path / "board_deltas" / "2026-09-25T06-00-00+00-00.parquet")
+    tick = _tick_rows(
+        tmp_path
+        / "state"
+        / "role_trend_board_deltas"
+        / "2026-09-25T06-00-00+00-00.parquet"
+    )
     booked = {
         r["metric"]: r["delta"] for r in tick if r["metric"] not in ("stock", "new")
     }
     assert booked == {"opened": 1, "closed": 1, "recounted_out": 1, "unscoped": 1}
     stock = sum(r["delta"] for r in tick if r["metric"] == "stock")
     assert stock == booked["opened"] - booked["closed"] - booked["recounted_out"]
-    counts = pq.read_table(tmp_path / "board_counts.parquet").to_pylist()
-    assert {r["metric"] for r in counts} <= {"stock", "new"}
+    _, levels = trend_history.board_levels(tmp_path / "state")
+    assert {metric for _, metric, *_ in levels} <= {"stock", "new"}
     # The entry the diffed 05:00 snapshot already covered is dropped. This run's stays until a
     # published snapshot covers it: if this run's `data/state` upload failed, the next tick
     # would diff the 05:00 snapshot again and still book it as Closed.
@@ -1201,7 +985,7 @@ def test_every_tick_writes_one_file_stamped_with_how_it_was_counted(
         monkeypatch.setenv(RUN_TS_ENV, ts)
         _run(tmp_path, monkeypatch)
 
-    files = sorted((tmp_path / "board_deltas").glob("*.parquet"))
+    files = sorted((tmp_path / "state" / "role_trend_board_deltas").glob("*.parquet"))
     assert [f.name for f in files] == [
         "2026-09-25T05-00-00+00-00.parquet",
         "2026-09-25T06-00-00+00-00.parquet",
@@ -1210,7 +994,7 @@ def test_every_tick_writes_one_file_stamped_with_how_it_was_counted(
     assert unchanged.num_rows == 0
     metadata = unchanged.schema.metadata
     assert metadata[b"ts"] == b"2026-09-25T06:00:00+00:00"
-    assert metadata[b"centroid_version"] == str(role_trends.series_version(1)).encode()
+    assert b"centroid_version" not in metadata  # no series versions (ADR-0230)
     assert json.loads(metadata[b"methodology"]) == {
         "family_list_fingerprint": roles.family_list_fingerprint(
             tmp_path / "families.json"
@@ -1248,29 +1032,4 @@ def test_a_failed_snapshot_takes_the_ticks_file_back_out(tmp_path, monkeypatch):
     monkeypatch.setenv(RUN_TS_ENV, "2026-09-25T05:00:00+00:00")
     with pytest.raises(RuntimeError):  # any failure, not only an OSError
         _run(tmp_path, monkeypatch)
-    assert not list((tmp_path / "board_deltas").glob("*.parquet"))
-
-
-def test_recovering_board_counts_skips_a_ticks_turnover_rows(tmp_path):
-    """A tick's delta file carries its turnover too (ADR-0227). Replayed as level changes after
-    a failed counts save, an `opened` row would have become a Board count of its own."""
-    deltas = tmp_path / "deltas"
-    deltas.mkdir()
-    key = ("greenhouse:acme", "software-engineering", "senior", "greenhouse")
-    table = pa.table(
-        {
-            "ts": ["2026-09-25T06:00:00+00:00"] * 2,
-            "board": [key[0]] * 2,
-            "metric": ["stock", "opened"],
-            "family": [key[1]] * 2,
-            "band": [key[2]] * 2,
-            "ats": [key[3]] * 2,
-            "delta": [1, 1],
-        },
-        metadata={b"centroid_version": b"3001"},
-    )
-    pq.write_table(table, deltas / "2026-09-25T06-00-00+00-00.parquet")
-    recovered = role_trends._recover_board_counts(
-        {}, "2026-09-25T05:00:00+00:00", deltas, 3001
-    )
-    assert recovered == {(key[0], "stock", *key[1:]): 1}
+    assert not list((tmp_path / "state" / "role_trend_board_deltas").glob("*.parquet"))

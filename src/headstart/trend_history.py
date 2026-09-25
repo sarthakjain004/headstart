@@ -1,30 +1,29 @@
-"""Trends' one reader of its stored history (ADR-0230): what ``/trends`` and the company picker
-answer from. It lives in ``headstart`` proper, not ``ingest``, so the Space and the pipeline can
-both import it.
+"""Trends' one owner of its stored history (ADR-0230): :func:`record_tick` writes it, and
+:class:`TrendHistory` answers ``/trends`` and the company picker from it. It lives in
+``headstart`` proper, not ``ingest``, so the Space and the pipeline can both import it.
 
 The history is the Board-delta ledger (ADR-0143): one file per **Tick** under
-``data/state/role_trend_board_deltas/``, each holding every **Board delta** of that tick and, since
-ADR-0227, the tick's turnover. Replayed, it gives every group's count at every tick, for the whole
-index or for any set of Boards. The aggregate ledger, ``role_trends.parquet``, is read only for
-the ticks before the delta ledger began on 2026-09-13. Nothing else holds those ticks, so they
-are the **archive**.
+``data/state/role_trend_board_deltas/``, written even when nothing moved. A file holds every
+**Board delta** of its tick as ``(board, metric, family, band, delta)``, then the tick's turnover
+(ADR-0227), and carries the tick's ``ts`` and **Methodology** in its metadata. A Board's ATS is
+its board_key's prefix. Summed in order, the files give every group's count at every tick, for
+the whole index or for any set of Boards. A new classifier head is one more delta, so the history
+has no series versions: a tick whose Methodology differs from the tick before it is a
+**Counting change**, and that is all a re-base now is.
 
-:meth:`TrendHistory.load` keeps the old layout's quirks inside itself, so no reader sees them:
+The ticks before per-Board counting began on 2026-09-13 exist only index-wide, in the
+**archive** ``role_trend_index_deltas_before_board_deltas.parquet``: ``(ts, metric, family, band,
+ats, delta)`` with the Methodology they were counted under in its metadata.
 
-- **Baseline ticks.** A series version's first tick (the ledger's first tick, or a re-base under a
-  new classifier head) holds every Board's whole count, so each version span replays from its own
-  first tick (``headstart.version_spans``, ADR-0221).
-- **``centroid_version``.** Each file names its series version in its metadata under this older
-  name.
-- **``trends_epochs.csv``.** Since ADR-0230 step 2 a tick's **Methodology** rides its own file's
-  metadata. Older files carry none, so the counting changes before the first stamped file come
-  from the epoch ledger, and each stamped file is compared with the one before it.
-- **The aggregate as columns, for the archive only.** The aggregate writes non-tech as one
-  ``(stock, non-tech, all, all)`` row a tick, so the replay folds non-tech the same way.
+Until ``scripts/state/migrate_trends_to_one_delta_history.py`` has rewritten the stored files
+(ADR-0230 step 6), the dataset holds them in the layout before this one: re-bases stored as
+baselines, the Methodology of older ticks in ``trends_epochs.csv``, and the archive only inside
+the aggregate ledger ``role_trends.parquet``. The reader and the writer read that layout through
+:mod:`headstart.trend_history_migration`, which rewrites it in memory exactly as the script
+rewrites it on disk.
 
-Step 3 of ADR-0230 moved the Space onto this module with its answers unchanged: netting still
-happens in the page until step 4. Since step 5 the Hot tab ranks companies off
-:meth:`TrendHistory.company_moves`, which reads the same answers.
+Netting happens in :meth:`TrendHistory.answer` (step 4), and the Hot tab ranks companies off
+:meth:`TrendHistory.company_moves`, which reads the same answers (step 5).
 """
 
 from __future__ import annotations
@@ -33,14 +32,14 @@ import csv
 import json
 from bisect import bisect_left
 from collections import Counter, defaultdict
-from collections.abc import Iterable
-from dataclasses import dataclass
+from collections.abc import Iterable, Mapping
+from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import numpy as np
 
-from headstart import company_match, trend_netting, version_spans
+from headstart import company_match, trend_netting
 from headstart.board_identity import ats_of
 from headstart.roles import BAND_LABELS, NON_TECH, WATCH_PREFIX
 
@@ -53,7 +52,7 @@ NEW_WINDOW_DAYS = 7
 # counts, whose deltas sum to a level. Since ADR-0227 a file also carries the tick's turnover,
 # which is a count of jobs, not a change in a level, and its Unauthoritative-Board markers. They
 # mirror ingest.job_turnover.METRICS and ingest.job_turnover.UNSCOPED.
-_LEVEL_METRICS = ("new", "stock")
+LEVEL_METRICS = ("new", "stock")
 _TURNOVER_METRICS = ("opened", "closed", "recounted_in", "recounted_out")
 _UNSCOPED = "unscoped"
 # What /trends serves per line: recounted as in less out, so opened − closed + recounted is the
@@ -66,25 +65,24 @@ _TURNOVER_KIND_OF = {
     "recounted_out": ("recounted", -1),
 }
 
-_DELTAS = "role_trend_board_deltas"
-_AGGREGATE = "role_trends.parquet"
-_EPOCH_LEDGER = "trends_epochs.csv"
+DELTAS = "role_trend_board_deltas"
+ARCHIVE = "role_trend_index_deltas_before_board_deltas.parquet"
+# A tick file's columns, and the archive's. The archive keeps `ats`: an index-wide row has no
+# Board to read it from.
+TICK_COLUMNS = ("board", "metric", "family", "band", "delta")
+ARCHIVE_COLUMNS = ("ts", "metric", "family", "band", "ats", "delta")
 _DEDUP_EVICTIONS = "dedup_evictions.csv"
 _DIRECTORY = "company_directory.json"
 
-# The epoch ledger's columns, each with what a chart says when it moves (ADR-0164).
+# Each Methodology field under the name the payload's `epochs[].fields` gives it, which is the
+# retired epoch ledger's column name (ADR-0164), and what a chart says when it moves.
 _EPOCH_LABELS = (
-    ("centroid_version", "role taxonomy refit"),
     ("family_map_fingerprint", "role family map edited"),
     ("tech_filter_version", "tech filter changed"),
     ("derivations_version", "experience/salary extraction changed"),
     ("dedup_version", "duplicate removal changed"),
     ("family_classifier_version", "role family assignment changed"),
 )
-# What a stamped tick's Methodology (ADR-0230) reads as in the epoch ledger's columns. The
-# pipeline writes `centroid_version` as `none` since ADR-0220, when no centroid fit decided
-# anything any more, and keeps the family list's fingerprint under its older column name.
-_CENTROID_VERSION_SINCE_ADR_0220 = "none"
 _METHODOLOGY_COLUMNS = (
     ("family_map_fingerprint", "family_list_fingerprint"),
     ("tech_filter_version", "tech_filter_version"),
@@ -235,20 +233,6 @@ def _family_labels(path: Path) -> dict[str, str]:
     return {f["name"]: f.get("label", f["name"]) for f in families}
 
 
-def _epoch_ledger_rows(path: Path) -> list[dict]:
-    """The epoch ledger's rows (ADR-0164), each column under its current name."""
-    if not path.exists():
-        return []
-    with path.open(encoding="utf-8", newline="") as fh:
-        rows = list(csv.DictReader(fh))
-    for row in rows:
-        # The sixth column's name before ADR-0220 renamed it in place; the pipeline rewrites the
-        # header on its first run under a new head, and this reads a file from before that.
-        if "family_rules_fingerprint" in row:
-            row["family_classifier_version"] = row.pop("family_rules_fingerprint")
-    return rows
-
-
 def _counting_changes(stamps: list[dict]) -> list[dict]:
     """Methodology boundaries (ADR-0164): every stamp after the first names what changed since
     the one before it, so a chart can mark the point and a reader isn't left decoding raw
@@ -259,7 +243,6 @@ def _counting_changes(stamps: list[dict]) -> list[dict]:
     for previous, row in zip([None, *stamps], stamps):
         if previous is None:
             continue
-        # .get: a file from before a column existed lacks it until the next tick upgrades it
         moved = [
             (key, label)
             for key, label in _EPOCH_LABELS
@@ -278,28 +261,18 @@ def _counting_changes(stamps: list[dict]) -> list[dict]:
     return out
 
 
-def _methodology_stamps(
-    epoch_rows: list[dict], stamped: list[tuple[str, dict]]
-) -> list[dict]:
-    """Every recorded Methodology, oldest first, in the epoch ledger's columns: the ledger's rows
-    from before the first tick whose file carries its own (ADR-0230), then each stamped tick's.
-
-    The ledger records a row only when something changed, and a stamped tick records every tick,
-    so comparing each with the one before it finds the same boundaries."""
-    first = stamped[0][0] if stamped else None
-    rows = [row for row in epoch_rows if first is None or row["ts"] < first]
-    for ts, methodology in stamped:
-        rows.append(
-            {
-                "ts": ts,
-                "centroid_version": _CENTROID_VERSION_SINCE_ADR_0220,
-                **{
-                    column: str(methodology.get(key))
-                    for column, key in _METHODOLOGY_COLUMNS
-                },
-            }
-        )
-    return rows
+def _methodology_stamps(stamped: list[tuple[str, dict]]) -> list[dict]:
+    """Every tick's Methodology, oldest first, under the field names the payload gives them."""
+    return [
+        {
+            "ts": ts,
+            **{
+                column: str(methodology.get(key))
+                for column, key in _METHODOLOGY_COLUMNS
+            },
+        }
+        for ts, methodology in stamped
+    ]
 
 
 def _load_evictions(path: Path) -> dict[str, list[tuple[str, int]]]:
@@ -359,7 +332,7 @@ def _family_weights(rows: list[dict]) -> Counter[str]:
     """Openings per family over ``rows`` — how much of the data each name holds."""
     weights: Counter[str] = Counter()
     for row in rows:
-        if row["metric"] in _LEVEL_METRICS:
+        if row["metric"] in LEVEL_METRICS:
             weights[row["family"]] += row["count"]
     return weights
 
@@ -447,10 +420,142 @@ def _metric_codes(column) -> np.ndarray:
     names = _Names()
     codes = names.encode(column)
     remap = np.array(
-        [_LEVEL_METRICS.index(n) if n in _LEVEL_METRICS else -1 for n in names.names],
+        [LEVEL_METRICS.index(n) if n in LEVEL_METRICS else -1 for n in names.names],
         dtype=np.int8,
     )
     return remap[codes] if len(remap) else codes.astype(np.int8)
+
+
+# ---- the stored history: its files, and writing a tick ---------------------------------------
+
+
+@dataclass(frozen=True)
+class Methodology:
+    """How one tick was counted (ADR-0164, ADR-0230), stored in the tick's own file. A tick whose
+    Methodology differs from the tick before it is a counting change. Ticks from before the
+    classifier head (ADR-0220) carry text as its version: ``none`` in the centroid era, and the
+    title rules' fingerprint under them."""
+
+    family_list_fingerprint: str
+    family_classifier_version: int | str
+    tech_filter_version: int
+    derivations_version: int
+    dedup_version: int
+
+
+def tick_path(directory: Path, ts: str) -> Path:
+    """The file of the tick stamped ``ts``: ``:`` is spelled ``-``, so ``+00:00`` ends
+    ``+00-00``."""
+    return directory / f"{ts.replace(':', '-')}.parquet"
+
+
+def _tick_stamp(table) -> str:
+    return (table.schema.metadata or {})[b"ts"].decode()
+
+
+def _tick_tables(state_dir: Path) -> list:
+    """Every tick file under ``state_dir`` as a table in this module's layout, oldest first. A
+    history still in the layout before ADR-0230 step 6 is rewritten in memory, as the one-off
+    migration rewrites it on disk."""
+    import pyarrow.parquet as pq
+
+    from headstart import trend_history_migration as migration
+
+    paths = sorted((state_dir / DELTAS).glob("*.parquet"))
+    tables = [pq.read_table(path) for path in paths]
+    if any(migration.is_old_layout(table.schema) for table in tables):
+        tables, _ = migration.rewritten_ticks(tables, state_dir / migration.EPOCHS)
+    return sorted(tables, key=_tick_stamp)
+
+
+def _archive_table(state_dir: Path, before: str | None):
+    """The archive: its file, or, while the history is still in the older layout, the aggregate
+    ledger's ticks before ``before`` (the first tick file's) as the migration writes them. None
+    when neither exists."""
+    import pyarrow.parquet as pq
+
+    from headstart import trend_history_migration as migration
+
+    if (state_dir / ARCHIVE).exists():
+        return pq.read_table(state_dir / ARCHIVE)
+    if not (state_dir / migration.AGGREGATE).exists():
+        return None
+    return migration.archive_from_aggregate(
+        state_dir / migration.AGGREGATE, before, state_dir / migration.EPOCHS
+    )
+
+
+def board_levels(
+    state_dir: Path,
+) -> tuple[str | None, dict[tuple[str, str, str, str], int]]:
+    """The newest tick's stamp, and every ``(board, metric, family, band)`` group's level at it:
+    the tick files' level deltas summed. ``(None, {})`` before the first tick."""
+    import pyarrow as pa
+    import pyarrow.compute as pc
+
+    tables = _tick_tables(state_dir)
+    if not tables:
+        return None, {}
+    rows = pa.concat_tables([table.select(list(TICK_COLUMNS)) for table in tables])
+    rows = rows.filter(pc.is_in(rows["metric"], pa.array(LEVEL_METRICS)))
+    key = list(TICK_COLUMNS[:-1])
+    summed = rows.group_by(key).aggregate([("delta", "sum")])
+    columns = [summed[name].to_pylist() for name in (*key, "delta_sum")]
+    levels = {tuple(k): n for *k, n in zip(*columns, strict=True) if n}
+    return _tick_stamp(tables[-1]), levels
+
+
+def record_tick(
+    state_dir: Path,
+    ts: str,
+    levels: Mapping[tuple[str, str, str, str], int],
+    turnover: Mapping[tuple[str, str, str, str], int],
+    methodology: Methodology,
+) -> int:
+    """Write the tick stamped ``ts`` as one file under ``state_dir``: its level changes against
+    the history replayed to its newest tick, then its ``turnover`` and markers (ADR-0227) as
+    counts of the tick, with ``methodology`` in the file's metadata. Returns the rows written.
+
+    ``levels`` is every ``(board, metric, family, band)`` group's count now, for the level
+    metrics; a group it leaves out is at 0. The file is written even when nothing moved, so the
+    history holds one file per tick, and a new classifier head writes a delta like any other tick,
+    never a baseline. Raises ValueError when ``ts`` is not newer than the newest tick; an OSError
+    propagates. Written beside its path and renamed over it, so a killed run leaves no half."""
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    newest, current = board_levels(state_dir)
+    if newest is not None and ts <= newest:
+        raise ValueError(f"tick {ts} is not newer than the history's newest, {newest}")
+    rows = [
+        (*key, levels.get(key, 0) - current.get(key, 0))
+        for key in sorted(levels.keys() | current.keys())
+        if levels.get(key, 0) != current.get(key, 0)
+    ] + sorted((*key, n) for key, n in turnover.items())
+    columns = list(zip(*rows, strict=True)) if rows else [()] * len(TICK_COLUMNS)
+    schema = pa.schema(
+        [
+            (name, pa.int64() if name == "delta" else pa.string())
+            for name in TICK_COLUMNS
+        ],
+        metadata={
+            b"ts": ts.encode(),
+            b"methodology": json.dumps(asdict(methodology), sort_keys=True).encode(),
+        },
+    )
+    table = pa.table(
+        {
+            name: list(column)
+            for name, column in zip(TICK_COLUMNS, columns, strict=True)
+        },
+        schema=schema,
+    )
+    path = tick_path(state_dir / DELTAS, ts)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    staged = path.with_suffix(".parquet.tmp")
+    pq.write_table(table, staged, compression="zstd")
+    staged.replace(path)
+    return len(rows)
 
 
 class TrendHistory:
@@ -462,19 +567,17 @@ class TrendHistory:
         # Every tick, oldest first: the archive's, then the delta ledger's from `_first_delta`.
         self._ticks: list[str] = []
         self._first_delta = 0
-        self._tick_versions: np.ndarray = np.zeros(0, dtype=np.int64)
         self._families = _Names()
         self._bands = _Names()
         self._atses = _Names()
         self._boards = _Names(np.int32)
-        # The index's group counts at every tick, as the aggregate ledger holds them: the
-        # archive's own rows, then the replay's (`_replayed_index_levels`). Codes and counts in
-        # the narrowest type that holds them: 6.6M rows on 2026-09-25.
+        # The index's group counts at every tick, as the aggregate ledger held them: the
+        # archive's replay, then the tick files' (`_index_levels`). Codes and counts in the
+        # narrowest type that holds them: 6.6M rows on 2026-09-25.
         self._index = _columns(_INDEX_TYPES)
         # Every Board delta of a level metric, in file order.
         self._deltas = _columns(_DELTA_TYPES)
         self._new_measured: set[str] = set()
-        self._live_version: int | None = None
         self._openings: Counter[str] = Counter()
         self._board_arrivals: dict[str, tuple[str, int]] = {}
         self._new_hold: dict[str, str] = {}
@@ -517,36 +620,20 @@ class TrendHistory:
             for key, entry in history._companies.items()
             for board in entry["boards"]
         }
-        history._epochs = _counting_changes(
-            _methodology_stamps(_epoch_ledger_rows(state_dir / _EPOCH_LEDGER), stamped)
-        )
+        history._epochs = _counting_changes(_methodology_stamps(stamped))
         history._derive_board_facts()
         return history
 
     def _read_ledgers(self, state_dir: Path) -> list[tuple[str, dict]]:
-        """Read the tick files and the archive; returns each stamped tick's Methodology."""
+        """Read the archive and the tick files; returns every tick's Methodology, oldest first."""
         import pyarrow as pa
 
-        files = [
-            file
-            for path in sorted((state_dir / _DELTAS).glob("*.parquet"))
-            if (file := self._read_tick_file(path)) is not None
-        ]
-        files.sort(key=lambda file: file[0])
-        first_delta = files[0][0] if files else None
-        archive_ticks, archive_versions = self._read_archive(
-            state_dir / _AGGREGATE, first_delta
-        )
+        files = [self._read_tick(table) for table in _tick_tables(state_dir)]
+        archive = _archive_table(state_dir, files[0][0] if files else None)
+        archive_ticks, archived, archive_deltas = self._read_archive(archive)
         self._ticks = [*archive_ticks, *(ts for ts, *_ in files)]
         self._first_delta = len(archive_ticks)
-        self._tick_versions = np.array(
-            [*archive_versions, *(version for _, version, *_ in files)],
-            dtype=np.int64,
-        )
-        spans = version_spans.spans(zip(self._ticks, self._tick_versions.tolist()))
-        # The version the newest runs are counted at: the last to begin, not the last read.
-        self._live_version = spans[-1][0] if spans else None
-        levels = [columns for *_, columns, _ in files]
+        levels = [columns for _, _, columns, _ in files]
         self._deltas = _columns(
             _DELTA_TYPES,
             tick=np.repeat(
@@ -556,9 +643,15 @@ class TrendHistory:
             **{
                 name: np.concatenate([columns[name] for columns in levels])
                 for name in _DELTA_TYPES
-                if name != "tick" and levels
+                if name not in ("tick", "ats") and levels
             },
         )
+        # A Board's ATS is its board_key's prefix: decoded once a Board, not once a row.
+        board_ats = np.array(
+            [self._atses.code(ats_of(board)) for board in self._boards.names],
+            dtype=_DELTA_TYPES["ats"],
+        )
+        self._deltas["ats"] = board_ats[self._deltas["board"]]
         turnover: dict[str, list[dict]] = defaultdict(list)
         unscoped: dict[str, list[dict]] = defaultdict(list)
         for *_, others in files:
@@ -569,31 +662,28 @@ class TrendHistory:
                     unscoped[row["board"]].append(row)
         self._turnover = dict(turnover)
         self._unscoped_markers = dict(unscoped)
-        replayed = self._replayed_index_levels()
+        parts = (
+            self._index_levels(archive_deltas, 0, self._first_delta),
+            self._index_levels(self._deltas, self._first_delta, len(self._ticks)),
+        )
         self._index = {
-            name: np.concatenate([self._index[name], replayed[name]])
-            for name in self._index
+            name: np.concatenate([part[name] for part in parts])
+            for name in _INDEX_TYPES
         }
         self._new_measured = {
             self._ticks[t]
             for t in np.unique(self._index["tick"][self._index["metric"] == 0]).tolist()
         }
         pa.default_memory_pool().release_unused()
-        return [(ts, methodology) for ts, _, methodology, *_ in files if methodology]
+        return [
+            *((ts, archived) for ts in archive_ticks),
+            *((ts, methodology) for ts, methodology, *_ in files),
+        ]
 
-    def _read_tick_file(self, path: Path):
-        """One tick's file as ``(ts, series version, methodology or None, level columns, other
-        rows)``: its level deltas encoded, and its turnover and markers (ADR-0227) as rows. None
-        for an empty file that names no tick."""
-        import pyarrow.parquet as pq
-
-        table = pq.read_table(path)
-        meta = table.schema.metadata or {}
-        ts = (meta.get(b"ts") or b"").decode()
-        if not ts and table.num_rows:
-            ts = table.column("ts")[0].as_py()
-        if not ts:
-            return None
+    def _read_tick(self, table) -> tuple[str, dict, dict[str, np.ndarray], list[dict]]:
+        """One tick's file as ``(ts, methodology, level columns, other rows)``: its level deltas
+        encoded, and its turnover and markers (ADR-0227) as rows carrying their tick and ATS."""
+        ts = _tick_stamp(table)
         metric = _metric_codes(table["metric"])
         levels = metric >= 0
         columns = {
@@ -601,110 +691,44 @@ class TrendHistory:
             "metric": metric[levels],
             "family": self._families.encode(table["family"])[levels],
             "band": self._bands.encode(table["band"])[levels],
-            "ats": self._atses.encode(table["ats"])[levels],
             "delta": table["delta"].to_numpy()[levels],
         }
-        others = table.filter(~levels).to_pylist() if not levels.all() else []
-        return (
-            ts,
-            int(meta.get(b"centroid_version", b"-1")),
-            json.loads(meta[b"methodology"]) if b"methodology" in meta else None,
-            columns,
-            others,
-        )
-
-    def _read_archive(
-        self, path: Path, first_delta: str | None
-    ) -> tuple[list[str], list[int]]:
-        """The aggregate's rows from before the delta ledger's first tick, as columns, each tick
-        at the version its span was counted at (a stray row of another version is dropped, so
-        two versions never share a tick). Read a batch at a time: decoded whole, its 3.2M rows
-        cost the Space a few hundred MB that Arrow's allocator then keeps."""
-        import pyarrow as pa
-        import pyarrow.compute as pc
-        import pyarrow.parquet as pq
-
-        if not path.exists():
-            return [], []
-        before = datetime.fromisoformat(first_delta) if first_delta else None
-        file = pq.ParquetFile(path, read_dictionary=["metric", "family", "band", "ats"])
-        ts_column = file.schema_arrow.get_field_index("ts")
-        groups = []
-        for i in range(file.num_row_groups):
-            stats = file.metadata.row_group(i).column(ts_column).statistics
-            if (
-                before is None
-                or not (stats and stats.has_min_max)
-                or stats.min < before
-            ):
-                groups.append(i)
-        parts = []
-        for batch in file.iter_batches(batch_size=1 << 16, row_groups=groups):
-            if before is not None:
-                batch = batch.filter(
-                    pc.less(batch["ts"], pa.scalar(before, type=batch["ts"].type))
-                )
-            parts.append(
-                {
-                    "ts": batch["ts"].cast("int64").to_numpy(),
-                    "version": batch["version"].to_numpy(),
-                    "metric": _metric_codes(batch["metric"]),
-                    "family": self._families.encode(batch["family"]),
-                    "band": self._bands.encode(batch["band"]),
-                    "ats": self._atses.encode(batch["ats"]),
-                    "count": batch["count"].to_numpy(),
-                }
-            )
-        if not parts or not sum(len(part["ts"]) for part in parts):
-            return [], []
-        rows = {
-            name: np.concatenate([part[name] for part in parts]) for name in parts[0]
-        }
-        instants, tick = np.unique(rows["ts"], return_inverse=True)
-        ticks = [
-            datetime.fromtimestamp(ms / 1000, UTC).isoformat(timespec="seconds")
-            for ms in instants.tolist()
+        others = [
+            {**row, "ts": ts, "ats": ats_of(row["board"])}
+            for row in (table.filter(~levels).to_pylist() if not levels.all() else [])
         ]
-        # each (tick, version) pair once, as one number: the tick above, the version below
-        lowest = int(rows["version"].min())
-        pairs = np.unique(tick.astype(np.int64) << 32 | (rows["version"] - lowest))
-        spans = version_spans.spans(
-            (ticks[p >> 32], (p & 0xFFFFFFFF) + lowest) for p in pairs.tolist()
-        )
-        versions = [version_spans.version_at(spans, ts) for ts in ticks]
-        keep = rows["version"] == np.array(versions, dtype=np.int64)[tick]
-        self._index = _columns(
-            _INDEX_TYPES,
-            tick=tick[keep],
-            **{
-                name: rows[name][keep]
-                for name in ("metric", "family", "band", "ats", "count")
-            },
-        )
-        return ticks, versions
+        methodology = json.loads((table.schema.metadata or {})[b"methodology"])
+        return ts, methodology, columns, others
 
-    def _delta_spans(self) -> list[tuple[int, int]]:
-        """Each version span of the delta ledger as ``(first tick, end tick)`` indices. Every
-        tick there holds one file at one version, so a span is a run of one version."""
-        ticks = self._ticks[self._first_delta :]
-        spans = version_spans.spans(
-            zip(ticks, self._tick_versions[self._first_delta :].tolist())
+    def _read_archive(self, table) -> tuple[list[str], dict, dict[str, np.ndarray]]:
+        """The archive as ``(its ticks, the Methodology they were counted under, its index-wide
+        deltas encoded)``, each delta's tick an index into its ticks. Its ticks are in its
+        metadata, since a tick where nothing moved has no rows. Empty without an archive."""
+        if table is None:
+            return [], {}, _columns(_DELTA_TYPES)
+        metadata = table.schema.metadata or {}
+        ticks = json.loads(metadata[b"ticks"])
+        position = {ts: i for i, ts in enumerate(ticks)}
+        deltas = _columns(
+            _DELTA_TYPES,
+            tick=[position[ts] for ts in table["ts"].to_pylist()],
+            metric=_metric_codes(table["metric"]),
+            family=self._families.encode(table["family"]),
+            band=self._bands.encode(table["band"]),
+            ats=self._atses.encode(table["ats"]),
+            delta=table["delta"].to_numpy(),
         )
-        return [
-            (
-                self._first_delta + bisect_left(ticks, start),
-                self._first_delta + (bisect_left(ticks, end) if end else len(ticks)),
-            )
-            for _, start, end in spans
-        ]
+        return ticks, json.loads(metadata[b"methodology"]), deltas
 
-    def _replayed_index_levels(self) -> dict[str, np.ndarray]:
-        """The index's group counts at every delta tick, as the aggregate ledger writes them:
-        each ``(metric, family, band, ats)`` group holding any rows, in name order, then non-tech
-        as one ``(stock, non-tech, all, all)`` row, written even at 0.
-
-        Each version span replays from its own first tick, a baseline of every Board's count."""
-        d = self._deltas
+    def _index_levels(
+        self, d: dict[str, np.ndarray], start: int, end: int
+    ) -> dict[str, np.ndarray]:
+        """The index's group counts at ticks ``[start, end)``, from the deltas ``d`` holds for
+        them, as the aggregate ledger wrote them: each ``(metric, family, band, ats)`` group
+        holding any rows, in name order, then non-tech as one ``(stock, non-tech, all, all)`` row,
+        written even at 0."""
+        if end <= start:
+            return _columns(_INDEX_TYPES)
         non_tech = self._families.code(NON_TECH)
         every = self._bands.code("all"), self._atses.code("all")
         sizes = (
@@ -720,7 +744,7 @@ class TrendHistory:
             self._atses.ranks(),
         )
         # Tech groups sort by name; non-tech, one row summed over every Board and ATS, sorts after
-        # all of them, as the writer appends it.
+        # all of them, as the writer appended it.
         last = int(np.prod(sizes))
         ranked = np.ravel_multi_index(
             tuple(
@@ -732,44 +756,29 @@ class TrendHistory:
             sizes,
         )
         ranked[d["family"] == non_tech] = last
-        parts = []
-        for start, end in self._delta_spans():
-            rows = (d["tick"] >= start) & (d["tick"] < end)
-            keys, inverse = np.unique(
-                np.append(ranked[rows], last), return_inverse=True
+        keys, inverse = np.unique(np.append(ranked, last), return_inverse=True)
+        level = np.zeros((end - start, len(keys)), dtype=np.int32)
+        np.add.at(level, (d["tick"] - start, inverse[:-1]), d["delta"])
+        np.cumsum(level, axis=0, out=level)
+        tick, key = np.nonzero((level > 0) | (keys == last))
+        # each group's own codes, decoded once per group rather than once per row
+        tech = keys < last
+        codes = [
+            np.argsort(rank)[part]
+            for rank, part in zip(
+                ranks, np.unravel_index(np.where(tech, keys, 0), sizes)
             )
-            level = np.zeros((end - start, len(keys)), dtype=np.int32)
-            np.add.at(level, (d["tick"][rows] - start, inverse[:-1]), d["delta"][rows])
-            np.cumsum(level, axis=0, out=level)
-            tick, key = np.nonzero((level > 0) | (keys == last))
-            # each group's own codes, decoded once per group rather than once per row
-            tech = keys < last
-            codes = [
-                np.argsort(rank)[part]
-                for rank, part in zip(
-                    ranks, np.unravel_index(np.where(tech, keys, 0), sizes)
-                )
-            ]
-            fixed = (1, non_tech, *every)
-            codes = [np.where(tech, c, value) for c, value in zip(codes, fixed)]
-            parts.append(
-                _columns(
-                    _INDEX_TYPES,
-                    tick=tick + start,
-                    metric=codes[0][key],
-                    family=codes[1][key],
-                    band=codes[2][key],
-                    ats=codes[3][key],
-                    count=level[tick, key],
-                )
-            )
-        return (
-            {
-                name: np.concatenate([part[name] for part in parts])
-                for name in _INDEX_TYPES
-            }
-            if parts
-            else _columns(_INDEX_TYPES)
+        ]
+        fixed = (1, non_tech, *every)
+        codes = [np.where(tech, c, value) for c, value in zip(codes, fixed)]
+        return _columns(
+            _INDEX_TYPES,
+            tick=tick + start,
+            metric=codes[0][key],
+            family=codes[1][key],
+            band=codes[2][key],
+            ats=codes[3][key],
+            count=level[tick, key],
         )
 
     def _derive_board_facts(self) -> None:
@@ -782,24 +791,20 @@ class TrendHistory:
             & (d["family"] != self._families.code(NON_TECH))
             & ~np.isin(d["family"], self._watch_codes())
         )
-        live = self._tick_versions[d["tick"]] == (
-            self._live_version if self._live_version is not None else -1
-        )
-        # Each Board's current tech openings: its `stock` deltas summed at the live version. The
-        # directory carries no counts on purpose (ADR-0185); the delta ledger already holds them,
-        # and its first tick is a baseline of every Board's whole stock, so the sum is the level
-        # now. `non-tech` is not an opening a picker should count, and `watch:` rows re-count Jobs
-        # already counted in their family (ADR-0051).
-        counted = tech_stock & live
-        sums = np.bincount(d["board"][counted], d["delta"][counted], len(boards))
+        # Each Board's current tech openings: its `stock` deltas summed. The directory carries no
+        # counts on purpose (ADR-0185); the delta ledger already holds them. `non-tech` is not an
+        # opening a picker should count, and `watch:` rows re-count Jobs already counted in their
+        # family (ADR-0051).
+        sums = np.bincount(d["board"][tech_stock], d["delta"][tech_stock], len(boards))
         self._openings = Counter(
-            {boards[b]: int(sums[b]) for b in np.unique(d["board"][counted]).tolist()}
+            {
+                boards[b]: int(sums[b])
+                for b in np.unique(d["board"][tech_stock]).tolist()
+            }
         )
-        # Each Board's first tick in the ledger, over every version, and the tech openings it
-        # arrived with. Over every version: a refit re-writes every Board's stock at its first
-        # tick, and reading arrivals off the newest version alone made every Board "found" there.
-        # A Board's first delta is its whole stock at once (ADR-0143), so a Board found after a
-        # company's line began lands in that line as one step (ADR-0185).
+        # Each Board's first tick in the ledger, and the tech openings it arrived with. A Board's
+        # first delta is its whole stock at once (ADR-0143), so a Board found after a company's
+        # line began lands in that line as one step (ADR-0185).
         stock = d["metric"] == 1
         first = np.full(len(boards), len(self._ticks), dtype=np.int64)
         np.minimum.at(first, d["board"][stock], d["tick"][stock])
@@ -876,8 +881,8 @@ class TrendHistory:
         return self._companies
 
     def openings(self) -> dict[str, int]:
-        """Every Board counted at the live series version, with its tech openings now (0 once
-        closed)."""
+        """Every Board the history has counted tech openings on, with its tech openings now (0
+        once closed)."""
         return dict(self._openings)
 
     def index_counts(self, ts: str) -> dict[tuple[str, str, str, str], int]:
@@ -887,7 +892,7 @@ class TrendHistory:
             return {}
         rows = self._index["tick"] == self._ticks.index(ts)
         names = (
-            np.array(_LEVEL_METRICS, dtype=object),
+            np.array(LEVEL_METRICS, dtype=object),
             np.array(self._families.names, dtype=object),
             np.array(self._bands.names, dtype=object),
             np.array(self._atses.names, dtype=object),
@@ -1441,7 +1446,6 @@ class TrendHistory:
             {parent for meta in self._watch.values() if (parent := parent_of(meta))}
         )
         payload = {
-            "version": self._live_version,
             "coverage": coverage,
             # How long a posting counts as new: the page says it, and netting under New takes a
             # tech-filter change out again a week on, when the openings it let in age out.
@@ -1559,7 +1563,7 @@ class TrendHistory:
         return [
             {
                 "ts": self._ticks[t + lo],
-                "metric": _LEVEL_METRICS[m],
+                "metric": LEVEL_METRICS[m],
                 "family": f,
                 "band": b,
                 "count": n,
@@ -1643,44 +1647,35 @@ class TrendHistory:
                 hold[code] = bisect_left(stamps, ts)
         lo, hi = self._window(since, until)
         first = max(bisect_left(stamps, base_stamp), lo)
-        out: list[dict] = []
-        for start, end in self._delta_spans():
-            out.extend(
-                self._replay_span(
-                    np.nonzero(rows & (d["tick"] >= start) & (d["tick"] < end))[0],
-                    company,
-                    companies,
-                    hold,
-                    start,
-                    end,
-                    range(max(start, first), min(end, hi)),
-                )
-            )
+        start, end = self._first_delta, len(self._ticks)
+        charted = range(max(start, first), min(end, hi))
+        out = self._counts_at_charted_ticks(
+            np.nonzero(rows)[0], company, companies, hold, charted
+        )
         return out, base_stamp
 
-    def _replay_span(
+    def _counts_at_charted_ticks(
         self,
         rows: np.ndarray,
         company: np.ndarray,
         companies: list[str],
         hold: np.ndarray,
-        start: int,
-        end: int,
         charted: range,
     ) -> list[dict]:
-        """One version span's rows at its charted ``ticks``, from its own deltas alone.
+        """The groups the delta ``rows`` replay to, at the ``charted`` ticks.
 
         Each group lists in the order its first delta was applied, which is the order the old
         per-row replay listed it in (so ties between lines sort the same): a tick's held `new`
         deltas first, Board by Board, then its own deltas in file order."""
         if not len(rows) or not len(charted):
             return []
+        start, end = self._first_delta, len(self._ticks)
         d = self._deltas
         board = d["board"][rows]
         tick = d["tick"][rows]
         held = (d["metric"][rows] == 0) & (tick < hold[board])
         applied = np.where(held, hold[board], tick)
-        kept = applied < end  # a hold that ends after the span is never applied in it
+        kept = applied < end  # a hold that ends after the newest tick is never applied
         rows, board, tick, held, applied = (
             a[kept] for a in (rows, board, tick, held, applied)
         )
@@ -1726,7 +1721,7 @@ class TrendHistory:
                 {
                     "ts": ts,
                     "company": companies[c[k]],
-                    "metric": _LEVEL_METRICS[m[k]],
+                    "metric": LEVEL_METRICS[m[k]],
                     "family": families[f[k]],
                     "band": bands[b[k]],
                     "count": counts[k],

@@ -102,18 +102,17 @@ def _pull_index(attempts: int = 5) -> None:
                 DATASET,
                 repo_type="dataset",
                 local_dir=_STATE,
-                # An absent pattern downloads nothing rather than failing, so a state file a
-                # pipeline run has not written yet hides its panel.
+                # an absent pattern downloads nothing rather than failing, so a state without
+                # the Trends history hides the tab
                 allow_patterns=[
                     "data/lancedb/*",
-                    # the aggregate trends ledger (~9 MB), read only for its archive: the ticks
-                    # before the Board-delta ledger began on 2026-09-13, which nothing else holds
-                    # (ADR-0230). One Parquet file cannot be fetched in part.
-                    "data/state/role_trends.parquet",
-                    # the Board-delta ledger, one file a tick: Trends' count history (ADR-0230)
+                    # the Trends history (ADR-0230): one file a tick, and the archive of the
+                    # ticks before per-Board counting
                     "data/state/role_trend_board_deltas/*",
-                    # the counting changes before the first tick whose file carries its own
-                    # methodology (ADR-0164, ADR-0230) — a few rows
+                    "data/state/role_trend_index_deltas_before_board_deltas.parquet",
+                    # the older layout's archive and Methodology, read only until the one-off
+                    # migration has rewritten the history (trend_history_migration); gone after
+                    "data/state/role_trends.parquet",
                     "data/state/trends_epochs.csv",
                     # the Company directory (ADR-0185) the Trends picker searches and the Hot
                     # tab ranks (ADR-0230) — ~2 MB, and absent until a run writes one, which

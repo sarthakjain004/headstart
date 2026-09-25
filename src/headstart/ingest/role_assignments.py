@@ -28,10 +28,10 @@ The Board, band and ATS columns, and the ``as_of`` stamp, are what job turnover 
 (ADR-0227, :mod:`headstart.ingest.job_turnover`). A job that left is booked under the key it had
 when it was last counted, so the snapshot has to remember that key.
 
-Version is the series version (`role_trends.series_version`): a new classifier head re-bases
-every assignment, so transitions must never be compared across versions.
-The snapshot still stamps it under the key ``centroid_version``, the name it had when the two were
-the same number.
+Version is the classifier head's (ADR-0220): a new head re-decides every assignment, so
+transitions must never be compared across versions. The snapshot stamps it under
+``family_classifier_version``, the name a tick's Methodology gives it (ADR-0230); a snapshot from
+before carries a series version under ``centroid_version``, and reads as not comparable once.
 """
 
 from __future__ import annotations
@@ -45,6 +45,7 @@ from headstart import log
 _log = log.get(__name__)
 
 _COLUMNS = ("ts", "version", "family_from", "family_to", "count")
+_VERSION_KEY = b"family_classifier_version"
 
 
 class Placement(NamedTuple):
@@ -60,7 +61,7 @@ def load_previous(path: Path, version: int) -> dict[str, str] | None:
     """The previous tick's ``id -> family``, or None when there is nothing comparable.
 
     None (rather than an empty dict) for the first run, an unreadable file, a snapshot carrying no
-    version stamp, or one stamped with a different series version — all cases where "no
+    version stamp, or one stamped with a different head version — all cases where "no
     transitions" is the honest answer and an empty diff would be a lie that reads as "nothing
     moved". An **unstamped** snapshot is rejected for the same reason a mismatched one is: this
     guard exists precisely for files whose provenance cannot be vouched for, and one with no
@@ -73,7 +74,7 @@ def load_previous(path: Path, version: int) -> dict[str, str] | None:
 
         table = pq.read_table(path)
         metadata = table.schema.metadata or {}
-        stamped = metadata.get(b"centroid_version")
+        stamped = metadata.get(_VERSION_KEY)
         if stamped is None or stamped.decode() != str(version):
             return None  # a refit re-based everything; transitions are meaningless across it
         return dict(zip(table["id"].to_pylist(), table["family"].to_pylist()))
@@ -90,7 +91,7 @@ def load_previous(path: Path, version: int) -> dict[str, str] | None:
 def save(
     path: Path, placements: dict[str, Placement], version: int, as_of: str
 ) -> None:
-    """Overwrite the snapshot with this tick's placements, stamped with the series version and
+    """Overwrite the snapshot with this tick's placements, stamped with the head version and
     with the tick itself (``as_of``)."""
     import pyarrow as pa
     import pyarrow.parquet as pq
@@ -108,7 +109,7 @@ def save(
             },
         },
         metadata={
-            b"centroid_version": str(version).encode(),
+            _VERSION_KEY: str(version).encode(),
             b"as_of": as_of.encode(),
         },
     )
@@ -120,7 +121,7 @@ def save(
 
 
 def load_placements(path: Path) -> tuple[dict[str, Placement], str] | None:
-    """The previous tick's ``id -> Placement`` and its stamp, at **any** series version.
+    """The previous tick's ``id -> Placement`` and its stamp, at **any** head version.
 
     Not version-guarded, unlike :func:`load_previous`. A new classifier head changes which family
     a row is in, but not whether the id was served. Returns None for a missing, unreadable or

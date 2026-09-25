@@ -1559,14 +1559,10 @@ def _trends_argv() -> tuple[str, ...]:
         "config/role_families.json",
         "--watchlist",
         "config/role_watchlist.json",
-        "--ledger",
-        "data/state/role_trends.parquet",
+        "--state",
+        "data/state",
         "--board-ledger",
         "data/validate/liveness",
-        "--board-counts",
-        "data/state/role_trend_board_counts.parquet",
-        "--board-deltas",
-        "data/state/role_trend_board_deltas",
         "--assignments",
         "data/state/role_assignments.parquet",
         "--reassignments",
@@ -1615,15 +1611,15 @@ def _trends(
                     f"{_TRENDS_FAMILIES.index(family)}-2-"
                 ):
                     snapshot[job_id] = was[family]
-        # Stamped as role_trends stamps it: the series version, not the head's own version
-        # (ADR-0220), or the snapshot reads as a re-base and is discarded.
+        # Stamped as role_trends stamps it, with the head's version, or the snapshot reads as
+        # a re-base and is discarded.
         role_assignments.save(
             Path("data/state/role_assignments.parquet"),
             {
                 job_id: role_assignments.Placement("b", family, "all", "greenhouse")
                 for job_id, family in snapshot.items()
             },
-            role_trends.series_version(_TRENDS_VERSION),
+            _TRENDS_VERSION,
             "2026-09-07T00:00:00+00:00",
         )
     _run_main(role_trends, monkeypatch, *_trends_argv())
@@ -2415,7 +2411,7 @@ CONTRACT: tuple[Line, ...] = (
         emitter=_TRENDS,
         body=(
             "assigning 3472 served rows to 42 families by title and description (classifier "
-            "head 7, series version 3007)"
+            "head 7)"
         ),
         why=(
             "logged before the title classifier runs, so a stalled step is not unnarrated. The "
@@ -2429,11 +2425,15 @@ CONTRACT: tuple[Line, ...] = (
         consumer="fanout_merge.TRENDS_APPENDED",
         emitter=_TRENDS,
         body=(
-            "appended 2051 rows @ 2026-09-08T00:00:00+00:00 -> data/state/role_trends.parquet | top: "
+            "appended 3117 rows @ 2026-09-08T00:00:00+00:00 -> "
+            "data/state/role_trend_board_deltas/2026-09-08T00-00-00+00-00.parquet | top: "
             "software-engineering/mid/workday 1204, data/mid/lever 53, ml/mid/greenhouse 42, "
             "devops/mid/ashby 31, security/mid/icims 20 | new in 7d: 2370"
         ),
-        why="the trends ledger tick; `new` is a 7-day LEVEL, never inflow (CONTEXT.md)",
+        why=(
+            "the Trends tick's file (ADR-0230), its rows each Board group's change; `new` is a "
+            "7-day LEVEL, never inflow (CONTEXT.md)"
+        ),
         emit=_trends_moved,
         heavy=True,
     ),
@@ -2441,15 +2441,14 @@ CONTRACT: tuple[Line, ...] = (
         consumer="fanout_merge.TRENDS_APPENDED",
         emitter=_TRENDS,
         body=(
-            "appended 1 rows @ 2026-09-08T00:00:00+00:00 -> data/state/role_trends.parquet | top:  "
-            "| new in 7d: 0"
+            "appended 1 rows @ 2026-09-08T00:00:00+00:00 -> "
+            "data/state/role_trend_board_deltas/2026-09-08T00-00-00+00-00.parquet | top:  | new in 7d: 0"
         ),
         why=(
             "the empty-`top` form: `stock_top` is a slice of a filtered comprehension, so a run "
             "with no stock-family row joins to '' and renders `| top:  |`. A `(.+)` group dropped "
-            "this line outright — no trends tick reported, no error raised. The count was FICTION: "
-            "it read `appended 0 rows`, and `append_ledger` returns `len(counts) + 1` — the "
-            "non-tech diagnostic row is written every run, so 0 is the one value it cannot return"
+            "this line outright — no trends tick reported, no error raised. The one row is the "
+            "fixture's one Board's non-tech group, the tick file's only change"
         ),
         emit=_trends_all_non_tech,
         heavy=True,

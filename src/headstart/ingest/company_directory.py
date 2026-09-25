@@ -17,9 +17,9 @@ and the **Operator** list in `board_operator`, and the Space never imports from 
 A company's line is the sum of its Boards' lines. A Board that has since closed its last tech
 opening still has history in the ledger, and listing only the Boards hiring today would drop that
 history from its company. On 2026-09-24, 1,374 of the ledger's 34,203 Boards had no tech opening
-left, 79 of them under a company still hiring. So the directory lists every Board with a tech
-`stock` row at the live series version, which also lets a user pick a company that has
-stopped hiring.
+left, 79 of them under a company still hiring. So the directory lists every Board the Trends
+history has counted tech openings on (`TrendHistory.openings`), which also lets a user pick a
+company that has stopped hiring.
 
 A closed Board has no rows left in the served table to name it (913 of those 1,374), so its
 name carries forward from the previous directory. Without that, a company would be renamed to
@@ -78,7 +78,7 @@ import collections
 import json
 from pathlib import Path
 
-from headstart import company_name, log, roles
+from headstart import company_name, log
 from headstart.board_identity import ats_of
 from headstart.ingest.board_naming import board_names, display_name, stated_name
 from headstart.ingest.board_operator import Operator, classify, tenant
@@ -88,42 +88,19 @@ from headstart.ingest.board_operator import Operator, classify, tenant
 _log = log.get(__name__, __spec__)
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-_BOARD_DELTAS = REPO_ROOT / "data" / "state" / "role_trend_board_deltas"
+_STATE = REPO_ROOT / "data" / "state"
+_CONFIG = REPO_ROOT / "config"
 _OUT = REPO_ROOT / "data" / "state" / "company_directory.json"
 _DB = REPO_ROOT / "data" / "lancedb"
 
 
-def ledger_boards(delta_dir: Path) -> set[str]:
-    """Every Board with a tech `stock` delta at the newest tick's series version.
+def ledger_boards(state_dir: Path) -> set[str]:
+    """Every Board the Trends history under ``state_dir`` has counted tech openings on
+    (ADR-0230): `non-tech` has no series to chart, and `watch:` rows re-count Jobs already
+    counted in their family (ADR-0051)."""
+    from headstart.trend_history import TrendHistory
 
-    Older versions are skipped because a new classifier head re-bases every series (ADR-0040,
-    ADR-0220) and the Space charts only the live one. `non-tech` has no series
-    to chart, and `watch:` rows re-count Jobs already counted in their family (ADR-0051).
-    """
-    import pyarrow.parquet as pq
-
-    tables = [
-        (pq.read_schema(path).metadata or {}, path)
-        for path in sorted(delta_dir.glob("*.parquet"))
-    ]
-    if not tables:
-        return set()
-    live = tables[-1][0].get(b"centroid_version")
-    boards: set[str] = set()
-    for metadata, path in tables:
-        if metadata.get(b"centroid_version") != live:
-            continue
-        table = pq.read_table(path, columns=["board", "metric", "family"]).to_pydict()
-        boards.update(
-            board
-            for board, metric, family in zip(
-                table["board"], table["metric"], table["family"], strict=True
-            )
-            if metric == "stock"
-            and family != roles.NON_TECH
-            and not family.startswith(roles.WATCH_PREFIX)
-        )
-    return boards
+    return set(TrendHistory.load(state_dir, _CONFIG).openings())
 
 
 def companies(boards: set[str], names: dict[str, str]) -> list[dict]:
@@ -222,17 +199,17 @@ def main() -> int:
     log.setup()
     log.context("company_directory")
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--board-deltas", type=Path, default=_BOARD_DELTAS)
+    ap.add_argument("--state", type=Path, default=_STATE)
     ap.add_argument("--db", type=Path, default=_DB)
     ap.add_argument("--out", type=Path, default=_OUT)
     args = ap.parse_args()
 
     # role_trends writes the ledger and is `continue-on-error`, so a run where it never has
     # leaves it absent: a missing prerequisite, not a defect here.
-    boards = ledger_boards(args.board_deltas)
+    boards = ledger_boards(args.state)
     if not boards:
         _log.warning(
-            f"skipping the company directory — no Board deltas in {args.board_deltas} "
+            f"skipping the company directory — no Trends history in {args.state} "
             "(role_trends writes them; it may have skipped this run)"
         )
         return 0

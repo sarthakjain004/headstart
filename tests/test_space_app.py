@@ -1659,7 +1659,7 @@ def test_trends_comparable_coverage_keeps_only_boards_known_at_the_base(
         {
             "ts": _T1,
             "version": 2,
-            "board": "early",
+            "board": "greenhouse:early",
             "metric": "stock",
             "family": "software-engineering",
             "band": "mid",
@@ -1669,7 +1669,7 @@ def test_trends_comparable_coverage_keeps_only_boards_known_at_the_base(
         {
             "ts": _T2,
             "version": 2,
-            "board": "early",
+            "board": "greenhouse:early",
             "metric": "stock",
             "family": "software-engineering",
             "band": "mid",
@@ -1679,7 +1679,7 @@ def test_trends_comparable_coverage_keeps_only_boards_known_at_the_base(
         {
             "ts": _T2,
             "version": 2,
-            "board": "late",
+            "board": "greenhouse:late",
             "metric": "stock",
             "family": "software-engineering",
             "band": "mid",
@@ -1689,7 +1689,7 @@ def test_trends_comparable_coverage_keeps_only_boards_known_at_the_base(
         {
             "ts": _T3,
             "version": 2,
-            "board": "early",
+            "board": "greenhouse:early",
             "metric": "stock",
             "family": "software-engineering",
             "band": "mid",
@@ -1728,7 +1728,7 @@ def test_trends_comparable_base_can_be_an_unchanged_measurement(
         {
             "ts": _T1,
             "version": 2,
-            "board": "early",
+            "board": "greenhouse:early",
             "metric": "stock",
             "family": "software-engineering",
             "band": "mid",
@@ -1738,7 +1738,7 @@ def test_trends_comparable_base_can_be_an_unchanged_measurement(
         {
             "ts": _T3,
             "version": 2,
-            "board": "early",
+            "board": "greenhouse:early",
             "metric": "stock",
             "family": "software-engineering",
             "band": "mid",
@@ -1778,7 +1778,10 @@ def comparable_history(trends_app, monkeypatch, tmp_path):
                 deltas=[
                     {**group, "ts": stamp, "board": board, "delta": change}
                     for board, stamp, change in [
-                        *(("early", stamp, change) for stamp, change in changes),
+                        *(
+                            ("greenhouse:early", stamp, change)
+                            for stamp, change in changes
+                        ),
                         *later,
                     ]
                 ],
@@ -1816,7 +1819,9 @@ def test_comparable_default_starts_at_supported_history(comparable_history):
 def test_comparable_implicit_base_is_independent_of_since(
     comparable_history, trends_app, since
 ):
-    client = comparable_history([_T1, _T2, _T3], [(_T2, 10)], [("later", _T3, 50)])
+    client = comparable_history(
+        [_T1, _T2, _T3], [(_T2, 10)], [("greenhouse:later", _T3, 50)]
+    )
     data = client.get(f"/trends?coverage=comparable&since={quote(since)}").get_json()
     assert data["base"] == _T2
     assert data["stamps"] == [stamp for stamp in [_T2, _T3] if stamp >= since]
@@ -2224,36 +2229,48 @@ def test_trends_multiple_ats_params_union(ats_trends_app):
     assert by_name["software-engineering"]["points"] == [110]  # 60 + 50, U2 only
 
 
+_METHODOLOGY = {
+    "family_list_fingerprint": "aaa",
+    "family_classifier_version": 3,
+    "tech_filter_version": 1,
+    "derivations_version": 12,
+    "dedup_version": 1,
+}
+
+
+def _write_stamped_ticks(state: Path, stamps: list[tuple[str, dict]]) -> Path:
+    """One tick a stamp, each written by ``record_tick`` with its Methodology and one Board's
+    opening. Returns the ``data/state`` directory."""
+    directory = state / "data" / "state"
+    for ts, changed in stamps:
+        trend_history.record_tick(
+            directory,
+            ts,
+            {("greenhouse:acme", "stock", "software-engineering", "mid"): 1},
+            {},
+            trend_history.Methodology(**{**_METHODOLOGY, **changed}),
+        )
+    return directory
+
+
 @pytest.fixture(scope="module")
 def epochs_trends_app(tmp_path_factory):
-    """The trends app plus a methodology-epoch ledger (ADR-0164): a baseline at T1, the tech
-    filter moving at T2, and both the family map and derivations moving together at T3."""
+    """The trends app over three ticks (ADR-0164, ADR-0230): a baseline at T1, the tech filter
+    moving at T2, and both the family map and derivations moving together at T3."""
     state = tmp_path_factory.mktemp("epochs-state")
-    _trends_csv(state)
-    _write_epochs(
+    _write_stamped_ticks(
         state,
         [
-            {
-                "ts": _T1,
-                "centroid_version": "2",
-                "family_map_fingerprint": "aaa",
-                "tech_filter_version": "1",
-                "derivations_version": "12",
-            },
-            {
-                "ts": _T2,
-                "centroid_version": "2",
-                "family_map_fingerprint": "aaa",
-                "tech_filter_version": "2",
-                "derivations_version": "12",
-            },
-            {
-                "ts": _T3,
-                "centroid_version": "2",
-                "family_map_fingerprint": "bbb",
-                "tech_filter_version": "2",
-                "derivations_version": "13",
-            },
+            (_T1, {}),
+            (_T2, {"tech_filter_version": 2}),
+            (
+                _T3,
+                {
+                    "tech_filter_version": 2,
+                    "family_list_fingerprint": "bbb",
+                    "derivations_version": 13,
+                },
+            ),
         ],
     )
     with _space_app(state, env={"SECRET_KEY": "", "GOOGLE_CLIENT_ID": ""}) as module:
@@ -2305,28 +2322,16 @@ def test_trends_epochs_are_narrowed_by_since_and_until(epochs_trends_app):
     ]
 
 
-def _epochs_of(path: Path) -> list[dict]:
-    """The counting changes a history marks from the epoch ledger at ``path`` alone."""
-    return trend_history.TrendHistory.load(path.parent, _SPACE_CONFIG)._epochs
+def _epochs_of(state: Path) -> list[dict]:
+    """The counting changes a history marks from its ticks' Methodology alone."""
+    return trend_history.TrendHistory.load(state, _SPACE_CONFIG)._epochs
 
 
-def test_trends_epochs_name_a_dedup_change(epochs_trends_app, tmp_path):
+def test_trends_epochs_name_a_dedup_change(tmp_path):
     """A dedup-rule change removes served duplicates in one tick, which reads as a hiring drop
     unless it is marked."""
-    stamp = {
-        "centroid_version": "2",
-        "family_map_fingerprint": "aaa",
-        "tech_filter_version": "2",
-        "derivations_version": "13",
-    }
-    path = _write_epochs(
-        tmp_path,
-        [
-            {"ts": _T1, **stamp, "dedup_version": "1"},
-            {"ts": _T2, **stamp, "dedup_version": "2"},
-        ],
-    )
-    assert _epochs_of(path) == [
+    state = _write_stamped_ticks(tmp_path, [(_T1, {}), (_T2, {"dedup_version": 2})])
+    assert _epochs_of(state) == [
         {
             "ts": _T2,
             "changed": ["duplicate removal changed"],
@@ -2335,88 +2340,19 @@ def test_trends_epochs_name_a_dedup_change(epochs_trends_app, tmp_path):
     ]
 
 
-def test_trends_epochs_name_a_family_assignment_change(epochs_trends_app, tmp_path):
-    """ADR-0215/ADR-0220: what decides a row's family from its title (the rules, then the
-    classifier head) moves Jobs between families in one tick, so it is marked like a family-map
-    edit. The upgraded file gives rows from before the title decided anything ``none``."""
-    stamp = {
-        "centroid_version": "2",
-        "family_map_fingerprint": "aaa",
-        "tech_filter_version": "2",
-        "derivations_version": "13",
-        "dedup_version": "1",
-    }
-    path = _write_epochs(
+def test_trends_epochs_name_a_family_assignment_change(tmp_path):
+    """ADR-0215/ADR-0220: what decides a row's family (the title rules, then the classifier head)
+    moves Jobs between families in one tick, so it is marked like a family-map edit. Ticks from
+    before the title decided anything carry ``none``."""
+    state = _write_stamped_ticks(
         tmp_path,
-        [
-            {"ts": _T1, **stamp, "family_classifier_version": "none"},
-            {"ts": _T2, **stamp, "family_classifier_version": "2"},
-        ],
+        [(_T1, {"family_classifier_version": "none"}), (_T2, {})],
     )
-    assert _epochs_of(path) == [
+    assert _epochs_of(state) == [
         {
             "ts": _T2,
             "changed": ["role family assignment changed"],
             "fields": ["family_classifier_version"],
-        }
-    ]
-
-
-def test_trends_epochs_read_the_title_column_under_its_old_name(
-    epochs_trends_app, tmp_path
-):
-    """Until the pipeline's first run under a new head rewrites the file, the column still has
-    its ADR-0215 name; it is read as the renamed column, label and field both."""
-    stamp = {
-        "centroid_version": "2",
-        "family_map_fingerprint": "aaa",
-        "tech_filter_version": "5",
-        "derivations_version": "15",
-        "dedup_version": "4",
-    }
-    path = _write_epochs(
-        tmp_path,
-        [
-            {"ts": _T1, **stamp, "family_rules_fingerprint": "none"},
-            {"ts": _T2, **stamp, "family_rules_fingerprint": "3b5cc5d9183c"},
-        ],
-    )
-    assert _epochs_of(path) == [
-        {
-            "ts": _T2,
-            "changed": ["role family assignment changed"],
-            "fields": ["family_classifier_version"],
-        }
-    ]
-
-
-def test_trends_epochs_load_a_file_from_before_dedup_version(
-    epochs_trends_app, tmp_path
-):
-    """The Space deploys before the next tick upgrades the file, so it must read the old shape."""
-    stamp = {"centroid_version": "2", "family_map_fingerprint": "aaa"}
-    path = _write_epochs(
-        tmp_path,
-        [
-            {
-                "ts": _T1,
-                **stamp,
-                "tech_filter_version": "1",
-                "derivations_version": "13",
-            },
-            {
-                "ts": _T2,
-                **stamp,
-                "tech_filter_version": "2",
-                "derivations_version": "13",
-            },
-        ],
-    )
-    assert _epochs_of(path) == [
-        {
-            "ts": _T2,
-            "changed": ["tech filter changed"],
-            "fields": ["tech_filter_version"],
         }
     ]
 
@@ -2431,6 +2367,9 @@ def test_trends_epochs_are_not_narrowed_by_ats(epochs_trends_app):
 @pytest.mark.parametrize(
     "path",
     [
+        "data/state/role_trend_board_deltas/2026-09-13T12-00-39+00-00.parquet",
+        "data/state/role_trend_index_deltas_before_board_deltas.parquet",
+        # the older layout's, read until the one-off migration has run
         "data/state/role_trends.parquet",
         "data/state/trends_epochs.csv",
         "data/state/company_directory.json",
@@ -2952,7 +2891,9 @@ def test_duplicate_removals_are_named_per_pick(company_trends, monkeypatch, tmp_
 def test_a_refit_is_a_step_in_one_history_not_its_end(
     trends_app, monkeypatch, tmp_path
 ):
-    """Version 2 runs T1–T2; a refit starts version 2001 at T3 with every Board re-written."""
+    """Version 2 runs T1–T2; a refit starts version 2001 at T3 with every Board re-written. Read
+    in the older layout, the re-write is the Board's change against T2, as the migration stores
+    it."""
     ledger = [
         {
             "ts": ts,
@@ -2965,16 +2906,6 @@ def test_a_refit_is_a_step_in_one_history_not_its_end(
         }
         for ts, v, n in [(_T1, 2, 10), (_T2, 2, 12), (_T3, 2001, 15), (_T3, 2, 99)]
     ]
-    stitched = _trend_history(tmp_path, ledger=ledger)
-    assert [
-        (ts, count)
-        for ts in stitched.ticks
-        for count in stitched.index_counts(ts).values()
-    ] == [
-        (_T1, 10),
-        (_T2, 12),
-        (_T3, 15),
-    ], "an old version's row after the refit is dropped"
     deltas = [
         {**_delta(_T1, "workday:hpe/a", 10), "version": 2},
         {**_delta(_T2, "workday:hpe/a", 2), "version": 2},
