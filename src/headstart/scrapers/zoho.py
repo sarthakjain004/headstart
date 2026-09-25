@@ -110,13 +110,15 @@ _UNAVAILABLE_VERDICTS = (
 #: "no jobs blob" loss (``docs/zoho/2026-09-25_closed-posting-shells.md``).
 _THROTTLE_LOSS = ".com throttle shell (page currently unavailable)"
 _THROTTLE_SHELL = "this page is currently unavailable."
+#: The throttle's status, seen because Zoho's detail requests do not follow redirects (ADR-0226).
+_THROTTLE_STATUS = 302
 #: Where the throttle redirects. Every live detail page sampled 2026-09-25 (30 of 30, .com/.eu/.in,
 #: open or closed) answered 200 without a redirect, so an unfollowed 302 there is the throttle.
 _THROTTLE_PATH = "/html/portal.html"
 #: The throttle is per client IP and lifts in ~7 min, so a retry from the same address is wasted;
 #: a 302 is retried because `egress_fallback_on` walls the group on it first, and the retry then
 #: rides the spare egress (ADR-0063) — a different address.
-_THROTTLE_RETRY_ON = http.TRANSIENT | {302}
+_THROTTLE_RETRY_ON = http.TRANSIENT | {_THROTTLE_STATUS}
 _DETAIL_WORKERS = (
     6  # detail pages are ~1.7MB each — bandwidth, not rate limits, is the constraint
 )
@@ -200,8 +202,9 @@ class ZohoScraper(BaseScraper):
     ats = "zoho"
     url_shape = r"https://[^/]+/jobs/Careers/\d+/.+"
     detail_workers = _DETAIL_WORKERS  # also the async stream width (base.fan_out_async)
-    # The .com throttle's redirect walls the group, so later Zoho requests ride the spare egress.
-    egress_fallback_on = frozenset({302})
+    #: The .com throttle's redirect walls the group, so later Zoho requests ride the spare egress
+    #: (ADR-0226; the measurement is on `_THROTTLE_RETRY_ON`).
+    egress_fallback_on = frozenset({_THROTTLE_STATUS})
     has_detail_pass = True  # per-Job fetch fills `description` (ADR-0050)
 
     def __init__(
@@ -283,8 +286,8 @@ class ZohoScraper(BaseScraper):
         )
 
     def detail_status_loss(self, response: Any) -> str:
-        location = (getattr(response, "headers", None) or {}).get("location", "")
-        if response.status_code == 302 and _THROTTLE_PATH in location:
+        location = response.headers.get("location", "")
+        if response.status_code == _THROTTLE_STATUS and _THROTTLE_PATH in location:
             return _THROTTLE_LOSS
         return super().detail_status_loss(response)
 

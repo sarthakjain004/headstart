@@ -218,7 +218,7 @@ supersedes it and note the supersession in both.
 | [0219](0219-a-boards-row-is-elected-on-evidence-its-key-is-kept.md) | A Board's row is elected on evidence, and its key is kept | 2026-09-25 |
 | [0220](0220-a-trained-title-classifier-decides-a-role-family.md) | A trained title classifier decides a role family, over a one-axis family list | 2026-09-25 |
 | [0221](0221-a-refit-is-a-step-in-one-trends-history.md) | A refit is a step in one Trends history, not its end | 2026-09-25 |
-| [0224](0224-zoho-throttle-redirect-walls-the-spare-egress.md) | Zoho's throttle redirect walls its egress group | 2026-09-25 |
+| [0226](0226-zoho-throttle-redirect-walls-the-spare-egress.md) | Zoho's throttle redirect walls its egress group | 2026-09-25 |
 
 *ADR-0037 was removed from the repository on 2026-09-24 by the owner's decision; its number is not
 reused.*
