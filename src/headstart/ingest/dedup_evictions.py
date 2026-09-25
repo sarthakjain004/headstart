@@ -14,9 +14,10 @@ removal where it happens, so a Trends reader can add them back exactly, whenever
   run's counts with, so the two ledgers join on it.
 - ``board`` is the evicted row's Board as ``index prune`` resolves it (``resolve_board``), the
   key ``role_trends`` counts Boards by.
-- ``rule`` is ``case-variant``, ``workday-tenant`` or ``backing-requisition``
-  (:mod:`headstart.ingest.index_plan`), or ``alias:{signal}`` for a row on a Board an alias ledger
-  buries. Ordinary closures (``sync``'s evictions) and other off-Board evictions are never here.
+- ``rule`` is ``case-variant``, ``workday-tenant``, ``tenant-requisition`` (a Taleo or ADP
+  Tenant's, ADR-0223) or ``backing-requisition`` (:mod:`headstart.ingest.index_plan`), or
+  ``alias:{signal}`` for a row on a Board an alias ledger buries. Ordinary closures (``sync``'s
+  evictions) and other off-Board evictions are never here.
 
 Append-only, and written whole to a temp file then renamed, so a crash mid-write leaves the
 previous ledger intact rather than truncated.

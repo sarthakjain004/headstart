@@ -24,9 +24,10 @@ cannot. A Board short the same way twice running evicts in full (ADR-0101).
 **Prune sweep** (ADR-0023) — because the sync is board-scoped it can't reach rows on Boards that left
 the scrape list, nor case-variant duplicates of one job (Workday sites like ``.../External`` vs
 ``.../external``). These planners compute what to drop in those two cases; the duplicate case also
-covers one Workday requisition on several sites of its Workday tenant, which sync declines to add
-in the first place (ADR-0187), and an Eightfold career site's copy of a posting its backing Board
-serves, matched on the stored ``requisition`` (ADR-0210).
+covers one requisition on several Boards of its Tenant — a Workday tenant's sites (ADR-0187), a
+Taleo tenant's career sections or sites and an ADP client's career centers (ADR-0223) — which sync
+declines to add in the first place, and an Eightfold career site's copy of a posting its backing
+Board serves, matched on the stored ``requisition`` (ADR-0210).
 
 Both layers ask "which Board owns this id", and both answer it through :func:`resolve_board`, whose
 docstring says why they must agree (ADR-0049).
@@ -43,7 +44,7 @@ from pathlib import Path
 from typing import Any
 
 from headstart import log, scrapable_boards
-from headstart.board_identity import board_key, board_of, lower_key
+from headstart.board_identity import ats_of, board_key, board_of, lower_key
 from headstart.corpus import iter_jobs
 from headstart.ingest.board_operator import tenant
 
@@ -56,10 +57,11 @@ _log = log.get(__name__, __spec__)
 #: rows count as duplicates: a new grouping in :func:`plan_prune`, or a new alias-ledger signal
 #: (:mod:`headstart.board_aliases`), or an existing signal's first ledger for an ATS (ADR-0222).
 #: Don't bump it for a routine rewrite of an alias ledger that already exists, nor for a
-#: ``config.PARKED_BOARDS`` entry, which is a temporary hold rather than a duplicate rule. The marker lands on the step only because both routes remove rows
-#: through ``index prune``, which has no grace period; a dedup that instead stops emitting ids at
-#: scrape time would drain through ``sync``'s two-scrape grace (ADR-0083) and read as a slow
-#: decline after the marker, so keep new dedup rules on the prune path.
+#: ``config.PARKED_BOARDS`` entry, which is a temporary hold rather than a duplicate rule. The
+#: marker lands on the step only because both routes remove rows through ``index prune``, which
+#: has no grace period; a dedup that instead stops emitting ids at scrape time would drain
+#: through ``sync``'s two-scrape grace (ADR-0083) and read as a slow decline after the marker, so
+#: keep new dedup rules on the prune path.
 #:
 #: 1 — the rules when the counter was added (ADR-0188): casing duplicates, redirect and
 #:     ``shared-reqs`` aliases. 2 — Taleo Enterprise ``subset-reqs`` aliases (ADR-0186).
@@ -68,6 +70,8 @@ _log = log.get(__name__, __spec__)
 #: 5 — one row per posting across an Eightfold site and its backing Board, on ``requisition``
 #:     (ADR-0210). Its removals follow the stamps, which arrive as each Board is re-scraped, so they
 #:     spread over days after the marker rather than landing on it (ADR-0188's amendment).
+#: 6 — one row per tenant and requisition extended to Taleo Enterprise, Taleo BE and ADP WFN
+#:     (ADR-0223).
 #: 7 — iCIMS redirect aliases, 270 Boards (ADR-0222).
 DEDUP_VERSION = 7
 
@@ -84,9 +88,10 @@ class SyncPlan:
 
     The caller persists ``unconfirmed`` and hands it back next run as ``was_unconfirmed``.
 
-    ``refused`` is the fresh ids *not* added because another site of the same Workday tenant
-    serves, or is being given, the same requisition — the rule ``plan_prune`` enforces on rows
-    already indexed, applied where rows arrive so prune never has to take them back out.
+    ``refused`` is the fresh ids *not* added because another Board of the same Tenant (a Workday
+    site, a Taleo section or career site, an ADP career center) serves, or is being given, the same
+    requisition — the rule ``plan_prune`` enforces on rows already indexed, applied where rows
+    arrive so prune never has to take them back out.
     """
 
     add: frozenset[str]
@@ -171,12 +176,13 @@ def plan_sync(
     rather than defaulted: omitting it silently restores the scoping ADR-0049 records as *worse*
     than the bug it fixes.
 
-    **One site per Workday requisition (ADR-0187).** A fresh id is not added — it lands in
-    ``refused`` instead — when another site of its Workday tenant already serves the same
-    requisition from a live Board (unless it is a public copy and every serving site is
-    non-public: that one displaces them), or when several sites bring it at once and another is
-    the :func:`_survivor_board`. That is ``plan_prune``'s grouping, applied where rows arrive:
-    without it, sync would re-add on the next run every copy prune took out. The served row is
+    **One site per Workday requisition (ADR-0187), and one Board per Taleo or ADP requisition
+    (ADR-0223).** A fresh id is not added — it lands in ``refused`` instead — when another Board
+    of its Tenant already serves the same requisition from a live Board (unless it is a public
+    copy and every serving site is non-public: that one displaces them), or when several sites
+    bring it at once and another is the :func:`_survivor_board`. That is ``plan_prune``'s
+    grouping, applied where rows arrive: without it, sync would re-add on the next run every copy
+    prune took out. The served row is
     judged *after* this plan's evictions, so a survivor its Board stopped listing makes way on the
     scrape that evicts it, and one on a Board that left ``live`` makes way at once — the other
     copy arriving whenever its own Board is next scraped. ``replaced`` names ids the caller took
@@ -296,9 +302,10 @@ def _placement(
 ) -> tuple[tuple[str, str], str] | None:
     """``(duplicate group, lowercased Board)`` for an id on a live Board, else None.
 
-    The group is ``(Board or Workday tenant, native id)`` — one served row each — and it is the
-    one grouping both planners use: ``plan_prune`` to collapse the rows a group already holds,
-    ``plan_sync`` to decline copies of one it already serves. An Eightfold id in ``copies``
+    The group is ``(Board or Tenant, native id)`` — one served row each, the Tenant on the ATSes
+    :func:`_requisition_tenant` names — and it is the one grouping both planners use:
+    ``plan_prune`` to collapse the rows a group already holds, ``plan_sync`` to decline copies of
+    one it already serves. An Eightfold id in ``copies``
     (:func:`_backing_copies`) joins the group of the backing row that carries its requisition
     instead (ADR-0210).
     """
@@ -307,7 +314,7 @@ def _placement(
         return None
     canon, native = lower_key(job_id[:end]), job_id[end + 1 :]
     group = (copies or {}).get(job_id)
-    return group or (_workday_tenant(canon, native) or canon, native), canon
+    return group or (_requisition_tenant(canon, native) or canon, native), canon
 
 
 def _backing_copies(
@@ -326,8 +333,9 @@ def _backing_copies(
     The Eightfold row joins the backing row's group rather than both joining a group keyed on
     the requisition, because a backing Board can serve one requisition as several rows —
     Greenhouse posts per location, SuccessFactors per locale — and those stay per row. A Workday
-    backing Board is matched on its tenant, the group ADR-0187 already serves a requisition from,
-    so a copy the tenant serves from another site still counts.
+    or Taleo Enterprise backing Board is matched on its Tenant, the group ADR-0187 and ADR-0223
+    already serve a requisition from, so a copy the Tenant serves from another Board still counts;
+    a backing row is also found on its own Board, whatever its stamp looks like.
     """
     if not requisitions or not backing:
         return {}
@@ -350,15 +358,17 @@ def _backing_copies(
         if board in by_slug:
             fronts.append((job_id, board, requisition))
         else:
-            held[group[0], requisition] = min(
-                group, held.get((group[0], requisition), group)
-            )
+            # Held under its own Board as well as its group: a Taleo Enterprise row is grouped on
+            # its Tenant by its native `jobId`, while the lookup below tests the stamped
+            # `contestNo`, so a `contestNo` with no digit still finds the row on its own Board.
+            for key in {(group[0], requisition), (board, requisition)}:
+                held[key] = min(group, held.get(key, group))
     copies: dict[str, tuple[str, str]] = {}
     for job_id, board, requisition in fronts:
         found = [
             held[key]
             for b in by_slug[board]
-            if (key := (_workday_tenant(b, requisition) or b, requisition)) in held
+            if (key := (_requisition_tenant(b, requisition) or b, requisition)) in held
         ]
         if found:
             copies[job_id] = min(found)
@@ -386,9 +396,10 @@ def _other_site_copies(
     A requisition with no incumbent takes :func:`_survivor_board`, the Board ``plan_prune`` would
     keep. A copy on the incumbent's own Board is still added: that is a case-variant spelling of
     it, which ``plan_prune`` settles by the live casing (ADR-0023), and refusing it would make a
-    fossil casing immortal. Every group but a Workday tenant's holds one Board, save an Eightfold
-    copy that joined its backing row's group (``copies``, ADR-0210) — whose backing row outranks it
-    both ways, so the copy is refused behind a served backing row and displaced by an arriving one.
+    fossil casing immortal. Every group but a Tenant's (:func:`_requisition_tenant`) holds one
+    Board, save an Eightfold copy that joined its backing row's group (``copies``, ADR-0210) —
+    whose backing row outranks it both ways, so the copy is refused behind a served backing row
+    and displaced by an arriving one.
     """
     arriving, _ = _by_group_and_board(new, live, copies)
     if not arriving:
@@ -759,26 +770,41 @@ def scraped_boards(
     return {resolve_board(job_id, live) for job_id in corpus_ids}
 
 
-def _workday_tenant(canon: str, native: str) -> str | None:
-    """``workday:{company}`` — the Workday tenant a row's requisition belongs to — or None.
+#: The ATSes whose native id is a requisition id every Board of one **Tenant** shares, so a
+#: requisition is served once per Tenant rather than once per Board: Workday's sites (ADR-0187),
+#: and Taleo Enterprise's career sections, Taleo Business Edition's career sites and ADP Workforce
+#: Now's career centers (ADR-0223). Measured on each before it was listed: the same id on two
+#: Boards of one Tenant is the same posting.
+_TENANT_REQUISITION_ATSES = frozenset(
+    {"workday", "taleo_enterprise", "taleo_be", "adp"}
+)
 
-    A Workday Board is one *site* (``workday:{company}/{site}``), and a Workday tenant posts one
-    requisition to several of its sites under the same native id, so the requisition's identity is
-    the Workday tenant plus that id, not the Board plus it. None for every other ATS, and for a
-    Workday native id with no digit in it: that is a fallback id (``Texas``, a title slug), not a
-    requisition id, and two sites sharing one says nothing about sharing a posting. The Workday
-    tenant key carries no ``/``, so it can never equal a real Board key.
+
+def _requisition_tenant(canon: str, native: str) -> str | None:
+    """``{ats}:{tenant}`` — the Tenant a row's requisition belongs to — or None.
+
+    A Board is one site of its Tenant (Workday's ``workday:{company}/{site}``, a Taleo career
+    section, an ADP career center), and on the ATSes in :data:`_TENANT_REQUISITION_ATSES` a Tenant
+    posts one requisition to several of its Boards under the same native id, so the requisition's
+    identity is the Tenant plus that id, not the Board plus it. The Tenant is
+    :func:`~headstart.board_identity.tenant`'s: Workday's ``{company}``, a Taleo Enterprise host,
+    a Taleo Business Edition ``org``, an ADP ``cid``. None for every other ATS, and for a native
+    id with no digit in it: that is a fallback id (Workday's ``Texas``, a title slug), not a
+    requisition id, and two Boards sharing one says nothing about sharing a posting. The key never
+    equals a real Board key: it drops the site part, and a Taleo key keeps no URL scheme.
     """
-    if not canon.startswith("workday:") or not any(ch.isdigit() for ch in native):
+    ats = ats_of(canon)
+    if ats not in _TENANT_REQUISITION_ATSES or not any(ch.isdigit() for ch in native):
         return None
-    return f"workday:{tenant(canon)}"
+    return f"{ats}:{tenant(canon)}"
 
 
-#: Substrings of a Workday site segment (case-insensitive) that mark a site as not meant for the
-#: public — measured on served v654, where a confidential executive-recruiting site outranked its
-#: public sibling on ledger jobs and kept 737 of GE Vernova's requisitions (ADR-0187). This only
-#: orders the choice of which copy stays; it never decides whether a requisition is served, so
-#: one found only on non-public sites still survives on one of them.
+#: Substrings of a Board's site segment (case-insensitive) that mark a site as not meant for the
+#: public — a Workday site, or a Taleo Enterprise career section (ADR-0223). Measured on served
+#: v654, where a confidential executive-recruiting site outranked its public sibling on ledger
+#: jobs and kept 737 of GE Vernova's requisitions (ADR-0187). This only orders the choice of
+#: which copy stays; it never decides whether a requisition is served, so one found only on
+#: non-public sites still survives on one of them.
 _NON_PUBLIC_SITE_TOKENS = (
     "hidden",
     "confidential",
@@ -809,26 +835,33 @@ def _survivor_board(boards: AbstractSet[str], site_jobs: dict[str, int]) -> str:
 
 
 def _survivor_precedence(board: str) -> tuple[bool, bool]:
-    """``(an Eightfold career site, a non-public Workday site)`` for a lowercased Board key —
+    """``(an Eightfold career site, a non-public site)`` for a lowercased Board key —
     :func:`_survivor_board`'s first keys, and all a displacement compares. A backing Board
-    outranks the Eightfold site in front of it (ADR-0210), and a public Workday site a non-public
-    one (ADR-0187); a group holding one Board never reaches either."""
+    outranks the Eightfold site in front of it (ADR-0210), and a public site a non-public one
+    (ADR-0187, ADR-0223); a group holding one Board never reaches either."""
     return board.startswith("eightfold:"), _is_non_public(board)
 
 
 def _is_non_public(board: str) -> bool:
-    """Whether a lowercased Board key's Workday site segment (after the ``/``) names it non-public
+    """Whether a lowercased Board key's site segment (after the first ``/``) names it non-public
     (:data:`_NON_PUBLIC_SITE_TOKENS`). Both callers pass the lowercased key :func:`_placement`
-    builds, which is what makes the match case-insensitive. Any other ATS's groups hold one Board,
-    so the answer never decides anything there."""
+    builds, which is what makes the match case-insensitive. A Taleo Enterprise key's segment is
+    ``/{host}/careersection/{section}``, and its internal sections (``mp_internal``) rank after
+    the public ones (ADR-0223); the host part is shared by every Board of the Tenant, so it never
+    decides between them. A Taleo Business Edition ``cws`` and an ADP ``ccId`` are numbers, which
+    name nothing. Any other ATS's groups hold one Board, so the answer never decides anything
+    there."""
     site = board.partition("/")[2]
     return any(token in site for token in _NON_PUBLIC_SITE_TOKENS)
 
 
 #: Which rule took a duplicate row out, as :func:`plan_prune` names it and the dedup
-#: eviction ledger records it (ADR-0210); :func:`alias_rules` adds ``alias:{signal}``.
+#: eviction ledger records it (ADR-0210); :func:`alias_rules` adds ``alias:{signal}``. One
+#: Tenant rule covers every ATS in :data:`_TENANT_REQUISITION_ATSES`, but Workday's removals keep
+#: the name they had before ADR-0223, so ``tenant-requisition`` is Taleo's and ADP's alone.
 CASE_VARIANT = "case-variant"
 WORKDAY_TENANT = "workday-tenant"
+TENANT_REQUISITION = "tenant-requisition"
 BACKING_REQUISITION = "backing-requisition"
 
 
@@ -857,8 +890,9 @@ def plan_prune(
     """Split index ids into ``(evict_off_board, {evict_duplicate: the rule that evicts it})``.
 
     The rule is :data:`CASE_VARIANT` for a row another casing of its own Board keeps,
-    :data:`WORKDAY_TENANT` for one another site of its Workday tenant keeps (ADR-0187), and
-    :data:`BACKING_REQUISITION` for an Eightfold copy its backing Board keeps (ADR-0210).
+    :data:`WORKDAY_TENANT` for one another site of its Workday tenant keeps (ADR-0187),
+    :data:`TENANT_REQUISITION` for one another Board of its Taleo or ADP Tenant keeps (ADR-0223),
+    and :data:`BACKING_REQUISITION` for an Eightfold copy its backing Board keeps (ADR-0210).
 
     A change to what counts as a duplicate here bumps :data:`DEDUP_VERSION` (ADR-0188).
 
@@ -866,14 +900,17 @@ def plan_prune(
     ``evict_duplicate``: among the survivors, every id but one per ``(lowercased Board, native id)``
     group — the case-variant dupes of one job — except that a Workday requisition is grouped on
     its **Workday tenant** rather than its Board, because a Workday tenant posts one requisition to
-    several of its sites, each a Board, under the same native id (ADR-0187). Such a group keeps one
-    Board, the :func:`_survivor_board` (``site_jobs`` is :func:`workday_site_jobs`; omitted,
-    every Board ties on jobs). ``plan_sync`` refuses copies on the same rule, so once today's
-    duplicates are gone this sees two Boards for one requisition only when a public copy has just
-    displaced a non-public incumbent — and it drops the incumbent, because the ranking puts public
-    first. The casing rule below then picks the row within the kept Board. An Eightfold row whose
-    ``requisitions`` stamp a row on one of its ``backing`` Boards carries joins that row's group
-    and loses to it (:func:`_backing_copies`, ADR-0210).
+    several of its sites, each a Board, under the same native id (ADR-0187); Taleo Enterprise,
+    Taleo Business Edition and ADP Workforce Now requisitions are grouped on their **Tenant** the
+    same way (:func:`_requisition_tenant`, ADR-0223). Such a group keeps one Board, the
+    :func:`_survivor_board` (``site_jobs`` is :func:`workday_site_jobs`, so a Taleo or ADP
+    Tenant's Boards tie on jobs and the key decides; omitted, every Board ties on jobs).
+    ``plan_sync`` refuses copies on the same rule, so once today's duplicates are gone this sees
+    two Boards for one requisition only when a public copy has just displaced a non-public
+    incumbent — and it drops the incumbent, because the ranking puts public first. The casing
+    rule below then picks the row within the kept Board. An Eightfold row whose ``requisitions``
+    stamp a row on one of its ``backing`` Boards carries joins that row's group and loses to it
+    (:func:`_backing_copies`, ADR-0210).
 
     The row kept is the one whose Board casing the **live ledger** produces, because that is the
     casing a future scrape emits. Keeping the lexicographically-smallest instead (the rule until
@@ -900,7 +937,11 @@ def plan_prune(
             if canon != kept_board:
                 for i in ids:
                     duplicate[i] = (
-                        BACKING_REQUISITION if i in copies else WORKDAY_TENANT
+                        BACKING_REQUISITION
+                        if i in copies
+                        else WORKDAY_TENANT
+                        if ats_of(canon) == "workday"
+                        else TENANT_REQUISITION
                     )
             elif len(ids) > 1:
                 kept = next(
