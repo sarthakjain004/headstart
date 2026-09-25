@@ -115,6 +115,7 @@ _DETAIL_ITEM_TIMEOUT_S = 900.0
 #: The loss labels the two bounds write, so the gap line names them.
 DETAIL_STALLED = "skipped after the detail pass stalled"
 DETAIL_TIMED_OUT = "timed out in the detail pass"
+DETAIL_WALLED = "skipped after the origin walled the detail pass"
 #: The clock the stall window reads; a module attribute so a test can drive it.
 _detail_clock = time.monotonic
 
@@ -242,6 +243,15 @@ class DetailLost(Exception):
         self.cause = cause
 
 
+class DetailBatchWalled(Exception):
+    """A batch transport's origin refused it and no route is left (ADR-0228).
+
+    Raised from :meth:`BaseScraper.fetch_detail_batch`. :meth:`BaseScraper.run_detail_pass` stops
+    the pass on it and counts every detail not yet fetched as skipped, keeping what already landed:
+    pressing on against a wall that blocks the whole origin would cost the listing too.
+    """
+
+
 @dataclass(frozen=True)
 class DetailWithoutDescription:
     """What :meth:`BaseScraper.read_detail` returns for a detail that arrived without its
@@ -324,6 +334,12 @@ class BaseScraper(ABC):
     #: the embed planner to decide whether a pre-ADR-0050 vector might have been built without
     #: one. Set it when you add a detail pass, or that ATS's degraded vectors go unrepaired.
     has_detail_pass: bool = False
+
+    #: How many details :meth:`run_detail_pass` sends per :meth:`fetch_detail_batch` call, for a
+    #: Scraper whose origin admits one warmed browser tab and no other client (ADR-0228). None —
+    #: every Scraper but Tesla — keeps the per-item HTTP transports. A batch is fetched one at a
+    #: time, in order, so the bound is the origin's politeness bound, not a width to tune up.
+    detail_batch_size: int | None = None
 
     #: HTTP statuses at which this ATS should stop being requested over the shard's own egress IP
     #: and move to a spare one (see :mod:`headstart.spare_egress`). Empty — every scraper unless it
@@ -1167,6 +1183,16 @@ class BaseScraper(ABC):
         """
         raise NotImplementedError(f"{type(self).__name__} has no read_detail")
 
+    def fetch_detail_batch(self, requests: Sequence[DetailRequest]) -> Sequence[Any]:
+        """The responses to ``requests``, one per request and in order — the transport of a
+        Scraper that sets :attr:`detail_batch_size` (ADR-0228).
+
+        Each element is an object with ``status_code``, ``text`` and ``json()`` (what
+        :meth:`read_detail` reads), or an ``Exception`` for a request that never got an answer.
+        Raise :class:`DetailBatchWalled` when the origin refuses the batch and no route is left.
+        """
+        raise NotImplementedError(f"{type(self).__name__} has no fetch_detail_batch")
+
     def run_detail_pass(
         self,
         items: Sequence[_T],
@@ -1247,7 +1273,11 @@ class BaseScraper(ABC):
                 return None
             return note(self._fetch_detail_outcome(item))
 
-        if self.async_fanout_enabled():
+        if self.detail_batch_size:
+            results = self._fetch_detail_batches(
+                wanted, self.detail_batch_size, skipped_as_stalled, note
+            )
+        elif self.async_fanout_enabled():
             results = self.fan_out_async(wanted, watched_async, concurrency=concurrency)
         else:
             results = self._fan_out_timed(
@@ -1264,6 +1294,55 @@ class BaseScraper(ABC):
             if fields is not None and (native_id := key_of(item)) is not None:
                 details[native_id] = fields
         return FetchedDetails(details, self.report_detail_gaps(described_details, what))
+
+    def _fetch_detail_batches(
+        self,
+        items: Sequence[_T],
+        size: int,
+        skipped_as_stalled: Callable[[], bool],
+        note: Callable[[Any], Any],
+    ) -> list[Any]:
+        """:meth:`run_detail_pass`'s transport for a Scraper with :attr:`detail_batch_size`: the
+        items in order, ``size`` at a time, each batch through :meth:`fetch_detail_batch`.
+
+        A :class:`DetailBatchWalled` ends the pass: this batch and every later one is skipped,
+        labelled :data:`DETAIL_WALLED`, and the details already landed are kept.
+        """
+        results: list[Any] = [None] * len(items)
+        walled = False
+        for start in range(0, len(items), size):
+            batch = range(start, min(start + size, len(items)))
+            if walled:
+                for _ in batch:
+                    self.note_detail_unattempted(DETAIL_WALLED)
+                continue
+            if skipped_as_stalled():
+                for _ in batch[
+                    1:
+                ]:  # one label per skipped item, as the other transports write
+                    skipped_as_stalled()
+                continue
+            formed = [
+                (i, request)
+                for i in batch
+                if (request := self._detail_request_or_none(items[i])) is not None
+            ]
+            if not formed:
+                continue
+            try:
+                responses = self.fetch_detail_batch([request for _, request in formed])
+            except DetailBatchWalled as wall:
+                self._log.info(f"{self.board_key()}: detail pass stopped — {wall}")
+                walled = True
+                for _ in formed:
+                    self.note_detail_unattempted(DETAIL_WALLED)
+                continue
+            for (i, _), response in zip(formed, responses, strict=True):
+                if isinstance(response, Exception):
+                    self.note_detail_exception(response)
+                else:
+                    results[i] = note(self._read_detail_outcome(items[i], response))
+        return results
 
     def _fan_out_timed(
         self, items: Sequence[_T], fetch_one: Callable[[_T], _R], workers: int

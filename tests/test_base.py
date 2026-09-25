@@ -1016,3 +1016,86 @@ def test_a_curated_name_overrides_every_source_and_skips_the_title_fetch(monkeyp
     unfetched = _NamingScraper("gmv")
     unfetched.resolve_company = lambda: pytest.fail("a curated Board fetched its title")
     assert _companies(unfetched) == ["GMV"] * 2
+
+
+# --- ADR-0228: a batch transport for an origin that admits one warmed tab ---------------
+
+
+class _BatchStub(_DetailStub):
+    """A Scraper whose details go through `fetch_detail_batch`, two ids at a time."""
+
+    detail_batch_size = 2
+
+    def fetch_detail_batch(self, requests):
+        ids = [request.url.rsplit("/", 1)[1] for request in requests]
+        self.batches.append(ids)
+        return self.answer(ids)
+
+
+def _batch_scraper(answer):
+    scraper = _BatchStub("x")
+    scraper.batches = []
+    scraper.answer = answer
+    return scraper
+
+
+def _answer_from_route(ids):
+    return [
+        _detail_route("GET", f"https://example.invalid/detail/{i}", {}) for i in ids
+    ]
+
+
+def test_run_detail_pass_sends_a_batch_transports_items_in_order_and_labels_every_loss():
+    scraper = _batch_scraper(_answer_from_route)
+    rows = [{"id": i} for i in ("ok", "gone", "empty", "refused")]
+
+    details = scraper.run_detail_pass(
+        rows, key_of=lambda row: row.get("id"), what="pages"
+    )
+
+    assert scraper.batches == [["ok", "gone"], ["empty", "refused"]]
+    assert dict(details) == {"ok": "text of ok"}
+    assert details.missing == 3
+    assert scraper.detail_losses == {
+        "HTTP 404": 1,
+        "no body on a 200": 1,
+        "RequestException": 1,
+    }
+
+
+def test_run_detail_pass_stops_a_batch_transport_at_a_wall_and_keeps_what_landed():
+    def answer(ids):
+        if ids == ["b1", "b2"]:
+            raise base.DetailBatchWalled("the origin answered 403 on every route tried")
+        return [FakeResponse(text='{"body": "text"}') for _ in ids]
+
+    scraper = _batch_scraper(answer)
+    rows = [{"id": i} for i in ("a1", "a2", "b1", "b2", "c1")]
+
+    details = scraper.run_detail_pass(
+        rows, key_of=lambda row: row.get("id"), what="pages"
+    )
+
+    assert scraper.batches == [
+        ["a1", "a2"],
+        ["b1", "b2"],
+    ]  # nothing sent after the wall
+    assert sorted(details) == ["a1", "a2"]
+    assert details.missing == 3
+    assert scraper.detail_losses == {base.DETAIL_WALLED: 3}
+    assert scraper.telemetry["detail_attempted"] == 2
+
+
+def test_run_detail_pass_keeps_an_unformed_request_out_of_a_batch():
+    scraper = _batch_scraper(
+        lambda ids: [FakeResponse(text='{"body": "t"}')] * len(ids)
+    )
+    rows = [{"id": "a"}, {}, {"id": "b"}]
+
+    details = scraper.run_detail_pass(
+        rows, key_of=lambda row: row.get("id"), what="pages"
+    )
+
+    assert scraper.batches == [["a"], ["b"]]  # the id-less row formed no request
+    assert sorted(details) == ["a", "b"]
+    assert scraper.detail_losses == {"no job id": 1}

@@ -9,11 +9,10 @@ Operations Advisor") that is genuinely absent from `lookup.locations` in the liv
 of the 4 (of 1,309 distinct ids referenced by a real listing set) measured missing — so `parse`
 must resolve that one to `None` rather than raising or dropping the Job.
 
-`fetch_raw`'s browser-driving half is deliberately untested here, matching `BaseScraper`'s own
-split: `parse` is pure and is what tests exercise; the network/browser side is not (see
-`base.py`'s class docstring, and `browser_http`'s own tests for the shape a shared browser
-transport's test suite takes when the investment is warranted — this one is single-caller and
-isn't).
+The Chrome itself is faked (`_chrome_factory`) and the in-page fetch is replaced at `_read_batch`:
+what is tested is the detail pass around them and the egress policy that decides when the Chrome
+is relaunched on the spare egress. The live behaviour is in `experiment/tesla-promise-all-detail-fetch/`
+and ADR-0228.
 """
 
 from __future__ import annotations
@@ -21,8 +20,13 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
+from headstart import spare_egress
+from headstart.scrapers import tesla
+from headstart.scrapers.base import DetailBatchWalled, DetailLost, DetailRequest
 from headstart.scrapers.registry import get_scraper
-from headstart.scrapers.tesla import SLUG, TeslaScraper
+from headstart.scrapers.tesla import SLUG, TeslaScraper, TeslaWalled
 
 FIXTURES = Path(__file__).parent / "fixtures"
 SCRAPED_AT = "2026-01-01T00:00:00+00:00"
@@ -157,3 +161,236 @@ def test_a_listings_key_present_but_empty_is_truncated_not_authoritative():
     scraper = TeslaScraper(SLUG, "Tesla")
     assert scraper.parse({"listings": [], "lookup": {}}, SCRAPED_AT) == []
     assert scraper.truncated is not None
+
+
+# --- the batched detail pass (ADR-0228) --------------------------------------------------
+
+
+class _FakeChrome:
+    async def __aenter__(self):
+        return self
+
+    async def start(self):
+        return None
+
+    async def __aexit__(self, *exc):
+        return None
+
+
+@pytest.fixture
+def chrome_launches(monkeypatch):
+    """A fake Chrome, and the route (proxy) each launch was given."""
+    launches = []
+
+    def factory():
+        launches.append(tesla._route)
+        return _FakeChrome()
+
+    monkeypatch.setattr(tesla, "_chrome_factory", factory)
+    spare_egress.reset()
+    tesla.shutdown()
+    tesla._route = None
+    yield launches
+    tesla.shutdown()
+    tesla._route = None
+    spare_egress.reset()
+
+
+def _detail_payload(**sections):
+    return json.dumps(
+        {
+            "jobDescription": sections.get("description", "<p>Build <b>cars</b></p>"),
+            "jobResponsibilities": sections.get(
+                "responsibilities", "<ul><li>Weld</li></ul>"
+            ),
+            "jobRequirements": sections.get("requirements", ""),
+            "jobCompensationAndBenefits": sections.get("compensation", "<p>$100k</p>"),
+        }
+    )
+
+
+def test_a_detail_is_the_four_html_sections_as_one_text():
+    scraper = TeslaScraper(SLUG, "Tesla")
+    response = tesla._BatchResponse(200, _detail_payload())
+
+    detail = scraper.read_detail({"id": "1"}, response)
+
+    assert detail == {"description": "Build cars\n\nWeld\n\n$100k"}
+
+
+def test_a_detail_with_no_section_text_is_lost_not_kept_empty():
+    scraper = TeslaScraper(SLUG, "Tesla")
+    empty = tesla._BatchResponse(
+        200, _detail_payload(description="", responsibilities="", compensation="")
+    )
+    with pytest.raises(DetailLost, match="no description"):
+        scraper.read_detail({"id": "1"}, empty)
+
+
+def test_a_listing_with_no_id_forms_no_detail_request():
+    scraper = TeslaScraper(SLUG, "Tesla")
+    with pytest.raises(DetailLost, match="no job id"):
+        scraper.detail_request({"t": "Engineer"})
+    assert scraper.detail_request({"id": "42"}).url.endswith("/cua-api/careers/job/42")
+
+
+def test_the_pass_reads_batches_of_tech_listings_and_parse_carries_the_description(
+    monkeypatch, chrome_launches
+):
+    monkeypatch.setattr(tesla, "_BATCH_PAUSE_S", 0)
+    state = _raw()
+    state["listings"] += [
+        {"id": "999", "t": "Store Barista", "dp": None, "l": None, "y": None},
+        {"id": "998", "t": "Software Engineer", "dp": None, "l": None, "y": None},
+    ]
+    monkeypatch.setattr(tesla, "_fetch_state_json", lambda: state)
+    asked = []
+
+    def read_batch(urls, page_url):
+        asked.append((list(urls), page_url))
+        return [{"s": 200, "t": _detail_payload()} for _ in urls]
+
+    monkeypatch.setattr(tesla, "_read_batch", read_batch)
+    monkeypatch.delenv("HEADSTART_TECH_GATE", raising=False)
+    scraper = TeslaScraper(SLUG, "Tesla")
+    scraper.have_details = frozenset({"tesla:www.tesla.com:998"})
+
+    jobs = scraper.parse(scraper.fetch_raw(), SCRAPED_AT)
+
+    fetched = {url.rsplit("/", 1)[1] for urls, _ in asked for url in urls}
+    described = {j.id.rsplit(":", 1)[1] for j in jobs if j.description}
+    assert fetched == described == {"224501"}
+    assert "999" not in fetched  # the ADR-0166 gate left the non-tech listing out
+    assert (
+        "998" not in fetched
+    )  # ADR-0048: a tech Job whose description is already held
+    assert any(j.id.endswith(":999") for j in jobs)  # ... but the Job is still listed
+    assert all("/careers/search/job/" in page for _, page in asked)
+    assert all(len(urls) <= tesla._BATCH_SIZE for urls, _ in asked)
+
+
+def test_a_batch_maps_each_answer_and_a_network_error_is_an_exception(monkeypatch):
+    monkeypatch.setattr(tesla, "_BATCH_PAUSE_S", 0)
+    rows = [
+        {"s": 200, "t": "{}"},
+        {"s": 404, "t": ""},
+        {"s": -1, "t": "Failed to fetch"},
+    ]
+    monkeypatch.setattr(tesla, "_read_batch", lambda urls, page_url: rows)
+    scraper = TeslaScraper(SLUG, "Tesla")
+    scraper._job_pages = {f"{tesla._DETAIL_URL}{i}": "page" for i in range(3)}
+
+    out = scraper.fetch_detail_batch(
+        [DetailRequest(f"{tesla._DETAIL_URL}{i}") for i in range(3)]
+    )
+
+    assert [getattr(r, "status_code", None) for r in out[:2]] == [200, 404]
+    assert isinstance(out[2], RuntimeError) and str(out[2]) == "Failed to fetch"
+
+
+def test_a_wall_on_every_route_stops_the_pass_rather_than_failing_the_board(
+    monkeypatch,
+):
+    def walled(urls, page_url):
+        raise TeslaWalled(403)
+
+    monkeypatch.setattr(tesla, "_with_egress", lambda operation: operation())
+    monkeypatch.setattr(tesla, "_read_batch", walled)
+    scraper = TeslaScraper(SLUG, "Tesla")
+    scraper._job_pages = {f"{tesla._DETAIL_URL}1": "page"}
+
+    with pytest.raises(DetailBatchWalled, match="403"):
+        scraper.fetch_detail_batch([DetailRequest(f"{tesla._DETAIL_URL}1")])
+
+
+# --- the egress policy: direct first, the spare egress once the origin walls -------------
+
+_SPARE = "socks5h://127.0.0.1:40000"
+
+
+def _walls_then_answers(walls):
+    seen = {"n": 0}
+
+    def operation():
+        seen["n"] += 1
+        if seen["n"] <= walls:
+            raise TeslaWalled(403)
+        return "answered"
+
+    return operation, seen
+
+
+def test_the_first_wall_relaunches_the_chrome_on_the_spare_egress(chrome_launches):
+    spare_egress.use_daemon(spare_egress.InMemoryEgressDaemon(_SPARE))
+    operation, seen = _walls_then_answers(1)
+
+    assert tesla._with_egress(operation) == "answered"
+
+    assert chrome_launches == [None, _SPARE]  # direct first, then --proxy-server
+    assert "tesla" in spare_egress.walled_groups()
+    assert seen["n"] == 2
+
+
+def test_a_wall_with_no_spare_egress_is_raised_after_one_attempt(chrome_launches):
+    operation, seen = _walls_then_answers(9)
+
+    with pytest.raises(TeslaWalled):
+        tesla._with_egress(operation)
+
+    assert seen["n"] == 1 and chrome_launches == [None]
+
+
+def test_each_wall_on_the_spare_egress_rotates_it_until_the_attempts_are_spent(
+    chrome_launches, monkeypatch
+):
+    spare_egress.use_daemon(spare_egress.InMemoryEgressDaemon(_SPARE))
+    rotations = []
+    monkeypatch.setattr(
+        spare_egress, "rotate", lambda board=None, **kw: rotations.append(board) or True
+    )
+    operation, seen = _walls_then_answers(99)
+
+    with pytest.raises(TeslaWalled):
+        tesla._with_egress(operation)
+
+    assert seen["n"] == tesla._EGRESS_ATTEMPTS + 1
+    assert rotations == [SLUG] * (tesla._EGRESS_ATTEMPTS - 1)
+    assert chrome_launches == [None] + [_SPARE] * tesla._EGRESS_ATTEMPTS
+
+
+def test_a_rotation_that_yields_no_fresh_ip_gives_up_at_once(
+    chrome_launches, monkeypatch
+):
+    spare_egress.use_daemon(spare_egress.InMemoryEgressDaemon(_SPARE))
+    monkeypatch.setattr(spare_egress, "rotate", lambda board=None, **kw: False)
+    operation, seen = _walls_then_answers(99)
+
+    with pytest.raises(TeslaWalled):
+        tesla._with_egress(operation)
+
+    assert seen["n"] == 2  # direct, then the spare egress; its rotation failed
+
+
+def test_the_chrome_is_launched_with_the_spare_egress_proxy_as_socks5(monkeypatch):
+    added = []
+
+    class _Options:
+        start_timeout = 0
+
+        def add_argument(self, arg):
+            added.append(arg)
+
+    monkeypatch.setitem(
+        __import__("sys").modules,
+        "pydoll.browser.options",
+        type("m", (), {"ChromiumOptions": _Options}),
+    )
+    monkeypatch.setitem(
+        __import__("sys").modules,
+        "pydoll.browser",
+        type("m", (), {"Chrome": lambda options: "chrome"}),
+    )
+    monkeypatch.setattr(tesla, "_route", _SPARE)
+
+    assert tesla._default_chrome() == "chrome"
+    assert "--proxy-server=socks5://127.0.0.1:40000" in added
