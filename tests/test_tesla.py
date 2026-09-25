@@ -268,7 +268,9 @@ def test_the_pass_reads_batches_of_tech_listings_and_parse_carries_the_descripti
     assert all(len(urls) <= tesla._BATCH_SIZE for urls, _ in asked)
 
 
-def test_a_batch_maps_each_answer_and_a_network_error_is_an_exception(monkeypatch):
+def test_a_batch_maps_each_answer_and_a_network_error_is_an_exception(
+    monkeypatch, chrome_launches
+):
     monkeypatch.setattr(tesla, "_BATCH_PAUSE_S", 0)
     rows = [
         {"s": 200, "t": "{}"},
