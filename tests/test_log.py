@@ -74,7 +74,7 @@ def test_fail_logs_error_and_exits_1(caplog):
 def test_get_resolves_dunder_main_via_spec():
     spec = log.ModuleSpec("headstart.ingest.embed_run", loader=None)
     assert log.get("__main__", spec).name == "headstart.ingest.embed_run"
-    assert log.get("headstart.http").name == "headstart.http"
+    assert log.get("headstart.network.http").name == "headstart.network.http"
     assert log.get("__main__", None).name == "__main__"  # direct-script fallback
 
 

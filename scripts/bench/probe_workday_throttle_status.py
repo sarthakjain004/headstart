@@ -107,7 +107,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 
-from headstart import http, spare_egress
+from headstart.network import http, spare_egress
 from headstart.scrapers.base import USER_AGENT
 from headstart.scrapers.workday import WorkdayScraper
 
@@ -390,7 +390,7 @@ def paired_browser_walk(
     nothing under load at all. And the loader is asked to stop before this returns, so it cannot
     go on hammering the tenant underneath the next arm.
     """
-    from headstart import browser_http
+    from headstart.network import browser_http
 
     company, instance, site = scraper._parts()
     pressure: collections.Counter[str] = collections.Counter()

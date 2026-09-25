@@ -27,7 +27,7 @@ wall and worked around it with a purpose-built stealth Chromium fork plus a resi
 consistent with, not contradicted by, what a stock pydoll/Chrome session finds here.)
 
 **So this scraper never issues an HTTP request of its own.** It drives a real, headful Chrome
-(pydoll, matching ``headstart.browser_http``'s ADR-0056 precedent for a wall that "admits a
+(pydoll, matching ``headstart.network.browser_http``'s ADR-0056 precedent for a wall that "admits a
 genuine Chrome and nothing else" — though the mechanism here is a different shape, see below),
 navigates once to the careers search page, and reads the body of that page's *own* network
 response for the state endpoint straight off the CDP ``Network`` domain
@@ -69,7 +69,7 @@ batch comes back mostly non-200 (the trust lapsed).
 on 69 ids and the next, of 200, on all 200; minutes later ``/careers/search/`` itself was a hard
 403 from that IP, so the listing dies with the details. The bound is therefore small, batches are
 paced, and any 403/429 is a wall: the Chrome restarts on the spare egress
-(:mod:`headstart.spare_egress`, ``--proxy-server``) and the batch is retried, rotating the IP on
+(:mod:`headstart.network.spare_egress`, ``--proxy-server``) and the batch is retried, rotating the IP on
 each further wall. When no route is left the pass stops with what it has
 (:class:`~headstart.scrapers.base.DetailBatchWalled`).
 """
@@ -84,8 +84,9 @@ import time
 from collections.abc import Callable, Sequence
 from typing import Any
 
-from headstart import log, spare_egress
+from headstart import log
 from headstart.models import Job, html_to_text, is_remote
+from headstart.network import spare_egress
 from headstart.scrapers.base import (
     BaseScraper,
     DetailBatchWalled,
@@ -123,7 +124,7 @@ _WALL_STATUSES = frozenset({403, 429})
 #: The walls one operation rides out before giving up: the first moves onto the spare egress, each
 #: further one rotates it.
 _EGRESS_ATTEMPTS = 3
-#: :mod:`headstart.spare_egress`'s key for this origin's wall.
+#: :mod:`headstart.network.spare_egress`'s key for this origin's wall.
 _GROUP = "tesla"
 
 # Headful, like `browser_http`'s darwinbox precedent (ADR-0056) — Chrome under CDP automation is
@@ -144,7 +145,7 @@ _TITLE_ID = re.compile(r"^(?P<slug>.+)-(?P<id>\d+)$")
 class TeslaBrowserUnavailable(Exception):
     """The browser transport cannot run here — pydoll is not installed.
 
-    Mirrors `headstart.browser_http.BrowserUnavailable`: distinct from a launch failure so the
+    Mirrors `headstart.network.browser_http.BrowserUnavailable`: distinct from a launch failure so the
     caller doesn't retry an install problem three times before saying what it actually is.
     """
 

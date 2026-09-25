@@ -1,5 +1,5 @@
 """The Fetcher seam (ADR-0153): what a scraper needs from its HTTP client, named once so
-``headstart.http`` and ``headstart.browser_http`` can each sit behind it as a real adapter
+``headstart.network.http`` and ``headstart.network.browser_http`` can each sit behind it as a real adapter
 instead of a scraper reaching a module global directly.
 
 Three capabilities, not one artificially merged shape:
@@ -15,7 +15,7 @@ Three capabilities, not one artificially merged shape:
   path (a browser tab is one session, not many concurrent HTTP/2 streams) can leave it
   unimplemented as long as nothing calls it. Python does not enforce ``Protocol`` conformance at
   runtime and this repo runs no type checker in CI, so that is a contract stated in prose, not
-  machinery. ``headstart.browser_http.BrowserFetcher`` is exactly that case: it implements
+  machinery. ``headstart.network.browser_http.BrowserFetcher`` is exactly that case: it implements
   ``fetch`` only, because darwinbox's browser escalation never runs a multiplexed detail pass
   (see that module's docstring) — forcing a ``fetch_async`` onto one warmed tab would be the
   unnatural shape this protocol is deliberately declining to invent.
@@ -38,12 +38,12 @@ from __future__ import annotations
 
 from typing import Any, Protocol
 
-from headstart import spare_egress
+from headstart.network import spare_egress
 
 
 class Fetcher(Protocol):
     """What :class:`~headstart.scrapers.base.BaseScraper` can be given instead of
-    reaching ``headstart.http`` directly."""
+    reaching ``headstart.network.http`` directly."""
 
     def fetch(self, method: str, url: str, **kwargs: Any) -> Any:
         """Issue one request; return whatever settles, for the caller to classify."""
@@ -67,7 +67,7 @@ class BoardFetcher:
     Before this, every request carried them as keyword arguments a scraper had to spread into
     each call (``**self._egress()``), and a call that forgot was silently inert: its wall never
     marked, its retries never attributed. Here the binding happens once, and :meth:`fetch`/
-    :meth:`fetch_async` add exactly the keyword arguments ``headstart.http.fetch`` has always
+    :meth:`fetch_async` add exactly the keyword arguments ``headstart.network.http.fetch`` has always
     received, so the request on the wire is unchanged.
 
     ``egress_group`` is None for a scraper that never opted into the spare egress; its requests
@@ -140,7 +140,7 @@ class BoardFetcher:
 
     def stream_width(self, ceiling: int) -> int:
         """How wide this Board's fan-out may go now, at most ``ceiling``: narrowed once its
-        egress group has walled (:func:`headstart.spare_egress.stream_width`, #195)."""
+        egress group has walled (:func:`headstart.network.spare_egress.stream_width`, #195)."""
         return spare_egress.stream_width(self._egress_group, ceiling)
 
     def clear_cookies(self, domain: str | None = None) -> None:

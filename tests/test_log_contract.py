@@ -1718,7 +1718,7 @@ _EMBED_MERGE = "headstart.ingest.embed_merge"
 _META = "headstart.ingest.update_meta"
 _INDEX = "headstart.ingest.index"
 _TRENDS = "headstart.ingest.role_trends"
-_EGRESS = "headstart.spare_egress"
+_EGRESS = "headstart.network.spare_egress"
 _RECLAIM = "headstart.ingest.reclaim_storage"
 
 # -- the storage reclaim (ADR-0168) -----------------------------------------------------------

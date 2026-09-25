@@ -11,8 +11,8 @@ import json
 from datetime import UTC, datetime
 from typing import Any
 
-from headstart.fetcher import Fetcher
 from headstart.models import Job, html_to_text, is_remote
+from headstart.network.fetcher import Fetcher
 from headstart.scrapers.base import BaseScraper
 
 _PAGE_SIZE = 10  # the API's fixed page size (0-indexed ?page=N)

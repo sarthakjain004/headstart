@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Container
 
 from headstart.config import CompanyRef
-from headstart.fetcher import Fetcher
+from headstart.network.fetcher import Fetcher
 from headstart.scrapers.adp import ADPScraper
 from headstart.scrapers.adp_recruiting import ADPRecruitingScraper
 from headstart.scrapers.amazon import AmazonScraper

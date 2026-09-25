@@ -1,6 +1,6 @@
 """Subscription records and their per-file store (ADR-0035).
 
-The four HF calls are replaced the way `tests/test_http.py` replaces its session, so the
+The four HF calls are replaced the way `tests/test_network_http.py` replaces its session, so the
 repo layout and the deny-on-missing-allowlist rule are exercised without a network.
 """
 

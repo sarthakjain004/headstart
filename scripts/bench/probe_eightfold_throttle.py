@@ -16,7 +16,7 @@ import time
 import urllib.parse
 from collections import Counter
 
-from headstart import http
+from headstart.network import http
 from headstart.scrapers.registry import get_scraper
 
 SLUG = sys.argv[1] if len(sys.argv) > 1 else "nvidia.eightfold.ai"

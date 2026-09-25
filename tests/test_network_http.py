@@ -1,4 +1,4 @@
-"""Tests for the reliable-fetch seam (headstart.http.fetch).
+"""Tests for the reliable-fetch seam (headstart.network.http.fetch).
 
 The retry/backoff/transient-classification policy was untested when it lived copy-pasted inside
 each scraper's loop; now it lives once, so it's tested once. The session is stubbed (no network)
@@ -12,7 +12,7 @@ import logging
 import pytest
 from curl_cffi.requests import Session
 
-from headstart import http
+from headstart.network import http
 
 
 class _Resp:
@@ -282,11 +282,11 @@ def test_transient_network_exhausted_raises(monkeypatch):
 
 
 def test_retries_log_debug_records(monkeypatch, caplog):
-    caplog.set_level(logging.DEBUG, logger="headstart.http")
+    caplog.set_level(logging.DEBUG, logger="headstart.network.http")
     _stub(monkeypatch, [_err(28), 503, 200])  # one network retry, one status retry
     http.fetch("GET", "u")
 
-    records = [r for r in caplog.records if r.name == "headstart.http"]
+    records = [r for r in caplog.records if r.name == "headstart.network.http"]
     assert [r.levelno for r in records] == [logging.DEBUG, logging.DEBUG]
     assert "attempt 1/3 failed" in records[0].getMessage()
     assert "-> 503" in records[1].getMessage()
@@ -296,7 +296,7 @@ def test_retries_log_debug_records(monkeypatch, caplog):
 # --- spare egress (ADR-0063) ---------------------------------------------------------------------
 # The escalation past retry: a wall status moves an opted-in ATS onto a second egress IP. These
 # stub `spare_egress.proxy_url` rather than dialling anything, so what is asserted is the routing decision
-# — which request carries a proxy and which does not — not the tunnel itself (see test_spare_egress.py).
+# — which request carries a proxy and which does not — not the tunnel itself (see test_network_spare_egress.py).
 
 
 @pytest.fixture(autouse=True)
@@ -306,7 +306,7 @@ def _clean_egress(monkeypatch):
     The rotation cooldown is neutralized here because `rotate` now *waits* it out rather than
     returning: left at its real value, every test that walls twice would sit out a real 5 seconds
     to assert something about routing. The cooldown itself is policy, and it is tested where it
-    lives, in test_spare_egress.py.
+    lives, in test_network_spare_egress.py.
 
     `rotate` itself is left live. It used to be stubbed to False here, because the live function
     shelled out to `sudo -n` and restarted the machine's actual WARP daemon (pid 96855 -> 97119
@@ -970,7 +970,7 @@ def test_a_proxied_request_is_counted_as_riding_the_tunnel(monkeypatch):
     straight through the requests it is about to sever — which is the bug the drain exists for
     (`experiment/workday-rotation-severed-pages/`).
     """
-    from headstart import spare_egress
+    from headstart.network import spare_egress
 
     seen: list[int] = []
 
@@ -992,7 +992,7 @@ def test_a_proxied_request_is_counted_as_riding_the_tunnel(monkeypatch):
 def test_a_direct_request_is_not_counted_as_riding_the_tunnel(monkeypatch):
     """A restart cannot sever a connection that never went through the proxy, so counting one
     would make every rotation wait on traffic it is not about to break."""
-    from headstart import spare_egress
+    from headstart.network import spare_egress
 
     seen: list[int] = []
 
@@ -1011,7 +1011,7 @@ def test_a_direct_request_is_not_counted_as_riding_the_tunnel(monkeypatch):
 def test_the_async_path_also_rides_the_tunnel(monkeypatch):
     """Workday's detail pass and its fanned-out listing pages both run on `fetch_async`; that is
     the larger share of the traffic a restart severs, so it cannot be left out."""
-    from headstart import spare_egress
+    from headstart.network import spare_egress
 
     seen: list[int] = []
 
@@ -1063,7 +1063,7 @@ def test_resolving_a_route_never_stalls_the_event_loop_during_a_rotation(monkeyp
     that line back. The assertion is the symptom: other coroutines keep being scheduled while a
     request waits on a closed gate.
     """
-    from headstart import spare_egress
+    from headstart.network import spare_egress
 
     _warp(monkeypatch)
     monkeypatch.setattr(spare_egress, "proxy_url", lambda: "socks5h://127.0.0.1:40000")

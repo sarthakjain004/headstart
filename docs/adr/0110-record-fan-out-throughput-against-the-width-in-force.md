@@ -24,7 +24,7 @@ chosen.
 
 ## Decision
 
-`headstart.fanout_stats` accumulates, per `(fan-out, width)`: batches, items, item-seconds
+`headstart.network.fanout_stats` accumulates, per `(fan-out, width)`: batches, items, item-seconds
 (`busy`), and batch-seconds (`wall`). The two sites that resolve a width through `stream_width`
 record against it — `BaseScraper.fan_out_async` (detail passes) and `WorkdayScraper._paginate_async`
 (listing pages) — and `scrape_run._report` prints one line per row plus a comparison.

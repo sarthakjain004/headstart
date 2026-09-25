@@ -17,7 +17,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from headstart import company_name, http, salary
+from headstart import company_name, salary
 from headstart.models import (
     Job,
     epoch_ms_to_iso,
@@ -25,6 +25,7 @@ from headstart.models import (
     is_remote,
     requisition_of,
 )
+from headstart.network import http
 from headstart.scrapers.base import BaseScraper, classify_exception
 from headstart.scrapers.job_posting_jsonld import find_job_posting, hiring_organization
 

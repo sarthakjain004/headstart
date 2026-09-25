@@ -78,7 +78,7 @@ WARP in proxy mode — for the rest of that shard's run.**
   spares every subsequent Board.
 - **Opt-in per scraper** via `BaseScraper.egress_fallback_on`. Eightfold declares `{403, 405}`.
   Every other ATS keeps its direct route unconditionally.
-- **Lazy connect, eager install.** `headstart.spare_egress` dials only once something has actually walled,
+- **Lazy connect, eager install.** `headstart.network.spare_egress` dials only once something has actually walled,
   and caches the outcome — including failure — for the process. `pipeline.yml` installs and
   registers `warp-cli` before the scrape, because an on-demand `apt-get` would land inside the
   first ten minutes of the shard, which is precisely the window Eightfold's Boards occupy and the
@@ -480,7 +480,7 @@ attempts on a route that cannot answer.
 cooldown and coalescing are all the production ones — and stubs only the daemon restart itself. It
 lives under `experiment/workday-rotation-severed-pages/`, which like every `experiment/` directory
 is **gitignored and local to whoever ran it**; the numbers below and the drain tests in
-`tests/test_spare_egress.py` are the durable record.
+`tests/test_network_spare_egress.py` are the durable record.
 
 | | pages lost | severed | served | rotations | wall | trials |
 | --- | --- | --- | --- | --- | --- | --- |

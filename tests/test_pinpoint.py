@@ -366,7 +366,7 @@ def test_a_board_page_that_names_no_one_falls_back_to_its_postings(monkeypatch):
     """The board title first (brand before legal name); where the board page is gone or its title
     is the slug, the hiring organization a posting page names (6 of 10 affected Boards,
     2026-09-24)."""
-    from headstart import http
+    from headstart.network import http
 
     monkeypatch.setattr(http, "fetch", lambda *a, **k: FakeResponse(404))
     scraper = PinpointScraper("kharon")

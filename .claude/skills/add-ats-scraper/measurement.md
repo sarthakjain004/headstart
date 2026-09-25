@@ -3,8 +3,8 @@
 Every question gets a number and a sample size, drawn from **both sides** of whatever the answer
 keys on. Each question names the build it cost when it was assumed instead of measured.
 
-Tools: `curl -sS -D- -A 'headstart/0.1'` for single requests; `headstart.http.fetch` (curl_cffi,
-Chrome TLS) when a host walls plain curl; `headstart.browser_http` or a real browser's HAR when
+Tools: `curl -sS -D- -A 'headstart/0.1'` for single requests; `headstart.network.http.fetch` (curl_cffi,
+Chrome TLS) when a host walls plain curl; `headstart.network.browser_http` or a real browser's HAR when
 the board is a client-rendered SPA and you need to see its XHRs. Write every probe script to
 disk under `experiment/{ats}-{surface}/` so the numbers can be re-derived.
 

@@ -415,19 +415,21 @@ Note the raw corpus files under `data/jobs/` carry a few fields the served table
 ## Layout
 
 - `src/headstart/` — shared library, used by both the pipeline and the curated feed: `models.py`
-  (Job + normalization), `scrapers/` (46 per-ATS + `base`/`registry`), `http.py` (the pooled
-  reliable-fetch seam), `config.py`, `scrapable_boards.py` (which Boards a run may scrape,
-  ADR-0191), `harvest.py` (the scrape engine), `liveness.py`, `corpus.py`,
+  (Job + normalization), `scrapers/` (46 per-ATS + `base`/`registry`), `config.py`,
+  `scrapable_boards.py` (which Boards a run may scrape, ADR-0191), `harvest.py` (the scrape
+  engine), `liveness.py`, `corpus.py`,
   `tech_filter.py` (ADR-0017), `experience.py`, `salary.py` (ADR-0082), `geo.py`, `remote.py`,
   `company_name.py` (ADR-0114, ADR-0212), `search.py` (shared embed/search constants + filter builder),
   `facets.py` (ADR-0084), `board_priority.py` (ADR-0022), `board_cost.py` (measured scrape
   seconds, ADR-0027), `board_aliases.py`, `board_identity.py`, `board_description_gap.py`,
-  `roles.py`, `profile_extract.py`, `fx.py`, `fetcher.py`, `fanout_stats.py`; plus
-  `telegram_bot_api.py`, the polling client the enrolment bot uses.
-- **Getting past walls**: `spare_egress.py` — a second network origin for a shard whose ATS
-  budget is spent, dialling Cloudflare WARP in proxy mode and rotating the egress address when a
-  host refuses it; `browser_http.py`, its browser twin, for hosts that admit a genuine Chrome and
-  nothing else; and `llm_router.py`, the one seam every LLM call goes through.
+  `roles.py`, `profile_extract.py`, `fx.py`, and `llm_router.py`, the one seam every LLM call
+  goes through; plus `telegram_bot_api.py`, the polling client the enrolment bot uses.
+- `src/headstart/network/` — how a request leaves the machine (ADR-0232): `http.py`, the pooled
+  reliable-fetch client; `browser_http.py`, its browser twin, for hosts that admit a genuine Chrome
+  and nothing else; `fetcher.py`, the seam both sit behind; `spare_egress.py`, a second network
+  origin for a shard whose ATS budget is spent, dialling Cloudflare WARP in proxy mode and rotating
+  the egress address when a host refuses it; and `fanout_stats.py`, which records a shard's
+  throughput against the fan-out width in force (ADR-0110).
 - `src/headstart/ui/` — the templates and static assets the Space serves.
 - `src/headstart/alerts/` — job alerts plus the signed-in per-account records: `store`
   (Subscriptions, Saved sets, Saved jobs, Profiles), `registry`, `access` (invite allowlist),

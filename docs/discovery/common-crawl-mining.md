@@ -70,7 +70,7 @@ The crawl list comes from [`collinfo.json`](https://index.commoncrawl.org/collin
 ### The tool
 
 [`cc_miner.py`](../scripts/discover/cc_miner.py) — `curl`, plus `cc_data_host.py` for the data-host
-fallback below (which needs `curl_cffi` and `headstart.spare_egress`), fully resumable:
+fallback below (which needs `curl_cffi` and `headstart.network.spare_egress`), fully resumable:
 
 - reads the crawl list and the set of already-finished crawls
   ([`data/discover/cc_miner_checkpoint.txt`](../data/discover/cc_miner_checkpoint.txt));
@@ -178,7 +178,7 @@ CC_DATA_HOST=1 CC_ONLY_ATS=ashby python -u scripts/discover/cc_miner.py CC-MAIN-
 The crawl list comes from the data host too (`crawl-data/index.html`). Its checkpoint key is one
 per crawl and target (`{crawl}|{target}|data`), so a crawl already mined through the API is read
 again, harmlessly, on the fallback. A 429 or 503 from it moves
-the requests to the spare egress (`headstart.spare_egress`, WARP) and back to direct after five
+the requests to the spare egress (`headstart.network.spare_egress`, WARP) and back to direct after five
 minutes; a ~1,640-request sweep on 2026-09-23 met none.
 
 **The one bug to avoid: `cluster.idx` is sparse, so the block holding your host normally

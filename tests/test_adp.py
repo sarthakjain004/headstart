@@ -179,7 +179,7 @@ class _Resp:
 
     def raise_for_status(self):
         if self.status_code >= 400:
-            from headstart import http
+            from headstart.network import http
 
             raise http.RequestsError(f"HTTP {self.status_code}")
 

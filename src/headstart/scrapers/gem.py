@@ -109,8 +109,8 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
-from headstart import http
 from headstart.models import Job, html_to_text
+from headstart.network import http
 from headstart.scrapers.base import USER_AGENT, BaseScraper
 
 GRAPHQL_URL = "https://jobs.gem.com/api/public/graphql/batch"

@@ -80,7 +80,7 @@ test on 2026-08-27 could not make the endpoint refuse: ~2,160 requests across 15
 200. One `403 Access Denied` from the Akamai front was seen during 2026-08 discovery and did
 survive a 150s backoff, so it is real — but it is rare and transient, **not a threshold to design
 around**, and this page previously described it as one. If it does appear, rotating the spare
-egress clears it (`headstart.spare_egress`; note `warp-cli disconnect`/`connect` is a no-op — only
+egress clears it (`headstart.network.spare_egress`; note `warp-cli disconnect`/`connect` is a no-op — only
 a daemon restart moves the address).
 
 **What actually breaks the request is the User-Agent.** `curl/8.7.1` and `python-requests`'s own

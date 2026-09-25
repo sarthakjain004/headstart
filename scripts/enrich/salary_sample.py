@@ -23,7 +23,7 @@ exits with a clear message rather than guessing.
 **Spare egress is automatic, never hand-rolled.** Every fetch goes through the scraper's own
 ``_get()``/``_post()``/``_job_detail()``-style methods, which already carry their Board
 fetcher's egress binding (ADR-0204) — so an ATS with ``egress_fallback_on`` set (workday:
-``{429}``) transparently routes through `headstart.spare_egress`'s WARP fallback the same way the
+``{429}``) transparently routes through `headstart.network.spare_egress`'s WARP fallback the same way the
 real pipeline does, reactively, the first time this process meets a wall. No adapter here should ever call
 ``http.fetch`` directly; that would silently skip it. ``_fetch_ripplehire``, which needs raw
 responses, sends its two requests through ``scraper.board_fetcher`` for the same reason. One real local limitation,

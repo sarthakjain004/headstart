@@ -22,7 +22,7 @@ cf-mitigated: challenge
 content-type: text/html; charset=UTF-8
 ```
 
-This repo's shared HTTP layer (`headstart.http.fetch`) already clears it, with **zero code
+This repo's shared HTTP layer (`headstart.network.http.fetch`) already clears it, with **zero code
 changes**: that module runs every request through a `curl_cffi` `Session(impersonate="chrome")` —
 its own module docstring says so ("Chrome impersonation lets the same client handle both plain
 JSON APIs and the TLS-fingerprinted boards"). Verified directly with `BaseScraper._get`'s exact
@@ -34,7 +34,7 @@ GET https://jobs.uber.com/api/jobs/search/?page=1&pagesize=5  ->  200 applicatio
 
 18/18 requests in a burst all returned 200. This means the sibling `kalil0321/ats-scrapers`
 project's own Uber scraper reaches for a dedicated TLS-impersonating "httpcloak" client to clear
-the same wall — a workaround this repo does not need, because `headstart.http` already impersonates
+the same wall — a workaround this repo does not need, because `headstart.network.http` already impersonates
 Chrome for every scraper, not just this one. `robots.txt` allows everything (`Allow: /`) and even
 publishes a `Sitemap:`, so the API is not something the site is trying to keep hidden from bots in
 general — only from clients with a bot-shaped TLS fingerprint.

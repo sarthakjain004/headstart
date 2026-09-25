@@ -52,13 +52,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
-from headstart import (
-    board_aliases,
-    eightfold_backing,
-    http,
-    liveness,
-    scrapable_boards,
-)
+from headstart import board_aliases, eightfold_backing, liveness, scrapable_boards
+from headstart.network import http
 from headstart.scrapers.base import USER_AGENT
 from headstart.scrapers.eightfold import EightfoldScraper, _department_of
 from headstart.scrapers.greenhouse import GreenhouseScraper
