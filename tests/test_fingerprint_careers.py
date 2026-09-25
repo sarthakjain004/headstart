@@ -1023,3 +1023,16 @@ def test_a_cornerstone_career_site_link_yields_the_corp_label_board():
         "cornerstone:aswatsoneurope",
         "unverified",
     )
+
+
+def test_a_peoplestrong_portal_link_yields_the_scrapers_lowercased_label():
+    """`peoplestrong.py` keys a Board on the portal's subdomain label, lowercased; the vendor's own
+    `www` and `static` hosts on the same zone are not portals."""
+    page = (
+        '<a href="https://HDFCErgoCareers.peoplestrong.com/job/joblist">Jobs</a>'
+        '<a href="https://www.peoplestrong.com/careers">PeopleStrong</a>'
+        '<script src="https://static.peoplestrong.com/app.js"></script>'
+    )
+    assert fp.scan(page, "hdfcergo.com") == [
+        ("peoplestrong", "ats", "hdfcergocareers", 1)
+    ]

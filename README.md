@@ -19,7 +19,7 @@ Not from a feed employers had to opt in to. Not from a list ranked by who paid.
 
 ### It costs nothing to run. All of it.
 
-Discovery. 46 scrapers. Embeddings. Vector search. Email and Telegram alerts.
+Discovery. 47 scrapers. Embeddings. Vector search. Email and Telegram alerts.
 
 Fork it, add your tokens, and the whole pipeline is yours — running on free tiers, end to
 end. No card. No trial. Not a stripped tier of something else: the same code that serves the
@@ -88,9 +88,9 @@ unparseable input with a 400 rather than silently ignoring it.
 
 ## ATS coverage
 
-**46 scrapers**, selected from a registry by the `ats` key: `adp`, `adp_recruiting`, `amazon`, `apple`, `ashby`,
+**47 scrapers**, selected from a registry by the `ats` key: `adp`, `adp_recruiting`, `amazon`, `apple`, `ashby`,
 `bamboohr`, `breezy`, `bytedance`, `clearcompany`, `cornerstone`, `darwinbox`, `eightfold`, `freshteam`, `gem`, `google`, `greenhouse`,
-`icims`, `jazzhr`, `jibe`, `jobvite`, `join`, `keka`, `lever`, `meta`, `oracle`, `personio`, `phenom`,
+`icims`, `jazzhr`, `jibe`, `jobvite`, `join`, `keka`, `lever`, `meta`, `oracle`, `peoplestrong`, `personio`, `phenom`,
 `pinpoint`, `pyjamahr`, `recruitee`, `ripplehire`, `rippling`, `sensehq`, `smartrecruiters`, `successfactors`,
 `taleo_be`, `taleo_enterprise`, `teamtailor`, `tesla`, `tiktok`, `trakstar`, `uber`, `workable`,
 `workday`, `zoho`, `zwayam`. All but `join` are active: `join`'s boards run ~1 tech job in ~10k (German-SMB
@@ -99,7 +99,7 @@ skips it — the scraper class and tests stay intact, and re-enabling it is a on
 `adp` and `adp_recruiting` are two separate ADP products, ADP Workforce Now and ADP Recruiting
 Management, each with its own host, API and Board identity.
 
-Eight of the 46 — `amazon`, `apple`, `bytedance`, `google`, `meta`, `tesla`, `tiktok`, `uber`
+Eight of the 47 — `amazon`, `apple`, `bytedance`, `google`, `meta`, `tesla`, `tiktok`, `uber`
 (ADR-0139) — are **Single source scrapers**: each company's own in-house careers system, not a
 multi-tenant platform, so there's no discovery step and each carries a fixed, hand-entered slug
 rather than a crawled tenant roster. `phenom` is a career-site skin over other ATSes rather than a
@@ -131,8 +131,8 @@ Board no source names is served under its humanised tenant (`nvidia.wd5.myworkda
 a vendor's code (Oracle's pods, ADP's GUIDs). A name is a display value, never an identity, which
 is why `CompanyPrefs` is keyed by **board_key** and never by company name.
 
-The liveness pipeline has probed **304,519 ledger rows**: 187,173 live, 100,453 dead, 16,893 unknown
-— rows, not boards; they collapse to 180,537 Unique Boards once duplicate spellings of the same
+The liveness pipeline has probed **304,945 ledger rows**: 187,277 live, 100,716 dead, 16,952 unknown
+— rows, not boards; they collapse to 180,641 Unique Boards once duplicate spellings of the same
 board are folded together and the 4 with a `dead` row newer than their newest `live` row are dropped (`CONTEXT.md` §Counting
 Boards).
 
@@ -184,14 +184,14 @@ flowchart TB
         D1["<b>discover</b><br/>Common Crawl · Wayback<br/>careers-page fingerprint"]
         D2["<b>merge</b><br/>union + dedupe per ATS"]
         D3["<b>validate</b><br/>liveness-probe each board"]
-        D4[("<b>liveness ledger</b><br/>187,173 live rows of 304,519<br/>git-tracked, authoritative")]
+        D4[("<b>liveness ledger</b><br/>187,277 live rows of 304,945<br/>git-tracked, authoritative")]
         D1 --> D2 --> D3 --> D4
     end
 
     subgraph P["② Ingest &nbsp;·&nbsp; GitHub Actions, back-to-back &nbsp;·&nbsp; ADR-0025 / ADR-0026"]
         direction LR
         P1["<b>scrape-plan</b><br/>1 VM<br/>pick a board slice, LPT pack"]
-        P2["<b>scrape</b><br/>≤15 VMs · 75m budget<br/>45 enabled scrapers → fragments"]
+        P2["<b>scrape</b><br/>≤15 VMs · 75m budget<br/>46 enabled scrapers → fragments"]
         P3["<b>join</b><br/>1 VM<br/>union · tech-filter · descriptions<br/>ledgers · plan embed"]
         P4["<b>embed</b><br/>≤15 VMs · 180m budget<br/>nomic on CPU → fragments"]
         P5["<b>merge</b><br/>1 VM · single writer<br/>concat · meta refresh · sync · prune · trends · companies · index"]
@@ -284,19 +284,19 @@ table in lockstep with the committed ledger:
 
 | | boards | |
 | --- | ---: | --- |
-| live rows in the ledger | 187,173 | a row, not a board — 6,632 of them are duplicate spellings |
+| live rows in the ledger | 187,277 | a row, not a board — 6,632 of them are duplicate spellings |
 | − `registry.DISABLED_ATS` | −25,488 | all of it `join` |
-| − `config.EXCLUDED_BOARDS` | −175 | vendor test/sandbox/demo boards and one historical feed, confirmed by reading their postings |
+| − `config.EXCLUDED_BOARDS` | −176 | vendor test/sandbox/demo boards and one historical feed, confirmed by reading their postings |
 | − alias ledger | −1,170 | one board under a second hostname or label, a career section or career site another of the same tenant already covers, or an Eightfold career site its backing ATS board already serves (ADR-0111, ADR-0182, ADR-0186, ADR-0202, ADR-0205, ADR-0222) |
 | − case-variant dedupe | −6,629 | `company/External` and `company/external` are one board (ADR-0023) |
 | − newer `dead` row | −4 | a board is read only if no `dead` row is newer than its newest `live` one; all 4 re-probed dead (ADR-0219) |
 | − `config.PARKED_BOARDS` | −13 | real boards withheld for now — five for scrape cost, two for near-duplicate spam, six Jibe clients whose every posting is on a Workday or Oracle board already held |
-| = **Scrapable Board** | **153,694** | |
+| = **Scrapable Board** | **153,797** | |
 
-That order matters: excluding before deduping reads −175 and −6,629, deduping first reads −172,
-because three excluded boards were themselves duplicates. Both land on 153,694.
+That order matters: excluding before deduping reads −176 and −6,629, deduping first reads −173,
+because three excluded boards were themselves duplicates. Both land on 153,797.
 
-Of those, **101,213 are currently hiring** — the 52,481 live-but-empty boards are skipped as having
+Of those, **101,269 are currently hiring** — the 52,528 live-but-empty boards are skipped as having
 nothing to read. A run takes a bounded slice and splits it between a scored head (top boards by a
 sticky measure of tech-job yield, large enough to hold every board that yields tech) and a tail
 that rotates through everything else, the boards looked at longest ago first, so
@@ -415,7 +415,7 @@ Note the raw corpus files under `data/jobs/` carry a few fields the served table
 ## Layout
 
 - `src/headstart/` — shared library, used by both the pipeline and the curated feed:
-  `scrapers/` (46 per-ATS + `base`/`registry`), `config.py`, `scrapable_boards.py` (which Boards a
+  `scrapers/` (47 per-ATS + `base`/`registry`), `config.py`, `scrapable_boards.py` (which Boards a
   run may scrape, ADR-0191), `harvest.py` (the scrape engine), `liveness.py`, `corpus.py`, `geo.py`,
   `company_name.py` (ADR-0114, ADR-0212), `search.py` (shared embed/search constants + filter builder),
   `facets.py` (ADR-0084), `board_priority.py` (ADR-0022), `board_cost.py` (measured scrape
