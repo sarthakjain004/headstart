@@ -13,23 +13,24 @@ the same id. Many retired or secondary portals redirect to the customer's main o
 main portal's sitemap and indexes it again under the redirecting host's `board_key`. So each
 posting is served once per portal.
 
-iCIMS is the largest class of duplicate rows across Boards: 5,190 by exact description on served
-v65 (critique #2, 2026-09-25). General Dynamics' portals alone held 2,215 rows and Peraton's pair
-1,091. The ADR-0111 alias ledger and `dedupe_boards.py` already existed, but had never been run
+iCIMS is the largest class of duplicate rows across Boards. A local audit of served duplicates on
+2026-09-25 hashed every description of 200 characters or more, then counted rows whose description
+matches a row on another Board. It measured 5,190 such iCIMS rows on the served LanceDB table
+(`jobs`, at table version 65 with 518,846 rows). General Dynamics' portals alone held 2,215 rows
+and Peraton's pair 1,091. The ADR-0111 alias ledger and `dedupe_boards.py` already existed, but had never been run
 for iCIMS.
 
 ## Decision
 
 **An iCIMS Board on a Live row whose sitemap redirects to another Board on a Live row is buried
-onto it**, in
-`data/validate/aliases/icims.csv` with signal `redirect`. This is ADR-0111 as shipped: the default
+onto it**, in `data/validate/aliases/icims.csv` with signal `redirect`. This is ADR-0111 as shipped: the default
 `alias_key` fits because an iCIMS slug is a host, and the survivor is the redirect's target, so no
 cluster needs an election. No code changes.
 
 - **The writer is `dedupe_boards.py --ats icims --apply`, and `--apply` is safe here.** Every row
   in the file comes from the redirect scan, so rewriting the file from the scan loses nothing. If
-  another writer ever adds a row with a different signal, the script's existing check refuses
-  `--apply`, as it does for ClearCompany and Taleo Enterprise.
+  another writer ever adds a row with a different signal, the script's foreign-signal check
+  refuses `--apply`, as it already does for Jibe's hand-written `shared-listing` rows.
 - **It runs by hand, after every refresh of `data/validate/liveness/icims.csv`**, on the same
   footing as ClearCompany's and Taleo Enterprise's writers. CLAUDE.md's landing rules carry the
   step. A full scan is 4,166 GETs, about ten minutes.
@@ -40,8 +41,8 @@ Measured 2026-09-25 against the Boards on the committed iCIMS ledger's 4,166 Liv
 distinct slugs):
 
 - **Two full scans about an hour apart gave the same answer.** Both found 230 clusters and 272
-  Boards to bury, pair for pair. Critique #1 had counted the same 272 in 230 clusters on
-  2026-09-24.
+  Boards to bury, pair for pair. An earlier dry run of the same script on 2026-09-24 had counted
+  the same 272 in 230 clusters.
 - **Every cluster was checked live, not a sample.** All 502 member sitemaps (272 buried Boards and
   their 230 survivors) were read the way the scraper reads them. For 272 of 272 buried Boards, the
   sitemap answered 200, landed on the survivor's host, and listed exactly the survivor's job-id
@@ -53,7 +54,7 @@ distinct slugs):
   host the ledger holds on no Live row. Scraping these returns the target's list or nothing, and
   that list has no other copy, so none is buried.
 
-Projected onto served v65 (518,846 rows, 20,480 iCIMS), opened read-only:
+Projected onto served v65 (the table version above; 20,480 iCIMS rows), opened read-only:
 
 | | |
 | ---: | --- |
@@ -75,8 +76,8 @@ Three tech postings had no copy on their survivor in v65. None is a posting the 
 
 ## What this does not catch
 
-**Portals that share job ids without redirecting.** Critique #2 lists 184 iCIMS–iCIMS Board
-pairs by shared descriptions. The redirect clusters join 125 of them and miss 59:
+**Portals that share job ids without redirecting.** The same audit lists 184 iCIMS–iCIMS Board
+pairs that share descriptions. The redirect clusters join 125 of them and miss 59:
 
 - **28 Boards** whose served job ids sit inside a sibling portal's, about **270 served rows**.
   Examples: `uscareers-fujifilm` against `uscareershub-fujifilm` (59 of 59), `careersus-shure` and
