@@ -1,0 +1,215 @@
+{
+ "description": "Sep 24 18:00 and 21:19 changes: the 21:19 jump is the 21:19 change's own run, not the 18:00 change's settling run.",
+ "answer_input": {
+  "stamps": [
+   "2026-09-20T00:00:00+00:00",
+   "2026-09-24T18:00:00+00:00",
+   "2026-09-24T21:19:00+00:00",
+   "2026-09-25T06:00:00+00:00",
+   "2026-09-27T00:00:00+00:00"
+  ],
+  "series": [
+   {
+    "name": "greenhouse:acme",
+    "label": "Acme",
+    "points": [
+     100,
+     101,
+     300,
+     300,
+     305
+    ],
+    "latest": 305
+   }
+  ],
+  "epochs": [
+   {
+    "ts": "2026-09-24T18:00:00+00:00",
+    "changed": [
+     "duplicate removal changed"
+    ],
+    "fields": [
+     "family_classifier_version"
+    ]
+   },
+   {
+    "ts": "2026-09-24T21:19:00+00:00",
+    "changed": [
+     "role family assignment changed"
+    ],
+    "fields": [
+     "family_classifier_version"
+    ]
+   }
+  ],
+  "metric": "stock",
+  "coverage": "all",
+  "new_window_days": 7,
+  "family": null,
+  "split_by": "company",
+  "companies": [
+   {
+    "key": "greenhouse:acme",
+    "label": "Acme",
+    "board_keys": [
+     "greenhouse:acme"
+    ],
+    "atses": [
+     "greenhouse"
+    ]
+   }
+  ],
+  "discovered": [],
+  "evicted": [],
+  "pick_series": {},
+  "pick_parts": {},
+  "pick_turnover": {},
+  "counted_since": {
+   "greenhouse:acme": "2026-09-20T00:00:00+00:00"
+  },
+  "totals": [
+   10000,
+   10000,
+   10000,
+   10000,
+   10000
+  ],
+  "non_tech": [
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "watch_parents": [],
+  "uncounted": [],
+  "company_totals": {}
+ },
+ "reading": {
+  "window": {
+   "from": "2026-09-20T00:00:00+00:00",
+   "to": "2026-09-27T00:00:00+00:00"
+  },
+  "picked": true,
+  "total": null,
+  "lines": [
+   {
+    "name": "greenhouse:acme",
+    "label": "Acme",
+    "estimated": false,
+    "move": {
+     "start": 100,
+     "latest": 305,
+     "hiring": 5,
+     "not_hiring": [
+      {
+       "change": "counting@2026-09-24T18:00:00+00:00",
+       "kind": "counting",
+       "label": "duplicate removal changed",
+       "size": 1
+      },
+      {
+       "change": "counting@2026-09-24T21:19:00+00:00",
+       "kind": "counting",
+       "label": "role family assignment changed",
+       "size": 199
+      }
+     ],
+     "percent": 1.6666666666666667,
+     "percent_withheld": null,
+     "turnover": null,
+     "share": {
+      "start": 3.0,
+      "latest": 3.05,
+      "denominator_start": 10000,
+      "denominator_latest": 10000
+     }
+    }
+   }
+  ],
+  "company_lines": [
+   {
+    "name": "greenhouse:acme",
+    "label": "Acme",
+    "estimated": false,
+    "move": {
+     "start": 100,
+     "latest": 305,
+     "hiring": 5,
+     "not_hiring": [
+      {
+       "change": "counting@2026-09-24T18:00:00+00:00",
+       "kind": "counting",
+       "label": "duplicate removal changed",
+       "size": 1
+      },
+      {
+       "change": "counting@2026-09-24T21:19:00+00:00",
+       "kind": "counting",
+       "label": "role family assignment changed",
+       "size": 199
+      }
+     ],
+     "percent": 1.6666666666666667,
+     "percent_withheld": null,
+     "turnover": null,
+     "share": {
+      "start": 3.0,
+      "latest": 3.05,
+      "denominator_start": 10000,
+      "denominator_latest": 10000
+     }
+    }
+   }
+  ],
+  "breakdown": null,
+  "marked_changes": [
+   {
+    "id": "counting@2026-09-24T18:00:00+00:00",
+    "kind": "counting",
+    "ts": "2026-09-24T18:00:00+00:00",
+    "label": "duplicate removal changed",
+    "fields": [
+     "family_classifier_version"
+    ],
+    "changed": [
+     "duplicate removal changed"
+    ],
+    "company": null,
+    "boards": null,
+    "sizes": {
+     "greenhouse:acme": 1
+    }
+   },
+   {
+    "id": "counting@2026-09-24T21:19:00+00:00",
+    "kind": "counting",
+    "ts": "2026-09-24T21:19:00+00:00",
+    "label": "role family assignment changed",
+    "fields": [
+     "family_classifier_version"
+    ],
+    "changed": [
+     "role family assignment changed"
+    ],
+    "company": null,
+    "boards": null,
+    "sizes": {
+     "greenhouse:acme": 199
+    }
+   }
+  ],
+  "day_markers": [
+   {
+    "day": "2026-09-24",
+    "at": "2026-09-24T21:19:00+00:00",
+    "changes": [
+     "counting@2026-09-24T18:00:00+00:00",
+     "counting@2026-09-24T21:19:00+00:00"
+    ]
+   }
+  ],
+  "reconciles": true,
+  "violations": []
+ }
+}

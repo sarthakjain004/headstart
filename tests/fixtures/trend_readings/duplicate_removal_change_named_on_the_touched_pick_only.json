@@ -1,0 +1,258 @@
+{
+ "description": "Acme (greenhouse) and Micron (Eightfold) at a duplicate-removal and family change.",
+ "answer_input": {
+  "stamps": [
+   "2026-09-13T00:00:00+00:00",
+   "2026-09-14T00:00:00+00:00",
+   "2026-09-15T00:00:00+00:00",
+   "2026-09-16T00:00:00+00:00",
+   "2026-09-17T00:00:00+00:00"
+  ],
+  "series": [
+   {
+    "name": "greenhouse:acme",
+    "label": "Acme",
+    "points": [
+     100,
+     100,
+     120,
+     120,
+     120
+    ],
+    "latest": 120
+   },
+   {
+    "name": "eightfold:micron",
+    "label": "Micron",
+    "points": [
+     100,
+     100,
+     80,
+     80,
+     80
+    ],
+    "latest": 80
+   }
+  ],
+  "epochs": [
+   {
+    "ts": "2026-09-15T00:00:00+00:00",
+    "changed": [
+     "duplicate removal changed",
+     "role family assignment changed"
+    ],
+    "fields": [
+     "dedup_version",
+     "family_classifier_version"
+    ]
+   }
+  ],
+  "metric": "stock",
+  "coverage": "all",
+  "new_window_days": 7,
+  "family": null,
+  "split_by": "company",
+  "companies": [
+   {
+    "key": "greenhouse:acme",
+    "label": "Acme",
+    "board_keys": [
+     "greenhouse:acme"
+    ],
+    "atses": [
+     "greenhouse"
+    ]
+   },
+   {
+    "key": "eightfold:micron",
+    "label": "Micron",
+    "board_keys": [
+     "eightfold:micron"
+    ],
+    "atses": [
+     "eightfold"
+    ]
+   }
+  ],
+  "discovered": [],
+  "evicted": [],
+  "pick_series": {},
+  "pick_parts": {},
+  "pick_turnover": {},
+  "counted_since": {
+   "greenhouse:acme": "2026-09-13T00:00:00+00:00",
+   "eightfold:micron": "2026-09-13T00:00:00+00:00"
+  },
+  "totals": [
+   10000,
+   10000,
+   10000,
+   10000,
+   10000
+  ],
+  "non_tech": [
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "watch_parents": [],
+  "uncounted": [],
+  "company_totals": {}
+ },
+ "reading": {
+  "window": {
+   "from": "2026-09-13T00:00:00+00:00",
+   "to": "2026-09-17T00:00:00+00:00"
+  },
+  "picked": true,
+  "total": null,
+  "lines": [
+   {
+    "name": "greenhouse:acme",
+    "label": "Acme",
+    "estimated": false,
+    "move": {
+     "start": 100,
+     "latest": 120,
+     "hiring": 0,
+     "not_hiring": [
+      {
+       "change": "counting@2026-09-15T00:00:00+00:00",
+       "kind": "counting",
+       "label": "duplicate removal changed, role family assignment changed",
+       "size": 20
+      }
+     ],
+     "percent": 0.0,
+     "percent_withheld": null,
+     "turnover": null,
+     "share": {
+      "start": 1.2,
+      "latest": 1.2,
+      "denominator_start": 10000,
+      "denominator_latest": 10000
+     }
+    }
+   },
+   {
+    "name": "eightfold:micron",
+    "label": "Micron",
+    "estimated": false,
+    "move": {
+     "start": 100,
+     "latest": 80,
+     "hiring": 0,
+     "not_hiring": [
+      {
+       "change": "counting@2026-09-15T00:00:00+00:00",
+       "kind": "counting",
+       "label": "duplicate removal changed, role family assignment changed",
+       "size": -20
+      }
+     ],
+     "percent": 0.0,
+     "percent_withheld": null,
+     "turnover": null,
+     "share": {
+      "start": 0.8,
+      "latest": 0.8,
+      "denominator_start": 10000,
+      "denominator_latest": 10000
+     }
+    }
+   }
+  ],
+  "company_lines": [
+   {
+    "name": "greenhouse:acme",
+    "label": "Acme",
+    "estimated": false,
+    "move": {
+     "start": 100,
+     "latest": 120,
+     "hiring": 0,
+     "not_hiring": [
+      {
+       "change": "counting@2026-09-15T00:00:00+00:00",
+       "kind": "counting",
+       "label": "duplicate removal changed, role family assignment changed",
+       "size": 20
+      }
+     ],
+     "percent": 0.0,
+     "percent_withheld": null,
+     "turnover": null,
+     "share": {
+      "start": 1.2,
+      "latest": 1.2,
+      "denominator_start": 10000,
+      "denominator_latest": 10000
+     }
+    }
+   },
+   {
+    "name": "eightfold:micron",
+    "label": "Micron",
+    "estimated": false,
+    "move": {
+     "start": 100,
+     "latest": 80,
+     "hiring": 0,
+     "not_hiring": [
+      {
+       "change": "counting@2026-09-15T00:00:00+00:00",
+       "kind": "counting",
+       "label": "duplicate removal changed, role family assignment changed",
+       "size": -20
+      }
+     ],
+     "percent": 0.0,
+     "percent_withheld": null,
+     "turnover": null,
+     "share": {
+      "start": 0.8,
+      "latest": 0.8,
+      "denominator_start": 10000,
+      "denominator_latest": 10000
+     }
+    }
+   }
+  ],
+  "breakdown": null,
+  "marked_changes": [
+   {
+    "id": "counting@2026-09-15T00:00:00+00:00",
+    "kind": "counting",
+    "ts": "2026-09-15T00:00:00+00:00",
+    "label": "duplicate removal changed, role family assignment changed",
+    "fields": [
+     "dedup_version",
+     "family_classifier_version"
+    ],
+    "changed": [
+     "duplicate removal changed",
+     "role family assignment changed"
+    ],
+    "company": null,
+    "boards": null,
+    "sizes": {
+     "greenhouse:acme": 20,
+     "eightfold:micron": -20
+    }
+   }
+  ],
+  "day_markers": [
+   {
+    "day": "2026-09-15",
+    "at": "2026-09-15T00:00:00+00:00",
+    "changes": [
+     "counting@2026-09-15T00:00:00+00:00"
+    ]
+   }
+  ],
+  "reconciles": true,
+  "violations": []
+ }
+}

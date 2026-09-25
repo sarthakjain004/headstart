@@ -1,0 +1,516 @@
+{
+ "description": "Nine categories, a filter change moving each by +10.",
+ "answer_input": {
+  "stamps": [
+   "2026-09-13T00:00:00+00:00",
+   "2026-09-14T00:00:00+00:00",
+   "2026-09-15T00:00:00+00:00",
+   "2026-09-16T00:00:00+00:00",
+   "2026-09-17T00:00:00+00:00"
+  ],
+  "series": [
+   {
+    "name": "a",
+    "label": "a",
+    "points": [
+     100,
+     100,
+     110,
+     110,
+     110
+    ],
+    "latest": 110
+   },
+   {
+    "name": "b",
+    "label": "b",
+    "points": [
+     99,
+     99,
+     109,
+     109,
+     109
+    ],
+    "latest": 109
+   },
+   {
+    "name": "c",
+    "label": "c",
+    "points": [
+     98,
+     98,
+     108,
+     108,
+     108
+    ],
+    "latest": 108
+   },
+   {
+    "name": "d",
+    "label": "d",
+    "points": [
+     97,
+     97,
+     107,
+     107,
+     107
+    ],
+    "latest": 107
+   },
+   {
+    "name": "e",
+    "label": "e",
+    "points": [
+     96,
+     96,
+     106,
+     106,
+     106
+    ],
+    "latest": 106
+   },
+   {
+    "name": "f",
+    "label": "f",
+    "points": [
+     95,
+     95,
+     105,
+     105,
+     105
+    ],
+    "latest": 105
+   },
+   {
+    "name": "g",
+    "label": "g",
+    "points": [
+     94,
+     94,
+     104,
+     104,
+     104
+    ],
+    "latest": 104
+   },
+   {
+    "name": "h",
+    "label": "h",
+    "points": [
+     93,
+     93,
+     103,
+     103,
+     103
+    ],
+    "latest": 103
+   },
+   {
+    "name": "i",
+    "label": "i",
+    "points": [
+     92,
+     92,
+     102,
+     102,
+     102
+    ],
+    "latest": 102
+   }
+  ],
+  "epochs": [
+   {
+    "ts": "2026-09-15T00:00:00+00:00",
+    "changed": [
+     "tech filter changed"
+    ],
+    "fields": [
+     "tech_filter_version"
+    ]
+   }
+  ],
+  "metric": "stock",
+  "coverage": "all",
+  "new_window_days": 7,
+  "family": null,
+  "split_by": "family",
+  "companies": [
+   {
+    "key": "greenhouse:acme",
+    "label": "Acme",
+    "board_keys": [
+     "greenhouse:acme"
+    ],
+    "atses": [
+     "greenhouse"
+    ]
+   }
+  ],
+  "discovered": [],
+  "evicted": [],
+  "pick_series": {},
+  "pick_parts": {},
+  "pick_turnover": {},
+  "counted_since": {
+   "greenhouse:acme": "2026-09-13T00:00:00+00:00"
+  },
+  "totals": [
+   10000,
+   10000,
+   10000,
+   10000,
+   10000
+  ],
+  "non_tech": [
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "watch_parents": [],
+  "uncounted": [],
+  "company_totals": {}
+ },
+ "reading": {
+  "window": {
+   "from": "2026-09-13T00:00:00+00:00",
+   "to": "2026-09-17T00:00:00+00:00"
+  },
+  "picked": true,
+  "total": {
+   "name": "__total__",
+   "label": "",
+   "estimated": false,
+   "move": {
+    "start": 864,
+    "latest": 954,
+    "hiring": 0,
+    "not_hiring": [
+     {
+      "change": "counting@2026-09-15T00:00:00+00:00",
+      "kind": "counting",
+      "label": "tech filter changed",
+      "size": 90
+     }
+    ],
+    "percent": 0.0,
+    "percent_withheld": null,
+    "turnover": null,
+    "share": {
+     "start": 9.54,
+     "latest": 9.54,
+     "denominator_start": 10000,
+     "denominator_latest": 10000
+    }
+   }
+  },
+  "lines": [
+   {
+    "name": "a",
+    "label": "a",
+    "estimated": false,
+    "move": {
+     "start": 100,
+     "latest": 110,
+     "hiring": 0,
+     "not_hiring": [
+      {
+       "change": "counting@2026-09-15T00:00:00+00:00",
+       "kind": "counting",
+       "label": "tech filter changed",
+       "size": 10
+      }
+     ],
+     "percent": 0.0,
+     "percent_withheld": null,
+     "turnover": null,
+     "share": {
+      "start": 1.0999999999999999,
+      "latest": 1.0999999999999999,
+      "denominator_start": 10000,
+      "denominator_latest": 10000
+     }
+    }
+   },
+   {
+    "name": "b",
+    "label": "b",
+    "estimated": false,
+    "move": {
+     "start": 99,
+     "latest": 109,
+     "hiring": 0,
+     "not_hiring": [
+      {
+       "change": "counting@2026-09-15T00:00:00+00:00",
+       "kind": "counting",
+       "label": "tech filter changed",
+       "size": 10
+      }
+     ],
+     "percent": 0.0,
+     "percent_withheld": null,
+     "turnover": null,
+     "share": {
+      "start": 1.09,
+      "latest": 1.09,
+      "denominator_start": 10000,
+      "denominator_latest": 10000
+     }
+    }
+   },
+   {
+    "name": "c",
+    "label": "c",
+    "estimated": false,
+    "move": {
+     "start": 98,
+     "latest": 108,
+     "hiring": 0,
+     "not_hiring": [
+      {
+       "change": "counting@2026-09-15T00:00:00+00:00",
+       "kind": "counting",
+       "label": "tech filter changed",
+       "size": 10
+      }
+     ],
+     "percent": 0.0,
+     "percent_withheld": null,
+     "turnover": null,
+     "share": {
+      "start": 1.08,
+      "latest": 1.08,
+      "denominator_start": 10000,
+      "denominator_latest": 10000
+     }
+    }
+   },
+   {
+    "name": "d",
+    "label": "d",
+    "estimated": false,
+    "move": {
+     "start": 97,
+     "latest": 107,
+     "hiring": 0,
+     "not_hiring": [
+      {
+       "change": "counting@2026-09-15T00:00:00+00:00",
+       "kind": "counting",
+       "label": "tech filter changed",
+       "size": 10
+      }
+     ],
+     "percent": 0.0,
+     "percent_withheld": null,
+     "turnover": null,
+     "share": {
+      "start": 1.0699999999999998,
+      "latest": 1.0699999999999998,
+      "denominator_start": 10000,
+      "denominator_latest": 10000
+     }
+    }
+   },
+   {
+    "name": "e",
+    "label": "e",
+    "estimated": false,
+    "move": {
+     "start": 96,
+     "latest": 106,
+     "hiring": 0,
+     "not_hiring": [
+      {
+       "change": "counting@2026-09-15T00:00:00+00:00",
+       "kind": "counting",
+       "label": "tech filter changed",
+       "size": 10
+      }
+     ],
+     "percent": 0.0,
+     "percent_withheld": null,
+     "turnover": null,
+     "share": {
+      "start": 1.06,
+      "latest": 1.06,
+      "denominator_start": 10000,
+      "denominator_latest": 10000
+     }
+    }
+   },
+   {
+    "name": "f",
+    "label": "f",
+    "estimated": false,
+    "move": {
+     "start": 95,
+     "latest": 105,
+     "hiring": 0,
+     "not_hiring": [
+      {
+       "change": "counting@2026-09-15T00:00:00+00:00",
+       "kind": "counting",
+       "label": "tech filter changed",
+       "size": 10
+      }
+     ],
+     "percent": 0.0,
+     "percent_withheld": null,
+     "turnover": null,
+     "share": {
+      "start": 1.05,
+      "latest": 1.05,
+      "denominator_start": 10000,
+      "denominator_latest": 10000
+     }
+    }
+   },
+   {
+    "name": "g",
+    "label": "g",
+    "estimated": false,
+    "move": {
+     "start": 94,
+     "latest": 104,
+     "hiring": 0,
+     "not_hiring": [
+      {
+       "change": "counting@2026-09-15T00:00:00+00:00",
+       "kind": "counting",
+       "label": "tech filter changed",
+       "size": 10
+      }
+     ],
+     "percent": 0.0,
+     "percent_withheld": null,
+     "turnover": null,
+     "share": {
+      "start": 1.04,
+      "latest": 1.04,
+      "denominator_start": 10000,
+      "denominator_latest": 10000
+     }
+    }
+   },
+   {
+    "name": "h",
+    "label": "h",
+    "estimated": false,
+    "move": {
+     "start": 93,
+     "latest": 103,
+     "hiring": 0,
+     "not_hiring": [
+      {
+       "change": "counting@2026-09-15T00:00:00+00:00",
+       "kind": "counting",
+       "label": "tech filter changed",
+       "size": 10
+      }
+     ],
+     "percent": 0.0,
+     "percent_withheld": null,
+     "turnover": null,
+     "share": {
+      "start": 1.03,
+      "latest": 1.03,
+      "denominator_start": 10000,
+      "denominator_latest": 10000
+     }
+    }
+   },
+   {
+    "name": "i",
+    "label": "i",
+    "estimated": false,
+    "move": {
+     "start": 92,
+     "latest": 102,
+     "hiring": 0,
+     "not_hiring": [
+      {
+       "change": "counting@2026-09-15T00:00:00+00:00",
+       "kind": "counting",
+       "label": "tech filter changed",
+       "size": 10
+      }
+     ],
+     "percent": 0.0,
+     "percent_withheld": null,
+     "turnover": null,
+     "share": {
+      "start": 1.02,
+      "latest": 1.02,
+      "denominator_start": 10000,
+      "denominator_latest": 10000
+     }
+    }
+   }
+  ],
+  "company_lines": [
+   {
+    "name": "greenhouse:acme",
+    "label": "Acme",
+    "estimated": false,
+    "move": {
+     "start": 864,
+     "latest": 954,
+     "hiring": 0,
+     "not_hiring": [
+      {
+       "change": "counting@2026-09-15T00:00:00+00:00",
+       "kind": "counting",
+       "label": "tech filter changed",
+       "size": 90
+      }
+     ],
+     "percent": 0.0,
+     "percent_withheld": null,
+     "turnover": null,
+     "share": {
+      "start": 9.54,
+      "latest": 9.54,
+      "denominator_start": 10000,
+      "denominator_latest": 10000
+     }
+    }
+   }
+  ],
+  "breakdown": {
+   "closing": null
+  },
+  "marked_changes": [
+   {
+    "id": "counting@2026-09-15T00:00:00+00:00",
+    "kind": "counting",
+    "ts": "2026-09-15T00:00:00+00:00",
+    "label": "tech filter changed",
+    "fields": [
+     "tech_filter_version"
+    ],
+    "changed": [
+     "tech filter changed"
+    ],
+    "company": null,
+    "boards": null,
+    "sizes": {
+     "greenhouse:acme": 90
+    }
+   }
+  ],
+  "day_markers": [
+   {
+    "day": "2026-09-15",
+    "at": "2026-09-15T00:00:00+00:00",
+    "changes": [
+     "counting@2026-09-15T00:00:00+00:00"
+    ]
+   }
+  ],
+  "reconciles": true,
+  "violations": []
+ }
+}

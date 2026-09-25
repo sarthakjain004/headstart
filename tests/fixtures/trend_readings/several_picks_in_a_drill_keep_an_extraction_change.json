@@ -1,0 +1,226 @@
+{
+ "description": "Beta's category rises 20 at a run where only extraction changed, which never moves a category's total.",
+ "answer_input": {
+  "stamps": [
+   "2026-09-13T00:00:00+00:00",
+   "2026-09-14T00:00:00+00:00",
+   "2026-09-15T00:00:00+00:00",
+   "2026-09-16T00:00:00+00:00",
+   "2026-09-17T00:00:00+00:00"
+  ],
+  "series": [
+   {
+    "name": "mid",
+    "label": "mid",
+    "points": [
+     150,
+     150,
+     170,
+     170,
+     170
+    ],
+    "latest": 170
+   }
+  ],
+  "pick_series": {
+   "greenhouse:acme": [
+    100,
+    100,
+    100,
+    100,
+    100
+   ],
+   "lever:beta": [
+    50,
+    50,
+    70,
+    70,
+    70
+   ]
+  },
+  "epochs": [
+   {
+    "ts": "2026-09-15T00:00:00+00:00",
+    "changed": [
+     "experience/salary extraction changed"
+    ],
+    "fields": [
+     "derivations_version"
+    ]
+   }
+  ],
+  "metric": "stock",
+  "coverage": "all",
+  "new_window_days": 7,
+  "family": "ai-ml",
+  "split_by": "band",
+  "companies": [
+   {
+    "key": "greenhouse:acme",
+    "label": "Acme",
+    "board_keys": [
+     "greenhouse:acme"
+    ],
+    "atses": [
+     "greenhouse"
+    ]
+   },
+   {
+    "key": "lever:beta",
+    "label": "Beta",
+    "board_keys": [
+     "lever:beta"
+    ],
+    "atses": [
+     "lever"
+    ]
+   }
+  ],
+  "discovered": [],
+  "evicted": [],
+  "pick_parts": {},
+  "pick_turnover": {},
+  "counted_since": {
+   "greenhouse:acme": "2026-09-13T00:00:00+00:00",
+   "lever:beta": "2026-09-13T00:00:00+00:00"
+  },
+  "totals": [
+   10000,
+   10000,
+   10000,
+   10000,
+   10000
+  ],
+  "non_tech": [
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "watch_parents": [],
+  "uncounted": [],
+  "company_totals": {}
+ },
+ "reading": {
+  "window": {
+   "from": "2026-09-13T00:00:00+00:00",
+   "to": "2026-09-17T00:00:00+00:00"
+  },
+  "picked": true,
+  "total": {
+   "name": "__total__",
+   "label": "",
+   "estimated": false,
+   "move": {
+    "start": 150,
+    "latest": 170,
+    "hiring": 20,
+    "not_hiring": [],
+    "percent": 13.333333333333334,
+    "percent_withheld": null,
+    "turnover": null,
+    "share": {
+     "start": 1.5,
+     "latest": 1.7000000000000002,
+     "denominator_start": 10000,
+     "denominator_latest": 10000
+    }
+   }
+  },
+  "lines": [
+   {
+    "name": "mid",
+    "label": "mid",
+    "estimated": false,
+    "move": {
+     "start": 150,
+     "latest": 170,
+     "hiring": 0,
+     "not_hiring": [
+      {
+       "change": "counting@2026-09-15T00:00:00+00:00",
+       "kind": "counting",
+       "label": "experience/salary extraction changed",
+       "size": 20
+      }
+     ],
+     "percent": 0.0,
+     "percent_withheld": null,
+     "turnover": null,
+     "share": {
+      "start": 1.7000000000000002,
+      "latest": 1.7000000000000002,
+      "denominator_start": 10000,
+      "denominator_latest": 10000
+     }
+    }
+   }
+  ],
+  "company_lines": [
+   {
+    "name": "greenhouse:acme",
+    "label": "Acme",
+    "estimated": false,
+    "move": {
+     "start": 100,
+     "latest": 100,
+     "hiring": 0,
+     "not_hiring": [],
+     "percent": 0.0,
+     "percent_withheld": null,
+     "turnover": null,
+     "share": {
+      "start": 1.0,
+      "latest": 1.0,
+      "denominator_start": 10000,
+      "denominator_latest": 10000
+     }
+    }
+   },
+   {
+    "name": "lever:beta",
+    "label": "Beta",
+    "estimated": false,
+    "move": {
+     "start": 50,
+     "latest": 70,
+     "hiring": 20,
+     "not_hiring": [],
+     "percent": 40.0,
+     "percent_withheld": null,
+     "turnover": null,
+     "share": {
+      "start": 0.5,
+      "latest": 0.7000000000000001,
+      "denominator_start": 10000,
+      "denominator_latest": 10000
+     }
+    }
+   }
+  ],
+  "breakdown": {
+   "closing": {
+    "start": 0,
+    "latest": 0,
+    "hiring": 20,
+    "not_hiring": [
+     {
+      "change": "moved_between_categories",
+      "kind": "counting",
+      "label": "moved between categories by a counting change",
+      "size": -20
+     }
+    ],
+    "percent": null,
+    "percent_withheld": "a closing row has no start",
+    "turnover": null,
+    "share": null
+   }
+  },
+  "marked_changes": [],
+  "day_markers": [],
+  "reconciles": true,
+  "violations": []
+ }
+}

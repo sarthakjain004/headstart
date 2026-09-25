@@ -1,0 +1,226 @@
+{
+ "description": "2,000 duplicate postings removed from Acme; +10 of hiring.",
+ "answer_input": {
+  "stamps": [
+   "2026-09-13T00:00:00+00:00",
+   "2026-09-14T00:00:00+00:00",
+   "2026-09-15T00:00:00+00:00",
+   "2026-09-16T00:00:00+00:00"
+  ],
+  "series": [
+   {
+    "name": "greenhouse:acme",
+    "label": "Acme",
+    "points": [
+     3000,
+     3000,
+     1000,
+     1010
+    ],
+    "latest": 1010
+   },
+   {
+    "name": "lever:beta",
+    "label": "Beta",
+    "points": [
+     50,
+     50,
+     50,
+     50
+    ],
+    "latest": 50
+   }
+  ],
+  "evicted": [
+   {
+    "ts": "2026-09-15T00:00:00+00:00",
+    "company": "greenhouse:acme",
+    "count": 2000
+   }
+  ],
+  "metric": "stock",
+  "coverage": "all",
+  "new_window_days": 7,
+  "family": null,
+  "split_by": "company",
+  "companies": [
+   {
+    "key": "greenhouse:acme",
+    "label": "Acme",
+    "board_keys": [
+     "greenhouse:acme"
+    ],
+    "atses": [
+     "greenhouse"
+    ]
+   },
+   {
+    "key": "lever:beta",
+    "label": "Beta",
+    "board_keys": [
+     "lever:beta"
+    ],
+    "atses": [
+     "lever"
+    ]
+   }
+  ],
+  "epochs": [],
+  "discovered": [],
+  "pick_series": {},
+  "pick_parts": {},
+  "pick_turnover": {},
+  "counted_since": {
+   "greenhouse:acme": "2026-09-13T00:00:00+00:00",
+   "lever:beta": "2026-09-13T00:00:00+00:00"
+  },
+  "totals": [
+   10000,
+   10000,
+   10000,
+   10000
+  ],
+  "non_tech": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "watch_parents": [],
+  "uncounted": [],
+  "company_totals": {}
+ },
+ "reading": {
+  "window": {
+   "from": "2026-09-13T00:00:00+00:00",
+   "to": "2026-09-16T00:00:00+00:00"
+  },
+  "picked": true,
+  "total": null,
+  "lines": [
+   {
+    "name": "greenhouse:acme",
+    "label": "Acme",
+    "estimated": false,
+    "move": {
+     "start": 3000,
+     "latest": 1010,
+     "hiring": 10,
+     "not_hiring": [
+      {
+       "change": "removed@2026-09-15T00:00:00+00:00/greenhouse:acme",
+       "kind": "duplicates_removed",
+       "label": "duplicate postings removed",
+       "size": -2000
+      }
+     ],
+     "percent": 1.0,
+     "percent_withheld": null,
+     "turnover": null,
+     "share": {
+      "start": 10.0,
+      "latest": 10.100000000000001,
+      "denominator_start": 10000,
+      "denominator_latest": 10000
+     }
+    }
+   },
+   {
+    "name": "lever:beta",
+    "label": "Beta",
+    "estimated": false,
+    "move": {
+     "start": 50,
+     "latest": 50,
+     "hiring": 0,
+     "not_hiring": [],
+     "percent": 0.0,
+     "percent_withheld": null,
+     "turnover": null,
+     "share": {
+      "start": 0.5,
+      "latest": 0.5,
+      "denominator_start": 10000,
+      "denominator_latest": 10000
+     }
+    }
+   }
+  ],
+  "company_lines": [
+   {
+    "name": "greenhouse:acme",
+    "label": "Acme",
+    "estimated": false,
+    "move": {
+     "start": 3000,
+     "latest": 1010,
+     "hiring": 10,
+     "not_hiring": [
+      {
+       "change": "removed@2026-09-15T00:00:00+00:00/greenhouse:acme",
+       "kind": "duplicates_removed",
+       "label": "duplicate postings removed",
+       "size": -2000
+      }
+     ],
+     "percent": 1.0,
+     "percent_withheld": null,
+     "turnover": null,
+     "share": {
+      "start": 10.0,
+      "latest": 10.100000000000001,
+      "denominator_start": 10000,
+      "denominator_latest": 10000
+     }
+    }
+   },
+   {
+    "name": "lever:beta",
+    "label": "Beta",
+    "estimated": false,
+    "move": {
+     "start": 50,
+     "latest": 50,
+     "hiring": 0,
+     "not_hiring": [],
+     "percent": 0.0,
+     "percent_withheld": null,
+     "turnover": null,
+     "share": {
+      "start": 0.5,
+      "latest": 0.5,
+      "denominator_start": 10000,
+      "denominator_latest": 10000
+     }
+    }
+   }
+  ],
+  "breakdown": null,
+  "marked_changes": [
+   {
+    "id": "removed@2026-09-15T00:00:00+00:00/greenhouse:acme",
+    "kind": "duplicates_removed",
+    "ts": "2026-09-15T00:00:00+00:00",
+    "label": "duplicate postings removed",
+    "fields": [],
+    "changed": [],
+    "company": "greenhouse:acme",
+    "boards": null,
+    "sizes": {
+     "greenhouse:acme": -2000
+    }
+   }
+  ],
+  "day_markers": [
+   {
+    "day": "2026-09-15",
+    "at": "2026-09-15T00:00:00+00:00",
+    "changes": [
+     "removed@2026-09-15T00:00:00+00:00/greenhouse:acme"
+    ]
+   }
+  ],
+  "reconciles": true,
+  "violations": []
+ }
+}

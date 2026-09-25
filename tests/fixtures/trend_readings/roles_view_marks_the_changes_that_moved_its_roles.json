@@ -1,0 +1,198 @@
+{
+ "description": "A tracked role moved by a filter change.",
+ "answer_input": {
+  "stamps": [
+   "2026-09-13T00:00:00+00:00",
+   "2026-09-14T00:00:00+00:00",
+   "2026-09-15T00:00:00+00:00",
+   "2026-09-16T00:00:00+00:00"
+  ],
+  "totals": [
+   1000,
+   1000,
+   1000,
+   1000
+  ],
+  "series": [
+   {
+    "name": "watch:llm",
+    "label": "watch:llm",
+    "points": [
+     80,
+     80,
+     96,
+     96
+    ],
+    "latest": 96
+   }
+  ],
+  "epochs": [
+   {
+    "ts": "2026-09-15T00:00:00+00:00",
+    "changed": [
+     "tech filter changed"
+    ],
+    "fields": [
+     "tech_filter_version"
+    ]
+   }
+  ],
+  "metric": "stock",
+  "coverage": "all",
+  "new_window_days": 7,
+  "family": "software-engineering",
+  "split_by": "family",
+  "companies": [
+   {
+    "key": "greenhouse:acme",
+    "label": "Acme",
+    "board_keys": [
+     "greenhouse:acme"
+    ],
+    "atses": [
+     "greenhouse"
+    ]
+   }
+  ],
+  "discovered": [],
+  "evicted": [],
+  "pick_series": {},
+  "pick_parts": {},
+  "pick_turnover": {},
+  "counted_since": {
+   "greenhouse:acme": "2026-09-13T00:00:00+00:00"
+  },
+  "non_tech": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "watch_parents": [],
+  "uncounted": [],
+  "company_totals": {}
+ },
+ "reading": {
+  "window": {
+   "from": "2026-09-13T00:00:00+00:00",
+   "to": "2026-09-16T00:00:00+00:00"
+  },
+  "picked": true,
+  "total": {
+   "name": "__total__",
+   "label": "",
+   "estimated": false,
+   "move": {
+    "start": 80,
+    "latest": 96,
+    "hiring": 0,
+    "not_hiring": [
+     {
+      "change": "counting@2026-09-15T00:00:00+00:00",
+      "kind": "counting",
+      "label": "tech filter changed",
+      "size": 16
+     }
+    ],
+    "percent": 0.0,
+    "percent_withheld": null,
+    "turnover": null,
+    "share": {
+     "start": 9.6,
+     "latest": 9.6,
+     "denominator_start": 1000,
+     "denominator_latest": 1000
+    }
+   }
+  },
+  "lines": [
+   {
+    "name": "watch:llm",
+    "label": "watch:llm",
+    "estimated": false,
+    "move": {
+     "start": 80,
+     "latest": 96,
+     "hiring": 0,
+     "not_hiring": [
+      {
+       "change": "counting@2026-09-15T00:00:00+00:00",
+       "kind": "counting",
+       "label": "tech filter changed",
+       "size": 16
+      }
+     ],
+     "percent": 0.0,
+     "percent_withheld": null,
+     "turnover": null,
+     "share": {
+      "start": 9.6,
+      "latest": 9.6,
+      "denominator_start": 1000,
+      "denominator_latest": 1000
+     }
+    }
+   }
+  ],
+  "company_lines": [
+   {
+    "name": "watch:llm",
+    "label": "watch:llm",
+    "estimated": false,
+    "move": {
+     "start": 80,
+     "latest": 96,
+     "hiring": 0,
+     "not_hiring": [
+      {
+       "change": "counting@2026-09-15T00:00:00+00:00",
+       "kind": "counting",
+       "label": "tech filter changed",
+       "size": 16
+      }
+     ],
+     "percent": 0.0,
+     "percent_withheld": null,
+     "turnover": null,
+     "share": {
+      "start": 9.6,
+      "latest": 9.6,
+      "denominator_start": 1000,
+      "denominator_latest": 1000
+     }
+    }
+   }
+  ],
+  "breakdown": null,
+  "marked_changes": [
+   {
+    "id": "counting@2026-09-15T00:00:00+00:00",
+    "kind": "counting",
+    "ts": "2026-09-15T00:00:00+00:00",
+    "label": "tech filter changed",
+    "fields": [
+     "tech_filter_version"
+    ],
+    "changed": [
+     "tech filter changed"
+    ],
+    "company": null,
+    "boards": null,
+    "sizes": {
+     "watch:llm": 16
+    }
+   }
+  ],
+  "day_markers": [
+   {
+    "day": "2026-09-15",
+    "at": "2026-09-15T00:00:00+00:00",
+    "changes": [
+     "counting@2026-09-15T00:00:00+00:00"
+    ]
+   }
+  ],
+  "reconciles": true,
+  "violations": []
+ }
+}

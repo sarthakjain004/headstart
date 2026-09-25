@@ -1,0 +1,294 @@
+{
+ "description": "A duplicate-removal change can move only Micron, so only its part of the sum leaves that run out.",
+ "answer_input": {
+  "stamps": [
+   "2026-09-13T00:00:00+00:00",
+   "2026-09-14T00:00:00+00:00",
+   "2026-09-15T00:00:00+00:00",
+   "2026-09-16T00:00:00+00:00"
+  ],
+  "series": [
+   {
+    "name": "mid",
+    "label": "mid",
+    "points": [
+     300,
+     300,
+     280,
+     280
+    ],
+    "latest": 280
+   }
+  ],
+  "epochs": [
+   {
+    "ts": "2026-09-15T00:00:00+00:00",
+    "changed": [
+     "duplicate removal changed"
+    ],
+    "fields": [
+     "dedup_version"
+    ]
+   }
+  ],
+  "pick_series": {
+   "greenhouse:acme": [
+    100,
+    100,
+    100,
+    100
+   ],
+   "eightfold:careers.micron.com": [
+    200,
+    200,
+    180,
+    180
+   ]
+  },
+  "pick_turnover": {
+   "greenhouse:acme": {
+    "opened": [
+     null,
+     10,
+     20,
+     30
+    ],
+    "closed": [
+     null,
+     0,
+     0,
+     0
+    ],
+    "recounted": [
+     null,
+     0,
+     0,
+     0
+    ]
+   },
+   "eightfold:careers.micron.com": {
+    "opened": [
+     null,
+     1,
+     2,
+     3
+    ],
+    "closed": [
+     null,
+     0,
+     0,
+     0
+    ],
+    "recounted": [
+     null,
+     0,
+     0,
+     0
+    ]
+   }
+  },
+  "metric": "stock",
+  "coverage": "all",
+  "new_window_days": 7,
+  "family": "ai-ml",
+  "split_by": "band",
+  "companies": [
+   {
+    "key": "greenhouse:acme",
+    "label": "Acme",
+    "board_keys": [
+     "greenhouse:acme"
+    ],
+    "atses": [
+     "greenhouse"
+    ]
+   },
+   {
+    "key": "eightfold:careers.micron.com",
+    "label": "Micron",
+    "board_keys": [
+     "eightfold:careers.micron.com"
+    ],
+    "atses": [
+     "eightfold"
+    ]
+   }
+  ],
+  "discovered": [],
+  "evicted": [],
+  "pick_parts": {},
+  "counted_since": {
+   "greenhouse:acme": "2026-09-13T00:00:00+00:00",
+   "eightfold:careers.micron.com": "2026-09-13T00:00:00+00:00"
+  },
+  "totals": [
+   10000,
+   10000,
+   10000,
+   10000
+  ],
+  "non_tech": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "watch_parents": [],
+  "uncounted": [],
+  "company_totals": {}
+ },
+ "reading": {
+  "window": {
+   "from": "2026-09-13T00:00:00+00:00",
+   "to": "2026-09-16T00:00:00+00:00"
+  },
+  "picked": true,
+  "total": {
+   "name": "__total__",
+   "label": "",
+   "estimated": false,
+   "move": {
+    "start": 300,
+    "latest": 280,
+    "hiring": 0,
+    "not_hiring": [
+     {
+      "change": "counting@2026-09-15T00:00:00+00:00",
+      "kind": "counting",
+      "label": "duplicate removal changed",
+      "size": -20
+     }
+    ],
+    "percent": 0.0,
+    "percent_withheld": null,
+    "turnover": {
+     "opened": 61,
+     "closed": 0
+    },
+    "share": {
+     "start": 2.8000000000000003,
+     "latest": 2.8000000000000003,
+     "denominator_start": 10000,
+     "denominator_latest": 10000
+    }
+   }
+  },
+  "lines": [
+   {
+    "name": "mid",
+    "label": "mid",
+    "estimated": false,
+    "move": {
+     "start": 300,
+     "latest": 280,
+     "hiring": 0,
+     "not_hiring": [
+      {
+       "change": "counting@2026-09-15T00:00:00+00:00",
+       "kind": "counting",
+       "label": "duplicate removal changed",
+       "size": -20
+      }
+     ],
+     "percent": 0.0,
+     "percent_withheld": null,
+     "turnover": null,
+     "share": {
+      "start": 2.8000000000000003,
+      "latest": 2.8000000000000003,
+      "denominator_start": 10000,
+      "denominator_latest": 10000
+     }
+    }
+   }
+  ],
+  "company_lines": [
+   {
+    "name": "greenhouse:acme",
+    "label": "Acme",
+    "estimated": false,
+    "move": {
+     "start": 100,
+     "latest": 100,
+     "hiring": 0,
+     "not_hiring": [],
+     "percent": 0.0,
+     "percent_withheld": null,
+     "turnover": {
+      "opened": 60,
+      "closed": 0
+     },
+     "share": {
+      "start": 1.0,
+      "latest": 1.0,
+      "denominator_start": 10000,
+      "denominator_latest": 10000
+     }
+    }
+   },
+   {
+    "name": "eightfold:careers.micron.com",
+    "label": "Micron",
+    "estimated": false,
+    "move": {
+     "start": 200,
+     "latest": 180,
+     "hiring": 0,
+     "not_hiring": [
+      {
+       "change": "counting@2026-09-15T00:00:00+00:00",
+       "kind": "counting",
+       "label": "duplicate removal changed",
+       "size": -20
+      }
+     ],
+     "percent": 0.0,
+     "percent_withheld": null,
+     "turnover": {
+      "opened": 1,
+      "closed": 0
+     },
+     "share": {
+      "start": 1.7999999999999998,
+      "latest": 1.7999999999999998,
+      "denominator_start": 10000,
+      "denominator_latest": 10000
+     }
+    }
+   }
+  ],
+  "breakdown": {
+   "closing": null
+  },
+  "marked_changes": [
+   {
+    "id": "counting@2026-09-15T00:00:00+00:00",
+    "kind": "counting",
+    "ts": "2026-09-15T00:00:00+00:00",
+    "label": "duplicate removal changed",
+    "fields": [
+     "dedup_version"
+    ],
+    "changed": [
+     "duplicate removal changed"
+    ],
+    "company": null,
+    "boards": null,
+    "sizes": {
+     "eightfold:careers.micron.com": -20
+    }
+   }
+  ],
+  "day_markers": [
+   {
+    "day": "2026-09-15",
+    "at": "2026-09-15T00:00:00+00:00",
+    "changes": [
+     "counting@2026-09-15T00:00:00+00:00"
+    ]
+   }
+  ],
+  "reconciles": true,
+  "violations": []
+ }
+}

@@ -1,0 +1,222 @@
+{
+ "description": "A filter change adds 200 at [2]; half the list is removed at [3], its settling run, where 50 more land.",
+ "answer_input": {
+  "stamps": [
+   "2026-09-13T00:00:00+00:00",
+   "2026-09-14T00:00:00+00:00",
+   "2026-09-15T00:00:00+00:00",
+   "2026-09-16T00:00:00+00:00",
+   "2026-09-17T00:00:00+00:00"
+  ],
+  "series": [
+   {
+    "name": "eightfold:micron",
+    "label": "Micron",
+    "points": [
+     2000,
+     2000,
+     2200,
+     1150,
+     1160
+    ],
+    "latest": 1160
+   }
+  ],
+  "company_totals": {
+   "eightfold:micron": [
+    2000,
+    2000,
+    2200,
+    1150,
+    1160
+   ]
+  },
+  "evicted": [
+   {
+    "ts": "2026-09-16T00:00:00+00:00",
+    "company": "eightfold:micron",
+    "count": 1100
+   }
+  ],
+  "epochs": [
+   {
+    "ts": "2026-09-15T00:00:00+00:00",
+    "changed": [
+     "tech filter changed"
+    ],
+    "fields": [
+     "tech_filter_version"
+    ]
+   }
+  ],
+  "metric": "stock",
+  "coverage": "all",
+  "new_window_days": 7,
+  "family": null,
+  "split_by": "company",
+  "companies": [
+   {
+    "key": "eightfold:micron",
+    "label": "Micron",
+    "board_keys": [
+     "eightfold:micron"
+    ],
+    "atses": [
+     "eightfold"
+    ]
+   }
+  ],
+  "discovered": [],
+  "pick_series": {},
+  "pick_parts": {},
+  "pick_turnover": {},
+  "counted_since": {
+   "eightfold:micron": "2026-09-13T00:00:00+00:00"
+  },
+  "totals": [
+   10000,
+   10000,
+   10000,
+   10000,
+   10000
+  ],
+  "non_tech": [
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "watch_parents": [],
+  "uncounted": []
+ },
+ "reading": {
+  "window": {
+   "from": "2026-09-13T00:00:00+00:00",
+   "to": "2026-09-17T00:00:00+00:00"
+  },
+  "picked": true,
+  "total": null,
+  "lines": [
+   {
+    "name": "eightfold:micron",
+    "label": "Micron",
+    "estimated": false,
+    "move": {
+     "start": 2000,
+     "latest": 1160,
+     "hiring": 10,
+     "not_hiring": [
+      {
+       "change": "counting@2026-09-15T00:00:00+00:00",
+       "kind": "counting",
+       "label": "tech filter changed",
+       "size": 250
+      },
+      {
+       "change": "removed@2026-09-16T00:00:00+00:00/eightfold:micron",
+       "kind": "duplicates_removed",
+       "label": "duplicate postings removed",
+       "size": -1100
+      }
+     ],
+     "percent": 0.8695652173913043,
+     "percent_withheld": null,
+     "turnover": null,
+     "share": {
+      "start": 100.0,
+      "latest": 100.0,
+      "denominator_start": 1150,
+      "denominator_latest": 1160
+     }
+    }
+   }
+  ],
+  "company_lines": [
+   {
+    "name": "eightfold:micron",
+    "label": "Micron",
+    "estimated": false,
+    "move": {
+     "start": 2000,
+     "latest": 1160,
+     "hiring": 10,
+     "not_hiring": [
+      {
+       "change": "counting@2026-09-15T00:00:00+00:00",
+       "kind": "counting",
+       "label": "tech filter changed",
+       "size": 250
+      },
+      {
+       "change": "removed@2026-09-16T00:00:00+00:00/eightfold:micron",
+       "kind": "duplicates_removed",
+       "label": "duplicate postings removed",
+       "size": -1100
+      }
+     ],
+     "percent": 0.8695652173913043,
+     "percent_withheld": null,
+     "turnover": null,
+     "share": {
+      "start": 100.0,
+      "latest": 100.0,
+      "denominator_start": 1150,
+      "denominator_latest": 1160
+     }
+    }
+   }
+  ],
+  "breakdown": null,
+  "marked_changes": [
+   {
+    "id": "counting@2026-09-15T00:00:00+00:00",
+    "kind": "counting",
+    "ts": "2026-09-15T00:00:00+00:00",
+    "label": "tech filter changed",
+    "fields": [
+     "tech_filter_version"
+    ],
+    "changed": [
+     "tech filter changed"
+    ],
+    "company": null,
+    "boards": null,
+    "sizes": {
+     "eightfold:micron": 250
+    }
+   },
+   {
+    "id": "removed@2026-09-16T00:00:00+00:00/eightfold:micron",
+    "kind": "duplicates_removed",
+    "ts": "2026-09-16T00:00:00+00:00",
+    "label": "duplicate postings removed",
+    "fields": [],
+    "changed": [],
+    "company": "eightfold:micron",
+    "boards": null,
+    "sizes": {
+     "eightfold:micron": -1100
+    }
+   }
+  ],
+  "day_markers": [
+   {
+    "day": "2026-09-15",
+    "at": "2026-09-15T00:00:00+00:00",
+    "changes": [
+     "counting@2026-09-15T00:00:00+00:00"
+    ]
+   },
+   {
+    "day": "2026-09-16",
+    "at": "2026-09-16T00:00:00+00:00",
+    "changes": [
+     "removed@2026-09-16T00:00:00+00:00/eightfold:micron"
+    ]
+   }
+  ],
+  "reconciles": true,
+  "violations": []
+ }
+}

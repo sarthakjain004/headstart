@@ -168,6 +168,36 @@ class _Jump:
     after: float
     kinds: set[str]
     lift: float | None
+    # the notes whose steps land on this run, for trend_reading to say whose jump it is
+    notes: tuple[int, ...] = ()
+
+
+@dataclass(frozen=True)
+class _Scaling:
+    """A run that scales the history before it by ``ratio``: a company's duplicate removal
+    (``by_removal``), or a shift the erase guard scaled because it would go below zero."""
+
+    ratio: float
+    by_removal: bool
+
+
+@dataclass
+class _NetTrace:
+    """How :func:`_net` took the steps out of one line, recorded for ``trend_reading`` to size
+    each cause without a second copy of the rule. Runs are indexes into the line's levels.
+
+    - ``scale``: each kept run -> the scale its netted value was read at (the removals and
+      scaled shifts after it);
+    - ``withheld``: each run a step lands on -> the openings the run gives up, before scaling;
+    - ``ratios``: each run that scales the history before it -> its :class:`_Scaling`;
+    - ``jumps``: each run a step lands on -> its jump.
+
+    A line summing several picks is traced pick by pick, by ``trend_reading``."""
+
+    scale: dict[int, float] = field(default_factory=dict)
+    withheld: dict[int, float] = field(default_factory=dict)
+    ratios: dict[int, _Scaling] = field(default_factory=dict)
+    jumps: dict[int, _Jump] = field(default_factory=dict)
 
 
 @dataclass
@@ -522,12 +552,15 @@ def _jumps(
         n = view.notes[k]
         if only is not None and n["kind"] not in only:
             continue
-        at = steps.setdefault(n["i"], {"size": 0, "sized": True, "kinds": set()})
+        at = steps.setdefault(
+            n["i"], {"size": 0, "sized": True, "kinds": set(), "notes": ()}
+        )
         if n["size"] is None:
             at["sized"] = False
         else:
             at["size"] += n["size"]
         at["kinds"].add(n["kind"])
+        at["notes"] += (k,)
     jumps: dict[int, _Jump] = {}
     if not steps:
         return jumps
@@ -541,6 +574,7 @@ def _jumps(
                     "size": pending["size"] + at["size"],
                     "sized": pending["sized"] and at["sized"],
                     "kinds": pending["kinds"] | at["kinds"],
+                    "notes": pending["notes"] + at["notes"],
                 }
                 if pending
                 else {**at, "kinds": set(at["kinds"])}
@@ -557,7 +591,7 @@ def _jumps(
             and pending["kinds"] == {"duplicates"}
         )
         if pending and last is not None and not hiring:
-            jumps[j] = _Jump(last, v, pending["kinds"], lift)
+            jumps[j] = _Jump(last, v, pending["kinds"], lift, pending["notes"])
         pending = None
         last = v
     return jumps
@@ -588,6 +622,7 @@ def _net(
     only: frozenset[str] | None,
     in_openings: bool,
     omit: int | None = None,
+    trace: _NetTrace | None = None,
 ) -> list:
     """``levels`` with the steps taken out of ``line``, adjusted backwards: the latest value
     stays the real one, and the history before a step is shifted by the step's size, never
@@ -598,7 +633,7 @@ def _net(
     RATIO_FLOOR openings; where it cannot scale either, the line starts after that step instead
     of inventing a zero base. A line summing several picks is the sum of each pick's own netted
     part, so a company's step comes out of its own part only, in openings; under Share every
-    level is divided by the whole."""
+    level is divided by the whole. ``trace``, when given, records how (:class:`_NetTrace`)."""
     picks = _summed_picks(view, line)
     if picks and in_openings:
         nets = []
@@ -640,6 +675,8 @@ def _net(
             # A removal on a run this line has no point at still scales what came before it.
             if j in dups:
                 scale *= dups[j]
+                if trace is not None:
+                    trace.ratios[j] = _Scaling(dups[j], by_removal=True)
             continue
         v = levels[j] * scale + lift
         if cut or v < 0:
@@ -648,19 +685,34 @@ def _net(
             continue
         out[j] = v
         jump = jumps.get(j)
+        if trace is not None:
+            trace.scale[j] = scale
+            if jump:
+                trace.jumps[j] = jump
         if j in dups:
             # The history before the run is scaled by the ratio, and the run itself gives up its
             # own step whole where it has one, else its share of the removal.
             r = dups[j]
             before = jump.before if jump else _level_before(levels, j)
             if before is not None:
-                withheld = (
-                    (jump.lift if jump.lift is not None else jump.after - jump.before)
-                    if jump
-                    else (r - 1) * before
-                )
+                if jump and jump.lift is not None:
+                    # A removal gives up its share of the line's tech openings, never the rows
+                    # it removed, which count non-tech ones too (ADR-0233 decision 3).
+                    removed = sum(
+                        view.notes[k]["size"]
+                        for k in jump.notes
+                        if view.notes[k]["evicted"]
+                    )
+                    withheld = jump.lift - removed + (r - 1) * before
+                elif jump:
+                    withheld = jump.after - jump.before
+                else:
+                    withheld = (r - 1) * before
                 lift += scale * (withheld - (r - 1) * before)
                 scale *= r
+                if trace is not None:
+                    trace.withheld[j] = withheld
+                    trace.ratios[j] = _Scaling(r, by_removal=True)
                 continue
         if not jump:
             continue
@@ -678,8 +730,13 @@ def _net(
             and size.after >= RATIO_FLOOR
         ):
             scale *= jump.after / jump.before
+            if trace is not None:
+                trace.withheld[j] = jump.after - jump.before
+                trace.ratios[j] = _Scaling(jump.after / jump.before, by_removal=False)
         else:
             lift += shift
+            if trace is not None:
+                trace.withheld[j] = shift / scale
     return out
 
 
@@ -938,11 +995,10 @@ def _sum_points(lists: list[list], width: int) -> list:
     return out
 
 
-def net_answer(answer: dict) -> dict:
-    """``answer`` (``TrendHistory.answer``'s payload) with every line's netting added. Pure: the
-    answer passed in is not changed."""
+def _viewed(answer: dict) -> tuple[dict, _View]:
+    """``answer`` with its partial reads dropped, and the view every line of it is netted in.
+    Pure: the answer passed in is not changed."""
     answer = {**answer, "series": [dict(line) for line in answer["series"]]}
-    stamps = answer["stamps"]
     companies = answer.get("companies") or []
     # A partial read is dropped before anything is netted or summed; under New a leap is the
     # week's own shape, not a misread Board.
@@ -951,15 +1007,13 @@ def net_answer(answer: dict) -> dict:
         for line in answer["series"]:
             line["points"] = list(line["points"])
         answer["partial"] = drop_partial_reads(answer["series"])
-    notes = _notes(answer)
-    split_company = answer.get("split_by") == "company"
     view = _View(
         metric=answer["metric"],
         drilled=bool(answer.get("family")),
-        split_company=split_company,
-        stamps=stamps,
+        split_company=answer.get("split_by") == "company",
+        stamps=answer["stamps"],
         totals=answer.get("totals") or [],
-        notes=notes,
+        notes=_notes(answer),
         pick_series=answer.get("pick_series") or {},
         pick_parts=answer.get("pick_parts") or {},
         pick_turnover=answer.get("pick_turnover") or {},
@@ -968,6 +1022,16 @@ def net_answer(answer: dict) -> dict:
         company_keys=[c["key"] for c in companies],
         picked=bool(companies),
     )
+    return answer, view
+
+
+def net_answer(answer: dict) -> dict:
+    """``answer`` (``TrendHistory.answer``'s payload) with every line's netting added. Pure: the
+    answer passed in is not changed."""
+    answer, view = _viewed(answer)
+    stamps = view.stamps
+    notes = view.notes
+    split_company = view.split_company
     company_totals = answer.get("company_totals") or {}
     for line in answer["series"]:
         line.update(

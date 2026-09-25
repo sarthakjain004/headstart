@@ -1,0 +1,225 @@
+{
+ "description": "AMD, counted from the second run, joins the summed categories there.",
+ "answer_input": {
+  "stamps": [
+   "2026-09-13T00:00:00+00:00",
+   "2026-09-20T00:00:00+00:00"
+  ],
+  "series": [
+   {
+    "name": "a",
+    "label": "a",
+    "points": [
+     50,
+     400
+    ],
+    "latest": 400
+   },
+   {
+    "name": "b",
+    "label": "b",
+    "points": [
+     40,
+     45
+    ],
+    "latest": 45
+   }
+  ],
+  "counted_since": {
+   "workday:nvidia": "2026-09-13T00:00:00+00:00",
+   "workday:amd": "2026-09-20T00:00:00+00:00"
+  },
+  "metric": "stock",
+  "coverage": "all",
+  "new_window_days": 7,
+  "family": null,
+  "split_by": "family",
+  "companies": [
+   {
+    "key": "workday:nvidia",
+    "label": "NVIDIA",
+    "board_keys": [
+     "workday:nvidia"
+    ],
+    "atses": [
+     "workday"
+    ]
+   },
+   {
+    "key": "workday:amd",
+    "label": "AMD",
+    "board_keys": [
+     "workday:amd"
+    ],
+    "atses": [
+     "workday"
+    ]
+   }
+  ],
+  "epochs": [],
+  "discovered": [],
+  "evicted": [],
+  "pick_series": {},
+  "pick_parts": {},
+  "pick_turnover": {},
+  "totals": [
+   10000,
+   10000
+  ],
+  "non_tech": [
+   0,
+   0
+  ],
+  "watch_parents": [],
+  "uncounted": [],
+  "company_totals": {}
+ },
+ "reading": {
+  "window": {
+   "from": "2026-09-13T00:00:00+00:00",
+   "to": "2026-09-20T00:00:00+00:00"
+  },
+  "picked": true,
+  "total": {
+   "name": "__total__",
+   "label": "",
+   "estimated": false,
+   "move": {
+    "start": 90,
+    "latest": 445,
+    "hiring": 0,
+    "not_hiring": [
+     {
+      "change": "joined@workday:amd",
+      "kind": "pick_joined",
+      "label": "counting starts",
+      "size": 355
+     }
+    ],
+    "percent": 0.0,
+    "percent_withheld": null,
+    "turnover": null,
+    "share": {
+     "start": 4.45,
+     "latest": 4.45,
+     "denominator_start": 10000,
+     "denominator_latest": 10000
+    }
+   }
+  },
+  "lines": [
+   {
+    "name": "a",
+    "label": "a",
+    "estimated": false,
+    "move": {
+     "start": 50,
+     "latest": 400,
+     "hiring": 0,
+     "not_hiring": [
+      {
+       "change": "joined@workday:amd",
+       "kind": "pick_joined",
+       "label": "counting starts",
+       "size": 350
+      }
+     ],
+     "percent": 0.0,
+     "percent_withheld": null,
+     "turnover": null,
+     "share": {
+      "start": 4.0,
+      "latest": 4.0,
+      "denominator_start": 10000,
+      "denominator_latest": 10000
+     }
+    }
+   },
+   {
+    "name": "b",
+    "label": "b",
+    "estimated": false,
+    "move": {
+     "start": 40,
+     "latest": 45,
+     "hiring": 0,
+     "not_hiring": [
+      {
+       "change": "joined@workday:amd",
+       "kind": "pick_joined",
+       "label": "counting starts",
+       "size": 5
+      }
+     ],
+     "percent": 0.0,
+     "percent_withheld": null,
+     "turnover": null,
+     "share": {
+      "start": 0.44999999999999996,
+      "latest": 0.44999999999999996,
+      "denominator_start": 10000,
+      "denominator_latest": 10000
+     }
+    }
+   }
+  ],
+  "company_lines": [
+   {
+    "name": "workday:nvidia",
+    "label": "NVIDIA",
+    "estimated": false,
+    "move": {
+     "start": 90,
+     "latest": 445,
+     "hiring": 0,
+     "not_hiring": [
+      {
+       "change": "joined@workday:amd",
+       "kind": "pick_joined",
+       "label": "counting starts",
+       "size": 355
+      }
+     ],
+     "percent": 0.0,
+     "percent_withheld": null,
+     "turnover": null,
+     "share": {
+      "start": 4.45,
+      "latest": 4.45,
+      "denominator_start": 10000,
+      "denominator_latest": 10000
+     }
+    }
+   }
+  ],
+  "breakdown": {
+   "closing": null
+  },
+  "marked_changes": [
+   {
+    "id": "joined@workday:amd",
+    "kind": "pick_joined",
+    "ts": "2026-09-20T00:00:00+00:00",
+    "label": "counting starts",
+    "fields": [],
+    "changed": [],
+    "company": "workday:amd",
+    "boards": null,
+    "sizes": {
+     "workday:nvidia": 355
+    }
+   }
+  ],
+  "day_markers": [
+   {
+    "day": "2026-09-20",
+    "at": "2026-09-20T00:00:00+00:00",
+    "changes": [
+     "joined@workday:amd"
+    ]
+   }
+  ],
+  "reconciles": true,
+  "violations": []
+ }
+}

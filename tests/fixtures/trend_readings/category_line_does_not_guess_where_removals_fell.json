@@ -1,0 +1,201 @@
+{
+ "description": "Duplicate removals are sized per Board, so a category line keeps them; the company line takes them out.",
+ "answer_input": {
+  "stamps": [
+   "2026-09-13T00:00:00+00:00",
+   "2026-09-14T00:00:00+00:00",
+   "2026-09-15T00:00:00+00:00",
+   "2026-09-16T00:00:00+00:00"
+  ],
+  "series": [
+   {
+    "name": "software-engineering",
+    "label": "software-engineering",
+    "points": [
+     100,
+     100,
+     95,
+     96
+    ],
+    "latest": 96
+   }
+  ],
+  "evicted": [
+   {
+    "ts": "2026-09-15T00:00:00+00:00",
+    "company": "greenhouse:acme",
+    "count": 7
+   }
+  ],
+  "metric": "stock",
+  "coverage": "all",
+  "new_window_days": 7,
+  "family": null,
+  "split_by": "family",
+  "companies": [
+   {
+    "key": "greenhouse:acme",
+    "label": "Acme",
+    "board_keys": [
+     "greenhouse:acme"
+    ],
+    "atses": [
+     "greenhouse"
+    ]
+   }
+  ],
+  "epochs": [],
+  "discovered": [],
+  "pick_series": {},
+  "pick_parts": {},
+  "pick_turnover": {},
+  "counted_since": {
+   "greenhouse:acme": "2026-09-13T00:00:00+00:00"
+  },
+  "totals": [
+   10000,
+   10000,
+   10000,
+   10000
+  ],
+  "non_tech": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "watch_parents": [],
+  "uncounted": [],
+  "company_totals": {}
+ },
+ "reading": {
+  "window": {
+   "from": "2026-09-13T00:00:00+00:00",
+   "to": "2026-09-16T00:00:00+00:00"
+  },
+  "picked": true,
+  "total": {
+   "name": "__total__",
+   "label": "",
+   "estimated": false,
+   "move": {
+    "start": 100,
+    "latest": 96,
+    "hiring": 3,
+    "not_hiring": [
+     {
+      "change": "removed@2026-09-15T00:00:00+00:00/greenhouse:acme",
+      "kind": "duplicates_removed",
+      "label": "duplicate postings removed",
+      "size": -7
+     }
+    ],
+    "percent": 3.225806451612903,
+    "percent_withheld": null,
+    "turnover": null,
+    "share": {
+     "start": 0.9306514560192134,
+     "latest": 0.96,
+     "denominator_start": 9993,
+     "denominator_latest": 10000
+    }
+   }
+  },
+  "lines": [
+   {
+    "name": "software-engineering",
+    "label": "software-engineering",
+    "estimated": false,
+    "move": {
+     "start": 100,
+     "latest": 96,
+     "hiring": -4,
+     "not_hiring": [],
+     "percent": -4.0,
+     "percent_withheld": null,
+     "turnover": null,
+     "share": {
+      "start": 1.0007004903432404,
+      "latest": 0.96,
+      "denominator_start": 9993,
+      "denominator_latest": 10000
+     }
+    }
+   }
+  ],
+  "company_lines": [
+   {
+    "name": "greenhouse:acme",
+    "label": "Acme",
+    "estimated": false,
+    "move": {
+     "start": 100,
+     "latest": 96,
+     "hiring": 3,
+     "not_hiring": [
+      {
+       "change": "removed@2026-09-15T00:00:00+00:00/greenhouse:acme",
+       "kind": "duplicates_removed",
+       "label": "duplicate postings removed",
+       "size": -7
+      }
+     ],
+     "percent": 3.225806451612903,
+     "percent_withheld": null,
+     "turnover": null,
+     "share": {
+      "start": 0.9306514560192134,
+      "latest": 0.96,
+      "denominator_start": 9993,
+      "denominator_latest": 10000
+     }
+    }
+   }
+  ],
+  "breakdown": {
+   "closing": {
+    "start": 0,
+    "latest": 0,
+    "hiring": 7,
+    "not_hiring": [
+     {
+      "change": "moved_between_categories",
+      "kind": "counting",
+      "label": "moved between categories by a counting change",
+      "size": -7
+     }
+    ],
+    "percent": null,
+    "percent_withheld": "a closing row has no start",
+    "turnover": null,
+    "share": null
+   }
+  },
+  "marked_changes": [
+   {
+    "id": "removed@2026-09-15T00:00:00+00:00/greenhouse:acme",
+    "kind": "duplicates_removed",
+    "ts": "2026-09-15T00:00:00+00:00",
+    "label": "duplicate postings removed",
+    "fields": [],
+    "changed": [],
+    "company": "greenhouse:acme",
+    "boards": null,
+    "sizes": {
+     "greenhouse:acme": -7
+    }
+   }
+  ],
+  "day_markers": [
+   {
+    "day": "2026-09-15",
+    "at": "2026-09-15T00:00:00+00:00",
+    "changes": [
+     "removed@2026-09-15T00:00:00+00:00/greenhouse:acme"
+    ]
+   }
+  ],
+  "reconciles": true,
+  "violations": []
+ }
+}

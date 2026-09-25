@@ -110,6 +110,11 @@ its figure is the sound one to headline, and to rank Hot by.
 * **Steps, one PR each, through the `code-review` skill:**
   1. this ADR;
   2. `trend_reading`, the checker and the golden readings, with the Space serving the reading
-     beside the current fields;
+     beside the current fields. It changes one netting rule, under decision 3: a removal alone
+     on its run used to give up the rows it removed, non-tech ones included; it now gives up
+     its share of the line's tech openings. Measured on 2026-09-25's state, this moves 0 of the
+     3,109 companies with 20 or more openings. The erase guard's rescaled growth is a cause of
+     its own, as growth counted twice is, and the closing row of decision 4 is one figure,
+     with no turnover of its own;
   3. the page reads the reading, and its arithmetic is deleted;
   4. Hot reads `read_company_moves`.

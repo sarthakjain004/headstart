@@ -1,0 +1,234 @@
+{
+ "description": "Micron Technology, only an Eightfold Board: #649 dropped almost all of its rows on one run.",
+ "answer_input": {
+  "stamps": [
+   "2026-09-13T00:00:00+00:00",
+   "2026-09-14T00:00:00+00:00",
+   "2026-09-15T00:00:00+00:00",
+   "2026-09-16T00:00:00+00:00"
+  ],
+  "series": [
+   {
+    "name": "eightfold:careers.micron.com",
+    "label": "Micron Technology",
+    "points": [
+     1887,
+     1887,
+     20,
+     20
+    ],
+    "latest": 20
+   },
+   {
+    "name": "lever:beta",
+    "label": "Beta",
+    "points": [
+     100,
+     100,
+     80,
+     80
+    ],
+    "latest": 80
+   }
+  ],
+  "epochs": [
+   {
+    "ts": "2026-09-15T00:00:00+00:00",
+    "changed": [
+     "duplicate removal changed"
+    ],
+    "fields": [
+     "dedup_version"
+    ]
+   }
+  ],
+  "metric": "stock",
+  "coverage": "all",
+  "new_window_days": 7,
+  "family": null,
+  "split_by": "company",
+  "companies": [
+   {
+    "key": "eightfold:careers.micron.com",
+    "label": "Micron Technology",
+    "board_keys": [
+     "eightfold:careers.micron.com"
+    ],
+    "atses": [
+     "eightfold"
+    ]
+   },
+   {
+    "key": "lever:beta",
+    "label": "Beta",
+    "board_keys": [
+     "lever:beta"
+    ],
+    "atses": [
+     "lever"
+    ]
+   }
+  ],
+  "discovered": [],
+  "evicted": [],
+  "pick_series": {},
+  "pick_parts": {},
+  "pick_turnover": {},
+  "counted_since": {
+   "eightfold:careers.micron.com": "2026-09-13T00:00:00+00:00",
+   "lever:beta": "2026-09-13T00:00:00+00:00"
+  },
+  "totals": [
+   10000,
+   10000,
+   10000,
+   10000
+  ],
+  "non_tech": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "watch_parents": [],
+  "uncounted": [],
+  "company_totals": {}
+ },
+ "reading": {
+  "window": {
+   "from": "2026-09-13T00:00:00+00:00",
+   "to": "2026-09-16T00:00:00+00:00"
+  },
+  "picked": true,
+  "total": null,
+  "lines": [
+   {
+    "name": "eightfold:careers.micron.com",
+    "label": "Micron Technology",
+    "estimated": false,
+    "move": {
+     "start": 1887,
+     "latest": 20,
+     "hiring": 0,
+     "not_hiring": [
+      {
+       "change": "counting@2026-09-15T00:00:00+00:00",
+       "kind": "counting",
+       "label": "duplicate removal changed",
+       "size": -1867
+      }
+     ],
+     "percent": 0.0,
+     "percent_withheld": null,
+     "turnover": null,
+     "share": {
+      "start": 0.2,
+      "latest": 0.2,
+      "denominator_start": 10000,
+      "denominator_latest": 10000
+     }
+    }
+   },
+   {
+    "name": "lever:beta",
+    "label": "Beta",
+    "estimated": false,
+    "move": {
+     "start": 100,
+     "latest": 80,
+     "hiring": -20,
+     "not_hiring": [],
+     "percent": -20.0,
+     "percent_withheld": null,
+     "turnover": null,
+     "share": {
+      "start": 1.0,
+      "latest": 0.8,
+      "denominator_start": 10000,
+      "denominator_latest": 10000
+     }
+    }
+   }
+  ],
+  "company_lines": [
+   {
+    "name": "eightfold:careers.micron.com",
+    "label": "Micron Technology",
+    "estimated": false,
+    "move": {
+     "start": 1887,
+     "latest": 20,
+     "hiring": 0,
+     "not_hiring": [
+      {
+       "change": "counting@2026-09-15T00:00:00+00:00",
+       "kind": "counting",
+       "label": "duplicate removal changed",
+       "size": -1867
+      }
+     ],
+     "percent": 0.0,
+     "percent_withheld": null,
+     "turnover": null,
+     "share": {
+      "start": 0.2,
+      "latest": 0.2,
+      "denominator_start": 10000,
+      "denominator_latest": 10000
+     }
+    }
+   },
+   {
+    "name": "lever:beta",
+    "label": "Beta",
+    "estimated": false,
+    "move": {
+     "start": 100,
+     "latest": 80,
+     "hiring": -20,
+     "not_hiring": [],
+     "percent": -20.0,
+     "percent_withheld": null,
+     "turnover": null,
+     "share": {
+      "start": 1.0,
+      "latest": 0.8,
+      "denominator_start": 10000,
+      "denominator_latest": 10000
+     }
+    }
+   }
+  ],
+  "breakdown": null,
+  "marked_changes": [
+   {
+    "id": "counting@2026-09-15T00:00:00+00:00",
+    "kind": "counting",
+    "ts": "2026-09-15T00:00:00+00:00",
+    "label": "duplicate removal changed",
+    "fields": [
+     "dedup_version"
+    ],
+    "changed": [
+     "duplicate removal changed"
+    ],
+    "company": null,
+    "boards": null,
+    "sizes": {
+     "eightfold:careers.micron.com": -1867
+    }
+   }
+  ],
+  "day_markers": [
+   {
+    "day": "2026-09-15",
+    "at": "2026-09-15T00:00:00+00:00",
+    "changes": [
+     "counting@2026-09-15T00:00:00+00:00"
+    ]
+   }
+  ],
+  "reconciles": true,
+  "violations": []
+ }
+}

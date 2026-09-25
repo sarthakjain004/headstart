@@ -1,0 +1,192 @@
+{
+ "description": "With no pick every counting change is marked on the chart, and no line is netted.",
+ "answer_input": {
+  "stamps": [
+   "2026-08-10T00:00:00+00:00",
+   "2026-08-13T00:00:00+00:00",
+   "2026-08-13T06:00:00+00:00",
+   "2026-08-13T12:00:00+00:00",
+   "2026-08-16T00:00:00+00:00"
+  ],
+  "totals": [
+   100000,
+   100000,
+   100000,
+   100000,
+   100000
+  ],
+  "series": [
+   {
+    "name": "software-engineering",
+    "label": "software-engineering",
+    "points": [
+     40000,
+     40000,
+     40500,
+     40500,
+     40600
+    ],
+    "latest": 40600
+   },
+   {
+    "name": "web-development",
+    "label": "web-development",
+    "points": [
+     9000,
+     9000,
+     9000,
+     9100,
+     9100
+    ],
+    "latest": 9100
+   }
+  ],
+  "epochs": [
+   {
+    "ts": "2026-08-13T00:00:00+00:00",
+    "changed": [
+     "tech filter changed"
+    ]
+   },
+   {
+    "ts": "2026-08-13T12:00:00+00:00",
+    "changed": [
+     "role taxonomy refit"
+    ]
+   }
+  ],
+  "metric": "stock",
+  "coverage": "all",
+  "new_window_days": 7,
+  "family": null,
+  "split_by": "family",
+  "companies": [],
+  "discovered": [],
+  "evicted": [],
+  "pick_series": {},
+  "pick_parts": {},
+  "pick_turnover": {},
+  "counted_since": {},
+  "non_tech": [
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "watch_parents": [],
+  "uncounted": [],
+  "company_totals": {}
+ },
+ "reading": {
+  "window": {
+   "from": "2026-08-10T00:00:00+00:00",
+   "to": "2026-08-16T00:00:00+00:00"
+  },
+  "picked": false,
+  "total": {
+   "name": "__total__",
+   "label": "",
+   "estimated": false,
+   "move": {
+    "start": 49000,
+    "latest": 49700,
+    "hiring": 700,
+    "not_hiring": [],
+    "percent": 1.4285714285714286,
+    "percent_withheld": null,
+    "turnover": null,
+    "share": {
+     "start": 49.0,
+     "latest": 49.7,
+     "denominator_start": 100000,
+     "denominator_latest": 100000
+    }
+   }
+  },
+  "lines": [
+   {
+    "name": "software-engineering",
+    "label": "software-engineering",
+    "estimated": false,
+    "move": {
+     "start": 40000,
+     "latest": 40600,
+     "hiring": 600,
+     "not_hiring": [],
+     "percent": 1.5,
+     "percent_withheld": null,
+     "turnover": null,
+     "share": {
+      "start": 40.0,
+      "latest": 40.6,
+      "denominator_start": 100000,
+      "denominator_latest": 100000
+     }
+    }
+   },
+   {
+    "name": "web-development",
+    "label": "web-development",
+    "estimated": false,
+    "move": {
+     "start": 9000,
+     "latest": 9100,
+     "hiring": 100,
+     "not_hiring": [],
+     "percent": 1.1111111111111112,
+     "percent_withheld": null,
+     "turnover": null,
+     "share": {
+      "start": 9.0,
+      "latest": 9.1,
+      "denominator_start": 100000,
+      "denominator_latest": 100000
+     }
+    }
+   }
+  ],
+  "company_lines": [],
+  "breakdown": null,
+  "marked_changes": [
+   {
+    "id": "counting@2026-08-13T00:00:00+00:00",
+    "kind": "counting",
+    "ts": "2026-08-13T00:00:00+00:00",
+    "label": "tech filter changed",
+    "fields": [],
+    "changed": [
+     "tech filter changed"
+    ],
+    "company": null,
+    "boards": null,
+    "sizes": {}
+   },
+   {
+    "id": "counting@2026-08-13T12:00:00+00:00",
+    "kind": "counting",
+    "ts": "2026-08-13T12:00:00+00:00",
+    "label": "role taxonomy refit",
+    "fields": [],
+    "changed": [
+     "role taxonomy refit"
+    ],
+    "company": null,
+    "boards": null,
+    "sizes": {}
+   }
+  ],
+  "day_markers": [
+   {
+    "day": "2026-08-13",
+    "at": "2026-08-13T12:00:00+00:00",
+    "changes": [
+     "counting@2026-08-13T00:00:00+00:00",
+     "counting@2026-08-13T12:00:00+00:00"
+    ]
+   }
+  ],
+  "reconciles": true,
+  "violations": []
+ }
+}

@@ -1,0 +1,275 @@
+{
+ "description": "The refit run moved −2,000: −2,041 duplicates and +41 from the family change beside them.",
+ "answer_input": {
+  "stamps": [
+   "2026-09-13T00:00:00+00:00",
+   "2026-09-14T00:00:00+00:00",
+   "2026-09-15T00:00:00+00:00",
+   "2026-09-16T00:00:00+00:00",
+   "2026-09-17T00:00:00+00:00"
+  ],
+  "series": [
+   {
+    "name": "eightfold:jobs.nvidia.com",
+    "label": "NVIDIA",
+    "points": [
+     3900,
+     3900,
+     1900,
+     1900,
+     1880
+    ],
+    "latest": 1880
+   },
+   {
+    "name": "lever:beta",
+    "label": "Beta",
+    "points": [
+     50,
+     50,
+     50,
+     50,
+     50
+    ],
+    "latest": 50
+   }
+  ],
+  "evicted": [
+   {
+    "ts": "2026-09-15T00:00:00+00:00",
+    "company": "eightfold:jobs.nvidia.com",
+    "count": 2041
+   }
+  ],
+  "epochs": [
+   {
+    "ts": "2026-09-15T00:00:00+00:00",
+    "changed": [
+     "duplicate removal changed",
+     "role family assignment changed"
+    ],
+    "fields": [
+     "dedup_version",
+     "family_classifier_version"
+    ]
+   }
+  ],
+  "metric": "stock",
+  "coverage": "all",
+  "new_window_days": 7,
+  "family": null,
+  "split_by": "company",
+  "companies": [
+   {
+    "key": "eightfold:jobs.nvidia.com",
+    "label": "NVIDIA",
+    "board_keys": [
+     "eightfold:jobs.nvidia.com"
+    ],
+    "atses": [
+     "eightfold"
+    ]
+   },
+   {
+    "key": "lever:beta",
+    "label": "Beta",
+    "board_keys": [
+     "lever:beta"
+    ],
+    "atses": [
+     "lever"
+    ]
+   }
+  ],
+  "discovered": [],
+  "pick_series": {},
+  "pick_parts": {},
+  "pick_turnover": {},
+  "counted_since": {
+   "eightfold:jobs.nvidia.com": "2026-09-13T00:00:00+00:00",
+   "lever:beta": "2026-09-13T00:00:00+00:00"
+  },
+  "totals": [
+   10000,
+   10000,
+   10000,
+   10000,
+   10000
+  ],
+  "non_tech": [
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "watch_parents": [],
+  "uncounted": [],
+  "company_totals": {}
+ },
+ "reading": {
+  "window": {
+   "from": "2026-09-13T00:00:00+00:00",
+   "to": "2026-09-17T00:00:00+00:00"
+  },
+  "picked": true,
+  "total": null,
+  "lines": [
+   {
+    "name": "eightfold:jobs.nvidia.com",
+    "label": "NVIDIA",
+    "estimated": false,
+    "move": {
+     "start": 3900,
+     "latest": 1880,
+     "hiring": -20,
+     "not_hiring": [
+      {
+       "change": "removed@2026-09-15T00:00:00+00:00/eightfold:jobs.nvidia.com",
+       "kind": "duplicates_removed",
+       "label": "duplicate postings removed",
+       "size": -2041
+      },
+      {
+       "change": "counting@2026-09-15T00:00:00+00:00",
+       "kind": "counting",
+       "label": "duplicate removal changed, role family assignment changed",
+       "size": 41
+      }
+     ],
+     "percent": -1.0526315789473684,
+     "percent_withheld": null,
+     "turnover": null,
+     "share": {
+      "start": 19.0,
+      "latest": 18.8,
+      "denominator_start": 10000,
+      "denominator_latest": 10000
+     }
+    }
+   },
+   {
+    "name": "lever:beta",
+    "label": "Beta",
+    "estimated": false,
+    "move": {
+     "start": 50,
+     "latest": 50,
+     "hiring": 0,
+     "not_hiring": [],
+     "percent": 0.0,
+     "percent_withheld": null,
+     "turnover": null,
+     "share": {
+      "start": 0.5,
+      "latest": 0.5,
+      "denominator_start": 10000,
+      "denominator_latest": 10000
+     }
+    }
+   }
+  ],
+  "company_lines": [
+   {
+    "name": "eightfold:jobs.nvidia.com",
+    "label": "NVIDIA",
+    "estimated": false,
+    "move": {
+     "start": 3900,
+     "latest": 1880,
+     "hiring": -20,
+     "not_hiring": [
+      {
+       "change": "removed@2026-09-15T00:00:00+00:00/eightfold:jobs.nvidia.com",
+       "kind": "duplicates_removed",
+       "label": "duplicate postings removed",
+       "size": -2041
+      },
+      {
+       "change": "counting@2026-09-15T00:00:00+00:00",
+       "kind": "counting",
+       "label": "duplicate removal changed, role family assignment changed",
+       "size": 41
+      }
+     ],
+     "percent": -1.0526315789473684,
+     "percent_withheld": null,
+     "turnover": null,
+     "share": {
+      "start": 19.0,
+      "latest": 18.8,
+      "denominator_start": 10000,
+      "denominator_latest": 10000
+     }
+    }
+   },
+   {
+    "name": "lever:beta",
+    "label": "Beta",
+    "estimated": false,
+    "move": {
+     "start": 50,
+     "latest": 50,
+     "hiring": 0,
+     "not_hiring": [],
+     "percent": 0.0,
+     "percent_withheld": null,
+     "turnover": null,
+     "share": {
+      "start": 0.5,
+      "latest": 0.5,
+      "denominator_start": 10000,
+      "denominator_latest": 10000
+     }
+    }
+   }
+  ],
+  "breakdown": null,
+  "marked_changes": [
+   {
+    "id": "counting@2026-09-15T00:00:00+00:00",
+    "kind": "counting",
+    "ts": "2026-09-15T00:00:00+00:00",
+    "label": "duplicate removal changed, role family assignment changed",
+    "fields": [
+     "dedup_version",
+     "family_classifier_version"
+    ],
+    "changed": [
+     "duplicate removal changed",
+     "role family assignment changed"
+    ],
+    "company": null,
+    "boards": null,
+    "sizes": {
+     "eightfold:jobs.nvidia.com": 41
+    }
+   },
+   {
+    "id": "removed@2026-09-15T00:00:00+00:00/eightfold:jobs.nvidia.com",
+    "kind": "duplicates_removed",
+    "ts": "2026-09-15T00:00:00+00:00",
+    "label": "duplicate postings removed",
+    "fields": [],
+    "changed": [],
+    "company": "eightfold:jobs.nvidia.com",
+    "boards": null,
+    "sizes": {
+     "eightfold:jobs.nvidia.com": -2041
+    }
+   }
+  ],
+  "day_markers": [
+   {
+    "day": "2026-09-15",
+    "at": "2026-09-15T00:00:00+00:00",
+    "changes": [
+     "counting@2026-09-15T00:00:00+00:00",
+     "removed@2026-09-15T00:00:00+00:00/eightfold:jobs.nvidia.com"
+    ]
+   }
+  ],
+  "reconciles": true,
+  "violations": []
+ }
+}

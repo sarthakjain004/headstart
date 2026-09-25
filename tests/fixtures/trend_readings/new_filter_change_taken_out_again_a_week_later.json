@@ -1,0 +1,81 @@
+{
+ "description": "+50 at a filter change and its settling run, −50 a week on as those openings age out of new.",
+ "answer_input": {
+  "stamps": [
+   "2026-09-16T00:00:00+00:00",
+   "2026-09-17T15:26:29+00:00",
+   "2026-09-20T00:00:00+00:00",
+   "2026-09-24T15:32:00+00:00",
+   "2026-09-25T00:00:00+00:00"
+  ],
+  "totals": [
+   100,
+   150,
+   150,
+   100,
+   100
+  ],
+  "epochs": [
+   {
+    "ts": "2026-09-17T15:26:29+00:00",
+    "changed": [
+     "tech filter changed"
+    ],
+    "fields": [
+     "tech_filter_version"
+    ]
+   }
+  ],
+  "metric": "new",
+  "coverage": "all",
+  "new_window_days": 7,
+  "family": null,
+  "split_by": "family",
+  "companies": [
+   {
+    "key": "greenhouse:acme",
+    "label": "Acme",
+    "board_keys": [
+     "greenhouse:acme"
+    ],
+    "atses": [
+     "greenhouse"
+    ]
+   }
+  ],
+  "series": [],
+  "discovered": [],
+  "evicted": [],
+  "pick_series": {},
+  "pick_parts": {},
+  "pick_turnover": {},
+  "counted_since": {
+   "greenhouse:acme": "2026-09-16T00:00:00+00:00"
+  },
+  "non_tech": [
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "watch_parents": [],
+  "uncounted": [],
+  "company_totals": {}
+ },
+ "reading": {
+  "window": {
+   "from": "2026-09-16T00:00:00+00:00",
+   "to": "2026-09-25T00:00:00+00:00"
+  },
+  "picked": true,
+  "total": null,
+  "lines": [],
+  "company_lines": [],
+  "breakdown": null,
+  "marked_changes": [],
+  "day_markers": [],
+  "reconciles": true,
+  "violations": []
+ }
+}
