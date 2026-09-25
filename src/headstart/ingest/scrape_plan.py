@@ -40,7 +40,6 @@ import shutil
 from collections.abc import Mapping
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 from headstart import (
     board_cost,
@@ -61,9 +60,6 @@ from headstart.ingest import (
     shard_speedup,
 )
 from headstart.ingest.binpack import lpt_pack_capped, shard_count
-
-if TYPE_CHECKING:
-    from headstart.scrapable_boards import ScrapableBoard
 
 _log = log.get(__name__, __spec__)
 
@@ -198,11 +194,6 @@ def _gated_boards(
     return gated
 
 
-def _count_scored(boards: list[ScrapableBoard], scores: Mapping[str, float]) -> int:
-    """How many of ``boards`` are Scored Boards, the ones that compete for the head."""
-    return sum(1 for c in boards if scores.get(board_priority.key_for(c), 0.0) > 0.0)
-
-
 def _days_since(updated_at: str, today: str) -> float:
     """Whole days between two stamps' dates; ``inf`` if the stored one is unreadable.
 
@@ -292,7 +283,7 @@ def main() -> int:
     ap.add_argument(
         "--gap",
         default=str(_GAP),
-        help="board_description_gap.csv (ADR-0062); part of the exploration tail is reserved "
+        help="board_description_gap.csv (ADR-0062); part of the Tail is reserved "
         "for its Boards, so their descriptions can finally be settled. Absent reserves nothing",
     )
     ap.add_argument(
@@ -388,25 +379,24 @@ def main() -> int:
     unsettled = board_description_gap.load(Path(args.gap))
     # The head holds every Scored Board only while they fit (ADR-0229). Past that, the
     # lowest-scored overflow joins the Tail and waits its turn by its last look like any
-    # unscored Board, which nothing downstream would notice, so it is named here. Not when the
-    # slice takes every Board: `pick_boards` then has no tail to overflow into.
-    scored = _count_scored(companies, scores)
-    head_cap = board_priority.head_slots(args.max_boards)
-    if 0 < args.max_boards < len(companies) and scored > head_cap:
+    # unscored Board, which nothing downstream would notice, so it is named here.
+    overflow = board_priority.head_overflow(companies, scores, args.max_boards)
+    if overflow:
+        head_cap = board_priority.head_slots(args.max_boards)
         _log.warning(
-            f"head: {scored:,} Scored Boards for {head_cap:,} head slots; the lowest-scored "
-            f"{scored - head_cap:,} join the Tail (ADR-0229)"
+            f"head: {head_cap + overflow:,} Scored Boards for {head_cap:,} head slots; the "
+            f"lowest-scored {overflow:,} join the Tail (ADR-0229)"
         )
     companies = pick_boards(
         companies,
         scores,
         args.max_boards,
         unsettled=unsettled,
-        # When each Board was last looked at, so the tail rotates oldest-first (ADR-0229).
+        # When each Board was last looked at, so the Tail rotates oldest-first (ADR-0229).
         last_looked={key: row.updated_at for key, row in cost_rows.items()},
     )
     n = len(companies)
-    priority = _count_scored(companies, scores)
+    priority = sum(1 for c in companies if board_priority.is_scored(c, scores))
     # Boards in the slice that hold unsettled descriptions — deliberately NOT reported as "the
     # quota picked N". A gap Board also reaches the slice through the head or the Tail
     # on its own, so a count phrased as quota fill would claim picks the reservation did not

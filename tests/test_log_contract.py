@@ -72,7 +72,7 @@ four-figure for that reason, including where the emitter has no separator today 
 case a `:,` would be *added* to. What stays below the line is a number the pipeline itself keeps
 small, where raising it would make the fixture lie about the run rather than about the format
 string: a shard count (15 at most) and its ATS-file count (21), the ATSes that contributed
-nothing (3), the Boards the ADR-0064 value gate skips (7), `QUARANTINE_AT` (a five-strike
+nothing (3), the Boards the ADR-0064 value gate skips (7), `QUARANTINE_AT` (a twenty-strike
 streak), `DERIVATIONS_VERSION` (pinned by the fixture, see `_meta_sweep`), and anything rendered
 through a float format — a minute figure, a percentage, an actual/predicted ratio.
 
@@ -1915,7 +1915,7 @@ CONTRACT: tuple[Line, ...] = (
         emitter=_LEDGERS,
         body=(
             "failures: 1204 of 2215 board error(s) read as gone (404/410) across 1 shard(s) | "
-            "1204 ledger rows (1150 cleared by a successful scrape) | 1204 at/over 5 strikes "
+            "1204 ledger rows (1150 cleared by a successful scrape) | 1204 at/over 20 strikes "
             "(+1204 new, -0 released) -> board_failures.csv"
         ),
         why=(
@@ -1934,7 +1934,7 @@ CONTRACT: tuple[Line, ...] = (
     Line(
         consumer="fanout_errors.QUARANTINE",
         emitter=_LEDGERS,
-        body="  quarantined  lever:beta (5 strikes, HTTPError: HTTP Error 404: Not Found)",
+        body="  quarantined  lever:beta (20 strikes, HTTPError: HTTP Error 404: Not Found)",
         why="the per-Board sample the emitter caps at 20 — never a total (see fanout_errors' docstring)",
         emit=_ledger_failures,
     ),

@@ -50,10 +50,14 @@ from headstart.board_identity import ats_of, lower_key
 if TYPE_CHECKING:
     from headstart.scrapable_boards import ScrapableBoard
 
-# Consecutive gone-runs before a Board leaves the scrape slice. Five rather than two because a
-# Board only ages when it is actually scraped, and the exploration tail re-selects a given Board
-# roughly one run in four — so five strikes is weeks of agreement, not an afternoon's blip.
-QUARANTINE_AT = 5
+# Consecutive gone-runs before a Board leaves the scrape slice. A Board only ages when it is
+# actually scraped, so this counts its own scrapes, and what it means in time depends on how often
+# the Slice reads it. Five was set when the exploration tail re-selected a Board roughly one run
+# in four, i.e. weeks of agreement. ADR-0229 reads every Scored Board every run, which would make
+# five ~5 hours: short enough for an outage, and zwayam's live cohort sat at exactly five
+# (ADR-0170). Twenty is ~a day of consecutive 404s for a Board read every run and ~3 days for one
+# in the Tail. A dead Board costs ~0.1 s a scrape, so the slower quarantine is cheap.
+QUARANTINE_AT = 20
 
 # Days a gone-verdict stands before the Board is re-admitted for one run to re-earn it (ADR-0162).
 #

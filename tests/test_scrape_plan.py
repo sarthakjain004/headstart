@@ -567,14 +567,18 @@ def test_main_rotates_the_unscored_tail_oldest_first(tmp_path, monkeypatch):
     Slice smaller than the unscored set takes the Boards read longest ago."""
     from headstart import board_cost
 
-    boards = [ScrapableBoard("lever", f"b{i}", f"B{i}") for i in range(6)]
+    # 30 Boards for 5 slots: a random draw lands on the 5 oldest once in ~142,000 plans.
+    boards = [ScrapableBoard("lever", f"b{i}", f"B{i}") for i in range(30)]
     monkeypatch.setattr(
         ps.scrapable_boards, "load", lambda ledger, min_jobs=0: list(boards)
     )
     cost = tmp_path / "board_cost.csv"
     board_cost.save(
         cost,
-        {f"lever:b{i}": _cost(1.0, f"2026-09-25T0{i}:00:00+00:00") for i in range(6)},
+        {
+            f"lever:b{i}": _cost(1.0, f"2026-09-25T00:{i:02d}:00+00:00")
+            for i in range(30)
+        },
     )
     out = tmp_path / "assignments"
     monkeypatch.setattr(
@@ -593,7 +597,7 @@ def test_main_rotates_the_unscored_tail_oldest_first(tmp_path, monkeypatch):
             "--out-dir",
             str(out),
             "--max-boards",
-            "2",
+            "5",
             "--max-shards",
             "1",
         ],
@@ -604,7 +608,7 @@ def test_main_rotates_the_unscored_tail_oldest_first(tmp_path, monkeypatch):
         f"{rec['ats']}:{rec['slug']}"
         for rec in map(json.loads, (out / "shard-0.jsonl").read_text().splitlines())
     }
-    assert planned == {"lever:b0", "lever:b1"}
+    assert planned == {f"lever:b{i}" for i in range(5)}
 
 
 def _plan_scored_boards(tmp_path, monkeypatch, n_boards, max_boards):

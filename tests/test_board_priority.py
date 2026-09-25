@@ -293,3 +293,28 @@ def test_rotation_order_never_reorders_the_scored_head():
         companies, scores, 10, last_looked=last_looked, rng=random.Random(2)
     )
     assert [c.slug for c in picked[:5]] == ["c0", "c1", "c2", "c3", "c4"]
+
+
+def test_scored_boards_the_head_cannot_seat_take_the_tail_by_last_look():
+    """Past the head cap the lowest-scored Boards join the Tail (ADR-0229) and wait their turn by
+    their last look like any unscored Board — neither ahead of the queue nor behind it."""
+    companies = _companies(10)
+    scores = {f"lever:c{i}": float(100 - i) for i in range(5)}  # c0..c4 scored
+    cap = head_slots(5)
+    assert cap < len(scores), "the fixture must overflow the head"
+    last_looked = {f"lever:c{i}": "2026-09-24T12:00:00+00:00" for i in range(10)}
+    last_looked["lever:c4"] = (
+        "2026-09-20T00:00:00+00:00"  # overflow, looked at longest ago
+    )
+    last_looked["lever:c3"] = (
+        "2026-09-25T12:00:00+00:00"  # overflow, looked at most recently
+    )
+
+    for seed in range(5):
+        picked = pick_boards(
+            companies, scores, 5, last_looked=last_looked, rng=random.Random(seed)
+        )
+        slugs = [c.slug for c in picked]
+        assert slugs[:cap] == [f"c{i}" for i in range(cap)]
+        assert slugs[cap] == "c4", "the oldest look goes first, scored or not"
+        assert "c3" not in slugs, "a fresh look waits behind every older one"

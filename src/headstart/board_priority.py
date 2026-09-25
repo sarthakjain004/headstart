@@ -12,7 +12,7 @@ left all 13,714 Workday and Personio boards permanently unscored). Since ADR-009
 and joining them silently produced nonsense for exactly those two ATSes. The file
 rides the pipeline's HF-dataset state round-trip; it deliberately does NOT live in the
 embedding store dir, which is regenerable and gets wiped by evictions — this history must
-survive them. A missing file degrades every consumer to the old behavior (pure shuffle,
+survive them. A missing file degrades every consumer to the old behavior (no priority head,
 corpus order).
 """
 
@@ -34,15 +34,39 @@ CURRENT_WEIGHT = 0.7  # EWMA weight on the night's tech count (the rest on histo
 # The Slice's share for its Tail, which explores the unscored Boards in rotation (ADR-0229). The
 # head gets the other 70%, which at an 80,000-Board slice holds every Scrapable Scored Board.
 TAIL_FRAC = 0.3
-GAP_FRAC = (
-    0.05  # share of that exploration tail reserved for the description gap (ADR-0062)
-)
+GAP_FRAC = 0.05  # share of the Tail reserved for the description gap (ADR-0062)
 PRUNE_BELOW = 0.05  # decayed rows below this drop out (~3 zero-tech scrapes)
 
 
 def head_slots(max_boards: int, tail_frac: float = TAIL_FRAC) -> int:
     """The most Scored Boards a ``max_boards`` slice gives its head; the Tail gets the rest."""
     return max_boards - round(max_boards * tail_frac)
+
+
+def is_scored(board: ScrapableBoard, scores: Mapping[str, float]) -> bool:
+    """Whether ``board`` is a Scored Board, i.e. competes for the head."""
+    return scores.get(key_for(board), 0.0) > 0.0
+
+
+def _takes_every_board(max_boards: int, n_boards: int) -> bool:
+    """A cap of 0, or one at least as big as the list, leaves no Tail: the slice is every Board."""
+    return not max_boards or max_boards >= n_boards
+
+
+def head_overflow(
+    boards: list[ScrapableBoard],
+    scores: Mapping[str, float],
+    max_boards: int,
+    tail_frac: float = TAIL_FRAC,
+) -> int:
+    """How many Scored Boards the head cannot seat, which join the Tail (ADR-0229).
+
+    0 when the slice takes every Board, since :func:`pick_boards` then has no Tail to fill.
+    """
+    if _takes_every_board(max_boards, len(boards)):
+        return 0
+    scored = sum(1 for c in boards if is_scored(c, scores))
+    return max(0, scored - head_slots(max_boards, tail_frac))
 
 
 def key_for(board: ScrapableBoard | str) -> str:
@@ -176,8 +200,9 @@ def pick_boards(
     The head gets ``head_slots(max_boards, tail_frac)`` slots of scored boards (stable sort over
     a shuffle = random tiebreak); the Tail fills the rest from the remaining boards. A short
     scored list rolls its unused head slots into the Tail.
-    With no scores (bootstrap) or ``max_boards=0`` semantics this degrades to the previous
-    behavior: pure shuffle + cap, or every board (scored-first when scores exist).
+    With no scores (bootstrap) the head is empty and the Tail takes the whole cap, in rotation
+    order when ``last_looked`` is given and shuffled otherwise. ``max_boards=0`` returns every
+    board, scored first.
 
     ``unsettled`` is the ADR-0062 description-gap ledger, ``{board: Jobs whose description we
     have never settled}``. When given, ``round(tail * gap_frac)`` of the *Tail's* slots are
@@ -208,17 +233,17 @@ def pick_boards(
     # rides HF, so treat this as indicative) 4,611 of them held a row — 3,784 Workday, 827
     # Personio — every one scoring 0.0 whatever it had earned, reachable only through the random
     # exploration tail. No board loses a score from this change; 4,611 regain one.
-    known = [c for c in shuffled if scores.get(key_for(c), 0.0) > 0.0]
+    known = [c for c in shuffled if is_scored(c, scores)]
     # Sorting an empty list is a no-op, so the bootstrap case (no ledger yet) falls through the
     # same path rather than returning early. It has to: the gap quota is reserved out of the
-    # exploration slots, and an early return skipped it entirely whenever nothing was scored —
+    # Tail's slots, and an early return skipped it entirely whenever nothing was scored —
     # which is exactly the state a fresh or lost priority ledger leaves behind.
     known.sort(
         key=lambda c: scores[key_for(c)], reverse=True
     )  # stable: shuffle breaks ties
 
-    if not max_boards or max_boards >= len(boards):
-        rest = [c for c in shuffled if scores.get(key_for(c), 0.0) <= 0.0]
+    if _takes_every_board(max_boards, len(boards)):
+        rest = [c for c in shuffled if not is_scored(c, scores)]
         return known + rest
 
     head = known[: head_slots(max_boards, tail_frac)]
