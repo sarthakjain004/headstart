@@ -1,0 +1,1654 @@
+"""Trends' one reader of its stored history (ADR-0230): what ``/trends`` and the company picker
+answer from. It lives in ``headstart`` proper, not ``ingest``, so the Space and the pipeline can
+both import it.
+
+The history is the Board-delta ledger (ADR-0143): one file per **Tick** under
+``data/state/role_trend_board_deltas/``, each holding every **Board delta** of that tick and, since
+ADR-0227, the tick's turnover. Replayed, it gives every group's count at every tick, for the whole
+index or for any set of Boards. The aggregate ledger, ``role_trends.parquet``, is read only for
+the ticks before the delta ledger began on 2026-09-13. Nothing else holds those ticks, so they
+are the **archive**.
+
+:meth:`TrendHistory.load` keeps the old layout's quirks inside itself, so no reader sees them:
+
+- **Baseline ticks.** A series version's first tick (the ledger's first tick, or a re-base under a
+  new classifier head) holds every Board's whole count, so each version span replays from its own
+  first tick (``headstart.version_spans``, ADR-0221).
+- **``centroid_version``.** Each file names its series version in its metadata under this older
+  name.
+- **``trends_epochs.csv``.** Since ADR-0230 step 2 a tick's **Methodology** rides its own file's
+  metadata. Older files carry none, so the counting changes before the first stamped file come
+  from the epoch ledger, and each stamped file is compared with the one before it.
+- **The aggregate as columns, for the archive only.** The aggregate writes non-tech as one
+  ``(stock, non-tech, all, all)`` row a tick, so the replay folds non-tech the same way.
+
+Step 3 of ADR-0230 moved the Space onto this module with its answers unchanged: netting still
+happens in the page until step 4, and Hot is still ranked by ``ingest.hot_boards`` until step 5.
+"""
+
+from __future__ import annotations
+
+import csv
+import json
+from bisect import bisect_left
+from collections import Counter, defaultdict
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
+
+import numpy as np
+
+from headstart import company_match, version_spans
+from headstart.board_identity import ats_of, tenant
+from headstart.roles import NON_TECH, WATCH_PREFIX
+
+# The `new` flow window (ADR-0051), in days: how long a found Board's backlog is held out of
+# `new`, and how far a `new` view's counting changes echo. The pipeline counts `new` over the
+# same week (`ingest.role_trends.NEW_WINDOW_DAYS`).
+NEW_WINDOW_DAYS = 7
+
+# A tick file's level metrics, in the order the aggregate writes them: a Board's `stock` and `new`
+# counts, whose deltas sum to a level. Since ADR-0227 a file also carries the tick's turnover,
+# which is a count of jobs, not a change in a level, and its Unauthoritative-Board markers. They
+# mirror ingest.job_turnover.METRICS and ingest.job_turnover.UNSCOPED.
+_LEVEL_METRICS = ("new", "stock")
+_TURNOVER_METRICS = ("opened", "closed", "recounted_in", "recounted_out")
+_UNSCOPED = "unscoped"
+# What /trends serves per line: recounted as in less out, so opened − closed + recounted is the
+# line's change in openings on every run.
+_TURNOVER_KINDS = ("opened", "closed", "recounted")
+_TURNOVER_KIND_OF = {
+    "opened": ("opened", 1),
+    "closed": ("closed", 1),
+    "recounted_in": ("recounted", 1),
+    "recounted_out": ("recounted", -1),
+}
+
+_DELTAS = "role_trend_board_deltas"
+_AGGREGATE = "role_trends.parquet"
+_EPOCH_LEDGER = "trends_epochs.csv"
+_DEDUP_EVICTIONS = "dedup_evictions.csv"
+_DIRECTORY = "company_directory.json"
+
+# The epoch ledger's columns, each with what a chart says when it moves (ADR-0164).
+_EPOCH_LABELS = (
+    ("centroid_version", "role taxonomy refit"),
+    ("family_map_fingerprint", "role family map edited"),
+    ("tech_filter_version", "tech filter changed"),
+    ("derivations_version", "experience/salary extraction changed"),
+    ("dedup_version", "duplicate removal changed"),
+    ("family_classifier_version", "role family assignment changed"),
+)
+# What a stamped tick's Methodology (ADR-0230) reads as in the epoch ledger's columns. The
+# pipeline writes `centroid_version` as `none` since ADR-0220, when no centroid fit decided
+# anything any more, and keeps the family list's fingerprint under its older column name.
+_CENTROID_VERSION_SINCE_ADR_0220 = "none"
+_METHODOLOGY_COLUMNS = (
+    ("family_map_fingerprint", "family_list_fingerprint"),
+    ("tech_filter_version", "tech_filter_version"),
+    ("derivations_version", "derivations_version"),
+    ("dedup_version", "dedup_version"),
+    ("family_classifier_version", "family_classifier_version"),
+)
+
+# The seniority bands `headstart.roles.band` writes, as a reader says them: the Level view's
+# legend read "mid", "senior", "unspecified".
+_BAND_LABELS = {
+    "intern": "Internships",
+    "entry": "Entry level (0–1 yrs)",
+    "mid": "Mid level (2–4 yrs)",
+    "senior": "Senior (5–7 yrs)",
+    "staff": "Staff and above (8+ yrs)",
+    "unspecified": "Experience not stated",
+}
+
+# Mirrors app.js DEDUP_ATSES and MIRROR_ATS, and hot_boards' `_DEDUP_SIBLING_ATSES` and
+# `_DEDUP_MIRROR_ATS`: the Boards a duplicate-removal change can move. Change one, change them all;
+# tests/test_space_app.py pins that this and hot_boards agree.
+_DEDUP_ATSES = ("taleo_enterprise", "workday")
+_MIRROR_ATS = "eightfold"
+# Mirrors app.js LINE_MOVING and hot_boards' `_STOCK_MOVING`: the counting changes that move
+# every line they reach.
+_LINE_MOVING = (
+    "centroid_version",
+    "family_map_fingerprint",
+    "family_classifier_version",
+    "tech_filter_version",
+)
+
+
+class TrendsUnavailable(LookupError):
+    """What a question needs is not on this deployment yet: no history, or no company directory.
+    The Space answers 503, so the tab stays dark rather than broken."""
+
+
+@dataclass(frozen=True)
+class TrendQuestion:
+    """One ``/trends`` request, as the page sends it. Values are the raw query strings;
+    :meth:`TrendHistory.answer` validates them."""
+
+    metric: str = "stock"
+    coverage: str = "all"
+    family: str | None = None
+    split: str = "bands"
+    companies: tuple[str, ...] = ()
+    since: str | None = None
+    until: str | None = None
+    base: str | None = None
+    ats: tuple[str, ...] = ()
+
+
+class _Names:
+    """A list of names, each with a stable code, shared by every table the history encodes."""
+
+    def __init__(self) -> None:
+        self.names: list[str] = []
+        self._codes: dict[str, int] = {}
+
+    def code(self, name: str) -> int:
+        if name not in self._codes:
+            self._codes[name] = len(self.names)
+            self.names.append(name)
+        return self._codes[name]
+
+    def encode(self, column) -> np.ndarray:
+        """``column`` (an Arrow string column) as codes."""
+        encoded = column.dictionary_encode()
+        if hasattr(encoded, "combine_chunks"):
+            encoded = encoded.combine_chunks()
+        remap = np.array(
+            [self.code(name) for name in encoded.dictionary.to_pylist()],
+            dtype=np.int32,
+        )
+        return remap[encoded.indices.to_numpy(zero_copy_only=False)]
+
+    def ranks(self) -> np.ndarray:
+        """Each code's position in name order."""
+        order = sorted(range(len(self.names)), key=self.names.__getitem__)
+        ranks = np.empty(len(order), dtype=np.int64)
+        ranks[order] = np.arange(len(order))
+        return ranks
+
+
+def family_successors(path: Path) -> dict[str, str]:
+    """Each retired family's v3 successor (ADR-0220), from `retired` in the curated map: the
+    data carries the old names until the new classifier's series lands, and links made before
+    carry them after."""
+    if not path.exists():
+        return {}
+    spec = json.loads(path.read_text(encoding="utf-8"))
+    return {
+        f["name"]: f["successor"] for f in spec.get("retired", []) if f.get("successor")
+    }
+
+
+def predecessors(family: str, successors: dict[str, str]) -> list[str]:
+    """The retired families whose successor is ``family`` (ADR-0220): one step, as the Trends
+    rename takes it, so Search's category and the Trends line for it sum the same names."""
+    return [old for old, new in successors.items() if new == family]
+
+
+def watched_roles(path: Path) -> dict[str, dict[str, str]]:
+    """``{watch:name: {label, parent, match}}`` from the curated watchlist under config/
+    (ADR-0051), like the family map. Missing file means no watch roles — older deploys."""
+    if not path.exists():
+        return {}
+    spec = json.loads(path.read_text(encoding="utf-8"))
+    return {
+        WATCH_PREFIX + r["name"]: {
+            "label": r.get("label", r["name"]),
+            "parent": r["parent"],
+            # the title patterns a role is counted by, so its jobs can be handed to Search
+            "match": r.get("match", []),
+        }
+        for r in spec["roles"]
+    }
+
+
+def _family_labels(path: Path) -> dict[str, str]:
+    """Display names, from the curated map under config/ (ADR-0040). The ledger stores slugs
+    so a label can be reworded without breaking a series; this resolves them."""
+    if not path.exists():
+        return {}
+    spec = json.loads(path.read_text(encoding="utf-8"))
+    # `retired` names the families before ADR-0220, whose series the Space still serves until a
+    # new head's title cache is warm and the first series under it lands.
+    families = [
+        *spec.get("retired", []),
+        *spec["families"],
+    ]  # a listed family's label wins
+    return {f["name"]: f.get("label", f["name"]) for f in families}
+
+
+def _epoch_ledger_rows(path: Path) -> list[dict]:
+    """The epoch ledger's rows (ADR-0164), each column under its current name."""
+    if not path.exists():
+        return []
+    with path.open(encoding="utf-8", newline="") as fh:
+        rows = list(csv.DictReader(fh))
+    for row in rows:
+        # The sixth column's name before ADR-0220 renamed it in place; the pipeline rewrites the
+        # header on its first run under a new head, and this reads a file from before that.
+        if "family_rules_fingerprint" in row:
+            row["family_classifier_version"] = row.pop("family_rules_fingerprint")
+    return rows
+
+
+def _counting_changes(stamps: list[dict]) -> list[dict]:
+    """Methodology boundaries (ADR-0164): every stamp after the first names what changed since
+    the one before it, so a chart can mark the point and a reader isn't left decoding raw
+    version integers. The first stamp is a baseline, not a boundary — there is nothing before it
+    to contrast against, so it names nothing and is dropped rather than emitted empty.
+    """
+    out = []
+    for previous, row in zip([None, *stamps], stamps):
+        if previous is None:
+            continue
+        # .get: a file from before a column existed lacks it until the next tick upgrades it
+        moved = [
+            (key, label)
+            for key, label in _EPOCH_LABELS
+            if row.get(key) != previous.get(key)
+        ]
+        if moved:
+            # `fields` beside the labels, so code can key on what moved (the Trends tab asks
+            # whether duplicate removal did) without matching prose someone may reword.
+            out.append(
+                {
+                    "ts": row["ts"],
+                    "changed": [label for _, label in moved],
+                    "fields": [key for key, _ in moved],
+                }
+            )
+    return out
+
+
+def _methodology_stamps(
+    epoch_rows: list[dict], stamped: list[tuple[str, dict]]
+) -> list[dict]:
+    """Every recorded Methodology, oldest first, in the epoch ledger's columns: the ledger's rows
+    from before the first tick whose file carries its own (ADR-0230), then each stamped tick's.
+
+    The ledger records a row only when something changed, and a stamped tick records every tick,
+    so comparing each with the one before it finds the same boundaries."""
+    first = stamped[0][0] if stamped else None
+    rows = [row for row in epoch_rows if first is None or row["ts"] < first]
+    for ts, methodology in stamped:
+        rows.append(
+            {
+                "ts": ts,
+                "centroid_version": _CENTROID_VERSION_SINCE_ADR_0220,
+                **{
+                    column: str(methodology.get(key))
+                    for column, key in _METHODOLOGY_COLUMNS
+                },
+            }
+        )
+    return rows
+
+
+def _load_evictions(path: Path) -> dict[str, list[tuple[str, int]]]:
+    """``board -> [(ts, rows removed)]`` from the duplicate-removal ledger (#649), or empty.
+
+    Its ``ts`` is the run's own stamp, the one role_trends writes, so a removal lands exactly
+    on a charted run. Rows removed as duplicates are not closures, and a company's line leaves
+    them out; the rule that removed them does not matter to that, so it is summed away."""
+    if not path.exists():
+        return {}
+    out: dict[str, Counter] = defaultdict(Counter)
+    try:
+        with path.open(encoding="utf-8", newline="") as fh:
+            for row in csv.DictReader(fh):
+                out[row["board"]][row["ts"]] += int(row["count"])
+    except (OSError, ValueError, KeyError, TypeError, csv.Error) as exc:
+        print(f"dedup evictions unreadable ({exc}); none left out", flush=True)
+        return {}
+    return {board: sorted(by_ts.items()) for board, by_ts in out.items()}
+
+
+def _load_directory(path: Path) -> dict[str, dict]:
+    """The company directory (ADR-0185) as ``{company key: {name, boards}}``, or ``{}``.
+
+    A company's key is its first board_key, and any of its Boards resolves to it, so a Hot-tab
+    row or a search result links to its company by the Board it already carries. Absent or
+    half-written means no picker, never a failed boot.
+    """
+    if not path.exists():
+        return {}
+    try:
+        entries = json.loads(path.read_text(encoding="utf-8"))["companies"]
+        return {entry["boards"][0]: entry for entry in entries}
+    except (OSError, ValueError, KeyError, TypeError, IndexError):
+        return {}
+
+
+def _held_at_zero(values: list[int | None], metric: str | None) -> list[int | None]:
+    """A stock series at 0, not unmeasured, at every charted run after it first appears.
+
+    Every charted run measured stock, and the ledgers write only non-empty groups, so a series
+    absent from a run held none there. Left as gaps, a category a refit emptied showed its last
+    count as its latest and never booked the drop — Syms' systems engineering read 46 in the
+    table beside 0 in the legend. `new` keeps its own rule (``value_at``), and so does the
+    index chart with no pick (``metric`` None): a family a version stops writing there is a
+    taxonomy change the chart marks, not a fall to zero."""
+    if metric != "stock":
+        return values
+    out, seen = [], False
+    for value in values:
+        seen = seen or value is not None
+        out.append(0 if seen and value is None else value)
+    return out
+
+
+def _family_weights(rows: list[dict]) -> Counter[str]:
+    """Openings per family over ``rows`` — how much of the data each name holds."""
+    weights: Counter[str] = Counter()
+    for row in rows:
+        if row["metric"] in _LEVEL_METRICS:
+            weights[row["family"]] += row["count"]
+    return weights
+
+
+def _resolve_family(
+    family: str | None, present: Counter[str], successors: dict[str, str]
+) -> str | None:
+    """``family`` as the data holds it: itself, its successor, or its largest predecessor there
+    (``present`` counts rows per family) — "AI, ML & Data Science" before its data lands reads
+    as "AI / Machine Learning", not as its smaller half, Data Science."""
+    if not family or family in present:
+        return family
+    successor = successors.get(family)
+    if successor in present:
+        return successor
+    older = [old for old in predecessors(family, successors) if old in present]
+    return max(older, key=lambda old: present[old]) if older else family
+
+
+def _in_ats_scope(board: str, ats: list[str]) -> bool:
+    """Whether ``board`` is inside a Trends request's ATS selection (ADR-0075); no selection
+    means every ATS."""
+    return not ats or ats_of(board) in ats
+
+
+def _dedup_touched(boards: list[str]) -> bool:
+    """Whether duplicate removal can move a company holding ``boards``: any Eightfold Board, or
+    two or more Boards of one Tenant on an ATS it dedupes within (ADR-0186/0187). Tenants compare
+    case-blind, as hot_boards' `dedup_touches` compares them, and as the page's rule for a pick."""
+    sites = Counter(
+        (ats_of(board), tenant(board).lower())
+        for board in boards
+        if ats_of(board) in _DEDUP_ATSES
+    )
+    return any(ats_of(board) == _MIRROR_ATS for board in boards) or any(
+        n > 1 for n in sites.values()
+    )
+
+
+def _index_turnover(by_board: dict[str, list[dict]], touched_of) -> list[dict]:
+    """Every Board's turnover summed per tick, metric, family, band, ATS and whether duplicate
+    removal can move it (ADR-0227): what the Trends view with no company picked draws. A few
+    hundred rows a tick where the per-Board rows run to thousands, so a request sums the index
+    without walking every Board. ``touched_of(board)`` says whether duplicate removal can move the
+    company holding ``board``, the rule a company's own view leaves runs out by."""
+    summed: Counter[tuple[str, str, str, str, str, bool]] = Counter()
+    for board, rows in by_board.items():
+        touched = touched_of(board)
+        for r in rows:
+            key = (r["ts"], r["metric"], r["family"], r["band"], r["ats"], touched)
+            summed[key] += r["delta"]
+    fields = ("ts", "metric", "family", "band", "ats", "touched")
+    return [{**dict(zip(fields, key)), "delta": n} for key, n in summed.items()]
+
+
+def _left_out_runs(
+    epochs: list[dict], stamps: list[str], bands: bool
+) -> tuple[set[int], set[int]]:
+    """The charted runs a company's whole line leaves out of its hiring, as app.js `stepNotes`
+    and `netOfSteps` do: ``(for every Board, for a Board duplicate removal can move)``. A counting
+    change that moves lines, and on a levels view an extraction change, leaves out its run and
+    the run after it everywhere. A duplicate-removal change alone does so only where it can move
+    a Board. A change on the window's first run is already in every line's start."""
+    every: set[int] = set()
+    touched: set[int] = set()
+    for epoch in epochs:
+        if epoch["ts"] not in stamps[1:]:
+            continue
+        i = stamps.index(epoch["ts"])
+        fields = epoch.get("fields", [])
+        moves = any(f in _LINE_MOVING for f in fields) or (
+            bands and "derivations_version" in fields
+        )
+        runs = {j for j in (i, i + 1) if j < len(stamps)}
+        if moves:
+            every |= runs
+        elif "dedup_version" in fields:
+            touched |= runs
+    return every, touched
+
+
+def _norm_stamp(raw: str) -> str:
+    """``raw`` re-shaped to exactly how the ledger stores ``ts`` (``+00:00``, whole seconds). A
+    naive string compare against the browser's ``Date.toISOString()`` (milliseconds, a ``Z``
+    suffix) would misorder a value naming the exact same instant as a stamp, since ``'.'`` and
+    ``'+'`` sort differently. ``fromisoformat`` already parses a trailing ``Z`` natively (3.11+),
+    and a naive value is read as UTC, matching the ledger."""
+    dt = datetime.fromisoformat(raw)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=UTC)
+    return dt.astimezone(UTC).isoformat(timespec="seconds")
+
+
+def _grouped(keys: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """``(distinct keys, each row's position among them)``."""
+    return np.unique(keys, return_inverse=True)
+
+
+class TrendHistory:
+    """Every Trends fact the Space serves, read once from ``data/state`` and ``config``.
+
+    Built by :meth:`load`; the rest of the interface answers from what it read."""
+
+    def __init__(self) -> None:
+        # Every tick, oldest first: the archive's, then the delta ledger's from `_first_delta`.
+        self._ticks: list[str] = []
+        self._first_delta = 0
+        self._tick_versions: np.ndarray = np.zeros(0, dtype=np.int64)
+        self._families = _Names()
+        self._bands = _Names()
+        self._atses = _Names()
+        self._boards = _Names()
+        # The index's group counts at every tick, as the aggregate ledger holds them: the
+        # archive's own rows, then the replay's (`_replayed_index_levels`).
+        self._index = {
+            name: np.zeros(0, dtype=np.int64)
+            for name in ("tick", "metric", "family", "band", "ats", "count")
+        }
+        # Every Board delta of a level metric, in file order.
+        self._deltas = {
+            name: np.zeros(0, dtype=np.int64)
+            for name in ("tick", "board", "metric", "family", "band", "ats", "delta")
+        }
+        self._new_measured: set[str] = set()
+        self._live_version: int | None = None
+        self._openings: Counter[str] = Counter()
+        self._board_arrivals: dict[str, tuple[str, int]] = {}
+        self._new_hold: dict[str, str] = {}
+        self._ledger_start: str | None = None
+        self._turnover: dict[str, list[dict]] = {}
+        self._unscoped_markers: dict[str, list[dict]] = {}
+        self._index_turnover: list[dict] = []
+        self._turnover_since: str | None = None
+        self._epochs: list[dict] = []
+        self._evictions: dict[str, list[tuple[str, int]]] = {}
+        self._companies: dict[str, dict] = {}
+        self._company_of: dict[str, str] = {}
+        self._candidates: list[company_match.Candidate] = []
+        self._watch: dict[str, dict[str, str]] = {}
+        self._family_labels: dict[str, str] = {}
+        self._family_successor: dict[str, str] = {}
+
+    # ---- loading -------------------------------------------------------------------------
+
+    @classmethod
+    def load(cls, state_dir: Path, config_dir: Path) -> TrendHistory:
+        """Read the history under ``state_dir`` (``data/state``) and the taxonomy under
+        ``config_dir``. Never raises: a missing or unreadable ledger is an empty history, and the
+        tab stays dark rather than taking the Space down at boot."""
+        history = cls()
+        history._watch = watched_roles(config_dir / "role_watchlist.json")
+        history._family_labels = _family_labels(config_dir / "role_families.json")
+        history._family_successor = family_successors(config_dir / "role_families.json")
+        history._evictions = _load_evictions(state_dir / _DEDUP_EVICTIONS)
+        history._companies = _load_directory(state_dir / _DIRECTORY)
+        history._company_of = {
+            board: key
+            for key, entry in history._companies.items()
+            for board in entry["boards"]
+        }
+        try:
+            stamped = history._read_ledgers(state_dir)
+        except Exception as exc:  # noqa: BLE001 - an unreadable history darkens the tab only
+            print(f"trend history unreadable ({type(exc).__name__}: {exc})", flush=True)
+            stamped = []
+            fresh = cls()
+            for name in ("_watch", "_family_labels", "_family_successor", "_evictions"):
+                setattr(fresh, name, getattr(history, name))
+            fresh._companies, fresh._company_of = history._companies, history._company_of
+            history = fresh
+        history._epochs = _counting_changes(
+            _methodology_stamps(_epoch_ledger_rows(state_dir / _EPOCH_LEDGER), stamped)
+        )
+        history._derive_board_facts()
+        return history
+
+    def _read_ledgers(self, state_dir: Path) -> list[tuple[str, dict]]:
+        """Read the tick files and the archive; returns each stamped tick's Methodology."""
+        import pyarrow as pa
+        import pyarrow.parquet as pq
+
+        files = []
+        for path in sorted((state_dir / _DELTAS).glob("*.parquet")):
+            table = pq.read_table(path)
+            meta = table.schema.metadata or {}
+            ts = (meta.get(b"ts") or b"").decode()
+            if not ts and table.num_rows:
+                ts = table.column("ts")[0].as_py()
+            if not ts:
+                continue  # an empty file with no stamp names no tick
+            methodology = (
+                json.loads(meta[b"methodology"]) if b"methodology" in meta else None
+            )
+            files.append(
+                (ts, int(meta.get(b"centroid_version", b"-1")), methodology, table)
+            )
+        files.sort(key=lambda file: file[0])
+        first_delta = files[0][0] if files else None
+        archive_ticks, archive_versions = self._read_archive(
+            state_dir / _AGGREGATE, first_delta
+        )
+        self._ticks = [*archive_ticks, *(ts for ts, *_ in files)]
+        self._first_delta = len(archive_ticks)
+        self._tick_versions = np.array(
+            [*archive_versions, *(version for _, version, *_ in files)],
+            dtype=np.int64,
+        )
+        spans = version_spans.spans(zip(self._ticks, self._tick_versions.tolist()))
+        # The version the newest runs are counted at: the last to begin, not the last read.
+        self._live_version = spans[-1][0] if spans else None
+        if files:
+            columns = ["board", "metric", "family", "band", "ats", "delta"]
+            table = pa.concat_tables(
+                [file[3].select(columns) for file in files]
+            ).combine_chunks()
+            ticks = np.repeat(
+                np.arange(self._first_delta, len(self._ticks), dtype=np.int64),
+                [file[3].num_rows for file in files],
+            )
+            self._read_deltas(table, ticks)
+        self._index = self._join_index(self._index, self._replayed_index_levels())
+        self._new_measured = {
+            self._ticks[t]
+            for t in np.unique(self._index["tick"][self._index["metric"] == 0]).tolist()
+        }
+        return [(ts, methodology) for ts, _, methodology, _ in files if methodology]
+
+    def _read_archive(
+        self, path: Path, first_delta: str | None
+    ) -> tuple[list[str], list[int]]:
+        """The aggregate's rows from before the delta ledger's first tick, as columns, each tick
+        at the version its span was counted at (a stray row of another version is dropped, so
+        two versions never share a tick)."""
+        import pyarrow.compute as pc
+        import pyarrow.parquet as pq
+
+        if not path.exists():
+            return [], []
+        filters = (
+            [("ts", "<", datetime.fromisoformat(first_delta))] if first_delta else None
+        )
+        table = pq.read_table(path, filters=filters)
+        if not table.num_rows:
+            return [], []
+        instants = pc.unique(table["ts"]).sort()
+        ticks = [t.isoformat(timespec="seconds") for t in instants.to_pylist()]
+        tick = pc.index_in(table["ts"], value_set=instants).to_numpy()
+        version = table["version"].to_numpy()
+        pairs = np.unique(np.stack([tick, version], axis=1), axis=0).tolist()
+        spans = version_spans.spans((ticks[t], v) for t, v in pairs)
+        versions = [version_spans.version_at(spans, ts) for ts in ticks]
+        keep = version == np.array(versions, dtype=np.int64)[tick]
+        metric = table["metric"].to_numpy(zero_copy_only=False)
+        self._index = {
+            "tick": tick[keep].astype(np.int64),
+            "metric": np.where(metric == "new", 0, 1)[keep],
+            "family": self._families.encode(table["family"])[keep],
+            "band": self._bands.encode(table["band"])[keep],
+            "ats": self._atses.encode(table["ats"])[keep],
+            "count": table["count"].to_numpy()[keep].astype(np.int64),
+        }
+        return ticks, versions
+
+    def _read_deltas(self, table, ticks: np.ndarray) -> None:
+        """Keep the level deltas as columns, and each Board's turnover and markers as rows."""
+        metric = table["metric"].to_numpy(zero_copy_only=False)
+        levels = np.isin(metric, _LEVEL_METRICS)
+        self._deltas = {
+            "tick": ticks[levels],
+            "board": self._boards.encode(table["board"])[levels],
+            "metric": np.where(metric == "new", 0, 1)[levels],
+            "family": self._families.encode(table["family"])[levels],
+            "band": self._bands.encode(table["band"])[levels],
+            "ats": self._atses.encode(table["ats"])[levels],
+            "delta": table["delta"].to_numpy()[levels].astype(np.int64),
+        }
+        others = table.filter(~levels)
+        turnover: dict[str, list[dict]] = defaultdict(list)
+        unscoped: dict[str, list[dict]] = defaultdict(list)
+        for tick, row in zip(ticks[~levels].tolist(), others.to_pylist()):
+            row["ts"] = self._ticks[tick]
+            if row["metric"] in _TURNOVER_METRICS:
+                turnover[row["board"]].append(row)
+            elif row["metric"] == _UNSCOPED:
+                unscoped[row["board"]].append(row)
+        self._turnover = dict(turnover)
+        self._unscoped_markers = dict(unscoped)
+
+    def _delta_spans(self) -> list[tuple[int, int]]:
+        """Each version span of the delta ledger as ``(first tick, end tick)`` indices. Every
+        tick there holds one file at one version, so a span is a run of one version."""
+        ticks = self._ticks[self._first_delta :]
+        spans = version_spans.spans(
+            zip(ticks, self._tick_versions[self._first_delta :].tolist())
+        )
+        return [
+            (
+                self._first_delta + bisect_left(ticks, start),
+                self._first_delta + (bisect_left(ticks, end) if end else len(ticks)),
+            )
+            for _, start, end in spans
+        ]
+
+    def _replayed_index_levels(self) -> dict[str, np.ndarray]:
+        """The index's group counts at every delta tick, as the aggregate ledger writes them:
+        each ``(metric, family, band, ats)`` group holding any rows, in name order, then non-tech
+        as one ``(stock, non-tech, all, all)`` row, written even at 0.
+
+        Each version span replays from its own first tick, a baseline of every Board's count."""
+        d = self._deltas
+        non_tech = self._families.code(NON_TECH)
+        every = self._bands.code("all"), self._atses.code("all")
+        ats = np.where(d["family"] == non_tech, every[1], d["ats"])
+        sizes = (2, len(self._families.names), len(self._bands.names), len(self._atses.names))
+        rank = [np.arange(2), self._families.ranks(), self._bands.ranks(), self._atses.ranks()]
+        # tech groups sort by name; non-tech after all of them, as the writer appends it
+        ranked = np.ravel_multi_index(
+            (rank[0][d["metric"]], rank[1][d["family"]], rank[2][d["band"]], rank[3][ats]),
+            sizes,
+        )
+        ranked = np.where(d["family"] == non_tech, np.prod(sizes), ranked)
+        out = []
+        for start, end in self._delta_spans():
+            rows = (d["tick"] >= start) & (d["tick"] < end)
+            keys, inverse = _grouped(np.append(ranked[rows], np.prod(sizes)))
+            level = np.zeros((end - start, len(keys)), dtype=np.int64)
+            np.add.at(level, (d["tick"][rows] - start, inverse[:-1]), d["delta"][rows])
+            level = level.cumsum(axis=0)
+            tick, key = np.nonzero((level > 0) | (keys == np.prod(sizes)))
+            out.append((tick + start, keys[key], level[tick, key]))
+        if not out:
+            return {name: np.zeros(0, dtype=np.int64) for name in self._index}
+        tick, key, count = (np.concatenate(part) for part in zip(*out))
+        tech = key < np.prod(sizes)
+        m, f, b, a = np.unravel_index(np.where(tech, key, 0), sizes)
+        by_rank = [np.argsort(r) for r in rank]
+        return {
+            "tick": tick,
+            "metric": np.where(tech, by_rank[0][m], 1),
+            "family": np.where(tech, by_rank[1][f], non_tech),
+            "band": np.where(tech, by_rank[2][b], every[0]),
+            "ats": np.where(tech, by_rank[3][a], every[1]),
+            "count": count,
+        }
+
+    @staticmethod
+    def _join_index(archive: dict, replayed: dict) -> dict[str, np.ndarray]:
+        return {
+            name: np.concatenate([archive[name], replayed[name]]).astype(np.int64)
+            for name in archive
+        }
+
+    def _derive_board_facts(self) -> None:
+        """Each Board's openings, arrival and `new` hold, the index's turnover, and the picker's
+        candidates: everything per Board a request reads, derived once."""
+        d = self._deltas
+        boards = self._boards.names
+        tech_stock = (
+            (d["metric"] == 1)
+            & (d["family"] != self._families.code(NON_TECH))
+            & ~np.isin(d["family"], self._watch_codes())
+        )
+        live = self._tick_versions[d["tick"]] == (
+            self._live_version if self._live_version is not None else -1
+        )
+        # Each Board's current tech openings: its `stock` deltas summed at the live version. The
+        # directory carries no counts on purpose (ADR-0185); the delta ledger already holds them,
+        # and its first tick is a baseline of every Board's whole stock, so the sum is the level
+        # now. `non-tech` is not an opening a picker should count, and `watch:` rows re-count Jobs
+        # already counted in their family (ADR-0051).
+        counted = tech_stock & live
+        sums = np.bincount(d["board"][counted], d["delta"][counted], len(boards))
+        self._openings = Counter(
+            {
+                boards[b]: int(sums[b])
+                for b in np.unique(d["board"][counted]).tolist()
+            }
+        )
+        # Each Board's first tick in the ledger, over every version, and the tech openings it
+        # arrived with. Over every version: a refit re-writes every Board's stock at its first
+        # tick, and reading arrivals off the newest version alone made every Board "found" there.
+        # A Board's first delta is its whole stock at once (ADR-0143), so a Board found after a
+        # company's line began lands in that line as one step (ADR-0185).
+        stock = d["metric"] == 1
+        first = np.full(len(boards), len(self._ticks), dtype=np.int64)
+        np.minimum.at(first, d["board"][stock], d["tick"][stock])
+        arrived_rows = tech_stock & (d["tick"] == first[d["board"]])
+        arrived = np.bincount(
+            d["board"][arrived_rows], d["delta"][arrived_rows], len(boards)
+        )
+        self._board_arrivals = {
+            boards[b]: (self._ticks[first[b]], int(arrived[b]))
+            for b in np.nonzero(first < len(self._ticks))[0].tolist()
+        }
+        # When each Board may count toward `new`: its first tick plus the flow window (ADR-0185).
+        # Every Board, the first tick's baseline included: the ledger's first week reads a
+        # Board's whole backlog as new wherever the Board was found.
+        self._new_hold = {
+            board: (
+                datetime.fromisoformat(ts) + timedelta(days=NEW_WINDOW_DAYS)
+            ).isoformat(timespec="seconds")
+            for board, (ts, _) in self._board_arrivals.items()
+        }
+        # The first tick of the Board-delta ledger, before which no per-Board count exists.
+        self._ledger_start = min(
+            (ts for ts, _ in self._board_arrivals.values()), default=None
+        )
+        # The index's turnover summed over every Board, and the first tick that booked any: a
+        # run before it measured none, which is a gap, not a zero.
+        self._index_turnover = _index_turnover(
+            self._turnover, self._company_dedup_touched
+        )
+        self._turnover_since = min(
+            (r["ts"] for r in self._index_turnover), default=None
+        )
+        self._candidates = [
+            company_match.Candidate(
+                key=key,
+                name=entry["name"],
+                words=tuple(company_match.normalize(entry["name"])),
+                openings=self._company_openings(entry),
+            )
+            for key, entry in self._companies.items()
+        ]
+
+    def _watch_codes(self) -> np.ndarray:
+        return np.array(
+            [
+                code
+                for code, name in enumerate(self._families.names)
+                if name.startswith(WATCH_PREFIX)
+            ],
+            dtype=np.int64,
+        )
+
+    # ---- what the history answers ----------------------------------------------------------
+
+    @property
+    def ticks(self) -> tuple[str, ...]:
+        """Every tick the history holds, oldest first."""
+        return tuple(self._ticks)
+
+    @property
+    def companies(self) -> dict[str, dict]:
+        """The Company directory (ADR-0185), ``{company key: {name, boards}}``; empty until the
+        pipeline writes one."""
+        return self._companies
+
+    def openings(self) -> dict[str, int]:
+        """Every Board counted at the live series version, with its tech openings now (0 once
+        closed)."""
+        return dict(self._openings)
+
+    def index_counts(self, ts: str) -> dict[tuple[str, str, str, str], int]:
+        """The index-wide group counts at tick ``ts``, ``(metric, family, band, ats) -> count``,
+        as the aggregate ledger holds them: the archive's own rows, or the replay's."""
+        if ts not in self._ticks:
+            return {}
+        rows = self._index["tick"] == self._ticks.index(ts)
+        names = (
+            np.array(_LEVEL_METRICS, dtype=object),
+            np.array(self._families.names, dtype=object),
+            np.array(self._bands.names, dtype=object),
+            np.array(self._atses.names, dtype=object),
+        )
+        keys = zip(
+            *(
+                names[i][self._index[column][rows]].tolist()
+                for i, column in enumerate(("metric", "family", "band", "ats"))
+            )
+        )
+        return dict(zip(keys, self._index["count"][rows].tolist()))
+
+    def suggest_companies(self, query: str, limit: int) -> list[dict]:
+        """Directory companies matching ``query`` for the Trends company picker (ADR-0185), best
+        first, each with its tech openings now and Board count, labelled apart from any other
+        of the same name among them."""
+        found = company_match.suggest(query, self._candidates, limit)
+        labels = self._company_labels([candidate.key for candidate in found])
+        return [self._company_json(c.key, labels[c.key]) for c in found]
+
+    def answer(self, question: TrendQuestion) -> dict:
+        """Role counts over time (ADR-0040, ADR-0051), the ``/trends`` payload.
+
+        ``metric`` ``stock`` (default) is live openings; ``new`` is those first seen inside the
+        flow window. Default view: one series per family, each point the family's total across
+        bands. ``family`` splits that family by seniority band, and ``split=roles`` swaps the
+        bands for the family's watched roles (ADR-0051) instead. ``since`` / ``until``
+        (ISO-8601, inclusive) narrow the window to runs whose stamp falls in range; a malformed
+        one is a ValueError, not a silent no-op, and an out-of-data range answers empty series.
+
+        ``coverage=comparable`` with ``base`` (ADR-0143) selects every Board first observed at or
+        before the requested base measurement, then replays only that cohort through later
+        measurements. The Board-delta ledger starts with this feature, so an earlier base returns
+        no fabricated history.
+
+        ``ats`` (ADR-0075) narrows to the named ATSes; empty means every ATS, which is the only
+        spelling of "no filter" — naming all of them explicitly would exclude every migrated
+        pre-ADR-0075 row (they carry ``ats='all'``, matching no real name).
+
+        ``companies`` (ADR-0185) narrows to picked companies from the company directory, each
+        named by **any** of its Boards' board_keys. A company's counts exist only per Board, so a
+        pick replays the Board-delta ledger and its history starts at that ledger's first tick.
+        ``split=company`` draws one series per picked company (with ``family``, within that
+        family), and ``companies`` echoes the picks with their labels. Under a pick, ``totals`` is
+        the picks' combined total and ``company_totals`` each pick's own, so a line split by
+        company can be a share of that company. ``counted_since`` maps each pick to its first
+        counted tick, and ``ledger_start`` is the Board-delta ledger's first tick. Under a pick, a
+        Board counts toward ``new`` only once the flow window has passed since its first tick;
+        ``new_counted_from`` maps each pick to the first run its ``new`` can count.
+        ``discovered`` lists ``{ts, company, boards, openings}``: Boards of a pick found after its
+        line began, a step of openings that were already open, not hiring.
+
+        ``totals`` carries the served table per stamp, narrowed by ``ats`` exactly like every
+        other row, so the page can plot a share of what is in view. Watched roles are left out of
+        it: they re-count Jobs already counted in their family. The reserved ``non-tech`` family
+        is never a series; it rides along as ``non_tech``, the tech filter's health number.
+
+        ``epochs`` (ADR-0164) lists methodology boundaries within the requested window, not
+        narrowed by ``ats``: a change of how we count did not happen "for" one ATS.
+
+        Raises ValueError on a bad question, and TrendsUnavailable when the history, or a pick's
+        company directory, is not on this deployment yet."""
+        if not self._ticks:
+            raise TrendsUnavailable("no trend data yet")
+        metric = question.metric
+        if metric not in ("stock", "new"):
+            raise ValueError("metric must be 'stock' or 'new'")
+        coverage = question.coverage
+        if coverage not in ("all", "comparable"):
+            raise ValueError("coverage must be 'all' or 'comparable'")
+        family = question.family
+        split = question.split
+        if split not in ("bands", "roles", "company"):
+            raise ValueError("split must be 'bands', 'roles' or 'company'")
+        picked = list(question.companies)
+        company_of: dict[str, str] | None = None
+        if picked:
+            if not self._companies:
+                raise TrendsUnavailable("no company directory on this deployment yet")
+            # Board keys compare case-blind, as the directory joins them: a hand-typed
+            # `company=GOOGLE:careers.google.com` was "not in the company directory".
+            if any(board not in self._company_of for board in picked):
+                folded = {board.lower(): board for board in self._company_of}
+                picked = [
+                    board
+                    if board in self._company_of
+                    else folded.get(board.lower(), board)
+                    for board in picked
+                ]
+            unknown = [board for board in picked if board not in self._company_of]
+            if unknown:
+                raise ValueError(f"unknown company: {', '.join(unknown)}")
+            company_of = {
+                board: key
+                for key in {self._company_of[board] for board in picked}
+                for board in self._companies[key]["boards"]
+            }
+        if split == "company" and not picked:
+            raise ValueError("split=company needs at least one company")
+        try:
+            since = _norm_stamp(question.since) if question.since is not None else None
+            until = _norm_stamp(question.until) if question.until is not None else None
+            base = _norm_stamp(question.base) if question.base is not None else None
+        except ValueError:
+            raise ValueError("since/until/base must be ISO-8601") from None
+        ats = list(question.ats)
+
+        base_stamp = None
+        if coverage == "comparable" or company_of is not None:
+            # A company's counts exist only per Board, so a pick replays the delta ledger too;
+            # its history therefore starts at that ledger's first tick, 2026-09-13 (ADR-0185).
+            trends_rows, first_charted = self._replay_rows(
+                base, coverage == "comparable", company_of, ats, since, until
+            )
+            if coverage == "comparable":
+                base_stamp = first_charted
+        else:
+            trends_rows = self._index_rows(ats, since, until)
+
+        # Epochs (ADR-0164) are their own timeline, independent of the series version — a refit
+        # is itself one of the things that can produce a boundary, so filtering by the live
+        # version would hide the exact event most worth marking. Only the window narrows it.
+        epochs = self._epochs
+        if since:
+            # Under New a change a week before the window still echoes inside it (its openings
+            # age out of "new" there), so its epoch comes along for the page to mark that echo.
+            earliest = since
+            if metric == "new":
+                earliest = (
+                    datetime.fromisoformat(since) - timedelta(days=NEW_WINDOW_DAYS)
+                ).isoformat(timespec="seconds")
+            epochs = [e for e in epochs if e["ts"] >= earliest]
+        if until:
+            epochs = [e for e in epochs if e["ts"] <= until]
+
+        # Stamps and the share denominator come from `trends_rows` (since/until/ats-narrowed,
+        # but not the family/metric drill): total(ts) is every family + non-tech IN THAT SCOPE,
+        # since the counts assign every row exactly once, which is what makes share
+        # coverage-immune (ADR-0051, scope extended to ATS by ADR-0075).
+        stock = [r for r in trends_rows if r["metric"] == "stock"]
+        stamps = sorted({r["ts"] for r in stock})
+        totals: dict[str, int] = {}
+        for r in stock:
+            if not r["family"].startswith(WATCH_PREFIX):  # watch rows re-count family rows
+                totals[r["ts"]] = totals.get(r["ts"], 0) + r["count"]
+
+        # Families by the names the data holds (ADR-0220). A retired family reads as its v3
+        # successor wherever the successor has data in this scope, so a window spanning the
+        # switch draws one line, not two that stop and start. Weighed in openings, so "the
+        # larger" means more jobs, not more rows.
+        successors = self._family_successor
+        present = _family_weights(trends_rows)
+        rename = {old: new for old, new in successors.items() if new in present}
+        # A v3 name asked for before its data lands reads as all of its predecessors together:
+        # "AI, ML & Data Science" is AI / Machine Learning and Data Science.
+        if family and family not in present:
+            rename.update(
+                {
+                    old: family
+                    for old in predecessors(family, successors)
+                    if old in present
+                }
+            )
+        if rename.keys() & present.keys():
+            trends_rows = [
+                {**r, "family": rename[r["family"]]} if r["family"] in rename else r
+                for r in trends_rows
+            ]
+            present = _family_weights(trends_rows)
+        family = _resolve_family(family, present, successors)
+
+        # A watched role's parent as the data holds it: its v3 parent, or while that has no
+        # data, the retired family it resolves to.
+        def parent_of(meta: dict) -> str | None:
+            return _resolve_family(meta["parent"], present, successors)
+
+        rows = [
+            r for r in trends_rows if r["metric"] == metric and r["family"] != NON_TECH
+        ]
+        if split == "company":
+            # One series per picked company (ADR-0185): its whole tech total, or one family.
+            rows = [
+                r
+                for r in rows
+                if (
+                    r["family"] == family
+                    if family
+                    else not r["family"].startswith(WATCH_PREFIX)
+                )
+            ]
+            key = "company"
+        elif family and split == "roles":
+            # The family's watched sub-roles (ADR-0051), each its own series.
+            wanted = {n for n, meta in self._watch.items() if parent_of(meta) == family}
+            rows = [r for r in rows if r["family"] in wanted]
+            key = "family"
+        elif family:
+            rows = [r for r in rows if r["family"] == family]
+            key = "band"
+        else:
+            rows = [r for r in rows if not r["family"].startswith(WATCH_PREFIX)]
+            key = "family"
+
+        # Stamps where the `new` metric was recorded at all. The counts write only non-empty
+        # groups, so on such a stamp a series with no row genuinely saw zero fresh openings,
+        # whereas a stamp with no `new` rows anywhere is one this metric did not yet exist for.
+        # A pick's own rows cannot answer it: one company can go a whole run with nothing new,
+        # which is a 0, not a gap. So under a pick the whole index says which runs measured it.
+        measured = (
+            self._new_measured
+            if company_of
+            else {r["ts"] for r in trends_rows if r["metric"] == "new"}
+        )
+
+        def value_at(
+            points: dict[str, int], ts: str, counts_from: str | None = None
+        ) -> int | None:
+            """A series' value at one stamp — 0 where the metric ran and found none, else None.
+
+            ``counts_from`` is when a pick's ``new`` first counts (the `new` hold): before it
+            every Board of the series is held, so the run measured nothing for it, which is a
+            gap — a 0 there drew a week of nothing and then a leap that read as a surge."""
+            if counts_from is not None and ts < counts_from:
+                return None
+            return points.get(ts, 0 if metric == "new" and ts in measured else None)
+
+        picked_keys = sorted(set(company_of.values())) if company_of else []
+        # A pick with rows in scope gets a line even when this metric has none of them — for
+        # `new`, "nothing opened this week" is a line at 0. A pick with no rows at all (outside
+        # a comparable cohort, the ATS selection or the window) gets none, and is named in
+        # `uncounted`.
+        in_scope = {r["company"] for r in trends_rows} if company_of else set()
+        series: dict[str, dict[str, int]] = {
+            k: {} for k in picked_keys if key == "company" and k in in_scope
+        }
+        for r in rows:  # sum over the other axis, so a family point is its total
+            series.setdefault(r[key], {})
+            at = series[r[key]]
+            at[r["ts"]] = at.get(r["ts"], 0) + r["count"]
+        company_labels = self._company_labels(picked_keys)
+        # Each pick's own first counted tick (over the Boards in scope), which is where its line
+        # starts: the ledger's first tick for most, later for companies first counted after it.
+        counted = {
+            board: pick
+            for board, pick in (company_of or {}).items()
+            if board in self._board_arrivals and _in_ats_scope(board, ats)
+        }
+        began: dict[str, str] = {}
+        new_from: dict[str, str] = {}  # when each pick's `new` first counts
+        for board, pick in counted.items():
+            ts = self._board_arrivals[board][0]
+            began[pick] = min(began.get(pick, ts), ts)
+            release = self._new_hold.get(board, ts)
+            new_from[pick] = min(new_from.get(pick, release), release)
+
+        def _series_label(name: str) -> str:
+            if key == "company":
+                return company_labels[name]
+            if key == "band":
+                return _BAND_LABELS.get(name, name)
+            if name in self._watch:
+                return self._watch[name]["label"]
+            return self._family_labels.get(name, name)
+
+        # Under `new`, where a series' first counted run is: a company line's own pick's
+        # release, and for a line summing several picks the earliest, after which each later
+        # one joins the sum as a marked step (the page's stepNotes).
+        def counts_from(name: str) -> str | None:
+            if metric != "new" or not company_of:
+                return None
+            if key == "company":
+                return new_from.get(name)
+            return min(new_from.values(), default=None)
+
+        out = [
+            {
+                "name": name,
+                "label": _series_label(name),
+                # None (not 0) where a run has no row for this series: a gap is "not
+                # measured", and plotting it as zero would invent a crash that never happened.
+                "points": values,
+                "latest": values[-1] if stamps else None,
+            }
+            for name, values in (
+                (
+                    name,
+                    _held_at_zero(
+                        [value_at(points, ts, counts_from(name)) for ts in stamps],
+                        metric if company_of else None,
+                    ),
+                )
+                for name, points in series.items()
+            )
+        ]
+        out.sort(key=lambda s: -(s["latest"] or 0))
+        # Each pick's own line under a view that sums several, so the page takes a company's
+        # steps out of that company's part of the sum only.
+        pick_series: dict[str, list[int | None]] = {}
+        if len(picked_keys) > 1 and key != "company" and not (family and split == "roles"):
+            per: dict[str, dict[str, int]] = {}
+            for r in rows:
+                at = per.setdefault(r["company"], {})
+                at[r["ts"]] = at.get(r["ts"], 0) + r["count"]
+            pick_series = {
+                k: _held_at_zero(
+                    [
+                        value_at(
+                            points, ts, new_from.get(k) if metric == "new" else None
+                        )
+                        for ts in stamps
+                    ],
+                    metric,
+                )
+                for k, points in per.items()
+            }
+        non_tech: dict[str, int] = {}
+        for row in stock:
+            if row["family"] == NON_TECH:
+                non_tech[row["ts"]] = non_tech.get(row["ts"], 0) + row["count"]
+        # Each pick's own denominator, so a line split by company is a share of *that* company.
+        company_totals: dict[str, dict[str, int]] = {k: {} for k in picked_keys}
+        for row in stock:
+            if company_of and not row["family"].startswith(WATCH_PREFIX):
+                at = company_totals[row["company"]]
+                at[row["ts"]] = at.get(row["ts"], 0) + row["count"]
+        # Boards of a pick found after its line began: each lands its tech openings at once,
+        # openings that were already open, so the chart marks the step rather than let it read
+        # as hiring. A Board that lands on the charted point where its company's line begins
+        # starts that line and is not a step, nor is one that brought no tech openings. None
+        # under comparable coverage, which leaves every such Board out of the cohort. Under
+        # `new` a found Board steps the line when its hold ends, not when it arrived.
+        found: dict[tuple[str, str], list[int]] = {}
+        if coverage != "comparable" and stamps:
+            for board, pick in counted.items():
+                ts, openings = self._board_arrivals[board]
+                if metric == "new":
+                    ts = self._new_hold.get(board, ts)
+                at = bisect_left(stamps, ts)
+                if (
+                    openings <= 0
+                    or at == len(stamps)
+                    # the pick's line begins at its own first counted run: under `new`, where
+                    # its first Board's hold ends, not where it arrived
+                    or at
+                    <= bisect_left(
+                        stamps, new_from[pick] if metric == "new" else began[pick]
+                    )
+                ):
+                    continue
+                bucket = found.setdefault((stamps[at], pick), [0, 0])
+                bucket[0] += 1
+                bucket[1] += openings
+        # Each line's turnover (ADR-0227): the jobs opened and closed that its net change is made
+        # of. On every line of every view on stock, the index's included, and summed from the
+        # same rows, so the index's is exactly the sum of every company's. Not on the roles
+        # drill, whose watched roles re-count their family's jobs.
+        with_turnover = metric == "stock" and not (family and split == "roles")
+        # The Boards in scope, by pick ("" for the index): a pick's Boards, else under comparable
+        # coverage the cohort's, else every Board through the index's own summed rows.
+        scope: dict[str, str] | None = None
+        if company_of is not None:
+            scope = counted
+        elif coverage == "comparable":
+            scope = {
+                board: ""
+                for board in self._turnover.keys() | self._unscoped_markers.keys()
+                if _in_ats_scope(board, ats)
+            }
+        if scope is not None and base_stamp is not None:
+            scope = {
+                board: pick
+                for board, pick in scope.items()
+                if board in self._board_arrivals
+                and self._board_arrivals[board][0] <= base_stamp
+            }
+        # With no pick the lines keep a counting change's jump, marked, but its turnover is not
+        # hiring. The index leaves out, Board by Board, the runs each company's own line leaves
+        # out, so the index's opened and closed are the sum of what every company's view shows.
+        left_out: tuple[set[int], set[int]] = (
+            _left_out_runs(epochs, stamps, bool(family))
+            if company_of is None
+            else (set(), set())
+        )
+        if scope is None:
+            turnover_rows = [
+                (row, "")
+                for row in self._index_turnover
+                if not ats or row["ats"] in ats
+            ]
+            unscoped = {
+                board: ""
+                for board in self._unscoped_markers
+                if _in_ats_scope(board, ats)
+            }
+        else:
+            # A comparable cohort with no pick is still the index: each row says whether
+            # duplicate removal can move its Board's company, as the index's summed rows do.
+            if company_of is None:
+                touched = {board: self._company_dedup_touched(board) for board in scope}
+                turnover_rows = [
+                    ({**row, "touched": touched[board]}, pick)
+                    for board, pick in scope.items()
+                    for row in self._turnover.get(board, ())
+                ]
+            else:
+                turnover_rows = [
+                    (row, pick)
+                    for board, pick in scope.items()
+                    for row in self._turnover.get(board, ())
+                ]
+            unscoped = scope
+
+        def line_of(row: dict, pick: str) -> str | None:
+            held = rename.get(row["family"], row["family"])
+            if split == "company":
+                return pick if not family or held == family else None
+            if family:
+                return row["band"] if held == family else None
+            return held
+
+        pick_turnover: dict[str, dict[str, list[int | None]]] = {}
+        if with_turnover:
+            by_line = self._turnover_series(
+                turnover_rows, stamps, line_of, [line["name"] for line in out], left_out
+            )
+            for line in out:
+                line["turnover"] = by_line[line["name"]]
+            # Each pick's own turnover where its own line is served (`pick_series`), so a line
+            # summing several picks counts each pick's turnover over the runs its line counts.
+            pick_turnover = self._turnover_series(
+                turnover_rows,
+                stamps,
+                lambda row, pick: pick if line_of(row, pick) is not None else None,
+                list(pick_series),
+            )
+        # Which families have watched sub-roles, so the page can offer the roles drill only
+        # there, under the names the data holds as well as the config's.
+        watch_parents = sorted(
+            {parent for meta in self._watch.values() if (parent := parent_of(meta))}
+        )
+        return {
+            "version": self._live_version,
+            "coverage": coverage,
+            "base": base_stamp,
+            "metric": metric,
+            "stamps": stamps,
+            "series": out,
+            "totals": [totals.get(ts) for ts in stamps],
+            "non_tech": [non_tech.get(ts) for ts in stamps],
+            "split_by": key,
+            # The drilled family's display name, so a cold link into a drill can name it.
+            "family": family,  # as resolved (_resolve_family), which the page adopts
+            # Whether HeadStart has that family at all, so an unknown name reads as unknown
+            # rather than as "no openings counted" at the company. Not "holds rows in scope":
+            # `present` is already narrowed to the picks and the window.
+            "family_known": bool(family)
+            and (family in present or family in self._family_labels),
+            "family_label": self._family_labels.get(family, family) if family else None,
+            "watch_parents": watch_parents,
+            "epochs": epochs,
+            # With its Board keys, so the chart can hand a pick to Search by Board (ADR-0185).
+            "companies": [
+                {
+                    **self._company_json(k, company_labels[k]),
+                    "board_keys": self._companies[k]["boards"],
+                }
+                for k in picked_keys
+            ],
+            "pick_series": pick_series,
+            "pick_turnover": pick_turnover,
+            "company_totals": {
+                k: [company_totals[k].get(ts) for ts in stamps] for k in picked_keys
+            },
+            "counted_since": began,
+            # Picks with nothing in this scope, so the page names them rather than charting
+            # fewer companies than the chips show.
+            "uncounted": [k for k in picked_keys if k not in in_scope],
+            "ledger_start": self._ledger_start,
+            "new_counted_from": new_from,
+            "discovered": [
+                {"ts": ts, "company": pick, "boards": n, "openings": openings}
+                for (ts, pick), (n, openings) in sorted(found.items())
+            ],
+            # Duplicate rows removed from each pick's Boards, per charted run (#649). None under
+            # comparable coverage, whose cohort leaves out Boards found later. The ledger counts
+            # every removed row, `non-tech` among them.
+            "evicted": self._picks_evicted(counted, stamps)
+            if coverage != "comparable"
+            else [],
+            # When turnover began (ADR-0227). A window that starts earlier has lines whose
+            # opened and closed cover only part of it, and the page says from when.
+            "turnover_since": self._turnover_since if with_turnover else None,
+            # The runs the index's turnover leaves out for a counting change. Empty under a
+            # pick, whose page decides.
+            "turnover_left_out": [stamps[k] for k in sorted(left_out[0] | left_out[1])],
+            # Per pick ("" for the index), its Boards whose closures went uncounted on some run
+            # in the window (ADR-0053).
+            "closures_unseen": self._closures_unseen(unscoped, stamps)
+            if with_turnover
+            else {},
+        }
+
+    # ---- the rows a question reads -----------------------------------------------------------
+
+    def _window(self, since: str | None, until: str | None) -> tuple[int, int]:
+        """The ticks inside ``[since, until]`` as a ``[first, end)`` index range."""
+        lo = bisect_left(self._ticks, since) if since else 0
+        hi = bisect_left(self._ticks, until) if until else len(self._ticks)
+        if until and hi < len(self._ticks) and self._ticks[hi] == until:
+            hi += 1
+        return lo, hi
+
+    def _ats_codes(self, ats: list[str]) -> np.ndarray:
+        return np.array(
+            [self._atses.code(name) for name in ats if name in self._atses.names],
+            dtype=np.int64,
+        )
+
+    def _index_rows(
+        self, ats: list[str], since: str | None, until: str | None
+    ) -> list[dict]:
+        """The index's rows in the window and the ATS selection, summed over ATS: every
+        ``(ts, metric, family, band)`` group holding a row, each tick's in name order, as the
+        aggregate ledger lists them."""
+        lo, hi = self._window(since, until)
+        index = self._index
+        rows = (index["tick"] >= lo) & (index["tick"] < hi)
+        if ats:
+            rows &= np.isin(index["ats"], self._ats_codes(ats))
+        sizes = (max(hi - lo, 1), 2, len(self._families.names), len(self._bands.names))
+        ranks = self._families.ranks(), self._bands.ranks()
+        keys = np.ravel_multi_index(
+            (
+                index["tick"][rows] - lo,
+                index["metric"][rows],
+                ranks[0][index["family"][rows]],
+                ranks[1][index["band"][rows]],
+            ),
+            sizes,
+        )
+        held = np.bincount(keys, minlength=int(np.prod(sizes)))
+        counts = np.zeros(len(held), dtype=np.int64)
+        np.add.at(counts, keys, index["count"][rows])
+        present = np.nonzero(held)[0]
+        tick, metric, family, band = np.unravel_index(present, sizes)
+        families = np.array(self._families.names, dtype=object)[
+            np.argsort(ranks[0])
+        ]
+        bands = np.array(self._bands.names, dtype=object)[np.argsort(ranks[1])]
+        return [
+            {"ts": self._ticks[t + lo], "metric": _LEVEL_METRICS[m], "family": f, "band": b, "count": n}
+            for t, m, f, b, n in zip(
+                tick.tolist(),
+                metric.tolist(),
+                families[family].tolist(),
+                bands[band].tolist(),
+                counts[present].tolist(),
+            )
+        ]
+
+    def _replay_rows(
+        self,
+        base: str | None,
+        comparable: bool,
+        company_of: dict[str, str] | None,
+        ats: list[str],
+        since: str | None,
+        until: str | None,
+    ) -> tuple[list[dict], str | None]:
+        """Rebuild counts from the Board-delta ledger for a chosen set of Boards.
+
+        ``comparable`` keeps only Boards first observed by ``base`` (ADR-0143). ``company_of``
+        keeps only the picked companies' Boards and tags every row with its company key, so the
+        answer can split by company (ADR-0185); None means every Board. The two combine: picked
+        companies, counted only over the Boards already known at the base.
+
+        Returns the rows in the window and the ATS selection, summed over ATS, and the first
+        measurement charted (the base, when ``comparable``)."""
+        if not self._ticks or self._first_delta == len(self._ticks):
+            return [], None
+        stamps = self._ticks
+        first_delta = stamps[self._first_delta]
+        eligible: set[str] | None = None
+        if comparable:
+            if base is None:
+                base = first_delta
+            # A base before per-Board counting began starts the cohort at the first run that
+            # counted by Board: nothing earlier can be told apart, and answering "nothing" left
+            # a 30-day window blank for a reader who only asked to hold coverage fixed. The
+            # first run at or after the asked start, as All coverage starts its window.
+            at = bisect_left(stamps, max(base, first_delta))
+            base_stamp = stamps[at] if at < len(stamps) else stamps[-1]
+            eligible = {
+                board
+                for board, (seen, _) in self._board_arrivals.items()
+                if seen <= base_stamp
+            }
+        else:
+            base_stamp = first_delta
+        d = self._deltas
+        boards = self._boards.names
+        rows = np.ones(len(d["tick"]), dtype=bool)
+        company = np.zeros(len(d["tick"]), dtype=np.int64)
+        companies = [""]
+        if company_of is not None:
+            companies = sorted(set(company_of.values()))
+            code_of = {key: i for i, key in enumerate(companies)}
+            of_board = np.full(len(boards), -1, dtype=np.int64)
+            for board, key in company_of.items():
+                if board in self._boards._codes:
+                    of_board[self._boards._codes[board]] = code_of[key]
+            company = of_board[d["board"]]
+            rows &= company >= 0
+        if eligible is not None:
+            allowed = np.zeros(len(boards), dtype=bool)
+            allowed[[self._boards._codes[b] for b in eligible if b in self._boards._codes]] = True
+            rows &= allowed[d["board"]]
+        if ats:
+            rows &= np.isin(d["ats"], self._ats_codes(ats))
+        # A Board's first week in the ledger reads its whole backlog as `new`, so its `new`
+        # deltas wait out the flow window and are applied at the first run after it, when the
+        # backlog has aged out and what lands is real inflow (ADR-0185).
+        hold = np.full(len(boards), -1, dtype=np.int64)
+        for board, ts in self._new_hold.items():
+            if board in self._boards._codes:
+                hold[self._boards._codes[board]] = bisect_left(stamps, ts)
+        lo, hi = self._window(since, until)
+        first = max(bisect_left(stamps, base_stamp), lo)
+        out: list[dict] = []
+        for start, end in self._delta_spans():
+            out.extend(
+                self._replay_span(
+                    np.nonzero(rows & (d["tick"] >= start) & (d["tick"] < end))[0],
+                    company,
+                    companies,
+                    hold,
+                    start,
+                    end,
+                    range(max(start, first), min(end, hi)),
+                )
+            )
+        return out, base_stamp
+
+    def _replay_span(
+        self,
+        rows: np.ndarray,
+        company: np.ndarray,
+        companies: list[str],
+        hold: np.ndarray,
+        start: int,
+        end: int,
+        charted: range,
+    ) -> list[dict]:
+        """One version span's rows at its charted ``ticks``, from its own deltas alone.
+
+        Each group lists in the order its first delta was applied, which is the order the old
+        per-row replay listed it in (so ties between lines sort the same): a tick's held `new`
+        deltas first, Board by Board, then its own deltas in file order."""
+        if not len(rows) or not len(charted):
+            return []
+        d = self._deltas
+        board = d["board"][rows]
+        tick = d["tick"][rows]
+        held = (d["metric"][rows] == 0) & (tick < hold[board])
+        applied = np.where(held, hold[board], tick)
+        kept = applied < end  # a hold that ends after the span is never applied in it
+        rows, board, tick, held, applied = (
+            a[kept] for a in (rows, board, tick, held, applied)
+        )
+        # the order each delta is applied in: by tick; held deltas first, each Board's after the
+        # Board first held before it; then file order
+        first_held = np.full(len(self._boards.names), len(d["tick"]), dtype=np.int64)
+        np.minimum.at(first_held, board[held], rows[held])
+        order = np.lexsort(
+            (rows, np.where(held, first_held[board], rows), ~held, applied)
+        )
+        rank = np.empty(len(rows), dtype=np.int64)
+        rank[order] = np.arange(len(rows))
+        sizes = (
+            len(companies),
+            2,
+            len(self._families.names),
+            len(self._bands.names),
+        )
+        keys, inverse = _grouped(
+            np.ravel_multi_index(
+                (company[rows], d["metric"][rows], d["family"][rows], d["band"][rows]),
+                sizes,
+            )
+        )
+        first_touch = np.full(len(keys), len(rows), dtype=np.int64)
+        np.minimum.at(first_touch, inverse, rank)
+        level = np.zeros((end - start, len(keys)), dtype=np.int64)
+        touched = np.zeros((end - start, len(keys)), dtype=np.int64)
+        np.add.at(level, (applied - start, inverse), d["delta"][rows])
+        np.add.at(touched, (applied - start, inverse), 1)
+        level = level.cumsum(axis=0)
+        touched = touched.cumsum(axis=0) > 0
+        listed = np.argsort(first_touch)
+        c, m, f, b = (a.tolist() for a in np.unravel_index(keys[listed], sizes))
+        families, bands = self._families.names, self._bands.names
+        out = []
+        for t in charted:
+            here = touched[t - start, listed].tolist()
+            counts = level[t - start, listed].tolist()
+            ts = self._ticks[t]
+            out.extend(
+                {
+                    "ts": ts,
+                    "company": companies[c[k]],
+                    "metric": _LEVEL_METRICS[m[k]],
+                    "family": families[f[k]],
+                    "band": bands[b[k]],
+                    "count": counts[k],
+                }
+                for k in range(len(listed))
+                if here[k]
+            )
+        return out
+
+    # ---- turnover, removals and companies ----------------------------------------------------
+
+    def _turnover_series(
+        self,
+        rows: list[tuple[dict, str]],
+        stamps: list[str],
+        line_of,
+        names,
+        left_out: tuple[set[int], set[int]] = (set(), set()),
+    ) -> dict[str, dict[str, list[int | None]]]:
+        """The turnover of each line in ``names`` at each charted run (ADR-0227): ``{line:
+        {opened, closed, recounted}}``, each list aligned to ``stamps``. ``recounted`` is in less
+        out, so on every run ``opened − closed + recounted`` is the line's change in openings.
+        ``rows`` pairs each turnover row in scope with its pick. ``line_of(row, pick)`` names the
+        line a row belongs to, or returns None to leave the row out.
+
+        A tick's turnover lands on the first charted run at or after it, because it counts what
+        happened since the run before. The first charted run is None: what landed there happened
+        before the window. So is every run before turnover began, since nothing measured it.
+
+        ``left_out`` is :func:`_left_out_runs`' pair: runs None on every line, and runs where a
+        row duplicate removal can move (``touched``) is not counted.
+        """
+        every, touched = left_out
+        first = max(
+            bisect_left(stamps, self._turnover_since)
+            if self._turnover_since
+            else len(stamps),
+            1,
+        )
+        blank = [None] * first + [0] * (len(stamps) - first)
+        lines = {name: {m: list(blank) for m in _TURNOVER_KINDS} for name in names}
+        for row, pick in rows:
+            k = bisect_left(stamps, row["ts"])
+            line = lines.get(line_of(row, pick))
+            if not 0 < k < len(stamps) or line is None:
+                continue
+            if k in every or (row.get("touched") and k in touched):
+                continue
+            kind, sign = _TURNOVER_KIND_OF[row["metric"]]
+            line[kind][k] = (line[kind][k] or 0) + sign * row["delta"]
+        for line in lines.values():
+            for values in line.values():
+                for k in every:
+                    values[k] = None
+        return lines
+
+    def _closures_unseen(self, boards: dict[str, str], stamps: list[str]) -> dict[str, int]:
+        """Per pick, how many of its Boards had a run inside the window whose scrape could not
+        show an absence (ADR-0053), so the closures on it went uncounted that run (ADR-0227)."""
+        seen: dict[str, set[str]] = defaultdict(set)
+        if not stamps:
+            return {}
+        for board, pick in boards.items():
+            if any(
+                stamps[0] < r["ts"] <= stamps[-1]
+                for r in self._unscoped_markers.get(board, ())
+            ):
+                seen[pick].add(board)
+        return {pick: len(found) for pick, found in seen.items()}
+
+    def _picks_evicted(self, counted: dict[str, str], stamps: list[str]) -> list[dict]:
+        """``[{ts, company, count}]``: each pick's duplicate removals at the charted run that
+        shows them — the first at or after the removal's own stamp, normally that stamp."""
+        if not stamps:
+            return []
+        at: Counter = Counter()
+        for board, pick in counted.items():
+            for ts, count in self._evictions.get(board, ()):
+                k = bisect_left(stamps, ts)
+                if 0 < k < len(stamps) and count:
+                    at[(stamps[k], pick)] += count
+        return [
+            {"ts": ts, "company": pick, "count": n}
+            for (ts, pick), n in sorted(at.items())
+        ]
+
+    def _company_dedup_touched(self, board: str) -> bool:
+        """Whether duplicate removal can move the directory company holding ``board``."""
+        boards = (
+            self._companies[self._company_of[board]]["boards"]
+            if board in self._company_of
+            else [board]
+        )
+        return _dedup_touched(boards)
+
+    def _company_openings(self, entry: dict) -> int:
+        return sum(self._openings[board] for board in entry["boards"])
+
+    def _company_json(self, key: str, label: str) -> dict:
+        """A directory company as the picker and the chart show it."""
+        entry = self._companies[key]
+        return {
+            "key": key,
+            "name": entry["name"],
+            "label": label,
+            "atses": sorted({ats_of(board) for board in entry["boards"]}),
+            "boards": len(entry["boards"]),
+            "openings": self._company_openings(entry),
+        }
+
+    def _company_labels(self, keys: list[str]) -> dict[str, str]:
+        """Each company's name, told apart from any other in ``keys`` that shares it.
+
+        The directory keeps same-named employers apart when nothing proves them one (ADR-0185),
+        so "Citi" on Workday and "Citi" on Eightfold both appear, labelled by ATS. Two on the
+        *same* ATS (220 name pairs measured) are labelled by their key, the one thing they
+        cannot share.
+        """
+        names = Counter(self._companies[key]["name"] for key in keys)
+        with_ats = {
+            key: f"{self._companies[key]['name']} ("
+            f"{', '.join(sorted({ats_of(b) for b in self._companies[key]['boards']}))})"
+            for key in keys
+        }
+        still_shared = Counter(with_ats.values())
+        labels = {}
+        for key in keys:
+            name = self._companies[key]["name"]
+            if names[name] == 1:
+                labels[key] = name
+            elif still_shared[with_ats[key]] == 1:
+                labels[key] = with_ats[key]
+            else:
+                labels[key] = f"{name} ({key})"
+        return labels
