@@ -1337,6 +1337,10 @@ class BaseScraper(ABC):
                 for _ in formed:
                     self.note_detail_unattempted(DETAIL_WALLED)
                 continue
+            except Exception as exc:  # noqa: BLE001 - one batch's failure must not sink the Board
+                for _ in formed:
+                    self.note_detail_exception(exc)
+                continue
             for (i, _), response in zip(formed, responses, strict=True):
                 if isinstance(response, Exception):
                     self.note_detail_exception(response)

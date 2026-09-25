@@ -16,7 +16,7 @@ description-less Board — because Akamai refuses any explicitly issued request 
 thought to cost one browser navigation per job. `run_detail_pass` could not help: its two
 transports are curl sessions, and curl is what the wall refuses.
 
-Measured live (`experiment/tesla-promise-all-detail-fetch/`, 2026-09-22 and 2026-09-25): a tab that
+Measured live on 2026-09-22 and 2026-09-25 (captures kept locally, not committed): a tab that
 has *navigated to one job page* can then fetch other ids with page-JS `fetch()`. Batches of 10, 25
 and 50 answered 200 on every id, with descriptions, in 1.5-2.0 s per batch; the same fetches from
 the search page, or after ten idle seconds, answered 404. So the cost is one navigation plus a few
@@ -41,12 +41,21 @@ once), a 0.5 s pause after each batch, and a walled-batch policy:
 
 * **Any 403/429 is a wall; a 404 is not.** The un-warmed tab answers 404, and so does a closed
   posting, so a batch that is *mostly* non-200 without a wall status navigates to a job page again
-  and retries once; what the second try answers stands.
+  and retries once. A second mostly-non-200 answer is itself treated as a wall (404), because the
+  un-warmed tab answers 404 and a wall that arrives without a wall status would otherwise cost two
+  navigations per batch across the whole board.
 * **A wall moves the Chrome onto the spare egress** (`spare_egress.mark_walled`, then a relaunch
   with `--proxy-server=socks5://…` — Chrome fixes its proxy at launch, so a route change is a
   browser restart), and **each further wall rotates the IP**, up to three. The state read takes the
   same path, since the listing shares the origin's fate. With no spare egress, or none left, the
   state read raises as before and the detail pass stops with what it has.
+
+Two guards keep this from costing more than it buys. A batch that raises for any reason other than
+a wall (a CDP error, a timeout, a Chrome that will not launch) is labelled per item and the pass
+goes on, as the other transports isolate a failing item; the stall bound (ADR-0209) cuts a pass
+that lands nothing. And a Scraper built outside the pipeline (`have_details is None`, so the tech
+gate and the held skip are both off) skips the pass entirely: it would otherwise fetch every
+posting, ~330 batches from one IP.
 
 Rejected: a bespoke pass inside `tesla.py` (smaller, but it re-implements the gate, the skip and
 the loss labelling that ADR-0201 exists to keep in one place); and fetching all listings with no
@@ -67,6 +76,13 @@ gate (fetches descriptions for jobs the index drops, and again every run).
 ## Consequences
 
 * Other Scrapers are untouched (`detail_batch_size` defaults to None).
+* `has_detail_pass = True` puts Tesla in `registry.detail_pass_atses()`, which the embed planner
+  (degraded-vector repair), `update_meta` and the description-gap drain read. The largest
+  description gap therefore starts to be drained and its title-only vectors repaired, which is
+  the point, but it is a wider effect than the scraper.
+* Wall-clock, unmeasured on a full board: ~330 batches of 25 at ~2.5 s with the pause is about
+  14 minutes for an ungated run; the tech gate and the held skip cut that to the new Jobs of a
+  night.
 * Until that Actions run, Tesla's first pipeline run is the measurement. A wall stops the detail
   pass and keeps what landed, leaving the listing intact. Only an IP refused before the state
   read fails the Board, as an unreadable Board did before this change.

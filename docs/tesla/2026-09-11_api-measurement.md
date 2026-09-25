@@ -98,8 +98,7 @@ repo works. That was the reading on 2026-09-11 and it is superseded: on 2026-09-
 2026-09-25 a tab that had navigated to one job page fetched other ids with in-page `fetch()`, 200 on
 every id of batches up to 50, while a batch of 100 drew 403 on 69 ids and got the IP refused
 (ADR-0228, issue #553). `has_detail_pass` is now `True`; the module docstring carries the
-mechanism and the raw output is in `experiment/tesla-promise-all-detail-fetch/` (local, not
-committed).
+mechanism; the raw captures are kept locally, not committed.
 
 ## Sample size
 

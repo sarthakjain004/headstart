@@ -1099,3 +1099,22 @@ def test_run_detail_pass_keeps_an_unformed_request_out_of_a_batch():
     assert scraper.batches == [["a"], ["b"]]  # the id-less row formed no request
     assert sorted(details) == ["a", "b"]
     assert scraper.detail_losses == {"no job id": 1}
+
+
+def test_run_detail_pass_labels_a_batch_that_raises_and_carries_on():
+    def answer(ids):
+        if ids == ["b1", "b2"]:
+            raise TimeoutError("no answer from the tab")
+        return [FakeResponse(text='{"body": "text"}') for _ in ids]
+
+    scraper = _batch_scraper(answer)
+    rows = [{"id": i} for i in ("a1", "a2", "b1", "b2", "c1")]
+
+    details = scraper.run_detail_pass(
+        rows, key_of=lambda row: row.get("id"), what="pages"
+    )
+
+    assert scraper.batches == [["a1", "a2"], ["b1", "b2"], ["c1"]]  # the pass went on
+    assert sorted(details) == ["a1", "a2", "c1"]
+    assert details.missing == 2
+    assert sum(scraper.detail_losses.values()) == 2

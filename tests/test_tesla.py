@@ -11,8 +11,7 @@ must resolve that one to `None` rather than raising or dropping the Job.
 
 The Chrome itself is faked (`_chrome_factory`) and the in-page fetch is replaced at `_read_batch`:
 what is tested is the detail pass around them and the egress policy that decides when the Chrome
-is relaunched on the spare egress. The live behaviour is in `experiment/tesla-promise-all-detail-fetch/`
-and ADR-0228.
+is relaunched on the spare egress. The live behaviour is recorded in ADR-0228.
 """
 
 from __future__ import annotations
@@ -394,3 +393,85 @@ def test_the_chrome_is_launched_with_the_spare_egress_proxy_as_socks5(monkeypatc
 
     assert tesla._default_chrome() == "chrome"
     assert "--proxy-server=socks5://127.0.0.1:40000" in added
+
+
+def test_a_scraper_built_outside_the_pipeline_reads_no_details(monkeypatch):
+    # have_details is None outside the pipeline: the tech gate and the held skip are off, so the
+    # pass would fetch every posting from one IP — and one overshoot blocks the origin.
+    monkeypatch.setattr(tesla, "_fetch_state_json", _raw)
+    monkeypatch.setattr(
+        tesla, "_read_batch", lambda *a: pytest.fail("a direct caller fetched details")
+    )
+    scraper = TeslaScraper(SLUG, "Tesla")
+
+    jobs = scraper.parse(scraper.fetch_raw(), SCRAPED_AT)
+
+    assert jobs and all(j.description is None for j in jobs)
+
+
+class _FakeTab:
+    """A tab that answers each in-page batch with the next scripted list of statuses."""
+
+    def __init__(self, *batches):
+        self.batches = list(batches)
+        self.navigations = 0
+
+    async def go_to(self, url, timeout=0):
+        self.navigations += 1
+
+    async def execute_script(self, script, **kwargs):
+        rows = [{"s": s, "t": "{}"} for s in self.batches.pop(0)]
+        return {"result": {"result": {"value": json.dumps(rows)}}}
+
+
+def _read_with(monkeypatch, chrome_launches, *batches):
+    monkeypatch.setattr(tesla, "_SETTLE_S", 0)
+    tesla._ensure_started()
+    tab = _FakeTab(*batches)
+    tesla._tab = tab
+    urls = [f"{tesla._DETAIL_URL}{i}" for i in range(len(batches[0]))]
+    return tab, lambda: tesla._read_batch(urls, "https://example.invalid/job")
+
+
+def test_a_batch_of_answers_is_read_without_navigating_again(
+    monkeypatch, chrome_launches
+):
+    tab, read = _read_with(monkeypatch, chrome_launches, [200, 200, 404, 200])
+
+    assert [r["s"] for r in read()] == [200, 200, 404, 200]
+    assert (
+        tab.navigations == 0
+    )  # the tab was warmed when it opened; a lone 404 is a closed posting
+
+
+def test_a_mostly_refused_batch_navigates_again_and_keeps_the_second_answer(
+    monkeypatch, chrome_launches
+):
+    tab, read = _read_with(
+        monkeypatch, chrome_launches, [404, 404, 404, 200], [200] * 4
+    )
+
+    assert [r["s"] for r in read()] == [200] * 4
+    assert tab.navigations == 1
+
+
+def test_a_batch_still_mostly_refused_after_navigating_is_a_wall(
+    monkeypatch, chrome_launches
+):
+    tab, read = _read_with(monkeypatch, chrome_launches, [404] * 4, [404] * 4)
+
+    with pytest.raises(TeslaWalled) as wall:
+        read()
+
+    assert wall.value.status == 404 and tab.navigations == 1
+
+
+def test_one_403_in_a_batch_is_a_wall_and_discards_the_batch(
+    monkeypatch, chrome_launches
+):
+    tab, read = _read_with(monkeypatch, chrome_launches, [200, 200, 403, 200])
+
+    with pytest.raises(TeslaWalled) as wall:
+        read()
+
+    assert wall.value.status == 403 and tab.navigations == 0

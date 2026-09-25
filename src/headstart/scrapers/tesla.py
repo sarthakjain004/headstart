@@ -58,7 +58,7 @@ is not substituted in.
 (ADR-0228, issue #553). A per-job detail (``GET /cua-api/careers/job/{id}``) carries
 ``jobDescription``, ``jobResponsibilities``, ``jobRequirements`` and ``jobCompensationAndBenefits``
 as HTML. One navigation per job would be thousands a run, but the wall is not per request:
-measured live 2026-09-22 and 2026-09-25 (``experiment/tesla-promise-all-detail-fetch/``), a tab
+measured live 2026-09-22 and 2026-09-25 (captures kept locally, not committed), a tab
 that has *navigated to one job page* can then fetch other ids with page-JS ``fetch()`` — 200 on
 every id of batches of 10, 25 and 50 in 1.5-2.0 s each — while the same fetches from the search
 page, or after ten idle seconds, answer 404 (the control). So the pass navigates to a job page,
@@ -180,6 +180,7 @@ _loop: Any = None
 _browser: Any = None
 #: The tab the detail batches run in, and the proxy the browser was launched on (None: direct).
 #: Chrome fixes its proxy at launch, so a route change is a browser restart, never a setting.
+#: Not guarded beyond `_lock` on start/stop: one Board, one scrape thread, drives them.
 _tab: Any = None
 _route: str | None = None
 
@@ -249,13 +250,15 @@ def _with_egress(operation: Callable[[], Any]) -> Any:
     :class:`TeslaWalled` when the attempts are spent or no spare egress can be brought up. The
     rotation runs outside ``riding_the_tunnel``, which it waits on to drain.
     """
-    for attempt in range(_EGRESS_ATTEMPTS + 1):
+    attempt = 0
+    while True:
         _ensure_started()
         try:
             with spare_egress.riding_the_tunnel(_route):
                 return operation()
         except TeslaWalled as wall:
-            if attempt == _EGRESS_ATTEMPTS:
+            attempt += 1
+            if attempt > _EGRESS_ATTEMPTS:
                 raise
             spare_egress.mark_walled(_GROUP, wall.status)
             was_on_spare = _route is not None
@@ -265,7 +268,6 @@ def _with_egress(operation: Callable[[], Any]) -> Any:
                     raise
             elif spare_egress.proxy_for(_GROUP) is None:
                 raise
-    raise AssertionError("unreachable")
 
 
 def _fetch_state_json() -> dict[str, Any]:
@@ -360,14 +362,18 @@ class _BatchResponse:
         return json.loads(self.text)
 
 
+def _mostly_refused(rows: Sequence[dict[str, Any]]) -> bool:
+    return sum(r["s"] == 200 for r in rows) * 2 < len(rows)
+
+
 def _read_batch(urls: Sequence[str], page_url: str) -> list[dict[str, Any]]:
     """The status and body of each of ``urls``, fetched in one in-page ``Promise.all`` from a tab
     that has navigated to ``page_url`` (a job page — the navigation is what earns the tab its
     trust, ADR-0228). Raises :class:`TeslaWalled` on any 403/429.
 
     A batch that comes back mostly non-200 with no wall status means the tab's trust lapsed: it
-    navigates again and tries the same batch once more. What the second try answers stands, so a
-    batch of closed postings costs one extra navigation rather than a loop.
+    navigates again and tries the same batch once more. A second mostly-non-200 answer is treated
+    as a wall (:class:`TeslaWalled` 404), so the spare egress is tried before the pass gives up.
     """
 
     async def evaluate() -> list[dict[str, Any]]:
@@ -396,9 +402,14 @@ def _read_batch(urls: Sequence[str], page_url: str) -> list[dict[str, Any]]:
             _tab = await _browser.new_tab()
             await navigate()
         rows = await evaluate()
-        if sum(r["s"] == 200 for r in rows) * 2 < len(rows):
+        if _mostly_refused(rows):
             await navigate()
             rows = await evaluate()
+            if _mostly_refused(rows):
+                # An untrusted tab answers 404 (the measured shape of the un-warmed fetch), so a
+                # second mostly-404 batch is a wall that came without a wall status, not a batch
+                # of closed postings: stop navigating twice per batch through the whole board.
+                raise TeslaWalled(404)
         return rows
 
     return _run(go(), timeout=2 * (_NAV_TIMEOUT_S + _SETTLE_S + _BATCH_TIMEOUT_S))
@@ -449,6 +460,10 @@ class TeslaScraper(BaseScraper):
         # listing (ADR-0166 §3 makes the tech gate exact here). ADR-0048's skip is taken: a held
         # description is not fetched again. Reported, not marked truncated — a missing detail
         # costs a Job its description, not its place in the list (ADR-0053).
+        if self.have_details is None:
+            # Not the pipeline: the tech gate and the held skip are both off, so the pass would
+            # fetch every posting, ~330 batches from one IP, and one overshoot blocks the origin.
+            return state
         details = self.run_detail_pass(
             listings,
             key_of=lambda e: str(e["id"]) if e.get("id") else None,
