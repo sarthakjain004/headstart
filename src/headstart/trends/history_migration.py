@@ -34,7 +34,7 @@ import pyarrow as pa
 import pyarrow.compute as pc
 import pyarrow.parquet as pq
 
-from headstart.trend_history import ARCHIVE_COLUMNS, LEVEL_METRICS, TICK_COLUMNS
+from headstart.trends.trend_history import ARCHIVE_COLUMNS, LEVEL_METRICS, TICK_COLUMNS
 
 _KEY = TICK_COLUMNS[:-1]
 

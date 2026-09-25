@@ -1,6 +1,6 @@
 """Tests for the one-off Trends state migration (scripts/state/migrate_trends_to_one_delta_history.py,
 ADR-0230 step 6): what it writes, and that its check catches a history that does not reproduce
-the files it replaces. How it rewrites a tick is `trend_history_migration`'s, tested there.
+the files it replaces. How it rewrites a tick is `history_migration`'s, tested there.
 """
 
 from __future__ import annotations

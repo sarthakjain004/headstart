@@ -28,7 +28,7 @@ import re
 from dataclasses import dataclass
 from typing import NamedTuple
 
-from headstart.roles import NON_TECH
+from headstart.trends.role_taxonomy import NON_TECH
 
 # Precedence classes; lower wins.
 (
@@ -1007,8 +1007,8 @@ FAMILIES = frozenset(cue.family for cue in _CUES)
 
 
 class Decision(NamedTuple):
-    """One title's verdict. ``family`` is a family name, ``roles.NON_TECH``, or None when no rule
-    decided and the title is no training example."""
+    """One title's verdict. ``family`` is a family name, ``role_taxonomy.NON_TECH``, or None when no
+    rule decided and the title is no training example."""
 
     family: str | None
     tier: (

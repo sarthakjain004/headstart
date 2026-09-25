@@ -6,7 +6,7 @@ removed, and a Board read only partly for one run. This module takes them out, o
 line an answer serves (ADR-0230 decision 3). Until ADR-0230 step 4 the rule lived in the page's
 JavaScript (`stepNotes`, `stepJumps`, `netOfSteps`); this is a port of that rule, checked against
 it by the golden answers under ``tests/fixtures/trend_answers/``. Since ADR-0233 step 3 the page
-reads ``trend_reading``, which uses this module as its private implementation; Hot still reads
+reads ``line_reading``, which uses this module as its private implementation; Hot still reads
 :func:`net_answer` until step 4.
 
 :func:`net_answer` is the one entry point. It reads an answer as ``TrendHistory.answer`` builds it
@@ -190,7 +190,7 @@ class _Jump:
     after: float
     kinds: set[str]
     lift: float | None
-    # the notes whose steps land on this run, for trend_reading to say whose jump it is
+    # the notes whose steps land on this run, for line_reading to say whose jump it is
     notes: tuple[int, ...] = ()
 
 
@@ -205,7 +205,7 @@ class _Scaling:
 
 @dataclass
 class _NetTrace:
-    """How :func:`_net` took the steps out of one line, recorded for ``trend_reading`` to size
+    """How :func:`_net` took the steps out of one line, recorded for ``line_reading`` to size
     each cause without a second copy of the rule. Runs are indexes into the line's levels.
 
     - ``scale``: each kept run -> the scale its netted value was read at (the removals and
@@ -214,7 +214,7 @@ class _NetTrace:
     - ``ratios``: each run that scales the history before it -> its :class:`_Scaling`;
     - ``jumps``: each run a step lands on -> its jump.
 
-    A line summing several picks is traced pick by pick, by ``trend_reading``."""
+    A line summing several picks is traced pick by pick, by ``line_reading``."""
 
     scale: dict[int, float] = field(default_factory=dict)
     withheld: dict[int, float] = field(default_factory=dict)

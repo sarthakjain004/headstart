@@ -1,5 +1,5 @@
 """A small Trends `data/state` in the layout before ADR-0230 step 6, shared by the tests of
-`trend_history_migration`, the migration script and `trend_history`'s reading of it.
+`history_migration`, the migration script and `trend_history`'s reading of it.
 
 It is written the way the old writer wrote it: a Board-delta file per tick, counted against the
 running total **at its own series version**, so a new version's first tick is a baseline; the

@@ -35,8 +35,8 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 
-from headstart import trend_history, trend_netting, trend_reading
 from headstart.llm_router import RouterUnavailable
+from headstart.trends import line_reading, netting, trend_history
 
 pytest.importorskip("flask")  # in [dev] so this runs in CI; guards a bare env
 
@@ -2017,7 +2017,7 @@ def test_trends_serves_the_line_reading_and_none_of_the_pieces_it_nets(company_t
         assert not set(_OFF_EACH_LINE) & line.keys(), line["name"]
     reading = d["reading"]
     assert reading["reconciles"] and reading["violations"] == []
-    assert trend_reading.check_reading(reading) == []
+    assert line_reading.check_reading(reading) == []
     history = company_trends.application.view_functions["trends"].__globals__[
         "_HISTORY"
     ]
@@ -2025,7 +2025,7 @@ def test_trends_serves_the_line_reading_and_none_of_the_pieces_it_nets(company_t
     netted = [v for v in whole["series_sum"]["net"]["count"] if v is not None]
     total = reading["total"]["move"]
     assert (total["start"], total["latest"]) == (17, 13)
-    assert total["hiring"] == trend_netting.js_round(netted[-1] - netted[0])
+    assert total["hiring"] == netting.js_round(netted[-1] - netted[0])
     assert [line["name"] for line in reading["company_lines"]] == ["workday:hpe/a"]
 
 
@@ -2034,9 +2034,9 @@ def test_a_reading_that_does_not_reconcile_is_served_saying_so(
 ):
     """ADR-0233 decision 6: served all the same, with its violations, and logged; the page says
     its figures do not fully reconcile."""
-    real = trend_reading.check_reading
+    real = line_reading.check_reading
     monkeypatch.setattr(
-        trend_reading, "check_reading", lambda r: [*real(r), "a violation"]
+        line_reading, "check_reading", lambda r: [*real(r), "a violation"]
     )
     d = company_trends.get("/trends?company=workday:hpe/b").get_json()
     assert d["reading"]["reconciles"] is False
@@ -2054,7 +2054,7 @@ def test_a_reading_that_cannot_be_read_is_served_as_null_with_why(
     def failing(answer):
         raise ZeroDivisionError("a reading that divides by nothing")
 
-    monkeypatch.setattr(trend_reading, "_read_viewed", lambda *a: failing(a))
+    monkeypatch.setattr(line_reading, "_read_viewed", lambda *a: failing(a))
     response = company_trends.get("/trends?company=workday:hpe/b")
     assert response.status_code == 200
     d = response.get_json()
@@ -3405,7 +3405,7 @@ def test_the_index_shows_what_every_companys_view_shows_after_runs_are_left_out(
     for s in split["series"]:
         # The page's rule for a pick's own line: a duplicate-removal change leaves out its run
         # (and the run after) only where the pick holds Boards it can move.
-        touched = trend_netting.dedup_touched(_COMPANY_DIRECTORY[s["name"]]["boards"])
+        touched = netting.dedup_touched(_COMPANY_DIRECTORY[s["name"]]["boards"])
         for kind, n in shown([s["turnover"]], {2} if touched else ()).items():
             by_company[kind] += n
     assert in_index == by_company == {"opened": 5, "closed": 0}

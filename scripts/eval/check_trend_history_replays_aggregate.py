@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Check that ``headstart.trend_history`` reproduces the aggregate trends ledger at every tick of
-a real state (ADR-0230 step 3).
+"""Check that ``headstart.trends.trend_history`` reproduces the aggregate trends ledger at every
+tick of a real state (ADR-0230 step 3).
 
 The history serves the index-wide counts at each tick from the Board-delta ledger's replay, and
 reads the aggregate ledger (``role_trends.parquet``) only for the archive, the ticks before the
@@ -26,7 +26,7 @@ from pathlib import Path
 import pyarrow.compute as pc
 import pyarrow.parquet as pq
 
-from headstart.trend_history import TrendHistory
+from headstart.trends.trend_history import TrendHistory
 
 # A config directory the check does not need: the counts do not depend on the taxonomy's labels.
 _NO_CONFIG = Path("/nonexistent-trends-config")

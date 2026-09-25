@@ -775,8 +775,8 @@ function answering(ctx, body, status = 200) {
 }
 
 /* Golden readings (tests/fixtures/trend_readings/, ADR-0233): each answer with the reading the
- * Space serves beside it. pytest proves headstart.trend_reading reads exactly these, so the page
- * is tested on the figures it will be given rather than on any it works out itself. */
+ * Space serves beside it. pytest proves headstart.trends.line_reading reads exactly these, so the
+ * page is tested on the figures it will be given rather than on any it works out itself. */
 const READINGS = path.join(__dirname, '..', 'fixtures', 'trend_readings');
 function golden(name) {
   const { answer_input, reading } = JSON.parse(fs.readFileSync(path.join(READINGS, `${name}.json`), 'utf8'));
@@ -1584,7 +1584,7 @@ test('without the Space’s category filter, the category ranks the jobs and no 
 
 // ---- duplicate removals, sized (#649) --------------------------------------------------------
 
-// The Space drops a partial read before it serves the answer (trend_reading.trends_payload, which
+// The Space drops a partial read before it serves the answer (line_reading.trends_payload, which
 // pytest checks); the page says how many runs it left out.
 test('a leap one run puts straight back is a partial read, not hiring', async () => {
   const { t, ctx, nodes } = loadApp();
@@ -2461,7 +2461,7 @@ test('the roles view marks the changes that moved its roles', () => {
 });
 
 /* Golden readings (tests/fixtures/trend_readings/, ADR-0233): the page's checkReading states the
- * same equalities as headstart.trend_reading.check_reading, in the same words, over the same
+ * same equalities as headstart.trends.line_reading.check_reading, in the same words, over the same
  * files. pytest proves the Space reads exactly these; here the page agrees they reconcile, and
  * catches each broken invariant with the sentence the Python checker gives. */
 function goldenReading(name) {

@@ -1,5 +1,5 @@
 """A small Trends history holding one duplicate removal, written through ``record_tick``: the
-state ``test_trend_history`` and ``test_trend_reading`` read a removal from.
+state ``test_trends_trend_history`` and ``test_trends_line_reading`` read a removal from.
 
 Micro (one Eightfold Board) hires 2 tech openings a tick over 17 ticks, twelve hours apart. On
 tick ``REMOVAL`` duplicate removal takes out 119 rows: 109 of its 218 tech openings and 10 of its
@@ -17,7 +17,7 @@ import json
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from headstart import roles, trend_history
+from headstart.trends import role_taxonomy, trend_history
 
 MICRO = "eightfold:careers.micro.com"
 BETA = "greenhouse:beta"
@@ -44,7 +44,7 @@ def write(state: Path, board_found_later: bool = False) -> None:
     for k, ts in enumerate(TICKS):
         levels = {
             (MICRO, "stock", "software-engineering", "mid"): micro_tech(k),
-            (MICRO, "stock", roles.NON_TECH, "all"): 20 if k < REMOVAL else 10,
+            (MICRO, "stock", role_taxonomy.NON_TECH, "all"): 20 if k < REMOVAL else 10,
             (BETA, "stock", "software-engineering", "mid"): 50 + k,
         }
         if board_found_later and k >= FOUND_LATER:

@@ -1,10 +1,10 @@
-"""The Trends line reading (ADR-0233), checked at ``trend_reading.read_answer``.
+"""The Trends line reading (ADR-0233), checked at ``line_reading.read_answer``.
 
 - **Golden readings** (``tests/fixtures/trend_readings/*.json``): every golden answer of
   ADR-0230, and the answers the page's node tests draw, as ``{answer_input, reading}``. Each
   reads exactly as stored and passes the checker; the node tests run the page's ``checkReading``
   over the same files and draw each one, so both state the same equalities. After a deliberate
-  rule change, rewrite them with ``WRITE_TREND_READINGS=1 pytest tests/test_trend_reading.py``
+  rule change, rewrite them with ``WRITE_TREND_READINGS=1 pytest tests/test_trends_line_reading.py``
   and read the diff.
 - **A change has one size in every window that holds it** (invariant 4), by re-reading each
   golden over every window narrowed from either end.
@@ -23,8 +23,7 @@ from pathlib import Path
 
 import pytest
 
-from headstart.trend_netting import js_round, net_answer
-from headstart.trend_reading import (
+from headstart.trends.line_reading import (
     _FIELD_ID,
     _OTHER,
     INDEX_BASE_FLOOR,
@@ -40,6 +39,7 @@ from headstart.trend_reading import (
     trends_payload,
     unread_trends_payload,
 )
+from headstart.trends.netting import js_round, net_answer
 
 READINGS = Path(__file__).parent / "fixtures" / "trend_readings"
 GOLDEN = sorted(READINGS.glob("*.json"))
@@ -608,7 +608,7 @@ pa = pytest.importorskip("pyarrow")
 
 import duplicate_removal_trends_state as removal_state
 
-from headstart.trend_history import TrendHistory, TrendQuestion
+from headstart.trends.trend_history import TrendHistory, TrendQuestion
 
 _NO_CONFIG = Path(__file__).resolve().parent / "no-trends-config"
 

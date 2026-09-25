@@ -26,13 +26,7 @@ from flask import Flask, jsonify, redirect, render_template, request, session
 from huggingface_hub import snapshot_download
 
 import headstart  # only for headstart.__file__, to locate ui/ beside this package (ADR-0153)
-from headstart import (
-    embedding_conventions,
-    hot_ranking,
-    llm_router,
-    trend_history,
-    trend_reading,
-)
+from headstart import embedding_conventions, llm_router
 
 # alerts/__init__.py is empty on purpose, so importing it never pulls in the Digest or Resend
 # modules, whose dependencies (xlsxwriter, Resend) this image does not install.
@@ -60,6 +54,7 @@ from headstart.search_filters.compiler import (
     keyword_scope_options,
 )
 from headstart.serving import facets, job_search, profile_extract
+from headstart.trends import hot_ranking, line_reading, trend_history
 
 DATASET = os.environ.get("HF_DATASET", "imPoseidon/headstart-index")
 _STATE = Path("/app/state")
@@ -110,7 +105,7 @@ def _pull_index(attempts: int = 5) -> None:
                     "data/state/role_trend_board_deltas/*",
                     "data/state/role_trend_index_deltas_before_board_deltas.parquet",
                     # the older layout's archive and Methodology, read only until the one-off
-                    # migration has rewritten the history (trend_history_migration); gone after
+                    # migration has rewritten the history (history_migration); gone after
                     "data/state/role_trends.parquet",
                     "data/state/trends_epochs.csv",
                     # the Company directory (ADR-0185) the Trends picker searches and the Hot
@@ -162,8 +157,8 @@ _searcher = job_search.JobSearch(_model, _table)
 _searcher.warm()
 
 # Role trends (ADR-0040): everything /trends and the company picker answer from, read by one
-# module, `headstart.trend_history` (ADR-0230). Same dark-until-ready shape as the two above: the
-# ledgers only exist after a pipeline run has written them, so an absent file hides the panel
+# module, `headstart.trends.trend_history` (ADR-0230). Same dark-until-ready shape as the two above:
+# the ledgers only exist after a pipeline run has written them, so an absent file hides the panel
 # rather than erroring. Read once at startup — the Space restarts after every run, so it is never
 # more than one run stale.
 _CONFIG = Path(__file__).parent / "config"  # copied in beside this app (ADR-0153)
@@ -175,7 +170,8 @@ _FAMILY_SUCCESSOR = trend_history.family_successors(_CONFIG / "role_families.jso
 
 
 def _rank_hot(history: trend_history.TrendHistory) -> dict:
-    """The Hot tab's ranking (``headstart.hot_ranking``, ADR-0230), or ``{}`` to keep it dark.
+    """The Hot tab's ranking (``headstart.trends.hot_ranking``, ADR-0230), or ``{}`` to keep it
+    dark.
 
     Ranked once at boot from the history just loaded, so it can never be stale against the ticks
     the Trends tab serves, and served as-is: the answer only changes when a run does, and the
@@ -1071,10 +1067,10 @@ def delete_resume(doc_id: str):
 
 @app.route("/trends")
 def trends():
-    """Role counts over time (ADR-0040, ADR-0051), answered by ``headstart.trend_history``
+    """Role counts over time (ADR-0040, ADR-0051), answered by ``headstart.trends.trend_history``
     (ADR-0230), whose ``TrendHistory.unnetted_answer`` documents every parameter and field, and
-    read by ``headstart.trend_reading``: its ``reading`` holds every figure the page shows, and
-    the page only formats and draws (ADR-0233).
+    read by ``headstart.trends.line_reading``: its ``reading`` holds every figure the page shows,
+    and the page only formats and draws (ADR-0233).
 
     ``?metric=`` ``stock`` or ``new``; ``?family=`` with ``&split=`` ``bands``, ``roles`` or
     ``company``; ``?since=`` / ``?until=`` / ``?base=`` (ISO-8601); ``?coverage=`` ``all`` or
@@ -1110,14 +1106,14 @@ def _trends_payload(answer: dict, question: trend_history.TrendQuestion) -> dict
     logged with its traceback. Either way the page draws the lines and says its figures do not
     fully reconcile, rather than the tab failing."""
     try:
-        payload, reading = trend_reading.trends_payload(answer)
+        payload, reading = line_reading.trends_payload(answer)
     except Exception as exc:  # noqa: BLE001 - a reading that fails costs its figures only
         error = f"{type(exc).__name__}: {exc}"
         print(
             f"trends reading failed for {question}: {error}\n{traceback.format_exc()}",
             flush=True,
         )
-        return trend_reading.unread_trends_payload(answer, error)
+        return line_reading.unread_trends_payload(answer, error)
     if not reading.reconciles:
         print(
             f"trends reading does not reconcile for {question}: "

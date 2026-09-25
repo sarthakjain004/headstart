@@ -1391,8 +1391,9 @@ def _index_prune(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
 # stay at their real order of magnitude rather than being pushed over 999.
 _TRENDS_K = 120
 _TRENDS_VERSION = 7
-#: `min_years` -> the band `roles.band` derives from it. Five bands, so a family's rows spread
-#: across every one of them and the group count the `appended` line reports is a real product.
+#: `min_years` -> the band `role_taxonomy.band` derives from it. Five bands, so a family's rows
+#: spread across every one of them and the group count the `appended` line reports is a real
+#: product.
 _TRENDS_BANDS = (
     (None, "unspecified"),
     (0, "entry"),

@@ -99,7 +99,7 @@ def ledger_boards(state_dir: Path) -> set[str]:
     """Every Board the Trends history under ``state_dir`` has counted tech openings on
     (ADR-0230): `non-tech` has no series to chart, and `watch:` rows re-count Jobs already
     counted in their family (ADR-0051)."""
-    from headstart.trend_history import TrendHistory
+    from headstart.trends.trend_history import TrendHistory
 
     return set(TrendHistory.load(state_dir, _CONFIG).openings())
 

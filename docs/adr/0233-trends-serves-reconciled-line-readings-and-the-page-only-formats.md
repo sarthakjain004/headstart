@@ -6,7 +6,9 @@ and its netting rules), [ADR-0227](0227-trends-record-each-boards-opened-and-clo
 [ADR-0230](0230-trends-keeps-one-board-delta-history-and-decides-rules-when-reading-it.md) (one
 history; netting moved out of the browser),
 [ADR-0232](0232-the-shared-library-is-grouped-into-packages-by-the-question-each-module-answers.md)
-(the `trends/` package this module joins)
+(the `trends/` package this module joins) · **Superseded in part by:**
+[ADR-0237](0237-trend-history-keeps-its-name-inside-trends.md) (the module's name in `trends/` is
+`line_reading`, not `reading`)
 
 ## Context
 

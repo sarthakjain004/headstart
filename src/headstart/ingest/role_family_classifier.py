@@ -40,7 +40,7 @@ from pathlib import Path
 import numpy as np
 
 from headstart import log
-from headstart.roles import NON_TECH
+from headstart.trends.role_taxonomy import NON_TECH
 
 _log = log.get(__name__, __spec__)
 

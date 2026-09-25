@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from headstart.company_match import Candidate, normalize, suggest, tier
+from headstart.trends.company_suggestions import Candidate, normalize, suggest, tier
 
 
 def _company(name: str, openings: int = 1, key: str | None = None) -> Candidate:

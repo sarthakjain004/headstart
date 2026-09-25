@@ -262,8 +262,10 @@ def test_the_pipelines_model_cache_key_names_the_heads_model_revision():
 def test_the_shipped_head_agrees_with_the_curated_family_list():
     from pathlib import Path
 
-    from headstart import roles
+    from headstart.trends import role_taxonomy
 
     repo = Path(__file__).resolve().parent.parent
     head = rfc.Head(repo / "config" / "role_family_classifier")
-    head.check_families(roles.load_families(repo / "config" / "role_families.json"))
+    head.check_families(
+        role_taxonomy.load_families(repo / "config" / "role_families.json")
+    )

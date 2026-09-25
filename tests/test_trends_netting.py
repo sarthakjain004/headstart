@@ -1,4 +1,4 @@
-"""The Trends netting rule (ADR-0185, ADR-0230), checked at ``trend_netting.net_answer``.
+"""The Trends netting rule (ADR-0185, ADR-0230), checked at ``netting.net_answer``.
 
 Two kinds of test:
 
@@ -7,7 +7,7 @@ Two kinds of test:
   They were first written by the page's own netting (app.js before ADR-0230 step 4), so passing
   them proves the port decides what the page decided. The node tests load the same files as the
   answers they draw, so the page and this rule cannot drift apart. After a deliberate rule change,
-  rewrite them with ``WRITE_TREND_ANSWERS=1 pytest tests/test_trend_netting.py`` and read the diff.
+  rewrite them with ``WRITE_TREND_ANSWERS=1 pytest tests/test_trends_netting.py`` and read the diff.
 - **The measured cases** the page's netting tests carried, each named for what it measured, and
   the design's invariants 2 and 3 (``docs/trends/2026-09-25_trends-feature-design.md`` §8.1).
 """
@@ -20,7 +20,7 @@ from pathlib import Path
 
 import pytest
 
-from headstart.trend_netting import js_round, net_answer
+from headstart.trends.netting import js_round, net_answer
 
 ANSWERS = Path(__file__).parent / "fixtures" / "trend_answers"
 GOLDEN = sorted(ANSWERS.glob("*.json"))

@@ -1612,12 +1612,13 @@ let tableView = false;      // the WCAG-clean twin of the chart, independent of 
 let lastGeom = null;        // scales + resolved values from the last drawTrends() — hover reads this
 let trendReq = null;        // the /trends request in flight, so a newer one can cancel it
 const hiddenSeries = new Set();   // legend toggle-to-hide; keyed by name, so a re-rank keeps it
-const CHART_MAX = 8;        // matches the 8-slot validated categorical palette; trend_reading.LINES_CHARTED
+const CHART_MAX = 8;        // matches the 8-slot validated categorical palette;
+                            // line_reading.LINES_CHARTED
 // The kinds of Marked change that are a counting change, drawn as a dashed marker; every other
-// kind moved openings into or out of the count at once, drawn solid (trend_reading.CauseKind).
+// kind moved openings into or out of the count at once, drawn solid (line_reading.CauseKind).
 const COUNTING_KINDS = new Set(['counting', 'growth_scaled_by_a_change']);
 // A raw field id in a label ("tech_filter_version"): words never have an underscore in them
-// (trend_reading._FIELD_ID).
+// (line_reading._FIELD_ID).
 const FIELD_ID = /\b[a-z0-9]+(?:_[a-z0-9]+)+\b/;
 // Picked companies (ADR-0185), in the order they were added. `key` is any board_key of a
 // directory entry, which is all `/trends?company=` needs; `label` is null until an answer names
@@ -2566,7 +2567,7 @@ function hasIndexBase(s){
 // a percentage, and no tile names it: Stripe's "Biggest riser: sre-platform +18.2%" was 11
 // openings becoming 13, and Paytm's −65.7% was six openings. The Change floor (5) decides
 // whether a line can be drawn indexed at all; this one decides whether its percentage is news.
-// The reading withholds the percentage below it (trend_reading.MOVER_FLOOR).
+// The reading withholds the percentage below it (line_reading.MOVER_FLOOR).
 const MOVER_FLOOR = 20;
 // The legend's and the table's figure for a line: its percentage (the share's own change under
 // Share), or where the reading withholds one its hiring in openings (`count`), which is what a
@@ -3533,8 +3534,9 @@ function markedText(item){
 }
 
 // Every way a line reading (the Space's `reading`, ADR-0233) breaks its invariants, as sentences;
-// empty when it reconciles. The same equalities as `headstart.trend_reading.check_reading`, in
-// the same words, run by the node tests over the same golden readings, so neither side can drift.
+// empty when it reconciles. The same equalities as
+// `headstart.trends.line_reading.check_reading`, in the same words, run by the node tests over the
+// same golden readings, so neither side can drift.
 // The page runs it on every reading it draws (problemsOf) and says when one fails.
 //   1. every line: latest − start = hiring + Σ not hiring;
 //   2. a company line's Not hiring is its Marked changes, change by change;
