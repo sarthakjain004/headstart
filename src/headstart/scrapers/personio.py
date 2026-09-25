@@ -15,9 +15,10 @@ from __future__ import annotations
 import xml.etree.ElementTree as ET
 from typing import Any
 
-from headstart import log, salary
-from headstart.experience import from_field
-from headstart.models import Job, host_of, html_to_text, is_remote
+from headstart import log
+from headstart.jobs import salary
+from headstart.jobs.experience import from_field
+from headstart.jobs.job import Job, host_of, html_to_text, is_remote
 from headstart.network import http
 from headstart.scrapers.base import USER_AGENT, BaseScraper
 
@@ -115,7 +116,7 @@ def _experience(pos: ET.Element) -> str | None:
     populated on ~100% of positions, so `seniority or yearsOfExperience` wins the `or` chain
     almost unconditionally and discards `<yearsOfExperience>`'s real numeric range
     ("2-5"/"1-2"/"5-7"/...) on essentially every position that has one. Measured through the
-    real `headstart.experience.extract()` cascade over a live 149-Board / 1,101-position sample
+    real `headstart.jobs.experience.extract()` cascade over a live 149-Board / 1,101-position sample
     (2026-08-25): preferring the range changes 54.95% of answers, corrects a `min_years` that was
     too high on 36.33% of positions (e.g. "experienced" -> floor 5 when the field says "1-2"), and
     a real `max_years` bound appears on 54.04% that never had one. 0 positions lose their answer.

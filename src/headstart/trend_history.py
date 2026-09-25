@@ -121,12 +121,12 @@ class CompanyMove:
 
     ``net`` is the change in its tech openings since the window's base with the steps that are
     not hiring taken out; ``opened`` and ``closed`` are the jobs it opened and closed over the runs
-    that change counts (ADR-0227); ``counted_since`` is the first tick that counted any of its
-    Boards."""
+    that change counts (ADR-0227), or None where no such run counted turnover: a 0 there stated a
+    week nobody measured; ``counted_since`` is the first tick that counted any of its Boards."""
 
     net: int
-    opened: int
-    closed: int
+    opened: int | None
+    closed: int | None
     counted_since: str
 
 
@@ -944,7 +944,7 @@ class TrendHistory:
             answer = self.answer(TrendQuestion(companies=(key,), since=base))
             line = answer["series_sum"]
             netted = [v for v in line["net"]["count"] if v is not None]
-            turnover = line["hiring_turnover"] or {"opened": 0, "closed": 0}
+            turnover = line["hiring_turnover"] or {"opened": None, "closed": None}
             moves[key] = CompanyMove(
                 net=trend_netting.js_round(netted[-1] - netted[0]) if netted else 0,
                 opened=turnover["opened"],

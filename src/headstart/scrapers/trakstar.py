@@ -104,7 +104,7 @@ from typing import Any
 from urllib.parse import quote
 
 from headstart import log
-from headstart.models import Job, html_to_text, is_remote
+from headstart.jobs.job import Job, html_to_text, is_remote
 from headstart.network import http
 from headstart.scrapers.base import (
     USER_AGENT,

@@ -8,7 +8,7 @@ already has a `browser_http` escalation path for exactly that wall (`darwinbox.p
 
 ## Method
 
-`headstart.network.browser_http.BrowserFetcher`, one Board at a time: navigate
+`headstart.browser_http.BrowserFetcher`, one Board at a time: navigate
 `https://{slug}.darwinbox.in/ms/candidate/careers` once to clear the wall, then POST
 `/ms/candidateapi/job/alljobs?companyId=main` on the warmed tab, reading the full JSON envelope
 (not just `data`, which is all the scraper reads today).

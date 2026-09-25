@@ -5,7 +5,7 @@ The declarations are projections with different purposes, not interchangeable sc
 
 | Change | Producers and consumers to check | Verification |
 | --- | --- | --- |
-| Job field | `models.Job`; Scraper output; `ingest.doc_prep.to_meta`; `ingest.update_meta.refresh_row` | Scraper fixture and metadata-refresh tests; confirm existing rows receive changed derivations |
+| Job field | `jobs.job.Job`; Scraper output; `ingest.doc_prep.to_meta`; `ingest.update_meta.refresh_row` | Scraper fixture and metadata-refresh tests; confirm existing rows receive changed derivations |
 | Served column | `ingest.index._schema` and migration; `README` served table/examples; `search.RESULT_COLUMNS` if returned; Facets if counted | `test_readme_schema.py`, index migration tests, result projection check |
 | Derived value | `experience`/`salary`/`geo`; `doc_prep`; `update_meta` overwrite/repair rules | Old/new value comparisons; required `DERIVATIONS_VERSION` bump for stored inputs; live-data claims need fresh data |
 | Search filter | `search_filter_compiler.build_filter`; Facets' lifted dimension; UI controls, active pills and defaults | `test_search_filter_compiler.py`, `test_search.py`, `test_facets.py`, real-source JS tests; live harness when semantics change |

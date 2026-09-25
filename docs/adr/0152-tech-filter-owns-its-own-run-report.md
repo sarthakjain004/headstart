@@ -30,7 +30,7 @@ next to the function whose output it interprets.
 
 ## Decision
 
-Move the reporting logic from `filter_tech.main()` into `headstart.tech_filter`, as two new
+Move the reporting logic from `filter_tech.main()` into `headstart.jobs.tech_filter`, as two new
 functions:
 
 - `tech_filter.report(stats, dst_dir, logger) -> None` — the per-ATS table, the zero-ATS warning
@@ -55,7 +55,7 @@ its lines would tag as `[tech_filter]` instead — a silent break of that consum
 matches what a real run emits, not that the code lives in any particular file. Passing the entry
 point's own `_log` down keeps every emitted record's logger identity — and therefore its tag —
 exactly as it was before this move; `test_report_logs_through_the_callers_logger_so_the_tag_is_preserved`
-in `tests/test_tech_filter.py` pins this directly.
+in `tests/test_jobs_tech_filter.py` pins this directly.
 
 ## Consequences
 
@@ -63,7 +63,7 @@ in `tests/test_tech_filter.py` pins this directly.
   every other thin ADR-0028 stage entry point.
 - `tech_filter.py` gains the reporting logic beside `filter_jobs()`, so the module that owns the
   tech gate (ADR-0017) also owns how to read and present its own run's stats.
-- New unit coverage lives directly on `report`/`filter_jobs_and_report` in `tests/test_tech_filter.py`
+- New unit coverage lives directly on `report`/`filter_jobs_and_report` in `tests/test_jobs_tech_filter.py`
   (per-ATS table + total, an ATS present with zero rows vs. one never in the slice at all, the
   corpus-wide zero, and the logger pass-through), independent of `tests/test_log_contract.py`'s
   existing end-to-end checks (`_tech_gate`, `_tech_gate_nothing`) — both now exercise the same code,

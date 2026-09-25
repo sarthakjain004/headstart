@@ -56,7 +56,7 @@ import re
 from typing import Any
 
 from headstart import company_name
-from headstart.models import Job, html_to_text, is_remote
+from headstart.jobs.job import Job, html_to_text, is_remote
 from headstart.scrapers.base import BaseScraper
 
 #: The widget caps a tenant at this many jobs and takes no pagination parameter,

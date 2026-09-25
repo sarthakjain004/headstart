@@ -11,7 +11,7 @@ a scraper is worth building:
 
   live rate      what fraction of the pool still resolves and answers
   jobs/row       how much a live row actually carries (most SMB boards carry nothing)
-  tech share     `headstart.tech_filter.is_tech` over the title
+  tech share     `headstart.jobs.tech_filter.is_tech` over the title
   India share    the location, where the surface exposes one
 
 **Titles come from the job URL where possible.** jazzhr and softgarden both put a title slug in the
@@ -41,7 +41,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / "src"))
 
-from headstart.tech_filter import is_tech
+from headstart.jobs.tech_filter import is_tech
 
 POOL = pathlib.Path("data/ats-tenants-merged")
 UA = "headstart/0.1"

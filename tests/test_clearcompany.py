@@ -22,7 +22,7 @@ from pathlib import Path
 import pytest
 from fake_fetcher import FakeFetcher, FakeResponse
 
-from headstart import salary
+from headstart.jobs import salary
 from headstart.network import http
 from headstart.scrapers.clearcompany import (
     ClearCompanyScraper,

@@ -65,13 +65,13 @@ Methods (`url`, `parse`, `job_url` and `_salary_field` are abstract):
   call (ClearCompany's `decode_hrm_bytes`, on the built-in `surrogateescape`); an import that
   registers a codec handler is a process-global side effect.
 - `html_to_text()` for descriptions, `is_remote()` only as a fallback to a stated field,
-  `host_of()` for any host arithmetic — all in `headstart.models`.
+  `host_of()` for any host arithmetic — all in `headstart.jobs.job`.
 
 Field formatting — values stay as the provider phrases them, shaped for the shared extractors:
 
 - `salary` via `_salary_field()`: a string `salary._field_generic` reads correctly
   (`"30000-40000 INR per-month"`), or a dedicated `_field_{ats}` parser registered in
-  `salary._FIELD_PARSERS`, with tests in `tests/test_salary.py`. A new dispatch key touches no
+  `salary._FIELD_PARSERS`, with tests in `tests/test_jobs_salary.py`. A new dispatch key touches no
   stored row, so it needs no `DERIVATIONS_VERSION` bump; a change to shared parsing does.
   An ATS that states no salary still overrides `_salary_field` to return None, with a comment
   citing the measurement (base.py's contract).

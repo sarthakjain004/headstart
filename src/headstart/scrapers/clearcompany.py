@@ -60,7 +60,7 @@ import re
 from email.utils import parsedate_to_datetime
 from typing import Any
 
-from headstart.models import Job, host_of, html_to_text, is_remote
+from headstart.jobs.job import Job, host_of, html_to_text, is_remote
 from headstart.scrapers.base import USER_AGENT, BaseScraper, DetailLost, DetailRequest
 
 #: The largest Board that answers, `oakmontmanagement` (695 reqs, 3.68 MB), took 20.7 s — too

@@ -19,10 +19,10 @@ from types import MappingProxyType
 from typing import Any, TypeVar
 
 from headstart import company_name, log
-from headstart.models import Job
+from headstart.jobs.job import Job
+from headstart.jobs.tech_filter import is_tech
 from headstart.network import fanout_stats, http
 from headstart.network.fetcher import BoardFetcher, Fetcher
-from headstart.tech_filter import is_tech
 
 #: The one User-Agent every scraper sends. Public because nine of them re-declared
 #: this same literal locally, which is a set of strings that can silently disagree.
@@ -631,7 +631,7 @@ class BaseScraper(ABC):
 
         A detail fetch costs one request against a per-origin budget; a posting the tech filter
         drops is never embedded, indexed or shown, so that request buys nothing that survives the
-        run. This asks :func:`~headstart.tech_filter.is_tech` the same question ``filter_tech``
+        run. This asks :func:`~headstart.jobs.tech_filter.is_tech` the same question ``filter_tech``
         will ask downstream, with the fields the *listing* already carries, and returns only the
         items still worth fetching.
 
@@ -832,12 +832,12 @@ class BaseScraper(ABC):
         """Format this ATS's native structured compensation field into ``Job.salary``, or
         ``None`` if this ATS has no such field.
 
-        ``headstart.salary``'s Tier 1 (``from_field``) is what actually reads ``Job.salary`` back
+        ``headstart.jobs.salary``'s Tier 1 (``from_field``) is what actually reads ``Job.salary`` back
         out at index time — this method is the other half of that contract, the one place each
         scraper states what it found. The expected shape is a bare string carrying whatever the
         native field states — a number or range, a currency code, and a period — space-separated,
         e.g. Lever's ``_salary_field`` returns ``"50000-70000 USD per-year-salary"`` from
-        ``salaryRange``. Build that shape with ``headstart.salary.to_field``, the encoder paired
+        ``salaryRange``. Build that shape with ``headstart.jobs.salary.to_field``, the encoder paired
         with ``from_field`` (ADR-0197), rather than by hand. An ATS with no calibrated
         ``salary.py`` parser still reaches ``_field_generic``, so any reasonable "AMOUNT[-AMOUNT] [CURRENCY] [PERIOD]" spelling is
         safe to emit even without adding a dedicated Tier-1 parser for it.

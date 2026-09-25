@@ -61,8 +61,9 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from headstart import company_name, salary
-from headstart.models import Job, html_to_text
+from headstart import company_name
+from headstart.jobs import salary
+from headstart.jobs.job import Job, html_to_text
 from headstart.scrapers.base import USER_AGENT, BaseScraper, DetailLost, DetailRequest
 from headstart.scrapers.job_posting_jsonld import find_job_posting, hiring_organization
 

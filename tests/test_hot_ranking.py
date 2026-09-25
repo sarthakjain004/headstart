@@ -33,8 +33,8 @@ _WINDOW = {
 @dataclass(frozen=True)
 class _Move:
     net: int = 0
-    opened: int = 0
-    closed: int = 0
+    opened: int | None = 0
+    closed: int | None = 0
     counted_since: str = _LONG_AGO
 
 
@@ -107,6 +107,32 @@ def test_expansion_separates_growth_from_churn() -> None:
     assert _keys(payload, "volume") == ["a:churner", "b:grower"]
     churner = payload["lenses"]["volume"][0]
     assert (churner["opened"], churner["closed"], churner["net"]) == (1396, 1399, -3)
+
+
+def test_a_company_whose_turnover_was_not_counted_says_so_rather_than_zero() -> None:
+    """A company whose runs all fell inside a step of unknown size has no turnover that week: its
+    row read "0 opened · 0 closed" as fact, and a 0% rate. It carries None, and ranks under no
+    lens that reads opened; a measured 0 is still 0."""
+    directory = {
+        "a:unmeasured": _company("Unmeasured", "a:unmeasured"),
+        "b:measured": _company("Measured", "b:measured"),
+    }
+    history = _History(
+        {"a:unmeasured": 400, "b:measured": 400},
+        {
+            "a:unmeasured": _Move(net=50, opened=None, closed=None),
+            "b:measured": _Move(net=40, opened=0, closed=0),
+        },
+    )
+    payload = hot_ranking.rank(history, directory)
+    rows = {row["key"]: row for row in payload["lenses"]["expansion"]}
+    assert (rows["a:unmeasured"]["opened"], rows["a:unmeasured"]["closed"]) == (
+        None,
+        None,
+    )
+    assert rows["a:unmeasured"]["rate"] is None
+    assert (rows["b:measured"]["opened"], rows["b:measured"]["rate"]) == (0, 0)
+    assert _keys(payload, "volume") == [] and _keys(payload, "rate") == []
 
 
 def test_rate_is_the_weeks_openings_as_a_share_of_openings_now() -> None:
@@ -219,7 +245,7 @@ _FILTER_CHANGE = "2026-09-15T00:00:00+00:00"
 _ACME_FOUND = "2026-09-16T00:00:00+00:00"
 
 
-def _write_history(state: Path) -> None:
+def _write_history(state: Path, with_turnover: bool = True) -> None:
     """Three companies whose raw change and hiring differ, one way each.
 
     Acme hires 2 a tick and finds a second Board (40 openings) mid-week, a step that is not
@@ -234,7 +260,7 @@ def _write_history(state: Path) -> None:
             ("greenhouse:acme", "stock", 100 if k == 0 else 2),
             ("greenhouse:beta", "stock", 60 if k == 0 else 1),
         ]
-        if k:
+        if k and with_turnover:
             rows += [("greenhouse:acme", "opened", 3), ("greenhouse:acme", "closed", 1)]
         if ts == _FILTER_CHANGE:
             rows.append(("greenhouse:beta", "stock", 30))
@@ -314,3 +340,14 @@ def test_a_rows_net_leaves_out_what_its_trend_leaves_out(tmp_path: Path) -> None
     acme = next(r for r in payload["lenses"]["volume"] if r["key"] == "greenhouse:acme")
     assert (acme["opened"], acme["closed"]) == (3 * hiring_runs, hiring_runs)
     assert payload["counts"]["too_new"] == 1, "Young, counted for half a day"
+
+
+def test_before_turnover_is_counted_a_row_carries_none_not_zero(tmp_path: Path) -> None:
+    """With no run counting turnover, `company_moves` read the missing figures as 0, and every
+    Growing row said "0 opened · 0 closed this week" beside its net."""
+    _write_history(tmp_path, with_turnover=False)
+    history = trend_history.TrendHistory.load(tmp_path, _CONFIG)
+    payload = hot_ranking.rank(history, history.companies)
+    assert payload["window"]["turnover_from"] is None
+    rows = payload["lenses"]["expansion"]
+    assert rows and all(row["opened"] is None and row["closed"] is None for row in rows)

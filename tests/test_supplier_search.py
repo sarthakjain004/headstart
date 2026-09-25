@@ -12,7 +12,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from headstart.models import html_to_text
+from headstart.jobs.job import html_to_text
 from headstart.scrapers.bytedance import ByteDanceScraper
 from headstart.scrapers.tiktok import TikTokScraper
 

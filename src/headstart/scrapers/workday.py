@@ -47,7 +47,7 @@ from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
 from headstart import log
-from headstart.models import Job, html_to_text, is_remote
+from headstart.jobs.job import Job, html_to_text, is_remote
 from headstart.network import fanout_stats, http
 from headstart.network.fetcher import Fetcher
 from headstart.scrapers import workday_company_name
@@ -156,7 +156,7 @@ def _extract_page_detail(response: Any) -> dict[str, Any] | None:
     The description is the gate — it is what the detail pass exists to supply (ADR-0050), and
     a JSON-LD block without one recovers nothing worth having. Measured on a healthy board
     (citi/2), the JSON-LD description is the CXS ``jobDescription``'s text content, tag-stripped
-    and entity-escaped, which :func:`~headstart.models.html_to_text` already normalises at
+    and entity-escaped, which :func:`~headstart.jobs.job.html_to_text` already normalises at
     :meth:`WorkdayScraper.parse`.
 
     Three more fields ride along because their currency is exact, not guessed (ADR-0099):

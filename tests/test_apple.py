@@ -17,7 +17,7 @@ from typing import Any
 import pytest
 from fake_fetcher import FakeFetcher, FakeResponse, Route
 
-from headstart.models import html_to_text
+from headstart.jobs.job import html_to_text
 from headstart.network import fanout_stats
 from headstart.scrapers.apple import _SEARCH_URL, AppleScraper
 from headstart.scrapers.registry import get_scraper
@@ -121,7 +121,7 @@ def test_alias_key_is_the_slug_itself():
 def test_the_search_request_carries_an_empty_query_and_filters():
     """An empty query/filters returns the whole board (module docstring) — the scraper must not
     narrow it with a keyword or team filter, since the tech gate is a post-hoc filter
-    (`headstart.tech_filter`), not something scraped-in."""
+    (`headstart.jobs.tech_filter`), not something scraped-in."""
     fetcher = FakeFetcher(
         lambda method, url, kwargs: RuntimeError("stop after first call")
     )

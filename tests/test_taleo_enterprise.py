@@ -310,7 +310,7 @@ def test_salary_field_currency_full_name_and_frequency_passed_through():
         enterprise._salary_field("18.00", None, "US Dollar (USD)", "Hourly")
         == "18.00 US Dollar (USD) Hourly"
     )
-    from headstart.salary import SalarySpan, extract
+    from headstart.jobs.salary import SalarySpan, extract
 
     assert extract(
         "18.00 US Dollar (USD) Hourly", None, "taleo_enterprise"

@@ -17,8 +17,9 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from headstart import company_name, salary
-from headstart.models import (
+from headstart import company_name
+from headstart.jobs import salary
+from headstart.jobs.job import (
     Job,
     epoch_ms_to_iso,
     html_to_text,

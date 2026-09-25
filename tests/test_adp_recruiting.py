@@ -147,7 +147,7 @@ def test_pay_transparency_amounts_win_and_carry_their_currency():
 
 
 def test_the_compensation_string_is_passed_through_as_stated():
-    from headstart import salary
+    from headstart.jobs import salary
 
     scraper = get_scraper("adp_recruiting", "churchmutual")
     stated = scraper._salary_field(_detail("churchmutual_detail_5001222115706"))

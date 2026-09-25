@@ -25,7 +25,7 @@ from typing import Any
 from urllib.parse import parse_qs, urlencode, urljoin, urlsplit, urlunsplit
 
 from headstart import company_name
-from headstart.models import Job, html_to_text, is_remote
+from headstart.jobs.job import Job, html_to_text, is_remote
 from headstart.network.fetcher import Fetcher
 from headstart.scrapers.base import (
     BaseScraper,

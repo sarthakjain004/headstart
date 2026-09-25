@@ -109,7 +109,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
-from headstart.models import Job, html_to_text
+from headstart.jobs.job import Job, html_to_text
 from headstart.network import http
 from headstart.scrapers.base import USER_AGENT, BaseScraper
 
@@ -387,7 +387,7 @@ class GemScraper(BaseScraper):
                     posted_at=_posted_at(detail.get("firstPublishedTsSec")),
                     scraped_at=scraped_at,
                     description=html_to_text(detail.get("descriptionHtml")),
-                    experience=None,  # no native field; headstart.experience.extract() covers it
+                    experience=None,  # no native field; headstart.jobs.experience.extract() covers it
                     employment_type=(
                         job_obj.get("employmentType")
                         or detail_job.get("employmentType")

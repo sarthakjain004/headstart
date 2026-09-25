@@ -283,7 +283,7 @@ numeric `Retry-After` honoured, 404 → `CompanyNotFoundError`, 403/406 escalate
 httpcloak TLS-impersonation engine when the scraper declares it (`:311-338`), and
 `MalformedJSONError` for a 200 whose body isn't JSON (`:137-144`).
 
-Ours has retry/backoff in `headstart.network.http` plus ADR-0063 spare-egress rotation keyed on a declared
+Ours has retry/backoff in `headstart.http` plus ADR-0063 spare-egress rotation keyed on a declared
 per-scraper `egress_fallback_on` (`wt-main/.../base.py:~206-228`), which is the
 per-origin-budget mechanism theirs has no analogue of. The only idea without a counterpart is
 **declared TLS-fingerprint escalation** — and this group supplies the counter-example: at

@@ -56,7 +56,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
 
-from headstart.models import Job, html_to_text, is_remote
+from headstart.jobs.job import Job, html_to_text, is_remote
 from headstart.network.browser_http import BrowserFetcher
 from headstart.network.fetcher import Fetcher
 from headstart.scrapers.base import USER_AGENT, BaseScraper, classify_exception

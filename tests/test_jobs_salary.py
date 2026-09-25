@@ -13,8 +13,8 @@ from pathlib import Path
 
 import pytest
 
-from headstart import salary as salary_module
-from headstart.salary import SalarySpan, extract, from_description, from_field
+from headstart.jobs import salary as salary_module
+from headstart.jobs.salary import SalarySpan, extract, from_description, from_field
 
 # --- Shared: _num(), US and European number formats -------------------------------------------
 
@@ -26,7 +26,7 @@ def test_num_us_and_european_formats():
     # plausibility floor in the case that surfaced it, but not guaranteed to in general. "14,00"
     # (fourteen, decimal-comma) read as 1400 — a genuine, dangerous OVERESTIMATE that can clear
     # the plausibility bounds and silently corrupt a real value.
-    from headstart.salary import _num
+    from headstart.jobs.salary import _num
 
     # European: period=thousands, comma=decimal.
     assert _num("49.000") == 49000
@@ -50,7 +50,7 @@ def test_num_repeated_separator_up_to_the_decimal_group_does_not_crash():
     # convert every comma to a period once a 2-digit trailing group is seen — would leave TWO
     # periods in "125,000,00" and crash float(); only the LAST separator may become a decimal
     # point, every earlier one is stripped. Covers both directions since the fix is symmetric.
-    from headstart.salary import _num
+    from headstart.jobs.salary import _num
 
     assert _num("125,000,00") == 125000
     assert _num("125.000.00") == 125000
@@ -173,7 +173,7 @@ def test_field_darwinbox_magnitude_threshold_boundary(monkeypatch):
     # 19, real absolute values start at 10,000) — exercise the exact 1,000 boundary mechanically.
     # 999 lakh is 9.99 crore, above the real 3-crore INR ceiling, so the ceiling is lifted here to
     # keep this about the magnitude branch rather than the bound.
-    from headstart import salary
+    from headstart.jobs import salary
 
     monkeypatch.setitem(salary._MAX_PLAUSIBLE_ANNUAL, "INR", 10**9)
     # Just below: treated as lakhs (x100,000) -> a large but in-bounds figure.
@@ -198,7 +198,7 @@ def test_field_gem_range_now_reads_whole_in_field_generic_too():
     # Gem got its own Tier-1 parser when _field_generic's _RANGE could not read a symbol before
     # EACH side ("$80,000 – $120,000") and kept only the floor. _RANGE reads it now; the bare "$"
     # stays currency-less there, where gem's own parser resolves it (bare_dollar="USD").
-    from headstart.salary import _field_generic
+    from headstart.jobs.salary import _field_generic
 
     assert _field_generic(
         "The base pay range for this role is $80,000 – $120,000 per year."
@@ -960,7 +960,7 @@ def test_resolve_tie_break_ignores_max_annual_when_currency_presence_already_dec
     # The tie-break's first criterion (currency-presence) still takes priority over the second
     # (max_annual-presence) when they'd otherwise disagree — a currency-less range must not beat
     # a currency-bearing single value just because the range is more complete.
-    from headstart.salary import _resolve
+    from headstart.jobs.salary import _resolve
 
     spans = [
         SalarySpan(50000, 60000, None, "regex"),
@@ -1832,7 +1832,7 @@ def test_hr_and_mo_after_the_figure_are_units_only_when_they_touch_it():
 def test_num_single_digit_decimal_comma_is_a_decimal():
     # Real served row (successfactors:jobs.avl.com, Cavriago IT): "Starting Salary: 28,5k" was
     # served as 285,000 — a one-digit comma tail can never be a thousands group (those are 3).
-    from headstart.salary import _num
+    from headstart.jobs.salary import _num
 
     assert _num("12,5") == 12  # banker's rounding, as for "12.5"
     assert _num("28,5") == 28
@@ -1881,7 +1881,7 @@ def test_a_word_cut_at_the_period_window_edge_is_not_a_hint():
 #: sources (a scraper module is named for its ATS), so a new caller is tested without an edit here.
 _ATSES_ENCODING_THROUGH_TO_FIELD = sorted(
     scraper_source.stem
-    for scraper_source in (Path(salary_module.__file__).parent / "scrapers").glob(
+    for scraper_source in (Path(salary_module.__file__).parents[1] / "scrapers").glob(
         "*.py"
     )
     if "salary.to_field(" in scraper_source.read_text(encoding="utf-8")
@@ -1901,7 +1901,7 @@ def test_the_encoding_ats_list_finds_every_scraper_that_calls_to_field():
 
 
 def test_to_field_spells_figures_currency_and_period_leaving_out_empty_parts():
-    from headstart.salary import to_field
+    from headstart.jobs.salary import to_field
 
     assert to_field(50000, 70000, "USD", "per-year-salary") == (
         "50000-70000 USD per-year-salary"
@@ -1914,7 +1914,7 @@ def test_to_field_spells_figures_currency_and_period_leaving_out_empty_parts():
 
 @pytest.mark.parametrize("ats", _ATSES_ENCODING_THROUGH_TO_FIELD)
 def test_to_field_round_trips_through_from_field_for_every_encoding_ats(ats):
-    from headstart.salary import to_field
+    from headstart.jobs.salary import to_field
 
     assert from_field(to_field(80000, 100000, "USD"), ats) == SalarySpan(
         80_000, 100_000, "USD", "field"
@@ -1936,14 +1936,14 @@ def test_keka_reads_no_lone_figure_a_known_codec_gap():
     # Found by the round trip above (ADR-0197): keka.py emits a lone figure when only one of
     # minimum/maximum is set, and `_field_keka` reads ranges only, so it declines. Pinned rather
     # than fixed: keka's lone figure may be a ceiling, and reading it would serve it as a floor.
-    from headstart.salary import to_field
+    from headstart.jobs.salary import to_field
 
     assert from_field(to_field("1200000", None, "INR"), "keka") is None
 
 
 @pytest.mark.parametrize("ats", _ATSES_READING_BARE_UNIT_WORDS)
 def test_to_field_bare_unit_words_round_trip_where_registered(ats):
-    from headstart.salary import to_field
+    from headstart.jobs.salary import to_field
 
     assert from_field(to_field(25, 30, "USD", "HOUR"), ats) == SalarySpan(
         25 * 2080, 30 * 2080, "USD", "field"
@@ -1954,7 +1954,7 @@ def test_to_field_bare_unit_words_round_trip_where_registered(ats):
 
 
 def test_currency_for_symbol_names_a_bare_dollar_by_the_callers_policy():
-    from headstart.salary import _currency_for_symbol
+    from headstart.jobs.salary import _currency_for_symbol
 
     # A named symbol decides alone, in any letter case.
     assert _currency_for_symbol("CA$", "USD", bare_dollar=None) == "CAD"
@@ -1974,7 +1974,8 @@ def test_currency_for_symbol_names_a_bare_dollar_by_the_callers_policy():
 def test_every_currency_salary_can_emit_has_an_fx_rate():
     # The salary bracket leaves out a currency config/fx_rates.json has no rate for (ADR-0117),
     # so a currency this module emits without one would silently drop its Jobs from the bracket.
-    from headstart import fx, salary
+    from headstart import fx
+    from headstart.jobs import salary
 
     emittable = {*salary._CURRENCY_CODES.split("|"), *salary._SYMBOL_CURRENCY.values()}
     assert emittable - fx.table()["rates"].keys() == set()

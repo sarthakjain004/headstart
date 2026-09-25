@@ -17,7 +17,7 @@ from pathlib import Path
 import pytest
 from fake_fetcher import FakeResponse
 
-from headstart.salary import extract as extract_salary
+from headstart.jobs.salary import extract as extract_salary
 from headstart.scrapers.registry import SCRAPERS, get_scraper
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures"

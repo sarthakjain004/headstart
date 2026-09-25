@@ -38,7 +38,7 @@ layer.
 
 ## Decision
 
-A **post-hoc, recall-biased regex filter** (`headstart.tech_filter`) is the authoritative tech gate.
+A **post-hoc, recall-biased regex filter** (`headstart.jobs.tech_filter`) is the authoritative tech gate.
 
 - The scrapers keep writing the full set to `data/jobs/{ats}.jsonl` (unchanged). A filter stage
   (`src/headstart/ingest/filter_tech.py`, and `filter_jobs()` in the `python -m headstart` pipeline) writes the

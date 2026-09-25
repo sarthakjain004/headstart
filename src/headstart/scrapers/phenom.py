@@ -42,7 +42,7 @@ import re
 from typing import Any, ClassVar
 
 from headstart import company_name
-from headstart.models import Job, host_of, html_to_text
+from headstart.jobs.job import Job, host_of, html_to_text
 from headstart.network import http
 from headstart.network.fetcher import Fetcher
 from headstart.scrapers.base import (
@@ -127,7 +127,7 @@ class PhenomScraper(BaseScraper):
     def slug_from(tenant: str, url: str) -> str:
         """The board host, which a pool row may carry in either column.
 
-        `models.host_of`, not a local split, for the reason its own docstring gives: the scraper,
+        `jobs.job.host_of`, not a local split, for the reason its own docstring gives: the scraper,
         the liveness prober and the ledger repair have to agree on what a host is, and the one time
         they did not it cost 312 Boards recorded live with zero jobs. Same shape oracle, icims and
         zwayam use.

@@ -130,7 +130,7 @@ def build_doc(job: dict) -> str:
 #
 # `remote` is a fourth family with a different shape (ADR-0118 amends ADR-0061's fact/derivation
 # table for it): its raw ATS-native value IS a fact, but the served column holds
-# `headstart.remote.extract`'s overlay on top of that fact rather than the fact itself, and —
+# `headstart.jobs.remote.extract`'s overlay on top of that fact rather than the fact itself, and —
 # unlike every field above — is deliberately EXCLUDED from `update_meta.FACT_FIELDS`
 # (`_FACT_WITH_OVERLAY`), so it is NOT refreshed unconditionally every run the way `location` or
 # `salary` are. Only a sweep or an explicit re-derive queue entry touches it, same cadence as
@@ -199,7 +199,7 @@ def build_doc(job: dict) -> str:
 # not occur in real postings: verified against 526 local LPA-bearing records with zero
 # disagreements between old and new.
 #
-# v8: added `headstart.remote.extract` — the JD-supersedes-field overlay described above. Not a
+# v8: added `headstart.jobs.remote.extract` — the JD-supersedes-field overlay described above. Not a
 # fix to an existing derivation; a new fourth family sharing this counter for the first time
 # (ADR-0118). Measured against the live served table (335,543 rows) joined to the full
 # description store (493,629 JDs, 98.1% coverage): AT LEAST 7,439 already-indexed rows have

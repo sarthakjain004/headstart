@@ -44,7 +44,7 @@ import re
 from typing import Any
 
 from headstart import company_name
-from headstart.models import Job, host_of, html_to_text, is_remote, requisition_of
+from headstart.jobs.job import Job, host_of, html_to_text, is_remote, requisition_of
 from headstart.network.fetcher import Fetcher
 from headstart.scrapers.base import (
     BaseScraper,
@@ -183,7 +183,7 @@ class OracleScraper(BaseScraper):
         tenant, which for the second shape is not a host and cannot be fetched — so prefer the
         URL's host and fall back to the tenant.
         """
-        # `models.host_of`, not a local split: that function exists because this rule has to
+        # `jobs.job.host_of`, not a local split: that function exists because this rule has to
         # hold in the scraper, the liveness prober and the ledger repair at once, and the one
         # time they disagreed it cost 312 boards recorded live with zero jobs. A hand-rolled
         # version here dropped its `?query` split and the lowercasing the casing-duplicate rule
