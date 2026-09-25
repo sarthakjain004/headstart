@@ -34,6 +34,15 @@ successfactors:southasiacareers.deloitte.com,Deloitte South Asia,"Deloitte's own
 workday:ms/External,Morgan Stanley,tenant page names Morgan Stanley (2026-09-25); casing duplicate of ms/external
 workday:ms/external,Morgan Stanley,tenant page names Morgan Stanley (2026-09-25)
 workday:ms/private,Morgan Stanley,tenant page names Morgan Stanley (2026-09-25)
+# Mirrored pairs joined once the index keeps one copy: #649 (DEDUP_VERSION 5) drops an Eightfold
+# row whose backing row is served (data/validate/eightfold_backing.csv pairs each one below), in
+# the pipeline run that rebuilds the directory with these names. Before, one Search card opened
+# "NVIDIA Corporation" and the next "Nvidia", two trends of ~2,045 (2026-09-25 critique).
+eightfold:jobs.nvidia.com,NVIDIA,eightfold_backing.csv: backed by workday:nvidia/nvidiaexternalcareersite (#649)
+workday:nvidia/NVIDIAExternalCareerSite,NVIDIA,backing Board of eightfold:jobs.nvidia.com (#649)
+eightfold:careers.micron.com,Micron,eightfold_backing.csv: backed by workday:micron/external (#649)
+workday:micron/External,Micron,backing Board of eightfold:careers.micron.com (#649)
+eightfold:morganstanley.eightfold.ai,Morgan Stanley,eightfold_backing.csv: backed by workday:ms/external and ms/private (#649)
 # Workday (ADR-0216): Boards the hiringOrganization cascade leaves unnamed, and big Boards it
 # names partially or wrongly, each read from the Board's own og tags, sidebar, approot and
 # posting text on 2026-09-24/25. The cascade's own answers are data/validate/company_names/workday.csv.

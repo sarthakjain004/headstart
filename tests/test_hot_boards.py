@@ -286,3 +286,36 @@ def test_a_change_with_no_tick_of_its_own_lands_on_the_next(tmp_path: Path) -> N
         )
     moved, _ = hot_boards.read_stock_change(deltas, {"2026-09-17T15:26:29+00:00"})
     assert moved["amazon:jobs"] == 15
+
+
+def test_non_tech_rows_are_not_hot_hiring(tmp_path: Path) -> None:
+    """Hot counts tech roles, as the trend each row links to does."""
+    path = tmp_path / "counts.parquet"
+    pq.write_table(
+        _counts(
+            [
+                ("amazon:jobs", "stock", "software-engineering", 90),
+                ("amazon:jobs", "stock", "non-tech", 9),
+                ("amazon:jobs", "new", "non-tech", 4),
+            ]
+        ),
+        path,
+    )
+    new, stock = hot_boards.read_levels(path)
+    assert stock["amazon:jobs"] == 90
+    assert new["amazon:jobs"] == 0
+    deltas = tmp_path / "deltas"
+    deltas.mkdir()
+    for ts, rows in [
+        ("2026-09-17T12:00:00+00:00", [("amazon:jobs", "stock", "se", 500)]),
+        (
+            "2026-09-18T12:00:00+00:00",
+            [
+                ("amazon:jobs", "stock", "se", 5),
+                ("amazon:jobs", "stock", "non-tech", 40),
+            ],
+        ),
+    ]:
+        pq.write_table(_deltas(ts, rows), deltas / f"{ts.replace(':', '-')}.parquet")
+    moved, _ = hot_boards.read_stock_change(deltas)
+    assert moved["amazon:jobs"] == 5

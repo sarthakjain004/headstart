@@ -219,11 +219,14 @@ test('the Other row sums every series past CHART_MAX', () => {
   assert.equal(ct[1], '3.0k');
 });
 
-test('clicking a marked row opens the roles split it advertised', () => {
+test('the roles marker opens the roles it names; the row opens the levels that add up to it', () => {
   const { t } = loadApp();
   t.set(fixture(), null);
-  t.click('software-engineering');
+  t.click('software-engineering', 'roles');
   assert.equal(t.split(), 'roles');
+  t.set(fixture(), null);
+  t.click('software-engineering', 'bands');
+  assert.equal(t.split(), 'bands');
 });
 
 test('clicking a category without watched roles opens the experience bands', () => {
@@ -275,7 +278,7 @@ test('a charted row does issue a drill request', () => {
   t.click('software-engineering');
   assert.equal(fetches.length, 1);
   assert.match(fetches[0], /family=software-engineering/);
-  assert.match(fetches[0], /split=roles/);
+  assert.match(fetches[0], /split=bands/, 'a row opens the levels that add up to it');
 });
 
 test('the scope line names the drillable set when more rows are listed than charted', () => {
@@ -305,11 +308,11 @@ test('the split toggle un-hides for a family that has watched roles', () => {
 
 test('an unmeasured roles drill says so, rather than claiming nothing is tracked', () => {
   const { t, nodes } = loadApp();
-  // Reach the roles split the way a user does — by clicking the marked row — then land on the
-  // empty series the first post-deploy run produces, before `role_trends` has written any
-  // `watch:` rows.
+  // Reach the roles split the way a user does — by clicking the row's roles marker — then land
+  // on the empty series the first post-deploy run produces, before `role_trends` has written
+  // any `watch:` rows.
   t.set(fixture(), null);
-  t.click('software-engineering');
+  t.click('software-engineering', 'roles');
   t.set({ ...fixture(), series: [] }, 'software-engineering');
   t.draw();
   assert.match(nodes['trends-empty'].textContent, /have not been measured yet/);
@@ -1458,13 +1461,15 @@ test('the mover floor is held to the openings a line really started with', () =>
   assert.match(row(nodes['trends-legend'].innerHTML, 'a'), /↑ \+2 openings</);
 });
 
-test('a counting change off zero starts the line there', () => {
+test('a counting change is taken out by its size in openings, never scaled', () => {
   const { t } = loadApp();
   t.setPicks([ACME]);
-  t.set({ ...picked({}), stamps: FOUR, series: [], discovered: [],
-    epochs: [{ ts: FOUR[2], changed: ['tech filter changed'], fields: ['tech_filter_version'] }] });
-  // No ratio off zero, so nothing before the change is a level to adjust.
-  same(t.netOfSteps([0, 0, 40, 40]), [null, null, 40, 40]);
+  t.set({ ...picked({}), stamps: FIVE, series: [], discovered: [],
+    epochs: [{ ts: FIVE[2], changed: ['tech filter changed'], fields: ['tech_filter_version'] }] });
+  // Microsoft's architecture line: 5 → 4, a filter change to 58, then flat. Scaled by 14.5,
+  // the one real opening became −12; by openings it stays −1.
+  // The run after the change (58 → 59) settles and goes too: net [60, 59, 59, 59, 59].
+  same(t.netOfSteps([5, 4, 58, 59, 59]), [60, 59, 59, 59, 59]);
 });
 
 test('found openings off zero lift the line', () => {

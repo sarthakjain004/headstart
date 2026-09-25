@@ -35,7 +35,8 @@ exclusion here is its Hot-tab-shaped equivalent, and its count ships in the arti
 being quietly applied.
 
 **``watch:`` families double-count** against centroid families (ADR-0051), so they are dropped
-from every total.
+from every total. ``non-tech`` is dropped too: the tab ranks tech hiring, and its rows link to a
+trend of tech openings.
 
 **``new`` is a rolling 7-day level, not per-tick inflow** (ADR-0051). It is read as a level and
 never summed across ticks. ``stock`` deltas *are* per-tick changes and are summed.
@@ -109,6 +110,10 @@ NEWLY_FOUND_SHARE = 0.9
 WINDOW_DAYS = 7
 
 _WATCH = "watch:"  # headstart.roles.WATCH_PREFIX; double-counts (ADR-0051)
+# The tech filter's reject pile (role_trends' reserved family). Hot counts tech roles only, as
+# Trends and Search do: counted in, Amazon's "open now" was 9,755 on Hot against 9,229 tech
+# openings on the trend its row links to.
+_NON_TECH = "non-tech"
 
 
 def read_levels(path: Path) -> tuple[collections.Counter, collections.Counter]:
@@ -121,7 +126,7 @@ def read_levels(path: Path) -> tuple[collections.Counter, collections.Counter]:
     for board, metric, family, count in zip(
         table["board"], table["metric"], table["family"], table["count"], strict=True
     ):
-        if family.startswith(_WATCH):
+        if family.startswith(_WATCH) or family == _NON_TECH:
             continue
         (new if metric == "new" else stock)[board] += count
     return new, stock
@@ -217,7 +222,11 @@ def read_stock_change(
             table["ts"],
             strict=True,
         ):
-            if metric == "stock" and not family.startswith(_WATCH):
+            if (
+                metric == "stock"
+                and not family.startswith(_WATCH)
+                and family != _NON_TECH
+            ):
                 moved[board] += delta
                 stamps.append(ts)
     return moved, stamps

@@ -332,6 +332,16 @@ _CONFIG = Path(__file__).parent / "config"  # copied in beside this app (ADR-015
 _WATCH = _watch_meta(_CONFIG / "role_watchlist.json")
 _FAMILY_LABELS = _family_labels(_CONFIG / "role_families.json")
 _EPOCHS = _load_epochs(_STATE / "data" / "state" / "trends_epochs.csv")
+# The seniority bands `headstart.roles.band` writes, as a reader says them: the Level view's
+# legend read "mid", "senior", "unspecified".
+_BAND_LABELS = {
+    "intern": "Internships",
+    "entry": "Entry level (0–1 yrs)",
+    "mid": "Mid level (2–4 yrs)",
+    "senior": "Senior (5–7 yrs)",
+    "staff": "Staff and above (8+ yrs)",
+    "unspecified": "Experience not stated",
+}
 _EVICTIONS = _load_evictions(_STATE / "data" / "state" / "dedup_evictions.csv")
 # A refit re-bases every series (ADR-0040), so never plot two versions on one axis: keep the
 # newest only. Older rows stay in the ledger, they just aren't charted.
@@ -1607,6 +1617,8 @@ def trends():
     def _series_label(name: str) -> str:
         if key == "company":
             return company_labels[name]
+        if key == "band":
+            return _BAND_LABELS.get(name, name)
         if name in _WATCH:
             return _WATCH[name]["label"]
         return _FAMILY_LABELS.get(name, name)
@@ -1665,7 +1677,13 @@ def trends():
             if (
                 openings <= 0
                 or at == len(stamps)
-                or at <= bisect_left(stamps, began[pick])
+                # the pick's line begins at its own first counted run: under `new`, where its
+                # first Board's hold ends, not where it arrived — the Sep 20 start of every
+                # line was marked as "boards found later"
+                or at
+                <= bisect_left(
+                    stamps, new_from[pick] if metric == "new" else began[pick]
+                )
             ):
                 continue
             bucket = found.setdefault((stamps[at], pick), [0, 0])

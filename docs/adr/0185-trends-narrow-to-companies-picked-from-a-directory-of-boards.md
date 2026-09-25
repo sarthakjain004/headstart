@@ -516,3 +516,40 @@ Its code review tightened the round:
   can move a tile. A duplicate-removal epoch names no ATS, so an Eightfold pick also has a
   Workday- or Taleo-only duplicate-removal run taken out, which costs it one run of ordinary
   change.
+
+### A critic's sixth round (2026-09-25): 6/10, measured on the live build
+
+The Space ran #665 (repo and runtime sha 952b419c, built from f35041b6). What changed:
+
+- **Steps come out by their size in openings, never by ratio.** Scaling the history multiplied
+  whatever moved before a step. Microsoft's architecture line went 5 → 4, and a filter change
+  took it to 58. Scaled ×14.5, the one real opening became "−12 openings". Added back, it is −1,
+  and the line is flat. A history pushed below zero is held at zero. The additive rule also
+  makes category lines sum to the company's at each counting change.
+- **The sentence always states the counting part,** under the mover floor too. Paytm's "−11"
+  sat over a line that went 14 → 6.
+- **Duplicate removals come out exactly.** The Space reads #649's `dedup_evictions.csv` and
+  names each pick's removals per charted run (`evicted`). A whole-company line takes them out at
+  their size. A category line does not guess where they fell, since the ledger carries no
+  family. This stays dark until the first run after #649 writes the ledger.
+- **One NVIDIA, one Micron, one Morgan Stanley.** The Eightfold site of each mirrors its Workday
+  Board. Search cards opened "NVIDIA Corporation" and "Nvidia" as two trends of about 2,045
+  each. `config/company_names.csv` now gives each pair one name. That is safe only because
+  #649's pipeline run, which rebuilds the directory with these names, also drops the Eightfold
+  copies.
+- **Hot counts tech roles only.** Its "open now" and net change included `non-tech` rows:
+  Amazon read 9,755 on Hot against 9,229 on the trend its row links to. Hot still ranks one
+  Board per company, so a multi-Board company's Hot figure is one Board's, not the company's.
+- **A row opens its levels. The "▸ roles" marker opens roles.** Landing on watched roles
+  showed "155" under a row that had just said 243. The Role view's tile is now "Openings in
+  tracked roles", and its hand-off can be exact too, bounded by the picks' totals.
+- **Levels are named** "Entry level (0–1 yrs)" and so on, not "mid".
+- **Under New,** a pick's line starts where its first Board's hold ends, so that start is no
+  longer marked as "boards found later".
+- **No stale answer under a new heading.** On a refetch the sentences, tiles and notes dim,
+  `aria-busy` is set, and the heading waits for the answer.
+- **Search under a company hand-off:**
+  - It names the company in its result line instead of "across every board".
+  - It does not fold that company's rows into "18 more at Google".
+  - A full first page says "counting the rest…" until the slow total arrives.
+- **Disabled presets look disabled,** and the reason is shown under the controls.
