@@ -1693,12 +1693,14 @@ function readTrendHash(){
     replacePicks(keys.map(key => ({ key, label: pickLabels.get(key) || null })));
     setCoNote('');
   }
-  topSplit.chosen = keys.length && ['families', 'total', 'company'].includes(q.get('by')) ? q.get('by') : 'auto';
-  trendSplit = ['roles', 'company'].includes(q.get('split')) ? q.get('split') : 'bands';
+  // Values compare case-blind, as company keys do: `by=TOTAL&unit=COUNT` was ignored.
+  const lower = k => (q.get(k) || '').toLowerCase();
+  topSplit.chosen = keys.length && ['families', 'total', 'company'].includes(lower('by')) ? lower('by') : 'auto';
+  trendSplit = ['roles', 'company'].includes(lower('split')) ? lower('split') : 'bands';
   unitWanted = null;
-  trendUnit = ['share', 'count', 'change'].includes(q.get('unit')) ? q.get('unit') : 'change';
-  trendMetric = q.get('metric') === 'new' ? 'new' : 'stock';
-  trendCoverage = q.get('coverage') === 'comparable' ? 'comparable' : 'all';
+  trendUnit = ['share', 'count', 'change'].includes(lower('unit')) ? lower('unit') : 'change';
+  trendMetric = lower('metric') === 'new' ? 'new' : 'stock';
+  trendCoverage = lower('coverage') === 'comparable' ? 'comparable' : 'all';
   // A custom range rides in the link as UTC minutes; the fields show them in local time.
   const since = q.get('since'), until = q.get('until');
   const hotNet = Number(q.get('hot'));
@@ -1850,8 +1852,10 @@ function stepNote(d, marked){
 // and a tap on one read the run beside it ("Left out: the run after a counting change").
 function drawChangeList(d, list){
   const host = el('trends-changes'); if (!host) return;
-  host.hidden = !list.length;
-  const sorted = list.slice().sort((a, b) => a.i - b.i);
+  // Under a pick, a change that moved no listed line by a whole opening is left out: a bare
+  // "1,927 duplicate postings removed" with no size beside it said nothing a reader could use.
+  const sorted = list.filter(g => !trendPicks.length || g.sizes.length).sort((a, b) => a.i - b.i);
+  host.hidden = !sorted.length;
   host.innerHTML = `<summary>Marked changes in this window (${sorted.length})</summary><ul>${sorted.map(g =>
     `<li><b>${esc(stampLabel(d.stamps[g.i]))}</b> ${esc(g.label)}${
       g.sizes && g.sizes.length ? ` — ${esc(g.sizes.join(', '))}` : ''}</li>`).join('')}</ul>`;
@@ -1873,9 +1877,14 @@ function hotNote(d){
   const pick = hotOriginPick(); if (!pick) return '';
   const o = hotOrigin, boards = pick.boardKeys || [pick.key];
   const figure = `${o.net < 0 ? '−' : '+'}${Math.abs(o.net).toLocaleString()} net tech roles`;
-  if (boards.length > 1)
-    return `Hot’s ${figure} is one of ${pick.label || 'this company'}’s ${boards.length} boards; this line sums all of them.`;
   const line = { name: '__total__', points: sumPoints(d.series, d.stamps) };
+  // With the line's own figure beside it, so the two can be read against each other: Bosch's note
+  // said its +440 was one of two boards and never what the line read.
+  if (boards.length > 1){
+    const whole = trendMove(line);
+    return `Hot’s ${figure} is one of ${pick.label || 'this company'}’s ${boards.length} boards; this line sums all of them${
+      whole ? ` and reads ${signedOpenings(Math.round(whole.change))}` : ''}.`;
+  }
   // A Board counted for hours has no week of its own here: SiTime read "too new" in its sentence
   // beside "this line reads +0 openings" under Hot's +59.
   const began = countedSince(d)[0];
@@ -2536,7 +2545,9 @@ async function loadTrends(family){
   // abort lands in the catch above like a dropped connection, and reporting it would put
   // "that request didn't go through" over a render that is about to be replaced anyway.
   if (req.signal.aborted) return;
-  if (refused && dropRefusedPicks(refused)) return loadTrends(family);
+  // The refused picks' chart goes with them rather than standing dimmed over the retry: Google's
+  // chart and sentence stayed under "no trend for nosuch:board" (critic round 15).
+  if (refused && dropRefusedPicks(refused)){ trendData = null; trendRaw = null; drawTrends(); return loadTrends(family); }
   if (refused) err = 'Trends didn’t load. Try again.';
   if (err){ showTrendsError(err); return; }
   hideTrendsError();
@@ -3394,6 +3405,11 @@ function drawTrends(){
     const a = s.points[i], b = s.points[i - 1];
     return sum + (a != null && b != null ? Math.abs(a - b) : 0);
   }, 0);
+  // Each listed change's size on each sized line, rounded together per line (largest remainder),
+  // so a line's entries sum to its rounded total exactly — rounded one by one, Micron's summed to
+  // −2,380 under a sentence of −2,378.
+  const listedNotes = notes.filter(n => (n.epoch && markerMoves(n)) || ((n.found || n.evicted) && n.withhold));
+  const sizeOf = new Map(sized.map(s => [s, apportion(listedNotes.map(n => changeSizeExact(n, s)))]));
   const drawMarkers = (list, cls) => {
     const groups = new Map();
     list.forEach(n => {
@@ -3413,7 +3429,7 @@ function drawTrends(){
       // repeated. Each is sized on every line, the whole company first (changeSize).
       g.notes.forEach(n => {
         const item = { i: n.i, label: n.short || n.text,
-          sizes: !trendPicks.length ? [] : sized.map(s => { const k = changeSize(n, s); return k ? `${s.label} ${signedOpenings(k)}` : ''; }).filter(Boolean) };
+          sizes: !trendPicks.length ? [] : sized.map(s => { const k = sizeOf.get(s)[listedNotes.indexOf(n)]; return k ? `${s.label} ${signedOpenings(k)}` : ''; }).filter(Boolean) };
         marked.list.push(item);
         marked.changesAt.set(g.i, [...(marked.changesAt.get(g.i) || []), item]);
       });
@@ -4031,18 +4047,34 @@ function stepMoved(n, s){
 // "Marked changes" list size a change this way, and the sentence's parts (netOfSteps over the
 // same runs) sum to the same total: the tooltip gave Micron's Sep 17 change +32 where the list
 // gave −264.
-function changeSize(n, s){
+function changeSize(n, s){ return Math.round(changeSizeExact(n, s)); }
+// Whole numbers that sum to the rounded sum of `xs`, each within one of its own value.
+function apportion(xs){
+  const floors = xs.map(Math.floor);
+  let left = Math.round(xs.reduce((a, b) => a + b, 0)) - floors.reduce((a, b) => a + b, 0);
+  const order = xs.map((x, k) => [x - floors[k], k]).sort((a, b) => b[0] - a[0]);
+  for (const [, k] of order){ if (left <= 0) break; floors[k] += 1; left -= 1; }
+  return floors;
+}
+function changeSizeExact(n, s){
   // A line summing several picks is sized as its sentence nets it, pick by pick: summed whole, a
   // change touching only Micron listed Acme's +30 of hiring that run as "These 2 companies +30".
   const picks = summedPicks(s);
-  if (picks) return picks.reduce((sum, p) => sum + changeSize(n, p), 0);
-  // A removal the line scales by is sized by what it does to the line's move — with it, against
-  // without it — since scaling shrinks the growth before it as well as taking out the removal.
-  if (n.evicted && dupRatiosFor(s).has(n.i) && stepsFor(s).includes(n)){
-    const withIt = (trendMove(s) || { change: 0 }).change;
+  if (picks) return picks.reduce((sum, p) => sum + changeSizeExact(n, p), 0);
+  // Sized as the sentence peels its causes: removals first, then everything else in the frame
+  // the removals leave. A removal the line scales by is what it does with only removals taken
+  // out — its own drop and the shrinking of the growth before it (Micron's 1,927 read +77 sized
+  // against a refit that took the whole run out anyway); any other change is its jump at the
+  // scale the removals after it leave (Sep 17's filter change counts half at Micron).
+  const dups = dupRatiosFor(s);
+  if (n.evicted && dups.has(n.i) && stepsFor(s).includes(n)){
+    const onlyDups = new Set(['duplicates']);
+    const moveOf = () => { const e = headTail(netOfSteps(s.points, s, onlyDups)); return e ? e.tail - e.head : 0; };
+    const withIt = moveOf();
     omittedNote = n;
-    try { return Math.round((trendMove(s) || { change: 0 }).change - withIt); } finally { omittedNote = null; }
+    try { return moveOf() - withIt; } finally { omittedNote = null; }
   }
+  const after = [...dups].filter(([j]) => j > stepRuns(n, s)[0]).reduce((f, [, r]) => f * r, 1);
   const steps = stepsFor(s);
   if (!steps.includes(n)) return 0;
   // Each left-out run belongs to one change: a run that is another change's own run is that
@@ -4060,14 +4092,14 @@ function changeSize(n, s){
   // Openings a line was born with at this change's own runs (recountBorn), under All openings.
   const first = s.points.findIndex(v => v != null);
   const arrived = trendMetric === 'stock' && birthChange(s) === n ? s.points[first] : 0;
-  return stepSize([n], s, runs) + Math.round(arrived);
+  return (stepSize([n], s, runs) + arrived) * after;
 }
 // What the crosshair says at a run: at a day's marker, every change it stands for, each at its own
 // time with the company's size, as "Marked changes" lists it — the Sep 24 marker named one of
 // Microsoft's four changes and gave only the last run's −29. Elsewhere, the run's own notes.
 function tooltipNotes(geom, index){
-  const items = geom.changesAt && geom.changesAt.get(index);
-  if (items) return items.map(it => `${stampLabel(geom.stamps[it.i])} ${it.label}${it.sizes.length ? ` — ${it.sizes.join(', ')}` : ''}`);
+  const items = geom.changesAt && (geom.changesAt.get(index) || []).filter(it => !trendPicks.length || it.sizes.length);
+  if (items && items.length) return items.map(it => `${stampLabel(geom.stamps[it.i])} ${it.label}${it.sizes.length ? ` — ${it.sizes.join(', ')}` : ''}`);
   return (geom.notes || []).filter(n => n.i === index && (n.short || n.text)).map(n => n.short || n.text);
 }
 // The lines a change is sized on in the list: each company's own line, never a category's — a

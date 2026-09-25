@@ -3387,3 +3387,17 @@ def test_a_company_key_is_found_whatever_its_case(company_trends):
     # Answered under the directory's own key, which the page adopts for its picks.
     lower = company_trends.get("/trends?company=workday:hpe/a").get_json()
     assert [c["key"] for c in d["companies"]] == [c["key"] for c in lower["companies"]]
+
+
+def test_the_index_scope_is_worked_out_once_and_answers_the_same(
+    trends_app, monkeypatch
+):
+    """The index's whole-ledger passes were most of its 8–10 s on the Space; a second request for
+    the same scope reads them from memory and answers exactly as the first did."""
+    monkeypatch.setattr(trends_app, "_INDEX_SCOPES", {})
+    client = trends_app.app.test_client()
+    first = client.get("/trends").get_json()
+    assert len(trends_app._INDEX_SCOPES) == 1
+    assert client.get("/trends").get_json() == first
+    client.get("/trends?company=workday:hpe/a")
+    assert len(trends_app._INDEX_SCOPES) == 1, "a pick's scope is never kept"

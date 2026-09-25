@@ -2062,7 +2062,7 @@ test('a trend opened from Hot says how Hot’s figure reads on it', () => {
   t.setPicks([bosch]);
   t.set(companies([['greenhouse:bosch', 'Bosch', [100, 200, 300, 540]]]));
   t.draw();
-  assert.match(nodes['trends-empty'].textContent, /Hot’s \+440 net tech roles is one of Bosch’s 2 boards; this line sums all of them\./);
+  assert.match(nodes['trends-empty'].textContent, /Hot’s \+440 net tech roles is one of Bosch’s 2 boards; this line sums all of them and reads \+440 openings\./);
   t.setPicks([{ ...bosch, boardKeys: ['greenhouse:bosch'] }]);
   t.draw();
   assert.match(nodes['trends-empty'].textContent, /Hot’s \+440 net tech roles is this line’s change/);
@@ -2623,4 +2623,54 @@ test('a duplicate removal scales the history before it, so doubled growth is hal
   assert.match(html, /Not hiring: −1,000 openings/);
   assert.match(nodes['trends-changes'].innerHTML, /duplicate postings of Micron removed — Micron −1,000 openings/,
     'the list sizes the removal by what it does to the line, so it sums to the sentence');
+});
+
+test('Comparable says its base moved only when the window starts before counting by board', () => {
+  const { t, nodes } = loadApp();
+  t.setPicks([ACME]);
+  t.coverageSet('comparable');
+  // Asked from a moment between two runs, after counting by board began: nothing moved.
+  nodes['trends-since'] = Object.assign(fakeEl(), { value: '2026-09-14T06:00' });
+  t.set({ ...companies([['greenhouse:acme', 'Acme', [100, 100, 100, 100]]]), base: FOUR[1], ledger_start: FOUR[0] });
+  t.draw();
+  assert.doesNotMatch(nodes['trends-empty'].textContent, /the first run it counted by board/);
+});
+
+test('a link’s values are read case-blind, as its company keys are', () => {
+  const { t, ctx } = loadApp();
+  ctx.location.hash = '#trends?company=greenhouse%3Aacme&by=TOTAL&unit=COUNT';
+  t.readHash();
+  assert.equal(t.top(), 'total');
+  assert.equal(t.unit(), 'count');
+});
+
+test('a company counted from a later run is not sized by a change before it (Zomato’s phantom +2)', () => {
+  const { t, nodes } = loadApp();
+  const zomato = { key: 'lever:zomato', label: 'Zomato', boardKeys: ['lever:zomato'] };
+  t.setPicks([ACME, zomato]);
+  t.set(companies([['greenhouse:acme', 'Acme', [100, 100, 110, 110, 110]], ['lever:zomato', 'Zomato', [null, null, null, 2, 2]]],
+    { stamps: FIVE, counted_since: { 'greenhouse:acme': FIVE[0], 'lever:zomato': FIVE[3] },
+      epochs: [{ ts: FIVE[2], changed: ['tech filter changed'], fields: ['tech_filter_version'] }] }));
+  t.setUnit('count', false);
+  t.draw();
+  const list = nodes['trends-changes'].innerHTML;
+  assert.match(list, /tech filter changed — Acme \+10 openings<\/li>/);
+  assert.doesNotMatch(list, /Zomato/, 'its first run is when counting began, not a change');
+});
+
+test('before a removal a change counts at the scale the removal leaves, and the list sums to the sentence', () => {
+  const { t, nodes } = loadApp();
+  const key = 'eightfold:micron';
+  t.setPicks([{ key, label: 'Micron', boardKeys: [key] }]);
+  // A filter change adds 200 while every job is listed twice; then half the list is removed.
+  const pts = [2000, 2200, 2200, 1100, 1110];
+  t.set(companies([[key, 'Micron', pts]], { stamps: FIVE, company_totals: { [key]: pts },
+    evicted: [{ ts: FIVE[3], company: key, count: 1100 }],
+    epochs: [{ ts: FIVE[1], changed: ['tech filter changed'], fields: ['tech_filter_version'] }] }));
+  t.setUnit('count', false);
+  t.draw();
+  const list = nodes['trends-changes'].innerHTML;
+  assert.match(list, /tech filter changed — Micron \+100 openings/, 'its 200 were 100 real jobs');
+  assert.match(list, /duplicate postings of Micron removed — Micron −1,000 openings/);
+  assert.match(nodes['trends-verdict'].innerHTML, /Not hiring: −900 openings/);
 });
