@@ -2360,7 +2360,7 @@ async function loadTrends(family){
   // and is left as a product call rather than smuggled in with a race fix.
   if (trendReq) trendReq.abort();
   const req = trendReq = new AbortController();
-  const push = picksPushed; picksPushed = false;   // this load's, whatever becomes of it
+  const push = nextLoadPushesHistory; nextLoadPushesHistory = false;   // this load's, whatever becomes of it
   const q = new URLSearchParams();
   // The roles split only exists for families that HAVE watched roles. Carrying a sticky
   // 'roles' into one that doesn't returns an empty series with its toggle hidden — nothing
@@ -3925,7 +3925,7 @@ function trendSplitSelect(v){
   topSplit.chosen = v;
   // A breakdown is a view a reader can step back out of: Company → Total → Category added no
   // history entry, so Back skipped all three.
-  if (refetch || !trendRaw){ picksPushed = true; loadTrends(null); return; }
+  if (refetch || !trendRaw){ loadTrendsAsHistoryStep(null); return; }
   trendData = trendView(trendRaw, null);
   writeTrendHash(true); applyUnitLocks();
   drawTrends();
@@ -3938,19 +3938,19 @@ function trendSplitSelect(v){
 trendSeg('trends-range', 'days', v => {
   trendDays = v;
   ['trends-since', 'trends-until'].forEach(id => { if (el(id)) el(id).value = ''; });
-  picksPushed = true; loadTrends(trendDrill);
+  loadTrendsAsHistoryStep(trendDrill);
 });
 ['trends-since', 'trends-until'].forEach(id => {
   // A typed range is neither preset, so none stays checked: "All" lit over Sep 18–21 was a lie.
   if (el(id)) el(id).addEventListener('change', () => {
     const any = ['trends-since', 'trends-until'].some(f => el(f) && el(f).value);
-    setRangePreset(any ? 'custom' : 'all'); picksPushed = true; loadTrends(trendDrill);
+    setRangePreset(any ? 'custom' : 'all'); loadTrendsAsHistoryStep(trendDrill);
   });
 });
 if (el('trends-range-clear')) el('trends-range-clear').addEventListener('click', () => {
   ['trends-since', 'trends-until'].forEach(id => { if (el(id)) el(id).value = ''; });
   setRangePreset('all');
-  picksPushed = true; loadTrends(trendDrill);
+  loadTrendsAsHistoryStep(trendDrill);
 });
 if (el('trends-back')) el('trends-back').addEventListener('click', () => { trendSplit = 'bands'; loadTrends(null); });
 if (el('trends-retry')) el('trends-retry').addEventListener('click', () => loadTrends(trendDrill));
@@ -4014,14 +4014,17 @@ function drawPicks(){
   trendAtsLabel();
 }
 
-// A change of picks is a history entry of its own, like a drill: Back used to undo every pick
-// and filter in one step.
-let picksPushed = false;
+// A change of picks, breakdown or window is a history entry of its own, like a drill: Back used
+// to undo every pick and filter in one step.
+let nextLoadPushesHistory = false;
+function loadTrendsAsHistoryStep(family){
+  nextLoadPushesHistory = true;
+  loadTrends(family);
+}
 function setPicks(picks){
   setCoNote('');   // a refusal's sentence belongs to the pick it refused, not to the next one
   replacePicks(picks);
-  picksPushed = true;
-  loadTrends(trendDrill);
+  loadTrendsAsHistoryStep(trendDrill);
 }
 
 // The follow list (ADR-0171) as one option, offered on an empty query. Followed companies are
@@ -4442,12 +4445,12 @@ function hotLens(){
 // Opened and closed are the week's turnover (ADR-0227). The net figure alone read Amazon's week
 // as "+17" while it opened 914–1,532. Rate divides the week's opened jobs by the openings now,
 // so its row leads with that share and gives the counts after it.
-// Before turnover is counted every row carries opened and closed as 0, so Expansion says
+// A row whose turnover was not counted carries opened and closed as null, and Expansion says
 // nothing of them then: "0 opened · 0 closed this week" beside "+442 net" stated a week nobody
-// measured. Volume and Rate need no such case: they rank only a positive opened.
+// measured. Volume and Rate need no such case: they rank only a counted, positive opened.
 const HOT_MEASURE = {
-  expansion: (r, turnoverCounted) => ({ big: (r.net > 0 ? '+' : '') + r.net, unit: 'net tech roles',
-    sub: turnoverCounted ? `${r.opened} opened · ${r.closed} closed this week · ${r.stock} open now`
+  expansion: r => ({ big: (r.net > 0 ? '+' : '') + r.net, unit: 'net tech roles',
+    sub: r.opened != null ? `${r.opened} opened · ${r.closed} closed this week · ${r.stock} open now`
       : `${r.stock} open now` }),
   volume:    r => ({ big: String(r.opened), unit: 'tech roles opened this week', sub:
     `${r.closed} closed · ${r.net >= 0 ? '+' : ''}${r.net} net · ${r.stock} open now` }),
@@ -4488,7 +4491,7 @@ function drawHot(){
 }
 
 function hotRow(r, i, lens){
-  const m = HOT_MEASURE[lens](r, hotTurnoverCounted());
+  const m = HOT_MEASURE[lens](r);
   const op = HOT_OPERATOR[r.operator];
   const followed = hotFollowed(r);
   const boards = r.boards.length === 1 ? 'board' : `${r.boards.length} boards`;
@@ -4529,7 +4532,7 @@ function drawHotProvenance(){
     : `${day(w.from)} to ${day(w.to)}`;
   // Turnover began with ADR-0227, so for its first week it covers less than the net change does.
   const turnoverLate = w.turnover_from && w.from && w.turnover_from > w.from;
-  const turnover = !w.turnover_from ? 'opened and closed are not counted yet'
+  const turnover = !hotTurnoverCounted() ? 'opened and closed are not counted yet'
     : turnoverLate ? `opened and closed are counted since ${day(w.turnover_from)}` : 'opened and closed over the same runs';
   el('hot-provenance').textContent =
     `Net change measured over ${span}; ${turnover}. ${x.ranked ?? 0} companies ranked; ` +
