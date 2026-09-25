@@ -22,7 +22,7 @@ only pays off at much larger fan-out and is a big rewrite.
 
 ## Decision
 
-**B, unified on `curl_cffi.Session`.** All scraper HTTP now goes through `headstart.http`, which
+**B, unified on `curl_cffi.Session`.** All scraper HTTP now goes through `headstart.network.http`, which
 hands out **one `curl_cffi` Session per thread** (keep-alive pools connections; thread-local because
 a libcurl session isn't safe to share across threads — and the scrapers already run under thread
 pools, per-company and per-detail-pass). It impersonates Chrome, so the *same* client serves both

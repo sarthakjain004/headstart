@@ -88,8 +88,8 @@ from collections import Counter
 from datetime import datetime
 from typing import Any
 
-from headstart import http
 from headstart.models import Job, html_to_text, is_remote
+from headstart.network import http
 from headstart.scrapers.base import BaseScraper, classify_exception, loss_breakdown
 
 #: The API's own hard maximum for `result_limit`. 200 and above answer 200 with

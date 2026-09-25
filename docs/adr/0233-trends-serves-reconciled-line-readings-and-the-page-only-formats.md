@@ -1,10 +1,12 @@
-# ADR-0232: Trends serves reconciled line readings, and the page only formats
+# ADR-0233: Trends serves reconciled line readings, and the page only formats
 
 **Status:** accepted · **Date:** 2026-09-25 · **Relates to:**
 [ADR-0185](0185-trends-narrow-to-companies-picked-from-a-directory-of-boards.md) (company trends
 and its netting rules), [ADR-0227](0227-trends-record-each-boards-opened-and-closed-jobs-not-only-its-net.md) (turnover),
 [ADR-0230](0230-trends-keeps-one-board-delta-history-and-decides-rules-when-reading-it.md) (one
-history; netting moved out of the browser)
+history; netting moved out of the browser),
+[ADR-0232](0232-the-shared-library-is-grouped-into-packages-by-the-question-each-module-answers.md)
+(the `trends/` package this module joins)
 
 ## Context
 
@@ -31,7 +33,8 @@ trace to that shape. Micron serves as the example:
 ## Decision
 
 1. **A new module, `headstart/trend_reading.py`, answers with readings, not pieces.** Today's
-   `trend_netting` becomes its private implementation. Its interface:
+   `trend_netting` becomes its private implementation. When ADR-0232's `trends/` package lands,
+   it moves with its neighbours and becomes `trends/reading`. Its interface:
    * `read_trends(history, question) -> TrendReading` returns every figure the Trends tab shows.
      Each line carries its start, latest, hiring move and "Not hiring", split into named causes.
      The window also carries its Marked changes and day markers. Every count is a whole number,

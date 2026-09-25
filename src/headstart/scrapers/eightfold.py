@@ -46,8 +46,9 @@ import urllib.parse
 from datetime import UTC, datetime
 from typing import Any, NamedTuple
 
-from headstart import company_name, eightfold_backing, http
+from headstart import company_name, eightfold_backing
 from headstart.models import Job, html_to_text, is_remote, requisition_of
+from headstart.network import http
 from headstart.scrapers.base import (
     USER_AGENT,
     BaseScraper,

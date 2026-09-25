@@ -2,7 +2,7 @@
 
 import pytest
 
-from headstart import spare_egress
+from headstart.network import spare_egress
 
 
 @pytest.fixture(autouse=True)

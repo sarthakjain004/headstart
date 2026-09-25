@@ -18,9 +18,10 @@ from functools import cached_property
 from types import MappingProxyType
 from typing import Any, TypeVar
 
-from headstart import company_name, fanout_stats, http, log
-from headstart.fetcher import BoardFetcher, Fetcher
+from headstart import company_name, log
 from headstart.models import Job
+from headstart.network import fanout_stats, http
+from headstart.network.fetcher import BoardFetcher, Fetcher
 from headstart.tech_filter import is_tech
 
 #: The one User-Agent every scraper sends. Public because nine of them re-declared
@@ -363,7 +364,7 @@ class BaseScraper(ABC):
     detail_batch_size: int | None = None
 
     #: HTTP statuses at which this ATS should stop being requested over the shard's own egress IP
-    #: and move to a spare one (see :mod:`headstart.spare_egress`). Empty — every scraper unless it
+    #: and move to a spare one (see :mod:`headstart.network.spare_egress`). Empty — every scraper unless it
     #: says otherwise — keeps the direct route no matter what comes back, which is the behaviour
     #: every ATS had before this existed.
     #:
@@ -433,12 +434,12 @@ class BaseScraper(ABC):
         # company at authorship time and the ledger's does not: that column doubles as the slug,
         # so a Board discovered by hostname carries the hostname as its display name.
         self.company = self.COMPANY or company or slug
-        # The Fetcher seam (ADR-0153): every method below that used to reach `headstart.http`
+        # The Fetcher seam (ADR-0153): every method below that used to reach `headstart.network.http`
         # as a module global now goes through this instead. Defaulting to `http.DEFAULT_FETCHER`
         # — resolved here, not as the parameter's own default value — means a caller that never
         # passes `fetcher` gets exactly today's global-http behaviour, unchanged, while a test
         # (or a future second HTTP-shaped adapter) can inject a fake without monkeypatching
-        # `headstart.http` itself. Every scraper that overrides `__init__` passes `fetcher` on to
+        # `headstart.network.http` itself. Every scraper that overrides `__init__` passes `fetcher` on to
         # here, and `registry.get_scraper` takes one too, so a fake reaches any Scraper (ADR-0199).
         self._fetcher: Fetcher = (
             fetcher if fetcher is not None else http.DEFAULT_FETCHER
@@ -779,7 +780,7 @@ class BaseScraper(ABC):
 
         None when the probe failed: an unreachable Board has earned no verdict, and
         ``board_aliases.resolve`` reports it rather than grouping it. Note that ``fetch`` settles
-        4xx/5xx rather than raising (:class:`~headstart.fetcher.Fetcher`'s contract, kept from
+        4xx/5xx rather than raising (:class:`~headstart.network.fetcher.Fetcher`'s contract, kept from
         ``http.fetch``), so a Board whose own host answers 503 records itself, not
         None — which reads as "nothing points away from it" and leaves it unburied. That is the
         conservative direction: it can miss a duplicate, never invent one.
@@ -1153,7 +1154,7 @@ class BaseScraper(ABC):
 
         Whatever that chain settles on is a **ceiling**, not the width: every step of it is static,
         so a shard whose origin has already refused it would otherwise fan out exactly as wide as
-        one the origin is still serving. :func:`~headstart.spare_egress.stream_width` clamps the
+        one the origin is still serving. :func:`~headstart.network.spare_egress.stream_width` clamps the
         resolved number once this scraper's egress group has walled (#195).
 
         The clamp only ever narrows, and it outranks **every** step above it, the operator's
@@ -1174,7 +1175,7 @@ class BaseScraper(ABC):
         # carry rather than a second guess at it that could drift from `egress_fallback_on`.
         concurrency = self.board_fetcher.stream_width(concurrency)
         # Recorded against the width in force, not the ceiling above it, so the clamp's two
-        # operating points stay comparable (`headstart.fanout_stats`).
+        # operating points stay comparable (`headstart.network.fanout_stats`).
         with fanout_stats.batch(f"{self.ats} details", concurrency) as item_done:
             return asyncio.run(
                 BaseScraper._gather_async(

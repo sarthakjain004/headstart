@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from headstart import fanout_stats
+from headstart.network import fanout_stats
 
 
 def setup_function() -> None:

@@ -1,5 +1,5 @@
 """The shared test double for the Fetcher seam (ADR-0153, ADR-0199) — what tests inject instead of
-writing another. The older per-file fakes (test_fetcher, test_bamboohr, test_jibe, test_cornerstone)
+writing another. The older per-file fakes (test_network_fetcher, test_bamboohr, test_jibe, test_cornerstone)
 now build on it too.
 
 A Scraper built with ``fetcher=FakeFetcher(route)`` sends every request — listing, detail, sync or
@@ -15,7 +15,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-from headstart import http
+from headstart.network import http
 
 
 class FakeResponse:
@@ -58,7 +58,7 @@ Route = Callable[[str, str, dict[str, Any]], "FakeResponse | Exception"]
 
 
 class FakeFetcher:
-    """A :class:`headstart.fetcher.Fetcher` whose answers come from ``route``."""
+    """A :class:`headstart.network.fetcher.Fetcher` whose answers come from ``route``."""
 
     def __init__(self, route: Route) -> None:
         self.route = route

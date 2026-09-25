@@ -476,7 +476,7 @@ def test_an_unknown_id_records_a_detail_loss_rather_than_raising():
 
 def test_the_prefix_probe_falls_back_when_the_board_will_not_answer(monkeypatch):
     """A failed probe costs link accuracy on that Board, not its postings."""
-    from headstart import http
+    from headstart.network import http
 
     scraper = _scraper()
 

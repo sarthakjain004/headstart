@@ -74,9 +74,9 @@ For the daemon:
   after a restart moved from `rotate` into `WarpDaemon.reconnect`. `InMemoryEgressDaemon` never
   leaves the process; its default is a machine with no WARP (nothing dials, no restart succeeds),
   which is what CI's test job already was. `use_daemon` swaps the adapter.
-- `tests/conftest.py` installs an `InMemoryEgressDaemon` for every test. `test_http.py`'s autouse
+- `tests/conftest.py` installs an `InMemoryEgressDaemon` for every test. `test_network_http.py`'s autouse
   stub of `rotate` is gone: an unstubbed rotation now fails in memory and returns False, which is
-  what the stub returned. The tests that assert the real commands (`test_spare_egress.py`'s
+  what the stub returned. The tests that assert the real commands (`test_network_spare_egress.py`'s
   `_stub`, `_rotating` and `_flapping`) install `WarpDaemon` after stubbing `subprocess`, the
   handshake and the trace, exactly as before.
 
@@ -92,12 +92,12 @@ what the port hides.
   error sequences, attempt budgets, `egress_on`/`retry_on` sets, routes, rotation outcomes and
   rotation generations), recording every `spare_egress` call, request and backoff: the traces were
   identical on all 6,000 runs. Lowering `_MAX_EARNED_ATTEMPTS` in the new module alone made the
-  harness fail, so it can see a drift. `test_http.py` and `test_spare_egress.py` pass with their
+  harness fail, so it can see a drift. `test_network_http.py` and `test_network_spare_egress.py` pass with their
   assertions unchanged.
-- **The two paths can no longer disagree on a decision.** `test_http.py`'s
+- **The two paths can no longer disagree on a decision.** `test_network_http.py`'s
   `test_both_paths_drive_one_policy_to_the_same_egress_decisions` drives the whole ladder through
   both and compares every egress call.
-- **No test can reach the real daemon by omission.** `test_spare_egress.py`'s
+- **No test can reach the real daemon by omission.** `test_network_spare_egress.py`'s
   `test_the_policy_reaches_the_daemon_only_through_the_port` refuses `subprocess`, sockets and the
   trace read, then dials, rotates and observes twice through an in-memory daemon.
 - **A second egress provider is an adapter, not an edit of the policy.** Nothing needs one today.

@@ -120,8 +120,8 @@ from typing import Any
 from urllib.parse import quote
 
 from headstart import log, salary
-from headstart.fetcher import Fetcher
 from headstart.models import Job, host_of, html_to_text, is_remote
+from headstart.network.fetcher import Fetcher
 from headstart.scrapers.base import (
     USER_AGENT,
     BaseScraper,

@@ -61,7 +61,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
-from headstart import http
+from headstart.network import http
 from headstart.scrapers.base import USER_AGENT
 from headstart.scrapers.successfactors import (
     SuccessFactorsScraper,

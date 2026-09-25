@@ -1,17 +1,17 @@
-"""Tests for the Fetcher seam (headstart.fetcher, ADR-0153, ADR-0199).
+"""Tests for the Fetcher seam (headstart.network.fetcher, ADR-0153, ADR-0199).
 
 Before this seam existed, faking a scraper's HTTP meant one of four structurally different
-tricks: monkeypatching ``headstart.http``'s module attributes with hand-rolled response doubles,
+tricks: monkeypatching ``headstart.network.http``'s module attributes with hand-rolled response doubles,
 monkeypatching a scraper's own ``_get``, monkeypatching ``fan_out``/``fan_out_async`` themselves,
 or bypassing the network entirely by reconstructing ``fetch_raw``'s output by hand from a fixture
 (e.g. ``tests/test_icims.py``'s ``_raw_from_fixture``). None of those let a caller simply pass a
 fake fetcher in.
 
-These tests do exactly that: construct a scraper with a fake :class:`~headstart.fetcher.Fetcher`
+These tests do exactly that: construct a scraper with a fake :class:`~headstart.network.fetcher.Fetcher`
 (and, for darwinbox, a fake browser fetcher too) and call its real ``fetch_raw``/``parse``. No
-test in this file answers a request by monkeypatching ``headstart.http`` or
-``headstart.browser_http`` — the whole point is that the seam makes that unnecessary. The only
-patches of ``headstart.http`` make a request that bypasses the seam fail loudly
+test in this file answers a request by monkeypatching ``headstart.network.http`` or
+``headstart.network.browser_http`` — the whole point is that the seam makes that unnecessary. The only
+patches of ``headstart.network.http`` make a request that bypasses the seam fail loudly
 (``seam_bypass_fails``). One representative per category
 from the task that motivated ADR-0153: greenhouse (a plain single-fetch board), icims (the
 sitemap-plus-per-job-JSON-LD-detail-pass pattern shared with successfactors/meta), and darwinbox
@@ -33,7 +33,7 @@ from typing import Any, Self
 import pytest
 from fake_fetcher import FakeFetcher, FakeRequest, FakeResponse, Route
 
-from headstart import http
+from headstart.network import http
 from headstart.scrapers.base import USER_AGENT
 from headstart.scrapers.darwinbox import DarwinboxScraper
 from headstart.scrapers.greenhouse import GreenhouseScraper
@@ -142,8 +142,8 @@ def test_icims_fetch_raw_uses_the_injected_fetcher_for_listing_and_detail() -> N
 
 
 class FakeBrowserFetcher:
-    """Satisfies :class:`~headstart.browser_http.BrowserFetcher`'s shape (``fetch`` only, a
-    context manager) without touching ``headstart.browser_http`` at all — the fake a test injects
+    """Satisfies :class:`~headstart.network.browser_http.BrowserFetcher`'s shape (``fetch`` only, a
+    context manager) without touching ``headstart.network.browser_http`` at all — the fake a test injects
     as :class:`DarwinboxScraper`'s ``browser_fetcher`` factory."""
 
     def __init__(self, page_url: str, pages: list[list[dict]], calls: list) -> None:
@@ -202,7 +202,7 @@ def test_darwinbox_fetch_raw_uses_the_injected_fetcher_when_unwalled() -> None:
 def test_darwinbox_wall_escalates_to_the_injected_browser_fetcher() -> None:
     """A persistent 403 on the tenant's real TLD escalates to the browser fetcher — proven here
     with a fake `fetcher` for the curl attempts AND a fake `browser_fetcher` for the escalation,
-    neither of which touches `headstart.http` or `headstart.browser_http`."""
+    neither of which touches `headstart.network.http` or `headstart.network.browser_http`."""
     in_url = "https://acme.darwinbox.in/ms/candidateapi/job/alljobs?companyId=main"
     com_url = "https://acme.darwinbox.com/ms/candidateapi/job/alljobs?companyId=main"
     fake_http = _fetcher_answering(
@@ -455,7 +455,7 @@ def test_a_scraper_that_never_opted_in_carries_only_its_board() -> None:
 
 
 def test_the_stream_width_is_read_through_the_board_fetcher() -> None:
-    from headstart import spare_egress
+    from headstart.network import spare_egress
 
     scraper = get_scraper(
         "workday", _WORKDAY_BOARD, "Acme", fetcher=FakeFetcher(_answer_empty)
@@ -476,7 +476,7 @@ def test_the_browser_fetcher_refuses_an_egress_binding_rather_than_dropping_it()
 ):
     """A browser tab has one origin and its own network stack; the spare egress cannot route it.
     It used to swallow any keyword, which is how a binding goes missing without a trace."""
-    from headstart.browser_http import BrowserFetcher
+    from headstart.network.browser_http import BrowserFetcher
 
     browser = BrowserFetcher("https://acme.darwinbox.in/ms/candidate/careers")
     with pytest.raises(TypeError):

@@ -13,8 +13,9 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from headstart import company_name, http, salary
+from headstart import company_name, salary
 from headstart.models import Job, html_to_text
+from headstart.network import http
 from headstart.scrapers.base import BaseScraper, classify_exception
 from headstart.scrapers.pacer import Pacer
 

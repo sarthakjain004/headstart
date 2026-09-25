@@ -37,7 +37,7 @@ page fan-out re-read the group from `_egress()` to call `spare_egress.stream_wid
 
 ## Decision
 
-- `headstart.fetcher.BoardFetcher(transport, *, board, egress_group, wall_statuses)`:
+- `headstart.network.fetcher.BoardFetcher(transport, *, board, egress_group, wall_statuses)`:
   `fetch`/`fetch_async(…, marks_wall=True, direct=False, **kwargs)`, `egress_binding(marks_wall)`,
   `stream_width(ceiling)` and `clear_cookies(domain=None)`. `marks_wall=False` keeps the routing
   and drops the marking, as `_egress(marks_wall=False)` did. `direct=True` sends no binding at all,

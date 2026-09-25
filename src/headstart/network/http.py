@@ -21,7 +21,7 @@ classification stays with the callers.
 Retry is not the last rung. An ATS that meters per origin can wall a shard outright, and no number
 of attempts from the same IP recovers that — so a scraper may opt a request into the **spare-egress
 fallback** (``egress_group``), which escalates from "try again" to "try from somewhere else"
-(:mod:`headstart.spare_egress`). Only the opted-in ATS moves; everything else keeps its direct route.
+(:mod:`headstart.network.spare_egress`). Only the opted-in ATS moves; everything else keeps its direct route.
 """
 
 from __future__ import annotations
@@ -37,7 +37,8 @@ from typing import Any, NamedTuple
 from curl_cffi import requests as _requests
 from curl_cffi.requests import RequestsError  # re-exported for callers' except blocks
 
-from headstart import log, spare_egress
+from headstart import log
+from headstart.network import spare_egress
 
 __all__ = [
     "DEFAULT_FETCHER",
@@ -548,7 +549,7 @@ async def fetch_async(
     37,688 sync requests carried, every async one still direct).
 
     **Nothing on this path may block the event loop**, and the two calls that would are routed
-    around it: the route comes from :func:`~headstart.spare_egress.proxy_for_async`, which polls
+    around it: the route comes from :func:`~headstart.network.spare_egress.proxy_for_async`, which polls
     the rotation gate and sends the WARP dial to a thread, and ``rotate()`` (a ``systemctl``
     round-trip) goes to a thread of its own.
 
@@ -603,12 +604,12 @@ async def fetch_async(
 
 
 class HTTPFetcher:
-    """The default :class:`headstart.fetcher.Fetcher` (ADR-0153): this module's pooled,
+    """The default :class:`headstart.network.fetcher.Fetcher` (ADR-0153): this module's pooled,
     retrying, spare-egress-aware HTTP client, named as a seam rather than reached as a module
     global. Adds no behaviour of its own — the thread-local session, the retry ladder and the
     spare-egress machinery above all stay exactly as they are; this only gives
     :class:`~headstart.scrapers.base.BaseScraper` something to inject instead of importing
-    ``headstart.http`` at module scope. Calls the module-level :func:`fetch`/:func:`fetch_async`
+    ``headstart.network.http`` at module scope. Calls the module-level :func:`fetch`/:func:`fetch_async`
     by name rather than duplicating them, so a test that monkeypatches those (most of this
     repo's do) keeps working against the default fetcher unchanged.
     """

@@ -21,7 +21,7 @@ from pathlib import Path
 
 import pytest
 
-from headstart import spare_egress
+from headstart.network import spare_egress
 from headstart.scrapers import tesla
 from headstart.scrapers.base import DetailBatchWalled, DetailLost, DetailRequest
 from headstart.scrapers.registry import get_scraper

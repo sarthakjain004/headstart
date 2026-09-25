@@ -2,6 +2,10 @@
 
 - Status: Accepted
 - Date: 2026-07-25
+- Amended by [ADR-0232](0232-the-shared-library-is-grouped-into-packages-by-the-question-each-module-answers.md)
+  (2026-09-25): the shared library outside `ingest/` is grouped into packages, and this ADR's list of
+  modules the curated feed reaches is superseded by a measurement — the feed reaches `harvest` and
+  `board_cost` only; `board_priority` and `corpus` are imported by the run and scripts alone.
 - Cadence note (2026-07-26, #63; updated 2026-08-19): this ADR was written when the run was
   6-hourly. It went 2-hourly, and is now **back-to-back** — see
   [ADR-0071](0071-back-to-back-runs-instead-of-a-fixed-cadence.md)

@@ -69,7 +69,7 @@ def test_registry_and_ledger_url_slug():
 
 
 def test_alias_key_uses_the_final_canonical_tbe_url(monkeypatch):
-    from headstart import http
+    from headstart.network import http
 
     target = "https://lde.tbe.taleo.net/lde01/ats/careers/v2/searchResults?org=DEFEHEAL&cws=37&act=sort"
 

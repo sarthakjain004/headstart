@@ -52,7 +52,7 @@ import time
 from collections import Counter
 from typing import Any
 
-from headstart import http, spare_egress
+from headstart.network import http, spare_egress
 from headstart.scrapers.base import USER_AGENT
 from headstart.scrapers.successfactors import (
     SuccessFactorsScraper,
