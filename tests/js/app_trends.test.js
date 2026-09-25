@@ -1757,7 +1757,9 @@ test('a run with duplicates removed beside a counting change names each by its s
   t.draw();
   // The refit run moved −2,000: −2,041 duplicates, +41 from the family change beside them.
   assert.match(nodes['trends-verdict'].innerHTML,
-    /not hiring: −2,041 openings from duplicate postings removed, \+41 openings from a duplicate removal change and a role family assignment change/);
+    /not hiring: −2,041 openings from duplicate postings removed, \+41 openings from a role family assignment change\./);
+  // The removals have their own figure, so the change that made them is not named again.
+  assert.doesNotMatch(nodes['trends-verdict'].innerHTML, /duplicate removal change/);
 });
 
 
@@ -1824,4 +1826,101 @@ test('an unknown category says so', () => {
   t.draw();
   assert.equal(nodes['trends-title'].textContent, 'No category called “nonsense-family”');
   assert.match(nodes['trends-empty'].textContent, /HeadStart has no category called “nonsense-family”/);
+});
+
+
+// ---- critique round 11 review ----------------------------------------------------------------
+const MICRON = { key: 'eightfold:micron', label: 'Micron', boardKeys: ['eightfold:micron'] };
+
+test('a duplicate-removal change is named only on the line of a pick it can touch', () => {
+  const { t, nodes } = loadApp();
+  t.setPicks([ACME, MICRON]);
+  t.set(companies([['greenhouse:acme', 'Acme', [100, 100, 120, 120, 120]], ['eightfold:micron', 'Micron', [100, 100, 80, 80, 80]]],
+    { stamps: FIVE, epochs: [{ ts: FIVE[2], changed: ['duplicate removal changed', 'role family assignment changed'],
+                               fields: ['dedup_version', 'family_classifier_version'] }] }));
+  t.setUnit('count', false);
+  t.draw();
+  const [acme, micron] = nodes['trends-verdict'].innerHTML.split('</li>');
+  assert.match(acme, /\+20 openings from a role family assignment change\./);
+  assert.match(micron, /−20 openings from a duplicate removal change and a role family assignment change\./);
+});
+
+test('counting changes are named in words that read, and counted once each', () => {
+  const { t, nodes } = loadApp();
+  t.setPicks([ACME]);
+  t.set(companies([['greenhouse:acme', 'Acme', [100, 100, 120, 120, 150]]],
+    { stamps: FIVE, epochs: [
+      { ts: FIVE[2], changed: ['role taxonomy refit'], fields: ['centroid_version'] },
+      { ts: FIVE[4], changed: ['tech filter changed', 'role family map edited'], fields: ['tech_filter_version', 'family_map_fingerprint'] }] }));
+  t.setUnit('count', false);
+  t.draw();
+  assert.match(nodes['trends-verdict'].innerHTML,
+    /\+50 openings from a role taxonomy refit, a tech filter change and a role family map edit\./);
+});
+
+test('under New a filter change and its week-later echo are one change', () => {
+  const { t, nodes } = loadApp();
+  const days = Array.from({ length: 12 }, (_, k) => `2026-09-${String(k + 1).padStart(2, '0')}T00:00:00+00:00`);
+  t.setPicks([ACME]);
+  t.metricSet('new');
+  t.set({ ...companies([['greenhouse:acme', 'Acme', [100, 100, 150, 150, 150, 150, 150, 150, 110, 110, 110, 110]]],
+    { stamps: days, counted_since: { 'greenhouse:acme': days[0] },
+      epochs: [{ ts: days[1], changed: ['tech filter changed'], fields: ['tech_filter_version'] }] }), metric: 'new' });
+  t.setUnit('count', false);
+  t.draw();
+  const html = nodes['trends-verdict'].innerHTML;
+  assert.match(html, /from a tech filter change\./);
+  assert.doesNotMatch(html, /2 tech filter changes/);
+});
+
+test('a rise over a duplicate-removal run is hiring, not a removal', () => {
+  const { t, nodes } = loadApp();
+  t.setPicks([MICRON]);
+  t.metricSet('new');
+  // Under New a duplicate-removal change has no size; removing duplicates cannot add openings,
+  // so the +20 at its run is that run's hiring.
+  t.set({ ...companies([['eightfold:micron', 'Micron', [50, 50, 70, 70, 70]]],
+    { stamps: FIVE, epochs: [{ ts: FIVE[2], changed: ['duplicate removal changed'], fields: ['dedup_version'] }] }), metric: 'new' });
+  t.setUnit('count', false);
+  t.draw();
+  const html = nodes['trends-verdict'].innerHTML;
+  assert.match(html, /\+20 openings/);
+  assert.doesNotMatch(html, /not hiring/);
+});
+
+test('an older company with one run in the window has a short window, not a new company', () => {
+  const { t, nodes } = loadApp();
+  t.setPicks([ACME]);
+  t.set(companies([['greenhouse:acme', 'Acme', [null, null, null, 100]]], { counted_since: { 'greenhouse:acme': FOUR[0] } }));
+  t.draw();
+  assert.match(nodes['trends-verdict'].innerHTML, /this window is too short to call a direction/);
+  assert.doesNotMatch(nodes['trends-verdict'].innerHTML, /too new/);
+});
+
+test('under Share a small line is no tile riser, and a short window gives no openings', () => {
+  const { t, nodes } = loadApp();
+  t.setPicks([ACME]);
+  t.set({ ...picked({ small: [10, 19], big: [100, 120] }), stamps: STAMPS });
+  t.setUnit('share', false);
+  t.draw();
+  assert.match(nodes['trends-kpi'].innerHTML, /Biggest riser<\/span>\s*<span class="kpi-value">big/);
+  // A window of a day over a company counted for a week: shares, so no change in openings.
+  t.set(companies([['greenhouse:acme', 'Acme', [null, null, 100, 104]]], { counted_since: { 'greenhouse:acme': FOUR[0] } }));
+  t.draw();
+  assert.doesNotMatch(nodes['trends-legend'].innerHTML, /opening/);
+});
+
+test('markers on one day are drawn as one, titled with every change', () => {
+  const { t, nodes } = loadApp();
+  const f = fixture();
+  f.stamps = ['2026-08-10T00:00:00+00:00', '2026-08-13T00:00:00+00:00', '2026-08-13T06:00:00+00:00',
+              '2026-08-13T12:00:00+00:00', '2026-08-16T00:00:00+00:00'];
+  f.totals = [1e5, 1e5, 1e5, 1e5, 1e5]; f.non_tech = [0, 0, 0, 0, 0];
+  f.series = f.series.map(s => ({ ...s, points: [1, 2, 3, 4, 5].map(() => s.points[0]) }));
+  f.epochs = [{ ts: f.stamps[1], changed: ['tech filter changed'] }, { ts: f.stamps[3], changed: ['role taxonomy refit'] }];
+  t.set(f, null);
+  t.draw();
+  const svg = nodes['trends-chart'].innerHTML;
+  assert.equal((svg.match(/class="epoch-marker"/g) || []).length, 1);
+  assert.match(svg, /tech filter changed\nCounting changed here: role taxonomy refit/);
 });

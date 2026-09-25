@@ -3019,6 +3019,9 @@ def test_a_v3_family_before_its_data_is_all_its_predecessors(trends_app, monkeyp
     monkeypatch.setattr(
         trends_app, "_FAMILY_SUCCESSOR", trends_app._family_successors(_REPO_FAMILIES)
     )
+    monkeypatch.setattr(
+        trends_app, "_FAMILY_LABELS", trends_app._family_labels(_REPO_FAMILIES)
+    )
     rows = [
         {
             "ts": _T1,
@@ -3042,12 +3045,12 @@ def test_a_v3_family_before_its_data_is_all_its_predecessors(trends_app, monkeyp
     assert [s["points"] for s in d["series"]] == [[40]]
     unknown = client.get("/trends?family=nonsense-family").get_json()
     assert unknown["family_known"] is False
+    # A real family with nothing in scope is empty, not unknown.
+    empty = client.get("/trends?family=security").get_json()
+    assert empty["family_known"] is True and empty["series"] == []
 
 
 def test_hot_names_the_run_its_window_is_measured_from(trends_app, monkeypatch):
-    monkeypatch.setattr(
-        trends_app, "_HOT", {"window": {"from": _T2, "to": _T3}, "lenses": {}}
-    )
     rows = [
         {
             "ts": ts,
@@ -3060,6 +3063,10 @@ def test_hot_names_the_run_its_window_is_measured_from(trends_app, monkeypatch):
         }
         for ts in (_T1, _T2, _T3)
     ]
-    monkeypatch.setattr(trends_app, "_TRENDS", rows)
+    hot = {"window": {"from": _T2, "to": _T3}, "lenses": {}}
+    monkeypatch.setattr(trends_app, "_HOT", trends_app._with_window_base(hot, rows))
     d = trends_app.app.test_client().get("/hot").get_json()
     assert d["window"]["base"] == _T1
+    # A base `hot_boards` published is kept as written.
+    written = {"window": {"from": _T2, "to": _T3, "base": _T2}}
+    assert trends_app._with_window_base(written, rows) == written

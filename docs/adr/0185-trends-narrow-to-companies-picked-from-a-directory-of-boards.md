@@ -754,3 +754,22 @@ itself:
   says "No category called …" (`family_known`), not "no openings counted".
 - **Under Share, a small line shows no change.** A change in openings beside a share mixed two
   units.
+- **Markers on one day are drawn as one** over a window of days, titled with every change it
+  stands for. Four filter changes and their settling runs on one day drew lines a pixel apart.
+
+The review of that change corrected four of its rules:
+
+- A duplicate-removal change is judged **per line**, not per chart: beside Micron, Google's
+  line still named one. A change and its week-later echo under New count as one change.
+- A rise over a duplicates-only step with no known size is **left in the line as hiring**, not
+  moved into the other causes, where it read as "+N from changes in how HeadStart counts".
+- Removals that have their own figure do not name the change that made them a second time.
+- An older company with a single run in the window reads "this window is too short", not "too
+  new". Under Share a short window gives no openings either, and a line under the floor is never
+  a tile's riser.
+
+Not built from this round, because each needs data the Trends ledger does not hold: a "top
+growers in this category" ranking (per-company counts by category), a location filter (a
+location dimension in `role_trends`), and hiding non-tech jobs in Search (the Space cannot
+filter by a Job-id set without pylance; Search states the non-tech count instead). Each is a
+pipeline and schema change, weighed on its own.

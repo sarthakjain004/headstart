@@ -1900,7 +1900,10 @@ function verdictOf(s, d){
   if (!m || days < MIN_SPAN_DAYS){
     const hours = Math.max(1, Math.round(days * 24));
     const span = days < 1.5 ? `over the last ${hours} hour${hours === 1 ? '' : 's'}` : over;
-    move = young || !m ? 'too new to show a direction yet' + counting
+    // An older company with one run in the window has no change to give; it is the window
+    // that is short, not the company that is new.
+    move = young ? 'too new to show a direction yet' + counting
+      : !m ? `this window is too short to call a direction${counting}`
       : `${signedOpenings(Math.round(m.change))} ${span} — too short a window to call a direction${counting}`;
   }
   else {
@@ -2027,7 +2030,9 @@ function stepNotes(d){
     if (trendMetric === 'new' && (e.fields || []).includes('tech_filter_version')){
       const echo = new Date(new Date(e.ts).getTime() + NEW_WINDOW_DAYS * 864e5);
       const k = d.stamps.findIndex(ts => new Date(ts) >= echo);
-      if (k > 0) notes.push({ i: k, found: false, epoch: true, withhold: picked, changed: ['tech filter changed'],
+      // `source`: the change it echoes, so countingChanges counts the two as one change.
+      if (k > 0) notes.push({ i: k, found: false, epoch: true, withhold: picked, fields: ['tech_filter_version'],
+        source: e.ts, touched,
         text: `A week after a counting change (${e.changed.join(', ')}): the openings it let in stop counting as new here — not hiring` });
     }
     const i = d.stamps.indexOf(e.ts); if (i < 0) return;
@@ -2045,9 +2050,8 @@ function stepNotes(d){
     // (below) is not.
     if (i > 0) notes.push({ i, text: `${text} — not hiring, so the jump it makes is left out of the lines it moves`,
       found: false, epoch: true, withhold: true, companies, bandsOnly,
-      // What changed, as far as it can move these lines: a duplicate-removal change beside a
-      // refit is no cause at a pick it cannot touch (Google's +290 named one).
-      changed: e.changed.filter((c, k) => fields[k] !== 'dedup_version' || touched.length > 0),
+      // What changed, for countingChanges to name, with the picks duplicate removal can touch.
+      fields, source: e.ts, touched,
       dedupOnly: fields.length === 1 && fields[0] === 'dedup_version' });
     // A change can land over two runs — Amazon's Sep 17 filter change was +308 at its run and
     // −439 at the next, which left in read as hiring and turned Amazon from +1.2% to −2.9% —
@@ -2524,9 +2528,11 @@ function lineMove(s){
   // older company states its change in openings, as the sentence does — Hot's "+18" had to be
   // checkable on the trend its row opens.
   const m = trendMove(s);
-  if (trendData && spanDays(s, trendData) < MIN_SPAN_DAYS)
-    return isYoung(s, trendData) || !m ? { tooNew: true } : { count: Math.round(m.change) };
-  // Under Share a small line's change in openings is another unit beside shares, so it shows none.
+  // Under Share a change in openings is another unit beside shares, so those lines show none.
+  if (trendData && spanDays(s, trendData) < MIN_SPAN_DAYS){
+    if (isYoung(s, trendData)) return { tooNew: true };
+    return !m || trendUnit === 'share' ? { small: true, short: true } : { count: Math.round(m.change), short: true };
+  }
   if (m && m.real < MOVER_FLOOR) return trendUnit === 'share' ? { small: true } : { count: Math.round(m.change) };
   return { dl: trendDelta(s.points, s) };
 }
@@ -2634,8 +2640,13 @@ function stepJumps(levels, s, only){
                             kinds: new Set([...pending.kinds, ...at.kinds]) } : { ...at, kinds: new Set(at.kinds) };
     }
     if (v == null) return;
-    if (pending && last != null) jumps.set(j, { before: last, after: v, kinds: pending.kinds,
-      lift: whole && pending.sized ? pending.size : null });
+    const lift = pending && whole && pending.sized ? pending.size : null;
+    // Removing duplicates cannot add openings. A rise over a duplicates-only step with no known
+    // size is that run's ordinary hiring, and stays in the line: taken out, and folded into
+    // the other causes, it read as "+N from changes in how HeadStart counts".
+    const hiring = pending && lift == null && v > last
+      && pending.kinds.size === 1 && pending.kinds.has('duplicates');
+    if (pending && last != null && !hiring) jumps.set(j, { before: last, after: v, kinds: pending.kinds, lift });
     pending = null;
     last = v;
   });
@@ -2852,7 +2863,7 @@ function drawTrends(){
       <span class="nm" title="${esc(s.label)}">${esc(s.label)}</span>
       <span class="ct">${latest == null ? '—' : fmtCompact(latest)}</span>
       ${noBase ? '<span class="dl flat" title="Under 5 openings at the start of this window, too few to index against">started under 5</span>'
-               : `<span class="dl ${moveClass(mv)}"${mv.count != null ? ' title="Too few openings for a percentage to mean much, so the change in openings"' : ''}>${moveText(mv)}</span>`}
+               : `<span class="dl ${moveClass(mv)}"${mv.count == null ? '' : mv.short ? ' title="Too short a window for a percentage to mean much, so the change in openings"' : ' title="Too few openings for a percentage to mean much, so the change in openings"'}>${moveText(mv)}</span>`}
       ${hasRoles ? '<span class="drill" role="img" aria-label="has tracked roles" title="Opens the named roles tracked inside this category">▸ roles</span>' : ''}</span>
       ${view === VIEWS.roles && trendPicks.length ? `<button class="linkish role-jobs" type="button" data-role="${esc(s.name)}"
         data-role-label="${esc(s.label)}" aria-label="See ${esc(s.label)} jobs in Search">jobs</button>` : ''}
@@ -3021,23 +3032,35 @@ function drawTrends(){
     return jump && Math.round(jump.after - jump.before) !== 0;
   });
   const marked = { epoch: false, found: false };
-  notes.filter(n => n.epoch && markerMoves(n)).forEach(n => {
-    marked.epoch = true;
-    const ex = x(n.i);
-    svg += `<line class="epoch-marker" x1="${ex.toFixed(1)}" y1="${PAD_T}"
-             x2="${ex.toFixed(1)}" y2="${H - PAD_B}"><title>${esc(n.text)}</title></line>`;
-  });
+  // One marker per day and kind over a window of days: four filter changes and their settling
+  // runs on one day drew a comb of lines a pixel apart, whose titles no pointer could tell apart.
+  // Its title says every change it stands for; the crosshair still names each run's own.
+  const byDay = d.stamps.length > 1 && (new Date(d.stamps[d.stamps.length - 1]) - new Date(d.stamps[0])) / 864e5 > 2;
+  const drawMarkers = (list, cls) => {
+    const groups = new Map();
+    list.forEach(n => {
+      const key = byDay ? stampLabel(d.stamps[n.i], true) : n.i;
+      if (!groups.has(key)) groups.set(key, { i: n.i, texts: [] });
+      const g = groups.get(key);
+      if (!g.texts.includes(n.text)) g.texts.push(n.text);
+    });
+    groups.forEach(g => {
+      const gx = x(g.i).toFixed(1);
+      svg += `<line class="${cls}" x1="${gx}" y1="${PAD_T}"
+               x2="${gx}" y2="${H - PAD_B}"><title>${esc(g.texts.join('\n'))}</title></line>`;
+    });
+  };
+  const epochMarks = notes.filter(n => n.epoch && markerMoves(n));
+  marked.epoch = epochMarks.length > 0;
+  drawMarkers(epochMarks, 'epoch-marker');
   // Boards of a pick that HeadStart found after its line began (ADR-0185). Each lands its
   // whole backlog at once — openings that were already open — so the step is marked where it
   // lands rather than left to read as hiring, the reason the Hot tab leaves new Boards out.
   // Found Boards and duplicate removals, each a step taken out of the lines it moves; below the
   // floor neither is taken out, so neither is marked (a marker for one opening was furniture).
-  notes.filter(n => (n.found || n.evicted) && n.withhold).forEach(n => {
-    marked.found = true;
-    const fx = x(n.i);
-    svg += `<line class="found-marker" x1="${fx.toFixed(1)}" y1="${PAD_T}"
-             x2="${fx.toFixed(1)}" y2="${H - PAD_B}"><title>${esc(n.text)}</title></line>`;
-  });
+  const foundMarks = notes.filter(n => (n.found || n.evicted) && n.withhold);
+  marked.found = foundMarks.length > 0;
+  drawMarkers(foundMarks, 'found-marker');
 
   // Drawn before the series: context to read them against, not one of them. Dashed because
   // dashing should mean exactly this — a reference, not a measurement — which is also why the
@@ -3260,8 +3283,7 @@ function buildKpis(d, charted, measured){
   // Movers are read off trendDelta, which is net of the marked steps (netOfSteps), so a found
   // Board or a counting change is never what a tile headlines.
   // And never off a line under MOVER_FLOOR, whose percentage is a handful of openings.
-  const moves = kind === 'total' ? [] : charted.filter(s => hasIndexBase(s) && lineMove(s).count == null
-      && spanDays(s, d) >= MIN_SPAN_DAYS)
+  const moves = kind === 'total' ? [] : charted.filter(s => hasIndexBase(s) && 'dl' in lineMove(s))
     .map(s => ({ label: s.label, dl: trendDelta(s.points, s) }))
     .filter(m => m.dl != null && Math.abs(shown(m.dl)) >= FLAT_PCT).sort((a, b) => b.dl - a.dl);   // a flat line is no mover
   // Summed from the series, NOT `totals - non_tech`: the ledger writes non_tech under the STOCK
@@ -3499,31 +3521,45 @@ function causesOf(s, total){
   const raw = change(new Set());
   const noDup = change(new Set(['duplicates']));
   const noFound = change(new Set(['duplicates', 'found']));
-  // Removing duplicates cannot add openings: a positive part there is the ordinary change of
-  // the run it landed on, and counts with the rest ("+1 from duplicate postings removed").
-  let duplicates = Math.round(raw - noDup);
-  if (duplicates > 0) duplicates = 0;
+  const duplicates = Math.round(raw - noDup);
   const found = Math.round(noDup - noFound);
   const counting = total - duplicates - found;
   const parts = [
     duplicates && `${signedOpenings(duplicates)} from duplicate postings removed`,
     found && `${signedOpenings(found)} from boards found later`,
-    counting && `${signedOpenings(counting)} from ${countingChanges(s)}`,
+    // With the removals given their own figure, the change that made them is not named again.
+    counting && `${signedOpenings(counting)} from ${countingChanges(s, duplicates !== 0)}`,
   ].filter(Boolean);
   return parts.join(', ');
 }
-// Which counting changes a line carries, named and counted: "4 tech-filter changes and a role
-// family change". "Changes in how HeadStart counts" left a +290 for Google with nothing to
-// check it against.
-function countingChanges(s){
-  const tally = new Map();
-  stepsFor(s).filter(n => n.epoch && n.changed && noteKind(n) === 'counting').forEach(n =>
-    n.changed.forEach(c => tally.set(c, (tally.get(c) || 0) + 1)));
-  if (!tally.size) return 'changes in how HeadStart counts';
-  const said = [...tally].map(([c, k]) => {
-    const what = c.replace(/ changed$/, '');
-    return k === 1 ? `a ${what} change` : `${k} ${what} changes`;
-  });
+// Which counting changes a line carries, named and counted: "4 tech filter changes and a role
+// family assignment change". "Changes in how HeadStart counts" left a +290 for Google with
+// nothing to check it against. Keyed on the epoch's fields, never the Space's display text.
+const CAUSE_NAMES = {
+  centroid_version: ['a role taxonomy refit', 'role taxonomy refits'],
+  family_map_fingerprint: ['a role family map edit', 'role family map edits'],
+  tech_filter_version: ['a tech filter change', 'tech filter changes'],
+  derivations_version: ['an experience/salary extraction change', 'experience/salary extraction changes'],
+  dedup_version: ['a duplicate removal change', 'duplicate removal changes'],
+  family_classifier_version: ['a role family assignment change', 'role family assignment changes'],
+};
+// `dupNamed`: the line's removals already have their own figure.
+function countingChanges(s, dupNamed){
+  const perCompany = !!s && VIEWS[viewKind(trendData)].split === 'company';
+  const bands = viewKind(trendData) === 'bands';
+  // A duplicate-removal change is a cause only at a line holding a pick it can touch: beside
+  // Micron, Google's line named one.
+  const touches = n => n.touched.length > 0 && (!perCompany || n.touched.includes(s.name));
+  const seen = new Map();  // field -> the changes (their stamps) that moved it
+  stepsFor(s).filter(n => n.fields && noteKind(n) === 'counting').forEach(n => n.fields.forEach(f => {
+    if (!CAUSE_NAMES[f] || (f === 'derivations_version' && !bands)
+      || (f === 'dedup_version' && (dupNamed || !touches(n)))) return;
+    // One change and its week-later echo under New are one change, not two.
+    seen.set(f, (seen.get(f) || new Set()).add(n.source));
+  }));
+  if (!seen.size) return 'changes in how HeadStart counts';
+  const said = [...seen].map(([f, changes]) =>
+    changes.size === 1 ? CAUSE_NAMES[f][0] : `${changes.size} ${CAUSE_NAMES[f][1]}`);
   return said.length === 1 ? said[0] : `${said.slice(0, -1).join(', ')} and ${said[said.length - 1]}`;
 }
 function countingMove(s){

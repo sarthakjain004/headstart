@@ -436,7 +436,23 @@ _TRENDS = _stitch_versions(_TRENDS)
 _TREND_DELTAS = _load_board_deltas(
     _STATE / "data" / "state" / "role_trend_board_deltas"
 )
-_HOT = _load_hot(_STATE / "data" / "state" / "hot_boards.json")
+
+
+def _with_window_base(hot: dict, trends: list[dict]) -> dict:
+    """``hot`` with its window's base filled in when ``hot_boards`` wrote none: the last run
+    before the window's first change, read off the Trends ledger — the runs a row's "See trend"
+    charts — so a row's trend covers its figure. Once at load: both inputs are fixed until the
+    next restart, and the scan is over every ledger row."""
+    window = hot.get("window") or {}
+    if not window.get("from") or window.get("base"):
+        return hot
+    before = [row["ts"] for row in trends if row["ts"] < window["from"]]
+    return {**hot, "window": {**window, "base": max(before)}} if before else hot
+
+
+_HOT = _with_window_base(
+    _load_hot(_STATE / "data" / "state" / "hot_boards.json"), _TRENDS
+)
 
 
 def _load_directory(path: Path) -> dict[str, dict]:
@@ -756,13 +772,6 @@ def hot_companies():
     """
     if not _HOT:
         return jsonify({"error": "no hot list on this deployment yet"}), 503
-    window = _HOT.get("window") or {}
-    if window.get("from") and not window.get("base"):
-        # A list written before `hot_boards` published its base: the run before the window's
-        # first change, read off the same ledger, so a row's trend covers its figure.
-        before = [row["ts"] for row in _TRENDS if row["ts"] < window["from"]]
-        if before:
-            return jsonify({**_HOT, "window": {**window, "base": max(before)}})
     return jsonify(_HOT)
 
 
@@ -1875,9 +1884,10 @@ def trends():
         split_by=key,
         # The drilled family's display name, so a cold link into a drill can name it.
         family=family,  # as resolved (_resolve_family), which the page adopts
-        # Whether that family holds anything in scope, so an unknown name reads as unknown
-        # rather than as "no openings counted" at the company.
-        family_known=bool(family) and family in present,
+        # Whether HeadStart has that family at all, so an unknown name reads as unknown rather
+        # than as "no openings counted" at the company. Not "holds rows in scope": `present` is
+        # already narrowed to the picks and the window, where a real family can be empty.
+        family_known=bool(family) and (family in present or family in _FAMILY_LABELS),
         family_label=_FAMILY_LABELS.get(family, family) if family else None,
         watch_parents=watch_parents,
         epochs=epochs,
