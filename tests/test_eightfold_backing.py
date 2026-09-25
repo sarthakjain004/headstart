@@ -70,3 +70,21 @@ def test_a_requisition_is_kept_only_on_a_board_the_pairs_name(
     other would rewrite its served row for nothing."""
     monkeypatch.setattr(eightfold_backing, "load", lambda: _PAIRS)
     assert eightfold_backing.in_scope(job_id) is stamped
+
+
+@pytest.mark.parametrize(
+    "job_id",
+    [
+        "eightfold:lockheedmartin.eightfold.ai:996476164742",
+        "successfactors:lockheed.jobs.hr.cloud.sap:1417942600",
+        "oracle:efds.fa.em5.oraclecloud.com:60884",
+        "workday:gsknch/GSKCareers:543292",  # the ledger's casing
+        "workday:astrazeneca/Alexion:R-260444",  # another site of a paired tenant
+        "lever:matchgroup:61e35c3c-3156-4760-a088-4a3765e37f8e",
+        "jibe:aarp:7348",
+    ],
+)
+def test_served_ids_of_the_fronts_added_2026_09_25_are_in_scope(job_id):
+    """Real v65 ids of pairs the band had left out (ADR-0210's 2026-09-25 amendment): a pair
+    whose Board ids fall outside `in_scope` would be stamped on one side only and never match."""
+    assert eightfold_backing.in_scope(job_id)
