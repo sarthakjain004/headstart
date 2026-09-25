@@ -379,22 +379,25 @@ EXCLUDED_BOARDS: frozenset[str] = frozenset(
         # (the match is on `slug_from`'s URL, not the `tenant` column, so only the URL's two
         # casings matter) — the lowercased key here covers both.
         "workday:https://walmart.wd5.myworkdayjobs.com/non-workdayinternal",
-        # Vendor demo tenants found by one description served on many Boards of one ATS (served
-        # table v65, 2026-09-25), each re-read live the same day. A real employer on the list
-        # below would be a sales demo named after a prospect, not that employer's Board.
+        # Vendor demo tenants found by one normalized description served on 8 or more Boards of
+        # one ATS (served table v65, 2026-09-25), each read live the same day. A real employer's
+        # name below is a sales demo named after a prospect, not that employer's Board.
         #
-        # BambooHR's stock demo set: "IT Security Engineer" in "Mayfaird, London, City of" (the
-        # misspelling is the tell; one description on 41 of these Boards), "Software Engineer" in
-        # "Sydney, NSW" (another on 40), "General Application" in Lindon, UT (BambooHR's home),
-        # "Financial Analyst", "Marketing Manager", "Account Executive". 49 of the 54 list only
-        # that set, under prospect and partner demo names ("BAT Demo Account", "KBS - Reseller
-        # Account", "Synthesia - Marketplace Account", "Your Company Name", "{{7*7}}"); `walmart`,
-        # `leidos`, `popeyes`, `usi` and the like are named demos, not those employers' Boards.
-        # `nook` adds placeholders ("Stuff goes here.", "Job description here") and a designer for
-        # "tools used by thousands of HR professionals" in Draper, UT; `seek` is "SEEK Test"
-        # ("Designer (youtube test)", "Job # 5 LinkOut Only - No AwSK"). The other five (`acme`,
+        # BambooHR's stock demo set, the one `bamboohr:implementation` above serves: "IT Security
+        # Engineer" in "Mayfaird, London, City of" (the misspelling is the tell; one description on
+        # 41 of these Boards), "Software Engineer" in "Sydney, NSW" (another on 40), "General
+        # Application" in Lindon, UT (BambooHR's home), "Financial Analyst", "Marketing Manager",
+        # "Account Executive". All 49 readable ones list that set, under prospect and partner demo
+        # names ("BAT Demo Account", "KBS - Reseller Account", "Synthesia - Marketplace Account",
+        # "Brett Johnson Demo Company", "Your Company Name", "{{7*7}}"), and 21 of them, every
+        # big-brand slug (`walmart`, `leidos`, `popeyes`, `usi`) among them, answer `inTrial: true`
+        # in `careers/company-info`. A few add more of the same: `nook` placeholders ("Stuff goes
+        # here.", "Job description here") and a designer for "tools used by thousands of HR
+        # professionals" in Draper, UT; `seek` is "SEEK Test" ("Designer (youtube test)", "Job # 5
+        # LinkOut Only - No AwSK"); `bjdc` "Test", `sticks` "Tester". The other five (`acme`,
         # `alice`, `catalyst`, `omise`, `pmi`) now redirect to `settings/account/expired.php`,
-        # lapsed trials whose indexed rows are the same stock set. 104 served rows.
+        # lapsed trials, so their verdict rests on their indexed rows: the same stock set.
+        # 104 served rows.
         "bamboohr:acme",
         "bamboohr:ailabs",
         "bamboohr:aix",
@@ -454,8 +457,11 @@ EXCLUDED_BOARDS: frozenset[str] = frozenset(
         # City ("123123", "Internal Job"); `kt` ("Test", "Test1", "HHH") and `abc` wear generated
         # company names ("Tucker, Hull and Gallegos", "Williams-Sheppard"); the two
         # `dunder-mifflin{uuid}` sandboxes are "Bubba Gump Shrimp Co." ("lovb test") and
-        # "Primestage Productions", some of whose postings say "About Williams-Sheppard". The
-        # other seven are real employers that left the template on one posting; they stay.
+        # "Primestage Productions", some of whose postings say "About Williams-Sheppard". 14
+        # served rows. Six others are real employers that left the template on one posting
+        # (SubBase, Ami, Ellit Groups, Get Covered, Jumper Capital, Sunshine Enterprise); they
+        # stay. So does `service` for now: its company name is generated ("Cooper-Haley") but it
+        # lists 0 postings today, leaving no content to confirm.
         "rippling:abc",
         "rippling:dunder-mifflin2b318e3b-60f0-4d80-98c0-8f70fa8cccf6",
         "rippling:dunder-mifflin845a6671-e3ae-4be6-ab4e-b06beb1cf02a",
@@ -465,14 +471,16 @@ EXCLUDED_BOARDS: frozenset[str] = frozenset(
         # "Formatting Test", "Horbach Footer Link Test", "Post-Deployment-B1111";
         # `testrcmsyncas002` is "RCMSYNCAS002 Test Site with updated Page Title b2111" ("RMK-RCM
         # job sync 2", "KirthiURLTest"). Both serve the same demo requisitions ("Database
-        # Programmer", "Help Desk Manager", "IT Project Manager" in Boston and Denver).
+        # Programmer", "Help Desk Manager", "IT Project Manager" in Boston and Denver). 6 served
+        # rows. Named in the same critique beside the BambooHR set, not found by the description
+        # signal.
         "successfactors:testco12.jobs2web.com",
         "successfactors:testrcmsyncas002.jobs2web.com",
         # Workday's own demo tenant, Global Modern Services (`hiringOrganization` "500.1 Global
         # Modern Services, Inc. (USA)", url workday.com): "HRREC (IRISH TEA) ... (Do not use)",
         # "Job Req 6220 Test", "Tester Conv5", and `TGS` repeating "QA Engineer-9"/"-10" across
-        # 20 European cities. Found at 5 Boards, under the 8 the signal uses, because every Board
-        # is one tenant's site. All seven sites.
+        # 20 European cities. Its shared description sits on 5 Boards, under the 8 used above,
+        # because every Board is one tenant's site. All seven sites; 106 served rows.
         "workday:https://super.wd103.myworkdayjobs.com/ext",
         "workday:https://super.wd103.myworkdayjobs.com/extdisform",
         "workday:https://super.wd103.myworkdayjobs.com/glt",
