@@ -166,13 +166,15 @@ def _zoho_location(
 
 
 #: Tenant-defined fields that state the posting's place, read in this order when City, State and
-#: Country are all empty. Measured live 2026-09-25 over the 3,571 still-listed postings the served
-#: table held no location for: 173 carry one of these (``Location`` 89, ``Job_Location`` 77,
-#: ``Office_Location2`` 4, a second ``City1``/``State1``/``Country1`` block 3). Other custom keys
-#: on those postings name something other than where the job is — ``Region`` ("Europe"),
-#: ``Preferred_Candidate_Region``, ``Virtual_Staff_s_Country`` (where a client's offshore staff
-#: sit), ``Location_Type`` ("Remote") — and are not read. The other 3,398 state no place at all;
-#: 3,436 of the 3,655 listed carry ``Remote_Job: true``, which already sets ``remote``.
+#: Country are all empty. Measured live 2026-09-25: the served table held no location for 3,823
+#: Zoho rows, 3,655 of them still listed, and 3,436 of those carry ``Remote_Job: true`` (which
+#: already sets ``remote``) with no place anywhere. Of the 3,571 whose detail page then read, 173
+#: carry one of these fields (``Location`` 89, ``Job_Location`` 77, ``Office_Location2`` 4, a
+#: second ``City1``/``State1``/``Country1`` block 3). The value is the tenant's own text and is
+#: kept as written, "Remote" included (3 postings). Other custom keys on those postings name
+#: something other than where the job is — ``Region`` ("Europe"), ``Preferred_Candidate_Region``,
+#: ``Virtual_Staff_s_Country`` (where a client's offshore staff sit), ``Location_Type`` — and are
+#: not read.
 _CUSTOM_LOCATION_FIELDS = ("Location", "Job_Location", "Office_Location2")
 
 

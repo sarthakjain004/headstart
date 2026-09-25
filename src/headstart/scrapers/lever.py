@@ -93,6 +93,7 @@ def _location(categories: dict, country: str | None) -> str | None:
         parts = [loc] if loc else []
     composed = ", ".join(parts)
     if country:
+        # the name only tells whether the location already spells this country out
         name = ISO_ALPHA2_NAMES.get(country.upper())
         if not _already_names_country(composed.lower(), country, name):
             composed = f"{composed}, {country}" if composed else country

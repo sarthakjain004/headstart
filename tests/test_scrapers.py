@@ -5553,6 +5553,7 @@ def test_successfactors_feed_location_names_a_country_code_and_drops_junk():
     assert _feed_location("#, LN, CN, _") == "LN, China"
     assert _feed_location("83, DK") == "Denmark"
     assert _feed_location("PT, 1990-266") == "Portugal"
+    assert _feed_location("Toronto, ON, CA, M5J 2V5") == "Toronto, ON, Canada"
     # already a name, or not a code: kept as it is
     assert _feed_location("Georgia, United States") == "Georgia, United States"
     assert _feed_location("Bangalore, India") == "Bangalore, India"

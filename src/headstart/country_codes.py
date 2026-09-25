@@ -1,10 +1,11 @@
 """ISO 3166-1 alpha-2 country code -> common English short name.
 
-Shared by the scrapers that receive a bare country code where a place name belongs: Lever's
-``country`` field, and SuccessFactors' ``/sitemal.xml`` ``g:location`` (``"IN"``, ``"Taguig, PH"``).
-The complete alpha-2 list rather than a curated subset — Lever alone used 75 distinct codes over
-286 live Boards (measured 2026-08-25), spread far enough across the standard that a subset would
-risk missing one.
+Two readers. Lever appends its ``country`` code to a posting's location and reads the name only
+to tell when the location already spells that country out, so it is not appended twice.
+SuccessFactors' ``/sitemal.xml`` states a bare code where a place belongs (``"IN"``,
+``"Taguig, PH"``), and its reader writes the name in the code's place. The complete alpha-2 list
+rather than a curated subset: Lever alone used 75 distinct codes over 286 live Boards (measured
+2026-08-25), spread far enough across the standard that a subset would risk missing one.
 """
 
 ISO_ALPHA2_NAMES: dict[str, str] = {

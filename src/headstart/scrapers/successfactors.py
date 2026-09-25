@@ -550,17 +550,17 @@ class SuccessFactorsScraper(BaseScraper):
                 "job pages say the posting is not available — dropped as closed"
             )
         # /sitemal.xml (module docstring): the fallback for a page that yielded nothing. The page
-        # stays the authority — it states the posting date the feed
-        # never does — and `listed` stays the sole id authority; this only ever fills fields.
+        # stays the authority — it states the posting date the feed never does — and `listed`
+        # stays the sole id authority; this only ever fills fields.
         # It also fills `location` alone on a page that read but stated none: some tenants render
         # the place as an unlabelled span no parser can anchor on, while the feed states it on
         # every item (careers.hcltech.com, 2026-09-25: 3,146 of 4,226 served rows had no location,
         # and the feed carried one on all 10,829 items).
-        placeless = sum(
-            1
+        placeless = {
+            job_id
             for _, job_id in open_listed
             if job_id in pages and not pages[job_id].get("location")
-        )
+        }
         sitemal_fields = self._sitemal_fields() if unread or placeless else {}
         fields = [
             _with_feed_location(pages[job_id], sitemal_fields.get(job_id))
@@ -569,12 +569,14 @@ class SuccessFactorsScraper(BaseScraper):
             for _, job_id in open_listed
         ]
         if placeless:
-            placed = placeless - sum(
-                1 for page in fields if page is not None and not page.get("location")
+            placed = sum(
+                1
+                for (_, job_id), page in zip(open_listed, fields)
+                if job_id in placeless and page.get("location")
             )
             _log.info(
-                f"{self.board_key()}: sitemal.xml placed {placed} of {placeless} job pages "
-                "that stated no location"
+                f"{self.board_key()}: sitemal.xml placed {placed} of {len(placeless)} "
+                "job pages that stated no location"
             )
         lost = sum(1 for page in fields if page is None)
         if lost < unread:
@@ -839,12 +841,24 @@ def _feed_location(location: str | None) -> str | None:
     """A ``g:location`` value as a place a search can find. The feed mostly states a bare ISO
     alpha-2 code (``IN`` on 8,643 of careers.hcltech.com's 10,829 items, 2026-09-25) or a city
     and code (``Taguig, PH``). Neither a search for "india" nor the India tag reads a code, so a
-    final two-letter segment becomes its country name. Segments with no letter at all are feed
-    junk (``#, LN, CN, _`` on careers.te.com, ``83, DK``, ``PT, 1990-266``) and are dropped."""
+    final two-letter segment becomes its country name.
+
+    That rests on the code being the last place segment. Every value read live bore it out — the
+    39 Boards whose served rows lacked a location, and 11 more tenants in review (telus, corning,
+    aecon, olympusamerica, rndc-usa, ...) — in the shapes ``CC`` and ``City, ST, CC[, postcode]``.
+    A feed ending in a US state code (``Indianapolis, IN``) would be misnamed; none was seen.
+
+    Segments holding a digit or no letter at all are dropped first: postcodes (``M5J 2V5`` on
+    careers.telus.com, ``1990-266`` on careers.casais.pt) and feed junk (``#, LN, CN, _`` on
+    careers.te.com, ``83, DK``)."""
     if not location:
         return None
     segments = [s.strip() for s in location.split(",")]
-    segments = [s for s in segments if any(c.isalpha() for c in s)]
+    segments = [
+        s
+        for s in segments
+        if any(c.isalpha() for c in s) and not any(c.isdigit() for c in s)
+    ]
     if segments and len(segments[-1]) == 2 and segments[-1].isupper():
         segments[-1] = ISO_ALPHA2_NAMES.get(segments[-1], segments[-1])
     return ", ".join(segments) or None
