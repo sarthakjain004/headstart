@@ -1243,7 +1243,7 @@ def backfill_from_store(args: argparse.Namespace) -> int:
     """Fill every null ``description`` in the served table from the ADR-0050 store (ADR-0104).
 
     ``sync`` cannot do this. It reads its text from the run's *corpus* (ADR-0207),
-    which is that run's ~20,000-Board slice, so it fills only the slice's share and a row whose
+    which is that run's ~80,000-Board slice, so it fills only the slice's share and a row whose
     Board sits out every run is never reached. This reads the store instead — every Job whose
     description we hold, regardless of which run last scraped it — so one pass covers the table.
 

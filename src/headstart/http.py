@@ -81,7 +81,7 @@ _MAX_EARNED_ATTEMPTS = 2
 _BACKOFF_STEP = 1.5
 _BACKOFF_JITTER = (0.5, 1.5)
 # Cap on an honoured Retry-After: past this, waiting costs more than the request buys, and a
-# shard's whole budget is 60 minutes.
+# shard's whole budget is 75 minutes.
 _MAX_RETRY_AFTER = 30.0
 _DNS = 6  # curl CURLE_COULDNT_RESOLVE_HOST — host doesn't exist, never retried
 

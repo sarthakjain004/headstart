@@ -4,7 +4,8 @@
 (the centroid `version` this generalises), [ADR-0057](0057-record-family-assignments-and-report-reassignment.md)
 (the reassignment ledger whose confusion this closes one more instance of) · **Amended by:**
 [ADR-0220](0220-a-trained-title-classifier-decides-a-role-family.md) — the sixth column is
-`family_classifier_version`, renamed in place from `family_rules_fingerprint`
+`family_classifier_version`, renamed in place from `family_rules_fingerprint` · **Amended by:**
+[ADR-0230](0230-trends-keeps-one-board-delta-history-and-decides-rules-when-reading-it.md) — methodology travels with every tick; `trends_epochs.csv` retires
 
 ## Context
 
