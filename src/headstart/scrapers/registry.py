@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Container
 
-from headstart.config import CompanyRef
+from headstart.boards.company_ref import CompanyRef
 from headstart.network.fetcher import Fetcher
 from headstart.scrapers.adp import ADPScraper
 from headstart.scrapers.adp_recruiting import ADPRecruitingScraper
@@ -158,7 +158,7 @@ def detail_pass_atses() -> frozenset[str]:
 
     Lives here because three callers across two packages need the same answer and had drifted into
     computing it three ways — `embed_plan` to decide which vectors were degraded, `update_meta` to
-    backfill that flag, and `board_priority` to drain the cheap half of the description gap first.
+    backfill that flag, and `priority_ledger` to drain the cheap half of the description gap first.
     """
     return frozenset(
         ats for ats, scraper in SCRAPERS.items() if scraper.has_detail_pass

@@ -29,15 +29,15 @@ import json
 from pathlib import Path
 
 from headstart import log
-from headstart.board_identity import board_of
-from headstart.board_priority import load_scores
-from headstart.corpus import iter_jobs
+from headstart.boards.board_identity import board_of
+from headstart.boards.priority_ledger import load_scores
 from headstart.embedding_conventions import MODEL
 from headstart.ingest import PENDING_UPGRADES_PATH, REPO_ROOT, observability, shard_plan
 from headstart.ingest.binpack import (
     lpt_pack,
     shard_count,
 )
+from headstart.ingest.corpus import iter_jobs
 from headstart.ingest.doc_prep import (
     MAX_SEQ_TOKENS,
     bucket_for,

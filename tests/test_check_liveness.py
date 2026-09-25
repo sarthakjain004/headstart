@@ -658,7 +658,7 @@ def test_an_unknown_reprobe_keeps_a_live_verdict(cl, tmp_path, monkeypatch):
         "newco,https://boards.greenhouse.io/newco\n",
         encoding="utf-8",
     )
-    live = cl.liveness.Verdict(
+    live = cl.liveness_ledger.Verdict(
         "greenhouse",
         "stripe",
         "https://boards.greenhouse.io/stripe",
@@ -666,7 +666,7 @@ def test_an_unknown_reprobe_keeps_a_live_verdict(cl, tmp_path, monkeypatch):
         300,
         "2026-01-01",
     )
-    cl.liveness.write(ledger / "greenhouse.csv", [live])
+    cl.liveness_ledger.write(ledger / "greenhouse.csv", [live])
     monkeypatch.setitem(cl.PROBES, "greenhouse", lambda tenant, url: (cl.UNKNOWN, None))
     monkeypatch.setattr(cl, "PASSES", [(1, 1)])
     monkeypatch.setattr(
@@ -681,7 +681,7 @@ def test_an_unknown_reprobe_keeps_a_live_verdict(cl, tmp_path, monkeypatch):
         ],
     )
     cl.main()
-    after = cl.liveness.load(ledger / "greenhouse.csv")
+    after = cl.liveness_ledger.load(ledger / "greenhouse.csv")
     assert after["stripe"] == live
     assert after["newco"].status == cl.UNKNOWN
 
@@ -716,7 +716,7 @@ def test_an_oracle_pool_row_lands_under_the_pod_host_its_scraper_reads(
         ["check_liveness", "--dir", str(pool), "--ledger-dir", str(ledger), "oracle"],
     )
     cl.main()
-    after = cl.liveness.load(ledger / "oracle.csv")
+    after = cl.liveness_ledger.load(ledger / "oracle.csv")
     assert sorted(after) == [
         "bun.fa.em2.oraclecloud.com",
         "cygl.fa.us2.oraclecloud.com",

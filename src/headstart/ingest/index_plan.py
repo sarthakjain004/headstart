@@ -43,10 +43,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from headstart import log, scrapable_boards
-from headstart.board_identity import ats_of, board_key, board_of, lower_key
-from headstart.corpus import iter_jobs
+from headstart import log
+from headstart.boards import scrapable_boards
+from headstart.boards.board_identity import ats_of, board_key, board_of, lower_key
 from headstart.ingest.board_operator import tenant
+from headstart.ingest.corpus import iter_jobs
 
 _log = log.get(__name__, __spec__)
 
@@ -55,7 +56,7 @@ _log = log.get(__name__, __spec__)
 #: Trends chart would draw that as a hiring drop; ``role_trends`` stamps this into the
 #: ADR-0164 epoch ledger so the chart marks it instead. Bump it in the change that alters which
 #: rows count as duplicates: a new grouping in :func:`plan_prune`, or a new alias-ledger signal
-#: (:mod:`headstart.board_aliases`), or an existing signal's first ledger for an ATS (ADR-0222).
+#: (:mod:`headstart.boards.alias_ledger`), or an existing signal's first ledger for an ATS (ADR-0222).
 #: Don't bump it for a routine rewrite of an alias ledger that already exists, nor for a
 #: ``excluded_and_parked.PARKED_BOARDS`` entry, which is a temporary hold rather than a duplicate rule. The
 #: marker lands on the step only because both routes remove rows through ``index prune``, which
@@ -175,7 +176,7 @@ def plan_sync(
     id (present in both) is left as-is (id-only change detection).
 
     ``live`` is the :func:`boards_by_canon` lookup ids resolve through; pass an empty dict when
-    there is no ledger to read, which degrades to :func:`~headstart.board_identity.board_of`. Required
+    there is no ledger to read, which degrades to :func:`~headstart.boards.board_identity.board_of`. Required
     rather than defaulted: omitting it silently restores the scoping ADR-0049 records as *worse*
     than the bug it fixes.
 
@@ -329,7 +330,7 @@ def _backing_copies(
     on one of its backing Boards}`` (ADR-0210).
 
     ``requisitions`` is each stamped row's ``requisition``; ``backing`` maps an Eightfold Board's
-    slug to its backing Board keys (:mod:`headstart.eightfold_backing`). A row with no stamp never
+    slug to its backing Board keys (:mod:`headstart.boards.eightfold_backing`). A row with no stamp never
     matches, so an unstamped pair keeps being served twice rather than risk serving it never.
 
     The Eightfold row joins the backing row's group rather than both joining a group keyed on
@@ -554,12 +555,12 @@ def workday_site_jobs(ledger_dir: str | Path) -> dict[str, int]:
     larger count. Only the Boards a keep-set holds are ever looked up, so a dead row here is
     harmless, and one whose URL will not parse is already reported by :func:`live_keep_set`.
     """
-    from headstart import liveness
+    from headstart.boards import liveness_ledger
     from headstart.scrapers.registry import company_from_row
 
     jobs: dict[str, int] = {}
-    for verdict in liveness.load(Path(ledger_dir) / "workday.csv").values():
-        if verdict.status != liveness.LIVE:
+    for verdict in liveness_ledger.load(Path(ledger_dir) / "workday.csv").values():
+        if verdict.status != liveness_ledger.LIVE:
             continue
         company = company_from_row("workday", verdict.tenant, verdict.url)
         try:
@@ -580,16 +581,16 @@ def aliased_boards(ledger_dir: str | Path) -> dict[str, str]:
     against the alias ledger's ``duplicate`` — whatever the row's status, since a buried Board
     that later died still left through the alias.
     """
-    from headstart import board_aliases, liveness
+    from headstart.boards import alias_ledger, liveness_ledger
     from headstart.scrapers.registry import company_from_row
 
     out: dict[str, str] = {}
     unkeyed: list[str] = []
     for ledger in sorted(Path(ledger_dir).glob("*.csv")):
-        signals = board_aliases.signals_for(ledger_dir, ledger.stem)
+        signals = alias_ledger.signals_for(ledger_dir, ledger.stem)
         if not signals:
             continue
-        for verdict in liveness.load(ledger).values():
+        for verdict in liveness_ledger.load(ledger).values():
             company = company_from_row(ledger.stem, verdict.tenant, verdict.url)
             signal = signals.get(company.slug.lower())
             if signal:
@@ -802,7 +803,7 @@ def _requisition_tenant(canon: str, native: str) -> str | None:
     section, an ADP career center), and on the ATSes in :data:`_TENANT_REQUISITION_ATSES` a Tenant
     posts one requisition to several of its Boards under the same native id, so the requisition's
     identity is the Tenant plus that id, not the Board plus it. The Tenant is
-    :func:`~headstart.board_identity.tenant`'s: Workday's ``{company}``, a Taleo Enterprise host,
+    :func:`~headstart.boards.board_identity.tenant`'s: Workday's ``{company}``, a Taleo Enterprise host,
     a Taleo Business Edition ``org``, an ADP ``cid``. None for every other ATS, and for a native
     id with no digit in it: that is a fallback id (Workday's ``Texas``, a title slug), not a
     requisition id, and two Boards sharing one says nothing about sharing a posting. The key never

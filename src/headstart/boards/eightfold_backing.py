@@ -31,7 +31,7 @@ from functools import cache
 from pathlib import Path
 
 PATH = (
-    Path(__file__).resolve().parents[2] / "data" / "validate" / "eightfold_backing.csv"
+    Path(__file__).resolve().parents[3] / "data" / "validate" / "eightfold_backing.csv"
 )
 
 

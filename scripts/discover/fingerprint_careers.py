@@ -96,9 +96,9 @@ from fingerprint_deep import (
 from fingerprint_job_evidence import check_jobs
 from wayback_feeder import ADP_HOST, ADP_PAGE_PATH, extract
 
-from headstart import scrapable_boards
-from headstart.board_identity import board_key, lower_key
-from headstart.config import CompanyRef
+from headstart.boards import scrapable_boards
+from headstart.boards.board_identity import board_key, lower_key
+from headstart.boards.company_ref import CompanyRef
 from headstart.scrapers import registry
 from headstart.scrapers.adp_recruiting import SLUG as ADP_RECRUITING_SLUG
 

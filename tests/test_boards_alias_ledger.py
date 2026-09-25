@@ -9,13 +9,13 @@ from __future__ import annotations
 
 from dataclasses import fields
 
-from headstart import board_aliases
+from headstart.boards import alias_ledger
 
 
 def resolve(keys, live=None, **kw):
-    """`board_aliases.resolve` with the ceremony every case shares."""
+    """`alias_ledger.resolve` with the ceremony every case shares."""
     kw.setdefault("signal", "redirect")
-    return board_aliases.resolve(keys, live if live is not None else list(keys), **kw)
+    return alias_ledger.resolve(keys, live if live is not None else list(keys), **kw)
 
 
 def test_two_boards_resolving_to_one_live_board_are_a_cluster():
@@ -64,26 +64,26 @@ def test_two_dead_tenants_on_the_vendors_marketing_page_are_not_duplicates():
     )
     assert r.clusters == ()
     assert {m.slug for m in r.moved} == {"careers.toagroup.com", "jobs.bhs-world.com"}
-    assert {m.reason for m in r.moved} == {board_aliases.TOMBSTONE}
+    assert {m.reason for m in r.moved} == {alias_ledger.TOMBSTONE}
 
 
 def test_an_unknown_target_is_migrated_not_a_duplicate():
     r = resolve({"careers.hagergroup.com": "careers.hager.com"})
     assert r.clusters == ()
-    assert r.moved[0].reason == board_aliases.MIGRATED
+    assert r.moved[0].reason == alias_ledger.MIGRATED
     assert r.moved[0].resolved_to == "careers.hager.com"
 
 
 def test_a_www_form_is_labelled_separately_from_a_real_migration():
     """Both are "target not in the ledger", but one is a ledger typo and the other is a move."""
     r = resolve({"optimumcareers.com": "www.optimumcareers.com"})
-    assert r.moved[0].reason == board_aliases.WWW_VARIANT
+    assert r.moved[0].reason == alias_ledger.WWW_VARIANT
 
 
 def test_a_failed_probe_earns_no_verdict():
     r = resolve({"careers.beyti.eg": None})
     assert r.clusters == ()
-    assert r.moved[0].reason == board_aliases.UNREACHABLE
+    assert r.moved[0].reason == alias_ledger.UNREACHABLE
 
 
 def test_a_canonical_this_scan_never_reached_is_reported_not_elected():
@@ -94,7 +94,7 @@ def test_a_canonical_this_scan_never_reached_is_reported_not_elected():
         live=["a.example", "b.example", "canon.example"],
     )
     assert r.clusters == ()
-    assert {m.reason for m in r.moved} == {board_aliases.CANONICAL_UNCONFIRMED}
+    assert {m.reason for m in r.moved} == {alias_ledger.CANONICAL_UNCONFIRMED}
 
 
 def test_a_board_nothing_points_at_is_left_alone():
@@ -116,26 +116,24 @@ def test_the_csv_header_matches_the_row_it_writes():
     """`write` emits `astuple(alias)`, so `FIELDS` and `Alias`'s field order are one fact in two
     places. Adding a field to either alone shifts every value under the wrong header — silently,
     since a CSV has no idea its columns moved."""
-    assert tuple(f.name for f in fields(board_aliases.Alias)) == board_aliases.FIELDS
+    assert tuple(f.name for f in fields(alias_ledger.Alias)) == alias_ledger.FIELDS
 
 
 def test_ledger_round_trips(tmp_path):
     r = resolve({"basf.jobs": "basf.jobs", "basf-se.jobs2web.com": "basf.jobs"})
     path = tmp_path / "successfactors.csv"
-    board_aliases.write(
-        path, board_aliases.aliases_of(r, "successfactors", "2026-09-06")
-    )
-    assert board_aliases.load(path) == {"basf-se.jobs2web.com": "basf.jobs"}
+    alias_ledger.write(path, alias_ledger.aliases_of(r, "successfactors", "2026-09-06"))
+    assert alias_ledger.load(path) == {"basf-se.jobs2web.com": "basf.jobs"}
 
 
 def test_the_ledger_is_looked_up_case_insensitively(tmp_path):
     """A ledger holds one Board under several casings (ADR-0023), and an exact-case miss looks
     exactly like "not a duplicate" — so it would scrape the duplicate anyway, silently."""
     path = tmp_path / "successfactors.csv"
-    board_aliases.write(
+    alias_ledger.write(
         path,
         [
-            board_aliases.Alias(
+            alias_ledger.Alias(
                 "successfactors",
                 "Careers.Example.COM",
                 "jobs.example.com",
@@ -145,20 +143,20 @@ def test_the_ledger_is_looked_up_case_insensitively(tmp_path):
             )
         ],
     )
-    loaded = board_aliases.load(path)
+    loaded = alias_ledger.load(path)
     assert "careers.example.com" in loaded
     assert loaded["careers.example.com"] == "jobs.example.com"  # value keeps its casing
 
 
 def test_a_missing_ledger_reads_as_empty(tmp_path):
     """Every ATS reads this on the scrape path; only the scanned ones have a file."""
-    assert board_aliases.load(tmp_path / "nothing-here.csv") == {}
+    assert alias_ledger.load(tmp_path / "nothing-here.csv") == {}
 
 
 def test_path_sits_beside_the_liveness_ledger(tmp_path):
     liveness_dir = tmp_path / "data" / "validate" / "liveness"
     assert (
-        board_aliases.path_for(liveness_dir, "successfactors")
+        alias_ledger.path_for(liveness_dir, "successfactors")
         == tmp_path / "data" / "validate" / "aliases" / "successfactors.csv"
     )
 
@@ -167,7 +165,7 @@ def test_bury_contained_compares_boards_only_within_their_group():
     """ADP Recruiting Management groups on `orgoid`: `gnc` lists exactly what
     `generalnutritioncenter` does (the same client) and is buried; another client's site with the
     same ids is not, and an empty site is never buried."""
-    from headstart.board_aliases import bury_contained
+    from headstart.boards.alias_ledger import bury_contained
 
     ids = {"1", "2"}
     client = {"gnc": "G3", "generalnutritioncenter": "G3", "other": "Z9", "empty": "G3"}
@@ -187,8 +185,8 @@ def test_a_row_missing_its_canonical_is_skipped_and_counted(tmp_path, caplog):
         "x,orphan,,redirect,,2026-09-01\n",
         encoding="utf-8",
     )
-    with caplog.at_level("INFO", logger="headstart.board_aliases"):
-        assert board_aliases.load(path) == {"dup": "Keep"}
+    with caplog.at_level("INFO", logger="headstart.boards.alias_ledger"):
+        assert alias_ledger.load(path) == {"dup": "Keep"}
     assert caplog.messages == [
         f"{path}: skipped 1 row(s) missing duplicate or canonical"
     ]

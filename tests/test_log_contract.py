@@ -527,7 +527,7 @@ def _ledger_priority(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     this run, which is the only input that moves `pruned`; `greenhouse:carried-*` are absent from
     the snapshot entirely, which is the only input that moves `carried`.
     """
-    from headstart import board_priority
+    from headstart.boards import priority_ledger
     from headstart.ingest import update_ledgers
 
     monkeypatch.chdir(tmp_path)
@@ -539,17 +539,17 @@ def _ledger_priority(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     )
     _jsonl(Path("data/jobs/tech/greenhouse.jsonl"), ({"id": i} for i in top + fresh))
     ledger = Path("data/state/board_priority.csv")
-    board_priority.save(
+    priority_ledger.save(
         ledger,
         {
             **{
-                f"greenhouse:fading-{n}": board_priority.BoardPriority(
-                    board_priority.PRUNE_BELOW, 0, "2026-09-01"
+                f"greenhouse:fading-{n}": priority_ledger.BoardPriority(
+                    priority_ledger.PRUNE_BELOW, 0, "2026-09-01"
                 )
                 for n in range(1010)
             },
             **{
-                f"greenhouse:carried-{n}": board_priority.BoardPriority(
+                f"greenhouse:carried-{n}": priority_ledger.BoardPriority(
                     3.0, 3, "2026-09-01"
                 )
                 for n in range(1020)
@@ -570,25 +570,25 @@ def _ledger_cost(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     and logs how many it moved, and a Workday key that is not a careers URL would trip that
     (and `board_identity`'s own warning) rather than exercise the plain path this line reports.
     """
-    from headstart import board_cost
-    from headstart.harvest import COST_FILENAME
+    from headstart.boards import cost_ledger
     from headstart.ingest import update_ledgers
+    from headstart.scrapers.harvest import COST_FILENAME
 
     monkeypatch.chdir(tmp_path)
     fragments = Path("data/scrape/fragments")
     for shard in range(15):
         rows = "".join(
-            board_cost.shard_row(f"greenhouse:timed-{shard}-{n}", 2393.0, 1204)
+            cost_ledger.shard_row(f"greenhouse:timed-{shard}-{n}", 2393.0, 1204)
             for n in range(80)
         )
         path = fragments / f"shard-{shard}" / COST_FILENAME
         path.parent.mkdir(parents=True)
-        path.write_text(board_cost.SHARD_HEADER + rows, encoding="utf-8")
+        path.write_text(cost_ledger.SHARD_HEADER + rows, encoding="utf-8")
     ledger = Path("data/state/board_cost.csv")
-    board_cost.save(
+    cost_ledger.save(
         ledger,
         {
-            f"greenhouse:carried-{n}": board_cost.BoardCost(2393.0, 1204, "2026-09-01")
+            f"greenhouse:carried-{n}": cost_ledger.BoardCost(2393.0, 1204, "2026-09-01")
             for n in range(1010)
         },
     )
@@ -754,7 +754,7 @@ def _ledger_gap_drain(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """
     import gzip
 
-    from headstart import board_description_gap
+    from headstart.boards import description_gap_ledger
     from headstart.ingest import update_ledgers
 
     monkeypatch.chdir(tmp_path)
@@ -776,7 +776,7 @@ def _ledger_gap_drain(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
             ]
         }
     )
-    board_description_gap.save(
+    description_gap_ledger.save(
         Path("data/state/board_description_gap.csv"),
         {"lever:drains": 2000, "lever:frozen": 1500, "lever:capped": 1100},
         today="2026-09-15",
@@ -991,8 +991,8 @@ def _plan_coldstart(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     format string shared by both branches of the line below — so this branch clearing 999 is what
     keeps a `{n:,}` on it catchable, whatever slice the measured fixture happens to plan.
     """
+    from headstart.boards.scrapable_boards import ScrapableBoard
     from headstart.ingest import scrape_plan
-    from headstart.scrapable_boards import ScrapableBoard
 
     monkeypatch.chdir(tmp_path)
     companies = [
@@ -1018,9 +1018,9 @@ def _plan_measured(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """
     from datetime import UTC, datetime
 
-    from headstart import board_cost, board_description_gap, board_priority
+    from headstart.boards import cost_ledger, description_gap_ledger, priority_ledger
+    from headstart.boards.scrapable_boards import ScrapableBoard
     from headstart.ingest import board_failures, scrape_plan
-    from headstart.scrapable_boards import ScrapableBoard
 
     monkeypatch.chdir(tmp_path)
     today = datetime.now(UTC).strftime("%Y-%m-%d")
@@ -1050,7 +1050,7 @@ def _plan_measured(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     # Distinct seconds per Board: LPT deals heaviest-first, so ties would leave the per-shard
     # counts at the mercy of `pick_boards`' shuffle.
     cost_rows = {
-        f"greenhouse:{slug}": board_cost.BoardCost(0.5 + n / 10000, 12, today)
+        f"greenhouse:{slug}": cost_ledger.BoardCost(0.5 + n / 10000, 12, today)
         for n, slug in enumerate(measured)
     }
     # The value gate's own inputs: over 10 min of measured scrape (`_GATE_FLOOR_S`) for a score
@@ -1058,20 +1058,20 @@ def _plan_measured(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     # expired into a re-check.
     cost_rows.update(
         {
-            f"greenhouse:{slug}": board_cost.BoardCost(1000.0 + 100 * n, 1204, today)
+            f"greenhouse:{slug}": cost_ledger.BoardCost(1000.0 + 100 * n, 1204, today)
             for n, slug in enumerate(gated)
         }
     )
-    cost_rows["greenhouse:giant"] = board_cost.BoardCost(4800.0, 1204, today)
-    board_cost.save(Path("data/state/board_cost.csv"), cost_rows)
+    cost_rows["greenhouse:giant"] = cost_ledger.BoardCost(4800.0, 1204, today)
+    cost_ledger.save(Path("data/state/board_cost.csv"), cost_rows)
 
     scores = {
-        f"greenhouse:{slug}": board_priority.BoardPriority(1.0 + n / 100, 12, today)
+        f"greenhouse:{slug}": priority_ledger.BoardPriority(1.0 + n / 100, 12, today)
         for n, slug in enumerate(measured)
     }
     scores.update(
         {
-            f"greenhouse:{slug}": board_priority.BoardPriority(
+            f"greenhouse:{slug}": priority_ledger.BoardPriority(
                 0.5 + n / 10, 1204, today
             )
             for n, slug in enumerate(gated)
@@ -1079,10 +1079,10 @@ def _plan_measured(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     )
     # Above 2 tech jobs per minute of its 80, so the giant survives the gate it would otherwise
     # be the first Board through.
-    scores["greenhouse:giant"] = board_priority.BoardPriority(200.0, 1204, today)
-    board_priority.save(Path("data/state/board_priority.csv"), scores)
+    scores["greenhouse:giant"] = priority_ledger.BoardPriority(200.0, 1204, today)
+    priority_ledger.save(Path("data/state/board_priority.csv"), scores)
 
-    board_description_gap.save(
+    description_gap_ledger.save(
         Path("data/state/board_description_gap.csv"),
         {f"greenhouse:{slug}": 98 for slug in measured},
         today=today,
@@ -1213,8 +1213,8 @@ def _index_ledger(monkeypatch: pytest.MonkeyPatch, boards: list[str]) -> None:
     """Stub the liveness ledger `live_keep_set` reads, as `_plan_coldstart` stubs it for the
     planner: the committed one holds ~20k Boards, and every count below would then drift with a
     data file that has nothing to do with the log's wording."""
+    from headstart.boards.scrapable_boards import ScrapableBoard
     from headstart.ingest import index_plan
-    from headstart.scrapable_boards import ScrapableBoard
 
     monkeypatch.setattr(
         index_plan.scrapable_boards,

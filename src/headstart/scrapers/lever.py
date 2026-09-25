@@ -17,8 +17,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from headstart import company_name
-from headstart.country_codes import ISO_ALPHA2_NAMES
+from headstart.boards import company_name
 from headstart.jobs import salary
 from headstart.jobs.job import (
     Job,
@@ -29,6 +28,7 @@ from headstart.jobs.job import (
 )
 from headstart.network import http
 from headstart.scrapers.base import BaseScraper, classify_exception
+from headstart.scrapers.country_codes import ISO_ALPHA2_NAMES
 from headstart.scrapers.job_posting_jsonld import find_job_posting, hiring_organization
 
 #: Lever's two instances, global first — the order a scrape asks them in. Public: the liveness
@@ -140,7 +140,7 @@ class LeverScraper(BaseScraper):
         """The public board, whose ``<title>`` is the company name with no wrapper at all.
 
         The postings API carries no company name — its keys are the posting's own fields and
-        nothing else — so this is the only place Lever states it (`headstart.company_name`).
+        nothing else — so this is the only place Lever states it (`headstart.boards.company_name`).
         On the instance the listing answered from: an EU Board's page is on ``jobs.eu.lever.co``."""
         host = "jobs.eu.lever.co" if self._api_host == EU_API_HOST else "jobs.lever.co"
         return f"https://{host}/{self.slug}"

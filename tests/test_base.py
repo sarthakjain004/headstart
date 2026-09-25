@@ -5,7 +5,8 @@ import logging
 import pytest
 from fake_fetcher import FakeFetcher, FakeResponse
 
-from headstart import company_name, log
+from headstart import log
+from headstart.boards import company_name
 from headstart.jobs.job import Job
 from headstart.network import fanout_stats, http
 from headstart.scrapers import base

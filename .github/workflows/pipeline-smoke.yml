@@ -54,7 +54,7 @@ jobs:
         run: |
           python - <<'PY'
           import json, pathlib
-          from headstart import scrapable_boards
+          from headstart.boards import scrapable_boards
 
           # Real Boards taken from the committed liveness ledger, not invented slugs: `index prune`
           # evicts every row whose Board is not live in the ledger, so a made-up slug would be

@@ -157,7 +157,7 @@ def test_the_ledger_is_rewritten_each_run_and_a_winner_it_buried_can_come_back(
     `jobs.nvidia.com` comes back — and its second site, whose dead row the prober must keep
     skipping, is buried onto it instead, although run 1's ledger is what kept it off the scrape
     list."""
-    from headstart import board_aliases
+    from headstart.boards import alias_ledger
 
     liveness = _ledgers(tmp_path)
     backing = {"jobs.nvidia.com": (WD,), "nvidia.eightfold.ai": (NVIDIA,)}
@@ -169,7 +169,7 @@ def test_the_ledger_is_rewritten_each_run_and_a_winner_it_buried_can_come_back(
         return wd_listing if ats == "workday" else reads[slug]
 
     mod.write_aliases(liveness, read, "2026-09-24", backing)
-    path = board_aliases.path_for(liveness, "eightfold")
+    path = alias_ledger.path_for(liveness, "eightfold")
     assert path.read_text(encoding="utf-8").splitlines()[1:] == [
         f"eightfold,jobs.nvidia.com,{WD},backing-reqs,{WD},2026-09-24",
         f"eightfold,nvidia.eightfold.ai,{WD},backing-reqs,{WD},2026-09-24",
@@ -177,7 +177,7 @@ def test_the_ledger_is_rewritten_each_run_and_a_winner_it_buried_can_come_back(
 
     wd_listing = None
     mod.write_aliases(liveness, read, "2026-09-25", backing)
-    assert board_aliases.load_for(liveness, "eightfold") == {
+    assert alias_ledger.load_for(liveness, "eightfold") == {
         "nvidia.eightfold.ai": NVIDIA
     }
 

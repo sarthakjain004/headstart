@@ -31,10 +31,10 @@ from pathlib import Path
 import lancedb
 
 from headstart import log
-from headstart.board_identity import ats_of
-from headstart.corpus import iter_jobs
+from headstart.boards.board_identity import ats_of
 from headstart.embedding_conventions import PROD_TABLE
 from headstart.ingest import REPO_ROOT, observability
+from headstart.ingest.corpus import iter_jobs
 from headstart.ingest.embed_merge import _FLOAT_BYTES, _dim_from_manifest, evict_ids
 from headstart.ingest.index import _all_ids, check_base
 

@@ -46,7 +46,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from check_liveness import PROBES  # needs the paths above first
 
-from headstart import liveness
+from headstart.boards import liveness_ledger
 from headstart.scrapers.registry import company_from_row
 
 LEDGER = ROOT / "data" / "validate" / "liveness"
@@ -192,7 +192,7 @@ def main() -> int:
 
     def ledger(ats: str) -> dict:
         if ats not in ledgers:
-            ledgers[ats] = liveness.load(LEDGER / f"{ats}.csv")
+            ledgers[ats] = liveness_ledger.load(LEDGER / f"{ats}.csv")
         return ledgers[ats]
 
     moved, stayed_dead, dead_only = [], [], []
@@ -222,7 +222,7 @@ def main() -> int:
             )
         except Exception:  # noqa: BLE001 - treat an unreachable source as unproven
             src_verdict = "error"
-        if src_verdict != liveness.DEAD:
+        if src_verdict != liveness_ledger.DEAD:
             print(
                 f"  skip {old_ats}:{old_slug} — source probed {src_verdict}, "
                 "not dead, so nothing to relocate",
@@ -247,7 +247,7 @@ def main() -> int:
             verdict, jobs = PROBES[new_ats](new_slug, new_slug)
         except Exception:  # noqa: BLE001 - an unreachable target is not a confirmed move
             verdict, jobs = "error", None
-        if verdict != liveness.LIVE or not (jobs or 0):
+        if verdict != liveness_ledger.LIVE or not (jobs or 0):
             dead_only.append((old_ats, old_slug))
             print(
                 f"  dead {old_ats}:{old_slug:<32} (target {new_ats}:{new_slug} probed "
@@ -282,8 +282,8 @@ def main() -> int:
         old = ledger(old_ats)
         if old_slug in old:
             row = old[old_slug]
-            old[old_slug] = liveness.Verdict(
-                old_ats, old_slug, row.url, liveness.DEAD, None, today
+            old[old_slug] = liveness_ledger.Verdict(
+                old_ats, old_slug, row.url, liveness_ledger.DEAD, None, today
             )
             touched.add(old_ats)
 
@@ -312,8 +312,8 @@ def main() -> int:
                 flush=True,
             )
             continue
-        new[new_slug] = liveness.Verdict(
-            new_ats, new_slug, url, liveness.LIVE, jobs, today
+        new[new_slug] = liveness_ledger.Verdict(
+            new_ats, new_slug, url, liveness_ledger.LIVE, jobs, today
         )
         touched.add(new_ats)
         bury(old_ats, slug)  # only once the replacement is actually in the ledger
@@ -322,7 +322,7 @@ def main() -> int:
         bury(old_ats, old_slug)
 
     for ats in sorted(touched):
-        liveness.write(LEDGER / f"{ats}.csv", ledgers[ats].values())
+        liveness_ledger.write(LEDGER / f"{ats}.csv", ledgers[ats].values())
         print(f"  wrote {LEDGER / f'{ats}.csv'}", flush=True)
     return 0
 

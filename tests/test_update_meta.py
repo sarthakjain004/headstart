@@ -877,7 +877,7 @@ def test_a_requisition_is_stored_only_on_a_board_the_eightfold_pairs_name(
     """ADR-0210: both places a fact reaches the store — a new Job's meta and the facts refresh
     of one already held — keep `requisition` only where it can match, so the refresh never
     rewrites a served row for a stamp nothing reads."""
-    from headstart import eightfold_backing
+    from headstart.boards import eightfold_backing
     from headstart.ingest.doc_prep import to_meta
 
     monkeypatch.setattr(

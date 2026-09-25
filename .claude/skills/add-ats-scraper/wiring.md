@@ -24,7 +24,7 @@ Class attributes:
   (phenom's wrong country prefix 200s to the landing page; darwinbox's SPA routed bad links to
   the dashboard).
 - `has_detail_pass = True` when a second per-Job request fills fields — read by the embed
-  planner and `board_priority` (ADR-0050).
+  planner and `priority_ledger` (ADR-0050).
 - `detail_workers` — below the measured knee: `harvest` scrapes Boards concurrently, so peak
   in-flight is Boards × workers. 16 is what icims, zwayam, oracle and pyjamahr run.
 - `detail_streams`, `async_fanout`, `egress_fallback_on`, `alias_vendor_hosts` — only on a

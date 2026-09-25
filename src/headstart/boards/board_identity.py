@@ -1,14 +1,14 @@
 """Which Board does this belong to — the one place that answers it, in both directions.
 
 Before this module the answer was reimplemented independently at five call sites
-(:mod:`headstart.config`, :mod:`headstart.ingest.board_failures`,
+(:mod:`headstart.boards.company_ref`, :mod:`headstart.ingest.board_failures`,
 :mod:`headstart.ingest.scrape_join`, :mod:`headstart.ingest.index_plan`,
-:mod:`headstart.harvest`), with three different policies for what to do when a slug won't parse
+:mod:`headstart.scrapers.harvest`), with three different policies for what to do when a slug won't parse
 — a silent fallback key, a dropped-and-``None``, and a dropped-and-warned. That divergence was
 never a design choice; it was five people solving the same problem without a shared name for it.
 Two directions, both here:
 
-**Construct** — a :class:`~headstart.config.CompanyRef` (or scraper) to its canonical key.
+**Construct** — a :class:`~headstart.boards.company_ref.CompanyRef` (or scraper) to its canonical key.
 :func:`board_key` is the real per-ATS answer (``BaseScraper.board_key()``, ADR-0023) and can
 raise on a slug its scraper cannot parse. Two names wrap it, chosen **per call site** rather than
 collapsed into one, because the right thing to do with a raise genuinely differs by caller (see
@@ -17,7 +17,7 @@ ADR-0155):
 - :func:`board_identity` — never raises; a slug that won't parse falls back to the plain
   ``ats:slug``, logged once per distinct Board (bounded, ADR-0039). For callers that need a name
   for *every* Board unconditionally: dedup and the parked-Board check
-  (:mod:`headstart.scrapable_boards`, which stores the answer on each Board), cost/priority-ledger
+  (:mod:`headstart.boards.scrapable_boards`, which stores the answer on each Board), cost/priority-ledger
   keys. Dropping a Board here would silently shrink the scrape list.
 - :func:`board_key_of` — takes a raw ``"{ats}:{slug}"`` string (a shard report's own key, which
   carries no :class:`CompanyRef`) and returns ``None`` on anything that won't resolve. For callers
@@ -47,7 +47,7 @@ import re
 from urllib.parse import parse_qs, urlsplit
 
 from headstart import log
-from headstart.config import CompanyRef
+from headstart.boards.company_ref import CompanyRef
 
 _log = log.get(__name__)
 
@@ -73,7 +73,7 @@ def board_key(company: CompanyRef) -> str:
 #:
 #: Module-level, and never cleared: a pipeline stage is one process, and the point is that every
 #: caller shares one record. `board_identity` was reached from ~15 sites (`scrape_plan` x8,
-#: `board_priority` x7, plus the Scrapable Board list's park and dedupe), each walking the
+#: `priority_ledger` x7, plus the Scrapable Board list's park and dedupe), each walking the
 #: whole company list, so one bad slug restated itself ~15x per run — and a scraper whose
 #: `board_key()` starts raising would emit `N_Boards x 15` lines for one bug. Since ADR-0191 a
 #: `ScrapableBoard` computes it once and every one of those sites reads the stored answer, but
@@ -94,7 +94,7 @@ def board_key(company: CompanyRef) -> str:
 #: Nothing feeds a state-ledger key back through here today.
 #:
 #: `board_priority.csv` is keyed the same way (5,143 Workday keys, 5,120 of them that shorthand)
-#: but never reaches here: `board_priority.load` returns `row["board"]` verbatim, and `pick_boards`
+#: but never reaches here: `priority_ledger.load` returns `row["board"]` verbatim, and `pick_boards`
 #: reads the `board_identity` of liveness-ledger Boards. That is the check on this diagnosis —
 #: 1,142 of its Workday keys are absent from the cost ledger, so had it fed them back too the flood
 #: would have been their 11,703-key union, not the 10,561 actually observed.
@@ -153,7 +153,7 @@ def _report_identity_failure(key: str, exc: Exception) -> None:
     amendment), so N failing Boards must not buy N of them — but nor can this be INFO
     throughout. `index_plan`'s keep-set guard warns about the same population and is *not* a
     substitute: it runs in the **merge** job while this is reached from `scrape_plan` and
-    `board_priority` in the plan and scrape jobs, so its annotation never appears on the job
+    `priority_ledger` in the plan and scrape jobs, so its annotation never appears on the job
     that hit the failure. A run whose plan stage silently re-keyed a whole ATS would show
     nothing on its own summary until a later job noticed.
 

@@ -41,7 +41,7 @@ from __future__ import annotations
 import re
 from typing import Any, ClassVar
 
-from headstart import company_name
+from headstart.boards import company_name
 from headstart.jobs.job import Job, host_of, html_to_text
 from headstart.network import http
 from headstart.network.fetcher import Fetcher

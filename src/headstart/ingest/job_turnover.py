@@ -33,7 +33,7 @@ from collections.abc import Set as AbstractSet
 from pathlib import Path
 from typing import NamedTuple
 
-from headstart.board_identity import ats_of
+from headstart.boards.board_identity import ats_of
 from headstart.ingest.role_assignments import Placement
 from headstart.ingest.role_family_classifier import normalise
 

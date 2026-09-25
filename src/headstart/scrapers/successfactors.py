@@ -80,8 +80,8 @@ from types import MappingProxyType
 from typing import Any
 from urllib.parse import unquote
 
-from headstart import company_name, log
-from headstart.country_codes import ISO_ALPHA2_NAMES
+from headstart import log
+from headstart.boards import company_name
 from headstart.jobs.job import Job, html_to_text, is_remote, requisition_of
 from headstart.network import http
 from headstart.network.fetcher import Fetcher
@@ -92,6 +92,7 @@ from headstart.scrapers.base import (
     DetailRequest,
     classify_exception,
 )
+from headstart.scrapers.country_codes import ISO_ALPHA2_NAMES
 from headstart.scrapers.job_posting_jsonld import find_job_posting, job_posting_fields
 
 _log = log.get(__name__)

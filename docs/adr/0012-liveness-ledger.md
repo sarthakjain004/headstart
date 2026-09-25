@@ -101,7 +101,7 @@ re-probed roughly twice a week, and it is still never allowed to settle into a f
 is the invariant this ADR exists to protect. What changes is only that we stop paying the entire
 retry cascade on every run for a board whose answer has not moved in months. The floor matters:
 this must stay far below `dead`'s 90 days, or `unknown` quietly becomes a verdict rather than the
-absence of one. `tests/test_liveness.py::test_unknown_ttl_is_far_shorter_than_dead` pins that.
+absence of one. `tests/test_boards_liveness_ledger.py::test_unknown_ttl_is_far_shorter_than_dead` pins that.
 
 The alternative considered and rejected was widening the conclusive sets — treating Workday `401`
 /`403` and SmartRecruiters `400` as definitive `dead`. That settles them permanently and costs

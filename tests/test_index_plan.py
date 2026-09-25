@@ -10,6 +10,7 @@ import logging
 
 import pytest
 
+from headstart.boards.scrapable_boards import load as load_scrapable_boards
 from headstart.ingest.index_plan import (
     _live_board_end,
     aliased_boards,
@@ -24,7 +25,6 @@ from headstart.ingest.index_plan import (
     scraped_boards,
     workday_site_jobs,
 )
-from headstart.scrapable_boards import load as load_scrapable_boards
 from headstart.scrapers.greenhouse import GreenhouseScraper
 from headstart.scrapers.personio import PersonioScraper
 from headstart.scrapers.workday import WorkdayScraper
@@ -701,8 +701,8 @@ def test_only_the_first_keyless_board_carries_a_stack(monkeypatch, caplog):
     the formatter silently dropped `exc_info`; a real flood once it renders them."""
     import logging
 
+    from headstart.boards.scrapable_boards import ScrapableBoard
     from headstart.ingest import index_plan
-    from headstart.scrapable_boards import ScrapableBoard
     from headstart.scrapers import registry
 
     def explode(*_args, **_kwargs):

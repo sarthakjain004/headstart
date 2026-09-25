@@ -10,9 +10,10 @@ import re
 from pathlib import Path
 from typing import Final
 
-from headstart import company_name, log
-from headstart.board_identity import ats_of
-from headstart.company_name import LABEL_NOISE, tidy
+from headstart import log
+from headstart.boards import company_name
+from headstart.boards.board_identity import ats_of
+from headstart.boards.company_name import LABEL_NOISE, tidy
 from headstart.ingest.board_operator import tenant
 
 _log = log.get(__name__)

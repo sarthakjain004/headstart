@@ -59,7 +59,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
-from headstart import liveness
+from headstart.boards import liveness_ledger
 from headstart.scrapers.eightfold import group_id_for, sitemap_ids_for
 
 LEDGER = ROOT / "data" / "validate" / "liveness" / "eightfold.csv"
@@ -103,8 +103,8 @@ def main() -> int:
     args = ap.parse_args()
     prefer = read_prefer(args.prefer) if args.prefer else set()
 
-    ledger = liveness.load(LEDGER)
-    live = [v for v in ledger.values() if v.status == liveness.LIVE]
+    ledger = liveness_ledger.load(LEDGER)
+    live = [v for v in ledger.values() if v.status == liveness_ledger.LIVE]
     print(f"probing group_id for {len(live)} live eightfold tenants...", flush=True)
 
     by_group: dict[str, list[str]] = defaultdict(list)
@@ -153,10 +153,10 @@ def main() -> int:
     today = datetime.now(UTC).date().isoformat()
     for _winner, loser in to_bury:
         row = ledger[loser]
-        ledger[loser] = liveness.Verdict(
-            row.ats, row.tenant, row.url, liveness.DEAD, None, today
+        ledger[loser] = liveness_ledger.Verdict(
+            row.ats, row.tenant, row.url, liveness_ledger.DEAD, None, today
         )
-    liveness.write(LEDGER, ledger.values())
+    liveness_ledger.write(LEDGER, ledger.values())
     print(f"wrote {LEDGER}", flush=True)
     return 0
 

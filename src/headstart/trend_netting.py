@@ -35,7 +35,7 @@ import math
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
-from headstart.board_identity import ats_of, tenant
+from headstart.boards.board_identity import ats_of, tenant
 
 # The counting changes that move every line they reach (ADR-0164): a taxonomy refit, a
 # family-list or family-assignment change (ADR-0215, ADR-0220) and a tech-filter change. An

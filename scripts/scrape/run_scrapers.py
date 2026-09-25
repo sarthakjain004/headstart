@@ -46,8 +46,8 @@ import tomllib
 from datetime import UTC, datetime
 from pathlib import Path
 
-from headstart.config import CompanyRef
-from headstart.harvest import scrape_all
+from headstart.boards.company_ref import CompanyRef
+from headstart.scrapers.harvest import scrape_all
 from headstart.scrapers.registry import SCRAPERS, company_from_row
 
 ROOT = Path(__file__).resolve().parents[2]

@@ -79,7 +79,7 @@ def probe(tenant: str) -> dict[str, object]:
         if attempt + 1 < _ATTEMPTS:
             time.sleep(1.5 * (attempt + 1))
     # Never seen a settled answer. `unknown` keeps the Board out of the scrape list without
-    # asserting it is gone — `liveness.load` treats it as not-live, and the next probe re-decides.
+    # asserting it is gone — `liveness_ledger.load` treats it as not-live, and the next probe re-decides.
     return _row(tenant, "unknown", "", last)
 
 

@@ -1,10 +1,10 @@
-"""The committed Eightfold -> backing Board pairs (headstart.eightfold_backing, ADR-0210)."""
+"""The committed Eightfold -> backing Board pairs (headstart.boards.eightfold_backing, ADR-0210)."""
 
 from __future__ import annotations
 
 import pytest
 
-from headstart import eightfold_backing
+from headstart.boards import eightfold_backing
 
 
 def test_a_site_with_several_backing_boards_keeps_them_all_in_order(tmp_path):

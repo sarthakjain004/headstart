@@ -221,7 +221,7 @@ def path_for(liveness_dir: str | Path, ats: str) -> Path:
 
     Keyed off the liveness directory rather than the repo root because both callers already hold
     that — ``scrapable_boards.load`` is handed it, and the script gets it from
-    ``liveness.dir_for`` — so neither has to reconstruct a root by walking up parents."""
+    ``liveness_ledger.dir_for`` — so neither has to reconstruct a root by walking up parents."""
     return Path(liveness_dir).parent / "aliases" / f"{ats}.csv"
 
 

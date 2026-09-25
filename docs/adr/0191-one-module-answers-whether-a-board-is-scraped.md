@@ -30,7 +30,7 @@ Six places outside the function re-implemented parts of the filter:
 
 ## Decision
 
-1. **A module named for the concept, `headstart.scrapable_boards`.** CONTEXT.md already names what
+1. **A module named for the concept, `headstart.boards.scrapable_boards`.** CONTEXT.md already names what
    the function returns: a **Scrapable Board** (`min_jobs=0`), or its **Hiring Board** subset
    (`min_jobs=1`, the default). `load(ledger_dir, *, min_jobs=1)` applies every rule in its fixed
    order, and the module docstring states that order and why it matters. `config` keeps

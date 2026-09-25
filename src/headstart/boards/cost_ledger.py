@@ -10,7 +10,7 @@ So cost is measured, not proxied. Each scrape shard times every Board (``pipelin
 (``board,seconds,jobs,updated_at``), which rides the same HF state round-trip as the priority
 ledger. The next run's planner packs on those seconds.
 
-Same shape as :mod:`headstart.board_priority` deliberately, and since ADR-0096 the **same key**:
+Same shape as :mod:`headstart.boards.priority_ledger` deliberately, and since ADR-0096 the **same key**:
 both are an EWMA over ``board_identity``. They disagreed until 2026-08-28 — this one written by
 `harvest` under the scraper's raw ``{ats}:{slug}``, the other from Job ids under ``board_key()`` —
 so the two ledgers described the same Boards under names that could never be joined, and a Workday
@@ -32,10 +32,10 @@ from statistics import median
 from typing import TYPE_CHECKING
 
 from headstart import log
-from headstart.board_identity import ats_of
+from headstart.boards.board_identity import ats_of
 
 if TYPE_CHECKING:
-    from headstart.scrapable_boards import ScrapableBoard
+    from headstart.boards.scrapable_boards import ScrapableBoard
 
 _log = log.get(__name__)
 
@@ -88,7 +88,7 @@ FALLBACK_SECONDS = 5.0  # last resort: no measurement anywhere, not even for the
 def key_for(board: ScrapableBoard | str) -> str:
     """This Board's key in the ledger: its identity exactly as its scraper cases it (ADR-0192).
 
-    A key passes through unchanged. The same key as :func:`headstart.board_priority.key_for`
+    A key passes through unchanged. The same key as :func:`headstart.boards.priority_ledger.key_for`
     (ADR-0096), so one key reads both ledgers. Not case-folded: the file holds 1,956 groups of
     case-variant keys (HF state, 2026-09-24), each its own row that a folded load would merge.
     """
@@ -121,7 +121,7 @@ class BoardCost:
 def load(path: str | Path) -> dict[str, BoardCost]:
     """The ledger as {board: BoardCost}; {} when the file doesn't exist yet.
 
-    The key is read verbatim, as :func:`headstart.board_priority.load` reads its own: since
+    The key is read verbatim, as :func:`headstart.boards.priority_ledger.load` reads its own: since
     ADR-0096 the file is written under ``board_identity`` and every row on HF is now that shape,
     so there is nothing left to normalise. Until 2026-09-09 a read-time shim re-keyed legacy
     ``{ats}:{slug}`` rows here and collapsed a Board carried under both spellings; the ledger
@@ -286,7 +286,7 @@ def ats_medians(rows: Mapping[str, BoardCost]) -> dict[str, float]:
     """Median measured seconds per ATS — the fallback for a Board with no history of its own.
 
     Since ADR-0096 a cost key is ``board_identity``, the same one the priority ledger uses, so
-    :func:`~headstart.board_identity.ats_of` reads the ATS half of either interchangeably. They
+    :func:`~headstart.boards.board_identity.ats_of` reads the ATS half of either interchangeably. They
     were not before, and the cost of getting it wrong is on record: ADR-0059 found a stale
     "matches corpus.board_of" comment of exactly this shape, and of the 13,402 Boards whose keys
     could not match, the 4,611 holding a priority row were scored 0.0. The ATS half is unaffected

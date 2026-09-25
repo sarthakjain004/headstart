@@ -46,7 +46,7 @@ import urllib.parse
 from datetime import UTC, datetime
 from typing import Any, NamedTuple
 
-from headstart import company_name, eightfold_backing
+from headstart.boards import company_name, eightfold_backing
 from headstart.jobs.job import Job, html_to_text, is_remote, requisition_of
 from headstart.network import http
 from headstart.scrapers.base import (
@@ -151,7 +151,7 @@ class EightfoldScraper(BaseScraper):
         """The careers landing page, whose ``<title>`` is ``"Careers at {Name}"``.
 
         Not `url`, which is the sitemap: the slug here is a hostname, so without this the served
-        company reads "jobs.vodafone.com" (`headstart.company_name`)."""
+        company reads "jobs.vodafone.com" (`headstart.boards.company_name`)."""
         return f"https://{self.slug}/careers"
 
     def company_from_page(self, page: str | None) -> str | None:

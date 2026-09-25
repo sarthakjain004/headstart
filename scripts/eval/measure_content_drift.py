@@ -21,8 +21,8 @@ from pathlib import Path
 
 from huggingface_hub import HfApi, snapshot_download
 
-from headstart import scrapable_boards
-from headstart.board_identity import board_key
+from headstart.boards import scrapable_boards
+from headstart.boards.board_identity import board_key
 from headstart.ingest.update_descriptions import read_store
 from headstart.scrapers.registry import get_scraper
 

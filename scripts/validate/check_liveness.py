@@ -63,7 +63,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT / "src"))
-from headstart import board_aliases, liveness  # needs src on sys.path first
+from headstart.boards import (  # needs src on sys.path first
+    alias_ledger,
+    liveness_ledger,
+)
 from headstart.network import http, spare_egress
 from headstart.scrapers import (
     adp_recruiting as _adp_recruiting,  # request shapes + headers, single source
@@ -1065,7 +1068,7 @@ def _drop_alias_duplicates(ats: str, rows: list[dict], ledger_dir: Path) -> list
     ``slug_from`` rather than assuming ``tenant`` is what keeps this correct when the framework
     reaches those — assuming it would fail silently, skipping nothing, which is the least
     detectable way for this to be wrong."""
-    aliases = board_aliases.load_for(ledger_dir, ats)
+    aliases = alias_ledger.load_for(ledger_dir, ats)
     if not aliases or ats not in SCRAPERS:
         return rows
     return [
@@ -2724,10 +2727,10 @@ PROBES = {
 
 def _parse_args(args):
     indir = ROOT / "data" / "ats-tenants-merged"
-    ledger_dir = liveness.dir_for(ROOT)
+    ledger_dir = liveness_ledger.dir_for(ROOT)
     limit = 0
-    live_ttl, dead_ttl = liveness.LIVE_TTL_DAYS, liveness.DEAD_TTL_DAYS
-    unknown_ttl = liveness.UNKNOWN_TTL_DAYS
+    live_ttl, dead_ttl = liveness_ledger.LIVE_TTL_DAYS, liveness_ledger.DEAD_TTL_DAYS
+    unknown_ttl = liveness_ledger.UNKNOWN_TTL_DAYS
     force = False
     rest = []
     i = 0
@@ -2770,13 +2773,13 @@ def main():
 
     # Per ATS: carry the whole ledger forward (verdicts[ats]: tenant -> Verdict), and re-probe only
     # the pool rows that are new, unknown, or past their TTL (ADR-0012). The rest stay untouched.
-    verdicts: dict[str, dict[str, liveness.Verdict]] = {}
+    verdicts: dict[str, dict[str, liveness_ledger.Verdict]] = {}
     buckets = {}  # ats -> [(ats, tenant, url), ...] to probe this run
     for csvf in sorted(indir.glob("*.csv")):
         ats = csvf.stem
         if ats not in PROBES or (filt and ats not in filt):
             continue
-        ledger = liveness.load(ledger_dir / f"{ats}.csv")
+        ledger = liveness_ledger.load(ledger_dir / f"{ats}.csv")
         verdicts[ats] = ledger
         rows = _respell_pool_rows(
             ats, list(csv.DictReader(csvf.open(encoding="utf-8")))
@@ -2785,7 +2788,7 @@ def main():
             r
             for r in rows
             if force
-            or liveness.needs_probe(
+            or liveness_ledger.needs_probe(
                 ledger.get(r["tenant"]),
                 today,
                 live_ttl=live_ttl,
@@ -2815,7 +2818,7 @@ def main():
 
     def flush_ledger():
         for ats, rows in verdicts.items():
-            liveness.write(ledger_dir / f"{ats}.csv", rows.values())
+            liveness_ledger.write(ledger_dir / f"{ats}.csv", rows.values())
 
     def run_pass(work, timeout, workers):
         global TIMEOUT
@@ -2845,7 +2848,7 @@ def main():
                     probed += 1
                 return
             with lock:  # settle it in the ledger (url refreshed from the pool)
-                verdicts[ats][tenant] = liveness.Verdict(
+                verdicts[ats][tenant] = liveness_ledger.Verdict(
                     ats, tenant, url, verdict, jobs, today_iso
                 )
             with ulock:
@@ -2913,7 +2916,7 @@ def main():
         prior = verdicts[ats].get(tenant)
         if prior is not None and prior.status == LIVE:
             continue
-        verdicts[ats][tenant] = liveness.Verdict(
+        verdicts[ats][tenant] = liveness_ledger.Verdict(
             ats, tenant, url, UNKNOWN, None, today_iso
         )
     flush_ledger()

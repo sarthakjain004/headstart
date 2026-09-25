@@ -3,10 +3,10 @@
 A Board that yields tech jobs should be scraped — and its docs embedded — before the long
 tail of boards that never do. The signal is a sticky EWMA of each Board's tech-job count,
 persisted as ``data/state/board_priority.csv`` (``board,score,last_tech_jobs,updated_at``,
-``board`` being whatever :func:`headstart.board_identity.board_of` yields — the **board_key** shape,
+``board`` being whatever :func:`headstart.boards.board_identity.board_of` yields — the **board_key** shape,
 which is *not* ``{ats}:{slug}`` wherever a scraper overrides ``board_key()``: a Workday slug is
 a whole careers URL and a Personio slug the whole host. Every lookup therefore goes through
-:func:`headstart.board_identity.board_identity`, never ``f"{ats}:{slug}"`` — keying it the latter way
+:func:`headstart.boards.board_identity.board_identity`, never ``f"{ats}:{slug}"`` — keying it the latter way
 left all 13,714 Workday and Personio boards permanently unscored). Since ADR-0096 the
 **Board-cost ledger** is keyed the same way, so the two are joinable; before that they were not,
 and joining them silently produced nonsense for exactly those two ATSes. The file
@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from headstart.scrapable_boards import ScrapableBoard
+    from headstart.boards.scrapable_boards import ScrapableBoard
 
 FIELDS = ("board", "score", "last_tech_jobs", "updated_at")
 CURRENT_WEIGHT = 0.7  # EWMA weight on the night's tech count (the rest on history)
@@ -168,14 +168,14 @@ def _gap_picks(
     keeps the makespan risk away from the first runs. Within a class, the Board holding the most
     unsettled Jobs goes first, so each slot repairs as many rows as it can.
     """
-    from headstart import board_description_gap
+    from headstart.boards import description_gap_ledger
     from headstart.scrapers.registry import detail_pass_atses
 
     detail_pass = detail_pass_atses()
     candidates = [
         c
         for c in boards
-        if board_description_gap.key_for(c) in unsettled and c.identity not in taken
+        if description_gap_ledger.key_for(c) in unsettled and c.identity not in taken
     ]
     # `False < True`, so listing-only sorts ahead of detail-pass. An ATS missing from the registry
     # cannot be scraped at all, so where it lands is moot — it is treated as the expensive class
@@ -183,7 +183,7 @@ def _gap_picks(
     candidates.sort(
         key=lambda c: (
             c.ats in detail_pass,
-            -unsettled[board_description_gap.key_for(c)],
+            -unsettled[description_gap_ledger.key_for(c)],
         )
     )
     return candidates[:slots]

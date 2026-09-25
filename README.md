@@ -415,12 +415,15 @@ Note the raw corpus files under `data/jobs/` carry a few fields the served table
 ## Layout
 
 - `src/headstart/` — shared library, used by both the pipeline and the curated feed:
-  `scrapers/` (47 per-ATS + `base`/`registry`), `config.py`, `scrapable_boards.py` (which Boards a
-  run may scrape, ADR-0191), `harvest.py` (the scrape engine), `liveness.py`, `corpus.py`,
-  `company_name.py` (ADR-0114, ADR-0212), `board_priority.py` (ADR-0022), `board_cost.py`
-  (measured scrape seconds, ADR-0027), `board_aliases.py`, `board_identity.py`,
-  `board_description_gap.py`, `roles.py`, and `llm_router.py`, the one seam every LLM call goes
-  through; plus `telegram_bot_api.py`, the polling client the enrolment bot uses.
+  `scrapers/` (47 per-ATS + `base`/`registry`, the scrape engine `harvest.py`, and
+  `country_codes.py`, the ISO table two scrapers read), `roles.py`, and `llm_router.py`, the one
+  seam every LLM call goes through.
+- `src/headstart/boards/` — which Boards exist, which get scraped, and how each is keyed and named
+  (ADR-0232): `board_identity.py` (ADR-0155), `scrapable_boards.py` (which Boards a run may
+  scrape, ADR-0191), `excluded_and_parked.py` (the Live Boards it never scrapes), `company_ref.py`,
+  the per-Board ledgers `liveness_ledger.py`, `alias_ledger.py`, `priority_ledger.py` (ADR-0022),
+  `cost_ledger.py` (measured scrape seconds, ADR-0027) and `description_gap_ledger.py`,
+  `eightfold_backing.py`, and `company_name.py` (ADR-0114, ADR-0212).
 - `src/headstart/network/` — how a request leaves the machine (ADR-0232): `http.py`, the pooled
   reliable-fetch client; `browser_http.py`, its browser twin, for hosts that admit a genuine Chrome
   and nothing else; `fetcher.py`, the seam both sit behind; `spare_egress.py`, a second network
@@ -444,7 +447,8 @@ Note the raw corpus files under `data/jobs/` carry a few fields the served table
 - `src/headstart/alerts/` — job alerts plus the signed-in per-account records: `store`
   (Subscriptions, Saved sets, Saved jobs, Profiles), `registry`, `access` (invite allowlist),
   `identity` (Google token verification), `transports`, `mail` and `telegram` (senders), `bot`
-  (Telegram enrolment), `digest`, `shortlist`, `space_query`, `run`.
+  (Telegram enrolment), `telegram_bot_api` (the polling client the bot uses), `digest`,
+  `shortlist`, `space_query`, `run`.
 - `src/headstart/ingest/` — **the back-to-back pipeline run**, one module per stage step, invoked
   as `python -m headstart.ingest.<module>` (ADR-0028): `scrape_plan`, `scrape_run`, `scrape_join`,
   `filter_tech`, `update_descriptions` (ADR-0050), `update_ledgers`
@@ -453,7 +457,7 @@ Note the raw corpus files under `data/jobs/` carry a few fields the served table
   then `index refresh-indexes` immediately before LanceDB publication. `.github/workflows/pipeline.yml` runs exactly these —
   every publication refreshes Search indexes over its fresh Jobs (ADR-0174); `index compact` is a
   subcommand of the same module but belongs to `cleanup-index`, not this run. Its pipeline-only helpers live here too:
-  `binpack.py` (LPT packing), `doc_prep.py`, `index_plan.py`, `shard_plan.py`, `shard_speedup.py`,
+  `binpack.py` (LPT packing), `corpus.py`, `doc_prep.py`, `index_plan.py`, `shard_plan.py`, `shard_speedup.py`,
   `derived_meta.py`, `board_failures.py` (ADR-0058), `board_freshness.py`, `role_assignments.py`
   (ADR-0057), `job_turnover.py` (ADR-0227), `observability.py`, `state_fetch.py`, `state_guard.py`, `state_witness.py`.
 - `scripts/` — tooling *outside* the run: `discover/`, `merge/`, `validate/`, `resolve/`,

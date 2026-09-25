@@ -61,25 +61,26 @@ from collections import Counter
 from datetime import UTC, datetime
 from pathlib import Path
 
-from headstart import board_description_gap, log
-from headstart.board_cost import ShardCost, ats_medians, read_shard_rows
-from headstart.board_cost import load as load_cost
-from headstart.board_cost import save as save_cost
-from headstart.board_cost import update as update_cost
-from headstart.board_identity import ats_of, board_key_of, board_of, lower_key
-from headstart.board_priority import load as load_priority
-from headstart.board_priority import save as save_priority
-from headstart.board_priority import update as update_priority
-from headstart.corpus import iter_jobs
-from headstart.harvest import COST_FILENAME
+from headstart import log
+from headstart.boards import description_gap_ledger
+from headstart.boards.board_identity import ats_of, board_key_of, board_of, lower_key
+from headstart.boards.cost_ledger import ShardCost, ats_medians, read_shard_rows
+from headstart.boards.cost_ledger import load as load_cost
+from headstart.boards.cost_ledger import save as save_cost
+from headstart.boards.cost_ledger import update as update_cost
+from headstart.boards.priority_ledger import load as load_priority
+from headstart.boards.priority_ledger import save as save_priority
+from headstart.boards.priority_ledger import update as update_priority
 from headstart.ingest import (
     REPO_ROOT,
     UNAUTHORITATIVE_BOARDS_PATH,
     board_failures,
     observability,
 )
+from headstart.ingest.corpus import iter_jobs
 from headstart.ingest.index_plan import read_unauthoritative_boards, resolve_board
 from headstart.ingest.update_descriptions import held_ids
+from headstart.scrapers.harvest import COST_FILENAME
 
 _log = log.get(__name__, __spec__)
 
@@ -256,7 +257,7 @@ def _authoritative_scrape(
     """The Boards whose scraped list this run can be read as their complete set of openings, and
     every id those Boards emitted.
 
-    Boards are keyed like the gap counts themselves — ``board_description_gap.key_for`` of
+    Boards are keyed like the gap counts themselves — ``description_gap_ledger.key_for`` of
     ``board_of`` — so the two pair (ADR-0049). An id can only ever be emitted by the Board whose key
     prefixes it, so one flat id set answers "did this Board re-emit it" exactly as a per-Board set
     would.
@@ -278,13 +279,13 @@ def _authoritative_scrape(
         # comparison in `gap` are built alike.
         if _on_unauthoritative_board(job["id"], unauthoritative):
             continue
-        boards.add(board_description_gap.key_for(board_of(job["id"])))
+        boards.add(description_gap_ledger.key_for(board_of(job["id"])))
         emitted.add(job["id"])
     return boards, emitted
 
 
 def gap(args: argparse.Namespace) -> int:
-    from headstart import scrapable_boards
+    from headstart.boards import scrapable_boards
     from headstart.scrapers.registry import DISABLED_ATS
 
     if not args.meta.exists():
@@ -325,7 +326,7 @@ def gap(args: argparse.Namespace) -> int:
     # emptying the ledger. A *partially* lost dir is not caught — one absent `{ats}.csv` would
     # silently take that ATS's whole backlog with it (ADR-0163).
     scrapable = {
-        board_description_gap.key_for(c)
+        description_gap_ledger.key_for(c)
         for c in scrapable_boards.load(args.liveness, min_jobs=0)
     }
     if not scrapable:
@@ -371,7 +372,7 @@ def gap(args: argparse.Namespace) -> int:
             # only case-insensitively, so keying this as-observed would strand every one of them.
             # It also folds ADR-0023's case-variant pairs (`.../External` and `.../external` are
             # one Board) into a single row instead of two half-counts.
-            board = board_description_gap.key_for(board_of(row["id"]))
+            board = description_gap_ledger.key_for(board_of(row["id"]))
             # Not a Scrapable Board — dead, parked, aliased away or a vendor test tenant — so it
             # is never scraped, its rows can never settle, and reserving gap quota against them
             # buys nothing. ADR-0062 named this class and left it in the count; measured on the
@@ -399,8 +400,8 @@ def gap(args: argparse.Namespace) -> int:
     # from, so the movement below prices exactly the quota this run spent. An absent *or empty*
     # ledger is not a prior of zero — subtracting one would print the whole backlog as inflow,
     # a spike that never happened — so both take the no-comparison branch.
-    prior = board_description_gap.load(args.ledger)
-    board_description_gap.save(args.ledger, dict(counts), today=today)
+    prior = description_gap_ledger.load(args.ledger)
+    description_gap_ledger.save(args.ledger, dict(counts), today=today)
     jobs = sum(counts.values())
     _log.info(
         f"gap: {rows:,} stored rows | {len(held):,} held | {jobs:,} unsettled across "

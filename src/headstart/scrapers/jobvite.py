@@ -51,7 +51,7 @@ so a wrong mark is permanent).
 **ADR-0111's alias dedupe does not apply here, and deliberately gets no override.** Every Board is
 a path on one host, so :meth:`BaseScraper.alias_key`'s default returns ``jobs.jobvite.com`` for all
 of them — which is the degenerate case its own docstring describes: the key is not itself a live
-slug, so ``board_aliases.resolve`` labels the whole ledger ``migrated`` and returns nothing. Inert,
+slug, so ``alias_ledger.resolve`` labels the whole ledger ``migrated`` and returns nothing. Inert,
 not wrong. Overriding it to return the slug would make every Board its own key and return nothing
 just the same, so it would be code that buys no behaviour. The duplication Jobvite *does* have —
 parent tenants that also serve their subsidiaries' postings, ~2.5% of rows — is not aliasing
@@ -219,7 +219,7 @@ class JobviteScraper(BaseScraper):
 
     def board_page(self) -> str:
         """The board again — its ``<title>`` is ``"{Name} Careers"``, the wrapper
-        ``headstart.company_name`` already models for eightfold and keka.
+        ``headstart.boards.company_name`` already models for eightfold and keka.
 
         Worth the second request (ripplehire's precedent, and one per Board rather than per Job):
         measured across all 434 live boards 2026-09-07, it resolves a real name on **424 (97.7%)**

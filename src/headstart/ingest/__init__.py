@@ -42,6 +42,8 @@ here, and ``alerts`` is not the feed::
     binpack        LPT packing + shard sizing, shared by both planners
     board_failures The consecutive-gone quarantine ledger (ADR-0058), written in the join
                    and read by scrape_plan
+    corpus         A jobs dir read into canonical Job dicts for the embed and index stages
+                   (ADR-0014)
     derived_meta   The four field-extractors composed into a Job's derived meta keys, shared
                    by doc_prep.to_meta and update_meta.refresh_row (ADR-0146)
     doc_prep       Doc build / English gate / typed metadata, shared by embed_run and embed_plan
@@ -57,9 +59,9 @@ here, and ``alerts`` is not the feed::
                    ``shard_index``, shared by each half's plan/run pair (ADR-0154)
     shard_speedup  The measured fan-out speedup the makespan divides by (ADR-0054)
 
-Genuinely shared logic stays in ``headstart`` proper — ``harvest`` (the scrape engine),
-``board_cost``, ``board_priority``, ``corpus`` — because ``python -m headstart``'s curated-feed
-path reaches them too, and the pipeline must not become a dependency of that.
+Shared logic the curated feed also reaches stays outside this package — the scrape engine
+``scrapers.harvest`` and the Board-cost ledger ``boards.cost_ledger`` (ADR-0232) — because the
+pipeline must not become a dependency of ``python -m headstart``.
 """
 
 from __future__ import annotations

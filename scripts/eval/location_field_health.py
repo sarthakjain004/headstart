@@ -48,7 +48,7 @@ from pathlib import Path
 _ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_ROOT / "src"))
 
-from headstart import scrapable_boards
+from headstart.boards import scrapable_boards
 from headstart.scrapers.registry import SCRAPERS, get_scraper
 
 _LEDGER = _ROOT / "data" / "validate" / "liveness"

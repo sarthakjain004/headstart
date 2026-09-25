@@ -32,9 +32,9 @@ import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
-from headstart.board_cost import BoardCost
-from headstart.board_cost import load as load_cost_ledger
-from headstart.board_priority import load_scores
+from headstart.boards.cost_ledger import BoardCost
+from headstart.boards.cost_ledger import load as load_cost_ledger
+from headstart.boards.priority_ledger import load_scores
 from headstart.ingest import scrape_plan as ps
 
 ROOT = Path(__file__).resolve().parents[2]

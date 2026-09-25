@@ -117,7 +117,7 @@ re-openable indefinitely — a stranger could re-prompt the owner on every `/sta
 undo the reason for having approval at all. `/allow` clears the entry, so the master can change
 their mind.
 
-**A separate sender rather than reusing `headstart/telegram_bot_api.py`.** (Named
+**A separate sender rather than reusing `headstart/alerts/telegram_bot_api.py`.** (Named
 `headstart/telegram.py` when this ADR was written; renamed to end the collision with this
 file.) That client swallows a
 failed send so one blocked chat cannot abort the polling loop — right for a bot answering

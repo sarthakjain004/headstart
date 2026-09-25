@@ -33,7 +33,7 @@ against a fresh one (needed it, per ADR-0049).
 
 ## Decision
 
-**One module, `headstart.board_identity`**, in `headstart` proper (not `ingest/`) because the
+**One module, `headstart.boards.board_identity`**, in `headstart` proper (not `ingest/`) because the
 curated-feed path (`harvest.py`) needs it and that path may not import from `ingest`
 (ADR-0028's layering). It owns both directions:
 
@@ -80,7 +80,7 @@ right default over forcing a single policy that would have to change one.
   direction it complements. Every caller's import line moves with it; `corpus.py` keeps only
   `iter_jobs`.
 - `config.py` keeps `_drop_parked`/`_dedupe_boards` but no longer defines `board_identity` itself;
-  both do a local (lazy) import of `headstart.board_identity`, mirroring the lazy
+  both do a local (lazy) import of `headstart.boards.board_identity`, mirroring the lazy
   `SCRAPERS`/`get_scraper` imports already in that file, so there is no import cycle between the
   two modules (`board_identity.py` imports `CompanyRef` from `config` at module level; `config.py`
   never imports `board_identity` at its own module level).

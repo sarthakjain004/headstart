@@ -3,11 +3,11 @@ import time
 
 import pytest
 
-from headstart import harvest
-from headstart.board_cost import read_shard_rows
-from headstart.config import CompanyRef
-from headstart.harvest import build_feed, scrape_all, write_feed
+from headstart.boards.company_ref import CompanyRef
+from headstart.boards.cost_ledger import read_shard_rows
 from headstart.jobs.job import Job
+from headstart.scrapers import harvest
+from headstart.scrapers.harvest import build_feed, scrape_all, write_feed
 
 
 def make_job(job_id: str, ats: str = "x", description: str | None = None) -> Job:
@@ -394,7 +394,8 @@ def test_a_kill_mid_harvest_abandons_the_queue_instead_of_draining_it(
 
     companies = [CompanyRef(ats="lever", slug=f"c{i}") for i in range(40)]
     monkeypatch.setattr(
-        "headstart.harvest.get_scraper", lambda ats, slug, name=None, **_: _Slow(slug)
+        "headstart.scrapers.harvest.get_scraper",
+        lambda ats, slug, name=None, **_: _Slow(slug),
     )
 
     def stop_after_two(key, jobs, error, seconds, truncated=None):
@@ -498,7 +499,7 @@ def test_a_board_still_running_at_the_kill_is_costed_for_what_it_burned(
         return FakeScraper([make_job("x:quick:1")]) if slug == "quick" else _Blocking()
 
     monkeypatch.setattr(harvest, "get_scraper", fake_get)
-    caplog.set_level("INFO", logger="headstart.harvest")
+    caplog.set_level("INFO", logger="headstart.scrapers.harvest")
 
     def on_board(key, jobs, error, seconds, truncated=None):
         if key.endswith(":quick"):

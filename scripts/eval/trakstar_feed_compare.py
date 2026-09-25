@@ -36,7 +36,7 @@ from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from headstart import scrapable_boards
+from headstart.boards import scrapable_boards
 from headstart.scrapers.registry import get_scraper
 
 ROOT = Path(__file__).resolve().parents[2]

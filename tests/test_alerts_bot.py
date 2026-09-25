@@ -451,8 +451,8 @@ def _wire_main(monkeypatch, updates, registry=None, store=None):
     modules rather than on `bot`'s namespace. Returns the registry so a test can read the
     offset back.
     """
-    from headstart import telegram_bot_api
     from headstart.alerts import registry as registry_store
+    from headstart.alerts import telegram_bot_api
 
     registry = registry or Registry(master=MASTER)
     for name in ("TELEGRAM_BOT_TOKEN", "SUBSCRIBERS_REPO", "SUBSCRIBERS_TOKEN"):

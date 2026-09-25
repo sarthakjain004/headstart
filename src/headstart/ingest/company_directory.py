@@ -78,8 +78,9 @@ import collections
 import json
 from pathlib import Path
 
-from headstart import company_name, log
-from headstart.board_identity import ats_of
+from headstart import log
+from headstart.boards import company_name
+from headstart.boards.board_identity import ats_of
 from headstart.ingest.board_naming import board_names, display_name, stated_name
 from headstart.ingest.board_operator import Operator, classify, tenant
 

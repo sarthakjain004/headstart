@@ -2,9 +2,9 @@
 
 from pathlib import Path
 
-from headstart import config, excluded_and_parked, liveness
-from headstart.excluded_and_parked import PARKED_BOARDS
-from headstart.scrapable_boards import ScrapableBoard, is_excluded, load
+from headstart.boards import company_ref, excluded_and_parked, liveness_ledger
+from headstart.boards.excluded_and_parked import PARKED_BOARDS
+from headstart.boards.scrapable_boards import ScrapableBoard, is_excluded, load
 from headstart.scrapers.registry import SCRAPERS, company_from_row
 
 
@@ -194,7 +194,7 @@ def test_a_scrapable_board_carries_its_identity_in_both_casings():
     board = ScrapableBoard(
         "workday", "https://Acme.wd1.myworkdayjobs.com/External", "Acme"
     )
-    assert isinstance(board, config.CompanyRef)
+    assert isinstance(board, company_ref.CompanyRef)
     assert board.identity == "workday:Acme/External"
     assert board.lowercase_identity == "workday:acme/external"
 
@@ -322,8 +322,8 @@ def test_no_board_in_the_committed_ledger_changes_key():
     for csv_path in sorted(ledger.glob("*.csv")):
         if csv_path.stem not in SCRAPERS:
             continue
-        for v in liveness.load(csv_path).values():
-            if v.status == liveness.LIVE:
+        for v in liveness_ledger.load(csv_path).values():
+            if v.status == liveness_ledger.LIVE:
                 c = company_from_row(csv_path.stem, v.tenant, v.url)
                 board = ScrapableBoard(ats=c.ats, slug=c.slug, name=c.name)
                 key = board.lowercase_identity
@@ -372,7 +372,7 @@ def test_load_reports_why_each_row_did_not_become_a_board(tmp_path, caplog):
         "workday.csv",
         ["workday,x,not-a-url,dead,,2026-06-01"],  # unparseable non-live
     )
-    with caplog.at_level("INFO", logger="headstart.scrapable_boards"):
+    with caplog.at_level("INFO", logger="headstart.boards.scrapable_boards"):
         assert len(load(ledger)) == 1
     (line,) = [r.message for r in caplog.records if "scrapable boards:" in r.message]
     assert line == (

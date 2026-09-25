@@ -1,4 +1,4 @@
-"""Tests for the canonical Board-identity module (headstart.board_identity, ADR-0155).
+"""Tests for the canonical Board-identity module (headstart.boards.board_identity, ADR-0155).
 
 Two directions, both covered: construct (:func:`board_key` strict, :func:`board_identity`
 lenient-with-fallback, :func:`board_key_of` strict-from-a-raw-string) and parse
@@ -10,15 +10,15 @@ from __future__ import annotations
 
 import pytest
 
-from headstart import board_identity
-from headstart.board_identity import (
+from headstart.boards import board_identity
+from headstart.boards.board_identity import (
     ats_of,
     board_key,
     board_key_of,
     board_of,
     lower_key,
 )
-from headstart.config import CompanyRef
+from headstart.boards.company_ref import CompanyRef
 
 
 def test_board_key_is_the_scrapers_own_answer():
@@ -54,7 +54,7 @@ def test_identity_failures_are_capped_not_unbounded(monkeypatch, caplog):
     """
     monkeypatch.setattr(board_identity, "_IDENTITY_FAILURES_SEEN", set())
     cap = board_identity._IDENTITY_REPORT_CAP
-    with caplog.at_level("INFO", logger="headstart.board_identity"):
+    with caplog.at_level("INFO", logger="headstart.boards.board_identity"):
         for i in range(cap * 5):
             board_identity.board_identity(
                 CompanyRef(ats="workday", slug=f"bad-{i}", name="")
@@ -62,7 +62,7 @@ def test_identity_failures_are_capped_not_unbounded(monkeypatch, caplog):
 
     # Only this module's records: another logger's line would otherwise be counted as one of
     # ours.
-    mine = [r for r in caplog.records if r.name == "headstart.board_identity"]
+    mine = [r for r in caplog.records if r.name == "headstart.boards.board_identity"]
     named = [r for r in mine if "board_key() failed" in r.message]
     assert len(named) == cap, f"expected {cap} named, got {len(named)}"
     assert [r for r in mine if "further board_key() failures" in r.message]
@@ -75,7 +75,7 @@ def test_a_genuinely_malformed_slug_is_still_reported(monkeypatch, caplog):
     a slug nothing can parse. It outlived `board_cost._rekeyed` and the `report_failure` opt-out
     that once had to be kept from silencing it, so it is now simply what the reporter does."""
     monkeypatch.setattr(board_identity, "_IDENTITY_FAILURES_SEEN", set())
-    with caplog.at_level("INFO", logger="headstart.board_identity"):
+    with caplog.at_level("INFO", logger="headstart.boards.board_identity"):
         board_identity.board_identity(
             CompanyRef(ats="workday", slug="not-a-url", name="")
         )
@@ -149,7 +149,7 @@ def test_board_key_of_names_the_cause_of_a_drop_once_per_key(monkeypatch, caplog
     """Its callers count dropped keys but never say why; this line is the only place the parse
     error surfaces, so it must be there — once per distinct key, not once per call."""
     monkeypatch.setattr(board_identity, "_KEY_OF_FAILURES_SEEN", set())
-    with caplog.at_level("INFO", logger="headstart.board_identity"):
+    with caplog.at_level("INFO", logger="headstart.boards.board_identity"):
         board_key_of("workday:not-a-url")
         board_key_of("workday:not-a-url")
     named = [
@@ -163,10 +163,10 @@ def test_board_key_of_says_once_when_it_stops_naming_drops(monkeypatch, caplog):
     """Mirrors `_report_identity_failure`: past the cap the silence is announced, once."""
     monkeypatch.setattr(board_identity, "_KEY_OF_FAILURES_SEEN", set())
     cap = board_identity._IDENTITY_REPORT_CAP
-    with caplog.at_level("INFO", logger="headstart.board_identity"):
+    with caplog.at_level("INFO", logger="headstart.boards.board_identity"):
         for i in range(cap * 3):
             board_key_of(f"workday:bad-{i}")
-    mine = [r for r in caplog.records if r.name == "headstart.board_identity"]
+    mine = [r for r in caplog.records if r.name == "headstart.boards.board_identity"]
     assert len([r for r in mine if "board_key() failed" in r.message]) == cap
     assert len([r for r in mine if "further board_key_of()" in r.message]) == 1
     assert len(mine) == cap + 1

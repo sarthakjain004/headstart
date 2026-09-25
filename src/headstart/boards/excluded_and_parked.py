@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-
 # Vendor test and sandbox Boards. They are live, they look like they are hiring, and their
 # postings are fabricated — RippleHire's own QA/UAT tenants, a SmartRecruiters demo board,
 # greenhouse boards whose company name is literally "Test". They reach users as real results

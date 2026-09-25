@@ -40,7 +40,7 @@ from collections.abc import Mapping
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
-from headstart.board_identity import ats_of
+from headstart.boards.board_identity import ats_of
 
 if TYPE_CHECKING:
     from headstart.trend_history import TrendHistory

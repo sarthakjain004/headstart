@@ -13,7 +13,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from headstart import company_name
+from headstart.boards import company_name
 from headstart.jobs import salary
 from headstart.jobs.job import Job, html_to_text
 from headstart.network import http

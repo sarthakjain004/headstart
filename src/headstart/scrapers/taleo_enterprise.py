@@ -23,7 +23,7 @@ from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import unquote, urlencode, urlsplit, urlunsplit
 
-from headstart import company_name
+from headstart.boards import company_name
 from headstart.jobs import salary
 from headstart.jobs.job import Job, html_to_text, is_remote, requisition_of
 from headstart.scrapers.base import (
@@ -91,7 +91,7 @@ def _last_title(shell: str) -> str | None:
     Search", literally, on all 150 of 150 sampled Boards) and, only when the tenant has
     themed the Career Section, its real title second. `title_of` reads the first ``<title>``
     it finds, so it can never reach the real one here — this is why `_company` cannot just
-    call it directly. See `headstart.company_name`'s module docstring for the full measurement.
+    call it directly. See `headstart.boards.company_name`'s module docstring for the full measurement.
     """
     matches = _TITLE_TAG.findall(shell)
     if not matches:

@@ -22,7 +22,7 @@ Output under ``data/embeddings/jobs/`` (or ``--outdir``):
 - ``meta.jsonl`` — one metadata record per vector, row-aligned with the vectors; the authority for resume.
 - ``manifest.json`` — provenance, written last as the "this run finished" marker.
 
-Crash-safe and resumable, mirroring the ``JobWriter`` pattern in :mod:`headstart.harvest`:
+Crash-safe and resumable, mirroring the ``JobWriter`` pattern in :mod:`headstart.scrapers.harvest`:
 vectors and metadata stream to disk in lockstep (A1), a failed batch is isolated and retried on the
 next run (A3), and ``--resume`` skips Jobs already embedded so you only encode the delta (A2).
 """
@@ -39,11 +39,11 @@ import torch
 from sentence_transformers import SentenceTransformer
 
 from headstart import log
-from headstart.board_identity import board_of
-from headstart.board_priority import load_scores
-from headstart.corpus import iter_jobs
+from headstart.boards.board_identity import board_of
+from headstart.boards.priority_ledger import load_scores
 from headstart.embedding_conventions import DOC_PREFIX, MODEL
 from headstart.ingest import REPO_ROOT, observability, shard_plan
+from headstart.ingest.corpus import iter_jobs
 from headstart.ingest.doc_prep import (  # re-exported: doc-prep shared with the embed planner (ADR-0025)
     BUCKETS,
     MAX_SEQ_TOKENS,

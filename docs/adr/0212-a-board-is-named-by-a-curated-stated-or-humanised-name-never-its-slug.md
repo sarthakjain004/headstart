@@ -19,7 +19,7 @@ same day. Two other changes wire those sources per ATS; this one is the shared p
 
 ## Decision
 
-`headstart.company_name` is the whole naming policy, and `BaseScraper.fetch` applies it once per
+`headstart.boards.company_name` is the whole naming policy, and `BaseScraper.fetch` applies it once per
 Board, after `fetch_raw` and `resolve_company` and before `parse`. A Board's company is, in order:
 
 1. **A curated name**, from `config/company_names.csv` (`board_key,name,evidence`, `#` lines are

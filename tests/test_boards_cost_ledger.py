@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 
 import pytest
 
-from headstart.board_cost import (
+from headstart.boards.cost_ledger import (
     BoardCost,
     ShardCost,
     ats_medians,
@@ -91,7 +91,7 @@ def test_read_shard_rows_says_how_many_rows_it_skipped(tmp_path, caplog):
     p.write_text(
         "board,seconds,jobs,unfinished\nlever:a,x,3,0\nworkday:b,", encoding="utf-8"
     )
-    with caplog.at_level("INFO", logger="headstart.board_cost"):
+    with caplog.at_level("INFO", logger="headstart.boards.cost_ledger"):
         assert read_shard_rows(p) == {}
     assert f"{p}: skipped 2 torn/malformed cost row(s)" in caplog.messages
 
@@ -265,13 +265,13 @@ def test_a_row_torn_after_unfinished_is_dropped_not_read_as_a_clean_scrape(tmp_p
 
 def test_key_for_keeps_the_casing_its_scraper_builds():
     """ADR-0192: the cost ledger is keyed verbatim, the same key the priority ledger reads."""
-    from headstart import board_cost, board_priority
-    from headstart.scrapable_boards import ScrapableBoard
+    from headstart.boards import cost_ledger, priority_ledger
+    from headstart.boards.scrapable_boards import ScrapableBoard
 
     board = ScrapableBoard("workday", "https://Acme.wd1.myworkdayjobs.com/External")
-    assert board_cost.key_for(board) == "workday:Acme/External"
-    assert board_cost.key_for("workday:Acme/External") == "workday:Acme/External"
-    assert board_cost.key_for(board) == board_priority.key_for(board)
+    assert cost_ledger.key_for(board) == "workday:Acme/External"
+    assert cost_ledger.key_for("workday:Acme/External") == "workday:Acme/External"
+    assert cost_ledger.key_for(board) == priority_ledger.key_for(board)
 
 
 def test_a_malformed_row_names_its_ledger_and_line(tmp_path):

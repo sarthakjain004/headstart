@@ -46,10 +46,10 @@ from pathlib import Path
 from typing import TYPE_CHECKING, NamedTuple
 
 from headstart import log
-from headstart.board_identity import ats_of, lower_key
+from headstart.boards.board_identity import ats_of, lower_key
 
 if TYPE_CHECKING:
-    from headstart.scrapable_boards import ScrapableBoard
+    from headstart.boards.scrapable_boards import ScrapableBoard
 
 _log = log.get(__name__)
 
@@ -113,7 +113,7 @@ def key_for(board: ScrapableBoard | str) -> str:
     """The lookup form of a Board against this ledger: its identity, or a key it is handed,
     lowercased (ADR-0192). Not the stored form, which stays verbatim.
 
-    Rows are stored as :func:`~headstart.board_identity.board_key_of` spells them, and
+    Rows are stored as :func:`~headstart.boards.board_identity.board_key_of` spells them, and
     :func:`update` pairs them verbatim with ``board_of`` keys from the same run. Only the lookups
     against the liveness ledger fold — the planner's quarantine test and prune's keep-set
     (ADR-0206) — because its casing and a Job id's need not agree (ADR-0049).

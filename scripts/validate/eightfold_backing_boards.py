@@ -25,7 +25,7 @@ when, in `aliases`:
   `check_liveness`'s hand-frozen `_EIGHTFOLD_ALIAS_LOSERS`, which stays beside them (ADR-0205).
 
 The candidates are `BACKING`, the committed pairs file `data/validate/eightfold_backing.csv`
-(`headstart.eightfold_backing`, ADR-0210), found by content on served index v654 (2026-09-23):
+(`headstart.boards.eightfold_backing`, ADR-0210), found by content on served index v654 (2026-09-23):
 pairs of Boards on two ATSes sharing exact descriptions, and completed on v65 (ADR-0210's
 2026-09-25 amendment). A new front enters by adding a row there. Lumen is left out by the user's
 decision (its backing site is an internal careers site). Every verdict is re-derived live on each
@@ -52,7 +52,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
-from headstart import board_aliases, eightfold_backing, liveness, scrapable_boards
+from headstart.boards import (
+    alias_ledger,
+    eightfold_backing,
+    liveness_ledger,
+    scrapable_boards,
+)
 from headstart.jobs.tech_filter import is_tech
 from headstart.network import http
 from headstart.scrapers.base import USER_AGENT
@@ -158,7 +163,7 @@ def write_aliases(
     read: Callable[[str, str], Sequence[Posting] | None],
     checked_at: str,
     backing: Mapping[str, Sequence[str]] = BACKING,
-) -> list[board_aliases.Alias]:
+) -> list[alias_ledger.Alias]:
     """Read every Board ``backing`` names through ``read(ats, slug)``, bury what ``aliases``
     elects, and replace the alias ledger beside ``liveness_dir``. A read that fails returns None
     and earns no verdict."""
@@ -193,11 +198,11 @@ def write_aliases(
         lambda board, why: print(f"  keep {board}: {why}", flush=True),
     )
     rows = [
-        board_aliases.Alias(ATS, board.split(":", 1)[1], p, SIGNAL, p, checked_at)
+        alias_ledger.Alias(ATS, board.split(":", 1)[1], p, SIGNAL, p, checked_at)
         for board, partners in sorted(buried.items())
         for p in partners
     ]
-    board_aliases.write(board_aliases.path_for(liveness_dir, ATS), rows)
+    alias_ledger.write(alias_ledger.path_for(liveness_dir, ATS), rows)
     print(f"buried {len(buried)} of {len(keyed)} Eightfold Boards", flush=True)
     return rows
 
@@ -206,11 +211,11 @@ def _buried_by(liveness_dir: Path) -> set[str]:
     """Eightfold Boards on live rows that the ledger this run replaces buries. Only that ledger
     keeps them off the Scrapable list, so a winner the last run buried must not count against its
     own second site."""
-    previous = board_aliases.load_for(liveness_dir, ATS)
+    previous = alias_ledger.load_for(liveness_dir, ATS)
     return {
         f"{ATS}:{v.tenant}".lower()
-        for v in liveness.load(liveness_dir / f"{ATS}.csv").values()
-        if v.status == liveness.LIVE
+        for v in liveness_ledger.load(liveness_dir / f"{ATS}.csv").values()
+        if v.status == liveness_ledger.LIVE
         and company_from_row(ATS, v.tenant, v.url).slug.lower() in previous
     }
 
@@ -335,7 +340,7 @@ def main() -> None:
     # Sequential within a Board, so `_WORKERS` bounds the requests in flight (ADR-0016's switch).
     os.environ["HEADSTART_ASYNC_FANOUT"] = "0"
     today = datetime.now(UTC).date().isoformat()
-    for a in write_aliases(liveness.dir_for(ROOT), read_board, today):
+    for a in write_aliases(liveness_ledger.dir_for(ROOT), read_board, today):
         print(f"  bury {a.duplicate} -> {a.canonical}", flush=True)
 
 

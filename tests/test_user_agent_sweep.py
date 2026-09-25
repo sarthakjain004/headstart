@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from headstart.config import CompanyRef
+from headstart.boards.company_ref import CompanyRef
 
 _SCRIPT = (
     Path(__file__).resolve().parents[1] / "scripts" / "validate" / "user_agent_sweep.py"

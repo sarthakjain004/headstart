@@ -28,12 +28,13 @@ import time
 from collections import Counter
 from pathlib import Path
 
-from headstart import board_priority, log, scrapable_boards
-from headstart.board_priority import load_scores, pick_boards
-from headstart.config import CompanyRef
-from headstart.harvest import scrape_all
+from headstart import log
+from headstart.boards import priority_ledger, scrapable_boards
+from headstart.boards.company_ref import CompanyRef
+from headstart.boards.priority_ledger import load_scores, pick_boards
 from headstart.ingest import HELD_DETAILS_PATH, REPO_ROOT, observability, shard_plan
 from headstart.network import fanout_stats, http, spare_egress
+from headstart.scrapers.harvest import scrape_all
 
 _LEDGER = REPO_ROOT / "data" / "validate" / "liveness"
 _JOBS_DIR = REPO_ROOT / "data" / "jobs"
@@ -408,7 +409,7 @@ def main() -> int:
         scores = load_scores(_PRIORITY)
         companies = pick_boards(companies, scores, args.max_boards)
         priority = sum(
-            1 for c in companies if scores.get(board_priority.key_for(c), 0.0) > 0.0
+            1 for c in companies if scores.get(priority_ledger.key_for(c), 0.0) > 0.0
         )
         _log.info(
             f"harvest: {len(companies)} boards this run "

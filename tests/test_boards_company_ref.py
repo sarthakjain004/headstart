@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from headstart.config import load_companies
+from headstart.boards.company_ref import load_companies
 from headstart.scrapers.registry import SCRAPERS
 
 CONFIG = Path(__file__).resolve().parent.parent / "config" / "companies.toml"

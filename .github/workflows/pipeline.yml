@@ -103,9 +103,9 @@ on:
         # `min_jobs=0`, so that is the count to compare against, not the **Hiring Board** subset
         # (CONTEXT.md §Counting Boards, whose figures a test keeps current). Recount
         # after any liveness sweep rather than trusting this line (it read 52,925 until 2026-08-11):
-        #   python -c "from headstart.scrapable_boards import load as f; \
+        #   python -c "from headstart.boards.scrapable_boards import load as f; \
         #     print(len(f('data/validate/liveness', min_jobs=0)))"
-        # pick_boards splits this **70/30** (TAIL_FRAC=0.3, board_priority.py): a head of up to
+        # pick_boards splits this **70/30** (TAIL_FRAC=0.3, priority_ledger.py): a head of up to
         # 56,000 **Scored Boards**, which held every Scrapable one (43,327 on 2026-09-25), then a
         # Tail that rotates through the rest oldest look first, so each is read every ~3.2 runs
         # on average and 4 at most (ADR-0229). It replaced a 20,000 slice whose 6,000-Board head left

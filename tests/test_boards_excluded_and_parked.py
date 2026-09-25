@@ -1,4 +1,4 @@
-from headstart.excluded_and_parked import EXCLUDED_BOARDS, PARKED_BOARDS
+from headstart.boards.excluded_and_parked import EXCLUDED_BOARDS, PARKED_BOARDS
 
 
 def test_skip_list_keys_are_lowercase():

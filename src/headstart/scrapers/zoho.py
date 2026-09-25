@@ -49,7 +49,8 @@ import json
 import re
 from typing import Any
 
-from headstart import company_name, log
+from headstart import log
+from headstart.boards import company_name
 from headstart.jobs.job import Job, host_of, html_to_text
 from headstart.network import http
 from headstart.network.fetcher import Fetcher

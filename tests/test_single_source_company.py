@@ -15,8 +15,8 @@ from pathlib import Path
 
 import pytest
 
-from headstart import scrapable_boards
-from headstart.config import CompanyRef
+from headstart.boards import scrapable_boards
+from headstart.boards.company_ref import CompanyRef
 from headstart.scrapers.registry import get_scraper
 
 LEDGERS = Path(__file__).resolve().parents[1] / "data" / "validate" / "liveness"

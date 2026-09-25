@@ -10,7 +10,7 @@ once per site. `dedupe_boards.py` cannot see it, because no site redirects to an
 
 The signal is containment, as in Taleo Enterprise's `subset-reqs` (ADR-0186). A site whose full
 posting set is non-empty and contained in the set of another site of the same client is buried
-onto a maximal site. The election is `board_aliases.bury_contained`. A site whose walk fails, or
+onto a maximal site. The election is `alias_ledger.bury_contained`. A site whose walk fails, or
 reads fewer unique postings than the count it states (even by one, which the scraper itself
 would tolerate), is left out, so it is neither buried nor kept for anything else.
 
@@ -32,8 +32,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
-from headstart import board_aliases, liveness
-from headstart.excluded_and_parked import EXCLUDED_BOARDS
+from headstart.boards import alias_ledger, liveness_ledger
+from headstart.boards.excluded_and_parked import EXCLUDED_BOARDS
 from headstart.network import http
 from headstart.scrapers.adp_recruiting import ADPRecruitingScraper
 
@@ -58,11 +58,11 @@ def _site(slug: str) -> tuple[str, set[str]]:
 
 
 def main() -> None:
-    liveness_dir = liveness.dir_for(ROOT)
+    liveness_dir = liveness_ledger.dir_for(ROOT)
     live = {
         ADPRecruitingScraper.slug_from(v.tenant, v.url)
-        for v in liveness.load(liveness_dir / f"{ATS}.csv").values()
-        if v.status == liveness.LIVE
+        for v in liveness_ledger.load(liveness_dir / f"{ATS}.csv").values()
+        if v.status == liveness_ledger.LIVE
     }
     sites = sorted(s for s in live if f"{ATS}:{s}".lower() not in EXCLUDED_BOARDS)
     print(f"{len(sites)} sites to read (live rows, less EXCLUDED_BOARDS)", flush=True)
@@ -83,12 +83,12 @@ def main() -> None:
             )
     today = datetime.now(UTC).date().isoformat()
     aliases = [
-        board_aliases.Alias(ATS, dup, keep, SIGNAL, keep, today)
+        alias_ledger.Alias(ATS, dup, keep, SIGNAL, keep, today)
         for dup, keep in sorted(
-            board_aliases.bury_contained(ids_by_site, client_of.__getitem__).items()
+            alias_ledger.bury_contained(ids_by_site, client_of.__getitem__).items()
         )
     ]
-    board_aliases.write(board_aliases.path_for(liveness_dir, ATS), aliases)
+    alias_ledger.write(alias_ledger.path_for(liveness_dir, ATS), aliases)
     for a in aliases:
         print(f"  bury {a.duplicate} -> {a.canonical}", flush=True)
     print(

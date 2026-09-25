@@ -30,7 +30,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
-from headstart import company_name, scrapable_boards
+from headstart.boards import company_name, scrapable_boards
 from headstart.scrapers import workday_company_name
 from headstart.scrapers.base import USER_AGENT
 from headstart.scrapers.workday import WorkdayScraper

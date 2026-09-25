@@ -1,8 +1,8 @@
 """Per-board count of stored Jobs whose description we have never settled (ADR-0062).
 
-The fourth per-board ledger, beside :mod:`headstart.board_priority`,
-:mod:`headstart.board_cost` and :mod:`headstart.ingest.board_failures`. Keyed on the
-**board_key** shape that :func:`headstart.board_identity.board_of` yields — not ``f"{ats}:{slug}"``
+The fourth per-board ledger, beside :mod:`headstart.boards.priority_ledger`,
+:mod:`headstart.boards.cost_ledger` and :mod:`headstart.ingest.board_failures`. Keyed on the
+**board_key** shape that :func:`headstart.boards.board_identity.board_of` yields — not ``f"{ats}:{slug}"``
 (ADR-0059) — and then **lowercased**, which the other three ledgers are not.
 
 Every per-Board ledger names its key form in its own :func:`key_for` (ADR-0192), so a caller never
@@ -32,10 +32,10 @@ from collections import Counter
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from headstart.board_identity import lower_key
+from headstart.boards.board_identity import lower_key
 
 if TYPE_CHECKING:
-    from headstart.scrapable_boards import ScrapableBoard
+    from headstart.boards.scrapable_boards import ScrapableBoard
 
 FIELDS = ("board", "unsettled", "updated_at")
 
