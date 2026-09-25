@@ -21,7 +21,7 @@ import os
 from pathlib import Path
 
 from headstart import log
-from headstart.ingest import REPO_ROOT, UNCONFIRMED_PATH
+from headstart.ingest import EVICTION_QUEUE_PATH, REPO_ROOT, UNCONFIRMED_PATH
 
 _log = log.get(__name__, __spec__)
 
@@ -40,18 +40,25 @@ def publish(repo: str, token: str | None, root: Path = REPO_ROOT) -> None:
         ignore_patterns=DEFAULT_IGNORE_PATTERNS,
     )
     paths = list(files)
-    grace = UNCONFIRMED_PATH.relative_to(REPO_ROOT).as_posix()
-    if (root / grace).is_file():
-        paths.append(grace)
+    # The grace set sync wrote for this table (ADR-0083), and the evictions it queued for Trends
+    # (ADR-0227): the queue must reach the Hub whenever the table does, or a failed `data/state`
+    # upload would lose the closures this run made.
+    beside = [
+        p.relative_to(REPO_ROOT).as_posix()
+        for p in (UNCONFIRMED_PATH, EVICTION_QUEUE_PATH)
+    ]
+    paths += [p for p in beside if (root / p).is_file()]
     HfApi(token=token).create_commit(
         repo_id=repo,
         repo_type="dataset",
         operations=[
             CommitOperationAdd(path_in_repo=p, path_or_fileobj=root / p) for p in paths
         ],
-        commit_message="nightly: lancedb index + unconfirmed ids",
+        commit_message="nightly: lancedb index + unconfirmed ids + eviction queue",
     )
-    _log.info(f"published {len(paths)} file(s): {_TABLE}/ + {grace} in one commit")
+    _log.info(
+        f"published {len(paths)} file(s): {_TABLE}/ + {', '.join(beside)} in one commit"
+    )
 
 
 def main() -> int:

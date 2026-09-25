@@ -1,6 +1,7 @@
 # ADR-0185: Trends narrow to companies picked from a directory of Boards
 
-**Status:** accepted · **Date:** 2026-09-24 · **Extends:** [ADR-0143](0143-trends-retain-board-deltas-for-arbitrary-comparable-cohorts.md), [ADR-0075](0075-ats-becomes-a-trends-ledger-dimension.md), [ADR-0171](0171-the-hot-tab-curates-what-it-shows-not-the-whole-index.md)
+**Status:** accepted · **Date:** 2026-09-24 · **Extends:** [ADR-0143](0143-trends-retain-board-deltas-for-arbitrary-comparable-cohorts.md), [ADR-0075](0075-ats-becomes-a-trends-ledger-dimension.md), [ADR-0171](0171-the-hot-tab-curates-what-it-shows-not-the-whole-index.md) · **Amended by:**
+[ADR-0230](0230-trends-keeps-one-board-delta-history-and-decides-rules-when-reading-it.md) — netting moves from the browser into `trend_history.answer`
 
 ## Context
 

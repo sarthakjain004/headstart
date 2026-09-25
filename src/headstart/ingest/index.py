@@ -86,6 +86,7 @@ import shutil
 import zlib
 from collections import Counter
 from collections.abc import Iterator
+from collections.abc import Set as AbstractSet
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, NamedTuple
@@ -107,12 +108,15 @@ from headstart.board_identity import ats_of, lower_key
 from headstart.corpus import iter_jobs
 from headstart.embedding_conventions import PROD_TABLE
 from headstart.ingest import (
+    EVICTION_QUEUE_PATH,
     PENDING_UPGRADES_PATH,
     REPO_ROOT,
+    UNAUTHORITATIVE_BOARDS_PATH,
     UNCONFIRMED_PATH,
     board_failures,
     board_freshness,
     dedup_evictions,
+    job_turnover,
     observability,
     read_id_list,
     run_ts,
@@ -153,7 +157,7 @@ _UPGRADES = PENDING_UPGRADES_PATH
 _UNCONFIRMED = UNCONFIRMED_PATH
 # Written by scrape_join from the shard reports: the Boards whose scraped list is not authoritative
 # this run, which must not be evicted from just because they emitted a partial list (ADR-0053).
-_UNAUTHORITATIVE = REPO_ROOT / "data" / "state" / "unauthoritative_boards.json"
+_UNAUTHORITATIVE = UNAUTHORITATIVE_BOARDS_PATH
 
 _ADD_CHUNK = 2048  # rows per add batch — bounds peak memory and streams progress
 _TOP_UNCONFIRMED_BOARDS = (
@@ -881,6 +885,27 @@ def sync(args: argparse.Namespace) -> int:
         f"plan: add {len(plan.add)} ({listings} new listings + {len(taken)} re-embedded), "
         f"evict {len(plan.delete)} -> net {listings - len(plan.delete):+d} rows"
     )
+    # A repost is the same role under a new id, and it reads as one Opened and one Closed
+    # (ADR-0227). It is measured here and never corrected: this is the scrape where the old id
+    # goes missing as the new one arrives, a scrape before the old one is evicted.
+    new_listings = plan.add - taken.keys()
+    if new_listings:
+
+        def board_and_title(ids: AbstractSet[str]) -> dict[str, tuple[str, str | None]]:
+            return {
+                i: (resolve_board(i, live), metas[row_of[i]].get("title"))
+                for i in ids
+                if i in row_of
+            }
+
+        matched = job_turnover.reposts(
+            board_and_title(new_listings),
+            board_and_title(plan.unconfirmed | plan.delete),
+        )
+        _log.info(
+            f"reposts: {matched} of {len(new_listings)} new listing(s) share a Board and title "
+            "with a posting missing from this scrape (ADR-0227)"
+        )
     if plan.refused:
         fronts = sum(1 for job_id in plan.refused if ats_of(job_id) == "eightfold")
         _log.info(
@@ -922,6 +947,14 @@ def sync(args: argparse.Namespace) -> int:
     _log_ids("evict", sorted(plan.delete))
 
     apply_sync(table, [], plan.delete)  # evictions first (chunked internally)
+    # The closures role_trends books as Closed (ADR-0227): these evictions, a posting's second
+    # consecutive absence, and nothing else. A re-embedded Job deleted by `_take_upgrades` and not
+    # re-added this run is no absence at all, and a prune here or in `cleanup-index` removes a
+    # copy or a Board: both are Recounted. Appended after the delete, so the queue never names a
+    # row the table still holds.
+    job_turnover.queue_evictions(
+        Path(args.eviction_queue), run_ts().isoformat(timespec="seconds"), plan.delete
+    )
 
     # One stamp for the whole run: every Job added here arrived in the same scrape, and
     # `sync` is the only place rows are ever added, so each row is stamped exactly once. A Job that
@@ -1367,6 +1400,12 @@ def main() -> int:
         default=str(_UNCONFIRMED),
         help="file of Job ids absent from their Board's last scrape but not yet from a second "
         "consecutive one; read and rewritten each run (the ADR-0083 grace period)",
+    )
+    p_sync.add_argument(
+        "--eviction-queue",
+        default=str(EVICTION_QUEUE_PATH),
+        help="append every id this sync evicted, stamped with the run, for role_trends to book "
+        "as Closed (ADR-0227); published in the table's commit by index_publish",
     )
     p_sync.add_argument(
         "--ledger",

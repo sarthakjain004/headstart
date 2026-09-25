@@ -285,15 +285,15 @@ These guidelines are working if: fewer unnecessary changes in diffs, fewer rewri
   state directories exist, so an empty fetch can be told apart from a first run. `state_guard`
   (ADR-0129) refuses a write to HF state that another workflow changed since it was read — `merge`
   and `cleanup-index` both record and verify through it. Another publishes inside a stage:
-  `index_publish` commits the LanceDB table and its ADR-0083 grace set in a single HF commit in
-  `merge`'s upload step, so the two can never disagree. And one runs at the
+  `index_publish` commits the LanceDB table, its ADR-0083 grace set and the ADR-0227 eviction queue in one HF commit
+  in `merge`'s upload step, so they can never disagree. And one runs at the
   end of `merge` without being a stage either: `reclaim_storage` (ADR-0168) deletes the orphaned
   LFS blobs and verifies the quota actually fell — squashing history only makes them eligible for
   HF's collection, which is how the 100 GB quota filled on 2026-09-18.
   If you change what the pipeline runs, change it there and update `.github/workflows/pipeline.yml`
   to match. Don't add a pipeline stage to `scripts/`. Helper modules used *only* by the pipeline
   live there too (`binpack`, `board_failures`, `board_freshness`, `board_naming`, `board_operator`,
-  `dedup_evictions`, `derived_meta`, `doc_prep`, `index_plan`, `observability`,
+  `dedup_evictions`, `derived_meta`, `doc_prep`, `index_plan`, `job_turnover`, `observability`,
   `role_assignments`, `role_family_classifier`, `shard_plan`, `shard_speedup`,
   `trends_epochs`). Logic the curated-feed path (`python -m headstart` → `headstart.harvest`)
   also reaches stays in `headstart` proper (`harvest`, `board_cost`, `board_priority`,

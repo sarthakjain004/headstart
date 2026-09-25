@@ -12,7 +12,8 @@ at 50.3x compression the file no longer needs one · **Amended by:**
 row's family first and the nearest centroid only where no rule does; the ledger's `version` is a
 series version that a new rules generation re-bases, as a refit does · **Amended by:**
 [ADR-0220](0220-a-trained-title-classifier-decides-a-role-family.md) — a one-axis family list, each
-row's family decided by a trained title classifier; the centroids are retired
+row's family decided by a trained title classifier; the centroids are retired · **Amended by:**
+[ADR-0230](0230-trends-keeps-one-board-delta-history-and-decides-rules-when-reading-it.md) — the trends ledger becomes derived: the ADR-0143 Board-delta ledger is the one stored count history
 
 ## Context
 

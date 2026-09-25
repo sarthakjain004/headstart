@@ -1016,10 +1016,13 @@ jobs:
             publication_state lancedb_index conflict
             exit 1
           fi
-          # One commit with `data/state/unconfirmed_ids.txt` (ADR-0083): `sync` wrote that grace
+          # One commit with `data/state/unconfirmed_ids.txt` (ADR-0083) and
+          # `data/state/eviction_queue.tsv` (ADR-0227): `sync` wrote that grace
           # set for THIS table, and if data/state below then failed, a table published alone was
           # paired on the Hub with the previous run's set — an absent/present/absent id was then
-          # evicted on one miss. Additive, like the other uploads (see the --delete note above).
+          # evicted on one miss. The ADR-0227 eviction queue rides the same commit, so a failed
+          # data/state upload cannot lose the closures this run made. Additive, like the other
+          # uploads (see the --delete note above).
           publish lancedb_index python -m headstart.ingest.index_publish "$HF_DATASET"
           # Append-only (ADR-0050): each run adds small per-ATS fragments and leaves the base
           # files alone, so this uploads ~430 KB rather than re-minting the ~174 MB store.

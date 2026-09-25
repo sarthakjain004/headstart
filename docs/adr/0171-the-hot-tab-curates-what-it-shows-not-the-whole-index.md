@@ -1,6 +1,7 @@
 # ADR-0171: The Hot tab curates what it shows, not the whole index
 
-**Status:** accepted · **Date:** 2026-09-21 · **Extends:** [ADR-0143](0143-trends-retain-board-deltas-for-arbitrary-comparable-cohorts.md), [ADR-0051](0051-trends-as-share-flow-and-watched-roles.md)
+**Status:** accepted · **Date:** 2026-09-21 · **Extends:** [ADR-0143](0143-trends-retain-board-deltas-for-arbitrary-comparable-cohorts.md), [ADR-0051](0051-trends-as-share-flow-and-watched-roles.md) · **Amended by:**
+[ADR-0230](0230-trends-keeps-one-board-delta-history-and-decides-rules-when-reading-it.md) — Hot ranks Company directory entries from the same history, at Space boot
 
 ## Context
 

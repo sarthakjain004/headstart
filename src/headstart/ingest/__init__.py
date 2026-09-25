@@ -112,6 +112,21 @@ PENDING_REDERIVE_PATH = REPO_ROOT / "data" / "state" / "pending_rederive.txt"
 # reappeared, been pruned, or belongs to a Board that left the ledger is simply not written again.
 UNCONFIRMED_PATH = REPO_ROOT / "data" / "state" / "unconfirmed_ids.txt"
 
+# Every id `index sync` evicted (ADR-0083), stamped with the run's `run_ts`, for `role_trends` to
+# book as Closed (ADR-0227, :mod:`headstart.ingest.job_turnover`). A row that leaves the table any
+# other way — a prune in this run or in `cleanup-index`, a failed re-embed — is not here, and so is
+# booked as Recounted. Published in the table's own commit (`index_publish`), like the grace set:
+# the snapshot it is booked against rides the later `data/state` upload, and if that upload fails
+# the next tick diffs the older snapshot, so its queue must still hold this run's evictions. So
+# `role_trends` drops an entry only once a published snapshot is newer than it.
+EVICTION_QUEUE_PATH = REPO_ROOT / "data" / "state" / "eviction_queue.tsv"
+
+# The Boards whose scrape this run was not authoritative (ADR-0053), written by `scrape_join` and
+# read by `index sync`, `update_ledgers` and `role_trends`.
+UNAUTHORITATIVE_BOARDS_PATH = (
+    REPO_ROOT / "data" / "state" / "unauthoritative_boards.json"
+)
+
 # How many times a fetch replaced each Job's held description, and a hash of the text it held
 # before the last replacement (ADR-0207). Written by `update_descriptions`, rewritten in full each
 # run. It lists only Jobs that have changed at least once.
