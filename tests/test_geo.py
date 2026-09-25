@@ -41,6 +41,7 @@ _ROWS = [
     ("Kalyani Nagar, Pune", True, {"pune"}),  # must NOT hit thane's 'kalyan'
     # country-tag rows carrying no city name at all (2026-08-25 audit: 429 such rows)
     ("IND", True, set()),
+    ("IN", True, set()),  # ISO alpha-2 as the whole string: SuccessFactors' feed, iCIMS
     ("IND-BLR-Divyasree Technopolis", True, set()),
     ("IND BNGL FL2-3 TWR 3", True, set()),
     ("Remote - IND", True, set()),
@@ -132,12 +133,12 @@ def test_where_india_is_unchanged_by_classify_s_addition():
     a transcription slip would go unnoticed (one did, while drafting this test: `surat`/`thane`
     swapped, caught only because this assertion failed against the real output). ADR-0024/
     ADR-0086/ADR-0138 cite 3,068 chars; the `goa`/`anand`/`INDIA_EXCLUDE` guards below moved it
-    to 3,301.
+    to 3,301, and the whole-string alpha-2 "IN" (`IN_EXACT`) to 3,327.
     """
     clause = where("india")
-    assert len(clause) == 3301
+    assert len(clause) == 3327
     assert hashlib.sha256(clause.encode()).hexdigest() == (
-        "67b08afaa17f1288cb57aed9375659496d3ed27e73ccf0911c734cddeb5d8808"
+        "b38f37d54224cf6e573a124e18974fed2bdd3a148e828c56fa6cf8263cd53e20"
     ), (
         "the compiled clause moved — if this is a deliberate CITIES/STATES/etc. data change, "
         "recompute the hash (hashlib.sha256(where('india').encode()).hexdigest()) and update "
