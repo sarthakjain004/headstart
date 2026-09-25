@@ -224,6 +224,7 @@ supersedes it and note the supersession in both.
 | [0226](0226-zoho-throttle-redirect-walls-the-spare-egress.md) | Zoho's throttle redirect walls its egress group | 2026-09-25 |
 | [0227](0227-trends-record-each-boards-opened-and-closed-jobs-not-only-its-net.md) | Trends record each Board's opened and closed jobs, not only its net | 2026-09-25 |
 | [0228](0228-a-detail-pass-may-send-its-requests-in-batches-from-one-warmed-tab.md) | A Detail pass may send its requests in batches from one warmed tab | 2026-09-25 |
+| [0229](0229-the-slice-reads-every-tech-yielding-board-and-rotates-the-rest.md) | The Slice reads every tech-yielding Board and rotates the rest oldest-first | 2026-09-25 |
 
 *ADR-0037 was removed from the repository on 2026-09-24 by the owner's decision; its number is not
 reused.*

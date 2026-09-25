@@ -468,7 +468,7 @@ any claim of the form "a single transient miss deletes a live job" has been fals
 Two mechanisms withhold evictions, are reported separately on purpose, and must not
 be conflated — CONTEXT.md's **Eviction** and **Unconfirmed** glossary entries are authoritative:
 - **Unconfirmed** (ADR-0083) — per-*Job*; one absence isn't enough. The unit is *scrapes of that
-  Board*, never runs: only ~20k are in any run's slice, under a quarter of the Scrapable Boards
+  Board*, never runs: only ~80k are in any run's slice, about half of the Scrapable Boards
   (CONTEXT.md §Counting Boards — "live Boards" names no single number), and a Board the run
   did not read is no evidence, so its ids keep the state they had.
 - **scope-excluded** (ADR-0053, narrowed by ADR-0121) — the Board's scrape was not authoritative,

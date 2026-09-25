@@ -145,7 +145,8 @@ def test_gap_quota_reserves_slots_from_the_exploration_tail():
         companies, scores, 40, unsettled=unsettled, gap_frac=0.5, rng=random.Random(7)
     )
 
-    head_n = 40 - round(40 * EXPLORE_FRAC)
+    # the head is capped by EXPLORE_FRAC but can hold no more than the scored Boards
+    head_n = min(len(scores), 40 - round(40 * EXPLORE_FRAC))
     explore_slots = 40 - head_n
     assert len(picked) == 40
     gap = [c for c in picked[head_n:] if f"lever:{c.slug}" in unsettled]
@@ -158,12 +159,13 @@ def test_gap_quota_leaves_the_priority_head_untouched():
     scores = {f"lever:c{i}": float(100 - i) for i in range(10)}
     unsettled = {f"lever:c{i}": 99 for i in range(10, 60)}
 
+    # gap_frac=0.5 so the quota really takes slots; at the default it rounds to none here
     with_gap = pick_boards(
-        companies, scores, 20, unsettled=unsettled, rng=random.Random(11)
+        companies, scores, 20, unsettled=unsettled, gap_frac=0.5, rng=random.Random(11)
     )
     without = pick_boards(companies, scores, 20, rng=random.Random(11))
 
-    head_n = 20 - round(20 * EXPLORE_FRAC)
+    head_n = min(len(scores), 20 - round(20 * EXPLORE_FRAC))
     assert [c.slug for c in with_gap[:head_n]] == [c.slug for c in without[:head_n]], (
         "the quota comes out of exploration; a scored board must never lose its slot to it"
     )
@@ -246,3 +248,47 @@ def test_key_for_keeps_the_casing_its_scraper_builds():
     board = ScrapableBoard("workday", "https://Acme.wd1.myworkdayjobs.com/External")
     assert key_for(board) == "workday:Acme/External"
     assert key_for("workday:Acme/External") == "workday:Acme/External"
+
+
+def test_rotation_tail_reads_the_boards_looked_at_longest_ago_first():
+    """ADR-0229: the tail is a rotation, not a draw. A random draw re-picked some Boards run after
+    run while others waited 11 days; ordering by the last look puts every unscored Board in a
+    Slice within ceil(unscored / tail) runs. A Board with no look at all goes first."""
+    companies = _companies(30)
+    last_looked = {f"lever:c{i}": "2026-09-25T10:00:00+00:00" for i in range(10)}
+    last_looked |= {f"lever:c{i}": "2026-09-24T22:00:00+00:00" for i in range(10, 20)}
+    # c20..c29 carry no stamp: never looked at
+
+    first = pick_boards(
+        companies, {}, 10, last_looked=last_looked, rng=random.Random(1)
+    )
+    assert {c.slug for c in first} == {f"c{i}" for i in range(20, 30)}
+
+    wider = pick_boards(
+        companies, {}, 20, last_looked=last_looked, rng=random.Random(1)
+    )
+    assert {c.slug for c in wider} == {f"c{i}" for i in range(10, 30)}
+
+
+def test_a_date_only_stamp_sorts_before_that_days_timestamps():
+    """Rows written before ADR-0229 carry a bare date. They must still take their turn, not wait
+    behind every Board stamped since, so a date sorts as the start of its day."""
+    companies = _companies(21)
+    last_looked = {f"lever:c{i}": "2026-09-24T01:00:00+00:00" for i in range(20)}
+    last_looked["lever:c20"] = "2026-09-24"
+    for seed in range(5):  # a random draw would find c20 one time in 21
+        picked = pick_boards(
+            companies, {}, 1, last_looked=last_looked, rng=random.Random(seed)
+        )
+        assert [c.slug for c in picked] == ["c20"]
+
+
+def test_rotation_order_never_reorders_the_scored_head():
+    """The head is ordered by tech score alone; a recent look must not demote a top Board."""
+    companies = _companies(40)
+    scores = {f"lever:c{i}": float(100 - i) for i in range(5)}
+    last_looked = {f"lever:c{i}": "2026-09-25T10:00:00+00:00" for i in range(5)}
+    picked = pick_boards(
+        companies, scores, 10, last_looked=last_looked, rng=random.Random(2)
+    )
+    assert [c.slug for c in picked[:5]] == ["c0", "c1", "c2", "c3", "c4"]

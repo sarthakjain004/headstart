@@ -452,7 +452,7 @@ def test_an_incomplete_measurement_cannot_gate_a_board_it_never_read():
             # killed by the shard's time budget mid-fetch
             "workday:target": ShardCost(seconds=3600.0, jobs=0, unfinished=True),
         },
-        today="2026-08-18",
+        looked_at="2026-08-18",
     )
     assert after["workday:walmart"].jobs == 15476
     assert after["workday:target"].jobs == 9000
@@ -553,3 +553,60 @@ def test_a_stale_quarantine_is_re_admitted_for_one_run(tmp_path, monkeypatch, ca
         r.message for r in caplog.records if r.message.startswith("quarantine:")
     )
     assert "1 re-admitted on parole, of 2 quarantined" in line
+
+
+def test_gate_counts_the_days_of_a_timestamped_cost_row():
+    """The cost ledger stamps a full timestamp since ADR-0229; the gate's re-check still counts
+    whole days, and the rows written before it (bare dates) keep reading the same."""
+    assert ps._days_since("2026-09-10T23:59:59+00:00", "2026-09-24") == 14.0
+    assert ps._days_since("2026-09-10", "2026-09-24") == 14.0
+
+
+def test_main_rotates_the_unscored_tail_oldest_first(tmp_path, monkeypatch):
+    """The planner hands the cost ledger's last-look stamps to `pick_boards` (ADR-0229), so a
+    Slice smaller than the unscored set takes the Boards read longest ago."""
+    from headstart import board_cost
+
+    boards = [ScrapableBoard("lever", f"b{i}", f"B{i}") for i in range(6)]
+    monkeypatch.setattr(
+        ps.scrapable_boards, "load", lambda ledger, min_jobs=0: list(boards)
+    )
+    cost = tmp_path / "board_cost.csv"
+    board_cost.save(
+        cost,
+        {
+            f"lever:b{i}": board_cost.BoardCost(
+                seconds=1.0, jobs=3, updated_at=f"2026-09-25T0{i}:00:00+00:00"
+            )
+            for i in range(6)
+        },
+    )
+    out = tmp_path / "assignments"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "scrape_plan",
+            "--priority",
+            str(tmp_path / "none.csv"),
+            "--cost",
+            str(cost),
+            "--failures",
+            str(tmp_path / "nofailures.csv"),
+            "--gap",
+            str(tmp_path / "nogap.csv"),
+            "--out-dir",
+            str(out),
+            "--max-boards",
+            "2",
+            "--max-shards",
+            "1",
+        ],
+    )
+    assert ps.main() == 0
+
+    planned = {
+        f"{rec['ats']}:{rec['slug']}"
+        for rec in map(json.loads, (out / "shard-0.jsonl").read_text().splitlines())
+    }
+    assert planned == {"lever:b0", "lever:b1"}

@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Plan the scrape fan-out — the scrape-planner of ADR-0026 (ADR-0025 Phase 2).
 
-Runs once, before the scrape matrix. It selects this run's board slice exactly as the monolith
-``scrape`` does (``pick_boards``: priority-first + a random exploration tail, capped at
-``--max-boards``, with part of that tail reserved for Boards holding unsettled descriptions —
-ADR-0062), then splits the *selected* boards across a dynamic number of shards:
+Runs once, before the scrape matrix. It selects this run's board slice with ``pick_boards``:
+priority-first, then an exploration tail that rotates through the unscored Boards oldest look
+first (ADR-0229), capped at ``--max-boards``, with part of that tail reserved for Boards holding
+unsettled descriptions (ADR-0062). It then splits the *selected* boards across a dynamic number of
+shards:
 
 - **Which board goes where** is an LPT bin-pack by each Board's **measured scrape seconds**
   (``board_cost.csv``, ADR-0027), so the shards' wall times balance. A Board with no measurement
@@ -28,7 +29,7 @@ scrapes its best boards first), a ``plan.json`` (``shards`` matrix + board ``cou
 reads, and a copy of the detail skip-list (ADR-0048, re-keyed by ADR-0050) so each shard can skip
 re-fetching details we already **hold** — all three ride the one artifact the shards download.
 
-Run: python -m headstart.ingest.scrape_plan [--max-boards 20000] [--max-shards 15]
+Run: python -m headstart.ingest.scrape_plan [--max-boards 80000] [--max-shards 15]
 """
 
 from __future__ import annotations
@@ -110,7 +111,8 @@ _EXPLORE_BASELINE = 5.0  # unscored board with no measurement and no history to 
 # in ~9 min, so a 10-15 min Board set the wall clock unjudged: `jibe:petsmart`, 760 s at a score
 # of 2.8 (4 tech jobs). On score, petsmart and greatclips sat far under 2 tech/min, ulta on the
 # line (2.08), and no fresh Board between 6 and 10 min was under it (ADR-0064 amendment).
-_GATE_FLOOR_S = 600.0  # 10 min: just above the ~9 min a shard now takes
+# ADR-0229 lengthened shards to a predicted ~24 min and kept this floor until they are measured.
+_GATE_FLOOR_S = 600.0  # 10 min: just above the ~9 min a shard took when it was set
 _GATE_MIN_TECH_PER_MIN = 2.0  # tech jobs per minute of shard time, in the gap above
 # A gated Board is not scraped, so its cost and score freeze — and evidence that cannot change
 # makes the gate a one-way door. Expiring the measurement re-admits it for one run every so
@@ -193,14 +195,17 @@ def _gated_boards(
 
 
 def _days_since(updated_at: str, today: str) -> float:
-    """Days between two ``YYYY-MM-DD`` stamps; ``inf`` if the stored one is unreadable.
+    """Whole days between two stamps' dates; ``inf`` if the stored one is unreadable.
+
+    ``updated_at`` is a UTC timestamp since ADR-0229 and a bare ``YYYY-MM-DD`` before it; only its
+    date counts, so both read the same.
 
     Unreadable reads as ancient on purpose: the gate then re-admits the Board and re-measures
     it, which is the safe direction — a bad date must never be grounds for dropping work.
     """
     fmt = "%Y-%m-%d"
     try:
-        then = datetime.strptime(updated_at, fmt)  # noqa: DTZ007
+        then = datetime.strptime(updated_at[:10], fmt)  # noqa: DTZ007
         now = datetime.strptime(today, fmt)  # noqa: DTZ007
     except (TypeError, ValueError):
         return float("inf")
@@ -208,7 +213,9 @@ def _days_since(updated_at: str, today: str) -> float:
 
 
 _MAX_SHARDS = 15  # == pipeline.yml `max-parallel`
-_TARGET_SECONDS = 600.0  # ~10 min of measured work per shard; a 20k slice → ~14 shards
+_TARGET_SECONDS = (
+    600.0  # ~10 min of measured work per shard; an 80k slice saturates all 15
+)
 _TARGET_BOARDS = (
     600  # cold-start only: ~boards per shard when there are no measurements
 )
@@ -246,7 +253,7 @@ def main() -> int:
     ap.add_argument(
         "--max-boards",
         type=int,
-        default=20000,  # == pipeline.yml's max_boards default
+        default=80000,  # == pipeline.yml's max_boards default
         help="boards to scrape this run (0 = all live)",
     )
     ap.add_argument(
@@ -370,7 +377,14 @@ def main() -> int:
             f"jobs/min — " + log.named_sample([_why(k, d) for k, d in worst])
         )
     unsettled = board_description_gap.load(Path(args.gap))
-    companies = pick_boards(companies, scores, args.max_boards, unsettled=unsettled)
+    companies = pick_boards(
+        companies,
+        scores,
+        args.max_boards,
+        unsettled=unsettled,
+        # When each Board was last looked at, so the tail rotates oldest-first (ADR-0229).
+        last_looked={key: row.updated_at for key, row in cost_rows.items()},
+    )
     n = len(companies)
     priority = sum(
         1 for c in companies if scores.get(board_priority.key_for(c), 0.0) > 0.0

@@ -103,7 +103,7 @@ _Avoid_: assuming `salary IS NOT NULL` (the `has_salary` filter) means "well-pai
 
 Five defensible answers exist to "how many Boards do we have", they differ by tens of thousands, and quoting the wrong one has already misled three separate discussions. Each name below binds to exactly one of them.
 
-The five headline counts — **Ledger row**, **Live row**, **Unique Board**, **Scrapable Board**, **Hiring Board** — plus the README funnel's every delta are **enforced by `tests/test_board_counts.py`**, which recomputes them from the committed ledger, so they cannot go stale without a red test. The figures *derived* from them are checked at each sentence that quotes one, across this file, `README.md` and `CLAUDE.md`. **Slice**'s 20,000 tracks a CLI default and is not checked.
+The five headline counts — **Ledger row**, **Live row**, **Unique Board**, **Scrapable Board**, **Hiring Board** — plus the README funnel's every delta are **enforced by `tests/test_board_counts.py`**, which recomputes them from the committed ledger, so they cannot go stale without a red test. The figures *derived* from them are checked at each sentence that quotes one, across this file, `README.md` and `CLAUDE.md`. **Slice**'s 80,000 tracks a CLI default and is not checked.
 
 **Scraped Board** and **Scored Board** cannot be enforced at all: they live only on HF and move every run, with no commit to hang an assertion on. They are marked *measured 2026-08-28* and should be re-measured, not quoted:
 ```
@@ -138,8 +138,8 @@ _Avoid_: calling this "unique" — the 26,842 Boards between it and Unique Board
 **Hiring Board** — 101,214:
 A Scrapable Board with at least one open posting (`scrapable_boards.load(min_jobs=1)`, the function's default). The other 52,481 are live but empty.
 
-**Slice** — 20,000:
-The Boards one run picks (`scrape_plan --max-boards`), split 30/70 by `pick_boards` into a **Head** (6,000, the top-scored) and a **Tail** (14,000). The Tail is random over everything not in the Head — *except* that ADR-0062 reserves a share of it for Boards with unsettled descriptions, so it is not purely random. Only the Slice is scraped, which is why **Eviction**'s unit is *scrapes of a Board*, never runs.
+**Slice** — 80,000:
+The Boards one run picks (`scrape_plan --max-boards`), split 70/30 by `pick_boards` into a **Head** (up to 56,000 scored Boards, score-descending, which holds every scored Board) and a **Tail** (the rest). The Tail rotates through everything not in the Head, the Boards looked at longest ago first, by the cost ledger's `updated_at` (ADR-0229); ADR-0062 reserves a share of it for Boards with unsettled descriptions. Only the Slice is scraped, which is why **Eviction**'s unit is *scrapes of a Board*, never runs.
 
 Two more count Board *history* rather than eligibility, and neither is a denominator for the above:
 
@@ -230,7 +230,7 @@ A **Board** whose scraped list this run cannot be read as its complete set of op
 _Avoid_: failed Board, partial Board — a truncated Board still returned real Jobs and they are still indexed; it is only the absences from its list that cannot be trusted.
 
 **Unconfirmed** (ADR-0083):
-A **Job** absent from its **Board**'s most recent scrape but not yet from a second consecutive one, so its **Eviction** is withheld pending another look. Persisted as `data/state/unconfirmed_ids.txt`, rewritten in full each run and handed back to `plan_sync` the next. Exists because an absence is ambiguous — "the posting closed" and "this scrape could not confirm it" arrive identically — and three separate mechanisms were measured deleting live postings through that ambiguity (`docs/pipeline/2026-08-23_false-board-eviction-root-cause.md`). The unit is *scrapes of that Board*, never runs: only ~20,000 of 128,048 **Scrapable Boards** are in any run's slice, and a Board the run did not read — including an **Unauthoritative Board** — is no evidence, so its ids keep the state they had rather than resetting.
+A **Job** absent from its **Board**'s most recent scrape but not yet from a second consecutive one, so its **Eviction** is withheld pending another look. Persisted as `data/state/unconfirmed_ids.txt`, rewritten in full each run and handed back to `plan_sync` the next. Exists because an absence is ambiguous — "the posting closed" and "this scrape could not confirm it" arrive identically — and three separate mechanisms were measured deleting live postings through that ambiguity (`docs/pipeline/2026-08-23_false-board-eviction-root-cause.md`). The unit is *scrapes of that Board*, never runs: only ~80,000 of the **Scrapable Boards** are in any run's slice, and a Board the run did not read — including an **Unauthoritative Board** — is no evidence, so its ids keep the state they had rather than resetting.
 _Avoid_: confusing it with the ADR-0046 collapse guard's per-**Board** cap, which ADR-0101 removed — it ran *after* this one, so everything it withheld had already been absent twice, and no `held` figure exists in a log written since. _Avoid_: reading it as a deletion queue — most Unconfirmed ids reappear on the next scrape and are never evicted at all.
 
 **Doc**:
