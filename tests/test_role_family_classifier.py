@@ -2,8 +2,8 @@
 
 Contracts: the head abstains below its cutoff; a malformed head is refused; the title cache
 survives a round trip and is discarded under another head; filling decides only missing titles,
-saves after each chunk and stops on its time budget; and coverage counts served rows, not
-distinct titles; encoding batches titles shortest first but returns vectors in input order. The
+saves after each chunk and stops on its time budget; coverage counts served rows, not distinct
+titles; and encoding batches titles shortest first but returns vectors in input order. The
 encoder is stubbed, so no test downloads JobBERT.
 """
 
