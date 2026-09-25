@@ -223,6 +223,7 @@ supersedes it and note the supersession in both.
 | [0224](0224-a-rows-description-vector-joins-its-title-in-deciding-its-role-family.md) | A row's description vector joins its title in deciding its role family | 2026-09-25 |
 | [0226](0226-zoho-throttle-redirect-walls-the-spare-egress.md) | Zoho's throttle redirect walls its egress group | 2026-09-25 |
 | [0227](0227-trends-record-each-boards-opened-and-closed-jobs-not-only-its-net.md) | Trends record each Board's opened and closed jobs, not only its net | 2026-09-25 |
+| [0228](0228-a-detail-pass-may-send-its-requests-in-batches-from-one-warmed-tab.md) | A Detail pass may send its requests in batches from one warmed tab | 2026-09-25 |
 
 *ADR-0037 was removed from the repository on 2026-09-24 by the owner's decision; its number is not
 reused.*

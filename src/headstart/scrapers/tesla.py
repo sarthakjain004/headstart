@@ -54,17 +54,24 @@ referenced were absent from it, so a resolved ``location`` can be ``None``.
 posting went up — only ``postUntilDate``, an application deadline, which is a different fact and
 is not substituted in.
 
-**The listing carries no description, and a per-job detail pass is not implemented here.** A
-per-job detail page (``GET /cua-api/careers/job/{id}``, reached by *navigating* to
-``https://www.tesla.com/careers/search/job/{slug}-{id}``) does carry one — verified live on one
-job, 200 with ``jobDescription``/``jobResponsibilities``/``jobRequirements`` HTML fields — but
-getting it costs a **full browser navigation per job**, not a cheap JSON GET: the same wall that
-blocks a second explicit request off the listing page blocks one issued from a job page too
-(measured on the same job id). At 8,105 postings that is thousands of navigations every run,
-which no other ATS in this repo pays and which would not fit a nightly pipeline's time
-budget. ``has_detail_pass`` therefore stays ``False`` and every Tesla ``Job.description`` is
-``None`` in this version — a deliberate scope cut, not an oversight, and a natural place to
-revisit if per-job descriptions turn out to matter enough to budget for.
+**The listing carries no description; the detail pass reads it in batches from one warmed tab**
+(ADR-0228, issue #553). A per-job detail (``GET /cua-api/careers/job/{id}``) carries
+``jobDescription``, ``jobResponsibilities``, ``jobRequirements`` and ``jobCompensationAndBenefits``
+as HTML. One navigation per job would be thousands a run, but the wall is not per request:
+measured live 2026-09-22 and 2026-09-25 (captures kept locally, not committed), a tab
+that has *navigated to one job page* can then fetch other ids with page-JS ``fetch()`` — 200 on
+every id of batches of 10, 25 and 50 in 1.5-2.0 s each — while the same fetches from the search
+page, or after ten idle seconds, answer 404 (the control). So the pass navigates to a job page,
+then sends ``detail_batch_size`` ids per in-page ``Promise.all``, and navigates again only when a
+batch comes back mostly non-200 (the trust lapsed).
+
+**Over the batch bound the origin refuses the IP, not the request.** A batch of 100 answered 403
+on 69 ids and the next, of 200, on all 200; minutes later ``/careers/search/`` itself was a hard
+403 from that IP, so the listing dies with the details. The bound is therefore small, batches are
+paced, and any 403/429 is a wall: the Chrome restarts on the spare egress
+(:mod:`headstart.spare_egress`, ``--proxy-server``) and the batch is retried, rotating the IP on
+each further wall. When no route is left the pass stops with what it has
+(:class:`~headstart.scrapers.base.DetailBatchWalled`).
 """
 
 from __future__ import annotations
@@ -73,11 +80,18 @@ import asyncio
 import json
 import re
 import threading
+import time
+from collections.abc import Callable, Sequence
 from typing import Any
 
-from headstart import log
-from headstart.models import Job, is_remote
-from headstart.scrapers.base import BaseScraper
+from headstart import log, spare_egress
+from headstart.models import Job, html_to_text, is_remote
+from headstart.scrapers.base import (
+    BaseScraper,
+    DetailBatchWalled,
+    DetailLost,
+    DetailRequest,
+)
 
 _log = log.get(__name__)
 
@@ -92,6 +106,25 @@ _STATE_URL_SUFFIX = "apps/careers/state"
 _NAV_TIMEOUT_S = 30  # generous: this is one navigation per run, not one per Board
 _STATE_WAIT_S = 20  # how long to wait for the page's own state call to complete
 _CHROME_START_TIMEOUT_S = 30
+
+_DETAIL_URL = f"https://{SLUG}/cua-api/careers/job/"
+#: Ids per in-page ``Promise.all`` (ADR-0228). 10, 25 and 50 answered 200 on every id; 100 drew 403
+#: on 69 of 100 and got the IP refused. Half of the largest size that worked, since 50 was
+#: measured once.
+_BATCH_SIZE = 25
+#: Pause after each batch. Unmeasured insurance: back-to-back batches of 10/25/50 passed, but the
+#: cost of being wrong is the whole origin for an IP.
+_BATCH_PAUSE_S = 0.5
+_SETTLE_S = 3  # after a job-page navigation, before the tab's fetches are tried
+_BATCH_TIMEOUT_S = 60
+#: Statuses that mean the origin refused the IP — ``404`` is not among them: the un-warmed tab
+#: answers 404, and so does a posting that closed.
+_WALL_STATUSES = frozenset({403, 429})
+#: The walls one operation rides out before giving up: the first moves onto the spare egress, each
+#: further one rotates it.
+_EGRESS_ATTEMPTS = 3
+#: :mod:`headstart.spare_egress`'s key for this origin's wall.
+_GROUP = "tesla"
 
 # Headful, like `browser_http`'s darwinbox precedent (ADR-0056) — Chrome under CDP automation is
 # not exempt from Akamai's sensor here regardless, since even the natural first-load request is
@@ -130,6 +163,11 @@ def _default_chrome():
     for arg in _CHROME_ARGS:
         options.add_argument(arg)
     options.start_timeout = _CHROME_START_TIMEOUT_S
+    if _route:
+        # Chrome takes `socks5://`, not `socks5h://`, and resolves through a SOCKS5 proxy anyway.
+        options.add_argument(
+            f"--proxy-server={_route.replace('socks5h://', 'socks5://')}"
+        )
     return Chrome(options=options)
 
 
@@ -140,6 +178,19 @@ _chrome_factory = _default_chrome
 _lock = threading.Lock()
 _loop: Any = None
 _browser: Any = None
+#: The tab the detail batches run in, and the proxy the browser was launched on (None: direct).
+#: Chrome fixes its proxy at launch, so a route change is a browser restart, never a setting.
+#: Not guarded beyond `_lock` on start/stop: one Board, one scrape thread, drives them.
+_tab: Any = None
+_route: str | None = None
+
+
+class TeslaWalled(Exception):
+    """The origin refused this route: a 403/429, or a page that never answered."""
+
+    def __init__(self, status: int) -> None:
+        super().__init__(f"the origin answered {status}")
+        self.status = status
 
 
 def _run(coro: Any, timeout: float) -> Any:
@@ -156,10 +207,12 @@ def _ensure_started() -> None:
     """The process's one Chrome, started on first use. No launch retry: this is one board, one
     navigation a run — a retry ladder built for a shard hammering hundreds of Boards is more
     machinery than a single navigation earns."""
-    global _loop, _browser
+    global _loop, _browser, _route
     with _lock:
         if _browser is not None:
             return
+        # Resolved here, off the browser's loop: `proxy_for` blocks while WARP dials.
+        _route = spare_egress.proxy_for(_GROUP)
         if _loop is None:
             _loop = asyncio.new_event_loop()
             threading.Thread(
@@ -178,9 +231,10 @@ def _ensure_started() -> None:
 def shutdown() -> None:
     """Close the browser. Not registered atexit (unlike `browser_http`): a single navigation a
     run means the process exits shortly after anyway, and tests call this directly to reset."""
-    global _browser
+    global _browser, _tab
     with _lock:
         browser, _browser = _browser, None
+        _tab = None
     if browser is not None and _loop is not None:
         try:
             _run(browser.__aexit__(None, None, None), timeout=15)
@@ -188,7 +242,39 @@ def shutdown() -> None:
             pass
 
 
+def _with_egress(operation: Callable[[], Any]) -> Any:
+    """Run ``operation``, and when the origin walls this route, retry it on the spare egress.
+
+    The first wall moves the Chrome onto the spare egress (:func:`spare_egress.mark_walled`, then a
+    relaunch with ``--proxy-server``); each further one rotates its IP. Raises the last
+    :class:`TeslaWalled` when the attempts are spent or no spare egress can be brought up. The
+    rotation runs outside ``riding_the_tunnel``, which it waits on to drain.
+    """
+    attempt = 0
+    while True:
+        _ensure_started()
+        try:
+            with spare_egress.riding_the_tunnel(_route):
+                return operation()
+        except TeslaWalled as wall:
+            attempt += 1
+            if attempt > _EGRESS_ATTEMPTS:
+                raise
+            spare_egress.mark_walled(_GROUP, wall.status)
+            was_on_spare = _route is not None
+            shutdown()
+            if was_on_spare:
+                if not spare_egress.rotate(SLUG):
+                    raise
+            elif spare_egress.proxy_for(_GROUP) is None:
+                raise
+
+
 def _fetch_state_json() -> dict[str, Any]:
+    return _with_egress(_read_state_json)
+
+
+def _read_state_json() -> dict[str, Any]:
     """Navigate the careers search page once, and read the body of *its own* first-load call to
     the state endpoint off the CDP Network domain. See the module docstring for why no request is
     ever issued explicitly — every one gets Akamai's ``429 {"cpr_chlge":"true"}`` challenge.
@@ -217,7 +303,14 @@ def _fetch_state_json() -> dict[str, Any]:
             await tab.on("Network.responseReceived", on_response)
             await tab.on("Network.loadingFinished", on_finished)
             await tab.go_to(_SEARCH_URL, timeout=_NAV_TIMEOUT_S)
-            await asyncio.wait_for(finished.wait(), timeout=_STATE_WAIT_S)
+            try:
+                await asyncio.wait_for(finished.wait(), timeout=_STATE_WAIT_S)
+            except TimeoutError:
+                # A refused IP gets a hard 403 page whose own state call never fires (measured
+                # 2026-09-25), so silence is the wall's usual shape here, not a slow load.
+                raise TeslaWalled(403) from None
+            if seen.get("status") in _WALL_STATUSES:
+                raise TeslaWalled(seen["status"])
             if seen.get("status") != 200:
                 raise RuntimeError(
                     f"the careers page's own state call answered {seen.get('status')}"
@@ -243,12 +336,93 @@ def _job_url(job_id: str, title: str) -> str:
     return f"{_SEARCH_URL}job/{slug}-{job_id}" if slug else f"{_SEARCH_URL}job/{job_id}"
 
 
+_BATCH_JS = """
+(async () => {
+  const urls = %s;
+  const out = await Promise.all(urls.map(async u => {
+    try {
+      const r = await fetch(u, {credentials: 'include'});
+      return {s: r.status, t: r.status === 200 ? await r.text() : ''};
+    } catch (e) { return {s: -1, t: String(e)}; }
+  }));
+  return JSON.stringify(out);
+})()
+"""
+
+
+class _BatchResponse:
+    """What :meth:`TeslaScraper.read_detail` reads off a batch member: ``status_code``, ``text``
+    and ``json()``, the shape of a curl response."""
+
+    def __init__(self, status_code: int, text: str) -> None:
+        self.status_code = status_code
+        self.text = text
+
+    def json(self) -> Any:
+        return json.loads(self.text)
+
+
+def _mostly_refused(rows: Sequence[dict[str, Any]]) -> bool:
+    return sum(r["s"] == 200 for r in rows) * 2 < len(rows)
+
+
+def _read_batch(urls: Sequence[str], page_url: str) -> list[dict[str, Any]]:
+    """The status and body of each of ``urls``, fetched in one in-page ``Promise.all`` from a tab
+    that has navigated to ``page_url`` (a job page — the navigation is what earns the tab its
+    trust, ADR-0228). Raises :class:`TeslaWalled` on any 403/429.
+
+    A batch that comes back mostly non-200 with no wall status means the tab's trust lapsed: it
+    navigates again and tries the same batch once more. A second mostly-non-200 answer is treated
+    as a wall (:class:`TeslaWalled` 404), so the spare egress is tried before the pass gives up.
+    """
+
+    async def evaluate() -> list[dict[str, Any]]:
+        result = await _tab.execute_script(
+            _BATCH_JS % json.dumps(list(urls)),
+            return_by_value=True,
+            await_promise=True,
+        )
+        rows = json.loads(result["result"]["result"]["value"])
+        if len(rows) != len(urls):
+            raise RuntimeError(
+                f"sent {len(urls)} ids and read {len(rows)} answers back"
+            )
+        walled = next((r["s"] for r in rows if r["s"] in _WALL_STATUSES), None)
+        if walled is not None:
+            raise TeslaWalled(walled)
+        return rows
+
+    async def navigate() -> None:
+        await _tab.go_to(page_url, timeout=_NAV_TIMEOUT_S)
+        await asyncio.sleep(_SETTLE_S)
+
+    async def go() -> list[dict[str, Any]]:
+        global _tab
+        if _tab is None:
+            _tab = await _browser.new_tab()
+            await navigate()
+        rows = await evaluate()
+        if _mostly_refused(rows):
+            await navigate()
+            rows = await evaluate()
+            if _mostly_refused(rows):
+                # An untrusted tab answers 404 (the measured shape of the un-warmed fetch), so a
+                # second mostly-404 batch is a wall that came without a wall status, not a batch
+                # of closed postings: stop navigating twice per batch through the whole board.
+                raise TeslaWalled(404)
+        return rows
+
+    return _run(go(), timeout=2 * (_NAV_TIMEOUT_S + _SETTLE_S + _BATCH_TIMEOUT_S))
+
+
 class TeslaScraper(BaseScraper):
     """Tesla's own in-house careers system — a single-source ats (ADR-0139)."""
 
     COMPANY = "Tesla"
 
     ats = "tesla"
+    has_detail_pass = True  # per-Job fetch fills `description` (ADR-0050, ADR-0228)
+    detail_batch_size = _BATCH_SIZE
     # single-source ats (ADR-0139) — one tenant, so the host is a literal, not a wildcard.
     # scraper builds f"{_SEARCH_URL}job/{title-slug}-{id}" (job_url below, via _job_url).
     url_shape = r"https://www\.tesla\.com/careers/search/job/[\w-]+-\d+"
@@ -274,7 +448,67 @@ class TeslaScraper(BaseScraper):
         return self.slug
 
     def fetch_raw(self) -> Any:
-        return _fetch_state_json()
+        state = _fetch_state_json()
+        listings = state.get("listings") or []
+        departments = (state.get("lookup") or {}).get("departments") or {}
+        self._job_pages = {
+            _DETAIL_URL + str(e["id"]): _job_url(str(e["id"]), e.get("t") or "")
+            for e in listings
+            if e.get("id")
+        }
+        # Details supply the description only, and `parse` reads title and department off the
+        # listing (ADR-0166 §3 makes the tech gate exact here). ADR-0048's skip is taken: a held
+        # description is not fetched again. Reported, not marked truncated — a missing detail
+        # costs a Job its description, not its place in the list (ADR-0053).
+        if self.have_details is None:
+            # Not the pipeline: the tech gate and the held skip are both off, so the pass would
+            # fetch every posting, ~330 batches from one IP, and one overshoot blocks the origin.
+            return state
+        details = self.run_detail_pass(
+            listings,
+            key_of=lambda e: str(e["id"]) if e.get("id") else None,
+            what="detail pages",
+            title_of=lambda e: e.get("t"),
+            department_of=lambda e: departments.get(e.get("dp")),
+            skip_held=True,
+        )
+        state["details"] = dict(details)
+        return state
+
+    def detail_request(self, item: dict) -> DetailRequest:
+        if not item.get("id"):
+            raise DetailLost("no job id")
+        return DetailRequest(_DETAIL_URL + str(item["id"]))
+
+    def read_detail(self, item: dict, response: Any) -> dict:
+        detail = response.json()
+        sections = (
+            html_to_text(detail.get(key))
+            for key in (
+                "jobDescription",
+                "jobResponsibilities",
+                "jobRequirements",
+                "jobCompensationAndBenefits",
+            )
+        )
+        description = "\n\n".join(s for s in sections if s)
+        if not description:
+            raise DetailLost("no description")
+        return {"description": description}
+
+    def fetch_detail_batch(self, requests: Sequence[DetailRequest]) -> list[Any]:
+        urls = [request.url for request in requests]
+        try:
+            rows = _with_egress(lambda: _read_batch(urls, self._job_pages[urls[0]]))
+        except TeslaWalled as wall:
+            raise DetailBatchWalled(f"{wall} on every route tried") from wall
+        time.sleep(_BATCH_PAUSE_S)
+        return [
+            RuntimeError(row["t"])
+            if row["s"] == -1
+            else _BatchResponse(row["s"], row["t"])
+            for row in rows
+        ]
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
         listings = raw.get("listings")
@@ -307,6 +541,7 @@ class TeslaScraper(BaseScraper):
         locations = lookup.get("locations") or {}
         departments = lookup.get("departments") or {}
         types = lookup.get("types") or {}
+        details = raw.get("details") or {}
         jobs: list[Job] = []
         for entry in listings:
             job_id = entry.get("id")
@@ -326,6 +561,7 @@ class TeslaScraper(BaseScraper):
                     url=self.job_url(job_id, title),
                     posted_at=None,  # not exposed anywhere on this board (module docstring)
                     scraped_at=scraped_at,
+                    description=(details.get(str(job_id)) or {}).get("description"),
                     employment_type=types.get(str(entry.get("y"))),
                 )
             )
