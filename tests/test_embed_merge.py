@@ -125,9 +125,11 @@ def test_shard_losses_from_the_manifests_are_named_in_one_warning(tmp_path, capl
         json.dumps({"dim": _DIM, "count": 1, "failed": 64, "unattempted": 210}),
         encoding="utf-8",
     )
+    upgrades = tmp_path / "upgrades.txt"
+    upgrades.write_text("", encoding="utf-8")
 
     with caplog.at_level("INFO", logger="headstart.ingest.embed_merge"):
-        _run(store, frags)
+        _run_with_upgrades(store, frags, upgrades)
 
     warnings = [r.getMessage() for r in caplog.records if r.levelname == "WARNING"]
     assert warnings == [
@@ -136,6 +138,42 @@ def test_shard_losses_from_the_manifests_are_named_in_one_warning(tmp_path, capl
             "shard-0 (64 failed, 210 unattempted)"
         )
     ]
+
+
+def test_a_fragment_without_a_manifest_is_named_as_a_loss(tmp_path, caplog):
+    """A shard `timeout` kills before its commit marker banks rows but never counts what it
+    did not reach — the routine time-budget exit, which the loss line used to skip."""
+    store = tmp_path / "store"
+    _write_store(store, ["prior:1"])
+    frags = tmp_path / "frags"
+    _write_store(frags / "shard-0", ["a:1", "a:2"])
+    (frags / "shard-0" / "manifest.json").unlink()
+    upgrades = tmp_path / "upgrades.txt"
+    upgrades.write_text("", encoding="utf-8")
+
+    with caplog.at_level("INFO", logger="headstart.ingest.embed_merge"):
+        _run_with_upgrades(store, frags, upgrades)
+
+    warnings = [r.getMessage() for r in caplog.records if r.levelname == "WARNING"]
+    assert warnings == [
+        (
+            "embed shards lost Docs, which are re-planned next run: shard-0 (no manifest — "
+            "stopped before finishing, e.g. its time budget; 2 rows banked, unattempted unknown)"
+        )
+    ]
+
+
+def test_a_missing_upgrade_list_with_fragments_warns(tmp_path, caplog):
+    store = tmp_path / "store"
+    _write_store(store, ["prior:1"])
+    frags = tmp_path / "frags"
+    _write_store(frags / "shard-0", ["a:1"])
+
+    with caplog.at_level("INFO", logger="headstart.ingest.embed_merge"):
+        _run_with_upgrades(store, frags, tmp_path / "absent.txt")
+
+    warnings = [r.getMessage() for r in caplog.records if r.levelname == "WARNING"]
+    assert len(warnings) == 1 and warnings[0].startswith("upgrade list missing at ")
 
 
 def test_merge_first_run_no_prior_store(tmp_path):

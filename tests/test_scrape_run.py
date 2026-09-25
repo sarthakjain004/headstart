@@ -499,3 +499,14 @@ def test_a_clean_empty_board_is_named_at_info(caplog):
         "greenhouse:quiet: 0 jobs in 1.0s (scraped clean, no postings)": logging.INFO,
         "greenhouse:busy: 5 jobs in 1.0s": logging.DEBUG,
     }
+
+
+def test_read_have_details_reads_a_corrupt_list_as_absent(tmp_path, caplog):
+    """Its docstring's promise: a torn skip-list costs re-fetches, never the shard."""
+    from headstart.ingest import scrape_run as sr
+
+    path = tmp_path / "held_details.txt.gz"
+    path.write_bytes(b"not gzip at all")
+    with caplog.at_level("INFO", logger=sr.__name__):
+        assert sr._read_have_details(path) is None
+    assert "treated as absent" in caplog.text

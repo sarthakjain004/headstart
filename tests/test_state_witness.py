@@ -184,3 +184,11 @@ def test_published_roots_parses_what_publish_wrote(monkeypatch, tmp_path: Path) 
     sw.publish(tmp_path)
     _stub_hub(monkeypatch, lambda *a, **k: str(tmp_path / sw.WITNESS_PATH))
     assert sw.published_roots("repo", None) == {"data/state"}
+
+
+def test_a_malformed_witness_names_its_file(monkeypatch, tmp_path: Path) -> None:
+    witness = tmp_path / "published_dirs.json"
+    witness.write_text('{"not_dirs": []}', encoding="utf-8")
+    _stub_hub(monkeypatch, lambda *a, **k: str(witness))
+    with pytest.raises(ValueError, match=sw.WITNESS_PATH):
+        sw.published_roots("repo", None)

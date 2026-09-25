@@ -204,6 +204,7 @@ def read_window_sum(
     touched: set[str] | frozenset[str] = frozenset(),
     metric: str = "stock",
     arrivals: dict[str, str] | None = None,
+    tally: dict[str, int] | None = None,
 ) -> tuple[collections.Counter, list[str]]:
     """Per-Board sum of one delta-ledger ``metric`` over the trailing window, and the tick stamps
     it covers. Under ``stock`` that is the net change. Under a turnover metric (``opened``,
@@ -242,6 +243,9 @@ def read_window_sum(
     cost is one ordinary run of real change per counting change. A duplicate-removal change
     (``dedup``, from :func:`dedup_changes`) is left out, with its run after, only for the Boards
     it can move (``touched``) — the runs the Trends chart leaves out of the line a row opens.
+
+    ``tally``, when given, is filled with how many ticks were read and why each dropped one was
+    dropped, so a caller left with no stamps can say which rule emptied the window.
     """
     import pyarrow.parquet as pq
 
@@ -280,15 +284,26 @@ def read_window_sum(
     # A duplicate-removal change, with its run after, only for the Boards it can move
     # (``touched``, from :func:`dedup_touches`).
     left_out_touched = runs_of(dedup)
+    read = len(ticks)
+    n_baselines = sum(ts in baselines for _, ts, _ in ticks)
     ticks = [
         (path, ts)
         for path, ts, version in ticks
         if ts not in baselines and version_spans.version_at(span_list, ts) == version
     ]
+    if tally is not None:
+        tally.update(
+            ticks=read,
+            baselines=n_baselines,
+            stray=read - n_baselines - len(ticks),
+            left_out=0,
+        )
     if not ticks:
         return collections.Counter(), []
     newest = max(ts for _, ts in ticks)
     cutoff = (datetime.fromisoformat(newest) - timedelta(days=WINDOW_DAYS)).isoformat()
+    if tally is not None:
+        tally["left_out"] = sum(ts >= cutoff and ts in left_out for _, ts in ticks)
 
     moved: collections.Counter = collections.Counter()
     stamps: list[str] = []
@@ -506,7 +521,8 @@ def main() -> int:
         "touched": dedup_touches(set(stock) | set(arrivals)),
         "arrivals": arrivals,
     }
-    moved, stamps = read_window_sum(args.board_deltas, **window_rules)
+    tally: dict[str, int] = {}
+    moved, stamps = read_window_sum(args.board_deltas, **window_rules, tally=tally)
     # The window's turnover (ADR-0227), over the same runs the net change sums, so a row's three
     # figures describe one stretch of time.
     opened, turnover_stamps = read_window_sum(
@@ -516,10 +532,19 @@ def main() -> int:
         args.board_deltas, **window_rules, metric=job_turnover.CLOSED
     )
     if not stamps:
-        # One delta file exists and it is the baseline. There is no measured change yet, and a
-        # lens built on the baseline would rank every Board as newly created.
+        # No measured change is left to rank: only baselines exist yet, or every in-window tick
+        # was left out. A lens built on a baseline would rank every Board as newly created. The
+        # output is not touched, so the previous list stays served — which the line says.
+        previous = "none"
+        if args.out.exists():
+            previous = json.loads(args.out.read_text(encoding="utf-8")).get(
+                "generated_at", "undated"
+            )
         _log.warning(
-            "only the baseline delta tick exists — no measured window, no hot list"
+            f"no measured change in the window: {tally.get('ticks', 0)} tick(s) in "
+            f"{args.board_deltas}, {tally.get('baselines', 0)} span baseline(s), "
+            f"{tally.get('stray', 0)} of a stray version, {tally.get('left_out', 0)} left out as "
+            f"counting changes — the previous hot list ({previous}) stays served"
         )
         return 0
     lenses, counts = rank(

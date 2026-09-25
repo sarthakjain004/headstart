@@ -57,6 +57,10 @@ def publish(repo: str, token: str | None, root: Path = REPO_ROOT) -> None:
             f"{unconfirmed} absent — publishing the table without its grace set; the Hub keeps "
             "the previous run's, which the next sync will read as this table's (ADR-0083)"
         )
+    size = sum((root / p).stat().st_size for p in paths)
+    # Said before the commit too: a multi-GB upload runs for minutes, and a hang in it was
+    # otherwise indistinguishable from the step never starting.
+    _log.info(f"publishing {len(paths)} file(s), {size / 1e9:.2f} GB …")
     HfApi(token=token).create_commit(
         repo_id=repo,
         repo_type="dataset",
@@ -65,7 +69,6 @@ def publish(repo: str, token: str | None, root: Path = REPO_ROOT) -> None:
         ],
         commit_message="nightly: lancedb index + unconfirmed ids + eviction queue",
     )
-    size = sum((root / p).stat().st_size for p in paths)
     _log.info(
         f"published {len(paths)} file(s), {size / 1e9:.2f} GB: {_TABLE}/ + "
         f"{', '.join(included) or 'nothing beside it'} in one commit"

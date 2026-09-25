@@ -138,13 +138,17 @@ def _field(array: list[Any] | None, index: int) -> Any:
     return array[index]
 
 
-def _merge_into(seen: dict[str, list[Any]], batch: list[list[Any]]) -> None:
+def _merge_into(seen: dict[str, list[Any]], batch: list[list[Any]]) -> int:
     """Add one fetched page's jobs to ``seen``, keyed by native id — shared by the fan-out loop
     and the tail walk in :meth:`GoogleScraper.fetch_raw` so a page fetched twice under drift
-    can't double-count."""
+    can't double-count. Returns how many rows carried no id, which the caller reports."""
+    unkeyed = 0
     for job in batch:
         if jid := _field(job, 0):
             seen.setdefault(jid, job)
+        else:
+            unkeyed += 1
+    return unkeyed
 
 
 def _pair(value: Any) -> Any:
@@ -261,6 +265,8 @@ class GoogleScraper(BaseScraper):
         seen: dict[str, list[Any]] = {
             jid: job for job in first_jobs if (jid := _field(job, 0))
         }
+        listed = len(first_jobs)
+        unkeyed = sum(1 for job in first_jobs if not _field(job, 0))
         total = _field(first, 2)
         total = total if isinstance(total, int) else 0
         last_page, last_page_size = 1, len(first_jobs)
@@ -292,7 +298,8 @@ class GoogleScraper(BaseScraper):
                     # real frontier and, walking forward one page at a time, naturally retries
                     # this failed page too.
                     continue
-                _merge_into(seen, batch)
+                unkeyed += _merge_into(seen, batch)
+                listed += len(batch)
                 last_page, last_page_size = page, len(batch)
         # page 1's total is only an ESTIMATE of how many pages to fan out — it is measured to
         # drift during a walk (module docstring: 3,414 -> 3,387 within a minute), and a total
@@ -305,8 +312,10 @@ class GoogleScraper(BaseScraper):
         while last_page_size >= _PAGE_SIZE and last_page < _MAX_PAGES:
             last_page += 1
             batch = self._fetch_page(last_page, page_losses)
-            _merge_into(seen, batch)
+            unkeyed += _merge_into(seen, batch)
+            listed += len(batch)
             last_page_size = len(batch)
+        self.note_unread_rows(unkeyed, listed, "carried no id")
         if last_page_size >= _PAGE_SIZE and last_page >= _MAX_PAGES:
             self.mark_truncated(
                 f"hit the {_MAX_PAGES}-page cap at {len(seen)} postings — the rest unread"
@@ -331,13 +340,14 @@ class GoogleScraper(BaseScraper):
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
         jobs: list[Job] = []
-        undescribed = 0
+        undescribed = untitled = 0
         for item in raw or []:
             if not isinstance(item, list):
                 continue
             native_id = _field(item, 0)
             title = _field(item, 1)
             if not native_id or not title:
+                untitled += 1
                 continue
             location = _location(_field(item, 9))
             jobs.append(
@@ -357,6 +367,7 @@ class GoogleScraper(BaseScraper):
                 )
             )
             undescribed += jobs[-1].description is None
+        self.note_unread_rows(untitled, len(raw or []), "carried no id or title")
         # Positional fields fail silently when an index moves (module docstring). 0 of 100
         # postings across five live pages lacked a description on 2026-09-25, so a share this
         # large is the layout, not the postings.

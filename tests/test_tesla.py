@@ -477,3 +477,12 @@ def test_one_403_in_a_batch_is_a_wall_and_discards_the_batch(
         read()
 
     assert wall.value.status == 403 and tab.navigations == 0
+
+
+def test_a_wall_read_from_silence_does_not_claim_the_origin_answered():
+    """The state-call timeout is walled as a 403 for the egress logic, but its text must not say
+    the origin answered 403 when it answered nothing."""
+    silent = TeslaWalled(403, "no state call within 20s (read as a wall)")
+
+    assert silent.status == 403 and "answered" not in str(silent)
+    assert str(TeslaWalled(429)) == "the origin answered 429"

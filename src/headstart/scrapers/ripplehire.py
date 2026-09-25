@@ -143,7 +143,14 @@ class RippleHireScraper(BaseScraper):
                 headers=headers,
                 timeout=30,
             )
-            data = response.json()
+            try:
+                data = response.json()
+            except ValueError:
+                # A non-JSON body (a 5xx/403 HTML page) already fails the Board; raise it as
+                # the HTTP error it is so the log names the status, not a JSONDecodeError. A
+                # JSON error body still reaches the `jobVoList` lines below, as before.
+                response.raise_for_status()
+                raise
             if page == 0:
                 # Kept from the first page: a page that ends the walk may be an error body with
                 # no `totalJobCount`, and testing the shortfall against it reads `< 0`.

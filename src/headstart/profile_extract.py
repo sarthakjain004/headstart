@@ -183,6 +183,17 @@ def extract(resume: str, ask: Callable[[str], str]) -> dict[str, Any]:
         raise EmptyExtraction(
             "couldn't derive a role from that text — fill the profile in by hand instead"
         )
+    # The prompt forbids years/salary in the sentence; the model writing them anyway is prompt
+    # drift. Counted from the pattern's own matches, not a before/after diff, so the quote and
+    # full-stop tidying `scrub_query` also does is not mistaken for it. Counts only.
+    removed = sum(
+        len(m.group()) for m in _FORBIDDEN.finditer(raw_query[:_MAX_SCRUB_CHARS])
+    )
+    if removed:
+        _log.warning(
+            f"profile extraction: scrub removed {removed} chars from a "
+            f"{len(raw_query)}-char query field"
+        )
     return {
         "query": query,
         "title": _fact(data.get("title")),

@@ -278,10 +278,13 @@ class ICIMSScraper(BaseScraper):
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
         jobs: list[Job] = []
+        untitled = 0
         for item in raw:
             fields = item.get("fields") or {}
             title = (fields.get("title") or "").strip()
             if not title:
+                # A page that never read is already in the gap line; count only the rest.
+                untitled += bool(fields)
                 continue  # page unreadable or a wrapper — nothing to keep the Job by
             location = fields.get("location")
             remote = fields.get("remote")
@@ -308,6 +311,7 @@ class ICIMSScraper(BaseScraper):
                     salary=fields.get("salary"),
                 )
             )
+        self.note_unread_rows(untitled, len(raw), "had a JobPosting with no title")
         return jobs
 
     def job_url(self, job_url: str) -> str:

@@ -292,6 +292,7 @@ class ADPRecruitingScraper(BaseScraper):
         seen: set[str] = set()
         total: int | None = None
         skip, top = 0, _PAGE
+        listed = unkeyed = 0
         for _ in range(_MAX_PAGES):
             data = self._page(token, skip, top)
             if data is None:
@@ -304,7 +305,14 @@ class ADPRecruitingScraper(BaseScraper):
                 )
                 return rows, total or 0
             total = data.get("count") or 0
+            if skip == 0 and "jobRequisitions" not in data:
+                # An empty Board still states `jobRequisitions: []` (3 of 3 live, 2026-09-25).
+                self.note_unreadable_board(
+                    "a listing page with jobRequisitions", f"keys {sorted(data)}"
+                )
             page = data.get("jobRequisitions") or []
+            listed += len(page)
+            unkeyed += sum(1 for row in page if not row.get("reqId"))
             for row in page:
                 if row.get("reqId") and row["reqId"] not in seen:
                     seen.add(row["reqId"])
@@ -318,6 +326,7 @@ class ADPRecruitingScraper(BaseScraper):
                 f"hit the {_MAX_PAGES}-page cap at {len(seen)} of {total} postings"
             )
             return rows, total or 0
+        self.note_unread_rows(unkeyed, listed, "carried no reqId")
         if rows and not total:
             # No `count` ends the walk after page 1 (`len(seen) >= 0`), so nothing past it is
             # read. Said, not marked truncated: whether that should shield the Board from

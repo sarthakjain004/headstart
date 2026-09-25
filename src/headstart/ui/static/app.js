@@ -12,10 +12,16 @@ const safeUrl = u => { const l=(u||'').toLowerCase(); return (l.startsWith('http
 function logFail(method, url, status, err){
   if (err && err.name === 'AbortError') return;
   const path = String(url).split('?')[0];
-  if (err) console.error('[api]', method, path, status || 'no response', err);
+  // A SyntaxError from r.json() quotes the body in V8, so only its name is logged.
+  if (err) console.error('[api]', method, path, status || 'no response', err.name === 'SyntaxError' ? err.name : err);
   else console.warn('[api]', method, path, status);
 }
-window.addEventListener('unhandledrejection', e => console.error('[app] unhandled', e.reason));
+// preventDefault after logging: the browser would otherwise print the rejection a second time.
+window.addEventListener('unhandledrejection', e => {
+  const why = e.reason;
+  console.error('[app] unhandled', why && why.name === 'SyntaxError' ? why.name : why);
+  e.preventDefault();
+});
 for (const id of ['q', 'kw']) el(id).addEventListener('keydown', e => { if (e.key === 'Enter') go(); });
 
 /* ---- tabs. The hash names the panel (#search, #trends); unknown hashes fall back to
@@ -1433,7 +1439,7 @@ async function toggleStar(jobId){
                                 body: JSON.stringify({ job_id: jobId, ...copy }) });
     d = await r.json().catch(() => null);
   }catch(e){ logFail('POST', '/saved', 0, e); }
-  if (r && !r.ok) logFail('POST', '/saved', r.status);
+  if (r && (!r.ok || !d)) logFail('POST', '/saved', r.status);
   if (r && r.ok && d){
     savedByJob.set(jobId, d);
     // A loadSaved that raced this POST (opening the Saved tab re-fetches) read server truth
@@ -2578,7 +2584,11 @@ async function loadTrends(family){
   let payload, err, refused, r;
   try {
     r = await fetch('/trends' + (q.size ? '?' + q : ''), { signal: req.signal });
-    if (r.ok) payload = await r.json();
+    if (r.ok){
+      payload = await r.json();
+      // A 200 of the wrong shape would pass here and throw inside drawTrends instead.
+      if (!payload || !Array.isArray(payload.series) || !Array.isArray(payload.stamps)) throw new Error('shape');
+    }
     else if (trendPicks.length && (r.status === 400 || r.status === 503))
       refused = { status: r.status, error: ((await r.json().catch(() => null)) || {}).error || '' };
     else err = r.status === 401

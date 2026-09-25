@@ -121,7 +121,11 @@
       if (response.status === 503) { this._state = 'off'; return { state: 'off' }; }
       return response.json().then(
         body => ({ state: 'ready', status: response.status, body }),
-        () => ({ state: 'ready', status: response.status, body: null })
+        () => {
+          /* A refusal was said above; an answer that claims success but will not parse was not. */
+          if (response.status < 400) console.warn('[api]', method, path, response.status, 'unreadable body');
+          return { state: 'ready', status: response.status, body: null };
+        }
       ).then(result => {
         /* A reachable endpoint means the feature is configured and this session is signed in,
            whatever this particular request answered — a 409 is a working sync, not a broken one. */
@@ -346,6 +350,15 @@
     }
     if (result.status === 409) {
       return this._conflict(doc, (result.body && result.body.stored) || null);
+    }
+    /* A 200 whose body would not parse confirms nothing: recording `candidate.rev` would claim
+       a revision the server may never have stored. Kept dirty and said, like a refusal. */
+    if (result.status === 200 && result.body === null) {
+      this._dirty = doc;
+      this._error = 'unconfirmed';
+      this._onMessage('Not confirmed by your account — saved in this browser.', true);
+      this._onChange();
+      return null;
     }
     if (result.status !== 200) {
       this._dirty = doc;

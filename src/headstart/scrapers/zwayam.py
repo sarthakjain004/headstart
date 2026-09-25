@@ -566,7 +566,13 @@ class ZwayamScraper(BaseScraper):
             return f"https://{self.slug}/job-view/"
         if "ng-view" in html:
             return f"https://{self.slug}/#!/job-view/"
-        return self._fallback_link_base()
+        fallback = self._fallback_link_base()
+        # Said, because every Job of this Board now ships a guessed link shape.
+        _log.info(
+            f"{self.board_key()}: homepage answered {response.status_code} with no "
+            f"base-href/_next/ng-view marker — assuming {fallback}"
+        )
+        return fallback
 
     def _config(self) -> tuple[int | None, str | None]:
         """The tenant's numeric id and stated name, from the config endpoint. The detail POST
@@ -731,10 +737,12 @@ class ZwayamScraper(BaseScraper):
         link_base = (raw or {}).get("link_base") or self._fallback_link_base()
         jobs: list[Job] = []
         unlinked = 0
+        unnamed = 0
         for source in rows:
             native_id = source.get("id")
             title = (source.get("jobTitle") or "").strip()
             if native_id is None or not title:
+                unnamed += 1
                 continue
             location = _location(source)
             job_url = (source.get("jobUrl") or "").strip()
@@ -783,6 +791,10 @@ class ZwayamScraper(BaseScraper):
             )
         if unlinked:
             _log.info(f"{self.board_key()}: {unlinked} job(s) had no jobUrl, skipped")
+        if unnamed:
+            _log.info(
+                f"{self.board_key()}: {unnamed} row(s) had no id or title, skipped"
+            )
         return jobs
 
     def _salary_field(self, raw: dict) -> str | None:

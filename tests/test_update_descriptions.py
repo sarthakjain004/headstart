@@ -544,3 +544,31 @@ def test_malformed_change_ledger_lines_are_counted(tmp_path, caplog):
     with caplog.at_level("INFO", logger=ud.__name__):
         assert list(ud.read_changes(path)) == ["lever:a:1"]
     assert caplog.messages == [f"{path}: skipped 1 malformed line(s)"]
+
+
+def test_main_turns_a_torn_line_into_a_named_abort(tmp_path, monkeypatch, caplog):
+    """An `::error::` naming the file and line, not a bare traceback."""
+    jobs_dir = tmp_path / "tech"
+    jobs_dir.mkdir()
+    (jobs_dir / "lever.jsonl").write_text('{"id": \n', encoding="utf-8")
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "update_descriptions",
+            "--jobs",
+            str(jobs_dir),
+            "--store",
+            str(tmp_path / "store"),
+            "--prior-meta",
+            str(tmp_path / "absent-meta.jsonl"),
+        ],
+    )
+    with caplog.at_level("INFO", logger=ud.__name__), pytest.raises(SystemExit):
+        ud.main()
+    assert "no embedding metadata at" in caplog.text
+    errors = [r.getMessage() for r in caplog.records if r.levelname == "ERROR"]
+    assert len(errors) == 1
+    assert errors[0].startswith(
+        f"description store update aborted: {jobs_dir / 'lever.jsonl'} line 1: "
+    )

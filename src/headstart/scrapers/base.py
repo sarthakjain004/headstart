@@ -569,6 +569,19 @@ class BaseScraper(ABC):
             f"{self.board_key()}: read no jobs — expected {expected}, got {got}"
         )
 
+    def note_unread_rows(self, unread: int, listed: int, why: str) -> None:
+        """Say how many listed rows the parse skipped — a row with no id or title cannot become a
+        Job, and a bare ``continue`` leaves no trace that the listing held more than was read.
+
+        Logging only: the skipped rows stay out of any truncation measure, as before. INFO, one
+        line per Board and only when non-zero, for :meth:`note_unreadable_board`'s reason.
+        """
+        if unread > 0:
+            self._log.info(
+                f"{self.board_key()}: {unread} of {listed} listed row(s) {why} — "
+                "those postings are listed but unread"
+            )
+
     def note_detail_loss(self, cause: str) -> None:
         """Record what one empty detail result was lost *to*, for :meth:`report_detail_gaps`.
 
@@ -1385,6 +1398,14 @@ class BaseScraper(ABC):
                     self.note_detail_unattempted(DETAIL_WALLED)
                 continue
             except Exception as exc:  # noqa: BLE001 - one batch's failure must not sink the Board
+                # As in `_read_detail_outcome`: the Board's first of each type only.
+                if (
+                    not isinstance(exc, _ROUTINE_FAILURES)
+                    and not self.detail_losses[classify_exception(exc)]
+                ):
+                    _UNEXPECTED.report(
+                        f"{self.board_key()}: unexpected {type(exc).__name__} in a detail batch"
+                    )
                 for _ in formed:
                     self.note_detail_exception(exc)
                 continue

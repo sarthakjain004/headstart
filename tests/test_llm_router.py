@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import io
 import json
+import re
 import urllib.error
 import urllib.request
 
@@ -99,7 +100,48 @@ def test_failure_logs_type_and_status_but_never_the_host(monkeypatch, caplog):
     monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
     with pytest.raises(llm_router.RouterUnavailable):
         llm_router.ask("hello")
-    assert [r.getMessage() for r in caplog.records] == [
-        "llm router unavailable: HTTPError 502"
-    ]
-    assert caplog.records[0].levelname == "WARNING"
+    (record,) = caplog.records
+    assert re.fullmatch(
+        r"llm router unavailable after \d+\.\ds: HTTPError 502", record.getMessage()
+    )
+    assert record.levelname == "WARNING"
+
+
+def test_unreachable_router_logs_the_cause_type_but_never_the_host(monkeypatch, caplog):
+    """A refused tunnel, a connect timeout and a DNS failure are all `URLError`; the wrapped
+    cause's type tells them apart without the text, which names the host."""
+
+    def fake_urlopen(req, timeout=None):
+        raise urllib.error.URLError(
+            ConnectionRefusedError(61, "router.internal refused")
+        )
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    with pytest.raises(llm_router.RouterUnavailable):
+        llm_router.ask("hello")
+    (record,) = caplog.records
+    assert re.fullmatch(
+        r"llm router unavailable after \d+\.\ds: URLError\(ConnectionRefusedError\)",
+        record.getMessage(),
+    )
+    assert "router.internal" not in record.getMessage()
+
+
+def test_a_truncated_completion_is_served_but_warned(monkeypatch, caplog):
+    """`finish_reason: length` is a 200 with a fragment in it — the bug `_MAX_TOKENS` fixed once."""
+    reply = {
+        "choices": [{"message": {"content": "Java, Gra"}, "finish_reason": "length"}],
+        "usage": {"completion_tokens": 4000},
+    }
+    monkeypatch.setattr(
+        urllib.request,
+        "urlopen",
+        lambda req, timeout=None: _Response(json.dumps(reply).encode()),
+    )
+    assert llm_router.ask("hello") == "Java, Gra"
+    (record,) = caplog.records
+    assert record.levelname == "WARNING"
+    assert record.getMessage() == (
+        f"llm router: completion truncated at max_tokens={llm_router._MAX_TOKENS} "
+        "(completion_tokens=4000)"
+    )

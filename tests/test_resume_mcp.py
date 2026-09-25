@@ -441,6 +441,56 @@ def test_an_unexpected_crash_logs_its_stack_and_argument_names_not_values(
     assert "secret-id-value" not in record.getMessage()
 
 
+@pytest.mark.parametrize(
+    "params", [[1, 2], {"name": "get_resume", "arguments": [{"a": 1}]}, "resume text"]
+)
+def test_malformed_params_are_refused_and_logged_by_type_only(account, caplog, params):
+    """A list for params once raised out of the except handler's own log call and killed
+    the stdio server; a string's characters were logged as argument names."""
+    caplog.set_level("INFO", logger="headstart")
+    stdout = io.StringIO()
+    message = {"jsonrpc": "2.0", "id": 7, "method": "tools/call", "params": params}
+    srv.serve(io.StringIO(json.dumps(message) + "\n"), stdout, account)
+    assert json.loads(stdout.getvalue())["error"]["code"] == -32602
+    [record] = [r for r in caplog.records if r.name == srv.__name__]
+    assert record.levelname == "INFO" and "resume text" not in record.getMessage()
+
+
+def test_a_bug_in_handle_answers_an_internal_error_and_serving_continues(
+    account, monkeypatch, caplog
+):
+    monkeypatch.setattr(srv, "_result", lambda *a: 1 / 0)
+    stdin = io.StringIO(
+        json.dumps({"jsonrpc": "2.0", "id": 1, "method": "ping"})
+        + "\n"
+        + json.dumps({"jsonrpc": "2.0", "id": 2, "method": "nope"})
+        + "\n"
+    )
+    stdout = io.StringIO()
+    srv.serve(stdin, stdout, account)
+    replies = [json.loads(line) for line in stdout.getvalue().splitlines()]
+    assert [r["error"]["code"] for r in replies] == [-32603, -32601]
+    [record] = [r for r in caplog.records if r.name == srv.__name__]
+    assert record.levelname == "ERROR" and record.exc_info is not None
+
+
+def test_every_tool_call_leaves_one_debug_line_with_its_outcome(account, caplog):
+    caplog.set_level("DEBUG", logger="headstart")
+    srv.handle(
+        {
+            "jsonrpc": "2.0",
+            "id": 8,
+            "method": "tools/call",
+            "params": {"name": "get_resume", "arguments": {"document_id": "nope"}},
+        },
+        account,
+    )
+    [record] = [r for r in caplog.records if r.name == srv.__name__]
+    assert record.levelname == "DEBUG"
+    assert "get_resume -> refused" in record.getMessage()
+    assert "nope" not in record.getMessage().replace("get_resume", "")
+
+
 def test_a_real_client_handshake_over_a_real_subprocess():
     """The transport is hand-written (ADR-0137), so it is measured rather than reasoned about:
     a real `python -m headstart.resume_mcp`, real pipes, a real initialize/tools-list exchange.

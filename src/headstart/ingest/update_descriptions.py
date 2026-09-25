@@ -452,6 +452,14 @@ def compact(ats_dir: Path) -> int:
 def main() -> int:
     log.setup()
     log.context("update_descriptions")
+    try:
+        return _update_store()
+    except ValueError as exc:
+        # a torn line raises with its file:line; say so as an abort, not a bare traceback
+        log.fail(_log, f"description store update aborted: {exc}")
+
+
+def _update_store() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--jobs", default=str(_JOBS), help="tech corpus dir")
     ap.add_argument("--store", default=str(_STORE), help="description store dir")
@@ -519,6 +527,10 @@ def main() -> int:
     # is "learned", which is tens of thousands per run. Left unfiltered the queue is never small,
     # and a non-empty queue makes the merge load the whole ~1 GB description store every run rather
     # than only on a sweep.
+    if not Path(args.prior_meta).exists():
+        _log.info(
+            f"no embedding metadata at {args.prior_meta} — nothing will be queued to re-derive"
+        )
     embedded = _embedded_ids(Path(args.prior_meta))
     _log.info(f"prior store: {len(embedded):,} already-embedded ids")
 

@@ -67,6 +67,7 @@ import argparse
 import os
 import re
 import time
+from collections import Counter
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import UTC, datetime
@@ -546,7 +547,10 @@ def _download(
             hf_hub_url(repo, path, repo_type="dataset"), dest, sizes[path], headers
         )
     if _inner_retries:
-        _log.info(f"  {len(_inner_retries)} inner retries absorbed")
+        classes = ", ".join(
+            f"{k} {n}" for k, n in Counter(_inner_retries).most_common()
+        )
+        _log.info(f"  {len(_inner_retries)} inner retries absorbed ({classes})")
 
 
 def fetch_state(repo: str, patterns: list[str], token: str | None) -> int:
@@ -558,6 +562,7 @@ def fetch_state(repo: str, patterns: list[str], token: str | None) -> int:
     for attempt in range(1, _ATTEMPTS + 1):
         started = time.monotonic()
         advised: int | None = None  # what the Hub says to wait, when it says anything
+        failure: Exception | None = None  # this attempt's exception, if it raised one
         try:
             info = _dataset_info(repo, token)
             siblings = info.siblings
@@ -652,6 +657,7 @@ def fetch_state(repo: str, patterns: list[str], token: str | None) -> int:
                 f"e.g. {absent[0]}"
             )
         except Exception as exc:  # noqa: BLE001 — any Hub failure is retried the same way
+            failure = exc
             reason = reason_for(exc)
             advised = reset_after(exc)
         if attempt < _ATTEMPTS:
@@ -678,12 +684,20 @@ def fetch_state(repo: str, patterns: list[str], token: str | None) -> int:
             )
             time.sleep(wait)
 
+    # A traceback only for what is not I/O: `reason` already says all a 429 or a reset has to
+    # say, but a KeyError or AttributeError in `_download` would otherwise abort naming no line.
+    code_bug = (
+        failure is not None
+        and not isinstance(failure, OSError)
+        and _response(failure) is None
+    )
     _log.error(
         # reason first: this renders as a ::error:: annotation, which is read left-to-right and
         # truncated, so the status has to beat the pattern list to the front (ADR-0039)
         f"ABORT: {reason} — could not fetch {' '.join(patterns)} from {repo}.\n"
         "Refusing to continue: the state dirs are gitignored, so proceeding would rebuild and "
-        "publish from an empty store as if this were a first run."
+        "publish from an empty store as if this were a first run.",
+        exc_info=failure if code_bug else None,
     )
     return 1
 

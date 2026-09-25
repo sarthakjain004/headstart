@@ -209,12 +209,12 @@ class ClearCompanyScraper(BaseScraper):
             return {"xml": "", "details": {}}
         reqs = feed_reqs(xml)
         # `feed_reqs` skips a <job> with no referencenumber, which would otherwise vanish unsaid.
-        unkeyed = len(_JOB.findall(xml)) - sum(len(rows) for _, rows in reqs)
-        if unkeyed:
-            self._log.info(
-                f"{self.board_key()}: {unkeyed} <job> row(s) carried no referencenumber — "
-                "those postings are listed but unread"
-            )
+        listed = len(_JOB.findall(xml))
+        self.note_unread_rows(
+            listed - sum(len(rows) for _, rows in reqs),
+            listed,
+            "carried no referencenumber",
+        )
         details = self.run_detail_pass(
             reqs,
             key_of=lambda req_rows: req_rows[0],

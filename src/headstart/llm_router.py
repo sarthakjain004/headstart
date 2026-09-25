@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 import urllib.error
 import urllib.request
 
@@ -67,14 +68,39 @@ def ask(prompt: str) -> str:
             "Authorization": f"Bearer {os.environ.get('LITELLM_MASTER_KEY', '')}",
         },
     )
+    started = time.monotonic()
     try:
         with urllib.request.urlopen(req, timeout=_TIMEOUT) as resp:
             reply = json.load(resp)
-        return reply["choices"][0]["message"]["content"]
+        choice = reply["choices"][0]
+        # The one way a 200 can still be a wrong answer: a completion cut off at the token
+        # ceiling reads as a fragment ("Java, GraphQL") and is served as if whole — see
+        # `_MAX_TOKENS`. WARNING for the same `lastResort` reason as below.
+        if choice.get("finish_reason") == "length":
+            _log.warning(
+                "llm router: completion truncated at max_tokens=%d (completion_tokens=%s)",
+                _MAX_TOKENS,
+                (reply.get("usage") or {}).get("completion_tokens"),
+            )
+        return choice["message"]["content"]
     except Exception as exc:  # every failure mode maps to the same caller answer
         # The Space answers 503 without a word, so this is the only trace of why; WARNING
-        # because its `lastResort` shows nothing lower. Type and status only: the exception
-        # text can carry the router's host, which is private.
-        status = f" {exc.code}" if isinstance(exc, urllib.error.HTTPError) else ""
-        _log.warning("llm router unavailable: %s%s", type(exc).__name__, status)
+        # because its `lastResort` shows nothing lower. Type, status and the URLError's own
+        # cause type only — the exception text can carry the router's host, which is private.
+        # The cause and the elapsed time tell a refused tunnel (instant) from a connect
+        # timeout (the full `_TIMEOUT`) from a DNS failure.
+        if isinstance(exc, urllib.error.HTTPError):
+            detail = f" {exc.code}"
+        elif isinstance(exc, urllib.error.URLError) and isinstance(
+            exc.reason, BaseException
+        ):
+            detail = f"({type(exc.reason).__name__})"
+        else:
+            detail = ""
+        _log.warning(
+            "llm router unavailable after %.1fs: %s%s",
+            time.monotonic() - started,
+            type(exc).__name__,
+            detail,
+        )
         raise RouterUnavailable(f"{type(exc).__name__}: {exc}") from exc

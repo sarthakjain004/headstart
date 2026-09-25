@@ -107,6 +107,9 @@ _retries_lock = threading.Lock()
 # alone cannot say whether the retries bought anything. Kept apart from `_retries` so the pinned
 # `retries:` line (scripts/runlog/fanout_retries.py) keeps counting what it always has.
 _exhausted: Counter[str] = Counter()
+# Retries by the `ats:slug` they were spent on, where the caller passed one: the reason counter
+# says *why* a shard retried, this says *where*, which `_note_retry`'s DEBUG line alone hid in CI.
+_retries_by_board: Counter[str] = Counter()
 
 
 def retry_stats() -> Counter[str]:
@@ -121,11 +124,18 @@ def exhausted_stats() -> Counter[str]:
         return Counter(_exhausted)
 
 
+def retry_stats_by_board() -> Counter[str]:
+    """A snapshot of retries by ``ats:slug`` since the last reset; unattributed ones are absent."""
+    with _retries_lock:
+        return Counter(_retries_by_board)
+
+
 def reset_retry_stats() -> None:
     """Zero the counters — a stage calls this once so its totals describe its own work."""
     with _retries_lock:
         _retries.clear()
         _exhausted.clear()
+        _retries_by_board.clear()
 
 
 def _note_exhausted(status: int | None) -> None:
@@ -254,6 +264,8 @@ def _note_retry(
     """
     with _retries_lock:
         _retries[_retry_reason(status)] += 1
+        if board:
+            _retries_by_board[board] += 1
     delay = (
         retry_after
         if retry_after is not None

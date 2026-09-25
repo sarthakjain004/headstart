@@ -155,7 +155,7 @@ def load(path: str | Path) -> dict[str, Failure]:
                     void += 1
                 else:
                     rows[board] = failure
-    except OSError as exc:
+    except (OSError, UnicodeDecodeError, csv.Error) as exc:
         _log.warning(
             f"unreadable failures ledger {p}: {exc} — reading it as empty, so no Board is "
             "quarantined this run"

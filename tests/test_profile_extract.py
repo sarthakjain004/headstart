@@ -78,13 +78,23 @@ def test_reply_that_is_not_json_raises_empty_extraction():
         pe.extract(_RESUME, ask=lambda p: "I cannot help with that.")
 
 
-def test_scrub_removes_years_and_salary_from_the_query_only():
-    out = pe.extract(
-        _RESUME,
-        ask=_reply(query="backend engineer, 7+ years of experience, ₹30 LPA, Kafka"),
-    )
+def test_scrub_removes_years_and_salary_from_the_query_only(caplog):
+    raw = "backend engineer, 7+ years of experience, ₹30 LPA, Kafka"
+    with caplog.at_level("WARNING", logger="headstart.profile_extract"):
+        out = pe.extract(_RESUME, ask=_reply(query=raw))
     assert out["query"] == "backend engineer, Kafka"
     assert out["years"] == 7  # the fact keeps what the sentence must not
+    # The model ignored the prompt — prompt drift, said by counts only.
+    (line,) = [r.getMessage() for r in caplog.records]
+    assert line.startswith("profile extraction: scrub removed ")
+    assert line.endswith(f"from a {len(raw)}-char query field")
+    assert "years" not in line and "Kafka" not in line
+
+
+def test_a_clean_query_or_mere_tidying_is_not_called_drift(caplog):
+    with caplog.at_level("WARNING", logger="headstart.profile_extract"):
+        pe.extract(_RESUME, ask=_reply(query='"backend engineer, Kafka."'))
+    assert not caplog.records
 
 
 @pytest.mark.parametrize(

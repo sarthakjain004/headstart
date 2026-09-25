@@ -76,12 +76,18 @@ import html
 import json
 import re
 import threading
+from collections import Counter
 from datetime import datetime
 from typing import Any
 
 from headstart import http
 from headstart.models import Job, html_to_text, is_remote
-from headstart.scrapers.base import USER_AGENT, BaseScraper
+from headstart.scrapers.base import (
+    USER_AGENT,
+    BaseScraper,
+    classify_exception,
+    loss_breakdown,
+)
 from headstart.scrapers.job_posting_jsonld import find_job_posting
 
 _CONTEXT = re.compile(r"csod\.context=(\{.*?\});", re.DOTALL)
@@ -370,15 +376,19 @@ class CornerstoneScraper(BaseScraper):
         first_per_site: dict[int, dict] = {}
         for row in rows:
             first_per_site.setdefault(row["_site"], row)
+        # What each page that stated nothing failed on, so a refusal is not read as an absence.
+        failures: Counter[str] = Counter()
         for site in sorted(first_per_site):
             url = self.job_url(site, str(first_per_site[site]["requisitionId"]))
             try:
                 response = self._fetch_once("GET", url)
-            except http.RequestsError:
+            except http.RequestsError as exc:
+                failures[classify_exception(exc)] += 1
                 continue
-            posting = (
-                find_job_posting(response.text) if response.status_code == 200 else None
-            )
+            if response.status_code != 200:
+                failures[f"HTTP {response.status_code}"] += 1
+                continue
+            posting = find_job_posting(response.text)
             # The keys are PascalCase on this ATS, unlike schema.org's own spelling.
             organization = (posting or {}).get("HiringOrganization")
             stated = (
@@ -387,9 +397,11 @@ class CornerstoneScraper(BaseScraper):
             if isinstance(stated, str) and stated.strip():
                 self.adopt_company(stated)
                 return
+        failed = sum(failures.values())
         self._log.info(
-            f"{self.board_key()}: no company name — {len(first_per_site)} posting page(s) "
-            "stated no HiringOrganization"
+            f"{self.board_key()}: no company name — {len(first_per_site)} posting page(s): "
+            f"{failed} failed{loss_breakdown(failures, failed)}, "
+            f"{len(first_per_site) - failed} stated no HiringOrganization"
         )
 
     async def _ad_async(self, session: Any, row: dict) -> str | None:

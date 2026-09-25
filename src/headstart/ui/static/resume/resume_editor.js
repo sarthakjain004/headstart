@@ -1786,12 +1786,18 @@
   async function prefill() {
     const note = el('rb-prefill-note');
     note.textContent = 'Reading…';
-    let profile = null, r;
+    let profile = null, r, failed = false;
     try {
       r = await fetch('/profile');
       if (r.ok) profile = await r.json();
-      else logFail('GET', '/profile', r.status);   // app.js's, loaded before this file
-    } catch (err) { logFail('GET', '/profile', r ? r.status : 0, err); profile = null; }
+      else { failed = true; logFail('GET', '/profile', r.status); }   // app.js's, loaded before this file
+    } catch (err) { failed = true; logFail('GET', '/profile', r ? r.status : 0, err); profile = null; }
+    /* "No profile" only when the Space said so; a failed read is not an empty profile. */
+    if (failed) {
+      note.textContent = r && r.status === 401 ? 'Sign in to fill from your profile.'
+        : 'Couldn’t read your profile — try again.';
+      return;
+    }
     if (!profile || profile.error) {
       note.textContent = 'No profile available here.';
       return;
@@ -2084,12 +2090,20 @@
     el('rb-new').addEventListener('click', () => startFresh(true));
     el('rb-new-blank').addEventListener('click', () => startFresh(false));
 
+    /* Why an account copy did not open, read from the state the failed pull just left: offline,
+       signed out and "not here" are not "that résumé is broken". */
+    const unreadable = () => ({
+      'signed-out': 'Sign in to open it.',
+      unreachable: 'You’re offline — try again.',
+      off: 'Account copies aren’t available here.',
+    }[sync.status().state] || 'That résumé could not be read.');
+
     el('rb-doclist-remote').addEventListener('click', e => {
       const pull = e.target.closest('[data-pull]');
       if (!pull || !sync) return;
       flashSaved('Opening from your account…');
       sync.pull(pull.dataset.pull).then(incoming => {
-        if (!incoming || !incoming.root) { flashSaved('That résumé could not be read.', true); return; }
+        if (!incoming || !incoming.root) { flashSaved(unreadable(), true); return; }
         /* Opened from storage, so a refused write has nothing to open: say that, not "Opened". */
         if (refusedWrite(repository.save(incoming))) return;
         openDocument(incoming.id);
@@ -2106,7 +2120,7 @@
            the one thing this feature must never do. */
         flashSaved('Opening from your account…');
         sync.adoptAccountCopy(newer.dataset.pullNewer).then(got => {
-          if (!got) flashSaved('That résumé could not be read.', true);
+          if (!got) flashSaved(unreadable(), true);
           docListPaint();
         });
         return;
@@ -2209,7 +2223,13 @@
       const payload = format === 'json' ? doc() : view();
       const by = { pdf: Export.print, word: Export.asWord, text: Export.asText,
         html: Export.asHtml, json: Export.asJson }[format];
-      if (by) by(window, payload);
+      try {
+        if (by) by(window, payload);
+      } catch (err) {
+        /* The name only: an export error's message can quote the résumé it was building. */
+        console.error('[resume] export failed', format, err && err.name);
+        flashSaved('That download could not be made — try another format or a JSON backup.', true);
+      }
       closePopovers();
     });
 

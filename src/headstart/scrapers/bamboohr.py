@@ -236,12 +236,9 @@ class BambooHRScraper(BaseScraper):
                         "department": departments.get(m.group("id")),
                     }
                 )
-        untitled = len(matches) - len(candidates)
-        if untitled:
-            self._log.info(
-                f"{self.board_key()}: {untitled} of {len(matches)} position row(s) carried no "
-                "title link — those postings are listed but unread"
-            )
+        self.note_unread_rows(
+            len(matches) - len(candidates), len(matches), "carried no title link"
+        )
         details = self.run_detail_pass(
             candidates,
             key_of=lambda candidate: candidate["id"],

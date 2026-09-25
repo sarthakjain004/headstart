@@ -412,6 +412,7 @@ class SuccessFactorsScraper(BaseScraper):
             return {}
         chunks: list[bytes] = []
         size = 0
+        aborted = None
         try:
             for chunk in response.iter_content():
                 chunks.append(chunk)
@@ -419,14 +420,15 @@ class SuccessFactorsScraper(BaseScraper):
                 if size >= _RSS_CAP:
                     break
         except http.RequestsError:
-            pass  # keep whatever arrived — partial coverage still saves detail fetches
+            # keep whatever arrived — partial coverage still saves detail fetches — but say so
+            aborted = f"aborted {size:,} bytes in"
         finally:
             response.close()
         if response.status_code != 200:
             self._sitemal_failure = f"HTTP {response.status_code}"
             return {}
         items = _sitemal_items(b"".join(chunks).decode("utf-8", "replace"))
-        self._sitemal_failure = None if items else "no readable items"
+        self._sitemal_failure = aborted or (None if items else "no readable items")
         return items
 
     def fetch_raw(self) -> Any:
@@ -557,6 +559,7 @@ class SuccessFactorsScraper(BaseScraper):
             _log.info(
                 f"{self.board_key()}: sitemal.xml filled {unread - lost} of {unread} "
                 "unreadable job pages"
+                + (f" (feed {self._sitemal_failure})" if self._sitemal_failure else "")
             )
         elif unread:
             _log.info(

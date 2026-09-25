@@ -297,3 +297,21 @@ def test_the_live_set_assertion_fires_even_if_selection_is_wrong(monkeypatch):
     monkeypatch.setattr(rs, "orphans", lambda *a, **k: [live_blob])
     assert run(hub) == 1
     assert hub.deleted == [], "nothing may be deleted once the assertion trips"
+
+
+def test_orphans_held_back_by_age_are_named(caplog):
+    """`orphans` drops a young blob silently; the run says how much it left for a later one."""
+    young = SimpleNamespace(
+        file_oid="young", filename="f", size=2_000_000_000, pushed_at=datetime.now(UTC)
+    )
+    hub = FakeHub(
+        live=[sibling("live", 1_000_000)],
+        stored=[blob("live", 1_000_000), young],
+        used=2_001_000_000,
+    )
+    with caplog.at_level("INFO", logger="headstart.ingest.reclaim_storage"):
+        assert run(hub) == 0
+    assert hub.deleted == []
+    assert (
+        "1 orphaned object(s), 2.00 GB held back as younger than 45 min" in caplog.text
+    )

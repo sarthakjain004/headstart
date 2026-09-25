@@ -87,6 +87,10 @@ def upgrade_older_header(path: Path) -> None:
         staged.replace(path)
     finally:
         staged.unlink(missing_ok=True)
+    _log.info(
+        f"{path}: upgraded header from {len(rows[0])} to {len(_COLUMNS)} columns "
+        f"({len(rows) - 1} boundary rows kept)"
+    )
 
 
 def _read_state(path: Path) -> tuple[tuple[str, ...] | None, bool]:

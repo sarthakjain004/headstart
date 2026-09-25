@@ -1208,3 +1208,38 @@ def test_read_detail_reports_a_bug_but_not_an_unparseable_body(monkeypatch, capl
     assert scraper._read_detail_outcome("title", ok) is None
     assert scraper.detail_losses["KeyError"] == 2
     assert len(caplog.records) == 1
+
+
+def test_a_detail_batch_that_raises_a_bug_is_reported_once_per_board(
+    monkeypatch, caplog
+):
+    """The batch catch-all labelled a bug as a loss and named neither file nor line."""
+    _fresh_unexpected(monkeypatch)
+    caplog.set_level(logging.INFO, logger=base.__name__)
+
+    def answer(ids):
+        raise KeyError("title")
+
+    scraper = _batch_scraper(answer)
+    scraper.run_detail_pass(
+        [{"id": i} for i in ("a1", "a2", "b1")],
+        key_of=lambda row: row.get("id"),
+        what="pages",
+    )
+
+    reports = [r for r in caplog.records if "in a detail batch" in r.getMessage()]
+    assert [r.levelno for r in reports] == [logging.WARNING]  # two batches, one report
+    assert reports[0].exc_info[0] is KeyError
+    assert scraper.detail_losses == {"KeyError": 3}
+
+
+def test_note_unread_rows_speaks_only_when_a_row_went_unread(caplog):
+    caplog.set_level(logging.INFO, logger="headstart.scrapers.stub")
+    scraper = _StubScraper("acme")
+    scraper.note_unread_rows(0, 5, "carried no id")
+    assert caplog.records == []
+    scraper.note_unread_rows(2, 5, "carried no id")
+    assert caplog.records[0].getMessage() == (
+        "stub:acme: 2 of 5 listed row(s) carried no id — "
+        "those postings are listed but unread"
+    )

@@ -167,11 +167,7 @@ class UberScraper(BaseScraper):
                     employment_type=_employment_type(item),
                 )
             )
-        if dropped := len(raw) - len(jobs):
-            self._log.info(
-                f"{self.board_key()}: parse dropped {dropped} of {len(raw)} rows "
-                "with no id/title"
-            )
+        self.note_unread_rows(len(raw) - len(jobs), len(raw), "with no id/title")
         return jobs
 
     def _salary_field(self, raw: Any) -> str | None:

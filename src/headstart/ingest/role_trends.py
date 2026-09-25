@@ -569,9 +569,7 @@ def _turnover_this_tick(
         turnover[job_turnover.unscoped_marker(live.get(lowered, lowered))] = 1
     loaded = role_assignments.load_placements(snapshot)
     if loaded is None:
-        _log.info(
-            "turnover: no comparable snapshot, so opened and closed start next run (ADR-0227)"
-        )
+        # `load_placements` has already said which reason, and that turnover waits a tick.
         return turnover, None
     previous, previous_as_of = loaded
     booked = job_turnover.turnover(
@@ -789,7 +787,13 @@ def main() -> int:
         # Entries the published snapshot already covers are dropped, never this run's: see
         # `job_turnover.drop_evictions_through`. After the snapshot, so a failed save keeps them.
         if booked_through is not None:
-            job_turnover.drop_evictions_through(args.eviction_queue, booked_through)
+            dropped, kept = job_turnover.drop_evictions_through(
+                args.eviction_queue, booked_through
+            )
+            _log.info(
+                f"eviction queue: dropped {dropped} booked through {booked_through}, "
+                f"{kept} carried forward"
+            )
     except (OSError, ValueError) as exc:
         _log.error(
             f"comparable Trends state unusable, no trends this run: {exc}",

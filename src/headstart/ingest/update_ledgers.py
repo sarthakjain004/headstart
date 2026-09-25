@@ -96,8 +96,20 @@ _LIVENESS = REPO_ROOT / "data" / "validate" / "liveness"
 
 
 def priority(args: argparse.Namespace) -> int:
-    snapshot_boards = {board_of(j["id"]) for j in iter_jobs(args.jobs)}
+    started = time.monotonic()
+    snapshot_rows = 0
+    snapshot_boards: set[str] = set()
+    for j in iter_jobs(args.jobs):
+        snapshot_rows += 1
+        snapshot_boards.add(board_of(j["id"]))
     tech_counts = Counter(board_of(j["id"]) for j in iter_jobs(args.tech))
+    tech_rows = tech_counts.total()
+    # Its own line: `priority:` is pinned. Both walks are the whole corpus, and untimed they
+    # were invisible inside the join job's wall clock.
+    _log.info(
+        f"read {snapshot_rows:,} snapshot / {tech_rows:,} tech rows in "
+        f"{time.monotonic() - started:.0f}s"
+    )
     prev = load_priority(args.ledger)
     rows = update_priority(prev, tech_counts, snapshot_boards)
     save_priority(args.ledger, rows)
@@ -156,13 +168,13 @@ def failures(args: argparse.Namespace) -> int:
     # `harvest` as "BrowserHTTPError: HTTP 404: ..." — a genuine 404 that never matches the
     # pattern, because `_GONE` looks for "HTTP Error 404" and this says "HTTP 404".
     examined = 0
-    unresolved = 0
+    unresolved: list[str] = []
     unmatched: Counter[str] = Counter()
     for report in reports:
         for key, reason in report.errors.items():
             board = board_key_of(key)
             if board is None:
-                unresolved += 1
+                unresolved.append(key)
                 continue
             examined += 1
             if board_failures.is_gone(str(reason)):
@@ -179,7 +191,7 @@ def failures(args: argparse.Namespace) -> int:
         for key in report.boards_ok:
             board = board_key_of(key)
             if board is None:
-                unresolved += 1
+                unresolved.append(key)
             else:
                 alive.add(board)
     # `board_of` yields the board_key shape the ids were built from, so both sides of the
@@ -210,7 +222,8 @@ def failures(args: argparse.Namespace) -> int:
     if unresolved:
         # Its own line: `failures:` is pinned, and a clause that vanishes at zero would break it.
         _log.info(
-            f"  {unresolved} report key(s) did not resolve to a board_key and were not counted"
+            f"  {len(unresolved)} report key(s) did not resolve to a board_key and were not "
+            f"counted: {log.named_sample(sorted(unresolved))}"
         )
     if unmatched:
         # Info, not warning: most of these are ordinary live failures (timeouts, 429s) that

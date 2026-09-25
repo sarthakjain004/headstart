@@ -281,8 +281,11 @@ def scoped_jobs_clause(
             return f"regexp_like(title, '(?i){joined}')"
         if not family:
             # Clipped `%r` for the reason `_warn_unknown_filters` gives: query-string input.
+            # No watchlist at all is a failed deploy of the config, not an unknown role.
             _log.warning(
-                "scope widened: role %.40r has no watch pattern; whole Board served",
+                "scope widened: role %.40r asked with no watchlist loaded; whole Board served"
+                if not watch_patterns
+                else "scope widened: role %.40r has no watch pattern; whole Board served",
                 role,
             )
     if not boards:
@@ -399,7 +402,7 @@ def _canonical_url(ats: str | None, url: str | None, job_id: str | None) -> str 
 
 
 def _warn_unknown_filters(
-    ats: str | None, etype: str | None, india: str | None, atses: Collection[str]
+    filters: SearchFilters, kw_in: str, sort: str, capabilities: IndexCapabilities
 ) -> None:
     """Say, once per request, that a query-string value missed its whitelist.
 
@@ -415,10 +418,14 @@ def _warn_unknown_filters(
     bad parameter from any crawler with a stale link. :meth:`JobSearch.parse_filters` parses a
     request exactly once, so this is said exactly once.
 
+    At most one line per parameter it checks — six a request (ats, employment_type, india,
+    salary_currency, kw_in, sort).
+
     Rendered through ``%r`` and clipped: the value comes from the query string, so it is never
     the format string itself and cannot open a second line in the log.
     """
-    if ats and ats not in atses:
+    ats, etype, india = filters.ats, filters.etype, filters.india
+    if ats and ats not in capabilities.atses:
         _log.warning("filter dropped: ats %.40r is not in this table", ats)
     if etype and etype not in employment_type_filter.RULES:
         _log.warning(
@@ -427,6 +434,34 @@ def _warn_unknown_filters(
     # `geo.where`'s own lookup order: the whole country, a region, else a city.
     if india and india not in (india_filter.WHOLE_COUNTRY, *geo.REGIONS, *geo.CITIES):
         _log.warning("filter dropped: india %.40r is not a known place", india)
+    # `build_filter`'s bracket fallback: an unserved currency is re-scoped to the default, and
+    # with the default unserved too the bracket compiles to nothing. Only once a bound is set —
+    # the currency alone is a modifier, not a filter.
+    currencies = capabilities.currencies
+    bracket = filters.salary_min is not None or filters.salary_max is not None
+    if (
+        capabilities.has_min_salary_annual
+        and bracket
+        and filters.salary_currency not in currencies
+    ):
+        _log.warning(
+            "filter re-scoped: salary_currency %.40r not served; "
+            + (
+                f"bracket uses {SALARY_DEFAULT_CURRENCY}"
+                if SALARY_DEFAULT_CURRENCY in currencies
+                else f"{SALARY_DEFAULT_CURRENCY} not served either, bracket dropped"
+            ),
+            filters.salary_currency,
+        )
+    # `parse_filters` falls an unknown scope back to the default; `run` sorts by nothing for
+    # an unknown sort. Both answer something other than what was asked.
+    if filters.kw and kw_in and kw_in not in KEYWORD_SCOPES:
+        _log.warning(
+            f"filter re-scoped: kw_in %.40r is not a known scope; {KEYWORD_DEFAULT_SCOPE} used",
+            kw_in,
+        )
+    if sort and sort not in SORT_COLUMNS:
+        _log.warning("sort dropped: %.40r is not a known sort; default order", sort)
 
 
 def _result_row(row: Mapping[str, Any], query: str) -> dict[str, Any]:
@@ -618,10 +653,11 @@ class JobSearch:
             )
         if caps.currencies and SALARY_DEFAULT_CURRENCY not in caps.currencies:
             # `run` converts a salary sort to the asked currency or the default; with neither served
-            # it falls back to raw cross-currency ordering (the ADR-0178 "INR above USD" shape).
+            # it falls back to raw cross-currency ordering (the ADR-0178 "INR above USD" shape),
+            # and `build_filter` compiles no bracket at all.
             _log.warning(
-                "salary sort unconverted unless a served currency is asked: "
-                f"{SALARY_DEFAULT_CURRENCY} not among served currencies"
+                f"{SALARY_DEFAULT_CURRENCY} not among served currencies: a salary sort with no "
+                "served currency asked is unconverted, and such a bracket is dropped"
             )
 
     @property
@@ -655,10 +691,7 @@ class JobSearch:
         ats = (args.get("ats") or "").strip() or None
         etype = (args.get("etype") or "").strip() or None
         india = (args.get("india") or "").strip().lower() or None
-        # The one place a request is parsed, and so the one place a dropped filter can be
-        # reported without `facets.counts` repeating it once per option — see the helper.
-        _warn_unknown_filters(ats, etype, india, self.capabilities.atses)
-        return SearchFilters(
+        filters = SearchFilters(
             remote=args.get("remote") == "true",
             max_years=_int("max_years"),
             ats=ats,
@@ -690,6 +723,12 @@ class JobSearch:
             if kw
             else None,
         )
+        # The one place a request is parsed, and so the one place a dropped filter can be
+        # reported without `facets.counts` repeating it once per option — see the helper.
+        _warn_unknown_filters(
+            filters, kw_in, (args.get("sort") or "").strip(), self.capabilities
+        )
+        return filters
 
     def facets(
         self, args: Mapping[str, str], *, extra_where: str | None = None
@@ -806,8 +845,12 @@ class JobSearch:
             if cached is not None:
                 return cached
 
+        encode_ms = 0.0  # a cache hit costs ~0 too; the slow line says which it was
         if query:
-            search = self._table.search(self._query_vector(query)).metric("cosine")
+            encode_started = time.monotonic()
+            vector = self._query_vector(query)
+            encode_ms = (time.monotonic() - encode_started) * 1000
+            search = self._table.search(vector).metric("cosine")
             if self.has_vector_index:
                 search = search.nprobes(ANN_NPROBES).refine_factor(ANN_REFINE_FACTOR)
         else:
@@ -891,8 +934,10 @@ class JobSearch:
 
             window.sort(key=key, reverse=True)
             rows = window[offset : offset + k]
+            path = "ranked-window"
         elif sort_currency:
             rows = self._salary_browse(where, sort_currency, k, offset)
+            path = "salary-browse"
         else:
             if sort:
                 # No query, so no ranking to protect: LanceDB can order the whole table. Same
@@ -904,13 +949,17 @@ class JobSearch:
                     ]
                 )
             rows = search.limit(k).offset(offset).to_list()
+            path = "ranked" if query else "browse"
 
         result = [_result_row(r, query) for r in rows]
         elapsed_ms = (time.monotonic() - started) * 1000
         if elapsed_ms > SLOW_SEARCH_MS:
-            # Shapes only: the query text is the user's and is never logged (ADR-0032).
+            # Shapes only: the query text is the user's and is never logged (ADR-0032). The path
+            # and encode time say where the time went: the model, the window, or the scan.
             _log.warning(
-                f"slow search {elapsed_ms:.0f} ms: sort={sort} query={bool(query)} "
+                f"slow search {elapsed_ms:.0f} ms: path={path} encode_ms={encode_ms:.0f} "
+                f"indexed={self.has_vector_index} page={page} k={k} sort={sort} "
+                f"query={bool(query)} extra_where={extra_where is not None} "
                 f"where_len={len(where or '')}"
             )
         if not query:

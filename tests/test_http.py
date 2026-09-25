@@ -82,6 +82,18 @@ def test_405_is_counted_apart_from_403(monkeypatch):
     assert stats["403-wall"] == 1
 
 
+def test_retries_are_counted_by_board_where_the_caller_names_one(monkeypatch):
+    """The per-Board tally says where a shard spent its retries; an unnamed request adds none."""
+    http.reset_retry_stats()
+    _stub(monkeypatch, [429, 503, 200])
+    http.fetch("GET", "u", egress_board="lever:acme")
+    _stub(monkeypatch, [503, 200])
+    http.fetch("GET", "u")
+    assert http.retry_stats_by_board() == {"lever:acme": 2}
+    http.reset_retry_stats()
+    assert http.retry_stats_by_board() == {}
+
+
 def test_a_network_error_is_never_classified_by_digits_in_its_message(monkeypatch):
     """Retry classes come from the status, never from the message text.
 

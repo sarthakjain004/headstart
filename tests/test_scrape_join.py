@@ -486,3 +486,29 @@ def test_a_board_scraped_clean_with_zero_jobs_is_in_the_scope(tmp_path):
         "greenhouse:emptyco",
         "workday:acme/Careers",
     }
+
+
+def test_the_join_names_the_shards_whose_reports_never_arrived(caplog):
+    caplog.set_level(logging.INFO, logger="headstart.ingest.scrape_join")
+    reports = [
+        ShardReport(shard="0", seconds=10.0),
+        ShardReport(shard="2", seconds=10.0),
+    ]
+    health = observability.ScrapeHealth.from_reports(reports, expected_reports=4)
+    js._report_shards(reports, 10, 1, health)
+    assert "missing shard reports: 1, 3" in caplog.text
+
+
+def test_the_egress_line_samples_its_addresses(caplog):
+    caplog.set_level(logging.INFO, logger="headstart.ingest.scrape_join")
+    ips = {f"ip:10.0.0.{i}": 1 for i in range(30)}
+    js._report_shards(
+        [ShardReport(shard="0", seconds=10.0, egress_ips={**ips, "colo:AMS": 30})],
+        10,
+        1,
+    )
+    line = next(m for m in caplog.messages if m.startswith("egress:"))
+    assert line.startswith(
+        "egress: 30 distinct address(es) across 1 shards, colos AMS; e.g. "
+    )
+    assert line.endswith("+20 more")

@@ -568,3 +568,24 @@ def test_a_board_whose_scraper_never_constructed_gets_no_floor(monkeypatch, tmp_
     assert not any(r.unfinished for r in rows.values()), (
         f"a Board that never started a fetch was costed as if it had: {rows}"
     )
+
+
+def test_a_job_labelled_with_an_unlisted_ats_is_kept_and_said_once(tmp_path, caplog):
+    """The run opens a file per listed ATS up front; a job labelled with any other ATS is a
+    scraper-labelling bug, still written, and named once per ATS at INFO — never an annotation."""
+    import logging
+
+    writer = harvest.JobWriter(tmp_path, {"lever"})
+    with caplog.at_level(logging.INFO, logger=harvest._log.name):
+        writer.write([make_job("lever:a:1", ats="lever")])
+        writer.write(
+            [make_job("ashby:a:1", ats="ashby"), make_job("ashby:a:2", ats="ashby")]
+        )
+    writer.close()
+    assert [(r.levelname, r.getMessage()) for r in caplog.records] == [
+        (
+            "INFO",
+            "jobs labelled ats=ashby (not in this run's Board list) — writing ashby.jsonl lazily",
+        )
+    ]
+    assert len((tmp_path / "ashby.jsonl").read_text().splitlines()) == 2

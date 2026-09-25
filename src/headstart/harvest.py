@@ -114,6 +114,15 @@ class JobWriter:
             if (
                 handle is None
             ):  # an ats not in the company list — open it lazily, just in case
+                # Every ATS the run's Boards name was opened above, so reaching here means a
+                # scraper labelled its jobs with another ATS: a bug signal, said once per ATS
+                # (the handle is cached below) and at INFO — the jobs are still kept.
+                _log.info(
+                    "jobs labelled ats=%s (not in this run's Board list) — writing %s.jsonl "
+                    "lazily",
+                    job.ats,
+                    job.ats,
+                )
                 handle = self._handles[job.ats] = (self._dir / f"{job.ats}.jsonl").open(
                     "a", encoding="utf-8"
                 )

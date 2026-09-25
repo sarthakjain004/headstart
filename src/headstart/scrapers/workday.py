@@ -614,6 +614,9 @@ class WorkdayScraper(BaseScraper):
         never provokes, so that special case is gone.)
         """
         hinted = self._requested_instance  # _instance is None here, so the URL's own
+        # The hinted probe's own outcome, kept for the no-data-centre line below: a 422 (moved)
+        # and a 429 or a dropped connection (unreachable) read the same otherwise.
+        outcomes: dict[str, str] = {}
 
         def serves(instance: str) -> bool:
             try:
@@ -633,8 +636,10 @@ class WorkdayScraper(BaseScraper):
                     },
                     timeout=30,
                 )
-            except http.RequestsError:
+            except http.RequestsError as exc:
+                outcomes[instance] = classify_exception(exc)
                 return False
+            outcomes[instance] = f"HTTP {response.status_code}"
             return response.status_code == 200
 
         if serves(hinted):
@@ -654,7 +659,8 @@ class WorkdayScraper(BaseScraper):
         # which the resulting error cannot carry.
         _log.info(
             f"{self.board_key()}: no Workday data centre served the probe "
-            f"({hinted} and every entry in INSTANCES) — crawling {hinted} anyway"
+            f"({hinted} and every entry in INSTANCES) — crawling {hinted} anyway; "
+            f"{hinted} answered {outcomes.get(hinted, 'nothing')}"
         )
 
     def _post(
@@ -952,6 +958,7 @@ class WorkdayScraper(BaseScraper):
                 wanted,
                 lambda item: self._job_detail(item.get("externalPath"), classes),
                 workers=_DETAIL_WORKERS,
+                what=self.board_key(),
             )
         # A no-`externalPath` posting that nonetheless carries a title is the one shape that would
         # make that loss cost something — it can pass the tech gate, and `parse` would then serve
@@ -1516,6 +1523,13 @@ class WorkdayScraper(BaseScraper):
             missing, error = self._paginate_sync(
                 applied, offsets, absorb, classes, retryable
             )
+        # Read before the pass spends it: a slice past the budget is not asked at all, and the
+        # shortfall should say so rather than read as pages that failed twice.
+        declined = (
+            f" (second pass declined: {len(retryable)} lost > {self._second_pass_left} left)"
+            if len(retryable) > self._second_pass_left
+            else ""
+        )
         missing -= self._second_pass(applied, retryable, absorb, classes)
         if not missing:
             return 0
@@ -1528,6 +1542,7 @@ class WorkdayScraper(BaseScraper):
         shortfall = (
             f"{missing} of {page_count} page(s) failed mid-crawl"
             + loss_breakdown(classes, missing)
+            + declined
         )
         if missing / page_count > _MAX_LOST_PAGE_SHARE:
             _log.info(

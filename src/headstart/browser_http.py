@@ -87,13 +87,10 @@ class BrowserUnavailable(Exception):
     """
 
 
-# Hand-rolled rather than `log.FirstOnly` on purpose, and not for the reason it first looks:
-# an f-string would satisfy `report`'s finished-string signature perfectly well. The difference
-# is what happens after the first: `FirstOnly` demotes to INFO and keeps naming every later
-# occurrence, which is right when each one carries its own subject. Here they do not — every
-# line after the first restates one browser's one broken blocking install, so this goes silent
-# instead. Swap it for the helper the day a second thing can fail here.
-_blocking_failed = False
+# One broken blocking install fails every Board the browser serves, so it costs one annotation:
+# the first failure warns with its traceback, every later one is an INFO line — each names the
+# Board-level slowdown that follows, so a run's log still shows how far the fault reached.
+_BLOCKING_FAILURE = log.FirstOnly(_log)
 
 
 async def _install_blocking(tab) -> None:
@@ -102,24 +99,18 @@ async def _install_blocking(tab) -> None:
     Not cosmetic: the wall doc measured an unblocked navigation at 20.6 s, above
     ``_NAV_TIMEOUT_S``. If pydoll's private command API drifts and this silently stops working,
     every walled Board becomes a bare navigation timeout with nothing pointing at the cause — so
-    the first failure is logged with its exception, once per process.
+    the first failure per process warns with its traceback, and every later one logs at INFO.
     """
-    global _blocking_failed
     try:
         from pydoll.commands.network_commands import NetworkCommands
 
         await tab.enable_network_events()
         await tab._execute_command(NetworkCommands.set_blocked_urls(_BLOCKED))
     except Exception as exc:  # noqa: BLE001 - an optimisation, not a gate: degrade, don't die
-        if not _blocking_failed:
-            _blocking_failed = True
-            _log.warning(
-                "subresource blocking unavailable (%s: %s) — navigations will be slower and "
-                "may exceed the %ss deadline",
-                type(exc).__name__,
-                exc,
-                _NAV_TIMEOUT_S,
-            )
+        _BLOCKING_FAILURE.report(
+            f"subresource blocking unavailable ({type(exc).__name__}: {exc}) — navigations "
+            f"will be slower and may exceed the {_NAV_TIMEOUT_S}s deadline"
+        )
 
 
 # Teardown failures (a reap, a tab close) are per walled Board, so INFO, never an annotation

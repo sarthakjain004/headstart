@@ -94,6 +94,9 @@ _PER_ITEM_BY_CONSTRUCTION = [
     _ROOT / "telegram_bot_api.py",
     # Once per résumé-parse request on the Space.
     _ROOT / "llm_router.py",
+    _ROOT / "profile_extract.py",
+    # Once per process by its cache, but reached from every Space request and every shard.
+    _ROOT / "fx.py",
 ]
 
 #: Every spelling a logger has in this package — the receiver a matched ``.warning``/``.error``
@@ -129,13 +132,13 @@ _ALLOWED: dict[str, str] = {
         "Trends category hand-off off (ADR-0185)."
     ),
     "search.py:_warn_unknown_filters": (
-        "Bound: 3 per HTTP request (ats, employment_type, india), and not against the annotation quota at all — `search.py` "
+        "Bound: at most 6 per HTTP request (ats, employment_type, india, salary_currency, kw_in, sort), and not against the annotation quota at all — `search.py` "
         "runs only in the deployed Space, which calls no `log.setup()`, so these render through "
         "`logging.lastResort` as bare stderr lines and no `::warning::` is ever produced. The "
         "budget that binds here is request volume, and this is the site that once cost 58 "
         "records a request: `facets.counts` re-entered `build_filter` once per facet option, "
         "driven by a URL parameter, unauthenticated. Hoisting the check to `parse_filters` — "
-        "the single parse point — made it 3 (one per filter it checks). WARNING rather than INFO is deliberate for the "
+        "the single parse point — made it at most 6 (one per parameter it checks). WARNING rather than INFO is deliberate for the "
         "same reason: `lastResort` carries WARNING and above only, so INFO here is invisible "
         "in the one deployment that serves users."
     ),
@@ -144,7 +147,8 @@ _ALLOWED: dict[str, str] = {
         "which acceleration flags are unmaterialized, so an un-migrated table cannot silently "
         "ignore `seen_within`/`salary` or answer on the slow raw clause with no record; (2) the "
         "ATS/currency whitelist scan capped below `count_rows()`; (3) served currencies with no "
-        "fx rate; (4) USD not served, so a salary sort cannot convert by default. Same "
+        "fx rate; (4) USD not served, so a salary sort with no served currency asked is "
+        "unconverted and such a bracket is dropped. Same "
         "`lastResort` reasoning as above: WARNING or invisible."
     ),
     "search.py:facets": (
@@ -155,8 +159,9 @@ _ALLOWED: dict[str, str] = {
     ),
     "search.py:scoped_jobs_clause": (
         "Bound: 1 per call, and it is called once per /search or /facets request (app.py's "
-        "`_company_where`). Five mutually exclusive branches: a hand-off with no `board=` "
-        "(ignored), a role with no watch pattern (scope widened), a family with no role "
+        "`_company_where`). Six mutually exclusive branches: a hand-off with no `board=` "
+        "(ignored), a role with no watchlist loaded or no watch pattern (scope widened), a "
+        "family with no role "
         "assignments loaded (widened), an unknown family (zero results), a category past "
         "`MAX_FAMILY_IDS` (refused). Values come from the query string, so they are "
         "`%.40r`-clipped. "
@@ -164,19 +169,39 @@ _ALLOWED: dict[str, str] = {
     ),
     "search.py:run": (
         "Fires only when an uncached request exceeds `SLOW_SEARCH_MS` (2 s), so rare by "
-        "construction. Shapes only (sort, has-query, where-clause length), never query text "
+        "construction. Shapes only (path, encode_ms, indexed, page, k, sort, has-query, "
+        "extra_where, where-clause length), never query text "
         "(ADR-0032). Space-only, so never an annotation."
     ),
-    "llm_router.py:ask": (
-        "Bound: once per résumé-parse request, capped per Account by `MAX_PARSES`. Space-only, "
-        "which calls no `log.setup()`, so it renders via `lastResort` and is never an "
-        "annotation; WARNING because `lastResort` shows nothing lower and the Space's 503 is "
-        "otherwise silent. Exception type and HTTP status only — the error text can name the "
-        "private router host."
+    "profile_extract.py:_reply_json": (
+        "Bound: at most 1 per `extract()` call, i.e. per POST /profile — every branch raises "
+        "right after its line (no text / no JSON / unparseable / not an object). Shapes and "
+        "sizes only, never reply text. Space-only, so never an annotation."
     ),
-    "browser_http.py:_install_blocking": (
-        "Bound: 1 per process by the `_blocking_failed` flag — the first failure to install "
-        "request blocking warns, every later Board rides the same unblocked browser silently."
+    "profile_extract.py:extract": (
+        "Bound: at most 1 per call — either no role sentence survived the scrub (then "
+        "EmptyExtraction) or the scrub removed N chars, never both. Counts only. Space-only."
+    ),
+    "fx.py:_no_conversion": (
+        "Bound: once per process — `table()` caches its answer; only an explicit `path=` "
+        "(tests and tools) bypasses the cache."
+    ),
+    "fx.py:table": (
+        "The unusable-rates line, once per process under the same cache as `_no_conversion`."
+    ),
+    "llm_router.py:ask": (
+        "Bound: at most one per résumé-parse request (the router unavailable, or a completion "
+        "truncated at `max_tokens` — exclusive outcomes of one call), capped per Account by "
+        "`MAX_PARSES`. Space-only, which calls no `log.setup()`, so it renders via `lastResort` "
+        "and is never an annotation; WARNING because `lastResort` shows nothing lower and the "
+        "Space's 503 (or a fragment served as a whole answer) is otherwise silent. Exception "
+        "type, HTTP status, the URLError's cause type and elapsed seconds only — the error text "
+        "can name the private router host."
+    ),
+    "browser_http.py:<module>": (
+        "`_BLOCKING_FAILURE`, a module-level `log.FirstOnly`: the first failure per process to "
+        "install subresource blocking warns with its traceback, every later one logs at INFO — "
+        "one broken pydoll command API fails every walled Board the browser serves, not one."
     ),
     "telegram_bot_api.py:<module>": (
         "`_SEND_FAILURE`, a module-level `log.FirstOnly`: the first failed send per process "
@@ -288,6 +313,12 @@ _LOOPED_OK: dict[str, str] = {
         "Fires at most once: the `break` below it ends the scan, and the `dropped` count in "
         "the line is the whole tail it is about to discard. The loop is how it finds the first "
         "unparseable metadata line, not how often it can report one."
+    ),
+    "resume_mcp/server.py:serve": (
+        "The Résumé MCP server's stdio loop (ADR-0137) runs on a user's machine under an MCP "
+        "client, never under Actions, so no annotation budget applies. The ERROR fires only "
+        "when `handle()` itself raises — a bug, not a per-request outcome — and it keeps the "
+        "session alive with a -32603 reply instead of killing the server."
     ),
     "ingest/state_fetch.py:fetch_state": (
         "Fires at most once per fetch: `first_run_noted` guards the first-run bootstrap "

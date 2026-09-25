@@ -6490,7 +6490,7 @@ def test_eightfold_counts_the_held_details_against_what_the_tech_gate_let_throug
     caplog,
 ):
     """The held skip keeps its own line, and a posting the gate dropped is not "already held"."""
-    caplog.set_level(logging.INFO, logger="headstart.scrapers.eightfold")
+    caplog.set_level(logging.DEBUG, logger="headstart.scrapers.eightfold")
     scraper, _fetcher = _eightfold_board(have_details={"eightfold:acme.eightfold.ai:1"})
 
     scraper._api_records(
@@ -6502,6 +6502,7 @@ def test_eightfold_counts_the_held_details_against_what_the_tech_gate_let_throug
         ],
     )
 
+    assert scraper.telemetry["detail_held"] == 1
     assert "fetched 1/2 descriptions (1 already held)" in caplog.text
 
 

@@ -234,8 +234,9 @@ def main() -> int:
     names = board_names(args.db, PROD_TABLE)
     if not names:
         # Every Board would fall back to its slug and every company would be named worse for
-        # a run. Keeping the previous directory is better.
-        _log.warning("keeping the previous company directory unchanged")
+        # a run. Keeping the previous directory is better. INFO: `board_names` has already
+        # warned why, and this is its consequence, not a second fault.
+        _log.info("keeping the previous company directory unchanged")
         return 0
     # The table wins wherever it still names a Board; the previous file only fills the gaps.
     entries = companies(boards, {**previous_names(args.out), **names})

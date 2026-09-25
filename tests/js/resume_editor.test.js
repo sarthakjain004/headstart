@@ -620,6 +620,16 @@ test('a format the menu does not offer is ignored rather than throwing', () => {
   assert.deepEqual(calls, []);
 });
 
+test('a download that throws says so in the bar and logs only the error name', () => {
+  const { ctx, el } = loadEditor();
+  ctx.ResumeExport.asWord = () => { throw new TypeError('Ada Lovelace, Analyst'); };
+  const logged = [];
+  ctx.console = { ...console, error: (...a) => logged.push(a.join(' ')) };
+  el('rb-pop-download').fire('click', { target: target({ fmt: 'word' }) });
+  assert.match(el('rb-saved').textContent, /could not be made/);
+  assert.deepEqual(logged, ['[resume] export failed word TypeError']);
+});
+
 /* ---- what a hidden segment costs -----------------------------------------------------------
 
    A HIDDEN ELEMENT MEASURES ZERO, and the sheet now starts inside a segment that is hidden. This

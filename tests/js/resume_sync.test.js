@@ -631,3 +631,20 @@ test('the listing is what a browser that has never seen these résumés reads', 
     assert.deepEqual(sync.rows(), rows);
   });
 });
+
+test('a 200 whose body will not parse is unconfirmed, not a stored revision', () => {
+  const doc = aDoc({ sync: true, rev: 0 });
+  const wire = { calls: [], request: () => Promise.resolve({
+    status: 200, json: () => Promise.reject(new SyntaxError('Unexpected token')) }) };
+  const warned = [];
+  const { sync, repository, messages, ctx } = loadSync({ docs: [doc], live: () => doc, wire });
+  ctx.console = { ...console, warn: (...a) => warned.push(a.join(' ')) };
+  sync.note(doc);
+  return sync.flush('save').then(() => {
+    assert.equal(repository.get(doc.id).rev, 0, 'an unreadable answer recorded a revision');
+    assert.equal(sync.status().at, null, 'an unreadable answer counted as a save');
+    assert.ok(sync.status().error);
+    assert.ok(messages.some(m => m.sticky && /Not confirmed/.test(m.text)), JSON.stringify(messages));
+    assert.deepEqual(warned, ['[api] PUT /resumes/rmfk3n2abcd 200 unreadable body']);
+  });
+});

@@ -211,3 +211,11 @@ def test_torn_rows_are_counted(tmp_path, caplog):
         rows = bf.load(path)
     assert list(rows) == ["greenhouse:b"]
     assert caplog.messages == [f"{path}: skipped 1 torn row(s), 0 void verdict(s)"]
+
+
+def test_an_undecodable_ledger_also_fails_open(tmp_path, caplog):
+    path = tmp_path / "board_failures.csv"
+    path.write_bytes(b"board,strikes\n\xff\xfe,1\n")
+    with caplog.at_level(logging.INFO, logger=bf.__name__):
+        assert bf.load(path) == {}
+    assert [r.levelname for r in caplog.records] == ["WARNING"]

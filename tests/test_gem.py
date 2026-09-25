@@ -383,7 +383,7 @@ def test_a_graphql_error_envelope_labels_every_id_in_the_batch():
     left `unlabelled` or raised into the fan-out's catch-all."""
     scraper = _scraper()
     assert scraper._apply_detail_results(["a", "b"], {"errors": []}) == {}
-    assert scraper.detail_losses == {"short batch answer": 2}
+    assert scraper.detail_losses == {"GraphQL errors envelope": 2}
 
 
 def test_a_short_batch_answer_labels_the_ids_it_ran_out_before():

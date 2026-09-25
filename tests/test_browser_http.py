@@ -345,3 +345,24 @@ def test_a_tab_that_will_not_close_leaves_a_record(
     closes = [r for r in caplog.records if r.message == expected]
     assert len(closes) == 1
     assert closes[0].levelno == logging.INFO and closes[0].exc_info
+
+
+def test_a_broken_blocking_install_warns_once_then_informs(monkeypatch, caplog):
+    """Every Board rides the same broken install, so only the first costs an annotation — but the
+    later ones still leave a line, so the log shows how far the slowdown reached."""
+    import asyncio
+
+    class _NoNetworkEvents:
+        async def enable_network_events(self):
+            raise RuntimeError("pydoll API drifted")
+
+    monkeypatch.setattr(bh, "_BLOCKING_FAILURE", bh.log.FirstOnly(bh._log))
+    with caplog.at_level(logging.INFO, logger=bh._log.name):
+        for _ in range(3):
+            asyncio.run(bh._install_blocking(_NoNetworkEvents()))
+    levels = [r.levelname for r in caplog.records]
+    assert levels == ["WARNING", "INFO", "INFO"]
+    assert caplog.records[0].exc_info is not None
+    assert all(
+        "subresource blocking unavailable" in r.getMessage() for r in caplog.records
+    )

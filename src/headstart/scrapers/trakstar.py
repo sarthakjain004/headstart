@@ -328,10 +328,20 @@ class TrakstarScraper(BaseScraper):
                 else "did not parse"
             )
             if feed_items is not None:
+                # Checked against the page's own total rather than called "the full" set:
+                # a feed short of it is said, not marked (whether it costs eviction scope is
+                # not a logging decision).
+                total = _total_openings(html)
+                stated = "no" if total is None else str(total)
                 _log.info(
                     f"{self.board_key()}: {len(codes)} cards rendered, capped — RSS feed "
-                    f"supplied the full {len(feed_items)} jobs, no detail pass needed"
+                    f"supplied {len(feed_items)} of {stated} stated, no detail pass needed"
                 )
+                if total is not None and len(feed_items) < total:
+                    _log.info(
+                        f"{self.board_key()}: RSS feed is {total - len(feed_items)} short of "
+                        f"the page's stated {total} openings"
+                    )
                 return {"feed_items": feed_items}
             # The feed is unreachable for this tenant (404, or a CSB-rendered /search/ — see
             # docs/location-audit/2026-08-26_trakstar-cap-verification.md for measured examples).
@@ -445,11 +455,11 @@ class TrakstarScraper(BaseScraper):
             jobs = _jobs_from_api(
                 self.ats, self.slug, self.company, raw["api_items"], scraped_at
             )
-            if dropped := len(raw["api_items"]) - len(jobs):
-                _log.info(
-                    f"{self.board_key()}: parse dropped {dropped} of "
-                    f"{len(raw['api_items'])} rows with no id/title"
-                )
+            self.note_unread_rows(
+                len(raw["api_items"]) - len(jobs),
+                len(raw["api_items"]),
+                "with no id/title",
+            )
             return jobs
         if isinstance(raw, dict) and "feed_items" in raw:
             # fetch_raw() already swapped in the RSS feed's full list for a capped Board (see

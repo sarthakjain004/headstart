@@ -584,6 +584,7 @@ def aliased_boards(ledger_dir: str | Path) -> dict[str, str]:
     from headstart.scrapers.registry import company_from_row
 
     out: dict[str, str] = {}
+    unkeyed: list[str] = []
     for ledger in sorted(Path(ledger_dir).glob("*.csv")):
         signals = board_aliases.signals_for(ledger_dir, ledger.stem)
         if not signals:
@@ -595,7 +596,13 @@ def aliased_boards(ledger_dir: str | Path) -> dict[str, str]:
                 try:
                     out[lower_key(board_key(company))] = signal
                 except ValueError:
-                    continue
+                    unkeyed.append(f"{ledger.stem}:{company.slug}")
+    # Said, because each one's prune is then booked as off-Board rather than `alias:{signal}`.
+    if unkeyed:
+        _log.info(
+            f"{len(unkeyed)} buried Board(s) have no board_key, so their prune books as "
+            f"off-Board: {log.named_sample(unkeyed)}"
+        )
     return out
 
 

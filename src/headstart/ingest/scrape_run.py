@@ -68,12 +68,16 @@ def _read_have_details(path: Path) -> set[str] | None:
 
     Absent, ``None`` — every detail is fetched, which is the pre-ADR-0048 behaviour and the right
     default whenever the planner could not publish the list (a first run, or an embed store that
-    has not merged yet). Never a partial read: a truncated file would silently re-fetch details
-    for the ids past the tear, which is only a cost, not a correctness problem."""
+    has not merged yet). Never a partial read: a truncated or corrupt file reads as absent too, so
+    every detail is re-fetched — only a cost, not a correctness problem, and not worth a shard."""
     if not path.exists():
         return None
-    with gzip.open(path, "rt", encoding="utf-8") as fh:
-        return {line.strip() for line in fh if line.strip()}
+    try:
+        with gzip.open(path, "rt", encoding="utf-8") as fh:
+            return {line.strip() for line in fh if line.strip()}
+    except (OSError, EOFError, UnicodeDecodeError) as exc:  # BadGzipFile is an OSError
+        _log.info(f"detail skip-list {path} unreadable ({exc!r}) — treated as absent")
+        return None
 
 
 _SLOW_BOARD_S = 120.0  # ~10x a p90 board; anything this slow is straggler material
@@ -230,6 +234,16 @@ def _report(
                 "retry budget exhausted: "
                 + ", ".join(f"{why} {n}" for why, n in sorted(exhausted.items()))
             )
+        # Which Boards the retries above belong to: without it a shard whose retries are one
+        # Board's 5xx storm reads the same as a provider-wide 429 wave.
+        by_board = http.retry_stats_by_board()
+        if by_board:
+            _log.info(
+                "retry demand by board: "
+                + log.named_sample(
+                    [f"{b} {n}" for b, n in by_board.most_common()], cap=5
+                )
+            )
         # Which ATSes cost this shard its Origin budget, and what the spare egress recovered for
         # them (ADR-0063). Reported for the same reason the retry classes are: without it a shard
         # that routed everything successfully and one whose proxy carried nothing log
@@ -377,7 +391,15 @@ def main() -> int:
     if (
         args.assignment
     ):  # ADR-0026 scrape-shard mode — the planner already selected these boards
-        companies = _read_assignment(Path(args.assignment))
+        try:
+            companies = _read_assignment(Path(args.assignment))
+        except (
+            OSError,
+            ValueError,
+            KeyError,
+        ) as exc:  # JSONDecodeError is a ValueError
+            # Before the scrape's own try, so the shard-aborted line would never name it.
+            log.fail(_log, f"shard {shard}: unreadable {args.assignment}: {exc!r}")
         _log.info(f"harvest: {len(companies)} boards from {args.assignment} (shard)")
         have_details = _read_have_details(
             Path(args.assignment).parent / HELD_DETAILS_PATH.name

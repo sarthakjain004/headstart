@@ -127,17 +127,19 @@ def queued_evictions(path: Path) -> dict[str, str]:
     return queued
 
 
-def drop_evictions_through(path: Path, booked_through: str) -> None:
-    """Keep only the entries stamped after ``booked_through``.
+def drop_evictions_through(path: Path, booked_through: str) -> tuple[int, int]:
+    """Keep only the entries stamped after ``booked_through``; return ``(dropped, kept)``.
 
     ``booked_through`` is the stamp of the snapshot this tick diffed. Every eviction up to it was
     booked by the tick that wrote that snapshot, which is published. A newer one may not be: if
     this run's ``data/state`` upload fails, the next tick diffs that same older snapshot again,
     and needs this run's evictions to book them as Closed."""
-    kept = {i: ts for i, ts in queued_evictions(path).items() if ts > booked_through}
+    queued = queued_evictions(path)
+    kept = {i: ts for i, ts in queued.items() if ts > booked_through}
     path.write_text(
         "".join(f"{ts}\t{i}\n" for i, ts in sorted(kept.items())), encoding="utf-8"
     )
+    return len(queued) - len(kept), len(kept)
 
 
 def reposts(

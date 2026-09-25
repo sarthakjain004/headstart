@@ -241,6 +241,12 @@ def main() -> int:
     losses = []
     for f in frags:
         if not (f / "manifest.json").exists():
+            # The shard was killed before its commit marker — routinely `timeout` ending its
+            # time budget — so what it banked merges but what it never reached is uncounted.
+            losses.append(
+                f"{f.name} (no manifest — stopped before finishing, e.g. its time budget; "
+                f"{len(good_by_frag[f])} rows banked, unattempted unknown)"
+            )
             continue
         failed, unattempted = _fragment_losses(f)
         if failed or unattempted:
@@ -259,6 +265,13 @@ def main() -> int:
         dim = _dim_from_manifest(f)
 
     upgrades = Path(args.evict_ids)
+    # `embed_plan` writes the list on every run, even empty, so with fragments to merge its
+    # absence is lost state: an upgraded Job would merge its fresh row beside the stale one.
+    if frags and not upgrades.exists():
+        _log.warning(
+            f"upgrade list missing at {upgrades} — embed_plan always writes it; any Job "
+            "re-embedded this run keeps its stale vector beside the fresh one"
+        )
     if dim is not None and upgrades.exists():
         upgrade_ids = read_id_list(upgrades)
         # An upgrade is a *replace*: drop the stale vector, merge the fresh one. Only the ids

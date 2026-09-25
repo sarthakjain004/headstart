@@ -276,10 +276,12 @@ class AmazonScraper(BaseScraper):
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
         jobs: list[Job] = []
+        untitled = 0
         for r in raw:
             native_id = str(r.get("id_icims") or "").strip()
             title = (r.get("title") or "").strip()
             if not native_id or not title:
+                untitled += 1
                 continue
             location = _location(r)
             jobs.append(
@@ -298,6 +300,7 @@ class AmazonScraper(BaseScraper):
                     employment_type=r.get("job_schedule_type"),
                 )
             )
+        self.note_unread_rows(untitled, len(raw), "carried no id or title")
         return jobs
 
     def _salary_field(self, raw: Any) -> str | None:

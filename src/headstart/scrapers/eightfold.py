@@ -415,6 +415,12 @@ class EightfoldScraper(BaseScraper):
                 "the SmartApply API answered 200 with an unparseable body"
             )
             return None
+        if "count" not in data or "positions" not in data:
+            # As the PCSX guard in `_api_search`: a zero-result answer still states both
+            # (albemarle, 2026-09-25), so their absence is a moved envelope, not an empty Board.
+            self.note_unreadable_board(
+                "a SmartApply envelope with positions", f"keys {sorted(data)}"
+            )
         total = int(data.get("count") or 0)
         seen: dict[str, dict[str, Any]] = {}
         for pos in data.get("positions") or []:
@@ -515,8 +521,11 @@ class EightfoldScraper(BaseScraper):
         # it: what it requested, against what the gate let through.
         requested = self.telemetry["detail_jobs"]
         tech = len(positions) - self.telemetry.get("tech_gated_details", 0)
+        # Into the shard report's observations, and DEBUG rather than INFO: the skip fires on
+        # nearly every Board every run, so an INFO line was one per Board saying nothing new.
+        self.telemetry["detail_held"] = tech - requested
         if requested < tech:
-            self._log.info(
+            self._log.debug(
                 f"{self.board_key()}: fetched {requested}/{tech} descriptions "
                 f"({tech - requested} already held)"
             )
@@ -670,11 +679,14 @@ class EightfoldScraper(BaseScraper):
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
         jobs: list[Job] = []
+        untitled = 0
         for item in raw:
             fields = item.get("fields") or {}
             title = (fields.get("title") or "").strip()
             position_id = item.get("id")
             if not title or not position_id:
+                # A detail that never arrived is already in the gap line; count only the rest.
+                untitled += bool(item.get("fields"))
                 continue  # unreadable / no id — nothing to key the job by
             location = fields.get("location")
             remote = fields.get("remote")
@@ -697,6 +709,7 @@ class EightfoldScraper(BaseScraper):
                     requisition=fields.get("requisition"),
                 )
             )
+        self.note_unread_rows(untitled, len(raw), "had a posting with no title or id")
         return jobs
 
     def _salary_field(self, raw: Any) -> str | None:

@@ -412,6 +412,12 @@ class JibeScraper(BaseScraper):
 
     def _read_board(self) -> list[dict]:
         first = self._json(self.url(1))
+        if "jobs" not in first or "totalCount" not in first:
+            # An empty Board still states both (3 of 3 live, 2026-09-25).
+            self.note_unreadable_board(
+                "an /api/jobs envelope with jobs and totalCount",
+                f"keys {sorted(first)}",
+            )
         total = int(first.get("totalCount") or 0)
         if total <= WINDOW:
             rows, total, windowed = self._walk(first)
@@ -490,7 +496,11 @@ class JibeScraper(BaseScraper):
         readable = raw.get("icims_readable") or {}
         jobs: list[Job] = []
         dropped = 0
-        for row in _english_first(raw.get("rows") or []):
+        rows = raw.get("rows") or []
+        self.note_unread_rows(
+            sum(1 for row in rows if not row.get("slug")), len(rows), "carried no slug"
+        )
+        for row in _english_first(rows):
             if readable.get(_apply_host(row)):
                 dropped += 1
                 continue

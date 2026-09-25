@@ -341,11 +341,15 @@ class ADPScraper(BaseScraper):
 
     def fetch_raw(self) -> Any:
         merged: dict[str, dict] = {}
+        listed = unkeyed = 0
         for lang in self._languages():
             for row in self._walk(lang):
+                listed += 1
                 ext = _ext_id(row)
+                unkeyed += not ext
                 if ext and ext not in merged:
                     merged[ext] = {**row, "_lang": lang}
+        self.note_unread_rows(unkeyed, listed, "carried no id")
         rows = list(merged.values())
         # The gate is exact: no department on either surface (`HomeDepartment` empty on 2,069 of
         # 2,069 rows and 120 of 120 details) and the detail overrides nothing — it adds
@@ -365,7 +369,10 @@ class ADPScraper(BaseScraper):
                 fetched = self.fan_out_async(wanted, self._detail_async)
             else:
                 fetched = self.fan_out(
-                    wanted, self._detail, workers=self.detail_workers
+                    wanted,
+                    self._detail,
+                    workers=self.detail_workers,
+                    what=self.board_key(),
                 )
             self.report_detail_gaps(fetched, "detail payloads")
             details = {_ext_id(r): d for r, d in zip(wanted, fetched) if d}

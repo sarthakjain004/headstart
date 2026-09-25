@@ -141,6 +141,10 @@ class SmartRecruitersScraper(BaseScraper):
         # both). The detail pass multiplexes over one HTTP/2 connection by default (ADR-0016); a
         # failed fetch leaves ``_detail`` empty.
         data = json.loads(self._get())
+        if "content" not in data:
+            # Even an unknown slug answers `"content": []` (measured 2026-09-25), so a payload
+            # without the key is one this parser did not recognise, not an empty Board.
+            self.note_unreadable_board("a `content` list", f"keys {sorted(data)[:5]}")
         batch = data.get("content") or []
         postings = list(batch)
         page = 1

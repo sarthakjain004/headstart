@@ -459,8 +459,17 @@ def _take_upgrades(table: Any, path: Path) -> dict[str, str | None]:
     (ADR-0050). Ids absent from the table (a first run, or a Job the prune already took) simply
     return no stamp and are stamped with the run's time like any other add.
     """
+    # Said when missing: `read_id_list` reads that as empty, and `embed_plan` writes the file on
+    # every run, even empty — so its absence is lost state, not "nothing to upgrade".
+    if not path.exists():
+        _log.warning(
+            f"upgrade list missing at {path} — embed_plan always writes it; any Job re-embedded "
+            "this run keeps its old row and vector in the table"
+        )
+        return {}
     ids = read_id_list(path)
     if not ids:
+        _log.info(f"upgrades: none listed in {path}")
         return {}
     # Safe to name the column: sync adds it to a pre-ADR-0031 table before reaching here.
     rows = (
@@ -878,6 +887,17 @@ def sync(args: argparse.Namespace) -> int:
     # start: one run of retained-but-closed rows is the price of never needing a migration, and
     # the run after it evicts normally.
     was_unconfirmed = read_id_list(Path(args.unconfirmed))
+    # Said either way, like the Unauthoritative-Board record above: a missing file and an empty
+    # one read the same, and only the first resets every streak.
+    if Path(args.unconfirmed).exists():
+        _log.info(
+            f"grace set: {len(was_unconfirmed)} id(s) read from {args.unconfirmed}"
+        )
+    else:
+        _log.warning(
+            f"grace set missing at {args.unconfirmed} — cold start: sync evicts nothing this run "
+            "and every Unconfirmed streak restarts (ADR-0083); expected only on a first run"
+        )
     # One row per requisition across a Workday tenant's sites (ADR-0187) and a Taleo or ADP
     # Tenant's Boards (ADR-0223), and per posting across an Eightfold site and its backing Board
     # (ADR-0210), decided here as well as in prune so a copy prune took out is never added back.
@@ -1284,6 +1304,10 @@ def compact(args: argparse.Namespace) -> int:
     # the next pipeline run would read its correct work as an unexplained move. The rmtree above
     # destroyed the previous record, so this must run on every path that reaches here: leaving
     # the uploaded directory with no record at all fails open, and silently.
+    if served is None:
+        _log.warning(
+            f"compact: no '{PROD_TABLE}' table among {names} — recording a base of 0 rows"
+        )
     write_base(db_path, served if served is not None else 0, "compact")
     _log.info(f"compacted: rebuilt {len(names)} table(s) fresh at {db_path}")
     return 0

@@ -296,6 +296,10 @@ class PersonioScraper(BaseScraper):
         response.raise_for_status()
         # personio serves XML; encode back to bytes so ElementTree accepts the encoding decl.
         root = ET.fromstring(response.text.encode("utf-8"))
+        if root.tag != "workzag-jobs":
+            # Zero positions is also what an empty Board serves, so only an unexpected root
+            # (measured 2026-09-25: a live Board's is `<workzag-jobs>`) is said to be unread.
+            self.note_unreadable_board("a <workzag-jobs> root", f"<{root.tag[:40]}>")
         unfilled: dict[str, ET.Element] = {}
         for pos in root.findall("position"):
             jid = _text(pos, "id")
@@ -368,11 +372,7 @@ class PersonioScraper(BaseScraper):
                     salary=self._salary_field(pos),
                 )
             )
-        if dropped := len(positions) - len(jobs):
-            self._log.info(
-                f"{self.board_key()}: parse dropped {dropped} of {len(positions)} rows "
-                "with no id/title"
-            )
+        self.note_unread_rows(len(positions) - len(jobs), len(positions), "with no id")
         return jobs
 
     def _salary_field(self, raw: ET.Element) -> str | None:
