@@ -1088,3 +1088,21 @@ def test_a_category_hands_over_as_the_ids_trends_counted() -> None:
     many = {"ai-ml": [f"b:x:{i:05d}" for i in range(MAX_FAMILY_IDS + 1)]}
     with pytest.raises(ValueError):
         scoped_jobs_clause(MultiDict([("board", "b:x"), ("family", "ai-ml")]), many)
+
+
+def test_a_tracked_role_hands_over_by_its_own_title_patterns() -> None:
+    from werkzeug.datastructures import MultiDict
+
+    from headstart.search import scoped_jobs_clause
+
+    patterns = {"watch:llm-genai": [r"\bLLM\b", r"\bGenAI\b"], "watch:odd": ["o'k"]}
+    args = MultiDict([("board", "google:careers.google.com"), ("role", "llm-genai")])
+    assert scoped_jobs_clause(args, None, patterns) == (
+        r"regexp_like(title, '(?i)(?:\bLLM\b)|(?:\bGenAI\b)')"
+    )
+    odd = MultiDict([("board", "b:x"), ("role", "odd")])
+    assert (
+        scoped_jobs_clause(odd, None, patterns) == "regexp_like(title, '(?i)(?:o''k)')"
+    )
+    unknown = MultiDict([("board", "b:x"), ("role", "nope")])
+    assert scoped_jobs_clause(unknown, None, patterns) is None

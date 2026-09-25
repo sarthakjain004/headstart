@@ -161,9 +161,14 @@ QUERY_ALIASES: dict[str, str] = {
     "chase": "jpmorgan chase",
     "meta platforms": "meta",
     "facebook": "meta",
-    "google deepmind": "deepmind",
+    "google deepmind": "google",
     "alphabet": "google",
     "tcs": "tata consultancy",
+    # Brands whose jobs sit on a parent's Board: Google's own board lists YouTube's and
+    # DeepMind's openings under those names (59 and 38, 2026-09-25). DeepMind keeps a small
+    # Board of its own too, which "deepmind" still finds by name beside Google.
+    "youtube": "google",
+    "deepmind": "google",
 }
 
 

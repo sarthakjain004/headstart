@@ -151,12 +151,21 @@ _LOCAL_COMPANIES = CompanyPrefs.blank("local")
 
 # A Trends category's Jobs by id, from a local pull of the role-assignment snapshot if any.
 _FAMILY_IDS = load_family_ids(_REPO / "data" / "state" / "role_assignments.parquet")
+# The tracked roles' title patterns (config/role_watchlist.json), for a role hand-off (ADR-0051).
+_WATCH = {
+    "watch:" + r["name"]: r.get("match", [])
+    for r in json.loads(
+        (_REPO / "config" / "role_watchlist.json").read_text(encoding="utf-8")
+    )["roles"]
+}
 
 
 def _company_where(args) -> str | None:
     """Mirror of the Space's per-request follow/hide, ``board=`` and ``family=`` clauses."""
     return with_extra(
-        with_extra(scoped_boards_clause(args), scoped_jobs_clause(args, _FAMILY_IDS)),
+        with_extra(
+            scoped_boards_clause(args), scoped_jobs_clause(args, _FAMILY_IDS, _WATCH)
+        ),
         request_account_clause(
             args, _LOCAL_COMPANIES.followed, _LOCAL_COMPANIES.hidden
         ),

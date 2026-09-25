@@ -669,3 +669,64 @@ Its code review changed the round:
   line, and counting changes are the total less the named parts.
 - **One rule for a line's latest figure** (`latestOf`), shared by the tile, the sentence and the
   legend.
+
+### A critic's ninth round (2026-09-25): 6/10
+
+- **A step comes out by ratio where both sides are substantial, and by openings where either
+  side is small.**
+  - Taking every step out by openings fixed small bases: Microsoft's architecture line went
+    4 → 58, and scaling its one lost opening by ×14.5 had read as −12.
+  - But it broke refits that halve a category. Google's software-engineering loss of 33 (−5.3%)
+    was measured against the halved base and read "−11.8%". It now reads −6.3%.
+  - The rule: a ratio when both sides hold at least 20 openings. A known size (found openings,
+    duplicates removed) always comes out by openings.
+- **A category a refit empties reads 0, and its drop is booked.**
+  - Every charted run measures stock, so a series absent from a run after it first appears is
+    at 0 there (`_held_at_zero`).
+  - A new version's span never re-emits a key it no longer holds. So Syms' systems engineering
+    showed its last count, 46, in the table beside 0 in the legend. Its drop is now a counting
+    change of −46.
+- **A drill agrees with its category row.** An extraction change re-sorts a category's levels
+  but never its total, so the drill's summed sentence no longer takes it out. It had read −6.8%
+  against the row's −6.3%.
+- **One company, one entry.** Paytm's three Boards, Razorpay's two and Infosys's two were each
+  split. Each pair was checked to share no posting title, so none of them double-counts, and
+  each group is now joined in `config/company_names.csv`. "youtube" and "deepmind" find Google,
+  whose Board lists their jobs.
+- **Hot's "See trend" opens Hot's own window** (`since=`), so its "+25" and the trend describe
+  the same span.
+- **A shorter sentence.** "; not hiring: −2,041 from duplicate postings removed, +230 from
+  changes in how HeadStart counts". A duplicate-removal change is named as duplicates under
+  either measure.
+- **Smaller:**
+  - Company sentences past two fold under "N more companies".
+  - The table's Latest column is the latest run's figure.
+  - A share's change no longer carries an openings count.
+  - "Too new" wins over "started under 5".
+  - An empty drill offers no roles hand-off.
+  - A phone's table shows that it scrolls.
+
+Its code review tightened the round:
+
+- **The causes are peeled one kind at a time.** Duplicates are taken out first, then found
+  Boards, then everything else. Each kind's figure is how much it moves the line's change, so
+  the parts add up exactly even when ratio steps sit between them. Read off each step's size,
+  a removal of 2,041 before a ×1.2 step pushed the difference into "counting changes".
+- **The ratio floor (`RATIO_FLOOR`, 20) is judged in openings, whatever the unit drawn.** Under
+  Share every level sits under 20, so every step had come out by openings.
+- **A duplicate-removal change is named as duplicates under New only.** Under All openings,
+  the Space's sized removals keep their exact figure beside it, and its settling run carries
+  the same name.
+- **A tracked role hands over to Search** (`role=`). Search filters by the same title patterns
+  `role_trends` counts the role by (`regexp_like`). Google's LLM / GenAI jobs opened as 81
+  against Trends' 84, a difference of one data run. The roles view gives each row a "jobs"
+  link.
+- **Hot's window carries its base**, the run its first change is measured from. A trend opened
+  from a Hot row now covers Hot's figure.
+- **Smaller:**
+  - A category a run leaves out reads 0 only under a pick. On the index chart it is a taxonomy
+    change the chart marks.
+  - The reference line leaves extraction steps in, as the sentence does.
+  - An opened fold stays open across redraws.
+  - The range note says "at the earliest" for picks counted from different dates.
+  - "google deepmind" finds Google.

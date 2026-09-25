@@ -1461,15 +1461,26 @@ test('the mover floor is held to the openings a line really started with', () =>
   assert.match(row(nodes['trends-legend'].innerHTML, 'a'), /↑ \+2 openings</);
 });
 
-test('a counting change is taken out by its size in openings, never scaled', () => {
+test('a counting change off a small base is taken out by openings, not scaled', () => {
   const { t } = loadApp();
   t.setPicks([ACME]);
   t.set({ ...picked({}), stamps: FIVE, series: [], discovered: [],
     epochs: [{ ts: FIVE[2], changed: ['tech filter changed'], fields: ['tech_filter_version'] }] });
   // Microsoft's architecture line: 5 → 4, a filter change to 58, then flat. Scaled by 14.5,
   // the one real opening became −12; by openings it stays −1.
-  // The run after the change (58 → 59) settles and goes too: net [60, 59, 59, 59, 59].
-  same(t.netOfSteps([5, 4, 58, 59, 59]), [60, 59, 59, 59, 59]);
+  // The run after the change (58 → 59) settles and goes too, by ratio (both sides ≥ 20):
+  // net ≈ [60, 59, 59, 59, 59] — one opening lost, not twelve.
+  same(t.netOfSteps([5, 4, 58, 59, 59]).map(Math.round), [60, 59, 59, 59, 59]);
+});
+
+test('a refit that halves a large category comes out by ratio (Google SWE)', () => {
+  const { t } = loadApp();
+  t.setPicks([ACME]);
+  t.set({ ...picked({}), stamps: FIVE, series: [], discovered: [],
+    epochs: [{ ts: FIVE[2], changed: ['role family assignment changed'], fields: ['family_classifier_version'] }] });
+  // 628 → 595 (−5.3%), then halved at the refit: by openings it read −11.8%; by ratio −5.3%.
+  const net = t.netOfSteps([628, 595, 304, 304, 304]);
+  same(net.map(v => Math.round(v)), [321, 304, 304, 304, 304]);
 });
 
 test('found openings off zero lift the line', () => {
@@ -1538,7 +1549,7 @@ test('the sentence says how much of the chart’s move was not hiring', () => {
     discovered: [{ ts: FOUR[2], company: 'greenhouse:acme', boards: 3, openings: 200 }] });
   t.draw();
   assert.match(nodes['trends-verdict'].innerHTML,
-    /Acme<\/b>: 1,700 tech openings; about flat over 3 days \(\+0\.0%, \+0 openings\); the chart’s other \+200 openings came from outside hiring: \+200 openings from boards found later or companies joining the count\./);
+    /Acme<\/b>: 1,700 tech openings; about flat over 3 days \(\+0\.0%, \+0 openings\); not hiring: \+200 openings from boards found later\./);
 });
 
 test('compared company by company, the heading asks how hiring compares', () => {
@@ -1682,9 +1693,9 @@ test('a step larger than what came before it starts the line after it', () => {
   t.setPicks([ACME]);
   t.set({ ...picked({}), stamps: FIVE, series: [], discovered: [],
     epochs: [{ ts: FIVE[3], changed: ['tech filter changed'], fields: ['tech_filter_version'] }] });
-  // 30 → 150, then a −130 change: 150 adjusts to 20, but 30 − 130 is no level, so the line
-  // starts after it.
-  same(t.netOfSteps([30, 150, 150, 20, 20]), [null, 20, 20, 20, 20]);
+  // 30 → 150, then a change to 5 (too small for a ratio): 150 adjusts to 5, but 30 − 145 is
+  // no level, so the line starts after it.
+  same(t.netOfSteps([30, 150, 150, 5, 5]), [null, 5, 5, 5, 5]);
 });
 
 
@@ -1720,7 +1731,7 @@ test('the sentence names each cause of the non-hiring move, with its size', () =
   t.setUnit('count', false);
   t.draw();
   assert.match(nodes['trends-verdict'].innerHTML,
-    /Acme<\/b>: 1,010 tech openings; up 1\.0% over 3 days \(\+10 openings[^)]*\); the chart’s other −2,000 openings came from outside hiring: −2,000 openings as duplicate postings were removed\./);
+    /Acme<\/b>: 1,010 tech openings; up 1\.0% over 3 days \(\+10 openings[^)]*\); not hiring: −2,000 openings from duplicate postings removed\./);
 });
 
 test('under New, a counting change is also taken out a week later, when its openings age out', () => {
@@ -1740,12 +1751,13 @@ test('a run with duplicates removed beside a counting change names each by its s
   t.setPicks([{ key: 'eightfold:jobs.nvidia.com', label: 'NVIDIA', boardKeys: ['eightfold:jobs.nvidia.com'] }, BETA]);
   t.set(companies([['eightfold:jobs.nvidia.com', 'NVIDIA', [3900, 3900, 1900, 1900, 1880]], ['lever:beta', 'Beta', [50, 50, 50, 50, 50]]],
     { stamps: FIVE, evicted: [{ ts: FIVE[2], company: 'eightfold:jobs.nvidia.com', count: 2041 }],
-      epochs: [{ ts: FIVE[2], changed: ['duplicate removal changed'], fields: ['dedup_version'] }] }));
+      epochs: [{ ts: FIVE[2], changed: ['duplicate removal changed', 'role family assignment changed'],
+                 fields: ['dedup_version', 'family_classifier_version'] }] }));
   t.setUnit('count', false);
   t.draw();
-  // The run moved −2,000: −2,041 duplicates, +41 from the counting change beside them.
+  // The refit run moved −2,000: −2,041 duplicates, +41 from the family change beside them.
   assert.match(nodes['trends-verdict'].innerHTML,
-    /−2,041 openings as duplicate postings were removed, \+41 openings from changes in how HeadStart counts/);
+    /not hiring: −2,041 openings from duplicate postings removed, \+41 openings from changes in how HeadStart counts/);
 });
 
 
@@ -1776,4 +1788,17 @@ test('a drill is titled for its category and its company', () => {
   t.set({ ...picked({}), family_label: 'AI / Machine Learning' }, 'ai-ml');
   t.draw();
   assert.equal(nodes['trends-title'].textContent, 'How AI / Machine Learning hiring is moving at Acme');
+});
+
+
+test('a tracked role hands over to Search as that role', () => {
+  const { t, ctx, nodes } = loadApp();
+  t.setPicks([{ ...ACME, boardKeys: ['greenhouse:acme'] }]);
+  const legend = nodes['trends-legend'];
+  legend.listeners.click.forEach(fn => fn({ target: { closest: sel => sel === '[data-hide]' ? null
+    : sel === '[data-role]' ? { dataset: { role: 'watch:llm-genai', roleLabel: 'LLM / GenAI' } } : null } }));
+  const hash = new URLSearchParams(ctx.location.hash.split('?')[1]);
+  assert.equal(hash.get('role'), 'llm-genai');
+  assert.equal(hash.get('family_label'), 'LLM / GenAI');
+  assert.equal(hash.get('family'), null);
 });
