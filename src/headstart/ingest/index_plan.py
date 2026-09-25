@@ -125,7 +125,7 @@ def grace_period_counts(
     reach the same branch here, because all three mean the Board is absent from ``scraped_boards``
     and this function cannot tell them apart:
 
-    - The id's Board was not in this run's slice at all. Only ~20,000 are — under a quarter of the
+    - The id's Board was not in this run's slice at all. Only ~80,000 are — about half of the
       Scrapable Boards — so this dominates a healthy set and is entirely benign; the streak simply
       did not advance.
     - The Board *was* scraped but came back Unauthoritative, so ``index sync`` subtracted it from
@@ -214,7 +214,7 @@ def plan_sync(
     for it.
 
     The unit is *scrapes of that Board*, not runs, and that distinction is the whole point: only
-    ~20,000 Boards, under a quarter of the Scrapable Boards, are in any run's slice, and
+    ~80,000 Boards, about half of the Scrapable Boards, are in any run's slice, and
     ``index sync`` already keeps
     Unauthoritative Boards out of ``scraped_boards`` (ADR-0053) — so a Board this run did not
     read is no evidence either way. Its ids keep their previous state rather than being counted
@@ -270,7 +270,7 @@ def plan_sync(
         # An id whose Board this run did not scrape keeps the state it had: no evidence arrived,
         # so its streak neither advances nor resets. Without this the set would be rebuilt from
         # the slice alone and a Board's ids would silently reset every run it sat out — with
-        # ~20,000 Boards scraped per run — under a quarter of the Scrapable Boards — so most
+        # ~80,000 Boards scraped per run — about half of the Scrapable Boards — so most
         # ids would never reach a second absence
         # and the grace period would never evict anything.
         #

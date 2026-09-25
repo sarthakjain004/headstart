@@ -18,7 +18,7 @@ shards:
   to ``--max-shards``. A full slice saturates the lanes, a small one collapses to a single shard.
   (Cold start has no seconds, so it sizes by ``--target-boards`` instead.)
 - With real seconds the planner can also **predict the makespan**, which is what sizes
-  ``pipeline.yml``'s ``timeout 60m`` scrape budget rather than a guess.
+  ``pipeline.yml``'s ``timeout 75m`` scrape budget rather than a guess.
 
 Each shard runs on its own runner/IP, so keeping per-shard workers at the monolith default (this
 planner does not touch ``HEADSTART_WORKERS``) makes every ATS host see a shard as one ordinary
@@ -63,9 +63,9 @@ from headstart.ingest.binpack import lpt_pack_capped, shard_count
 
 _log = log.get(__name__, __spec__)
 
-# The shard's CI work budget (pipeline.yml's `timeout 60m`). Mirrored here only to warn when a
+# The shard's CI work budget (pipeline.yml's `timeout 75m`). Mirrored here only to warn when a
 # plan predicts past it — the workflow stays the single place that enforces it.
-_BUDGET_MIN = 60.0
+_BUDGET_MIN = 75.0
 
 _LEDGER = REPO_ROOT / "data" / "validate" / "liveness"
 _PRIORITY = REPO_ROOT / "data" / "state" / "board_priority.csv"
@@ -111,7 +111,7 @@ _EXPLORE_BASELINE = 5.0  # unscored board with no measurement and no history to 
 # in ~9 min, so a 10-15 min Board set the wall clock unjudged: `jibe:petsmart`, 760 s at a score
 # of 2.8 (4 tech jobs). On score, petsmart and greatclips sat far under 2 tech/min, ulta on the
 # line (2.08), and no fresh Board between 6 and 10 min was under it (ADR-0064 amendment).
-# ADR-0229 lengthened shards to a predicted ~24 min and kept this floor until they are measured.
+# ADR-0229 lengthened shards to a predicted ~25 min and kept this floor until they are measured.
 _GATE_FLOOR_S = 600.0  # 10 min: just above the ~9 min a shard took when it was set
 _GATE_MIN_TECH_PER_MIN = 2.0  # tech jobs per minute of shard time, in the gap above
 # A gated Board is not scraped, so its cost and score freeze — and evidence that cannot change
@@ -377,6 +377,18 @@ def main() -> int:
             f"jobs/min — " + log.named_sample([_why(k, d) for k, d in worst])
         )
     unsettled = board_description_gap.load(Path(args.gap))
+    # The head holds every scored Board only while they fit (ADR-0229). Past that, the
+    # lowest-scored overflow falls to the rotation tail behind every unscored Board, which nothing
+    # downstream would notice, so it is named here.
+    scored = sum(
+        1 for c in companies if scores.get(board_priority.key_for(c), 0.0) > 0.0
+    )
+    head_cap = board_priority.head_slots(args.max_boards)
+    if args.max_boards and scored > head_cap:
+        _log.warning(
+            f"head: {scored:,} scored Boards for {head_cap:,} head slots; the lowest-scored "
+            f"{scored - head_cap:,} join the rotation tail (ADR-0229)"
+        )
     companies = pick_boards(
         companies,
         scores,
@@ -390,9 +402,9 @@ def main() -> int:
         1 for c in companies if scores.get(board_priority.key_for(c), 0.0) > 0.0
     )
     # Boards in the slice that hold unsettled descriptions — deliberately NOT reported as "the
-    # quota picked N". With ~12k gap Boards and a ~14k random exploration tail, coincidental hits
-    # dominate the ~700 reserved slots, so a count phrased as quota fill would read as progress
-    # that the reservation did not make. What the ledger still tells us honestly is the backlog.
+    # quota picked N". A gap Board also reaches the slice through the head or the rotation tail
+    # on its own, so a count phrased as quota fill would claim picks the reservation did not
+    # make. What the ledger still tells us honestly is the backlog.
     gap_in_slice = sum(
         1 for c in companies if board_description_gap.key_for(c) in unsettled
     )

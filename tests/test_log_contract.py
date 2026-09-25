@@ -1007,7 +1007,7 @@ def _plan_coldstart(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
 def _plan_measured(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """A measured plan carrying every branch the planner reports on at once.
 
-    One Board (`greenhouse:giant`, 65 min) outweighs an even share of a slice that is otherwise
+    One Board (`greenhouse:giant`, 80 min) outweighs an even share of a slice that is otherwise
     all sub-second Boards, which is what makes the makespan floor and the budget warning fire
     together — that is not contrived, it is the shape of this pipeline's real cost distribution
     (a handful of giants against ~20k Boards that answer in under a second).
@@ -1062,7 +1062,7 @@ def _plan_measured(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
             for n, slug in enumerate(gated)
         }
     )
-    cost_rows["greenhouse:giant"] = board_cost.BoardCost(3900.0, 1204, today)
+    cost_rows["greenhouse:giant"] = board_cost.BoardCost(4800.0, 1204, today)
     board_cost.save(Path("data/state/board_cost.csv"), cost_rows)
 
     scores = {
@@ -1077,7 +1077,7 @@ def _plan_measured(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
             for n, slug in enumerate(gated)
         }
     )
-    # Above 2 tech jobs per minute of its 65, so the giant survives the gate it would otherwise
+    # Above 2 tech jobs per minute of its 80, so the giant survives the gate it would otherwise
     # be the first Board through.
     scores["greenhouse:giant"] = board_priority.BoardPriority(200.0, 1204, today)
     board_priority.save(Path("data/state/board_priority.csv"), scores)
@@ -2671,7 +2671,7 @@ CONTRACT: tuple[Line, ...] = (
     Line(
         consumer="fanout_plan.MAKESPAN",
         emitter=_SCRAPE_PLAN,
-        body="2307 boards across 9 shards; predicted makespan ~67.1 min (total work Σ 86.5 min)",
+        body="2307 boards across 11 shards; predicted makespan ~81.8 min (total work Σ 101.5 min)",
         why="the measured form, with the makespan tail",
         emit=_plan_measured,
     ),
@@ -2688,7 +2688,7 @@ CONTRACT: tuple[Line, ...] = (
     Line(
         consumer="fanout_timing.PLAN_SHARD",
         emitter=_SCRAPE_PLAN,
-        body="shard 0: 251 boards (~67.1 min)",
+        body="shard 0: 207 boards (~81.8 min)",
         why="the measured per-shard serial estimate — NOT a wall estimate",
         emit=_plan_measured,
     ),
@@ -2703,8 +2703,8 @@ CONTRACT: tuple[Line, ...] = (
         consumer="fanout_plan.SPREAD",
         emitter=_SCRAPE_PLAN,
         body=(
-            "predicted spread: min 2.4 / mean 9.6 / max 67.1 min (6.98x mean); "
-            "single-board floor 65.0 min"
+            "predicted spread: min 2.0 / mean 9.2 / max 81.8 min (8.86x mean); "
+            "single-board floor 80.0 min"
         ),
         why="the planner naming its own straggler, in the units floor_table reports after the fact",
         emit=_plan_measured,
@@ -2713,7 +2713,7 @@ CONTRACT: tuple[Line, ...] = (
         consumer="fanout_plan.FLOOR_WARN",
         emitter=_SCRAPE_PLAN,
         body=(
-            "one board costs 65.0 min, above the 9.6 min even share — the makespan floor is this "
+            "one board costs 80.0 min, above the 9.2 min even share — the makespan floor is this "
             "board, not the packing"
         ),
         why="fires only when it applies; a better packer cannot help a floor-bound shard",
@@ -2723,7 +2723,7 @@ CONTRACT: tuple[Line, ...] = (
         consumer="fanout_plan.BUDGET_WARN",
         emitter=_SCRAPE_PLAN,
         body=(
-            "predicted makespan ~67.1 min exceeds the 60 min shard budget — shards matching their "
+            "predicted makespan ~81.8 min exceeds the 75 min shard budget — shards matching their "
             "prediction will bank partials"
         ),
         why="an advance warning of budget kills, printed before any shard has run",

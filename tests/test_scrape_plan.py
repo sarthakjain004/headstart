@@ -574,12 +574,7 @@ def test_main_rotates_the_unscored_tail_oldest_first(tmp_path, monkeypatch):
     cost = tmp_path / "board_cost.csv"
     board_cost.save(
         cost,
-        {
-            f"lever:b{i}": board_cost.BoardCost(
-                seconds=1.0, jobs=3, updated_at=f"2026-09-25T0{i}:00:00+00:00"
-            )
-            for i in range(6)
-        },
+        {f"lever:b{i}": _cost(1.0, f"2026-09-25T0{i}:00:00+00:00") for i in range(6)},
     )
     out = tmp_path / "assignments"
     monkeypatch.setattr(
@@ -610,3 +605,51 @@ def test_main_rotates_the_unscored_tail_oldest_first(tmp_path, monkeypatch):
         for rec in map(json.loads, (out / "shard-0.jsonl").read_text().splitlines())
     }
     assert planned == {"lever:b0", "lever:b1"}
+
+
+def test_main_names_scored_boards_the_head_cannot_hold(tmp_path, monkeypatch, caplog):
+    """The head holds every scored Board only while they fit (ADR-0229). Past the cap the
+    lowest-scored fall to the rotation tail, and the plan says so rather than letting the
+    "every tech-yielding Board every run" promise lapse unseen."""
+    from headstart import board_priority
+
+    boards = [ScrapableBoard("lever", f"b{i}", f"B{i}") for i in range(10)]
+    monkeypatch.setattr(
+        ps.scrapable_boards, "load", lambda ledger, min_jobs=0: list(boards)
+    )
+    priority = tmp_path / "board_priority.csv"
+    board_priority.save(
+        priority,
+        {
+            f"lever:b{i}": board_priority.BoardPriority(10.0 - i, 5, "2026-09-25")
+            for i in range(10)
+        },
+    )
+    out = tmp_path / "assignments"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "scrape_plan",
+            "--priority",
+            str(priority),
+            "--cost",
+            str(tmp_path / "nocost.csv"),
+            "--failures",
+            str(tmp_path / "nofailures.csv"),
+            "--gap",
+            str(tmp_path / "nogap.csv"),
+            "--out-dir",
+            str(out),
+            "--max-boards",
+            "10",
+            "--max-shards",
+            "1",
+        ],
+    )
+    with caplog.at_level("WARNING"):
+        assert ps.main() == 0
+
+    cap = board_priority.head_slots(10)
+    assert f"head: 10 scored Boards for {cap} head slots" in caplog.text
+    assert f"the lowest-scored {10 - cap} join the rotation tail" in caplog.text

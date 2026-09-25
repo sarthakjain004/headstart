@@ -234,9 +234,9 @@ def paroled(rows: dict[str, Failure], now: str) -> set[str]:
     simply restamps its row and serves another :data:`PAROLE_DAYS`.
 
     Re-admitted is not scraped. ``pick_boards`` still has to choose the Board, and an unscored one
-    goes into the random exploration tail, which selected at p = 0.144 when this was measured
-    (14,000 explore slots over a 97,254-Board tail pool). So a parole cohort drains over several
-    runs rather than being probed in one — expect roughly one in seven of it per run.
+    goes into the rotation tail, which takes the Boards looked at longest ago first (ADR-0229). A
+    paroled Board has not been looked at since quarantine took it out of the slice, so it sorts
+    near the front and a parole cohort is usually probed on its next run.
 
     A Board whose re-probe fails some *other* way (timeout, TLS, 429) is neither gone nor
     produced, so its row is untouched and it stays paroled until a verdict arrives. That is the

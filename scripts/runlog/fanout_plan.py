@@ -39,7 +39,7 @@ the 9 min even share", the actual run confirming a straggler is not a new findin
    after the fact — compare them: a plan-predicted floor that didn't show up as the actual floor
    means something changed between plan and run (a Board that failed fast, an egress problem that
    slowed everything evenly instead of one item).
-5. **The budget-exceeded warning** — `predicted makespan ~M min exceeds the 60 min shard budget —
+5. **The budget-exceeded warning** — `predicted makespan ~M min exceeds the 75 min shard budget —
    shards matching their prediction will bank partials`. This is an advance warning of budget kills,
    printed before any shard has run. If `fanout_errors.py` then shows 0 kills, the run beat its own
    prediction (worth knowing, not just silently good).

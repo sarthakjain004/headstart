@@ -32,12 +32,17 @@ if TYPE_CHECKING:
 FIELDS = ("board", "score", "last_tech_jobs", "updated_at")
 CURRENT_WEIGHT = 0.7  # EWMA weight on the night's tech count (the rest on history)
 # Slice share reserved for the rotation over unscored Boards. The head gets the other 70%, which
-# at an 80,000-Board slice holds every scored Board (43,405 on 2026-09-25) — ADR-0229.
+# at an 80,000-Board slice holds every Scrapable Board with a tech score (ADR-0229).
 EXPLORE_FRAC = 0.3
 GAP_FRAC = (
     0.05  # share of that exploration tail reserved for the description gap (ADR-0062)
 )
 PRUNE_BELOW = 0.05  # decayed rows below this drop out (~3 zero-tech scrapes)
+
+
+def head_slots(max_boards: int, explore_frac: float = EXPLORE_FRAC) -> int:
+    """The most scored Boards a ``max_boards`` slice gives its head; the tail gets the rest."""
+    return max_boards - round(max_boards * explore_frac)
 
 
 def key_for(board: ScrapableBoard | str) -> str:
@@ -176,8 +181,8 @@ def pick_boards(
 
     ``unsettled`` is the ADR-0062 description-gap ledger, ``{board: Jobs whose description we
     have never settled}``. When given, ``round(tail * gap_frac)`` of the *exploration* slots are
-    reserved for those Boards — the priority head is never touched, because a random exploration
-    pick is strictly worse than a Board we already know is worth visiting. It self-cancels: an
+    reserved for those Boards — the priority head is never touched, because an exploration pick
+    is strictly worse than a Board we already know is worth visiting. It self-cancels: an
     empty or absent ledger reserves nothing and the slice is byte-identical to before.
 
     ``last_looked`` is ``{board: when a run last looked at it}``, the cost ledger's ``updated_at``
@@ -216,7 +221,7 @@ def pick_boards(
         rest = [c for c in shuffled if scores.get(key_for(c), 0.0) <= 0.0]
         return known + rest
 
-    head = known[: max_boards - round(max_boards * explore_frac)]
+    head = known[: head_slots(max_boards, explore_frac)]
     head_set = {c.identity for c in head}
     explore_slots = max_boards - len(head)
     gap = (
