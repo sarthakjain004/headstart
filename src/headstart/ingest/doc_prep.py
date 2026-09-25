@@ -70,8 +70,8 @@ def stored_facts(job: dict) -> dict:
 
     ``requisition`` is kept only on a Board the Eightfold pairs name (ADR-0210): nothing else can
     ever match on it, and a new value in the store rewrites the served row, vector and all, so
-    stamping every row of the ATSes that state one (six on v654) would rewrite ~216k rows on the
-    first run for no dedup. Widen it by adding pairs, or by dropping this check.
+    stamping every row of the ATSes that state one (six when measured on v654) would rewrite
+    ~216k rows on the first run for no dedup. Widen it by adding pairs, or by dropping this check.
     """
     facts = {field: job.get(field) for field in META_FIELDS}
     if facts["requisition"] and not eightfold_backing.in_scope(job["id"]):
