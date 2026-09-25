@@ -209,8 +209,9 @@ def main() -> int:
     boards = ledger_boards(args.state)
     if not boards:
         _log.warning(
-            f"skipping the company directory — no Trends history in {args.state} "
-            "(role_trends writes them; it may have skipped this run)"
+            f"skipping the company directory — no Trends history readable in {args.state}: "
+            "role_trends may have skipped this run, or the history failed to load (see "
+            "trend_history's warning above); the previous directory stays served"
         )
         return 0
 

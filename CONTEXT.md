@@ -290,7 +290,7 @@ Which ATSes a Trends request is scoped to. No exclusion is the only spelling of 
 _Avoid_: **Search filter** — that names a deterministic where-clause over the **Search index**; this narrows which rows of the trends ledger get summed, a different mechanism over a different thing.
 
 **Opened** (ADR-0227):
-A tech **Job** that arrived in the **Search index** since the previous `role_trends` tick: an id new to the tick's snapshot, whose `first_seen` is after that tick, on a **Board** the tick already counted. Booked per Board, family, band and ATS in the tick's Board-delta file (`metric=opened`), so a net change can be read with what made it. A lower bound: a Job opened and closed between two scrapes of its Board is in no count.
+A tech **Job** that arrived in the **Search index** since the previous `role_trends` tick: an id new to the tick's snapshot, whose `first_seen` is after that tick, on a **Board** the tick already counted. Booked per Board, family and band in the tick's Board-delta file (the ATS is the board_key's prefix) (`metric=opened`), so a net change can be read with what made it. A lower bound: a Job opened and closed between two scrapes of its Board is in no count.
 _Avoid_: reading a `new` point from before its switch as Opened. `new` is Opened summed over the trailing 7 days (ADR-0230), from the first **Tick** whose whole week has Opened facts (an answer's `new_inflow_from`). Before that tick `new` is the level it always was, the Jobs first seen in the last 7 days *and still open*, a found Board's backlog included, and the chart marks the switch as a **Counting change**.
 
 **Closed** (ADR-0227):
@@ -302,7 +302,7 @@ Every arrival or departure that is not hiring: a found Board's backlog, a row `i
 _Avoid_: calling the three together "flows" — ADR-0051 already calls `new` the flow metric. Say **turnover**, the name of the module that books them (`ingest/job_turnover`).
 
 **Tick** (ADR-0040, ADR-0230):
-One pipeline run's measurement of the served stock, stamped with the run's `ts` (`HEADSTART_RUN_TS`, which `index prune` and `role_trends` share). Every Trends number belongs to a tick; a series is a sequence of ticks at one series version. Under ADR-0230 every tick writes exactly one **Board delta** file, even when nothing moved.
+One pipeline run's measurement of the served stock, stamped with the run's `ts` (`HEADSTART_RUN_TS`, which `index prune` and `role_trends` share). Every Trends number belongs to a tick, and a Trends line is the replay of every tick's Board deltas. Under ADR-0230 every tick writes exactly one **Board delta** file, even when nothing moved.
 _Avoid_: "run" when you mean the measurement — a run that skips `role_trends` (a stand-down, a warm-up) is a run with no tick.
 
 **Board delta** (ADR-0143, ADR-0227):
@@ -315,7 +315,7 @@ _Avoid_: reading a found Board's first tick as growth.
 
 **Methodology** (ADR-0164, ADR-0230):
 What decides what a count means: the family list, the classifier head, the tech filter, the derivations and the dedup rules, each with its own version stamp. It travels in every tick's delta file (ADR-0230); `trends_epochs.csv`, which recorded a row only where a stamp moved, retired with step 6.
-_Avoid_: `centroid_version` — the key still carries a series version, but no centroid decides anything since ADR-0220.
+_Avoid_: `centroid_version` or "series version" — both are gone since ADR-0230 step 6; a counting change is a tick whose Methodology moved.
 
 **Counting change** (ADR-0164, ADR-0188):
 A tick where a **Methodology** stamp moved, so its step in a line is a change in how the index counts, not hiring. Trends marks it on the chart and nets it out of a line's change.

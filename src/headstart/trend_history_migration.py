@@ -171,6 +171,7 @@ def rewritten_ticks(
     levels_so_far: list[pa.Table] = []
     by_version: dict[bytes, list[pa.Table]] = {}
     rebased: list[str] = []
+    unstamped = 0  # old-layout ticks no epoch ledger could give a Methodology
     previous: bytes | None = None
     for table in ordered:
         ts = tick_stamp(table)
@@ -203,12 +204,21 @@ def rewritten_ticks(
             if epoch_rows:
                 centroids.add(epoch_in_force(epoch_rows, ts)["centroid_version"])
             methodology = _methodology_at(epoch_rows, ts)
+            unstamped += not epoch_rows
         others = table.filter(pc.invert(level)).select(list(TICK_COLUMNS))
         out.append(tick_table(pa.concat_tables([levels, others]), ts, methodology))
         previous = version
     if len(centroids) > 1:
         raise ValueError(
             f"centroid_version moves between epoch rows ({sorted(centroids)})"
+        )
+    if unstamped:
+        # Said aloud: without the epoch ledger these ticks carry no Methodology, so the counting
+        # changes among them vanish from every line rather than fail.
+        print(
+            f"trend history: {unstamped} older tick(s) have no Methodology — "
+            f"{epochs} is missing, so their counting changes are not marked",
+            flush=True,
         )
     return out, rebased
 
