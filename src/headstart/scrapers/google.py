@@ -52,7 +52,7 @@ returned data, so the walk below still starts from the real end and retries the 
 11 and 20 here) with no accompanying string table found anywhere on the page — guessing what they
 encode would misrepresent them, so both stay unset, same call Eightfold's PCSX API made for
 ``employment_type`` ("not exposed"). ``remote`` falls back to
-:func:`~headstart.models.is_remote` on the location string; no explicit remote/hybrid flag was
+:func:`~headstart.jobs.job.is_remote` on the location string; no explicit remote/hybrid flag was
 found in the payload.
 
 **``company`` is read per-job, not hardcoded "Google".** The careers site serves several
@@ -69,7 +69,7 @@ from collections import Counter
 from datetime import UTC, datetime
 from typing import Any
 
-from headstart.models import Job, html_to_text, is_remote
+from headstart.jobs.job import Job, html_to_text, is_remote
 from headstart.network import http
 from headstart.scrapers.base import BaseScraper, classify_exception, loss_breakdown
 

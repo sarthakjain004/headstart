@@ -50,7 +50,7 @@ The second theory was that the Actions runner egress was walled, since the pages
 from a laptop and the vantage was the only variable left. A probe was written to test that from
 inside Actions. **That was also wrong**, and expensively so: the probe reproduced the bug on its
 first local run, in about thirty seconds, because it did what `curl` had not — sent the request
-through `headstart.network.http.fetch` with the repo's own `USER_AGENT`.
+through `headstart.http.fetch` with the repo's own `USER_AGENT`.
 
 > Two elaborate explanations died to one harness that ran the real code path. Build the loop
 > first.

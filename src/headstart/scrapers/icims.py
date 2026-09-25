@@ -56,7 +56,7 @@ from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
 from headstart import company_name
-from headstart.models import Job, host_of, html_to_text, is_remote
+from headstart.jobs.job import Job, host_of, html_to_text, is_remote
 from headstart.scrapers.base import USER_AGENT, BaseScraper, DetailLost, DetailRequest
 from headstart.scrapers.job_posting_jsonld import (
     find_job_posting,
@@ -479,7 +479,7 @@ def _stated_date(value: Any) -> str | None:
 
 
 def _salary(node: Any) -> str | None:
-    """``baseSalary`` as a string ``headstart.salary`` can actually read, or None.
+    """``baseSalary`` as a string ``headstart.jobs.salary`` can actually read, or None.
 
     iCIMS puts `minValue`/`maxValue` **directly on the node** rather than under `value` as
     schema.org specifies, so both shapes are read — a spec-correct parser sees null on every real

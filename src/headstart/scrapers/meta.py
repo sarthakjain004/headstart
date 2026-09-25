@@ -53,7 +53,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from headstart.models import Job, host_of, html_to_text, is_remote
+from headstart.jobs.job import Job, host_of, html_to_text, is_remote
 from headstart.scrapers.base import USER_AGENT, BaseScraper, DetailLost, DetailRequest
 from headstart.scrapers.job_posting_jsonld import find_job_posting, job_posting_fields
 

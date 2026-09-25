@@ -2,7 +2,7 @@
 
 One continuous initiative across every active ATS scraper: measure how each one shows salary
 (structured field, embedded in the description, or not at all), extend the code where it helps,
-and feed a shared `headstart.salary` extraction module so search gets real numeric salary
+and feed a shared `headstart.jobs.salary` extraction module so search gets real numeric salary
 filtering with, in the founder's words, "extremely good coverage" — not just the boolean
 `has_salary` presence check that exists today.
 
@@ -52,7 +52,7 @@ reader can also open `workday.md` alone and get everything about workday specifi
    just run.
 2. **Measure.** Two numbers, both required: % of jobs (and % of boards with ≥1 job) carrying a
    populated structured `salary` field, and % where a salary figure only shows up inside the
-   description text (a loose detector for this measurement pass — `headstart.salary` is the real
+   description text (a loose detector for this measurement pass — `headstart.jobs.salary` is the real
    extractor, built from what this step finds, not the other way around).
 3. **Read the real shapes, and audit whether "no signal" is genuinely non-disclosure.**
    `--misses <ats>` re-reads captured artifacts (no new network calls) and samples substantial
@@ -67,7 +67,7 @@ reader can also open `workday.md` alone and get everything about workday specifi
    `docs/salary-extraction/personio.md`'s "Post-merge coverage audit") found this exact audit
    surfaced two real `_num()` locale bugs and a new Tier-2 pattern that also lifted coverage on
    every other already-merged ATS — required for every pass from here on, not optional.
-4. **Extend `headstart.salary` and/or the scraper**, informed by what was actually read — never
+4. **Extend `headstart.jobs.salary` and/or the scraper**, informed by what was actually read — never
    speculative patterns written ahead of real evidence. Code changes to a scraper are in scope
    (e.g. fixing a raw-field ambiguity at the source, or adding a query param that unlocks a
    compensation field) — make them freely, but every one gets live-verified, not just tested
@@ -105,7 +105,7 @@ Recorded in full in
 
 - **Currency**: period-normalized (hourly/monthly → annual), native currency kept as its own
   column. No FX conversion, no single cross-currency figure.
-- **No estimate fallback**: unlike `headstart.experience`'s seniority-based Tier 3, salary never
+- **No estimate fallback**: unlike `headstart.jobs.experience`'s seniority-based Tier 3, salary never
   fabricates a number when none is stated anywhere. Unknown stays unknown, and unknown is never
   treated as exclusionary — a job with no discoverable salary still passes any salary-related
   filter rather than being hidden.

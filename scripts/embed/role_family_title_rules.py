@@ -5,7 +5,7 @@ same held-out Jobs, a classifier trained on their verdicts did better than the r
 so since ADR-0220 they are its **labelling functions**: ``train_role_family_classifier.py`` runs
 them over served titles and trains on what they decide. The pipeline never runs them.
 
-Shaped like :mod:`headstart.tech_filter` (ADR-0017, ADR-0068), over the taxonomy-v3 families in
+Shaped like :mod:`headstart.jobs.tech_filter` (ADR-0017, ADR-0068), over the taxonomy-v3 families in
 ``config/role_families.json``. For one title:
 
 1. every family cue that matches is collected with its precedence class, strength and position;

@@ -47,7 +47,7 @@ from datetime import UTC, datetime
 from typing import Any, NamedTuple
 
 from headstart import company_name, eightfold_backing
-from headstart.models import Job, html_to_text, is_remote, requisition_of
+from headstart.jobs.job import Job, html_to_text, is_remote, requisition_of
 from headstart.network import http
 from headstart.scrapers.base import (
     USER_AGENT,
@@ -487,7 +487,7 @@ class EightfoldScraper(BaseScraper):
         on every run forever. Measured across five runs of 2026-09-16, eightfold's non-tech count
         tracked its detail `attempted` to within 0.3% every run (34,806 vs 34,736 on the first).
 
-        :func:`~headstart.tech_filter.is_tech` reads `title` + `department` and nothing else, and
+        :func:`~headstart.jobs.tech_filter.is_tech` reads `title` + `department` and nothing else, and
         the PCSX search already carries both — probed live 2026-09-16 over 6 boards / 2,929
         positions: `name` 2,929/2,929, `department` 2,843/2,929 — so the detail body was never an
         input to that decision. The 2.9% with no `department` are classified on the title alone

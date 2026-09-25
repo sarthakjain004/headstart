@@ -48,7 +48,7 @@ Stripping rather than discarding the whole department veto is deliberate: "Hardw
 Mechanical** Engineering" must still veto on `mechanical`. That distinction is worth 14 rows.
 
 **`sales` is deliberately not stripped.** Under Sales, "Solutions Engineer" is the pre-sales role
-the filter already classifies non-tech when the title says so, and `tests/test_tech_filter.py`
+the filter already classifies non-tech when the title says so, and `tests/test_jobs_tech_filter.py`
 pins `Sales Engineer` as non-tech. There the department corroborates rather than misleads;
 stripping it would contradict a decision already asserted in a test.
 

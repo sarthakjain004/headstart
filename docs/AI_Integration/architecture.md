@@ -109,7 +109,7 @@ index doesn't rot — re-embed new/changed Jobs, drop ids that go dead.
 ## Grounding in the current code
 
 - `src/headstart/alerts/store.py` — `ALLOWED_SEARCH_FILTERS` is the structured-filter seam to extend (the old `filters.py` went with ADR-0038).
-- `src/headstart/models.py` — the `Job` record; `id` is the natural embedding key; `experience`
+- `src/headstart/jobs/job.py` — the `Job` record; `id` is the natural embedding key; `experience`
   and `salary` are the free-text fields needing enrichment.
 - `data/jobs/{ats}.jsonl` — the incremental, id-keyed corpus to embed from.
 - `src/headstart/alerts/run.py` — the alert path, already semantic since ADR-0035/0038.

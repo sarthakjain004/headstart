@@ -25,7 +25,7 @@ from urllib.parse import parse_qs, urlsplit
 import pytest
 from fake_fetcher import FakeFetcher, FakeResponse
 
-from headstart import salary
+from headstart.jobs import salary
 from headstart.network import http
 from headstart.scrapers import jibe
 from headstart.scrapers.jibe import JibeScraper

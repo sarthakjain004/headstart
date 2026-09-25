@@ -1,6 +1,6 @@
 """Salary extraction: a stated field, then the description — never a fabricated estimate.
 
-Mirrors ``headstart.experience``'s tiered-cascade shape (ADR-0009, ADR-0018) with one deliberate
+Mirrors ``headstart.jobs.experience``'s tiered-cascade shape (ADR-0009, ADR-0018) with one deliberate
 difference: there is no third, seniority-style fallback tier. A missing years-of-experience number
 can be reasonably floor-estimated from a title ("Senior" plausibly means 5+); a missing salary
 cannot be guessed from a title without fabricating a dollar figure that risks misleading a real

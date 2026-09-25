@@ -19,7 +19,8 @@ from pathlib import Path
 import pytest
 from fake_fetcher import FakeFetcher, FakeResponse
 
-from headstart import company_name, salary
+from headstart import company_name
+from headstart.jobs import salary
 from headstart.scrapers.pinpoint import PinpointScraper
 from headstart.scrapers.registry import detail_pass_atses, get_scraper
 

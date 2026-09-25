@@ -19,7 +19,7 @@ import re
 import pytest
 from fake_fetcher import FakeFetcher, FakeResponse
 
-from headstart.salary import extract
+from headstart.jobs.salary import extract
 from headstart.scrapers.icims import (
     _LD_KEEP,
     _detail_url,

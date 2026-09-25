@@ -195,7 +195,7 @@ def _row_ok(row: dict) -> bool:
     """Every served row must carry the fields the UI cannot render without.
 
     ``id`` is the newest of them and the load-bearing one: it is the star identity
-    (``{ats}:{slug}:{native_id}``, models.py), so a null or malformed id silently breaks
+    (``{ats}:{slug}:{native_id}``, jobs/job.py), so a null or malformed id silently breaks
     saving a job rather than erroring anywhere visible.
     """
     job_id, ats = row.get("id") or "", row.get("ats") or ""

@@ -8,7 +8,7 @@ patterns are exactly what a bare ``"remote" in text`` check gets wrong in practi
 
 from __future__ import annotations
 
-from headstart.remote import extract
+from headstart.jobs.remote import extract
 
 # --- structured tags: highest precision, checked first -------------------------------------
 

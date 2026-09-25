@@ -72,7 +72,7 @@ none of them and therefore rejected every hourly figure. Present on 25.8% of det
 bound correctly rejecting tenant data-entry errors (an hourly rate typed under ``unitText:
 YEAR``, e.g. "35-60 USD YEAR").
 
-``remote`` stays :func:`~headstart.models.is_remote` on the listing location. JazzHR does emit
+``remote`` stays :func:`~headstart.jobs.job.is_remote` on the listing location. JazzHR does emit
 schema.org ``jobLocationType: TELECOMMUTE`` on 145 of the 1,063 JSON-LD pages, and it was
 checked rather than assumed: on 60 of 60 sampled, the listing location already read exactly
 "Remote", so reading it would add nothing.
@@ -83,8 +83,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from headstart import salary
-from headstart.models import Job, html_to_text, is_remote
+from headstart.jobs import salary
+from headstart.jobs.job import Job, html_to_text, is_remote
 from headstart.network import http
 from headstart.scrapers.base import BaseScraper, DetailLost, DetailRequest
 from headstart.scrapers.job_posting_jsonld import find_job_posting, jsonld_nodes
@@ -359,7 +359,7 @@ class JazzHRScraper(BaseScraper):
     def _salary_field(self, raw: Any) -> str | None:
         """``Job.salary`` as ``"MIN-MAX CUR UNIT"`` from the JSON-LD ``baseSalary`` MonetaryAmount.
 
-        Built by :func:`headstart.salary.to_field`; :func:`headstart.salary.from_field` reads it
+        Built by :func:`headstart.jobs.salary.to_field`; :func:`headstart.jobs.salary.from_field` reads it
         for jazzhr with the bare unit words, which is how an hourly figure gets annualized at
         all. A single-valued amount — a fixed rate with no range, 33 of the 393 in
         the sample — keeps the same shape minus the range, which that parser also handles.

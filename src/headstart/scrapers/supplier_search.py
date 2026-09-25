@@ -50,7 +50,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from headstart.models import Job, html_to_text, is_remote
+from headstart.jobs.job import Job, html_to_text, is_remote
 from headstart.scrapers.base import USER_AGENT, BaseScraper
 
 #: Both hosts served ``limit=1,000`` un-clamped (measured 2026-09-24). Paged anyway: an un-clamped

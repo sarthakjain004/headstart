@@ -26,8 +26,8 @@ import json
 import re
 from typing import Any
 
-from headstart import salary
-from headstart.models import Job, html_to_text
+from headstart.jobs import salary
+from headstart.jobs.job import Job, html_to_text
 from headstart.scrapers.base import USER_AGENT, BaseScraper, DetailLost, DetailRequest
 
 _NEXT = re.compile(r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', re.DOTALL)

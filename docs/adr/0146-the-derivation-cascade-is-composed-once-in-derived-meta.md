@@ -7,8 +7,8 @@ recent family added to the cascade)
 
 ## Context
 
-Four field-extractors — `headstart.experience`, `headstart.salary`, `headstart.geo`,
-`headstart.remote` — derive a Job's `remote`, `country`,
+Four field-extractors — `headstart.jobs.experience`, `headstart.jobs.salary`, `headstart.geo`,
+`headstart.jobs.remote` — derive a Job's `remote`, `country`,
 `min_years`/`max_years`/`experience_source` and
 `min_salary_annual`/`max_salary_annual`/`salary_currency`/`salary_source` columns. Two callers run
 this composition, independently:
@@ -85,8 +85,8 @@ that split (facts vs. derivations, ADR-0061) and this keeps it.
 
 ## Consequences
 
-- `doc_prep.py` no longer imports `headstart.experience`/`headstart.geo`/`headstart.remote`/
-  `headstart.salary` directly; `update_meta.py` keeps direct imports only for the tiers its
+- `doc_prep.py` no longer imports `headstart.jobs.experience`/`headstart.geo`/`headstart.jobs.remote`/
+  `headstart.jobs.salary` directly; `update_meta.py` keeps direct imports only for the tiers its
   no-held-text fallback calls itself (`from_field`, `from_seniority`, salary's `from_field`).
 - `tests/test_derived_meta.py` is new: it asserts `to_meta(job)` and `refresh_row`'s cold-start
   sweep (`sweep=True`, no prior stored values) agree on all nine derived keys, across a

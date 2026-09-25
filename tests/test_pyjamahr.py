@@ -21,8 +21,9 @@ from pathlib import Path
 
 from fake_fetcher import FakeFetcher, FakeResponse
 
-from headstart import company_name, experience, salary
-from headstart.models import html_to_text
+from headstart import company_name
+from headstart.jobs import experience, salary
+from headstart.jobs.job import html_to_text
 from headstart.scrapers.pyjamahr import (
     _API,
     _LIMIT,

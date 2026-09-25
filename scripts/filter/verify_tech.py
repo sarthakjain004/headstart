@@ -29,7 +29,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from headstart.tech_filter import _STRONG, classify
+from headstart.jobs.tech_filter import _STRONG, classify
 
 _ROOT = Path(__file__).resolve().parents[2]
 _JOBS = _ROOT / "data" / "jobs"

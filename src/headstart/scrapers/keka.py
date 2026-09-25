@@ -61,8 +61,9 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from headstart import company_name, salary
-from headstart.models import Job, html_to_text, is_remote
+from headstart import company_name
+from headstart.jobs import salary
+from headstart.jobs.job import Job, html_to_text, is_remote
 from headstart.scrapers.base import BaseScraper
 
 # Keka renders these at HTTP 200 (not 404/403): an unknown slug -> "Invalid Tenant", a disabled
@@ -96,14 +97,14 @@ def _location(job_locations: Any) -> str | None:
 def _format_num(v: float) -> str:
     """Fixed-point, never scientific notation. Python's ``:g`` format (this function's own
     predecessor) silently switches to scientific notation ("1e+06") for values >= 1,000,000 —
-    neither this module's ``_RANGE`` regex nor ``headstart.salary._num()`` can parse an exponent,
+    neither this module's ``_RANGE`` regex nor ``headstart.jobs.salary._num()`` can parse an exponent,
     so every genuine keka figure at or above ₹1,000,000 was silently discarded (real, evidenced:
     27% of a 300-job sample of rejected ``Job.salary`` field values, across 19 distinct companies
     — salary-extraction pass 2026-08-22)."""
     return f"{v:f}".rstrip("0").rstrip(".") or "0"
 
 
-#: salaryPeriod -> the phrase word `headstart.salary.from_field` recognizes for keka, so it
+#: salaryPeriod -> the phrase word `headstart.jobs.salary.from_field` recognizes for keka, so it
 #: annualizes the figure before the plausibility bounds are checked. See
 #: `KekaScraper._salary_field`'s docstring for the live re-measurement behind this map. Period 4
 #: (Annual) needs no word: with no period phrase present, `from_field` already reads annual.

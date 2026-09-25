@@ -15,8 +15,8 @@ from pathlib import Path
 
 import pytest
 
-from headstart import tech_filter
-from headstart.tech_filter import (
+from headstart.jobs import tech_filter
+from headstart.jobs.tech_filter import (
     _STRONG,
     TECH_FILTER_VERSION,
     classify,

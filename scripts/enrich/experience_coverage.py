@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Gauge how well ``headstart.experience`` covers the tech corpus, per ATS (ADR-0009, ADR-0018).
+"""Gauge how well ``headstart.jobs.experience`` covers the tech corpus, per ATS (ADR-0009, ADR-0018).
 
 Runs ``experience.extract(field, description, title)`` over ``data/jobs/tech/{ats}.jsonl`` and reports,
 per ATS, how many jobs got a years number and from which tier (field / regex / seniority) vs ``none``.
@@ -21,7 +21,7 @@ import re
 import sys
 from pathlib import Path
 
-from headstart.experience import extract
+from headstart.jobs.experience import extract
 
 ROOT = Path(__file__).resolve().parents[2]
 csv.field_size_limit(min(sys.maxsize, 2**31 - 1))

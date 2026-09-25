@@ -6,7 +6,7 @@ source and dedup every other production consumer uses), fetches the listing resp
 *real* registered scraper (``registry.get_scraper``) and its real ``parse()``, then measures, per
 Job: whether ``salary`` came back populated (a structured-field hit), and whether the description
 text *looks* like it mentions a figure (``_SALARY_HINT_RE`` — a loose detector for this coarse
-measurement pass only; it is not the extractor. ``headstart.salary`` is what actually parses a
+measurement pass only; it is not the extractor. ``headstart.jobs.salary`` is what actually parses a
 figure out, built from what this script finds).
 
 Listing-only ATSes (``has_detail_pass = False``) get one cheap request per board — the whole
@@ -68,7 +68,7 @@ from pathlib import Path
 
 from headstart import scrapable_boards
 from headstart.config import CompanyRef
-from headstart.models import Job
+from headstart.jobs.job import Job
 from headstart.scrapers import registry
 from headstart.scrapers.base import USER_AGENT, BaseScraper
 from headstart.scrapers.eightfold import _sitemap_position_id
@@ -100,7 +100,7 @@ _DEFAULT_WORKERS = 32
 # — currency symbols/codes near digits, magnitude shorthand, and the region-specific phrasings
 # this repo's India-strong-segment scope makes common (LPA, CTC, "per annum"). Deliberately loose:
 # false positives get sorted out by reading the --misses/hit sample by hand, not by tightening this
-# regex, since headstart.salary (not this script) is where real precision belongs.
+# regex, since headstart.jobs.salary (not this script) is where real precision belongs.
 _SALARY_HINT_RE = re.compile(
     r"""
     (?:[$€£₹]\s?\d[\d,]*\s?[kK]?)                       # $120,000  €50k  ₹8

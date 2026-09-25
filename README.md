@@ -414,11 +414,9 @@ Note the raw corpus files under `data/jobs/` carry a few fields the served table
 
 ## Layout
 
-- `src/headstart/` — shared library, used by both the pipeline and the curated feed: `models.py`
-  (Job + normalization), `scrapers/` (46 per-ATS + `base`/`registry`), `config.py`,
-  `scrapable_boards.py` (which Boards a run may scrape, ADR-0191), `harvest.py` (the scrape
-  engine), `liveness.py`, `corpus.py`,
-  `tech_filter.py` (ADR-0017), `experience.py`, `salary.py` (ADR-0082), `geo.py`, `remote.py`,
+- `src/headstart/` — shared library, used by both the pipeline and the curated feed:
+  `scrapers/` (46 per-ATS + `base`/`registry`), `config.py`, `scrapable_boards.py` (which Boards a
+  run may scrape, ADR-0191), `harvest.py` (the scrape engine), `liveness.py`, `corpus.py`, `geo.py`,
   `company_name.py` (ADR-0114, ADR-0212), `search.py` (shared embed/search constants + filter builder),
   `facets.py` (ADR-0084), `board_priority.py` (ADR-0022), `board_cost.py` (measured scrape
   seconds, ADR-0027), `board_aliases.py`, `board_identity.py`, `board_description_gap.py`,
@@ -430,6 +428,10 @@ Note the raw corpus files under `data/jobs/` carry a few fields the served table
   origin for a shard whose ATS budget is spent, dialling Cloudflare WARP in proxy mode and rotating
   the egress address when a host refuses it; and `fanout_stats.py`, which records a shard's
   throughput against the fan-out width in force (ADR-0110).
+- `src/headstart/jobs/` — one Job and every field derived from its own text (ADR-0232): `job.py`
+  (the `Job` record and the normalizers a scraper builds one with), `experience.py` (ADR-0009),
+  `salary.py` (ADR-0082), `remote.py` (ADR-0118), and `tech_filter.py`, the **Tech filter**
+  (ADR-0017).
 - `src/headstart/ui/` — the templates and static assets the Space serves.
 - `src/headstart/alerts/` — job alerts plus the signed-in per-account records: `store`
   (Subscriptions, Saved sets, Saved jobs, Profiles), `registry`, `access` (invite allowlist),

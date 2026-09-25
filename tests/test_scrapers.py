@@ -842,7 +842,7 @@ def test_keka_employment_type_maps_the_two_confirmed_jobtype_values():
 def test_keka_salary_no_scientific_notation_for_large_amounts():
     # Real bug, salary-extraction pass 2026-08-22: Python's `:g` format (the previous
     # implementation) switches to scientific notation ("1e+06") for values >= 1,000,000 — neither
-    # headstart.salary's _RANGE regex nor _num() can parse an exponent, so every genuine keka
+    # headstart.jobs.salary's _RANGE regex nor _num() can parse an exponent, so every genuine keka
     # figure at or above ₹1,000,000 was silently discarded. 27% of a 300-job sample of rejected
     # Job.salary values showed this shape, across 19 distinct companies. Fixing it recovered
     # ~1,550 jobs on re-measurement (Tier 1 coverage 15.8% -> 27.8% of the full sampled corpus).
@@ -1167,7 +1167,7 @@ def test_smartrecruiters_compensation_custom_field_appended_to_description():
     assert (
         "New Zealand" not in j.description
     )  # unrelated custom fields are not appended
-    from headstart.salary import extract
+    from headstart.jobs.salary import extract
 
     assert extract(None, j.description, "smartrecruiters") is not None
 
@@ -1310,7 +1310,7 @@ def test_detail_without_a_native_id_is_not_counted_as_attempted():
 
 def test_smartrecruiters_parse_maps_native_compensation_into_job_salary():
     """End-to-end: a posting whose detail carries the native `compensation` block gets a
-    populated `Job.salary`, formatted so `headstart.salary.extract` parses it as Tier 1."""
+    populated `Job.salary`, formatted so `headstart.jobs.salary.extract` parses it as Tier 1."""
     jobs = get_scraper("smartrecruiters", "acme", "Acme").parse(
         {
             "content": [
@@ -1335,7 +1335,7 @@ def test_smartrecruiters_parse_maps_native_compensation_into_job_salary():
     j = jobs[0]
     assert j.salary == "70000-85000 EUR 1 YEAR"
 
-    from headstart.salary import SalarySpan, extract
+    from headstart.jobs.salary import SalarySpan, extract
 
     assert extract(j.salary, j.description, "smartrecruiters") == SalarySpan(
         70000, 85000, "EUR", "field"
@@ -2596,8 +2596,8 @@ def test_workday_stub_posting_parses_to_a_job_the_tech_gate_drops():
     an "Untitled" Job whose url falls back to the board root, and `tech_filter.classify` drops it
     before the description store or the index can see it. `_posting_key` still reads the req id
     off `bulletFields`, so the id is stable rather than churning (ADR-0097)."""
+    from headstart.jobs.tech_filter import classify
     from headstart.scrapers.workday import WorkdayScraper
-    from headstart.tech_filter import classify
 
     scraper = WorkdayScraper("https://accenture.wd103.myworkdayjobs.com/avanadecareers")
     (job,) = scraper.parse([{"bulletFields": ["R00322521"]}], "2026-09-09T00:00:00Z")
@@ -3653,7 +3653,7 @@ def test_trakstar_read_detail_falls_back_to_html_when_jsonld_absent():
     real cityflo/dripcapital markup, live-fetched 2026-08-19, whose body is wrapped in a
     nested <div> that a naive non-greedy regex truncates (verified: it loses >1000 chars on
     the real dripcapital page)."""
-    from headstart.models import html_to_text
+    from headstart.jobs.job import html_to_text
     from headstart.scrapers.trakstar import TrakstarScraper
 
     page = """<html><body>
@@ -4249,7 +4249,7 @@ def test_teamtailor_parse_with_no_rss_enrichment_falls_back_to_the_location_gues
     )
     j = jobs[0]
     assert j.department is None  # nothing to join against
-    from headstart.models import is_remote
+    from headstart.jobs.job import is_remote
 
     assert j.remote == is_remote(j.location)
 
@@ -4549,7 +4549,7 @@ def test_personio_parse_reflects_the_years_range_preference():
         raw, SCRAPED_AT
     )
     # Through the real cascade: "experienced" alone floors at 5; the native "1-2" range must win.
-    from headstart.experience import extract
+    from headstart.jobs.experience import extract
 
     span = extract(jobs[0].experience, jobs[0].description, jobs[0].title)
     assert span.min_years == 1
@@ -10266,7 +10266,7 @@ def test_zwayam_experience_falls_back_only_when_the_numbers_are_blank():
     behaviour it described. These assertions can: `extract("Upto 4 years")` returns None while the
     numeric pair (0, 4) parses to 0-4, so preferring the prose silently loses a stated range.
     """
-    from headstart.experience import extract
+    from headstart.jobs.experience import extract
     from headstart.scrapers.zwayam import _experience
 
     assert (
@@ -10484,7 +10484,7 @@ def test_zwayam_bare_amounts_default_to_rupees():
     guard falls back to USD bounds for an unknown currency — so a real 17-20 lakh range reads as
     $1.7M and is dropped, while small placeholder ranges survive. Defaulting to INR is what makes
     the large, genuine figures reach the index."""
-    from headstart.salary import extract
+    from headstart.jobs.salary import extract
 
     _salary = get_scraper("zwayam", "acme")._salary_field
 
@@ -10518,7 +10518,7 @@ def test_zwayam_fixture_row_without_a_currency_gets_the_default():
 def test_zwayam_a_zero_bound_is_an_unfilled_form_half():
     """`1000000-0` makes `salary.extract` reject the whole row, losing a real floor that parses
     fine alone — 17 of 5,079 amount rows carried a floor with a zero ceiling."""
-    from headstart.salary import extract
+    from headstart.jobs.salary import extract
 
     _salary = get_scraper("zwayam", "acme")._salary_field
 
@@ -10532,7 +10532,7 @@ def test_zwayam_a_ceiling_without_a_floor_is_shown_but_never_read_as_a_floor():
     one paying at least that (10 of 5,079 amount rows). "Upto" keeps the display column honest —
     `Job.salary` is "raw, for display" — while parsing to nothing, so no derived column inverts.
     """
-    from headstart.salary import extract
+    from headstart.jobs.salary import extract
 
     _salary = get_scraper("zwayam", "acme")._salary_field
 
@@ -10561,7 +10561,7 @@ def test_zwayam_above_n_years_is_an_open_floor_not_an_inverted_range():
     """59 of 60 lo>hi pairs walked are "Above N years" rows — max left at the form's 0. Emitting
     "3.5-0 years" ships an inverted range; "3.5+ years" is what `experience.extract` reads as an
     open floor."""
-    from headstart.experience import extract
+    from headstart.jobs.experience import extract
     from headstart.scrapers.zwayam import _experience
 
     source = {

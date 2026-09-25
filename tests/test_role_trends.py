@@ -25,11 +25,12 @@ from datetime import UTC
 
 import lancedb
 
-from headstart import roles, tech_filter, trend_history
+from headstart import roles, trend_history
 from headstart.embedding_conventions import MODEL as EMBED_MODEL
 from headstart.embedding_conventions import PROD_TABLE
 from headstart.ingest import RUN_TS_ENV, index_plan, role_family_classifier, role_trends
 from headstart.ingest.doc_prep import DERIVATIONS_VERSION
+from headstart.jobs import tech_filter
 from headstart.trend_history import TrendHistory
 
 _DIM = 4
