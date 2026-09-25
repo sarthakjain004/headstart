@@ -13,6 +13,7 @@ the base install runs.
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -41,6 +42,17 @@ class Unreadable(Exception):
     second-best answer that quietly disagrees with the Résumé tab is the failure that decision
     exists to prevent.
     """
+
+
+# An indented `at …` line ending in `:line:col` — a V8 frame. A multi-line error message can
+# carry a line that merely starts with "at " (a résumé bullet), and that must not pass.
+_FRAME = re.compile(r"^\s+at .*:\d+:\d+\)?$")
+
+
+def _frames(stderr: str | None) -> str:
+    """The ``at file:line:col`` frames of a Node stack, and nothing that could quote the record."""
+    lines = (stderr or "").splitlines()
+    return "\n".join(line for line in lines if _FRAME.match(line))[:2000]
 
 
 def read_document(document: dict[str, Any], view: str = "master") -> dict[str, Any]:
@@ -77,12 +89,13 @@ def read_document(document: dict[str, Any], view: str = "master") -> dict[str, A
     try:
         answer = json.loads(done.stdout)
     except ValueError as exc:
-        # Stderr's frames only, as for a fault below: the tool result alone reaches no log.
+        # The tool result alone reaches no log. Frames only: this is Node's own crash output,
+        # whose message line and source excerpt can quote the résumé.
         _log.warning(
             "inspect_document.js gave no JSON for document %s: exit %d %s",
             document.get("id"),
             done.returncode,
-            (done.stderr or "").strip()[:2000],
+            _frames(done.stderr),
         )
         # stderr, not stdout: a crash before the handler writes its JSON leaves the stack there.
         detail = (done.stderr or "").strip()[
@@ -92,12 +105,13 @@ def read_document(document: dict[str, Any], view: str = "master") -> dict[str, A
     if isinstance(answer, dict) and answer.get("error"):
         # The script writes a stack to stderr only for a fault, never for a deliberate refusal
         # (a malformed record, no such version), so a non-empty stderr is a bug to look at.
-        # Its frames carry file:line, not the message, which can quote the résumé.
+        # Frames only, filtered here too rather than trusting the script's own filter: the
+        # message can quote the résumé.
         if done.stderr.strip():
             _log.warning(
                 "inspect_document.js failed for document %s: %s",
                 document.get("id"),
-                done.stderr.strip()[:2000],
+                _frames(done.stderr),
             )
         raise Unreadable(str(answer["error"]))
     return answer

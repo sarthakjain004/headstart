@@ -791,10 +791,7 @@ class ZwayamScraper(BaseScraper):
             )
         if unlinked:
             _log.info(f"{self.board_key()}: {unlinked} job(s) had no jobUrl, skipped")
-        if unnamed:
-            _log.info(
-                f"{self.board_key()}: {unnamed} row(s) had no id or title, skipped"
-            )
+        self.note_unread_rows(unnamed, len(rows), "with no id/title")
         return jobs
 
     def _salary_field(self, raw: dict) -> str | None:
