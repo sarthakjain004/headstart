@@ -145,6 +145,7 @@ def _rank(
     names: dict | None = None,
     opened: dict | None = None,
     closed: dict | None = None,
+    young: set | None = None,
 ):
     return hot_boards.rank(
         collections.Counter(new),
@@ -153,6 +154,7 @@ def _rank(
         names or {},
         collections.Counter(opened or {}),
         collections.Counter(closed or {}),
+        young=young or set(),
     )
 
 
@@ -475,7 +477,50 @@ def test_an_emptied_site_still_makes_its_sibling_touched(tmp_path: Path) -> None
     )
     now = {"workday:acme/a"}  # b emptied, so it is gone from the current counts
     assert hot_boards.dedup_touches(now) == set()
-    assert hot_boards.dedup_touches(now | hot_boards.ledger_boards(deltas)) == {
+    assert hot_boards.dedup_touches(now | set(hot_boards.board_arrivals(deltas))) == {
         "workday:acme/a",
         "workday:acme/b",
     }
+
+
+def test_a_boards_arrival_is_not_hiring_and_a_board_counted_briefly_is_not_ranked(
+    tmp_path: Path,
+) -> None:
+    """Sphinixusa, counted from Sep 23, ranked second at "+250 net" off the backlog it landed
+    with, while the trend its row opens called it too new. Its arrival tick is left out of its
+    net and its opened, and a Board counted under three days is not ranked at all."""
+    deltas = tmp_path / "deltas"
+    deltas.mkdir()
+    ticks = [
+        ("2026-09-13T00:00:00+00:00", [("greenhouse:old", "stock", "se", 100)]),
+        ("2026-09-20T00:00:00+00:00", [("greenhouse:old", "stock", "se", 4)]),
+        (
+            "2026-09-23T00:00:00+00:00",
+            [
+                ("lever:sphinix", "stock", "se", 250),
+                ("lever:sphinix", "recounted_in", "se", 250),
+            ],
+        ),
+        (
+            "2026-09-24T00:00:00+00:00",
+            [("lever:sphinix", "stock", "se", 3), ("lever:sphinix", "opened", "se", 3)],
+        ),
+    ]
+    for ts, rows in ticks:
+        pq.write_table(_deltas(ts, rows), deltas / f"{ts.replace(':', '-')}.parquet")
+    arrivals = hot_boards.board_arrivals(deltas)
+    moved, _ = hot_boards.read_window_sum(deltas, arrivals=arrivals)
+    opened, _ = hot_boards.read_window_sum(deltas, arrivals=arrivals, metric="opened")
+    assert moved["lever:sphinix"] == 3 == opened["lever:sphinix"]
+    assert moved["greenhouse:old"] == 4
+    young = hot_boards.too_new(arrivals, "2026-09-24T00:00:00+00:00")
+    assert young == {"lever:sphinix"}
+    lenses, counts = _rank(
+        new={},
+        stock={"lever:sphinix": 253, "greenhouse:old": 104},
+        moved=moved,
+        opened=opened,
+        young=young,
+    )
+    assert [r["board"] for r in lenses["expansion"]] == ["greenhouse:old"]
+    assert counts["newly_discovered"] == 1
