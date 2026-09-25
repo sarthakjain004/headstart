@@ -80,7 +80,8 @@ adds rows and in `index prune`.** Board keys do not change and nothing is re-key
   The order only chooses which copy stays; it never decides whether a requisition is served, so
   one that only non-public sites hold still survives on one of them.
 - **Where the rule lives.** `index_plan`, in private helpers both planners call: `_placement`
-  (an id's duplicate group and site, with `_workday_tenant` as the one place the key widens),
+  (an id's duplicate group and site, with `_workday_tenant` — `_requisition_tenant` since
+  ADR-0223 — as the one place the key widens),
   `_survivor_board` (the ranking: public first, then ledger jobs, then key) and `_is_non_public`.
   `plan_sync` gains keyword `site_jobs` and `replaced` and reports the ids it declined as
   `SyncPlan.refused`; `plan_prune` gains keyword `site_jobs`. One place defines the ranking, so
