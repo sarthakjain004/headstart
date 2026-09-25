@@ -1342,7 +1342,7 @@ class BaseScraper(ABC):
 
     def _read_detail_outcome(self, item: Any, response: Any) -> Any:
         if response.status_code != 200:
-            self.note_detail_loss(f"HTTP {response.status_code}")
+            self.note_detail_loss(self.detail_status_loss(response))
             return None
         try:
             detail = self.read_detail(item, response)
@@ -1355,6 +1355,11 @@ class BaseScraper(ABC):
                 self.note_detail_loss(detail.cause)
             return detail
         return None
+
+    def detail_status_loss(self, response: Any) -> str:
+        """The loss label for a detail that settled on a non-200 status: the status itself, unless
+        a Scraper knows what that status means on its host (Zoho's throttle redirect)."""
+        return f"HTTP {response.status_code}"
 
     def report_detail_gaps(self, results: Sequence[Any], what: str) -> int:
         """Log how many of a detail pass's results came back empty (None) — the gaps behind
