@@ -93,16 +93,37 @@
     "latest": 49700,
     "hiring": 700,
     "not_hiring": [],
+    "not_hiring_total": 0,
     "percent": 1.4285714285714286,
     "percent_withheld": null,
+    "span_days": 6.0,
+    "per_week": 817,
     "turnover": null,
     "share": {
      "start": 49.0,
      "latest": 49.7,
      "denominator_start": 100000,
-     "denominator_latest": 100000
+     "denominator_latest": 100000,
+     "percent": 1.4285714285714344
     }
-   }
+   },
+   "netted": [
+    49000,
+    49000,
+    49500,
+    49600,
+    49700
+   ],
+   "steps_at": [],
+   "index_base": 49000,
+   "arrived_by": null,
+   "points": [
+    49000,
+    49000,
+    49500,
+    49600,
+    49700
+   ]
   },
   "lines": [
    {
@@ -114,16 +135,30 @@
      "latest": 40600,
      "hiring": 600,
      "not_hiring": [],
+     "not_hiring_total": 0,
      "percent": 1.5,
      "percent_withheld": null,
+     "span_days": 6.0,
+     "per_week": 700,
      "turnover": null,
      "share": {
       "start": 40.0,
       "latest": 40.6,
       "denominator_start": 100000,
-      "denominator_latest": 100000
+      "denominator_latest": 100000,
+      "percent": 1.5000000000000036
      }
-    }
+    },
+    "netted": [
+     40000,
+     40000,
+     40500,
+     40500,
+     40600
+    ],
+    "steps_at": [],
+    "index_base": 40000,
+    "arrived_by": null
    },
    {
     "name": "web-development",
@@ -134,18 +169,33 @@
      "latest": 9100,
      "hiring": 100,
      "not_hiring": [],
+     "not_hiring_total": 0,
      "percent": 1.1111111111111112,
      "percent_withheld": null,
+     "span_days": 6.0,
+     "per_week": 117,
      "turnover": null,
      "share": {
       "start": 9.0,
       "latest": 9.1,
       "denominator_start": 100000,
-      "denominator_latest": 100000
+      "denominator_latest": 100000,
+      "percent": 1.1111111111111072
      }
-    }
+    },
+    "netted": [
+     9000,
+     9000,
+     9000,
+     9100,
+     9100
+    ],
+    "steps_at": [],
+    "index_base": 9000,
+    "arrived_by": null
    }
   ],
+  "other": null,
   "company_lines": [],
   "breakdown": null,
   "marked_changes": [
@@ -186,6 +236,16 @@
     ]
    }
   ],
+  "reference": [
+   100000,
+   100000,
+   100000,
+   100000,
+   100000
+  ],
+  "openings": 49700,
+  "served_jobs": null,
+  "non_tech_jobs": null,
   "reconciles": true,
   "violations": []
  }

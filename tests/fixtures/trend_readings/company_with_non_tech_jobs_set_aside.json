@@ -1,0 +1,177 @@
+{
+ "description": "108 served jobs, 100 of them tech: Search is told 8 are left out as non-tech.",
+ "answer_input": {
+  "metric": "stock",
+  "coverage": "all",
+  "new_window_days": 7,
+  "family": null,
+  "epochs": [],
+  "discovered": [],
+  "stamps": [
+   "2026-09-13T00:00:00+00:00",
+   "2026-09-20T00:00:00+00:00"
+  ],
+  "watch_parents": [],
+  "split_by": "family",
+  "totals": [
+   1000,
+   1000
+  ],
+  "non_tech": [
+   10,
+   10
+  ],
+  "series": [
+   {
+    "name": "a",
+    "label": "a",
+    "points": [
+     90,
+     100
+    ],
+    "latest": 100
+   }
+  ],
+  "companies": [
+   {
+    "key": "greenhouse:acme",
+    "label": "Acme",
+    "board_keys": [
+     "greenhouse:acme"
+    ],
+    "atses": [
+     "greenhouse"
+    ]
+   }
+  ],
+  "company_totals": {
+   "greenhouse:acme": [
+    100,
+    108
+   ]
+  },
+  "counted_since": {
+   "greenhouse:acme": "2026-09-13T00:00:00+00:00"
+  }
+ },
+ "reading": {
+  "window": {
+   "from": "2026-09-13T00:00:00+00:00",
+   "to": "2026-09-20T00:00:00+00:00"
+  },
+  "picked": true,
+  "total": {
+   "name": "__total__",
+   "label": "",
+   "estimated": false,
+   "move": {
+    "start": 90,
+    "latest": 100,
+    "hiring": 10,
+    "not_hiring": [],
+    "not_hiring_total": 0,
+    "percent": 11.11111111111111,
+    "percent_withheld": null,
+    "span_days": 7.0,
+    "per_week": 10,
+    "turnover": null,
+    "share": {
+     "start": 9.0,
+     "latest": 10.0,
+     "denominator_start": 1000,
+     "denominator_latest": 1000,
+     "percent": 11.11111111111111
+    }
+   },
+   "netted": [
+    90,
+    100
+   ],
+   "steps_at": [],
+   "index_base": 90,
+   "arrived_by": null,
+   "points": [
+    90,
+    100
+   ]
+  },
+  "lines": [
+   {
+    "name": "a",
+    "label": "a",
+    "estimated": false,
+    "move": {
+     "start": 90,
+     "latest": 100,
+     "hiring": 10,
+     "not_hiring": [],
+     "not_hiring_total": 0,
+     "percent": 11.11111111111111,
+     "percent_withheld": null,
+     "span_days": 7.0,
+     "per_week": 10,
+     "turnover": null,
+     "share": {
+      "start": 9.0,
+      "latest": 10.0,
+      "denominator_start": 1000,
+      "denominator_latest": 1000,
+      "percent": 11.11111111111111
+     }
+    },
+    "netted": [
+     90,
+     100
+    ],
+    "steps_at": [],
+    "index_base": 90,
+    "arrived_by": null
+   }
+  ],
+  "other": null,
+  "company_lines": [
+   {
+    "name": "greenhouse:acme",
+    "label": "Acme",
+    "estimated": false,
+    "move": {
+     "start": 90,
+     "latest": 100,
+     "hiring": 10,
+     "not_hiring": [],
+     "not_hiring_total": 0,
+     "percent": 11.11111111111111,
+     "percent_withheld": null,
+     "span_days": 7.0,
+     "per_week": 10,
+     "turnover": null,
+     "share": {
+      "start": 9.0,
+      "latest": 10.0,
+      "denominator_start": 1000,
+      "denominator_latest": 1000,
+      "percent": 11.11111111111111
+     }
+    },
+    "netted": [],
+    "steps_at": [],
+    "index_base": null,
+    "arrived_by": null
+   }
+  ],
+  "breakdown": {
+   "closing": null
+  },
+  "marked_changes": [],
+  "day_markers": [],
+  "reference": [
+   1000,
+   1000
+  ],
+  "openings": 100,
+  "served_jobs": 108,
+  "non_tech_jobs": 8,
+  "reconciles": true,
+  "violations": []
+ }
+}

@@ -1,0 +1,730 @@
+{
+ "description": "Eight companies, largest first: G, the smallest but one, rises most and F falls most.",
+ "answer_input": {
+  "metric": "stock",
+  "coverage": "all",
+  "new_window_days": 7,
+  "family": null,
+  "epochs": [],
+  "discovered": [],
+  "stamps": [
+   "2026-09-13T00:00:00+00:00",
+   "2026-09-14T00:00:00+00:00",
+   "2026-09-15T00:00:00+00:00",
+   "2026-09-16T00:00:00+00:00"
+  ],
+  "watch_parents": [],
+  "split_by": "company",
+  "totals": [
+   10000,
+   10000,
+   10000,
+   10000
+  ],
+  "non_tech": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "series": [
+   {
+    "name": "lever:a",
+    "label": "A",
+    "points": [
+     700,
+     700,
+     700,
+     700
+    ],
+    "latest": 700
+   },
+   {
+    "name": "lever:b",
+    "label": "B",
+    "points": [
+     600,
+     600,
+     600,
+     600
+    ],
+    "latest": 600
+   },
+   {
+    "name": "lever:c",
+    "label": "C",
+    "points": [
+     500,
+     500,
+     500,
+     500
+    ],
+    "latest": 500
+   },
+   {
+    "name": "lever:d",
+    "label": "D",
+    "points": [
+     400,
+     400,
+     400,
+     400
+    ],
+    "latest": 400
+   },
+   {
+    "name": "lever:e",
+    "label": "E",
+    "points": [
+     300,
+     300,
+     300,
+     300
+    ],
+    "latest": 300
+   },
+   {
+    "name": "lever:f",
+    "label": "F",
+    "points": [
+     300,
+     300,
+     300,
+     200
+    ],
+    "latest": 200
+   },
+   {
+    "name": "lever:g",
+    "label": "G",
+    "points": [
+     100,
+     100,
+     100,
+     200
+    ],
+    "latest": 200
+   },
+   {
+    "name": "lever:h",
+    "label": "H",
+    "points": [
+     50,
+     50,
+     50,
+     50
+    ],
+    "latest": 50
+   }
+  ],
+  "companies": [
+   {
+    "key": "lever:a",
+    "label": "A",
+    "board_keys": [
+     "lever:a"
+    ],
+    "atses": [
+     "lever"
+    ]
+   },
+   {
+    "key": "lever:b",
+    "label": "B",
+    "board_keys": [
+     "lever:b"
+    ],
+    "atses": [
+     "lever"
+    ]
+   },
+   {
+    "key": "lever:c",
+    "label": "C",
+    "board_keys": [
+     "lever:c"
+    ],
+    "atses": [
+     "lever"
+    ]
+   },
+   {
+    "key": "lever:d",
+    "label": "D",
+    "board_keys": [
+     "lever:d"
+    ],
+    "atses": [
+     "lever"
+    ]
+   },
+   {
+    "key": "lever:e",
+    "label": "E",
+    "board_keys": [
+     "lever:e"
+    ],
+    "atses": [
+     "lever"
+    ]
+   },
+   {
+    "key": "lever:f",
+    "label": "F",
+    "board_keys": [
+     "lever:f"
+    ],
+    "atses": [
+     "lever"
+    ]
+   },
+   {
+    "key": "lever:g",
+    "label": "G",
+    "board_keys": [
+     "lever:g"
+    ],
+    "atses": [
+     "lever"
+    ]
+   },
+   {
+    "key": "lever:h",
+    "label": "H",
+    "board_keys": [
+     "lever:h"
+    ],
+    "atses": [
+     "lever"
+    ]
+   }
+  ],
+  "company_totals": {},
+  "uncounted": [],
+  "counted_since": {
+   "lever:a": "2026-09-13T00:00:00+00:00",
+   "lever:b": "2026-09-13T00:00:00+00:00",
+   "lever:c": "2026-09-13T00:00:00+00:00",
+   "lever:d": "2026-09-13T00:00:00+00:00",
+   "lever:e": "2026-09-13T00:00:00+00:00",
+   "lever:f": "2026-09-13T00:00:00+00:00",
+   "lever:g": "2026-09-13T00:00:00+00:00",
+   "lever:h": "2026-09-13T00:00:00+00:00"
+  }
+ },
+ "reading": {
+  "window": {
+   "from": "2026-09-13T00:00:00+00:00",
+   "to": "2026-09-16T00:00:00+00:00"
+  },
+  "picked": true,
+  "total": null,
+  "lines": [
+   {
+    "name": "lever:a",
+    "label": "A",
+    "estimated": false,
+    "move": {
+     "start": 700,
+     "latest": 700,
+     "hiring": 0,
+     "not_hiring": [],
+     "not_hiring_total": 0,
+     "percent": 0.0,
+     "percent_withheld": null,
+     "span_days": 3.0,
+     "per_week": 0,
+     "turnover": null,
+     "share": {
+      "start": 7.000000000000001,
+      "latest": 7.000000000000001,
+      "denominator_start": 10000,
+      "denominator_latest": 10000,
+      "percent": 0.0
+     }
+    },
+    "netted": [
+     700,
+     700,
+     700,
+     700
+    ],
+    "steps_at": [],
+    "index_base": 700,
+    "arrived_by": null
+   },
+   {
+    "name": "lever:b",
+    "label": "B",
+    "estimated": false,
+    "move": {
+     "start": 600,
+     "latest": 600,
+     "hiring": 0,
+     "not_hiring": [],
+     "not_hiring_total": 0,
+     "percent": 0.0,
+     "percent_withheld": null,
+     "span_days": 3.0,
+     "per_week": 0,
+     "turnover": null,
+     "share": {
+      "start": 6.0,
+      "latest": 6.0,
+      "denominator_start": 10000,
+      "denominator_latest": 10000,
+      "percent": 0.0
+     }
+    },
+    "netted": [
+     600,
+     600,
+     600,
+     600
+    ],
+    "steps_at": [],
+    "index_base": 600,
+    "arrived_by": null
+   },
+   {
+    "name": "lever:c",
+    "label": "C",
+    "estimated": false,
+    "move": {
+     "start": 500,
+     "latest": 500,
+     "hiring": 0,
+     "not_hiring": [],
+     "not_hiring_total": 0,
+     "percent": 0.0,
+     "percent_withheld": null,
+     "span_days": 3.0,
+     "per_week": 0,
+     "turnover": null,
+     "share": {
+      "start": 5.0,
+      "latest": 5.0,
+      "denominator_start": 10000,
+      "denominator_latest": 10000,
+      "percent": 0.0
+     }
+    },
+    "netted": [
+     500,
+     500,
+     500,
+     500
+    ],
+    "steps_at": [],
+    "index_base": 500,
+    "arrived_by": null
+   },
+   {
+    "name": "lever:d",
+    "label": "D",
+    "estimated": false,
+    "move": {
+     "start": 400,
+     "latest": 400,
+     "hiring": 0,
+     "not_hiring": [],
+     "not_hiring_total": 0,
+     "percent": 0.0,
+     "percent_withheld": null,
+     "span_days": 3.0,
+     "per_week": 0,
+     "turnover": null,
+     "share": {
+      "start": 4.0,
+      "latest": 4.0,
+      "denominator_start": 10000,
+      "denominator_latest": 10000,
+      "percent": 0.0
+     }
+    },
+    "netted": [
+     400,
+     400,
+     400,
+     400
+    ],
+    "steps_at": [],
+    "index_base": 400,
+    "arrived_by": null
+   },
+   {
+    "name": "lever:e",
+    "label": "E",
+    "estimated": false,
+    "move": {
+     "start": 300,
+     "latest": 300,
+     "hiring": 0,
+     "not_hiring": [],
+     "not_hiring_total": 0,
+     "percent": 0.0,
+     "percent_withheld": null,
+     "span_days": 3.0,
+     "per_week": 0,
+     "turnover": null,
+     "share": {
+      "start": 3.0,
+      "latest": 3.0,
+      "denominator_start": 10000,
+      "denominator_latest": 10000,
+      "percent": 0.0
+     }
+    },
+    "netted": [
+     300,
+     300,
+     300,
+     300
+    ],
+    "steps_at": [],
+    "index_base": 300,
+    "arrived_by": null
+   },
+   {
+    "name": "lever:f",
+    "label": "F",
+    "estimated": false,
+    "move": {
+     "start": 300,
+     "latest": 200,
+     "hiring": -100,
+     "not_hiring": [],
+     "not_hiring_total": 0,
+     "percent": -33.33333333333333,
+     "percent_withheld": null,
+     "span_days": 3.0,
+     "per_week": -233,
+     "turnover": null,
+     "share": {
+      "start": 3.0,
+      "latest": 2.0,
+      "denominator_start": 10000,
+      "denominator_latest": 10000,
+      "percent": -33.33333333333333
+     }
+    },
+    "netted": [
+     300,
+     300,
+     300,
+     200
+    ],
+    "steps_at": [],
+    "index_base": 300,
+    "arrived_by": null
+   },
+   {
+    "name": "lever:g",
+    "label": "G",
+    "estimated": false,
+    "move": {
+     "start": 100,
+     "latest": 200,
+     "hiring": 100,
+     "not_hiring": [],
+     "not_hiring_total": 0,
+     "percent": 100.0,
+     "percent_withheld": null,
+     "span_days": 3.0,
+     "per_week": 233,
+     "turnover": null,
+     "share": {
+      "start": 1.0,
+      "latest": 2.0,
+      "denominator_start": 10000,
+      "denominator_latest": 10000,
+      "percent": 100.0
+     }
+    },
+    "netted": [
+     100,
+     100,
+     100,
+     200
+    ],
+    "steps_at": [],
+    "index_base": 100,
+    "arrived_by": null
+   },
+   {
+    "name": "lever:h",
+    "label": "H",
+    "estimated": false,
+    "move": {
+     "start": 50,
+     "latest": 50,
+     "hiring": 0,
+     "not_hiring": [],
+     "not_hiring_total": 0,
+     "percent": 0.0,
+     "percent_withheld": null,
+     "span_days": 3.0,
+     "per_week": 0,
+     "turnover": null,
+     "share": {
+      "start": 0.5,
+      "latest": 0.5,
+      "denominator_start": 10000,
+      "denominator_latest": 10000,
+      "percent": 0.0
+     }
+    },
+    "netted": [
+     50,
+     50,
+     50,
+     50
+    ],
+    "steps_at": [],
+    "index_base": 50,
+    "arrived_by": null
+   }
+  ],
+  "other": null,
+  "company_lines": [
+   {
+    "name": "lever:a",
+    "label": "A",
+    "estimated": false,
+    "move": {
+     "start": 700,
+     "latest": 700,
+     "hiring": 0,
+     "not_hiring": [],
+     "not_hiring_total": 0,
+     "percent": 0.0,
+     "percent_withheld": null,
+     "span_days": 3.0,
+     "per_week": 0,
+     "turnover": null,
+     "share": {
+      "start": 7.000000000000001,
+      "latest": 7.000000000000001,
+      "denominator_start": 10000,
+      "denominator_latest": 10000,
+      "percent": 0.0
+     }
+    },
+    "netted": [],
+    "steps_at": [],
+    "index_base": null,
+    "arrived_by": null
+   },
+   {
+    "name": "lever:b",
+    "label": "B",
+    "estimated": false,
+    "move": {
+     "start": 600,
+     "latest": 600,
+     "hiring": 0,
+     "not_hiring": [],
+     "not_hiring_total": 0,
+     "percent": 0.0,
+     "percent_withheld": null,
+     "span_days": 3.0,
+     "per_week": 0,
+     "turnover": null,
+     "share": {
+      "start": 6.0,
+      "latest": 6.0,
+      "denominator_start": 10000,
+      "denominator_latest": 10000,
+      "percent": 0.0
+     }
+    },
+    "netted": [],
+    "steps_at": [],
+    "index_base": null,
+    "arrived_by": null
+   },
+   {
+    "name": "lever:c",
+    "label": "C",
+    "estimated": false,
+    "move": {
+     "start": 500,
+     "latest": 500,
+     "hiring": 0,
+     "not_hiring": [],
+     "not_hiring_total": 0,
+     "percent": 0.0,
+     "percent_withheld": null,
+     "span_days": 3.0,
+     "per_week": 0,
+     "turnover": null,
+     "share": {
+      "start": 5.0,
+      "latest": 5.0,
+      "denominator_start": 10000,
+      "denominator_latest": 10000,
+      "percent": 0.0
+     }
+    },
+    "netted": [],
+    "steps_at": [],
+    "index_base": null,
+    "arrived_by": null
+   },
+   {
+    "name": "lever:d",
+    "label": "D",
+    "estimated": false,
+    "move": {
+     "start": 400,
+     "latest": 400,
+     "hiring": 0,
+     "not_hiring": [],
+     "not_hiring_total": 0,
+     "percent": 0.0,
+     "percent_withheld": null,
+     "span_days": 3.0,
+     "per_week": 0,
+     "turnover": null,
+     "share": {
+      "start": 4.0,
+      "latest": 4.0,
+      "denominator_start": 10000,
+      "denominator_latest": 10000,
+      "percent": 0.0
+     }
+    },
+    "netted": [],
+    "steps_at": [],
+    "index_base": null,
+    "arrived_by": null
+   },
+   {
+    "name": "lever:e",
+    "label": "E",
+    "estimated": false,
+    "move": {
+     "start": 300,
+     "latest": 300,
+     "hiring": 0,
+     "not_hiring": [],
+     "not_hiring_total": 0,
+     "percent": 0.0,
+     "percent_withheld": null,
+     "span_days": 3.0,
+     "per_week": 0,
+     "turnover": null,
+     "share": {
+      "start": 3.0,
+      "latest": 3.0,
+      "denominator_start": 10000,
+      "denominator_latest": 10000,
+      "percent": 0.0
+     }
+    },
+    "netted": [],
+    "steps_at": [],
+    "index_base": null,
+    "arrived_by": null
+   },
+   {
+    "name": "lever:f",
+    "label": "F",
+    "estimated": false,
+    "move": {
+     "start": 300,
+     "latest": 200,
+     "hiring": -100,
+     "not_hiring": [],
+     "not_hiring_total": 0,
+     "percent": -33.33333333333333,
+     "percent_withheld": null,
+     "span_days": 3.0,
+     "per_week": -233,
+     "turnover": null,
+     "share": {
+      "start": 3.0,
+      "latest": 2.0,
+      "denominator_start": 10000,
+      "denominator_latest": 10000,
+      "percent": -33.33333333333333
+     }
+    },
+    "netted": [],
+    "steps_at": [],
+    "index_base": null,
+    "arrived_by": null
+   },
+   {
+    "name": "lever:g",
+    "label": "G",
+    "estimated": false,
+    "move": {
+     "start": 100,
+     "latest": 200,
+     "hiring": 100,
+     "not_hiring": [],
+     "not_hiring_total": 0,
+     "percent": 100.0,
+     "percent_withheld": null,
+     "span_days": 3.0,
+     "per_week": 233,
+     "turnover": null,
+     "share": {
+      "start": 1.0,
+      "latest": 2.0,
+      "denominator_start": 10000,
+      "denominator_latest": 10000,
+      "percent": 100.0
+     }
+    },
+    "netted": [],
+    "steps_at": [],
+    "index_base": null,
+    "arrived_by": null
+   },
+   {
+    "name": "lever:h",
+    "label": "H",
+    "estimated": false,
+    "move": {
+     "start": 50,
+     "latest": 50,
+     "hiring": 0,
+     "not_hiring": [],
+     "not_hiring_total": 0,
+     "percent": 0.0,
+     "percent_withheld": null,
+     "span_days": 3.0,
+     "per_week": 0,
+     "turnover": null,
+     "share": {
+      "start": 0.5,
+      "latest": 0.5,
+      "denominator_start": 10000,
+      "denominator_latest": 10000,
+      "percent": 0.0
+     }
+    },
+    "netted": [],
+    "steps_at": [],
+    "index_base": null,
+    "arrived_by": null
+   }
+  ],
+  "breakdown": null,
+  "marked_changes": [],
+  "day_markers": [],
+  "reference": [
+   10000,
+   10000,
+   10000,
+   10000
+  ],
+  "openings": 2950,
+  "served_jobs": null,
+  "non_tech_jobs": null,
+  "reconciles": true,
+  "violations": []
+ }
+}

@@ -91,16 +91,37 @@
       "size": 12
      }
     ],
+    "not_hiring_total": 12,
     "percent": null,
     "percent_withheld": "under 20 openings at the start",
+    "span_days": 3.0,
+    "per_week": 5,
     "turnover": null,
     "share": {
      "start": 0.23971234518577705,
      "latest": 0.26,
      "denominator_start": 10012,
-     "denominator_latest": 10000
+     "denominator_latest": 10000,
+     "percent": null
     }
-   }
+   },
+   "netted": [
+    24,
+    24,
+    24,
+    26
+   ],
+   "steps_at": [
+    2
+   ],
+   "index_base": 24,
+   "arrived_by": null,
+   "points": [
+    12,
+    12,
+    24,
+    26
+   ]
   },
   "lines": [
    {
@@ -119,18 +140,34 @@
        "size": 12
       }
      ],
+     "not_hiring_total": 12,
      "percent": null,
      "percent_withheld": "under 20 openings at the start",
+     "span_days": 3.0,
+     "per_week": 5,
      "turnover": null,
      "share": {
       "start": 0.23971234518577705,
       "latest": 0.26,
       "denominator_start": 10012,
-      "denominator_latest": 10000
+      "denominator_latest": 10000,
+      "percent": null
      }
-    }
+    },
+    "netted": [
+     24,
+     24,
+     24,
+     26
+    ],
+    "steps_at": [
+     2
+    ],
+    "index_base": 24,
+    "arrived_by": null
    }
   ],
+  "other": null,
   "company_lines": [
    {
     "name": "greenhouse:acme",
@@ -148,16 +185,24 @@
        "size": 12
       }
      ],
+     "not_hiring_total": 12,
      "percent": null,
      "percent_withheld": "under 20 openings at the start",
+     "span_days": 3.0,
+     "per_week": 5,
      "turnover": null,
      "share": {
       "start": 0.23971234518577705,
       "latest": 0.26,
       "denominator_start": 10012,
-      "denominator_latest": 10000
+      "denominator_latest": 10000,
+      "percent": null
      }
-    }
+    },
+    "netted": [],
+    "steps_at": [],
+    "index_base": null,
+    "arrived_by": null
    }
   ],
   "breakdown": {
@@ -187,6 +232,15 @@
     ]
    }
   ],
+  "reference": [
+   10012,
+   10012,
+   10000,
+   10000
+  ],
+  "openings": 26,
+  "served_jobs": null,
+  "non_tech_jobs": null,
   "reconciles": true,
   "violations": []
  }

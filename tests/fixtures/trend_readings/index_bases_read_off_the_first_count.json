@@ -1,0 +1,349 @@
+{
+ "description": "No pick. A line whose first count is under 5 is not indexed, however it grows: a measured 0 (not the first truthy 5), a 0 before 50, a 4 before 20. A line from 8 is indexed on its count, whatever the denominator does.",
+ "answer_input": {
+  "metric": "stock",
+  "coverage": "all",
+  "new_window_days": 7,
+  "family": null,
+  "epochs": [],
+  "discovered": [],
+  "stamps": [
+   "2026-09-13T00:00:00+00:00",
+   "2026-09-14T00:00:00+00:00",
+   "2026-09-15T00:00:00+00:00",
+   "2026-09-16T00:00:00+00:00",
+   "2026-09-17T00:00:00+00:00",
+   "2026-09-18T00:00:00+00:00"
+  ],
+  "watch_parents": [],
+  "split_by": "family",
+  "totals": [
+   100,
+   150,
+   200,
+   300,
+   300,
+   300
+  ],
+  "non_tech": [
+   0,
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "series": [
+   {
+    "name": "big",
+    "label": "big",
+    "points": [
+     50,
+     50,
+     50,
+     50,
+     50,
+     50
+    ],
+    "latest": 50
+   },
+   {
+    "name": "ok",
+    "label": "ok",
+    "points": [
+     8,
+     9,
+     12,
+     16,
+     16,
+     16
+    ],
+    "latest": 16
+   },
+   {
+    "name": "zerostart",
+    "label": "zerostart",
+    "points": [
+     0,
+     0,
+     5,
+     10,
+     20,
+     40
+    ],
+    "latest": 40
+   },
+   {
+    "name": "high",
+    "label": "high",
+    "points": [
+     0,
+     0,
+     50,
+     100,
+     100,
+     100
+    ],
+    "latest": 100
+   },
+   {
+    "name": "low",
+    "label": "low",
+    "points": [
+     4,
+     20,
+     30,
+     40,
+     40,
+     40
+    ],
+    "latest": 40
+   }
+  ]
+ },
+ "reading": {
+  "window": {
+   "from": "2026-09-13T00:00:00+00:00",
+   "to": "2026-09-18T00:00:00+00:00"
+  },
+  "picked": false,
+  "total": {
+   "name": "__total__",
+   "label": "",
+   "estimated": false,
+   "move": {
+    "start": 62,
+    "latest": 246,
+    "hiring": 184,
+    "not_hiring": [],
+    "not_hiring_total": 0,
+    "percent": 296.7741935483871,
+    "percent_withheld": null,
+    "span_days": 5.0,
+    "per_week": 258,
+    "turnover": null,
+    "share": {
+     "start": 62.0,
+     "latest": 82.0,
+     "denominator_start": 100,
+     "denominator_latest": 300,
+     "percent": 32.25806451612903
+    }
+   },
+   "netted": [
+    62,
+    79,
+    147,
+    216,
+    226,
+    246
+   ],
+   "steps_at": [],
+   "index_base": 62,
+   "arrived_by": null,
+   "points": [
+    62,
+    79,
+    147,
+    216,
+    226,
+    246
+   ]
+  },
+  "lines": [
+   {
+    "name": "big",
+    "label": "big",
+    "estimated": false,
+    "move": {
+     "start": 50,
+     "latest": 50,
+     "hiring": 0,
+     "not_hiring": [],
+     "not_hiring_total": 0,
+     "percent": 0.0,
+     "percent_withheld": null,
+     "span_days": 5.0,
+     "per_week": 0,
+     "turnover": null,
+     "share": {
+      "start": 50.0,
+      "latest": 16.666666666666664,
+      "denominator_start": 100,
+      "denominator_latest": 300,
+      "percent": -66.66666666666667
+     }
+    },
+    "netted": [
+     50,
+     50,
+     50,
+     50,
+     50,
+     50
+    ],
+    "steps_at": [],
+    "index_base": 50,
+    "arrived_by": null
+   },
+   {
+    "name": "ok",
+    "label": "ok",
+    "estimated": false,
+    "move": {
+     "start": 8,
+     "latest": 16,
+     "hiring": 8,
+     "not_hiring": [],
+     "not_hiring_total": 0,
+     "percent": null,
+     "percent_withheld": "under 20 openings at the start",
+     "span_days": 5.0,
+     "per_week": 11,
+     "turnover": null,
+     "share": {
+      "start": 8.0,
+      "latest": 5.333333333333334,
+      "denominator_start": 100,
+      "denominator_latest": 300,
+      "percent": null
+     }
+    },
+    "netted": [
+     8,
+     9,
+     12,
+     16,
+     16,
+     16
+    ],
+    "steps_at": [],
+    "index_base": 8,
+    "arrived_by": null
+   },
+   {
+    "name": "zerostart",
+    "label": "zerostart",
+    "estimated": false,
+    "move": {
+     "start": 0,
+     "latest": 40,
+     "hiring": 40,
+     "not_hiring": [],
+     "not_hiring_total": 0,
+     "percent": null,
+     "percent_withheld": "under 20 openings at the start",
+     "span_days": 5.0,
+     "per_week": 56,
+     "turnover": null,
+     "share": {
+      "start": 0.0,
+      "latest": 13.333333333333334,
+      "denominator_start": 100,
+      "denominator_latest": 300,
+      "percent": null
+     }
+    },
+    "netted": [
+     0,
+     0,
+     5,
+     10,
+     20,
+     40
+    ],
+    "steps_at": [],
+    "index_base": null,
+    "arrived_by": null
+   },
+   {
+    "name": "high",
+    "label": "high",
+    "estimated": false,
+    "move": {
+     "start": 0,
+     "latest": 100,
+     "hiring": 100,
+     "not_hiring": [],
+     "not_hiring_total": 0,
+     "percent": null,
+     "percent_withheld": "under 20 openings at the start",
+     "span_days": 5.0,
+     "per_week": 140,
+     "turnover": null,
+     "share": {
+      "start": 0.0,
+      "latest": 33.33333333333333,
+      "denominator_start": 100,
+      "denominator_latest": 300,
+      "percent": null
+     }
+    },
+    "netted": [
+     0,
+     0,
+     50,
+     100,
+     100,
+     100
+    ],
+    "steps_at": [],
+    "index_base": null,
+    "arrived_by": null
+   },
+   {
+    "name": "low",
+    "label": "low",
+    "estimated": false,
+    "move": {
+     "start": 4,
+     "latest": 40,
+     "hiring": 36,
+     "not_hiring": [],
+     "not_hiring_total": 0,
+     "percent": null,
+     "percent_withheld": "under 20 openings at the start",
+     "span_days": 5.0,
+     "per_week": 50,
+     "turnover": null,
+     "share": {
+      "start": 4.0,
+      "latest": 13.333333333333334,
+      "denominator_start": 100,
+      "denominator_latest": 300,
+      "percent": null
+     }
+    },
+    "netted": [
+     4,
+     20,
+     30,
+     40,
+     40,
+     40
+    ],
+    "steps_at": [],
+    "index_base": null,
+    "arrived_by": null
+   }
+  ],
+  "other": null,
+  "company_lines": [],
+  "breakdown": null,
+  "marked_changes": [],
+  "day_markers": [],
+  "reference": [
+   100,
+   150,
+   200,
+   300,
+   300,
+   300
+  ],
+  "openings": 246,
+  "served_jobs": null,
+  "non_tech_jobs": null,
+  "reconciles": true,
+  "violations": []
+ }
+}

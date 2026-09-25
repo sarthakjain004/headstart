@@ -1,0 +1,916 @@
+{
+ "description": "Ten companies inside a category: the two past the eighth are Other, a share of their own companies' totals (183 of 400, 45.75%), not of all ten.",
+ "answer_input": {
+  "metric": "stock",
+  "coverage": "all",
+  "new_window_days": 7,
+  "family": "ai-ml",
+  "epochs": [],
+  "discovered": [],
+  "stamps": [
+   "2026-09-13T00:00:00+00:00",
+   "2026-09-20T00:00:00+00:00"
+  ],
+  "watch_parents": [],
+  "split_by": "company",
+  "totals": [
+   10000,
+   10000
+  ],
+  "non_tech": [
+   0,
+   0
+  ],
+  "series": [
+   {
+    "name": "greenhouse:c0",
+    "label": "greenhouse:c0",
+    "points": [
+     100,
+     100
+    ],
+    "latest": 100
+   },
+   {
+    "name": "greenhouse:c1",
+    "label": "greenhouse:c1",
+    "points": [
+     99,
+     99
+    ],
+    "latest": 99
+   },
+   {
+    "name": "greenhouse:c2",
+    "label": "greenhouse:c2",
+    "points": [
+     98,
+     98
+    ],
+    "latest": 98
+   },
+   {
+    "name": "greenhouse:c3",
+    "label": "greenhouse:c3",
+    "points": [
+     97,
+     97
+    ],
+    "latest": 97
+   },
+   {
+    "name": "greenhouse:c4",
+    "label": "greenhouse:c4",
+    "points": [
+     96,
+     96
+    ],
+    "latest": 96
+   },
+   {
+    "name": "greenhouse:c5",
+    "label": "greenhouse:c5",
+    "points": [
+     95,
+     95
+    ],
+    "latest": 95
+   },
+   {
+    "name": "greenhouse:c6",
+    "label": "greenhouse:c6",
+    "points": [
+     94,
+     94
+    ],
+    "latest": 94
+   },
+   {
+    "name": "greenhouse:c7",
+    "label": "greenhouse:c7",
+    "points": [
+     93,
+     93
+    ],
+    "latest": 93
+   },
+   {
+    "name": "greenhouse:c8",
+    "label": "greenhouse:c8",
+    "points": [
+     92,
+     92
+    ],
+    "latest": 92
+   },
+   {
+    "name": "greenhouse:c9",
+    "label": "greenhouse:c9",
+    "points": [
+     91,
+     91
+    ],
+    "latest": 91
+   }
+  ],
+  "companies": [
+   {
+    "key": "greenhouse:c0",
+    "label": "greenhouse:c0",
+    "board_keys": [
+     "greenhouse:c0"
+    ],
+    "atses": [
+     "greenhouse"
+    ]
+   },
+   {
+    "key": "greenhouse:c1",
+    "label": "greenhouse:c1",
+    "board_keys": [
+     "greenhouse:c1"
+    ],
+    "atses": [
+     "greenhouse"
+    ]
+   },
+   {
+    "key": "greenhouse:c2",
+    "label": "greenhouse:c2",
+    "board_keys": [
+     "greenhouse:c2"
+    ],
+    "atses": [
+     "greenhouse"
+    ]
+   },
+   {
+    "key": "greenhouse:c3",
+    "label": "greenhouse:c3",
+    "board_keys": [
+     "greenhouse:c3"
+    ],
+    "atses": [
+     "greenhouse"
+    ]
+   },
+   {
+    "key": "greenhouse:c4",
+    "label": "greenhouse:c4",
+    "board_keys": [
+     "greenhouse:c4"
+    ],
+    "atses": [
+     "greenhouse"
+    ]
+   },
+   {
+    "key": "greenhouse:c5",
+    "label": "greenhouse:c5",
+    "board_keys": [
+     "greenhouse:c5"
+    ],
+    "atses": [
+     "greenhouse"
+    ]
+   },
+   {
+    "key": "greenhouse:c6",
+    "label": "greenhouse:c6",
+    "board_keys": [
+     "greenhouse:c6"
+    ],
+    "atses": [
+     "greenhouse"
+    ]
+   },
+   {
+    "key": "greenhouse:c7",
+    "label": "greenhouse:c7",
+    "board_keys": [
+     "greenhouse:c7"
+    ],
+    "atses": [
+     "greenhouse"
+    ]
+   },
+   {
+    "key": "greenhouse:c8",
+    "label": "greenhouse:c8",
+    "board_keys": [
+     "greenhouse:c8"
+    ],
+    "atses": [
+     "greenhouse"
+    ]
+   },
+   {
+    "key": "greenhouse:c9",
+    "label": "greenhouse:c9",
+    "board_keys": [
+     "greenhouse:c9"
+    ],
+    "atses": [
+     "greenhouse"
+    ]
+   }
+  ],
+  "company_totals": {
+   "greenhouse:c0": [
+    200,
+    200
+   ],
+   "greenhouse:c1": [
+    200,
+    200
+   ],
+   "greenhouse:c2": [
+    200,
+    200
+   ],
+   "greenhouse:c3": [
+    200,
+    200
+   ],
+   "greenhouse:c4": [
+    200,
+    200
+   ],
+   "greenhouse:c5": [
+    200,
+    200
+   ],
+   "greenhouse:c6": [
+    200,
+    200
+   ],
+   "greenhouse:c7": [
+    200,
+    200
+   ],
+   "greenhouse:c8": [
+    200,
+    200
+   ],
+   "greenhouse:c9": [
+    200,
+    200
+   ]
+  },
+  "uncounted": [],
+  "counted_since": {
+   "greenhouse:c0": "2026-09-13T00:00:00+00:00",
+   "greenhouse:c1": "2026-09-13T00:00:00+00:00",
+   "greenhouse:c2": "2026-09-13T00:00:00+00:00",
+   "greenhouse:c3": "2026-09-13T00:00:00+00:00",
+   "greenhouse:c4": "2026-09-13T00:00:00+00:00",
+   "greenhouse:c5": "2026-09-13T00:00:00+00:00",
+   "greenhouse:c6": "2026-09-13T00:00:00+00:00",
+   "greenhouse:c7": "2026-09-13T00:00:00+00:00",
+   "greenhouse:c8": "2026-09-13T00:00:00+00:00",
+   "greenhouse:c9": "2026-09-13T00:00:00+00:00"
+  }
+ },
+ "reading": {
+  "window": {
+   "from": "2026-09-13T00:00:00+00:00",
+   "to": "2026-09-20T00:00:00+00:00"
+  },
+  "picked": true,
+  "total": null,
+  "lines": [
+   {
+    "name": "greenhouse:c0",
+    "label": "greenhouse:c0",
+    "estimated": false,
+    "move": {
+     "start": 100,
+     "latest": 100,
+     "hiring": 0,
+     "not_hiring": [],
+     "not_hiring_total": 0,
+     "percent": 0.0,
+     "percent_withheld": null,
+     "span_days": 7.0,
+     "per_week": 0,
+     "turnover": null,
+     "share": {
+      "start": 50.0,
+      "latest": 50.0,
+      "denominator_start": 200,
+      "denominator_latest": 200,
+      "percent": 0.0
+     }
+    },
+    "netted": [
+     100,
+     100
+    ],
+    "steps_at": [],
+    "index_base": 100,
+    "arrived_by": null
+   },
+   {
+    "name": "greenhouse:c1",
+    "label": "greenhouse:c1",
+    "estimated": false,
+    "move": {
+     "start": 99,
+     "latest": 99,
+     "hiring": 0,
+     "not_hiring": [],
+     "not_hiring_total": 0,
+     "percent": 0.0,
+     "percent_withheld": null,
+     "span_days": 7.0,
+     "per_week": 0,
+     "turnover": null,
+     "share": {
+      "start": 49.5,
+      "latest": 49.5,
+      "denominator_start": 200,
+      "denominator_latest": 200,
+      "percent": 0.0
+     }
+    },
+    "netted": [
+     99,
+     99
+    ],
+    "steps_at": [],
+    "index_base": 99,
+    "arrived_by": null
+   },
+   {
+    "name": "greenhouse:c2",
+    "label": "greenhouse:c2",
+    "estimated": false,
+    "move": {
+     "start": 98,
+     "latest": 98,
+     "hiring": 0,
+     "not_hiring": [],
+     "not_hiring_total": 0,
+     "percent": 0.0,
+     "percent_withheld": null,
+     "span_days": 7.0,
+     "per_week": 0,
+     "turnover": null,
+     "share": {
+      "start": 49.0,
+      "latest": 49.0,
+      "denominator_start": 200,
+      "denominator_latest": 200,
+      "percent": 0.0
+     }
+    },
+    "netted": [
+     98,
+     98
+    ],
+    "steps_at": [],
+    "index_base": 98,
+    "arrived_by": null
+   },
+   {
+    "name": "greenhouse:c3",
+    "label": "greenhouse:c3",
+    "estimated": false,
+    "move": {
+     "start": 97,
+     "latest": 97,
+     "hiring": 0,
+     "not_hiring": [],
+     "not_hiring_total": 0,
+     "percent": 0.0,
+     "percent_withheld": null,
+     "span_days": 7.0,
+     "per_week": 0,
+     "turnover": null,
+     "share": {
+      "start": 48.5,
+      "latest": 48.5,
+      "denominator_start": 200,
+      "denominator_latest": 200,
+      "percent": 0.0
+     }
+    },
+    "netted": [
+     97,
+     97
+    ],
+    "steps_at": [],
+    "index_base": 97,
+    "arrived_by": null
+   },
+   {
+    "name": "greenhouse:c4",
+    "label": "greenhouse:c4",
+    "estimated": false,
+    "move": {
+     "start": 96,
+     "latest": 96,
+     "hiring": 0,
+     "not_hiring": [],
+     "not_hiring_total": 0,
+     "percent": 0.0,
+     "percent_withheld": null,
+     "span_days": 7.0,
+     "per_week": 0,
+     "turnover": null,
+     "share": {
+      "start": 48.0,
+      "latest": 48.0,
+      "denominator_start": 200,
+      "denominator_latest": 200,
+      "percent": 0.0
+     }
+    },
+    "netted": [
+     96,
+     96
+    ],
+    "steps_at": [],
+    "index_base": 96,
+    "arrived_by": null
+   },
+   {
+    "name": "greenhouse:c5",
+    "label": "greenhouse:c5",
+    "estimated": false,
+    "move": {
+     "start": 95,
+     "latest": 95,
+     "hiring": 0,
+     "not_hiring": [],
+     "not_hiring_total": 0,
+     "percent": 0.0,
+     "percent_withheld": null,
+     "span_days": 7.0,
+     "per_week": 0,
+     "turnover": null,
+     "share": {
+      "start": 47.5,
+      "latest": 47.5,
+      "denominator_start": 200,
+      "denominator_latest": 200,
+      "percent": 0.0
+     }
+    },
+    "netted": [
+     95,
+     95
+    ],
+    "steps_at": [],
+    "index_base": 95,
+    "arrived_by": null
+   },
+   {
+    "name": "greenhouse:c6",
+    "label": "greenhouse:c6",
+    "estimated": false,
+    "move": {
+     "start": 94,
+     "latest": 94,
+     "hiring": 0,
+     "not_hiring": [],
+     "not_hiring_total": 0,
+     "percent": 0.0,
+     "percent_withheld": null,
+     "span_days": 7.0,
+     "per_week": 0,
+     "turnover": null,
+     "share": {
+      "start": 47.0,
+      "latest": 47.0,
+      "denominator_start": 200,
+      "denominator_latest": 200,
+      "percent": 0.0
+     }
+    },
+    "netted": [
+     94,
+     94
+    ],
+    "steps_at": [],
+    "index_base": 94,
+    "arrived_by": null
+   },
+   {
+    "name": "greenhouse:c7",
+    "label": "greenhouse:c7",
+    "estimated": false,
+    "move": {
+     "start": 93,
+     "latest": 93,
+     "hiring": 0,
+     "not_hiring": [],
+     "not_hiring_total": 0,
+     "percent": 0.0,
+     "percent_withheld": null,
+     "span_days": 7.0,
+     "per_week": 0,
+     "turnover": null,
+     "share": {
+      "start": 46.5,
+      "latest": 46.5,
+      "denominator_start": 200,
+      "denominator_latest": 200,
+      "percent": 0.0
+     }
+    },
+    "netted": [
+     93,
+     93
+    ],
+    "steps_at": [],
+    "index_base": 93,
+    "arrived_by": null
+   },
+   {
+    "name": "greenhouse:c8",
+    "label": "greenhouse:c8",
+    "estimated": false,
+    "move": {
+     "start": 92,
+     "latest": 92,
+     "hiring": 0,
+     "not_hiring": [],
+     "not_hiring_total": 0,
+     "percent": 0.0,
+     "percent_withheld": null,
+     "span_days": 7.0,
+     "per_week": 0,
+     "turnover": null,
+     "share": {
+      "start": 46.0,
+      "latest": 46.0,
+      "denominator_start": 200,
+      "denominator_latest": 200,
+      "percent": 0.0
+     }
+    },
+    "netted": [
+     92,
+     92
+    ],
+    "steps_at": [],
+    "index_base": 92,
+    "arrived_by": null
+   },
+   {
+    "name": "greenhouse:c9",
+    "label": "greenhouse:c9",
+    "estimated": false,
+    "move": {
+     "start": 91,
+     "latest": 91,
+     "hiring": 0,
+     "not_hiring": [],
+     "not_hiring_total": 0,
+     "percent": 0.0,
+     "percent_withheld": null,
+     "span_days": 7.0,
+     "per_week": 0,
+     "turnover": null,
+     "share": {
+      "start": 45.5,
+      "latest": 45.5,
+      "denominator_start": 200,
+      "denominator_latest": 200,
+      "percent": 0.0
+     }
+    },
+    "netted": [
+     91,
+     91
+    ],
+    "steps_at": [],
+    "index_base": 91,
+    "arrived_by": null
+   }
+  ],
+  "other": {
+   "name": "__other__",
+   "label": "",
+   "estimated": false,
+   "move": {
+    "start": 183,
+    "latest": 183,
+    "hiring": 0,
+    "not_hiring": [],
+    "not_hiring_total": 0,
+    "percent": 0.0,
+    "percent_withheld": null,
+    "span_days": 7.0,
+    "per_week": 0,
+    "turnover": null,
+    "share": {
+     "start": 45.75,
+     "latest": 45.75,
+     "denominator_start": 400,
+     "denominator_latest": 400,
+     "percent": 0.0
+    }
+   },
+   "netted": [],
+   "steps_at": [],
+   "index_base": null,
+   "arrived_by": null
+  },
+  "company_lines": [
+   {
+    "name": "greenhouse:c0",
+    "label": "greenhouse:c0",
+    "estimated": false,
+    "move": {
+     "start": 100,
+     "latest": 100,
+     "hiring": 0,
+     "not_hiring": [],
+     "not_hiring_total": 0,
+     "percent": 0.0,
+     "percent_withheld": null,
+     "span_days": 7.0,
+     "per_week": 0,
+     "turnover": null,
+     "share": {
+      "start": 50.0,
+      "latest": 50.0,
+      "denominator_start": 200,
+      "denominator_latest": 200,
+      "percent": 0.0
+     }
+    },
+    "netted": [],
+    "steps_at": [],
+    "index_base": null,
+    "arrived_by": null
+   },
+   {
+    "name": "greenhouse:c1",
+    "label": "greenhouse:c1",
+    "estimated": false,
+    "move": {
+     "start": 99,
+     "latest": 99,
+     "hiring": 0,
+     "not_hiring": [],
+     "not_hiring_total": 0,
+     "percent": 0.0,
+     "percent_withheld": null,
+     "span_days": 7.0,
+     "per_week": 0,
+     "turnover": null,
+     "share": {
+      "start": 49.5,
+      "latest": 49.5,
+      "denominator_start": 200,
+      "denominator_latest": 200,
+      "percent": 0.0
+     }
+    },
+    "netted": [],
+    "steps_at": [],
+    "index_base": null,
+    "arrived_by": null
+   },
+   {
+    "name": "greenhouse:c2",
+    "label": "greenhouse:c2",
+    "estimated": false,
+    "move": {
+     "start": 98,
+     "latest": 98,
+     "hiring": 0,
+     "not_hiring": [],
+     "not_hiring_total": 0,
+     "percent": 0.0,
+     "percent_withheld": null,
+     "span_days": 7.0,
+     "per_week": 0,
+     "turnover": null,
+     "share": {
+      "start": 49.0,
+      "latest": 49.0,
+      "denominator_start": 200,
+      "denominator_latest": 200,
+      "percent": 0.0
+     }
+    },
+    "netted": [],
+    "steps_at": [],
+    "index_base": null,
+    "arrived_by": null
+   },
+   {
+    "name": "greenhouse:c3",
+    "label": "greenhouse:c3",
+    "estimated": false,
+    "move": {
+     "start": 97,
+     "latest": 97,
+     "hiring": 0,
+     "not_hiring": [],
+     "not_hiring_total": 0,
+     "percent": 0.0,
+     "percent_withheld": null,
+     "span_days": 7.0,
+     "per_week": 0,
+     "turnover": null,
+     "share": {
+      "start": 48.5,
+      "latest": 48.5,
+      "denominator_start": 200,
+      "denominator_latest": 200,
+      "percent": 0.0
+     }
+    },
+    "netted": [],
+    "steps_at": [],
+    "index_base": null,
+    "arrived_by": null
+   },
+   {
+    "name": "greenhouse:c4",
+    "label": "greenhouse:c4",
+    "estimated": false,
+    "move": {
+     "start": 96,
+     "latest": 96,
+     "hiring": 0,
+     "not_hiring": [],
+     "not_hiring_total": 0,
+     "percent": 0.0,
+     "percent_withheld": null,
+     "span_days": 7.0,
+     "per_week": 0,
+     "turnover": null,
+     "share": {
+      "start": 48.0,
+      "latest": 48.0,
+      "denominator_start": 200,
+      "denominator_latest": 200,
+      "percent": 0.0
+     }
+    },
+    "netted": [],
+    "steps_at": [],
+    "index_base": null,
+    "arrived_by": null
+   },
+   {
+    "name": "greenhouse:c5",
+    "label": "greenhouse:c5",
+    "estimated": false,
+    "move": {
+     "start": 95,
+     "latest": 95,
+     "hiring": 0,
+     "not_hiring": [],
+     "not_hiring_total": 0,
+     "percent": 0.0,
+     "percent_withheld": null,
+     "span_days": 7.0,
+     "per_week": 0,
+     "turnover": null,
+     "share": {
+      "start": 47.5,
+      "latest": 47.5,
+      "denominator_start": 200,
+      "denominator_latest": 200,
+      "percent": 0.0
+     }
+    },
+    "netted": [],
+    "steps_at": [],
+    "index_base": null,
+    "arrived_by": null
+   },
+   {
+    "name": "greenhouse:c6",
+    "label": "greenhouse:c6",
+    "estimated": false,
+    "move": {
+     "start": 94,
+     "latest": 94,
+     "hiring": 0,
+     "not_hiring": [],
+     "not_hiring_total": 0,
+     "percent": 0.0,
+     "percent_withheld": null,
+     "span_days": 7.0,
+     "per_week": 0,
+     "turnover": null,
+     "share": {
+      "start": 47.0,
+      "latest": 47.0,
+      "denominator_start": 200,
+      "denominator_latest": 200,
+      "percent": 0.0
+     }
+    },
+    "netted": [],
+    "steps_at": [],
+    "index_base": null,
+    "arrived_by": null
+   },
+   {
+    "name": "greenhouse:c7",
+    "label": "greenhouse:c7",
+    "estimated": false,
+    "move": {
+     "start": 93,
+     "latest": 93,
+     "hiring": 0,
+     "not_hiring": [],
+     "not_hiring_total": 0,
+     "percent": 0.0,
+     "percent_withheld": null,
+     "span_days": 7.0,
+     "per_week": 0,
+     "turnover": null,
+     "share": {
+      "start": 46.5,
+      "latest": 46.5,
+      "denominator_start": 200,
+      "denominator_latest": 200,
+      "percent": 0.0
+     }
+    },
+    "netted": [],
+    "steps_at": [],
+    "index_base": null,
+    "arrived_by": null
+   },
+   {
+    "name": "greenhouse:c8",
+    "label": "greenhouse:c8",
+    "estimated": false,
+    "move": {
+     "start": 92,
+     "latest": 92,
+     "hiring": 0,
+     "not_hiring": [],
+     "not_hiring_total": 0,
+     "percent": 0.0,
+     "percent_withheld": null,
+     "span_days": 7.0,
+     "per_week": 0,
+     "turnover": null,
+     "share": {
+      "start": 46.0,
+      "latest": 46.0,
+      "denominator_start": 200,
+      "denominator_latest": 200,
+      "percent": 0.0
+     }
+    },
+    "netted": [],
+    "steps_at": [],
+    "index_base": null,
+    "arrived_by": null
+   },
+   {
+    "name": "greenhouse:c9",
+    "label": "greenhouse:c9",
+    "estimated": false,
+    "move": {
+     "start": 91,
+     "latest": 91,
+     "hiring": 0,
+     "not_hiring": [],
+     "not_hiring_total": 0,
+     "percent": 0.0,
+     "percent_withheld": null,
+     "span_days": 7.0,
+     "per_week": 0,
+     "turnover": null,
+     "share": {
+      "start": 45.5,
+      "latest": 45.5,
+      "denominator_start": 200,
+      "denominator_latest": 200,
+      "percent": 0.0
+     }
+    },
+    "netted": [],
+    "steps_at": [],
+    "index_base": null,
+    "arrived_by": null
+   }
+  ],
+  "breakdown": null,
+  "marked_changes": [],
+  "day_markers": [],
+  "reference": [
+   2000,
+   2000
+  ],
+  "openings": 955,
+  "served_jobs": 2000,
+  "non_tech_jobs": 1045,
+  "reconciles": true,
+  "violations": []
+ }
+}

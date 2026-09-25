@@ -117,16 +117,42 @@
     "latest": 210,
     "hiring": 60,
     "not_hiring": [],
+    "not_hiring_total": 0,
     "percent": 40.0,
     "percent_withheld": null,
+    "span_days": 5.0,
+    "per_week": 84,
     "turnover": null,
     "share": {
      "start": 100.0,
      "latest": 100.0,
      "denominator_start": 150,
-     "denominator_latest": 210
+     "denominator_latest": 210,
+     "percent": 0.0
     }
-   }
+   },
+   "netted": [
+    150,
+    200,
+    200,
+    200,
+    210,
+    210
+   ],
+   "steps_at": [
+    2,
+    3
+   ],
+   "index_base": 150,
+   "arrived_by": null,
+   "points": [
+    150,
+    200,
+    200,
+    200,
+    210,
+    210
+   ]
   },
   "lines": [
    {
@@ -151,16 +177,34 @@
        "size": 40
       }
      ],
+     "not_hiring_total": -80,
      "percent": 100.0,
      "percent_withheld": null,
+     "span_days": 5.0,
+     "per_week": 28,
      "turnover": null,
      "share": {
       "start": 13.333333333333334,
       "latest": 19.047619047619047,
       "denominator_start": 150,
-      "denominator_latest": 210
+      "denominator_latest": 210,
+      "percent": 42.85714285714285
      }
-    }
+    },
+    "netted": [
+     20.0,
+     30.0,
+     30,
+     30,
+     40,
+     40
+    ],
+    "steps_at": [
+     2,
+     3
+    ],
+    "index_base": 20.0,
+    "arrived_by": null
    },
    {
     "name": "ai-ml",
@@ -178,18 +222,37 @@
        "size": 120
       }
      ],
+     "not_hiring_total": 120,
      "percent": 0.0,
      "percent_withheld": null,
+     "span_days": 5.0,
+     "per_week": 0,
      "turnover": null,
      "share": {
       "start": 113.33333333333333,
       "latest": 80.95238095238095,
       "denominator_start": 150,
-      "denominator_latest": 210
+      "denominator_latest": 210,
+      "percent": -28.57142857142857
      }
-    }
+    },
+    "netted": [
+     170,
+     170,
+     170,
+     170,
+     170,
+     170
+    ],
+    "steps_at": [
+     2,
+     3
+    ],
+    "index_base": 170,
+    "arrived_by": null
    }
   ],
+  "other": null,
   "company_lines": [
    {
     "name": "successfactors:careers.wipro.com",
@@ -200,16 +263,24 @@
      "latest": 210,
      "hiring": 60,
      "not_hiring": [],
+     "not_hiring_total": 0,
      "percent": 40.0,
      "percent_withheld": null,
+     "span_days": 5.0,
+     "per_week": 84,
      "turnover": null,
      "share": {
       "start": 100.0,
       "latest": 100.0,
       "denominator_start": 150,
-      "denominator_latest": 210
+      "denominator_latest": 210,
+      "percent": 0.0
      }
-    }
+    },
+    "netted": [],
+    "steps_at": [],
+    "index_base": null,
+    "arrived_by": null
    }
   ],
   "breakdown": {
@@ -225,14 +296,28 @@
       "size": -40
      }
     ],
+    "not_hiring_total": -40,
     "percent": null,
     "percent_withheld": "a closing row has no start",
+    "span_days": 0.0,
+    "per_week": null,
     "turnover": null,
     "share": null
    }
   },
   "marked_changes": [],
   "day_markers": [],
+  "reference": [
+   150,
+   200,
+   200,
+   200,
+   210,
+   210
+  ],
+  "openings": 210,
+  "served_jobs": 210,
+  "non_tech_jobs": 0,
   "reconciles": true,
   "violations": []
  }

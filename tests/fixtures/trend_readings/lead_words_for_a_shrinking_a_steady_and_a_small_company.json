@@ -1,0 +1,315 @@
+{
+ "description": "Three companies: one shrinking, one holding steady, one from a small start with more openings.",
+ "answer_input": {
+  "metric": "stock",
+  "coverage": "all",
+  "new_window_days": 7,
+  "family": null,
+  "epochs": [],
+  "discovered": [],
+  "stamps": [
+   "2026-09-13T00:00:00+00:00",
+   "2026-09-14T00:00:00+00:00",
+   "2026-09-15T00:00:00+00:00",
+   "2026-09-16T00:00:00+00:00"
+  ],
+  "watch_parents": [],
+  "split_by": "company",
+  "totals": [
+   10000,
+   10000,
+   10000,
+   10000
+  ],
+  "non_tech": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "series": [
+   {
+    "name": "greenhouse:shrinks",
+    "label": "Shrinks",
+    "points": [
+     100,
+     100,
+     100,
+     80
+    ],
+    "latest": 80
+   },
+   {
+    "name": "greenhouse:holds",
+    "label": "Holds",
+    "points": [
+     100,
+     100,
+     100,
+     100
+    ],
+    "latest": 100
+   },
+   {
+    "name": "greenhouse:small",
+    "label": "Small",
+    "points": [
+     10,
+     10,
+     10,
+     60
+    ],
+    "latest": 60
+   }
+  ],
+  "companies": [
+   {
+    "key": "greenhouse:shrinks",
+    "label": "Shrinks",
+    "board_keys": [
+     "greenhouse:shrinks"
+    ],
+    "atses": [
+     "greenhouse"
+    ]
+   },
+   {
+    "key": "greenhouse:holds",
+    "label": "Holds",
+    "board_keys": [
+     "greenhouse:holds"
+    ],
+    "atses": [
+     "greenhouse"
+    ]
+   },
+   {
+    "key": "greenhouse:small",
+    "label": "Small",
+    "board_keys": [
+     "greenhouse:small"
+    ],
+    "atses": [
+     "greenhouse"
+    ]
+   }
+  ],
+  "company_totals": {},
+  "uncounted": [],
+  "counted_since": {
+   "greenhouse:shrinks": "2026-09-13T00:00:00+00:00",
+   "greenhouse:holds": "2026-09-13T00:00:00+00:00",
+   "greenhouse:small": "2026-09-13T00:00:00+00:00"
+  }
+ },
+ "reading": {
+  "window": {
+   "from": "2026-09-13T00:00:00+00:00",
+   "to": "2026-09-16T00:00:00+00:00"
+  },
+  "picked": true,
+  "total": null,
+  "lines": [
+   {
+    "name": "greenhouse:shrinks",
+    "label": "Shrinks",
+    "estimated": false,
+    "move": {
+     "start": 100,
+     "latest": 80,
+     "hiring": -20,
+     "not_hiring": [],
+     "not_hiring_total": 0,
+     "percent": -20.0,
+     "percent_withheld": null,
+     "span_days": 3.0,
+     "per_week": -47,
+     "turnover": null,
+     "share": {
+      "start": 1.0,
+      "latest": 0.8,
+      "denominator_start": 10000,
+      "denominator_latest": 10000,
+      "percent": -19.999999999999996
+     }
+    },
+    "netted": [
+     100,
+     100,
+     100,
+     80
+    ],
+    "steps_at": [],
+    "index_base": 100,
+    "arrived_by": null
+   },
+   {
+    "name": "greenhouse:holds",
+    "label": "Holds",
+    "estimated": false,
+    "move": {
+     "start": 100,
+     "latest": 100,
+     "hiring": 0,
+     "not_hiring": [],
+     "not_hiring_total": 0,
+     "percent": 0.0,
+     "percent_withheld": null,
+     "span_days": 3.0,
+     "per_week": 0,
+     "turnover": null,
+     "share": {
+      "start": 1.0,
+      "latest": 1.0,
+      "denominator_start": 10000,
+      "denominator_latest": 10000,
+      "percent": 0.0
+     }
+    },
+    "netted": [
+     100,
+     100,
+     100,
+     100
+    ],
+    "steps_at": [],
+    "index_base": 100,
+    "arrived_by": null
+   },
+   {
+    "name": "greenhouse:small",
+    "label": "Small",
+    "estimated": false,
+    "move": {
+     "start": 10,
+     "latest": 60,
+     "hiring": 50,
+     "not_hiring": [],
+     "not_hiring_total": 0,
+     "percent": null,
+     "percent_withheld": "under 20 openings at the start",
+     "span_days": 3.0,
+     "per_week": 117,
+     "turnover": null,
+     "share": {
+      "start": 0.1,
+      "latest": 0.6,
+      "denominator_start": 10000,
+      "denominator_latest": 10000,
+      "percent": null
+     }
+    },
+    "netted": [
+     10,
+     10,
+     10,
+     60
+    ],
+    "steps_at": [],
+    "index_base": 10,
+    "arrived_by": null
+   }
+  ],
+  "other": null,
+  "company_lines": [
+   {
+    "name": "greenhouse:shrinks",
+    "label": "Shrinks",
+    "estimated": false,
+    "move": {
+     "start": 100,
+     "latest": 80,
+     "hiring": -20,
+     "not_hiring": [],
+     "not_hiring_total": 0,
+     "percent": -20.0,
+     "percent_withheld": null,
+     "span_days": 3.0,
+     "per_week": -47,
+     "turnover": null,
+     "share": {
+      "start": 1.0,
+      "latest": 0.8,
+      "denominator_start": 10000,
+      "denominator_latest": 10000,
+      "percent": -19.999999999999996
+     }
+    },
+    "netted": [],
+    "steps_at": [],
+    "index_base": null,
+    "arrived_by": null
+   },
+   {
+    "name": "greenhouse:holds",
+    "label": "Holds",
+    "estimated": false,
+    "move": {
+     "start": 100,
+     "latest": 100,
+     "hiring": 0,
+     "not_hiring": [],
+     "not_hiring_total": 0,
+     "percent": 0.0,
+     "percent_withheld": null,
+     "span_days": 3.0,
+     "per_week": 0,
+     "turnover": null,
+     "share": {
+      "start": 1.0,
+      "latest": 1.0,
+      "denominator_start": 10000,
+      "denominator_latest": 10000,
+      "percent": 0.0
+     }
+    },
+    "netted": [],
+    "steps_at": [],
+    "index_base": null,
+    "arrived_by": null
+   },
+   {
+    "name": "greenhouse:small",
+    "label": "Small",
+    "estimated": false,
+    "move": {
+     "start": 10,
+     "latest": 60,
+     "hiring": 50,
+     "not_hiring": [],
+     "not_hiring_total": 0,
+     "percent": null,
+     "percent_withheld": "under 20 openings at the start",
+     "span_days": 3.0,
+     "per_week": 117,
+     "turnover": null,
+     "share": {
+      "start": 0.1,
+      "latest": 0.6,
+      "denominator_start": 10000,
+      "denominator_latest": 10000,
+      "percent": null
+     }
+    },
+    "netted": [],
+    "steps_at": [],
+    "index_base": null,
+    "arrived_by": null
+   }
+  ],
+  "breakdown": null,
+  "marked_changes": [],
+  "day_markers": [],
+  "reference": [
+   10000,
+   10000,
+   10000,
+   10000
+  ],
+  "openings": 240,
+  "served_jobs": null,
+  "non_tech_jobs": null,
+  "reconciles": true,
+  "violations": []
+ }
+}

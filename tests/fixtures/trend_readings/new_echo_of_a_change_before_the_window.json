@@ -122,24 +122,48 @@
      "hiring": 0,
      "not_hiring": [
       {
-       "change": "counting@2026-09-11T12:00:00+00:00",
+       "change": "echo@2026-09-11T12:00:00+00:00",
        "kind": "counting",
-       "label": "tech_filter_version",
+       "label": "the week-later echo of the Sep 11 tech filter change",
        "size": -40
       }
      ],
+     "not_hiring_total": -40,
      "percent": 0.0,
      "percent_withheld": null,
+     "span_days": 11.0,
+     "per_week": 0,
      "turnover": null,
      "share": {
       "start": 1.0999999999999999,
       "latest": 1.0999999999999999,
       "denominator_start": 10000,
-      "denominator_latest": 10000
+      "denominator_latest": 10000,
+      "percent": 0.0
      }
-    }
+    },
+    "netted": [
+     110,
+     110,
+     110,
+     110,
+     110,
+     110,
+     110,
+     110,
+     110,
+     110,
+     110,
+     110
+    ],
+    "steps_at": [
+     9
+    ],
+    "index_base": 110,
+    "arrived_by": null
    }
   ],
+  "other": null,
   "company_lines": [
    {
     "name": "greenhouse:acme",
@@ -151,31 +175,39 @@
      "hiring": 0,
      "not_hiring": [
       {
-       "change": "counting@2026-09-11T12:00:00+00:00",
+       "change": "echo@2026-09-11T12:00:00+00:00",
        "kind": "counting",
-       "label": "tech_filter_version",
+       "label": "the week-later echo of the Sep 11 tech filter change",
        "size": -40
       }
      ],
+     "not_hiring_total": -40,
      "percent": 0.0,
      "percent_withheld": null,
+     "span_days": 11.0,
+     "per_week": 0,
      "turnover": null,
      "share": {
       "start": 1.0999999999999999,
       "latest": 1.0999999999999999,
       "denominator_start": 10000,
-      "denominator_latest": 10000
+      "denominator_latest": 10000,
+      "percent": 0.0
      }
-    }
+    },
+    "netted": [],
+    "steps_at": [],
+    "index_base": null,
+    "arrived_by": null
    }
   ],
   "breakdown": null,
   "marked_changes": [
    {
-    "id": "counting@2026-09-11T12:00:00+00:00",
+    "id": "echo@2026-09-11T12:00:00+00:00",
     "kind": "counting",
-    "ts": "2026-09-11T12:00:00+00:00",
-    "label": "tech_filter_version",
+    "ts": "2026-09-19T00:00:00+00:00",
+    "label": "the week-later echo of the Sep 11 tech filter change",
     "fields": [
      "tech_filter_version"
     ],
@@ -192,10 +224,27 @@
     "day": "2026-09-19",
     "at": "2026-09-19T00:00:00+00:00",
     "changes": [
-     "counting@2026-09-11T12:00:00+00:00"
+     "echo@2026-09-11T12:00:00+00:00"
     ]
    }
   ],
+  "reference": [
+   10000,
+   10000,
+   10000,
+   10000,
+   10000,
+   10000,
+   10000,
+   10000,
+   10000,
+   10000,
+   10000,
+   10000
+  ],
+  "openings": 110,
+  "served_jobs": null,
+  "non_tech_jobs": null,
   "reconciles": true,
   "violations": []
  }

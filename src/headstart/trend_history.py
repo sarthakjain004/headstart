@@ -77,13 +77,17 @@ _DEDUP_EVICTIONS = "dedup_evictions.csv"
 _DIRECTORY = "company_directory.json"
 
 # Each Methodology field under the name the payload's `epochs[].fields` gives it, which is the
-# retired epoch ledger's column name (ADR-0164), and what a chart says when it moves.
-_EPOCH_LABELS = (
-    ("family_map_fingerprint", "role family map edited"),
-    ("tech_filter_version", "tech filter changed"),
-    ("derivations_version", "experience/salary extraction changed"),
-    ("dedup_version", "duplicate removal changed"),
-    ("family_classifier_version", "role family assignment changed"),
+# retired epoch ledger's column name (ADR-0164), and what a chart says when it moves: its words
+# in `trend_netting.METHODOLOGY_WORDS`, the one home of every Trends label.
+_EPOCH_LABELS = tuple(
+    (field, trend_netting.METHODOLOGY_WORDS[field][0])
+    for field in (
+        "family_map_fingerprint",
+        "tech_filter_version",
+        "derivations_version",
+        "dedup_version",
+        "family_classifier_version",
+    )
 )
 _METHODOLOGY_COLUMNS = (
     ("family_map_fingerprint", "family_list_fingerprint"),
@@ -963,8 +967,9 @@ class TrendHistory:
         return CompanyMoves(window, moves)
 
     def answer(self, question: TrendQuestion) -> dict:
-        """The ``/trends`` payload: :meth:`unnetted_answer` with every line netted, once
-        (ADR-0230 decision 3), so the page draws what it is given."""
+        """:meth:`unnetted_answer` with every line netted, once (ADR-0230 decision 3): what Hot
+        reads (:meth:`company_moves`) until it reads ``trend_reading.read_company_moves``
+        (ADR-0233 step 4). ``/trends`` serves the line reading instead."""
         return trend_netting.net_answer(self.unnetted_answer(question))
 
     def unnetted_answer(self, question: TrendQuestion) -> dict:
@@ -1105,7 +1110,11 @@ class TrendHistory:
                     *epochs,
                     {
                         "ts": inflow_from,
-                        "changed": ["new openings became the jobs opened in the week"],
+                        "changed": [
+                            trend_netting.METHODOLOGY_WORDS[
+                                trend_netting.NEW_BECAME_INFLOW
+                            ][0]
+                        ],
                         "fields": [trend_netting.NEW_BECAME_INFLOW],
                     },
                 ],

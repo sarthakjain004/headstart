@@ -1,0 +1,308 @@
+{
+ "description": "A counting change takes 56 of a category's 60 openings, and 14 are hired after it. Off a netted start of 4, +350% is arithmetic, not a reading: the move is given in openings.",
+ "answer_input": {
+  "metric": "stock",
+  "coverage": "all",
+  "new_window_days": 7,
+  "family": null,
+  "epochs": [
+   {
+    "ts": "2026-09-15T00:00:00+00:00",
+    "changed": [
+     "tech filter changed"
+    ],
+    "fields": [
+     "tech_filter_version"
+    ]
+   }
+  ],
+  "discovered": [],
+  "stamps": [
+   "2026-09-13T00:00:00+00:00",
+   "2026-09-14T00:00:00+00:00",
+   "2026-09-15T00:00:00+00:00",
+   "2026-09-16T00:00:00+00:00",
+   "2026-09-17T00:00:00+00:00"
+  ],
+  "watch_parents": [],
+  "split_by": "family",
+  "totals": [
+   1000,
+   1000,
+   1000,
+   1000,
+   1000
+  ],
+  "non_tech": [
+   10,
+   10,
+   10,
+   10,
+   10
+  ],
+  "series": [
+   {
+    "name": "interns",
+    "label": "interns",
+    "points": [
+     60,
+     60,
+     4,
+     4,
+     18
+    ],
+    "latest": 18
+   },
+   {
+    "name": "big",
+    "label": "big",
+    "points": [
+     100,
+     100,
+     100,
+     100,
+     110
+    ],
+    "latest": 110
+   }
+  ],
+  "companies": [
+   {
+    "key": "greenhouse:acme",
+    "label": "Acme",
+    "board_keys": [
+     "greenhouse:acme"
+    ],
+    "atses": [
+     "greenhouse"
+    ]
+   }
+  ],
+  "company_totals": {},
+  "counted_since": {
+   "greenhouse:acme": "2026-09-13T00:00:00+00:00"
+  }
+ },
+ "reading": {
+  "window": {
+   "from": "2026-09-13T00:00:00+00:00",
+   "to": "2026-09-17T00:00:00+00:00"
+  },
+  "picked": true,
+  "total": {
+   "name": "__total__",
+   "label": "",
+   "estimated": false,
+   "move": {
+    "start": 160,
+    "latest": 128,
+    "hiring": 24,
+    "not_hiring": [
+     {
+      "change": "counting@2026-09-15T00:00:00+00:00",
+      "kind": "counting",
+      "label": "tech filter changed",
+      "size": -56
+     }
+    ],
+    "not_hiring_total": -56,
+    "percent": 23.076923076923077,
+    "percent_withheld": null,
+    "span_days": 4.0,
+    "per_week": 42,
+    "turnover": null,
+    "share": {
+     "start": 10.4,
+     "latest": 12.8,
+     "denominator_start": 1000,
+     "denominator_latest": 1000,
+     "percent": 23.076923076923077
+    }
+   },
+   "netted": [
+    104,
+    104,
+    104,
+    104,
+    128
+   ],
+   "steps_at": [
+    2,
+    3
+   ],
+   "index_base": 104,
+   "arrived_by": null,
+   "points": [
+    160,
+    160,
+    104,
+    104,
+    128
+   ]
+  },
+  "lines": [
+   {
+    "name": "interns",
+    "label": "interns",
+    "estimated": false,
+    "move": {
+     "start": 60,
+     "latest": 18,
+     "hiring": 14,
+     "not_hiring": [
+      {
+       "change": "counting@2026-09-15T00:00:00+00:00",
+       "kind": "counting",
+       "label": "tech filter changed",
+       "size": -56
+      }
+     ],
+     "not_hiring_total": -56,
+     "percent": null,
+     "percent_withheld": "under 5 openings at the start once the steps are taken out",
+     "span_days": 4.0,
+     "per_week": 25,
+     "turnover": null,
+     "share": {
+      "start": 0.4,
+      "latest": 1.7999999999999998,
+      "denominator_start": 1000,
+      "denominator_latest": 1000,
+      "percent": 349.99999999999994
+     }
+    },
+    "netted": [
+     4,
+     4,
+     4,
+     4,
+     18
+    ],
+    "steps_at": [
+     2,
+     3
+    ],
+    "index_base": null,
+    "arrived_by": null
+   },
+   {
+    "name": "big",
+    "label": "big",
+    "estimated": false,
+    "move": {
+     "start": 100,
+     "latest": 110,
+     "hiring": 10,
+     "not_hiring": [],
+     "not_hiring_total": 0,
+     "percent": 10.0,
+     "percent_withheld": null,
+     "span_days": 4.0,
+     "per_week": 18,
+     "turnover": null,
+     "share": {
+      "start": 10.0,
+      "latest": 11.0,
+      "denominator_start": 1000,
+      "denominator_latest": 1000,
+      "percent": 10.0
+     }
+    },
+    "netted": [
+     100,
+     100,
+     100,
+     100,
+     110
+    ],
+    "steps_at": [
+     2,
+     3
+    ],
+    "index_base": 100,
+    "arrived_by": null
+   }
+  ],
+  "other": null,
+  "company_lines": [
+   {
+    "name": "greenhouse:acme",
+    "label": "Acme",
+    "estimated": false,
+    "move": {
+     "start": 160,
+     "latest": 128,
+     "hiring": 24,
+     "not_hiring": [
+      {
+       "change": "counting@2026-09-15T00:00:00+00:00",
+       "kind": "counting",
+       "label": "tech filter changed",
+       "size": -56
+      }
+     ],
+     "not_hiring_total": -56,
+     "percent": 23.076923076923077,
+     "percent_withheld": null,
+     "span_days": 4.0,
+     "per_week": 42,
+     "turnover": null,
+     "share": {
+      "start": 10.4,
+      "latest": 12.8,
+      "denominator_start": 1000,
+      "denominator_latest": 1000,
+      "percent": 23.076923076923077
+     }
+    },
+    "netted": [],
+    "steps_at": [],
+    "index_base": null,
+    "arrived_by": null
+   }
+  ],
+  "breakdown": {
+   "closing": null
+  },
+  "marked_changes": [
+   {
+    "id": "counting@2026-09-15T00:00:00+00:00",
+    "kind": "counting",
+    "ts": "2026-09-15T00:00:00+00:00",
+    "label": "tech filter changed",
+    "fields": [
+     "tech_filter_version"
+    ],
+    "changed": [
+     "tech filter changed"
+    ],
+    "company": null,
+    "boards": null,
+    "sizes": {
+     "greenhouse:acme": -56
+    }
+   }
+  ],
+  "day_markers": [
+   {
+    "day": "2026-09-15",
+    "at": "2026-09-15T00:00:00+00:00",
+    "changes": [
+     "counting@2026-09-15T00:00:00+00:00"
+    ]
+   }
+  ],
+  "reference": [
+   1000,
+   1000,
+   1000,
+   1000,
+   1000
+  ],
+  "openings": 128,
+  "served_jobs": null,
+  "non_tech_jobs": null,
+  "reconciles": true,
+  "violations": []
+ }
+}

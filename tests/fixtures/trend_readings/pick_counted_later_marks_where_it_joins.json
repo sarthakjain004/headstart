@@ -96,16 +96,33 @@
       "size": 355
      }
     ],
+    "not_hiring_total": 355,
     "percent": 0.0,
     "percent_withheld": null,
+    "span_days": 7.0,
+    "per_week": 0,
     "turnover": null,
     "share": {
      "start": 4.45,
      "latest": 4.45,
      "denominator_start": 10000,
-     "denominator_latest": 10000
+     "denominator_latest": 10000,
+     "percent": 0.0
     }
-   }
+   },
+   "netted": [
+    445,
+    445
+   ],
+   "steps_at": [
+    1
+   ],
+   "index_base": 445,
+   "arrived_by": null,
+   "points": [
+    90,
+    445
+   ]
   },
   "lines": [
    {
@@ -124,16 +141,29 @@
        "size": 350
       }
      ],
+     "not_hiring_total": 350,
      "percent": 0.0,
      "percent_withheld": null,
+     "span_days": 7.0,
+     "per_week": 0,
      "turnover": null,
      "share": {
       "start": 4.0,
       "latest": 4.0,
       "denominator_start": 10000,
-      "denominator_latest": 10000
+      "denominator_latest": 10000,
+      "percent": 0.0
      }
-    }
+    },
+    "netted": [
+     400,
+     400
+    ],
+    "steps_at": [
+     1
+    ],
+    "index_base": 400,
+    "arrived_by": null
    },
    {
     "name": "b",
@@ -151,18 +181,32 @@
        "size": 5
       }
      ],
+     "not_hiring_total": 5,
      "percent": 0.0,
      "percent_withheld": null,
+     "span_days": 7.0,
+     "per_week": 0,
      "turnover": null,
      "share": {
       "start": 0.44999999999999996,
       "latest": 0.44999999999999996,
       "denominator_start": 10000,
-      "denominator_latest": 10000
+      "denominator_latest": 10000,
+      "percent": 0.0
      }
-    }
+    },
+    "netted": [
+     45,
+     45
+    ],
+    "steps_at": [
+     1
+    ],
+    "index_base": 45,
+    "arrived_by": null
    }
   ],
+  "other": null,
   "company_lines": [
    {
     "name": "workday:nvidia",
@@ -180,16 +224,24 @@
        "size": 355
       }
      ],
+     "not_hiring_total": 355,
      "percent": 0.0,
      "percent_withheld": null,
+     "span_days": 7.0,
+     "per_week": 0,
      "turnover": null,
      "share": {
       "start": 4.45,
       "latest": 4.45,
       "denominator_start": 10000,
-      "denominator_latest": 10000
+      "denominator_latest": 10000,
+      "percent": 0.0
      }
-    }
+    },
+    "netted": [],
+    "steps_at": [],
+    "index_base": null,
+    "arrived_by": null
    }
   ],
   "breakdown": {
@@ -219,6 +271,13 @@
     ]
    }
   ],
+  "reference": [
+   10000,
+   10000
+  ],
+  "openings": 445,
+  "served_jobs": null,
+  "non_tech_jobs": null,
   "reconciles": true,
   "violations": []
  }

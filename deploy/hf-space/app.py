@@ -16,6 +16,7 @@ import json
 import os
 import threading
 import time
+import traceback
 from dataclasses import replace
 from datetime import timedelta
 from pathlib import Path
@@ -30,7 +31,6 @@ from headstart import (
     hot_ranking,
     llm_router,
     trend_history,
-    trend_netting,
     trend_reading,
 )
 
@@ -1072,8 +1072,9 @@ def delete_resume(doc_id: str):
 @app.route("/trends")
 def trends():
     """Role counts over time (ADR-0040, ADR-0051), answered by ``headstart.trend_history``
-    (ADR-0230), whose ``TrendHistory.unnetted_answer`` documents every parameter and field, with
-    every line netted (``trend_netting``) and its ``reading`` beside them (ADR-0233).
+    (ADR-0230), whose ``TrendHistory.unnetted_answer`` documents every parameter and field, and
+    read by ``headstart.trend_reading``: its ``reading`` holds every figure the page shows, and
+    the page only formats and draws (ADR-0233).
 
     ``?metric=`` ``stock`` or ``new``; ``?family=`` with ``&split=`` ``bands``, ``roles`` or
     ``company``; ``?since=`` / ``?until=`` / ``?base=`` (ISO-8601); ``?coverage=`` ``all`` or
@@ -1098,28 +1099,32 @@ def trends():
         return jsonify(error=str(exc)), 503
     except ValueError as exc:
         return jsonify(error=str(exc)), 400
-    payload = trend_netting.net_answer(answer)
-    payload["reading"] = _trend_reading(answer, question)
-    return jsonify(payload)
+    return jsonify(_trends_payload(answer, question))
 
 
-def _trend_reading(answer: dict, question: trend_history.TrendQuestion) -> dict | None:
-    """The answer's line reading (ADR-0233), served beside the fields the page still reads.
+def _trends_payload(answer: dict, question: trend_history.TrendQuestion) -> dict:
+    """The answer with its line reading (ADR-0233), which holds every figure the page shows.
 
-    A reading that does not reconcile is served all the same, saying so, and logged. Until the
-    page reads it (ADR-0233 step 3) a reading that fails outright costs only itself: None."""
+    A reading is never an error (decision 6). One that does not reconcile is served all the
+    same, saying so, and logged; one that cannot be read at all is served as null with why,
+    logged with its traceback. Either way the page draws the lines and says its figures do not
+    fully reconcile, rather than the tab failing."""
     try:
-        reading = trend_reading.read_answer(answer)
-    except Exception as exc:  # noqa: BLE001 - the page does not read it yet
-        print(f"trends reading failed ({type(exc).__name__}: {exc})", flush=True)
-        return None
+        payload, reading = trend_reading.trends_payload(answer)
+    except Exception as exc:  # noqa: BLE001 - a reading that fails costs its figures only
+        error = f"{type(exc).__name__}: {exc}"
+        print(
+            f"trends reading failed for {question}: {error}\n{traceback.format_exc()}",
+            flush=True,
+        )
+        return trend_reading.unread_trends_payload(answer, error)
     if not reading.reconciles:
         print(
             f"trends reading does not reconcile for {question}: "
             + "; ".join(reading.violations[:5]),
             flush=True,
         )
-    return reading.to_json()
+    return payload
 
 
 @app.route("/companies/suggest")

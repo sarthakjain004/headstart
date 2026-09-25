@@ -3,10 +3,11 @@
 A line's change holds steps that are not hiring: a **Counting change** and the run after it, a
 **Found Board**'s backlog, a pick counted from a later date joining a sum, duplicate postings
 removed, and a Board read only partly for one run. This module takes them out, once, for every
-line an answer serves, so the page draws what it is given and Hot can read the same figures
-(ADR-0230 decision 3). Until ADR-0230 step 4 the rule lived in the page's JavaScript (`stepNotes`,
-`stepJumps`, `netOfSteps`); this is a port of that rule, checked against it by the golden answers
-under ``tests/fixtures/trend_answers/``.
+line an answer serves (ADR-0230 decision 3). Until ADR-0230 step 4 the rule lived in the page's
+JavaScript (`stepNotes`, `stepJumps`, `netOfSteps`); this is a port of that rule, checked against
+it by the golden answers under ``tests/fixtures/trend_answers/``. Since ADR-0233 step 3 the page
+reads ``trend_reading``, which uses this module as its private implementation; Hot still reads
+:func:`net_answer` until step 4.
 
 :func:`net_answer` is the one entry point. It reads an answer as ``TrendHistory.answer`` builds it
 and adds, without touching any count:
@@ -48,6 +49,27 @@ LINE_MOVING_FIELDS = (
 # The tick `new` stops being a level and becomes the Opened inflow (ADR-0230 decision 5): a
 # counting change of its own, marked on every `new` line and taken out of it like a refit.
 NEW_BECAME_INFLOW = "new_became_inflow"
+# What each Methodology field is called where it moved (ADR-0164), as a change ("tech filter
+# changed") and as a noun ("the week-later echo of the Sep 17 tech filter change"): the one home
+# of the words every Trends label is built from, so no label is a raw field id.
+METHODOLOGY_WORDS = {
+    "centroid_version": ("role taxonomy refit", "role taxonomy refit"),
+    "family_map_fingerprint": ("role family map edited", "role family map edit"),
+    "tech_filter_version": ("tech filter changed", "tech filter change"),
+    "derivations_version": (
+        "experience/salary extraction changed",
+        "experience/salary extraction change",
+    ),
+    "dedup_version": ("duplicate removal changed", "duplicate removal change"),
+    "family_classifier_version": (
+        "role family assignment changed",
+        "role family assignment change",
+    ),
+    NEW_BECAME_INFLOW: (
+        "new openings became the jobs opened in the week",
+        "change of new openings to the jobs opened in the week",
+    ),
+}
 _DERIVATIONS = "derivations_version"
 _DEDUP = "dedup_version"
 _TECH_FILTER = "tech_filter_version"

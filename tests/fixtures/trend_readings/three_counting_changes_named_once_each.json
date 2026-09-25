@@ -117,18 +117,37 @@
        "size": 30
       }
      ],
+     "not_hiring_total": 50,
      "percent": 0.0,
      "percent_withheld": null,
+     "span_days": 4.0,
+     "per_week": 0,
      "turnover": null,
      "share": {
       "start": 1.5,
       "latest": 1.5,
       "denominator_start": 10000,
-      "denominator_latest": 10000
+      "denominator_latest": 10000,
+      "percent": 0.0
      }
-    }
+    },
+    "netted": [
+     150,
+     150,
+     150,
+     150,
+     150
+    ],
+    "steps_at": [
+     2,
+     3,
+     4
+    ],
+    "index_base": 150,
+    "arrived_by": null
    }
   ],
+  "other": null,
   "company_lines": [
    {
     "name": "greenhouse:acme",
@@ -152,16 +171,24 @@
        "size": 30
       }
      ],
+     "not_hiring_total": 50,
      "percent": 0.0,
      "percent_withheld": null,
+     "span_days": 4.0,
+     "per_week": 0,
      "turnover": null,
      "share": {
       "start": 1.5,
       "latest": 1.5,
       "denominator_start": 10000,
-      "denominator_latest": 10000
+      "denominator_latest": 10000,
+      "percent": 0.0
      }
-    }
+    },
+    "netted": [],
+    "steps_at": [],
+    "index_base": null,
+    "arrived_by": null
    }
   ],
   "breakdown": null,
@@ -219,6 +246,16 @@
     ]
    }
   ],
+  "reference": [
+   10000,
+   10000,
+   10000,
+   10000,
+   10000
+  ],
+  "openings": 150,
+  "served_jobs": null,
+  "non_tech_jobs": null,
   "reconciles": true,
   "violations": []
  }

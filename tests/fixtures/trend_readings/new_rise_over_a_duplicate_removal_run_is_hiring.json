@@ -93,18 +93,35 @@
      "latest": 70,
      "hiring": 20,
      "not_hiring": [],
+     "not_hiring_total": 0,
      "percent": 40.0,
      "percent_withheld": null,
+     "span_days": 4.0,
+     "per_week": 35,
      "turnover": null,
      "share": {
       "start": 0.5,
       "latest": 0.7000000000000001,
       "denominator_start": 10000,
-      "denominator_latest": 10000
+      "denominator_latest": 10000,
+      "percent": 40.000000000000014
      }
-    }
+    },
+    "netted": [
+     50,
+     50,
+     70,
+     70,
+     70
+    ],
+    "steps_at": [
+     3
+    ],
+    "index_base": 50,
+    "arrived_by": null
    }
   ],
+  "other": null,
   "company_lines": [
    {
     "name": "eightfold:micron",
@@ -115,21 +132,39 @@
      "latest": 70,
      "hiring": 20,
      "not_hiring": [],
+     "not_hiring_total": 0,
      "percent": 40.0,
      "percent_withheld": null,
+     "span_days": 4.0,
+     "per_week": 35,
      "turnover": null,
      "share": {
       "start": 0.5,
       "latest": 0.7000000000000001,
       "denominator_start": 10000,
-      "denominator_latest": 10000
+      "denominator_latest": 10000,
+      "percent": 40.000000000000014
      }
-    }
+    },
+    "netted": [],
+    "steps_at": [],
+    "index_base": null,
+    "arrived_by": null
    }
   ],
   "breakdown": null,
   "marked_changes": [],
   "day_markers": [],
+  "reference": [
+   10000,
+   10000,
+   10000,
+   10000,
+   10000
+  ],
+  "openings": 70,
+  "served_jobs": null,
+  "non_tech_jobs": null,
   "reconciles": true,
   "violations": []
  }

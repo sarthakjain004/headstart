@@ -1612,7 +1612,13 @@ let tableView = false;      // the WCAG-clean twin of the chart, independent of 
 let lastGeom = null;        // scales + resolved values from the last drawTrends() — hover reads this
 let trendReq = null;        // the /trends request in flight, so a newer one can cancel it
 const hiddenSeries = new Set();   // legend toggle-to-hide; keyed by name, so a re-rank keeps it
-const CHART_MAX = 8;        // matches the 8-slot validated categorical palette
+const CHART_MAX = 8;        // matches the 8-slot validated categorical palette; trend_reading.LINES_CHARTED
+// The kinds of Marked change that are a counting change, drawn as a dashed marker; every other
+// kind moved openings into or out of the count at once, drawn solid (trend_reading.CauseKind).
+const COUNTING_KINDS = new Set(['counting', 'growth_scaled_by_a_change']);
+// A raw field id in a label ("tech_filter_version"): words never have an underscore in them
+// (trend_reading._FIELD_ID).
+const FIELD_ID = /\b[a-z0-9]+(?:_[a-z0-9]+)+\b/;
 // Picked companies (ADR-0185), in the order they were added. `key` is any board_key of a
 // directory entry, which is all `/trends?company=` needs; `label` is null until an answer names
 // it, because a pick that arrives by link or from the follow list carries only a key.
@@ -1686,67 +1692,53 @@ function swatchHtml(color, slot){
 }
 // Everything past CHART_MAX, folded into one honest aggregate row instead of the N real-looking
 // legend rows the previous design left permanently inert (a documented dead-click: dataviz
-// skill anti-patterns, "cycling past 8" — fold the tail into "Other," don't seat a 9th).
-// A stamp where every hidden series is unmeasured stays null, so the aggregate's line breaks at
-// the same points a real series' would; where some measured and others didn't, an unmeasured
-// series contributes 0 rather than being excluded — a display approximation, not a data claim.
-function buildOtherSeries(rest){
-  if (!rest.length) return null;
-  const points = sumPoints(rest, trendData.stamps);
-  const latest = rest.reduce((sum, s) => sum + (s.latest || 0), 0);
-  const noun = trendData.split_by === 'company'
-    ? (rest.length === 1 ? 'company' : 'companies')
-    : (rest.length === 1 ? 'category' : 'categories');
-  // Folded company lines are a share of their own companies, so Other is a share of theirs.
-  const denoms = rest.every(s => s.denoms)
-    ? sumPoints(rest.map(s => ({ points: s.denoms })), trendData.stamps) : undefined;
-  const other = { name: '__other__', label: `Other (${rest.length} smaller ${noun})`, points, latest, denoms,
-    turnover: sumTurnover(rest, trendData.stamps) };
-  // Netted as the sum of its lines' netting (the Space's, ADR-0230), in openings: the rows it
-  // folds add up to it, as a company's categories add up to the company.
-  const count = sumPoints(rest.map(s => ({ points: countNet(s) })), trendData.stamps);
-  const turnovers = rest.map(s => s.hiring_turnover).filter(Boolean);
-  const jumps = new Map();
-  rest.forEach(s => (s.jumps || []).forEach(j => jumps.set(j.i, (jumps.get(j.i) || 0) + j.size)));
-  return { ...other,
-    net: { count, share: count.map((v, j) => levelValue(v, j, other)) },
-    steps: rest.flatMap(s => s.steps || []),
-    jumps: [...jumps].map(([i, size]) => ({ i, size })),
-    causes: { duplicates: rest.reduce((sum, s) => sum + ((s.causes || {}).duplicates || 0), 0),
-              found: rest.reduce((sum, s) => sum + ((s.causes || {}).found || 0), 0) },
-    hiring_turnover: turnovers.length ? { opened: turnovers.reduce((sum, t) => sum + t.opened, 0),
-                                          closed: turnovers.reduce((sum, t) => sum + t.closed, 0) } : null };
-}
-function sumPoints(list, stamps){
-  return stamps.map((_, j) => list.some(s => s.points[j] != null)
-    ? list.reduce((sum, s) => sum + (s.points[j] || 0), 0) : null);
-}
-// A summed line's turnover (ADR-0227): its lines' opened, closed and recounted, run by run,
-// where any of them was measured. Undefined when none carries turnover.
-function sumTurnover(list, stamps){
-  const parts = list.map(s => s.turnover).filter(Boolean);
-  if (!parts.length) return undefined;
-  const add = m => sumPoints(parts.map(t => ({ points: t[m] })), stamps);
-  return { opened: add('opened'), closed: add('closed'), recounted: add('recounted') };
+// skill anti-patterns, "cycling past 8" — fold the tail into "Other," don't seat a 9th). Its
+// figures are the reading's `other`, the folded lines added together in Python (ADR-0233), so
+// the table's rows, Other among them, add up to its first row.
+function otherSeries(d, rest){
+  if (!rest) return null;
+  const noun = d.split_by === 'company'
+    ? (rest === 1 ? 'company' : 'companies')
+    : (rest === 1 ? 'category' : 'categories');
+  return { name: '__other__', label: `Other (${rest} smaller ${noun})` };
 }
 
 // What the chart draws from what the Space sent (ADR-0185). Total is not asked for: the
-// category lines partition a pick's tech openings, so their sum is exactly its tech total. A
-// Company line carries its own company's total as its Share denominator — dividing every pick
-// by all of them combined would make the largest look like it dominates every category.
+// reading's first row is every category of the picks added together, drawn from its own points
+// and netted line. A Company line carries its own company's total as its Share denominator —
+// dividing every pick by all of them combined would make the largest look like it dominates
+// every category.
 function trendView(raw, family){
   if (raw.split_by === 'company') return { ...raw, series: raw.series.map(s =>
     ({ ...s, denoms: (raw.company_totals || {})[s.name] })) };
-  if (family || !trendPicks.length || topSplitNow() !== 'total' || !raw.series.length) return raw;
-  const latest = raw.series.filter(s => s.latest != null);
-  return { ...raw, total: true, series: [{ ...seriesSum(raw), label: 'All tech roles',
-    latest: latest.length ? latest.reduce((sum, s) => sum + s.latest, 0) : null }] };
+  const total = raw.reading && raw.reading.total;
+  if (family || !trendPicks.length || topSplitNow() !== 'total' || !raw.series.length || !total) return raw;
+  return { ...raw, total: true, series: [{ name: '__total__', label: 'All tech roles',
+    points: total.points, latest: total.move.latest }] };
 }
-// Every series of an answer added together, netted by the Space (`series_sum`): a pick's whole
-// company, or several picks' sum, which is each pick's own netted line added up. An answer with
-// no netting (nothing was taken out of it) sums its series here.
-function seriesSum(d){
-  return d.series_sum || { name: '__total__', points: sumPoints(d.series, d.stamps), turnover: sumTurnover(d.series, d.stamps) };
+
+// The reading's line for a drawn series (ADR-0233): every figure a reader compares is read here,
+// never worked out from the points. The Total and Other rows are the reading's own.
+function lineReading(s){
+  const reading = trendData && trendData.reading;
+  if (!reading || !s) return null;
+  if (s.name === '__total__') return reading.total || null;
+  if (s.name === '__other__') return reading.other || null;
+  return (reading.lines || []).find(line => line.name === s.name) || null;
+}
+// What checkReading says of a reading, worked out once per reading received. A missing reading, or
+// one the page cannot read, is a problem too, never a throw.
+const readingProblems = new WeakMap();
+function problemsOf(reading){
+  if (!reading) return ['no reading'];
+  if (!readingProblems.has(reading)){
+    let problems;
+    try { problems = checkReading(reading); }
+    catch (e){ problems = [`the reading could not be checked: ${e.message}`]; }
+    if (reading.reconciles === false && !problems.length) problems = ['the Space says it does not reconcile'];
+    readingProblems.set(reading, problems);
+  }
+  return readingProblems.get(reading);
 }
 function topSplitNow(){
   if (topSplit.chosen !== 'auto') return topSplit.chosen;
@@ -1755,11 +1747,11 @@ function topSplitNow(){
 // Fewer than two categories big enough to index is a set of picks the category view cannot
 // show: its legend would be "not indexed" rows over one line or none. The median Board holds
 // three tech openings (ADR-0185), so for a single pick this is the usual case, not the edge.
+// Decided off the reading's index bases; with no reading, the Space's own default, Category.
 function fewIndexable(raw){
-  return raw.series.filter(startsIndexable).length < 2;
+  const lines = raw.reading && raw.reading.lines;
+  return !!lines && lines.filter(line => line.index_base != null).length < 2;
 }
-// Whether a line's first measured count reaches the Change floor (INDEX_BASE_FLOOR).
-const startsIndexable = s => (s.points.find(v => v != null) ?? 0) >= INDEX_BASE_FLOOR;
 
 // Picks live in the hash (`#trends?company=…&by=…`), so a view can be shared and a Hot-tab row
 // or a search result can link straight into it. A bare `#trends` — the tab strip's own link —
@@ -1907,30 +1899,42 @@ function stepNote(d, marked){
   const parts = [];
   if (marked.found)
     parts.push(`A solid grey vertical line marks openings that joined or left the count at once — ${
-      notesOf(d).some(n => n.evicted && n.withhold) ? 'duplicate postings removed, ' : ''}boards found later, or a company counted from a later date — not hiring.`);
+      marked.removal ? 'duplicate postings removed, ' : ''}boards found later, or a company counted from a later date — not hiring.`);
   // Said only where a line carries a step and has a figure read off it: Zomato, with no
   // percentage, and a Count view, whose lines are real levels, both got the Change sentence.
   // Only where a step is marked on the chart ("Point at a marked line" over a chart with none
   // pointed at nothing) and a line has a percentage read net of it.
   if ((marked.epoch || marked.found)
-      && chartedAndOther(d).charted.some(s => lineNotes(s).length && lineMove(s).dl != null))
+      && chartedAndOther(d).charted.some(s => {
+        const line = lineReading(s);
+        return line && line.move.not_hiring.length && lineMove(s).dl != null;
+      }))
     parts.push(trendUnit === 'change'
       ? 'Lines and percentages leave out the jumps at marked lines, so they show hiring between them. Point at a marked line, or open “Marked changes” below the chart, to see what changed there.'
       : 'Lines break at each marked jump, and the percentages leave the jumps out, so they measure hiring between them. Point at a marked line, or open “Marked changes” below the chart, to see what changed there.');
   return parts.filter(Boolean).join(' ');
 }
 
-// Every marked line, listed under the chart: a phone has no pointer to hover a 1px line with,
-// and a tap on one read the run beside it ("Left out: the run after a counting change").
+// Every marked change, listed under the chart: a phone has no pointer to hover a 1px line with,
+// and a tap on one read the run beside it ("Left out: the run after a counting change"). Each is
+// the reading's Marked change (ADR-0233), sized on each company line, so under a pick a
+// company's entries sum to its "Not hiring".
 function drawChangeList(d, list){
   const host = el('trends-changes'); if (!host) return;
-  // Under a pick, a change that moved no listed line by a whole opening is left out: a bare
+  // Under a pick, a change that moved no company line by a whole opening is left out: a bare
   // "1,927 duplicate postings removed" with no size beside it said nothing a reader could use.
-  const sorted = list.filter(g => !trendPicks.length || g.sizes.length).sort((a, b) => a.i - b.i);
-  host.hidden = !sorted.length;
-  host.innerHTML = `<summary>Marked changes in this window (${sorted.length})</summary><ul>${sorted.map(g =>
-    `<li><b>${esc(stampLabel(d.stamps[g.i]))}</b> ${esc(g.label)}${
-      g.sizes && g.sizes.length ? ` — ${esc(g.sizes.join(', '))}` : ''}</li>`).join('')}</ul>`;
+  const shownItems = list.filter(item => !trendPicks.length || item.sizes.length);
+  host.hidden = !shownItems.length;
+  host.innerHTML = `<summary>Marked changes in this window (${shownItems.length})</summary><ul>${shownItems.map(item =>
+    `<li><b>${esc(stampLabel(item.ts))}</b> ${esc(item.label)}${
+      item.sizes.length ? ` — ${esc(item.sizes.join(', '))}` : ''}</li>`).join('')}</ul>`;
+}
+// One Marked change as the list, the marker's title and the crosshair say it: its label, and
+// its size on each company line in the reading's order ("Micron −1,858 openings").
+function markedItem(change, reading){
+  const sizes = (reading.company_lines || []).filter(line => (change.sizes || {})[line.name] != null)
+    .map(line => `${line.label} ${signedOpenings(change.sizes[line.name])}`);
+  return { ts: change.ts, label: change.label, sizes };
 }
 
 // Picks this answer has nothing for, named with the reason, so the chart never shows fewer
@@ -1979,45 +1983,43 @@ function viewNotes(d){ return [comparableNote(d), companyNote(d)].filter(Boolean
 // under Comparable, "These 2 companies" was said of one.
 function verdictLines(d){
   if (!d.series.length || !d.stamps.length) return [];
+  const reading = d.reading || {};
   // The index gets one sentence too: its turnover (ADR-0227), the figure a job hunter cannot read
   // off a chart of levels. Its lines keep a counting change's jump, marked, so the net it gives is
   // the hiring one, opened less closed, over the runs the Space kept.
   if (!trendPicks.length){
-    const whole = seriesSum(d);
-    const t = turnoverOf(whole);
+    const whole = reading.total;
+    const t = whole && whole.move.turnover;
     if (!t) return [];
     // Its net is the hiring one, opened less closed; recounted jobs are not hiring. The chart's
     // own lines keep a counting change's jump, marked, so this sentence says when the figures
     // leave one out.
-    const net = t.opened - t.closed;
     const left = (d.turnover_left_out || []).length
       ? ', runs where HeadStart changed how it counts left out' : '';
     return [{ name: viewKind(d) === 'bands' ? drillLabel() : 'All tech roles', days: 0,
-      text: `about ${net < 0 ? '−' : '+'}${aboutCount(Math.abs(net))} net from hiring — ${turnoverPhrase(whole, d)}${left}.` }];
+      text: `about ${t.net < 0 ? '−' : '+'}${aboutCount(Math.abs(t.net))} net from hiring — ${turnoverPhrase(whole, d)}${left}.` }];
   }
   const kind = viewKind(d);
   const counted = trendPicks.filter(p => !(d.uncounted || []).includes(p.key));
   // Inside a category: a sentence per company, or the category's own total, which its levels
   // add up to.
   if (kind === 'drillCompany')
-    return d.series.slice(0, CHART_MAX).map(s => ({ name: `${s.label} · ${drillLabel()}`, key: s.name, ...verdictOf(s, d) }));
+    return d.series.slice(0, CHART_MAX).map(s => ({ name: `${s.label} · ${drillLabel()}`, key: s.name, ...verdictOf(lineReading(s), d) }));
   // Tracked roles get one sentence on what they are, not a move each: in their place the view
   // read only "HeadStart has counted Google since Sep 13", with nothing it qualified.
   if (kind === 'roles')
     return [{ name: `${counted.length === 1 ? counted[0].label || 'This company' : `These ${counted.length} companies`} · ${drillLabel()}`,
       days: 0, text: 'roles tracked by their titles inside this category. A job can match more than one, so they need not add up to the category — its levels view has the category’s total and move.' }];
-  // Several picks summed: the sum of each company's own netted line (the Space's `pick_series`),
-  // so the move is exactly the Company breakdown's total. It read only "summed here — break down
+  // Several picks summed: the reading's first row, the sum of each company's own netted line, so
+  // the move is exactly the Company breakdown's total. It read only "summed here — break down
   // by Company", no move and no direction.
-  const whole = seriesSum(d);
+  const whole = reading.total || null;
   const who = counted.length === 1 ? counted[0].label || 'This company' : `These ${counted.length} companies`;
   if (kind === 'bands') return [{ name: `${who} · ${drillLabel()}`, ...verdictOf(whole, d) }];
-  if (kind !== 'company' && counted.length > 1)
-    return [{ name: who, ...verdictOf(kind === 'total' ? d.series[0] : whole, d) }];
-  const lines = kind === 'company' ? d.series.slice(0, CHART_MAX).map(s => [s.label, s, s.name])
-    : [[counted.length === 1 ? (counted[0].label || 'This company') : 'This company',
-        kind === 'total' ? d.series[0] : whole]];
-  return lines.map(([name, s, key]) => ({ name, key, ...verdictOf(s, d) }));
+  if (kind !== 'company' && counted.length > 1) return [{ name: who, ...verdictOf(whole, d) }];
+  const lines = kind === 'company' ? d.series.slice(0, CHART_MAX).map(s => [s.label, lineReading(s), s.name])
+    : [[counted.length === 1 ? (counted[0].label || 'This company') : 'This company', whole]];
+  return lines.map(([name, line, key]) => ({ name, key, ...verdictOf(line, d) }));
 }
 // How old the newest count may be before the page says so: four of the pipeline's own usual
 // gaps between runs (the median, about an hour on 2026-09-25), and never under three hours. A
@@ -2032,17 +2034,6 @@ const VERDICTS_SHOWN = 5;
 // Under this many days of measurements a line names no direction and no tile headlines it:
 // AMD, counted for a few hours, was "Biggest riser +0.1%".
 const MIN_SPAN_DAYS = 3;
-function spanDays(s, d){
-  const first = s.points.findIndex(v => v != null);
-  return first < 0 ? 0 : (new Date(d.stamps[d.stamps.length - 1]) - new Date(d.stamps[first])) / 864e5;
-}
-// The jobs a line opened and closed across the window (ADR-0227). A net change alone read
-// Amazon's week as "+17" while it opened 914–1,532. The Space counts them over exactly the runs
-// the line's hiring move counts (its `hiring_turnover`, ADR-0230). Null when no run in the window
-// measured turnover.
-function turnoverOf(s){
-  return (s && s.hiring_turnover) || null;
-}
 // "about 1,500": two significant figures from 100 up, since every turnover count is a lower
 // bound (a job opened and closed between two scrapes of its Board is in neither).
 function aboutCount(n){
@@ -2050,47 +2041,48 @@ function aboutCount(n){
   const step = 10 ** (Math.floor(Math.log10(n)) - 1);
   return (Math.round(n / step) * step).toLocaleString();
 }
-// "about 1,500 opened, 1,500 closed", or '' with no turnover. It adds from when, if turnover
-// began inside the window. It also adds how many of the line's Boards had a run whose closures
-// went uncounted (ADR-0053): their scrape could not show an absence, so the line can read as
-// opening more than it closed.
-function turnoverPhrase(s, d){
-  const t = turnoverOf(s);
+// "about 1,500 opened, 1,500 closed", or '' with no turnover: the jobs a line reading opened and
+// closed over the runs its hiring move counts (ADR-0227). A net change alone read Amazon's week
+// as "+17" while it opened 914–1,532. It adds from when, if turnover began inside the window. It
+// also adds how many of the line's Boards had a run whose closures went uncounted (ADR-0053):
+// their scrape could not show an absence, so the line can read as opening more than it closed.
+function turnoverPhrase(line, d){
+  const t = line && line.move.turnover;
   if (!t) return '';
   const since = d.turnover_since && d.turnover_since > d.stamps[0] ? ` since ${stampLabel(d.turnover_since, true)}` : '';
   const unseenBy = d.closures_unseen || {};
-  const unseen = VIEWS[viewKind(d)].split === 'company' ? unseenBy[s.name] || 0
+  const unseen = VIEWS[viewKind(d)].split === 'company' ? unseenBy[line.name] || 0
     : Object.values(unseenBy).reduce((sum, n) => sum + n, 0);
   const note = unseen ? `, closures not counted on ${unseen} board${unseen === 1 ? '' : 's'}` : '';
   return `about ${aboutCount(t.opened)} opened, ${aboutCount(t.closed)} closed${since}${note}`;
 }
-function verdictOf(s, d){
-  const now = latestOf(s);
-  const days = spanDays(s, d);
+// One company sentence from a line reading (ADR-0233): its openings, its hiring move, its
+// percentage and weekly rate, and its "Not hiring" by cause, each as the reading gives it.
+function verdictOf(line, d){
+  if (!line) return { text: '—', detail: null, days: 0 };
+  const m = line.move;
+  const now = m.latest;
+  const days = m.span_days;
   const over = `over ${Math.round(days)} days`;
-  const one = now != null && Math.round(now) === 1;   // "Near AI: 1 tech openings"
-  const what = `tech opening${one ? '' : 's'}${trendMetric === 'new' ? ` ${newCounts(d)}` : ''}`;
-  const m = trendMove(s);
+  const what = `tech opening${now === 1 ? '' : 's'}${trendMetric === 'new' ? ` ${newCounts(d)}` : ''}`;
   // Short because of the window, or because of the company: a company counted for 11 days
   // under a 2-day custom range was called "too new".
   // A company line is judged by its own counting, a summed line by its youngest company's:
   // NewCo beside Google read "this window is too short" off Google's date.
-  const young = isYoung(s, d);
-  let move;
-  const other = countingMove(s) || 0;
-  // "; not hiring: −2,041 from duplicate postings removed, +230 from changes in how HeadStart
-  // counts" — the rest of the chart's move, by cause. It read "the chart's other +292 openings
-  // came from outside hiring: +292 openings from…", twice the words for one figure, and
-  // "outside hiring" read as hiring from outside.
+  const young = isYoung(line.name, d);
+  const n = m.hiring;
+  // "Not hiring: −2,378 openings", its causes one by one — the rest of the chart's move. It read
+  // "the chart's other +292 openings came from outside hiring: +292 openings from…", twice the
+  // words for one figure, and "outside hiring" read as hiring from outside.
   // Said on a line of its own, under the answer: 40 words of counting causes led every sentence
   // and buried "is Google hiring more or fewer engineers" (critic round 14).
-  const detail = other ? { total: signedOpenings(other), causes: `${causesOf(s, other)}.` } : null;
+  const detail = m.not_hiring_total ? { total: signedOpenings(m.not_hiring_total), causes: m.not_hiring } : null;
   // What the net change is made of (ADR-0227): said in the main text after the move, never
   // in the not-hiring disclosure.
-  const phrase = turnoverPhrase(s, d);
+  const phrase = turnoverPhrase(line, d);
   // The answer in a word or two, before any figure.
-  let lead;
-  if (!m || days < MIN_SPAN_DAYS){
+  let lead, move;
+  if (days < MIN_SPAN_DAYS){
     const hours = Math.max(1, Math.round(days * 24));
     const span = days < 1.5 ? `over the last ${hours} hour${hours === 1 ? '' : 's'}` : over;
     // An older company with one run in the window has no change to give; it is the window
@@ -2098,30 +2090,40 @@ function verdictOf(s, d){
     // The lead says it; the rest gives only the figure it has, never the lead again ("too new to
     // tell — …; too new to show a direction yet").
     lead = young ? 'too new to tell' : 'too short a window to tell';
-    move = young || !m ? '' : `${signedOpenings(Math.round(m.change))} ${span}`;
+    move = young || !days ? '' : `${signedOpenings(n)} ${span}`;
+  }
+  else if (m.percent == null){
+    // From a small start the change is stated, not judged — "a few more" read beside +50.
+    move = n ? `${signedOpenings(n)} ${over}${m.start < MOVER_FLOOR ? ', too few to call a trend' : ''}` : `unchanged ${over}`;
+    lead = n > 0 ? 'more openings' : n < 0 ? 'fewer openings' : 'unchanged';
   }
   else {
-    const n = Math.round(m.change), pct = m.head ? m.change / m.head * 100 : 0;
+    const pct = m.percent;
     // A weekly rate is the figure a reader can hold ("about +77 a week"); the window's own
     // length changes with the date range, a week does not. Not under New, whose figure is
     // already a week's count: a weekly rate of it, drawn from four days, was noise.
     // Nor over a window of about a week, where it restates the change: HCLTech read "−1,282
     // openings, about −1,281 a week".
-    const weekly = trendMetric === 'new' || Math.round(days) === 7 ? 0 : Math.round(m.change / days * 7);
+    const weekly = trendMetric === 'new' || Math.round(days) === 7 ? 0 : m.per_week || 0;
     const count = signedOpenings(n) + (weekly ? `, about ${weekly < 0 ? '−' : '+'}${Math.abs(weekly).toLocaleString()} a week` : '');
-    move = m.real < MOVER_FLOOR ? (n ? `${signedOpenings(n)} ${over}, too few to call a trend` : `unchanged ${over}`)
-      : Math.abs(shown(pct)) < FLAT_PCT ? `about flat ${over} (${pct < 0 ? '−' : '+'}${Math.abs(pct).toFixed(1)}%, ${count})`
+    move = Math.abs(shown(pct)) < FLAT_PCT ? `about flat ${over} (${pct < 0 ? '−' : '+'}${Math.abs(pct).toFixed(1)}%, ${count})`
       : `${pct > 0 ? 'up' : 'down'} ${Math.abs(pct).toFixed(1)}% ${over} (${count})`;
     const newer = trendMetric === 'new';
-    // From a small start the change is stated, not judged — "a few more" read beside +50.
-    lead = m.real < MOVER_FLOOR ? (n > 0 ? 'more openings' : n < 0 ? 'fewer openings' : 'unchanged')
-      : Math.abs(shown(pct)) < FLAT_PCT ? 'holding steady'
+    lead = Math.abs(shown(pct)) < FLAT_PCT ? 'holding steady'
       : pct > 0 ? (newer ? 'opening more new roles' : 'growing') : (newer ? 'opening fewer new roles' : 'shrinking');
   }
-  // The part of the chart's move that is not hiring, as the difference between the chart's own
-  // move and the hiring one, so the two figures add up to what the chart shows (Google's Count
-  // line climbed 1,540 → 1,802 under "about flat (+3 openings)" with only a footnote saying why).
-  return { text: `${lead} — ${now == null ? 'no' : Math.round(now).toLocaleString()} ${what}${move ? `; ${move}` : ''}${phrase ? ` — ${phrase}` : ''}.`, detail, days };
+  return { text: `${lead} — ${now.toLocaleString()} ${what}${move ? `; ${move}` : ''}${phrase ? ` — ${phrase}` : ''}.`, detail, days };
+}
+// One cause of a line's "Not hiring", as its disclosure lists it: the day of its Marked change,
+// what it was and its size ("Sep 24 duplicate postings removed: −1,858 openings"). Where one
+// sentence sums several picks, a change of one company's says whose: NVIDIA and Micron's sentence
+// listed two removals, neither named.
+function causeText(cause, d){
+  const marked = ((d.reading || {}).marked_changes || []).find(c => c.id === cause.change);
+  const summed = trendPicks.length > 1 && VIEWS[viewKind(d)].split !== 'company';
+  const pick = summed && marked && marked.company && trendPicks.find(p => p.key === marked.company);
+  return `${marked ? `${stampLabel(marked.ts, true)} ` : ''}${cause.label}${
+    pick && pick.label ? ` (${pick.label})` : ''}: ${signedOpenings(cause.size)}`;
 }
 function drawVerdict(d){
   const host = el('trends-verdict'); if (!host) return;
@@ -2151,7 +2153,8 @@ function drawVerdict(d){
   // The not-hiring part folded under its total, as a disclosure: the answer first, the counting
   // for whoever wants it.
   const item = l => `<li><b>${esc(l.name)}</b>: ${esc(l.text)}${l.detail
-    ? `<details class="verdict-why"><summary>Not hiring: ${esc(l.detail.total)}</summary>${esc(l.detail.causes)}</details>` : ''}</li>`;
+    ? `<details class="verdict-why"><summary>Not hiring: ${esc(l.detail.total)}</summary><ul>${
+      l.detail.causes.map(c => `<li>${esc(causeText(c, d))}</li>`).join('')}</ul></details>` : ''}</li>`;
   const { riser, faller } = tileMovers(d, chartedAndOther(d).charted);
   const unfolded = new Set(lines.slice(0, VERDICTS_SHOWN));
   lines.filter(l => l.key && [riser, faller].some(m => m && m.name === l.key)).forEach(l => unfolded.add(l));
@@ -2160,37 +2163,6 @@ function drawVerdict(d){
   const wasOpen = !!(host.querySelector && host.querySelector('details[open]'));
   host.innerHTML = `<ul>${shownLines.map(item).join('')}</ul>${more.length
     ? `<details class="verdict-more"${wasOpen ? ' open' : ''}><summary>${more.length} more compan${more.length === 1 ? 'y' : 'ies'}</summary><ul>${more.map(item).join('')}</ul></details>` : ''}${tail}`;
-}
-
-// Every point in the window where lines move for a reason that is not hiring, as the Space
-// decided it (`notes`, ADR-0230): a counting change and the run after it, a Board found later,
-// duplicate postings removed, a pick joining a sum. Each gets here the sentence the crosshair and
-// the "Marked changes" list show (`text`, `short`). Worked out once per answer (a WeakMap on the
-// data), not once per legend row.
-const notesCache = new WeakMap();
-function notesOf(d){
-  if (!notesCache.has(d)) notesCache.set(d, (d.notes || []).map(n => ({ ...n, ...noteText(n) })));
-  return notesCache.get(d);
-}
-function noteText(n){
-  const who = (trendPicks.find(p => p.key === n.company) || {}).label || 'a picked company';
-  const said = (n.changed || []).join(', ');
-  if (n.echo) return { short: 'a week after a tech filter change, its openings stop counting as new',
-    text: 'A week after a counting change (tech filter changed): the openings it let in stop counting as new here — not hiring' };
-  if (n.settle) return { text: 'Left out: the run after a counting change, which can still be settling' };
-  if (n.epoch) return { short: said, text: n.withhold
-    ? `Counting changed here: ${said} — not hiring, so the jump it makes is left out of the lines it moves`
-    : `Counting changed here: ${said}` };
-  if (n.join) return { short: `counting for ${who} starts`,
-    text: `Counting for ${who} starts here: its openings join these lines at once — not new hiring` };
-  if (n.evicted){
-    const count = -n.size;
-    return { short: `${count.toLocaleString()} duplicate posting${count === 1 ? '' : 's'} of ${who} removed`,
-      text: `${count.toLocaleString()} duplicate posting${count === 1 ? '' : 's'} of ${who} removed here — the same jobs listed twice, not closures` };
-  }
-  return { short: `${n.boards} more board${n.boards === 1 ? '' : 's'} of ${who} found`,
-    text: `${n.boards} more board${n.boards === 1 ? '' : 's'} of ${who} found here: `
-      + `${n.size.toLocaleString()} tech opening${n.size === 1 ? '' : 's'} across the company, already open, arrive at once — not new hiring` };
 }
 
 // Each pick with its date from `dates` (pick key -> ISO stamp): "Acme since Sep 13", "these
@@ -2274,7 +2246,7 @@ function countedSince(d, key){
 // it so the split can't quietly drift between the two renderers.
 function chartedAndOther(d){
   const charted = d.series.slice(0, CHART_MAX);
-  const other = buildOtherSeries(d.series.slice(CHART_MAX));
+  const other = otherSeries(d, Math.max(0, d.series.length - CHART_MAX));
   return { charted, other, shown: other ? [...charted, other] : charted };
 }
 
@@ -2556,25 +2528,15 @@ function levelValue(v, j, s){
 // zero or missing cannot be indexed at all and is drawn as a gap rather than as a spike.
 const INDEX_BASE_FLOOR = 5;   // openings; below this an index is arithmetic, not a reading
 
-// The one place that decides a series' index base, so the chart, the legend and the KPI tiles
-// cannot disagree about it. They did: the chart gated on the first measured level while
-// trendDelta gated on the mean of the first three, so [4, 20, 30, ...] was drawn as a gap and
-// labelled "not indexed" in the legend while the tile above it read "Biggest riser +233.3%".
-// Returns null when there is no usable base.
-// The floor is read off the real first count, the base off the adjusted one (netLevels), so
-// the index line is the same shape the percentage beside it is read from.
+// A series' index base, as the reading decides it (its `index_base`, ADR-0233): the first count
+// of its netted line, where that and its first count as counted reach INDEX_BASE_FLOOR; else
+// null, and the line is not indexed. The chart, the legend, the tiles and the Change lock all read
+// it here, so they cannot disagree: the chart once gated on the first level while the percentage
+// gated on a mean of three, drawing a gap under a tile reading "Biggest riser +233.3%".
 function indexBase(s){
-  const first = s.points.map((v, j) => levelValue(v, j, s)).find(v => v != null);
-  if (first == null || first < INDEX_BASE_FLOOR) return null;
-  return netLevels(s).find(v => v != null);
+  const line = lineReading(s);
+  return line ? line.index_base : null;
 }
-// A line with its marked steps taken out, as the Space netted it (`net`, ADR-0230): in the
-// displayed unit, or in openings. Adjusted backwards, the way a price history is adjusted: the
-// latest value stays the real one. A line with no `net` had nothing taken out.
-function netLevels(s){
-  return s.net ? s.net[trendUnit === 'share' ? 'share' : 'count'] : s.points.map((v, j) => levelValue(v, j, s));
-}
-function countNet(s){ return s.net ? s.net.count : s.points; }
 
 // Under Share and Count the plot draws the real levels, which a reader reads off the axis, and
 // breaks the line at each marked step (drawTrends) rather than drawing a jump as a climb.
@@ -2589,7 +2551,9 @@ function seriesValues(s){
   // under the floor is no base: two openings would turn one posting into +50%.
   const base = indexBase(s);
   if (base == null) return level.map(() => null);
-  return netLevels(s).map(v => (v == null ? null : v / base * 100));
+  // The line with its marked steps taken out, as the reading netted it, adjusted backwards the
+  // way a price history is: the latest value stays the real one.
+  return lineReading(s).netted.map(v => (v == null ? null : v / base * 100));
 }
 
 // Whether a series can be indexed in the current window — the legend uses this to say why a
@@ -2598,75 +2562,59 @@ function hasIndexBase(s){
   return trendUnit !== 'change' || indexBase(s) != null;
 }
 
-// A series' movement across the window, in the displayed unit, first run to last (headTail),
-// net of the marked steps. A thin run at either end is not averaged away; the steps that used
-// to swing a headline are taken out instead, and the run after each counting change with them.
-function trendDelta(s){
-  const ends = headTail(netLevels(s));
-  if (!ends) return null;
-  const { head, tail } = ends;
-  // A percentage off a head of one or two openings is arithmetic, not a reading: it produced
-  // a "Biggest riser +1300.0%" headline off a category that went from 1 opening to 14.
-  if (!head || (trendUnit !== 'share' && head < INDEX_BASE_FLOOR)) return null;
-  return (tail - head) / head * 100;
-}
-// The first and last measured values, or null under two. Endpoints, not averages of three:
-// the Change line ends at 100 × last / first, so a percentage off averages never quite matched
-// its own line (107.7 against +7.6%), and a sentence's "+121 hiring" and "+477 counting
-// changes" did not add up to the +583 the chart showed. The steps the averaging guarded
-// against are taken out now, and the run after each counting change with them.
-function headTail(values){
-  const seen = values.filter(v => v != null);
-  if (seen.length < 2) return null;
-  return { head: seen[0], tail: seen[seen.length - 1] };
-}
-// A line's movement in openings, net of the marked steps, read the way trendDelta reads its
-// percentage. `head` is the net head the percentage divides by; `real` is the openings it
-// really had at the window's start, which MOVER_FLOOR is held to — held to the adjusted head,
-// a company at 12 whose found Board doubled it cleared the floor it exists to stop.
-function trendMove(s){
-  const ends = headTail(countNet(s));
-  const real = headTail(s.points);
-  return ends && { head: ends.head, real: real ? real.head : ends.head, change: ends.tail - ends.head };
-}
 // Below this many openings at the window's start a line's move is stated in openings, never as
 // a percentage, and no tile names it: Stripe's "Biggest riser: sre-platform +18.2%" was 11
 // openings becoming 13, and Paytm's −65.7% was six openings. The Change floor (5) decides
 // whether a line can be drawn indexed at all; this one decides whether its percentage is news.
+// The reading withholds the percentage below it (trend_reading.MOVER_FLOOR).
 const MOVER_FLOOR = 20;
-// The legend's and the table's figure for a line: its percentage, or under the floor its
-// change in openings (`count`), which is what a reader can actually weigh.
+// The legend's and the table's figure for a line: its percentage (the share's own change under
+// Share), or where the reading withholds one its hiring in openings (`count`), which is what a
+// reader can actually weigh. Every figure is the reading's.
 function lineMove(s){
+  const line = lineReading(s);
+  const since = firstSeen(s, trendData);
+  if (since) return line && line.arrived_by === 'counting' ? { since, recount: true } : { since };
+  if (!line) return { small: true };
+  const m = line.move;
   // Under MIN_SPAN_DAYS of a young company a line has no direction to state, in the legend as
   // in the sentence: "too new to show a direction" sat beside "↑ +1.5%". A short window over an
   // older company states its change in openings, as the sentence does — Hot's "+18" had to be
   // checkable on the trend its row opens.
-  const m = trendMove(s);
-  const since = firstSeen(s, trendData);
-  if (since) return birthChange(s) ? { since, recount: true } : { since };
   // Under Share a change in openings is another unit beside shares, so those lines show none.
-  if (trendData && spanDays(s, trendData) < MIN_SPAN_DAYS){
-    if (isYoung(s, trendData)) return { tooNew: true };
-    return !m || trendUnit === 'share' ? { small: true, short: true } : { count: Math.round(m.change), short: true };
+  if (trendData && m.span_days < MIN_SPAN_DAYS){
+    if (isYoung(s.name, trendData)) return { tooNew: true };
+    return !m.span_days || trendUnit === 'share' ? { small: true, short: true } : { count: m.hiring, short: true };
   }
-  if (m && m.real < MOVER_FLOOR) return trendUnit === 'share' ? { small: true } : { count: Math.round(m.change) };
+  const pct = trendUnit === 'share' ? (m.share ? m.share.percent : null) : m.percent;
+  if (pct == null) return trendUnit === 'share' ? { small: true } : { count: m.hiring };
   // A change under half an opening has no direction: Micron's Engineering Management read
   // "↑ +1.7%" beside "+0 openings", a quarter-opening off a netted base of 15.
-  if (m && trendUnit !== 'share' && Math.round(m.change) === 0) return { count: 0 };
-  return { dl: trendDelta(s) };
+  if (trendUnit !== 'share' && m.hiring === 0) return { count: 0 };
+  return { dl: pct };
 }
 // A legend row's move. Under Count the plot is in openings, so every row's move is too, the
 // Other row's included: "Product Management ↑ +12 openings" sat among percentages. The tiles
 // still rank by percentage (tileMovers).
 function legendMove(s){
-  const moved = lineMove(s), net = trendUnit === 'count' && 'dl' in moved && trendMove(s);
-  return net ? { count: Math.round(net.change) } : moved;
+  const moved = lineMove(s), line = trendUnit === 'count' && 'dl' in moved && lineReading(s);
+  return line ? { count: line.move.hiring } : moved;
+}
+// A line's latest figure in the displayed unit, as the reading gives it: its openings, or under
+// Share its share of the denominator.
+function latestLevel(s){
+  const line = lineReading(s);
+  if (!line) return null;
+  if (trendUnit !== 'share') return line.move.latest;
+  return line.move.share ? line.move.share.latest : null;
 }
 // The stamp a picked company's category first held openings, when that is inside the window and
 // after every pick was counted: Micron's Architecture, new at the Sep 24 refit, read "→ +0
 // openings" over what looked like twelve flat days. Stock only — under New a line also starts
 // where a Board's first-week hold ends — and never a company's own line, which says when it
-// was counted.
+// was counted. Whether a counting change sorted it in is the reading's `arrived_by`: Stripe's
+// "Web & .NET Development 16 new since Sep 24" was the Sep 24 family-assignment change sorting
+// 16 existing jobs into it, which "new since" read as hiring.
 function firstSeen(s, d){
   if (!d || !trendPicks.length || trendMetric !== 'stock' || !s || s.name === '__total__' || s.name === '__other__'
     || VIEWS[viewKind(d)].split === 'company') return null;
@@ -2676,22 +2624,11 @@ function firstSeen(s, d){
   const youngest = counted[counted.length - 1];
   return youngest && d.stamps[first] > youngest ? d.stamps[first] : null;
 }
-// Whether a line first seen inside the window appeared at a counting change (or the run after
-// it): Stripe's "Web & .NET Development 16 new since Sep 24" was the Sep 24 family-assignment
-// change sorting 16 existing jobs into it, which "new since" read as hiring.
-// The counting change a category line was born at: one whose own run (or settling run) is the
-// line's first point — never one that reaches it by skipping the empty runs before it. Skipping,
-// Sep 17's filter change claimed Stripe's "Web & .NET" born at the Sep 24 refit, and a company
-// first counted Sep 22 (Zomato) got a +2 from it. A company's own first point is when counting
-// began, never a change's.
-function birthChange(s){
-  return !!s.born_by_change;
-}
-// Whether HeadStart has counted the line's company (a summed line: its youngest) for under
-// MIN_SPAN_DAYS, as against the window being short.
-function isYoung(s, d){
+// Whether HeadStart has counted the company of line `name` (a summed line: its youngest) for
+// under MIN_SPAN_DAYS, as against the window being short.
+function isYoung(name, d){
   const all = countedSince(d);
-  const began = countedSince(d, s.name) || all[all.length - 1];
+  const began = countedSince(d, name) || all[all.length - 1];
   return !began || (new Date(d.stamps[d.stamps.length - 1]) - new Date(began)) / 864e5 < MIN_SPAN_DAYS;
 }
 // A count has no dead band: one opening either way is a direction, where deltaClass reads
@@ -2712,15 +2649,6 @@ function moveText(mv){
 // "+3 openings", "−1 opening": every place a change is given in openings.
 function signedOpenings(n){
   return `${n < 0 ? '−' : '+'}${Math.abs(n).toLocaleString()} opening${Math.abs(n) === 1 ? '' : 's'}`;
-}
-
-// The notes taken out of line `s`, as the Space decided (its `steps`, ADR-0230): every line of a
-// view leaves out the same runs, and a company's own step only its own line under a Company
-// breakdown. Other carries its lines' steps, so a note is listed once however many it folds.
-function lineNotes(s){
-  if (!trendData || !s) return [];
-  const notes = notesOf(trendData);
-  return [...new Set((s.steps || []).map(st => notes[st.note]))];
 }
 
 // "Aug 12 09:00" from an ISO stamp — enough to anchor the axis without a timezone lecture.
@@ -2886,8 +2814,7 @@ function drawTrends(){
     const slot = seriesColorAssignment.get(s.name);
     const c = seriesColor(slot);
     const mv = legendMove(s);
-    const j = d.stamps.length - 1;
-    const latest = latestOf(s) == null ? null : levelValue(latestOf(s), j, s);
+    const latest = latestLevel(s);
     // Mark the categories that hold named roles, so the by-role drill is DISCOVERABLE from the
     // top level. Without it the split toggle only appears after drilling in, which means the
     // one place that advertises the feature is the one place you reach by already knowing it
@@ -2924,8 +2851,7 @@ function drawTrends(){
     // (findIndex returns -1), so `__other__` is inert by the SAME guard real unknown names use,
     // not a new special case. The hide button is a sibling, not a child of that row.
     const mv = legendMove(other);
-    const j = d.stamps.length - 1;
-    const latest = other.points[j] == null ? null : levelValue(other.points[j], j, other);
+    const latest = latestLevel(other);
     // No hide toggle and no swatch: since ADR-0119 Other is on neither the plot nor its scale,
     // so there is no line to hide and no colour to key. The row is a reconciliation figure —
     // it says where the rest of the index went — and it reads as one.
@@ -2965,7 +2891,8 @@ function drawTrends(){
   const refShown = trendUnit === 'change' && d.totals && !['total', 'company'].includes(viewKind(d));
   const refVals = [];
   if (refShown){
-    const net = d.totals_net || d.totals;
+    // The denominator netted by the reading, so a removal steps neither it nor the lines.
+    const net = d.reading && d.reading.reference && d.reading.reference.length ? d.reading.reference : d.totals;
     const rb = net.find(v => v != null);
     if (rb) net.forEach(t => refVals.push(t == null ? null : t / rb * 100));
   }
@@ -3063,81 +2990,40 @@ function drawTrends(){
     });
   }
 
-  // Methodology boundaries (ADR-0164): the taxonomy, tech filter, extraction or duplicate
-  // removal (ADR-0188) changed at this stamp, not the market. Drawn as a vertical note behind
-  // the series, same as the reference line and the gridlines — an epoch's `ts` is written by
-  // the same tick as a trends row, so it
-  // is normally an exact stamp match; one that predates this feature or fell outside the window
-  // simply finds no index and is skipped rather than guessed at.
-  // Under a pick only the changes that move its lines are listed (the Space's notes).
-  const notes = notesOf(d);
-  // Each change's size on each line the list sizes (the company, or inside a drill the drilled
-  // lines), rounded together per line (largest remainder) so a line's entries sum to its rounded
-  // total exactly — rounded one by one, Micron's summed to −2,380 under a sentence of −2,378. A
-  // change is marked, under a pick, only where that rounded size is not nothing, so every marker
-  // has its entry in the list and every entry its marker.
-  const sized = listLines(d);
-  const candidates = notes.filter(n => n.epoch || ((n.found || n.evicted) && n.withhold));
-  const sizeOf = new Map(sized.map(s => [s, apportion(candidates.map(n => changeSizeExact(n, s)))]));
-  const markerMoves = n => !trendPicks.length || sized.some(s => sizeOf.get(s)[candidates.indexOf(n)] !== 0);
-  // `list`: every marked change on its own, at its own time, for "Marked changes"; `marks`: the
-  // runs the markers stand at, for a finger's snap.
-  // `changesAt`: each marker's run -> every change it stands for, for the crosshair's notes.
-  const marked = { epoch: false, found: false, list: [], marks: [], changesAt: new Map() };
-  // One marker per day and kind over a window of days: four filter changes and their settling
-  // runs on one day drew a comb of lines a pixel apart, whose titles no pointer could tell apart.
-  // Its title says every change it stands for; the crosshair still names each run's own.
-  const byDay = d.stamps.length > 1 && (new Date(d.stamps[d.stamps.length - 1]) - new Date(d.stamps[0])) / 864e5 > 2;
-  // Drawn at the day's run whose drawn lines moved most: at the day's first, Google with Micron's
-  // Sep 24 marker sat on an 18:00 run that moved one opening, 8px left of the 21:19 run that
-  // moved 2,199.
-  // The marked jump itself, over every line and not just those drawn, so hiding a line in the
-  // legend does not move a marker; with no pick nothing is taken out, so the run's own change.
-  const stepSizes = trendPicks.length ? d.series.map(s => new Map((s.jumps || []).map(j => [j.i, j.size]))) : null;
-  const movedAt = i => i < 1 ? 0 : d.series.reduce((sum, s, k) => {
-    if (stepSizes) return sum + Math.abs(stepSizes[k].get(i) || 0);
-    const a = s.points[i], b = s.points[i - 1];
-    return sum + (a != null && b != null ? Math.abs(a - b) : 0);
-  }, 0);
-  const drawMarkers = (list, cls) => {
-    const groups = new Map();
-    list.forEach(n => {
-      const key = byDay ? stampLabel(d.stamps[n.i], true) : n.i;
-      if (!groups.has(key)) groups.set(key, { i: n.i, notes: [], texts: new Map() });
-      const g = groups.get(key);
-      if (movedAt(n.i) > movedAt(g.i)) g.i = n.i;
-      g.notes.push(n);
-      // Counted, not collapsed: three filter changes on one day listed as one entry beside a
-      // sentence naming three.
-      g.texts.set(`${stampLabel(d.stamps[n.i])} ${n.short || n.text}`, (g.texts.get(`${stampLabel(d.stamps[n.i])} ${n.short || n.text}`) || 0) + 1);
-    });
-    groups.forEach(g => {
-      const texts = [...g.texts].map(([t, k]) => k > 1 ? `${t} (×${k})` : t);
-      marked.marks.push(g.i);
-      // Listed one by one, not by day: four Sep 24 changes read as one "21:19" entry, its text
-      // repeated. Each is sized on the company (listLines), as apportioned above.
-      g.notes.forEach(n => {
-        const item = { i: n.i, label: n.short || n.text,
-          sizes: !trendPicks.length ? [] : sized.map(s => { const k = sizeOf.get(s)[candidates.indexOf(n)]; return k ? `${s.label} ${signedOpenings(k)}` : ''; }).filter(Boolean) };
-        marked.list.push(item);
-        marked.changesAt.set(g.i, [...(marked.changesAt.get(g.i) || []), item]);
-      });
-      const gx = x(g.i).toFixed(1);
-      svg += `<line class="${cls}" x1="${gx}" y1="${PAD_T}"
-               x2="${gx}" y2="${H - PAD_B}"><title>${esc(texts.join('\n'))}</title></line>`;
-    });
-  };
-  const epochMarks = notes.filter(n => n.epoch && markerMoves(n));
-  marked.epoch = epochMarks.length > 0;
-  drawMarkers(epochMarks, 'epoch-marker');
-  // Boards of a pick that HeadStart found after its line began (ADR-0185). Each lands its
-  // whole backlog at once — openings that were already open — so the step is marked where it
-  // lands rather than left to read as hiring, the reason the Hot tab leaves new Boards out.
-  // Found Boards and duplicate removals, each a step taken out of the lines it moves; below the
-  // floor neither is taken out, so neither is marked (a marker for one opening was furniture).
-  const foundMarks = notes.filter(n => (n.found || n.evicted) && n.withhold);
-  marked.found = foundMarks.length > 0;
-  drawMarkers(foundMarks, 'found-marker');
+  // Methodology boundaries (ADR-0164) and the other changes that are not hiring — a counting
+  // change, a Board found later, duplicate postings removed, a pick joining a sum — as the
+  // reading marks them (ADR-0233): one marker per day, drawn at the day's run where the lines
+  // moved most, naming every change that day. Four filter changes and their settling runs on one
+  // day drew a comb of lines a pixel apart, whose titles no pointer could tell apart. A marker
+  // whose run is outside the window finds no index and is skipped rather than guessed at.
+  const reading = d.reading || {};
+  const changeById = new Map((reading.marked_changes || []).map(c => [c.id, c]));
+  // `list`: every Marked change on its own, at its own time, for "Marked changes"; `marks`: the
+  // runs the markers stand at, for a finger's snap; `changesAt`: each marker's run -> every
+  // change it stands for, for the crosshair's notes.
+  const marked = { epoch: false, found: false, removal: false, marks: [], changesAt: new Map(),
+    list: (reading.marked_changes || []).map(c => markedItem(c, reading)) };
+  (reading.day_markers || []).forEach(day => {
+    const i = d.stamps.indexOf(day.at);
+    const changes = day.changes.map(id => changeById.get(id)).filter(Boolean);
+    if (i < 0 || !changes.length) return;
+    // A counting change is a dashed marker; openings that joined or left the count at once (a
+    // Board found later, duplicates removed, a pick joining) a solid one.
+    const counting = changes.some(c => COUNTING_KINDS.has(c.kind));
+    marked.epoch = marked.epoch || counting;
+    marked.found = marked.found || changes.some(c => !COUNTING_KINDS.has(c.kind));
+    marked.removal = marked.removal || changes.some(c => c.kind === 'duplicates_removed');
+    marked.marks.push(i);
+    const items = changes.map(c => markedItem(c, reading));
+    marked.changesAt.set(i, items);
+    // Its title says what the list says. Counted, not collapsed: three filter changes on one day
+    // listed as one entry beside a sentence naming three.
+    const texts = new Map();
+    items.forEach(item => { const t = markedText(item); texts.set(t, (texts.get(t) || 0) + 1); });
+    const gx = x(i).toFixed(1);
+    svg += `<line class="${counting ? 'epoch-marker' : 'found-marker'}" x1="${gx}" y1="${PAD_T}"
+             x2="${gx}" y2="${H - PAD_B}"><title>${esc([...texts].map(([t, k]) => k > 1 ? `${t} (×${k})` : t).join('\n'))}</title></line>`;
+  });
 
   // Drawn before the series: context to read them against, not one of them. Dashed because
   // dashing should mean exactly this — a reference, not a measurement — which is also why the
@@ -3158,8 +3044,8 @@ function drawTrends(){
     const c = seriesColor(slot);
     const values = seriesValues(s);
     // Under Share and Count the line is the real level, so it breaks at a step rather than
-    // drawing the jump as a climb.
-    const jumps = new Set((s.jumps || []).map(j => j.i));
+    // drawing the jump as a climb: at each run the reading says a step lands on.
+    const jumps = new Set((lineReading(s) || {}).steps_at || []);
     // break the path at gaps rather than bridging them — an unmeasured run is not a value
     let path = '', pen = 'M', lastPt = null;
     values.forEach((u, j) => {
@@ -3216,7 +3102,7 @@ function drawTrends(){
   el('trends-chart').style.aspectRatio = `${W} / ${H}`;
   el('trends-chart').innerHTML = svg;
   const dotEls = [...el('trends-chart').querySelectorAll('.ch-dot')];
-  lastGeom = { x, y, W, stamps: d.stamps, series: geomSeries, dotEls, notes, marks: marked.marks, changesAt: marked.changesAt };
+  lastGeom = { x, y, W, stamps: d.stamps, series: geomSeries, dotEls, marks: marked.marks, changesAt: marked.changesAt };
   positionHoverLayer(null);
   hoveredSeries = null;
 
@@ -3276,6 +3162,7 @@ function drawTrends(){
         : `No openings counted${where} in this window. ${viewNotes(d)}`.trim())
       : viewNotes(d));
   drawVerdict(d);
+  drawReconcileNote(d);
   drawTitle();
   drawRangeLimits(d);
   // An axis with no lines under it is the "broken chart" reading the message above exists to
@@ -3337,6 +3224,16 @@ function drawTrends(){
   if (tableView) renderTrendsTables();
 }
 
+// Said whenever the reading's own checks fail, in the Space (`reconciles`) or here
+// (checkReading, ADR-0233 decision 6): the figures are still drawn, and the reader is told they
+// do not fully add up. Never a throw: a reading the page cannot check says so too.
+function drawReconcileNote(d){
+  const host = el('trends-reconcile'); if (!host) return;
+  const reconciles = !d.stamps.length || !problemsOf(d.reading).length;
+  host.hidden = reconciles;
+  host.textContent = reconciles ? '' : 'These figures don’t fully reconcile.';
+}
+
 // The legend column's own content height, and only when it IS a column — stacked under the
 // plot below the 760px breakpoint it constrains nothing. Summed from the rows rather than read
 // off the <ul>, because the column is `align-self:stretch`: its box already reports whatever
@@ -3363,14 +3260,11 @@ function buildKpis(d, charted, measured){
   // "Biggest riser +233.3%" — the same tile class the floor was added to stop.
   // One Total line has no rival to rise or fall against; its own movement is in its legend row.
   const kind = viewKind(d);
-  // Summed from the series, NOT `totals - non_tech`: the ledger writes non_tech under the STOCK
-  // metric only, so that subtraction reports the stock figure whatever the Measure says —
-  // measured against this payload, 266,008 under a "New this week" label whose series sum to
-  // 31,143. The sum agrees with the subtraction exactly on stock, where both are defined.
-  const openings = d.series.reduce((sum, s) => {
-    const last = latestOf(s);
-    return sum + (last || 0);
-  }, 0);
+  // Every line's latest openings added together, as the reading gives it (`openings`), NOT
+  // `totals - non_tech`: the ledger writes non_tech under the STOCK metric only, so that
+  // subtraction reported the stock figure whatever the Measure said (266,008 under a "New this
+  // week" label whose lines held 31,143).
+  const openings = d.reading ? d.reading.openings : null;
   const tiles = [];
   // Each mover tile has to earn its own name: on "New this week" every category is falling, so
   // the top of the range is a -39.2% and calling it the biggest riser would be a lie the tile
@@ -3381,7 +3275,7 @@ function buildKpis(d, charted, measured){
   if (d.series.length) tiles.push({
     label: trendDrill ? (trendSplit === 'roles' ? 'Openings in tracked roles' : 'Openings in this category')
       : trendMetric === 'new' ? 'New tech openings' : 'Tech openings',
-    value: openings.toLocaleString(), note: measured });
+    value: openings == null ? '—' : openings.toLocaleString(), note: measured });
   const { tracked } = VIEWS[kind];
   if (tracked) tiles.push({ label: tracked, value: String(d.series.length) });
   if (!tiles.length) return false;
@@ -3391,15 +3285,15 @@ function buildKpis(d, charted, measured){
                    : `<span class="kpi-delta ${deltaClass(t.dl)}">${deltaText(t.dl)}</span>`}</div>`).join('');
   return true;
 }
-// The lines the tiles headline, or none. Movers are read off trendDelta, which is net of the
-// marked steps (the Space's `net`), so a found Board or a counting change is never what a tile
-// headlines; and never off a line under MOVER_FLOOR, whose percentage is a handful of openings.
+// The lines the tiles headline, or none. Movers are read off each line reading's percentage,
+// which is net of the marked steps, so a found Board or a counting change is never what a tile
+// headlines; and never off a line under MOVER_FLOOR, whose percentage the reading withholds.
 // Each extreme only when its sign agrees: on "New this week" every category is falling, and the
 // top of the range, a −39.2%, is no riser.
 function tileMovers(d, charted){
   if (viewKind(d) === 'total') return {};
-  const moves = charted.filter(s => hasIndexBase(s) && 'dl' in lineMove(s))
-    .map(s => ({ name: s.name, label: s.label, dl: trendDelta(s) }))
+  const moves = charted.filter(s => hasIndexBase(s))
+    .map(s => ({ name: s.name, label: s.label, dl: lineMove(s).dl }))
     .filter(m => m.dl != null && Math.abs(shown(m.dl)) >= FLAT_PCT).sort((a, b) => b.dl - a.dl);   // a flat line is no mover
   const top = moves[0], bottom = moves[moves.length - 1];
   return { riser: top && top.dl > 0 ? top : null, faller: bottom && bottom.dl < 0 ? bottom : null };
@@ -3438,7 +3332,7 @@ function positionHoverLayer(index, opts){
   rows.forEach((r, i) => { if (r.dy != null && r.dy < best){ best = r.dy; near = i; } });
   if (opts && opts.announce && el('trends-readout')){
     el('trends-readout').textContent = rows.length
-      ? `${stampLabel(stamps[index])}. ` + (lastGeom.notes || []).filter(n => n.i === index && n.text).map(n => n.text + '. ').join('')
+      ? `${stampLabel(stamps[index])}. ` + tooltipNotes(lastGeom, index).map(text => text + '. ').join('')
         + rows.map(r => `${r.label} ${rowText(r)}`).join(', ')
       : `${stampLabel(stamps[index])}. Nothing measured.`;
   }
@@ -3524,135 +3418,100 @@ function applyEmphasis(){
 // ---- the table view: the WCAG-clean twin of the chart (dataviz skill, components.md) --------
 
 // The row header both tables share — a line-key plus the label, so a reader who is here
-// BECAUSE the light-mode chart's contrast sent them can still tell which line is which.
+// BECAUSE the light-mode chart's contrast sent them can still tell which line is which. A line
+// the chart does not draw (Other, or one folded into it in the full grid) gets the neutral key.
 function tableRowHead(s){
   if (s.name === '__total__') return `<th scope="row"><b>${esc(s.label)}</b></th>`;
-  const isOther = s.name === '__other__';
-  const slot = isOther ? 'other' : seriesColorAssignment.get(s.name);
-  return `<th scope="row">${swatchHtml(isOther ? 'var(--ink-3)' : seriesColor(slot), slot)}${esc(s.label)}</th>`;
+  const drawn = seriesColorAssignment.has(s.name);
+  const slot = drawn ? seriesColorAssignment.get(s.name) : 'other';
+  return `<th scope="row">${swatchHtml(drawn ? seriesColor(slot) : 'var(--ink-3)', slot)}${esc(s.label)}</th>`;
 }
 
 // One row per series: what it is now, how far it moved, and the shape of the window around it.
 // This was 471 columns wide — one per measurement — which made the chart's a11y twin and the
 // documented relief for the sub-3:1 light-mode slots something nobody could read either. The
 // full grid is still here, one disclosure down (buildTrendsFull), so nothing is gated.
+// Every figure is the reading's (ADR-0233): under a pick the first row is the company's line, and
+// the rows below it, Other and the closing row among them, add up to it because the reading is
+// checked to (checkReading).
 function buildTrendsTable(){
   const d = trendData; if (!d) return '';
+  const reading = d.reading || {};
   const { shown: rows } = chartedAndOther(d);
-  const withTurnover = trendMetric === 'stock' && d.series.some(s => s.turnover);
-  // The change column leaves the marked steps out and the counts are as counted, so both are
-  // named and the steps get a column of their own: 764 → 1,018 beside "−0.2%" read as a bug.
-  const head = `<tr><th scope="col">${VIEWS[viewKind(d)].column}</th><th scope="col">Latest</th>`
+  const kind = viewKind(d);
+  const withTurnover = trendMetric === 'stock' && rows.some(s => { const line = lineReading(s); return line && line.move.turnover; });
+  // The hiring change, the rest of the move and the start are in openings whatever the unit, so
+  // under Count a row's start, hiring and "Not hiring" add up to its latest.
+  const head = `<tr><th scope="col">${VIEWS[kind].column}</th><th scope="col">Latest</th>`
     // Under Share the percentage is the share's own change, which can fall while openings rise.
     // "Share, change +6.2%" did not say whether that was points or a relative change.
     + `<th scope="col">${trendUnit === 'share' ? 'Share, relative change' : 'Hiring, %'}</th>`
-    + '<th scope="col">Hiring, openings</th><th scope="col">Counting changes, openings</th>'
-    // What the hiring move is made of (ADR-0227), on the runs that move counts (turnoverOf).
+    + '<th scope="col">Hiring, openings</th><th scope="col">Not hiring, openings</th>'
+    // What the hiring move is made of (ADR-0227), on the runs that move counts.
     + (withTurnover ? '<th scope="col">Opened</th><th scope="col">Closed</th>' : '')
-    + '<th scope="col">Start, as counted</th><th scope="col">Min</th><th scope="col">Max</th></tr>';
-  const turnoverCells = s => {
+    + '<th scope="col">Start, openings</th><th scope="col">Min</th><th scope="col">Max</th></tr>';
+  const dash = '<td class="flat">—</td>';
+  const turnoverCells = move => {
     if (!withTurnover) return '';
-    const t = turnoverOf(s);
-    return t ? `<td>${esc(t.opened.toLocaleString())}</td><td>${esc(t.closed.toLocaleString())}</td>`
-      : '<td class="flat">—</td><td class="flat">—</td>';
+    const t = move && move.turnover;
+    return t ? `<td>${esc(t.opened.toLocaleString())}</td><td>${esc(t.closed.toLocaleString())}</td>` : dash + dash;
   };
   const cell = v => `<td>${v == null ? '—' : esc(fmtLevel(v))}</td>`;
+  const openings = n => `<td class="${n > 0 ? 'up' : n < 0 ? 'down' : 'flat'}">${esc(signedOpenings(n))}</td>`;
   // Under a pick, the company's own line heads the table, so a reader summing the categories has
-  // the figure they are checking against — and the note says why the sum need not reach it.
-  const kind = viewKind(d);
-  const withTotal = trendPicks.length && (kind === 'families' || kind === 'bands') && rows.length > 1;
+  // the figure they are checking against.
+  const withTotal = trendPicks.length && (kind === 'families' || kind === 'bands') && rows.length > 1 && reading.total;
   // Under Share the first row is a share of every opening the company has, non-tech included:
   // "All tech roles 97%" read as an error without it.
-  const total = withTotal ? [{ ...seriesSum(d), label: (kind === 'bands' ? `All of ${drillLabel()}` : 'All tech roles')
-    + (trendUnit === 'share' ? ' (of all its openings)' : '') }] : [];
+  const total = withTotal ? [{ name: '__total__', points: reading.total.points,
+    label: (kind === 'bands' ? `All of ${drillLabel()}` : 'All tech roles') + (trendUnit === 'share' ? ' (of all its openings)' : '') }] : [];
   const body = [...total, ...rows].map(s => {
-    const vals = s.points.map((v, j) => levelValue(v, j, s)).filter(v => v != null);
-    const mv = lineMove(s);
-    // The latest run's figure, as the legend reads it: a category emptied by a refit read its
-    // last count before (Syms' systems engineering, 46 in the table beside 0 in the legend).
-    const now = latestOf(s);
+    const line = lineReading(s), move = line && line.move;
+    const vals = (s.points || []).map((v, j) => levelValue(v, j, s)).filter(v => v != null);
     return `<tr${s.name === '__other__' ? ' class="other"' : s.name === '__total__' ? ' class="total"' : ''}>` + tableRowHead(s)
-      + cell(now == null ? null : levelValue(now, s.points.length - 1, s))
-      + hiringCells(s, mv)
-      + `<td>${countingChange(s)}</td>`
-      + turnoverCells(s)
-      + cell(vals.length ? vals[0] : null)
+      + cell(latestLevel(s))
+      + hiringCells(move, lineMove(s))
+      + (move && move.not_hiring_total ? openings(move.not_hiring_total) : dash)
+      + turnoverCells(move)
+      + (move ? `<td>${esc(move.start.toLocaleString())}</td>` : dash)
       + cell(vals.length ? Math.min(...vals) : null)
       + cell(vals.length ? Math.max(...vals) : null) + '</tr>';
   }).join('');
+  // The closing row (ADR-0233 decision 4): what a counting change moved between categories that
+  // the categories took out and the company line counts, one figure, so the rows add up.
+  const closing = withTotal && reading.breakdown && reading.breakdown.closing;
+  const closingRow = closing ? `<tr class="closing"><th scope="row">Moved between categories by a counting change</th>`
+    // One figure, in the hiring column: the rows took it out as a counting change's and the
+    // company line counts it, and saying so twice read as two figures (the owner's call).
+    + dash + dash + openings(closing.hiring) + dash
+    + (withTurnover ? dash + dash : '') + dash + dash + dash + '</tr>' : '';
   const many = kind === 'bands' ? 'levels' : 'categories';
   const whose = trendPicks.length > 1 ? 'the companies’' : 'the company’s';
-  // The first row names what it is and nothing more: a caption apportioning what the rows left
-  // of it among possible causes was true and unreadable (critic round 15), and with every line
-  // leaving out the same runs by the same rule the rows add up to it but for rounding.
-  const note = withTotal ? `<caption>The first row is ${whose} hiring; the ${many} below add up to it.</caption>` : '';
-  return `${note}<thead>${head}</thead><tbody>${body}</tbody>`;
+  // The rows are said to add up only where the reading's checks say they do. Opened and closed
+  // are counted line by line (a category leaves out a Found Board's run the company counts), so
+  // they are never said to.
+  // With a closing row only the hiring is said to add up: that row gives one figure (its Not
+  // hiring cell is blank), so the other columns of the rows do not reach the first row's.
+  const addsUp = !problemsOf(reading).length
+    ? `; the ${many} below${closing ? ' and the closing row add up to its hiring' : ' add up to it'}` : '';
+  const note = withTotal ? `<caption>The first row is ${whose} hiring${addsUp}.${
+    withTurnover ? ' Opened and closed are counted line by line, so they need not add up.' : ''}</caption>` : '';
+  return `${note}<thead>${head}</thead><tbody>${body}${closingRow}</tbody>`;
 }
 
-// How many openings a line's marked steps moved it, as counted: the chart's move less the
-// hiring one, so under Count a row's start, its hiring change in openings and this add up to
-// its latest count. Always in openings, whatever the unit — the column says so.
-// How many of the picks' served jobs the classifier sets aside as non-tech at the latest run:
-// each company's whole total less its tech openings.
-function nonTechAt(d){
-  if (!d || !d.company_totals) return 0;
-  const whole = Object.values(d.company_totals).reduce((sum, t) => sum + (t[t.length - 1] || 0), 0);
-  const tech = d.series.reduce((sum, s) => sum + (latestOf(s) || 0), 0);
-  return Math.max(0, whole - tech);
-}
-
-// A line's figure at the latest run. The Space leaves a stock series' point empty where a run
-// counted none of it, so a line with earlier counts reads 0 there — one rule for the tile, the
-// sentence and the legend, which disagreed ("227" beside 144).
-function latestOf(s){
-  // A summed line built here (a Total) carries no `latest`; its last point is it.
-  const last = s.latest !== undefined ? s.latest : s.points[s.points.length - 1];
-  if (last != null) return last;
-  return trendMetric === 'stock' && s.points.some(v => v != null) ? 0 : null;
-}
 
 // One unit per column: "↑ +6.8%" and "+12 openings" in one column read as two scales for one
 // question. A line under the floor has no percentage worth printing ("—", with the reason); a
-// line too new or first seen in the window has neither.
-function hiringCells(s, mv){
-  const n = hiringOpenings(s, mv);
+// line too new has neither. Its hiring in openings is the reading's, a category first seen
+// inside the window included: all of it is hiring, or, sorted in by a counting change, none.
+function hiringCells(move, mv){
   const pct = mv.tooNew || mv.since ? `<td class="flat">${esc(moveText(mv))}</td>`
     : mv.dl != null ? `<td class="${deltaClass(mv.dl)}">${deltaText(mv.dl)}</td>`
     : `<td class="flat" title="Under ${MOVER_FLOOR} openings at the start, or too short a window, for a percentage to mean much">—</td>`;
+  const n = !move || mv.tooNew ? null : move.hiring;
   return pct + (n == null ? '<td class="flat">—</td>'
     : `<td class="${n > 0 ? 'up' : n < 0 ? 'down' : 'flat'}">${esc(signedOpenings(n))}</td>`);
 }
-// A line's hiring in openings, as its table row gives it: none for a line too new to read;
-// all of a category first seen inside the window, which is hiring; and from its first run for
-// one sorted in by a counting change, whose starting openings are that change's.
-function hiringOpenings(s, mv){
-  if (mv.tooNew) return null;
-  if (mv.since && !mv.recount) return Math.round(latestOf(s) || 0);
-  const m = trendMove(s);
-  return m ? Math.round(m.change) : null;
-}
-// What the non-hiring part of a line's move was, by cause and size, from the steps taken out of
-// it: "−2,041 duplicate postings removed, +230 from counting changes". The payload knew NVIDIA's
-// −1,811 was mostly one duplicate removal; the sentence named three possible causes and none.
-// A run holding two kinds of step is named by both, with one size.
-function causesOf(s, total){
-  // The duplicates and found-Board parts as the Space peeled them (`causes`), a kind at a time,
-  // so with ratio steps the parts still add up to the total exactly; the rest is counting changes.
-  const { duplicates = 0, found = 0 } = s.causes || {};
-  const counting = total - duplicates - found;
-  const parts = [
-    // Named as what it was: removals sized per Board, or under New a duplicate-removal change,
-    // which All openings named "3 duplicate removal changes" and New "duplicate postings removed".
-    duplicates && `${signedOpenings(duplicates)} from ${dupCause(s)}`,
-    found && `${signedOpenings(found)} from boards found later`,
-    // With the removals given their own figure, the change that made them is not named again.
-    counting && `${signedOpenings(counting)} from ${countingChanges(s, duplicates !== 0)}`,
-  ].filter(Boolean);
-  return parts.join(', ');
-}
-// Which counting changes a line carries, named and counted: "4 tech filter changes and a role
-// family assignment change". "Changes in how HeadStart counts" left a +290 for Google with
-// nothing to check it against. Keyed on the epoch's fields, never the Space's display text.
 // What a `new` line's latest figure counts, in the answer's own window (`new_window_days`): the
 // jobs opened in it once `new` is the Opened inflow (ADR-0230 decision 5), until then the jobs
 // first seen in it and still open.
@@ -3660,143 +3519,80 @@ function newCounts(d){
   const days = `${d.new_window_days || 7} days`;
   return d.new_inflow_from ? `opened in the last ${days}` : `first seen in the last ${days}`;
 }
-const CAUSE_NAMES = {
-  new_became_inflow: ['“new” becoming the jobs opened in the week', '“new” becoming the jobs opened in the week'],
-  centroid_version: ['a role taxonomy refit', 'role taxonomy refits'],
-  family_map_fingerprint: ['a role family map edit', 'role family map edits'],
-  tech_filter_version: ['a tech filter change', 'tech filter changes'],
-  derivations_version: ['an experience/salary extraction change', 'experience/salary extraction changes'],
-  dedup_version: ['a duplicate removal change', 'duplicate removal changes'],
-  family_classifier_version: ['a role family assignment change', 'role family assignment changes'],
-};
-// `dupNamed`: the line's removals already have their own figure.
-function countingChanges(s, dupNamed){
-  const perCompany = !!s && VIEWS[viewKind(trendData)].split === 'company';
-  const bands = viewKind(trendData) === 'bands';
-  // A duplicate-removal change is a cause only at a line holding a pick it can touch: beside
-  // Micron, Google's line named one.
-  const touches = n => n.touched.length > 0 && (!perCompany || n.touched.includes(s.name));
-  // Only a change that moved this line, at its run or the run after: every company read "4 tech
-  // filter changes" although Google's Sep 24 16:23 one moved it by nothing.
-  const moved = n => stepMoved(n, s);
-  const seen = new Map();  // field -> the changes (their stamps) that moved it
-  const echoes = new Set();  // the changes seen here only by their week-later echo under New
-  lineNotes(s).filter(n => n.fields.length && n.kind === 'counting' && moved(n)).forEach(n => n.fields.forEach(f => {
-    if (!CAUSE_NAMES[f] || (f === 'derivations_version' && !bands)
-      || (f === 'dedup_version' && (dupNamed || !touches(n)))) return;
-    if (n.echo){ echoes.add(n.source); return; }
-    seen.set(f, (seen.get(f) || new Set()).add(n.source));
-  }));
-  // One change and its echo are one change; an echo whose change fell before the window is
-  // named as an echo — "4 tech filter changes" over a 4-day window held three.
-  const tech = seen.get('tech_filter_version') || new Set();
-  const lone = [...echoes].filter(src => !tech.has(src)).length;
-  if (!seen.size && !lone) return 'changes in how HeadStart counts';
-  const said = [...seen].map(([f, changes]) =>
-    changes.size === 1 ? CAUSE_NAMES[f][0] : `${changes.size} ${CAUSE_NAMES[f][1]}`);
-  if (lone) said.push(lone === 1 ? 'the week-later echo of an earlier tech filter change'
-    : `the week-later echoes of ${lone} earlier tech filter changes`);
-  return said.length === 1 ? said[0] : `${said.slice(0, -1).join(', ')} and ${said[said.length - 1]}`;
-}
-// Whether a note's left-out runs moved line `s` — its own run or its settling run — the one test
-// the sentence, the markers and the list share, so every opening the sentence gives to counting
-// changes is named, and every named change has a size in the list (Stripe's sentence named one
-// filter change while its left-out runs moved it three times).
-function stepMoved(n, s){
-  const notes = notesOf(trendData);
-  return (s.steps || []).some(st => notes[st.note] === n && st.moved);
-}
-// How many openings one marked change moved line `s` by, as the Space sized it
-// (`steps[].size`, exact): its left-out runs at the scale the duplicate removals after them
-// leave, and for a line the change sorted into existence, the openings it arrived with. The list
-// and the crosshair give these, rounded together per line (apportion).
-function apportion(xs){
-  const floors = xs.map(Math.floor);
-  let left = Math.round(xs.reduce((a, b) => a + b, 0)) - floors.reduce((a, b) => a + b, 0);
-  const order = xs.map((x, k) => [x - floors[k], k]).sort((a, b) => b[0] - a[0]);
-  for (const [, k] of order){ if (left <= 0) break; floors[k] += 1; left -= 1; }
-  return floors;
-}
-function changeSizeExact(n, s){
-  const notes = notesOf(trendData);
-  return (s.steps || []).reduce((sum, st) => sum + (notes[st.note] === n ? st.size : 0), 0);
-}
-// What the crosshair says at a run: at a day's marker, every change it stands for, each at its own
-// time with the company's size, as "Marked changes" lists it — the Sep 24 marker named one of
-// Microsoft's four changes and gave only the last run's −29. Elsewhere, the run's own notes.
+// What the crosshair says at a marker's run: every change that day at its own time with each
+// company's size, as "Marked changes" lists it — the Sep 24 marker named one of Microsoft's four
+// changes and gave only the last run's −29.
 function tooltipNotes(geom, index){
-  const items = geom.changesAt && (geom.changesAt.get(index) || []).filter(it => !trendPicks.length || it.sizes.length);
-  if (items && items.length) return items.map(it => `${stampLabel(geom.stamps[it.i])} ${it.label}${it.sizes.length ? ` — ${it.sizes.join(', ')}` : ''}`);
-  return (geom.notes || []).filter(n => n.i === index && (n.short || n.text)).map(n => n.short || n.text);
+  const items = (geom.changesAt && geom.changesAt.get(index)) || [];
+  return items.filter(item => !trendPicks.length || item.sizes.length).map(markedText);
 }
-// The lines a change is sized on in the list: each company's own line, never a category's — a
-// category sized beside its company read "NVIDIA −63, Hardware −2,138", the one bigger than the
-// other, and every extra line was one more place to disagree (the user's call, 2026-09-25: company
-// totals only). Inside a drill, the drilled total: the page has no company line there.
-function listLines(d){
-  const { shown } = chartedAndOther(d);
-  const kind = viewKind(d);
-  if (!trendPicks.length) return shown;
-  if (kind === 'company' || kind === 'drillCompany' || kind === 'total') return shown.filter(s => s.name !== '__other__');
-  if (kind === 'roles') return shown;   // no company line there; the tracked roles themselves
-  const counted = trendPicks.filter(p => !(d.uncounted || []).includes(p.key));
-  if (!counted.length) return [];
-  const label = counted.length === 1 ? counted[0].label || 'This company' : `These ${counted.length} companies`;
-  return [{ ...seriesSum(d), label: kind === 'bands' ? `${label}, ${drillLabel()}` : label }];
-}
-// The duplicates part of a line's move, named by what made it.
-function dupCause(s){
-  const steps = lineNotes(s).filter(n => n.kind === 'duplicates' && stepMoved(n, s));
-  if (steps.some(n => n.evicted)) return 'duplicate postings removed';
-  const changes = new Set(steps.filter(n => n.dedup_only && !n.settle).map(n => n.source)).size;
-  return changes > 1 ? `${changes} duplicate removal changes` : 'a duplicate removal change';
-}
-function countingMove(s){
-  const raw = headTail(s.points), net = trendMove(s);
-  return raw && net ? Math.round(raw.tail - raw.head) - Math.round(net.change) : null;
-}
-function countingChange(s){
-  // A line sorted in by a counting change arrived with its openings by that change.
-  const arrived = firstSeen(s, trendData) && birthChange(s) ? s.points.find(v => v != null) || 0 : 0;
-  const n = (countingMove(s) || 0) + arrived;
-  return n ? esc(signedOpenings(n)) : '—';
+// A Marked change in one line of text: "Sep 24 21:19 duplicate postings removed — Micron −1,858
+// openings", as the marker's title and the crosshair give it.
+function markedText(item){
+  return `${stampLabel(item.ts)} ${item.label}${item.sizes.length ? ` — ${item.sizes.join(', ')}` : ''}`;
 }
 
 // Every way a line reading (the Space's `reading`, ADR-0233) breaks its invariants, as sentences;
 // empty when it reconciles. The same equalities as `headstart.trend_reading.check_reading`, in
 // the same words, run by the node tests over the same golden readings, so neither side can drift.
-// Not drawn from yet: the page reads the reading from ADR-0233 step 3.
+// The page runs it on every reading it draws (problemsOf) and says when one fails.
 //   1. every line: latest − start = hiring + Σ not hiring;
 //   2. a company line's Not hiring is its Marked changes, change by change;
 //   3. a breakdown's rows, with its closing row, add up to its first row in start, latest, hiring
 //      and Not hiring; the closing row starts and ends at 0 and is one figure, hiring N and one
 //      counting-change cause −N, N ≠ 0;
 //   5. share is the netted count over the netted denominator, and the percentage hiring over the
-//      netted start, neither netted a second time;
+//      netted start, given only off INDEX_BASE_FLOOR openings or more, neither netted a second
+//      time; the share's own change is its latest over its start, withheld with the percentage;
 //   6. with no pick nothing is taken out.
 // (4, one size in every window, is stated by the tests over narrower windows.) Plus: every count
-// is a whole number, no change is one the reading could not name, and every Marked change is
-// named by exactly one day marker.
+// is a whole number; a line's Not hiring total is its causes' sum; its weekly rate is its hiring
+// over the days it was counted, withheld under MIN_SPAN_DAYS; its turnover's net is opened less
+// closed; the Other row is the lines past CHART_MAX added together; no change is one the reading
+// could not name; and every Marked change is named by exactly one day marker.
 function checkReading(reading){
   const out = [];
   const changes = new Map((reading.marked_changes || []).map(c => [c.id, c]));
+  const labels = [...changes.values()].map(c => c.label).concat(
+    [reading.total, reading.other, ...(reading.lines || []), ...(reading.company_lines || [])]
+      .filter(Boolean).flatMap(r => r.move.not_hiring.map(c => c.label)));
+  [...new Set(labels.filter(label => FIELD_ID.test(label)))].sort()
+    .forEach(label => out.push(`label '${label}': it is a field id, not words`));
+  [reading.total, ...(reading.lines || [])].filter(r => r && r.index_base != null).forEach(r => {
+    const first = r.netted.find(v => v != null);
+    if (r.index_base < INDEX_BASE_FLOOR || r.index_base !== first)
+      out.push(`line ${r.name}: its index base is not a first netted count of ${INDEX_BASE_FLOOR} or more`);
+  });
+  const linesNow = (reading.lines || []).reduce((sum, r) => sum + r.move.latest, 0);
+  if ((reading.openings || 0) !== linesNow) out.push("openings: not every line's latest added together");
+  const served = reading.served_jobs;
+  if ((reading.non_tech_jobs ?? null) !== (served == null ? null : Math.max(0, served - linesNow)))
+    out.push('non-tech jobs: not the served jobs less the openings');
   const same = (a, b) => (a == null || b == null) ? a == null && b == null
     : Math.abs(a - b) <= Math.max(1e-9 * Math.max(Math.abs(a), Math.abs(b)), 1e-9);
   const lines = [['first row', reading.total],
     ...(reading.lines || []).map(r => [`line ${r.name}`, r]),
+    ['other row', reading.other],
     ...(reading.company_lines || []).map(r => [`company line ${r.name}`, r])];
   const moves = lines.filter(([, r]) => r).map(([where, r]) => [where, r.move]);
   const breakdown = reading.breakdown;
   const closing = breakdown ? breakdown.closing : null;
   if (closing) moves.push(['closing row', closing]);
   for (const [where, m] of moves){
-    const counts = [m.start, m.latest, m.hiring, ...m.not_hiring.map(c => c.size),
-      ...(m.turnover ? [m.turnover.opened, m.turnover.closed] : [])];
+    const counts = [m.start, m.latest, m.hiring, m.not_hiring_total, ...m.not_hiring.map(c => c.size),
+      ...(m.per_week != null ? [m.per_week] : []),
+      ...(m.turnover ? [m.turnover.opened, m.turnover.closed, m.turnover.net] : [])];
     if (counts.some(n => !Number.isInteger(n))){ out.push(`${where}: a count is not a whole number`); continue; }
     const named = m.not_hiring.reduce((sum, c) => sum + c.size, 0);
     const nettedStart = m.latest - m.hiring;
     if (m.latest - m.start !== m.hiring + named)
       out.push(`${where}: latest − start is ${m.latest - m.start}, hiring + not hiring is ${m.hiring + named}`);
+    if (m.not_hiring_total !== named)
+      out.push(`${where}: its Not hiring reads ${m.not_hiring_total}, its causes sum to ${named}`);
+    const weekly = m.span_days >= MIN_SPAN_DAYS ? Math.round(m.hiring / m.span_days * 7) : null;
+    if (m.per_week !== weekly) out.push(`${where}: its weekly rate is not its hiring over its days`);
+    if (m.turnover && m.turnover.net !== m.turnover.opened - m.turnover.closed)
+      out.push(`${where}: its turnover's net is not opened less closed`);
     m.not_hiring.filter(c => c.kind === 'unexplained')
       .forEach(c => out.push(`${where}: ${c.size} openings of not hiring have no named cause`));
     if (m.share){
@@ -3805,8 +3601,13 @@ function checkReading(reading){
         out.push(`${where}: its share at the start is not its netted count over the netted denominator`);
       if (!same(m.share.latest, latest ? m.latest / latest * 100 : null))
         out.push(`${where}: its latest share is not its count over the denominator`);
+      const start = m.share.start, now = m.share.latest;
+      const change = m.span_days >= MIN_SPAN_DAYS && m.start >= MOVER_FLOOR && start && now != null
+        ? (now - start) / start * 100 : null;
+      if (!same(m.share.percent, change))
+        out.push(`${where}: its share's change is not its latest share over its start`);
     }
-    if (m.percent != null && (nettedStart <= 0 || !same(m.percent, m.hiring / nettedStart * 100)))
+    if (m.percent != null && (nettedStart < INDEX_BASE_FLOOR || !same(m.percent, m.hiring / nettedStart * 100)))
       out.push(`${where}: its percentage is not hiring over the netted start`);
     if (!reading.picked && (m.not_hiring.length || m.hiring !== m.latest - m.start))
       out.push(`${where}: with no pick, something was taken out`);
@@ -3833,6 +3634,22 @@ function checkReading(reading){
       if (summed !== total) out.push(`breakdown: its rows' ${k} add up to ${summed}, its first row's is ${total}`);
     });
   }
+  const folded = (reading.lines || []).slice(CHART_MAX).map(r => r.move);
+  const other = reading.other;
+  if (!!folded.length !== !!other)
+    out.push(`other row: ${folded.length ? 'missing' : 'present'} with ${folded.length} lines past the first ${CHART_MAX}`);
+  else if (other){
+    const m = other.move;
+    ['start', 'latest', 'hiring', 'not_hiring_total'].forEach(k => {
+      if (m[k] !== folded.reduce((sum, f) => sum + f[k], 0)) out.push(`other row: its ${k} is not the folded lines' added together`);
+    });
+    const merged = new Map();
+    folded.forEach(f => f.not_hiring.forEach(c => merged.set(c.change, (merged.get(c.change) || 0) + c.size)));
+    const own = new Map(m.not_hiring.map(c => [c.change, c.size]));
+    const kept = [...merged].filter(([, n]) => n);
+    if (own.size !== kept.length || kept.some(([change, n]) => own.get(change) !== n))
+      out.push("other row: its causes are not the folded lines' added together");
+  }
   const named = new Map();
   (reading.day_markers || []).forEach(d => d.changes.forEach(c => named.set(c, (named.get(c) || 0) + 1)));
   changes.forEach((_, id) => {
@@ -3843,13 +3660,13 @@ function checkReading(reading){
 }
 
 // The whole time grid, one column per measurement — behind a disclosure because 471 columns
-// is a data dump, not a table view, and only some readers want it.
+// is a data dump, not a table view, and only some readers want it. Every line as counted, those
+// the chart folds into Other included: a grid of levels has no Other row to add up.
 function buildTrendsFull(){
   const d = trendData; if (!d) return '';
-  const { shown: rows } = chartedAndOther(d);
   const head = `<tr><th scope="col">${VIEWS[viewKind(d)].column}</th>` +
     d.stamps.map(ts => `<th scope="col">${esc(stampLabel(ts))}</th>`).join('') + '</tr>';
-  const body = rows.map(s => `<tr${s.name === '__other__' ? ' class="other"' : ''}>` + tableRowHead(s) +
+  const body = d.series.map(s => '<tr>' + tableRowHead(s) +
     s.points.map((v, j) => { const u = levelValue(v, j, s); return `<td>${u == null ? '—' : esc(fmtLevel(u))}</td>`; }).join('') +
     '</tr>').join('');
   return `<thead>${head}</thead><tbody>${body}</tbody>`;
@@ -3969,7 +3786,7 @@ function shareLock(){
 function changeLock(){
   if (!trendData) return '';
   const { charted } = chartedAndOther(trendData);
-  return !charted.length || charted.some(startsIndexable) ? ''
+  return !charted.length || charted.some(s => indexBase(s) != null) ? ''
     : `Change is off here — no line starts with ${INDEX_BASE_FLOOR} or more openings to index against, so counts are shown.`;
 }
 // A lock moves the reader off a unit only while it holds: the unit they chose is kept in
@@ -4232,18 +4049,19 @@ if (el('trends-co-roles')) el('trends-co-roles').addEventListener('click', () =>
   const name = trendDrill ? drillLabel() : null;
   const kind = trendData ? viewKind(trendData) : null;
   // The category's size, to keep inside the Space's cap: its levels add up to it; a watched-roles
-  // view counts only a few titles, so the picks' whole totals bound it from above instead.
-  const latest = list => list.reduce((sum, v) => sum + (v || 0), 0);
-  const size = !trendData ? Infinity : kind === 'roles'
-    ? latest(Object.values(trendData.company_totals || {}).map(t => t[t.length - 1]))
-    : latest(trendData.series.map(s => s.latest));
+  // view counts only a few titles, so the picks' whole totals bound it from above instead. Both
+  // are the reading's (`openings`, `served_jobs`).
+  const reading = trendData && trendData.reading;
+  const size = !reading ? Infinity : kind === 'roles' ? reading.served_jobs ?? Infinity : reading.openings;
   const exact = trendDrill && CFG.family_handoff && size <= (CFG.max_family_ids || 0);
   searchCompany(trendPicks.flatMap(p => p.boardKeys || []),
     trendPicks.length === 1 ? trendPicks[0].label : trendPicks.map(p => p.label).join(', '),
     // "Software Engineering (general)" asks for "(general)" too; the qualifier is not a role.
     trendDrill && !exact ? name.replace(/\s*\(.*\)\s*$/, '') : '',
     exact ? { family: trendDrill, label: name } : null,
-    trendDrill ? 0 : nonTechAt(trendData),
+    // How many of the picks' served jobs the tech filter sets aside, which Search says it leaves
+    // out: the reading's `non_tech_jobs`.
+    trendDrill || !reading ? 0 : reading.non_tech_jobs || 0,
     // Only where Search lists exactly what the trend counts: a whole company's tech openings, or
     // a category handed over by its ids.
     // Not under New, a week's count Search does not list, nor under a source filter Search does
@@ -4361,8 +4179,8 @@ if (el('trends-legend')) {
     if (jobs){
       // With the trend's own count and time, as the company and category hand-offs carry: Google's
       // LLM/GenAI read 84 here and 82 in Search with nothing to say why.
-      const line = trendData && trendData.series.find(s => s.name === jobs.dataset.role);
-      const n = line && latestOf(line);
+      const line = trendData && lineReading({ name: jobs.dataset.role });
+      const n = line && line.move.latest;
       searchCompany(trendPicks.flatMap(p => p.boardKeys || []),
         trendPicks.length === 1 ? trendPicks[0].label : trendPicks.map(p => p.label).join(', '),
         '', { role: jobs.dataset.role.replace(/^watch:/, ''), label: jobs.dataset.roleLabel }, 0,

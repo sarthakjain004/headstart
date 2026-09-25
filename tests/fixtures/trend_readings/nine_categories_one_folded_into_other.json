@@ -194,16 +194,40 @@
       "size": 90
      }
     ],
+    "not_hiring_total": 90,
     "percent": 0.0,
     "percent_withheld": null,
+    "span_days": 4.0,
+    "per_week": 0,
     "turnover": null,
     "share": {
      "start": 9.54,
      "latest": 9.54,
      "denominator_start": 10000,
-     "denominator_latest": 10000
+     "denominator_latest": 10000,
+     "percent": 0.0
     }
-   }
+   },
+   "netted": [
+    954,
+    954,
+    954,
+    954,
+    954
+   ],
+   "steps_at": [
+    2,
+    3
+   ],
+   "index_base": 954,
+   "arrived_by": null,
+   "points": [
+    864,
+    864,
+    954,
+    954,
+    954
+   ]
   },
   "lines": [
    {
@@ -222,16 +246,33 @@
        "size": 10
       }
      ],
+     "not_hiring_total": 10,
      "percent": 0.0,
      "percent_withheld": null,
+     "span_days": 4.0,
+     "per_week": 0,
      "turnover": null,
      "share": {
       "start": 1.0999999999999999,
       "latest": 1.0999999999999999,
       "denominator_start": 10000,
-      "denominator_latest": 10000
+      "denominator_latest": 10000,
+      "percent": 0.0
      }
-    }
+    },
+    "netted": [
+     110,
+     110,
+     110,
+     110,
+     110
+    ],
+    "steps_at": [
+     2,
+     3
+    ],
+    "index_base": 110,
+    "arrived_by": null
    },
    {
     "name": "b",
@@ -249,16 +290,33 @@
        "size": 10
       }
      ],
+     "not_hiring_total": 10,
      "percent": 0.0,
      "percent_withheld": null,
+     "span_days": 4.0,
+     "per_week": 0,
      "turnover": null,
      "share": {
       "start": 1.09,
       "latest": 1.09,
       "denominator_start": 10000,
-      "denominator_latest": 10000
+      "denominator_latest": 10000,
+      "percent": 0.0
      }
-    }
+    },
+    "netted": [
+     109,
+     109,
+     109,
+     109,
+     109
+    ],
+    "steps_at": [
+     2,
+     3
+    ],
+    "index_base": 109,
+    "arrived_by": null
    },
    {
     "name": "c",
@@ -276,16 +334,33 @@
        "size": 10
       }
      ],
+     "not_hiring_total": 10,
      "percent": 0.0,
      "percent_withheld": null,
+     "span_days": 4.0,
+     "per_week": 0,
      "turnover": null,
      "share": {
       "start": 1.08,
       "latest": 1.08,
       "denominator_start": 10000,
-      "denominator_latest": 10000
+      "denominator_latest": 10000,
+      "percent": 0.0
      }
-    }
+    },
+    "netted": [
+     108,
+     108,
+     108,
+     108,
+     108
+    ],
+    "steps_at": [
+     2,
+     3
+    ],
+    "index_base": 108,
+    "arrived_by": null
    },
    {
     "name": "d",
@@ -303,16 +378,33 @@
        "size": 10
       }
      ],
+     "not_hiring_total": 10,
      "percent": 0.0,
      "percent_withheld": null,
+     "span_days": 4.0,
+     "per_week": 0,
      "turnover": null,
      "share": {
       "start": 1.0699999999999998,
       "latest": 1.0699999999999998,
       "denominator_start": 10000,
-      "denominator_latest": 10000
+      "denominator_latest": 10000,
+      "percent": 0.0
      }
-    }
+    },
+    "netted": [
+     107,
+     107,
+     107,
+     107,
+     107
+    ],
+    "steps_at": [
+     2,
+     3
+    ],
+    "index_base": 107,
+    "arrived_by": null
    },
    {
     "name": "e",
@@ -330,16 +422,33 @@
        "size": 10
       }
      ],
+     "not_hiring_total": 10,
      "percent": 0.0,
      "percent_withheld": null,
+     "span_days": 4.0,
+     "per_week": 0,
      "turnover": null,
      "share": {
       "start": 1.06,
       "latest": 1.06,
       "denominator_start": 10000,
-      "denominator_latest": 10000
+      "denominator_latest": 10000,
+      "percent": 0.0
      }
-    }
+    },
+    "netted": [
+     106,
+     106,
+     106,
+     106,
+     106
+    ],
+    "steps_at": [
+     2,
+     3
+    ],
+    "index_base": 106,
+    "arrived_by": null
    },
    {
     "name": "f",
@@ -357,16 +466,33 @@
        "size": 10
       }
      ],
+     "not_hiring_total": 10,
      "percent": 0.0,
      "percent_withheld": null,
+     "span_days": 4.0,
+     "per_week": 0,
      "turnover": null,
      "share": {
       "start": 1.05,
       "latest": 1.05,
       "denominator_start": 10000,
-      "denominator_latest": 10000
+      "denominator_latest": 10000,
+      "percent": 0.0
      }
-    }
+    },
+    "netted": [
+     105,
+     105,
+     105,
+     105,
+     105
+    ],
+    "steps_at": [
+     2,
+     3
+    ],
+    "index_base": 105,
+    "arrived_by": null
    },
    {
     "name": "g",
@@ -384,16 +510,33 @@
        "size": 10
       }
      ],
+     "not_hiring_total": 10,
      "percent": 0.0,
      "percent_withheld": null,
+     "span_days": 4.0,
+     "per_week": 0,
      "turnover": null,
      "share": {
       "start": 1.04,
       "latest": 1.04,
       "denominator_start": 10000,
-      "denominator_latest": 10000
+      "denominator_latest": 10000,
+      "percent": 0.0
      }
-    }
+    },
+    "netted": [
+     104,
+     104,
+     104,
+     104,
+     104
+    ],
+    "steps_at": [
+     2,
+     3
+    ],
+    "index_base": 104,
+    "arrived_by": null
    },
    {
     "name": "h",
@@ -411,16 +554,33 @@
        "size": 10
       }
      ],
+     "not_hiring_total": 10,
      "percent": 0.0,
      "percent_withheld": null,
+     "span_days": 4.0,
+     "per_week": 0,
      "turnover": null,
      "share": {
       "start": 1.03,
       "latest": 1.03,
       "denominator_start": 10000,
-      "denominator_latest": 10000
+      "denominator_latest": 10000,
+      "percent": 0.0
      }
-    }
+    },
+    "netted": [
+     103,
+     103,
+     103,
+     103,
+     103
+    ],
+    "steps_at": [
+     2,
+     3
+    ],
+    "index_base": 103,
+    "arrived_by": null
    },
    {
     "name": "i",
@@ -438,18 +598,70 @@
        "size": 10
       }
      ],
+     "not_hiring_total": 10,
      "percent": 0.0,
      "percent_withheld": null,
+     "span_days": 4.0,
+     "per_week": 0,
      "turnover": null,
      "share": {
       "start": 1.02,
       "latest": 1.02,
       "denominator_start": 10000,
-      "denominator_latest": 10000
+      "denominator_latest": 10000,
+      "percent": 0.0
      }
-    }
+    },
+    "netted": [
+     102,
+     102,
+     102,
+     102,
+     102
+    ],
+    "steps_at": [
+     2,
+     3
+    ],
+    "index_base": 102,
+    "arrived_by": null
    }
   ],
+  "other": {
+   "name": "__other__",
+   "label": "",
+   "estimated": false,
+   "move": {
+    "start": 92,
+    "latest": 102,
+    "hiring": 0,
+    "not_hiring": [
+     {
+      "change": "counting@2026-09-15T00:00:00+00:00",
+      "kind": "counting",
+      "label": "tech filter changed",
+      "size": 10
+     }
+    ],
+    "not_hiring_total": 10,
+    "percent": 0.0,
+    "percent_withheld": null,
+    "span_days": 4.0,
+    "per_week": 0,
+    "turnover": null,
+    "share": {
+     "start": 1.02,
+     "latest": 1.02,
+     "denominator_start": 10000,
+     "denominator_latest": 10000,
+     "percent": 0.0
+    }
+   },
+   "netted": [],
+   "steps_at": [],
+   "index_base": null,
+   "arrived_by": null
+  },
   "company_lines": [
    {
     "name": "greenhouse:acme",
@@ -467,16 +679,24 @@
        "size": 90
       }
      ],
+     "not_hiring_total": 90,
      "percent": 0.0,
      "percent_withheld": null,
+     "span_days": 4.0,
+     "per_week": 0,
      "turnover": null,
      "share": {
       "start": 9.54,
       "latest": 9.54,
       "denominator_start": 10000,
-      "denominator_latest": 10000
+      "denominator_latest": 10000,
+      "percent": 0.0
      }
-    }
+    },
+    "netted": [],
+    "steps_at": [],
+    "index_base": null,
+    "arrived_by": null
    }
   ],
   "breakdown": {
@@ -510,6 +730,16 @@
     ]
    }
   ],
+  "reference": [
+   10000,
+   10000,
+   10000,
+   10000,
+   10000
+  ],
+  "openings": 954,
+  "served_jobs": null,
+  "non_tech_jobs": null,
   "reconciles": true,
   "violations": []
  }

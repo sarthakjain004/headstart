@@ -105,7 +105,7 @@
       {
        "change": "counting@2026-09-24T18:00:00+00:00",
        "kind": "counting",
-       "label": "duplicate removal changed",
+       "label": "role family assignment changed",
        "size": 1
       },
       {
@@ -115,18 +115,37 @@
        "size": 199
       }
      ],
+     "not_hiring_total": 200,
      "percent": 1.6666666666666667,
      "percent_withheld": null,
+     "span_days": 7.0,
+     "per_week": 5,
      "turnover": null,
      "share": {
       "start": 3.0,
       "latest": 3.05,
       "denominator_start": 10000,
-      "denominator_latest": 10000
+      "denominator_latest": 10000,
+      "percent": 1.6666666666666607
      }
-    }
+    },
+    "netted": [
+     300,
+     300,
+     300,
+     300,
+     305
+    ],
+    "steps_at": [
+     1,
+     2,
+     3
+    ],
+    "index_base": 300,
+    "arrived_by": null
    }
   ],
+  "other": null,
   "company_lines": [
    {
     "name": "greenhouse:acme",
@@ -140,7 +159,7 @@
       {
        "change": "counting@2026-09-24T18:00:00+00:00",
        "kind": "counting",
-       "label": "duplicate removal changed",
+       "label": "role family assignment changed",
        "size": 1
       },
       {
@@ -150,16 +169,24 @@
        "size": 199
       }
      ],
+     "not_hiring_total": 200,
      "percent": 1.6666666666666667,
      "percent_withheld": null,
+     "span_days": 7.0,
+     "per_week": 5,
      "turnover": null,
      "share": {
       "start": 3.0,
       "latest": 3.05,
       "denominator_start": 10000,
-      "denominator_latest": 10000
+      "denominator_latest": 10000,
+      "percent": 1.6666666666666607
      }
-    }
+    },
+    "netted": [],
+    "steps_at": [],
+    "index_base": null,
+    "arrived_by": null
    }
   ],
   "breakdown": null,
@@ -168,7 +195,7 @@
     "id": "counting@2026-09-24T18:00:00+00:00",
     "kind": "counting",
     "ts": "2026-09-24T18:00:00+00:00",
-    "label": "duplicate removal changed",
+    "label": "role family assignment changed",
     "fields": [
      "family_classifier_version"
     ],
@@ -209,6 +236,16 @@
     ]
    }
   ],
+  "reference": [
+   10000,
+   10000,
+   10000,
+   10000,
+   10000
+  ],
+  "openings": 305,
+  "served_jobs": null,
+  "non_tech_jobs": null,
   "reconciles": true,
   "violations": []
  }

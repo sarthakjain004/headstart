@@ -123,16 +123,33 @@
        "size": 10
       }
      ],
+     "not_hiring_total": 10,
      "percent": 0.0,
      "percent_withheld": null,
+     "span_days": 4.0,
+     "per_week": 0,
      "turnover": null,
      "share": {
       "start": 1.0999999999999999,
       "latest": 1.0999999999999999,
       "denominator_start": 10000,
-      "denominator_latest": 10000
+      "denominator_latest": 10000,
+      "percent": 0.0
      }
-    }
+    },
+    "netted": [
+     110,
+     110,
+     110,
+     110,
+     110
+    ],
+    "steps_at": [
+     2,
+     3
+    ],
+    "index_base": 110,
+    "arrived_by": null
    },
    {
     "name": "lever:zomato",
@@ -143,18 +160,33 @@
      "latest": 2,
      "hiring": 0,
      "not_hiring": [],
+     "not_hiring_total": 0,
      "percent": null,
      "percent_withheld": "a window under 3 days",
+     "span_days": 1.0,
+     "per_week": null,
      "turnover": null,
      "share": {
       "start": 0.02,
       "latest": 0.02,
       "denominator_start": 10000,
-      "denominator_latest": 10000
+      "denominator_latest": 10000,
+      "percent": null
      }
-    }
+    },
+    "netted": [
+     null,
+     null,
+     null,
+     2,
+     2
+    ],
+    "steps_at": [],
+    "index_base": null,
+    "arrived_by": null
    }
   ],
+  "other": null,
   "company_lines": [
    {
     "name": "greenhouse:acme",
@@ -172,16 +204,24 @@
        "size": 10
       }
      ],
+     "not_hiring_total": 10,
      "percent": 0.0,
      "percent_withheld": null,
+     "span_days": 4.0,
+     "per_week": 0,
      "turnover": null,
      "share": {
       "start": 1.0999999999999999,
       "latest": 1.0999999999999999,
       "denominator_start": 10000,
-      "denominator_latest": 10000
+      "denominator_latest": 10000,
+      "percent": 0.0
      }
-    }
+    },
+    "netted": [],
+    "steps_at": [],
+    "index_base": null,
+    "arrived_by": null
    },
    {
     "name": "lever:zomato",
@@ -192,16 +232,24 @@
      "latest": 2,
      "hiring": 0,
      "not_hiring": [],
+     "not_hiring_total": 0,
      "percent": null,
      "percent_withheld": "a window under 3 days",
+     "span_days": 1.0,
+     "per_week": null,
      "turnover": null,
      "share": {
       "start": 0.02,
       "latest": 0.02,
       "denominator_start": 10000,
-      "denominator_latest": 10000
+      "denominator_latest": 10000,
+      "percent": null
      }
-    }
+    },
+    "netted": [],
+    "steps_at": [],
+    "index_base": null,
+    "arrived_by": null
    }
   ],
   "breakdown": null,
@@ -233,6 +281,16 @@
     ]
    }
   ],
+  "reference": [
+   10000,
+   10000,
+   10000,
+   10000,
+   10000
+  ],
+  "openings": 112,
+  "served_jobs": null,
+  "non_tech_jobs": null,
   "reconciles": true,
   "violations": []
  }

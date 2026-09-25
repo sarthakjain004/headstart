@@ -1,0 +1,149 @@
+{
+ "description": "Acme from 100 to 120 openings: growing, up 20%.",
+ "answer_input": {
+  "metric": "stock",
+  "coverage": "all",
+  "new_window_days": 7,
+  "family": null,
+  "epochs": [],
+  "discovered": [],
+  "stamps": [
+   "2026-09-13T00:00:00+00:00",
+   "2026-09-14T00:00:00+00:00",
+   "2026-09-15T00:00:00+00:00",
+   "2026-09-16T00:00:00+00:00"
+  ],
+  "watch_parents": [],
+  "split_by": "company",
+  "totals": [
+   10000,
+   10000,
+   10000,
+   10000
+  ],
+  "non_tech": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "series": [
+   {
+    "name": "greenhouse:acme",
+    "label": "Acme",
+    "points": [
+     100,
+     100,
+     100,
+     120
+    ],
+    "latest": 120
+   }
+  ],
+  "companies": [
+   {
+    "key": "greenhouse:acme",
+    "label": "Acme",
+    "board_keys": [
+     "greenhouse:acme"
+    ],
+    "atses": [
+     "greenhouse"
+    ]
+   }
+  ],
+  "company_totals": {},
+  "uncounted": [],
+  "counted_since": {
+   "greenhouse:acme": "2026-09-13T00:00:00+00:00"
+  }
+ },
+ "reading": {
+  "window": {
+   "from": "2026-09-13T00:00:00+00:00",
+   "to": "2026-09-16T00:00:00+00:00"
+  },
+  "picked": true,
+  "total": null,
+  "lines": [
+   {
+    "name": "greenhouse:acme",
+    "label": "Acme",
+    "estimated": false,
+    "move": {
+     "start": 100,
+     "latest": 120,
+     "hiring": 20,
+     "not_hiring": [],
+     "not_hiring_total": 0,
+     "percent": 20.0,
+     "percent_withheld": null,
+     "span_days": 3.0,
+     "per_week": 47,
+     "turnover": null,
+     "share": {
+      "start": 1.0,
+      "latest": 1.2,
+      "denominator_start": 10000,
+      "denominator_latest": 10000,
+      "percent": 19.999999999999996
+     }
+    },
+    "netted": [
+     100,
+     100,
+     100,
+     120
+    ],
+    "steps_at": [],
+    "index_base": 100,
+    "arrived_by": null
+   }
+  ],
+  "other": null,
+  "company_lines": [
+   {
+    "name": "greenhouse:acme",
+    "label": "Acme",
+    "estimated": false,
+    "move": {
+     "start": 100,
+     "latest": 120,
+     "hiring": 20,
+     "not_hiring": [],
+     "not_hiring_total": 0,
+     "percent": 20.0,
+     "percent_withheld": null,
+     "span_days": 3.0,
+     "per_week": 47,
+     "turnover": null,
+     "share": {
+      "start": 1.0,
+      "latest": 1.2,
+      "denominator_start": 10000,
+      "denominator_latest": 10000,
+      "percent": 19.999999999999996
+     }
+    },
+    "netted": [],
+    "steps_at": [],
+    "index_base": null,
+    "arrived_by": null
+   }
+  ],
+  "breakdown": null,
+  "marked_changes": [],
+  "day_markers": [],
+  "reference": [
+   10000,
+   10000,
+   10000,
+   10000
+  ],
+  "openings": 120,
+  "served_jobs": null,
+  "non_tech_jobs": null,
+  "reconciles": true,
+  "violations": []
+ }
+}
