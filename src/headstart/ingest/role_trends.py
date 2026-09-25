@@ -42,6 +42,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import json
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -148,19 +149,27 @@ def _columns(rows) -> tuple[list, ...]:
     )
 
 
-def count_groups(
+def count_board_groups(
     rows,
     families: list[str | None],
     watchlist: list[roles.WatchRole],
     new_after: str,
-) -> tuple[dict[tuple[str, str, str, str], int], int, dict[str, str]]:
-    """Count served rows into ``(metric, family, band, ats)`` groups; non-tech counted apart.
+    boards: list[str],
+) -> tuple[
+    dict[tuple[str, str, str, str], int],
+    int,
+    dict[str, Placement],
+    dict[tuple[str, str, str, str, str], int],
+]:
+    """Count served rows into ``(metric, family, band, ats)`` groups, and each Board's
+    contribution to them, in one pass; non-tech counted apart.
 
     ``families`` is each row's family, aligned with ``rows``; ``None`` marks a non-tech row.
 
-    Returns ``(counts, non_tech, assigned)`` — the last being ``id -> family`` for every row that
-    landed in a real family, which :mod:`headstart.ingest.role_assignments` diffs against the
-    previous tick so a job that *changed* family is not miscounted as one that closed.
+    Returns ``(counts, non_tech, placed, board_counts)``. ``placed`` is where each tech row was
+    counted, its family with the rest of its Board-delta key (ADR-0227):
+    :mod:`headstart.ingest.role_assignments` diffs it against the previous tick, so a job that
+    *changed* family is not miscounted as one that closed.
 
     Two metrics per group (ADR-0051): ``stock`` — every live row — and ``new`` — the subset
     whose ``first_seen`` is at or after ``new_after``. Stock answers "how big is this field";
@@ -175,59 +184,12 @@ def count_groups(
     Watch roles (ADR-0051) are counted by title into the same structure under
     ``watch:{name}``, whatever family the row landed in — the pattern is the definition — but
     only on tech rows (ADR-0215): the chart excludes non-tech, and a watch line counting a
-    grocery "Front End" clerk contradicted it.
+    grocery "Front End" clerk contradicted it. They are never a row's placement: a row "moving"
+    between them is a title edit, not a reassignment.
 
     Non-tech rows are the tech filter's known creep (ADR-0017 is recall-biased on purpose) — kept
     out of the role groups, but returned as one number so the ledger carries a filter-health
     series (ADR-0040)."""
-    ids, min_years, titles, employment, atses, seen = _columns(rows)
-    counts: dict[tuple[str, str, str, str], int] = {}
-    assigned: dict[str, str] = {}
-
-    def bump(family: str, band: str, ats: str, is_new: bool) -> None:
-        counts[("stock", family, band, ats)] = (
-            counts.get(("stock", family, band, ats), 0) + 1
-        )
-        if is_new:
-            counts[("new", family, band, ats)] = (
-                counts.get(("new", family, band, ats), 0) + 1
-            )
-
-    non_tech = 0
-    for job_id, years, title, etype, first, ats, family in zip(
-        ids, min_years, titles, employment, seen, atses, families, strict=True
-    ):
-        # ISO-8601 UTC on both sides, so string order is time order.
-        is_new = bool(first) and first >= new_after
-        if family is None:
-            non_tech += 1
-            continue
-        band = roles.band(years, title, etype)
-        for role in watchlist:
-            if role.matches(title):
-                bump(roles.WATCH_PREFIX + role.name, band, ats, is_new)
-        # Watch roles are deliberately absent here: they are title matches layered over the
-        # taxonomy, so a row "moving" between them is a title edit, not a reassignment.
-        assigned[job_id] = family
-        bump(family, band, ats, is_new)
-    return counts, non_tech, assigned
-
-
-def count_board_groups(
-    rows,
-    families: list[str | None],
-    watchlist: list[roles.WatchRole],
-    new_after: str,
-    boards: list[str],
-) -> tuple[
-    dict[tuple[str, str, str, str], int],
-    int,
-    dict[str, Placement],
-    dict[tuple[str, str, str, str, str], int],
-]:
-    """Count the regular ledger and each Board's contribution in one pass. The third value is
-    where each tech row was counted: :func:`count_groups`'s assignments, with the rest of the
-    row's Board-delta key beside its family (ADR-0227)."""
     ids, min_years, titles, employment, atses, seen = _columns(rows)
     if len(boards) != len(ids):
         raise ValueError("Board identities must align with served rows")
@@ -463,6 +425,17 @@ def _delta_path(directory: Path, ts: str) -> Path:
     return directory / f"{ts.replace(':', '-').replace('+00:00', 'Z')}.parquet"
 
 
+_DELTA_SCHEMA = (
+    ("ts", "string"),
+    ("board", "string"),
+    ("metric", "string"),
+    ("family", "string"),
+    ("band", "string"),
+    ("ats", "string"),
+    ("delta", "int64"),
+)
+
+
 def _append_board_deltas(
     directory: Path,
     previous: dict[tuple[str, ...], int],
@@ -470,9 +443,14 @@ def _append_board_deltas(
     version: int,
     ts: str,
     turnover: dict[job_turnover.Key, int],
+    methodology: dict[str, int | str],
 ) -> int:
     """Write this tick's level changes, and its ``turnover`` (ADR-0227) as rows of their own
-    metrics, to one file. A turnover row carries its tick's count, not a change in a level."""
+    metrics, to one file. A turnover row carries its tick's count, not a change in a level.
+
+    The file is written on every tick, empty when nothing moved, so the directory holds exactly
+    one file per tick (ADR-0230). Its metadata says which tick it is and how it was counted: the
+    series version, the tick's stamp, and the ``methodology`` the epoch ledger compares."""
     import pyarrow as pa
     import pyarrow.parquet as pq
 
@@ -481,23 +459,21 @@ def _append_board_deltas(
         for key in sorted(previous.keys() | current.keys())
         if current.get(key, 0) != previous.get(key, 0)
     ] + [(*key, n) for key, n in sorted(turnover.items())]
-    if not changed:
-        return 0
     directory.mkdir(parents=True, exist_ok=True)
     path = _delta_path(directory, ts)
     if path.exists():
         raise ValueError(f"{path}: a Board delta already exists for this measurement")
+    columns = [[ts] * len(changed), *([row[i] for row in changed] for i in range(6))]
     table = pa.table(
-        {
-            "ts": [ts] * len(changed),
-            "board": [row[0] for row in changed],
-            "metric": [row[1] for row in changed],
-            "family": [row[2] for row in changed],
-            "band": [row[3] for row in changed],
-            "ats": [row[4] for row in changed],
-            "delta": [row[5] for row in changed],
-        },
-        metadata={b"centroid_version": str(version).encode()},
+        dict(zip((name for name, _ in _DELTA_SCHEMA), columns, strict=True)),
+        schema=pa.schema(
+            [(name, pa.type_for_alias(kind)) for name, kind in _DELTA_SCHEMA],
+            metadata={
+                b"centroid_version": str(version).encode(),
+                b"ts": ts.encode(),
+                b"methodology": json.dumps(methodology, sort_keys=True).encode(),
+            },
+        ),
     )
     tmp = path.with_suffix(".parquet.tmp")
     pq.write_table(table, tmp, compression="zstd")
@@ -686,7 +662,8 @@ def main() -> int:
         f"(classifier head {head.version}, series version {version})"
     )
     # first_seen may be absent on a pre-ADR-0031 table; select() would raise on the missing
-    # column, so ask only for what exists and let count_groups treat absence as "never new".
+    # column, so ask only for what exists and let count_board_groups treat absence as "never
+    # new".
     # ats carries no such case — every served row has had one since before this table existed.
     columns = ["id", "min_years", "title", "employment_type", "ats"]
     if "first_seen" in table.schema.names:
@@ -729,6 +706,15 @@ def main() -> int:
 
     # The run's one stamp, which `index prune` also wrote its dedup evictions under (ADR-0210).
     now = run_ts()
+    # How this tick counts (ADR-0164, ADR-0230): the stamps the epoch ledger compares, carried by
+    # the tick's own Board-delta file too, so a reader needs no second file to learn them.
+    methodology: dict[str, int | str] = {
+        "family_map_fingerprint": roles.family_list_fingerprint(args.families),
+        "family_classifier_version": head.version,
+        "tech_filter_version": tech_filter.TECH_FILTER_VERSION,
+        "derivations_version": DERIVATIONS_VERSION,
+        "dedup_version": DEDUP_VERSION,
+    }
     ts = now.isoformat(timespec="seconds")
     new_after = (now - timedelta(days=NEW_WINDOW_DAYS)).isoformat(timespec="seconds")
     try:
@@ -756,7 +742,13 @@ def main() -> int:
         previous, as_of = _load_board_counts(args.board_counts, version)
         previous = _recover_board_counts(previous, as_of, args.board_deltas, version)
         changed = _append_board_deltas(
-            args.board_deltas, previous, board_counts, version, ts, turnover
+            args.board_deltas,
+            previous,
+            board_counts,
+            version,
+            ts,
+            turnover,
+            methodology,
         )
         # The snapshot turnover diffs, and the level changes, must move together (ADR-0227):
         # the tick's file without its snapshot would book this tick's turnover again next tick,
@@ -845,11 +837,7 @@ def main() -> int:
             args.epochs,
             ts,
             centroid_version=trends_epochs.ABSENT,  # no centroid fit decides anything
-            family_map_fingerprint=roles.family_list_fingerprint(args.families),
-            family_classifier_version=head.version,
-            tech_filter_version=tech_filter.TECH_FILTER_VERSION,
-            derivations_version=DERIVATIONS_VERSION,
-            dedup_version=DEDUP_VERSION,
+            **methodology,
         )
         if wrote_epoch:
             _log.info(f"epochs: methodology boundary recorded @ {ts} -> {args.epochs}")
