@@ -31,8 +31,7 @@ function showTab(name){
     // them. One Back after picking Google landed on `#trends` and the kept pick wrote itself
     // straight back, so the press did nothing.
     const bare = location.hash.indexOf('?') < 0;
-    if (bare && !viaTabStrip && trendPicks.length){ replacePicks([]); loadTrends(null); viaTabStrip = false; return; }
-    viaTabStrip = false;
+    if (bare && !viaTabStrip && trendPicks.length){ replacePicks([]); loadTrends(null); return; }
     const linked = readTrendHash();
     if (linked || !trendData) loadTrends(linked ? linked.family : null);
     else writeTrendHash();   // the tab strip's bare `#trends` gets the view back, for sharing
@@ -48,8 +47,10 @@ function showTab(name){
   // panel measures zero — so it re-paints on the way in rather than on page load.
   if (name === 'resume' && window.ResumeEditor) ResumeEditor.shown();
 }
-window.addEventListener('hashchange', () => showTab(currentTab()));
-// Whether the hash change about to land came from the tab strip's own link (showTab).
+window.addEventListener('hashchange', () => { showTab(currentTab()); viaTabStrip = false; });
+// Whether the hash change about to land came from the tab strip's own link (showTab). Reset on
+// every hash change, so a click that changed nothing (a cmd-click, a tab already open) cannot
+// leave it set for a later Back.
 let viaTabStrip = false;
 document.addEventListener('click', e => { if (e.target.closest && e.target.closest('.tabs [data-tab]')) viaTabStrip = true; }, true);
 
@@ -1868,7 +1869,8 @@ function hotNote(d){
   const line = { name: '__total__', points: sumPoints(d.series, d.stamps) };
   // A Board counted for hours has no week of its own here: SiTime read "too new" in its sentence
   // beside "this line reads +0 openings" under Hot's +59.
-  if (isYoung(line, d)) return `Hot’s ${figure} is its board’s first days, counted since ${stampLabel(countedSince(d)[0], true)}: too new for this line to give a week’s change.`;
+  const began = countedSince(d)[0];
+  if (isYoung(line, d)) return `Hot’s ${figure} is its board’s first days${began ? `, counted since ${stampLabel(began, true)}` : ''}: too new for this line to give a week’s change.`;
   const m = trendMove(line);
   if (!m) return '';
   const n = Math.round(m.change);
@@ -1876,7 +1878,7 @@ function hotNote(d){
   // the pipeline, so its build time is the fact a reader can weigh against this line's runs.
   return n === o.net
     ? `Hot’s ${figure} is this line’s change: both leave out the runs where HeadStart changed how it counts.`
-    : `Hot measured ${figure} on this board over the same week${o.built ? `, in its list built ${stampLabel(o.built + 'Z')} UTC` : ''}; this line reads ${signedOpenings(n)}.`;
+    : `Hot measured ${figure} on this board over the same week${o.built ? `, in its list built ${stampLabel(/Z$/.test(o.built) ? o.built : o.built + 'Z')} UTC` : ''}; this line reads ${signedOpenings(n)}.`;
 }
 
 // Picks this answer has nothing for, named with the reason, so the chart never shows fewer
@@ -1943,7 +1945,7 @@ function verdictLines(d){
     return [{ name: who, ...verdictOf(kind === 'total' ? d.series[0] : whole, d) }];
   const lines = kind === 'company' ? d.series.slice(0, CHART_MAX).map(s => [s.label, s, s.name])
     : [[counted.length === 1 ? (counted[0].label || 'This company') : 'This company',
-        kind === 'total' ? d.series[0] : { name: '__total__', points: sumPoints(d.series, d.stamps) }]];
+        kind === 'total' ? d.series[0] : whole]];
   return lines.map(([name, s, key]) => ({ name, key, ...verdictOf(s, d) }));
 }
 // How old the newest count may be before the page says so: four of the pipeline's own usual
@@ -2128,7 +2130,7 @@ function stepNotes(d){
       // `source`: the change it echoes, so countingChanges counts the two as one change.
       if (k > 0) notes.push({ i: k, found: false, epoch: true, withhold: picked, fields: ['tech_filter_version'],
         source: e.ts, touched, echo: true,
-        text: `A week after a counting change (${e.changed.join(', ')}): the openings it let in stop counting as new here — not hiring` });
+        text: `A week after a counting change (tech filter changed): the openings it let in stop counting as new here — not hiring` });
     }
     const i = d.stamps.indexOf(e.ts); if (i < 0) return;
     const fields = e.fields || [];
@@ -2841,21 +2843,13 @@ function stepsFor(s){
   const perCompany = !!s && (!!s.pick || VIEWS[viewKind(trendData)].split === 'company');
   const whole = isWholeLine(s);
   return notesOf(trendData)
-    .filter(n => n.withhold && !(n.wholeOnly && !whole) && !(n.bandsOnly && (!s || s.name === '__total__'))
+    // Every line of a view leaves out the same runs, so a company's categories add up to it: a
+    // step dropped from one line but kept in another (tried, 2026-09-25) left a gap neither
+    // rule could name. Whether a change moved a line decides only whether it is named there.
+    .filter(n => n.withhold && !(n.wholeOnly && !whole)
+      && !(n.bandsOnly && (!s || s.name === '__total__' || s.pick))   // a pick's line is its total
       && !(perCompany && ((n.company && s.name !== n.company)
-      || (n.companies && !n.companies.includes(s.name))))
-      // A counting change that did not move this line at its own run is no step of this line,
-      // nor is its settling run: Stripe's sentence named one filter change while its settling
-      // runs, left out, moved it −1 and −3 more, so the list and the sentence disagreed.
-      && !((n.epoch || n.settle) && s && s.points && ownJump(n.settle ? n.settles : n.i, s) === 0));
-}
-// The line's change at run `i` in openings, rounded (a step on a gap lands on the next measured
-// point), or null where the line has no point on either side of it.
-function ownJump(i, s){
-  let j = i; while (j < s.points.length && s.points[j] == null) j++;
-  let k = Math.min(i, j) - 1; while (k >= 0 && s.points[k] == null) k--;
-  if (j >= s.points.length || k < 0) return null;
-  return Math.round(s.points[j] - s.points[k]);
+      || (n.companies && !n.companies.includes(s.name)))));
 }
 
 // "Aug 12 09:00" from an ISO stamp — enough to anchor the axis without a timezone lecture.
@@ -3704,16 +3698,24 @@ function buildTrendsTable(){
   // what cannot: rows too new to read, and a step scaled so it would not erase a line's start.
   const [one, many] = kind === 'bands' ? ['level', 'levels'] : ['category', 'categories'];
   const whose = trendPicks.length > 1 ? 'the companies’' : 'the company’s';
-  let between = '';
+  // What the rows leave of the first row's hiring is said in the caption, never put in a column:
+  // a "Between categories" row in the hiring column read as hiring (critic round 13). With every
+  // line leaving out the same runs by openings it is rare, and each cause is named.
+  let gapNote = '';
   if (withTotal){
     const whole = hiringOpenings(total[0], lineMove(total[0]));
     const parts = rows.map(s => hiringOpenings(s, lineMove(s)) || 0).reduce((a, b) => a + b, 0);
     const gap = whole == null ? 0 : whole - parts;
-    if (gap) between = `<tr class="between"><th scope="row" title="The first row’s hiring less the rows’ sum: ${many} too new to read, or a counting change scaled so it would not erase a ${one}’s start">Between ${many}</th>`
-      + `<td></td><td></td><td class="${gap > 0 ? 'up' : 'down'}">${esc(signedOpenings(gap))}</td><td></td><td></td><td></td><td></td></tr>`;
+    const causes = [
+      rows.some(s => lineMove(s).tooNew) && `${many} too new to read`,
+      'duplicates removed or boards found, which only the first row can size',
+      trendPicks.length > 1 && 'a company’s own step taken out of every row it is summed into',
+      'a counting change scaled so it would not erase a line’s start',
+    ].filter(Boolean);
+    if (gap) gapNote = ` The ${many}’ hiring adds up to ${signedOpenings(parts)}, ${signedOpenings(gap)} from it — not hiring any ${one} shows, but ${causes.join(', or ')}.`;
   }
-  const note = withTotal ? `<caption>The first row is ${whose} hiring, and the ${many} add up to it${between ? ' with the last row, which holds what no single row can read' : ''}.</caption>` : '';
-  return `${note}<thead>${head}</thead><tbody>${body}${between}</tbody>`;
+  const note = withTotal ? `<caption>The first row is ${whose} hiring${gapNote ? '.' + gapNote : `, and the ${many} add up to it.`}</caption>` : '';
+  return `${note}<thead>${head}</thead><tbody>${body}</tbody>`;
 }
 
 // How many openings a line's marked steps moved it, as counted: the chart's move less the
@@ -3832,21 +3834,25 @@ function stepRuns(n, s){
 // steps of known size (duplicates removed, Boards found) leaves those out: NVIDIA's list gave its
 // counting change −2,138 beside "2,041 duplicate postings removed", the one inside the other.
 function stepSize(ns, s){
+  // Removals and found Boards on a whole company's line are their own known size: NVIDIA's
+  // "2,041 duplicate postings removed" entry read −2,138, the counting change beside it included.
+  if (isWholeLine(s) && ns.every(n => n.size != null)) return Math.round(ns.reduce((a, n) => a + n.size, 0));
   const jumps = stepJumps(s.points, s);
   const runs = new Set(ns.flatMap(n => stepRuns(n, s)));
-  const others = stepsFor(s).filter(n => !ns.includes(n) && n.size != null && isWholeLine(s));
+  const others = isWholeLine(s) ? stepsFor(s).filter(n => !ns.includes(n) && n.size != null) : [];
   return Math.round([...runs].reduce((sum, j) => {
     const jump = jumps.get(j); if (!jump) return sum;
     const known = others.filter(n => stepRuns(n, s)[0] === j).reduce((a, n) => a + n.size, 0);
     return sum + (jump.after - jump.before) - known;
   }, 0));
 }
-// Whether a note moved line `s` at its own run — the one test the sentence, the markers and the
-// list share. Not at the run after: that one is left out in case the change is still settling,
-// and a move there is as likely ordinary hiring, or another change's own step.
+// Whether a note's left-out runs moved line `s` — its own run or its settling run — the one test
+// the sentence, the markers and the list share, so every opening the sentence gives to counting
+// changes is named, and every named change has a size in the list (Stripe's sentence named one
+// filter change while its left-out runs moved it three times).
 function stepMoved(n, s){
-  const jump = stepJumps(s.points, s).get(stepRuns(n, s)[0]);
-  return !!jump && Math.round(jump.after - jump.before) !== 0;
+  const jumps = stepJumps(s.points, s);
+  return stepRuns(n, s).some(j => { const jump = jumps.get(j); return !!jump && Math.round(jump.after - jump.before) !== 0; });
 }
 function countingMove(s){
   const raw = headTail(s.points), net = trendMove(s);
@@ -4277,10 +4283,9 @@ function openCompanyTrend(board, name, since, net, built){
   location.hash = '#trends?company=' + encodeURIComponent(board)
     + (since ? '&since=' + encodeURIComponent(since.slice(0, 16)) : '')
     + (net != null && since ? `&hot=${encodeURIComponent(net)}&hot_board=${encodeURIComponent(board)}` : '')
-    // In UTC minutes, like `since`: sliced off a local-offset stamp it read as 05:44 UTC in IST
-    // and 18:14 UTC in Los Angeles for an 11:14 build.
-    + (net != null && since && built && !isNaN(new Date(built))
-      ? `&hot_at=${encodeURIComponent(new Date(built).toISOString().slice(0, 16))}` : '');
+    // UTC minutes marked as UTC: `hot_boards` writes the build time in UTC, and read back as
+    // local wall time it gave 05:44 in India and 18:14 in Los Angeles for an 11:14 build.
+    + (net != null && since && built ? `&hot_at=${encodeURIComponent(built.slice(0, 16) + 'Z')}` : '');
 }
 
 // Pointer tracking for the crosshair+tooltip lives on the SVG element itself, wired once: an
@@ -4296,7 +4301,7 @@ if (el('trends-chart')) {
   // It stuck over the "Marked changes" list after scrolling to it, covering its entries.
   window.addEventListener('scroll', () => { if (hoverIndex != null) positionHoverLayer(null); }, { passive: true });
   document.addEventListener('click', e => {
-    if (hoverIndex != null && !e.target.closest('#trends-chart')) positionHoverLayer(null);
+    if (hoverIndex != null && !(e.target.closest && e.target.closest('#trends-chart'))) positionHoverLayer(null);
   });
 }
 // The stamp nearest a pointer's x, read into the crosshair and tooltip.

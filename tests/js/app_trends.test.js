@@ -2219,16 +2219,17 @@ test('a Hot row on a board counted for hours gets no week’s change beside it',
   assert.doesNotMatch(nodes['trends-empty'].textContent, /reads \+0/);
 });
 
-test('a counting change that did not move a line leaves its settling run in that line', () => {
+test('a change named for a line is every change whose left-out runs moved it, sized in the list', () => {
   const { t, nodes } = loadApp();
   t.setPicks([ACME]);
-  // The change moved Acme by 0 at its run; the run after is ordinary −3, not the change's.
+  // The change moved Acme by 0 at its run and −3 at its settling run, which is left out on every
+  // line alike; so the sentence names it with that −3, and the list sizes it the same.
   t.set(companies([['greenhouse:acme', 'Acme', [100, 100, 100, 97, 97]]], { stamps: FIVE,
     epochs: [{ ts: FIVE[2], changed: ['tech filter changed'], fields: ['tech_filter_version'] }] }));
   t.setUnit('count', false);
   t.draw();
-  assert.match(nodes['trends-verdict'].innerHTML, /Acme<\/b>: 97 tech openings; down 3\.0% over 4 days \(−3 openings/);
-  assert.doesNotMatch(nodes['trends-verdict'].innerHTML, /not hiring/);
+  assert.match(nodes['trends-verdict'].innerHTML, /not hiring: −3 openings from a tech filter change\./);
+  assert.match(nodes['trends-changes'].innerHTML, /— Acme −3 openings/);
 });
 
 test('the list gives a counting change without the duplicates removed on its run', () => {
@@ -2242,7 +2243,7 @@ test('the list gives a counting change without the duplicates removed on its run
   t.draw();
   const list = nodes['trends-changes'].innerHTML;
   assert.match(list, /Counting changed here[^<]*— NVIDIA −97 openings/, '−2,138 less the 2,041 removed');
-  assert.match(list, /2,041/);
+  assert.match(list, /duplicate postings of NVIDIA removed[^<]*— NVIDIA −2,041 openings/, 'its own size, not the run’s −2,138');
 });
 
 test('a move under half an opening has no arrow', () => {
@@ -2258,5 +2259,76 @@ test('a window with no runs names the picks, not "0 companies"', () => {
   t.setPicks([ACME, BETA]);
   t.set({ ...companies([]), stamps: [], series: [] });
   t.draw();
-  assert.doesNotMatch(nodes['trends-scope'].textContent, /0 companies/);
+  assert.equal(nodes['trends-scope'].textContent, '2 companies picked · no measurements in this window');
+});
+
+
+// ---- round 14 review ------------------------------------------------------------------------------
+test('a change landing one run late is still left out whole (Amazon’s Sep 17 shape)', () => {
+  const { t, nodes } = loadApp();
+  t.setPicks([ACME]);
+  // The filter change moved nothing at its own run and −400 at the next, its settling run.
+  t.set(companies([['greenhouse:acme', 'Acme', [500, 500, 500, 100, 100]]], { stamps: FIVE,
+    epochs: [{ ts: FIVE[2], changed: ['tech filter changed'], fields: ['tech_filter_version'] }] }));
+  t.setUnit('count', false);
+  t.draw();
+  assert.match(nodes['trends-verdict'].innerHTML, /not hiring: −400 openings from a tech filter change\./);
+  assert.doesNotMatch(nodes['trends-verdict'].innerHTML, /down 80/);
+});
+
+test('a refit leaves a company’s categories adding up to it, settling run and all', () => {
+  const { t, nodes } = loadApp();
+  t.setPicks([ACME]);
+  // The refit moves 24 from a to b (the total holds); the run after, a hires 5.
+  t.set({ ...picked({}), stamps: FIVE, totals: [1e3, 1e3, 1e3, 1e3, 1e3], non_tech: [0, 0, 0, 0, 0],
+    series: [{ name: 'a', label: 'a', points: [100, 100, 76, 81, 81], latest: 81 },
+             { name: 'b', label: 'b', points: [50, 50, 74, 74, 74], latest: 74 }],
+    counted_since: { 'greenhouse:acme': FIVE[0] },
+    epochs: [{ ts: FIVE[2], changed: ['role family assignment changed'], fields: ['family_classifier_version'] }] });
+  t.setUnit('count', false);
+  t.draw();
+  nodes['trends-error'] = Object.assign(fakeEl(), { hidden: true });
+  t.table(true);
+  assert.match(nodes['trends-table'].innerHTML, /<caption>The first row is the company’s hiring, and the categories add up to it\.<\/caption>/);
+});
+
+test('several picks in a drill leave an extraction change in the level total', () => {
+  const { t, nodes } = loadApp();
+  t.setPicks([ACME, BETA]);
+  // Beta's category rises 20 at a run where only experience extraction changed, which re-sorts
+  // levels but never a category's total: that +20 is hiring.
+  t.set({ ...picked({}, [{ key: 'greenhouse:acme', label: 'Acme' }, { key: 'lever:beta', label: 'Beta' }]),
+    stamps: FIVE, totals: [1e3, 1e3, 1e3, 1e3, 1e3], non_tech: [0, 0, 0, 0, 0],
+    series: [{ name: 'mid', label: 'Mid', points: [150, 150, 170, 170, 170], latest: 170 }],
+    pick_series: { 'greenhouse:acme': [100, 100, 100, 100, 100], 'lever:beta': [50, 50, 70, 70, 70] },
+    counted_since: { 'greenhouse:acme': FIVE[0], 'lever:beta': FIVE[0] },
+    epochs: [{ ts: FIVE[2], changed: ['experience/salary extraction changed'], fields: ['derivations_version'] }] }, 'ai-ml');
+  t.setUnit('count', false);
+  t.draw();
+  assert.match(nodes['trends-verdict'].innerHTML, /\+20 openings/);
+  assert.doesNotMatch(nodes['trends-verdict'].innerHTML, /not hiring/);
+});
+
+test('a marker names duplicate removal only where a pick can be touched', () => {
+  const { t, nodes } = loadApp();
+  t.setPicks([ACME]);
+  t.set(companies([['greenhouse:acme', 'Acme', [100, 100, 130, 130]]],
+    { epochs: [{ ts: FOUR[2], changed: ['duplicate removal changed', 'role family assignment changed'],
+                 fields: ['dedup_version', 'family_classifier_version'] }] }));
+  t.setUnit('count', false);
+  t.draw();
+  assert.match(nodes['trends-chart'].innerHTML, /Counting changed here: role family assignment changed/);
+  assert.doesNotMatch(nodes['trends-chart'].innerHTML, /duplicate removal changed/);
+});
+
+test('a breakdown change is a step Back can undo', () => {
+  const { t, ctx } = loadApp();
+  const pushed = [];
+  ctx.history = { pushState: (_, __, h) => pushed.push(h), replaceState: () => {} };
+  ctx.location.hash = '#trends?company=greenhouse%3Aacme';
+  t.setPicks([ACME]);
+  t.set({ ...picked({ a: [100, 110], b: [50, 55] }), stamps: STAMPS });
+  t.selectSplit('total');
+  assert.equal(pushed.length, 1, 'a history entry, not a replace');
+  assert.match(pushed[0], /by=total/);
 });

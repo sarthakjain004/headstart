@@ -875,9 +875,15 @@ counting change out by ratio, the company line by openings.
   against the pre-refit base (Google's software engineering: −11.8% where ratio gave −5.3%).
   Ratio remains only where a shift would erase a line's start. On the 2026-09-25 state,
   Micron's Between row fell from +98 to +8 and Google's is gone.
-- **A counting change that did not move a line at its own run is no step of that line**, nor is
-  its settling run, so the sentence, the list and the sums use one set of steps. The list gives
-  a counting change's size without the duplicates removed on the same run.
+- **Every line leaves out the same runs; whether a change moved a line decides only whether it
+  is named there.** A change counts as having moved a line if its own run or its settling run
+  did, so every opening the sentence gives to counting changes is named, and the list sizes each
+  named change the same way. Dropping a change from the lines it did not move, tried first, made
+  a company keep a settling run its categories left out, a gap neither rule could name, and read
+  a change landing one run late as hiring (review of #675). The list gives removals and found
+  Boards their own size, and a counting change's size without them.
+- **What the categories leave of the company's hiring is said in the caption, with its causes,
+  never put in the hiring column.**
 - **Hot's build time is carried in UTC** (it read 05:44 in India and 18:14 in Los Angeles for an
   11:14 build), and a Hot row on a Board counted for hours says so instead of "+0".
 - **Summed views get a sentence**: several picks under Total, or in a drill, read their move
