@@ -19,7 +19,7 @@ only, no numeric range).
 
 ADR-0019 named exactly this gap and deferred it: salary parsing "is ambiguous (lakhs vs absolute,
 doubled suffixes, multi-currency)... its own step, and it shouldn't block serving the real
-corpus." This ADR is that step, built the same way `headstart.experience` was (ADR-0009 →
+corpus." This ADR is that step, built the same way `headstart.jobs.experience` was (ADR-0009 →
 ADR-0018 → five more): start with one ATS, read real captured data, build patterns from evidence,
 measure, document, repeat — not a single speculative design landed everywhere at once. This ADR
 covers the module and schema design; per-ATS coverage numbers live in
@@ -28,7 +28,7 @@ covers the module and schema design; per-ATS coverage numbers live in
 ## Decision
 
 **A two-tier cascade — structured field, then description — with no third tier, in
-`src/headstart/salary.py`:**
+`src/headstart/jobs/salary.py`:**
 
 ```python
 def extract(salary, description, ats=None) -> SalarySpan | None:

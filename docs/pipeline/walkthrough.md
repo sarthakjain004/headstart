@@ -251,7 +251,7 @@ identity now comes from the listing alone.)
 3. **`src/headstart/ingest/update_descriptions.py`** — the module docstring covers the store's two
    directions and why membership means text and nothing else; `reconcile()` is where the logic
    lives, and `_entries()` is the one place the "held" rule is written down.
-4. **`src/headstart/experience.py`** and **`src/headstart/salary.py`** — the extraction cascades
+4. **`src/headstart/jobs/experience.py`** and **`src/headstart/jobs/salary.py`** — the extraction cascades
    themselves, once you want to see what actually does the extracting.
 5. **`.github/workflows/pipeline.yml`** — the authoritative stage order, with a comment on most
    steps explaining why it sits exactly there.

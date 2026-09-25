@@ -166,7 +166,7 @@ every measurement taken after.
 ## Population
 
 22. **Tech share and volume.** Over a real sample of postings: rows per Hiring Board, and the
-    share `headstart.tech_filter.is_tech(title, department)` keeps
+    share `headstart.jobs.tech_filter.is_tech(title, department)` keeps
     (`scripts/validate/ats_tech_yield.py` if it handles the ATS).
 23. **Language.** Roughly what share is non-English? The index is English-only; a mostly
     non-English ATS is scraped but its rows are held out of the index.

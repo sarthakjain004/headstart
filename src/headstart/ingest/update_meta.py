@@ -24,7 +24,7 @@ downgrade it, and #162 measured 127,501 such rows (all pre-ADR-0050, so they car
 ``has_description``).
 
 **``remote`` is both** — a Fact (each scraper's own ATS-native field, re-observed above like any
-other) with a Derivation overlaid on top of it (``headstart.remote.extract``, ADR-0061 v8): if
+other) with a Derivation overlaid on top of it (``headstart.jobs.remote.extract``, ADR-0061 v8): if
 the JD confidently reads as remote, that wins over whatever the just-refreshed fact says. That
 overlay needs no "text the store doesn't hold" guard the way the cascade above does — it is
 one-directional (can only turn False/None into True), so recomputing it without text simply
@@ -72,7 +72,6 @@ from time import monotonic
 from typing import Any, NamedTuple
 
 from headstart import india_filter, log
-from headstart.experience import from_field, from_seniority
 from headstart.ingest import (
     PENDING_REDERIVE_PATH,
     REPO_ROOT,
@@ -88,7 +87,8 @@ from headstart.ingest.derived_meta import (
 )
 from headstart.ingest.doc_prep import DERIVATIONS_VERSION, META_FIELDS, stored_facts
 from headstart.ingest.update_descriptions import read_store
-from headstart.salary import from_field as salary_from_field
+from headstart.jobs.experience import from_field, from_seniority
+from headstart.jobs.salary import from_field as salary_from_field
 from headstart.scrapers import registry
 
 _log = log.get(__name__, __spec__)
@@ -337,7 +337,7 @@ def refresh_row(
         changed = changed or (new_country != row.get(india_filter.COLUMN))
         row[india_filter.COLUMN] = new_country
 
-    # `remote`'s overlay (headstart.remote, ADR-0061 v8/ADR-0118). `remote` is excluded from
+    # `remote`'s overlay (headstart.jobs.remote, ADR-0061 v8/ADR-0118). `remote` is excluded from
     # FACT_FIELDS (see `_FACT_WITH_OVERLAY`), so unlike every fact above, nothing has already
     # refreshed `row["remote"]` to this run's raw field — that has to happen here, from `facts`,
     # the same place `experience`/`salary`'s own raw-field re-syncs come from. Only on `sweep or
@@ -386,7 +386,7 @@ def _rederive_salary_without_text(row: dict, meta: dict) -> Any:
 
     A parseable field wins outright, same as experience. A description-sourced value is kept
     because nothing here can improve on it without the text. But where experience falls through to
-    a seniority floor that needs no text, salary has no such tier (see ``headstart.salary``'s
+    a seniority floor that needs no text, salary has no such tier (see ``headstart.jobs.salary``'s
     module docstring) — "no field, no held description, no prior regex value" is honestly
     ``None`` here, never a guess.
     """

@@ -39,7 +39,7 @@ from pathlib import Path
 
 import numpy as np
 
-from headstart import log, roles, tech_filter, trend_history
+from headstart import log, roles, trend_history
 from headstart.ingest import (
     EVICTION_QUEUE_PATH,
     REPO_ROOT,
@@ -58,6 +58,7 @@ from headstart.ingest.index_plan import (
     resolve_board,
 )
 from headstart.ingest.role_assignments import Placement
+from headstart.jobs import tech_filter
 
 _log = log.get(__name__, __spec__)
 

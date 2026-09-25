@@ -66,7 +66,7 @@ a run landing short should be read against this before being called a scraper bu
   on subdividing the listing walk.
 - A posting's ``locations`` array carries a per-location ``type``: ``ONSITE`` (99.7% of 1,280
   location entries sampled) or ``VIRTUAL``. Any ``VIRTUAL`` entry marks the Job remote; the
-  location-string heuristic (:func:`headstart.models.is_remote`) is the fallback for the rare
+  location-string heuristic (:func:`headstart.jobs.job.is_remote`) is the fallback for the rare
   posting with no parseable ``locations`` entry at all.
 - ``posted_date`` is a human string ("September 11, 2026") — and on a single-digit day the API
   emits a **double space** ("September  9, 2026"), confirmed live across a 500-posting sample.
@@ -88,7 +88,7 @@ from collections import Counter
 from datetime import datetime
 from typing import Any
 
-from headstart.models import Job, html_to_text, is_remote
+from headstart.jobs.job import Job, html_to_text, is_remote
 from headstart.network import http
 from headstart.scrapers.base import BaseScraper, classify_exception, loss_breakdown
 

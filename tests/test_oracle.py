@@ -22,7 +22,7 @@ from pathlib import Path
 import pytest
 from fake_fetcher import FakeFetcher, FakeResponse
 
-from headstart.models import html_to_text
+from headstart.jobs.job import html_to_text
 from headstart.scrapers.oracle import OracleScraper
 from headstart.scrapers.registry import get_scraper
 

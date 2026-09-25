@@ -68,8 +68,8 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from headstart import salary
-from headstart.models import Job, html_to_text, is_remote
+from headstart.jobs import salary
+from headstart.jobs.job import Job, html_to_text, is_remote
 from headstart.scrapers.base import (
     BaseScraper,
     DetailLost,

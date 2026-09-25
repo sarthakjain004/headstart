@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from headstart.experience import (
+from headstart.jobs.experience import (
     ExperienceSpan,
     extract,
     from_description,
@@ -270,7 +270,7 @@ def test_unguarded_patterns_cannot_match_without_the_word_experience():
     # Asserted behaviourally rather than by inspecting the pattern string: the work-word pattern
     # contains "experience" inside an alternation while still needing guards, so any structural
     # check reports it as safe.
-    from headstart.experience import _DESC_PATTERNS, _NUM_WORD_PATTERNS
+    from headstart.jobs.experience import _DESC_PATTERNS, _NUM_WORD_PATTERNS
 
     narrative = [
         "Founded 12 years ago by a team of engineers",
@@ -290,7 +290,7 @@ def test_unguarded_patterns_cannot_match_without_the_word_experience():
 def test_both_passes_carry_the_same_guard_flags():
     # `_desc_patterns` is a factory so the digits pass and the words pass stay in lockstep; if one
     # gained a pattern the other did not, or the flags diverged, the guards would apply unevenly.
-    from headstart.experience import _DESC_PATTERNS, _NUM_WORD_PATTERNS
+    from headstart.jobs.experience import _DESC_PATTERNS, _NUM_WORD_PATTERNS
 
     assert [p.guarded for p in _DESC_PATTERNS] == [
         p.guarded for p in _NUM_WORD_PATTERNS
@@ -304,7 +304,7 @@ def test_both_passes_carry_the_same_guard_flags():
 def test_fold_covers_every_character_the_patterns_stopped_handling():
     # The Tier-2 patterns dropped their typographic variants once folding was introduced, so they
     # are correct only while `_FOLD` maps each one. Pin that: this is a silent failure otherwise.
-    from headstart.experience import _FOLD
+    from headstart.jobs.experience import _FOLD
 
     for ch, expected in [
         ("\u2011", "-"),
@@ -326,7 +326,7 @@ def test_fold_covers_every_character_the_patterns_stopped_handling():
 def test_fold_is_offset_preserving():
     # The narrative guards slice `text` by `match.start()`, so a mapping that changed length would
     # silently move every guard window. Every replacement must be exactly one character.
-    from headstart.experience import _FOLD
+    from headstart.jobs.experience import _FOLD
 
     for src, dst in _FOLD.items():
         assert isinstance(dst, str) and len(dst) == 1, (chr(src), dst)

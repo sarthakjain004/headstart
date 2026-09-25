@@ -53,6 +53,7 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
 from headstart import board_aliases, eightfold_backing, liveness, scrapable_boards
+from headstart.jobs.tech_filter import is_tech
 from headstart.network import http
 from headstart.scrapers.base import USER_AGENT
 from headstart.scrapers.eightfold import EightfoldScraper, _department_of
@@ -70,7 +71,6 @@ from headstart.scrapers.workday import (
     WorkdayScraper,
     _posting_key,
 )
-from headstart.tech_filter import is_tech
 
 ATS = "eightfold"
 SIGNAL = "backing-reqs"

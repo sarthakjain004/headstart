@@ -1,5 +1,5 @@
 """The Job derivation cascade (ADR-0061, ADR-0146): the four field-extractors —
-``headstart.experience``, ``headstart.salary``, ``headstart.geo``, ``headstart.remote`` — composed
+``headstart.jobs.experience``, ``headstart.jobs.salary``, ``headstart.geo``, ``headstart.jobs.remote`` — composed
 into the *derived* subset of a Job's served meta columns: ``remote``, ``country``,
 ``min_years``/``max_years``/``experience_source``, and
 ``min_salary_annual``/``max_salary_annual``/``salary_currency``/``salary_source``.
@@ -23,11 +23,11 @@ from a description it no longer has re-readable.
 from __future__ import annotations
 
 from headstart import india_filter
-from headstart.experience import ExperienceSpan
-from headstart.experience import extract as extract_experience
-from headstart.remote import extract as extract_remote
-from headstart.salary import SalarySpan
-from headstart.salary import extract as extract_salary
+from headstart.jobs.experience import ExperienceSpan
+from headstart.jobs.experience import extract as extract_experience
+from headstart.jobs.remote import extract as extract_remote
+from headstart.jobs.salary import SalarySpan
+from headstart.jobs.salary import extract as extract_salary
 
 
 def experience_fields(span: ExperienceSpan | None) -> dict:
@@ -46,7 +46,7 @@ def experience_fields(span: ExperienceSpan | None) -> dict:
 def experience_meta(
     experience: str | None, description: str | None, title: str | None
 ) -> dict:
-    """The experience cascade (``headstart.experience``) as its three served meta keys."""
+    """The experience cascade (``headstart.jobs.experience``) as its three served meta keys."""
     return experience_fields(extract_experience(experience, description, title))
 
 
@@ -62,7 +62,7 @@ def salary_fields(span: SalarySpan | None) -> dict:
 
 
 def salary_meta(salary: str | None, description: str | None, ats: str | None) -> dict:
-    """The salary cascade (``headstart.salary``) as its four served meta keys."""
+    """The salary cascade (``headstart.jobs.salary``) as its four served meta keys."""
     return salary_fields(extract_salary(salary, description, ats))
 
 
@@ -73,7 +73,7 @@ def country_meta(location: str | None) -> dict:
 
 
 def remote_meta(remote: bool | None, description: str | None) -> dict:
-    """``headstart.remote.extract`` as its one served meta key (ADR-0061 v8 / ADR-0118)."""
+    """``headstart.jobs.remote.extract`` as its one served meta key (ADR-0061 v8 / ADR-0118)."""
     return {"remote": extract_remote(remote, description)}
 
 

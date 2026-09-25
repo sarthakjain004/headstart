@@ -55,7 +55,7 @@ from pathlib import Path
 # same reason: this gate's output feeds `role_trends`, whose per-tick counts silently absorb a
 # widened or narrowed regex as if the market moved. Reading this value once per tick lets a
 # reader tell "we changed who counts" from "conditions changed" instead of conflating the two.
-# 2 (2026-09-17, `git log 277b5e2a..1fd0f843 -- src/headstart/tech_filter.py`): rules 1 and 2
+# 2 (2026-09-17, `git log 277b5e2a..1fd0f843 -- src/headstart/jobs/tech_filter.py`): rules 1 and 2
 # stopped reading the department, rule 4 stopped promoting a title
 # that names a different profession, and the strong list gained the roles the department had been
 # covering for. Net **+0.45%** on a 489,661-posting sample — 4 of run 35193130454's 15 scrape
@@ -64,7 +64,7 @@ from pathlib import Path
 # docs/tech-filter/2026-09-17_the-title-decides.md. This is exactly the shape the counter exists
 # for: `role_trends` would otherwise read "Security Officer" leaving the index as the market
 # shedding security jobs.
-# 3 (2026-09-21, `git log 96c0c702..c2c026ed -- src/headstart/tech_filter.py`): the strong
+# 3 (2026-09-21, `git log 96c0c702..c2c026ed -- src/headstart/jobs/tech_filter.py`): the strong
 # list gained the role families still outside it after version 2 moved rules 1-2 onto the title —
 # Member of Technical Staff, Forward Deployed Engineer, AI/ML research and applied scientists,
 # business intelligence, silicon design, security operations, the QA role words, bioinformatics —
@@ -72,7 +72,7 @@ from pathlib import Path
 # Net **+1.62%** on the 332,383-posting pre-filter snapshot, 67,506 -> 68,600: **+1,094 in, 0 out**,
 # so unlike version 2 this one is purely additive and the composition moves exactly as far as the
 # total. See docs/tech-filter/2026-09-21_the-families-still-outside-the-gate.md.
-# 4 (2026-09-23, `git log da0565b7..f6811db8 -- src/headstart/tech_filter.py`): English spellings
+# 4 (2026-09-23, `git log da0565b7..f6811db8 -- src/headstart/jobs/tech_filter.py`): English spellings
 # and families the gate could not see (`_` as a separator, glued levels, plurals, Engr/Engg/Dev,
 # DevSecOps, IT/cyber/IAM/SOC/support/stack-word families, most found in the Indeed harvest's
 # rejects), and the "…engineer" trades it admitted in bulk (site, MEP, QA/QC, highway and its
@@ -83,7 +83,7 @@ from pathlib import Path
 # pre-filter snapshot 68,600 -> 69,192, **+1,852 in, -1,260 out**. A blind 800-title hold-out
 # puts recall at ~84.6% and precision at ~82.0%. See
 # docs/tech-filter/2026-09-23_spellings-and-trades.md.
-# 5 (2026-09-24, `git log 6458fbac..6e05d8cc -- src/headstart/tech_filter.py`): rule 0 sets aside
+# 5 (2026-09-24, `git log 6458fbac..6e05d8cc -- src/headstart/jobs/tech_filter.py`): rule 0 sets aside
 # a cashier on either side of "front end" ("Cashier (Front End)", "FRONT END/CASHIER"), which the
 # strong `front[\s-]?end` signal had been reading as a front-end developer. Purely subtractive: on
 # the served table (v654, 514,163 rows) **-148 out, 0 in**, every one a cashier title read by hand;

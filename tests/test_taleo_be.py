@@ -225,7 +225,7 @@ def test_posted_at_falls_back_to_the_json_ld_date_posted():
 def test_salary_bounds_drop_their_bonus_tail_before_joining():
     """ICANN states each bound as "40,000.00 + 10% Bonus + Benefits" (live 2026-09-22);
     joined whole, no range survives and `salary.extract` keeps only the floor."""
-    from headstart import salary
+    from headstart.jobs import salary
 
     scraper = TaleoBEScraper(URL, "ICANN")
     labels = {

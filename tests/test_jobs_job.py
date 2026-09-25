@@ -1,4 +1,4 @@
-from headstart.models import (
+from headstart.jobs.job import (
     Job,
     epoch_ms_to_iso,
     html_to_text,

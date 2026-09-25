@@ -8,7 +8,7 @@ from pathlib import Path
 from headstart import log, scrapable_boards
 from headstart.config import load_companies
 from headstart.harvest import build_feed, scrape_all, write_feed
-from headstart.tech_filter import filter_jobs
+from headstart.jobs.tech_filter import filter_jobs
 
 _log = log.get(__name__, __spec__)
 

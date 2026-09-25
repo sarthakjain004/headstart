@@ -39,9 +39,9 @@ from typing import Any
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / "src"))
 
+from headstart.jobs.tech_filter import is_tech
 from headstart.network import http
 from headstart.scrapers.registry import get_scraper
-from headstart.tech_filter import is_tech
 
 
 class _CountingFetcher:

@@ -4,7 +4,7 @@
 
 ## Context
 
-A critique of `headstart.tech_filter` (TECH_FILTER_VERSION 3) measured two separate kinds of
+A critique of `headstart.jobs.tech_filter` (TECH_FILTER_VERSION 3) measured two separate kinds of
 failure. **Recall:** real English tech titles the gate could not see — `_` used as a separator
 ("Application Developer_5"), a level glued to an acronym ("SDE3"), plurals ("PHP Developers"),
 abbreviations ("Software Engr II", "Java Lead"), and whole families (DevSecOps, "IT Project

@@ -17,7 +17,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from headstart.models import html_to_text
+from headstart.jobs.job import html_to_text
 from headstart.scrapers.registry import get_scraper
 from headstart.scrapers.tiktok import TikTokScraper
 

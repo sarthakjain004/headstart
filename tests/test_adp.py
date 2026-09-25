@@ -91,7 +91,7 @@ def _salary(row: dict) -> str | None:
 def test_salary_is_the_pay_grade_range_with_its_period():
     """`payGradeRange` plus `SalaryType` HR/AN: 1,080 of 2,069 rows state one. The spelling is
     what `salary._field_generic` reads — a range, an ISO code, a phrase-shaped period."""
-    from headstart import salary
+    from headstart.jobs import salary
 
     hourly = _salary(_paid(19.0, 20.5, "HR"))
     yearly = _salary(_paid(150000.0, 220000.0, "AN", "CAD"))
@@ -109,7 +109,7 @@ def test_an_up_to_range_is_a_lone_ceiling_and_is_refused():
 
 def test_a_floor_with_no_ceiling_is_a_single_figure():
     """ "45000.00 (USD) Annually Onwards" arrives as max 0.0: a real floor, stated as one."""
-    from headstart import salary
+    from headstart.jobs import salary
 
     value = _salary(_paid(45000.0, 0.0, "AN"))
     assert value == "45000 USD per-year"
@@ -638,7 +638,7 @@ def test_languages_put_english_first_then_alphabetical():
 def test_an_hourly_rate_labelled_annual_by_the_tenant_yields_no_salary():
     """ "18.00 To 20.00 (CAD) Annually" is hourly money under `AN`. It is emitted as stated and
     the parser's plausibility floor refuses it, rather than serving $18 a year."""
-    from headstart import salary
+    from headstart.jobs import salary
 
     value = _salary(_paid(18.0, 20.0, "AN", "CAD"))
     assert value == "18-20 CAD per-year"

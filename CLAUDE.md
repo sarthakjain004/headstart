@@ -14,7 +14,7 @@ HeadStart surfaces job openings read directly from company ATS boards.
   ATS query params as that layer: Lever is fetched as a plain `?mode=json` board, and Workday's
   `jobFamilyGroup` facet is the 2,000-cap subdivision whose *union covers the full board*, so it
   reduces nothing. The **authoritative tech gate is a recall-biased post-hoc filter**
-  (`headstart.tech_filter`): the scrape writes the full set to `data/jobs/{ats}.jsonl`, the filter
+  (`headstart.jobs.tech_filter`): the scrape writes the full set to `data/jobs/{ats}.jsonl`, the filter
   keeps the tech subset in `data/jobs/tech/{ats}.jsonl`, and everything downstream (feed, embedding,
   index, UI) reads that. Post-hoc saves no scraping, but it is the only layer that is uniform across
   ATSes and recall-safe — no tech job dropped, some non-tech creep tolerated — which is exactly what

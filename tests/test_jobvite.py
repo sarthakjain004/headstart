@@ -65,7 +65,7 @@ def test_reads_a_populated_base_salary():
     (job,) = get_scraper("jobvite", "aarete").parse(_raw_for("aarete"), SCRAPED_AT)
     assert job.employment_type == "Full-Time"
     assert job.salary is not None
-    from headstart import salary as salary_module
+    from headstart.jobs import salary as salary_module
 
     span = salary_module.extract(job.salary, None, "jobvite")
     assert span is not None and span.min_annual and span.source == "field"

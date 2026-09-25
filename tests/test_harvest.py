@@ -7,7 +7,7 @@ from headstart import harvest
 from headstart.board_cost import read_shard_rows
 from headstart.config import CompanyRef
 from headstart.harvest import build_feed, scrape_all, write_feed
-from headstart.models import Job
+from headstart.jobs.job import Job
 
 
 def make_job(job_id: str, ats: str = "x", description: str | None = None) -> Job:

@@ -4,7 +4,7 @@
 ``data/jobs/{ats}.jsonl`` (every scraped job) -> ``data/jobs/tech/{ats}.jsonl`` (software/tech only).
 
 The scrapers keep writing the full set; this stage keeps only software/tech roles
-(``headstart.tech_filter``, recall-biased — a non-tech job creeping in is fine, dropping a tech job
+(``headstart.jobs.tech_filter``, recall-biased — a non-tech job creeping in is fine, dropping a tech job
 is not) into ``data/jobs/tech/``, which is what the embedding / index / UI consume. Dropping the
 non-tech ~83% means the embedding model only ever works on the jobs the product actually serves.
 
@@ -20,7 +20,7 @@ from pathlib import Path
 
 from headstart import log
 from headstart.ingest import REPO_ROOT
-from headstart.tech_filter import filter_jobs_and_report
+from headstart.jobs.tech_filter import filter_jobs_and_report
 
 _log = log.get(__name__, __spec__)
 

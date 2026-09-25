@@ -130,7 +130,7 @@ def build_doc(job: dict) -> str:
 #
 # `remote` is a fourth family with a different shape (ADR-0118 amends ADR-0061's fact/derivation
 # table for it): its raw ATS-native value IS a fact, but the served column holds
-# `headstart.remote.extract`'s overlay on top of that fact rather than the fact itself, and —
+# `headstart.jobs.remote.extract`'s overlay on top of that fact rather than the fact itself, and —
 # unlike every field above — is deliberately EXCLUDED from `update_meta.FACT_FIELDS`
 # (`_FACT_WITH_OVERLAY`), so it is NOT refreshed unconditionally every run the way `location` or
 # `salary` are. Only a sweep or an explicit re-derive queue entry touches it, same cadence as
@@ -145,13 +145,13 @@ def build_doc(job: dict) -> str:
 # v3: added the salary cascade (min_salary_annual/max_salary_annual/salary_currency/salary_source).
 # v4: covers 10 salary.py-changing commits since v3 that none bumped this despite each measurably
 # changing `extract()`'s output on its own mandatory cross-ATS diff (workday through rippling, full
-# list: `git log 42665d9..24dee34 -- src/headstart/salary.py` — a fixed range, not `..HEAD`, which
+# list: `git log 42665d9..24dee34 -- src/headstart/jobs/salary.py` — a fixed range, not `..HEAD`, which
 # would drift as later commits land) plus keka's own pass (AED currency, leading-currency-code
 # labels, "stipend"/"ctc" labels, an "L"/lakh numeric shorthand, and a 401(k) false-positive guard
 # that also corrects the same pre-existing false positive on 8 already-merged ATSes — see
 # docs/salary-extraction/keka.md). One bump sweeps in all of it; the counter has no way to
 # distinguish which change it's covering.
-# v5: the exact same gap recurred (full list: `git log 2b6ccd8..e14f412 -- src/headstart/salary.py`
+# v5: the exact same gap recurred (full list: `git log 2b6ccd8..e14f412 -- src/headstart/jobs/salary.py`
 # — 3 commits, none bumped this). Two made real, measurable changes: darwinbox's pass fixed a
 # lakhs-vs-absolute magnitude bug in its own field parser (zero cross-ATS effect, but darwinbox's
 # own pre-existing rows need a sweep to pick up the fix — see docs/salary-extraction/darwinbox.md);
@@ -169,7 +169,7 @@ def build_doc(job: dict) -> str:
 # still open and tracked separately, not resolved by this change.
 # v6: a new full-HF-corpus recall audit (docs/salary-extraction/full-corpus-audit.md — a new
 # initiative distinct from the per-ATS passes, see that doc's own opening for the brief) found and
-# fixed three real gaps (full list: `git log a9d73be..b676a3e -- src/headstart/salary.py` — one
+# fixed three real gaps (full list: `git log a9d73be..b676a3e -- src/headstart/jobs/salary.py` — one
 # commit), verified via a full-corpus diff (391,134 jobs, every ATS, not a per-ATS sample): (1)
 # `_LABELED`'s own "for X Y Z" filler cap was too tight (3 words) to reach real phrasing like "for
 # this role across Switzerland" (4 words), silently missing the whole match; widened to 4 words —
@@ -194,12 +194,12 @@ def build_doc(job: dict) -> str:
 # ("10 To 12 LPA" — Zoho Recruit's own salary-widget phrasing, live-verified) matched only the
 # high number as a bare, hi-less figure: a 10-12 range read as a floor of 12 with no ceiling.
 # Fixed by accepting `\bto\b` alongside `[-–]` (`git log 0d030f7..98ad53d --
-# src/headstart/salary.py` — one commit). Not a structural guarantee — a doubled "to" ("5 to 10
+# src/headstart/jobs/salary.py` — one commit). Not a structural guarantee — a doubled "to" ("5 to 10
 # to 20 LPA") shifts which `lo` the match captures, not just adds a `hi` — but that shape does
 # not occur in real postings: verified against 526 local LPA-bearing records with zero
 # disagreements between old and new.
 #
-# v8: added `headstart.remote.extract` — the JD-supersedes-field overlay described above. Not a
+# v8: added `headstart.jobs.remote.extract` — the JD-supersedes-field overlay described above. Not a
 # fix to an existing derivation; a new fourth family sharing this counter for the first time
 # (ADR-0118). Measured against the live served table (335,543 rows) joined to the full
 # description store (493,629 JDs, 98.1% coverage): AT LEAST 7,439 already-indexed rows have
@@ -281,8 +281,8 @@ def build_doc(job: dict) -> str:
 # full, 33 None -> full), zero regressions (no record lost a value or had an already-resolved
 # min/max change). On top of the v13 bump at `ea577fff`.
 # v15: the 2026-09-22 bug-hunt fixes, all one PR on top of the v14 bump at `90a6fc64` (full list:
-# `git log 90a6fc64..19027279 -- src/headstart/salary.py src/headstart/experience.py
-# src/headstart/remote.py` on that PR's branch — 2ab9e6ba in that range is #562, inert, below; a
+# `git log 90a6fc64..19027279 -- src/headstart/jobs/salary.py src/headstart/jobs/experience.py
+# src/headstart/jobs/remote.py` on that PR's branch — 2ab9e6ba in that range is #562, inert, below; a
 # later commit only moves a docstring). The commits by subject, in case it lands squashed: "Read
 # £/€/₹ and per-side symbols in generic salary fields", "Map HK$/S$/A$/AU$/NZ$/US$ salary symbols
 # to their currency", "Treat 'not a fully remote position' as a negation", "Refuse 'up to USD X'

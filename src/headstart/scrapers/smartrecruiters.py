@@ -55,8 +55,8 @@ import json
 import re
 from typing import Any
 
-from headstart import salary
-from headstart.models import Job, html_to_text, is_remote
+from headstart.jobs import salary
+from headstart.jobs.job import Job, html_to_text, is_remote
 from headstart.scrapers.base import (
     USER_AGENT,
     BaseScraper,
@@ -81,7 +81,7 @@ _MAX_PAGES = 50
 # inspection during the salary-extraction pass, 2026-08-22: "Enter salary or hourly pay range
 # (+ pay grade, if known)" -> "$100K - $115K"; also "Target Salary Range Max" -> "$220,000"). Rare
 # (~2% of boards sampled) but real data the standard sections never carry. Appended to the
-# description as "{label}: {value}" so headstart.salary's existing description-mining cascade can
+# description as "{label}: {value}" so headstart.jobs.salary's existing description-mining cascade can
 # parse whatever shape shows up — not a bespoke parser, since the field is company-configured and
 # non-standardized (one company's free text, another's bare max-only figure).
 _COMPENSATION_FIELD_LABEL = re.compile(

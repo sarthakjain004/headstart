@@ -39,7 +39,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from headstart import scrapable_boards
-from headstart.models import is_remote
+from headstart.jobs.job import is_remote
 from headstart.scrapers.registry import SCRAPERS, get_scraper
 
 _ROOT = Path(__file__).resolve().parents[2]

@@ -99,7 +99,7 @@ import json
 import re
 from typing import Any
 
-from headstart.models import Job, html_to_text
+from headstart.jobs.job import Job, html_to_text
 from headstart.scrapers.base import USER_AGENT, BaseScraper, DetailLost, DetailRequest
 
 _SEARCH_URL = "https://jobs.apple.com/api/v1/search"

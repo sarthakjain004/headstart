@@ -51,7 +51,7 @@ Four things checked against kalil0321's implementation rather than trusted from 
    614 of 627 sampled jobs (97.9%) carry a seniority-tier label — "Entry-level", "Mid-level",
    "Experienced", "Manager/Supervisor", "Senior Manager/Supervisor", "Executive", "Senior
    Executive" — matching `Job.experience`'s documented shape ("e.g. ... Mid-Senior level"
-   verbatim). `headstart.experience.extract()`'s seniority tier already knows how to turn most of
+   verbatim). `headstart.jobs.experience.extract()`'s seniority tier already knows how to turn most of
    these words into a numeric floor downstream; upstream's `_apply_opening_to_job` never even
    reads this field, so it was pure loss before.
 4. **No auth needed, full stop** — upstream doesn't claim otherwise, but it's worth stating this
@@ -104,7 +104,7 @@ import re
 from typing import Any
 
 from headstart import company_name
-from headstart.models import Job, html_to_text, is_remote
+from headstart.jobs.job import Job, html_to_text, is_remote
 from headstart.scrapers.base import BaseScraper, DetailLost, DetailRequest
 
 #: One job's `<li>` block in the widget — id in the tag, title/location inside the body.

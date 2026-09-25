@@ -116,7 +116,7 @@ mechanisms in CLAUDE.md §"Checking a liveness ledger for duplicate boards" are 
 ## 6. Decide whether it scrapes
 
 Estimate the pool's storage cost per tech Job: Hiring Boards × postings × bytes per posting
-fetched, divided by the tech Jobs it yields (`headstart.tech_filter.is_tech(title, department)`
+fetched, divided by the tech Jobs it yields (`headstart.jobs.tech_filter.is_tech(title, department)`
 over a real sample; `scripts/validate/ats_tech_yield.py` is title-only and handles four ATSes).
 The accepted bar is ADR-0158's jazzhr: ~10.7 GB for ~5,100 tech Jobs, about **2 MB per tech
 Job**. At or under it the ATS lands active; over it, it lands in `DISABLED_ATS` with the

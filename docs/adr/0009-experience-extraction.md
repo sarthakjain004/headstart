@@ -14,7 +14,7 @@ millions of Jobs.
 
 ## Decision
 
-A **tiered, deterministic cascade** in `src/headstart/experience.py` — pure, I/O-free, unit-testable
+A **tiered, deterministic cascade** in `src/headstart/jobs/experience.py` — pure, I/O-free, unit-testable
 functions, run cheapest-first by `extract(field, description)`, returning the first hit with the tier
 that produced it (`ExperienceSpan(min_years, max_years, source)`):
 

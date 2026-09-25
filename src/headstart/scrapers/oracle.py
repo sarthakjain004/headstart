@@ -44,7 +44,7 @@ import re
 from typing import Any
 
 from headstart import company_name
-from headstart.models import Job, host_of, html_to_text, is_remote, requisition_of
+from headstart.jobs.job import Job, host_of, html_to_text, is_remote, requisition_of
 from headstart.network.fetcher import Fetcher
 from headstart.scrapers.base import (
     BaseScraper,

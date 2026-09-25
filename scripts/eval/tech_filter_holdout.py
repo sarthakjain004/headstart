@@ -10,7 +10,7 @@ Two subcommands:
   draw      replay the sample from the Indeed harvest with a given filter module, and print the
             titles with the number of drawn rows each stands for (the row weights)
   estimate  weight the fixture's labels back to the population and report recall/precision for
-            the CURRENT filter (``headstart.tech_filter``), by row, with the ambiguous labels
+            the CURRENT filter (``headstart.jobs.tech_filter``), by row, with the ambiguous labels
             both left out and counted as tech
 
 The design strata are the verdicts of the filter the sample was drawn with (``--draw-filter``,
@@ -107,7 +107,7 @@ def _wilson(k: int, n: int, z: float = 1.96) -> tuple[float, float]:
 
 
 def estimate(_args) -> None:
-    from headstart.tech_filter import is_tech
+    from headstart.jobs.tech_filter import is_tech
 
     meta = json.loads(META.read_text())
     with FIXTURE.open(encoding="utf-8", newline="") as fh:

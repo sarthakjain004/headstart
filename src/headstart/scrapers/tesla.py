@@ -85,7 +85,7 @@ from collections.abc import Callable, Sequence
 from typing import Any
 
 from headstart import log
-from headstart.models import Job, html_to_text, is_remote
+from headstart.jobs.job import Job, html_to_text, is_remote
 from headstart.network import spare_egress
 from headstart.scrapers.base import (
     BaseScraper,

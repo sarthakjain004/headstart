@@ -23,8 +23,9 @@ from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import unquote, urlencode, urlsplit, urlunsplit
 
-from headstart import company_name, salary
-from headstart.models import Job, html_to_text, is_remote, requisition_of
+from headstart import company_name
+from headstart.jobs import salary
+from headstart.jobs.job import Job, html_to_text, is_remote, requisition_of
 from headstart.scrapers.base import (
     MIN_AUTHORITATIVE_SHARE,
     USER_AGENT,

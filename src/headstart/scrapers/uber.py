@@ -71,7 +71,7 @@ import json
 import urllib.parse
 from typing import Any
 
-from headstart.models import Job, html_to_text
+from headstart.jobs.job import Job, html_to_text
 from headstart.scrapers.base import BaseScraper
 
 _JOBS_ORIGIN = "https://jobs.uber.com"

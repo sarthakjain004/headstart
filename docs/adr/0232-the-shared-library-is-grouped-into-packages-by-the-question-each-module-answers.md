@@ -14,9 +14,8 @@
 ADR-0028 gave the ingest run its own package and left everything else flat in `src/headstart/`.
 By 2026-09-25 that flat level held 43 files, and its names had stopped saying what the files are:
 
-* `tech_filter` (the tech classifier) and `ingest/filter_tech` (the stage that calls it) are the
-  near-homograph pair CLAUDE.md's naming rule warns about. `tech_filter` is also not a Search
-  filter, though five modules beside it now are.
+* `tech_filter` (the **Tech filter**, which gates which Jobs are indexed) sat among the
+  Search-filter modules (which narrow a request) and read as one of them.
 * `config` held no configuration: about 95% of it is two hand-curated Board lists
   (`EXCLUDED_BOARDS`, `PARKED_BOARDS`), the rest `CompanyRef` and a TOML loader. It also reads as
   the repo's `config/` data directory.
@@ -42,7 +41,7 @@ its name unless the name misled; a package supplies the context a short name lac
 |---|---|---|
 | `boards/` | Which Boards exist, which get scraped, and how each is keyed and named | `board_identity` → `board_key`; `liveness` → `liveness_ledger`; `board_aliases` → `alias_ledger`; `board_priority` → `priority_ledger`; `board_cost` → `cost_ledger`; `board_description_gap` → `description_gap_ledger`; `scrapable_boards` → `scrapable`; `eightfold_backing`; `company_name`; `config` → split into `company_ref` (`CompanyRef`, `load_companies`) and `excluded_and_parked` (the two lists) |
 | `network/` | How a request leaves the machine | `http`, `browser_http`, `fetcher`, `spare_egress`, `fanout_stats` |
-| `jobs/` | One Job: its shape, and every field derived from its own text | `models` → `job`; `experience`; `salary`; `remote`; `tech_filter` → `tech_classifier` |
+| `jobs/` | One Job: its shape, and every field derived from its own text | `models` → `job`; `experience`; `salary`; `remote`; `tech_filter` |
 | `search_filters/` | The Search-filter vocabulary: what the index materializes and what the compiler turns into a where-clause | `search_filter_compiler` → `compiler`; `employment_type_filter` → `employment_type`; `experience_filter` → `experience_ceiling`; `salary_known_filter` → `salary_known`; `india_filter` → `india`; `posted_date_guard`; `geo` → `india_gazetteer`; `fx` |
 | `search/` | The serving path the Space and the local dev server run | `search` → `job_search`; `facets`; `profile_extract` |
 | `trends/` | What Trends reads from its history | `trend_history` → `history`; `trend_netting` → `netting`; `trend_history_migration` → `history_migration`; `hot_ranking`; `roles` → `role_taxonomy`; `company_match` → `company_suggestions` |
@@ -73,11 +72,17 @@ The layout lands one package per PR, each rewriting every reference in the same 
 `mock.patch` targets, workflows, the Space, docs and ADRs, per CLAUDE.md's naming rule), with no
 compatibility shims.
 
-A rewritten reference tells a reader where the code lives now, so the rewrite reaches past ADRs and
-dated docs too. Two kinds of text keep the old name, because they describe the tree as it was: a
-link pinned to a commit (`blob/<sha>/src/headstart/http.py`), and a sentence stating what was true
-of the tree at a stated time or commit ("measured on `main` at `12d45409`", "`tests/test_http.py`
-had to autouse-stub `rotate`"). The table above is the map from those names to today's.
+`tech_filter` keeps its name although it and the stage `ingest/filter_tech` form a near-homograph:
+it is CONTEXT.md's **Tech filter**, and a module is named in the glossary's vocabulary. Their
+packages, `jobs/` and `ingest/`, now tell the two apart.
+
+A rewritten reference tells a reader where the code lives now, so the rewrite reaches living docs
+and ADRs. Dated records describe the tree as it was, and keep the names they were written with:
+any doc whose file name starts with a date, every `LOG.md`, `docs/code-review/`,
+`docs/upstream-comparison/`, and the per-ATS pass logs in `docs/salary-extraction/`. So does a
+link pinned to a commit (`blob/<sha>/src/headstart/http.py`), and, inside an ADR, a sentence
+stating what was true of the tree at a stated time or commit ("measured on `main` at
+`12d45409`"). The table above is the map from those names to today's.
 
 ## Consequences
 

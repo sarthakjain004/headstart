@@ -72,8 +72,9 @@ from datetime import datetime
 from typing import Any
 from urllib.parse import urlencode, urljoin, urlsplit
 
-from headstart import company_name, salary
-from headstart.models import Job, html_to_text, is_remote, requisition_of
+from headstart import company_name
+from headstart.jobs import salary
+from headstart.jobs.job import Job, html_to_text, is_remote, requisition_of
 from headstart.network import http
 from headstart.network.fetcher import Fetcher
 from headstart.scrapers.base import USER_AGENT, BaseScraper

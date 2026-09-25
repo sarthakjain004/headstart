@@ -80,7 +80,7 @@ from typing import Any
 from urllib.parse import unquote
 
 from headstart import company_name, log
-from headstart.models import Job, html_to_text, is_remote, requisition_of
+from headstart.jobs.job import Job, html_to_text, is_remote, requisition_of
 from headstart.network import http
 from headstart.network.fetcher import Fetcher
 from headstart.scrapers.base import (
@@ -849,7 +849,7 @@ def _title_from_slug(url: str) -> str:
     pages rather than assumed clean: 403/403 verdict agreement against careers.hcltech.com's
     title-only slugs and 400/400 against jobs.sap.com's location-prefixed, largely German ones,
     both 2026-09-16. The extra tokens never flipped a verdict in either sample —
-    :func:`~headstart.tech_filter.classify`'s signals are word-bounded substrings, so noise
+    :func:`~headstart.jobs.tech_filter.classify`'s signals are word-bounded substrings, so noise
     around a real title rarely removes what was already there — but this is a measured
     tolerance, not a guarantee for every tenant's slug shape.
     """
