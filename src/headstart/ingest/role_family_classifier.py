@@ -1,22 +1,30 @@
-"""A served row's role family, from its title alone, by a trained classifier (ADR-0220).
+"""A served row's role family, from its title and its description, by a trained classifier
+(ADR-0220, ADR-0222).
 
-The title is embedded with JobBERT-v2's title ("anchor") branch, a model trained to place job
-titles that name the same occupation near each other, and a logistic-regression head trained on
-labelled titles turns the embedding into a family. When the head's top probability is below the
-manifest's cutoff, the row is ``unclassified-tech``: a family forced onto a title the head cannot
+The head is linear over two inputs. The title is embedded with JobBERT-v2's title ("anchor")
+branch, a model trained to place job titles that name the same occupation near each other. The
+description arrives as the row's own served ``vector`` (nomic, title plus cleaned description),
+which the index already holds, so it costs no encoding. When the head's top probability is below
+the manifest's cutoff, the row is ``unclassified-tech``: a family forced onto a row the head cannot
 place would count as a trend in the wrong line.
 
-A family depends only on the normalised title, so every copy of a posting agrees and a re-embed
-of the description cannot move it. That also makes the answer cacheable. ``role_trends`` keeps a
-title → family cache in ``data/state`` and embeds only titles the cache has not seen under the
-current head. A new head starts with an empty cache, and the served table holds about 270,000
-distinct titles, too many for one run. So each run spends a fixed time budget filling the cache,
-saving after every chunk, and ``role_trends`` counts nothing until the cache covers the table:
-Trends pauses for a few runs rather than charting a backlog as "unclassified".
+Because the head is linear, its logits split into a **title part** (``JobBERT(title) @ W_title``)
+and a **row part** (``vector @ W_row + bias``). The title part is what costs an encoding, so
+``role_trends`` caches it per normalised title in ``data/state`` and embeds only titles the cache
+has not seen under the current head; the row part is one matrix product over the served vectors
+each run. A new head starts with an empty cache, and the served table holds about 290,000 distinct
+titles, too many for one run. So each run spends a fixed time budget filling the cache, saving
+after every chunk, and ``role_trends`` counts nothing until the cache covers the table: Trends
+pauses for a few runs rather than charting a backlog as "unclassified".
 
-Everything the head decides is fixed by ``config/role_family_classifier/``: the manifest (model
-and its pinned revision, the families, the cutoff, the head's version) and the weights. A new
-head is a new version, and a new version re-bases every Trends series.
+Copies of a posting share a title and nearly always a family; the description moves a row only
+where it contradicts its title (a "Systems Engineer" at a utility is non-tech). So a re-embedded
+description can move a row, which the ADR-0057 transition ledger records.
+
+Everything the head decides is fixed by ``config/role_family_classifier/``: the manifest (title
+model and its pinned revision, the row vector's model and width, the families, the cutoff, the
+head's version) and the weights. A new head is a new version, and a new version re-bases every
+Trends series.
 """
 
 from __future__ import annotations
@@ -56,27 +64,48 @@ class Head:
         self.version: int = manifest["version"]
         self.model: str = manifest["model"]
         self.model_revision: str = manifest["model_revision"]
+        self.row_vector_model: str = manifest["row_vector"]["model"]
+        self.row_vector_dim: int = manifest["row_vector"]["dim"]
         self.families: list[str] = manifest["families"]
         self.cutoff: float = manifest["cutoff"]
-        self._weights = weights["weights"].astype(np.float32)  # families x dim
+        self._title_weights = weights["title_weights"].astype(
+            np.float32
+        )  # families x dim
+        self._row_weights = weights["row_weights"].astype(
+            np.float32
+        )  # families x row dim
         self._bias = weights["bias"].astype(np.float32)
-        if self._weights.shape[0] != len(self.families):
+        if (
+            not (
+                len(self._title_weights) == len(self._row_weights) == len(self.families)
+            )
+            or self._row_weights.shape[1] != self.row_vector_dim
+        ):
             raise ValueError(
-                f"{directory}: {self._weights.shape[0]} weight rows for "
-                f"{len(self.families)} families — the manifest and head.npz disagree"
+                f"{directory}: weights {self._title_weights.shape} and "
+                f"{self._row_weights.shape} for {len(self.families)} families and a "
+                f"{self.row_vector_dim}-wide row vector — the manifest and head.npz disagree"
             )
         if UNCLASSIFIED in self.families:
             raise ValueError(
                 f"{directory}: '{UNCLASSIFIED}' is what the cutoff produces, never a trained class"
             )
 
-    def probabilities(self, vectors: np.ndarray) -> np.ndarray:
-        """Each row's probability over :attr:`families`, before the cutoff."""
-        return softmax(vectors @ self._weights.T + self._bias)
+    def title_logits(self, title_vectors: np.ndarray) -> np.ndarray:
+        """The title part of each row's logits: what the cache keeps per title."""
+        return title_vectors @ self._title_weights.T
 
-    def decide(self, vectors: np.ndarray) -> list[tuple[str, float]]:
+    def row_logits(self, row_vectors: np.ndarray) -> np.ndarray:
+        """The row part of each row's logits, bias included, from its served ``vector``."""
+        return row_vectors @ self._row_weights.T + self._bias
+
+    def decide(
+        self, title_logits: np.ndarray, row_logits: np.ndarray
+    ) -> list[tuple[str, float]]:
         """``(family, top probability)`` per row; below the cutoff the family is ``UNCLASSIFIED``."""
-        return choose_families(self.probabilities(vectors), self.families, self.cutoff)
+        return choose_families(
+            softmax(title_logits + row_logits), self.families, self.cutoff
+        )
 
     def check_families(self, listed: list[str]) -> None:
         """Refuse a head that decides a family the curated list lacks, or a list without the
@@ -150,16 +179,16 @@ def encode(titles: list[str], model: str, revision: str) -> np.ndarray:
 
 @dataclass
 class Cache:
-    """``normalised title -> (family, top probability)``, valid for one head version. Mutable:
-    :func:`fill` adds to it."""
+    """``normalised title -> the head's title logits`` (one per family), valid for one head
+    version. Mutable: :func:`fill` adds to it."""
 
     version: int
-    decisions: dict[str, tuple[str, float]]
+    title_logits: dict[str, np.ndarray]
 
 
 def load_cache(path: Path, version: int) -> Cache:
     """The cache for ``version``, or an empty one when the file is absent, unreadable or written
-    under another head. A cache from another head holds another head's answers, so it is
+    under another head. A cache from another head holds another head's logits, so it is
     discarded rather than trusted."""
     empty = Cache(version, {})
     if not path.exists():
@@ -174,17 +203,11 @@ def load_cache(path: Path, version: int) -> Cache:
                 f"title cache {path} is for head {stamped!r}, not {version}: starting empty"
             )
             return empty
+        logits = table["logits"].combine_chunks()
+        width = logits.type.list_size
+        matrix = logits.flatten().to_numpy().reshape(-1, width)
         return Cache(
-            version,
-            {
-                title: (family, confidence)
-                for title, family, confidence in zip(
-                    table["title"].to_pylist(),
-                    table["family"].to_pylist(),
-                    table["confidence"].to_pylist(),
-                    strict=True,
-                )
-            },
+            version, dict(zip(table["title"].to_pylist(), matrix, strict=True))
         )
     except Exception as exc:  # noqa: BLE001 - a corrupt cache is rebuilt, never fatal
         _log.warning(
@@ -197,14 +220,13 @@ def save_cache(path: Path, cache: Cache) -> None:
     import pyarrow as pa
     import pyarrow.parquet as pq
 
-    titles = sorted(cache.decisions)
+    titles = sorted(cache.title_logits)
+    matrix = np.array([cache.title_logits[t] for t in titles], dtype=np.float32)
+    width = matrix.shape[1] if titles else 0
     table = pa.table(
         {
             "title": titles,
-            "family": [cache.decisions[t][0] for t in titles],
-            "confidence": pa.array(
-                [cache.decisions[t][1] for t in titles], pa.float32()
-            ),
+            "logits": pa.FixedSizeListArray.from_arrays(matrix.reshape(-1), width),
         },
         metadata={b"head_version": str(cache.version).encode()},
     )
@@ -221,9 +243,9 @@ def fill(
     budget_seconds: float,
     checkpoint: Callable[[Cache], None],
 ) -> int:
-    """Decide the titles the cache lacks, in chunks, until done or out of time; returns how many
+    """Encode the titles the cache lacks, in chunks, until done or out of time; returns how many
     were added. ``checkpoint`` runs after every chunk, so a run killed mid-fill keeps its work."""
-    missing = sorted({normalise(t) for t in titles} - cache.decisions.keys())
+    missing = sorted({normalise(t) for t in titles} - cache.title_logits.keys())
     started, added = time.monotonic(), 0
     for start in range(0, len(missing), _FILL_CHUNK):
         if time.monotonic() - started > budget_seconds:
@@ -232,8 +254,8 @@ def fill(
             )
             break
         chunk = missing[start : start + _FILL_CHUNK]
-        decided = head.decide(encode(chunk, head.model, head.model_revision))
-        cache.decisions.update(zip(chunk, decided, strict=True))
+        logits = head.title_logits(encode(chunk, head.model, head.model_revision))
+        cache.title_logits.update(zip(chunk, logits, strict=True))
         added += len(chunk)
         checkpoint(cache)
         _log.info(f"classified {added}/{len(missing)} new titles")
@@ -241,12 +263,26 @@ def fill(
 
 
 def coverage(cache: Cache, titles: Iterable[str | None]) -> float:
-    """The share of ``titles`` (one per served row) whose normalised title the cache has decided."""
+    """The share of ``titles`` (one per served row) whose normalised title the cache holds."""
     keys = [normalise(t) for t in titles]
-    return sum(k in cache.decisions for k in keys) / len(keys) if keys else 1.0
+    return sum(k in cache.title_logits for k in keys) / len(keys) if keys else 1.0
 
 
-def family(cache: Cache, title: str | None) -> str:
-    """The cached family for ``title``, or ``UNCLASSIFIED`` for one no run has decided yet."""
-    decided = cache.decisions.get(normalise(title))
-    return decided[0] if decided else UNCLASSIFIED
+def decide_rows(
+    cache: Cache, head: Head, titles: list[str | None], row_logits: np.ndarray
+) -> list[str]:
+    """Each served row's family, from its title's cached logits plus its own row logits. A row
+    whose title no run has encoded yet is ``UNCLASSIFIED``; the warm-up gate keeps a table with
+    many of those out of the ledger."""
+    families = [UNCLASSIFIED] * len(titles)
+    known = [
+        (i, logits)
+        for i, title in enumerate(titles)
+        if (logits := cache.title_logits.get(normalise(title))) is not None
+    ]
+    if known:
+        rows = [i for i, _ in known]
+        decided = head.decide(np.stack([l for _, l in known]), row_logits[rows])
+        for i, (family, _) in zip(rows, decided, strict=True):
+            families[i] = family
+    return families

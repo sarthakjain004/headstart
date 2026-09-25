@@ -2,9 +2,10 @@
 """Append this run's role-group counts to the trends ledger (ADR-0040) — merge stage.
 
 Runs after ``index sync`` and ``index prune``, so it counts the **served stock**: every row
-still in the ``jobs`` table gets a role family from its title, through the classifier head in
-``config/role_family_classifier/`` (ADR-0220, :mod:`headstart.ingest.role_family_classifier`), and
-titles already decided under that head come from a cache kept in ``data/state``. The row is banded
+still in the ``jobs`` table gets a role family from its title and its served description
+``vector``, through the classifier head in ``config/role_family_classifier/`` (ADR-0220,
+ADR-0222, :mod:`headstart.ingest.role_family_classifier`), and titles already encoded under that
+head come from a cache kept in ``data/state``. The row is banded
 by the experience columns the table already carries, and one ``(ts, version, family, band, ats,
 count)`` row per non-empty group is appended to ``data/state/role_trends.parquet`` — plus one
 unbanded, undecomposed ``(non-tech, all, all)`` diagnostic row. Series identity is ``(version,
@@ -15,8 +16,8 @@ migration, the same sentinel the diagnostic row itself always uses.
 
 It also records which family each row landed in and reports the rows that **changed** family
 since the last tick (ADR-0057, :mod:`headstart.ingest.role_assignments`). Counting stock alone
-cannot tell a closure apart from a reassignment, and a retitled posting moves between families
-— so the transitions ride their own ledger rather than distorting this one.
+cannot tell a closure apart from a reassignment, and a retitled or re-described posting moves
+between families — so the transitions ride their own ledger rather than distorting this one.
 
 The ledger is **Parquet, not CSV** (ADR-0120). It is append-only but the merge job re-uploads
 it whole every run, so its on-disk size is a per-run upload cost: measured on the real ledger,
@@ -36,9 +37,10 @@ from __future__ import annotations
 
 import argparse
 import csv
-from collections.abc import Callable
 from datetime import datetime, timedelta
 from pathlib import Path
+
+import numpy as np
 
 from headstart import log, roles, tech_filter
 from headstart.ingest import (
@@ -145,11 +147,13 @@ def _columns(rows) -> tuple[list, ...]:
 
 def count_groups(
     rows,
-    family_of: Callable[[str | None], str | None],
+    families: list[str | None],
     watchlist: list[roles.WatchRole],
     new_after: str,
 ) -> tuple[dict[tuple[str, str, str, str], int], int, dict[str, str]]:
     """Count served rows into ``(metric, family, band, ats)`` groups; non-tech counted apart.
+
+    ``families`` is each row's family, aligned with ``rows``; ``None`` marks a non-tech row.
 
     Returns ``(counts, non_tech, assigned)`` — the last being ``id -> family`` for every row that
     landed in a real family, which :mod:`headstart.ingest.role_assignments` diffs against the
@@ -187,12 +191,11 @@ def count_groups(
             )
 
     non_tech = 0
-    for job_id, years, title, etype, first, ats in zip(
-        ids, min_years, titles, employment, seen, atses, strict=True
+    for job_id, years, title, etype, first, ats, family in zip(
+        ids, min_years, titles, employment, seen, atses, families, strict=True
     ):
         # ISO-8601 UTC on both sides, so string order is time order.
         is_new = bool(first) and first >= new_after
-        family = family_of(title)
         if family is None:
             non_tech += 1
             continue
@@ -209,7 +212,7 @@ def count_groups(
 
 def count_board_groups(
     rows,
-    family_of: Callable[[str | None], str | None],
+    families: list[str | None],
     watchlist: list[roles.WatchRole],
     new_after: str,
     boards: list[str],
@@ -239,11 +242,10 @@ def count_board_groups(
             board_key = (board, *key)
             board_counts[board_key] = board_counts.get(board_key, 0) + 1
 
-    for job_id, years, title, etype, first, ats, board in zip(
-        ids, min_years, titles, employment, seen, atses, boards, strict=True
+    for job_id, years, title, etype, first, ats, board, family in zip(
+        ids, min_years, titles, employment, seen, atses, boards, families, strict=True
     ):
         is_new = bool(first) and first >= new_after
-        family = family_of(title)
         if family is None:
             non_tech += 1
             key = (board, "stock", roles.NON_TECH, "all", ats)
@@ -503,6 +505,25 @@ def _save_board_counts(
     tmp.replace(path)
 
 
+def _row_logits(table, ids: list[str], head) -> np.ndarray:
+    """Each served row's row part of the head's logits (ADR-0222), aligned with ``ids``. Only
+    ``id`` and ``vector`` are read, in batches, and each batch shrinks to one logit per family."""
+    position = {job_id: i for i, job_id in enumerate(ids)}
+    out = np.empty((len(ids), len(head.families)), dtype=np.float32)
+    seen = 0
+    for batch in (
+        table.search().select(["id", "vector"]).limit(len(ids)).to_batches(65536)
+    ):
+        vectors = batch.column("vector").flatten().to_numpy().reshape(len(batch), -1)
+        out[[position[job_id] for job_id in batch.column("id").to_pylist()]] = (
+            head.row_logits(vectors)
+        )
+        seen += len(batch)
+    if seen != len(ids):
+        raise ValueError(f"read {seen} served vectors for {len(ids)} served rows")
+    return out
+
+
 def main() -> int:
     log.setup()
     log.context("role_trends")
@@ -541,6 +562,7 @@ def main() -> int:
 
     import lancedb
 
+    from headstart.embedding_conventions import MODEL as EMBED_MODEL
     from headstart.embedding_conventions import PROD_TABLE
 
     try:
@@ -563,12 +585,22 @@ def main() -> int:
     if not n:
         _log.warning(f"served table '{PROD_TABLE}' is empty — no trend rows this run")
         return 0
+    # The head read the served `vector` as it was trained on: another embedder or width would feed
+    # its row part numbers it never learned, and still yield a confident family.
+    row_width = table.schema.field("vector").type.list_size
+    if (head.row_vector_model, head.row_vector_dim) != (EMBED_MODEL, row_width):
+        _log.error(
+            f"role taxonomy unusable, no trends this run: the head was trained on "
+            f"{head.row_vector_dim}-wide {head.row_vector_model} vectors, the served table holds "
+            f"{row_width}-wide {EMBED_MODEL} ones — retrain the head (ADR-0222)"
+        )
+        return 1
     version = series_version(head.version)
     # The "assigning N served rows to K families" prefix is parsed by
     # scripts/runlog/fanout_merge.py (tests/test_log_contract.py pins it); what follows is free.
     _log.info(
-        f"assigning {n} served rows to {len(family_names)} families by title (classifier "
-        f"head {head.version}, series version {version})"
+        f"assigning {n} served rows to {len(family_names)} families by title and description "
+        f"(classifier head {head.version}, series version {version})"
     )
     # first_seen may be absent on a pre-ADR-0031 table; select() would raise on the missing
     # column, so ask only for what exists and let count_groups treat absence as "never new".
@@ -604,9 +636,10 @@ def main() -> int:
         )
         return 0
 
-    def family_of(title: str | None) -> str | None:
-        family = role_family_classifier.family(cache, title)
-        return None if family == roles.NON_TECH else family
+    decided = role_family_classifier.decide_rows(
+        cache, head, titles, _row_logits(table, rows["id"].to_pylist(), head)
+    )
+    families = [None if family == roles.NON_TECH else family for family in decided]
 
     # The run's one stamp, which `index prune` also wrote its dedup evictions under (ADR-0210).
     now = run_ts()
@@ -615,7 +648,7 @@ def main() -> int:
     try:
         boards = _board_keys(rows["id"].to_pylist(), args.board_ledger)
         counts, non_tech, assigned, board_counts = count_board_groups(
-            rows, family_of, watchlist, new_after, boards
+            rows, families, watchlist, new_after, boards
         )
         previous, as_of = _load_board_counts(args.board_counts, version)
         previous = _recover_board_counts(previous, as_of, args.board_deltas, version)

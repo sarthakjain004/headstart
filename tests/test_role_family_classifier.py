@@ -1,10 +1,13 @@
-"""Tests for the title classifier that decides a row's role family (ADR-0220).
+"""Tests for the classifier that decides a row's role family from its title and its served
+description vector (ADR-0220, ADR-0222).
 
-Contracts: the head abstains below its cutoff; a malformed head is refused; the title cache
-survives a round trip and is discarded under another head; filling decides only missing titles,
-saves after each chunk and stops on its time budget; coverage counts served rows, not distinct
-titles; and encoding batches titles shortest first but returns vectors in input order. The
-encoder is stubbed, so no test downloads JobBERT.
+Contracts: the head adds a row's title part and row part and abstains below its cutoff; the row
+part alone can move a row whose title says otherwise; a malformed head is refused; the title
+cache keeps title logits, survives a round trip and is discarded under another head; filling
+encodes only missing titles, saves after each chunk and stops on its time budget; a row whose
+title no run has encoded is unclassified; coverage counts served rows, not distinct titles; and
+encoding batches titles shortest first but returns vectors in input order. The encoder is
+stubbed, so no test downloads JobBERT.
 """
 
 from __future__ import annotations
@@ -19,14 +22,29 @@ pytest.importorskip("pyarrow")
 from headstart.ingest import role_family_classifier as rfc
 
 _FAMILIES = ["software-engineering", "qa-test", "non-tech"]
+_ROW_DIM = 2
+#: a served vector the row part reads as non-tech, strongly enough to outvote a one-hot title
+_NON_TECH_ROW = [0.0, 1.0]
 
 
-def _head(tmp_path, cutoff=0.6, families=_FAMILIES, rows=None):
+def _head(tmp_path, cutoff=0.6, families=_FAMILIES, title_rows=None, row_dim=_ROW_DIM):
+    """Title part: a one-hot title vector names its family. Row part: the first row coordinate is
+    neutral and the second pulls hard towards non-tech."""
     directory = tmp_path / "head"
     directory.mkdir()
-    weights = np.eye(len(families), 3, dtype=np.float32) * 10 if rows is None else rows
+    title_weights = (
+        np.eye(len(families), 3, dtype=np.float32) * 10
+        if title_rows is None
+        else title_rows
+    )
+    row_weights = np.zeros((len(families), row_dim), np.float32)
+    if "non-tech" in families:
+        row_weights[families.index("non-tech"), -1] = 30.0
     np.savez(
-        directory / "head.npz", weights=weights, bias=np.zeros(len(weights), np.float32)
+        directory / "head.npz",
+        title_weights=title_weights,
+        row_weights=row_weights,
+        bias=np.zeros(len(families), np.float32),
     )
     (directory / "manifest.json").write_text(
         json.dumps(
@@ -34,6 +52,7 @@ def _head(tmp_path, cutoff=0.6, families=_FAMILIES, rows=None):
                 "version": 7,
                 "model": "stub",
                 "model_revision": "stub",
+                "row_vector": {"column": "vector", "model": "stub", "dim": _ROW_DIM},
                 "families": families,
                 "cutoff": cutoff,
             }
@@ -41,6 +60,10 @@ def _head(tmp_path, cutoff=0.6, families=_FAMILIES, rows=None):
         encoding="utf-8",
     )
     return rfc.Head(directory)
+
+
+def _neutral_rows(n):
+    return np.zeros((n, _ROW_DIM), np.float32)
 
 
 def _stub_encoder(monkeypatch, calls=None):
@@ -114,14 +137,31 @@ def test_normalise_is_the_cache_key():
 
 def test_the_head_decides_and_abstains_below_its_cutoff(tmp_path):
     head = _head(tmp_path)
-    decided = head.decide(np.array([[1.0, 0, 0], [0.1, 0.1, 0.1]], dtype=np.float32))
+    titles = head.title_logits(np.array([[1.0, 0, 0], [0.1, 0.1, 0.1]], np.float32))
+    decided = head.decide(titles, head.row_logits(_neutral_rows(2)))
     assert decided[0][0] == "software-engineering" and decided[0][1] > 0.99
     assert decided[1][0] == rfc.UNCLASSIFIED
 
 
+def test_the_row_part_moves_a_row_its_title_alone_would_misfile(tmp_path):
+    """ADR-0222: the same software title, with a description that reads as non-tech."""
+    head = _head(tmp_path)
+    titles = head.title_logits(np.array([[1.0, 0, 0], [1.0, 0, 0]], np.float32))
+    rows = head.row_logits(np.array([[1.0, 0.0], _NON_TECH_ROW], np.float32))
+    assert [family for family, _ in head.decide(titles, rows)] == [
+        "software-engineering",
+        "non-tech",
+    ]
+
+
 def test_a_head_whose_weights_and_manifest_disagree_is_refused(tmp_path):
     with pytest.raises(ValueError, match="disagree"):
-        _head(tmp_path, rows=np.zeros((2, 3), np.float32))
+        _head(tmp_path, title_rows=np.zeros((2, 3), np.float32))
+
+
+def test_a_head_whose_row_weights_miss_the_row_vector_width_is_refused(tmp_path):
+    with pytest.raises(ValueError, match="disagree"):
+        _head(tmp_path, row_dim=_ROW_DIM + 1)
 
 
 def test_a_head_that_trained_the_abstain_family_is_refused(tmp_path):
@@ -131,17 +171,18 @@ def test_a_head_that_trained_the_abstain_family_is_refused(tmp_path):
 
 def test_the_cache_round_trips_and_is_discarded_under_another_head(tmp_path):
     path = tmp_path / "cache.parquet"
-    rfc.save_cache(path, rfc.Cache(7, {"qa engineer": ("qa-test", 0.9)}))
-    assert rfc.load_cache(path, 7).decisions == {
-        "qa engineer": ("qa-test", pytest.approx(0.9))
-    }
-    assert rfc.load_cache(path, 8).decisions == {}
+    logits = np.array([0.5, -1.25, 3.0], np.float32)
+    rfc.save_cache(path, rfc.Cache(7, {"qa engineer": logits}))
+    loaded = rfc.load_cache(path, 7).title_logits
+    assert list(loaded) == ["qa engineer"]
+    assert loaded["qa engineer"].tolist() == logits.tolist()
+    assert rfc.load_cache(path, 8).title_logits == {}
 
 
 def test_an_unreadable_cache_starts_empty(tmp_path):
     path = tmp_path / "cache.parquet"
     path.write_bytes(b"not parquet")
-    assert rfc.load_cache(path, 7).decisions == {}
+    assert rfc.load_cache(path, 7).title_logits == {}
 
 
 def test_fill_decides_only_missing_titles_and_saves_each_chunk(tmp_path, monkeypatch):
@@ -149,21 +190,26 @@ def test_fill_decides_only_missing_titles_and_saves_each_chunk(tmp_path, monkeyp
     _stub_encoder(monkeypatch, calls)
     monkeypatch.setattr(rfc, "_FILL_CHUNK", 2)
     head = _head(tmp_path)
-    cache = rfc.Cache(7, {"software engineer": ("software-engineering", 0.99)})
+    cache = rfc.Cache(7, {"software engineer": np.array([10.0, 0, 0], np.float32)})
     saved: list[int] = []
+    titles = ["Software Engineer", "QA Lead", "Store Clerk", "Engineer II", None]
     added = rfc.fill(
         cache,
         head,
-        ["Software Engineer", "QA Lead", "Store Clerk", "Engineer II", None],
+        titles,
         budget_seconds=60,
-        checkpoint=lambda c: saved.append(len(c.decisions)),
+        checkpoint=lambda c: saved.append(len(c.title_logits)),
     )
     assert added == 4  # "" (from None), "engineer ii", "qa lead", "store clerk"
     assert calls == [["", "engineer ii"], ["qa lead", "store clerk"]]
     assert saved == [3, 5]
-    assert rfc.family(cache, "QA Lead") == "qa-test"
-    assert rfc.family(cache, "store clerk") == "non-tech"
-    assert rfc.family(cache, "Engineer II") == rfc.UNCLASSIFIED
+    assert rfc.decide_rows(cache, head, titles, head.row_logits(_neutral_rows(5))) == [
+        "software-engineering",
+        "qa-test",
+        "non-tech",
+        rfc.UNCLASSIFIED,  # the head cannot place "engineer ii"
+        rfc.UNCLASSIFIED,
+    ]
 
 
 def test_fill_stops_when_its_budget_is_spent(tmp_path, monkeypatch):
@@ -175,15 +221,21 @@ def test_fill_stops_when_its_budget_is_spent(tmp_path, monkeypatch):
     added = rfc.fill(
         cache, _head(tmp_path), ["a software role", "a qa role"], 50, lambda c: None
     )
-    assert added == 1 and len(cache.decisions) == 1
+    assert added == 1 and len(cache.title_logits) == 1
 
 
-def test_a_title_no_run_has_decided_counts_as_unclassified():
-    assert rfc.family(rfc.Cache(7, {}), "Staff Engineer") == rfc.UNCLASSIFIED
+def test_a_row_whose_title_no_run_has_encoded_counts_as_unclassified(tmp_path):
+    head = _head(tmp_path)
+    cache = rfc.Cache(7, {"qa engineer": np.array([0, 10.0, 0], np.float32)})
+    rows = head.row_logits(np.array([[1.0, 0.0], _NON_TECH_ROW], np.float32))
+    assert rfc.decide_rows(cache, head, ["Staff Engineer", "QA Engineer"], rows) == [
+        rfc.UNCLASSIFIED,
+        "non-tech",  # the row part outvotes the qa title
+    ]
 
 
 def test_coverage_counts_served_rows_not_distinct_titles():
-    cache = rfc.Cache(7, {"qa engineer": ("qa-test", 0.9)})
+    cache = rfc.Cache(7, {"qa engineer": np.zeros(3, np.float32)})
     assert (
         rfc.coverage(
             cache, ["QA Engineer", "qa engineer", "QA ENGINEER", "Staff Engineer"]

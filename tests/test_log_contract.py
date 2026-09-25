@@ -1491,16 +1491,21 @@ def _trends_rows() -> tuple[list[dict], dict[str, str]]:
 def _trends_taxonomy(tmp_path: Path, *, unlisted: bool = False) -> None:
     """Write the classifier head and the curated family list, in the paths a real run reads.
 
-    The head knows every family plus non-tech and is confident on a one-hot title vector. With
-    ``unlisted`` the list omits the last family, which the head still decides."""
+    The head knows every family plus non-tech and is confident on a one-hot title vector; its row
+    part (ADR-0222) reads the served table's `_TRENDS_K`-wide vectors with all-zero weights, so a
+    title alone decides. With ``unlisted`` the list omits the last family, which the head still
+    decides."""
     import numpy as np
+
+    from headstart.embedding_conventions import MODEL
 
     head_families = [*_TRENDS_FAMILIES, "non-tech"]
     head = Path("config/role_family_classifier")
     head.mkdir(parents=True, exist_ok=True)
     np.savez(
         head / "head.npz",
-        weights=np.eye(len(head_families), dtype="float32") * 10,
+        title_weights=np.eye(len(head_families), dtype="float32") * 10,
+        row_weights=np.zeros((len(head_families), _TRENDS_K), dtype="float32"),
         bias=np.zeros(len(head_families), dtype="float32"),
     )
     (head / "manifest.json").write_text(
@@ -1509,6 +1514,7 @@ def _trends_taxonomy(tmp_path: Path, *, unlisted: bool = False) -> None:
                 "version": _TRENDS_VERSION,
                 "model": "stub",
                 "model_revision": "stub",
+                "row_vector": {"column": "vector", "model": MODEL, "dim": _TRENDS_K},
                 "families": head_families,
                 "cutoff": 0.5,
             }
@@ -2401,8 +2407,8 @@ CONTRACT: tuple[Line, ...] = (
         consumer="fanout_merge.TRENDS_ASSIGNING",
         emitter=_TRENDS,
         body=(
-            "assigning 3472 served rows to 42 families by title (classifier head 7, series "
-            "version 3007)"
+            "assigning 3472 served rows to 42 families by title and description (classifier "
+            "head 7, series version 3007)"
         ),
         why=(
             "logged before the title classifier runs, so a stalled step is not unnarrated. The "
