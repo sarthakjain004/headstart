@@ -45,7 +45,7 @@ _Avoid_: reading `services` as a judgement on the company — Capgemini employs 
 **Lens** (ADR-0171):
 One of the three questions "actively hiring" can mean, each ranking the same **Company directory** entries differently (ADR-0230; single Boards before it): **Expansion** (net change in open roles, **Netting** applied — who is growing), **Volume** (roles **Opened** in the rolling 7-day window, over the same runs Expansion sums — since ADR-0227; before it, roles first seen in the window and still open), **Rate** (roles Opened in the window as a share of the company's open roles — since ADR-0230; before it, roles first seen in the window and still open). Amazon opened 1,396 roles in one measured week at a net change of −3, which is why these are three lenses and not one number.
 _Avoid_: "hot" as a measure. `hot` is the internal name of the ranking — its module
-(`headstart/hot_ranking`, run at Space boot) and its route — while **Hiring now** is what the tab
+(`headstart/trends/hot_ranking`, run at Space boot) and its route — while **Hiring now** is what the tab
 is called in the UI. Neither is a value a row can hold; a row holds a lens figure and an Operator.
 
 **Followed / Hidden Board** (ADR-0171):
@@ -326,7 +326,7 @@ A tick where a **Methodology** stamp moved, so its step in a line is a change in
 _Avoid_: calling it a data change — the Jobs may be the same; the rules that count them moved.
 
 **Netting** (ADR-0185, ADR-0230):
-Taking out of a line's change the steps that are not hiring — **Counting change**s, **Found Board**s' backlogs and dedup removals — so what is left reads as hiring. Decided once, by `netting` inside `trend_history.answer`, when the history is read (ADR-0230); the Trends tab draws each line's `net` and `steps` as it is given them, and the Hot tab reads its figures off the same answers.
+Taking out of a line's change the steps that are not hiring — **Counting change**s, **Found Board**s' backlogs and dedup removals — so what is left reads as hiring. Decided once, by `trends.netting` inside `trend_history.answer`, when the history is read (ADR-0230); the Trends tab draws each line's `net` and `steps` as it is given them, and the Hot tab reads its figures off the same answers.
 _Avoid_: storing a netted figure — the rule has changed in most of ADR-0185's rounds, so a stored net would go stale with it.
 
 **Line reading** (ADR-0233):

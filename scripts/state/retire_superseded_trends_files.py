@@ -15,8 +15,8 @@ its stored bytes (ADR-0168).
 1. **The pipeline's chain is paused.** The `merge` upload adds and never deletes, so a run that
    fetched `data/state` before the delete and uploads it after would put all four files back.
    `retire_legacy_trends_csv.py` met exactly that resurrection.
-2. **The live Space reads the new layout.** Its deployed `headstart/trends/trend_history.py` names the
-   archive, which only step 6's reader does. An older Space would read the aggregate at its next
+2. **The live Space reads the new layout.** Its deployed `headstart/trends/trend_history.py` names
+   the archive, which only step 6's reader does. An older Space would read the aggregate at its next
    boot and find nothing.
 3. **The history on HF reproduces what is deleted.** It fetches the tick files, the archive and
    the three files this retires that hold counts or methodology, and runs the migration's own

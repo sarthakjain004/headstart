@@ -190,7 +190,7 @@ class _Jump:
     after: float
     kinds: set[str]
     lift: float | None
-    # the notes whose steps land on this run, for trend_reading to say whose jump it is
+    # the notes whose steps land on this run, for line_reading to say whose jump it is
     notes: tuple[int, ...] = ()
 
 

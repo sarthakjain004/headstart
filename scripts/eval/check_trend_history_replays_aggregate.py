@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Check that ``headstart.trends.trend_history`` reproduces the aggregate trends ledger at every tick of
-a real state (ADR-0230 step 3).
+"""Check that ``headstart.trends.trend_history`` reproduces the aggregate trends ledger at every
+tick of a real state (ADR-0230 step 3).
 
 The history serves the index-wide counts at each tick from the Board-delta ledger's replay, and
 reads the aggregate ledger (``role_trends.parquet``) only for the archive, the ticks before the

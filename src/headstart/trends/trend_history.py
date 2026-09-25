@@ -1,6 +1,6 @@
 """Trends' one owner of its stored history (ADR-0230): :func:`record_tick` writes it, and
 :class:`TrendHistory` answers ``/trends`` and the company picker from it. It lives in
-``headstart`` proper, not ``ingest``, so the Space and the pipeline can both import it.
+``headstart.trends``, not ``ingest``, so the Space and the pipeline can both import it.
 
 The history is the Board-delta ledger (ADR-0143): one file per **Tick** under
 ``data/state/role_trend_board_deltas/``, written even when nothing moved. A file holds every
@@ -1259,7 +1259,7 @@ class TrendHistory:
 
         # Under `new`, where a series' first counted run is: a company line's own pick's
         # release, and for a line summing several picks the earliest, after which each later
-        # one joins the sum as a marked step (trend_netting's notes).
+        # one joins the sum as a marked step (netting's notes).
         def counts_from(name: str) -> str | None:
             if metric != "new" or not company_of:
                 return None
@@ -1837,8 +1837,8 @@ class TrendHistory:
         happened since the run before. The first charted run is None: what landed there happened
         before the window. So is every run before turnover began, since nothing measured it.
 
-        ``left_out`` is :func:`netting.left_out_runs`' pair: runs None on every line, and runs where a
-        row duplicate removal can move (``touched``) is not counted.
+        ``left_out`` is :func:`netting.left_out_runs`' pair: runs None on every line, and runs where
+        a row duplicate removal can move (``touched``) is not counted.
         """
         every, touched = left_out
         first = max(

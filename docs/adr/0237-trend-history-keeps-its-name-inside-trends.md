@@ -26,4 +26,5 @@ which ADR-0233 itself introduced, and a name no local holds. The rest of the `tr
 ## Consequences
 
 * `trends/trend_history.py` stutters, for the same reason `boards/scrapable_boards.py` does.
-* Its log tag stays `[trend_history]`.
+* `trend_history` opens no logger, so no tag moves with it. Of this step's modules only `roles`
+  logs, and it now logs as `[role_taxonomy]`; nothing parses that tag.

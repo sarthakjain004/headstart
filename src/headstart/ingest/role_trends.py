@@ -7,11 +7,12 @@ still in the ``jobs`` table gets a role family from its title and its served des
 ADR-0224, :mod:`headstart.ingest.role_family_classifier`), and titles already encoded under that
 head come from a cache kept in ``data/state``. The row is banded by the experience columns the
 table already carries, and counted per Board into ``(metric, family, band)`` groups, with
-non-tech as one ``(stock, non-tech, all)`` group a Board. :func:`headstart.trends.trend_history.record_tick`
-writes the tick as one file of the Board-delta ledger: each group's change since the last tick,
-and the tick's **Methodology** (the family list, the classifier head, the tech filter, the
-derivations and the dedup rules). A new classifier head is a delta like any other tick; the tick
-it lands on is a counting change because its Methodology moved (ADR-0230).
+non-tech as one ``(stock, non-tech, all)`` group a Board.
+:func:`headstart.trends.trend_history.record_tick` writes the tick as one file of the Board-delta
+ledger: each group's change since the last tick, and the tick's **Methodology** (the family list,
+the classifier head, the tech filter, the derivations and the dedup rules). A new classifier head is
+a delta like any other tick; the tick it lands on is a counting change because its Methodology moved
+(ADR-0230).
 
 It also records which family each row landed in and reports the rows that **changed** family
 since the last tick (ADR-0057, :mod:`headstart.ingest.role_assignments`). Counting stock alone

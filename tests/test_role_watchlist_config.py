@@ -1,11 +1,11 @@
 """Invariants of the shipped `config/role_watchlist.json` (ADR-0051, amended by ADR-0052).
 
-Deliberately stdlib-only, so it runs in CI's quality job. `headstart.trends.role_taxonomy` imports numpy at
-module scope, so `test_trends_role_taxonomy.py` and `test_role_trends.py` both `importorskip` and are SKIPPED
-in CI — a watchlist invariant asserted there would gate nothing. These checks are cheap and the
-failures they catch are silent: a typo'd `parent` orphans a role from every drill, an
-uncompilable pattern raises inside a pipeline step marked `continue-on-error`, and a ninth role
-under one parent simply never gets a colour.
+Deliberately stdlib-only, so it runs in CI's quality job. `headstart.trends.role_taxonomy` imports
+numpy at module scope, so `test_trends_role_taxonomy.py` and `test_role_trends.py` both
+`importorskip` and are SKIPPED in CI — a watchlist invariant asserted there would gate nothing.
+These checks are cheap and the failures they catch are silent: a typo'd `parent` orphans a role from
+every drill, an uncompilable pattern raises inside a pipeline step marked `continue-on-error`, and a
+ninth role under one parent simply never gets a colour.
 """
 
 import json

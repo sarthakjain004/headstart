@@ -2,7 +2,7 @@
 """Diff the Space's ``/trends`` and ``/companies/suggest`` answers between two checkouts, on one
 state (ADR-0230 step 3).
 
-Step 3 moves both routes onto ``headstart.trends.trend_history`` and promises their JSON stays byte for
+Step 3 moves both routes onto ``headstart.trend_history`` and promises their JSON stays byte for
 byte what it was. This checks the promise on real state. It boots each checkout's Space app in a
 process of its own, so each imports its own ``headstart``. The encoder, LanceDB and the HF pull
 are stubbed, and the app's ``_STATE`` and ``_CONFIG`` are pointed at ``--state`` and at the

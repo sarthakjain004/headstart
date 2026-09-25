@@ -1,5 +1,5 @@
 """A small Trends history holding one duplicate removal, written through ``record_tick``: the
-state ``test_trend_history`` and ``test_trend_reading`` read a removal from.
+state ``test_trends_trend_history`` and ``test_trends_line_reading`` read a removal from.
 
 Micro (one Eightfold Board) hires 2 tech openings a tick over 17 ticks, twelve hours apart. On
 tick ``REMOVAL`` duplicate removal takes out 119 rows: 109 of its 218 tech openings and 10 of its

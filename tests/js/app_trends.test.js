@@ -775,8 +775,8 @@ function answering(ctx, body, status = 200) {
 }
 
 /* Golden readings (tests/fixtures/trend_readings/, ADR-0233): each answer with the reading the
- * Space serves beside it. pytest proves headstart.trends.line_reading reads exactly these, so the page
- * is tested on the figures it will be given rather than on any it works out itself. */
+ * Space serves beside it. pytest proves headstart.trends.line_reading reads exactly these, so the
+ * page is tested on the figures it will be given rather than on any it works out itself. */
 const READINGS = path.join(__dirname, '..', 'fixtures', 'trend_readings');
 function golden(name) {
   const { answer_input, reading } = JSON.parse(fs.readFileSync(path.join(READINGS, `${name}.json`), 'utf8'));

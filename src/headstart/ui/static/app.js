@@ -1612,7 +1612,8 @@ let tableView = false;      // the WCAG-clean twin of the chart, independent of 
 let lastGeom = null;        // scales + resolved values from the last drawTrends() — hover reads this
 let trendReq = null;        // the /trends request in flight, so a newer one can cancel it
 const hiddenSeries = new Set();   // legend toggle-to-hide; keyed by name, so a re-rank keeps it
-const CHART_MAX = 8;        // matches the 8-slot validated categorical palette; line_reading.LINES_CHARTED
+const CHART_MAX = 8;        // matches the 8-slot validated categorical palette;
+                            // line_reading.LINES_CHARTED
 // The kinds of Marked change that are a counting change, drawn as a dashed marker; every other
 // kind moved openings into or out of the count at once, drawn solid (line_reading.CauseKind).
 const COUNTING_KINDS = new Set(['counting', 'growth_scaled_by_a_change']);
@@ -3533,8 +3534,9 @@ function markedText(item){
 }
 
 // Every way a line reading (the Space's `reading`, ADR-0233) breaks its invariants, as sentences;
-// empty when it reconciles. The same equalities as `headstart.trends.line_reading.check_reading`, in
-// the same words, run by the node tests over the same golden readings, so neither side can drift.
+// empty when it reconciles. The same equalities as
+// `headstart.trends.line_reading.check_reading`, in the same words, run by the node tests over the
+// same golden readings, so neither side can drift.
 // The page runs it on every reading it draws (problemsOf) and says when one fails.
 //   1. every line: latest − start = hiring + Σ not hiring;
 //   2. a company line's Not hiring is its Marked changes, change by change;
