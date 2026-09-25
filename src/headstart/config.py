@@ -299,6 +299,12 @@ EXCLUDED_BOARDS: frozenset[str] = frozenset(
         "jobvite:li3",
         "jobvite:michaelcarrinotest",
         "jobvite:onecoprd",
+        # `blackbear` (2026-09-25) is a sales-demo tenant: its postings' `og:title` names a
+        # different company each ("Chromalloy", "CFO Services", "Blackbear Manufacturing",
+        # "BlackBear Professional Services"), one carries "DO NOT EDIT - Steve T - Using for
+        # branded demo", and every one of its 129 detail pages is an unrendered template
+        # (`'${job.applyLinkUrl}'`) with no posting, so it has served no rows.
+        "jobvite:blackbear",
         # JazzHR (board page, detail JSON-LD `hiringOrganization`): `adptestcompanycp` is "ADP
         # Test Company- CP", stock titles ("Advertising Sales Representative", "Art Director");
         # `jobtarget` is "JobTarget - Demo", 46 postings: "Donkey Handler - JazzHr Integration Test

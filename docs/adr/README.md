@@ -223,6 +223,7 @@ supersedes it and note the supersession in both.
 | [0224](0224-a-rows-description-vector-joins-its-title-in-deciding-its-role-family.md) | A row's description vector joins its title in deciding its role family | 2026-09-25 |
 | [0226](0226-zoho-throttle-redirect-walls-the-spare-egress.md) | Zoho's throttle redirect walls its egress group | 2026-09-25 |
 | [0228](0228-a-detail-pass-may-send-its-requests-in-batches-from-one-warmed-tab.md) | A Detail pass may send its requests in batches from one warmed tab | 2026-09-25 |
+| [0230](0230-a-jobvite-job-is-read-from-its-detail-page-or-not-at-all.md) | A Jobvite Job is read from its detail page or not at all | 2026-09-25 |
 
 *ADR-0037 was removed from the repository on 2026-09-24 by the owner's decision; its number is not
 reused.*
