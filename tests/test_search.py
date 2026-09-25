@@ -1088,18 +1088,3 @@ def test_a_category_hands_over_as_the_ids_trends_counted() -> None:
     many = {"ai-ml": [f"b:x:{i:05d}" for i in range(MAX_FAMILY_IDS + 1)]}
     with pytest.raises(ValueError):
         scoped_jobs_clause(MultiDict([("board", "b:x"), ("family", "ai-ml")]), many)
-
-
-def test_a_company_hands_over_its_tech_roles_only() -> None:
-    """`tech=1` leaves out the Boards' Jobs the assignment calls non-tech, as the trend does."""
-    from werkzeug.datastructures import MultiDict
-
-    from headstart.search import scoped_jobs_clause
-
-    ids = {"non-tech": ["google:careers.google.com:9", "x:y:1"]}
-    args = MultiDict([("board", "google:careers.google.com"), ("tech", "1")])
-    assert scoped_jobs_clause(args, ids) == (
-        "NOT (id IN ('google:careers.google.com:9'))"
-    )
-    plain = MultiDict([("board", "google:careers.google.com")])
-    assert scoped_jobs_clause(plain, ids) is None

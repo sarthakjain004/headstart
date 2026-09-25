@@ -238,23 +238,24 @@ def _load_board_deltas(path: Path) -> list[dict]:
     return rows
 
 
-# The families ADR-0220 retired, and the v3 family each became: the data carries the old names
-# until the new classifier's series lands, and links made before carry them after.
-_FAMILY_SUCCESSOR = {
-    "ai-ml": "ai-ml-data-science",
-    "data-science": "ai-ml-data-science",
-    "security-engineering": "security",
-    "web-development": "frontend-web",
-    "mobile-development": "mobile",
-    "data-analytics": "data-analytics-bi",
-    "network-infrastructure": "network-engineering",
-    "hardware-embedded": "embedded-firmware",
-    "it-operations": "systems-administration-it-operations",
-    "enterprise-platform": "enterprise-applications",
-    "java-development": "software-engineering",
-    "python-development": "software-engineering",
-    "tech-leadership": "engineering-management",
-}
+def _family_successors(path: Path) -> dict[str, str]:
+    """Each retired family's v3 successor (ADR-0220), from `retired` in the curated map: the
+    data carries the old names until the new classifier's series lands, and links made before
+    carry them after."""
+    if not path.exists():
+        return {}
+    spec = json.loads(path.read_text(encoding="utf-8"))
+    return {
+        f["name"]: f["successor"] for f in spec.get("retired", []) if f.get("successor")
+    }
+
+
+def _family_weights(rows: list[dict]) -> Counter[str]:
+    """Openings per family over ``rows`` — how much of the data each name holds."""
+    weights: Counter[str] = Counter()
+    for row in rows:
+        weights[row["family"]] += row["count"]
+    return weights
 
 
 def _resolve_family(family: str | None, present: Counter[str]) -> str | None:
@@ -272,14 +273,6 @@ def _resolve_family(family: str | None, present: Counter[str]) -> str | None:
         if new == family and old in present
     ]
     return max(older, key=lambda old: present[old]) if older else family
-
-
-def _retired_labels(path: Path) -> dict[str, str]:
-    """Display names of the retired families (ADR-0220), which the data still carries."""
-    if not path.exists():
-        return {}
-    spec = json.loads(path.read_text(encoding="utf-8"))
-    return {f["name"]: f.get("label", f["name"]) for f in spec.get("retired", [])}
 
 
 def _family_labels(path: Path) -> dict[str, str]:
@@ -406,7 +399,7 @@ _TRENDS = _load_trends(_STATE / "data" / "state" / "role_trends.parquet")
 _CONFIG = Path(__file__).parent / "config"  # copied in beside this app (ADR-0153)
 _WATCH = _watch_meta(_CONFIG / "role_watchlist.json")
 _FAMILY_LABELS = _family_labels(_CONFIG / "role_families.json")
-_RETIRED_LABELS = _retired_labels(_CONFIG / "role_families.json")
+_FAMILY_SUCCESSOR = _family_successors(_CONFIG / "role_families.json")
 _EPOCHS = _load_epochs(_STATE / "data" / "state" / "trends_epochs.csv")
 # The seniority bands `headstart.roles.band` writes, as a reader says them: the Level view's
 # legend read "mid", "senior", "unspecified".
@@ -531,16 +524,6 @@ def _company_atses(entry: dict) -> list[str]:
 _FAMILY_IDS = search.load_family_ids(
     _STATE / "data" / "state" / "role_assignments.parquet"
 )
-# The snapshot leaves out the Jobs the classifier calls non-tech, so they are the served ids it
-# does not hold — read off the table once, so "See its open roles" can list tech roles only.
-if _FAMILY_IDS is not None:
-    try:
-        _FAMILY_IDS[_NON_TECH] = search.unassigned_ids(
-            _table.to_lance().to_table(columns=["id"]).column("id").to_pylist(),
-            _FAMILY_IDS,
-        )
-    except Exception as exc:  # noqa: BLE001 — a missing lance reader must not stop boot
-        print(f"served ids unreadable ({exc}); non-tech not left out", flush=True)
 _COMPANIES = _load_directory(_STATE / "data" / "state" / "company_directory.json")
 _COMPANY_OF = {
     board: key for key, entry in _COMPANIES.items() for board in entry["boards"]
@@ -1621,7 +1604,14 @@ def trends():
     # narrows it.
     epochs = _EPOCHS
     if since:
-        epochs = [e for e in epochs if e["ts"] >= since]
+        # Under New a change a week before the window still echoes inside it (its openings age
+        # out of "new" there), so its epoch comes along for the page to mark that echo.
+        earliest = since
+        if metric == "new":
+            earliest = (
+                datetime.fromisoformat(since) - timedelta(days=_NEW_WINDOW_DAYS)
+            ).isoformat(timespec="seconds")
+        epochs = [e for e in epochs if e["ts"] >= earliest]
     if until:
         epochs = [e for e in epochs if e["ts"] <= until]
 
@@ -1639,14 +1629,24 @@ def trends():
 
     # A family asked for by a name the data does not hold — an old link after the v3 families
     # (ADR-0220), or a new one before their data lands — reads as the name it does hold.
-    present = Counter(r["family"] for r in trends_rows)
+    # Families by the names the data holds (ADR-0220). A retired family reads as its v3
+    # successor wherever the successor has data in this scope, so a window spanning the switch
+    # draws one line — "AI / Machine Learning" becoming "AI, ML & Data Science" — not two that
+    # stop and start. Weighed in openings, so "the larger" means more jobs, not more rows.
+    present = _family_weights(trends_rows)
+    rename = {old: new for old, new in _FAMILY_SUCCESSOR.items() if new in present}
+    if rename.keys() & present.keys():
+        trends_rows = [
+            {**r, "family": rename[r["family"]]} if r["family"] in rename else r
+            for r in trends_rows
+        ]
+        present = _family_weights(trends_rows)
     family = _resolve_family(family, present)
 
-    # The v3 name a family in the data answers to, only while that name has no data of its own:
-    # `java-development`'s successor is `software-engineering`, which is not the same drill.
-    def successor(name: str | None) -> str | None:
-        new = _FAMILY_SUCCESSOR.get(name or "")
-        return new if new and new not in present else None
+    # A watched role's parent as the data holds it: its v3 parent, or while that has no data,
+    # the retired family it resolves to — "ai-ml", not its smaller sibling "data-science".
+    def parent_of(meta: dict) -> str | None:
+        return _resolve_family(meta["parent"], present)
 
     rows = [
         r for r in trends_rows if r["metric"] == metric and r["family"] != _NON_TECH
@@ -1665,11 +1665,7 @@ def trends():
         key = "company"
     elif family and split == "roles":
         # The family's watched sub-roles (ADR-0051), each its own series.
-        wanted = {
-            n
-            for n, meta in _WATCH.items()
-            if meta["parent"] in (family, successor(family))
-        }
+        wanted = {n for n, meta in _WATCH.items() if parent_of(meta) == family}
         rows = [r for r in rows if r["family"] in wanted]
         key = "family"
     elif family:
@@ -1817,9 +1813,8 @@ def trends():
     # Under the names the data holds as well as the config's: the watchlist moved to the v3
     # families before their data landed, and the AI roles' drill vanished from "AI / Machine
     # Learning" with it.
-    parents = {meta["parent"] for meta in _WATCH.values()}
     watch_parents = sorted(
-        parents | {old for old in _FAMILY_SUCCESSOR if successor(old) in parents}
+        {parent for meta in _WATCH.values() if (parent := parent_of(meta))}
     )
     return jsonify(
         version=_LIVE_VERSION,
@@ -1833,9 +1828,7 @@ def trends():
         split_by=key,
         # The drilled family's display name, so a cold link into a drill can name it.
         family=family,  # as resolved (_resolve_family), which the page adopts
-        family_label=_FAMILY_LABELS.get(family, _RETIRED_LABELS.get(family, family))
-        if family
-        else None,
+        family_label=_FAMILY_LABELS.get(family, family) if family else None,
         watch_parents=watch_parents,
         epochs=epochs,
         # With its Board keys, so the chart can hand a pick to Search by Board (ADR-0185).

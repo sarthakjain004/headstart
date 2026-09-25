@@ -490,8 +490,8 @@ let searched = null;
 // the exact Jobs the trend counted — a semantic query alone ranked all 1,856 Google jobs under
 // a trend of 243.
 let searchScope = null;
-function searchCompany(boards, label, q, category, tech){
-  searchScope = { boards, label, category: category || null, tech: !!tech };
+function searchCompany(boards, label, q, category, aside){
+  searchScope = { boards, label, category: category || null, aside: aside || 0 };
   el('company').value = '';   // the text filter would narrow the Boards again, by name
   if (q != null) el('q').value = q;
   location.hash = searchHash();
@@ -505,7 +505,7 @@ function searchHash(){
   if (searchScope.category){
     p.set('family', searchScope.category.family);
     p.set('family_label', searchScope.category.label);
-  } else if (searchScope.tech) p.set('tech', '1');
+  } else if (searchScope.aside) p.set('aside', String(searchScope.aside));
   if (el('q').value.trim()) p.set('q', el('q').value.trim());
   return '#search?' + p;
 }
@@ -520,7 +520,7 @@ function readSearchHash(){
   if (!boards.length || location.hash === searchHash()) return false;
   searchScope = { boards, label: p.get('label') || `${boards.length} board${boards.length === 1 ? '' : 's'}`,
                   category: p.get('family') ? { family: p.get('family'), label: p.get('family_label') || p.get('family') } : null,
-                  tech: p.get('tech') === '1' };
+                  aside: Number(p.get('aside')) || 0 };
   el('company').value = '';
   el('q').value = p.get('q') || '';
   return true;
@@ -556,9 +556,7 @@ async function fetchPage(){
   if (mine) p.set('mine', '1');
   if (scope){
     scope.boards.forEach(b => p.append('board', b));
-    // A category is its Jobs; a whole company is its tech roles, as the trend counts them.
     if (scope.category) p.set('family', scope.category.family);
-    else if (scope.tech) p.set('tech', '1');
   }
   el('results').innerHTML = skeleton() + skeleton() + skeleton();
   setResultRows(3);
@@ -657,8 +655,13 @@ function drawResultKind(q, shown){
     // sentence as the `has_first_seen` one directly below.
     // A company hand-off is a narrowing too: under "Company: Google · AI / Machine Learning"
     // it said "across every board".
+    // The trend counts tech roles; Search lists every job HeadStart serves for the company,
+    // including those its role classifier sets aside as non-tech. The gap is said, not left to
+    // read as a mismatch (Google: 1,800 in Trends, 1,854 here).
+    const aside = searched.scope && searched.scope.aside
+      ? ` — including ${searched.scope.aside.toLocaleString()} its trend leaves out as non-tech` : '';
     const scope = searched.scope
-      ? `Jobs from ${searched.scope.label}${searched.scope.category ? `, ${searched.scope.category.label}` : ''}`
+      ? `Jobs from ${searched.scope.label}${searched.scope.category ? `, ${searched.scope.category.label}` : ''}${aside}`
       : Object.keys(searched.filters).length ? 'Jobs matching the filters above' : 'Jobs from across every board';
     node.textContent = `${scope}, ${order} \u2014 no search yet, so nothing is ranked. ` +
       'Describe a role above to rank by meaning.';
@@ -1872,9 +1875,7 @@ function spanDays(s, d){
   return first < 0 ? 0 : (new Date(d.stamps[d.stamps.length - 1]) - new Date(d.stamps[first])) / 864e5;
 }
 function verdictOf(s, d){
-  // The latest run's figure, not the last one measured: a category now at none kept its old
-  // count in the tile (Syms "227" beside a sentence of 144).
-  const now = s.points[s.points.length - 1] ?? (s.points.some(v => v != null) ? 0 : null);
+  const now = latestOf(s);
   const days = spanDays(s, d);
   const over = `over ${Math.round(days)} days`;
   const what = trendMetric === 'new' ? 'tech openings first seen in the last 7 days' : 'tech openings';
@@ -2000,6 +2001,17 @@ function stepNotes(d){
       || keys.some(k => k.startsWith(MIRROR_ATS + ':'));
   }).map(p => p.key);
   (d.epochs || []).forEach(e => {
+    // Under New a tech-filter change counts twice: the openings it lets in read as new at once,
+    // and stop reading as new a week later, when they age out of the window. That second drop
+    // read as NVIDIA's "down 45.1%" and the index's unmarked −19,600. Only that change: a
+    // refit or a duplicate removal adds no newly-seen postings, so it has nothing to age out.
+    // The change itself can sit before the window, with its echo inside it.
+    if (trendMetric === 'new' && (e.fields || []).includes('tech_filter_version')){
+      const echo = new Date(new Date(e.ts).getTime() + NEW_WINDOW_DAYS * 864e5);
+      const k = d.stamps.findIndex(ts => new Date(ts) >= echo);
+      if (k > 0) notes.push({ i: k, found: false, epoch: true, withhold: picked,
+        text: `A week after a counting change (${e.changed.join(', ')}): the openings it let in stop counting as new here — not hiring` });
+    }
     const i = d.stamps.indexOf(e.ts); if (i < 0) return;
     const text = `Counting changed here: ${e.changed.join(', ')}`;
     if (!picked){ notes.push({ i, text, found: false, epoch: true, withhold: false }); return; }
@@ -2012,15 +2024,6 @@ function stepNotes(d){
     // (below) is not.
     if (i > 0) notes.push({ i, text: `${text} — not hiring, so the jump it makes is left out of the lines it moves`,
       found: false, epoch: true, withhold: true, companies });
-    // Under New a change counts twice: the openings it adds read as new at once, and read as
-    // no longer new a week later, when they age out of the window. That second drop read as
-    // NVIDIA's "down 45.1%" and the index's unmarked −19,600.
-    if (trendMetric === 'new'){
-      const echo = new Date(new Date(e.ts).getTime() + NEW_WINDOW_DAYS * 864e5).toISOString();
-      const k = d.stamps.findIndex(ts => ts >= echo.replace('.000Z', '+00:00'));
-      if (k > 0) notes.push({ i: k, found: false, epoch: true, withhold: true, companies,
-        text: `A week after a counting change (${e.changed.join(', ')}): the openings it added stop counting as new here — not hiring` });
-    }
     // A change can land over two runs — Amazon's Sep 17 filter change was +308 at its run and
     // −439 at the next, which left in read as hiring and turned Amazon from +1.2% to −2.9% —
     // so the run after it is left out too, at the cost of one run of ordinary change.
@@ -2131,7 +2134,7 @@ function countedPicks(){
 }
 function pickPhrase(){
   // With none counted (a window before counting began) the picks still name the chart.
-  const picks = countedPicks().length ? countedPicks() : trendPicks, n = picks.length;
+  const counted = countedPicks(), picks = counted.length ? counted : trendPicks, n = picks.length;
   return !n ? '' : n === 1 ? `at ${picks[0].label || 'the picked company'}` : `at ${n} companies`;
 }
 // When HeadStart began counting the picks this answer counts, earliest first — or one pick's
@@ -2768,9 +2771,7 @@ function drawTrends(){
     const c = seriesColor(slot);
     const mv = lineMove(s);
     const j = d.stamps.length - 1;
-    // A line with earlier counts and none at the latest run is at zero there, not unknown.
-    const latest = s.latest == null ? (trendPicks.length && s.points.some(v => v != null) ? 0 : null)
-      : levelValue(s.latest, j, s);
+    const latest = latestOf(s) == null ? null : levelValue(latestOf(s), j, s);
     // Mark the categories that hold named roles, so the by-role drill is DISCOVERABLE from the
     // top level. Without it the split toggle only appears after drilling in, which means the
     // one place that advertises the feature is the one place you reach by already knowing it
@@ -3201,7 +3202,7 @@ function buildKpis(d, charted, measured){
   // measured against this payload, 266,008 under a "New this week" label whose series sum to
   // 31,143. The sum agrees with the subtraction exactly on stock, where both are defined.
   const openings = d.series.reduce((sum, s) => {
-    const last = s.latest;
+    const last = latestOf(s);
     return sum + (last || 0);
   }, 0);
   const tiles = [];
@@ -3382,6 +3383,25 @@ function buildTrendsTable(){
 // How many openings a line's marked steps moved it, as counted: the chart's move less the
 // hiring one, so under Count a row's start, its hiring change in openings and this add up to
 // its latest count. Always in openings, whatever the unit — the column says so.
+// How many of the picks' served jobs the classifier sets aside as non-tech at the latest run:
+// each company's whole total less its tech openings.
+function nonTechAt(d){
+  if (!d || !d.company_totals) return 0;
+  const whole = Object.values(d.company_totals).reduce((sum, t) => sum + (t[t.length - 1] || 0), 0);
+  const tech = d.series.reduce((sum, s) => sum + (latestOf(s) || 0), 0);
+  return Math.max(0, whole - tech);
+}
+
+// A line's figure at the latest run. The Space leaves a stock series' point empty where a run
+// counted none of it, so a line with earlier counts reads 0 there — one rule for the tile, the
+// sentence and the legend, which disagreed ("227" beside 144).
+function latestOf(s){
+  // A summed line built here (a Total) carries no `latest`; its last point is it.
+  const last = s.latest !== undefined ? s.latest : s.points[s.points.length - 1];
+  if (last != null) return last;
+  return trendMetric === 'stock' && s.points.some(v => v != null) ? 0 : null;
+}
+
 // A percentage's own size in openings, so a table row adds up: "+1.0% (+19)".
 function hiringOpenings(s, mv){
   const m = mv.dl != null && trendMove(s);
@@ -3391,24 +3411,26 @@ function hiringOpenings(s, mv){
 // it: "−2,041 duplicate postings removed, +230 from counting changes". The payload knew NVIDIA's
 // −1,811 was mostly one duplicate removal; the sentence named three possible causes and none.
 // A run holding two kinds of step is named by both, with one size.
-function causesOf(s, other){
-  const by = { duplicates: 0, found: 0, counting: 0 };
+function causesOf(s, total){
+  const by = { duplicates: 0, found: 0 };
   // A run holding several kinds gives each known size to its kind (NVIDIA's refit run removed
-  // 2,041 duplicates beside a family change) and the rest of the jump to counting changes.
+  // 2,041 duplicates beside a family change), which only a whole company's line can: a found
+  // Board's openings are the company's, not one category's. What is left is counting changes,
+  // taken as the total less the named parts, so the parts always add up to it.
+  const whole = isWholeLine(s);
   stepJumps(s.points, s).forEach(j => {
-    const size = j.lift ?? (j.after - j.before);
-    if (j.kinds.size === 1){ by[[...j.kinds][0]] += size; return; }
-    by.duplicates += j.known.duplicates;
-    by.found += j.known.found;
-    by.counting += size - j.known.duplicates - j.known.found;
+    const only = j.kinds.size === 1 ? [...j.kinds][0] : null;
+    if (only && only !== 'counting') by[only] += j.lift ?? (j.after - j.before);
+    else if (!only && whole){ by.duplicates += j.known.duplicates; by.found += j.known.found; }
   });
+  const duplicates = Math.round(by.duplicates), found = Math.round(by.found);
+  const counting = total - duplicates - found;
   const parts = [
-    by.duplicates && `${signedOpenings(Math.round(by.duplicates))} as duplicate postings were removed`,
-    by.found && `${signedOpenings(Math.round(by.found))} from boards found later or companies joining the count`,
-    by.counting && `${signedOpenings(Math.round(by.counting))} from changes in how HeadStart counts`,
+    duplicates && `${signedOpenings(duplicates)} as duplicate postings were removed`,
+    found && `${signedOpenings(found)} from boards found later or companies joining the count`,
+    counting && `${signedOpenings(counting)} from changes in how HeadStart counts`,
   ].filter(Boolean);
-  return parts.length ? `came from outside hiring: ${parts.join(', ')}`
-    : `came in runs marked as counting changes (${signedOpenings(other)})`;
+  return `came from outside hiring: ${parts.join(', ')}`;
 }
 function countingMove(s){
   const raw = headTail(s.points), net = trendMove(s);
@@ -3810,7 +3832,7 @@ if (el('trends-co-roles')) el('trends-co-roles').addEventListener('click', () =>
     // "Software Engineering (general)" asks for "(general)" too; the qualifier is not a role.
     trendDrill && !exact ? name.replace(/\s*\(.*\)\s*$/, '') : '',
     exact ? { family: trendDrill, label: name } : null,
-    !trendDrill && CFG.family_handoff);
+    trendDrill ? 0 : nonTechAt(trendData));
 });
 
 // "See trend" from a Hot-tab row or a search result (ADR-0185): the Board key the row already

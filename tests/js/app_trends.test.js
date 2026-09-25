@@ -1747,3 +1747,33 @@ test('a run with duplicates removed beside a counting change names each by its s
   assert.match(nodes['trends-verdict'].innerHTML,
     /−2,041 openings as duplicate postings were removed, \+41 openings from changes in how HeadStart counts/);
 });
+
+
+test('Search says how many of its jobs the trend leaves out as non-tech', () => {
+  const { t, ctx, nodes } = loadApp();
+  t.setPicks([ACME]);
+  t.set({ ...picked({ a: [90, 100] }), stamps: STAMPS,
+    company_totals: { 'greenhouse:acme': [100, 108] } });
+  nodes['trends-co-roles'].fire('click');
+  const hash = new URLSearchParams(ctx.location.hash.split('?')[1]);
+  assert.equal(hash.get('aside'), '8', '108 served, 100 tech');
+});
+
+test('the latest figure is one rule: a line now at none reads 0 in the tile and the sentence', () => {
+  const { t, nodes } = loadApp();
+  t.setPicks([ACME]);
+  t.set({ ...picked({}), stamps: FOUR, totals: [1e3, 1e3, 1e3, 1e3], non_tech: [0, 0, 0, 0],
+    series: [{ name: 'a', label: 'a', points: [100, 100, 100, 100], latest: 100 },
+             { name: 'b', label: 'b', points: [83, 83, 83, null], latest: null }] });
+  t.draw();
+  assert.match(nodes['trends-kpi'].innerHTML, /<span class="kpi-value">100<\/span>/);
+  assert.match(nodes['trends-verdict'].innerHTML, /Acme<\/b>: 100 tech openings/);
+});
+
+test('a drill is titled for its category and its company', () => {
+  const { t, nodes } = loadApp();
+  t.setPicks([ACME]);
+  t.set({ ...picked({}), family_label: 'AI / Machine Learning' }, 'ai-ml');
+  t.draw();
+  assert.equal(nodes['trends-title'].textContent, 'How AI / Machine Learning hiring is moving at Acme');
+});

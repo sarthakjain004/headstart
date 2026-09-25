@@ -645,3 +645,27 @@ sentence, line and table agreed. What remained:
     no counted pick still names its picks.
 - **Not changed:** an exact company name still ranks first ("Infosys", 4 openings, above its
   larger subsidiaries), as a test states.
+
+Its code review changed the round:
+
+- **"See its open roles" explains the non-tech gap instead of filtering it out.**
+  - Filtering needed the served ids, read through `to_lance()`. That needs `pylance`, which the
+    Space does not install, so the exclusion was dead there.
+  - Filtering on "served but unassigned" would also hide every job indexed since the
+    assignment snapshot, which happens during a classifier warm-up (ADR-0220).
+  - So Search now says how many of its jobs the trend leaves out as non-tech. That figure is each
+    company's whole total less its tech openings, carried in the hand-off (`aside=`).
+- **The echo under New is for tech-filter changes only.** A refit or a duplicate removal adds no
+  newly-seen postings, so nothing ages out a week later. A change up to a week before the window
+  now comes with it, and the index chart marks the echo too.
+- **Retired families name their successor in `config/role_families.json`**, the one source,
+  not a map in the Space.
+  - A retired family reads as its successor wherever the successor has data in scope, so a window
+    spanning the switch draws one line.
+  - Family sizes are weighed in openings.
+  - A watched role's parent resolves to the name the data holds, so the AI roles sit under
+    "AI / Machine Learning" only, not under Data Science as well.
+- **The causes add up exactly.** A known size is given to its kind only on a whole company's
+  line, and counting changes are the total less the named parts.
+- **One rule for a line's latest figure** (`latestOf`), shared by the tile, the sentence and the
+  legend.
