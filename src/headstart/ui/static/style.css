@@ -1226,5 +1226,14 @@ textarea:focus{ border-color:var(--accent); }
 .trends-changes{ margin-top:10px; font-size:12.5px; color:var(--ink-2); }
 .trends-changes ul{ margin:6px 0 0; padding-left:18px; }
 .trends-changes li{ margin:3px 0; }
-/* On a phone the tooltip's names wrap rather than cut: "Engineer… Manage…" read as nothing. */
-@media (max-width:560px){ .trends-tooltip .tt-name{ white-space:normal; } }
+/* The not-hiring causes, on their own line under the answer they qualify (verdictOf). */
+.verdict-why{ display:block; margin-top:2px; font-size:12.5px; color:var(--ink-3); }
+/* Under the chart on a phone the reading takes its own place in the page rather than floating
+   over the legend it covered, and a name keeps room of its own: squeezed beside the figures it
+   broke as "Hard… / Firm… / & / Silicon" (critic round 14). */
+.trends-tooltip.under{ position:static; margin-top:6px; }
+.trends-tooltip.under .tt-val{ white-space:nowrap; }
+.trends-tooltip.under .tt-name{ min-width:9em; }
+/* On a 320px phone a long reading ("1,032 · marked change −264") wraps under its name rather than
+   pushing the row past the edge. */
+.trends-tooltip.under .tt-row{ flex-wrap:wrap; }

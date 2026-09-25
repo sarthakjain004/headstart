@@ -107,11 +107,13 @@
      is measured in days. The presets above answer the question; the exact range is still
      here, one hairline down (dataviz skill, palette.md § Filter controls). #}
   <details class="trends-custom">
-    <summary>Custom range</summary>
+    <summary>Custom range <span class="note">(your local time; the chart reads in UTC)</span></summary>
+    {# Said, since every other time on the tab is UTC: Sep 15 00:00 typed in India asked for
+       Sep 14 18:30 UTC with nothing to say so (critic round 14). #}
     <div class="trends-range">
-      <input type="datetime-local" id="trends-since" aria-label="From">
+      <input type="datetime-local" id="trends-since" aria-label="From, in your local time">
       <span class="note" aria-hidden="true">–</span>
-      <input type="datetime-local" id="trends-until" aria-label="To">
+      <input type="datetime-local" id="trends-until" aria-label="To, in your local time">
       <button class="ghost" id="trends-range-clear" type="button">Clear</button>
     </div>
   </details>
