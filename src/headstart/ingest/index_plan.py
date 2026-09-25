@@ -54,9 +54,9 @@ _log = log.get(__name__, __spec__)
 #: Trends chart would draw that as a hiring drop; ``role_trends`` stamps this into the
 #: ADR-0164 epoch ledger so the chart marks it instead. Bump it in the change that alters which
 #: rows count as duplicates: a new grouping in :func:`plan_prune`, or a new alias-ledger signal
-#: (:mod:`headstart.board_aliases`). Don't bump it for a routine alias-ledger rewrite that applies
-#: an existing signal, nor for a ``config.PARKED_BOARDS`` entry, which is a temporary hold rather
-#: than a duplicate rule. The marker lands on the step only because both routes remove rows
+#: (:mod:`headstart.board_aliases`), or an existing signal's first ledger for an ATS (ADR-0222).
+#: Don't bump it for a routine rewrite of an alias ledger that already exists, nor for a
+#: ``config.PARKED_BOARDS`` entry, which is a temporary hold rather than a duplicate rule. The marker lands on the step only because both routes remove rows
 #: through ``index prune``, which has no grace period; a dedup that instead stops emitting ids at
 #: scrape time would drain through ``sync``'s two-scrape grace (ADR-0083) and read as a slow
 #: decline after the marker, so keep new dedup rules on the prune path.
@@ -68,7 +68,8 @@ _log = log.get(__name__, __spec__)
 #: 5 — one row per posting across an Eightfold site and its backing Board, on ``requisition``
 #:     (ADR-0210). Its removals follow the stamps, which arrive as each Board is re-scraped, so they
 #:     spread over days after the marker rather than landing on it (ADR-0188's amendment).
-DEDUP_VERSION = 5
+#: 7 — iCIMS redirect aliases, 270 Boards (ADR-0222).
+DEDUP_VERSION = 7
 
 
 @dataclass(frozen=True, slots=True)

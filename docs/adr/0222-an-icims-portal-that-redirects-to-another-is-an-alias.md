@@ -1,6 +1,6 @@
 # ADR-0222: An iCIMS portal that redirects to another is an alias
 
-**Status:** accepted · **Date:** 2026-09-25 · **Relates to:** [ADR-0111](0111-duplicate-boards-resolve-the-board-surface.md) (the redirect signal and the alias ledger, applied here unchanged), [ADR-0182](0182-a-clearcompany-board-is-its-hrm-direct-feed.md) and [ADR-0186](0186-a-taleo-section-another-section-already-lists-is-an-alias.md) (the hand-run footing followed here), [ADR-0188](0188-a-dedup-rule-change-is-a-trends-epoch.md) (the Trends epoch), [ADR-0189](0189-a-jibe-board-is-a-client-read-under-its-own-robots-rules.md) (Jibe's iCIMS drop)
+**Status:** accepted · **Date:** 2026-09-25 · **Relates to:** [ADR-0111](0111-duplicate-boards-resolve-the-board-surface.md) (the redirect signal and the alias ledger, applied here unchanged), [ADR-0182](0182-a-clearcompany-board-is-its-hrm-direct-feed.md) and [ADR-0186](0186-a-taleo-section-another-section-already-lists-is-an-alias.md) (the hand-run footing followed here), [ADR-0188](0188-a-dedup-rule-change-is-a-trends-epoch.md) (the Trends epoch, amended here), [ADR-0189](0189-a-jibe-board-is-a-client-read-under-its-own-robots-rules.md) (Jibe's iCIMS drop)
 
 ## Context
 
@@ -25,7 +25,7 @@ for iCIMS.
 **An iCIMS Board on a Live row whose sitemap redirects to another Board on a Live row is buried
 onto it**, in `data/validate/aliases/icims.csv` with signal `redirect`. This is ADR-0111 as shipped: the default
 `alias_key` fits because an iCIMS slug is a host, and the survivor is the redirect's target, so no
-cluster needs an election. No code changes.
+cluster needs an election. No scraper or script changes.
 
 - **The writer is `dedupe_boards.py --ats icims --apply`, and `--apply` is safe here.** Every row
   in the file comes from the redirect scan, so rewriting the file from the scan loses nothing. If
@@ -43,8 +43,8 @@ distinct slugs):
 - **Two full scans about an hour apart gave the same answer.** Both found 230 clusters and 272
   Boards to bury, pair for pair. An earlier dry run of the same script on 2026-09-24 had counted
   the same 272 in 230 clusters.
-- **Every cluster was checked live, not a sample.** All 502 member sitemaps (272 buried Boards and
-  their 230 survivors) were read the way the scraper reads them. For 272 of 272 buried Boards, the
+- **Every cluster was checked live, not a sample.** All 502 member sitemaps (272 Boards to bury and
+  their 230 survivors) were read the way the scraper reads them. For 272 of 272 such Boards, the
   sitemap answered 200, landed on the survivor's host, and listed exactly the survivor's job-id
   set. 200 of these sets were non-empty, 39,546 postings in all (every role, not only tech). No
   buried Board lists a posting its survivor does not.
@@ -54,25 +54,34 @@ distinct slugs):
   host the ledger holds on no Live row. Scraping these returns the target's list or nothing, and
   that list has no other copy, so none is buried.
 
-Projected onto served v65 (the table version above; 20,480 iCIMS rows), opened read-only:
+**Two of the 272 are held back, so 270 are buried.** Projected onto served v65 with all 272,
+three tech postings had no copy on their survivor:
+
+- `careers-virginpulse` 4849 → `careers-personifyhealth`, and `careers-trnty` 3441 →
+  `careers-ricardo`. Both were posted 2026-09-24, after the survivor was last read. Both are on
+  the survivor's sitemap today, but `prune` evicts a buried Board's rows with no grace period.
+  Both survivors rank outside the 6,000-Board Head (`board_priority.csv`, 2026-09-25:
+  `careers-ricardo` 7,111th, `careers-personifyhealth` 8,505th), so the postings would go
+  unserved until the random Tail picks the survivor, which can take several runs.
+- `careers-avantus` 12310 (QinetiQ) is closed: neither sitemap lists it, re-checked 2026-09-25.
+  `sync` would evict it anyway.
+
+The two Boards are left out of the ledger, and so stay scraped and served. **The next hand re-run
+of the scan buries them again**, because both still redirect. Run it once both survivors have been
+scraped since 2026-09-25 (`board_cost.csv`'s `updated_at`), and their newest postings are then
+already served from the survivor.
+
+Projected onto served v65 (the table version above; 20,480 iCIMS rows) with the 270, opened
+read-only:
 
 | | |
 | ---: | --- |
-| 114 | buried Boards with served rows |
-| 5,265 | served rows the next `prune` evicts |
-| 15,218 → 15,215 | distinct (survivor, job id) tech postings served |
+| 112 | buried Boards with served rows |
+| 5,239 | served rows the next `prune` evicts |
+| 15,242 → 15,241 | distinct (survivor, job id) tech postings served |
 
-Three tech postings had no copy on their survivor in v65. None is a posting the survivor lacks:
-
-- `careers-avantus` 12310 (QinetiQ): closed. Neither sitemap lists it, so `sync` would evict it
-  anyway.
-- `careers-virginpulse` 4849 → `careers-personifyhealth`, and `careers-trnty` 3441 →
-  `careers-ricardo`: posted 2026-09-24, after the survivor was last read. Both are on the
-  survivor's sitemap today, so its next scrape serves them. Until then they are not served:
-  `prune` evicts the buried copy with no grace period. The gap can last several runs. Both
-  survivors rank outside the 6,000-Board Head (`board_priority.csv`, 2026-09-25:
-  `careers-ricardo` 7,111th, `careers-personifyhealth` 8,505th), so each waits for the random
-  Tail to pick it.
+The one posting lost is QinetiQ's 12310, closed on both Boards. No open tech posting loses its
+only served copy.
 
 ## What this does not catch
 
@@ -120,12 +129,15 @@ The two groups together are about 350 rows, 7% of what the redirect removes.
 
 ## Consequences
 
-- **Scrapable Board** falls 153,965 → 153,693 (−272) and **Hiring Board** 101,414 → 101,212
-  (−202), against the ledger at merge. `index prune` evicts the buried Boards' rows through its existing off-Board path.
-- **`DEDUP_VERSION` is not bumped in this change.** `index_plan`'s rule says not to bump it for
-  an alias-ledger rewrite that applies an existing signal, and `redirect` was in version 1. Even
-  so, the first `prune` removes about 5,265 rows in one tick, and ADR-0188 exists so that Trends
-  does not read a step of that size as a hiring drop. Whether to mark it is left to the merge.
+- **Scrapable Board** falls 153,965 → 153,695 (−270) and **Hiring Board** 101,414 → 101,214
+  (−200), against the ledger at merge. `index prune` evicts the buried Boards' rows through its
+  existing off-Board path.
+- **`DEDUP_VERSION` goes to 7, and this amends ADR-0188.** ADR-0188 said not to bump for an
+  alias-ledger rewrite that applies an existing signal, and `redirect` was in version 1. But an
+  existing signal's first ledger for an ATS is not routine churn: here it removes about 5,239 rows
+  in one tick, and ADR-0188 exists so that Trends does not read a step of that size as a hiring
+  drop. So an existing signal's first ledger for an ATS now bumps it too; a later rewrite of that
+  ledger still does not.
 - **Jibe loses nothing.** Jibe drops a posting whose iCIMS apply host lets the sitemap be read,
   whether or not that host is held (ADR-0189). A posting on a buried host is still served, because
   the host's survivor lists the same id.
