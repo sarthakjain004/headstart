@@ -3163,3 +3163,6 @@ def test_a_company_key_is_found_whatever_its_case(company_trends):
     """A hand-typed `GOOGLE:careers.google.com` answered "not in the company directory"."""
     d = company_trends.get("/trends?company=WORKDAY:HPE/A").get_json()
     assert "error" not in d and d["series"]
+    # Answered under the directory's own key, which the page adopts for its picks.
+    lower = company_trends.get("/trends?company=workday:hpe/a").get_json()
+    assert [c["key"] for c in d["companies"]] == [c["key"] for c in lower["companies"]]

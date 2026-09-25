@@ -1985,7 +1985,7 @@ function verdictOf(s, d){
   // "outside hiring" read as hiring from outside.
   // Said on a line of its own, under the answer: 40 words of counting causes led every sentence
   // and buried "is Google hiring more or fewer engineers" (critic round 14).
-  const detail = other ? `Not hiring: ${causesOf(s, other)}.` : '';
+  const detail = other ? { total: signedOpenings(other), causes: `${causesOf(s, other)}.` } : null;
   // The answer in a word or two, before any figure.
   let lead;
   if (!m || days < MIN_SPAN_DAYS){
@@ -1993,10 +1993,10 @@ function verdictOf(s, d){
     const span = days < 1.5 ? `over the last ${hours} hour${hours === 1 ? '' : 's'}` : over;
     // An older company with one run in the window has no change to give; it is the window
     // that is short, not the company that is new.
+    // The lead says it; the rest gives only the figure it has, never the lead again ("too new to
+    // tell — …; too new to show a direction yet").
     lead = young ? 'too new to tell' : 'too short a window to tell';
-    move = young ? 'too new to show a direction yet'
-      : !m ? 'this window is too short to call a direction'
-      : `${signedOpenings(Math.round(m.change))} ${span} — too short a window to call a direction`;
+    move = young || !m ? '' : `${signedOpenings(Math.round(m.change))} ${span}`;
   }
   else {
     const n = Math.round(m.change), pct = m.head ? m.change / m.head * 100 : 0;
@@ -2011,14 +2011,15 @@ function verdictOf(s, d){
       : Math.abs(shown(pct)) < FLAT_PCT ? `about flat ${over} (${pct < 0 ? '−' : '+'}${Math.abs(pct).toFixed(1)}%, ${count})`
       : `${pct > 0 ? 'up' : 'down'} ${Math.abs(pct).toFixed(1)}% ${over} (${count})`;
     const newer = trendMetric === 'new';
-    lead = m.real < MOVER_FLOOR ? (n > 0 ? 'a few more openings' : n < 0 ? 'a few fewer openings' : 'unchanged')
+    // From a small start the change is stated, not judged — "a few more" read beside +50.
+    lead = m.real < MOVER_FLOOR ? (n > 0 ? 'more openings' : n < 0 ? 'fewer openings' : 'unchanged')
       : Math.abs(shown(pct)) < FLAT_PCT ? 'holding steady'
       : pct > 0 ? (newer ? 'opening more new roles' : 'growing') : (newer ? 'opening fewer new roles' : 'shrinking');
   }
   // The part of the chart's move that is not hiring, as the difference between the chart's own
   // move and the hiring one, so the two figures add up to what the chart shows (Google's Count
   // line climbed 1,540 → 1,802 under "about flat (+3 openings)" with only a footnote saying why).
-  return { text: `${lead} — ${now == null ? 'no' : Math.round(now).toLocaleString()} ${what}; ${move}.`, detail, days };
+  return { text: `${lead} — ${now == null ? 'no' : Math.round(now).toLocaleString()} ${what}${move ? `; ${move}` : ''}.`, detail, days };
 }
 function drawVerdict(d){
   const host = el('trends-verdict'); if (!host) return;
@@ -2045,7 +2046,10 @@ function drawVerdict(d){
   // Up to five sentences in the legend's order (largest first), then the rest folded, keeping
   // any company the tiles headline in view. Two at a time in pick order hid Amazon, the largest
   // of five picks, and Microsoft, the second riser, under "2 more companies" (critic round 14).
-  const item = l => `<li><b>${esc(l.name)}</b>: ${esc(l.text)}${l.detail ? `<span class="verdict-why">${esc(l.detail)}</span>` : ''}</li>`;
+  // The not-hiring part folded under its total, as a disclosure: the answer first, the counting
+  // for whoever wants it.
+  const item = l => `<li><b>${esc(l.name)}</b>: ${esc(l.text)}${l.detail
+    ? `<details class="verdict-why"><summary>Not hiring: ${esc(l.detail.total)}</summary>${esc(l.detail.causes)}</details>` : ''}</li>`;
   const { riser, faller } = tileMovers(d, chartedAndOther(d).charted);
   const unfolded = new Set(lines.slice(0, VERDICTS_SHOWN));
   lines.filter(l => l.key && [riser, faller].some(m => m && m.name === l.key)).forEach(l => unfolded.add(l));
@@ -2141,7 +2145,7 @@ function stepNotes(d){
     // marker read "duplicate removal changed", which moved nothing at Google.
     const said = e.changed.filter((c, k) => !picked || fields[k] !== 'dedup_version' || touched.length > 0);
     const text = `Counting changed here: ${said.join(', ')}`;
-    if (!picked){ notes.push({ i, text, found: false, epoch: true, withhold: false }); return; }
+    if (!picked){ notes.push({ i, text, short: said.join(', '), found: false, epoch: true, withhold: false }); return; }
     const linesMove = fields.some(f => LINE_MOVING.includes(f)) || (bands && fields.includes('derivations_version'));
     const dedup = !linesMove && touched.length > 0 && fields.includes('dedup_version');
     if (!(linesMove || dedup)) return;
@@ -2673,8 +2677,10 @@ function firstSeen(s, d){
 // it): Stripe's "Web & .NET Development 16 new since Sep 24" was the Sep 24 family-assignment
 // change sorting 16 existing jobs into it, which "new since" read as hiring.
 function recountBorn(s){
+  // By where each change lands (stepRuns), as changeSize sizes it: by raw index, a line born
+  // after a gap read "new since" in the table while the list gave its openings to the change.
   const first = s.points.findIndex(v => v != null);
-  return stepsFor(s).some(n => n.epoch && noteKind(n) === 'counting' && (n.i === first || n.i + 1 === first));
+  return stepsFor(s).some(n => n.epoch && !n.echo && noteKind(n) === 'counting' && stepRuns(n, s).includes(first));
 }
 // Whether HeadStart has counted the line's company (a summed line: its youngest) for under
 // MIN_SPAN_DAYS, as against the window being short.
@@ -3212,9 +3218,9 @@ function drawTrends(){
   // simply finds no index and is skipped rather than guessed at.
   // Under a pick only the changes that move its lines are listed (stepNotes).
   const notes = notesOf(d);
-  // Under a pick, a change marked where no drawn line moved ("jumped +0 here") explains nothing.
-  // Under a pick, a change marked where no drawn line moved ("jumped +0 here") explains nothing;
-  // "moved" is the sentence's own test (stepMoved), so a marker and a named cause agree.
+  // Under a pick, a change marked where nothing moved explains nothing. A marker stands where it
+  // moved any line the list sizes — the company, a charted line or Other — so every listed change
+  // has a marker, though one may stand where a hidden line alone moved.
   const sized = listLines(d);
   const markerMoves = n => !trendPicks.length || sized.some(s => changeSize(n, s) !== 0);
   // `list`: every marked change on its own, at its own time, for "Marked changes"; `marks`: the
@@ -3245,7 +3251,7 @@ function drawTrends(){
       g.notes.push(n);
       // Counted, not collapsed: three filter changes on one day listed as one entry beside a
       // sentence naming three.
-      g.texts.set(n.text, (g.texts.get(n.text) || 0) + 1);
+      g.texts.set(`${stampLabel(d.stamps[n.i])} ${n.short || n.text}`, (g.texts.get(`${stampLabel(d.stamps[n.i])} ${n.short || n.text}`) || 0) + 1);
     });
     groups.forEach(g => {
       const texts = [...g.texts].map(([t, k]) => k > 1 ? `${t} (×${k})` : t);
@@ -3292,13 +3298,7 @@ function drawTrends(){
     // Under Share and Count the line is the real level, so it breaks at a step rather than
     // drawing the jump as a climb.
     const jumps = stepJumps(s.points, s);
-    // Each marked change's size on this line, at the change's own run, for the tooltip — sized as
-    // the list and the sentence size it (changeSize), its settling run included.
-    const changeSizes = new Map();
-    stepsFor(s).filter(n => !n.settle).forEach(n => {
-      const at = stepRuns(n, s)[0];
-      changeSizes.set(at, (changeSizes.get(at) || 0) + changeSize(n, s));
-    });
+    const changeSizes = changeSizesOf(s);
     // break the path at gaps rather than bridging them — an unmeasured run is not a value
     let path = '', pen = 'M', lastPt = null;
     values.forEach((u, j) => {
@@ -3730,15 +3730,18 @@ function buildTrendsTable(){
     // Only the causes this view has — Google with Microsoft was told of duplicates removed and
     // boards found, neither of which either company had.
     const steps = stepsFor(total[0]);
+    const sizedWhole = isWholeLine(total[0]);   // found and removed openings are lifted only there
     const causes = [
       rows.some(s => lineMove(s).tooNew) && `${many} too new to read`,
-      steps.some(n => n.evicted) && 'duplicates removed, which only the first row can size',
-      steps.some(n => n.found && n.size != null) && 'boards found later, which only the first row can size',
+      sizedWhole && steps.some(n => n.evicted) && 'duplicates removed, which only the first row can size',
+      sizedWhole && steps.some(n => n.found && n.size != null) && 'boards found later, which only the first row can size',
+      kind === 'bands' && rows.some(s => stepsFor(s).some(n => n.bandsOnly)) && 'an extraction change that re-sorted levels, taken out of each level but not their total',
       trendPicks.length > 1 && steps.some(n => n.company || n.companies) && 'one company’s own step taken out of every row it is summed into',
       scaledLines.size > 0 && 'a counting change scaled so it would not erase a line’s start',
     ].filter(Boolean);
+    // What can make a gap here, not a claim that each did: the page cannot apportion it.
     if (gap) gapNote = ` The ${many}’ hiring adds up to ${signedOpenings(parts)}, ${signedOpenings(gap)} from it: ${
-      causes.length ? `not hiring any ${one} shows, but ${causes.join(', and ')}` : `each ${one} rounded to whole openings`}.`;
+      causes.length ? `not hiring any ${one} shows, from ${causes.length > 1 ? 'one or more of ' : ''}${causes.join('; ')}` : `each ${one} rounded to whole openings`}.`;
   }
   const note = withTotal ? `<caption>The first row is ${whose} hiring${gapNote ? '.' + gapNote : `, and the ${many} add up to it.`}</caption>` : '';
   return `${note}<thead>${head}</thead><tbody>${body}</tbody>`;
@@ -3883,23 +3886,43 @@ function stepMoved(n, s){
   return stepRuns(n, s).some(j => { const jump = jumps.get(j); return !!jump && Math.round(jump.after - jump.before) !== 0; });
 }
 // How many openings one marked change moved line `s` by: its left-out runs (stepSize), and for
-// a line the change sorted into existence, the openings it arrived with. The tooltip, the
-// "Marked changes" list and the sentence all size a change this way, so the three agree: the
-// tooltip gave Micron's Sep 17 change +32 where the list gave −264.
+// a line the change sorted into existence, the openings it arrived with. The tooltip and the
+// "Marked changes" list size a change this way, and the sentence's parts (netOfSteps over the
+// same runs) sum to the same total: the tooltip gave Micron's Sep 17 change +32 where the list
+// gave −264.
 function changeSize(n, s){
+  // A line summing several picks is sized as its sentence nets it, pick by pick: summed whole, a
+  // change touching only Micron listed Acme's +30 of hiring that run as "These 2 companies +30".
+  const picks = summedPicks(s);
+  if (picks) return picks.reduce((sum, p) => sum + changeSize(n, p), 0);
   const steps = stepsFor(s);
   if (!steps.includes(n)) return 0;
   // Each left-out run belongs to one change: a run that is another change's own run is that
   // change's, not this one's settling run — Sep 24's 18:00 change and its 21:19 neighbour both
   // claimed the 21:19 jump, listed +200 and +199 for one +200.
-  // Two changes on one run (an echo beside a new change) give it to the first listed.
+  // Only a change of unknown size claims runs: a removal or a found Board is its own size and
+  // reads no run, so a counting change keeps the rest of a run it shares with one. Two changes on
+  // one run go to the new change over a week-later echo, else to the first listed.
+  const claims = m => !m.settle && m.size == null;
   const mine = steps.indexOf(n);
-  const owned = new Set(steps.filter(m => m !== n && !m.settle).map(m => stepRuns(m, s)[0]));
-  const firstOwner = new Set(steps.filter((m, k) => k < mine && !m.settle).map(m => stepRuns(m, s)[0]));
-  const runs = stepRuns(n, s).filter((j, k) => k === 0 ? !firstOwner.has(j) : !owned.has(j));
+  const beats = m => m.echo === n.echo ? steps.indexOf(m) < mine : !m.echo;
+  const owned = new Set(steps.filter(m => m !== n && claims(m)).map(m => stepRuns(m, s)[0]));
+  const ahead = new Set(steps.filter(m => m !== n && claims(m) && beats(m)).map(m => stepRuns(m, s)[0]));
+  const runs = stepRuns(n, s).filter((j, k) => k === 0 ? !ahead.has(j) : !owned.has(j));
+  // Openings a line was born with at this change's own runs (recountBorn), under All openings.
   const first = s.points.findIndex(v => v != null);
-  const arrived = n.epoch && !n.echo && first > 0 && stepRuns(n, s).includes(first) ? s.points[first] : 0;
+  const arrived = trendMetric === 'stock' && n.epoch && !n.echo && first > 0 && runs.includes(first) ? s.points[first] : 0;
   return stepSize([n], s, runs) + Math.round(arrived);
+}
+// Each marked change's size on line `s`, keyed by the change's own run, for the tooltip — sized
+// as the list sizes it (changeSize), its settling run included.
+function changeSizesOf(s){
+  const sizes = new Map();
+  stepsFor(s).filter(n => !n.settle).forEach(n => {
+    const at = stepRuns(n, s)[0];
+    sizes.set(at, (sizes.get(at) || 0) + changeSize(n, s));
+  });
+  return sizes;
 }
 // The lines a change is sized on in the list: the whole company (or the picks together) first,
 // then every drawn line and Other — Google's list, without Other's +122, summed to +170 under a
@@ -3909,6 +3932,7 @@ function listLines(d){
   const kind = viewKind(d);
   if (!trendPicks.length || !(kind === 'families' || kind === 'bands') || shown.length < 2) return shown;
   const counted = trendPicks.filter(p => !(d.uncounted || []).includes(p.key));
+  if (!counted.length) return shown;
   const label = counted.length === 1 ? counted[0].label || 'This company' : `These ${counted.length} companies`;
   return [{ name: '__total__', label: kind === 'bands' ? `${label}, ${drillLabel()}` : label, points: sumPoints(d.series, d.stamps) }, ...shown];
 }

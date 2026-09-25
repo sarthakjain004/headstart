@@ -919,5 +919,14 @@ existence, so Google's list summed to +170 under a sentence of +292.
   names; Share's table says "relative change" and "(of all its openings)"; company keys compare
   case-blind; a duplicates part is named by its cause under every measure.
 
+The review of that change (#684) tightened it: a line summing several picks is sized pick by
+pick, as its sentence nets it; only changes of unknown size claim runs, a new change over a
+week-later echo; a line's birth run is counted once and only under All openings; the markers'
+titles give each change its own time and short name; the lead no longer repeats the sentence
+("too new to tell — …; too new to show a direction yet"); the not-hiring causes fold under
+their total as a disclosure; the caption says what *can* make a gap ("one or more of"), since
+the page cannot apportion it, and names found or removed openings only where the first row
+can size them.
+
 Handed to the gross-flows PR (#679), which rewrites `hot_boards`: Hot ranked a Board counted
 for two days second by its arrival.

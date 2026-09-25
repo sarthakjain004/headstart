@@ -1234,3 +1234,6 @@ textarea:focus{ border-color:var(--accent); }
 .trends-tooltip.under{ position:static; margin-top:6px; }
 .trends-tooltip.under .tt-val{ white-space:nowrap; }
 .trends-tooltip.under .tt-name{ min-width:9em; }
+/* On a 320px phone a long reading ("1,032 · marked change −264") wraps under its name rather than
+   pushing the row past the edge. */
+.trends-tooltip.under .tt-row{ flex-wrap:wrap; }
