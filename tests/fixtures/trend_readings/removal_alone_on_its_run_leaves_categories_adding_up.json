@@ -114,16 +114,36 @@
       "size": 50
      }
     ],
+    "not_hiring_total": -1000,
     "percent": 6.0,
     "percent_withheld": null,
+    "span_days": 3.0,
+    "per_week": 140,
     "turnover": null,
     "share": {
      "start": 20.0,
      "latest": 10.6,
      "denominator_start": 5000,
-     "denominator_latest": 10000
+     "denominator_latest": 10000,
+     "percent": -47.0
     }
-   }
+   },
+   "netted": [
+    1000.0,
+    1050.0,
+    1050,
+    1060
+   ],
+   "steps_at": [
+    2
+   ],
+   "arrived_by": null,
+   "points": [
+    2000,
+    2100,
+    1050,
+    1060
+   ]
   },
   "lines": [
    {
@@ -148,16 +168,28 @@
        "size": 50
       }
      ],
+     "not_hiring_total": -600,
      "percent": 10.0,
      "percent_withheld": null,
+     "span_days": 3.0,
+     "per_week": 140,
      "turnover": null,
      "share": {
       "start": 12.0,
       "latest": 6.6000000000000005,
       "denominator_start": 5000,
-      "denominator_latest": 10000
+      "denominator_latest": 10000,
+      "percent": -44.99999999999999
      }
-    }
+    },
+    "netted": [
+     600.0,
+     650.0,
+     650,
+     660
+    ],
+    "steps_at": [],
+    "arrived_by": null
    },
    {
     "name": "b",
@@ -175,18 +207,31 @@
        "size": -400
       }
      ],
+     "not_hiring_total": -400,
      "percent": 0.0,
      "percent_withheld": null,
+     "span_days": 3.0,
+     "per_week": 0,
      "turnover": null,
      "share": {
       "start": 8.0,
       "latest": 4.0,
       "denominator_start": 5000,
-      "denominator_latest": 10000
+      "denominator_latest": 10000,
+      "percent": -50.0
      }
-    }
+    },
+    "netted": [
+     400.0,
+     400.0,
+     400,
+     400
+    ],
+    "steps_at": [],
+    "arrived_by": null
    }
   ],
+  "other": null,
   "company_lines": [
    {
     "name": "eightfold:micron",
@@ -210,16 +255,23 @@
        "size": 50
       }
      ],
+     "not_hiring_total": -1000,
      "percent": 6.0,
      "percent_withheld": null,
+     "span_days": 3.0,
+     "per_week": 140,
      "turnover": null,
      "share": {
       "start": 20.0,
       "latest": 10.6,
       "denominator_start": 5000,
-      "denominator_latest": 10000
+      "denominator_latest": 10000,
+      "percent": -47.0
      }
-    }
+    },
+    "netted": [],
+    "steps_at": [],
+    "arrived_by": null
    }
   ],
   "breakdown": {
@@ -262,6 +314,12 @@
      "removed@2026-09-15T00:00:00+00:00/eightfold:micron"
     ]
    }
+  ],
+  "reference": [
+   5000.0,
+   5000.0,
+   10000,
+   10000
   ],
   "reconciles": true,
   "violations": []

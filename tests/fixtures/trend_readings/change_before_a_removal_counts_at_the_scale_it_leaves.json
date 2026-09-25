@@ -120,18 +120,36 @@
        "size": -1100
       }
      ],
+     "not_hiring_total": -900,
      "percent": 0.9090909090909091,
      "percent_withheld": null,
+     "span_days": 4.0,
+     "per_week": 18,
      "turnover": null,
      "share": {
       "start": 100.0,
       "latest": 100.0,
       "denominator_start": 1100,
-      "denominator_latest": 1110
+      "denominator_latest": 1110,
+      "percent": 0.0
      }
-    }
+    },
+    "netted": [
+     1100.0,
+     1100.0,
+     1100.0,
+     1100,
+     1110
+    ],
+    "steps_at": [
+     1,
+     2,
+     3
+    ],
+    "arrived_by": null
    }
   ],
+  "other": null,
   "company_lines": [
    {
     "name": "eightfold:micron",
@@ -155,16 +173,23 @@
        "size": -1100
       }
      ],
+     "not_hiring_total": -900,
      "percent": 0.9090909090909091,
      "percent_withheld": null,
+     "span_days": 4.0,
+     "per_week": 18,
      "turnover": null,
      "share": {
       "start": 100.0,
       "latest": 100.0,
       "denominator_start": 1100,
-      "denominator_latest": 1110
+      "denominator_latest": 1110,
+      "percent": 0.0
      }
-    }
+    },
+    "netted": [],
+    "steps_at": [],
+    "arrived_by": null
    }
   ],
   "breakdown": null,
@@ -215,6 +240,13 @@
      "removed@2026-09-16T00:00:00+00:00/eightfold:micron"
     ]
    }
+  ],
+  "reference": [
+   5000.0,
+   5000.0,
+   5000.0,
+   10000,
+   10000
   ],
   "reconciles": true,
   "violations": []

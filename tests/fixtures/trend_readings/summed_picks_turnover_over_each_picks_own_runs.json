@@ -159,19 +159,41 @@
       "size": -20
      }
     ],
+    "not_hiring_total": -20,
     "percent": 0.0,
     "percent_withheld": null,
+    "span_days": 3.0,
+    "per_week": 0,
     "turnover": {
      "opened": 61,
-     "closed": 0
+     "closed": 0,
+     "net": 61
     },
     "share": {
      "start": 2.8000000000000003,
      "latest": 2.8000000000000003,
      "denominator_start": 10000,
-     "denominator_latest": 10000
+     "denominator_latest": 10000,
+     "percent": 0.0
     }
-   }
+   },
+   "netted": [
+    280,
+    280,
+    280,
+    280
+   ],
+   "steps_at": [
+    2,
+    3
+   ],
+   "arrived_by": null,
+   "points": [
+    300,
+    300,
+    280,
+    280
+   ]
   },
   "lines": [
    {
@@ -190,18 +212,34 @@
        "size": -20
       }
      ],
+     "not_hiring_total": -20,
      "percent": 0.0,
      "percent_withheld": null,
+     "span_days": 3.0,
+     "per_week": 0,
      "turnover": null,
      "share": {
       "start": 2.8000000000000003,
       "latest": 2.8000000000000003,
       "denominator_start": 10000,
-      "denominator_latest": 10000
+      "denominator_latest": 10000,
+      "percent": 0.0
      }
-    }
+    },
+    "netted": [
+     280,
+     280,
+     280,
+     280
+    ],
+    "steps_at": [
+     2,
+     3
+    ],
+    "arrived_by": null
    }
   ],
+  "other": null,
   "company_lines": [
    {
     "name": "greenhouse:acme",
@@ -212,19 +250,27 @@
      "latest": 100,
      "hiring": 0,
      "not_hiring": [],
+     "not_hiring_total": 0,
      "percent": 0.0,
      "percent_withheld": null,
+     "span_days": 3.0,
+     "per_week": 0,
      "turnover": {
       "opened": 60,
-      "closed": 0
+      "closed": 0,
+      "net": 60
      },
      "share": {
       "start": 1.0,
       "latest": 1.0,
       "denominator_start": 10000,
-      "denominator_latest": 10000
+      "denominator_latest": 10000,
+      "percent": 0.0
      }
-    }
+    },
+    "netted": [],
+    "steps_at": [],
+    "arrived_by": null
    },
    {
     "name": "eightfold:careers.micron.com",
@@ -242,19 +288,27 @@
        "size": -20
       }
      ],
+     "not_hiring_total": -20,
      "percent": 0.0,
      "percent_withheld": null,
+     "span_days": 3.0,
+     "per_week": 0,
      "turnover": {
       "opened": 1,
-      "closed": 0
+      "closed": 0,
+      "net": 1
      },
      "share": {
       "start": 1.7999999999999998,
       "latest": 1.7999999999999998,
       "denominator_start": 10000,
-      "denominator_latest": 10000
+      "denominator_latest": 10000,
+      "percent": 0.0
      }
-    }
+    },
+    "netted": [],
+    "steps_at": [],
+    "arrived_by": null
    }
   ],
   "breakdown": {
@@ -287,6 +341,12 @@
      "counting@2026-09-15T00:00:00+00:00"
     ]
    }
+  ],
+  "reference": [
+   10000,
+   10000,
+   10000,
+   10000
   ],
   "reconciles": true,
   "violations": []

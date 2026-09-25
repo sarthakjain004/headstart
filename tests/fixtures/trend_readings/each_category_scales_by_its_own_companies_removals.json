@@ -173,16 +173,36 @@
       "size": 50
      }
     ],
+    "not_hiring_total": -1000,
     "percent": 6.956521739130435,
     "percent_withheld": null,
+    "span_days": 3.0,
+    "per_week": 187,
     "turnover": null,
     "share": {
      "start": 100.0,
      "latest": 12.3,
      "denominator_start": 1150,
-     "denominator_latest": 10000
+     "denominator_latest": 10000,
+     "percent": -87.7
     }
-   }
+   },
+   "netted": [
+    1150.0,
+    1200.0,
+    1210,
+    1230
+   ],
+   "steps_at": [
+    2
+   ],
+   "arrived_by": null,
+   "points": [
+    2150,
+    2250,
+    1210,
+    1230
+   ]
   },
   "lines": [
    {
@@ -207,16 +227,28 @@
        "size": 50
       }
      ],
+     "not_hiring_total": -600,
      "percent": 10.0,
      "percent_withheld": null,
+     "span_days": 3.0,
+     "per_week": 163,
      "turnover": null,
      "share": {
       "start": 60.86956521739131,
       "latest": 7.7,
       "denominator_start": 1150,
-      "denominator_latest": 10000
+      "denominator_latest": 10000,
+      "percent": -87.35
      }
-    }
+    },
+    "netted": [
+     700.0,
+     750.0,
+     760,
+     770
+    ],
+    "steps_at": [],
+    "arrived_by": null
    },
    {
     "name": "b",
@@ -234,18 +266,31 @@
        "size": -400
       }
      ],
+     "not_hiring_total": -400,
      "percent": 2.2222222222222223,
      "percent_withheld": null,
+     "span_days": 3.0,
+     "per_week": 23,
      "turnover": null,
      "share": {
       "start": 39.130434782608695,
       "latest": 4.6,
       "denominator_start": 1150,
-      "denominator_latest": 10000
+      "denominator_latest": 10000,
+      "percent": -88.24444444444444
      }
-    }
+    },
+    "netted": [
+     450.0,
+     450.0,
+     450,
+     460
+    ],
+    "steps_at": [],
+    "arrived_by": null
    }
   ],
+  "other": null,
   "company_lines": [
    {
     "name": "greenhouse:acme",
@@ -256,16 +301,23 @@
      "latest": 170,
      "hiring": 20,
      "not_hiring": [],
+     "not_hiring_total": 0,
      "percent": 13.333333333333334,
      "percent_withheld": null,
+     "span_days": 3.0,
+     "per_week": 47,
      "turnover": null,
      "share": {
       "start": 13.043478260869565,
       "latest": 1.7000000000000002,
       "denominator_start": 1150,
-      "denominator_latest": 10000
+      "denominator_latest": 10000,
+      "percent": -86.96666666666665
      }
-    }
+    },
+    "netted": [],
+    "steps_at": [],
+    "arrived_by": null
    },
    {
     "name": "eightfold:micron",
@@ -289,16 +341,23 @@
        "size": 50
       }
      ],
+     "not_hiring_total": -1000,
      "percent": 6.0,
      "percent_withheld": null,
+     "span_days": 3.0,
+     "per_week": 140,
      "turnover": null,
      "share": {
       "start": 86.95652173913044,
       "latest": 10.6,
       "denominator_start": 1150,
-      "denominator_latest": 10000
+      "denominator_latest": 10000,
+      "percent": -87.81000000000002
      }
-    }
+    },
+    "netted": [],
+    "steps_at": [],
+    "arrived_by": null
    }
   ],
   "breakdown": {
@@ -341,6 +400,12 @@
      "removed@2026-09-15T00:00:00+00:00/eightfold:micron"
     ]
    }
+  ],
+  "reference": [
+   1150.0,
+   1200.0,
+   1210,
+   1230
   ],
   "reconciles": true,
   "violations": []

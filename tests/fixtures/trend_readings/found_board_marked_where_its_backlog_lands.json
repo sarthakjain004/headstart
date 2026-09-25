@@ -92,16 +92,32 @@
       "size": 1048
      }
     ],
+    "not_hiring_total": 1048,
     "percent": -16.95957820738137,
     "percent_withheld": null,
+    "span_days": 7.0,
+    "per_week": -193,
     "turnover": null,
     "share": {
      "start": 10.300506879073136,
      "latest": 9.45,
      "denominator_start": 11048,
-     "denominator_latest": 10000
+     "denominator_latest": 10000,
+     "percent": -8.256942003514954
     }
-   }
+   },
+   "netted": [
+    1138,
+    945
+   ],
+   "steps_at": [
+    1
+   ],
+   "arrived_by": null,
+   "points": [
+    90,
+    945
+   ]
   },
   "lines": [
    {
@@ -120,16 +136,28 @@
        "size": 850
       }
      ],
+     "not_hiring_total": 850,
      "percent": 0.0,
      "percent_withheld": null,
+     "span_days": 7.0,
+     "per_week": 0,
      "turnover": null,
      "share": {
       "start": 8.146270818247647,
       "latest": 9.0,
       "denominator_start": 11048,
-      "denominator_latest": 10000
+      "denominator_latest": 10000,
+      "percent": 10.479999999999997
      }
-    }
+    },
+    "netted": [
+     900,
+     900
+    ],
+    "steps_at": [
+     1
+    ],
+    "arrived_by": null
    },
    {
     "name": "b",
@@ -147,18 +175,31 @@
        "size": 5
       }
      ],
+     "not_hiring_total": 5,
      "percent": 0.0,
      "percent_withheld": null,
+     "span_days": 7.0,
+     "per_week": 0,
      "turnover": null,
      "share": {
       "start": 0.40731354091238237,
       "latest": 0.44999999999999996,
       "denominator_start": 11048,
-      "denominator_latest": 10000
+      "denominator_latest": 10000,
+      "percent": 10.479999999999979
      }
-    }
+    },
+    "netted": [
+     45,
+     45
+    ],
+    "steps_at": [
+     1
+    ],
+    "arrived_by": null
    }
   ],
+  "other": null,
   "company_lines": [
    {
     "name": "greenhouse:acme",
@@ -176,16 +217,23 @@
        "size": 1048
       }
      ],
+     "not_hiring_total": 1048,
      "percent": -16.95957820738137,
      "percent_withheld": null,
+     "span_days": 7.0,
+     "per_week": -193,
      "turnover": null,
      "share": {
       "start": 10.300506879073136,
       "latest": 9.45,
       "denominator_start": 11048,
-      "denominator_latest": 10000
+      "denominator_latest": 10000,
+      "percent": -8.256942003514954
      }
-    }
+    },
+    "netted": [],
+    "steps_at": [],
+    "arrived_by": null
    }
   ],
   "breakdown": {
@@ -201,8 +249,11 @@
       "size": 193
      }
     ],
+    "not_hiring_total": 193,
     "percent": null,
     "percent_withheld": "a closing row has no start",
+    "span_days": 0.0,
+    "per_week": null,
     "turnover": null,
     "share": null
    }
@@ -230,6 +281,10 @@
      "found@2026-09-20T00:00:00+00:00/greenhouse:acme"
     ]
    }
+  ],
+  "reference": [
+   11048,
+   10000
   ],
   "reconciles": true,
   "violations": []

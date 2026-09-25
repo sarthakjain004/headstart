@@ -106,18 +106,35 @@
        "size": 135
       }
      ],
+     "not_hiring_total": -45,
      "percent": 340.0,
      "percent_withheld": null,
+     "span_days": 4.0,
+     "per_week": 30,
      "turnover": null,
      "share": {
       "start": 0.05,
       "latest": 0.22,
       "denominator_start": 10000,
-      "denominator_latest": 10000
+      "denominator_latest": 10000,
+      "percent": 339.99999999999994
      }
-    }
+    },
+    "netted": [
+     5.0,
+     20.0,
+     20,
+     20,
+     22
+    ],
+    "steps_at": [
+     2,
+     3
+    ],
+    "arrived_by": null
    }
   ],
+  "other": null,
   "company_lines": [
    {
     "name": "greenhouse:acme",
@@ -141,16 +158,23 @@
        "size": 135
       }
      ],
+     "not_hiring_total": -45,
      "percent": 340.0,
      "percent_withheld": null,
+     "span_days": 4.0,
+     "per_week": 30,
      "turnover": null,
      "share": {
       "start": 0.05,
       "latest": 0.22,
       "denominator_start": 10000,
-      "denominator_latest": 10000
+      "denominator_latest": 10000,
+      "percent": 339.99999999999994
      }
-    }
+    },
+    "netted": [],
+    "steps_at": [],
+    "arrived_by": null
    }
   ],
   "breakdown": null,
@@ -195,6 +219,13 @@
      "growth_scaled_by_counting@2026-09-15T00:00:00+00:00"
     ]
    }
+  ],
+  "reference": [
+   10000,
+   10000,
+   10000,
+   10000,
+   10000
   ],
   "reconciles": true,
   "violations": []

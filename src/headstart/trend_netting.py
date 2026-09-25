@@ -3,10 +3,11 @@
 A line's change holds steps that are not hiring: a **Counting change** and the run after it, a
 **Found Board**'s backlog, a pick counted from a later date joining a sum, duplicate postings
 removed, and a Board read only partly for one run. This module takes them out, once, for every
-line an answer serves, so the page draws what it is given and Hot can read the same figures
-(ADR-0230 decision 3). Until ADR-0230 step 4 the rule lived in the page's JavaScript (`stepNotes`,
-`stepJumps`, `netOfSteps`); this is a port of that rule, checked against it by the golden answers
-under ``tests/fixtures/trend_answers/``.
+line an answer serves (ADR-0230 decision 3). Until ADR-0230 step 4 the rule lived in the page's
+JavaScript (`stepNotes`, `stepJumps`, `netOfSteps`); this is a port of that rule, checked against
+it by the golden answers under ``tests/fixtures/trend_answers/``. Since ADR-0233 step 3 the page
+reads ``trend_reading``, which uses this module as its private implementation; Hot still reads
+:func:`net_answer` until step 4.
 
 :func:`net_answer` is the one entry point. It reads an answer as ``TrendHistory.answer`` builds it
 and adds, without touching any count:

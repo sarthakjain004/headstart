@@ -35,7 +35,6 @@ from headstart import (
     profile_extract,
     search,
     trend_history,
-    trend_netting,
     trend_reading,
 )
 
@@ -1075,8 +1074,9 @@ def delete_resume(doc_id: str):
 @app.route("/trends")
 def trends():
     """Role counts over time (ADR-0040, ADR-0051), answered by ``headstart.trend_history``
-    (ADR-0230), whose ``TrendHistory.unnetted_answer`` documents every parameter and field, with
-    every line netted (``trend_netting``) and its ``reading`` beside them (ADR-0233).
+    (ADR-0230), whose ``TrendHistory.unnetted_answer`` documents every parameter and field, and
+    read by ``headstart.trend_reading``: its ``reading`` holds every figure the page shows, and
+    the page only formats and draws (ADR-0233).
 
     ``?metric=`` ``stock`` or ``new``; ``?family=`` with ``&split=`` ``bands``, ``roles`` or
     ``company``; ``?since=`` / ``?until=`` / ``?base=`` (ISO-8601); ``?coverage=`` ``all`` or
@@ -1101,28 +1101,25 @@ def trends():
         return jsonify(error=str(exc)), 503
     except ValueError as exc:
         return jsonify(error=str(exc)), 400
-    payload = trend_netting.net_answer(answer)
-    payload["reading"] = _trend_reading(answer, question)
-    return jsonify(payload)
+    reading = _trend_reading(answer, question)
+    return jsonify(trend_reading.trends_payload(answer, reading))
 
 
-def _trend_reading(answer: dict, question: trend_history.TrendQuestion) -> dict | None:
-    """The answer's line reading (ADR-0233), served beside the fields the page still reads.
+def _trend_reading(
+    answer: dict, question: trend_history.TrendQuestion
+) -> trend_reading.TrendReading:
+    """The answer's line reading (ADR-0233), which holds every figure the page shows.
 
-    A reading that does not reconcile is served all the same, saying so, and logged. Until the
-    page reads it (ADR-0233 step 3) a reading that fails outright costs only itself: None."""
-    try:
-        reading = trend_reading.read_answer(answer)
-    except Exception as exc:  # noqa: BLE001 - the page does not read it yet
-        print(f"trends reading failed ({type(exc).__name__}: {exc})", flush=True)
-        return None
+    A reading that does not reconcile is served all the same, saying so, and logged
+    (decision 6); the page says its figures do not fully reconcile."""
+    reading = trend_reading.read_answer(answer)
     if not reading.reconciles:
         print(
             f"trends reading does not reconcile for {question}: "
             + "; ".join(reading.violations[:5]),
             flush=True,
         )
-    return reading.to_json()
+    return reading
 
 
 @app.route("/companies/suggest")

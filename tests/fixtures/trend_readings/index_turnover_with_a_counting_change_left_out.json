@@ -102,19 +102,38 @@
     "latest": 1300,
     "hiring": 400,
     "not_hiring": [],
+    "not_hiring_total": 0,
     "percent": 44.44444444444444,
     "percent_withheld": null,
+    "span_days": 3.0,
+    "per_week": 933,
     "turnover": {
      "opened": 50,
-     "closed": 40
+     "closed": 40,
+     "net": 10
     },
     "share": {
      "start": 9.0,
      "latest": 13.0,
      "denominator_start": 10000,
-     "denominator_latest": 10000
+     "denominator_latest": 10000,
+     "percent": 44.44444444444444
     }
-   }
+   },
+   "netted": [
+    900,
+    900,
+    1300,
+    1300
+   ],
+   "steps_at": [],
+   "arrived_by": null,
+   "points": [
+    900,
+    900,
+    1300,
+    1300
+   ]
   },
   "lines": [
    {
@@ -126,21 +145,35 @@
      "latest": 1300,
      "hiring": 400,
      "not_hiring": [],
+     "not_hiring_total": 0,
      "percent": 44.44444444444444,
      "percent_withheld": null,
+     "span_days": 3.0,
+     "per_week": 933,
      "turnover": {
       "opened": 50,
-      "closed": 40
+      "closed": 40,
+      "net": 10
      },
      "share": {
       "start": 9.0,
       "latest": 13.0,
       "denominator_start": 10000,
-      "denominator_latest": 10000
+      "denominator_latest": 10000,
+      "percent": 44.44444444444444
      }
-    }
+    },
+    "netted": [
+     900,
+     900,
+     1300,
+     1300
+    ],
+    "steps_at": [],
+    "arrived_by": null
    }
   ],
+  "other": null,
   "company_lines": [],
   "breakdown": null,
   "marked_changes": [
@@ -166,6 +199,12 @@
      "counting@2026-09-15T00:00:00+00:00"
     ]
    }
+  ],
+  "reference": [
+   10000,
+   10000,
+   10000,
+   10000
   ],
   "reconciles": true,
   "violations": []

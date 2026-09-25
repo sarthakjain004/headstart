@@ -1,9 +1,9 @@
 """The Trends line reading (ADR-0233), checked at ``trend_reading.read_answer``.
 
 - **Golden readings** (``tests/fixtures/trend_readings/*.json``): every golden answer of
-  ADR-0230 as ``{answer_input, reading}``. Each reads exactly as stored and passes the checker;
-  the node tests run the page's ``checkReading`` over the same files, so both state the same
-  equalities. After a deliberate rule change, rewrite them with
+  ADR-0230, and the answers the page's node tests draw, as ``{answer_input, reading}``. Each
+  reads exactly as stored and passes the checker; the node tests run the page's ``checkReading``
+  over the same files and draw each one, so both state the same equalities. After a deliberate rule change, rewrite them with
   ``WRITE_TREND_READINGS=1 pytest tests/test_trend_reading.py`` and read the diff.
 - **A change has one size in every window that holds it** (invariant 4), by re-reading each
   golden over every window narrowed from either end.
@@ -23,12 +23,14 @@ import pytest
 
 from headstart.trend_netting import js_round, net_answer
 from headstart.trend_reading import (
+    LINES_CHARTED,
     CauseKind,
     TrendWindow,
     check_reading,
     read_answer,
     read_company_moves,
     read_trends,
+    trends_payload,
 )
 
 READINGS = Path(__file__).parent / "fixtures" / "trend_readings"
@@ -73,6 +75,67 @@ def test_the_first_row_and_each_category_read_their_netted_figure(path: Path) ->
         whole_window = line["points"][0] is not None and line["points"][-1] is not None
         if whole_window and _netted_move(line) is not None and line["name"] in rows:
             assert rows[line["name"]] == _netted_move(line), line["name"]
+
+
+@pytest.mark.parametrize("path", GOLDEN, ids=[p.stem for p in GOLDEN])
+def test_each_line_is_drawn_as_it_is_netted(path: Path) -> None:
+    """The Change plot's line is the line netted as its figures are, and a line drawn in counts
+    breaks where a step lands: what ``net_answer`` served as ``net.count`` and ``jumps``."""
+    golden = json.loads(path.read_text(encoding="utf-8"))
+    reading = golden["reading"]
+    served = net_answer(golden["answer_input"])
+    lines = {line["name"]: line for line in reading["lines"]}
+    for line in served["series"]:
+        if line["name"] not in lines:
+            continue
+        drawn = lines[line["name"]]
+        assert drawn["netted"] == [
+            None if v is None else round(v, 2) for v in line["net"]["count"]
+        ], line["name"]
+        assert drawn["steps_at"] == [j["i"] for j in line["jumps"]], line["name"]
+    if reading["total"] is not None:
+        total = served["series_sum"]
+        assert reading["total"]["points"] == total["points"]
+        assert reading["total"]["netted"] == [
+            None if v is None else round(v, 2) for v in total["net"]["count"]
+        ]
+
+
+@pytest.mark.parametrize("path", GOLDEN, ids=[p.stem for p in GOLDEN])
+def test_other_is_the_lines_past_the_charted_ones(path: Path) -> None:
+    reading = json.loads(path.read_text(encoding="utf-8"))["reading"]
+    folded = reading["lines"][LINES_CHARTED:]
+    assert (reading["other"] is None) == (not folded)
+    if folded:
+        for k in ("start", "latest", "hiring", "not_hiring_total"):
+            assert reading["other"]["move"][k] == sum(f["move"][k] for f in folded)
+
+
+# ---- the payload the Space serves ---------------------------------------------------------------
+
+
+def test_the_payload_is_the_answer_as_drawn_with_its_reading() -> None:
+    """A partial read is dropped from the points the page draws, and counted; the pieces only the
+    reading nets stay off the wire (ADR-0233 decision 7)."""
+    answer = _golden("partial_read_put_straight_back")["answer_input"]
+    reading = read_answer(answer)
+    payload = trends_payload(answer, reading)
+    points = {line["name"]: line["points"] for line in payload["series"]}
+    assert points["a"] == [26, None, 26, 27]
+    assert points["b"] == [100, 110, 120, 130], "steady growth is kept"
+    assert payload["partial"] == 1
+    assert payload["reading"] == reading.to_json()
+    for piece in (
+        "pick_series",
+        "pick_parts",
+        "pick_turnover",
+        "evicted",
+        "discovered",
+    ):
+        assert piece not in payload, piece
+    assert answer["series"][0]["points"][1] == 104, (
+        "the answer passed in is not changed"
+    )
 
 
 # ---- invariant 4: one size in every window -----------------------------------------------------
@@ -257,6 +320,17 @@ def test_growth_rescaled_by_a_change_stands_on_that_changes_day() -> None:
     assert [sorted(d["changes"]) for d in reading["day_markers"]] == [sorted(kinds)]
 
 
+def test_no_percentage_off_a_netted_start_under_five_openings() -> None:
+    """NVIDIA's Internships read "+350%" as a tile's Biggest riser: 14 hired off a netted 4."""
+    reading = _golden("percentage_withheld_off_a_netted_start_under_five")["reading"]
+    interns = next(line for line in reading["lines"] if line["name"] == "interns")[
+        "move"
+    ]
+    assert (interns["hiring"], interns["latest"] - interns["hiring"]) == (14, 4)
+    assert interns["percent"] is None
+    assert interns["share"]["percent"] is None
+
+
 def test_with_no_pick_nothing_is_taken_out_and_changes_are_still_marked() -> None:
     reading = _golden("index_marks_counting_changes_and_takes_nothing_out")["reading"]
     for line in reading["lines"]:
@@ -341,6 +415,69 @@ def test_the_checker_catches_something_taken_out_with_no_pick() -> None:
 
     violations = _broken("index_marks_counting_changes_and_takes_nothing_out", breaking)
     assert any("no pick" in v for v in violations)
+
+
+def test_the_checker_catches_a_not_hiring_total_that_is_not_its_causes() -> None:
+    def breaking(r):
+        r["company_lines"][0]["move"]["not_hiring_total"] += 1
+
+    violations = _broken("duplicate_removal_scales_the_history_before_it", breaking)
+    assert any("its causes sum to" in v for v in violations)
+
+
+def test_the_checker_catches_a_weekly_rate_that_is_not_the_hiring_over_its_days() -> (
+    None
+):
+    def breaking(r):
+        r["company_lines"][0]["move"]["per_week"] += 1
+
+    violations = _broken("duplicate_removal_scales_the_history_before_it", breaking)
+    assert any("weekly rate" in v for v in violations)
+
+
+def test_the_checker_catches_a_share_change_not_read_off_the_shares() -> None:
+    def breaking(r):
+        r["company_lines"][0]["move"]["share"]["percent"] += 1
+
+    violations = _broken("duplicate_removal_scales_the_history_before_it", breaking)
+    assert any("share's change" in v for v in violations)
+
+
+def test_the_checker_catches_a_turnover_net_that_is_not_opened_less_closed() -> None:
+    def breaking(r):
+        r["lines"][0]["move"]["turnover"]["net"] += 1
+
+    violations = _broken("busy_company_turnover_leaves_out_a_filter_change", breaking)
+    assert any("turnover's net" in v for v in violations)
+
+
+def test_the_checker_catches_an_other_row_that_is_not_its_lines_added_together() -> (
+    None
+):
+    def breaking(r):
+        r["other"]["move"]["hiring"] += 1
+        r["other"]["move"]["latest"] += 1
+
+    violations = _broken("index_folds_the_categories_past_eight_into_other", breaking)
+    assert any(v.startswith("other row: its hiring") for v in violations)
+
+    def dropping(r):
+        r["other"] = None
+
+    assert _broken("index_folds_the_categories_past_eight_into_other", dropping) == [
+        f"other row: missing with 2 lines past the first {LINES_CHARTED}"
+    ]
+
+
+def test_the_checker_catches_a_percentage_off_a_netted_start_under_five() -> None:
+    def breaking(r):
+        interns = next(line for line in r["lines"] if line["name"] == "interns")
+        interns["move"]["percent"] = 350.0
+
+    violations = _broken("percentage_withheld_off_a_netted_start_under_five", breaking)
+    assert (
+        "line interns: its percentage is not hiring over the netted start" in violations
+    )
 
 
 def test_the_checker_catches_a_count_that_is_not_whole() -> None:

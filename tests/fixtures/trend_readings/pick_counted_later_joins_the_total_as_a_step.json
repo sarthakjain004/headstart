@@ -108,16 +108,36 @@
       "size": 500
      }
     ],
+    "not_hiring_total": 500,
     "percent": 0.6666666666666667,
     "percent_withheld": null,
+    "span_days": 3.0,
+    "per_week": 9,
     "turnover": null,
     "share": {
      "start": 6.0,
      "latest": 6.04,
      "denominator_start": 10000,
-     "denominator_latest": 10000
+     "denominator_latest": 10000,
+     "percent": 0.6666666666666672
     }
-   }
+   },
+   "netted": [
+    600,
+    600,
+    600,
+    604
+   ],
+   "steps_at": [
+    2
+   ],
+   "arrived_by": "pick_joined",
+   "points": [
+    100,
+    100,
+    600,
+    604
+   ]
   },
   "lines": [
    {
@@ -136,18 +156,33 @@
        "size": 500
       }
      ],
+     "not_hiring_total": 500,
      "percent": 0.6666666666666667,
      "percent_withheld": null,
+     "span_days": 3.0,
+     "per_week": 9,
      "turnover": null,
      "share": {
       "start": 6.0,
       "latest": 6.04,
       "denominator_start": 10000,
-      "denominator_latest": 10000
+      "denominator_latest": 10000,
+      "percent": 0.6666666666666672
      }
-    }
+    },
+    "netted": [
+     600,
+     600,
+     600,
+     604
+    ],
+    "steps_at": [
+     2
+    ],
+    "arrived_by": null
    }
   ],
+  "other": null,
   "company_lines": [
    {
     "name": "greenhouse:acme",
@@ -158,16 +193,23 @@
      "latest": 104,
      "hiring": 4,
      "not_hiring": [],
+     "not_hiring_total": 0,
      "percent": 4.0,
      "percent_withheld": null,
+     "span_days": 3.0,
+     "per_week": 9,
      "turnover": null,
      "share": {
       "start": 1.0,
       "latest": 1.04,
       "denominator_start": 10000,
-      "denominator_latest": 10000
+      "denominator_latest": 10000,
+      "percent": 4.0000000000000036
      }
-    }
+    },
+    "netted": [],
+    "steps_at": [],
+    "arrived_by": null
    },
    {
     "name": "workday:amd/x",
@@ -185,16 +227,23 @@
        "size": 500
       }
      ],
+     "not_hiring_total": 500,
      "percent": null,
      "percent_withheld": "a window under 3 days",
+     "span_days": 1.0,
+     "per_week": null,
      "turnover": null,
      "share": {
       "start": 5.0,
       "latest": 5.0,
       "denominator_start": 10000,
-      "denominator_latest": 10000
+      "denominator_latest": 10000,
+      "percent": null
      }
-    }
+    },
+    "netted": [],
+    "steps_at": [],
+    "arrived_by": "pick_joined"
    }
   ],
   "breakdown": {
@@ -223,6 +272,12 @@
      "joined@workday:amd/x"
     ]
    }
+  ],
+  "reference": [
+   10000,
+   10000,
+   10000,
+   10000
   ],
   "reconciles": true,
   "violations": []

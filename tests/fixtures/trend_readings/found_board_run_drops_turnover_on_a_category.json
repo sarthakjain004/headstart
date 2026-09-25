@@ -111,19 +111,40 @@
       "size": 200
      }
     ],
+    "not_hiring_total": 200,
     "percent": 0.0,
     "percent_withheld": null,
+    "span_days": 3.0,
+    "per_week": 0,
     "turnover": {
      "opened": 15,
-     "closed": 10
+     "closed": 10,
+     "net": 5
     },
     "share": {
      "start": 2.941176470588235,
      "latest": 3.0,
      "denominator_start": 10200,
-     "denominator_latest": 10000
+     "denominator_latest": 10000,
+     "percent": 2.000000000000008
     }
-   }
+   },
+   "netted": [
+    300,
+    300,
+    300,
+    300
+   ],
+   "steps_at": [
+    2
+   ],
+   "arrived_by": null,
+   "points": [
+    100,
+    100,
+    300,
+    300
+   ]
   },
   "lines": [
    {
@@ -142,21 +163,37 @@
        "size": 200
       }
      ],
+     "not_hiring_total": 200,
      "percent": 0.0,
      "percent_withheld": null,
+     "span_days": 3.0,
+     "per_week": 0,
      "turnover": {
       "opened": 6,
-      "closed": 5
+      "closed": 5,
+      "net": 1
      },
      "share": {
       "start": 2.941176470588235,
       "latest": 3.0,
       "denominator_start": 10200,
-      "denominator_latest": 10000
+      "denominator_latest": 10000,
+      "percent": 2.000000000000008
      }
-    }
+    },
+    "netted": [
+     300,
+     300,
+     300,
+     300
+    ],
+    "steps_at": [
+     2
+    ],
+    "arrived_by": null
    }
   ],
+  "other": null,
   "company_lines": [
    {
     "name": "greenhouse:acme",
@@ -174,19 +211,27 @@
        "size": 200
       }
      ],
+     "not_hiring_total": 200,
      "percent": 0.0,
      "percent_withheld": null,
+     "span_days": 3.0,
+     "per_week": 0,
      "turnover": {
       "opened": 15,
-      "closed": 10
+      "closed": 10,
+      "net": 5
      },
      "share": {
       "start": 2.941176470588235,
       "latest": 3.0,
       "denominator_start": 10200,
-      "denominator_latest": 10000
+      "denominator_latest": 10000,
+      "percent": 2.000000000000008
      }
-    }
+    },
+    "netted": [],
+    "steps_at": [],
+    "arrived_by": null
    }
   ],
   "breakdown": {
@@ -215,6 +260,12 @@
      "found@2026-09-15T00:00:00+00:00/greenhouse:acme"
     ]
    }
+  ],
+  "reference": [
+   10200,
+   10200,
+   10000,
+   10000
   ],
   "reconciles": true,
   "violations": []

@@ -137,16 +137,32 @@
        "size": 41
       }
      ],
+     "not_hiring_total": -2000,
      "percent": -1.0526315789473684,
      "percent_withheld": null,
+     "span_days": 4.0,
+     "per_week": -35,
      "turnover": null,
      "share": {
       "start": 19.0,
       "latest": 18.8,
       "denominator_start": 10000,
-      "denominator_latest": 10000
+      "denominator_latest": 10000,
+      "percent": -1.0526315789473648
      }
-    }
+    },
+    "netted": [
+     1900,
+     1900,
+     1900,
+     1900,
+     1880
+    ],
+    "steps_at": [
+     2,
+     3
+    ],
+    "arrived_by": null
    },
    {
     "name": "lever:beta",
@@ -157,18 +173,35 @@
      "latest": 50,
      "hiring": 0,
      "not_hiring": [],
+     "not_hiring_total": 0,
      "percent": 0.0,
      "percent_withheld": null,
+     "span_days": 4.0,
+     "per_week": 0,
      "turnover": null,
      "share": {
       "start": 0.5,
       "latest": 0.5,
       "denominator_start": 10000,
-      "denominator_latest": 10000
+      "denominator_latest": 10000,
+      "percent": 0.0
      }
-    }
+    },
+    "netted": [
+     50,
+     50,
+     50,
+     50,
+     50
+    ],
+    "steps_at": [
+     2,
+     3
+    ],
+    "arrived_by": null
    }
   ],
+  "other": null,
   "company_lines": [
    {
     "name": "eightfold:jobs.nvidia.com",
@@ -192,16 +225,23 @@
        "size": 41
       }
      ],
+     "not_hiring_total": -2000,
      "percent": -1.0526315789473684,
      "percent_withheld": null,
+     "span_days": 4.0,
+     "per_week": -35,
      "turnover": null,
      "share": {
       "start": 19.0,
       "latest": 18.8,
       "denominator_start": 10000,
-      "denominator_latest": 10000
+      "denominator_latest": 10000,
+      "percent": -1.0526315789473648
      }
-    }
+    },
+    "netted": [],
+    "steps_at": [],
+    "arrived_by": null
    },
    {
     "name": "lever:beta",
@@ -212,16 +252,23 @@
      "latest": 50,
      "hiring": 0,
      "not_hiring": [],
+     "not_hiring_total": 0,
      "percent": 0.0,
      "percent_withheld": null,
+     "span_days": 4.0,
+     "per_week": 0,
      "turnover": null,
      "share": {
       "start": 0.5,
       "latest": 0.5,
       "denominator_start": 10000,
-      "denominator_latest": 10000
+      "denominator_latest": 10000,
+      "percent": 0.0
      }
-    }
+    },
+    "netted": [],
+    "steps_at": [],
+    "arrived_by": null
    }
   ],
   "breakdown": null,
@@ -268,6 +315,13 @@
      "removed@2026-09-15T00:00:00+00:00/eightfold:jobs.nvidia.com"
     ]
    }
+  ],
+  "reference": [
+   10000,
+   10000,
+   10000,
+   10000,
+   10000
   ],
   "reconciles": true,
   "violations": []

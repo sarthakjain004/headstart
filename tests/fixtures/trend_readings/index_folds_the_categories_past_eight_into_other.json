@@ -1,0 +1,500 @@
+{
+ "description": "No pick, ten categories: the two past the eighth are one Other row, their openings added together (3,000).",
+ "answer_input": {
+  "metric": "stock",
+  "coverage": "all",
+  "new_window_days": 7,
+  "family": null,
+  "epochs": [],
+  "discovered": [],
+  "stamps": [
+   "2026-08-13T00:00:00+00:00",
+   "2026-08-13T06:00:00+00:00"
+  ],
+  "watch_parents": [
+   "ai-ml",
+   "software-engineering"
+  ],
+  "split_by": "family",
+  "totals": [
+   100000,
+   100000
+  ],
+  "non_tech": [
+   1000,
+   1000
+  ],
+  "series": [
+   {
+    "name": "software-engineering",
+    "label": "Software Engineering (general)",
+    "points": [
+     40000,
+     40000
+    ],
+    "latest": 40000
+   },
+   {
+    "name": "web-development",
+    "label": "Web & .NET Development",
+    "points": [
+     9000,
+     9000
+    ],
+    "latest": 9000
+   },
+   {
+    "name": "data-engineering",
+    "label": "Data Engineering",
+    "points": [
+     8000,
+     8000
+    ],
+    "latest": 8000
+   },
+   {
+    "name": "qa-test",
+    "label": "QA & Test Engineering",
+    "points": [
+     7000,
+     7000
+    ],
+    "latest": 7000
+   },
+   {
+    "name": "devops",
+    "label": "DevOps",
+    "points": [
+     6000,
+     6000
+    ],
+    "latest": 6000
+   },
+   {
+    "name": "security-engineering",
+    "label": "Security Engineering",
+    "points": [
+     5000,
+     5000
+    ],
+    "latest": 5000
+   },
+   {
+    "name": "sre-platform",
+    "label": "SRE & Platform Engineering",
+    "points": [
+     4000,
+     4000
+    ],
+    "latest": 4000
+   },
+   {
+    "name": "mobile-development",
+    "label": "Mobile Development",
+    "points": [
+     3000,
+     3000
+    ],
+    "latest": 3000
+   },
+   {
+    "name": "ai-ml",
+    "label": "AI / Machine Learning",
+    "points": [
+     2000,
+     2000
+    ],
+    "latest": 2000
+   },
+   {
+    "name": "data-science",
+    "label": "Data Science",
+    "points": [
+     1000,
+     1000
+    ],
+    "latest": 1000
+   }
+  ]
+ },
+ "reading": {
+  "window": {
+   "from": "2026-08-13T00:00:00+00:00",
+   "to": "2026-08-13T06:00:00+00:00"
+  },
+  "picked": false,
+  "total": {
+   "name": "__total__",
+   "label": "",
+   "estimated": false,
+   "move": {
+    "start": 85000,
+    "latest": 85000,
+    "hiring": 0,
+    "not_hiring": [],
+    "not_hiring_total": 0,
+    "percent": null,
+    "percent_withheld": "a window under 3 days",
+    "span_days": 0.25,
+    "per_week": null,
+    "turnover": null,
+    "share": {
+     "start": 85.0,
+     "latest": 85.0,
+     "denominator_start": 100000,
+     "denominator_latest": 100000,
+     "percent": null
+    }
+   },
+   "netted": [
+    85000,
+    85000
+   ],
+   "steps_at": [],
+   "arrived_by": null,
+   "points": [
+    85000,
+    85000
+   ]
+  },
+  "lines": [
+   {
+    "name": "software-engineering",
+    "label": "Software Engineering (general)",
+    "estimated": false,
+    "move": {
+     "start": 40000,
+     "latest": 40000,
+     "hiring": 0,
+     "not_hiring": [],
+     "not_hiring_total": 0,
+     "percent": null,
+     "percent_withheld": "a window under 3 days",
+     "span_days": 0.25,
+     "per_week": null,
+     "turnover": null,
+     "share": {
+      "start": 40.0,
+      "latest": 40.0,
+      "denominator_start": 100000,
+      "denominator_latest": 100000,
+      "percent": null
+     }
+    },
+    "netted": [
+     40000,
+     40000
+    ],
+    "steps_at": [],
+    "arrived_by": null
+   },
+   {
+    "name": "web-development",
+    "label": "Web & .NET Development",
+    "estimated": false,
+    "move": {
+     "start": 9000,
+     "latest": 9000,
+     "hiring": 0,
+     "not_hiring": [],
+     "not_hiring_total": 0,
+     "percent": null,
+     "percent_withheld": "a window under 3 days",
+     "span_days": 0.25,
+     "per_week": null,
+     "turnover": null,
+     "share": {
+      "start": 9.0,
+      "latest": 9.0,
+      "denominator_start": 100000,
+      "denominator_latest": 100000,
+      "percent": null
+     }
+    },
+    "netted": [
+     9000,
+     9000
+    ],
+    "steps_at": [],
+    "arrived_by": null
+   },
+   {
+    "name": "data-engineering",
+    "label": "Data Engineering",
+    "estimated": false,
+    "move": {
+     "start": 8000,
+     "latest": 8000,
+     "hiring": 0,
+     "not_hiring": [],
+     "not_hiring_total": 0,
+     "percent": null,
+     "percent_withheld": "a window under 3 days",
+     "span_days": 0.25,
+     "per_week": null,
+     "turnover": null,
+     "share": {
+      "start": 8.0,
+      "latest": 8.0,
+      "denominator_start": 100000,
+      "denominator_latest": 100000,
+      "percent": null
+     }
+    },
+    "netted": [
+     8000,
+     8000
+    ],
+    "steps_at": [],
+    "arrived_by": null
+   },
+   {
+    "name": "qa-test",
+    "label": "QA & Test Engineering",
+    "estimated": false,
+    "move": {
+     "start": 7000,
+     "latest": 7000,
+     "hiring": 0,
+     "not_hiring": [],
+     "not_hiring_total": 0,
+     "percent": null,
+     "percent_withheld": "a window under 3 days",
+     "span_days": 0.25,
+     "per_week": null,
+     "turnover": null,
+     "share": {
+      "start": 7.000000000000001,
+      "latest": 7.000000000000001,
+      "denominator_start": 100000,
+      "denominator_latest": 100000,
+      "percent": null
+     }
+    },
+    "netted": [
+     7000,
+     7000
+    ],
+    "steps_at": [],
+    "arrived_by": null
+   },
+   {
+    "name": "devops",
+    "label": "DevOps",
+    "estimated": false,
+    "move": {
+     "start": 6000,
+     "latest": 6000,
+     "hiring": 0,
+     "not_hiring": [],
+     "not_hiring_total": 0,
+     "percent": null,
+     "percent_withheld": "a window under 3 days",
+     "span_days": 0.25,
+     "per_week": null,
+     "turnover": null,
+     "share": {
+      "start": 6.0,
+      "latest": 6.0,
+      "denominator_start": 100000,
+      "denominator_latest": 100000,
+      "percent": null
+     }
+    },
+    "netted": [
+     6000,
+     6000
+    ],
+    "steps_at": [],
+    "arrived_by": null
+   },
+   {
+    "name": "security-engineering",
+    "label": "Security Engineering",
+    "estimated": false,
+    "move": {
+     "start": 5000,
+     "latest": 5000,
+     "hiring": 0,
+     "not_hiring": [],
+     "not_hiring_total": 0,
+     "percent": null,
+     "percent_withheld": "a window under 3 days",
+     "span_days": 0.25,
+     "per_week": null,
+     "turnover": null,
+     "share": {
+      "start": 5.0,
+      "latest": 5.0,
+      "denominator_start": 100000,
+      "denominator_latest": 100000,
+      "percent": null
+     }
+    },
+    "netted": [
+     5000,
+     5000
+    ],
+    "steps_at": [],
+    "arrived_by": null
+   },
+   {
+    "name": "sre-platform",
+    "label": "SRE & Platform Engineering",
+    "estimated": false,
+    "move": {
+     "start": 4000,
+     "latest": 4000,
+     "hiring": 0,
+     "not_hiring": [],
+     "not_hiring_total": 0,
+     "percent": null,
+     "percent_withheld": "a window under 3 days",
+     "span_days": 0.25,
+     "per_week": null,
+     "turnover": null,
+     "share": {
+      "start": 4.0,
+      "latest": 4.0,
+      "denominator_start": 100000,
+      "denominator_latest": 100000,
+      "percent": null
+     }
+    },
+    "netted": [
+     4000,
+     4000
+    ],
+    "steps_at": [],
+    "arrived_by": null
+   },
+   {
+    "name": "mobile-development",
+    "label": "Mobile Development",
+    "estimated": false,
+    "move": {
+     "start": 3000,
+     "latest": 3000,
+     "hiring": 0,
+     "not_hiring": [],
+     "not_hiring_total": 0,
+     "percent": null,
+     "percent_withheld": "a window under 3 days",
+     "span_days": 0.25,
+     "per_week": null,
+     "turnover": null,
+     "share": {
+      "start": 3.0,
+      "latest": 3.0,
+      "denominator_start": 100000,
+      "denominator_latest": 100000,
+      "percent": null
+     }
+    },
+    "netted": [
+     3000,
+     3000
+    ],
+    "steps_at": [],
+    "arrived_by": null
+   },
+   {
+    "name": "ai-ml",
+    "label": "AI / Machine Learning",
+    "estimated": false,
+    "move": {
+     "start": 2000,
+     "latest": 2000,
+     "hiring": 0,
+     "not_hiring": [],
+     "not_hiring_total": 0,
+     "percent": null,
+     "percent_withheld": "a window under 3 days",
+     "span_days": 0.25,
+     "per_week": null,
+     "turnover": null,
+     "share": {
+      "start": 2.0,
+      "latest": 2.0,
+      "denominator_start": 100000,
+      "denominator_latest": 100000,
+      "percent": null
+     }
+    },
+    "netted": [
+     2000,
+     2000
+    ],
+    "steps_at": [],
+    "arrived_by": null
+   },
+   {
+    "name": "data-science",
+    "label": "Data Science",
+    "estimated": false,
+    "move": {
+     "start": 1000,
+     "latest": 1000,
+     "hiring": 0,
+     "not_hiring": [],
+     "not_hiring_total": 0,
+     "percent": null,
+     "percent_withheld": "a window under 3 days",
+     "span_days": 0.25,
+     "per_week": null,
+     "turnover": null,
+     "share": {
+      "start": 1.0,
+      "latest": 1.0,
+      "denominator_start": 100000,
+      "denominator_latest": 100000,
+      "percent": null
+     }
+    },
+    "netted": [
+     1000,
+     1000
+    ],
+    "steps_at": [],
+    "arrived_by": null
+   }
+  ],
+  "other": {
+   "name": "__other__",
+   "label": "",
+   "estimated": false,
+   "move": {
+    "start": 3000,
+    "latest": 3000,
+    "hiring": 0,
+    "not_hiring": [],
+    "not_hiring_total": 0,
+    "percent": null,
+    "percent_withheld": "a window under 3 days",
+    "span_days": 0.25,
+    "per_week": null,
+    "turnover": null,
+    "share": {
+     "start": 3.0,
+     "latest": 3.0,
+     "denominator_start": 100000,
+     "denominator_latest": 100000,
+     "percent": null
+    }
+   },
+   "netted": [],
+   "steps_at": [],
+   "arrived_by": null
+  },
+  "company_lines": [],
+  "breakdown": null,
+  "marked_changes": [],
+  "day_markers": [],
+  "reference": [
+   100000,
+   100000
+  ],
+  "reconciles": true,
+  "violations": []
+ }
+}

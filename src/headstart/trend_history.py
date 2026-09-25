@@ -963,8 +963,9 @@ class TrendHistory:
         return CompanyMoves(window, moves)
 
     def answer(self, question: TrendQuestion) -> dict:
-        """The ``/trends`` payload: :meth:`unnetted_answer` with every line netted, once
-        (ADR-0230 decision 3), so the page draws what it is given."""
+        """:meth:`unnetted_answer` with every line netted, once (ADR-0230 decision 3): what Hot
+        reads (:meth:`company_moves`) until it reads ``trend_reading.read_company_moves``
+        (ADR-0233 step 4). ``/trends`` serves the line reading instead."""
         return trend_netting.net_answer(self.unnetted_answer(question))
 
     def unnetted_answer(self, question: TrendQuestion) -> dict:

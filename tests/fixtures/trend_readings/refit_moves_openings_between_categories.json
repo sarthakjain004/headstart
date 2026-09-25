@@ -98,16 +98,37 @@
     "latest": 170,
     "hiring": 20,
     "not_hiring": [],
+    "not_hiring_total": 0,
     "percent": 13.333333333333334,
     "percent_withheld": null,
+    "span_days": 3.0,
+    "per_week": 47,
     "turnover": null,
     "share": {
      "start": 1.5,
      "latest": 1.7000000000000002,
      "denominator_start": 10000,
-     "denominator_latest": 10000
+     "denominator_latest": 10000,
+     "percent": 13.333333333333345
     }
-   }
+   },
+   "netted": [
+    150,
+    170,
+    170,
+    170
+   ],
+   "steps_at": [
+    2,
+    3
+   ],
+   "arrived_by": null,
+   "points": [
+    150,
+    170,
+    170,
+    170
+   ]
   },
   "lines": [
    {
@@ -126,16 +147,31 @@
        "size": -24
       }
      ],
+     "not_hiring_total": -24,
      "percent": 26.31578947368421,
      "percent_withheld": null,
+     "span_days": 3.0,
+     "per_week": 47,
      "turnover": null,
      "share": {
       "start": 0.76,
       "latest": 0.96,
       "denominator_start": 10000,
-      "denominator_latest": 10000
+      "denominator_latest": 10000,
+      "percent": 26.315789473684205
      }
-    }
+    },
+    "netted": [
+     76,
+     96,
+     96,
+     96
+    ],
+    "steps_at": [
+     2,
+     3
+    ],
+    "arrived_by": null
    },
    {
     "name": "b",
@@ -153,18 +189,34 @@
        "size": 24
       }
      ],
+     "not_hiring_total": 24,
      "percent": 0.0,
      "percent_withheld": null,
+     "span_days": 3.0,
+     "per_week": 0,
      "turnover": null,
      "share": {
       "start": 0.74,
       "latest": 0.74,
       "denominator_start": 10000,
-      "denominator_latest": 10000
+      "denominator_latest": 10000,
+      "percent": 0.0
      }
-    }
+    },
+    "netted": [
+     74,
+     74,
+     74,
+     74
+    ],
+    "steps_at": [
+     2,
+     3
+    ],
+    "arrived_by": null
    }
   ],
+  "other": null,
   "company_lines": [
    {
     "name": "greenhouse:acme",
@@ -175,16 +227,23 @@
      "latest": 170,
      "hiring": 20,
      "not_hiring": [],
+     "not_hiring_total": 0,
      "percent": 13.333333333333334,
      "percent_withheld": null,
+     "span_days": 3.0,
+     "per_week": 47,
      "turnover": null,
      "share": {
       "start": 1.5,
       "latest": 1.7000000000000002,
       "denominator_start": 10000,
-      "denominator_latest": 10000
+      "denominator_latest": 10000,
+      "percent": 13.333333333333345
      }
-    }
+    },
+    "netted": [],
+    "steps_at": [],
+    "arrived_by": null
    }
   ],
   "breakdown": {
@@ -192,6 +251,12 @@
   },
   "marked_changes": [],
   "day_markers": [],
+  "reference": [
+   10000,
+   10000,
+   10000,
+   10000
+  ],
   "reconciles": true,
   "violations": []
  }

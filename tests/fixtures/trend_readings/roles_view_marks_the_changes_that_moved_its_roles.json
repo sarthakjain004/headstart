@@ -94,16 +94,37 @@
       "size": 16
      }
     ],
+    "not_hiring_total": 16,
     "percent": 0.0,
     "percent_withheld": null,
+    "span_days": 3.0,
+    "per_week": 0,
     "turnover": null,
     "share": {
      "start": 9.6,
      "latest": 9.6,
      "denominator_start": 1000,
-     "denominator_latest": 1000
+     "denominator_latest": 1000,
+     "percent": 0.0
     }
-   }
+   },
+   "netted": [
+    96,
+    96,
+    96,
+    96
+   ],
+   "steps_at": [
+    2,
+    3
+   ],
+   "arrived_by": null,
+   "points": [
+    80,
+    80,
+    96,
+    96
+   ]
   },
   "lines": [
    {
@@ -122,18 +143,34 @@
        "size": 16
       }
      ],
+     "not_hiring_total": 16,
      "percent": 0.0,
      "percent_withheld": null,
+     "span_days": 3.0,
+     "per_week": 0,
      "turnover": null,
      "share": {
       "start": 9.6,
       "latest": 9.6,
       "denominator_start": 1000,
-      "denominator_latest": 1000
+      "denominator_latest": 1000,
+      "percent": 0.0
      }
-    }
+    },
+    "netted": [
+     96,
+     96,
+     96,
+     96
+    ],
+    "steps_at": [
+     2,
+     3
+    ],
+    "arrived_by": null
    }
   ],
+  "other": null,
   "company_lines": [
    {
     "name": "watch:llm",
@@ -151,16 +188,23 @@
        "size": 16
       }
      ],
+     "not_hiring_total": 16,
      "percent": 0.0,
      "percent_withheld": null,
+     "span_days": 3.0,
+     "per_week": 0,
      "turnover": null,
      "share": {
       "start": 9.6,
       "latest": 9.6,
       "denominator_start": 1000,
-      "denominator_latest": 1000
+      "denominator_latest": 1000,
+      "percent": 0.0
      }
-    }
+    },
+    "netted": [],
+    "steps_at": [],
+    "arrived_by": null
    }
   ],
   "breakdown": null,
@@ -191,6 +235,12 @@
      "counting@2026-09-15T00:00:00+00:00"
     ]
    }
+  ],
+  "reference": [
+   1000,
+   1000,
+   1000,
+   1000
   ],
   "reconciles": true,
   "violations": []

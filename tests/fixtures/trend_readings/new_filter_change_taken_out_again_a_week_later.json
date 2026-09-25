@@ -71,10 +71,12 @@
   "picked": true,
   "total": null,
   "lines": [],
+  "other": null,
   "company_lines": [],
   "breakdown": null,
   "marked_changes": [],
   "day_markers": [],
+  "reference": [],
   "reconciles": true,
   "violations": []
  }

@@ -114,18 +114,35 @@
        "size": -97
       }
      ],
+     "not_hiring_total": -2138,
      "percent": 2.0408163265306123,
      "percent_withheld": null,
+     "span_days": 4.0,
+     "per_week": 67,
      "turnover": null,
      "share": {
       "start": 18.62,
       "latest": 19.0,
       "denominator_start": 10000,
-      "denominator_latest": 10000
+      "denominator_latest": 10000,
+      "percent": 2.040816326530607
      }
-    }
+    },
+    "netted": [
+     1862,
+     1862,
+     1862,
+     1862,
+     1900
+    ],
+    "steps_at": [
+     2,
+     3
+    ],
+    "arrived_by": null
    }
   ],
+  "other": null,
   "company_lines": [
    {
     "name": "eightfold:nvidia",
@@ -149,16 +166,23 @@
        "size": -97
       }
      ],
+     "not_hiring_total": -2138,
      "percent": 2.0408163265306123,
      "percent_withheld": null,
+     "span_days": 4.0,
+     "per_week": 67,
      "turnover": null,
      "share": {
       "start": 18.62,
       "latest": 19.0,
       "denominator_start": 10000,
-      "denominator_latest": 10000
+      "denominator_latest": 10000,
+      "percent": 2.040816326530607
      }
-    }
+    },
+    "netted": [],
+    "steps_at": [],
+    "arrived_by": null
    }
   ],
   "breakdown": null,
@@ -205,6 +229,13 @@
      "removed@2026-09-15T00:00:00+00:00/eightfold:nvidia"
     ]
    }
+  ],
+  "reference": [
+   10000,
+   10000,
+   10000,
+   10000,
+   10000
   ],
   "reconciles": true,
   "violations": []

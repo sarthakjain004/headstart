@@ -91,16 +91,36 @@
       "size": 254
      }
     ],
+    "not_hiring_total": 254,
     "percent": 0.0,
     "percent_withheld": null,
+    "span_days": 3.0,
+    "per_week": 0,
     "turnover": null,
     "share": {
      "start": 9.927833040764579,
      "latest": 10.18,
      "denominator_start": 10254,
-     "denominator_latest": 10000
+     "denominator_latest": 10000,
+     "percent": 2.540000000000005
     }
-   }
+   },
+   "netted": [
+    1018,
+    1018,
+    1018,
+    1018
+   ],
+   "steps_at": [
+    2
+   ],
+   "arrived_by": null,
+   "points": [
+    764,
+    764,
+    1018,
+    1018
+   ]
   },
   "lines": [
    {
@@ -119,18 +139,33 @@
        "size": 254
       }
      ],
+     "not_hiring_total": 254,
      "percent": 0.0,
      "percent_withheld": null,
+     "span_days": 3.0,
+     "per_week": 0,
      "turnover": null,
      "share": {
       "start": 9.927833040764579,
       "latest": 10.18,
       "denominator_start": 10254,
-      "denominator_latest": 10000
+      "denominator_latest": 10000,
+      "percent": 2.540000000000005
      }
-    }
+    },
+    "netted": [
+     1018,
+     1018,
+     1018,
+     1018
+    ],
+    "steps_at": [
+     2
+    ],
+    "arrived_by": null
    }
   ],
+  "other": null,
   "company_lines": [
    {
     "name": "greenhouse:acme",
@@ -148,16 +183,23 @@
        "size": 254
       }
      ],
+     "not_hiring_total": 254,
      "percent": 0.0,
      "percent_withheld": null,
+     "span_days": 3.0,
+     "per_week": 0,
      "turnover": null,
      "share": {
       "start": 9.927833040764579,
       "latest": 10.18,
       "denominator_start": 10254,
-      "denominator_latest": 10000
+      "denominator_latest": 10000,
+      "percent": 2.540000000000005
      }
-    }
+    },
+    "netted": [],
+    "steps_at": [],
+    "arrived_by": null
    }
   ],
   "breakdown": {
@@ -186,6 +228,12 @@
      "found@2026-09-15T00:00:00+00:00/greenhouse:acme"
     ]
    }
+  ],
+  "reference": [
+   10254,
+   10254,
+   10000,
+   10000
   ],
   "reconciles": true,
   "violations": []
