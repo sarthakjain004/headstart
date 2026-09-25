@@ -3142,7 +3142,16 @@ def _with_turnover(trends_app, monkeypatch, rows: list[dict]) -> None:
     """The fixture's ledger plus turnover rows (ADR-0222), loaded as the Space loads them."""
     deltas = trends_app._TREND_DELTAS + rows
     monkeypatch.setattr(trends_app, "_TREND_DELTAS", deltas)
-    monkeypatch.setattr(trends_app, "_TURNOVER", trends_app._turnover_by_board(deltas))
+    turnover = trends_app._rows_by_board(deltas, trends_app._TURNOVER_METRICS)
+    monkeypatch.setattr(trends_app, "_TURNOVER", turnover)
+    monkeypatch.setattr(
+        trends_app,
+        "_UNSCOPED_MARKERS",
+        trends_app._rows_by_board(deltas, ("unscoped",)),
+    )
+    monkeypatch.setattr(
+        trends_app, "_INDEX_TURNOVER", trends_app._index_turnover(turnover)
+    )
     monkeypatch.setattr(trends_app, "_TURNOVER_SINCE", _T2)
 
 
@@ -3153,6 +3162,8 @@ _HPE_TURNOVER = [
     _delta(_T3, "workday:hpe/b", 1, family="ai-ml", metric="recounted_in"),
     _delta(_T3, "workday:hpe/b", 1, family="ai-ml", metric="recounted_out"),
     _delta(_T3, "workday:hpe/b", 1, family="all", metric="unscoped"),
+    _delta(_T3, "workday:citi/2", 5, metric="opened"),
+    _delta(_T2, "eightfold:citi.eightfold.ai", 3, metric="recounted_in"),  # found
 ]
 
 
@@ -3199,7 +3210,40 @@ def test_each_line_carries_the_turnover_its_change_is_made_of(
         "/trends?split=company&company=workday:hpe/a&company=workday:citi/2"
     ).get_json()
     by_label = {s["label"]: s["turnover"]["opened"] for s in split["series"]}
-    assert by_label == {"Hpe": [None, 0, 2], "Citi": [None, 0, 0]}
+    assert by_label == {"Hpe": [None, 0, 2], "Citi": [None, 0, 5]}
+
+
+def test_the_index_has_turnover_and_it_is_the_sum_of_every_companys(
+    company_trends, trends_app, monkeypatch
+):
+    """With no company picked, every line carries turnover too, summed from the same Board rows,
+    so the index is exactly the sum over every company, run by run (ADR-0222). A found Board is
+    recounted in the index as in its company."""
+    _with_turnover(trends_app, monkeypatch, _HPE_TURNOVER)
+    index = company_trends.get("/trends").get_json()
+    turnover = {s["name"]: s["turnover"] for s in index["series"]}
+    assert turnover["software-engineering"] == {
+        "opened": [None, 0, 7],
+        "closed": [None, 0, 7],
+        "recounted": [None, 3, 0],
+    }
+    assert index["closures_unseen"] == {"": 1}
+    every = "&".join(f"company={key}" for key in trends_app._COMPANIES)
+    companies = company_trends.get(f"/trends?split=company&{every}").get_json()
+    for kind in ("opened", "closed", "recounted"):
+        by_run = [
+            sum(s["turnover"][kind][j] or 0 for s in companies["series"])
+            for j in range(len(companies["stamps"]))
+        ]
+        in_index = [
+            sum(t[kind][j] or 0 for t in turnover.values())
+            for j in range(len(index["stamps"]))
+        ]
+        assert by_run == in_index, kind
+    lever = company_trends.get("/trends?ats=lever").get_json()
+    assert all(
+        v in (None, 0) for s in lever["series"] for v in s["turnover"]["opened"]
+    ), "an ATS filter narrows the index's turnover"
 
 
 def test_no_turnover_off_openings(company_trends, trends_app, monkeypatch):

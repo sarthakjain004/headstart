@@ -1933,7 +1933,16 @@ function viewNotes(d){ return [comparableNote(d), companyNote(d)].filter(Boolean
 // word, because a handful of openings moving is not a trend. Only the picks this answer counts:
 // under Comparable, "These 2 companies" was said of one.
 function verdictLines(d){
-  if (!trendPicks.length || !d.series.length || !d.stamps.length) return [];
+  if (!d.series.length || !d.stamps.length) return [];
+  // The index gets one sentence too: its turnover (ADR-0222), the figure a job hunter cannot read
+  // off a chart of levels. Its net is the chart's own, counting changes marked rather than taken
+  // out, so the sentence gives only the jobs opened and closed.
+  if (!trendPicks.length){
+    const whole = { name: '__total__', points: sumPoints(d.series, d.stamps), turnover: sumTurnover(d.series) };
+    const phrase = turnoverPhrase(whole, d);
+    return phrase ? [{ name: viewKind(d) === 'bands' ? drillLabel() : 'All tech roles', days: 0,
+      text: `${phrase}, runs where HeadStart changed how it counts left out.` }] : [];
+  }
   const kind = viewKind(d);
   const counted = trendPicks.filter(p => !(d.uncounted || []).includes(p.key));
   // Inside a category: a sentence per company, or the category's own total, which its levels
@@ -1993,14 +2002,25 @@ function turnoverOf(s){
   }
   const t = s && s.turnover;
   if (!t || trendMetric !== 'stock') return null;
-  const jumps = stepJumps(s.points, s), left = new Set();
-  let last = -1;
-  s.points.forEach((v, j) => {
-    if (v == null) return;
-    const jump = jumps.get(j);
-    if (jump && jump.lift == null) for (let k = last + 1; k <= j; k++) left.add(k);
-    last = j;
-  });
+  const left = new Set();
+  if (!trendPicks.length){
+    // The index's lines keep a counting change's jump, marked, but its turnover is still not
+    // hiring: the runs a pick's line would leave out for it are left out of the index's count,
+    // a change and its settling run.
+    const bands = viewKind(trendData) === 'bands';
+    notesOf(trendData).filter(n => n.epoch && !n.echo && n.i > 0 && (n.fields || [])
+      .some(f => LINE_MOVING.includes(f) || (bands && f === 'derivations_version')))
+      .forEach(n => { left.add(n.i); left.add(n.i + 1); });
+  } else {
+    const jumps = stepJumps(s.points, s);
+    let last = -1;
+    s.points.forEach((v, j) => {
+      if (v == null) return;
+      const jump = jumps.get(j);
+      if (jump && jump.lift == null) for (let k = last + 1; k <= j; k++) left.add(k);
+      last = j;
+    });
+  }
   let opened = 0, closed = 0, seen = false;
   t.opened.forEach((v, j) => {
     if (j === 0 || v == null || left.has(j)) return;
@@ -2020,6 +2040,11 @@ function aboutCount(n){
 // (ADR-0053): their scrape could not show an absence, so the line can read as opening more than
 // it closed.
 function turnoverText(s, d){
+  const phrase = turnoverPhrase(s, d);
+  return phrase ? ` — ${phrase}` : '';
+}
+// "about 1,500 opened, 1,500 closed", with from when and the uncounted closures (turnoverText).
+function turnoverPhrase(s, d){
   const t = turnoverOf(s);
   if (!t) return '';
   const since = d.turnover_since && d.turnover_since > d.stamps[0] ? ` since ${stampLabel(d.turnover_since, true)}` : '';
@@ -2027,7 +2052,7 @@ function turnoverText(s, d){
   const unseen = VIEWS[viewKind(d)].split === 'company' ? unseenBy[s.name] || 0
     : Object.values(unseenBy).reduce((sum, n) => sum + n, 0);
   const note = unseen ? `, closures not counted on ${unseen} board${unseen === 1 ? '' : 's'}` : '';
-  return ` — about ${aboutCount(t.opened)} opened, ${aboutCount(t.closed)} closed${since}${note}`;
+  return `about ${aboutCount(t.opened)} opened, ${aboutCount(t.closed)} closed${since}${note}`;
 }
 function verdictOf(s, d){
   const now = latestOf(s);
@@ -2101,7 +2126,7 @@ function drawVerdict(d){
   const early = `HeadStart has counted ${who}${days < 14
     ? ` — too short to tell a trend from noise, so read this as an early sign.${month ? ` A month of counting arrives ${month}.` : ''}`
     : '; there is nothing before that.'}`;
-  const tail = early ? `<p class="verdict-early">${esc(early)}</p>` : '';
+  const tail = early && trendPicks.length ? `<p class="verdict-early">${esc(early)}</p>` : '';
   // A few sentences, then the rest folded: four companies' took twelve lines above the chart,
   // more than a phone's screen. In pick order, not by size, with the first pick and the lines
   // the tiles headline kept out of the fold: the tile read "Biggest riser Microsoft" while
@@ -2205,7 +2230,7 @@ function stepNotes(d){
     // marker read "duplicate removal changed", which moved nothing at Google.
     const said = e.changed.filter((c, k) => !picked || fields[k] !== 'dedup_version' || touched.length > 0);
     const text = `Counting changed here: ${said.join(', ')}`;
-    if (!picked){ notes.push({ i, text, found: false, epoch: true, withhold: false }); return; }
+    if (!picked){ notes.push({ i, text, found: false, epoch: true, withhold: false, fields: e.fields || [] }); return; }
     const linesMove = fields.some(f => LINE_MOVING.includes(f)) || (bands && fields.includes('derivations_version'));
     const dedup = !linesMove && touched.length > 0 && fields.includes('dedup_version');
     if (!(linesMove || dedup)) return;
@@ -3731,7 +3756,7 @@ function tableRowHead(s){
 function buildTrendsTable(){
   const d = trendData; if (!d) return '';
   const { shown: rows } = chartedAndOther(d);
-  const flows = trendMetric === 'stock' && d.series.some(s => s.turnover);
+  const withTurnover = trendMetric === 'stock' && d.series.some(s => s.turnover);
   // The change column leaves the marked steps out and the counts are as counted, so both are
   // named and the steps get a column of their own: 764 → 1,018 beside "−0.2%" read as a bug.
   const head = `<tr><th scope="col">${VIEWS[viewKind(d)].column}</th><th scope="col">Latest</th>`
@@ -3739,10 +3764,10 @@ function buildTrendsTable(){
     + `<th scope="col">${trendUnit === 'share' ? 'Share, change' : 'Hiring, %'}</th>`
     + '<th scope="col">Hiring, openings</th><th scope="col">Counting changes, openings</th>'
     // What the hiring move is made of (ADR-0222), on the runs that move counts (turnoverOf).
-    + (flows ? '<th scope="col">Opened</th><th scope="col">Closed</th>' : '')
+    + (withTurnover ? '<th scope="col">Opened</th><th scope="col">Closed</th>' : '')
     + '<th scope="col">Start, as counted</th><th scope="col">Min</th><th scope="col">Max</th></tr>';
-  const flowCells = s => {
-    if (!flows) return '';
+  const turnoverCells = s => {
+    if (!withTurnover) return '';
     const t = turnoverOf(s);
     return t ? `<td>${esc(t.opened.toLocaleString())}</td><td>${esc(t.closed.toLocaleString())}</td>`
       : '<td class="flat">—</td><td class="flat">—</td>';
@@ -3764,7 +3789,7 @@ function buildTrendsTable(){
       + cell(now == null ? null : levelValue(now, s.points.length - 1, s))
       + hiringCells(s, mv)
       + `<td>${countingChange(s)}</td>`
-      + flowCells(s)
+      + turnoverCells(s)
       + cell(vals.length ? vals[0] : null)
       + cell(vals.length ? Math.min(...vals) : null)
       + cell(vals.length ? Math.max(...vals) : null) + '</tr>';
@@ -4685,11 +4710,11 @@ function drawHotProvenance(){
   const span = hours != null && hours < 72 ? `the last ${Math.max(1, Math.round(hours))} hours`
     : `${day(w.from)} to ${day(w.to)}`;
   // Turnover began with ADR-0222, so for its first week it covers less than the net change does.
-  const flowsLate = w.flows_from && w.from && w.flows_from > w.from;
-  const flows = !w.flows_from ? 'opened and closed are not counted yet'
-    : flowsLate ? `opened and closed are counted since ${day(w.flows_from)}` : 'opened and closed over the same runs';
+  const turnoverLate = w.turnover_from && w.from && w.turnover_from > w.from;
+  const turnover = !w.turnover_from ? 'opened and closed are not counted yet'
+    : turnoverLate ? `opened and closed are counted since ${day(w.turnover_from)}` : 'opened and closed over the same runs';
   el('hot-provenance').textContent =
-    `Net change measured over ${span}; ${flows}. ${x.ranked ?? 0} companies ranked; ` +
+    `Net change measured over ${span}; ${turnover}. ${x.ranked ?? 0} companies ranked; ` +
     `${x.below_min_stock ?? 0} with fewer than ${x.min_stock ?? '?'} open tech roles and ` +
     `${x.newly_discovered ?? 0} ` +
     `boards we had only just discovered were left out.`;

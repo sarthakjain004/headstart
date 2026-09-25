@@ -537,13 +537,29 @@ def _board_arrivals(deltas: list[dict]) -> dict[str, tuple[str, int]]:
     return {board: (ts, arrived[board]) for board, ts in first.items()}
 
 
-def _turnover_by_board(deltas: list[dict]) -> dict[str, list[dict]]:
-    """Each Board's turnover rows and Unauthoritative markers from the delta ledger (ADR-0222)."""
+def _rows_by_board(deltas: list[dict], metrics) -> dict[str, list[dict]]:
+    """Each Board's delta rows of ``metrics``: its turnover, or its Unauthoritative markers
+    (ADR-0222)."""
     out: dict[str, list[dict]] = defaultdict(list)
     for row in deltas:
-        if row["metric"] in _TURNOVER_METRICS or row["metric"] == _UNSCOPED:
+        if row["metric"] in metrics:
             out[row["board"]].append(row)
     return out
+
+
+def _index_turnover(by_board: dict[str, list[dict]]) -> list[dict]:
+    """Every Board's turnover summed per tick, metric, family, band and ATS (ADR-0222): what the
+    Trends view with no company picked draws. A few hundred rows a tick where the per-Board rows
+    run to thousands, so a request sums the index without walking every Board. The same rows
+    summed, so the index is exactly the sum of every company's turnover."""
+    summed: Counter[tuple[str, str, str, str, str]] = Counter()
+    for rows in by_board.values():
+        for r in rows:
+            summed[(r["ts"], r["metric"], r["family"], r["band"], r["ats"])] += r[
+                "delta"
+            ]
+    fields = ("ts", "metric", "family", "band", "ats")
+    return [{**dict(zip(fields, key)), "delta": n} for key, n in summed.items()]
 
 
 def _new_holds(arrivals: dict[str, tuple[str, int]]) -> dict[str, str]:
@@ -618,13 +634,13 @@ _BOARD_ARRIVALS = _board_arrivals(_TREND_DELTAS)
 _NEW_HOLD = _new_holds(_BOARD_ARRIVALS)
 # The first tick of the Board-delta ledger, before which no per-Board count exists.
 _LEDGER_START = min((ts for ts, _ in _BOARD_ARRIVALS.values()), default=None)
-# Each Board's turnover rows and markers (ADR-0222), and the first tick that booked any turnover:
-# a run before it measured none, which is a gap, not a zero.
-_TURNOVER = _turnover_by_board(_TREND_DELTAS)
-_TURNOVER_SINCE = min(
-    (r["ts"] for rows in _TURNOVER.values() for r in rows if r["metric"] != _UNSCOPED),
-    default=None,
-)
+# Each Board's turnover and Unauthoritative markers (ADR-0222), the index's turnover summed over
+# every Board, and the first tick that booked any turnover: a run before it measured none, which
+# is a gap, not a zero.
+_TURNOVER = _rows_by_board(_TREND_DELTAS, _TURNOVER_METRICS)
+_UNSCOPED_MARKERS = _rows_by_board(_TREND_DELTAS, (_UNSCOPED,))
+_INDEX_TURNOVER = _index_turnover(_TURNOVER)
+_TURNOVER_SINCE = min((r["ts"] for r in _INDEX_TURNOVER), default=None)
 # Email alerts (ADR-0035) — invite-only, so all three must be set before the panel appears:
 # the Google client id the sign-in button needs, and a token scoped to the Subscriptions
 # dataset alone (never the index token, which is read-only by design).
@@ -1940,20 +1956,44 @@ def trends():
             bucket[0] += 1
             bucket[1] += openings
     # Each line's turnover (ADR-0222): the jobs opened and closed that its net change is made
-    # of. Amazon read "+17" over a week in which it opened 914–1,532. Under a pick and on stock
-    # only, because a pick's lines are the ones read as a company's hiring. Not on the roles
-    # drill, whose watched roles re-count their family's jobs.
-    turnover_boards: dict[str, str] = {}
-    if (
-        company_of is not None
-        and metric == "stock"
-        and not (family and split == "roles")
-    ):
-        turnover_boards = {
-            board: pick
-            for board, pick in counted.items()
-            if base_stamp is None or _BOARD_ARRIVALS[board][0] <= base_stamp
+    # of. Amazon read "+17" over a week in which it opened 914–1,532. On every line of every view
+    # on stock, the index's included, and summed from the same rows, so the index's is exactly
+    # the sum of every company's. Not on the roles drill, whose watched roles re-count their
+    # family's jobs.
+    with_turnover = metric == "stock" and not (family and split == "roles")
+    # The Boards in scope, by pick ("" for the index): a pick's Boards, else under comparable
+    # coverage the cohort's, else every Board through the index's own summed rows.
+    scope: dict[str, str] | None = None
+    if company_of is not None:
+        scope = counted
+    elif coverage == "comparable":
+        scope = {
+            board: ""
+            for board in _TURNOVER.keys() | _UNSCOPED_MARKERS.keys()
+            if not (ats and ats_of(board) not in ats)
         }
+    if scope is not None and base_stamp is not None:
+        scope = {
+            board: pick
+            for board, pick in scope.items()
+            if board in _BOARD_ARRIVALS and _BOARD_ARRIVALS[board][0] <= base_stamp
+        }
+    if scope is None:
+        turnover_rows = [
+            (row, "") for row in _INDEX_TURNOVER if not ats or row["ats"] in ats
+        ]
+        unscoped = {
+            board: ""
+            for board in _UNSCOPED_MARKERS
+            if not (ats and ats_of(board) not in ats)
+        }
+    else:
+        turnover_rows = [
+            (row, pick)
+            for board, pick in scope.items()
+            for row in _TURNOVER.get(board, ())
+        ]
+        unscoped = scope
 
     def line_of(row: dict, pick: str) -> str | None:
         held = rename.get(row["family"], row["family"])
@@ -1963,24 +2003,21 @@ def trends():
             return row["band"] if held == family else None
         return held
 
-    if turnover_boards:
+    pick_turnover: dict[str, dict[str, list[int | None]]] = {}
+    if with_turnover:
         by_line = _turnover_series(
-            turnover_boards, stamps, line_of, [line["name"] for line in out]
+            turnover_rows, stamps, line_of, [line["name"] for line in out]
         )
         for line in out:
             line["turnover"] = by_line[line["name"]]
-    # Each pick's own turnover where its own line is served (`pick_series`), so a line summing
-    # several picks counts each pick's turnover over the runs its own netted line counts.
-    pick_turnover = (
-        _turnover_series(
-            turnover_boards,
+        # Each pick's own turnover where its own line is served (`pick_series`), so a line
+        # summing several picks counts each pick's turnover over the runs its own line counts.
+        pick_turnover = _turnover_series(
+            turnover_rows,
             stamps,
             lambda row, pick: pick if line_of(row, pick) is not None else None,
             list(pick_series),
         )
-        if turnover_boards and pick_series
-        else {}
-    )
     # Which families have watched sub-roles, so the UI can offer the roles drill only there.
     # Under the names the data holds as well as the config's: the watchlist moved to the v3
     # families before their data landed, and the AI roles' drill vanished from "AI / Machine
@@ -2038,23 +2075,24 @@ def trends():
         evicted=_picks_evicted(counted, stamps) if coverage != "comparable" else [],
         # When turnover began (ADR-0222). A window that starts earlier has lines whose opened
         # and closed cover only part of it, and the page says from when.
-        turnover_since=_TURNOVER_SINCE if turnover_boards else None,
-        # Per pick, its Boards whose closures went uncounted on some run in the window (ADR-0053).
-        closures_unseen=_closures_unseen(turnover_boards, stamps),
+        turnover_since=_TURNOVER_SINCE if with_turnover else None,
+        # Per pick ("" for the index), its Boards whose closures went uncounted on some run in the
+        # window (ADR-0053).
+        closures_unseen=_closures_unseen(unscoped, stamps) if with_turnover else {},
     )
 
 
 def _turnover_series(
-    boards: dict[str, str],
+    rows: list[tuple[dict, str]],
     stamps: list[str],
     line_of,
     names,
 ) -> dict[str, dict[str, list[int | None]]]:
     """The turnover of each line in ``names`` at each charted run (ADR-0222): ``{line: {opened,
     closed, recounted}}``, each list aligned to ``stamps``. ``recounted`` is in less out, so on
-    every run ``opened − closed + recounted`` is the line's change in openings. ``boards`` maps
-    the Boards in scope to their pick. ``line_of(row, pick)`` names the line a row belongs to, or
-    returns None to leave the row out.
+    every run ``opened − closed + recounted`` is the line's change in openings. ``rows`` pairs
+    each turnover row in scope with its pick. ``line_of(row, pick)`` names the line a row belongs
+    to, or returns None to leave the row out.
 
     A tick's turnover lands on the first charted run at or after it, because it counts what
     happened since the run before. The first charted run is None: what landed there happened
@@ -2065,14 +2103,13 @@ def _turnover_series(
     )
     blank = [None] * first + [0] * (len(stamps) - first)
     lines = {name: {m: list(blank) for m in _TURNOVER_KINDS} for name in names}
-    for board, pick in boards.items():
-        for row in _TURNOVER.get(board, ()):
-            k = bisect_left(stamps, row["ts"])
-            line = lines.get(line_of(row, pick))
-            if row["metric"] == _UNSCOPED or not 0 < k < len(stamps) or line is None:
-                continue
-            kind, sign = _TURNOVER_KIND_OF[row["metric"]]
-            line[kind][k] = (line[kind][k] or 0) + sign * row["delta"]
+    for row, pick in rows:
+        k = bisect_left(stamps, row["ts"])
+        line = lines.get(line_of(row, pick))
+        if not 0 < k < len(stamps) or line is None:
+            continue
+        kind, sign = _TURNOVER_KIND_OF[row["metric"]]
+        line[kind][k] = (line[kind][k] or 0) + sign * row["delta"]
     return lines
 
 
@@ -2084,8 +2121,7 @@ def _closures_unseen(boards: dict[str, str], stamps: list[str]) -> dict[str, int
         return {}
     for board, pick in boards.items():
         if any(
-            r["metric"] == _UNSCOPED and stamps[0] < r["ts"] <= stamps[-1]
-            for r in _TURNOVER.get(board, ())
+            stamps[0] < r["ts"] <= stamps[-1] for r in _UNSCOPED_MARKERS.get(board, ())
         ):
             seen[pick].add(board)
     return {pick: len(found) for pick, found in seen.items()}

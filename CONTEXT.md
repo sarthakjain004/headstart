@@ -294,11 +294,11 @@ A tech **Job** that arrived in the **Search index** since the previous `role_tre
 _Avoid_: reading `new` as Opened. `new` is a level: the Jobs first seen in the last 7 days *and still open*, backlog of a found Board included.
 
 **Closed** (ADR-0222):
-A tech Job that left the Search index since the previous tick through `index sync`'s **Eviction** — its second consecutive absence (**Unconfirmed**), so a closure lands one scrape of its Board after the posting went. An **Unauthoritative Board** evicts nothing, so its closures go uncounted that tick; the tick's file marks each such Board (`metric=unscoped`) and Trends says on how many.
+A tech Job that left the Search index since the previous tick through `index sync`'s **Eviction** — its second consecutive absence (**Unconfirmed**), so a closure lands one scrape of its Board after the posting went. Sync queues each eviction in `data/state/evicted_ids.txt`, and `role_trends` books only a queued id as Closed. An **Unauthoritative Board** evicts nothing, so its closures go uncounted that tick; the tick's file marks each such Board (`metric=unscoped`) and Trends says on how many.
 _Avoid_: counting a `prune` removal as Closed — a duplicate is still served from another Board.
 
 **Recounted** (ADR-0222):
-Every arrival or departure that is not hiring: a found Board's backlog, a row `index prune` removed as a duplicate or off-Board, a served row the classifier moved into or out of tech, and a row whose family, band or Board key changed. Booked in (`recounted_in`) and out (`recounted_out`) so that, per key and tick, the stock change is exactly Opened − Closed + Recounted. A tech-filter change is the one recount it cannot see — its Jobs arrive looking newly posted — so readers leave its run and the run after out of every flow, as they do of the net change.
+Every arrival or departure that is not hiring: a found Board's backlog, a row `index prune` removed as a duplicate or off-Board (in the pipeline or in `cleanup-index`), a served row the classifier moved into or out of tech, and a row whose family, band or Board key changed. Booked in (`recounted_in`) and out (`recounted_out`) so that, per key and tick, the stock change is exactly Opened − Closed + Recounted. A tech-filter change is the one recount it cannot see — its Jobs arrive looking newly posted — so readers leave its run and the run after out of the turnover, as they do of the net change.
 _Avoid_: calling the three together "flows" — ADR-0051 already calls `new` the flow metric. Say **turnover**, the name of the module that books them (`ingest/job_turnover`).
 
 ### Accounts
