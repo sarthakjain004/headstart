@@ -43,7 +43,7 @@ Who runs a Board — the `employer` itself, a `services` firm (IT services, cons
 _Avoid_: reading `services` as a judgement on the company — Capgemini employs its own engineers; the label says its postings are client placements, which is a different thing for a job hunter.
 
 **Lens** (ADR-0171):
-One of the three questions "actively hiring" can mean, each ranking the same Boards differently: **Expansion** (net change in open roles — who is growing), **Volume** (roles opened in the rolling 7-day window), **Rate** (that count as a share of the Board's open roles). Amazon opened 1,396 roles in one measured week at a net change of −3, which is why these are three lenses and not one number.
+One of the three questions "actively hiring" can mean, each ranking the same Boards differently: **Expansion** (net change in open roles — who is growing), **Volume** (roles **Opened** in the rolling 7-day window, over the same runs Expansion sums — since ADR-0227; before it, roles first seen in the window and still open), **Rate** (roles first seen in the window and still open, as a share of the Board's open roles). Amazon opened 1,396 roles in one measured week at a net change of −3, which is why these are three lenses and not one number.
 _Avoid_: "hot" as a measure. `hot` is the internal name of the ranking — the stage
 (`ingest/hot_boards`), its artifact and its route — while **Hiring now** is what the tab is
 called in the UI. Neither is a value a row can hold; a row holds a lens figure and an Operator.
@@ -288,6 +288,18 @@ _Avoid_: invalid filter, bad filter — a Blocking filter is perfectly valid and
 **Trend filter** (ADR-0075):
 Which ATSes a Trends request is scoped to. No exclusion is the only spelling of "no filter" — a request naming every ATS explicitly would still exclude any row from before this filter existed (those carry no real ATS name), silently cutting off history a user never meant to exclude. A scoped request's series can start later than an unscoped one's for the same reason: there is nothing to backfill from.
 _Avoid_: **Search filter** — that names a deterministic where-clause over the **Search index**; this narrows which rows of the trends ledger get summed, a different mechanism over a different thing.
+
+**Opened** (ADR-0227):
+A tech **Job** that arrived in the **Search index** since the previous `role_trends` tick: an id new to the tick's snapshot, whose `first_seen` is after that tick, on a **Board** the tick already counted. Booked per Board, family, band and ATS in the tick's Board-delta file (`metric=opened`), so a net change can be read with what made it. A lower bound: a Job opened and closed between two scrapes of its Board is in no count.
+_Avoid_: reading `new` as Opened. `new` is a level: the Jobs first seen in the last 7 days *and still open*, backlog of a found Board included.
+
+**Closed** (ADR-0227):
+A tech Job that left the Search index since the previous tick through `index sync`'s **Eviction** — its second consecutive absence (**Unconfirmed**), so a closure lands one scrape of its Board after the posting went. Sync queues each eviction, stamped with its run, in `data/state/eviction_queue.tsv`, which rides the table's own commit; `role_trends` books only a queued id as Closed. An **Unauthoritative Board** evicts nothing, so its closures go uncounted that tick; the tick's file marks each such Board (`metric=unscoped`) and Trends says on how many.
+_Avoid_: counting a `prune` removal as Closed — a duplicate is still served from another Board.
+
+**Recounted** (ADR-0227):
+Every arrival or departure that is not hiring: a found Board's backlog, a row `index prune` removed as a duplicate or off-Board (in the pipeline or in `cleanup-index`), a served row the classifier moved into or out of tech, and a row whose family, band or Board key changed. Booked in (`recounted_in`) and out (`recounted_out`) so that, per key and tick, the stock change is exactly Opened − Closed + Recounted. A tech-filter change is the one recount it cannot see — its Jobs arrive looking newly posted — so readers leave its run and the run after out of the turnover, as they do of the net change.
+_Avoid_: calling the three together "flows" — ADR-0051 already calls `new` the flow metric. Say **turnover**, the name of the module that books them (`ingest/job_turnover`).
 
 ### Accounts
 

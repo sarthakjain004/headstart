@@ -3138,6 +3138,227 @@ def test_a_view_summing_picks_carries_each_picks_own_line(company_trends):
     assert one["pick_series"] == {}, "one pick is its own sum"
 
 
+def _with_turnover(trends_app, monkeypatch, rows: list[dict]) -> None:
+    """The fixture's ledger plus turnover rows (ADR-0227), loaded as the Space loads them."""
+    deltas = trends_app._TREND_DELTAS + rows
+    monkeypatch.setattr(trends_app, "_TREND_DELTAS", deltas)
+    turnover = trends_app._rows_by_board(deltas, trends_app._TURNOVER_METRICS)
+    monkeypatch.setattr(trends_app, "_TURNOVER", turnover)
+    monkeypatch.setattr(
+        trends_app,
+        "_UNSCOPED_MARKERS",
+        trends_app._rows_by_board(deltas, ("unscoped",)),
+    )
+    boards_of = {
+        b: e["boards"] for e in trends_app._COMPANIES.values() for b in e["boards"]
+    }
+    monkeypatch.setattr(
+        trends_app,
+        "_INDEX_TURNOVER",
+        trends_app._index_turnover(
+            turnover, lambda b: trends_app._dedup_touched(boards_of.get(b, [b]))
+        ),
+    )
+    monkeypatch.setattr(trends_app, "_TURNOVER_SINCE", _T2)
+
+
+_HPE_TURNOVER = [
+    _delta(_T1, "workday:hpe/a", 99, metric="opened"),  # before the window's first run
+    _delta(_T3, "workday:hpe/b", 2, metric="opened"),
+    _delta(_T3, "workday:hpe/b", 7, metric="closed"),
+    _delta(_T3, "workday:hpe/b", 1, family="ai-ml", metric="recounted_in"),
+    _delta(_T3, "workday:hpe/b", 1, family="ai-ml", metric="recounted_out"),
+    _delta(_T3, "workday:hpe/b", 1, family="all", metric="unscoped"),
+    _delta(_T3, "workday:citi/2", 5, metric="opened"),
+    _delta(_T2, "eightfold:citi.eightfold.ai", 3, metric="recounted_in"),  # found
+]
+
+
+def test_turnover_rows_leave_every_level_as_it_was(
+    company_trends, trends_app, monkeypatch
+):
+    """A tick's turnover rides its delta file (ADR-0227). Replayed as levels, 99 opened jobs
+    would have become 99 more openings on HPE's line."""
+    before = company_trends.get("/trends?company=workday:hpe/a").get_json()
+    _with_turnover(trends_app, monkeypatch, _HPE_TURNOVER)
+    after = company_trends.get("/trends?company=workday:hpe/a").get_json()
+    assert [s["points"] for s in after["series"]] == [
+        s["points"] for s in before["series"]
+    ]
+    assert after["totals"] == before["totals"]
+    hpe = {"workday:hpe/a": "hpe", "workday:hpe/b": "hpe"}
+    replayed, _ = trends_app._replay_rows(None, False, hpe)
+    assert {r["metric"] for r in replayed} == {"stock", "new"}
+    assert (
+        trends_app._family_weights(
+            [{"metric": "opened", "family": "ai-ml", "count": 99}]
+        )
+        == {}
+    )
+
+
+def test_each_line_carries_the_turnover_its_change_is_made_of(
+    company_trends, trends_app, monkeypatch
+):
+    """Opened and closed beside the net line, on every line of a pick (ADR-0227). The first run
+    is None, since what landed there happened before the window."""
+    _with_turnover(trends_app, monkeypatch, _HPE_TURNOVER)
+    d = company_trends.get("/trends?company=workday:hpe/a").get_json()
+    lines = {s["name"]: s["turnover"] for s in d["series"]}
+    assert lines["software-engineering"] == {
+        "opened": [None, 0, 2],
+        "closed": [None, 0, 7],
+        "recounted": [None, 0, 0],
+    }
+    assert lines["ai-ml"]["recounted"] == [None, 0, 0]
+    assert d["turnover_since"] == _T2
+    assert d["closures_unseen"] == {"workday:hpe/a": 1}
+    split = company_trends.get(
+        "/trends?split=company&company=workday:hpe/a&company=workday:citi/2"
+    ).get_json()
+    by_label = {s["label"]: s["turnover"]["opened"] for s in split["series"]}
+    assert by_label == {"Hpe": [None, 0, 2], "Citi": [None, 0, 5]}
+
+
+def test_the_index_has_turnover_and_it_is_the_sum_of_every_companys(
+    company_trends, trends_app, monkeypatch
+):
+    """With no company picked, every line carries turnover too, summed from the same Board rows,
+    so the index is exactly the sum over every company, run by run (ADR-0227). A found Board is
+    recounted in the index as in its company."""
+    _with_turnover(trends_app, monkeypatch, _HPE_TURNOVER)
+    index = company_trends.get("/trends").get_json()
+    turnover = {s["name"]: s["turnover"] for s in index["series"]}
+    assert turnover["software-engineering"] == {
+        "opened": [None, 0, 7],
+        "closed": [None, 0, 7],
+        "recounted": [None, 3, 0],
+    }
+    assert index["closures_unseen"] == {"": 1}
+    every = "&".join(f"company={key}" for key in trends_app._COMPANIES)
+    companies = company_trends.get(f"/trends?split=company&{every}").get_json()
+    for kind in ("opened", "closed", "recounted"):
+        by_run = [
+            sum(s["turnover"][kind][j] or 0 for s in companies["series"])
+            for j in range(len(companies["stamps"]))
+        ]
+        in_index = [
+            sum(t[kind][j] or 0 for t in turnover.values())
+            for j in range(len(index["stamps"]))
+        ]
+        assert by_run == in_index, kind
+    lever = company_trends.get("/trends?ats=lever").get_json()
+    assert all(
+        v in (None, 0) for s in lever["series"] for v in s["turnover"]["opened"]
+    ), "an ATS filter narrows the index's turnover"
+
+
+def test_the_index_shows_what_every_companys_view_shows_after_runs_are_left_out(
+    company_trends, trends_app, monkeypatch
+):
+    """The figures each view displays reconcile (ADR-0227): the index leaves out, Board by
+    Board, the runs a company's own line leaves out, so its opened and closed are the sum of
+    what every company's view shows. A duplicate-removal change at the last run can move HPE
+    (two Workday sites) and not Citi's one Workday site: HPE's turnover there is left out of the
+    index as of HPE's line, Citi's stays in both."""
+    _with_turnover(trends_app, monkeypatch, _HPE_TURNOVER)
+    epoch = {
+        "ts": _T3,
+        "changed": ["duplicate removal changed"],
+        "fields": ["dedup_version"],
+    }
+    monkeypatch.setattr(trends_app, "_EPOCHS", [epoch])
+    index = company_trends.get("/trends").get_json()
+    assert index["turnover_left_out"] == [_T3]
+
+    def shown(lines, left=()):
+        return {
+            kind: sum(
+                v
+                for t in lines
+                for j, v in enumerate(t[kind])
+                if j > 0 and v is not None and j not in left
+            )
+            for kind in ("opened", "closed")
+        }
+
+    in_index = shown([s["turnover"] for s in index["series"]])
+    every = "&".join(f"company={key}" for key in trends_app._COMPANIES)
+    split = company_trends.get(f"/trends?split=company&{every}").get_json()
+    by_company = {"opened": 0, "closed": 0}
+    for s in split["series"]:
+        # The page's rule for a pick's own line: a duplicate-removal change leaves out its run
+        # (and the run after) only where the pick holds Boards it can move.
+        touched = trends_app._dedup_touched(trends_app._COMPANIES[s["name"]]["boards"])
+        for kind, n in shown([s["turnover"]], {2} if touched else ()).items():
+            by_company[kind] += n
+    assert in_index == by_company == {"opened": 5, "closed": 0}
+
+
+@pytest.mark.parametrize(
+    ("epoch_ts", "fields", "query", "left_out"),
+    [
+        # A tech-filter change on the middle run: its run and the run after, everywhere.
+        (_T2, ["tech_filter_version"], "", [_T2, _T3]),
+        # On the window's first run it is already in every line's start: nothing is left out,
+        # as app.js leaves nothing out there (its settling run cut Amazon's real −7).
+        (_T1, ["tech_filter_version"], "", []),
+        # The index under comparable coverage is still the index: the same runs come out.
+        (_T3, ["dedup_version"], "?coverage=comparable", [_T3]),
+    ],
+)
+def test_the_index_leaves_out_the_runs_a_companys_line_leaves_out(
+    company_trends, trends_app, monkeypatch, epoch_ts, fields, query, left_out
+):
+    """The Space's rule for the index mirrors the page's for a pick's line (ADR-0227), whatever
+    the change, wherever it lands, and under comparable coverage too."""
+    _with_turnover(trends_app, monkeypatch, _HPE_TURNOVER)
+    epoch = {"ts": epoch_ts, "changed": ["a change"], "fields": fields}
+    monkeypatch.setattr(trends_app, "_EPOCHS", [epoch])
+    index = company_trends.get(f"/trends{query}").get_json()
+    assert index["turnover_left_out"] == left_out
+    opened = [
+        sum(s["turnover"]["opened"][j] or 0 for s in index["series"])
+        for j in range(len(index["stamps"]))
+    ]
+    everywhere = "dedup_version" not in fields
+    for j, ts in enumerate(index["stamps"]):
+        if ts in left_out and everywhere:
+            assert all(s["turnover"]["opened"][j] is None for s in index["series"]), ts
+    if query:  # comparable: HPE's run-3 turnover is out, Citi's one-site Board's stays
+        assert opened[2] == 5
+
+
+def test_no_turnover_off_openings(company_trends, trends_app, monkeypatch):
+    """Under `new` a line is a rolling level of fresh jobs, not a stock with a net change."""
+    _with_turnover(trends_app, monkeypatch, _HPE_TURNOVER)
+    d = company_trends.get("/trends?metric=new&company=workday:hpe/a").get_json()
+    assert all("turnover" not in s for s in d["series"])
+    assert d["closures_unseen"] == {}
+
+
+def test_the_space_and_the_hot_list_leave_out_the_same_runs_and_boards(trends_app):
+    """ADR-0227: the index's turnover (the Space) and Hot (hot_boards) leave out the same
+    counting changes, and duplicate removal touches the same Boards, so the two never tell a
+    reader different figures for one week. Each keeps its own copy of the rule."""
+    from headstart.ingest import hot_boards
+
+    assert set(trends_app._LINE_MOVING) == set(hot_boards._STOCK_MOVING)
+    assert set(trends_app._DEDUP_ATSES) == set(hot_boards._DEDUP_SIBLING_ATSES)
+    assert trends_app._MIRROR_ATS == hot_boards._DEDUP_MIRROR_ATS
+    for boards in (
+        ["workday:acme/a", "workday:acme/b"],
+        ["workday:acme/a", "workday:other/b"],  # two Tenants: nothing to deduplicate
+        ["workday:ACME/a", "workday:acme/b"],  # one Tenant, compared case-blind
+        ["workday:acme/a", "greenhouse:acme"],
+        ["eightfold:jobs.acme.com"],
+        ["taleo_enterprise:acme/1", "taleo_enterprise:acme/2"],
+    ):
+        assert trends_app._dedup_touched(boards) == bool(
+            hot_boards.dedup_touches(boards)
+        ), boards
+
+
 def test_comparable_starts_its_window_where_all_coverage_does(company_trends):
     """Under Comparable the cohort's base was the last run before the asked start, so Google's
     Sep 15–20 window began one run earlier than under All coverage (1,502 against 1,494)."""

@@ -60,7 +60,7 @@ from headstart.alerts.store import (
     is_resume_id,
     subscription_id,
 )
-from headstart.board_identity import ats_of
+from headstart.board_identity import ats_of, tenant
 from headstart.search_filter_compiler import (
     KEYWORD_DEFAULT_SCOPE,
     keyword_scope_options,
@@ -174,6 +174,21 @@ _NON_TECH = "non-tech"  # reserved diagnostic series — mirrors headstart.roles
 _NEW_WINDOW_DAYS = (
     7  # the `new` flow window — mirrors ingest.role_trends.NEW_WINDOW_DAYS
 )
+# The Board-delta ledger's level metrics. Since ADR-0227 a tick's file also carries that tick's
+# turnover, which is a count of jobs, not a change in a level. It mirrors
+# ingest.job_turnover.METRICS, and the marker mirrors ingest.job_turnover.UNSCOPED.
+_LEVEL_METRICS = ("stock", "new")
+_TURNOVER_METRICS = ("opened", "closed", "recounted_in", "recounted_out")
+_UNSCOPED = "unscoped"
+# What /trends serves per line: recounted as in less out, so opened − closed + recounted is the
+# line's change in openings on every run.
+_TURNOVER_KINDS = ("opened", "closed", "recounted")
+_TURNOVER_KIND_OF = {
+    "opened": ("opened", 1),
+    "closed": ("closed", 1),
+    "recounted_in": ("recounted", 1),
+    "recounted_out": ("recounted", -1),
+}
 
 
 def _load_trends(path: Path) -> list[dict]:
@@ -272,7 +287,8 @@ def _family_weights(rows: list[dict]) -> Counter[str]:
     """Openings per family over ``rows`` — how much of the data each name holds."""
     weights: Counter[str] = Counter()
     for row in rows:
-        weights[row["family"]] += row["count"]
+        if row["metric"] in _LEVEL_METRICS:
+            weights[row["family"]] += row["count"]
     return weights
 
 
@@ -521,6 +537,103 @@ def _board_arrivals(deltas: list[dict]) -> dict[str, tuple[str, int]]:
     return {board: (ts, arrived[board]) for board, ts in first.items()}
 
 
+def _in_ats_scope(board: str, ats: list[str]) -> bool:
+    """Whether ``board`` is inside a Trends request's ATS selection (ADR-0075); no selection
+    means every ATS."""
+    return not ats or ats_of(board) in ats
+
+
+def _rows_by_board(deltas: list[dict], metrics) -> dict[str, list[dict]]:
+    """Each Board's delta rows of ``metrics``: its turnover, or its Unauthoritative markers
+    (ADR-0227)."""
+    out: dict[str, list[dict]] = defaultdict(list)
+    for row in deltas:
+        if row["metric"] in metrics:
+            out[row["board"]].append(row)
+    return out
+
+
+# Mirrors app.js DEDUP_ATSES and MIRROR_ATS, and hot_boards' `_DEDUP_SIBLING_ATSES` and
+# `_DEDUP_MIRROR_ATS`: the Boards a duplicate-removal change can move. Change one, change them all;
+# tests/test_space_app.py pins that this and hot_boards agree.
+_DEDUP_ATSES = ("taleo_enterprise", "workday")
+_MIRROR_ATS = "eightfold"
+# Mirrors app.js LINE_MOVING and hot_boards' `_STOCK_MOVING`: the counting changes that move
+# every line they reach.
+_LINE_MOVING = (
+    "centroid_version",
+    "family_map_fingerprint",
+    "family_classifier_version",
+    "tech_filter_version",
+)
+
+
+def _company_boards(board: str) -> list[str]:
+    """Every Board of the directory company holding ``board``, or ``board`` alone."""
+    return _COMPANIES[_COMPANY_OF[board]]["boards"] if board in _COMPANY_OF else [board]
+
+
+def _dedup_touched(boards: list[str]) -> bool:
+    """Whether duplicate removal can move a company holding ``boards``: any Eightfold Board, or
+    two or more Boards of one Tenant on an ATS it dedupes within (ADR-0186/0187). Tenants compare
+    case-blind, as hot_boards' `dedup_touches` compares them, and as the page's rule for a pick."""
+    sites = Counter(
+        (ats_of(board), tenant(board).lower())
+        for board in boards
+        if ats_of(board) in _DEDUP_ATSES
+    )
+    return any(ats_of(board) == _MIRROR_ATS for board in boards) or any(
+        n > 1 for n in sites.values()
+    )
+
+
+def _company_dedup_touched(board: str) -> bool:
+    """Whether duplicate removal can move the directory company holding ``board``."""
+    return _dedup_touched(_company_boards(board))
+
+
+def _index_turnover(by_board: dict[str, list[dict]], touched_of) -> list[dict]:
+    """Every Board's turnover summed per tick, metric, family, band, ATS and whether duplicate
+    removal can move it (ADR-0227): what the Trends view with no company picked draws. A few
+    hundred rows a tick where the per-Board rows run to thousands, so a request sums the index
+    without walking every Board. ``touched_of(board)`` says whether duplicate removal can move the
+    company holding ``board``, the rule a company's own view leaves runs out by."""
+    summed: Counter[tuple[str, str, str, str, str, bool]] = Counter()
+    for board, rows in by_board.items():
+        touched = touched_of(board)
+        for r in rows:
+            key = (r["ts"], r["metric"], r["family"], r["band"], r["ats"], touched)
+            summed[key] += r["delta"]
+    fields = ("ts", "metric", "family", "band", "ats", "touched")
+    return [{**dict(zip(fields, key)), "delta": n} for key, n in summed.items()]
+
+
+def _left_out_runs(
+    epochs: list[dict], stamps: list[str], bands: bool
+) -> tuple[set[int], set[int]]:
+    """The charted runs a company's whole line leaves out of its hiring, as app.js `stepNotes`
+    and `netOfSteps` do: ``(for every Board, for a Board duplicate removal can move)``. A counting
+    change that moves lines, and on a levels view an extraction change, leaves out its run and
+    the run after it everywhere. A duplicate-removal change alone does so only where it can move
+    a Board. A change on the window's first run is already in every line's start."""
+    every: set[int] = set()
+    touched: set[int] = set()
+    for epoch in epochs:
+        if epoch["ts"] not in stamps[1:]:
+            continue
+        i = stamps.index(epoch["ts"])
+        fields = epoch.get("fields", [])
+        moves = any(f in _LINE_MOVING for f in fields) or (
+            bands and "derivations_version" in fields
+        )
+        runs = {j for j in (i, i + 1) if j < len(stamps)}
+        if moves:
+            every |= runs
+        elif "dedup_version" in fields:
+            touched |= runs
+    return every, touched
+
+
 def _new_holds(arrivals: dict[str, tuple[str, int]]) -> dict[str, str]:
     """When each Board may count toward `new`: its first tick plus the flow window (ADR-0185).
 
@@ -593,6 +706,13 @@ _BOARD_ARRIVALS = _board_arrivals(_TREND_DELTAS)
 _NEW_HOLD = _new_holds(_BOARD_ARRIVALS)
 # The first tick of the Board-delta ledger, before which no per-Board count exists.
 _LEDGER_START = min((ts for ts, _ in _BOARD_ARRIVALS.values()), default=None)
+# Each Board's turnover and Unauthoritative markers (ADR-0227), the index's turnover summed over
+# every Board, and the first tick that booked any turnover: a run before it measured none, which
+# is a gap, not a zero.
+_TURNOVER = _rows_by_board(_TREND_DELTAS, _TURNOVER_METRICS)
+_UNSCOPED_MARKERS = _rows_by_board(_TREND_DELTAS, (_UNSCOPED,))
+_INDEX_TURNOVER = _index_turnover(_TURNOVER, _company_dedup_touched)
+_TURNOVER_SINCE = min((r["ts"] for r in _INDEX_TURNOVER), default=None)
 # Email alerts (ADR-0035) — invite-only, so all three must be set before the panel appears:
 # the Google client id the sign-in button needs, and a token scoped to the Subscriptions
 # dataset alone (never the index token, which is read-only by design).
@@ -1487,7 +1607,9 @@ def _replay_span(
     """One version's rows at its own charted runs, from its deltas alone (see _replay_rows)."""
     by_stamp: dict[str, list[dict]] = defaultdict(list)
     for row in deltas:
-        if end is None or row["ts"] < end:
+        # Levels only: a tick's turnover rows (ADR-0227) are its own counts, served apart by
+        # _turnover_series, and summed here they would chart as ever-growing levels.
+        if (end is None or row["ts"] < end) and row["metric"] in _LEVEL_METRICS:
             by_stamp[row["ts"]].append(row)
     state: Counter[tuple[str, str, str, str, str]] = Counter()
     rows = []
@@ -1803,7 +1925,7 @@ def trends():
     counted = {
         board: pick
         for board, pick in (company_of or {}).items()
-        if board in _BOARD_ARRIVALS and not (ats and ats_of(board) not in ats)
+        if board in _BOARD_ARRIVALS and _in_ats_scope(board, ats)
     }
     began: dict[str, str] = {}
     new_from: dict[
@@ -1916,6 +2038,85 @@ def trends():
             bucket = found.setdefault((stamps[at], pick), [0, 0])
             bucket[0] += 1
             bucket[1] += openings
+    # Each line's turnover (ADR-0227): the jobs opened and closed that its net change is made
+    # of. Amazon read "+17" over a week in which it opened 914–1,532. On every line of every view
+    # on stock, the index's included, and summed from the same rows, so the index's is exactly
+    # the sum of every company's. Not on the roles drill, whose watched roles re-count their
+    # family's jobs.
+    with_turnover = metric == "stock" and not (family and split == "roles")
+    # The Boards in scope, by pick ("" for the index): a pick's Boards, else under comparable
+    # coverage the cohort's, else every Board through the index's own summed rows.
+    scope: dict[str, str] | None = None
+    if company_of is not None:
+        scope = counted
+    elif coverage == "comparable":
+        scope = {
+            board: ""
+            for board in _TURNOVER.keys() | _UNSCOPED_MARKERS.keys()
+            if _in_ats_scope(board, ats)
+        }
+    if scope is not None and base_stamp is not None:
+        scope = {
+            board: pick
+            for board, pick in scope.items()
+            if board in _BOARD_ARRIVALS and _BOARD_ARRIVALS[board][0] <= base_stamp
+        }
+    # With no pick the lines keep a counting change's jump, marked, but its turnover is not
+    # hiring. The index leaves out, Board by Board, the runs each company's own line leaves out,
+    # so the index's opened and closed are the sum of what every company's view shows.
+    left_out: tuple[set[int], set[int]] = (
+        _left_out_runs(epochs, stamps, bool(family))
+        if company_of is None
+        else (set(), set())
+    )
+    if scope is None:
+        turnover_rows = [
+            (row, "") for row in _INDEX_TURNOVER if not ats or row["ats"] in ats
+        ]
+        unscoped = {
+            board: "" for board in _UNSCOPED_MARKERS if _in_ats_scope(board, ats)
+        }
+    else:
+        # A comparable cohort with no pick is still the index: each row says whether duplicate
+        # removal can move its Board's company, as `_INDEX_TURNOVER`'s rows do.
+        if company_of is None:
+            touched = {board: _company_dedup_touched(board) for board in scope}
+            turnover_rows = [
+                ({**row, "touched": touched[board]}, pick)
+                for board, pick in scope.items()
+                for row in _TURNOVER.get(board, ())
+            ]
+        else:
+            turnover_rows = [
+                (row, pick)
+                for board, pick in scope.items()
+                for row in _TURNOVER.get(board, ())
+            ]
+        unscoped = scope
+
+    def line_of(row: dict, pick: str) -> str | None:
+        held = rename.get(row["family"], row["family"])
+        if split == "company":
+            return pick if not family or held == family else None
+        if family:
+            return row["band"] if held == family else None
+        return held
+
+    pick_turnover: dict[str, dict[str, list[int | None]]] = {}
+    if with_turnover:
+        by_line = _turnover_series(
+            turnover_rows, stamps, line_of, [line["name"] for line in out], left_out
+        )
+        for line in out:
+            line["turnover"] = by_line[line["name"]]
+        # Each pick's own turnover where its own line is served (`pick_series`), so a line
+        # summing several picks counts each pick's turnover over the runs its own line counts.
+        pick_turnover = _turnover_series(
+            turnover_rows,
+            stamps,
+            lambda row, pick: pick if line_of(row, pick) is not None else None,
+            list(pick_series),
+        )
     # Which families have watched sub-roles, so the UI can offer the roles drill only there.
     # Under the names the data holds as well as the config's: the watchlist moved to the v3
     # families before their data landed, and the AI roles' drill vanished from "AI / Machine
@@ -1951,6 +2152,7 @@ def trends():
             for k in picked_keys
         ],
         pick_series=pick_series,
+        pick_turnover=pick_turnover,
         company_totals={
             k: [company_totals[k].get(ts) for ts in stamps] for k in picked_keys
         },
@@ -1970,7 +2172,72 @@ def trends():
         # The ledger counts every removed row, `non-tech` among them, so a removal reads a few
         # percent larger than the tech openings it took from a company's line.
         evicted=_picks_evicted(counted, stamps) if coverage != "comparable" else [],
+        # When turnover began (ADR-0227). A window that starts earlier has lines whose opened
+        # and closed cover only part of it, and the page says from when.
+        turnover_since=_TURNOVER_SINCE if with_turnover else None,
+        # The runs the index's turnover leaves out for a counting change, so its sentence can
+        # say so only when one is inside the window. Empty under a pick, whose page decides.
+        turnover_left_out=[stamps[k] for k in sorted(left_out[0] | left_out[1])],
+        # Per pick ("" for the index), its Boards whose closures went uncounted on some run in the
+        # window (ADR-0053).
+        closures_unseen=_closures_unseen(unscoped, stamps) if with_turnover else {},
     )
+
+
+def _turnover_series(
+    rows: list[tuple[dict, str]],
+    stamps: list[str],
+    line_of,
+    names,
+    left_out: tuple[set[int], set[int]] = (set(), set()),
+) -> dict[str, dict[str, list[int | None]]]:
+    """The turnover of each line in ``names`` at each charted run (ADR-0227): ``{line: {opened,
+    closed, recounted}}``, each list aligned to ``stamps``. ``recounted`` is in less out, so on
+    every run ``opened − closed + recounted`` is the line's change in openings. ``rows`` pairs
+    each turnover row in scope with its pick. ``line_of(row, pick)`` names the line a row belongs
+    to, or returns None to leave the row out.
+
+    A tick's turnover lands on the first charted run at or after it, because it counts what
+    happened since the run before. The first charted run is None: what landed there happened
+    before the window. So is every run before turnover began, since nothing measured it.
+
+    ``left_out`` is :func:`_left_out_runs`' pair: runs None on every line, and runs where a row
+    duplicate removal can move (``touched``) is not counted.
+    """
+    every, touched = left_out
+    first = max(
+        bisect_left(stamps, _TURNOVER_SINCE) if _TURNOVER_SINCE else len(stamps), 1
+    )
+    blank = [None] * first + [0] * (len(stamps) - first)
+    lines = {name: {m: list(blank) for m in _TURNOVER_KINDS} for name in names}
+    for row, pick in rows:
+        k = bisect_left(stamps, row["ts"])
+        line = lines.get(line_of(row, pick))
+        if not 0 < k < len(stamps) or line is None:
+            continue
+        if k in every or (row.get("touched") and k in touched):
+            continue
+        kind, sign = _TURNOVER_KIND_OF[row["metric"]]
+        line[kind][k] = (line[kind][k] or 0) + sign * row["delta"]
+    for line in lines.values():
+        for values in line.values():
+            for k in every:
+                values[k] = None
+    return lines
+
+
+def _closures_unseen(boards: dict[str, str], stamps: list[str]) -> dict[str, int]:
+    """Per pick, how many of its Boards had a run inside the window whose scrape could not show
+    an absence (ADR-0053), so the closures on it went uncounted that run (ADR-0227)."""
+    seen: dict[str, set[str]] = defaultdict(set)
+    if not stamps:
+        return {}
+    for board, pick in boards.items():
+        if any(
+            stamps[0] < r["ts"] <= stamps[-1] for r in _UNSCOPED_MARKERS.get(board, ())
+        ):
+            seen[pick].add(board)
+    return {pick: len(found) for pick, found in seen.items()}
 
 
 def _picks_evicted(counted: dict[str, str], stamps: list[str]) -> list[dict]:

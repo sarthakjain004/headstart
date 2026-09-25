@@ -14,11 +14,13 @@ growing.*
 The default: over the 7 days to 2026-09-21 Amazon opened **1,396** roles at a net change of
 **+20** — churn at a near-constant size rather than growth, which only this lens says.
 
-``volume`` — the rolling 7-day count of roles first seen inside the window. *Where the most
-opportunity is right now.* Always led by the largest employers.
+``volume`` — the roles opened across the window (ADR-0227's turnover), over the same runs
+Expansion sums. *Where the most opportunity is right now.* Always led by the largest employers.
+Until ADR-0227 it was ``new``, the roles first seen in the last 7 days *and still open*. That
+missed a job opened and closed inside the week.
 
-``rate`` — that same count as a share of the Board's open roles. *Who is moving fast for their
-size*, which is the only lens that surfaces a small company a user would never otherwise find.
+``rate`` — ``new`` as a share of the Board's open roles. *Who is moving fast for their size*,
+which is the only lens that surfaces a small company a user would never otherwise find.
 
 ## Four traps, each of which silently produces a plausible wrong list
 
@@ -63,6 +65,7 @@ from typing import Any
 
 from headstart import log, roles, version_spans
 from headstart.board_identity import tenant
+from headstart.ingest import job_turnover
 from headstart.ingest.board_naming import board_names, display_name
 from headstart.ingest.board_operator import classify
 
@@ -80,7 +83,8 @@ _OUT = REPO_ROOT / "data" / "state" / "hot_boards.json"
 _EPOCHS = REPO_ROOT / "data" / "state" / "trends_epochs.csv"
 # The epoch columns whose change moves a Board's stock: a centroid refit (before ADR-0220), a
 # family-list or family-assignment change (ADR-0215, ADR-0220), a tech-filter change or duplicate
-# removal. An extraction change (derivations) moves no count.
+# removal. An extraction change (derivations) moves no count. Mirrored by app.js `LINE_MOVING`
+# and the Space's `_LINE_MOVING` (ADR-0227).
 _STOCK_MOVING = (
     "centroid_version",
     "family_map_fingerprint",
@@ -89,7 +93,9 @@ _STOCK_MOVING = (
 )
 #: Moves only the Boards it can touch (ADR-0186/0187, #632/#649): Eightfold's, and those of a
 #: Tenant with two or more Workday or Taleo Enterprise Boards — the Trends tab's own rule for a
-#: company (app.js `DEDUP_ATSES`, `MIRROR_ATS`). Change one, change the other.
+#: company (app.js `DEDUP_ATSES`, `MIRROR_ATS`), and the Space's for the index's turnover
+#: (`_DEDUP_ATSES`, `_MIRROR_ATS`, ADR-0227). Change one, change them all;
+#: tests/test_space_app.py pins that the Space and this module agree.
 _DEDUP = "dedup_version"
 _DEDUP_SIBLING_ATSES = ("workday", "taleo_enterprise")
 _DEDUP_MIRROR_ATS = "eightfold"
@@ -115,6 +121,10 @@ NEWLY_FOUND_SHARE = 0.9
 #: rolling window (ADR-0051's NEW_WINDOW_DAYS) — the two are printed on the same row, so they
 #: have to describe the same length of time or the row compares a week against a month.
 WINDOW_DAYS = 7
+
+#: A Board counted for fewer days than this is too new to rank. It mirrors app.js MIN_SPAN_DAYS,
+#: under which the trend a row opens reads "too new to show a direction yet".
+MIN_COUNTED_DAYS = 3
 
 _WATCH = "watch:"  # headstart.roles.WATCH_PREFIX; double-counts (ADR-0051)
 # Hot counts tech roles only, as Trends and Search do: with the reserved non-tech family counted
@@ -187,13 +197,17 @@ def dedup_touches(boards) -> set[str]:
     }
 
 
-def read_stock_change(
+def read_window_sum(
     delta_dir: Path,
     changes: set[str] | frozenset[str] = frozenset(),
     dedup: set[str] | frozenset[str] = frozenset(),
     touched: set[str] | frozenset[str] = frozenset(),
+    metric: str = "stock",
+    arrivals: dict[str, str] | None = None,
 ) -> tuple[collections.Counter, list[str]]:
-    """Net per-Board stock change over the trailing window, and the tick stamps it covers.
+    """Per-Board sum of one delta-ledger ``metric`` over the trailing window, and the tick stamps
+    it covers. Under ``stock`` that is the net change. Under a turnover metric (``opened``,
+    ``closed``, ADR-0227) it is the jobs opened or closed over the same runs the net change sums.
 
     **The window is bounded to the same span as ``new``, and that is the point.** An unbounded
     sum grows by one run every run, so Expansion would quietly measure a longer period each
@@ -282,7 +296,7 @@ def read_stock_change(
         if first_ts < cutoff or first_ts in left_out:
             continue
         table = pq.read_table(path).to_pydict()
-        for board, metric, family, delta, ts in zip(
+        for board, row_metric, family, delta, ts in zip(
             table["board"],
             table["metric"],
             table["family"],
@@ -291,25 +305,44 @@ def read_stock_change(
             strict=True,
         ):
             if (
-                metric == "stock"
+                row_metric == metric
                 and not family.startswith(_WATCH)
                 and family != _NON_TECH
                 and not (first_ts in left_out_touched and board in touched)
+                # A Board's first tick lands its whole backlog at once: not hiring.
+                and (arrivals or {}).get(board) != ts
             ):
                 moved[board] += delta
                 stamps.append(ts)
     return moved, stamps
 
 
-def ledger_boards(delta_dir: Path) -> set[str]:
-    """Every Board the delta ledger has a row for."""
+def board_arrivals(delta_dir: Path) -> dict[str, str]:
+    """Each Board's first tick in the delta ledger, over every version: where its backlog landed.
+
+    Mirrors the Space's ``_board_arrivals``, so Hot and the trend a row opens agree on when a
+    Board arrived. Sphinixusa, counted from Sep 23, ranked second on Hot at "+250 net" off the
+    backlog it landed with, while its trend called it too new to read."""
     import pyarrow.parquet as pq
 
-    return {
-        board
-        for path in delta_dir.glob("*.parquet")
-        for board in pq.read_table(path, columns=["board"]).column("board").to_pylist()
-    }
+    first: dict[str, str] = {}
+    for path in delta_dir.glob("*.parquet"):
+        table = pq.read_table(path, columns=["ts", "board", "metric"]).to_pydict()
+        for ts, board, metric in zip(
+            table["ts"], table["board"], table["metric"], strict=True
+        ):
+            if metric == "stock" and (board not in first or ts < first[board]):
+                first[board] = ts
+    return first
+
+
+def young_boards(arrivals: dict[str, str], newest: str) -> set[str]:
+    """The Boards counted for under ``MIN_COUNTED_DAYS`` at ``newest``: too new to rank, as the
+    trend a row opens calls a company counted that briefly too new to show a direction."""
+    cutoff = (
+        datetime.fromisoformat(newest) - timedelta(days=MIN_COUNTED_DAYS)
+    ).isoformat()
+    return {board for board, first in arrivals.items() if first > cutoff}
 
 
 def window_base(delta_dir: Path, first: str) -> str | None:
@@ -352,8 +385,16 @@ def rank(
     stock: collections.Counter,
     moved: collections.Counter,
     names: dict[str, str],
+    opened: collections.Counter,
+    closed: collections.Counter,
+    young: set[str] | frozenset[str] = frozenset(),
 ) -> tuple[dict[str, list[dict[str, Any]]], dict[str, int]]:
     """The three lenses, plus the counts of what was ranked and what each exclusion removed.
+
+    ``opened`` and ``closed`` are the window's turnover (ADR-0227). Volume ranks by ``opened``,
+    and every row carries both, because a net change alone read Amazon's week of 914–1,532
+    openings as "+17". ``young`` are the Boards too new to rank (:func:`young_boards`); they are
+    counted with the newly discovered.
 
     Exclusions are counted and returned rather than silently applied: a tab that quietly drops a
     fifth of the ledger should say so, and the numbers are how anyone checks this stage is
@@ -364,7 +405,7 @@ def rank(
     for board, open_roles in stock.items():
         if open_roles < MIN_STOCK:
             continue
-        if moved.get(board, 0) >= NEWLY_FOUND_SHARE * open_roles:
+        if board in young or moved.get(board, 0) >= NEWLY_FOUND_SHARE * open_roles:
             newly_found += 1
             continue
         company = display_name(names.get(board, ""), board)
@@ -381,6 +422,8 @@ def rank(
                 "stock": open_roles,
                 "new7": new.get(board, 0),
                 "net": moved.get(board, 0),
+                "opened": opened.get(board, 0),
+                "closed": closed.get(board, 0),
                 # Percent rather than a fraction: it is a display value, and rounding it here
                 # keeps every consumer from inventing its own precision.
                 "rate": round(100 * new.get(board, 0) / open_roles),
@@ -394,7 +437,9 @@ def rank(
             sorted((c for c in candidates if c["net"] > 0), key=lambda c: -c["net"])
         )[:TOP_N],
         "volume": _collapse_same_company(
-            sorted((c for c in candidates if c["new7"] > 0), key=lambda c: -c["new7"])
+            sorted(
+                (c for c in candidates if c["opened"] > 0), key=lambda c: -c["opened"]
+            )
         )[:TOP_N],
         "rate": _collapse_same_company(
             sorted((c for c in candidates if c["new7"] > 0), key=lambda c: -c["rate"])
@@ -444,13 +489,26 @@ def main() -> int:
     from headstart.embedding_conventions import PROD_TABLE
 
     new, stock = read_levels(args.board_counts)
-    moved, stamps = read_stock_change(
-        args.board_deltas,
-        counting_changes(args.epochs),
-        dedup_changes(args.epochs),
-        # Every Board the ledger has read, not only those holding stock now: #603 can empty one of
-        # a Tenant's two Workday sites, and its sibling is still one duplicate removal can move.
-        dedup_touches(set(stock) | ledger_boards(args.board_deltas)),
+    arrivals = board_arrivals(args.board_deltas)
+    # The runs and Board ticks every lens leaves out, whichever metric it sums: a counting
+    # change and the run after it, a duplicate-removal change on the Boards it can move, and each
+    # Board's own arrival.
+    window_rules = {
+        "changes": counting_changes(args.epochs),
+        "dedup": dedup_changes(args.epochs),
+        # Every Board the ledger has read, not only those holding stock now: #603 can empty one
+        # of a Tenant's two Workday sites, and its sibling is still one duplicate removal can move.
+        "touched": dedup_touches(set(stock) | set(arrivals)),
+        "arrivals": arrivals,
+    }
+    moved, stamps = read_window_sum(args.board_deltas, **window_rules)
+    # The window's turnover (ADR-0227), over the same runs the net change sums, so a row's three
+    # figures describe one stretch of time.
+    opened, turnover_stamps = read_window_sum(
+        args.board_deltas, **window_rules, metric=job_turnover.OPENED
+    )
+    closed, _ = read_window_sum(
+        args.board_deltas, **window_rules, metric=job_turnover.CLOSED
     )
     if not stamps:
         # One delta file exists and it is the baseline. There is no measured change yet, and a
@@ -459,7 +517,15 @@ def main() -> int:
             "only the baseline delta tick exists — no measured window, no hot list"
         )
         return 0
-    lenses, counts = rank(new, stock, moved, board_names(args.db, PROD_TABLE))
+    lenses, counts = rank(
+        new,
+        stock,
+        moved,
+        board_names(args.db, PROD_TABLE),
+        opened,
+        closed,
+        young=young_boards(arrivals, max(stamps)),
+    )
 
     payload = {
         "generated_at": datetime.now(UTC).isoformat(timespec="seconds"),
@@ -469,6 +535,9 @@ def main() -> int:
             "from": min(stamps),
             "to": max(stamps),
             "base": window_base(args.board_deltas, min(stamps)),
+            # Turnover began with ADR-0227, so for its first week it covers less of the window
+            # than the net change does, and the tab says from when.
+            "turnover_from": min(turnover_stamps, default=None),
         },
         "lenses": lenses,
         "counts": counts,

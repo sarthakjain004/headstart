@@ -16,6 +16,16 @@ pytest.importorskip("pyarrow")
 
 from headstart.ingest import role_assignments as ra
 
+_AS_OF = "2026-09-25T06:00:00+00:00"
+
+
+def _placed(families: dict[str, str]) -> dict[str, ra.Placement]:
+    """Placements for ``id -> family``, on one Board: the family is what these tests compare."""
+    return {
+        i: ra.Placement("greenhouse:acme", f, "mid", "greenhouse")
+        for i, f in families.items()
+    }
+
 
 def test_transitions_counts_only_rows_present_on_both_sides():
     previous = {
@@ -45,7 +55,7 @@ def test_transitions_aggregates_identical_moves():
 def test_snapshot_round_trips(tmp_path):
     path = tmp_path / "role_assignments.parquet"
     assignments = {"ats:board:1": "ai-ml", "ats:board:2": "software-engineering"}
-    ra.save(path, assignments, version=2)
+    ra.save(path, _placed(assignments), 2, _AS_OF)
     assert ra.load_previous(path, version=2) == assignments
 
 
@@ -56,7 +66,7 @@ def test_a_centroid_refit_makes_the_previous_snapshot_incomparable(tmp_path):
     job in the corpus changing family at once.
     """
     path = tmp_path / "role_assignments.parquet"
-    ra.save(path, {"ats:board:1": "ai-ml"}, version=2)
+    ra.save(path, _placed({"ats:board:1": "ai-ml"}), 2, _AS_OF)
     assert ra.load_previous(path, version=3) is None
     assert ra.load_previous(path, version=2) is not None
 
@@ -90,10 +100,38 @@ def test_missing_snapshot_is_not_an_error(tmp_path):
 def test_save_is_atomic_leaving_no_partial_file(tmp_path):
     """A killed run must leave the previous snapshot, never a half-written one."""
     path = tmp_path / "role_assignments.parquet"
-    ra.save(path, {"a": "ai-ml"}, version=2)
-    ra.save(path, {"a": "web-development"}, version=2)
+    ra.save(path, _placed({"a": "ai-ml"}), 2, _AS_OF)
+    ra.save(path, _placed({"a": "web-development"}), 2, _AS_OF)
     assert not list(tmp_path.glob("*.tmp"))
     assert ra.load_previous(path, version=2) == {"a": "web-development"}
+
+
+def test_placements_round_trip_at_any_series_version(tmp_path):
+    """Turnover diffs ids, not families, so a new classifier head must not hide the previous
+    tick from it the way it hides it from the transitions (ADR-0227)."""
+    path = tmp_path / "role_assignments.parquet"
+    placed = {"ats:board:1": ra.Placement("ats:board", "ai-ml", "senior", "ats")}
+    ra.save(path, placed, 2, _AS_OF)
+    assert ra.load_previous(path, version=3) is None
+    assert ra.load_placements(path) == (placed, _AS_OF)
+
+
+def test_a_snapshot_without_placements_gives_no_turnover(tmp_path):
+    """A snapshot written before ADR-0227 has families only: diffing it would read every served
+    row as having moved, so turnover waits a tick instead."""
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    path = tmp_path / "role_assignments.parquet"
+    pq.write_table(
+        pa.table(
+            {"id": ["x"], "family": ["ai-ml"]}, metadata={b"centroid_version": b"2"}
+        ),
+        path,
+    )
+    assert ra.load_previous(path, version=2) == {"x": "ai-ml"}
+    assert ra.load_placements(path) is None
+    assert ra.load_placements(tmp_path / "absent.parquet") is None
 
 
 def test_ledger_writes_a_header_once_then_appends(tmp_path):

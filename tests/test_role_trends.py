@@ -180,6 +180,11 @@ def _run(tmp_path: Path, monkeypatch, expect: int = 0) -> Path:
             # Pinned too (ADR-0164): defaults to the repo's real data/state/trends_epochs.csv.
             "--epochs",
             str(tmp_path / "trends_epochs.csv"),
+            # Pinned too (ADR-0227): these default to the real eviction queue and scrape outcome.
+            "--eviction-queue",
+            str(tmp_path / "eviction_queue.tsv"),
+            "--unauthoritative-boards",
+            str(tmp_path / "unauthoritative_boards.json"),
         ],
     )
     assert role_trends.main() == expect
@@ -1104,3 +1109,126 @@ def test_top_line_distinguishes_two_atses_sharing_a_family_and_band(
     assert len(labels) == len(set(labels)), f"top-5 labels are not unique: {top}"
     assert "software-engineering/mid/greenhouse" in top
     assert "software-engineering/mid/workday" in top
+
+
+def _tick_rows(path: Path) -> list[dict]:
+    return pq.read_table(path).to_pylist()
+
+
+def test_a_second_tick_books_turnover_beside_the_level_changes(tmp_path, monkeypatch):
+    """ADR-0227 end to end. The first tick writes the snapshot that turnover diffs. The second
+    books a new posting as opened, an evicted one as closed, and a row that left any other way
+    (here a prune, as `cleanup-index` makes) as recounted, plus one marker for an Unauthoritative
+    Board. All of it goes in the tick's own delta file, the Board counts carry levels only, and
+    the queue keeps only what the new snapshot does not yet cover."""
+    from headstart.ingest import RUN_TS_ENV
+
+    _taxonomy(tmp_path / "head", tmp_path / "families.json")
+
+    def row(job_id: str, seen: str) -> dict:
+        return {
+            "id": f"greenhouse:acme:{job_id}",
+            "title": "Backend Dev",
+            "employment_type": None,
+            "min_years": 5,
+            "vector": [1.0, 0.0, 0.0, 0.0],
+            "first_seen": seen,
+        }
+
+    early = "2026-09-20T00:00:00+00:00"
+    _table(
+        tmp_path / "db", [row("stays", early), row("closes", early), row("dup", early)]
+    )
+    monkeypatch.setenv(RUN_TS_ENV, "2026-09-25T05:00:00+00:00")
+    _run(tmp_path, monkeypatch)
+    first = _tick_rows(tmp_path / "board_deltas" / "2026-09-25T05-00-00+00-00.parquet")
+    assert {r["metric"] for r in first} == {"stock", "new"}, (
+        "no snapshot to diff yet, so the first tick books no turnover"
+    )
+
+    lancedb.connect(tmp_path / "db").drop_table(PROD_TABLE)
+    _table(
+        tmp_path / "db",
+        [row("stays", early), row("opens", "2026-09-25T05:30:00+00:00")],
+    )
+    queue = tmp_path / "eviction_queue.tsv"
+    queue.write_text(
+        "2026-09-25T04:00:00+00:00\tgreenhouse:acme:long-gone\n"
+        "2026-09-25T06:00:00+00:00\tgreenhouse:acme:closes\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "unauthoritative_boards.json").write_text(
+        json.dumps({"greenhouse:acme": "truncated"}), encoding="utf-8"
+    )
+    monkeypatch.setenv(RUN_TS_ENV, "2026-09-25T06:00:00+00:00")
+    _run(tmp_path, monkeypatch)
+
+    tick = _tick_rows(tmp_path / "board_deltas" / "2026-09-25T06-00-00+00-00.parquet")
+    booked = {
+        r["metric"]: r["delta"] for r in tick if r["metric"] not in ("stock", "new")
+    }
+    assert booked == {"opened": 1, "closed": 1, "recounted_out": 1, "unscoped": 1}
+    stock = sum(r["delta"] for r in tick if r["metric"] == "stock")
+    assert stock == booked["opened"] - booked["closed"] - booked["recounted_out"]
+    counts = pq.read_table(tmp_path / "board_counts.parquet").to_pylist()
+    assert {r["metric"] for r in counts} <= {"stock", "new"}
+    # The entry the diffed 05:00 snapshot already covered is dropped. This run's stays until a
+    # published snapshot covers it: if this run's `data/state` upload failed, the next tick
+    # would diff the 05:00 snapshot again and still book it as Closed.
+    assert queue.read_text(encoding="utf-8") == (
+        "2026-09-25T06:00:00+00:00\tgreenhouse:acme:closes\n"
+    )
+
+
+def test_a_failed_snapshot_takes_the_ticks_file_back_out(tmp_path, monkeypatch):
+    """The tick's delta file and the snapshot turnover diffs move together (ADR-0227). The file
+    without its snapshot would book this tick's turnover again next tick."""
+    from headstart.ingest import RUN_TS_ENV, role_assignments
+
+    _taxonomy(tmp_path / "head", tmp_path / "families.json")
+    _table(
+        tmp_path / "db",
+        [
+            {
+                "id": "greenhouse:acme:1",
+                "title": "Backend Dev",
+                "employment_type": None,
+                "min_years": 5,
+                "vector": [1.0, 0.0, 0.0, 0.0],
+            }
+        ],
+    )
+
+    def _unwritable(*_args, **_kwargs):
+        raise RuntimeError("a snapshot the writer refused")
+
+    monkeypatch.setattr(role_assignments, "save", _unwritable)
+    monkeypatch.setenv(RUN_TS_ENV, "2026-09-25T05:00:00+00:00")
+    with pytest.raises(RuntimeError):  # any failure, not only an OSError
+        _run(tmp_path, monkeypatch)
+    assert not list((tmp_path / "board_deltas").glob("*.parquet"))
+
+
+def test_recovering_board_counts_skips_a_ticks_turnover_rows(tmp_path):
+    """A tick's delta file carries its turnover too (ADR-0227). Replayed as level changes after
+    a failed counts save, an `opened` row would have become a Board count of its own."""
+    deltas = tmp_path / "deltas"
+    deltas.mkdir()
+    key = ("greenhouse:acme", "software-engineering", "senior", "greenhouse")
+    table = pa.table(
+        {
+            "ts": ["2026-09-25T06:00:00+00:00"] * 2,
+            "board": [key[0]] * 2,
+            "metric": ["stock", "opened"],
+            "family": [key[1]] * 2,
+            "band": [key[2]] * 2,
+            "ats": [key[3]] * 2,
+            "delta": [1, 1],
+        },
+        metadata={b"centroid_version": b"3001"},
+    )
+    pq.write_table(table, deltas / "2026-09-25T06-00-00+00-00.parquet")
+    recovered = role_trends._recover_board_counts(
+        {}, "2026-09-25T05:00:00+00:00", deltas, 3001
+    )
+    assert recovered == {(key[0], "stock", *key[1:]): 1}

@@ -71,7 +71,7 @@ def test_baseline_tick_is_not_a_change(tmp_path: Path) -> None:
         _deltas("2026-09-14T12:00:00+00:00", [("greenhouse:acme", "stock", "se", 4)]),
         deltas / "2026-09-14T12-00-00+00-00.parquet",
     )
-    moved, stamps = hot_boards.read_stock_change(deltas)
+    moved, stamps = hot_boards.read_window_sum(deltas)
     assert moved["greenhouse:acme"] == 4, (
         "the 500-row baseline must not count as growth"
     )
@@ -99,7 +99,7 @@ def test_the_window_is_bounded_so_it_cannot_outgrow_the_new_metric(
             _deltas(ts, [("greenhouse:acme", "stock", "se", delta)]),
             deltas / f"{ts.replace(':', '-')}.parquet",
         )
-    moved, stamps = hot_boards.read_stock_change(deltas)
+    moved, stamps = hot_boards.read_window_sum(deltas)
     assert moved["greenhouse:acme"] == 7, "only the two ticks inside the 7-day window"
     assert min(stamps) == "2026-09-20T12:00:00+00:00"
 
@@ -122,7 +122,7 @@ def test_a_refit_segments_the_window_by_centroid_version(tmp_path: Path) -> None
         table = _deltas(ts, [("greenhouse:acme", "stock", "se", delta)])
         table = table.replace_schema_metadata({"centroid_version": str(version)})
         pq.write_table(table, deltas / f"{ts.replace(':', '-')}.parquet")
-    moved, stamps = hot_boards.read_stock_change(deltas)
+    moved, stamps = hot_boards.read_window_sum(deltas)
     assert moved["greenhouse:acme"] == 8
     assert stamps == ["2026-09-21T12:00:00+00:00", "2026-09-23T12:00:00+00:00"]
 
@@ -134,16 +134,27 @@ def test_only_a_baseline_means_no_measured_window(tmp_path: Path) -> None:
         _deltas("2026-09-13T12:00:00+00:00", [("greenhouse:acme", "stock", "se", 500)]),
         deltas / "2026-09-13T12-00-00+00-00.parquet",
     )
-    moved, stamps = hot_boards.read_stock_change(deltas)
+    moved, stamps = hot_boards.read_window_sum(deltas)
     assert not stamps and not moved
 
 
-def _rank(new: dict, stock: dict, moved: dict, names: dict | None = None):
+def _rank(
+    new: dict,
+    stock: dict,
+    moved: dict,
+    names: dict | None = None,
+    opened: dict | None = None,
+    closed: dict | None = None,
+    young: set | None = None,
+):
     return hot_boards.rank(
         collections.Counter(new),
         collections.Counter(stock),
         collections.Counter(moved),
         names or {},
+        collections.Counter(opened or {}),
+        collections.Counter(closed or {}),
+        young=young or set(),
     )
 
 
@@ -173,9 +184,47 @@ def test_expansion_separates_growth_from_churn() -> None:
         new={"a:churner": 1396, "b:grower": 100},
         stock={"a:churner": 9081, "b:grower": 500},
         moved={"a:churner": -3, "b:grower": 200},
+        opened={"a:churner": 1396, "b:grower": 210},
+        closed={"a:churner": 1399, "b:grower": 10},
     )
     assert [r["board"] for r in lenses["expansion"]] == ["b:grower"]
     assert [r["board"] for r in lenses["volume"]] == ["a:churner", "b:grower"]
+    churner = lenses["volume"][0]
+    assert (churner["opened"], churner["closed"], churner["net"]) == (1396, 1399, -3)
+
+
+def test_volume_ranks_by_the_weeks_opened_jobs_not_new() -> None:
+    """`new` counts only what is still open, so a Board that opened and closed 300 jobs inside
+    the week read as quiet (ADR-0227)."""
+    lenses, _ = _rank(
+        new={"a:fast": 10, "b:slow": 50},
+        stock={"a:fast": 400, "b:slow": 400},
+        moved={"a:fast": 1, "b:slow": 1},
+        opened={"a:fast": 300, "b:slow": 50},
+        closed={"a:fast": 299, "b:slow": 49},
+    )
+    assert [r["board"] for r in lenses["volume"]] == ["a:fast", "b:slow"]
+
+
+def test_turnover_is_summed_over_the_runs_the_net_change_sums(tmp_path: Path) -> None:
+    """A counting change's run and the run after it are left out of opened and closed exactly
+    as they are out of the net change, so one row's figures cover the same runs (ADR-0227)."""
+    deltas = tmp_path / "deltas"
+    deltas.mkdir()
+    ticks = [
+        ("2026-09-20T12:00:00+00:00", [("greenhouse:acme", "stock", "se", 500)]),
+        ("2026-09-21T12:00:00+00:00", [("greenhouse:acme", "opened", "se", 4)]),
+        ("2026-09-22T12:00:00+00:00", [("greenhouse:acme", "opened", "se", 300)]),
+        ("2026-09-23T12:00:00+00:00", [("greenhouse:acme", "opened", "se", 200)]),
+        ("2026-09-24T12:00:00+00:00", [("greenhouse:acme", "opened", "se", 6)]),
+    ]
+    for ts, rows in ticks:
+        pq.write_table(_deltas(ts, rows), deltas / f"{ts.replace(':', '-')}.parquet")
+    opened, stamps = hot_boards.read_window_sum(
+        deltas, {"2026-09-22T12:00:00+00:00"}, metric="opened"
+    )
+    assert opened["greenhouse:acme"] == 10
+    assert min(stamps) == "2026-09-21T12:00:00+00:00"
 
 
 def test_one_company_on_two_atses_collapses_to_one_row() -> None:
@@ -251,7 +300,7 @@ def test_a_counting_change_and_the_run_after_it_are_not_hiring(tmp_path: Path) -
     )
     changes = hot_boards.counting_changes(epochs)
     assert changes == {"2026-09-17T15:26:29+00:00"}
-    moved, _ = hot_boards.read_stock_change(deltas, changes)
+    moved, _ = hot_boards.read_window_sum(deltas, changes)
     assert moved["amazon:jobs"] == 15
     assert hot_boards.counting_changes(tmp_path / "missing.csv") == set()
 
@@ -285,7 +334,7 @@ def test_a_change_with_no_tick_of_its_own_lands_on_the_next(tmp_path: Path) -> N
             _deltas(ts, [("amazon:jobs", "stock", "se", delta)]),
             deltas / f"{ts.replace(':', '-')}.parquet",
         )
-    moved, _ = hot_boards.read_stock_change(deltas, {"2026-09-17T15:26:29+00:00"})
+    moved, _ = hot_boards.read_window_sum(deltas, {"2026-09-17T15:26:29+00:00"})
     assert moved["amazon:jobs"] == 15
 
 
@@ -318,7 +367,7 @@ def test_non_tech_rows_are_not_hot_hiring(tmp_path: Path) -> None:
         ),
     ]:
         pq.write_table(_deltas(ts, rows), deltas / f"{ts.replace(':', '-')}.parquet")
-    moved, _ = hot_boards.read_stock_change(deltas)
+    moved, _ = hot_boards.read_window_sum(deltas)
     assert moved["amazon:jobs"] == 5
 
 
@@ -342,7 +391,7 @@ def test_a_refit_leaves_out_its_own_run_and_the_next_only(tmp_path: Path) -> Non
         table = _deltas(ts, [("amazon:jobs", "stock", "se", delta)])
         table = table.replace_schema_metadata({"centroid_version": str(version)})
         pq.write_table(table, deltas / f"{ts.replace(':', '-')}.parquet")
-    moved, _ = hot_boards.read_stock_change(deltas, {"2026-09-24T21:19:12+00:00"})
+    moved, _ = hot_boards.read_window_sum(deltas, {"2026-09-24T21:19:12+00:00"})
     assert moved["amazon:jobs"] == 13
 
 
@@ -398,7 +447,7 @@ def test_duplicate_removal_leaves_out_only_the_boards_it_can_touch(
     assert hot_boards.dedup_changes(epochs) == {"2026-09-22T00:00:00+00:00"}
     touched = hot_boards.dedup_touches(boards + ["eightfold:micron"])
     assert touched == {"workday:acme/a", "workday:acme/b", "eightfold:micron"}
-    moved, _ = hot_boards.read_stock_change(
+    moved, _ = hot_boards.read_window_sum(
         deltas,
         hot_boards.counting_changes(epochs),
         hot_boards.dedup_changes(epochs),
@@ -428,7 +477,50 @@ def test_an_emptied_site_still_makes_its_sibling_touched(tmp_path: Path) -> None
     )
     now = {"workday:acme/a"}  # b emptied, so it is gone from the current counts
     assert hot_boards.dedup_touches(now) == set()
-    assert hot_boards.dedup_touches(now | hot_boards.ledger_boards(deltas)) == {
+    assert hot_boards.dedup_touches(now | set(hot_boards.board_arrivals(deltas))) == {
         "workday:acme/a",
         "workday:acme/b",
     }
+
+
+def test_a_boards_arrival_is_not_hiring_and_a_board_counted_briefly_is_not_ranked(
+    tmp_path: Path,
+) -> None:
+    """Sphinixusa, counted from Sep 23, ranked second at "+250 net" off the backlog it landed
+    with, while the trend its row opens called it too new. Its arrival tick is left out of its
+    net and its opened, and a Board counted under three days is not ranked at all."""
+    deltas = tmp_path / "deltas"
+    deltas.mkdir()
+    ticks = [
+        ("2026-09-13T00:00:00+00:00", [("greenhouse:old", "stock", "se", 100)]),
+        ("2026-09-20T00:00:00+00:00", [("greenhouse:old", "stock", "se", 4)]),
+        (
+            "2026-09-23T00:00:00+00:00",
+            [
+                ("lever:sphinix", "stock", "se", 250),
+                ("lever:sphinix", "recounted_in", "se", 250),
+            ],
+        ),
+        (
+            "2026-09-24T00:00:00+00:00",
+            [("lever:sphinix", "stock", "se", 3), ("lever:sphinix", "opened", "se", 3)],
+        ),
+    ]
+    for ts, rows in ticks:
+        pq.write_table(_deltas(ts, rows), deltas / f"{ts.replace(':', '-')}.parquet")
+    arrivals = hot_boards.board_arrivals(deltas)
+    moved, _ = hot_boards.read_window_sum(deltas, arrivals=arrivals)
+    opened, _ = hot_boards.read_window_sum(deltas, arrivals=arrivals, metric="opened")
+    assert moved["lever:sphinix"] == 3 == opened["lever:sphinix"]
+    assert moved["greenhouse:old"] == 4
+    young = hot_boards.young_boards(arrivals, "2026-09-24T00:00:00+00:00")
+    assert young == {"lever:sphinix"}
+    lenses, counts = _rank(
+        new={},
+        stock={"lever:sphinix": 253, "greenhouse:old": 104},
+        moved=moved,
+        opened=opened,
+        young=young,
+    )
+    assert [r["board"] for r in lenses["expansion"]] == ["greenhouse:old"]
+    assert counts["newly_discovered"] == 1

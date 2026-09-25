@@ -71,7 +71,12 @@ from headstart.board_priority import save as save_priority
 from headstart.board_priority import update as update_priority
 from headstart.corpus import iter_jobs
 from headstart.harvest import COST_FILENAME
-from headstart.ingest import REPO_ROOT, board_failures, observability
+from headstart.ingest import (
+    REPO_ROOT,
+    UNAUTHORITATIVE_BOARDS_PATH,
+    board_failures,
+    observability,
+)
 from headstart.ingest.index_plan import read_unauthoritative_boards, resolve_board
 from headstart.ingest.update_descriptions import held_ids
 
@@ -84,7 +89,6 @@ _PRIORITY_LEDGER = REPO_ROOT / "data" / "state" / "board_priority.csv"
 _COST_LEDGER = REPO_ROOT / "data" / "state" / "board_cost.csv"
 _FAILURES_LEDGER = REPO_ROOT / "data" / "state" / "board_failures.csv"
 _GAP_LEDGER = REPO_ROOT / "data" / "state" / "board_description_gap.csv"
-_UNAUTHORITATIVE = REPO_ROOT / "data" / "state" / "unauthoritative_boards.json"
 _META = REPO_ROOT / "data" / "embeddings" / "jobs" / "meta.jsonl"
 _DESCRIPTIONS = REPO_ROOT / "data" / "descriptions"
 _LIVENESS = REPO_ROOT / "data" / "validate" / "liveness"
@@ -479,7 +483,7 @@ def main() -> int:
     p_gap.add_argument(
         "--unauthoritative-boards",
         type=Path,
-        default=_UNAUTHORITATIVE,
+        default=UNAUTHORITATIVE_BOARDS_PATH,
         help="Boards whose scrape came back truncated or raised this run (ADR-0053); their "
         "missing Jobs stay unsettled (default: data/state/unauthoritative_boards.json)",
     )

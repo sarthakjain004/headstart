@@ -107,7 +107,7 @@ function loadApp(fetchImpl) {
     + ' follow: boards => { myCompanies = { followed: boards, hidden: [] }; },'
     + ' followed: followedOption, openTrend: openCompanyTrend, chartedAndOther,'
     + ' unit: () => trendUnit, clickUnit: pickUnit, hash: trendHash, pick: setPicks, netOfSteps,'
-    + ' table: toggleTrendsTable, changeSizesOf, rowText,'
+    + ' table: toggleTrendsTable, changeSizesOf, rowText, hotMeasure: HOT_MEASURE, turnoverOf,'
     + ' set: (d, drill) => { trendData = d; trendRaw = d; trendDrill = drill || null; } };'
     // Repaints are counted at the global binding, which is what loadTrends' own `drawTrends()`
     // call resolves — so this counts the real paints, not a copy of them.
@@ -1363,6 +1363,17 @@ test('duplicate removal is taken out only of the pick it can touch', () => {
   same(t.seriesValues(beta), [100, 100, 80, 80]);
 });
 
+test('duplicate removal needs two sites of one Tenant, as Hot and the Space read it', () => {
+  // Duplicate removal parks copies among one Tenant's sites (ADR-0186/0187). A company holding
+  // two Tenants' Workday sites has nothing to deduplicate, so its fall is its own.
+  const { t } = loadApp();
+  t.setPicks([{ ...ACME, key: 'workday:acme/a', boardKeys: ['workday:acme/a', 'workday:other/b'] }]);
+  t.set(companies([['workday:acme/a', 'Acme', [100, 100, 80, 80]]],
+    { epochs: [{ ts: FOUR[2], changed: ['duplicate removal changed'], fields: ['dedup_version'] }] }));
+  t.setUnit('change', false);
+  same(t.seriesValues(t.data().series[0]), [100, 100, 80, 80]);
+});
+
 test('under Count a marked step breaks the line instead of drawing a climb', () => {
   const { t, nodes } = loadApp();
   t.setPicks([ACME, BETA]);
@@ -2465,4 +2476,140 @@ test('Share’s table names what its figures are', () => {
   const html = nodes['trends-table'].innerHTML;
   assert.match(html, /Share, relative change/);
   assert.match(html, /All tech roles \(of all its openings\)/);
+});
+
+// ---- job turnover (ADR-0227) ------------------------------------------------------------------
+// Acme opens and closes about as many jobs as it holds: flat by net, busy by turnover. The Sep 15
+// tech-filter change lands 400 jobs that look newly posted, so its run and the run after it are
+// left out of opened and closed, exactly as they are out of the net change.
+function busyAcme(extra) {
+  const d = companies([['greenhouse:acme', 'Acme', [1000, 1000, 1000, 1000]]], {
+    epochs: [{ ts: FOUR[2], changed: ['tech filter changed'], fields: ['tech_filter_version'] }],
+    turnover_since: FOUR[0], closures_unseen: { 'greenhouse:acme': 1 }, ...extra });
+  d.series[0].turnover = { opened: [null, 500, 900, 110], closed: [null, 490, 505, 100],
+    recounted: [null, 0, 0, 0] };
+  return d;
+}
+
+test('a company sentence gives the jobs its net change is made of', () => {
+  const { t, nodes } = loadApp();
+  t.setPicks([ACME]);
+  t.set(busyAcme());
+  t.draw();
+  // #684's shape: the answer first, then the move, then what it is made of, in the main text.
+  assert.match(nodes['trends-verdict'].innerHTML,
+    /<b>Acme<\/b>: holding steady — 1,000 tech openings; [^<]* — about 500 opened, 490 closed, closures not counted on 1 board\./);
+});
+
+test('turnover stays in the main text, never in the not-hiring disclosure', () => {
+  const { t, nodes } = loadApp();
+  t.setPicks([ACME]);
+  const d = busyAcme();
+  d.series[0].points = [1000, 1000, 1400, 1400];
+  d.series[0].latest = 1400;
+  t.set(d);
+  t.draw();
+  const html = nodes['trends-verdict'].innerHTML;
+  assert.match(html, /<details class="verdict-why">/, 'the tech-filter step is disclosed');
+  const [main, why] = html.split('<details class="verdict-why">');
+  assert.match(main, /about 500 opened, 490 closed/);
+  assert.doesNotMatch(why, /opened/);
+});
+
+test('a counting change on the window’s first run leaves no turnover out, as the Space’s index rule', () => {
+  // Mirrors the Space's `_left_out_runs`: a change already in every line's start takes nothing
+  // out, not even its settling run (which cut Amazon's real −7).
+  const { t } = loadApp();
+  t.setPicks([ACME]);
+  t.set(busyAcme({ epochs: [{ ts: FOUR[0], changed: ['tech filter changed'], fields: ['tech_filter_version'] }] }));
+  same({ ...t.turnoverOf(t.data().series[0]) }, { opened: 1510, closed: 1095 });
+});
+
+test('turnover that began inside the window says from when', () => {
+  const { t, nodes } = loadApp();
+  t.setPicks([ACME]);
+  t.set(busyAcme({ turnover_since: FOUR[1], closures_unseen: {} }));
+  t.draw();
+  assert.match(nodes['trends-verdict'].innerHTML, / — about 500 opened, 490 closed since Sep 14[.;]/);
+});
+
+test('the table gives each line its opened and closed', () => {
+  const { t, nodes } = loadApp();
+  t.setPicks([ACME]);
+  t.set(busyAcme());
+  t.setUnit('count', false);
+  t.draw();
+  nodes['trends-error'] = Object.assign(fakeEl(), { hidden: true });
+  t.table(true);
+  const html = nodes['trends-table'].innerHTML;
+  assert.match(html, /Counting changes, openings<\/th><th scope="col">Opened<\/th><th scope="col">Closed<\/th>/);
+  assert.match(html, /<td>500<\/td><td>490<\/td>/);
+});
+
+test('a found Board’s run keeps its turnover on a whole line and drops it on a category', () => {
+  // On the company's own line the found openings come out by their size, so that run's ordinary
+  // hiring, and its turnover, stay in. On a category line the whole run comes out, turnover too.
+  const { t } = loadApp();
+  t.setPicks([ACME]);
+  const found = [{ ts: FOUR[2], company: 'greenhouse:acme', boards: 1, openings: 200 }];
+  t.set(busyAcme({ epochs: [], discovered: found }));
+  same({ ...t.turnoverOf(t.data().series[0]) }, { opened: 1510, closed: 1095 });
+  t.set({ ...picked({}), stamps: FOUR, split_by: 'family', discovered: found,
+    totals: [1e4, 1e4, 1e4, 1e4], non_tech: [0, 0, 0, 0],
+    series: [{ name: 'a', label: 'a', points: [100, 100, 300, 300], latest: 300,
+      turnover: { opened: [null, 5, 9, 1], closed: [null, 4, 5, 1], recounted: [null, 0, 200, 0] } }] });
+  same({ ...t.turnoverOf(t.data().series[0]) }, { opened: 6, closed: 5 });
+});
+
+test('the index gets a hiring net from its turnover, and table columns too', () => {
+  // The Space has already left the Sep 15 change's runs out (gaps), Board by Board, and names
+  // them in `turnover_left_out`, which is what the sentence's closing clause rests on.
+  const { t, nodes } = loadApp();
+  t.setPicks([]);
+  const index = extra => ({ ...picked({}), companies: [], stamps: FOUR, totals: [1e4, 1e4, 1e4, 1e4],
+    non_tech: [0, 0, 0, 0], turnover_since: FOUR[0], closures_unseen: { '': 3 },
+    epochs: [{ ts: FOUR[2], changed: ['tech filter changed'], fields: ['tech_filter_version'] }],
+    series: [{ name: 'a', label: 'a', points: [900, 900, 1300, 1300], latest: 1300,
+      turnover: { opened: [null, 50, null, null], closed: [null, 40, null, null], recounted: [null, 0, null, null] } }],
+    ...extra });
+  t.set(index({ turnover_left_out: [FOUR[2], FOUR[3]] }));
+  t.setUnit('count', false);
+  t.draw();
+  assert.match(nodes['trends-verdict'].innerHTML,
+    /<b>All tech roles<\/b>: about \+10 net from hiring — about 50 opened, 40 closed, closures not counted on 3 boards, runs where HeadStart changed how it counts left out\./);
+  assert.doesNotMatch(nodes['trends-verdict'].innerHTML, /HeadStart has counted/);
+  nodes['trends-error'] = Object.assign(fakeEl(), { hidden: true });
+  t.table(true);
+  assert.match(nodes['trends-table'].innerHTML, /<td>50<\/td><td>40<\/td>/);
+  t.set(index({ turnover_left_out: [], epochs: [], closures_unseen: {} }));
+  t.draw();
+  assert.match(nodes['trends-verdict'].innerHTML, /about \+10 net from hiring — about 50 opened, 40 closed\./,
+    'no counting change in the window, so nothing is said about one');
+});
+
+test('a Hot row shows the week’s opened and closed, and Volume leads with opened', () => {
+  const { t } = loadApp();
+  const amazon = { net: -3, opened: 1396, closed: 1399, stock: 9081, new7: 1300, rate: 14 };
+  assert.equal(t.hotMeasure.volume(amazon).big, '1396');
+  assert.match(t.hotMeasure.expansion(amazon).sub, /1396 opened · 1399 closed this week/);
+  assert.match(t.hotMeasure.rate(amazon).sub, /^1300 new and still open of 9081 · 1396 opened/,
+    'Rate divides new7, so its row leads with it');
+});
+
+test('a line summing picks counts each pick’s turnover over the runs its own line counts', () => {
+  // A duplicate-removal change can move only the Eightfold pick, so only its part of the sum
+  // leaves out that run and the run after; Acme's turnover there is still hiring.
+  const { t } = loadApp();
+  const MICRON = { key: 'eightfold:careers.micron.com', label: 'Micron', boardKeys: ['eightfold:careers.micron.com'] };
+  t.setPicks([ACME, MICRON]);
+  t.set({ ...picked({}, [{ key: ACME.key, label: 'Acme' }, { key: MICRON.key, label: 'Micron' }]),
+    stamps: FOUR, totals: [1e4, 1e4, 1e4, 1e4], non_tech: [0, 0, 0, 0],
+    epochs: [{ ts: FOUR[2], changed: ['duplicate removal changed'], fields: ['dedup_version'] }],
+    series: [{ name: 'mid', label: 'Mid', points: [300, 300, 280, 280], latest: 280 }],
+    pick_series: { [ACME.key]: [100, 100, 100, 100], [MICRON.key]: [200, 200, 180, 180] },
+    pick_turnover: {
+      [ACME.key]: { opened: [null, 10, 20, 30], closed: [null, 0, 0, 0], recounted: [null, 0, 0, 0] },
+      [MICRON.key]: { opened: [null, 1, 2, 3], closed: [null, 0, 0, 0], recounted: [null, 0, 0, 0] } },
+    counted_since: { [ACME.key]: FOUR[0], [MICRON.key]: FOUR[0] } }, 'ai-ml');
+  same({ ...t.turnoverOf({ name: '__total__', points: [300, 300, 280, 280] }) }, { opened: 61, closed: 0 });
 });
