@@ -70,6 +70,9 @@ def test_encode_batches_shortest_first_and_returns_input_order(monkeypatch):
     batches = []
 
     class Encoder:
+        def tokenizer(self, titles):
+            return {"input_ids": [t.split() for t in titles]}
+
         def tokenize(self, titles):
             batches.append(list(titles))
             return {"titles": list(titles)}
@@ -81,13 +84,27 @@ def test_encode_batches_shortest_first_and_returns_input_order(monkeypatch):
 
     monkeypatch.setattr(rfc, "_encoder", lambda model, revision: Encoder())
     monkeypatch.setattr(rfc, "_ENCODE_BATCH", 2)
-    titles = ["principal engineer", "qa", "data scientist", "sre", "it"]
+    # word count stands in for token count; "reliability engineer" is long in characters but
+    # short in words, so a character sort would misplace it
+    titles = [
+        "principal staff engineer",
+        "qa",
+        "reliability engineer",
+        "sre",
+        "senior it lead",
+    ]
 
     vectors = rfc.encode(titles, "stub", "stub")
 
     assert vectors.tolist() == [[len(t), ord(t[0])] for t in titles]
-    lengths = [[len(t) for t in batch] for batch in batches]
-    assert [n for batch in lengths for n in batch] == sorted(len(t) for t in titles)
+    assert [t for batch in batches for t in batch] == [
+        "qa",
+        "sre",
+        "reliability engineer",
+        "principal staff engineer",
+        "senior it lead",
+    ]
+    assert rfc.encode([], "stub", "stub").shape == (0, 0)
 
 
 def test_normalise_is_the_cache_key():
