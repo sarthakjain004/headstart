@@ -90,7 +90,10 @@ def test_assignment_writes_row_aligned_fragment(tmp_path):
         "a:3",
         "a:4",
     }  # every assigned Doc embedded
-    assert json.loads((outdir / "manifest.json").read_text())["count"] == 4
+    manifest = json.loads((outdir / "manifest.json").read_text())
+    assert manifest["count"] == 4
+    # embed_merge reads the shard's losses back from here (a shard writes no step summary)
+    assert (manifest["failed"], manifest["unattempted"]) == (0, 0)
 
 
 def test_empty_assignment_yields_empty_fragment(tmp_path):

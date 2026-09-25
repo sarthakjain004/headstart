@@ -232,7 +232,7 @@ class ADPScraper(BaseScraper):
         """One GET through the pacer; a 429 rests the whole process through the window and, for
         up to ``tries`` attempts in all, asks again. The company-name lookup takes one: a
         display name is not worth a second window, but its 429 still rests everyone else."""
-        for _ in range(tries):
+        for i in range(tries):
             self.pacer.wait()
             response = self._fetch(
                 "GET",
@@ -245,11 +245,11 @@ class ADPScraper(BaseScraper):
             if response.status_code != 429:
                 response.raise_for_status()
                 return json.loads(response.text)
-            self.pacer.rest(_WINDOW_S)
+            self._rest_on_429(url, i, tries)
         raise _RateLimited(url)
 
     async def _paced_get_async(self, session: Any, url: str) -> Any:
-        for _ in range(_TRIES):
+        for i in range(_TRIES):
             await self.pacer.wait_async()
             response = await self._fetch_async(
                 session,
@@ -262,8 +262,17 @@ class ADPScraper(BaseScraper):
             if response.status_code != 429:
                 response.raise_for_status()
                 return json.loads(response.text)
-            self.pacer.rest(_WINDOW_S)
+            self._rest_on_429(url, i, _TRIES)
         raise _RateLimited(url)
+
+    def _rest_on_429(self, url: str, i: int, tries: int) -> None:
+        """Rest the process-wide pacer through a refused window, and say so: the rest stalls
+        every ADP Board in the process, so an unlogged one reads as a hung shard."""
+        self._log.info(
+            f"{self.board_key()}: 429 on {url} — resting every ADP request "
+            f"{_WINDOW_S:.0f}s (try {i + 1}/{tries})"
+        )
+        self.pacer.rest(_WINDOW_S)
 
     def _languages(self) -> list[str]:
         """The languages this career center posts in, English first.
@@ -275,7 +284,14 @@ class ADPScraper(BaseScraper):
         not depend on the `lang` asked. The page supports `de_DE` and `ko_KR` too; neither held a
         posting on those 45.
         """
-        return languages_of(self._paced_get(locales_url(self.cid, self.cc_id)))
+        content_links = self._paced_get(locales_url(self.cid, self.cc_id))
+        if not is_published(content_links):
+            # Not an empty center: an empty one is published too (`is_published`). This is a
+            # `ccId` the client does not have, which otherwise reads as a Board with no jobs.
+            self.note_unreadable_board(
+                "a published career center", "PublishedIndicator false"
+            )
+        return languages_of(content_links)
 
     def _walk(self, lang: str) -> list[dict]:
         """Every listing row in one language: pages of 20 from the 1-based `$skip=1` until
@@ -325,11 +341,15 @@ class ADPScraper(BaseScraper):
 
     def fetch_raw(self) -> Any:
         merged: dict[str, dict] = {}
+        listed = unkeyed = 0
         for lang in self._languages():
             for row in self._walk(lang):
+                listed += 1
                 ext = _ext_id(row)
+                unkeyed += not ext
                 if ext and ext not in merged:
                     merged[ext] = {**row, "_lang": lang}
+        self.note_unread_rows(unkeyed, listed, "carried no id")
         rows = list(merged.values())
         # The gate is exact: no department on either surface (`HomeDepartment` empty on 2,069 of
         # 2,069 rows and 120 of 120 details) and the detail overrides nothing — it adds
@@ -349,7 +369,10 @@ class ADPScraper(BaseScraper):
                 fetched = self.fan_out_async(wanted, self._detail_async)
             else:
                 fetched = self.fan_out(
-                    wanted, self._detail, workers=self.detail_workers
+                    wanted,
+                    self._detail,
+                    workers=self.detail_workers,
+                    what=self.board_key(),
                 )
             self.report_detail_gaps(fetched, "detail payloads")
             details = {_ext_id(r): d for r, d in zip(wanted, fetched) if d}
@@ -373,14 +396,14 @@ class ADPScraper(BaseScraper):
         """
         if not company_name.looks_like_slug(self.company):
             return
+        client_url = f"{_CLIENT}?{_query(self.cid, self.cc_id, 'en_US')}"
         try:
-            body = self._paced_get(
-                f"{_CLIENT}?{_query(self.cid, self.cc_id, 'en_US')}",
-                tries=1,
-                attempts=1,
-                marks_wall=False,
+            body = self._paced_get(client_url, tries=1, attempts=1, marks_wall=False)
+        except Exception as exc:  # noqa: BLE001 - a display name is never worth failing a Board for
+            self._log.info(
+                f"{self.board_key()}: no company name — {client_url} raised "
+                f"{type(exc).__name__}"
             )
-        except Exception:  # noqa: BLE001 - a display name is never worth failing a Board for
             return
         self.adopt_company(next(iter(_strings(_meta_group(body), "ClientName")), ""))
 

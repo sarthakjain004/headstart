@@ -45,10 +45,13 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, NamedTuple
 
+from headstart import log
 from headstart.board_identity import ats_of, lower_key
 
 if TYPE_CHECKING:
     from headstart.scrapable_boards import ScrapableBoard
+
+_log = log.get(__name__)
 
 # Consecutive gone-runs before a Board leaves the scrape slice. A Board only ages when it is
 # actually scraped, so this counts its own scrapes, and what it means in time depends on how often
@@ -128,12 +131,15 @@ def load(path: str | Path) -> dict[str, Failure]:
     """Read the ledger, or an empty mapping when it is absent or unreadable.
 
     Fails **open** on purpose: this file rides the HF state round-trip, and a missing or truncated
-    copy must cost one run of memory, never quarantine a Board or stop the plan.
+    copy must cost one run of memory, never quarantine a Board or stop the plan. But not silently:
+    a present-but-unreadable file returns every quarantined Board to the slice, so it warns, and
+    the rows it skips are counted.
     """
     p = Path(path)
     if not p.exists():
         return {}
     rows: dict[str, Failure] = {}
+    torn = void = 0
     try:
         with p.open(encoding="utf-8", newline="") as fh:
             for row in csv.DictReader(fh):
@@ -143,16 +149,25 @@ def load(path: str | Path) -> dict[str, Failure]:
                 try:
                     strikes = int(row.get("strikes") or 0)
                 except ValueError:
+                    torn += 1
                     continue  # a torn row is one Board's memory, not the file's
                 failure = Failure(
                     strikes=strikes,
                     last_reason=row.get("last_reason") or "",
                     last_seen_gone=row.get("last_seen_gone") or "",
                 )
-                if not _void(board, failure):
+                if _void(board, failure):
+                    void += 1
+                else:
                     rows[board] = failure
-    except OSError:
+    except (OSError, UnicodeDecodeError, csv.Error) as exc:
+        _log.warning(
+            f"unreadable failures ledger {p}: {exc} — reading it as empty, so no Board is "
+            "quarantined this run"
+        )
         return {}
+    if torn or void:
+        _log.info(f"{p}: skipped {torn} torn row(s), {void} void verdict(s)")
     return rows
 
 

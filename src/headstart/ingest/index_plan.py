@@ -584,6 +584,7 @@ def aliased_boards(ledger_dir: str | Path) -> dict[str, str]:
     from headstart.scrapers.registry import company_from_row
 
     out: dict[str, str] = {}
+    unkeyed: list[str] = []
     for ledger in sorted(Path(ledger_dir).glob("*.csv")):
         signals = board_aliases.signals_for(ledger_dir, ledger.stem)
         if not signals:
@@ -595,7 +596,13 @@ def aliased_boards(ledger_dir: str | Path) -> dict[str, str]:
                 try:
                     out[lower_key(board_key(company))] = signal
                 except ValueError:
-                    continue
+                    unkeyed.append(f"{ledger.stem}:{company.slug}")
+    # Said, because each one's prune is then booked as off-Board rather than `alias:{signal}`.
+    if unkeyed:
+        _log.info(
+            f"{len(unkeyed)} buried Board(s) have no board_key, so their prune books as "
+            f"off-Board: {log.named_sample(unkeyed)}"
+        )
     return out
 
 
@@ -764,12 +771,18 @@ def scraped_boards(
     """
     path = Path(scraped)
     if path.is_dir() and any(path.glob("*.jsonl")):
-        return {resolve_board(job["id"], live) for job in iter_jobs(path)}
-    if recorded is not None:
-        from_join = read_scraped_boards(recorded)
-        if from_join is not None:
-            return from_join
-    return {resolve_board(job_id, live) for job_id in corpus_ids}
+        boards = {resolve_board(job["id"], live) for job in iter_jobs(path)}
+        source = f"the full scrape under {path}"
+    elif (
+        recorded is not None
+        and (from_join := read_scraped_boards(recorded)) is not None
+    ):
+        boards, source = from_join, f"scrape_join's record {recorded}"
+    else:
+        boards = {resolve_board(job_id, live) for job_id in corpus_ids}
+        source = "the corpus ids (no full scrape and no record)"
+    _log.info(f"eviction scope: {len(boards)} Boards from {source}")
+    return boards
 
 
 #: The ATSes whose native id is a requisition id every Board of one **Tenant** shares, so a

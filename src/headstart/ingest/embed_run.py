@@ -191,7 +191,7 @@ class EmbeddingStore:
                     # un-embedded forever and re-embed on every run. Loud, and with the count,
                     # because the file itself cannot tell the two cases apart afterwards.
                     dropped = 1 + sum(1 for _ in f)
-                    _log.error(
+                    _log.warning(
                         f"{self._meta_path}: unparseable metadata at line {lineno} — dropping "
                         f"{dropped} record(s) from there to end of file, and truncating "
                         f"{self._vec_path.name} to match"
@@ -360,7 +360,10 @@ def _encode_groups(
             # A wedged accelerator fails every allocation no matter how small — stop instead
             # of marching through the queue marking everything failed; --resume resumes here.
             if consec_failed >= 64:
-                _log.warning(
+                # INFO, not WARNING: `_BATCH_FAILURE` has already annotated this shard with the
+                # error and its stack, and the merge's one summary line names every shard that
+                # lost Docs — a warning here would cost a second annotation per shard for one bug.
+                _log.info(
                     f"{consec_failed} consecutive failures — allocator looks wedged; "
                     "stopping (re-run with --resume)"
                 )
@@ -416,10 +419,22 @@ def _run_assignment(
         done, failed = _encode_groups(
             model, device, docs, metas, groups, store, budget, tokens
         )
-    count = store.close(_manifest(device, str(path), dim))
+    # A wedge stops the walk; the Docs after it were never tried — not failed, just unreached.
+    unattempted = len(docs) - done - failed
+    # Both losses ride in the manifest because a shard writes no step summary: embed_merge reads
+    # them back and reports every shard's in one line, where this shard's log alone is unread.
+    count = store.close(
+        {
+            **_manifest(device, str(path), dim),
+            "failed": failed,
+            "unattempted": unattempted,
+        }
+    )
     _log.info(
         f"done: shard embedded {done} ({failed} failed) -> {outdir} ({count} vectors)"
     )
+    if unattempted:
+        _log.info(f"not attempted: {unattempted} doc(s) after the allocator wedged")
 
 
 def main() -> None:

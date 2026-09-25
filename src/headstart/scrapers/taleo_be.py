@@ -334,12 +334,22 @@ class TaleoBEScraper(BaseScraper):
                 "GET", _rss_url(self.slug), accept="application/rss+xml", stream=True
             )
             head = _head_of(response, _RSS_HEAD_BYTES)
-        except Exception:  # noqa: BLE001 - a display name is never worth failing a Board for
+        except Exception as exc:  # noqa: BLE001 - a display name is never worth failing a Board for
+            self._log.info(
+                f"{self.board_key()}: no company name — {_rss_url(self.slug)} raised "
+                f"{type(exc).__name__}"
+            )
             return
         name = company_name.from_title(self.ats, company_name.title_of(head), self.slug)
         if name:
             _ORG_NAMES[key] = name
             self.company = name
+        else:
+            # The base resolver's line, which this override replaces (ADR-0114).
+            self._log.info(
+                f"{self.board_key()}: no company name — {_rss_url(self.slug)} answered "
+                f"{response.status_code} and stated none this ATS accepts"
+            )
 
     @staticmethod
     def slug_from(tenant: str, url: str) -> str:
@@ -371,19 +381,32 @@ class TaleoBEScraper(BaseScraper):
         seen_pages: set[str] = set()
         seen_jobs: set[str] = set()
         listed: list[dict[str, str | None]] = []
+        blocks = unmatched = 0
         for _ in range(_MAX_PAGES):
             if page_url in seen_pages:
                 self.mark_truncated("listing next link looped before the Board ended")
                 break
             seen_pages.add(page_url)
             page = self._get(page_url)
+            if not listed and "oracletaleocwsv2-accordion-group" not in page:
+                # An empty Board still renders the (blockless) accordion group — 3 of 3 live-0
+                # ledger Boards, and both Boards with postings, 2026-09-25 — so a first page
+                # without it is one this cannot read.
+                self.note_unreadable_board(
+                    "an oracletaleocwsv2 accordion group",
+                    f"{len(page)} bytes without one",
+                )
             headers = {
                 int(m.group("n")): (_text(m.group("label")) or "").lower()
                 for m in _SORT_COLUMN.finditer(page)
             }
             for block in _BLOCK.findall(page):
+                blocks += 1
                 match = _JOB.search(block)
-                if not match or match.group("id") in seen_jobs:
+                if not match:
+                    unmatched += 1
+                    continue
+                if match.group("id") in seen_jobs:
                     continue
                 seen_jobs.add(match.group("id"))
                 fields_match = _HEAD_FIELDS.search(block)
@@ -416,10 +439,20 @@ class TaleoBEScraper(BaseScraper):
                 )
             next_match = NEXT_PAGE_LINK.search(page)
             if not next_match:
-                return listed
+                break  # skips the for-else below, like the `return` that stood here
             page_url = urljoin(page_url, html.unescape(next_match.group("href")))
         else:
             self.mark_truncated(f"hit the {_MAX_PAGES}-page cap at {len(listed)} jobs")
+        if blocks and unmatched == blocks:
+            self.note_unreadable_board(
+                "viewRequisition cards",
+                f"{blocks} accordion blocks, none with a viewRequisition link",
+            )
+        elif unmatched:
+            self._log.info(
+                f"{self.board_key()}: {unmatched} of {blocks} listing cards had no "
+                "viewRequisition link — skipped"
+            )
         return listed
 
     def fetch_raw(self) -> Any:

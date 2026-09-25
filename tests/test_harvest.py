@@ -466,7 +466,7 @@ def test_shutdown_does_not_wait_for_a_board_still_in_flight(monkeypatch, tmp_pat
 
 
 def test_a_board_still_running_at_the_kill_is_costed_for_what_it_burned(
-    monkeypatch, tmp_path
+    monkeypatch, tmp_path, caplog
 ):
     """The survivorship hole that let one Board kill a shard every run, forever.
 
@@ -498,6 +498,7 @@ def test_a_board_still_running_at_the_kill_is_costed_for_what_it_burned(
         return FakeScraper([make_job("x:quick:1")]) if slug == "quick" else _Blocking()
 
     monkeypatch.setattr(harvest, "get_scraper", fake_get)
+    caplog.set_level("INFO", logger="headstart.harvest")
 
     def on_board(key, jobs, error, seconds, truncated=None):
         if key.endswith(":quick"):
@@ -522,6 +523,11 @@ def test_a_board_still_running_at_the_kill_is_costed_for_what_it_burned(
     )
     assert monster.unfinished, "a bound must not reach the ledger as a measurement"
     assert not rows["x:quick"].unfinished
+    # ... and the log names the Board the kill caught, which the deferred list rarely does.
+    assert any(
+        r.getMessage().startswith("killed mid-fetch: 1 board(s) — x:monster ")
+        for r in caplog.records
+    )
 
 
 def test_a_clean_finish_costs_every_board_exactly_once(monkeypatch, tmp_path):
@@ -562,3 +568,24 @@ def test_a_board_whose_scraper_never_constructed_gets_no_floor(monkeypatch, tmp_
     assert not any(r.unfinished for r in rows.values()), (
         f"a Board that never started a fetch was costed as if it had: {rows}"
     )
+
+
+def test_a_job_labelled_with_an_unlisted_ats_is_kept_and_said_once(tmp_path, caplog):
+    """The run opens a file per listed ATS up front; a job labelled with any other ATS is a
+    scraper-labelling bug, still written, and named once per ATS at INFO — never an annotation."""
+    import logging
+
+    writer = harvest.JobWriter(tmp_path, {"lever"})
+    with caplog.at_level(logging.INFO, logger=harvest._log.name):
+        writer.write([make_job("lever:a:1", ats="lever")])
+        writer.write(
+            [make_job("ashby:a:1", ats="ashby"), make_job("ashby:a:2", ats="ashby")]
+        )
+    writer.close()
+    assert [(r.levelname, r.getMessage()) for r in caplog.records] == [
+        (
+            "INFO",
+            "jobs labelled ats=ashby (not in this run's Board list) — writing ashby.jsonl lazily",
+        )
+    ]
+    assert len((tmp_path / "ashby.jsonl").read_text().splitlines()) == 2

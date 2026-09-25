@@ -42,7 +42,16 @@ class SenseHQScraper(BaseScraper):
         rows: list[dict] = []
         self._page = 0
         while True:
-            data = json.loads(self._get()).get("data") or {}
+            payload = json.loads(self._get())
+            data = payload.get("data") or {}
+            if not rows and "rows" not in data:
+                self.note_unreadable_board(
+                    "a payload with `data.rows`", f"keys {sorted(payload)[:5]}"
+                )
+            if not rows:
+                stated = data.get(
+                    "count", 0
+                )  # the first page's, for the shortfall line
             batch = data.get("rows", [])
             rows.extend(batch)
             self._page += 1
@@ -53,6 +62,11 @@ class SenseHQScraper(BaseScraper):
             # fixed defensively: guarding against an input the real API never sends would be
             # untestable speculation, the opposite of what CLAUDE.md's measure-first rule asks.
             if len(batch) < _PAGE_SIZE or len(rows) >= data.get("count", 0):
+                if len(rows) < stated:
+                    self._log.info(
+                        f"{self.board_key()}: read {len(rows)} of {stated} listed — "
+                        "a short page ended the walk"
+                    )
                 break
             if self._page > _MAX_PAGES:
                 # A separate exit from the two above, because it means something different: the

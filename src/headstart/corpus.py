@@ -26,12 +26,17 @@ def _read_jsonl_dir(path: Path) -> Iterator[dict]:
     for file in sorted(path.glob("*.jsonl")):
         duplicates = 0
         with file.open(encoding="utf-8") as fh:
-            for line in fh:
+            for lineno, line in enumerate(fh, 1):
                 line = line.strip()
                 if not line:
                     continue
-                job = json.loads(line)
-                if job["id"] in seen:
+                try:
+                    job = json.loads(line)
+                    job_id = job["id"]
+                except (KeyError, TypeError, ValueError) as exc:
+                    # A bare JSONDecodeError names neither the file nor the line.
+                    raise ValueError(f"{file}:{lineno}: {exc!r}") from exc
+                if job_id in seen:
                     # A resumed scrape re-emitting a board's lines is one source. It was not the
                     # one actually firing: across the five runs of 2026-09-16 this dropped
                     # 4,135-4,347 lines a run with no shard resuming in any of them — the real
@@ -40,7 +45,7 @@ def _read_jsonl_dir(path: Path) -> Iterator[dict]:
                     # and the count says so rather than the drop being silent.
                     duplicates += 1
                     continue
-                seen.add(job["id"])
+                seen.add(job_id)
                 yield job
         if duplicates:
             # Per file, as each one finishes, rather than a total at the end: the end of a

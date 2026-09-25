@@ -99,7 +99,7 @@ def published_roots(repo: str, token: str | None) -> set[str] | None:
     every workflow installs `huggingface_hub` unpinned, so the floor is not ours to assume.
 
     Residual: a future ``EntryNotFoundError`` subclass meaning "transient" would fail open again.
-    A malformed witness raises out of ``json.loads`` instead, and is retried like a Hub failure —
+    A malformed witness raises a ``ValueError`` naming the file, and is retried like a Hub failure —
     deterministic, so it burns the ADR-0033 budget to learn nothing. Both are known and unhandled;
     neither has been observed.
     """
@@ -112,7 +112,11 @@ def published_roots(repo: str, token: str | None) -> set[str] | None:
         raise  # a Hub we could not reach is not a dataset that published nothing
     except EntryNotFoundError:
         return None  # a genuine 404: no witness here
-    return set(json.loads(Path(path).read_text(encoding="utf-8"))["dirs"])
+    try:
+        return set(json.loads(Path(path).read_text(encoding="utf-8"))["dirs"])
+    except (ValueError, KeyError, TypeError) as exc:  # JSONDecodeError is a ValueError
+        # named, or the fetch's retries and abort would say only "KeyError: 'dirs'"
+        raise ValueError(f"{WITNESS_PATH}: {exc!r}") from exc
 
 
 def unwitnessed(patterns: list[str], roots: set[str] | None) -> list[str]:
@@ -144,7 +148,13 @@ def publish(root: Path = REPO_ROOT) -> list[str]:
     path = root / WITNESS_PATH
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps({"dirs": dirs}, indent=2) + "\n", encoding="utf-8")
-    _log.info(f"witness: {len(dirs)} published dir(s) — {' '.join(dirs) or '(none)'}")
+    # The omitted roots too: an under-claim costs nothing, but it is the one thing a reader
+    # checking why a later fetch bootstrapped would want named.
+    omitted = [r for r in ROOTS if r not in dirs]
+    _log.info(
+        f"witness: {len(dirs)} published dir(s) — {' '.join(dirs) or '(none)'}"
+        + (f"; omitted: {' '.join(omitted)}" if omitted else "")
+    )
     return dirs
 
 

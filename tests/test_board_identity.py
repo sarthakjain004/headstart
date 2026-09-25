@@ -143,3 +143,30 @@ def test_lower_key_is_plain_lower_not_casefold():
     assert lower_key("GreenHouse:Stripe") == "greenhouse:stripe"
     # str.casefold() would map this differently; lower_key must not silently switch algorithms
     assert lower_key("İ") == "İ".lower()
+
+
+def test_board_key_of_names_the_cause_of_a_drop_once_per_key(monkeypatch, caplog):
+    """Its callers count dropped keys but never say why; this line is the only place the parse
+    error surfaces, so it must be there — once per distinct key, not once per call."""
+    monkeypatch.setattr(board_identity, "_KEY_OF_FAILURES_SEEN", set())
+    with caplog.at_level("INFO", logger="headstart.board_identity"):
+        board_key_of("workday:not-a-url")
+        board_key_of("workday:not-a-url")
+    named = [
+        r for r in caplog.records if "dropped from the board_key-keyed" in r.message
+    ]
+    assert len(named) == 1
+    assert named[0].message.startswith("workday:not-a-url: board_key() failed (")
+
+
+def test_board_key_of_says_once_when_it_stops_naming_drops(monkeypatch, caplog):
+    """Mirrors `_report_identity_failure`: past the cap the silence is announced, once."""
+    monkeypatch.setattr(board_identity, "_KEY_OF_FAILURES_SEEN", set())
+    cap = board_identity._IDENTITY_REPORT_CAP
+    with caplog.at_level("INFO", logger="headstart.board_identity"):
+        for i in range(cap * 3):
+            board_key_of(f"workday:bad-{i}")
+    mine = [r for r in caplog.records if r.name == "headstart.board_identity"]
+    assert len([r for r in mine if "board_key() failed" in r.message]) == cap
+    assert len([r for r in mine if "further board_key_of()" in r.message]) == 1
+    assert len(mine) == cap + 1

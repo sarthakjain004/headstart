@@ -14,6 +14,8 @@ import sys
 from pathlib import Path
 from typing import ClassVar
 
+import pytest
+
 from headstart.ingest import scrape_run
 
 
@@ -121,6 +123,36 @@ def test_report_survives_the_time_budget_and_still_writes_its_numbers(tmp_path, 
     assert report["killed_by_budget"] is True
     assert (report["undone"], report["shard"], report["assigned"]) == (60, "7", 100)
     assert report["board_seconds"]["max"] == 1.5
+
+
+def test_report_still_writes_the_shard_report_when_telemetry_raises(
+    tmp_path, caplog, monkeypatch
+):
+    """`_report` runs in a `finally`: a telemetry bug must not stop the shard report the join
+    reads, nor turn a budget kill into a raise — and it logs at INFO, once per shard."""
+    caplog.set_level(logging.INFO, logger="headstart.ingest.scrape_run")
+
+    def broken() -> list[str]:
+        raise RuntimeError("telemetry bug")
+
+    monkeypatch.setattr(scrape_run.spare_egress, "report", broken)
+    progress = scrape_run._Progress(assigned=1)
+    progress.on_board("lever:a", 1, None, 2.0)
+
+    scrape_run._report(
+        progress,
+        tmp_path,
+        elapsed=60.0,
+        predicted=None,
+        serial=None,
+        killed=True,
+        shard="4",
+    )
+
+    report = json.loads((tmp_path / "_shard_report.json").read_text())
+    assert (report["shard"], report["killed_by_budget"]) == ("4", True)
+    [failed] = [r for r in caplog.records if "telemetry failed" in r.getMessage()]
+    assert failed.levelno == logging.INFO and failed.exc_info
 
 
 def test_report_carries_short_lists_into_the_shard_report(tmp_path):
@@ -256,13 +288,35 @@ def test_a_budget_kill_returns_the_sentinel_and_still_writes_its_report(
     """
 
     def killed(*_a, **_k):
-        raise SystemExit("signal 15")
+        scrape_run._raise_on_term(15, None)
 
     status = _run_main(tmp_path, monkeypatch, killed)
 
     assert status == scrape_run._BUDGET_KILLED
     report = json.loads((tmp_path / "frag" / "_shard_report.json").read_text())
     assert report["killed_by_budget"] is True
+
+
+def test_a_crash_is_not_a_budget_kill(tmp_path, monkeypatch, caplog):
+    """Only the budget's SIGTERM is a kill. Any other exception used to reach `_report` as a
+    clean finish, so a crashed shard's summary said "finished within the time budget"."""
+    caplog.set_level(logging.INFO, logger="headstart.ingest.scrape_run")
+    summary = tmp_path / "summary.md"
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary))
+
+    def crashed(*_a, **_k):
+        raise RuntimeError("boom")
+
+    with pytest.raises(RuntimeError):
+        _run_main(tmp_path, monkeypatch, crashed)
+
+    errors = [r for r in caplog.records if r.levelno == logging.ERROR]
+    assert [r.getMessage() for r in errors] == ["shard 0 aborted by RuntimeError: boom"]
+    report = json.loads((tmp_path / "frag" / "_shard_report.json").read_text())
+    assert report["killed_by_budget"] is False
+    text = summary.read_text()
+    assert "aborted** by RuntimeError: boom" in text
+    assert "finished within the time budget" not in text
 
 
 def test_a_clean_finish_returns_zero(tmp_path, monkeypatch):
@@ -410,7 +464,7 @@ def test_main_derives_the_deferred_list_from_the_assignment(tmp_path, monkeypatc
     so the shard needs no extra bookkeeping to say what it lost."""
 
     def killed(*_a, **_k):
-        raise SystemExit("signal 15")
+        scrape_run._raise_on_term(15, None)
 
     _run_main(tmp_path, monkeypatch, killed)
 
@@ -430,3 +484,29 @@ def test_main_defers_nothing_when_every_board_reported(tmp_path, monkeypatch):
 
     report = json.loads((tmp_path / "frag" / "_shard_report.json").read_text())
     assert report["deferred"] == []
+
+
+def test_a_clean_empty_board_is_named_at_info(caplog):
+    """Its rows evict two scrapes later (ADR-0083), so CI must record which Board read empty;
+    a Board with postings stays at DEBUG."""
+    caplog.set_level(logging.DEBUG, logger="headstart.ingest.scrape_run")
+    progress = scrape_run._Progress(assigned=2)
+    progress.on_board("greenhouse:quiet", jobs=0, error=None, seconds=1.0)
+    progress.on_board("greenhouse:busy", jobs=5, error=None, seconds=1.0)
+
+    by_level = {r.getMessage(): r.levelno for r in caplog.records}
+    assert by_level == {
+        "greenhouse:quiet: 0 jobs in 1.0s (scraped clean, no postings)": logging.INFO,
+        "greenhouse:busy: 5 jobs in 1.0s": logging.DEBUG,
+    }
+
+
+def test_read_have_details_reads_a_corrupt_list_as_absent(tmp_path, caplog):
+    """Its docstring's promise: a torn skip-list costs re-fetches, never the shard."""
+    from headstart.ingest import scrape_run as sr
+
+    path = tmp_path / "held_details.txt.gz"
+    path.write_bytes(b"not gzip at all")
+    with caplog.at_level("INFO", logger=sr.__name__):
+        assert sr._read_have_details(path) is None
+    assert "treated as absent" in caplog.text

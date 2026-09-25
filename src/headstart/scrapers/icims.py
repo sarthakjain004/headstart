@@ -55,16 +55,15 @@ import re
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
-from headstart import company_name, log
+from headstart import company_name
 from headstart.models import Job, host_of, html_to_text, is_remote
 from headstart.scrapers.base import USER_AGENT, BaseScraper, DetailLost, DetailRequest
 from headstart.scrapers.job_posting_jsonld import (
     find_job_posting,
+    has_unparseable_jsonld,
     job_location_text,
     job_posting_fields,
 )
-
-_log = log.get(__name__)
 
 _DETAIL_WORKERS = 16
 
@@ -196,8 +195,15 @@ class ICIMSScraper(BaseScraper):
         # non-200 and the Board earns a liveness verdict rather than looking empty.
         response.raise_for_status()
         listed = _sitemap_rows(response.text)
-        _log.info(f"{self.slug}: sitemap -> {len(listed)} job pages to fetch")
         if not listed:
+            # INFO on the empty exit only: the count on every other Board is the gap line's
+            # own denominator. A Board with nothing open also lands here, so this names what
+            # the sitemap held rather than calling it broken.
+            self.note_unreadable_board(
+                "job URLs in the sitemap",
+                f"{len(_SITEMAP_URL.findall(response.text))} <url> entries, none matching "
+                "/jobs/{id}/…/job",
+            )
             return []
 
         pages = self.run_detail_pass(
@@ -263,6 +269,8 @@ class ICIMSScraper(BaseScraper):
         runs across 102 Boards)."""
         fields = _ld_fields(response.text)
         if fields is None:
+            if has_unparseable_jsonld(response.text):
+                raise DetailLost("unparseable JSON-LD on a 200")
             # The `in_iframe=1` trap as well as a genuine JSON-LD outage — the branded wrapper
             # is a well-formed 200 carrying no JobPosting at all.
             raise DetailLost("no JSON-LD on a 200")
@@ -270,10 +278,13 @@ class ICIMSScraper(BaseScraper):
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
         jobs: list[Job] = []
+        untitled = 0
         for item in raw:
             fields = item.get("fields") or {}
             title = (fields.get("title") or "").strip()
             if not title:
+                # A page that never read is already in the gap line; count only the rest.
+                untitled += bool(fields)
                 continue  # page unreadable or a wrapper — nothing to keep the Job by
             location = fields.get("location")
             remote = fields.get("remote")
@@ -300,6 +311,7 @@ class ICIMSScraper(BaseScraper):
                     salary=fields.get("salary"),
                 )
             )
+        self.note_unread_rows(untitled, len(raw), "had a JobPosting with no title")
         return jobs
 
     def job_url(self, job_url: str) -> str:

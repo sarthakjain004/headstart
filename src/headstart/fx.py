@@ -98,7 +98,7 @@ def table(path: Path | None = None) -> dict[str, Any] | None:
     try:
         found = path or next((c for c in _candidates() if c.exists()), None)
         if found is None:
-            raise FileNotFoundError("no fx_rates.json on either known path")
+            raise FileNotFoundError
         raw = json.loads(found.read_text())
         stated = {str(k).upper(): v for k, v in (raw.get("rates") or {}).items()}
         rates = {
@@ -142,6 +142,10 @@ def table(path: Path | None = None) -> dict[str, Any] | None:
             result = None
         else:
             result = {"base": base, "as_of": as_of, "rates": rates}
+    except FileNotFoundError:
+        # Absence is its own whole reason; a traceback here would only restate it.
+        _no_conversion("not found on any known path" if path is None else "not found")
+        result = None
     except (OSError, ValueError, TypeError, AttributeError) as exc:
         _no_conversion(f"unreadable ({type(exc).__name__}: {exc})", exc_info=True)
         result = None

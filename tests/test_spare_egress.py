@@ -11,6 +11,7 @@ daemon's commands install `WarpDaemon` only after stubbing them (`_stub`, `_rota
 `_flapping`); every other test runs on the in-memory daemon `tests/conftest.py` installs.
 """
 
+import asyncio
 import subprocess
 import threading
 import time
@@ -224,6 +225,25 @@ def test_a_daemon_that_restarts_but_does_not_come_back_re_arms_the_dial(monkeypa
     assert spare_egress.rotate() is False
     spare_egress.proxy_for("workday")
     assert daemon.calls.count("dial") == 2  # a later caller re-dials
+
+
+def test_a_route_lookup_that_outwaits_the_gate_is_counted(monkeypatch):
+    """A caller that gives up on a rotation still in progress rides the tunnel mid-restart; the
+    count is the only trace of it, on both route resolvers. (Not `_refuse_leaving_the_process`:
+    `asyncio.run` needs its own socketpair; the in-memory daemon is what keeps this local.)"""
+    monkeypatch.setattr(spare_egress, "_CONNECT_TIMEOUT", 0.01)
+    spare_egress.use_daemon(
+        spare_egress.InMemoryEgressDaemon("socks5h://127.0.0.1:40000")
+    )
+    spare_egress.mark_walled("workday", 429)
+    spare_egress._gate.clear()  # a rotation that never finishes
+    try:
+        spare_egress.proxy_for("workday")
+        asyncio.run(spare_egress.proxy_for_async("workday"))
+    finally:
+        spare_egress._gate.set()
+    assert spare_egress.rotations()["gate_timeout"] == 2
+    assert "gate_timeout 2" in "\n".join(spare_egress.report())
 
 
 # --- observability -------------------------------------------------------------------------------
@@ -721,6 +741,29 @@ def test_an_unreadable_trace_never_fails_the_rotation(monkeypatch):
     assert spare_egress.egress_ips()["unreadable"] == 1
 
 
+def test_a_trace_with_no_ip_names_its_body_once(monkeypatch, caplog):
+    """The exception branch already says why on its first occurrence; a body with no `ip=` was
+    tallied silently, leaving nothing to say what the endpoint answered instead."""
+    spare_egress.reset()
+    spare_egress._proxy = "socks5://127.0.0.1:40000"
+    spare_egress._resolved = True
+    _rotating(monkeypatch)
+    monkeypatch.setattr(spare_egress, "_ROTATION_COOLDOWN", 0.0)
+
+    class _Resp:
+        text = "<html>captive portal</html>"
+
+    monkeypatch.setattr(spare_egress._rq, "get", lambda *a, **kw: _Resp())
+    caplog.set_level("INFO", logger="headstart.spare_egress")
+
+    assert spare_egress.rotate() is True
+    assert spare_egress.rotate() is True
+    assert spare_egress.egress_ips()["unreadable"] == 2
+    lines = [r for r in caplog.records if "trace has no ip=" in r.getMessage()]
+    assert len(lines) == 1 and "captive portal" in lines[0].getMessage()
+    assert lines[0].levelname == "INFO"
+
+
 def test_a_direct_response_from_the_trace_is_not_recorded_as_an_egress_address(
     monkeypatch,
 ):
@@ -975,7 +1018,6 @@ def test_a_routine_rotation_is_not_an_annotation(monkeypatch, caplog):
     ] == []
     text = caplog.text
     assert "workday:acme/careers walled the current IP" in text
-    assert "rotating egress IP" in text
     assert "rotated to a fresh egress IP" in text
     assert "now egressing from 104.28.232.96" in text
 

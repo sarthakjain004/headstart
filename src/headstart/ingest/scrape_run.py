@@ -68,12 +68,16 @@ def _read_have_details(path: Path) -> set[str] | None:
 
     Absent, ``None`` — every detail is fetched, which is the pre-ADR-0048 behaviour and the right
     default whenever the planner could not publish the list (a first run, or an embed store that
-    has not merged yet). Never a partial read: a truncated file would silently re-fetch details
-    for the ids past the tear, which is only a cost, not a correctness problem."""
+    has not merged yet). Never a partial read: a truncated or corrupt file reads as absent too, so
+    every detail is re-fetched — only a cost, not a correctness problem, and not worth a shard."""
     if not path.exists():
         return None
-    with gzip.open(path, "rt", encoding="utf-8") as fh:
-        return {line.strip() for line in fh if line.strip()}
+    try:
+        with gzip.open(path, "rt", encoding="utf-8") as fh:
+            return {line.strip() for line in fh if line.strip()}
+    except (OSError, EOFError, UnicodeDecodeError) as exc:  # BadGzipFile is an OSError
+        _log.info(f"detail skip-list {path} unreadable ({exc!r}) — treated as absent")
+        return None
 
 
 _SLOW_BOARD_S = 120.0  # ~10x a p90 board; anything this slow is straggler material
@@ -133,6 +137,10 @@ class _Progress:
         self.boards_ok.append(key)
         if seconds >= _SLOW_BOARD_S:
             _log.info(f"slow board {key}: {jobs} jobs in {seconds:.0f}s")
+        elif not jobs:
+            # INFO, not DEBUG: a clean empty Board is the one outcome whose rows ADR-0083 evicts
+            # two scrapes later, and at DEBUG CI would carry no record of which Board it was.
+            _log.info(f"{key}: 0 jobs in {seconds:.1f}s (scraped clean, no postings)")
         else:
             _log.debug(f"{key}: {jobs} jobs in {seconds:.1f}s")
 
@@ -155,9 +163,15 @@ def _ats_mix(companies: list[CompanyRef], top: int = 4) -> str:
     return detail + (f", +{len(ranked) - top} more" if len(ranked) > top else "")
 
 
+class _BudgetKill(SystemExit):
+    """The budget's SIGTERM, told apart from any other exit: only this one is a kill. A shard
+    that crashed used to read as a clean finish in its own summary, because every `SystemExit`
+    counted as the budget and every other exception fell through to "finished"."""
+
+
 def _raise_on_term(signum: int, frame: object) -> None:
     """SIGTERM as an exception, so the shutdown path is ordinary Python and `finally` runs."""
-    raise SystemExit(f"signal {signum}")
+    raise _BudgetKill(f"signal {signum}")
 
 
 def _report(
@@ -169,104 +183,149 @@ def _report(
     killed: bool,
     shard: str | None = None,
     deferred: list[str] | None = None,
+    aborted: str | None = None,
 ) -> None:
-    """Everything this shard learned, on every exit path — clean finish or time budget.
+    """Everything this shard learned, on every exit path — clean finish, time budget, or an
+    abort (``aborted`` names the exception that ended it).
 
     Runs in a `finally`, so it must not raise: the shard's fragment is already on disk and
     reaching the join matters more than its telemetry.
     """
     deferred = deferred or []
-    spread = observability.percentiles(progress.seconds)
-    retries = http.retry_stats()
-    actual_min = elapsed / 60
-    if killed:
-        _log.warning(
-            f"time budget reached after {actual_min:.1f} min — banking a partial fragment; "
-            f"{progress.done}/{progress.assigned} boards done, {progress.undone} deferred "
-            "to the next run"
-        )
-        # Which Boards, not just how many. A count sends the next person to diff the assignment
-        # artifact against the fragment's cost rows to learn which Board ate the shard — that is
-        # how `workday:dollartree/dollartreeus` was found on 2026-08-18, and it should have been
-        # one log line. Capped: a shard killed early defers hundreds and the list is then noise.
-        if deferred:
-            _log.warning("deferred: " + log.named_sample(deferred))
-    if progress.errors:
-        _log.warning(
-            f"{len(progress.errors)} board errors: {observability.error_summary(progress.errors)}"
-        )
-    if retries:
-        _log.info(
-            "retries: "
-            + ", ".join(f"{why} {n}" for why, n in sorted(retries.items()))
-            + f" (total {sum(retries.values())})"
-        )
-    # Which ATSes cost this shard its Origin budget, and what the spare egress recovered for them
-    # (ADR-0063). Reported for the same reason the retry classes are: without it a shard that
-    # routed everything successfully and one whose proxy carried nothing log identically, and
-    # "did the fallback work?" is the only question this feature has.
-    egress = spare_egress.report()
-    # What each fan-out width actually bought. The ADR-0078 clamp already runs some Boards at the
-    # ceiling and some at 12, so this is the only place the two are comparable — and
-    # `stream_width`'s own docstring says 12 has never been re-measured.
-    widths = fanout_stats.report()
-    health = observability.ScrapeHealth.from_reports(
-        [
-            observability.ShardReport(
-                boards_ok=progress.boards_ok,
-                errors=progress.errors,
-                truncated=progress.truncated,
-                observations=progress.observations,
+    # Defaults the shard report falls back to if the telemetry below raises.
+    spread: dict[str, float] = {}
+    retries: dict[str, int] = {}
+    try:
+        spread = observability.percentiles(progress.seconds)
+        retries = http.retry_stats()
+        actual_min = elapsed / 60
+        # INFO, not WARNING: each of these three fires once per *shard*, so fifteen shards would
+        # spend up to 45 of the run's 50 annotations on them (ADR-0039). The join already warns
+        # run-level.
+        if killed:
+            _log.info(
+                f"time budget reached after {actual_min:.1f} min — banking a partial fragment; "
+                f"{progress.done}/{progress.assigned} boards done, {progress.undone} deferred "
+                "to the next run"
             )
-        ]
-    )
-    coverage = health.coverage_line()
-    losses = health.loss_lines()
-    # Both are routine per-run measurement, so both are info. They were warnings only to force a
-    # GitHub annotation, which is a quota and not a level: 10 per step, 50 per job, and fifteen
-    # shards each claiming several of them starve the errors the annotations exist for. The step
-    # summary below is the surface that was actually wanted — uncapped and on the run page.
-    for line in egress + widths:
-        _log.info(line)
-    if coverage:
-        _log.info("Board coverage by ATS: " + coverage)
-        _log.info(health.verdict_line())
-    for line in losses:
-        _log.info(line)
-    ratio = (
-        f" | predicted {predicted:.1f} min, actual/predicted {actual_min / predicted:.2f}x"
-        if predicted
-        else ""
-    )
-    _log.info(
-        f"done: {progress.jobs} jobs from {progress.done} boards in {elapsed:0.0f}s "
-        f"({len(progress.errors)} board errors) | board seconds {spread}{ratio}"
-    )
-    observability.summary(
-        f"Scrape shard {shard}" if shard else "Scrape",
-        [
-            (
-                f"- **{progress.jobs:,}** jobs from {progress.done}/{progress.assigned} "
-                f"boards in {actual_min:.1f} min{ratio}"
-            ),
-            f"- {len(progress.errors)} board errors"
-            + (
-                f": {observability.error_summary(progress.errors)}"
-                if progress.errors
-                else ""
-            ),
-            f"- **{len(deferred)} deferred** (time budget reached)"
-            if killed
-            else "- finished within the time budget",
-            f"- board seconds {spread}",
-        ]
-        + (
-            [f"- **{health.verdict_line()}**", f"- Board coverage by ATS: {coverage}"]
-            if coverage
-            else []
+            # Which Boards, not just how many. A count sends the next person to diff the
+            # assignment artifact against the fragment's cost rows to learn which Board ate the
+            # shard — that is how `workday:dollartree/dollartreeus` was found on 2026-08-18, and
+            # it should have been one log line. Capped: a shard killed early defers hundreds and
+            # the list is then noise.
+            if deferred:
+                _log.info("deferred: " + log.named_sample(deferred))
+        if progress.errors:
+            _log.info(
+                f"{len(progress.errors)} board errors: "
+                f"{observability.error_summary(progress.errors)}"
+            )
+        if retries:
+            _log.info(
+                "retries: "
+                + ", ".join(f"{why} {n}" for why, n in sorted(retries.items()))
+                + f" (total {sum(retries.values())})"
+            )
+        # Kept off the pinned `retries:` line: a request that gave up is not one more retry, and
+        # folding it in would inflate that line's total (scripts/runlog/fanout_retries.py).
+        exhausted = http.exhausted_stats()
+        if exhausted:
+            _log.info(
+                "retry budget exhausted: "
+                + ", ".join(f"{why} {n}" for why, n in sorted(exhausted.items()))
+            )
+        # Which Boards the retries above belong to: without it a shard whose retries are one
+        # Board's 5xx storm reads the same as a provider-wide 429 wave.
+        by_board = http.retry_stats_by_board()
+        if by_board:
+            _log.info(
+                "retry demand by board: "
+                + log.named_sample(
+                    [f"{b} {n}" for b, n in by_board.most_common()], cap=5
+                )
+            )
+        # Which ATSes cost this shard its Origin budget, and what the spare egress recovered for
+        # them (ADR-0063). Reported for the same reason the retry classes are: without it a shard
+        # that routed everything successfully and one whose proxy carried nothing log
+        # identically, and "did the fallback work?" is the only question this feature has.
+        egress = spare_egress.report()
+        # What each fan-out width actually bought. The ADR-0078 clamp already runs some Boards at
+        # the ceiling and some at 12, so this is the only place the two are comparable — and
+        # `stream_width`'s own docstring says 12 has never been re-measured.
+        widths = fanout_stats.report()
+        health = observability.ScrapeHealth.from_reports(
+            [
+                observability.ShardReport(
+                    shard=shard,
+                    boards_ok=progress.boards_ok,
+                    errors=progress.errors,
+                    truncated=progress.truncated,
+                    observations=progress.observations,
+                )
+            ],
+            # INFO here: every shard would warn for one systemic fault; the join warns once
+            quiet=True,
         )
-        + [f"- {line}" for line in losses + egress + widths],
-    )
+        coverage = health.coverage_line()
+        losses = health.loss_lines()
+        # Both are routine per-run measurement, so both are info. They were warnings only to force a
+        # GitHub annotation, which is a quota and not a level: 10 per step, 50 per job, and fifteen
+        # shards each claiming several of them starve the errors the annotations exist for. The step
+        # summary below is the surface that was actually wanted — uncapped and on the run page.
+        for line in egress + widths:
+            _log.info(line)
+        if coverage:
+            _log.info("Board coverage by ATS: " + coverage)
+            _log.info(health.verdict_line())
+        for line in losses:
+            _log.info(line)
+        ratio = (
+            f" | predicted {predicted:.1f} min, actual/predicted {actual_min / predicted:.2f}x"
+            if predicted
+            else ""
+        )
+        _log.info(
+            f"done: {progress.jobs} jobs from {progress.done} boards in {elapsed:0.0f}s "
+            f"({len(progress.errors)} board errors) | board seconds {spread}{ratio}"
+        )
+        observability.summary(
+            f"Scrape shard {shard}" if shard else "Scrape",
+            [
+                (
+                    f"- **{progress.jobs:,}** jobs from {progress.done}/{progress.assigned} "
+                    f"boards in {actual_min:.1f} min{ratio}"
+                ),
+                f"- {len(progress.errors)} board errors"
+                + (
+                    f": {observability.error_summary(progress.errors)}"
+                    if progress.errors
+                    else ""
+                ),
+                f"- **{len(deferred)} deferred** (time budget reached)"
+                if killed
+                else f"- **aborted** by {aborted}"
+                if aborted
+                else "- finished within the time budget",
+                f"- board seconds {spread}",
+            ]
+            + (
+                [
+                    f"- **{health.verdict_line()}**",
+                    f"- Board coverage by ATS: {coverage}",
+                ]
+                if coverage
+                else []
+            )
+            + [f"- {line}" for line in losses + egress + widths],
+        )
+    except Exception:  # noqa: BLE001 - telemetry must never cost the shard report
+        # INFO, not WARNING or FirstOnly: this is once per shard *process*, so either would
+        # annotate every shard for one bug. The traceback still names the line, and the shard
+        # report below must be written regardless — it is what the join reads.
+        _log.info(
+            f"shard {shard} telemetry failed; writing its shard report anyway",
+            exc_info=True,
+        )
     observability.write_shard(
         outdir,
         observability.ShardReport(
@@ -332,7 +391,15 @@ def main() -> int:
     if (
         args.assignment
     ):  # ADR-0026 scrape-shard mode — the planner already selected these boards
-        companies = _read_assignment(Path(args.assignment))
+        try:
+            companies = _read_assignment(Path(args.assignment))
+        except (
+            OSError,
+            ValueError,
+            KeyError,
+        ) as exc:  # JSONDecodeError is a ValueError
+            # Before the scrape's own try, so the shard-aborted line would never name it.
+            log.fail(_log, f"shard {shard}: unreadable {args.assignment}: {exc!r}")
         _log.info(f"harvest: {len(companies)} boards from {args.assignment} (shard)")
         have_details = _read_have_details(
             Path(args.assignment).parent / HELD_DETAILS_PATH.name
@@ -360,7 +427,16 @@ def main() -> int:
         if args.assignment
         else None
     )
+    if args.assignment and plan is None:
+        _log.info(
+            f"no prediction: {Path(args.assignment).parent / 'plan.json'} missing or unreadable"
+        )
     predicted = plan.predicted_minutes(shard) if plan else None
+    if plan and predicted is None:
+        _log.info(
+            f"no prediction for shard {shard} in {Path(args.assignment).parent / 'plan.json'} "
+            "(cold start or index out of range)"
+        )
     serial = plan.serial_minutes(shard) if plan else None
     _log.info(f"shard mix: {_ats_mix(companies)}")
     if predicted is not None:
@@ -376,6 +452,7 @@ def main() -> int:
 
     start = time.monotonic()
     killed = False
+    aborted = None
     try:
         scrape_all(
             companies,
@@ -385,8 +462,14 @@ def main() -> int:
             on_observation=progress.on_observation,
             have_details=have_details,
         )
-    except SystemExit:
+    except _BudgetKill:
         killed = True
+    except BaseException as exc:
+        # Fatal and once per shard, so an annotation is what it should cost. Re-raised: the step
+        # must go red, and the `finally` still banks what the shard did before it died.
+        aborted = f"{type(exc).__name__}: {exc}"
+        _log.error(f"shard {shard} aborted by {aborted}")
+        raise
     finally:
         # Assignment minus everything that reported back — the Boards this shard never finished,
         # in the order the planner listed them (priority-desc), so the first name is the most
@@ -403,6 +486,7 @@ def main() -> int:
             killed,
             shard,
             deferred,
+            aborted,
         )
     return _BUDGET_KILLED if killed else 0
 

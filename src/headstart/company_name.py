@@ -112,7 +112,10 @@ from collections import Counter
 from collections.abc import Iterable
 from pathlib import Path
 
+from headstart import log
 from headstart.board_identity import tenant
+
+_log = log.get(__name__)
 
 __all__ = [
     "agreed_name",
@@ -698,16 +701,21 @@ def curated_names() -> dict[str, str]:
     (ADR-0212).
     """
     here = Path(__file__).resolve()
-    for path in (
+    candidates = (
         here.parent / _CURATED_FILE,
         *(ancestor / "config" / _CURATED_FILE for ancestor in here.parents),
-    ):
+    )
+    for path in candidates:
         if path.is_file():
             with path.open(encoding="utf-8") as handle:
                 rows = csv.DictReader(
                     line for line in handle if not line.startswith("#")
                 )
                 return {row["board_key"].lower(): row["name"].strip() for row in rows}
+    # Once per process, by the cache above.
+    _log.info(
+        f"{_CURATED_FILE} not found on {len(candidates)} candidate paths — curated names off"
+    )
     return {}
 
 

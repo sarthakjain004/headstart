@@ -31,10 +31,13 @@ from pathlib import Path
 from statistics import median
 from typing import TYPE_CHECKING
 
+from headstart import log
 from headstart.board_identity import ats_of
 
 if TYPE_CHECKING:
     from headstart.scrapable_boards import ScrapableBoard
+
+_log = log.get(__name__)
 
 FIELDS = ("board", "seconds", "jobs", "updated_at")
 # The per-shard file a scrape writes (pipeline.JobWriter.record_cost) and read_shard_rows reads.
@@ -135,12 +138,17 @@ def load(path: str | Path) -> dict[str, BoardCost]:
         return {}
     rows: dict[str, BoardCost] = {}
     with path.open(newline="", encoding="utf-8") as fh:
-        for row in csv.DictReader(fh):
-            rows[row["board"]] = BoardCost(
-                seconds=float(row["seconds"]),
-                jobs=int(row["jobs"]) if row["jobs"] not in ("", None) else None,
-                updated_at=row["updated_at"],
-            )
+        reader = csv.DictReader(fh)
+        for row in reader:
+            try:
+                rows[row["board"]] = BoardCost(
+                    seconds=float(row["seconds"]),
+                    jobs=int(row["jobs"]) if row["jobs"] not in ("", None) else None,
+                    updated_at=row["updated_at"],
+                )
+            except (KeyError, TypeError, ValueError) as exc:
+                # A bare parse error names neither the ledger nor the row that broke it.
+                raise ValueError(f"{path}:{reader.line_num}: {exc!r}") from exc
     return rows
 
 
@@ -179,6 +187,7 @@ def read_shard_rows(path: str | Path) -> dict[str, ShardCost]:
     if not path.exists():
         return {}
     out: dict[str, ShardCost] = {}
+    skipped = 0
     with path.open(newline="", encoding="utf-8") as fh:
         reader = csv.DictReader(fh)
         # Whether the *file* has the column, not whether a row does. A row missing it means two
@@ -193,6 +202,7 @@ def read_shard_rows(path: str | Path) -> dict[str, ShardCost]:
                 flag = row.get("unfinished")
                 errored = row.get("errored")
                 if (has_flag and flag is None) or (has_errored and errored is None):
+                    skipped += 1
                     continue  # torn tail row
                 out[row["board"]] = ShardCost(
                     seconds=float(row["seconds"]),
@@ -201,7 +211,12 @@ def read_shard_rows(path: str | Path) -> dict[str, ShardCost]:
                     errored=bool(int(errored or 0)),
                 )
             except (TypeError, ValueError):
+                skipped += 1
                 continue  # half-written tail row
+    if (
+        skipped
+    ):  # expected only on a shard killed mid-write; anything else is a bad fragment
+        _log.info(f"{path}: skipped {skipped} torn/malformed cost row(s)")
     return out
 
 

@@ -101,5 +101,5 @@
 <script defer src="{{ url_for('static', filename='resume/resume_export.js') }}"></script>
 <script defer src="{{ url_for('static', filename='resume/resume_decorators.js') }}"></script>
 <script defer src="{{ url_for('static', filename='resume/resume_editor.js') }}"></script>
-{% if alerts_on %}<script src="https://accounts.google.com/gsi/client" async onload="initAlerts()"></script>{% endif %}
+{% if alerts_on %}<script src="https://accounts.google.com/gsi/client" async onload="initAlerts()" onerror="gsiFailed()"></script>{% endif %}
 </body></html>

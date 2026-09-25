@@ -52,6 +52,27 @@ def test_load_families_rejects_a_family_listed_twice(tmp_path):
         roles.load_families(path)
 
 
+def test_a_malformed_taxonomy_file_is_a_value_error_naming_it(tmp_path):
+    # `role_trends` catches ValueError into a named ERROR; a bare KeyError or decode error
+    # escaped it with neither the file nor the role.
+    broken = tmp_path / "families.json"
+    broken.write_text("{not json", encoding="utf-8")
+    with pytest.raises(ValueError, match="families.json: unreadable family list"):
+        roles.load_families(broken)
+    no_name = _families(tmp_path, [{"label": "QA"}])
+    with pytest.raises(ValueError, match="unreadable family list"):
+        roles.load_families(no_name)
+    watchlist = tmp_path / "watch.json"
+    watchlist.write_text(
+        json.dumps({"roles": [{"name": "rust", "parent": "qa-test"}]}), encoding="utf-8"
+    )
+    with pytest.raises(ValueError, match=r"watch.json: watch role 'rust' is missing"):
+        roles.load_watchlist(watchlist, {"qa-test"})
+    watchlist.write_text("[]", encoding="utf-8")
+    with pytest.raises(ValueError, match="unreadable watchlist"):
+        roles.load_watchlist(watchlist, {"qa-test"})
+
+
 def test_load_families_rejects_the_reserved_non_tech_name(tmp_path):
     path = _families(tmp_path, [{"name": roles.NON_TECH}])
     with pytest.raises(ValueError, match="reserved"):

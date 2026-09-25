@@ -199,6 +199,15 @@ def reclaim(
         min_age=timedelta(minutes=min_age_minutes),
     )
     dead_bytes = sum(b.size for b in dead)
+    # The age filter is silent inside `orphans`; say what it held back, or a blob that stays
+    # orphaned run after run is indistinguishable from one a writer is still pushing.
+    kept = live | {b.file_oid for b in dead}
+    young = [b for b in stored if b.file_oid not in kept]
+    if young:
+        _log.info(
+            f"{len(young)} orphaned object(s), {_gb(sum(b.size for b in young))} held back as "
+            f"younger than {min_age_minutes} min"
+        )
     if dead_bytes < min_reclaim_gb * 1e9:
         _log.info(
             f"{_gb(dead_bytes)} orphaned across {len(dead)} object(s) — under the "
@@ -234,7 +243,8 @@ def reclaim(
     # The whole point of this module: the old step announced a reclaim it never measured. But
     # the counter lags the delete (see VERIFY_TIMEOUT_S), so poll it rather than read once —
     # reading immediately is how this check would have cried wolf on every healthy run.
-    deadline = time.monotonic() + verify_timeout_s
+    started = time.monotonic()
+    deadline = started + verify_timeout_s
     while True:
         used_after, live_after, siblings_after = read_usage()
         if used_before is None or (used_after is not None and used_after < used_before):
@@ -242,6 +252,7 @@ def reclaim(
         if time.monotonic() >= deadline:
             break
         time.sleep(verify_interval_s)
+    _log.info(f"verified after {time.monotonic() - started:.0f}s")
 
     if live_after < live_bytes:
         _log.error(
@@ -311,4 +322,15 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    # The step is `continue-on-error`, so an unguarded exception would end in a green run with
+    # no annotation at all; one ERROR names it and says what is left undone. SystemExit and
+    # KeyboardInterrupt are not `Exception`, so they pass through untouched.
+    try:
+        raise SystemExit(main())
+    except Exception:  # noqa: BLE001 - the one catch-all per entry point, logged and re-exited
+        _log.error(
+            "reclaim_storage failed — orphaned blobs were not deleted this run; usedStorage "
+            "keeps growing until a later run reclaims",
+            exc_info=True,
+        )
+        raise SystemExit(1) from None

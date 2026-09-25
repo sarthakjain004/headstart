@@ -50,7 +50,7 @@ function chooseView(doc, selector) {
     tailorings.find(t => String(t.name || '').toLowerCase() === wanted.toLowerCase());
   if (!hit) {
     const known = tailorings.map(t => `${t.name} (${t.id})`).join(', ') || 'none';
-    throw new Error(`no version called "${selector}" in this résumé — it has: ${known}`);
+    throw refusal(`no version called "${selector}" in this résumé — it has: ${known}`);
   }
   return hit;
 }
@@ -167,11 +167,16 @@ function inspect(ctx, doc, selector) {
   };
 }
 
+/** An answer about the record, not a fault in this script — so no stack goes to stderr. */
+function refusal(message) {
+  return Object.assign(new Error(message), { refusal: true });
+}
+
 function main() {
   const raw = fs.readFileSync(0, 'utf8');
   const doc = JSON.parse(raw);
   if (!doc || typeof doc !== 'object' || !doc.root || !Array.isArray(doc.root.children)) {
-    throw new Error('this record is not a Résumé document — it has no node tree');
+    throw refusal('this record is not a Résumé document — it has no node tree');
   }
   /* A document with no `content` map is malformed rather than empty, but every read below
      would fault on it one field at a time. One default here keeps the failure legible. */
@@ -183,5 +188,11 @@ try {
   main();
 } catch (err) {
   process.stdout.write(JSON.stringify({ error: String((err && err.message) || err) }));
+  /* A fault's frames go to stderr for the server's log; the message line is left off because
+     it can quote the record (JSON.parse does). */
+  if (!(err && err.refusal)) {
+    const frames = String((err && err.stack) || '').split('\n').filter(l => /^\s+at /.test(l));
+    process.stderr.write(`${(err && err.name) || 'Error'}\n${frames.join('\n')}\n`);
+  }
   process.exit(1);
 }

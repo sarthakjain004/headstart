@@ -21,6 +21,10 @@ import json
 import re
 from pathlib import Path
 
+from headstart import log
+
+_log = log.get(__name__)
+
 _INTERN = re.compile(r"\bintern(ship)?\b|\btrainee\b", re.IGNORECASE)
 
 NON_TECH = "non-tech"  # the reserved family: counted as a diagnostic, never charted
@@ -31,8 +35,13 @@ def load_families(path: Path) -> list[str]:
 
     A duplicate would merge two series under one name, and a family called ``non-tech`` would
     collide with the diagnostic series in the ledger, so either is refused."""
-    spec = json.loads(path.read_text(encoding="utf-8"))
-    names = [family["name"] for family in spec["families"]]
+    # The ValueError `role_trends` catches, naming the file: a bare KeyError or decode error
+    # reached its log with neither.
+    try:
+        spec = json.loads(path.read_text(encoding="utf-8"))
+        names = [family["name"] for family in spec["families"]]
+    except (ValueError, KeyError, TypeError) as exc:
+        raise ValueError(f"{path}: unreadable family list ({exc!r})") from exc
     if len(set(names)) != len(names):
         raise ValueError(f"{path}: a family is listed twice")
     if NON_TECH in names:
@@ -105,26 +114,34 @@ def load_watchlist(path: Path, family_names: set[str]) -> list[WatchRole]:
     Missing file is an empty list, not an error: the watchlist is optional by design.
     """
     if not path.exists():
+        # Optional, but its absence removes every `watch:*` series from the trends ledger from
+        # this tick on — which would otherwise read as those roles leaving the market.
+        _log.info(f"watchlist {path} absent — no watch roles this run")
         return []
-    spec = json.loads(path.read_text(encoding="utf-8"))
+    try:
+        entries = json.loads(path.read_text(encoding="utf-8"))["roles"]
+    except (ValueError, KeyError, TypeError) as exc:
+        raise ValueError(f"{path}: unreadable watchlist ({exc!r})") from exc
     watched: list[WatchRole] = []
     seen: set[str] = set()
-    for entry in spec["roles"]:
-        name = entry["name"]
+    for i, entry in enumerate(entries):
+        try:
+            name, parent, patterns = entry["name"], entry["parent"], entry["match"]
+        except (KeyError, TypeError) as exc:
+            role = entry.get("name", f"#{i}") if isinstance(entry, dict) else f"#{i}"
+            raise ValueError(
+                f"{path}: watch role '{role}' is missing a field ({exc!r})"
+            ) from exc
         if name in seen:
             raise ValueError(f"{path}: watch role '{name}' defined twice")
         seen.add(name)
-        if entry["parent"] not in family_names:
+        if parent not in family_names:
             raise ValueError(
-                f"{path}: watch role '{name}' names parent '{entry['parent']}', which is not "
+                f"{path}: watch role '{name}' names parent '{parent}', which is not "
                 "a family in role_families.json — the drill it should appear under does not exist"
             )
         try:
-            watched.append(
-                WatchRole(
-                    name, entry.get("label", name), entry["parent"], entry["match"]
-                )
-            )
+            watched.append(WatchRole(name, entry.get("label", name), parent, patterns))
         except re.error as exc:
             raise ValueError(
                 f"{path}: watch role '{name}' has a bad pattern: {exc}"

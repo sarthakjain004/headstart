@@ -92,12 +92,17 @@ def load(path: str | Path) -> dict[str, BoardPriority]:
         return {}
     rows: dict[str, BoardPriority] = {}
     with path.open(newline="", encoding="utf-8") as fh:
-        for row in csv.DictReader(fh):
-            rows[row["board"]] = BoardPriority(
-                score=float(row["score"]),
-                last_tech_jobs=int(row["last_tech_jobs"]),
-                updated_at=row["updated_at"],
-            )
+        reader = csv.DictReader(fh)
+        for row in reader:
+            try:
+                rows[row["board"]] = BoardPriority(
+                    score=float(row["score"]),
+                    last_tech_jobs=int(row["last_tech_jobs"]),
+                    updated_at=row["updated_at"],
+                )
+            except (KeyError, TypeError, ValueError) as exc:
+                # A bare parse error names neither the ledger nor the row that broke it.
+                raise ValueError(f"{path}:{reader.line_num}: {exc!r}") from exc
     return rows
 
 

@@ -82,7 +82,13 @@ from urllib.parse import unquote
 from headstart import company_name, http, log
 from headstart.fetcher import Fetcher
 from headstart.models import Job, html_to_text, is_remote, requisition_of
-from headstart.scrapers.base import USER_AGENT, BaseScraper, DetailLost, DetailRequest
+from headstart.scrapers.base import (
+    USER_AGENT,
+    BaseScraper,
+    DetailLost,
+    DetailRequest,
+    classify_exception,
+)
 from headstart.scrapers.job_posting_jsonld import find_job_posting, job_posting_fields
 
 _log = log.get(__name__)
@@ -161,6 +167,9 @@ class SuccessFactorsScraper(BaseScraper):
     """SuccessFactors RMK scraper — ``slug`` is the board's vanity host."""
 
     ats = "successfactors"
+    #: Why the last :meth:`_sitemal_fields` came back empty, for the rescue line in
+    #: :meth:`fetch_raw`.
+    _sitemal_failure: str | None = None
     # scraper passes through RMK sitemap URLs: /job/{slug}/{id}/ on per-tenant vanity hosts
     # (jobs.bt.com, careers.capgemini.com, jobs.turbo.co.th — no common host to anchor on)
     url_shape = r"https://[^/]+/job/.+/\d+/?"
@@ -205,7 +214,7 @@ class SuccessFactorsScraper(BaseScraper):
         the same reason :meth:`_search_job_urls` reports — ``fetch_raw`` decides which surface is
         the Board's answer (ADR-0053)."""
         # Through the retry seam, not the raw session: a 429/5xx here used to settle on the
-        # first try, and `_fetch_sitemap` maps a non-200 to ("other", "", None) — so a throttled
+        # first try, and `_fetch_sitemap` maps a non-200 to an empty text — so a throttled
         # fetch read as an empty Board and `index sync` evicted its rows (ADR-0047, ADR-0053).
         response = self._fetch(
             "GET",
@@ -232,7 +241,9 @@ class SuccessFactorsScraper(BaseScraper):
         finally:
             response.close()
         if response.status_code != 200:
-            return "other", "", None
+            # Neither urlset nor rss, so it lists nothing; the status is the kind so that
+            # `fetch_raw`'s surface line can say why.
+            return f"HTTP {response.status_code}", "", None
         text = b"".join(chunks).decode("utf-8", "replace")
         return (
             kind or _sitemap_kind(text),
@@ -373,7 +384,8 @@ class SuccessFactorsScraper(BaseScraper):
         finally:
             response.close()
         if response.status_code != 200:
-            return [], {}, None
+            # Reported for the surface line only: with nothing listed, no truncation is recorded.
+            return [], {}, f"HTTP {response.status_code}"
         text = b"".join(chunks).decode("utf-8", "replace")
         return (
             _job_urls_from(text, self.slug),
@@ -395,10 +407,12 @@ class SuccessFactorsScraper(BaseScraper):
                 timeout=_RSS_TIMEOUT,
                 stream=True,
             )
-        except http.RequestsError:
+        except http.RequestsError as exc:
+            self._sitemal_failure = classify_exception(exc)
             return {}
         chunks: list[bytes] = []
         size = 0
+        aborted = None
         try:
             for chunk in response.iter_content():
                 chunks.append(chunk)
@@ -406,12 +420,16 @@ class SuccessFactorsScraper(BaseScraper):
                 if size >= _RSS_CAP:
                     break
         except http.RequestsError:
-            pass  # keep whatever arrived — partial coverage still saves detail fetches
+            # keep whatever arrived — partial coverage still saves detail fetches — but say so
+            aborted = f"aborted {size:,} bytes in"
         finally:
             response.close()
         if response.status_code != 200:
+            self._sitemal_failure = f"HTTP {response.status_code}"
             return {}
-        return _sitemal_items(b"".join(chunks).decode("utf-8", "replace"))
+        items = _sitemal_items(b"".join(chunks).decode("utf-8", "replace"))
+        self._sitemal_failure = aborted or (None if items else "no readable items")
+        return items
 
     def fetch_raw(self) -> Any:
         # Each of the three surfaces hands back *why* its list came up short, and the truncation
@@ -439,6 +457,7 @@ class SuccessFactorsScraper(BaseScraper):
         # surface is unknown; only `jobs.tetrapak.com` (module docstring's own `rss-stream`
         # example) was directly confirmed live to benefit — see :meth:`_rss_job_urls`.
         job_functions: dict[str, str] = {}
+        search_cut_short = rss_cut_short = None
         if listed and sitemap_cut_short:
             self.mark_truncated(sitemap_cut_short)
         if not listed:
@@ -470,10 +489,19 @@ class SuccessFactorsScraper(BaseScraper):
         # tenant's cost is decided here and nowhere else — the RSS stream is the patient last
         # resort — so without this line a board that takes 37 minutes for 7 jobs
         # (cbscorporation.jobs, 2026-08-12) leaves no evidence of why.
-        _log.info(
-            f"{self.slug}: {surface or 'nothing'} via sitemap {kind or 'unknown'} "
-            f"-> {len(listed)} job pages to fetch"
-        )
+        # Not on the common case — the urlset answering with postings — which is every Board,
+        # every run, and says nothing the cost ledger does not.
+        if surface != "sitemap-urlset":
+            fallbacks = (
+                f", search {search_cut_short or 'empty'}, "
+                f"rss {(rss_cut_short or 'empty') if kind == 'rss' else 'n/a'}"
+                if not listed
+                else ""
+            )
+            _log.info(
+                f"{self.board_key()}: {surface or 'nothing'} via sitemap "
+                f"{kind or 'unknown'}{fallbacks} -> {len(listed)} job pages to fetch"
+            )
         # The tech gate (ADR-0017), read off the URL's own slug plus — on `rss-stream` boards
         # only — the feed's own department, rather than the listing generally: unlike
         # eightfold's PCSX surface, the sitemap-urlset and search-pages surfaces carry no title
@@ -514,7 +542,8 @@ class SuccessFactorsScraper(BaseScraper):
         ]
         if len(open_listed) < len(tech_listed):
             _log.info(
-                f"{self.slug}: {len(tech_listed) - len(open_listed)} of {len(tech_listed)} "
+                f"{self.board_key()}: {len(tech_listed) - len(open_listed)} of "
+                f"{len(tech_listed)} "
                 "job pages say the posting is not available — dropped as closed"
             )
         # /sitemal.xml (module docstring): the fallback for a page that yielded nothing, fetched
@@ -528,8 +557,15 @@ class SuccessFactorsScraper(BaseScraper):
         lost = sum(1 for page in fields if page is None)
         if lost < unread:
             _log.info(
-                f"{self.slug}: sitemal.xml filled {unread - lost} of {unread} unreadable "
-                "job pages"
+                f"{self.board_key()}: sitemal.xml filled {unread - lost} of {unread} "
+                "unreadable job pages"
+                + (f" (feed {self._sitemal_failure})" if self._sitemal_failure else "")
+            )
+        elif unread:
+            _log.info(
+                f"{self.board_key()}: sitemal.xml rescue unavailable "
+                f"({self._sitemal_failure or 'none of the unread ids listed'}) — {unread} "
+                "pages stay unread"
             )
         if lost:
             # Every field comes from the job page (or its fallback), so `parse` drops a Job

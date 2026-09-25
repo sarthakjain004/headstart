@@ -100,15 +100,14 @@ ADR-0023's duplicate-prune case, so nothing is done about it here beyond saying 
 
 from __future__ import annotations
 
+import math
 import re
 from typing import Any
 
-from headstart import http, log
+from headstart import http
 from headstart.models import Job, html_to_text, is_remote
 from headstart.scrapers.base import USER_AGENT, BaseScraper, DetailLost, DetailRequest
 from headstart.scrapers.job_posting_jsonld import find_job_posting, hiring_organization
-
-_log = log.get(__name__)
 
 #: Detail pages are 40-110 KB each and every one hits the same origin, so the fan-out stays
 #: narrow. Also the async stream width (``BaseScraper.fan_out_async``).
@@ -118,6 +117,8 @@ _DETAIL_WORKERS = 6
 #: so this is ~3.5x headroom; it exists so a ``next`` link that ever pointed at itself could not
 #: spin forever, not as a cap anyone is expected to reach.
 _MAX_PAGES = 200
+#: Postings per ``/search`` page (module docstring), so a stated total implies a page count.
+_PAGE_SIZE = 50
 
 _JOB_ID = r"[A-Za-z0-9]+"
 #: The ``jv-pagination-next`` anchor, which is how the walk advances. Attribute order varies by
@@ -297,6 +298,24 @@ class JobviteScraper(BaseScraper):
             # `new == 0` also stops the walk: a next link that returned nothing new is either the
             # end or a loop, and either way there is nothing further to read.
             if not match or not new:
+                if stated and not ids:
+                    self.note_unreadable_board(
+                        f"job links matching /{self.slug}/job/{{id}}",
+                        f"none on a page whose counter states {stated}",
+                    )
+                elif match:
+                    self._log.info(
+                        f"{self.board_key()}: next link offered on page {pages} but it added "
+                        f"no ids — walk stopped at {len(ids)} of {stated}"
+                    )
+                elif stated and pages < math.ceil(stated / _PAGE_SIZE):
+                    # A template change that stops `_NEXT` matching would otherwise serve page 0
+                    # alone as the whole Board, with nothing in the log to say so.
+                    self._log.info(
+                        f"{self.board_key()}: walk ended with no next link on page {pages} of "
+                        f"the {math.ceil(stated / _PAGE_SIZE)} the counter implies — {len(ids)} of "
+                        f"{stated} ids read"
+                    )
                 return ids
             href = match.group(1)
             url = (
@@ -305,11 +324,8 @@ class JobviteScraper(BaseScraper):
                 else f"https://jobs.jobvite.com{href}"
             )
         self.mark_truncated(
-            f"stopped at the {_MAX_PAGES}-page cap with a next link still offered"
-        )
-        _log.info(
-            f"{self.board_key()}: hit the {_MAX_PAGES}-page walk cap after {len(ids)} postings "
-            f"(the board's own counter stated {stated})"
+            f"stopped at the {_MAX_PAGES}-page cap after {len(ids)} postings with a next link "
+            f"still offered (the board's own counter stated {stated})"
         )
         return ids
 

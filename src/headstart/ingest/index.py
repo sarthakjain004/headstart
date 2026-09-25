@@ -459,8 +459,17 @@ def _take_upgrades(table: Any, path: Path) -> dict[str, str | None]:
     (ADR-0050). Ids absent from the table (a first run, or a Job the prune already took) simply
     return no stamp and are stamped with the run's time like any other add.
     """
+    # Said when missing: `read_id_list` reads that as empty, and `embed_plan` writes the file on
+    # every run, even empty — so its absence is lost state, not "nothing to upgrade".
+    if not path.exists():
+        _log.warning(
+            f"upgrade list missing at {path} — embed_plan always writes it; any Job re-embedded "
+            "this run keeps its old row and vector in the table"
+        )
+        return {}
     ids = read_id_list(path)
     if not ids:
+        _log.info(f"upgrades: none listed in {path}")
         return {}
     # Safe to name the column: sync adds it to a pre-ADR-0031 table before reaching here.
     rows = (
@@ -472,7 +481,10 @@ def _take_upgrades(table: Any, path: Path) -> dict[str, str | None]:
     taken = {r["id"]: r.get(_FIRST_SEEN_FIELD.name) for r in rows}
     apply_sync(table, [], list(taken))
     kept = sum(1 for v in taken.values() if v)
-    _log.info(f"upgrades: replacing {len(taken)} rows, {kept} keeping first_seen")
+    _log.info(
+        f"upgrades: {len(ids)} listed, replacing {len(taken)} rows, "
+        f"{kept} keeping first_seen"
+    )
     return taken
 
 
@@ -527,9 +539,11 @@ def _refresh_metadata(
     # references rather than copies: still well under the vector case, and bounded by the table.
     stale: dict[str, _Held] = {}  # its meta moved
     current: dict[str, _Held] = {}  # its meta matches; only its text can make it stale
+    storeless = 0
     for row in indexed:
         job_id = row["id"]
         index = row_of.get(job_id)
+        storeless += index is None
         if index is None or job_id in just_added:
             continue
         stored = _served_meta(metas[index])
@@ -553,6 +567,10 @@ def _refresh_metadata(
             edited[job_id] = kept
     filled = sum(1 for kept in edited.values() if kept.description is None)
     rewrite = [*stale.values(), *edited.values()]
+    if storeless:
+        _log.info(
+            f"metadata refresh: {storeless} served row(s) have no store row — left as-is"
+        )
 
     if not rewrite:
         _log.info("metadata refresh: table already matches the store")
@@ -693,6 +711,20 @@ def sync(args: argparse.Namespace) -> int:
     # truncation that reports nothing at all is caught only by the second — and only while it
     # stays transient.
     unauthoritative = read_unauthoritative_boards(args.unauthoritative_boards)
+    # Said either way: an empty mapping reads the same whether none was short or the file never
+    # arrived, and only the second leaves every Board unprotected. Missing is a WARNING because
+    # scrape_join writes the file on every run, even empty — so its absence is lost state, the
+    # same way read_scraped_boards treats its own sibling file.
+    if Path(args.unauthoritative_boards).exists():
+        _log.info(
+            f"scope: {len(unauthoritative)} Unauthoritative Board(s) read from "
+            f"{args.unauthoritative_boards}"
+        )
+    else:
+        _log.warning(
+            f"unauthoritative-Board record missing at {args.unauthoritative_boards} — "
+            "scrape_join always writes it; no Board is protected from eviction this run"
+        )
     excluded = {b for b in boards if lower_key(b) in unauthoritative}
     if excluded:
         boards -= excluded
@@ -855,6 +887,17 @@ def sync(args: argparse.Namespace) -> int:
     # start: one run of retained-but-closed rows is the price of never needing a migration, and
     # the run after it evicts normally.
     was_unconfirmed = read_id_list(Path(args.unconfirmed))
+    # Said either way, like the Unauthoritative-Board record above: a missing file and an empty
+    # one read the same, and only the first resets every streak.
+    if Path(args.unconfirmed).exists():
+        _log.info(
+            f"grace set: {len(was_unconfirmed)} id(s) read from {args.unconfirmed}"
+        )
+    else:
+        _log.warning(
+            f"grace set missing at {args.unconfirmed} — cold start: sync evicts nothing this run "
+            "and every Unconfirmed streak restarts (ADR-0083); expected only on a first run"
+        )
     # One row per requisition across a Workday tenant's sites (ADR-0187) and a Taleo or ADP
     # Tenant's Boards (ADR-0223), and per posting across an Eightfold site and its backing Board
     # (ADR-0210), decided here as well as in prune so a copy prune took out is never added back.
@@ -1018,7 +1061,12 @@ def sync(args: argparse.Namespace) -> int:
         csv.Error,
         zlib.error,
     ) as exc:
-        _log.warning("freshness telemetry unavailable (%s)", type(exc).__name__)
+        _log.warning(
+            "freshness telemetry unavailable (%s: %s) — board_freshness not updated this run",
+            type(exc).__name__,
+            exc,
+            exc_info=True,
+        )
     write_base(args.db, final, "sync")
     _log.info(f"done: table '{PROD_TABLE}' now holds {final} rows at {args.db}")
     observability.summary(
@@ -1048,6 +1096,20 @@ def prune(args: argparse.Namespace) -> int:
         board_failures.key_for(b) for b in board_failures.reconfirmed(failures)
     }
     evicted = {board for board in keep if board_failures.key_for(board) in gone_keys}
+    # Said every run, apart from the pinned keep-set line: without it a missing ledger and a run
+    # where no Board was re-confirmed gone read the same.
+    if args.board_failures and Path(args.board_failures).exists():
+        _log.info(
+            f"board failures: {len(failures)} entries from {args.board_failures}, "
+            f"{len(gone_keys)} re-confirmed gone"
+        )
+    else:
+        where = (
+            f"{args.board_failures} missing"
+            if args.board_failures
+            else "no ledger given"
+        )
+        _log.info(f"board failures: {where} — no parole evictions this run")
     if evicted:
         keep -= evicted
         _log.info(
@@ -1117,12 +1179,20 @@ def prune(args: argparse.Namespace) -> int:
     if args.dedup_evictions:
         # After the delete, so the ledger never records a removal the table did not make.
         live = boards_by_canon(keep)
-        dedup_evictions.append(
+        dedup = {**rules, **alias_rules(off_board, live, aliased_boards(args.ledger))}
+        appended = dedup_evictions.append(
             args.dedup_evictions,
             run_ts().isoformat(timespec="seconds"),
-            {**rules, **alias_rules(off_board, live, aliased_boards(args.ledger))},
+            dedup,
             lambda job_id: resolve_board(job_id, live),
         )
+        if dedup:
+            by_rule = Counter(dedup.values()).most_common()
+            _log.info(
+                "dedup rules: "
+                + ", ".join(f"{rule} {n}" for rule, n in by_rule)
+                + f"; appended {appended} ledger row(s) to {args.dedup_evictions}"
+            )
     final = table.count_rows()
     write_base(args.db, final, "prune")
     _log.info(f"done: pruned {len(evict)} rows; table '{PROD_TABLE}' now holds {final}")
@@ -1234,6 +1304,10 @@ def compact(args: argparse.Namespace) -> int:
     # the next pipeline run would read its correct work as an unexplained move. The rmtree above
     # destroyed the previous record, so this must run on every path that reaches here: leaving
     # the uploaded directory with no record at all fails open, and silently.
+    if served is None:
+        _log.warning(
+            f"compact: no '{PROD_TABLE}' table among {names} — recording a base of 0 rows"
+        )
     write_base(db_path, served if served is not None else 0, "compact")
     _log.info(f"compacted: rebuilt {len(names)} table(s) fresh at {db_path}")
     return 0

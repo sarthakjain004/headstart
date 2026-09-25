@@ -1,5 +1,7 @@
 import random
 
+import pytest
+
 from headstart.board_priority import (
     TAIL_FRAC,
     BoardPriority,
@@ -249,6 +251,16 @@ def test_key_for_keeps_the_casing_its_scraper_builds():
     board = ScrapableBoard("workday", "https://Acme.wd1.myworkdayjobs.com/External")
     assert key_for(board) == "workday:Acme/External"
     assert key_for("workday:Acme/External") == "workday:Acme/External"
+
+
+def test_a_malformed_row_names_its_ledger_and_line(tmp_path):
+    path = tmp_path / "board_priority.csv"
+    path.write_text(
+        "board,score,last_tech_jobs,updated_at\nx:a,1.0,2,2026-09-01\nx:b,1.0,,2026-09-01\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match=r"board_priority\.csv:3: "):
+        load(path)
 
 
 def test_rotation_tail_reads_the_boards_looked_at_longest_ago_first():

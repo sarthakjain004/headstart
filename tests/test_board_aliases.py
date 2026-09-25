@@ -176,3 +176,19 @@ def test_bury_contained_compares_boards_only_within_their_group():
         client.__getitem__,
     )
     assert buried == {"gnc": "generalnutritioncenter"}
+
+
+def test_a_row_missing_its_canonical_is_skipped_and_counted(tmp_path, caplog):
+    """A skipped row un-buries its duplicate, so the skip has to say so."""
+    path = tmp_path / "x.csv"
+    path.write_text(
+        "ats,duplicate,canonical,signal,resolved_to,checked_at\n"
+        "x,Dup,Keep,redirect,,2026-09-01\n"
+        "x,orphan,,redirect,,2026-09-01\n",
+        encoding="utf-8",
+    )
+    with caplog.at_level("INFO", logger="headstart.board_aliases"):
+        assert board_aliases.load(path) == {"dup": "Keep"}
+    assert caplog.messages == [
+        f"{path}: skipped 1 row(s) missing duplicate or canonical"
+    ]

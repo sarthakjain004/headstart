@@ -307,6 +307,7 @@ def main() -> int:
     args = ap.parse_args()
 
     companies = scrapable_boards.load(Path(args.ledger), min_jobs=0)
+    scrapable = len(companies)
     failure_rows = board_failures.load(args.failures)
     # Boards whose gone-verdict has expired come back for one run to re-earn it (ADR-0161).
     # Without this, quarantine is a one-way door: a Board removed from the slice never scrapes,
@@ -318,26 +319,26 @@ def main() -> int:
         board_failures.key_for(b)
         for b in board_failures.quarantined(failure_rows) - on_parole
     }
-    if quarantine or on_parole:
-        # Boards confirmed gone (404/410) on QUARANTINE_AT consecutive scrapes — skip them here.
-        # The liveness ledger stays the probe-owned truth, and `index prune` evicts only a
-        # verdict parole re-confirmed, never a first-time quarantine (ADR-0206).
-        # Compared in the ledger's own key form (`board_failures.key_for`, lowercased): the
-        # ledger's casing and `board_key()`'s need not agree (ADR-0049).
-        before = len(companies)
-        companies = [
-            c for c in companies if board_failures.key_for(c) not in quarantine
-        ]
-        # Two things make this line honest. The parole count is stated even when it is zero, so
-        # a consumer never has to treat the clause as optional going forward. And the ledger's
-        # own quarantined total is named, because the `of N` denominator no longer *is* that
-        # total — it is the total minus parole, and a figure that quietly changed population is
-        # how a number misleads (CLAUDE.md, §Counting Boards).
-        _log.info(
-            f"quarantine: skipped {before - len(companies)} of {len(quarantine)} "
-            f"confirmed-gone board(s); {len(on_parole)} re-admitted on parole, of "
-            f"{len(quarantine) + len(on_parole)} quarantined"
-        )
+    # Boards confirmed gone (404/410) on QUARANTINE_AT consecutive scrapes — skip them here.
+    # The liveness ledger stays the probe-owned truth, and `index prune` evicts only a
+    # verdict parole re-confirmed, never a first-time quarantine (ADR-0206).
+    # Compared in the ledger's own key form (`board_failures.key_for`, lowercased): the
+    # ledger's casing and `board_key()`'s need not agree (ADR-0049).
+    before = len(companies)
+    companies = [c for c in companies if board_failures.key_for(c) not in quarantine]
+    quarantined_out = before - len(companies)
+    # Logged even at zero: a lost failures ledger reads as an empty one and silently returns every
+    # quarantined Board to the slice, and a zero here is the only sign of it in the plan's log.
+    # Two things make this line honest. The parole count is stated even when it is zero, so
+    # a consumer never has to treat the clause as optional going forward. And the ledger's
+    # own quarantined total is named, because the `of N` denominator no longer *is* that
+    # total — it is the total minus parole, and a figure that quietly changed population is
+    # how a number misleads (CLAUDE.md, §Counting Boards).
+    _log.info(
+        f"quarantine: skipped {quarantined_out} of {len(quarantine)} "
+        f"confirmed-gone board(s); {len(on_parole)} re-admitted on parole, of "
+        f"{len(quarantine) + len(on_parole)} quarantined"
+    )
     scores = load_scores(Path(args.priority))
     # Loaded before the slice is picked, not after: the value gate (ADR-0064) needs measured
     # seconds to decide what is worth a shard's makespan, and a Board dropped after selection
@@ -421,7 +422,12 @@ def main() -> int:
         _write_plan(
             out_dir, shard_plan.ScrapePlan(shards=[], count=0, per_shard_boards=[])
         )
-        _log.info("no active boards — emitted empty plan")
+        # A warning, not the INFO it was: the whole run scrapes nothing, and the causes are
+        # already counted here, so the one line can say which of them emptied the slice.
+        _log.warning(
+            f"empty slice: {scrapable} Scrapable Boards, {quarantined_out} quarantined, "
+            f"{len(gated)} gated — no shards planned"
+        )
         return 0
 
     # Pack on measured seconds when the ledger has them (ADR-0027); fall back to the ADR-0026
@@ -492,6 +498,14 @@ def main() -> int:
     # that doesn't hold it (ADR-0054).
     per_shard_serial_minutes = [loads[k] / 60 for k in range(m)] if measured else None
     speedup = shard_speedup.load(args.speedup_ledger)
+    # A missing or corrupt ledger reads as 1.0x, which over-predicts every shard and can fire the
+    # budget warning below falsely — so say which one this plan divided by.
+    _log.info(
+        f"speedup: {speedup.ratio:.2f}x ({speedup.shards} shards, updated {speedup.updated_at})"
+        if speedup.shards
+        else f"speedup: cold start {speedup.ratio:.2f}x (ledger absent or unreadable at "
+        f"{args.speedup_ledger})"
+    )
     per_shard_minutes = (
         [
             shard_speedup.predict_minutes(
@@ -567,9 +581,11 @@ def main() -> int:
             # The packing cannot go below its slowest single item, so when one board outweighs
             # an even share the shard count is no longer the lever — that board is. Saying so
             # here stops the next person tuning the packer at a problem it cannot reach.
+            # The Board named last: `fanout_plan.FLOOR_WARN` parses the line's start.
             _log.warning(
                 f"one board costs {floor:.1f} min, above the {even_wall:.1f} min even share — "
-                "the makespan floor is this board, not the packing"
+                "the makespan floor is this board, not the packing: "
+                + keys[costs.index(max(costs))]
             )
         if makespan > _BUDGET_MIN:
             # Worth an annotation: the planner is packing shards it expects to exceed the CI

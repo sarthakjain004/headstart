@@ -15,7 +15,13 @@ from typing import Any
 
 from headstart import salary
 from headstart.models import Job, html_to_text, is_remote
-from headstart.scrapers.base import USER_AGENT, BaseScraper, DetailLost, DetailRequest
+from headstart.scrapers.base import (
+    USER_AGENT,
+    BaseScraper,
+    DetailLost,
+    DetailRequest,
+    DetailWithoutDescription,
+)
 
 _API = "https://api.rippling.com/platform/api/ats/v1/board"
 _DETAIL_WORKERS = 8
@@ -112,6 +118,10 @@ class RipplingScraper(BaseScraper):
             if isinstance(data, list)
             else (data.get("items") or data.get("jobs") or [])
         )
+        if isinstance(data, dict) and "items" not in data and "jobs" not in data:
+            self.note_unreadable_board(
+                "a list, or an `items`/`jobs` key", f"keys {sorted(data)[:5]}"
+            )
         # The tech gate (ADR-0017): `parse` reads `name` and `department` off this listing item,
         # falling back to the detail only for a department the listing omitted. The listing
         # item's `department` carries `{id, label}` (measured live 2026-09-22, 76/76 postings
@@ -152,10 +162,15 @@ class RipplingScraper(BaseScraper):
             headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
         )
 
-    def read_detail(self, posting: dict, response: Any) -> dict:
+    def read_detail(
+        self, posting: dict, response: Any
+    ) -> dict | DetailWithoutDescription:
         record = response.json()
         if not record:
             raise DetailLost("empty record on a 200")
+        if not _description(record):
+            # Kept for the department `parse` falls back to; a gap for the description.
+            return DetailWithoutDescription(record, "200 without description")
         return record
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:

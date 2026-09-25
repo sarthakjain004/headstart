@@ -200,7 +200,12 @@ def previous_names(path: Path) -> dict[str, str]:
     """
     try:
         entries = json.loads(path.read_text(encoding="utf-8"))["companies"]
-    except (OSError, ValueError, KeyError, TypeError):
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        if path.exists():
+            _log.info(
+                f"previous company directory {path} unreadable ({type(exc).__name__}) — "
+                "no names carried forward"
+            )
         return {}
     return {board: entry["name"] for entry in entries for board in entry["boards"]}
 
@@ -229,8 +234,9 @@ def main() -> int:
     names = board_names(args.db, PROD_TABLE)
     if not names:
         # Every Board would fall back to its slug and every company would be named worse for
-        # a run. Keeping the previous directory is better.
-        _log.warning("keeping the previous company directory unchanged")
+        # a run. Keeping the previous directory is better. INFO: `board_names` has already
+        # warned why, and this is its consequence, not a second fault.
+        _log.info("keeping the previous company directory unchanged")
         return 0
     # The table wins wherever it still names a Board; the previous file only fills the gaps.
     entries = companies(boards, {**previous_names(args.out), **names})
@@ -240,12 +246,24 @@ def main() -> int:
         encoding="utf-8",
     )
     multi = sum(1 for c in entries if len(c["boards"]) > 1)
+    unnamed = len(boards) - sum(len(c["boards"]) for c in entries)
     _log.info(
         f"company directory: {len(entries):,} companies over {len(boards):,} Boards, "
-        f"{multi:,} with more than one Board, {args.out.stat().st_size:,} bytes"
+        f"{multi:,} with more than one Board, {args.out.stat().st_size:,} bytes; "
+        f"{unnamed:,} Boards left out with no name"
     )
     return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    # The step is `continue-on-error`, so an unguarded exception would end in a green run with
+    # no annotation at all; one ERROR names it and says what is stale. SystemExit and
+    # KeyboardInterrupt are not `Exception`, so they pass through untouched.
+    try:
+        raise SystemExit(main())
+    except Exception:  # noqa: BLE001 - the one catch-all per entry point, logged and re-exited
+        _log.error(
+            "company_directory failed — the previous company directory stays served this run",
+            exc_info=True,
+        )
+        raise SystemExit(1) from None

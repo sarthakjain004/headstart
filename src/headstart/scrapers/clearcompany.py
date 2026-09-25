@@ -207,8 +207,16 @@ class ClearCompanyScraper(BaseScraper):
                 "an HRM Direct <source> feed", f"{len(xml)} chars without one"
             )
             return {"xml": "", "details": {}}
+        reqs = feed_reqs(xml)
+        # `feed_reqs` skips a <job> with no referencenumber, which would otherwise vanish unsaid.
+        listed = len(_JOB.findall(xml))
+        self.note_unread_rows(
+            listed - sum(len(rows) for _, rows in reqs),
+            listed,
+            "carried no referencenumber",
+        )
         details = self.run_detail_pass(
-            feed_reqs(xml),
+            reqs,
             key_of=lambda req_rows: req_rows[0],
             what="detail pages",
             title_of=lambda req_rows: _tag(req_rows[1][0], "title"),

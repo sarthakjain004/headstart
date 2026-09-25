@@ -56,6 +56,7 @@ const star = (id, extra) => ({
  *  page's star buttons, which is all `paintStars` asks the DOM for. */
 function loadApp(saved, stars) {
   const nodes = {};
+  const logged = [];
   const ctx = {
     document: {
       getElementById: id => (nodes[id] ||= fakeEl()),
@@ -64,7 +65,10 @@ function loadApp(saved, stars) {
     },
     window: { addEventListener() {}, location: { hash: '' }, CFG: {} },
     location: { hash: '' },
-    console, CFG: {}, URLSearchParams, Date, Math, isNaN, Number, Array,
+    // Recorded, not printed: app.js reports every failed request, and the stub fetches fail most
+    // of the page-load ones on purpose.
+    console: { log: console.log, warn: (...a) => logged.push(a), error: (...a) => logged.push(a) },
+    CFG: {}, URLSearchParams, Date, Math, isNaN, Number, Array,
     Event: class { constructor(type) { this.type = type; } },
     fetch: url => {
       if (String(url) !== '/saved') return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });

@@ -29,6 +29,13 @@ import re
 from collections.abc import Callable
 from typing import Any
 
+from headstart import log
+
+# The Space calls no `log.setup()`, so only WARNING+ reaches its log (via `lastResort`) — which
+# is why each refusal below warns. Every line names a shape and a size, never reply or résumé
+# text: the reply is an extraction *of* the résumé (ADR-0032, ADR-0041).
+_log = log.get(__name__)
+
 MAX_RESUME_CHARS = (
     20_000  # a real résumé is ~3-6 KB of text; anything bigger is not one
 )
@@ -98,17 +105,27 @@ class EmptyExtraction(ResumeError):
 def _reply_json(reply: str) -> dict[str, Any]:
     """The one JSON object in the model's reply, fences and preamble tolerated."""
     if not isinstance(reply, str):  # a router answering `content: null` still answered
+        _log.warning(f"profile extraction: reply is {type(reply).__name__}, not text")
         raise EmptyExtraction("couldn't read a profile from that text — try again")
     start, end = reply.find("{"), reply.rfind("}")
     if start == -1 or end <= start:
+        _log.warning(f"profile extraction: no JSON object in a {len(reply)}-char reply")
         raise EmptyExtraction("couldn't read a profile from that text — try again")
     try:
         data = json.loads(reply[start : end + 1])
     except ValueError as exc:
+        # Type only: a decode error's message can quote the text it choked on.
+        _log.warning(
+            f"profile extraction: unparseable JSON ({type(exc).__name__}) "
+            f"in a {len(reply)}-char reply"
+        )
         raise EmptyExtraction(
             "couldn't read a profile from that text — try again"
         ) from exc
     if not isinstance(data, dict):
+        _log.warning(
+            f"profile extraction: reply JSON is a {type(data).__name__}, not an object"
+        )
         raise EmptyExtraction("couldn't read a profile from that text — try again")
     return data
 
@@ -156,10 +173,26 @@ def extract(resume: str, ask: Callable[[str], str]) -> dict[str, Any]:
         )
 
     data = _reply_json(ask(_PROMPT.format(resume=text)))
-    query = scrub_query(_fact(data.get("query")))
+    raw_query = _fact(data.get("query"))
+    query = scrub_query(raw_query)
     if not query:
+        _log.warning(
+            f"profile extraction: no role sentence left from a {len(raw_query)}-char "
+            f"query field ({len(text)}-char résumé)"
+        )
         raise EmptyExtraction(
             "couldn't derive a role from that text — fill the profile in by hand instead"
+        )
+    # The prompt forbids years/salary in the sentence; the model writing them anyway is prompt
+    # drift. Counted from the pattern's own matches, not a before/after diff, so the quote and
+    # full-stop tidying `scrub_query` also does is not mistaken for it. Counts only.
+    removed = sum(
+        len(m.group()) for m in _FORBIDDEN.finditer(raw_query[:_MAX_SCRUB_CHARS])
+    )
+    if removed:
+        _log.warning(
+            f"profile extraction: scrub removed {removed} chars from a "
+            f"{len(raw_query)}-char query field"
         )
     return {
         "query": query,

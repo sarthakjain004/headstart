@@ -1624,7 +1624,7 @@
 
   function openDocument(id) {
     const loaded = repository.get(id);
-    if (!loaded) return;
+    if (!loaded) { flashSaved('That résumé could not be read from this browser.', true); return; }
     selectedId = null;
     store.adopt(loaded);
     repository.setLastOpened(id);
@@ -1769,6 +1769,16 @@
     if (!sticky) savedTimer = setTimeout(() => { box.textContent = ''; }, 2600);
   }
 
+  /** Says a refused `repository.save` in the bar and answers true; a stored write answers false.
+   *  Every write site checks, so no "Imported." goes up over a document this browser never kept. */
+  function refusedWrite(result) {
+    if (result.ok) return false;
+    flashSaved(result.reason === 'quota'
+      ? 'This browser is out of storage — your last change is NOT saved. Download a JSON backup.'
+      : 'Could not save to this browser. Download a JSON backup.', true);
+    return true;
+  }
+
   /* ---- profile prefill ---------------------------------------------------------------------
      The Profile deliberately holds no contact details (ADR-0041), so this can fill the career
      facts and nothing else. Saying so beats a button that silently leaves the name blank. */
@@ -1776,11 +1786,18 @@
   async function prefill() {
     const note = el('rb-prefill-note');
     note.textContent = 'Reading…';
-    let profile = null;
+    let profile = null, r, failed = false;
     try {
-      const r = await fetch('/profile');
+      r = await fetch('/profile');
       if (r.ok) profile = await r.json();
-    } catch (err) { profile = null; }
+      else { failed = true; logFail('GET', '/profile', r.status); }   // app.js's, loaded before this file
+    } catch (err) { failed = true; logFail('GET', '/profile', r ? r.status : 0, err); profile = null; }
+    /* "No profile" only when the Space said so; a failed read is not an empty profile. */
+    if (failed) {
+      note.textContent = r && r.status === 401 ? 'Sign in to fill from your profile.'
+        : 'Couldn’t read your profile — try again.';
+      return;
+    }
     if (!profile || profile.error) {
       note.textContent = 'No profile available here.';
       return;
@@ -2064,21 +2081,31 @@
       expanded.clear();
       firstRun = false;
       const fresh = startDocument(lay.id, filled && !!lay.example);
-      repository.save(fresh);
+      const saved = repository.save(fresh);
       repository.setLastOpened(fresh.id);
       store.adopt(fresh);
       closePopovers();
+      refusedWrite(saved);
     };
     el('rb-new').addEventListener('click', () => startFresh(true));
     el('rb-new-blank').addEventListener('click', () => startFresh(false));
+
+    /* Why an account copy did not open, read from the state the failed pull just left: offline,
+       signed out and "not here" are not "that résumé is broken". */
+    const unreadable = () => ({
+      'signed-out': 'Sign in to open it.',
+      unreachable: 'You’re offline — try again.',
+      off: 'Account copies aren’t available here.',
+    }[sync.status().state] || 'That résumé could not be read.');
 
     el('rb-doclist-remote').addEventListener('click', e => {
       const pull = e.target.closest('[data-pull]');
       if (!pull || !sync) return;
       flashSaved('Opening from your account…');
       sync.pull(pull.dataset.pull).then(incoming => {
-        if (!incoming || !incoming.root) { flashSaved('That résumé could not be read.', true); return; }
-        repository.save(incoming);
+        if (!incoming || !incoming.root) { flashSaved(unreadable(), true); return; }
+        /* Opened from storage, so a refused write has nothing to open: say that, not "Opened". */
+        if (refusedWrite(repository.save(incoming))) return;
         openDocument(incoming.id);
         flashSaved('Opened from your account.');
       });
@@ -2093,7 +2120,7 @@
            the one thing this feature must never do. */
         flashSaved('Opening from your account…');
         sync.adoptAccountCopy(newer.dataset.pullNewer).then(got => {
-          if (!got) flashSaved('That résumé could not be read.', true);
+          if (!got) flashSaved(unreadable(), true);
           docListPaint();
         });
         return;
@@ -2130,7 +2157,12 @@
         if (doc() && doc().id === id) {
           const next = repository.list()[0];
           if (next) openDocument(next.id);
-          else { const fresh = startDocument('headless-headhunter', false); repository.save(fresh); store.adopt(fresh); }
+          else {
+            const fresh = startDocument('headless-headhunter', false);
+            const saved = repository.save(fresh);
+            store.adopt(fresh);
+            refusedWrite(saved);
+          }
         }
         docListPaint();
       }
@@ -2165,13 +2197,15 @@
       if (!file) return;
       try {
         const imported = Export.importJson(await file.text());
-        repository.save(imported);
+        const saved = repository.save(imported);
         repository.setLastOpened(imported.id);
         selectedId = null;
         store.adopt(imported);
         docListPaint();
-        flashSaved('Imported.');
+        /* Still opened when refused, so the words can at least go out as a backup. */
+        if (!refusedWrite(saved)) flashSaved('Imported.');
       } catch (err) {
+        console.error('[resume] import failed', err);
         /* `window.alert` was the last modal here. The bar already carries every other thing that
            went wrong, and `sticky` keeps this one up rather than fading after two seconds. */
         flashSaved(err.message || 'That file could not be read.', true);
@@ -2189,7 +2223,13 @@
       const payload = format === 'json' ? doc() : view();
       const by = { pdf: Export.print, word: Export.asWord, text: Export.asText,
         html: Export.asHtml, json: Export.asJson }[format];
-      if (by) by(window, payload);
+      try {
+        if (by) by(window, payload);
+      } catch (err) {
+        /* The name only: an export error's message can quote the résumé it was building. */
+        console.error('[resume] export failed', format, err && err.name);
+        flashSaved('That download could not be made — try another format or a JSON backup.', true);
+      }
       closePopovers();
     });
 
@@ -2535,9 +2575,7 @@
       },
     }) : null;
     store = new Doc.Store(repository, {
-      onError: result => flashSaved(result.reason === 'quota'
-        ? 'This browser is out of storage — your last change is NOT saved. Download a JSON backup.'
-        : 'Could not save to this browser. Download a JSON backup.', true),
+      onError: refusedWrite,
       /* The account push hangs off a completed local write, never off a keystroke and never off
          a repaint — see the `_onSaved` comment in resume_document.js, and the write-cadence
          header in resume_sync.js. This is the seam ADR-0124 says must not reuse the debounce. */

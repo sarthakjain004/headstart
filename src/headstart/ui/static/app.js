@@ -6,6 +6,22 @@ const el = s => document.getElementById(s);
 // allow http(s) hrefs (no javascript: URLs).
 const esc = s => (s==null?'':String(s)).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const safeUrl = u => { const l=(u||'').toLowerCase(); return (l.startsWith('http://')||l.startsWith('https://'))? u : '#'; };
+// Every failed request reaches the console: method, path and status on a refusal, the caught
+// error on a dropped one. The query string is cut — it carries search text and résumé words —
+// and a body is never logged. An AbortError is a newer request cancelling this one on purpose.
+function logFail(method, url, status, err){
+  if (err && err.name === 'AbortError') return;
+  const path = String(url).split('?')[0];
+  // A SyntaxError from r.json() quotes the body in V8, so only its name is logged.
+  if (err) console.error('[api]', method, path, status || 'no response', err.name === 'SyntaxError' ? err.name : err);
+  else console.warn('[api]', method, path, status);
+}
+// preventDefault after logging: the browser would otherwise print the rejection a second time.
+window.addEventListener('unhandledrejection', e => {
+  const why = e.reason;
+  console.error('[app] unhandled', why && why.name === 'SyntaxError' ? why.name : why);
+  e.preventDefault();
+});
 for (const id of ['q', 'kw']) el(id).addEventListener('keydown', e => { if (e.key === 'Enter') go(); });
 
 /* ---- tabs. The hash names the panel (#search, #trends); unknown hashes fall back to
@@ -82,13 +98,14 @@ async function loadCoverage(){
   // none of these fields yet" \u2014 a false claim, on the one page whose subject is not making any.
   const fail = '<p class="aside">Couldn\u2019t reach the index to count just now. ' +
     'Reload to try again \u2014 no figure is better than a guessed one.</p>';
+  let r;
   try{
-    const r = await fetch('/coverage');
-    if (!r.ok) throw new Error(r.status);
+    r = await fetch('/coverage');
+    if (!r.ok){ logFail('GET', '/coverage', r.status); box.innerHTML = fail; return; }
     const d = await r.json();
     if (!d || typeof d.total !== 'number' || !d.fields) throw new Error('shape');
     coverage = d;
-  }catch(e){ box.innerHTML = fail; return; }
+  }catch(e){ logFail('GET', '/coverage', r ? r.status : 0, e); box.innerHTML = fail; return; }
   const total = coverage.total;
   // One count per field against the one total \u2014 the server used to repeat `total` on every
   // field, which is one number said five times and five chances for them to disagree.
@@ -135,15 +152,21 @@ function tryIt(btn){ el('q').value = btn.textContent.trim(); go(); }
 // wall is off (or the caller somehow reached this page signed out) it stays blank.
 async function whoAmI(){
   try{
-    const d = await (await fetch('/me')).json();
+    const r = await fetch('/me');
+    if (!r.ok){ logFail('GET', '/me', r.status); return; }
+    const d = await r.json();
     if (!d.auth || !d.email) return;
     el('who').textContent = d.email;
     el('signout').style.display = '';
-  }catch(e){}
+  }catch(e){ logFail('GET', '/me', 0, e); }
 }
 async function signOut(){
-  try{ await fetch('/signout', { method:'POST' }); }catch(e){}
-  location.reload();
+  // A failed sign-out reloading as if it worked leaves the session live and says otherwise.
+  let r = null;
+  try{ r = await fetch('/signout', { method:'POST' }); }catch(e){ logFail('POST', '/signout', 0, e); }
+  if (r && r.ok){ location.reload(); return; }
+  if (r) logFail('POST', '/signout', r.status);
+  window.alert('Sign-out didn\'t go through — you are still signed in. Try again.');
 }
 function toggleRail(){
   const rail = el('rail');
@@ -586,22 +609,26 @@ async function fetchPage(){
   el('n').textContent = q ? 'searching…' : 'loading…';
   // Fired together, not one after the other: the counts depend only on the filters, never on
   // the query, so they neither wait for the ranking nor make the user wait for them.
-  const facetsPromise = fetch('/facets?'+p).then(r => r.json()).catch(() => null);
+  const facetsPromise = fetch('/facets?'+p)
+    .then(r => { if (!r.ok){ logFail('GET', '/facets', r.status); return null; } return r.json(); })
+    .catch(e => { logFail('GET', '/facets', 0, e); return null; });
   facetsPromise.then(facets => { if (request === searchRequest) applyFacets(facets); });
   drawSortNote();
   let rows, r;
   try { r = await fetch('/search?'+p); rows = await r.json(); }
-  catch(e){ if (request !== searchRequest) return;
+  catch(e){ logFail('GET', '/search', r ? r.status : 0, e); if (request !== searchRequest) return;
             busy(false); el('results').innerHTML = '<div class="empty">That search didn\'t go through. Try again.</div>';
             setResultRows(1);
             el('n').textContent = ''; el('kind').textContent = ''; return; }
   if (request !== searchRequest) return;
   busy(false);
   if(!Array.isArray(rows)){
+    logFail('GET', '/search', r.status);
     // The sign-in wall's 401 is not a filter's fault — reading it as one had the user clearing
-    // filters that were never the problem.
+    // filters that were never the problem. Nor is a server fault (the store's 503).
     el('results').innerHTML = '<div class="empty">' + (r.status === 401
       ? 'Your session expired — sign in again to search.'
+      : r.status >= 500 ? esc((rows && rows.error) || ('The search failed (status ' + r.status + ').')) + ' Try again.'
       : 'One of the filters isn\'t valid — clear it and try again.') + '</div>';
     setResultRows(1);
     el('n').textContent = ''; el('kind').textContent = ''; return; }
@@ -955,23 +982,37 @@ let myCompanies = { followed: [], hidden: [] };
 // dead clicks — while the ADR claims a capped row is one click away.
 const capOverflow = new Map();   // listId -> Map(board -> [card html])
 
+// False only when the lists could not be read: a 401 (signed out) or 503 (a dark deployment)
+// is the controls simply not rendering, but any other failure leaves the server excluding
+// hidden companies while the page shows no "N hidden" to undo it with.
 async function loadCompanies(){
   try{
     const r = await fetch('/companies');
-    if (r.ok) myCompanies = await r.json();
-  }catch(e){ /* dark deployment or signed out — the controls simply don't render */ }
+    if (r.ok){ myCompanies = await r.json(); return true; }
+    if (r.status === 401 || r.status === 503) return true;
+    logFail('GET', '/companies', r.status);
+  }catch(e){ logFail('GET', '/companies', 0, e); }
+  return false;
 }
 
+// {ok, status, error}. A refusal (503 dark, 409 at the cap) or a dropped request is said on the
+// tab's status line — a button that only re-enables said nothing.
 async function setCompany(board, action){
+  let r = null, d = null;
   try{
-    const r = await fetch('/companies', {
+    r = await fetch('/companies', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({ board, action })
     });
-    if (!r.ok) return false;
-    myCompanies = await r.json();
-    return true;
-  }catch(e){ return false; }
+    d = await r.json().catch(() => null);
+  }catch(e){ logFail('POST', '/companies', 0, e); }
+  if (r && r.ok && d){ myCompanies = d; return { ok: true, status: r.status, error: '' }; }
+  const status = r ? r.status : 0;
+  const error = (d && d.error) || (status ? `Couldn't update that company (status ${status})`
+    : 'Couldn\'t update that company — the request didn\'t go through.');
+  if (r) logFail('POST', '/companies', status);   // a refusal or unreadable body; a drop logged above
+  starMsg(error);
+  return { ok: false, status, error };
 }
 
 function capRows(rows, target){
@@ -1047,9 +1088,9 @@ async function loadSets(){
   try{
     const r = await fetch('/sets');
     if (request !== matchesRequest) return;
-    if (!r.ok){ el('matches-msg').textContent = 'Couldn\'t load your sets.'; return; }
+    if (!r.ok){ logFail('GET', '/sets', r.status); el('matches-msg').textContent = 'Couldn\'t load your sets.'; return; }
     sets = await r.json();
-  }catch(e){ if (request === matchesRequest) el('matches-msg').textContent = 'Couldn\'t load your sets.'; return; }
+  }catch(e){ logFail('GET', '/sets', 0, e); if (request === matchesRequest) el('matches-msg').textContent = 'Couldn\'t load your sets.'; return; }
   if (request !== matchesRequest) return;
   mySets = sets;
   if (activeSetId && !mySets.some(s => s.id === activeSetId)) activeSetId = null;
@@ -1118,10 +1159,11 @@ async function runSet(id){
   for (const [key, value] of Object.entries(matchesRange())) p.set(key, value);
   let rows, r;
   try { r = await fetch('/search?'+p); rows = await r.json(); }
-  catch(e){ if (request === matchesRequest) el('matches-msg').textContent = 'That search didn\'t go through.'; return; }
+  catch(e){ logFail('GET', '/search', r ? r.status : 0, e); if (request === matchesRequest) el('matches-msg').textContent = 'That search didn\'t go through.'; return; }
   if (request !== matchesRequest) return;
-  if (!Array.isArray(rows)){ el('matches-msg').textContent = r.status === 401
+  if (!Array.isArray(rows)){ logFail('GET', '/search', r.status); el('matches-msg').textContent = r.status === 401
     ? 'Your session expired — sign in again to see your matches.'
+    : r.status >= 500 ? ((rows && rows.error) || ('The search failed (status ' + r.status + ').')) + ' Try again.'
     : 'A saved filter isn\'t valid — refine the set.'; return; }
   el('matches-msg').textContent = rows.length
     ? `${rows.length} match${rows.length === 1 ? '' : 'es'} for “${s.name}”`
@@ -1147,35 +1189,48 @@ async function handleSetAction(act, id){
   if (act === 'rename'){
     const name = (window.prompt('Rename this set', s.name) || '').trim();
     if (!name || name === s.name) return;
-    await postAndReloadSets('/sets', { id, name, query: s.query, filters: s.search_filters });
+    await setRefusal(await postAndReloadSets('/sets', { id, name, query: s.query, filters: s.search_filters }));
     return;
   }
   if (act === 'del'){
     if (!window.confirm(`Delete “${s.name}”?${s.emails ? ' Its email digest stops too.' : ''}`)) return;
-    try{ await fetch('/sets/' + encodeURIComponent(id), { method: 'DELETE' }); }catch(e){}
-    mySets = null; loadSets();
+    const url = '/sets/' + encodeURIComponent(id);
+    let r = null;
+    try{ r = await fetch(url, { method: 'DELETE' }); }catch(e){ logFail('DELETE', url, 0, e); }
+    if (r && r.ok){ mySets = null; loadSets(); return; }
+    // Not reloaded: the reload's set re-run rewrites #matches-msg, and the set that is still
+    // there would just reappear with nothing said.
+    if (r) logFail('DELETE', url, r.status);
+    el('matches-msg').textContent = r
+      ? 'Couldn\'t delete that set (status ' + r.status + ').' : 'That request didn\'t go through. Try again.';
     return;
   }
   if (act === 'email'){
-    const r = await postAndReloadSets('/sets/' + encodeURIComponent(id) + '/email', { on: !s.emails }, true);
-    if (r && !r.ok){
-      const d = await r.json().catch(() => ({}));
-      el('matches-msg').textContent = d.error || ('Failed (' + r.status + ')');
-    }
+    await setRefusal(await postAndReloadSets('/sets/' + encodeURIComponent(id) + '/email', { on: !s.emails }));
   }
 }
 
+// A set action the server refused says why in #matches-msg; a dropped one says so too.
+async function setRefusal(r){
+  if (r && r.ok) return;
+  const d = r ? await r.json().catch(() => ({})) : {};
+  el('matches-msg').textContent = r ? (d.error || ('Failed (' + r.status + ')'))
+    : 'That request didn\'t go through. Try again.';
+}
+
 // POST helper for set actions; reloads the strip afterwards so state is always server-truth.
-async function postAndReloadSets(url, body, returnResponse){
+// Returns the response, or null when the request never got one.
+async function postAndReloadSets(url, body){
   let r = null;
   try{
     r = await fetch(url, { method: 'POST', headers: {'Content-Type': 'application/json'},
                            body: JSON.stringify(body) });
-  }catch(e){}
+  }catch(e){ logFail('POST', url, 0, e); }
+  if (r && !r.ok) logFail('POST', url, r.status);
   // A refusal changed nothing, so there is nothing to reload — and the reload's un-awaited set
   // re-run overwrote the refusal the caller then showed in #matches-msg.
   if (!r || r.ok){ mySets = null; await loadSets(); }
-  return returnResponse ? r : null;
+  return r;
 }
 
 function saveSearchToggle(){
@@ -1194,13 +1249,13 @@ async function saveSearch(){
     const r = await fetch('/sets', { method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({ name, query: q, filters: currentFilters() }) });
     const d = await r.json().catch(() => ({}));
-    if (!r.ok){ msg.textContent = d.error || ('Failed (' + r.status + ')'); return; }
+    if (!r.ok){ logFail('POST', '/sets', r.status); msg.textContent = d.error || ('Failed (' + r.status + ')'); return; }
     mySets = null;                       // the strip reloads next time Matches opens
     el('savename').value = '';
     el('saverow').style.display = 'none';
     msg.textContent = '';
     el('n').textContent = `Saved — see Matches`;
-  }catch(e){ msg.textContent = 'That request didn\'t go through. Try again.'; }
+  }catch(e){ logFail('POST', '/sets', 0, e); msg.textContent = 'That request didn\'t go through. Try again.'; }
 }
 
 /* ---- Saved jobs (ADR-0042, ADR-0044): starring keeps a copy of the card's display
@@ -1269,16 +1324,17 @@ function starBtn(jobId, on){
 
 // The visible tab's status line — where star errors land, wherever the click happened.
 function starMsg(text){
-  const id = { search:'n', matches:'matches-msg', saved:'saved-msg' }[currentTab()];
+  const id = { search:'n', matches:'matches-msg', saved:'saved-msg', hot:'hot-msg' }[currentTab()];
   if (id && el(id)) el(id).textContent = text;
 }
 
 async function loadSaved(){
+  let r;
   try{
-    const r = await fetch('/saved');
-    if (!r.ok){ starMsg('Couldn\'t load your saved jobs.'); return; }
+    r = await fetch('/saved');
+    if (!r.ok){ logFail('GET', '/saved', r.status); starMsg('Couldn\'t load your saved jobs.'); return; }
     mySaved = await r.json();
-  }catch(e){ starMsg('Couldn\'t load your saved jobs.'); return; }
+  }catch(e){ logFail('GET', '/saved', r ? r.status : 0, e); starMsg('Couldn\'t load your saved jobs.'); return; }
   savedByJob.clear();
   mySaved.forEach(j => savedByJob.set(j.job_id, j));
   renderSaved();
@@ -1352,8 +1408,9 @@ async function toggleStar(jobId){
     paintStars(); renderSaved();
     let r = null;
     try{ r = await fetch('/saved/' + encodeURIComponent(existing.id), { method: 'DELETE' }); }
-    catch(e){}
+    catch(e){ logFail('DELETE', '/saved/' + existing.id, 0, e); }
     if (!r || (!r.ok && r.status !== 404)){
+      if (r) logFail('DELETE', '/saved/' + existing.id, r.status);
       savedByJob.set(jobId, existing);
       // a loadSaved may have refreshed mySaved while the DELETE was in flight — don't duplicate
       if (mySaved && !mySaved.some(j => j.job_id === jobId)) mySaved.push(existing);
@@ -1381,7 +1438,8 @@ async function toggleStar(jobId){
     r = await fetch('/saved', { method: 'POST', headers: {'Content-Type': 'application/json'},
                                 body: JSON.stringify({ job_id: jobId, ...copy }) });
     d = await r.json().catch(() => null);
-  }catch(e){}
+  }catch(e){ logFail('POST', '/saved', 0, e); }
+  if (r && (!r.ok || !d)) logFail('POST', '/saved', r.status);
   if (r && r.ok && d){
     savedByJob.set(jobId, d);
     // A loadSaved that raced this POST (opening the Saved tab re-fetches) read server truth
@@ -1425,11 +1483,12 @@ function readProfileForm(){
 
 async function loadProfile(){
   const msg = el('profile-msg');
+  let r;
   try{
-    const r = await fetch('/profile');
-    if (!r.ok){ msg.textContent = 'Couldn\'t load your profile.'; return; }
+    r = await fetch('/profile');
+    if (!r.ok){ logFail('GET', '/profile', r.status); msg.textContent = 'Couldn\'t load your profile.'; return; }
     fillProfileForm(await r.json());
-  }catch(e){ msg.textContent = 'Couldn\'t load your profile.'; }
+  }catch(e){ logFail('GET', '/profile', r ? r.status : 0, e); msg.textContent = 'Couldn\'t load your profile.'; }
 }
 
 async function saveProfile(){
@@ -1439,10 +1498,10 @@ async function saveProfile(){
     const r = await fetch('/profile', { method: 'POST', headers: {'Content-Type': 'application/json'},
                                         body: JSON.stringify(readProfileForm()) });
     const d = await r.json().catch(() => ({}));
-    if (!r.ok){ msg.textContent = d.error || ('Failed (' + r.status + ')'); return; }
+    if (!r.ok){ logFail('POST', '/profile', r.status); msg.textContent = d.error || ('Failed (' + r.status + ')'); return; }
     fillProfileForm(d);
     msg.textContent = 'Saved.';
-  }catch(e){ msg.textContent = 'That request didn\'t go through. Try again.'; }
+  }catch(e){ logFail('POST', '/profile', 0, e); msg.textContent = 'That request didn\'t go through. Try again.'; }
 }
 
 async function parseResume(){
@@ -1462,9 +1521,10 @@ async function parseResume(){
       msg.textContent = 'Read — check the fields below, edit anything, then Save.';
     } else {
       spent = r.status === 502;   // the router answered nothing usable — a read was still spent
+      logFail('POST', '/profile/parse', r.status);
       msg.textContent = d.error || ('Failed (' + r.status + ')');
     }
-  }catch(e){ msg.textContent = 'That request didn\'t go through. Try again.'; }
+  }catch(e){ logFail('POST', '/profile/parse', 0, e); msg.textContent = 'That request didn\'t go through. Try again.'; }
   if (!ok){
     if (spent) await loadProfile();   // refresh the reads-left counter (and button state)
     else btn.disabled = false;
@@ -1490,10 +1550,10 @@ async function deleteProfile(){
   const msg = el('profile-msg');
   try{
     const r = await fetch('/profile', { method: 'DELETE' });
-    if (!r.ok){ msg.textContent = 'Couldn\'t delete — try again.'; return; }
+    if (!r.ok){ logFail('DELETE', '/profile', r.status); msg.textContent = 'Couldn\'t delete — try again.'; return; }
     await loadProfile();
     msg.textContent = 'Profile cleared.';
-  }catch(e){ msg.textContent = 'Couldn\'t delete — try again.'; }
+  }catch(e){ logFail('DELETE', '/profile', 0, e); msg.textContent = 'Couldn\'t delete — try again.'; }
 }
 
 // Google sign-in returns a signed credential; the address is read from it server-side, so
@@ -1503,15 +1563,17 @@ async function onGoogleCredential(resp){
   const q = el('q').value.trim();
   if (!q){ msg.textContent = 'Type the role you want first.'; return; }
   msg.textContent = 'Subscribing…';
+  let r;
   try {
-    const r = await fetch('/subscribe', {
+    r = await fetch('/subscribe', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({ credential: resp.credential, query: q, filters: currentFilters() })
     });
     const data = await r.json();
+    if (!r.ok) logFail('POST', '/subscribe', r.status);
     msg.textContent = r.ok ? ('Subscribed — digests go to ' + data.email)
                            : (data.error || ('Failed (' + r.status + ')'));
-  } catch(e){ msg.textContent = 'That request didn\'t go through. Try again.'; }
+  } catch(e){ logFail('POST', '/subscribe', r ? r.status : 0, e); msg.textContent = 'That request didn\'t go through. Try again.'; }
 }
 /* ---- role trends (ADR-0040/0051). The ledger is one count per (metric, family, band) per
    pipeline run; this draws a line per series and ranks them by size. Two measures ("All
@@ -2519,16 +2581,21 @@ async function loadTrends(family){
   // because an abort mid-download rejects r.json() exactly as it rejects the fetch — which
   // also closes a hole that was already there: a malformed 200 body used to reject nowhere at
   // all, leaving the panel dimmed for good instead of saying anything.
-  let payload, err, refused;
+  let payload, err, refused, r;
   try {
-    const r = await fetch('/trends' + (q.size ? '?' + q : ''), { signal: req.signal });
-    if (r.ok) payload = await r.json();
+    r = await fetch('/trends' + (q.size ? '?' + q : ''), { signal: req.signal });
+    if (r.ok){
+      payload = await r.json();
+      // A 200 of the wrong shape would pass here and throw inside drawTrends instead.
+      if (!payload || !Array.isArray(payload.series) || !Array.isArray(payload.stamps)) throw new Error('shape');
+    }
     else if (trendPicks.length && (r.status === 400 || r.status === 503))
       refused = { status: r.status, error: ((await r.json().catch(() => null)) || {}).error || '' };
     else err = r.status === 401
       ? 'Your session expired — sign in again to see trends.'
       : 'Trends didn’t load. Try again.';
-  } catch(e){ err = 'That request didn’t go through.'; }
+    if (!r.ok) logFail('GET', '/trends', r.status);
+  } catch(e){ logFail('GET', '/trends', r ? r.status : 0, e); err = 'That request didn’t go through.'; }
   // Cancelled by a newer request, which now owns the panel: say nothing, paint nothing. An
   // abort lands in the catch above like a dropped connection, and reporting it would put
   // "that request didn't go through" over a render that is about to be replaced anyway.
@@ -4379,12 +4446,12 @@ function chooseCo(i){
 async function suggestCompanies(q){
   if (coReq) coReq.abort();
   const req = coReq = new AbortController();
-  let found = null, missing = false;
+  let found = null, missing = false, r;
   try {
-    const r = await fetch('/companies/suggest?' + new URLSearchParams({ q }), { signal: req.signal });
+    r = await fetch('/companies/suggest?' + new URLSearchParams({ q }), { signal: req.signal });
     if (r.ok) found = (await r.json()).companies || [];
-    else missing = r.status === 503 || r.status === 404;
-  } catch(e){ /* reported below, unless a newer query replaced this one */ }
+    else { missing = r.status === 503 || r.status === 404; logFail('GET', '/companies/suggest', r.status); }
+  } catch(e){ logFail('GET', '/companies/suggest', r ? r.status : 0, e); /* reported below, unless a newer query replaced this one */ }
   if (req.signal.aborted) return;
   const picked = pickedKeys();
   const options = (found || []).filter(c => !picked.has(c.key.toLowerCase())).map(company => ({ company }));
@@ -4550,6 +4617,11 @@ if (el('trends-chart')) {
   el('trends-chart').addEventListener('blur', () => positionHoverLayer(null));
 }
 
+// Google's script blocked or dropped left an empty space where its button goes, and no reason.
+function gsiFailed(){
+  console.error('[gsi] Google sign-in script failed to load');
+  if (el('amsg')) el('amsg').textContent = 'Google sign-in didn\u2019t load \u2014 a content blocker may be stopping it.';
+}
 function initAlerts(){
   if (!window.google || !CFG.google_client_id) return;
   google.accounts.id.initialize({ client_id: CFG.google_client_id, callback: onGoogleCredential });
@@ -4713,6 +4785,7 @@ async function loadHot(){
   try{
     const r = await fetch('/hot');
     if (!r.ok){
+      if (r.status !== 503) logFail('GET', '/hot', r.status);
       // 503 is "no run has written one", which is a different thing from a failure and is the
       // only case the tab can be opened in without data.
       el('hot-msg').textContent = r.status === 503
@@ -4721,7 +4794,7 @@ async function loadHot(){
       return;
     }
     hotData = await r.json();
-  }catch(e){ el('hot-msg').textContent = 'Couldn’t load the ranking.'; return; }
+  }catch(e){ logFail('GET', '/hot', 0, e); el('hot-msg').textContent = 'Couldn’t load the ranking.'; return; }
   el('hot-msg').textContent = '';
   drawHotProvenance();
   drawHot();
@@ -4838,7 +4911,7 @@ if (el('hot-results')){
       // showing "Following" and then posting `follow` again, so it never cleared.
       const on = (myCompanies.followed || []).some(
         b => b.toLowerCase() === board.toLowerCase());
-      if (await setCompany(board, on ? 'clear' : 'follow')) drawHot();
+      if ((await setCompany(board, on ? 'clear' : 'follow')).ok) drawHot();
       else track.disabled = false;
       return;
     }
@@ -4863,7 +4936,7 @@ document.addEventListener('click', async ev => {
   const hide = ev.target.closest('[data-hide-company]');
   if (!hide) return;
   hide.disabled = true;
-  if (await setCompany(hide.dataset.hideCompany, 'hide')) {
+  if ((await setCompany(hide.dataset.hideCompany, 'hide')).ok) {
     drawMyCompanies();
     // fetchPage redraws the Search list only; a hide clicked on Matches re-runs its Set too,
     // or the company just hidden stays on screen there.
@@ -4884,9 +4957,14 @@ function drawMyCompanies(){
       `<button class="linkish" id="unhide-all">show them again</button>`
     : '';
   if (el('unhide-all')) el('unhide-all').addEventListener('click', async () => {
-    for (const board of [...(myCompanies.hidden || [])]) await setCompany(board, 'clear');
+    let res = { ok: true };
+    for (const board of [...(myCompanies.hidden || [])]){
+      res = await setCompany(board, 'clear');
+      if (!res.ok) break;
+    }
     drawMyCompanies();
     await fetchPage();
+    if (!res.ok) starMsg(res.error);   // after the redraw, which rewrites the count line
   });
 }
 
@@ -4900,4 +4978,7 @@ showTab(currentTab());
 // Result cards need star states before the Saved tab is ever opened; landing ON the tab
 // already loads via showTab above.
 if (CAN_STAR && currentTab() !== 'saved') loadSaved();
-loadCompanies().then(drawMyCompanies);
+loadCompanies().then(read => {
+  drawMyCompanies();
+  if (!read && el('my-companies')) el('my-companies').textContent = 'Couldn\u2019t load your followed/hidden companies.';
+});

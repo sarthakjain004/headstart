@@ -83,12 +83,10 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from headstart import http, log, salary
+from headstart import http, salary
 from headstart.models import Job, html_to_text, is_remote
 from headstart.scrapers.base import BaseScraper, DetailLost, DetailRequest
 from headstart.scrapers.job_posting_jsonld import find_job_posting, jsonld_nodes
-
-_log = log.get(__name__)
 
 #: Detail-pass width. Every tenant is a subdomain of one Cloudflare-fronted origin, so this is a
 #: bound on that origin rather than on a per-tenant host. 8 is the base default and is well inside
@@ -273,12 +271,8 @@ class JazzHRScraper(BaseScraper):
         # only total this listing states. Not marked truncated: this module's 1,000-tenant sweep
         # never saw a link-less row, so how many are benign is unmeasured, and a truncation guard
         # built on a guess is the one this repo has learned not to ship.
-        unread = len(_ROW.findall(listing)) - len(rows)
-        if unread > 0:
-            _log.info(
-                f"{self.board_key()}: {unread} of {unread + len(rows)} listing row(s) carried "
-                "no posting link — those postings are listed but unread"
-            )
+        listed = len(_ROW.findall(listing))
+        self.note_unread_rows(listed - len(rows), listed, "carried no posting link")
         # The tech gate (ADR-0017). `_rows` states title and department per listing row, so the
         # gate asks `filter_tech`'s question before spending a page on the answer. Unlike
         # workday's, this is a *measured* tolerance rather than exactness: `parse` lets the

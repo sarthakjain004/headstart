@@ -122,7 +122,13 @@ from urllib.parse import quote
 from headstart import log, salary
 from headstart.fetcher import Fetcher
 from headstart.models import Job, host_of, html_to_text, is_remote
-from headstart.scrapers.base import USER_AGENT, BaseScraper, DetailLost, DetailRequest
+from headstart.scrapers.base import (
+    USER_AGENT,
+    BaseScraper,
+    DetailLost,
+    DetailRequest,
+    classify_exception,
+)
 from headstart.scrapers.pacer import Pacer
 
 _log = log.get(__name__)
@@ -538,7 +544,7 @@ class ZwayamScraper(BaseScraper):
         except Exception as exc:  # noqa: BLE001 - a link prefix must not fail the Board
             fallback = self._fallback_link_base()
             _log.info(
-                f"{self.board_key()}: homepage unread ({type(exc).__name__}), "
+                f"{self.board_key()}: homepage unread ({classify_exception(exc)}), "
                 f"assuming {fallback}"
             )
             return fallback
@@ -560,7 +566,13 @@ class ZwayamScraper(BaseScraper):
             return f"https://{self.slug}/job-view/"
         if "ng-view" in html:
             return f"https://{self.slug}/#!/job-view/"
-        return self._fallback_link_base()
+        fallback = self._fallback_link_base()
+        # Said, because every Job of this Board now ships a guessed link shape.
+        _log.info(
+            f"{self.board_key()}: homepage answered {response.status_code} with no "
+            f"base-href/_next/ng-view marker — assuming {fallback}"
+        )
+        return fallback
 
     def _config(self) -> tuple[int | None, str | None]:
         """The tenant's numeric id and stated name, from the config endpoint. The detail POST
@@ -589,7 +601,9 @@ class ZwayamScraper(BaseScraper):
                 name if isinstance(name, str) else None,
             )
         except Exception as exc:  # noqa: BLE001 - a lost detail pass must not fail the Board
-            _log.info(f"{self.board_key()}: config call failed ({type(exc).__name__})")
+            _log.info(
+                f"{self.board_key()}: config call failed ({classify_exception(exc)})"
+            )
             return None, None
 
     def _config_once_per_board(self) -> tuple[int | None, str | None]:
@@ -651,6 +665,11 @@ class ZwayamScraper(BaseScraper):
                 # A hostname that is not a registered Board answers 200 with data: null (and a
                 # body code of 200 — `_page` raised otherwise). Nothing to scrape, and not an
                 # error — the ledger simply holds a host that no longer is.
+                if not rows:
+                    self.note_unreadable_board(
+                        "a `data` object",
+                        "code 200 with data: null — host not a registered Board",
+                    )
                 break
             total = data.get("totalCount", total)
             batch = [
@@ -674,8 +693,6 @@ class ZwayamScraper(BaseScraper):
             # `mark_truncated` keeps the FIRST reason, so the page cap above still wins where it
             # fired — this is the shortfall that reaches `harvest` when it did not.
             self.mark_truncated(f"read {len(rows)} of {total} postings")
-        if self.truncated:
-            _log.info(f"{self.board_key()}: {self.truncated}")
         # Detail pass for every row the ADR-0050 store does not already hold text for: the
         # listing's own fields can be silently truncated (module docstring), so the detail is
         # the only text trusted as complete. Steady state, `needs_detail` prunes this to the
@@ -719,18 +736,21 @@ class ZwayamScraper(BaseScraper):
         rows = (raw or {}).get("rows") or []
         link_base = (raw or {}).get("link_base") or self._fallback_link_base()
         jobs: list[Job] = []
+        unlinked = 0
+        unnamed = 0
         for source in rows:
             native_id = source.get("id")
             title = (source.get("jobTitle") or "").strip()
             if native_id is None or not title:
+                unnamed += 1
                 continue
             location = _location(source)
             job_url = (source.get("jobUrl") or "").strip()
             if not job_url:
                 # Unobserved: 0 of 16,427 rows across 19 Boards. The alternative — falling back
                 # to the Board root — would emit a link that no per-Job URL shape can match, so
-                # the row is dropped and logged instead of shipping an unverifiable link.
-                _log.info(f"{self.board_key()}: job {native_id} has no jobUrl, skipped")
+                # the row is dropped and counted instead of shipping an unverifiable link.
+                unlinked += 1
                 continue
             jobs.append(
                 Job(
@@ -768,6 +788,12 @@ class ZwayamScraper(BaseScraper):
                     employment_type=None,
                     salary=self._salary_field(source),
                 )
+            )
+        if unlinked:
+            _log.info(f"{self.board_key()}: {unlinked} job(s) had no jobUrl, skipped")
+        if unnamed:
+            _log.info(
+                f"{self.board_key()}: {unnamed} row(s) had no id or title, skipped"
             )
         return jobs
 

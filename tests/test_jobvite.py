@@ -10,6 +10,7 @@ parsed from is committed beside the analysis in `docs/jobvite/artifacts/`.
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -231,9 +232,11 @@ def test_the_walk_follows_the_next_link_to_the_end(monkeypatch):
     assert scraper.truncated is None
 
 
-def test_the_walk_stops_when_a_page_repeats_itself(monkeypatch):
+def test_the_walk_stops_when_a_page_repeats_itself(monkeypatch, caplog):
     """A posting can occupy two pagination slots (`cascade`: 71 slots, 70 distinct), so ids are
-    de-duplicated — and a next link that yields nothing new ends the walk rather than looping."""
+    de-duplicated — and a next link that yields nothing new ends the walk rather than looping,
+    saying so, since a loop and an end read alike otherwise."""
+    caplog.set_level(logging.INFO, logger="headstart.scrapers.jobvite")
     base = "https://jobs.jobvite.com/acme/search"
     page = _listing(jobs=("a", "b"), next_href="/acme/search/?p=1", total=2)
     _responses(
@@ -246,6 +249,34 @@ def test_the_walk_stops_when_a_page_repeats_itself(monkeypatch):
     scraper = JobviteScraper("acme")
     assert scraper._listing_ids() == ["a", "b"]
     assert scraper.truncated is None
+    assert (
+        "jobvite:acme: next link offered on page 2 but it added no ids — walk stopped at 2 "
+        "of 2" in caplog.text
+    )
+
+
+def test_a_counter_with_no_job_links_is_named_as_unread(monkeypatch, caplog):
+    """A counter stating postings over a page whose links no longer match reads as empty."""
+    caplog.set_level(logging.INFO, logger="headstart.scrapers.jobvite")
+    base = "https://jobs.jobvite.com/acme/search"
+    _responses(
+        monkeypatch, {base: (200, _listing(jobs=("a",), total=5, slug="x"), None)}
+    )
+    assert JobviteScraper("acme")._listing_ids() == []
+    assert "jobvite:acme: read no jobs" in caplog.text
+    assert "counter states 5" in caplog.text
+
+
+def test_a_walk_ending_short_of_the_counter_says_so(monkeypatch, caplog):
+    """A template change that stops the next link matching would serve page 0 as the Board."""
+    caplog.set_level(logging.INFO, logger="headstart.scrapers.jobvite")
+    base = "https://jobs.jobvite.com/acme/search"
+    _responses(monkeypatch, {base: (200, _listing(jobs=("a", "b"), total=120), None)})
+    assert JobviteScraper("acme")._listing_ids() == ["a", "b"]
+    assert (
+        "jobvite:acme: walk ended with no next link on page 1 of the 3 the counter implies "
+        "— 2 of 120 ids read" in caplog.text
+    )
 
 
 def test_an_empty_board_is_no_postings_not_an_error(monkeypatch):

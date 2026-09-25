@@ -65,6 +65,7 @@ function fakeEl() {
  * alone passes either way, because 'bands' is also the fallback. */
 function loadApp(fetchImpl) {
   const nodes = {};
+  const logged = [];
   const fetches = [];
   const ctx = {
     document: {
@@ -80,7 +81,10 @@ function loadApp(fetchImpl) {
     // app.js reads its config off `window.CFG`, so tests set flags there.
     window: { addEventListener() {}, location: { hash: '' }, CFG: {} },
     location: { hash: '' },
-    console, CFG: {}, URLSearchParams, Date, Math, isNaN, setTimeout, clearTimeout,
+    // Recorded, not printed: app.js reports every failed request, and the stub fetches fail most
+    // of the page-load ones on purpose.
+    console: { log: console.log, warn: (...a) => logged.push(a), error: (...a) => logged.push(a) },
+    CFG: {}, URLSearchParams, Date, Math, isNaN, setTimeout, clearTimeout,
     // loadTrends cancels its own previous request, so app.js does not evaluate without this.
     // Node's real one, not a stub: the abort tests below need a signal that genuinely fires.
     AbortController,

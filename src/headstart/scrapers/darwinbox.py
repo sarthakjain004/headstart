@@ -56,13 +56,10 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
 
-from headstart import log
 from headstart.browser_http import BrowserFetcher
 from headstart.fetcher import Fetcher
 from headstart.models import Job, html_to_text, is_remote
-from headstart.scrapers.base import USER_AGENT, BaseScraper
-
-_log = log.get(__name__)
+from headstart.scrapers.base import USER_AGENT, BaseScraper, classify_exception
 
 _PAGE_SIZE = 100  # server caps each page at 100 regardless of the requested limit
 _MAX_PAGES = (
@@ -179,8 +176,19 @@ class DarwinboxScraper(BaseScraper):
         )
         response.raise_for_status()
         payload = response.json()
+        if page == 1:
+            self._note_failed_envelope(payload)
         self._job_counts = payload.get("job_counts")
         return payload.get("data") or []
+
+    def _note_failed_envelope(self, payload: dict) -> None:
+        """Name a page-1 envelope whose ``status`` is not ``"success"``, which would otherwise
+        read as an empty Board. Every tenant measured answers ``"success"``, an HR-only one with
+        ``data: []`` included (3 hosts, 2026-09-25)."""
+        if payload.get("status") != "success":
+            self.note_unreadable_board(
+                'an alljobs envelope with status "success"', repr(payload.get("status"))
+            )
 
     def _company_info(self, host: str) -> dict:
         """The tenant's ``companyinfo`` record, or ``{}`` when it cannot be read. It says whether
@@ -194,8 +202,17 @@ class DarwinboxScraper(BaseScraper):
                 headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
             )
             return (response.json().get("message") or {}).get("company") or {}
-        except Exception:  # noqa: BLE001 - portal detection must never sink the board
+        except Exception as exc:  # noqa: BLE001 - portal detection must never sink the board
+            self._note_company_info_unread(exc)
             return {}
+
+    def _note_company_info_unread(self, exc: Exception) -> None:
+        # Said because the default it falls back to is silent: links built for the v2 portal
+        # and the slug kept as the company name.
+        self._log.info(
+            f"{self.board_key()}: companyinfo unread ({classify_exception(exc)}) — "
+            "assuming the candidatev2 portal"
+        )
 
     def _read_company_info(self, company: dict) -> None:
         """Portal generation and company name from a ``companyinfo`` record. Every tenant surveyed
@@ -219,6 +236,7 @@ class DarwinboxScraper(BaseScraper):
             response = browser.fetch("POST", api, json={**body, "page": 1})
             response.raise_for_status()
             payload = response.json()
+            self._note_failed_envelope(payload)
             self._job_counts = payload.get("job_counts")
             batch = payload.get("data") or []
             jobs = list(batch)
@@ -248,7 +266,8 @@ class DarwinboxScraper(BaseScraper):
                 )
                 info.raise_for_status()
                 company = (info.json().get("message") or {}).get("company") or {}
-            except Exception:  # noqa: BLE001 - portal detection must never sink the board
+            except Exception as exc:  # noqa: BLE001 - portal detection must never sink the board
+                self._note_company_info_unread(exc)
                 company = {}
             self._read_company_info(company)
         self._host = host
@@ -276,10 +295,15 @@ class DarwinboxScraper(BaseScraper):
                 # The most expensive path any scraper takes — a real browser, for one Board —
                 # and it was entered silently, so a run whose cost was dominated by escalations
                 # looked identical to one where none fired.
-                _log.info(
+                self._log.info(
                     f"{self.board_key()}: walled on {walled}, escalating to a browser"
                 )
                 return self._fetch_raw_browser(walled)
+            # The raise carries the last TLD's error alone; name every TLD's here.
+            self._log.info(
+                f"{self.board_key()}: no TLD answered — "
+                + "; ".join(f"{h}: {classify_exception(e)}" for h, e in errors)
+            )
             raise errors[-1][1]
         self._host = host
         self._read_company_info(self._company_info(host))

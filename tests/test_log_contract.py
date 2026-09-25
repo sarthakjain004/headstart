@@ -449,7 +449,7 @@ def _tech_gate(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def _tech_gate_nothing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Every ATS in the slice contributed zero rows — the corpus-wide zero, logged at ERROR."""
+    """Every ATS in the slice contributed zero rows — the corpus-wide zero, logged at WARNING."""
     from headstart.ingest import filter_tech
 
     monkeypatch.chdir(tmp_path)
@@ -2714,7 +2714,7 @@ CONTRACT: tuple[Line, ...] = (
         emitter=_SCRAPE_PLAN,
         body=(
             "one board costs 80.0 min, above the 9.2 min even share — the makespan floor is this "
-            "board, not the packing"
+            "board, not the packing: greenhouse:giant"
         ),
         why="fires only when it applies; a better packer cannot help a floor-bound shard",
         emit=_plan_measured,
@@ -3390,3 +3390,12 @@ def test_the_two_adr_0162_clauses_stay_optional_for_older_runs():
     )
     match = _pattern("fanout_errors.FAILURES").search(before)
     assert match is not None and match.group(8) is None
+
+
+def test_the_filter_tech_progress_line_is_not_read_as_a_table_row():
+    """`filter_jobs` streams one progress line per ATS file under the same `[filter_tech]` tag
+    as the per-ATS table `fanout_corpus.TECH` parses. The `:` after the ATS name is what keeps
+    the two apart — a space there would make every progress line a second, bogus table row."""
+    line = "12:00:00 [filter_tech] filtered workday: 1204/4816 kept, 3.1s elapsed (1/4 files)"
+    assert _pattern("fanout_corpus.TECH").search(line) is None
+    assert _pattern("fanout_corpus.TECH_TOTAL").search(line) is None

@@ -18,6 +18,9 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from .. import log
+
+_log = log.get(__name__)
 #: The Node script beside this module. Kept next to the Python that runs it rather than with
 #: the browser scripts it loads, because it is not part of the Résumé tab — nothing in the
 #: product loads it, and a file in `static/resume/` is a file the page might one day serve.
@@ -63,18 +66,39 @@ def read_document(document: dict[str, Any], view: str = "master") -> dict[str, A
     except FileNotFoundError as exc:  # `which` said yes and exec still failed
         raise Unreadable(f"`node` could not be run: {exc}") from exc
     except subprocess.TimeoutExpired as exc:
+        _log.warning(
+            "inspect_document.js timed out after %ss for document %s",
+            TIMEOUT_S,
+            document.get("id"),
+        )
         raise Unreadable(
             f"reading the document took longer than {TIMEOUT_S}s and was stopped"
         ) from exc
     try:
         answer = json.loads(done.stdout)
     except ValueError as exc:
+        # Stderr's frames only, as for a fault below: the tool result alone reaches no log.
+        _log.warning(
+            "inspect_document.js gave no JSON for document %s: exit %d %s",
+            document.get("id"),
+            done.returncode,
+            (done.stderr or "").strip()[:2000],
+        )
         # stderr, not stdout: a crash before the handler writes its JSON leaves the stack there.
         detail = (done.stderr or "").strip()[
             :500
         ] or f"exit {done.returncode}, no output"
         raise Unreadable(f"reading the document failed: {detail}") from exc
     if isinstance(answer, dict) and answer.get("error"):
+        # The script writes a stack to stderr only for a fault, never for a deliberate refusal
+        # (a malformed record, no such version), so a non-empty stderr is a bug to look at.
+        # Its frames carry file:line, not the message, which can quote the résumé.
+        if done.stderr.strip():
+            _log.warning(
+                "inspect_document.js failed for document %s: %s",
+                document.get("id"),
+                done.stderr.strip()[:2000],
+            )
         raise Unreadable(str(answer["error"]))
     return answer
 

@@ -18,11 +18,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from headstart import log, salary
+from headstart import salary
 from headstart.models import Job, html_to_text, is_remote, requisition_of
 from headstart.scrapers.base import BaseScraper
-
-_log = log.get(__name__)
 
 # Names carrying a genuine currency-range/point disclosure (real minority of tenants) score
 # higher when they mention one of these words — task evidence, doordashusa (2026-09-15): "USA:
@@ -109,10 +107,13 @@ class GreenhouseScraper(BaseScraper):
         run-level quota, so an observation-only tripwire is exactly what must not spend it.
         """
         raw = super().fetch_raw()
+        if "jobs" not in raw:
+            # `parse` reads a missing list as an empty one; an empty Board answers `"jobs": []`.
+            self.note_unreadable_board("a jobs list", f"keys {sorted(raw)}")
         total = (raw.get("meta") or {}).get("total")
         listed = len(raw.get("jobs") or [])
         if isinstance(total, int) and total != listed:
-            _log.info(
+            self._log.info(
                 f"{self.board_key()}: envelope disagrees — {listed} jobs listed but "
                 f"meta.total={total} (delta {total - listed}); the response is short and "
                 "says so, so a mark_truncated guard on this signal would fire here"

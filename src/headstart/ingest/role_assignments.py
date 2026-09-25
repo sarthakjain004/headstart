@@ -40,6 +40,10 @@ import csv
 from pathlib import Path
 from typing import NamedTuple
 
+from headstart import log
+
+_log = log.get(__name__)
+
 _COLUMNS = ("ts", "version", "family_from", "family_to", "count")
 
 
@@ -73,7 +77,13 @@ def load_previous(path: Path, version: int) -> dict[str, str] | None:
         if stamped is None or stamped.decode() != str(version):
             return None  # a refit re-based everything; transitions are meaningless across it
         return dict(zip(table["id"].to_pylist(), table["family"].to_pylist()))
-    except Exception:  # noqa: BLE001 - a corrupt snapshot must not sink the run
+    except Exception as exc:  # noqa: BLE001 - a corrupt snapshot must not sink the run
+        _log.warning(
+            "role snapshot %s unreadable (%s) — no transitions this tick",
+            path,
+            type(exc).__name__,
+            exc_info=True,
+        )
         return None
 
 
@@ -117,13 +127,24 @@ def load_placements(path: Path) -> tuple[dict[str, Placement], str] | None:
     unstamped snapshot, or for one written before ADR-0227 added the placement columns. Turnover
     then starts on the next tick, rather than reading the whole index as opened."""
     if not path.exists():
+        _log.info(f"role snapshot {path} missing — no turnover this tick")
         return None
     try:
         import pyarrow.parquet as pq
 
         table = pq.read_table(path)
         as_of = ((table.schema.metadata or {}).get(b"as_of") or b"").decode()
-        if not as_of or not set(Placement._fields) <= set(table.schema.names):
+        # Each reason said, because the caller's one line cannot tell them apart.
+        if not as_of:
+            _log.info(
+                f"role snapshot {path} carries no as_of stamp — no turnover this tick"
+            )
+            return None
+        if not set(Placement._fields) <= set(table.schema.names):
+            _log.info(
+                f"role snapshot {path} predates the placement columns (ADR-0227) — "
+                "no turnover this tick"
+            )
             return None
         columns = [table[field].to_pylist() for field in Placement._fields]
         placed = {
@@ -131,7 +152,13 @@ def load_placements(path: Path) -> tuple[dict[str, Placement], str] | None:
             for job_id, *values in zip(table["id"].to_pylist(), *columns, strict=True)
         }
         return placed, as_of
-    except Exception:  # noqa: BLE001 - a corrupt snapshot must not sink the run
+    except Exception as exc:  # noqa: BLE001 - a corrupt snapshot must not sink the run
+        _log.warning(
+            "role snapshot %s unreadable (%s) — no turnover this tick",
+            path,
+            type(exc).__name__,
+            exc_info=True,
+        )
         return None
 
 

@@ -352,3 +352,31 @@ def test_a_same_day_tie_keeps_the_row_the_ledger_lists_first(tmp_path):
     )
     (board,) = load(ledger, min_jobs=0)
     assert board.slug == "https://amadeus.wd502.myworkdayjobs.com/jobs"
+
+
+def test_load_reports_why_each_row_did_not_become_a_board(tmp_path, caplog):
+    """One line per load that accounts for every row, so a shrunken list names the rule."""
+    ledger = tmp_path / "liveness"
+    _write_ledger(
+        ledger,
+        "greenhouse.csv",
+        [
+            "greenhouse,stripe,https://boards.greenhouse.io/stripe,live,12,2026-07-01",
+            "greenhouse,Stripe,https://boards.greenhouse.io/Stripe,live,12,2026-07-01",  # collapsed
+            "greenhouse,emptyco,https://boards.greenhouse.io/emptyco,live,0,2026-07-01",  # min_jobs
+            "greenhouse,deadco,https://boards.greenhouse.io/deadco,dead,,2026-06-01",  # no live
+        ],
+    )
+    _write_ledger(
+        ledger,
+        "workday.csv",
+        ["workday,x,not-a-url,dead,,2026-06-01"],  # unparseable non-live
+    )
+    with caplog.at_level("INFO", logger="headstart.scrapable_boards"):
+        assert len(load(ledger)) == 1
+    (line,) = [r.message for r in caplog.records if "scrapable boards:" in r.message]
+    assert line == (
+        "scrapable boards: 1 from 5 ledger rows — excluded 0, alias-buried 0, "
+        "unparseable non-live 1, collapsed 1, no live or newer dead 1, "
+        "under min_jobs=1 1, parked 0"
+    )

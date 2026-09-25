@@ -114,6 +114,15 @@ class JobWriter:
             if (
                 handle is None
             ):  # an ats not in the company list — open it lazily, just in case
+                # Every ATS the run's Boards name was opened above, so reaching here means a
+                # scraper labelled its jobs with another ATS: a bug signal, said once per ATS
+                # (the handle is cached below) and at INFO — the jobs are still kept.
+                _log.info(
+                    "jobs labelled ats=%s (not in this run's Board list) — writing %s.jsonl "
+                    "lazily",
+                    job.ats,
+                    job.ats,
+                )
                 handle = self._handles[job.ats] = (self._dir / f"{job.ats}.jsonl").open(
                     "a", encoding="utf-8"
                 )
@@ -271,6 +280,8 @@ def scrape_all(
     # the first carries a traceback and an annotation, the rest are INFO (see the branch below).
     unexpected = log.FirstOnly(_log)
     total, done = len(companies), 0
+    # The worker count is resolved here (`_default_workers`), so no caller can print it.
+    _log.info(f"scraping {total} boards with {workers} workers")
     start = time.monotonic()
     executor = ThreadPoolExecutor(max_workers=workers)
     try:
@@ -332,6 +343,11 @@ def scrape_all(
                 writer.record_cost(
                     cost_key[key], seconds, n_fresh, errored=key in errors
                 )
+            else:
+                _log.info(
+                    f"{key}: detail pass stalled — cost row left at its previous value "
+                    f"({seconds:.0f}s not recorded)"
+                )
             if on_board is not None:
                 on_board(key, n_fresh, errors.get(key), seconds, truncated.get(key))
             if on_observation is not None:
@@ -366,6 +382,19 @@ def scrape_all(
         # above, which has already exited. So everything in this snapshot needs its floor.
         with in_flight_lock:
             unfinished = sorted(in_flight.items())
+        if unfinished:
+            # The deferred list downstream mixes these with Boards that never started, in
+            # assignment order and capped, so the Board that ate the shard is rarely in it.
+            # Oldest start first: the longest-running Board is the likeliest culprit.
+            now = time.monotonic()
+            burned = [
+                f"{key} {now - started_at:.0f}s"
+                for key, started_at in sorted(unfinished, key=lambda kv: kv[1])
+            ]
+            _log.info(
+                f"killed mid-fetch: {len(unfinished)} board(s) — "
+                + log.named_sample(burned)
+            )
         for key, started_at in unfinished:
             writer.record_cost(
                 cost_key.get(key, key),
