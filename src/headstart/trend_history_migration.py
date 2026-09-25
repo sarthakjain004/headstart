@@ -34,12 +34,14 @@ import pyarrow as pa
 import pyarrow.compute as pc
 import pyarrow.parquet as pq
 
-# The step-6 layout (owned by trend_history once it adopts it).
-TICK_COLUMNS = ("board", "metric", "family", "band", "delta")
-ARCHIVE_COLUMNS = ("ts", "metric", "family", "band", "ats", "delta")
-LEVEL_METRICS = ("new", "stock")
+from headstart.trend_history import ARCHIVE_COLUMNS, LEVEL_METRICS, TICK_COLUMNS
+
 _KEY = TICK_COLUMNS[:-1]
 
+# The files only the old layout has, under `data/state/`: the aggregate ledger, which holds the
+# archive's ticks, and the epoch ledger, which holds the Methodology of ticks before #688.
+AGGREGATE = "role_trends.parquet"
+EPOCHS = "trends_epochs.csv"
 # The old layout's series-version key: misnamed since ADR-0220, and gone with the versions.
 _SERIES_KEY = b"centroid_version"
 _EPOCH_COLUMNS = (
@@ -98,6 +100,16 @@ def epoch_in_force(epochs: list[dict[str, str]], ts: str) -> dict[str, str]:
             break
         found = row
     return found
+
+
+def _methodology_at(epochs: list[dict[str, str]], ts: str) -> dict[str, int | str]:
+    """The Methodology a tick without its own was counted under: its epoch row's, or none at all
+    where no epoch ledger was ever written, which is how the readers before step 6 took it."""
+    return methodology_of(epoch_in_force(epochs, ts)) if epochs else {}
+
+
+def _epoch_rows(path: Path) -> list[dict[str, str]]:
+    return read_epochs(path) if path.exists() else []
 
 
 def methodology_of(row: dict[str, str]) -> dict[str, int | str]:
@@ -187,10 +199,10 @@ def rewritten_ticks(
         if b"methodology" in metadata:
             methodology = json.loads(metadata[b"methodology"])
         else:
-            epoch_rows = epoch_rows or read_epochs(epochs)
-            row = epoch_in_force(epoch_rows, ts)
-            centroids.add(row["centroid_version"])
-            methodology = methodology_of(row)
+            epoch_rows = epoch_rows or _epoch_rows(epochs)
+            if epoch_rows:
+                centroids.add(epoch_in_force(epoch_rows, ts)["centroid_version"])
+            methodology = _methodology_at(epoch_rows, ts)
         others = table.filter(pc.invert(level)).select(list(TICK_COLUMNS))
         out.append(tick_table(pa.concat_tables([levels, others]), ts, methodology))
         previous = version
@@ -237,26 +249,31 @@ def aggregate_ticks(path: Path, before: str | None = None):
         yield ts.isoformat(timespec="seconds"), {k: n for k, n in level.items() if n}
 
 
-def archive_from_aggregate(aggregate: Path, before: str, epochs: Path) -> pa.Table:
+def archive_from_aggregate(
+    aggregate: Path, before: str | None, epochs: Path
+) -> pa.Table:
     """The aggregate's ticks before ``before`` as index-wide group deltas, the first against
-    nothing, with the methodology in force at them in the table's metadata. Raises ValueError
-    when those ticks span more than one methodology, which one metadata key cannot hold."""
+    nothing. The table's metadata holds every tick's stamp, since a tick where nothing moved has
+    no rows, and the methodology in force at them. Raises ValueError when those ticks span more
+    than one methodology, which one metadata key cannot hold."""
     rows: list[tuple] = []
+    ticks: list[str] = []
     in_force: set[str] = set()
     previous: dict[tuple, int] = {}
-    epoch_rows = read_epochs(epochs)
+    epoch_rows = _epoch_rows(epochs)
     for ts, level in aggregate_ticks(aggregate, before):
         rows.extend(
             (ts, *key, level.get(key, 0) - previous.get(key, 0))
             for key in sorted(level.keys() | previous.keys())
             if level.get(key, 0) != previous.get(key, 0)
         )
-        in_force.add(json.dumps(methodology_of(epoch_in_force(epoch_rows, ts))))
+        in_force.add(json.dumps(_methodology_at(epoch_rows, ts)))
+        ticks.append(ts)
         previous = level
     if len(in_force) > 1:
         raise ValueError(f"the archive's ticks span {len(in_force)} methodologies")
     methodology = (
-        json.loads(in_force.pop()) if in_force else methodology_of(epoch_rows[0])
+        json.loads(in_force.pop()) if in_force else _methodology_at(epoch_rows, "")
     )
     columns = list(zip(*rows, strict=True)) if rows else [()] * len(ARCHIVE_COLUMNS)
     return pa.table(
@@ -264,5 +281,8 @@ def archive_from_aggregate(aggregate: Path, before: str, epochs: Path) -> pa.Tab
             name: pa.array(column, pa.int64() if name == "delta" else pa.string())
             for name, column in zip(ARCHIVE_COLUMNS, columns, strict=True)
         },
-        metadata={b"methodology": json.dumps(methodology, sort_keys=True).encode()},
+        metadata={
+            b"ticks": json.dumps(ticks).encode(),
+            b"methodology": json.dumps(methodology, sort_keys=True).encode(),
+        },
     )

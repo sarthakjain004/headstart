@@ -76,17 +76,19 @@ import pyarrow.parquet as pq
 
 from headstart import log, roles, trend_history_migration
 from headstart.board_identity import ats_of
+from headstart.trend_history import (
+    ARCHIVE,
+    ARCHIVE_COLUMNS,
+    DELTAS,
+    LEVEL_METRICS,
+    TICK_COLUMNS,
+)
+from headstart.trend_history_migration import AGGREGATE, EPOCHS
 
 REPO = "imPoseidon/headstart-index"
 STATE = "data/state"
-DELTAS = "role_trend_board_deltas"
-ARCHIVE = "role_trend_index_deltas_before_board_deltas.parquet"
-AGGREGATE = "role_trends.parquet"
 BOARD_COUNTS = "role_trend_board_counts.parquet"
-EPOCHS = "trends_epochs.csv"
 
-LEVEL_METRICS = trend_history_migration.LEVEL_METRICS
-TICK_COLUMNS = trend_history_migration.TICK_COLUMNS
 # The aggregate's one undecomposed row per tick: non-tech, unbanded and across every ATS.
 _NOT_SPLIT = "all"
 
@@ -134,7 +136,7 @@ def migrate(source: Path, out: Path) -> Migration:
         rows_before=sum(table.num_rows for table in tables),
         rows_after=sum(table.num_rows for table in ticks),
         rebased=rebased,
-        archive_ticks=len(set(archive["ts"].to_pylist())),
+        archive_ticks=len(json.loads(archive.schema.metadata[b"ticks"])),
         archive_rows=archive.num_rows,
     )
 
@@ -208,17 +210,15 @@ class Verification:
 
 
 def _archive_ticks(path: Path) -> Iterator[tuple[str, list[tuple]]]:
+    """The archive's ticks, oldest first, each with its rows: none where nothing moved."""
     table = pq.read_table(path)
-    rows = zip(*(table[name].to_pylist() for name in table.schema.names), strict=True)
-    ts, group = None, []
-    for row in rows:
-        if row[0] != ts and group:
-            yield ts, group
-            group = []
-        ts = row[0]
-        group.append(row[1:])
-    if group:
-        yield ts, group
+    by_tick: dict[str, list[tuple]] = {}
+    for ts, *row in zip(
+        *(table[name].to_pylist() for name in ARCHIVE_COLUMNS), strict=True
+    ):
+        by_tick.setdefault(ts, []).append(tuple(row))
+    for ts in json.loads(table.schema.metadata[b"ticks"]):
+        yield ts, by_tick.get(ts, [])
 
 
 def verify(migrated: Path, source: Path) -> Verification:
