@@ -86,6 +86,7 @@ import shutil
 import zlib
 from collections import Counter
 from collections.abc import Iterator
+from collections.abc import Set as AbstractSet
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, NamedTuple
@@ -113,6 +114,7 @@ from headstart.ingest import (
     board_failures,
     board_freshness,
     dedup_evictions,
+    job_turnover,
     observability,
     read_id_list,
     run_ts,
@@ -881,6 +883,27 @@ def sync(args: argparse.Namespace) -> int:
         f"plan: add {len(plan.add)} ({listings} new listings + {len(taken)} re-embedded), "
         f"evict {len(plan.delete)} -> net {listings - len(plan.delete):+d} rows"
     )
+    # A repost is the same role under a new id, and it reads as one Opened and one Closed
+    # (ADR-0222). It is measured here and never corrected: this is the scrape where the old id
+    # goes missing as the new one arrives, a scrape before the old one is evicted.
+    new_listings = plan.add - taken.keys()
+    if new_listings:
+
+        def board_and_title(ids: AbstractSet[str]) -> dict[str, tuple[str, str | None]]:
+            return {
+                i: (resolve_board(i, live), metas[row_of[i]].get("title"))
+                for i in ids
+                if i in row_of
+            }
+
+        matched = job_turnover.reposts(
+            board_and_title(new_listings),
+            board_and_title(plan.unconfirmed | plan.delete),
+        )
+        _log.info(
+            f"reposts: {matched} of {len(new_listings)} new listing(s) share a Board and title "
+            "with a posting missing from this scrape (ADR-0222)"
+        )
     if plan.refused:
         fronts = sum(1 for job_id in plan.refused if ats_of(job_id) == "eightfold")
         _log.info(
@@ -1090,6 +1113,10 @@ def prune(args: argparse.Namespace) -> int:
             {**rules, **alias_rules(off_board, live, aliased_boards(args.ledger))},
             lambda job_id: resolve_board(job_id, live),
         )
+    if args.pruned_ids:
+        # After the delete, like the ledger above: role_trends books these as Recounted, and an id
+        # the table still held would not be a removal at all (ADR-0222).
+        write_id_list(Path(args.pruned_ids), evict)
     final = table.count_rows()
     write_base(args.db, final, "prune")
     _log.info(f"done: pruned {len(evict)} rows; table '{PROD_TABLE}' now holds {final}")
@@ -1400,6 +1427,13 @@ def main() -> int:
         default=None,
         help="append each dedup eviction to this ledger (ADR-0210); the pipeline passes "
         "data/state/dedup_evictions.csv, and a run that does not publish data/state omits it",
+    )
+    p_prune.add_argument(
+        "--pruned-ids",
+        default=None,
+        help="write every id this prune removed, duplicates and off-Board alike, so role_trends "
+        "books them as Recounted rather than Closed (ADR-0222); the pipeline passes "
+        "data/run/pruned_ids.txt",
     )
     p_prune.set_defaults(fn=prune)
 

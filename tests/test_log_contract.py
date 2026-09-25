@@ -1379,6 +1379,7 @@ def _index_prune(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
                 apply=True,
                 board_failures="data/state/board_failures.csv",
                 dedup_evictions=None,
+                pruned_ids=None,
             )
         )
         == 0
@@ -1612,8 +1613,12 @@ def _trends(
         # (ADR-0220), or the snapshot reads as a re-base and is discarded.
         role_assignments.save(
             Path("data/state/role_assignments.parquet"),
-            snapshot,
+            {
+                job_id: role_assignments.Placement("b", family, "all", "greenhouse")
+                for job_id, family in snapshot.items()
+            },
             role_trends.series_version(_TRENDS_VERSION),
+            "2026-09-07T00:00:00+00:00",
         )
     _run_main(role_trends, monkeypatch, *_trends_argv())
 
@@ -1659,7 +1664,9 @@ def _trends_diff_skipped(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Non
     def _no_space(*_args: object, **_kwargs: object) -> None:
         raise OSError(28, "No space left on device")
 
-    monkeypatch.setattr(role_assignments, "load_previous", _no_space)
+    # `transitions`, not `load_previous`: the snapshot is read before this tick's turnover
+    # overwrites it (ADR-0222), and `load_previous` already turns any failure into None.
+    monkeypatch.setattr(role_assignments, "transitions", _no_space)
     _trends(tmp_path, monkeypatch)
 
 

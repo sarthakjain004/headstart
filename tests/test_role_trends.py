@@ -167,6 +167,11 @@ def _run(tmp_path: Path, monkeypatch) -> Path:
             # Pinned too (ADR-0164): defaults to the repo's real data/state/trends_epochs.csv.
             "--epochs",
             str(tmp_path / "trends_epochs.csv"),
+            # Pinned too (ADR-0222): these default to this run's real prune and scrape hand-offs.
+            "--pruned-ids",
+            str(tmp_path / "pruned_ids.txt"),
+            "--unauthoritative-boards",
+            str(tmp_path / "unauthoritative_boards.json"),
         ],
     )
     assert role_trends.main() == 0
@@ -1016,3 +1021,85 @@ def test_top_line_distinguishes_two_atses_sharing_a_family_and_band(
     assert len(labels) == len(set(labels)), f"top-5 labels are not unique: {top}"
     assert "software-engineering/mid/greenhouse" in top
     assert "software-engineering/mid/workday" in top
+
+
+def _tick_rows(path: Path) -> list[dict]:
+    return pq.read_table(path).to_pylist()
+
+
+def test_a_second_tick_books_turnover_beside_the_level_changes(tmp_path, monkeypatch):
+    """ADR-0222 end to end. The first tick writes the snapshot that turnover diffs. The second
+    books a new posting as opened, an evicted one as closed, a pruned duplicate as recounted,
+    and one marker for an Unauthoritative Board. All of it goes in the tick's own delta file,
+    and the Board counts carry levels only."""
+    from headstart.ingest import RUN_TS_ENV
+
+    _taxonomy(tmp_path / "head", tmp_path / "families.json")
+
+    def row(job_id: str, seen: str) -> dict:
+        return {
+            "id": f"greenhouse:acme:{job_id}",
+            "title": "Backend Dev",
+            "employment_type": None,
+            "min_years": 5,
+            "vector": [1.0, 0.0, 0.0, 0.0],
+            "first_seen": seen,
+        }
+
+    early = "2026-09-20T00:00:00+00:00"
+    _table(
+        tmp_path / "db", [row("stays", early), row("closes", early), row("dup", early)]
+    )
+    monkeypatch.setenv(RUN_TS_ENV, "2026-09-25T05:00:00+00:00")
+    _run(tmp_path, monkeypatch)
+    first = _tick_rows(tmp_path / "board_deltas" / "2026-09-25T05-00-00+00-00.parquet")
+    assert {r["metric"] for r in first} == {"stock", "new"}, (
+        "no snapshot to diff yet, so the first tick books no turnover"
+    )
+
+    lancedb.connect(tmp_path / "db").drop_table(PROD_TABLE)
+    _table(
+        tmp_path / "db",
+        [row("stays", early), row("opens", "2026-09-25T05:30:00+00:00")],
+    )
+    (tmp_path / "pruned_ids.txt").write_text("greenhouse:acme:dup\n", encoding="utf-8")
+    (tmp_path / "unauthoritative_boards.json").write_text(
+        json.dumps({"greenhouse:acme": "truncated"}), encoding="utf-8"
+    )
+    monkeypatch.setenv(RUN_TS_ENV, "2026-09-25T06:00:00+00:00")
+    _run(tmp_path, monkeypatch)
+
+    tick = _tick_rows(tmp_path / "board_deltas" / "2026-09-25T06-00-00+00-00.parquet")
+    flows = {
+        r["metric"]: r["delta"] for r in tick if r["metric"] not in ("stock", "new")
+    }
+    assert flows == {"opened": 1, "closed": 1, "recounted_out": 1, "unscoped": 1}
+    stock = sum(r["delta"] for r in tick if r["metric"] == "stock")
+    assert stock == flows["opened"] - flows["closed"] - flows["recounted_out"]
+    counts = pq.read_table(tmp_path / "board_counts.parquet").to_pylist()
+    assert {r["metric"] for r in counts} <= {"stock", "new"}
+
+
+def test_recovering_board_counts_skips_a_ticks_flow_rows(tmp_path):
+    """A tick's delta file carries its flows too (ADR-0222). Replayed as level changes after a
+    failed counts save, an `opened` row would have become a Board count of its own."""
+    deltas = tmp_path / "deltas"
+    deltas.mkdir()
+    key = ("greenhouse:acme", "software-engineering", "senior", "greenhouse")
+    table = pa.table(
+        {
+            "ts": ["2026-09-25T06:00:00+00:00"] * 2,
+            "board": [key[0]] * 2,
+            "metric": ["stock", "opened"],
+            "family": [key[1]] * 2,
+            "band": [key[2]] * 2,
+            "ats": [key[3]] * 2,
+            "delta": [1, 1],
+        },
+        metadata={b"centroid_version": b"3001"},
+    )
+    pq.write_table(table, deltas / "2026-09-25T06-00-00+00-00.parquet")
+    recovered = role_trends._recover_board_counts(
+        {}, "2026-09-25T05:00:00+00:00", deltas, 3001
+    )
+    assert recovered == {(key[0], "stock", *key[1:]): 1}

@@ -19,8 +19,13 @@ taxonomy, not a fact about the Job, and keeping it out of `_schema()` keeps the 
 (README, the Space, ADR-0031's `first_seen`) untouched.
 
 Two files under ``data/state/``:
-  ``role_assignments.parquet``  the current tick's ``id -> family`` (overwritten each run)
+  ``role_assignments.parquet``  the current tick's ``id -> family``, with each row's Board, band
+                                and ATS beside it (overwritten each run)
   ``role_reassignments.csv``    append-only ``ts,version,family_from,family_to,count``
+
+The Board, band and ATS columns, and the ``as_of`` stamp, are what job turnover diffs
+(ADR-0222, :mod:`headstart.ingest.job_turnover`). A job that left is booked under the key it had
+when it was last counted, so the snapshot has to remember that key.
 
 Version is the series version (`role_trends.series_version`): a new classifier head re-bases
 every assignment, so transitions must never be compared across versions.
@@ -32,8 +37,18 @@ from __future__ import annotations
 
 import csv
 from pathlib import Path
+from typing import NamedTuple
 
 _COLUMNS = ("ts", "version", "family_from", "family_to", "count")
+
+
+class Placement(NamedTuple):
+    """Where one served tech row was counted on a tick: its Board-delta key, less the metric."""
+
+    board: str
+    family: str
+    band: str
+    ats: str
 
 
 def load_previous(path: Path, version: int) -> dict[str, str] | None:
@@ -61,25 +76,62 @@ def load_previous(path: Path, version: int) -> dict[str, str] | None:
         return None
 
 
-def save(path: Path, assignments: dict[str, str], version: int) -> None:
-    """Overwrite the snapshot with this tick's assignments, stamped with the series version."""
+def save(
+    path: Path, placements: dict[str, Placement], version: int, as_of: str
+) -> None:
+    """Overwrite the snapshot with this tick's placements, stamped with the series version and
+    with the tick itself (``as_of``)."""
     import pyarrow as pa
     import pyarrow.parquet as pq
 
     path.parent.mkdir(parents=True, exist_ok=True)
-    ids = list(assignments)
+    ids = list(placements)
     table = pa.table(
         {
             "id": pa.array(ids, pa.string()),
-            "family": pa.array([assignments[i] for i in ids], pa.string()),
+            **{
+                field: pa.array(
+                    [getattr(placements[i], field) for i in ids], pa.string()
+                )
+                for field in Placement._fields
+            },
         },
-        metadata={b"centroid_version": str(version).encode()},
+        metadata={
+            b"centroid_version": str(version).encode(),
+            b"as_of": as_of.encode(),
+        },
     )
     tmp = path.with_suffix(path.suffix + ".tmp")
     pq.write_table(table, tmp, compression="zstd")
     tmp.replace(
         path
     )  # atomic: a killed run leaves the old snapshot, never a half-written one
+
+
+def load_placements(path: Path) -> tuple[dict[str, Placement], str] | None:
+    """The previous tick's ``id -> Placement`` and its stamp, at **any** series version.
+
+    Not version-guarded, unlike :func:`load_previous`. A new classifier head changes which family
+    a row is in, but not whether the id was served. Returns None for a missing, unreadable or
+    unstamped snapshot, or for one written before ADR-0222 added the placement columns. Turnover
+    then starts on the next tick, rather than reading the whole index as opened."""
+    if not path.exists():
+        return None
+    try:
+        import pyarrow.parquet as pq
+
+        table = pq.read_table(path)
+        as_of = ((table.schema.metadata or {}).get(b"as_of") or b"").decode()
+        if not as_of or not set(Placement._fields) <= set(table.schema.names):
+            return None
+        columns = [table[field].to_pylist() for field in Placement._fields]
+        placed = {
+            job_id: Placement(*values)
+            for job_id, *values in zip(table["id"].to_pylist(), *columns, strict=True)
+        }
+        return placed, as_of
+    except Exception:  # noqa: BLE001 - a corrupt snapshot must not sink the run
+        return None
 
 
 def transitions(

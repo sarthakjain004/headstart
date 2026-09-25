@@ -18,6 +18,11 @@ since the last tick (ADR-0057, :mod:`headstart.ingest.role_assignments`). Counti
 cannot tell a closure apart from a reassignment, and a retitled posting moves between families
 — so the transitions ride their own ledger rather than distorting this one.
 
+The same snapshot gives each tick's **turnover** (ADR-0222, :mod:`headstart.ingest.job_turnover`).
+The ids that arrived since the last tick, and the ids that left, are booked as Opened, Closed or
+Recounted per Board, family, band and ATS. They go into the tick's Board-delta file as rows of
+their own metrics, beside the level changes, so a net change can be read with what made it.
+
 The ledger is **Parquet, not CSV** (ADR-0120). It is append-only but the merge job re-uploads
 it whole every run, so its on-disk size is a per-run upload cost: measured on the real ledger,
 zstd + dictionary encoding took 172,537,804 bytes of CSV to 3,430,805 — 50.3x — against a
@@ -42,7 +47,10 @@ from pathlib import Path
 
 from headstart import log, roles, tech_filter
 from headstart.ingest import (
+    PRUNED_IDS_PATH,
     REPO_ROOT,
+    job_turnover,
+    read_id_list,
     role_assignments,
     role_family_classifier,
     run_ts,
@@ -53,8 +61,10 @@ from headstart.ingest.index_plan import (
     DEDUP_VERSION,
     boards_by_canon,
     live_keep_set,
+    read_unauthoritative_boards,
     resolve_board,
 )
+from headstart.ingest.role_assignments import Placement
 
 _log = log.get(__name__, __spec__)
 
@@ -79,6 +89,8 @@ _ASSIGNMENTS = REPO_ROOT / "data" / "state" / "role_assignments.parquet"
 _REASSIGNMENTS = REPO_ROOT / "data" / "state" / "role_reassignments.csv"
 # methodology boundaries: a row only when the definition changed, not every tick (trends_epochs)
 _EPOCHS = REPO_ROOT / "data" / "state" / "trends_epochs.csv"
+# the Boards whose scrape this run could not show an absence (ADR-0053), written by scrape_join
+_UNAUTHORITATIVE_BOARDS = REPO_ROOT / "data" / "state" / "unauthoritative_boards.json"
 
 _COLUMNS = ("ts", "version", "metric", "family", "band", "ats", "count")
 _PRE_ATS_COLUMNS = (
@@ -118,9 +130,8 @@ def series_version(head_version: int) -> int:
     return _CLASSIFIER_SERIES_BASE + head_version
 
 
-def _board_keys(ids: list[str], ledger: Path) -> list[str]:
+def _board_keys(ids: list[str], live: dict[str, str]) -> list[str]:
     """Resolve Job ids through the same Board identity index sync and prune use."""
-    live = boards_by_canon(live_keep_set(ledger))
     return [resolve_board(job_id, live) for job_id in ids]
 
 
@@ -216,16 +227,18 @@ def count_board_groups(
 ) -> tuple[
     dict[tuple[str, str, str, str], int],
     int,
-    dict[str, str],
+    dict[str, Placement],
     dict[tuple[str, str, str, str, str], int],
 ]:
-    """Count the regular ledger and each Board's contribution in one pass."""
+    """Count the regular ledger and each Board's contribution in one pass. The third value is
+    where each tech row was counted: :func:`count_groups`'s assignments, with the rest of the
+    row's Board-delta key beside its family (ADR-0222)."""
     ids, min_years, titles, employment, atses, seen = _columns(rows)
     if len(boards) != len(ids):
         raise ValueError("Board identities must align with served rows")
     counts: dict[tuple[str, str, str, str], int] = {}
     board_counts: dict[tuple[str, str, str, str, str], int] = {}
-    assigned: dict[str, str] = {}
+    placed: dict[str, Placement] = {}
     non_tech = 0
 
     def bump(board: str, family: str, band: str, ats: str, is_new: bool) -> None:
@@ -253,9 +266,9 @@ def count_board_groups(
         for role in watchlist:
             if role.matches(title):
                 bump(board, roles.WATCH_PREFIX + role.name, band, ats, is_new)
-        assigned[job_id] = family
+        placed[job_id] = Placement(board, family, band, ats)
         bump(board, family, band, ats, is_new)
-    return counts, non_tech, assigned, board_counts
+    return counts, non_tech, placed, board_counts
 
 
 def _ledger_schema():
@@ -403,6 +416,9 @@ def append_ledger(
 
 
 _BOARD_COUNT_COLUMNS = ("board", "metric", "family", "band", "ats", "count")
+# The delta ledger's level metrics: a Board's `stock` and `new` counts, whose deltas sum to a level.
+# A tick's file also holds rows that are not: that tick's flows and markers (ADR-0222).
+_LEVEL_METRICS = ("stock", "new")
 
 
 def _load_board_counts(
@@ -436,7 +452,8 @@ def _recover_board_counts(
         ).encode():
             continue
         for row in table.to_pylist():
-            if row["ts"] <= as_of:
+            # A tick's file also carries its flows and markers (ADR-0222), which are not levels.
+            if row["ts"] <= as_of or row["metric"] not in _LEVEL_METRICS:
                 continue
             key = tuple(row[k] for k in _BOARD_COUNT_COLUMNS[:-1])
             value = counts.get(key, 0) + row["delta"]
@@ -453,7 +470,10 @@ def _append_board_deltas(
     current: dict[tuple[str, ...], int],
     version: int,
     ts: str,
+    flows: dict[tuple[str, ...], int],
 ) -> int:
+    """Write this tick's level changes, and its ``flows`` (ADR-0222) as rows of their own
+    metrics, to one file. ``flows`` rows carry their tick's count, not a change in a level."""
     import pyarrow as pa
     import pyarrow.parquet as pq
 
@@ -461,7 +481,7 @@ def _append_board_deltas(
         (*key, current.get(key, 0) - previous.get(key, 0))
         for key in sorted(previous.keys() | current.keys())
         if current.get(key, 0) != previous.get(key, 0)
-    ]
+    ] + [(*key, n) for key, n in sorted(flows.items())]
     if not changed:
         return 0
     directory.mkdir(parents=True, exist_ok=True)
@@ -503,6 +523,63 @@ def _save_board_counts(
     tmp.replace(path)
 
 
+def _counted_boards(path: Path) -> set[str]:
+    """Every Board the previous tick counted any row of, at whatever series version: a Board
+    missing from it was found this tick, so its backlog is Recounted, not Opened (ADR-0222)."""
+    import pyarrow.parquet as pq
+
+    if not path.exists():
+        return set()
+    return set(pq.read_table(path, columns=["board"]).column("board").to_pylist())
+
+
+def _flows_this_tick(
+    args: argparse.Namespace,
+    ids: list[str],
+    first_seen: list[str | None],
+    placed: dict[str, Placement],
+    live: dict[str, str],
+) -> dict[tuple[str, ...], int]:
+    """This tick's turnover and its Unauthoritative-Board markers, keyed like the delta ledger
+    (ADR-0222). There is no turnover without a comparable snapshot, which happens on the first
+    tick after ADR-0222 and after an unreadable one."""
+    flows: dict[tuple[str, ...], int] = {}
+    # One marker per Board whose scrape could not show an absence (ADR-0053): none of its
+    # closures counts this tick, and the Space says so rather than let it read as all opening.
+    for lowered in read_unauthoritative_boards(args.unauthoritative_boards):
+        board = live.get(lowered, lowered)
+        key = (board, job_turnover.UNSCOPED, "all", "all", board.split(":", 1)[0])
+        flows[key] = 1
+    snapshot = role_assignments.load_placements(args.assignments)
+    if snapshot is None:
+        _log.info(
+            "turnover: no comparable snapshot, so opened and closed start next run (ADR-0222)"
+        )
+        return flows
+    previous, previous_as_of = snapshot
+    turned = job_turnover.turnover(
+        previous,
+        placed,
+        previous_as_of=previous_as_of,
+        first_seen=dict(zip(ids, first_seen, strict=True)),
+        counted_boards=_counted_boards(args.board_counts),
+        served=set(ids),
+        pruned=read_id_list(args.pruned_ids),
+    )
+    totals = {
+        metric: sum(n for key, n in turned.items() if key[1] == metric)
+        for metric in job_turnover.METRICS
+    }
+    _log.info(
+        f"turnover since {previous_as_of}: opened {totals[job_turnover.OPENED]}, closed "
+        f"{totals[job_turnover.CLOSED]}, recounted +{totals[job_turnover.RECOUNTED_IN]} "
+        f"−{totals[job_turnover.RECOUNTED_OUT]}; closures not counted on {len(flows)} "
+        "Unauthoritative Board(s) (ADR-0222)"
+    )
+    flows.update(turned)
+    return flows
+
+
 def main() -> int:
     log.setup()
     log.context("role_trends")
@@ -519,6 +596,11 @@ def main() -> int:
     ap.add_argument("--assignments", type=Path, default=_ASSIGNMENTS)
     ap.add_argument("--reassignments", type=Path, default=_REASSIGNMENTS)
     ap.add_argument("--epochs", type=Path, default=_EPOCHS)
+    # this run's prune removals and Unauthoritative Boards, for turnover (ADR-0222)
+    ap.add_argument("--pruned-ids", type=Path, default=PRUNED_IDS_PATH)
+    ap.add_argument(
+        "--unauthoritative-boards", type=Path, default=_UNAUTHORITATIVE_BOARDS
+    )
     args = ap.parse_args()
 
     # The step is `continue-on-error`, which would turn an unguarded FileNotFoundError into a
@@ -613,14 +695,26 @@ def main() -> int:
     ts = now.isoformat(timespec="seconds")
     new_after = (now - timedelta(days=NEW_WINDOW_DAYS)).isoformat(timespec="seconds")
     try:
-        boards = _board_keys(rows["id"].to_pylist(), args.board_ledger)
-        counts, non_tech, assigned, board_counts = count_board_groups(
+        live = boards_by_canon(live_keep_set(args.board_ledger))
+        ids = rows["id"].to_pylist()
+        boards = _board_keys(ids, live)
+        counts, non_tech, placed, board_counts = count_board_groups(
             rows, family_of, watchlist, new_after, boards
         )
+        assigned = {job_id: p.family for job_id, p in placed.items()}
+        # Read before the snapshot is overwritten below: the transitions diff it (ADR-0057), and
+        # so does this tick's turnover (ADR-0222).
+        previous_families = role_assignments.load_previous(args.assignments, version)
+        had_snapshot = args.assignments.exists()
+        flows = _flows_this_tick(args, ids, _columns(rows)[5], placed, live)
+        # The snapshot before the delta file (ADR-0222). Turnover is a diff against it, so a
+        # snapshot left stale after this tick's flows were written would book them again on the
+        # next tick. This order can lose one tick's flows instead, which under-reports once.
+        role_assignments.save(args.assignments, placed, version, ts)
         previous, as_of = _load_board_counts(args.board_counts, version)
         previous = _recover_board_counts(previous, as_of, args.board_deltas, version)
         changed = _append_board_deltas(
-            args.board_deltas, previous, board_counts, version, ts
+            args.board_deltas, previous, board_counts, version, ts, flows
         )
         _save_board_counts(args.board_counts, board_counts, version, ts)
     except (OSError, ValueError) as exc:
@@ -651,15 +745,14 @@ def main() -> int:
     # unrelated new posting — which is how a 622-row "software-engineering decline" turned out to
     # be largely redistribution. Diagnostic only: never fails the run.
     try:
-        previous = role_assignments.load_previous(args.assignments, version)
+        previous = previous_families
         moved = role_assignments.transitions(previous, assigned)
-        # Snapshot BEFORE the ledger, deliberately. The ledger is append-only, so if the snapshot
-        # write failed after appending, the next tick would diff against the stale snapshot and
-        # append the same transitions again — silently inflating the series with duplicates that
-        # are indistinguishable from real repeated moves. This order can instead lose one tick's
-        # transitions, which under-reports once and stays truthful.
-        had_snapshot = args.assignments.exists()
-        role_assignments.save(args.assignments, assigned, version)
+        # The snapshot was written above, BEFORE this ledger, deliberately. The ledger is
+        # append-only, so if the snapshot write failed after appending, the next tick would diff
+        # against the stale snapshot and append the same transitions again — silently inflating
+        # the series with duplicates that are indistinguishable from real repeated moves. This
+        # order can instead lose one tick's transitions, which under-reports once and stays
+        # truthful.
         rows_written = role_assignments.append_ledger(
             args.reassignments, moved, version, ts
         )

@@ -14,11 +14,13 @@ growing.*
 The default: over the 7 days to 2026-09-21 Amazon opened **1,396** roles at a net change of
 **+20** — churn at a near-constant size rather than growth, which only this lens says.
 
-``volume`` — the rolling 7-day count of roles first seen inside the window. *Where the most
-opportunity is right now.* Always led by the largest employers.
+``volume`` — the roles opened across the window (ADR-0222's turnover), over the same runs
+Expansion sums. *Where the most opportunity is right now.* Always led by the largest employers.
+Until ADR-0222 it was ``new``, the roles first seen in the last 7 days *and still open*. That
+missed a job opened and closed inside the week.
 
-``rate`` — that same count as a share of the Board's open roles. *Who is moving fast for their
-size*, which is the only lens that surfaces a small company a user would never otherwise find.
+``rate`` — ``new`` as a share of the Board's open roles. *Who is moving fast for their size*,
+which is the only lens that surfaces a small company a user would never otherwise find.
 
 ## Four traps, each of which silently produces a plausible wrong list
 
@@ -63,6 +65,7 @@ from typing import Any
 
 from headstart import log, roles, version_spans
 from headstart.board_identity import tenant
+from headstart.ingest import job_turnover
 from headstart.ingest.board_naming import board_names, display_name
 from headstart.ingest.board_operator import classify
 
@@ -187,13 +190,16 @@ def dedup_touches(boards) -> set[str]:
     }
 
 
-def read_stock_change(
+def read_window_sum(
     delta_dir: Path,
     changes: set[str] | frozenset[str] = frozenset(),
     dedup: set[str] | frozenset[str] = frozenset(),
     touched: set[str] | frozenset[str] = frozenset(),
+    metric: str = "stock",
 ) -> tuple[collections.Counter, list[str]]:
-    """Net per-Board stock change over the trailing window, and the tick stamps it covers.
+    """Per-Board sum of one delta-ledger ``metric`` over the trailing window, and the tick stamps
+    it covers. Under ``stock`` that is the net change. Under a turnover metric (``opened``,
+    ``closed``, ADR-0222) it is the jobs that flowed, over the same runs the net change sums.
 
     **The window is bounded to the same span as ``new``, and that is the point.** An unbounded
     sum grows by one run every run, so Expansion would quietly measure a longer period each
@@ -282,7 +288,7 @@ def read_stock_change(
         if first_ts < cutoff or first_ts in left_out:
             continue
         table = pq.read_table(path).to_pydict()
-        for board, metric, family, delta, ts in zip(
+        for board, row_metric, family, delta, ts in zip(
             table["board"],
             table["metric"],
             table["family"],
@@ -291,7 +297,7 @@ def read_stock_change(
             strict=True,
         ):
             if (
-                metric == "stock"
+                row_metric == metric
                 and not family.startswith(_WATCH)
                 and family != _NON_TECH
                 and not (first_ts in left_out_touched and board in touched)
@@ -352,8 +358,14 @@ def rank(
     stock: collections.Counter,
     moved: collections.Counter,
     names: dict[str, str],
+    opened: collections.Counter,
+    closed: collections.Counter,
 ) -> tuple[dict[str, list[dict[str, Any]]], dict[str, int]]:
     """The three lenses, plus the counts of what was ranked and what each exclusion removed.
+
+    ``opened`` and ``closed`` are the window's turnover (ADR-0222). Volume ranks by ``opened``,
+    and every row carries both, because a net change alone read Amazon's week of 914–1,532
+    openings as "+17".
 
     Exclusions are counted and returned rather than silently applied: a tab that quietly drops a
     fifth of the ledger should say so, and the numbers are how anyone checks this stage is
@@ -381,6 +393,8 @@ def rank(
                 "stock": open_roles,
                 "new7": new.get(board, 0),
                 "net": moved.get(board, 0),
+                "opened": opened.get(board, 0),
+                "closed": closed.get(board, 0),
                 # Percent rather than a fraction: it is a display value, and rounding it here
                 # keeps every consumer from inventing its own precision.
                 "rate": round(100 * new.get(board, 0) / open_roles),
@@ -394,7 +408,9 @@ def rank(
             sorted((c for c in candidates if c["net"] > 0), key=lambda c: -c["net"])
         )[:TOP_N],
         "volume": _collapse_same_company(
-            sorted((c for c in candidates if c["new7"] > 0), key=lambda c: -c["new7"])
+            sorted(
+                (c for c in candidates if c["opened"] > 0), key=lambda c: -c["opened"]
+            )
         )[:TOP_N],
         "rate": _collapse_same_company(
             sorted((c for c in candidates if c["new7"] > 0), key=lambda c: -c["rate"])
@@ -444,7 +460,7 @@ def main() -> int:
     from headstart.embedding_conventions import PROD_TABLE
 
     new, stock = read_levels(args.board_counts)
-    moved, stamps = read_stock_change(
+    left_out = (
         args.board_deltas,
         counting_changes(args.epochs),
         dedup_changes(args.epochs),
@@ -452,6 +468,11 @@ def main() -> int:
         # a Tenant's two Workday sites, and its sibling is still one duplicate removal can move.
         dedup_touches(set(stock) | ledger_boards(args.board_deltas)),
     )
+    moved, stamps = read_window_sum(*left_out)
+    # The window's turnover (ADR-0222), over the same runs the net change sums, so a row's three
+    # figures describe one stretch of time.
+    opened, flow_stamps = read_window_sum(*left_out, metric=job_turnover.OPENED)
+    closed, _ = read_window_sum(*left_out, metric=job_turnover.CLOSED)
     if not stamps:
         # One delta file exists and it is the baseline. There is no measured change yet, and a
         # lens built on the baseline would rank every Board as newly created.
@@ -459,7 +480,9 @@ def main() -> int:
             "only the baseline delta tick exists — no measured window, no hot list"
         )
         return 0
-    lenses, counts = rank(new, stock, moved, board_names(args.db, PROD_TABLE))
+    lenses, counts = rank(
+        new, stock, moved, board_names(args.db, PROD_TABLE), opened, closed
+    )
 
     payload = {
         "generated_at": datetime.now(UTC).isoformat(timespec="seconds"),
@@ -469,6 +492,9 @@ def main() -> int:
             "from": min(stamps),
             "to": max(stamps),
             "base": window_base(args.board_deltas, min(stamps)),
+            # Turnover began with ADR-0222, so for its first week it covers less of the window
+            # than the net change does, and the tab says from when.
+            "flows_from": min(flow_stamps, default=None),
         },
         "lenses": lenses,
         "counts": counts,

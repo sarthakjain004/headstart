@@ -1043,10 +1043,13 @@ def _prune_args(tmp_path, monkeypatch):
         limit=None,
         board_failures=str(tmp_path / "board_failures.csv"),
         dedup_evictions=None,
+        pruned_ids=None,
     )
 
 
-def _prune_with_failures(tmp_path, monkeypatch, failures: str | None) -> set[str]:
+def _prune_with_failures(
+    tmp_path, monkeypatch, failures: str | None, pruned_ids: Path | None = None
+) -> set[str]:
     """Prune a table holding one row per Board below, each Board in the keep-set, against a
     consecutive-gone ledger (``None`` passes no ``--board-failures``); return the ids that
     survive."""
@@ -1062,6 +1065,7 @@ def _prune_with_failures(tmp_path, monkeypatch, failures: str | None) -> set[str
         ],
     )
     args = _prune_args(tmp_path, monkeypatch)
+    args.pruned_ids = pruned_ids and str(pruned_ids)
     floor = idx.live_keep_set
     monkeypatch.setattr(
         idx,
@@ -1098,6 +1102,20 @@ def test_prune_evicts_a_board_only_once_parole_reconfirms_it_gone(
         f"greenhouse:flaky,2,{gone}",
     )
     assert kept == {"greenhouse:a:1", "greenhouse:outage:1", "greenhouse:flaky:1"}
+
+
+def test_prune_hands_every_id_it_removed_to_role_trends(tmp_path, monkeypatch):
+    """None of prune's removals is a posting that closed, so role_trends books them as
+    Recounted, which it can do only if it knows them (ADR-0222)."""
+    gone = "HTTPError: HTTP Error 404: ,2026-09-23T17:47:04+00:00\n"
+    handoff = tmp_path / "run" / "pruned_ids.txt"
+    _prune_with_failures(
+        tmp_path, monkeypatch, f"greenhouse:RECONFIRMED,6,{gone}", handoff
+    )
+    assert handoff.read_text(encoding="utf-8").split() == [
+        "greenhouse:reconfirmed:1",
+        "greenhouse:reconfirmed:2",
+    ]
 
 
 def test_prune_without_a_failures_ledger_evicts_nothing_for_it(tmp_path, monkeypatch):
@@ -1235,6 +1253,7 @@ def _prune_args_keeping_the_stub(tmp_path):
         limit=None,
         board_failures=None,
         dedup_evictions=None,
+        pruned_ids=None,
     )
 
 
