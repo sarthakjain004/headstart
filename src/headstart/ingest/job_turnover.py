@@ -32,7 +32,9 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping
 from collections.abc import Set as AbstractSet
 from pathlib import Path
+from typing import NamedTuple
 
+from headstart.board_identity import ats_of
 from headstart.ingest.role_assignments import Placement
 from headstart.ingest.role_family_classifier import normalise
 
@@ -46,9 +48,23 @@ METRICS = (OPENED, CLOSED, RECOUNTED_IN, RECOUNTED_OUT)
 #: so its absences were not read and none of its closures could be counted that tick.
 UNSCOPED = "unscoped"
 
-Key = tuple[
-    str, str, str, str, str
-]  # (board, metric, family, band, ats), as the delta ledger
+#: What a marker row carries where a turnover row carries a family and a band: it counts a Board.
+ALL = "all"
+
+
+class Key(NamedTuple):
+    """A Board-delta ledger key: the row a count is written under."""
+
+    board: str
+    metric: str
+    family: str
+    band: str
+    ats: str
+
+
+def unscoped_marker(board: str) -> Key:
+    """The marker row for a Board whose scrape could not show an absence this tick."""
+    return Key(board, UNSCOPED, ALL, ALL, ats_of(board))
 
 
 def turnover(
@@ -69,7 +85,7 @@ def turnover(
     booked: dict[Key, int] = {}
 
     def book(placed: Placement, metric: str) -> None:
-        key = (placed.board, metric, placed.family, placed.band, placed.ats)
+        key = Key(placed.board, metric, placed.family, placed.band, placed.ats)
         booked[key] = booked.get(key, 0) + 1
 
     for job_id, now in current.items():

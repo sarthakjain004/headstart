@@ -553,11 +553,13 @@ def _rows_by_board(deltas: list[dict], metrics) -> dict[str, list[dict]]:
     return out
 
 
-# Mirrors app.js DEDUP_ATSES and MIRROR_ATS (and hot_boards' `dedup_touches`): the Boards a
-# duplicate-removal change can move. Change one, change the others.
+# Mirrors app.js DEDUP_ATSES and MIRROR_ATS, and hot_boards' `_DEDUP_SIBLING_ATSES` and
+# `_DEDUP_MIRROR_ATS`: the Boards a duplicate-removal change can move. Change one, change them all;
+# tests/test_space_app.py pins that this and hot_boards agree.
 _DEDUP_ATSES = ("taleo_enterprise", "workday")
 _MIRROR_ATS = "eightfold"
-# Mirrors app.js LINE_MOVING: the counting changes that move every line they reach.
+# Mirrors app.js LINE_MOVING and hot_boards' `_STOCK_MOVING`: the counting changes that move
+# every line they reach.
 _LINE_MOVING = (
     "centroid_version",
     "family_map_fingerprint",

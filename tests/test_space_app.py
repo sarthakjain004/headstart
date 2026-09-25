@@ -3299,3 +3299,23 @@ def test_no_turnover_off_openings(company_trends, trends_app, monkeypatch):
     d = company_trends.get("/trends?metric=new&company=workday:hpe/a").get_json()
     assert all("turnover" not in s for s in d["series"])
     assert d["closures_unseen"] == {}
+
+
+def test_the_space_and_the_hot_list_leave_out_the_same_runs_and_boards(trends_app):
+    """ADR-0227: the index's turnover (the Space) and Hot (hot_boards) leave out the same
+    counting changes, and duplicate removal touches the same Boards, so the two never tell a
+    reader different figures for one week. Each keeps its own copy of the rule."""
+    from headstart.ingest import hot_boards
+
+    assert set(trends_app._LINE_MOVING) == set(hot_boards._STOCK_MOVING)
+    assert set(trends_app._DEDUP_ATSES) == set(hot_boards._DEDUP_SIBLING_ATSES)
+    assert trends_app._MIRROR_ATS == hot_boards._DEDUP_MIRROR_ATS
+    for boards in (
+        ["workday:acme/a", "workday:acme/b"],
+        ["workday:acme/a", "greenhouse:acme"],
+        ["eightfold:jobs.acme.com"],
+        ["taleo_enterprise:acme/1", "taleo_enterprise:acme/2"],
+    ):
+        assert trends_app._dedup_touched(boards) == bool(
+            hot_boards.dedup_touches(boards)
+        ), boards

@@ -92,7 +92,9 @@ _STOCK_MOVING = (
 )
 #: Moves only the Boards it can touch (ADR-0186/0187, #632/#649): Eightfold's, and those of a
 #: Tenant with two or more Workday or Taleo Enterprise Boards — the Trends tab's own rule for a
-#: company (app.js `DEDUP_ATSES`, `MIRROR_ATS`). Change one, change the other.
+#: company (app.js `DEDUP_ATSES`, `MIRROR_ATS`), and the Space's for the index's turnover
+#: (`_DEDUP_ATSES`, `_MIRROR_ATS`, `_LINE_MOVING`, ADR-0227). Change one, change them all;
+#: tests/test_space_app.py pins that the Space and this module agree.
 _DEDUP = "dedup_version"
 _DEDUP_SIBLING_ATSES = ("workday", "taleo_enterprise")
 _DEDUP_MIRROR_ATS = "eightfold"
@@ -328,12 +330,12 @@ def board_arrivals(delta_dir: Path) -> dict[str, str]:
         for ts, board, metric in zip(
             table["ts"], table["board"], table["metric"], strict=True
         ):
-            if metric == "stock" and ts < first.get(board, "~"):
+            if metric == "stock" and (board not in first or ts < first[board]):
                 first[board] = ts
     return first
 
 
-def too_new(arrivals: dict[str, str], newest: str) -> set[str]:
+def young_boards(arrivals: dict[str, str], newest: str) -> set[str]:
     """The Boards counted for under ``MIN_COUNTED_DAYS`` at ``newest``: too new to rank, as the
     trend a row opens calls a company counted that briefly too new to show a direction."""
     cutoff = (
@@ -390,7 +392,7 @@ def rank(
 
     ``opened`` and ``closed`` are the window's turnover (ADR-0227). Volume ranks by ``opened``,
     and every row carries both, because a net change alone read Amazon's week of 914–1,532
-    openings as "+17". ``young`` are the Boards too new to rank (:func:`too_new`); they are
+    openings as "+17". ``young`` are the Boards too new to rank (:func:`young_boards`); they are
     counted with the newly discovered.
 
     Exclusions are counted and returned rather than silently applied: a tab that quietly drops a
@@ -521,7 +523,7 @@ def main() -> int:
         board_names(args.db, PROD_TABLE),
         opened,
         closed,
-        young=too_new(arrivals, max(stamps)),
+        young=young_boards(arrivals, max(stamps)),
     )
 
     payload = {

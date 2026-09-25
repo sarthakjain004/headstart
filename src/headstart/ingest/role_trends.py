@@ -128,11 +128,6 @@ def series_version(head_version: int) -> int:
     return _CLASSIFIER_SERIES_BASE + head_version
 
 
-def _board_keys(ids: list[str], live: dict[str, str]) -> list[str]:
-    """Resolve Job ids through the same Board identity index sync and prune use."""
-    return [resolve_board(job_id, live) for job_id in ids]
-
-
 def _columns(rows) -> tuple[list, ...]:
     """The served columns the counts read, row-aligned. ``first_seen`` is absent when the table
     predates ADR-0031; those rows are stock, never new."""
@@ -554,9 +549,7 @@ def _turnover_this_tick(
     # One marker per Board whose scrape could not show an absence (ADR-0053): none of its
     # closures counts this tick, and the Space says so rather than let it read as all opening.
     for lowered in read_unauthoritative_boards(unauthoritative_boards):
-        board = live.get(lowered, lowered)
-        key = (board, job_turnover.UNSCOPED, "all", "all", board.split(":", 1)[0])
-        turnover[key] = 1
+        turnover[job_turnover.unscoped_marker(live.get(lowered, lowered))] = 1
     loaded = role_assignments.load_placements(snapshot)
     if loaded is None:
         _log.info(
@@ -703,7 +696,8 @@ def main() -> int:
     try:
         live = boards_by_canon(live_keep_set(args.board_ledger))
         ids, *_, first_seen = _columns(rows)
-        boards = _board_keys(ids, live)
+        # The Board identity index sync and prune resolve through.
+        boards = [resolve_board(job_id, live) for job_id in ids]
         counts, non_tech, placed, board_counts = count_board_groups(
             rows, family_of, watchlist, new_after, boards
         )

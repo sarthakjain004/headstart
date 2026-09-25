@@ -513,7 +513,7 @@ def test_a_boards_arrival_is_not_hiring_and_a_board_counted_briefly_is_not_ranke
     opened, _ = hot_boards.read_window_sum(deltas, arrivals=arrivals, metric="opened")
     assert moved["lever:sphinix"] == 3 == opened["lever:sphinix"]
     assert moved["greenhouse:old"] == 4
-    young = hot_boards.too_new(arrivals, "2026-09-24T00:00:00+00:00")
+    young = hot_boards.young_boards(arrivals, "2026-09-24T00:00:00+00:00")
     assert young == {"lever:sphinix"}
     lenses, counts = _rank(
         new={},

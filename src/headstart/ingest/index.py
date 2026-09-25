@@ -157,6 +157,7 @@ _UPGRADES = PENDING_UPGRADES_PATH
 _UNCONFIRMED = UNCONFIRMED_PATH
 # Written by scrape_join from the shard reports: the Boards whose scraped list is not authoritative
 # this run, which must not be evicted from just because they emitted a partial list (ADR-0053).
+_UNAUTHORITATIVE = UNAUTHORITATIVE_BOARDS_PATH
 
 _ADD_CHUNK = 2048  # rows per add batch — bounds peak memory and streams progress
 _TOP_UNCONFIRMED_BOARDS = (
@@ -1383,7 +1384,7 @@ def main() -> int:
     )
     p_sync.add_argument(
         "--unauthoritative-boards",
-        default=str(UNAUTHORITATIVE_BOARDS_PATH),
+        default=str(_UNAUTHORITATIVE),
         help="JSON of Boards whose scraped list is not authoritative, written by scrape_join; "
         "they are dropped from the eviction scope (ADR-0053). Missing file means no Board is "
         "protected",

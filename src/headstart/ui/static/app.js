@@ -2184,6 +2184,7 @@ function dropPartialReads(series){
 // as crossed: a change at the window's first point is already in every line's start.
 // Mirrors role_trends.NEW_WINDOW_DAYS: how long a posting counts as new.
 const NEW_WINDOW_DAYS = 7;
+// Mirrored by the Space's `_LINE_MOVING` and hot_boards `_STOCK_MOVING` (ADR-0227).
 const LINE_MOVING = [
   'centroid_version', 'family_map_fingerprint', 'family_classifier_version', 'tech_filter_version',
 ];

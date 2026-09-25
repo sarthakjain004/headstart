@@ -45,6 +45,7 @@ _SHARDS = (
 _OUT = REPO_ROOT / "data" / "jobs"
 # Under data/state because that is what rides the corpus-state artifact to the job running
 # `index sync` — the shard fragments themselves stop at this stage (ADR-0053).
+_UNAUTHORITATIVE = UNAUTHORITATIVE_BOARDS_PATH
 _SCRAPED_BOARDS = REPO_ROOT / "data" / "state" / "scraped_boards.json"
 _LEDGER = REPO_ROOT / "data" / "validate" / "liveness"
 _SPEEDUP = REPO_ROOT / "data" / "state" / "shard_speedup.csv"
@@ -149,7 +150,7 @@ def main() -> int:
     )
     ap.add_argument(
         "--unauthoritative-boards",
-        default=str(UNAUTHORITATIVE_BOARDS_PATH),
+        default=str(_UNAUTHORITATIVE),
         help="where to record the Boards whose scraped list is not authoritative, for `index "
         "sync` to exclude from the eviction scope "
         "(default: data/state/unauthoritative_boards.json)",
