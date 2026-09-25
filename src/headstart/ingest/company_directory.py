@@ -1,15 +1,16 @@
 """Name every Board the Trends tab has counted, grouped into the companies a person would pick.
 
-The Trends tab can be narrowed to one or more companies (ADR-0185). Its counts come from the
-ADR-0143 Board-delta ledger, which is keyed by **board_key**, while a person types a company
-name, so something has to join the two. This stage writes that join as a static file the Space
-serves, `data/state/company_directory.json`:
+The Trends tab can be narrowed to one or more companies (ADR-0185), and the Hot tab ranks them
+(ADR-0230). Their counts come from the ADR-0143 Board-delta ledger, which is keyed by
+**board_key**, while a person types a company name, so something has to join the two. This stage
+writes that join as a static file the Space serves, `data/state/company_directory.json`:
 
     {"companies": [{"name": "HPE",
-                    "boards": ["workday:hpe/ACJobSite", "workday:hpe/Jobsathpe"]}, ...]}
+                    "boards": ["workday:hpe/ACJobSite", "workday:hpe/Jobsathpe"],
+                    "operator": "employer"}, ...]}
 
-It runs in the pipeline rather than the Space because the naming rules live in `board_naming`,
-and the Space never imports from `ingest`.
+It runs in the pipeline rather than the Space because the naming rules live in `board_naming`
+and the **Operator** list in `board_operator`, and the Space never imports from `ingest`.
 
 ## Every Board the ledger has counted, not only the ones hiring now
 
@@ -24,7 +25,7 @@ A closed Board has no rows left in the served table to name it (913 of those 1,3
 name carries forward from the previous directory. Without that, a company would be renamed to
 its slug for having stopped hiring.
 
-## Names and Boards, no counts
+## Names, Boards and an Operator, no counts
 
 A Board's openings are derivable from the delta ledger the Space already loads, and its ATS is
 the prefix of its board_key, so the file carries neither. That keeps one source for counts. It
@@ -80,7 +81,7 @@ from pathlib import Path
 from headstart import company_name, log, roles
 from headstart.board_identity import ats_of
 from headstart.ingest.board_naming import board_names, display_name, stated_name
-from headstart.ingest.board_operator import tenant
+from headstart.ingest.board_operator import Operator, classify, tenant
 
 # `__spec__` as well as `__name__`, like every other module that doubles as a `python -m`
 # entry point: run that way `__name__` is "__main__", outside the root `setup()` configures.
@@ -152,7 +153,7 @@ def companies(boards: set[str], names: dict[str, str]) -> list[dict]:
     for board in boards:
         clusters[root(board)].append(board)
     entries = [
-        {"name": name, "boards": sorted(cluster)}
+        {"name": name, "boards": sorted(cluster), "operator": _operator(cluster, name)}
         for cluster in clusters.values()
         # A company nobody can name cannot be picked by name: its tenant is only a code and no
         # source states one (ADR-0212). Its Boards still count toward the Total breakdown.
@@ -189,6 +190,13 @@ def _company_name(cluster: list[str], names: dict[str, str]) -> str | None:
         if 2 * votes >= len(cluster):
             return name
     return display_name("", first)
+
+
+def _operator(cluster: list[str], name: str) -> Operator:
+    """Who runs the company (ADR-0171): an aggregator if any of its Boards re-posts, else
+    services if any places staff, else the employer. The Hot tab labels a company row with it."""
+    found = {classify(board, name) for board in cluster}
+    return next((op for op in ("aggregator", "services") if op in found), "employer")
 
 
 def previous_names(path: Path) -> dict[str, str]:

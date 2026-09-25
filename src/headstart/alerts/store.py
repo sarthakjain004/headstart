@@ -30,7 +30,7 @@ import hashlib
 import json
 import re
 import secrets
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field, replace
@@ -423,34 +423,38 @@ class CompanyPrefs:
     def blank(cls, account: str) -> CompanyPrefs:
         return cls(account=account)
 
-    def with_board(self, board: str, action: str) -> CompanyPrefs:
-        """This record with ``board`` moved to ``follow``, ``hide``, or neither (``clear``).
+    def with_boards(self, boards: Iterable[str], action: str) -> CompanyPrefs:
+        """This record with ``boards`` moved to ``follow``, ``hide``, or neither (``clear``).
 
-        Removing it from both lists first is what keeps them disjoint: following a Board that
-        was hidden has to un-hide it. The key is folded first, so a differently-cased spelling
-        of a Board already listed is the *same* Board rather than a second entry.
+        Several Boards at once because the gesture is a company's (ADR-0230): following one
+        of a Company directory entry's Boards follows all of them, in one write.
+
+        Removing them from both lists first is what keeps the lists disjoint: following a Board
+        that was hidden has to un-hide it. Keys are folded first, so a differently-cased
+        spelling of a Board already listed is the *same* Board rather than a second entry.
         """
-        board = lower_key(board)
-        followed = tuple(b for b in self.followed if b != board)
-        hidden = tuple(b for b in self.hidden if b != board)
+        moved = tuple(dict.fromkeys(lower_key(board) for board in boards))
+        followed = tuple(b for b in self.followed if b not in moved)
+        hidden = tuple(b for b in self.hidden if b not in moved)
         if action == "follow":
-            followed = (*followed, board)[-MAX_COMPANIES:]
+            followed = (*followed, *moved)[-MAX_COMPANIES:]
         elif action == "hide":
-            hidden = (*hidden, board)[-MAX_COMPANIES:]
+            hidden = (*hidden, *moved)[-MAX_COMPANIES:]
         return replace(self, followed=followed, hidden=hidden, updated_at=now_iso())
 
-    def would_evict(self, board: str, action: str) -> bool:
-        """Whether writing ``board`` would silently drop a different Board to stay under the cap.
+    def would_evict(self, boards: Iterable[str], action: str) -> bool:
+        """Whether writing ``boards`` would silently drop a different Board to stay under the cap.
 
         Asked by both `/companies` routes *before* the write, and it has to be asked there
-        rather than inferred afterwards: :meth:`with_board` appends and then cuts the front, so
-        the new entry always lands and the OLDEST is what goes. Checking the result instead
+        rather than inferred afterwards: :meth:`with_boards` appends and then cuts the front, so
+        the new entries always land and the OLDEST are what go. Checking the result instead
         never fires — measured through the route, the 201st follow answered 200.
         """
         if action not in ("follow", "hide"):
             return False
         listed = self.followed if action == "follow" else self.hidden
-        return lower_key(board) not in listed and len(listed) >= MAX_COMPANIES
+        added = {lower_key(board) for board in boards} - set(listed)
+        return len(listed) + len(added) > MAX_COMPANIES
 
     def to_dict(self) -> dict[str, Any]:
         return {

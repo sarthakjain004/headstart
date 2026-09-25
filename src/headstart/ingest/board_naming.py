@@ -1,8 +1,7 @@
 """Name a Board for a person to read: its stated company, a curated alias, or its humanised tenant.
 
-Two stages name Boards — `hot_boards` for the Hot tab's ranked rows and `company_directory`
-for every Board the Trends company filter can pick — and both must name a Board the same way,
-or the company a user picks on one tab is spelled differently on the other.
+`company_directory` names every Board the Trends company filter can pick, and the Hot tab ranks
+the same entries (ADR-0230), so a company is spelled the same on both tabs.
 """
 
 from __future__ import annotations
@@ -26,10 +25,10 @@ def board_names(db: Path, table_name: str) -> dict[str, str]:
     2026-09-24 carry a cased company name (ADR-0114, ADR-0172), and the rest fall back to their
     slug. Unreadable rather than fatal: each caller decides what an empty map means for it.
 
-    Each caller scans the whole table, `hot_boards` and `company_directory` once per run each.
-    That is affordable because of where they run: `role_trends`, the stage before both on the
-    same merge VM, already reads every row *including the 768-d vector column*, and two string
-    columns over the same rows are strictly cheaper. If either moves off that VM, revisit it.
+    `company_directory` scans the whole table once per run. That is affordable because of where
+    it runs: `role_trends`, the stage before it on the same merge VM, already reads every row
+    *including the 768-d vector column*, and two string columns over the same rows are strictly
+    cheaper. If it moves off that VM, revisit it.
     """
     try:
         import lancedb

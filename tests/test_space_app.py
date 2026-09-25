@@ -715,9 +715,43 @@ def test_a_company_click_is_stored(sets_app, hub, monkeypatch):
     )
 
     assert r.status_code == 200
-    assert r.json == {"followed": ["greenhouse:acme"], "hidden": ["lever:b"]}
+    assert r.json == {
+        "followed": ["greenhouse:acme"],
+        "hidden": ["lever:b"],
+        "hidden_companies": 1,
+    }
     assert client.get("/companies", base_url=_HTTPS).json == r.json
     assert b"lever:b" in hub[path]
+
+
+def test_one_board_clicked_follows_or_hides_its_whole_company(
+    sets_app, hub, monkeypatch
+):
+    """ADR-0230: a Hot row is a company, so its Follow is every Board of it, and so is a result
+    card's hide. The hidden count is of companies: Boeing's Boards are one."""
+    boeing = ("workday:boeing/EXTERNAL_CAREERS", "workday:boeing/Eng")
+    monkeypatch.setattr(
+        sets_app, "_COMPANY_BOARDS", {board.lower(): boeing for board in boeing}
+    )
+    _stored_companies(sets_app, hub)
+    client = _signed_in(sets_app, monkeypatch)
+
+    r = client.post(
+        "/companies",
+        json={"board": "WORKDAY:boeing/eng", "action": "follow"},
+        base_url=_HTTPS,
+    )
+    assert r.json["followed"] == [
+        "workday:boeing/external_careers",
+        "workday:boeing/eng",
+    ]
+    r = client.post(
+        "/companies",
+        json={"board": "workday:boeing/external_careers", "action": "hide"},
+        base_url=_HTTPS,
+    )
+    assert (r.json["followed"], len(r.json["hidden"])) == ([], 2)
+    assert r.json["hidden_companies"] == 1
 
 
 # ---- Profile (ADR-0041) ----
@@ -2399,7 +2433,7 @@ def test_trends_epochs_are_not_narrowed_by_ats(epochs_trends_app):
     [
         "data/state/role_trends.parquet",
         "data/state/trends_epochs.csv",
-        "data/state/hot_boards.json",
+        "data/state/company_directory.json",
     ],
 )
 def test_the_index_pull_fetches_every_state_file_the_app_reads(app, monkeypatch, path):
@@ -3067,27 +3101,42 @@ def test_a_v3_family_before_its_data_is_all_its_predecessors(
     assert empty["family_known"] is True and empty["series"] == []
 
 
-def test_hot_names_the_run_its_window_is_measured_from(trends_app, monkeypatch):
-    rows = [
-        {
-            "ts": ts,
-            "version": 2,
-            "metric": "stock",
-            "family": "se",
-            "band": "all",
-            "ats": "x",
-            "count": 1,
-        }
-        for ts in (_T1, _T2, _T3)
-    ]
-    ticks = tuple(sorted({row["ts"] for row in rows}))
-    hot = {"window": {"from": _T2, "to": _T3}, "lenses": {}}
-    monkeypatch.setattr(trends_app, "_HOT", trends_app._with_window_base(hot, ticks))
-    d = trends_app.app.test_client().get("/hot").get_json()
-    assert d["window"]["base"] == _T1
-    # A base `hot_boards` published is kept as written.
-    written = {"window": {"from": _T2, "to": _T3, "base": _T2}}
-    assert trends_app._with_window_base(written, ticks) == written
+def test_hot_is_ranked_at_boot_from_the_history_the_trends_tab_reads(
+    trends_app, monkeypatch, tmp_path
+):
+    """ADR-0230: no pipeline file; the Space ranks the Company directory from `_HISTORY`."""
+    history = _company_history(trends_app, monkeypatch, tmp_path)
+    seen = {}
+
+    def rank(given, directory):
+        seen.update(history=given, directory=directory)
+        return {"window": {"base": _T1}, "lenses": {}, "counts": {"ranked": 0}}
+
+    monkeypatch.setattr(trends_app.hot_ranking, "rank", rank)
+    # A directory from before the Operator ranks nothing: every staffing firm would otherwise
+    # read as an employer until the next run wrote one.
+    assert trends_app._rank_hot(history) == {}
+    for entry in history.companies.values():
+        entry["operator"] = "employer"
+    ranked = trends_app._rank_hot(history)
+    assert ranked["window"]["base"] == _T1
+    assert seen == {"history": history, "directory": history.companies}
+    monkeypatch.setattr(trends_app, "_HOT", ranked)
+    assert trends_app.app.test_client().get("/hot").get_json() == ranked
+
+
+def test_a_hot_ranking_that_fails_darkens_hot_only(trends_app, monkeypatch, tmp_path):
+    history = _company_history(trends_app, monkeypatch, tmp_path)
+    for entry in history.companies.values():
+        entry["operator"] = "employer"
+
+    def broken(*_):
+        raise KeyError("counted_since")
+
+    monkeypatch.setattr(trends_app.hot_ranking, "rank", broken)
+    assert trends_app._rank_hot(history) == {}
+    monkeypatch.setattr(trends_app, "_HOT", {})
+    assert trends_app.app.test_client().get("/hot").status_code == 503
 
 
 def test_every_category_hands_search_the_jobs_its_trend_counts(

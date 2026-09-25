@@ -887,8 +887,8 @@ if __name__ == "__main__":
         raise SystemExit(main())
     except Exception:  # noqa: BLE001 - the one catch-all per entry point, logged and re-exited
         _log.error(
-            "role_trends failed — no trend rows this run, and the Board ledgers hot_boards "
-            "and company_directory read may be a tick stale",
+            "role_trends failed — no trend rows this run, and the Board ledgers "
+            "company_directory and the Space's Hot ranking read may be a tick stale",
             exc_info=True,
         )
         raise SystemExit(1) from None

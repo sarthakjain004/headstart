@@ -22,9 +22,8 @@ That is what lets a sentence give all three without them disagreeing.
 
 What this cannot tell: a job a tech-filter change lets in arrives with a fresh ``first_seen``,
 exactly like a new posting. The readers leave a counting change's run, and the run after it, out
-of the turnover, as they already do for net (``hot_boards.counting_changes``,
-``trend_netting``). A job opened and closed between two scrapes of its Board is in no count at all, so
-every count is a lower bound.
+of the turnover, as they already do for net (``trend_netting``, ADR-0230). A job opened and
+closed between two scrapes of its Board is in no count at all, so every count is a lower bound.
 """
 
 from __future__ import annotations

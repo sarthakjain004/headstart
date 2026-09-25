@@ -395,29 +395,21 @@ def test_a_stock_series_a_run_leaves_out_is_at_zero_there():
     )
 
 
-def test_the_space_and_the_hot_list_leave_out_the_same_runs_and_boards():
-    """ADR-0227: the index's turnover (the Space) and Hot (hot_boards) leave out the same
-    counting changes, and duplicate removal touches the same Boards, so the two never tell a
-    reader different figures for one week. Hot keeps its own copy of the rule until ADR-0230
-    step 5 ranks it from the history; the Space's is trend_netting's."""
-    from headstart.ingest import hot_boards
-
-    assert set(trend_netting.LINE_MOVING_FIELDS) == set(hot_boards._STOCK_MOVING)
-    assert set(trend_netting.DEDUP_SIBLING_ATSES) == set(
-        hot_boards._DEDUP_SIBLING_ATSES
-    )
-    assert trend_netting.DEDUP_MIRROR_ATS == hot_boards._DEDUP_MIRROR_ATS
-    for boards in (
-        ["workday:acme/a", "workday:acme/b"],
-        ["workday:acme/a", "workday:other/b"],  # two Tenants: nothing to deduplicate
-        ["workday:ACME/a", "workday:acme/b"],  # one Tenant, compared case-blind
-        ["workday:acme/a", "greenhouse:acme"],
-        ["eightfold:jobs.acme.com"],
-        ["taleo_enterprise:acme/1", "taleo_enterprise:acme/2"],
-    ):
-        assert trend_netting.dedup_touched(boards) == bool(
-            hot_boards.dedup_touches(boards)
-        ), boards
+@pytest.mark.parametrize(
+    ("boards", "touched"),
+    [
+        (["workday:acme/a", "workday:acme/b"], True),
+        (["workday:acme/a", "workday:other/b"], False),  # two Tenants, nothing to do
+        (["workday:ACME/a", "workday:acme/b"], True),  # one Tenant, compared case-blind
+        (["workday:acme/a", "greenhouse:acme"], False),
+        (["eightfold:jobs.acme.com"], True),
+        (["taleo_enterprise:acme/1", "taleo_enterprise:acme/2"], True),
+    ],
+)
+def test_duplicate_removal_touches_a_company_by_its_boards(boards, touched):
+    """ADR-0227: the Boards duplicate removal can move. Hot kept a copy of this rule, pinned
+    here to trend_netting's, until ADR-0230 ranked it from the history; now it has none."""
+    assert trend_netting.dedup_touched(boards) is touched
 
 
 def _write_opened_history(state: Path) -> None:

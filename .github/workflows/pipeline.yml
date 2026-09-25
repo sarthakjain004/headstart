@@ -901,18 +901,12 @@ jobs:
         continue-on-error: true
         timeout-minutes: 20
         run: python -m headstart.ingest.role_trends
-      - name: Rank the actively-hiring Boards
-        # Strictly after role_trends: it reads that stage's Board-count snapshot and delta
-        # ledger. Never fatal for the same reason — when role_trends skipped, this one finds no
-        # ledger, warns and exits 0, which hides the tab rather than failing a run that has
-        # already scraped, embedded and indexed successfully.
-        if: needs.scrape-plan.outputs.run == 'true'
-        continue-on-error: true
-        run: python -m headstart.ingest.hot_boards
-      - name: Name the companies Trends can be filtered to (ADR-0185)
-        # After role_trends for the same reason as the hot list: it reads that stage's
-        # Board-delta ledger, and warns and exits 0 without it. When the table's names can't be
-        # read it keeps the previous directory rather than writing an all-slug one.
+      - name: Name the companies Trends can be filtered to and Hot ranks (ADR-0185, ADR-0230)
+        # Strictly after role_trends: it reads that stage's Board-delta ledger, and warns and
+        # exits 0 without it. Never fatal for the same reason — a run that has already scraped,
+        # embedded and indexed must not fail over it. When the table's names can't be read it
+        # keeps the previous directory rather than writing an all-slug one. The Space ranks Hot
+        # from this file and the delta ledger at boot.
         if: needs.scrape-plan.outputs.run == 'true'
         continue-on-error: true
         run: python -m headstart.ingest.company_directory

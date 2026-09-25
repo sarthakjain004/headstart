@@ -1134,7 +1134,7 @@ textarea:focus{ border-color:var(--accent); }
 .cov-txt .aside{ margin-top:2px; }
 @media (max-width:520px){ .cov-row{ grid-template-columns:48px 1fr; gap:10px; } }
 
-/* ---- "Hiring now" (hot_boards) ------------------------------------------------------------
+/* ---- "Hiring now" (hot_ranking) -----------------------------------------------------------
    A leaderboard, so the row is a grid with the ranking number in its own column: the measure
    is the thing being compared and it stays on one right-aligned axis down the list, which is
    the only reason a ranked list reads faster than the same rows unranked. Every value here is

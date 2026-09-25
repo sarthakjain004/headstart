@@ -2,9 +2,9 @@
 
 Renders the shared templates/static from ``src/headstart/ui`` and answers ``/search``
 through the shared ``headstart.search.JobSearch``, against the local LanceDB copy of the
-``jobs`` table. No sign-in wall, no alerts, no résumé panel, no trends — those need Space
-secrets or state; the page simply renders without them, which is also what a Space with no
-secrets shows.
+``jobs`` table. No sign-in wall, no alerts, no résumé panel, no trends and no Hot tab — those
+need Space secrets or state; the page simply renders without them, which is also what a Space
+with no secrets shows.
 
 Run:  python scripts/ui/serve.py    then open  http://localhost:8000
 """
@@ -41,17 +41,6 @@ _REPO = Path(__file__).resolve().parents[2]
 # the same headstart/ui regardless of whether headstart is this repo's src/ or the Space
 # image's copy of it.
 _UI = Path(headstart.__file__).parent / "ui"
-
-# The hot list is a plain artifact with no secret behind it, so unlike trends it renders here
-# whenever a local pipeline run (or a pull) has left one — which is what makes the tab
-# reviewable without deploying.
-_HOT_PATH = _REPO / "data" / "state" / "hot_boards.json"
-try:  # a half-written artifact must not stop the renderer booting, as on the Space
-    _HOT = (
-        json.loads(_HOT_PATH.read_text(encoding="utf-8")) if _HOT_PATH.exists() else {}
-    )
-except (OSError, ValueError):
-    _HOT = {}
 
 print("loading model + index ...", flush=True)
 _model = load_encoder()
@@ -125,7 +114,9 @@ def index():
         keyword_default_scope=KEYWORD_DEFAULT_SCOPE,
         has_description=capabilities.has_description,
         trends_on=False,
-        hot_on=bool(_HOT),
+        # Hot is ranked from the Trends history at the Space's boot (ADR-0230), which this
+        # renderer does not load, so the tab is dark here as the Trends tab is.
+        hot_on=False,
         alerts_on=False,
         sets_on=False,
         # unlike the rest: this renderer implements /companies over one in-memory record
@@ -192,21 +183,12 @@ def set_company():
         return jsonify(
             {"error": "board and action (follow|hide|clear) are required"}
         ), 400
-    # The record owns the rule, so the two mirrors cannot answer differently at the limit.
-    if _LOCAL_COMPANIES.would_evict(board, action):
-        return jsonify(
-            {"error": f"at most {MAX_COMPANIES} companies in each list"}
-        ), 409
-    _LOCAL_COMPANIES = _LOCAL_COMPANIES.with_board(board, action)
+    # The record owns the rule, so the two mirrors cannot answer differently at the limit. With
+    # no Company directory here, each Board is its own company.
+    if _LOCAL_COMPANIES.would_evict([board], action):
+        return jsonify({"error": f"at most {MAX_COMPANIES} boards in each list"}), 409
+    _LOCAL_COMPANIES = _LOCAL_COMPANIES.with_boards([board], action)
     return list_companies()
-
-
-@app.route("/hot")
-def hot_companies():
-    """Mirror of the Space's route, so the tab is reviewable locally (ADR-0042)."""
-    if not _HOT:
-        return jsonify({"error": "no hot list built locally"}), 503
-    return jsonify(_HOT)
 
 
 @app.route("/search")

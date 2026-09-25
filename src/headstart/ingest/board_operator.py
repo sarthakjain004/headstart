@@ -1,10 +1,11 @@
 """Who operates a Board — the employer itself, a services firm, or an aggregator.
 
-The Hot tab ranks Boards by hiring activity, and the three loudest Boards on every lens are
-not employers: `lever:jobgether` re-posts other companies' jobs, `careers.hcltech.com` and
+The Hot tab ranks companies by hiring activity, and the three loudest on every lens are not
+employers: `lever:jobgether` re-posts other companies' jobs, `careers.hcltech.com` and
 `careers.wipro.com` staff client projects. Serving them as "the companies hiring hardest right
-now" is wrong in a way a user notices immediately, so each ranked row carries the label this
-module assigns and the tab defaults to employers.
+now" is wrong in a way a user notices immediately, so `company_directory` labels every company
+with what this module assigns its Boards, each ranked row carries that label, and the tab
+defaults to employers.
 
 **This is a curated list, not a classifier, and that is a measured decision.** A stratified
 sample of 114 Boards (of the 2,916 with >=25 open roles) was hand-labelled on 2026-09-21 and

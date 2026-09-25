@@ -23,7 +23,8 @@ are the **archive**.
   ``(stock, non-tech, all, all)`` row a tick, so the replay folds non-tech the same way.
 
 Step 3 of ADR-0230 moved the Space onto this module with its answers unchanged: netting still
-happens in the page until step 4, and Hot is still ranked by ``ingest.hot_boards`` until step 5.
+happens in the page until step 4. Since step 5 the Hot tab ranks companies off
+:meth:`TrendHistory.company_moves`, which reads the same answers.
 """
 
 from __future__ import annotations
@@ -32,6 +33,7 @@ import csv
 import json
 from bisect import bisect_left
 from collections import Counter, defaultdict
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -111,6 +113,32 @@ class TrendQuestion:
     until: str | None = None
     base: str | None = None
     ats: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class CompanyMove:
+    """One company's week, read off its own netted Trends line (:meth:`TrendHistory.company_moves`).
+
+    ``net`` is the change in its tech openings since the window's base with the steps that are
+    not hiring taken out; ``opened`` and ``closed`` are the jobs it opened and closed over the runs
+    that change counts (ADR-0227); ``counted_since`` is the first tick that counted any of its
+    Boards."""
+
+    net: int
+    opened: int
+    closed: int
+    counted_since: str
+
+
+@dataclass(frozen=True)
+class CompanyMoves:
+    """Hot's figures (ADR-0230): every company asked about, and the window they cover as
+    ``{base, from, to, turnover_from}``. ``base`` is the tick each change is measured from, where
+    a Hot row's "See trend" opens; ``from`` and ``to`` are the first and last ticks measured after
+    it; ``turnover_from`` is the first of them with turnover booked, None before ADR-0227's data."""
+
+    window: dict[str, str | None]
+    moves: dict[str, CompanyMove]
 
 
 class _Names:
@@ -294,7 +322,7 @@ def _load_evictions(path: Path) -> dict[str, list[tuple[str, int]]]:
 
 
 def _load_directory(path: Path) -> dict[str, dict]:
-    """The company directory (ADR-0185) as ``{company key: {name, boards}}``, or ``{}``.
+    """The company directory (ADR-0185) as ``{company key: {name, boards, operator}}``, or ``{}``.
 
     A company's key is its first board_key, and any of its Boards resolves to it, so a Hot-tab
     row or a search result links to its company by the Board it already carries. Absent or
@@ -843,8 +871,8 @@ class TrendHistory:
 
     @property
     def companies(self) -> dict[str, dict]:
-        """The Company directory (ADR-0185), ``{company key: {name, boards}}``; empty until the
-        pipeline writes one."""
+        """The Company directory (ADR-0185), ``{company key: {name, boards, operator}}``; empty
+        until the pipeline writes one."""
         return self._companies
 
     def openings(self) -> dict[str, int]:
@@ -879,6 +907,53 @@ class TrendHistory:
         found = company_match.suggest(query, self._candidates, limit)
         labels = self._company_labels([candidate.key for candidate in found])
         return [self._company_json(c.key, labels[c.key]) for c in found]
+
+    def company_moves(self, keys: Iterable[str]) -> CompanyMoves:
+        """Hot's figures for each directory company in ``keys``, over the trailing
+        ``NEW_WINDOW_DAYS`` (ADR-0230).
+
+        Each is read off the company's own whole-company line, netted, from the window's base:
+        the answer its Hot row's "See trend" opens. So a row's ``net`` is what that trend moves
+        by, by construction rather than by a second copy of the netting rule (the design's
+        invariant 4). The base is the last tick before the week began, so the first change
+        measured is the week's own.
+
+        One answer per company, not one answer split by company: measured on 2026-09-25's
+        state, the split view netted 3 of 2,478 companies differently (a partial read is judged
+        per line, and a company's line there is not its categories' sum)."""
+        if not self._ticks:
+            return CompanyMoves(
+                {"base": None, "from": None, "to": None, "turnover_from": None}, {}
+            )
+        newest = self._ticks[-1]
+        week_began = (
+            datetime.fromisoformat(newest) - timedelta(days=NEW_WINDOW_DAYS)
+        ).isoformat(timespec="seconds")
+        at = max(bisect_left(self._ticks, week_began) - 1, 0)
+        base = self._ticks[at]
+        first = self._ticks[min(at + 1, len(self._ticks) - 1)]
+        moves = {}
+        for key in keys:
+            answer = self.answer(TrendQuestion(companies=(key,), since=base))
+            line = answer["series_sum"]
+            netted = [v for v in line["net"]["count"] if v is not None]
+            turnover = line["hiring_turnover"] or {"opened": 0, "closed": 0}
+            moves[key] = CompanyMove(
+                net=trend_netting.js_round(netted[-1] - netted[0]) if netted else 0,
+                opened=turnover["opened"],
+                closed=turnover["closed"],
+                counted_since=answer["counted_since"][key],
+            )
+        turnover_from = (
+            max(self._turnover_since, first) if self._turnover_since else None
+        )
+        window = {
+            "base": base,
+            "from": first,
+            "to": newest,
+            "turnover_from": turnover_from,
+        }
+        return CompanyMoves(window, moves)
 
     def answer(self, question: TrendQuestion) -> dict:
         """Role counts over time (ADR-0040, ADR-0051), the ``/trends`` payload.

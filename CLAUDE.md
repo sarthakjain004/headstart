@@ -273,11 +273,10 @@ These guidelines are working if: fewer unnecessary changes in diffs, fewer rewri
   this order: `priority`, `cost`, `failures`, `gap`), `embed_plan`, `embed_run`, `embed_merge`, `update_meta` (the ADR-0061
   metadata refresh, after the merge and before `sync`), `index` (`sync` then `prune --apply`),
   `embed_prune` (the ADR-0190 store prune, after `prune`, dropping vectors no served row uses),
-  `role_trends` (the ADR-0040 trends ledger, after prune), `hot_boards` (the actively-hiring
-  ranking the "Hiring now" tab serves, strictly after `role_trends` because it reads that
-  stage's Board-count snapshot and delta ledger), `company_directory` (the ADR-0185 Board →
-  company names the Trends company filter searches, after `role_trends`, whose
-  Board-delta ledger it reads). `index compact` is a subcommand of the
+  `role_trends` (the ADR-0040 trends ledger, after prune), `company_directory` (the ADR-0185
+  Board → company names and Operators the Trends company filter searches and the "Hiring now"
+  tab ranks, after `role_trends`, whose Board-delta ledger it reads; the Space ranks that tab at
+  boot, ADR-0230, so no stage does). `index compact` is a subcommand of the
   same module but is **not** part of this run — it moved to the `cleanup-index` workflow, because
   rewriting the whole table once per run is what the storage budget cannot afford.
   Five more entry points are not stages. `state_fetch` (ADR-0030) pulls each stage's slice of HF
