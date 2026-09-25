@@ -16,7 +16,8 @@ contaminated the raw inventory), "wai" (inside taiwan/kuwait/hawaii), "salem" (U
 "punjab" (Pakistan has one), "verna" (inside Governador Valadares), "whitefield"
 (Manchester, UK), "supa" (inside Supai, AZ; its rows carry "india" anyway), "vadod"
 (inside vadodara), "hisar" (inside Turkish Hisarönü/Rumelihisarı). Known residual collisions accepted as negligible for a tech-jobs
-corpus: hyderabad (Pakistan), kochi (Japan), thane (Thanet, UK), madras (Madras, OR).
+corpus: hyderabad (Pakistan), kochi (Japan), thane (Thanet, UK), madras (Madras, OR), a bare
+"IN" (Indiana, on a US state field — see IN_EXACT).
 
 This file is deployed standalone into the Space image (deploy-space.yml copies it next to
 app.py), so it must stay dependency-free. Regenerate the inventory before extending.
@@ -228,6 +229,14 @@ STATES: tuple[str, ...] = (
 # substring: "ind" sits inside Indore, Indianapolis and a hundred ordinary words. Forms observed:
 # "IND", "IND-BLR-Divyasree Technopolis", "IND BNGL FL2-3 TWR 3", "IND - Remote", "Remote (IND)",
 # "Remote - IND".
+#
+# ISO alpha-2 "IN" too, but only as the whole string. Measured on the served table 2026-09-25:
+# 885 rows read exactly "IN"/"In". 876 are India — SuccessFactors' feed (847) and iCIMS tenants
+# (29, their descriptions naming Delhi, Pune or Hyderabad). 9 are Indiana, a US state field on
+# JazzHR and Zoho (Harrison Consulting Solutions; one description names Indianapolis). Case does
+# not separate them and this rule sees only the string, so those 9 are an accepted collision,
+# like the residual ones listed in the module docstring. Anywhere else "in" is a word.
+IN_EXACT = "in"
 IND_FORMS: tuple[str, ...] = (
     "ind-%",  # IND-BLR-..., IND-Remote
     "ind %",  # IND BNGL ..., IND Karle Tech Park
@@ -438,9 +447,10 @@ def _country_where() -> str:
 
 
 def _ind_where() -> str:
-    """ISO alpha-3 "IND", in the positions where it is the country tag rather than a substring."""
+    """ISO alpha-3 "IND", in the positions where it is the country tag rather than a substring,
+    and alpha-2 "IN" as the whole string (:data:`IN_EXACT`)."""
     forms = _regexp_like("|".join(_anchored(f) for f in IND_FORMS))
-    return f"(({_LOC} = 'ind' OR {forms}){_none(IND_EXCLUDE)})"
+    return f"(({_LOC} = 'ind' OR {_LOC} = '{IN_EXACT}' OR {forms}){_none(IND_EXCLUDE)})"
 
 
 def _subdivision_where() -> str:
@@ -455,7 +465,8 @@ def where(place: str) -> str | None:
 
     The country-level "india" rule is five things OR'd together (ADR-0024, extended by
     ADR-0086): the substring "india" minus :data:`INDIA_EXCLUDE`; ISO alpha-3 "IND" in its
-    :data:`IND_FORMS` positions minus :data:`IND_EXCLUDE`; the ", {code}, in" subdivision tail;
+    :data:`IND_FORMS` positions, or alpha-2 "IN" as the whole string, minus :data:`IND_EXCLUDE`;
+    the ", {code}, in" subdivision tail;
     every city alias; and every state name. That is how the rule is *written*; the clause it
     compiles to has fewer parts, because every city without an :data:`EXCLUDE` guard shares one
     alternation with the states.
@@ -534,7 +545,8 @@ def classify(location: str | None) -> str | None:
     if "india" in text and not has_any(INDIA_EXCLUDE):  # _country_where
         return "IN"
     if not has_any(IND_EXCLUDE) and (  # _ind_where
-        text == "ind" or any(_matches_like(text, form) for form in IND_FORMS)
+        text in ("ind", IN_EXACT)
+        or any(_matches_like(text, form) for form in IND_FORMS)
     ):
         return "IN"
     if any(
