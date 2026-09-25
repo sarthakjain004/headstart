@@ -1,19 +1,18 @@
-"""Tests for ``headstart.trend_history`` (ADR-0230 step 3), Trends' one reader of its history.
+"""Tests for ``headstart.trend_history`` (ADR-0230), Trends' one owner of its history.
 
 The Space's ``/trends`` answers are pinned by ``tests/test_space_app.py``; this file pins what
 the history must hold for those answers to be right:
 
-- The replay of the Board-delta ledger reproduces the aggregate ledger at every tick. The ticks
-  are written by ``ingest.role_trends``' own writers, through an archive, a baseline, a tick where
-  nothing moved, a re-base and a tick that carries turnover.
-- A tick's Methodology is read from its own file and compared with the tick before it; the
-  counting changes from before the first stamped file still come from the epoch ledger.
+- ``record_tick`` writes one file a tick, even when nothing moved, and a new classifier head as an
+  ordinary delta; replayed, the files give back every level each tick recorded.
+- A tick's Methodology rides its own file, and a counting change is a tick whose Methodology
+  differs from the tick before it.
+- A history still in the older layout reads exactly as the one-off migration rewrites it.
 - An unreadable ledger is an empty history, never a failed boot.
 """
 
 from __future__ import annotations
 
-import csv
 import json
 import re
 from datetime import datetime, timedelta
@@ -24,7 +23,10 @@ import pytest
 pa = pytest.importorskip("pyarrow")
 pq = pytest.importorskip("pyarrow.parquet")
 
+import old_layout_trends_state
+
 from headstart import roles, trend_history, trend_netting
+from headstart import trend_history_migration as migration
 from headstart.ingest import role_trends
 from headstart.trend_history import (
     TrendHistory,
@@ -77,32 +79,37 @@ _FAMILY = {
 }
 _SEEN = {"1": 1.5, "2": -30, "3": -30, "4": -30, "5": -30, "6": 2.5, "7": 6.5}
 
-# (days after _START, series version, the Jobs served, family moves, re-banded Jobs)
-_ARCHIVE_TICKS = [(0, 2, "12345", {}, {}), (1, 2, "12345", {}, {})]
-_DELTA_TICKS = [
-    # the delta ledger's first tick: a baseline
+# (days after _START, the classifier head, the Jobs served, family moves, re-banded Jobs)
+_TICKS = [
     (2, 2, "12345", {}, {}),
     # the cashier closes, so non-tech falls to 0; a Board is found; a Job re-bands
     (3, 2, "12456", {}, {"2": 2}),
     # nothing moved: an empty file
     (3.5, 2, "12456", {}, {"2": 2}),
-    # a new head: a re-base, and a Job moves family
-    (4, 3001, "12456", {"4": "ai-ml"}, {"2": 2}),
+    # a new head: a Job moves family, one more delta
+    (4, 3, "12456", {"4": "ai-ml"}, {"2": 2}),
     # one closes, one opens, and the tick books turnover
-    (7, 3001, "24567", {"4": "ai-ml"}, {"2": 2}),
+    (7, 3, "24567", {"4": "ai-ml"}, {"2": 2}),
     # Job 6 ages out of `new`
-    (12, 3001, "24567", {"4": "ai-ml"}, {"2": 2}),
+    (12, 3, "24567", {"4": "ai-ml"}, {"2": 2}),
 ]
+_TURNOVER = {
+    ("workday:big/a", "opened", "data-engineering", "mid"): 1,
+    ("greenhouse:acme", "closed", "software-engineering", "mid"): 1,
+    ("lever:newco", "unscoped", "all", "all"): 1,
+}
 
 
-def _write_ticks(state: Path) -> None:
-    """The archive, then the Board-delta ledger beside the aggregate, as ``role_trends`` writes
-    them: its own counting, delta and ledger functions, one tick at a time."""
-    ledger = state / "role_trends.parquet"
-    deltas = state / "role_trend_board_deltas"
-    previous: dict = {}
-    last_version = None
-    for days, version, served, moved, rebanded in _ARCHIVE_TICKS + _DELTA_TICKS:
+def _methodology(head: int) -> trend_history.Methodology:
+    return trend_history.Methodology("7681eb07a2b5", head, 5, 15, 5)
+
+
+def _write_ticks(state: Path) -> dict[str, tuple[dict, dict]]:
+    """Every tick recorded as ``role_trends`` records it: its own counting, then ``record_tick``.
+    Returns each tick's Board levels and its index-wide counts as the aggregate ledger held them.
+    """
+    recorded = {}
+    for days, head, served, moved, rebanded in _TICKS:
         ts = _stamp(days)
         jobs = [
             {
@@ -121,63 +128,40 @@ def _write_ticks(state: Path) -> None:
             _stamp(days - role_trends.NEW_WINDOW_DAYS),
             [job["board"] for job in jobs],
         )
-        if (days, version, served, moved, rebanded) in _DELTA_TICKS:
-            turnover = {}
-            if days == 7:
-                turnover = {
-                    (
-                        "workday:big/a",
-                        "opened",
-                        "data-engineering",
-                        "mid",
-                        "workday",
-                    ): 1,
-                    (
-                        "greenhouse:acme",
-                        "closed",
-                        "software-engineering",
-                        "mid",
-                        "greenhouse",
-                    ): 1,
-                    ("lever:newco", "unscoped", "all", "all", "lever"): 1,
-                }
-            role_trends._append_board_deltas(
-                deltas,
-                previous if version == last_version else {},
-                board_counts,
-                version,
-                ts,
-                turnover,
-                {"family_classifier_version": version - 3000, "dedup_version": 5},
-            )
-            previous, last_version = board_counts, version
-        role_trends.append_ledger(ledger, counts, non_tech, version, ts)
+        turnover = _TURNOVER if days == 7 else {}
+        trend_history.record_tick(state, ts, board_counts, turnover, _methodology(head))
+        index = {**counts, ("stock", roles.NON_TECH, "all", "all"): non_tech}
+        recorded[ts] = (board_counts, index)
+    return recorded
 
 
-def _aggregate(state: Path) -> dict[str, dict[tuple[str, str, str, str], int]]:
-    """The aggregate ledger's counts at every tick."""
-    out: dict[str, dict] = {}
-    for row in pq.read_table(state / "role_trends.parquet").to_pylist():
-        key = (row["metric"], row["family"], row["band"], row["ats"])
-        out.setdefault(row["ts"].isoformat(timespec="seconds"), {})[key] = row["count"]
-    return out
-
-
-def test_the_replay_reproduces_the_aggregate_at_every_tick(tmp_path):
-    _write_ticks(tmp_path)
+def test_the_replay_gives_back_every_recorded_tick(tmp_path):
+    recorded = _write_ticks(tmp_path)
     history = TrendHistory.load(tmp_path, _NO_CONFIG)
-    aggregate = _aggregate(tmp_path)
-    assert history.ticks == tuple(sorted(aggregate))
-    mismatches = [ts for ts in aggregate if history.index_counts(ts) != aggregate[ts]]
-    assert mismatches == []
+    assert history.ticks == tuple(recorded)
+    assert [
+        ts for ts, (_, index) in recorded.items() if history.index_counts(ts) != index
+    ] == []
+    newest, levels = trend_history.board_levels(tmp_path)
+    assert (newest, levels) == (_stamp(12), list(recorded.values())[-1][0])
     # the fixture reaches what it means to: a tick with nothing moved, and non-tech at 0
-    files = sorted((tmp_path / "role_trend_board_deltas").glob("*.parquet"))
-    assert len(files) == len(_DELTA_TICKS)
+    files = sorted((tmp_path / trend_history.DELTAS).glob("*.parquet"))
+    assert len(files) == len(_TICKS)
     assert min(pq.read_table(file).num_rows for file in files) == 0
-    assert aggregate[_stamp(3)][("stock", roles.NON_TECH, "all", "all")] == 0
+    assert recorded[_stamp(3)][1][("stock", roles.NON_TECH, "all", "all")] == 0
 
 
-def test_openings_are_each_boards_tech_stock_at_the_live_version(tmp_path):
+def test_a_new_head_is_one_more_delta_not_a_baseline(tmp_path):
+    _write_ticks(tmp_path)
+    directory = tmp_path / trend_history.DELTAS
+    tick = pq.read_table(trend_history.tick_path(directory, _stamp(4)))
+    # only Job 4 moves, out of software-engineering into ai-ml; no other Board is re-written
+    assert {row["board"] for row in tick.to_pylist()} == {"workday:big/a"}
+    stamped = json.loads(tick.schema.metadata[b"methodology"])
+    assert stamped["family_classifier_version"] == 3
+
+
+def test_openings_are_each_boards_tech_stock_now(tmp_path):
     _write_ticks(tmp_path)
     openings = TrendHistory.load(tmp_path, _NO_CONFIG).openings()
     # Job 2 (ai-ml) and Job 4, moved to ai-ml by the new head; Jobs 5 and 7; Job 6. The
@@ -185,83 +169,57 @@ def test_openings_are_each_boards_tech_stock_at_the_live_version(tmp_path):
     assert openings == {"greenhouse:acme": 1, "workday:big/a": 3, "lever:newco": 1}
 
 
-def _write_tick_file(directory: Path, ts: str, methodology: dict | None) -> None:
-    """One tick's file with one Board delta, stamped with ``methodology`` or, as before
-    ADR-0230 step 2, with none."""
-    metadata = {b"centroid_version": b"3003", b"ts": ts.encode()}
-    if methodology is not None:
-        metadata[b"methodology"] = json.dumps(methodology).encode()
-    row = {
-        "ts": ts,
-        "board": "greenhouse:acme",
-        "metric": "stock",
-        "family": "software-engineering",
-        "band": "mid",
-        "ats": "greenhouse",
-        "delta": 1,
-    }
-    table = pa.Table.from_pylist([row]).replace_schema_metadata(metadata)
-    directory.mkdir(parents=True, exist_ok=True)
-    pq.write_table(table, directory / f"{ts.replace(':', '-')}.parquet")
+def test_a_tick_no_newer_than_the_newest_is_refused(tmp_path):
+    _write_ticks(tmp_path)
+    with pytest.raises(ValueError, match="not newer"):
+        trend_history.record_tick(tmp_path, _stamp(12), {}, {}, _methodology(3))
 
 
-def test_a_stamped_tick_marks_what_changed_as_the_epoch_ledger_did(tmp_path):
-    """Before the first stamped file the epoch ledger holds the boundaries; after it, each
-    tick's Methodology is compared with the one before it, the ledger's last row first."""
-    ledger_columns = {
-        "centroid_version": "2",
-        "family_map_fingerprint": "7681eb07a2b5",
-        "tech_filter_version": "5",
-        "derivations_version": "15",
-        "dedup_version": "5",
-        "family_classifier_version": "3b5cc5d9183c",
-    }
-    methodology = {
-        "family_list_fingerprint": "7681eb07a2b5",
-        "family_classifier_version": 3,
-        "tech_filter_version": 5,
-        "derivations_version": 15,
-        "dedup_version": 6,
-    }
-    t0, t1, t2, t3, t4 = (_stamp(days) for days in range(5))
-    with (tmp_path / "trends_epochs.csv").open("w", encoding="utf-8", newline="") as fh:
-        writer = csv.DictWriter(fh, fieldnames=["ts", *ledger_columns])
-        writer.writeheader()
-        writer.writerow({"ts": t0, **ledger_columns, "dedup_version": "4"})
-        writer.writerow({"ts": t1, **ledger_columns})
-        # what the pipeline also wrote at the first stamped tick: read from the file instead
-        writer.writerow({"ts": t2, **ledger_columns, "centroid_version": "none"})
-    directory = tmp_path / "role_trend_board_deltas"
-    _write_tick_file(directory, t1, None)
-    _write_tick_file(directory, t2, methodology)
-    _write_tick_file(directory, t3, methodology)
-    _write_tick_file(directory, t4, {**methodology, "tech_filter_version": 6})
+def test_a_counting_change_is_a_tick_whose_methodology_moved(tmp_path):
+    _write_ticks(tmp_path)
     epochs = TrendHistory.load(tmp_path, _NO_CONFIG).answer(TrendQuestion())["epochs"]
     assert epochs == [
         {
-            "ts": t1,
-            "changed": ["duplicate removal changed"],
-            "fields": ["dedup_version"],
-        },
-        {
-            "ts": t2,
-            "changed": [
-                "role taxonomy refit",
-                "duplicate removal changed",
-                "role family assignment changed",
-            ],
-            "fields": [
-                "centroid_version",
-                "dedup_version",
-                "family_classifier_version",
-            ],
-        },
-        {
-            "ts": t4,
-            "changed": ["tech filter changed"],
-            "fields": ["tech_filter_version"],
-        },
+            "ts": _stamp(4),
+            "changed": ["role family assignment changed"],
+            "fields": ["family_classifier_version"],
+        }
     ]
+
+
+def _migrated(old_state: Path, out: Path) -> Path:
+    """``old_state`` rewritten into the step-6 layout under ``out``, as the one-off migration
+    writes it."""
+    tables = [
+        pq.read_table(path)
+        for path in sorted((old_state / trend_history.DELTAS).glob("*.parquet"))
+    ]
+    ticks, _ = migration.rewritten_ticks(tables, old_state / migration.EPOCHS)
+    for table in ticks:
+        path = trend_history.tick_path(
+            out / trend_history.DELTAS, migration.tick_stamp(table)
+        )
+        path.parent.mkdir(parents=True, exist_ok=True)
+        pq.write_table(table, path)
+    archive = migration.archive_from_aggregate(
+        old_state / migration.AGGREGATE,
+        migration.tick_stamp(ticks[0]),
+        old_state / migration.EPOCHS,
+    )
+    pq.write_table(archive, out / trend_history.ARCHIVE)
+    return out
+
+
+def test_an_older_layout_reads_as_its_migration_stores_it(tmp_path):
+    old_state = old_layout_trends_state.write(tmp_path / "old")
+    before = TrendHistory.load(old_state, _NO_CONFIG)
+    after = TrendHistory.load(_migrated(old_state, tmp_path / "new"), _NO_CONFIG)
+    assert before.ticks == after.ticks == tuple(old_layout_trends_state.T)
+    for ts in before.ticks:
+        assert before.index_counts(ts) == after.index_counts(ts)
+    assert before.openings() == after.openings()
+    for question in (TrendQuestion(), TrendQuestion(metric="new")):
+        assert before.answer(question) == after.answer(question)
 
 
 def test_an_unreadable_ledger_is_an_empty_history(tmp_path):

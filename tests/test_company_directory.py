@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from headstart import company_name
+from headstart import company_name, trend_history
 from headstart.ingest import company_directory
 
 pa = pytest.importorskip("pyarrow")
@@ -144,23 +144,21 @@ def test_a_company_is_named_by_its_stated_spelling() -> None:
     assert list(got) == ["NVIDIA"]
 
 
-def _ledger(directory: Path, ticks: list[tuple[str, int, list[tuple]]]) -> Path:
-    """Write delta ticks ``(stamp, centroid_version, [(board, metric, family, delta)])``."""
-    directory.mkdir(exist_ok=True)
-    for ts, version, rows in ticks:
-        table = pa.table(
-            {
-                "ts": [ts] * len(rows),
-                "board": [r[0] for r in rows],
-                "metric": [r[1] for r in rows],
-                "family": [r[2] for r in rows],
-                "band": ["all"] * len(rows),
-                "ats": [r[0].split(":", 1)[0] for r in rows],
-                "delta": [r[3] for r in rows],
-            }
-        ).replace_schema_metadata({"centroid_version": str(version)})
-        pq.write_table(table, directory / f"{ts.replace(':', '-')}.parquet")
-    return directory
+_METHODOLOGY = trend_history.Methodology("abc", 3, 5, 15, 5)
+
+
+def _ledger(state: Path, ticks: list[tuple[str, list[tuple]]]) -> Path:
+    """Record ticks ``(stamp, [(board, metric, family, delta)])`` of the Trends history under
+    ``state``, which it returns."""
+    level: dict = {}
+    for ts, rows in ticks:
+        for board, metric, family, delta in rows:
+            key = (board, metric, family, "all")
+            level[key] = level.get(key, 0) + delta
+        trend_history.record_tick(
+            state, ts, {k: n for k, n in level.items() if n}, {}, _METHODOLOGY
+        )
+    return state
 
 
 def test_a_board_that_stopped_hiring_keeps_its_place(tmp_path: Path) -> None:
@@ -170,12 +168,10 @@ def test_a_board_that_stopped_hiring_keeps_its_place(tmp_path: Path) -> None:
         [
             (
                 "2026-09-13T12:00:00+00:00",
-                2,
                 [("workday:acme/closed", "stock", "data", 4)],
             ),
             (
                 "2026-09-14T12:00:00+00:00",
-                2,
                 [("workday:acme/closed", "stock", "data", -4)],
             ),
         ],
@@ -183,15 +179,17 @@ def test_a_board_that_stopped_hiring_keeps_its_place(tmp_path: Path) -> None:
     assert company_directory.ledger_boards(deltas) == {"workday:acme/closed"}
 
 
-def test_only_tech_stock_at_the_live_version_is_listed(tmp_path: Path) -> None:
-    """`non-tech` and `watch:` have no series; a refit re-bases every series (ADR-0040)."""
+def test_every_board_the_history_counted_tech_stock_on_is_listed(
+    tmp_path: Path,
+) -> None:
+    """`non-tech` and `watch:` have no series, and `new` is no opening. A new classifier head is
+    one more delta (ADR-0230), so a Board counted before it stays listed."""
     deltas = _ledger(
         tmp_path / "deltas",
         [
-            ("2026-09-13T12:00:00+00:00", 2, [("greenhouse:old", "stock", "se", 3)]),
+            ("2026-09-13T12:00:00+00:00", [("greenhouse:old", "stock", "se", 3)]),
             (
                 "2026-09-14T12:00:00+00:00",
-                3,
                 [
                     ("greenhouse:acme", "stock", "software-engineering", 3),
                     ("greenhouse:bakery", "stock", "non-tech", 9),
@@ -201,12 +199,15 @@ def test_only_tech_stock_at_the_live_version_is_listed(tmp_path: Path) -> None:
             ),
         ],
     )
-    assert company_directory.ledger_boards(deltas) == {"greenhouse:acme"}
+    assert company_directory.ledger_boards(deltas) == {
+        "greenhouse:old",
+        "greenhouse:acme",
+    }
 
 
 def _run(monkeypatch: pytest.MonkeyPatch, deltas: Path, out: Path, names: dict) -> int:
     monkeypatch.setattr(company_directory, "board_names", lambda db, table: names)
-    argv = ["company_directory", "--board-deltas", str(deltas), "--out", str(out)]
+    argv = ["company_directory", "--state", str(deltas), "--out", str(out)]
     monkeypatch.setattr("sys.argv", argv)
     return company_directory.main()
 
@@ -220,7 +221,6 @@ def test_the_file_names_boards_and_carries_no_counts(
         [
             (
                 "2026-09-13T12:00:00+00:00",
-                2,
                 [
                     ("greenhouse:acme", "stock", "software-engineering", 3),
                     ("workday:acmecorp/ACJobSite", "stock", "data", 5),
@@ -251,7 +251,7 @@ def test_unreadable_names_keep_the_previous_directory(
     """An all-slug directory would name every company worse for a run."""
     deltas = _ledger(
         tmp_path / "deltas",
-        [("2026-09-13T12:00:00+00:00", 2, [("greenhouse:acme", "stock", "se", 3)])],
+        [("2026-09-13T12:00:00+00:00", [("greenhouse:acme", "stock", "se", 3)])],
     )
     out = tmp_path / "company_directory.json"
     out.write_text('{"companies": []}', encoding="utf-8")
@@ -296,7 +296,7 @@ def test_a_closed_board_keeps_its_previous_name(
     """A closed Board has no table rows to name it; it must not be renamed to its slug."""
     deltas = _ledger(
         tmp_path / "deltas",
-        [("2026-09-13T12:00:00+00:00", 2, [("greenhouse:acmecorp", "stock", "se", 3)])],
+        [("2026-09-13T12:00:00+00:00", [("greenhouse:acmecorp", "stock", "se", 3)])],
     )
     out = tmp_path / "company_directory.json"
     out.write_text(

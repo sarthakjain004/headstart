@@ -273,7 +273,7 @@ These guidelines are working if: fewer unnecessary changes in diffs, fewer rewri
   this order: `priority`, `cost`, `failures`, `gap`), `embed_plan`, `embed_run`, `embed_merge`, `update_meta` (the ADR-0061
   metadata refresh, after the merge and before `sync`), `index` (`sync` then `prune --apply`),
   `embed_prune` (the ADR-0190 store prune, after `prune`, dropping vectors no served row uses),
-  `role_trends` (the ADR-0040 trends ledger, after prune), `company_directory` (the ADR-0185
+  `role_trends` (one tick of the ADR-0230 Trends history, written through `trend_history`, after prune), `company_directory` (the ADR-0185
   Board → company names and Operators the Trends company filter searches and the "Hiring now"
   tab ranks, after `role_trends`, whose Board-delta ledger it reads; the Space ranks that tab at
   boot, ADR-0230, so no stage does). `index compact` is a subcommand of the
@@ -293,8 +293,7 @@ These guidelines are working if: fewer unnecessary changes in diffs, fewer rewri
   to match. Don't add a pipeline stage to `scripts/`. Helper modules used *only* by the pipeline
   live there too (`binpack`, `board_failures`, `board_freshness`, `board_naming`, `board_operator`,
   `dedup_evictions`, `derived_meta`, `doc_prep`, `index_plan`, `job_turnover`, `observability`,
-  `role_assignments`, `role_family_classifier`, `shard_plan`, `shard_speedup`,
-  `trends_epochs`). Logic the curated-feed path (`python -m headstart` → `headstart.harvest`)
+  `role_assignments`, `role_family_classifier`, `shard_plan`, `shard_speedup`). Logic the curated-feed path (`python -m headstart` → `headstart.harvest`)
   also reaches stays in `headstart` proper (`harvest`, `board_cost`, `board_priority`,
   `corpus`), so the feed never imports from `ingest`.
 - `scripts/` is for everything *outside* that run — R&D, discovery, and one-off ops tooling —

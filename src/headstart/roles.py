@@ -55,9 +55,10 @@ def load_families(path: Path) -> list[str]:
 def family_list_fingerprint(path: Path) -> str:
     """A short digest over which families exist, not over the file's bytes.
 
-    Adding, removing or renaming a family changes what the chart's lines are, so
-    ``trends_epochs`` marks the tick it first runs (ADR-0164), in its ``family_map_fingerprint``
-    column: the name the column had when the list was a cluster map, kept rather than renamed.
+    Adding, removing or renaming a family changes what the chart's lines are, so every tick
+    carries it in its Methodology (ADR-0164, ADR-0230), and the tick it first runs on is a
+    counting change. Trends names the field ``family_map_fingerprint``, the name it had when the
+    list was a cluster map.
     ``label`` and ``definition`` are left out: rewording a family changes no count."""
     return hashlib.sha256(
         json.dumps(sorted(load_families(path))).encode("utf-8")

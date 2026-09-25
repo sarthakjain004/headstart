@@ -227,6 +227,8 @@ def aggregate_ticks(path: Path, before: str | None = None):
         columns=["ts", "metric", "family", "band", "ats", "count"],
         filters=filters,
     )
+    if not table.num_rows:
+        return
     stamps = table["ts"].combine_chunks().cast(pa.int64()).to_numpy()
     counts = table["count"].to_numpy()
     codes = []
