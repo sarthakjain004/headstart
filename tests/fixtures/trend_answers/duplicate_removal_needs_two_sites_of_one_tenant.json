@@ -1,0 +1,211 @@
+{
+ "description": "Two Tenants' Workday sites have nothing to deduplicate between them.",
+ "unnetted": {
+  "stamps": [
+   "2026-09-13T00:00:00+00:00",
+   "2026-09-14T00:00:00+00:00",
+   "2026-09-15T00:00:00+00:00",
+   "2026-09-16T00:00:00+00:00"
+  ],
+  "series": [
+   {
+    "name": "workday:acme/a",
+    "label": "Acme",
+    "points": [
+     100,
+     100,
+     80,
+     80
+    ],
+    "latest": 80
+   }
+  ],
+  "epochs": [
+   {
+    "ts": "2026-09-15T00:00:00+00:00",
+    "changed": [
+     "duplicate removal changed"
+    ],
+    "fields": [
+     "dedup_version"
+    ]
+   }
+  ],
+  "metric": "stock",
+  "coverage": "all",
+  "new_window_days": 7,
+  "family": null,
+  "split_by": "company",
+  "companies": [
+   {
+    "key": "workday:acme/a",
+    "label": "Acme",
+    "board_keys": [
+     "workday:acme/a",
+     "workday:other/b"
+    ],
+    "atses": [
+     "workday"
+    ]
+   }
+  ],
+  "discovered": [],
+  "evicted": [],
+  "pick_series": {},
+  "pick_parts": {},
+  "pick_turnover": {},
+  "counted_since": {
+   "workday:acme/a": "2026-09-13T00:00:00+00:00"
+  },
+  "totals": [
+   10000,
+   10000,
+   10000,
+   10000
+  ],
+  "non_tech": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "watch_parents": [],
+  "uncounted": [],
+  "company_totals": {}
+ },
+ "served": {
+  "stamps": [
+   "2026-09-13T00:00:00+00:00",
+   "2026-09-14T00:00:00+00:00",
+   "2026-09-15T00:00:00+00:00",
+   "2026-09-16T00:00:00+00:00"
+  ],
+  "series": [
+   {
+    "name": "workday:acme/a",
+    "label": "Acme",
+    "points": [
+     100,
+     100,
+     80,
+     80
+    ],
+    "latest": 80,
+    "net": {
+     "count": [
+      100,
+      100,
+      80,
+      80
+     ],
+     "share": [
+      1,
+      1,
+      0.8,
+      0.8
+     ]
+    },
+    "steps": [],
+    "jumps": [],
+    "causes": {
+     "duplicates": 0,
+     "found": 0
+    },
+    "hiring_turnover": null,
+    "born_by_change": false
+   }
+  ],
+  "epochs": [
+   {
+    "ts": "2026-09-15T00:00:00+00:00",
+    "changed": [
+     "duplicate removal changed"
+    ],
+    "fields": [
+     "dedup_version"
+    ]
+   }
+  ],
+  "metric": "stock",
+  "coverage": "all",
+  "new_window_days": 7,
+  "family": null,
+  "split_by": "company",
+  "companies": [
+   {
+    "key": "workday:acme/a",
+    "label": "Acme",
+    "board_keys": [
+     "workday:acme/a",
+     "workday:other/b"
+    ],
+    "atses": [
+     "workday"
+    ]
+   }
+  ],
+  "discovered": [],
+  "evicted": [],
+  "pick_series": {},
+  "pick_parts": {},
+  "pick_turnover": {},
+  "counted_since": {
+   "workday:acme/a": "2026-09-13T00:00:00+00:00"
+  },
+  "totals": [
+   10000,
+   10000,
+   10000,
+   10000
+  ],
+  "non_tech": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "watch_parents": [],
+  "uncounted": [],
+  "company_totals": {},
+  "partial": 0,
+  "series_sum": {
+   "name": "__total__",
+   "points": [
+    100,
+    100,
+    80,
+    80
+   ],
+   "turnover": null,
+   "net": {
+    "count": [
+     100,
+     100,
+     80,
+     80
+    ],
+    "share": [
+     1,
+     1,
+     0.8,
+     0.8
+    ]
+   },
+   "steps": [],
+   "jumps": [],
+   "causes": {
+    "duplicates": 0,
+    "found": 0
+   },
+   "hiring_turnover": null,
+   "born_by_change": false
+  },
+  "totals_net": [
+   10000,
+   10000,
+   10000,
+   10000
+  ],
+  "notes": []
+ }
+}

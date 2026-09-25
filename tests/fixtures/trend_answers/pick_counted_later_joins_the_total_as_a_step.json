@@ -1,0 +1,282 @@
+{
+ "description": "AMD, counted from a later date, joins the sum with 500 openings: not hiring.",
+ "unnetted": {
+  "stamps": [
+   "2026-09-13T00:00:00+00:00",
+   "2026-09-14T00:00:00+00:00",
+   "2026-09-15T00:00:00+00:00",
+   "2026-09-16T00:00:00+00:00"
+  ],
+  "series": [
+   {
+    "name": "a",
+    "label": "a",
+    "points": [
+     100,
+     100,
+     600,
+     604
+    ],
+    "latest": 604
+   }
+  ],
+  "counted_since": {
+   "greenhouse:acme": "2026-09-13T00:00:00+00:00",
+   "workday:amd/x": "2026-09-15T00:00:00+00:00"
+  },
+  "pick_series": {
+   "greenhouse:acme": [
+    100,
+    100,
+    100,
+    104
+   ],
+   "workday:amd/x": [
+    null,
+    null,
+    500,
+    500
+   ]
+  },
+  "metric": "stock",
+  "coverage": "all",
+  "new_window_days": 7,
+  "family": null,
+  "split_by": "family",
+  "companies": [
+   {
+    "key": "greenhouse:acme",
+    "label": "Acme",
+    "board_keys": [
+     "greenhouse:acme"
+    ],
+    "atses": [
+     "greenhouse"
+    ]
+   },
+   {
+    "key": "workday:amd/x",
+    "label": "AMD",
+    "board_keys": [
+     "workday:amd/x"
+    ],
+    "atses": [
+     "workday"
+    ]
+   }
+  ],
+  "epochs": [],
+  "discovered": [],
+  "evicted": [],
+  "pick_parts": {},
+  "pick_turnover": {},
+  "totals": [
+   10000,
+   10000,
+   10000,
+   10000
+  ],
+  "non_tech": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "watch_parents": [],
+  "uncounted": [],
+  "company_totals": {}
+ },
+ "served": {
+  "stamps": [
+   "2026-09-13T00:00:00+00:00",
+   "2026-09-14T00:00:00+00:00",
+   "2026-09-15T00:00:00+00:00",
+   "2026-09-16T00:00:00+00:00"
+  ],
+  "series": [
+   {
+    "name": "a",
+    "label": "a",
+    "points": [
+     100,
+     100,
+     600,
+     604
+    ],
+    "latest": 604,
+    "net": {
+     "count": [
+      600,
+      600,
+      600,
+      604
+     ],
+     "share": [
+      6,
+      6,
+      6,
+      6.04
+     ]
+    },
+    "steps": [
+     {
+      "note": 0,
+      "size": 500,
+      "moved": true
+     }
+    ],
+    "jumps": [
+     {
+      "i": 2,
+      "size": 500
+     }
+    ],
+    "causes": {
+     "duplicates": 0,
+     "found": 500
+    },
+    "hiring_turnover": null,
+    "born_by_change": false
+   }
+  ],
+  "counted_since": {
+   "greenhouse:acme": "2026-09-13T00:00:00+00:00",
+   "workday:amd/x": "2026-09-15T00:00:00+00:00"
+  },
+  "pick_series": {
+   "greenhouse:acme": [
+    100,
+    100,
+    100,
+    104
+   ],
+   "workday:amd/x": [
+    null,
+    null,
+    500,
+    500
+   ]
+  },
+  "metric": "stock",
+  "coverage": "all",
+  "new_window_days": 7,
+  "family": null,
+  "split_by": "family",
+  "companies": [
+   {
+    "key": "greenhouse:acme",
+    "label": "Acme",
+    "board_keys": [
+     "greenhouse:acme"
+    ],
+    "atses": [
+     "greenhouse"
+    ]
+   },
+   {
+    "key": "workday:amd/x",
+    "label": "AMD",
+    "board_keys": [
+     "workday:amd/x"
+    ],
+    "atses": [
+     "workday"
+    ]
+   }
+  ],
+  "epochs": [],
+  "discovered": [],
+  "evicted": [],
+  "pick_parts": {},
+  "pick_turnover": {},
+  "totals": [
+   10000,
+   10000,
+   10000,
+   10000
+  ],
+  "non_tech": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "watch_parents": [],
+  "uncounted": [],
+  "company_totals": {},
+  "partial": 0,
+  "series_sum": {
+   "name": "__total__",
+   "points": [
+    100,
+    100,
+    600,
+    604
+   ],
+   "turnover": null,
+   "net": {
+    "count": [
+     600,
+     600,
+     600,
+     604
+    ],
+    "share": [
+     6,
+     6,
+     6,
+     6.04
+    ]
+   },
+   "steps": [
+    {
+     "note": 0,
+     "size": 0,
+     "moved": true
+    }
+   ],
+   "jumps": [
+    {
+     "i": 2,
+     "size": 500
+    }
+   ],
+   "causes": {
+    "duplicates": 0,
+    "found": 0
+   },
+   "hiring_turnover": null,
+   "born_by_change": false
+  },
+  "totals_net": [
+   10000,
+   10000,
+   10000,
+   10000
+  ],
+  "notes": [
+   {
+    "i": 2,
+    "kind": "found",
+    "epoch": false,
+    "echo": false,
+    "settle": false,
+    "found": true,
+    "evicted": false,
+    "join": true,
+    "withhold": true,
+    "company": "workday:amd/x",
+    "companies": null,
+    "size": null,
+    "boards": null,
+    "fields": [],
+    "changed": [],
+    "source": null,
+    "touched": [],
+    "bands_only": false,
+    "dedup_only": false,
+    "whole_only": false
+   }
+  ]
+ }
+}

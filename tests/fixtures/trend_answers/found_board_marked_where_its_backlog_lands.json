@@ -1,0 +1,267 @@
+{
+ "description": "83 more Boards of Acme found at the second run, 1,048 openings already open.",
+ "unnetted": {
+  "stamps": [
+   "2026-09-13T00:00:00+00:00",
+   "2026-09-20T00:00:00+00:00"
+  ],
+  "series": [
+   {
+    "name": "a",
+    "label": "a",
+    "points": [
+     50,
+     900
+    ],
+    "latest": 900
+   },
+   {
+    "name": "b",
+    "label": "b",
+    "points": [
+     40,
+     45
+    ],
+    "latest": 45
+   }
+  ],
+  "discovered": [
+   {
+    "ts": "2026-09-20T00:00:00+00:00",
+    "company": "greenhouse:acme",
+    "boards": 83,
+    "openings": 1048
+   }
+  ],
+  "metric": "stock",
+  "coverage": "all",
+  "new_window_days": 7,
+  "family": null,
+  "split_by": "family",
+  "companies": [
+   {
+    "key": "greenhouse:acme",
+    "label": "Acme",
+    "board_keys": [
+     "greenhouse:acme"
+    ],
+    "atses": [
+     "greenhouse"
+    ]
+   }
+  ],
+  "epochs": [],
+  "evicted": [],
+  "pick_series": {},
+  "pick_parts": {},
+  "pick_turnover": {},
+  "counted_since": {
+   "greenhouse:acme": "2026-09-13T00:00:00+00:00"
+  },
+  "totals": [
+   10000,
+   10000
+  ],
+  "non_tech": [
+   0,
+   0
+  ],
+  "watch_parents": [],
+  "uncounted": [],
+  "company_totals": {}
+ },
+ "served": {
+  "stamps": [
+   "2026-09-13T00:00:00+00:00",
+   "2026-09-20T00:00:00+00:00"
+  ],
+  "series": [
+   {
+    "name": "a",
+    "label": "a",
+    "points": [
+     50,
+     900
+    ],
+    "latest": 900,
+    "net": {
+     "count": [
+      900,
+      900
+     ],
+     "share": [
+      9,
+      9
+     ]
+    },
+    "steps": [
+     {
+      "note": 0,
+      "size": 850,
+      "moved": true
+     }
+    ],
+    "jumps": [
+     {
+      "i": 1,
+      "size": 850
+     }
+    ],
+    "causes": {
+     "duplicates": 0,
+     "found": 850
+    },
+    "hiring_turnover": null,
+    "born_by_change": false
+   },
+   {
+    "name": "b",
+    "label": "b",
+    "points": [
+     40,
+     45
+    ],
+    "latest": 45,
+    "net": {
+     "count": [
+      45,
+      45
+     ],
+     "share": [
+      0.44999999999999996,
+      0.44999999999999996
+     ]
+    },
+    "steps": [
+     {
+      "note": 0,
+      "size": 5,
+      "moved": true
+     }
+    ],
+    "jumps": [
+     {
+      "i": 1,
+      "size": 5
+     }
+    ],
+    "causes": {
+     "duplicates": 0,
+     "found": 5
+    },
+    "hiring_turnover": null,
+    "born_by_change": false
+   }
+  ],
+  "discovered": [
+   {
+    "ts": "2026-09-20T00:00:00+00:00",
+    "company": "greenhouse:acme",
+    "boards": 83,
+    "openings": 1048
+   }
+  ],
+  "metric": "stock",
+  "coverage": "all",
+  "new_window_days": 7,
+  "family": null,
+  "split_by": "family",
+  "companies": [
+   {
+    "key": "greenhouse:acme",
+    "label": "Acme",
+    "board_keys": [
+     "greenhouse:acme"
+    ],
+    "atses": [
+     "greenhouse"
+    ]
+   }
+  ],
+  "epochs": [],
+  "evicted": [],
+  "pick_series": {},
+  "pick_parts": {},
+  "pick_turnover": {},
+  "counted_since": {
+   "greenhouse:acme": "2026-09-13T00:00:00+00:00"
+  },
+  "totals": [
+   10000,
+   10000
+  ],
+  "non_tech": [
+   0,
+   0
+  ],
+  "watch_parents": [],
+  "uncounted": [],
+  "company_totals": {},
+  "partial": 0,
+  "series_sum": {
+   "name": "__total__",
+   "points": [
+    90,
+    945
+   ],
+   "turnover": null,
+   "net": {
+    "count": [
+     1138,
+     945
+    ],
+    "share": [
+     1048.9,
+     9.45
+    ]
+   },
+   "steps": [
+    {
+     "note": 0,
+     "size": 1048,
+     "moved": true
+    }
+   ],
+   "jumps": [
+    {
+     "i": 1,
+     "size": 855
+    }
+   ],
+   "causes": {
+    "duplicates": 0,
+    "found": 1048
+   },
+   "hiring_turnover": null,
+   "born_by_change": false
+  },
+  "totals_net": [
+   10000,
+   10000
+  ],
+  "notes": [
+   {
+    "i": 1,
+    "kind": "found",
+    "epoch": false,
+    "echo": false,
+    "settle": false,
+    "found": true,
+    "evicted": false,
+    "join": false,
+    "withhold": true,
+    "company": "greenhouse:acme",
+    "companies": null,
+    "size": 1048,
+    "boards": 83,
+    "fields": [],
+    "changed": [],
+    "source": null,
+    "touched": [],
+    "bands_only": false,
+    "dedup_only": false,
+    "whole_only": false
+   }
+  ]
+ }
+}

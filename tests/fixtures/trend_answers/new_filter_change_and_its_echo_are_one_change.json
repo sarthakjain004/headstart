@@ -1,0 +1,452 @@
+{
+ "description": "Under New a filter change lands at its run and its echo a week on.",
+ "unnetted": {
+  "stamps": [
+   "2026-09-01T00:00:00+00:00",
+   "2026-09-02T00:00:00+00:00",
+   "2026-09-03T00:00:00+00:00",
+   "2026-09-04T00:00:00+00:00",
+   "2026-09-05T00:00:00+00:00",
+   "2026-09-06T00:00:00+00:00",
+   "2026-09-07T00:00:00+00:00",
+   "2026-09-08T00:00:00+00:00",
+   "2026-09-09T00:00:00+00:00",
+   "2026-09-10T00:00:00+00:00",
+   "2026-09-11T00:00:00+00:00",
+   "2026-09-12T00:00:00+00:00"
+  ],
+  "series": [
+   {
+    "name": "greenhouse:acme",
+    "label": "Acme",
+    "points": [
+     100,
+     150,
+     150,
+     150,
+     150,
+     150,
+     150,
+     150,
+     110,
+     110,
+     110,
+     110
+    ],
+    "latest": 110
+   }
+  ],
+  "epochs": [
+   {
+    "ts": "2026-09-02T00:00:00+00:00",
+    "changed": [
+     "tech filter changed"
+    ],
+    "fields": [
+     "tech_filter_version"
+    ]
+   }
+  ],
+  "metric": "new",
+  "coverage": "all",
+  "new_window_days": 7,
+  "family": null,
+  "split_by": "company",
+  "companies": [
+   {
+    "key": "greenhouse:acme",
+    "label": "Acme",
+    "board_keys": [
+     "greenhouse:acme"
+    ],
+    "atses": [
+     "greenhouse"
+    ]
+   }
+  ],
+  "discovered": [],
+  "evicted": [],
+  "pick_series": {},
+  "pick_parts": {},
+  "pick_turnover": {},
+  "counted_since": {
+   "greenhouse:acme": "2026-09-01T00:00:00+00:00"
+  },
+  "totals": [
+   10000,
+   10000,
+   10000,
+   10000,
+   10000,
+   10000,
+   10000,
+   10000,
+   10000,
+   10000,
+   10000,
+   10000
+  ],
+  "non_tech": [
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "watch_parents": [],
+  "uncounted": [],
+  "company_totals": {}
+ },
+ "served": {
+  "stamps": [
+   "2026-09-01T00:00:00+00:00",
+   "2026-09-02T00:00:00+00:00",
+   "2026-09-03T00:00:00+00:00",
+   "2026-09-04T00:00:00+00:00",
+   "2026-09-05T00:00:00+00:00",
+   "2026-09-06T00:00:00+00:00",
+   "2026-09-07T00:00:00+00:00",
+   "2026-09-08T00:00:00+00:00",
+   "2026-09-09T00:00:00+00:00",
+   "2026-09-10T00:00:00+00:00",
+   "2026-09-11T00:00:00+00:00",
+   "2026-09-12T00:00:00+00:00"
+  ],
+  "series": [
+   {
+    "name": "greenhouse:acme",
+    "label": "Acme",
+    "points": [
+     100,
+     150,
+     150,
+     150,
+     150,
+     150,
+     150,
+     150,
+     110,
+     110,
+     110,
+     110
+    ],
+    "latest": 110,
+    "net": {
+     "count": [
+      110,
+      110,
+      110,
+      110,
+      110,
+      110,
+      110,
+      110,
+      110,
+      110,
+      110,
+      110
+     ],
+     "share": [
+      1.0999999999999999,
+      1.0999999999999999,
+      1.0999999999999999,
+      1.0999999999999999,
+      1.0999999999999999,
+      1.0999999999999999,
+      1.0999999999999999,
+      1.0999999999999999,
+      1.0999999999999999,
+      1.0999999999999999,
+      1.0999999999999999,
+      1.0999999999999999
+     ]
+    },
+    "steps": [
+     {
+      "note": 0,
+      "size": -40,
+      "moved": true
+     },
+     {
+      "note": 1,
+      "size": 50,
+      "moved": true
+     },
+     {
+      "note": 2,
+      "size": 0,
+      "moved": false
+     }
+    ],
+    "jumps": [
+     {
+      "i": 1,
+      "size": 50
+     },
+     {
+      "i": 2,
+      "size": 0
+     },
+     {
+      "i": 8,
+      "size": -40
+     }
+    ],
+    "causes": {
+     "duplicates": 0,
+     "found": 0
+    },
+    "hiring_turnover": null,
+    "born_by_change": false
+   }
+  ],
+  "epochs": [
+   {
+    "ts": "2026-09-02T00:00:00+00:00",
+    "changed": [
+     "tech filter changed"
+    ],
+    "fields": [
+     "tech_filter_version"
+    ]
+   }
+  ],
+  "metric": "new",
+  "coverage": "all",
+  "new_window_days": 7,
+  "family": null,
+  "split_by": "company",
+  "companies": [
+   {
+    "key": "greenhouse:acme",
+    "label": "Acme",
+    "board_keys": [
+     "greenhouse:acme"
+    ],
+    "atses": [
+     "greenhouse"
+    ]
+   }
+  ],
+  "discovered": [],
+  "evicted": [],
+  "pick_series": {},
+  "pick_parts": {},
+  "pick_turnover": {},
+  "counted_since": {
+   "greenhouse:acme": "2026-09-01T00:00:00+00:00"
+  },
+  "totals": [
+   10000,
+   10000,
+   10000,
+   10000,
+   10000,
+   10000,
+   10000,
+   10000,
+   10000,
+   10000,
+   10000,
+   10000
+  ],
+  "non_tech": [
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "watch_parents": [],
+  "uncounted": [],
+  "company_totals": {},
+  "partial": 0,
+  "series_sum": {
+   "name": "__total__",
+   "points": [
+    100,
+    150,
+    150,
+    150,
+    150,
+    150,
+    150,
+    150,
+    110,
+    110,
+    110,
+    110
+   ],
+   "turnover": null,
+   "net": {
+    "count": [
+     110,
+     110,
+     110,
+     110,
+     110,
+     110,
+     110,
+     110,
+     110,
+     110,
+     110,
+     110
+    ],
+    "share": [
+     1.0999999999999999,
+     1.0999999999999999,
+     1.0999999999999999,
+     1.0999999999999999,
+     1.0999999999999999,
+     1.0999999999999999,
+     1.0999999999999999,
+     1.0999999999999999,
+     1.0999999999999999,
+     1.0999999999999999,
+     1.0999999999999999,
+     1.0999999999999999
+    ]
+   },
+   "steps": [
+    {
+     "note": 0,
+     "size": -40,
+     "moved": true
+    },
+    {
+     "note": 1,
+     "size": 50,
+     "moved": true
+    },
+    {
+     "note": 2,
+     "size": 0,
+     "moved": false
+    }
+   ],
+   "jumps": [
+    {
+     "i": 1,
+     "size": 50
+    },
+    {
+     "i": 2,
+     "size": 0
+    },
+    {
+     "i": 8,
+     "size": -40
+    }
+   ],
+   "causes": {
+    "duplicates": 0,
+    "found": 0
+   },
+   "hiring_turnover": null,
+   "born_by_change": false
+  },
+  "totals_net": [
+   10000,
+   10000,
+   10000,
+   10000,
+   10000,
+   10000,
+   10000,
+   10000,
+   10000,
+   10000,
+   10000,
+   10000
+  ],
+  "notes": [
+   {
+    "i": 8,
+    "kind": "counting",
+    "epoch": true,
+    "echo": true,
+    "settle": false,
+    "found": false,
+    "evicted": false,
+    "join": false,
+    "withhold": true,
+    "company": null,
+    "companies": null,
+    "size": null,
+    "boards": null,
+    "fields": [
+     "tech_filter_version"
+    ],
+    "changed": [],
+    "source": "2026-09-02T00:00:00+00:00",
+    "touched": [],
+    "bands_only": false,
+    "dedup_only": false,
+    "whole_only": false
+   },
+   {
+    "i": 1,
+    "kind": "counting",
+    "epoch": true,
+    "echo": false,
+    "settle": false,
+    "found": false,
+    "evicted": false,
+    "join": false,
+    "withhold": true,
+    "company": null,
+    "companies": null,
+    "size": null,
+    "boards": null,
+    "fields": [
+     "tech_filter_version"
+    ],
+    "changed": [
+     "tech filter changed"
+    ],
+    "source": "2026-09-02T00:00:00+00:00",
+    "touched": [],
+    "bands_only": false,
+    "dedup_only": false,
+    "whole_only": false
+   },
+   {
+    "i": 2,
+    "kind": "counting",
+    "epoch": false,
+    "echo": false,
+    "settle": true,
+    "found": false,
+    "evicted": false,
+    "join": false,
+    "withhold": true,
+    "company": null,
+    "companies": null,
+    "size": null,
+    "boards": null,
+    "fields": [],
+    "changed": [],
+    "source": null,
+    "touched": [],
+    "bands_only": false,
+    "dedup_only": false,
+    "whole_only": false
+   }
+  ]
+ }
+}

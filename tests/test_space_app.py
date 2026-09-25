@@ -35,7 +35,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 
-from headstart import trend_history
+from headstart import trend_history, trend_netting
 from headstart.llm_router import RouterUnavailable
 
 pytest.importorskip("flask")  # in [dev] so this runs in CI; guards a bare env
@@ -3314,7 +3314,7 @@ def test_the_index_shows_what_every_companys_view_shows_after_runs_are_left_out(
     for s in split["series"]:
         # The page's rule for a pick's own line: a duplicate-removal change leaves out its run
         # (and the run after) only where the pick holds Boards it can move.
-        touched = trend_history._dedup_touched(_COMPANY_DIRECTORY[s["name"]]["boards"])
+        touched = trend_netting.dedup_touched(_COMPANY_DIRECTORY[s["name"]]["boards"])
         for kind, n in shown([s["turnover"]], {2} if touched else ()).items():
             by_company[kind] += n
     assert in_index == by_company == {"opened": 5, "closed": 0}

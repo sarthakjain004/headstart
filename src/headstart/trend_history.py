@@ -38,8 +38,8 @@ from pathlib import Path
 
 import numpy as np
 
-from headstart import company_match, version_spans
-from headstart.board_identity import ats_of, tenant
+from headstart import company_match, trend_netting, version_spans
+from headstart.board_identity import ats_of
 from headstart.roles import BAND_LABELS, NON_TECH, WATCH_PREFIX
 
 # The `new` flow window (ADR-0051), in days: how long a found Board's backlog is held out of
@@ -89,20 +89,6 @@ _METHODOLOGY_COLUMNS = (
     ("derivations_version", "derivations_version"),
     ("dedup_version", "dedup_version"),
     ("family_classifier_version", "family_classifier_version"),
-)
-
-# Mirrors app.js DEDUP_ATSES and MIRROR_ATS, and hot_boards' `_DEDUP_SIBLING_ATSES` and
-# `_DEDUP_MIRROR_ATS`: the Boards a duplicate-removal change can move. Change one, change them all;
-# tests/test_space_app.py pins that this and hot_boards agree.
-_DEDUP_ATSES = ("taleo_enterprise", "workday")
-_MIRROR_ATS = "eightfold"
-# Mirrors app.js LINE_MOVING and hot_boards' `_STOCK_MOVING`: the counting changes that move
-# every line they reach.
-_LINE_MOVING = (
-    "centroid_version",
-    "family_map_fingerprint",
-    "family_classifier_version",
-    "tech_filter_version",
 )
 
 
@@ -371,20 +357,6 @@ def _in_ats_scope(board: str, ats: list[str]) -> bool:
     return not ats or ats_of(board) in ats
 
 
-def _dedup_touched(boards: list[str]) -> bool:
-    """Whether duplicate removal can move a company holding ``boards``: any Eightfold Board, or
-    two or more Boards of one Tenant on an ATS it dedupes within (ADR-0186/0187). Tenants compare
-    case-blind, as hot_boards' `dedup_touches` compares them, and as the page's rule for a pick."""
-    sites = Counter(
-        (ats_of(board), tenant(board).lower())
-        for board in boards
-        if ats_of(board) in _DEDUP_ATSES
-    )
-    return any(ats_of(board) == _MIRROR_ATS for board in boards) or any(
-        n > 1 for n in sites.values()
-    )
-
-
 def _index_turnover(by_board: dict[str, list[dict]], touched_of) -> list[dict]:
     """Every Board's turnover summed per tick, metric, family, band, ATS and whether duplicate
     removal can move it (ADR-0227): what the Trends view with no company picked draws. A few
@@ -399,32 +371,6 @@ def _index_turnover(by_board: dict[str, list[dict]], touched_of) -> list[dict]:
             summed[key] += r["delta"]
     fields = ("ts", "metric", "family", "band", "ats", "touched")
     return [{**dict(zip(fields, key)), "delta": n} for key, n in summed.items()]
-
-
-def _left_out_runs(
-    epochs: list[dict], stamps: list[str], bands: bool
-) -> tuple[set[int], set[int]]:
-    """The charted runs a company's whole line leaves out of its hiring, as app.js `stepNotes`
-    and `netOfSteps` do: ``(for every Board, for a Board duplicate removal can move)``. A counting
-    change that moves lines, and on a levels view an extraction change, leaves out its run and
-    the run after it everywhere. A duplicate-removal change alone does so only where it can move
-    a Board. A change on the window's first run is already in every line's start."""
-    every: set[int] = set()
-    touched: set[int] = set()
-    for epoch in epochs:
-        if epoch["ts"] not in stamps[1:]:
-            continue
-        i = stamps.index(epoch["ts"])
-        fields = epoch.get("fields", [])
-        moves = any(f in _LINE_MOVING for f in fields) or (
-            bands and "derivations_version" in fields
-        )
-        runs = {j for j in (i, i + 1) if j < len(stamps)}
-        if moves:
-            every |= runs
-        elif "dedup_version" in fields:
-            touched |= runs
-    return every, touched
 
 
 def _norm_stamp(raw: str) -> str:
@@ -509,6 +455,7 @@ class TrendHistory:
         self._unscoped_markers: dict[str, list[dict]] = {}
         self._index_turnover: list[dict] = []
         self._turnover_since: str | None = None
+        self._new_inflow_from: str | None = None
         self._epochs: list[dict] = []
         self._evictions: dict[str, list[tuple[str, int]]] = {}
         self._companies: dict[str, dict] = {}
@@ -857,6 +804,16 @@ class TrendHistory:
         self._turnover_since = min(
             (r["ts"] for r in self._index_turnover), default=None
         )
+        # The first tick whose whole trailing week has Opened facts (ADR-0227), where `new`
+        # becomes that week's Opened jobs (ADR-0230 decision 5). They cannot be backfilled, so
+        # before it `new` stays the level it always was; a partial week would read as a ramp.
+        if self._turnover_since:
+            full = (
+                datetime.fromisoformat(self._turnover_since)
+                + timedelta(days=NEW_WINDOW_DAYS)
+            ).isoformat(timespec="seconds")
+            at = bisect_left(self._ticks, full)
+            self._new_inflow_from = self._ticks[at] if at < len(self._ticks) else None
         self._candidates = [
             company_match.Candidate(
                 key=key,
@@ -1021,6 +978,19 @@ class TrendHistory:
                 base_stamp = first_charted
         else:
             trends_rows = self._index_rows(ats, since, until)
+        # `new` is the jobs Opened over the trailing week from `_new_inflow_from` on (ADR-0230
+        # decision 5); before it, the level it always was. The switch is a counting change.
+        # Watched roles have no Opened facts (turnover is booked per family, ADR-0227), so the
+        # roles drill keeps the level.
+        inflow_from = (
+            self._new_inflow_from
+            if metric == "new" and not (family and split == "roles")
+            else None
+        )
+        if inflow_from:
+            trends_rows = self._with_new_inflow(
+                trends_rows, inflow_from, company_of, base_stamp, ats
+            )
 
         # Epochs (ADR-0164) are their own timeline, independent of the series version — a refit
         # is itself one of the things that can produce a boundary, so filtering by the live
@@ -1037,6 +1007,22 @@ class TrendHistory:
             epochs = [e for e in epochs if e["ts"] >= earliest]
         if until:
             epochs = [e for e in epochs if e["ts"] <= until]
+        if (
+            inflow_from
+            and (not since or since <= inflow_from)
+            and (not until or inflow_from <= until)
+        ):
+            epochs = sorted(
+                [
+                    *epochs,
+                    {
+                        "ts": inflow_from,
+                        "changed": ["new openings became the jobs opened in the week"],
+                        "fields": [trend_netting.NEW_BECAME_INFLOW],
+                    },
+                ],
+                key=lambda e: e["ts"],
+            )
 
         # Stamps and the share denominator come from `trends_rows` (since/until/ats-narrowed,
         # but not the family/metric drill): total(ts) is every family + non-tech IN THAT SCOPE,
@@ -1117,7 +1103,7 @@ class TrendHistory:
             self._new_measured
             if company_of
             else {r["ts"] for r in trends_rows if r["metric"] == "new"}
-        )
+        ) | ({ts for ts in stamps if ts >= inflow_from} if inflow_from else set())
 
         def value_at(
             points: dict[str, int], ts: str, counts_from: str | None = None
@@ -1127,7 +1113,11 @@ class TrendHistory:
             ``counts_from`` is when a pick's ``new`` first counts (the `new` hold): before it
             every Board of the series is held, so the run measured nothing for it, which is a
             gap — a 0 there drew a week of nothing and then a leap that read as a surge."""
-            if counts_from is not None and ts < counts_from:
+            if (
+                counts_from is not None
+                and ts < counts_from
+                and not (inflow_from and ts >= inflow_from)
+            ):
                 return None
             return points.get(ts, 0 if metric == "new" and ts in measured else None)
 
@@ -1158,6 +1148,9 @@ class TrendHistory:
             ts = self._board_arrivals[board][0]
             began[pick] = min(began.get(pick, ts), ts)
             release = self._new_hold.get(board, ts)
+            # Opened holds no backlog, so from the inflow's first run nothing is held.
+            if inflow_from and release > inflow_from:
+                release = max(ts, inflow_from)
             new_from[pick] = min(new_from.get(pick, release), release)
 
         def _series_label(name: str) -> str:
@@ -1171,7 +1164,7 @@ class TrendHistory:
 
         # Under `new`, where a series' first counted run is: a company line's own pick's
         # release, and for a line summing several picks the earliest, after which each later
-        # one joins the sum as a marked step (the page's stepNotes).
+        # one joins the sum as a marked step (trend_netting's notes).
         def counts_from(name: str) -> str | None:
             if metric != "new" or not company_of:
                 return None
@@ -1266,6 +1259,9 @@ class TrendHistory:
                 ts, openings = self._board_arrivals[board]
                 if metric == "new":
                     ts = self._new_hold.get(board, ts)
+                    # A found Board's backlog is Recounted, never Opened: no step in the inflow.
+                    if inflow_from and ts >= inflow_from:
+                        continue
                 at = bisect_left(stamps, ts)
                 if (
                     openings <= 0
@@ -1308,7 +1304,7 @@ class TrendHistory:
         # hiring. The index leaves out, Board by Board, the runs each company's own line leaves
         # out, so the index's opened and closed are the sum of what every company's view shows.
         left_out: tuple[set[int], set[int]] = (
-            _left_out_runs(epochs, stamps, bool(family))
+            trend_netting.left_out_runs(epochs, stamps, key == "band")
             if company_of is None
             else (set(), set())
         )
@@ -1369,9 +1365,15 @@ class TrendHistory:
         watch_parents = sorted(
             {parent for meta in self._watch.values() if (parent := parent_of(meta))}
         )
-        return {
+        payload = {
             "version": self._live_version,
             "coverage": coverage,
+            # How long a posting counts as new: the page says it, and netting under New takes a
+            # tech-filter change out again a week on, when the openings it let in age out.
+            "new_window_days": NEW_WINDOW_DAYS,
+            # The first run whose `new` is the jobs opened in the week, not the level of jobs
+            # first seen in it and still open (ADR-0230 decision 5); None until then.
+            "new_inflow_from": inflow_from,
             "base": base_stamp,
             "metric": metric,
             "stamps": stamps,
@@ -1423,7 +1425,7 @@ class TrendHistory:
             # opened and closed cover only part of it, and the page says from when.
             "turnover_since": self._turnover_since if with_turnover else None,
             # The runs the index's turnover leaves out for a counting change. Empty under a
-            # pick, whose page decides.
+            # pick, whose lines' netting decides (`hiring_turnover`).
             "turnover_left_out": [stamps[k] for k in sorted(left_out[0] | left_out[1])],
             # Per pick ("" for the index), its Boards whose closures went uncounted on some run
             # in the window (ADR-0053).
@@ -1431,6 +1433,8 @@ class TrendHistory:
             if with_turnover
             else {},
         }
+        # Every line is netted here, once (ADR-0230 decision 3): the page draws what it is given.
+        return trend_netting.net_answer(payload)
 
     # ---- the rows a question reads -----------------------------------------------------------
 
@@ -1657,6 +1661,73 @@ class TrendHistory:
             )
         return out
 
+    def _with_new_inflow(
+        self,
+        rows: list[dict],
+        inflow_from: str,
+        company_of: dict[str, str] | None,
+        base_stamp: str | None,
+        ats: list[str],
+    ) -> list[dict]:
+        """``rows`` with each `new` row from ``inflow_from`` on replaced by the jobs Opened over
+        the trailing ``NEW_WINDOW_DAYS`` (ADR-0227), in the same Boards' scope: the picks', a
+        comparable cohort's, or the index's. Opened already leaves out a found Board's backlog,
+        duplicates and reclassified jobs (Recounted), so it is summed as it is."""
+        charted = sorted({r["ts"] for r in rows if r["metric"] == "stock"})
+        with_company = bool(rows) and "company" in rows[0]
+        if company_of is None and base_stamp is None:
+            opened = [
+                (r, None)
+                for r in self._index_turnover
+                if r["metric"] == "opened" and (not ats or r["ats"] in ats)
+            ]
+        else:
+            boards = (
+                {b: pick for b, pick in company_of.items() if _in_ats_scope(b, ats)}
+                if company_of is not None
+                else {b: "" for b in self._turnover if _in_ats_scope(b, ats)}
+            )
+            if base_stamp is not None:
+                boards = {
+                    b: pick
+                    for b, pick in boards.items()
+                    if b in self._board_arrivals
+                    and self._board_arrivals[b][0] <= base_stamp
+                }
+            opened = [
+                (r, pick)
+                for b, pick in boards.items()
+                for r in self._turnover.get(b, ())
+                if r["metric"] == "opened"
+            ]
+        opened.sort(key=lambda pair: pair[0]["ts"])
+        inflow = [
+            r for r in rows if not (r["metric"] == "new" and r["ts"] >= inflow_from)
+        ]
+        window: Counter[tuple[str | None, str, str]] = Counter()
+        entered = left = 0
+        for ts in charted:
+            if ts < inflow_from:
+                continue
+            start = (
+                datetime.fromisoformat(ts) - timedelta(days=NEW_WINDOW_DAYS)
+            ).isoformat(timespec="seconds")
+            while entered < len(opened) and opened[entered][0]["ts"] <= ts:
+                r, pick = opened[entered]
+                window[(pick, r["family"], r["band"])] += r["delta"]
+                entered += 1
+            while left < entered and opened[left][0]["ts"] <= start:
+                r, pick = opened[left]
+                window[(pick, r["family"], r["band"])] -= r["delta"]
+                left += 1
+            for (pick, family, band), count in window.items():
+                if count:
+                    row = {"ts": ts, "metric": "new", "family": family, "band": band}
+                    if with_company:
+                        row["company"] = pick
+                    inflow.append({**row, "count": count})
+        return inflow
+
     # ---- turnover, removals and companies ----------------------------------------------------
 
     def _turnover_series(
@@ -1677,7 +1748,7 @@ class TrendHistory:
         happened since the run before. The first charted run is None: what landed there happened
         before the window. So is every run before turnover began, since nothing measured it.
 
-        ``left_out`` is :func:`_left_out_runs`' pair: runs None on every line, and runs where a
+        ``left_out`` is :func:`trend_netting.left_out_runs`' pair: runs None on every line, and runs where a
         row duplicate removal can move (``touched``) is not counted.
         """
         every, touched = left_out
@@ -1743,7 +1814,7 @@ class TrendHistory:
             if board in self._company_of
             else [board]
         )
-        return _dedup_touched(boards)
+        return trend_netting.dedup_touched(boards)
 
     def _company_openings(self, entry: dict) -> int:
         return sum(self._openings[board] for board in entry["boards"])

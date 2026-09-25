@@ -1,0 +1,255 @@
+{
+ "description": "1,000 real jobs listed twice; 50 real hires showed as +100; the 1,050 copies are removed, and 10 more hired.",
+ "unnetted": {
+  "stamps": [
+   "2026-09-13T00:00:00+00:00",
+   "2026-09-14T00:00:00+00:00",
+   "2026-09-15T00:00:00+00:00",
+   "2026-09-16T00:00:00+00:00"
+  ],
+  "series": [
+   {
+    "name": "eightfold:micron",
+    "label": "Micron",
+    "points": [
+     2000,
+     2100,
+     1050,
+     1060
+    ],
+    "latest": 1060
+   }
+  ],
+  "company_totals": {
+   "eightfold:micron": [
+    2000,
+    2100,
+    1050,
+    1060
+   ]
+  },
+  "evicted": [
+   {
+    "ts": "2026-09-15T00:00:00+00:00",
+    "company": "eightfold:micron",
+    "count": 1050
+   }
+  ],
+  "metric": "stock",
+  "coverage": "all",
+  "new_window_days": 7,
+  "family": null,
+  "split_by": "company",
+  "companies": [
+   {
+    "key": "eightfold:micron",
+    "label": "Micron",
+    "board_keys": [
+     "eightfold:micron"
+    ],
+    "atses": [
+     "eightfold"
+    ]
+   }
+  ],
+  "epochs": [],
+  "discovered": [],
+  "pick_series": {},
+  "pick_parts": {},
+  "pick_turnover": {},
+  "counted_since": {
+   "eightfold:micron": "2026-09-13T00:00:00+00:00"
+  },
+  "totals": [
+   10000,
+   10000,
+   10000,
+   10000
+  ],
+  "non_tech": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "watch_parents": [],
+  "uncounted": []
+ },
+ "served": {
+  "stamps": [
+   "2026-09-13T00:00:00+00:00",
+   "2026-09-14T00:00:00+00:00",
+   "2026-09-15T00:00:00+00:00",
+   "2026-09-16T00:00:00+00:00"
+  ],
+  "series": [
+   {
+    "name": "eightfold:micron",
+    "label": "Micron",
+    "points": [
+     2000,
+     2100,
+     1050,
+     1060
+    ],
+    "latest": 1060,
+    "net": {
+     "count": [
+      1000,
+      1050,
+      1050,
+      1060
+     ],
+     "share": [
+      null,
+      null,
+      100,
+      100
+     ]
+    },
+    "steps": [
+     {
+      "note": 0,
+      "size": -1000,
+      "moved": true
+     }
+    ],
+    "jumps": [
+     {
+      "i": 2,
+      "size": -1050
+     }
+    ],
+    "causes": {
+     "duplicates": -1000,
+     "found": 0
+    },
+    "hiring_turnover": null,
+    "born_by_change": false
+   }
+  ],
+  "company_totals": {
+   "eightfold:micron": [
+    2000,
+    2100,
+    1050,
+    1060
+   ]
+  },
+  "evicted": [
+   {
+    "ts": "2026-09-15T00:00:00+00:00",
+    "company": "eightfold:micron",
+    "count": 1050
+   }
+  ],
+  "metric": "stock",
+  "coverage": "all",
+  "new_window_days": 7,
+  "family": null,
+  "split_by": "company",
+  "companies": [
+   {
+    "key": "eightfold:micron",
+    "label": "Micron",
+    "board_keys": [
+     "eightfold:micron"
+    ],
+    "atses": [
+     "eightfold"
+    ]
+   }
+  ],
+  "epochs": [],
+  "discovered": [],
+  "pick_series": {},
+  "pick_parts": {},
+  "pick_turnover": {},
+  "counted_since": {
+   "eightfold:micron": "2026-09-13T00:00:00+00:00"
+  },
+  "totals": [
+   10000,
+   10000,
+   10000,
+   10000
+  ],
+  "non_tech": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "watch_parents": [],
+  "uncounted": [],
+  "partial": 0,
+  "series_sum": {
+   "name": "__total__",
+   "points": [
+    2000,
+    2100,
+    1050,
+    1060
+   ],
+   "turnover": null,
+   "net": {
+    "count": [
+     1000,
+     1050,
+     1050,
+     1060
+    ],
+    "share": [
+     20,
+     21,
+     10.5,
+     10.6
+    ]
+   },
+   "steps": [
+    {
+     "note": 0,
+     "size": -1000,
+     "moved": false
+    }
+   ],
+   "jumps": [],
+   "causes": {
+    "duplicates": -1000,
+    "found": 0
+   },
+   "hiring_turnover": null,
+   "born_by_change": false
+  },
+  "totals_net": [
+   10000,
+   10000,
+   10000,
+   10000
+  ],
+  "notes": [
+   {
+    "i": 2,
+    "kind": "duplicates",
+    "epoch": false,
+    "echo": false,
+    "settle": false,
+    "found": false,
+    "evicted": true,
+    "join": false,
+    "withhold": true,
+    "company": "eightfold:micron",
+    "companies": null,
+    "size": -1050,
+    "boards": null,
+    "fields": [],
+    "changed": [],
+    "source": null,
+    "touched": [],
+    "bands_only": false,
+    "dedup_only": false,
+    "whole_only": true
+   }
+  ]
+ }
+}

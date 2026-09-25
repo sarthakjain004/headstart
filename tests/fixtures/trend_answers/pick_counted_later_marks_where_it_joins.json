@@ -1,0 +1,275 @@
+{
+ "description": "AMD, counted from the second run, joins the summed categories there.",
+ "unnetted": {
+  "stamps": [
+   "2026-09-13T00:00:00+00:00",
+   "2026-09-20T00:00:00+00:00"
+  ],
+  "series": [
+   {
+    "name": "a",
+    "label": "a",
+    "points": [
+     50,
+     400
+    ],
+    "latest": 400
+   },
+   {
+    "name": "b",
+    "label": "b",
+    "points": [
+     40,
+     45
+    ],
+    "latest": 45
+   }
+  ],
+  "counted_since": {
+   "workday:nvidia": "2026-09-13T00:00:00+00:00",
+   "workday:amd": "2026-09-20T00:00:00+00:00"
+  },
+  "metric": "stock",
+  "coverage": "all",
+  "new_window_days": 7,
+  "family": null,
+  "split_by": "family",
+  "companies": [
+   {
+    "key": "workday:nvidia",
+    "label": "NVIDIA",
+    "board_keys": [
+     "workday:nvidia"
+    ],
+    "atses": [
+     "workday"
+    ]
+   },
+   {
+    "key": "workday:amd",
+    "label": "AMD",
+    "board_keys": [
+     "workday:amd"
+    ],
+    "atses": [
+     "workday"
+    ]
+   }
+  ],
+  "epochs": [],
+  "discovered": [],
+  "evicted": [],
+  "pick_series": {},
+  "pick_parts": {},
+  "pick_turnover": {},
+  "totals": [
+   10000,
+   10000
+  ],
+  "non_tech": [
+   0,
+   0
+  ],
+  "watch_parents": [],
+  "uncounted": [],
+  "company_totals": {}
+ },
+ "served": {
+  "stamps": [
+   "2026-09-13T00:00:00+00:00",
+   "2026-09-20T00:00:00+00:00"
+  ],
+  "series": [
+   {
+    "name": "a",
+    "label": "a",
+    "points": [
+     50,
+     400
+    ],
+    "latest": 400,
+    "net": {
+     "count": [
+      400,
+      400
+     ],
+     "share": [
+      4,
+      4
+     ]
+    },
+    "steps": [
+     {
+      "note": 0,
+      "size": 350,
+      "moved": true
+     }
+    ],
+    "jumps": [
+     {
+      "i": 1,
+      "size": 350
+     }
+    ],
+    "causes": {
+     "duplicates": 0,
+     "found": 350
+    },
+    "hiring_turnover": null,
+    "born_by_change": false
+   },
+   {
+    "name": "b",
+    "label": "b",
+    "points": [
+     40,
+     45
+    ],
+    "latest": 45,
+    "net": {
+     "count": [
+      45,
+      45
+     ],
+     "share": [
+      0.44999999999999996,
+      0.44999999999999996
+     ]
+    },
+    "steps": [
+     {
+      "note": 0,
+      "size": 5,
+      "moved": true
+     }
+    ],
+    "jumps": [
+     {
+      "i": 1,
+      "size": 5
+     }
+    ],
+    "causes": {
+     "duplicates": 0,
+     "found": 5
+    },
+    "hiring_turnover": null,
+    "born_by_change": false
+   }
+  ],
+  "counted_since": {
+   "workday:nvidia": "2026-09-13T00:00:00+00:00",
+   "workday:amd": "2026-09-20T00:00:00+00:00"
+  },
+  "metric": "stock",
+  "coverage": "all",
+  "new_window_days": 7,
+  "family": null,
+  "split_by": "family",
+  "companies": [
+   {
+    "key": "workday:nvidia",
+    "label": "NVIDIA",
+    "board_keys": [
+     "workday:nvidia"
+    ],
+    "atses": [
+     "workday"
+    ]
+   },
+   {
+    "key": "workday:amd",
+    "label": "AMD",
+    "board_keys": [
+     "workday:amd"
+    ],
+    "atses": [
+     "workday"
+    ]
+   }
+  ],
+  "epochs": [],
+  "discovered": [],
+  "evicted": [],
+  "pick_series": {},
+  "pick_parts": {},
+  "pick_turnover": {},
+  "totals": [
+   10000,
+   10000
+  ],
+  "non_tech": [
+   0,
+   0
+  ],
+  "watch_parents": [],
+  "uncounted": [],
+  "company_totals": {},
+  "partial": 0,
+  "series_sum": {
+   "name": "__total__",
+   "points": [
+    90,
+    445
+   ],
+   "turnover": null,
+   "net": {
+    "count": [
+     445,
+     445
+    ],
+    "share": [
+     4.45,
+     4.45
+    ]
+   },
+   "steps": [
+    {
+     "note": 0,
+     "size": 355,
+     "moved": true
+    }
+   ],
+   "jumps": [
+    {
+     "i": 1,
+     "size": 355
+    }
+   ],
+   "causes": {
+    "duplicates": 0,
+    "found": 355
+   },
+   "hiring_turnover": null,
+   "born_by_change": false
+  },
+  "totals_net": [
+   10000,
+   10000
+  ],
+  "notes": [
+   {
+    "i": 1,
+    "kind": "found",
+    "epoch": false,
+    "echo": false,
+    "settle": false,
+    "found": true,
+    "evicted": false,
+    "join": true,
+    "withhold": true,
+    "company": "workday:amd",
+    "companies": null,
+    "size": null,
+    "boards": null,
+    "fields": [],
+    "changed": [],
+    "source": null,
+    "touched": [],
+    "bands_only": false,
+    "dedup_only": false,
+    "whole_only": false
+   }
+  ]
+ }
+}

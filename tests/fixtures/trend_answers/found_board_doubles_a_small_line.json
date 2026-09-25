@@ -1,0 +1,248 @@
+{
+ "description": "12 openings, then a found Board doubles it: net [24, 24, 24, 26], two openings of hiring.",
+ "unnetted": {
+  "stamps": [
+   "2026-09-13T00:00:00+00:00",
+   "2026-09-14T00:00:00+00:00",
+   "2026-09-15T00:00:00+00:00",
+   "2026-09-16T00:00:00+00:00"
+  ],
+  "series": [
+   {
+    "name": "a",
+    "label": "a",
+    "points": [
+     12,
+     12,
+     24,
+     26
+    ],
+    "latest": 26
+   }
+  ],
+  "discovered": [
+   {
+    "ts": "2026-09-15T00:00:00+00:00",
+    "company": "greenhouse:acme",
+    "boards": 1,
+    "openings": 12
+   }
+  ],
+  "metric": "stock",
+  "coverage": "all",
+  "new_window_days": 7,
+  "family": null,
+  "split_by": "family",
+  "companies": [
+   {
+    "key": "greenhouse:acme",
+    "label": "Acme",
+    "board_keys": [
+     "greenhouse:acme"
+    ],
+    "atses": [
+     "greenhouse"
+    ]
+   }
+  ],
+  "epochs": [],
+  "evicted": [],
+  "pick_series": {},
+  "pick_parts": {},
+  "pick_turnover": {},
+  "counted_since": {
+   "greenhouse:acme": "2026-09-13T00:00:00+00:00"
+  },
+  "totals": [
+   10000,
+   10000,
+   10000,
+   10000
+  ],
+  "non_tech": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "watch_parents": [],
+  "uncounted": [],
+  "company_totals": {}
+ },
+ "served": {
+  "stamps": [
+   "2026-09-13T00:00:00+00:00",
+   "2026-09-14T00:00:00+00:00",
+   "2026-09-15T00:00:00+00:00",
+   "2026-09-16T00:00:00+00:00"
+  ],
+  "series": [
+   {
+    "name": "a",
+    "label": "a",
+    "points": [
+     12,
+     12,
+     24,
+     26
+    ],
+    "latest": 26,
+    "net": {
+     "count": [
+      24,
+      24,
+      24,
+      26
+     ],
+     "share": [
+      0.24,
+      0.24,
+      0.24,
+      0.26
+     ]
+    },
+    "steps": [
+     {
+      "note": 0,
+      "size": 12,
+      "moved": true
+     }
+    ],
+    "jumps": [
+     {
+      "i": 2,
+      "size": 12
+     }
+    ],
+    "causes": {
+     "duplicates": 0,
+     "found": 12
+    },
+    "hiring_turnover": null,
+    "born_by_change": false
+   }
+  ],
+  "discovered": [
+   {
+    "ts": "2026-09-15T00:00:00+00:00",
+    "company": "greenhouse:acme",
+    "boards": 1,
+    "openings": 12
+   }
+  ],
+  "metric": "stock",
+  "coverage": "all",
+  "new_window_days": 7,
+  "family": null,
+  "split_by": "family",
+  "companies": [
+   {
+    "key": "greenhouse:acme",
+    "label": "Acme",
+    "board_keys": [
+     "greenhouse:acme"
+    ],
+    "atses": [
+     "greenhouse"
+    ]
+   }
+  ],
+  "epochs": [],
+  "evicted": [],
+  "pick_series": {},
+  "pick_parts": {},
+  "pick_turnover": {},
+  "counted_since": {
+   "greenhouse:acme": "2026-09-13T00:00:00+00:00"
+  },
+  "totals": [
+   10000,
+   10000,
+   10000,
+   10000
+  ],
+  "non_tech": [
+   0,
+   0,
+   0,
+   0
+  ],
+  "watch_parents": [],
+  "uncounted": [],
+  "company_totals": {},
+  "partial": 0,
+  "series_sum": {
+   "name": "__total__",
+   "points": [
+    12,
+    12,
+    24,
+    26
+   ],
+   "turnover": null,
+   "net": {
+    "count": [
+     24,
+     24,
+     24,
+     26
+    ],
+    "share": [
+     12.12,
+     12.12,
+     0.24,
+     0.26
+    ]
+   },
+   "steps": [
+    {
+     "note": 0,
+     "size": 12,
+     "moved": true
+    }
+   ],
+   "jumps": [
+    {
+     "i": 2,
+     "size": 12
+    }
+   ],
+   "causes": {
+    "duplicates": 0,
+    "found": 12
+   },
+   "hiring_turnover": null,
+   "born_by_change": false
+  },
+  "totals_net": [
+   10000,
+   10000,
+   10000,
+   10000
+  ],
+  "notes": [
+   {
+    "i": 2,
+    "kind": "found",
+    "epoch": false,
+    "echo": false,
+    "settle": false,
+    "found": true,
+    "evicted": false,
+    "join": false,
+    "withhold": true,
+    "company": "greenhouse:acme",
+    "companies": null,
+    "size": 12,
+    "boards": 1,
+    "fields": [],
+    "changed": [],
+    "source": null,
+    "touched": [],
+    "bands_only": false,
+    "dedup_only": false,
+    "whole_only": false
+   }
+  ]
+ }
+}
