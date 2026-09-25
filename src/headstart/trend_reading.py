@@ -62,14 +62,6 @@ PICK_JOINED = "pick_joined"
 # the line below zero (the erase guard, ADR-0185 round 13): its own cause, as growth counted
 # twice is, so the change keeps one size in every window.
 GROWTH_SCALED_BY_A_CHANGE = "growth_scaled_by_a_change"
-CHANGE_KINDS = (
-    COUNTING,
-    FOUND_BOARDS,
-    DUPLICATES_REMOVED,
-    GROWTH_COUNTED_TWICE,
-    GROWTH_SCALED_BY_A_CHANGE,
-    PICK_JOINED,
-)
 # Not hiring the reading could not name: it never should be, and check_reading says so.
 UNEXPLAINED = "unexplained"
 
@@ -325,8 +317,8 @@ class _Reader:
         self.view = view
         self.stamps = view.stamps
         self.notes = view.notes
-        self.split_by = answer.get("split_by")
-        self.roles = bool(answer.get("family")) and self.split_by == "family"
+        # the tracked-roles drill, whose lines re-count their category's jobs and add up to nothing
+        self.roles = bool(answer.get("family")) and answer.get("split_by") == "family"
         self.company_totals = answer.get("company_totals") or {}
         self.labels = {c["key"]: c["label"] for c in answer.get("companies") or []}
         self._denominators: dict[str | None, list] = {}
