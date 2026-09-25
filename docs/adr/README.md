@@ -229,6 +229,7 @@ supersedes it and note the supersession in both.
 | [0231](0231-a-jobvite-job-is-read-from-its-detail-page-or-not-at-all.md) | A Jobvite Job is read from its detail page or not at all | 2026-09-25 |
 | [0232](0232-the-shared-library-is-grouped-into-packages-by-the-question-each-module-answers.md) | The shared library is grouped into packages by the question each module answers | 2026-09-25 |
 | [0233](0233-trends-serves-reconciled-line-readings-and-the-page-only-formats.md) | Trends serves reconciled line readings, and the page only formats | 2026-09-25 |
+| [0234](0234-a-peoplestrong-board-is-its-portal-label-read-through-one-paced-budget.md) | A PeopleStrong Board is its portal label, read through one paced budget | 2026-09-25 |
 
 *ADR-0037 was removed from the repository on 2026-09-24 by the owner's decision; its number is not
 reused.*

@@ -311,6 +311,14 @@ ATS_PATTERNS = {
         "kind": "host",
         "patterns": [r"([a-z0-9][a-z0-9-]*\.zohorecruit\.(?:com|eu|in|ca))"],
     },
+    "peoplestrong": {
+        # Every candidate portal is `{label}.peoplestrong.com`, the label `peoplestrong.py` keys
+        # the API with. The zone is a wildcard and also carries PeopleStrong's own HRMS logins
+        # and support hosts (`phpsupport`, `auth`), which the prober reads as unregistered.
+        "targets": ["peoplestrong.com"],
+        "kind": "label",
+        "patterns": [r"([a-z0-9][a-z0-9-]*)\.peoplestrong\.com"],
+    },
     "personio": {
         "targets": ["jobs.personio.com", "jobs.personio.de"],
         "kind": "host",

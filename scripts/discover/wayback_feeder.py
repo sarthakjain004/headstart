@@ -399,6 +399,9 @@ ATS_HOSTS: dict[str, tuple[tuple[str, Style], ...]] = {
         # ledger rows. `cc_miner` misses it too: its regex requires a pod segment.
         "fa.oraclecloud.com",
     ),
+    # One host: every candidate portal is `{label}.peoplestrong.com`. `altone.io` and
+    # `peoplestrong.in` resolve no tenant (2026-09-25), so they are not swept.
+    "peoplestrong": _with_style("sub", "peoplestrong.com"),
     "personio": _with_style("sub", "jobs.personio.com", "jobs.personio.de"),
     # One host: every tenant is `{slug}.pinpointhq.com`, the label `pinpoint.py` keys the
     # listing on. The vendor's own hosts (`www`, `app`, …) answer 404 on `/postings.json` and
@@ -472,7 +475,7 @@ ATS_HOSTS: dict[str, tuple[tuple[str, Style], ...]] = {
 #   greythr, qandle, beehive, taleo, HirePro, iSmartRecruit, Recruit CRM, Ceipal — verified dead
 #             ends (CLAUDE.md's build list); the retired PowerShell feeder still swept
 #             qandle and beehive.
-# An ATS with no scraper yet (turbohire, peoplestrong, jobsoid, …) can still be swept ad hoc:
+# An ATS with no scraper yet (turbohire, jobsoid, …) can still be swept ad hoc:
 # `--domain HOST --style sub` bypasses this table.
 
 
