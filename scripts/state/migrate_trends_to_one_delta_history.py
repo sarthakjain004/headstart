@@ -120,11 +120,13 @@ def migrate(source: Path, out: Path) -> Migration:
     }
     if len(name_of) != len(paths):
         raise ValueError(f"{source / DELTAS}: two files hold one tick")
+    print(f"read {len(tables)} tick file(s); rewriting re-bases", flush=True)
     ticks, rebased = trend_history_migration.rewritten_ticks(tables, source / EPOCHS)
     (out / DELTAS).mkdir(parents=True)
     for table in ticks:
         name = name_of[trend_history_migration.tick_stamp(table)]
         pq.write_table(table, out / DELTAS / name, compression="zstd")
+    print(f"wrote {len(ticks)} tick file(s); building the archive", flush=True)
     archive = trend_history_migration.archive_from_aggregate(
         source / AGGREGATE,
         before=trend_history_migration.tick_stamp(ticks[0]),
@@ -226,6 +228,7 @@ def verify(migrated: Path, source: Path) -> Verification:
     of the same facts: the Board-count snapshot, the aggregate at every tick, and the epochs."""
     result = Verification()
     ticks = written_ticks(migrated / DELTAS)
+    print(f"verifying {len(ticks)} tick file(s) and the archive", flush=True)
     snapshot = pq.read_table(source / BOARD_COUNTS)
     result.board_counts_as_of = (
         (snapshot.schema.metadata or {}).get(b"as_of", b"").decode()

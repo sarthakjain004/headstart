@@ -102,6 +102,7 @@ def history_refusal(work: Path) -> str | None:
     if missing:
         return f"not on {REPO} (or not fetched): {', '.join(missing)}"
     try:
+        print("verifying the history on the dataset", flush=True)
         check = verify(state, state)
     except ValueError as exc:
         return f"the history on {REPO} is not migrated: {exc}"

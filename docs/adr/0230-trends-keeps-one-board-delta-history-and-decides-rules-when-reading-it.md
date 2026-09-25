@@ -142,7 +142,13 @@ later, with the pipeline's chain paused. Four calls follow from that, or were ma
   first ticks land beside the older files and count against that same history. Measured on the
   2026-09-25 state: the Space's 23 fixed Trends requests answer identically on the older layout and
   on its rewrite. Once the rewrite and the retirement have run, the module, the script, the
-  Space's two download patterns for the retired files and the older-layout test fixtures go.
+  Space's two download patterns for the retired files, the older-layout test fixtures and
+  `scripts/eval/check_trend_history_replays_aggregate.py` (which reads the aggregate) go.
+- **The rewrite reproduces what it replaces.** Dry-run on the 2026-09-25 HF state (newest tick
+  05:15:02): 314 tick files, 1,110,438 rows to 986,222, one re-base rewritten (2026-09-24
+  21:19:12); an archive of 615 ticks and 331,354 rows under one Methodology; the replay against
+  the Board-count snapshot differs on 0 of 294,047 keys, against the aggregate on 0 of 929
+  ticks, and its 9 counting changes are the epoch ledger's 9 boundaries, tick for tick.
 - **The archive is named for what it precedes.** `role_trend_index_deltas_before_board_deltas.parquet`,
   not `..._before_2026-09-13`: two of its 615 ticks fall on 2026-09-13, before 12:00:39, when
   per-Board counting began. It lists its ticks in its metadata, since a tick where nothing moved

@@ -406,13 +406,13 @@ def main() -> int:
             args.assignments, head.version
         )
         had_snapshot = args.assignments.exists()
-        _, counted = trend_history.board_levels(args.state)
+        _, last_levels = trend_history.board_levels(args.state)
         turnover, booked_through = _turnover_this_tick(
             placed,
             dict(zip(ids, first_seen, strict=True)),
             live,
             snapshot=args.assignments,
-            counted_boards={board for board, *_ in counted},
+            counted_boards={board for board, *_ in last_levels},
             eviction_queue=args.eviction_queue,
             unauthoritative_boards=args.unauthoritative_boards,
         )
