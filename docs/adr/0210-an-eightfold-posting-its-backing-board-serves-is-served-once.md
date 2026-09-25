@@ -30,7 +30,8 @@ Every Eightfold posting states its backing ATS's requisition, and #632 measured 
 ## Decision
 
 1. **`Job.requisition` and a nullable `requisition` string column on the served table.** Filled by
-   six scrapers only — eightfold, workday, oracle, greenhouse, taleo_enterprise, successfactors —
+   six scrapers at first — eightfold, workday, oracle, greenhouse, taleo_enterprise,
+   successfactors — and lever and jibe since the 2026-09-25 amendment,
    from the fields above; every other ATS writes null. Stored as the ATS states it, normalised
    just enough to compare: `models.requisition_of` makes it trimmed text (Greenhouse states a
    number), and SuccessFactors keeps only the id before the first `-` of `internalId`, so a
@@ -168,3 +169,58 @@ and **90% of pairs after about 10 runs (~8 hours)**.
   resolves through `board_of`'s last-colon guess (ADR-0049), so a buried Board's row whose native
   id carries a colon (Workday's `REQ: 228` shape) is removed unrecorded. The same guess every
   other off-Board path makes; rare, and logged.
+
+## Amendment (2026-09-25): every front whose backing Board we hold
+
+**The pairs were filtered by the wrong rule.** The file's rows came from a content sweep of v654
+that kept only Board pairs in the band ADR-0205's burial reads (Jaccard ≥ 0.5 or containment ≥
+0.8). That band asks whether a whole Board can be aliased. This rule removes one Eightfold row
+only when a served backing row carries its requisition, so a front that also posts on its own
+needs no band. A second dedup critique measured about 3,400 served duplicate rows that the band
+left out, on v65 of the served table (2026-09-25; the table's version count has restarted since
+v654). The file has no writer: its rows were copied by hand from that sweep, so this amendment adds
+the missing rows by hand from the v65 evidence. Nothing regenerates the file, so no re-run can
+drop them.
+
+**25 pairs added, 22 fronts** (Lumen stays out, the user's decision). On SuccessFactors:
+Lockheed, HSBC's `portal.careers.hsbc.com`, Faurecia, Bayer, FCX, Insight, International SOS,
+Estée Lauder, LG CNS, Australian Unity and Deloitte. On Oracle: Ford, Ralliant, Fortive and
+Omnicell. On Workday: Plexus, AstraZeneca, Haleon, Kraft Heinz and Strada.
+Tinder is on Lever and AARP on Jibe. International SOS was left out of ADR-0205's candidates
+because it posts on its own. That keeps it off the alias ledger (rule 1) but does not bear on this
+rule. Alnylam is left out: its SuccessFactors host `opportunities.alnylam.com` answers NXDOMAIN, so
+no scrape can stamp it, although its ledger row still reads `live`.
+
+**Lever and Jibe now state `requisition`**, as their native id, like Workday and Oracle. Read live
+on 2026-09-25, Tinder's `atsJobId` is the Lever posting id on 27 of 27 served rows, and AARP's is
+the Jibe `slug` on 15 of 15. The store still keeps the column only on paired Boards. ADR-0205's
+writer reads this file as its candidates, so it now also measures the other 20 new fronts for
+burial. It has no Lever or Jibe reader, so those two fronts are never aliased. The row rule covers
+them.
+
+**No new request.** Every stamp comes from a field the scrape already reads: the Eightfold listing,
+the backing row's native id, or the SuccessFactors job page. The detail pass fetches every tech
+page on every run, and none is skipped as already held. Lockheed's `lockheed.jobs.hr.cloud.sap`
+stated `internalId` on 2,742 of its 2,742 served v65 rows, fetched live on 2026-09-25.
+
+**Projection on served v65 (read-only).** The projection runs the real `plan_prune` twice, with
+the pairs file of origin/main and with this one. Stamps are v65's own plus the values read live on
+2026-09-25 for the new pairs' rows, with each field chosen as the scraper chooses it. Result:
+**3,709** Eightfold rows removed. Lockheed accounts for 2,594, Ford 295, HSBC portal 132, Faurecia
+96, Plexus 84, Ralliant 78, Bayer 71 and Fortive 67, and 14 fronts share the other 292. **0 tech
+postings lost**: every removed row's requisition is carried by a row that stays, on one of its
+backing Boards. The titles agree on 3,708 of the 3,709 matches. The one that differs is
+AstraZeneca `R-260578`: "Principal  Engineer" on Eightfold and "Process Engineer" on the Workday
+`Alexion` site, one requisition of one tenant.
+
+**Sephora stamped 0 of its 6 rows on v65 because of timing.** Sephora's Eightfold Board is a Tail
+Board and was not scraped between deploy and v65. Its next scrape, at 11:56 UTC, stamped all six
+in the store, and four match the SuccessFactors requisitions (291799, 293212, 294086, 295904).
+Nothing to fix.
+
+**Cost and timing.** 7,940 v65 rows come into stamp scope and are rewritten once, vector included
+(3,878 Eightfold, 3,191 SuccessFactors, 516 Oracle, 313 Workday, 27 Lever, 15 Jibe). Both sides of
+most pairs are Head Boards (Lockheed ranks 10 and 11 by score), so most removals land in the first
+run after deploy. The Tail pairs (AARP, Australian Unity, Estée Lauder's SuccessFactors Board,
+International SOS's, LG CNS's Eightfold site, Omnicell's Oracle Board and Strada's Workday site) land
+within about a day. The merge needs a `DEDUP_VERSION` bump (ADR-0188), made by whoever merges this.

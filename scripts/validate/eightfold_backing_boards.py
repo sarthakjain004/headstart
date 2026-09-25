@@ -26,11 +26,11 @@ when, in `aliases`:
 
 The candidates are `BACKING`, the committed pairs file `data/validate/eightfold_backing.csv`
 (`headstart.eightfold_backing`, ADR-0210), found by content on served index v654 (2026-09-23):
-pairs of Boards on two ATSes sharing exact descriptions. A new front enters by adding a row there.
-Lumen is left out by the user's decision (its backing site is an internal careers site), and so is
-International SOS (postings of its own). Every verdict is re-derived live on each run, including
-for the Boards the last run buried, so a Board whose backing Board drops out comes back when the
-script next runs.
+pairs of Boards on two ATSes sharing exact descriptions, and completed on v65 (ADR-0210's
+2026-09-25 amendment). A new front enters by adding a row there. Lumen is left out by the user's
+decision (its backing site is an internal careers site). Every verdict is re-derived live on each
+run, including for the Boards the last run buried, so a Board whose backing Board drops out comes
+back when the script next runs.
 
 Reads each candidate and backing Board once, every read sequential within its Board and 16 Boards
 at a time, so at most 16 requests are in flight. Replaces the alias file, so re-run it after every
@@ -221,7 +221,13 @@ def _buried_by(liveness_dir: Path) -> set[str]:
 
 
 def read_board(ats: str, slug: str) -> list[Posting] | None:
-    """One Board's postings through its scraper's own listing walk, or None when unreadable."""
+    """One Board's postings through its scraper's own listing walk, or None when unreadable.
+
+    A Lever or Jibe backing Board has no reader, so its Eightfold site is never buried; the
+    row-level rule (ADR-0210) still serves each posting the two share once."""
+    if ats not in _READERS:
+        print(f"  {ats}:{slug}: no reader for {ats}", flush=True)
+        return None
     try:
         return _READERS[ats](slug)
     except (http.RequestsError, ValueError, RuntimeError) as exc:

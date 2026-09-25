@@ -26,7 +26,7 @@ Management (ADR-0202). ``shared-reqs`` is clustered outside this module; ``subse
 is :func:`bury_contained`, a containment test within one account rather than a union-find. So the
 grouping :func:`resolve` does is still never pairwise. A new signal changes which
 served rows count as duplicates, so it bumps ``index_plan.DEDUP_VERSION`` in the same change
-(ADR-0188).
+(ADR-0188), and so does an existing signal's first ledger for an ATS (ADR-0222).
 
 **A group is a duplicate cluster only when its key is itself a live Board**, and that one
 condition is what keeps two unrelated companies apart. Measured 2026-09-06:

@@ -1,6 +1,8 @@
 # ADR-0220: A trained title classifier decides a role family, over a one-axis family list
 
-**Status:** accepted · **Date:** 2026-09-25 · **Supersedes:**
+**Status:** accepted, amended by
+[ADR-0224](0224-a-rows-description-vector-joins-its-title-in-deciding-its-role-family.md) (the
+head also reads the row's description vector) · **Date:** 2026-09-25 · **Supersedes:**
 [ADR-0215](0215-a-title-rule-decides-a-role-family-before-the-centroid.md) (title rules before
 the centroid) · **Amends:** [ADR-0040](0040-role-trend-ledger.md) (the family list, and what
 decides a row's family), [ADR-0051](0051-trends-as-share-flow-and-watched-roles.md) (watch-role
