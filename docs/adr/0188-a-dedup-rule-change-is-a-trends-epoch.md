@@ -29,7 +29,9 @@ same way, since an aliased Board's history stays in the Board-delta ledger.
    there, whether their Board was aliased or they lost a duplicate group. `board_aliases` points
    back to it, since a new alias signal is the other way to change the rules.
 2. **Bumped by hand, only for a rule change.** A new grouping in `plan_prune` or a new alias
-   signal bumps it. A routine alias-ledger rewrite that applies an existing signal does not,
+   signal bumps it, and so does an existing signal's first ledger for an ATS (amended by
+   [ADR-0222](0222-an-icims-portal-that-redirects-to-another-is-an-alias.md): iCIMS's first
+   `redirect` ledger removed ~5,239 rows in one tick). A routine rewrite of an existing ledger does not,
    because the rows it moves are the ordinary churn of Boards changing, not a new definition, and
    neither does a `config.PARKED_BOARDS` entry, which is a temporary hold (CONTEXT.md §Parked),
    not a duplicate rule. A content hash of the alias ledgers would move on every such rewrite and

@@ -405,3 +405,37 @@ def test_zoho_labels_any_other_blobless_page_as_a_missing_jobs_blob() -> None:
     """The fallback stays: a page with no record and neither shell is a shape that moved."""
     with pytest.raises(DetailLost, match="no jobs blob on the page"):
         ZohoScraper._detail_record_of("<html><body><p>something else</p></body></html>")
+
+
+@pytest.mark.parametrize("async_fanout", ["1", "0"])
+def test_zoho_a_throttle_redirect_walls_the_group_and_is_retried(
+    monkeypatch, async_fanout
+):
+    """The .com throttle is a 302 to /html/portal.html (2026-09-25; 30 of 30 live detail pages
+    across .com/.eu/.in answer 200 directly, open or closed). Seen unfollowed, it marks the zoho
+    egress group walled and is retried, so the retry rides the spare egress (ADR-0063)."""
+    monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", async_fanout)
+    scraper, fetcher = _zoho_board(
+        _page([{"id": "1", "Posting_Title": "Open Role"}]),
+        lambda job_id: FakeResponse(text=_detail_page({"id": "1"})),
+    )
+    scraper.fetch_raw()
+
+    detail = next(r for r in fetcher.requests if r.url.endswith("/jobs/Careers/1"))
+    assert detail.kwargs["allow_redirects"] is False
+    assert 302 in detail.kwargs["retry_on"]
+    assert detail.kwargs["egress_on"] == frozenset({302})
+    assert detail.kwargs["egress_group"] == "zoho"
+
+
+def test_zoho_labels_a_throttle_redirect_that_never_cleared() -> None:
+    """Retries spent and still redirected: the loss says throttle, not a bare status."""
+    throttled = FakeResponse(302, "", headers={"location": "/html/portal.html"})
+    scraper, _fetcher = _zoho_board(
+        _page([{"id": "1", "Posting_Title": "Open Role"}]), lambda job_id: throttled
+    )
+
+    jobs = scraper.parse(scraper.fetch_raw(), SCRAPED_AT)
+
+    assert [j.title for j in jobs] == ["Open Role"]  # a throttle is not a closure
+    assert scraper.detail_losses == {_THROTTLE_LOSS: 1}

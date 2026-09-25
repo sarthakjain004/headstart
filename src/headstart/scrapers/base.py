@@ -1160,7 +1160,7 @@ class BaseScraper(ABC):
         why the page carries none — or return :class:`DetailWithoutDescription` for a page whose
         other fields are real but whose description is missing.
 
-        Only ever handed a 200: a non-200 is labelled ``HTTP {status}`` before this is called,
+        Only ever handed a 200: a non-200 is labelled by :meth:`detail_status_loss` before this is called,
         and anything it raises other than :class:`DetailLost` is labelled by its exception type
         rather than lost unlabelled. Keep it free of I/O — it runs inside the event loop on the
         multiplexed path.
@@ -1342,7 +1342,7 @@ class BaseScraper(ABC):
 
     def _read_detail_outcome(self, item: Any, response: Any) -> Any:
         if response.status_code != 200:
-            self.note_detail_loss(f"HTTP {response.status_code}")
+            self.note_detail_loss(self.detail_status_loss(response))
             return None
         try:
             detail = self.read_detail(item, response)
@@ -1355,6 +1355,15 @@ class BaseScraper(ABC):
                 self.note_detail_loss(detail.cause)
             return detail
         return None
+
+    def detail_status_loss(self, response: Any) -> str:
+        """The loss label for a detail that settled on a non-200 status (:meth:`run_detail_pass`,
+        either transport; the response is already read, so no I/O here).
+
+        The status itself by default. Override where a status means something specific on the
+        host: Zoho's unfollowed 302 to ``/html/portal.html`` is its throttle (ADR-0226), and a bare
+        ``HTTP 302`` would hide that."""
+        return f"HTTP {response.status_code}"
 
     def report_detail_gaps(self, results: Sequence[Any], what: str) -> int:
         """Log how many of a detail pass's results came back empty (None) — the gaps behind

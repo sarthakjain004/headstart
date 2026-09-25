@@ -55,12 +55,13 @@ _log = log.get(__name__, __spec__)
 #: Trends chart would draw that as a hiring drop; ``role_trends`` stamps this into the
 #: ADR-0164 epoch ledger so the chart marks it instead. Bump it in the change that alters which
 #: rows count as duplicates: a new grouping in :func:`plan_prune`, or a new alias-ledger signal
-#: (:mod:`headstart.board_aliases`). Don't bump it for a routine alias-ledger rewrite that applies
-#: an existing signal, nor for a ``config.PARKED_BOARDS`` entry, which is a temporary hold rather
-#: than a duplicate rule. The marker lands on the step only because both routes remove rows
-#: through ``index prune``, which has no grace period; a dedup that instead stops emitting ids at
-#: scrape time would drain through ``sync``'s two-scrape grace (ADR-0083) and read as a slow
-#: decline after the marker, so keep new dedup rules on the prune path.
+#: (:mod:`headstart.board_aliases`), or an existing signal's first ledger for an ATS (ADR-0222).
+#: Don't bump it for a routine rewrite of an alias ledger that already exists, nor for a
+#: ``config.PARKED_BOARDS`` entry, which is a temporary hold rather than a duplicate rule. The
+#: marker lands on the step only because both routes remove rows through ``index prune``, which
+#: has no grace period; a dedup that instead stops emitting ids at scrape time would drain
+#: through ``sync``'s two-scrape grace (ADR-0083) and read as a slow decline after the marker, so
+#: keep new dedup rules on the prune path.
 #:
 #: 1 — the rules when the counter was added (ADR-0188): casing duplicates, redirect and
 #:     ``shared-reqs`` aliases. 2 — Taleo Enterprise ``subset-reqs`` aliases (ADR-0186).
@@ -71,7 +72,8 @@ _log = log.get(__name__, __spec__)
 #:     spread over days after the marker rather than landing on it (ADR-0188's amendment).
 #: 6 — one row per tenant and requisition extended to Taleo Enterprise, Taleo BE and ADP WFN
 #:     (ADR-0223).
-DEDUP_VERSION = 6
+#: 7 — iCIMS redirect aliases, 270 Boards (ADR-0222).
+DEDUP_VERSION = 7
 
 
 @dataclass(frozen=True, slots=True)
