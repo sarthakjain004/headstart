@@ -250,6 +250,18 @@ def read_stock_change(
     return moved, stamps
 
 
+def window_base(delta_dir: Path, first: str) -> str | None:
+    """The newest tick before ``first``: the run the window's first change is measured from."""
+    import pyarrow.parquet as pq
+
+    before = []
+    for path in delta_dir.glob("*.parquet"):
+        stamps = pq.read_table(path, columns=["ts"]).column("ts").to_pylist()
+        if stamps and stamps[0] < first:
+            before.append(stamps[0])
+    return max(before, default=None)
+
+
 def _collapse_same_company(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """One row per company within a lens, keeping the best-ranked Board.
 
@@ -382,7 +394,13 @@ def main() -> int:
 
     payload = {
         "generated_at": datetime.now(UTC).isoformat(timespec="seconds"),
-        "window": {"from": min(stamps), "to": max(stamps)},
+        # `base`: the run each window's first change is measured from, so a trend opened from
+        # a row starts where Hot's figure starts; from `from` it left the first tick's change out.
+        "window": {
+            "from": min(stamps),
+            "to": max(stamps),
+            "base": window_base(args.board_deltas, min(stamps)),
+        },
         "lenses": lenses,
         "counts": counts,
     }

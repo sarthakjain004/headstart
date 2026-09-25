@@ -239,10 +239,12 @@ MAX_FAMILY_IDS = 5000
 
 
 def scoped_jobs_clause(
-    args, family_ids: Mapping[str, Sequence[str]] | None
+    args,
+    family_ids: Mapping[str, Sequence[str]] | None,
+    watch_patterns: Mapping[str, Sequence[str]] | None = None,
 ) -> str | None:
-    """The Jobs a Trends hand-off names beside ``board=``: one role family's (``family=``), or
-    None.
+    """The Jobs a Trends hand-off names beside ``board=``: one role family's (``family=``), one
+    tracked role's (``role=``), or None.
 
     Search has no family column; the family of each served Job is the pipeline's own
     ``role_assignments`` snapshot (ADR-0057), the same assignment the Trends counts are made
@@ -254,6 +256,16 @@ def scoped_jobs_clause(
     """
     family = (args.get("family") or "").strip()
     boards = sorted({b.lower() + ":" for b in args.getlist("board") if b.strip()})
+    # `role=`: a tracked role's jobs, by the same title patterns role_trends counts it by
+    # (ADR-0051). Trends showed "LLM / GenAI 84" at Google with no way to open those 84.
+    role = (args.get("role") or "").strip()
+    if role and boards and watch_patterns:
+        patterns = watch_patterns.get(
+            role if role.startswith("watch:") else "watch:" + role
+        )
+        if patterns:
+            joined = "|".join(f"(?:{p})" for p in patterns).replace("'", "''")
+            return f"regexp_like(title, '(?i){joined}')"
     if not boards or family_ids is None:
         return None
     if family:

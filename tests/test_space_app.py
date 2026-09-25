@@ -3009,3 +3009,6 @@ def test_a_stock_series_a_run_leaves_out_is_at_zero_there(trends_app):
     held = trends_app._held_at_zero
     assert held([None, 46, 46, None, None], "stock") == [None, 46, 46, 0, 0]
     assert held([None, 3, None], "new") == [None, 3, None], "new keeps its own rule"
+    assert held([None, 3, None], None) == [None, 3, None], (
+        "so does the chart with no pick"
+    )

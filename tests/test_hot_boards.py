@@ -344,3 +344,22 @@ def test_a_refit_leaves_out_its_own_run_and_the_next_only(tmp_path: Path) -> Non
         pq.write_table(table, deltas / f"{ts.replace(':', '-')}.parquet")
     moved, _ = hot_boards.read_stock_change(deltas, {"2026-09-24T21:19:12+00:00"})
     assert moved["amazon:jobs"] == 13
+
+
+def test_the_window_base_is_the_run_before_its_first_change(tmp_path: Path) -> None:
+    deltas = tmp_path / "deltas"
+    deltas.mkdir()
+    for ts in (
+        "2026-09-24T10:00:00+00:00",
+        "2026-09-24T11:00:00+00:00",
+        "2026-09-24T12:00:00+00:00",
+    ):
+        pq.write_table(
+            _deltas(ts, [("a:b", "stock", "se", 1)]),
+            deltas / f"{ts.replace(':', '-')}.parquet",
+        )
+    assert (
+        hot_boards.window_base(deltas, "2026-09-24T12:00:00+00:00")
+        == "2026-09-24T11:00:00+00:00"
+    )
+    assert hot_boards.window_base(deltas, "2026-09-24T10:00:00+00:00") is None

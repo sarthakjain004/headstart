@@ -1789,3 +1789,16 @@ test('a drill is titled for its category and its company', () => {
   t.draw();
   assert.equal(nodes['trends-title'].textContent, 'How AI / Machine Learning hiring is moving at Acme');
 });
+
+
+test('a tracked role hands over to Search as that role', () => {
+  const { t, ctx, nodes } = loadApp();
+  t.setPicks([{ ...ACME, boardKeys: ['greenhouse:acme'] }]);
+  const legend = nodes['trends-legend'];
+  legend.listeners.click.forEach(fn => fn({ target: { closest: sel => sel === '[data-hide]' ? null
+    : sel === '[data-role]' ? { dataset: { role: 'watch:llm-genai', roleLabel: 'LLM / GenAI' } } : null } }));
+  const hash = new URLSearchParams(ctx.location.hash.split('?')[1]);
+  assert.equal(hash.get('role'), 'llm-genai');
+  assert.equal(hash.get('family_label'), 'LLM / GenAI');
+  assert.equal(hash.get('family'), null);
+});

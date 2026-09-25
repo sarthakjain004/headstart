@@ -250,13 +250,15 @@ def _family_successors(path: Path) -> dict[str, str]:
     }
 
 
-def _held_at_zero(values: list[int | None], metric: str) -> list[int | None]:
+def _held_at_zero(values: list[int | None], metric: str | None) -> list[int | None]:
     """A stock series at 0, not unmeasured, at every charted run after it first appears.
 
     Every charted run measured stock, and the ledgers write only non-empty groups, so a series
     absent from a run held none there. Left as gaps, a category a refit emptied showed its last
     count as its latest and never booked the drop — Syms' systems engineering read 46 in the
-    table beside 0 in the legend. `new` keeps its own rule (``value_at``)."""
+    table beside 0 in the legend. `new` keeps its own rule (``value_at``), and so does the
+    index chart with no pick (``metric`` None): a family a version stops writing there is a
+    taxonomy change the chart marks, not a fall to zero."""
     if metric != "stock":
         return values
     out, seen = [], False
@@ -319,6 +321,8 @@ def _watch_meta(path: Path) -> dict[str, dict[str, str]]:
         _WATCH_PREFIX + r["name"]: {
             "label": r.get("label", r["name"]),
             "parent": r["parent"],
+            # the title patterns a role is counted by, so its jobs can be handed to Search
+            "match": r.get("match", []),
         }
         for r in spec["roles"]
     }
@@ -679,7 +683,9 @@ def _company_where(args) -> str | None:
     """
     scoped = search.with_extra(
         search.scoped_boards_clause(args),
-        search.scoped_jobs_clause(args, _FAMILY_IDS),
+        search.scoped_jobs_clause(
+            args, _FAMILY_IDS, {n: m["match"] for n, m in _WATCH.items()}
+        ),
     )
     gate = _account_gate()
     if not gate:
@@ -1779,15 +1785,19 @@ def trends():
             # where new WAS measured (any new row exists), a missing series row genuinely
             # means zero fresh openings; a stamp with no new rows at all predates ADR-0051
             # and stays a gap.
-            "points": (
-                values := _held_at_zero(
-                    [value_at(points, ts, counts_from(name)) for ts in stamps],
-                    metric,
-                )
-            ),
+            "points": values,
             "latest": values[-1] if stamps else None,
         }
-        for name, points in series.items()
+        for name, values in (
+            (
+                name,
+                _held_at_zero(
+                    [value_at(points, ts, counts_from(name)) for ts in stamps],
+                    metric if company_of else None,
+                ),
+            )
+            for name, points in series.items()
+        )
     ]
     out.sort(key=lambda s: -(s["latest"] or 0))
     non_tech: dict[str, int] = {}

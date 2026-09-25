@@ -1,6 +1,7 @@
 # Hand-curated company names, keyed by board_key (ADR-0212). An entry here overrides every other
 # name source, at scrape time (the served `company`) and on the Hot and Trends tabs. It is for
-# Boards that state no name anywhere we read; `evidence` says where a person read this one.
+# Boards that state no name anywhere we read, and for joining one employer's Boards into one
+# company; `evidence` says where a person read this one.
 #
 # An entry is also the company directory's cross-ATS identity (ADR-0185): Boards sharing a name
 # here are one company there, and their counts are summed. So a pair whose Boards mirror each
@@ -51,7 +52,7 @@ eightfold:morganstanley.eightfold.ai,Morgan Stanley,eightfold_backing.csv: backe
 lever:paytm,Paytm,Lever board titled "Paytm"; no title shared with the other Paytm Boards
 lever:paytmpayments,Paytm,"Lever board titled ""Paytm Payments Services"", a Paytm company; no shared title"
 ripplehire:paytm,Paytm,RippleHire tenant paytm (Paytm Payments Services Limited); no shared title
-trakstar:razorpay,Razorpay,Trakstar tenant razorpay; no title shared with the Greenhouse Board
+trakstar:razorpay,Razorpay,Trakstar tenant razorpay (an inactive account: 0 openings on 2026-09-25)
 greenhouse:razorpaysoftwareprivatelimited,Razorpay,Razorpay Software Private Limited's Greenhouse Board; no shared title
 smartrecruiters:Infosys2,Infosys,SmartRecruiters company Infosys; no title shared with trakstar:infosys
 trakstar:infosys,Infosys,Trakstar tenant infosys; no title shared with smartrecruiters:Infosys2

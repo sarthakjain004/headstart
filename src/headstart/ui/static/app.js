@@ -503,7 +503,8 @@ function searchHash(){
   searchScope.boards.forEach(b => p.append('board', b));
   if (searchScope.label) p.set('label', searchScope.label);
   if (searchScope.category){
-    p.set('family', searchScope.category.family);
+    if (searchScope.category.role) p.set('role', searchScope.category.role);
+    else p.set('family', searchScope.category.family);
     p.set('family_label', searchScope.category.label);
   } else if (searchScope.aside) p.set('aside', String(searchScope.aside));
   if (el('q').value.trim()) p.set('q', el('q').value.trim());
@@ -519,7 +520,8 @@ function readSearchHash(){
   // same Boards with another query, and comparing the Boards alone left the page on Data.
   if (!boards.length || location.hash === searchHash()) return false;
   searchScope = { boards, label: p.get('label') || `${boards.length} board${boards.length === 1 ? '' : 's'}`,
-                  category: p.get('family') ? { family: p.get('family'), label: p.get('family_label') || p.get('family') } : null,
+                  category: p.get('role') ? { role: p.get('role'), label: p.get('family_label') || p.get('role') }
+                    : p.get('family') ? { family: p.get('family'), label: p.get('family_label') || p.get('family') } : null,
                   aside: Number(p.get('aside')) || 0 };
   el('company').value = '';
   el('q').value = p.get('q') || '';
@@ -556,7 +558,10 @@ async function fetchPage(){
   if (mine) p.set('mine', '1');
   if (scope){
     scope.boards.forEach(b => p.append('board', b));
-    if (scope.category) p.set('family', scope.category.family);
+    if (scope.category){
+      if (scope.category.role) p.set('role', scope.category.role);
+      else p.set('family', scope.category.family);
+    }
   }
   el('results').innerHTML = skeleton() + skeleton() + skeleton();
   setResultRows(3);
@@ -1942,8 +1947,10 @@ function drawVerdict(d){
   // more than a phone's screen.
   const item = l => `<li><b>${esc(l.name)}</b>: ${esc(l.text)}</li>`;
   const more = lines.slice(2);
+  // A redraw (a legend toggle) rebuilds this; an opened fold stays open.
+  const wasOpen = !!(host.querySelector && host.querySelector('details[open]'));
   host.innerHTML = `<ul>${lines.slice(0, 2).map(item).join('')}</ul>${more.length
-    ? `<details class="verdict-more"><summary>${more.length} more compan${more.length === 1 ? 'y' : 'ies'}</summary><ul>${more.map(item).join('')}</ul></details>` : ''}${tail}`;
+    ? `<details class="verdict-more"${wasOpen ? ' open' : ''}><summary>${more.length} more compan${more.length === 1 ? 'y' : 'ies'}</summary><ul>${more.map(item).join('')}</ul></details>` : ''}${tail}`;
 }
 
 // A run where one line leaps and the next run puts it straight back is a partial read of a
@@ -2045,6 +2052,7 @@ function stepNotes(d){
     // cut Amazon's real −7 with no marker to say why. The cost: a change landing over two runs
     // exactly at the window's start leaves its second half in.
     if (i > 0 && i + 1 < d.stamps.length) notes.push({ i: i + 1, found: false, withhold: true, companies, settle: true, bandsOnly,
+      dedupOnly: fields.length === 1 && fields[0] === 'dedup_version',
       text: 'Left out: the run after a counting change, which can still be settling' });
   });
   (d.discovered || []).forEach(f => {
@@ -2116,7 +2124,8 @@ function drawRangeLimits(d){
   if (note){
     note.hidden = !off;
     note.textContent = off ? `Longer ranges are off: HeadStart has counted ${
-      trendPicks.length === 1 ? 'this company' : 'these companies'} only since ${stampLabel(first, true)}.` : '';
+      trendPicks.length === 1 ? 'this company' : 'these companies'} only since ${stampLabel(first, true)}${
+      new Set(firsts).size > 1 ? ' at the earliest' : ''}.` : '';
   }
 }
 
@@ -2531,28 +2540,32 @@ function signedOpenings(n){
 
 // A line's levels with the marked steps taken out (stepNotes' `withhold`: a counting change and
 // the run after it, a found Board, a later pick joining a sum, duplicate removals). Adjusted
-// backwards, the way a price history is adjusted: the latest value stays the real one, and
-// everything before a step moves by that step's size in openings, so the line reads as if the
-// new counting had applied all along. Wipro's "+74.7%" carried +500 and +258 openings landing on
-// two tech-filter markers; Google with BAE Systems "+1170.2%" was BAE joining the sum.
+// backwards, the way a price history is adjusted: the latest value stays the real one, and the
+// history before a step is brought to it, so the line reads as if the new counting had applied
+// all along. Wipro's "+74.7%" carried +500 and +258 openings landing on two tech-filter markers;
+// Google with BAE Systems "+1170.2%" was BAE joining the sum.
 //
-// By openings, never by ratio. Scaling the history by a step's ratio multiplied whatever moved
-// before it: Microsoft's architecture line went 5 → 4, a filter change took it to 58, and a ×14.5
-// scale turned that one opening into "−12 openings" that never happened. Added back, it is −1.
+// By ratio where both sides of a step hold RATIO_FLOOR openings or more, by openings where
+// either is smaller. A refit that halves a category re-sorts a share of it, so its history is
+// halved too: taken out by openings, Google's software-engineering loss of 33 (−5.3%) was
+// measured against the halved base and read "−11.8%". A small side has no ratio worth trusting:
+// Microsoft's architecture line went 4 → 58 at a filter change, and scaled ×14.5 its one lost
+// opening read −12. A known size (found openings, duplicates removed) always comes out by
+// openings. The floor is judged in openings, whatever the unit drawn: under Share every level
+// sits under 20 and every step came out by openings.
+//
 // A history a step would push below zero cannot be adjusted — the step took out more than was
 // there before it — so the line starts after that step instead of inventing a zero base.
 //
 // The Change plot draws these levels and every percentage is read off them, so the line and its
 // number cannot disagree. With no pick there are no such steps, so the index chart is unchanged.
-// By ratio where both sides of a step are substantial, by openings where either is small. A
-// refit that halves a category re-sorts a share of it, so its history is halved too: taken
-// out by openings, Google's software-engineering loss of 33 (−5.3%) was measured against the
-// halved base and read "−11.8%". A small side has no ratio worth trusting: Microsoft's
-// architecture line went 4 → 58 at a filter change, and scaled ×14.5 its one lost opening read
-// −12. A known size (found openings, duplicates removed) always comes out by openings.
-function netOfSteps(levels, s){
-  const jumps = stepJumps(levels, s);
+// `only` limits the steps to those kinds (causesOf).
+const RATIO_FLOOR = 20;
+function netOfSteps(levels, s, only){
+  const jumps = stepJumps(levels, s, only);
   if (!jumps.size) return levels;
+  // The same steps read off the openings themselves, for the floor.
+  const counts = s && s.points && levels !== s.points ? stepJumps(s.points, s, only) : jumps;
   const out = levels.slice();
   let scale = 1, lift = 0, cut = false;
   for (let j = levels.length - 1; j >= 0; j--){
@@ -2562,19 +2575,19 @@ function netOfSteps(levels, s){
     out[j] = v;
     const jump = jumps.get(j);
     if (!jump) continue;
+    const size = counts.get(j) || jump;
     const known = jump.kinds.has('found') || jump.kinds.has('duplicates');
-    if (jump.lift == null && !known && jump.before >= MOVER_FLOOR && jump.after >= MOVER_FLOOR)
+    if (jump.lift == null && !known && size.before >= RATIO_FLOOR && size.after >= RATIO_FLOOR)
       scale *= jump.after / jump.before;
     else lift += scale * (jump.lift ?? (jump.after - jump.before));
   }
   return out;
 }
 // Where each withheld step lands on series `s` (a step on a gap lands on the next measured
-// point), with the level on either side of it: landing index -> {before, after, lift}. The
-// tooltip states the size from here, and netOfSteps takes it out. `lift` is a step's size when
-// it is known exactly and the line is a whole company's (isWholeLine): found openings, duplicate
-// removals. Taking out that size rather than the run's whole jump keeps the run's ordinary hiring
-// in the line. A run that also carries a counting change has no exact size, and its whole jump goes.
+// point), with the level on either side of it: landing index -> {before, after, kinds, lift}.
+// `lift` is a step's size when it is known exactly and the line is a whole company's
+// (isWholeLine): found openings, duplicate removals. Taking out that size rather than the run's
+// whole jump keeps the run's ordinary hiring in the line.
 // A line that is a whole company's tech openings under All openings: the Total, or a company's
 // line at the top level. Only these can take out a step whose size is known per company.
 function isWholeLine(s){
@@ -2583,15 +2596,14 @@ function isWholeLine(s){
   return trendMetric === 'stock' && !!s && !trendDrill
     && (s.name === '__total__' || VIEWS[viewKind(trendData)].split === 'company');
 }
-function stepJumps(levels, s){
+function stepJumps(levels, s, only){
   const steps = new Map(), jumps = new Map();
   const whole = isWholeLine(s);
   stepsFor(s).forEach(n => {
-    const at = steps.get(n.i) || { size: 0, sized: true, kinds: new Set(), known: { duplicates: 0, found: 0 } };
-    // A duplicate-removal change is duplicates under either measure: under New, where no
-    // `evicted` sizes come, NVIDIA's −231 read "changes in how HeadStart counts".
-    const kind = n.evicted || n.dedupOnly ? 'duplicates' : n.found ? 'found' : 'counting';
-    if (n.size == null) at.sized = false; else { at.size += n.size; at.known[kind] += n.size; }
+    const kind = noteKind(n);
+    if (only && !only.has(kind)) return;
+    const at = steps.get(n.i) || { size: 0, sized: true, kinds: new Set() };
+    if (n.size == null) at.sized = false; else at.size += n.size;
     at.kinds.add(kind);
     steps.set(n.i, at);
   });
@@ -2601,18 +2613,23 @@ function stepJumps(levels, s){
     if (steps.has(j)){
       const at = steps.get(j);
       pending = pending ? { size: pending.size + at.size, sized: pending.sized && at.sized,
-                            kinds: new Set([...pending.kinds, ...at.kinds]),
-                            known: { duplicates: pending.known.duplicates + at.known.duplicates,
-                                     found: pending.known.found + at.known.found } }
-        : { ...at, kinds: new Set(at.kinds), known: { ...at.known } };
+                            kinds: new Set([...pending.kinds, ...at.kinds]) } : { ...at, kinds: new Set(at.kinds) };
     }
     if (v == null) return;
-    if (pending && last != null) jumps.set(j, { before: last, after: v, kinds: pending.kinds, known: pending.known,
+    if (pending && last != null) jumps.set(j, { before: last, after: v, kinds: pending.kinds,
       lift: whole && pending.sized ? pending.size : null });
     pending = null;
     last = v;
   });
   return jumps;
+}
+// What a step is, for its label: duplicates removed (sized from the Space's `evicted`, or under
+// New a duplicate-removal change, which has no sizes there), a Board found later or a pick
+// joining, else a change in how HeadStart counts. Under All openings a duplicate-removal change
+// stays a counting change, so the sized removals beside it keep their exact figure.
+function noteKind(n){
+  if (n.evicted || (n.dedupOnly && trendMetric === 'new')) return 'duplicates';
+  return n.found ? 'found' : 'counting';
 }
 // The indices of the withheld steps that move series `s`. A company's own step (a Board found
 // at it, it joining a sum, duplicate removal at its Boards) moves every line of a summed view
@@ -2631,7 +2648,7 @@ function stepsFor(s){
   const perCompany = !!s && VIEWS[viewKind(trendData)].split === 'company';
   const whole = isWholeLine(s);
   return notesOf(trendData)
-    .filter(n => n.withhold && !(n.wholeOnly && !whole) && !(n.bandsOnly && s && s.name === '__total__')
+    .filter(n => n.withhold && !(n.wholeOnly && !whole) && !(n.bandsOnly && (!s || s.name === '__total__'))
       && !(perCompany && ((n.company && s.name !== n.company)
       || (n.companies && !n.companies.includes(s.name)))));
 }
@@ -2819,6 +2836,8 @@ function drawTrends(){
       ${noBase ? '<span class="dl flat" title="Under 5 openings at the start of this window, too few to index against">started under 5</span>'
                : `<span class="dl ${moveClass(mv)}"${mv.count != null ? ' title="Too few openings for a percentage to mean much, so the change in openings"' : ''}>${moveText(mv)}</span>`}
       ${hasRoles ? '<span class="drill" role="img" aria-label="has tracked roles" title="Opens the named roles tracked inside this category">▸ roles</span>' : ''}</span>
+      ${view === VIEWS.roles && trendPicks.length ? `<button class="linkish role-jobs" type="button" data-role="${esc(s.name)}"
+        data-role-label="${esc(s.label)}" aria-label="See ${esc(s.label)} jobs in Search">jobs</button>` : ''}
       <button class="vis" type="button" data-hide="${esc(s.name)}" aria-pressed="${off}"
         title="${off ? 'Show' : 'Hide'} this line" aria-label="${off ? 'Show' : 'Hide'} ${esc(s.label)}"
         >${off ? '○' : '●'}</button></li>`;
@@ -3443,18 +3462,15 @@ function hiringOpenings(s, mv){
 // −1,811 was mostly one duplicate removal; the sentence named three possible causes and none.
 // A run holding two kinds of step is named by both, with one size.
 function causesOf(s, total){
-  const by = { duplicates: 0, found: 0 };
-  // A run holding several kinds gives each known size to its kind (NVIDIA's refit run removed
-  // 2,041 duplicates beside a family change), which only a whole company's line can: a found
-  // Board's openings are the company's, not one category's. What is left is counting changes,
-  // taken as the total less the named parts, so the parts always add up to it.
-  const whole = isWholeLine(s);
-  stepJumps(s.points, s).forEach(j => {
-    const only = j.kinds.size === 1 ? [...j.kinds][0] : null;
-    if (only && only !== 'counting') by[only] += j.lift ?? (j.after - j.before);
-    else if (!only && whole){ by.duplicates += j.known.duplicates; by.found += j.known.found; }
-  });
-  const duplicates = Math.round(by.duplicates), found = Math.round(by.found);
+  // Peeled a kind at a time — duplicates, then found Boards, then the rest — each kind's part
+  // being how much it moves the line's change. With ratio steps a known size is not its own
+  // part: a removal of 2,041 before a ×1.2 step moved the line by 1.2 × 2,041, and read off the
+  // size the rest landed in "counting changes". Peeled, the parts add up to the total exactly.
+  const change = only => { const e = headTail(netOfSteps(s.points, s, only)); return e ? e.tail - e.head : 0; };
+  const raw = change(new Set());
+  const noDup = change(new Set(['duplicates']));
+  const noFound = change(new Set(['duplicates', 'found']));
+  const duplicates = Math.round(raw - noDup), found = Math.round(noDup - noFound);
   const counting = total - duplicates - found;
   const parts = [
     duplicates && `${signedOpenings(duplicates)} from duplicate postings removed`,
@@ -3947,6 +3963,15 @@ if (el('trends-legend')) {
       if (again) again.focus();
       return;
     }
+    // A tracked role's own jobs, by the title patterns it is counted by: "LLM / GenAI 84" at
+    // Google had no way to those 84 (the Space's `role=`).
+    const jobs = e.target.closest('[data-role]');
+    if (jobs){
+      searchCompany(trendPicks.flatMap(p => p.boardKeys || []),
+        trendPicks.length === 1 ? trendPicks[0].label : trendPicks.map(p => p.label).join(', '),
+        '', { role: jobs.dataset.role.replace(/^watch:/, ''), label: jobs.dataset.roleLabel });
+      return;
+    }
     const row = e.target.closest('.row[data-name]');
     if (row) trendClick(row.dataset.name, e.target.closest('.drill') ? 'roles' : 'bands');
   });
@@ -4155,7 +4180,7 @@ function hotRow(r, i, lens){
           aria-pressed="${followed}">${followed ? 'Following' : 'Follow'}</button>` : ''}
         <button class="ghost hot-see" data-board="${esc(r.board)}" data-company="${esc(r.company)}">See roles</button>
         ${el('trends') ? `<button class="ghost hot-trend" data-trend="${esc(r.board)}"
-          data-trend-name="${esc(r.company)}" data-trend-since="${esc((hotData.window || {}).from || '')}">See trend</button>` : ''}
+          data-trend-name="${esc(r.company)}" data-trend-since="${esc((hotData.window || {}).base || (hotData.window || {}).from || '')}">See trend</button>` : ''}
       </div>
     </li>`;
 }

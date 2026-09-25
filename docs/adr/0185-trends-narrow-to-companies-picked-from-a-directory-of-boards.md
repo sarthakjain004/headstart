@@ -705,3 +705,28 @@ Its code review changed the round:
   - "Too new" wins over "started under 5".
   - An empty drill offers no roles hand-off.
   - A phone's table shows that it scrolls.
+
+Its code review tightened the round:
+
+- **The causes are peeled one kind at a time.** Duplicates are taken out first, then found
+  Boards, then everything else. Each kind's figure is how much it moves the line's change, so
+  the parts add up exactly even when ratio steps sit between them. Read off each step's size,
+  a removal of 2,041 before a ×1.2 step pushed the difference into "counting changes".
+- **The ratio floor (`RATIO_FLOOR`, 20) is judged in openings, whatever the unit drawn.** Under
+  Share every level sits under 20, so every step had come out by openings.
+- **A duplicate-removal change is named as duplicates under New only.** Under All openings,
+  the Space's sized removals keep their exact figure beside it, and its settling run carries
+  the same name.
+- **A tracked role hands over to Search** (`role=`). Search filters by the same title patterns
+  `role_trends` counts the role by (`regexp_like`). Google's LLM / GenAI jobs opened as 81
+  against Trends' 84, a difference of one data run. The roles view gives each row a "jobs"
+  link.
+- **Hot's window carries its base**, the run its first change is measured from. A trend opened
+  from a Hot row now covers Hot's figure.
+- **Smaller:**
+  - A category a run leaves out reads 0 only under a pick. On the index chart it is a taxonomy
+    change the chart marks.
+  - The reference line leaves extraction steps in, as the sentence does.
+  - An opened fold stays open across redraws.
+  - The range note says "at the earliest" for picks counted from different dates.
+  - "google deepmind" finds Google.
