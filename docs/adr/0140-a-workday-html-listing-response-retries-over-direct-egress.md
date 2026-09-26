@@ -78,3 +78,15 @@ the Board remains outside authoritative eviction scope.
 
 The direct retry is a narrow exception to ADR-0063, not a global retreat from spare egress. Workday
 429 handling and every other ATS keep their existing routing policy.
+
+## Amendment (2026-09-26): visible in the error map, not as an annotation
+
+"Must stay visible" is kept through the Board's error map and `scrape_run`'s end-of-run digest,
+which carry the full `classification=… body_prefix=…` diagnostic. The raise no longer earns
+`harvest`'s traceback-carrying `##[warning]`: `UnexpectedListingResponse` is now a
+`base.BoardUnreadable`, which harvest exempts as it does a transport error. Over runs
+36200233818–36218633315 that annotation fired 18 times, all `unexpected-body` on a 200 (Workday's
+`<wml:Application_Error>` XML, and 6 redirects to `community.workday.com/maintenance-page`). The
+diagnostic already names the Board, the class and the body; each traceback added only the raise
+site, which is the same two lines of `workday.py` every time.
+Neither body is yet a recognised transient class; this amendment does not change that.
