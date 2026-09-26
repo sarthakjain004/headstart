@@ -3341,6 +3341,9 @@ def test_each_line_carries_the_turnover_its_change_is_made_of(
     assert d["turnover_since"] == _T2
     assert d["closures_unseen"] == {"workday:hpe/a": 1}
     assert d["closures_uncounted"] == [], "HPE's other Board counted its closures"
+    assert d["boards_in_scope"] == {"workday:hpe/a": 2}
+    hpe = trends_app._HISTORY.company_moves(["workday:hpe/a"]).moves["workday:hpe/a"]
+    assert (hpe.closures_uncounted_boards, hpe.boards_in_scope) == (1, 2)
     split = _answer(
         company_trends, "split=company&company=workday:hpe/a&company=workday:citi/2"
     )

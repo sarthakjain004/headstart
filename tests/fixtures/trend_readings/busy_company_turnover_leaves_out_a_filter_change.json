@@ -1,5 +1,5 @@
 {
- "description": "Acme opens and closes about as many jobs as it holds; the Sep 15 filter change lands 400 jobs that look newly posted.",
+ "description": "Acme opens and closes about as many jobs as it holds; the Sep 15 filter change lands 400 jobs that look newly posted. One of its two Boards had a run whose closures went uncounted.",
  "answer_input": {
   "stamps": [
    "2026-09-13T00:00:00+00:00",
@@ -65,7 +65,8 @@
     "key": "greenhouse:acme",
     "label": "Acme",
     "board_keys": [
-     "greenhouse:acme"
+     "greenhouse:acme",
+     "lever:acme"
     ],
     "atses": [
      "greenhouse"
@@ -94,7 +95,10 @@
   ],
   "watch_parents": [],
   "uncounted": [],
-  "company_totals": {}
+  "company_totals": {},
+  "boards_in_scope": {
+   "greenhouse:acme": 2
+  }
  },
  "reading": {
   "window": {

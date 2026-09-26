@@ -2199,7 +2199,7 @@ test('a company sentence gives the jobs its net change is made of', () => {
   t.draw();
   // #684's shape: the answer first, then the move, then what it is made of, in the main text.
   assert.match(nodes['trends-verdict'].innerHTML,
-    /<b>Acme<\/b>: holding steady — 1,000 tech openings; [^<]* — about 500 opened, 490 closed, closures not counted on 1 board\./);
+    /<b>Acme<\/b>: holding steady — 1,000 tech openings; [^<]* — about 500 opened, 490 closed \(not counted on 1 of 2 boards\)\./);
 });
 
 test('turnover stays in the main text, never in the not-hiring disclosure', () => {
@@ -2244,7 +2244,7 @@ test('the index gets a hiring net from its turnover, and table columns too', () 
   t.setUnit('count', false);
   t.draw();
   assert.match(nodes['trends-verdict'].innerHTML,
-    /<b>All tech roles<\/b>: about \+10 net from hiring — about 50 opened, 40 closed, closures not counted on 3 boards, runs where HeadStart changed how it counts left out\./);
+    /<b>All tech roles<\/b>: about \+10 net from hiring — about 50 opened, 40 closed \(not counted on 3 of 120 boards\), runs where HeadStart changed how it counts left out\./);
   assert.doesNotMatch(nodes['trends-verdict'].innerHTML, /HeadStart has counted/);
   nodes['trends-error'] = Object.assign(fakeEl(), { hidden: true });
   t.table(true);
@@ -2771,6 +2771,12 @@ test('a Hot row says over how long its opened and closed were counted, and no cl
   assert.equal(t.hotMeasure.expansion(amazon).sub, '66 opened in the last 11 hours · closures not counted · 900 open now');
   assert.match(t.hotMeasure.volume(amazon).sub, /^closures not counted · \+100 net/);
   assert.match(t.hotMeasure.rate(amazon).sub, /· closures not counted$/);
+  // Some Boards' closures uncounted: the count stands, and says over how many (review of #731).
+  const hpe = hotRowOf('workday:hpe/a', 'HPE', 'employer', { opened: 9, closed: 3,
+    closures_uncounted_boards: 1, boards_in_scope: 2 });
+  assert.equal(t.hotMeasure.expansion(hpe).sub, '9 opened · 3 closed (not counted on 1 of 2 boards) in the last 11 hours · 900 open now');
+  assert.match(t.hotMeasure.volume(hpe).sub, /^3 closed \(not counted on 1 of 2 boards\) · \+100 net/);
+  assert.match(t.hotMeasure.rate(hpe).sub, /· 3 closed \(not counted on 1 of 2 boards\) in the last 11 hours$/);
   t.setHotData(hotWith([], '2026-09-21T00:00:00+00:00'));
   assert.equal(t.hotMeasure.expansion(bosch).sub, '2 opened · 0 closed since Sep 21 00:00 · 900 open now');
   t.setHotData(hotWith([], '2026-09-19T06:00:29+00:00'));

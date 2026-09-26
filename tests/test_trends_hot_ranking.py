@@ -36,6 +36,8 @@ class _Move:
     opened: int | None = 0
     closed: int | None = 0
     counted_since: str = _LONG_AGO
+    closures_uncounted_boards: int = 0
+    boards_in_scope: int = 1
 
 
 class _History:
@@ -215,6 +217,26 @@ def test_a_closed_count_not_counted_stays_none() -> None:
     )
     (row,) = hot_ranking.rank(history, directory)["lenses"]["volume"]
     assert (row["opened"], row["closed"]) == (66, None)
+
+
+def test_a_closed_count_over_some_boards_says_how_many() -> None:
+    """A company with some Boards' closures uncounted keeps its closed count, with how many of
+    its Boards it leaves out (review of #731)."""
+    directory = {"sr:acme": _company("Acme", "sr:acme", "gh:acme")}
+    history = _History(
+        {"sr:acme": 300, "gh:acme": 100},
+        {
+            "sr:acme": _Move(
+                net=5, opened=9, closed=3, closures_uncounted_boards=1, boards_in_scope=2
+            )
+        },
+    )
+    (row,) = hot_ranking.rank(history, directory)["lenses"]["volume"]
+    assert (row["closed"], row["closures_uncounted_boards"], row["boards_in_scope"]) == (
+        3,
+        1,
+        2,
+    )
 
 
 def test_a_board_no_directory_entry_holds_is_counted_not_ranked() -> None:

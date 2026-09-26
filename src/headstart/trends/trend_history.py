@@ -128,13 +128,16 @@ class CompanyMove:
     not hiring taken out; ``opened`` and ``closed`` are the jobs it opened and closed over the runs
     that change counts (ADR-0227), or None where no such run counted turnover: a 0 there stated a
     week nobody measured. ``closed`` is None too where every Board of the company had a run in
-    the window whose closures went uncounted. ``counted_since`` is the first tick that counted
-    any of its Boards."""
+    the window whose closures went uncounted; where only some did, ``closures_uncounted_boards``
+    of its ``boards_in_scope`` did, and ``closed`` counts the rest. ``counted_since`` is the first
+    tick that counted any of its Boards."""
 
     net: int
     opened: int | None
     closed: int | None
     counted_since: str
+    closures_uncounted_boards: int = 0
+    boards_in_scope: int = 0
 
 
 @dataclass(frozen=True)
@@ -971,6 +974,8 @@ class TrendHistory:
                 if key in answer["closures_uncounted"]
                 else turnover["closed"],
                 counted_since=answer["counted_since"][key],
+                closures_uncounted_boards=answer["closures_unseen"].get(key, 0),
+                boards_in_scope=answer["boards_in_scope"].get(key, 0),
             )
         turnover_from = (
             max(self._turnover_since, first) if self._turnover_since else None
@@ -1561,6 +1566,9 @@ class TrendHistory:
             "closures_unseen": closures_unseen,
             # The picks for which that is every Board they have in scope: no closed count.
             "closures_uncounted": self._closures_uncounted(unscoped, closures_unseen),
+            # Per pick, its Boards in scope, so a closed count read over some of them says so:
+            # "3 closed (not counted on 1 of 2 boards)".
+            "boards_in_scope": dict(Counter(unscoped.values())) if with_turnover else {},
         }
         return payload
 

@@ -102,6 +102,10 @@ def rank(
                 "net": move.net,
                 "opened": move.opened,
                 "closed": move.closed,
+                # Where some of its Boards' closures went uncounted, how many of how many: its
+                # closed count is then theirs only, and the row says so.
+                "closures_uncounted_boards": move.closures_uncounted_boards,
+                "boards_in_scope": move.boards_in_scope,
                 # Percent rather than a fraction: it is a display value, and rounding it here
                 # keeps every consumer from inventing its own precision. None, as opened is,
                 # where the company's turnover was not counted.

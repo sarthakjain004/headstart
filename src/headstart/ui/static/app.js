@@ -2052,14 +2052,19 @@ function turnoverPhrase(line, d){
   const t = line && line.move.turnover;
   if (!t) return '';
   const since = d.turnover_since && d.turnover_since > d.stamps[0] ? ` since ${stampLabel(d.turnover_since, true)}` : '';
-  const unseenBy = d.closures_unseen || {};
-  const unseen = VIEWS[viewKind(d)].split === 'company' ? unseenBy[line.name] || 0
-    : Object.values(unseenBy).reduce((sum, n) => sum + n, 0);
+  const whose = counts => VIEWS[viewKind(d)].split === 'company' ? (counts || {})[line.name] || 0
+    : Object.values(counts || {}).reduce((sum, n) => sum + n, 0);
   // Where every Board's closures went uncounted the reading gives no closed count, and the
   // sentence none: Google, one Board, read "18 closed … closures not counted on 1 board".
   if (t.closed == null) return `about ${aboutCount(t.opened)} opened${since}; closures not counted`;
-  const note = unseen ? `, closures not counted on ${unseen} board${unseen === 1 ? '' : 's'}` : '';
-  return `about ${aboutCount(t.opened)} opened, ${aboutCount(t.closed)} closed${since}${note}`;
+  return `about ${aboutCount(t.opened)} opened, ${aboutCount(t.closed)} closed${
+    notCountedOn(whose(d.closures_unseen), whose(d.boards_in_scope))}${since}`;
+}
+// " (not counted on 1 of 2 boards)" after a closed count read over only some of the Boards: the
+// rest had a run whose closures went uncounted (ADR-0227). '' when every Board counted them.
+function notCountedOn(unseen, boards){
+  if (!unseen) return '';
+  return ` (not counted on ${unseen} of ${boards || unseen} board${(boards || unseen) === 1 ? '' : 's'})`;
 }
 // One company sentence from a line reading (ADR-0233): its openings, its hiring move, its
 // percentage and weekly rate, and its "Not hiring" by cause, each as the reading gives it.
@@ -4408,16 +4413,19 @@ function hotLens(){
 // measured. Volume and Rate need no such case: they rank only a counted, positive opened.
 // A row's closed count is null too where every Board of its company had its closures go
 // uncounted (hot_ranking): Amazon, one Board, read "0 closed" beside a trend saying "closures not
-// counted on 1 board".
+// counted on 1 board". Where only some did, the count says so: "3 closed (not counted on 1 of 2
+// boards)".
+const hotClosed = r => r.closed == null ? 'closures not counted'
+  : `${r.closed} closed${notCountedOn(r.closures_uncounted_boards, r.boards_in_scope)}`;
 const HOT_MEASURE = {
   expansion: r => ({ big: (r.net > 0 ? '+' : '') + r.net, unit: 'net tech roles',
     sub: r.opened == null ? `${r.stock} open now`
       : r.closed == null ? `${r.opened} opened ${hotTurnoverSpan()} · closures not counted · ${r.stock} open now`
-      : `${r.opened} opened · ${r.closed} closed ${hotTurnoverSpan()} · ${r.stock} open now` }),
+      : `${r.opened} opened · ${hotClosed(r)} ${hotTurnoverSpan()} · ${r.stock} open now` }),
   volume:    r => ({ big: String(r.opened), unit: `tech roles opened ${hotTurnoverSpan()}`, sub:
-    `${r.closed == null ? 'closures not counted' : `${r.closed} closed`} · ${r.net >= 0 ? '+' : ''}${r.net} net · ${r.stock} open now` }),
+    `${hotClosed(r)} · ${r.net >= 0 ? '+' : ''}${r.net} net · ${r.stock} open now` }),
   rate:      r => ({ big: r.rate + '%', unit: `opened ${hotTurnoverSpan()}, as a share of its open roles`, sub:
-    `${r.opened} opened of ${r.stock} open now · ${r.closed == null ? 'closures not counted' : `${r.closed} closed ${hotTurnoverSpan()}`}` }),
+    `${r.opened} opened of ${r.stock} open now · ${r.closed == null ? hotClosed(r) : `${hotClosed(r)} ${hotTurnoverSpan()}`}` }),
 };
 // Over when the rows' opened and closed were counted, in words: "this week" where turnover covers
 // Hot's whole window, else "in the last 11 hours", or past three days "since Sep 25 18:16" (UTC).

@@ -85,7 +85,10 @@
   ],
   "watch_parents": [],
   "uncounted": [],
-  "company_totals": {}
+  "company_totals": {},
+  "boards_in_scope": {
+   "": 120
+  }
  },
  "reading": {
   "window": {
