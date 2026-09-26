@@ -26,7 +26,7 @@
    {
     "ts": "2026-09-24T18:00:00+00:00",
     "changed": [
-     "duplicate removal changed"
+     "duplicate postings detection updated"
     ],
     "fields": [
      "family_classifier_version"
@@ -35,7 +35,7 @@
    {
     "ts": "2026-09-24T21:19:00+00:00",
     "changed": [
-     "role family assignment changed"
+     "job categories re-sorted"
     ],
     "fields": [
      "family_classifier_version"
@@ -96,6 +96,7 @@
    {
     "name": "greenhouse:acme",
     "label": "Acme",
+    "whole_company": true,
     "estimated": false,
     "move": {
      "start": 100,
@@ -105,13 +106,13 @@
       {
        "change": "counting@2026-09-24T18:00:00+00:00",
        "kind": "counting",
-       "label": "role family assignment changed",
+       "label": "job categories re-sorted",
        "size": 1
       },
       {
        "change": "counting@2026-09-24T21:19:00+00:00",
        "kind": "counting",
-       "label": "role family assignment changed",
+       "label": "job categories re-sorted",
        "size": 199
       }
      ],
@@ -150,6 +151,7 @@
    {
     "name": "greenhouse:acme",
     "label": "Acme",
+    "whole_company": true,
     "estimated": false,
     "move": {
      "start": 100,
@@ -159,13 +161,13 @@
       {
        "change": "counting@2026-09-24T18:00:00+00:00",
        "kind": "counting",
-       "label": "role family assignment changed",
+       "label": "job categories re-sorted",
        "size": 1
       },
       {
        "change": "counting@2026-09-24T21:19:00+00:00",
        "kind": "counting",
-       "label": "role family assignment changed",
+       "label": "job categories re-sorted",
        "size": 199
       }
      ],
@@ -195,12 +197,12 @@
     "id": "counting@2026-09-24T18:00:00+00:00",
     "kind": "counting",
     "ts": "2026-09-24T18:00:00+00:00",
-    "label": "role family assignment changed",
+    "label": "job categories re-sorted",
     "fields": [
      "family_classifier_version"
     ],
     "changed": [
-     "duplicate removal changed"
+     "duplicate postings detection updated"
     ],
     "company": null,
     "boards": null,
@@ -212,12 +214,12 @@
     "id": "counting@2026-09-24T21:19:00+00:00",
     "kind": "counting",
     "ts": "2026-09-24T21:19:00+00:00",
-    "label": "role family assignment changed",
+    "label": "job categories re-sorted",
     "fields": [
      "family_classifier_version"
     ],
     "changed": [
-     "role family assignment changed"
+     "job categories re-sorted"
     ],
     "company": null,
     "boards": null,

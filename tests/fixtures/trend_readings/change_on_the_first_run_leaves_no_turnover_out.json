@@ -44,7 +44,7 @@
    {
     "ts": "2026-09-13T00:00:00+00:00",
     "changed": [
-     "tech filter changed"
+     "tech-job filter updated"
     ],
     "fields": [
      "tech_filter_version"
@@ -104,6 +104,7 @@
    {
     "name": "greenhouse:acme",
     "label": "Acme",
+    "whole_company": true,
     "estimated": false,
     "move": {
      "start": 1000,
@@ -144,6 +145,7 @@
    {
     "name": "greenhouse:acme",
     "label": "Acme",
+    "whole_company": true,
     "estimated": false,
     "move": {
      "start": 1000,

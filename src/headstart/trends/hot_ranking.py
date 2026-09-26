@@ -46,7 +46,7 @@ if TYPE_CHECKING:
     from headstart.trends.trend_history import TrendHistory
 
 #: Rows kept per lens. Enough to scroll, small enough that the companies on it can be adjudicated
-#: by hand, the stated way to extend `ingest.board_operator` beyond its curated head.
+#: by hand, the stated way to extend `boards.board_operator` beyond its curated head.
 TOP_N = 100
 
 #: A company below this many tech openings is not ranked (see the module docstring).
@@ -102,6 +102,10 @@ def rank(
                 "net": move.net,
                 "opened": move.opened,
                 "closed": move.closed,
+                # Where some of its Boards' closures went uncounted, how many of how many: its
+                # closed count is then theirs only, and the row says so.
+                "closures_uncounted_boards": move.closures_uncounted_boards,
+                "boards_in_scope": move.boards_in_scope,
                 # Percent rather than a fraction: it is a display value, and rounding it here
                 # keeps every consumer from inventing its own precision. None, as opened is,
                 # where the company's turnover was not counted.
@@ -133,6 +137,7 @@ def rank(
             if n >= MIN_STOCK and board not in in_directory
         ),
         "services": operators["services"],
+        "staffing": operators["staffing"],
         "aggregator": operators["aggregator"],
     }
     return {"window": dict(moves.window), "lenses": lenses, "counts": counts}

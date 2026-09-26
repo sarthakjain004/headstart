@@ -96,7 +96,7 @@ def test_encode_batches_shortest_first_and_returns_input_order(monkeypatch):
         def tokenizer(self, titles):
             return {"input_ids": [t.split() for t in titles]}
 
-        def tokenize(self, titles):
+        def preprocess(self, titles):
             batches.append(list(titles))
             return {"titles": list(titles)}
 

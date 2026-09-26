@@ -46,7 +46,7 @@ from typing import Any
 from headstart import log
 from headstart.boards import scrapable_boards
 from headstart.boards.board_identity import ats_of, board_key, board_of, lower_key
-from headstart.ingest.board_operator import tenant
+from headstart.boards.board_operator import tenant
 from headstart.ingest.corpus import iter_jobs
 
 _log = log.get(__name__, __spec__)

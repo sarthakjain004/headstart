@@ -1,7 +1,8 @@
 # ADR-0171: The Hot tab curates what it shows, not the whole index
 
 **Status:** accepted · **Date:** 2026-09-21 · **Extends:** [ADR-0143](0143-trends-retain-board-deltas-for-arbitrary-comparable-cohorts.md), [ADR-0051](0051-trends-as-share-flow-and-watched-roles.md) · **Amended by:**
-[ADR-0230](0230-trends-keeps-one-board-delta-history-and-decides-rules-when-reading-it.md) — Hot ranks Company directory entries from the same history, at Space boot
+[ADR-0230](0230-trends-keeps-one-board-delta-history-and-decides-rules-when-reading-it.md) — Hot ranks Company directory entries from the same history, at Space boot;
+[ADR-0238](0238-a-mostly-re-counted-line-gives-no-percentage-and-hot-hides-only-staffing-and-job-boards.md) — `staffing` splits from `services`, and Hot hides only staffing firms and job boards
 
 ## Context
 

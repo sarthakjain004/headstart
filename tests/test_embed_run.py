@@ -173,3 +173,22 @@ def test_order_by_priority_score_desc_stable_unknown_last():
     scores = {"ashby:top": 50.0, "lever:low": 2.0}
     ordered = ej.order_by_priority([0, 1, 2, 3], metas, scores)
     assert ordered == [1, 3, 0, 2]  # top board first (stable tie), unknown board last
+
+
+def test_load_model_reads_the_width_through_the_current_api(monkeypatch):
+    """sentence-transformers 6 deprecates `get_sentence_embedding_dimension`; the model here offers
+    only its replacement, so a call to the old name fails."""
+
+    class Model:
+        max_seq_length = 8192
+
+        def get_embedding_dimension(self):
+            return 768
+
+    monkeypatch.setattr(ej.torch.backends.mps, "is_available", lambda: False)
+    monkeypatch.setattr(ej, "open_model", lambda device: Model())
+
+    model, device, dim, budget = ej._load_model()
+
+    assert (device, dim, budget) == ("cpu", 768, ej._ATTN_BUDGET // 4)
+    assert model.max_seq_length == ej.MAX_SEQ_TOKENS

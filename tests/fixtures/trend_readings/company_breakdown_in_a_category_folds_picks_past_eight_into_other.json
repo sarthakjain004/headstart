@@ -282,6 +282,7 @@
    {
     "name": "greenhouse:c0",
     "label": "greenhouse:c0",
+    "whole_company": false,
     "estimated": false,
     "move": {
      "start": 100,
@@ -313,6 +314,7 @@
    {
     "name": "greenhouse:c1",
     "label": "greenhouse:c1",
+    "whole_company": false,
     "estimated": false,
     "move": {
      "start": 99,
@@ -344,6 +346,7 @@
    {
     "name": "greenhouse:c2",
     "label": "greenhouse:c2",
+    "whole_company": false,
     "estimated": false,
     "move": {
      "start": 98,
@@ -375,6 +378,7 @@
    {
     "name": "greenhouse:c3",
     "label": "greenhouse:c3",
+    "whole_company": false,
     "estimated": false,
     "move": {
      "start": 97,
@@ -406,6 +410,7 @@
    {
     "name": "greenhouse:c4",
     "label": "greenhouse:c4",
+    "whole_company": false,
     "estimated": false,
     "move": {
      "start": 96,
@@ -437,6 +442,7 @@
    {
     "name": "greenhouse:c5",
     "label": "greenhouse:c5",
+    "whole_company": false,
     "estimated": false,
     "move": {
      "start": 95,
@@ -468,6 +474,7 @@
    {
     "name": "greenhouse:c6",
     "label": "greenhouse:c6",
+    "whole_company": false,
     "estimated": false,
     "move": {
      "start": 94,
@@ -499,6 +506,7 @@
    {
     "name": "greenhouse:c7",
     "label": "greenhouse:c7",
+    "whole_company": false,
     "estimated": false,
     "move": {
      "start": 93,
@@ -530,6 +538,7 @@
    {
     "name": "greenhouse:c8",
     "label": "greenhouse:c8",
+    "whole_company": false,
     "estimated": false,
     "move": {
      "start": 92,
@@ -561,6 +570,7 @@
    {
     "name": "greenhouse:c9",
     "label": "greenhouse:c9",
+    "whole_company": false,
     "estimated": false,
     "move": {
      "start": 91,
@@ -593,6 +603,7 @@
   "other": {
    "name": "__other__",
    "label": "",
+   "whole_company": false,
    "estimated": false,
    "move": {
     "start": 183,
@@ -622,6 +633,7 @@
    {
     "name": "greenhouse:c0",
     "label": "greenhouse:c0",
+    "whole_company": false,
     "estimated": false,
     "move": {
      "start": 100,
@@ -650,6 +662,7 @@
    {
     "name": "greenhouse:c1",
     "label": "greenhouse:c1",
+    "whole_company": false,
     "estimated": false,
     "move": {
      "start": 99,
@@ -678,6 +691,7 @@
    {
     "name": "greenhouse:c2",
     "label": "greenhouse:c2",
+    "whole_company": false,
     "estimated": false,
     "move": {
      "start": 98,
@@ -706,6 +720,7 @@
    {
     "name": "greenhouse:c3",
     "label": "greenhouse:c3",
+    "whole_company": false,
     "estimated": false,
     "move": {
      "start": 97,
@@ -734,6 +749,7 @@
    {
     "name": "greenhouse:c4",
     "label": "greenhouse:c4",
+    "whole_company": false,
     "estimated": false,
     "move": {
      "start": 96,
@@ -762,6 +778,7 @@
    {
     "name": "greenhouse:c5",
     "label": "greenhouse:c5",
+    "whole_company": false,
     "estimated": false,
     "move": {
      "start": 95,
@@ -790,6 +807,7 @@
    {
     "name": "greenhouse:c6",
     "label": "greenhouse:c6",
+    "whole_company": false,
     "estimated": false,
     "move": {
      "start": 94,
@@ -818,6 +836,7 @@
    {
     "name": "greenhouse:c7",
     "label": "greenhouse:c7",
+    "whole_company": false,
     "estimated": false,
     "move": {
      "start": 93,
@@ -846,6 +865,7 @@
    {
     "name": "greenhouse:c8",
     "label": "greenhouse:c8",
+    "whole_company": false,
     "estimated": false,
     "move": {
      "start": 92,
@@ -874,6 +894,7 @@
    {
     "name": "greenhouse:c9",
     "label": "greenhouse:c9",
+    "whole_company": false,
     "estimated": false,
     "move": {
      "start": 91,
