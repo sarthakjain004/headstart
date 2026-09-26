@@ -25,8 +25,8 @@ planner does not touch ``HEADSTART_WORKERS``) makes every ATS host see a shard a
 monolith from a distinct IP — per-IP load is unchanged (ADR-0026, "cost-balanced, per-IP safety").
 
 Writes one ``shard-{k}.jsonl`` (``{ats, slug, name}`` per board: Boards measured over a minute
-first, slowest first, then priority-desc so a time-boxed shard scrapes its best boards first), a ``plan.json`` (``shards`` matrix + board ``count``) the workflow
-reads, and a copy of the detail skip-list (ADR-0048, re-keyed by ADR-0050) so each shard can skip
+first, slowest first, then priority-desc so a time-boxed shard scrapes its best boards first), a
+``plan.json`` (``shards`` matrix + board ``count``) the workflow reads, and a copy of the detail skip-list (ADR-0048, re-keyed by ADR-0050) so each shard can skip
 re-fetching details we already **hold** — all three ride the one artifact the shards download.
 
 Run: python -m headstart.ingest.scrape_plan [--max-boards 80000] [--max-shards 15]
@@ -130,7 +130,7 @@ _GATE_RECHECK_DAYS = 14
 _GATE_ZERO_FLOOR_S = 120.0
 
 # The Tail back-off (ADR-0242). An unscored Board whose last complete scrape found no postings is
-# read at most once per this interval rather than every rotation (~1.5 runs at an 80k Slice). Of
+# read at most once per this interval rather than every rotation (~3 runs at an 80k Slice). Of
 # 52,890 complete empty looks across the seven runs of 2026-09-25/26, 7 were followed by a
 # non-empty one; meanwhile ~2,200 empty ADP Boards cost ~10 serial hours of every run.
 _EMPTY_BACKOFF = timedelta(hours=24)
@@ -139,7 +139,7 @@ _EMPTY_BACKOFF = timedelta(hours=24)
 # shard's wall clock ends with its last Board, so a slow one submitted last — the priority order
 # puts every zero-score Board there — runs alone past everything else: `jibe:commonspirit` started
 # at t=1,181 s and ran 515 s on run 36218633315.
-_LONG_BOARD_S = 60.0
+_SLOW_BOARD_S = 60.0
 
 
 def _measured_nothing(row: BoardCost) -> bool:
@@ -235,10 +235,32 @@ def _days_since(updated_at: str, today: str) -> float:
     return float((now - then).days)
 
 
-def _tail_stamps(cost_rows: Mapping[str, BoardCost]) -> dict[str, str]:
+def _backs_off(key: str, row: BoardCost, scores: Mapping[str, float]) -> bool:
+    """Is this an unscored Board whose last complete scrape found nothing — the Tail back-off's
+    set (ADR-0242)? A Scored Board the head overflowed into the Tail is not backed off."""
+    return _measured_nothing(row) and scores.get(key, 0.0) <= 0.0
+
+
+def _count_backed_off(
+    boards: list[ScrapableBoard],
+    cost_rows: Mapping[str, BoardCost],
+    scores: Mapping[str, float],
+) -> int:
+    """How many of ``boards`` the Tail back-off applies to."""
+    return sum(
+        1
+        for c in boards
+        if (row := cost_rows.get(cost_ledger.key_for(c))) is not None
+        and _backs_off(cost_ledger.key_for(c), row, scores)
+    )
+
+
+def _tail_stamps(
+    cost_rows: Mapping[str, BoardCost], scores: Mapping[str, float]
+) -> dict[str, str]:
     """Each Board's last-look stamp as the Tail rotation orders it (ADR-0229, ADR-0242).
 
-    A Board whose last complete scrape found nothing competes as if it had been looked at
+    An unscored Board whose last complete scrape found nothing competes as if it had been looked at
     :data:`_EMPTY_BACKOFF` later than it was, so it comes round once per interval instead of once
     per rotation — and still comes round, which a skip-list would not guarantee. Only the Tail
     reads these stamps, so a Scored Board in the head is never delayed. An unreadable stamp is
@@ -247,7 +269,7 @@ def _tail_stamps(cost_rows: Mapping[str, BoardCost]) -> dict[str, str]:
     stamps: dict[str, str] = {}
     for key, row in cost_rows.items():
         stamp = row.updated_at
-        if _measured_nothing(row):
+        if _backs_off(key, row, scores):
             try:
                 stamp = (datetime.fromisoformat(stamp) + _EMPTY_BACKOFF).isoformat(
                     timespec="seconds"
@@ -396,14 +418,14 @@ def main() -> int:
         scores,
     )
     unsettled = description_gap_ledger.load(Path(args.gap))
+    # Gap Boards the gate holds out can never drain while gated, so the slice line says so.
+    gated_gap = sum(
+        1
+        for c in companies
+        if cost_ledger.key_for(c) in gated
+        and description_gap_ledger.key_for(c) in unsettled
+    )
     if gated:
-        # Gap Boards the gate holds out can never drain while gated, so the slice line says so.
-        gated_gap = sum(
-            1
-            for c in companies
-            if cost_ledger.key_for(c) in gated
-            and description_gap_ledger.key_for(c) in unsettled
-        )
         companies = [c for c in companies if cost_ledger.key_for(c) not in gated]
         # Named, every run, not just counted. This gate removes work on purpose, and the only
         # way that stays honest is if the list is in front of whoever reads the run — a Board
@@ -435,8 +457,6 @@ def main() -> int:
         # The warning's sample stops at ten; ADR-0064 wants every gated Board named every run.
         for k, d in worst:
             _log.info(f"value gate: {_why(k, d)}")
-    else:
-        gated_gap = 0
     # The head holds every Scored Board only while they fit (ADR-0229). Past that, the
     # lowest-scored overflow joins the Tail and waits its turn by its last look like any
     # unscored Board, which nothing downstream would notice, so it is named here.
@@ -448,17 +468,7 @@ def main() -> int:
             f"lowest-scored {overflow:,} join the Tail (ADR-0229)"
         )
 
-    def _empty_tail(boards: list[ScrapableBoard]) -> int:
-        """Unscored Boards whose last complete scrape found nothing — the Tail back-off's set."""
-        return sum(
-            1
-            for c in boards
-            if not priority_ledger.is_scored(c, scores)
-            and (row := cost_rows.get(cost_ledger.key_for(c))) is not None
-            and _measured_nothing(row)
-        )
-
-    empty_candidates = _empty_tail(companies)
+    backed_off = _count_backed_off(companies, cost_rows, scores)
     companies = pick_boards(
         companies,
         scores,
@@ -466,7 +476,7 @@ def main() -> int:
         unsettled=unsettled,
         # When each Board was last looked at, so the Tail rotates oldest-first (ADR-0229), with
         # a measured-empty Board's look pushed back (ADR-0242).
-        last_looked=_tail_stamps(cost_rows),
+        last_looked=_tail_stamps(cost_rows, scores),
     )
     n = len(companies)
     scored = sum(1 for c in companies if priority_ledger.is_scored(c, scores))
@@ -475,7 +485,8 @@ def main() -> int:
         min(scored, priority_ledger.head_slots(args.max_boards)) if overflow else scored
     )
     _log.info(
-        f"tail back-off: {_empty_tail(companies)} of {empty_candidates} measured-empty "
+        f"tail back-off: {_count_backed_off(companies, cost_rows, scores)} of {backed_off} "
+        "measured-empty "
         f"unscored Board(s) are due this run; each comes round at most once per "
         f"{_EMPTY_BACKOFF.total_seconds() / 3600:.0f} h (ADR-0242)"
     )
@@ -557,7 +568,7 @@ def main() -> int:
         shard_boards[k].sort(
             key=lambda i: (
                 (0, -costs[i])
-                if measured and keys[i] in cost_rows and costs[i] > _LONG_BOARD_S
+                if measured and keys[i] in cost_rows and costs[i] > _SLOW_BOARD_S
                 else (1, -scores.get(priority_ledger.key_for(companies[i]), 0.0))
             )
         )

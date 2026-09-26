@@ -828,3 +828,21 @@ def test_plan_log_names_head_and_tail_and_gated_gap_boards(
     assert "cost: measured seconds for 2/2 boards (3 in ledger)" in [
         r.message for r in caplog.records
     ]
+
+
+def test_tail_stamps_back_off_only_unscored_empty_boards():
+    """A Scored Board the head overflowed into the Tail keeps its real stamp, even when its last
+    complete scrape was empty; only an unscored empty Board is pushed 24 h back (ADR-0242)."""
+    rows = {
+        "lever:empty": _cost(1.0, "2026-09-26T00:00:00+00:00", jobs=0),
+        "lever:scored-empty": _cost(1.0, "2026-09-26T00:00:00+00:00", jobs=0),
+        "lever:hiring": _cost(1.0, "2026-09-26T00:00:00+00:00", jobs=4),
+        "lever:old-style": _cost(1.0, "2026-09-24", jobs=0),
+    }
+    stamps = ps._tail_stamps(rows, {"lever:scored-empty": 3.0})
+    assert stamps == {
+        "lever:empty": "2026-09-27T00:00:00+00:00",
+        "lever:scored-empty": "2026-09-26T00:00:00+00:00",
+        "lever:hiring": "2026-09-26T00:00:00+00:00",
+        "lever:old-style": "2026-09-25T00:00:00",
+    }

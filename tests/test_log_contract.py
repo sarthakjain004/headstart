@@ -2647,7 +2647,7 @@ CONTRACT: tuple[Line, ...] = (
             "descriptions, out of 1,204 gap boards (117,992 jobs) still to drain; 0 of them "
             "value-gated, which cannot drain while gated"
         ),
-        why="a thin per-ATS scrape is often this run's exploration draw, not a regression",
+        why="a thin per-ATS scrape is often which Boards this run's Tail reached, not a regression",
         emit=_plan_measured,
     ),
     Line(
