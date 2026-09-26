@@ -449,9 +449,8 @@ Note the raw corpus files under `data/jobs/` carry a few fields the served table
 - `src/headstart/trends/` — what Trends reads from its history (ADR-0230, ADR-0233):
   `trend_history.py` (the one reader of the Board-delta history), `netting.py` (**Netting**),
   `line_reading.py` (the **Line reading** each chart draws), `hot_ranking.py` (the Hot tab's
-  ranking), `role_taxonomy.py` (the role families, seniority bands and watchlist, ADR-0040),
-  `company_suggestions.py` (the company picker's candidates, ADR-0185) and
-  `history_migration.py` (the pre-ADR-0230 layout, read as today's).
+  ranking), `role_taxonomy.py` (the role families, seniority bands and watchlist, ADR-0040)
+  and `company_suggestions.py` (the company picker's candidates, ADR-0185).
 - `src/headstart/ui/` — the templates and static assets the Space serves.
 - `src/headstart/alerts/` — job alerts plus the signed-in per-account records: `store`
   (Subscriptions, Saved sets, Saved jobs, Profiles), `registry`, `access` (invite allowlist),

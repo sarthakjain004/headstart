@@ -15,13 +15,6 @@ The ticks before per-Board counting began on 2026-09-13 exist only index-wide, i
 **archive** ``role_trend_index_deltas_before_board_deltas.parquet``: ``(ts, metric, family, band,
 ats, delta)`` with the Methodology they were counted under in its metadata.
 
-Until ``scripts/state/migrate_trends_to_one_delta_history.py`` has rewritten the stored files
-(ADR-0230 step 6), the dataset holds them in the layout before this one: re-bases stored as
-baselines, the Methodology of older ticks in ``trends_epochs.csv``, and the archive only inside
-the aggregate ledger ``role_trends.parquet``. The reader and the writer read that layout through
-:mod:`headstart.trends.history_migration`, which rewrites it in memory exactly as the script
-rewrites it on disk.
-
 Netting happens in :meth:`TrendHistory.answer` (step 4), and the Hot tab ranks companies off
 :meth:`TrendHistory.company_moves`, which reads the same answers (step 5). ``line_reading``
 reads the answer before netting (:meth:`TrendHistory.unnetted_answer`) into reconciled line
@@ -476,34 +469,19 @@ def _tick_stamp(table) -> str:
 
 
 def _tick_tables(state_dir: Path) -> list:
-    """Every tick file under ``state_dir`` as a table in this module's layout, oldest first. A
-    history still in the layout before ADR-0230 step 6 is rewritten in memory, as the one-off
-    migration rewrites it on disk."""
+    """Every tick file under ``state_dir`` as a table, oldest first."""
     import pyarrow.parquet as pq
-
-    from headstart.trends import history_migration as migration
 
     paths = sorted((state_dir / DELTAS).glob("*.parquet"))
-    tables = [pq.read_table(path) for path in paths]
-    if any(migration.is_old_layout(table.schema) for table in tables):
-        tables, _ = migration.rewritten_ticks(tables, state_dir / migration.EPOCHS)
-    return sorted(tables, key=_tick_stamp)
+    return sorted((pq.read_table(path) for path in paths), key=_tick_stamp)
 
 
-def _archive_table(state_dir: Path, before: str | None):
-    """The archive: its file, or, while the history is still in the older layout, the aggregate
-    ledger's ticks before ``before`` (the first tick file's) as the migration writes them. None
-    when neither exists."""
+def _archive_table(state_dir: Path):
+    """The archive of the ticks before per-Board counting, or None where it does not exist."""
     import pyarrow.parquet as pq
 
-    from headstart.trends import history_migration as migration
-
-    if (state_dir / ARCHIVE).exists():
-        return pq.read_table(state_dir / ARCHIVE)
-    if not (state_dir / migration.AGGREGATE).exists():
-        return None
-    return migration.archive_from_aggregate(
-        state_dir / migration.AGGREGATE, before, state_dir / migration.EPOCHS
+    return (
+        pq.read_table(state_dir / ARCHIVE) if (state_dir / ARCHIVE).exists() else None
     )
 
 
@@ -651,7 +629,7 @@ class TrendHistory:
         import pyarrow as pa
 
         files = [self._read_tick(table) for table in _tick_tables(state_dir)]
-        archive = _archive_table(state_dir, files[0][0] if files else None)
+        archive = _archive_table(state_dir)
         archive_ticks, archived, archive_deltas = self._read_archive(archive)
         self._ticks = [*archive_ticks, *(ts for ts, *_ in files)]
         self._first_delta = len(archive_ticks)

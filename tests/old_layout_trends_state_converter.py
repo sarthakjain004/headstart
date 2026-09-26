@@ -1,25 +1,14 @@
-"""The Trends history in the layout it had before ADR-0230 step 6, read as that step's layout.
+"""Test fixtures' Trends state, written in the layout before ADR-0230 step 6, stored as step 6's.
 
-Step 6 changed four things about the stored history (design §8.2, §9):
+The live history was migrated on 2026-09-26 and production no longer reads the older layout. Many
+Trends tests still author their state compactly in it: an aggregate ledger `role_trends.parquet`,
+tick files keyed by series version, and `trends_epochs.csv`. :func:`store_in_current_layout`
+rewrites such a state directory in place into the layout `trend_history` reads, exactly as the
+one-off migration rewrote the real history:
 
-- **A re-base is a delta.** A new series version's first tick held every Board's whole count,
-  because the old writer counted a tick only against earlier ticks at its own version. It becomes
-  its change against the tick before it, so the history replays by plain summation.
-- **Every tick carries its methodology.** Ticks written before #688 carry none; each takes the
-  `trends_epochs.csv` row in force at it, and a tick before the first row takes the first row,
-  which readers always took as a baseline rather than a boundary. The row's `centroid_version`
-  is not carried: it read 2 on every row, and no centroid decides anything since ADR-0220.
-- **A tick file holds `(board, metric, family, band, delta)`,** with its `ts` in its metadata.
-  The old `ts` column repeated the metadata, and `ats` is the board_key's prefix on every row.
-  The old `centroid_version` metadata goes with the series versions.
-- **The ticks before per-Board counting are an archive** of index-wide deltas, not rows of the
-  aggregate ledger `role_trends.parquet`.
-
-`scripts/state/migrate_trends_to_one_delta_history.py` rewrites the stored files once, through
-this module. Until it has run, `trend_history` reads the old files through this module too, so the
-reader and the rewrite cannot disagree, and the step-6 writer counts its first ticks against the
-same history the rewrite will store. Once it has run no file is in the old layout, nothing calls
-this module, and it goes with the script.
+- a re-base becomes a delta, and every tick file carries its methodology (from the epoch row in
+  force at it) and its `ts` in metadata, as `(board, metric, family, band, delta)`;
+- the aggregate's ticks before the first tick file become the archive.
 """
 
 from __future__ import annotations
@@ -34,6 +23,7 @@ import pyarrow as pa
 import pyarrow.compute as pc
 import pyarrow.parquet as pq
 
+from headstart.trends import trend_history
 from headstart.trends.trend_history import ARCHIVE_COLUMNS, LEVEL_METRICS, TICK_COLUMNS
 
 _KEY = TICK_COLUMNS[:-1]
@@ -298,3 +288,29 @@ def archive_from_aggregate(
             b"methodology": json.dumps(methodology, sort_keys=True).encode(),
         },
     )
+
+
+def store_in_current_layout(state_dir: Path) -> Path:
+    """Rewrite ``state_dir`` (a ``data/state`` directory) into the layout `trend_history` reads,
+    removing the older layout's files. A directory already in that layout is left as it is."""
+    deltas = state_dir / trend_history.DELTAS
+    paths = sorted(deltas.glob("*.parquet")) if deltas.exists() else []
+    tables = [pq.read_table(path) for path in paths]
+    epochs = state_dir / EPOCHS
+    if any(is_old_layout(table.schema) for table in tables):
+        ticks, _ = rewritten_ticks(tables, epochs)
+        for path in paths:
+            path.unlink()
+        for table in ticks:
+            pq.write_table(table, trend_history.tick_path(deltas, tick_stamp(table)))
+        tables = ticks
+    aggregate = state_dir / AGGREGATE
+    if aggregate.exists() and not (state_dir / trend_history.ARCHIVE).exists():
+        first = min((tick_stamp(table) for table in tables), default=None)
+        pq.write_table(
+            archive_from_aggregate(aggregate, first, epochs),
+            state_dir / trend_history.ARCHIVE,
+        )
+    aggregate.unlink(missing_ok=True)
+    epochs.unlink(missing_ok=True)
+    return state_dir

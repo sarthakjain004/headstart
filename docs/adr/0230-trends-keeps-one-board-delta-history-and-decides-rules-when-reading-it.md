@@ -144,6 +144,12 @@ later, with the pipeline's chain paused. Four calls follow from that, or were ma
   on its rewrite. Once the rewrite and the retirement have run, the module, the script, the
   Space's two download patterns for the retired files, the older-layout test fixtures and
   `scripts/eval/check_trend_history_replays_aggregate.py` (which reads the aggregate) go.
+  **Done 2026-09-26:**
+  - the rewrite and the retirement ran live (commit `fa4a8cf3`), and the first run after them
+    wrote one tick file;
+  - the module, both scripts, the check and the two download patterns are deleted;
+  - the older-layout fixtures survive only as the test helper `tests/trends_stored_layout.py`,
+    which stores a test's compact old-style state in today's layout.
 - **The rewrite reproduces what it replaces.** Dry-run on the 2026-09-25 HF state (newest tick
   05:15:02): 314 tick files, 1,110,438 rows to 986,222, one re-base rewritten (2026-09-24
   21:19:12); an archive of 615 ticks and 331,354 rows under one Methodology; the replay against

@@ -1,5 +1,6 @@
-"""Tests for reading the Trends history's older layout as ADR-0230 step 6's
-(`headstart.trends.history_migration`), which the migration script writes and the reader replays.
+"""Tests for the test helper that stores old-layout Trends fixture state in today's layout
+(`old_layout_trends_state_converter`, the logic the ADR-0230 step-6 live migration ran), so the
+fixtures every Trends test builds on convert exactly as the real history did.
 """
 
 from __future__ import annotations
@@ -8,11 +9,10 @@ import json
 from pathlib import Path
 
 import old_layout_trends_state as old
+import old_layout_trends_state_converter as migration
 import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
-
-from headstart.trends import history_migration as migration
 
 
 @pytest.fixture

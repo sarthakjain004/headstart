@@ -39,6 +39,7 @@ from headstart.llm_router import RouterUnavailable
 from headstart.trends import line_reading, netting, trend_history
 
 pytest.importorskip("flask")  # in [dev] so this runs in CI; guards a bare env
+old_layout_converter = pytest.importorskip("old_layout_trends_state_converter")
 
 APP = Path(__file__).resolve().parents[1] / "deploy" / "hf-space" / "app.py"
 
@@ -1562,7 +1563,9 @@ def _trend_history(
         (state / "data" / "state" / "company_directory.json").write_text(
             json.dumps({"companies": list(companies.values())}), encoding="utf-8"
         )
-    return trend_history.TrendHistory.load(state / "data" / "state", config)
+    return trend_history.TrendHistory.load(
+        old_layout_converter.store_in_current_layout(state / "data" / "state"), config
+    )
 
 
 def _trends_csv(state: Path) -> None:
@@ -1611,7 +1614,8 @@ def trends_app(tmp_path_factory):
     # inherit a live wall depending on test order and answer every request 401.
     with _space_app(state, env={"SECRET_KEY": "", "GOOGLE_CLIENT_ID": ""}) as module:
         module._HISTORY = trend_history.TrendHistory.load(
-            state / "data" / "state", _SPACE_CONFIG
+            old_layout_converter.store_in_current_layout(state / "data" / "state"),
+            _SPACE_CONFIG,
         )
         module._HISTORY._watch = {
             "watch:fde": {
@@ -2284,7 +2288,8 @@ def ats_trends_app(tmp_path_factory):
     _ats_trends_csv(state)
     with _space_app(state, env={"SECRET_KEY": "", "GOOGLE_CLIENT_ID": ""}) as module:
         module._HISTORY = trend_history.TrendHistory.load(
-            state / "data" / "state", _SPACE_CONFIG
+            old_layout_converter.store_in_current_layout(state / "data" / "state"),
+            _SPACE_CONFIG,
         )
         module._HISTORY._watch = {}
         yield module
@@ -2378,7 +2383,8 @@ def epochs_trends_app(tmp_path_factory):
     )
     with _space_app(state, env={"SECRET_KEY": "", "GOOGLE_CLIENT_ID": ""}) as module:
         module._HISTORY = trend_history.TrendHistory.load(
-            state / "data" / "state", _SPACE_CONFIG
+            old_layout_converter.store_in_current_layout(state / "data" / "state"),
+            _SPACE_CONFIG,
         )
         yield module
 
@@ -2434,7 +2440,9 @@ def test_trends_epochs_are_narrowed_by_since_and_until(epochs_trends_app):
 
 def _epochs_of(state: Path) -> list[dict]:
     """The counting changes a history marks from its ticks' Methodology alone."""
-    return trend_history.TrendHistory.load(state, _SPACE_CONFIG)._epochs
+    return trend_history.TrendHistory.load(
+        old_layout_converter.store_in_current_layout(state), _SPACE_CONFIG
+    )._epochs
 
 
 def test_trends_epochs_name_a_dedup_change(tmp_path):
@@ -2479,9 +2487,6 @@ def test_trends_epochs_are_not_narrowed_by_ats(epochs_trends_app):
     [
         "data/state/role_trend_board_deltas/2026-09-13T12-00-39+00-00.parquet",
         "data/state/role_trend_index_deltas_before_board_deltas.parquet",
-        # the older layout's, read until the one-off migration has run
-        "data/state/role_trends.parquet",
-        "data/state/trends_epochs.csv",
         "data/state/company_directory.json",
     ],
 )
