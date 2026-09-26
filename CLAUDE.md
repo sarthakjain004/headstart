@@ -76,9 +76,12 @@ discovery landing (#576) moved five more. Board totals belong in README and CONT
   A Board is `{client}.jibeapply.com`; resolve a vanity host (`careers.costco.com`) to its client
   with `scripts/discover/mine_jibe.py --vanity`, which reads the rows' `client_code`, else the
   page's `_jibe` cid, which is sometimes a template leftover. The scraper drops a
-  posting whose iCIMS tenant is readable, so no iCIMS overlap needs a gate, but it cannot see a
+  posting whose iCIMS tenant is a Scrapable iCIMS Board (ADR-0240), but it cannot see a
   Workday or Oracle backing Board: walk a new client's whole listing, join every `apply_url` host
-  to the ledgers, and park a client whose postings all sit on a held Board (ADR-0189).
+  to the ledgers, and park a client whose postings all sit on a held Board (ADR-0189). A client
+  wholly on Scrapable iCIMS Boards reads 0 Jobs at 5 s a page, so park it too:
+  `scripts/validate/jibe_icims_covered_clients.py` walks every client and prints `park` for
+  those. Re-run it after landing jibe or icims rows.
   Resolve DNS for `jibeapply.com` on a public resolver, never the OS one: macOS answered a false
   "no such host" for live clients under a 64-thread sweep.
 - **ClearCompany: re-run `scripts/validate/clearcompany_shared_accounts.py` after landing rows.**
