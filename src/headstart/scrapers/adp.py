@@ -45,10 +45,14 @@ browser's all 200).
 
 from __future__ import annotations
 
+import csv
+import functools
 import json
+from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode
 
+from headstart import log
 from headstart.boards import company_name
 from headstart.jobs import salary
 from headstart.jobs.job import Job, html_to_text, is_remote
@@ -91,6 +95,27 @@ class _RateLimited(Exception):
 
 
 _PACER = Pacer(_SPACING_S)
+
+_log = log.get(__name__)
+
+#: Each client's ``ClientName``, one ``cid,name,checked_at`` row per client, written by
+#: ``scripts/validate/adp_company_names.py`` and committed (ADR-0241). A client on file costs no
+#: ``client-features`` request: that request was one of every Board's paced few, run after run,
+#: for a name that does not move. An empty ``name`` is a client ADP states none for.
+RESOLVED_NAMES = Path("data/validate/company_names/adp.csv")
+
+
+@functools.cache
+def resolved_names() -> dict[str, str]:
+    """``cid -> ClientName`` from the cache file, read once; empty when it is absent."""
+    path = Path(__file__).resolve().parents[3] / RESOLVED_NAMES
+    try:
+        with path.open(encoding="utf-8", newline="") as handle:
+            return {row["cid"]: row["name"] for row in csv.DictReader(handle)}
+    except OSError as exc:
+        # Once per process: without the file every Board asks the host, and nothing else says why.
+        _log.info(f"{RESOLVED_NAMES} unreadable ({exc}) — every ADP name is requested")
+        return {}
 
 
 def _query(cid: str, cc_id: str, lang: str | None = None, **extra: Any) -> str:
@@ -381,7 +406,7 @@ class ADPScraper(BaseScraper):
         return {"rows": rows, "details": details}
 
     def resolve_company(self) -> None:
-        """The employer, from ``client-features``' ``ClientName`` — one request per Board.
+        """The employer, from ``client-features``' ``ClientName``.
 
         Nothing a browser renders names the employer: the title is "Recruitment" on every
         career center, there is no og: tag or JSON-LD, and no posting field carries it (5 centers
@@ -392,22 +417,30 @@ class ADPScraper(BaseScraper):
         name a parent or legal entity ("KERRIDGE COMMERCIAL SYSTEMS CORP" for Klipboard). It is
         served as stated — the company's own claim, like every other name source (ADR-0114).
 
-        One attempt that can never wall the host, as the base method's title fetch — a 429 still
-        rests the shared pacer for everyone, but is not retried; any failure leaves the slug,
-        which is the floor.
+        Read from :data:`RESOLVED_NAMES` when the client is on file. Otherwise one attempt that
+        can never wall the host, as the base method's title fetch — a 429 still rests the shared
+        pacer for everyone, but is not retried; any failure leaves the slug, which is the floor.
         """
         if not company_name.looks_like_slug(self.company):
             return
+        name = resolved_names().get(self.cid)
+        if name is None:
+            try:
+                name = self.client_name()
+            except Exception as exc:  # noqa: BLE001 - a display name is never worth failing a Board for
+                self._log.info(
+                    f"{self.board_key()}: no company name — client-features raised "
+                    f"{type(exc).__name__}"
+                )
+                return
+        self.adopt_company(name)
+
+    def client_name(self) -> str:
+        """This client's ``ClientName`` as ``client-features`` states it, "" when it states none.
+        One paced attempt; raises on any failure."""
         client_url = f"{_CLIENT}?{_query(self.cid, self.cc_id, 'en_US')}"
-        try:
-            body = self._paced_get(client_url, tries=1, attempts=1, marks_wall=False)
-        except Exception as exc:  # noqa: BLE001 - a display name is never worth failing a Board for
-            self._log.info(
-                f"{self.board_key()}: no company name — {client_url} raised "
-                f"{type(exc).__name__}"
-            )
-            return
-        self.adopt_company(next(iter(_strings(_meta_group(body), "ClientName")), ""))
+        body = self._paced_get(client_url, tries=1, attempts=1, marks_wall=False)
+        return next(iter(_strings(_meta_group(body), "ClientName")), "")
 
     def _detail_url(self, row: dict) -> str:
         return f"{_LISTING}/{_ext_id(row)}?{_query(self.cid, self.cc_id, row['_lang'])}"

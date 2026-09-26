@@ -161,6 +161,24 @@ def test_reclaim_succeeds_and_reports_when_storage_falls():
     assert hub.squashed
 
 
+def test_reclaimed_is_the_bytes_deleted_not_a_lagging_counter_difference(caplog):
+    """Run 36218633315: usedStorage read 16.13 GB against 16.59 GB stored, because the first read
+    lags the upload the run just made, so `before - after` said 1.60 GB for a 2.06 GB delete. The
+    line reports the delete and prints the store less the delete beside the counter."""
+    hub = FakeHub(
+        live=[sibling("live", 14_530_000_000)],
+        stored=[blob("live", 14_530_000_000), blob("dead", 2_060_000_000)],
+        used=16_130_000_000,
+        used_after=14_530_000_000,
+    )
+    caplog.set_level("INFO")
+    assert run(hub) == 0
+    assert (
+        "reclaimed 2.06 GB: usedStorage 16.13 GB -> 14.53 GB (stored less deleted 14.53 GB), "
+        "live 14.53 GB intact across 1 file(s)"
+    ) in [r.getMessage() for r in caplog.records]
+
+
 # --- safety ---------------------------------------------------------------------------------
 
 
@@ -314,4 +332,21 @@ def test_orphans_held_back_by_age_are_named(caplog):
     assert hub.deleted == []
     assert (
         "1 orphaned object(s), 2.00 GB held back as younger than 45 min" in caplog.text
+    )
+
+
+def test_a_counter_left_above_the_store_less_the_delete_is_said(caplog):
+    """The counter fell, but not to what the store now holds: the gap is not read as freed."""
+    hub = FakeHub(
+        live=[sibling("live", 14_530_000_000)],
+        stored=[blob("live", 14_530_000_000), blob("dead", 2_060_000_000)],
+        used=16_130_000_000,
+        used_after=15_500_000_000,
+    )
+    caplog.set_level("INFO")
+    assert run(hub) == 0
+    assert any(
+        "still above the store less the delete (14.53 GB)" in r.getMessage()
+        for r in caplog.records
+        if r.levelname == "WARNING"
     )

@@ -127,6 +127,12 @@ UNAUTHORITATIVE_BOARDS_PATH = (
     REPO_ROOT / "data" / "state" / "unauthoritative_boards.json"
 )
 
+# The ids this run's full scrape returned on those Boards, written by `scrape_join` beside them.
+# `index sync` evicts the ones the tech filter rejected: they were seen, not unread (ADR-0243).
+UNAUTHORITATIVE_BOARD_IDS_PATH = (
+    REPO_ROOT / "data" / "state" / "unauthoritative_board_ids.txt"
+)
+
 # How many times a fetch replaced each Job's held description, and a hash of the text it held
 # before the last replacement (ADR-0207). Written by `update_descriptions`, rewritten in full each
 # run. It lists only Jobs that have changed at least once.

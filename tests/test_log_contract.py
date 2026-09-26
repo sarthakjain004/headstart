@@ -556,9 +556,16 @@ def _ledger_priority(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
             },
         },
     )
+    # No liveness dir, so no row is dropped as off the Scrapable set; no fragments, so no
+    # Board is clean-empty; no unauthoritative file, so nothing is carried unblended.
     update_ledgers.priority(
         argparse.Namespace(
-            jobs=Path("data/jobs"), tech=Path("data/jobs/tech"), ledger=ledger
+            jobs=Path("data/jobs"),
+            tech=Path("data/jobs/tech"),
+            ledger=ledger,
+            fragments=Path("fragments"),
+            unauthoritative_boards=Path("unauthoritative_boards.json"),
+            liveness=Path("liveness"),
         )
     )
 
@@ -1203,6 +1210,7 @@ def _index_paths(**over: object) -> argparse.Namespace:
         ledger="data/validate/liveness",
         upgrades="data/state/pending_upgrades.txt",
         unauthoritative_boards="data/state/unauthoritative_boards.json",
+        unauthoritative_ids="data/state/unauthoritative_board_ids.txt",
         unconfirmed="data/state/unconfirmed_ids.txt",
         eviction_queue="data/state/eviction_queue.tsv",
         **over,
@@ -1911,7 +1919,8 @@ CONTRACT: tuple[Line, ...] = (
         consumer="fanout_errors.FAILURES",
         emitter=_LEDGERS,
         body=(
-            "failures: 1204 of 2215 board error(s) read as gone (404/410) across 1 shard(s) | "
+            "failures: 1204 of 2215 board error(s) read as gone (404/410, unresolvable host, "
+            "Jobvite invalid) across 1 shard(s) | "
             "1204 ledger rows (1150 cleared by a successful scrape) | 1204 at/over 20 strikes "
             "(+1204 new, -0 released) -> board_failures.csv"
         ),
@@ -2287,8 +2296,8 @@ CONTRACT: tuple[Line, ...] = (
         body=(
             "grace period: 2207 id(s) unconfirmed, awaiting a second look before eviction; of the "
             "3010 carried in, 1002 reappeared in this scrape and 1003 are unconfirmed again "
-            "(their Board sat out this run's slice, was Unauthoritative, or emitted nothing at "
-            "all — all three leave the eviction scope) (ADR-0083)"
+            "(their Board sat out this run's slice, was Unauthoritative, or raised — all three "
+            "leave the eviction scope) (ADR-0083)"
         ),
         why=(
             "ADR-0083's per-Job grace period — the only mechanism left that withholds in-scope. "
@@ -2571,10 +2580,13 @@ CONTRACT: tuple[Line, ...] = (
         emitter=_RECLAIM,
         emit=_reclaim_freed,
         body=(
-            "reclaimed 89.26 GB: usedStorage 96.83 GB -> 7.57 GB, live 7.57 GB intact "
-            "across 1 file(s)"
+            "reclaimed 89.26 GB: usedStorage 96.83 GB -> 7.57 GB (stored less deleted 7.57 GB), "
+            "live 7.57 GB intact across 1 file(s)"
         ),
-        why="the reclaim actually freed bytes — measured after the fact, not predicted",
+        why=(
+            "the bytes deleted, with the counter's fall beside it — measured after the fact, not "
+            "predicted; `before - after` understated the delete while usedStorage lagged"
+        ),
     ),
     Line(
         consumer="fanout_merge.NOTHING_TO_RECLAIM",
@@ -2590,7 +2602,7 @@ CONTRACT: tuple[Line, ...] = (
         body=(
             "reclaim did not free anything: usedStorage 96.83 GB -> 96.83 GB after deleting "
             "1 object(s) worth 89.26 GB, and still had not moved 0s later. The quota fills at "
-            "~100 GB/day, so this will reject uploads within a day if it is not fixed."
+            "~55 GB/day, so this will reject uploads within two days if it is not fixed."
         ),
         why=(
             "the 2026-09-18 failure: blobs deleted and the quota unmoved. The old step could "

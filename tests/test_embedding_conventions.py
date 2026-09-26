@@ -36,3 +36,13 @@ def test_the_embed_jobs_model_cache_key_names_the_pinned_revision():
     repo = Path(__file__).resolve().parent.parent
     workflow = (repo / ".github" / "workflows" / "pipeline.yml").read_text("utf-8")
     assert f"key: hf-model-nomic-embed-text-v1.5-{ec.MODEL_REVISION[:12]}" in workflow
+
+
+def test_the_join_tokenizer_cache_key_names_the_pinned_revision():
+    """embed_plan's tokenizer load is pinned too. A key that outlives its pin keeps hitting a cache
+    without the new commit, which actions/cache never re-saves, so every run re-fetches it."""
+    repo = Path(__file__).resolve().parent.parent
+    workflow = (repo / ".github" / "workflows" / "pipeline.yml").read_text("utf-8")
+    assert (
+        f"key: hf-tokenizer-nomic-embed-text-v1.5-{ec.MODEL_REVISION[:12]}" in workflow
+    )

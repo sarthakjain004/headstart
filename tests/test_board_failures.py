@@ -220,3 +220,24 @@ def test_an_undecodable_ledger_also_fails_open(tmp_path, caplog):
     with caplog.at_level(logging.INFO, logger=bf.__name__):
         assert bf.load(path) == {}
     assert [r.levelname for r in caplog.records] == ["WARNING"]
+
+
+def test_an_unresolvable_host_and_a_jobvite_invalid_redirect_read_as_gone():
+    """ADR-0242, both shapes measured live on 2026-09-26: 4 of the 5 unresolvable hosts on run
+    36218633315 were NXDOMAIN on 8.8.8.8, and Jobvite 302s an unknown company to `?invalid=1`."""
+    assert bf.is_gone(
+        "DNSError: Failed to perform, curl: (6) Could not resolve host: njit.csod.com. See "
+        "https://curl.se/libcurl/c/libcurl-errors.html first for more details."
+    )
+    assert bf.is_gone(
+        "RequestException: https://jobs.jobvite.com/tcsatl/search -> 302 "
+        "http://search.jobvite.com?invalid=1"
+    )
+
+
+def test_a_transient_jobvite_404_burst_does_not_read_as_gone():
+    """Jobvite's bare `-> 404` answers come in bursts on live companies; only the explicit
+    `invalid=1` redirect says the company is gone."""
+    assert not bf.is_gone(
+        "RequestException: https://jobs.jobvite.com/nutanix/search -> 404"
+    )

@@ -255,7 +255,13 @@ class ADPRecruitingScraper(BaseScraper):
         response = self._fetch(
             "GET", url, headers=request_headers(token), timeout=_TIMEOUT, **kwargs
         )
-        response.raise_for_status()
+        try:
+            response.raise_for_status()
+        except Exception as exc:
+            # curl's message names only the status, and the site record and the listing both
+            # answer 500: say which endpoint it was, keeping the exception's type and fields.
+            exc.args = (f"{exc} on {url.split('?', 1)[0]}", *exc.args[1:])
+            raise
         return json.loads(response.text)
 
     def _page(self, token: str, skip: int, top: int) -> dict | None:
