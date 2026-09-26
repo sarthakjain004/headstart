@@ -79,3 +79,67 @@ def test_a_missing_grace_set_warns_and_the_success_line_names_only_what_went_up(
         r.getMessage() for r in caplog.records if "published" in r.getMessage()
     )
     assert "eviction_queue.tsv" in published and "unconfirmed" not in published
+
+
+def test_superseded_search_indexes_are_left_out_and_deleted(tmp_path, monkeypatch):
+    """ADR-0244. `refresh-indexes` replaces every index each run, and the old ones stayed on the
+    Hub: 374 of 391 index directories, 8.9 GB, that the latest version never reads. The commit
+    leaves them out and deletes their remote files; the table still opens and serves each index
+    from what remains."""
+    lancedb = pytest.importorskip("lancedb")
+    import shutil
+
+    db = lancedb.connect(str(tmp_path / "data/lancedb"))
+    table = db.create_table(
+        "jobs", data=[{"id": f"x{i}", "ats": "a" if i % 2 else "b"} for i in range(300)]
+    )
+    table.create_scalar_index("ats")
+    indices = tmp_path / "data/lancedb/jobs.lance/_indices"
+    first = {d.name for d in indices.iterdir()}
+    table.create_scalar_index("ats", replace=True)
+    (old,) = first
+    remote_old = f"data/lancedb/jobs.lance/_indices/{old}/page_data.lance"
+    monkeypatch.setattr(
+        HfApi,
+        "list_repo_files",
+        lambda self, repo, repo_type=None: [remote_old, "data/state/board_cost.csv"],
+    )
+    commits = _capture(monkeypatch)
+
+    index_publish.publish("owner/repo", None, tmp_path)
+
+    ops = commits[0]["operations"]
+    deleted = [
+        op.path_in_repo for op in ops if type(op).__name__ == "CommitOperationDelete"
+    ]
+    added = [op.path_in_repo for op in ops if type(op).__name__ == "CommitOperationAdd"]
+    assert deleted == [remote_old]
+    assert not [p for p in added if f"/_indices/{old}/" in p]
+    assert [p for p in added if "/_indices/" in p], "the live index still goes up"
+
+    shutil.rmtree(indices / old)
+    reopened = lancedb.connect(str(tmp_path / "data/lancedb")).open_table("jobs")
+    assert reopened.search().where("ats = 'a'").limit(500).to_arrow().num_rows == 150
+    assert reopened.index_stats("ats_idx").num_unindexed_rows == 0
+
+
+def test_an_unreadable_table_deletes_no_index(tmp_path, monkeypatch):
+    """A table the manifest read fails on keeps every index: a publish never deletes on a read it
+    could not make."""
+    pytest.importorskip("lance")
+    (tmp_path / "data/lancedb/jobs.lance/_indices/abc").mkdir(parents=True)
+    (tmp_path / "data/lancedb/jobs.lance/_indices/abc/page_data.lance").write_bytes(
+        b"x"
+    )
+    monkeypatch.setattr(
+        HfApi,
+        "list_repo_files",
+        lambda self, repo, repo_type=None: pytest.fail("listed"),
+    )
+    commits = _capture(monkeypatch)
+
+    index_publish.publish("owner/repo", None, tmp_path)
+
+    assert [op.path_in_repo for op in commits[0]["operations"]] == [
+        "data/lancedb/jobs.lance/_indices/abc/page_data.lance"
+    ]
