@@ -39,7 +39,7 @@ _REPORT_DIR = _ROOT / "data" / "eval" / "filter_checks"
 
 sys.path.insert(0, str(_ROOT / "src"))
 from headstart.scrapers.registry import DISABLED_ATS, SCRAPERS
-from headstart.search_filters import india_gazetteer
+from headstart.search_filters import fx, india_gazetteer
 
 # Deliberately OUTSIDE the repo: this is a live credential for a real account, and a file
 # in the tree is one `git add` away from being published.
@@ -201,7 +201,33 @@ def _row_ok(row: dict) -> bool:
     job_id, ats = row.get("id") or "", row.get("ats") or ""
     if not (job_id and ats and job_id.startswith(f"{ats}:") and job_id.count(":") >= 2):
         return False
-    return bool(row.get("title") and row.get("company") and row.get("url"))
+    # `company` may be empty: ADR-0212 serves "" for a Board whose tenant is only a code
+    # (`base.fetch` -> `company_name.settled(...) or ""`) rather than a made-up name.
+    return bool(row.get("title") and row.get("url"))
+
+
+# The INR bracket the salary cases send, named once so the request and its check cannot drift.
+_SALARY_FLOOR_INR = 500_000
+_SALARY_CEILING_INR = 5_000_000
+
+
+def _inr_bound_in(row: dict, bound: int, *, is_floor: bool) -> int | None:
+    """An INR salary bound restated in ``row``'s own currency, as the Space compiles it.
+
+    ADR-0117 compares the bracket ACROSS currencies: `compiler._salary_clauses` restates the
+    user's bound in every currency the rate table holds and rounds it outward (floor down,
+    ceiling up), so a USD or EUR row legitimately answers an INR bracket. ``None`` when the row's
+    currency has no rate, which the Space never serves under a bracket. Reads the committed
+    `config/fx_rates.json`, so a Space deployed on an older table can differ at the boundary.
+    """
+    currency = row.get("salary_currency")
+    if currency == "INR":
+        return bound
+    rates = (fx.table() or {}).get("rates") or {}
+    here = fx.convert(float(bound), "INR", currency or "", rates)
+    if here is None:
+        return None
+    return int(here) if is_floor else int(here) + 1
 
 
 def _etype_ok(value: str | None, canonical: str) -> bool:
@@ -265,24 +291,35 @@ def run_checks(base: str, atses: list[str]) -> list[dict]:
         # The bound is an OVERLAP test, not containment (see `build_filter`): the job's top of
         # range must clear the user's floor, and `max_salary_annual` is null on single-figure
         # postings, so the COALESCE fallback has to be mirrored here.
+        #
+        # And the bracket is compared ACROSS currencies (ADR-0117): an INR bound admits a USD
+        # row whose figure clears the bound restated in USD. Pinning `salary_currency == "INR"`
+        # and comparing raw amounts predates that and failed every legitimate foreign row, so
+        # each row is judged against the bound in its own currency (`_inr_bound_in`).
         cases.append(
             (
                 f"salary_min+currency [{q}]",
-                {"q": q, "salary_min": "500000", "salary_currency": "INR", "k": 30},
+                {
+                    "q": q,
+                    "salary_min": str(_SALARY_FLOOR_INR),
+                    "salary_currency": "INR",
+                    "k": 30,
+                },
                 lambda r: (
-                    r.get("salary_currency") == "INR"
-                    and (
+                    (
                         r.get("max_salary_annual")
                         if r.get("max_salary_annual") is not None
                         else r.get("min_salary_annual")
                     )
+                    is not None
+                    and (floor := _inr_bound_in(r, _SALARY_FLOOR_INR, is_floor=True))
                     is not None
                     and (
                         r.get("max_salary_annual")
                         if r.get("max_salary_annual") is not None
                         else r.get("min_salary_annual")
                     )
-                    >= 500_000
+                    >= floor
                 ),
                 q,
             )
@@ -290,11 +327,19 @@ def run_checks(base: str, atses: list[str]) -> list[dict]:
         cases.append(
             (
                 f"salary_max+currency [{q}]",
-                {"q": q, "salary_max": "5000000", "salary_currency": "INR", "k": 30},
+                {
+                    "q": q,
+                    "salary_max": str(_SALARY_CEILING_INR),
+                    "salary_currency": "INR",
+                    "k": 30,
+                },
                 lambda r: (
-                    r.get("salary_currency") == "INR"
-                    and r.get("min_salary_annual") is not None
-                    and r.get("min_salary_annual") <= 5_000_000
+                    r.get("min_salary_annual") is not None
+                    and (
+                        ceiling := _inr_bound_in(r, _SALARY_CEILING_INR, is_floor=False)
+                    )
+                    is not None
+                    and r.get("min_salary_annual") <= ceiling
                 ),
                 q,
             )

@@ -24,6 +24,7 @@ successfactors:careers.capgemini.com,Capgemini,board_naming alias (ADR-0185)
 successfactors:careers.wipro.com,Wipro,board_naming alias (ADR-0185)
 successfactors:careers-inc.nttdata.com,NTT Data,board_naming alias (ADR-0185)
 oracle:jpmc.fa.oraclecloud.com,JPMorgan Chase,"site calls itself ""JPMC Candidate Experience page"" (2026-09-24)"
+oracle:fa-evjm-saasfaprod1.fa.ocs.oraclecloud.com,Ali & Sons Contracting,"reqs 2554 and 4572: OrganizationDescriptionStr opens ""Ali & Sons Contracting""; LegalEmployer, Organization and BusinessUnit null; page title ""Global Career Site"" (2026-09-26)"
 icims:careers-apac-atlassian.icims.com,Atlassian,Atlassian's own pages (2026-09-24)
 icims:globalcareers-atlassian.icims.com,Atlassian,Atlassian's own pages (2026-09-24)
 icims:campus-globalcareers-atlassian.icims.com,Atlassian,Atlassian's own pages (2026-09-24)
