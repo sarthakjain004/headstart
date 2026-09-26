@@ -16,10 +16,8 @@ still need an HTTP probe. Of the DNS-provable ones ~66% turn out to have a publi
 name-guess hit rate two orders of magnitude below that — which is what makes sweeping a
 six-figure wordlist affordable.
 
-Stage 2 verifies against the real embed API, in the two steps ``KekaScraper`` uses:
-``/careers/api/organization/default/careerportalinfo`` for the org UUID (it only rides along inside
-``careersBackgroundPath``, so background-less portals fall back to the ``/careers`` page HTML),
-then ``/careers/api/embedjobs/default/active/{uuid}`` for the job array.
+Stage 2 verifies with the one request ``KekaScraper`` and ``check_liveness.p_keka`` make:
+``GET /careers/api/jobs/default/active``, the job array, no org UUID needed (see ``verify``).
 
 **Parse the body, never the status.** Keka soft-errors at HTTP 200 — an unknown Slug renders
 "Invalid Tenant", a disabled portal "Forbidden Access". Both mean no public Board; a probe that
@@ -58,8 +56,11 @@ WILDCARD_POD = "cin02.hr.keka.com"
 
 DNS_WORKERS = 128
 # One shared origin serves every Board, so this is a per-host budget, not a machine one
-# (ADR-0026). 24 in-flight measured ~30 boards/s with no 429s.
+# (ADR-0026). The careers origin states its budget: `x-rate-limit-limit: 1m` with 1,000 requests
+# per window per client (measured 2026-09-26); 24 unpaced workers ran ~25/s and drew 429s within
+# two minutes. So pace to 15 requests/s across all workers, under the stated 1,000/min.
 HTTP_WORKERS = 24
+HTTP_RATE = 15.0
 
 
 def _load_done(out: Path, col: int = 0) -> set[str]:
@@ -151,6 +152,7 @@ class _Politeness:
 
     def __init__(self) -> None:
         self.until = 0.0
+        self.next_slot = 0.0
         self._lock = threading.Lock()
 
     def wait(self) -> None:
@@ -160,6 +162,13 @@ class _Politeness:
             if delay <= 0:
                 return
             time.sleep(min(delay, 5))
+
+    def pace(self) -> None:
+        """Space request starts HTTP_RATE per second apart, across every worker."""
+        with self._lock:
+            start = max(self.next_slot, time.monotonic())
+            self.next_slot = start + 1 / HTTP_RATE
+        time.sleep(max(0.0, start - time.monotonic()))
 
     def trip(self, seconds: float, why: str) -> None:
         with self._lock:
@@ -171,6 +180,7 @@ class _Politeness:
 
 def _get(url: str, pol: _Politeness, timeout: int = 20):
     pol.wait()
+    pol.pace()
     r = http.fetch(
         "GET",
         url,
