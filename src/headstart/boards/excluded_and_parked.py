@@ -627,13 +627,14 @@ PARKED_BOARDS: frozenset[str] = frozenset(
         # or a direct route exists for this host.
         "oracle:ejwl.fa.us2.oraclecloud.com",
         # Parked on landing, before any run read it. Found 2026-09-26 by the six-letter code DNS
-        # sieve (`{code}.fa.ocs.oraclecloud.com`): a US discount-store chain's Board reporting
-        # **90,694 postings**. A live sample of the first 1,000 titles that day was store
-        # managers and warehouse roles, with **2 passing `tech_filter.is_tech`** (0.2%). Oracle
-        # serves no offset past 10,000 (ADR-0053, ADR-0239), so every scrape would read up to
-        # ~20,000 postings from both ends for a few dozen tech jobs, far more than the Boards
-        # above it on this list. Un-park if a per-Board row budget bounds the cost, the same
-        # condition as Accenture.
+        # sieve (`{code}.fa.ocs.oraclecloud.com`): **Dollar General**'s Board (named in its
+        # postings' detail), reporting **90,694 postings**. Content read before parking: real
+        # store-manager and warehouse roles, not a demo tenant. **2 of the first 1,000 titles
+        # pass `tech_filter.is_tech`** (0.2%). That sample is the oldest end of the listing, not a
+        # random draw, so it bounds the rate only roughly. Oracle serves no offset past 10,000, so
+        # a scrape reads up to ~20,000 postings from both ends (ADR-0239): at 0.2%, about 40 tech
+        # jobs for 20,000 rows read. Un-park if its tech yield ever justifies that, or once a
+        # per-Board deadline or row budget bounds the cost.
         "oracle:ibxwjb.fa.ocs.oraclecloud.com",
         # The two below are the first parked for what they *serve* rather than what they cost:
         # near-duplicate spam, holding a top-5 priority slot each. They are the same defect from
