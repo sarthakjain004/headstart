@@ -69,21 +69,24 @@ from typing import NamedTuple
 from run_logs import Run, common_args, runs_from, skip_if_stood_down
 
 RETRIES = re.compile(r"\[scrape_run\] retries: ([^(]+)\(total (\d+)\)")
-# `http._retry_reason` emits these five for the statuses anyone currently retries, with `network`
+# `http._retry_reason` emits the first five for the statuses anyone currently retries, with `network`
 # as its fallback for a transport failure. It is no longer strictly closed: a caller that extends
 # its own `retry_on` past `http.TRANSIENT` gets an `http-{status}` line, which shows up in the NB
 # below rather than being folded into one of these. (A `400-throttle` column lived here until
 # ADR-0103: workday used to retry a 400 as a throttle, until the 400 turned out to be a stale
 # session cookie the scraper now clears in-pass rather than retrying — see its `cookie-reset
 # (recovered)` detail-loss line, not a retry class.)
+# `http-302` is the one such class named as a column, because it is deliberate: Zoho retries its unfollowed
+# 302 to /html/portal.html, the .com data centre's per-IP throttle (ADR-0226), and it appeared in
+# every run of 36200233818-36218633315.
 # Naming them here rather than deriving columns from the rows is what lets this table print
 # its header up front and stream each shard as it lands, per the repo's streaming rule.
-CLASSES = ("network", "429-ratelimit", "5xx", "403-wall", "405-wall")
+CLASSES = ("network", "429-ratelimit", "5xx", "403-wall", "405-wall", "http-302")
 DEGRADED = "degrading to direct"
 ROTATED = re.compile(r"spare egress: rotated to a fresh egress IP")
 WALLED = re.compile(r"spare egress: (\S+) walled the current IP")
 SPENT = re.compile(
-    r"\[spare_egress\] (\w+): origin returned (\d+) — spending this shard"
+    r"\[spare_egress\] (\S+): origin returned (\d+) — spending this shard"
 )
 
 # Above DIRECT_RATIO a shard's retries are dominated by rate-limiting rather than proxy

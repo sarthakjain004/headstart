@@ -249,6 +249,16 @@ class DetailRequest:
     options: Mapping[str, Any] = field(default_factory=dict)
 
 
+class BoardUnreadable(ValueError):
+    """A Board answered, but not with anything its scraper can read — an outcome the scraper has
+    named (Workday's non-JSON listing, a Taleo shell with no ``portalNo``), not a parse bug.
+
+    ``harvest.scrape_all`` records it in the Board's error map like any failure but, like a
+    transport error, without the traceback and annotation it keeps for the unclassified.
+    A ``ValueError`` so the callers that already catch one still do.
+    """
+
+
 class DetailLost(Exception):
     """One Job's detail is lost, and ``cause`` names what lost it — the label
     :meth:`BaseScraper.report_detail_gaps` prints (ADR-0088's discipline).
@@ -533,7 +543,9 @@ class BaseScraper(ABC):
         # the Board is Unauthoritative whatever this call decides, and saying "stays
         # authoritative" about it would be flatly wrong. Reachable — Oracle's page cap runs
         # before this branch, and SuccessFactors' listing cut-short before its detail pass.
-        if self.truncated is not None:
+        # Nor when nothing is missing: a complete read has no shortfall to tolerate, and phenom,
+        # which routes every Board through here, printed ~70 "0 missing id(s)" lines a run.
+        if self.truncated is not None or read >= expected:
             return
         # INFO, not WARNING: this fires once per tolerated Board per run and a WARNING is an
         # Actions annotation against a hard quota (ADR-0039). Logged at all because the
@@ -853,6 +865,12 @@ class BaseScraper(ABC):
         what stops a future scraper from silently never addressing the salary question at all.
         """
 
+    @property
+    def egress_group(self) -> str:
+        """The origin this Board's spare-egress fallback is metered and walled under: the ATS,
+        unless one ATS serves from origins that wall independently (Zoho's data centres)."""
+        return self.ats
+
     @cached_property
     def board_fetcher(self) -> BoardFetcher:
         """This Board's fetcher: the injected fetcher, bound to the Board's spare-egress opt-in
@@ -861,8 +879,8 @@ class BaseScraper(ABC):
         Routing (``egress_group``/``egress_on``) is empty for every scraper that leaves
         :attr:`egress_fallback_on` unset, so its requests are identical to the ones made before
         the fallback existed — no scraper is routed or walled without opting in. Keyed on
-        :attr:`ats` rather than the Board, because the metering that motivates it is per origin
-        across all of an ATS's tenants. ``egress_board`` rides along unconditionally: it steers
+        :attr:`egress_group` rather than the Board, because the metering that motivates it is per
+        origin across all of an ATS's tenants. ``egress_board`` rides along unconditionally: it steers
         nothing, and exists so the retry log (``http._note_retry``, DEBUG) and the shard report
         can name *which* Board spent a retry or the IP supply.
 
@@ -874,7 +892,7 @@ class BaseScraper(ABC):
         return BoardFetcher(
             self._fetcher,
             board_key=self.board_key(),
-            egress_group=self.ats if self.egress_fallback_on else None,
+            egress_group=self.egress_group if self.egress_fallback_on else None,
             wall_statuses=self.egress_fallback_on,
         )
 
