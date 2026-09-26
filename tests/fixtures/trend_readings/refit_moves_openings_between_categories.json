@@ -35,7 +35,7 @@
    {
     "ts": "2026-09-15T00:00:00+00:00",
     "changed": [
-     "role family assignment changed"
+     "job categories re-sorted"
     ],
     "fields": [
      "family_classifier_version"
@@ -92,6 +92,7 @@
   "total": {
    "name": "__total__",
    "label": "",
+   "whole_company": true,
    "estimated": false,
    "move": {
     "start": 150,
@@ -135,6 +136,7 @@
    {
     "name": "a",
     "label": "a",
+    "whole_company": false,
     "estimated": false,
     "move": {
      "start": 100,
@@ -144,7 +146,7 @@
       {
        "change": "counting@2026-09-15T00:00:00+00:00",
        "kind": "counting",
-       "label": "role family assignment changed",
+       "label": "job categories re-sorted",
        "size": -24
       }
      ],
@@ -178,6 +180,7 @@
    {
     "name": "b",
     "label": "b",
+    "whole_company": false,
     "estimated": false,
     "move": {
      "start": 50,
@@ -187,7 +190,7 @@
       {
        "change": "counting@2026-09-15T00:00:00+00:00",
        "kind": "counting",
-       "label": "role family assignment changed",
+       "label": "job categories re-sorted",
        "size": 24
       }
      ],
@@ -224,6 +227,7 @@
    {
     "name": "greenhouse:acme",
     "label": "Acme",
+    "whole_company": true,
     "estimated": false,
     "move": {
      "start": 150,

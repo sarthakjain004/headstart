@@ -45,8 +45,8 @@
    {
     "ts": "2026-09-15T00:00:00+00:00",
     "changed": [
-     "duplicate removal changed",
-     "role family assignment changed"
+     "duplicate postings detection updated",
+     "job categories re-sorted"
     ],
     "fields": [
      "dedup_version",
@@ -118,6 +118,7 @@
    {
     "name": "eightfold:jobs.nvidia.com",
     "label": "NVIDIA",
+    "whole_company": true,
     "estimated": false,
     "move": {
      "start": 3900,
@@ -133,7 +134,7 @@
       {
        "change": "counting@2026-09-15T00:00:00+00:00",
        "kind": "counting",
-       "label": "duplicate removal changed, role family assignment changed",
+       "label": "duplicate postings detection updated, job categories re-sorted",
        "size": 41
       }
      ],
@@ -168,6 +169,7 @@
    {
     "name": "lever:beta",
     "label": "Beta",
+    "whole_company": true,
     "estimated": false,
     "move": {
      "start": 50,
@@ -208,6 +210,7 @@
    {
     "name": "eightfold:jobs.nvidia.com",
     "label": "NVIDIA",
+    "whole_company": true,
     "estimated": false,
     "move": {
      "start": 3900,
@@ -223,7 +226,7 @@
       {
        "change": "counting@2026-09-15T00:00:00+00:00",
        "kind": "counting",
-       "label": "duplicate removal changed, role family assignment changed",
+       "label": "duplicate postings detection updated, job categories re-sorted",
        "size": 41
       }
      ],
@@ -249,6 +252,7 @@
    {
     "name": "lever:beta",
     "label": "Beta",
+    "whole_company": true,
     "estimated": false,
     "move": {
      "start": 50,
@@ -281,14 +285,14 @@
     "id": "counting@2026-09-15T00:00:00+00:00",
     "kind": "counting",
     "ts": "2026-09-15T00:00:00+00:00",
-    "label": "duplicate removal changed, role family assignment changed",
+    "label": "duplicate postings detection updated, job categories re-sorted",
     "fields": [
      "dedup_version",
      "family_classifier_version"
     ],
     "changed": [
-     "duplicate removal changed",
-     "role family assignment changed"
+     "duplicate postings detection updated",
+     "job categories re-sorted"
     ],
     "company": null,
     "boards": null,

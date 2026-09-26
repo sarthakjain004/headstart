@@ -487,7 +487,11 @@ class SuccessFactorsScraper(BaseScraper):
         # A 403, 429 or 5xx is the fetch failing, not the Board emptying: run 36218633315 read
         # 19 Boards as clean empties off `sitemap HTTP 429, search HTTP 429`, sending ~260 live
         # ids into ADR-0083's grace period. So raise, and the Board stays unauthoritative
-        # (ADR-0238).
+        # (ADR-0053). 403 is a block, not an answer: jobs.witron.com 403s both surfaces in CI
+        # every run and served 261 postings to a residential client on 2026-09-26.
+        # Not caught: a `/search/` that redirects to a non-RMK page answering 200 still reads
+        # as empty — jobs.sap.com (moved to a new /en/jobs/ site) alongside Boards that left
+        # for another ATS or onto www.sap.com, which should evict. Nothing here tells them apart.
         # A gone tenant still cannot earn an ADR-0058 gone-verdict here; a root-of-host probe was
         # rejected on measurement (9 of 12 dead hosts answer `GET /` with 200).
         # A 200 that is neither urlset nor feed (a sitemap index, a corporate page) lists nothing
