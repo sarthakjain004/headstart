@@ -83,6 +83,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 import urllib.parse
 from collections import Counter
 from datetime import datetime
@@ -105,6 +106,12 @@ _OFFSET_CEILING = 10_000
 #: `mark_truncated_unless_negligible` is what actually protects a run if it recurs. Left at 16,
 #: the same value icims/zwayam settled on, rather than guessing at a lower one on one incident.
 _PAGE_WORKERS = 16
+#: How long the CAPTCHA'd listing pages wait before their one re-fetch. Measured live: a retry
+#: right away recovered little, while one ~2–3 minutes later recovered 8 of 8. The wall lost
+#: 0–72 of 266 pages a run and truncated the Board on 4 of runs 36200233818..36218633315.
+#: 120 is the low end of that window: the least wait that still recovered every page measured.
+_CAPTCHA_WAIT_SECONDS = 120
+_CAPTCHA = "CAPTCHA HTML on a 200"
 
 _WS = re.compile(r"\s+")
 
@@ -188,7 +195,7 @@ class AmazonScraper(BaseScraper):
         except http.RequestsError as exc:
             self._page_losses[classify_exception(exc)] += 1
             return []
-        return self._jobs_of(body)
+        return self._jobs_of(body, task)
 
     async def _page_async(self, session: Any, task: tuple[str, int]) -> list[dict]:
         category, offset = task
@@ -199,20 +206,32 @@ class AmazonScraper(BaseScraper):
         except http.RequestsError as exc:
             self._page_losses[classify_exception(exc)] += 1
             return []
-        return self._jobs_of(body)
+        return self._jobs_of(body, task)
 
-    def _jobs_of(self, body: str) -> list[dict]:
+    def _jobs_of(self, body: str, task: tuple[str, int]) -> list[dict]:
         """One listing page's postings, or [] with the page's loss tallied for the truncation
-        reason — the CAPTCHA interstitial answers 200 with HTML (module docstring)."""
+        reason — the CAPTCHA interstitial answers 200 with HTML (module docstring), and its
+        task is kept for the one delayed re-fetch in :meth:`fetch_raw`."""
         try:
             data = json.loads(body)
         except json.JSONDecodeError:
-            self._page_losses["CAPTCHA HTML on a 200"] += 1
+            self._page_losses[_CAPTCHA] += 1
+            self._captcha_tasks.append(task)
             return []
         if data.get("error"):
             self._page_losses["error body"] += 1
             return []
         return data.get("jobs") or []
+
+    def _fetch_pages(self, tasks: list[tuple[str, int]]) -> list[list[dict] | None]:
+        """Each task's page, over whichever fan-out this run uses."""
+        if self.async_fanout_enabled():
+            return self.fan_out_async(
+                tasks, self._page_async, concurrency=_PAGE_WORKERS
+            )
+        return self.fan_out(
+            tasks, self._page, workers=_PAGE_WORKERS, what=self.board_key()
+        )
 
     def fetch_raw(self) -> Any:
         categories = self._categories()
@@ -232,14 +251,23 @@ class AmazonScraper(BaseScraper):
         # Why each lost listing page was lost, for the truncation reason below. A page that
         # raised anything else comes back None and is counted `unlabelled`.
         self._page_losses: Counter[str] = Counter()
-        if self.async_fanout_enabled():
-            pages = self.fan_out_async(
-                tasks, self._page_async, concurrency=_PAGE_WORKERS
+        self._captcha_tasks: list[tuple[str, int]] = []
+        pages = self._fetch_pages(tasks)
+        if self._captcha_tasks:
+            # One delayed pass over the walled pages; whatever is still walled stays lost, and
+            # the tally is re-counted from this pass.
+            retry, self._captcha_tasks = self._captcha_tasks, []
+            self._page_losses -= Counter({_CAPTCHA: len(retry)})
+            self._log.info(
+                f"{self.board_key()}: {len(retry)} of {len(tasks)} listing pages came back "
+                f"as CAPTCHA HTML — re-fetching them once in {_CAPTCHA_WAIT_SECONDS}s"
             )
-        else:
-            pages = self.fan_out(
-                tasks, self._page, workers=_PAGE_WORKERS, what=self.board_key()
-            )
+            # Blocks this Board's worker, and only this Board's: the one Amazon Board is read
+            # in a shard's first minutes (run 36218633315 finished it ~2 minutes in), so the
+            # wait fits the shard's budget with the rest of its Boards still running beside it.
+            time.sleep(_CAPTCHA_WAIT_SECONDS)
+            pages += self._fetch_pages(retry)
+            self._captcha_tasks = []  # still-walled pages are tallied; nothing re-fetches them
         # Deduped defensively by native id, not because a job is known to carry more than one
         # business_category (measured: it doesn't — a full walk of one category matched its own
         # facet count exactly, with no drift) but because every other subdivided scraper here

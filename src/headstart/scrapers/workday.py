@@ -106,10 +106,19 @@ def _listing_class(response: Any, body: bytes) -> tuple[str, bool]:
         "<title>just a moment" in text and "</html" in text
     ):
         return "challenge", True
-    if "<title>maintenance" in text or (
-        "temporarily unavailable" in text and "<html" in text
+    # Since 2026-09 a maintenance window 303s to community.workday.com/maintenance-page, whose
+    # title is "Workday is currently unavailable." (12 raises across runs 36200233818..
+    # 36218633315, all read as `unexpected-body`).
+    if (
+        "<title>maintenance" in text
+        or "<title>workday is currently unavailable" in text
+        or ("temporarily unavailable" in text and "<html" in text)
     ):
         return "maintenance", True
+    # Workday's own XML server error at HTTP 200 — a 5xx in all but status (28 raises across
+    # the same runs, ms, lego and alcon among them).
+    if "<wml:application_error" in text and "internal server error" in text:
+        return "server-error", True
     if "graphicscontainer" in text and "wdaylogo" in text:
         return "workday-error-page", True
     return "unexpected-body", False

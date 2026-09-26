@@ -64,6 +64,11 @@ _MAX_PAGES = 100
 #: returns none; offset 9900 limit 100 returns 100, limit 101 returns none — and confirmed on
 #: `eluq.fa.us2`. A Board above it cannot be read whole by offset paging at all.
 _OFFSET_CEILING = 10_000
+#: The second order a Board over the ceiling is walked in (ADR-0239). The default order is oldest
+#: first — on `eluq.fa.us2` (11,436 stated, 2026-09-26) it reads the same 9,975 ids as
+#: `POSTING_DATES_ASC` — so newest first reaches the other end of the Board: the two walks read
+#: 9,975 and 10,000 ids, 11,411 together, 99.8% of the stated total.
+_NEWEST_FIRST = "POSTING_DATES_DESC"
 
 #: Concurrent detail fetches. Measured clean at 32 across five regional pods (us2, ocs, em3, em2,
 #: us6) — 454 calls, 46-65 req/s, zero non-200s, and no rate limit found anywhere in 6,351
@@ -115,6 +120,20 @@ def is_pod_host(slug: str) -> bool:
     (``www.coherent.com``) — names no Board this scraper can read, and lands in no ledger (#627).
     """
     return slug.lower().endswith(".oraclecloud.com")
+
+
+def _description_html(detail: dict) -> str | None:
+    """The posting's description off its detail payload: ``ExternalDescriptionStr``, else the
+    responsibilities and qualifications some tenants write instead. Those tenants leave the
+    description empty on every posting — 12 of 12 sampled on `fa-exty`, 11 of 12 on `fa-exvn`,
+    6 of 6 on `eibd.fa.em2` (2026-09-26) — so reading it alone lost each one's description."""
+    parts = [
+        detail.get(key)
+        for key in ("ExternalResponsibilitiesStr", "ExternalQualificationsStr")
+    ]
+    return (
+        detail.get("ExternalDescriptionStr") or "\n".join(p for p in parts if p) or None
+    )
 
 
 def _remote(listed: dict, detail: dict, location: str | None) -> bool | None:
@@ -172,6 +191,7 @@ class OracleScraper(BaseScraper):
         self._offset = (
             0  # advanced by `fetch_raw`; `url()` renders whatever page it is on
         )
+        self._sort_by: str | None = None  # `url()`'s order; None is the API's default
 
     @staticmethod
     def slug_from(tenant: str, url: str) -> str:
@@ -225,6 +245,7 @@ class OracleScraper(BaseScraper):
             f"https://{self.slug}/hcmRestApi/resources/latest/"
             f"recruitingCEJobRequisitions?onlyData=true&expand=requisitionList"
             f"&finder=findReqs;limit={_PAGE_SIZE},offset={self._offset}"
+            + (f",sortBy={self._sort_by}" if self._sort_by else "")
         )
 
     def _listing(self) -> list[dict]:
@@ -250,7 +271,55 @@ class OracleScraper(BaseScraper):
         that: across 55 multi-page Boards no Board repeated an id, and 46 of 55 landed exactly on
         their total. `hasMore` remains useless — it came back ``false`` on a 248-posting Board
         whose first page held 200.
+
+        **A Board over the ceiling is walked a second time, newest first** (ADR-0239). The default
+        order is oldest first, so the second walk reads the other end of the Board, and the union
+        of the two is measured against the stated total under ADR-0121's tolerance rather than
+        truncated outright: only what sits between the two ends is unreachable.
         """
+        reqs, total, itemless_page = self._walk()
+        # The walk read past the ceiling only if its last page began beyond the last offset the
+        # API serves (`offset + limit <= 10,000`). A Board that ended on an empty page *at* 9,800
+        # never reached it: `hcbt.fa.em2` (9,621 stated) read 9,611 and was truncated on every
+        # run by a `>=` here, because `_offset` had already advanced past that empty page.
+        if total and len(reqs) < total and self._offset > _OFFSET_CEILING:
+            self._sort_by = _NEWEST_FIRST
+            newest, _, _ = self._walk()
+            self._sort_by = None
+            seen = {requisition.get("Id") for requisition in reqs}
+            reqs += [r for r in newest if r.get("Id") not in seen]
+            self.mark_truncated_unless_negligible(
+                len(reqs),
+                total,
+                f"read {len(reqs)} of {total} requisitions oldest and newest first — the API "
+                f"serves no offset past {_OFFSET_CEILING:,}, so the rest is unreachable, "
+                "not absent",
+            )
+        elif total and len(reqs) < total and not itemless_page:
+            # Below the ceiling the walk stopped because a page came back empty, and an empty
+            # page is the end of the Board — so this list is whole and a shortfall against
+            # `TotalJobsCount` says nothing about it (ADR-0169). The counter is not a count of
+            # servable requisitions: measured live 2026-09-21 across 17 Boards, an exhaustive
+            # sweep of every offset window up to the stated total found **zero** ids the
+            # ordinary walk had missed. The claim rests on the **16** stating under 10,000,
+            # where the sweep can look past where the walk stopped; the 17th sits at the
+            # ceiling, where it stops at the same wall, so it proves nothing and is excluded.
+            # Nine of the 16 were being marked truncated here, at ratios from 27-of-600 to
+            # 98-of-123. Truncating on that gap parked complete reads in ADR-0053's exclusion
+            # scope, which has no drain, so their closed postings were served indefinitely.
+            #
+            # Logged rather than silent: the inflation is worth watching, and this is the only
+            # place that can see it.
+            self._log.info(
+                f"{self.board_key()}: served {len(reqs)} of a stated {total} requisitions — "
+                f"the Board ended on an empty page at offset {self._offset - _PAGE_SIZE}, "
+                "so the counter over-states it (ADR-0169)"
+            )
+        return reqs
+
+    def _walk(self) -> tuple[list[dict], int, bool]:
+        """One offset walk in `url()`'s current order: the requisitions read, the stated total
+        (0 when none was), and whether a page ended the walk with no `items` at all."""
         reqs: list[dict] = []
         total = 0
         self._offset = 0
@@ -290,39 +359,7 @@ class OracleScraper(BaseScraper):
                 f"hit the {_MAX_PAGES}-page cap at {len(reqs)} of {total or 'unknown'} "
                 "requisitions — the rest unread"
             )
-        if total and len(reqs) < total:
-            if self._offset >= _OFFSET_CEILING:
-                # The one genuine incompleteness this walk can suffer below `_MAX_PAGES`: the API
-                # serves no offset past 10,000, so the remainder is unreachable on every run
-                # rather than a transient miss, and no share of it is negligible however close to
-                # `total` the read landed. A Board stating 10,050 and reading 10,000 is 99.5% and
-                # still must not be declared authoritative — the class ADR-0121 keeps outside the
-                # tolerance. Measured live on `eubt.fa.us6`: 10,000 read of a stated 78,431.
-                self.mark_truncated(
-                    f"read {len(reqs)} of {total} requisitions — the API serves no offset past "
-                    f"{_OFFSET_CEILING:,}, so the rest is unreachable, not absent"
-                )
-            elif not itemless_page:
-                # Below the ceiling the walk stopped because a page came back empty, and an empty
-                # page is the end of the Board — so this list is whole and a shortfall against
-                # `TotalJobsCount` says nothing about it (ADR-0169). The counter is not a count of
-                # servable requisitions: measured live 2026-09-21 across 17 Boards, an exhaustive
-                # sweep of every offset window up to the stated total found **zero** ids the
-                # ordinary walk had missed. The claim rests on the **16** stating under 10,000,
-                # where the sweep can look past where the walk stopped; the 17th sits at the
-                # ceiling, where it stops at the same wall, so it proves nothing and is excluded.
-                # Nine of the 16 were being marked truncated here, at ratios from 27-of-600 to
-                # 98-of-123. Truncating on that gap parked complete reads in ADR-0053's exclusion
-                # scope, which has no drain, so their closed postings were served indefinitely.
-                #
-                # Logged rather than silent: the inflation is worth watching, and this is the only
-                # place that can see it.
-                self._log.info(
-                    f"{self.board_key()}: served {len(reqs)} of a stated {total} requisitions — "
-                    f"the Board ended on an empty page at offset {self._offset - _PAGE_SIZE}, "
-                    "so the counter over-states it (ADR-0169)"
-                )
-        return reqs
+        return reqs, total, itemless_page
 
     def fetch_raw(self) -> Any:
         # Every listed posting gets its detail payload, with no ADR-0048 `needs_detail` skip. That
@@ -366,11 +403,12 @@ class OracleScraper(BaseScraper):
         items = json.loads(response.text).get("items") or []
         if not items:
             raise DetailLost("no items on a 200")
-        if not items[0].get("ExternalDescriptionStr"):
+        if not _description_html(items[0]):
             # Kept for the employment type, department and remote the payload still states;
             # counted as a gap for the description (ADR-0201).
             return DetailWithoutDescription(
-                items[0], "200 without ExternalDescriptionStr"
+                items[0],
+                "200 without ExternalDescriptionStr or responsibilities/qualifications",
             )
         return items[0]
 
@@ -431,7 +469,7 @@ class OracleScraper(BaseScraper):
                     # The detail body, not the listing's `ShortDescriptionStr` — that field is
                     # capped at 1,000 characters and present on well under half the rows.
                     description=html_to_text(
-                        d.get("ExternalDescriptionStr") or r.get("ShortDescriptionStr")
+                        _description_html(d) or r.get("ShortDescriptionStr")
                     ),
                     # `JobSchedule` (80.6% on detail) is the populated one; `JobType` is 0.7%.
                     employment_type=(

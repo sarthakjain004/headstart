@@ -19,7 +19,9 @@ from __future__ import annotations
 import json
 import math
 import re
+from collections.abc import Mapping
 from datetime import UTC, datetime
+from types import MappingProxyType
 from typing import Any
 from urllib.parse import unquote, urlencode, urlsplit, urlunsplit
 
@@ -54,6 +56,14 @@ _SECTION = re.compile(r"^/careersection/([^/?#]+)/?")
 _DETAIL_WORKERS = (
     16  # clean at 16-way; 32 had one 30-second timeout (2026-09-13 ladder)
 )
+#: The page Taleo serves, at 200, for a listed requisition it has closed. On
+#: `scripps.taleo.net/careersection/2m` 34 of 40 sampled detail pages were this and carried no
+#: requisition fields, while the other 6 parsed and none of 8 on `aa010` carried it (2026-09-26).
+_CLOSED_MARKER = "The job is no longer available."
+#: What :meth:`TaleoEnterpriseScraper.read_detail` answers for that page: a closure, for
+#: ``fetch_raw`` to drop — not a Job and not a lost detail. Its own immutable object, compared by
+#: identity, as successfactors' is; empty, so a caller reading it as fields sees none.
+_CLOSED_POSTING: Mapping[str, str | None] = MappingProxyType({})
 
 
 def _canonical(url: str) -> str:
@@ -442,6 +452,8 @@ class TaleoEnterpriseScraper(BaseScraper):
     ) -> dict[str, str | None] | DetailWithoutDescription:
         detail = _parse_detail_page(response.text)
         if detail is None:
+            if _CLOSED_MARKER in response.text:
+                return _CLOSED_POSTING
             raise DetailLost("no labelled requisition fields on a 200")
         if not detail.get("description"):
             # Kept, not lost: its location, department and salary are real and `parse` prefers
@@ -466,7 +478,16 @@ class TaleoEnterpriseScraper(BaseScraper):
         details = self.run_detail_pass(
             listed, key_of=lambda item: item["id"], what="detail pages"
         )
-        return [(item, details.get(item["id"])) for item in listed]
+        open_listed = [
+            item for item in listed if details.get(item["id"]) is not _CLOSED_POSTING
+        ]
+        if len(open_listed) < len(listed):
+            # ~265 of 303 a run on scripps' 2m section were served as Jobs before this.
+            self._log.info(
+                f"{self.board_key()}: {len(listed) - len(open_listed)} of {len(listed)} "
+                "job pages say the job is no longer available — dropped as closed"
+            )
+        return [(item, details.get(item["id"])) for item in open_listed]
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
         jobs: list[Job] = []

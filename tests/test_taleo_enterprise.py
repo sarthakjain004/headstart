@@ -465,6 +465,28 @@ def test_each_detail_page_is_read_and_every_loss_is_named(caplog):
     assert "unlabelled" not in caplog.text
 
 
+def test_a_closed_requisition_page_drops_its_job_rather_than_serving_it(caplog):
+    """`scripps.taleo.net/careersection/2m` still lists requisitions whose page says "The job
+    is no longer available." (34 of 40 sampled 2026-09-26). That is a closure: the Job is not
+    served, and it is not counted as a lost detail either."""
+    scraper, _fetcher = _served_board(
+        {
+            "1": _requisition_page({"reqlistitem.jobfield": "Research"}),
+            "2": "<html><body><span>The job is no longer available.</span></body></html>",
+            "3": "<html>maintenance</html>",
+            "4": _requisition_page({"reqlistitem.jobfield": "Research"}),
+        }
+    )
+
+    with caplog.at_level("INFO"):
+        jobs = scraper.parse(scraper.fetch_raw(), "2026-01-01T00:00:00+00:00")
+
+    assert [job.id.rsplit(":", 1)[1] for job in jobs] == ["1", "3", "4"]
+    assert "no labelled requisition fields on a 200" in scraper.detail_losses
+    assert scraper.detail_losses["no labelled requisition fields on a 200"] == 1
+    assert "1 of 4 job pages say the job is no longer available" in caplog.text
+
+
 def test_every_detail_request_rides_the_thread_path(monkeypatch):
     """`async_fanout = False` on a measurement (ADR-0167): the kill switch aside, nothing may
     put this Scraper's Detail pass back on the multiplexed path."""

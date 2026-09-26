@@ -716,6 +716,7 @@ class ZwayamScraper(BaseScraper):
             ),
             skip_held=True,
         )
+        bodyless = 0
         for row in linked:
             text = texts.get(_native_id(row))
             if text:
@@ -724,6 +725,7 @@ class ZwayamScraper(BaseScraper):
                 # The detail answered with no body: this posting has no fuller text than the
                 # listing's, so the listing's is final rather than provisional.
                 row[_TEXT] = _listing_description(row)
+                bodyless += 1
             # A *failed* detail (absent) records nothing, so the Job ships with no description
             # and `update_descriptions` stores none — leaving `needs_detail` true so the next
             # run retries it. Falling back to the listing text here would be a one-way door:
@@ -731,6 +733,14 @@ class ZwayamScraper(BaseScraper):
             # skip-list, and a skip-listed Job never fetches a detail again — so one
             # transient failure would freeze text this module measured as possibly
             # truncated, permanently and invisibly.
+        if bodyless:
+            # Not losses, so the gap line never counted them — yet each is fetched again every
+            # run when the listing text is empty too, since no description is then stored to
+            # skip it by.
+            _log.info(
+                f"{self.board_key()}: {bodyless} of {len(texts)} details that arrived had no "
+                "longDescription — the listing text is kept"
+            )
         return {"rows": rows, "link_base": self._link_base() if rows else ""}
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:

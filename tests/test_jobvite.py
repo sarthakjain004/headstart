@@ -17,6 +17,7 @@ from types import SimpleNamespace
 import pytest
 from fake_fetcher import FakeFetcher, FakeResponse
 
+from headstart.ingest.board_failures import is_gone
 from headstart.network import http
 from headstart.scrapers.jobvite import JobviteScraper, total_of
 from headstart.scrapers.registry import get_scraper
@@ -310,6 +311,9 @@ def test_a_redirecting_tenant_raises_instead_of_reading_as_empty(monkeypatch, lo
         JobviteScraper("acme").fetch_raw()
     assert "302" in str(excinfo.value)
     assert location.split("?")[0] in str(excinfo.value)
+    # Only Jobvite's own "no such tenant" is a gone-strike (ADR-0162); a login wall or a
+    # moved career site is not proof the Board is gone.
+    assert is_gone(str(excinfo.value)) == ("invalid=1" in location)
 
 
 def test_the_walk_asks_for_no_redirects(monkeypatch):

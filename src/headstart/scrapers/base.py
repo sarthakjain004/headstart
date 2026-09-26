@@ -285,6 +285,13 @@ class DetailBatchWalled(Exception):
     """
 
 
+def gone_board_error(detail: str) -> http.RequestsError:
+    """A Board failure in the shape `board_failures.is_gone` matches, so the Board earns an
+    ADR-0162 gone-strike. ``HTTP Error 410`` is that ledger's marker for "this Board no longer
+    exists", not a claim about the status the host answered — ``detail`` says what it did."""
+    return http.RequestsError(f"HTTP Error 410 (gone): {detail}")
+
+
 @dataclass(frozen=True)
 class DetailWithoutDescription:
     """What :meth:`BaseScraper.read_detail` returns for a detail that arrived without its
@@ -522,10 +529,12 @@ class BaseScraper(ABC):
 
         Two shapes must **not** come through here, because no share makes them tolerable:
 
-        * **A hard cap.** Oracle's API serves no offset past 10,000 and a Workday query can cap at
-          2,000 with no facet left to split. The unread remainder is genuinely unreachable, not
-          noise, and it is unreachable identically on every run — so it calls
-          :meth:`mark_truncated` directly however close to complete the read looks.
+        * **A hard cap.** A Workday query can cap at 2,000 with no facet left to split. The unread
+          remainder is genuinely unreachable, not noise, and it is unreachable identically on
+          every run — so it calls :meth:`mark_truncated` directly however close to complete the
+          read looks. Oracle's 10,000-offset ceiling was this class until ADR-0239: a Board past
+          it is now read from both ends, and the union comes through here, since only the
+          middle between the two ends is out of reach.
         * **A shortfall with no total to measure against.** A raised scrape, or a surface that
           could not say how much it was missing, has no ``expected`` — the ratio would be
           fabricated. Those call :meth:`mark_truncated` too.
