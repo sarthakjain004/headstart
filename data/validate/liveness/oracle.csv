@@ -457,6 +457,7 @@ oracle,e0.fa.us2.oraclecloud.com,https://e0.fa.us2.oraclecloud.com,unknown,,2026
 oracle,eaag.fa.us2.oraclecloud.com,https://eaag.fa.us2.oraclecloud.com,live,0,2026-09-09
 oracle,eaal.fa.em2.oraclecloud.com,https://eaal.fa.em2.oraclecloud.com,live,0,2026-09-09
 oracle,eaan.fa.us2.oraclecloud.com,https://eaan.fa.us2.oraclecloud.com,live,0,2026-09-07
+oracle,eaau.fa.em2.oraclecloud.com,https://eaau.fa.em2.oraclecloud.com,live,1,2026-09-26
 oracle,eabp.fa.em2.oraclecloud.com,https://eabp.fa.em2.oraclecloud.com,unknown,,2026-09-09
 oracle,eabw.fa.us2.oraclecloud.com,https://eabw.fa.us2.oraclecloud.com,live,99,2026-09-07
 oracle,eabz.fa.em2.oraclecloud.com,https://eabz.fa.em2.oraclecloud.com,live,0,2026-09-09
@@ -580,6 +581,7 @@ oracle,eczf-test.fa.us2.oraclecloud.com,https://eczf-test.fa.us2.oraclecloud.com
 oracle,eczy-dev3.fa.us2.oraclecloud.com,https://eczy-dev3.fa.us2.oraclecloud.com,dead,,2026-09-23
 oracle,eczy-test.fa.us2.oraclecloud.com,https://eczy-test.fa.us2.oraclecloud.com,dead,,2026-09-23
 oracle,eczy.fa.us2.oraclecloud.com,https://eczy.fa.us2.oraclecloud.com,live,2478,2026-09-07
+oracle,eday.fa.us2.oraclecloud.com,https://eday.fa.us2.oraclecloud.com,live,310,2026-09-26
 oracle,edbz.fa.us2.oraclecloud.com,https://edbz.fa.us2.oraclecloud.com,live,655,2026-09-07
 oracle,edca-test.fa.us2.oraclecloud.com,https://edca-test.fa.us2.oraclecloud.com,dead,,2026-09-23
 oracle,edcm.fa.em2.oraclecloud.com,https://edcm.fa.em2.oraclecloud.com,unknown,,2026-09-09
@@ -662,6 +664,7 @@ oracle,edzt.fa.em4.oraclecloud.com,https://edzt.fa.em4.oraclecloud.com,live,3,20
 oracle,edzz.fa.em3.oraclecloud.com,https://edzz.fa.em3.oraclecloud.com,live,64,2026-09-07
 oracle,ee.fa.us2.oraclecloud.com,https://ee.fa.us2.oraclecloud.com,unknown,,2026-09-09
 oracle,eeab.fa.us2.oraclecloud.com,https://eeab.fa.us2.oraclecloud.com,live,4,2026-09-07
+oracle,eebv.fa.us2.oraclecloud.com,https://eebv.fa.us2.oraclecloud.com,live,15,2026-09-26
 oracle,eedm.fa.em3.oraclecloud.com,https://eedm.fa.em3.oraclecloud.com,live,0,2026-09-09
 oracle,eedu-dev28.fa.em3.oraclecloud.com,https://eedu-dev28.fa.em3.oraclecloud.com,unknown,,2026-09-09
 oracle,eedu.fa.em3.oraclecloud.com,https://eedu.fa.em3.oraclecloud.com,live,558,2026-09-07
@@ -722,6 +725,7 @@ oracle,effy.fa.us6.oraclecloud.com,https://effy.fa.us6.oraclecloud.com,live,10,2
 oracle,efgz-dev2.fa.us6.oraclecloud.com,https://efgz-dev2.fa.us6.oraclecloud.com,dead,,2026-09-23
 oracle,efgz.fa.us6.oraclecloud.com,https://efgz.fa.us6.oraclecloud.com,dead,,2026-09-09
 oracle,efhc.fa.ca2.oraclecloud.com,https://efhc.fa.ca2.oraclecloud.com,live,1,2026-09-07
+oracle,efhd.fa.us6.oraclecloud.com,https://efhd.fa.us6.oraclecloud.com,live,1192,2026-09-26
 oracle,efhi.fa.em3.oraclecloud.com,https://efhi.fa.em3.oraclecloud.com,live,565,2026-09-07
 oracle,efhn.fa.us6.oraclecloud.com,https://efhn.fa.us6.oraclecloud.com,live,23,2026-09-09
 oracle,efip-dev3.fa.us6.oraclecloud.com,https://efip-dev3.fa.us6.oraclecloud.com,unknown,,2026-09-09
@@ -836,6 +840,7 @@ oracle,egrr.fa.us2.oraclecloud.com,https://egrr.fa.us2.oraclecloud.com,live,0,20
 oracle,egsd.fa.us2.oraclecloud.com,https://egsd.fa.us2.oraclecloud.com,live,11,2026-09-07
 oracle,egsi-test.fa.ap1.oraclecloud.com,https://egsi-test.fa.ap1.oraclecloud.com,unknown,,2026-09-09
 oracle,egst.fa.em3.oraclecloud.com,https://egst.fa.em3.oraclecloud.com,live,19,2026-09-07
+oracle,egte.fa.us2.oraclecloud.com,https://egte.fa.us2.oraclecloud.com,live,97,2026-09-26
 oracle,egtq.fa.us2.oraclecloud.com,https://egtq.fa.us2.oraclecloud.com,live,1,2026-09-09
 oracle,egua.fa.us2.oraclecloud.com,https://egua.fa.us2.oraclecloud.com,live,604,2026-09-07
 oracle,egud-dev4.fa.us2.oraclecloud.com,https://egud-dev4.fa.us2.oraclecloud.com,dead,,2026-09-23
@@ -908,6 +913,7 @@ oracle,ehkv.fa.us2.oraclecloud.com,https://ehkv.fa.us2.oraclecloud.com,unknown,,
 oracle,ehlc.fa.us6.oraclecloud.com,https://ehlc.fa.us6.oraclecloud.com,unknown,,2026-09-09
 oracle,ehle.fa.em2.oraclecloud.com,https://ehle.fa.em2.oraclecloud.com,live,26,2026-09-07
 oracle,ehlj.fa.us6.oraclecloud.com,https://ehlj.fa.us6.oraclecloud.com,live,17,2026-09-09
+oracle,ehnb.fa.us6.oraclecloud.com,https://ehnb.fa.us6.oraclecloud.com,live,22,2026-09-26
 oracle,ehnn.fa.us2.oraclecloud.com,https://ehnn.fa.us2.oraclecloud.com,live,110,2026-09-07
 oracle,ehnx.fa.us6.oraclecloud.com,https://ehnx.fa.us6.oraclecloud.com,live,0,2026-09-07
 oracle,ehof.fa.us2.oraclecloud.com,https://ehof.fa.us2.oraclecloud.com,live,0,2026-09-09
@@ -1039,6 +1045,7 @@ oracle,ejbz.fa.us6.oraclecloud.com,https://ejbz.fa.us6.oraclecloud.com,live,0,20
 oracle,ejcu.fa.us6.oraclecloud.com,https://ejcu.fa.us6.oraclecloud.com,live,68,2026-09-07
 oracle,ejdf.fa.us6.oraclecloud.com,https://ejdf.fa.us6.oraclecloud.com,live,81,2026-09-09
 oracle,ejdk.fa.em2.oraclecloud.com,https://ejdk.fa.em2.oraclecloud.com,live,0,2026-09-09
+oracle,ejds.fa.em2.oraclecloud.com,https://ejds.fa.em2.oraclecloud.com,live,1,2026-09-26
 oracle,ejdt.fa.ap1.oraclecloud.com,https://ejdt.fa.ap1.oraclecloud.com,live,0,2026-09-09
 oracle,ejdv-test.fa.em2.oraclecloud.com,https://ejdv-test.fa.em2.oraclecloud.com,dead,,2026-09-23
 oracle,ejdv.fa.em2.oraclecloud.com,https://ejdv.fa.em2.oraclecloud.com,live,0,2026-09-09
@@ -1105,6 +1112,7 @@ oracle,ejql.fa.us6.oraclecloud.com,https://ejql.fa.us6.oraclecloud.com,live,2184
 oracle,ejqy.fa.us6.oraclecloud.com,https://ejqy.fa.us6.oraclecloud.com,live,51,2026-09-07
 oracle,ejrd.fa.us6.oraclecloud.com,https://ejrd.fa.us6.oraclecloud.com,live,3,2026-09-09
 oracle,ejrf.fa.ap1.oraclecloud.com,https://ejrf.fa.ap1.oraclecloud.com,unknown,,2026-09-09
+oracle,ejrk.fa.em2.oraclecloud.com,https://ejrk.fa.em2.oraclecloud.com,live,3,2026-09-26
 oracle,ejrz-dev1.fa.us2.oraclecloud.com,https://ejrz-dev1.fa.us2.oraclecloud.com,dead,,2026-09-23
 oracle,ejrz.fa.us2.oraclecloud.com,https://ejrz.fa.us2.oraclecloud.com,live,1061,2026-09-07
 oracle,ejsk.fa.us6.oraclecloud.com,https://ejsk.fa.us6.oraclecloud.com,unknown,,2026-09-09
@@ -1168,6 +1176,7 @@ oracle,ekgs-dev6.fa.us2.oraclecloud.com,https://ekgs-dev6.fa.us2.oraclecloud.com
 oracle,ekgs-test.fa.us2.oraclecloud.com,https://ekgs-test.fa.us2.oraclecloud.com,dead,,2026-09-23
 oracle,ekgs.fa.us2.oraclecloud.com,https://ekgs.fa.us2.oraclecloud.com,live,0,2026-09-09
 oracle,ekgv.fa.ap1.oraclecloud.com,https://ekgv.fa.ap1.oraclecloud.com,unknown,,2026-09-09
+oracle,ekgz.fa.us6.oraclecloud.com,https://ekgz.fa.us6.oraclecloud.com,live,317,2026-09-26
 oracle,ekha.fa.us6.oraclecloud.com,https://ekha.fa.us6.oraclecloud.com,live,0,2026-09-09
 oracle,ekhf.fa.em2.oraclecloud.com,https://ekhf.fa.em2.oraclecloud.com,live,0,2026-09-09
 oracle,ekhg.fa.ap1.oraclecloud.com,https://ekhg.fa.ap1.oraclecloud.com,unknown,,2026-09-09
@@ -1398,6 +1407,7 @@ oracle,enyy-dev1.fa.us2.oraclecloud.com,https://enyy-dev1.fa.us2.oraclecloud.com
 oracle,enyy.fa.us2.oraclecloud.com,https://enyy.fa.us2.oraclecloud.com,live,1,2026-09-07
 oracle,enzj.fa.em3.oraclecloud.com,https://enzj.fa.em3.oraclecloud.com,live,25,2026-09-07
 oracle,eoa.fa.us1.oraclecloud.com,https://eoa.fa.us1.oraclecloud.com,dead,,2026-09-09
+oracle,eoax.fa.em2.oraclecloud.com,https://eoax.fa.em2.oraclecloud.com,live,34,2026-09-26
 oracle,eoay.fa.em2.oraclecloud.com,https://eoay.fa.em2.oraclecloud.com,live,0,2026-09-07
 oracle,eobd.fa.ap1.oraclecloud.com,https://eobd.fa.ap1.oraclecloud.com,live,30,2026-09-09
 oracle,eobe.fa.em2.oraclecloud.com,https://eobe.fa.em2.oraclecloud.com,live,2,2026-09-07
@@ -1583,6 +1593,7 @@ oracle,fa-eloa-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-eloa-saasfaprod1.fa
 oracle,fa-elob-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-elob-saasfaprod1.fa.ocs.oraclecloud.com,live,0,2026-09-09
 oracle,fa-eloh-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-eloh-saasfaprod1.fa.ocs.oraclecloud.com,dead,,2026-09-09
 oracle,fa-elpm-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-elpm-saasfaprod1.fa.ocs.oraclecloud.com,live,210,2026-09-07
+oracle,fa-elto-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-elto-saasfaprod1.fa.ocs.oraclecloud.com,live,121,2026-09-26
 oracle,fa-elwc-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-elwc-saasfaprod1.fa.ocs.oraclecloud.com,live,59,2026-09-07
 oracle,fa-elwc-test-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-elwc-test-saasfaprod1.fa.ocs.oraclecloud.com,dead,,2026-09-23
 oracle,fa-elxu-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-elxu-saasfaprod1.fa.ocs.oraclecloud.com,live,465,2026-09-07
@@ -1669,6 +1680,7 @@ oracle,fa-epec-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-epec-saasfaprod1.fa
 oracle,fa-epeq-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-epeq-saasfaprod1.fa.ocs.oraclecloud.com,live,1,2026-09-07
 oracle,fa-epje-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-epje-saasfaprod1.fa.ocs.oraclecloud.com,live,1,2026-09-07
 oracle,fa-eply-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-eply-saasfaprod1.fa.ocs.oraclecloud.com,live,0,2026-09-07
+oracle,fa-epma-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-epma-saasfaprod1.fa.ocs.oraclecloud.com,live,1,2026-09-26
 oracle,fa-epmd-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-epmd-saasfaprod1.fa.ocs.oraclecloud.com,live,194,2026-09-07
 oracle,fa-epmn-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-epmn-saasfaprod1.fa.ocs.oraclecloud.com,live,2,2026-09-07
 oracle,fa-epmr-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-epmr-saasfaprod1.fa.ocs.oraclecloud.com,live,156,2026-09-07
@@ -1724,6 +1736,7 @@ oracle,fa-eqie-dev7-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-eqie-dev7-saas
 oracle,fa-eqie-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-eqie-saasfaprod1.fa.ocs.oraclecloud.com,live,49,2026-09-07
 oracle,fa-eqjd-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-eqjd-saasfaprod1.fa.ocs.oraclecloud.com,live,0,2026-09-09
 oracle,fa-eqkk-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-eqkk-saasfaprod1.fa.ocs.oraclecloud.com,live,24,2026-09-09
+oracle,fa-eqkv-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-eqkv-saasfaprod1.fa.ocs.oraclecloud.com,live,6,2026-09-26
 oracle,fa-eqlf-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-eqlf-saasfaprod1.fa.ocs.oraclecloud.com,live,0,2026-09-07
 oracle,fa-eqma-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-eqma-saasfaprod1.fa.ocs.oraclecloud.com,live,0,2026-09-09
 oracle,fa-eqnh-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-eqnh-saasfaprod1.fa.ocs.oraclecloud.com,dead,,2026-09-09
@@ -1762,6 +1775,7 @@ oracle,fa-erbz-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-erbz-saasfaprod1.fa
 oracle,fa-ercf-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-ercf-saasfaprod1.fa.ocs.oraclecloud.com,live,0,2026-09-09
 oracle,fa-ercv-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-ercv-saasfaprod1.fa.ocs.oraclecloud.com,live,0,2026-09-09
 oracle,fa-ercy-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-ercy-saasfaprod1.fa.ocs.oraclecloud.com,live,6,2026-09-07
+oracle,fa-erdv-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-erdv-saasfaprod1.fa.ocs.oraclecloud.com,live,59,2026-09-26
 oracle,fa-ereg-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-ereg-saasfaprod1.fa.ocs.oraclecloud.com,live,0,2026-09-09
 oracle,fa-erfr-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-erfr-saasfaprod1.fa.ocs.oraclecloud.com,unknown,,2026-09-09
 oracle,fa-erhc-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-erhc-saasfaprod1.fa.ocs.oraclecloud.com,live,12,2026-09-23
@@ -1788,6 +1802,7 @@ oracle,fa-ertg-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-ertg-saasfaprod1.fa
 oracle,fa-erwh-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-erwh-saasfaprod1.fa.ocs.oraclecloud.com,unknown,,2026-09-09
 oracle,fa-eryf-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-eryf-saasfaprod1.fa.ocs.oraclecloud.com,live,1,2026-09-07
 oracle,fa-eryk-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-eryk-saasfaprod1.fa.ocs.oraclecloud.com,live,179,2026-09-09
+oracle,fa-eryn-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-eryn-saasfaprod1.fa.ocs.oraclecloud.com,live,4,2026-09-26
 oracle,fa-erzm-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-erzm-saasfaprod1.fa.ocs.oraclecloud.com,live,0,2026-09-09
 oracle,fa-esaq-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-esaq-saasfaprod1.fa.ocs.oraclecloud.com,live,32,2026-09-07
 oracle,fa-esau-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-esau-saasfaprod1.fa.ocs.oraclecloud.com,live,268,2026-09-07
@@ -1853,6 +1868,7 @@ oracle,fa-etfq-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-etfq-saasfaprod1.fa
 oracle,fa-etfq-test-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-etfq-test-saasfaprod1.fa.ocs.oraclecloud.com,dead,,2026-09-23
 oracle,fa-etgu-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-etgu-saasfaprod1.fa.ocs.oraclecloud.com,live,0,2026-09-09
 oracle,fa-etgw-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-etgw-saasfaprod1.fa.ocs.oraclecloud.com,live,185,2026-09-07
+oracle,fa-ethg-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-ethg-saasfaprod1.fa.ocs.oraclecloud.com,live,5,2026-09-26
 oracle,fa-ethm-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-ethm-saasfaprod1.fa.ocs.oraclecloud.com,live,85,2026-09-09
 oracle,fa-etiv-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-etiv-saasfaprod1.fa.ocs.oraclecloud.com,live,10,2026-09-07
 oracle,fa-etjb-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-etjb-saasfaprod1.fa.ocs.oraclecloud.com,live,388,2026-09-07
@@ -1903,6 +1919,7 @@ oracle,fa-etyz-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-etyz-saasfaprod1.fa
 oracle,fa-etzd-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-etzd-saasfaprod1.fa.ocs.oraclecloud.com,live,340,2026-09-07
 oracle,fa-etzy-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-etzy-saasfaprod1.fa.ocs.oraclecloud.com,live,0,2026-09-09
 oracle,fa-eubm-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-eubm-saasfaprod1.fa.ocs.oraclecloud.com,live,19,2026-09-09
+oracle,fa-euca-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-euca-saasfaprod1.fa.ocs.oraclecloud.com,live,17,2026-09-26
 oracle,fa-euca-test-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-euca-test-saasfaprod1.fa.ocs.oraclecloud.com,dead,,2026-09-23
 oracle,fa-eucb-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-eucb-saasfaprod1.fa.ocs.oraclecloud.com,live,3,2026-09-09
 oracle,fa-eucc-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-eucc-saasfaprod1.fa.ocs.oraclecloud.com,live,30,2026-09-09
@@ -1963,9 +1980,11 @@ oracle,fa-eurt-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-eurt-saasfaprod1.fa
 oracle,fa-euru-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-euru-saasfaprod1.fa.ocs.oraclecloud.com,live,108,2026-09-07
 oracle,fa-eurv-dev1-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-eurv-dev1-saasfaprod1.fa.ocs.oraclecloud.com,dead,,2026-09-23
 oracle,fa-eurv-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-eurv-saasfaprod1.fa.ocs.oraclecloud.com,live,2,2026-09-09
+oracle,fa-eurx-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-eurx-saasfaprod1.fa.ocs.oraclecloud.com,live,6,2026-09-26
 oracle,fa-eusf-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-eusf-saasfaprod1.fa.ocs.oraclecloud.com,live,0,2026-09-09
 oracle,fa-eusw-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-eusw-saasfaprod1.fa.ocs.oraclecloud.com,live,0,2026-09-09
 oracle,fa-eutb-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-eutb-saasfaprod1.fa.ocs.oraclecloud.com,live,0,2026-09-09
+oracle,fa-eutd-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-eutd-saasfaprod1.fa.ocs.oraclecloud.com,live,3,2026-09-26
 oracle,fa-eute-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-eute-saasfaprod1.fa.ocs.oraclecloud.com,live,17,2026-09-07
 oracle,fa-eutm-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-eutm-saasfaprod1.fa.ocs.oraclecloud.com,live,48,2026-09-07
 oracle,fa-eutm-test-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-eutm-test-saasfaprod1.fa.ocs.oraclecloud.com,dead,,2026-09-23
@@ -1983,6 +2002,8 @@ oracle,fa-euup-test-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-euup-test-saas
 oracle,fa-euuy-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-euuy-saasfaprod1.fa.ocs.oraclecloud.com,live,0,2026-09-09
 oracle,fa-euva-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-euva-saasfaprod1.fa.ocs.oraclecloud.com,live,31,2026-09-09
 oracle,fa-euva-test-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-euva-test-saasfaprod1.fa.ocs.oraclecloud.com,dead,,2026-09-23
+oracle,fa-euvo-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-euvo-saasfaprod1.fa.ocs.oraclecloud.com,live,5,2026-09-26
+oracle,fa-euvp-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-euvp-saasfaprod1.fa.ocs.oraclecloud.com,live,78,2026-09-26
 oracle,fa-euwp-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-euwp-saasfaprod1.fa.ocs.oraclecloud.com,live,1359,2026-09-07
 oracle,fa-euwx-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-euwx-saasfaprod1.fa.ocs.oraclecloud.com,live,69,2026-09-07
 oracle,fa-euxc-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-euxc-saasfaprod1.fa.ocs.oraclecloud.com,live,458,2026-09-07
@@ -2036,6 +2057,7 @@ oracle,fa-evgd-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-evgd-saasfaprod1.fa
 oracle,fa-evgd-test-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-evgd-test-saasfaprod1.fa.ocs.oraclecloud.com,dead,,2026-09-23
 oracle,fa-evge-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-evge-saasfaprod1.fa.ocs.oraclecloud.com,live,10,2026-09-07
 oracle,fa-evgk-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-evgk-saasfaprod1.fa.ocs.oraclecloud.com,live,53,2026-09-09
+oracle,fa-evgn-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-evgn-saasfaprod1.fa.ocs.oraclecloud.com,live,87,2026-09-26
 oracle,fa-evhj-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-evhj-saasfaprod1.fa.ocs.oraclecloud.com,live,19,2026-09-07
 oracle,fa-evht-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-evht-saasfaprod1.fa.ocs.oraclecloud.com,dead,,2026-09-09
 oracle,fa-evhu-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-evhu-saasfaprod1.fa.ocs.oraclecloud.com,unknown,,2026-09-09
@@ -2083,6 +2105,7 @@ oracle,fa-evnu-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-evnu-saasfaprod1.fa
 oracle,fa-evpg-saasfaeuraprod1.fa.ocs.oraclecloud.com,https://fa-evpg-saasfaeuraprod1.fa.ocs.oraclecloud.com,live,29,2026-09-07
 oracle,fa-evpi-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-evpi-saasfaprod1.fa.ocs.oraclecloud.com,live,0,2026-09-09
 oracle,fa-evql-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-evql-saasfaprod1.fa.ocs.oraclecloud.com,live,0,2026-09-09
+oracle,fa-evqo-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-evqo-saasfaprod1.fa.ocs.oraclecloud.com,live,1,2026-09-26
 oracle,fa-evqv-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-evqv-saasfaprod1.fa.ocs.oraclecloud.com,live,0,2026-09-07
 oracle,fa-evra-dev2-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-evra-dev2-saasfaprod1.fa.ocs.oraclecloud.com,dead,,2026-09-23
 oracle,fa-evra-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-evra-saasfaprod1.fa.ocs.oraclecloud.com,live,24,2026-09-07
@@ -2110,15 +2133,18 @@ oracle,fa-evyj-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-evyj-saasfaprod1.fa
 oracle,fa-evyu-dev3-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-evyu-dev3-saasfaprod1.fa.ocs.oraclecloud.com,dead,,2026-09-23
 oracle,fa-evyu-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-evyu-saasfaprod1.fa.ocs.oraclecloud.com,live,157,2026-09-07
 oracle,fa-evzd-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-evzd-saasfaprod1.fa.ocs.oraclecloud.com,live,0,2026-09-09
+oracle,fa-evze-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-evze-saasfaprod1.fa.ocs.oraclecloud.com,live,41,2026-09-26
 oracle,fa-evzh-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-evzh-saasfaprod1.fa.ocs.oraclecloud.com,live,0,2026-09-09
 oracle,fa-evzn-saasfaukgovprod1.fa.ocs.oraclecloud.com,https://fa-evzn-saasfaukgovprod1.fa.ocs.oraclecloud.com,live,23,2026-09-07
 oracle,fa-evzp-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-evzp-saasfaprod1.fa.ocs.oraclecloud.com,live,0,2026-09-09
 oracle,fa-evzu-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-evzu-saasfaprod1.fa.ocs.oraclecloud.com,live,1008,2026-09-07
 oracle,fa-ewab-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-ewab-saasfaprod1.fa.ocs.oraclecloud.com,live,10,2026-09-07
+oracle,fa-ewag-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-ewag-saasfaprod1.fa.ocs.oraclecloud.com,live,44,2026-09-26
 oracle,fa-ewbi-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-ewbi-saasfaprod1.fa.ocs.oraclecloud.com,live,33,2026-09-07
 oracle,fa-ewbq-dev1-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-ewbq-dev1-saasfaprod1.fa.ocs.oraclecloud.com,dead,,2026-09-23
 oracle,fa-ewbq-test-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-ewbq-test-saasfaprod1.fa.ocs.oraclecloud.com,dead,,2026-09-23
 oracle,fa-ewbu-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-ewbu-saasfaprod1.fa.ocs.oraclecloud.com,live,202,2026-09-07
+oracle,fa-ewbz-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-ewbz-saasfaprod1.fa.ocs.oraclecloud.com,live,1,2026-09-26
 oracle,fa-ewca-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-ewca-saasfaprod1.fa.ocs.oraclecloud.com,live,121,2026-09-07
 oracle,fa-ewcd-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-ewcd-saasfaprod1.fa.ocs.oraclecloud.com,live,58,2026-09-07
 oracle,fa-ewci-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-ewci-saasfaprod1.fa.ocs.oraclecloud.com,live,3,2026-09-07
@@ -2162,6 +2188,7 @@ oracle,fa-ewmx-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-ewmx-saasfaprod1.fa
 oracle,fa-ewmy-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-ewmy-saasfaprod1.fa.ocs.oraclecloud.com,live,144,2026-09-07
 oracle,fa-ewnb-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-ewnb-saasfaprod1.fa.ocs.oraclecloud.com,live,36,2026-09-07
 oracle,fa-ewnd-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-ewnd-saasfaprod1.fa.ocs.oraclecloud.com,unknown,,2026-09-09
+oracle,fa-ewni-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-ewni-saasfaprod1.fa.ocs.oraclecloud.com,live,3,2026-09-26
 oracle,fa-ewnk-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-ewnk-saasfaprod1.fa.ocs.oraclecloud.com,dead,,2026-09-09
 oracle,fa-ewnp-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-ewnp-saasfaprod1.fa.ocs.oraclecloud.com,live,18,2026-09-07
 oracle,fa-ewnv-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-ewnv-saasfaprod1.fa.ocs.oraclecloud.com,live,1,2026-09-07
@@ -2184,6 +2211,7 @@ oracle,fa-ewrm-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-ewrm-saasfaprod1.fa
 oracle,fa-ewrm-test-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-ewrm-test-saasfaprod1.fa.ocs.oraclecloud.com,dead,,2026-09-23
 oracle,fa-ewsg-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-ewsg-saasfaprod1.fa.ocs.oraclecloud.com,dead,,2026-09-09
 oracle,fa-ewsh-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-ewsh-saasfaprod1.fa.ocs.oraclecloud.com,live,0,2026-09-09
+oracle,fa-ewsy-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-ewsy-saasfaprod1.fa.ocs.oraclecloud.com,live,72,2026-09-26
 oracle,fa-ewtd-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-ewtd-saasfaprod1.fa.ocs.oraclecloud.com,live,1,2026-09-07
 oracle,fa-ewtk-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-ewtk-saasfaprod1.fa.ocs.oraclecloud.com,live,1,2026-09-07
 oracle,fa-ewtm-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-ewtm-saasfaprod1.fa.ocs.oraclecloud.com,live,0,2026-09-09
@@ -2191,6 +2219,7 @@ oracle,fa-ewto-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-ewto-saasfaprod1.fa
 oracle,fa-ewto-test-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-ewto-test-saasfaprod1.fa.ocs.oraclecloud.com,dead,,2026-09-23
 oracle,fa-ewts-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-ewts-saasfaprod1.fa.ocs.oraclecloud.com,live,136,2026-09-09
 oracle,fa-ewtx-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-ewtx-saasfaprod1.fa.ocs.oraclecloud.com,live,0,2026-09-09
+oracle,fa-ewua-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-ewua-saasfaprod1.fa.ocs.oraclecloud.com,live,563,2026-09-26
 oracle,fa-ewub-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-ewub-saasfaprod1.fa.ocs.oraclecloud.com,live,14,2026-09-07
 oracle,fa-ewuh-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-ewuh-saasfaprod1.fa.ocs.oraclecloud.com,live,0,2026-09-09
 oracle,fa-ewur-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-ewur-saasfaprod1.fa.ocs.oraclecloud.com,live,105,2026-09-07
@@ -2237,6 +2266,8 @@ oracle,fa-exiu-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-exiu-saasfaprod1.fa
 oracle,fa-exjc-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-exjc-saasfaprod1.fa.ocs.oraclecloud.com,live,0,2026-09-09
 oracle,fa-exjk-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-exjk-saasfaprod1.fa.ocs.oraclecloud.com,live,0,2026-09-09
 oracle,fa-exjq-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-exjq-saasfaprod1.fa.ocs.oraclecloud.com,live,6,2026-09-07
+oracle,fa-exke-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-exke-saasfaprod1.fa.ocs.oraclecloud.com,live,7,2026-09-26
+oracle,fa-exkf-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-exkf-saasfaprod1.fa.ocs.oraclecloud.com,live,95,2026-09-26
 oracle,fa-exki-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-exki-saasfaprod1.fa.ocs.oraclecloud.com,live,18,2026-09-07
 oracle,fa-exkk-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-exkk-saasfaprod1.fa.ocs.oraclecloud.com,live,38,2026-09-07
 oracle,fa-exkk-test-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-exkk-test-saasfaprod1.fa.ocs.oraclecloud.com,dead,,2026-09-23
@@ -2262,6 +2293,7 @@ oracle,fa-exph-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-exph-saasfaprod1.fa
 oracle,fa-expo-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-expo-saasfaprod1.fa.ocs.oraclecloud.com,live,15,2026-09-07
 oracle,fa-exqb-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-exqb-saasfaprod1.fa.ocs.oraclecloud.com,live,4,2026-09-07
 oracle,fa-exqo-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-exqo-saasfaprod1.fa.ocs.oraclecloud.com,dead,,2026-09-09
+oracle,fa-exrn-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-exrn-saasfaprod1.fa.ocs.oraclecloud.com,live,1,2026-09-26
 oracle,fa-exrr-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-exrr-saasfaprod1.fa.ocs.oraclecloud.com,live,422,2026-09-07
 oracle,fa-exru-saasfaukgovprod1.fa.ocs.oraclecloud.com,https://fa-exru-saasfaukgovprod1.fa.ocs.oraclecloud.com,live,15,2026-09-07
 oracle,fa-exrw-saasfaprod1.fa.ocs.oraclecloud.com,https://fa-exrw-saasfaprod1.fa.ocs.oraclecloud.com,live,10,2026-09-07
@@ -2556,6 +2588,7 @@ oracle,hdbg-test.fa.us2.oraclecloud.com,https://hdbg-test.fa.us2.oraclecloud.com
 oracle,hdbg.fa.us2.oraclecloud.com,https://hdbg.fa.us2.oraclecloud.com,live,148,2026-09-07
 oracle,hdbj-dev1.fa.em2.oraclecloud.com,https://hdbj-dev1.fa.em2.oraclecloud.com,dead,,2026-09-23
 oracle,hdbj.fa.em2.oraclecloud.com,https://hdbj.fa.em2.oraclecloud.com,live,73,2026-09-07
+oracle,hdbm.fa.em2.oraclecloud.com,https://hdbm.fa.em2.oraclecloud.com,live,6,2026-09-26
 oracle,hdbq.fa.us2.oraclecloud.com,https://hdbq.fa.us2.oraclecloud.com,live,0,2026-09-09
 oracle,hdbr.fa.em2.oraclecloud.com,https://hdbr.fa.em2.oraclecloud.com,dead,,2026-09-09
 oracle,hdbs.fa.em2.oraclecloud.com,https://hdbs.fa.em2.oraclecloud.com,live,1,2026-09-07
@@ -2629,6 +2662,7 @@ oracle,hdrc.fa.ca3.oraclecloud.com,https://hdrc.fa.ca3.oraclecloud.com,live,102,
 oracle,hdrd.fa.us2.oraclecloud.com,https://hdrd.fa.us2.oraclecloud.com,live,0,2026-09-09
 oracle,hdrf.fa.us6.oraclecloud.com,https://hdrf.fa.us6.oraclecloud.com,dead,,2026-09-09
 oracle,hdrj.fa.us8.oraclecloud.com,https://hdrj.fa.us8.oraclecloud.com,live,0,2026-09-09
+oracle,hdrm.fa.em2.oraclecloud.com,https://hdrm.fa.em2.oraclecloud.com,live,1,2026-09-26
 oracle,hdrp.fa.em2.oraclecloud.com,https://hdrp.fa.em2.oraclecloud.com,dead,,2026-09-09
 oracle,hdrw.fa.em2.oraclecloud.com,https://hdrw.fa.em2.oraclecloud.com,live,2,2026-09-09
 oracle,hdse-dev1.fa.em2.oraclecloud.com,https://hdse-dev1.fa.em2.oraclecloud.com,dead,,2026-09-23
