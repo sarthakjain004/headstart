@@ -26,23 +26,23 @@ from pathlib import Path
 
 from headstart import log
 from headstart.ingest import EVICTION_QUEUE_PATH, REPO_ROOT, UNCONFIRMED_PATH
+from headstart.ingest.state_fetch import remote_files
 
 _log = log.get(__name__, __spec__)
 
 _TABLE = "data/lancedb"
 
 
-def superseded_index_dirs(table_root: Path) -> set[str]:
-    """``{table}.lance/_indices/{uuid}`` for each index directory under ``table_root`` that the
-    table's latest version does not reference, relative to ``table_root`` (ADR-0244).
+def superseded_index_dirs(root: Path) -> set[str]:
+    """``data/lancedb/{table}.lance/_indices/{uuid}/``, relative to ``root``, for each index
+    directory the table's latest version does not reference (ADR-0244).
 
     Read from the manifest through ``lance``: every segment of every index the version serves,
-    since one index can span several directories.
-    A table that will not open yields nothing, so a publish never deletes on a read it could not
-    make; nor does a table whose manifest names an index this copy does not hold.
+    since one index can span several directories. A table that will not open yields nothing, so
+    a publish never deletes on a read it could not make.
     """
     superseded: set[str] = set()
-    for table in sorted(table_root.glob("*.lance")):
+    for table in sorted((root / _TABLE).glob("*.lance")):
         held = {d.name for d in (table / "_indices").glob("*") if d.is_dir()}
         if not held:
             continue
@@ -59,13 +59,9 @@ def superseded_index_dirs(table_root: Path) -> set[str]:
                 f"could not read {table.name}'s indexes ({exc}) — deleting none"
             )
             continue
-        if not referenced <= held:
-            _log.warning(
-                f"{table.name}'s latest version names {len(referenced - held)} index(es) this "
-                "copy does not hold — deleting none"
-            )
-            continue
-        superseded |= {f"{table.name}/_indices/{uuid}" for uuid in held - referenced}
+        superseded |= {
+            f"{_TABLE}/{table.name}/_indices/{uuid}/" for uuid in held - referenced
+        }
     return superseded
 
 
@@ -81,15 +77,10 @@ def publish(repo: str, token: str | None, root: Path = REPO_ROOT) -> None:
         ignore_patterns=DEFAULT_IGNORE_PATTERNS,
     )
     # Superseded Search indexes neither go up nor stay up (ADR-0244).
-    superseded = {f"{_TABLE}/{d}/" for d in superseded_index_dirs(table)}
-    paths = [p for p in files if not p.startswith(tuple(superseded))]
-    api = HfApi(token=token)
-    doomed = (
-        [
-            f
-            for f in api.list_repo_files(repo, repo_type="dataset")
-            if f.startswith(tuple(superseded))
-        ]
+    superseded = tuple(superseded_index_dirs(root))
+    paths = [p for p in files if not p.startswith(superseded)]
+    remote_superseded = (
+        [f for f in remote_files(repo, token) if f.startswith(superseded)]
         if superseded
         else []
     )
@@ -114,18 +105,18 @@ def publish(repo: str, token: str | None, root: Path = REPO_ROOT) -> None:
     # Said before the commit too: a multi-GB upload runs for minutes, and a hang in it was
     # otherwise indistinguishable from the step never starting.
     _log.info(f"publishing {len(paths)} file(s), {size / 1e9:.2f} GB …")
-    if doomed:
+    if remote_superseded:
         _log.info(
-            f"deleting {len(doomed)} file(s) of {len(superseded)} Search index(es) the table's "
+            f"deleting {len(remote_superseded)} file(s) of {len(superseded)} Search index(es) the table's "
             "latest version no longer references (ADR-0244)"
         )
-    api.create_commit(
+    HfApi(token=token).create_commit(
         repo_id=repo,
         repo_type="dataset",
         operations=[
             CommitOperationAdd(path_in_repo=p, path_or_fileobj=root / p) for p in paths
         ]
-        + [CommitOperationDelete(path_in_repo=f) for f in doomed],
+        + [CommitOperationDelete(path_in_repo=f) for f in remote_superseded],
         commit_message="nightly: lancedb index + unconfirmed ids + eviction queue",
     )
     _log.info(

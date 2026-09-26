@@ -7,11 +7,13 @@ pair a new table with the previous run's grace set (ADR-0083). The commit is cap
 
 from __future__ import annotations
 
+import shutil
+
 import pytest
 
 pytest.importorskip("huggingface_hub")
 
-from huggingface_hub import HfApi
+from huggingface_hub import CommitOperationAdd, CommitOperationDelete, HfApi
 
 from headstart.ingest import index_publish
 
@@ -87,8 +89,6 @@ def test_superseded_search_indexes_are_left_out_and_deleted(tmp_path, monkeypatc
     leaves them out and deletes their remote files; the table still opens and serves each index
     from what remains."""
     lancedb = pytest.importorskip("lancedb")
-    import shutil
-
     db = lancedb.connect(str(tmp_path / "data/lancedb"))
     table = db.create_table(
         "jobs", data=[{"id": f"x{i}", "ats": "a" if i % 2 else "b"} for i in range(300)]
@@ -100,19 +100,17 @@ def test_superseded_search_indexes_are_left_out_and_deleted(tmp_path, monkeypatc
     (old,) = first
     remote_old = f"data/lancedb/jobs.lance/_indices/{old}/page_data.lance"
     monkeypatch.setattr(
-        HfApi,
-        "list_repo_files",
-        lambda self, repo, repo_type=None: [remote_old, "data/state/board_cost.csv"],
+        index_publish,
+        "remote_files",
+        lambda repo, token: [remote_old, "data/state/board_cost.csv"],
     )
     commits = _capture(monkeypatch)
 
     index_publish.publish("owner/repo", None, tmp_path)
 
     ops = commits[0]["operations"]
-    deleted = [
-        op.path_in_repo for op in ops if type(op).__name__ == "CommitOperationDelete"
-    ]
-    added = [op.path_in_repo for op in ops if type(op).__name__ == "CommitOperationAdd"]
+    deleted = [op.path_in_repo for op in ops if isinstance(op, CommitOperationDelete)]
+    added = [op.path_in_repo for op in ops if isinstance(op, CommitOperationAdd)]
     assert deleted == [remote_old]
     assert not [p for p in added if f"/_indices/{old}/" in p]
     assert [p for p in added if "/_indices/" in p], "the live index still goes up"
@@ -132,9 +130,9 @@ def test_an_unreadable_table_deletes_no_index(tmp_path, monkeypatch):
         b"x"
     )
     monkeypatch.setattr(
-        HfApi,
-        "list_repo_files",
-        lambda self, repo, repo_type=None: pytest.fail("listed"),
+        index_publish,
+        "remote_files",
+        lambda repo, token: pytest.fail("listed"),
     )
     commits = _capture(monkeypatch)
 

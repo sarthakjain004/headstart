@@ -27,8 +27,16 @@ publishes a version is the one that drops what that version replaced.
 
 Only `_indices/` is touched. Data fragments, deletion files and old manifests stay additive, as
 before, and `cleanup-index` still reaps them. The delete fails safe: a table whose manifest cannot
-be read, or names an index this copy does not hold, deletes nothing, and the commit goes up as it
-did before this change.
+be read deletes nothing, and the commit goes up as it did before this change. Only directories
+this copy holds and the manifest does not name are candidates, so an index the manifest names
+without a directory of its own (Lance's fragment-reuse index, which nothing here creates) changes
+nothing.
+
+It keeps only the latest version's indexes, not the previous version's too. Keeping N-1 would
+guard a reader of the previous version, and there is none: the Space and every stage open the
+latest, and a reader that downloaded the previous commit already has its files. The blobs that
+commit points at are deleted by `reclaim_storage` once they are orphaned anyway, so holding N-1's
+index files on the Hub would keep ~0.41 GB a run without making the previous version readable.
 
 Nothing is done at fetch time. Once the Hub holds only the referenced indexes, fetching
 `data/lancedb/*` fetches only those. A fetch-side filter would need the manifest before the
