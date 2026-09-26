@@ -1,9 +1,10 @@
-"""The Hot tab's company ranking (ADR-0171, ADR-0230).
+"""The Hot tab's company ranking (ADR-0171, ADR-0230, ADR-0233).
 
-`rank` reads the history through two calls, `openings` and `company_moves`, so most tests here
-hand it a fake of both and check only what the ranking itself decides: who is a candidate, how
-each lens sorts, and what is counted as left out. The last ones rank a real history and hold a
-row to the trend it opens (the design's invariant 4)."""
+`rank` reads the history through `openings` and `trailing_week`, and each company's own line
+through `line_reading.read_company_moves`, so most tests here hand it a fake of all three and
+check only what the ranking itself decides: who is a candidate, how each lens sorts, and what is
+counted as left out. The last ones rank a real history and hold a row to the trend it opens (the
+design's invariant 4)."""
 
 from __future__ import annotations
 
@@ -11,13 +12,12 @@ import json
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 
 old_layout_converter = pytest.importorskip("old_layout_trends_state_converter")
-from headstart.trends import hot_ranking, trend_history
-from headstart.trends.netting import js_round
+from headstart.trends import hot_ranking, line_reading, trend_history
+from headstart.trends.line_reading import CompanyMove, LineMove, Turnover
 
 _CONFIG = Path(__file__).resolve().parents[1] / "config"
 
@@ -33,6 +33,9 @@ _WINDOW = {
 
 @dataclass(frozen=True)
 class _Move:
+    """What Hot reads of a company's line: its hiring (``net``) and turnover, None where it was
+    not counted, and what its answer says of the company."""
+
     net: int = 0
     opened: int | None = 0
     closed: int | None = 0
@@ -40,24 +43,63 @@ class _Move:
     closures_uncounted_boards: int = 0
     boards_in_scope: int = 1
 
+    def company_move(self) -> CompanyMove:
+        """As `read_company_moves` gives it."""
+        opened, closed = self.opened, self.closed
+        turnover = (
+            None
+            if opened is None
+            else Turnover(opened, closed, None if closed is None else opened - closed)
+        )
+        line = LineMove(
+            start=0,
+            latest=self.net,
+            hiring=self.net,
+            not_hiring=(),
+            not_hiring_total=0,
+            percent=None,
+            percent_withheld=None,
+            span_days=7.0,
+            per_week=self.net,
+            turnover=turnover,
+        )
+        return CompanyMove(
+            line,
+            self.counted_since,
+            self.closures_uncounted_boards,
+            self.boards_in_scope,
+        )
+
 
 class _History:
-    """`openings` and `company_moves` as the ranking reads them, and nothing else."""
+    """`openings` and `trailing_week` as the ranking reads them, and each company's line as
+    `read_company_moves` would read it (`_read_fake_company_moves`)."""
 
     def __init__(self, openings: dict[str, int], moves: dict[str, _Move]) -> None:
         self._openings = openings
-        self._moves = moves
+        self.moves = moves
         self.asked: list[str] = []
 
     def openings(self) -> dict[str, int]:
         return dict(self._openings)
 
-    def company_moves(self, companies):
-        self.asked = list(companies)
-        return SimpleNamespace(
-            window=dict(_WINDOW),
-            moves={key: self._moves.get(key, _Move()) for key in companies},
-        )
+    def trailing_week(self) -> dict[str, str | None]:
+        return dict(_WINDOW)
+
+
+@pytest.fixture(autouse=True)
+def _read_fake_company_moves(monkeypatch):
+    """A fake history's moves stand in for `read_company_moves`; a real history is read."""
+    real = line_reading.read_company_moves
+
+    def read(history, window, keys):
+        if not isinstance(history, _History):
+            return real(history, window, keys)
+        assert window == line_reading.TrendWindow(since=_WINDOW["base"])
+        history.asked = list(keys)
+        return {key: history.moves.get(key, _Move()).company_move() for key in keys}
+
+    monkeypatch.setattr(line_reading, "read_company_moves", read)
 
 
 def _company(name: str, *boards: str, operator: str = "employer") -> dict:
@@ -211,7 +253,7 @@ def test_rows_carry_the_directorys_operator_and_the_counts_say_how_many() -> Non
 
 def test_a_closed_count_not_counted_stays_none() -> None:
     """Amazon, one Board whose closures went uncounted, read "0 closed" (ADR-0227): a closed
-    count `company_moves` gives as None reaches the row as None, never 0."""
+    count a company's line gives as None reaches the row as None, never 0."""
     directory = {"amazon:jobs": _company("Amazon", "amazon:jobs")}
     history = _History(
         {"amazon:jobs": 7896}, {"amazon:jobs": _Move(net=5, opened=66, closed=None)}
@@ -279,12 +321,12 @@ def test_no_measured_window_ranks_nothing() -> None:
     """A history with no tick yet has no week to rank over, and the tab stays dark."""
 
     class _Empty(_History):
-        def company_moves(self, companies):
-            return SimpleNamespace(
-                window={"base": None, "from": None, "to": None}, moves={}
-            )
+        def trailing_week(self):
+            return {"base": None, "from": None, "to": None, "turnover_from": None}
 
-    assert hot_ranking.rank(_Empty({}, {}), {}) == {}
+    empty = _Empty({}, {})
+    assert hot_ranking.rank(empty, {}) == {}
+    assert empty.asked == [], "no company is read"
 
 
 # ---- over a real history ------------------------------------------------------------------------
@@ -351,17 +393,18 @@ def _write_history(state: Path, with_turnover: bool = True) -> None:
     )
 
 
-def _trend_move(history, key: str, since: str) -> int:
-    """How far the whole-company line a Hot row's "See trend" opens moves, netted."""
-    answer = history.answer(trend_history.TrendQuestion(companies=(key,), since=since))
-    netted = [v for v in answer["series_sum"]["net"]["count"] if v is not None]
-    return js_round(netted[-1] - netted[0])
+def _trend_hiring(history, key: str, since: str) -> int:
+    """The hiring the trend a Hot row's "See trend" opens reads: its company line's."""
+    reading = line_reading.read_trends(
+        history, trend_history.TrendQuestion(companies=(key,), since=since)
+    )
+    return reading.company_lines[0].move.hiring
 
 
-def test_every_rows_net_is_what_the_trend_it_opens_moves_by(tmp_path: Path) -> None:
-    """The design's invariant 4 (ADR-0230): Hot is computed by the same code as the trend it
-    opens, so the two agree by construction. Before it, Hot read Google −27 against its trend's
-    −42, and Bosch Group +440 from one of the two Boards its trend summed."""
+def test_every_rows_net_is_the_hiring_of_the_trend_it_opens(tmp_path: Path) -> None:
+    """The design's invariant 4 (ADR-0230, ADR-0233): Hot is read by the same code as the trend
+    it opens, so the two agree by construction. Before it, Hot read Google −27 against its
+    trend's −42, and Bosch Group +440 from one of the two Boards its trend summed."""
     _write_history(tmp_path)
     history = trend_history.TrendHistory.load(
         old_layout_converter.store_in_current_layout(tmp_path), _CONFIG
@@ -372,7 +415,7 @@ def test_every_rows_net_is_what_the_trend_it_opens_moves_by(tmp_path: Path) -> N
     assert {row["key"] for row in rows} == {"greenhouse:acme", "greenhouse:beta"}
     for row in rows:
         # As the row's link opens it: `since` cut to UTC minutes (app.js openCompanyTrend).
-        assert row["net"] == _trend_move(history, row["key"], base[:16]), row["key"]
+        assert row["net"] == _trend_hiring(history, row["key"], base[:16]), row["key"]
 
 
 def test_a_rows_net_leaves_out_what_its_trend_leaves_out(tmp_path: Path) -> None:
@@ -398,8 +441,8 @@ def test_a_rows_net_leaves_out_what_its_trend_leaves_out(tmp_path: Path) -> None
 
 
 def test_before_turnover_is_counted_a_row_carries_none_not_zero(tmp_path: Path) -> None:
-    """With no run counting turnover, `company_moves` read the missing figures as 0, and every
-    Growing row said "0 opened · 0 closed this week" beside its net."""
+    """With no run counting turnover, Hot read the missing figures as 0, and every Growing row
+    said "0 opened · 0 closed this week" beside its net."""
     _write_history(tmp_path, with_turnover=False)
     history = trend_history.TrendHistory.load(
         old_layout_converter.store_in_current_layout(tmp_path), _CONFIG

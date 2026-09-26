@@ -2025,11 +2025,12 @@ def test_trends_serves_the_line_reading_and_none_of_the_pieces_it_nets(company_t
     history = company_trends.application.view_functions["trends"].__globals__[
         "_HISTORY"
     ]
-    whole = history.answer(trend_history.TrendQuestion(companies=("workday:hpe/b",)))
-    netted = [v for v in whole["series_sum"]["net"]["count"] if v is not None]
+    hot = line_reading.read_company_moves(
+        history, line_reading.TrendWindow(), ["workday:hpe/a"]
+    )
     total = reading["total"]["move"]
     assert (total["start"], total["latest"]) == (17, 13)
-    assert total["hiring"] == netting.js_round(netted[-1] - netted[0])
+    assert total["hiring"] == hot["workday:hpe/a"].move.hiring
     assert [line["name"] for line in reading["company_lines"]] == ["workday:hpe/a"]
 
 
@@ -3289,6 +3290,13 @@ def _with_turnover(trends_app, monkeypatch, tmp_path, rows: list[dict]) -> None:
     history._turnover_since = _T2
 
 
+def _hot_moves(trends_app, keys: list[str]) -> dict:
+    """Each company's line as Hot reads it, over the history's trailing week."""
+    history = trends_app._HISTORY
+    week = line_reading.TrendWindow(since=history.trailing_week()["base"])
+    return line_reading.read_company_moves(history, week, keys)
+
+
 _HPE_TURNOVER = [
     _delta(_T1, "workday:hpe/a", 99, metric="opened"),  # before the window's first run
     _delta(_T3, "workday:hpe/b", 2, metric="opened"),
@@ -3347,7 +3355,7 @@ def test_each_line_carries_the_turnover_its_change_is_made_of(
     assert d["closures_unseen"] == {"workday:hpe/a": 1}
     assert d["closures_uncounted"] == [], "HPE's other Board counted its closures"
     assert d["boards_in_scope"] == {"workday:hpe/a": 2}
-    hpe = trends_app._HISTORY.company_moves(["workday:hpe/a"]).moves["workday:hpe/a"]
+    hpe = _hot_moves(trends_app, ["workday:hpe/a"])["workday:hpe/a"]
     assert (hpe.closures_uncounted_boards, hpe.boards_in_scope) == (1, 2)
     split = _answer(
         company_trends, "split=company&company=workday:hpe/a&company=workday:citi/2"
@@ -3375,10 +3383,12 @@ def test_no_closed_count_where_every_board_had_its_closures_go_uncounted(
     shown = {r["name"]: r["move"]["turnover"] for r in served["reading"]["lines"]}
     assert shown["software-engineering"] == {"opened": 2, "closed": None, "net": None}
     assert served["reading"]["reconciles"], served["reading"]["violations"]
-    moves = trends_app._HISTORY.company_moves(["workday:hpe/a", "workday:citi/2"])
-    assert moves.moves["workday:hpe/a"].closed is None
-    assert moves.moves["workday:hpe/a"].opened == 2
-    assert moves.moves["workday:citi/2"].closed == 0, "a counted quiet week is a real 0"
+    moves = _hot_moves(trends_app, ["workday:hpe/a", "workday:citi/2"])
+    assert moves["workday:hpe/a"].move.turnover.closed is None
+    assert moves["workday:hpe/a"].move.turnover.opened == 2
+    assert moves["workday:citi/2"].move.turnover.closed == 0, (
+        "a counted quiet week is a real 0"
+    )
 
 
 def test_the_index_has_turnover_and_it_is_the_sum_of_every_companys(

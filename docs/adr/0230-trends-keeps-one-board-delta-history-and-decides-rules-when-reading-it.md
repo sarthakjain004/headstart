@@ -9,7 +9,10 @@ each tick), [ADR-0171](0171-the-hot-tab-curates-what-it-shows-not-the-whole-inde
 the same history, and netting leaves the browser) · **Builds on:**
 [ADR-0143](0143-trends-retain-board-deltas-for-arbitrary-comparable-cohorts.md) (the Board-delta ledger) and
 [ADR-0227](0227-trends-record-each-boards-opened-and-closed-jobs-not-only-its-net.md) (Opened,
-Closed and Recounted)
+Closed and Recounted) · **Amended by:**
+[ADR-0233](0233-trends-serves-reconciled-line-readings-and-the-page-only-formats.md) (the
+Trends tab and Hot read line readings; `answer`, `company_moves` and the golden answers are
+deleted)
 
 ## Context
 

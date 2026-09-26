@@ -15,10 +15,9 @@ The ticks before per-Board counting began on 2026-09-13 exist only index-wide, i
 **archive** ``role_trend_index_deltas_before_board_deltas.parquet``: ``(ts, metric, family, band,
 ats, delta)`` with the Methodology they were counted under in its metadata.
 
-Netting happens in :meth:`TrendHistory.answer` (step 4), and the Hot tab ranks companies off
-:meth:`TrendHistory.company_moves`, which reads the same answers (step 5). ``line_reading``
-reads the answer before netting (:meth:`TrendHistory.unnetted_answer`) into reconciled line
-readings (ADR-0233).
+:meth:`TrendHistory.unnetted_answer` builds an answer before any line is netted, and
+``line_reading`` reads it into reconciled line readings (ADR-0233): the Trends tab's, and Hot's
+over :meth:`TrendHistory.trailing_week`.
 """
 
 from __future__ import annotations
@@ -27,7 +26,7 @@ import csv
 import json
 from bisect import bisect_left
 from collections import Counter, defaultdict
-from collections.abc import Iterable, Mapping
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -100,7 +99,7 @@ class TrendsUnavailable(LookupError):
 @dataclass(frozen=True)
 class TrendQuestion:
     """One ``/trends`` request, as the page sends it. Values are the raw query strings;
-    :meth:`TrendHistory.answer` validates them."""
+    :meth:`TrendHistory.unnetted_answer` validates them."""
 
     metric: str = "stock"
     coverage: str = "all"
@@ -111,37 +110,6 @@ class TrendQuestion:
     until: str | None = None
     base: str | None = None
     ats: tuple[str, ...] = ()
-
-
-@dataclass(frozen=True)
-class CompanyMove:
-    """One company's week, read off its own netted Trends line (:meth:`TrendHistory.company_moves`).
-
-    ``net`` is the change in its tech openings since the window's base with the steps that are
-    not hiring taken out; ``opened`` and ``closed`` are the jobs it opened and closed over the runs
-    that change counts (ADR-0227), or None where no such run counted turnover: a 0 there stated a
-    week nobody measured. ``closed`` is None too where every Board of the company had a run in
-    the window whose closures went uncounted; where only some did, ``closures_uncounted_boards``
-    of its ``boards_in_scope`` did, and ``closed`` counts the rest. ``counted_since`` is the first
-    tick that counted any of its Boards."""
-
-    net: int
-    opened: int | None
-    closed: int | None
-    counted_since: str
-    closures_uncounted_boards: int = 0
-    boards_in_scope: int = 0
-
-
-@dataclass(frozen=True)
-class CompanyMoves:
-    """Hot's figures (ADR-0230): every company asked about, and the window they cover as
-    ``{base, from, to, turnover_from}``. ``base`` is the tick each change is measured from, where
-    a Hot row's "See trend" opens; ``from`` and ``to`` are the first and last ticks measured after
-    it; ``turnover_from`` is the first of them with turnover booked, None before ADR-0227's data."""
-
-    window: dict[str, str | None]
-    moves: dict[str, CompanyMove]
 
 
 class _Names:
@@ -913,68 +881,33 @@ class TrendHistory:
         labels = self._company_labels([candidate.key for candidate in found])
         return [self._company_json(c.key, labels[c.key]) for c in found]
 
-    def company_moves(self, keys: Iterable[str]) -> CompanyMoves:
-        """Hot's figures for each directory company in ``keys``, over the trailing
-        ``NEW_WINDOW_DAYS`` (ADR-0230).
-
-        Each is read off the company's own whole-company line, netted, from the window's base:
-        the answer its Hot row's "See trend" opens. So a row's ``net`` is what that trend moves
-        by, by construction rather than by a second copy of the netting rule (the design's
-        invariant 4). The base is the last tick before the week began, so the first change
-        measured is the week's own.
-
-        One answer per company, not one answer split by company: measured on 2026-09-25's
-        state, the split view netted 3 of 2,478 companies differently (a partial read is judged
-        per line, and a company's line there is not its categories' sum)."""
+    def trailing_week(self) -> dict[str, str | None]:
+        """The window Hot ranks over (ADR-0230), the trailing ``NEW_WINDOW_DAYS``, as
+        ``{base, from, to, turnover_from}``. ``base`` is the last tick before the week began, so
+        the first change measured is the week's own, and it is where a Hot row's "See trend"
+        opens; ``from`` and ``to`` are the first and last ticks measured after it;
+        ``turnover_from`` is the first of them with turnover booked, None before ADR-0227's data.
+        Every value is None with no tick yet."""
         if not self._ticks:
-            return CompanyMoves(
-                {"base": None, "from": None, "to": None, "turnover_from": None}, {}
-            )
+            return {"base": None, "from": None, "to": None, "turnover_from": None}
         newest = self._ticks[-1]
         week_began = (
             datetime.fromisoformat(newest) - timedelta(days=NEW_WINDOW_DAYS)
         ).isoformat(timespec="seconds")
         at = max(bisect_left(self._ticks, week_began) - 1, 0)
-        base = self._ticks[at]
         first = self._ticks[min(at + 1, len(self._ticks) - 1)]
-        moves = {}
-        for key in keys:
-            answer = self.answer(TrendQuestion(companies=(key,), since=base))
-            line = answer["series_sum"]
-            netted = [v for v in line["net"]["count"] if v is not None]
-            turnover = line["hiring_turnover"] or {"opened": None, "closed": None}
-            moves[key] = CompanyMove(
-                net=netting.js_round(netted[-1] - netted[0]) if netted else 0,
-                opened=turnover["opened"],
-                # Not counted where every Board's closures went uncounted: Amazon, one Board,
-                # read "0 closed" while its trend said "closures not counted on 1 board".
-                closed=None
-                if key in answer["closures_uncounted"]
-                else turnover["closed"],
-                counted_since=answer["counted_since"][key],
-                closures_uncounted_boards=answer["closures_unseen"].get(key, 0),
-                boards_in_scope=answer["boards_in_scope"].get(key, 0),
-            )
-        turnover_from = (
-            max(self._turnover_since, first) if self._turnover_since else None
-        )
-        window = {
-            "base": base,
+        return {
+            "base": self._ticks[at],
             "from": first,
             "to": newest,
-            "turnover_from": turnover_from,
+            "turnover_from": max(self._turnover_since, first)
+            if self._turnover_since
+            else None,
         }
-        return CompanyMoves(window, moves)
-
-    def answer(self, question: TrendQuestion) -> dict:
-        """:meth:`unnetted_answer` with every line netted, once (ADR-0230 decision 3): what Hot
-        reads (:meth:`company_moves`) until it reads ``line_reading.read_company_moves``
-        (ADR-0233 step 4). ``/trends`` serves the line reading instead."""
-        return netting.net_answer(self.unnetted_answer(question))
 
     def unnetted_answer(self, question: TrendQuestion) -> dict:
         """Role counts over time (ADR-0040, ADR-0051), before any line is netted: what
-        :meth:`answer` nets and ``line_reading`` reads (ADR-0233).
+        ``line_reading`` reads (ADR-0233).
 
         ``metric`` ``stock`` (default) is live openings; ``new`` is those first seen inside the
         flow window. Default view: one series per family, each point the family's total across

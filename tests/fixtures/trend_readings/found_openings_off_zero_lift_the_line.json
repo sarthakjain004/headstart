@@ -38,7 +38,19 @@
     ]
    }
   ],
-  "series": [],
+  "series": [
+   {
+    "name": "a",
+    "label": "a",
+    "points": [
+     0,
+     0,
+     40,
+     42
+    ],
+    "latest": 42
+   }
+  ],
   "epochs": [],
   "evicted": [],
   "pick_series": {},
@@ -63,15 +75,173 @@
    "to": "2026-09-16T00:00:00+00:00"
   },
   "picked": true,
-  "total": null,
-  "lines": [],
+  "total": {
+   "name": "__total__",
+   "label": "",
+   "whole_company": true,
+   "estimated": false,
+   "move": {
+    "start": 0,
+    "latest": 42,
+    "hiring": 2,
+    "not_hiring": [
+     {
+      "change": "found@2026-09-15T00:00:00+00:00/greenhouse:acme",
+      "kind": "found_boards",
+      "label": "1 more board found",
+      "size": 40
+     }
+    ],
+    "not_hiring_total": 40,
+    "percent": null,
+    "percent_withheld": "under 20 openings at the start",
+    "span_days": 3.0,
+    "per_week": 5,
+    "turnover": null,
+    "share": {
+     "start": 100.0,
+     "latest": 100.0,
+     "denominator_start": 40,
+     "denominator_latest": 42,
+     "percent": null
+    }
+   },
+   "netted": [
+    40,
+    40,
+    40,
+    42
+   ],
+   "steps_at": [
+    2
+   ],
+   "index_base": null,
+   "arrived_by": null,
+   "points": [
+    0,
+    0,
+    40,
+    42
+   ]
+  },
+  "lines": [
+   {
+    "name": "a",
+    "label": "a",
+    "whole_company": false,
+    "estimated": false,
+    "move": {
+     "start": 0,
+     "latest": 42,
+     "hiring": 2,
+     "not_hiring": [
+      {
+       "change": "found@2026-09-15T00:00:00+00:00/greenhouse:acme",
+       "kind": "found_boards",
+       "label": "1 more board found",
+       "size": 40
+      }
+     ],
+     "not_hiring_total": 40,
+     "percent": null,
+     "percent_withheld": "under 20 openings at the start",
+     "span_days": 3.0,
+     "per_week": 5,
+     "turnover": null,
+     "share": {
+      "start": 100.0,
+      "latest": 100.0,
+      "denominator_start": 40,
+      "denominator_latest": 42,
+      "percent": null
+     }
+    },
+    "netted": [
+     40,
+     40,
+     40,
+     42
+    ],
+    "steps_at": [
+     2
+    ],
+    "index_base": null,
+    "arrived_by": null
+   }
+  ],
   "other": null,
-  "company_lines": [],
-  "breakdown": null,
-  "marked_changes": [],
-  "day_markers": [],
-  "reference": [],
-  "openings": 0,
+  "company_lines": [
+   {
+    "name": "greenhouse:acme",
+    "label": "Acme",
+    "whole_company": true,
+    "estimated": false,
+    "move": {
+     "start": 0,
+     "latest": 42,
+     "hiring": 2,
+     "not_hiring": [
+      {
+       "change": "found@2026-09-15T00:00:00+00:00/greenhouse:acme",
+       "kind": "found_boards",
+       "label": "1 more board found",
+       "size": 40
+      }
+     ],
+     "not_hiring_total": 40,
+     "percent": null,
+     "percent_withheld": "under 20 openings at the start",
+     "span_days": 3.0,
+     "per_week": 5,
+     "turnover": null,
+     "share": {
+      "start": 100.0,
+      "latest": 100.0,
+      "denominator_start": 40,
+      "denominator_latest": 42,
+      "percent": null
+     }
+    },
+    "netted": [],
+    "steps_at": [],
+    "index_base": null,
+    "arrived_by": null
+   }
+  ],
+  "breakdown": {
+   "closing": null
+  },
+  "marked_changes": [
+   {
+    "id": "found@2026-09-15T00:00:00+00:00/greenhouse:acme",
+    "kind": "found_boards",
+    "ts": "2026-09-15T00:00:00+00:00",
+    "label": "1 more board found",
+    "fields": [],
+    "changed": [],
+    "company": "greenhouse:acme",
+    "boards": 1,
+    "sizes": {
+     "greenhouse:acme": 40
+    }
+   }
+  ],
+  "day_markers": [
+   {
+    "day": "2026-09-15",
+    "at": "2026-09-15T00:00:00+00:00",
+    "changes": [
+     "found@2026-09-15T00:00:00+00:00/greenhouse:acme"
+    ]
+   }
+  ],
+  "reference": [
+   40,
+   40,
+   40,
+   42
+  ],
+  "openings": 42,
   "served_jobs": null,
   "non_tech_jobs": null,
   "reconciles": true,

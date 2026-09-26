@@ -13,10 +13,9 @@ counts, the lines past the page's eighth added together (its Other row), and the
 denominator netted run by run (the dashed line). :func:`trends_payload` is what ``/trends``
 serves: the answer as the page draws it, with its reading.
 
-The netting rule is ``netting``'s, used here as the private implementation: a company's
-line is netted exactly as ``net_answer`` nets it, so its hiring figure is today's. What this
-module adds is the split of the rest, read off how ``netting._net`` took each step out
-(its ``_NetTrace``), pair of runs by pair of runs:
+The netting rule is ``netting``'s, used here as the private implementation: a line's hiring
+is how far ``netting._net`` moves it. What this module adds is the split of the rest, read off
+how ``_net`` took each step out (its ``_NetTrace``), pair of runs by pair of runs:
 
 - a run a step lands on gives up its ``withheld`` openings, at their own size, never scaled: a
   duplicate removal's share of the line, ``(1 − r) ×`` the line's level before it, with ``r`` the
@@ -370,6 +369,21 @@ class TrendWindow:
     until: str | None = None
 
 
+@dataclass(frozen=True)
+class CompanyMove:
+    """One company's own line over a window, as Hot ranks it (:func:`read_company_moves`).
+
+    ``move`` is the line's move, the one its trend reads. ``counted_since`` is the first tick
+    that counted any of its Boards. Where some of its Boards had a run in the window whose
+    closures went uncounted, ``closures_uncounted_boards`` of its ``boards_in_scope`` did, and
+    its closed count is the rest's; where every Board did, it has none (``Turnover.closed``)."""
+
+    move: LineMove
+    counted_since: str
+    closures_uncounted_boards: int
+    boards_in_scope: int
+
+
 # ---- entry points ----------------------------------------------------------------------------
 
 
@@ -381,20 +395,35 @@ def read_trends(history, question) -> TrendReading:
 
 def read_company_moves(
     history, window: TrendWindow, keys: Iterable[str]
-) -> dict[str, LineMove]:
-    """Hot's figures: each company's own line over ``window``, the move the trend its "See
-    trend" link opens reads (ADR-0233 decision 1). A company with nothing counted in the window
-    is left out."""
+) -> dict[str, CompanyMove]:
+    """Hot's figures: each company in ``keys`` (Company directory keys), its own line over
+    ``window``, the move the trend its "See trend" link opens reads (ADR-0233 decision 1), with
+    what its answer says of the company. A company with nothing counted in the window is left
+    out.
+
+    The line is read by the same code as that trend's first row (``_Reader.company_move``),
+    without the rest of the reading: Hot reads every company of 25 openings or more at Space
+    boot, and each whole reading would read its every category too."""
     from headstart.trends.trend_history import TrendQuestion
 
     moves = {}
     for key in keys:
-        reading = read_trends(
-            history,
-            TrendQuestion(companies=(key,), since=window.since, until=window.until),
+        answer = history.unnetted_answer(
+            TrendQuestion(companies=(key,), since=window.since, until=window.until)
         )
-        if reading.company_lines:
-            moves[key] = reading.company_lines[0].move
+        drawn, view = _viewed(answer)
+        move = (
+            _Reader(drawn, view).company_move()
+            if view.stamps and drawn["series"]
+            else None
+        )
+        if move is not None:
+            moves[key] = CompanyMove(
+                move=move,
+                counted_since=answer["counted_since"][key],
+                closures_uncounted_boards=answer["closures_unseen"].get(key, 0),
+                boards_in_scope=answer["boards_in_scope"].get(key, 0),
+            )
     return moves
 
 
@@ -490,34 +519,55 @@ class _Reader:
 
     # -- lines --
 
-    def read(self) -> TrendReading:
-        view, answer, stamps = self.view, self.answer, self.stamps
-        series = [
+    def _series_lines(self) -> list[_Line]:
+        return [
             _Line(
                 line["name"],
                 line["points"],
                 turnover=line.get("turnover"),
                 denominators=self.company_totals.get(line["name"])
-                if view.split_company
+                if self.view.split_company
                 else None,
             )
-            for line in answer["series"]
+            for line in self.answer["series"]
         ]
-        parts = [
-            line.get("turnover") for line in answer["series"] if line.get("turnover")
-        ]
-        total_line = _Line(
+
+    def _total_line(self, series: list[_Line]) -> _Line:
+        """Every line added together: the first row, a whole company's own line under one
+        pick."""
+        width = len(self.stamps)
+        parts = [line.turnover for line in series if line.turnover]
+        return _Line(
             _TOTAL,
-            netting._sum_points([line.points for line in series], len(stamps)),
+            netting._sum_points([line.points for line in series], width),
             turnover={
-                metric: netting._sum_points(
-                    [part[metric] for part in parts], len(stamps)
-                )
+                metric: netting._sum_points([part[metric] for part in parts], width)
                 for metric in ("opened", "closed", "recounted")
             }
             if parts
             else None,
         )
+
+    def company_move(self) -> LineMove | None:
+        """The move of the first row alone, read as :meth:`read` reads it and nothing else of
+        the answer read: under one pick, the company's own line. None where it has no count."""
+        total_line = self._total_line(self._series_lines())
+        exact = self._exact(total_line, None)
+        if exact is None:
+            return None
+        hiring = self._rounded_hiring(exact)
+        return self._move(
+            total_line,
+            exact,
+            hiring,
+            self._round_to_openings(exact, hiring),
+            self._is_whole_company(total_line),
+        )
+
+    def read(self) -> TrendReading:
+        view, answer, stamps = self.view, self.answer, self.stamps
+        series = self._series_lines()
+        total_line = self._total_line(series)
         origin = next(
             (j for j, v in enumerate(total_line.points) if v is not None), None
         )
@@ -658,7 +708,7 @@ class _Reader:
         measured = [j for j, v in enumerate(points) if v is not None]
         first, last = measured[0], measured[-1]
         trace = _NetTrace()
-        net = _net(view, points, line, None, True, trace=trace)
+        net = _net(view, line, trace=trace)
         kept = [j for j in measured if net[j] is not None]
         stock = view.metric == "stock"
         # A stock line with no count at the latest run reads 0 there (the page's latestOf).
@@ -723,7 +773,7 @@ class _Reader:
         )
 
     def _rounded_hiring(self, exact: _Exact | None) -> int | None:
-        """A line's hiring in whole openings, rounded as ``net_answer``'s figure is."""
+        """A line's hiring in whole openings, rounded once, halves up (``js_round``)."""
         if exact is None:
             return None
         return js_round(exact.hiring) if exact.causes else exact.latest - exact.start
@@ -748,7 +798,7 @@ class _Reader:
     ) -> LineReading | None:
         if exact is None:
             return None
-        netted = _rounded_for_drawing(_net(self.view, line.points, line, None, True))
+        netted = _rounded_for_drawing(_net(self.view, line))
         whole = self._is_whole_company(line)
         move = self._move(
             line, exact, hiring, self._round_to_openings(exact, hiring), whole
@@ -931,7 +981,7 @@ class _Reader:
                 if line.denominators
                 else _Line(_TOTAL, raw)
             )
-            netted = _net(whole, raw, whose, None, True)
+            netted = _net(whole, whose)
         self._denominators[key] = netted
         return netted
 

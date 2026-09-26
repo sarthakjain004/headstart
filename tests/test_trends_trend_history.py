@@ -26,7 +26,7 @@ old_layout_converter = pytest.importorskip("old_layout_trends_state_converter")
 import duplicate_removal_trends_state
 
 from headstart.ingest import role_trends
-from headstart.trends import netting, role_taxonomy, trend_history
+from headstart.trends import line_reading, netting, role_taxonomy, trend_history
 from headstart.trends.trend_history import (
     TrendHistory,
     TrendQuestion,
@@ -178,7 +178,9 @@ def test_a_tick_no_newer_than_the_newest_is_refused(tmp_path):
 
 def test_a_counting_change_is_a_tick_whose_methodology_moved(tmp_path):
     _write_ticks(tmp_path)
-    epochs = TrendHistory.load(tmp_path, _NO_CONFIG).answer(TrendQuestion())["epochs"]
+    epochs = TrendHistory.load(tmp_path, _NO_CONFIG).unnetted_answer(TrendQuestion())[
+        "epochs"
+    ]
     assert epochs == [
         {
             "ts": _stamp(4),
@@ -224,7 +226,7 @@ def test_an_unreadable_ledger_is_an_empty_history(tmp_path):
     assert history.ticks == ()
     assert list(history.companies) == ["greenhouse:acme"]
     with pytest.raises(TrendsUnavailable):
-        history.answer(TrendQuestion())
+        history.unnetted_answer(TrendQuestion())
 
 
 @pytest.mark.parametrize(
@@ -254,7 +256,7 @@ def test_a_bad_question_is_a_value_error_naming_what_is_wrong(
     )
     history = TrendHistory.load(tmp_path, _NO_CONFIG)
     with pytest.raises(ValueError, match=re.escape(message)):
-        history.answer(question)
+        history.unnetted_answer(question)
 
 
 def test_the_module_keeps_no_copy_of_the_reserved_names():
@@ -453,7 +455,7 @@ def test_new_becomes_the_week_of_opened_jobs_once_a_whole_week_has_them(
     history = TrendHistory.load(
         old_layout_converter.store_in_current_layout(tmp_path), _NO_CONFIG
     )
-    answer = history.answer(TrendQuestion(metric="new", companies=companies))
+    answer = history.unnetted_answer(TrendQuestion(metric="new", companies=companies))
 
     # turnover began on day 3; day 10 is the first with a whole week
     switch = _stamp(10)
@@ -465,17 +467,20 @@ def test_new_becomes_the_week_of_opened_jobs_once_a_whole_week_has_them(
     assert points[at - 1] != 14
     switched = [e for e in answer["epochs"] if e["ts"] == switch]
     assert switched and switched[0]["fields"] == ["new_became_inflow"]
-    # answer() nets every line it serves, and a netted line ends on its measured latest value
-    for line in [*answer["series"], answer["series_sum"]]:
-        assert [v for v in line["net"]["count"] if v is not None][-1] == line["points"][
-            -1
-        ]
+    # its reading nets every line, and a netted line ends on its measured latest value
+    reading = line_reading.read_answer(answer)
+    points = {line["name"]: line["points"] for line in answer["series"]}
+    for line in reading.lines:
+        assert [v for v in line.netted if v is not None][-1] == points[line.name][-1]
+    if reading.total is not None:
+        total = reading.total
+        assert [v for v in total.netted if v is not None][-1] == total.points[-1]
 
 
 def test_all_openings_carry_no_switch_of_new(tmp_path):
     _write_opened_history(tmp_path)
     answer = TrendHistory.load(
         old_layout_converter.store_in_current_layout(tmp_path), _NO_CONFIG
-    ).answer(TrendQuestion())
+    ).unnetted_answer(TrendQuestion())
     assert answer["new_inflow_from"] is None
     assert all("new_became_inflow" not in e["fields"] for e in answer["epochs"])

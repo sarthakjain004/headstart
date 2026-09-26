@@ -3,9 +3,10 @@
 A row is a **Company directory** entry, never a single Board (ADR-0230): Bosch Group ranked
 third at +442 from one of its two Boards while the trend its row opened summed both. Ranked at
 Space boot from the same history the Trends tab answers from, so it can never be stale against
-the ticks the Space loaded, and its figures are :meth:`TrendHistory.company_moves`, computed by
-the same code as the trend a row opens. A row's net change is therefore what its "See trend"
-charts from the window's base, by construction rather than by a mirrored rule.
+the ticks the Space loaded, and its figures are :func:`line_reading.read_company_moves`, each
+company's own line read by the same code as the trend a row opens (ADR-0233). A row's net
+change is therefore the hiring its "See trend" reads from the window's base, by construction
+rather than by a mirrored rule.
 
 ## Three lenses, because "actively hiring" is three questions
 
@@ -41,6 +42,7 @@ from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 from headstart.boards.board_identity import ats_of
+from headstart.trends import line_reading
 
 if TYPE_CHECKING:
     from headstart.trends.trend_history import TrendHistory
@@ -64,8 +66,9 @@ def rank(
     window yet, which keeps the tab dark rather than ranking nothing.
 
     ``history`` is a :class:`headstart.trends.trend_history.TrendHistory`, read through
-    :meth:`~headstart.trends.trend_history.TrendHistory.openings` and
-    :meth:`~headstart.trends.trend_history.TrendHistory.company_moves`. ``directory`` is the Company
+    :meth:`~headstart.trends.trend_history.TrendHistory.openings`,
+    :meth:`~headstart.trends.trend_history.TrendHistory.trailing_week` and
+    :func:`headstart.trends.line_reading.read_company_moves`. ``directory`` is the Company
     directory, ``{company key: {name, boards, operator}}``.
 
     Every candidate company is scored once and the three lenses sort the same rows, so a company
@@ -77,20 +80,26 @@ def rank(
         for key, entry in directory.items()
     }
     ranked = {key: n for key, n in stock.items() if n >= MIN_STOCK}
-    moves = history.company_moves(list(ranked))
-    newest = moves.window.get("to")
+    window = history.trailing_week()
+    newest = window["to"]
     if not newest:
         return {}
+    moves = line_reading.read_company_moves(
+        history, line_reading.TrendWindow(since=window["base"]), list(ranked)
+    )
     too_new_since = (
         datetime.fromisoformat(newest) - timedelta(days=MIN_COUNTED_DAYS)
     ).isoformat(timespec="seconds")
     candidates, too_new = [], 0
     for key, open_now in ranked.items():
-        move = moves.moves[key]
-        if move.counted_since > too_new_since:
+        company = moves[key]
+        if company.counted_since > too_new_since:
             too_new += 1
             continue
-        entry = directory[key]
+        move, entry = company.move, directory[key]
+        # None where the company's turnover was not counted: a 0 there stated a week nobody
+        # measured.
+        opened = move.turnover.opened if move.turnover else None
         candidates.append(
             {
                 "key": key,
@@ -99,19 +108,17 @@ def rank(
                 "atses": sorted({ats_of(board) for board in entry["boards"]}),
                 "operator": entry["operator"],
                 "stock": open_now,
-                "net": move.net,
-                "opened": move.opened,
-                "closed": move.closed,
+                "net": move.hiring,
+                "opened": opened,
+                "closed": move.turnover.closed if move.turnover else None,
                 # Where some of its Boards' closures went uncounted, how many of how many: its
                 # closed count is then theirs only, and the row says so.
-                "closures_uncounted_boards": move.closures_uncounted_boards,
-                "boards_in_scope": move.boards_in_scope,
+                "closures_uncounted_boards": company.closures_uncounted_boards,
+                "boards_in_scope": company.boards_in_scope,
                 # Percent rather than a fraction: it is a display value, and rounding it here
                 # keeps every consumer from inventing its own precision. None, as opened is,
                 # where the company's turnover was not counted.
-                "rate": None
-                if move.opened is None
-                else round(100 * move.opened / open_now),
+                "rate": None if opened is None else round(100 * opened / open_now),
             }
         )
     # Ties break on the key, so the same history always ranks the same list.
@@ -140,7 +147,7 @@ def rank(
         "staffing": operators["staffing"],
         "aggregator": operators["aggregator"],
     }
-    return {"window": dict(moves.window), "lenses": lenses, "counts": counts}
+    return {"window": window, "lenses": lenses, "counts": counts}
 
 
 def _top(candidates: list[dict[str, Any]], figure: str) -> list[dict[str, Any]]:

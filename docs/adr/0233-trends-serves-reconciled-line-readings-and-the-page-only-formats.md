@@ -122,3 +122,22 @@ its figure is the sound one to headline, and to rank Hot by.
      with no turnover of its own;
   3. the page reads the reading, and its arithmetic is deleted;
   4. Hot reads `read_company_moves`.
+
+## Step 4, as built (2026-09-26)
+
+Hot reads `read_company_moves` over `TrendHistory.trailing_week`'s base. Each company's line is
+read by the code that reads the first row of the trend its "See trend" opens, without that
+trend's categories. What only the old path used is deleted: `TrendHistory.answer`,
+`company_moves` and its `CompanyMove`/`CompanyMoves` types, `netting.net_answer` with the helpers
+only it called (`_netted`, `_causes`, `_shares`, `_change_size`, `_moved`, `_runs`), and the
+share, reference-line and single-kind paths through `_net`. The golden answers
+(`tests/fixtures/trend_answers/`, `tests/test_trends_netting.py`) retire into the golden
+readings. Eight of those readings had no line; their cases lived only in the netted reference
+line. Each now carries its counts as a category line, which nets exactly as the reference did.
+
+Measured on the 2026-09-26 12:28 state (2,398 companies with 25 or more openings):
+
+* Hot's payload is identical to the one before this step, lens by lens and row by row.
+* On every company, the line Hot reads equals the full reading's company line.
+* On all 248 Hot rows, a row's net is the hiring of the trend its "See trend" opens.
+* Ranking at boot took 38–40 s, down from 46–48 s before (three interleaved runs of each).
