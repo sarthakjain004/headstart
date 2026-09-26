@@ -79,6 +79,9 @@ DEFAULT_MIN_RECLAIM_GB = 1.0
 # Poll instead, generously over the measured ~25s, and only call it a failure at the end.
 VERIFY_TIMEOUT_S = 180.0
 VERIFY_INTERVAL_S = 5.0
+# How far above the store less the delete usedStorage may settle before that is said. On all
+# seven runs 36200233818..36218633315 it settled exactly there (e.g. 16.59 - 2.06 = 14.53 GB).
+_SETTLED_TOLERANCE = 0.01
 
 
 class _Hub(Protocol):
@@ -284,9 +287,17 @@ def reclaim(
     # upload this run just made (16.13 GB against 16.59 GB stored on run 36218633315), so that
     # difference read 1.60 GB for the same 2.06 GB delete. What the counter should now show is
     # the store less the delete, printed beside it so the lag stays visible.
+    expected = stored_bytes - dead_bytes
+    if used_after > expected * (1 + _SETTLED_TOLERANCE):
+        # The counter fell, but not yet to what the store now holds: HF has not released all of
+        # the delete yet, or something else is stored. Said, so the gap is not read as freed.
+        _log.warning(
+            f"usedStorage {_gb(used_after)} is still above the store less the delete "
+            f"({_gb(expected)}) — the Hub has not released all {_gb(dead_bytes)} yet"
+        )
     _log.info(
         f"reclaimed {_gb(dead_bytes)}: usedStorage {_gb(used_before)} -> "
-        f"{_gb(used_after)} (stored less deleted {_gb(stored_bytes - dead_bytes)}), "
+        f"{_gb(used_after)} (stored less deleted {_gb(expected)}), "
         f"live {_gb(live_after)} intact across {len(siblings_after)} file(s)"
     )
     return 0

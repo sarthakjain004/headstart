@@ -72,6 +72,7 @@ from time import monotonic
 from typing import Any, NamedTuple
 
 from headstart import log
+from headstart.boards.board_identity import ats_of
 from headstart.ingest import (
     PENDING_REDERIVE_PATH,
     REPO_ROOT,
@@ -717,12 +718,12 @@ def refresh(
         # (up to 17 a run, 2026-09-26), and a count alone cannot say which read went wrong.
         by_ats: dict[str, list[tuple[str, bool]]] = {}
         for job_id, cleared in lost[label]:
-            by_ats.setdefault(job_id.split(":", 1)[0], []).append((job_id, cleared))
+            by_ats.setdefault(ats_of(job_id), []).append((job_id, cleared))
         for ats, ids in sorted(by_ats.items(), key=lambda kv: (-len(kv[1]), kv[0])):
             _log.info(
                 f"  {label} lost on {ats}: {len(ids)}, {sum(c for _, c in ids)} with the raw "
                 f"field cleared by this scrape — e.g. "
-                + ", ".join(job_id for job_id, _ in ids[:_LOST_SAMPLE])
+                + log.named_sample([job_id for job_id, _ in ids], cap=_LOST_SAMPLE)
             )
     if country_delta:
         _log.info(

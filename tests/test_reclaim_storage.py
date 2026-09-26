@@ -333,3 +333,20 @@ def test_orphans_held_back_by_age_are_named(caplog):
     assert (
         "1 orphaned object(s), 2.00 GB held back as younger than 45 min" in caplog.text
     )
+
+
+def test_a_counter_left_above_the_store_less_the_delete_is_said(caplog):
+    """The counter fell, but not to what the store now holds: the gap is not read as freed."""
+    hub = FakeHub(
+        live=[sibling("live", 14_530_000_000)],
+        stored=[blob("live", 14_530_000_000), blob("dead", 2_060_000_000)],
+        used=16_130_000_000,
+        used_after=15_500_000_000,
+    )
+    caplog.set_level("INFO")
+    assert run(hub) == 0
+    assert any(
+        "still above the store less the delete (14.53 GB)" in r.getMessage()
+        for r in caplog.records
+        if r.levelname == "WARNING"
+    )

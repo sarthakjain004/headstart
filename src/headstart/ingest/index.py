@@ -827,16 +827,16 @@ def sync(args: argparse.Namespace) -> int:
             _log.info(
                 f"  {count} eviction-candidate row(s) kept out of scope on {board}"
             )
-        brought_in = Counter(
+        rejected_by_board = Counter(
             resolve_board(job_id, live) for job_id in rejected.intersection(index_ids)
         )
         _log.info(
-            f"scope exclusion: {sum(brought_in.values())} indexed row(s) on scope-excluded "
+            f"scope exclusion: {sum(rejected_by_board.values())} indexed row(s) on scope-excluded "
             "Board(s) were returned by this scrape and rejected by the tech filter, so they take "
             "the grace period like any absence (ADR-0243)"
             + (
-                f": {log.named_sample([f'{b} ({n})' for b, n in brought_in.most_common()])}"
-                if brought_in
+                f": {log.named_sample([f'{b} ({n})' for b, n in rejected_by_board.most_common()])}"
+                if rejected_by_board
                 else ""
             )
         )
@@ -1007,7 +1007,7 @@ def sync(args: argparse.Namespace) -> int:
         # evicts next scrape unless the Board comes back — so name those Boards apart.
         answered = {lower_key(resolve_board(i, live)) for i in corpus_ids}
         emptied: Counter[str] = Counter()
-        for job_id in plan.unconfirmed - was_unconfirmed:
+        for job_id in plan.unconfirmed - was_unconfirmed - rejected:
             board = resolve_board(job_id, live)
             if lower_key(board) not in answered:
                 emptied[board] += 1

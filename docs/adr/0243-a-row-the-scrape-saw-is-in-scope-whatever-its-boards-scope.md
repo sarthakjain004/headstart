@@ -57,3 +57,9 @@ verdict that flips on a degraded read gets the same second look any other short 
   that reads another run's copy is bounded: only ids on Boards this run excluded count.
 * Rejected ids on a Board ADR-0053 excludes as *raised* cannot exist: a Board that raised wrote
   no lines.
+* Both kinds of eviction are queued for Trends like any other (ADR-0227), so they are booked as
+  Closed over the two ticks that evict them: ~730 rejected rows and ~2,000 fossils. A rejected row
+  on an in-scope Board has always been booked that way, and the fossils are closures, only late.
+* A fossil whose live-cased copy is not embedded yet (non-English, or awaiting an embed) leaves
+  the table before that copy arrives. It was a duplicate of a posting the corpus now carries
+  under another spelling, so nothing is lost that the next embed does not bring back.
