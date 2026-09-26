@@ -2615,7 +2615,8 @@ CONTRACT: tuple[Line, ...] = (
         consumer="fanout_plan.VALUE_GATE",
         emitter=_SCRAPE_PLAN,
         body=(
-            "value gate: skipped 7 Board(s) costing over 10 min for under 2 tech jobs/min — "
+            "value gate: skipped 7 Board(s) costing over 10 min for under 2 tech jobs/min, "
+            "or over 2 min for none — "
             "greenhouse:gate-0 (0.03/min), greenhouse:gate-1 (0.03/min), "
             "greenhouse:gate-2 (0.03/min), greenhouse:gate-3 (0.04/min), "
             "greenhouse:gate-4 (0.04/min), greenhouse:gate-5 (0.04/min), "
@@ -2642,8 +2643,9 @@ CONTRACT: tuple[Line, ...] = (
         consumer="fanout_plan.SLICE",
         emitter=_SCRAPE_PLAN,
         body=(
-            "slice: 2307 boards (1205 priority + 1102 exploration); 1204 hold unsettled "
-            "descriptions, out of 1,204 gap boards (117,992 jobs) still to drain"
+            "slice: 2307 boards (1205 Head + 1102 Tail); 1204 hold unsettled "
+            "descriptions, out of 1,204 gap boards (117,992 jobs) still to drain; 0 of them "
+            "value-gated, which cannot drain while gated"
         ),
         why="a thin per-ATS scrape is often this run's exploration draw, not a regression",
         emit=_plan_measured,
@@ -2671,7 +2673,10 @@ CONTRACT: tuple[Line, ...] = (
     Line(
         consumer="fanout_plan.MAKESPAN",
         emitter=_SCRAPE_PLAN,
-        body="2307 boards across 11 shards; predicted makespan ~81.8 min (total work Σ 101.5 min)",
+        body=(
+            "2307 boards across 11 shards; predicted makespan ~81.8 min "
+            "(total work Σ 101.5 serial min)"
+        ),
         why="the measured form, with the makespan tail",
         emit=_plan_measured,
     ),
@@ -2688,7 +2693,7 @@ CONTRACT: tuple[Line, ...] = (
     Line(
         consumer="fanout_timing.PLAN_SHARD",
         emitter=_SCRAPE_PLAN,
-        body="shard 0: 207 boards (~81.8 min)",
+        body="shard 0: 207 boards (~81.8 serial min)",
         why="the measured per-shard serial estimate — NOT a wall estimate",
         emit=_plan_measured,
     ),
@@ -2703,7 +2708,7 @@ CONTRACT: tuple[Line, ...] = (
         consumer="fanout_plan.SPREAD",
         emitter=_SCRAPE_PLAN,
         body=(
-            "predicted spread: min 2.0 / mean 9.2 / max 81.8 min (8.86x mean); "
+            "predicted serial spread: min 2.0 / mean 9.2 / max 81.8 min (8.86x mean); "
             "single-board floor 80.0 min"
         ),
         why="the planner naming its own straggler, in the units floor_table reports after the fact",
