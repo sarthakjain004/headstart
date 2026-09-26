@@ -1052,8 +1052,9 @@ def _csb_description(page: str) -> str | None:
     Tenants split a posting over several such blocks: lockheed.jobs.hr.cloud.sap puts its pay
     range in a block of its own (measured 2026-09-26), and keeping only the longest dropped it,
     so its salaries came and went with whichever surface last wrote the description. A block
-    whose text another block already carries is left out: jobs.teck.com and careers.orkla.com
-    render every block twice, and a CSB teaser repeats the start of the full text."""
+    whose text starts another block is left out: jobs.teck.com and careers.orkla.com render
+    every block twice, and a CSB teaser repeats the start of the full text. Only a prefix counts,
+    so a short block whose words merely recur mid-text (a pay line, "Remote") is kept."""
     blocks = []
     for match in _DESC_OPEN.finditer(page):
         content = _matched_content(page, match)
@@ -1064,7 +1065,7 @@ def _csb_description(page: str) -> str | None:
         content
         for i, (content, text) in enumerate(blocks)
         if not any(
-            text in other and (text != other or j < i)
+            other.startswith(text) and (text != other or j < i)
             for j, (_, other) in enumerate(blocks)
             if j != i
         )
