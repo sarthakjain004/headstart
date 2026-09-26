@@ -95,6 +95,7 @@
   "total": {
    "name": "__total__",
    "label": "",
+   "whole_company": true,
    "estimated": false,
    "move": {
     "start": 100,
@@ -144,6 +145,7 @@
    {
     "name": "a",
     "label": "a",
+    "whole_company": false,
     "estimated": false,
     "move": {
      "start": 100,
@@ -189,6 +191,7 @@
    {
     "name": "greenhouse:acme",
     "label": "Acme",
+    "whole_company": true,
     "estimated": false,
     "move": {
      "start": 100,
@@ -217,6 +220,7 @@
    {
     "name": "workday:amd/x",
     "label": "AMD",
+    "whole_company": true,
     "estimated": false,
     "move": {
      "start": 0,

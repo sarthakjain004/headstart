@@ -112,6 +112,7 @@ from headstart.scrapers.base import (
     DetailLost,
     DetailRequest,
     classify_exception,
+    gone_board_error,
 )
 from headstart.scrapers.job_posting_jsonld import find_job_posting
 
@@ -295,8 +296,8 @@ class TrakstarScraper(BaseScraper):
         if page is not None and _INACTIVE_ACCOUNT in page:
             # Raised in the shape `board_failures.is_gone` matches (module docstring): the API
             # still lists this account's openings, and every link it names is dead.
-            raise http.RequestsError(
-                f"HTTP Error 410: {self.board_key()} is an inactive Trakstar Hire account"
+            raise gone_board_error(
+                f"{self.board_key()} is an inactive Trakstar Hire account"
             )
         if page is not None and self.wants_company_name():
             # A title, so the title patterns read it (`company_from_page`), not `from_field`.

@@ -893,3 +893,55 @@ def test_a_requisition_is_stored_only_on_a_board_the_eightfold_pairs_name(
     facts = um.corpus_facts(tmp_path)
     assert facts[paired["id"]]["requisition"] == "R-100"
     assert facts[other["id"]]["requisition"] is None
+
+
+def test_a_lost_derivation_is_named_per_ats_with_its_ids(tmp_path, caplog):
+    """`lost` on an ordinary run mirrored the next run's `gained` (up to 17 a run, 2026-09-26): a
+    field-sourced answer goes when the raw field changes to one nothing parses. The line names the
+    ATS and ids to open."""
+    store = tmp_path / "store"
+    store.mkdir()
+    row = _meta(
+        experience="3-5 years", min_years=3, max_years=5, experience_source="field"
+    )
+    (store / "meta.jsonl").write_text(json.dumps(row) + "\n", encoding="utf-8")
+    jobs = tmp_path / "jobs"
+    jobs.mkdir()
+    (jobs / "greenhouse.jsonl").write_text(
+        json.dumps({**row, "experience": "see description"}) + "\n", encoding="utf-8"
+    )
+    caplog.set_level("INFO")
+    assert um.refresh(store, jobs, tmp_path / "none", tmp_path / "wm.json") == 0
+    lines = [r.getMessage() for r in caplog.records]
+    assert ("  experience lost on greenhouse: 1 — e.g. greenhouse:acme:1") in lines
+
+
+def test_a_none_from_the_scrape_does_not_erase_a_stored_fact():
+    """A degraded read nulls several facts of one row at once and the next read restores them
+    (Zoho `experience` with `posted_at`, 2026-09-26). A None is not observed, so the stored
+    field-sourced answer survives the flap instead of being lost for one run."""
+    meta = _meta(
+        experience="1-3 years",
+        min_years=1,
+        max_years=3,
+        experience_source="field",
+        posted_at="2023-05-08",
+    )
+    facts = {f: meta.get(f) for f in um.FACT_FIELDS} | {
+        "experience": None,
+        "posted_at": None,
+        "title": "Node.JS - Remote",
+    }
+    row, facts_changed, _ = um.refresh_row(meta, facts, {}, sweep=False)
+    assert row["experience"] == "1-3 years" and row["posted_at"] == "2023-05-08"
+    assert (row["min_years"], row["experience_source"]) == (1, "field")
+    assert row["title"] == "Node.JS - Remote" and facts_changed
+
+
+def test_a_none_requisition_still_clears_the_stored_one():
+    """`requisition` is None on purpose off the Boards Eightfold pairs (ADR-0210), so it is not one
+    of the facts a None leaves alone."""
+    meta = _meta(requisition="R-1")
+    facts = {f: meta.get(f) for f in um.FACT_FIELDS} | {"requisition": None}
+    row, facts_changed, _ = um.refresh_row(meta, facts, {}, sweep=False)
+    assert row["requisition"] is None and facts_changed

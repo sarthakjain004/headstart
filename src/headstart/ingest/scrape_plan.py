@@ -24,9 +24,9 @@ Each shard runs on its own runner/IP, so keeping per-shard workers at the monoli
 planner does not touch ``HEADSTART_WORKERS``) makes every ATS host see a shard as one ordinary
 monolith from a distinct IP — per-IP load is unchanged (ADR-0026, "cost-balanced, per-IP safety").
 
-Writes one ``shard-{k}.jsonl`` (``{ats, slug, name}`` per board, priority-desc so a time-boxed shard
-scrapes its best boards first), a ``plan.json`` (``shards`` matrix + board ``count``) the workflow
-reads, and a copy of the detail skip-list (ADR-0048, re-keyed by ADR-0050) so each shard can skip
+Writes one ``shard-{k}.jsonl`` (``{ats, slug, name}`` per board: Boards measured over a minute
+first, slowest first, then priority-desc so a time-boxed shard scrapes its best boards first), a
+``plan.json`` (``shards`` matrix + board ``count``) the workflow reads, and a copy of the detail skip-list (ADR-0048, re-keyed by ADR-0050) so each shard can skip
 re-fetching details we already **hold** — all three ride the one artifact the shards download.
 
 Run: python -m headstart.ingest.scrape_plan [--max-boards 80000] [--max-shards 15]
@@ -38,8 +38,9 @@ import argparse
 import json
 import shutil
 from collections.abc import Mapping
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from headstart import log
 from headstart.boards import (
@@ -60,6 +61,9 @@ from headstart.ingest import (
     shard_speedup,
 )
 from headstart.ingest.binpack import lpt_pack_capped, shard_count
+
+if TYPE_CHECKING:
+    from headstart.boards.scrapable_boards import ScrapableBoard
 
 _log = log.get(__name__, __spec__)
 
@@ -119,6 +123,23 @@ _GATE_MIN_TECH_PER_MIN = 2.0  # tech jobs per minute of shard time, in the gap a
 # often, where it is measured again and judged on what it is now. The cost of being wrong is
 # then one shard-hour a fortnight, not a Board lost forever.
 _GATE_RECHECK_DAYS = 14
+# A Board whose last complete scrape found nothing is judged from a lower floor. Its yield is known
+# to be zero, so there is no ratio to protect and only the seconds matter: on run 36218633315
+# `jibe:commonspirit` read 0 jobs in 515 s, started last on its shard and lengthened the whole
+# stage by ~339 s, and the 10-min floor above kept the gate from ever looking at it (ADR-0242).
+_GATE_ZERO_FLOOR_S = 120.0
+
+# The Tail back-off (ADR-0242). An unscored Board whose last complete scrape found no postings is
+# read at most once per this interval rather than every rotation (~3 runs at an 80k Slice). Of
+# 52,890 complete empty looks across the seven runs of 2026-09-25/26, 7 were followed by a
+# non-empty one; meanwhile ~2,200 empty ADP Boards cost ~10 serial hours of every run.
+_EMPTY_BACKOFF = timedelta(hours=24)
+
+# Boards measured slower than this start first in their shard, whatever their score (ADR-0242). A
+# shard's wall clock ends with its last Board, so a slow one submitted last — the priority order
+# puts every zero-score Board there — runs alone past everything else: `jibe:commonspirit` started
+# at t=1,181 s and ran 515 s on run 36218633315.
+_SLOW_BOARD_S = 60.0
 
 
 def _measured_nothing(row: BoardCost) -> bool:
@@ -165,7 +186,9 @@ def _gated_boards(
     gated: dict[str, float] = {}
     for key in keys:
         row = cost_rows.get(key)
-        if row is None or row.seconds <= _GATE_FLOOR_S:
+        if row is None or row.seconds <= (
+            _GATE_ZERO_FLOOR_S if _measured_nothing(row) else _GATE_FLOOR_S
+        ):
             continue
         if _days_since(row.updated_at, today) >= _GATE_RECHECK_DAYS:
             continue  # measurement expired — re-admit it and measure again
@@ -210,6 +233,51 @@ def _days_since(updated_at: str, today: str) -> float:
     except (TypeError, ValueError):
         return float("inf")
     return float((now - then).days)
+
+
+def _backs_off(key: str, row: BoardCost, scores: Mapping[str, float]) -> bool:
+    """Is this an unscored Board whose last complete scrape found nothing — the Tail back-off's
+    set (ADR-0242)? A Scored Board the head overflowed into the Tail is not backed off."""
+    return _measured_nothing(row) and scores.get(key, 0.0) <= 0.0
+
+
+def _count_backed_off(
+    boards: list[ScrapableBoard],
+    cost_rows: Mapping[str, BoardCost],
+    scores: Mapping[str, float],
+) -> int:
+    """How many of ``boards`` the Tail back-off applies to."""
+    return sum(
+        1
+        for c in boards
+        if (row := cost_rows.get(cost_ledger.key_for(c))) is not None
+        and _backs_off(cost_ledger.key_for(c), row, scores)
+    )
+
+
+def _tail_stamps(
+    cost_rows: Mapping[str, BoardCost], scores: Mapping[str, float]
+) -> dict[str, str]:
+    """Each Board's last-look stamp as the Tail rotation orders it (ADR-0229, ADR-0242).
+
+    An unscored Board whose last complete scrape found nothing competes as if it had been looked at
+    :data:`_EMPTY_BACKOFF` later than it was, so it comes round once per interval instead of once
+    per rotation — and still comes round, which a skip-list would not guarantee. Only the Tail
+    reads these stamps, so a Scored Board in the head is never delayed. An unreadable stamp is
+    left as it is: a bad date must not be grounds for reading a Board less often.
+    """
+    stamps: dict[str, str] = {}
+    for key, row in cost_rows.items():
+        stamp = row.updated_at
+        if _backs_off(key, row, scores):
+            try:
+                stamp = (datetime.fromisoformat(stamp) + _EMPTY_BACKOFF).isoformat(
+                    timespec="seconds"
+                )
+            except (TypeError, ValueError):
+                pass
+        stamps[key] = stamp
+    return stamps
 
 
 _MAX_SHARDS = 15  # == pipeline.yml `max-parallel`
@@ -349,6 +417,14 @@ def main() -> int:
         cost_rows,
         scores,
     )
+    unsettled = description_gap_ledger.load(Path(args.gap))
+    # Gap Boards the gate holds out can never drain while gated, so the slice line says so.
+    gated_gap = sum(
+        1
+        for c in companies
+        if cost_ledger.key_for(c) in gated
+        and description_gap_ledger.key_for(c) in unsettled
+    )
     if gated:
         companies = [c for c in companies if cost_ledger.key_for(c) not in gated]
         # Named, every run, not just counted. This gate removes work on purpose, and the only
@@ -375,9 +451,12 @@ def main() -> int:
         _log.warning(
             f"value gate: skipped {len(gated)} Board(s) costing over "
             f"{_GATE_FLOOR_S / 60:.0f} min for under {_GATE_MIN_TECH_PER_MIN:.0f} tech "
-            f"jobs/min — " + log.named_sample([_why(k, d) for k, d in worst])
+            f"jobs/min, or over {_GATE_ZERO_FLOOR_S / 60:.0f} min for none — "
+            + log.named_sample([_why(k, d) for k, d in worst])
         )
-    unsettled = description_gap_ledger.load(Path(args.gap))
+        # The warning's sample stops at ten; ADR-0064 wants every gated Board named every run.
+        for k, d in worst:
+            _log.info(f"value gate: {_why(k, d)}")
     # The head holds every Scored Board only while they fit (ADR-0229). Past that, the
     # lowest-scored overflow joins the Tail and waits its turn by its last look like any
     # unscored Board, which nothing downstream would notice, so it is named here.
@@ -388,16 +467,29 @@ def main() -> int:
             f"head: {head_cap + overflow:,} Scored Boards for {head_cap:,} head slots; the "
             f"lowest-scored {overflow:,} join the Tail (ADR-0229)"
         )
+
+    backed_off = _count_backed_off(companies, cost_rows, scores)
     companies = pick_boards(
         companies,
         scores,
         args.max_boards,
         unsettled=unsettled,
-        # When each Board was last looked at, so the Tail rotates oldest-first (ADR-0229).
-        last_looked={key: row.updated_at for key, row in cost_rows.items()},
+        # When each Board was last looked at, so the Tail rotates oldest-first (ADR-0229), with
+        # a measured-empty Board's look pushed back (ADR-0242).
+        last_looked=_tail_stamps(cost_rows, scores),
     )
     n = len(companies)
-    priority = sum(1 for c in companies if priority_ledger.is_scored(c, scores))
+    scored = sum(1 for c in companies if priority_ledger.is_scored(c, scores))
+    # The head is capped; Scored Boards past the cap were picked by the Tail (ADR-0229).
+    head = (
+        min(scored, priority_ledger.head_slots(args.max_boards)) if overflow else scored
+    )
+    _log.info(
+        f"tail back-off: {_count_backed_off(companies, cost_rows, scores)} of {backed_off} "
+        "measured-empty "
+        f"unscored Board(s) are due this run; each comes round at most once per "
+        f"{_EMPTY_BACKOFF.total_seconds() / 3600:.0f} h (ADR-0242)"
+    )
     # Boards in the slice that hold unsettled descriptions — deliberately NOT reported as "the
     # quota picked N". A gap Board also reaches the slice through the head or the Tail
     # on its own, so a count phrased as quota fill would claim picks the reservation did not
@@ -406,9 +498,10 @@ def main() -> int:
         1 for c in companies if description_gap_ledger.key_for(c) in unsettled
     )
     _log.info(
-        f"slice: {n} boards ({priority} priority + {n - priority} exploration); "
+        f"slice: {n} boards ({head} Head + {n - head} Tail); "
         f"{gap_in_slice} hold unsettled descriptions, out of {len(unsettled):,} gap boards "
-        f"({sum(unsettled.values()):,} jobs) still to drain"
+        f"({sum(unsettled.values()):,} jobs) still to drain; {gated_gap} of them value-gated, "
+        "which cannot drain while gated"
     )
 
     out_dir = Path(args.out_dir)
@@ -444,8 +537,8 @@ def main() -> int:
         sizing_total, sizing_target = sum(costs), args.target_seconds
         have = sum(1 for k in keys if k in cost_rows)
         _log.info(
-            f"cost: measured seconds for {have}/{n} boards "
-            f"({len(cost_rows)} in ledger); rest estimated from their ATS median"
+            f"cost: measured seconds for {have}/{n} boards ({len(cost_rows)} in ledger)"
+            + ("; rest estimated from their ATS median" if have < n else "")
         )
     else:
         costs = [
@@ -470,10 +563,14 @@ def main() -> int:
         shard_boards[k].append(i)
     per_shard: list[int] = []
     for k in range(m):
-        # priority-desc within a shard: a time-boxed shard scrapes its highest-value boards first
+        # Measured-slow Boards first, slowest first, so none starts late and runs alone past the
+        # rest (ADR-0242); then priority-desc, so a time-boxed shard scrapes its best Boards first.
         shard_boards[k].sort(
-            key=lambda i: scores.get(priority_ledger.key_for(companies[i]), 0.0),
-            reverse=True,
+            key=lambda i: (
+                (0, -costs[i])
+                if measured and keys[i] in cost_rows and costs[i] > _SLOW_BOARD_S
+                else (1, -scores.get(priority_ledger.key_for(companies[i]), 0.0))
+            )
         )
         path = out_dir / f"shard-{k}.jsonl"
         with path.open("w", encoding="utf-8") as fh:
@@ -486,7 +583,7 @@ def main() -> int:
         load = loads[k] / 60 if measured else loads[k]
         _log.info(
             f"shard {k}: {len(shard_boards[k])} boards "
-            + (f"(~{load:.1f} min)" if measured else f"(cost ~{load:.0f})")
+            + (f"(~{load:.1f} serial min)" if measured else f"(cost ~{load:.0f})")
         )
 
     # Ship the per-shard prediction, not just the board counts: a shard can then say what it
@@ -549,7 +646,7 @@ def main() -> int:
     makespan = max(per_shard_minutes) if per_shard_minutes else 0.0
     tail = (
         f"; predicted makespan ~{makespan:.1f} min "
-        f"(total work Σ {total_cost / 60:.1f} min)"
+        f"(total work Σ {total_cost / 60:.1f} serial min)"
         if measured
         else " (cold-start cost units)"
     )
@@ -564,7 +661,7 @@ def main() -> int:
         widest = max(loads) / 60
         floor = max(costs) / 60 if costs else 0.0
         _log.info(
-            f"predicted spread: min {min(loads) / 60:.1f} / mean {even:.1f} / "
+            f"predicted serial spread: min {min(loads) / 60:.1f} / mean {even:.1f} / "
             f"max {widest:.1f} min ({widest / even if even else 0:.2f}x mean); "
             f"single-board floor {floor:.1f} min"
         )

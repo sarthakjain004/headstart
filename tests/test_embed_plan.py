@@ -74,14 +74,13 @@ def test_target_seconds_fans_a_steady_state_run_out_across_lanes():
     stays green if `_TARGET_SECONDS` regresses to the 20 min that made `ceil(cost / target)`
     exactly 1 on every run and left 14 of 15 lanes idle.
 
-    The four 2026-09-09 runs' planned costs are pinned to the shard counts the constant's own
-    comment claims for them (`docs/pipeline/2026-09-09_five-run-log-review.md` §3), rather than
-    merely asserting `> 1` — `> 1` is satisfied by a 700 s target, which would split the top of
-    the band in two and the bottom not at all, restoring almost none of the fan-out. Retuning the
-    constant should fail here so the comment gets updated with it. `n_items` is only
-    `shard_count`'s has-work guard.
+    Six of the seven 2026-09-25/26 runs (36200233818-36215851608), re-costed with the
+    recalibrated `_S_PER_DOC`, are pinned to the shard counts those runs actually planned, rather
+    than merely asserting `> 1` — `> 1` is satisfied by a target that restores almost none of the
+    fan-out. Retuning the constant should fail here so the comment gets updated with it.
+    `n_items` is only `shard_count`'s has-work guard.
     """
-    planned = {792.0: 3, 714.0: 3, 876.0: 3, 1146.0: 4}
+    planned = {558.0: 4, 484.0: 3, 336.0: 3, 232.0: 2, 113.0: 1, 129.0: 1}
     got = {
         cost: pe.shard_count(cost, 300, pe._MAX_SHARDS, pe._TARGET_SECONDS)
         for cost in planned
@@ -398,3 +397,30 @@ def test_a_degraded_row_whose_new_description_is_not_english_is_not_listed(
 
     # dropped by the English gate, so it must not be promised to the merge as an incoming replacement
     assert upgrades.read_text().strip() == ""
+
+
+def test_the_tokenizer_loads_at_the_pinned_revisions(monkeypatch):
+    """`trust_remote_code` runs the model config's Python from `nomic-bert-2048`, so the tokenizer
+    load needs both pins, like the encoder's."""
+    import types
+
+    from headstart import embedding_conventions as ec
+
+    seen = {}
+
+    def fake(model, **kwargs):
+        seen.update(kwargs, model=model)
+        return "tok"
+
+    monkeypatch.setitem(
+        sys.modules,
+        "transformers",
+        types.SimpleNamespace(
+            AutoTokenizer=types.SimpleNamespace(from_pretrained=fake)
+        ),
+    )
+
+    assert pe._load_tokenizer() == "tok"
+    assert seen["model"] == ec.MODEL
+    assert seen["revision"] == ec.MODEL_REVISION
+    assert seen["code_revision"] == ec.MODEL_CODE_REVISION

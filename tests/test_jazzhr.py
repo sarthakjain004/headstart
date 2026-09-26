@@ -17,6 +17,7 @@ from pathlib import Path
 import pytest
 from fake_fetcher import FakeResponse
 
+from headstart.ingest.board_failures import is_gone
 from headstart.jobs.salary import extract as extract_salary
 from headstart.scrapers.registry import SCRAPERS, get_scraper
 
@@ -207,8 +208,10 @@ def test_a_departed_tenant_raises_instead_of_reading_as_an_empty_board(monkeypat
             "<html><title>JazzHR - Inactive Career Page</title></html>"
         ),
     )
-    with pytest.raises(Exception, match="jobs_table"):
+    with pytest.raises(Exception, match="jobs_table") as raised:
         scraper._listing()
+    # A gone-strike (ADR-0162), so a departed tenant is eventually quarantined.
+    assert is_gone(str(raised.value))
 
 
 def test_a_live_board_with_nothing_open_does_not_raise(monkeypatch):

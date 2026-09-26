@@ -45,7 +45,8 @@ egress artefact rather than a board problem. Cross-check with `fanout_retries.py
 an error spike as a scraper defect.
 
 **A second line beside `failures:` answers the shape question, not the volume one.** The
-gone-streak ledger only advances on a 404/410 read; everything else is a *failure to observe*.
+gone-streak ledger only advances on a gone read (404/410, an unresolvable host, Jobvite's
+`invalid=1` redirect); everything else is a *failure to observe*.
 `N error(s) did not read as gone; top classes: ...` names what fell into that second bucket — a
 big number there is often ordinary (timeouts, 429s correctly not counted as strikes), but a
 404-ish class recurring run after run means the matcher is missing a genuine gone-response.
@@ -80,7 +81,8 @@ DEFERRED = re.compile(r"\[scrape_run\] deferred: (.+)")
 QUARANTINE = re.compile(
     r"\[update_ledgers\]\s+quarantined\s+(\S+) \((\d+) strikes, ([^)]+)\)"
 )
-# The authoritative totals. The per-board `quarantined` lines above are capped at 20 by the
+# The authoritative totals. The per-board `quarantined` lines above name only this run's arrivals,
+# capped at 20 with a `+N more this run` line, by the
 # emitter, so this line is the only honest source for "how many".
 # Tracks `update_ledgers._failures`' emitter. It used to read `N board(s) reported gone`; the
 # emitter now says `N of M board error(s) read as gone`, and because the miss was a plain
@@ -88,7 +90,7 @@ QUARANTINE = re.compile(
 # no error at all — on runs whose log carried it verbatim. `warn_if_unparsed` below is the guard
 # that makes the next such drift loud; `fanout_corpus` and `fanout_ledgers` already use it.
 FAILURES = re.compile(
-    r"\[update_ledgers\] failures: (\d+) of (\d+) board error\(s\) read as gone \(404/410\)"
+    r"\[update_ledgers\] failures: (\d+) of (\d+) board error\(s\) read as gone \(404/410[^)]*\)"
     r" across (\d+) shard\(s\)"
     r" \| (\d+) ledger rows \((\d+) cleared by a successful scrape\) \| (\d+) at/over (\d+) strikes"
     # Optional for the same reason as `fanout_plan.QUARANTINE_SKIP`: the emitter always writes the
@@ -96,8 +98,8 @@ FAILURES = re.compile(
     r"(?: \(\+(\d+) new, -(\d+) released\))?"
 )
 FAILED = re.compile(r"\[scrape_run\] (\S+?) failed after (\d+)s: (\w+)")
-# `failures`'s own second line: how much of the run's error volume did NOT read as a gone-board
-# 404/410, with the top classes named. A 404-ish class sitting here run after run means the
+# `failures`'s own second line: how much of the run's error volume did NOT read as gone (404/410,
+# an unresolvable host, Jobvite's `invalid=1`), with the top classes and status codes named. A 404-ish class sitting here run after run means the
 # matcher is missing a genuine gone-response — read the shape, not the volume.
 UNMATCHED = re.compile(r"(\d+) error\(s\) did not read as gone; top classes: (.+)")
 

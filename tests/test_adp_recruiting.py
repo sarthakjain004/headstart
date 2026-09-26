@@ -442,3 +442,16 @@ def test_the_tech_gate_picks_the_details_and_a_lost_one_ships_without_salary(
         "HTTP 400": len(asked) - 2,
         "no jobRequisitions on a 200": 1,
     }
+
+
+def test_an_http_error_names_the_endpoint_that_answered_it():
+    """ADP answers 500 on the site record and on the listing alike, and curl's message names
+    neither ("adp_recruiting:ridenowpowersports failed after 15s: HTTPError: HTTP Error 500: ",
+    2026-09-26), so which call failed could not be read off the log."""
+
+    def route(method: str, url: str, kwargs: dict) -> FakeResponse:
+        return FakeResponse(500, "")
+
+    scraper = ADPRecruitingScraper("churchmutual", fetcher=FakeFetcher(route))
+    with pytest.raises(Exception, match=r"HTTP 500 on https://myjobs\.adp\.com/"):
+        scraper._json(scraper.url())

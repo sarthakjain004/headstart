@@ -57,7 +57,7 @@ SLOW_BOARD = re.compile(r"slow board ([a-z]+):(\S+?): (\d+) jobs in (\d+)s")
 # runs where the plan is least trustworthy — so match both and let `plan_note` say which it read.
 # Group 3 is minutes (measured), group 4 is cost units (cold start); exactly one is ever set.
 PLAN_SHARD = re.compile(
-    r"\[scrape_plan\] shard (\d+): (\d+) boards \((?:~([\d.]+) min|cost ~(\d+))\)"
+    r"\[scrape_plan\] shard (\d+): (\d+) boards \((?:~([\d.]+) (?:serial )?min|cost ~(\d+))\)"
 )
 
 

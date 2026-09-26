@@ -154,6 +154,7 @@
   "total": {
    "name": "__total__",
    "label": "",
+   "whole_company": true,
    "estimated": false,
    "move": {
     "start": 2150,
@@ -209,6 +210,7 @@
    {
     "name": "a",
     "label": "a",
+    "whole_company": false,
     "estimated": true,
     "move": {
      "start": 1300,
@@ -255,6 +257,7 @@
    {
     "name": "b",
     "label": "b",
+    "whole_company": false,
     "estimated": true,
     "move": {
      "start": 850,
@@ -298,6 +301,7 @@
    {
     "name": "greenhouse:acme",
     "label": "Acme",
+    "whole_company": true,
     "estimated": false,
     "move": {
      "start": 150,
@@ -326,6 +330,7 @@
    {
     "name": "eightfold:micron",
     "label": "Micron",
+    "whole_company": true,
     "estimated": false,
     "move": {
      "start": 2000,

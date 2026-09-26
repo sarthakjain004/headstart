@@ -76,9 +76,12 @@ discovery landing (#576) moved five more. Board totals belong in README and CONT
   A Board is `{client}.jibeapply.com`; resolve a vanity host (`careers.costco.com`) to its client
   with `scripts/discover/mine_jibe.py --vanity`, which reads the rows' `client_code`, else the
   page's `_jibe` cid, which is sometimes a template leftover. The scraper drops a
-  posting whose iCIMS tenant is readable, so no iCIMS overlap needs a gate, but it cannot see a
+  posting whose iCIMS tenant is a Scrapable iCIMS Board (ADR-0240), but it cannot see a
   Workday or Oracle backing Board: walk a new client's whole listing, join every `apply_url` host
-  to the ledgers, and park a client whose postings all sit on a held Board (ADR-0189).
+  to the ledgers, and park a client whose postings all sit on a held Board (ADR-0189). A client
+  wholly on Scrapable iCIMS Boards reads 0 Jobs at 5 s a page, so park it too:
+  `scripts/validate/jibe_icims_covered_clients.py` walks every client and prints `park` for
+  those. Re-run it after landing jibe or icims rows.
   Resolve DNS for `jibeapply.com` on a public resolver, never the OS one: macOS answered a false
   "no such host" for live clients under a 64-thread sweep.
 - **ClearCompany: re-run `scripts/validate/clearcompany_shared_accounts.py` after landing rows.**
@@ -110,6 +113,13 @@ discovery landing (#576) moved five more. Board totals belong in README and CONT
   out or it starts posting on its own. Candidates are the pairs in `data/validate/eightfold_backing.csv`
   (ADR-0210); a new front enters there.
   `dedupe_boards.py` refuses `--apply` for this ATS (ADR-0205).
+- **ADP Workforce Now: land no ADP test client, and re-run `scripts/validate/adp_company_names.py`
+  after landing rows.** ADP's own QA and build-verification clients are `live` and post by the
+  thousand: "BVT Analyst_…", "RECT AUTO REQS_…", "NEW" at "BVT Location, Anchorage, AK" (ADR-0241). The script caches each new client's `ClientName`, which the
+  scraper would otherwise request every run, and prints `test-client?` for a name like `WFNQA…`,
+  `WFNPJL…`, `… BVT4` or `TEST CODE`. Read that client's postings before you exclude it: the name
+  is a lead, not proof. `WFN - The McDonnel Group` is a real employer, and a test client can
+  carry no such name at all.
 - **SuccessFactors holds RMK sites only.** `p_successfactors` accepts any `<urlset>`, so a corporate
   site or a Radancy career front probes `live`, and the scraper reads it as 0 jobs or as page titles
   ("Working at TUI"). Before landing a host, confirm a `/job/` page from its sitemap (urlset, RSS or
@@ -290,7 +300,7 @@ These guidelines are working if: fewer unnecessary changes in diffs, fewer rewri
   HF's collection, which is how the 100 GB quota filled on 2026-09-18.
   If you change what the pipeline runs, change it there and update `.github/workflows/pipeline.yml`
   to match. Don't add a pipeline stage to `scripts/`. Helper modules used *only* by the pipeline
-  live there too (`binpack`, `board_failures`, `board_freshness`, `board_naming`, `board_operator`,
+  live there too (`binpack`, `board_failures`, `board_freshness`, `board_naming`,
   `corpus`, `dedup_evictions`, `derived_meta`, `doc_prep`, `index_plan`, `job_turnover`,
   `observability`, `role_assignments`, `role_family_classifier`, `shard_plan`, `shard_speedup`).
   Logic the curated-feed path (`python -m headstart` → `headstart.scrapers.harvest`) also reaches
@@ -473,9 +483,12 @@ be conflated — CONTEXT.md's **Eviction** and **Unconfirmed** glossary entries 
   so it leaves the eviction scope entirely that run. Since ADR-0121 a *measured* shortfall at or
   above 99% of the Board's own stated total no longer scope-excludes it — those ids go to the
   per-Job grace period instead — so this now covers hard caps, unmeasurable shortfalls and losses
-  past the tolerance. For everything it still covers it has **no bound and no drain**: a Board
-  that is short on every run never re-enters scope, and its closed postings are served indefinitely
-  (measured: 105 dead rows on `careers.qualcomm.com`, oldest 22 days —
+  past the tolerance. Since ADR-0243 two kinds of row on such a Board take the grace period
+  anyway: ids its list returned that the tech filter rejected, and rows stored under a Board
+  casing the scrape no longer emits (scope now matches case-folded). For the rest — ids the list
+  did not return — it still has **no bound and no drain**: a Board that is short on every run
+  never re-enters scope, and its closed postings are served indefinitely (measured: 105 dead rows
+  on `careers.qualcomm.com`, oldest 22 days —
   `docs/eightfold/no-client-side-fix-for-replica-instability.md`). It reports only a Board count,
   never a row count, so the accretion is invisible unless you go looking for it.
 

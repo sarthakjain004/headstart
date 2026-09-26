@@ -384,7 +384,9 @@ def test_floor_warning_compares_wall_clock_not_serial_minutes(
         assert ps.main() == 0
 
     spread = next(
-        r.message for r in caplog.records if r.message.startswith("predicted spread:")
+        r.message
+        for r in caplog.records
+        if r.message.startswith("predicted serial spread:")
     )
     even_serial = float(re.search(r"mean ([\d.]+)", spread).group(1))
     floor = float(re.search(r"single-board floor ([\d.]+)", spread).group(1))
@@ -682,3 +684,189 @@ def test_a_slice_that_takes_every_board_reports_no_head_overflow(
         _plan_scored_boards(tmp_path, monkeypatch, n_boards=10, max_boards=10)
 
     assert "head:" not in caplog.text
+
+
+def test_the_gate_judges_a_slow_board_that_measured_zero_under_the_ten_minute_floor():
+    """ADR-0242: a measured-empty Board is judged from 2 min, not 10. `jibe:commonspirit` read 0
+    jobs in 515 s on run 36218633315 and the 10-min floor skipped it before the veto could run."""
+    rows = {
+        "jibe:commonspirit": _cost(515.0, "2026-09-26", jobs=0),
+        "jibe:quick-empty": _cost(100.0, "2026-09-26", jobs=0),
+        "jibe:slow-hiring": _cost(515.0, "2026-09-26", jobs=40),
+    }
+    gated = ps._gated_boards(list(rows), rows, {}, today="2026-09-26")
+    assert gated == {"jibe:commonspirit": 0.0}
+
+
+def _plan(tmp_path, monkeypatch, boards, cost_rows, *, scores=None, max_boards=0):
+    """Plan ``boards`` on one shard over the given cost (and optional priority) rows."""
+    from headstart.boards import cost_ledger, priority_ledger
+
+    monkeypatch.setattr(
+        ps.scrapable_boards, "load", lambda ledger, min_jobs=0: list(boards)
+    )
+    cost_ledger.save(tmp_path / "board_cost.csv", cost_rows)
+    priority_ledger.save(
+        tmp_path / "board_priority.csv",
+        {
+            k: priority_ledger.BoardPriority(v, 1, "2026-09-26")
+            for k, v in (scores or {}).items()
+        },
+    )
+    out = tmp_path / "assignments"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "scrape_plan",
+            "--priority",
+            str(tmp_path / "board_priority.csv"),
+            "--cost",
+            str(tmp_path / "board_cost.csv"),
+            "--failures",
+            str(tmp_path / "nofailures.csv"),
+            "--gap",
+            str(tmp_path / "nogap.csv"),
+            "--out-dir",
+            str(out),
+            "--max-boards",
+            str(max_boards),
+            "--max-shards",
+            "1",
+        ],
+    )
+    assert ps.main() == 0
+    return [
+        f"{rec['ats']}:{rec['slug']}"
+        for rec in map(json.loads, (out / "shard-0.jsonl").read_text().splitlines())
+    ]
+
+
+def test_main_names_every_gated_board_not_just_the_first_ten(
+    tmp_path, monkeypatch, caplog
+):
+    """ADR-0064 promises every gated Board is named every run; the warning's sample stops at ten
+    (run 36218633315 named 10 of 34), so each gated Board also gets a line of its own."""
+    boards = [ScrapableBoard("lever", f"g{i}", f"G{i}") for i in range(12)]
+    boards.append(ScrapableBoard("lever", "ok", "Ok"))
+    rows = {f"lever:g{i}": _cost(700.0 + i, "2026-09-26", jobs=0) for i in range(12)}
+    rows["lever:ok"] = _cost(1.0, "2026-09-26")
+    monkeypatch.setattr(ps, "datetime", _FrozenDatetime)
+    with caplog.at_level("INFO"):
+        _plan(tmp_path, monkeypatch, boards, rows)
+
+    for i in range(12):
+        assert f"value gate: lever:g{i} (0.00/min)" in caplog.text
+
+
+class _FrozenDatetime(datetime):
+    @classmethod
+    def now(cls, tz=None):
+        return datetime(2026, 9, 26, 12, 0, tzinfo=UTC)
+
+
+def test_main_backs_off_measured_empty_tail_boards_but_still_comes_round(
+    tmp_path, monkeypatch
+):
+    """ADR-0242: a Tail Board whose last complete scrape found nothing competes as if looked at
+    24 h later than it was, so the rotation reads Boards with postings first — yet an empty Board
+    looked at long enough ago still beats a fresh non-empty one."""
+    boards = [ScrapableBoard("adp", s, s) for s in ("empty-old", "empty-new", "a", "b")]
+    rows = {
+        # Emptiest and oldest, but read an hour before the others: backed off.
+        "adp:empty-new": _cost(17.0, "2026-09-26T00:00:00+00:00", jobs=0),
+        # Read two days ago: its backed-off stamp is still the oldest in the rotation.
+        "adp:empty-old": _cost(17.0, "2026-09-24T00:00:00+00:00", jobs=0),
+        "adp:a": _cost(1.0, "2026-09-26T01:00:00+00:00", jobs=3),
+        "adp:b": _cost(1.0, "2026-09-26T02:00:00+00:00", jobs=3),
+    }
+    planned = _plan(tmp_path, monkeypatch, boards, rows, max_boards=3)
+    assert set(planned) == {"adp:empty-old", "adp:a", "adp:b"}
+
+
+def test_a_shard_starts_its_measured_slow_boards_first(tmp_path, monkeypatch):
+    """ADR-0242: a slow zero-score Board submitted last runs alone past the rest of its shard
+    (`jibe:commonspirit` started at t=1,181 s and ran 515 s), so Boards measured over a minute
+    start first, slowest first; the rest keep priority order."""
+    boards = [ScrapableBoard("jibe", s, s) for s in ("slow", "slower", "hi", "lo")]
+    rows = {
+        "jibe:slow": _cost(90.0, "2026-09-26", jobs=5),
+        "jibe:slower": _cost(300.0, "2026-09-26", jobs=5),
+        "jibe:hi": _cost(2.0, "2026-09-26", jobs=5),
+        "jibe:lo": _cost(3.0, "2026-09-26", jobs=5),
+    }
+    planned = _plan(
+        tmp_path, monkeypatch, boards, rows, scores={"jibe:hi": 9.0, "jibe:lo": 1.0}
+    )
+    assert planned == ["jibe:slower", "jibe:slow", "jibe:hi", "jibe:lo"]
+
+
+def test_plan_log_names_head_and_tail_and_gated_gap_boards(
+    tmp_path, monkeypatch, caplog
+):
+    """The slice line uses CONTEXT.md's Head/Tail, says how many gap Boards the gate holds (they
+    cannot drain while gated), and the cost line drops "rest estimated" when nothing is."""
+    from headstart.boards import description_gap_ledger
+
+    boards = [ScrapableBoard("lever", s, s) for s in ("gated", "scored", "tail")]
+    rows = {
+        "lever:gated": _cost(900.0, "2026-09-26", jobs=0),
+        "lever:scored": _cost(1.0, "2026-09-26"),
+        "lever:tail": _cost(1.0, "2026-09-26"),
+    }
+    description_gap_ledger.save(
+        tmp_path / "nogap.csv", {"lever:gated": 7}, today="2026-09-26"
+    )
+    monkeypatch.setattr(ps, "datetime", _FrozenDatetime)
+    with caplog.at_level("INFO"):
+        _plan(tmp_path, monkeypatch, boards, rows, scores={"lever:scored": 5.0})
+
+    assert "slice: 2 boards (1 Head + 1 Tail)" in caplog.text
+    assert "out of 1 gap boards (7 jobs) still to drain; 1 of them value-gated" in (
+        caplog.text
+    )
+    assert "cost: measured seconds for 2/2 boards (3 in ledger)" in [
+        r.message for r in caplog.records
+    ]
+
+
+def test_tail_stamps_back_off_only_unscored_empty_boards():
+    """A Scored Board the head overflowed into the Tail keeps its real stamp, even when its last
+    complete scrape was empty; only an unscored empty Board is pushed 24 h back (ADR-0242)."""
+    rows = {
+        "lever:empty": _cost(1.0, "2026-09-26T00:00:00+00:00", jobs=0),
+        "lever:scored-empty": _cost(1.0, "2026-09-26T00:00:00+00:00", jobs=0),
+        "lever:hiring": _cost(1.0, "2026-09-26T00:00:00+00:00", jobs=4),
+        "lever:old-style": _cost(1.0, "2026-09-24", jobs=0),
+    }
+    stamps = ps._tail_stamps(rows, {"lever:scored-empty": 3.0})
+    assert stamps == {
+        "lever:empty": "2026-09-27T00:00:00+00:00",
+        "lever:scored-empty": "2026-09-26T00:00:00+00:00",
+        "lever:hiring": "2026-09-26T00:00:00+00:00",
+        "lever:old-style": "2026-09-25T00:00:00",
+    }
+
+
+def test_the_scrape_plan_job_fetches_exactly_the_state_files_the_planner_reads():
+    """pipeline.yml names scrape_plan's state files one by one rather than pulling `data/state/*`,
+    which also dragged in every role-trend delta. A ledger the planner starts reading without it
+    being added there would be absent on the runner, and the plan would silently go cold on it."""
+    from pathlib import Path
+
+    from headstart.ingest import REPO_ROOT
+
+    state = REPO_ROOT / "data" / "state"
+    read = {
+        str(v.relative_to(REPO_ROOT))
+        for v in vars(ps).values()
+        if isinstance(v, Path) and v.is_relative_to(state)
+    }
+    workflow = (REPO_ROOT / ".github" / "workflows" / "pipeline.yml").read_text("utf-8")
+    fetch = re.search(
+        r"python -m headstart\.ingest\.state_fetch\n(.*?)\n      - name: Plan the scrape",
+        workflow,
+        re.DOTALL,
+    )
+    assert fetch, "scrape-plan's state_fetch step not found"
+    assert set(fetch.group(1).split()) == read

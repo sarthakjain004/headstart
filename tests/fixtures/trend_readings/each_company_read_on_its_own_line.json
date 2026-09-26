@@ -91,6 +91,7 @@
    {
     "name": "greenhouse:acme",
     "label": "Acme",
+    "whole_company": true,
     "estimated": false,
     "move": {
      "start": 1000,
@@ -124,6 +125,7 @@
    {
     "name": "lever:beta",
     "label": "Beta",
+    "whole_company": true,
     "estimated": false,
     "move": {
      "start": 100,
@@ -160,6 +162,7 @@
    {
     "name": "greenhouse:acme",
     "label": "Acme",
+    "whole_company": true,
     "estimated": false,
     "move": {
      "start": 1000,
@@ -188,6 +191,7 @@
    {
     "name": "lever:beta",
     "label": "Beta",
+    "whole_company": true,
     "estimated": false,
     "move": {
      "start": 100,

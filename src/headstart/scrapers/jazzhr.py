@@ -85,8 +85,12 @@ from typing import Any
 
 from headstart.jobs import salary
 from headstart.jobs.job import Job, html_to_text, is_remote
-from headstart.network import http
-from headstart.scrapers.base import BaseScraper, DetailLost, DetailRequest
+from headstart.scrapers.base import (
+    BaseScraper,
+    DetailLost,
+    DetailRequest,
+    gone_board_error,
+)
 from headstart.scrapers.job_posting_jsonld import find_job_posting, jsonld_nodes
 
 #: Detail-pass width. Every tenant is a subdomain of one Cloudflare-fronted origin, so this is a
@@ -245,10 +249,14 @@ class JazzHRScraper(BaseScraper):
         verdict, which is precisely when this guard has to be the one that fires. Raising here
         makes it a Board error, so ADR-0053 drops the Board out of the eviction scope instead.
         `jobvite._page` takes the same position on its own 302-to-200 dead tenants.
+
+        Raised in the shape `board_failures.is_gone` matches, as trakstar's inactive account is:
+        a departed tenant is gone, and ~20 of them raised this every run (36200233818..
+        36218633315) without earning an ADR-0162 gone-strike, so none was ever quarantined.
         """
         listing = self._get()
         if 'id="jobs_table"' not in listing:
-            raise http.RequestsError(
+            raise gone_board_error(
                 f"{self.url()} -> 200 without the jobs_table shell; tenant departed"
             )
         return listing

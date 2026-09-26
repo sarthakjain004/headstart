@@ -156,11 +156,15 @@ env:
   # than as three inline literals that would drift apart.
   UV_VERSION: "0.12.11"
 
+# Every job pins `ubuntu-24.04`, not `ubuntu-latest`: GitHub moves `-latest` to Ubuntu 26.04 from
+# 2026-10-19 and annotates every job that runs on it until then. The scrape shards' WARP install
+# adds Cloudflare's apt repo by `lsb_release -cs` and is proven only on noble — and every shard
+# dials it (105 of 105 in runs 36200233818-36218633315). Move by measuring.
 jobs:
   # ── Stage 1: select this run's board slice and bin-pack it into scrape shards. Downloads only the
   # priority ledger (light); the liveness ledger is committed in the repo.
   scrape-plan:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10 # hang detector: measured ~40s (the packing itself is ~30ms)
     outputs:
       run: ${{ steps.gate.outputs.run }}
@@ -239,12 +243,25 @@ jobs:
             echo "run=true" >> "$GITHUB_OUTPUT"
           fi
       - if: steps.gate.outputs.run == 'true'
-        run: pip install -e . huggingface_hub
+        # `<2`: 2.0.0 (2026-09-24) is the release this job resolved unbounded while the `.[embed]`
+        # jobs got 1.x through transformers' cap; one major across the pipeline until measured.
+        run: pip install -e . "huggingface_hub<2"
       - name: Download the priority ledger (light; empty on first run)
         if: steps.gate.outputs.run == 'true'
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        run: python -m headstart.ingest.state_fetch 'data/state/*'
+        # Only the files scrape_plan reads, not `data/state/*`: that glob also matched every
+        # `role_trend_board_deltas/*.parquet`, 327 of the 357 files it pulled on 2026-09-26 and +1
+        # per run. Named file by file, so each is still a `data/state` pattern the ADR-0095 witness
+        # answers for: a missing ledger fails closed rather than planning cold. So a ledger lands
+        # here only once the Hub holds it — one no stage has published yet would abort every run
+        # before any could write it. tests/test_scrape_plan.py keeps this list in step with
+        # scrape_plan's defaults.
+        run: >-
+          python -m headstart.ingest.state_fetch
+          data/state/board_priority.csv data/state/board_cost.csv data/state/shard_speedup.csv
+          data/state/board_failures.csv data/state/board_description_gap.csv
+          data/state/held_details.txt.gz
       - name: Plan the scrape fan-out
         id: plan
         if: steps.gate.outputs.run == 'true'
@@ -278,7 +295,7 @@ jobs:
       contents: read
       actions: read
     if: needs.scrape-plan.outputs.run == 'true' && needs.scrape-plan.outputs.count != '0'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # inner 75m -> scrape step 81m -> job: 81m + the WARP step's own 8m cap + ~5m for setup,
     # checkout, pip, board download and fragment upload. The WARP slice is counted explicitly
     # because on 2026-08-18 it silently consumed the whole 6m slack this comment used to promise
@@ -313,7 +330,8 @@ jobs:
         # which is the failure that actually happened. Run 32157275202: four shards sat ~72 min
         # in this apt-get, hit the 72 min job cap, and were cancelled with their scrape step still
         # `skipped` — 5 of 15 shards produced nothing, the join ran on 10, and the run was green.
-        # The step is a convenience for a fallback most shards never dial, so it gets a small
+        # Every shard dials the fallback (105 of 105 in runs 36200233818-36218633315: Workday
+        # walls each shard's IP), but a shard without it still scrapes, so it gets a small
         # bounded slice of the budget and the shard scrapes regardless. The layers are budgeted
         # against the cap, worst case (curl --max-time is per TRANSFER, so --retry 1 doubles it):
         # 2 attempts x (32s curl + 45s update + 60s install) + 20s sleep + 15s systemctl
@@ -328,7 +346,8 @@ jobs:
         # cap. Every call in the step still carries a ceiling, so that sum is a real bound rather
         # than an assumption that local IPC always answers promptly — and the cap keeps ~1.5 min
         # over it, because a bound with six seconds of headroom is a coin flip.
-        # p50 install is 24 s (run 32146017194's 15 shards); the cap only bites when a host wedges.
+        # Median install is 15 s, max 43 s (105 shards, the seven runs above); the cap only bites
+        # when a host wedges.
         continue-on-error: true
         timeout-minutes: 10
         run: |
@@ -536,7 +555,7 @@ jobs:
   join:
     needs: [scrape-plan, scrape]
     if: always() && needs.scrape-plan.outputs.run == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # ~22 min at 80k Boards (ADR-0229): ~90s fixed + ~3.9e-4 s/scraped line over ~3.2M lines,
     # plus embed_plan's tokenize + English gate, which scale with *new Docs*, not lines. The same
     # model said ~14 min at 20k and the job measured 10-11. ~3.4x that estimate, inside the
@@ -565,9 +584,12 @@ jobs:
       # ships the run's data. Verified on a real runner (`hf --version` under this exact install),
       # not assumed. Version pinned at the workflow's `UV_VERSION` — see the note there.
       # Measurement: docs/pipeline/2026-09-09_env-install-benchmark.md.
+      #   `--torch-backend cpu` takes torch from PyTorch's CPU index: the same torch release
+      # (2.14.0 against 2.14.0+cpu on 2026-09-26, every other resolved package identical), minus
+      # ~2.3 GB of CUDA and triton wheels no CPU runner can use.
       - run: |
           pip install "uv==$UV_VERSION"
-          uv pip install --system -e ".[embed]" huggingface_hub
+          uv pip install --system --torch-backend cpu -e ".[embed]" "huggingface_hub<2"
       - name: Cache the embedding model
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -575,7 +597,8 @@ jobs:
           # Distinct key from embed's: embed_plan loads only the TOKENIZER, so a shared
           # key let this job win the race and publish a weightless cache that all 15
           # embed shards then hit, re-downloading ~550 MB each and never re-saving it.
-          key: hf-tokenizer-nomic-embed-text-v1.5
+          # Names the pinned revision embed_plan loads, like embed's key.
+          key: hf-tokenizer-nomic-embed-text-v1.5-e9b6763023c6
       - name: Download meta + priority state (light — the embed diff + ledger blend)
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
@@ -583,8 +606,8 @@ jobs:
           python -m headstart.ingest.state_fetch 'data/embeddings/jobs/meta.jsonl' 'data/state/*'
           # The description store (ADR-0050). Fetched only here: this is the one job that both
           # writes it (update_descriptions) and reads it (embed_plan, via the repaired corpus).
-          # Deliberately NOT under data/state/, whose glob scrape-plan also pulls — that would
-          # ship ~174 MB toward a planner that has no use for it.
+          # Deliberately NOT under data/state/, whose glob this job pulls (and scrape-plan once
+          # did) — that would ship ~174 MB toward stages that have no use for it.
           #
           # Fails closed, like the line above. A genuine first run never fails here — a pattern
           # the Hub lists nothing for returns 0 — so a non-zero exit is always a real failed
@@ -686,7 +709,7 @@ jobs:
     if: >-
       ${{ !cancelled() && needs.join.result == 'success'
       && needs.scrape-plan.outputs.run == 'true' && needs.join.outputs.count != '0' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 198 # inner 180m -> step 188m -> job 198m; 10 min covers a cold pip cache
     strategy:
       fail-fast: false
@@ -701,12 +724,15 @@ jobs:
           # No `cache: pip`, and uv rather than pip — see the join job's notes.
       - run: |
           pip install "uv==$UV_VERSION"
-          uv pip install --system -e ".[embed]"
+          uv pip install --system --torch-backend cpu -e ".[embed]" "huggingface_hub<2"
       - name: Cache the embedding model
+        id: model-cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/huggingface/hub
-          key: hf-model-nomic-embed-text-v1.5 # full weights; see the join job's note
+          # Full weights (see the join job's note), at the revision embedding_conventions pins:
+          # the key names it, so a hit always holds the commit the load asks for.
+          key: hf-model-nomic-embed-text-v1.5-e9b6763023c6
       - name: Download this shard's assignment
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
@@ -718,6 +744,14 @@ jobs:
         # this covers the run even before `_S_PER_DOC` is recalibrated. Partials are safe:
         # EmbeddingStore flushes vectors then metadata per batch, embed_merge truncates any
         # half-written tail, and the dropped Docs simply reappear in the next run's plan.
+        env:
+          # Offline only on a cache hit, which holds the pinned revision: even pinned, a load
+          # otherwise asks the Hub for files the model does not have (adapter_config.json),
+          # unauthenticated, every run. On a miss it must download. A hit is complete because
+          # the load runs first and a failed one fails the job, so no partial download is saved.
+          # role_trends' JobBERT load stays online: its step is `continue-on-error` under a cap
+          # that includes a cold download, so a timed-out partial could be saved and then hit.
+          HF_HUB_OFFLINE: ${{ steps.model-cache.outputs.cache-hit == 'true' && '1' || '' }}
         run: |
           # Same reasoning as the scrape budget: only 124 is the budget: anything else crashed.
           timeout 180m python -m headstart.ingest.embed_run \
@@ -746,7 +780,7 @@ jobs:
     # down. This is the one job that would otherwise ignore the gate, and it is precisely the job
     # that writes LanceDB, so a compaction it was meant to yield to would have found it there.
     if: always() && needs.scrape-plan.outputs.run == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # hang detector: ~5 min of work at this scale, up to ~4.5 min of `up()` retry backoff across
     # the three HF uploads, up to ~18 min of state_fetch retries (5 partial downloads of the
     # ~1.3k-file lancedb dir + 7.5 min of waits, ADR-0033), and up to 10 min for the reclaim step
@@ -776,7 +810,7 @@ jobs:
       - if: needs.scrape-plan.outputs.run == 'true'
         run: |
           pip install "uv==$UV_VERSION"
-          uv pip install --system -e ".[embed]" huggingface_hub
+          uv pip install --system --torch-backend cpu -e ".[embed]" "huggingface_hub<2"
       - name: Download the prior store + LanceDB (empty on first run)
         if: needs.scrape-plan.outputs.run == 'true'
         env:
@@ -916,13 +950,17 @@ jobs:
       # brand-new ~755 MB blob that HF stores in full and keeps forever; at ~1.9 GB/run the 100 GB
       # quota filled in ~45 runs. Lance table data appends instead: `sync`/`prune` write small new
       # fragments and leave the big existing data files untouched. `refresh-indexes` deliberately
-      # adds ~402 MB of replacement index files at 509k rows (ADR-0174), reclaimed by cleanup.
+      # adds ~402 MB of replacement index files at 509k rows (ADR-0174); publication deletes
+      # the superseded ones (ADR-0244) and reclaim_storage frees their blobs.
       - name: Upload index state
         id: publish
         if: needs.scrape-plan.outputs.run == 'true'
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           CORPUS: ${{ steps.corpus.outcome }}
+          # The per-file tqdm bars were 15-20% of every merge log and say nothing the
+          # `publish` lines below do not.
+          HF_HUB_DISABLE_PROGRESS_BARS: "1"
         run: |
           publication_status="$RUNNER_TEMP/headstart-publication-status"
           printf '%s\n' \
@@ -1013,8 +1051,9 @@ jobs:
           # set for THIS table, and if data/state below then failed, a table published alone was
           # paired on the Hub with the previous run's set — an absent/present/absent id was then
           # evicted on one miss. The ADR-0227 eviction queue rides the same commit, so a failed
-          # data/state upload cannot lose the closures this run made. Additive, like the other
-          # uploads (see the --delete note above).
+          # data/state upload cannot lose the closures this run made. Additive for table
+          # fragments (see the --delete note above), but the same commit deletes the superseded
+          # `_indices/` directories (ADR-0244).
           publish lancedb_index python -m headstart.ingest.index_publish "$HF_DATASET"
           # Append-only (ADR-0050): each run adds small per-ATS fragments and leaves the base
           # files alone, so this uploads ~430 KB rather than re-minting the ~174 MB store.
@@ -1122,23 +1161,18 @@ jobs:
       # starvation is what rejected every upload on 2026-08-27. So ask for one on a THRESHOLD, the
       # way the reclaim above works on `usedStorage` rather than on a clock.
       #
-      # 3,000 of 10,000, and the honest reason is *cadence*, not headroom. Growth is linear in
-      # fragment count and therefore QUADRATIC IN RUNS: ADR-0091 measured `ceil(deleted / chunk) x
-      # fragments` with fragments climbing ~10 per run, and ~10,000 files accumulated across ~36
-      # runs. Fitting that gives ~7.7n², under which a daily compaction at ~20 runs/day lands at
-      # ~3,086 files — so 3,000 reproduces the daily cadence the cron intended, rather than
-      # buying a long runway. It does not: margin from 3,000 to the limit is only ~16 runs
-      # (~0.8 days), and dropping the threshold to 500 would buy just 28. The quadratic is why
-      # compacting *often* is the protection and a bigger buffer is not.
-      #
-      # The threshold itself is a FILE COUNT, so it needs no cadence correction — more runs cross
-      # it sooner, which is the behaviour wanted. Only the margin quoted in *days* moves: at the
-      # 38.6 runs/day measured at `schedule` above, 16 runs is **~10 hours**, not ~0.8 days.
-      #
-      # Caveat on the evidence: the one measurement here — 309 files after the six runs since the
-      # previous compaction emptied the directory — fits linear (~51/run) and quadratic (~7.7n²,
-      # predicting 278) equally well. One point cannot separate them, so this is sized against the
-      # pessimistic model. Re-measure at a second point before trusting either.
+      # 1,200 of 10,000, sized so a missed daily compaction is asked for within about a day. The
+      # threshold used to be 3,000, from a model of growth as quadratic in runs (~7.7n², fitted to
+      # ADR-0091's ~10,000 files over ~36 runs), under which 3,000 was roughly one day. Measured
+      # since, growth is linear and if anything slowing: 651, 711, 762, 813, 841, 874, 897 files
+      # across the seven merges of runs 36200233818-36218633315 (2026-09-25/26), ~41 per run,
+      # the directory last emptied by the 2026-09-25 08:32 compaction. Those runs started ~55 min
+      # apart (~26 a day), so a directory gains ~1,070 files a day: 3,000 is crossed ~2.8 days
+      # after the last compaction, 1,200 ~1.1 days after it — just past a missed daily cron, and
+      # still ~8,800 files (~200 runs) short of the limit. At the faster 38.6 runs/day measured at
+      # `schedule` above, 1,200 comes in ~0.8 days, before the cron: an extra compaction, the
+      # cheap direction to err in. ADR-0094's 2026-09-26 amendment.
+      # The threshold is a FILE COUNT, so it needs no cadence correction: more runs cross it sooner.
       - name: Ask for a compaction when _deletions is filling
         id: compaction
         if: always() && needs.scrape-plan.outputs.run == 'true'
@@ -1175,7 +1209,7 @@ jobs:
           # Diagnostics go to stderr, where they still reach the log.
           print(f"_deletions: {n} files of 10000 in {worst}/_deletions/", file=sys.stderr,
                 flush=True)
-          print(f"due={str(n > 3000).lower()}")
+          print(f"due={str(n > 1200).lower()}")
           PY
       - name: Restart the Space to pick up the new index
         if: needs.scrape-plan.outputs.run == 'true'
@@ -1215,7 +1249,7 @@ jobs:
     if: >-
       ${{ !cancelled() && needs.scrape-plan.outputs.run == 'true'
       && (github.event_name == 'schedule' || github.event.inputs.chained == 'true') }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10 # a dispatch plus up to 13 API calls across a ≤60s confirmation poll
     permissions:
       actions: write # read recent conclusions; dispatch the successor
@@ -1281,7 +1315,7 @@ jobs:
   request-compaction:
     needs: [merge]
     if: ${{ !cancelled() && needs.merge.outputs.compact_due == 'true' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Never redden a run whose data is already published — the same rule the reclaim step states
     # one job above. Two reasons it matters more here than it looks: the run has fully succeeded
     # by this point, and ADR-0093's breaker counts *run* conclusions, so three `gh` flakes in a

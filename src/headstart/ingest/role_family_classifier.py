@@ -169,7 +169,7 @@ def encode(titles: list[str], model: str, revision: str) -> np.ndarray:
     with torch.inference_mode():
         for start in range(0, len(titles), _ENCODE_BATCH):
             batch = [titles[i] for i in order[start : start + _ENCODE_BATCH]]
-            features = encoder.tokenize(batch)
+            features = encoder.preprocess(batch)
             features["text_keys"] = ["anchor"]
             out.append(encoder.forward(features)["sentence_embedding"].cpu().numpy())
     sorted_vectors = np.concatenate(out).astype(np.float32)
