@@ -1,6 +1,6 @@
 """Avature: every job portal's sitemap, then one job page per tech posting.
 
-Measured live 2026-09-26 over 140 seed tenants and 257 job pages from 55 portals; the method and
+Measured live 2026-09-26 over 77 of the 140 seed tenants and 257 job pages from 55 portals; the method and
 every number are in `docs/avature/2026-09-26_listing-measurement.md` (ADR-0245).
 
 **A Board is a tenant host** (`bloomberg` for `bloomberg.avature.net`), not one of its portals.
@@ -193,16 +193,31 @@ class AvatureScraper(BaseScraper):
         return response.text
 
     def fetch_raw(self) -> Any:
+        robots = self._get_text(self.url())
         portals = sorted(
-            _SITEMAP_LINE.findall(self._get_text(self.url())),
+            _SITEMAP_LINE.findall(robots),
             key=lambda sitemap: bool(_PRIVATE_PORTAL.search(sitemap)),
         )
+        if not portals:
+            # Every live tenant measured names at least its root sitemap; a robots.txt naming
+            # none is not a Board with nothing open, and reading it as one would evict the lot.
+            self.note_unreadable_board(
+                "Sitemap: lines in robots.txt", f"{len(robots)} bytes, none"
+            )
+            self.mark_truncated("robots.txt names no sitemap")
+            return []
         listed: dict[str, dict[str, str]] = {}
+        # L'Oréal's portals each redirect their index to one shared index, so its child
+        # sitemaps would otherwise be read once per portal against a 1 request/s budget.
+        read: set[str] = set()
         for index_url in portals:
             if not index_url.endswith("sitemap_index.xml"):
                 continue  # the root `/sitemap.xml` lists only the favicon
             own: list[dict[str, str]] = []
             for sitemap in _LOC.findall(self._get_text(index_url)):
+                if sitemap in read:
+                    continue
+                read.add(sitemap)
                 for row in listing_rows(self._get_text(sitemap)):
                     if row["id"] not in listed:
                         listed[row["id"]] = row

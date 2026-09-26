@@ -45,6 +45,12 @@ sibling portal `careersnz` too (4 of 4), so they are closed, not misfiled.
 
 ## Job pages
 
+- **Job URLs are the sitemap's own `<loc>`, and they land on the posting.** Every 200 in the
+  257-page sample was the posting itself (its `og:title` named it); the shape includes a locale
+  (`/en_US/jobs/…` on L'Oréal) and vanity hosts (`jobs.bmc.com`, `career.loreal.com`), which the
+  scraper's `url_shape` admits. L'Oréal's portal indexes all 301 to one shared index, whose
+  child sitemaps the scraper reads once.
+
 - **Closed and private postings redirect.** A closed posting's page answers `302 → /{portal}/Error`
   (a 404 once followed). An internal portal's pages answer `302 → /{portal}/Login/` (12 of 12
   on bloomberg and broadinstitute), then on to the tenant's SSO host. Job pages are therefore

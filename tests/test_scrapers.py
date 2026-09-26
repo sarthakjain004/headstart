@@ -11583,6 +11583,8 @@ _NO_BOARD_PAGE = {
     "cornerstone",
     "trakstar",
     "successfactors",
+    # Reads the name its job pages agree on (`og:site_name`), pages the Detail pass fetched anyway.
+    "avature",
     "taleo_be",
     # These three read the name off a response the scrape already fetches: darwinbox's
     # `companyinfo`, zwayam's config call and zoho's careers page — covered by their own tests.

@@ -35,8 +35,9 @@ read last, so a shared id keeps its public URL. A duplicate portal (fonterra's `
 bmcrecruit's `oldcareersportal`) collapses into the one before it with no alias ledger, and a new
 portal is picked up without a ledger change.
 
-**A private portal is settled by one request.** If a private-named portal's first own posting
-redirects to `/Login/`, the portal's other own ids are dropped unread. Bloomberg: 191 job pages
+**One request settles a login-walled portal.** If a private-named portal's first own posting
+redirects to `/Login/`, the portal's other own ids are dropped unread; a portal that answers
+otherwise costs that one extra request and is read posting by posting. Bloomberg: 191 job pages
 and 227 s per gated run became 88 pages and 126 s, for the same 88 Jobs.
 
 **Closed postings are not lost details.** A sitemap can keep closed ids (bupaanz `careersau`:
@@ -44,7 +45,10 @@ and 227 s per gated run became 88 pages and 126 s, for the same 88 Jobs.
 with redirects off; a `302` to `/{portal}/Error` or `/Login/` is labelled "not public (closed or
 login-walled)" and subtracted before truncation is decided, so a Board with stale sitemap rows is
 not scope-excluded every run (ADR-0053 has no drain). A `302` to another job page (cyclecarriage's
-`/en_US/` URLs) is followed once.
+`/en_US/` URLs) is followed once. A job page that fails outright ships no Job, unlike the
+wiring contract's "the Job still ships, without a description": every field but the id comes from
+the page, and the only stand-in title is the URL slug, which 2 of 52 tech postings had outgrown.
+The loss is labelled and truncates the Board unless negligible (ADR-0121), so its rows stay.
 
 **The tech gate reads the URL slug's title** — the only listing surface; none states a department.
 A measured approximation: over 244 titled pages it kept 47 of 52 tech postings (90.4%) and let

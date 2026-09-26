@@ -438,6 +438,9 @@ _VENDOR_ALIASES: dict[str, frozenset[str]] = {
     # (909 postings) and `adpinternalcareers` both state "ADP" (2 of 681 sites, 2026-09-24).
     "adp_recruiting": frozenset(),
     "ashby": frozenset({"ashby", "ashbyhq"}),
+    # Read off the job pages' `og:site_name`, which a tenant that never set it could leave as the
+    # vendor's; none of the 15 portals stating one did (2026-09-26, ADR-0245).
+    "avature": frozenset({"avature"}),
     # Empty on purpose: the GraphQL organization record is no page that can fall back to the
     # vendor's branding, and Ashby is a real employer on its own board (`ashby:ashby`).
     "ashby:graphql": frozenset(),

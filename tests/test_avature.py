@@ -229,3 +229,49 @@ def test_url_shape_matches_every_job_url():
     scraper = _scraper(_route(), gated=False)
     for row in scraper.fetch_raw():
         assert re.fullmatch(scraper.url_shape, scraper.job_url(row["url"]))
+
+
+def test_a_robots_txt_naming_no_sitemap_is_an_unreadable_board_not_an_empty_one():
+    def route(method, url, kwargs):
+        return FakeResponse(200, "<html><body>Maintenance</body></html>")
+
+    scraper = _scraper(route)
+    assert scraper.fetch_raw() == []
+    assert scraper.truncated
+
+
+def test_portals_listing_no_job_pages_are_an_empty_board():
+    # intuit: its portals' sitemaps list profile and login pages, no JobDetail.
+    robots = "Sitemap: https://intuit.avature.net/externalCareers/sitemap_index.xml\n"
+    index = (
+        "<sitemapindex><sitemap><loc>https://intuit.avature.net/en_US/externalCareers/"
+        "sitemap.xml</loc></sitemap></sitemapindex>"
+    )
+    sitemap = "<urlset><url><loc>https://intuit.avature.net/en_US/externalCareers/Login</loc></url></urlset>"
+
+    def route(method, url, kwargs):
+        if url.endswith("robots.txt"):
+            return FakeResponse(200, robots)
+        return FakeResponse(200, index if url.endswith("_index.xml") else sitemap)
+
+    scraper = get_scraper(
+        "avature", "intuit", fetcher=FakeFetcher(route), have_details=set()
+    )
+    scraper.pacer = Pacer(0)
+    assert scraper.fetch_raw() == []
+    assert scraper.truncated is None
+
+
+def test_a_sitemap_two_portals_share_is_read_once():
+    fetcher = FakeFetcher(_route())
+    scraper = get_scraper("avature", "bloomberg", fetcher=fetcher, have_details=set())
+    scraper.pacer = Pacer(0)
+    shared = "https://bloomberg.avature.net/careers/sitemap.xml"
+    index = _FIXTURE["index"]["careers"]
+    fetcher.route = lambda m, u, k: (
+        FakeResponse(200, index)
+        if u.endswith("sitemap_index.xml")
+        else _route()(m, u, k)
+    )
+    scraper.fetch_raw()
+    assert fetcher.urls().count(shared) == 1
