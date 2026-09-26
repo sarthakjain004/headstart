@@ -388,13 +388,43 @@ def test_a_line_mostly_recounted_gives_no_percentage_in_any_unit() -> None:
     assert big["percent"] == pytest.approx(10.0)
     assert big["share"]["percent"] is not None
     assert lines["big"]["index_base"] == 100
-    # 7 of 12 taken, 5 left: at the index floor, yet mostly re-counted, so not indexed; and too
-    # small for a percentage, which stays its reason.
+    # 7 of 12 taken, 5 left: at the index floor, yet mostly re-counted, so not indexed; and
+    # though too small for a percentage anyway, said to be mostly re-counted (review of #731).
     tiny = lines["tiny"]
     assert tiny["index_base"] is None
-    assert (
-        tiny["move"]["percent_withheld"] == f"under {MOVER_FLOOR} openings at the start"
+    assert tiny["move"]["percent_withheld"] == MOSTLY_RECOUNTED
+
+
+def test_mostly_recounted_is_measured_after_a_found_board() -> None:
+    """Start 100, a found Board +500, a counting change −400: 400 of the 600 it held once the
+    Board is counted, so mostly re-counted, though what is left (200) is above its raw start. A
+    gate on the raw start let it through (review of #731)."""
+    reading = _golden("category_mostly_recounted_after_a_found_board")["reading"]
+    a = next(line for line in reading["lines"] if line["name"] == "a")
+    move = a["move"]
+    assert (move["start"], move["latest"] - move["hiring"]) == (100, 200)
+    assert move["percent_withheld"] == MOSTLY_RECOUNTED
+    assert move["percent"] is None and move["share"]["percent"] is None
+    assert a["index_base"] is None
+    assert reading["total"]["move"]["percent_withheld"] is None, "a company's own line"
+
+
+def test_mostly_recounted_is_said_over_a_short_window_too() -> None:
+    """A short window withheld the percentage first and hid the note (review of #731)."""
+    answer = _golden("category_mostly_recounted_gives_no_percentage")["answer_input"]
+    short = read_answer(
+        {
+            **answer,
+            "stamps": answer["stamps"][1:4],
+            "totals": answer["totals"][1:4],
+            "non_tech": answer["non_tech"][1:4],
+            "series": [{**s, "points": s["points"][1:4]} for s in answer["series"]],
+        }
     )
+    assert short.reconciles, short.violations
+    embedded = next(line for line in short.lines if line.name == "embedded")
+    assert embedded.move.span_days < MIN_SPAN_DAYS
+    assert embedded.move.percent_withheld == MOSTLY_RECOUNTED
 
 
 def test_no_share_change_off_a_share_of_zero_at_the_start() -> None:

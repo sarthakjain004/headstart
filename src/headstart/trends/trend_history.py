@@ -1568,7 +1568,9 @@ class TrendHistory:
             "closures_uncounted": self._closures_uncounted(unscoped, closures_unseen),
             # Per pick, its Boards in scope, so a closed count read over some of them says so:
             # "3 closed (not counted on 1 of 2 boards)".
-            "boards_in_scope": dict(Counter(unscoped.values())) if with_turnover else {},
+            "boards_in_scope": dict(Counter(unscoped.values()))
+            if with_turnover
+            else {},
         }
         return payload
 

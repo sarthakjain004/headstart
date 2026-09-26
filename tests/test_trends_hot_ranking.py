@@ -227,12 +227,20 @@ def test_a_closed_count_over_some_boards_says_how_many() -> None:
         {"sr:acme": 300, "gh:acme": 100},
         {
             "sr:acme": _Move(
-                net=5, opened=9, closed=3, closures_uncounted_boards=1, boards_in_scope=2
+                net=5,
+                opened=9,
+                closed=3,
+                closures_uncounted_boards=1,
+                boards_in_scope=2,
             )
         },
     )
     (row,) = hot_ranking.rank(history, directory)["lenses"]["volume"]
-    assert (row["closed"], row["closures_uncounted_boards"], row["boards_in_scope"]) == (
+    assert (
+        row["closed"],
+        row["closures_uncounted_boards"],
+        row["boards_in_scope"],
+    ) == (
         3,
         1,
         2,

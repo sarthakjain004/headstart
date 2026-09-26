@@ -23,13 +23,15 @@ The round-17 live critic of company trends (7.5/10) found two things the owner d
 
 ## Decision
 
-1. **A category, level or role line is mostly re-counted when the steps took openings out of it
-   and either its counting changes took out more than was left, or under 5 openings were left.** Its counting changes
-   are its causes of kind `counting` or `growth_scaled_by_a_change`. Taking out more than was
-   left is the same as taking out more than half of the start once the line's other steps
-   (duplicates removed, Boards found, a pick joining) are counted. A duplicate removal alone
-   never makes a line one: it corrects the count by a known size and estimates nothing. The
-   rule lives in `line_reading._mostly_recounted`.
+1. **A category, level or role line is mostly re-counted when its counting changes took openings
+   out, and either took out more than half of its start once its other steps are counted, or
+   left under 5 openings.** Its counting changes are its causes of kind `counting` or
+   `growth_scaled_by_a_change`. Its other steps are duplicates removed, Boards found and a pick
+   joining, so its start once they are counted is its netted start less its counting changes.
+   More than half of that is the changes taking out more than was left: a start of 100, a found
+   Board of +500 and changes of −400 leave 200 of 600, and the line is mostly re-counted though
+   200 is above its raw start. A duplicate removal alone never makes a line one: it corrects the
+   count by a known size and estimates nothing. The rule is `line_reading._mostly_recounted`.
 2. **A company's own line is never mostly re-counted, and keeps its percentage** (the owner's
    call on #731). That covers every company headline, a company under the Company breakdown,
    the first row with one or several picks, and Hot's rows; the reading marks each such line
@@ -37,14 +39,15 @@ The round-17 live critic of company trends (7.5/10) found two things the owner d
    mostly moves jobs between a company's categories, so it barely moves the company's total
    (ADR-0233's measurement on 3,108 companies), and Hot ranks by that total. A category has no
    such anchor: its netted start is what the erase guard and the shifts left of its history. A
-   whole company's line still gives no percentage off a netted start under 5.
-3. **A mostly re-counted line gives no percentage in any unit, no index line and no tile.** Its
-   `percent_withheld` is `"mostly_recounted"`, its share's change is None, and its
-   `index_base` is None. It still gives its hiring in openings, and the page adds "mostly
-   re-counted in this window". A line that started under 20 openings keeps "under 20" as its
-   reason: 8,097 of 45,547 category lines are that small and kept under 5 of it.
+   whole company's line still gives no percentage off a netted start under 5. Nor is the
+   breakdown's closing row ever one: it has no start.
+3. **A mostly re-counted line gives no percentage in any unit, no index line and no tile, and
+   says so first.** Its `percent_withheld` is `"mostly_recounted"` even where a window under 3
+   days or a start under 20 openings would also withhold the percentage, so the page always adds
+   "mostly re-counted in this window" beside its hiring in openings. Its share's change and its
+   `index_base` are None.
 4. **A share's change is withheld wherever the line's own percentage is.** It no longer has
-   floors of its own.
+   floors of its own: the critic expected Share to withhold wherever Change does.
 5. **The Operator has a fourth value, `staffing`, and Hot hides `staffing` and `aggregator`
    only.** `board_operator.SERVICES` keeps IT services, consultancies and BPO firms, which
    employ the people they post for. It shows those rows, labelled "IT services". `STAFFING`
@@ -52,15 +55,27 @@ The round-17 live critic of company trends (7.5/10) found two things the owner d
    and each firm adjudicated from Hot's top 50 on 2026-09-26 by a sample of its own live
    postings. A company with a staffing Board and a services Board is `staffing`. The "hidden"
    note names each kind with its count and its first companies.
+6. **The Space decides each company's Operator as it loads the directory.** What Hot hides must
+   not depend on when the directory was last written: the file then on HF had no `staffing`,
+   so Randstad, Collabera and Sonsoft would have shown as IT services until the next run.
+   `board_operator` moves from `ingest/` to `boards/` (ADR-0232: the Space never imports
+   `ingest`), and `trend_history`'s directory reader applies its `company_operator` to every
+   entry. The `company_directory` stage still writes the same label.
+7. **A list entry is a form no other company carries.** Every entry was checked against the
+   directory and the liveness ledgers on 2026-09-26. Single words another company's name can
+   carry, with no form of their own to narrow to, are left off (Info-Ways, LinkTag, Raydar, AG
+   Technologies, Quantix); `maarut` and `simera` are narrowed to `maarutinc` and
+   `simeratalent`; and three collisions become exceptions (Turing Machines, Atos Medical, a
+   Sutherland trade-union club).
+8. **A closed count over only some of a company's Boards says so.** Where every Board had a run
+   whose closures went uncounted, no closed count is given; where some did, Hot and the trend
+   sentence give it as "3 closed (not counted on 1 of 2 boards)".
 
 ## Consequences
 
-* Over All, on the 2026-09-26 state (3,008 companies with 20 or more openings), 662 of 45,547
-  category lines are mostly re-counted, and no company line is. Micron's headline keeps its
-  percentage (3,933 → 931 netted, +9.1%); its Embedded & Firmware (3,768 → 2) does not. No
-  reading fails the checker.
-* `check_reading` and the page's `checkReading` state rules 1 and 2 as their invariant 7.
-* **A new staffing tag reaches Hot only when the next pipeline run rewrites
-  `company_directory.json`.** The Space reads each company's Operator from that file and never
-  imports `ingest`. Until the run, a staffing firm the old file labels `services` shows on Hot,
-  labelled "IT services", and a newly tagged one shows as an employer.
+* Over All, on the 2026-09-26 state (3,008 companies with 20 or more openings), 9,695 of 45,547
+  category lines are mostly re-counted, 10,728 over 7 days, and no company line is. Micron's
+  headline keeps its percentage (3,933 → 931 netted, +9.1%); its Embedded & Firmware does not.
+  No reading fails the checker.
+* `check_reading` and the page's `checkReading` state rules 1 to 3 as their invariant 7.
+* A new tag in `board_operator` reaches Hot at the Space's next boot, not the next run.

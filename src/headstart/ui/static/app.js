@@ -2100,7 +2100,8 @@ function verdictOf(line, d){
     // The lead says it; the rest gives only the figure it has, never the lead again ("too new to
     // tell — …; too new to show a direction yet").
     lead = young ? 'too new to tell' : 'too short a window to tell';
-    move = young || !days ? '' : `${signedOpenings(n)} ${span}`;
+    move = [young || !days ? '' : `${signedOpenings(n)} ${span}`,
+      m.percent_withheld === MOSTLY_RECOUNTED ? RECOUNTED_NOTE : ''].filter(Boolean).join(', ');
   }
   else if (m.percent == null){
     // From a small start the change is stated, not judged — "a few more" read beside +50.
@@ -2600,13 +2601,14 @@ function lineMove(s){
   // older company states its change in openings, as the sentence does — Hot's "+18" had to be
   // checkable on the trend its row opens.
   // Under Share a change in openings is another unit beside shares, so those lines show none.
+  // Mostly re-counted in this window (line_reading.MOSTLY_RECOUNTED): no percentage in any unit,
+  // no index line and no tile, only its hiring in openings, said with why, and said first: a
+  // short window or a small start hid it (review of #731).
+  if (m.percent_withheld === MOSTLY_RECOUNTED) return { count: m.hiring, recounted: true };
   if (trendData && m.span_days < MIN_SPAN_DAYS){
     if (isYoung(s.name, trendData)) return { tooNew: true };
     return !m.span_days || trendUnit === 'share' ? { small: true, short: true } : { count: m.hiring, short: true };
   }
-  // Mostly re-counted in this window (line_reading.MOSTLY_RECOUNTED): no percentage in any unit,
-  // no index line and no tile, only its hiring in openings, said with why.
-  if (m.percent_withheld === MOSTLY_RECOUNTED) return { count: m.hiring, recounted: true };
   const pct = trendUnit === 'share' ? (m.share ? m.share.percent : null) : m.percent;
   if (pct == null) return trendUnit === 'share' ? { small: true } : { count: m.hiring };
   // A change under half an opening has no direction: Micron's Engineering Management read
@@ -3584,9 +3586,10 @@ function markedText(item){
 //      time; the share's own change is its latest over its start, withheld with the percentage;
 //   6. with no pick nothing is taken out;
 //   7. a category, level or role line mostly re-counted in the window (MOSTLY_RECOUNTED: its
-//      counting changes took out more than was left, or under INDEX_BASE_FLOOR was left) gives
-//      no percentage, in any unit, and no index base; and only such a line, of MOVER_FLOOR
-//      openings or more at the start, is said to be one. A whole company's line never is.
+//      counting changes took openings out, and took out more than was left or left under
+//      INDEX_BASE_FLOOR) gives no percentage, in any unit, and no index base, and says it is
+//      one whatever else withholds its percentage; no other line says so. A whole company's
+//      line and the closing row never are.
 // (4, one size in every window, is stated by the tests over narrower windows.) Plus: every count
 // is a whole number; a line's Not hiring total is its causes' sum; its weekly rate is its hiring
 // over the days it was counted, withheld under MIN_SPAN_DAYS; its turnover's net is opened less
@@ -3606,7 +3609,7 @@ function checkReading(reading){
   const recounted = m => {
     const left = m.latest - m.hiring;
     const counting = m.not_hiring.filter(c => COUNTING_KINDS.has(c.kind)).reduce((sum, c) => sum + c.size, 0);
-    return left < m.start && (left < INDEX_BASE_FLOOR || -counting > left);
+    return counting < 0 && (left < INDEX_BASE_FLOOR || -counting > left);
   };
   [reading.total, ...(reading.lines || [])].filter(r => r && r.index_base != null).forEach(r => {
     const first = r.netted.find(v => v != null);
@@ -3629,8 +3632,8 @@ function checkReading(reading){
   const moves = lines.filter(([, r]) => r).map(([where, r]) => [where, r.move, !!r.whole_company]);
   const breakdown = reading.breakdown;
   const closing = breakdown ? breakdown.closing : null;
-  if (closing) moves.push(['closing row', closing, true]);
-  for (const [where, m, whole] of moves){
+  if (closing) moves.push(['closing row', closing, false, true]);
+  for (const [where, m, wholeCompany, isClosingRow] of moves){
     const counts = [m.start, m.latest, m.hiring, m.not_hiring_total, ...m.not_hiring.map(c => c.size),
       ...(m.per_week != null ? [m.per_week] : []),
       ...(m.turnover ? [m.turnover.opened, m.turnover.closed, m.turnover.net].filter(n => n != null) : [])];
@@ -3660,9 +3663,9 @@ function checkReading(reading){
     }
     if (m.percent != null && (nettedStart < INDEX_BASE_FLOOR || !same(m.percent, m.hiring / nettedStart * 100)))
       out.push(`${where}: its percentage is not hiring over the netted start`);
-    const isRecounted = !whole && recounted(m);
+    const isRecounted = !(wholeCompany || isClosingRow) && recounted(m);
     if (isRecounted && m.percent != null) out.push(`${where}: it gives a percentage though mostly re-counted`);
-    if ((m.percent_withheld === MOSTLY_RECOUNTED) !== (isRecounted && m.span_days >= MIN_SPAN_DAYS && m.start >= MOVER_FLOOR))
+    if ((m.percent_withheld === MOSTLY_RECOUNTED) !== isRecounted)
       out.push(`${where}: it is said to be mostly re-counted where it is not`);
     if (!reading.picked && (m.not_hiring.length || m.hiring !== m.latest - m.start))
       out.push(`${where}: with no pick, something was taken out`);
@@ -4365,15 +4368,15 @@ if (el('matches-controls')){
    re-polled. ---- */
 let hotData = null;
 
+// `hidden` marks the kinds of row the list hides unless asked (the owner's call, ADR-0238):
+// staffing firms and job boards, never an IT services employer such as Wipro, Infosys or TCS.
 // `noun` names a hidden row's kind in the "hidden" note, one and many.
 const HOT_OPERATOR = {
   services: { label: 'IT services', hint: 'This company is an IT services firm: it employs the people it hires, though most of its roles are on client projects.' },
-  staffing: { label: 'staffing firm', noun: ['staffing firm', 'staffing firms'], hint: 'This company is a staffing firm, so most roles are placements with its clients rather than jobs at the company itself.' },
-  aggregator: { label: 'job board', noun: ['job board', 'job boards'], hint: 'This company re-posts other companies’ jobs. The employer behind a given role is somebody else.' },
+  staffing: { label: 'staffing firm', hidden: true, noun: ['staffing firm', 'staffing firms'], hint: 'This company is a staffing firm, so most roles are placements with its clients rather than jobs at the company itself.' },
+  aggregator: { label: 'job board', hidden: true, noun: ['job board', 'job boards'], hint: 'This company re-posts other companies’ jobs. The employer behind a given role is somebody else.' },
 };
-// The kinds of row the list hides unless asked (the owner's call, ADR-0238): staffing firms and
-// job boards, never an IT services employer such as Wipro, Infosys or TCS.
-const HOT_HIDDEN = ['staffing', 'aggregator'];
+const hotHidden = r => !!(HOT_OPERATOR[r.operator] || {}).hidden;
 
 async function loadHot(){
   el('hot-msg').textContent = 'Loading…';
@@ -4453,7 +4456,7 @@ function drawHot(){
   const lens = hotLens();
   const showAll = el('hot-show-all').checked;
   const all = hotData.lenses[lens] || [];
-  const rows = showAll ? all : all.filter(r => !HOT_HIDDEN.includes(r.operator));
+  const rows = showAll ? all : all.filter(r => !hotHidden(r));
   el('hot-filtered').textContent = showAll ? '' : hotHiddenNote(all.filter(r => !rows.includes(r)));
 
   if (!rows.length){
@@ -4471,7 +4474,7 @@ function drawHot(){
 const HOT_HIDDEN_NAMED = 3;
 function hotHiddenNote(hidden){
   if (!hidden.length) return 'nothing hidden on this view';
-  const parts = HOT_HIDDEN.map(op => {
+  const parts = Object.keys(HOT_OPERATOR).filter(op => HOT_OPERATOR[op].hidden).map(op => {
     const of = hidden.filter(r => r.operator === op);
     if (!of.length) return '';
     const names = of.slice(0, HOT_HIDDEN_NAMED).map(r => r.company).join(', ');

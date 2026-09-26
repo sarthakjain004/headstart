@@ -2588,6 +2588,35 @@ test('under Share a share\'s change is given where the line\'s own percentage is
   assert.equal(shareMove('category_mostly_recounted_gives_no_percentage', 'big'), '↑ +10.0%');
 });
 
+test('mostly re-counted is said even where a short window or a small start also withholds the percentage', () => {
+  // The short-window branch and "too few" returned first and hid it (review of #731).
+  const { t, nodes } = loadApp();
+  const d = golden('category_mostly_recounted_gives_no_percentage');
+  const embedded = d.reading.lines.find(l => l.name === 'embedded');
+  embedded.move = { ...embedded.move, span_days: 1, per_week: null };
+  t.setPicks(picksOf(d));
+  t.set(d);
+  t.setUnit('count', false);
+  t.draw();
+  assert.match(row(nodes['trends-legend'].innerHTML, 'embedded'), /\+10 openings, mostly re-counted in this window/);
+  assert.match(row(nodes['trends-legend'].innerHTML, 'tiny'), /\+1 opening, mostly re-counted in this window/, 'a start under 20');
+  // The sentence over a short window says it too.
+  const split = golden('micron_eightfold_only_company_steps_at_duplicate_removal');
+  const loaded = loadApp();
+  loaded.t.setPicks(picksOf(split));
+  const micron = split.reading.lines[0];
+  micron.move = { ...micron.move, span_days: 1, per_week: null, percent: null, percent_withheld: 'mostly_recounted' };
+  loaded.t.set(split);
+  loaded.t.draw();
+  assert.match(loaded.nodes['trends-verdict'].innerHTML, /too short a window to tell — 20 tech openings; [^.]*mostly re-counted in this window/);
+});
+
+test('a category is mostly re-counted by its start once a found Board is counted', () => {
+  // Start 100, a found Board +500, a counting change −400: 400 of 600 (review of #731).
+  const { nodes } = drawGolden('category_mostly_recounted_after_a_found_board');
+  assert.match(row(nodes['trends-legend'].innerHTML, 'a'), /\+10 openings, mostly re-counted in this window/);
+});
+
 test('a line mostly re-counted gives its hiring in openings, says why, and no tile or index line names it', () => {
   // NVIDIA's Embedded & Firmware, 2,706 netted to 96, was "Biggest faller −14.6%"; with Micron
   // beside it, 6,474 netted to 97 drew index 121 → 74 → 125 and tiled "Biggest riser +25.8%".

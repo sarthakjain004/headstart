@@ -81,8 +81,8 @@ from pathlib import Path
 from headstart import log
 from headstart.boards import company_name
 from headstart.boards.board_identity import ats_of
-from headstart.ingest.board_naming import board_names, display_name, stated_name
 from headstart.boards.board_operator import company_operator, tenant
+from headstart.ingest.board_naming import board_names, display_name, stated_name
 
 # `__spec__` as well as `__name__`, like every other module that doubles as a `python -m`
 # entry point: run that way `__name__` is "__main__", outside the root `setup()` configures.
@@ -131,7 +131,11 @@ def companies(boards: set[str], names: dict[str, str]) -> list[dict]:
     for board in boards:
         clusters[root(board)].append(board)
     entries = [
-        {"name": name, "boards": sorted(cluster), "operator": company_operator(cluster, name)}
+        {
+            "name": name,
+            "boards": sorted(cluster),
+            "operator": company_operator(cluster, name),
+        }
         for cluster in clusters.values()
         # A company nobody can name cannot be picked by name: its tenant is only a code and no
         # source states one (ADR-0212). Its Boards still count toward the Total breakdown.
