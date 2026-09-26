@@ -332,6 +332,38 @@ def test_the_first_wall_relaunches_the_chrome_on_the_spare_egress(chrome_launche
     assert seen["n"] == 2
 
 
+def test_a_rescue_on_the_spare_egress_is_reported_as_one(chrome_launches, monkeypatch):
+    """The Chrome's navigations never pass through `http`, which is what counts the spare
+    egress's traffic, so the report read "no spare egress was available — Boards lost" on the
+    one shard that rotated Tesla onto it (run 36218633315)."""
+    spare_egress.use_daemon(spare_egress.InMemoryEgressDaemon(_SPARE))
+    monkeypatch.setattr(spare_egress, "rotate", lambda board=None, **kw: True)
+    operation, _seen = _walls_then_answers(2)
+
+    tesla._with_egress(operation)
+
+    assert spare_egress.report()[-1] == (
+        "tesla: walled; spare egress rescued 1/1 walled request(s) (100%); "
+        "2 attempt(s) carried"
+    )
+
+
+def test_a_give_up_on_the_spare_egress_is_reported_as_still_walled(
+    chrome_launches, monkeypatch
+):
+    spare_egress.use_daemon(spare_egress.InMemoryEgressDaemon(_SPARE))
+    monkeypatch.setattr(spare_egress, "rotate", lambda board=None, **kw: False)
+    operation, _seen = _walls_then_answers(99)
+
+    with pytest.raises(TeslaWalled):
+        tesla._with_egress(operation)
+
+    assert spare_egress.report()[-1] == (
+        "tesla: walled; spare egress rescued 0/1 walled request(s) (0%); "
+        "1 attempt(s) carried"
+    )
+
+
 def test_a_wall_with_no_spare_egress_is_raised_after_one_attempt(chrome_launches):
     operation, seen = _walls_then_answers(9)
 

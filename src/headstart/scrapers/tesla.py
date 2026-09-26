@@ -256,21 +256,39 @@ def _with_egress(operation: Callable[[], Any]) -> Any:
     attempt = 0
     while True:
         _ensure_started()
+        on_spare = _route is not None
         try:
             with spare_egress.riding_the_tunnel(_route):
-                return operation()
+                result = operation()
         except TeslaWalled as wall:
+            # Counted here because the Chrome's navigations bypass `http`, which counts every
+            # other group's spare-egress traffic: uncounted, the report called a rotated Tesla
+            # "walled, but no spare egress was available — Boards lost".
+            if on_spare:
+                spare_egress.note_routed(_GROUP)
             attempt += 1
             if attempt > _EGRESS_ATTEMPTS:
+                _settle_walled(on_spare, wall)
                 raise
             spare_egress.mark_walled(_GROUP, wall.status)
-            was_on_spare = _route is not None
             shutdown()
-            if was_on_spare:
+            if on_spare:
                 if not spare_egress.rotate(SLUG):
+                    _settle_walled(on_spare, wall)
                     raise
             elif spare_egress.proxy_for(_GROUP) is None:
                 raise
+        else:
+            if on_spare:
+                spare_egress.note_routed(_GROUP)
+                spare_egress.note_settled(_GROUP, 200, frozenset())
+            return result
+
+
+def _settle_walled(on_spare: bool, wall: TeslaWalled) -> None:
+    """Count a request the spare egress carried and could not get past the wall."""
+    if on_spare:
+        spare_egress.note_settled(_GROUP, wall.status, frozenset({wall.status}))
 
 
 def _fetch_state_json() -> dict[str, Any]:

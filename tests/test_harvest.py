@@ -590,3 +590,36 @@ def test_a_job_labelled_with_an_unlisted_ats_is_kept_and_said_once(tmp_path, cap
         )
     ]
     assert len((tmp_path / "ashby.jsonl").read_text().splitlines()) == 2
+
+
+def test_a_classified_unreadable_board_is_recorded_without_a_warning(
+    monkeypatch, tmp_path, caplog
+):
+    """A Workday non-JSON listing and a Taleo shell with no portalNo are outcomes their scrapers
+    already name; only an unclassified exception earns the traceback and the annotation."""
+    import logging
+
+    from headstart.scrapers.base import BoardUnreadable
+    from headstart.scrapers.workday import UnexpectedListingResponse
+
+    failures = {
+        "workday": UnexpectedListingResponse("classification=unexpected-body"),
+        "taleo_enterprise": BoardUnreadable("Career Section shell has no portalNo"),
+        "x": KeyError("title"),
+    }
+    monkeypatch.setattr(
+        harvest,
+        "get_scraper",
+        lambda ats, slug, name=None, **_: FakeScraper(error=failures[ats]),
+    )
+
+    with caplog.at_level(logging.INFO):
+        result = scrape_all(
+            [CompanyRef(ats, "b") for ats in failures], jobs_dir=tmp_path
+        )
+
+    assert set(result.errors) == {"workday:b", "taleo_enterprise:b", "x:b"}
+    unexpected = [r for r in caplog.records if "unexpected" in r.getMessage()]
+    assert [(r.getMessage(), r.levelno) for r in unexpected] == [
+        ("x:b: unexpected KeyError", logging.WARNING)
+    ]
