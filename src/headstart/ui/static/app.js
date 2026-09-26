@@ -1608,6 +1608,7 @@ let trendMetric = 'stock', trendUnit = 'change', trendSplit = 'bands', trendCove
 let trendDays = 'all';      // the date-range preset: 7 | 30 | 90 | 'all'; a custom bound beats it
 let hoveredSeries = null;   // legend/chart hover-focus name — dims every other line (§ emphasis)
 let hoverIndex = null;      // the stamp the crosshair is parked on — the keyboard walks this
+let tipScrollY = null;      // where scrolling the phone's tooltip into view left the page, so that scroll keeps it
 let tableView = false;      // the WCAG-clean twin of the chart, independent of the SVG
 let lastGeom = null;        // scales + resolved values from the last drawTrends() — hover reads this
 let trendReq = null;        // the /trends request in flight, so a newer one can cancel it
@@ -3328,6 +3329,7 @@ function positionHoverLayer(index, opts){
   if (!group) return;
   hoverIndex = index;
   if (index == null){
+    tipScrollY = null;
     group.style.display = 'none';
     if (tip) tip.hidden = true;
     return;
@@ -3395,9 +3397,12 @@ function positionHoverLayer(index, opts){
       tip.style.top = (svgRect.height + 6) + 'px';
       // It sits in the page's flow under the chart there (style.css), so a tap near the foot of
       // a 390px screen put it below the edge (critic round 17): scrolled just into view then.
+      // The scroll that makes is not the reader's, so it does not put the reading away.
       const viewH = (typeof window !== 'undefined' && window.innerHeight) || 0;
-      if (viewH && tip.getBoundingClientRect().bottom > viewH && tip.scrollIntoView)
+      if (viewH && tip.getBoundingClientRect().bottom > viewH && tip.scrollIntoView){
         tip.scrollIntoView({ block: 'nearest' });
+        tipScrollY = window.scrollY;
+      }
       return;
     }
     const left = px > wrapRect.width / 2 ? Math.max(4, px - tw - 12)
@@ -4140,7 +4145,9 @@ if (el('trends-chart')) {
   el('trends-chart').addEventListener('pointerleave', e => { if (e.pointerType !== 'touch') positionHoverLayer(null); });
   // A tapped reading stays until the finger moves on: a scroll, or a tap anywhere off the plot.
   // It stuck over the "Marked changes" list after scrolling to it, covering its entries.
-  window.addEventListener('scroll', () => { if (hoverIndex != null) positionHoverLayer(null); }, { passive: true });
+  window.addEventListener('scroll', () => {
+    if (hoverIndex != null && window.scrollY !== tipScrollY) positionHoverLayer(null);
+  }, { passive: true });
   document.addEventListener('click', e => {
     if (hoverIndex != null && !(e.target.closest && e.target.closest('#trends-chart'))) positionHoverLayer(null);
   });

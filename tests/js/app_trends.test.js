@@ -79,7 +79,9 @@ function loadApp(fetchImpl) {
       documentElement: { getAttribute: () => null, setAttribute() {} },
     },
     // app.js reads its config off `window.CFG`, so tests set flags there.
-    window: { addEventListener() {}, location: { hash: '' }, CFG: {} },
+    // Listeners recorded, as an element's are: the tooltip test fires the page's scroll.
+    window: { listeners: {}, addEventListener(type, fn) { (this.listeners[type] ||= []).push(fn); },
+      location: { hash: '' }, CFG: {} },
     location: { hash: '' },
     // Recorded, not printed: app.js reports every failed request, and the stub fetches fail most
     // of the page-load ones on purpose.
@@ -2829,10 +2831,20 @@ test('on a phone the tooltip under the chart is scrolled into view when it falls
     const tip = Object.assign(nodes['trends-tooltip'], { offsetHeight: 180, offsetWidth: 390,
       replaceChildren() {}, appendChild() {}, scrolled: false, scrollIntoView() { this.scrolled = true; },
       getBoundingClientRect: () => ({ left: 0, top: chartTop + 266, width: 390, height: 180, bottom: chartTop + 446 }) });
+    tip.scrollIntoView = function () { this.scrolled = true; ctx.window.scrollY = 113; };
+    ctx.window.scrollY = 0;
     t.hover(1);
-    return tip.scrolled;
+    // The scroll that brought it into view keeps it up; the reader's next scroll puts it away.
+    const scroll = () => ctx.window.listeners.scroll.forEach(fn => fn());
+    scroll();
+    const keptThroughItsOwnScroll = !tip.hidden;
+    ctx.window.scrollY = 200;
+    scroll();
+    return { scrolled: tip.scrolled, keptThroughItsOwnScroll, hiddenByTheReaders: tip.hidden };
   };
-  assert.equal(place(100, 844), false, 'on screen: left where it is');
-  assert.equal(place(584, 844), true, 'below the screen’s foot: scrolled into view');
+  same(place(100, 844), { scrolled: false, keptThroughItsOwnScroll: false, hiddenByTheReaders: true },
+    'on screen: left where it is, and any scroll puts it away');
+  same(place(584, 844), { scrolled: true, keptThroughItsOwnScroll: true, hiddenByTheReaders: true },
+    'below the screen’s foot: scrolled into view, and kept through that scroll');
 });
 
