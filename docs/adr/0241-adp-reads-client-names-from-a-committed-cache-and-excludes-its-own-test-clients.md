@@ -22,11 +22,11 @@ problems.
 ## Decision
 
 1. **The 36 Boards are in `EXCLUDED_BOARDS`, each confirmed by content.** On 2026-09-26 each
-   client's `ClientName` and listing were read. Thirty name themselves as ADP test clients. The
-   other six were confirmed from their postings alone:
+   client's `ClientName` and listing were read. Thirty-one name themselves as ADP test clients,
+   `1af96a82` "WFN4PRODA1" among them (60 of 60 postings titled "NEW", at "BVT Location"). The
+   other five were confirmed from their postings alone:
    - `ff0a5e37` "PARAMOUNT V23P2gh", and the unnamed `c347ef8d` and `b47d5556`: "BVT Analyst"
      rows, all in Anchorage.
-   - `1af96a82` "WFN4PRODA1": 60 of 60 postings titled "NEW", at "BVT Location".
    - `a1630435` "V15P1TALONNN": "Administrative Analyst after restart", "multiselect posting" and
      ADP's own "About Company: At ADP…" copy.
    - `d096a084`, unnamed: "testjob_oct09", "Test", "E only with referrals", in "Alabama, Chicago,
@@ -42,7 +42,7 @@ problems.
      file.
    - An empty cached name means ADP states no name for that client. It is not asked again.
 3. **Landing check.** The same script prints `test-client?` for a `ClientName` that matches
-   `^WFN`, `BVT<n>`, `TEST CODE` or `Prod Enablement`. The match is a lead, not a verdict. Six of
+   `^WFN`, `BVT<n>`, `TEST CODE` or `Prod Enablement`. The match is a lead, not a verdict. Five of
    the 36 matched no such name, and `EXCLUDED_BOARDS` still requires reading the postings. The
    rule is in CLAUDE.md's landing rules.
 4. **The pacer's spacing stays at 0.4 s.** The documented limit is the 201st request in a 60 s

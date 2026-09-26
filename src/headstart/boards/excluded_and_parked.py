@@ -489,13 +489,12 @@ EXCLUDED_BOARDS: frozenset[str] = frozenset(
         "workday:https://super.wd103.myworkdayjobs.com/wdd",
         # ADP Workforce Now's own QA and build-verification clients (ADR-0241), each confirmed on
         # 2026-09-26 by reading its `client-features` ClientName and its listing, not from the
-        # GUID, which hints at nothing. 30 name themselves as ADP test clients (`WFNQA…`,
-        # `WFNPJL969`, `FARM 61 BVT4`, `NAS TEST CODE- Prod Enablement`); their titles are "NEW",
+        # GUID, which hints at nothing. 31 name themselves as ADP test clients (`WFNQA…`,
+        # `WFNPJL969`, `WFN4PRODA1`, `FARM 61 BVT4`, `NAS TEST CODE- Prod Enablement`); their titles are "NEW",
         # "BVT Analyst_07/30/2026" and "RECT AUTO REQS_07/17/2025", placed at "BVT Location,
-        # Anchorage, AK". Six state no such name and were read by content: `ff0a5e37` ("PARAMOUNT
-        # V23P2gh") and the unnamed `c347ef8d`/`b47d5556` post the same "BVT Analyst" rows all in
-        # Anchorage; `1af96a82` ("WFN4PRODA1") posts 60 of 60 "NEW" at "BVT Location";
-        # `a1630435` ("V15P1TALONNN") posts "Administrative Analyst after restart", "multiselect
+        # Anchorage, AK" (`1af96a82`'s 60 of 60 are "NEW" there). Five state no such name and were
+        # read by content: `ff0a5e37` ("PARAMOUNT V23P2gh") and the unnamed `c347ef8d`/`b47d5556`
+        # post the same "BVT Analyst" rows all in Anchorage; `a1630435` ("V15P1TALONNN") posts "Administrative Analyst after restart", "multiselect
         # posting" and ADP's own "About Company: At ADP…" copy; the unnamed `d096a084` posts
         # "testjob_oct09", "Test", "E only with referrals" in "Alabama, Chicago, IL". 52,765
         # postings between them by the ledger, none an employer's; ~190 of them were served.

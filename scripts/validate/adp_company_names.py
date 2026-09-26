@@ -42,19 +42,19 @@ FIELDS = ["cid", "name", "checked_at"]
 #: ADP's own QA and build-verification clients, as their ``ClientName`` states them on the 36
 #: measured 2026-09-26: ``WFNQA…``/``WFNPJL…``/``WFNBVT…``/``WFN4PRODA1``, ``FARM 61 BVT4``,
 #: ``NAS TEST CODE- Prod Enablement``, ``NAS WFN Prod Enablement -testnas030``. A lead to read,
-#: never a verdict: 6 of the 36 state no such name (3 none at all) and were found by content.
+#: never a verdict: 5 of the 36 state no such name (3 none at all) and were found by content.
 TEST_CLIENT_NAME = re.compile(
     r"^wfn|\bbvt\d*\b|test ?code|prod enablement", re.IGNORECASE
 )
 
 
-def client_name(cid: str, cc_id: str) -> str:
+def read_client_name(cid: str, cc_id: str) -> str:
     return adp.ADPScraper(f"{cid}/{cc_id}").client_name()
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
-    parser.add_argument("--spacing", type=float, default=adp._SPACING_S)
+    parser.add_argument("--spacing", type=float, default=0.4)
     args = parser.parse_args()
     log.setup()
     adp.ADPScraper.pacer = Pacer(args.spacing)
@@ -82,7 +82,7 @@ def main() -> int:
         # because some clients never answer `client-features` and hold a thread for the 30 s
         # timeout (9 of the first 130 read, 2026-09-26).
         with ThreadPoolExecutor(16) as pool:
-            futures = {pool.submit(client_name, c, centers[c]): c for c in todo}
+            futures = {pool.submit(read_client_name, c, centers[c]): c for c in todo}
             for done, future in enumerate(as_completed(futures), 1):
                 cid = futures[future]
                 try:
@@ -94,10 +94,9 @@ def main() -> int:
                 writer.writerow(row)
                 fh.flush()
                 held[cid] = row
+                print(f"[{done}/{len(todo)}] {cid}: {name!r}", flush=True)
                 if TEST_CLIENT_NAME.search(name):
                     print(f"test-client? {cid} {name!r}", file=sys.stderr, flush=True)
-                if done % 500 == 0:
-                    print(f"{done}/{len(todo)}", flush=True)
     with CACHE.open("w", encoding="utf-8", newline="") as fh:
         writer = csv.DictWriter(fh, FIELDS, lineterminator="\n")
         writer.writeheader()

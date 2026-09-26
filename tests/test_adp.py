@@ -692,3 +692,13 @@ def test_the_async_path_re_claims_a_slot_that_a_rest_overtook():
         return time.monotonic() - started
 
     assert asyncio.run(run()) >= 0.3
+
+
+def test_adps_own_build_verification_client_is_not_scraped_or_kept():
+    """`WFNPJL969` posts "BVT Analyst_…" rows in Anchorage (ADR-0241). Excluded, so `scrapable_boards`
+    drops it and `index prune`'s keep-set, built from that list, evicts its served rows."""
+    from headstart.boards import scrapable_boards
+
+    assert scrapable_boards.is_excluded(
+        "adp", "77f11391-62d0-44e8-bcdb-802b2798d815/19000101_000001"
+    )
