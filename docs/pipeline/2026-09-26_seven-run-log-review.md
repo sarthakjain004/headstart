@@ -251,5 +251,32 @@ Severity: **BUG** (wrong data or wrong decision), **DEGRADATION** (lost coverage
 
 ## Fixes
 
-Every finding above is being fixed in its own PR group, under ADRs 0238–0245. This section lists the
-merged PRs once they land.
+Findings are numbered as above. "Log" means the Log defects table.
+
+| PR | ADR | What it fixed | Findings |
+|---|---|---|---|
+| #733 | 0242 | Tail back-off for measured-empty Boards; slow Boards start first; value gate from 2 min; scrape-plan log lines (Head/Tail names, labelled serial minutes, every gated Board named) | 8, 15, Log |
+| #734 | 0094 amendment | Runners pinned to `ubuntu-24.04`; `huggingface_hub<2`; sentence-transformers renames; nomic load pinned; CPU torch; scrape-plan's state fetch narrowed; compaction threshold 3,000 → 1,200; tqdm bars off | 17, 18, 19, Log |
+| #735 | 0244 | Publication deletes superseded Search indexes, so the merge no longer re-downloads them | 16 |
+| #736 | 0243 | Rows the scrape saw but the filter rejected, and fossil-cased rows, take the grace period; grace-period and `reclaim_storage` lines corrected | 5, 7, Log |
+| #737 | 0226 amendment | Six misleading scrape log lines: classified unreadable Boards raise no traceback annotation; Zoho closures are not detail losses; Tesla spare egress; Zoho walls per data centre; zero-shortfall lines silent; `fanout_retries.py` knows `http-302` | Log |
+| #738 | 0240 | Jibe drops a posting only when its iCIMS tenant is a Board we scrape; 288 covered clients parked | 3, 8 |
+| #739 | 0239 | SuccessFactors raises when every surface failed; Oracle ceiling off-by-one and two-ended walk; Oracle responsibilities/qualifications descriptions; JazzHR and Jobvite gone-strikes; Workday outage bodies transient; Taleo closed requisitions dropped; Amazon CAPTCHA re-fetch; zwayam bodyless details counted | 1, 2, 9, 10, 11, 12, 13 |
+| #740 | 0242 amendment | Priority ledger decays clean-empty Boards; gone classes widened; coverage graded without gone Boards; held re-fetch counts served ids only; embed cost model recalibrated | 6, 9, 17, Log |
+| #741 | 0241 | 36 ADP test clients excluded; ADP client names cached; `adp_recruiting` errors name their endpoint | 4, 11, 15 |
+| #742 | — | Review follow-ups: `embed_plan`'s tokenizer pinned and its cache keyed on the revision; `huggingface_hub<2` in the remaining workflows; smoke run installs as the pipeline does; stale comments after ADR-0243/0244 | 19, Log |
+| #744 | — | SuccessFactors joins every description block, so Lockheed's separate pay block stops flapping (660 gained, then 664 lost, on runs 36224130300 and 36226622028); bench cache keys; `reclaim_storage` churn figure | 13, 14, Log |
+
+### Still open
+
+- **Join re-walk consolidation.** The join parses the scrape three times and decompresses the
+  description store three times, about 3 min (finding 17). One pass needs the stages re-keyed.
+- **Closed-id memory across runs.** HCLTech, Zoho and zwayam re-fetch postings already known to be
+  closed on every run (findings 13 and 17).
+- **jobs.sap.com's new site is unreadable.**
+- **Jibe clients partly on Workday or Oracle.** Those postings are served twice under two ATS labels.
+  #738 parks only clients wholly on held iCIMS Boards.
+- **Stale ADP ledger rows.** Client ids that hang or answer 404 are still in the ledger.
+- **ADR-0053 still has no drain** for ids an Unauthoritative Board's list never returned. ADR-0243
+  covers only rows the list did return and fossil-cased rows (finding 7).
+- **Tail back-off raises serial work.** The 80k Slice is kept by choice.
