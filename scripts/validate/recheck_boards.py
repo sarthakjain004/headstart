@@ -86,7 +86,7 @@ def main() -> int:
         for done in as_completed(futures):
             ats, slug, url = futures[done]
             try:
-                verdict, jobs = done.result()
+                verdict, jobs, *_ = done.result()
             except Exception as exc:  # noqa: BLE001 - a probe blowing up is itself a verdict
                 verdict, jobs = "unknown", None
                 print(f"  {ats}:{slug} raised {type(exc).__name__}", flush=True)

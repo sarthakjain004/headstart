@@ -686,6 +686,37 @@ def test_an_unknown_reprobe_keeps_a_live_verdict(cl, tmp_path, monkeypatch):
     assert after["newco"].status == cl.UNKNOWN
 
 
+def test_a_workday_row_records_the_data_centre_that_answered(cl, tmp_path, monkeypatch):
+    """#661: a Board found on another data centre than its row's url names lands with that data
+    centre in its url, so `checked_at` dates the data centre too and ADR-0219's newest-row rule
+    elects one that answers. The tenant, which keys the ledger, stays as it was: respelling it
+    would land a second row for the Board."""
+    pool, ledger = tmp_path / "pool", tmp_path / "ledger"
+    pool.mkdir()
+    tenant = "acme.wd1.myworkdayjobs.com/External"
+    (pool / "workday.csv").write_text(
+        f"tenant,url\n{tenant},https://acme.wd1.myworkdayjobs.com/External\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        cl,
+        "_post",
+        lambda url, body, headers: (
+            (200, {"total": 4}) if ".wd5." in url else (422, None)
+        ),
+    )
+    monkeypatch.setattr(cl, "PASSES", [(1, 1)])
+    monkeypatch.setattr(
+        "sys.argv",
+        ["check_liveness", "--dir", str(pool), "--ledger-dir", str(ledger), "workday"],
+    )
+    cl.main()
+    after = cl.liveness.load(ledger / "workday.csv")
+    assert list(after) == [tenant]
+    assert after[tenant].url == "https://acme.wd5.myworkdayjobs.com/External"
+    assert (after[tenant].status, after[tenant].jobs) == (cl.LIVE, 4)
+
+
 def test_an_oracle_pool_row_lands_under_the_pod_host_its_scraper_reads(
     cl, tmp_path, monkeypatch
 ):

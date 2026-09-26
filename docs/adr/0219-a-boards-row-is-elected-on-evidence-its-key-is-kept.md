@@ -107,6 +107,25 @@ centres at scrape time, at the cost of a few extra POSTs. The fix that would mak
 in the prober: write the data centre that answered into the row's url. It is not done here;
 [#661](https://github.com/sarthakjain004/headstart/issues/661) tracks it.
 
+**Amended 2026-09-25 ([#661](https://github.com/sarthakjain004/headstart/issues/661)).** The
+prober now does this. When a data centre other than the row's own answers, `p_workday` returns
+the row's url with that `wdN` swapped in, keeping the casing and any query string, and the ledger
+records it. It rewrites only the url. The ledger is keyed on the raw tenant, and 15,167 of
+27,473 Workday tenants spell a `wdN`, so respelling the tenant would land a second row for the
+Board. A tenant can therefore name an older data centre than its url. Nothing reads a Workday
+tenant as a url: `slug_from` reads the url, and `board_key` is `company/site`. A row whose url is
+no `wdN` careers url (#650's display slugs) is not rewritten; `p_workday` calls it dead as before.
+
+This saves POSTs at scrape time, not at probe time. The prober reads each row's url from the
+pool (`data/ats-tenants-merged`), not from the ledger, so a re-probe starts again from the pool's
+`wdN` and sweeps. It still lands the answering data centre each time.
+
+Measured live on 2026-09-25 against a copy of the committed ledger, over the rows of the same 344
+Boards, with `--force`. The elected data centre refused while another answered on 105 before
+the run. After the run it refused on 0 with the new prober, and on 108 with `main`'s. So
+re-dating the rows does not fix the election; recording the data centre does. The run rewrote 430
+urls, and it left the tenant set, the row count and the Scrapable set unchanged.
+
 ## Consequences
 
 - `min_jobs` reads the job count on the key row, not on the newest live row. A Board whose key row
