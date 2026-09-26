@@ -1,8 +1,8 @@
 """Which held descriptions the next scrape re-fetches (ADR-0211).
 
-Five Scrapers skip a Job's detail fetch once the ADR-0050 store holds its description (ADR-0048):
-ADP, Apple, Cornerstone, Eightfold and Phenom. On those, an edited posting was never fetched again,
-so no edit could reach the store or the served table (ADR-0207). This rotation takes a slice of
+Six Scrapers skip a Job's detail fetch once the ADR-0050 store holds its description (ADR-0048):
+ADP, Apple, Cornerstone, Eightfold, Phenom and Tesla. On those, an edited posting was never fetched
+again, so no edit could reach the store or the served table (ADR-0207). This rotation takes a slice of
 their held Jobs off the skip-list each run, so every held Job is fetched again once its last fetch
 is :data:`PERIOD_DAYS` old, on the first scrape of its Board after that.
 
@@ -40,7 +40,9 @@ from headstart.boards.board_identity import ats_of
 _log = log.get(__name__, __spec__)
 
 #: The Scrapers whose Detail pass skips held Jobs and whose re-fetch cost was measured to fit.
-ATSES = frozenset({"adp", "apple", "cornerstone", "eightfold", "phenom"})
+#: Tesla's detail pass skips held Jobs too (`tesla.py`, `skip_held=True`) and was left off until
+#: 2026-09-26, so no edit to a held Tesla posting could reach the store.
+ATSES = frozenset({"adp", "apple", "cornerstone", "eightfold", "phenom", "tesla"})
 
 #: Days between two fetches of one held Job: about 1/190 of each ATS's held Jobs a run, ~240 for
 #: Eightfold across its shards (ADR-0211).
@@ -125,10 +127,18 @@ def record(
 
 
 def plan(
-    held_by_ats: dict[str, set[str]], checked: dict[str, datetime], at: datetime
+    held_by_ats: dict[str, set[str]],
+    checked: dict[str, datetime],
+    at: datetime,
+    live: set[str] | None = None,
 ) -> set[str]:
     """The held Jobs the next scrape fetches again. Narrows ``checked`` in place to held Jobs,
-    seeding the ones it does not know, so the ledger never outgrows the store."""
+    seeding the ones it does not know, so the ledger never outgrows the store.
+
+    ``live`` is the ids the index serves. The store keeps a description after its Job is
+    evicted, and no scrape re-emits an evicted Job, so only live ones are made due: on 2026-09-26
+    4,652 of the 4,896 due were evicted ids, and the log line said the rotation was ~20x bigger
+    than it was. Empty or None (no index metadata yet) counts every held Job, as before."""
     for job_id in [i for i in checked if i not in held_by_ats.get(ats_of(i), ())]:
         del checked[job_id]
     due: set[str] = set()
@@ -136,10 +146,12 @@ def plan(
         held = held_by_ats[ats]
         for job_id in held:
             checked.setdefault(job_id, _seeded(job_id, at))
-        ats_due = {i for i in held if at - checked[i] >= _PERIOD}
+        served = held & live if live else held
+        ats_due = {i for i in served if at - checked[i] >= _PERIOD}
         due |= ats_due
         _log.info(
-            f"re-fetch rotation: {ats}: {len(ats_due):,} of {len(held):,} held descriptions due, "
-            f"left off the skip-list (every {PERIOD_DAYS} days, ADR-0211)"
+            f"re-fetch rotation: {ats}: {len(ats_due):,} of {len(served):,} held descriptions "
+            f"of served Jobs due, left off the skip-list (every {PERIOD_DAYS} days, ADR-0211); "
+            f"{len(held) - len(served):,} held for evicted Jobs not counted"
         )
     return due
