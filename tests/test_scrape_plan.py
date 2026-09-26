@@ -846,3 +846,27 @@ def test_tail_stamps_back_off_only_unscored_empty_boards():
         "lever:hiring": "2026-09-26T00:00:00+00:00",
         "lever:old-style": "2026-09-25T00:00:00",
     }
+
+
+def test_the_scrape_plan_job_fetches_exactly_the_state_files_the_planner_reads():
+    """pipeline.yml names scrape_plan's state files one by one rather than pulling `data/state/*`,
+    which also dragged in every role-trend delta. A ledger the planner starts reading without it
+    being added there would be absent on the runner, and the plan would silently go cold on it."""
+    from pathlib import Path
+
+    from headstart.ingest import REPO_ROOT
+
+    state = REPO_ROOT / "data" / "state"
+    read = {
+        str(v.relative_to(REPO_ROOT))
+        for v in vars(ps).values()
+        if isinstance(v, Path) and v.is_relative_to(state)
+    }
+    workflow = (REPO_ROOT / ".github" / "workflows" / "pipeline.yml").read_text("utf-8")
+    fetch = re.search(
+        r"python -m headstart\.ingest\.state_fetch\n(.*?)\n      - name: Plan the scrape",
+        workflow,
+        re.DOTALL,
+    )
+    assert fetch, "scrape-plan's state_fetch step not found"
+    assert set(fetch.group(1).split()) == read
