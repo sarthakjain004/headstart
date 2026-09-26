@@ -184,8 +184,8 @@ def test_scrape_health_keeps_atses_and_loss_kinds_separate(tmp_path):
     assert health.verdict_line() == (
         # 2 unusable of 3 attempted is 66.67%, past `_CRITICAL_SHARE` — the verdict is graded on
         # the share now, not on `any(failed or partial)`, so this tiny fixture reads CRITICAL.
-        "Fresh coverage: CRITICAL — 1 failed and 1 partial of 3 attempted Boards "
-        "(66.67% unusable)"
+        "Fresh coverage: CRITICAL — 1 failed (0 of them confirmed gone, not counted) and "
+        "1 partial of 3 attempted Boards (66.67% unusable)"
     )
     lines = health.loss_lines()
     assert any("workday detail loss events: 8/10" in line for line in lines)
@@ -288,3 +288,24 @@ def test_every_loss_cause_is_reported_with_its_count():
     assert "more causes" not in line
     for code in range(500, 507):
         assert f"HTTP {code}" in line, f"HTTP {code} was dropped from the tail"
+
+
+def test_confirmed_gone_boards_do_not_degrade_coverage():
+    """ADR-0242: a 404/410 Board is the failures ledger's to quarantine, not a coverage loss. The
+    80k Slice's dead Tail Boards alone put shards at 1.1-3.2%, past the 2% threshold, on a
+    normal run; the verdict counts them in `failed` but not in the unusable share."""
+    ok = [f"lever:ok-{i}" for i in range(97)]
+    errors = {
+        f"lever:dead-{i}": "HTTPError: HTTP Error 404: Not Found" for i in range(2)
+    }
+    errors["lever:flaky"] = "ReadTimeout: read timed out"
+    health = observability.ScrapeHealth.from_reports(
+        [observability.ShardReport.from_json({"boards_ok": ok, "errors": errors})]
+    )
+
+    assert health.unusable_share == 1 / 100
+    assert not health.degraded
+    assert health.verdict_line() == (
+        "Fresh coverage: healthy — 3 failed (2 of them confirmed gone, not counted) and "
+        "0 partial of 100 attempted Boards (1.00% unusable)"
+    )

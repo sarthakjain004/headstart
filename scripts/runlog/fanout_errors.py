@@ -88,7 +88,7 @@ QUARANTINE = re.compile(
 # no error at all — on runs whose log carried it verbatim. `warn_if_unparsed` below is the guard
 # that makes the next such drift loud; `fanout_corpus` and `fanout_ledgers` already use it.
 FAILURES = re.compile(
-    r"\[update_ledgers\] failures: (\d+) of (\d+) board error\(s\) read as gone \(404/410\)"
+    r"\[update_ledgers\] failures: (\d+) of (\d+) board error\(s\) read as gone \(404/410[^)]*\)"
     r" across (\d+) shard\(s\)"
     r" \| (\d+) ledger rows \((\d+) cleared by a successful scrape\) \| (\d+) at/over (\d+) strikes"
     # Optional for the same reason as `fanout_plan.QUARANTINE_SKIP`: the emitter always writes the

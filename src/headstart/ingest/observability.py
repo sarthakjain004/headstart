@@ -37,6 +37,7 @@ from typing import Any
 
 from headstart import log
 from headstart.boards.board_identity import ats_of
+from headstart.ingest.board_failures import is_gone
 
 _log = log.get(__name__)
 
@@ -247,6 +248,13 @@ class ShardReport:
 #: across the five runs of 2026-09-16 — 119/130/135/112/147 unusable of 20,000 attempted, from
 #: those runs' own join logs — and 0.655% on the live `data/state/scrape_health.json`. 2% leaves
 #: roughly 3x headroom over that baseline, which is what stops the ordinary run tripping it.
+#:
+#: **Confirmed-gone Boards are not counted as unusable (ADR-0242).** A 404/410 Board is the failures
+#: ledger's to count and quarantine (ADR-0162), not a coverage loss. Since ADR-0229's 80k Slice
+#: rotates through dead Tail Boards, they alone put every shard at 1.1-3.2% (105 shard reports of
+#: the seven runs 36200233818-36218633315), so the unchanged 2% read DEGRADED on 36 of 105 shards,
+#: 15 of 15 in one run. Without them the same 105 read 0.06-1.09% (median 0.24%), so 2% again
+#: leaves ~2x headroom over the worst normal shard.
 _DEGRADED_SHARE = 0.02
 #: Where a run stops being noisy and starts being an incident. 2026-09-12's Workday collapse ran at
 #: 80.8% of that provider's own attempts, which at Workday's measured 12.7% of a slice computes to
@@ -259,6 +267,11 @@ _CRITICAL_SHARE = 0.10
 #: Fewest attempted Boards an ATS needs before it can be named as driving the verdict. `amazon` is
 #: one Board and reads 100% unusable the moment it comes back short.
 _MIN_GRADED_BOARDS = 25
+
+
+def _unusable(counts: Counter[str]) -> int:
+    """Failed-but-not-gone plus partial Boards: the coverage verdict's numerator."""
+    return counts["failed"] - counts["gone"] + counts["partial"]
 
 
 @dataclass
@@ -300,8 +313,10 @@ class ScrapeHealth:
                 malformed_fields.append(f"{shard}:report")
             for key in report.boards_ok:
                 coverage[ats_of(key)]["successful"] += 1
-            for key in report.errors:
+            for key, reason in report.errors.items():
                 coverage[ats_of(key)]["failed"] += 1
+                if is_gone(reason):
+                    coverage[ats_of(key)]["gone"] += 1
             for key in report.truncated:
                 coverage[ats_of(key)]["partial"] += 1
             for board, observation in report.observations.items():
@@ -358,7 +373,9 @@ class ScrapeHealth:
     def unusable_share(self) -> float:
         """Fraction of attempted Boards whose list this run could not use — failed or partial.
 
-        The number the verdict is graded on. Attempted is ``successful + failed``.
+        The number the verdict is graded on. Attempted is ``successful + failed``. A Board that
+        failed as confirmed gone (404/410) is not counted as unusable: it is the failures ledger's
+        to quarantine (ADR-0162), and the 80k Slice's dead Tail Boards alone crossed the threshold.
 
         **The numerator is an upper bound, and is clamped.** ``failed`` and ``partial`` are counted
         from two sets in the same report and a Board can be in both: ``harvest`` records truncation
@@ -372,7 +389,7 @@ class ScrapeHealth:
         attempted = sum(c["successful"] + c["failed"] for c in self.coverage.values())
         if not attempted:
             return 0.0
-        unusable = sum(c["failed"] + c["partial"] for c in self.coverage.values())
+        unusable = sum(_unusable(c) for c in self.coverage.values())
         return min(unusable, attempted) / attempted
 
     def worst_atses(self, limit: int = 3) -> list[tuple[str, float, int]]:
@@ -388,7 +405,7 @@ class ScrapeHealth:
             attempted = counts["successful"] + counts["failed"]
             if attempted < _MIN_GRADED_BOARDS:
                 continue
-            unusable = counts["failed"] + counts["partial"]
+            unusable = _unusable(counts)
             if unusable:
                 ranked.append((ats, unusable / attempted, attempted))
         return sorted(ranked, key=lambda row: -row[1])[:limit]
@@ -429,6 +446,7 @@ class ScrapeHealth:
             return "Fresh coverage: unavailable — no shard reports arrived"
         successful = sum(c["successful"] for c in self.coverage.values())
         failed = sum(c["failed"] for c in self.coverage.values())
+        gone = sum(c["gone"] for c in self.coverage.values())
         partial = sum(c["partial"] for c in self.coverage.values())
         attempted = successful + failed
         share = self.unusable_share
@@ -440,8 +458,9 @@ class ScrapeHealth:
         else:
             verdict = "healthy"
         line = (
-            f"Fresh coverage: {verdict} — {failed} failed and {partial} partial of "
-            f"{attempted} attempted Boards ({share:.2%} unusable)"
+            f"Fresh coverage: {verdict} — {failed} failed ({gone} of them confirmed gone, not "
+            f"counted) and {partial} partial of {attempted} attempted Boards "
+            f"({share:.2%} unusable)"
         )
         if verdict != "healthy":
             worst = self.worst_atses()

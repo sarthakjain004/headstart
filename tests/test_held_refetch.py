@@ -85,3 +85,36 @@ def test_malformed_ledger_lines_are_counted(tmp_path, caplog):
     with caplog.at_level("INFO", logger=hr.__name__):
         assert list(hr.read_checked(path)) == ["lever:a:1"]
     assert caplog.messages == [f"{path}: skipped 2 malformed line(s)"]
+
+
+def test_only_served_jobs_fall_due():
+    """The store keeps an evicted Job's description, and no scrape re-emits an evicted Job, so
+    counting it made the rotation read ~20x its real size (4,652 of 4,896 due on 2026-09-26)."""
+    held = {"eightfold": {"eightfold:acme:live", "eightfold:acme:evicted"}}
+    checked = {i: AT - PERIOD for i in held["eightfold"]}
+    assert hr.plan(held, checked, AT, live={"eightfold:acme:live"}) == {
+        "eightfold:acme:live"
+    }
+
+
+def test_no_index_metadata_counts_every_held_job():
+    held = {"eightfold": {"eightfold:acme:1"}}
+    assert hr.plan(held, {"eightfold:acme:1": AT - PERIOD}, AT, live=set()) == {
+        "eightfold:acme:1"
+    }
+
+
+def test_every_scraper_that_skips_held_details_is_rotated_except_zwayam():
+    """A Scraper that skips held details but is missing here never re-fetches an edited posting
+    (Tesla was). Zwayam is left out on purpose (the module docstring says why)."""
+    import pathlib
+    import re
+
+    from headstart import scrapers
+
+    skipping = {
+        p.stem
+        for p in pathlib.Path(scrapers.__file__).parent.glob("*.py")
+        if re.search(r"skip_held=True", p.read_text(encoding="utf-8"))
+    }
+    assert skipping - {"zwayam"} <= hr.ATSES

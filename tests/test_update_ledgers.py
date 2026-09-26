@@ -475,3 +475,142 @@ def test_the_quarantine_total_is_reported_as_a_delta(tmp_path, caplog):
         )
     line = next(r.message for r in caplog.records if r.message.startswith("failures:"))
     assert "+1 new" in line and "-1 released" in line
+
+
+def _priority_run(
+    tmp_path: Path,
+    *,
+    prev: dict[str, float],
+    jobs=(),
+    tech=(),
+    boards_ok=(),
+    unauthoritative=None,
+    live=None,
+):
+    """Run `update_ledgers priority` over one shard report and a snapshot; return the scores."""
+    from headstart.boards import priority_ledger
+    from headstart.ingest.update_ledgers import priority
+
+    ledger = tmp_path / "board_priority.csv"
+    priority_ledger.save(
+        ledger,
+        {
+            b: priority_ledger.BoardPriority(v, int(v), "2026-09-20")
+            for b, v in prev.items()
+        },
+    )
+    frag = tmp_path / "fragments" / "shard-0"
+    frag.mkdir(parents=True, exist_ok=True)
+    (frag / "_shard_report.json").write_text(
+        json.dumps({"errors": {}, "boards_ok": list(boards_ok)}), encoding="utf-8"
+    )
+    for sub, ids in (("jobs", jobs), ("jobs/tech", tech)):
+        d = tmp_path / sub
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "greenhouse.jsonl").write_text(
+            "".join(json.dumps({"id": i}) + "\n" for i in ids), encoding="utf-8"
+        )
+    unauth = tmp_path / "unauthoritative_boards.json"
+    unauth.write_text(json.dumps(unauthoritative or {}), encoding="utf-8")
+    priority(
+        argparse.Namespace(
+            jobs=tmp_path / "jobs",
+            tech=tmp_path / "jobs/tech",
+            ledger=ledger,
+            fragments=tmp_path / "fragments",
+            unauthoritative_boards=unauth,
+            liveness=_liveness(tmp_path, live or {})
+            if live is not None
+            else tmp_path / "no-liveness",
+        )
+    )
+    return {b: p.score for b, p in priority_ledger.load(ledger).items()}
+
+
+def test_priority_decays_a_board_that_scraped_clean_and_empty(tmp_path):
+    """ADR-0242: a Board in `boards_ok` with no job lines was carried unchanged forever; it is a
+    complete look that found no tech, so its score decays like any zero-tech scrape."""
+    scores = _priority_run(
+        tmp_path, prev={"greenhouse:quiet": 10.0}, boards_ok=["greenhouse:quiet"]
+    )
+    assert scores == {"greenhouse:quiet": 3.0}
+
+
+def test_priority_carries_an_unauthoritative_board_unblended(tmp_path):
+    """A truncated read (amazon's CAPTCHA-short list) is no measurement of the Board's tech
+    count, so its row is carried as it was rather than blended with the short count."""
+    scores = _priority_run(
+        tmp_path,
+        prev={"greenhouse:short": 10.0},
+        jobs=["greenhouse:short:1"],
+        tech=["greenhouse:short:1"],
+        boards_ok=["greenhouse:short"],
+        unauthoritative={"greenhouse:short": "truncated: CAPTCHA"},
+    )
+    assert scores == {"greenhouse:short": 10.0}
+
+
+def test_priority_drops_rows_for_boards_no_longer_scrapable(tmp_path):
+    """A parked or dead Board is never scraped again, so its row never decays and held a top-ten
+    place every run (`recruitee:rebootmonkey`, `oracle:jpmc-test`). Matched case-folded."""
+    scores = _priority_run(
+        tmp_path,
+        prev={"greenhouse:Live": 5.0, "greenhouse:parked": 50.0},
+        live={"greenhouse": ["live"]},
+    )
+    assert scores == {"greenhouse:Live": 5.0}
+
+
+def test_priority_drops_nothing_when_the_liveness_dir_is_missing(tmp_path, caplog):
+    """A missing liveness dir lists no Scrapable Board; that is a lost dir, not an empty world."""
+    with caplog.at_level(logging.WARNING):
+        scores = _priority_run(tmp_path, prev={"greenhouse:any": 5.0})
+    assert scores == {"greenhouse:any": 5.0}
+    assert "dropping no rows" in caplog.text
+
+
+def test_errors_that_did_not_read_as_gone_group_by_status_code(tmp_path, caplog):
+    """A class alone lumps a 404-ish shape in with ordinary 429s; the status code splits them."""
+    with caplog.at_level(logging.INFO):
+        _run(
+            tmp_path,
+            errors={
+                "greenhouse:a": "HTTPError: HTTP Error 429: Too Many",
+                "greenhouse:b": "HTTPError: HTTP Error 429: Too Many",
+                "greenhouse:c": "HTTPError: HTTP Error 503: Unavailable",
+                "greenhouse:d": "ReadTimeout: timed out",
+            },
+        )
+    line = next(
+        r.message for r in caplog.records if "did not read as gone" in r.message
+    )
+    assert "greenhouse HTTPError 429 x2" in line
+    assert "greenhouse HTTPError 503 x1" in line
+    assert "greenhouse ReadTimeout x1" in line
+
+
+def test_the_quarantine_sample_names_this_runs_arrivals(tmp_path, caplog):
+    """The alphabetical stock named the same twenty Boards every run; the sample is the Boards
+    that crossed the line this run, with the rest counted."""
+    ledger = tmp_path / "board_failures.csv"
+    gone = "HTTPError: HTTP Error 404: "
+    bf.save(
+        ledger,
+        {
+            "greenhouse:aaa-stock": bf.Failure(bf.QUARANTINE_AT, gone, "t"),
+            **{
+                f"greenhouse:new-{n:02d}": bf.Failure(bf.QUARANTINE_AT - 1, gone, "t")
+                for n in range(22)
+            },
+        },
+    )
+    with caplog.at_level(logging.INFO):
+        _run(
+            tmp_path,
+            errors={f"greenhouse:new-{n:02d}": gone for n in range(22)},
+            ledger=ledger,
+        )
+    named = [r.message for r in caplog.records if r.message.startswith("  quarantined")]
+    assert not any("aaa-stock" in m for m in named)
+    assert sum("greenhouse:new-" in m for m in named) == 20
+    assert named[-1] == "  quarantined  +2 more this run"

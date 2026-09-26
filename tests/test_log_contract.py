@@ -556,9 +556,16 @@ def _ledger_priority(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
             },
         },
     )
+    # No liveness dir, so no row is dropped as off the Scrapable set; no fragments, so no
+    # Board is clean-empty; no unauthoritative file, so nothing is carried unblended.
     update_ledgers.priority(
         argparse.Namespace(
-            jobs=Path("data/jobs"), tech=Path("data/jobs/tech"), ledger=ledger
+            jobs=Path("data/jobs"),
+            tech=Path("data/jobs/tech"),
+            ledger=ledger,
+            fragments=Path("fragments"),
+            unauthoritative_boards=Path("unauthoritative_boards.json"),
+            liveness=Path("liveness"),
         )
     )
 
@@ -1911,7 +1918,8 @@ CONTRACT: tuple[Line, ...] = (
         consumer="fanout_errors.FAILURES",
         emitter=_LEDGERS,
         body=(
-            "failures: 1204 of 2215 board error(s) read as gone (404/410) across 1 shard(s) | "
+            "failures: 1204 of 2215 board error(s) read as gone (404/410, unresolvable host, "
+            "Jobvite invalid) across 1 shard(s) | "
             "1204 ledger rows (1150 cleared by a successful scrape) | 1204 at/over 20 strikes "
             "(+1204 new, -0 released) -> board_failures.csv"
         ),

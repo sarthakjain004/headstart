@@ -573,7 +573,10 @@ def _update_store() -> int:
         )
     write_changes(Path(args.changes), changes)
     due = held_refetch.plan(
-        {ats: _ats_held_ids(store / ats) for ats in held_refetch.ATSES}, checked, at
+        {ats: _ats_held_ids(store / ats) for ats in held_refetch.ATSES},
+        checked,
+        at,
+        live=embedded,
     )
     held = write_held_details(store, Path(args.held_details), leave_out=due)
     write_id_list(Path(args.refetch_due), due)

@@ -80,7 +80,19 @@ PAROLE_DAYS = 7
 
 # "Gone" as the origin reports it. Matched against the recorded reason, which the shard reports
 # carry as "{ExcType}: {message}" (e.g. "HTTPError: HTTP Error 404: ").
-_GONE = re.compile(r"HTTP Error (404|410)\b")
+#
+# Two more shapes say the same thing (ADR-0242), each checked live on 2026-09-26:
+# - a host that no longer resolves, curl's "Could not resolve host". 8.8.8.8 answered NXDOMAIN for
+#   4 of the 5 on run 36218633315 (njit.csod.com, careers.grampianshealth.com,
+#   karriere.richter-frenzel.de, opportunities.alnylam.com) and no A record for jobs.clc.ca, while
+#   both controls resolved. One resolver hiccup is one strike of the 20 quarantine needs.
+# - Jobvite's redirect of an unknown company to `search.jobvite.com?invalid=1`: `tcsatl` still
+#   302s there, a live company answers 200. Its bare "-> 404" bursts are transient and stay out.
+_GONE = re.compile(
+    r"HTTP Error (404|410)\b"
+    r"|Could not resolve host"
+    r"|-> 302 \S*search\.jobvite\.com/?\?invalid=1"
+)
 
 _FIELDS = ("board", "strikes", "last_reason", "last_seen_gone")
 
