@@ -32,7 +32,7 @@ jobs:
             echo "HF_TOKEN secret not set - skipping. See docs/adr/0020-free-tier-deployment.md."
             exit 0
           fi
-          pip install huggingface_hub
+          pip install "huggingface_hub<2"  # one major across the workflows, as in pipeline.yml
           # ADR-0156: the Space installs `headstart` as a real package rather than a
           # hand-picked file list — one directory copy each, so nothing can be forgotten from
           # one side of a two-list sync the way role_families.json (#115) and

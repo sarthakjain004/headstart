@@ -397,3 +397,30 @@ def test_a_degraded_row_whose_new_description_is_not_english_is_not_listed(
 
     # dropped by the English gate, so it must not be promised to the merge as an incoming replacement
     assert upgrades.read_text().strip() == ""
+
+
+def test_the_tokenizer_loads_at_the_pinned_revisions(monkeypatch):
+    """`trust_remote_code` runs the model config's Python from `nomic-bert-2048`, so the tokenizer
+    load needs both pins, like the encoder's."""
+    import types
+
+    from headstart import embedding_conventions as ec
+
+    seen = {}
+
+    def fake(model, **kwargs):
+        seen.update(kwargs, model=model)
+        return "tok"
+
+    monkeypatch.setitem(
+        sys.modules,
+        "transformers",
+        types.SimpleNamespace(
+            AutoTokenizer=types.SimpleNamespace(from_pretrained=fake)
+        ),
+    )
+
+    assert pe._load_tokenizer() == "tok"
+    assert seen["model"] == ec.MODEL
+    assert seen["revision"] == ec.MODEL_REVISION
+    assert seen["code_revision"] == ec.MODEL_CODE_REVISION

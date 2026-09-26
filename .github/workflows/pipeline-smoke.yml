@@ -42,12 +42,17 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-      - run: pip install -e ".[embed]"
+      # uv and `--torch-backend cpu`, as pipeline.yml installs `.[embed]` (its UV_VERSION): the CPU
+      # torch wheel, without ~2.3 GB of CUDA and triton wheels no CPU runner can use.
+      - run: |
+          pip install "uv==0.12.11"
+          uv pip install --system --torch-backend cpu -e ".[embed]" "huggingface_hub<2"
       - name: Cache the embedding model
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/huggingface/hub
-          key: hf-model-nomic-embed-text-v1.5
+          # Names the revision embedding_conventions pins, like pipeline.yml's embed key.
+          key: hf-model-nomic-embed-text-v1.5-e9b6763023c6
 
       # ── Cycle 1 ─────────────────────────────────────────────────────────────────────────────
       - name: Cycle 1 — a healthy two-Board scrape, written as shard fragments

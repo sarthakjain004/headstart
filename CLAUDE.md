@@ -483,9 +483,12 @@ be conflated — CONTEXT.md's **Eviction** and **Unconfirmed** glossary entries 
   so it leaves the eviction scope entirely that run. Since ADR-0121 a *measured* shortfall at or
   above 99% of the Board's own stated total no longer scope-excludes it — those ids go to the
   per-Job grace period instead — so this now covers hard caps, unmeasurable shortfalls and losses
-  past the tolerance. For everything it still covers it has **no bound and no drain**: a Board
-  that is short on every run never re-enters scope, and its closed postings are served indefinitely
-  (measured: 105 dead rows on `careers.qualcomm.com`, oldest 22 days —
+  past the tolerance. Since ADR-0243 two kinds of row on such a Board take the grace period
+  anyway: ids its list returned that the tech filter rejected, and rows stored under a Board
+  casing the scrape no longer emits (scope now matches case-folded). For the rest — ids the list
+  did not return — it still has **no bound and no drain**: a Board that is short on every run
+  never re-enters scope, and its closed postings are served indefinitely (measured: 105 dead rows
+  on `careers.qualcomm.com`, oldest 22 days —
   `docs/eightfold/no-client-side-fix-for-replica-instability.md`). It reports only a Board count,
   never a row count, so the accretion is invisible unless you go looking for it.
 

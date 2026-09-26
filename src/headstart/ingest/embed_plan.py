@@ -31,7 +31,7 @@ from pathlib import Path
 from headstart import log
 from headstart.boards.board_identity import board_of
 from headstart.boards.priority_ledger import load_scores
-from headstart.embedding_conventions import MODEL
+from headstart.embedding_conventions import MODEL, MODEL_CODE_REVISION, MODEL_REVISION
 from headstart.ingest import PENDING_UPGRADES_PATH, REPO_ROOT, observability, shard_plan
 from headstart.ingest.binpack import (
     lpt_pack,
@@ -116,10 +116,16 @@ def _prior_rows(path: Path) -> tuple[set[str], set[str]]:
 
 def _load_tokenizer():
     """The model's tokenizer — the same one ``SentenceTransformer(MODEL)`` wraps, loaded standalone
-    so the planner never pulls the encoder weights (it only needs token counts)."""
+    so the planner never pulls the encoder weights (it only needs token counts). Pinned like
+    ``open_model``: the load reads the model config, whose code comes from ``nomic-bert-2048``."""
     from transformers import AutoTokenizer
 
-    return AutoTokenizer.from_pretrained(MODEL, trust_remote_code=True)
+    return AutoTokenizer.from_pretrained(
+        MODEL,
+        revision=MODEL_REVISION,
+        trust_remote_code=True,
+        code_revision=MODEL_CODE_REVISION,
+    )
 
 
 def _token_lengths(tok, docs: list[str]) -> list[int]:

@@ -413,7 +413,7 @@ def main() -> int:
         )
         _log.info(
             f"harvest: {len(companies)} boards this run "
-            f"({priority} priority + {len(companies) - priority} exploration)"
+            f"({priority} Head + {len(companies) - priority} Tail)"
         )
 
     outdir = Path(args.outdir)

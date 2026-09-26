@@ -158,7 +158,8 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-      - run: pip install -e ".[embed]" huggingface_hub
+      # `<2`, like every pipeline.yml install: one huggingface_hub major until 2.x is measured.
+      - run: pip install -e ".[embed]" "huggingface_hub<2"
       - name: Download the current lancedb
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
