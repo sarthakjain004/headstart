@@ -43,7 +43,7 @@ class _Move:
     closures_uncounted_boards: int = 0
     boards_in_scope: int = 1
 
-    def company_move(self) -> CompanyMove:
+    def as_company_move(self) -> CompanyMove:
         """As `read_company_moves` gives it."""
         opened, closed = self.opened, self.closed
         turnover = (
@@ -75,7 +75,9 @@ class _History:
     """`openings` and `trailing_week` as the ranking reads them, and each company's line as
     `read_company_moves` would read it (`_read_fake_company_moves`)."""
 
-    def __init__(self, openings: dict[str, int], moves: dict[str, _Move]) -> None:
+    def __init__(
+        self, openings: dict[str, int], moves: dict[str, _Move | None]
+    ) -> None:
         self._openings = openings
         self.moves = moves
         self.asked: list[str] = []
@@ -97,7 +99,13 @@ def _read_fake_company_moves(monkeypatch):
             return real(history, window, keys)
         assert window == line_reading.TrendWindow(since=_WINDOW["base"])
         history.asked = list(keys)
-        return {key: history.moves.get(key, _Move()).company_move() for key in keys}
+        # A company mapped to None had nothing counted in the window, and is left out.
+        moves = {key: history.moves.get(key, _Move()) for key in keys}
+        return {
+            key: move.as_company_move()
+            for key, move in moves.items()
+            if move is not None
+        }
 
     monkeypatch.setattr(line_reading, "read_company_moves", read)
 
@@ -213,6 +221,24 @@ def test_a_company_counted_for_under_three_days_is_too_new_to_rank() -> None:
     )
     payload = hot_ranking.rank(history, directory)
     assert _keys(payload, "expansion") == ["gh:older"], "exactly three days is enough"
+    assert payload["counts"]["too_new"] == 1
+
+
+def test_a_company_with_nothing_counted_in_the_window_is_left_out_not_fatal() -> None:
+    """`read_company_moves` leaves out a company with no counted run in the window. Looked up
+    as if it were there, one such company raised KeyError and darkened the whole tab; it ranks
+    nowhere, as its net of 0 did before, and is counted with the companies too new to rank."""
+    directory = {
+        "gh:uncounted": _company("Uncounted", "gh:uncounted"),
+        "gh:acme": _company("Acme", "gh:acme"),
+    }
+    history = _History(
+        {"gh:uncounted": 300, "gh:acme": 100},
+        {"gh:uncounted": None, "gh:acme": _Move(net=10, opened=12)},
+    )
+    payload = hot_ranking.rank(history, directory)
+    assert _keys(payload, "expansion") == ["gh:acme"]
+    assert payload["counts"]["ranked"] == 1
     assert payload["counts"]["too_new"] == 1
 
 

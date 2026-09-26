@@ -127,8 +127,12 @@ its figure is the sound one to headline, and to rank Hot by.
 
 Hot reads `read_company_moves` over `TrendHistory.trailing_week`'s base. Each company's line is
 read by the code that reads the first row of the trend its "See trend" opens, without that
-trend's categories. What only the old path used is deleted: `TrendHistory.answer`,
-`company_moves` and its `CompanyMove`/`CompanyMoves` types, `netting.net_answer` with the helpers
+trend's categories. `CompanyMove` now lives in `line_reading` in a new shape: it wraps the
+company line's `LineMove` with what the answer says of the company (when counting began, and how
+many of its Boards had closures uncounted). A company with nothing counted in the window is left
+out, and Hot counts it with the companies too new to rank. What only the old path used is
+deleted: `TrendHistory.answer`, `company_moves` and its old `CompanyMove` and `CompanyMoves`
+types, `netting.net_answer` with the helpers
 only it called (`_netted`, `_causes`, `_shares`, `_change_size`, `_moved`, `_runs`), and the
 share, reference-line and single-kind paths through `_net`. The golden answers
 (`tests/fixtures/trend_answers/`, `tests/test_trends_netting.py`) retire into the golden

@@ -401,7 +401,7 @@ def read_company_moves(
     what its answer says of the company. A company with nothing counted in the window is left
     out.
 
-    The line is read by the same code as that trend's first row (``_Reader.company_move``),
+    The line is read by the same code as that trend's first row (``_Reader.first_row_move``),
     without the rest of the reading: Hot reads every company of 25 openings or more at Space
     boot, and each whole reading would read its every category too."""
     from headstart.trends.trend_history import TrendQuestion
@@ -413,9 +413,9 @@ def read_company_moves(
         )
         drawn, view = _viewed(answer)
         move = (
-            _Reader(drawn, view).company_move()
-            if view.stamps and drawn["series"]
-            else None
+            None
+            if _nothing_to_read(drawn, view)
+            else _Reader(drawn, view).first_row_move()
         )
         if move is not None:
             moves[key] = CompanyMove(
@@ -463,9 +463,14 @@ def read_answer(answer: dict) -> TrendReading:
     return _read_viewed(*_viewed(answer))
 
 
+def _nothing_to_read(answer: dict, view: _View) -> bool:
+    """An answer with no run or no line, whose reading is empty."""
+    return not view.stamps or not answer["series"]
+
+
 def _read_viewed(answer: dict, view: _View) -> TrendReading:
     stamps = view.stamps
-    if not stamps or not answer["series"]:
+    if _nothing_to_read(answer, view):
         reading = TrendReading(
             window=(stamps[0], stamps[-1]) if stamps else None,
             picked=view.picked,
@@ -532,12 +537,14 @@ class _Reader:
             for line in self.answer["series"]
         ]
 
-    def _total_line(self, series: list[_Line]) -> _Line:
-        """Every line added together: the first row, a whole company's own line under one
-        pick."""
+    def _first_row(
+        self, series: list[_Line]
+    ) -> tuple[_Line, int | None, _Exact | None]:
+        """The first row: every line added together (under one pick, the company's own line),
+        the run its counting starts at, and its figures before rounding (None with no count)."""
         width = len(self.stamps)
         parts = [line.turnover for line in series if line.turnover]
-        return _Line(
+        line = _Line(
             _TOTAL,
             netting._sum_points([line.points for line in series], width),
             turnover={
@@ -547,36 +554,27 @@ class _Reader:
             if parts
             else None,
         )
+        origin = next((j for j, v in enumerate(line.points) if v is not None), None)
+        return line, origin, self._exact(line, origin)
 
-    def company_move(self) -> LineMove | None:
-        """The move of the first row alone, read as :meth:`read` reads it and nothing else of
-        the answer read: under one pick, the company's own line. None where it has no count."""
-        total_line = self._total_line(self._series_lines())
-        exact = self._exact(total_line, None)
+    def first_row_move(self) -> LineMove | None:
+        """The first row's move, and nothing else of the reading: :meth:`read` reads the same
+        row through the same two calls, :meth:`_first_row` and :meth:`_rounded_move`. None where
+        the row has no count."""
+        line, _, exact = self._first_row(self._series_lines())
         if exact is None:
             return None
-        hiring = self._rounded_hiring(exact)
-        return self._move(
-            total_line,
-            exact,
-            hiring,
-            self._round_to_openings(exact, hiring),
-            self._is_whole_company(total_line),
-        )
+        return self._rounded_move(line, exact, self._rounded_hiring(exact))
 
     def read(self) -> TrendReading:
         view, answer, stamps = self.view, self.answer, self.stamps
         series = self._series_lines()
-        total_line = self._total_line(series)
-        origin = next(
-            (j for j, v in enumerate(total_line.points) if v is not None), None
-        )
+        total_line, origin, total_exact = self._first_row(series)
         # Rows of a breakdown start where the first row does, 0 where they were not counted
         # yet, so their starts and latests add up to the first row's.
         breakdown = (
             view.picked and not view.split_company and not self.is_tracked_roles_view
         )
-        total_exact = self._exact(total_line, origin)
         rows_exact = [
             self._exact(line, origin if breakdown else None) for line in series
         ]
@@ -799,15 +797,12 @@ class _Reader:
         if exact is None:
             return None
         netted = _rounded_for_drawing(_net(self.view, line))
-        whole = self._is_whole_company(line)
-        move = self._move(
-            line, exact, hiring, self._round_to_openings(exact, hiring), whole
-        )
+        move = self._rounded_move(line, exact, hiring)
         return LineReading(
             name=line.name,
             label=label,
             move=move,
-            whole_company=whole,
+            whole_company=self._is_whole_company(line),
             estimated=exact.estimated,
             netted=netted,
             steps_at=tuple(sorted(_count_jumps(self.view, line))),
@@ -815,6 +810,17 @@ class _Reader:
             if move.percent_withheld == MOSTLY_RECOUNTED
             else _index_base(line.points, netted),
             arrived_by=exact.arrived_by,
+        )
+
+    def _rounded_move(self, line: _Line, exact: _Exact, hiring: int) -> LineMove:
+        """``line``'s move in whole openings: its causes rounded to add up to its figures less
+        ``hiring``."""
+        return self._move(
+            line,
+            exact,
+            hiring,
+            self._round_to_openings(exact, hiring),
+            self._is_whole_company(line),
         )
 
     def _is_whole_company(self, line: _Line) -> bool:

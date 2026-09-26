@@ -26,7 +26,8 @@ their size*, the only lens that surfaces a small company a user would never othe
 - **A company below ``MIN_STOCK`` openings.** One posting on a three-posting company is a 33%
   rate and pure noise, and the Rate lens would become a list of tiny companies that posted once.
 - **A company counted for under ``MIN_COUNTED_DAYS``.** Its trend reads "too new to show a
-  direction yet", so a row for it would state a direction its own link will not.
+  direction yet", so a row for it would state a direction its own link will not. A company with
+  nothing counted in the window has no line to read, and is counted with these.
 - **A Board no directory entry holds.** The directory names only companies someone can name
   (ADR-0212), so such a Board cannot be a row.
 
@@ -92,14 +93,18 @@ def rank(
     ).isoformat(timespec="seconds")
     candidates, too_new = [], 0
     for key, open_now in ranked.items():
-        company = moves[key]
-        if company.counted_since > too_new_since:
+        company = moves.get(key)
+        # Left out by the reading where nothing of it was counted in the window: like a company
+        # whose counting only just began, it has no week to rank. Looked up as if present, one
+        # such company would darken the whole tab.
+        if company is None or company.counted_since > too_new_since:
             too_new += 1
             continue
         move, entry = company.move, directory[key]
         # None where the company's turnover was not counted: a 0 there stated a week nobody
         # measured.
         opened = move.turnover.opened if move.turnover else None
+        closed = move.turnover.closed if move.turnover else None
         candidates.append(
             {
                 "key": key,
@@ -110,7 +115,7 @@ def rank(
                 "stock": open_now,
                 "net": move.hiring,
                 "opened": opened,
-                "closed": move.turnover.closed if move.turnover else None,
+                "closed": closed,
                 # Where some of its Boards' closures went uncounted, how many of how many: its
                 # closed count is then theirs only, and the row says so.
                 "closures_uncounted_boards": company.closures_uncounted_boards,
