@@ -341,3 +341,17 @@ def test_one_board_that_reposts_makes_the_company_an_aggregator(
     monkeypatch.setattr(company_name, "curated_names", lambda: aliases)
     (entry,) = company_directory.companies({"greenhouse:acme", "lever:jobgether"}, {})
     assert entry["operator"] == "aggregator"
+
+
+def test_one_board_that_places_staff_makes_an_it_services_company_staffing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The Hot tab hides staffing firms and shows IT services firms (ADR-0238), so a company
+    with a Board of each is hidden: its staffing Board's placements would be on its row."""
+    aliases = {
+        "successfactors:careers.wipro.com": "Wipro",
+        "smartrecruiters:mindlance2": "Wipro",
+    }
+    monkeypatch.setattr(company_name, "curated_names", lambda: aliases)
+    (entry,) = company_directory.companies(set(aliases), {})
+    assert entry["operator"] == "staffing"

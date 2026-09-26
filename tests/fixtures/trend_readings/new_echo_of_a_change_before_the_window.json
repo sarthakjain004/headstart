@@ -40,7 +40,7 @@
    {
     "ts": "2026-09-11T12:00:00+00:00",
     "changed": [
-     "tech filter changed"
+     "tech-job filter updated"
     ],
     "fields": [
      "tech_filter_version"
@@ -115,6 +115,7 @@
    {
     "name": "greenhouse:acme",
     "label": "Acme",
+    "whole_company": true,
     "estimated": false,
     "move": {
      "start": 150,
@@ -124,7 +125,7 @@
       {
        "change": "echo@2026-09-11T12:00:00+00:00",
        "kind": "counting",
-       "label": "the week-later echo of the Sep 11 tech filter change",
+       "label": "the week-later echo of the Sep 11 tech-job filter update",
        "size": -40
       }
      ],
@@ -168,6 +169,7 @@
    {
     "name": "greenhouse:acme",
     "label": "Acme",
+    "whole_company": true,
     "estimated": false,
     "move": {
      "start": 150,
@@ -177,7 +179,7 @@
       {
        "change": "echo@2026-09-11T12:00:00+00:00",
        "kind": "counting",
-       "label": "the week-later echo of the Sep 11 tech filter change",
+       "label": "the week-later echo of the Sep 11 tech-job filter update",
        "size": -40
       }
      ],
@@ -207,7 +209,7 @@
     "id": "echo@2026-09-11T12:00:00+00:00",
     "kind": "counting",
     "ts": "2026-09-19T00:00:00+00:00",
-    "label": "the week-later echo of the Sep 11 tech filter change",
+    "label": "the week-later echo of the Sep 11 tech-job filter update",
     "fields": [
      "tech_filter_version"
     ],
