@@ -24,7 +24,7 @@ landed, because nothing here can tell whether the ledger already holds it under 
 Output: TSV `vanity  verdict  jobs  dc  org_id  canonical  method`, streamed as hosts finish.
 Politeness: 6 workers; each host costs 1-6 requests.
 
-Run:  python -u scripts/discover/zoho_resolve_vanity_hosts.py HOSTS_FILE > OUT.tsv
+Run:  python -u scripts/discover/mine_zoho_vanity_resolve.py HOSTS_FILE > OUT.tsv
 """
 
 import html

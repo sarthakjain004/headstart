@@ -19,9 +19,9 @@ documented but was not confirmed live is marked **unconfirmed**._
    (they were Backstage, Forms and People). **That sample was too small.** The discovery run the
    same day found Recruit bundles on the `.com` and `.com.au` fronts in bulk. Vanity hosts found
    by reverse-IP on `recruit.cs.zohohost.{dc}`, by CT (certspotter) and by SAN handshakes
-   resolved to 1,867 new live canonical Boards that no other technique found; the run landed
-   1,396 new live Boards on `.com` in all (`scripts/discover/mine_zoho_vanity_tls_sans.py`,
-   `mine_zoho_custom_domains_ct.py`, `zoho_resolve_vanity_hosts.py`). Only `.eu` stayed empty:
+   resolved to 1,867 new Live rows (canonical hosts, each one Unique Board) that no other
+   technique found; the run added 1,396 new Live rows on `.com` in all (`scripts/discover/mine_zoho_vanity_tls_sans.py`,
+   `mine_zoho_vanity_ct.py`, `mine_zoho_vanity_resolve.py`). Only `.eu` stayed empty:
    reverse-IP returned 0 hosts there.
 2. **`recruit.zoho.{dc}/recruit/Portal.na?digest=…` resolves an archived digest to its tenant
    host.** The legacy iframe/job links put the tenant in an opaque `digest` query parameter on
@@ -162,10 +162,15 @@ Keka Boards, and archive and embed mining do not have this problem.
 
 ## Open questions / not confirmed
 
-- **How many Zoho vanity certificates exist.** crt.sh returned 502 all session, so the roster was
-  measured on one certificate only. Whether Recruit-only batching holds beyond `.in` is unknown.
-- Zoho's `Job_Openings` `$url` echoes the vanity host on ~2/3 of vanity Boards. `org_info.id`
-  matching is the proposed dedup key, measured on 2 pairs only.
+- **How many Zoho vanity certificates exist.** crt.sh returned 502 all session. The discovery run
+  answered the batching question another way. `mine_zoho_vanity_tls_sans.py` handshakes seeded
+  with 3,510 known hosts found 305 more, and a second round found none. So the reachable roster
+  is closed for now, on `.com`, `.com.au` and `.in` alike (see finding 1). The total number of
+  certificates is still unmeasured.
+- Zoho's `Job_Openings` `$url` echoes the vanity host on ~2/3 of vanity Boards. `org_info.id` is
+  the dedup key `mine_zoho_vanity_resolve.py` uses: a guessed canonical label is accepted only
+  when its id matches. That rule has been confirmed on 5 vanity/canonical pairs (2coms, yellow,
+  alconcysec, empowersstaffing, myoperator), not on every landed host.
 - Zoho portal names other than `Careers`: not tested. The multi-career-site feature was not
   checked in the docs, and the CDX sample reached only 19 `.in` hosts.
 - Whether Indeed/LinkedIn listings link back to a tenant URL (`?source=Indeed` etc.) for either

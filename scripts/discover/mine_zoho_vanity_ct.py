@@ -11,14 +11,14 @@ many more. Walking that graph from a few seeds enumerates the custom-domain coho
 
 Every host is only a candidate. A bundle can hold a host whose career site has since gone, and a
 custom domain is the *same Board* as its `{label}.zohorecruit.{tld}` host when both exist (same
-`org_info.id`), so every host goes through `zoho_resolve_vanity_hosts.py`, and only the
+`org_info.id`), so every host goes through `mine_zoho_vanity_resolve.py`, and only the
 canonical host it names is landed.
 
 Source: the Cert Spotter API (`/v1/issuances?domain=`), about 100 unauthenticated queries an
 hour per IP; a 429 is slept out using its `retry-after`. (crt.sh answered 502 all day 2026-09-26.) Resumable: queried hosts are recorded in
 `{OUT}.queried` and never asked again.
 
-Run:  python -u scripts/discover/mine_zoho_custom_domains_ct.py SEEDS_FILE OUT_FILE [MAX_QUERIES]
+Run:  python -u scripts/discover/mine_zoho_vanity_ct.py SEEDS_FILE OUT_FILE [MAX_QUERIES]
 """
 
 import json

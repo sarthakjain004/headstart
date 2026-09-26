@@ -5,11 +5,11 @@ Zoho serves every customer's vanity career host (`careers.acme.com`, CNAMEd to
 `recruit.cs.zohohost.{dc}`) behind Let's Encrypt certificates that bundle ~80-100 customers'
 hosts as SANs. One handshake with SNI set to a known vanity host returns its current bundle,
 so walking handshakes from a seed list names the whole current cohort — with no rate limit,
-unlike the CT history `mine_zoho_custom_domains_ct.py` reads (which also names members that
+unlike the CT history `mine_zoho_vanity_ct.py` reads (which also names members that
 have since left). Measured 2026-09-26: 3,510 known hosts -> 305 more, then a fixed point after
 one further round (0 new).
 
-Every host is a candidate only: run `zoho_resolve_vanity_hosts.py` on the output and land the
+Every host is a candidate only: run `mine_zoho_vanity_resolve.py` on the output and land the
 canonical `{label}.zohorecruit.{dc}` host it names, never the vanity host.
 
 Output: new hosts (not in SEEDS), one per line, streamed. 16 concurrent handshakes.
