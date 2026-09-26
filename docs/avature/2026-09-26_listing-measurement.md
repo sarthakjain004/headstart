@@ -123,6 +123,15 @@ IPv4 pool.
   492, advocateaurorahealth 660.
 - Tech share 21.3% of 244 pages; language is mixed (German, Spanish, Japanese and Chinese pages in
   the sample), and the index's language gate holds the non-English ones out.
+- **Most reachable tenants list no public job.** Of a 20-label strided pool sample
+  (`scripts/validate/verify_scraper.py avature 20`), 8 were dead (DNS, refused, or a routing
+  label with no certificate of its own), and 12 were reachable, of which 1 listed jobs
+  (St. Jude, 201, every one with a description). The other 11 were checked sitemap by sitemap:
+  they run Avature for graduate and careers-fair portals (barclays), events and talent
+  communities (sandia), recruiter and onboarding workflows (jacobs, cbreglobal), or a `careers`
+  portal whose sitemap holds only the empty `JobDetail` template, which is Intuit's pattern. Such
+  a company publishes its jobs through another front and keeps Avature as its CRM and apply
+  backend.
 - **Intuit is not reachable here.** `intuit.avature.net` names portals whose sitemaps list no
   job pages and whose search page 404s; its public listing is `jobs.intuit.com`, a Radancy
   career front whose Apply button hands off to this tenant.
