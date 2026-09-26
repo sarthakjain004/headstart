@@ -113,6 +113,7 @@
    {
     "name": "greenhouse:shrinks",
     "label": "Shrinks",
+    "whole_company": true,
     "estimated": false,
     "move": {
      "start": 100,
@@ -146,6 +147,7 @@
    {
     "name": "greenhouse:holds",
     "label": "Holds",
+    "whole_company": true,
     "estimated": false,
     "move": {
      "start": 100,
@@ -179,6 +181,7 @@
    {
     "name": "greenhouse:small",
     "label": "Small",
+    "whole_company": true,
     "estimated": false,
     "move": {
      "start": 10,
@@ -215,6 +218,7 @@
    {
     "name": "greenhouse:shrinks",
     "label": "Shrinks",
+    "whole_company": true,
     "estimated": false,
     "move": {
      "start": 100,
@@ -243,6 +247,7 @@
    {
     "name": "greenhouse:holds",
     "label": "Holds",
+    "whole_company": true,
     "estimated": false,
     "move": {
      "start": 100,
@@ -271,6 +276,7 @@
    {
     "name": "greenhouse:small",
     "label": "Small",
+    "whole_company": true,
     "estimated": false,
     "move": {
      "start": 10,

@@ -36,6 +36,8 @@ class _Move:
     opened: int | None = 0
     closed: int | None = 0
     counted_since: str = _LONG_AGO
+    closures_uncounted_boards: int = 0
+    boards_in_scope: int = 1
 
 
 class _History:
@@ -177,13 +179,20 @@ def test_rows_carry_the_directorys_operator_and_the_counts_say_how_many() -> Non
             "Jobgether", "lever:jobgether", operator="aggregator"
         ),
         "sf:wipro": _company("Wipro", "sf:wipro", operator="services"),
+        "sr:mindlance": _company("Mindlance", "sr:mindlance", operator="staffing"),
         "gh:acme": _company("Acme", "gh:acme"),
     }
     history = _History(
-        {"lever:jobgether": 1773, "sf:wipro": 2962, "gh:acme": 400},
+        {
+            "lever:jobgether": 1773,
+            "sf:wipro": 2962,
+            "sr:mindlance": 350,
+            "gh:acme": 400,
+        },
         {
             "lever:jobgether": _Move(net=503, opened=900),
             "sf:wipro": _Move(net=213, opened=945),
+            "sr:mindlance": _Move(net=79, opened=0),
             "gh:acme": _Move(net=60, opened=40),
         },
     )
@@ -192,9 +201,50 @@ def test_rows_carry_the_directorys_operator_and_the_counts_say_how_many() -> Non
     assert labels == {
         "lever:jobgether": "aggregator",
         "sf:wipro": "services",
+        "sr:mindlance": "staffing",
         "gh:acme": "employer",
     }
-    assert (payload["counts"]["aggregator"], payload["counts"]["services"]) == (1, 1)
+    counts = payload["counts"]
+    assert (counts["aggregator"], counts["services"], counts["staffing"]) == (1, 1, 1)
+
+
+def test_a_closed_count_not_counted_stays_none() -> None:
+    """Amazon, one Board whose closures went uncounted, read "0 closed" (ADR-0227): a closed
+    count `company_moves` gives as None reaches the row as None, never 0."""
+    directory = {"amazon:jobs": _company("Amazon", "amazon:jobs")}
+    history = _History(
+        {"amazon:jobs": 7896}, {"amazon:jobs": _Move(net=5, opened=66, closed=None)}
+    )
+    (row,) = hot_ranking.rank(history, directory)["lenses"]["volume"]
+    assert (row["opened"], row["closed"]) == (66, None)
+
+
+def test_a_closed_count_over_some_boards_says_how_many() -> None:
+    """A company with some Boards' closures uncounted keeps its closed count, with how many of
+    its Boards it leaves out (review of #731)."""
+    directory = {"sr:acme": _company("Acme", "sr:acme", "gh:acme")}
+    history = _History(
+        {"sr:acme": 300, "gh:acme": 100},
+        {
+            "sr:acme": _Move(
+                net=5,
+                opened=9,
+                closed=3,
+                closures_uncounted_boards=1,
+                boards_in_scope=2,
+            )
+        },
+    )
+    (row,) = hot_ranking.rank(history, directory)["lenses"]["volume"]
+    assert (
+        row["closed"],
+        row["closures_uncounted_boards"],
+        row["boards_in_scope"],
+    ) == (
+        3,
+        1,
+        2,
+    )
 
 
 def test_a_board_no_directory_entry_holds_is_counted_not_ranked() -> None:

@@ -175,13 +175,13 @@ def _rank_hot(history: trend_history.TrendHistory) -> dict:
 
     Ranked once at boot from the history just loaded, so it can never be stale against the ticks
     the Trends tab serves, and served as-is: the answer only changes when a run does, and the
-    Space restarts after every run. Dark rather than broken when there is nothing to rank yet,
-    and when the directory predates the Operator (ADR-0171): ranked without it, every staffing
-    firm would read as an employer until the next run wrote one. Never fatal: Search is the
-    product, and a ranking that fails costs this one tab.
+    Space restarts after every run. Dark rather than broken when there is nothing to rank yet.
+    Each company's Operator is decided as the history loads the directory (ADR-0238), so a file
+    written before an Operator existed ranks as the current list says. Never fatal: Search is
+    the product, and a ranking that fails costs this one tab.
     """
     companies = history.companies
-    if not companies or any("operator" not in entry for entry in companies.values()):
+    if not companies:
         return {}
     started = time.monotonic()
     try:

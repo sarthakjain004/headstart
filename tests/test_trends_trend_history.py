@@ -184,7 +184,7 @@ def test_a_counting_change_is_a_tick_whose_methodology_moved(tmp_path):
     assert epochs == [
         {
             "ts": _stamp(4),
-            "changed": ["role family assignment changed"],
+            "changed": ["job categories re-sorted"],
             "fields": ["family_classifier_version"],
         }
     ]
@@ -329,6 +329,56 @@ def test_load_directory_keys_each_company_by_its_first_board(tmp_path):
     path.write_text("{half-written", encoding="utf-8")
     assert trend_history._load_directory(path) == {}
     assert trend_history._load_directory(tmp_path / "absent.json") == {}
+
+
+def test_a_directory_written_before_staffing_is_tagged_as_the_current_list_says(
+    tmp_path,
+):
+    """The live file had no `staffing` Operator, so until the next run rewrote it Hot would have
+    shown Randstad, Collabera and Sonsoft as IT services (review of #731). The Space decides
+    each company's Operator as it loads the file (ADR-0238)."""
+    path = tmp_path / "company_directory.json"
+    old_layout = [
+        ("Randstad", ["workable:randstad"], "services"),
+        ("Collabera", ["smartrecruiters:collabera2"], "services"),
+        ("Sonsoft Inc", ["smartrecruiters:SonsoftInc"], "services"),
+        ("Mindlance", ["smartrecruiters:mindlance2"], "employer"),
+        ("Wipro", ["successfactors:careers.wipro.com"], "services"),
+        ("Jobgether", ["lever:jobgether"], "aggregator"),
+        ("Acme", ["greenhouse:acme"], "employer"),
+    ]
+    path.write_text(
+        json.dumps(
+            {
+                "companies": [
+                    {"name": name, "boards": boards, "operator": op}
+                    for name, boards, op in old_layout
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    operators = {
+        entry["name"]: entry["operator"]
+        for entry in trend_history._load_directory(path).values()
+    }
+    assert operators == {
+        "Randstad": "staffing",
+        "Collabera": "staffing",
+        "Sonsoft Inc": "staffing",
+        "Mindlance": "staffing",
+        "Wipro": "services",
+        "Jobgether": "aggregator",
+        "Acme": "employer",
+    }
+    # A file from before any Operator is tagged the same way.
+    path.write_text(
+        '{"companies": [{"name": "Randstad", "boards": ["workable:randstad"]}]}',
+        encoding="utf-8",
+    )
+    assert trend_history._load_directory(path)["workable:randstad"]["operator"] == (
+        "staffing"
+    )
 
 
 def test_retired_families_keep_their_labels(tmp_path):
