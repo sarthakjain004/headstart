@@ -101,8 +101,13 @@ def _sync(
     upgrades: list[str] | None = None,
     meta_over: dict | None = None,
     descriptions: dict[str, str] | None = None,
+    corpus: list[str] | None = None,
+    scope: list[str] | None = None,
 ) -> int:
     """Run one `index sync` cycle over ``ids`` — store, corpus, and scrape scope all agree.
+
+    ``corpus`` narrows the tech corpus below the store, and ``scope`` records the scraped Boards
+    as `scrape_join` would (ADR-0161) instead of deriving them from the corpus.
 
     ``meta_over`` restates every store row's metadata after it is written, which is how a run that
     follows an ``update_meta`` refresh looks to sync (ADR-0061).
@@ -117,7 +122,10 @@ def _sync(
         for row in rows:
             row.update(meta_over)
         path.write_text("".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8")
-    _write_corpus(source, ids, descriptions)
+    _write_corpus(source, ids if corpus is None else corpus, descriptions)
+    recorded = tmp_path / "scraped_boards.json"
+    if scope is not None:
+        recorded.write_text(json.dumps(scope), encoding="utf-8")
     monkeypatch.setattr(idx, "_STORE", store)
     # An empty ledger dir: no live Boards, so board resolution falls back to `board_of` — the
     # rule these tests were written against, and what a first run genuinely sees.
@@ -126,10 +134,10 @@ def _sync(
     return idx.sync(
         argparse.Namespace(
             source=str(source),
-            scraped=str(source),
-            # Not passed, which is what a sync outside the pipeline does (ADR-0161): these
-            # tests keep deriving the scope from `source` exactly as they always have.
-            scraped_boards=None,
+            scraped=str(source if scope is None else tmp_path / "no-full-scrape"),
+            # Not passed unless `scope` is, which is what a sync outside the pipeline does
+            # (ADR-0161): these tests keep deriving the scope from `source` as they always have.
+            scraped_boards=None if scope is None else str(recorded),
             db=str(db),
             ledger=str(ledger),
             # Pinned into tmp_path like every other output: it defaults to the repo's real
@@ -138,6 +146,8 @@ def _sync(
             # Same reason, and absent on purpose: every Board's list is authoritative, so the
             # scope is the infer-from-lines one these tests were written against (ADR-0053).
             unauthoritative_boards=str(tmp_path / "unauthoritative_boards.json"),
+            # Absent unless a test writes it: no Unauthoritative Board returned an id (ADR-0243).
+            unauthoritative_ids=str(tmp_path / "unauthoritative_board_ids.txt"),
             # Pinned into tmp_path for the same reason as `upgrades`. The grace period is left
             # ON so these tests exercise the real production path; the file starts absent, which
             # reads as an empty set — so a first absence is withheld here exactly as it would be
@@ -167,6 +177,51 @@ def test_sync_keeps_sweep_checkpoints_out_of_served_rows(tmp_path, monkeypatch):
     table = lancedb.connect(str(tmp_path / "db")).open_table(idx.PROD_TABLE)
     assert table.count_rows() == 1
     assert "_derivations_version" not in table.schema.names
+
+
+def test_a_rejected_row_on_a_scope_excluded_board_evicts_on_its_second_scrape(
+    tmp_path, monkeypatch
+):
+    """ADR-0243. `freshteam:abnhire` is over its listing cap every run, so ADR-0053 keeps it out of
+    scope for good; 729 of its served rows were postings its list did return and the tech filter
+    rejected. Those were seen, so they take the grace period. The control is the same run without
+    `scrape_join`'s id list: the row stays, as it did before."""
+    (tmp_path / "unauthoritative_boards.json").write_text(
+        json.dumps({"greenhouse:a": "at the listing cap"}), encoding="utf-8"
+    )
+    kept, rejected = "greenhouse:a:1", "greenhouse:a:2"
+    assert _sync(tmp_path, monkeypatch, [kept, rejected]) == 0
+    for _ in range(2):
+        assert _sync(tmp_path, monkeypatch, [kept, rejected], corpus=[kept]) == 0
+    assert set(_rows(tmp_path)) == {kept, rejected}, (
+        "control: no id list, nothing moves"
+    )
+
+    (tmp_path / "unauthoritative_board_ids.txt").write_text(
+        f"{kept}\n{rejected}\n", encoding="utf-8"
+    )
+    assert _sync(tmp_path, monkeypatch, [kept, rejected], corpus=[kept]) == 0
+    assert set(_rows(tmp_path)) == {kept, rejected}, "a first absence only marks it"
+    assert _sync(tmp_path, monkeypatch, [kept, rejected], corpus=[kept]) == 0
+    assert set(_rows(tmp_path)) == {kept}
+
+
+def test_the_grace_line_names_boards_that_emptied_at_once(
+    tmp_path, monkeypatch, caplog
+):
+    """A Board that held rows and returned no tech Job puts every row in the grace set at once
+    (19 SuccessFactors Boards behind run 36218633315's 983 new Unconfirmed ids), and they evict
+    on the next scrape. The grace line names such Boards apart from ordinary churn."""
+    ids = ["greenhouse:a:1", "greenhouse:b:1", "greenhouse:b:2"]
+    assert _sync(tmp_path, monkeypatch, ids) == 0
+    caplog.set_level("INFO", logger="headstart.ingest.index")
+    scope = ["greenhouse:a", "greenhouse:b"]
+    assert _sync(tmp_path, monkeypatch, ids, corpus=ids[:1], scope=scope) == 0
+    lines = [r.getMessage() for r in caplog.records]
+    assert (
+        "  2 newly unconfirmed on 1 Board(s) that returned no tech Job this scrape, emptying "
+        "at once: greenhouse:b (2)" in lines
+    )
 
 
 def test_sync_stamps_every_row_it_adds(tmp_path, monkeypatch):

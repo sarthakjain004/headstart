@@ -50,6 +50,8 @@ def _run(
         str(out),
         "--unauthoritative-boards",
         str(out.parent / "unauthoritative_boards.json"),
+        "--unauthoritative-ids",
+        str(out.parent / "unauthoritative_board_ids.txt"),
         "--scraped-boards",
         str(scraped_boards_path or out.parent / "scraped_boards.json"),
         "--ledger",
@@ -486,6 +488,33 @@ def test_a_board_scraped_clean_with_zero_jobs_is_in_the_scope(tmp_path):
         "greenhouse:emptyco",
         "workday:acme/Careers",
     }
+
+
+def test_the_ids_an_unauthoritative_board_returned_are_recorded(tmp_path):
+    """ADR-0243. `freshteam:abnhire` is over its 1,000-job widget cap on every run, so it is never
+    in the eviction scope; the ids its list *did* return are what lets `index sync` evict the
+    ones the tech filter rejects. Only an Unauthoritative Board's ids are recorded."""
+    frags = tmp_path / "frags"
+    _shard(
+        frags,
+        0,
+        {
+            "freshteam.jsonl": [
+                '{"id": "freshteam:abnhire:1"}',
+                '{"id": "freshteam:abnhire:2"}',
+                '{"id": "freshteam:clean:3"}',
+            ]
+        },
+    )
+    observability.write_shard(
+        frags / "shard-0",
+        ShardReport(truncated={"freshteam:abnhire": "1000 jobs, at the cap"}),
+    )
+
+    _run(frags, tmp_path / "jobs")
+
+    recorded = (tmp_path / "unauthoritative_board_ids.txt").read_text(encoding="utf-8")
+    assert recorded.split() == ["freshteam:abnhire:1", "freshteam:abnhire:2"]
 
 
 def test_the_join_names_the_shards_whose_reports_never_arrived(caplog):
