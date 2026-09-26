@@ -1341,13 +1341,15 @@ def _line_move(
     netted_start = latest - hiring
     percent, withheld = None, None
     # Under INDEX_BASE_FLOOR openings left of a start of MOVER_FLOOR or more is mostly re-counted,
-    # so the percentage is never read off a netted start under that floor.
+    # so the percentage is never read off a netted start under that floor. A line too small to
+    # read a percentage off keeps that as its reason: 8,097 of 45,547 category lines started
+    # under 20 and kept under 5 (2026-09-26), where "mostly re-counted" would often be one of 3.
     if span_days < MIN_SPAN_DAYS:
         withheld = f"a window under {MIN_SPAN_DAYS} days"
-    elif _mostly_recounted(start, netted_start, _counting(not_hiring)):
-        withheld = MOSTLY_RECOUNTED
     elif start < MOVER_FLOOR:
         withheld = f"under {MOVER_FLOOR} openings at the start"
+    elif _mostly_recounted(start, netted_start, _counting(not_hiring)):
+        withheld = MOSTLY_RECOUNTED
     else:
         percent = hiring / netted_start * 100
     share = None
@@ -1474,7 +1476,8 @@ def check_reading(reading: dict) -> list[str]:
     6. With no pick nothing is taken out.
     7. A line mostly re-counted in the window (MOSTLY_RECOUNTED: its counting changes took out
        more than was left, or under INDEX_BASE_FLOOR was left) gives no percentage, in any
-       unit, and no index base; and only such a line is said to be one.
+       unit, and no index base; and only such a line, of MOVER_FLOOR openings or more at the
+       start, is said to be one.
     Plus: every count is a whole number; a line's "Not hiring" total is its causes' sum; its
     weekly rate is its hiring over the days it was counted, withheld under MIN_SPAN_DAYS; its
     turnover's net is opened less closed, and neither is given where closed is not; the Other
@@ -1619,7 +1622,9 @@ def check_reading(reading: dict) -> list[str]:
         if recounted and m["percent"] is not None:
             out.append(f"{where}: it gives a percentage though mostly re-counted")
         if (m["percent_withheld"] == MOSTLY_RECOUNTED) != (
-            recounted and m["span_days"] >= MIN_SPAN_DAYS
+            recounted
+            and m["span_days"] >= MIN_SPAN_DAYS
+            and m["start"] >= MOVER_FLOOR
         ):
             out.append(f"{where}: it is said to be mostly re-counted where it is not")
         if not reading.get("picked") and (

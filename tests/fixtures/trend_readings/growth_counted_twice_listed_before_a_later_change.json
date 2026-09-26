@@ -1,0 +1,292 @@
+{
+ "description": "A duplicate removal on Sep 15 halves the growth before it, and a filter change on Sep 17 adds 100. The growth counted twice stands on Sep 15 and is listed before the Sep 17 change: Micron's list gave Sep 24's growth counted twice after Sep 25's change.",
+ "answer_input": {
+  "stamps": [
+   "2026-09-13T00:00:00+00:00",
+   "2026-09-14T00:00:00+00:00",
+   "2026-09-15T00:00:00+00:00",
+   "2026-09-16T00:00:00+00:00",
+   "2026-09-17T00:00:00+00:00",
+   "2026-09-18T00:00:00+00:00"
+  ],
+  "series": [
+   {
+    "name": "eightfold:micron",
+    "label": "Micron",
+    "points": [
+     2000,
+     2100,
+     1050,
+     1060,
+     1160,
+     1165
+    ],
+    "latest": 1165
+   }
+  ],
+  "company_totals": {
+   "eightfold:micron": [
+    2000,
+    2100,
+    1050,
+    1060,
+    1160,
+    1165
+   ]
+  },
+  "evicted": [
+   {
+    "ts": "2026-09-15T00:00:00+00:00",
+    "company": "eightfold:micron",
+    "count": 1050
+   }
+  ],
+  "metric": "stock",
+  "coverage": "all",
+  "new_window_days": 7,
+  "family": null,
+  "split_by": "company",
+  "companies": [
+   {
+    "key": "eightfold:micron",
+    "label": "Micron",
+    "board_keys": [
+     "eightfold:micron"
+    ],
+    "atses": [
+     "eightfold"
+    ]
+   }
+  ],
+  "epochs": [
+   {
+    "ts": "2026-09-17T00:00:00+00:00",
+    "changed": [
+     "tech-job filter updated"
+    ],
+    "fields": [
+     "tech_filter_version"
+    ]
+   }
+  ],
+  "discovered": [],
+  "pick_series": {},
+  "pick_parts": {},
+  "pick_turnover": {},
+  "counted_since": {
+   "eightfold:micron": "2026-09-13T00:00:00+00:00"
+  },
+  "totals": [
+   10000,
+   10000,
+   10000,
+   10000,
+   10000,
+   10000
+  ],
+  "non_tech": [
+   0,
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "watch_parents": [],
+  "uncounted": []
+ },
+ "reading": {
+  "window": {
+   "from": "2026-09-13T00:00:00+00:00",
+   "to": "2026-09-18T00:00:00+00:00"
+  },
+  "picked": true,
+  "total": null,
+  "lines": [
+   {
+    "name": "eightfold:micron",
+    "label": "Micron",
+    "estimated": false,
+    "move": {
+     "start": 2000,
+     "latest": 1165,
+     "hiring": 60,
+     "not_hiring": [
+      {
+       "change": "removed@2026-09-15T00:00:00+00:00/eightfold:micron",
+       "kind": "duplicates_removed",
+       "label": "duplicate postings removed",
+       "size": -1050
+      },
+      {
+       "change": "growth_counted_twice@2026-09-15T00:00:00+00:00/eightfold:micron",
+       "kind": "growth_counted_twice",
+       "label": "growth counted twice before the removal",
+       "size": 50
+      },
+      {
+       "change": "counting@2026-09-17T00:00:00+00:00",
+       "kind": "counting",
+       "label": "tech-job filter updated",
+       "size": 105
+      }
+     ],
+     "not_hiring_total": -895,
+     "percent": 5.429864253393665,
+     "percent_withheld": null,
+     "span_days": 5.0,
+     "per_week": 84,
+     "turnover": null,
+     "share": {
+      "start": 100.0,
+      "latest": 100.0,
+      "denominator_start": 1105,
+      "denominator_latest": 1165,
+      "percent": 0.0
+     }
+    },
+    "netted": [
+     1105.0,
+     1155.0,
+     1155,
+     1165,
+     1165,
+     1165
+    ],
+    "steps_at": [
+     2,
+     4,
+     5
+    ],
+    "index_base": 1105.0,
+    "arrived_by": null
+   }
+  ],
+  "other": null,
+  "company_lines": [
+   {
+    "name": "eightfold:micron",
+    "label": "Micron",
+    "estimated": false,
+    "move": {
+     "start": 2000,
+     "latest": 1165,
+     "hiring": 60,
+     "not_hiring": [
+      {
+       "change": "removed@2026-09-15T00:00:00+00:00/eightfold:micron",
+       "kind": "duplicates_removed",
+       "label": "duplicate postings removed",
+       "size": -1050
+      },
+      {
+       "change": "growth_counted_twice@2026-09-15T00:00:00+00:00/eightfold:micron",
+       "kind": "growth_counted_twice",
+       "label": "growth counted twice before the removal",
+       "size": 50
+      },
+      {
+       "change": "counting@2026-09-17T00:00:00+00:00",
+       "kind": "counting",
+       "label": "tech-job filter updated",
+       "size": 105
+      }
+     ],
+     "not_hiring_total": -895,
+     "percent": 5.429864253393665,
+     "percent_withheld": null,
+     "span_days": 5.0,
+     "per_week": 84,
+     "turnover": null,
+     "share": {
+      "start": 100.0,
+      "latest": 100.0,
+      "denominator_start": 1105,
+      "denominator_latest": 1165,
+      "percent": 0.0
+     }
+    },
+    "netted": [],
+    "steps_at": [],
+    "index_base": null,
+    "arrived_by": null
+   }
+  ],
+  "breakdown": null,
+  "marked_changes": [
+   {
+    "id": "growth_counted_twice@2026-09-15T00:00:00+00:00/eightfold:micron",
+    "kind": "growth_counted_twice",
+    "ts": "2026-09-15T00:00:00+00:00",
+    "label": "growth counted twice before the removal",
+    "fields": [],
+    "changed": [],
+    "company": "eightfold:micron",
+    "boards": null,
+    "sizes": {
+     "eightfold:micron": 50
+    }
+   },
+   {
+    "id": "removed@2026-09-15T00:00:00+00:00/eightfold:micron",
+    "kind": "duplicates_removed",
+    "ts": "2026-09-15T00:00:00+00:00",
+    "label": "duplicate postings removed",
+    "fields": [],
+    "changed": [],
+    "company": "eightfold:micron",
+    "boards": null,
+    "sizes": {
+     "eightfold:micron": -1050
+    }
+   },
+   {
+    "id": "counting@2026-09-17T00:00:00+00:00",
+    "kind": "counting",
+    "ts": "2026-09-17T00:00:00+00:00",
+    "label": "tech-job filter updated",
+    "fields": [
+     "tech_filter_version"
+    ],
+    "changed": [
+     "tech-job filter updated"
+    ],
+    "company": null,
+    "boards": null,
+    "sizes": {
+     "eightfold:micron": 105
+    }
+   }
+  ],
+  "day_markers": [
+   {
+    "day": "2026-09-15",
+    "at": "2026-09-15T00:00:00+00:00",
+    "changes": [
+     "growth_counted_twice@2026-09-15T00:00:00+00:00/eightfold:micron",
+     "removed@2026-09-15T00:00:00+00:00/eightfold:micron"
+    ]
+   },
+   {
+    "day": "2026-09-17",
+    "at": "2026-09-17T00:00:00+00:00",
+    "changes": [
+     "counting@2026-09-17T00:00:00+00:00"
+    ]
+   }
+  ],
+  "reference": [
+   5000.0,
+   5000.0,
+   10000,
+   10000,
+   10000,
+   10000
+  ],
+  "openings": 1165,
+  "served_jobs": 1165,
+  "non_tech_jobs": 0,
+  "reconciles": true,
+  "violations": []
+ }
+}

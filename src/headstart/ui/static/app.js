@@ -3577,7 +3577,8 @@ function markedText(item){
 //   6. with no pick nothing is taken out;
 //   7. a line mostly re-counted in the window (MOSTLY_RECOUNTED: its counting changes took out
 //      more than was left, or under INDEX_BASE_FLOOR was left) gives no percentage, in any
-//      unit, and no index base; and only such a line is said to be one.
+//      unit, and no index base; and only such a line, of MOVER_FLOOR openings or more at the
+//      start, is said to be one.
 // (4, one size in every window, is stated by the tests over narrower windows.) Plus: every count
 // is a whole number; a line's Not hiring total is its causes' sum; its weekly rate is its hiring
 // over the days it was counted, withheld under MIN_SPAN_DAYS; its turnover's net is opened less
@@ -3651,7 +3652,7 @@ function checkReading(reading){
     if (m.percent != null && (nettedStart < INDEX_BASE_FLOOR || !same(m.percent, m.hiring / nettedStart * 100)))
       out.push(`${where}: its percentage is not hiring over the netted start`);
     if (recounted(m) && m.percent != null) out.push(`${where}: it gives a percentage though mostly re-counted`);
-    if ((m.percent_withheld === MOSTLY_RECOUNTED) !== (recounted(m) && m.span_days >= MIN_SPAN_DAYS))
+    if ((m.percent_withheld === MOSTLY_RECOUNTED) !== (recounted(m) && m.span_days >= MIN_SPAN_DAYS && m.start >= MOVER_FLOOR))
       out.push(`${where}: it is said to be mostly re-counted where it is not`);
     if (!reading.picked && (m.not_hiring.length || m.hiring !== m.latest - m.start))
       out.push(`${where}: with no pick, something was taken out`);

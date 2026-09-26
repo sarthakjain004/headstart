@@ -388,6 +388,11 @@ def test_a_line_mostly_recounted_gives_no_percentage_in_any_unit() -> None:
     assert big["percent"] == pytest.approx(10.0)
     assert big["share"]["percent"] is not None
     assert lines["big"]["index_base"] == 100
+    # 7 of 12 taken, 5 left: at the index floor, yet mostly re-counted, so not indexed; and too
+    # small for a percentage, which stays its reason.
+    tiny = lines["tiny"]
+    assert tiny["index_base"] is None
+    assert tiny["move"]["percent_withheld"] == f"under {MOVER_FLOOR} openings at the start"
 
 
 def test_no_share_change_off_a_share_of_zero_at_the_start() -> None:

@@ -27,11 +27,12 @@ Foundever at 0.20, and Jobs for Lebanon, an actual job board, at 0.04. The thing
 separates them is what the company *does*, which none of those features observes.
 
 So the scope is deliberately the head of one ranked list rather than the whole index. Measured
-2026-09-25 against the Expansion lens over its 7-day window (Sep 18 → Sep 25), **the entries
-this file ships** flag 86% of the net growth in the top 20 rows, 72% of the top 50 and 61% of
-the top 100 — decreasing, because the tail is endless; the list before that day's ten
-additions flagged 59/49/42 on the same window (79/62/48 on 2026-09-21's). Those figures move
-with the list and must be
+2026-09-26 against the Expansion lens over its 7-day window (Sep 19 → Sep 26), **the entries
+this file ships** flag 92% of the net growth in the top 20 rows, 87% of the top 50 and 81% of
+the top 100 as not an employer's, and the staffing firms and job boards the tab hides hold
+89/83/78% of it — decreasing, because the tail is endless. On 2026-09-25's window the list then
+shipped flagged 86/72/61, and before that day's ten additions 59/49/42 (79/62/48 on
+2026-09-21's). Those figures move with the list and must be
 re-measured when names are added: the 45-entry draft in the research doc measured 73/52/40, and
 quoting a number that describes a list nobody shipped is exactly the kind of borrowed fact this
 repo has been caught by before. Method:
@@ -222,6 +223,36 @@ STAFFING: Final[frozenset[str]] = frozenset(
         "3coresystems",
         "7thskytechnologiesllc",
         "pragmatike",
+        # The next tier, which hiding the first surfaced in Expansion's shown top 50, sampled
+        # the same way: client contracts (Arete, EROS, SA Technologies, Career Guidant, LinkTag,
+        # Paradigm Infotech, Comtech LLC, Procom Services, Implify, Veredus), a training-and-
+        # placement mill (I.T. Excel: "QA and BA Training and Placement for OPT/CPT…"), a general
+        # agency (Global Channel Management: data processors to graphic designers), tutors and
+        # bakery managers in Lagos (Lextorah), a startup recruiter (Raydar), and freelance and
+        # crowd-work marketplaces (FyerX, Welo Global). Quantix, sampled as staffing too, is
+        # left out: "quantix" also names another company.
+        "aretetechnologiesinc",
+        "itexcelllc",
+        "careerguidant",
+        "erostechnologiesinc",
+        "globalchannelmanagementinc",
+        "satechnologiesinc",
+        "implifyinc",
+        "lextorahlds",
+        "linktag",
+        "procomservices",
+        "comtechllc",
+        "paradigminfotech",
+        "veredusdc",
+        "raydar",
+        "fyerx",
+        "weloglobal",
+        # and warehouse, lab and payables temps beside IT contracts (AmNet, TekWissen,
+        # BCforward), and client resourcing in Bengaluru (Intersoft KK).
+        "amnetservicesinc",
+        "tekwissenllc",
+        "bcforward",
+        "intersoftkk",
         # Talent marketplaces and placement programmes that post on behalf of others
         "eworgmbh",
         "simera",
