@@ -103,6 +103,7 @@ from headstart.ingest import (
     EVICTION_QUEUE_PATH,
     PENDING_UPGRADES_PATH,
     REPO_ROOT,
+    UNAUTHORITATIVE_BOARD_IDS_PATH,
     UNAUTHORITATIVE_BOARDS_PATH,
     UNCONFIRMED_PATH,
     board_failures,
@@ -742,6 +743,16 @@ def sync(args: argparse.Namespace) -> int:
             "scope-excluded Board",
             {b: unauthoritative[lower_key(b)] for b in sorted(excluded)},
         )
+    # An id a scope-excluded Board's list did return, and the tech filter rejected, was seen: a
+    # live non-tech posting, not an unread one, so it takes the grace period like any absence
+    # (ADR-0243). Kept to this run's excluded Boards, so a file left by another run cannot reach
+    # a Board this run read in full or did not read at all.
+    excluded_keys = {lower_key(b) for b in excluded}
+    rejected = {
+        job_id
+        for job_id in read_id_list(Path(args.unauthoritative_ids)) - corpus_ids
+        if lower_key(resolve_board(job_id, live)) in excluded_keys
+    }
     fresh = corpus_ids & row_of.keys()
     unembedded = len(corpus_ids) - len(fresh)
     _log.info(
@@ -792,7 +803,7 @@ def sync(args: argparse.Namespace) -> int:
         # embed — is in this set too. "Eviction candidate" is what the set actually is.
         out_of_scope: Counter[str] = Counter()
         for job_id in index_ids:
-            if job_id in fresh:
+            if job_id in fresh or job_id in rejected:
                 continue
             board = resolve_board(job_id, live)
             if board in excluded:
@@ -816,6 +827,19 @@ def sync(args: argparse.Namespace) -> int:
             _log.info(
                 f"  {count} eviction-candidate row(s) kept out of scope on {board}"
             )
+        brought_in = Counter(
+            resolve_board(job_id, live) for job_id in rejected.intersection(index_ids)
+        )
+        _log.info(
+            f"scope exclusion: {sum(brought_in.values())} indexed row(s) on scope-excluded "
+            "Board(s) were returned by this scrape and rejected by the tech filter, so they take "
+            "the grace period like any absence (ADR-0243)"
+            + (
+                f": {log.named_sample([f'{b} ({n})' for b, n in brought_in.most_common()])}"
+                if brought_in
+                else ""
+            )
+        )
 
     # `_schema()` only reaches tables this call creates, so a table built before `first_seen`
     # existed keeps its frozen schema — and `apply_sync` requires rows to match it exactly. Add the
@@ -912,6 +936,7 @@ def sync(args: argparse.Namespace) -> int:
         was_unconfirmed,
         site_jobs=workday_site_jobs(args.ledger),
         replaced=taken.keys(),
+        rejected=rejected,
         requisitions={m["id"]: m["requisition"] for m in metas if m.get("requisition")},
         backing=eightfold_backing.load(),
     )
@@ -973,9 +998,25 @@ def sync(args: argparse.Namespace) -> int:
             f"grace period: {len(plan.unconfirmed)} id(s) unconfirmed, awaiting a second look "
             f"before eviction; of the {len(was_unconfirmed)} carried in, {reappeared} reappeared "
             f"in this scrape and {still_waiting} are unconfirmed again (their Board sat out this "
-            "run's slice, was Unauthoritative, or emitted nothing at all — all three leave the "
-            "eviction scope) (ADR-0083)"
+            "run's slice, was Unauthoritative, or raised — all three leave the eviction scope) "
+            "(ADR-0083)"
         )
+        # A Board that held indexed rows and returned no tech Job at all this scrape puts every
+        # row it served in the grace set at once. That is more often a read that came back empty
+        # than a mass closure (19 SuccessFactors Boards behind run 36218633315's 983), and it
+        # evicts next scrape unless the Board comes back — so name those Boards apart.
+        answered = {lower_key(resolve_board(i, live)) for i in corpus_ids}
+        emptied: Counter[str] = Counter()
+        for job_id in plan.unconfirmed - was_unconfirmed:
+            board = resolve_board(job_id, live)
+            if lower_key(board) not in answered:
+                emptied[board] += 1
+        if emptied:
+            _log.info(
+                f"  {sum(emptied.values())} newly unconfirmed on {len(emptied)} Board(s) that "
+                "returned no tech Job this scrape, emptying at once: "
+                + log.named_sample([f"{b} ({n})" for b, n in emptied.most_common()])
+            )
         # Which Boards dominate the unconfirmed set. A grace period spread thinly over many Boards
         # is ordinary churn; one concentrated on a handful is a scrape that keeps coming back
         # short, and naming them is the difference between "570 unconfirmed" and a diagnosis.
@@ -1462,6 +1503,12 @@ def main() -> int:
         help="JSON of Boards whose scraped list is not authoritative, written by scrape_join; "
         "they are dropped from the eviction scope (ADR-0053). Missing file means no Board is "
         "protected",
+    )
+    p_sync.add_argument(
+        "--unauthoritative-ids",
+        default=str(UNAUTHORITATIVE_BOARD_IDS_PATH),
+        help="ids the scrape returned on those Boards, written by scrape_join; any the tech "
+        "filter rejected take the grace period despite the Board's exclusion (ADR-0243)",
     )
     p_sync.add_argument(
         "--upgrades",

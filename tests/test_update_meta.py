@@ -893,3 +893,27 @@ def test_a_requisition_is_stored_only_on_a_board_the_eightfold_pairs_name(
     facts = um.corpus_facts(tmp_path)
     assert facts[paired["id"]]["requisition"] == "R-100"
     assert facts[other["id"]]["requisition"] is None
+
+
+def test_a_lost_derivation_is_named_per_ats_with_its_ids(tmp_path, caplog):
+    """`lost` on an ordinary run mirrored the next run's `gained` (up to 17 a run, 2026-09-26): a
+    field-sourced answer goes when a read comes back with the raw field empty. The line names the
+    ATS, how many lost it with the raw field cleared, and ids to open."""
+    store = tmp_path / "store"
+    store.mkdir()
+    row = _meta(
+        experience="3-5 years", min_years=3, max_years=5, experience_source="field"
+    )
+    (store / "meta.jsonl").write_text(json.dumps(row) + "\n", encoding="utf-8")
+    jobs = tmp_path / "jobs"
+    jobs.mkdir()
+    (jobs / "greenhouse.jsonl").write_text(
+        json.dumps({**row, "experience": None}) + "\n", encoding="utf-8"
+    )
+    caplog.set_level("INFO")
+    assert um.refresh(store, jobs, tmp_path / "none", tmp_path / "wm.json") == 0
+    lines = [r.getMessage() for r in caplog.records]
+    assert (
+        "  experience lost on greenhouse: 1, 1 with the raw field cleared by this scrape — "
+        "e.g. greenhouse:acme:1"
+    ) in lines

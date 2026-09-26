@@ -161,6 +161,24 @@ def test_reclaim_succeeds_and_reports_when_storage_falls():
     assert hub.squashed
 
 
+def test_reclaimed_is_the_bytes_deleted_not_a_lagging_counter_difference(caplog):
+    """Run 36218633315: usedStorage read 16.13 GB against 16.59 GB stored, because the first read
+    lags the upload the run just made, so `before - after` said 1.60 GB for a 2.06 GB delete. The
+    line reports the delete and prints the store less the delete beside the counter."""
+    hub = FakeHub(
+        live=[sibling("live", 14_530_000_000)],
+        stored=[blob("live", 14_530_000_000), blob("dead", 2_060_000_000)],
+        used=16_130_000_000,
+        used_after=14_530_000_000,
+    )
+    caplog.set_level("INFO")
+    assert run(hub) == 0
+    assert (
+        "reclaimed 2.06 GB: usedStorage 16.13 GB -> 14.53 GB (stored less deleted 14.53 GB), "
+        "live 14.53 GB intact across 1 file(s)"
+    ) in [r.getMessage() for r in caplog.records]
+
+
 # --- safety ---------------------------------------------------------------------------------
 
 

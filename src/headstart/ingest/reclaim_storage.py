@@ -19,11 +19,12 @@ The reclaim step had reported success on every one of those runs, because it pri
 ``usedStorage falls as HF collects the orphans`` — a prediction — and never re-read the number.
 
 The margin was one day wide and the old design did not know it. The run rewrites
-``embeddings.f32`` (2.71 GB) and ``meta.jsonl`` (0.577 GB) **wholesale**, ~3.31 GB of new blobs per
-run at ~38.6 runs/day (re-measured over the 99 runs in the 2.57 days to 2026-09-21; median
-start-to-start 34.6 min, against the ~30 runs/day this first cited): the repo generates **~128 GB**
-of dead weight a day against a 100 GB quota, so the maximum tolerable collection lag is **~19h**
-for a process with no SLA and no signal.
+``embeddings.f32`` and ``meta.jsonl`` **wholesale**. On 2026-09-21 that was 2.71 GB and 0.577 GB,
+~3.31 GB of new blobs per run at ~38.6 runs/day: **~128 GB** of dead weight a day against a 100 GB
+quota, a maximum tolerable collection lag of **~19h** for a process with no SLA and no signal.
+Re-measured over runs 36200233818..36218633315 (2026-09-26), after ADR-0190 pruned the store:
+1.64 GB and 0.36 GB, 2.06 GB deleted per run at ~27 runs/day (median start-to-start 54 min), so
+~55 GB a day against the ~85 GB the quota leaves above ~15 GB live — a lag of ~37h, still no SLA.
 
 So delete the blobs outright (:func:`~huggingface_hub.HfApi.permanently_delete_lfs_files`) rather
 than asking for them to be collected, and **verify the number moved**. Three invariants, because
@@ -275,18 +276,18 @@ def reclaim(
         _log.error(
             f"reclaim did not free anything: usedStorage {_gb(used_before)} -> {_gb(used_after)} "
             f"after deleting {len(dead)} object(s) worth {_gb(dead_bytes)}, and still had not "
-            f"moved {verify_timeout_s:.0f}s later. The quota fills at ~100 GB/day, so this will "
-            "reject uploads within a day if it is not fixed."
+            f"moved {verify_timeout_s:.0f}s later. The quota fills at ~55 GB/day, so this will "
+            "reject uploads within two days if it is not fixed."
         )
         return 1
-    freed = (
-        used_before - used_after
-        if used_before is not None and used_after is not None
-        else None
-    )
+    # The bytes deleted, not `used_before - used_after`: the first read of usedStorage lags the
+    # upload this run just made (16.13 GB against 16.59 GB stored on run 36218633315), so that
+    # difference read 1.60 GB for the same 2.06 GB delete. What the counter should now show is
+    # the store less the delete, printed beside it so the lag stays visible.
     _log.info(
-        f"reclaimed {_gb(freed)}: usedStorage {_gb(used_before)} -> "
-        f"{_gb(used_after)}, live {_gb(live_after)} intact across {len(siblings_after)} file(s)"
+        f"reclaimed {_gb(dead_bytes)}: usedStorage {_gb(used_before)} -> "
+        f"{_gb(used_after)} (stored less deleted {_gb(stored_bytes - dead_bytes)}), "
+        f"live {_gb(live_after)} intact across {len(siblings_after)} file(s)"
     )
     return 0
 
