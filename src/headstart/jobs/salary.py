@@ -1140,6 +1140,18 @@ def _period_from_window(text: str, start: int, end: int) -> int:
     return 1  # yr/year/annum/annual(ly)/jahr — already annual
 
 
+# An ISO code just before a bare "$" names that dollar or peso ("Pay Range: CAD $150,000 -
+# $185,000", SuccessFactors Teck 1433495400, was served as USD): no pattern's match reaches back
+# over the code, so the bare-"$" USD default won. Measured on the 2026-09-26 description store,
+# 11,811 descriptions with an upper-case three-letter word before "$": USD 10,534, CAD 854, AUD 35,
+# SGD 16, MXN 11, NZD 9, TWD/NTD 7, CLP/COP 4. A code this module bounds names its currency; the
+# peso and Taiwan-dollar codes read None rather than a wrong USD. Upper case only: "can $" is a verb.
+_NAMED_CODES = frozenset(_CURRENCY_CODES.split("|")) | {"NZD", "SGD"}
+_CODE_BEFORE_DOLLAR = re.compile(
+    rf"\b({'|'.join(sorted(_NAMED_CODES))}|MXN|CLP|COP|TWD|NTD)\$?\s*$"
+)
+
+
 def _span_from_match(
     text: str, m: re.Match, lo_raw: str, hi_raw: str | None
 ) -> SalarySpan | None:
@@ -1173,10 +1185,14 @@ def _span_from_match(
         else 1
     )
     mult = _period_from_window(text, m.start(), m.end())
-    # A bare "$" reads USD: statistically dominant in this corpus, genuinely ambiguous otherwise.
-    currency = _currency_for_symbol(
-        m.groupdict().get("sym"), matched, bare_dollar="USD"
-    )
+    sym = m.groupdict().get("sym")
+    code = _CODE_BEFORE_DOLLAR.search(text, 0, m.start("sym")) if sym == "$" else None
+    if code:
+        currency = code.group(1) if code.group(1) in _NAMED_CODES else None
+    else:
+        # A bare "$" reads USD: statistically dominant in this corpus, genuinely ambiguous
+        # otherwise.
+        currency = _currency_for_symbol(sym, matched, bare_dollar="USD")
     lo = round(_num_value(lo_raw) * magnitude_mult) * mult
     hi = round(_num_value(hi_raw) * magnitude_mult) * mult if hi_raw else None
     span = _bounded(min(lo, hi) if hi else lo, max(lo, hi) if hi else None, currency)
