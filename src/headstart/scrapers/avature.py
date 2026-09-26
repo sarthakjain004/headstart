@@ -1,7 +1,7 @@
 """Avature: every job portal's sitemap, then one job page per tech posting.
 
-Measured live 2026-09-26 over 77 of the 140 seed tenants and 257 job pages from 55 portals; the method and
-every number are in `docs/avature/2026-09-26_listing-measurement.md` (ADR-0245).
+Measured live 2026-09-26 over 77 of the 140 seed tenants and 257 job pages from 55 portals; the
+method and every number are in `docs/avature/2026-09-26_listing-measurement.md` (ADR-0245).
 
 **A Board is a tenant host** (`bloomberg` for `bloomberg.avature.net`), not one of its portals.
 A tenant runs several portals — `/careers`, `/internalcareers`, `/oldcareersportal`, template
@@ -129,9 +129,11 @@ _DEPARTMENT = (
         re.IGNORECASE,
     ),
 )
+#: Not "job type": dfiretailgroup's states "Store" and "Store Support Centre" under it, and
+#: deloittece's "Non Consulting" — a store or a practice, not an employment type.
 _EMPLOYMENT = (
     re.compile(
-        r"employment type|type of employment|work type|time type|contract type|job type"
+        r"employment type|type of employment|work type|time type|contract type"
         r"|worker type|tipo de empleo",
         re.IGNORECASE,
     ),
@@ -209,15 +211,15 @@ class AvatureScraper(BaseScraper):
         listed: dict[str, dict[str, str]] = {}
         # L'Oréal's portals each redirect their index to one shared index, so its child
         # sitemaps would otherwise be read once per portal against a 1 request/s budget.
-        read: set[str] = set()
+        read_sitemaps: set[str] = set()
         for index_url in portals:
             if not index_url.endswith("sitemap_index.xml"):
                 continue  # the root `/sitemap.xml` lists only the favicon
             own: list[dict[str, str]] = []
             for sitemap in _LOC.findall(self._get_text(index_url)):
-                if sitemap in read:
+                if sitemap in read_sitemaps:
                     continue
-                read.add(sitemap)
+                read_sitemaps.add(sitemap)
                 for row in listing_rows(self._get_text(sitemap)):
                     if row["id"] not in listed:
                         listed[row["id"]] = row
@@ -359,7 +361,7 @@ def listing_rows(sitemap_xml: str) -> list[dict[str, str]]:
     return list(rows.values())
 
 
-def _text(fragment: str) -> str:
+def _plain_text(fragment: str) -> str:
     return re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]+>", " ", fragment))).strip()
 
 
@@ -384,17 +386,19 @@ def page_fields(page: str) -> dict[str, Any]:
     labels: dict[str, str] = {}
     for pattern in _LABEL_PAIRS:
         for label, value in pattern.findall(page):
-            labels.setdefault(_text(label).rstrip(":").strip(), _text(value))
+            labels.setdefault(
+                _plain_text(label).rstrip(":").strip(), _plain_text(value)
+            )
     body = (
         ld.get("description")
         or "\n".join(_DETAILS_BLOCK.findall(page))
-        or "\n".join(v for v in _RICH_TEXT.findall(page) if len(_text(v)) > 200)
+        or "\n".join(v for v in _RICH_TEXT.findall(page) if len(_plain_text(v)) > 200)
         or next(iter(_MAIN.findall(page)), None)
     )
     remote_text = _labelled(labels, _REMOTE)
     return {
         "title": og.get("title")
-        or _text(str(ld.get("title") or ""))
+        or _plain_text(str(ld.get("title") or ""))
         or _labelled(labels, _TITLE),
         "company": og.get("site_name")
         or hiring_organization(node.get("hiringOrganization")),

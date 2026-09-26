@@ -70,12 +70,37 @@ sibling portal `careersnz` too (4 of 4), so they are closed, not misfiled.
   "Site", "勤務地". One tenant's JSON-LD does not parse (frequentis: a missing delimiter).
 - **Field coverage** of the shipped parser over the 257 pages: title 97%, description 91%
   (median 4,958 characters), location 72%, company 65%, posted date 39% (JSON-LD `datePosted`
-  only), department 34%, employment type 32%, remote 19%. The misses are tenant templates: L'Oréal's
+  only), department 34%, employment type 25%, remote 19%. The misses are tenant templates: L'Oréal's
   locale portals (26 pages, fully custom), and tenants that state location outside any label
   (ea, lululemon, ecb, frequentis).
 - **Company name**: `og:site_name` names the employer on 15 of 26 portals ("Bloomberg",
   "Electronic Arts", "Deloitte Italia"); JSON-LD `hiringOrganization` covers some of the rest.
   The scraper takes the name its fetched pages agree on — no extra request.
+
+## Fields, answered over the 257 saved pages
+
+- **Dates (Q13)** come only from JSON-LD `datePosted`: 100 of 257 pages state one, every one a
+  bare day (`2026-04-29`), none a clock time and none equal to the fetch day. Not fetched twice
+  seconds apart, so render-time fabrication is ruled out by shape rather than by a repeat fetch.
+- **Remote (Q14)**: 48 pages state it (a JSON-LD `TELECOMMUTE` or a "Remote"/"Work Model"/"Home
+  Office" label). Against `is_remote` on the same page's location text, 47 agree and 1 disagrees
+  (a remote label over an office location): 2%.
+- **Salary (Q15)**: 108 of 257 pages name a salary somewhere (a label, JSON-LD `baseSalary`, or
+  the body); `salary.extract(None, description, ats="avature")` reads a figure from 75 of the 233
+  descriptions. No field shape is common to tenants ("Pay Range", "Salary Banding MIN/MAX",
+  "Min salary"), so the scraper passes no salary field and leaves it to the description cascade.
+- **Employment type (Q16)** is stated on 25% (63 of 257). Observed values and the filter's reading:
+  "Regular - Permanent", "Permanent Full-Time", "Permanent", "Full time", "Full-time",
+  "FULL_TIME" → full-time; "Part time", "PART_TIME" → part-time; "Contract" → contract;
+  "Regular Employee" (EA's "Worker Type") → no flag. A "Job Type" label was dropped from the
+  vocabulary: dfiretailgroup and deloittece state "Store", "Store Support Centre" and "Non
+  Consulting" under it.
+- **Location (Q17)**: 185 pages yield one; none names several places (no `;` or `|` list in any
+  value), so one value per posting is what the tenants state.
+- **Language (Q23)** of the 233 descriptions (langdetect): en 203 (87%), de 17, ko 5, it 3, hu 2,
+  cs, ja, nl 1 each. The index's language gate holds the non-English ones out.
+- **Bytes (Q21)**: a job page is 63 KB at the median and 154 KB at p90 (257 pages); Bloomberg's
+  sitemap is 343 bytes per posting (352 postings). These are the enable arithmetic's inputs.
 
 ## Tech gate
 

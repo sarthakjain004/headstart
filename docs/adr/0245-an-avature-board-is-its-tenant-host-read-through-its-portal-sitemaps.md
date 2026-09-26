@@ -48,7 +48,9 @@ not scope-excluded every run (ADR-0053 has no drain). A `302` to another job pag
 `/en_US/` URLs) is followed once. A job page that fails outright ships no Job, unlike the
 wiring contract's "the Job still ships, without a description": every field but the id comes from
 the page, and the only stand-in title is the URL slug, which 2 of 52 tech postings had outgrown.
-The loss is labelled and truncates the Board unless negligible (ADR-0121), so its rows stay.
+The loss is labelled and truncates the Board unless negligible (ADR-0121), so its rows stay;
+a negligible loss leaves the Board authoritative, and the missing Job goes to ADR-0083's grace
+period — evicted only if the next scrape misses it too.
 
 **The tech gate reads the URL slug's title** — the only listing surface; none states a department.
 A measured approximation: over 244 titled pages it kept 47 of 52 tech postings (90.4%) and let

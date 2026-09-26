@@ -263,15 +263,14 @@ def test_portals_listing_no_job_pages_are_an_empty_board():
 
 
 def test_a_sitemap_two_portals_share_is_read_once():
-    fetcher = FakeFetcher(_route())
-    scraper = get_scraper("avature", "bloomberg", fetcher=fetcher, have_details=set())
-    scraper.pacer = Pacer(0)
+    # L'Oréal: every portal's index redirects to one shared index.
+    scraper = _scraper(_route())
     shared = "https://bloomberg.avature.net/careers/sitemap.xml"
     index = _FIXTURE["index"]["careers"]
-    fetcher.route = lambda m, u, k: (
+    scraper.fake.route = lambda m, u, k: (
         FakeResponse(200, index)
         if u.endswith("sitemap_index.xml")
         else _route()(m, u, k)
     )
     scraper.fetch_raw()
-    assert fetcher.urls().count(shared) == 1
+    assert scraper.fake.urls().count(shared) == 1

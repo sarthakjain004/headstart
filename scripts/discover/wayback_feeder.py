@@ -291,7 +291,7 @@ ATS_HOSTS: dict[str, tuple[tuple[str, Style], ...]] = {
     "adp_recruiting": _with_style("path", "myjobs.adp.com"),
     "ashby": _with_style("path", "jobs.ashbyhq.com"),
     # Label only: a tenant's job portals (`/careers`, `/externalCareers`, …) are resolved from
-    # its robots.txt by the prober, not by this sweep.
+    # its robots.txt by the scraper, not by this sweep.
     "avature": _with_style("sub", "avature.net"),
     # One host, no regional pods — checked live against Wayback CDX (2026-09-16): a
     # `matchType=domain` sweep filtered to `/careers` paths found 307 distinct
