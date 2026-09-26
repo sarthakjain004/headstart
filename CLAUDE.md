@@ -146,11 +146,11 @@ Evidence for the first two is in `docs/discovery/2026-09-23_indeed-sweep-landing
   landed. Avature is built too, ADR-0245; the sweep's Avature companies are a landing still to
   do. ADP Workforce Now is built too, #585, ADR-0180; the sweep's ADP companies are a landing
   still to do.)
-- **Radancy (TalentBrew) career fronts** — not an ATS but a **Career front** (CONTEXT.md), and for
-  some companies the only public listing: Intuit's is `jobs.intuit.com` (543 postings,
-  2026-09-26) over an Avature tenant that lists nothing. Owner decision 2026-09-26: scrape every
-  front in full, no Backing-Board gate, and log **Front duplication** per front each run; revisit
-  from those numbers, not before.
+- **Radancy (TalentBrew) career fronts** are built (ADR-0246) — a **Career front**, not an ATS,
+  landed under the landing rule above. Still to do: 13 fronts' sitemaps are capped (12 at 500, one
+  at 10,000), and the `/search-jobs/results` endpoint that lists the rest is disallowed by
+  robots.txt on 6 of those 13 — reading it on the other 7 (`jobs.walgreens.com`'s 22,544 among
+  them) recovers most of the ~29,700 postings the fronts state beyond their sitemaps. Revisit the no-gate decision from the per-run **Front duplication** lines.
 - **SenseHQ** — the scraper is registered but has no ledger and no liveness probe, so none of its
   Boards can land.
 - **TurboHire** — token flow: `/api/token/noauth` (needs Referer), then `POST

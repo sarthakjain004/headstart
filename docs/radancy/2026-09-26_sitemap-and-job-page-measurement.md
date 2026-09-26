@@ -5,7 +5,7 @@ live on 2026-09-26. The probe scripts and raw captures were kept locally under
 `experiment/radancy-talentbrew/` (not committed); every number a reader needs is below.
 
 **Radancy is not an ATS.** It is a recruitment-marketing vendor; TalentBrew is its career-site
-CMS. A TalentBrew site is a **Career front** (CONTEXT.md, the term arriving with #750): a branded
+CMS. A TalentBrew site is a **Career front** (CONTEXT.md): a branded
 job site that mirrors one or more **Backing Boards** on the company's real ATS and hands its Apply
 button off to them. It stores no applications. `jobs.intuit.com` is Intuit's only public listing:
 its Apply buttons go to `intuit.avature.net/externalCareers/JobApplication?pipelineId=…`, an
@@ -172,14 +172,14 @@ Career", Palo Alto Networks' subsidiaries, Mattel's "MattelInc"). Title first at
 ## Population
 
 - **Tech share.** `is_tech(title, department)` kept 961 of 6,816 sampled postings (14.1%).
-- **Front duplication.** Of the 6,816 sampled postings, 4,027 (59.1%) apply on a Board a
+- **Front duplication.** Of the 6,816 sampled postings, 4,289 (62.9%) apply on a Board a
   Scrapable Board already serves, resolved through each ATS's own `slug_from` (the scraper's
-  `backing_board`). Weighted by each front's ledger count, 55.3%. By front: 89 fully duplicated, 63
-  not at all, 25 partly. By Backing ATS: Workday 2,534, iCIMS 553, Oracle 432, SmartRecruiters 212,
-  SuccessFactors 120, Taleo Enterprise 60, Greenhouse 43, Lever 40, Eightfold 33. This is an
-  undercount: SuccessFactors' own apply form (`career2.successfactors.eu/…?company=cargill`) names
-  a company id rather than the RMK host its Board is keyed by (107 sampled postings), and Avature
-  has no scraper on this branch (304).
+  `backing_board`, run over the ledgers of main at 1a97fd82). Weighted by each front's ledger
+  count, 58.3%. By front: 94 fully duplicated, 57 not at all, 26 partly. By Backing ATS: Workday
+  2,534, iCIMS 553, Oracle 432, Avature 262, SmartRecruiters 212, SuccessFactors 120, Taleo
+  Enterprise 60, Greenhouse 43, Lever 40, Eightfold 33. This is an undercount: SuccessFactors' own
+  apply form (`career2.successfactors.eu/…?company=cargill`) names a company id rather than the
+  RMK host its Board is keyed by (107 sampled postings).
 - **Cross-ATS collisions.** `scripts/validate/cross_ats_duplicates.py radancy` finds 14 domains
   held by another ledger too. Four are the **same host**: `careers.alexion.com`,
   `careers.chevron.com`, `careers.moodys.com` and `jobs.stemcell.com` sit in the SuccessFactors

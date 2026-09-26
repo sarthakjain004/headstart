@@ -1,12 +1,11 @@
 # ADR-0246: A Radancy career front is a Board keyed by its host, scraped in full
 
-**Status:** accepted · **Date:** 2026-09-26 · **Relates to:** [ADR-0001](0001-per-ats-slug-derivation.md) (a scraper's slug is its own to define), [ADR-0048](0048-skip-details-we-already-hold.md) (skipping a held detail — deliberately not applied here), [ADR-0053](0053-scope-eviction-on-scrape-outcome.md) and [ADR-0121](0121-a-negligible-shortfall-is-still-an-authoritative-list.md) (a short Board's eviction scope), [ADR-0158](0158-jazzhr-and-jobvite-are-worth-their-storage.md) (the enable bar), [ADR-0166](0166-gate-the-detail-pass-on-the-tech-filter.md) (the pre-detail tech gate), [ADR-0201](0201-a-scraper-states-its-detail-request-once-and-the-base-runs-the-pass.md) (the Detail pass seam), ADR-0245 (Avature, a Backing ATS)
+**Status:** accepted · **Date:** 2026-09-26 · **Relates to:** [ADR-0001](0001-per-ats-slug-derivation.md) (a scraper's slug is its own to define), [ADR-0048](0048-skip-details-we-already-hold.md) (skipping a held detail — deliberately not applied here), [ADR-0053](0053-scope-eviction-on-scrape-outcome.md) and [ADR-0121](0121-a-negligible-shortfall-is-still-an-authoritative-list.md) (a short Board's eviction scope), [ADR-0158](0158-jazzhr-and-jobvite-are-worth-their-storage.md) (the enable bar), [ADR-0166](0166-gate-the-detail-pass-on-the-tech-filter.md) (the pre-detail tech gate), [ADR-0201](0201-a-scraper-states-its-detail-request-once-and-the-base-runs-the-pass.md) (the Detail pass seam), [ADR-0245](0245-an-avature-board-is-its-tenant-host-read-through-its-portal-sitemaps.md) (Avature, a Backing ATS)
 
 ## Context
 
 **Radancy is not an ATS.** It is a recruitment-marketing vendor, and TalentBrew is its career-site
-CMS. A TalentBrew site is a **Career front** (CONTEXT.md; the term, with **Backing Board** and
-**Front duplication**, arrives with #750): a branded job site mirroring one or more Boards on the
+CMS. A TalentBrew site is a **Career front** (CONTEXT.md): a branded job site mirroring one or more Boards on the
 company's real ATS, whose Apply button hands off to that ATS. It stores no applications. For some
 companies it is the only public listing — `jobs.intuit.com` mirrors an Avature tenant that lists
 nothing itself — and until now the repo met these fronts only from the other side, as sites that
@@ -22,7 +21,7 @@ candidate hosts, the 188 live fronts' sitemaps against their stated totals, 7,14
   `robots.txt` disallows the paginated results endpoint (`/search-jobs/`) on 151 of 188;
 - every field lives on the job page, as JSON-LD on 177 of 185 fronts and as TalentBrew's own meta
   tags on the other 8;
-- 59.1% of sampled postings (55.3% weighted by Board size) apply on a Board the repo already
+- 62.9% of sampled postings (58.3% weighted by Board size) apply on a Board the repo already
   scrapes.
 
 ## Decision
@@ -50,7 +49,7 @@ skip would blank every other field, since all of them come from the page.
 owner's decision of 2026-09-26, the opposite of Phenom's landing rule on purpose. Each posting's
 apply URL is resolved to a Scrapable Board through that ATS's own `slug_from` (Workday, Taleo
 Enterprise, SmartRecruiters, Greenhouse, Lever by URL shape; host-keyed Boards — iCIMS,
-SuccessFactors RMK, Eightfold, Phenom, Oracle, Avature — by host), and one INFO line per Board
+SuccessFactors RMK, Eightfold, Phenom, Oracle — by host; Avature by tenant label), and one INFO line per Board
 states `Front duplication k/n postings apply on a Scrapable Board`, with `front_duplicated` and
 `front_postings` in the Board's telemetry. The decision is to be revisited from those numbers. A
 front and its Backing Board are **not** joined in `company_directory`: both copies are served, so
@@ -82,7 +81,7 @@ under ADR-0158's ~2 MB bar (within 2x of it).
 
 - 13 capped fronts are out of eviction scope every run (ADR-0053's undrained scope exclusion), so
   their closed postings can linger until the results-endpoint follow-up lands.
-- Front duplication is served: ~55% of Radancy's postings have a second copy under their Backing
+- Front duplication is served: ~58% of Radancy's postings have a second copy under their Backing
   Board's key. The per-Board log line is the measurement the owner revisits.
 - Four SuccessFactors ledger rows are the same hosts as Radancy fronts (`careers.alexion.com`,
   `careers.chevron.com`, `careers.moodys.com`, `jobs.stemcell.com`), which the SuccessFactors

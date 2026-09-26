@@ -528,11 +528,12 @@ def backing_board(apply_url: str | None, held: _HeldBoards) -> str | None:
 
     Built the way the ledger spells each ATS's row and read through that ATS's own ``slug_from``
     (``registry.company_from_row``), so the identity is the one ``scrapable_boards`` computes. The
-    Backing ATSes measured behind 17 fronts: Workday (9 fronts), iCIMS, Taleo Enterprise,
-    SmartRecruiters, Avature, Eightfold, SuccessFactors and Paradox. A host-keyed Board (iCIMS,
-    SuccessFactors RMK, Eightfold, Phenom, Avature) matches on the apply URL's host. SuccessFactors'
-    own apply form (``career2.successfactors.eu/…?company=cargill``) names a company id, not the
-    RMK host its Board is keyed by, so it resolves to nothing: an undercount, stated as such.
+    apply URLs of 6,816 sampled postings named Workday on 69 of 177 fronts, then iCIMS, Oracle,
+    Avature, Taleo, SmartRecruiters and SuccessFactors. A host-keyed Board (iCIMS, SuccessFactors
+    RMK, Eightfold, Phenom, Oracle) matches on the apply URL's host; Avature's is its tenant label.
+    SuccessFactors' own apply form (``career2.successfactors.eu/…?company=cargill``) names a company
+    id, not the RMK host its Board is keyed by, so it resolves to nothing: an undercount, stated as
+    such.
     """
     parts = urlsplit(apply_url or "")
     host = (parts.hostname or "").lower()
@@ -560,6 +561,8 @@ def backing_board(apply_url: str | None, held: _HeldBoards) -> str | None:
         row = ("greenhouse", segments[0], apply_url or "")
     elif host in {"jobs.lever.co", "jobs.eu.lever.co"} and segments:
         row = ("lever", segments[0], apply_url or "")
+    elif host.endswith(".avature.net"):
+        row = ("avature", host.removesuffix(".avature.net"), apply_url or "")
     if row is None:
         return None
     # Imported here for the same cycle `_scrapable_boards` avoids.

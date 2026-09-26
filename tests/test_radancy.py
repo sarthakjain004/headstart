@@ -44,6 +44,7 @@ _HELD = _HeldBoards(
             "successfactors:jobs.netapp.com",
             "workday:stemcell/external_careers",
             "radancy:jobs.sanofi.com",
+            "avature:synopsys",
         }
     )
 )
@@ -320,6 +321,10 @@ def test_emitted_salary_round_trips_through_the_repo_parser() -> None:
         (
             "https://intuit.avature.net/externalCareers/JobApplication?pipelineId=23933",
             None,
+        ),
+        (
+            "https://synopsys.avature.net/careers/Login?jobId=18266&source=&tags=&user=&formValues",
+            "avature:synopsys",
         ),
         (
             "https://amgen.wd1.myworkdayjobs.com/Careers/job/US---California---Thousand-Oaks/Associate-Manufacturing_R-256887/apply",

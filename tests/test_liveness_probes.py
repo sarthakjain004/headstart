@@ -2072,6 +2072,8 @@ def test_avature_a_406_is_the_spent_budget_it_rests_the_gate_and_settles_nothing
 def test_avature_every_tenant_shares_one_gate():
     assert cl._gate_key("bloomberg.avature.net") == "avature.net"
     assert cl._gate_for("intuit.avature.net") is cl._GATES["avature.net"]
+
+
 # --- radancy: the sitemap counts, `/search-jobs` settles a front with none -------------------
 
 _TAKEDA_JOB = (
