@@ -100,3 +100,13 @@ compaction can occur while ADR-0093's three-consecutive-failure breaker has deli
 the chain — and `handback` then restarts it. That is bounded (the compaction empties the directory,
 so it does not recur) and arguably right, since a rebuilt index is a reason to try again. But it
 does mean the breaker's stop is not permanent while compactions are firing.
+
+## Amendment (2026-09-26): the threshold is 1,200, because growth is linear
+
+The quadratic model above did not survive a second measurement. Across the seven merges of runs
+36200233818–36218633315 (2026-09-25/26, all after the 2026-09-25 08:32 compaction) `_deletions/`
+read 651, 711, 762, 813, 841, 874 and 897 files: ~41 per run, linear and if anything slowing. At
+~26 runs a day that is ~1,070 files a day, so 3,000 was crossed ~2.8 days after a compaction, not
+one — a missed cron went unasked-for for nearly three days. The threshold is now **1,200**,
+~1.1 days of growth: just past a missed daily cron, and still ~8,800 files (~200 runs) short of the
+limit. Nothing else here changes.
