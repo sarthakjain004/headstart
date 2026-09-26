@@ -63,6 +63,7 @@
   "total": {
    "name": "__total__",
    "label": "",
+   "whole_company": false,
    "estimated": false,
    "move": {
     "start": 80,
@@ -99,6 +100,7 @@
    {
     "name": "watch:llm",
     "label": "watch:llm",
+    "whole_company": false,
     "estimated": false,
     "move": {
      "start": 80,
@@ -133,6 +135,7 @@
    {
     "name": "watch:llm",
     "label": "watch:llm",
+    "whole_company": false,
     "estimated": false,
     "move": {
      "start": 80,

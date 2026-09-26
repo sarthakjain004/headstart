@@ -83,6 +83,7 @@
   "total": {
    "name": "__total__",
    "label": "",
+   "whole_company": true,
    "estimated": false,
    "move": {
     "start": 90,
@@ -119,6 +120,7 @@
    {
     "name": "a",
     "label": "a",
+    "whole_company": false,
     "estimated": false,
     "move": {
      "start": 50,
@@ -150,6 +152,7 @@
    {
     "name": "b",
     "label": "b",
+    "whole_company": false,
     "estimated": false,
     "move": {
      "start": 40,
@@ -184,6 +187,7 @@
    {
     "name": "taleo_enterprise:hdr/1",
     "label": "HDR",
+    "whole_company": true,
     "estimated": false,
     "move": {
      "start": 90,

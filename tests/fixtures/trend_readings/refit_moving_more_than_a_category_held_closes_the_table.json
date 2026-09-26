@@ -111,6 +111,7 @@
   "total": {
    "name": "__total__",
    "label": "",
+   "whole_company": true,
    "estimated": false,
    "move": {
     "start": 150,
@@ -158,6 +159,7 @@
    {
     "name": "software-engineering",
     "label": "Software Engineering",
+    "whole_company": false,
     "estimated": false,
     "move": {
      "start": 100,
@@ -209,6 +211,7 @@
    {
     "name": "ai-ml",
     "label": "AI / Machine Learning",
+    "whole_company": false,
     "estimated": false,
     "move": {
      "start": 50,
@@ -257,6 +260,7 @@
    {
     "name": "successfactors:careers.wipro.com",
     "label": "Wipro",
+    "whole_company": true,
     "estimated": false,
     "move": {
      "start": 150,

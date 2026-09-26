@@ -95,6 +95,7 @@
   "total": {
    "name": "__total__",
    "label": "",
+   "whole_company": false,
    "estimated": true,
    "move": {
     "start": 2000,
@@ -148,6 +149,7 @@
    {
     "name": "mid",
     "label": "mid",
+    "whole_company": false,
     "estimated": true,
     "move": {
      "start": 1200,
@@ -194,6 +196,7 @@
    {
     "name": "senior",
     "label": "senior",
+    "whole_company": false,
     "estimated": true,
     "move": {
      "start": 800,
@@ -237,6 +240,7 @@
    {
     "name": "eightfold:micron",
     "label": "Micron, ai-ml",
+    "whole_company": false,
     "estimated": true,
     "move": {
      "start": 2000,

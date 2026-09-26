@@ -84,6 +84,7 @@
    {
     "name": "workday:acme/a",
     "label": "Acme",
+    "whole_company": true,
     "estimated": false,
     "move": {
      "start": 100,
@@ -120,6 +121,7 @@
    {
     "name": "workday:acme/a",
     "label": "Acme",
+    "whole_company": true,
     "estimated": false,
     "move": {
      "start": 100,

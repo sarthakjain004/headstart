@@ -90,7 +90,8 @@ MIN_SPAN_DAYS = 3
 # Nor is it given off a netted start under this many openings, where it is arithmetic, not a
 # reading: 14 openings off a netted 4 read "+350%". The page's INDEX_BASE_FLOOR.
 INDEX_BASE_FLOOR = 5
-# What ``percent_withheld`` says of a line mostly re-counted in the window: its counting changes
+# What ``percent_withheld`` says of a category, level or role line mostly re-counted in the
+# window (never of a whole company's, LineReading.whole_company): its counting changes
 # took out more than half of what it started with once its other steps (duplicates removed,
 # Boards found) are counted, or what is left of its start is under INDEX_BASE_FLOOR. Its netted
 # start is then mostly an estimate of its history, and a percentage off it is arithmetic.
@@ -215,13 +216,18 @@ class LineReading:
     ``index_base`` is what the Change plot divides ``netted`` by, its first netted count; None
     where the line's first count or that base is under INDEX_BASE_FLOOR, or the line is mostly
     re-counted (MOSTLY_RECOUNTED), and the line is not indexed at all. ``points`` are its
-    counts run by run where no answer series carries them: the first row's. ``arrived_by`` is what a line that began inside the window arrived by, a
-    counting change sorting openings into it or a pick joining; None where it began with the
-    window, or arrived by hiring."""
+    counts run by run where no answer series carries them: the first row's. ``arrived_by`` is
+    what a line that began inside the window arrived by, a counting change sorting openings into
+    it or a pick joining; None where it began with the window, or arrived by hiring.
+    ``whole_company`` when the line is a whole company's own (or several picks' summed): the
+    first row under a pick, a pick's own line, a company under the Company breakdown, and never
+    inside a category. Such a line is never mostly re-counted (ADR-0238): the netting keeps it
+    sound, and Hot ranks by it."""
 
     name: str
     label: str
     move: LineMove
+    whole_company: bool = False
     estimated: bool = False
     netted: tuple[float | None, ...] = ()
     steps_at: tuple[int, ...] = ()
@@ -307,6 +313,7 @@ class TrendReading:
             out = {
                 "name": r.name,
                 "label": r.label,
+                "whole_company": r.whole_company,
                 "estimated": r.estimated,
                 "move": move(r.move),
                 "netted": list(r.netted),
@@ -742,24 +749,45 @@ class _Reader:
         if exact is None:
             return None
         netted = _rounded_for_drawing(_net(self.view, line.points, line, None, True))
-        move = self._move(line, exact, hiring, self._round_to_openings(exact, hiring))
+        whole = self._is_whole_company(line)
+        move = self._move(
+            line, exact, hiring, self._round_to_openings(exact, hiring), whole
+        )
         return LineReading(
             name=line.name,
             label=label,
             move=move,
+            whole_company=whole,
             estimated=exact.estimated,
             netted=netted,
             steps_at=tuple(sorted(_count_jumps(self.view, line))),
             index_base=None
-            if _mostly_recounted(
+            if not whole
+            and _mostly_recounted(
                 move.start, move.latest - move.hiring, _counting(move.not_hiring)
             )
             else _index_base(line.points, netted),
             arrived_by=exact.arrived_by,
         )
 
+    def _is_whole_company(self, line: _Line) -> bool:
+        """Whether ``line`` is a whole company's own, or several picks' summed: the first row
+        under a pick, a pick's own line, or a company under the Company breakdown, never inside
+        a category (LineReading.whole_company)."""
+        view = self.view
+        return (
+            view.picked
+            and not view.drilled
+            and (line.name == _TOTAL or line.pick or view.split_company)
+        )
+
     def _move(
-        self, line: _Line, exact: _Exact, hiring: int, causes: dict[str, int]
+        self,
+        line: _Line,
+        exact: _Exact,
+        hiring: int,
+        causes: dict[str, int],
+        whole_company: bool,
     ) -> LineMove:
         span = (
             datetime.fromisoformat(self.stamps[-1])
@@ -787,6 +815,7 @@ class _Reader:
             if turnover
             else None,
             denominators=self._denominators_of(line, exact),
+            whole_company=whole_company,
         )
 
     def _in_date_order(self, causes: Iterable[Cause]) -> tuple[Cause, ...]:
@@ -856,6 +885,8 @@ class _Reader:
             else:
                 longest = max(moves, key=lambda m: m.span_days).share
                 denominators = (longest.denominator_start, longest.denominator_latest)
+        # Folded companies are whole companies; folded categories are not.
+        whole = all(r.whole_company for r in folded)
         return LineReading(
             name=_OTHER,
             label="",
@@ -873,7 +904,9 @@ class _Reader:
                 if turnovers
                 else None,
                 denominators=denominators,
+                whole_company=whole,
             ),
+            whole_company=whole,
             estimated=any(r.estimated for r in folded),
         )
 
@@ -1334,22 +1367,28 @@ def _line_move(
     span_days: float,
     turnover: Turnover | None,
     denominators: tuple[int | None, int | None] | None,
+    whole_company: bool = False,
 ) -> LineMove:
     """A line's move from its whole figures: its percentage, weekly rate and share, each read
-    off them once. ``denominators`` is the share's, netted at the start and as counted now."""
+    off them once. ``denominators`` is the share's, netted at the start and as counted now.
+    A ``whole_company`` line is never mostly re-counted (ADR-0238)."""
     span_days = round(span_days, 4)
     netted_start = latest - hiring
     percent, withheld = None, None
-    # Under INDEX_BASE_FLOOR openings left of a start of MOVER_FLOOR or more is mostly re-counted,
-    # so the percentage is never read off a netted start under that floor. A line too small to
-    # read a percentage off keeps that as its reason: 8,097 of 45,547 category lines started
-    # under 20 and kept under 5 (2026-09-26), where "mostly re-counted" would often be one of 3.
+    # A line too small to read a percentage off keeps that as its reason: 8,097 of 45,547
+    # category lines started under 20 and kept under 5 (2026-09-26), where "mostly re-counted"
+    # would often be one of 3. A whole company's line is never mostly re-counted, but still
+    # gives no percentage off a netted start under INDEX_BASE_FLOOR.
     if span_days < MIN_SPAN_DAYS:
         withheld = f"a window under {MIN_SPAN_DAYS} days"
     elif start < MOVER_FLOOR:
         withheld = f"under {MOVER_FLOOR} openings at the start"
-    elif _mostly_recounted(start, netted_start, _counting(not_hiring)):
+    elif not whole_company and _mostly_recounted(
+        start, netted_start, _counting(not_hiring)
+    ):
         withheld = MOSTLY_RECOUNTED
+    elif netted_start < INDEX_BASE_FLOOR:
+        withheld = f"under {INDEX_BASE_FLOOR} openings at the start once the steps are taken out"
     else:
         percent = hiring / netted_start * 100
     share = None
@@ -1474,10 +1513,10 @@ def check_reading(reading: dict) -> list[str]:
        second time. The share's own change is its latest
        over its start, and is withheld with the percentage.
     6. With no pick nothing is taken out.
-    7. A line mostly re-counted in the window (MOSTLY_RECOUNTED: its counting changes took out
-       more than was left, or under INDEX_BASE_FLOOR was left) gives no percentage, in any
-       unit, and no index base; and only such a line, of MOVER_FLOOR openings or more at the
-       start, is said to be one.
+    7. A category, level or role line mostly re-counted in the window (MOSTLY_RECOUNTED: its
+       counting changes took out more than was left, or under INDEX_BASE_FLOOR was left) gives
+       no percentage, in any unit, and no index base; and only such a line, of MOVER_FLOOR
+       openings or more at the start, is said to be one. A whole company's line never is.
     Plus: every count is a whole number; a line's "Not hiring" total is its causes' sum; its
     weekly rate is its hiring over the days it was counted, withheld under MIN_SPAN_DAYS; its
     turnover's net is opened less closed, and neither is given where closed is not; the Other
@@ -1514,7 +1553,7 @@ def check_reading(reading: dict) -> list[str]:
                     f"{INDEX_BASE_FLOOR} or more"
                 )
             m = r["move"]
-            if _mostly_recounted(
+            if not r.get("whole_company") and _mostly_recounted(
                 m["start"], m["latest"] - m["hiring"], _counting(m["not_hiring"])
             ):
                 out.append(f"line {r['name']}: it is indexed though mostly re-counted")
@@ -1532,12 +1571,15 @@ def check_reading(reading: dict) -> list[str]:
         ("other row", reading.get("other")),
         *((f"company line {r['name']}", r) for r in reading.get("company_lines") or []),
     ]
-    moves = [(where, r["move"]) for where, r in lines if r]
+    # Each move with whether it is a whole company's, which is never mostly re-counted.
+    moves = [
+        (where, r["move"], bool(r.get("whole_company"))) for where, r in lines if r
+    ]
     breakdown = reading.get("breakdown")
     closing = breakdown.get("closing") if breakdown else None
     if closing:
-        moves.append(("closing row", closing))
-    for where, m in moves:
+        moves.append(("closing row", closing, True))
+    for where, m, whole in moves:
         counts = [
             m["start"],
             m["latest"],
@@ -1616,7 +1658,7 @@ def check_reading(reading: dict) -> list[str]:
             or not _same(m["percent"], m["hiring"] / netted_start * 100)
         ):
             out.append(f"{where}: its percentage is not hiring over the netted start")
-        recounted = _mostly_recounted(
+        recounted = not whole and _mostly_recounted(
             m["start"], netted_start, _counting(m["not_hiring"])
         )
         if recounted and m["percent"] is not None:

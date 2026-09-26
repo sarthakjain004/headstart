@@ -110,6 +110,7 @@
    {
     "name": "greenhouse:acme",
     "label": "Acme",
+    "whole_company": true,
     "estimated": false,
     "move": {
      "start": 100,
@@ -154,6 +155,7 @@
    {
     "name": "lever:zomato",
     "label": "Zomato",
+    "whole_company": true,
     "estimated": false,
     "move": {
      "start": 2,
@@ -191,6 +193,7 @@
    {
     "name": "greenhouse:acme",
     "label": "Acme",
+    "whole_company": true,
     "estimated": false,
     "move": {
      "start": 100,
@@ -226,6 +229,7 @@
    {
     "name": "lever:zomato",
     "label": "Zomato",
+    "whole_company": true,
     "estimated": false,
     "move": {
      "start": 2,

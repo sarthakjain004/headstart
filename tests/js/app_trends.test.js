@@ -1528,9 +1528,9 @@ test('duplicate removal is taken out of an Eightfold-only company too (Micron Te
   showGolden(t, 'micron_eightfold_only_company_steps_at_duplicate_removal');
   t.setUnit('change', false);
   const [micron, beta] = t.data().series;
-  // The change took 1,867 of its 1,887, more than the 20 left: mostly re-counted, so no index
-  // line is drawn off 20 (ADR-0238).
-  same(t.seriesValues(micron), [null, null, null, null]);
+  // The change took 1,867 of its 1,887, more than the 20 left, but a whole company's line is
+  // never mostly re-counted (ADR-0238): it is indexed as the netting keeps it.
+  same(t.seriesValues(micron), [100, 100, 100, 100]);
   same(t.seriesValues(beta), [100, 100, 80, 80], 'one Board off Eightfold: its fall is its own');
 });
 
@@ -2552,6 +2552,9 @@ test('the page catches each broken invariant with the checker\'s own sentence', 
     'line embedded: it is indexed though mostly re-counted',
     "line embedded: its share's change is not its latest share over its start",
   ]);
+  assert.ok(broken('micron_eightfold_only_company_steps_at_duplicate_removal', r => {
+    Object.assign(r.lines[0].move, { percent: null, percent_withheld: 'mostly_recounted' });
+  }).includes('line eightfold:careers.micron.com: it is said to be mostly re-counted where it is not'));
   same(broken('three_counting_changes_named_once_each', r => { r.company_lines[0].move.not_hiring.reverse(); }),
     ['company line greenhouse:acme: its Not hiring is not in the order its changes ran']);
   assert.ok(broken('busy_company_step_disclosed_turnover_kept', r => { r.company_lines[0].move.turnover.closed = null; })

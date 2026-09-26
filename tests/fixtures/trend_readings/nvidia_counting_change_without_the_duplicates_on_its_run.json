@@ -95,6 +95,7 @@
    {
     "name": "eightfold:nvidia",
     "label": "NVIDIA",
+    "whole_company": true,
     "estimated": false,
     "move": {
      "start": 4000,
@@ -148,6 +149,7 @@
    {
     "name": "eightfold:nvidia",
     "label": "NVIDIA",
+    "whole_company": true,
     "estimated": false,
     "move": {
      "start": 4000,

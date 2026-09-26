@@ -96,6 +96,7 @@
   "total": {
    "name": "__total__",
    "label": "",
+   "whole_company": false,
    "estimated": false,
    "move": {
     "start": 900,
@@ -140,6 +141,7 @@
    {
     "name": "a",
     "label": "a",
+    "whole_company": false,
     "estimated": false,
     "move": {
      "start": 900,

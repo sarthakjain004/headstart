@@ -92,6 +92,7 @@
   "total": {
    "name": "__total__",
    "label": "",
+   "whole_company": true,
    "estimated": false,
    "move": {
     "start": 140,
@@ -144,6 +145,7 @@
    {
     "name": "interns",
     "label": "interns",
+    "whole_company": false,
     "estimated": false,
     "move": {
      "start": 40,
@@ -188,6 +190,7 @@
    {
     "name": "big",
     "label": "big",
+    "whole_company": false,
     "estimated": false,
     "move": {
      "start": 100,
@@ -228,6 +231,7 @@
    {
     "name": "greenhouse:acme",
     "label": "Acme",
+    "whole_company": true,
     "estimated": false,
     "move": {
      "start": 140,

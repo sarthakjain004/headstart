@@ -576,6 +576,38 @@ def test_the_checker_catches_a_percentage_off_a_line_mostly_recounted() -> None:
     ]
 
 
+def test_a_whole_companys_line_is_never_mostly_recounted() -> None:
+    """The owner's call on #731 (ADR-0238): a company's own line keeps its percentage, since the
+    netting keeps it sound and Hot ranks by it. Micron's change took 1,867 of 1,887 and left
+    20, which on a category would withhold it."""
+    reading = _golden("micron_eightfold_only_company_steps_at_duplicate_removal")[
+        "reading"
+    ]
+    micron = reading["lines"][0]
+    assert micron["whole_company"]
+    assert (micron["move"]["start"], micron["move"]["latest"]) == (1887, 20)
+    assert micron["move"]["percent_withheld"] is None
+    assert micron["move"]["percent"] == 0.0
+    assert micron["index_base"] == 20
+    categories = _golden("category_mostly_recounted_gives_no_percentage")["reading"]
+    assert not any(line["whole_company"] for line in categories["lines"])
+    assert categories["total"]["whole_company"]
+
+
+def test_the_checker_catches_a_company_line_said_to_be_mostly_recounted() -> None:
+    def breaking(r):
+        move = r["lines"][0]["move"]
+        move["percent"], move["percent_withheld"] = None, MOSTLY_RECOUNTED
+
+    violations = _broken(
+        "micron_eightfold_only_company_steps_at_duplicate_removal", breaking
+    )
+    assert (
+        "line eightfold:careers.micron.com: it is said to be mostly re-counted where it is not"
+        in violations
+    )
+
+
 def test_the_checker_catches_causes_out_of_the_order_their_changes_ran() -> None:
     def breaking(r):
         r["company_lines"][0]["move"]["not_hiring"].reverse()

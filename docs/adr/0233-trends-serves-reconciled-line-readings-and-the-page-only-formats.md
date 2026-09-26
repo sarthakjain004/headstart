@@ -10,7 +10,7 @@ history; netting moved out of the browser),
 [ADR-0237](0237-trend-history-keeps-its-name-inside-trends.md) (the module's name in `trends/` is
 `line_reading`, not `reading`) · **Amended by:**
 [ADR-0238](0238-a-mostly-re-counted-line-gives-no-percentage-and-hot-hides-only-staffing-and-job-boards.md)
-(a mostly re-counted line gives no percentage, and a share's change is withheld with the line's)
+(a mostly re-counted category gives no percentage, and a share's change is withheld with the line's)
 
 ## Context
 

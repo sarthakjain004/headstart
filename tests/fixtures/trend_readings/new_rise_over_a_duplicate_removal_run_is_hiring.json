@@ -87,6 +87,7 @@
    {
     "name": "eightfold:micron",
     "label": "Micron",
+    "whole_company": true,
     "estimated": false,
     "move": {
      "start": 50,
@@ -126,6 +127,7 @@
    {
     "name": "eightfold:micron",
     "label": "Micron",
+    "whole_company": true,
     "estimated": false,
     "move": {
      "start": 50,

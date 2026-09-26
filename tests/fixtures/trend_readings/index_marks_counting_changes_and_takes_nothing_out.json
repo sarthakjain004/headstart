@@ -87,6 +87,7 @@
   "total": {
    "name": "__total__",
    "label": "",
+   "whole_company": false,
    "estimated": false,
    "move": {
     "start": 49000,
@@ -129,6 +130,7 @@
    {
     "name": "software-engineering",
     "label": "software-engineering",
+    "whole_company": false,
     "estimated": false,
     "move": {
      "start": 40000,
@@ -163,6 +165,7 @@
    {
     "name": "web-development",
     "label": "web-development",
+    "whole_company": false,
     "estimated": false,
     "move": {
      "start": 9000,

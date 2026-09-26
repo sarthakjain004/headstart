@@ -105,6 +105,7 @@
    {
     "name": "eightfold:careers.micron.com",
     "label": "Micron Technology",
+    "whole_company": true,
     "estimated": false,
     "move": {
      "start": 1887,
@@ -119,8 +120,8 @@
       }
      ],
      "not_hiring_total": -1867,
-     "percent": null,
-     "percent_withheld": "mostly_recounted",
+     "percent": 0.0,
+     "percent_withheld": null,
      "span_days": 3.0,
      "per_week": 0,
      "turnover": null,
@@ -129,7 +130,7 @@
       "latest": 0.2,
       "denominator_start": 10000,
       "denominator_latest": 10000,
-      "percent": null
+      "percent": 0.0
      }
     },
     "netted": [
@@ -142,12 +143,13 @@
      2,
      3
     ],
-    "index_base": null,
+    "index_base": 20,
     "arrived_by": null
    },
    {
     "name": "lever:beta",
     "label": "Beta",
+    "whole_company": true,
     "estimated": false,
     "move": {
      "start": 100,
@@ -184,6 +186,7 @@
    {
     "name": "eightfold:careers.micron.com",
     "label": "Micron Technology",
+    "whole_company": true,
     "estimated": false,
     "move": {
      "start": 1887,
@@ -198,8 +201,8 @@
       }
      ],
      "not_hiring_total": -1867,
-     "percent": null,
-     "percent_withheld": "mostly_recounted",
+     "percent": 0.0,
+     "percent_withheld": null,
      "span_days": 3.0,
      "per_week": 0,
      "turnover": null,
@@ -208,7 +211,7 @@
       "latest": 0.2,
       "denominator_start": 10000,
       "denominator_latest": 10000,
-      "percent": null
+      "percent": 0.0
      }
     },
     "netted": [],
@@ -219,6 +222,7 @@
    {
     "name": "lever:beta",
     "label": "Beta",
+    "whole_company": true,
     "estimated": false,
     "move": {
      "start": 100,

@@ -3578,10 +3578,10 @@ function markedText(item){
 //      netted start, given only off INDEX_BASE_FLOOR openings or more, neither netted a second
 //      time; the share's own change is its latest over its start, withheld with the percentage;
 //   6. with no pick nothing is taken out;
-//   7. a line mostly re-counted in the window (MOSTLY_RECOUNTED: its counting changes took out
-//      more than was left, or under INDEX_BASE_FLOOR was left) gives no percentage, in any
-//      unit, and no index base; and only such a line, of MOVER_FLOOR openings or more at the
-//      start, is said to be one.
+//   7. a category, level or role line mostly re-counted in the window (MOSTLY_RECOUNTED: its
+//      counting changes took out more than was left, or under INDEX_BASE_FLOOR was left) gives
+//      no percentage, in any unit, and no index base; and only such a line, of MOVER_FLOOR
+//      openings or more at the start, is said to be one. A whole company's line never is.
 // (4, one size in every window, is stated by the tests over narrower windows.) Plus: every count
 // is a whole number; a line's Not hiring total is its causes' sum; its weekly rate is its hiring
 // over the days it was counted, withheld under MIN_SPAN_DAYS; its turnover's net is opened less
@@ -3607,7 +3607,7 @@ function checkReading(reading){
     const first = r.netted.find(v => v != null);
     if (r.index_base < INDEX_BASE_FLOOR || r.index_base !== first)
       out.push(`line ${r.name}: its index base is not a first netted count of ${INDEX_BASE_FLOOR} or more`);
-    if (recounted(r.move)) out.push(`line ${r.name}: it is indexed though mostly re-counted`);
+    if (!r.whole_company && recounted(r.move)) out.push(`line ${r.name}: it is indexed though mostly re-counted`);
   });
   const linesNow = (reading.lines || []).reduce((sum, r) => sum + r.move.latest, 0);
   if ((reading.openings || 0) !== linesNow) out.push("openings: not every line's latest added together");
@@ -3620,11 +3620,12 @@ function checkReading(reading){
     ...(reading.lines || []).map(r => [`line ${r.name}`, r]),
     ['other row', reading.other],
     ...(reading.company_lines || []).map(r => [`company line ${r.name}`, r])];
-  const moves = lines.filter(([, r]) => r).map(([where, r]) => [where, r.move]);
+  // Each move with whether it is a whole company's, which is never mostly re-counted.
+  const moves = lines.filter(([, r]) => r).map(([where, r]) => [where, r.move, !!r.whole_company]);
   const breakdown = reading.breakdown;
   const closing = breakdown ? breakdown.closing : null;
-  if (closing) moves.push(['closing row', closing]);
-  for (const [where, m] of moves){
+  if (closing) moves.push(['closing row', closing, true]);
+  for (const [where, m, whole] of moves){
     const counts = [m.start, m.latest, m.hiring, m.not_hiring_total, ...m.not_hiring.map(c => c.size),
       ...(m.per_week != null ? [m.per_week] : []),
       ...(m.turnover ? [m.turnover.opened, m.turnover.closed, m.turnover.net].filter(n => n != null) : [])];
@@ -3654,8 +3655,9 @@ function checkReading(reading){
     }
     if (m.percent != null && (nettedStart < INDEX_BASE_FLOOR || !same(m.percent, m.hiring / nettedStart * 100)))
       out.push(`${where}: its percentage is not hiring over the netted start`);
-    if (recounted(m) && m.percent != null) out.push(`${where}: it gives a percentage though mostly re-counted`);
-    if ((m.percent_withheld === MOSTLY_RECOUNTED) !== (recounted(m) && m.span_days >= MIN_SPAN_DAYS && m.start >= MOVER_FLOOR))
+    const isRecounted = !whole && recounted(m);
+    if (isRecounted && m.percent != null) out.push(`${where}: it gives a percentage though mostly re-counted`);
+    if ((m.percent_withheld === MOSTLY_RECOUNTED) !== (isRecounted && m.span_days >= MIN_SPAN_DAYS && m.start >= MOVER_FLOOR))
       out.push(`${where}: it is said to be mostly re-counted where it is not`);
     if (!reading.picked && (m.not_hiring.length || m.hiring !== m.latest - m.start))
       out.push(`${where}: with no pick, something was taken out`);

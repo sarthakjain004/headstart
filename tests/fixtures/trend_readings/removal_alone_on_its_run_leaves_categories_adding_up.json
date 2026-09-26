@@ -95,6 +95,7 @@
   "total": {
    "name": "__total__",
    "label": "",
+   "whole_company": true,
    "estimated": false,
    "move": {
     "start": 2000,
@@ -150,6 +151,7 @@
    {
     "name": "a",
     "label": "a",
+    "whole_company": false,
     "estimated": true,
     "move": {
      "start": 1200,
@@ -196,6 +198,7 @@
    {
     "name": "b",
     "label": "b",
+    "whole_company": false,
     "estimated": true,
     "move": {
      "start": 800,
@@ -239,6 +242,7 @@
    {
     "name": "eightfold:micron",
     "label": "Micron",
+    "whole_company": true,
     "estimated": false,
     "move": {
      "start": 2000,

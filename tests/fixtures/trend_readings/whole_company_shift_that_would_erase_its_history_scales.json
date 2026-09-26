@@ -87,6 +87,7 @@
    {
     "name": "greenhouse:acme",
     "label": "Acme",
+    "whole_company": true,
     "estimated": false,
     "move": {
      "start": 50,
@@ -107,8 +108,8 @@
       }
      ],
      "not_hiring_total": -45,
-     "percent": null,
-     "percent_withheld": "mostly_recounted",
+     "percent": 340.0,
+     "percent_withheld": null,
      "span_days": 4.0,
      "per_week": 30,
      "turnover": null,
@@ -117,7 +118,7 @@
       "latest": 0.22,
       "denominator_start": 10000,
       "denominator_latest": 10000,
-      "percent": null
+      "percent": 339.99999999999994
      }
     },
     "netted": [
@@ -131,7 +132,7 @@
      2,
      3
     ],
-    "index_base": null,
+    "index_base": 5.0,
     "arrived_by": null
    }
   ],
@@ -140,6 +141,7 @@
    {
     "name": "greenhouse:acme",
     "label": "Acme",
+    "whole_company": true,
     "estimated": false,
     "move": {
      "start": 50,
@@ -160,8 +162,8 @@
       }
      ],
      "not_hiring_total": -45,
-     "percent": null,
-     "percent_withheld": "mostly_recounted",
+     "percent": 340.0,
+     "percent_withheld": null,
      "span_days": 4.0,
      "per_week": 30,
      "turnover": null,
@@ -170,7 +172,7 @@
       "latest": 0.22,
       "denominator_start": 10000,
       "denominator_latest": 10000,
-      "percent": null
+      "percent": 339.99999999999994
      }
     },
     "netted": [],

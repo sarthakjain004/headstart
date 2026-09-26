@@ -104,6 +104,7 @@
   "total": {
    "name": "__total__",
    "label": "",
+   "whole_company": true,
    "estimated": false,
    "move": {
     "start": 312,
@@ -118,8 +119,8 @@
      }
     ],
     "not_hiring_total": -157,
-    "percent": null,
-    "percent_withheld": "mostly_recounted",
+    "percent": 13.548387096774196,
+    "percent_withheld": null,
     "span_days": 4.0,
     "per_week": 37,
     "turnover": null,
@@ -128,7 +129,7 @@
      "latest": 17.599999999999998,
      "denominator_start": 1000,
      "denominator_latest": 1000,
-     "percent": null
+     "percent": 13.548387096774182
     }
    },
    "netted": [
@@ -142,7 +143,7 @@
     2,
     3
    ],
-   "index_base": null,
+   "index_base": 155,
    "arrived_by": null,
    "points": [
     312,
@@ -156,6 +157,7 @@
    {
     "name": "big",
     "label": "big",
+    "whole_company": false,
     "estimated": false,
     "move": {
      "start": 100,
@@ -193,6 +195,7 @@
    {
     "name": "embedded",
     "label": "embedded",
+    "whole_company": false,
     "estimated": false,
     "move": {
      "start": 200,
@@ -237,6 +240,7 @@
    {
     "name": "tiny",
     "label": "tiny",
+    "whole_company": false,
     "estimated": false,
     "move": {
      "start": 12,
@@ -284,6 +288,7 @@
    {
     "name": "greenhouse:acme",
     "label": "Acme",
+    "whole_company": true,
     "estimated": false,
     "move": {
      "start": 312,
@@ -298,8 +303,8 @@
       }
      ],
      "not_hiring_total": -157,
-     "percent": null,
-     "percent_withheld": "mostly_recounted",
+     "percent": 13.548387096774196,
+     "percent_withheld": null,
      "span_days": 4.0,
      "per_week": 37,
      "turnover": null,
@@ -308,7 +313,7 @@
       "latest": 17.599999999999998,
       "denominator_start": 1000,
       "denominator_latest": 1000,
-      "percent": null
+      "percent": 13.548387096774182
      }
     },
     "netted": [],

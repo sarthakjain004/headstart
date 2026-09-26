@@ -111,6 +111,7 @@
   "total": {
    "name": "__total__",
    "label": "",
+   "whole_company": false,
    "estimated": false,
    "move": {
     "start": 150,
@@ -153,6 +154,7 @@
    {
     "name": "mid",
     "label": "mid",
+    "whole_company": false,
     "estimated": false,
     "move": {
      "start": 150,
@@ -200,6 +202,7 @@
    {
     "name": "greenhouse:acme",
     "label": "Acme",
+    "whole_company": false,
     "estimated": false,
     "move": {
      "start": 100,
@@ -228,6 +231,7 @@
    {
     "name": "lever:beta",
     "label": "Beta",
+    "whole_company": false,
     "estimated": false,
     "move": {
      "start": 50,

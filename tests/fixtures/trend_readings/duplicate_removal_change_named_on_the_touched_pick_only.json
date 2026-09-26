@@ -112,6 +112,7 @@
    {
     "name": "greenhouse:acme",
     "label": "Acme",
+    "whole_company": true,
     "estimated": false,
     "move": {
      "start": 100,
@@ -156,6 +157,7 @@
    {
     "name": "eightfold:micron",
     "label": "Micron",
+    "whole_company": true,
     "estimated": false,
     "move": {
      "start": 100,
@@ -203,6 +205,7 @@
    {
     "name": "greenhouse:acme",
     "label": "Acme",
+    "whole_company": true,
     "estimated": false,
     "move": {
      "start": 100,
@@ -238,6 +241,7 @@
    {
     "name": "eightfold:micron",
     "label": "Micron",
+    "whole_company": true,
     "estimated": false,
     "move": {
      "start": 100,
