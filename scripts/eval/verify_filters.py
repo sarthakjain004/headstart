@@ -206,6 +206,11 @@ def _row_ok(row: dict) -> bool:
     return bool(row.get("title") and row.get("url"))
 
 
+# The INR bracket the salary cases send, named once so the request and its check cannot drift.
+_SALARY_FLOOR_INR = 500_000
+_SALARY_CEILING_INR = 5_000_000
+
+
 def _inr_bound_in(row: dict, bound: int, *, is_floor: bool) -> int | None:
     """An INR salary bound restated in ``row``'s own currency, as the Space compiles it.
 
@@ -294,7 +299,12 @@ def run_checks(base: str, atses: list[str]) -> list[dict]:
         cases.append(
             (
                 f"salary_min+currency [{q}]",
-                {"q": q, "salary_min": "500000", "salary_currency": "INR", "k": 30},
+                {
+                    "q": q,
+                    "salary_min": str(_SALARY_FLOOR_INR),
+                    "salary_currency": "INR",
+                    "k": 30,
+                },
                 lambda r: (
                     (
                         r.get("max_salary_annual")
@@ -302,7 +312,8 @@ def run_checks(base: str, atses: list[str]) -> list[dict]:
                         else r.get("min_salary_annual")
                     )
                     is not None
-                    and (floor := _inr_bound_in(r, 500_000, is_floor=True)) is not None
+                    and (floor := _inr_bound_in(r, _SALARY_FLOOR_INR, is_floor=True))
+                    is not None
                     and (
                         r.get("max_salary_annual")
                         if r.get("max_salary_annual") is not None
@@ -316,10 +327,17 @@ def run_checks(base: str, atses: list[str]) -> list[dict]:
         cases.append(
             (
                 f"salary_max+currency [{q}]",
-                {"q": q, "salary_max": "5000000", "salary_currency": "INR", "k": 30},
+                {
+                    "q": q,
+                    "salary_max": str(_SALARY_CEILING_INR),
+                    "salary_currency": "INR",
+                    "k": 30,
+                },
                 lambda r: (
                     r.get("min_salary_annual") is not None
-                    and (ceiling := _inr_bound_in(r, 5_000_000, is_floor=False))
+                    and (
+                        ceiling := _inr_bound_in(r, _SALARY_CEILING_INR, is_floor=False)
+                    )
                     is not None
                     and r.get("min_salary_annual") <= ceiling
                 ),
