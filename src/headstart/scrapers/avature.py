@@ -55,6 +55,7 @@ from urllib.parse import urljoin
 
 from headstart.boards import company_name
 from headstart.jobs.job import Job, html_to_text, is_remote
+from headstart.network import http
 from headstart.scrapers.base import USER_AGENT, BaseScraper, DetailRequest
 from headstart.scrapers.job_posting_jsonld import (
     find_job_posting,
@@ -184,7 +185,7 @@ class AvatureScraper(BaseScraper):
         await self.pacer.wait_async()
         return await super()._fetch_async(session, method, moved, **kwargs)
 
-    def _text(self, url: str) -> str:
+    def _get_text(self, url: str) -> str:
         response = self._fetch(
             "GET", url, headers={"User-Agent": USER_AGENT}, timeout=60
         )
@@ -193,7 +194,7 @@ class AvatureScraper(BaseScraper):
 
     def fetch_raw(self) -> Any:
         portals = sorted(
-            _SITEMAP_LINE.findall(self._text(self.url())),
+            _SITEMAP_LINE.findall(self._get_text(self.url())),
             key=lambda sitemap: bool(_PRIVATE_PORTAL.search(sitemap)),
         )
         listed: dict[str, dict[str, str]] = {}
@@ -201,8 +202,8 @@ class AvatureScraper(BaseScraper):
             if not index_url.endswith("sitemap_index.xml"):
                 continue  # the root `/sitemap.xml` lists only the favicon
             own: list[dict[str, str]] = []
-            for sitemap in _LOC.findall(self._text(index_url)):
-                for row in listing_rows(self._text(sitemap)):
+            for sitemap in _LOC.findall(self._get_text(index_url)):
+                for row in listing_rows(self._get_text(sitemap)):
                     if row["id"] not in listed:
                         listed[row["id"]] = row
                         own.append(row)
@@ -249,7 +250,7 @@ class AvatureScraper(BaseScraper):
             response = self._fetch(
                 "GET", request.url, headers=dict(request.headers), **request.options
             )
-        except Exception:  # noqa: BLE001 - an unsettled portal is read, not dropped
+        except http.RequestsError:  # an unsettled portal is read, not dropped
             return False
         return "/Login" in _location(response)
 
