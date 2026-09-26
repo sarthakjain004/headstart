@@ -35,8 +35,9 @@ none of its own and probes DEAD; the pool holds canonical hosts.
 **The listing is the sitemap; a capped one is marked short.** A job URL is recognised by its shape
 (`[/{lang}]/{word}/{place}/{title}/{companyId}/{jobId}`), since `{word}` is localised (`emploi`,
 `banen`, CJK). One GET of the front's `/search-jobs` page — not the `/search-jobs/` endpoint
-robots.txt names — reads its stated total, and a sitemap short of it marks the Board truncated
-unless negligible (ADR-0121).
+robots.txt names — reads its stated total. A sitemap at a measured cap (500 or 10,000) marks the
+Board truncated outright, since the remainder is unreachable every run (ADR-0053); any other
+shortfall is truncated unless negligible (ADR-0121).
 
 **One job page per posting, no tech gate, no held-detail skip.** The page's JSON-LD `JobPosting`,
 else `gtm_tbcn_*` meta tags and the `ats-description` block; department from
@@ -50,7 +51,9 @@ owner's decision of 2026-09-26, the opposite of Phenom's landing rule on purpose
 apply URL is resolved to a Scrapable Board through that ATS's own `slug_from` (Workday, Taleo
 Enterprise, SmartRecruiters, Greenhouse, Lever by URL shape; host-keyed Boards — iCIMS,
 SuccessFactors RMK, Eightfold, Phenom, Oracle — by host; Avature by tenant label), and one INFO line per Board
-states `Front duplication k/n postings apply on a Scrapable Board`, with `front_duplicated` and
+states `Front duplication at least k/n postings apply on a Scrapable Board` ("at least": a
+SuccessFactors apply form names no Board key), or `Front duplication not measured (no ledger)`
+where no ledger sits beside the checkout, with `front_duplicated` and
 `front_postings` in the Board's telemetry. The decision is to be revisited from those numbers. A
 front and its Backing Board are **not** joined in `company_directory`: both copies are served, so
 a joined entry would count twice.
@@ -71,7 +74,7 @@ under ADR-0158's ~2 MB bar (within 2x of it).
 - **Gate the front against its Backing Board, as Phenom does.** The owner declined it for now:
   Front duplication is logged instead, so the cost of serving both copies is known before it is
   cut.
-- **Read `/search-jobs/results` past a sitemap cap.** It is the complete surface, and 7 of the 12
+- **Read `/search-jobs/results` past a sitemap cap.** It is the complete surface, and 7 of the 13
   capped fronts do not disallow it; left as a follow-up rather than a per-front robots branch in
   the first build. The caps hide ~29,700 stated postings today.
 - **A pre-page tech gate on the URL slug.** Rejected at 15.1% recall loss, past Avature's accepted

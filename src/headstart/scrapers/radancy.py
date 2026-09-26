@@ -20,7 +20,8 @@ alone is the native id.
 **The listing is ``/sitemap.xml``, and on some fronts it is capped.** Across 188 live fronts it
 listed 175,485 postings against the 205,214 the fronts' own ``/search-jobs`` pages state
 (``data-total-job-results``): 160 matched exactly and 169 to within five, and 14 were short by
-more — 12 capped at exactly 500 and one at 10,000 (``jobs.walgreens.com`` lists 500 of 22,544).
+more — 12 capped at exactly 500, one at 10,000 and one short by chance (``jobs.walgreens.com``
+lists 500 of 22,544).
 No paging parameter reaches past the cap (``?page=2``, ``?p=2`` and ``sitemap-2.xml`` all return
 the same 500). ``robots.txt`` on 151 of the 188 says ``Disallow: /search-jobs/``, where
 TalentBrew's paginated results endpoint lives, so the sitemap is the one listing this scraper

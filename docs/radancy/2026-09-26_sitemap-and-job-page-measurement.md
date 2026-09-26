@@ -67,7 +67,7 @@ on 16 and read 527 of 529 on the 17th. Across all 188 live fronts it listed 175,
 them at exactly 500** (`jobs.walgreens.com`: 500 of 22,544; `careers.walmart.ca`: 500 of 5,439)
 and **one at 10,000** (`jobs.greatclips.com`: 10,000 of 11,989). No paging reaches past the cap:
 `?page=2`, `?p=2`, `?pageNumber=2` and `sitemap-2.xml` return the same 500; `sitemap2.xml`,
-`sitemap_index.xml` and `jobs-sitemap.xml` redirect away. 7 of the 12 capped fronts do not
+`sitemap_index.xml` and `jobs-sitemap.xml` redirect away. 7 of the 13 capped fronts (all at 500) do not
 disallow `/search-jobs/`; reading their results endpoint is the follow-up that would recover
 most of the ~29,700 postings the fronts state beyond their sitemaps.
 
