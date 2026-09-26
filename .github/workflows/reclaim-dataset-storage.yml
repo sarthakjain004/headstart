@@ -50,7 +50,8 @@ jobs:
       # No uv here on purpose: `pipeline.yml` documents its `UV_VERSION` pin as a single
       # hand-maintained edit point, and this job installs one pure-Python package, so a second
       # copy of that literal would buy nothing and drift.
-      - run: pip install -e . huggingface_hub
+      # `<2`, like every pipeline.yml install: one huggingface_hub major until 2.x is measured.
+      - run: pip install -e . "huggingface_hub<2"
       - name: Reclaim dataset storage
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}

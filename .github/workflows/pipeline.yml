@@ -597,7 +597,8 @@ jobs:
           # Distinct key from embed's: embed_plan loads only the TOKENIZER, so a shared
           # key let this job win the race and publish a weightless cache that all 15
           # embed shards then hit, re-downloading ~550 MB each and never re-saving it.
-          key: hf-tokenizer-nomic-embed-text-v1.5
+          # Names the pinned revision embed_plan loads, like embed's key.
+          key: hf-tokenizer-nomic-embed-text-v1.5-e9b6763023c6
       - name: Download meta + priority state (light — the embed diff + ledger blend)
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
@@ -723,7 +724,7 @@ jobs:
           # No `cache: pip`, and uv rather than pip — see the join job's notes.
       - run: |
           pip install "uv==$UV_VERSION"
-          uv pip install --system --torch-backend cpu -e ".[embed]"
+          uv pip install --system --torch-backend cpu -e ".[embed]" "huggingface_hub<2"
       - name: Cache the embedding model
         id: model-cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -949,7 +950,8 @@ jobs:
       # brand-new ~755 MB blob that HF stores in full and keeps forever; at ~1.9 GB/run the 100 GB
       # quota filled in ~45 runs. Lance table data appends instead: `sync`/`prune` write small new
       # fragments and leave the big existing data files untouched. `refresh-indexes` deliberately
-      # adds ~402 MB of replacement index files at 509k rows (ADR-0174), reclaimed by cleanup.
+      # adds ~402 MB of replacement index files at 509k rows (ADR-0174); publication deletes
+      # the superseded ones (ADR-0244) and reclaim_storage frees their blobs.
       - name: Upload index state
         id: publish
         if: needs.scrape-plan.outputs.run == 'true'
@@ -1049,8 +1051,9 @@ jobs:
           # set for THIS table, and if data/state below then failed, a table published alone was
           # paired on the Hub with the previous run's set — an absent/present/absent id was then
           # evicted on one miss. The ADR-0227 eviction queue rides the same commit, so a failed
-          # data/state upload cannot lose the closures this run made. Additive, like the other
-          # uploads (see the --delete note above).
+          # data/state upload cannot lose the closures this run made. Additive for table
+          # fragments (see the --delete note above), but the same commit deletes the superseded
+          # `_indices/` directories (ADR-0244).
           publish lancedb_index python -m headstart.ingest.index_publish "$HF_DATASET"
           # Append-only (ADR-0050): each run adds small per-ATS fragments and leaves the base
           # files alone, so this uploads ~430 KB rather than re-minting the ~174 MB store.
