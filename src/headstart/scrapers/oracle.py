@@ -407,7 +407,8 @@ class OracleScraper(BaseScraper):
             # Kept for the employment type, department and remote the payload still states;
             # counted as a gap for the description (ADR-0201).
             return DetailWithoutDescription(
-                items[0], "200 without ExternalDescriptionStr"
+                items[0],
+                "200 without ExternalDescriptionStr or responsibilities/qualifications",
             )
         return items[0]
 

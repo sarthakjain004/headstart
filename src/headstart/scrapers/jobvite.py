@@ -106,7 +106,13 @@ from typing import Any
 
 from headstart.jobs.job import Job, html_to_text, is_remote
 from headstart.network import http
-from headstart.scrapers.base import USER_AGENT, BaseScraper, DetailLost, DetailRequest
+from headstart.scrapers.base import (
+    USER_AGENT,
+    BaseScraper,
+    DetailLost,
+    DetailRequest,
+    gone_board_error,
+)
 from headstart.scrapers.job_posting_jsonld import find_job_posting, hiring_organization
 
 #: Detail pages are 40-110 KB each and every one hits the same origin, so the fan-out stays
@@ -268,9 +274,8 @@ class JobviteScraper(BaseScraper):
             # Jobvite's own "no such tenant" (module docstring), raised in the shape
             # `board_failures.is_gone` matches so the Board earns ADR-0162 gone-strikes: 22
             # raises across runs 36200233818..36218633315 earned none.
-            raise http.RequestsError(
-                f"HTTP Error 410: {url} -> {response.status_code} {location}; "
-                "tenant departed"
+            raise gone_board_error(
+                f"{url} -> {response.status_code} {location}; tenant departed"
             )
         if response.status_code != 200:
             raise http.RequestsError(

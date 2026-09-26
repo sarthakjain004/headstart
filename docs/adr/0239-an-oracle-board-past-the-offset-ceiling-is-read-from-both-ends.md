@@ -12,7 +12,7 @@ stated more, whatever share it read, because the remainder was unreachable on ev
 
 The walk also misread its own ceiling. It advanced its offset before testing for the empty page,
 so a Board that ended on the empty page at offset 9,800 (which the API still serves) looked like
-it had passed 10,000. `oracle:hcbt.fa.em2` (9,621 stated, 9,608 served) was truncated for that on
+it had passed 10,000. `oracle:hcbt.fa.em2` (run 36218633315: 9,611 read of 9,621 stated) was truncated for that on
 every run in 36200233818..36218633315.
 
 ## Decision
@@ -27,7 +27,7 @@ two ends is out of reach, and a Board stating more than about 20,000 still falls
 tolerance and stays truncated.
 
 Measured live on 2026-09-26: `eluq` read 9,975 ids in the default order and 10,000 newest first,
-11,411 together, which is 99.8% of the 11,436 it states. `hcbt` read 9,608 of 9,618 stated and
+11,411 together, which is 99.8% of the 11,436 it states. `hcbt` read 9,608 of the 9,618 it stated that day and
 ended on the empty page at 9,800.
 
 ## Consequences

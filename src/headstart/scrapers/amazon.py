@@ -109,6 +109,7 @@ _PAGE_WORKERS = 16
 #: How long the CAPTCHA'd listing pages wait before their one re-fetch. Measured live: a retry
 #: right away recovered little, while one ~2–3 minutes later recovered 8 of 8. The wall lost
 #: 0–72 of 266 pages a run and truncated the Board on 4 of runs 36200233818..36218633315.
+#: 120 is the low end of that window: the least wait that still recovered every page measured.
 _CAPTCHA_WAIT_SECONDS = 120
 _CAPTCHA = "CAPTCHA HTML on a 200"
 
@@ -222,6 +223,16 @@ class AmazonScraper(BaseScraper):
             return []
         return data.get("jobs") or []
 
+    def _fetch_pages(self, tasks: list[tuple[str, int]]) -> list[list[dict] | None]:
+        """Each task's page, over whichever fan-out this run uses."""
+        if self.async_fanout_enabled():
+            return self.fan_out_async(
+                tasks, self._page_async, concurrency=_PAGE_WORKERS
+            )
+        return self.fan_out(
+            tasks, self._page, workers=_PAGE_WORKERS, what=self.board_key()
+        )
+
     def fetch_raw(self) -> Any:
         categories = self._categories()
         tasks: list[tuple[str, int]] = []
@@ -241,14 +252,7 @@ class AmazonScraper(BaseScraper):
         # raised anything else comes back None and is counted `unlabelled`.
         self._page_losses: Counter[str] = Counter()
         self._captcha_tasks: list[tuple[str, int]] = []
-        if self.async_fanout_enabled():
-            pages = self.fan_out_async(
-                tasks, self._page_async, concurrency=_PAGE_WORKERS
-            )
-        else:
-            pages = self.fan_out(
-                tasks, self._page, workers=_PAGE_WORKERS, what=self.board_key()
-            )
+        pages = self._fetch_pages(tasks)
         if self._captcha_tasks:
             # One delayed pass over the walled pages; whatever is still walled stays lost, and
             # the tally is re-counted from this pass.
@@ -258,10 +262,12 @@ class AmazonScraper(BaseScraper):
                 f"{self.board_key()}: {len(retry)} of {len(tasks)} listing pages came back "
                 f"as CAPTCHA HTML — re-fetching them once in {_CAPTCHA_WAIT_SECONDS}s"
             )
+            # Blocks this Board's worker, and only this Board's: the one Amazon Board is read
+            # in a shard's first minutes (run 36218633315 finished it ~2 minutes in), so the
+            # wait fits the shard's budget with the rest of its Boards still running beside it.
             time.sleep(_CAPTCHA_WAIT_SECONDS)
-            pages += self.fan_out(
-                retry, self._page, workers=_PAGE_WORKERS, what=self.board_key()
-            )
+            pages += self._fetch_pages(retry)
+            self._captcha_tasks = []  # still-walled pages are tallied; nothing re-fetches them
         # Deduped defensively by native id, not because a job is known to carry more than one
         # business_category (measured: it doesn't — a full walk of one category matched its own
         # facet count exactly, with no drift) but because every other subdivided scraper here

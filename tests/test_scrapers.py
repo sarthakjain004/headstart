@@ -10903,7 +10903,7 @@ def test_zwayam_a_detail_that_answers_empty_keeps_the_listing_text(caplog):
     )
     with caplog.at_level("INFO"):
         jobs = scraper.parse(scraper.fetch_raw(), SCRAPED_AT)
-    assert "2/2 details answered with no longDescription" in caplog.text
+    assert "2 of 2 details that arrived had no longDescription" in caplog.text
     assert {j.id.rsplit(":", 1)[1]: j.description for j in jobs} == {
         "1": "possibly truncated listing",
         "2": None,

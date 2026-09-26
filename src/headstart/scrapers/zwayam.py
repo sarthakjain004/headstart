@@ -738,7 +738,7 @@ class ZwayamScraper(BaseScraper):
             # run when the listing text is empty too, since no description is then stored to
             # skip it by.
             _log.info(
-                f"{self.board_key()}: {bodyless}/{len(texts)} details answered with no "
+                f"{self.board_key()}: {bodyless} of {len(texts)} details that arrived had no "
                 "longDescription — the listing text is kept"
             )
         return {"rows": rows, "link_base": self._link_base() if rows else ""}

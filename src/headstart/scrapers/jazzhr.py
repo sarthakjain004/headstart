@@ -85,8 +85,12 @@ from typing import Any
 
 from headstart.jobs import salary
 from headstart.jobs.job import Job, html_to_text, is_remote
-from headstart.network import http
-from headstart.scrapers.base import BaseScraper, DetailLost, DetailRequest
+from headstart.scrapers.base import (
+    BaseScraper,
+    DetailLost,
+    DetailRequest,
+    gone_board_error,
+)
 from headstart.scrapers.job_posting_jsonld import find_job_posting, jsonld_nodes
 
 #: Detail-pass width. Every tenant is a subdomain of one Cloudflare-fronted origin, so this is a
@@ -252,9 +256,8 @@ class JazzHRScraper(BaseScraper):
         """
         listing = self._get()
         if 'id="jobs_table"' not in listing:
-            raise http.RequestsError(
-                f"HTTP Error 410: {self.url()} -> 200 without the jobs_table shell; "
-                "tenant departed"
+            raise gone_board_error(
+                f"{self.url()} -> 200 without the jobs_table shell; tenant departed"
             )
         return listing
 

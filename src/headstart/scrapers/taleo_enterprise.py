@@ -19,7 +19,9 @@ from __future__ import annotations
 import json
 import math
 import re
+from collections.abc import Mapping
 from datetime import UTC, datetime
+from types import MappingProxyType
 from typing import Any
 from urllib.parse import unquote, urlencode, urlsplit, urlunsplit
 
@@ -58,8 +60,9 @@ _DETAIL_WORKERS = (
 #: requisition fields, while the other 6 parsed and none of 8 on `aa010` carried it (2026-09-26).
 _CLOSED_MARKER = "The job is no longer available."
 #: What :meth:`TaleoEnterpriseScraper.read_detail` answers for that page: a closure, for
-#: ``fetch_raw`` to drop — not a Job and not a lost detail.
-_CLOSED_POSTING: dict[str, str | None] = {}
+#: ``fetch_raw`` to drop — not a Job and not a lost detail. Its own immutable object, compared by
+#: identity, as successfactors' is; empty, so a caller reading it as fields sees none.
+_CLOSED_POSTING: Mapping[str, str | None] = MappingProxyType({})
 
 
 def _canonical(url: str) -> str:
