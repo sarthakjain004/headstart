@@ -46,19 +46,25 @@ QA_HOST = re.compile(r"\.runmytests\.(?:com|eu)$")
 LOC = re.compile(r"<loc>\s*([^<\s]+)\s*</loc>")
 
 
+#: Windows urlscan never answered — reported, never read as "no scans" (a silent 0 is how a
+#: throttled source passes for an exhausted one).
+UNANSWERED: list[date] = []
+
+
 def _search(start: date, end: date) -> dict:
     query = f"domain:tbcdn.talentbrew.com AND date:[{start} TO {end}}}"
     url = "https://urlscan.io/api/v1/search/?" + urllib.parse.urlencode(
         {"q": query, "size": 100}
     )
-    for attempt in range(4):
+    for attempt in range(6):
         try:
             request = urllib.request.Request(url, headers={"User-Agent": UA})
             with urllib.request.urlopen(request, timeout=60) as response:
                 return json.load(response)
         except Exception as exc:  # noqa: BLE001 — urlscan throttles; wait and ask again
             print(f"  {start}: {exc}, retrying", flush=True)
-            time.sleep(10 * (attempt + 1))
+            time.sleep(30 * (attempt + 1))  # 429s on this API cleared within minutes
+    UNANSWERED.append(start)
     return {}
 
 
@@ -129,6 +135,8 @@ def main(argv: list[str]) -> int:
             new += 1
             print(f"  + {front}  (from {host})", flush=True)
     print(f"DONE {new} new fronts -> {out}", flush=True)
+    if UNANSWERED:
+        print(f"NOT MEASURED (urlscan never answered): {UNANSWERED}", flush=True)
     return 0
 
 

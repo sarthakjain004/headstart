@@ -120,6 +120,13 @@ discovery landing (#576) moved five more. Board totals belong in README and CONT
   `WFNPJL…`, `… BVT4` or `TEST CODE`. Read that client's postings before you exclude it: the name
   is a lead, not proof. `WFN - The McDonnel Group` is a real employer, and a test client can
   carry no such name at all.
+- **Radancy holds canonical front hosts only — no alias, QA or employee-only host.** A Radancy
+  TalentBrew front is a Career front, not an ATS (ADR-0246); its Board is its host. Land the host its
+  own sitemap's job URLs carry (`scripts/discover/mine_radancy.py` resolves it): vanity and country
+  hosts redirect to it and probe DEAD. `*.runmytests.com`/`.eu` is Radancy's QA estate and mirrors
+  real fronts. Employee-only fronts (`internal.commonspirit.careers`) go in `PARKED_BOARDS`. A
+  front is landed whether or not its Backing Board is held — the opposite of Phenom's rule, by the
+  owner's decision of 2026-09-26; each run logs its Front duplication instead.
 - **SuccessFactors holds RMK sites only.** `p_successfactors` accepts any `<urlset>`, so a corporate
   site or a Radancy career front probes `live`, and the scraper reads it as 0 jobs or as page titles
   ("Working at TUI"). Before landing a host, confirm a `/job/` page from its sitemap (urlset, RSS or
