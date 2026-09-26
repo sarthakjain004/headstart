@@ -59,6 +59,18 @@ _Avoid_: reading an entry's Boards as additive where the index still holds both 
 **Careers page**:
 A company's own web page that links to or embeds its Board; the input to careers-page discovery, distinct from the Board itself.
 
+**Career front**:
+A branded job site a recruitment-marketing vendor runs for a **Company** — Radancy's TalentBrew, Phenom — whose listing mirrors one or more **Board**s on the Company's real **ATS** and whose Apply button hands off to that ATS. Not an ATS: it stores no applications. Scraped, it is a Board keyed under the vendor (`radancy:jobs.intuit.com`). Sometimes the Company's only public listing: Intuit's Avature Tenant serves an apply form and no job list.
+_Avoid_: "skin" (reserved for résumé Layouts); "career site" or **Careers page** — a Careers page is the company's own page linking to a Board.
+
+**Backing Board**:
+The Board a **Career front**'s posting mirrors, named by the posting's apply URL (`intuit.avature.net/…?pipelineId=23933`); also an Eightfold career site's paired Board (ADR-0210).
+_Avoid_: assuming it is scraped — it may have no public listing (Intuit's), be login-walled, or be dead.
+
+**Front duplication**:
+The share of a **Career front**'s postings whose **Backing Board** is a **Scrapable Board**, so the index serves them twice. For Radancy it is logged each run and not gated — the owner's decision of 2026-09-26, open to revisit; Phenom instead parks every front whose Backing Board is held (CLAUDE.md §Landing rules).
+_Avoid_: reading it as a defect count — it is a measured, accepted cost.
+
 **Slug**:
 The identifier that locates a Company within its ATS (`boards.greenhouse.io/{slug}`). Its form is ATS-specific — a bare label for most, a host for Zoho, a full URL for Workday. A Company's presence on an ATS is just its `(ATS, slug)`. Only the Scraper reads a slug off a ledger or pool row (`slug_from`, ADR-0001); `registry.company_from_row` is the one place a row becomes a `CompanyRef` (ADR-0203).
 _Avoid_: handle, id, key, **token** — Greenhouse's own API spells it `boards-api.greenhouse.io/v1/boards/{token}`, so it leaks in easily; the thing it names is still a Slug, and the thing it locates is a **Board**.
@@ -83,6 +95,10 @@ The employer listed on an ATS, behind a Board; a `CompanyRef` (`ats`, `slug`, `n
 **Tenant** (ADR-0185):
 The customer an ATS hosts, which may hold several **Board**s: Workday's `{company}` across its sites, a Taleo Enterprise host across its career sections, a Taleo Business Edition `org` across its `cws` sites, an ADP Workforce Now client `cid` across its career centers (ADR-0223); on most ATSes it is simply the **Slug**. Usually one **Company**'s, but a holding group's Tenant can carry its portfolio companies' Boards, and a Company on two ATSes has two Tenants.
 _Avoid_: "account" — that is a signed-in person (**Account**); reading the ledgers' `tenant` column as a Tenant — that column holds one Board's slug spelling, site included.
+
+**Portal** (Avature):
+One of an Avature **Tenant**'s named sites on its host (`bloomberg.avature.net/careers`, `/internalcareers`, `jobs.bmc.com/oldcareersportal`), each with its own sitemap named in the host's `robots.txt`. Job ids are Tenant-wide: one id is one posting on every Portal listing it. A Portal whose job pages redirect to `/Login/` is a **non-public site**, as in **Requisition**.
+_Avoid_: "site" alone — Workday's word. Whether a Board is a Portal or the whole Tenant is still undecided (the Avature build's checkpoint).
 
 **Requisition** (ADR-0187, ADR-0210):
 The ATS's own record behind a **Job** — on most ATSes identified by the Job's native id, but on Greenhouse, Taleo Enterprise and SuccessFactors by a separate field, and one requisition can be several Jobs there (a post per location or locale). A Workday **Tenant** can post one requisition to several of its sites, each a **Board**, under the same native id, and so can a Taleo Enterprise, Taleo Business Edition or ADP Workforce Now Tenant across its career sections, sites or centers (ADR-0223); the **Search index** serves it once per Tenant, not once per Board, preferring a public site: one whose name carries `hidden`, `confidential`, `internal`, `private`, `sourcer` or `targeted` is a **non-public site**, kept only when no public site of the Tenant holds the requisition. An Eightfold career site fronting another ATS's Board states that Board's requisition on each posting, so eight ATSes state it as `Job.requisition`, the served `requisition` column keeps it on the rows of the paired Boards (`data/validate/eightfold_backing.csv`), and the Search index serves a posting both list once, from the backing Board (ADR-0210).

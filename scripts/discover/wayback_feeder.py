@@ -293,6 +293,9 @@ ATS_HOSTS: dict[str, tuple[tuple[str, Style], ...]] = {
     # One host, no regional pods — checked live against Wayback CDX (2026-09-16): a
     # `matchType=domain` sweep filtered to `/careers` paths found 307 distinct
     # `*.bamboohr.com` hosts and nothing on a second domain.
+    # Label only: a tenant's job portals (`/careers`, `/externalCareers`, …) are resolved from
+    # its robots.txt by the prober, not by this sweep.
+    "avature": _with_style("sub", "avature.net"),
     "bamboohr": _with_style("sub", "bamboohr.com"),
     # One host, `{slug}.breezy.hr` — the label is the slug `breezy.py` keys on. No regional pod:
     # an invented label and a departed tenant both answer the same 404 portal page on this

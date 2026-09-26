@@ -130,6 +130,11 @@ ATS_PATTERNS = {
             r"jobs\.ashbyhq\.com/([a-z0-9][a-z0-9._-]+)",
         ],
     },
+    "avature": {
+        "targets": ["avature.net"],
+        "kind": "label",
+        "patterns": [r"([a-z0-9][a-z0-9-]*)\.avature\.net"],
+    },
     "smartrecruiters": {
         "targets": [
             "jobs.smartrecruiters.com",
