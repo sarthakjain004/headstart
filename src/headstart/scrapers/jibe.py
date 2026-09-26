@@ -148,9 +148,9 @@ def _scraped_icims_tenants() -> frozenset[str]:
     """The iCIMS tenant hosts the iCIMS scraper reads: every Scrapable iCIMS Board, lowercased, read
     once per process from the committed ledger."""
     # Imported here: `scrapable_boards` reaches the scraper registry, which imports this module.
-    from headstart.boards import scrapable_boards
+    from headstart.boards import liveness_ledger, scrapable_boards
 
-    ledger = Path(__file__).resolve().parents[3] / "data" / "validate" / "liveness"
+    ledger = liveness_ledger.dir_for(Path(__file__).resolve().parents[3])
     return frozenset(
         board.lowercase_identity.removeprefix("icims:")
         for board in scrapable_boards.load(ledger, min_jobs=0)

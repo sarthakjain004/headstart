@@ -3,7 +3,8 @@
 `jibe_api_jobs.json` holds ten real `/api/jobs` rows captured 2026-09-24 from nine client hosts,
 in one envelope, with the unused `meta_data`/`qualifications`/`responsibilities` keys removed. They
 cover a posting served in two languages (flyporter 5262), a dead and a live iCIMS tenant (rm, uhs),
-three structured salaries (petsmart hourly range, pepsico weekly value, smoothieking lone ceiling), a repeated multi-place location (dwf), a "Month D, YYYY" date (se) and a
+three structured salaries (petsmart hourly range, pepsico weekly value, smoothieking lone
+ceiling), a repeated multi-place location (dwf), a "Month D, YYYY" date (se) and a
 `location_type: ANY` remote place (incyte). `jibe_costco_facets.json` is costco's page-1 envelope
 without its jobs: the `state` terms that split a Board over the window.
 
@@ -264,9 +265,7 @@ def _page(rows, total):
 def clock(monkeypatch):
     fake = _Clock()
     monkeypatch.setattr(jibe, "time", fake)
-    monkeypatch.setattr(
-        jibe, "_scraped_icims_tenants", lambda: frozenset({UHS_TENANT}), raising=False
-    )
+    monkeypatch.setattr(jibe, "_scraped_icims_tenants", lambda: frozenset({UHS_TENANT}))
     return fake
 
 

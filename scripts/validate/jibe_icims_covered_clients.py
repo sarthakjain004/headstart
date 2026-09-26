@@ -11,11 +11,13 @@ paced per host) and prints one CSV row per client as it completes:
 
     client,postings,on_scraped_icims,elsewhere,verdict
 
-`verdict` is `park` when `postings > 0` and `elsewhere == 0`, `keep` otherwise, `error` when the
-walk raised. `postings` counts one per requisition, as `parse` does. Parked clients are already
-out of the Scrapable list, so re-running this after landing reads only the ones still scraped.
+`postings` is what `JibeScraper.fetch` keeps plus what it drops as iCIMS-covered, so the verdict is
+`parse`'s own rule: `park` when it drops postings and keeps none, `keep` otherwise, `error` when the
+walk raised. Parked clients are already out of the Scrapable list, so re-running this after
+landing reads only the ones still scraped.
 
-    PYTHONPATH=src python -u scripts/validate/jibe_icims_covered_clients.py [--workers 32] > out.csv
+    PYTHONPATH=src python -u scripts/validate/jibe_icims_covered_clients.py [--workers 32] \
+        > experiment/jibe-icims-covered/2026-09-26_jibe-icims-covered-clients.csv
 """
 
 from __future__ import annotations
@@ -25,20 +27,18 @@ import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
-from headstart.boards import scrapable_boards
+from headstart.boards import liveness_ledger, scrapable_boards
 from headstart.scrapers import jibe
 
-LEDGER = Path(__file__).resolve().parents[2] / "data" / "validate" / "liveness"
+LEDGER = liveness_ledger.dir_for(Path(__file__).resolve().parents[2])
 
 
 def classify(client: str) -> str:
     scraper = jibe.JibeScraper(client)
-    rows = jibe._english_first(scraper._read_board())
-    covered = jibe._scraped_icims_tenants()
-    on_icims = sum(1 for row in rows if jibe._apply_host(row) in covered)
-    elsewhere = len(rows) - on_icims
-    verdict = "park" if rows and not elsewhere else "keep"
-    return f"{client},{len(rows)},{on_icims},{elsewhere},{verdict}"
+    kept = len(scraper.fetch())
+    dropped = scraper.telemetry.get("icims_covered", 0)
+    verdict = "park" if dropped and not kept else "keep"
+    return f"{client},{kept + dropped},{dropped},{kept},{verdict}"
 
 
 def main() -> int:

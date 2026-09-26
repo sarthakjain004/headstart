@@ -46,9 +46,10 @@ run. commonspirit alone took 515 s a run, and on one run it lengthened a shard's
 
 ## Consequences
 
-- The 97 clients serve their 9,252 postings again. Before and after, live on 2026-09-26: conduent,
-  mhm-services and riteaid went from 0 Jobs to 1,243, 1,087 and 983. The covered clients
-  adastragrp and arrowtransportation read 0 both times, with 7 and 25 dropped.
+- By the walk, the 97 clients' 9,252 postings are on no Scrapable iCIMS Board, so the new rule
+  keeps them. Three were re-scraped before and after, live on 2026-09-26: conduent, mhm-services
+  and riteaid went from 0 Jobs to 1,243, 1,087 and 983. The covered clients adastragrp and
+  arrowtransportation read 0 both times, with 7 and 25 dropped.
 - The gate follows the ledger, not the live host. When an iCIMS Board dies in the ledger, its Jibe
   postings come back on the next run. When a dead one is re-landed live, they are dropped again. A
   tenant that is live in the ledger but has lately stopped answering drops its Jibe postings until
@@ -57,5 +58,9 @@ run. commonspirit alone took 515 s a run, and on one run it lengthened a shard's
 - A parked client stays parked when its postings move off iCIMS. Re-run the script after landing
   jibe or icims rows. It reads only the clients still scraped, so bringing a parked client back
   means taking it out of `PARKED_BOARDS` and running the script again.
+- A scraper now reads the Scrapable Board list, the reverse of the usual direction, in which
+  `boards/` reads the scrapers. The import is deferred because `scrapable_boards` reaches the
+  scraper registry. The list is the only thing that says which iCIMS Boards are scraped, and it
+  is the list `index prune` keeps. A missing ledger yields an empty set, so nothing is dropped.
 - Scrape shards now load the whole Scrapable list once per process that meets a Jibe Board with
   iCIMS postings (~1.7 s).
