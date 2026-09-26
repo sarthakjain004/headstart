@@ -24,14 +24,17 @@ The round-17 live critic of company trends (7.5/10) found two things the owner d
 ## Decision
 
 1. **A category, level or role line is mostly re-counted when its counting changes took openings
-   out, and either took out more than half of its start once its other steps are counted, or
-   left under 5 openings.** Its counting changes are its causes of kind `counting` or
+   out, and either took out more than half of its start once its other steps are counted, or,
+   for a line that started with 20 openings or more, left under 5.** Its counting changes are its causes of kind `counting` or
    `growth_scaled_by_a_change`. Its other steps are duplicates removed, Boards found and a pick
    joining, so its start once they are counted is its netted start less its counting changes.
    More than half of that is the changes taking out more than was left: a start of 100, a found
    Board of +500 and changes of −400 leave 200 of 600, and the line is mostly re-counted though
    200 is above its raw start. A duplicate removal alone never makes a line one: it corrects the
-   count by a known size and estimates nothing. The rule is `line_reading._mostly_recounted`.
+   count by a known size and estimates nothing. A line that started under 20 with little left
+   keeps its plain "too few openings" reason (the owner's call on #731): "2 → 1 after −1" is not
+   mostly re-counted, and the under-5 clause alone labelled 2,284 such lines. The rule is
+   `line_reading._mostly_recounted`.
 2. **A company's own line is never mostly re-counted, and keeps its percentage** (the owner's
    call on #731). That covers every company headline, a company under the Company breakdown,
    the first row with one or several picks, and Hot's rows; the reading marks each such line

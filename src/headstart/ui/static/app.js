@@ -3586,8 +3586,8 @@ function markedText(item){
 //      time; the share's own change is its latest over its start, withheld with the percentage;
 //   6. with no pick nothing is taken out;
 //   7. a category, level or role line mostly re-counted in the window (MOSTLY_RECOUNTED: its
-//      counting changes took openings out, and took out more than was left or left under
-//      INDEX_BASE_FLOOR) gives no percentage, in any unit, and no index base, and says it is
+//      counting changes took openings out, and took out more than was left, or left under
+//      INDEX_BASE_FLOOR of a start of MOVER_FLOOR or more) gives no percentage, in any unit, and no index base, and says it is
 //      one whatever else withholds its percentage; no other line says so. A whole company's
 //      line and the closing row never are.
 // (4, one size in every window, is stated by the tests over narrower windows.) Plus: every count
@@ -3604,12 +3604,12 @@ function checkReading(reading){
       .filter(Boolean).flatMap(r => r.move.not_hiring.map(c => c.label)));
   [...new Set(labels.filter(label => FIELD_ID.test(label)))].sort()
     .forEach(label => out.push(`label '${label}': it is a field id, not words`));
-  // line_reading._mostly_recounted: the steps took openings out, and left under
-  // INDEX_BASE_FLOOR or less than the counting changes took.
+  // line_reading._mostly_recounted: counting changes took openings out, and took more than
+  // was left, or left under INDEX_BASE_FLOOR of a start of MOVER_FLOOR or more.
   const recounted = m => {
     const left = m.latest - m.hiring;
     const counting = m.not_hiring.filter(c => COUNTING_KINDS.has(c.kind)).reduce((sum, c) => sum + c.size, 0);
-    return counting < 0 && (left < INDEX_BASE_FLOOR || -counting > left);
+    return counting < 0 && (-counting > left || (m.start >= MOVER_FLOOR && left < INDEX_BASE_FLOOR));
   };
   [reading.total, ...(reading.lines || [])].filter(r => r && r.index_base != null).forEach(r => {
     const first = r.netted.find(v => v != null);

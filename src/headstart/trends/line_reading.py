@@ -1376,7 +1376,9 @@ def _line_move(
     # the percentage, the reader still learns the line is mostly re-counted (review of #731). A
     # whole company's line never is, but still gives no percentage off a netted start under
     # INDEX_BASE_FLOOR.
-    if not whole_company and _mostly_recounted(netted_start, _counting(not_hiring)):
+    if not whole_company and _mostly_recounted(
+        start, netted_start, _counting(not_hiring)
+    ):
         withheld = MOSTLY_RECOUNTED
     elif span_days < MIN_SPAN_DAYS:
         withheld = f"a window under {MIN_SPAN_DAYS} days"
@@ -1424,16 +1426,19 @@ def _rounded_for_drawing(values) -> tuple[float | None, ...]:
     return tuple(None if v is None else round(v, _DRAWN_DECIMALS) for v in values)
 
 
-def _mostly_recounted(netted_start: int, counting: int) -> bool:
+def _mostly_recounted(start: int, netted_start: int, counting: int) -> bool:
     """Whether a line is mostly re-counted in its window (MOSTLY_RECOUNTED): its counting
     changes took openings out (``counting``, the sum of its counting-change causes, is below 0),
     and either they took out more than half of its start once its other steps (duplicates
-    removed, Boards found, a pick joining) are counted, or under INDEX_BASE_FLOOR is left. That
-    start is ``netted_start − counting``, so more than half of it is ``−counting >
-    netted_start``: a start of 100, a found Board of +500 and changes of −400 leave 200 of 600,
-    and are mostly re-counted."""
+    removed, Boards found, a pick joining) are counted, or a line that started with MOVER_FLOOR
+    openings or more has under INDEX_BASE_FLOOR left. That start is ``netted_start − counting``,
+    so more than half of it is ``−counting > netted_start``: a start of 100, a found Board of
+    +500 and changes of −400 leave 200 of 600, and are mostly re-counted. A line that started
+    under MOVER_FLOOR with little left keeps its plain "too few" reason (the owner's call on
+    #731): "2 → 1 after −1" is not mostly re-counted."""
     return counting < 0 and (
-        netted_start < INDEX_BASE_FLOOR or -counting > netted_start
+        -counting > netted_start
+        or (start >= MOVER_FLOOR and netted_start < INDEX_BASE_FLOOR)
     )
 
 
@@ -1515,8 +1520,8 @@ def check_reading(reading: dict) -> list[str]:
        over its start, and is withheld with the percentage.
     6. With no pick nothing is taken out.
     7. A category, level or role line mostly re-counted in the window (MOSTLY_RECOUNTED: its
-       counting changes took openings out, and took out more than was left or left under
-       INDEX_BASE_FLOOR) gives no percentage, in any unit, and no index base, and says it is
+       counting changes took openings out, and took out more than was left, or left under
+       INDEX_BASE_FLOOR of a start of MOVER_FLOOR or more) gives no percentage, in any unit, and no index base, and says it is
        one whatever else withholds its percentage; no other line says so. A whole company's
        line and the closing row never are.
     Plus: every count is a whole number; a line's "Not hiring" total is its causes' sum; its
@@ -1556,7 +1561,7 @@ def check_reading(reading: dict) -> list[str]:
                 )
             m = r["move"]
             if not r.get("whole_company") and _mostly_recounted(
-                m["latest"] - m["hiring"], _counting(_causes_of(m))
+                m["start"], m["latest"] - m["hiring"], _counting(_causes_of(m))
             ):
                 out.append(f"line {r['name']}: it is indexed though mostly re-counted")
     lines_now = [r["move"]["latest"] for r in reading.get("lines") or []]
@@ -1664,7 +1669,7 @@ def check_reading(reading: dict) -> list[str]:
         ):
             out.append(f"{where}: its percentage is not hiring over the netted start")
         recounted = not (whole_company or is_closing_row) and _mostly_recounted(
-            netted_start, _counting(_causes_of(m))
+            m["start"], netted_start, _counting(_causes_of(m))
         )
         if recounted and m["percent"] is not None:
             out.append(f"{where}: it gives a percentage though mostly re-counted")

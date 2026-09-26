@@ -393,6 +393,10 @@ def test_a_line_mostly_recounted_gives_no_percentage_in_any_unit() -> None:
     tiny = lines["tiny"]
     assert tiny["index_base"] is None
     assert tiny["move"]["percent_withheld"] == MOSTLY_RECOUNTED
+    # 1 of 4 taken, 3 left: under 5, but it started under 20, so it is too few openings, not
+    # mostly re-counted (the owner's call on #731).
+    small = lines["small"]["move"]
+    assert small["percent_withheld"] == f"under {MOVER_FLOOR} openings at the start"
 
 
 def test_mostly_recounted_is_measured_after_a_found_board() -> None:
