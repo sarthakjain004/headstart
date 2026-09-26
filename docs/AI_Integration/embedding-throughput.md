@@ -77,6 +77,11 @@ doc plus count-padding — an MPS-only shape workaround that no longer runs on C
 Re-measure with the recipe below after the next run and update `_S_PER_DOC`; until then the
 planner's makespan prediction reads high.
 
+**Re-measured 2026-09-26** over all 14 embed shards of runs 36200233818-36221241950, timing each
+`[embed_run] bucket` line to the next: ≤512 0.60, ≤1024 1.46, ≤2048 2.22, ≤4096 4.88 s/doc
+(211 / 433 / 559 / 30 Docs). `_S_PER_DOC` is now 0.6 / 1.5 / 2.2 / 4.9, and `_TARGET_SECONDS`
+fell from 300 to 165 s to keep the fan-out those runs planned (ADR-0242).
+
 ## The rates above are one rate, not four (ADR-0029)
 
 Read the two tables again by **tokens per second** rather than seconds per Doc:
