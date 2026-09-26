@@ -277,8 +277,9 @@ several filters before it reaches what a run can even consider — `registry.DIS
 vendor test/sandbox boards, aliases (one board serving two hostnames, a career section or site whose
 every posting another of the same tenant already lists, or an Eightfold career site whose backing
 ATS board already serves it), case-variant duplicate spellings, boards whose newest probe says
-`dead`, and a handful of real boards deliberately parked — most because their cost
-dwarfs their tech yield, two because what they serve is near-duplicate spam. `CONTEXT.md`'s
+`dead`, and real boards deliberately parked — most of them Jibe career sites whose every posting
+another board we scrape already serves, a few because their cost dwarfs their tech yield, two
+because what they serve is near-duplicate spam. `CONTEXT.md`'s
 §Counting Boards names each of these stages precisely, and `tests/test_board_counts.py` keeps this
 table in lockstep with the committed ledger:
 
@@ -290,13 +291,13 @@ table in lockstep with the committed ledger:
 | − alias ledger | −1,170 | one board under a second hostname or label, a career section or career site another of the same tenant already covers, or an Eightfold career site its backing ATS board already serves (ADR-0111, ADR-0182, ADR-0186, ADR-0202, ADR-0205, ADR-0222) |
 | − case-variant dedupe | −6,629 | `company/External` and `company/external` are one board (ADR-0023) |
 | − newer `dead` row | −4 | a board is read only if no `dead` row is newer than its newest `live` one; all 4 re-probed dead (ADR-0219) |
-| − `excluded_and_parked.PARKED_BOARDS` | −13 | real boards withheld for now — five for scrape cost, two for near-duplicate spam, six Jibe clients whose every posting is on a Workday or Oracle board already held |
-| = **Scrapable Board** | **156,765** | |
+| − `excluded_and_parked.PARKED_BOARDS` | −301 | real boards withheld for now — five for scrape cost, two for near-duplicate spam, six Jibe clients whose every posting is on a Workday or Oracle board already held, 288 whose every posting is on an iCIMS board we scrape (ADR-0240) |
+| = **Scrapable Board** | **156,477** | |
 
 That order matters: excluding before deduping reads −176 and −6,629, deduping first reads −173,
-because three excluded boards were themselves duplicates. Both land on 156,765.
+because three excluded boards were themselves duplicates. Both land on 156,477.
 
-Of those, **103,479 are currently hiring** — the 53,286 live-but-empty boards are skipped as having
+Of those, **103,193 are currently hiring** — the 53,284 live-but-empty boards are skipped as having
 nothing to read. A run takes a bounded slice and splits it between a scored head (top boards by a
 sticky measure of tech-job yield, large enough to hold every board that yields tech) and a tail
 that rotates through everything else, the boards looked at longest ago first, so

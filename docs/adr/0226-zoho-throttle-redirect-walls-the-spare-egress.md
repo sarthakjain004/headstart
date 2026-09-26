@@ -54,3 +54,15 @@ The listing request still follows redirects and cannot wall the group.
   did before this change. No run has shown that yet.
 - The yardstick is the `.com throttle shell` count in `scrape_join`'s Zoho loss-cause line: 3,339
   on the run before this change.
+
+## Amendment (2026-09-26): the egress group is keyed by data centre
+
+The follow-up named under Consequences was taken. `BaseScraper.egress_group` (the ATS by default)
+is what a Board's spare-egress fallback is metered and walled under, and Zoho overrides it to
+`zoho.{centre}` from the `.zohorecruit.{centre}` host (`zoho.com`, `zoho.in`, `zoho.eu`, …); a
+vanity host names no centre and keeps `zoho`. The evidence was the cost this ADR predicted, seen
+in runs 36200233818–36218633315: every Zoho detail ConnectionError came after the group was walled
+onto the spare egress, at 1.18% of `.in` details against 0.01% of `.com`. Now a `.com` throttle
+walls only `.com`. Two consequences: `stream_width` clamps each walled centre separately (Zoho's 6
+streams sit under the clamp either way), and the shard report's egress lines and
+`fanout_retries.py` name `zoho.com`-style groups rather than `zoho`.

@@ -93,3 +93,14 @@ def test_a_material_shortfall_routed_through_the_tolerance_also_logs(caplog):
     assert scraper.truncated == "far short"
     logged = " ".join(r.getMessage() for r in caplog.records)
     assert scraper.board_key() in logged and "far short" in logged
+
+
+def test_a_complete_read_through_the_tolerance_says_nothing(caplog):
+    """Nothing missing is nothing to tolerate: phenom's walk routes every Board through here, and
+    "read N of N (100.000%) — within tolerance … carries the 0 missing id(s)" was ~70 lines a run
+    (runs 36200233818-36218633315), google's and amazon's a few more."""
+    scraper = _scraper()
+    with caplog.at_level(logging.INFO, logger=LOGGER):
+        scraper.mark_truncated_unless_negligible(1000, 1000, "all read")
+    assert scraper.truncated is None
+    assert not [r for r in caplog.records if "within tolerance" in r.getMessage()]

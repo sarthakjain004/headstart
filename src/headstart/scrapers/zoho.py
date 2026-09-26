@@ -53,7 +53,6 @@ from headstart import log
 from headstart.boards import company_name
 from headstart.jobs.job import Job, host_of, html_to_text
 from headstart.network import http
-from headstart.network.fetcher import Fetcher
 from headstart.scrapers.base import BaseScraper, DetailLost, DetailRequest
 
 _log = log.get(__name__)
@@ -78,6 +77,12 @@ class _PostingClosed(DetailLost):
 
     def __init__(self) -> None:
         super().__init__("posting explicitly unavailable")
+
+
+#: What :meth:`ZohoScraper.read_detail` returns for a closed posting — an arrived detail, so the
+#: pass counts no loss, the way successfactors' own ``_CLOSED_POSTING`` works. Counted as a loss,
+#: closures were 2,462 of the 2,545 zoho "detail loss events" in run 36218633315's join.
+_CLOSED_POSTING = object()
 
 
 #: The verdict a closed posting's detail page renders in place of its record, in the Board's
@@ -236,12 +241,14 @@ class ZohoScraper(BaseScraper):
     egress_fallback_on = frozenset({_THROTTLE_STATUS})
     has_detail_pass = True  # per-Job fetch fills `description` (ADR-0050)
 
-    def __init__(
-        self, slug: str, company: str | None = None, fetcher: Fetcher | None = None
-    ) -> None:
-        super().__init__(slug, company, fetcher)
-        # Listed ids whose detail page says the posting is gone, filled by `read_detail`.
-        self._unavailable_ids: set[str] = set()
+    @property
+    def egress_group(self) -> str:
+        # Per data centre: the throttle is .com's, per IP (`_THROTTLE_LOSS`). One group walled
+        # every data centre's Boards onto the spare egress with .com, and there .in's detail pages
+        # failed ConnectionError at 1.18% against .com's 0.01% (runs 36200233818-36218633315). A
+        # vanity host names no data centre and keeps the ATS-wide group.
+        _, dot, centre = self.slug.partition(".zohorecruit.")
+        return f"zoho.{centre}" if dot else "zoho"
 
     @staticmethod
     def slug_from(tenant: str, url: str) -> str:
@@ -290,21 +297,21 @@ class ZohoScraper(BaseScraper):
         # No tech gate: a department-blind gate would drop 47.4% of zoho's tech postings
         # (ADR-0166). No held-description skip either: a stored description does not hold the
         # Salary above.
-        self._unavailable_ids.clear()
-        details = self.run_detail_pass(
+        fetched = self.run_detail_pass(
             ids, key_of=lambda job_id: job_id, what="detail pages"
         )
-        if self._unavailable_ids:
-            # The gap line counts these as lost details; this says they are closures, the way
-            # successfactors reports its own. Accounting is unchanged.
+        unavailable = frozenset(k for k, v in fetched.items() if v is _CLOSED_POSTING)
+        if unavailable:
+            # Not on the gap line, which counts losses: closures are counted here instead, the
+            # way successfactors reports its own.
             _log.info(
-                f"{self.board_key()}: {len(self._unavailable_ids)} of {len(ids)} job pages "
+                f"{self.board_key()}: {len(unavailable)} of {len(ids)} job pages "
                 "say the posting is not available — dropped as closed"
             )
         return {
             "page": page,
-            "details": details,
-            "unavailable": frozenset(self._unavailable_ids),
+            "details": {k: v for k, v in fetched.items() if v is not _CLOSED_POSTING},
+            "unavailable": unavailable,
         }
 
     @staticmethod
@@ -336,13 +343,11 @@ class ZohoScraper(BaseScraper):
             return _THROTTLE_LOSS
         return super().detail_status_loss(response)
 
-    def read_detail(self, job_id: str, response: Any) -> dict:
+    def read_detail(self, job_id: str, response: Any) -> Any:
         try:
             return self._detail_record_of(response.text)
-        except DetailLost as lost:
-            if isinstance(lost, _PostingClosed):
-                self._unavailable_ids.add(job_id)
-            raise
+        except _PostingClosed:
+            return _CLOSED_POSTING
 
     @staticmethod
     def _detail_record_of(page: str) -> dict:
