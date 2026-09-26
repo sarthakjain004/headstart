@@ -10,9 +10,9 @@ the 9 min even share", the actual run confirming a straggler is not a new findin
 
 **Five things a plan run tells you that nothing else does:**
 
-1. **Slice composition** (`scrape_plan` only) — `slice: N boards (P priority + E exploration); G
+1. **Slice composition** (`scrape_plan` only) — `slice: N boards (P Head + E Tail); G
    hold unsettled descriptions, out of U gap boards (J jobs) still to drain`. `P` boards are ranked
-   by measured tech yield; `E` (logged as `exploration`) is the Tail filling out the target,
+   by measured tech yield; `E` (logged as `exploration` before ADR-0242) is the Tail filling out the target,
    oldest look first since ADR-0229 (a random draw before it). A scrape that looks thin on a
    specific ATS may just be which Boards this run's Tail reached, not a regression — check this
    line before calling a per-ATS drop real (the same caution `fanout_corpus.py` already gives for
@@ -71,11 +71,11 @@ QUARANTINE_SKIP = re.compile(
 )
 VALUE_GATE = re.compile(
     r"value gate: skipped (\d+) Board\(s\) costing over (\d+) min for under (\d+) "
-    r"tech jobs/min — (.+)"
+    r"tech jobs/min(?:, or over \d+ min for none)? — (.+)"
 )
 GATE_BOARD = re.compile(r"(\S+) \(([\d.]+)/min\)")
 SLICE = re.compile(
-    r"\[scrape_plan\] slice: (\d+) boards \((\d+) priority \+ (\d+) exploration\); "
+    r"\[scrape_plan\] slice: (\d+) boards \((\d+) (?:priority|Head) \+ (\d+) (?:exploration|Tail)\); "
     r"(\d+) hold unsettled descriptions, out of ([\d,]+) gap boards \(([\d,]+) jobs\) "
     r"still to drain"
 )
@@ -91,11 +91,11 @@ COST_COLDSTART = re.compile(r"\[scrape_plan\] cost: no measurements yet")
 # cold start; `scrape_plan_report` says which form it read.
 MAKESPAN = re.compile(
     r"\[scrape_plan\] (\d+) boards across (\d+) shards"
-    r"(?:; predicted makespan ~([\d.]+) min \(total work Σ ([\d.]+) min\)"
+    r"(?:; predicted makespan ~([\d.]+) min \(total work Σ ([\d.]+) (?:serial )?min\)"
     r"| \(cold-start cost units\))"
 )
 SPREAD = re.compile(
-    r"predicted spread: min ([\d.]+) / mean ([\d.]+) / max ([\d.]+) min "
+    r"predicted (?:serial )?spread: min ([\d.]+) / mean ([\d.]+) / max ([\d.]+) min "
     r"\(([\d.]+)x mean\); single-board floor ([\d.]+) min"
 )
 FLOOR_WARN = re.compile(
@@ -144,7 +144,7 @@ def scrape_plan_report(run: Run) -> None:
     s = SLICE.search(text)
     if s:
         print(
-            f"  slice: {s.group(1)} boards ({s.group(2)} priority + {s.group(3)} exploration); "
+            f"  slice: {s.group(1)} boards ({s.group(2)} Head + {s.group(3)} Tail); "
             f"{s.group(4)} hold unsettled descriptions, {s.group(5)} gap boards "
             f"({s.group(6)} jobs) still to drain",
             flush=True,
