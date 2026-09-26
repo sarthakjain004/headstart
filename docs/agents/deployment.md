@@ -255,29 +255,12 @@ stays because the *hazard* it documents outlives the deletion: `merge` uploads `
 folder **without `--delete`**, so any run sitting between `join`'s `state_fetch 'data/state/*'` and
 `merge`'s upload when a delete lands will put the file straight back.
 
-**If it ever comes back, re-run the tool — do not hand-run a recipe.** The heredoc that used to sit
-here has been folded into `scripts/state/retire_legacy_trends_csv.py`, so there is one spelling of
-this operation rather than two that can drift:
-
-```bash
-python scripts/state/retire_legacy_trends_csv.py            # report only
-python scripts/state/retire_legacy_trends_csv.py --apply    # delete it
-```
-
-It is idempotent (`already gone — nothing to do`, exit 0) and enforces **two of the three**
-preconditions this section established: the Parquet must exist, *and* it must hold more than
-`MIN_ROWS = 2_400_000` rows, read from its own Parquet metadata. **The third — timing — is prose
-only, and is therefore the one a re-run will skip.** Nothing in the script checks whether a
-pipeline run is mid-flight; you have to. The row-count floor is the point — it is what turns a bad
-fold-in from silent permanent data loss into a recoverable state, because the CSV is still there to
-migrate again. The hazard is concrete: `merge` running without the `corpus-state` artifact writes a
-fresh one-tick ledger (~10,700 rows) that the upload then publishes over the real one, and
-`role_trends.py` folds the CSV back in **only when the Parquet is absent** — so a short-but-present
-Parquet plus a deleted CSV loses every historical row with nothing to say so.
-
-Timing matters as much as the guard: delete only while no run sits between `join`'s fetch and
-`merge`'s upload. On 2026-09-21 that meant waiting for run `35628837050` to be in `scrape` with
-zero `join`/`merge` jobs started.
+**Since ADR-0230 step 6 (2026-09-26) the hazard is harmless.** Nothing reads `role_trends.csv` or
+the `role_trends.parquet` ledger that replaced it: the fold-in that could restore history from the
+CSV went with the old writer, and the Parquet was itself retired. If the CSV ever reappears, delete
+it with `HfApi().delete_file("data/state/role_trends.csv", repo_type="dataset", ...)` while no
+pipeline run is in flight. `scripts/state/retire_legacy_trends_csv.py`, whose guard read the
+now-retired Parquet, is deleted.
 
 ### Verified 2026-09-21, before deleting
 The Parquet's row-group `ts` statistics spanned `2026-08-11T12:57:28+00:00` →
