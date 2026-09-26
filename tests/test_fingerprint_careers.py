@@ -621,7 +621,25 @@ def test_radancy_and_real_workdaysite_shapes():
     assert fp.scan(
         "https://careers-amgen-com.talentbrew.com/assets/app.js", "amgen.com"
     )[0][:2] == ("radancy", "ats")
-    assert fp.candidate_identity("radancy", "", "G4S") == ("", "unsupported")
+    assert fp.candidate_identity("radancy", "", "G4S") == (
+        "",
+        "detected-needs-url-evidence",
+    )
+    # The Board is the front's own host, never the vendor host the evidence matched.
+    assert (
+        fp.normalise_tenant(
+            "radancy",
+            "careers-amgen-com.talentbrew.com",
+            "careers.amgen.com CNAME careers-amgen-com.talentbrew.com",
+        )
+        == "careers.amgen.com"
+    )
+    assert (
+        fp.normalise_tenant(
+            "radancy", "tbcdn.talentbrew.com", "https://jobs.intuit.com/search-jobs"
+        )
+        == "jobs.intuit.com"
+    )
 
 
 def test_social_page_cannot_supply_an_employers_ats(monkeypatch):

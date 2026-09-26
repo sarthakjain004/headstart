@@ -109,6 +109,9 @@ from headstart.scrapers.lever import (
 from headstart.scrapers.oracle import (  # the pod-host spelling, single source
     is_pod_host,
 )
+from headstart.scrapers.radancy import (  # the job-URL shape, single source
+    sitemap_rows as _radancy_sitemap_rows,
+)
 from headstart.scrapers.registry import (  # the row-to-Board funnel, per ATS
     SCRAPERS,
     company_from_row,
@@ -2408,6 +2411,66 @@ def p_successfactors(t, u):
     return DEAD, None
 
 
+#: What a TalentBrew results page states its own count as. On the 17 fronts measured 2026-09-26 it
+#: equalled the sitemap's job count on 16 and was 2 more on the 17th.
+_RADANCY_TOTAL = re.compile(rb'data-total-job-results="(\d+)"')
+
+
+def _radancy_get(url):
+    """`_get`, plus the host the redirects ended on: (status, final host, body)."""
+    try:
+        r = _fetch("GET", url, headers={"User-Agent": UA})
+    except http.RequestsError as e:
+        if _is_dns(e):
+            return "dns", "", b""
+        _note(_net_reason(e))
+        return None, "", b""
+    if r is None:
+        _note("breaker-open")
+        return None, "", b""
+    if r.status_code not in (200, 404, 410):
+        _note(f"http-{r.status_code}")
+    return (
+        r.status_code,
+        (urllib.parse.urlsplit(r.url).hostname or "").lower(),
+        r.content,
+    )
+
+
+def p_radancy(t, u):
+    """The front's `/sitemap.xml`, counted by the scraper's own job-URL shape on the front's own
+    host; `/search-jobs` only to tell an empty front from a host that is not one.
+
+    A sitemap with no job URL is both: three live fronts with nothing open serve a `<urlset>` of
+    content pages, and so do the 285 other hosts with a `/sitemap.xml` measured 2026-09-26. The
+    three state `data-total-job-results="0"` on their own `/search-jobs`; of the 285, the 14 that
+    state the attribute at all redirect it to another front's filtered results
+    (`disneytech.com` to `www.disneycareers.com/en/search-jobs?acm=…`) — a view of a Board held
+    under that host, not a Board. So the count is read only where the page stays on the host.
+    robots.txt disallows `/search-jobs/` (the results endpoint beneath it) on 151 of 188 fronts,
+    not this page. A front a customer has left redirects to `www.radancy.com`
+    (`www.tmp.com`, `www.aia.co.uk`) or its new site and reads the same way: DEAD. So does an
+    alias host whose sitemap lists another host's jobs (`www.takedajobs.com`, `jobs.takeda.com`'s
+    Board). A DNS failure is DEAD: fronts sit on the customer's own hosts, not a wildcard zone.
+    """
+    slug = _slug_of("radancy", t, u)
+    status, _, body = _radancy_get(f"https://{slug}/sitemap.xml")
+    if status == "dns" or status in (404, 410):
+        return DEAD, None
+    if status != 200:
+        return UNKNOWN, None
+    jobs = len(_radancy_sitemap_rows(body.decode("utf-8-sig", "replace"), slug))
+    if jobs:
+        return LIVE, jobs
+    status, landed, page = _radancy_get(f"https://{slug}/search-jobs")
+    if status == "dns" or status in (404, 410):
+        return DEAD, None
+    if status != 200:
+        return UNKNOWN, None
+    stated = _RADANCY_TOTAL.search(page) if landed == slug else None
+    return (LIVE, int(stated.group(1))) if stated else (DEAD, None)
+
+
 def p_rippling(t, u):
     return _classify(
         _scraper_for_row("rippling", t, u).url(),
@@ -2904,6 +2967,7 @@ PROBES = {
     "phenom": p_phenom,
     "pinpoint": p_pinpoint,
     "pyjamahr": p_pyjamahr,
+    "radancy": p_radancy,
     "taleo_be": p_taleo_be,
     "taleo_enterprise": p_taleo_enterprise,
     "gem": p_gem,

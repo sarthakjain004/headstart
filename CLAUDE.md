@@ -120,6 +120,13 @@ discovery landing (#576) moved five more. Board totals belong in README and CONT
   `WFNPJL…`, `… BVT4` or `TEST CODE`. Read that client's postings before you exclude it: the name
   is a lead, not proof. `WFN - The McDonnel Group` is a real employer, and a test client can
   carry no such name at all.
+- **Radancy holds canonical front hosts only — no alias, QA or employee-only host.** A Radancy
+  TalentBrew front is a Career front, not an ATS (ADR-0246); its Board is its host. Land the host its
+  own sitemap's job URLs carry (`scripts/discover/mine_radancy.py` resolves it): vanity and country
+  hosts redirect to it and probe DEAD. `*.runmytests.com`/`.eu` is Radancy's QA estate and mirrors
+  real fronts. Employee-only fronts (`internal.commonspirit.careers`) go in `PARKED_BOARDS`. A
+  front is landed whether or not its Backing Board is held — the opposite of Phenom's rule, by the
+  owner's decision of 2026-09-26; each run logs its Front duplication instead.
 - **SuccessFactors holds RMK sites only.** `p_successfactors` accepts any `<urlset>`, so a corporate
   site or a Radancy career front probes `live`, and the scraper reads it as 0 jobs or as page titles
   ("Working at TUI"). Before landing a host, confirm a `/job/` page from its sitemap (urlset, RSS or
@@ -139,11 +146,10 @@ Evidence for the first two is in `docs/discovery/2026-09-23_indeed-sweep-landing
   landed. Avature is built too, ADR-0245; the sweep's Avature companies are a landing still to
   do. ADP Workforce Now is built too, #585, ADR-0180; the sweep's ADP companies are a landing
   still to do.)
-- **Radancy (TalentBrew) career fronts** — not an ATS but a **Career front** (CONTEXT.md), and for
-  some companies the only public listing: Intuit's is `jobs.intuit.com` (543 postings,
-  2026-09-26) over an Avature tenant that lists nothing. Owner decision 2026-09-26: scrape every
-  front in full, no Backing-Board gate, and log **Front duplication** per front each run; revisit
-  from those numbers, not before.
+- **Radancy (TalentBrew) career fronts** are built (ADR-0246), a **Career front** landed under
+  the landing rule above. Open: reading `/search-jobs/results` on capped fronts whose robots.txt
+  allows it (ADR-0246 §Alternatives), and revisiting the no-gate decision from each run's **Front
+  duplication** lines.
 - **SenseHQ** — the scraper is registered but has no ledger and no liveness probe, so none of its
   Boards can land.
 - **TurboHire** — token flow: `/api/token/noauth` (needs Referer), then `POST
