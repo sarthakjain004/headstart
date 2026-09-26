@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from headstart.ingest.board_operator import (
+from headstart.boards.board_operator import (
     AGGREGATORS,
     SERVICES,
     STAFFING,
@@ -140,7 +140,6 @@ def test_it_services_employers_are_services_not_staffing(
         ("smartrecruiters:sonomaconsultinginc", "Sonoma Consulting Inc."),
         ("smartrecruiters:USITSolutionsInc", "US IT Solutions Inc"),
         ("smartrecruiters:EProInc", "E*Pro Inc"),
-        ("smartrecruiters:Info-Ways", "Info-Ways"),
         (
             "smartrecruiters:nextlevelbusinessservicesinc2",
             "Next Level Business Services, Inc.",
@@ -197,3 +196,44 @@ def test_hots_placement_agencies_are_staffing_and_their_near_names_are_not():
         classify("workday:usm/careers", "University of Southern Mississippi")
         == "employer"
     )
+
+
+@pytest.mark.parametrize(
+    ("tier", "operator"),
+    [(SERVICES, "services"), (STAFFING, "staffing"), (AGGREGATORS, "aggregator")],
+    ids=["services", "staffing", "aggregators"],
+)
+def test_every_entry_of_each_list_labels_its_board(tier, operator) -> None:
+    """Each entry, as a Board's own slug, gets its list's label: no entry is shadowed by an
+    exception or by an earlier list."""
+    for entry in sorted(tier):
+        assert classify(f"greenhouse:{entry}", None) == operator, entry
+
+
+@pytest.mark.parametrize(
+    ("board", "company"),
+    [
+        # Each carries an entry's word and is another company (review of #731): a satellite-
+        # optics maker, a robotics startup, a medical-device maker and a trade-union club.
+        ("breezy:simera-sense", "Simera Sense"),
+        ("workable:turing-machines-inc", "Turing Machines Inc"),
+        ("workable:atos-medical-us", "Atos Medical US"),
+        ("workable:sutherland-district-trade-union-club", None),
+        # Left off the list: single words another company's name can carry.
+        ("smartrecruiters:Info-Ways", "Info-Ways"),
+        ("smartrecruiters:acme", "Acme Infoways Pvt Ltd"),
+        ("smartrecruiters:LinkTag", "LinkTag"),
+        ("workable:raydar", "Raydar"),
+        ("workable:ag-technologies", "AG Technologies"),
+        ("greenhouse:acme", "Maarut Drones"),
+    ],
+)
+def test_another_company_carrying_an_entrys_word_stays_an_employer(
+    board: str, company: str | None
+) -> None:
+    assert classify(board, company) == "employer"
+
+
+def test_a_narrowed_entry_still_labels_its_own_board() -> None:
+    assert classify("zoho:maarutinc.zohorecruit.com", "Maarut") == "staffing"
+    assert classify("freshteam:simera-talent", "Simera") == "staffing"

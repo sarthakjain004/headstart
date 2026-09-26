@@ -42,6 +42,7 @@ from pathlib import Path
 import numpy as np
 
 from headstart.boards.board_identity import ats_of
+from headstart.boards.board_operator import company_operator
 from headstart.trends import company_suggestions, netting
 from headstart.trends.role_taxonomy import BAND_LABELS, NON_TECH, WATCH_PREFIX
 
@@ -308,12 +309,22 @@ def _load_directory(path: Path) -> dict[str, dict]:
     A company's key is its first board_key, and any of its Boards resolves to it, so a Hot-tab
     row or a search result links to its company by the Board it already carries. Absent or
     half-written means no picker, never a failed boot.
+
+    Each company's Operator is decided here again, by ``board_operator``, not taken from the
+    file: what Hot hides must not wait on the next run to rewrite it (ADR-0238). A file written
+    before the `staffing` Operator showed Randstad and Collabera as IT services.
     """
     if not path.exists():
         return {}
     try:
         entries = json.loads(path.read_text(encoding="utf-8"))["companies"]
-        return {entry["boards"][0]: entry for entry in entries}
+        return {
+            entry["boards"][0]: {
+                **entry,
+                "operator": company_operator(entry["boards"], entry["name"]),
+            }
+            for entry in entries
+        }
     except (OSError, ValueError, KeyError, TypeError, IndexError):
         return {}
 

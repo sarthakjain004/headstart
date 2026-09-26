@@ -82,7 +82,7 @@ from headstart import log
 from headstart.boards import company_name
 from headstart.boards.board_identity import ats_of
 from headstart.ingest.board_naming import board_names, display_name, stated_name
-from headstart.ingest.board_operator import Operator, classify, tenant
+from headstart.boards.board_operator import company_operator, tenant
 
 # `__spec__` as well as `__name__`, like every other module that doubles as a `python -m`
 # entry point: run that way `__name__` is "__main__", outside the root `setup()` configures.
@@ -131,7 +131,7 @@ def companies(boards: set[str], names: dict[str, str]) -> list[dict]:
     for board in boards:
         clusters[root(board)].append(board)
     entries = [
-        {"name": name, "boards": sorted(cluster), "operator": _operator(cluster, name)}
+        {"name": name, "boards": sorted(cluster), "operator": company_operator(cluster, name)}
         for cluster in clusters.values()
         # A company nobody can name cannot be picked by name: its tenant is only a code and no
         # source states one (ADR-0212). Its Boards still count toward the Total breakdown.
@@ -168,17 +168,6 @@ def _company_name(cluster: list[str], names: dict[str, str]) -> str | None:
         if 2 * votes >= len(cluster):
             return name
     return display_name("", first)
-
-
-def _operator(cluster: list[str], name: str) -> Operator:
-    """Who runs the company (ADR-0171, ADR-0238): an aggregator if any of its Boards re-posts,
-    else staffing if any places staff with clients, else services if any does client IT work,
-    else the employer. The Hot tab labels a company row with it."""
-    found = {classify(board, name) for board in cluster}
-    return next(
-        (op for op in ("aggregator", "staffing", "services") if op in found),
-        "employer",
-    )
 
 
 def previous_names(path: Path) -> dict[str, str]:

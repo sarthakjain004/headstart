@@ -52,6 +52,7 @@ Two consequences for anyone extending this:
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 from typing import Final, Literal
 
 from headstart.boards.board_identity import tenant
@@ -197,7 +198,7 @@ STAFFING: Final[frozenset[str]] = frozenset(
         "webleetechnologies",
         # Adjudicated from Hot's employer-labelled top 50 on 2026-09-26, each by a sample of its
         # own live postings: one client contract posted city by city (Dellfor: "AWS Cloud
-        # Consultant" 518 times; AG Technologies: "Hiring Entry Level Software Engineer"), client
+        # Consultant" 518 times), client
         # requisition codes (Xinnovit's "XIN001_…"), "local to"/"W2 only"/"in person interview"
         # contracts (Sonoma, Ask IT, 7th Sky), IT beside phlebotomists or plumbers (Mindlance,
         # US IT Solutions, Procom), and placements abroad (Urban Ridge: Doha, Cairo, Riyadh;
@@ -207,11 +208,9 @@ STAFFING: Final[frozenset[str]] = frozenset(
         "usitsolutionsinc",
         "sonomaconsultinginc",
         "mindlance",
-        "infoways",
         "nextlevelbusinessservicesinc",
         "dellfortechnologies",
         "askitconsulting",
-        "agtechnologies",
         "procomconsultantsgroup",
         "mapjects",
         "xinnovit",
@@ -219,18 +218,19 @@ STAFFING: Final[frozenset[str]] = frozenset(
         "sbtglobalinc",
         "urbanridgesupplies",
         "brightvisiontechnologies",
-        "maarut",
+        "maarutinc",  # the Zoho tenant: "maarut" alone is a word other names use
         "3coresystems",
         "7thskytechnologiesllc",
         "pragmatike",
         # The next tier, which hiding the first surfaced in Expansion's shown top 50, sampled
-        # the same way: client contracts (Arete, EROS, SA Technologies, Career Guidant, LinkTag,
-        # Paradigm Infotech, Comtech LLC, Procom Services, Implify, Veredus), a training-and-
-        # placement mill (I.T. Excel: "QA and BA Training and Placement for OPT/CPT…"), a general
-        # agency (Global Channel Management: data processors to graphic designers), tutors and
-        # bakery managers in Lagos (Lextorah), a startup recruiter (Raydar), and freelance and
-        # crowd-work marketplaces (FyerX, Welo Global). Quantix, sampled as staffing too, is
-        # left out: "quantix" also names another company.
+        # the same way: client contracts (Arete, EROS, SA Technologies, Career Guidant, Paradigm
+        # Infotech, Comtech LLC, Procom Services, Implify, Veredus), a training-and-placement mill
+        # (I.T. Excel: "QA and BA Training and Placement for OPT/CPT…"), a general agency (Global
+        # Channel Management: data processors to graphic designers), tutors and bakery managers
+        # in Lagos (Lextorah), and freelance and crowd-work marketplaces (FyerX, Welo Global).
+        # Sampled as staffing too but left out, each a single word another company's name can
+        # carry and with no form of its own to narrow to: Quantix, Info-Ways ("X Infoways Pvt
+        # Ltd"), LinkTag, Raydar, and AG Technologies (a second Workable Board of that name).
         "aretetechnologiesinc",
         "itexcelllc",
         "careerguidant",
@@ -239,12 +239,10 @@ STAFFING: Final[frozenset[str]] = frozenset(
         "satechnologiesinc",
         "implifyinc",
         "lextorahlds",
-        "linktag",
         "procomservices",
         "comtechllc",
         "paradigminfotech",
         "veredusdc",
-        "raydar",
         "fyerx",
         "weloglobal",
         # and warehouse, lab and payables temps beside IT contracts (AmNet, TekWissen,
@@ -255,7 +253,7 @@ STAFFING: Final[frozenset[str]] = frozenset(
         "intersoftkk",
         # Talent marketplaces and placement programmes that post on behalf of others
         "eworgmbh",
-        "simera",
+        "simeratalent",  # not "simera": Simera Sense (satellite optics) is an employer
         "turing",
         "andela",
         "toptal",
@@ -276,6 +274,12 @@ EXCEPTIONS: Final[frozenset[str]] = frozenset(
         # (`greenhouse:turing`), so the collision cannot be fixed by dropping the entry.
         "alanturinginstitute",
         "turinginstitute",
+        # Found checking every entry against the directory and the liveness ledgers (review of
+        # #731): a robotics startup, a medical-device maker and a trade-union club.
+        "turingmachinesinc",
+        "atosmedical",
+        "atosmedicalus",
+        "sutherlanddistricttradeunionclub",
     }
 )
 
@@ -331,3 +335,15 @@ def classify(board_key: str, company: str | None = None) -> Operator:
     if forms & SERVICES:
         return "services"
     return "employer"
+
+
+def company_operator(boards: Iterable[str], name: str) -> Operator:
+    """Who runs a company (ADR-0171, ADR-0238): an aggregator if any of its ``boards`` re-posts,
+    else staffing if any places staff with clients, else services if any does client IT work,
+    else the employer. The directory stage writes it, and the Space decides it again when it
+    loads the directory, so what Hot hides never waits on the next run to write the file."""
+    found = {classify(board, name) for board in boards}
+    return next(
+        (op for op in ("aggregator", "staffing", "services") if op in found),
+        "employer",
+    )

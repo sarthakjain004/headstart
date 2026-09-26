@@ -3168,11 +3168,6 @@ def test_hot_is_ranked_at_boot_from_the_history_the_trends_tab_reads(
         return {"window": {"base": _T1}, "lenses": {}, "counts": {"ranked": 0}}
 
     monkeypatch.setattr(trends_app.hot_ranking, "rank", rank)
-    # A directory from before the Operator ranks nothing: every staffing firm would otherwise
-    # read as an employer until the next run wrote one.
-    assert trends_app._rank_hot(history) == {}
-    for entry in history.companies.values():
-        entry["operator"] = "employer"
     ranked = trends_app._rank_hot(history)
     assert ranked["window"]["base"] == _T1
     assert seen == {"history": history, "directory": history.companies}
@@ -3182,8 +3177,6 @@ def test_hot_is_ranked_at_boot_from_the_history_the_trends_tab_reads(
 
 def test_a_hot_ranking_that_fails_darkens_hot_only(trends_app, monkeypatch, tmp_path):
     history = _company_history(trends_app, monkeypatch, tmp_path)
-    for entry in history.companies.values():
-        entry["operator"] = "employer"
 
     def broken(*_):
         raise KeyError("counted_since")

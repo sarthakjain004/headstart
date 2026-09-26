@@ -46,7 +46,7 @@ if TYPE_CHECKING:
     from headstart.trends.trend_history import TrendHistory
 
 #: Rows kept per lens. Enough to scroll, small enough that the companies on it can be adjudicated
-#: by hand, the stated way to extend `ingest.board_operator` beyond its curated head.
+#: by hand, the stated way to extend `boards.board_operator` beyond its curated head.
 TOP_N = 100
 
 #: A company below this many tech openings is not ranked (see the module docstring).
