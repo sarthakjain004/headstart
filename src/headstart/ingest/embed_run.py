@@ -41,7 +41,7 @@ from sentence_transformers import SentenceTransformer
 from headstart import log
 from headstart.boards.board_identity import board_of
 from headstart.boards.priority_ledger import load_scores
-from headstart.embedding_conventions import DOC_PREFIX, MODEL
+from headstart.embedding_conventions import DOC_PREFIX, MODEL, open_model
 from headstart.ingest import REPO_ROOT, observability, shard_plan
 from headstart.ingest.corpus import iter_jobs
 from headstart.ingest.doc_prep import (  # re-exported: doc-prep shared with the embed planner (ADR-0025)
@@ -235,13 +235,13 @@ def _load_model() -> tuple[SentenceTransformer, str, int, int]:
     the attention memory of the MPS/fp16 path, and CI runners are small)."""
     device = "mps" if torch.backends.mps.is_available() else "cpu"
     _log.info(f"loading {MODEL} on {device} ...")
-    model = SentenceTransformer(MODEL, trust_remote_code=True, device=device)
+    model = open_model(device)
     if device == "mps":
         model = model.half()  # fp16 on the GPU: ~2x faster + half the memory; vectors upcast to f32 on store
     model.max_seq_length = min(
         model.max_seq_length, MAX_SEQ_TOKENS
     )  # see MAX_SEQ_TOKENS
-    dim = model.get_sentence_embedding_dimension()
+    dim = model.get_embedding_dimension()
     budget = _ATTN_BUDGET if device == "mps" else _ATTN_BUDGET // 4
     return model, device, dim, budget
 

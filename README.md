@@ -425,7 +425,8 @@ Note the raw corpus files under `data/jobs/` carry a few fields the served table
   scrape, ADR-0191), `excluded_and_parked.py` (the Live Boards it never scrapes), `company_ref.py`,
   the per-Board ledgers `liveness_ledger.py`, `alias_ledger.py`, `priority_ledger.py` (ADR-0022),
   `cost_ledger.py` (measured scrape seconds, ADR-0027) and `description_gap_ledger.py`,
-  `eightfold_backing.py`, and `company_name.py` (ADR-0114, ADR-0212).
+  `eightfold_backing.py`, `company_name.py` (ADR-0114, ADR-0212), and `board_operator.py` (who
+  runs a Board, read by the directory stage and by the Space at boot, ADR-0171, ADR-0238).
 - `src/headstart/network/` — how a request leaves the machine (ADR-0232): `http.py`, the pooled
   reliable-fetch client; `browser_http.py`, its browser twin, for hosts that admit a genuine Chrome
   and nothing else; `fetcher.py`, the seam both sit behind; `spare_egress.py`, a second network

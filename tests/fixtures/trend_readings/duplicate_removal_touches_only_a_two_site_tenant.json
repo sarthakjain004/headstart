@@ -35,7 +35,7 @@
    {
     "ts": "2026-09-15T00:00:00+00:00",
     "changed": [
-     "duplicate removal changed"
+     "duplicate postings detection updated"
     ],
     "fields": [
      "dedup_version"
@@ -106,6 +106,7 @@
    {
     "name": "workday:acme/a",
     "label": "Acme",
+    "whole_company": true,
     "estimated": false,
     "move": {
      "start": 100,
@@ -115,7 +116,7 @@
       {
        "change": "counting@2026-09-15T00:00:00+00:00",
        "kind": "counting",
-       "label": "duplicate removal changed",
+       "label": "duplicate postings detection updated",
        "size": -20
       }
      ],
@@ -149,6 +150,7 @@
    {
     "name": "lever:beta",
     "label": "Beta",
+    "whole_company": true,
     "estimated": false,
     "move": {
      "start": 100,
@@ -185,6 +187,7 @@
    {
     "name": "workday:acme/a",
     "label": "Acme",
+    "whole_company": true,
     "estimated": false,
     "move": {
      "start": 100,
@@ -194,7 +197,7 @@
       {
        "change": "counting@2026-09-15T00:00:00+00:00",
        "kind": "counting",
-       "label": "duplicate removal changed",
+       "label": "duplicate postings detection updated",
        "size": -20
       }
      ],
@@ -220,6 +223,7 @@
    {
     "name": "lever:beta",
     "label": "Beta",
+    "whole_company": true,
     "estimated": false,
     "move": {
      "start": 100,
@@ -252,12 +256,12 @@
     "id": "counting@2026-09-15T00:00:00+00:00",
     "kind": "counting",
     "ts": "2026-09-15T00:00:00+00:00",
-    "label": "duplicate removal changed",
+    "label": "duplicate postings detection updated",
     "fields": [
      "dedup_version"
     ],
     "changed": [
-     "duplicate removal changed"
+     "duplicate postings detection updated"
     ],
     "company": null,
     "boards": null,

@@ -126,6 +126,7 @@
   "total": {
    "name": "__total__",
    "label": "",
+   "whole_company": false,
    "estimated": false,
    "move": {
     "start": 85000,
@@ -162,6 +163,7 @@
    {
     "name": "software-engineering",
     "label": "Software Engineering (general)",
+    "whole_company": false,
     "estimated": false,
     "move": {
      "start": 40000,
@@ -193,6 +195,7 @@
    {
     "name": "web-development",
     "label": "Web & .NET Development",
+    "whole_company": false,
     "estimated": false,
     "move": {
      "start": 9000,
@@ -224,6 +227,7 @@
    {
     "name": "data-engineering",
     "label": "Data Engineering",
+    "whole_company": false,
     "estimated": false,
     "move": {
      "start": 8000,
@@ -255,6 +259,7 @@
    {
     "name": "qa-test",
     "label": "QA & Test Engineering",
+    "whole_company": false,
     "estimated": false,
     "move": {
      "start": 7000,
@@ -286,6 +291,7 @@
    {
     "name": "devops",
     "label": "DevOps",
+    "whole_company": false,
     "estimated": false,
     "move": {
      "start": 6000,
@@ -317,6 +323,7 @@
    {
     "name": "security-engineering",
     "label": "Security Engineering",
+    "whole_company": false,
     "estimated": false,
     "move": {
      "start": 5000,
@@ -348,6 +355,7 @@
    {
     "name": "sre-platform",
     "label": "SRE & Platform Engineering",
+    "whole_company": false,
     "estimated": false,
     "move": {
      "start": 4000,
@@ -379,6 +387,7 @@
    {
     "name": "mobile-development",
     "label": "Mobile Development",
+    "whole_company": false,
     "estimated": false,
     "move": {
      "start": 3000,
@@ -410,6 +419,7 @@
    {
     "name": "ai-ml",
     "label": "AI / Machine Learning",
+    "whole_company": false,
     "estimated": false,
     "move": {
      "start": 2000,
@@ -441,6 +451,7 @@
    {
     "name": "data-science",
     "label": "Data Science",
+    "whole_company": false,
     "estimated": false,
     "move": {
      "start": 1000,
@@ -473,6 +484,7 @@
   "other": {
    "name": "__other__",
    "label": "",
+   "whole_company": false,
    "estimated": false,
    "move": {
     "start": 3000,

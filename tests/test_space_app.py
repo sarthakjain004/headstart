@@ -2388,21 +2388,21 @@ def test_trends_epochs_drops_the_baseline_and_names_what_moved(epochs_trends_app
     served = client.get("/trends").get_json()
     assert "epochs" not in served, "the reading marks them; the page never read them"
     assert [c["label"] for c in served["reading"]["marked_changes"]] == [
-        "tech filter changed",
-        "role family map edited, experience/salary extraction changed",
+        "tech-job filter updated",
+        "job category list edited, experience and salary reading updated",
     ]
     d = _answer(client, "")
     assert d["epochs"] == [
         {
             "ts": _T2,
-            "changed": ["tech filter changed"],
+            "changed": ["tech-job filter updated"],
             "fields": ["tech_filter_version"],
         },
         {
             "ts": _T3,
             "changed": [
-                "role family map edited",
-                "experience/salary extraction changed",
+                "job category list edited",
+                "experience and salary reading updated",
             ],
             "fields": ["family_map_fingerprint", "derivations_version"],
         },
@@ -2416,8 +2416,8 @@ def test_trends_epochs_are_narrowed_by_since_and_until(epochs_trends_app):
         {
             "ts": _T3,
             "changed": [
-                "role family map edited",
-                "experience/salary extraction changed",
+                "job category list edited",
+                "experience and salary reading updated",
             ],
             "fields": ["family_map_fingerprint", "derivations_version"],
         }
@@ -2426,7 +2426,7 @@ def test_trends_epochs_are_narrowed_by_since_and_until(epochs_trends_app):
     assert d["epochs"] == [
         {
             "ts": _T2,
-            "changed": ["tech filter changed"],
+            "changed": ["tech-job filter updated"],
             "fields": ["tech_filter_version"],
         }
     ]
@@ -2444,7 +2444,7 @@ def test_trends_epochs_name_a_dedup_change(tmp_path):
     assert _epochs_of(state) == [
         {
             "ts": _T2,
-            "changed": ["duplicate removal changed"],
+            "changed": ["duplicate postings detection updated"],
             "fields": ["dedup_version"],
         }
     ]
@@ -2461,7 +2461,7 @@ def test_trends_epochs_name_a_family_assignment_change(tmp_path):
     assert _epochs_of(state) == [
         {
             "ts": _T2,
-            "changed": ["role family assignment changed"],
+            "changed": ["job categories re-sorted"],
             "fields": ["family_classifier_version"],
         }
     ]
@@ -2954,6 +2954,24 @@ def test_a_held_week_is_a_gap_not_a_zero(company_trends, monkeypatch):
     assert summed["series"][0]["points"] == [None, 0, 2]
 
 
+def test_under_new_the_window_starts_where_new_counts(company_trends, monkeypatch):
+    """Micron's New counted from Sep 20, yet its window began Sep 13: its sentence read "over 5
+    days" while its table's Start and its Marked changes reached back a week before counting
+    did. The window now starts at the first run any pick's `new` counts."""
+    history = company_trends.application.view_functions["trends"].__globals__[
+        "_HISTORY"
+    ]
+    monkeypatch.setattr(
+        history, "_new_hold", {"workday:hpe/a": _T2, "workday:hpe/b": _T2}
+    )
+    d = company_trends.get("/trends?metric=new&company=workday:hpe/a").get_json()
+    assert d["new_counted_from"] == {"workday:hpe/a": _T2}
+    assert d["stamps"][0] == _T2
+    assert d["reading"]["window"]["from"] == _T2
+    stock = company_trends.get("/trends?company=workday:hpe/a").get_json()
+    assert stock["stamps"][0] == _T1, "All openings keep the whole window"
+
+
 def test_picks_a_view_leaves_out_are_named(company_trends):
     """Comparable from T1 keeps only Boards known then: Eightfold's Citi (found T2) is out."""
     d = company_trends.get(
@@ -3150,11 +3168,6 @@ def test_hot_is_ranked_at_boot_from_the_history_the_trends_tab_reads(
         return {"window": {"base": _T1}, "lenses": {}, "counts": {"ranked": 0}}
 
     monkeypatch.setattr(trends_app.hot_ranking, "rank", rank)
-    # A directory from before the Operator ranks nothing: every staffing firm would otherwise
-    # read as an employer until the next run wrote one.
-    assert trends_app._rank_hot(history) == {}
-    for entry in history.companies.values():
-        entry["operator"] = "employer"
     ranked = trends_app._rank_hot(history)
     assert ranked["window"]["base"] == _T1
     assert seen == {"history": history, "directory": history.companies}
@@ -3164,8 +3177,6 @@ def test_hot_is_ranked_at_boot_from_the_history_the_trends_tab_reads(
 
 def test_a_hot_ranking_that_fails_darkens_hot_only(trends_app, monkeypatch, tmp_path):
     history = _company_history(trends_app, monkeypatch, tmp_path)
-    for entry in history.companies.values():
-        entry["operator"] = "employer"
 
     def broken(*_):
         raise KeyError("counted_since")
@@ -3329,11 +3340,40 @@ def test_each_line_carries_the_turnover_its_change_is_made_of(
     assert lines["ai-ml"]["recounted"] == [None, 0, 0]
     assert d["turnover_since"] == _T2
     assert d["closures_unseen"] == {"workday:hpe/a": 1}
+    assert d["closures_uncounted"] == [], "HPE's other Board counted its closures"
+    assert d["boards_in_scope"] == {"workday:hpe/a": 2}
+    hpe = trends_app._HISTORY.company_moves(["workday:hpe/a"]).moves["workday:hpe/a"]
+    assert (hpe.closures_uncounted_boards, hpe.boards_in_scope) == (1, 2)
     split = _answer(
         company_trends, "split=company&company=workday:hpe/a&company=workday:citi/2"
     )
     by_label = {s["label"]: s["turnover"]["opened"] for s in split["series"]}
     assert by_label == {"Hpe": [None, 0, 2], "Citi": [None, 0, 5]}
+
+
+def test_no_closed_count_where_every_board_had_its_closures_go_uncounted(
+    company_trends, trends_app, monkeypatch, tmp_path
+):
+    """Amazon, one Board, read "0 closed" on Hot while its trend said "closures not counted on 1
+    board", and Google's trend gave "18 closed" beside that note. Where every Board of a company
+    had a run whose closures went uncounted, neither its trend nor its Hot row gives a closed
+    count."""
+    rows = [
+        *_HPE_TURNOVER,
+        _delta(_T3, "workday:hpe/a", 1, family="all", metric="unscoped"),
+    ]
+    _with_turnover(trends_app, monkeypatch, tmp_path, rows)
+    d = _answer(company_trends, "company=workday:hpe/a")
+    assert d["closures_unseen"] == {"workday:hpe/a": 2}
+    assert d["closures_uncounted"] == ["workday:hpe/a"]
+    served = company_trends.get("/trends?company=workday:hpe/a").get_json()
+    shown = {r["name"]: r["move"]["turnover"] for r in served["reading"]["lines"]}
+    assert shown["software-engineering"] == {"opened": 2, "closed": None, "net": None}
+    assert served["reading"]["reconciles"], served["reading"]["violations"]
+    moves = trends_app._HISTORY.company_moves(["workday:hpe/a", "workday:citi/2"])
+    assert moves.moves["workday:hpe/a"].closed is None
+    assert moves.moves["workday:hpe/a"].opened == 2
+    assert moves.moves["workday:citi/2"].closed == 0, "a counted quiet week is a real 0"
 
 
 def test_the_index_has_turnover_and_it_is_the_sum_of_every_companys(
@@ -3380,7 +3420,7 @@ def test_the_index_shows_what_every_companys_view_shows_after_runs_are_left_out(
     _with_turnover(trends_app, monkeypatch, tmp_path, _HPE_TURNOVER)
     epoch = {
         "ts": _T3,
-        "changed": ["duplicate removal changed"],
+        "changed": ["duplicate postings detection updated"],
         "fields": ["dedup_version"],
     }
     monkeypatch.setattr(trends_app._HISTORY, "_epochs", [epoch])

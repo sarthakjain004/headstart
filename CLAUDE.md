@@ -293,7 +293,7 @@ These guidelines are working if: fewer unnecessary changes in diffs, fewer rewri
   HF's collection, which is how the 100 GB quota filled on 2026-09-18.
   If you change what the pipeline runs, change it there and update `.github/workflows/pipeline.yml`
   to match. Don't add a pipeline stage to `scripts/`. Helper modules used *only* by the pipeline
-  live there too (`binpack`, `board_failures`, `board_freshness`, `board_naming`, `board_operator`,
+  live there too (`binpack`, `board_failures`, `board_freshness`, `board_naming`,
   `corpus`, `dedup_evictions`, `derived_meta`, `doc_prep`, `index_plan`, `job_turnover`,
   `observability`, `role_assignments`, `role_family_classifier`, `shard_plan`, `shard_speedup`).
   Logic the curated-feed path (`python -m headstart` → `headstart.scrapers.harvest`) also reaches

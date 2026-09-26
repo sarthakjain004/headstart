@@ -223,6 +223,7 @@
    {
     "name": "lever:a",
     "label": "A",
+    "whole_company": true,
     "estimated": false,
     "move": {
      "start": 700,
@@ -256,6 +257,7 @@
    {
     "name": "lever:b",
     "label": "B",
+    "whole_company": true,
     "estimated": false,
     "move": {
      "start": 600,
@@ -289,6 +291,7 @@
    {
     "name": "lever:c",
     "label": "C",
+    "whole_company": true,
     "estimated": false,
     "move": {
      "start": 500,
@@ -322,6 +325,7 @@
    {
     "name": "lever:d",
     "label": "D",
+    "whole_company": true,
     "estimated": false,
     "move": {
      "start": 400,
@@ -355,6 +359,7 @@
    {
     "name": "lever:e",
     "label": "E",
+    "whole_company": true,
     "estimated": false,
     "move": {
      "start": 300,
@@ -388,6 +393,7 @@
    {
     "name": "lever:f",
     "label": "F",
+    "whole_company": true,
     "estimated": false,
     "move": {
      "start": 300,
@@ -421,6 +427,7 @@
    {
     "name": "lever:g",
     "label": "G",
+    "whole_company": true,
     "estimated": false,
     "move": {
      "start": 100,
@@ -454,6 +461,7 @@
    {
     "name": "lever:h",
     "label": "H",
+    "whole_company": true,
     "estimated": false,
     "move": {
      "start": 50,
@@ -490,6 +498,7 @@
    {
     "name": "lever:a",
     "label": "A",
+    "whole_company": true,
     "estimated": false,
     "move": {
      "start": 700,
@@ -518,6 +527,7 @@
    {
     "name": "lever:b",
     "label": "B",
+    "whole_company": true,
     "estimated": false,
     "move": {
      "start": 600,
@@ -546,6 +556,7 @@
    {
     "name": "lever:c",
     "label": "C",
+    "whole_company": true,
     "estimated": false,
     "move": {
      "start": 500,
@@ -574,6 +585,7 @@
    {
     "name": "lever:d",
     "label": "D",
+    "whole_company": true,
     "estimated": false,
     "move": {
      "start": 400,
@@ -602,6 +614,7 @@
    {
     "name": "lever:e",
     "label": "E",
+    "whole_company": true,
     "estimated": false,
     "move": {
      "start": 300,
@@ -630,6 +643,7 @@
    {
     "name": "lever:f",
     "label": "F",
+    "whole_company": true,
     "estimated": false,
     "move": {
      "start": 300,
@@ -658,6 +672,7 @@
    {
     "name": "lever:g",
     "label": "G",
+    "whole_company": true,
     "estimated": false,
     "move": {
      "start": 100,
@@ -686,6 +701,7 @@
    {
     "name": "lever:h",
     "label": "H",
+    "whole_company": true,
     "estimated": false,
     "move": {
      "start": 50,
