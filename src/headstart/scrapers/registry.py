@@ -11,6 +11,7 @@ from headstart.scrapers.adp_recruiting import ADPRecruitingScraper
 from headstart.scrapers.amazon import AmazonScraper
 from headstart.scrapers.apple import AppleScraper
 from headstart.scrapers.ashby import AshbyScraper
+from headstart.scrapers.avature import AvatureScraper
 from headstart.scrapers.bamboohr import BambooHRScraper
 from headstart.scrapers.base import BaseScraper
 from headstart.scrapers.breezy import BreezyScraper
@@ -62,6 +63,7 @@ SCRAPERS: dict[str, type[BaseScraper]] = {
         GreenhouseScraper,
         LeverScraper,
         AshbyScraper,
+        AvatureScraper,
         ZohoScraper,
         WorkdayScraper,
         WorkableScraper,
