@@ -11573,7 +11573,9 @@ def test_every_wired_scraper_resolves_its_company(
 #: successfactors reads the name off the job pages its detail pass already fetched
 #: (`SuccessFactorsScraper._board_company`), covered beside its other tests above. taleo_be
 #: reads its RSS feed's channel title streamed, only as far as the title
-#: (`TaleoBEScraper.resolve_company`), covered by `tests/test_taleo_be.py`. Either may land
+#: (`TaleoBEScraper.resolve_company`), covered by `tests/test_taleo_be.py`. avature takes the
+#: name its fetched job pages agree on (`og:site_name`), covered by `tests/test_avature.py`.
+#: Either may land
 #: before the other; an entry naming an ATS without patterns yet subtracts nothing.
 _NO_BOARD_PAGE = {
     "taleo_enterprise",
@@ -11583,6 +11585,7 @@ _NO_BOARD_PAGE = {
     "cornerstone",
     "trakstar",
     "successfactors",
+    "avature",
     "taleo_be",
     # These three read the name off a response the scrape already fetches: darwinbox's
     # `companyinfo`, zwayam's config call and zoho's careers page — covered by their own tests.

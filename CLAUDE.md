@@ -134,10 +134,16 @@ discovery landing (#576) moved five more. Board totals belong in README and CONT
 Evidence for the first two is in `docs/discovery/2026-09-23_indeed-sweep-landing.md`.
 
 - **The unsupported ATSes the Indeed sweep resolved most companies to**, most first:
-  Hireology, Recruiterflow, Avature. (Breezy led that count; it, ClearCompany, Pinpoint and
+  Hireology, Recruiterflow. (Breezy led that count; it, ClearCompany, Pinpoint and
   Cornerstone are now built, #579, #582, #580 and #584, and the sweep's companies on all four are
-  landed. ADP Workforce Now is built too, #585, ADR-0180; the sweep's ADP companies are a landing
+  landed. Avature is built too, ADR-0245; the sweep's Avature companies are a landing still to
+  do. ADP Workforce Now is built too, #585, ADR-0180; the sweep's ADP companies are a landing
   still to do.)
+- **Radancy (TalentBrew) career fronts** — not an ATS but a **Career front** (CONTEXT.md), and for
+  some companies the only public listing: Intuit's is `jobs.intuit.com` (543 postings,
+  2026-09-26) over an Avature tenant that lists nothing. Owner decision 2026-09-26: scrape every
+  front in full, no Backing-Board gate, and log **Front duplication** per front each run; revisit
+  from those numbers, not before.
 - **SenseHQ** — the scraper is registered but has no ledger and no liveness probe, so none of its
   Boards can land.
 - **TurboHire** — token flow: `/api/token/noauth` (needs Referer), then `POST

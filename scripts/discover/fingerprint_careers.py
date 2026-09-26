@@ -801,6 +801,9 @@ TEAMTAILOR_INFRA = frozenset({"ext", "www", "jobs", "careers"})
 # evidence supplies the shape its scraper expects.
 CNAME_LABEL_ATS = frozenset(
     {
+        # A vanity careers host CNAMEs to its tenant label: jobs.bmc.com -> bmcrecruit.avature.net,
+        # careers.fonterra.com -> fonterrakf (2026-09-26, ADR-0245).
+        "avature",
         "bamboohr",
         "breezy",
         "clearcompany",
