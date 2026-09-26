@@ -104,10 +104,6 @@ def _pull_index(attempts: int = 5) -> None:
                     # ticks before per-Board counting
                     "data/state/role_trend_board_deltas/*",
                     "data/state/role_trend_index_deltas_before_board_deltas.parquet",
-                    # the older layout's archive and Methodology, read only until the one-off
-                    # migration has rewritten the history (history_migration); gone after
-                    "data/state/role_trends.parquet",
-                    "data/state/trends_epochs.csv",
                     # the Company directory (ADR-0185) the Trends picker searches and the Hot
                     # tab ranks (ADR-0230) — ~2 MB, and absent until a run writes one, which
                     # hides both rather than failing the pull

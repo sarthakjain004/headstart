@@ -14,6 +14,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+import trends_stored_layout as stored_layout
 
 from headstart.trends import hot_ranking, trend_history
 from headstart.trends.netting import js_round
@@ -362,7 +363,9 @@ def test_every_rows_net_is_what_the_trend_it_opens_moves_by(tmp_path: Path) -> N
     opens, so the two agree by construction. Before it, Hot read Google −27 against its trend's
     −42, and Bosch Group +440 from one of the two Boards its trend summed."""
     _write_history(tmp_path)
-    history = trend_history.TrendHistory.load(tmp_path, _CONFIG)
+    history = trend_history.TrendHistory.load(
+        stored_layout.store_in_current_layout(tmp_path), _CONFIG
+    )
     payload = hot_ranking.rank(history, history.companies)
     base = payload["window"]["base"]
     rows = [row for lens in payload["lenses"].values() for row in lens]
@@ -376,7 +379,9 @@ def test_a_rows_net_leaves_out_what_its_trend_leaves_out(tmp_path: Path) -> None
     """Not a tautology of the test above: the raw change holds a found Board and a counting
     change, and the row holds neither."""
     _write_history(tmp_path)
-    history = trend_history.TrendHistory.load(tmp_path, _CONFIG)
+    history = trend_history.TrendHistory.load(
+        stored_layout.store_in_current_layout(tmp_path), _CONFIG
+    )
     payload = hot_ranking.rank(history, history.companies)
     assert payload["window"]["base"] == "2026-09-12T12:00:00+00:00"
     net = {row["key"]: row["net"] for row in payload["lenses"]["expansion"]}
@@ -396,7 +401,9 @@ def test_before_turnover_is_counted_a_row_carries_none_not_zero(tmp_path: Path) 
     """With no run counting turnover, `company_moves` read the missing figures as 0, and every
     Growing row said "0 opened · 0 closed this week" beside its net."""
     _write_history(tmp_path, with_turnover=False)
-    history = trend_history.TrendHistory.load(tmp_path, _CONFIG)
+    history = trend_history.TrendHistory.load(
+        stored_layout.store_in_current_layout(tmp_path), _CONFIG
+    )
     payload = hot_ranking.rank(history, history.companies)
     assert payload["window"]["turnover_from"] is None
     rows = payload["lenses"]["expansion"]

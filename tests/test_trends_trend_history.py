@@ -7,7 +7,6 @@ the history must hold for those answers to be right:
   ordinary delta; replayed, the files give back every level each tick recorded.
 - A tick's Methodology rides its own file, and a counting change is a tick whose Methodology
   differs from the tick before it.
-- A history still in the older layout reads exactly as the one-off migration rewrites it.
 - An unreadable ledger is an empty history, never a failed boot.
 """
 
@@ -19,15 +18,14 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
+import trends_stored_layout as stored_layout
 
 pa = pytest.importorskip("pyarrow")
 pq = pytest.importorskip("pyarrow.parquet")
 
 import duplicate_removal_trends_state
-import old_layout_trends_state
 
 from headstart.ingest import role_trends
-from headstart.trends import history_migration as migration
 from headstart.trends import netting, role_taxonomy, trend_history
 from headstart.trends.trend_history import (
     TrendHistory,
@@ -188,55 +186,6 @@ def test_a_counting_change_is_a_tick_whose_methodology_moved(tmp_path):
             "fields": ["family_classifier_version"],
         }
     ]
-
-
-def _migrated(old_state: Path, out: Path) -> Path:
-    """``old_state`` rewritten into the step-6 layout under ``out``, as the one-off migration
-    writes it."""
-    tables = [
-        pq.read_table(path)
-        for path in sorted((old_state / trend_history.DELTAS).glob("*.parquet"))
-    ]
-    ticks, _ = migration.rewritten_ticks(tables, old_state / migration.EPOCHS)
-    for table in ticks:
-        path = trend_history.tick_path(
-            out / trend_history.DELTAS, migration.tick_stamp(table)
-        )
-        path.parent.mkdir(parents=True, exist_ok=True)
-        pq.write_table(table, path)
-    archive = migration.archive_from_aggregate(
-        old_state / migration.AGGREGATE,
-        migration.tick_stamp(ticks[0]),
-        old_state / migration.EPOCHS,
-    )
-    pq.write_table(archive, out / trend_history.ARCHIVE)
-    return out
-
-
-def test_an_older_layout_reads_as_its_migration_stores_it(tmp_path):
-    old_state = old_layout_trends_state.write(tmp_path / "old")
-    before = TrendHistory.load(old_state, _NO_CONFIG)
-    after = TrendHistory.load(_migrated(old_state, tmp_path / "new"), _NO_CONFIG)
-    assert before.ticks == after.ticks == tuple(old_layout_trends_state.T)
-    for ts in before.ticks:
-        assert before.index_counts(ts) == after.index_counts(ts)
-    assert before.openings() == after.openings()
-    for question in (TrendQuestion(), TrendQuestion(metric="new")):
-        assert before.answer(question) == after.answer(question)
-
-
-def test_a_tick_recorded_onto_the_older_layout_counts_against_its_migration(tmp_path):
-    """The step-6 writer runs before the one-off migration: its first ticks land beside files
-    in the older layout, and must count against the history the migration will store."""
-    old = old_layout_trends_state
-    state = old.write(tmp_path / "old")
-    _, before = trend_history.board_levels(state)
-    assert before == old.LEVELS[old.T[5]][1]
-    now = {**before, (old.ACME, "stock", "software", "mid"): 6}
-    ts = "2026-09-16T00:00:00+00:00"
-    assert trend_history.record_tick(state, ts, now, {}, _methodology(3)) == 1
-    assert trend_history.board_levels(state) == (ts, now)
-    assert TrendHistory.load(state, _NO_CONFIG).ticks[-1] == ts
 
 
 def test_comparable_coverage_serves_the_removals_on_its_cohorts_boards_only(tmp_path):
@@ -501,7 +450,9 @@ def test_new_becomes_the_week_of_opened_jobs_once_a_whole_week_has_them(
     whose whole week has Opened facts; before it, the level it always was. The switch is a
     counting change of its own, marked where it lands."""
     _write_opened_history(tmp_path)
-    history = TrendHistory.load(tmp_path, _NO_CONFIG)
+    history = TrendHistory.load(
+        stored_layout.store_in_current_layout(tmp_path), _NO_CONFIG
+    )
     answer = history.answer(TrendQuestion(metric="new", companies=companies))
 
     # turnover began on day 3; day 10 is the first with a whole week
@@ -523,6 +474,8 @@ def test_new_becomes_the_week_of_opened_jobs_once_a_whole_week_has_them(
 
 def test_all_openings_carry_no_switch_of_new(tmp_path):
     _write_opened_history(tmp_path)
-    answer = TrendHistory.load(tmp_path, _NO_CONFIG).answer(TrendQuestion())
+    answer = TrendHistory.load(
+        stored_layout.store_in_current_layout(tmp_path), _NO_CONFIG
+    ).answer(TrendQuestion())
     assert answer["new_inflow_from"] is None
     assert all("new_became_inflow" not in e["fields"] for e in answer["epochs"])
