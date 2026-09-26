@@ -682,3 +682,27 @@ def test_a_slice_that_takes_every_board_reports_no_head_overflow(
         _plan_scored_boards(tmp_path, monkeypatch, n_boards=10, max_boards=10)
 
     assert "head:" not in caplog.text
+
+
+def test_the_scrape_plan_job_fetches_exactly_the_state_files_the_planner_reads():
+    """pipeline.yml names scrape_plan's state files one by one rather than pulling `data/state/*`,
+    which also dragged in every role-trend delta. A ledger the planner starts reading without it
+    being added there would be absent on the runner, and the plan would silently go cold on it."""
+    from pathlib import Path
+
+    from headstart.ingest import REPO_ROOT
+
+    state = REPO_ROOT / "data" / "state"
+    read = {
+        str(v.relative_to(REPO_ROOT))
+        for v in vars(ps).values()
+        if isinstance(v, Path) and v.is_relative_to(state)
+    }
+    workflow = (REPO_ROOT / ".github" / "workflows" / "pipeline.yml").read_text("utf-8")
+    fetch = re.search(
+        r"python -m headstart\.ingest\.state_fetch\n(.*?)\n      - name: Plan the scrape",
+        workflow,
+        re.DOTALL,
+    )
+    assert fetch, "scrape-plan's state_fetch step not found"
+    assert set(fetch.group(1).split()) == read

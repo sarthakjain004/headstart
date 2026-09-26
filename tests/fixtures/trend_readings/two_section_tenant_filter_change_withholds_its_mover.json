@@ -29,7 +29,7 @@
    {
     "ts": "2026-09-20T00:00:00+00:00",
     "changed": [
-     "tech filter changed"
+     "tech-job filter updated"
     ],
     "fields": [
      "tech_filter_version"
@@ -83,6 +83,7 @@
   "total": {
    "name": "__total__",
    "label": "",
+   "whole_company": true,
    "estimated": false,
    "move": {
     "start": 90,
@@ -92,7 +93,7 @@
      {
       "change": "counting@2026-09-20T00:00:00+00:00",
       "kind": "counting",
-      "label": "tech filter changed",
+      "label": "tech-job filter updated",
       "size": 45
      }
     ],
@@ -128,6 +129,7 @@
    {
     "name": "a",
     "label": "a",
+    "whole_company": false,
     "estimated": false,
     "move": {
      "start": 50,
@@ -137,7 +139,7 @@
       {
        "change": "counting@2026-09-20T00:00:00+00:00",
        "kind": "counting",
-       "label": "tech filter changed",
+       "label": "tech-job filter updated",
        "size": 40
       }
      ],
@@ -168,6 +170,7 @@
    {
     "name": "b",
     "label": "b",
+    "whole_company": false,
     "estimated": false,
     "move": {
      "start": 40,
@@ -177,7 +180,7 @@
       {
        "change": "counting@2026-09-20T00:00:00+00:00",
        "kind": "counting",
-       "label": "tech filter changed",
+       "label": "tech-job filter updated",
        "size": 5
       }
      ],
@@ -211,6 +214,7 @@
    {
     "name": "taleo_enterprise:hdr/1",
     "label": "HDR",
+    "whole_company": true,
     "estimated": false,
     "move": {
      "start": 90,
@@ -220,7 +224,7 @@
       {
        "change": "counting@2026-09-20T00:00:00+00:00",
        "kind": "counting",
-       "label": "tech filter changed",
+       "label": "tech-job filter updated",
        "size": 45
       }
      ],
@@ -252,12 +256,12 @@
     "id": "counting@2026-09-20T00:00:00+00:00",
     "kind": "counting",
     "ts": "2026-09-20T00:00:00+00:00",
-    "label": "tech filter changed",
+    "label": "tech-job filter updated",
     "fields": [
      "tech_filter_version"
     ],
     "changed": [
-     "tech filter changed"
+     "tech-job filter updated"
     ],
     "company": null,
     "boards": null,

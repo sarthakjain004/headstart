@@ -42,6 +42,7 @@ from pathlib import Path
 import numpy as np
 
 from headstart.boards.board_identity import ats_of
+from headstart.boards.board_operator import company_operator
 from headstart.trends import company_suggestions, netting
 from headstart.trends.role_taxonomy import BAND_LABELS, NON_TECH, WATCH_PREFIX
 
@@ -126,12 +127,17 @@ class CompanyMove:
     ``net`` is the change in its tech openings since the window's base with the steps that are
     not hiring taken out; ``opened`` and ``closed`` are the jobs it opened and closed over the runs
     that change counts (ADR-0227), or None where no such run counted turnover: a 0 there stated a
-    week nobody measured; ``counted_since`` is the first tick that counted any of its Boards."""
+    week nobody measured. ``closed`` is None too where every Board of the company had a run in
+    the window whose closures went uncounted; where only some did, ``closures_uncounted_boards``
+    of its ``boards_in_scope`` did, and ``closed`` counts the rest. ``counted_since`` is the first
+    tick that counted any of its Boards."""
 
     net: int
     opened: int | None
     closed: int | None
     counted_since: str
+    closures_uncounted_boards: int = 0
+    boards_in_scope: int = 0
 
 
 @dataclass(frozen=True)
@@ -306,12 +312,22 @@ def _load_directory(path: Path) -> dict[str, dict]:
     A company's key is its first board_key, and any of its Boards resolves to it, so a Hot-tab
     row or a search result links to its company by the Board it already carries. Absent or
     half-written means no picker, never a failed boot.
+
+    Each company's Operator is decided here again, by ``board_operator``, not taken from the
+    file: what Hot hides must not wait on the next run to rewrite it (ADR-0238). A file written
+    before the `staffing` Operator showed Randstad and Collabera as IT services.
     """
     if not path.exists():
         return {}
     try:
         entries = json.loads(path.read_text(encoding="utf-8"))["companies"]
-        return {entry["boards"][0]: entry for entry in entries}
+        return {
+            entry["boards"][0]: {
+                **entry,
+                "operator": company_operator(entry["boards"], entry["name"]),
+            }
+            for entry in entries
+        }
     except (OSError, ValueError, KeyError, TypeError, IndexError):
         return {}
 
@@ -952,8 +968,14 @@ class TrendHistory:
             moves[key] = CompanyMove(
                 net=netting.js_round(netted[-1] - netted[0]) if netted else 0,
                 opened=turnover["opened"],
-                closed=turnover["closed"],
+                # Not counted where every Board's closures went uncounted: Amazon, one Board,
+                # read "0 closed" while its trend said "closures not counted on 1 board".
+                closed=None
+                if key in answer["closures_uncounted"]
+                else turnover["closed"],
                 counted_since=answer["counted_since"][key],
+                closures_uncounted_boards=answer["closures_unseen"].get(key, 0),
+                boards_in_scope=answer["boards_in_scope"].get(key, 0),
             )
         turnover_from = (
             max(self._turnover_since, first) if self._turnover_since else None
@@ -1247,6 +1269,15 @@ class TrendHistory:
             if inflow_from and release > inflow_from:
                 release = max(ts, inflow_from)
             new_from[pick] = min(new_from.get(pick, release), release)
+        # Under New a pick's lines count only from its release, so the window starts at the
+        # first run any of them counts: its start, its causes and its Marked changes are all read
+        # over the runs New counts. Micron's New counted from Sep 20, yet its window began Sep 13
+        # and listed a Sep 17 filter change inside its "Not hiring"; a change before the window
+        # now reads as the week-later echo it is. With no run counted yet the window stays, and
+        # the page says why nothing is new.
+        counting_from = min(new_from.values()) if metric == "new" and new_from else None
+        if counting_from and stamps and stamps[-1] >= counting_from:
+            stamps = [ts for ts in stamps if ts >= counting_from]
 
         def _series_label(name: str) -> str:
             if key == "company":
@@ -1459,6 +1490,9 @@ class TrendHistory:
         watch_parents = sorted(
             {parent for meta in self._watch.values() if (parent := parent_of(meta))}
         )
+        closures_unseen = (
+            self._closures_unseen(unscoped, stamps) if with_turnover else {}
+        )
         payload = {
             "coverage": coverage,
             # How long a posting counts as new: the page says it, and netting under New takes a
@@ -1529,7 +1563,12 @@ class TrendHistory:
             "turnover_left_out": [stamps[k] for k in sorted(left_out[0] | left_out[1])],
             # Per pick ("" for the index), its Boards whose closures went uncounted on some run
             # in the window (ADR-0053).
-            "closures_unseen": self._closures_unseen(unscoped, stamps)
+            "closures_unseen": closures_unseen,
+            # The picks for which that is every Board they have in scope: no closed count.
+            "closures_uncounted": self._closures_uncounted(unscoped, closures_unseen),
+            # Per pick, its Boards in scope, so a closed count read over some of them says so:
+            # "3 closed (not counted on 1 of 2 boards)".
+            "boards_in_scope": dict(Counter(unscoped.values()))
             if with_turnover
             else {},
         }
@@ -1879,6 +1918,17 @@ class TrendHistory:
             ):
                 seen[pick].add(board)
         return {pick: len(found) for pick, found in seen.items()}
+
+    @staticmethod
+    def _closures_uncounted(
+        boards: dict[str, str], unseen: dict[str, int]
+    ) -> list[str]:
+        """The picks whose every Board in scope (``boards``, Board -> pick) had its closures go
+        uncounted on a run in the window (``unseen``, :meth:`_closures_unseen`), so no closed
+        count is theirs to give. Google, one Board, read "18 closed … closures not counted on 1
+        board"."""
+        held = Counter(boards.values())
+        return sorted(pick for pick, n in unseen.items() if n == held[pick])
 
     def _in_cohort(self, board: str, base_stamp: str | None) -> bool:
         """Whether a comparable cohort based at ``base_stamp`` (ADR-0143) holds ``board``: a
