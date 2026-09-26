@@ -11,7 +11,8 @@ by DNS + HTTP probe rather than assumed: .jp, .uk, .sa, .sg and .com.cn also ans
 serves the identical careers stack (a bogus tenant returns HTTP 200 with `cl-error-block`, the
 soft-404 check_liveness.p_zoho already treats as DEAD). Only .com.br resolves without being a
 tenant namespace — its root 400s and the wildcard subdomain doesn't resolve — so it is excluded.
-.co.uk/.nl/.de/.fr/.za/.mx have no DNS at all.
+.co.uk/.nl/.de/.fr/.za/.mx have no DNS at all. Re-enumerated 2026-09-26: .ae (UAE) answers the same
+soft-404 and was missing from this list; ~60 other TLDs probed had no DNS.
 
 This page-mines every data-center domain with a real cohort and folds the deduped tenants
 into data/wayback-ats/zoho.csv. Dedup is by full host (url), not the bare label, because
@@ -46,6 +47,7 @@ REGIONAL = [
     ("zoho_cn", "zohorecruit.com.cn"),  # China
     ("zoho_uk", "zohorecruit.uk"),  # UK
     ("zoho_sg", "zohorecruit.sg"),  # Singapore
+    ("zoho_ae", "zohorecruit.ae"),  # UAE -- found 2026-09-26, the 11th data centre
 ]
 
 
