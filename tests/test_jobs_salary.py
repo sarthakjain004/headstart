@@ -1735,6 +1735,42 @@ def test_description_ca_dollar_prefix_resolves_as_cad():
     assert from_description(text) == SalarySpan(105_000, 145_000, "CAD", "regex")
 
 
+def test_description_iso_code_before_a_bare_dollar_names_the_currency():
+    # SuccessFactors Teck job 1433495400: "CAD $150,000" was read as USD, since the code sits
+    # before the "$" the match starts at and a bare "$" defaults to USD.
+    text = "Pay Range: CAD $150,000 - $185,000 per year"
+    assert from_description(text) == SalarySpan(150_000, 185_000, "CAD", "regex")
+    assert from_description("AUD $120,000 - $140,000 per year") == SalarySpan(
+        120_000, 140_000, "AUD", "regex"
+    )
+    assert from_description("HKD $50,000 - $60,000 per month") == SalarySpan(
+        600_000, 720_000, "HKD", "regex"
+    )
+    assert from_description("USD $150,000 - $185,000 per year") == SalarySpan(
+        150_000, 185_000, "USD", "regex"
+    )
+    assert from_description("NZD $90,000 - $110,000 per year") == SalarySpan(
+        90_000, 110_000, "NZD", "regex"
+    )
+    assert from_description("SGD $8,000 - $10,000 per month") == SalarySpan(
+        96_000, 120_000, "SGD", "regex"
+    )
+    assert from_description(
+        "Salary range CAD: $102,500 to $124,700 annually"
+    ) == SalarySpan(102_500, 124_700, "CAD", "regex")
+    # A peso code this module cannot emit is not a US dollar either.
+    assert from_description("MXN $50,000 - $60,000 per month") == SalarySpan(
+        600_000, 720_000, None, "regex"
+    )
+    # The prefixed symbols already named their currency; unchanged.
+    assert from_description("Pay Range: C$150,000 - $185,000 per year") == SalarySpan(
+        150_000, 185_000, "CAD", "regex"
+    )
+    assert from_description("Pay: A$120,000 - $140,000 per year") == SalarySpan(
+        120_000, 140_000, "AUD", "regex"
+    )
+
+
 def test_description_ca_dollar_prefix_works_without_a_swallowing_filler():
     # Code review caught that the first version of the fix above only worked when an unrelated
     # earlier part of the SAME _LABELED match happened to have already consumed the "CA" letters
