@@ -364,6 +364,27 @@ def test_a_give_up_on_the_spare_egress_is_reported_as_still_walled(
     )
 
 
+def test_a_failure_on_the_spare_egress_is_reported_as_carried(chrome_launches):
+    """A navigation that dies on the spare egress without a wall still rode it, as `http`
+    counts a transport failure through the proxy."""
+    spare_egress.use_daemon(spare_egress.InMemoryEgressDaemon(_SPARE))
+    seen = {"n": 0}
+
+    def operation():
+        seen["n"] += 1
+        if seen["n"] == 1:
+            raise TeslaWalled(403)
+        raise TimeoutError("navigation")
+
+    with pytest.raises(TimeoutError):
+        tesla._with_egress(operation)
+
+    assert spare_egress.report()[-1] == (
+        "tesla: walled; spare egress rescued 0/0 walled request(s) (n/a); "
+        "1 attempt(s) carried, 1 settled non-wall"
+    )
+
+
 def test_a_wall_with_no_spare_egress_is_raised_after_one_attempt(chrome_launches):
     operation, seen = _walls_then_answers(9)
 

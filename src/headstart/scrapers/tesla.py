@@ -268,27 +268,33 @@ def _with_egress(operation: Callable[[], Any]) -> Any:
                 spare_egress.note_routed(_GROUP)
             attempt += 1
             if attempt > _EGRESS_ATTEMPTS:
-                _settle_walled(on_spare, wall)
+                if on_spare:
+                    spare_egress.note_settled(
+                        _GROUP, wall.status, frozenset({wall.status})
+                    )
                 raise
             spare_egress.mark_walled(_GROUP, wall.status)
             shutdown()
             if on_spare:
                 if not spare_egress.rotate(SLUG):
-                    _settle_walled(on_spare, wall)
+                    spare_egress.note_settled(
+                        _GROUP, wall.status, frozenset({wall.status})
+                    )
                     raise
             elif spare_egress.proxy_for(_GROUP) is None:
                 raise
+        except Exception:
+            if (
+                on_spare
+            ):  # carried, but settled on no status: `http`'s transport-failure case
+                spare_egress.note_routed(_GROUP)
+                spare_egress.note_settled(_GROUP, None, frozenset())
+            raise
         else:
             if on_spare:
                 spare_egress.note_routed(_GROUP)
                 spare_egress.note_settled(_GROUP, 200, frozenset())
             return result
-
-
-def _settle_walled(on_spare: bool, wall: TeslaWalled) -> None:
-    """Count a request the spare egress carried and could not get past the wall."""
-    if on_spare:
-        spare_egress.note_settled(_GROUP, wall.status, frozenset({wall.status}))
 
 
 def _fetch_state_json() -> dict[str, Any]:

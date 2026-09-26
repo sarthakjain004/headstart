@@ -64,3 +64,18 @@ def test_a_genuinely_degraded_shard_is_still_caught(
 @pytest.mark.parametrize(("net", "lim"), [(5_000, 1_100), (19_000, 2_900)])
 def test_a_healthy_warp_shard_still_reads_warp(retries, net: int, lim: int) -> None:
     assert _verdict(retries, net, lim) == "warp"
+
+
+def test_zohos_throttle_retries_are_a_column_and_its_centre_groups_parse(
+    retries,
+) -> None:
+    """Zoho's deliberate `http-302` retry appeared in every run of 36200233818-36218633315, and its
+    egress groups are now per data centre (`zoho.com`), which a `\\w+` group name cannot match."""
+    line = (
+        "[scrape_run] retries: 403-wall 20, 429-ratelimit 140, 5xx 594, http-302 1, "
+        "network 700 (total 1455)"
+    )
+    counts, _total = retries.parse_retries(line)
+    assert set(counts) <= set(retries.CLASSES)
+    spent = "[spare_egress] zoho.com: origin returned 302 — spending this shard's spare egress"
+    assert retries.SPENT.findall(spent) == [("zoho.com", "302")]

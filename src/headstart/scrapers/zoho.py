@@ -53,7 +53,6 @@ from headstart import log
 from headstart.boards import company_name
 from headstart.jobs.job import Job, host_of, html_to_text
 from headstart.network import http
-from headstart.network.fetcher import Fetcher
 from headstart.scrapers.base import BaseScraper, DetailLost, DetailRequest
 
 _log = log.get(__name__)
@@ -241,11 +240,6 @@ class ZohoScraper(BaseScraper):
     #: (ADR-0226; the measurement is on `_THROTTLE_RETRY_ON`).
     egress_fallback_on = frozenset({_THROTTLE_STATUS})
     has_detail_pass = True  # per-Job fetch fills `description` (ADR-0050)
-
-    def __init__(
-        self, slug: str, company: str | None = None, fetcher: Fetcher | None = None
-    ) -> None:
-        super().__init__(slug, company, fetcher)
 
     @property
     def egress_group(self) -> str:
