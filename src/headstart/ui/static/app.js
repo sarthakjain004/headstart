@@ -1608,6 +1608,7 @@ let trendMetric = 'stock', trendUnit = 'change', trendSplit = 'bands', trendCove
 let trendDays = 'all';      // the date-range preset: 7 | 30 | 90 | 'all'; a custom bound beats it
 let hoveredSeries = null;   // legend/chart hover-focus name — dims every other line (§ emphasis)
 let hoverIndex = null;      // the stamp the crosshair is parked on — the keyboard walks this
+let tipScrollY = null;      // where scrolling the phone's tooltip into view left the page, so that scroll keeps it
 let tableView = false;      // the WCAG-clean twin of the chart, independent of the SVG
 let lastGeom = null;        // scales + resolved values from the last drawTrends() — hover reads this
 let trendReq = null;        // the /trends request in flight, so a newer one can cancel it
@@ -2051,11 +2052,19 @@ function turnoverPhrase(line, d){
   const t = line && line.move.turnover;
   if (!t) return '';
   const since = d.turnover_since && d.turnover_since > d.stamps[0] ? ` since ${stampLabel(d.turnover_since, true)}` : '';
-  const unseenBy = d.closures_unseen || {};
-  const unseen = VIEWS[viewKind(d)].split === 'company' ? unseenBy[line.name] || 0
-    : Object.values(unseenBy).reduce((sum, n) => sum + n, 0);
-  const note = unseen ? `, closures not counted on ${unseen} board${unseen === 1 ? '' : 's'}` : '';
-  return `about ${aboutCount(t.opened)} opened, ${aboutCount(t.closed)} closed${since}${note}`;
+  const whose = counts => VIEWS[viewKind(d)].split === 'company' ? (counts || {})[line.name] || 0
+    : Object.values(counts || {}).reduce((sum, n) => sum + n, 0);
+  // Where every Board's closures went uncounted the reading gives no closed count, and the
+  // sentence none: Google, one Board, read "18 closed … closures not counted on 1 board".
+  if (t.closed == null) return `about ${aboutCount(t.opened)} opened${since}; closures not counted`;
+  return `about ${aboutCount(t.opened)} opened, ${aboutCount(t.closed)} closed${
+    notCountedOn(whose(d.closures_unseen), whose(d.boards_in_scope))}${since}`;
+}
+// " (not counted on 1 of 2 boards)" after a closed count read over only some of the Boards: the
+// rest had a run whose closures went uncounted (ADR-0227). '' when every Board counted them.
+function notCountedOn(unseen, boards){
+  if (!unseen) return '';
+  return ` (not counted on ${unseen} of ${boards || unseen} board${(boards || unseen) === 1 ? '' : 's'})`;
 }
 // One company sentence from a line reading (ADR-0233): its openings, its hiring move, its
 // percentage and weekly rate, and its "Not hiring" by cause, each as the reading gives it.
@@ -2091,11 +2100,14 @@ function verdictOf(line, d){
     // The lead says it; the rest gives only the figure it has, never the lead again ("too new to
     // tell — …; too new to show a direction yet").
     lead = young ? 'too new to tell' : 'too short a window to tell';
-    move = young || !days ? '' : `${signedOpenings(n)} ${span}`;
+    move = [young || !days ? '' : `${signedOpenings(n)} ${span}`,
+      m.percent_withheld === MOSTLY_RECOUNTED ? RECOUNTED_NOTE : ''].filter(Boolean).join(', ');
   }
   else if (m.percent == null){
     // From a small start the change is stated, not judged — "a few more" read beside +50.
-    move = n ? `${signedOpenings(n)} ${over}${m.start < MOVER_FLOOR ? ', too few to call a trend' : ''}` : `unchanged ${over}`;
+    const why = m.percent_withheld === MOSTLY_RECOUNTED ? `, ${RECOUNTED_NOTE}`
+      : n && m.start < MOVER_FLOOR ? ', too few to call a trend' : '';
+    move = `${n ? signedOpenings(n) : 'unchanged'} ${over}${why}`;
     lead = n > 0 ? 'more openings' : n < 0 ? 'fewer openings' : 'unchanged';
   }
   else {
@@ -2399,7 +2411,9 @@ async function loadTrends(family){
   // chart and sentence stayed under "no trend for nosuch:board" (critic round 15).
   if (refused && dropRefusedPicks(refused)){ clearTrendsView(); return loadTrends(family); }
   if (refused) err = 'Trends didn’t load. Try again.';
-  if (err){ showTrendsError(err); return; }
+  // A failed load takes the last answer's words with it: a hand-off from Hot to Lockheed Martin
+  // that did not go through left Bosch Group's sentence under Lockheed's chip (critic round 17).
+  if (err){ clearTrendsView(); showTrendsError(err); return; }
   hideTrendsError();
   // The Space names each pick, disambiguated against the others (ADR-0185), and answers with
   // the directory's own key even when the pick came in by another of the company's Boards.
@@ -2430,7 +2444,8 @@ async function loadTrends(family){
 // left the refused picks' chart and sentence standing under the note that refused them.
 function clearTrendsView(){
   trendData = null; trendRaw = null;
-  ['trends-chart', 'trends-legend', 'trends-verdict', 'trends-kpi'].forEach(id => { if (el(id)) el(id).innerHTML = ''; });
+  ['trends-chart', 'trends-legend', 'trends-verdict', 'trends-kpi', 'trends-table', 'trends-full-table',
+    'trends-changes'].forEach(id => { if (el(id)) el(id).innerHTML = ''; });
   if (el('trends-changes')) el('trends-changes').hidden = true;
 }
 // A pick the Space refuses leaves with a sentence rather than failing the chart. A search
@@ -2569,6 +2584,9 @@ function hasIndexBase(s){
 // whether a line can be drawn indexed at all; this one decides whether its percentage is news.
 // The reading withholds the percentage below it (line_reading.MOVER_FLOOR).
 const MOVER_FLOOR = 20;
+// A line mostly re-counted in the window says so in `percent_withheld`
+// (line_reading.MOSTLY_RECOUNTED).
+const MOSTLY_RECOUNTED = 'mostly_recounted';
 // The legend's and the table's figure for a line: its percentage (the share's own change under
 // Share), or where the reading withholds one its hiring in openings (`count`), which is what a
 // reader can actually weigh. Every figure is the reading's.
@@ -2583,6 +2601,10 @@ function lineMove(s){
   // older company states its change in openings, as the sentence does — Hot's "+18" had to be
   // checkable on the trend its row opens.
   // Under Share a change in openings is another unit beside shares, so those lines show none.
+  // Mostly re-counted in this window (line_reading.MOSTLY_RECOUNTED): no percentage in any unit,
+  // no index line and no tile, only its hiring in openings, said with why, and said first: a
+  // short window or a small start hid it (review of #731).
+  if (m.percent_withheld === MOSTLY_RECOUNTED) return { count: m.hiring, recounted: true };
   if (trendData && m.span_days < MIN_SPAN_DAYS){
     if (isYoung(s.name, trendData)) return { tooNew: true };
     return !m.span_days || trendUnit === 'share' ? { small: true, short: true } : { count: m.hiring, short: true };
@@ -2645,8 +2667,11 @@ function moveText(mv){
   if (mv.small) return '—';
   if (mv.count == null) return deltaText(mv.dl);
   const n = mv.count;
-  return `${n > 0 ? '↑' : n < 0 ? '↓' : '→'} ${signedOpenings(n)}`;
+  return `${n > 0 ? '↑' : n < 0 ? '↓' : '→'} ${signedOpenings(n)}${mv.recounted ? `, ${RECOUNTED_NOTE}` : ''}`;
 }
+// What a mostly re-counted line says beside its hiring, and why, as a title.
+const RECOUNTED_NOTE = 'mostly re-counted in this window';
+const RECOUNTED_WHY = 'Changes to how HeadStart counts took out more of this line’s openings than are left of its start, so a percentage off what is left would be arithmetic, not hiring';
 // "+3 openings", "−1 opening": every place a change is given in openings.
 function signedOpenings(n){
   return `${n < 0 ? '−' : '+'}${Math.abs(n).toLocaleString()} opening${Math.abs(n) === 1 ? '' : 's'}`;
@@ -2837,7 +2862,7 @@ function drawTrends(){
       <span class="nm" title="${esc(s.label)}">${esc(s.label)}</span>
       <span class="ct">${latest == null ? '—' : fmtCompact(latest)}</span>
       ${noBase && 'dl' in mv ? '<span class="dl flat" title="Under 5 openings at the start of this window, too few to index against">started under 5</span>'
-               : `<span class="dl ${moveClass(mv)}"${mv.count == null ? '' : mv.short ? ' title="Too short a window for a percentage to mean much, so the change in openings"' : ' title="Too few openings for a percentage to mean much, so the change in openings"'}>${moveText(mv)}</span>`}
+               : `<span class="dl ${moveClass(mv)}"${mv.count == null ? '' : mv.recounted ? ` title="${RECOUNTED_WHY}"` : mv.short ? ' title="Too short a window for a percentage to mean much, so the change in openings"' : ' title="Too few openings for a percentage to mean much, so the change in openings"'}>${moveText(mv)}</span>`}
       ${hasRoles ? '<span class="drill" role="img" aria-label="has tracked roles" title="Opens the named roles tracked inside this category">▸ roles</span>' : ''}</span>
       ${view === VIEWS.roles && trendPicks.length ? `<button class="linkish role-jobs" type="button" data-role="${esc(s.name)}"
         data-role-label="${esc(s.label)}" aria-label="See ${esc(s.label)} jobs in Search">jobs</button>` : ''}
@@ -3311,6 +3336,7 @@ function positionHoverLayer(index, opts){
   if (!group) return;
   hoverIndex = index;
   if (index == null){
+    tipScrollY = null;
     group.style.display = 'none';
     if (tip) tip.hidden = true;
     return;
@@ -3376,6 +3402,14 @@ function positionHoverLayer(index, opts){
     if (under){
       tip.style.left = '0px';
       tip.style.top = (svgRect.height + 6) + 'px';
+      // It sits in the page's flow under the chart there (style.css), so a tap near the foot of
+      // a 390px screen put it below the edge (critic round 17): scrolled just into view then.
+      // The scroll that makes is not the reader's, so it does not put the reading away.
+      const viewH = (typeof window !== 'undefined' && window.innerHeight) || 0;
+      if (viewH && tip.getBoundingClientRect().bottom > viewH && tip.scrollIntoView){
+        tip.scrollIntoView({ block: 'nearest' });
+        tipScrollY = window.scrollY;
+      }
       return;
     }
     const left = px > wrapRect.width / 2 ? Math.max(4, px - tw - 12)
@@ -3455,7 +3489,10 @@ function buildTrendsTable(){
   const turnoverCells = move => {
     if (!withTurnover) return '';
     const t = move && move.turnover;
-    return t ? `<td>${esc(t.opened.toLocaleString())}</td><td>${esc(t.closed.toLocaleString())}</td>` : dash + dash;
+    if (!t) return dash + dash;
+    return `<td>${esc(t.opened.toLocaleString())}</td>` + (t.closed == null
+      ? '<td class="flat" title="Every board’s closures went uncounted on a run in this window">not counted</td>'
+      : `<td>${esc(t.closed.toLocaleString())}</td>`);
   };
   const cell = v => `<td>${v == null ? '—' : esc(fmtLevel(v))}</td>`;
   const openings = n => `<td class="${n > 0 ? 'up' : n < 0 ? 'down' : 'flat'}">${esc(signedOpenings(n))}</td>`;
@@ -3507,6 +3544,7 @@ function buildTrendsTable(){
 // inside the window included: all of it is hiring, or, sorted in by a counting change, none.
 function hiringCells(move, mv){
   const pct = mv.tooNew || mv.since ? `<td class="flat">${esc(moveText(mv))}</td>`
+    : mv.recounted ? `<td class="flat" title="${RECOUNTED_WHY}">${RECOUNTED_NOTE}</td>`
     : mv.dl != null ? `<td class="${deltaClass(mv.dl)}">${deltaText(mv.dl)}</td>`
     : `<td class="flat" title="Under ${MOVER_FLOOR} openings at the start, or too short a window, for a percentage to mean much">—</td>`;
   const n = !move || mv.tooNew ? null : move.hiring;
@@ -3546,12 +3584,18 @@ function markedText(item){
 //   5. share is the netted count over the netted denominator, and the percentage hiring over the
 //      netted start, given only off INDEX_BASE_FLOOR openings or more, neither netted a second
 //      time; the share's own change is its latest over its start, withheld with the percentage;
-//   6. with no pick nothing is taken out.
+//   6. with no pick nothing is taken out;
+//   7. a category, level or role line mostly re-counted in the window (MOSTLY_RECOUNTED: its
+//      counting changes took openings out, and took out more than was left, or left under
+//      INDEX_BASE_FLOOR of a start of MOVER_FLOOR or more) gives no percentage, in any unit, and no index base, and says it is
+//      one whatever else withholds its percentage; no other line says so. A whole company's
+//      line and the closing row never are.
 // (4, one size in every window, is stated by the tests over narrower windows.) Plus: every count
 // is a whole number; a line's Not hiring total is its causes' sum; its weekly rate is its hiring
 // over the days it was counted, withheld under MIN_SPAN_DAYS; its turnover's net is opened less
-// closed; the Other row is the lines past CHART_MAX added together; no change is one the reading
-// could not name; and every Marked change is named by exactly one day marker.
+// closed, and neither is given where closed is not; the Other row is the lines past CHART_MAX
+// added together; no change is one the reading could not name; a company line's causes stand in
+// the order their Marked changes ran; and every Marked change is named by exactly one day marker.
 function checkReading(reading){
   const out = [];
   const changes = new Map((reading.marked_changes || []).map(c => [c.id, c]));
@@ -3560,10 +3604,18 @@ function checkReading(reading){
       .filter(Boolean).flatMap(r => r.move.not_hiring.map(c => c.label)));
   [...new Set(labels.filter(label => FIELD_ID.test(label)))].sort()
     .forEach(label => out.push(`label '${label}': it is a field id, not words`));
+  // line_reading._mostly_recounted: counting changes took openings out, and took more than
+  // was left, or left under INDEX_BASE_FLOOR of a start of MOVER_FLOOR or more.
+  const recounted = m => {
+    const left = m.latest - m.hiring;
+    const counting = m.not_hiring.filter(c => COUNTING_KINDS.has(c.kind)).reduce((sum, c) => sum + c.size, 0);
+    return counting < 0 && (-counting > left || (m.start >= MOVER_FLOOR && left < INDEX_BASE_FLOOR));
+  };
   [reading.total, ...(reading.lines || [])].filter(r => r && r.index_base != null).forEach(r => {
     const first = r.netted.find(v => v != null);
     if (r.index_base < INDEX_BASE_FLOOR || r.index_base !== first)
       out.push(`line ${r.name}: its index base is not a first netted count of ${INDEX_BASE_FLOOR} or more`);
+    if (!r.whole_company && recounted(r.move)) out.push(`line ${r.name}: it is indexed though mostly re-counted`);
   });
   const linesNow = (reading.lines || []).reduce((sum, r) => sum + r.move.latest, 0);
   if ((reading.openings || 0) !== linesNow) out.push("openings: not every line's latest added together");
@@ -3576,14 +3628,15 @@ function checkReading(reading){
     ...(reading.lines || []).map(r => [`line ${r.name}`, r]),
     ['other row', reading.other],
     ...(reading.company_lines || []).map(r => [`company line ${r.name}`, r])];
-  const moves = lines.filter(([, r]) => r).map(([where, r]) => [where, r.move]);
+  // Each move with whether it is a whole company's, which is never mostly re-counted.
+  const moves = lines.filter(([, r]) => r).map(([where, r]) => [where, r.move, !!r.whole_company]);
   const breakdown = reading.breakdown;
   const closing = breakdown ? breakdown.closing : null;
-  if (closing) moves.push(['closing row', closing]);
-  for (const [where, m] of moves){
+  if (closing) moves.push(['closing row', closing, false, true]);
+  for (const [where, m, wholeCompany, isClosingRow] of moves){
     const counts = [m.start, m.latest, m.hiring, m.not_hiring_total, ...m.not_hiring.map(c => c.size),
       ...(m.per_week != null ? [m.per_week] : []),
-      ...(m.turnover ? [m.turnover.opened, m.turnover.closed, m.turnover.net] : [])];
+      ...(m.turnover ? [m.turnover.opened, m.turnover.closed, m.turnover.net].filter(n => n != null) : [])];
     if (counts.some(n => !Number.isInteger(n))){ out.push(`${where}: a count is not a whole number`); continue; }
     const named = m.not_hiring.reduce((sum, c) => sum + c.size, 0);
     const nettedStart = m.latest - m.hiring;
@@ -3593,7 +3646,7 @@ function checkReading(reading){
       out.push(`${where}: its Not hiring reads ${m.not_hiring_total}, its causes sum to ${named}`);
     const weekly = m.span_days >= MIN_SPAN_DAYS ? Math.round(m.hiring / m.span_days * 7) : null;
     if (m.per_week !== weekly) out.push(`${where}: its weekly rate is not its hiring over its days`);
-    if (m.turnover && m.turnover.net !== m.turnover.opened - m.turnover.closed)
+    if (m.turnover && m.turnover.net !== (m.turnover.closed == null ? null : m.turnover.opened - m.turnover.closed))
       out.push(`${where}: its turnover's net is not opened less closed`);
     m.not_hiring.filter(c => c.kind === 'unexplained')
       .forEach(c => out.push(`${where}: ${c.size} openings of not hiring have no named cause`));
@@ -3604,13 +3657,16 @@ function checkReading(reading){
       if (!same(m.share.latest, latest ? m.latest / latest * 100 : null))
         out.push(`${where}: its latest share is not its count over the denominator`);
       const start = m.share.start, now = m.share.latest;
-      const change = m.span_days >= MIN_SPAN_DAYS && m.start >= MOVER_FLOOR && start && now != null
-        ? (now - start) / start * 100 : null;
+      const change = m.percent != null && start && now != null ? (now - start) / start * 100 : null;
       if (!same(m.share.percent, change))
         out.push(`${where}: its share's change is not its latest share over its start`);
     }
     if (m.percent != null && (nettedStart < INDEX_BASE_FLOOR || !same(m.percent, m.hiring / nettedStart * 100)))
       out.push(`${where}: its percentage is not hiring over the netted start`);
+    const isRecounted = !(wholeCompany || isClosingRow) && recounted(m);
+    if (isRecounted && m.percent != null) out.push(`${where}: it gives a percentage though mostly re-counted`);
+    if ((m.percent_withheld === MOSTLY_RECOUNTED) !== isRecounted)
+      out.push(`${where}: it is said to be mostly re-counted where it is not`);
     if (!reading.picked && (m.not_hiring.length || m.hiring !== m.latest - m.start))
       out.push(`${where}: with no pick, something was taken out`);
   }
@@ -3619,6 +3675,9 @@ function checkReading(reading){
     const listed = [...changes.values()].filter(c => line.name in c.sizes);
     if (causes.size !== listed.length || listed.some(c => causes.get(c.id) !== c.sizes[line.name]))
       out.push(`company line ${line.name}: its Not hiring is not its Marked changes`);
+    const ran = line.move.not_hiring.filter(c => changes.has(c.change)).map(c => changes.get(c.change).ts);
+    if (ran.some((ts, k) => k && ts < ran[k - 1]))
+      out.push(`company line ${line.name}: its Not hiring is not in the order its changes ran`);
   });
   if (breakdown && reading.total){
     const rows = (reading.lines || []).map(r => r.move);
@@ -4096,7 +4155,9 @@ if (el('trends-chart')) {
   el('trends-chart').addEventListener('pointerleave', e => { if (e.pointerType !== 'touch') positionHoverLayer(null); });
   // A tapped reading stays until the finger moves on: a scroll, or a tap anywhere off the plot.
   // It stuck over the "Marked changes" list after scrolling to it, covering its entries.
-  window.addEventListener('scroll', () => { if (hoverIndex != null) positionHoverLayer(null); }, { passive: true });
+  window.addEventListener('scroll', () => {
+    if (hoverIndex != null && window.scrollY !== tipScrollY) positionHoverLayer(null);
+  }, { passive: true });
   document.addEventListener('click', e => {
     if (hoverIndex != null && !(e.target.closest && e.target.closest('#trends-chart'))) positionHoverLayer(null);
   });
@@ -4307,10 +4368,15 @@ if (el('matches-controls')){
    re-polled. ---- */
 let hotData = null;
 
+// `hidden` marks the kinds of row the list hides unless asked (the owner's call, ADR-0238):
+// staffing firms and job boards, never an IT services employer such as Wipro, Infosys or TCS.
+// `noun` names a hidden row's kind in the "hidden" note, one and many.
 const HOT_OPERATOR = {
-  services: { label: 'staffing / services', hint: 'This company is an IT services or staffing firm, so most roles are placements with its clients rather than jobs at the company itself.' },
-  aggregator: { label: 'job board', hint: 'This company re-posts other companies’ jobs. The employer behind a given role is somebody else.' },
+  services: { label: 'IT services', hint: 'This company is an IT services firm: it employs the people it hires, though most of its roles are on client projects.' },
+  staffing: { label: 'staffing firm', hidden: true, noun: ['staffing firm', 'staffing firms'], hint: 'This company is a staffing firm, so most roles are placements with its clients rather than jobs at the company itself.' },
+  aggregator: { label: 'job board', hidden: true, noun: ['job board', 'job boards'], hint: 'This company re-posts other companies’ jobs. The employer behind a given role is somebody else.' },
 };
+const hotHidden = r => !!(HOT_OPERATOR[r.operator] || {}).hidden;
 
 async function loadHot(){
   el('hot-msg').textContent = 'Loading…';
@@ -4348,15 +4414,31 @@ function hotLens(){
 // A row whose turnover was not counted carries opened and closed as null, and Expansion says
 // nothing of them then: "0 opened · 0 closed this week" beside "+442 net" stated a week nobody
 // measured. Volume and Rate need no such case: they rank only a counted, positive opened.
+// A row's closed count is null too where every Board of its company had its closures go
+// uncounted (hot_ranking): Amazon, one Board, read "0 closed" beside a trend saying "closures not
+// counted on 1 board". Where only some did, the count says so: "3 closed (not counted on 1 of 2
+// boards)".
+const hotClosed = r => r.closed == null ? 'closures not counted'
+  : `${r.closed} closed${notCountedOn(r.closures_uncounted_boards, r.boards_in_scope)}`;
 const HOT_MEASURE = {
   expansion: r => ({ big: (r.net > 0 ? '+' : '') + r.net, unit: 'net tech roles',
-    sub: r.opened != null ? `${r.opened} opened · ${r.closed} closed this week · ${r.stock} open now`
-      : `${r.stock} open now` }),
-  volume:    r => ({ big: String(r.opened), unit: 'tech roles opened this week', sub:
-    `${r.closed} closed · ${r.net >= 0 ? '+' : ''}${r.net} net · ${r.stock} open now` }),
-  rate:      r => ({ big: r.rate + '%', unit: 'opened this week, as a share of its open roles', sub:
-    `${r.opened} opened of ${r.stock} open now · ${r.closed} closed this week` }),
+    sub: r.opened == null ? `${r.stock} open now`
+      : r.closed == null ? `${r.opened} opened ${hotTurnoverSpan()} · closures not counted · ${r.stock} open now`
+      : `${r.opened} opened · ${hotClosed(r)} ${hotTurnoverSpan()} · ${r.stock} open now` }),
+  volume:    r => ({ big: String(r.opened), unit: `tech roles opened ${hotTurnoverSpan()}`, sub:
+    `${hotClosed(r)} · ${r.net >= 0 ? '+' : ''}${r.net} net · ${r.stock} open now` }),
+  rate:      r => ({ big: r.rate + '%', unit: `opened ${hotTurnoverSpan()}, as a share of its open roles`, sub:
+    `${r.opened} opened of ${r.stock} open now · ${r.closed == null ? hotClosed(r) : `${hotClosed(r)} ${hotTurnoverSpan()}`}` }),
 };
+// Over when the rows' opened and closed were counted, in words: "this week" where turnover covers
+// Hot's whole window, else "in the last 11 hours", or past three days "since Sep 25 18:16" (UTC).
+// Rows read "0 opened · 0 closed this week" when turnover had been counted for about an hour.
+function hotTurnoverSpan(){
+  const w = (hotData && hotData.window) || {};
+  if (!w.turnover_from || !w.from || !w.to || w.turnover_from <= w.from) return 'this week';
+  const hours = Math.max(1, Math.round((new Date(w.to) - new Date(w.turnover_from)) / 36e5));
+  return hours < 72 ? `in the last ${hours} hour${hours === 1 ? '' : 's'}` : `since ${stampLabel(w.turnover_from)}`;
+}
 
 // Whether every Board of the row's company is followed. Following one follows them all
 // (ADR-0230), so a company followed Board by Board before that reads "Follow" until it is whole.
@@ -4374,12 +4456,8 @@ function drawHot(){
   const lens = hotLens();
   const showAll = el('hot-show-all').checked;
   const all = hotData.lenses[lens] || [];
-  const rows = showAll ? all : all.filter(r => r.operator === 'employer');
-  const hiddenCount = all.length - rows.length;
-
-  el('hot-filtered').textContent = hiddenCount
-    ? `${hiddenCount} staffing ${hiddenCount === 1 ? 'firm or job board' : 'firms and job boards'} hidden`
-    : (showAll ? '' : 'nothing filtered on this view');
+  const rows = showAll ? all : all.filter(r => !hotHidden(r));
+  el('hot-filtered').textContent = showAll ? '' : hotHiddenNote(all.filter(r => !rows.includes(r)));
 
   if (!rows.length){
     el('hot-results').innerHTML = lens !== 'expansion' && !hotTurnoverCounted()
@@ -4388,6 +4466,22 @@ function drawHot(){
     return;
   }
   el('hot-results').innerHTML = rows.map((r, i) => hotRow(r, i, lens)).join('');
+}
+
+// What the list hides, named: each kind with its count and its first few companies, "Hidden:
+// 12 staffing firms (Sonsoft Inc, USM, Collabera and 9 more) and 1 job board (Jobgether)". A bare
+// count read "staffing firms and job boards" of a view that hid one of either.
+const HOT_HIDDEN_NAMED = 3;
+function hotHiddenNote(hidden){
+  if (!hidden.length) return 'nothing hidden on this view';
+  const parts = Object.keys(HOT_OPERATOR).filter(op => HOT_OPERATOR[op].hidden).map(op => {
+    const of = hidden.filter(r => r.operator === op);
+    if (!of.length) return '';
+    const names = of.slice(0, HOT_HIDDEN_NAMED).map(r => r.company).join(', ');
+    const more = of.length > HOT_HIDDEN_NAMED ? ` and ${of.length - HOT_HIDDEN_NAMED} more` : '';
+    return `${of.length} ${HOT_OPERATOR[op].noun[of.length === 1 ? 0 : 1]} (${names}${more})`;
+  }).filter(Boolean);
+  return `Hidden: ${parts.join(' and ')}.`;
 }
 
 function hotRow(r, i, lens){

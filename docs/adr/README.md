@@ -233,6 +233,7 @@ supersedes it and note the supersession in both.
 | [0235](0235-where-the-package-layout-keeps-a-name-and-what-its-rewrites-leave-alone.md) | Where the package layout keeps a name, and what its rewrites leave alone | 2026-09-26 |
 | [0236](0236-board-identity-and-scrapable-boards-keep-their-names-inside-boards.md) | `board_identity` and `scrapable_boards` keep their names inside `boards/` | 2026-09-26 |
 | [0237](0237-trend-history-keeps-its-name-inside-trends.md) | `trend_history` keeps its name inside `trends/`, and `trend_reading` becomes `line_reading` | 2026-09-26 |
+| [0238](0238-a-mostly-re-counted-line-gives-no-percentage-and-hot-hides-only-staffing-and-job-boards.md) | A mostly re-counted category gives no percentage, and Hot hides only staffing firms and job boards | 2026-09-26 |
 | [0244](0244-publication-deletes-the-search-indexes-the-table-no-longer-reads.md) | Publication deletes the Search indexes the table no longer reads | 2026-09-26 |
 
 *ADR-0037 was removed from the repository on 2026-09-24 by the owner's decision; its number is not

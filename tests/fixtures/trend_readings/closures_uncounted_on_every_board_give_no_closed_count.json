@@ -1,25 +1,43 @@
 {
- "description": "A filter change of +40 on the company line.",
+ "description": "Every Board of the company had a run whose closures went uncounted (closures_uncounted): it opened 500 jobs, and no closed count or net is given. Google, one Board, read '18 closed ... closures not counted on 1 board'.",
  "answer_input": {
   "stamps": [
    "2026-09-13T00:00:00+00:00",
    "2026-09-14T00:00:00+00:00",
    "2026-09-15T00:00:00+00:00",
-   "2026-09-16T00:00:00+00:00",
-   "2026-09-17T00:00:00+00:00"
+   "2026-09-16T00:00:00+00:00"
   ],
   "series": [
    {
     "name": "greenhouse:acme",
     "label": "Acme",
     "points": [
-     100,
-     100,
-     140,
-     140,
-     150
+     1000,
+     1000,
+     1400,
+     1400
     ],
-    "latest": 150
+    "latest": 1400,
+    "turnover": {
+     "opened": [
+      null,
+      500,
+      900,
+      110
+     ],
+     "closed": [
+      null,
+      490,
+      505,
+      100
+     ],
+     "recounted": [
+      null,
+      0,
+      0,
+      0
+     ]
+    }
    }
   ],
   "epochs": [
@@ -33,6 +51,10 @@
     ]
    }
   ],
+  "turnover_since": "2026-09-13T00:00:00+00:00",
+  "closures_unseen": {
+   "greenhouse:acme": 1
+  },
   "metric": "stock",
   "coverage": "all",
   "new_window_days": 7,
@@ -62,11 +84,9 @@
    10000,
    10000,
    10000,
-   10000,
    10000
   ],
   "non_tech": [
-   0,
    0,
    0,
    0,
@@ -74,12 +94,15 @@
   ],
   "watch_parents": [],
   "uncounted": [],
-  "company_totals": {}
+  "company_totals": {},
+  "closures_uncounted": [
+   "greenhouse:acme"
+  ]
  },
  "reading": {
   "window": {
    "from": "2026-09-13T00:00:00+00:00",
-   "to": "2026-09-17T00:00:00+00:00"
+   "to": "2026-09-16T00:00:00+00:00"
   },
   "picked": true,
   "total": null,
@@ -90,43 +113,46 @@
     "whole_company": true,
     "estimated": false,
     "move": {
-     "start": 100,
-     "latest": 150,
-     "hiring": 10,
+     "start": 1000,
+     "latest": 1400,
+     "hiring": 0,
      "not_hiring": [
       {
        "change": "counting@2026-09-15T00:00:00+00:00",
        "kind": "counting",
        "label": "tech-job filter updated",
-       "size": 40
+       "size": 400
       }
      ],
-     "not_hiring_total": 40,
-     "percent": 7.142857142857142,
+     "not_hiring_total": 400,
+     "percent": 0.0,
      "percent_withheld": null,
-     "span_days": 4.0,
-     "per_week": 18,
-     "turnover": null,
+     "span_days": 3.0,
+     "per_week": 0,
+     "turnover": {
+      "opened": 500,
+      "closed": null,
+      "net": null
+     },
      "share": {
-      "start": 1.4000000000000001,
-      "latest": 1.5,
+      "start": 14.000000000000002,
+      "latest": 14.000000000000002,
       "denominator_start": 10000,
       "denominator_latest": 10000,
-      "percent": 7.142857142857133
+      "percent": 0.0
      }
     },
     "netted": [
-     140,
-     140,
-     140,
-     140,
-     150
+     1400,
+     1400,
+     1400,
+     1400
     ],
     "steps_at": [
      2,
      3
     ],
-    "index_base": 140,
+    "index_base": 1400,
     "arrived_by": null
    }
   ],
@@ -138,29 +164,33 @@
     "whole_company": true,
     "estimated": false,
     "move": {
-     "start": 100,
-     "latest": 150,
-     "hiring": 10,
+     "start": 1000,
+     "latest": 1400,
+     "hiring": 0,
      "not_hiring": [
       {
        "change": "counting@2026-09-15T00:00:00+00:00",
        "kind": "counting",
        "label": "tech-job filter updated",
-       "size": 40
+       "size": 400
       }
      ],
-     "not_hiring_total": 40,
-     "percent": 7.142857142857142,
+     "not_hiring_total": 400,
+     "percent": 0.0,
      "percent_withheld": null,
-     "span_days": 4.0,
-     "per_week": 18,
-     "turnover": null,
+     "span_days": 3.0,
+     "per_week": 0,
+     "turnover": {
+      "opened": 500,
+      "closed": null,
+      "net": null
+     },
      "share": {
-      "start": 1.4000000000000001,
-      "latest": 1.5,
+      "start": 14.000000000000002,
+      "latest": 14.000000000000002,
       "denominator_start": 10000,
       "denominator_latest": 10000,
-      "percent": 7.142857142857133
+      "percent": 0.0
      }
     },
     "netted": [],
@@ -185,7 +215,7 @@
     "company": null,
     "boards": null,
     "sizes": {
-     "greenhouse:acme": 40
+     "greenhouse:acme": 400
     }
    }
   ],
@@ -202,10 +232,9 @@
    10000,
    10000,
    10000,
-   10000,
    10000
   ],
-  "openings": 150,
+  "openings": 1400,
   "served_jobs": null,
   "non_tech_jobs": null,
   "reconciles": true,

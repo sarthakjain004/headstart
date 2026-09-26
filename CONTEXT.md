@@ -39,7 +39,7 @@ ATS); a board_key is only its string name. Before ADR-0155 five call sites each 
 string independently, with three different opinions about a slug that wouldn't parse.
 
 **Operator** (ADR-0171):
-Who runs a Board — the `employer` itself, a `services` firm (IT services, consulting, staffing, BPO) placing people with its clients, or an `aggregator` re-posting other companies' postings. A curated list (`ingest/board_operator.py`), not a classifier: the measurement behind it says no cheap rule separates a services firm from an employer (F1 52.7, and it demotes Cerebras), so a Board on no list is an `employer`. `company_directory` labels each **Company directory** entry with it (aggregator if any of its Boards is, else services if any is), and the Hot list shows the label (ADR-0230).
+Who runs a Board — the `employer` itself, a `services` firm (IT services, consulting, BPO) that employs the people it puts on client work, a `staffing` firm (staffing, contract placement, talent marketplaces) placing people with its clients, or an `aggregator` re-posting other companies' postings. A curated list (`boards/board_operator.py`), not a classifier: the measurement behind it says no cheap rule separates a services firm from an employer (F1 52.7, and it demotes Cerebras), so a Board on no list is an `employer`. Each **Company directory** entry carries it (aggregator if any of its Boards is, else staffing, else services), decided again as the Space loads the directory, and the Hot list shows the label and hides staffing firms and aggregators unless asked (ADR-0230, ADR-0238).
 _Avoid_: reading `services` as a judgement on the company — Capgemini employs its own engineers; the label says its postings are client placements, which is a different thing for a job hunter.
 
 **Lens** (ADR-0171):
@@ -330,7 +330,7 @@ Taking out of a line's change the steps that are not hiring — **Counting chang
 _Avoid_: storing a netted figure — the rule has changed in most of ADR-0185's rounds, so a stored net would go stale with it.
 
 **Line reading** (ADR-0233):
-What a Trends line reports over a window, whole and reconciled: its start and latest openings, its hiring move, and its "Not hiring" split into named causes — each **Counting change**, **Found Board**s, duplicate postings removed, and growth counted twice before a removal — so that latest − start is exactly hiring plus those causes. A line's Marked changes are its causes; a breakdown's rows add up to its first row, with a closing row when a counting change reassigned more jobs than a category held.
+What a Trends line reports over a window, whole and reconciled: its start and latest openings, its hiring move, and its "Not hiring" split into named causes — each **Counting change**, **Found Board**s, duplicate postings removed, and growth counted twice before a removal — so that latest − start is exactly hiring plus those causes. A line's Marked changes are its causes; a breakdown's rows add up to its first row, with a closing row when a counting change reassigned more jobs than a category held. A category, level or role line is _mostly re-counted_ when counting changes took out most of what it held in the window; it then reads in openings only. A company's own line never is (ADR-0238).
 _Avoid_: reading a line's move off its points — the points include the steps that are not hiring.
 
 ### Accounts
