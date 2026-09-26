@@ -18,16 +18,17 @@ fetch's own retry ladder (backoff from 0.75 s) is switched off here. robots.txt 
 Board per run and, per RFC 9309, a 4xx means no restrictions and a 5xx or an unreachable host means
 none may be assumed — so the Board fails for the run rather than reading as empty. A host that
 disallows ``/api/jobs`` (``carrefour`` does) is not read at all. No request is ever made to the
-backing ATS's own host except its robots.txt (below), and never to a posting's ``apply_url``.
+backing ATS's own host, and never to a posting's ``apply_url``.
 
-**iCIMS already covers a readable tenant, so its postings are dropped here (the user's option A,
-ADR-0189).** Each row's ``apply_url`` names its backing Board. 26.8% of pool rows sit on iCIMS
-tenants whose robots.txt lets the sitemap-only iCIMS scraper read them, and Jibe's ``slug`` is that
-same requisition id, so serving them here would serve each posting twice. A posting is dropped only
-when its tenant's robots.txt is *known* to allow ``/sitemap.xml``; a tenant that disallows it
-(``Disallow: /`` on 82 of 85 sampled behind the Indeed sweep), answers 5xx or cannot be reached
-keeps its postings here. The verdict is fetched once per tenant per process and cached, one fetch
-in flight at a time, so a tenant flipping either way is followed on the next run.
+**iCIMS already covers a tenant we scrape, so its postings are dropped here (the user's option A,
+ADR-0189, amended by ADR-0240).** Each row's ``apply_url`` names its backing Board, and Jibe's
+``slug`` is that same requisition id, so serving a posting whose tenant the iCIMS scraper reads
+would serve it twice. A posting is dropped only when its tenant is a Scrapable iCIMS Board
+(:func:`_scraped_icims_tenants`, the committed ledger read the way ``scrapable_boards.load``
+reads it); any other tenant keeps its postings here. The gate used to be the tenant's robots.txt,
+and a 404 there reads as "no rule applies" — so the dead tenants of ascension (3,172 postings) and
+conduent (1,243), which 404 robots.txt and sitemap.xml alike, were dropped with nothing else
+serving them. No request reaches an iCIMS host.
 
 **One listing, no detail pass.** ``GET /api/jobs?page=N&limit=100&internal=false``. ``limit`` above
 100 answers 422. The listing carries the full description: ``html_to_text`` of it equals the
@@ -65,10 +66,11 @@ Field mappings, each on the measured distribution (151,619 rows, 277 hosts):
 
 from __future__ import annotations
 
-import threading
 import time
 import urllib.robotparser
 from datetime import datetime
+from functools import cache
+from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode, urljoin, urlsplit
 
@@ -95,9 +97,6 @@ _NO_SUCH_HOST = 6
 _ATTEMPTS = 3
 #: The path the listing lives on, which a client's robots.txt must allow.
 API_PATH = "/api/jobs"
-#: The path the iCIMS scraper reads (`icims.py` is sitemap-only), so the one whose permission
-#: decides whether iCIMS already covers a tenant.
-_ICIMS_PATH = "/sitemap.xml"
 
 #: `employment_type` -> label. The eight schema.org values seen on 114,809 rows; each label reads
 #: correctly through `employment_type_filter.flags` (TEMPORARY, PER_DIEM and OTHER set no flag, which is
@@ -144,15 +143,19 @@ def robots_verdict(status: int | None, text: str, path: str, agent: str) -> str:
     return ALLOW if parser.can_fetch(agent, path) else DISALLOW
 
 
-# One verdict per iCIMS tenant per process, i.e. per run, so a tenant that flips is followed on the
-# next run. The lock keeps one fetch in flight at a time across every Board of the process.
-_icims_verdicts: dict[str, str] = {}
-_icims_lock = threading.Lock()
-#: Seconds between two iCIMS robots.txt fetches from one process. Every tenant is its own host and
-#: is asked once, so this is courtesy to iCIMS's shared edge rather than a per-host crawl delay: no
-#: rate limit was found there at 15 req/s (`icims.py`), and one a second is far below it.
-_ICIMS_INTERVAL = 1.0
-_icims_last = float("-inf")
+@cache
+def _scraped_icims_tenants() -> frozenset[str]:
+    """The iCIMS tenant hosts the iCIMS scraper reads: every Scrapable iCIMS Board, lowercased, read
+    once per process from the committed ledger."""
+    # Imported here: `scrapable_boards` reaches the scraper registry, which imports this module.
+    from headstart.boards import scrapable_boards
+
+    ledger = Path(__file__).resolve().parents[3] / "data" / "validate" / "liveness"
+    return frozenset(
+        board.lowercase_identity.removeprefix("icims:")
+        for board in scrapable_boards.load(ledger, min_jobs=0)
+        if board.ats == "icims"
+    )
 
 
 def _pair(row: dict) -> tuple[str, str]:
@@ -272,7 +275,7 @@ class JibeScraper(BaseScraper):
 
     def _agreed_company(self, rows: list[dict]) -> str | None:
         """The ``hiring_organization`` :data:`_AGREEMENT` of the Board's rows state, or None.
-        Every row the listing read counts, the ones dropped for a readable iCIMS tenant too: they
+        Every row the listing read counts, the ones dropped for a scraped iCIMS Board too: they
         are this client's postings all the same."""
         agreed = company_name.agreed_name(
             (row.get("hiring_organization") for row in rows), _AGREEMENT
@@ -300,7 +303,7 @@ class JibeScraper(BaseScraper):
 
         A path robots.txt does not allow raises before any request is made, so this is the one
         place the policy is enforced — the listing, the board page and any redirect alike. Other
-        hosts (an iCIMS tenant's robots.txt) pass straight through.
+        hosts pass straight through.
         """
         if urlsplit(url).hostname != self.host:
             return super()._fetch(method, url, **kwargs)
@@ -446,33 +449,6 @@ class JibeScraper(BaseScraper):
             )
         return rows
 
-    def _icims_readable(self, host: str) -> bool:
-        """Whether iCIMS's own scraper may read `host` — cached per process, one fetch at a time,
-        each at least :data:`_ICIMS_INTERVAL` after the last."""
-        global _icims_last
-        with _icims_lock:
-            if host not in _icims_verdicts:
-                wait = _icims_last + _ICIMS_INTERVAL - time.monotonic()
-                if wait > 0:
-                    time.sleep(wait)
-                _icims_last = time.monotonic()
-                try:
-                    response = self._fetch(
-                        "GET",
-                        f"https://{host}/robots.txt",
-                        headers={"User-Agent": USER_AGENT},
-                        timeout=30,
-                        attempts=1,
-                        marks_wall=False,
-                    )
-                    status, text = response.status_code, response.text
-                except http.RequestsError:
-                    status, text = None, ""
-                _icims_verdicts[host] = robots_verdict(
-                    status, text, _ICIMS_PATH, USER_AGENT
-                )
-            return _icims_verdicts[host] == ALLOW
-
     def fetch_raw(self) -> dict:
         verdict = self.robots_verdict_for(API_PATH)
         if verdict == UNREACHABLE:
@@ -483,7 +459,7 @@ class JibeScraper(BaseScraper):
             )
         if verdict == DISALLOW:
             self.note_unreadable_board(f"robots.txt allowing {API_PATH}", "Disallow")
-            return {"rows": [], "icims_readable": {}}
+            return {"rows": [], "icims_scraped": {}}
         rows = self._read_board()
         self._rows_company = self._agreed_company(rows)
         tenants = sorted(
@@ -491,11 +467,11 @@ class JibeScraper(BaseScraper):
         )
         return {
             "rows": rows,
-            "icims_readable": {h: self._icims_readable(h) for h in tenants},
+            "icims_scraped": {h: h in _scraped_icims_tenants() for h in tenants},
         }
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
-        readable = raw.get("icims_readable") or {}
+        scraped = raw.get("icims_scraped") or {}
         jobs: list[Job] = []
         dropped = 0
         rows = raw.get("rows") or []
@@ -503,7 +479,7 @@ class JibeScraper(BaseScraper):
             sum(1 for row in rows if not row.get("slug")), len(rows), "carried no slug"
         )
         for row in _english_first(rows):
-            if readable.get(_apply_host(row)):
+            if scraped.get(_apply_host(row)):
                 dropped += 1
                 continue
             location = _location(row)
@@ -532,10 +508,10 @@ class JibeScraper(BaseScraper):
             )
         if dropped:
             self.telemetry["icims_covered"] = dropped
-            # DEBUG: routine per Board, and the shard report already carries the count.
-            self._log.debug(
-                f"{self.board_key()}: dropped {dropped} posting(s) a readable iCIMS tenant "
-                f"already serves (ADR-0189)"
+            # INFO, so a Board that scrapes slowly for 0 Jobs says why in the log.
+            self._log.info(
+                f"{self.board_key()}: dropped {dropped} posting(s) a scraped iCIMS Board "
+                f"already serves (ADR-0240)"
             )
         return jobs
 
