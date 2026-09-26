@@ -80,6 +80,21 @@ def test_per_ats_shape_rules_refuse_unusable_provider_evidence():
         fp.normalise_tenant("breezy", "fathom.breezy.hr", "https://fathom.breezy.hr/")
         == "fathom"
     )
+    # Avature's Board is its tenant label, read off a link or off a vanity host's CNAME.
+    assert (
+        fp.normalise_tenant(
+            "avature", "bloomberg", "https://bloomberg.avature.net/careers/SearchJobs"
+        )
+        == "bloomberg"
+    )
+    assert (
+        fp.normalise_tenant(
+            "avature",
+            "bmcrecruit.avature.net",
+            "jobs.bmc.com CNAME bmcrecruit.avature.net",
+        )
+        == "bmcrecruit"
+    )
     assert (
         fp.normalise_tenant(
             "workday", "acme.wd1.myworkdayjobs.com", "https://acme.com/"
