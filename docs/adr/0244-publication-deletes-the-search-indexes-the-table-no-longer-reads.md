@@ -19,15 +19,17 @@ Every Space boot pulls `data/lancedb/*` too, so it downloaded the same dead weig
 
 ## Decision
 
-`index_publish` reads the local table's latest manifest and treats an `_indices/{uuid}/` directory
+`index_publish` opens the local table with `lancedb` to learn its latest version, reads that version's
+manifest, and treats an `_indices/{uuid}/` directory
 as referenced when that uuid's 16 bytes appear in it. The manifest carries every segment of every
 index the version serves, and one index can span several directories. It is read as bytes
 because the pipeline installs `lancedb` without `pylance`, and `pylance` is the only Python reader
 of a manifest's index section. The rule was checked against `lance`'s own
 `describe_indices()` on 8 of the Hub's manifests (versions 508–545). Every time it found every
 segment `lance` lists. On 7 of the 8 it found one more: the index the version's own commit
-replaced, which the manifest still names. So it keeps the latest two generations of an index and
-never fewer. That is the N-1 margin, and it comes from the manifest rather than from a counter.
+replaced, which the manifest still names. So it always keeps the current generation of an index,
+and usually the one before it too. The N-1 margin is whatever the manifest still names; this
+change does not enforce it on its own.
 
 Each directory it does not find is superseded. The publication commit leaves those directories out
 of its additions and deletes their files from the Hub, in the same commit as the table.
@@ -36,6 +38,7 @@ Only `_indices/` is touched. Data fragments, deletion files and old manifests st
 before, and `cleanup-index` still reaps them. The delete fails safe in three ways:
 
 * A table `lancedb` cannot open deletes nothing.
+* So does a table whose version's manifest is not on disk.
 * So does a table whose manifest yields fewer directories than the table has indexes.
 * A directory not named by a uuid is kept.
 
@@ -49,7 +52,8 @@ download, a second copy of the same rule, and it would save nothing the delete d
 
 * Measured on the Hub listing at `020e05cd`, every file version 545 needs is present: 132 fragment
   and deletion files, and 17 of 17 index segments. So the table opens with the superseded files
-  gone. Run over that manifest, the rule keeps 18 of the 391 directories (0.80 GB) and supersedes
+  gone. That is a listing check, not a Hub table opened with those files alone. Run over that
+  manifest, the rule keeps 18 of the 391 directories (0.80 GB) and supersedes
   373 (8.54 GB). A test runs three index generations, deletes the oldest and queries through the
   live index.
 * The first publish after this deletes ~8.5 GB of index files. `reclaim_storage` then deletes their

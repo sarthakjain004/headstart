@@ -34,30 +34,25 @@ _log = log.get(__name__, __spec__)
 _TABLE = "data/lancedb"
 
 
-def _latest_manifest(table: Path) -> Path | None:
-    """The manifest of ``table``'s latest version: Lance's V2 names count *down* from 2**64 - 1,
-    so the latest is the smallest; V1 names count up, so it is the largest."""
-    versions = {
-        int(p.stem): p
-        for p in (table / "_versions").glob("*.manifest")
-        if p.stem.isdigit()
-    }
-    if not versions:
-        return None
-    v2 = min(versions) >= 2**63
-    return versions[min(versions) if v2 else max(versions)]
+def _manifest_of(table: Path, version: int) -> Path | None:
+    """``version``'s manifest file: Lance's V2 names count down from 2**64 - 1, V1 names up."""
+    for name in (f"{2**64 - 1 - version:020d}.manifest", f"{version}.manifest"):
+        if (table / "_versions" / name).is_file():
+            return table / "_versions" / name
+    return None
 
 
 def superseded_index_dirs(root: Path) -> set[str]:
     """``data/lancedb/{table}.lance/_indices/{uuid}/``, relative to ``root``, for each index
     directory the table's latest version does not reference (ADR-0244).
 
-    A directory is referenced when its uuid's 16 bytes appear in the latest manifest, which
-    carries every index segment the version serves. Read as bytes because the pipeline installs
-    ``lancedb`` without ``pylance``, the only Python reader of a manifest's index section.
-    Conservative by construction: on 8 of the Hub's manifests (2026-09-26) the rule found every
-    segment ``lance`` lists and at most one more, so it can keep an index but not lose one. A
-    table whose manifest finds fewer directories than it has indexes deletes nothing.
+    A directory is referenced when its uuid's 16 bytes appear in the latest version's manifest,
+    which carries every index segment the version serves. Read as bytes because the pipeline
+    installs ``lancedb`` without ``pylance``, the only Python reader of a manifest's index section.
+    Conservative: on 8 of the Hub's manifests (2026-09-26) the rule found every segment ``lance``
+    lists, and on 7 the index the version replaced as well. A table that will not open, whose
+    manifest is not on disk, or whose manifest finds fewer directories than it has indexes,
+    deletes nothing.
     """
     import lancedb
 
@@ -65,21 +60,24 @@ def superseded_index_dirs(root: Path) -> set[str]:
     skipped: list[str] = []
     for table in sorted((root / _TABLE).glob("*.lance")):
         held = {d.name for d in (table / "_indices").glob("*") if d.is_dir()}
-        manifest = _latest_manifest(table)
-        if not held or manifest is None:
+        if not held:
             continue
-        raw = manifest.read_bytes()
-        referenced = {d for d in held if _referenced(d, raw)}
         try:
-            indexes = (
-                lancedb.connect(str(table.parent)).open_table(table.stem).list_indices()
-            )
+            opened = lancedb.connect(str(table.parent)).open_table(table.stem)
+            version, indexes = opened.version, opened.list_indices()
         except Exception as exc:  # noqa: BLE001 - a table we cannot read keeps every index
             skipped.append(f"{table.name} ({exc})")
             continue
+        manifest = _manifest_of(table, version)
+        if manifest is None:
+            skipped.append(f"{table.name} (no manifest for version {version})")
+            continue
+        raw = manifest.read_bytes()
+        referenced = {d for d in held if _referenced(d, raw)}
         if len(referenced) < len(indexes):
             skipped.append(
-                f"{table.name} ({len(indexes)} index(es), {len(referenced)} found in {manifest.name})"
+                f"{table.name} ({len(indexes)} index(es), {len(referenced)} found in "
+                f"{manifest.name})"
             )
             continue
         superseded |= {

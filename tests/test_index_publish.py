@@ -85,7 +85,7 @@ def test_a_missing_grace_set_warns_and_the_success_line_names_only_what_went_up(
 
 def test_superseded_search_indexes_are_left_out_and_deleted(tmp_path, monkeypatch):
     """ADR-0244. `refresh-indexes` replaces every index each run, and the old ones stayed on the
-    Hub: 374 of 391 index directories, 8.9 GB, that the latest version never reads. The commit
+    Hub: 373 of 391 index directories, 8.54 GB, that the latest version no longer names. The commit
     leaves them out and deletes their remote files; the table still opens and serves each index
     from what remains."""
     lancedb = pytest.importorskip("lancedb")
@@ -153,3 +153,15 @@ def test_an_unreadable_table_deletes_no_index(tmp_path, monkeypatch, caplog):
         "deleting no superseded index of jobs.lance" in r.getMessage()
         for r in caplog.records
     )
+
+
+def test_the_manifest_is_found_under_either_naming(tmp_path):
+    """Lance's V2 names count down from 2**64 - 1 and V1 names count up; the version decides."""
+    versions = tmp_path / "_versions"
+    versions.mkdir()
+    (versions / "7.manifest").write_bytes(b"v1")
+    assert index_publish._manifest_of(tmp_path, 7) == versions / "7.manifest"
+    v2 = versions / f"{2**64 - 1 - 7:020d}.manifest"
+    v2.write_bytes(b"v2")
+    assert index_publish._manifest_of(tmp_path, 7) == v2
+    assert index_publish._manifest_of(tmp_path, 8) is None

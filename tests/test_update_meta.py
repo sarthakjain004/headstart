@@ -936,3 +936,12 @@ def test_a_none_from_the_scrape_does_not_erase_a_stored_fact():
     assert row["experience"] == "1-3 years" and row["posted_at"] == "2023-05-08"
     assert (row["min_years"], row["experience_source"]) == (1, "field")
     assert row["title"] == "Node.JS - Remote" and facts_changed
+
+
+def test_a_none_requisition_still_clears_the_stored_one():
+    """`requisition` is None on purpose off the Boards Eightfold pairs (ADR-0210), so it is not one
+    of the facts a None leaves alone."""
+    meta = _meta(requisition="R-1")
+    facts = {f: meta.get(f) for f in um.FACT_FIELDS} | {"requisition": None}
+    row, facts_changed, _ = um.refresh_row(meta, facts, {}, sweep=False)
+    assert row["requisition"] is None and facts_changed

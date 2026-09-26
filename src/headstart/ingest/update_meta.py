@@ -130,6 +130,11 @@ FACT_FIELDS = tuple(
     f for f in META_FIELDS if f not in _IDENTITY and f not in _FACT_WITH_OVERLAY
 )
 
+#: Facts a degraded read was measured nulling, then the next read restoring (ADR-0061's
+#: amendment): a None for one of them is "not observed" and leaves the stored value alone. Not
+#: every fact — `requisition` is None on purpose off the Boards Eightfold pairs (ADR-0210).
+_NONE_IS_NOT_OBSERVED = ("experience", "salary", "employment_type", "posted_at")
+
 #: Recomputed from facts whenever the extractor's version moves.
 DERIVED_FIELDS = ("min_years", "max_years", "experience_source")
 
@@ -290,7 +295,9 @@ def refresh_row(
             # one row at once and the next read restores them. Between 2026-09-26's two
             # consecutive stores, 90 rows lost a fact to None (54 of them two or more at once),
             # and each flap nulled a derivation for one run (ADR-0061's amendment).
-            if facts[field] is not None and row.get(field) != facts[field]:
+            if facts[field] is None and field in _NONE_IS_NOT_OBSERVED:
+                continue
+            if row.get(field) != facts[field]:
                 row[field] = facts[field]
                 facts_changed = True
 
@@ -718,7 +725,7 @@ def refresh(
                 f"value) (ADR-0066)"
             )
         # Per ATS, with ids to open: a count alone cannot say which read or which description
-        # took the answers away (658 Lockheed salaries went in one re-derivation, 2026-09-26).
+        # took the answers away.
         by_ats: dict[str, list[str]] = {}
         for job_id in lost[label]:
             by_ats.setdefault(ats_of(job_id), []).append(job_id)

@@ -162,7 +162,9 @@ no column was added, removed, or retyped.
 > `experience` with `posted_at`; ADP Recruiting lost `salary`. The same fields came back on
 > rows the run before had nulled: Zoho `experience` 9, JazzHR 9, Workday `posted_at` 119. Each flap
 > nulled that row's derivation for one run: the `lost` count that mirrored the next run's `gained`,
-> up to 17 a run. So a None from the scrape now leaves the stored value alone. The trade is that a
+> up to 17 a run. So a None from the scrape now leaves the stored value alone for the four fields
+> measured flapping: `experience`, `salary`, `employment_type` and `posted_at`. Every other fact still
+> takes the None, because `requisition` is None on purpose off the Boards Eightfold pairs (ADR-0210). The trade is that a
 > Board that genuinely removes a field keeps serving the old value until the posting closes or is
-> re-embedded. Derivations do not change for any row the next good read would not restore, so no
-> `DERIVATIONS_VERSION` bump.
+> re-embedded. No extractor changed, so there is no `DERIVATIONS_VERSION` bump. A field a Board really removes
+> keeps its old derivation with its old value.
