@@ -131,8 +131,8 @@ Board no source names is served under its humanised tenant (`nvidia.wd5.myworkda
 a vendor's code (Oracle's pods, ADP's GUIDs). A name is a display value, never an identity, which
 is why `CompanyPrefs` is keyed by **board_key** and never by company name.
 
-The liveness pipeline has probed **310,936 ledger rows**: 190,705 live, 103,275 dead, 16,956 unknown
-— rows, not boards; they collapse to 184,069 Unique Boards once duplicate spellings of the same
+The liveness pipeline has probed **310,974 ledger rows**: 190,743 live, 103,275 dead, 16,956 unknown
+— rows, not boards; they collapse to 184,107 Unique Boards once duplicate spellings of the same
 board are folded together and the 4 with a `dead` row newer than their newest `live` row are dropped (`CONTEXT.md` §Counting
 Boards).
 
@@ -184,7 +184,7 @@ flowchart TB
         D1["<b>discover</b><br/>Common Crawl · Wayback<br/>careers-page fingerprint"]
         D2["<b>merge</b><br/>union + dedupe per ATS"]
         D3["<b>validate</b><br/>liveness-probe each board"]
-        D4[("<b>liveness ledger</b><br/>190,705 live rows of 310,936<br/>git-tracked, authoritative")]
+        D4[("<b>liveness ledger</b><br/>190,743 live rows of 310,974<br/>git-tracked, authoritative")]
         D1 --> D2 --> D3 --> D4
     end
 
@@ -285,19 +285,19 @@ table in lockstep with the committed ledger:
 
 | | boards | |
 | --- | ---: | --- |
-| live rows in the ledger | 190,705 | a row, not a board — 6,632 of them are duplicate spellings |
+| live rows in the ledger | 190,743 | a row, not a board — 6,632 of them are duplicate spellings |
 | − `registry.DISABLED_ATS` | −25,488 | all of it `join` |
 | − `excluded_and_parked.EXCLUDED_BOARDS` | −212 | vendor test/sandbox/demo boards and one historical feed, confirmed by reading their postings |
 | − alias ledger | −1,170 | one board under a second hostname or label, a career section or career site another of the same tenant already covers, or an Eightfold career site its backing ATS board already serves (ADR-0111, ADR-0182, ADR-0186, ADR-0202, ADR-0205, ADR-0222) |
 | − case-variant dedupe | −6,629 | `company/External` and `company/external` are one board (ADR-0023) |
 | − newer `dead` row | −4 | a board is read only if no `dead` row is newer than its newest `live` one; all 4 re-probed dead (ADR-0219) |
-| − `excluded_and_parked.PARKED_BOARDS` | −301 | real boards withheld for now — five for scrape cost, two for near-duplicate spam, six Jibe clients whose every posting is on a Workday or Oracle board already held, 288 whose every posting is on an iCIMS board we scrape (ADR-0240) |
-| = **Scrapable Board** | **156,901** | |
+| − `excluded_and_parked.PARKED_BOARDS` | −302 | real boards withheld for now — six for scrape cost, two for near-duplicate spam, six Jibe clients whose every posting is on a Workday or Oracle board already held, 288 whose every posting is on an iCIMS board we scrape (ADR-0240) |
+| = **Scrapable Board** | **156,938** | |
 
 That order matters: excluding before deduping reads −212 and −6,629, deduping first reads −209,
-because three excluded boards were themselves duplicates. Both land on 156,901.
+because three excluded boards were themselves duplicates. Both land on 156,938.
 
-Of those, **103,559 are currently hiring** — the 53,342 live-but-empty boards are skipped as having
+Of those, **103,596 are currently hiring** — the 53,342 live-but-empty boards are skipped as having
 nothing to read. A run takes a bounded slice and splits it between a scored head (top boards by a
 sticky measure of tech-job yield, large enough to hold every board that yields tech) and a tail
 that rotates through everything else, the boards looked at longest ago first, so
