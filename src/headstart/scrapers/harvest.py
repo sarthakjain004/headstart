@@ -28,6 +28,7 @@ from headstart.boards.company_ref import CompanyRef
 from headstart.boards.cost_ledger import SHARD_HEADER, shard_row
 from headstart.jobs.job import Job
 from headstart.network import http
+from headstart.scrapers.base import BoardUnreadable
 from headstart.scrapers.registry import get_scraper
 
 _log = log.get(__name__)
@@ -299,9 +300,11 @@ def scrape_all(
                 jobs = future.result()
             except Exception as exc:  # noqa: BLE001 - isolate per-company failures
                 errors[key] = f"{type(exc).__name__}: {exc}"
-                if not isinstance(exc, http.RequestsError):
+                if not isinstance(exc, (http.RequestsError, BoardUnreadable)):
                     # A transport failure is the expected shape here, and `scrape_run` already
-                    # groups those by class. Anything else came out of this repo's own parse
+                    # groups those by class; so is a Board its scraper classified as unreadable
+                    # (18 Workday and 10 Taleo annotations, each with a traceback, over the seven
+                    # runs 36200233818-36218633315). Anything else came out of this repo's own parse
                     # code, and `KeyError: 'title'` — which is what one of those looks like in
                     # the digest — names neither the scraper nor the line it happened on. The
                     # traceback rides only on that branch, so the 150-250 routine Board errors

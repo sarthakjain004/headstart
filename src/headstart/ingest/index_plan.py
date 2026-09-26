@@ -46,7 +46,7 @@ from typing import Any
 from headstart import log
 from headstart.boards import scrapable_boards
 from headstart.boards.board_identity import ats_of, board_key, board_of, lower_key
-from headstart.ingest.board_operator import tenant
+from headstart.boards.board_operator import tenant
 from headstart.ingest.corpus import iter_jobs
 
 _log = log.get(__name__, __spec__)
@@ -167,6 +167,7 @@ def plan_sync(
     replaced: AbstractSet[str] = frozenset(),
     requisitions: Mapping[str, str] | None = None,
     backing: Mapping[str, Iterable[str]] | None = None,
+    rejected: AbstractSet[str] = frozenset(),
 ) -> SyncPlan:
     """Diff the current index against a scrape's fresh ids, scoped to the Boards it covered.
 
@@ -229,6 +230,13 @@ def plan_sync(
     present in the scrape between its two evictions — and the mechanics force that, since a
     second eviction requires a re-add, which requires reappearing in ``fresh_ids``.
 
+    **An id the scrape returned and the tech filter rejected was seen (ADR-0243).** ``rejected``
+    names them: this run's full scrape of an Unauthoritative Board listed the id, and it is not in
+    the tech corpus. It is absent from ``fresh_ids`` on a Board that *was* read, so it takes the
+    ordinary grace period whatever its Board's scope. Without this, a Board Unauthoritative on
+    every run (one over its listing cap) keeps a posting the current filter rejects served for
+    good, which is how ``freshteam:abnhire`` held 729 such rows out of scope.
+
     ``None`` and an empty set are **opposites** here, and the distinction is load-bearing.
     ``None`` disables the grace period entirely, restoring the previous evict-on-first-absence
     behaviour; it exists for callers written before this and is not what the pipeline passes. An
@@ -239,7 +247,10 @@ def plan_sync(
     """
     index = set(index_ids)
     fresh = set(fresh_ids)
-    boards = set(scraped_boards)
+    # Case-folded, so an id stored under a casing the scrape no longer emits is still in its
+    # Board's scope (ADR-0243): matched exactly, a fossil with no live-cased twin was reachable
+    # by neither sync nor prune's casing dedup, and stayed served after its posting closed.
+    scope = {lower_key(b) for b in scraped_boards}
     add = fresh - index
     # None means "no grace period" (the pre-ADR-0083 behaviour); an empty set means "the grace
     # period is on and nothing is owed a second look yet". Those are different, so the None check
@@ -250,7 +261,7 @@ def plan_sync(
     indexed_by_board: dict[str, set[str]] = defaultdict(set)
     for job_id in index:
         board = resolve_board(job_id, live)
-        if board in boards:
+        if lower_key(board) in scope or job_id in rejected:
             indexed_by_board[board].add(job_id)
 
     delete: set[str] = set()
@@ -284,7 +295,11 @@ def plan_sync(
         # an intersection against the whole index.
         for job_id in previously:
             board = resolve_board(job_id, live)
-            if board not in boards and lower_key(board) in live:
+            if (
+                lower_key(board) not in scope
+                and job_id not in rejected
+                and lower_key(board) in live
+            ):
                 unconfirmed.add(job_id)
 
     served = (index - delete) | (add & replaced)
@@ -691,12 +706,10 @@ def resolve_board(job_id: str, live: dict[str, str]) -> str:
     posting became unreachable by both — prune saw it on a live Board and left it, while sync's
     scope only ever held the phantom Board, which no fresh sibling recreates once the req closes.
 
-    Returns the Board in the **id's own casing**, not the ledger's. Sync pairs indexed ids against
-    the Boards a scrape emitted, and a scrape emits the live casing, so a fossil-cased row resolves
-    to a Board absent from that scope and sync leaves it alone — which is the partial-harvest
-    protection :func:`plan_prune` documents and relies on. Canonicalising to ``live[canon]`` here
-    would fold fossils onto the live Board and let sync evict them as stale, quietly taking over
-    the job prune does under its own keep-set guard.
+    Returns the Board in the **id's own casing**, not the ledger's: :func:`plan_prune` groups
+    casing duplicates by it and keeps the live casing. Sync matches its scope case-folded instead
+    (ADR-0243), so a fossil-cased row with no live-cased twin, which prune never reaches, is still
+    evicted once two scrapes of its Board miss it.
     """
     end = _live_board_end(job_id, live)
     return job_id[:end] if end is not None else board_of(job_id)

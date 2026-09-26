@@ -75,7 +75,7 @@ def main() -> int:
     new = not CACHE.exists()
     today = datetime.now(UTC).date().isoformat()
     with CACHE.open("a", encoding="utf-8", newline="") as fh:
-        writer = csv.DictWriter(fh, FIELDS)
+        writer = csv.DictWriter(fh, FIELDS, lineterminator="\n")
         if new:
             writer.writeheader()
         # Threads only overlap the requests' latency; the pacer still spaces every start. Sixteen,
@@ -99,7 +99,7 @@ def main() -> int:
                 if done % 500 == 0:
                     print(f"{done}/{len(todo)}", flush=True)
     with CACHE.open("w", encoding="utf-8", newline="") as fh:
-        writer = csv.DictWriter(fh, FIELDS)
+        writer = csv.DictWriter(fh, FIELDS, lineterminator="\n")
         writer.writeheader()
         writer.writerows(held[cid] for cid in sorted(held))
     return 0

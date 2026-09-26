@@ -374,8 +374,11 @@ def test_zoho_classifies_a_source_declared_unavailable_detail(
 
     raw = scraper.fetch_raw()
 
+    # A closure, not a lost detail: the join's "detail loss events" were ~97% closures.
     assert raw["details"] == {}
-    assert scraper.detail_losses == {"posting explicitly unavailable": 1}
+    assert raw["unavailable"] == {"1"}
+    assert scraper.detail_losses == {}
+    assert scraper.telemetry["detail_losses"] == 0
 
 
 # The shell Zoho serves at a posting's detail URL once the posting is closed, captured live
@@ -413,7 +416,7 @@ def test_zoho_drops_a_listed_posting_its_detail_page_says_is_gone(
     jobs = scraper.parse(scraper.fetch_raw(), SCRAPED_AT)
 
     assert [j.title for j in jobs] == ["Open Role"]
-    assert scraper.detail_losses == {"posting explicitly unavailable": 1}
+    assert scraper.detail_losses == {}
     assert scraper.truncated is None
 
 
@@ -473,7 +476,23 @@ def test_zoho_a_throttle_redirect_walls_the_group_and_is_retried(
     assert detail.kwargs["allow_redirects"] is False
     assert 302 in detail.kwargs["retry_on"]
     assert detail.kwargs["egress_on"] == frozenset({302})
-    assert detail.kwargs["egress_group"] == "zoho"
+    assert detail.kwargs["egress_group"] == "zoho.com"
+
+
+@pytest.mark.parametrize(
+    ("host", "group"),
+    [
+        ("acme.zohorecruit.com", "zoho.com"),
+        ("pnbcsl.zohorecruit.in", "zoho.in"),
+        ("01da.zohorecruit.eu", "zoho.eu"),
+        ("careers.example.com", "zoho"),
+    ],
+)
+def test_zoho_meters_each_data_centre_as_its_own_egress_group(host, group) -> None:
+    """The throttle is the .com data centre's, per IP. One group for every data centre walled
+    .in's Boards onto the spare egress with it, where their detail pages failed ConnectionError
+    at 1.18% against .com's 0.01% (runs 36200233818-36218633315)."""
+    assert ZohoScraper(host).egress_group == group
 
 
 def test_zoho_labels_a_throttle_redirect_that_never_cleared() -> None:

@@ -55,11 +55,14 @@ _PRIORITY = REPO_ROOT / "data" / "state" / "board_priority.csv"
 _UPGRADES = PENDING_UPGRADES_PATH
 _OUT = REPO_ROOT / "data" / "embeddings" / "assignments"
 
-# Measured CPU seconds-per-Doc per Bucket, from the 2026-07-24 ubuntu-latest run recorded in
-# docs/AI_Integration/embedding-throughput.md. Hardcoded (not derived from live CI logs) for
-# Phase 1 (ADR-0025): deterministic, one dict to edit. Refresh with the recipe in that doc
-# (`gh run view <id> --log | grep '[embed_run]'`) when runner performance drifts.
-_S_PER_DOC = {512: 0.8, 1024: 1.7, 2048: 4.4, 4096: 18.0}
+# Measured CPU seconds-per-Doc per Bucket. Hardcoded (not derived from live CI logs) for Phase 1
+# (ADR-0025): deterministic, one dict to edit. Refresh with the recipe in
+# docs/AI_Integration/embedding-throughput.md (`gh run view <id> --log | grep '[embed_run]'`) when
+# runner performance drifts. Last refreshed from all 14 embed shards of the eight runs
+# 36200233818-36221241950 (2026-09-25/26), timing each `[embed_run] bucket` line to the next:
+# 211/433/559/30 Docs at 0.60/1.46/2.22/4.88 s. The 2026-07-24 values (0.8/1.7/4.4/18.0) had
+# every shard encoding in 0.32-0.71 of its predicted time.
+_S_PER_DOC = {512: 0.6, 1024: 1.5, 2048: 2.2, 4096: 4.9}
 _MAX_SHARDS = 15  # == pipeline.yml `max-parallel`; Phase 1 runs one shard per lane
 # Per-shard makespan target: `binpack.shard_count` spins `ceil(total_cost / this)` shards, clamped
 # to [1, _MAX_SHARDS] when there is work. This was 20 min, "sized so a big backlog saturates the
@@ -74,7 +77,12 @@ _MAX_SHARDS = 15  # == pipeline.yml `max-parallel`; Phase 1 runs one shard per l
 # lane still pays the ~2.4 min job setup — and the 6-9 min/run saving is a projection, not a
 # measurement of a multi-shard run: docs/pipeline/2026-09-09_five-run-log-review.md §3 has the
 # per-lane costs and the workings.
-_TARGET_SECONDS = 5 * 60
+#
+# Lowered to 165 s with the 2026-09-26 recalibration above, which cut a plan's cost to ~0.55 of
+# what the old table said: 300 x 0.55. Replayed on the seven runs 36200233818-36218633315, it
+# plans the shards they ran on six of the seven (36218633315 would take 2, not 1). Keeping 300 s
+# would have halved the fan-out on the same work.
+_TARGET_SECONDS = 165.0
 
 
 def _prior_rows(path: Path) -> tuple[set[str], set[str]]:

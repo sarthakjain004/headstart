@@ -26,7 +26,7 @@
    {
     "ts": "2026-09-24T11:32:00+00:00",
     "changed": [
-     "tech filter changed"
+     "tech-job filter updated"
     ],
     "fields": [
      "tech_filter_version"
@@ -35,7 +35,7 @@
    {
     "ts": "2026-09-24T21:19:00+00:00",
     "changed": [
-     "role family assignment changed"
+     "job categories re-sorted"
     ],
     "fields": [
      "family_classifier_version"
@@ -96,6 +96,7 @@
    {
     "name": "greenhouse:acme",
     "label": "Acme",
+    "whole_company": true,
     "estimated": false,
     "move": {
      "start": 100,
@@ -105,13 +106,13 @@
       {
        "change": "counting@2026-09-24T11:32:00+00:00",
        "kind": "counting",
-       "label": "tech filter changed",
+       "label": "tech-job filter updated",
        "size": -11
       },
       {
        "change": "counting@2026-09-24T21:19:00+00:00",
        "kind": "counting",
-       "label": "role family assignment changed",
+       "label": "job categories re-sorted",
        "size": 10
       }
      ],
@@ -151,6 +152,7 @@
    {
     "name": "greenhouse:acme",
     "label": "Acme",
+    "whole_company": true,
     "estimated": false,
     "move": {
      "start": 100,
@@ -160,13 +162,13 @@
       {
        "change": "counting@2026-09-24T11:32:00+00:00",
        "kind": "counting",
-       "label": "tech filter changed",
+       "label": "tech-job filter updated",
        "size": -11
       },
       {
        "change": "counting@2026-09-24T21:19:00+00:00",
        "kind": "counting",
-       "label": "role family assignment changed",
+       "label": "job categories re-sorted",
        "size": 10
       }
      ],
@@ -196,12 +198,12 @@
     "id": "counting@2026-09-24T11:32:00+00:00",
     "kind": "counting",
     "ts": "2026-09-24T11:32:00+00:00",
-    "label": "tech filter changed",
+    "label": "tech-job filter updated",
     "fields": [
      "tech_filter_version"
     ],
     "changed": [
-     "tech filter changed"
+     "tech-job filter updated"
     ],
     "company": null,
     "boards": null,
@@ -213,12 +215,12 @@
     "id": "counting@2026-09-24T21:19:00+00:00",
     "kind": "counting",
     "ts": "2026-09-24T21:19:00+00:00",
-    "label": "role family assignment changed",
+    "label": "job categories re-sorted",
     "fields": [
      "family_classifier_version"
     ],
     "changed": [
-     "role family assignment changed"
+     "job categories re-sorted"
     ],
     "company": null,
     "boards": null,

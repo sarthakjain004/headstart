@@ -496,6 +496,57 @@ def test_an_unscraped_board_is_no_evidence_and_carries_its_ids_forward():
     assert plan.unconfirmed == frozenset(owed), "state carried forward unchanged"
 
 
+def test_a_rejected_id_on_a_scope_excluded_board_evicts_after_two_scrapes():
+    """ADR-0243. A Board over its listing cap (freshteam:abnhire, 1,000-job widget) is
+    Unauthoritative on every run, so ADR-0053 keeps it out of scope for good. But an id its raw
+    listing *did* return, which the tech filter rejected, was seen: it is a live non-tech
+    posting, not an unread one, so it takes the ordinary grace period whatever the Board's scope.
+    An id on the same Board that was not seen stays out of scope."""
+    board = "freshteam:abnhire"
+    indexed = _board(board, 6)
+    rejected = frozenset(indexed[:2])
+    live = {board: board}
+    first = plan_sync(
+        index_ids=indexed,
+        fresh_ids=indexed[4:],
+        scraped_boards=[],  # scope-excluded
+        live=live,
+        was_unconfirmed=set(),
+        rejected=rejected,
+    )
+    assert first.delete == frozenset()
+    assert first.unconfirmed == rejected, (
+        "only the seen-and-rejected ids start a streak"
+    )
+
+    second = plan_sync(
+        index_ids=indexed,
+        fresh_ids=indexed[4:],
+        scraped_boards=[],
+        live=live,
+        was_unconfirmed=first.unconfirmed,
+        rejected=rejected,
+    )
+    assert second.delete == rejected
+    assert second.unconfirmed == frozenset(), "an evicted id is not carried forward"
+
+
+def test_a_singleton_fossil_casing_is_in_its_boards_scope():
+    """ADR-0243. An id stored under a Board casing the scrape no longer emits
+    (`workday:boeing/external_careers` against `EXTERNAL_CAREERS`) resolves to a Board spelled
+    unlike any scope key. Matched exactly, it was never in scope; with no live-cased twin, prune's
+    casing dedup never reached it either, and 1,969 closed postings on 343 Boards stayed served
+    (2026-09-26). Scope is matched case-folded, so a fossil the scrape did not re-emit takes the
+    grace period like any other absence, and is not carried once evicted."""
+    fossil = "workday:co/site:R1"
+    live = boards_by_canon({"workday:co/SITE"})
+    first = plan_sync([fossil], [], {"workday:co/SITE"}, live, set())
+    assert first.unconfirmed == {fossil}
+    second = plan_sync([fossil], [], {"workday:co/SITE"}, live, first.unconfirmed)
+    assert second.delete == {fossil}
+    assert second.unconfirmed == frozenset()
+
+
 def test_ids_on_a_board_that_left_the_ledger_are_not_carried_forever():
     """The bound on the file. A Board that leaves the ledger is never scraped again, so its
     entries would accrete for good — the ADR-0055 ratchet in a new place. Those rows leave the

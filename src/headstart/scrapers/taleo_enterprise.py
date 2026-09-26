@@ -30,6 +30,7 @@ from headstart.scrapers.base import (
     MIN_AUTHORITATIVE_SHARE,
     USER_AGENT,
     BaseScraper,
+    BoardUnreadable,
     DetailLost,
     DetailRequest,
     DetailWithoutDescription,
@@ -301,7 +302,7 @@ class TaleoEnterpriseScraper(BaseScraper):
     def _listing(self, shell: str, timeout: int = 30) -> list[dict[str, Any]]:
         portal = _PORTAL.search(shell)
         if not portal:
-            raise ValueError("Career Section shell has no portalNo")
+            raise BoardUnreadable("Career Section shell has no portalNo")
         headers = _headers(shell)
         board = _canonical(self.slug)
         parsed = urlsplit(board)
