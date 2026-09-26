@@ -235,6 +235,7 @@ supersedes it and note the supersession in both.
 | [0237](0237-trend-history-keeps-its-name-inside-trends.md) | `trend_history` keeps its name inside `trends/`, and `trend_reading` becomes `line_reading` | 2026-09-26 |
 | [0238](0238-a-mostly-re-counted-line-gives-no-percentage-and-hot-hides-only-staffing-and-job-boards.md) | A mostly re-counted category gives no percentage, and Hot hides only staffing firms and job boards | 2026-09-26 |
 | [0239](0239-an-oracle-board-past-the-offset-ceiling-is-read-from-both-ends.md) | An Oracle Board past the offset ceiling is read from both ends | 2026-09-26 |
+| [0242](0242-empty-tail-boards-back-off-and-slow-boards-start-first.md) | Empty Tail Boards back off, and slow Boards start first in their shard | 2026-09-26 |
 
 *ADR-0037 was removed from the repository on 2026-09-24 by the owner's decision; its number is not
 reused.*
