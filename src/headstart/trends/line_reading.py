@@ -1622,9 +1622,7 @@ def check_reading(reading: dict) -> list[str]:
         if recounted and m["percent"] is not None:
             out.append(f"{where}: it gives a percentage though mostly re-counted")
         if (m["percent_withheld"] == MOSTLY_RECOUNTED) != (
-            recounted
-            and m["span_days"] >= MIN_SPAN_DAYS
-            and m["start"] >= MOVER_FLOOR
+            recounted and m["span_days"] >= MIN_SPAN_DAYS and m["start"] >= MOVER_FLOOR
         ):
             out.append(f"{where}: it is said to be mostly re-counted where it is not")
         if not reading.get("picked") and (

@@ -392,7 +392,9 @@ def test_a_line_mostly_recounted_gives_no_percentage_in_any_unit() -> None:
     # small for a percentage, which stays its reason.
     tiny = lines["tiny"]
     assert tiny["index_base"] is None
-    assert tiny["move"]["percent_withheld"] == f"under {MOVER_FLOOR} openings at the start"
+    assert (
+        tiny["move"]["percent_withheld"] == f"under {MOVER_FLOOR} openings at the start"
+    )
 
 
 def test_no_share_change_off_a_share_of_zero_at_the_start() -> None:
