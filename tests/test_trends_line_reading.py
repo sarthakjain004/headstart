@@ -1,7 +1,8 @@
 """The Trends line reading (ADR-0233), checked at ``line_reading.read_answer``.
 
 - **Golden readings** (``tests/fixtures/trend_readings/*.json``): every golden answer of
-  ADR-0230, and the answers the page's node tests draw, as ``{answer_input, reading}``. Each
+  ADR-0230 (retired into these at ADR-0233 step 4, with the cases they measured), and the
+  answers the page's node tests draw, as ``{answer_input, reading}``. Each
   reads exactly as stored and passes the checker; the node tests run the page's ``checkReading``
   over the same files and draw each one, so both state the same equalities. After a deliberate
   rule change, rewrite them with ``WRITE_TREND_READINGS=1 pytest tests/test_trends_line_reading.py``
@@ -40,7 +41,7 @@ from headstart.trends.line_reading import (
     trends_payload,
     unread_trends_payload,
 )
-from headstart.trends.netting import js_round, net_answer
+from headstart.trends.netting import js_round
 
 READINGS = Path(__file__).parent / "fixtures" / "trend_readings"
 GOLDEN = sorted(READINGS.glob("*.json"))
@@ -64,50 +65,43 @@ def test_golden_reading_is_what_the_module_reads(path: Path) -> None:
     assert check_reading(golden["reading"]) == []
 
 
-def _netted_move(line: dict) -> int | None:
-    netted = [v for v in line["net"]["count"] if v is not None]
-    return js_round(netted[-1] - netted[0]) if len(netted) >= 2 else None
+def _drawn_move(netted: list) -> int | None:
+    seen = [v for v in netted if v is not None]
+    return js_round(seen[-1] - seen[0]) if len(seen) >= 2 else None
 
 
 @pytest.mark.parametrize("path", GOLDEN, ids=[p.stem for p in GOLDEN])
-def test_the_first_row_and_each_category_read_their_netted_figure(path: Path) -> None:
-    """A company's line is netted exactly as before (decision 4): Hot must not move. A category
-    keeps its own netted figure too, where it was counted all through the window; the rows are
-    rounded together, so in general a row is its netted figure rounded down or up."""
+def test_a_lines_hiring_is_how_far_its_drawn_line_moves(path: Path) -> None:
+    """A company's hiring is how far its netted line moves, so the Change plot draws the figure
+    Hot ranks by (decision 4). A category keeps its own netted figure too, where it was counted
+    all through the window; the rows are rounded together, so in general a row is its netted
+    figure rounded down or up."""
     golden = json.loads(path.read_text(encoding="utf-8"))
     reading = golden["reading"]
-    served = net_answer(golden["answer_input"])
-    if reading["total"] is not None and _netted_move(served["series_sum"]) is not None:
-        assert reading["total"]["move"]["hiring"] == _netted_move(served["series_sum"])
-    rows = {line["name"]: line["move"]["hiring"] for line in reading["lines"]}
-    for line in served["series"]:
-        whole_window = line["points"][0] is not None and line["points"][-1] is not None
-        if whole_window and _netted_move(line) is not None and line["name"] in rows:
-            assert rows[line["name"]] == _netted_move(line), line["name"]
+    total = reading["total"]
+    if total is not None and _drawn_move(total["netted"]) is not None:
+        assert total["move"]["hiring"] == _drawn_move(total["netted"])
+    points = {s["name"]: s["points"] for s in golden["answer_input"]["series"]}
+    for line in reading["lines"]:
+        counted = points[line["name"]]
+        whole_window = counted[0] is not None and counted[-1] is not None
+        if whole_window and _drawn_move(line["netted"]) is not None:
+            assert line["move"]["hiring"] == _drawn_move(line["netted"]), line["name"]
 
 
 @pytest.mark.parametrize("path", GOLDEN, ids=[p.stem for p in GOLDEN])
-def test_each_line_is_drawn_as_it_is_netted(path: Path) -> None:
-    """The Change plot's line is the line netted as its figures are, and a line drawn in counts
-    breaks where a step lands: what ``net_answer`` served as ``net.count`` and ``jumps``."""
+def test_every_netted_line_ends_on_its_measured_latest_count(path: Path) -> None:
+    """Netting adjusts backwards, the way a price history is: a line's last netted count is the
+    one the index measured, and the history before a step is brought to it."""
     golden = json.loads(path.read_text(encoding="utf-8"))
     reading = golden["reading"]
-    served = net_answer(golden["answer_input"])
-    lines = {line["name"]: line for line in reading["lines"]}
-    for line in served["series"]:
-        if line["name"] not in lines:
-            continue
-        drawn = lines[line["name"]]
-        assert drawn["netted"] == [
-            None if v is None else round(v, 2) for v in line["net"]["count"]
-        ], line["name"]
-        assert drawn["steps_at"] == [j["i"] for j in line["jumps"]], line["name"]
+    measured = {s["name"]: s["points"] for s in golden["answer_input"]["series"]}
+    drawn = [(measured[line["name"]], line["netted"]) for line in reading["lines"]]
     if reading["total"] is not None:
-        total = served["series_sum"]
-        assert reading["total"]["points"] == total["points"]
-        assert reading["total"]["netted"] == [
-            None if v is None else round(v, 2) for v in total["net"]["count"]
-        ]
+        drawn.append((reading["total"]["points"], reading["total"]["netted"]))
+    for points, netted in drawn:
+        last = [v for v in points if v is not None][-1]
+        assert [v for v in netted if v is not None][-1] == last
 
 
 @pytest.mark.parametrize("path", GOLDEN, ids=[p.stem for p in GOLDEN])
@@ -443,12 +437,85 @@ def test_no_share_change_off_a_share_of_zero_at_the_start() -> None:
 
 
 def test_with_no_pick_nothing_is_taken_out_and_changes_are_still_marked() -> None:
-    reading = _golden("index_marks_counting_changes_and_takes_nothing_out")["reading"]
+    golden = _golden("index_marks_counting_changes_and_takes_nothing_out")
+    reading = golden["reading"]
+    points = {s["name"]: s["points"] for s in golden["answer_input"]["series"]}
     for line in reading["lines"]:
         assert line["move"]["not_hiring"] == []
         assert line["move"]["hiring"] == line["move"]["latest"] - line["move"]["start"]
+        assert line["netted"] == points[line["name"]]
+        assert line["steps_at"] == []
     assert [c["kind"] for c in reading["marked_changes"]] == ["counting", "counting"]
     assert reading["day_markers"]
+
+
+# ---- the measured cases the golden answers carried (ADR-0230) ----------------------------------
+
+
+def _netted(name: str, line: int = 0) -> list:
+    return _golden(name)["reading"]["lines"][line]["netted"]
+
+
+@pytest.mark.parametrize(
+    ("name", "netted"),
+    [
+        # Amazon, Sep 17: +308 at the change and −439 at the next run were one change.
+        ("amazon_filter_change_lands_over_two_runs", [8869, 8869, 8869, 8869, 8880]),
+        # Google SWE: the −33 before a refit that halved the category stays −33.
+        ("google_refit_halves_a_category_by_openings", [337, 304, 304, 304, 304]),
+        # Microsoft architecture: scaled by 14.5, the one real opening lost became −12.
+        ("microsoft_filter_change_off_a_small_base", [60, 59, 59, 59, 59]),
+        ("step_larger_than_the_history_starts_the_line_after_it", [None, 5, 5, 5, 5]),
+        ("new_filter_change_taken_out_again_a_week_later", [100, 100, 100, 100, 100]),
+        # 200 found; the other 10 that run were hiring and stay in, as Hot sums them.
+        (
+            "found_board_lifted_by_its_own_size_keeping_the_run_hiring",
+            [300, 300, 310, 310],
+        ),
+        # Squircle read +513 scaled where Hot read +459: a whole line comes out by openings.
+        (
+            "whole_company_line_takes_a_filter_change_out_by_openings",
+            [200, 210, 210, 210, 230],
+        ),
+        # #690: 1,000 jobs listed twice; +100 before the removal was 50 real hires, then 10.
+        ("duplicate_removal_scales_the_history_before_it", [1000, 1050, 1050, 1060]),
+        # Wipro's "+74.7%" carried a filter step; netted, it grows only its last 10%.
+        ("tech_filter_doubles_one_category", [200, 200, 200, 200, 220]),
+    ],
+)
+def test_a_measured_line_is_netted_as_it_was_measured(name: str, netted: list) -> None:
+    assert _netted(name) == netted
+
+
+def test_micron_filter_change_is_one_change_with_its_settling_run() -> None:
+    """Micron, Sep 17: +32 at its run and −296 at the settling run, sized −264."""
+    micron = _golden("micron_filter_change_sized_with_its_settling_run")["reading"]
+    causes = micron["lines"][0]["move"]["not_hiring"]
+    assert [(c["kind"], c["size"]) for c in causes] == [("counting", -264)]
+
+
+def test_nvidia_duplicates_have_their_own_size_beside_a_counting_change() -> None:
+    """NVIDIA: the counting change on the run is −97, not the run's −2,138."""
+    nvidia = _golden("nvidia_counting_change_without_the_duplicates_on_its_run")
+    causes = nvidia["reading"]["lines"][0]["move"]["not_hiring"]
+    assert {c["kind"]: c["size"] for c in causes} == {
+        "duplicates_removed": -2041,
+        "counting": -97,
+    }
+
+
+def test_duplicate_removal_touches_only_a_company_it_can_move() -> None:
+    name = "duplicate_removal_touches_only_a_two_site_tenant"
+    assert _netted(name, 0) == [80, 80, 80, 80]
+    assert _netted(name, 1) == [100, 100, 80, 80]
+
+
+def test_several_picks_read_the_sum_of_each_picks_own_line() -> None:
+    """Several picks summed read the sum of each pick's own netted line: Total is the Company
+    breakdown's sum, +30 where the sum netted whole read 0."""
+    total = _golden("duplicate_removal_total_sums_each_company")["reading"]["total"]
+    picks = _golden("duplicate_removal_breakdown_by_company")["reading"]["lines"]
+    assert total["move"]["hiring"] == sum(p["move"]["hiring"] for p in picks) == 30
 
 
 # ---- the checker catches each broken invariant ------------------------------------------------
@@ -803,7 +870,8 @@ def test_hot_reads_the_line_its_trend_opens(history) -> None:
         reading = read_trends(
             history, TrendQuestion(companies=(key,), since=window.since)
         )
-        assert moves[key] == reading.company_lines[0].move
+        assert moves[key].move == reading.company_lines[0].move
+        assert moves[key].counted_since == removal_state.TICKS[0]
 
 
 def test_comparable_coverage_takes_its_cohorts_removal_out_and_not_a_later_boards(

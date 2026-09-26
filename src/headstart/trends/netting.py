@@ -2,29 +2,12 @@
 
 A line's change holds steps that are not hiring: a **Counting change** and the run after it, a
 **Found Board**'s backlog, a pick counted from a later date joining a sum, duplicate postings
-removed, and a Board read only partly for one run. This module takes them out, once, for every
-line an answer serves (ADR-0230 decision 3). Until ADR-0230 step 4 the rule lived in the page's
-JavaScript (`stepNotes`, `stepJumps`, `netOfSteps`); this is a port of that rule, checked against
-it by the golden answers under ``tests/fixtures/trend_answers/``. Since ADR-0233 step 3 the page
-reads ``line_reading``, which uses this module as its private implementation; Hot still reads
-:func:`net_answer` until step 4.
-
-:func:`net_answer` is the one entry point. It reads an answer as ``TrendHistory.answer`` builds it
-and adds, without touching any count:
-
-- ``notes``: every point in the window where lines move for a reason that is not hiring, each
-  with what the page needs to say it (``kind``, ``fields``, ``changed``, ``company``, ``size``);
-- on each series, on ``series_sum`` (every series added together, the whole company's line
-  under a pick) and on ``totals_net`` (the share denominator, the chart's dashed reference line):
-  - ``net``: the line with its steps taken out, in openings (``count``) and as a share
-    (``share``). Adjusted backwards, the way a price history is: the latest value stays the real
-    one and the history before a step is brought to it;
-  - ``steps``: each note that moves the line, with where it lands (``at``), how many openings it
-    moved the line by (``size``) and whether its runs moved the line at all (``moved``);
-  - ``jumps``: each run a step lands on, with the jump there, where a drawn line breaks;
-  - ``causes``: how much of the change was duplicates removed and Boards found;
-  - ``hiring_turnover``: the jobs opened and closed over the runs the net change counts;
-  - ``born_by_change``, for the "sorted in by a counting change" reading.
+removed, and a Board read only partly for one run. This module is the rule that takes them out,
+once, for every line: it lists the steps (``_notes``), finds where each lands on a line
+(``_count_jumps``) and nets the line (``_net``), adjusted backwards the way a price history is:
+the latest value stays the real one and the history before a step is brought to it. It is
+``line_reading``'s private implementation (ADR-0233), which reads how ``_net`` took each step out
+(``_NetTrace``) into a line's hiring and its named causes; the Trends tab and Hot both read that.
 
 With no pick nothing is taken out: the index chart keeps a counting change's jump, marked.
 """
@@ -181,10 +164,10 @@ def drop_partial_reads(series: list[dict]) -> int:
 
 @dataclass
 class _Line:
-    """One line the answer serves. ``name`` None is the dashed reference line (``totals``);
-    ``company`` names the one company a part of a summed category counts (``pick_parts``)."""
+    """One line the answer serves. ``company`` names the one company a part of a summed
+    category counts (``pick_parts``)."""
 
-    name: str | None
+    name: str
     points: list
     pick: bool = False
     turnover: dict | None = None
@@ -443,57 +426,51 @@ def _notes(answer: dict) -> list[dict]:
     return notes
 
 
-def _is_whole(view: _View, line: _Line | None) -> bool:
+def _is_whole(view: _View, line: _Line) -> bool:
     """A line that is a whole company's tech openings under All openings: the sum of every
     series, a pick's own line, or a company's line at the top level. Only these can take out a
     step whose size is known per company. Never inside a category: NVIDIA's 2,045 removals
     would overshoot its AI/ML 300."""
     return (
         view.metric == "stock"
-        and line is not None
         and not view.drilled
         and (line.name == _TOTAL or line.pick or view.split_company)
     )
 
 
-def _line_notes(view: _View, line: _Line | None, omit: int | None = None) -> list[int]:
-    """The notes taken out of ``line`` (``omit`` left out, to size a change against the rest).
-    Every line of a view leaves out the same runs, so a company's categories add up to it. A
-    company's own step moves every line of a summed view but only its own line under a Company
-    breakdown, and only its own part of a category summed over several picks. ``line`` None is
-    the dashed reference line."""
-    per_company = line is not None and (line.pick or view.split_company)
+def _line_notes(view: _View, line: _Line) -> list[int]:
+    """The notes taken out of ``line``. Every line of a view leaves out the same runs, so a
+    company's categories add up to it. A company's own step moves every line of a summed view
+    but only its own line under a Company breakdown, and only its own part of a category summed
+    over several picks."""
+    per_company = line.pick or view.split_company
     whole = _is_whole(view, line)
     out = []
     for k, n in enumerate(view.notes):
-        if k == omit or not n["withhold"] or (n["whole_only"] and not whole):
+        if not n["withhold"] or (n["whole_only"] and not whole):
             continue
         # a pick's line is its total, which an extraction change never moves
-        if n["bands_only"] and (line is None or line.name == _TOTAL or line.pick):
+        if n["bands_only"] and (line.name == _TOTAL or line.pick):
             continue
         if per_company and (
             (n["company"] and line.name != n["company"])
             or (n["companies"] is not None and line.name not in n["companies"])
         ):
             continue
-        if (
-            line is not None
-            and line.company
-            and (
-                (n["company"] and n["company"] != line.company)
-                or (n["companies"] is not None and line.company not in n["companies"])
-            )
+        if line.company and (
+            (n["company"] and n["company"] != line.company)
+            or (n["companies"] is not None and line.company not in n["companies"])
         ):
             continue
         out.append(k)
     return out
 
 
-def _summed_picks(view: _View, line: _Line | None) -> list[_Line] | None:
+def _summed_picks(view: _View, line: _Line) -> list[_Line] | None:
     """Each pick's own part of ``line`` when it sums several: ``pick_series`` for the sum of
     every series, ``pick_parts`` for a category or level. A category took the removals of no
     company: NVIDIA and Micron's categories summed +73 against a Total of +40 (#690)."""
-    if line is None or line.pick or line.company:
+    if line.pick or line.company:
         return None
     if line.name == _TOTAL:
         if len(view.pick_series) < 2:
@@ -517,11 +494,9 @@ def _level_before(values: list, j: int):
     return values[k] if k >= 0 else None
 
 
-def _line_company(view: _View, line: _Line | None) -> str | None:
+def _line_company(view: _View, line: _Line) -> str | None:
     """The one company ``line`` counts: its own for a company's line, a company's part of a
     summed line, or any line inside one company's view; None for a line summing several."""
-    if line is None:
-        return None
     if line.company:
         return line.company
     if line.pick or (view.split_company and line.name in view.company_keys):
@@ -556,32 +531,21 @@ def _dup_ratios(view: _View, key: str) -> dict[int, float]:
     return out
 
 
-def _dup_ratios_for(
-    view: _View, line: _Line | None, in_openings: bool
-) -> dict[int, float]:
-    """Whose removals scale ``line``: its own company's, in openings only."""
-    key = _line_company(view, line) if in_openings else None
+def _dup_ratios_for(view: _View, line: _Line) -> dict[int, float]:
+    """Whose removals scale ``line``: its own company's."""
+    key = _line_company(view, line)
     return dict(_dup_ratios(view, key)) if key else {}
 
 
-def _jumps(
-    view: _View,
-    levels: list,
-    line: _Line | None,
-    only: frozenset[str] | None,
-    omit: int | None = None,
-) -> dict[int, _Jump]:
-    """Where each step taken out of ``line`` lands on ``levels`` (a step on a gap lands on the
+def _jumps(view: _View, line: _Line) -> dict[int, _Jump]:
+    """Where each step taken out of ``line`` lands on its points (a step on a gap lands on the
     next measured point), with the level on either side of it. ``lift`` is a step's size when it
     is known exactly and the line is a whole company's: found openings, duplicate removals.
-    Taking out that size rather than the run's whole jump keeps the run's ordinary hiring in.
-    ``only`` limits the steps to those kinds."""
+    Taking out that size rather than the run's whole jump keeps the run's ordinary hiring in."""
     whole = _is_whole(view, line)
     steps: dict[int, dict] = {}
-    for k in _line_notes(view, line, omit):
+    for k in _line_notes(view, line):
         n = view.notes[k]
-        if only is not None and n["kind"] not in only:
-            continue
         at = steps.setdefault(
             n["i"], {"size": 0, "sized": True, "kinds": set(), "notes": ()}
         )
@@ -596,7 +560,7 @@ def _jumps(
         return jumps
     last = None
     pending = None
-    for j, v in enumerate(levels):
+    for j, v in enumerate(line.points):
         if j in steps:
             at = steps[j]
             pending = (
@@ -627,34 +591,17 @@ def _jumps(
     return jumps
 
 
-def _count_jumps(
-    view: _View, line: _Line | None, only=None, omit: int | None = None
-) -> dict[int, _Jump]:
-    """``_jumps`` on ``line``'s own openings, worked out once per line: a line is one series, a
-    pick's or a company's part of a summed line, the sum of every series, or (None) the
-    reference line."""
-    key = (
-        (line.name, line.pick, line.company, only, omit)
-        if line is not None
-        else (None, False, None, only, omit)
-    )
+def _count_jumps(view: _View, line: _Line) -> dict[int, _Jump]:
+    """``_jumps`` on ``line``, worked out once per line: a line is one series, a pick's or a
+    company's part of a summed line, or the sum of every series."""
+    key = (line.name, line.pick, line.company)
     if key not in view._jump_cache:
-        view._jump_cache[key] = _jumps(
-            view, line.points if line else view.totals, line, only, omit
-        )
+        view._jump_cache[key] = _jumps(view, line)
     return view._jump_cache[key]
 
 
-def _net(
-    view: _View,
-    levels: list,
-    line: _Line | None,
-    only: frozenset[str] | None,
-    in_openings: bool,
-    omit: int | None = None,
-    trace: _NetTrace | None = None,
-) -> list:
-    """``levels`` with the steps taken out of ``line``, adjusted backwards: the latest value
+def _net(view: _View, line: _Line, trace: _NetTrace | None = None) -> list:
+    """``line``'s points with its steps taken out, adjusted backwards: the latest value
     stays the real one, and the history before a step is shifted by the step's size, never
     scaled, so a company's categories add up to it (the owner's choice, 2026-09-25).
 
@@ -662,13 +609,14 @@ def _net(
     and a shift that would push the history below zero scales instead where both sides hold
     RATIO_FLOOR openings; where it cannot scale either, the line starts after that step instead
     of inventing a zero base. A line summing several picks is the sum of each pick's own netted
-    part, so a company's step comes out of its own part only, in openings; under Share every
-    level is divided by the whole. ``trace``, when given, records how (:class:`_NetTrace`)."""
+    part, so a company's step comes out of its own part only, in openings. ``trace``, when
+    given, records how (:class:`_NetTrace`)."""
+    levels = line.points
     picks = _summed_picks(view, line)
-    if picks and in_openings:
+    if picks:
         nets = []
         for pick in picks:
-            net = _net(view, pick.points, pick, only, True, omit)
+            net = _net(view, pick)
             first = next((v for v in net if v is not None), None)
             seen = False
             filled = []
@@ -679,19 +627,11 @@ def _net(
             nets.append(filled)
         summed = _sum_points(nets, len(levels))
         return [None if v is None else summed[j] for j, v in enumerate(levels)]
-    jumps = _jumps(view, levels, line, only, omit)
+    jumps = _count_jumps(view, line)
     # A line with no step of its own can still sit inside a company whose removals scale it.
-    dups = (
-        _dup_ratios_for(view, line, in_openings)
-        if only is None or "duplicates" in only
-        else {}
-    )
-    if omit is not None and view.notes[omit]["evicted"]:
-        dups.pop(view.notes[omit]["i"], None)
+    dups = _dup_ratios_for(view, line)
     if not jumps and not dups:
         return list(levels)
-    # The same steps read off the openings themselves, for the floor.
-    counts = _count_jumps(view, line, only, omit) if line is not None else jumps
     out = list(levels)
     lowest = math.inf
     lowest_before = []
@@ -746,7 +686,6 @@ def _net(
                 continue
         if not jump:
             continue
-        size = counts.get(j) or jump
         known = "found" in jump.kinds or "duplicates" in jump.kinds
         shift = scale * (
             jump.lift if jump.lift is not None else jump.after - jump.before
@@ -756,8 +695,8 @@ def _net(
             erases
             and jump.lift is None
             and not known
-            and size.before >= RATIO_FLOOR
-            and size.after >= RATIO_FLOOR
+            and jump.before >= RATIO_FLOOR
+            and jump.after >= RATIO_FLOOR
         ):
             scale *= jump.after / jump.before
             if trace is not None:
@@ -768,30 +707,6 @@ def _net(
             if trace is not None:
                 trace.withheld[j] = shift / scale
     return out
-
-
-def _runs(note: dict, line: _Line) -> list[int]:
-    """The runs a note moves ``line`` at: where it lands (a step on a gap lands on the next
-    measured point), and for a counting change where its settling run lands."""
-
-    def landing(i: int) -> int:
-        j = i
-        while j < len(line.points) and line.points[j] is None:
-            j += 1
-        return j
-
-    if note["epoch"] and not note["echo"]:
-        return [landing(note["i"]), landing(note["i"] + 1)]
-    return [landing(note["i"])]
-
-
-def _moved(view: _View, k: int, line: _Line) -> bool:
-    """Whether note ``k``'s runs moved ``line`` — its own run or its settling run."""
-    jumps = _count_jumps(view, line)
-    return any(
-        (jump := jumps.get(j)) is not None and js_round(jump.after - jump.before) != 0
-        for j in _runs(view.notes[k], line)
-    )
 
 
 def _birth_note(view: _View, line: _Line) -> int | None:
@@ -812,118 +727,6 @@ def _birth_note(view: _View, line: _Line) -> int | None:
         ):
             return k
     return None
-
-
-def _head_tail_change(values: list) -> float:
-    seen = [v for v in values if v is not None]
-    return seen[-1] - seen[0] if len(seen) >= 2 else 0
-
-
-def _change_size(view: _View, k: int, line: _Line) -> float:
-    """How many openings note ``k`` moved ``line`` by, exactly, sized as the sentence peels its
-    causes: removals first, then everything else in the frame the removals leave. A removal the
-    line scales by is what it does with only removals taken out; any other change is its jump at
-    the scale the removals after it leave, and for a line the change sorted into existence, the
-    openings it arrived with. A line summing several picks is sized pick by pick. Each left-out
-    run belongs to one change: only a change of unknown size claims runs, and two changes on one
-    run go to the new change over a week-later echo, else to the first listed."""
-    picks = _summed_picks(view, line)
-    if picks:
-        total = 0
-        for pick in picks:
-            total = total + _change_size(view, k, pick)
-        return total
-    n = view.notes[k]
-    dups = _dup_ratios_for(view, line, True)
-    if n["evicted"] and n["i"] in dups and n["company"] == _line_company(view, line):
-        only = frozenset({"duplicates"})
-
-        def move_of(omit: int | None) -> float:
-            return _head_tail_change(_net(view, line.points, line, only, True, omit))
-
-        return move_of(k) - move_of(None)
-
-    def factor_after(j: int) -> float:
-        f = 1
-        for at, r in dups.items():
-            if at > j:
-                f = f * r
-        return f
-
-    steps = _line_notes(view, line)
-    if k not in steps:
-        return 0
-    whole = _is_whole(view, line)
-    if whole and n["size"] is not None:  # a found Board
-        return n["size"] * factor_after(_runs(n, line)[0])
-
-    def claims(m: dict) -> bool:
-        return not m["settle"] and m["size"] is None
-
-    mine = steps.index(k)
-
-    def beats(position: int) -> bool:
-        m = view.notes[steps[position]]
-        return position < mine if m["echo"] == n["echo"] else not m["echo"]
-
-    owned = set()
-    ahead = set()
-    for position, other in enumerate(steps):
-        m = view.notes[other]
-        if other == k or not claims(m):
-            continue
-        owned.add(_runs(m, line)[0])
-        if beats(position):
-            ahead.add(_runs(m, line)[0])
-    runs = [
-        j
-        for position, j in enumerate(_runs(n, line))
-        if (j not in ahead if position == 0 else j not in owned)
-    ]
-    first = next((j for j, v in enumerate(line.points) if v is not None), -1)
-    arrived = (
-        line.points[first] * factor_after(first)
-        if view.metric == "stock" and _birth_note(view, line) == k
-        else 0
-    )
-    # Each run at its own scale, as `_net` takes it out: a run that is also a removal's gives up
-    # the removal's share there, and the removal's known size is not taken twice.
-    jumps = _count_jumps(view, line)
-    moved = 0
-    for j in runs:
-        jump = jumps.get(j)
-        if not jump:
-            continue
-        known = 0
-        if whole:
-            for other in steps:
-                m = view.notes[other]
-                if (
-                    other != k
-                    and m["size"] is not None
-                    and not (m["evicted"] and j in dups)
-                    and _runs(m, line)[0] == j
-                ):
-                    known = known + m["size"]
-        share = (dups[j] - 1) * jump.before if j in dups else 0
-        moved = moved + (jump.after - jump.before - known - share) * factor_after(j)
-    return arrived + moved
-
-
-def _causes(view: _View, line: _Line) -> dict[str, int]:
-    """The duplicates and found-Board parts of ``line``'s move, peeled a kind at a time so that
-    with ratio steps the parts still add up to the total exactly."""
-
-    def change(only: frozenset[str]) -> float:
-        return _head_tail_change(_net(view, line.points, line, only, True))
-
-    raw = change(frozenset())
-    without_duplicates = change(frozenset({"duplicates"}))
-    without_found = change(frozenset({"duplicates", "found"}))
-    return {
-        "duplicates": js_round(raw - without_duplicates),
-        "found": js_round(without_duplicates - without_found),
-    }
 
 
 def _hiring_turnover(view: _View, line: _Line) -> dict[str, int] | None:
@@ -976,41 +779,6 @@ def _hiring_turnover(view: _View, line: _Line) -> dict[str, int] | None:
     return {"opened": opened, "closed": closed} if seen else None
 
 
-def _shares(line: _Line, totals: list) -> list:
-    denominators = line.denominators or totals
-    return [
-        v / denominators[j] * 100 if v is not None and denominators[j] else None
-        for j, v in enumerate(line.points)
-    ]
-
-
-def _netted(view: _View, line: _Line) -> dict:
-    """Everything the page reads off one line's netting. A note is on the line where it is taken
-    out of it, or where it is a removal that scales it."""
-    steps = []
-    taken_out = set(_line_notes(view, line))
-    for k, n in enumerate(view.notes):
-        if k not in taken_out and not n["evicted"]:
-            continue
-        size = _change_size(view, k, line)
-        if k in taken_out or size != 0:
-            steps.append({"note": k, "size": size, "moved": _moved(view, k, line)})
-    return {
-        "net": {
-            "count": _net(view, line.points, line, None, True),
-            "share": _net(view, _shares(line, view.totals), line, None, False),
-        },
-        "steps": steps,
-        "jumps": [
-            {"i": j, "size": jump.after - jump.before}
-            for j, jump in sorted(_count_jumps(view, line).items())
-        ],
-        "causes": _causes(view, line),
-        "hiring_turnover": _hiring_turnover(view, line),
-        "born_by_change": _birth_note(view, line) is not None,
-    }
-
-
 def _sum_points(lists: list[list], width: int) -> list:
     """Lines added run by run: null where none was measured, else each unmeasured one as 0."""
     out = []
@@ -1053,47 +821,3 @@ def _viewed(answer: dict) -> tuple[dict, _View]:
         picked=bool(companies),
     )
     return answer, view
-
-
-def net_answer(answer: dict) -> dict:
-    """``answer`` (``TrendHistory.answer``'s payload) with every line's netting added. Pure: the
-    answer passed in is not changed."""
-    answer, view = _viewed(answer)
-    stamps = view.stamps
-    notes = view.notes
-    split_company = view.split_company
-    company_totals = answer.get("company_totals") or {}
-    for line in answer["series"]:
-        line.update(
-            _netted(
-                view,
-                _Line(
-                    line["name"],
-                    line["points"],
-                    turnover=line.get("turnover"),
-                    denominators=company_totals.get(line["name"])
-                    if split_company
-                    else None,
-                ),
-            )
-        )
-    parts = [line.get("turnover") for line in answer["series"] if line.get("turnover")]
-    series_sum = _Line(
-        _TOTAL,
-        _sum_points([line["points"] for line in answer["series"]], len(stamps)),
-        turnover={
-            metric: _sum_points([part[metric] for part in parts], len(stamps))
-            for metric in ("opened", "closed", "recounted")
-        }
-        if parts
-        else None,
-    )
-    answer["series_sum"] = {
-        "name": _TOTAL,
-        "points": series_sum.points,
-        "turnover": series_sum.turnover,
-        **_netted(view, series_sum),
-    }
-    answer["totals_net"] = _net(view, view.totals, None, None, True)
-    answer["notes"] = notes
-    return answer
