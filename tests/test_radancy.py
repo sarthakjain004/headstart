@@ -20,10 +20,10 @@ from fake_fetcher import FakeFetcher, FakeResponse
 from headstart.jobs.salary import from_field
 from headstart.scrapers import radancy
 from headstart.scrapers.radancy import (
-    _HeldBoards,
     _iso_date,
     _page_fields,
     _salary,
+    _ScrapableBoardIndex,
     backing_board,
     sitemap_rows,
 )
@@ -34,7 +34,7 @@ _FIXTURE = json.loads(
 )
 _HOST = _FIXTURE["host"]
 _SCRAPED_AT = "2026-09-26T00:00:00+00:00"
-_HELD = _HeldBoards(
+_HELD = _ScrapableBoardIndex(
     frozenset(
         {
             "workday:takeda/external",
@@ -45,6 +45,7 @@ _HELD = _HeldBoards(
             "workday:stemcell/external_careers",
             "radancy:jobs.sanofi.com",
             "avature:synopsys",
+            "greenhouse:acme",
         }
     )
 )
@@ -179,6 +180,22 @@ def test_a_capped_sitemap_marks_the_board_short_by_the_stated_total() -> None:
     )
 
 
+def test_a_sitemap_at_a_cap_truncates_however_small_the_shortfall(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # 500 of 503 clears ADR-0121's tolerance, but a cap hides the remainder every run.
+    monkeypatch.setattr(radancy, "_SITEMAP_CAPS", frozenset({4}))
+
+    def route(method: str, url: str, kwargs: dict) -> FakeResponse:
+        if url.endswith("/search-jobs"):
+            return FakeResponse(text='<section data-total-job-results="5">')
+        return _route(method, url, kwargs)
+
+    scraper = get_scraper("radancy", _HOST, fetcher=FakeFetcher(route))
+    scraper.fetch()
+    assert scraper.truncated == "the sitemap lists 4 of the 5 postings the front states"
+
+
 def test_a_results_page_on_another_host_states_nothing_for_this_board() -> None:
     def route(method: str, url: str, kwargs: dict) -> FakeResponse:
         if url.endswith("/search-jobs"):
@@ -231,6 +248,7 @@ def test_slug_is_the_front_host() -> None:
     [
         ("2026-9-3", "2026-09-03"),
         ("2026-09-25", "2026-09-25"),
+        ("2026-2-31", None),
         ("", None),
         (None, None),
     ],
@@ -334,6 +352,10 @@ def test_emitted_salary_round_trips_through_the_repo_parser() -> None:
             "https://jobs.sanofi.com/sys/apply/job/application/2649/44048303680?languageCode=en",
             None,  # TalentBrew's own apply form, on the front itself
         ),
+        (
+            "https://boards.greenhouse.io/embed/job_app?for=acme&token=1",
+            "greenhouse:acme",
+        ),
         (None, None),
     ],
 )
@@ -354,19 +376,21 @@ def test_front_duplication_is_logged_and_recorded(
     assert scraper.telemetry["front_postings"] == 4
     assert scraper.telemetry["front_duplicated"] == 4
     assert (
-        "radancy:jobs.takeda.com: Front duplication 4/4 postings apply on a Scrapable Board "
+        "radancy:jobs.takeda.com: Front duplication at least 4/4 postings apply on a Scrapable Board "
         "(workday:takeda/external 4)"
     ) in caplog.text
 
 
-def test_front_duplication_is_not_reported_without_a_ledger(
+def test_front_duplication_says_it_was_not_measured_without_a_ledger(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
-    monkeypatch.setattr(radancy, "_scrapable_boards", lambda: _HeldBoards(frozenset()))
+    monkeypatch.setattr(
+        radancy, "_scrapable_boards", lambda: _ScrapableBoardIndex(frozenset())
+    )
     scraper = get_scraper("radancy", _HOST, fetcher=FakeFetcher(_route))
     with caplog.at_level(logging.INFO):
         scraper.fetch()
-    assert "Front duplication" not in caplog.text
+    assert "Front duplication not measured (no ledger)" in caplog.text
     assert "front_duplicated" not in scraper.telemetry
 
 

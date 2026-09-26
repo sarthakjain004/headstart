@@ -185,6 +185,27 @@ Career", Palo Alto Networks' subsidiaries, Mattel's "MattelInc"). Title first at
   `careers.chevron.com`, `careers.moodys.com` and `jobs.stemcell.com` sit in the SuccessFactors
   ledger as live, the Radancy fronts CLAUDE.md's SuccessFactors landing rule warns about.
 
+## Discovery
+
+A front sits on its customer's own host, so there is no vendor namespace for the Wayback or Common
+Crawl feeders to sweep (`*.talentbrew.com` is reachable only as a CNAME target: the dashed host
+answers 400, and Common Crawl's index API returned 502 for `*.talentbrew.com` on the day), and no
+upstream seed list exists. The pool came instead from:
+
+- **urlscan.io**, `domain:tbcdn.talentbrew.com`, month by month: 1,073 page hosts, 212 of the 220
+  pool rows, 187 found by nothing else (`scripts/discover/mine_radancy.py`);
+- **a CNAME sieve** (`scripts/discover/sf_cname_probe.py`, whose output keeps every chain) over
+  the 10,071 hosts the committed ledgers and earlier harvests hold: 14 fronts;
+- the same sieve over `careers./jobs./search.jobs.{label}.{com,net,org,co.uk}` for the Avature
+  pool's 1,009 labels, since many Avature tenants list nothing and front their postings elsewhere:
+  18 fronts, 3 new;
+- the six-row harvest pool (`radancy.csv`/`talentbrew.csv`), of which `careers.upstart.com` and
+  `careers.zoom.us` turned out to be Greenhouse sites and probe DEAD.
+
+A sieve over `careers./jobs./career.` hosts of ~250,000 top domains was still running at landing,
+with 118 `talentbrew.com` CNAMEs found in its first ~704,000 of 731,717 hosts; those land in a
+follow-up.
+
 ## Cost
 
 Per step 6 of the build: bytes fetched per tech Job. A posting costs one ~170 KB page (the

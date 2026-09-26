@@ -62,10 +62,11 @@ from __future__ import annotations
 import html
 import re
 from collections import Counter
+from datetime import date
 from functools import cache
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
 from headstart.boards import company_name
 from headstart.jobs.job import Job, host_of, html_to_text, is_remote
@@ -105,6 +106,10 @@ _DIV_TAG = re.compile(r"<(/?)div\b[^>]*>", re.IGNORECASE)
 _PAGE_TITLE = re.compile(r"<title>(.*?)</title>", re.DOTALL | re.IGNORECASE)
 _DATE = re.compile(r"^(\d{4})-(\d{1,2})-(\d{1,2})")
 _STATED_TOTAL = re.compile(r'data-total-job-results="(\d+)"')
+#: The sitemap sizes TalentBrew caps at. Of 188 live fronts, 14 listed more than five postings
+#: fewer than they state: 12 at exactly 500 (`jobs.walgreens.com`: 500 of 22,544), one at exactly
+#: 10,000 (`jobs.greatclips.com`: 10,000 of 11,989), one short by chance.
+_SITEMAP_CAPS = frozenset({500, 10_000})
 
 #: How much of a Board's pages must agree on one name before it names the Board — iCIMS's 0.9.
 #: Measured over 17 fronts: the page title's "{Title} at {Company}" agreed on every page of 14,
@@ -162,16 +167,15 @@ class RadancyScraper(BaseScraper):
             return []
         stated = self._stated_total()
         if stated is not None and stated > len(listed):
-            # A capped sitemap: 20 of 188 fronts listed fewer jobs than they state, 12 of them
-            # exactly 500 and one 10,000 (`jobs.walgreens.com`: 500 of 22,544). Nothing else a
-            # front's robots.txt allows lists the rest, so the Board is short by a measured
-            # amount, and a negligible shortfall (a posting added between the two reads) is
-            # left to ADR-0083's grace period (ADR-0121).
-            self.mark_truncated_unless_negligible(
-                len(listed),
-                stated,
-                f"the sitemap lists {len(listed)} of the {stated} postings the front states",
-            )
+            why = f"the sitemap lists {len(listed)} of the {stated} postings the front states"
+            if len(listed) in _SITEMAP_CAPS:
+                # A hard cap is the same unreachable remainder every run, however small a
+                # share it is, so it truncates outright (ADR-0053).
+                self.mark_truncated(why)
+            else:
+                # A posting added between the two reads: a measured, usually negligible
+                # shortfall, left to ADR-0083's grace period when it is (ADR-0121).
+                self.mark_truncated_unless_negligible(len(listed), stated, why)
         pages = self.run_detail_pass(
             listed, key_of=lambda row: row[0], what="job pages"
         )
@@ -222,7 +226,11 @@ class RadancyScraper(BaseScraper):
         annotation against a quota of ten per step (ADR-0039)."""
         held = _scrapable_boards()
         if not held.identities:
-            return  # no committed ledger beside this checkout: not measured, never "0%"
+            # No committed ledger beside this checkout: say it was not measured, never "0%".
+            self._log.info(
+                f"{self.board_key()}: Front duplication not measured (no ledger)"
+            )
+            return
         read = [item["fields"] for item in items if item.get("fields")]
         backing = Counter(
             board
@@ -234,8 +242,8 @@ class RadancyScraper(BaseScraper):
         self.telemetry["front_duplicated"] = duplicated
         boards = ", ".join(f"{board} {n}" for board, n in backing.most_common(3))
         self._log.info(
-            f"{self.board_key()}: Front duplication {duplicated}/{len(read)} postings apply "
-            f"on a Scrapable Board" + (f" ({boards})" if boards else "")
+            f"{self.board_key()}: Front duplication at least {duplicated}/{len(read)} postings "
+            f"apply on a Scrapable Board" + (f" ({boards})" if boards else "")
         )
 
     def resolve_company(self) -> None:
@@ -415,9 +423,7 @@ def _us_date(value: str | None) -> str | None:
     if not match:
         return None
     month, day, year = (int(part) for part in match.groups())
-    if not 1 <= month <= 12:
-        return None
-    return f"{year:04d}-{month:02d}-{day:02d}"
+    return _checked_date(year, month, day)
 
 
 def _iso_date(value: Any) -> str | None:
@@ -427,7 +433,15 @@ def _iso_date(value: Any) -> str | None:
     if not match:
         return None
     year, month, day = (int(part) for part in match.groups())
-    return f"{year:04d}-{month:02d}-{day:02d}"
+    return _checked_date(year, month, day)
+
+
+def _checked_date(year: int, month: int, day: int) -> str | None:
+    """The date as ISO-8601, or None where it names no real day."""
+    try:
+        return date(year, month, day).isoformat()
+    except ValueError:
+        return None
 
 
 def _title_company(page_title: str) -> str | None:
@@ -485,7 +499,7 @@ def _fmt(value: float) -> str:
     return f"{value:g}" if value != int(value) else str(int(value))
 
 
-class _HeldBoards:
+class _ScrapableBoardIndex:
     """The Scrapable Boards, as what an apply URL is matched against: every lowercased identity,
     and those whose slug is a bare host indexed by that host."""
 
@@ -504,14 +518,14 @@ def _is_host(slug: str) -> bool:
 
 
 @cache
-def _scrapable_boards() -> _HeldBoards:
+def _scrapable_boards() -> _ScrapableBoardIndex:
     """Every Scrapable Board, read once per process from the committed ledger the way
     ``scrapable_boards.load`` reads it (Jibe's `_scraped_icims_tenants` is the precedent)."""
     # Imported here: `scrapable_boards` reaches the scraper registry, which imports this module.
     from headstart.boards import liveness_ledger, scrapable_boards
 
     ledger = liveness_ledger.dir_for(Path(__file__).resolve().parents[3])
-    return _HeldBoards(
+    return _ScrapableBoardIndex(
         frozenset(
             board.lowercase_identity
             for board in scrapable_boards.load(ledger, min_jobs=0)
@@ -523,7 +537,7 @@ _WORKDAY_HOST = re.compile(r"^[^.]+\.wd\d+\.myworkdayjobs\.com$")
 _LOCALE = re.compile(r"^[a-z]{2}-[a-z]{2}$", re.IGNORECASE)
 
 
-def backing_board(apply_url: str | None, held: _HeldBoards) -> str | None:
+def backing_board(apply_url: str | None, held: _ScrapableBoardIndex) -> str | None:
     """The Scrapable Board an apply URL hands off to, as its lowercased identity, or None.
 
     Built the way the ledger spells each ATS's row and read through that ATS's own ``slug_from``
@@ -558,7 +572,11 @@ def backing_board(apply_url: str | None, held: _HeldBoards) -> str | None:
         if segments:
             row = ("smartrecruiters", segments[0], apply_url or "")
     elif host.endswith("greenhouse.io") and segments:
-        row = ("greenhouse", segments[0], apply_url or "")
+        # An embedded board names its slug in `for=` (`/embed/job_app?for=acme`).
+        embedded = parse_qs(parts.query).get("for", [""])[0]
+        slug = embedded if segments[0] == "embed" else segments[0]
+        if slug:
+            row = ("greenhouse", slug, apply_url or "")
     elif host in {"jobs.lever.co", "jobs.eu.lever.co"} and segments:
         row = ("lever", segments[0], apply_url or "")
     elif host.endswith(".avature.net"):

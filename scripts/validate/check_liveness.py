@@ -2447,8 +2447,8 @@ def p_radancy(t, u):
     state the attribute at all redirect it to another front's filtered results
     (`disneytech.com` to `www.disneycareers.com/en/search-jobs?acm=…`) — a view of a Board held
     under that host, not a Board. So the count is read only where the page stays on the host.
-    robots.txt disallows `/search-jobs/` (the results endpoint beneath it) on every front
-    measured, not this page. A front a customer has left redirects to `www.radancy.com`
+    robots.txt disallows `/search-jobs/` (the results endpoint beneath it) on 151 of 188 fronts,
+    not this page. A front a customer has left redirects to `www.radancy.com`
     (`www.tmp.com`, `www.aia.co.uk`) or its new site and reads the same way: DEAD. So does an
     alias host whose sitemap lists another host's jobs (`www.takedajobs.com`, `jobs.takeda.com`'s
     Board). A DNS failure is DEAD: fronts sit on the customer's own hosts, not a wildcard zone.
