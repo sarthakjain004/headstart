@@ -149,6 +149,27 @@ def test_description_comes_from_the_detail_body_not_the_listing_teaser():
     assert job.description != html_to_text(teaser)
 
 
+def test_the_description_is_composed_from_responsibilities_and_qualifications_when_absent():
+    """`fa-exty`, `fa-exvn` and `eibd.fa.em2` leave `ExternalDescriptionStr` empty and write
+    the posting into its responsibilities and qualifications instead (12/12, 11/12 and 6/6
+    sampled 2026-09-26). The detail read must keep that payload as a description, not a gap."""
+    detail = {
+        "ExternalDescriptionStr": "",
+        "ExternalResponsibilitiesStr": "<p>Build the thing.</p>",
+        "ExternalQualificationsStr": "<p>Five years of Rust.</p>",
+    }
+    scraper = _scraper()
+    read = scraper.read_detail(
+        {"Id": REMOTE_ID}, FakeResponse(text=json.dumps({"items": [detail]}))
+    )
+    assert read == detail
+    raw = _raw()
+    raw["details"] = {REMOTE_ID: detail}
+    job = {j.id.rsplit(":", 1)[1]: j for j in scraper.parse(raw, SCRAPED_AT)}[REMOTE_ID]
+    assert "Build the thing." in job.description
+    assert "Five years of Rust." in job.description
+
+
 def test_a_missing_detail_payload_falls_back_to_the_capped_teaser():
     """Enrichment, not a hard dependency: the Job is still listed and still emitted."""
     raw = {"requisitionList": _raw()["requisitionList"], "details": {}}
@@ -268,12 +289,14 @@ class _FakeListing:
         self.ceiling = True
 
     def __call__(self, url):
-        offset = int(url.split("offset=")[1])
+        offset = int(url.split("offset=")[1].split(",")[0])
         self.offsets.append(offset)
+        # The default order is oldest first; `sortBy=POSTING_DATES_DESC` reads the other end.
+        ids = self.ids[::-1] if "sortBy=POSTING_DATES_DESC" in url else self.ids
         if self.ceiling and offset + self.page_size > 10_000:
             page = []  # the API's own offset ceiling: a blank envelope, not an error
         else:
-            page = self.ids[offset : offset + self.page_size]
+            page = ids[offset : offset + self.page_size]
         if (
             offset in self.short_at
         ):  # serve this page one row light, as Oracle really does
@@ -349,20 +372,43 @@ def test_a_short_page_does_not_end_the_walk():
     assert scraper.truncated is None
 
 
-def test_the_offset_ceiling_is_reported_though_every_other_shortfall_is_not():
-    """The ceiling is the one shortfall that still truncates.
-
-    Oracle serves no offset past 10,000, so a Board stating more than that reads exactly 10,000 and
-    the remainder is unreachable on every run — a knowingly short list, which is the single thing
-    ADR-0053 exists to prevent. ADR-0169 stopped reporting *sub*-ceiling gaps because they are not
-    losses; this arm must survive that, which is why it is checked on a Board whose gap (50 rows)
-    is far smaller than the sub-ceiling gaps now tolerated.
-    """
-    fake = _FakeListing(total_ids=10_050, page_size=200, reported_total=10_050)
+def test_a_board_past_the_ceiling_is_read_again_newest_first():
+    """ADR-0239. The default order is oldest first and serves no offset past 10,000, so a
+    Board stating 10,050 reads 10,000 of them; a second walk newest first reads the other end,
+    and the union is the whole Board. Measured live on `eluq.fa.us2` 2026-09-26: 9,975 + 10,000
+    ids, 11,411 together of 11,436 stated."""
+    fake = _FakeListing(total_ids=10_050, page_size=200)
     scraper = _paged(fake)
     raw = scraper.fetch_raw()
-    assert len(raw["requisitionList"]) == 10_000  # the ceiling, not the Board's end
+    ids = [r["Id"] for r in raw["requisitionList"]]
+    assert len(ids) == len(set(ids)) == 10_050
+    assert scraper.truncated is None
+    assert (
+        "sortBy" not in scraper.url()
+    )  # the next Board's walk starts in the default order
+
+
+def test_the_middle_both_orders_cannot_reach_is_still_reported():
+    """Past twice the ceiling the two ends leave a middle neither walk can read, and ADR-0121's
+    tolerance sees the shortfall: 20,000 read of a stated 30,000 stays truncated."""
+    fake = _FakeListing(total_ids=30_000, page_size=200)
+    scraper = _paged(fake)
+    raw = scraper.fetch_raw()
+    assert len(raw["requisitionList"]) == 20_000
     assert scraper.truncated and "no offset past 10,000" in scraper.truncated
+
+
+def test_a_board_ending_on_an_empty_page_just_under_the_ceiling_is_not_capped():
+    """`hcbt.fa.em2` states 9,621 and serves 9,611: the walk ends on the empty page at offset
+    9,800, which the API still serves. It was truncated as a ceiling hit on every run
+    (36200233818..36218633315) because the check read the offset *after* that page."""
+    fake = _FakeListing(total_ids=9_611, page_size=200, reported_total=9_621)
+    scraper = _paged(fake)
+    raw = scraper.fetch_raw()
+    assert len(raw["requisitionList"]) == 9_611
+    assert fake.offsets[-1] == 9_800
+    assert "sortBy=POSTING_DATES_DESC" not in scraper.url()
+    assert scraper.truncated is None
 
 
 def test_the_etud_shortfall_that_justified_the_slack_is_not_a_loss():

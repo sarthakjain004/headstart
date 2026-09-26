@@ -16,9 +16,13 @@ from __future__ import annotations
 
 import json
 import logging
+from collections import Counter
 from pathlib import Path
 
+import pytest
+
 from headstart.network import http
+from headstart.scrapers import amazon
 from headstart.scrapers.amazon import (
     AmazonScraper,
     _full_description,
@@ -378,8 +382,50 @@ def test_lost_listing_pages_are_tallied_into_the_truncation_reason(monkeypatch):
 
     monkeypatch.setattr(scraper, "_get", get)
     monkeypatch.setattr(scraper, "async_fanout_enabled", lambda: False)
+    monkeypatch.setattr(amazon.time, "sleep", lambda seconds: None)
     scraper.fetch_raw()
     lost = scraper.truncated.split("; ", 1)[1]
     assert lost.startswith("3 of 4 listing pages lost (")
     for cause in ("CAPTCHA HTML on a 200 x1", "error body x1", "RequestException x1"):
         assert cause in lost
+
+
+@pytest.mark.parametrize("async_fanout", [True, False])
+def test_captcha_pages_are_re_fetched_once_after_a_wait(
+    monkeypatch, caplog, async_fanout
+):
+    """The wall truncated the Board on 4 of runs 36200233818..36218633315 (up to 72 of 266
+    pages). A re-fetch ~2–3 minutes later recovered 8 of 8 measured pages, so each walled page
+    is asked once more after a wait — and a page still walled then stays lost."""
+    scraper = _scraper()
+    monkeypatch.setattr(scraper, "_categories", lambda: {"a": 300})
+    asked: Counter[int] = Counter()
+    walled = "<html><title>Server Busy</title></html>"
+
+    def body(offset):
+        asked[offset] += 1
+        if offset == 200 or (offset == 100 and asked[offset] == 1):
+            return walled
+        return json.dumps({"jobs": [{"id_icims": str(offset), "title": "X"}]})
+
+    async def get_async(session, url=None):
+        return body(int(url.split("offset=")[1].split("&")[0]))
+
+    monkeypatch.setattr(
+        scraper,
+        "_get",
+        lambda url=None: body(int(url.split("offset=")[1].split("&")[0])),
+    )
+    monkeypatch.setattr(scraper, "_get_async", get_async)
+    monkeypatch.setattr(scraper, "async_fanout_enabled", lambda: async_fanout)
+    slept = []
+    monkeypatch.setattr(amazon.time, "sleep", slept.append)
+
+    with caplog.at_level("INFO"):
+        jobs = scraper.fetch_raw()
+
+    assert sorted(j["id_icims"] for j in jobs) == ["0", "100"]
+    assert asked == {0: 1, 100: 2, 200: 2}
+    assert slept == [amazon._CAPTCHA_WAIT_SECONDS]
+    assert "2 of 3 listing pages came back as CAPTCHA HTML" in caplog.text
+    assert "1 of 3 listing pages lost (CAPTCHA HTML on a 200 x1)" in scraper.truncated

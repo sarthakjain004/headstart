@@ -481,14 +481,28 @@ class SuccessFactorsScraper(BaseScraper):
                 surface = "rss-stream"
                 if rss_cut_short:
                     self.mark_truncated(rss_cut_short)
-        # NB: all three surfaces empty is indistinguishable here from a dead vanity host, since
-        # each maps its own non-200 to "nothing" and falls through — so a gone SuccessFactors
-        # tenant cannot currently earn an ADR-0058 gone-verdict. A root-of-host probe was tried
-        # and rejected on measurement: of 12 hosts this ledger already calls dead, 9 answer
-        # `GET /` with 200 (the jobs2web parking page), so the probe would have cost one extra
-        # request per empty board per run and still missed three quarters of the dead ones. The
-        # real fix is for the three surfaces to distinguish "errored" from "legitimately empty"
-        # and raise only when every one of them errored.
+        # All three surfaces empty reads as an empty Board only when one of them *answered*: a
+        # urlset or search walk that came back with no postings, or a 400/404/410 saying the
+        # Board is gone (jobs.vibrantm.com, now a 301 to another domain, answers 400 on both).
+        # A 403, 429 or 5xx is the fetch failing, not the Board emptying: run 36218633315 read
+        # 19 Boards as clean empties off `sitemap HTTP 429, search HTTP 429`, sending ~260 live
+        # ids into ADR-0083's grace period. So raise, and the Board stays unauthoritative
+        # (ADR-0238).
+        # A gone tenant still cannot earn an ADR-0058 gone-verdict here; a root-of-host probe was
+        # rejected on measurement (9 of 12 dead hosts answer `GET /` with 200).
+        # A 200 that is neither urlset nor feed (a sitemap index, a corporate page) lists nothing
+        # and answers nothing; an RSS sitemap answers through the feed it names.
+        if kind == "rss":
+            sitemap_answered = not _unanswered(rss_cut_short)
+        elif kind.startswith("HTTP"):
+            sitemap_answered = not _unanswered(kind)
+        else:
+            sitemap_answered = kind == "urlset"
+        if not listed and _unanswered(search_cut_short) and not sitemap_answered:
+            raise http.RequestsError(
+                f"{self.board_key()}: no listing surface answered (sitemap {kind}, search "
+                f"{search_cut_short}, rss {rss_cut_short or 'n/a'}) — unread, not empty"
+            )
         # Which of the three surfaces answered, and how much the detail pass will cost. This
         # tenant's cost is decided here and nowhere else — the RSS stream is the patient last
         # resort — so without this line a board that takes 37 minutes for 7 jobs
@@ -715,6 +729,15 @@ def _cap_reason(what: str, cap: int) -> str:
         f"the {what} hit the {cap // (1024 * 1024)} MB read cap — "
         "postings past it were not listed"
     )
+
+
+#: A surface failure that says nothing about the Board: blocked, throttled or erroring.
+_UNANSWERED = re.compile(r"HTTP (?:403|429|5\d\d)\b")
+
+
+def _unanswered(reason: str | None) -> bool:
+    """Whether a surface's reason for listing nothing is a failed fetch rather than an answer."""
+    return bool(reason and _UNANSWERED.match(reason))
 
 
 def _sitemap_kind(text: str) -> str:

@@ -263,10 +263,18 @@ class JobviteScraper(BaseScraper):
             timeout=30,
             allow_redirects=False,
         )
+        location = response.headers.get("location") or ""
+        if "invalid=1" in location:
+            # Jobvite's own "no such tenant" (module docstring), raised in the shape
+            # `board_failures.is_gone` matches so the Board earns ADR-0162 gone-strikes: 22
+            # raises across runs 36200233818..36218633315 earned none.
+            raise http.RequestsError(
+                f"HTTP Error 410: {url} -> {response.status_code} {location}; "
+                "tenant departed"
+            )
         if response.status_code != 200:
             raise http.RequestsError(
-                f"{url} -> {response.status_code} "
-                f"{response.headers.get('location') or ''}".strip()
+                f"{url} -> {response.status_code} {location}".strip()
             )
         return response.text
 

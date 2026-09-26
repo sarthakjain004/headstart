@@ -7264,16 +7264,14 @@ def test_oracle_remote_reads_detail_when_listing_omits_the_code():
     assert _remote({}, {"WorkplaceTypeCode": "ORA_REMOTE"}, "Austin, TX") is True
 
 
-def test_oracle_offset_ceiling_truncates_however_complete_the_read_looks(monkeypatch):
-    """A hard cap is never tolerated, whatever share it leaves (ADR-0121).
-
-    The API serves no offset past 10,000, so a Board stating 10,050 reads exactly 10,000 —
-    99.5%, inside the tolerance — and the 50 it cannot reach are unreachable on *every* run, not
-    a transient miss. `oracle:ejwl.fa.us2.oraclecloud.com` is the live case, 187 shielded rows on
-    run 34327339789. Releasing this class would evict those rows for good.
+def test_oracle_offset_ceiling_truncates_what_both_orders_cannot_reach(monkeypatch):
+    """The API serves no offset past 10,000 in either order. ADR-0239 reads such a Board a
+    second time newest first and lets ADR-0121's tolerance judge the union; a Board whose two
+    walks together still fall short of it stays truncated. Here both walks read the same 200
+    ids fifty times over, so the union is 10,000 of a stated 30,000.
     """
-    full = _oracle_page(_oracle_reqs(0, 200), 10_050)
-    blank = _oracle_page([], 10_050)
+    full = _oracle_page(_oracle_reqs(0, 200), 30_000)
+    blank = _oracle_page([], 30_000)
     s = get_scraper("oracle", "ejwl.fa.us2.oraclecloud.com", "Acme")
     calls = {"n": 0}
 
@@ -7281,7 +7279,7 @@ def test_oracle_offset_ceiling_truncates_however_complete_the_read_looks(monkeyp
         calls["n"] += 1
         # 50 full pages take the walk to exactly the ceiling; past it the envelope goes blank
         # rather than erroring, which is what ends the walk short of the Board's own total.
-        return full if calls["n"] <= 50 else blank
+        return full if calls["n"] % 51 else blank
 
     monkeypatch.setattr(type(s), "_get", _get)
 
@@ -8762,6 +8760,33 @@ def test_workday_listing_diagnostic_redacts_a_bearer_credential():
     assert "bearer-secret" not in diagnostic
 
 
+@pytest.mark.parametrize(
+    "body, classification",
+    [
+        (
+            "<!DOCTYPE html><html><head><title>Workday is currently unavailable.</title>",
+            "maintenance",
+        ),
+        (
+            (
+                '<wml:Application_Error xmlns:wml="http://www.workday.com/ns/model/1.0" '
+                'Type="Validation"><wml:Message>Internal Server Error. (id: VPS|d5c1)'
+                "</wml:Message> </wml:Application_Error>"
+            ),
+            "server-error",
+        ),
+    ],
+)
+def test_workday_outage_bodies_on_a_200_are_transient(body, classification):
+    """Both shapes raised as a non-transient `unexpected-body` Board failure across runs
+    36200233818..36218633315 (12 maintenance redirects, 28 XML server errors); each is an
+    outage, so it earns the one retry a 5xx does."""
+    from headstart.scrapers.workday import _listing_class
+
+    response = _NonJsonListing(body)
+    assert _listing_class(response, body.encode()) == (classification, True)
+
+
 def test_workday_error_page_retries_once_and_recovers(monkeypatch, caplog):
     """The live 2026-09-12 probe saw this Workday-branded HTML error shape settle and the exact
     request immediately recover. This one positively identified transient class earns one retry."""
@@ -9952,6 +9977,61 @@ def test_successfactors_listing_surfaces_go_through_the_retry_seam(monkeypatch):
     scraper._rss_job_urls()  # must not touch the raw session either
 
 
+_SF_SEARCH_429 = "HTTP 429 at startrow 0 — 0 postings read before the walk stopped"
+
+
+@pytest.mark.parametrize(
+    "sitemap_kind, search_cut_short, rss_cut_short",
+    [
+        ("HTTP 429", _SF_SEARCH_429, None),  # run 36218633315, 19 Boards
+        ("HTTP 503", "HTTP 502 at startrow 0 — 0 postings read", None),
+        ("other", "HTTP 403 at startrow 0 — 0 postings read", None),  # a sitemap index
+        ("rss", _SF_SEARCH_429, "HTTP 429"),  # careers.bankwithunited.com
+    ],
+)
+def test_successfactors_raises_when_no_listing_surface_answered(
+    monkeypatch, sitemap_kind, search_cut_short, rss_cut_short
+):
+    """A throttled or blocked read is not an empty Board: returning [] sent ~260 live ids into
+    ADR-0083's grace period on one run. Raising keeps the Board unauthoritative (ADR-0053)."""
+    from headstart.network import http
+
+    scraper = _successfactors_board(
+        monkeypatch,
+        sitemap=(sitemap_kind, "", None),
+        search=([], search_cut_short, None),
+        rss=([], {}, rss_cut_short),
+    )
+
+    with pytest.raises(http.RequestsError, match="no listing surface answered"):
+        scraper.fetch_raw()
+
+
+@pytest.mark.parametrize(
+    "sitemap_kind, search_cut_short, rss_cut_short",
+    [
+        ("HTTP 400", "HTTP 400 at startrow 0 — 0 postings read", None),  # vibrantm
+        ("HTTP 404", "HTTP 404 at startrow 0 — 0 postings read", None),
+        ("urlset", _SF_SEARCH_429, None),  # the urlset answered: no postings
+        ("HTTP 429", None, None),  # the search walk answered: no postings
+        ("rss", _SF_SEARCH_429, None),  # the feed answered: no postings
+    ],
+)
+def test_successfactors_reads_an_answered_empty_board_as_empty(
+    monkeypatch, sitemap_kind, search_cut_short, rss_cut_short
+):
+    """One surface answering with nothing, or saying the Board is gone, is still an empty
+    Board — so a gone tenant's rows keep draining through eviction."""
+    scraper = _successfactors_board(
+        monkeypatch,
+        sitemap=(sitemap_kind, "", None),
+        search=([], search_cut_short, None),
+        rss=([], {}, rss_cut_short),
+    )
+
+    assert scraper.parse(scraper.fetch_raw(), "2026-01-01") == []
+
+
 @pytest.mark.parametrize("async_fanout", ["1", "0"])
 def test_successfactors_marks_truncation_when_detail_pages_are_lost(
     monkeypatch, async_fanout
@@ -10814,13 +10894,16 @@ def test_zwayam_a_failed_config_call_ships_no_descriptions_not_stale_ones():
     assert scraper.telemetry["detail_attempted"] == 0
 
 
-def test_zwayam_a_detail_that_answers_empty_keeps_the_listing_text():
+def test_zwayam_a_detail_that_answers_empty_keeps_the_listing_text(caplog):
     """An answered-but-bodyless detail is the posting's final word, so the listing text is the
-    best that will ever exist for it — kept, unlike the failed-fetch case above."""
+    best that will ever exist for it — kept, unlike the failed-fetch case above. Not a loss,
+    so it gets its own count: the gap line never showed one."""
     scraper, _fetcher = _zwayam_served_board(
         _ZWAYAM_TWO_ROWS, lambda job_url: FakeResponse(text="{}")
     )
-    jobs = scraper.parse(scraper.fetch_raw(), SCRAPED_AT)
+    with caplog.at_level("INFO"):
+        jobs = scraper.parse(scraper.fetch_raw(), SCRAPED_AT)
+    assert "2/2 details answered with no longDescription" in caplog.text
     assert {j.id.rsplit(":", 1)[1]: j.description for j in jobs} == {
         "1": "possibly truncated listing",
         "2": None,
