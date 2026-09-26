@@ -286,7 +286,11 @@ def refresh_row(
     facts_changed = False
     if facts:
         for field in FACT_FIELDS:
-            if row.get(field) != facts[field]:
+            # A None is "not observed", never "removed": a degraded read nulls several facts of
+            # one row at once and the next read restores them. Between 2026-09-26's two
+            # consecutive stores, 90 rows lost a fact to None (54 of them two or more at once),
+            # and each flap nulled a derivation for one run (ADR-0061's amendment).
+            if facts[field] is not None and row.get(field) != facts[field]:
                 row[field] = facts[field]
                 facts_changed = True
 
@@ -480,8 +484,8 @@ class _ChunkResult(NamedTuple):
     country_delta: Counter[str]
     unswept: int
     swept_without_text: int
-    #: ``{"experience" | "salary": [(Job id, raw field cleared)]}`` for every "lost" row.
-    lost: dict[str, list[tuple[str, bool]]]
+    #: ``{"experience" | "salary": [Job id]}`` for every "lost" row.
+    lost: dict[str, list[str]]
 
 
 def _refresh_chunk(args: _ChunkArgs) -> _ChunkResult:
@@ -496,7 +500,7 @@ def _refresh_chunk(args: _ChunkArgs) -> _ChunkResult:
     sal_delta: Counter[str] = Counter()
     country_delta: Counter[str] = Counter()
     unswept = swept_without_text = 0
-    lost: dict[str, list[tuple[str, bool]]] = {"experience": [], "salary": []}
+    lost: dict[str, list[str]] = {"experience": [], "salary": []}
     for meta in args.rows:
         sweep_row = args.sweep and meta.get(_ROW_VERSION, 0) < DERIVATIONS_VERSION
         row, fact_changed, derived_changed = refresh_row(
@@ -522,8 +526,7 @@ def _refresh_chunk(args: _ChunkArgs) -> _ChunkResult:
                 if move:
                     counts[move] += 1
                 if move == "lost":
-                    cleared = meta.get(label) is not None and row.get(label) is None
-                    lost[label].append((meta["id"], cleared))
+                    lost[label].append(meta["id"])
             # `country` has no tier concept (`derivation_delta` doesn't apply) — just a direct
             # before/after compare, since the only two values are "IN" and null.
             if meta.get(india_filter.COLUMN) != row.get(india_filter.COLUMN):
@@ -643,7 +646,7 @@ def refresh(
     sal_delta: Counter[str] = Counter()
     country_delta: Counter[str] = Counter()
     unswept = swept_without_text = 0
-    lost: dict[str, list[tuple[str, bool]]] = {"experience": [], "salary": []}
+    lost: dict[str, list[str]] = {"experience": [], "salary": []}
     deadline = monotonic() + sweep_budget_seconds if sweep else None
     # A sweep runs the full cascade on every row instead of a cheap fact-sync — measured ~230x
     # slower per row on the 2026-09-15 nightly (805,160 rows: ~15s fact-only vs. a sweep still not
@@ -714,16 +717,15 @@ def refresh(
                 f"{counts['retiered']} retiered, {counts['moved']} moved (same tier, new "
                 f"value) (ADR-0066)"
             )
-        # Per ATS, with ids to open: `lost` on an ordinary run mirrored the next run's `gained`
-        # (up to 17 a run, 2026-09-26), and a count alone cannot say which read went wrong.
-        by_ats: dict[str, list[tuple[str, bool]]] = {}
-        for job_id, cleared in lost[label]:
-            by_ats.setdefault(ats_of(job_id), []).append((job_id, cleared))
+        # Per ATS, with ids to open: a count alone cannot say which read or which description
+        # took the answers away (658 Lockheed salaries went in one re-derivation, 2026-09-26).
+        by_ats: dict[str, list[str]] = {}
+        for job_id in lost[label]:
+            by_ats.setdefault(ats_of(job_id), []).append(job_id)
         for ats, ids in sorted(by_ats.items(), key=lambda kv: (-len(kv[1]), kv[0])):
             _log.info(
-                f"  {label} lost on {ats}: {len(ids)}, {sum(c for _, c in ids)} with the raw "
-                f"field cleared by this scrape — e.g. "
-                + log.named_sample([job_id for job_id, _ in ids], cap=_LOST_SAMPLE)
+                f"  {label} lost on {ats}: {len(ids)} — e.g. "
+                + log.named_sample(ids, cap=_LOST_SAMPLE)
             )
     if country_delta:
         _log.info(

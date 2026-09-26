@@ -153,3 +153,16 @@ with a queue in `data/state/`.
 served table in the next run instead of never. `verify-search-filters` remains the harness that
 would catch a reconcile writing wrong columns, and the README served-table schema is untouched —
 no column was added, removed, or retyped.
+
+> **Amendment (2026-09-26): a None is not an observation.** The fact sync used to overwrite a stored
+> fact with whatever this run's scrape carried, None included. A degraded read nulls several facts
+> of one row at once, and the next read restores them. Between two consecutive stores, after run
+> 36224130300 and after run 36226622028, 90 rows lost a fact to None and 54 of them lost two or
+> more at once. JazzHR lost `experience` with `employment_type` and `posted_at`; Zoho lost
+> `experience` with `posted_at`; ADP Recruiting lost `salary`. The same fields came back on
+> rows the run before had nulled: Zoho `experience` 9, JazzHR 9, Workday `posted_at` 119. Each flap
+> nulled that row's derivation for one run: the `lost` count that mirrored the next run's `gained`,
+> up to 17 a run. So a None from the scrape now leaves the stored value alone. The trade is that a
+> Board that genuinely removes a field keeps serving the old value until the posting closes or is
+> re-embedded. Derivations do not change for any row the next good read would not restore, so no
+> `DERIVATIONS_VERSION` bump.
