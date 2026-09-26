@@ -106,7 +106,9 @@ does mean the breaker's stop is not permanent while compactions are firing.
 The quadratic model above did not survive a second measurement. Across the seven merges of runs
 36200233818–36218633315 (2026-09-25/26, all after the 2026-09-25 08:32 compaction) `_deletions/`
 read 651, 711, 762, 813, 841, 874 and 897 files: ~41 per run, linear and if anything slowing. At
-~26 runs a day that is ~1,070 files a day, so 3,000 was crossed ~2.8 days after a compaction, not
+the ~26 runs a day those runs kept (~55 min apart) that is ~1,070 files a day, so 3,000 was crossed ~2.8 days after a compaction, not
 one — a missed cron went unasked-for for nearly three days. The threshold is now **1,200**,
 ~1.1 days of growth: just past a missed daily cron, and still ~8,800 files (~200 runs) short of the
-limit. Nothing else here changes.
+limit. At the 38.6 runs/day pipeline.yml's `schedule` note measured earlier, 1,200 comes in ~0.8
+days, before the cron: an extra compaction, the cheap direction to err in. Nothing else here
+changes.

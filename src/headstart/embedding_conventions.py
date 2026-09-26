@@ -15,8 +15,8 @@ from __future__ import annotations
 from typing import Any
 
 MODEL = "nomic-ai/nomic-embed-text-v1.5"
-# Pinned, because `trust_remote_code` runs Python fetched from the Hub: unpinned, every load ran
-# whatever nomic last pushed. Two repos, since the model's `auto_map` sends its modeling code to
+# Pinned, because `trust_remote_code` runs Python fetched from the Hub: unpinned, a load runs
+# whatever nomic last pushed (embed_plan's tokenizer load does not use the pin yet). Two repos, since the model's `auto_map` sends its modeling code to
 # `nomic-ai/nomic-bert-2048`, which `revision` does not reach and `code_revision` does. Both are
 # the commits `main` named, and the pipeline's cache held, on 2026-09-26. A new revision is a new
 # model cache key in pipeline.yml (tests/test_embedding_conventions.py).

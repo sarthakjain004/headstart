@@ -156,14 +156,14 @@ env:
   # than as three inline literals that would drift apart.
   UV_VERSION: "0.12.11"
 
+# Every job pins `ubuntu-24.04`, not `ubuntu-latest`: GitHub moves `-latest` to Ubuntu 26.04 from
+# 2026-10-19 and annotates every job that runs on it until then. The scrape shards' WARP install
+# adds Cloudflare's apt repo by `lsb_release -cs` and is proven only on noble — and every shard
+# dials it (105 of 105 in runs 36200233818-36218633315). Move by measuring.
 jobs:
   # ── Stage 1: select this run's board slice and bin-pack it into scrape shards. Downloads only the
   # priority ledger (light); the liveness ledger is committed in the repo.
   scrape-plan:
-    # Every job pins 24.04, not `ubuntu-latest`: GitHub moves `-latest` to Ubuntu 26.04 from
-    # 2026-10-19 and annotates every job that runs on it until then. The scrape shards' WARP
-    # install adds Cloudflare's apt repo by `lsb_release -cs` and is proven only on noble — and
-    # every shard dials it (105 of 105 in runs 36200233818-36218633315). Move by measuring.
     runs-on: ubuntu-24.04
     timeout-minutes: 10 # hang detector: measured ~40s (the packing itself is ~30ms)
     outputs:
@@ -253,8 +253,10 @@ jobs:
         # Only the files scrape_plan reads, not `data/state/*`: that glob also matched every
         # `role_trend_board_deltas/*.parquet`, 327 of the 357 files it pulled on 2026-09-26 and +1
         # per run. Named file by file, so each is still a `data/state` pattern the ADR-0095 witness
-        # answers for: a missing ledger fails closed rather than planning cold.
-        # tests/test_scrape_plan.py keeps this list in step with scrape_plan's defaults.
+        # answers for: a missing ledger fails closed rather than planning cold. So a ledger lands
+        # here only once the Hub holds it — one no stage has published yet would abort every run
+        # before any could write it. tests/test_scrape_plan.py keeps this list in step with
+        # scrape_plan's defaults.
         run: >-
           python -m headstart.ingest.state_fetch
           data/state/board_priority.csv data/state/board_cost.csv data/state/shard_speedup.csv
@@ -603,8 +605,8 @@ jobs:
           python -m headstart.ingest.state_fetch 'data/embeddings/jobs/meta.jsonl' 'data/state/*'
           # The description store (ADR-0050). Fetched only here: this is the one job that both
           # writes it (update_descriptions) and reads it (embed_plan, via the repaired corpus).
-          # Deliberately NOT under data/state/, whose glob scrape-plan also pulls — that would
-          # ship ~174 MB toward a planner that has no use for it.
+          # Deliberately NOT under data/state/, whose glob this job pulls (and scrape-plan once
+          # did) — that would ship ~174 MB toward stages that have no use for it.
           #
           # Fails closed, like the line above. A genuine first run never fails here — a pattern
           # the Hub lists nothing for returns 0 — so a non-zero exit is always a real failed
@@ -744,7 +746,10 @@ jobs:
         env:
           # Offline only on a cache hit, which holds the pinned revision: even pinned, a load
           # otherwise asks the Hub for files the model does not have (adapter_config.json),
-          # unauthenticated, every run. On a miss it must download.
+          # unauthenticated, every run. On a miss it must download. A hit is complete because
+          # the load runs first and a failed one fails the job, so no partial download is saved.
+          # role_trends' JobBERT load stays online: its step is `continue-on-error` under a cap
+          # that includes a cold download, so a timed-out partial could be saved and then hit.
           HF_HUB_OFFLINE: ${{ steps.model-cache.outputs.cache-hit == 'true' && '1' || '' }}
         run: |
           # Same reasoning as the scrape budget: only 124 is the budget: anything else crashed.
@@ -913,7 +918,6 @@ jobs:
       - name: Cache the title-classifier model (ADR-0220)
         # JobBERT-v2 (~450 MB) at the revision the head's manifest pins; the key names it, so a
         # new revision is a new entry rather than a stale hit.
-        id: title-model-cache
         if: needs.scrape-plan.outputs.run == 'true'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -929,9 +933,6 @@ jobs:
         if: needs.scrape-plan.outputs.run == 'true' && steps.corpus.outcome == 'success'
         continue-on-error: true
         timeout-minutes: 20
-        env:
-          # Offline on a hit, as in the embed job: role_trends reads nothing else from the Hub.
-          HF_HUB_OFFLINE: ${{ steps.title-model-cache.outputs.cache-hit == 'true' && '1' || '' }}
         run: python -m headstart.ingest.role_trends
       - name: Name the companies Trends can be filtered to and Hot ranks (ADR-0185, ADR-0230)
         # Strictly after role_trends: it reads that stage's Board-delta ledger, and warns and
@@ -1162,10 +1163,12 @@ jobs:
       # ADR-0091's ~10,000 files over ~36 runs), under which 3,000 was roughly one day. Measured
       # since, growth is linear and if anything slowing: 651, 711, 762, 813, 841, 874, 897 files
       # across the seven merges of runs 36200233818-36218633315 (2026-09-25/26), ~41 per run,
-      # the directory last emptied by the 2026-09-25 08:32 compaction. At ~41 per run and ~26
-      # runs a day a directory gains ~1,070 files a day: 3,000 is crossed ~2.8 days after the last
-      # compaction, 1,200 ~1.1 days after it — just past a missed daily cron, and still ~8,800
-      # files (~200 runs) short of the limit.
+      # the directory last emptied by the 2026-09-25 08:32 compaction. Those runs started ~55 min
+      # apart (~26 a day), so a directory gains ~1,070 files a day: 3,000 is crossed ~2.8 days
+      # after the last compaction, 1,200 ~1.1 days after it — just past a missed daily cron, and
+      # still ~8,800 files (~200 runs) short of the limit. At the faster 38.6 runs/day measured at
+      # `schedule` above, 1,200 comes in ~0.8 days, before the cron: an extra compaction, the
+      # cheap direction to err in. ADR-0094's 2026-09-26 amendment.
       # The threshold is a FILE COUNT, so it needs no cadence correction: more runs cross it sooner.
       - name: Ask for a compaction when _deletions is filling
         id: compaction
