@@ -1153,6 +1153,10 @@ def normalise_tenant(ats: str, tenant: str, evidence: str) -> str:
     if " API " in evidence:
         return tenant
     source_host = evidence.split(" CNAME ")[0].lower() if " CNAME " in evidence else ""
+    if ats == "radancy":
+        # A Radancy front's Board is its own host (ADR-0246); a matched talentbrew.com or
+        # radancy.com host is the vendor's CNAME target or asset CDN, never the front.
+        return source_host or (urlsplit(evidence).hostname or "").lower()
     if ats in QUERY_HOST_ATS and source_host:
         return source_host
     if ats in QUERY_HOST_ATS:

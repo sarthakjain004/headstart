@@ -91,13 +91,16 @@ unparseable input with a 400 rather than silently ignoring it.
 **48 scrapers**, selected from a registry by the `ats` key: `adp`, `adp_recruiting`, `amazon`, `apple`, `ashby`,
 `avature`, `bamboohr`, `breezy`, `bytedance`, `clearcompany`, `cornerstone`, `darwinbox`, `eightfold`, `freshteam`, `gem`, `google`, `greenhouse`,
 `icims`, `jazzhr`, `jibe`, `jobvite`, `join`, `keka`, `lever`, `meta`, `oracle`, `peoplestrong`, `personio`, `phenom`,
-`pinpoint`, `pyjamahr`, `recruitee`, `ripplehire`, `rippling`, `sensehq`, `smartrecruiters`, `successfactors`,
+`pinpoint`, `pyjamahr`, `radancy`, `recruitee`, `ripplehire`, `rippling`, `sensehq`, `smartrecruiters`, `successfactors`,
 `taleo_be`, `taleo_enterprise`, `teamtailor`, `tesla`, `tiktok`, `trakstar`, `uber`, `workable`,
 `workday`, `zoho`, `zwayam`. All but `join` are active: `join`'s boards run ~1 tech job in ~10k (German-SMB
 listings, almost entirely non-tech), pure noise for a tech-only index, so `registry.DISABLED_ATS`
 skips it — the scraper class and tests stay intact, and re-enabling it is a one-line change.
 `adp` and `adp_recruiting` are two separate ADP products, ADP Workforce Now and ADP Recruiting
-Management, each with its own host, API and Board identity.
+Management, each with its own host, API and Board identity. `radancy` is not an ATS at all but
+a **Career front**: Radancy's TalentBrew sites (`jobs.intuit.com`) mirror a company's real ATS
+Boards and hand the Apply button off to them, and are scraped as Boards keyed by their host
+(ADR-0246), as `phenom`'s are.
 
 Eight of the 48 — `amazon`, `apple`, `bytedance`, `google`, `meta`, `tesla`, `tiktok`, `uber`
 (ADR-0139) — are **Single source scrapers**: each company's own in-house careers system, not a

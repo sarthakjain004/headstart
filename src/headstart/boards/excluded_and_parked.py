@@ -990,5 +990,20 @@ PARKED_BOARDS: frozenset[str] = frozenset(
         "jibe:yelp",
         "jibe:ymcasd",
         "jibe:yptc",
+        # Radancy's employee-only career fronts (ADR-0246), each the internal twin of a public
+        # front we scrape. Measured 2026-09-26 by city and title in the job URL: 76% of
+        # `internal.commonspirit.careers`'s 4,585 postings also sit on `www.commonspirit.careers`,
+        # 70% of `employees.kaiserpermanentejobs.org`'s on `www.kaiserpermanentejobs.org`, 82%
+        # of `internalcareers.primark.com`'s on `careers.primark.com`, 88% of
+        # `internal.santanderjobsus.com`'s on `www.santandercareers.com` and 40% of
+        # `internal.jobs.chsinc.com`'s on `jobs.chsinc.com` — under different job ids, so nothing
+        # would serve them once. The rest are postings an outside applicant cannot apply to (the
+        # **non-public site** of CONTEXT.md's **Requisition**). Un-park once cross-front
+        # deduplication exists and the index wants internal postings.
+        "radancy:employees.kaiserpermanentejobs.org",
+        "radancy:internal.commonspirit.careers",
+        "radancy:internal.jobs.chsinc.com",
+        "radancy:internal.santanderjobsus.com",
+        "radancy:internalcareers.primark.com",
     }
 )

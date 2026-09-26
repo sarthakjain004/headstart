@@ -2072,3 +2072,124 @@ def test_avature_a_406_is_the_spent_budget_it_rests_the_gate_and_settles_nothing
 def test_avature_every_tenant_shares_one_gate():
     assert cl._gate_key("bloomberg.avature.net") == "avature.net"
     assert cl._gate_for("intuit.avature.net") is cl._GATES["avature.net"]
+# --- radancy: the sitemap counts, `/search-jobs` settles a front with none -------------------
+
+_TAKEDA_JOB = (
+    "https://jobs.takeda.com/job/boston/director-clinical-operations/1113/101095894992"
+)
+
+
+def _radancy_fetch(answers, calls=None):
+    """`_fetch` keyed on path: `answers[path] = (status, landed url, body)`."""
+
+    def _fetch(method, url, **kw):
+        if calls is not None:
+            calls.append(url)
+        status, landed, body = answers[urllib.parse.urlsplit(url).path]
+        return SimpleNamespace(status_code=status, url=landed or url, content=body)
+
+    return _fetch
+
+
+def test_radancy_counts_the_sitemaps_job_urls(monkeypatch):
+    calls = []
+    sitemap = f"<urlset><url><loc>https://jobs.takeda.com</loc></url><url><loc>{_TAKEDA_JOB}</loc></url></urlset>"
+    monkeypatch.setattr(
+        cl,
+        "_fetch",
+        _radancy_fetch(
+            {"/sitemap.xml": (200, "", b"\xef\xbb\xbf" + sitemap.encode())}, calls
+        ),
+    )
+    assert cl.p_radancy("jobs.takeda.com", "https://jobs.takeda.com") == (cl.LIVE, 1)
+    assert calls == ["https://jobs.takeda.com/sitemap.xml"]
+
+
+def test_radancy_an_empty_front_states_zero_on_its_own_results_page(monkeypatch):
+    """Measured on empregos.allianceautomotive.eu, www.attjobs.com.mx, www.careersataspa.com."""
+    host = "www.careersataspa.com"
+    monkeypatch.setattr(
+        cl,
+        "_fetch",
+        _radancy_fetch(
+            {
+                "/sitemap.xml": (
+                    200,
+                    "",
+                    f"<urlset><url><loc>https://{host}</loc></url></urlset>".encode(),
+                ),
+                "/search-jobs": (200, "", b'<section data-total-job-results="0">'),
+            }
+        ),
+    )
+    assert cl.p_radancy(host, f"https://{host}") == (cl.LIVE, 0)
+
+
+def test_radancy_a_results_page_on_another_front_is_not_this_board(monkeypatch):
+    """disneytech.com's `/search-jobs` lands on www.disneycareers.com's filtered results."""
+    monkeypatch.setattr(
+        cl,
+        "_fetch",
+        _radancy_fetch(
+            {
+                "/sitemap.xml": (
+                    200,
+                    "",
+                    b"<urlset><url><loc>https://disneytech.com/</loc></url></urlset>",
+                ),
+                "/search-jobs": (
+                    200,
+                    "https://www.disneycareers.com/en/search-jobs?acm=26715",
+                    b'<section data-total-job-results="245">',
+                ),
+            }
+        ),
+    )
+    assert cl.p_radancy("disneytech.com", "https://disneytech.com") == (cl.DEAD, None)
+
+
+def test_radancy_an_alias_host_lists_none_of_its_own_jobs(monkeypatch):
+    """www.takedajobs.com's sitemap is jobs.takeda.com's; so is its results page."""
+    sitemap = f"<urlset><url><loc>{_TAKEDA_JOB}</loc></url></urlset>".encode()
+    monkeypatch.setattr(
+        cl,
+        "_fetch",
+        _radancy_fetch(
+            {
+                "/sitemap.xml": (200, "https://jobs.takeda.com/sitemap.xml", sitemap),
+                "/search-jobs": (
+                    200,
+                    "https://jobs.takeda.com/search-jobs",
+                    b'<section data-total-job-results="838">',
+                ),
+            }
+        ),
+    )
+    assert cl.p_radancy("www.takedajobs.com", "") == (cl.DEAD, None)
+
+
+def test_radancy_a_departed_front_is_dead(monkeypatch):
+    """www.tmp.com and www.aia.co.uk redirect to www.radancy.com's marketing site."""
+    page = (200, "https://www.radancy.com/", b"<html>Radancy</html>")
+    monkeypatch.setattr(
+        cl, "_fetch", _radancy_fetch({"/sitemap.xml": page, "/search-jobs": page})
+    )
+    assert cl.p_radancy("www.tmp.com", "") == (cl.DEAD, None)
+    monkeypatch.setattr(cl, "_fetch", _radancy_fetch({"/sitemap.xml": (404, "", b"")}))
+    assert cl.p_radancy("gone.example.com", "") == (cl.DEAD, None)
+
+
+def test_radancy_inconclusive_answers_stay_unknown(monkeypatch):
+    monkeypatch.setattr(cl, "_fetch", _radancy_fetch({"/sitemap.xml": (503, "", b"")}))
+    assert cl.p_radancy("jobs.intuit.com", "") == (cl.UNKNOWN, None)
+    monkeypatch.setattr(
+        cl,
+        "_fetch",
+        _radancy_fetch(
+            {
+                "/sitemap.xml": (200, "", b"<urlset></urlset>"),
+                "/search-jobs": (403, "", b""),
+            }
+        ),
+    )
+    assert cl.p_radancy("jobs.intuit.com", "") == (cl.UNKNOWN, None)
