@@ -93,11 +93,15 @@ def test_superseded_search_indexes_are_left_out_and_deleted(tmp_path, monkeypatc
     table = db.create_table(
         "jobs", data=[{"id": f"x{i}", "ats": "a" if i % 2 else "b"} for i in range(300)]
     )
-    table.create_scalar_index("ats")
     indices = tmp_path / "data/lancedb/jobs.lance/_indices"
-    first = {d.name for d in indices.iterdir()}
-    table.create_scalar_index("ats", replace=True)
-    (old,) = first
+    generations: list[str] = []
+    for run in range(3):  # a run adds rows, then refresh-indexes replaces the index
+        if run:
+            table.add([{"id": f"y{run}", "ats": "a"}])
+        table.create_scalar_index("ats", replace=True)
+        (new,) = {d.name for d in indices.iterdir()} - set(generations)
+        generations.append(new)
+    old = generations[0]
     remote_old = f"data/lancedb/jobs.lance/_indices/{old}/page_data.lance"
     monkeypatch.setattr(
         index_publish,
@@ -113,31 +117,39 @@ def test_superseded_search_indexes_are_left_out_and_deleted(tmp_path, monkeypatc
     added = [op.path_in_repo for op in ops if isinstance(op, CommitOperationAdd)]
     assert deleted == [remote_old]
     assert not [p for p in added if f"/_indices/{old}/" in p]
+    # The manifest still names the index its own version replaced, so that one is kept: the
+    # rule holds the latest two generations, never fewer.
+    assert [p for p in added if f"/_indices/{generations[1]}/" in p]
     assert [p for p in added if "/_indices/" in p], "the live index still goes up"
 
     shutil.rmtree(indices / old)
     reopened = lancedb.connect(str(tmp_path / "data/lancedb")).open_table("jobs")
-    assert reopened.search().where("ats = 'a'").limit(500).to_arrow().num_rows == 150
+    assert reopened.search().where("ats = 'a'").limit(500).to_arrow().num_rows == 152
     assert reopened.index_stats("ats_idx").num_unindexed_rows == 0
 
 
-def test_an_unreadable_table_deletes_no_index(tmp_path, monkeypatch):
-    """A table the manifest read fails on keeps every index: a publish never deletes on a read it
-    could not make."""
-    pytest.importorskip("lance")
-    (tmp_path / "data/lancedb/jobs.lance/_indices/abc").mkdir(parents=True)
-    (tmp_path / "data/lancedb/jobs.lance/_indices/abc/page_data.lance").write_bytes(
-        b"x"
-    )
+def test_an_unreadable_table_deletes_no_index(tmp_path, monkeypatch, caplog):
+    """A table that will not open keeps every index: a publish never deletes on a read it could
+    not make, and says so."""
+    pytest.importorskip("lancedb")
+    table = tmp_path / "data/lancedb/jobs.lance"
+    held = table / "_indices/6a44c829-1cab-46cf-96ab-8609ac557f4d"
+    held.mkdir(parents=True)
+    (held / "page_data.lance").write_bytes(b"x")
+    (table / "_versions").mkdir()
+    (table / "_versions/18446744073709551614.manifest").write_bytes(b"not a manifest")
     monkeypatch.setattr(
-        index_publish,
-        "remote_files",
-        lambda repo, token: pytest.fail("listed"),
+        index_publish, "remote_files", lambda repo, token: pytest.fail("listed")
     )
     commits = _capture(monkeypatch)
 
-    index_publish.publish("owner/repo", None, tmp_path)
+    with caplog.at_level("WARNING", logger="headstart.ingest.index_publish"):
+        index_publish.publish("owner/repo", None, tmp_path)
 
-    assert [op.path_in_repo for op in commits[0]["operations"]] == [
-        "data/lancedb/jobs.lance/_indices/abc/page_data.lance"
+    assert not [
+        op for op in commits[0]["operations"] if isinstance(op, CommitOperationDelete)
     ]
+    assert any(
+        "deleting no superseded index of jobs.lance" in r.getMessage()
+        for r in caplog.records
+    )

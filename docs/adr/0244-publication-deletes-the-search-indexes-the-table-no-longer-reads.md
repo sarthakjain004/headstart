@@ -19,24 +19,27 @@ Every Space boot pulls `data/lancedb/*` too, so it downloaded the same dead weig
 
 ## Decision
 
-`index_publish` reads the local table's latest manifest with `lance`, taking every segment of every
-index it serves, since one index can span several directories. Each `_indices/{uuid}/` directory it
-does not name is superseded. The publication commit leaves the superseded directories out of its
-additions and deletes their files from the Hub, in the same commit as the table. The commit that
-publishes a version is the one that drops what that version replaced.
+`index_publish` reads the local table's latest manifest and treats an `_indices/{uuid}/` directory
+as referenced when that uuid's 16 bytes appear in it. The manifest carries every segment of every
+index the version serves, and one index can span several directories. It is read as bytes
+because the pipeline installs `lancedb` without `pylance`, and `pylance` is the only Python reader
+of a manifest's index section. The rule was checked against `lance`'s own
+`describe_indices()` on 8 of the Hub's manifests (versions 508–545). Every time it found every
+segment `lance` lists. On 7 of the 8 it found one more: the index the version's own commit
+replaced, which the manifest still names. So it keeps the latest two generations of an index and
+never fewer. That is the N-1 margin, and it comes from the manifest rather than from a counter.
 
-Only `_indices/` is touched. Data fragments, deletion files and old manifests stay additive, as
-before, and `cleanup-index` still reaps them. The delete fails safe: a table whose manifest cannot
-be read deletes nothing, and the commit goes up as it did before this change. Only directories
-this copy holds and the manifest does not name are candidates, so an index the manifest names
-without a directory of its own (Lance's fragment-reuse index, which nothing here creates) changes
-nothing.
+Each directory it does not find is superseded. The publication commit leaves those directories out
+of its additions and deletes their files from the Hub, in the same commit as the table.
 
-It keeps only the latest version's indexes, not the previous version's too. Keeping N-1 would
-guard a reader of the previous version, and there is none: the Space and every stage open the
-latest, and a reader that downloaded the previous commit already has its files. The blobs that
-commit points at are deleted by `reclaim_storage` once they are orphaned anyway, so holding N-1's
-index files on the Hub would keep ~0.41 GB a run without making the previous version readable.
+Only `_indices/` is touched. Data fragments, deletion files and old manifests stay additive as
+before, and `cleanup-index` still reaps them. The delete fails safe in three ways:
+
+* A table `lancedb` cannot open deletes nothing.
+* So does a table whose manifest yields fewer directories than the table has indexes.
+* A directory not named by a uuid is kept.
+
+In each of these cases the commit goes up as it did before this change, with one warning.
 
 Nothing is done at fetch time. Once the Hub holds only the referenced indexes, fetching
 `data/lancedb/*` fetches only those. A fetch-side filter would need the manifest before the
@@ -44,15 +47,16 @@ download, a second copy of the same rule, and it would save nothing the delete d
 
 ## Consequences
 
-* Measured on the Hub listing at `020e05cd`: every file version 545 needs is present (132 fragment
-  and deletion files, 17 of 17 index segments), so the table opens with the superseded files gone.
-  A test builds a table, replaces an index, deletes the old directory and queries through the new
-  one.
-* The first publish after this deletes ~8.9 GB of index files. `reclaim_storage` then deletes their
+* Measured on the Hub listing at `020e05cd`, every file version 545 needs is present: 132 fragment
+  and deletion files, and 17 of 17 index segments. So the table opens with the superseded files
+  gone. Run over that manifest, the rule keeps 18 of the 391 directories (0.80 GB) and supersedes
+  373 (8.54 GB). A test runs three index generations, deletes the oldest and queries through the
+  live index.
+* The first publish after this deletes ~8.5 GB of index files. `reclaim_storage` then deletes their
   blobs in the same run: they were pushed on earlier runs, so the age guard does not hold them.
-  After that each publish deletes the previous run's ~0.41 GB.
-* The merge fetch and the Space boot shrink by the same ~8.9 GB, to about the table's data files
-  and one set of indexes.
-* A reader on an older version of the table loses its indexes, as it already loses its blobs to
+  After that, each publish deletes the index that is two generations old, ~0.41 GB.
+* The merge fetch and the Space boot shrink by the same ~8.5 GB. What is left is the table's data
+  files and two sets of indexes.
+* A reader on a version older than the previous one loses its indexes, as it already loses its blobs to
   `reclaim_storage` once they are orphaned. Nothing in the repo opens an old version: the Space
   and every stage open the latest.

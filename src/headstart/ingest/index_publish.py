@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import uuid
 from pathlib import Path
 
 from headstart import log
@@ -33,36 +34,71 @@ _log = log.get(__name__, __spec__)
 _TABLE = "data/lancedb"
 
 
+def _latest_manifest(table: Path) -> Path | None:
+    """The manifest of ``table``'s latest version: Lance's V2 names count *down* from 2**64 - 1,
+    so the latest is the smallest; V1 names count up, so it is the largest."""
+    versions = {
+        int(p.stem): p
+        for p in (table / "_versions").glob("*.manifest")
+        if p.stem.isdigit()
+    }
+    if not versions:
+        return None
+    v2 = min(versions) >= 2**63
+    return versions[min(versions) if v2 else max(versions)]
+
+
 def superseded_index_dirs(root: Path) -> set[str]:
     """``data/lancedb/{table}.lance/_indices/{uuid}/``, relative to ``root``, for each index
     directory the table's latest version does not reference (ADR-0244).
 
-    Read from the manifest through ``lance``: every segment of every index the version serves,
-    since one index can span several directories. A table that will not open yields nothing, so
-    a publish never deletes on a read it could not make.
+    A directory is referenced when its uuid's 16 bytes appear in the latest manifest, which
+    carries every index segment the version serves. Read as bytes because the pipeline installs
+    ``lancedb`` without ``pylance``, the only Python reader of a manifest's index section.
+    Conservative by construction: on 8 of the Hub's manifests (2026-09-26) the rule found every
+    segment ``lance`` lists and at most one more, so it can keep an index but not lose one. A
+    table whose manifest finds fewer directories than it has indexes deletes nothing.
     """
+    import lancedb
+
     superseded: set[str] = set()
+    skipped: list[str] = []
     for table in sorted((root / _TABLE).glob("*.lance")):
         held = {d.name for d in (table / "_indices").glob("*") if d.is_dir()}
-        if not held:
+        manifest = _latest_manifest(table)
+        if not held or manifest is None:
             continue
-        import lance  # the index extra; only a table that holds indexes needs it
-
+        raw = manifest.read_bytes()
+        referenced = {d for d in held if _referenced(d, raw)}
         try:
-            referenced = {
-                segment.uuid
-                for index in lance.dataset(str(table)).describe_indices()
-                for segment in index.segments
-            }
+            indexes = (
+                lancedb.connect(str(table.parent)).open_table(table.stem).list_indices()
+            )
         except Exception as exc:  # noqa: BLE001 - a table we cannot read keeps every index
-            _log.warning(
-                f"could not read {table.name}'s indexes ({exc}) — deleting none"
+            skipped.append(f"{table.name} ({exc})")
+            continue
+        if len(referenced) < len(indexes):
+            skipped.append(
+                f"{table.name} ({len(indexes)} index(es), {len(referenced)} found in {manifest.name})"
             )
             continue
         superseded |= {
-            f"{_TABLE}/{table.name}/_indices/{uuid}/" for uuid in held - referenced
+            f"{_TABLE}/{table.name}/_indices/{d}/" for d in held - referenced
         }
+    if skipped:
+        _log.warning(
+            f"deleting no superseded index of {log.named_sample(skipped)} — could not tell "
+            "which indexes the latest version serves (ADR-0244)"
+        )
     return superseded
+
+
+def _referenced(name: str, manifest: bytes) -> bool:
+    """Whether the manifest names this ``_indices/`` directory; one not named by a uuid is kept."""
+    try:
+        return uuid.UUID(name).bytes in manifest
+    except ValueError:
+        return True
 
 
 def publish(repo: str, token: str | None, root: Path = REPO_ROOT) -> None:
