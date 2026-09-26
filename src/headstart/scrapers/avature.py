@@ -200,9 +200,17 @@ class AvatureScraper(BaseScraper):
         for index_url in portals:
             if not index_url.endswith("sitemap_index.xml"):
                 continue  # the root `/sitemap.xml` lists only the favicon
+            own: list[dict[str, str]] = []
             for sitemap in _LOC.findall(self._text(index_url)):
                 for row in listing_rows(self._text(sitemap)):
-                    listed.setdefault(row["id"], row)
+                    if row["id"] not in listed:
+                        listed[row["id"]] = row
+                        own.append(row)
+            if own and _PRIVATE_PORTAL.search(index_url) and self._login_walled(own[0]):
+                # Bloomberg's `internalcareers` lists 193 ids no public portal does; fetching
+                # each to learn it redirects to /Login/ cost 103 of 191 job pages a run.
+                for row in own:
+                    del listed[row["id"]]
         rows = list(listed.values())
         if not rows:
             self._log.info(
@@ -232,6 +240,18 @@ class AvatureScraper(BaseScraper):
             ),
         )
         return items
+
+    def _login_walled(self, row: dict[str, str]) -> bool:
+        """Whether a private-named portal's job page redirects to its login — one request that
+        settles the portal. Any other answer keeps its postings, to be read one by one."""
+        request = self.detail_request(row)
+        try:
+            response = self._fetch(
+                "GET", request.url, headers=dict(request.headers), **request.options
+            )
+        except Exception:  # noqa: BLE001 - an unsettled portal is read, not dropped
+            return False
+        return "/Login" in _location(response)
 
     def resolve_company(self) -> None:
         """The employer the Board's own job pages name — no extra request."""

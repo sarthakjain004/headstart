@@ -65,12 +65,37 @@ def _job_pages_asked(scraper) -> list[str]:
     return [url for url in scraper.fake.urls() if "/JobDetail/" in url]
 
 
+_INTERNAL_ONLY = (
+    "https://bloomberg.avature.net/internalcareers/JobDetail/"
+    "User-Support-Analytics-Team-Leader-Sydney/21234"
+)
+_TO_LOGIN = FakeResponse(
+    302,
+    "",
+    headers={"location": "https://bloomberg.avature.net/internalcareers/Login/"},
+)
+
+
 def test_listing_is_every_portals_sitemap_joined_by_the_tenant_wide_id():
     scraper = _scraper(_route(), gated=False)
     scraper.fetch_raw()
     asked = [url.rsplit("/", 1)[1] for url in _job_pages_asked(scraper)]
     # careers lists 22342, 21806 and 12444; internalcareers 21806 again and 21234; timeslots none.
-    assert sorted(asked) == ["12444", "21234", "21806", "22342"]
+    # The internal portal's page did not redirect to a login, so its own id is read too.
+    assert sorted(asked) == ["12444", "21234", "21234", "21806", "22342"]
+
+
+def test_a_login_walled_portal_costs_one_request_not_one_per_posting():
+    scraper = _scraper(_route({_INTERNAL_ONLY: _TO_LOGIN}), gated=False)
+    scraper.fetch_raw()
+    asked = [url.rsplit("/", 1)[1] for url in _job_pages_asked(scraper)]
+    assert sorted(asked) == [
+        "12444",
+        "21234",
+        "21806",
+        "22342",
+    ]  # 21234 once: the probe
+    assert "not public (closed or login-walled)" not in scraper.detail_losses
 
 
 def test_a_shared_id_keeps_the_public_portals_url():
@@ -81,9 +106,10 @@ def test_a_shared_id_keeps_the_public_portals_url():
 
 
 def test_the_slug_gate_fetches_only_tech_job_pages():
-    scraper = _scraper(_route())
+    scraper = _scraper(_route({_INTERNAL_ONLY: _TO_LOGIN}))
     scraper.fetch_raw()
-    assert sorted(_job_pages_asked(scraper)) == sorted([_TECH, _PDM])
+    # Plus one probe of the internal portal, which settles it as login-walled.
+    assert sorted(_job_pages_asked(scraper)) == sorted([_TECH, _PDM, _INTERNAL_ONLY])
 
 
 def test_a_tech_job_page_becomes_a_job_with_its_own_fields():
