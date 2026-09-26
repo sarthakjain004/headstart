@@ -34,12 +34,12 @@ from urllib.parse import parse_qs, quote
 import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
-import trends_stored_layout as stored_layout
 
 from headstart.llm_router import RouterUnavailable
 from headstart.trends import line_reading, netting, trend_history
 
 pytest.importorskip("flask")  # in [dev] so this runs in CI; guards a bare env
+old_layout_converter = pytest.importorskip("old_layout_trends_state_converter")
 
 APP = Path(__file__).resolve().parents[1] / "deploy" / "hf-space" / "app.py"
 
@@ -1564,7 +1564,7 @@ def _trend_history(
             json.dumps({"companies": list(companies.values())}), encoding="utf-8"
         )
     return trend_history.TrendHistory.load(
-        stored_layout.store_in_current_layout(state / "data" / "state"), config
+        old_layout_converter.store_in_current_layout(state / "data" / "state"), config
     )
 
 
@@ -1614,7 +1614,7 @@ def trends_app(tmp_path_factory):
     # inherit a live wall depending on test order and answer every request 401.
     with _space_app(state, env={"SECRET_KEY": "", "GOOGLE_CLIENT_ID": ""}) as module:
         module._HISTORY = trend_history.TrendHistory.load(
-            stored_layout.store_in_current_layout(state / "data" / "state"),
+            old_layout_converter.store_in_current_layout(state / "data" / "state"),
             _SPACE_CONFIG,
         )
         module._HISTORY._watch = {
@@ -2288,7 +2288,7 @@ def ats_trends_app(tmp_path_factory):
     _ats_trends_csv(state)
     with _space_app(state, env={"SECRET_KEY": "", "GOOGLE_CLIENT_ID": ""}) as module:
         module._HISTORY = trend_history.TrendHistory.load(
-            stored_layout.store_in_current_layout(state / "data" / "state"),
+            old_layout_converter.store_in_current_layout(state / "data" / "state"),
             _SPACE_CONFIG,
         )
         module._HISTORY._watch = {}
@@ -2383,7 +2383,7 @@ def epochs_trends_app(tmp_path_factory):
     )
     with _space_app(state, env={"SECRET_KEY": "", "GOOGLE_CLIENT_ID": ""}) as module:
         module._HISTORY = trend_history.TrendHistory.load(
-            stored_layout.store_in_current_layout(state / "data" / "state"),
+            old_layout_converter.store_in_current_layout(state / "data" / "state"),
             _SPACE_CONFIG,
         )
         yield module
@@ -2441,7 +2441,7 @@ def test_trends_epochs_are_narrowed_by_since_and_until(epochs_trends_app):
 def _epochs_of(state: Path) -> list[dict]:
     """The counting changes a history marks from its ticks' Methodology alone."""
     return trend_history.TrendHistory.load(
-        stored_layout.store_in_current_layout(state), _SPACE_CONFIG
+        old_layout_converter.store_in_current_layout(state), _SPACE_CONFIG
     )._epochs
 
 

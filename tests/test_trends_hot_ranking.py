@@ -14,8 +14,8 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-import trends_stored_layout as stored_layout
 
+old_layout_converter = pytest.importorskip("old_layout_trends_state_converter")
 from headstart.trends import hot_ranking, trend_history
 from headstart.trends.netting import js_round
 
@@ -364,7 +364,7 @@ def test_every_rows_net_is_what_the_trend_it_opens_moves_by(tmp_path: Path) -> N
     −42, and Bosch Group +440 from one of the two Boards its trend summed."""
     _write_history(tmp_path)
     history = trend_history.TrendHistory.load(
-        stored_layout.store_in_current_layout(tmp_path), _CONFIG
+        old_layout_converter.store_in_current_layout(tmp_path), _CONFIG
     )
     payload = hot_ranking.rank(history, history.companies)
     base = payload["window"]["base"]
@@ -380,7 +380,7 @@ def test_a_rows_net_leaves_out_what_its_trend_leaves_out(tmp_path: Path) -> None
     change, and the row holds neither."""
     _write_history(tmp_path)
     history = trend_history.TrendHistory.load(
-        stored_layout.store_in_current_layout(tmp_path), _CONFIG
+        old_layout_converter.store_in_current_layout(tmp_path), _CONFIG
     )
     payload = hot_ranking.rank(history, history.companies)
     assert payload["window"]["base"] == "2026-09-12T12:00:00+00:00"
@@ -402,7 +402,7 @@ def test_before_turnover_is_counted_a_row_carries_none_not_zero(tmp_path: Path) 
     Growing row said "0 opened · 0 closed this week" beside its net."""
     _write_history(tmp_path, with_turnover=False)
     history = trend_history.TrendHistory.load(
-        stored_layout.store_in_current_layout(tmp_path), _CONFIG
+        old_layout_converter.store_in_current_layout(tmp_path), _CONFIG
     )
     payload = hot_ranking.rank(history, history.companies)
     assert payload["window"]["turnover_from"] is None

@@ -23,6 +23,7 @@ import pyarrow as pa
 import pyarrow.compute as pc
 import pyarrow.parquet as pq
 
+from headstart.trends import trend_history
 from headstart.trends.trend_history import ARCHIVE_COLUMNS, LEVEL_METRICS, TICK_COLUMNS
 
 _KEY = TICK_COLUMNS[:-1]
@@ -292,8 +293,6 @@ def archive_from_aggregate(
 def store_in_current_layout(state_dir: Path) -> Path:
     """Rewrite ``state_dir`` (a ``data/state`` directory) into the layout `trend_history` reads,
     removing the older layout's files. A directory already in that layout is left as it is."""
-    from headstart.trends import trend_history
-
     deltas = state_dir / trend_history.DELTAS
     paths = sorted(deltas.glob("*.parquet")) if deltas.exists() else []
     tables = [pq.read_table(path) for path in paths]

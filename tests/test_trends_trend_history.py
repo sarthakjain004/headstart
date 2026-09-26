@@ -18,10 +18,10 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
-import trends_stored_layout as stored_layout
 
 pa = pytest.importorskip("pyarrow")
 pq = pytest.importorskip("pyarrow.parquet")
+old_layout_converter = pytest.importorskip("old_layout_trends_state_converter")
 
 import duplicate_removal_trends_state
 
@@ -451,7 +451,7 @@ def test_new_becomes_the_week_of_opened_jobs_once_a_whole_week_has_them(
     counting change of its own, marked where it lands."""
     _write_opened_history(tmp_path)
     history = TrendHistory.load(
-        stored_layout.store_in_current_layout(tmp_path), _NO_CONFIG
+        old_layout_converter.store_in_current_layout(tmp_path), _NO_CONFIG
     )
     answer = history.answer(TrendQuestion(metric="new", companies=companies))
 
@@ -475,7 +475,7 @@ def test_new_becomes_the_week_of_opened_jobs_once_a_whole_week_has_them(
 def test_all_openings_carry_no_switch_of_new(tmp_path):
     _write_opened_history(tmp_path)
     answer = TrendHistory.load(
-        stored_layout.store_in_current_layout(tmp_path), _NO_CONFIG
+        old_layout_converter.store_in_current_layout(tmp_path), _NO_CONFIG
     ).answer(TrendQuestion())
     assert answer["new_inflow_from"] is None
     assert all("new_became_inflow" not in e["fields"] for e in answer["epochs"])
