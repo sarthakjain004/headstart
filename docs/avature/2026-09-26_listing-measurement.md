@@ -50,6 +50,10 @@ sibling portal `careersnz` too (4 of 4), so they are closed, not misfiled.
   on bloomberg and broadinstitute), then on to the tenant's SSO host. Job pages are therefore
   fetched with redirects off and the `Location` read; both are counted as "not public", never as
   a lost detail, so a Board's closed postings cannot truncate it.
+- **A login-walled portal is settled by one probe.** If a private-named portal's first own job
+  page redirects to `/Login/`, its other own ids are dropped unread. On Bloomberg that cut a
+  gated run from 191 job pages (103 of them internal-only) and 227 s to 88 pages and 126 s, for
+  the same 88 Jobs.
 - **A job page can move to another job page**: cyclecarriage's sitemap names `/en_US/careers/…`
   URLs that 302 to the same path without the locale (6 of 6). Those are followed once.
 - **No one layout.** Of 26 readable portals, 9 carry JSON-LD, 19 carry label/value rows in one of
