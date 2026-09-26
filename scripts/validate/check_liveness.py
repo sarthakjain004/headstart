@@ -81,6 +81,9 @@ from headstart.scrapers.adp import (  # request shapes + envelope parsers, singl
     listing_url,
     locales_url,
 )
+from headstart.scrapers.avature import (  # a sitemap's JobDetail ids, single source
+    listing_rows as avature_listing_rows,
+)
 from headstart.scrapers.clearcompany import (  # feed decode + req grouping, single source
     decode_hrm_bytes,
     feed_reqs,
@@ -368,6 +371,13 @@ _SPANNING = (
     # and endpoint — `X-RateLimit-Remaining-minute` fell across four different hosts, including an
     # invented one (2026-09-25). A refusal on one tenant is a refusal on all of them.
     "peoplestrong.com",
+    # avature.net: every tenant is `{label}.avature.net`, and Avature's edge meters per client IP
+    # across all of them — a ~350-request burst refilling at ~1.2 req/s (measured 2026-09-26: at 2
+    # req/s the first refusal came at request 893, after 446 s). A spent budget answers 406 Not
+    # Acceptable (a 172-byte nginx page) to every request on every tenant for ~3-4 minutes, while
+    # a WARP address answers 200 meanwhile. `p_avature` reads that 406 as UNKNOWN and rests or
+    # rotates this gate; it never settles a Board.
+    "avature.net",
 )
 _GATES = {
     # host: (max in-flight, seconds between request starts)
@@ -403,6 +413,11 @@ _GATES = {
     # across tenants (see `_SPANNING`); 10,555 requests at 81 req/s on average ran clean, so this
     # leaves room for a scrape sharing the address.
     "peoplestrong.com": _HostGate(16, 0.02, "peoplestrong.com"),
+    # avature.net: 1 req/s, under the ~1.2 req/s refill (see `_SPANNING`), so a whole-pool pass
+    # never spends the burst and loses every tenant for minutes. It makes a pass slow — a tenant
+    # costs a request per portal sitemap and locale, ~9 on average over 25 measured — and that is
+    # the price of never reading a 406.
+    "avature.net": _HostGate(16, 1.0, "avature.net"),
     # `jobs.jobvite.com` has no entry on purpose: one fixed host rather than a subdomain per
     # tenant, so the auto-gate below already keys it exactly, and it drew zero refusals even at
     # 432. A seeded gate for it would be configuration with no measurement behind it.
@@ -1250,6 +1265,175 @@ def p_ashby(t, u):
     )
 
 
+_AVATURE_LOC = re.compile(r"<loc>\s*([^<\s]+)\s*</loc>")
+_AVATURE_SITEMAP = re.compile(r"(?im)^sitemap:\s*(\S+)")
+_AVATURE_REDIRECTS = (301, 302, 303, 307, 308)
+#: Avature names a customer's non-production instance by prefixing its label, undelimited, so
+#: ADR-0034's token rule misses it: `sandboxtql` lists 434 JobDetail ids, 329 of them `tql`'s own
+#: (measured 2026-09-26) — a stale copy of the production Board. 20 such labels probed live with
+#: 3,700 postings between them (sandbox3uskpmg 990, sandboxfonterrakf 921, uatauspost 5).
+_AVATURE_NONPROD = re.compile(r"(?:sandbox|uat)", re.IGNORECASE)
+#: How long the avature.net gate rests when a request is answered 406 and no spare egress can be
+#: had: the spent budget answered 406 to every tenant for ~3-4 minutes (see `_SPANNING`).
+_AVATURE_REFILL_S = 240
+
+
+def _avature_get(url):
+    """(status, location, text) for one request, redirects unfollowed. Status is "dns" when the
+    host does not resolve and None for a transient failure. A 406 is Avature's spent per-IP
+    budget, never an answer about the Board: it rests the avature.net gate (or moves it onto a
+    spare egress) and reads as None."""
+    try:
+        r = _fetch("GET", url, headers={"User-Agent": UA}, allow_redirects=False)
+    except http.RequestsError as e:
+        if _is_dns(e):
+            return "dns", "", ""
+        _note(_net_reason(e))
+        return None, "", ""
+    if r is None:
+        _note("breaker-open")
+        return None, "", ""
+    if r.status_code == 406:
+        _note("406-budget")
+        netloc = urllib.parse.urlsplit(url).netloc
+        _ban_or_rotate(
+            _gate_for(netloc) or _ensure_gate(netloc, "406"),
+            r,
+            url,
+            _AVATURE_REFILL_S,
+            "406, per-IP budget spent",
+        )
+        return None, "", ""
+    return r.status_code, r.headers.get("location") or "", r.text
+
+
+def _avature_owner_label(host):
+    """The avature.net tenant label `host` serves, read off its CNAME on a public resolver:
+    `jobs.opptly.com` -> `opptly`, `rohde-schwarz.avature.net` -> `rohdeschwarz`. A host whose
+    CNAME names no tenant (bloomberg's names its app server, `iatsapp-prod-en19`) serves itself
+    when it is under avature.net. None when that cannot be read."""
+    import dns.exception
+    import dns.resolver
+
+    resolver = dns.resolver.Resolver(configure=False)
+    resolver.nameservers, resolver.lifetime = ["1.1.1.1", "8.8.8.8"], 5
+    try:
+        target = str(resolver.resolve(host, "CNAME")[0].target).rstrip(".")
+    except (dns.resolver.NXDOMAIN, dns.resolver.NoAnswer, dns.resolver.NoNameservers):
+        target = ""
+    except dns.exception.Timeout:
+        _note("dns-unconfirmed")
+        return None
+    label = target.removesuffix(".avature.net")
+    # `iatsapp-*` is an app server, and a dotted name (`…-prod-en01.integrations`) infrastructure
+    if (
+        target.endswith(".avature.net")
+        and "." not in label
+        and not label.startswith("iatsapp")
+    ):
+        return label
+    return host.removesuffix(".avature.net") if host.endswith(".avature.net") else None
+
+
+def p_avature(t, u):
+    """A Board is the tenant label, `{label}.avature.net` (owner decision 2026-09-26).
+
+    robots.txt names every portal as `Sitemap: https://{host}/{portal}/sitemap_index.xml`, each
+    index names per-locale child sitemaps, and the count is the distinct `JobDetail` ids across
+    every portal a visitor can open — `listing_rows`, the scraper's own parse, so the two read
+    one set of ids (the id is tenant-wide: bloomberg's `careers` and `internalcareers` share 257,
+    same titles). The root `/sitemap.xml` is skipped (favicon only), and so is a
+    portal whose first posting redirects to a `/Login` path: its ids are the same postings, or ones
+    no visitor can read. That is one request per job portal rather than a name rule, because the
+    name misleads: `internalcareers` 302s to `/Login` on bloomberg and broadinstitute (6 of 6
+    each) and mgl, three vanity-hosted internal portals (tennet, unifi, ucsf) answer the label
+    host with a 301 whose Location is already `…/Login/`, but dbgroup's `internaljobsde` is
+    public. Most internal portals list no `JobDetail` at all (14 of the 19 sampled that answered). Portals that are
+    not job portals (events, timeslots, referrals) list none either and add nothing.
+
+    The count is an upper bound: a sitemap can keep closed postings (bupaanz `careersau` listed
+    1,701 ids against a SearchJobs total of 999, and 6 of 6 sampled ids 302 to `/Error`). That is
+    enough for liveness and the jobs >= 1 hiring cut, and the scrape reads the real set.
+
+    Every request goes to the host robots.txt was read on, `{label}.avature.net`, which serves a
+    vanity host's portals byte for byte (arcbest, auspost, bain) — so the pass stays behind the one
+    avature.net gate. The exception is a label that redirects to its own vanity host (four in the
+    pool), read on that host ungated: a few dozen requests a pass. Measured 2026-09-26 over the 1,008-label pool
+    (`experiment/avature-liveness/LOG.md`):
+
+    - `avature.net` has no wildcard A record (an invented label, and 605 pool labels, get NOERROR
+      with no A from the zone's own name servers), so a label no public resolver can find is DEAD
+      — asked before any request, so the 605 cost the gate nothing. A local "no such host" for a
+      label a public resolver does find is the resolver under load: UNKNOWN.
+    - A resolving label whose robots.txt names no portal (amazon, ally, abbgb) is a live instance
+      with no public career site — LIVE with 0, like intuit, whose listing is a Radancy front.
+    - A label can be a second name for another tenant, and then it is DEAD, so no posting is
+      served twice under two labels. Two ways, both read off DNS before any Avature request: the
+      label's own CNAME names another tenant label (13 of the 403 resolving pool labels:
+      `rohde-schwarz` -> `rohdeschwarz` and `smurfitwestrockta` -> `westrockta` serve the same
+      portals, `portalciscojobs` -> `cisco` answers nothing of its own), or its robots.txt
+      redirects to a host whose CNAME does (`genesys` -> `jobs.opptly.com` -> `opptly`). Four
+      labels redirect to their own vanity host instead (deloitteglobal, dttl, opptly, unops) and
+      are read there.
+    - A `sandbox…`/`uat…` label is a non-production copy of a tenant (`_AVATURE_NONPROD`): DEAD.
+    - 403, 202, 5xx, timeouts and refused connections are unexplained -> UNKNOWN.
+    """
+    label = _slug_of("avature", t, u)
+    if _AVATURE_NONPROD.match(label):
+        return DEAD, None
+    host = f"{label}.avature.net"
+    if _public_resolver_has_no_a_record(host):
+        return DEAD, None
+    owner = _avature_owner_label(host)
+    if owner is None:
+        return UNKNOWN, None
+    if owner.lower() != label:
+        return DEAD, None  # another tenant's Board under a second name
+    status, location, robots = _avature_get(f"https://{host}/robots.txt")
+    if status in _AVATURE_REDIRECTS:
+        target = urllib.parse.urlsplit(
+            urllib.parse.urljoin(f"https://{host}/", location)
+        )
+        owner = _avature_owner_label(target.netloc)
+        if owner is None:
+            _note("redirect-unresolved")
+            return UNKNOWN, None
+        if owner.lower() != label:
+            return DEAD, None
+        host = target.netloc
+        status, location, robots = _avature_get(f"https://{host}/robots.txt")
+    if status != 200:
+        if status not in (None, "dns"):
+            _note(f"http-{status}")
+        return UNKNOWN, None
+    public_ids = set()
+    for index_url in _AVATURE_SITEMAP.findall(robots):
+        index = urllib.parse.urlsplit(index_url)
+        if index.path == "/sitemap.xml":
+            continue
+        postings = {}  # id -> one posting URL, for the login check
+        status, _, body = _avature_get(index._replace(netloc=host).geturl())
+        if status != 200:
+            return UNKNOWN, None
+        for child_url in _AVATURE_LOC.findall(body):
+            child = urllib.parse.urlsplit(child_url)._replace(netloc=host).geturl()
+            status, _, body = _avature_get(child)
+            if status != 200:
+                return UNKNOWN, None
+            for row in avature_listing_rows(body):
+                postings.setdefault(row["id"], row["url"])
+        if not postings:
+            continue
+        first = urllib.parse.urlsplit(next(iter(postings.values())))
+        status, location, _ = _avature_get(first._replace(netloc=host).geturl())
+        if status is None or status == "dns":
+            return UNKNOWN, None
+        if status in _AVATURE_REDIRECTS and "/login" in location.lower():
+            continue  # a login-walled portal (internalcareers)
+        public_ids |= postings.keys()
+    return LIVE, len(public_ids)
+
+
 def p_recruitee(t, u):
     return _classify(
         _scraper_for_row("recruitee", t, u).url(), lambda b: _len_of(b, "offers")
@@ -2002,10 +2186,10 @@ def _jibe_get(url, follow=False):
     return r.status_code, r.text
 
 
-def _jibe_has_no_a_record(hostname):
+def _public_resolver_has_no_a_record(hostname):
     """True when a public resolver — the first of 1.1.1.1 and 8.8.8.8 that answers at all — says
-    `hostname` has no A record: an unknown Jibe label answers NOERROR with an empty answer, not
-    NXDOMAIN, on both alike. Neither answering is not an answer: False, so the Board stays
+    `hostname` has no A record: an unknown Jibe or Avature label answers NOERROR with an empty
+    answer, not NXDOMAIN, on both alike. Neither answering is not an answer: False, so the Board stays
     UNKNOWN."""
     import dns.exception
     import dns.resolver
@@ -2039,7 +2223,7 @@ def p_jibe(t, u):
     if status == "dns":
         # Only a public resolver's "no A record" is dead: the macOS system resolver answered "no
         # such host" for live clients (uhs) under a 64-thread sweep on 2026-09-24.
-        if _jibe_has_no_a_record(hostname):
+        if _public_resolver_has_no_a_record(hostname):
             return DEAD, None
         return UNKNOWN, None
     verdict = _jibe.robots_verdict(status, body, _jibe.API_PATH, UA)
@@ -2690,6 +2874,7 @@ PROBES = {
     "adp": p_adp,
     "adp_recruiting": p_adp_recruiting,
     "ashby": p_ashby,
+    "avature": p_avature,
     "bamboohr": p_bamboohr,
     "breezy": p_breezy,
     "clearcompany": p_clearcompany,

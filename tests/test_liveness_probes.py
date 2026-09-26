@@ -1197,7 +1197,9 @@ def test_jibe_an_unresolvable_label_is_dead_once_public_dns_agrees(monkeypatch):
         monkeypatch, cl.http.RequestsError("Could not resolve host", code=cl._DNS_ERR)
     )
     asked = []
-    monkeypatch.setattr(cl, "_jibe_has_no_a_record", lambda h: asked.append(h) or True)
+    monkeypatch.setattr(
+        cl, "_public_resolver_has_no_a_record", lambda h: asked.append(h) or True
+    )
     assert cl.p_jibe("att", "https://att.jibeapply.com") == (cl.DEAD, None)
     assert calls == ["https://att.jibeapply.com/robots.txt"]
     assert asked == ["att.jibeapply.com"]
@@ -1207,7 +1209,7 @@ def test_jibe_a_local_dns_failure_public_dns_contradicts_is_unknown(monkeypatch)
     _jibe(
         monkeypatch, cl.http.RequestsError("Could not resolve host", code=cl._DNS_ERR)
     )
-    monkeypatch.setattr(cl, "_jibe_has_no_a_record", lambda h: False)
+    monkeypatch.setattr(cl, "_public_resolver_has_no_a_record", lambda h: False)
     assert cl.p_jibe("uhs", "https://uhs.jibeapply.com") == (cl.UNKNOWN, None)
 
 
@@ -1766,7 +1768,9 @@ def _first_host_asked(monkeypatch, ats, tenant, url):
         lambda: SimpleNamespace(request=lambda method, target, **kw: record(target)),
     )
     monkeypatch.setattr(
-        cl, "_jibe_has_no_a_record", lambda hostname: record(f"https://{hostname}")
+        cl,
+        "_public_resolver_has_no_a_record",
+        lambda hostname: record(f"https://{hostname}"),
     )
     try:
         cl.PROBES[ats](tenant, url)
@@ -1803,3 +1807,268 @@ def test_every_probe_asks_the_host_its_scraper_reads(monkeypatch, ats, tenant, u
     assert _first_host_asked(monkeypatch, ats, tenant, url) == _host_the_scraper_reads(
         ats, tenant, url
     )
+
+
+# --- avature: a Board is the tenant label; its count is the distinct public JobDetail ids -------
+
+
+_AVATURE_ROBOTS = """User-agent: *
+Sitemap: https://careers.acme.com/careers/sitemap_index.xml
+Sitemap: https://acme.avature.net/internalcareers/sitemap_index.xml
+Sitemap: https://acme.avature.net/events/sitemap_index.xml
+Sitemap: https://acme.avature.net/sitemap.xml
+Disallow: /
+"""
+
+
+def _avature_index(*children):
+    return (
+        "<sitemapindex>"
+        + "".join(f"<sitemap><loc>{c}</loc></sitemap>" for c in children)
+        + "</sitemapindex>"
+    )
+
+
+def _avature_urlset(*locs):
+    return (
+        "<urlset>" + "".join(f"<url><loc>{u}</loc></url>" for u in locs) + "</urlset>"
+    )
+
+
+_AVATURE_SITE = {
+    "https://acme.avature.net/robots.txt": (200, "", _AVATURE_ROBOTS),
+    # a vanity portal, read on the label's own host; two locales list overlapping ids
+    "https://acme.avature.net/careers/sitemap_index.xml": (
+        200,
+        "",
+        _avature_index(
+            "https://careers.acme.com/en_US/careers/sitemap.xml",
+            "https://careers.acme.com/fr_FR/careers/sitemap.xml",
+        ),
+    ),
+    "https://acme.avature.net/en_US/careers/sitemap.xml": (
+        200,
+        "",
+        _avature_urlset(
+            "https://careers.acme.com/en_US/careers/JobDetail",
+            "https://careers.acme.com/en_US/careers/JobDetail/Backend-Engineer/101",
+            "https://careers.acme.com/en_US/careers/JobDetail/Data-Engineer/102",
+        ),
+    ),
+    "https://acme.avature.net/fr_FR/careers/sitemap.xml": (
+        200,
+        "",
+        _avature_urlset(
+            "https://careers.acme.com/fr_FR/careers/JobDetail/Ingenieur/102",
+            "https://careers.acme.com/fr_FR/careers/JobDetail/Stagiaire/103",
+        ),
+    ),
+    "https://acme.avature.net/en_US/careers/JobDetail/Backend-Engineer/101": (
+        301,
+        "https://careers.acme.com/en_US/careers/JobDetail/Backend-Engineer/101",
+        "",
+    ),
+    # a login-walled portal: its ids are not public
+    "https://acme.avature.net/internalcareers/sitemap_index.xml": (
+        200,
+        "",
+        _avature_index("https://acme.avature.net/internalcareers/sitemap.xml"),
+    ),
+    "https://acme.avature.net/internalcareers/sitemap.xml": (
+        200,
+        "",
+        _avature_urlset(
+            "https://acme.avature.net/internalcareers/JobDetail/Backend-Engineer/101",
+            "https://acme.avature.net/internalcareers/JobDetail/Internal-Only/900",
+        ),
+    ),
+    "https://acme.avature.net/internalcareers/JobDetail/Backend-Engineer/101": (
+        302,
+        "https://acme.avature.net/internalcareers/Login/",
+        "",
+    ),
+    # a portal that is not a job portal
+    "https://acme.avature.net/events/sitemap_index.xml": (
+        200,
+        "",
+        _avature_index("https://acme.avature.net/events/sitemap.xml"),
+    ),
+    "https://acme.avature.net/events/sitemap.xml": (
+        200,
+        "",
+        _avature_urlset("https://acme.avature.net/events/Register"),
+    ),
+}
+
+
+def _avature(monkeypatch, site, owners=None):
+    """`_fetch` answering from `site` (url -> (status, location, text), or an exception to raise),
+    and a CNAME reading from `owners` (host -> label; default: the host's own label)."""
+    asked = []
+
+    def _fetch(method, url, **kw):
+        asked.append(url)
+        assert kw.get("allow_redirects") is False
+        answer = site.get(url, (404, "", ""))
+        if isinstance(answer, Exception):
+            raise answer
+        if answer is None:
+            return None
+        status, location, text = answer
+        return SimpleNamespace(
+            status_code=status,
+            headers={"location": location} if location else {},
+            text=text,
+            url=url,
+        )
+
+    monkeypatch.setattr(cl, "_fetch", _fetch)
+    monkeypatch.setattr(cl, "_public_resolver_has_no_a_record", lambda host: False)
+    monkeypatch.setattr(
+        cl,
+        "_avature_owner_label",
+        lambda host: (owners or {}).get(host, host.removesuffix(".avature.net")),
+    )
+    return asked
+
+
+def test_avature_counts_distinct_public_ids_across_portals_and_locales(monkeypatch):
+    asked = _avature(monkeypatch, _AVATURE_SITE)
+    assert cl.p_avature("acme", "https://acme.avature.net") == (cl.LIVE, 3)
+    # every request stays on the label's own host, behind the one avature.net gate
+    assert all(urllib.parse.urlsplit(u).netloc == "acme.avature.net" for u in asked)
+    assert "https://acme.avature.net/sitemap.xml" not in asked
+
+
+def test_avature_a_tenant_with_no_portal_is_live_and_empty(monkeypatch):
+    robots = (
+        "User-agent: *\nSitemap: https://amazon.avature.net/sitemap.xml\nDisallow: /\n"
+    )
+    _avature(monkeypatch, {"https://amazon.avature.net/robots.txt": (200, "", robots)})
+    assert cl.p_avature("amazon", "") == (cl.LIVE, 0)
+
+
+def test_avature_a_label_no_public_resolver_finds_is_dead_unprobed(monkeypatch):
+    asked = _avature(monkeypatch, {})
+    monkeypatch.setattr(cl, "_public_resolver_has_no_a_record", lambda h: True)
+    assert cl.p_avature("avanade", "") == (cl.DEAD, None)
+    assert asked == []
+
+
+def test_avature_a_local_dns_failure_public_dns_contradicts_is_unknown(monkeypatch):
+    dns_error = cl.http.RequestsError("Could not resolve host", code=cl._DNS_ERR)
+    _avature(monkeypatch, {"https://bloomberg.avature.net/robots.txt": dns_error})
+    assert cl.p_avature("bloomberg", "") == (cl.UNKNOWN, None)
+
+
+def test_avature_a_label_whose_cname_names_another_tenant_is_dead_unprobed(monkeypatch):
+    asked = _avature(
+        monkeypatch, {}, owners={"rohde-schwarz.avature.net": "rohdeschwarz"}
+    )
+    assert cl.p_avature("rohde-schwarz", "") == (cl.DEAD, None)
+    assert asked == []
+
+
+@pytest.mark.parametrize("label", ["sandboxtql", "sandbox3uskpmg", "uatauspost"])
+def test_avature_a_non_production_label_is_dead_unprobed(monkeypatch, label):
+    asked = _avature(monkeypatch, {})
+    assert cl.p_avature(label, "") == (cl.DEAD, None)
+    assert asked == []
+
+
+def test_avature_an_unreadable_cname_is_unknown(monkeypatch):
+    asked = _avature(monkeypatch, {}, owners={"acme.avature.net": None})
+    assert cl.p_avature("acme", "") == (cl.UNKNOWN, None)
+    assert asked == []
+
+
+def test_avature_a_redirect_to_another_tenants_host_is_dead(monkeypatch):
+    site = {
+        "https://genesys.avature.net/robots.txt": (
+            301,
+            "https://jobs.opptly.com/robots.txt",
+            "",
+        )
+    }
+    asked = _avature(monkeypatch, site, owners={"jobs.opptly.com": "opptly"})
+    assert cl.p_avature("genesys", "") == (cl.DEAD, None)
+    assert asked == ["https://genesys.avature.net/robots.txt"]
+
+
+def test_avature_a_redirect_to_its_own_vanity_host_is_read_there(monkeypatch):
+    vanity = "talentsourcing.deloitteresources.com"
+    site = {
+        "https://deloitteglobal.avature.net/robots.txt": (
+            301,
+            f"https://{vanity}/robots.txt",
+            "",
+        ),
+        f"https://{vanity}/robots.txt": (
+            200,
+            "",
+            "Sitemap: https://middleeastjobs.deloitte.com/careersME/sitemap_index.xml\n",
+        ),
+        f"https://{vanity}/careersME/sitemap_index.xml": (
+            200,
+            "",
+            _avature_index("https://middleeastjobs.deloitte.com/careersME/sitemap.xml"),
+        ),
+        f"https://{vanity}/careersME/sitemap.xml": (
+            200,
+            "",
+            _avature_urlset(
+                "https://middleeastjobs.deloitte.com/careersME/JobDetail/Analyst/7"
+            ),
+        ),
+        f"https://{vanity}/careersME/JobDetail/Analyst/7": (200, "", "<html>"),
+    }
+    _avature(monkeypatch, site, owners={vanity: "deloitteglobal"})
+    assert cl.p_avature("deloitteglobal", "") == (cl.LIVE, 1)
+
+
+def test_avature_a_redirect_whose_owner_cannot_be_read_is_unknown(monkeypatch):
+    site = {
+        "https://acme.avature.net/robots.txt": (
+            301,
+            "https://jobs.acme.com/robots.txt",
+            "",
+        )
+    }
+    _avature(monkeypatch, site, owners={"jobs.acme.com": None})
+    assert cl.p_avature("acme", "") == (cl.UNKNOWN, None)
+
+
+@pytest.mark.parametrize(
+    "failing_url",
+    [
+        "https://acme.avature.net/careers/sitemap_index.xml",
+        "https://acme.avature.net/fr_FR/careers/sitemap.xml",
+        "https://acme.avature.net/en_US/careers/JobDetail/Backend-Engineer/101",
+    ],
+)
+def test_avature_any_unanswered_request_leaves_the_count_unknown(
+    monkeypatch, failing_url
+):
+    _avature(monkeypatch, {**_AVATURE_SITE, failing_url: None})
+    assert cl.p_avature("acme", "") == (cl.UNKNOWN, None)
+
+
+@pytest.mark.parametrize("status", [403, 202, 502])
+def test_avature_an_unexplained_robots_answer_is_unknown(monkeypatch, status):
+    _avature(monkeypatch, {"https://acme.avature.net/robots.txt": (status, "", "")})
+    assert cl.p_avature("acme", "") == (cl.UNKNOWN, None)
+
+
+def test_avature_a_406_is_the_spent_budget_it_rests_the_gate_and_settles_nothing(
+    monkeypatch,
+):
+    gate = cl._HostGate(16, 0.0, "avature.net")
+    monkeypatch.setitem(cl._GATES, "avature.net", gate)
+    _avature(monkeypatch, {"https://acme.avature.net/robots.txt": (406, "", "")})
+    assert cl.p_avature("acme", "") == (cl.UNKNOWN, None)
+    assert gate.blocked()
+
+
+def test_avature_every_tenant_shares_one_gate():
+    assert cl._gate_key("bloomberg.avature.net") == "avature.net"
+    assert cl._gate_for("intuit.avature.net") is cl._GATES["avature.net"]
