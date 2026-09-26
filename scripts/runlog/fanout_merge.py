@@ -226,8 +226,8 @@ NOTHING_TO_RECLAIM = re.compile(
 )
 # The failure the old step could not see: blobs deleted, quota unmoved. At ~2.5 GB/run (2.06 GB
 # of store rewrite, reclaim_storage's 2026-09-26 figure, plus the ~0.41 GB index generation
-# ADR-0244 deletes) and ~27 runs/day, this fills the ~85 GB above the live set in about a day and
-# a half, so it is the line worth shouting about.
+# ADR-0244 deletes) and ~27 runs/day, ~67 GB/day, this fills the ~85 GB above the live set in about
+# 30 hours, so it is the line worth shouting about.
 RECLAIM_NOOP = re.compile(
     r"\[reclaim_storage\] reclaim did not free anything: usedStorage ([\d.]+) GB -> ([\d.]+) GB"
 )

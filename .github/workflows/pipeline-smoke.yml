@@ -32,6 +32,11 @@ on:
 permissions:
   contents: read
 
+env:
+  # pipeline.yml's UV_VERSION, copied: a workflow cannot read another's env.
+  # tests/test_pipeline_smoke_workflow.py fails when the two differ.
+  UV_VERSION: "0.12.11"
+
 jobs:
   smoke:
     runs-on: ubuntu-latest
@@ -42,10 +47,10 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-      # uv and `--torch-backend cpu`, as pipeline.yml installs `.[embed]` (its UV_VERSION): the CPU
+      # uv and `--torch-backend cpu`, as pipeline.yml installs `.[embed]`: the CPU
       # torch wheel, without ~2.3 GB of CUDA and triton wheels no CPU runner can use.
       - run: |
-          pip install "uv==0.12.11"
+          pip install "uv==$UV_VERSION"
           uv pip install --system --torch-backend cpu -e ".[embed]" "huggingface_hub<2"
       - name: Cache the embedding model
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0

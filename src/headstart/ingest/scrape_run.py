@@ -407,13 +407,18 @@ def main() -> int:
     else:
         companies = scrapable_boards.load(_LEDGER, min_jobs=0)
         scores = load_scores(_PRIORITY)
+        overflow = priority_ledger.head_overflow(companies, scores, args.max_boards)
         companies = pick_boards(companies, scores, args.max_boards)
-        priority = sum(
-            1 for c in companies if scores.get(priority_ledger.key_for(c), 0.0) > 0.0
+        scored = sum(1 for c in companies if priority_ledger.is_scored(c, scores))
+        # Counted as scrape_plan counts its slice: Scored Boards past the head cap are Tail.
+        head = (
+            min(scored, priority_ledger.head_slots(args.max_boards))
+            if overflow
+            else scored
         )
         _log.info(
             f"harvest: {len(companies)} boards this run "
-            f"({priority} Head + {len(companies) - priority} Tail)"
+            f"({head} Head + {len(companies) - head} Tail)"
         )
 
     outdir = Path(args.outdir)
