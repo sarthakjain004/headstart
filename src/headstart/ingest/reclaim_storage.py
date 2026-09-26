@@ -67,7 +67,8 @@ _log = log.get(__name__, __spec__)
 # orphaned it looks from here. The merge job's own uploads finish minutes before this step.
 DEFAULT_MIN_AGE_MINUTES = 45
 
-# Below this there is nothing worth a destructive call — one run's churn is ~3.3 GB, so this fires
+# Below this there is nothing worth a destructive call — one run's churn is ~2.5 GB (2.06 GB of
+# store rewrite, above, plus the ~0.41 GB index generation ADR-0244 deletes), so this fires
 # on essentially every run and the path stays continuously exercised rather than rotting until the
 # one day it is needed.
 DEFAULT_MIN_RECLAIM_GB = 1.0

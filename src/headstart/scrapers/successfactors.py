@@ -1047,14 +1047,29 @@ def _csb_title(page: str) -> str | None:
 
 
 def _csb_description(page: str) -> str | None:
-    """The longest ``itemprop="description"`` element's inner HTML (CSB pages render a short
-    teaser and the full description under the same itemprop)."""
-    best = None
+    """Every ``itemprop="description"`` element's inner HTML, in page order, joined.
+
+    Tenants split a posting over several such blocks: lockheed.jobs.hr.cloud.sap puts its pay
+    range in a block of its own (measured 2026-09-26), and keeping only the longest dropped it,
+    so its salaries came and went with whichever surface last wrote the description. A block
+    whose text another block already carries is left out: jobs.teck.com and careers.orkla.com
+    render every block twice, and a CSB teaser repeats the start of the full text."""
+    blocks = []
     for match in _DESC_OPEN.finditer(page):
         content = _matched_content(page, match)
-        if content and (best is None or len(content) > len(best)):
-            best = content
-    return best
+        text = html_to_text(content)
+        if text:
+            blocks.append((content, text))
+    kept = [
+        content
+        for i, (content, text) in enumerate(blocks)
+        if not any(
+            text in other and (text != other or j < i)
+            for j, (_, other) in enumerate(blocks)
+            if j != i
+        )
+    ]
+    return "\n".join(kept) or None
 
 
 def _matched_content(page: str, open_match: re.Match) -> str:

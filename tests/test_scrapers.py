@@ -5964,9 +5964,36 @@ def test_successfactors_page_fields_csb():
     assert fields["title"] == "Lead Data Scientist"
     assert fields["location"] == "Mississauga, Ontario"
     assert fields["posted_at"] == "2026-06-29"
-    # the longest itemprop=description block wins (teaser vs full description), and the
-    # tag-matching walk keeps the nested span inside it
-    assert "Python" in fields["description"] and "teaser" not in fields["description"]
+    # the tag-matching walk keeps the nested span inside the block
+    assert "Python" in fields["description"]
+
+
+def test_successfactors_description_joins_every_block():
+    from headstart.scrapers.successfactors import _csb_description
+
+    # lockheed.jobs.hr.cloud.sap job 1417840900 (2026-09-26): an empty block, the role, then the
+    # pay block. Keeping only the longest dropped the salary on every ordinary read.
+    page = """<span itemprop="description"> </span>
+    <span itemprop="description"><p>Build avionics software.</p></span>
+    <div><span itemprop="description"><p>Pay Information</p>
+    <p>Full-Time Salary Range: $110300.00 - $204900.00</p></span></div>"""
+    desc = _csb_description(page)
+    assert desc.index("Build avionics") < desc.index("$110300.00")
+
+
+def test_successfactors_description_drops_repeated_and_teaser_blocks():
+    from headstart.scrapers.successfactors import _csb_description
+
+    # jobs.teck.com and careers.orkla.com render every block twice (2026-09-26); a teaser whose
+    # text another block already carries adds nothing either.
+    page = """<span itemprop="description"><p>Role: build</p></span>
+    <span itemprop="description"><p>Role: build things well.</p></span>
+    <span itemprop="description"><p>Perks.</p></span>
+    <span itemprop="description"><p>Role: build things well.</p></span>
+    <span itemprop="description"><p>Perks.</p></span>"""
+    desc = _csb_description(page)
+    assert desc.count("things well") == 1 and desc.count("Perks") == 1
+    assert desc.count("Role: build") == 1
 
 
 def test_successfactors_page_fields_csb_meta_microdata():
