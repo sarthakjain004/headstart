@@ -133,6 +133,7 @@ def rank(
             if n >= MIN_STOCK and board not in in_directory
         ),
         "services": operators["services"],
+        "staffing": operators["staffing"],
         "aggregator": operators["aggregator"],
     }
     return {"window": dict(moves.window), "lenses": lenses, "counts": counts}

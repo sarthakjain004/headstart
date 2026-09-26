@@ -29,6 +29,7 @@ from headstart.trends.line_reading import (
     INDEX_BASE_FLOOR,
     LINES_CHARTED,
     MIN_SPAN_DAYS,
+    MOSTLY_RECOUNTED,
     MOVER_FLOOR,
     CauseKind,
     TrendWindow,
@@ -161,7 +162,7 @@ def test_no_label_is_a_raw_field_id() -> None:
     change. It reads as the echo it is, at its own run."""
     reading = _golden("new_echo_of_a_change_before_the_window")["reading"]
     [echo] = reading["marked_changes"]
-    assert echo["label"] == "the week-later echo of the Sep 11 tech filter change"
+    assert echo["label"] == "the week-later echo of the Sep 11 tech-job filter update"
     assert echo["ts"] == "2026-09-19T00:00:00+00:00"
     for path in GOLDEN:
         reading = json.loads(path.read_text(encoding="utf-8"))["reading"]
@@ -336,8 +337,8 @@ def test_the_categories_add_up_to_the_company_with_a_closing_row() -> None:
         "the refit at its size, then the growth"
     )
     assert [c["label"] for c in change] == [
-        "role family assignment changed",
-        "growth rescaled by role family assignment changed",
+        "job categories re-sorted",
+        "growth rescaled when job categories re-sorted",
     ]
 
 
@@ -359,11 +360,34 @@ def test_no_percentage_off_a_netted_start_under_five_openings() -> None:
     ]
     assert (interns["hiring"], interns["latest"] - interns["hiring"]) == (14, 4)
     assert interns["percent"] is None
+    assert interns["percent_withheld"] == MOSTLY_RECOUNTED, (
+        "56 of its 60 were taken out"
+    )
     lines = {line["name"]: line for line in reading["lines"]}
     assert lines["interns"]["index_base"] is None, "nor is it indexed off 4"
     assert lines["big"]["index_base"] == 100
-    # A share has no such floor: 0.4% of the company becoming 1.8% is a share's change.
-    assert interns["share"]["percent"] == pytest.approx(350.0)
+    # Nor is a share's change read off it: 0.4% becoming 1.8% is the same arithmetic.
+    assert interns["share"]["percent"] is None
+
+
+def test_a_line_mostly_recounted_gives_no_percentage_in_any_unit() -> None:
+    """NVIDIA's Embedded & Firmware started at 2,706 and netted to 96, and read "Biggest faller
+    −14.6%": a netted start well over INDEX_BASE_FLOOR, but what is left after the steps took
+    more than half. Here a refit takes 150 of 200 and 10 are hired: no +20%, under Change,
+    Count or Share, and no index line. A line the steps left more than half of keeps its own."""
+    reading = _golden("category_mostly_recounted_gives_no_percentage")["reading"]
+    lines = {line["name"]: line for line in reading["lines"]}
+    embedded = lines["embedded"]["move"]
+    assert (embedded["start"], embedded["latest"] - embedded["hiring"]) == (200, 50)
+    assert embedded["hiring"] == 10
+    assert embedded["percent"] is None
+    assert embedded["percent_withheld"] == MOSTLY_RECOUNTED
+    assert embedded["share"]["percent"] is None
+    assert lines["embedded"]["index_base"] is None
+    big = lines["big"]["move"]
+    assert big["percent"] == pytest.approx(10.0)
+    assert big["share"]["percent"] is not None
+    assert lines["big"]["index_base"] == 100
 
 
 def test_no_share_change_off_a_share_of_zero_at_the_start() -> None:
@@ -526,6 +550,69 @@ def test_the_checker_catches_a_percentage_off_a_netted_start_under_five() -> Non
     )
 
 
+def test_the_checker_catches_a_percentage_off_a_line_mostly_recounted() -> None:
+    def breaking(r):
+        embedded = next(line for line in r["lines"] if line["name"] == "embedded")
+        move = embedded["move"]
+        move["percent"] = move["hiring"] / (move["latest"] - move["hiring"]) * 100
+        move["share"]["percent"] = 5.0
+        embedded["index_base"] = embedded["netted"][0]
+        big = next(line for line in r["lines"] if line["name"] == "big")["move"]
+        big["percent_withheld"] = MOSTLY_RECOUNTED
+
+    violations = _broken("category_mostly_recounted_gives_no_percentage", breaking)
+    assert sorted(violations) == [
+        "line big: it is said to be mostly re-counted where it is not",
+        "line embedded: it gives a percentage though mostly re-counted",
+        "line embedded: it is indexed though mostly re-counted",
+        "line embedded: its share's change is not its latest share over its start",
+    ]
+
+
+def test_the_checker_catches_causes_out_of_the_order_their_changes_ran() -> None:
+    def breaking(r):
+        r["company_lines"][0]["move"]["not_hiring"].reverse()
+
+    violations = _broken("three_counting_changes_named_once_each", breaking)
+    assert violations == [
+        "company line greenhouse:acme: its Not hiring is not in the order its changes ran"
+    ]
+
+
+def test_no_closed_count_where_every_board_had_its_closures_go_uncounted() -> None:
+    """Google, one Board, read "about 1 opened, 18 closed since Sep 25, closures not counted on
+    1 board". Where every Board of a line had a run whose closures went uncounted
+    (``closures_uncounted``), the line gives no closed count and no net; a company with a Board
+    still counted keeps both."""
+    answer = _golden("busy_company_step_disclosed_turnover_kept")["answer_input"]
+    uncounted = read_answer({**answer, "closures_uncounted": ["greenhouse:acme"]})
+    assert uncounted.reconciles, uncounted.violations
+    turnover = uncounted.company_lines[0].move.turnover
+    assert (turnover.opened, turnover.closed, turnover.net) == (500, None, None)
+    counted = read_answer({**answer, "closures_uncounted": []})
+    assert counted.company_lines[0].move.turnover.closed == 490
+
+
+def test_a_lines_causes_stand_in_the_order_their_changes_ran() -> None:
+    """Micron's "Not hiring" gave Sep 24's growth counted twice after Sep 25's change: its
+    causes stood in the order the netting met them, not the order they ran."""
+    for path in GOLDEN:
+        answer = json.loads(path.read_text(encoding="utf-8"))["answer_input"]
+        reading = read_answer(answer).to_json()
+        ran = {c["id"]: c["ts"] for c in reading.get("marked_changes") or []}
+        for line in reading.get("company_lines") or []:
+            order = [ran[c["change"]] for c in line["move"]["not_hiring"]]
+            assert order == sorted(order), (path.stem, line["name"])
+
+
+def test_the_checker_catches_a_net_given_without_its_closed_count() -> None:
+    def breaking(r):
+        r["company_lines"][0]["move"]["turnover"]["closed"] = None
+
+    violations = _broken("busy_company_step_disclosed_turnover_kept", breaking)
+    assert any("its turnover's net is not opened less closed" in v for v in violations)
+
+
 def test_the_checker_catches_a_raw_field_id_as_a_label() -> None:
     def breaking(r):
         r["marked_changes"][0]["label"] = "tech_filter_version"
@@ -596,6 +683,7 @@ def test_the_page_states_the_readings_rules_with_the_same_values() -> None:
     assert int(_js_constant("MIN_SPAN_DAYS").split()[0]) == MIN_SPAN_DAYS
     assert int(_js_constant("INDEX_BASE_FLOOR").split()[0]) == INDEX_BASE_FLOOR
     assert int(_js_constant("CHART_MAX").split()[0]) == LINES_CHARTED
+    assert _js_constant("MOSTLY_RECOUNTED") == f"'{MOSTLY_RECOUNTED}'"
     counting = set(re.findall(r"'([a-z_]+)'", _js_constant("COUNTING_KINDS")))
     assert counting == {CauseKind.COUNTING, CauseKind.GROWTH_SCALED_BY_A_CHANGE}
     assert f"'{_OTHER}'" in APP_JS.read_text(encoding="utf-8")

@@ -26,7 +26,7 @@
    {
     "ts": "2026-09-15T00:00:00+00:00",
     "changed": [
-     "tech filter changed"
+     "tech-job filter updated"
     ],
     "fields": [
      "tech_filter_version"
@@ -96,13 +96,13 @@
       {
        "change": "counting@2026-09-15T00:00:00+00:00",
        "kind": "counting",
-       "label": "tech filter changed",
+       "label": "tech-job filter updated",
        "size": -400
       }
      ],
      "not_hiring_total": -400,
-     "percent": 0.0,
-     "percent_withheld": null,
+     "percent": null,
+     "percent_withheld": "mostly_recounted",
      "span_days": 4.0,
      "per_week": 0,
      "turnover": null,
@@ -111,7 +111,7 @@
       "latest": 1.0,
       "denominator_start": 10000,
       "denominator_latest": 10000,
-      "percent": 0.0
+      "percent": null
      }
     },
     "netted": [
@@ -125,7 +125,7 @@
      2,
      3
     ],
-    "index_base": 100,
+    "index_base": null,
     "arrived_by": null
    }
   ],
@@ -143,13 +143,13 @@
       {
        "change": "counting@2026-09-15T00:00:00+00:00",
        "kind": "counting",
-       "label": "tech filter changed",
+       "label": "tech-job filter updated",
        "size": -400
       }
      ],
      "not_hiring_total": -400,
-     "percent": 0.0,
-     "percent_withheld": null,
+     "percent": null,
+     "percent_withheld": "mostly_recounted",
      "span_days": 4.0,
      "per_week": 0,
      "turnover": null,
@@ -158,7 +158,7 @@
       "latest": 1.0,
       "denominator_start": 10000,
       "denominator_latest": 10000,
-      "percent": 0.0
+      "percent": null
      }
     },
     "netted": [],
@@ -173,12 +173,12 @@
     "id": "counting@2026-09-15T00:00:00+00:00",
     "kind": "counting",
     "ts": "2026-09-15T00:00:00+00:00",
-    "label": "tech filter changed",
+    "label": "tech-job filter updated",
     "fields": [
      "tech_filter_version"
     ],
     "changed": [
-     "tech filter changed"
+     "tech-job filter updated"
     ],
     "company": null,
     "boards": null,

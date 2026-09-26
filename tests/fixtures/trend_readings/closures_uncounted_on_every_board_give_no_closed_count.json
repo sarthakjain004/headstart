@@ -1,5 +1,5 @@
 {
- "description": "A duplicate-removal change touches only Micron; Acme hires +30 that run.",
+ "description": "Every Board of the company had a run whose closures went uncounted (closures_uncounted): it opened 500 jobs, and no closed count or net is given. Google, one Board, read '18 closed ... closures not counted on 1 board'.",
  "answer_input": {
   "stamps": [
    "2026-09-13T00:00:00+00:00",
@@ -12,36 +12,49 @@
     "name": "greenhouse:acme",
     "label": "Acme",
     "points": [
-     100,
-     100,
-     130,
-     130
+     1000,
+     1000,
+     1400,
+     1400
     ],
-    "latest": 130
-   },
-   {
-    "name": "eightfold:micron",
-    "label": "Micron",
-    "points": [
-     200,
-     200,
-     150,
-     150
-    ],
-    "latest": 150
+    "latest": 1400,
+    "turnover": {
+     "opened": [
+      null,
+      500,
+      900,
+      110
+     ],
+     "closed": [
+      null,
+      490,
+      505,
+      100
+     ],
+     "recounted": [
+      null,
+      0,
+      0,
+      0
+     ]
+    }
    }
   ],
   "epochs": [
    {
     "ts": "2026-09-15T00:00:00+00:00",
     "changed": [
-     "duplicate postings detection updated"
+     "tech-job filter updated"
     ],
     "fields": [
-     "dedup_version"
+     "tech_filter_version"
     ]
    }
   ],
+  "turnover_since": "2026-09-13T00:00:00+00:00",
+  "closures_unseen": {
+   "greenhouse:acme": 1
+  },
   "metric": "stock",
   "coverage": "all",
   "new_window_days": 7,
@@ -57,16 +70,6 @@
     "atses": [
      "greenhouse"
     ]
-   },
-   {
-    "key": "eightfold:micron",
-    "label": "Micron",
-    "board_keys": [
-     "eightfold:micron"
-    ],
-    "atses": [
-     "eightfold"
-    ]
    }
   ],
   "discovered": [],
@@ -75,8 +78,7 @@
   "pick_parts": {},
   "pick_turnover": {},
   "counted_since": {
-   "greenhouse:acme": "2026-09-13T00:00:00+00:00",
-   "eightfold:micron": "2026-09-13T00:00:00+00:00"
+   "greenhouse:acme": "2026-09-13T00:00:00+00:00"
   },
   "totals": [
    10000,
@@ -92,7 +94,10 @@
   ],
   "watch_parents": [],
   "uncounted": [],
-  "company_totals": {}
+  "company_totals": {},
+  "closures_uncounted": [
+   "greenhouse:acme"
+  ]
  },
  "reading": {
   "window": {
@@ -107,75 +112,46 @@
     "label": "Acme",
     "estimated": false,
     "move": {
-     "start": 100,
-     "latest": 130,
-     "hiring": 30,
-     "not_hiring": [],
-     "not_hiring_total": 0,
-     "percent": 30.0,
-     "percent_withheld": null,
-     "span_days": 3.0,
-     "per_week": 70,
-     "turnover": null,
-     "share": {
-      "start": 1.0,
-      "latest": 1.3,
-      "denominator_start": 10000,
-      "denominator_latest": 10000,
-      "percent": 30.000000000000004
-     }
-    },
-    "netted": [
-     100,
-     100,
-     130,
-     130
-    ],
-    "steps_at": [],
-    "index_base": 100,
-    "arrived_by": null
-   },
-   {
-    "name": "eightfold:micron",
-    "label": "Micron",
-    "estimated": false,
-    "move": {
-     "start": 200,
-     "latest": 150,
+     "start": 1000,
+     "latest": 1400,
      "hiring": 0,
      "not_hiring": [
       {
        "change": "counting@2026-09-15T00:00:00+00:00",
        "kind": "counting",
-       "label": "duplicate postings detection updated",
-       "size": -50
+       "label": "tech-job filter updated",
+       "size": 400
       }
      ],
-     "not_hiring_total": -50,
+     "not_hiring_total": 400,
      "percent": 0.0,
      "percent_withheld": null,
      "span_days": 3.0,
      "per_week": 0,
-     "turnover": null,
+     "turnover": {
+      "opened": 500,
+      "closed": null,
+      "net": null
+     },
      "share": {
-      "start": 1.5,
-      "latest": 1.5,
+      "start": 14.000000000000002,
+      "latest": 14.000000000000002,
       "denominator_start": 10000,
       "denominator_latest": 10000,
       "percent": 0.0
      }
     },
     "netted": [
-     150,
-     150,
-     150,
-     150
+     1400,
+     1400,
+     1400,
+     1400
     ],
     "steps_at": [
      2,
      3
     ],
-    "index_base": 150,
+    "index_base": 1400,
     "arrived_by": null
    }
   ],
@@ -186,54 +162,30 @@
     "label": "Acme",
     "estimated": false,
     "move": {
-     "start": 100,
-     "latest": 130,
-     "hiring": 30,
-     "not_hiring": [],
-     "not_hiring_total": 0,
-     "percent": 30.0,
-     "percent_withheld": null,
-     "span_days": 3.0,
-     "per_week": 70,
-     "turnover": null,
-     "share": {
-      "start": 1.0,
-      "latest": 1.3,
-      "denominator_start": 10000,
-      "denominator_latest": 10000,
-      "percent": 30.000000000000004
-     }
-    },
-    "netted": [],
-    "steps_at": [],
-    "index_base": null,
-    "arrived_by": null
-   },
-   {
-    "name": "eightfold:micron",
-    "label": "Micron",
-    "estimated": false,
-    "move": {
-     "start": 200,
-     "latest": 150,
+     "start": 1000,
+     "latest": 1400,
      "hiring": 0,
      "not_hiring": [
       {
        "change": "counting@2026-09-15T00:00:00+00:00",
        "kind": "counting",
-       "label": "duplicate postings detection updated",
-       "size": -50
+       "label": "tech-job filter updated",
+       "size": 400
       }
      ],
-     "not_hiring_total": -50,
+     "not_hiring_total": 400,
      "percent": 0.0,
      "percent_withheld": null,
      "span_days": 3.0,
      "per_week": 0,
-     "turnover": null,
+     "turnover": {
+      "opened": 500,
+      "closed": null,
+      "net": null
+     },
      "share": {
-      "start": 1.5,
-      "latest": 1.5,
+      "start": 14.000000000000002,
+      "latest": 14.000000000000002,
       "denominator_start": 10000,
       "denominator_latest": 10000,
       "percent": 0.0
@@ -251,17 +203,17 @@
     "id": "counting@2026-09-15T00:00:00+00:00",
     "kind": "counting",
     "ts": "2026-09-15T00:00:00+00:00",
-    "label": "duplicate postings detection updated",
+    "label": "tech-job filter updated",
     "fields": [
-     "dedup_version"
+     "tech_filter_version"
     ],
     "changed": [
-     "duplicate postings detection updated"
+     "tech-job filter updated"
     ],
     "company": null,
     "boards": null,
     "sizes": {
-     "eightfold:micron": -50
+     "greenhouse:acme": 400
     }
    }
   ],
@@ -280,7 +232,7 @@
    10000,
    10000
   ],
-  "openings": 280,
+  "openings": 1400,
   "served_jobs": null,
   "non_tech_jobs": null,
   "reconciles": true,

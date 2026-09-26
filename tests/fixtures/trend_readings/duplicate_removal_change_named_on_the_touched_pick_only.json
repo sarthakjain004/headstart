@@ -38,8 +38,8 @@
    {
     "ts": "2026-09-15T00:00:00+00:00",
     "changed": [
-     "duplicate removal changed",
-     "role family assignment changed"
+     "duplicate postings detection updated",
+     "job categories re-sorted"
     ],
     "fields": [
      "dedup_version",
@@ -121,7 +121,7 @@
       {
        "change": "counting@2026-09-15T00:00:00+00:00",
        "kind": "counting",
-       "label": "duplicate removal changed, role family assignment changed",
+       "label": "duplicate postings detection updated, job categories re-sorted",
        "size": 20
       }
      ],
@@ -165,7 +165,7 @@
       {
        "change": "counting@2026-09-15T00:00:00+00:00",
        "kind": "counting",
-       "label": "duplicate removal changed, role family assignment changed",
+       "label": "duplicate postings detection updated, job categories re-sorted",
        "size": -20
       }
      ],
@@ -212,7 +212,7 @@
       {
        "change": "counting@2026-09-15T00:00:00+00:00",
        "kind": "counting",
-       "label": "duplicate removal changed, role family assignment changed",
+       "label": "duplicate postings detection updated, job categories re-sorted",
        "size": 20
       }
      ],
@@ -247,7 +247,7 @@
       {
        "change": "counting@2026-09-15T00:00:00+00:00",
        "kind": "counting",
-       "label": "duplicate removal changed, role family assignment changed",
+       "label": "duplicate postings detection updated, job categories re-sorted",
        "size": -20
       }
      ],
@@ -277,14 +277,14 @@
     "id": "counting@2026-09-15T00:00:00+00:00",
     "kind": "counting",
     "ts": "2026-09-15T00:00:00+00:00",
-    "label": "duplicate removal changed, role family assignment changed",
+    "label": "duplicate postings detection updated, job categories re-sorted",
     "fields": [
      "dedup_version",
      "family_classifier_version"
     ],
     "changed": [
-     "duplicate removal changed",
-     "role family assignment changed"
+     "duplicate postings detection updated",
+     "job categories re-sorted"
     ],
     "company": null,
     "boards": null,

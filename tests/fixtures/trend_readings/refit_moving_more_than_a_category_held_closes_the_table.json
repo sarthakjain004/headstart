@@ -41,7 +41,7 @@
    {
     "ts": "2026-09-15T00:00:00+00:00",
     "changed": [
-     "role family assignment changed"
+     "job categories re-sorted"
     ],
     "fields": [
      "family_classifier_version"
@@ -167,19 +167,19 @@
       {
        "change": "counting@2026-09-15T00:00:00+00:00",
        "kind": "counting",
-       "label": "role family assignment changed",
+       "label": "job categories re-sorted",
        "size": -120
       },
       {
        "change": "growth_scaled_by_counting@2026-09-15T00:00:00+00:00",
        "kind": "growth_scaled_by_a_change",
-       "label": "growth rescaled by role family assignment changed",
+       "label": "growth rescaled when job categories re-sorted",
        "size": 40
       }
      ],
      "not_hiring_total": -80,
-     "percent": 100.0,
-     "percent_withheld": null,
+     "percent": null,
+     "percent_withheld": "mostly_recounted",
      "span_days": 5.0,
      "per_week": 28,
      "turnover": null,
@@ -188,7 +188,7 @@
       "latest": 19.047619047619047,
       "denominator_start": 150,
       "denominator_latest": 210,
-      "percent": 42.85714285714285
+      "percent": null
      }
     },
     "netted": [
@@ -203,7 +203,7 @@
      2,
      3
     ],
-    "index_base": 20.0,
+    "index_base": null,
     "arrived_by": null
    },
    {
@@ -218,7 +218,7 @@
       {
        "change": "counting@2026-09-15T00:00:00+00:00",
        "kind": "counting",
-       "label": "role family assignment changed",
+       "label": "job categories re-sorted",
        "size": 120
       }
      ],

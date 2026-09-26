@@ -26,7 +26,7 @@
    {
     "ts": "2026-09-15T00:00:00+00:00",
     "changed": [
-     "tech filter changed"
+     "tech-job filter updated"
     ],
     "fields": [
      "tech_filter_version"
@@ -96,19 +96,19 @@
       {
        "change": "counting@2026-09-15T00:00:00+00:00",
        "kind": "counting",
-       "label": "tech filter changed",
+       "label": "tech-job filter updated",
        "size": -180
       },
       {
        "change": "growth_scaled_by_counting@2026-09-15T00:00:00+00:00",
        "kind": "growth_scaled_by_a_change",
-       "label": "growth rescaled by tech filter changed",
+       "label": "growth rescaled when tech-job filter updated",
        "size": 135
       }
      ],
      "not_hiring_total": -45,
-     "percent": 340.0,
-     "percent_withheld": null,
+     "percent": null,
+     "percent_withheld": "mostly_recounted",
      "span_days": 4.0,
      "per_week": 30,
      "turnover": null,
@@ -117,7 +117,7 @@
       "latest": 0.22,
       "denominator_start": 10000,
       "denominator_latest": 10000,
-      "percent": 339.99999999999994
+      "percent": null
      }
     },
     "netted": [
@@ -131,7 +131,7 @@
      2,
      3
     ],
-    "index_base": 5.0,
+    "index_base": null,
     "arrived_by": null
    }
   ],
@@ -149,19 +149,19 @@
       {
        "change": "counting@2026-09-15T00:00:00+00:00",
        "kind": "counting",
-       "label": "tech filter changed",
+       "label": "tech-job filter updated",
        "size": -180
       },
       {
        "change": "growth_scaled_by_counting@2026-09-15T00:00:00+00:00",
        "kind": "growth_scaled_by_a_change",
-       "label": "growth rescaled by tech filter changed",
+       "label": "growth rescaled when tech-job filter updated",
        "size": 135
       }
      ],
      "not_hiring_total": -45,
-     "percent": 340.0,
-     "percent_withheld": null,
+     "percent": null,
+     "percent_withheld": "mostly_recounted",
      "span_days": 4.0,
      "per_week": 30,
      "turnover": null,
@@ -170,7 +170,7 @@
       "latest": 0.22,
       "denominator_start": 10000,
       "denominator_latest": 10000,
-      "percent": 339.99999999999994
+      "percent": null
      }
     },
     "netted": [],
@@ -185,12 +185,12 @@
     "id": "counting@2026-09-15T00:00:00+00:00",
     "kind": "counting",
     "ts": "2026-09-15T00:00:00+00:00",
-    "label": "tech filter changed",
+    "label": "tech-job filter updated",
     "fields": [
      "tech_filter_version"
     ],
     "changed": [
-     "tech filter changed"
+     "tech-job filter updated"
     ],
     "company": null,
     "boards": null,
@@ -202,7 +202,7 @@
     "id": "growth_scaled_by_counting@2026-09-15T00:00:00+00:00",
     "kind": "growth_scaled_by_a_change",
     "ts": "2026-09-15T00:00:00+00:00",
-    "label": "growth rescaled by tech filter changed",
+    "label": "growth rescaled when tech-job filter updated",
     "fields": [],
     "changed": [],
     "company": null,

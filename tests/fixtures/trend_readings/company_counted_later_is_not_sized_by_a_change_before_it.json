@@ -42,7 +42,7 @@
    {
     "ts": "2026-09-15T00:00:00+00:00",
     "changed": [
-     "tech filter changed"
+     "tech-job filter updated"
     ],
     "fields": [
      "tech_filter_version"
@@ -119,7 +119,7 @@
       {
        "change": "counting@2026-09-15T00:00:00+00:00",
        "kind": "counting",
-       "label": "tech filter changed",
+       "label": "tech-job filter updated",
        "size": 10
       }
      ],
@@ -200,7 +200,7 @@
       {
        "change": "counting@2026-09-15T00:00:00+00:00",
        "kind": "counting",
-       "label": "tech filter changed",
+       "label": "tech-job filter updated",
        "size": 10
       }
      ],
@@ -258,12 +258,12 @@
     "id": "counting@2026-09-15T00:00:00+00:00",
     "kind": "counting",
     "ts": "2026-09-15T00:00:00+00:00",
-    "label": "tech filter changed",
+    "label": "tech-job filter updated",
     "fields": [
      "tech_filter_version"
     ],
     "changed": [
-     "tech filter changed"
+     "tech-job filter updated"
     ],
     "company": null,
     "boards": null,

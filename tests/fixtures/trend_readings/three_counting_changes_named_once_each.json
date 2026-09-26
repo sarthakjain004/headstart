@@ -26,7 +26,7 @@
    {
     "ts": "2026-09-15T00:00:00+00:00",
     "changed": [
-     "role taxonomy refit"
+     "job categories redrawn"
     ],
     "fields": [
      "centroid_version"
@@ -35,8 +35,8 @@
    {
     "ts": "2026-09-17T00:00:00+00:00",
     "changed": [
-     "tech filter changed",
-     "role family map edited"
+     "tech-job filter updated",
+     "job category list edited"
     ],
     "fields": [
      "tech_filter_version",
@@ -107,13 +107,13 @@
       {
        "change": "counting@2026-09-15T00:00:00+00:00",
        "kind": "counting",
-       "label": "role taxonomy refit",
+       "label": "job categories redrawn",
        "size": 20
       },
       {
        "change": "counting@2026-09-17T00:00:00+00:00",
        "kind": "counting",
-       "label": "tech filter changed, role family map edited",
+       "label": "tech-job filter updated, job category list edited",
        "size": 30
       }
      ],
@@ -161,13 +161,13 @@
       {
        "change": "counting@2026-09-15T00:00:00+00:00",
        "kind": "counting",
-       "label": "role taxonomy refit",
+       "label": "job categories redrawn",
        "size": 20
       },
       {
        "change": "counting@2026-09-17T00:00:00+00:00",
        "kind": "counting",
-       "label": "tech filter changed, role family map edited",
+       "label": "tech-job filter updated, job category list edited",
        "size": 30
       }
      ],
@@ -197,12 +197,12 @@
     "id": "counting@2026-09-15T00:00:00+00:00",
     "kind": "counting",
     "ts": "2026-09-15T00:00:00+00:00",
-    "label": "role taxonomy refit",
+    "label": "job categories redrawn",
     "fields": [
      "centroid_version"
     ],
     "changed": [
-     "role taxonomy refit"
+     "job categories redrawn"
     ],
     "company": null,
     "boards": null,
@@ -214,14 +214,14 @@
     "id": "counting@2026-09-17T00:00:00+00:00",
     "kind": "counting",
     "ts": "2026-09-17T00:00:00+00:00",
-    "label": "tech filter changed, role family map edited",
+    "label": "tech-job filter updated, job category list edited",
     "fields": [
      "tech_filter_version",
      "family_map_fingerprint"
     ],
     "changed": [
-     "tech filter changed",
-     "role family map edited"
+     "tech-job filter updated",
+     "job category list edited"
     ],
     "company": null,
     "boards": null,

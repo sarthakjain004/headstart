@@ -29,7 +29,7 @@
    {
     "ts": "2026-09-20T00:00:00+00:00",
     "changed": [
-     "duplicate removal changed"
+     "duplicate postings detection updated"
     ],
     "fields": [
      "dedup_version"

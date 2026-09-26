@@ -29,7 +29,7 @@
    {
     "ts": "2026-09-20T00:00:00+00:00",
     "changed": [
-     "experience/salary extraction changed"
+     "experience and salary reading updated"
     ],
     "fields": [
      "derivations_version"

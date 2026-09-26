@@ -45,13 +45,13 @@
    {
     "ts": "2026-08-13T00:00:00+00:00",
     "changed": [
-     "tech filter changed"
+     "tech-job filter updated"
     ]
    },
    {
     "ts": "2026-08-13T12:00:00+00:00",
     "changed": [
-     "role taxonomy refit"
+     "job categories redrawn"
     ]
    }
   ],
@@ -203,10 +203,10 @@
     "id": "counting@2026-08-13T00:00:00+00:00",
     "kind": "counting",
     "ts": "2026-08-13T00:00:00+00:00",
-    "label": "tech filter changed",
+    "label": "tech-job filter updated",
     "fields": [],
     "changed": [
-     "tech filter changed"
+     "tech-job filter updated"
     ],
     "company": null,
     "boards": null,
@@ -216,10 +216,10 @@
     "id": "counting@2026-08-13T12:00:00+00:00",
     "kind": "counting",
     "ts": "2026-08-13T12:00:00+00:00",
-    "label": "role taxonomy refit",
+    "label": "job categories redrawn",
     "fields": [],
     "changed": [
-     "role taxonomy refit"
+     "job categories redrawn"
     ],
     "company": null,
     "boards": null,

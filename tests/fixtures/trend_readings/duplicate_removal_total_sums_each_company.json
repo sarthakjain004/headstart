@@ -24,7 +24,7 @@
    {
     "ts": "2026-09-15T00:00:00+00:00",
     "changed": [
-     "duplicate removal changed"
+     "duplicate postings detection updated"
     ],
     "fields": [
      "dedup_version"
@@ -114,7 +114,7 @@
      {
       "change": "counting@2026-09-15T00:00:00+00:00",
       "kind": "counting",
-      "label": "duplicate removal changed",
+      "label": "duplicate postings detection updated",
       "size": -50
      }
     ],
@@ -164,7 +164,7 @@
       {
        "change": "counting@2026-09-15T00:00:00+00:00",
        "kind": "counting",
-       "label": "duplicate removal changed",
+       "label": "duplicate postings detection updated",
        "size": -20
       }
      ],
@@ -238,7 +238,7 @@
       {
        "change": "counting@2026-09-15T00:00:00+00:00",
        "kind": "counting",
-       "label": "duplicate removal changed",
+       "label": "duplicate postings detection updated",
        "size": -50
       }
      ],
@@ -289,12 +289,12 @@
     "id": "counting@2026-09-15T00:00:00+00:00",
     "kind": "counting",
     "ts": "2026-09-15T00:00:00+00:00",
-    "label": "duplicate removal changed",
+    "label": "duplicate postings detection updated",
     "fields": [
      "dedup_version"
     ],
     "changed": [
-     "duplicate removal changed"
+     "duplicate postings detection updated"
     ],
     "company": null,
     "boards": null,

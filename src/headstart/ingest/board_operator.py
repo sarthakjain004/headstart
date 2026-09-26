@@ -1,11 +1,14 @@
-"""Who operates a Board — the employer itself, a services firm, or an aggregator.
+"""Who operates a Board — the employer itself, an IT services firm, a staffing firm, or an
+aggregator.
 
-The Hot tab ranks companies by hiring activity, and the three loudest on every lens are not
-employers: `lever:jobgether` re-posts other companies' jobs, `careers.hcltech.com` and
-`careers.wipro.com` staff client projects. Serving them as "the companies hiring hardest right
-now" is wrong in a way a user notices immediately, so `company_directory` labels every company
-with what this module assigns its Boards, each ranked row carries that label, and the tab
-defaults to employers.
+The Hot tab ranks companies by hiring activity, and the loudest on every lens are not all
+employers: `lever:jobgether` re-posts other companies' jobs, and SmartRecruiters' staffing
+agencies post the same client contract in twenty cities. Serving them as "the companies hiring
+hardest right now" is wrong in a way a user notices immediately, so `company_directory` labels
+every company with what this module assigns its Boards, each ranked row carries that label, and
+the tab hides staffing firms and job boards by default. An IT services firm (Wipro, Infosys,
+TCS) employs the engineers it posts for, so it stays on the tab, labelled (the owner's call,
+critic round 17, ADR-0238).
 
 **This is a curated list, not a classifier, and that is a measured decision.** A stratified
 sample of 114 Boards (of the 2,916 with >=25 open roles) was hand-labelled on 2026-09-21 and
@@ -40,7 +43,7 @@ Two consequences for anyone extending this:
   it. The bounded way to go deeper is to adjudicate the Boards actually displayed — a few new
   entrants a day — and record the verdicts here.
 * **A label is not a verdict on the employer.** Capgemini and CI&T employ their own engineers;
-  they are labelled `services` because their postings are client staffing, which is a different
+  they are labelled `services` because their postings are client work, which is a different
   thing for a job hunter, not a worse company. Nothing is evicted from the index over this
   label (ADR-0053 and ADR-0083 own eviction); the tab filters, and says what it filtered.
 """
@@ -52,7 +55,7 @@ from typing import Final, Literal
 
 from headstart.boards.board_identity import tenant
 
-Operator = Literal["employer", "services", "aggregator"]
+Operator = Literal["employer", "services", "staffing", "aggregator"]
 
 #: Boards that re-post other companies' postings. They are not employers at all, so they are
 #: separated from `services` — a user excluding staffing firms may still want Capgemini's own
@@ -65,15 +68,19 @@ AGGREGATORS: Final[frozenset[str]] = frozenset(
         "whatjobs",
         "trabajo",
         "jooble",
+        # A job platform re-posting other employers' roles, nurses and call centres among
+        # them (sampled live 2026-09-26).
+        "jobsforhumanity",
     }
 )
 
-#: IT services, consulting, staffing, BPO and talent-marketplace operators, curated by hand from
-#: the top of the Expansion and Rate lenses on 2026-09-21. Compared against the Board's slug
-#: and its company name. Entries are **exact normalized spellings** (see `_forms`):
-#: a multi-word operator is written as one run, `Avance Consulting Services` ->
-#: "avanceconsultingservices". An entry that is also an ordinary word or another company's name
-#: does not belong here — "ibex" was removed for matching Ibex Medical Analytics.
+#: IT services, consulting and BPO operators, curated by hand from the top of the Expansion and
+#: Rate lenses on 2026-09-21. They employ the people they post for, on client work, so the Hot
+#: tab shows them, labelled. Compared against the Board's slug and its company name. Entries are
+#: **exact normalized spellings** (see `_forms`): a multi-word operator is written as one run,
+#: `Avance Consulting Services` -> "avanceconsultingservices". An entry that is also an ordinary
+#: word or another company's name does not belong here — "ibex" was removed for matching Ibex
+#: Medical Analytics. The same holds for STAFFING.
 #:
 #: Ordered by the group it came from so an entry can be argued with individually.
 SERVICES: Final[frozenset[str]] = frozenset(
@@ -131,6 +138,14 @@ SERVICES: Final[frozenset[str]] = frozenset(
         "concentrix",
         "alorica",
         "taskus",
+    }
+)
+
+#: Staffing, contract-placement and talent-marketplace operators: their postings are placements
+#: with clients, often one client contract posted in many cities, so the Hot tab hides them with
+#: the job boards (ADR-0238). Split out of SERVICES on 2026-09-26; spelled as SERVICES is.
+STAFFING: Final[frozenset[str]] = frozenset(
+    {
         # Staffing and contract-placement firms
         "randstad",
         "adecco",
@@ -179,6 +194,34 @@ SERVICES: Final[frozenset[str]] = frozenset(
         "idealforcellc",
         "vams",
         "webleetechnologies",
+        # Adjudicated from Hot's employer-labelled top 50 on 2026-09-26, each by a sample of its
+        # own live postings: one client contract posted city by city (Dellfor: "AWS Cloud
+        # Consultant" 518 times; AG Technologies: "Hiring Entry Level Software Engineer"), client
+        # requisition codes (Xinnovit's "XIN001_…"), "local to"/"W2 only"/"in person interview"
+        # contracts (Sonoma, Ask IT, 7th Sky), IT beside phlebotomists or plumbers (Mindlance,
+        # US IT Solutions, Procom), and placements abroad (Urban Ridge: Doha, Cairo, Riyadh;
+        # SBT Global: Korean-bilingual roles at clients' plants; Pragmatike, a recruiter).
+        "deegitinc",
+        "eproinc",
+        "usitsolutionsinc",
+        "sonomaconsultinginc",
+        "mindlance",
+        "infoways",
+        "nextlevelbusinessservicesinc",
+        "dellfortechnologies",
+        "askitconsulting",
+        "agtechnologies",
+        "procomconsultantsgroup",
+        "mapjects",
+        "xinnovit",
+        "pyramidit",
+        "sbtglobalinc",
+        "urbanridgesupplies",
+        "brightvisiontechnologies",
+        "maarut",
+        "3coresystems",
+        "7thskytechnologiesllc",
+        "pragmatike",
         # Talent marketplaces and placement programmes that post on behalf of others
         "eworgmbh",
         "simera",
@@ -239,7 +282,7 @@ def classify(board_key: str, company: str | None = None) -> Operator:
     is reliable: only ~20% of served rows resolve a real company name (ADR-0114), while a slug
     is often a host that names the operator plainly (`careers.wipro.com`). Aggregators are
     tested first — a Board that is both re-posting and a services firm is more usefully called
-    the former.
+    the former — then staffing firms, then services firms.
 
     ``employer`` is the default on purpose. The measurement in the module docstring says a rule
     confident enough to move an *unrecognised* Board out of that default does not exist, so an
@@ -252,6 +295,8 @@ def classify(board_key: str, company: str | None = None) -> Operator:
         return "employer"
     if forms & AGGREGATORS:
         return "aggregator"
+    if forms & STAFFING:
+        return "staffing"
     if forms & SERVICES:
         return "services"
     return "employer"

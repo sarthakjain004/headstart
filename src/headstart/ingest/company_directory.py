@@ -171,10 +171,14 @@ def _company_name(cluster: list[str], names: dict[str, str]) -> str | None:
 
 
 def _operator(cluster: list[str], name: str) -> Operator:
-    """Who runs the company (ADR-0171): an aggregator if any of its Boards re-posts, else
-    services if any places staff, else the employer. The Hot tab labels a company row with it."""
+    """Who runs the company (ADR-0171, ADR-0238): an aggregator if any of its Boards re-posts,
+    else staffing if any places staff with clients, else services if any does client IT work,
+    else the employer. The Hot tab labels a company row with it."""
     found = {classify(board, name) for board in cluster}
-    return next((op for op in ("aggregator", "services") if op in found), "employer")
+    return next(
+        (op for op in ("aggregator", "staffing", "services") if op in found),
+        "employer",
+    )
 
 
 def previous_names(path: Path) -> dict[str, str]:

@@ -35,7 +35,7 @@
    {
     "ts": "2026-09-15T00:00:00+00:00",
     "changed": [
-     "duplicate removal changed"
+     "duplicate postings detection updated"
     ],
     "fields": [
      "dedup_version"
@@ -114,13 +114,13 @@
       {
        "change": "counting@2026-09-15T00:00:00+00:00",
        "kind": "counting",
-       "label": "duplicate removal changed",
+       "label": "duplicate postings detection updated",
        "size": -1867
       }
      ],
      "not_hiring_total": -1867,
-     "percent": 0.0,
-     "percent_withheld": null,
+     "percent": null,
+     "percent_withheld": "mostly_recounted",
      "span_days": 3.0,
      "per_week": 0,
      "turnover": null,
@@ -129,7 +129,7 @@
       "latest": 0.2,
       "denominator_start": 10000,
       "denominator_latest": 10000,
-      "percent": 0.0
+      "percent": null
      }
     },
     "netted": [
@@ -142,7 +142,7 @@
      2,
      3
     ],
-    "index_base": 20,
+    "index_base": null,
     "arrived_by": null
    },
    {
@@ -193,13 +193,13 @@
       {
        "change": "counting@2026-09-15T00:00:00+00:00",
        "kind": "counting",
-       "label": "duplicate removal changed",
+       "label": "duplicate postings detection updated",
        "size": -1867
       }
      ],
      "not_hiring_total": -1867,
-     "percent": 0.0,
-     "percent_withheld": null,
+     "percent": null,
+     "percent_withheld": "mostly_recounted",
      "span_days": 3.0,
      "per_week": 0,
      "turnover": null,
@@ -208,7 +208,7 @@
       "latest": 0.2,
       "denominator_start": 10000,
       "denominator_latest": 10000,
-      "percent": 0.0
+      "percent": null
      }
     },
     "netted": [],
@@ -251,12 +251,12 @@
     "id": "counting@2026-09-15T00:00:00+00:00",
     "kind": "counting",
     "ts": "2026-09-15T00:00:00+00:00",
-    "label": "duplicate removal changed",
+    "label": "duplicate postings detection updated",
     "fields": [
      "dedup_version"
     ],
     "changed": [
-     "duplicate removal changed"
+     "duplicate postings detection updated"
     ],
     "company": null,
     "boards": null,

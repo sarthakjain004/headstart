@@ -1,5 +1,5 @@
 {
- "description": "A counting change takes all 40 of a category's openings, and 12 are hired after it. Netted, it started at 0 openings and a share of 0: no percentage under any unit, and the move is given in openings.",
+ "description": "A counting change takes 150 of a category's 200 openings, and 10 are hired after it. Its netted start of 50 clears INDEX_BASE_FLOOR, but it is what is left of a history mostly re-counted: no percentage in any unit, no index line, no tile (NVIDIA's Embedded & Firmware, 2,706 netted to 96).",
  "answer_input": {
   "metric": "stock",
   "coverage": "all",
@@ -42,18 +42,6 @@
   ],
   "series": [
    {
-    "name": "interns",
-    "label": "interns",
-    "points": [
-     40,
-     40,
-     0,
-     0,
-     12
-    ],
-    "latest": 12
-   },
-   {
     "name": "big",
     "label": "big",
     "points": [
@@ -64,6 +52,18 @@
      110
     ],
     "latest": 110
+   },
+   {
+    "name": "embedded",
+    "label": "embedded",
+    "points": [
+     200,
+     200,
+     50,
+     50,
+     60
+    ],
+    "latest": 60
    }
   ],
   "companies": [
@@ -94,97 +94,53 @@
    "label": "",
    "estimated": false,
    "move": {
-    "start": 140,
-    "latest": 122,
-    "hiring": 22,
+    "start": 300,
+    "latest": 170,
+    "hiring": 20,
     "not_hiring": [
      {
       "change": "counting@2026-09-15T00:00:00+00:00",
       "kind": "counting",
       "label": "tech-job filter updated",
-      "size": -40
+      "size": -150
      }
     ],
-    "not_hiring_total": -40,
-    "percent": 22.0,
+    "not_hiring_total": -150,
+    "percent": 13.333333333333334,
     "percent_withheld": null,
     "span_days": 4.0,
-    "per_week": 39,
+    "per_week": 35,
     "turnover": null,
     "share": {
-     "start": 10.0,
-     "latest": 12.2,
+     "start": 15.0,
+     "latest": 17.0,
      "denominator_start": 1000,
      "denominator_latest": 1000,
-     "percent": 21.999999999999993
+     "percent": 13.333333333333334
     }
    },
    "netted": [
-    100,
-    100,
-    100,
-    100,
-    122
+    150,
+    150,
+    150,
+    150,
+    170
    ],
    "steps_at": [
     2,
     3
    ],
-   "index_base": 100,
+   "index_base": 150,
    "arrived_by": null,
    "points": [
-    140,
-    140,
-    100,
-    100,
-    122
+    300,
+    300,
+    150,
+    150,
+    170
    ]
   },
   "lines": [
-   {
-    "name": "interns",
-    "label": "interns",
-    "estimated": false,
-    "move": {
-     "start": 40,
-     "latest": 12,
-     "hiring": 12,
-     "not_hiring": [
-      {
-       "change": "counting@2026-09-15T00:00:00+00:00",
-       "kind": "counting",
-       "label": "tech-job filter updated",
-       "size": -40
-      }
-     ],
-     "not_hiring_total": -40,
-     "percent": null,
-     "percent_withheld": "mostly_recounted",
-     "span_days": 4.0,
-     "per_week": 21,
-     "turnover": null,
-     "share": {
-      "start": 0.0,
-      "latest": 1.2,
-      "denominator_start": 1000,
-      "denominator_latest": 1000,
-      "percent": null
-     }
-    },
-    "netted": [
-     0,
-     0,
-     0,
-     0,
-     12
-    ],
-    "steps_at": [
-     2,
-     3
-    ],
-    "index_base": null,
-    "arrived_by": null
-   },
    {
     "name": "big",
     "label": "big",
@@ -221,6 +177,50 @@
     ],
     "index_base": 100,
     "arrived_by": null
+   },
+   {
+    "name": "embedded",
+    "label": "embedded",
+    "estimated": false,
+    "move": {
+     "start": 200,
+     "latest": 60,
+     "hiring": 10,
+     "not_hiring": [
+      {
+       "change": "counting@2026-09-15T00:00:00+00:00",
+       "kind": "counting",
+       "label": "tech-job filter updated",
+       "size": -150
+      }
+     ],
+     "not_hiring_total": -150,
+     "percent": null,
+     "percent_withheld": "mostly_recounted",
+     "span_days": 4.0,
+     "per_week": 18,
+     "turnover": null,
+     "share": {
+      "start": 5.0,
+      "latest": 6.0,
+      "denominator_start": 1000,
+      "denominator_latest": 1000,
+      "percent": null
+     }
+    },
+    "netted": [
+     50,
+     50,
+     50,
+     50,
+     60
+    ],
+    "steps_at": [
+     2,
+     3
+    ],
+    "index_base": null,
+    "arrived_by": null
    }
   ],
   "other": null,
@@ -230,29 +230,29 @@
     "label": "Acme",
     "estimated": false,
     "move": {
-     "start": 140,
-     "latest": 122,
-     "hiring": 22,
+     "start": 300,
+     "latest": 170,
+     "hiring": 20,
      "not_hiring": [
       {
        "change": "counting@2026-09-15T00:00:00+00:00",
        "kind": "counting",
        "label": "tech-job filter updated",
-       "size": -40
+       "size": -150
       }
      ],
-     "not_hiring_total": -40,
-     "percent": 22.0,
+     "not_hiring_total": -150,
+     "percent": 13.333333333333334,
      "percent_withheld": null,
      "span_days": 4.0,
-     "per_week": 39,
+     "per_week": 35,
      "turnover": null,
      "share": {
-      "start": 10.0,
-      "latest": 12.2,
+      "start": 15.0,
+      "latest": 17.0,
       "denominator_start": 1000,
       "denominator_latest": 1000,
-      "percent": 21.999999999999993
+      "percent": 13.333333333333334
      }
     },
     "netted": [],
@@ -279,7 +279,7 @@
     "company": null,
     "boards": null,
     "sizes": {
-     "greenhouse:acme": -40
+     "greenhouse:acme": -150
     }
    }
   ],
@@ -299,7 +299,7 @@
    1000,
    1000
   ],
-  "openings": 122,
+  "openings": 170,
   "served_jobs": null,
   "non_tech_jobs": null,
   "reconciles": true,

@@ -90,6 +90,19 @@ MIN_SPAN_DAYS = 3
 # Nor is it given off a netted start under this many openings, where it is arithmetic, not a
 # reading: 14 openings off a netted 4 read "+350%". The page's INDEX_BASE_FLOOR.
 INDEX_BASE_FLOOR = 5
+# What ``percent_withheld`` says of a line mostly re-counted in the window: its counting changes
+# took out more than half of what it started with once its other steps (duplicates removed,
+# Boards found) are counted, or what is left of its start is under INDEX_BASE_FLOOR. Its netted
+# start is then mostly an estimate of its history, and a percentage off it is arithmetic.
+# NVIDIA's Embedded & Firmware started at 2,706, gave up 1,422 to duplicates and 1,188 of the
+# 1,284 left to counting changes, and read "Biggest faller −14.6%" off the 96 that remained; with
+# Micron's beside it, 6,474 netted to 97 and read "Biggest riser +25.8%". Such a line gives no
+# percentage in any unit, no index line and no tile, only its hiring in openings (the owner's
+# call, critic round 17, ADR-0238). A duplicate removal alone is an exact correction, not an
+# estimate, so it never makes a line one.
+MOSTLY_RECOUNTED = "mostly_recounted"
+# The causes that are a counting change's: its own size, and the growth it rescaled.
+_COUNTING_KINDS = (CauseKind.COUNTING, CauseKind.GROWTH_SCALED_BY_A_CHANGE)
 
 # The lines a page charts, one colour each; the rest fold into one Other row: the page's
 # CHART_MAX.
@@ -131,11 +144,13 @@ _FIELD_ID = re.compile(r"\b[a-z0-9]+(?:_[a-z0-9]+)+\b")
 class Turnover:
     """The jobs a line opened and closed over the runs its hiring move counts (ADR-0227), and
     ``net``, opened less closed. It need not equal the line's hiring: a job opened and closed
-    between two reads of its Board is in neither count."""
+    between two reads of its Board is in neither count. ``closed`` and ``net`` are None where
+    every Board the line covers had a run whose closures went uncounted (ADR-0227): Google, one
+    Board, read "18 closed … closures not counted on 1 board"."""
 
     opened: int
-    closed: int
-    net: int
+    closed: int | None
+    net: int | None
 
 
 @dataclass(frozen=True)
@@ -154,8 +169,8 @@ class Cause:
 class Share:
     """A line as a share of its denominator, at the window's start and now. The start is the
     netted count over the netted denominator, each netted once (ADR-0233 decision 2).
-    ``percent`` is the share's own change, latest over start, None over a window under
-    MIN_SPAN_DAYS, from under MOVER_FLOOR openings, or off a share of 0 at the start."""
+    ``percent`` is the share's own change, latest over start, None wherever the line's own
+    percentage is withheld, or off a share of 0 at the start."""
 
     start: float | None
     latest: float | None
@@ -167,9 +182,11 @@ class Share:
 @dataclass(frozen=True)
 class LineMove:
     """What one line reports over the window. ``latest − start == hiring + not_hiring_total``,
-    and ``not_hiring_total`` is ``Σ not_hiring``. ``percent`` is ``hiring`` over the netted
-    start, or None with ``percent_withheld`` saying why. ``span_days`` is how long the line was
-    counted in the window, and ``per_week`` its hiring at that rate, None under MIN_SPAN_DAYS.
+    and ``not_hiring_total`` is ``Σ not_hiring``, whose causes stand in the order their changes
+    ran. ``percent`` is ``hiring`` over the netted start, or None with ``percent_withheld``
+    saying why, MOSTLY_RECOUNTED where the line is mostly re-counted in the window.
+    ``span_days`` is how long the line was counted in the window, and ``per_week`` its hiring
+    at that rate, None under MIN_SPAN_DAYS.
     ``turnover`` is None where no run in the window counted it; a counted 0 stays 0."""
 
     start: int
@@ -196,9 +213,9 @@ class LineReading:
     adjusted backwards so the latest stays the real one (the Change plot indexes it); and
     ``steps_at``, the runs a step lands on, where a line drawn in counts or shares breaks.
     ``index_base`` is what the Change plot divides ``netted`` by, its first netted count; None
-    where the line's first count or that base is under INDEX_BASE_FLOOR, and the line is not
-    indexed at all. ``points`` are its counts run by run where no answer series carries them:
-    the first row's. ``arrived_by`` is what a line that began inside the window arrived by, a
+    where the line's first count or that base is under INDEX_BASE_FLOOR, or the line is mostly
+    re-counted (MOSTLY_RECOUNTED), and the line is not indexed at all. ``points`` are its
+    counts run by run where no answer series carries them: the first row's. ``arrived_by`` is what a line that began inside the window arrived by, a
     counting change sorting openings into it or a pick joining; None where it began with the
     window, or arrived by hiring."""
 
@@ -725,16 +742,19 @@ class _Reader:
         if exact is None:
             return None
         netted = _rounded_for_drawing(_net(self.view, line.points, line, None, True))
+        move = self._move(line, exact, hiring, self._round_to_openings(exact, hiring))
         return LineReading(
             name=line.name,
             label=label,
-            move=self._move(
-                line, exact, hiring, self._round_to_openings(exact, hiring)
-            ),
+            move=move,
             estimated=exact.estimated,
             netted=netted,
             steps_at=tuple(sorted(_count_jumps(self.view, line))),
-            index_base=_index_base(line.points, netted),
+            index_base=None
+            if _mostly_recounted(
+                move.start, move.latest - move.hiring, _counting(move.not_hiring)
+            )
+            else _index_base(line.points, netted),
             arrived_by=exact.arrived_by,
         )
 
@@ -746,11 +766,14 @@ class _Reader:
             - datetime.fromisoformat(self.stamps[exact.first])
         ).total_seconds() / 86400
         turnover = _hiring_turnover(self.view, line)
+        closed = (
+            turnover["closed"] if turnover and self._closures_counted(line) else None
+        )
         return _line_move(
             start=exact.start,
             latest=exact.latest,
             hiring=hiring,
-            not_hiring=tuple(
+            not_hiring=self._in_date_order(
                 Cause(c, self.changes[c].kind, self.changes[c].label, n)
                 for c, n in causes.items()
                 if n
@@ -758,13 +781,34 @@ class _Reader:
             span_days=span,
             turnover=Turnover(
                 turnover["opened"],
-                turnover["closed"],
-                turnover["opened"] - turnover["closed"],
+                closed,
+                None if closed is None else turnover["opened"] - closed,
             )
             if turnover
             else None,
             denominators=self._denominators_of(line, exact),
         )
+
+    def _in_date_order(self, causes: Iterable[Cause]) -> tuple[Cause, ...]:
+        """``causes`` in the order their changes ran, as the Marked changes list them: Micron's
+        "Not hiring" list gave Sep 24's growth counted twice after Sep 25's change. Causes of
+        one run keep the order the netting met them."""
+        return tuple(sorted(causes, key=lambda c: self.changes[c.change].ts))
+
+    def _closures_counted(self, line: _Line) -> bool:
+        """False where every pick ``line`` covers is in the answer's ``closures_uncounted``: each
+        of its Boards had a run in the window whose closures went uncounted. A pick's own line
+        covers that pick; any other line covers every pick the answer counts."""
+        uncounted = set(self.answer.get("closures_uncounted") or ())
+        if not uncounted:
+            return True
+        left_out = set(self.answer.get("uncounted") or ())
+        covered = (
+            {line.name}
+            if line.name in self.labels
+            else {key for key in self.labels if key not in left_out}
+        )
+        return not covered or not covered <= uncounted
 
     def _denominators_of(
         self, line: _Line, exact: _Exact
@@ -793,6 +837,13 @@ class _Reader:
                 had = causes.get(c.change)
                 causes[c.change] = replace(c, size=c.size + had.size) if had else c
         turnovers = [m.turnover for m in moves if m.turnover]
+        # Closures left uncounted on a folded line leave Other's uncounted too: the rest summed
+        # would read as all of them.
+        closed = (
+            None
+            if any(t.closed is None for t in turnovers)
+            else sum(t.closed for t in turnovers)
+        )
         shares = [m.share for m in moves]
         denominators = None
         if all(shares):
@@ -812,12 +863,12 @@ class _Reader:
                 start=sum(m.start for m in moves),
                 latest=sum(m.latest for m in moves),
                 hiring=sum(m.hiring for m in moves),
-                not_hiring=tuple(c for c in causes.values() if c.size),
+                not_hiring=self._in_date_order(c for c in causes.values() if c.size),
                 span_days=max(m.span_days for m in moves),
                 turnover=Turnover(
                     sum(t.opened for t in turnovers),
-                    sum(t.closed for t in turnovers),
-                    sum(t.net for t in turnovers),
+                    closed,
+                    None if closed is None else sum(t.net for t in turnovers),
                 )
                 if turnovers
                 else None,
@@ -972,7 +1023,7 @@ class _Reader:
             rescaled,
             CauseKind.GROWTH_SCALED_BY_A_CHANGE,
             parent.ts,
-            f"growth rescaled by {parent.label}",
+            f"growth rescaled when {parent.label}",
         )
         self.parent_of[rescaled] = change
         return rescaled
@@ -1289,12 +1340,14 @@ def _line_move(
     span_days = round(span_days, 4)
     netted_start = latest - hiring
     percent, withheld = None, None
+    # Under INDEX_BASE_FLOOR openings left of a start of MOVER_FLOOR or more is mostly re-counted,
+    # so the percentage is never read off a netted start under that floor.
     if span_days < MIN_SPAN_DAYS:
         withheld = f"a window under {MIN_SPAN_DAYS} days"
+    elif _mostly_recounted(start, netted_start, _counting(not_hiring)):
+        withheld = MOSTLY_RECOUNTED
     elif start < MOVER_FLOOR:
         withheld = f"under {MOVER_FLOOR} openings at the start"
-    elif netted_start < INDEX_BASE_FLOOR:
-        withheld = f"under {INDEX_BASE_FLOOR} openings at the start once the steps are taken out"
     else:
         percent = hiring / netted_start * 100
     share = None
@@ -1302,14 +1355,10 @@ def _line_move(
         den_start, den_latest = denominators
         at_start = netted_start / den_start * 100 if den_start else None
         now = latest / den_latest * 100 if den_latest else None
-        # A share's own change has no INDEX_BASE_FLOOR: a category's share off 4 openings of a
-        # company's 1,000 is still a share. Only a zero share at the start has none.
-        shares_change = (
-            span_days >= MIN_SPAN_DAYS
-            and start >= MOVER_FLOOR
-            and bool(at_start)
-            and now is not None
-        )
+        # A share's own change is withheld wherever the line's percentage is, and off a zero
+        # share at the start. Micron's Embedded & Firmware, mostly re-counted, read "—" under
+        # Change and "Biggest riser +1829.1%" under Share: the Share floor read the raw start.
+        shares_change = percent is not None and bool(at_start) and now is not None
         share = Share(
             start=at_start,
             latest=now,
@@ -1337,6 +1386,26 @@ def _line_move(
 def _rounded_for_drawing(values) -> tuple[float | None, ...]:
     """Values a line is drawn from, to _DRAWN_DECIMALS: a shape, not counts."""
     return tuple(None if v is None else round(v, _DRAWN_DECIMALS) for v in values)
+
+
+def _mostly_recounted(start: int, netted_start: int, counting: int) -> bool:
+    """Whether a line is mostly re-counted in its window (MOSTLY_RECOUNTED). ``counting`` is the
+    sum of its counting-change causes. Its start once the other steps are counted is
+    ``netted_start − counting``, so its counting changes took out more than half of that exactly
+    when they took out more than is left (``−counting > netted_start``). Or its steps left under
+    INDEX_BASE_FLOOR of its start. Either way only where the steps took openings out."""
+    return netted_start < start and (
+        netted_start < INDEX_BASE_FLOOR or -counting > netted_start
+    )
+
+
+def _counting(causes: Iterable) -> int:
+    """The sum of a line's counting-change causes (Cause, or its JSON)."""
+    return sum(
+        c["size"] if isinstance(c, dict) else c.size
+        for c in causes
+        if (c["kind"] if isinstance(c, dict) else c.kind) in _COUNTING_KINDS
+    )
 
 
 def _index_base(points, netted: tuple[float | None, ...]) -> float | None:
@@ -1403,13 +1472,17 @@ def check_reading(reading: dict) -> list[str]:
        second time. The share's own change is its latest
        over its start, and is withheld with the percentage.
     6. With no pick nothing is taken out.
+    7. A line mostly re-counted in the window (MOSTLY_RECOUNTED: its counting changes took out
+       more than was left, or under INDEX_BASE_FLOOR was left) gives no percentage, in any
+       unit, and no index base; and only such a line is said to be one.
     Plus: every count is a whole number; a line's "Not hiring" total is its causes' sum; its
     weekly rate is its hiring over the days it was counted, withheld under MIN_SPAN_DAYS; its
-    turnover's net is opened less closed; the Other row is the lines past LINES_CHARTED added
-    together; a line's index base, where given, is its first netted count and at least
-    INDEX_BASE_FLOOR; ``openings`` is every line's latest added together, and ``non_tech_jobs``
-    the served jobs less those; no change is one the reading could not name; no label is a raw
-    field id; and every Marked change is named by exactly one day marker."""
+    turnover's net is opened less closed, and neither is given where closed is not; the Other
+    row is the lines past LINES_CHARTED added together; a line's index base, where given, is its
+    first netted count and at least INDEX_BASE_FLOOR; ``openings`` is every line's latest added
+    together, and ``non_tech_jobs`` the served jobs less those; no change is one the reading
+    could not name; no label is a raw field id; a company line's causes stand in the order their
+    Marked changes ran; and every Marked change is named by exactly one day marker."""
     out: list[str] = []
     changes = {c["id"]: c for c in reading.get("marked_changes") or []}
     labels = [
@@ -1437,6 +1510,11 @@ def check_reading(reading: dict) -> list[str]:
                     f"line {r['name']}: its index base is not a first netted count of "
                     f"{INDEX_BASE_FLOOR} or more"
                 )
+            m = r["move"]
+            if _mostly_recounted(
+                m["start"], m["latest"] - m["hiring"], _counting(m["not_hiring"])
+            ):
+                out.append(f"line {r['name']}: it is indexed though mostly re-counted")
     lines_now = [r["move"]["latest"] for r in reading.get("lines") or []]
     if reading.get("openings", 0) != sum(lines_now):
         out.append("openings: not every line's latest added together")
@@ -1468,9 +1546,13 @@ def check_reading(reading: dict) -> list[str]:
             counts.append(m["per_week"])
         if m["turnover"]:
             counts += [
-                m["turnover"]["opened"],
-                m["turnover"]["closed"],
-                m["turnover"]["net"],
+                n
+                for n in (
+                    m["turnover"]["opened"],
+                    m["turnover"]["closed"],
+                    m["turnover"]["net"],
+                )
+                if n is not None
             ]
         if any(not isinstance(n, int) or isinstance(n, bool) for n in counts):
             out.append(f"{where}: a count is not a whole number")
@@ -1492,7 +1574,11 @@ def check_reading(reading: dict) -> list[str]:
         if m["per_week"] != weekly:
             out.append(f"{where}: its weekly rate is not its hiring over its days")
         turnover = m["turnover"]
-        if turnover and turnover["net"] != turnover["opened"] - turnover["closed"]:
+        if turnover and turnover["net"] != (
+            None
+            if turnover["closed"] is None
+            else turnover["opened"] - turnover["closed"]
+        ):
             out.append(f"{where}: its turnover's net is not opened less closed")
         for c in m["not_hiring"]:
             if c["kind"] == CauseKind.UNEXPLAINED:
@@ -1515,10 +1601,7 @@ def check_reading(reading: dict) -> list[str]:
             start, now = share["start"], share["latest"]
             change = (
                 (now - start) / start * 100
-                if m["span_days"] >= MIN_SPAN_DAYS
-                and m["start"] >= MOVER_FLOOR
-                and start
-                and now is not None
+                if m["percent"] is not None and start and now is not None
                 else None
             )
             if not _same(share["percent"], change):
@@ -1530,6 +1613,15 @@ def check_reading(reading: dict) -> list[str]:
             or not _same(m["percent"], m["hiring"] / netted_start * 100)
         ):
             out.append(f"{where}: its percentage is not hiring over the netted start")
+        recounted = _mostly_recounted(
+            m["start"], netted_start, _counting(m["not_hiring"])
+        )
+        if recounted and m["percent"] is not None:
+            out.append(f"{where}: it gives a percentage though mostly re-counted")
+        if (m["percent_withheld"] == MOSTLY_RECOUNTED) != (
+            recounted and m["span_days"] >= MIN_SPAN_DAYS
+        ):
+            out.append(f"{where}: it is said to be mostly re-counted where it is not")
         if not reading.get("picked") and (
             m["not_hiring"] or m["hiring"] != m["latest"] - m["start"]
         ):
@@ -1546,6 +1638,15 @@ def check_reading(reading: dict) -> list[str]:
             if causes != listed:
                 out.append(
                     f"company line {name}: its Not hiring is not its Marked changes"
+                )
+            ran = [
+                changes[c["change"]]["ts"]
+                for c in line["move"]["not_hiring"]
+                if c["change"] in changes
+            ]
+            if ran != sorted(ran):
+                out.append(
+                    f"company line {name}: its Not hiring is not in the order its changes ran"
                 )
     if breakdown and reading.get("total"):
         rows = [r["move"] for r in reading.get("lines") or []]
