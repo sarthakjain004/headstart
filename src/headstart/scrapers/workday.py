@@ -55,6 +55,7 @@ from headstart.scrapers.base import (
     MIN_AUTHORITATIVE_SHARE,
     USER_AGENT,
     BaseScraper,
+    BoardUnreadable,
     classify_exception,
     loss_breakdown,
 )
@@ -63,7 +64,7 @@ from headstart.scrapers.job_posting_jsonld import jsonld_nodes
 _log = log.get(__name__)
 
 
-class UnexpectedListingResponse(ValueError):
+class UnexpectedListingResponse(BoardUnreadable):
     """A Workday listing response that did not contain the promised JSON.
 
     Kept distinct from ``JSONDecodeError`` because the useful failure is the source observation,
