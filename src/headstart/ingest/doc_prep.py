@@ -313,7 +313,15 @@ def build_doc(job: dict) -> str:
 # 2026-09-25 (514,163 rows), per ADR-0066: 885 rows move, all null -> "IN", none the other way —
 # 847 SuccessFactors, 29 iCIMS, 7 Zoho, 2 JazzHR. 876 are India; the 9 JazzHR/Zoho rows are
 # Indiana on a US state field, an accepted collision (`geo.IN_EXACT`'s comment).
-DERIVATIONS_VERSION = 16
+# v17: `jobs/salary.py`'s Tier 2 reads an ISO code just before a bare "$" ("CAD $150,000") as the
+# currency instead of the bare-"$" USD default — one commit on top of the v16 bump at `6324c83c`
+# (`git log 6324c83c..e3fc3b42 -- src/headstart/jobs/salary.py`, subject "Read an ISO code before
+# a bare $ as its currency", in case it lands squashed). Measured old vs new `from_description()`
+# on the 11,811 descriptions in the store pulled 2026-09-26 with an upper-case three-letter word
+# before "$", per ADR-0066: 294 move, none in amount — 269 USD->CAD, 17 USD->AUD, 1 USD->NZD, 3
+# USD->None (MXN), 4 value->None (a USD and a CAD range in one posting, now declined as the
+# ambiguous multi-region case). Tier 1 is untouched, so a row whose field already answered keeps it.
+DERIVATIONS_VERSION = 17
 
 
 def to_meta(job: dict) -> dict:
