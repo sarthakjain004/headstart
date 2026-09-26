@@ -37,7 +37,7 @@ from typing import Any
 
 from headstart import log
 from headstart.boards.board_identity import ats_of
-from headstart.ingest.board_failures import is_gone
+from headstart.ingest.board_failures import is_http_gone
 
 _log = log.get(__name__)
 
@@ -249,8 +249,10 @@ class ShardReport:
 #: those runs' own join logs — and 0.655% on the live `data/state/scrape_health.json`. 2% leaves
 #: roughly 3x headroom over that baseline, which is what stops the ordinary run tripping it.
 #:
-#: **Confirmed-gone Boards are not counted as unusable (ADR-0242).** A 404/410 Board is the failures
-#: ledger's to count and quarantine (ADR-0162), not a coverage loss. Since ADR-0229's 80k Slice
+#: **Boards that answered 404/410 are not counted as unusable (ADR-0242).** They are the failures
+#: ledger's to count and quarantine (ADR-0162), not a coverage loss. Only the HTTP answer, not the
+#: ledger's wider gone class: an unresolvable host is gone to the ledger too, but excluding it would
+#: grade a shard whose resolver broke as healthy. Since ADR-0229's 80k Slice
 #: rotates through dead Tail Boards, they alone put every shard at 1.1-3.2% (105 shard reports of
 #: the seven runs 36200233818-36218633315), so the unchanged 2% read DEGRADED on 36 of 105 shards,
 #: 15 of 15 in one run. Without them the same 105 read 0.06-1.09% (median 0.24%), so 2% again
@@ -269,8 +271,8 @@ _CRITICAL_SHARE = 0.10
 _MIN_GRADED_BOARDS = 25
 
 
-def _unusable(counts: Counter[str]) -> int:
-    """Failed-but-not-gone plus partial Boards: the coverage verdict's numerator."""
+def _unusable_excluding_gone(counts: Counter[str]) -> int:
+    """Failed Boards that did not answer 404/410, plus partial ones: the verdict's numerator."""
     return counts["failed"] - counts["gone"] + counts["partial"]
 
 
@@ -315,7 +317,7 @@ class ScrapeHealth:
                 coverage[ats_of(key)]["successful"] += 1
             for key, reason in report.errors.items():
                 coverage[ats_of(key)]["failed"] += 1
-                if is_gone(reason):
+                if is_http_gone(reason):
                     coverage[ats_of(key)]["gone"] += 1
             for key in report.truncated:
                 coverage[ats_of(key)]["partial"] += 1
@@ -374,8 +376,8 @@ class ScrapeHealth:
         """Fraction of attempted Boards whose list this run could not use — failed or partial.
 
         The number the verdict is graded on. Attempted is ``successful + failed``. A Board that
-        failed as confirmed gone (404/410) is not counted as unusable: it is the failures ledger's
-        to quarantine (ADR-0162), and the 80k Slice's dead Tail Boards alone crossed the threshold.
+        answered 404/410 is not counted as unusable: it is the failures ledger's to quarantine
+        (ADR-0162), and the 80k Slice's dead Tail Boards alone crossed the threshold.
 
         **The numerator is an upper bound, and is clamped.** ``failed`` and ``partial`` are counted
         from two sets in the same report and a Board can be in both: ``harvest`` records truncation
@@ -389,7 +391,7 @@ class ScrapeHealth:
         attempted = sum(c["successful"] + c["failed"] for c in self.coverage.values())
         if not attempted:
             return 0.0
-        unusable = sum(_unusable(c) for c in self.coverage.values())
+        unusable = sum(_unusable_excluding_gone(c) for c in self.coverage.values())
         return min(unusable, attempted) / attempted
 
     def worst_atses(self, limit: int = 3) -> list[tuple[str, float, int]]:
@@ -405,7 +407,7 @@ class ScrapeHealth:
             attempted = counts["successful"] + counts["failed"]
             if attempted < _MIN_GRADED_BOARDS:
                 continue
-            unusable = _unusable(counts)
+            unusable = _unusable_excluding_gone(counts)
             if unusable:
                 ranked.append((ats, unusable / attempted, attempted))
         return sorted(ranked, key=lambda row: -row[1])[:limit]
@@ -458,7 +460,7 @@ class ScrapeHealth:
         else:
             verdict = "healthy"
         line = (
-            f"Fresh coverage: {verdict} — {failed} failed ({gone} of them confirmed gone, not "
+            f"Fresh coverage: {verdict} — {failed} failed ({gone} of them 404/410, not "
             f"counted) and {partial} partial of {attempted} attempted Boards "
             f"({share:.2%} unusable)"
         )

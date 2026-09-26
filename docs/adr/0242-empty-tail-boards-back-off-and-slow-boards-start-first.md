@@ -76,7 +76,19 @@ The same review found three places where the join's own bookkeeping misread thes
   on 8.8.8.8, and the fifth had no A record; 2 controls resolved. The invalid Jobvite company 302s
   to `invalid=1`, and a live one answers 200. One resolver hiccup is one strike of the 20 that
   quarantine needs.
-* **The coverage verdict leaves confirmed-gone Boards out of its unusable share.** They are the
-  failures ledger's to quarantine. At the 80k Slice, dead Tail Boards alone put 36 of 105 shard
+  A Board quarantined on this evidence and re-confirmed on parole has its served rows pruned
+  (ADR-0206), so an unresolvable host can now remove rows. At 20 consecutive strikes, that trade
+  is taken.
+* **The coverage verdict leaves Boards that answered 404/410 out of its unusable share.** They are
+  the failures ledger's to quarantine. It does not leave out the wider gone class: were
+  unresolvable hosts excluded, a shard whose resolver broke would read healthy. At the 80k Slice, dead Tail Boards alone put 36 of 105 shard
   reports over 2%. Without them, the worst of the 105 is 1.09% and the median 0.24%. The 2%
   threshold therefore stands, with ~2x headroom again.
+* **The held re-fetch rotation (ADR-0211) counts only served Jobs, and now includes Tesla.** The
+  store keeps an evicted Job's text, and 4,652 of 4,896 due ids were evicted. Tesla skipped held
+  details but was never rotated; it has 1,742 served Jobs, ~10 due a run. Jobs the index does not
+  serve (non-English, or waiting to embed) are no longer re-fetched. That matters once
+  multilingual retrieval lands.
+* **The embed planner's cost table was re-measured, and its per-shard target fell from 300 to
+  165 s** (`docs/AI_Integration/embedding-throughput.md`). The measured rates are ~0.55 of the
+  old table, so the old target would have halved the fan-out on the same work.

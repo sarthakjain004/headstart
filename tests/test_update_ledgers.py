@@ -614,3 +614,17 @@ def test_the_quarantine_sample_names_this_runs_arrivals(tmp_path, caplog):
     assert not any("aaa-stock" in m for m in named)
     assert sum("greenhouse:new-" in m for m in named) == 20
     assert named[-1] == "  quarantined  +2 more this run"
+
+
+def test_priority_never_reads_a_board_with_lines_as_clean_empty(tmp_path):
+    """An id whose native part carries a colon gets a longer `board_of` key (ADR-0049). The
+    Board's real key is then absent from the snapshot's keys, and a prefix test is what stops
+    its `boards_ok` entry from decaying a Board that emitted Jobs."""
+    scores = _priority_run(
+        tmp_path,
+        prev={"greenhouse:acme": 10.0},
+        jobs=["greenhouse:acme:req:1"],
+        tech=["greenhouse:acme:req:1"],
+        boards_ok=["greenhouse:acme"],
+    )
+    assert scores.get("greenhouse:acme") == 10.0

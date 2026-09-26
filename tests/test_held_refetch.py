@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import gzip
+import pathlib
+import re
 from collections import Counter
 from datetime import UTC, datetime, timedelta
 
@@ -107,9 +109,6 @@ def test_no_index_metadata_counts_every_held_job():
 def test_every_scraper_that_skips_held_details_is_rotated_except_zwayam():
     """A Scraper that skips held details but is missing here never re-fetches an edited posting
     (Tesla was). Zwayam is left out on purpose (the module docstring says why)."""
-    import pathlib
-    import re
-
     from headstart import scrapers
 
     skipping = {

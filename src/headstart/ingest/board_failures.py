@@ -88,10 +88,11 @@ PAROLE_DAYS = 7
 #   both controls resolved. One resolver hiccup is one strike of the 20 quarantine needs.
 # - Jobvite's redirect of an unknown company to `search.jobvite.com?invalid=1`: `tcsatl` still
 #   302s there, a live company answers 200. Its bare "-> 404" bursts are transient and stay out.
+_HTTP_GONE = re.compile(r"HTTP Error (404|410)\b")
 _GONE = re.compile(
-    r"HTTP Error (404|410)\b"
-    r"|Could not resolve host"
-    r"|-> 302 \S*search\.jobvite\.com/?\?invalid=1"
+    _HTTP_GONE.pattern
+    + r"|Could not resolve host"
+    + r"|-> 302 \S*search\.jobvite\.com/?\?invalid=1"
 )
 
 _FIELDS = ("board", "strikes", "last_reason", "last_seen_gone")
@@ -137,6 +138,13 @@ def is_gone(reason: str) -> bool:
     """Whether a recorded scrape failure means *the Board no longer exists*, rather than *the
     fetch failed*. Only this class of failure may age a Board toward quarantine."""
     return bool(_GONE.search(reason or ""))
+
+
+def is_http_gone(reason: str) -> bool:
+    """Whether the origin itself answered 404/410. The coverage verdict leaves only these out of
+    its unusable share (ADR-0242): an unresolvable host also reads as gone here, but a shard whose
+    resolver broke would then grade every failure as gone and read healthy."""
+    return bool(_HTTP_GONE.search(reason or ""))
 
 
 def load(path: str | Path) -> dict[str, Failure]:

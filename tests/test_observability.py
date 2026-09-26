@@ -184,7 +184,7 @@ def test_scrape_health_keeps_atses_and_loss_kinds_separate(tmp_path):
     assert health.verdict_line() == (
         # 2 unusable of 3 attempted is 66.67%, past `_CRITICAL_SHARE` — the verdict is graded on
         # the share now, not on `any(failed or partial)`, so this tiny fixture reads CRITICAL.
-        "Fresh coverage: CRITICAL — 1 failed (0 of them confirmed gone, not counted) and "
+        "Fresh coverage: CRITICAL — 1 failed (0 of them 404/410, not counted) and "
         "1 partial of 3 attempted Boards (66.67% unusable)"
     )
     lines = health.loss_lines()
@@ -306,6 +306,24 @@ def test_confirmed_gone_boards_do_not_degrade_coverage():
     assert health.unusable_share == 1 / 100
     assert not health.degraded
     assert health.verdict_line() == (
-        "Fresh coverage: healthy — 3 failed (2 of them confirmed gone, not counted) and "
+        "Fresh coverage: healthy — 3 failed (2 of them 404/410, not counted) and "
         "0 partial of 100 attempted Boards (1.00% unusable)"
     )
+
+
+def test_an_unresolvable_host_still_counts_against_coverage():
+    """The failures ledger reads an unresolvable host as gone, but the verdict must not: a shard
+    whose resolver broke would otherwise grade every failure as gone and read healthy."""
+    errors = {
+        f"lever:x-{i}": "DNSError: curl: (6) Could not resolve host: x.example"
+        for i in range(10)
+    }
+    health = observability.ScrapeHealth.from_reports(
+        [
+            observability.ShardReport.from_json(
+                {"boards_ok": [f"lever:ok-{i}" for i in range(90)], "errors": errors}
+            )
+        ]
+    )
+    assert health.unusable_share == 10 / 100
+    assert health.degraded

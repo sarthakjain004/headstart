@@ -1,8 +1,8 @@
 """Which held descriptions the next scrape re-fetches (ADR-0211).
 
 Six Scrapers skip a Job's detail fetch once the ADR-0050 store holds its description (ADR-0048):
-ADP, Apple, Cornerstone, Eightfold, Phenom and Tesla. On those, an edited posting was never fetched again,
-so no edit could reach the store or the served table (ADR-0207). This rotation takes a slice of
+ADP, Apple, Cornerstone, Eightfold, Phenom and Tesla. On those, an edited posting was never fetched
+again, so no edit could reach the store or the served table (ADR-0207). This rotation takes a slice of
 their held Jobs off the skip-list each run, so every held Job is fetched again once its last fetch
 is :data:`PERIOD_DAYS` old, on the first scrape of its Board after that.
 

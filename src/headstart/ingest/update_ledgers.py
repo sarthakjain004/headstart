@@ -15,8 +15,8 @@ workflow treats their failures differently: a cost- or failures-ledger failure i
 the harvest snapshot (``data/jobs``) or in a shard report's ``boards_ok`` — gets its EWMA score
 refreshed from its tech-subset count (``data/jobs/tech``), so a Board that scraped clean and empty
 decays. Boards the run didn't scrape, and Boards whose scrape was not authoritative (ADR-0053),
-carry their rows unchanged; rows for Boards that are no longer Scrapable are dropped (ADR-0242). The ledger drives the next harvest's
-slice ordering and the embed's within-bucket ordering.
+carry their rows unchanged; rows for Boards that are no longer Scrapable are dropped (ADR-0242).
+The ledger drives the next harvest's slice ordering and the embed's within-bucket ordering.
 
 **cost** runs right after the fragments land. Each scrape shard timed every Board it scraped and
 streamed the rows to ``board_cost.csv`` inside its own fragment dir; this reads all of them and
@@ -25,8 +25,8 @@ the *next* run's ``scrape_plan`` bin-packs on. A shard that died mid-write contr
 did flush; only a torn final line is skipped.
 
 **failures** reads the shard reports' per-Board errors, keeps only the *gone* class (404/410, an
-unresolvable host, Jobvite's ``invalid=1`` redirect — see :mod:`headstart.ingest.board_failures` for why a 429 or a timeout must not count), and tracks
-consecutive gone-runs per Board. At :data:`~headstart.ingest.board_failures.QUARANTINE_AT` strikes
+unresolvable host, Jobvite's ``invalid=1`` redirect — see :mod:`headstart.ingest.board_failures`
+for why a 429 or a timeout must not count), and tracks consecutive gone-runs per Board. At :data:`~headstart.ingest.board_failures.QUARANTINE_AT` strikes
 the Board leaves the next run's scrape slice; any successful scrape clears it, and
 :data:`~headstart.ingest.board_failures.PAROLE_DAYS` later the verdict expires and the Board comes
 back for one run to re-earn it (ADR-0161). This is the loop nothing else closes: the liveness
@@ -57,6 +57,7 @@ Seed the priority ledger from a full local corpus with::
 from __future__ import annotations
 
 import argparse
+import bisect
 import json
 import re
 import time
@@ -97,8 +98,10 @@ _GAP_LEDGER = REPO_ROOT / "data" / "state" / "board_description_gap.csv"
 _META = REPO_ROOT / "data" / "embeddings" / "jobs" / "meta.jsonl"
 _DESCRIPTIONS = REPO_ROOT / "data" / "descriptions"
 _LIVENESS = REPO_ROOT / "data" / "validate" / "liveness"
+# This run's newly quarantined Boards named one per line before the rest are only counted.
+_QUARANTINE_SAMPLE = 20
 # An HTTP status in a recorded reason: "HTTP Error 429", "HTTP 404", "-> 302".
-_STATUS = re.compile(r"(?:HTTP(?: Error)?|->) (\d{3})\b")
+_HTTP_STATUS = re.compile(r"(?:HTTP(?: Error)?|->) (\d{3})\b")
 
 
 def priority(args: argparse.Namespace) -> int:
@@ -114,11 +117,22 @@ def priority(args: argparse.Namespace) -> int:
     # A Board that scraped clean with zero jobs writes no line, so without `boards_ok` its score
     # was carried forever instead of decaying. With the off-Scrapable rows dropped below, that
     # carry held 4,960 rows, 17.9% of the ledger's tech credit, on 2026-09-26 (ADR-0242).
+    # "Has lines" by prefix, not by key: `board_of` yields a longer phantom key for an id whose
+    # native part carries a colon (ADR-0049), and a Board with lines must never read as empty.
+    with_lines = sorted(lower_key(b) for b in sample_id)
+
+    def _has_lines(board: str) -> bool:
+        low = lower_key(board)
+        i = bisect.bisect_left(with_lines, low)
+        return i < len(with_lines) and (
+            with_lines[i] == low or with_lines[i].startswith(low + ":")
+        )
+
     clean_empty = {
         board
         for report in observability.read_shards(args.fragments, quiet=True)
         for key in report.boards_ok
-        if (board := board_key_of(key)) is not None and board not in sample_id
+        if (board := board_key_of(key)) is not None and not _has_lines(board)
     }
     # A truncated or raised scrape is no measurement of the Board's tech count (amazon's
     # CAPTCHA-short read), so its row is carried, not blended.
@@ -233,7 +247,7 @@ def failures(args: argparse.Namespace) -> int:
                 # 429. `ats` alongside it because a matcher gap is usually one scraper's
                 # phrasing, not a global one.
                 head = str(reason).split(":", 1)[0].strip()[:60] or "unknown"
-                status = _STATUS.search(str(reason))
+                status = _HTTP_STATUS.search(str(reason))
                 unmatched[
                     f"{ats_of(board)} {head}"
                     + (f" {status.group(1)}" if status else "")
@@ -290,11 +304,11 @@ def failures(args: argparse.Namespace) -> int:
     # This run's arrivals, not the alphabetical stock: the stock's first twenty were the same
     # Boards every run, and the Boards that just crossed the line were never named.
     arrivals = sorted(quarantined - was)
-    for board in arrivals[:20]:
+    for board in arrivals[:_QUARANTINE_SAMPLE]:
         row = rows[board]
         _log.info(f"  quarantined  {board} ({row.strikes} strikes, {row.last_reason})")
-    if len(arrivals) > 20:
-        _log.info(f"  quarantined  +{len(arrivals) - 20} more this run")
+    if len(arrivals) > _QUARANTINE_SAMPLE:
+        _log.info(f"  quarantined  +{len(arrivals) - _QUARANTINE_SAMPLE} more this run")
     return 0
 
 
