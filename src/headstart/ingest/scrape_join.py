@@ -27,12 +27,14 @@ from collections import Counter
 from pathlib import Path
 
 from headstart import log
-from headstart.boards.board_identity import board_key_of
+from headstart.boards.board_identity import board_key_of, lower_key
 from headstart.ingest import (
     REPO_ROOT,
+    UNAUTHORITATIVE_BOARD_IDS_PATH,
     UNAUTHORITATIVE_BOARDS_PATH,
     observability,
     shard_speedup,
+    write_id_list,
 )
 from headstart.ingest.index_plan import boards_by_canon, live_keep_set, resolve_board
 from headstart.ingest.observability import ShardReport
@@ -156,6 +158,12 @@ def main() -> int:
         "(default: data/state/unauthoritative_boards.json)",
     )
     ap.add_argument(
+        "--unauthoritative-ids",
+        default=str(UNAUTHORITATIVE_BOARD_IDS_PATH),
+        help="where to record the ids the scrape returned on those Boards, for `index sync` to "
+        "evict the ones the tech filter rejects (ADR-0243)",
+    )
+    ap.add_argument(
         "--scraped-boards",
         default=str(_SCRAPED_BOARDS),
         help="where to record the Boards this union covered — the eviction scope `index sync` "
@@ -203,6 +211,19 @@ def main() -> int:
     # the ledger is committed, so both halves resolve ids through the same lookup.
     live = boards_by_canon(live_keep_set(args.ledger))
     boards: set[str] = set()
+    # Read before the union rather than after it, so the ids an Unauthoritative Board did return
+    # are kept as the lines stream: the tech filter drops some of them next, and `index sync`
+    # can only tell a rejected posting from an unread one with this list (ADR-0243). Written
+    # unconditionally: an empty file is the honest record of "every Board's list is
+    # authoritative", and the summary below is telemetry that must never gate the eviction signal.
+    reports = observability.read_shards(shards_root)
+    unauthoritative = {
+        lower_key(b)
+        for b in write_unauthoritative_boards(
+            reports, Path(args.unauthoritative_boards)
+        )
+    }
+    seen_on_unauthoritative: list[str] = []
 
     total = 0
     for ats_file, sources in sorted(per_ats.items()):
@@ -219,13 +240,20 @@ def main() -> int:
                                 # Still fatal — a torn fragment must not join — but named, so
                                 # the abort says which shard's file and line to open.
                                 log.fail(_log, f"{src} line {lineno}: {exc!r}")
-                            boards.add(resolve_board(job_id, live))
+                            board = resolve_board(job_id, live)
+                            boards.add(board)
+                            if lower_key(board) in unauthoritative:
+                                seen_on_unauthoritative.append(job_id)
                             n += 1
         total += n
         _log.info(f"{ats_file}: {n} lines from {len(sources)} shard(s)")
 
     _log.info(f"wrote {total} lines across {len(per_ats)} ATS files -> {out}")
-    reports = observability.read_shards(shards_root)
+    write_id_list(Path(args.unauthoritative_ids), seen_on_unauthoritative)
+    _log.info(
+        f"recorded {len(seen_on_unauthoritative)} id(s) returned by Unauthoritative Board(s) "
+        f"-> {args.unauthoritative_ids}"
+    )
     # A Board scraped clean with zero jobs writes no line above, so it would never enter the
     # scope and its closed postings would be served forever. `boards_ok` is that evidence; keyed
     # through `board_key_of`, it is the prefix the Board's own ids carry. A truncated Board is in
@@ -249,10 +277,6 @@ def main() -> int:
     # Before the telemetry below, like the unauthoritative-Board write: this is the eviction
     # signal, and an empty file is the honest record of a run that joined nothing.
     write_scraped_boards(boards, Path(args.scraped_boards))
-    # Written unconditionally, before the summary: an empty file is the honest record of "every
-    # Board's list is authoritative", and the summary below is telemetry that must never gate the
-    # eviction signal.
-    write_unauthoritative_boards(reports, Path(args.unauthoritative_boards))
     _update_speedup(reports, Path(args.speedup_ledger))
     health = observability.ScrapeHealth.from_reports(
         reports, expected_reports=args.expected_shards or None

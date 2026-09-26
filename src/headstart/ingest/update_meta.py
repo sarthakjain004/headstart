@@ -72,6 +72,7 @@ from time import monotonic
 from typing import Any, NamedTuple
 
 from headstart import log
+from headstart.boards.board_identity import ats_of
 from headstart.ingest import (
     PENDING_REDERIVE_PATH,
     REPO_ROOT,
@@ -103,6 +104,8 @@ _WATERMARK = REPO_ROOT / "data" / "state" / "derivations.json"
 #: Progress remains every 50,000 written rows, independently of dispatch size.
 _SWEEP_CHUNK_ROWS = 1_000
 _PROGRESS_ROWS = 50_000
+#: Job ids named per ATS on a "lost" derivation line.
+_LOST_SAMPLE = 3
 _ROW_VERSION = "_derivations_version"
 _SWEEP_BUDGET_SECONDS = 600
 
@@ -477,6 +480,8 @@ class _ChunkResult(NamedTuple):
     country_delta: Counter[str]
     unswept: int
     swept_without_text: int
+    #: ``{"experience" | "salary": [(Job id, raw field cleared)]}`` for every "lost" row.
+    lost: dict[str, list[tuple[str, bool]]]
 
 
 def _refresh_chunk(args: _ChunkArgs) -> _ChunkResult:
@@ -491,6 +496,7 @@ def _refresh_chunk(args: _ChunkArgs) -> _ChunkResult:
     sal_delta: Counter[str] = Counter()
     country_delta: Counter[str] = Counter()
     unswept = swept_without_text = 0
+    lost: dict[str, list[tuple[str, bool]]] = {"experience": [], "salary": []}
     for meta in args.rows:
         sweep_row = args.sweep and meta.get(_ROW_VERSION, 0) < DERIVATIONS_VERSION
         row, fact_changed, derived_changed = refresh_row(
@@ -508,13 +514,16 @@ def _refresh_chunk(args: _ChunkArgs) -> _ChunkResult:
         derived_hits += derived_changed
         # `meta` is untouched (refresh_row copies), so it is the genuine "before".
         if derived_changed:
-            for counts, source, fields in (
-                (exp_delta, "experience_source", DERIVED_FIELDS),
-                (sal_delta, "salary_source", SALARY_DERIVED_FIELDS),
+            for label, counts, source, fields in (
+                ("experience", exp_delta, "experience_source", DERIVED_FIELDS),
+                ("salary", sal_delta, "salary_source", SALARY_DERIVED_FIELDS),
             ):
                 move = derivation_delta(meta, row, source, fields)
                 if move:
                     counts[move] += 1
+                if move == "lost":
+                    cleared = meta.get(label) is not None and row.get(label) is None
+                    lost[label].append((meta["id"], cleared))
             # `country` has no tier concept (`derivation_delta` doesn't apply) — just a direct
             # before/after compare, since the only two values are "IN" and null.
             if meta.get(india_filter.COLUMN) != row.get(india_filter.COLUMN):
@@ -541,6 +550,7 @@ def _refresh_chunk(args: _ChunkArgs) -> _ChunkResult:
         country_delta,
         unswept,
         swept_without_text,
+        lost,
     )
 
 
@@ -633,6 +643,7 @@ def refresh(
     sal_delta: Counter[str] = Counter()
     country_delta: Counter[str] = Counter()
     unswept = swept_without_text = 0
+    lost: dict[str, list[tuple[str, bool]]] = {"experience": [], "salary": []}
     deadline = monotonic() + sweep_budget_seconds if sweep else None
     # A sweep runs the full cascade on every row instead of a cheap fact-sync — measured ~230x
     # slower per row on the 2026-09-15 nightly (805,160 rows: ~15s fact-only vs. a sweep still not
@@ -674,6 +685,8 @@ def refresh(
                 country_delta.update(chunk.country_delta)
                 unswept += chunk.unswept
                 swept_without_text += chunk.swept_without_text
+                for label, ids in chunk.lost.items():
+                    lost[label].extend(ids)
                 if rows % _PROGRESS_ROWS == 0:
                     _log.info(f"  {rows} rows refreshed")
         tmp.replace(meta_path)
@@ -700,6 +713,17 @@ def refresh(
                 f"{label} derivations: {counts['gained']} gained, {counts['lost']} lost, "
                 f"{counts['retiered']} retiered, {counts['moved']} moved (same tier, new "
                 f"value) (ADR-0066)"
+            )
+        # Per ATS, with ids to open: `lost` on an ordinary run mirrored the next run's `gained`
+        # (up to 17 a run, 2026-09-26), and a count alone cannot say which read went wrong.
+        by_ats: dict[str, list[tuple[str, bool]]] = {}
+        for job_id, cleared in lost[label]:
+            by_ats.setdefault(ats_of(job_id), []).append((job_id, cleared))
+        for ats, ids in sorted(by_ats.items(), key=lambda kv: (-len(kv[1]), kv[0])):
+            _log.info(
+                f"  {label} lost on {ats}: {len(ids)}, {sum(c for _, c in ids)} with the raw "
+                f"field cleared by this scrape — e.g. "
+                + log.named_sample([job_id for job_id, _ in ids], cap=_LOST_SAMPLE)
             )
     if country_delta:
         _log.info(
