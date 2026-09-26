@@ -2,9 +2,9 @@
 
 `jibe_api_jobs.json` holds ten real `/api/jobs` rows captured 2026-09-24 from nine client hosts,
 in one envelope, with the unused `meta_data`/`qualifications`/`responsibilities` keys removed. They
-cover a posting served in two languages (flyporter 5262), a disallowing and a readable iCIMS tenant
-(rm, uhs), three structured salaries (petsmart hourly range, pepsico weekly value, smoothieking
-lone ceiling), a repeated multi-place location (dwf), a "Month D, YYYY" date (se) and a
+cover a posting served in two languages (flyporter 5262), a dead and a live iCIMS tenant (rm, uhs),
+three structured salaries (petsmart hourly range, pepsico weekly value, smoothieking lone
+ceiling), a repeated multi-place location (dwf), a "Month D, YYYY" date (se) and a
 `location_type: ANY` remote place (incyte). `jibe_costco_facets.json` is costco's page-1 envelope
 without its jobs: the `state` terms that split a Board over the window.
 
@@ -40,15 +40,7 @@ JIBE_DISALLOW = (
     "User-agent: *\nDisallow: /\n"
     "Sitemap: http://carrefour.jibeapply.com/sitemap.xml\ncrawl-delay: 5\n"
 )
-# `careers-rmeducation.icims.com/robots.txt`: the iCIMS scraper cannot read this tenant.
-ICIMS_DISALLOW = "User-agent: *\nDisallow: /\n"
-# `careers-universalhealthservices.icims.com/robots.txt`: it can.
-ICIMS_ALLOW = (
-    "User-agent: *\n"
-    "Sitemap: https://careers-universalhealthservices.icims.com/sitemap.xml\n"
-    "Disallow: /jobs/*referral\nDisallow: /jobs/referral\nDisallow: /jobs/*login\n"
-    "Disallow: /jobs/login\nDisallow: /connect\n"
-)
+# Two backing iCIMS tenants in the fixture: rm's is dead in the icims ledger, uhs's is live.
 RM_TENANT = "careers-rmeducation.icims.com"
 UHS_TENANT = "careers-universalhealthservices.icims.com"
 
@@ -62,10 +54,10 @@ def _row(slug: str, language: str = "en-us") -> dict:
     return next(r for r in _rows() if r["slug"] == slug and r["language"] == language)
 
 
-def _jobs(rows=None, icims_readable=None, slug="demo") -> dict:
+def _jobs(rows=None, icims_scraped=None, slug="demo") -> dict:
     raw = {
         "rows": _rows() if rows is None else rows,
-        "icims_readable": icims_readable or {},
+        "icims_scraped": icims_scraped or {},
     }
     return {j.id.rsplit(":", 1)[1]: j for j in JibeScraper(slug).parse(raw, SCRAPED_AT)}
 
@@ -205,17 +197,23 @@ def test_an_unstated_salary_is_none():
     assert _jobs()["3713"].salary is None
 
 
-def test_a_posting_a_readable_icims_tenant_serves_is_dropped():
-    """iCIMS's own scraper reads a tenant whose robots.txt allows its sitemap, and Jibe's `slug`
-    is that same requisition id, so the posting would serve twice (option A, ADR-0189). A
-    disallowing tenant's posting is kept; so is one whose apply host is not iCIMS at all."""
-    readable = {RM_TENANT: False, UHS_TENANT: True}
-    jobs = _jobs(icims_readable=readable)
-    assert (
-        "6496" not in jobs
-    )  # uhs -> careers-universalhealthservices.icims.com, readable
-    assert "3713" in jobs  # rm -> careers-rmeducation.icims.com, Disallow: /
+def test_a_posting_a_scraped_icims_board_serves_is_dropped():
+    """iCIMS's own scraper reads a tenant that is a Scrapable iCIMS Board, and Jibe's `slug` is
+    that same requisition id, so the posting would serve twice (ADR-0189 as amended by ADR-0240).
+    A tenant we do not scrape keeps its posting here; so does one whose apply host is not iCIMS."""
+    jobs = _jobs(icims_scraped={RM_TENANT: False, UHS_TENANT: True})
+    assert "6496" not in jobs  # uhs -> careers-universalhealthservices.icims.com, live
+    assert "3713" in jobs  # rm -> careers-rmeducation.icims.com, dead
     assert "P1-6651123-2" in jobs  # pepsico -> olivia.paradox.ai
+
+
+def test_the_scraped_icims_tenants_are_the_ledgers_scrapable_icims_boards():
+    """Read from the committed ledger, on the identity `scrapable_boards` elects: uhs's tenant is
+    live; ascension's and rm's are dead, so no scraper reads their postings but Jibe's."""
+    tenants = jibe._scraped_icims_tenants()
+    assert UHS_TENANT in tenants
+    assert RM_TENANT not in tenants
+    assert "ascensionjobs1-ascension.icims.com" not in tenants
 
 
 # --- the network: a fake Fetcher and a fake clock -----------------------------------------------
@@ -267,8 +265,7 @@ def _page(rows, total):
 def clock(monkeypatch):
     fake = _Clock()
     monkeypatch.setattr(jibe, "time", fake)
-    monkeypatch.setattr(jibe, "_icims_verdicts", {})
-    monkeypatch.setattr(jibe, "_icims_last", float("-inf"))
+    monkeypatch.setattr(jibe, "_scraped_icims_tenants", lambda: frozenset({UHS_TENANT}))
     return fake
 
 
@@ -277,15 +274,13 @@ def _scraper(routes, clock, slug="rmeducation"):
     return JibeScraper(slug, fetcher=fetcher), fetcher
 
 
-def _routes(listing, slug="rmeducation", robots=(200, JIBE_ALLOW), icims=None):
+def _routes(listing, slug="rmeducation", robots=(200, JIBE_ALLOW)):
     host = f"{slug}.jibeapply.com"
     routes = {
         (host, "/robots.txt"): [robots],
         (host, "/api/jobs"): listing,
         (host, "/jobs"): [(200, "<title>RM Education Limited Careers</title>")],
     }
-    for tenant, body in (icims or {}).items():
-        routes[(tenant, "/robots.txt")] = [body]
     return routes
 
 
@@ -295,10 +290,7 @@ def test_every_request_to_the_client_host_is_five_seconds_apart(clock):
     rows = [_row("3713"), _row("6496")]
     listing = lambda q: _page(rows[int(q["page"]) - 1 : int(q["page"])], 2)
     scraper, fetcher = _scraper(
-        _routes(
-            listing,
-            icims={RM_TENANT: (200, ICIMS_DISALLOW), UHS_TENANT: (200, ICIMS_ALLOW)},
-        ),
+        _routes(listing),
         clock,
     )
     scraper.fetch()
@@ -310,50 +302,33 @@ def test_every_request_to_the_client_host_is_five_seconds_apart(clock):
     )
 
 
-def test_the_icims_verdict_is_read_once_and_decides_each_posting(clock):
-    """One robots.txt fetch per backing tenant per process; the readable tenant's posting drops."""
+def test_no_icims_host_is_fetched_and_a_scraped_tenants_posting_drops(clock, caplog):
+    """Whether iCIMS covers a tenant is read from the ledger, so no request reaches iCIMS. The
+    drop is said at INFO: commonspirit spent 515 s a run reading 0 Jobs, and nothing said why."""
     rows = [_row("3713"), _row("6496")]
-    routes = _routes(
-        [_page(rows, 2)],
-        icims={RM_TENANT: (200, ICIMS_DISALLOW), UHS_TENANT: (200, ICIMS_ALLOW)},
-    )
-    scraper, _ = _scraper(routes, clock)
-    ids = {j.id for j in scraper.fetch()}
+    scraper, fetcher = _scraper(_routes([_page(rows, 2)]), clock)
+    with caplog.at_level(logging.INFO):
+        ids = {j.id for j in scraper.fetch()}
     assert ids == {"jibe:rmeducation:3713"}
     assert scraper.telemetry["icims_covered"] == 1
-    again, fetcher2 = _scraper(routes, clock)
-    again.fetch()
-    assert not any("icims.com" in url for _, url in fetcher2.log)  # cached for the run
+    assert not any("icims.com" in url for _, url in fetcher.log)
+    assert any(
+        r.levelno == logging.INFO and "dropped 1 posting(s)" in r.getMessage()
+        for r in caplog.records
+    )
 
 
-def test_a_tenant_that_flips_is_followed_on_the_next_run(clock, monkeypatch):
-    """The cache lives for one process, i.e. one run. When uhs's tenant starts disallowing, its
-    posting comes back to Jibe; when rm's starts allowing, its posting leaves."""
+def test_a_posting_on_an_icims_tenant_we_do_not_scrape_is_kept(clock, monkeypatch):
+    """ascension's and conduent's tenants answer 404 for robots.txt and sitemap.xml and are dead
+    in the icims ledger; the old robots-only gate read the 404 as "iCIMS may read it" and dropped
+    all 3,172 and 1,243 of their postings. Nothing else serves them, so Jibe does."""
+    monkeypatch.setattr(jibe, "_scraped_icims_tenants", lambda: frozenset())
     rows = [_row("3713"), _row("6496")]
-    first = _routes(
-        [_page(rows, 2)],
-        icims={RM_TENANT: (200, ICIMS_DISALLOW), UHS_TENANT: (200, ICIMS_ALLOW)},
-    )
-    assert {j.id for j in _scraper(first, clock)[0].fetch()} == {
-        "jibe:rmeducation:3713"
+    scraper, _ = _scraper(_routes([_page(rows, 2)]), clock)
+    assert {j.id for j in scraper.fetch()} == {
+        "jibe:rmeducation:3713",
+        "jibe:rmeducation:6496",
     }
-    monkeypatch.setattr(jibe, "_icims_verdicts", {})  # the next run is a new process
-    flipped = _routes(
-        [_page(rows, 2)],
-        icims={RM_TENANT: (200, ICIMS_ALLOW), UHS_TENANT: (200, ICIMS_DISALLOW)},
-    )
-    assert {j.id for j in _scraper(flipped, clock)[0].fetch()} == {
-        "jibe:rmeducation:6496"
-    }
-
-
-def test_an_unreachable_icims_robots_keeps_the_posting(clock):
-    """RFC 9309: a 5xx robots.txt permits nothing, so iCIMS cannot be assumed to cover it."""
-    rows = [_row("6496")]
-    routes = _routes([_page(rows, 1)], icims={UHS_TENANT: (503, "")})
-    assert [j.id for j in _scraper(routes, clock)[0].fetch()] == [
-        "jibe:rmeducation:6496"
-    ]
 
 
 def test_a_client_that_disallows_the_listing_is_not_read(clock):
@@ -376,11 +351,7 @@ def test_an_unreachable_client_robots_fails_the_board(clock):
 
 def test_a_missing_client_robots_allows_everything(clock):
     """RFC 9309: a 4xx robots.txt means no rule applies."""
-    routes = _routes(
-        [_page([_row("3713")], 1)],
-        robots=(404, "not found"),
-        icims={RM_TENANT: (200, ICIMS_DISALLOW)},
-    )
+    routes = _routes([_page([_row("3713")], 1)], robots=(404, "not found"))
     assert [j.id for j in _scraper(routes, clock)[0].fetch()] == [
         "jibe:rmeducation:3713"
     ]
@@ -388,9 +359,7 @@ def test_a_missing_client_robots_allows_everything(clock):
 
 def test_a_transient_status_is_retried_at_the_crawl_delay(clock):
     """The shared retry ladder backs off from 0.75 s, so the scraper retries on its own, paced."""
-    routes = _routes(
-        [(503, ""), _page([_row("3713")], 1)], icims={RM_TENANT: (200, ICIMS_DISALLOW)}
-    )
+    routes = _routes([(503, ""), _page([_row("3713")], 1)])
     scraper, fetcher = _scraper(routes, clock)
     assert [j.id for j in scraper.fetch()] == ["jibe:rmeducation:3713"]
     listing = [t for t, url in fetcher.log if "/api/jobs" in url]
@@ -398,9 +367,7 @@ def test_a_transient_status_is_retried_at_the_crawl_delay(clock):
 
 
 def test_the_company_is_the_board_page_title(clock):
-    routes = _routes(
-        [_page([_row("3713")], 1)], icims={RM_TENANT: (200, ICIMS_DISALLOW)}
-    )
+    routes = _routes([_page([_row("3713")], 1)])
     scraper, _ = _scraper(routes, clock)
     assert scraper.fetch()[0].company == "RM Education Limited"
 
@@ -549,9 +516,7 @@ def test_a_board_without_a_state_facet_is_split_by_category(clock, monkeypatch):
 def test_a_redirect_off_the_client_host_is_not_followed(clock):
     """regiscorp's board page redirects to `www.regiscorp.com/careers`, a host whose robots.txt
     this Board never read: the redirect is left unfollowed, and the name comes from the rows."""
-    routes = _routes(
-        [_page([_row("3713")], 1)], icims={RM_TENANT: (200, ICIMS_DISALLOW)}
-    )
+    routes = _routes([_page([_row("3713")], 1)])
     off_host = SimpleNamespace(
         status_code=302,
         text="",
@@ -579,9 +544,7 @@ def test_a_departed_client_fails_on_dns_not_on_robots(clock):
 def test_a_robots_redirect_is_followed_even_off_host(clock):
     """RFC 9309 §2.3.1.2 asks a crawler to follow robots.txt's redirects (3 `career.page` vanity
     hosts redirect theirs); every other redirect off the client host stays unfollowed."""
-    routes = _routes(
-        [_page([_row("3713")], 1)], icims={RM_TENANT: (200, ICIMS_DISALLOW)}
-    )
+    routes = _routes([_page([_row("3713")], 1)])
     routes[("www.example-parent.com", "/robots.txt")] = [(200, JIBE_DISALLOW)]
     moved = SimpleNamespace(
         status_code=301,
@@ -602,9 +565,7 @@ def test_a_robots_redirect_is_followed_even_off_host(clock):
 def test_a_robots_redirect_to_a_page_is_read_once_not_recursively(clock):
     """A robots.txt that redirects to a homepage (on or off host) is read as that page — no rules,
     so no restriction — in one chain of at most five hops, never by re-asking robots.txt."""
-    routes = _routes(
-        [_page([_row("3713")], 1)], icims={RM_TENANT: (200, ICIMS_DISALLOW)}
-    )
+    routes = _routes([_page([_row("3713")], 1)])
     routes[("www.example-parent.com", "/")] = [
         (200, "<html><title>Parent</title></html>")
     ]
@@ -622,16 +583,3 @@ def test_a_robots_redirect_to_a_page_is_read_once_not_recursively(clock):
     )
     assert [j.id for j in scraper.fetch()] == ["jibe:rmeducation:3713"]
     assert sum(url == "https://www.example-parent.com/" for _, url in fetcher.log) == 1
-
-
-def test_icims_robots_fetches_are_spaced(clock):
-    """One process asks each backing tenant once, one at a time, a second apart."""
-    rows = [_row("3713"), _row("6496")]
-    routes = _routes(
-        [_page(rows, 2)],
-        icims={RM_TENANT: (200, ICIMS_DISALLOW), UHS_TENANT: (200, ICIMS_ALLOW)},
-    )
-    scraper, fetcher = _scraper(routes, clock)
-    scraper.fetch()
-    icims = [t for t, url in fetcher.log if ".icims.com/robots.txt" in url]
-    assert len(icims) == 2 and icims[1] - icims[0] >= jibe._ICIMS_INTERVAL
