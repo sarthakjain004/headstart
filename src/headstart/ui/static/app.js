@@ -3392,14 +3392,12 @@ function positionHoverLayer(index, opts){
     tip.classList.toggle('under', under);
     if (under){
       tip.style.left = '0px';
-      // Kept in view: on a 390px phone the tooltip under the chart sat below the screen's edge.
-      // Above the chart where it fits there and not below, else scrolled to.
-      const th = tip.offsetHeight || 0, gap = 6, top = svgRect.top - wrapRect.top;
+      tip.style.top = (svgRect.height + 6) + 'px';
+      // It sits in the page's flow under the chart there (style.css), so a tap near the foot of
+      // a 390px screen put it below the edge (critic round 17): scrolled just into view then.
       const viewH = (typeof window !== 'undefined' && window.innerHeight) || 0;
-      const fitsBelow = !viewH || svgRect.bottom + gap + th <= viewH;
-      const above = !fitsBelow && svgRect.top - gap - th >= 0;
-      tip.style.top = (above ? top - gap - th : top + svgRect.height + gap) + 'px';
-      if (!fitsBelow && !above && tip.scrollIntoView) tip.scrollIntoView({ block: 'nearest' });
+      if (viewH && tip.getBoundingClientRect().bottom > viewH && tip.scrollIntoView)
+        tip.scrollIntoView({ block: 'nearest' });
       return;
     }
     const left = px > wrapRect.width / 2 ? Math.max(4, px - tw - 12)

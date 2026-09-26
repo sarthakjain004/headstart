@@ -2811,9 +2811,9 @@ test('a failed load takes the last company’s sentence, list and table with it'
   assert.equal(t.data(), null);
 });
 
-test('on a phone the tooltip stays on screen: under the chart where it fits, else above it', () => {
-  // At 390px the tooltip sits under the chart, and a tap near the screen's foot put it below
-  // the edge (critic round 17).
+test('on a phone the tooltip under the chart is scrolled into view when it falls below the screen', () => {
+  // At 390px the tooltip sits in the page's flow under the chart, and a tap near the screen's
+  // foot put it below the edge (critic round 17).
   const place = (chartTop, viewHeight) => {
     const { t, nodes, ctx } = loadApp();
     ctx.document.createElement = () => Object.assign(fakeEl(), { append() {} });
@@ -2825,13 +2825,14 @@ test('on a phone the tooltip stays on screen: under the chart where it fits, els
     chart.querySelector = selector => selector === '#trends-crosshair' ? group : null;
     chart.parentElement = Object.assign(fakeEl(), { getBoundingClientRect: () => ({ left: 0, top: chartTop, width: 390, height: 260 }) });
     chart.getBoundingClientRect = () => ({ left: 0, top: chartTop, width: 390, height: 260, bottom: chartTop + 260 });
+    // In flow, 6px under the chart and 180px tall.
     const tip = Object.assign(nodes['trends-tooltip'], { offsetHeight: 180, offsetWidth: 390,
-      replaceChildren() {}, appendChild() {}, scrolled: false, scrollIntoView() { this.scrolled = true; } });
+      replaceChildren() {}, appendChild() {}, scrolled: false, scrollIntoView() { this.scrolled = true; },
+      getBoundingClientRect: () => ({ left: 0, top: chartTop + 266, width: 390, height: 180, bottom: chartTop + 446 }) });
     t.hover(1);
-    return { top: tip.style.top, scrolled: tip.scrolled };
+    return tip.scrolled;
   };
-  same(place(100, 844), { top: '266px', scrolled: false }, 'room below: under the chart');
-  same(place(560, 844), { top: '-186px', scrolled: false }, 'no room below: above it');
-  same(place(100, 300), { top: '266px', scrolled: true }, 'room on neither side: scrolled to');
+  assert.equal(place(100, 844), false, 'on screen: left where it is');
+  assert.equal(place(584, 844), true, 'below the screen’s foot: scrolled into view');
 });
 
