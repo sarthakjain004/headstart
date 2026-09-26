@@ -144,10 +144,27 @@ _SYMBOL_CURRENCY = {
     "€": "EUR",
     "₹": "INR",
 }
+# An ISO code just before a bare "$" names that dollar ("Pay Range: CAD $150,000 - $185,000",
+# SuccessFactors Teck 1433495400, was served as USD): no pattern's match reaches back over the code.
+# Measured on the 2026-09-26 description store, 11,811 descriptions with an upper-case three-letter
+# word before "$": USD 10,534, CAD 854, AUD 35, SGD 16, MXN 11, NZD 9, TWD/NTD 7, CLP/COP 4. A code
+# this module can emit names its currency; a peso or Taiwan-dollar code declines to None rather
+# than a wrong USD. Upper case only: "can $" is a verb.
+_EMITTABLE_CODES = frozenset(_CURRENCY_CODES.split("|")) | frozenset(
+    _SYMBOL_CURRENCY.values()
+)
+_DECLINED_DOLLAR_CODES = frozenset({"MXN", "CLP", "COP", "TWD", "NTD"})
+_CODE_BEFORE_DOLLAR = re.compile(
+    rf"\b({'|'.join(sorted(_EMITTABLE_CODES | _DECLINED_DOLLAR_CODES))})\$?:?\s*$"
+)
 
 
 def _currency_for_symbol(
-    symbol: str | None, stated_text: str, *, bare_dollar: str | None
+    symbol: str | None,
+    stated_text: str,
+    *,
+    bare_dollar: str | None,
+    preceding: str = "",
 ) -> str | None:
     """The currency a captured symbol names — the one currency-symbol resolver (ADR-0197).
 
@@ -156,9 +173,14 @@ def _currency_for_symbol(
     policy that genuinely differs by context. Description text (Tier 2) and gem's templated
     sentence pass "USD", the corpus's dominant dollar; a free-text field read by `_field_generic`
     passes None, since ~15% of its bare-"$" fields were measured non-US (see
-    `_currency_of_symbol_before`)."""
+    `_currency_of_symbol_before`). An ISO code ending ``preceding``, the text just before the
+    symbol, names a bare "$" before any of that ("CAD $150,000")."""
     if symbol and symbol != "$":
         return _SYMBOL_CURRENCY.get(symbol.upper())
+    code_before = _CODE_BEFORE_DOLLAR.search(preceding) if symbol == "$" else None
+    if code_before:
+        code = code_before.group(1)
+        return code if code in _EMITTABLE_CODES else None
     stated_code = _CURRENCY_CODE.search(stated_text)
     if stated_code:
         return stated_code.group(1).upper()
@@ -1140,18 +1162,6 @@ def _period_from_window(text: str, start: int, end: int) -> int:
     return 1  # yr/year/annum/annual(ly)/jahr — already annual
 
 
-# An ISO code just before a bare "$" names that dollar or peso ("Pay Range: CAD $150,000 -
-# $185,000", SuccessFactors Teck 1433495400, was served as USD): no pattern's match reaches back
-# over the code, so the bare-"$" USD default won. Measured on the 2026-09-26 description store,
-# 11,811 descriptions with an upper-case three-letter word before "$": USD 10,534, CAD 854, AUD 35,
-# SGD 16, MXN 11, NZD 9, TWD/NTD 7, CLP/COP 4. A code this module bounds names its currency; the
-# peso and Taiwan-dollar codes read None rather than a wrong USD. Upper case only: "can $" is a verb.
-_NAMED_CODES = frozenset(_CURRENCY_CODES.split("|")) | {"NZD", "SGD"}
-_CODE_BEFORE_DOLLAR = re.compile(
-    rf"\b({'|'.join(sorted(_NAMED_CODES))}|MXN|CLP|COP|TWD|NTD)\$?\s*$"
-)
-
-
 def _span_from_match(
     text: str, m: re.Match, lo_raw: str, hi_raw: str | None
 ) -> SalarySpan | None:
@@ -1186,13 +1196,13 @@ def _span_from_match(
     )
     mult = _period_from_window(text, m.start(), m.end())
     sym = m.groupdict().get("sym")
-    code = _CODE_BEFORE_DOLLAR.search(text, 0, m.start("sym")) if sym == "$" else None
-    if code:
-        currency = code.group(1) if code.group(1) in _NAMED_CODES else None
-    else:
-        # A bare "$" reads USD: statistically dominant in this corpus, genuinely ambiguous
-        # otherwise.
-        currency = _currency_for_symbol(sym, matched, bare_dollar="USD")
+    # A bare "$" reads USD: statistically dominant in this corpus, genuinely ambiguous otherwise.
+    currency = _currency_for_symbol(
+        sym,
+        matched,
+        bare_dollar="USD",
+        preceding=text[: m.start("sym")] if sym else "",
+    )
     lo = round(_num_value(lo_raw) * magnitude_mult) * mult
     hi = round(_num_value(hi_raw) * magnitude_mult) * mult if hi_raw else None
     span = _bounded(min(lo, hi) if hi else lo, max(lo, hi) if hi else None, currency)

@@ -1755,7 +1755,10 @@ def test_description_iso_code_before_a_bare_dollar_names_the_currency():
     assert from_description("SGD $8,000 - $10,000 per month") == SalarySpan(
         96_000, 120_000, "SGD", "regex"
     )
-    # A peso code this module has no bounds for is not a US dollar either.
+    assert from_description(
+        "Salary range CAD: $102,500 to $124,700 annually"
+    ) == SalarySpan(102_500, 124_700, "CAD", "regex")
+    # A peso code this module cannot emit is not a US dollar either.
     assert from_description("MXN $50,000 - $60,000 per month") == SalarySpan(
         600_000, 720_000, None, "regex"
     )
