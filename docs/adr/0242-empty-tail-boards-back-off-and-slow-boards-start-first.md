@@ -56,3 +56,27 @@ costs, all visible in each run's shard `board_cost.csv`:
   hiring tech enters the head once it is scored.
 * A slow Board that is gated no longer reaches the back-off; the gate's 14-day re-check applies to
   it instead.
+
+## Amendment (2026-09-26): the ledgers and the coverage verdict
+
+The same review found three places where the join's own bookkeeping misread these Boards.
+
+* **The priority ledger now reads `boards_ok` and the unauthoritative list.** Before, a Board that
+  scraped clean with zero jobs wrote no line, so its score was never decayed and was carried
+  forever. Rows for Boards off the Scrapable set were never read again, so they were carried too.
+  On 2026-09-26 those carried rows were 4,960, holding 17.9% of the ledger's tech credit. Parked
+  and dead Boards (`recruitee:rebootmonkey`, `oracle:jpmc-test`) sat in the top ten every run. Now:
+  * A clean-empty Board decays.
+  * A Board whose scrape was truncated or raised (ADR-0053) is carried unblended.
+  * A row whose Board is not Scrapable (case-folded match) is dropped. Against the live ledger
+    that is 2,826 of 48,499 rows, and none of them was scraped on the last run, so no row churns.
+    A missing liveness dir drops nothing.
+* **More failures count as "gone".** An unresolvable host and Jobvite's `?invalid=1` redirect now
+  count, alongside 404/410. Both were probed on 2026-09-26: 4 of 5 unresolvable hosts were NXDOMAIN
+  on 8.8.8.8, and the fifth had no A record; 2 controls resolved. The invalid Jobvite company 302s
+  to `invalid=1`, and a live one answers 200. One resolver hiccup is one strike of the 20 that
+  quarantine needs.
+* **The coverage verdict leaves confirmed-gone Boards out of its unusable share.** They are the
+  failures ledger's to quarantine. At the 80k Slice, dead Tail Boards alone put 36 of 105 shard
+  reports over 2%. Without them, the worst of the 105 is 1.09% and the median 0.24%. The 2%
+  threshold therefore stands, with ~2x headroom again.
