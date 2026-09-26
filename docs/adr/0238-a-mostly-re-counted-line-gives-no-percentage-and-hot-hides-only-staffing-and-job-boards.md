@@ -76,8 +76,8 @@ The round-17 live critic of company trends (7.5/10) found two things the owner d
 
 ## Consequences
 
-* Over All, on the 2026-09-26 state (3,008 companies with 20 or more openings), 9,695 of 45,547
-  category lines are mostly re-counted, 10,728 over 7 days, and no company line is. Micron's
+* Over All, on the 2026-09-26 state (3,008 companies with 20 or more openings), 7,411 of 45,547
+  category lines are mostly re-counted, 8,024 over 7 days, and no company line is. Micron's
   headline keeps its percentage (3,933 → 931 netted, +9.1%); its Embedded & Firmware does not.
   No reading fails the checker.
 * `check_reading` and the page's `checkReading` state rules 1 to 3 as their invariant 7.
