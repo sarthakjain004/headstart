@@ -487,6 +487,53 @@ EXCLUDED_BOARDS: frozenset[str] = frozenset(
         "workday:https://super.wd103.myworkdayjobs.com/search",
         "workday:https://super.wd103.myworkdayjobs.com/tgs",
         "workday:https://super.wd103.myworkdayjobs.com/wdd",
+        # ADP Workforce Now's own QA and build-verification clients (ADR-0241), each confirmed on
+        # 2026-09-26 by reading its `client-features` ClientName and its listing, not from the
+        # GUID, which hints at nothing. 31 name themselves as ADP test clients (`WFNQA…`,
+        # `WFNPJL969`, `WFN4PRODA1`, `FARM 61 BVT4`, `NAS TEST CODE- Prod Enablement`); their titles are "NEW",
+        # "BVT Analyst_07/30/2026" and "RECT AUTO REQS_07/17/2025", placed at "BVT Location,
+        # Anchorage, AK" (`1af96a82`'s 60 of 60 are "NEW" there). Five state no such name and were
+        # read by content: `ff0a5e37` ("PARAMOUNT V23P2gh") and the unnamed `c347ef8d`/`b47d5556`
+        # post the same "BVT Analyst" rows all in Anchorage; `a1630435` ("V15P1TALONNN") posts "Administrative Analyst after restart", "multiselect
+        # posting" and ADP's own "About Company: At ADP…" copy; the unnamed `d096a084` posts
+        # "testjob_oct09", "Test", "E only with referrals" in "Alabama, Chicago, IL". 52,765
+        # postings between them by the ledger, none an employer's; ~190 of them were served.
+        "adp:cee60b4c-a3ce-4449-8f18-fd3eca0b7894/19000101_000001",  # "WFNQAFR60W", 3,486 postings
+        "adp:163890b0-f860-4191-b06c-881706e6d893/19000101_000001",  # "WFNQAFR46Q", 1,962 postings
+        "adp:77f11391-62d0-44e8-bcdb-802b2798d815/19000101_000001",  # "WFNPJL969", 1,795 postings
+        "adp:f9798566-70f0-4281-9743-2e359e66f30a/19000101_000001",  # "WFNBVT53", 1,733 postings
+        "adp:f56f72a6-d98d-43bc-b8f6-4862e222cb43/19000101_000001",  # "WFNQAFR56C", 1,729 postings
+        "adp:ff0a5e37-b65d-4035-b863-3097434d4915/19000101_000001",  # "PARAMOUNT V23P2gh", 1,725 postings
+        "adp:eab2adc0-9f02-4e29-bf20-79b5cce8210e/19000101_000001",  # "WFNQAFR45D", 1,721 postings
+        "adp:3c865fe4-0ee2-4e55-b508-b1b451d8d221/19000101_000001",  # "WFNQARTP50", 1,711 postings
+        "adp:b7eb6885-fe6e-42ac-ab29-7a8c5227c15e/19000101_000001",  # "WFNQAFR52D", 1,703 postings
+        "adp:8e8b931f-9f93-47ca-a52f-dffe178e0e7d/19000101_000001",  # "wfnqafr77E", 1,702 postings
+        "adp:4fb7b47c-06c6-4f12-9c53-fbfcdbc0d011/19000101_000001",  # "FARM 61 BVT4", 1,696 postings
+        "adp:e97c4a5e-b050-4e9d-96f9-a5757e7c85a0/19000101_000001",  # "FARM 61 BVT4", 1,696 postings
+        "adp:902aa559-750d-4565-92ef-29f69097ef3f/19000101_000001",  # "WFNQAFR49D", 1,693 postings
+        "adp:1af96a82-0f9c-49a0-895a-457e1347863f/19000101_000001",  # "WFN4PRODA1", 1,689 postings
+        "adp:833c58fd-5bc2-40b2-9d99-7fceb4b98847/19000101_000001",  # "WFNQAFR54A", 1,687 postings
+        "adp:660ec678-4d96-4fd9-9834-3f094bb98b46/19000101_000001",  # "WFNQAFRC8", 1,666 postings
+        "adp:450cc0e8-55e7-4b41-9cca-3a3418e88728/19000101_000001",  # "WFNQASD5", 1,661 postings
+        "adp:5f909076-d657-4269-a81f-6274bb186535/19000101_000001",  # "WFNQABVT41", 1,653 postings
+        "adp:41b1b7bc-6fa1-478b-b961-0a004311c745/19000101_000001",  # "WFNQAFR59M", 1,651 postings
+        "adp:fb429c02-21bb-4995-a563-9f5d77ee858e/19000101_000001",  # "WFNQARTP47", 1,624 postings
+        "adp:665c6c88-3fd0-4071-b8e8-b9dd969e16b6/19000101_000001",  # "WFNQA86P2", 1,621 postings
+        "adp:b758d3b7-9627-4fcd-8f39-5fff8ed94908/19000101_000001",  # "WFNQA86P2", 1,621 postings
+        "adp:f1238493-f948-4881-9181-84ce545d714b/19000101_000001",  # "WFNQA88P2", 1,610 postings
+        "adp:3aa15c1d-9e2a-4792-ab0f-7b36ba852f23/19000101_000001",  # "WFNQAFR45L", 1,604 postings
+        "adp:3da01a47-4989-46a2-90a4-eb4dfac6dd64/19000101_000001",  # "WFNQAFR59M", 1,430 postings
+        "adp:6e24c0b1-d3c5-45f6-8731-ff36924e0a37/19000101_000001",  # "WFNQAFR59M", 1,430 postings
+        "adp:b47d5556-ee90-42b7-a7c5-3643f0eb2ff4/19000101_000001",  # no ClientName, 1,430 postings
+        "adp:c347ef8d-b253-480d-b4f5-e3738b7c5148/19000101_000001",  # no ClientName, 1,430 postings
+        "adp:d9c2098d-4a3c-4a66-aa54-edfb7e8ac72b/19000101_000001",  # "WFNQA94P28", 1,415 postings
+        "adp:aedf6cdf-cf4c-4553-91c9-1e2b6d1b1227/19000101_000001",  # "WFNQAFR64D", 1,398 postings
+        "adp:a1630435-4700-4d72-84cf-2c5414d66b3c/19000101_000001",  # "V15P1TALONNN", 1,202 postings
+        "adp:d096a084-16ea-4e5d-b8c3-7be8b4104c6f/19000101_000001",  # no ClientName, 538 postings
+        "adp:f00fb933-2eef-4643-899d-cae607d51e91/19000101_000001",  # "WFNQAv17T5", 20 postings
+        "adp:aeb4c75f-7753-4ed5-9ee0-84cc931df3cd/19000101_000001",  # "WFNQAEM6", 17 postings
+        "adp:3c19fd9b-0d5e-449a-81a8-b59357c53950/19000101_000001",  # "NAS WFN Prod Enablement -testnas030", 11 postings
+        "adp:096c8f5e-1be4-44f5-858d-6b11303c27f2/19000101_000001",  # "NAS TEST CODE- Prod Enablement", 5 postings
     }
 )
 

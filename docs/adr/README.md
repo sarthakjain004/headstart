@@ -235,6 +235,7 @@ supersedes it and note the supersession in both.
 | [0237](0237-trend-history-keeps-its-name-inside-trends.md) | `trend_history` keeps its name inside `trends/`, and `trend_reading` becomes `line_reading` | 2026-09-26 |
 | [0238](0238-a-mostly-re-counted-line-gives-no-percentage-and-hot-hides-only-staffing-and-job-boards.md) | A mostly re-counted category gives no percentage, and Hot hides only staffing firms and job boards | 2026-09-26 |
 | [0240](0240-jibe-drops-a-posting-only-when-its-icims-tenant-is-a-board-we-scrape.md) | Jibe drops a posting only when its iCIMS tenant is a Board we scrape | 2026-09-26 |
+| [0241](0241-adp-reads-client-names-from-a-committed-cache-and-excludes-its-own-test-clients.md) | ADP reads client names from a committed cache, and excludes ADP's own test clients | 2026-09-26 |
 | [0242](0242-empty-tail-boards-back-off-and-slow-boards-start-first.md) | Empty Tail Boards back off, and slow Boards start first in their shard | 2026-09-26 |
 | [0243](0243-a-row-the-scrape-saw-is-in-scope-whatever-its-boards-scope.md) | A row the scrape saw is in scope, whatever its Board's scope | 2026-09-26 |
 | [0244](0244-publication-deletes-the-search-indexes-the-table-no-longer-reads.md) | Publication deletes the Search indexes the table no longer reads | 2026-09-26 |

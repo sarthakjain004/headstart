@@ -251,6 +251,7 @@ def _wired(monkeypatch, slug: str, fake: _FakeADP):
     monkeypatch.setattr(scraper, "_fetch", fake)
     monkeypatch.setattr(scraper, "pacer", Pacer(0.0))
     monkeypatch.setattr(adp, "_WINDOW_S", 0.0)
+    monkeypatch.setattr(adp, "resolved_names", dict)  # no client on file
     monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", "0")
     return scraper
 
@@ -530,6 +531,36 @@ def test_the_company_is_the_client_name_adp_states_for_the_board(monkeypatch):
     assert seen[0]["attempts"] == 1 and seen[0]["marks_wall"] is False
 
 
+def test_a_client_on_file_is_named_without_a_request(monkeypatch):
+    """`client-features` was one of every Board's paced requests, run after run, for a name that
+    does not move; the committed cache answers it (ADR-0241). An empty cached name is a client
+    ADP states none for, so it is not asked again either."""
+    from headstart.scrapers import adp
+
+    fake = _cox_fake()
+    scraper = _wired(monkeypatch, COX, fake)
+    monkeypatch.setattr(
+        adp, "resolved_names", lambda: {COX.split("/")[0]: "Cox & Palmer"}
+    )
+    scraper.resolve_company()
+    assert scraper.company == "Cox & Palmer" and fake.calls == []
+
+    unnamed = _wired(monkeypatch, COX, fake)
+    monkeypatch.setattr(adp, "resolved_names", lambda: {COX.split("/")[0]: ""})
+    unnamed.resolve_company()
+    assert unnamed.company == COX and fake.calls == []
+
+
+def test_the_committed_name_cache_is_keyed_on_the_client_id():
+    """Read from `data/validate/company_names/adp.csv`: every key a client GUID, and ADP's own
+    build-verification client on file under the name it states."""
+    from headstart.scrapers import adp
+
+    names = adp.resolved_names()
+    assert names and all(len(cid) == 36 and cid.count("-") == 4 for cid in names)
+    assert names["77f11391-62d0-44e8-bcdb-802b2798d815"] == "WFNPJL969"
+
+
 def test_a_failed_name_lookup_leaves_the_slug(monkeypatch):
     fake = _cox_fake()
     fake.refuse = [500]
@@ -661,3 +692,13 @@ def test_the_async_path_re_claims_a_slot_that_a_rest_overtook():
         return time.monotonic() - started
 
     assert asyncio.run(run()) >= 0.3
+
+
+def test_adps_own_build_verification_client_is_not_scraped_or_kept():
+    """`WFNPJL969` posts "BVT Analyst_…" rows in Anchorage (ADR-0241). Excluded, so `scrapable_boards`
+    drops it and `index prune`'s keep-set, built from that list, evicts its served rows."""
+    from headstart.boards import scrapable_boards
+
+    assert scrapable_boards.is_excluded(
+        "adp", "77f11391-62d0-44e8-bcdb-802b2798d815/19000101_000001"
+    )

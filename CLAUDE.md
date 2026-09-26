@@ -113,6 +113,13 @@ discovery landing (#576) moved five more. Board totals belong in README and CONT
   out or it starts posting on its own. Candidates are the pairs in `data/validate/eightfold_backing.csv`
   (ADR-0210); a new front enters there.
   `dedupe_boards.py` refuses `--apply` for this ATS (ADR-0205).
+- **ADP Workforce Now: land no ADP test client, and re-run `scripts/validate/adp_company_names.py`
+  after landing rows.** ADP's own QA and build-verification clients are `live` and post by the
+  thousand: "BVT Analyst_…", "RECT AUTO REQS_…", "NEW" at "BVT Location, Anchorage, AK" (ADR-0241). The script caches each new client's `ClientName`, which the
+  scraper would otherwise request every run, and prints `test-client?` for a name like `WFNQA…`,
+  `WFNPJL…`, `… BVT4` or `TEST CODE`. Read that client's postings before you exclude it: the name
+  is a lead, not proof. `WFN - The McDonnel Group` is a real employer, and a test client can
+  carry no such name at all.
 - **SuccessFactors holds RMK sites only.** `p_successfactors` accepts any `<urlset>`, so a corporate
   site or a Radancy career front probes `live`, and the scraper reads it as 0 jobs or as page titles
   ("Working at TUI"). Before landing a host, confirm a `/job/` page from its sitemap (urlset, RSS or
