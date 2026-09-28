@@ -138,12 +138,67 @@ def test_the_search_request_carries_an_empty_query_and_filters():
     assert body["page"] == 1
 
 
-def test_the_job_url_is_the_details_page():
+def test_the_job_url_is_the_details_page_of_the_exact_requisition():
+    """A REQ link carries the full `{positionId}-{reqSuffix}` id. The bare positionId form
+    redirects to whichever req Apple picks (live 2026-09-28: `/details/200685976/...` lands on
+    the Culver City req `-0670`, not New York's `-2459`)."""
     job = _jobs()[REQ_ID]
     assert job.url == (
-        "https://jobs.apple.com/en-us/details/200681917/"
+        "https://jobs.apple.com/en-us/details/200681917-3715/"
         "apple-vision-pro-hardware-system-ee-intern"
     )
+
+
+def test_a_pipe_url_uses_the_position_id():
+    """A PIPE role has no req suffix; its page lives at the bare positionId (live 2026-09-28:
+    `/details/200313970/in-business-expert` answers 200 with no redirect)."""
+    assert (
+        _jobs()[PIPE_ID].url
+        == "https://jobs.apple.com/en-us/details/200313970/in-business-expert"
+    )
+
+
+def _multi_location_req() -> dict:
+    """Live 2026-09-28: the two listing rows of positionId 200685976 (New York City `-2459`,
+    Culver City `-0670`) and the detail of `-2459`, trimmed to the keys the scraper reads."""
+    with open(FIXTURES / "apple_multi_location_req.json", encoding="utf-8") as fh:
+        raw = json.load(fh)
+    raw["details"] = {k: v["res"] for k, v in raw["details"].items()}
+    return raw
+
+
+def _multi_location_jobs():
+    raw = _multi_location_req()
+    return {j.id.rsplit(":", 1)[1]: j for j in _scraper().parse(raw, SCRAPED_AT)}
+
+
+def test_reqs_sharing_a_position_get_distinct_links():
+    jobs = _multi_location_jobs()
+    assert jobs["200685976-2459"].url != jobs["200685976-0670"].url
+    assert "/details/200685976-2459/" in jobs["200685976-2459"].url
+
+
+def test_the_description_carries_the_pay_footer_of_the_rows_own_location():
+    """Pay sits in the detail's `postingFooters`, one per location, and differs by location:
+    New York states $184,700-$324,800, Culver City $175,000-$308,500 on the same position."""
+    job = _multi_location_jobs()["200685976-2459"]
+    assert "$184,700 and $324,800" in job.description
+    assert "$175,000" not in job.description
+    assert "EEO" not in job.description  # only the Pay & Benefits footer is read
+
+
+def test_location_carries_the_country_after_the_place_name():
+    assert _multi_location_jobs()["200685976-2459"].location == (
+        "New York City, United States of America"
+    )
+
+
+def test_a_pipe_row_has_no_posted_date():
+    """A PIPE row's `postDateInGMT` is the server clock at request time (live 2026-09-28: 81/81
+    PIPE rows of a full walk dated the scrape day), not a posting date."""
+    jobs = _jobs()
+    assert jobs[PIPE_ID].posted_at is None
+    assert jobs[REQ_ID].posted_at == "2026-09-11T17:46:18.230Z"
 
 
 def test_the_detail_url_strips_the_pipe_prefix_but_not_a_req_id():
@@ -166,7 +221,7 @@ def test_the_core_identity_fields_come_from_the_listing():
     assert job.company == "Apple"
     assert job.title == "Apple Vision Pro Hardware System EE Intern"
     assert job.department == "Hardware"
-    assert job.location == "Shanghai"
+    assert job.location == "Shanghai, China"
     assert job.posted_at
 
 

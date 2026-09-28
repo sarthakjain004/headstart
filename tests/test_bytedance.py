@@ -64,7 +64,7 @@ def test_parses_id_title_and_url():
     assert (
         job.title == "Research Scientist Graduate (DPU & AI Infra) - 2027 Start (PhD)"
     )
-    assert job.url == f"https://jobs.bytedance.com/en/position/{REGULAR_ID}"
+    assert job.url == f"https://joinbytedance.com/search/{REGULAR_ID}"
 
 
 def test_description_joins_description_and_requirement():

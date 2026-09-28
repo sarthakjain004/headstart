@@ -1,0 +1,194 @@
+{
+ "searchResults": [
+  {
+   "id": "200685976-2459",
+   "jobSummary": "At Apple, extraordinary ideas become products, services, and experiences that sh",
+   "locations": [
+    {
+     "postLocationId": "postLocation-NYC",
+     "city": "",
+     "stateProvince": "",
+     "countryName": "United States of America",
+     "metro": "",
+     "region": "",
+     "name": "New York City",
+     "countryID": "iso-country-USA",
+     "level": 5
+    }
+   ],
+   "positionId": "200685976",
+   "postingDate": "Sep 26, 2026",
+   "postingTitle": "Lead Designer, Design Systems & Structures",
+   "localeInfo": {
+    "languageCode": "en_US",
+    "dateFormat": "MMM D, YYYY",
+    "defaultLocaleCode": "en-us"
+   },
+   "postDateInGMT": "2026-09-26T06:56:05.885Z",
+   "transformedPostingTitle": "lead-designer-design-systems-structures",
+   "reqId": "200685976-2459",
+   "managedPipelineRole": false,
+   "standardWeeklyHours": 40,
+   "team": {
+    "teamName": "Software and Services",
+    "teamID": "teamsAndSubTeams-SFTWR",
+    "teamCode": "SFTWR"
+   },
+   "type": "PIPE",
+   "homeOffice": false,
+   "jobPositionId": "PIPE-200685976",
+   "isMultiLocation": true,
+   "postExternal": true
+  },
+  {
+   "id": "200685976-0670",
+   "jobSummary": "At Apple, extraordinary ideas become products, services, and experiences that sh",
+   "locations": [
+    {
+     "postLocationId": "postLocation-CUL",
+     "city": "",
+     "stateProvince": "",
+     "countryName": "United States of America",
+     "metro": "",
+     "region": "",
+     "name": "Culver City",
+     "countryID": "iso-country-USA",
+     "level": 5
+    }
+   ],
+   "positionId": "200685976",
+   "postingDate": "Sep 26, 2026",
+   "postingTitle": "Lead Designer, Design Systems & Structures",
+   "localeInfo": {
+    "languageCode": "en_US",
+    "dateFormat": "MMM D, YYYY",
+    "defaultLocaleCode": "en-us"
+   },
+   "postDateInGMT": "2026-09-26T06:56:05.885Z",
+   "transformedPostingTitle": "lead-designer-design-systems-structures",
+   "reqId": "200685976-0670",
+   "managedPipelineRole": false,
+   "standardWeeklyHours": 40,
+   "team": {
+    "teamName": "Software and Services",
+    "teamID": "teamsAndSubTeams-SFTWR",
+    "teamCode": "SFTWR"
+   },
+   "type": "PIPE",
+   "homeOffice": false,
+   "jobPositionId": "PIPE-200685976",
+   "isMultiLocation": true,
+   "postExternal": true
+  }
+ ],
+ "details": {
+  "200685976-2459": {
+   "res": {
+    "id": "PIPE-200685976",
+    "jobNumber": "200685976-2459",
+    "positionId": "200685976",
+    "postingTitle": "Lead Designer, Design Systems & Structures",
+    "description": "As a lead on the Design Systems & Structures team, you will set the strategic direction for content design systems and formats across Services lines of business, partner closely with cross-functional teams, and bring a rigorous, human-centered approach to building scalable frameworks that uphold Apple's standards of quality and craft.\nDescription\n- Lead the design, development, and evolution of content design systems used across Apple Services\n- Define and operationalize cohesive content structures that reflect Apple's signature voice, style, and experience principles\n- Leverage AI tools, design tools, and emerging technologies to advance the efficiency and quality of content design at scale\n- Partner with design, engineering, product, and business teams to ensure systems are adopted, maintained, and continuously improved\n- Support the exploration and development of new content formats across Services\n- Mentor and guide IC designers, raising the craft and capability of the team\n- Synthesize complex, cross-functional requirements into clear, elegant design system solutions",
+    "minimumQualifications": "12+ years of experience in human interface design, content design and UX design\nDemonstrated experience leading owning design systems work in a large, complex organization\nExpert-level proficiency in design tools (Sketch, CS Suite and Figma). Prototyping skills are beneficial.\nExperience working across multiple products and lines of business simultaneously\nStrong understanding of content strategy, information architecture, and editorial standards",
+    "preferredQualifications": "Experience in a consumer technology, media and services environment\nFamiliarity with AI-assisted content and design workflows\nExperience developing new content formats and pioneering design system standards from the ground up\nPrior experience mentoring and managing designers",
+    "locations": [
+     {
+      "id": "postLocation-CUL",
+      "name": "Culver City",
+      "city": "Culver City",
+      "code": "CUL",
+      "stateProvince": "California",
+      "metro": "Los Angeles Metro Area",
+      "countryName": "United States",
+      "countryID": "iso-country-USA",
+      "zipCode": "90232",
+      "region": "West",
+      "level": 5,
+      "active": true,
+      "postLocationCountryID": "postLocation-USA",
+      "postingIdentifier": "0670",
+      "showPayAndBenefits": false,
+      "promotedOnLinkedIn": false
+     },
+     {
+      "id": "postLocation-NYC",
+      "name": "New York City",
+      "city": "New York City",
+      "code": "NYC",
+      "stateProvince": "New York",
+      "metro": "New York City Metro Area",
+      "countryName": "United States",
+      "countryID": "iso-country-USA",
+      "zipCode": "10022",
+      "region": "Middle Atlantic",
+      "level": 5,
+      "active": true,
+      "postLocationCountryID": "postLocation-USA",
+      "postingIdentifier": "2459",
+      "showPayAndBenefits": false,
+      "promotedOnLinkedIn": false
+     }
+    ],
+    "postingFooters": [
+     {
+      "postLocationId": "postLocation-NYC",
+      "localizations": {
+       "en_US": [
+        {
+         "displayOrder": 1,
+         "name": "Pay & Benefits",
+         "content": "At Apple, base pay is one part of our total compensation package and is determined within a range. This provides the opportunity to progress as you grow and develop within a role. The base pay range for this role is between $184,700 and $324,800, and your base pay will depend on your skills, qualifications, experience, and location.<br><br>Apple employees also have the opportunity to become an Apple shareholder through participation in Apple’s discretionary employee stock programs. Apple employees are eligible for discretionary restricted stock unit awards, and can purchase Apple stock at a discount if voluntarily participating in Apple’s Employee Stock Purchase Plan. You’ll also receive benefits including: Comprehensive medical and dental coverage, retirement benefits, a range of discounted products and free services, and for formal education related to advancing your career at Apple, reimbursement for certain educational expenses — including tuition. Additionally, this role might be eligible for discretionary bonuses or commission payments as well as relocation. <a href='https://www.apple.com/careers/us/benefits.html' target='_blank' aria-label='Learn more about Apple Benefits (Opens in new window)'>Learn more about Apple Benefits<span class='icon icon-after icon-external' aria-hidden='true'></span></a><br><br>Note: Apple benefit, compensation and employee stock programs are subject to eligibility requirements and other terms of the applicable plan or program.<br>",
+         "label": "Pay & Benefits"
+        },
+        {
+         "displayOrder": 2,
+         "name": "EEO Statement",
+         "content": "<p>Apple is an equal opportunity employer that is committed to inclusion and diversity. We seek to promote equal opportunity for all applicants without regard to race, color, religion, sex, sexual orientation, gender identity, national origin, disability, Veteran status, or other legally protected characteristics. <a href='https://www.eeoc.gov/sites/default/files/2023-06/22-088_EEOC_KnowYourRights6.12ScreenRdr.pdf' target='_blank' aria-label='Learn more about your EEO rights as an applicant (Opens PDF in new window)'>Learn more about your EEO rights as an applicant<span class='icon icon-after icon-external' aria-hidden='true'></span></a></p>"
+        },
+        {
+         "displayOrder": 3,
+         "name": "Accessibility",
+         "content": "<p>At Apple, we believe accessibility is a fundamental human right. You’ll find that idea reflected in everything here — in our culture, our benefits and our digital tools. By welcoming as many perspectives as possible, we help you build a career where you feel like you belong.<br><br><a href='https://www.apple.com/careers/us/accessibility.html' target='_blank' aria-label='Learn about accessibility in Apple’s workplace (Opens in new window)' rel='noopener noreferrer'>Learn about accessibility in Apple’s workplace<span class='icon icon-after icon-external' aria-hidden='true'></span></a><br><br><a href='https://www.apple.com/careers/us/accommodation.html' aria-label='Learn about reasonable accommodations for job applicants (Opens in new window)' target='_blank' rel='noopener noreferrer'>Learn about reasonable accommodations for job applicants<span class='icon icon-after icon-external' aria-hidden='true'></span></a></p>"
+        },
+        {
+         "displayOrder": 4,
+         "name": "Application Deadline",
+         "content": "<p>Apple accepts applications to this posting on an ongoing basis.</p>"
+        }
+       ]
+      }
+     },
+     {
+      "postLocationId": "postLocation-CUL",
+      "localizations": {
+       "en_US": [
+        {
+         "displayOrder": 1,
+         "name": "Pay & Benefits",
+         "content": "At Apple, base pay is one part of our total compensation package and is determined within a range. This provides the opportunity to progress as you grow and develop within a role. The base pay range for this role is between $175,000 and $308,500, and your base pay will depend on your skills, qualifications, experience, and location.<br><br>Apple employees also have the opportunity to become an Apple shareholder through participation in Apple’s discretionary employee stock programs. Apple employees are eligible for discretionary restricted stock unit awards, and can purchase Apple stock at a discount if voluntarily participating in Apple’s Employee Stock Purchase Plan. You’ll also receive benefits including: Comprehensive medical and dental coverage, retirement benefits, a range of discounted products and free services, and for formal education related to advancing your career at Apple, reimbursement for certain educational expenses — including tuition. Additionally, this role might be eligible for discretionary bonuses or commission payments as well as relocation. <a href='https://www.apple.com/careers/us/benefits.html' target='_blank' aria-label='Learn more about Apple Benefits (Opens in new window)'>Learn more about Apple Benefits<span class='icon icon-after icon-external' aria-hidden='true'></span></a><br><br>Note: Apple benefit, compensation and employee stock programs are subject to eligibility requirements and other terms of the applicable plan or program.<br>",
+         "label": "Pay & Benefits"
+        },
+        {
+         "displayOrder": 2,
+         "name": "EEO Statement",
+         "content": "<p>Apple is an equal opportunity employer that is committed to inclusion and diversity. We seek to promote equal opportunity for all applicants without regard to race, color, religion, sex, sexual orientation, gender identity, national origin, disability, Veteran status, or other legally protected characteristics. <a href='https://www.eeoc.gov/sites/default/files/2023-06/22-088_EEOC_KnowYourRights6.12ScreenRdr.pdf' target='_blank' aria-label='Learn more about your EEO rights as an applicant (Opens PDF in new window)'>Learn more about your EEO rights as an applicant<span class='icon icon-after icon-external' aria-hidden='true'></span></a></p>"
+        },
+        {
+         "displayOrder": 3,
+         "name": "Accessibility",
+         "content": "<p>At Apple, we believe accessibility is a fundamental human right. You’ll find that idea reflected in everything here — in our culture, our benefits and our digital tools. By welcoming as many perspectives as possible, we help you build a career where you feel like you belong.<br><br><a href='https://www.apple.com/careers/us/accessibility.html' target='_blank' aria-label='Learn about accessibility in Apple’s workplace (Opens in new window)' rel='noopener noreferrer'>Learn about accessibility in Apple’s workplace<span class='icon icon-after icon-external' aria-hidden='true'></span></a><br><br><a href='https://www.apple.com/careers/us/accommodation.html' aria-label='Learn about reasonable accommodations for job applicants (Opens in new window)' target='_blank' rel='noopener noreferrer'>Learn about reasonable accommodations for job applicants<span class='icon icon-after icon-external' aria-hidden='true'></span></a></p>"
+        },
+        {
+         "displayOrder": 4,
+         "name": "Application Deadline",
+         "content": "<p>Apple accepts applications to this posting on an ongoing basis.</p>"
+        }
+       ]
+      }
+     }
+    ],
+    "postDateInGMT": "2026-09-26T06:56:05.885+00:00"
+   }
+  }
+ }
+}
