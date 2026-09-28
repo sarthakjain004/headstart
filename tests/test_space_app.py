@@ -2321,6 +2321,25 @@ def test_the_page_hands_the_browser_this_boots_answers_version(app):
     assert cfg["answers_version"] == app._ANSWERS_VERSION
 
 
+@pytest.mark.parametrize("name", ["app.js", "style.css"])
+def test_a_script_or_stylesheet_is_gzipped_and_still_revalidates(app, name):
+    """ADR-0250: the same file, compressed where the browser takes it, and a revalidation of
+    the gzipped copy still answers 304 rather than sending the file again."""
+    client = app.app.test_client()
+    on_disk = (Path(app.app.static_folder) / name).read_bytes()
+    plain = client.get(f"/static/{name}")
+    zipped = client.get(f"/static/{name}", headers={"Accept-Encoding": "gzip"})
+    assert plain.data == on_disk and "Content-Encoding" not in plain.headers
+    assert zipped.headers["Content-Encoding"] == "gzip"
+    assert gzip.decompress(zipped.data) == on_disk
+    assert zipped.headers["ETag"].startswith("W/")
+    again = client.get(
+        f"/static/{name}",
+        headers={"Accept-Encoding": "gzip", "If-None-Match": zipped.headers["ETag"]},
+    )
+    assert again.status_code == 304
+
+
 def test_no_directory_answers_503(trends_app, monkeypatch):
     monkeypatch.setattr(trends_app._HISTORY, "_companies", {})
     client = trends_app.app.test_client()

@@ -352,6 +352,40 @@ def _require_sign_in():
     return None
 
 
+# Each script and stylesheet gzipped, by path and ETag: compressed once a boot (`_gzip_static`).
+_GZIPPED_STATIC: dict[tuple[str, str | None], bytes] = {}
+
+
+@app.after_request
+def _gzip_static(response):
+    """The page's scripts and stylesheets gzipped where the browser takes it (ADR-0250): ~0.9 MB
+    of them on a first visit, which the Space's proxy passes on uncompressed (measured
+    2026-09-28), and the Trends chart waits on app.js. The ETag is weakened, since the gzipped
+    copy is not the file byte for byte; a revalidation still matches it and still answers 304."""
+    if (
+        request.endpoint != "static"
+        or response.status_code != 200
+        or response.mimetype
+        not in ("text/javascript", "application/javascript", "text/css")
+        or request.accept_encodings.quality("gzip") <= 0
+    ):
+        return response
+    etag, _ = response.get_etag()
+    response.direct_passthrough = False
+    data = (
+        response.get_data()
+    )  # read even when kept: it closes the file send_file opened
+    key = (request.path, etag)
+    if key not in _GZIPPED_STATIC:
+        _GZIPPED_STATIC[key] = gzip.compress(data, compresslevel=6)
+    response.set_data(_GZIPPED_STATIC[key])
+    response.headers["Content-Encoding"] = "gzip"
+    response.vary.add("Accept-Encoding")
+    if etag:
+        response.set_etag(etag, weak=True)
+    return response
+
+
 def _company_where(args) -> str | None:
     """The signed-in Account's follow/hide clause for this request (ADR-0171), or None.
 
