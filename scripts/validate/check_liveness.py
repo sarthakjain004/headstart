@@ -1540,9 +1540,16 @@ def _zoho_count(text):
     if not m:
         return None
     try:
-        return len(json.loads(_html.unescape(m.group(1))))
+        records = json.loads(_html.unescape(m.group(1)))
     except Exception:  # noqa: BLE001
         return None
+    # The records the scraper reads (`ZohoScraper.fetch_raw`): published and unlocked. The raw
+    # blob also carries unpublished rows — mdx, 2026-09-28: 750 records, 7 published.
+    return sum(
+        1
+        for r in records
+        if isinstance(r, dict) and not r.get("Is_Locked") and r.get("Publish", True)
+    )
 
 
 def p_zoho(t, u):

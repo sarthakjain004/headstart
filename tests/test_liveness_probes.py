@@ -76,6 +76,13 @@ def test_zoho_live_page_counts_jobs(monkeypatch):
     assert cl.p_zoho("acme", "https://acme.zohorecruit.com") == (cl.LIVE, 3)
 
 
+def test_zoho_counts_only_the_published_unlocked_jobs_the_scraper_reads(monkeypatch):
+    rows = '[{"id": 1}, {"id": 2, "Publish": false}, {"id": 3, "Is_Locked": true}]'
+    body = f'<input type="hidden" value="{html.escape(rows)}" id="jobs">'.encode()
+    monkeypatch.setattr(cl, "_get", _stub_get(200, body))
+    assert cl.p_zoho("acme", "https://acme.zohorecruit.com") == (cl.LIVE, 1)
+
+
 def test_zoho_200_without_jobs_or_error_is_unknown(monkeypatch):
     # a 200 that is neither the error page nor a jobs page -> genuinely can't tell -> re-probe
     monkeypatch.setattr(cl, "_get", _stub_get(200, b"<html>nothing useful here</html>"))
