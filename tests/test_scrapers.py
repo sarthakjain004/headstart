@@ -3688,10 +3688,14 @@ def test_trakstar_fetch_raw_prefers_the_api_and_never_reads_the_page_cards(
         raise AssertionError("must not re-fetch the careers page when the API answered")
 
     monkeypatch.setattr(scraper, "_get", boom_get)
+    monkeypatch.setattr(scraper, "_fetch_feed", lambda: None)  # the dates' feed
 
     raw = scraper.fetch_raw()
 
-    assert raw == {"api_items": [{"id": "1", "title": "Engineer"}]}
+    assert raw == {
+        "api_items": [{"id": "1", "title": "Engineer"}],
+        "posted_at_by_code": {},
+    }
     jobs = scraper.parse(raw, SCRAPED_AT)
     assert jobs[0].id == "trakstar:acme:1"
 
@@ -3952,10 +3956,10 @@ def _trakstar_cards_page(n_cards, total=None):
 
 
 def test_trakstar_is_capped_true_when_total_exceeds_cards():
-    from headstart.scrapers.trakstar import _is_capped
+    from headstart.scrapers.trakstar import is_capped
 
     html = _trakstar_cards_page(25, total=40)
-    assert _is_capped(html, 25) is True
+    assert is_capped(html, 25) is True
 
 
 def test_trakstar_is_capped_false_when_total_matches_cards_at_the_render_cap():
@@ -3963,17 +3967,17 @@ def test_trakstar_is_capped_false_when_total_matches_cards_at_the_render_cap():
     # interglobalhomes, 2workonline1, dataentrydirect) -- the card count alone can't tell that
     # apart from a truncated one, but the page's own total can, and must not trigger a wasted
     # RSS fetch.
-    from headstart.scrapers.trakstar import _is_capped
+    from headstart.scrapers.trakstar import is_capped
 
     html = _trakstar_cards_page(25, total=25)
-    assert _is_capped(html, 25) is False
+    assert is_capped(html, 25) is False
 
 
 def test_trakstar_is_capped_falls_back_to_card_count_without_a_total():
-    from headstart.scrapers.trakstar import _is_capped
+    from headstart.scrapers.trakstar import is_capped
 
-    assert _is_capped(_trakstar_cards_page(25), 25) is True
-    assert _is_capped(_trakstar_cards_page(24), 24) is False
+    assert is_capped(_trakstar_cards_page(25), 25) is True
+    assert is_capped(_trakstar_cards_page(24), 24) is False
 
 
 def test_trakstar_fetch_raw_uses_feed_when_capped_and_skips_the_detail_pass():
@@ -4049,7 +4053,7 @@ def test_trakstar_fetch_raw_keeps_html_when_feed_unreachable():
 
 
 def test_trakstar_fetch_raw_does_not_mark_truncated_for_card_count_heuristic_alone():
-    """A Board with no "View N Openings" total on the page (_is_capped falls back to the bare
+    """A Board with no "View N Openings" total on the page (is_capped falls back to the bare
     card-count heuristic) that also lands on the cap and has an unreachable feed must NOT be
     marked truncated -- this is the same ambiguous "reached the cap" signal the pre-fix code
     deliberately declined to mark_truncated for; only the page's own total turns that into
