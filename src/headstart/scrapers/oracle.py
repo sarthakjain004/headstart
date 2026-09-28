@@ -136,6 +136,21 @@ def _description_html(detail: dict) -> str | None:
     )
 
 
+def _places(primary: str | None, detail: dict) -> str | None:
+    """The primary place, then every secondary place the detail names, joined with "; " as
+    workday.py joins a posting's extra places. The listing states secondaries only under an extra
+    ``expand``; the detail pass already carries them (fa-esfc: 6 of 200 rows name more than one,
+    eubt 2 of 200, 2026-09-28)."""
+    places = [primary] if primary else []
+    for secondary in detail.get("secondaryLocations") or []:
+        name = (
+            (secondary.get("Name") or "").strip() if isinstance(secondary, dict) else ""
+        )
+        if name and name not in places:
+            places.append(name)
+    return "; ".join(places) or None
+
+
 def _remote(listed: dict, detail: dict, location: str | None) -> bool | None:
     """Whether this posting is remote: the tenant's own answer where unambiguous, else the
     location guess.
@@ -444,7 +459,9 @@ class OracleScraper(BaseScraper):
         for r in reqs:
             job_id = str(r["Id"])
             d = details.get(job_id) or {}
-            location = r.get("PrimaryLocation") or r.get("PrimaryLocationCountry")
+            location = _places(
+                r.get("PrimaryLocation") or r.get("PrimaryLocationCountry"), d
+            )
             jobs.append(
                 Job(
                     id=self.job_id(job_id),

@@ -2972,7 +2972,9 @@ def p_taleo_enterprise(t, u):
         return LIVE, len(scraper._listing(response.text, timeout=TIMEOUT))
     except Exception as exc:  # noqa: BLE001 - network/shape failure stays retryable
         status = getattr(getattr(exc, "response", None), "status_code", None)
-        return (DEAD, None) if status in (404, 410) else (UNKNOWN, None)
+        # A host with no DNS record is gone (52 of 60 sampled `unknown` hosts, 2026-09-28).
+        gone = status in (404, 410) or _is_dns(exc)
+        return (DEAD, None) if gone else (UNKNOWN, None)
 
 
 PROBES = {

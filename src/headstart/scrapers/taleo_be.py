@@ -25,7 +25,7 @@ from typing import Any
 from urllib.parse import parse_qs, urlencode, urljoin, urlsplit, urlunsplit
 
 from headstart.boards import company_name
-from headstart.jobs.job import Job, html_to_text, is_remote
+from headstart.jobs.job import Job, html_to_text, is_remote, requisition_of
 from headstart.network.fetcher import Fetcher
 from headstart.scrapers.base import (
     BaseScraper,
@@ -34,6 +34,7 @@ from headstart.scrapers.base import (
     DetailWithoutDescription,
     _head_of,
 )
+from headstart.scrapers.job_posting_jsonld import find_job_posting, job_posting_fields
 
 _MAX_PAGES = 1_000
 _DETAIL_WORKERS = 16
@@ -218,6 +219,20 @@ def _column(
         if n and n <= len(fields) and any(word in header for word in words):
             return fields[n - 1]
     return None
+
+
+# Label spellings measured on 48 detail pages over 25 live Boards (2026-09-28), most specific
+# first: AGIOS "Primary Work Location", CITYBURNABY "All Location(s)", AXIOSOLU "Location(s)",
+# CPOFNYS "Search Location(s)" and "Type of Position".
+_LOCATION_LABELS = (
+    "Primary Location",
+    "Primary Work Location",
+    "Location",
+    "All Location(s)",
+    "Location(s)",
+    "Search Location(s)",
+)
+_EMPLOYMENT_TYPE_LABELS = ("Employment Type", "Job Type", "Type of Position")
 
 
 def _field(labels: dict[str, str], *names: str) -> str | None:
@@ -476,11 +491,22 @@ class TaleoBEScraper(BaseScraper):
         labels = _labels(page)
         body = _description_html(page)
         date = _DATE_POSTED.search(page)
+        # The labels are the tenant's own, so they are read first; the JobPosting JSON-LD (on 30
+        # of 48 pages over 25 Boards, 2026-09-28) fills what no label states. Its `jobLocation`
+        # is the last resort only: AGIOS fills its locality with a site name ("Agios
+        # Pharmaceuticals HQ") where its label reads "Remote - US".
+        posting = find_job_posting(page) or {}
+        stated = job_posting_fields(posting)
+        identifier = posting.get("identifier")
         detail = {
             "description": _text(body) if body else None,
-            "location": _field(labels, "Primary Location", "Location"),
+            "location": _field(labels, *_LOCATION_LABELS) or stated["location"],
             "department": _field(labels, "Department"),
-            "employment_type": _field(labels, "Employment Type", "Job Type"),
+            "employment_type": _field(labels, *_EMPLOYMENT_TYPE_LABELS)
+            or stated["employment_type"],
+            "requisition": requisition_of(
+                identifier.get("value") if isinstance(identifier, dict) else None
+            ),
             "posted_at": _posted_at(
                 _field(labels, "Date Posted", "Posting Date")
                 or (date.group("value") if date else None)
@@ -529,6 +555,7 @@ class TaleoBEScraper(BaseScraper):
                     description=detail.get("description"),
                     employment_type=detail.get("employment_type"),
                     salary=detail.get("salary"),
+                    requisition=detail.get("requisition"),
                 )
             )
         return jobs
