@@ -2,6 +2,8 @@
 
 **Status:** accepted · **Date:** 2026-09-07 · **Replaces the visual language ADR-0042 shipped; keeps every decision ADR-0112 and ADR-0113 made about what the product says**
 
+- Amended by: [ADR-0247](0247-search-filters-are-always-open-beside-the-results.md) — the filters are always open (beside the results on a wide screen), and the per-row dismiss and the compact-density toggle are removed.
+
 ## Context
 
 The UI ADR-0042 built had a consistent register: near-black navy ground, a neon aqua→violet

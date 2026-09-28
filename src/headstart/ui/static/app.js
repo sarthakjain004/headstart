@@ -22,7 +22,9 @@ window.addEventListener('unhandledrejection', e => {
   console.error('[app] unhandled', why && why.name === 'SyntaxError' ? why.name : why);
   e.preventDefault();
 });
-for (const id of ['q', 'kw']) el(id).addEventListener('keydown', e => { if (e.key === 'Enter') go(); });
+// Only the query: every field in the filter rail searches on its own `change` (see the rail's
+// listener), which a browser also fires on Enter — a second Enter handler there searched twice.
+el('q').addEventListener('keydown', e => { if (e.key === 'Enter') go(); });
 
 /* ---- tabs. The hash names the panel (#search, #trends); unknown hashes fall back to
    search, so a stale link never strands anyone on a blank page. Trends data loads the
@@ -358,6 +360,12 @@ for (const id of SEGMENTED_SELECTS){
   if (!el(id + '-seg')) continue;
   el(id + '-seg').addEventListener('change', e => { el(id).value = e.target.value; go(); });
 }
+// Every other rail control searches on `change` too, so no filter waits for the Search button
+// (issue #755): a switch or a <select> on the pick, a typed field on Enter or on leaving it. The
+// radio rows and the salary slider have their own listeners, so they are left out here.
+if (el('rail')) el('rail').addEventListener('change', e => {
+  if (e.target.matches('select, input:not([type="radio"]):not([type="range"])')) go();
+});
 /* ---- the salary bracket's slider. Two native ranges over one track; `#salmin`/`#salmax`
    stay the values every other part of this file reads (currentFilters, clearAll, dropFilter,
    applySetToControls), so the slider is an input method for them and never a second source of
@@ -4254,9 +4262,8 @@ if (el('salrmin')){
   // The currency is part of the where-clause, not a label on it (ADR-0117): the bounds are
   // restated in it before anything is compared, so changing it changes which jobs match.
   // Bound to `syncSalarySlider` alone, it relabelled the read-out and left the previous
-  // currency's results on screen underneath — USD rows under an INR heading. `go()` redraws
-  // the read-out and the chips on its way through drawActive, so this is the whole fix.
-  if (el('salcur')) el('salcur').addEventListener('change', go);
+  // currency's results on screen underneath — USD rows under an INR heading. The rail's change
+  // listener searches on it, and `go()` redraws the read-out and the chips via drawActive.
 }
 if (el('sets-strip')) el('sets-strip').addEventListener('click', e => {
   const btn = e.target.closest('[data-act]');
@@ -4555,8 +4562,6 @@ function drawMyCompanies(){
     if (!res.ok) starMsg(res.error);   // after the redraw, which rewrites the count line
   });
 }
-
-if (el('mine')) el('mine').addEventListener('change', () => go());
 
 readSearchHash();   // a reloaded or shared hand-off (`#search?board=…`) scopes the first search
 go();   // an empty query browses the newest jobs (ADR-0074) — the Search tab is never empty

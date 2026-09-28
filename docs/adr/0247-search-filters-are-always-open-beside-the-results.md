@@ -1,6 +1,6 @@
 # ADR-0247: Search filters are always open, beside the results on a wide screen
 
-**Status:** accepted · **Date:** 2026-09-28 · **Amends:** [ADR-0116](0116-a-quiet-palette-and-a-scanning-layout.md) (its "filters above the results, collapsed by default" half) · **Issue:** #755 items 7 and 12
+**Status:** accepted · **Date:** 2026-09-28 · **Amends:** [ADR-0116](0116-a-quiet-palette-and-a-scanning-layout.md) (its "filters above the results, collapsed by default" layout, and two of its "three behaviours": the per-row dismiss and the compact-density toggle) · **Issue:** #755 items 4, 5, 6, 7, 8, 12 and 14
 
 ## Context
 
@@ -33,8 +33,18 @@ narrow screen it docks to the foot of the viewport, because a scrolling row woul
 **A `<select>` of five options or fewer is drawn as a row of radios** — sort, keyword scope,
 employment type and posted date. The `<select>` stays in the page, hidden, as the one value every
 reader and writer uses (the filter object, the facet counts written onto its options, a Saved Set);
-the radios are redrawn from it. A pick searches at once, as the sort select always did. Selects with
-more options (India, first seen, ATS, currency) stay selects.
+the radios are redrawn from it. Selects with more options (India, first seen, ATS, currency) stay
+selects.
+
+**Every pick searches at once.** Before, only the sort and keyword-scope selects did; a switch or
+any other select waited for the Search button. Now a chip, a switch or a select searches on change,
+and a typed field (years, location, company, salary bounds) searches on Enter.
+
+**Three things the owner named go** (#755 items 5, 8, 14): the per-row dismiss (×) and its
+"N hidden" note, the compact-density toggle — both ADR-0116 records as authorised by its critique
+loop — and the "via {ATS}" provenance label, on result cards and on Hiring-now rows alike. A card with no salary leaves its pay cell empty rather than printing "—".
+The trend link is an icon button, same target. The company-level "hide" (ADR-0171) is kept: it
+removes a company, not a job, and is server-side state with its own undo.
 
 ## Alternatives
 

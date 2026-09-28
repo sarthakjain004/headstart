@@ -629,11 +629,27 @@ test('changing the currency re-runs the search — the label and the results can
   set(nodes, 'salmin', '60000');
   set(nodes, 'salcur', 'INR');
   fetches.length = 0;
-  nodes.salcur.fire('change');
+  // The change bubbles to the rail's one listener, which searches on any select or switch.
+  nodes.rail.fire('change', { target: { matches: sel => sel.startsWith('select') } });
   await new Promise(r => setTimeout(r, 0));
   const search = fetches.filter(u => u.startsWith('/search?')).at(-1);
   assert.ok(search, `no /search after the currency changed: ${fetches}`);
   assert.strictEqual(qs(search).salary_currency, 'INR');
+});
+
+test('a switch in the rail searches on change; a radio row is left to its own listener', async () => {
+  const { t, nodes, fetches } = loadApp(() => []);
+  await t.go();
+  nodes.remote.checked = true;
+  fetches.length = 0;
+  nodes.rail.fire('change', { target: { matches: sel => sel.includes('input:not(') } });
+  await new Promise(r => setTimeout(r, 0));
+  assert.strictEqual(qs(fetches.filter(u => u.startsWith('/search?')).at(-1)).remote, 'true');
+
+  fetches.length = 0;
+  nodes.rail.fire('change', { target: { matches: () => false } });   // a radio: not the rail's to run
+  await new Promise(r => setTimeout(r, 0));
+  assert.strictEqual(fetches.filter(u => u.startsWith('/search?')).length, 0);
 });
 
 test('a salary sort is stated in the picker\'s currency even with no bound set', async () => {

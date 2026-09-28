@@ -41,9 +41,9 @@
 
 <main class="search-layout">
   {# Always shown, never behind a Filters button (issue #755: opening the panel and shutting it
-     again was two clicks per change). A sticky column beside the results on a wide screen, so
-     the rows still start at the top of the page; a wrapping bar above them on a narrow one.
-     Each field's caveat shows only while that field has focus. #}
+     again was two clicks per change). A column beside the results on a wide screen, so the rows
+     still start at the top of the page; one sideways-scrolling row above them on a narrow one
+     (ADR-0247). Each field's caveat shows only while that field has keyboard or typing focus. #}
     <aside class="rail" id="rail">
       {# The Keyword filter (ADR-0104): a deterministic where-clause, not a Query — it narrows, the
          Query ranks. The options are rendered from headstart.search_filters.compiler.keyword_scope_options(), never
@@ -86,9 +86,8 @@
             the body text can be missed.</span></div>
       </div>
 
-      {# Pay is its own group, not the tail of Role. It is by far the tallest thing in the
-         panel — a currency, two bounds, a slider, its scale and two caveats — and sitting
-         inside Role it made one column 729px tall next to a 214px one. #}
+      {# Pay is its own group, not the tail of Role: a currency, two bounds, a slider, its scale
+         and a caveat, the tallest field in the bar. #}
       <div class="set">
         <h2>Pay</h2>
         <label class="sw"><input type="checkbox" id="hassalary"> Shows salary</label>
