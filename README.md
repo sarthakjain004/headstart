@@ -463,7 +463,11 @@ Note the raw corpus files under `data/jobs/` carry a few fields the served table
   (Telegram enrolment), `telegram_bot_api` (the polling client the bot uses), `digest`,
   `shortlist`, `space_query`, `run`.
 - `src/headstart/mcp_protocol/` — the JSON-RPC loop over stdio every HeadStart MCP server speaks
-  (`stdio.py`; ADR-0137's amendment of 2026-09-28).
+  (`stdio.py`; ADR-0137's amendment of 2026-09-28) and `tool_arguments.py`, which checks a call's
+  arguments against the tool's schema.
+- `src/headstart/space_mcp/` — the Space MCP server (ADR-0253): `search_jobs`, `read_trends` and
+  `hiring_now` for an agent, answered from the deployed Space's read routes. How to install it:
+  `docs/agents/space-mcp-server.md`.
 - `src/headstart/ingest/` — **the back-to-back pipeline run**, one module per stage step, invoked
   as `python -m headstart.ingest.<module>` (ADR-0028): `scrape_plan`, `scrape_run`, `scrape_join`,
   `filter_tech`, `update_descriptions` (ADR-0050), `update_ledgers`

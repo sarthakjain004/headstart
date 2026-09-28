@@ -118,6 +118,18 @@ def host_of(url: str | None) -> str:
     return (url or "").split("://", 1)[-1].split("/", 1)[0].split("?", 1)[0]
 
 
+def http_url(value: Any) -> str:
+    """A job link if it is http(s), else "" — rendered like a job with no link.
+
+    A scraped `javascript:` or `data:` URL must not ship as a link (#594). The scheme test is
+    `safeUrl`'s in the web UI's app.js; surrounding whitespace is stripped first, as a browser
+    strips it from an href. The Digest, Telegram and spreadsheet links and the Space MCP server's
+    answers all pass a job's `url` through here.
+    """
+    url = str(value or "").strip()
+    return url if url.lower().startswith(("http://", "https://")) else ""
+
+
 def html_to_text(value: str | None) -> str | None:
     """Strip HTML tags/entities from a description blob into clean, single-spaced text.
 
