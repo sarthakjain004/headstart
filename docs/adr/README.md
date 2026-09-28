@@ -276,6 +276,7 @@ supersedes it and note the supersession in both.
 | [0280](0280-ashby-declares-how-a-link-writes-its-slug.md) | Ashby declares how a link writes its slug | 2026-09-29 |
 | [0281](0281-a-lever-board-whose-hosted-pages-are-off-serves-nothing.md) | A Lever Board whose hosted pages are off serves nothing | 2026-09-29 |
 | [0285](0285-a-vector-is-rebuilt-when-its-postings-text-changes.md) | A vector is rebuilt when its posting's text changes | 2026-09-29 |
+| [0286](0286-a-held-job-whose-text-fails-the-english-gate-leaves-the-index.md) | A held Job whose text fails the English gate leaves the index | 2026-09-29 |
 | [0290](0290-a-merge-deploys-the-space-only-when-it-changes-what-the-space-loads.md) | A merge deploys the Space only when it changes what the Space loads | 2026-09-29 |
 | [0292](0292-the-description-store-is-not-reaped-until-a-last-listed-signal-exists.md) | The description store is not reaped until a "last listed" signal exists | 2026-09-29 |
 | [0293](0293-a-period-less-salary-figure-is-read-by-its-size-only-as-far-as-the-evidence-goes.md) | A period-less salary figure is read by its size only as far as the evidence goes | 2026-09-29 |

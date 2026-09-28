@@ -154,6 +154,10 @@ def test_main_partitions_new_english_docs(tmp_path, monkeypatch):
             # must never write there.
             "--upgrades-out",
             str(tmp_path / "pending_upgrades.txt"),
+            "--non-english-out",
+            str(tmp_path / "pending_non_english.txt"),
+            "--regate",
+            str(tmp_path / "regate.txt"),
             "--max-shards",
             "3",
             "--target-seconds",
@@ -202,6 +206,10 @@ def test_main_empty_plan_when_nothing_new(tmp_path, monkeypatch):
             # must never write there.
             "--upgrades-out",
             str(tmp_path / "pending_upgrades.txt"),
+            "--non-english-out",
+            str(tmp_path / "pending_non_english.txt"),
+            "--regate",
+            str(tmp_path / "regate.txt"),
         ],
     )
     assert pe.main() == 0
@@ -285,6 +293,10 @@ def test_a_degraded_row_is_re_embedded_once_its_description_arrives(
             str(out),
             "--upgrades-out",
             str(upgrades),
+            "--non-english-out",
+            str(tmp_path / "pending_non_english.txt"),
+            "--regate",
+            str(tmp_path / "regate.txt"),
         ],
     )
     assert pe.main() == 0
@@ -334,6 +346,10 @@ def test_a_degraded_row_with_still_no_description_is_left_alone(tmp_path, monkey
             str(out),
             "--upgrades-out",
             str(upgrades),
+            "--non-english-out",
+            str(tmp_path / "pending_non_english.txt"),
+            "--regate",
+            str(tmp_path / "regate.txt"),
         ],
     )
     assert pe.main() == 0
@@ -392,6 +408,10 @@ def test_a_degraded_row_whose_new_description_is_not_english_is_not_listed(
             str(tmp_path / "assignments"),
             "--upgrades-out",
             str(upgrades),
+            "--non-english-out",
+            str(tmp_path / "pending_non_english.txt"),
+            "--regate",
+            str(tmp_path / "regate.txt"),
         ],
     )
     assert pe.main() == 0
@@ -455,6 +475,10 @@ def _plan_upgrades(tmp_path, monkeypatch, jobs: list[dict], meta: str) -> list[s
             str(tmp_path / "assignments"),
             "--upgrades-out",
             str(upgrades),
+            "--non-english-out",
+            str(tmp_path / "pending_non_english.txt"),
+            "--regate",
+            str(tmp_path / "regate.txt"),
         ],
     )
     assert pe.main() == 0
@@ -583,3 +607,57 @@ def test_edit_re_embeds_stop_at_the_cap(tmp_path, monkeypatch, caplog):
     caplog.set_level("INFO")
     assert len(_plan_upgrades(tmp_path, monkeypatch, jobs, meta)) == 1
     assert any("2 more deferred" in r.getMessage() for r in caplog.records)
+
+
+# --- ADR-0286: a held Job whose text fails the English gate is dropped -----------------------
+
+
+def _non_english_listed(tmp_path) -> list[str]:
+    return (tmp_path / "pending_non_english.txt").read_text().split()
+
+
+_GERMAN = {
+    **_JOB,
+    "title": "Entwickler Backend",
+    "description": "Wir suchen einen erfahrenen Entwickler für unser Team in Berlin heute.",
+}
+
+
+def test_an_edit_into_another_language_is_dropped_not_re_embedded(
+    tmp_path, monkeypatch
+):
+    """#706: the served row keeps its English vector while its text no longer passes the gate a
+    new Job must. Re-embedding would put a German vector in the English index; the row is
+    dropped instead, and sync evicts it like any Job that left."""
+    pytest.importorskip("langdetect", reason=_NEEDS_LANGDETECT)
+    meta = _meta_row(_JOB["id"], "greenhouse", doc_hash=doc_hash(_JOB))
+    assert _plan_upgrades(tmp_path, monkeypatch, [_GERMAN], meta) == []
+    assert _non_english_listed(tmp_path) == [_JOB["id"]]
+
+
+def test_a_regate_listed_job_that_fails_the_gate_is_dropped(tmp_path, monkeypatch):
+    pytest.importorskip("langdetect", reason=_NEEDS_LANGDETECT)
+    (tmp_path / "regate.txt").write_text(_JOB["id"] + "\n", encoding="utf-8")
+    meta = _meta_row(_JOB["id"], "greenhouse", doc_hash=doc_hash(_GERMAN))
+    assert _plan_upgrades(tmp_path, monkeypatch, [_GERMAN], meta) == []
+    assert _non_english_listed(tmp_path) == [_JOB["id"]]
+
+
+def test_a_regate_listed_job_that_passes_is_neither_dropped_nor_re_embedded(
+    tmp_path, monkeypatch
+):
+    pytest.importorskip("langdetect", reason=_NEEDS_LANGDETECT)
+    (tmp_path / "regate.txt").write_text(_JOB["id"] + "\n", encoding="utf-8")
+    meta = _meta_row(_JOB["id"], "greenhouse", doc_hash=doc_hash(_JOB))
+    assert _plan_upgrades(tmp_path, monkeypatch, [_JOB], meta) == []
+    assert _non_english_listed(tmp_path) == []
+    assert (
+        json.loads((tmp_path / "assignments" / "plan.json").read_text())["count"] == 0
+    )
+
+
+def test_a_new_non_english_job_is_never_listed_for_a_drop(tmp_path, monkeypatch):
+    """It was never embedded, so there is nothing to drop; it is held out as before."""
+    pytest.importorskip("langdetect", reason=_NEEDS_LANGDETECT)
+    assert _plan_upgrades(tmp_path, monkeypatch, [_GERMAN], "") == []
+    assert _non_english_listed(tmp_path) == []

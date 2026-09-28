@@ -94,6 +94,11 @@ HELD_DETAILS_PATH = REPO_ROOT / "data" / "state" / "held_details.txt.gz"
 # replacement lands, `index` re-adds the rows) and each previously declared the path itself.
 PENDING_UPGRADES_PATH = REPO_ROOT / "data" / "state" / "pending_upgrades.txt"
 
+# Held Job ids whose text no longer passes the English gate when `embed_plan` re-evaluates them
+# (ADR-0286). `embed_plan` writes it every run, `embed_merge` drops them from the store, and
+# `index sync` then evicts their rows like any Job that left: two reads of its Board later.
+PENDING_NON_ENGLISH_PATH = REPO_ROOT / "data" / "state" / "pending_non_english.txt"
+
 # The ADR-0062 re-derivation queue: Job ids whose description the store learned *this run*, whose
 # stored metadata therefore still carries numbers derived without that text. `update_descriptions`
 # appends, `update_meta` re-derives them and clears the file. It lives under data/state rather than

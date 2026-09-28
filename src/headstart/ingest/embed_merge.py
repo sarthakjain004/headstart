@@ -31,6 +31,7 @@ from pathlib import Path
 from headstart import log
 from headstart.embedding_conventions import DOC_PREFIX, MODEL
 from headstart.ingest import (
+    PENDING_NON_ENGLISH_PATH,
     PENDING_UPGRADES_PATH,
     REPO_ROOT,
     read_id_list,
@@ -201,6 +202,12 @@ def main() -> int:
         "upgrade list (ADR-0050); missing or empty is a no-op",
     )
     ap.add_argument(
+        "--drop-ids",
+        default=str(PENDING_NON_ENGLISH_PATH),
+        help="file of held Job ids to drop outright — the embed planner's list of Jobs whose "
+        "text no longer passes the English gate (ADR-0286); missing or empty is a no-op",
+    )
+    ap.add_argument(
         "--expect-shards",
         type=int,
         default=None,
@@ -298,6 +305,19 @@ def main() -> int:
             _log.info(
                 f"upgrades: holding {held} id(s) whose replacement did not arrive"
                 f"{' (no fragments at all)' if not frags else ''}"
+            )
+
+    drops = Path(args.drop_ids)
+    if dim is not None and drops.exists():
+        # Unlike an upgrade, nothing replaces these: a Job whose text fails the English gate is
+        # held out of the index, as a new one would be. Leaving the store makes it not `fresh`,
+        # so `index sync` evicts its row two reads of its Board later (ADR-0083, ADR-0286).
+        drop_ids = read_id_list(drops)
+        if drop_ids:
+            dropped = evict_ids(meta_path, vec_path, dim, drop_ids)
+            _log.info(
+                f"non-English: dropped {dropped} held row(s) of {len(drop_ids)} listed "
+                "(ADR-0286)"
             )
 
     prior_rows = _reconcile_store(meta_path, vec_path, dim)
