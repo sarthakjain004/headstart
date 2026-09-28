@@ -38,6 +38,16 @@ SUPPORTED_VERSIONS = ("2025-11-25", "2025-06-18")
 NEWEST = SUPPORTED_VERSIONS[0]
 
 
+#: The annotations of a tool that only reads: it changes nothing, so calling it twice is calling it
+#: once, and it reaches no system but its own server's.
+READ_ONLY_ANNOTATIONS = {
+    "readOnlyHint": True,
+    "destructiveHint": False,
+    "idempotentHint": True,
+    "openWorldHint": False,
+}
+
+
 class ToolFailure(Exception):
     """Something the caller should read and act on — reported as a failed tool result with a
     sentence in it, never as a JSON-RPC error. A protocol error says the server is broken; a
