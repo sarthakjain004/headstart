@@ -106,9 +106,9 @@ def test_no_index_metadata_counts_every_held_job():
     }
 
 
-def test_every_scraper_that_skips_held_details_is_rotated_except_zwayam():
+def test_every_scraper_that_skips_held_details_is_rotated():
     """A Scraper that skips held details but is missing here never re-fetches an edited posting
-    (Tesla was). Zwayam is left out on purpose (the module docstring says why)."""
+    (Tesla was, and Zwayam until #709)."""
     from headstart import scrapers
 
     skipping = {
@@ -116,4 +116,5 @@ def test_every_scraper_that_skips_held_details_is_rotated_except_zwayam():
         for p in pathlib.Path(scrapers.__file__).parent.glob("*.py")
         if re.search(r"skip_held=True", p.read_text(encoding="utf-8"))
     }
-    assert skipping - {"zwayam"} <= hr.ATSES
+    assert "zwayam" in skipping
+    assert skipping <= hr.ATSES

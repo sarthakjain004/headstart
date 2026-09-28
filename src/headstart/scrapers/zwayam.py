@@ -61,13 +61,14 @@ The per-job detail endpoint (``jobs-service/v1/jobs/careersite``, JSON POST of `
 was measured behind a listing row with none), so it is fetched for **every row not on the
 ADR-0050 skip-list** and wins over the listing text. The listing fields stand only when the
 detail answers with no text; a failed detail call — or a failed config call, which fails every
-detail on the Board — ships no description, so the next run retries it. The store bounds the cost: each Job's detail is fetched once in its lifetime (~15 KB a
-response, so the first pass over the 22,456-posting corpus moves ~340 MB; steady state is new
-postings only). What the detail holds is the tenant's own paste, junk included — one measured
-posting carries an AI-chat UI's class markup verbatim, and ``html_to_text``'s
-unescape-before-strip order (a deliberate Darwinbox accommodation, per its docstring) lets an
-escaped ``&gt;`` inside such an attribute leak fragments of it into the text. Tenant data
-quality, logged here so the next reader doesn't chase it as a scraper bug.
+detail on the Board — ships no description, so the next run retries it. The store bounds the
+cost: a held Job's detail is fetched again only every 7 days (ADR-0211's rotation). A response is
+~15 KB, so the first pass over the 22,456-posting corpus moves ~340 MB, and steady state is new
+postings plus about 1/170 of the held ones a run. What the detail holds is the tenant's own paste,
+junk included — one measured posting carries an AI-chat UI's class markup verbatim, and
+``html_to_text``'s unescape-before-strip order (a deliberate Darwinbox accommodation, per its
+docstring) lets an escaped ``&gt;`` inside such an attribute leak fragments of it into the text.
+Tenant data quality, logged here so the next reader doesn't chase it as a scraper bug.
 
 **Three frontend generations, three job-link shapes.** The API is one host, but the careers sites
 in front of it are not one SPA — classified live across all 224 hiring Boards (2026-08-27):
@@ -107,7 +108,7 @@ by rotating rather than by pacing. The other binding
 costs are **bytes and detail latency**: a 10-row page is 70-200 KB and a
 detail ~15 KB, so the first full pass moves ~680 MB and its 22,456 details take ~45 minutes of
 aggregate wall-clock at the ceiling — once, since the ADR-0050 store prunes every later run to
-new postings.
+new postings and the held ones the ADR-0211 rotation has due.
 """
 
 from __future__ import annotations
@@ -426,8 +427,9 @@ class ZwayamScraper(BaseScraper):
         r"https://[^/]+(?:(?:/[\w.-]+)*/jobview/|/job-view/|/#!/job-view/)[\w.%~-]+$"
     )
     #: The detail POST supplies every Job's description (the listing's own text can be silently
-    #: truncated — module docstring); the ADR-0050 skip-list prunes it to new postings. True so
-    #: the embed planner knows a zwayam vector can have been built before its text arrived.
+    #: truncated — module docstring); the ADR-0050 skip-list prunes it to new postings and due
+    #: re-fetches. True so the embed planner knows a zwayam vector can have been built before its
+    #: text arrived.
     has_detail_pass = True
     #: A judgement call, not a measured optimum — say so plainly, because the two probe numbers
     #: it rests on are **not** a width sweep: 32-wide measured 9.3 responses/s and 16-wide 7.8,
@@ -697,7 +699,7 @@ class ZwayamScraper(BaseScraper):
         # Detail pass for every row the ADR-0050 store does not already hold text for: the
         # listing's own fields can be silently truncated (module docstring), so the detail is
         # the only text trusted as complete. Steady state, `needs_detail` prunes this to the
-        # Board's new postings.
+        # Board's new postings and the held ones the ADR-0211 rotation has due.
         # Two skips: the tech gate (ADR-0017) drops what `filter_tech` would drop anyway, and
         # `skip_held` (ADR-0048) drops what the description store already holds. The gate is
         # exact here — `parse` reads `jobTitle` and `departmentName` off this same listing row

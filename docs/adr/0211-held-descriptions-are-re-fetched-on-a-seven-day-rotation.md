@@ -129,3 +129,84 @@ differed only in `’` becoming `?`, so re-fetching would replace good text with
 - The skip-list is no longer "every held Job". It is every held Job minus the due set.
 - A fetch that fails transiently on a due Job counts as a check, so that Job's next attempt is 7
   days away. That is the conservative trade: no retry storm, at the cost of a slower re-check.
+
+## Amendment (2026-09-29): Zwayam joins the rotation, and a `?`-only difference keeps the held text (#709)
+
+Zwayam was left out for three measured reasons. Each was measured again.
+
+**The `?` is in the tenant's text, not in our decoding.** On `careers.microland.com` the detail
+JSON (`application/json`, no charset) carries a literal `?` in both the listing and
+`longDescription`, and the body has zero non-ASCII bytes. On `career.axismaxlife.com`, fetched with
+the same User-Agent and decoding, `’` and `–` arrive intact: 2 details with 18 and 132 non-ASCII
+bytes, and no `?` inside a word. So nothing on our side can restore the character. A fetch can
+only replace the good held text with the degraded one.
+
+**A re-fetch of 14 held Jobs** (2026-09-29, sequential, 3 s apart, all HTTP 200):
+
+| Board | re-fetched | same | different |
+|---|---:|---:|---:|
+| careers.microland.com, held text with `’` | 5 | 0 | 5, each held `’` or `–` read as one `?`, same length, nothing else |
+| careers.microland.com, held text with `??` | 3 | 3 | 0 |
+| careers.persistent.com, held text with `’` | 4 | 4 | 0 (3 to 10 non-ASCII characters each) |
+| jobs.happiestminds.com | 2 | 2 | 0 |
+
+In the store (HF, 2026-09-29), 2,098 of 5,552 held Zwayam descriptions carry a non-ASCII
+character, 103 of them on microland, and 592 already carry a `?` inside a word or a `??`.
+
+**Its Boards are no longer scraped late.** The `board_freshness.csv.gz` of 2026-09-28 21:50Z has
+755 Zwayam Boards, the oldest last scraped 0.55 days before, none more than a day. Each of 7 runs
+on 2026-09-28 filled 4,551 to 4,561 Zwayam corpus rows from the store. That is about as many as the
+4,469 held descriptions of served Jobs, so the Boards they sit on are read every run (ADR-0229). A
+due Job is fetched by the next run, so due Jobs do not pile up on a Board and arrive as a burst.
+
+### Decision
+
+**Zwayam joins `held_refetch.ATSES`.**
+
+**`update_descriptions` keeps the held text over a fetch that only lost characters.** When the
+fresh text has the held text's length, and every character that differs is a held non-ASCII
+character that came back as `?`, the held text stays in the store and in the corpus row. That
+fetch is not learned, not counted as a replacement and not queued to re-derive. It still counts
+as a check, so the Job is next due 7 days later. Any other difference replaces the held text as
+ADR-0207 says, including a `?` beside a real edit. A fetch that restores a character the held
+text had as `?` replaces it too. Each ATS whose count is not zero logs
+`{ats}: kept N held description(s) over a fetch that read their non-ASCII characters as '?' and
+changed nothing else (ADR-0211)`.
+
+The rule is not keyed to Zwayam. Across the store fragments of every ATS since the last
+compaction (up to 11 runs), 1,488 entries replace text an earlier fragment held, and the rule
+matches none of them. So it changes nothing elsewhere today. A one-for-one `?` is the only shape
+measured. A character read as two `?`, as an emoji outside the Basic Multilingual Plane might be,
+would still replace the held text. 9 held Zwayam descriptions carry such a character, none of them
+on microland.
+
+**The budget, with no pacer and no new width.** In the served table (v298) 4,469 held Zwayam
+descriptions belong to served Jobs. That is 638 re-fetches a day, about 27 a run at the 24 runs of
+2026-09-28. They spread over that run's shards by Board. The largest Board, `careers.persistent.com`
+with 545, adds about 3 a run.
+
+- **The added load is small.** The runs of 2026-09-28 already made about 165 Zwayam detail
+  requests each (learned plus unrecorded). In run 36482634879, 139 of them went to microland
+  Jobs whose detail has no `longDescription`, and 24 got a 404.
+- **The quota is per IP.** It refuses from about 500 cumulative requests from one IP
+  (2026-09-17), and it meters volume, not width.
+- **Each shard has its own address.** Every scrape shard is a separate runner IP, and a 403
+  rotates to WARP (`egress_fallback_on`). In that run the microland Board walled its shard's IP 7
+  times, each was rotated, and none of its 139 details was lost.
+- **A stall stays inside that.** A day with no runs makes 638 due at once, about 78 of them
+  persistent's. A week with no runs makes every held Job due, which is the size of the first pass
+  the detail pass already absorbed.
+- **A 2 s pacer would cost more than it saves.** It would slow every Zwayam detail, new postings
+  included, to fix a load the rotation adds about 2 requests a shard to. #657's 3-wide burst got
+  a 403 on about 57 of its first 70 calls, and sequential calls 2 s apart went 56 of 56. Neither
+  result changes this arithmetic.
+
+### Consequences
+
+- A Zwayam edit reaches the store, the re-derive queue and the served table within 7 days of the
+  last fetch, plus the time until the next run.
+- Microland's held texts with `’` keep it. A Zwayam Job first fetched after its tenant's text
+  degraded is stored with the `?`, and nothing can restore it from the client side.
+- A due Zwayam Job whose detail now answers with no `longDescription` takes the listing's text,
+  which can be truncated, through the scraper's bodyless fallback. None of the 14 held Jobs
+  re-fetched did. If it happens, it shows on the per-ATS `replaced N held description(s)` line.
