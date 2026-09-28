@@ -235,7 +235,10 @@ TOOL = SpaceTool(
         "separated out; whole index by default, or one job category, or up to 10 named "
         "companies. A company is a directory company: a key such as "
         "'greenhouse:stripe', or its exact name (read as the site's Trends picker "
-        "reads it). Company counts begin 2026-09-13. Each line reports start and latest "
+        "reads it). Tell the user which directory company each name was read as, "
+        "with its key and Boards: it can hold fewer Boards than a search_jobs company "
+        "match on the same name. "
+        "Company counts begin 2026-09-13. Each line reports start and latest "
         "openings, hiring, percent, per week, and jobs opened and closed."
     ),
     input_schema={
@@ -251,8 +254,9 @@ TOOL = SpaceTool(
                 "type": "string",
                 "enum": list(SPLITS),
                 "description": (
-                    "Lines by category, seniority level, watched role or company. "
-                    "Default: company with two or more companies, level with a "
+                    "Lines by category, seniority level, watched role or company "
+                    "(company needs two or more companies; one company's lines are "
+                    "by category). Default: company with two or more companies, level with a "
                     "category, else category."
                 ),
             },
@@ -272,7 +276,8 @@ TOOL = SpaceTool(
         "additionalProperties": False,
     },
     when_to_use=(
-        "Use read_trends for how the number of openings is changing overall, in a job category, or at named companies."
+        "Use read_trends for how the number of openings is changing overall, in a job category, "
+        "or at named companies; say which directory company each name was read as."
     ),
     answer=answer,
     max_chars=20_000,
