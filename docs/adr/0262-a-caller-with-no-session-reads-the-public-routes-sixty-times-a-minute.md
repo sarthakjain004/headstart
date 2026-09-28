@@ -153,12 +153,18 @@ counted as its Account, one without as its address, and the two are counted apar
 signing in starts a fresh window rather than inheriting its address's. Two limits join the read
 limit, both per caller over the same 60 s:
 
-- **30 writes** (`POST`, `PUT`, `DELETE`, any path). Every Account write is its own HF commit on
-  the one token every Account shares. A résumé pushes at most once every three minutes, so the
-  busiest real writer is a reader starring jobs.
+- **30 writes** (`POST`, `PUT`, `DELETE`, any path, and `GET /unsubscribe`, which commits). Every
+  Account write is its own HF commit on the one token every Account shares. A résumé being edited
+  pushes at most once every three minutes plus once per tab or document switch, so the busiest
+  real writer is a reader starring jobs.
 - **20 `GET /saved`**. It lists the whole Subscriptions repo. `store._list_files` also reuses a
-  listing of the head for 5 s, dropped by every write through the store, so a request after a write
-  never lists without it.
+  listing of the head for 5 s. Every write through the store drops it once the write lands, and a
+  listing taken while a write landed is not kept, so a request after a write never lists without
+  it; another process's write can go unseen for up to 5 s.
+
+These bound one caller, not the total, as the issue says: sign-up is open, so N Accounts still
+spend N times the budget on the one token. Bounding the total would take a global limit, which
+would let one abuser lock out every Account; that is not built.
 
 The 429 names the unit: "from one Account" or "from one address". The owner chose this in-process
 window over flask-limiter, which would be a new pin in the production image.

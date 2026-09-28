@@ -628,9 +628,12 @@ def _hf(token: str):
 #: How long a listing of the head revision is reused (#592). `GET /saved` lists the whole repo on
 #: every call, so a client looping it spends the token's HF API budget; a few seconds' reuse caps
 #: that at one listing per window. Every write through this module drops the cached listing once it
-#: lands, so a request that follows a write never lists without it.
+#: lands and bumps the repo's generation, and a listing is kept only if no write landed while it
+#: was taken, so a request that follows a write never lists without it. Another process's write
+#: (the Space's, seen from a Digest run, or the reverse) can go unseen for up to the TTL.
 _LISTING_TTL_SECONDS = 5.0
 _listings: dict[str, tuple[float, list[str]]] = {}
+_listing_generations: dict[str, int] = {}
 _listings_lock = threading.Lock()
 
 
@@ -639,17 +642,20 @@ def _list_files(repo: str, token: str, revision: str | None = None) -> list[str]
         return _hf(token).list_repo_files(repo, repo_type="dataset", revision=revision)
     with _listings_lock:
         cached = _listings.get(repo)
+        generation = _listing_generations.get(repo, 0)
     if cached and time.monotonic() - cached[0] < _LISTING_TTL_SECONDS:
         return list(cached[1])
     files = _hf(token).list_repo_files(repo, repo_type="dataset")
     with _listings_lock:
-        _listings[repo] = (time.monotonic(), files)
+        if _listing_generations.get(repo, 0) == generation:
+            _listings[repo] = (time.monotonic(), files)
     return list(files)
 
 
 def _forget_listing(repo: str) -> None:
     with _listings_lock:
         _listings.pop(repo, None)
+        _listing_generations[repo] = _listing_generations.get(repo, 0) + 1
 
 
 def _head_revision(repo: str, token: str) -> str:

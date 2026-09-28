@@ -436,17 +436,19 @@ def _require_sign_in():
 # unticked in its ATS picker, about 20. The MCP server holds itself to the same 60 a minute, so
 # one server process meets its own limit before this one.
 _READ_LIMIT_REQUESTS = 60
-_READ_LIMIT_WINDOW_S = 60
-_READ_LIMIT = rate_limit.RateLimit(_READ_LIMIT_REQUESTS, _READ_LIMIT_WINDOW_S)
+_LIMIT_WINDOW_S = 60
+_READ_LIMIT = rate_limit.RateLimit(_READ_LIMIT_REQUESTS, _LIMIT_WINDOW_S)
 # And how often it may write, or list its saved jobs (#592). Every POST, PUT and DELETE is its
 # own HF commit on the Subscriptions dataset, and `GET /saved` lists that whole repo, all on one
 # token shared by every Account: a looping client would spend the token's commit and API budget
-# for everyone. A résumé pushes at most once every three minutes (`resume_sync.js`), so the
-# busiest writer is a reader starring jobs, well under 30 a minute.
+# for everyone. `GET /unsubscribe` commits too, so it counts as a write. A résumé being edited
+# pushes at most once every three minutes, plus once on each tab switch or document switch
+# (`resume_sync.js`), so the busiest writer is a reader starring jobs, well under 30 a minute.
+# These bound one caller, not the total: N Accounts still spend N times the budget.
 _WRITE_LIMIT_REQUESTS = 30
-_WRITE_LIMIT = rate_limit.RateLimit(_WRITE_LIMIT_REQUESTS, _READ_LIMIT_WINDOW_S)
+_WRITE_LIMIT = rate_limit.RateLimit(_WRITE_LIMIT_REQUESTS, _LIMIT_WINDOW_S)
 _SAVED_LIMIT_REQUESTS = 20
-_SAVED_LIMIT = rate_limit.RateLimit(_SAVED_LIMIT_REQUESTS, _READ_LIMIT_WINDOW_S)
+_SAVED_LIMIT = rate_limit.RateLimit(_SAVED_LIMIT_REQUESTS, _LIMIT_WINDOW_S)
 
 
 def _client_address() -> str:
@@ -460,7 +462,7 @@ def _client_address() -> str:
 
 def _request_limit() -> tuple[rate_limit.RateLimit, int] | None:
     """The limit this request counts against, and its size; None when it counts against none."""
-    if request.method in ("POST", "PUT", "DELETE"):
+    if request.method in ("POST", "PUT", "DELETE") or request.path == "/unsubscribe":
         return _WRITE_LIMIT, _WRITE_LIMIT_REQUESTS
     if request.path == "/saved":
         return _SAVED_LIMIT, _SAVED_LIMIT_REQUESTS
@@ -488,7 +490,7 @@ def _limit_each_caller():
     return (
         jsonify(
             error="too many requests",
-            detail=f"at most {requests} requests in {_READ_LIMIT_WINDOW_S} s "
+            detail=f"at most {requests} requests in {_LIMIT_WINDOW_S} s "
             f"from one {who}; retry in {wait_s} s",
         ),
         429,

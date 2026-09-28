@@ -867,6 +867,7 @@ def counting_api(monkeypatch):
     api = _CountingApi(["saved/a.json"])
     monkeypatch.setattr(st, "_hf", lambda token: api)
     monkeypatch.setattr(st, "_listings", {})
+    monkeypatch.setattr(st, "_listing_generations", {})
     return api
 
 
@@ -892,3 +893,19 @@ def test_a_listing_at_a_revision_is_never_cached(counting_api):
     st._list_files("r", "t", revision="abc")
     st._list_files("r", "t", revision="abc")
     assert counting_api.listings == 2
+
+
+def test_a_listing_a_write_lands_during_is_not_kept(counting_api):
+    """Requests overlap on the Space's threads: a listing taken before a write lands must not
+    be kept past it, or the next request would list without the write for a few seconds."""
+    listing = counting_api.list_repo_files
+
+    def a_write_lands_meanwhile(repo, repo_type, revision=None):
+        files = listing(repo, repo_type, revision)
+        st._write("r", "saved/b.json", b"{}", "t")
+        return files
+
+    counting_api.list_repo_files = a_write_lands_meanwhile
+    assert "saved/b.json" not in st._list_files("r", "t")
+    counting_api.list_repo_files = listing
+    assert "saved/b.json" in st._list_files("r", "t")

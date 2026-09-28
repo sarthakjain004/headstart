@@ -167,7 +167,7 @@ def _no_kept_trends_answers():
 
 
 @pytest.fixture(autouse=True)
-def _no_spent_read_limit(monkeypatch):
+def _no_spent_rate_limit(monkeypatch):
     """Each test starts with nothing counted against any rate limit: the app
     fixtures are module-scoped, so one test's requests would otherwise 429 a later test's."""
     for module in _LOADED_APPS:
@@ -179,7 +179,7 @@ def _no_spent_read_limit(monkeypatch):
             monkeypatch.setattr(
                 module,
                 name,
-                rate_limit.RateLimit(requests, module._READ_LIMIT_WINDOW_S),
+                rate_limit.RateLimit(requests, module._LIMIT_WINDOW_S),
             )
 
 
@@ -540,7 +540,7 @@ def test_a_signed_in_session_still_applies_its_hidden_companies(
     assert hidden and asked == [hidden, None, hidden, None]
 
 
-# ---- the anonymous read limit (ADR-0262) ----
+# ---- the rate limits (ADR-0262, #592) ----
 
 
 def _spend_the_read_limit(module, client, path="/hot", **kwargs):
@@ -556,7 +556,7 @@ def _refused(response) -> bool:
 
 def test_the_read_limit_is_sixty_requests_a_minute(auth_app):
     # Pinned: the number is a decision ADR-0262 reasons out, not a tuning knob.
-    assert (auth_app._READ_LIMIT_REQUESTS, auth_app._READ_LIMIT_WINDOW_S) == (60, 60)
+    assert (auth_app._READ_LIMIT_REQUESTS, auth_app._LIMIT_WINDOW_S) == (60, 60)
 
 
 def test_an_anonymous_caller_past_the_limit_is_told_when_to_retry(auth_app):
@@ -584,7 +584,7 @@ def test_the_window_frees_the_caller_again(auth_app, monkeypatch):
         "_READ_LIMIT",
         rate_limit.RateLimit(
             auth_app._READ_LIMIT_REQUESTS,
-            auth_app._READ_LIMIT_WINDOW_S,
+            auth_app._LIMIT_WINDOW_S,
             clock=lambda: now[0],
         ),
     )
@@ -638,7 +638,7 @@ def test_a_digest_search_the_limit_refuses_is_admitted_on_a_retry(auth_app):
     from headstart.alerts import space_query
 
     assert 429 not in space_query._PERMANENT_HTTP
-    assert sum(space_query._WAITS) >= auth_app._READ_LIMIT_WINDOW_S
+    assert sum(space_query._WAITS) >= auth_app._LIMIT_WINDOW_S
 
 
 def test_the_limit_leaves_every_other_path_alone(auth_app):
@@ -1406,7 +1406,7 @@ def test_saved_are_capped_but_a_restar_never_hits_the_cap(sets_app, hub, monkeyp
     monkeypatch.setattr(
         sets_app,
         "_WRITE_LIMIT",
-        rate_limit.RateLimit(10_000, sets_app._READ_LIMIT_WINDOW_S),
+        rate_limit.RateLimit(10_000, sets_app._LIMIT_WINDOW_S),
     )
     client = _signed_in(sets_app, monkeypatch)
     for i in range(sets_app.MAX_SAVED):
