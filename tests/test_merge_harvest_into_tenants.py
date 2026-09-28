@@ -47,3 +47,34 @@ def test_an_oracle_row_is_folded_under_the_pod_host_its_scraper_reads(
             "harvest",
         ),
     }
+
+
+def test_a_new_lever_slug_is_folded_in_the_casing_it_was_harvested_in(
+    tmp_path, monkeypatch
+):
+    """Lever reads a slug case-sensitively (`CesiumAstro` lists 309 postings, `cesiumastro` is
+    "Document not found", 2026-09-28), so a new tenant written lowercased names no Board. The
+    match against the pool stays case-insensitive, so a Board the pool already holds under another
+    casing is not added twice."""
+    byp, merged = tmp_path / "by-provider", tmp_path / "ats-tenants-merged"
+    byp.mkdir()
+    merged.mkdir()
+    (byp / "lever.csv").write_text(
+        "slug,url,n_sources,sources\n"
+        "CesiumAstro,https://jobs.lever.co/CesiumAstro,1,x\n"
+        "Aprio,https://jobs.lever.co/Aprio,1,x\n",
+        encoding="utf-8",
+    )
+    (merged / "lever.csv").write_text(
+        "ats,tenant,url,source\nlever,aprio,https://jobs.lever.co/aprio,wayback\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(mh, "BYP", byp)
+    monkeypatch.setattr(mh, "MERGED", merged)
+    mh.main()
+    with (merged / "lever.csv").open(encoding="utf-8") as f:
+        pool = {r["tenant"]: (r["url"], r["source"]) for r in csv.DictReader(f)}
+    assert pool == {
+        "aprio": ("https://jobs.lever.co/aprio", "wayback+harvest"),
+        "CesiumAstro": ("https://jobs.lever.co/CesiumAstro", "harvest"),
+    }

@@ -265,3 +265,24 @@ def test_cornerstone_pattern_keeps_career_site_urls_and_skips_the_lms(miner):
     assert hits(
         "https://x.com/?u=https%3A%2F%2Fbbb.csod.com%2Fux%2Fats%2Fcareersite%2F1"
     ) == ["bbb"]
+
+
+def test_a_path_slug_keeps_the_casing_it_was_captured_in(miner):
+    """Lever's API and board read a slug case-sensitively: `api.lever.co/v0/postings/CesiumAstro`
+    lists 309 postings and `.../cesiumastro` answers "Document not found" (measured 2026-09-28).
+    A path slug lowercased here named a Board that does not exist, and the ledger held it `dead`.
+    A subdomain label is a host, so it is still lowercased, and `BLOCK` still matches any casing."""
+    spec = miner.ATS_PATTERNS["lever"]
+    pats = [re.compile(p, re.IGNORECASE) for p in spec["patterns"]]
+    hits: dict[str, str] = {}
+    miner.extract_tenants(
+        spec,
+        pats,
+        [
+            "https://jobs.lever.co/CesiumAstro/5f1c3a8e-0000-4000-8000-000000000000",
+            "https://api.lever.co/v0/postings/USMobile?mode=json",
+            "https://jobs.lever.co/WWW",
+        ],
+        hits,
+    )
+    assert sorted(hits) == ["CesiumAstro", "USMobile"]

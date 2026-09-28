@@ -619,8 +619,11 @@ def tenant_from(kind, match):
         # always clean — only `url` was polluted, and only because of this branch.
         host = tok.lower()
         return host, f"https://{host}"
-    tok = tok.lower()  # label / slug
-    if tok in BLOCK or len(tok) < 2 or tok.isdigit():
+    if kind == "label":
+        tok = tok.lower()  # a host label, and hosts are case-insensitive
+    # A path slug stays as written: Lever reads it case-sensitively, so `CesiumAstro` lowercased
+    # names no Board (`wayback_feeder.extract` keeps it for the same reason).
+    if tok.lower() in BLOCK or len(tok) < 2 or tok.isdigit():
         return None
     return tok, None
 
