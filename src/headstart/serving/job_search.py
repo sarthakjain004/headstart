@@ -148,6 +148,30 @@ RESULT_COLUMNS = (
     "url",
 )
 
+#: What a Job read by id (`/job`, ADR-0277) carries beyond :data:`RESULT_COLUMNS`: the stored
+#: description and the raw fields a search row leaves out. Intersected with the live schema like
+#: the search projection, since `description` and `description_stored` arrive by migration.
+JOB_DETAIL_COLUMNS = (
+    "department",
+    "experience",
+    "max_years",
+    "description_stored",
+    "description",
+)
+
+#: The most Jobs one read by id may name (ADR-0277).
+MAX_JOB_IDS = 5
+
+#: The longest a Job id may be in a read by id or in ``like=``. The longest served id was 180
+#: characters on 2026-09-29 (a Workday slug); the bound keeps a crafted id out of a where-clause.
+JOB_ID_MAX_CHARS = 300
+
+#: The most of one description a read by id serves (ADR-0277). 11,860 characters was the 99th
+#: percentile of 2,991 stored descriptions on 2026-09-29 (median 5,229, longest 22,806), so the
+#: cut reaches about one description in a hundred, and a 30,000-character MCP answer still fits
+#: one whole.
+JOB_DESCRIPTION_LIMIT = 12_000
+
 
 # The sort control's values, mapped to the column each orders by (issue #275). A whitelist
 # because the result reaches an ORDER BY; "rel" is deliberately absent, since relevance is the
@@ -418,6 +442,32 @@ def _ids_in_clause(ids: list[str]) -> str:
     return "id IN (" + ", ".join("'" + i.replace("'", "''") + "'" for i in ids) + ")"
 
 
+def _checked_job_id(job_id: str, name: str) -> str:
+    if len(job_id) > JOB_ID_MAX_CHARS:
+        raise ValueError(
+            f"{name} must be a job id of at most {JOB_ID_MAX_CHARS} characters"
+        )
+    return job_id
+
+
+def _like_id(args: Mapping[str, str]) -> str | None:
+    """The Job ``like=`` ranks by (ADR-0277), or None. Refused beside ``q``: one ranking replaces
+    the other, and neither narrows what matches, so honouring both is not possible."""
+    like = (args.get("like") or "").strip()
+    if not like:
+        return None
+    if (args.get("q") or "").strip():
+        raise ValueError(
+            "like ranks by one job and q by a query; send one of them, not both"
+        )
+    return _checked_job_id(like, "like")
+
+
+def _other_than(job_id: str) -> str:
+    """Every Job but ``job_id``: a ``like=`` search never lists or counts its own Job."""
+    return "id <> '" + job_id.replace("'", "''") + "'"
+
+
 # TEMPORARY (2026-07-07) — INTENDED FOR REMOVAL. Darwinbox rows scraped before the
 # candidatev2 URL fix carry the old `/ms/candidate/careers/jobs/{id}` link, which on v2
 # tenants redirects to the careers home instead of the job. The stored data self-heals only
@@ -640,7 +690,7 @@ def _refuse_an_unserved_currency(
     )
 
 
-def _result_row(row: Mapping[str, Any], query: str) -> dict[str, Any]:
+def _result_row(row: Mapping[str, Any], ranked: bool) -> dict[str, Any]:
     """One served result: every :data:`RESULT_COLUMNS` value, plus ``score`` after the id.
 
     Built from that one tuple rather than a hand-written dict beside it (ADR-0194), so the
@@ -651,12 +701,26 @@ def _result_row(row: Mapping[str, Any], query: str) -> dict[str, Any]:
     """
     result: dict[str, Any] = {
         "id": row.get("id"),
-        "score": round(1 - row["_distance"], 3) if query else None,
+        "score": round(1 - row["_distance"], 3) if ranked else None,
     }
     result.update(
         {column: row.get(column) for column in RESULT_COLUMNS if column != "id"}
     )
     result["url"] = _canonical_url(row.get("ats"), row.get("url"), row.get("id"))
+    return result
+
+
+def _job_row(row: Mapping[str, Any]) -> dict[str, Any]:
+    """One Job read by id (ADR-0277): a search row's fields without ``score``, then
+    :data:`JOB_DETAIL_COLUMNS`, the description cut at :data:`JOB_DESCRIPTION_LIMIT`.
+    ``description_chars`` is its whole length, so a reader knows how much the cut left out."""
+    result: dict[str, Any] = {column: row.get(column) for column in RESULT_COLUMNS}
+    result["url"] = _canonical_url(row.get("ats"), row.get("url"), row.get("id"))
+    result.update({column: row.get(column) for column in JOB_DETAIL_COLUMNS})
+    description = row.get("description") or ""
+    result["description"] = description[:JOB_DESCRIPTION_LIMIT] or None
+    result["description_chars"] = len(description)
+    result["description_cut"] = len(description) > JOB_DESCRIPTION_LIMIT
     return result
 
 
@@ -751,6 +815,10 @@ class JobSearch:
         #: :data:`RESULT_COLUMNS` narrowed to what this table actually has — see that constant
         #: for why the intersection is mandatory rather than defensive.
         self.projection = tuple(c for c in RESULT_COLUMNS if c in names)
+        #: What :meth:`jobs_by_id` asks for: the projection plus the detail columns present.
+        self.job_projection = self.projection + tuple(
+            c for c in JOB_DETAIL_COLUMNS if c in names
+        )
         # Facets ignore the semantic query and the served table is immutable for this process's
         # lifetime (the Space restarts when a new table lands). Cache only the parsed structured
         # filters, bounded so arbitrary public requests cannot grow memory without limit.
@@ -922,6 +990,8 @@ class JobSearch:
 
         ``counts=total`` in ``args`` counts no option (:data:`FACET_COUNTS`, ADR-0274), cached
         apart from the full strip; any other value but ``all`` is refused.
+
+        A ``like=`` Job is left out of every count, as :meth:`run` leaves it out of the list.
         """
         filters = self.parse_filters(args)
         asked = (args.get("counts") or "").strip() or FACET_COUNTS[0]
@@ -930,6 +1000,8 @@ class JobSearch:
                 f"counts {asked!r} is not known; known: {_listed(FACET_COUNTS)}"
             )
         only_total = asked == "total"
+        if like := _like_id(args):
+            extra_where = with_extra(extra_where, _other_than(like))
         cache_key = (filters, extra_where, only_total)
         cached = _cache_get(
             self._facet_cache,
@@ -988,12 +1060,21 @@ class JobSearch:
         here is **Account state** — the follow/hide lists (ADR-0171) — not a control the user set
         on this request. Keeping it out of `SearchFilters` is what stops a Saved Set freezing a
         follow list at the moment it was saved.
+
+        ``like=<id>`` ranks by that Job's own stored vector in place of ``q``, and leaves the Job
+        out (ADR-0277); ``ValueError`` when it comes with ``q`` or names no served Job.
         """
         started = time.monotonic()
         query = (args.get("q") or "").strip()
+        # `like=` ranks by one Job's own stored vector instead of an encoded query, and leaves
+        # that Job out (ADR-0277); from here on it is a ranked search like any other.
+        like = _like_id(args)
+        ranked = bool(query or like)
         _int = _int_arg(args)
         filters = self.parse_filters(args)
         where = with_extra(build_filter(filters, self.capabilities), extra_where)
+        if like:
+            where = with_extra(where, _other_than(like))
         # Whitelisted to a column name, never taken from the query string — this reaches an
         # ORDER BY. An unknown value is no sort at all, which is the existing behaviour.
         sort = SORT_COLUMNS.get((args.get("sort") or "").strip())
@@ -1033,7 +1114,7 @@ class JobSearch:
         page = max(1, min(1 if page is None else page, self.max_page))
         offset = (page - 1) * k
         browse_key = (filters, sort, k, page, extra_where)
-        if not query:
+        if not ranked:
             cached = _cache_get(
                 self._browse_cache,
                 self._browse_cache_lock,
@@ -1044,9 +1125,9 @@ class JobSearch:
                 return cached
 
         encode_ms = 0.0  # a cache hit costs ~0 too; the slow line says which it was
-        if query:
+        if ranked:
             encode_started = time.monotonic()
-            vector = self._query_vector(query)
+            vector = self._query_vector(query) if query else self._stored_vector(like)
             encode_ms = (time.monotonic() - encode_started) * 1000
             search = self._table.search(vector).metric("cosine")
             if self.has_vector_index:
@@ -1067,9 +1148,9 @@ class JobSearch:
         # error that briefly bought a `_rowid` here, on a probe whose projection was the thing
         # at fault.)
         search = search.select(
-            [*self.projection, "_distance"] if query else [*self.projection]
+            [*self.projection, "_distance"] if ranked else [*self.projection]
         )
-        if not query and not sort:
+        if not ranked and not sort:
             # `first_seen` alone is not a stable sort key: pipeline runs stamp it once per
             # sync batch, so thousands of rows tie on the exact same timestamp, and `offset`
             # pagination over a tied sort silently repeats and drops rows across pages
@@ -1096,7 +1177,7 @@ class JobSearch:
             ordering.append({"column_name": "id", "ascending": True})
             search = search.order_by(ordering)
 
-        if sort and query:
+        if sort and ranked:
             # Sorting a *ranked* result set, issue #275. The comment above is the constraint:
             # an `order_by` on the vector branch does not tie-break similarity, it replaces
             # it — so asking LanceDB to do this would silently discard the query. Instead take
@@ -1147,9 +1228,9 @@ class JobSearch:
                     ]
                 )
             rows = search.limit(k).offset(offset).to_list()
-            path = "ranked" if query else "browse"
+            path = "ranked" if ranked else "browse"
 
-        result = [_result_row(r, query) for r in rows]
+        result = [_result_row(r, ranked) for r in rows]
         elapsed_ms = (time.monotonic() - started) * 1000
         if elapsed_ms > SLOW_SEARCH_MS:
             # Shapes only: the query text is the user's and is never logged (ADR-0032). The path
@@ -1157,10 +1238,10 @@ class JobSearch:
             _log.warning(
                 f"slow search {elapsed_ms:.0f} ms: path={path} encode_ms={encode_ms:.0f} "
                 f"indexed={self.has_vector_index} page={page} k={k} sort={sort} "
-                f"query={bool(query)} extra_where={extra_where is not None} "
+                f"query={bool(query)} like={bool(like)} extra_where={extra_where is not None} "
                 f"where_len={len(where or '')}"
             )
-        if not query:
+        if not ranked:
             _cache_put(
                 self._browse_cache,
                 self._browse_cache_lock,
@@ -1248,6 +1329,45 @@ class JobSearch:
             .to_list()
         )
         return {r["id"] for r in rows}
+
+    def jobs_by_id(self, ids: Sequence[str]) -> dict[str, dict[str, Any]]:
+        """Up to :data:`MAX_JOB_IDS` served Jobs, whole enough to read (``/job``, ADR-0277),
+        keyed by id; an id the table does not hold is simply absent. ``ValueError`` on no id,
+        too many, or one past :data:`JOB_ID_MAX_CHARS`, which the route answers as 400.
+
+        One id-equality scan asking only for :attr:`job_projection`: the table has no index on
+        ``id``, and none is needed — 18–20 ms for one to five ids on the 514,163-row table
+        (measured 2026-09-29 on a local copy)."""
+        wanted = list(dict.fromkeys(i for i in ids if i))
+        if not wanted or len(wanted) > MAX_JOB_IDS:
+            raise ValueError(f"name 1 to {MAX_JOB_IDS} job ids")
+        for job_id in wanted:
+            _checked_job_id(job_id, "id")
+        rows = (
+            self._table.search()
+            .where(_ids_in_clause(wanted))
+            .select([*self.job_projection])
+            .limit(len(wanted))
+            .to_list()
+        )
+        return {row["id"]: _job_row(row) for row in rows}
+
+    def _stored_vector(self, job_id: str) -> Any:
+        """``job_id``'s own stored vector, which ``like=`` ranks by; ``ValueError`` when the
+        table does not hold it. 12 ms on the table above."""
+        rows = (
+            self._table.search()
+            .where(_ids_in_clause([job_id]))
+            .select(["vector"])
+            .limit(1)
+            .to_list()
+        )
+        if not rows:
+            raise ValueError(
+                f"no job with id {job_id!r} is in the index. HeadStart removes a posting once "
+                "two consecutive scrapes of its Board miss it, so it has most likely closed"
+            )
+        return rows[0]["vector"]
 
     def n_seen_within(self, hours: int) -> int | None:
         """How many Jobs entered the index in the last ``hours`` — ``None`` without the column.

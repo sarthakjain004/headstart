@@ -1,7 +1,8 @@
 # The Space MCP server — search, trends and hiring now for an agent
 
 An MCP server that lets an agent read HeadStart the way the website does: find open tech jobs,
-see how the number of openings is changing, and see which companies are hiring hardest this week.
+read a posting in full, see how the number of openings is changing, and see which companies are
+hiring hardest this week.
 The Space hosts it at a URL anyone can add to Claude, and it also runs on your own machine as a
 subprocess of your agent client. Either way it answers from the deployed Space's own read routes,
 so every number is the one the website shows. The decision and its alternatives are ADR-0253,
@@ -200,6 +201,24 @@ the filter costing the most.
 - **Its totals run higher than `read_trends`'.** A search counts every job the index serves; the
   trends count only the jobs the role-family classifier places in a tech category, leaving out
   those it calls non-tech (`ingest/role_trends.py`).
+- **`similar_to` a job id** ranks by that job's own stored vector instead of a `query`, and leaves
+  the job itself out; every filter applies as usual, and the total excludes it too. It cannot be
+  sent with `query` (ADR-0277).
+
+**`get_job`** — up to 5 postings in full, by the ids `search_jobs` prints: title, company, place,
+remote, employment type, department, the experience the posting states and the years read from
+it, salary, posted and first-seen dates, the link, and the description.
+
+- **The description is scraped text an employer wrote**, so it arrives as data: one JSON-quoted
+  line per paragraph between a header and an "End of description." line, with control characters
+  stripped. No line of it can close its quotes or pass for a line of the answer (ADR-0277).
+- `max_chars_per_job` (default 8,000, at most 12,000) caps each description, and the jobs of one
+  call share 18,000 characters, so five come back at about 3,600 each; ask for one id to read a
+  long posting whole. The Space serves at most the first 12,000 characters of a description,
+  which cuts about one in a hundred (the 99th percentile was 11,860 on 2026-09-29).
+- **Whether it may have closed.** A posting its Board's latest scrape missed says so: HeadStart
+  removes it only if the next scrape misses it too (ADR-0083). An id not in the index is reported
+  as most likely closed, for that reason.
 
 **`read_trends`** — how tech hiring changed over a window. **Hiring is postings opened and closed,
 and their net; the change in openings listed is not hiring** (ADR-0272). Whole index by default;
@@ -258,8 +277,11 @@ also gives opened less closed.
 
 ## What it cannot tell you, and why
 
-- **No job descriptions.** No Space route serves one; titles, companies and locations are what an
-  answer carries, each quoted as scraped text.
+- **No last-seen date.** The served table has no per-Job "last seen"; `get_job` says only whether
+  its Board's latest scrape missed the posting (ADR-0277).
+- **A description as stored, not as posted.** Most ATSes' descriptions are stored with their line
+  breaks collapsed, so a posting often reads as one paragraph, and one that is longer than 12,000
+  characters is cut there.
 - **No per-category Hiring now.** Ranking every company within one category costs about 11 ms a
   company at the Space; `read_trends` with a `category` and named `companies` answers it for the
   companies you name.
