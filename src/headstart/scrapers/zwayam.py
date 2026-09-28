@@ -87,7 +87,7 @@ costs ``ceil(jobs / 10) + 1`` requests per Board plus the details. When that GET
 the shape falls back on the measured hostname prior: ``openings.co`` Boards are Next 102:12, every
 custom domain measured is Angular 92:0.
 
-**No reproducible rate limit — on either endpoint.** A 2026-08-27 load test could not make the
+**A per-IP request quota, not a rate limit — on both endpoints.** A 2026-08-27 load test could not make the
 search refuse: ~2,160 requests across 150 sequential, 32-wide concurrency (~94 req/s), 60
 distinct ``domain`` values, and 1,500 sustained at 34 req/s — zero non-200s. The **detail**
 endpoint was probed separately the same day (1,360 requests: 300 sequential, 600 at 32-wide, 400
@@ -795,7 +795,9 @@ class ZwayamScraper(BaseScraper):
                     experience=_experience(source),
                     # `jobType` is "J" on all 16,427 rows walked and `employeeType`/
                     # `jobTypeFieldDisplayName` are null, so the listing states no employment
-                    # type. Left None rather than mapped from a constant that means nothing.
+                    # type; the detail JSON's only such field is the same `jobType` "J"
+                    # (airbus.openings.co, 2026-09-28). Left None rather than mapped from a
+                    # constant that means nothing.
                     employment_type=None,
                     salary=self._salary_field(source),
                 )
