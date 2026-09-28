@@ -64,6 +64,7 @@ test('the sidebar opens unfolded, and its button says so', () => {
   assert.equal(root.dataset.nav, undefined);
   assert.equal(button['aria-expanded'], 'true');
   assert.equal(button['aria-label'], 'Collapse navigation');
+  assert.equal(button.title, 'Collapse navigation', 'an icon-only button carries its name as a tooltip');
 });
 
 test('a fold applied before the first paint is what the button reports at load', () => {

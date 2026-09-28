@@ -112,19 +112,20 @@ document.addEventListener('click', e => { if (e.target.closest && e.target.close
 const NAV_KEY = 'hs.navCollapsed';
 function drawNavToggle(){
   const btn = el('nav-toggle');
-  if (!btn) return;
   const folded = document.documentElement.dataset.nav === 'collapsed';
+  const label = folded ? 'Expand navigation' : 'Collapse navigation';
   btn.setAttribute('aria-expanded', String(!folded));
-  btn.setAttribute('aria-label', folded ? 'Expand navigation' : 'Collapse navigation');
+  btn.setAttribute('aria-label', label);
+  btn.setAttribute('title', label);   // an icon-only button, like the theme switch beside it
 }
 function flipNav(){
-  const folded = document.documentElement.dataset.nav !== 'collapsed';
-  if (folded) document.documentElement.dataset.nav = 'collapsed';
+  const fold = document.documentElement.dataset.nav !== 'collapsed';
+  if (fold) document.documentElement.dataset.nav = 'collapsed';
   else delete document.documentElement.dataset.nav;
-  try { localStorage.setItem(NAV_KEY, folded ? '1' : ''); } catch(e){}
+  try { localStorage.setItem(NAV_KEY, fold ? '1' : ''); } catch(e){}
   drawNavToggle();
 }
-if (el('nav-toggle')) el('nav-toggle').addEventListener('click', flipNav);
+el('nav-toggle').addEventListener('click', flipNav);
 drawNavToggle();
 function flipTheme(){
   const now = document.documentElement.getAttribute('data-theme')

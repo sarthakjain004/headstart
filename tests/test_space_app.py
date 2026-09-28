@@ -2866,7 +2866,7 @@ def test_the_sidebar_fold_is_applied_before_the_first_paint(app):
     assert 'aria-expanded="true"' in button
     assert 'aria-label="Collapse navigation"' in button
     assert '<nav class="tabs" id="site-nav"' in page
-    # Every entry keeps its name as text inside the link, so the folded rail still announces it.
+    # Every entry keeps its name as text inside the link, so the folded sidebar still announces it.
     nav = page.split('id="site-nav"', 1)[1].split("</nav>", 1)[0]
     assert nav.count('<span class="nav-label">') == nav.count('class="nav-item"')
 

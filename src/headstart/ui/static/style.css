@@ -40,8 +40,8 @@
      880px on one tab and 1276px on another is the same component at two sizes. --shell-pad
      is the shell's own gutter, named so the two cannot drift apart in the calc below. */
   --measure:1150px; --shell-pad:26px;
-  /* The wide-screen sidebar's column, its folded rail, and the gap beside it (ADR-0249). */
-  --nav-w:176px; --nav-rail:64px; --nav-gap:24px;
+  /* The wide-screen sidebar's column, its folded width, and the gap beside it (ADR-0249). */
+  --nav-w:176px; --nav-folded-w:64px; --nav-gap:24px;
   /* What the guided tour dims the page with: dark in both themes, a touch lighter on light. */
   --scrim:rgba(6,7,9,.62);
 }
@@ -1232,11 +1232,16 @@ textarea:focus{ border-color:var(--accent); }
   .content{ grid-area:content; min-width:0; }
   .foot{ grid-area:foot; }
   /* z-index: a sticky box is its own stacking context, and without one above the content the
-     folded rail's tooltips painted under the filter column beside it (measured at 1280). */
+     folded sidebar's tooltips painted under Search's filter rail beside it (measured at 1280). */
   .tabs{ grid-area:nav; position:sticky; top:18px; z-index:3; flex-direction:column; gap:2px;
     margin:0; border-bottom:0; overflow:visible; -webkit-mask-image:none; mask-image:none; }
-  .nav-item{ gap:11px; padding:10px 12px; margin-bottom:0; border-bottom:0;
-    border-radius:var(--r-md); transition:color var(--step), background var(--step); }
+  /* The icon sits 23px in, which is the centre of the folded 64px column, so folding and
+     unfolding only slide the column's edge: nothing inside it jumps. `overflow:hidden` clips a
+     label the column is still too narrow for while it unfolds; the folded state lifts it for
+     the tooltips. */
+  .nav-item{ gap:11px; padding:10px 12px 10px 23px; margin-bottom:0; border-bottom:0;
+    overflow:hidden; border-radius:var(--r-md);
+    transition:color var(--step), background var(--step); }
   .nav-item:hover{ background:var(--raise); }
   .nav-item[aria-current="page"]{ background:var(--raise); box-shadow:inset 3px 0 0 var(--accent); }
   .nav-ico{ display:block; }
@@ -1248,23 +1253,22 @@ textarea:focus{ border-color:var(--accent); }
   .shell{ max-width:min(calc(var(--measure) + var(--nav-w) + var(--nav-gap) + 2 * var(--shell-pad)), 94vw); }
 }
 
-/* ---- the folded sidebar (ADR-0249): a rail of icons. `data-nav` on <html> is set before the
-       first paint (base.html), so a reload opens at the right width instead of sliding into it.
-       Each entry's name stays in the DOM as its accessible name and doubles as its tooltip. ---- */
-.nav-toggle{ display:none; place-items:center; width:44px; height:44px; margin:0 0 6px auto;
+/* ---- the folded sidebar (ADR-0249): a column of icons. `data-nav` on <html> is set before
+       the first paint (base.html), so a reload opens at the right width instead of sliding into
+       it. Each entry's name stays in the DOM as its accessible name and doubles as its tooltip.
+       The button sits centred in the folded width (10px in), and stays there unfolded. ---- */
+.nav-toggle{ display:none; place-items:center; width:44px; height:44px; margin:0 0 6px 10px;
   padding:0; border:1px solid var(--rule); border-radius:var(--r-md); background:var(--raise);
-  color:var(--ink-2); cursor:pointer;
-  transition:color var(--step), border-color var(--step), transform var(--step); }
+  color:var(--ink-2); cursor:pointer; transition:color var(--step), border-color var(--step); }
 .nav-toggle:hover{ color:var(--accent); border-color:var(--accent); }
 .nav-toggle-ico{ width:20px; height:20px; fill:none; stroke:currentColor; stroke-width:1.8;
   stroke-linecap:round; stroke-linejoin:round; transition:transform var(--step); }
 @media screen and (min-width:1280px){
   .nav-toggle{ display:grid; }
-  .shell{ transition:grid-template-columns .2s ease; }
-  :root[data-nav="collapsed"] .shell{ grid-template-columns:var(--nav-rail) minmax(0,1fr); }
-  :root[data-nav="collapsed"] .nav-toggle{ margin:0 auto 6px; }
+  .shell{ transition:grid-template-columns var(--step); }
+  :root[data-nav="collapsed"] .shell{ grid-template-columns:var(--nav-folded-w) minmax(0,1fr); }
   :root[data-nav="collapsed"] .nav-toggle-ico{ transform:scaleX(-1); }
-  :root[data-nav="collapsed"] .nav-item{ position:relative; justify-content:center; padding:10px 0; }
+  :root[data-nav="collapsed"] .nav-item{ position:relative; overflow:visible; }
   :root[data-nav="collapsed"] .nav-label{ position:absolute; width:1px; height:1px; overflow:hidden;
     clip-path:inset(50%); white-space:nowrap; }
   :root[data-nav="collapsed"] .nav-item:hover .nav-label,

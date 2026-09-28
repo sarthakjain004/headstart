@@ -56,7 +56,7 @@ function loadApp(hash) {
       },
       addEventListener() {}, querySelector: () => null,
       querySelectorAll: sel => (sel === '.panel' ? Object.values(panels) : []),
-      documentElement: { dataset: {} },
+      documentElement: { dataset: {} },   // the sidebar's folded state (ADR-0249)
     },
     window: { addEventListener() {}, location, CFG: {}, scrollTo() {} },
     location,
