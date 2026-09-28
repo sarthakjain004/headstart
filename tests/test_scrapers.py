@@ -3692,7 +3692,10 @@ def test_trakstar_fetch_raw_prefers_the_api_and_never_reads_the_page_cards(
 
     raw = scraper.fetch_raw()
 
-    assert raw == {"api_items": [{"id": "1", "title": "Engineer"}], "posted_at": {}}
+    assert raw == {
+        "api_items": [{"id": "1", "title": "Engineer"}],
+        "posted_at_by_code": {},
+    }
     jobs = scraper.parse(raw, SCRAPED_AT)
     assert jobs[0].id == "trakstar:acme:1"
 
@@ -4050,7 +4053,7 @@ def test_trakstar_fetch_raw_keeps_html_when_feed_unreachable():
 
 
 def test_trakstar_fetch_raw_does_not_mark_truncated_for_card_count_heuristic_alone():
-    """A Board with no "View N Openings" total on the page (_is_capped falls back to the bare
+    """A Board with no "View N Openings" total on the page (is_capped falls back to the bare
     card-count heuristic) that also lands on the cap and has an unreachable feed must NOT be
     marked truncated -- this is the same ambiguous "reached the cap" signal the pre-fix code
     deliberately declined to mark_truncated for; only the page's own total turns that into

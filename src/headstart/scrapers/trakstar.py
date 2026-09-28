@@ -134,7 +134,7 @@ _API_MAX_PAGES = 50
 #: The careers page renders at most this many job cards. ``is_capped``'s fallback, used when a
 #: page carries no "View N Openings" total to compare against (see ``_total_openings``) — a
 #: Board landing exactly on it with no total is very likely truncated.
-CARD_CAP = 25
+_CARD_CAP = 25
 
 _ITEM = "js-careers-page-job-list-item"
 _CODE = re.compile(r'data-href="/jobs/([^/"]+)/?"')
@@ -313,7 +313,7 @@ class TrakstarScraper(BaseScraper):
             # object already carries its own description, so there is no per-job fetch to gate
             # with ADR-0017 the way the HTML+detail path below still needs. It states no date,
             # so the job feed supplies each one's `pubDate` by code (`_feed_dates`).
-            return {"api_items": api_items, "posted_at": self._feed_dates()}
+            return {"api_items": api_items, "posted_at_by_code": self._feed_dates()}
         # The careers page HTML (job cards), fetched again only if the first read failed.
         html = page if page is not None else self._get()
         # Split once: the cap check needs the count, the tech gate below needs each card's own
@@ -463,11 +463,12 @@ class TrakstarScraper(BaseScraper):
         feed_xml = self._fetch_feed()
         items = _feed_items(feed_xml) if feed_xml is not None else None
         if items is None:
-            _log.info(
-                f"{self.board_key()}: job feed "
-                f"{'unreachable (' + str(self._feed_failure) + ')' if feed_xml is None else 'did not parse'}"
-                " — jsapi jobs served undated"
+            why = (
+                f"unreachable ({self._feed_failure})"
+                if feed_xml is None
+                else "did not parse"
             )
+            _log.info(f"{self.board_key()}: job feed {why} — jsapi jobs served undated")
         return {i["code"]: i["posted_at"] for i in items or [] if i["posted_at"]}
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
@@ -480,7 +481,7 @@ class TrakstarScraper(BaseScraper):
                 self.company,
                 raw["api_items"],
                 scraped_at,
-                raw.get("posted_at"),
+                raw.get("posted_at_by_code"),
             )
             self.note_unread_rows(
                 len(raw["api_items"]) - len(jobs),
@@ -583,7 +584,7 @@ def is_capped(html: str, n_codes: int) -> bool:
     total = _total_openings(html)
     if total is not None:
         return total > n_codes
-    return n_codes >= CARD_CAP
+    return n_codes >= _CARD_CAP
 
 
 def _isolate_div(html: str, opening_div: re.Pattern) -> str | None:

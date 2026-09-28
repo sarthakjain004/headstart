@@ -2753,7 +2753,7 @@ def p_trakstar(t, u):
             try:
                 total = (json.loads(body).get("meta") or {}).get("total")
             except Exception:  # noqa: BLE001
-                total = None
+                total = None  # not the listing; keep the card count
         if isinstance(total, int) and total > n:
             return LIVE, total
     return LIVE, n
