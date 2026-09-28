@@ -279,6 +279,28 @@ def test_the_key_keeps_its_casing_when_a_newer_row_spells_it_otherwise(tmp_path)
     assert board.slug == "https://3m.wd1.myworkdayjobs.com/Search"
 
 
+def test_a_lever_board_is_fetched_in_its_ledger_casing(tmp_path):
+    """Lever reads a slug case-sensitively: `CesiumAstro` lists 309 postings and `cesiumastro`
+    answers "Document not found" (2026-09-28). An older `dead` row in the lowercased spelling does
+    not take the Board out, and nothing between the ledger and the request lowercases the slug."""
+    from headstart.scrapers.registry import get_scraper
+
+    ledger = tmp_path / "liveness"
+    _write_ledger(
+        ledger,
+        "lever.csv",
+        [
+            "lever,cesiumastro,https://jobs.lever.co/cesiumastro,dead,,2026-08-14",
+            "lever,CesiumAstro,https://jobs.lever.co/CesiumAstro,live,309,2026-09-28",
+        ],
+    )
+    (board,) = load(ledger, min_jobs=0)
+    assert board.slug == "CesiumAstro"
+    assert board.lowercase_identity == "lever:cesiumastro"
+    scraper = get_scraper(board.ats, board.slug, board.name)
+    assert scraper.url() == "https://api.lever.co/v0/postings/CesiumAstro?mode=json"
+
+
 def test_the_slug_comes_from_the_newest_live_row_carrying_the_key(tmp_path):
     """One site on two data centres: both rows carry the same key, and the newer one's pod is the
     one fetched, not whichever the ledger lists first."""
