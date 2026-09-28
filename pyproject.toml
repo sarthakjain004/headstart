@@ -71,6 +71,11 @@ ui = ["flask"]
 # builds the Digest's spreadsheet; huggingface_hub reads and writes the Subscription records.
 alerts = ["google-auth", "xlsxwriter", "huggingface_hub<2"]
 
+# The Space MCP server (ADR-0253), runnable with no clone:
+# `uvx --from git+https://github.com/sarthakjain004/headstart headstart-space-mcp`.
+[project.scripts]
+headstart-space-mcp = "headstart.space_mcp.server:main"
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/headstart"]
 

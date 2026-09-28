@@ -11,12 +11,14 @@ are `tests/test_space_mcp_tools.py`.
 from __future__ import annotations
 
 import dataclasses
+import importlib
 import json
 import os
 import pathlib
 import re
 import subprocess
 import sys
+import tomllib
 
 import pytest
 
@@ -158,6 +160,14 @@ def test_a_real_client_handshake_over_a_real_subprocess():
     assert [t["name"] for t in replies[1]["result"]["tools"]] == [
         tool.name for tool in REGISTRY
     ]
+
+
+def test_the_console_script_a_no_clone_install_runs_is_this_servers_main():
+    """`uvx --from git+…/headstart headstart-space-mcp` runs whatever pyproject names."""
+    pyproject = pathlib.Path(__file__).resolve().parent.parent / "pyproject.toml"
+    scripts = tomllib.loads(pyproject.read_text(encoding="utf-8"))["project"]["scripts"]
+    module, _, attribute = scripts["headstart-space-mcp"].partition(":")
+    assert getattr(importlib.import_module(module), attribute) is server.main
 
 
 # ---- arguments ---------------------------------------------------------------------------
