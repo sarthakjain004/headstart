@@ -57,3 +57,15 @@ were read, 272 were buried by redirect and 148 by `subset-reqs`.
   from the internal portal was not verified.
 - Two maximal portals that overlap without either containing the other both stay, so the
   postings they share are still served twice.
+
+## Amendment (2026-09-28): an internal portal is never the kept one (#794)
+
+The four public Beaumont portals the Consequences above bury onto `internal-beaumonthospital` are the
+defect #794 found in Taleo's section burials: kept, a portal's own links are served, and these are
+the internal portal's. The containment election is now `alias_ledger.bury_contained_keeping_public`
+(ADR-0186's amendment): the public portals elect among themselves, and a portal whose host label
+carries a non-public token (`index_plan.names_non_public`: `internal`, `confidential`, ...) is
+buried onto the largest kept public portal of its customer that lists all its postings, or left
+unburied. Redirect burials are unchanged: a portal whose sitemap iCIMS redirects to an
+internal-named one (`application-chesterton` to `internalcareers-chesterton`) is read from that
+list either way.

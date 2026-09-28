@@ -99,3 +99,20 @@ def test_a_redirect_to_a_buried_portal_lands_on_the_survivor(mod):
 def test_the_customer_is_the_last_word_of_the_host_label(mod):
     assert mod.customer_of(RED_ES) == "redlobster"
     assert mod.customer_of("careers-gd-ais.icims.com") == "ais"
+
+
+def test_a_public_portal_is_not_buried_onto_an_internal_one(mod):
+    """#794, as ADR-0254's Consequences recorded it: four public Beaumont portals were buried onto
+    `internal-beaumonthospital`, serving its employee-only links. The internal portal is now
+    buried onto the public one it mirrors instead."""
+    internal, general = (
+        "internal-beaumonthospital.icims.com",
+        "general-beaumonthospital.icims.com",
+    )
+    postings = {
+        internal: frozenset({("1", "rn"), ("2", "md")}),
+        general: frozenset({("1", "rn"), ("2", "md")}),
+    }
+    assert mod.burials(_unredirected(postings), postings) == {
+        internal: (general, "subset-reqs")
+    }

@@ -216,6 +216,34 @@ def bury_contained(
     return buried
 
 
+def bury_contained_keeping_public(
+    ids_by_board: Mapping[str, Collection[str]],
+    group_of: Callable[[str], str],
+    non_public: Callable[[str], bool],
+) -> dict[str, str]:
+    """:func:`bury_contained`, where a non-public Board is never the kept one (#794).
+
+    The public Boards elect among themselves; a non-public Board is then buried onto the largest
+    kept public Board of its group that lists all its ids (then the lowest key), and left unburied
+    when none does. Kept, a non-public Board's own links are served — employee-only ones, won on
+    one extra id at read time; buried, nothing scrapes it. Leaving it out of the comparison
+    instead would never bury it, and its non-public-only ids would be served."""
+    public = {b: ids for b, ids in ids_by_board.items() if not non_public(b)}
+    buried = bury_contained(public, group_of)
+    kept = {b: frozenset(ids) for b, ids in public.items() if ids and b not in buried}
+    for board, ids in ids_by_board.items():
+        if board in public or not ids:
+            continue
+        hosts = [
+            b
+            for b, own in kept.items()
+            if group_of(b) == group_of(board) and own >= set(ids)
+        ]
+        if hosts:
+            buried[board] = min(hosts, key=lambda b: (-len(kept[b]), b))
+    return buried
+
+
 def path_for(liveness_dir: str | Path, ats: str) -> Path:
     """This ATS's alias ledger, resolved from the liveness dir it sits beside.
 
