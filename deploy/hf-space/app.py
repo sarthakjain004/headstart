@@ -405,9 +405,24 @@ def _request_json_object() -> dict:
 
 
 @app.before_request
-def _require_sign_in():
+def _end_a_week_old_session():
+    """Sign out a session ``_SESSION_LIFETIME`` after its sign-in, on every path (#593). It is
+    registered first, so the wall, ADR-0262's limit and ``/me`` all see such a caller signed out."""
     if _AUTH_ON and session.get("email") and not _signed_in_recently():
         session.clear()
+
+
+def _signed_in_recently() -> bool:
+    """Whether the session's sign-in is under ``_SESSION_LIFETIME`` old. A cookie from before
+    ``signed_in_at`` existed has none, and signs in again."""
+    signed_in_at = session.get("signed_in_at")
+    return isinstance(signed_in_at, int | float) and (
+        time.time() - signed_in_at < _SESSION_LIFETIME.total_seconds()
+    )
+
+
+@app.before_request
+def _require_sign_in():
     if not _AUTH_ON or request.path in _PUBLIC_PATHS:
         return None
     if not session.get("email"):
@@ -452,15 +467,6 @@ def _limit_the_anonymous():
         ),
         429,
         {"Retry-After": str(wait_s)},
-    )
-
-
-def _signed_in_recently() -> bool:
-    """Whether the session's sign-in is under ``_SESSION_LIFETIME`` old. A cookie from before
-    ``signed_in_at`` existed has none, and signs in again."""
-    signed_in_at = session.get("signed_in_at")
-    return isinstance(signed_in_at, int | float) and (
-        time.time() - signed_in_at < _SESSION_LIFETIME.total_seconds()
     )
 
 

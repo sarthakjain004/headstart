@@ -28,8 +28,8 @@ Search and Trends are no longer anonymous — accepted deliberately, knowing it 
 visitors.
 
 **Sessions are a signed Flask cookie.** The Google credential is verified once at sign-in;
-the server then sets its own signed cookie (a week, from sign-in). One new secret (`SECRET_KEY`) joins
-the Space. Re-sending the Google token per request was rejected: its ~1h expiry would bounce
+the server then sets its own signed cookie (a week, from sign-in). One new secret
+(`SECRET_KEY`) joins the Space. Re-sending the Google token per request was rejected: its ~1h expiry would bounce
 users mid-use.
 
 **A Saved set is the unit of personalisation, and the Subscription is the one with email

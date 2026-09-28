@@ -382,7 +382,9 @@ def test_a_session_ends_a_week_after_sign_in_however_often_it_is_used(
     clock = [1_000_000.0]
     monkeypatch.setattr(auth_app.time, "time", lambda: clock[0])
     client = _signed_in(auth_app, monkeypatch)
-    for _ in range(7):  # used every day
+    # Used every day for a week, each request re-signing the cookie: 7 x 86,399 s is one
+    # second short of the lifetime, and the next 7 s cross it.
+    for _ in range(7):
         clock[0] += 86_399
         assert client.get("/sets", base_url=_HTTPS).status_code != 401
     clock[0] += 7
