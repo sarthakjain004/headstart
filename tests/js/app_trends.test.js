@@ -451,7 +451,7 @@ test('the chart does not name an ATS scope it is not filtered to', () => {
   assert.doesNotMatch(nodes['trends-chart'].getAttribute('aria-label'), /of the ATS sources/);
 });
 
-test('a short history with nothing checked blames the pipeline, not a selection', () => {
+test('a short history with nothing checked does not blame a selection', () => {
   const { t, nodes } = loadApp();
   fakeAtsMenu(nodes, [['greenhouse', false], ['lever', false]]);
   t.set(oneStampFixture(), null);
@@ -592,7 +592,7 @@ test('a short history under an active ATS filter names the filter as the cause',
   assert.match(nodes['trends-empty'].textContent, /for these sources so far/);
 });
 
-test('a short history with no ATS filter keeps the generic pipeline-is-new message', () => {
+test('a short history with no ATS filter keeps the generic too-few-updates message', () => {
   const { t, nodes } = loadApp();
   fakeAtsMenu(nodes, [['greenhouse', true], ['lever', true]]);    // all checked = no filter
   t.set(oneStampFixture(), null);
@@ -2216,7 +2216,7 @@ test('turnover stays in the main text, never in the not-hiring disclosure', () =
 test('turnover that began inside the window says from when', () => {
   const { t, nodes } = loadApp();
   t.setPicks([ACME]);
-  t.set(busyAcme({ turnover_since: FOUR[1], closures_unseen: {} }));
+  t.set(busyAcme({ turnover_since: FOUR[1] }));
   t.draw();
   assert.match(nodes['trends-verdict'].innerHTML, / — about 500 opened, 490 closed since Sep 14[.;]/);
 });
@@ -2237,7 +2237,8 @@ test('the table gives each line its opened and closed', () => {
 test('the index gets a hiring net from its turnover, and table columns too', () => {
   // The Space has already left the Sep 15 change's runs out (gaps), Board by Board, and names
   // them in `turnover_left_out`. The sentence says neither that nor how many Boards' closures
-  // went uncounted (#755): "How to read this" carries both, once.
+  // went uncounted: "How to read this" carries both, once (ADR-0248). Its net is opened against
+  // closed, never "more openings": the golden's line rises 400 while its net is 10.
   const { t, nodes } = loadApp();
   t.setPicks([]);
   const index = golden('index_turnover_with_a_counting_change_left_out');
@@ -2245,17 +2246,17 @@ test('the index gets a hiring net from its turnover, and table columns too', () 
   t.setUnit('count', false);
   t.draw();
   assert.match(nodes['trends-verdict'].innerHTML,
-    /<b>All tech roles<\/b>: about 10 more openings — about 50 opened, 40 closed\./);
+    /<b>All tech roles<\/b>: about 10 more opened than closed — about 50 opened, 40 closed\./);
   assert.doesNotMatch(nodes['trends-verdict'].innerHTML, /HeadStart has counted|boards?\b|runs?\b/);
   nodes['trends-error'] = Object.assign(fakeEl(), { hidden: true });
   t.table(true);
   assert.match(nodes['trends-table'].innerHTML, /<td>50<\/td><td>40<\/td>/);
-  // A net fall is said as fewer openings, its figure unsigned.
+  // A net fall is said as more closed than opened, its figure unsigned.
   const fewer = structuredClone(index);
   Object.assign(fewer.reading.total.move.turnover, { opened: 40, closed: 50, net: -10 });
   t.set(fewer);
   t.draw();
-  assert.match(nodes['trends-verdict'].innerHTML, /about 10 fewer openings — about 40 opened, 50 closed\./);
+  assert.match(nodes['trends-verdict'].innerHTML, /about 10 more closed than opened — about 40 opened, 50 closed\./);
 });
 
 test('a Hot row shows the week’s opened and closed, and Volume leads with opened', () => {

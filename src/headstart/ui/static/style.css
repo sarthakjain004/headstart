@@ -627,7 +627,7 @@ textarea:focus{ border-color:var(--accent); }
 
 /* The chart's caption and its "How to read this" note, as one bounded block. Loose under a
    full-width plot they read as leftover text; given an edge and a surface they read as the note
-   they are. The note folds to one summary line: it is optional reading (#755). */
+   they are. The note folds to one summary line: it is optional reading (ADR-0248). */
 .chart-note{ margin-top:26px; padding:14px 18px; background:var(--raise-2);
   border-left:2px solid var(--rule-2); border-radius:0 var(--r-md) var(--r-md) 0; }
 .chart-note #trends-foot{ margin:0; max-width:74ch; line-height:1.5; }

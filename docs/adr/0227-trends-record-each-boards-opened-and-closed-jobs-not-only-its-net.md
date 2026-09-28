@@ -1,6 +1,9 @@
 # ADR-0227: Trends record each Board's opened and closed jobs, not only its net
 
-**Status:** accepted · **Date:** 2026-09-25 · **Extends:**
+**Status:** accepted · **Date:** 2026-09-25 · **Amended by:**
+[ADR-0248](0248-the-trends-tab-speaks-to-a-job-seeker.md) — the page's turnover sentences drop the
+Board fraction and the "runs … left out" clause, and the index net reads "more opened than closed";
+"How to read this" carries both caveats · **Extends:**
 [ADR-0143](0143-trends-retain-board-deltas-for-arbitrary-comparable-cohorts.md) (the Board-delta
 ledger), [ADR-0185](0185-trends-narrow-to-companies-picked-from-a-directory-of-boards.md) (company
 trends), [ADR-0171](0171-the-hot-tab-curates-what-it-shows-not-the-whole-index.md) (Hot) ·

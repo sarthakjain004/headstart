@@ -1017,7 +1017,7 @@ class _Reader:
                 change,
                 CauseKind.FOUND_BOARDS,
                 stamps[n["i"]],
-                # "job site", not "board": the reader's word for it (#755).
+                # "job site", not "board": the reader's word for it (ADR-0248).
                 f"{boards} more job site{'' if boards == 1 else 's'} found",
                 company=n["company"],
                 boards=boards,

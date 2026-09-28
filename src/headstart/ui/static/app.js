@@ -1867,8 +1867,8 @@ function stepNote(d, marked){
       marked.removal ? 'duplicates removed, ' : ''}job sites found later, or a company added later.`);
   // Said only where a line carries a step and has a figure read off it: Zomato, with no
   // percentage, and a Count view, whose lines are real levels, both got the Change sentence.
-  // Only where a step is marked on the chart ("Point at a marked line" over a chart with none
-  // pointed at nothing) and a line has a percentage read net of it.
+  // Only where a step is marked on the chart ("Point at one" over a chart with none points at
+  // nothing) and a line has a percentage read net of it.
   if ((marked.epoch || marked.found)
       && chartedAndOther(d).charted.some(s => {
         const line = lineReading(s);
@@ -1956,11 +1956,12 @@ function verdictLines(d){
     const whole = reading.total;
     const t = whole && whole.move.turnover;
     if (!t) return [];
-    // Its net is the hiring one, opened less closed; recounted jobs are not hiring. The runs a
-    // counting change left out (`turnover_left_out`) are said once, under "How to read this",
-    // not in the answer (#755).
-    const net = t.net == null ? '' : t.net < 0 ? `about ${aboutCount(-t.net)} fewer openings — `
-      : t.net > 0 ? `about ${aboutCount(t.net)} more openings — ` : 'no net change — ';
+    // Its net is the hiring one, opened less closed; recounted jobs are not hiring. Said as
+    // opened against closed, never as "more openings": the lines keep a counting change's jump,
+    // so a line up 400 read "about 10 more openings" beside it. That the runs of such a change
+    // are left out (`turnover_left_out`) is said under "How to read this", not here (ADR-0248).
+    const net = t.net == null ? '' : t.net < 0 ? `about ${aboutCount(-t.net)} more closed than opened — `
+      : t.net > 0 ? `about ${aboutCount(t.net)} more opened than closed — ` : 'as many opened as closed — ';
     return [{ name: viewKind(d) === 'bands' ? drillLabel() : 'All tech roles', days: 0,
       text: `${net}${turnoverPhrase(whole, d)}.` }];
   }
@@ -2010,7 +2011,7 @@ function aboutCount(n){
 // closed over the runs its hiring move counts (ADR-0227). A net change alone read Amazon's week
 // as "+17" while it opened 914–1,532. It adds from when, if turnover began inside the window.
 // Boards whose closures went uncounted on a run (ADR-0053) are not named here: "(not counted on
-// 3571 of 5747 boards)" buried the answer (#755). "How to read this" says closed can run low.
+// 3571 of 5747 boards)" buried the answer. "How to read this" says closed can run low (ADR-0248).
 function turnoverPhrase(line, d){
   const t = line && line.move.turnover;
   if (!t) return '';
@@ -2631,7 +2632,7 @@ function moveText(mv){
 }
 // What a mostly re-counted line says beside its hiring, and why, as a title.
 const RECOUNTED_NOTE = 'mostly re-counted in this window';
-const RECOUNTED_WHY = 'Most of this line’s change came from how HeadStart counts, not from hiring, so no percentage is shown';
+const RECOUNTED_WHY = 'Changes in how HeadStart counts moved more jobs out of this line than it had left from its start, so a percentage would not mean anything';
 // "+3 openings", "−1 opening": every place a change is given in openings.
 function signedOpenings(n){
   return `${n < 0 ? '−' : '+'}${Math.abs(n).toLocaleString()} opening${Math.abs(n) === 1 ? '' : 's'}`;
@@ -2716,12 +2717,13 @@ function fmtAxis(v, dec){
 }
 
 // A hover row's reading. Under Change the plotted number and the magnitude are different
-// numbers, so both are given, the index named as one — a bare "1,739 · 113" left the reader to
-// guess what 113 was. Where a marked step lands on this line, its size in openings is given
-// too: "Counting changed here" alone never said by how much.
+// numbers, so both are given, the index said against its start — a bare "1,739 · 113" left the
+// reader to guess what 113 was, and "index 113" named it in jargon (ADR-0248). Where a marked
+// step lands on this line, its size in openings is given too: "Counting changed here" alone
+// never said by how much.
 function rowText(r){
   const lvl = r.value == null ? '—' : fmtLevel(r.value);
-  return trendUnit === 'change' && r.index != null ? `${lvl} · index ${r.index.toFixed(0)}` : lvl;
+  return trendUnit === 'change' && r.index != null ? `${lvl} · ${r.index.toFixed(0)} vs 100 at start` : lvl;
 }
 
 // The legend, table and tooltip always speak the level, whatever the plot is drawing.
@@ -2821,7 +2823,7 @@ function drawTrends(){
       >${swatchHtml(c, slot)}
       <span class="nm" title="${esc(s.label)}">${esc(s.label)}</span>
       <span class="ct">${latest == null ? '—' : fmtCompact(latest)}</span>
-      ${noBase && 'dl' in mv ? '<span class="dl flat" title="Under 5 openings at the start of this window, too few to index against">started under 5</span>'
+      ${noBase && 'dl' in mv ? '<span class="dl flat" title="Under 5 openings at the start of this window, too few to draw a change line">started under 5</span>'
                : `<span class="dl ${moveClass(mv)}"${mv.count == null ? '' : mv.recounted ? ` title="${RECOUNTED_WHY}"` : mv.short ? ' title="Too short a window for a percentage to mean much, so the change in openings"' : ' title="Too few openings for a percentage to mean much, so the change in openings"'}>${moveText(mv)}</span>`}
       ${hasRoles ? '<span class="drill" role="img" aria-label="has tracked roles" title="Opens the named roles tracked inside this category">▸ roles</span>' : ''}</span>
       ${view === VIEWS.roles && trendPicks.length ? `<button class="linkish role-jobs" type="button" data-role="${esc(s.name)}"
@@ -3108,7 +3110,7 @@ function drawTrends(){
     `Line chart. ${trendMetric === 'new' ? `Openings ${newCounts(d)}` : 'All live openings'}${where}`
     + `${view.grouping ? ` by ${view.grouping(trendDrill)}` : ', every category summed into one line'}, as ${
         trendUnit === 'share' ? (view.split === 'company' ? 'a share of each company’s own openings' : pickScope().share)
-        : trendUnit === 'change' ? 'an index against each line’s own count at the window’s start'
+        : trendUnit === 'change' ? 'change from each line’s own count at the window’s start, which is 100'
         : 'a count'}`
     + `${atsPick ? `, ${atsPick.length} of the ATS sources` : ''}, over ${measured}.`
     + ` ${drawn.length} line${drawn.length === 1 ? '' : 's'}.`
@@ -3161,23 +3163,21 @@ function drawTrends(){
   // The reassignment caveat is about a job's category moving, which a Total line, a whole
   // company's line and a title-matched role's line cannot show.
   if (el('trends-how-moves')) el('trends-how-moves').hidden = ['total', 'company', 'roles'].includes(viewKind(d));
-  // One short caption for the view on screen (#755); "How to read this" has the rest. With no
-  // pick nothing is netted, so a found Board lifts every line, and the caption says so where
-  // the unit shows it.
+  // One short caption for the view on screen; "How to read this" defines all three units
+  // (ADR-0248). With no pick nothing is netted, so a found Board lifts every Change line, and
+  // that caption says why the dashed line is there.
   const parts = [];
   parts.push(trendMetric === 'new'
     ? `Jobs ${newCounts(d)}.`
     : (trendUnit === 'share'
-      ? (view.split === 'company'
-        ? 'Each line is a share of that company’s own openings, so big and small companies compare directly.'
-        : trendPicks.length
-        ? `Each line is a category’s share of all openings ${at}.`
-        : 'Each line is a category’s share of all open jobs, so it isn’t lifted when HeadStart adds companies.')
+      ? `Each line is a share of ${view.split === 'company' ? 'its company’s own openings'
+        : trendPicks.length ? `all openings ${at}` : 'all open jobs'}.`
       : trendUnit === 'change'
-      ? `Each line starts at 100 on ${stampLabel(d.stamps[0], true)}; 120 means 20% more openings than then.${
-          !refShown ? '' : trendPicks.length ? ` Compare each with the dashed line, ${pickScope().whole}.`
+      // A line with no count at the window's start is based on its own first one.
+      ? `Lines start at 100 on ${stampLabel(d.stamps[0], true)} (or where they first appear), so 120 means 20% more openings.${
+          !refShown ? '' : trendPicks.length ? ` The dashed line is ${pickScope().whole}.`
           : ` Adding companies lifts every line, so compare each with the dashed line, ${pickScope().whole}.`}`
-      : `Each line counts open jobs.${trendPicks.length ? '' : ' Counts also rise when HeadStart adds companies.'}`));
+      : 'Each line counts open jobs.'));
   const steps = stepNote(d, marked);
   if (steps) parts.push(steps);
   drawChangeList(d, runs === 0 ? [] : marked.list);
@@ -3452,7 +3452,7 @@ function buildTrendsTable(){
     const t = move && move.turnover;
     if (!t) return dash + dash;
     return `<td>${esc(t.opened.toLocaleString())}</td>` + (t.closed == null
-      ? '<td class="flat" title="Every board’s closures went uncounted on a run in this window">not counted</td>'
+      ? '<td class="flat" title="HeadStart couldn’t see these sites close jobs in this window">not counted</td>'
       : `<td>${esc(t.closed.toLocaleString())}</td>`);
   };
   const cell = v => `<td>${v == null ? '—' : esc(fmtLevel(v))}</td>`;
@@ -3809,7 +3809,7 @@ function changeLock(){
   if (!trendData) return '';
   const { charted } = chartedAndOther(trendData);
   return !charted.length || charted.some(s => indexBase(s) != null) ? ''
-    : `Change is off here — no line starts with ${INDEX_BASE_FLOOR} or more openings to index against, so counts are shown.`;
+    : `Change is off here — no line starts with ${INDEX_BASE_FLOOR} or more openings, so counts are shown.`;
 }
 // A lock moves the reader off a unit only while it holds: the unit they chose is kept in
 // `unitWanted` and comes back when the view can show it again.
@@ -3920,7 +3920,7 @@ function drawPicks(){
     // Inside a category the link names it and hands its name to Search as the query, so Google ›
     // AI / Machine Learning leads to Google's AI roles first rather than to every Google job.
     const its = trendPicks.length > 1 ? 'their' : 'its';
-    roles.textContent = roles.disabled ? `Too many boards to list at once (${boards.length}) — remove a company`
+    roles.textContent = roles.disabled ? `Too many job sites to list at once (${boards.length}) — remove a company`
       : trendDrill && trendSplit === 'roles' ? `See all ${its} ${drillLabel()} roles`
       : trendDrill ? `See ${its} ${drillLabel()} roles` : `See ${its} open roles`;
   }
