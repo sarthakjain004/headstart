@@ -122,10 +122,10 @@ def report(run: Run) -> None:
     for a in names:
         kept, _total, pct = tech.get(a, (0, 0, 0.0))
         filled, learned, queued = desc.get(a, (0, 0, 0))
-        changed, flips = edited.get(a, (0, 0))
+        replaced, flips = edited.get(a, (0, 0))
         print(
             f"{a:18}{scraped.get(a, 0):>10,}{kept:>9,}{pct:>7.1f}"
-            f"{filled:>10,}{learned:>9,}{queued:>8,}{changed:>8,}{flips:>7,}",
+            f"{filled:>10,}{learned:>9,}{queued:>8,}{replaced:>8,}{flips:>7,}",
             flush=True,
         )
 
@@ -144,9 +144,12 @@ def report(run: Run) -> None:
     warn_if_unparsed(
         text, "[update_descriptions] ", desc, "update_descriptions per-ATS"
     )
+    # The stage prefix, not the line's own wording, as `run_logs.warn_if_unparsed` asks: a reworded
+    # line would take its own wording with it and stay silent. A run from before #638 (2026-09-25)
+    # never logged this line, so it warns too; its `edited`/`flips` really are missing there.
     warn_if_unparsed(
         text,
-        "held description(s) with different text",
+        "[update_descriptions] ",
         edited,
         "update_descriptions edits",
     )
