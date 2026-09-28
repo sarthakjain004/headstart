@@ -20,6 +20,7 @@ import csv
 import json
 import re
 from pathlib import Path
+from urllib.parse import unquote_plus
 
 from curl_cffi.requests import AsyncSession
 
@@ -201,8 +202,9 @@ PATTERNS = {
         r"jobs\.lever\.co/([a-zA-Z0-9_-]+)",
     ],
     "ashby": [
-        r"api\.ashbyhq\.com/posting-api/job-board/([a-zA-Z0-9_-]+)",
-        r"jobs\.ashbyhq\.com/([a-zA-Z0-9_-]+)",
+        # An Ashby Board name may hold a space, linked as %20 or + (#864): 30 live ledger rows.
+        r"api\.ashbyhq\.com/posting-api/job-board/((?:[a-zA-Z0-9_-]|%20|\+)+)",
+        r"jobs\.ashbyhq\.com/((?:[a-zA-Z0-9_-]|%20|\+)+)",
     ],
     "zoho": [HOST + r"([a-z0-9][a-z0-9-]*)\.zohorecruit\.(?:com|eu|in|ca)"],
     "recruitee": [HOST + r"([a-z0-9][a-z0-9-]*)\.recruitee\.com"],
@@ -269,6 +271,10 @@ def detect(html):
         for p in pats:
             for m in re.finditer(p, html, re.IGNORECASE):
                 raw = m.group(1) or ""
+                if ats == "ashby":
+                    raw = unquote_plus(
+                        raw
+                    )  # the ledger spells "Blackpoint Cyber", not %20
                 tok = raw if ats in KEEPS_SLUG_CASE else raw.lower()
                 # require len 3-60: a 1-2 char token is almost always garbage from a minified
                 # JS path (e.g. a stray `apply.workable.com/j` -> "j"), not a real board slug.
