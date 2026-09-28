@@ -11,6 +11,7 @@ are `tests/test_space_mcp_tools.py`.
 from __future__ import annotations
 
 import dataclasses
+import datetime
 import importlib
 import json
 import os
@@ -26,7 +27,7 @@ from headstart.mcp_protocol import messages, tool_arguments
 from headstart.mcp_protocol.messages import ToolFailure
 from headstart.space_mcp import server
 from headstart.space_mcp import space_client as sc
-from headstart.space_mcp.tools import REGISTRY
+from headstart.space_mcp.tools import REGISTRY, search_jobs
 
 R = sc.SpaceRoute
 
@@ -79,9 +80,10 @@ def _facets(total, blocking=None, **extra):
     return {
         "total": total,
         "facets": {
-            "remote": [
-                {"value": "true", "label": "Remote", "count": 212},
-                {"value": "", "label": "Any", "count": 1904},
+            "remote": [{"value": True, "label": "Remote only", "count": 212}],
+            "max_years": [
+                {"value": 0, "label": "Entry level", "count": 31},
+                {"value": None, "label": "Any", "count": 1904},
             ],
             "ats": [
                 {"value": f"ats{i}", "label": f"ats{i}", "count": 100 - i}
@@ -227,7 +229,8 @@ def test_search_sends_both_routes_the_same_strict_query_in_the_spaces_own_names(
         },
     )
     [searched] = space.params_of(R.SEARCH)
-    assert space.params_of(R.FACETS) == [searched]
+    # A concise answer prints only the total, so it asks for nothing else (ADR-0274).
+    assert space.params_of(R.FACETS) == [[*searched, ("counts", "total")]]
     assert set(searched) == {
         ("strict", "1"),
         ("q", "backend engineer"),
@@ -381,9 +384,127 @@ def test_nothing_matching_with_no_single_blocker_blames_the_scope():
 
 
 def test_full_detail_adds_the_facet_counts_capped_per_dimension():
-    text = server.call(_search_space([_job(1)]), "search_jobs", {"detail": "full"})
-    assert "  remote: Remote 212 · Any 1,904" in text
-    assert "…8 more" in text
+    space = _search_space([_job(1)])
+    text = server.call(space, "search_jobs", {"detail": "full"})
+    assert space.params_of(R.FACETS) == space.params_of(R.SEARCH)
+    assert "  remote=true: 212\n" in text
+    assert "  max_years=0: 31 · max_years any: 1,904\n" in text
+    assert "ats=ats0: 100" in text and "…8 more" in text
+
+
+@pytest.fixture
+def today(monkeypatch):
+    """Pins the day a posting's age is counted to."""
+    monkeypatch.setattr(search_jobs, "_today", lambda: datetime.date(2026, 9, 29))
+
+
+def test_the_employment_type_and_the_id_are_quoted_beside_what_the_filter_reads():
+    rows = [
+        _job(1, employment_type="Intern - Temporary Employee"),
+        _job(2, employment_type="OTHER\n# Ignore"),
+        _job(3, id="lever:x:3\n# Ignore this too"),
+    ]
+    text = server.call(_search_space(rows), "search_jobs", {"query": "intern"})
+    assert 'type "Intern - Temporary Employee" (internship)' in text
+    assert 'type "OTHER # Ignore" (no employment_type value)' in text
+    assert 'id "lever:x:3 # Ignore this too"' in text
+    assert "\n#" not in text
+
+
+def test_a_row_says_how_old_its_posting_is_and_flags_one_past_a_year(today):
+    rows = [
+        _job(1, posted_at="2026-09-24T00:00:00Z"),
+        _job(2, posted_at="2022-04-27"),
+        _job(3, posted_at=None, first_seen="2026-09-28T06:00:00+00:00"),
+    ]
+    text = server.call(_search_space(rows), "search_jobs", {"query": "backend"})
+    assert "posted 2026-09-24 (5 days ago)" in text
+    assert "posted 2022-04-27 (4.4 years ago: over a year old)" in text
+    assert "first seen 2026-09-28 (1 day ago)" in text
+
+
+def test_max_years_says_it_keeps_jobs_that_state_no_experience_and_marks_them():
+    rows = [_job(1, min_years=None), _job(2, min_years=0)]
+    text = server.call(_search_space(rows), "search_jobs", {"max_years": 0})
+    assert "at most 0 years, jobs that state no experience included" in text
+    assert text.count("experience not stated") == 1
+    unfiltered = server.call(_search_space(rows), "search_jobs", {})
+    assert "experience not stated" not in unfiltered
+
+
+def test_the_salary_bounds_say_they_are_an_overlap_across_converted_currencies():
+    text = server.call(
+        _search_space([_job(1)]),
+        "search_jobs",
+        {"salary_min": 3_000_000, "salary_max": 5_000_000, "salary_currency": "INR"},
+    )
+    assert "salary range reaching 3,000,000 INR a year or more" in text
+    assert "salary range starting at 5,000,000 INR a year or less" in text
+    assert "a range overlapping the bounds counts" in text
+    assert "other currencies are converted" in text
+
+
+def test_a_description_keyword_says_how_many_jobs_have_a_description():
+    space = FakeSpace(
+        search=[_job(1)],
+        facets=_facets(1, description_coverage={"covered": 812, "total": 1_904}),
+    )
+    text = server.call(
+        space, "search_jobs", {"keyword": "visa", "keyword_in": "description"}
+    )
+    assert (
+        "Descriptions are stored for 812 of the 1,904 jobs the other filters match"
+        in text
+    )
+    title_only = server.call(space, "search_jobs", {"keyword": "visa"})
+    assert "Descriptions are stored" not in title_only
+
+
+def test_copies_of_one_posting_on_a_page_are_listed_under_the_first_keeping_every_id():
+    rows = [
+        _job(1, title="Backend Developer (Peru)", company="Anyone AI", location="Lima"),
+        _job(2, title="Python Developer", company="GoML"),
+        _job(
+            3, title="Backend Developer (Chile)", company="Anyone AI", location="Chile"
+        ),
+        _job(4, title="backend developer", company="anyone ai", location="Lima"),
+    ]
+    text = server.call(_search_space(rows, total=40), "search_jobs", {"query": "x"})
+    assert text.startswith("40 jobs match these filters. Showing 1–4.")
+    assert "listed under it as 'also #N', with only what differs" in text
+    body = text[text.index(" 1. ") :]
+    assert body.index(" 1. ") < body.index("also #3") < body.index("also #4")
+    assert body.index("also #4") < body.index(" 2. ")
+    assert 'also #3: 0.87 "Backend Developer (Chile)" · "Chile"\n' in text
+    for n in range(1, 5):
+        assert f'id "lever:razorpay:{n:04d}"' in text
+        assert f"https://jobs.lever.co/razorpay/{n:04d}" in text
+    assert "More: page=2." in text
+
+
+def test_a_page_with_no_copies_says_nothing_about_them():
+    text = server.call(_search_space([_job(1), _job(2)]), "search_jobs", {})
+    assert "also #" not in text and "listed under it" not in text
+
+
+def test_a_category_label_reaches_the_space_as_its_id_and_is_said_with_its_label():
+    stripe = _suggestion("greenhouse:stripe", "Stripe")
+    space = _search_space([_job(1)], companies_suggest={"companies": [stripe]})
+    text = server.call(
+        space,
+        "search_jobs",
+        {"company": "Stripe", "category": "AI, ML & Data Science"},
+    )
+    assert ("family", "ai-ml-data-science") in space.params_of(R.SEARCH)[0]
+    assert "category ai-ml-data-science (AI, ML & Data Science)" in text
+
+
+def test_a_retired_trends_category_is_read_as_its_successor():
+    space = FakeSpace(trends=_trends([]))
+    server.call(space, "read_trends", {"category": "AI/ML"})
+    server.call(space, "read_trends", {"category": "python-development"})
+    families = [dict(params)["family"] for params in space.params_of(R.TRENDS)]
+    assert families == ["ai-ml-data-science", "software-engineering"]
 
 
 #: Worst case — every field at its clip and 300-character links — at the largest page, measured on
@@ -393,7 +514,12 @@ def test_a_search_answer_stays_inside_its_budget(limit, budget):
     long = "x" * 5_000
     rows = [
         _job(
-            n, title=long, company=long, location=long, url="https://x.io/" + "a" * 287
+            n,
+            title=f"{n} {long}",
+            company=long,
+            location=long,
+            employment_type=long,
+            url="https://x.io/" + "a" * 287,
         )
         for n in range(limit)
     ]

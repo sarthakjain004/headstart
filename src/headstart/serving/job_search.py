@@ -70,6 +70,9 @@ SLOW_SEARCH_MS = 2000
 ANN_NPROBES = 80
 ANN_REFINE_FACTOR = 2
 FACET_CACHE_SIZE = 128
+#: What `/facets` may be asked to count (``counts=``, ADR-0274): every option's count, the default
+#: the page reads, or only the total, for an agent that prints nothing else.
+FACET_COUNTS = ("all", "total")
 FACET_CACHE_TTL_SECONDS = 60
 BROWSE_CACHE_SIZE = 64
 BROWSE_CACHE_TTL_SECONDS = 60
@@ -742,7 +745,7 @@ class JobSearch:
         # lifetime (the Space restarts when a new table lands). Cache only the parsed structured
         # filters, bounded so arbitrary public requests cannot grow memory without limit.
         self._facet_cache: OrderedDict[
-            tuple[SearchFilters, str | None], tuple[float, dict[str, Any]]
+            tuple[SearchFilters, str | None, bool], tuple[float, dict[str, Any]]
         ] = OrderedDict()
         self._facet_cache_lock = Lock()
         self._browse_cache: OrderedDict[tuple[Any, ...], tuple[float, list[dict]]] = (
@@ -904,9 +907,18 @@ class JobSearch:
         Here rather than in the route so the table and the runtime schema facts stay behind
         this object; a caller reaching for ``_table`` to count would be the same class of leak
         that ``parse_filters`` exists to prevent on the filter side.
+
+        ``counts=total`` in ``args`` counts no option (:data:`FACET_COUNTS`, ADR-0274), cached
+        apart from the full strip; any other value but ``all`` is refused.
         """
         filters = self.parse_filters(args)
-        cache_key = (filters, extra_where)
+        asked = (args.get("counts") or "").strip() or FACET_COUNTS[0]
+        if asked not in FACET_COUNTS:
+            raise ValueError(
+                f"counts {asked!r} is not known; known: {_listed(FACET_COUNTS)}"
+            )
+        only_total = asked == "total"
+        cache_key = (filters, extra_where, only_total)
         cached = _cache_get(
             self._facet_cache,
             self._facet_cache_lock,
@@ -921,6 +933,7 @@ class JobSearch:
             filters,
             self.capabilities,
             extra_where=extra_where,
+            only_total=only_total,
         )
         elapsed_ms = (time.monotonic() - started) * 1000
         if elapsed_ms > SLOW_SEARCH_MS:
@@ -929,7 +942,7 @@ class JobSearch:
             _log.warning(
                 f"slow facets {elapsed_ms:.0f} ms: blocking={counted.get('blocking') is not None} "
                 f"india={bool(filters.india)} kw_scope={filters.kw_in} "
-                f"extra_where={extra_where is not None}"
+                f"extra_where={extra_where is not None} only_total={only_total}"
             )
         _cache_put(
             self._facet_cache,

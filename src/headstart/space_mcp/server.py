@@ -9,8 +9,8 @@ trends or ranking rule of their own.
 
 The tools are `space_mcp/tools/`, one module each, registered in `tools.REGISTRY`; this module
 only serves them — their listing, the instructions built from what each says about itself, the
-argument check, the schema defaults, the answer-size guard and the entry point. The design is
-`docs/mcp/2026-09-28_space-mcp-server-plan.md`; how to install it and add a tool,
+argument readers and check, the schema defaults, the answer-size guard and the entry point. The
+design is `docs/mcp/2026-09-28_space-mcp-server-plan.md`; how to install it and add a tool,
 `docs/agents/space-mcp-server.md`.
 """
 
@@ -98,6 +98,11 @@ def call(client: SpaceClient, name: str, arguments: dict[str, Any]) -> str:
     """Answer one tool call against ``client``. A schema breach, a refused combination and every
     reason the Space gave no answer are :class:`ToolFailure` sentences, never protocol errors."""
     tool = BY_NAME[name]
+    readers = tool.argument_readers
+    arguments = {
+        key: readers[key](value) if key in readers else value
+        for key, value in arguments.items()
+    }
     if problems := tool_arguments.problems(tool.input_schema, arguments):
         raise ToolFailure(" ".join(problems))
     arguments = tool_arguments.with_defaults(tool.input_schema, arguments)

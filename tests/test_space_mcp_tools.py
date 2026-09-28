@@ -112,6 +112,20 @@ def test_a_tools_budget_is_under_the_clients_warning(tool):
     assert 0 < tool.max_chars <= space_tool.ANSWER_CEILING_CHARS
 
 
+def test_an_argument_reader_reads_an_argument_the_schema_names(tool):
+    assert set(tool.argument_readers) <= set(tool.input_schema["properties"])
+
+
+def test_every_tool_with_a_category_reads_a_label_as_its_id():
+    """The enum lists ids, and the server checks arguments against it, so a label reaches the
+    tool only through the reader (ADR-0274)."""
+    with_category = [t for t in REGISTRY if "category" in t.input_schema["properties"]]
+    assert with_category and all(
+        t.argument_readers.get("category") is role_families.resolve
+        for t in with_category
+    )
+
+
 def test_categories_are_the_spaces_own_role_families():
     families = json.loads(role_families.FILE.read_text(encoding="utf-8"))["families"]
     schemas = [
@@ -126,11 +140,11 @@ def test_categories_are_the_spaces_own_role_families():
 
 def test_without_the_families_file_category_is_a_free_string(monkeypatch, tmp_path):
     monkeypatch.setattr(role_families, "FILE", tmp_path / "missing.json")
-    role_families.names.cache_clear()
+    role_families._taxonomy.cache_clear()
     try:
         schema = role_families.schema("A category.")
     finally:
-        role_families.names.cache_clear()
+        role_families._taxonomy.cache_clear()
     assert "enum" not in schema and schema["type"] == "string"
 
 
@@ -138,10 +152,10 @@ def test_the_families_are_read_once_so_a_missing_file_warns_once(
     monkeypatch, tmp_path, caplog
 ):
     monkeypatch.setattr(role_families, "FILE", tmp_path / "missing.json")
-    role_families.names.cache_clear()
+    role_families._taxonomy.cache_clear()
     try:
         role_families.schema("One.")
         role_families.schema("Two.")
     finally:
-        role_families.names.cache_clear()
+        role_families._taxonomy.cache_clear()
     assert caplog.text.count("role families not readable") == 1

@@ -556,7 +556,7 @@ def test_the_iteration_tasks_use_known_verifiers_and_real_arguments(ev):
     tasks = tasks_file["tasks"]
     arguments = {tool.name: set(tool.input_schema["properties"]) for tool in REGISTRY}
 
-    assert [t["id"] for t in tasks] == [f"t{n:02d}" for n in range(1, 13)]
+    assert [t["id"] for t in tasks] == [f"t{n:02d}" for n in range(1, len(tasks) + 1)]
     assert {t["verifier"] for t in tasks} == set(ev.VERIFIERS)
     for task in tasks:
         assert task["prompt"].strip() and task["why"].strip()

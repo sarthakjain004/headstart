@@ -281,4 +281,5 @@ TOOL = SpaceTool(
     ),
     answer=answer,
     max_chars=20_000,
+    argument_readers={"category": role_families.resolve},
 )

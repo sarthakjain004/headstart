@@ -250,7 +250,7 @@ def test_facets_cache_the_filter_set_not_the_semantic_query(monkeypatch):
 
     calls = []
 
-    def counted(_table, filters, _capabilities, *, extra_where=None):
+    def counted(_table, filters, _capabilities, *, extra_where=None, only_total=False):
         calls.append((filters, extra_where))
         return {"total": len(calls), "facets": {}}
 
@@ -271,7 +271,7 @@ def test_facet_cache_keeps_account_clauses_separate(monkeypatch):
 
     calls = []
 
-    def counted(_table, _filters, _capabilities, *, extra_where=None):
+    def counted(_table, _filters, _capabilities, *, extra_where=None, only_total=False):
         calls.append(extra_where)
         return {"total": len(calls), "facets": {}}
 
@@ -281,6 +281,29 @@ def test_facet_cache_keeps_account_clauses_separate(monkeypatch):
     second = searcher.facets({}, extra_where="account = 2")
     assert first is not second
     assert calls == ["account = 1", "account = 2"]
+
+
+def test_counts_total_asks_for_the_total_alone_and_is_cached_apart(monkeypatch):
+    """ADR-0274: an agent printing only the total sends `counts=total`; the page never does."""
+    from headstart.serving import facets
+
+    calls = []
+
+    def counted(_table, _filters, _capabilities, *, extra_where=None, only_total=False):
+        calls.append(only_total)
+        return {"total": 1, "facets": {} if only_total else {"remote": []}}
+
+    monkeypatch.setattr(facets, "counts", counted)
+    searcher, _ = _searcher()
+    total = searcher.facets({"remote": "true", "counts": "total"})
+    full = searcher.facets({"remote": "true"})
+    assert searcher.facets({"remote": "true", "counts": "total"}) is total
+    assert searcher.facets({"remote": "true", "counts": "all"}) is full
+    assert calls == [True, False]
+    with pytest.raises(
+        ValueError, match="counts 'some' is not known; known: all, total"
+    ):
+        searcher.facets({"counts": "some"})
 
 
 def test_facet_cache_expires_so_recency_counts_keep_moving(monkeypatch):

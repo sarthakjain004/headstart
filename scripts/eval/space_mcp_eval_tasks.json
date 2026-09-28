@@ -158,6 +158,29 @@
       "verifier": "blocking_named",
       "expect": {"argument": null},
       "why": "Plan §9: must name the Blocking filter, not say nothing exists. Which filter blocks is data-dependent (/facets drops each filter in turn and names the one recovering the most rows), so argument null accepts whichever one the search_jobs result named; the final answer must mention it by name or as that filter ('salary filter', 'minimum salary', not a bare 'salary', which a ₹1 crore answer says anyway). Pin the argument once a live run shows which it is. If no single filter blocks, no result names one and the task fails; revise it then."
+    },
+    {
+      "id": "t13",
+      "prompt": "Find software engineering jobs in Germany that mention visa sponsorship.",
+      "verifier": "mentions",
+      "expect": {
+        "all": [["description"]],
+        "tool_results_all": ["Descriptions are stored for"]
+      },
+      "why": "ADR-0274: visa terms live in descriptions, which not every job has. The search must look for the keyword in descriptions (the only way its answer carries the 'Descriptions are stored for N of M' line), and the final answer must pass on that the keyword could only match jobs with a stored description."
+    },
+    {
+      "id": "t14",
+      "prompt": "Which of Stripe's openings are in the AI, ML & Data Science category?",
+      "verifier": "search_args",
+      "expect": {
+        "tool": "search_jobs",
+        "must": {
+          "company": {"op": "contains", "value": "stripe"},
+          "category": {"op": "in", "value": ["ai-ml-data-science", "AI, ML & Data Science"]}
+        }
+      },
+      "why": "ADR-0274: the category the site and the answers print as a label reaches search_jobs as its id or as that label, which the server reads as the id; either names the same category."
     }
   ],
   "heldout_sha256": "801e7149bc71c42e7b346dcf089ea20f87d1e0035d989b3dba8ffb50fe055e4d"
