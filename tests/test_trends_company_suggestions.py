@@ -67,7 +67,7 @@ def test_a_better_tier_beats_more_openings() -> None:
     got = suggest(
         "amazon", [_company("Amazon Robotics", 5000), _company("Amazon", 1)], limit=5
     )
-    assert [c.name for c in got] == ["Amazon", "Amazon Robotics"]
+    assert [s.candidate.name for s in got] == ["Amazon", "Amazon Robotics"]
 
 
 def test_within_a_tier_more_openings_come_first() -> None:
@@ -76,7 +76,7 @@ def test_within_a_tier_more_openings_come_first() -> None:
         [_company("Amazon Pay", 3), _company("Amazon Web Services", 900)],
         limit=5,
     )
-    assert [c.name for c in got] == ["Amazon Web Services", "Amazon Pay"]
+    assert [s.candidate.name for s in got] == ["Amazon Web Services", "Amazon Pay"]
 
 
 def test_one_suggestion_per_name_the_one_with_most_openings() -> None:
@@ -90,7 +90,7 @@ def test_one_suggestion_per_name_the_one_with_most_openings() -> None:
         ],
         limit=5,
     )
-    assert [c.key for c in got] == ["amazon:www.amazon.jobs"]
+    assert [s.candidate.key for s in got] == ["amazon:www.amazon.jobs"]
     got = suggest(
         "nvidia",
         [
@@ -99,13 +99,13 @@ def test_one_suggestion_per_name_the_one_with_most_openings() -> None:
         ],
         limit=5,
     )
-    assert [c.key for c in got] == ["eightfold:jobs.nvidia.com"]
+    assert [s.candidate.key for s in got] == ["eightfold:jobs.nvidia.com"]
 
 
 def test_a_collapsed_twin_does_not_take_a_slot() -> None:
     companies = [_company("Acme", 5, key=f"greenhouse:acme{i}") for i in range(3)]
     companies.append(_company("Acme Labs", 1))
-    assert [c.name for c in suggest("acme", companies, limit=2)] == [
+    assert [s.candidate.name for s in suggest("acme", companies, limit=2)] == [
         "Acme",
         "Acme Labs",
     ]
@@ -128,16 +128,16 @@ def test_a_test_tenant_with_no_openings_is_not_offered() -> None:
             "Acme Studio", 0
         ),  # nor are no openings alone: a closed employer stays
     ]
-    assert [c.name for c in suggest("jpmc", companies, 5)] == ["Jpmc"]
+    assert [s.candidate.name for s in suggest("jpmc", companies, 5)] == ["Jpmc"]
     assert suggest("nvidia", companies, 5) == []
-    assert [c.name for c in suggest("dev", companies, 5)] == ["Dev Partners"]
-    assert [c.name for c in suggest("acme", companies, 5)] == ["Acme Studio"]
+    assert [s.candidate.name for s in suggest("dev", companies, 5)] == ["Dev Partners"]
+    assert [s.candidate.name for s in suggest("acme", companies, 5)] == ["Acme Studio"]
 
 
 def test_a_name_that_differs_by_a_trailing_word_is_another_employer() -> None:
     """Affinity and Affinity Group are two employers, so both are offered."""
     companies = [_company("Affinity", 40), _company("Affinity Group", 12)]
-    assert [c.name for c in suggest("affinity", companies, 5)] == [
+    assert [s.candidate.name for s in suggest("affinity", companies, 5)] == [
         "Affinity",
         "Affinity Group",
     ]
@@ -157,6 +157,42 @@ def test_a_query_alias_finds_the_company_by_the_name_people_use() -> None:
         ),
         Candidate(key="gh:awsome", name="Awsome", words=("awsome",), openings=3),
     ]
-    assert [c.key for c in suggest("aws", companies, 5)] == ["amazon:jobs", "gh:awsome"]
-    assert [c.key for c in suggest("JP Morgan", companies, 5)] == ["oracle:jpmc"]
-    assert suggest("chase", companies, 5)[0].key == "oracle:jpmc"
+    assert [s.candidate.key for s in suggest("aws", companies, 5)] == [
+        "amazon:jobs",
+        "gh:awsome",
+    ]
+    assert [s.candidate.key for s in suggest("JP Morgan", companies, 5)] == [
+        "oracle:jpmc"
+    ]
+    assert suggest("chase", companies, 5)[0].candidate.key == "oracle:jpmc"
+
+
+@pytest.mark.parametrize(
+    ("query", "name", "match"),
+    [
+        ("lockheed martin", "Lockheed Martin", "exact"),
+        ("Acme, Inc.", "Acme", "exact"),  # the legal form is not part of the name
+        ("lockh", "Lockheed Martin", "prefix"),
+        ("martin", "Lockheed Martin", "words"),
+        ("lokheed", "Lockheed Martin", "typo"),
+        ("micro soft", "Microsoft", "joined"),
+        ("aws", "Amazon", "alias"),
+        ("facebook", "Meta", "alias"),
+    ],
+)
+def test_each_suggestion_says_how_it_matched(query: str, name: str, match: str) -> None:
+    """ADR-0253: an agent accepts a typed name only on an exact or alias match, so the label
+    comes from the ranking that found it rather than being re-derived by the caller."""
+    (found,) = suggest(query, [_company(name)], 5)
+    assert (found.candidate.name, found.match) == (name, match)
+
+
+def test_an_alias_labels_only_what_it_ranked() -> None:
+    """The word "chase" starts a word of JPMorgan Chase, but the alias is what ranks it first,
+    so it reads as an alias; a company the typed words match better keeps its own label."""
+    companies = [
+        _company("JPMorgan Chase", 1718, key="oracle:jpmc"),
+        _company("Chase Bank", 1, key="gh:chase-bank"),
+    ]
+    got = {s.candidate.key: s.match for s in suggest("chase", companies, 5)}
+    assert got == {"oracle:jpmc": "alias", "gh:chase-bank": "prefix"}

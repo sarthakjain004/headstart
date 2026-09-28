@@ -191,7 +191,7 @@ def watched_roles(path: Path) -> dict[str, dict[str, str]]:
     }
 
 
-def _family_labels(path: Path) -> dict[str, str]:
+def family_labels(path: Path) -> dict[str, str]:
     """Display names, from the curated map under config/ (ADR-0040). The ledger stores slugs
     so a label can be reworded without breaking a series; this resolves them."""
     if not path.exists():
@@ -587,7 +587,7 @@ class TrendHistory:
             print(f"trend history unreadable ({type(exc).__name__}: {exc})", flush=True)
             history, stamped = cls(), []
         history._watch = watched_roles(config_dir / "role_watchlist.json")
-        history._family_labels = _family_labels(config_dir / "role_families.json")
+        history._family_labels = family_labels(config_dir / "role_families.json")
         history._family_successor = family_successors(config_dir / "role_families.json")
         history._evictions = _load_evictions(state_dir / _DEDUP_EVICTIONS)
         history._companies = _load_directory(state_dir / _DIRECTORY)
@@ -898,11 +898,29 @@ class TrendHistory:
 
     def suggest_companies(self, query: str, limit: int) -> list[dict]:
         """Directory companies matching ``query`` for the Trends company picker (ADR-0185), best
-        first, each with its tech openings now and Board count, labelled apart from any other
-        of the same name among them."""
+        first, each as :meth:`describe_companies` gives it, with how it matched (``match``, a
+        :data:`company_suggestions.MATCH_KINDS` name or ``alias``, ADR-0253)."""
         found = company_suggestions.suggest(query, self._candidates, limit)
-        labels = self._company_labels([candidate.key for candidate in found])
-        return [self._company_json(c.key, labels[c.key]) for c in found]
+        described = self.describe_companies([s.candidate.key for s in found])
+        return [
+            {**item, "match": s.match} for s, item in zip(found, described, strict=True)
+        ]
+
+    def describe_companies(self, keys: list[str]) -> list[dict]:
+        """Each directory company in ``keys``, in order, as the picker and the chart show it:
+        its tech openings now, its ATSes, its Boards and their keys, and a label telling it apart
+        from any other of the same name among ``keys``."""
+        labels = self._company_labels(keys)
+        return [self._company_json(key, labels[key]) for key in keys]
+
+    def company_of(self, board: str) -> str | None:
+        """The directory key of the company holding ``board``, or None when none does. Board
+        keys compare case-blind, as the directory joins them: a hand-typed
+        `company=GOOGLE:careers.google.com` was "not in the company directory"."""
+        if board in self._company_of:
+            return self._company_of[board]
+        folded = {held.lower(): key for held, key in self._company_of.items()}
+        return folded.get(board.lower())
 
     def trailing_week(self) -> dict[str, str | None]:
         """The window Hot ranks over (ADR-0230), the trailing ``NEW_WINDOW_DAYS``, as
@@ -988,22 +1006,13 @@ class TrendHistory:
         if picked:
             if not self._companies:
                 raise TrendsUnavailable("no company directory on this deployment yet")
-            # Board keys compare case-blind, as the directory joins them: a hand-typed
-            # `company=GOOGLE:careers.google.com` was "not in the company directory".
-            if any(board not in self._company_of for board in picked):
-                folded = {board.lower(): board for board in self._company_of}
-                picked = [
-                    board
-                    if board in self._company_of
-                    else folded.get(board.lower(), board)
-                    for board in picked
-                ]
-            unknown = [board for board in picked if board not in self._company_of]
+            pick_keys = [self.company_of(board) for board in picked]
+            unknown = [board for board, key in zip(picked, pick_keys) if key is None]
             if unknown:
                 raise ValueError(f"unknown company: {', '.join(unknown)}")
             company_of = {
                 board: key
-                for key in {self._company_of[board] for board in picked}
+                for key in set(pick_keys)
                 for board in self._companies[key]["boards"]
             }
         if split == "company" and not picked:
@@ -1454,11 +1463,7 @@ class TrendHistory:
             "epochs": epochs,
             # With its Board keys, so the chart can hand a pick to Search by Board (ADR-0185).
             "companies": [
-                {
-                    **self._company_json(k, company_labels[k]),
-                    "board_keys": self._companies[k]["boards"],
-                }
-                for k in picked_keys
+                self._company_json(k, company_labels[k]) for k in picked_keys
             ],
             "pick_series": pick_series,
             "pick_parts": pick_parts,
@@ -1899,7 +1904,8 @@ class TrendHistory:
         return sum(self._openings[board] for board in entry["boards"])
 
     def _company_json(self, key: str, label: str) -> dict:
-        """A directory company as the picker and the chart show it."""
+        """A directory company as the picker and the chart show it, with its Board keys, so a
+        pick can be handed to Search by Board (ADR-0185)."""
         entry = self._companies[key]
         return {
             "key": key,
@@ -1908,6 +1914,7 @@ class TrendHistory:
             "atses": sorted({ats_of(board) for board in entry["boards"]}),
             "boards": len(entry["boards"]),
             "openings": self._company_openings(entry),
+            "board_keys": entry["boards"],
         }
 
     def _company_labels(self, keys: list[str]) -> dict[str, str]:

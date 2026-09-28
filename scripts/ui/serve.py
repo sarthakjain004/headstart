@@ -31,11 +31,14 @@ from headstart.serving.job_search import (
     MAX_FAMILY_IDS,
     MAX_SCOPED_BOARDS,
     JobSearch,
+    ScopeUnavailable,
     load_family_ids,
+    refusal,
     request_account_clause,
     scoped_boards_clause,
     scoped_jobs_clause,
 )
+from headstart.trends.trend_history import family_labels
 
 _REPO = Path(__file__).resolve().parents[2]
 # Resolved off the installed package (ADR-0153), exactly like the Space's app.py — both find
@@ -146,13 +149,18 @@ _WATCH = {
         (_REPO / "config" / "role_watchlist.json").read_text(encoding="utf-8")
     )["roles"]
 }
+# Every family the taxonomy names, as the Space reads it, for a `strict=1` hand-off (ADR-0253).
+_KNOWN_FAMILIES = frozenset(family_labels(_REPO / "config" / "role_families.json"))
 
 
 def _company_where(args) -> str | None:
     """Mirror of the Space's per-request follow/hide, ``board=`` and ``family=`` clauses."""
     return with_extra(
         with_extra(
-            scoped_boards_clause(args), scoped_jobs_clause(args, _FAMILY_IDS, _WATCH)
+            scoped_boards_clause(args),
+            scoped_jobs_clause(
+                args, _FAMILY_IDS, _WATCH, known_families=_KNOWN_FAMILIES
+            ),
         ),
         request_account_clause(
             args, _LOCAL_COMPANIES.followed, _LOCAL_COMPANIES.hidden
@@ -194,8 +202,9 @@ def search_jobs():
         return jsonify(
             _searcher.run(request.args, extra_where=_company_where(request.args))
         )
-    except ValueError:
-        return jsonify({"error": "invalid filter"}), 400
+    except (ValueError, ScopeUnavailable) as exc:
+        body, status = refusal(exc)
+        return jsonify(body), status
 
 
 @app.route("/facets")
@@ -205,8 +214,9 @@ def search_facets():
         return jsonify(
             _searcher.facets(request.args, extra_where=_company_where(request.args))
         )
-    except ValueError:
-        return jsonify({"error": "invalid filter"}), 400
+    except (ValueError, ScopeUnavailable) as exc:
+        body, status = refusal(exc)
+        return jsonify(body), status
 
 
 @app.route("/me")

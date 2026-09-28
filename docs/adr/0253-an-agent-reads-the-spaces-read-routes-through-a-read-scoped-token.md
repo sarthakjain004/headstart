@@ -53,10 +53,10 @@ neither widens the other. The wall's single path set becomes `_SERVICE_TOKENS`, 
 secret to the paths it admits:
 
 - `ALERTS_TOKEN` keeps exactly `/search`.
-- `AGENT_TOKEN` admits `/search`, `/facets`, `/trends`, `/hot` and `/companies/suggest`, and
-  `/companies/lookup` once that route exists (below). These are the read routes that answer
-  without an Account: `_account_gate` returns nothing without a session email, so no Account's
-  follow or hide clause applies to them and no Account's records are reachable through them.
+- `AGENT_TOKEN` admits `/search`, `/facets`, `/trends`, `/hot`, `/companies/suggest` and
+  `/companies/lookup` (below). These are the read routes that answer without an Account:
+  `_account_gate` returns nothing without a session email, so no Account's follow or hide clause
+  applies to them and no Account's records are reachable through them.
 
 Unchanged from the amendment: an unset secret admits nobody, and a presented token is compared in
 constant time on latin-1 bytes. If the two secrets are set equal, one secret would open both path
@@ -84,27 +84,64 @@ on a route's own answer (measured, and pinned by tests on all four). The header 
   suggestion fields. A client that needs version N stops on an older app instead of having a newer
   argument silently ignored.
 
-The header is introduced at `agent-api=0`. The version becomes 1 in the change that lands the
-contract below, so `agent-api=1` is only ever served by an app that has all of it.
+The header was introduced at `agent-api=0`, and the change that landed the contract below set it
+to 1, so `agent-api=1` is only ever served by an app that has all of it.
 
-### Strictness and company lookup (landing in the next change)
+### Strictness and company lookup (`agent-api=1`)
 
-These land in the change after this one, with `agent-api=1`, and this record is updated then:
+These landed in the second change of this decision, and this section records the contract as
+built.
 
-- **`strict=1` on `/search` and `/facets`.** Today a filter value outside its whitelist is dropped
-  and the search runs wider, with only a log line, so that a stale bookmark never errors. Under
-  `strict=1` every such silent drop, re-scope or widening is refused instead: a caller's error
-  answers `400 {"error": "invalid filter", "detail": …}` naming the value and the accepted ones, and
-  a state of the deployment (no role assignments loaded, a column the table has not migrated yet)
-  answers 503. Without `strict`, behaviour is unchanged.
-- **What a suggestion is.** Each `/companies/suggest` item gains its `match` kind (`exact`,
-  `prefix`, `words`, `typo`, `joined` or `alias`) and its `board_keys`, so the rule "accept a
-  name only when it matches exactly" lives with the ranking that produces the match.
-- **`/companies/lookup?board=…`** answers the directory company for any of its Board keys,
-  case-blind, through the map `/trends` already uses to accept any Board of a pick, and refuses a
-  key the directory does not hold. `AGENT_TOKEN` admits it.
-- **`/facets` gains `newest_tick`**, the newest Trends tick, which dates the data an answer came
-  from. The page does not read it.
+- **`strict=1` on `/search` and `/facets`.** Without it a filter value outside its whitelist is
+  dropped and the search runs wider, with only a log line, so that a stale bookmark never errors.
+  Under `strict=1` every such silent drop, re-scope or widening is refused instead. The three
+  places that already read the query string raise:
+  - `JobSearch.parse_filters` raises for what either route would drop.
+  - `JobSearch.run` raises for a sort fallback.
+  - `job_search.scoped_jobs_clause` raises for a hand-off.
+
+  Refusals are of two kinds:
+  - **A `ValueError`, the caller's error.** It names the value and the accepted ones:
+    - an `ats`, `etype`, `india` or `kw_in` outside its whitelist, or an unknown `sort`;
+    - a salary bound, or a salary sort, in a currency the table does not serve, including the
+      USD default when no currency is sent;
+    - `family=` or `role=` without `board=`, or both at once;
+    - a `family` the taxonomy does not configure;
+    - a `role` with no watch pattern.
+  - **A `job_search.ScopeUnavailable` (a `LookupError`), a state of the deployment:**
+    - `family=` with no role assignments loaded;
+    - `role=` with no watchlist loaded;
+    - a filter or sort keyed on a column the table has not migrated onto: `description` for a
+      keyword scope that reads it, `min_salary_annual` for a salary bound, `has_salary` or the
+      salary sort, and `first_seen` for `seen_within`, `first_seen_after`, `seen_after`,
+      `seen_before` or the `seen` sort.
+
+  One helper, `job_search.refusal(exc)`, turns either into the answer both apps give:
+  `400 {"error": "invalid filter", "detail": …}` or `503 {"error": …}`. So the Space and
+  `scripts/ui/serve.py` carry no copy of their own (ADR-0194). A 400 that is not strict's,
+  such as a malformed integer, now carries the same `detail`.
+
+  A configured family with no Jobs assigned yet, as during the classifier's warm-up, is not an
+  error. It answers zero rows, as it does without `strict`. So `scoped_jobs_clause` takes
+  `known_families`, which both apps read from `config/role_families.json` through
+  `trend_history.family_labels`, retired families included.
+- **What a suggestion is.** `company_suggestions.suggest` returns each company as a `Suggestion`
+  with its `match`: `exact`, `prefix`, `words`, `typo` or `joined` for the five match tiers, or
+  `alias` when `QUERY_ALIASES` ranked it rather than the words typed. The rule "accept a name only
+  when it matches exactly" then lives with the ranking that produces the match. Each
+  `/companies/suggest` item gains `match` and `board_keys`. The company's Board keys moved into
+  the one shape the picker and the chart share, so `/trends`' echo of its picks is unchanged.
+- **`/companies/lookup?board=…`** takes 1 to 10 Board keys. It answers the directory company
+  holding each key, case-blind, through `TrendHistory.company_of`, the map `/trends` uses to accept
+  any Board of a pick. Each company comes once, in the order first named, shaped as a suggestion
+  item without `match`. The refusals are:
+  - `400 {"error": "unknown company", "detail": …}` naming the keys no company holds;
+  - `400 {"error": "invalid lookup", …}` for no keys or more than ten;
+  - a 503 with no directory on this deployment.
+
+  `AGENT_TOKEN` admits it.
+- **`/facets` gains `newest_tick`**, the newest Trends tick or null, which dates the data an answer
+  came from. The page does not read it.
 
 ### The deploy trigger leaves out the MCP packages
 

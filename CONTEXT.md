@@ -360,7 +360,7 @@ A signed-in person, identified by the verified address their Google sign-in prov
 _Avoid_: user, subscriber — an Account is the identity; whether it receives email is the **Subscription**'s question. Also "ATS account" for an ATS's customer — that is a **Tenant**.
 
 **Agent token** (ADR-0253):
-The shared secret (`AGENT_TOKEN`, a Space secret) an agent reading HeadStart for its owner carries past the sign-in wall. It opens only the read routes that answer without an **Account** — `/search`, `/facets`, `/trends`, `/hot` and `/companies/suggest` — so it reads what any signed-in visitor can read, and no Account's records; it writes nothing. It is not an Account: no follow or hide list applies to what it reads. Separate from `ALERTS_TOKEN`, the **Digest** run's secret, which opens `/search` alone; set equal to it, the agent token is ignored.
+The shared secret (`AGENT_TOKEN`, a Space secret) an agent reading HeadStart for its owner carries past the sign-in wall. It opens only the read routes that answer without an **Account** — `/search`, `/facets`, `/trends`, `/hot`, `/companies/suggest` and `/companies/lookup` — so it reads what any signed-in visitor can read, and no Account's records; it writes nothing. It is not an Account: no follow or hide list applies to what it reads. Separate from `ALERTS_TOKEN`, the **Digest** run's secret, which opens `/search` alone; set equal to it, the agent token is ignored.
 _Avoid_: session or API key — it names no person and buys no Account; one leaked reads only what open sign-up already offers.
 
 **Profile** (ADR-0041):
