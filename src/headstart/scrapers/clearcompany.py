@@ -31,8 +31,9 @@ short of the Board on 97 of 161 Boards (3,597 vs 4,138 postings), served posting
 whose Board is gone (newest 2011-2025), answered ``[]`` for 11 hiring Boards, and every
 ClearCompany host's ``robots.txt`` is ``Disallow: /``. HRM Direct publishes no ``robots.txt``.
 
-**The description is detail-only.** xml.php's ``descriptionrich`` stops at exactly 1,000 chars
-(6,601 of 8,335 rows; none longer), so each posting's ``job-opening.php?req=N`` page supplies the
+**The full description is detail-only.** xml.php's ``descriptionrich`` stops at exactly 1,000
+chars (6,601 of 8,335 rows; none longer) — shipped only for a Job with no page read and nothing
+in the description store (``_description``) — so each posting's ``job-opening.php?req=N`` page supplies the
 body (the ``jobDesc`` block: 509 of 510 pages, p50 5,269 chars) and the tenant's ``Salary:`` row
 (15 of 510). The tech gate (ADR-0166) is **exact**: ``title`` and ``department`` come from xml.php
 and the detail overrides neither. ADR-0048's skip of the already-described is **not** taken: the
@@ -109,6 +110,19 @@ def _tag(row: str, tag: str) -> str | None:
         return None
     value = html.unescape(m.group(1) if m.group(1) is not None else m.group(2)).strip()
     return value or None
+
+
+def _description(row: str, page: str | None, unheld: bool) -> str | None:
+    """The page's ``jobDesc`` block. A Job with no page read (gated, lost, or a page with no
+    posting on it) ships the feed's own ``descriptionrich`` — its first 1,000 chars, better than
+    nothing to embed — but only when the pipeline's skip-list says the store does not hold its
+    text (``unheld``): the store keeps fresh text over held text, so a teaser would overwrite a
+    full description for one run and flip back on the next. With no skip-list (outside the
+    pipeline, or one that could not be read) nothing says the text is unheld, so no teaser.
+    ClearCompany is not in the ADR-0211 re-fetch rotation, which takes held Jobs off the list."""
+    if page is None:
+        return html_to_text(_tag(row, "descriptionrich")) if unheld else None
+    return html_to_text(_job_desc(page))
 
 
 def _place(row: str) -> str | None:
@@ -243,7 +257,7 @@ class ClearCompanyScraper(BaseScraper):
             row = rows[0]
             location = _location(rows)
             office = _tag(row, "office")
-            page = details.get(req) or ""
+            page = details.get(req)
             jobs.append(
                 Job(
                     id=self.job_id(req),
@@ -256,8 +270,12 @@ class ClearCompanyScraper(BaseScraper):
                     url=self.job_url(req),
                     posted_at=_date(_tag(row, "date")),
                     scraped_at=scraped_at,
-                    description=html_to_text(_job_desc(page)),
-                    salary=self._salary_field(page),
+                    description=_description(
+                        row,
+                        page,
+                        self.have_details is not None and self.needs_detail(req),
+                    ),
+                    salary=self._salary_field(page or ""),
                 )
             )
         return jobs
