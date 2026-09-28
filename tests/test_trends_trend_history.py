@@ -484,3 +484,23 @@ def test_all_openings_carry_no_switch_of_new(tmp_path):
     ).unnetted_answer(TrendQuestion())
     assert answer["new_inflow_from"] is None
     assert all("new_became_inflow" not in e["fields"] for e in answer["epochs"])
+
+
+def test_a_tick_written_from_the_callers_replay_is_the_tick_it_replays_itself(tmp_path):
+    """#716: `role_trends` hands `record_tick` the replay it already made; the file is the same."""
+    _write_ticks(tmp_path)
+    replayed = trend_history.board_levels(tmp_path)
+    moved, *kept = sorted(replayed[1])  # one group moves, one drops to 0, the rest hold
+    levels = {moved: replayed[1][moved] + 3, **{k: replayed[1][k] for k in kept[1:]}}
+    other = tmp_path / "copy"
+    import shutil
+
+    shutil.copytree(tmp_path / trend_history.DELTAS, other / trend_history.DELTAS)
+    ts = _stamp(20)
+    trend_history.record_tick(
+        tmp_path, ts, levels, {}, _methodology(3), replayed=replayed
+    )
+    trend_history.record_tick(other, ts, levels, {}, _methodology(3))
+    name = trend_history.tick_path(Path(trend_history.DELTAS), ts)
+    written = pq.read_table(tmp_path / name)
+    assert written.num_rows == 2 and written.equals(pq.read_table(other / name))

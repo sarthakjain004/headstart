@@ -411,7 +411,8 @@ def main() -> int:
             args.assignments, head.version
         )
         had_snapshot = args.assignments.exists()
-        _, last_levels = trend_history.board_levels(args.state)
+        replayed = trend_history.board_levels(args.state)
+        _, last_levels = replayed
         turnover, booked_through = _turnover_this_tick(
             placed,
             dict(zip(ids, first_seen, strict=True)),
@@ -427,7 +428,7 @@ def main() -> int:
             short = (key.board, key.metric, key.family, key.band)
             tick_turnover[short] = tick_turnover.get(short, 0) + count
         written = trend_history.record_tick(
-            args.state, ts, board_counts, tick_turnover, methodology
+            args.state, ts, board_counts, tick_turnover, methodology, replayed=replayed
         )
         # The snapshot turnover diffs, and the level changes, must move together (ADR-0227):
         # the tick's file without its snapshot would book this tick's turnover again next tick,
