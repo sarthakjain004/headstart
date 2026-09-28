@@ -41,7 +41,7 @@ def test_the_committed_pairs_name_only_the_atses_that_state_a_requisition():
         "jibe",
     }
     assert "lumen.eightfold.ai" not in pairs  # the user's decision (ADR-0205)
-    assert len(pairs) == 61
+    assert len(pairs) == 62
 
 
 _PAIRS = {
