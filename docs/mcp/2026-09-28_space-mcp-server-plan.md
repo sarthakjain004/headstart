@@ -6,6 +6,10 @@ that implements it · **Verified against:** `origin/main` at `65045ff9` (after #
 ADR-0194, ADR-0230, ADR-0232/0235, ADR-0233, ADR-0238, ADR-0249 · **Proposed ADR:** ADR-0253
 (0247–0250 are taken on `main`; re-check at landing, since ADR numbers collide across branches)
 
+**Superseded in part (2026-09-28):** the Space's read routes now answer anyone
+([ADR-0258](../adr/0258-the-spaces-read-routes-answer-anyone.md)), so the server needs no
+credential. Everything below about `AGENT_TOKEN` / `HEADSTART_AGENT_TOKEN` is history.
+
 The owner was away while this was written and could not answer questions. Every fork they would
 normally settle is decided here with a default, and §12 lists each default so it can be flipped
 before any code lands.

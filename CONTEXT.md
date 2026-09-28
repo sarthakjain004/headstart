@@ -140,19 +140,19 @@ Two rules resolve most of it. **"live" describes a _row_, not a Board** — a se
 **Ledger row** — 312,236:
 One line in a `data/validate/liveness/{ats}.csv`. Includes `dead` and `unknown`. Never a Board count; a raw `wc -l` overstates by however many duplicates exist.
 
-**Live row** — 191,237:
+**Live row** — 193,732:
 A Ledger row whose last verdict is `live`. Still a row: pre-dedupe, and pre every deliberate exclusion.
 _Avoid_: "live Boards" for this number — that is the phrase this section exists to kill.
 
-**Unique Board** — 184,601:
+**Unique Board** — 187,096:
 Live rows collapsed to one entry per canonical `board_key` (ADR-0023) — the distinct Boards we know exist — less the 4 Boards with a `dead` row newer than their newest `live` row (ADR-0219). **Scrapable Board** and **Hiring Board** are subsets of it; nothing in that chain removes a duplicate, only Boards we choose not to read. The two *history* counts at the end are **not** subsets: 949 Scraped Boards are absent from it (measured 2026-09-25; `board_cost.csv` is HF-backed, so CI skips this figure), because a Board read months ago may have gone Dead since and left the live set.
 
-**Scrapable Board** — 157,269:
-A Unique Board a run may actually pick: minus `registry.DISABLED_ATS` (−25,488, all of it `join`), `excluded_and_parked.EXCLUDED_BOARDS` (−215 vendor test Boards), the alias ledger (−1,322 Boards published under a second hostname or label, Taleo career sections and ADP Recruiting Management career sites whose every posting another section or site of the same tenant already lists, or Eightfold career sites whose backing ATS Board already serves them, ADR-0111, ADR-0182, ADR-0186, ADR-0202, ADR-0205 and ADR-0222) and `excluded_and_parked.PARKED_BOARDS` (−307). Computed by `scrapable_boards.load(min_jobs=0)` (ADR-0191, the one place that decides whether a Board is scraped) — which applies these in the *other* order, excluding before it dedupes, and lands on the same figure. The right default answer to "how many Boards do we have".
-_Avoid_: calling this "unique" — the 27,332 Boards between it and Unique Board are real and distinct, deliberately skipped rather than deduplicated. The alias subtraction is the one exception, and it is small: those 1,322 serve no posting a kept Board does not — one Board reached by more than one name, a Taleo career section or ADP Recruiting Management career site whose every posting another of its tenant already lists, or an Eightfold career site whose backing ATS Board lists its postings and serves every tech one (a distinct Board, but a redundant one).
+**Scrapable Board** — 159,769:
+A Unique Board a run may actually pick: minus `registry.DISABLED_ATS` (−25,488, all of it `join`), `excluded_and_parked.EXCLUDED_BOARDS` (−210 vendor test Boards), the alias ledger (−1,322 Boards published under a second hostname or label, Taleo career sections and ADP Recruiting Management career sites whose every posting another section or site of the same tenant already lists, or Eightfold career sites whose backing ATS Board already serves them, ADR-0111, ADR-0182, ADR-0186, ADR-0202, ADR-0205 and ADR-0222) and `excluded_and_parked.PARKED_BOARDS` (−307). Computed by `scrapable_boards.load(min_jobs=0)` (ADR-0191, the one place that decides whether a Board is scraped) — which applies these in the *other* order, excluding before it dedupes, and lands on the same figure. The right default answer to "how many Boards do we have".
+_Avoid_: calling this "unique" — the 27,327 Boards between it and Unique Board are real and distinct, deliberately skipped rather than deduplicated. The alias subtraction is the one exception, and it is small: those 1,322 serve no posting a kept Board does not — one Board reached by more than one name, a Taleo career section or ADP Recruiting Management career site whose every posting another of its tenant already lists, or an Eightfold career site whose backing ATS Board lists its postings and serves every tech one (a distinct Board, but a redundant one).
 
-**Hiring Board** — 103,696:
-A Scrapable Board with at least one open posting (`scrapable_boards.load(min_jobs=1)`, the function's default). The other 53,573 are live but empty.
+**Hiring Board** — 105,802:
+A Scrapable Board with at least one open posting (`scrapable_boards.load(min_jobs=1)`, the function's default). The other 53,967 are live but empty.
 
 **Slice** — 80,000:
 The Boards one run picks (`scrape_plan --max-boards`), split 70/30 by `pick_boards` into a **Head** (up to 56,000 **Scored Boards**, score-descending; on 2026-09-25 that held every Scrapable one, ADR-0229 has the count) and a **Tail** (the rest). The Tail rotates through everything not in the Head, the Boards looked at longest ago first, by the cost ledger's `updated_at` (ADR-0229); ADR-0062 reserves a share of it for Boards with unsettled descriptions. Only the Slice is scraped, which is why **Eviction**'s unit is *scrapes of a Board*, never runs.
@@ -356,12 +356,8 @@ _Avoid_: reading a line's move off its points — the points include the steps t
 ### Accounts
 
 **Account** (ADR-0042):
-A signed-in person, identified by the verified address their Google sign-in proves. The whole UI sits behind sign-in and anyone may create an Account; the costly paths keep their own gates — **Digest** delivery stays invite-only, **Résumé** parsing is capped per Account.
-_Avoid_: user, subscriber — an Account is the identity; whether it receives email is the **Subscription**'s question. Also "ATS account" for an ATS's customer — that is a **Tenant**.
-
-**Agent token** (ADR-0253):
-The shared secret (`AGENT_TOKEN`, a Space secret) an agent reading HeadStart for its owner carries past the sign-in wall. It opens only the read routes that answer without an **Account** — `/search`, `/facets`, `/trends`, `/hot`, `/companies/suggest` and `/companies/lookup` — so it reads what any signed-in visitor can read, and no Account's records; it writes nothing. It is not an Account: no follow or hide list applies to what it reads. Separate from `ALERTS_TOKEN`, the **Digest** run's secret, which opens `/search` alone; set equal to it, the agent token is ignored.
-_Avoid_: session or API key — it names no person and buys no Account; one leaked reads only what open sign-up already offers.
+A signed-in person, identified by the verified address their Google sign-in proves. The whole UI sits behind sign-in and anyone may create an Account; the costly paths keep their own gates — **Digest** delivery stays invite-only, **Résumé** parsing is capped per Account. The JSON read routes need none and answer anyone (ADR-0258); a signed-in caller's follow and hide lists still apply to its own searches.
+_Avoid_: user, subscriber — an Account is the identity; whether it receives email is the **Subscription**'s question. Also "ATS account" for an ATS's customer — that is a **Tenant**. Also "agent token" — ADR-0253's `AGENT_TOKEN`, retired by ADR-0258 once the read routes it opened answered anyone.
 
 **Profile** (ADR-0041):
 The stored, structured extraction of an Account's career: one role sentence (the **Résumé query**) plus facts — current title, years of experience, skills, past roles, education, location. Built by one LLM call from a **Résumé** or edited by hand; the document it came from is discarded, and contact details are never kept. Split by purpose: the sentence drives ranking, the facts pre-fill **Search filters** — a Profile never smuggles years or location into the **Query**.

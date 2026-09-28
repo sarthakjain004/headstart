@@ -98,8 +98,13 @@ Profile one PR each.
 (2026-09-28) — a second machine secret, `AGENT_TOKEN`, opens the read routes that answer without an
 Account; `ALERTS_TOKEN` still opens `/search` alone.
 
-**Status:** accepted. "The whole app sits behind Google sign-in" (above) is now false in one
-narrow, deliberate place, and this records why.
+**Superseded by:** [ADR-0258](0258-the-spaces-read-routes-answer-anyone.md) (2026-09-28): the read
+routes, `/search` among them, answer anyone, so neither machine secret opens anything and both are
+retired.
+
+**Status:** superseded by ADR-0258. It recorded why "The whole app sits behind Google sign-in"
+(above) was false in one narrow, deliberate place; since ADR-0258 it is false for the six read
+routes.
 
 The decision above put every path outside `_PUBLIC_PATHS` behind a session. `_PUBLIC_PATHS`
 was reasoned out from the human's side — the door, and the unsubscribe link a mailed Digest

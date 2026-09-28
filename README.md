@@ -134,8 +134,8 @@ Board no source names is served under its humanised tenant (`nvidia.wd5.myworkda
 a vendor's code (Oracle's pods, ADP's GUIDs). A name is a display value, never an identity, which
 is why `CompanyPrefs` is keyed by **board_key** and never by company name.
 
-The liveness pipeline has probed **312,236 ledger rows**: 191,237 live, 109,933 dead, 11,066 unknown
-— rows, not boards; they collapse to 184,601 Unique Boards once duplicate spellings of the same
+The liveness pipeline has probed **312,236 ledger rows**: 193,732 live, 112,618 dead, 5,886 unknown
+— rows, not boards; they collapse to 187,096 Unique Boards once duplicate spellings of the same
 board are folded together and the 4 with a `dead` row newer than their newest `live` row are dropped (`CONTEXT.md` §Counting
 Boards).
 
@@ -187,7 +187,7 @@ flowchart TB
         D1["<b>discover</b><br/>Common Crawl · Wayback<br/>careers-page fingerprint"]
         D2["<b>merge</b><br/>union + dedupe per ATS"]
         D3["<b>validate</b><br/>liveness-probe each board"]
-        D4[("<b>liveness ledger</b><br/>191,237 live rows of 312,236<br/>git-tracked, authoritative")]
+        D4[("<b>liveness ledger</b><br/>193,732 live rows of 312,236<br/>git-tracked, authoritative")]
         D1 --> D2 --> D3 --> D4
     end
 
@@ -290,19 +290,19 @@ table in lockstep with the committed ledger:
 
 | | boards | |
 | --- | ---: | --- |
-| live rows in the ledger | 191,237 | a row, not a board — 6,632 of them are duplicate spellings |
+| live rows in the ledger | 193,732 | a row, not a board — 6,632 of them are duplicate spellings |
 | − `registry.DISABLED_ATS` | −25,488 | all of it `join` |
 | − `excluded_and_parked.EXCLUDED_BOARDS` | −218 | vendor and customer test/sandbox/demo/dev boards and one historical feed, confirmed by reading their postings |
 | − alias ledger | −1,322 | one board under a second hostname or label, a career section or career site another of the same tenant already covers, or an Eightfold career site its backing ATS board already serves (ADR-0111, ADR-0182, ADR-0186, ADR-0202, ADR-0205, ADR-0222, ADR-0254) |
 | − case-variant dedupe | −6,629 | `company/External` and `company/external` are one board (ADR-0023) |
 | − newer `dead` row | −4 | a board is read only if no `dead` row is newer than its newest `live` one; all 4 re-probed dead (ADR-0219) |
 | − `excluded_and_parked.PARKED_BOARDS` | −307 | real boards withheld for now — six for scrape cost, two for near-duplicate spam, six Jibe clients whose every posting is on a Workday or Oracle board already held, 288 whose every posting is on an iCIMS board we scrape (ADR-0240), five employee-only Radancy fronts (ADR-0246) |
-| = **Scrapable Board** | **157,269** | |
+| = **Scrapable Board** | **159,769** | |
 
-That order matters: excluding before deduping reads −218 and −6,629, deduping first reads −215,
-because three excluded boards were themselves duplicates. Both land on 157,269.
+That order matters: excluding before deduping reads −213 and −6,629, deduping first reads −210,
+because three excluded boards were themselves duplicates. Both land on 159,769.
 
-Of those, **103,696 are currently hiring** — the 53,573 live-but-empty boards are skipped as having
+Of those, **105,802 are currently hiring** — the 53,967 live-but-empty boards are skipped as having
 nothing to read. A run takes a bounded slice and splits it between a scored head (top boards by a
 sticky measure of tech-job yield, large enough to hold every board that yields tech) and a tail
 that rotates through everything else, the boards looked at longest ago first, so
@@ -542,14 +542,12 @@ reason), so a fork's Space may not be free.
 |---|---|---|
 | Actions secret | `HF_TOKEN` | write access to your dataset and Space (every pipeline stage, `deploy-space`) |
 | Actions secret | `SUBSCRIBERS_TOKEN`, variable `SUBSCRIBERS_REPO` | the private dataset holding Accounts and Subscriptions |
-| Actions secret | `ALERTS_TOKEN` | lets the digest run call the Space's `/search`; set the same value on the Space |
 | Actions secret | `RESEND_API_KEY`, variable `ALERTS_SENDER` | email digests ([`docs/email-alerts.md`](./docs/email-alerts.md)) |
 | Actions secret | `TELEGRAM_BOT_TOKEN` | Telegram alerts ([`docs/telegram-alerts.md`](./docs/telegram-alerts.md)) |
 | Actions variable | `SPACE_URL` | the public URL of your Space |
 | Space secret | `HF_TOKEN`, `HF_DATASET` | read access to the index dataset; `HF_DATASET` defaults to this project's own (`deploy/hf-space/app.py`) |
 | Space secret | `SECRET_KEY`, `GOOGLE_CLIENT_ID` | session signing and Google sign-in; both unset = no sign-in wall |
 | Space secret | `SUBSCRIBERS_REPO`, `SUBSCRIBERS_TOKEN` | with sign-in on, turn on Accounts: saved searches, starred jobs, Profile, alerts |
-| Space secret | `AGENT_TOKEN` | with sign-in on, lets an agent read Search, Trends and Hot through the wall, and nothing of an Account's ([ADR-0253](./docs/adr/0253-an-agent-reads-the-spaces-read-routes-through-a-read-scoped-token.md)); unset = no agent access |
 | Space secret | `LLM_ROUTER_BASE`, `LLM_ROUTER_MODEL`, `LITELLM_MASTER_KEY` | an OpenAI-compatible endpoint for résumé parsing (optional; unset = that one feature answers 503). `start.sh` can instead open an SSH tunnel to a private router (`OCI_SSH_KEY`, `LLM_ROUTER_SSH`) |
 
 Every alert and account feature is inert until its secrets are set. The dataset and Space ids are

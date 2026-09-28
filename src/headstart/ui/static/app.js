@@ -630,11 +630,10 @@ async function fetchPage(){
   busy(false);
   if(!Array.isArray(rows)){
     logFail('GET', '/search', r.status);
-    // The sign-in wall's 401 is not a filter's fault — reading it as one had the user clearing
-    // filters that were never the problem. Nor is a server fault (the store's 503).
-    el('results').innerHTML = '<div class="empty">' + (r.status === 401
-      ? 'Your session expired — sign in again to search.'
-      : r.status >= 500 ? esc((rows && rows.error) || ('The search failed (status ' + r.status + ').')) + ' Try again.'
+    // A server fault (the store's 503) is not a filter's fault: reading it as one has the user
+    // clearing filters that were never the problem.
+    el('results').innerHTML = '<div class="empty">' + (r.status >= 500
+      ? esc((rows && rows.error) || ('The search failed (status ' + r.status + ').')) + ' Try again.'
       : 'One of the filters isn\'t valid — clear it and try again.') + '</div>';
     setResultRows(1);
     el('n').textContent = ''; el('kind').textContent = ''; return; }
@@ -1166,9 +1165,8 @@ async function runSet(id){
   try { r = await fetch('/search?'+p); rows = await r.json(); }
   catch(e){ logFail('GET', '/search', r ? r.status : 0, e); if (request === matchesRequest) el('matches-msg').textContent = 'That search didn\'t go through.'; return; }
   if (request !== matchesRequest) return;
-  if (!Array.isArray(rows)){ logFail('GET', '/search', r.status); el('matches-msg').textContent = r.status === 401
-    ? 'Your session expired — sign in again to see your matches.'
-    : r.status >= 500 ? ((rows && rows.error) || ('The search failed (status ' + r.status + ').')) + ' Try again.'
+  if (!Array.isArray(rows)){ logFail('GET', '/search', r.status); el('matches-msg').textContent = r.status >= 500
+    ? ((rows && rows.error) || ('The search failed (status ' + r.status + ').')) + ' Try again.'
     : 'A saved filter isn\'t valid — refine the set.'; return; }
   el('matches-msg').textContent = rows.length
     ? `${rows.length} match${rows.length === 1 ? '' : 'es'} for “${s.name}”`
@@ -2393,9 +2391,7 @@ async function loadTrends(family){
     }
     else if (trendPicks.length && (r.status === 400 || r.status === 503))
       refused = { status: r.status, error: ((await r.json().catch(() => null)) || {}).error || '' };
-    else err = r.status === 401
-      ? 'Your session expired — sign in again to see trends.'
-      : 'Trends didn’t load. Try again.';
+    else err = 'Trends didn’t load. Try again.';
     if (!r.ok) logFail('GET', '/trends', r.status);
   } catch(e){ logFail('GET', '/trends', r ? r.status : 0, e); err = 'That request didn’t go through.'; }
   // Cancelled by a newer request, which now owns the panel: say nothing, paint nothing. An
