@@ -53,10 +53,8 @@ answers ``application/json`` with no charset; its bytes are parsed as JSON, i.e.
 
 **The tech gate is exact** (ADR-0166): no surface states a department, and ``parse`` reads the
 listing's ``displayJobTitle``, which the ad's ``title`` equalled on 58 of 58. ADR-0048's skip of an
-already-described Job is taken too — the ad supplies nothing but the description. A gated or
-skipped ad leaves the Job without a description (the store holds it, or the filter drops it); a
-failed ad ships the listing's ``externalDescription`` instead, shorter but better than nothing to
-embed. Never without the Job.
+already-described Job is taken too — the ad supplies nothing but the description. A gated,
+skipped or failed ad leaves the Job without a description, never without the Job.
 
 Not on any surface, so never set: department, salary (75 of 924 ads end in a templated "Monthly
 Salary 25,000.00 - 28,000.00" prose line, 45 of them "0.00 - 0.00" — the description extractor's
@@ -366,10 +364,6 @@ class CornerstoneScraper(BaseScraper):
             "ads": {
                 str(r["requisitionId"]): a for r, a in zip(wanted, ads) if a is not None
             },
-            # Asked for and lost: these ship the listing's shorter text rather than none.
-            "lost_ads": [
-                str(r["requisitionId"]) for r, a in zip(wanted, ads) if a is None
-            ],
         }
 
     def _read_company(self, rows: list[dict]) -> None:
@@ -447,7 +441,6 @@ class CornerstoneScraper(BaseScraper):
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
         ads = raw.get("ads") or {}
-        lost = set(raw.get("lost_ads") or ())
         jobs: list[Job] = []
         for row in raw.get("postings") or []:
             rid = str(row["requisitionId"])
@@ -464,19 +457,17 @@ class CornerstoneScraper(BaseScraper):
                     url=self.job_url(row["_site"], rid),
                     posted_at=_posted_at(row.get("postingEffectiveDate")),
                     scraped_at=scraped_at,
-                    description=self._description(row, ads.get(rid), rid in lost),
+                    description=self._description(row, ads.get(rid)),
                     salary=self._salary_field(row),
                 )
             )
         return jobs
 
     @staticmethod
-    def _description(row: dict, ad: str | None, ad_lost: bool) -> str | None:
-        """The job ad's text, else the listing's ``externalDescription``. A Job whose ad was not
-        asked for (gated, or its description already stored) gets None, so the store keeps the
-        full ad; one whose ad was asked for and lost gets the listing's text, lossier (``&``
-        deleted, the ad is a median 3.24x longer) but better than nothing to embed."""
-        if ad is None and not ad_lost:
+    def _description(row: dict, ad: str | None) -> str | None:
+        if (
+            ad is None
+        ):  # gated, already stored, or failed: the store or the next run fills it
             return None
         return _real_text(ad) or _real_text(row.get("externalDescription"))
 

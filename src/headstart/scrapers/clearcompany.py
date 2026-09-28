@@ -115,9 +115,11 @@ def _tag(row: str, tag: str) -> str | None:
 def _description(row: str, page: str | None, unheld: bool) -> str | None:
     """The page's ``jobDesc`` block. A Job with no page read (gated, lost, or a page with no
     posting on it) ships the feed's own ``descriptionrich`` — its first 1,000 chars, better than
-    nothing to embed — but only when the description store does not already hold its text
-    (``unheld``): the store keeps fresh text over held text, so a teaser would overwrite a full
-    description for one run and flip back on the next."""
+    nothing to embed — but only when the pipeline's skip-list says the store does not hold its
+    text (``unheld``): the store keeps fresh text over held text, so a teaser would overwrite a
+    full description for one run and flip back on the next. With no skip-list (outside the
+    pipeline, or one that could not be read) nothing says the text is unheld, so no teaser.
+    ClearCompany is not in the ADR-0211 re-fetch rotation, which takes held Jobs off the list."""
     if page is None:
         return html_to_text(_tag(row, "descriptionrich")) if unheld else None
     return html_to_text(_job_desc(page))
@@ -268,7 +270,11 @@ class ClearCompanyScraper(BaseScraper):
                     url=self.job_url(req),
                     posted_at=_date(_tag(row, "date")),
                     scraped_at=scraped_at,
-                    description=_description(row, page, self.needs_detail(req)),
+                    description=_description(
+                        row,
+                        page,
+                        self.have_details is not None and self.needs_detail(req),
+                    ),
                     salary=self._salary_field(page or ""),
                 )
             )
