@@ -1,6 +1,6 @@
 # ADR-0156: The Space installs `headstart` as a real package
 
-**Status:** accepted · **Date:** 2026-09-15 · **Relates to:** ADR-0020 (free-tier deployment), ADR-0042 (`search.JobSearch` as the one serving path)
+**Status:** accepted · **Date:** 2026-09-15 · **Relates to:** ADR-0020 (free-tier deployment), ADR-0042 (`search.JobSearch` as the one serving path) · **Amended by:** [ADR-0252](0252-an-agent-reads-the-spaces-read-routes-through-a-read-scoped-token.md) — the deploy trigger leaves out the three MCP packages, which the Space never imports; the copy still ships them
 
 ## Context
 

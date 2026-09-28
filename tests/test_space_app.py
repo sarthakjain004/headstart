@@ -432,6 +432,138 @@ def test_an_unconfigured_service_token_admits_nobody(auth_app):
     for header in ("Bearer ", "Bearer x", ""):
         r = client.get("/search?q=", headers={"Authorization": header})
         assert r.status_code == 401, f"{header!r} got in with no ALERTS_TOKEN set"
+    assert auth_app._SERVICE_TOKENS == {}
+
+
+# ---- the agent token (ADR-0252) ----
+
+_AGENT_BEARER = {"Authorization": "Bearer agent-token"}
+_ALERTS_BEARER = {"Authorization": "Bearer service-token"}
+# The read routes that answer without an Account: the whole of what AGENT_TOKEN opens.
+_AGENT_PATHS = ("/search", "/facets", "/trends", "/hot", "/companies/suggest")
+
+
+def _wall_env(**secrets):
+    """The sign-in wall on, with exactly the machine secrets given and no others: a module
+    fixture's env stays set until the module ends, so an unnamed secret must be pinned off."""
+    return {
+        "SECRET_KEY": "test-secret",
+        "GOOGLE_CLIENT_ID": "client-id.example",
+        "ALERTS_TOKEN": "",
+        "AGENT_TOKEN": "",
+        **secrets,
+    }
+
+
+@pytest.fixture(scope="module")
+def agent_app(tmp_path_factory):
+    """Wall on AND both machine secrets set: the Digest generator's and an agent's."""
+    with _space_app(
+        tmp_path_factory.mktemp("state"),
+        env=_wall_env(ALERTS_TOKEN="service-token", AGENT_TOKEN="agent-token"),
+    ) as module:
+        yield module
+
+
+def _through_the_wall(response) -> bool:
+    """Whether the wall let the request reach its route: the route may still answer 503
+    (nothing to serve on this empty state) or 400, but never the wall's own 401."""
+    return response.status_code != 401 and response.get_json(silent=True) != {
+        "error": "sign in first"
+    }
+
+
+def test_each_machine_secret_admits_exactly_its_own_paths(agent_app):
+    # Pinned as whole sets, so widening either one is a decision a test has to be told
+    # about, never an accident of editing the map.
+    assert agent_app._SERVICE_TOKENS == {
+        b"service-token": frozenset({"/search"}),
+        b"agent-token": frozenset(_AGENT_PATHS),
+    }
+
+
+def test_the_agent_token_opens_every_read_route_it_names(agent_app):
+    client = agent_app.app.test_client()
+    for path in _AGENT_PATHS:
+        assert not _through_the_wall(client.get(path)), f"{path} open to the anonymous"
+        assert _through_the_wall(client.get(path, headers=_AGENT_BEARER)), path
+
+
+@pytest.mark.parametrize(
+    "method, path",
+    [
+        ("GET", "/sets"),
+        ("GET", "/saved"),
+        ("GET", "/profile"),
+        ("GET", "/resumes"),
+        ("GET", "/companies"),
+        ("POST", "/companies"),
+        ("POST", "/subscribe"),
+    ],
+)
+def test_the_agent_token_opens_no_account_route(agent_app, method, path):
+    # A leaked agent token reads what any signed-in visitor can read, and nothing of an
+    # Account's own: no records, no follow or hide lists, and no write.
+    client = agent_app.app.test_client()
+    r = client.open(path, method=method, json={}, headers=_AGENT_BEARER)
+    assert r.status_code == 401 and r.json == {"error": "sign in first"}
+
+
+def test_the_alerts_token_still_opens_search_alone(agent_app):
+    client = agent_app.app.test_client()
+    assert client.get("/search?q=", headers=_ALERTS_BEARER).status_code == 200
+    for path in _AGENT_PATHS[1:]:
+        assert client.get(path, headers=_ALERTS_BEARER).status_code == 401, path
+
+
+def test_an_agent_token_equal_to_the_alerts_token_admits_nothing_extra(
+    tmp_path, capsys
+):
+    # One secret would otherwise open both path sets. The Space still boots, and says so.
+    with _space_app(
+        tmp_path, env=_wall_env(ALERTS_TOKEN="same-token", AGENT_TOKEN="same-token")
+    ) as module:
+        assert module._SERVICE_TOKENS == {b"same-token": frozenset({"/search"})}
+        client = module.app.test_client()
+        bearer = {"Authorization": "Bearer same-token"}
+        assert client.get("/search?q=", headers=bearer).status_code == 200
+        for path in _AGENT_PATHS[1:]:
+            assert client.get(path, headers=bearer).status_code == 401, path
+    assert "AGENT_TOKEN equals ALERTS_TOKEN" in capsys.readouterr().out
+
+
+# ---- the app's own mark on every reply (ADR-0252) ----
+
+_OWN_REPLY = "app; agent-api=0"
+
+
+def test_a_routes_own_answer_is_marked(agent_app):
+    r = agent_app.app.test_client().get("/search?q=", headers=_AGENT_BEARER)
+    assert r.status_code == 200 and r.headers["X-HeadStart"] == _OWN_REPLY
+
+
+def test_the_walls_refusal_is_marked(agent_app):
+    r = agent_app.app.test_client().get("/sets", headers=_AGENT_BEARER)
+    assert r.status_code == 401 and r.headers["X-HeadStart"] == _OWN_REPLY
+
+
+def test_a_path_with_no_route_is_marked(agent_app, monkeypatch):
+    client = _signed_in(agent_app, monkeypatch)  # past the wall, which would answer 401
+    r = client.get("/no-such-route", base_url=_HTTPS)
+    assert r.status_code == 404 and r.headers["X-HeadStart"] == _OWN_REPLY
+
+
+def test_a_route_that_raises_is_marked(agent_app, monkeypatch):
+    # The fixture leaves `testing` off, as the Space does, so the exception becomes Flask's
+    # 500 rather than propagating into the test: exactly the reply a caller would see.
+    assert not agent_app.app.testing
+
+    def broken(*args, **kwargs):
+        raise RuntimeError("a bug in the search path")
+
+    monkeypatch.setattr(agent_app._searcher, "run", broken)
+    r = agent_app.app.test_client().get("/search?q=", headers=_AGENT_BEARER)
+    assert r.status_code == 500 and r.headers["X-HeadStart"] == _OWN_REPLY
 
 
 # ---- Saved sets (ADR-0043) ----

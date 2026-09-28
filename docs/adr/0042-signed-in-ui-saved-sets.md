@@ -94,6 +94,10 @@ Profile one PR each.
 
 ## Amendment (2026-08-13): the wall admits one machine, on one path
 
+**Amended by:** [ADR-0252](0252-an-agent-reads-the-spaces-read-routes-through-a-read-scoped-token.md)
+(2026-09-28) — a second machine secret, `AGENT_TOKEN`, opens the read routes that answer without an
+Account; `ALERTS_TOKEN` still opens `/search` alone.
+
 **Status:** accepted. "The whole app sits behind Google sign-in" (above) is now false in one
 narrow, deliberate place, and this records why.
 
