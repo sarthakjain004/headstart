@@ -65,7 +65,7 @@ from headstart.search_filters.compiler import (
     KEYWORD_DEFAULT_SCOPE,
     keyword_scope_options,
 )
-from headstart.serving import facets, job_search, profile_extract
+from headstart.serving import facets, job_search, profile_extract, rate_limit
 from headstart.trends import hot_ranking, line_reading, trend_history
 
 DATASET = os.environ.get("HF_DATASET", "imPoseidon/headstart-index")
@@ -343,7 +343,18 @@ app.session_interface = _AnswersLeaveTheSessionAlone()
 # writes, and none serves one Account's records to another: a signed-in caller's own session
 # still applies its follow/hide clause to /search and /facets (`_company_where`), and an
 # anonymous one gets none. Every Account route stays behind the wall, and the page at `/`
-# still shows the door until its visitor signs in.
+# still shows the door until its visitor signs in. A caller with no session is rate-limited on
+# them (`_limit_the_anonymous`).
+_READ_ROUTES = frozenset(
+    {
+        "/search",
+        "/facets",
+        "/trends",
+        "/hot",
+        "/companies/suggest",
+        "/companies/lookup",
+    }
+)
 _PUBLIC_PATHS = {
     "/",
     "/auth/google",
@@ -351,12 +362,7 @@ _PUBLIC_PATHS = {
     "/unsubscribe",
     "/privacy",
     "/static/logo_mark.svg",
-    "/search",
-    "/facets",
-    "/trends",
-    "/hot",
-    "/companies/suggest",
-    "/companies/lookup",
+    *_READ_ROUTES,
 }
 
 # The public repository, named once *for the Space*. ADR-0112's door, the app's privacy-policy
@@ -402,6 +408,46 @@ def _require_sign_in():
     if not session.get("email"):
         return jsonify({"error": "sign in first"}), 401
     return None
+
+
+# How often one caller with no session may read `_READ_ROUTES` (ADR-0262): 60 requests in any
+# 60 s from one address, the six routes together. The page's own busiest minute fits: a Search
+# is two requests (/search and /facets, again on each page turn), and the Trends tab's worst
+# burst is one /trends per box unticked in its ATS picker, about 20. The MCP server holds itself
+# to the same 60 a minute, so one server process meets its own limit before this one. A
+# signed-in session is not limited.
+_READ_LIMIT_REQUESTS = 60
+_READ_LIMIT_WINDOW_S = 60
+_READ_LIMIT = rate_limit.RateLimit(_READ_LIMIT_REQUESTS, _READ_LIMIT_WINDOW_S)
+
+
+def _client_address() -> str:
+    """The address this request came from. Hugging Face's edge appends the address it accepted
+    the connection from to `X-Forwarded-For` and keeps whatever the caller sent to its left
+    (measured 2026-09-28, ADR-0262), so only the last entry is the edge's word; an earlier one
+    is the caller's to forge. Without the header, as in a local run, the peer is the caller."""
+    forwarded = request.headers.get("X-Forwarded-For", "")
+    return forwarded.rsplit(",", 1)[-1].strip() or request.remote_addr or ""
+
+
+@app.before_request
+def _limit_the_anonymous():
+    """A 429 with `Retry-After` for a caller with no session past `_READ_LIMIT` on a read
+    route. Nothing else is limited, so the door and the Account routes answer as before."""
+    if request.path not in _READ_ROUTES or (_AUTH_ON and session.get("email")):
+        return None
+    wait_s = _READ_LIMIT.admit(_client_address())
+    if not wait_s:
+        return None
+    return (
+        jsonify(
+            error="too many requests",
+            detail=f"at most {_READ_LIMIT_REQUESTS} requests in {_READ_LIMIT_WINDOW_S} s "
+            f"from one address; retry in {wait_s} s",
+        ),
+        429,
+        {"Retry-After": str(wait_s)},
+    )
 
 
 def _gzip(data: bytes) -> bytes:

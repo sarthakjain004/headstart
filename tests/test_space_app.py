@@ -39,6 +39,7 @@ import pyarrow.parquet as pq
 import pytest
 
 from headstart.llm_router import RouterUnavailable
+from headstart.serving import rate_limit
 from headstart.trends import line_reading, netting, trend_history
 
 pytest.importorskip("flask")  # in [dev] so this runs in CI; guards a bare env
@@ -163,6 +164,20 @@ def _forget_trends_answers():
 @pytest.fixture(autouse=True)
 def _no_kept_trends_answers():
     _forget_trends_answers()
+
+
+@pytest.fixture(autouse=True)
+def _no_spent_read_limit(monkeypatch):
+    """Each test starts with nothing counted against the anonymous read limit: the app
+    fixtures are module-scoped, so one test's requests would otherwise 429 a later test's."""
+    for module in _LOADED_APPS:
+        monkeypatch.setattr(
+            module,
+            "_READ_LIMIT",
+            rate_limit.RateLimit(
+                module._READ_LIMIT_REQUESTS, module._READ_LIMIT_WINDOW_S
+            ),
+        )
 
 
 @contextmanager
@@ -495,6 +510,103 @@ def test_a_signed_in_session_still_applies_its_hidden_companies(
         assert anonymous.get(path, base_url=_HTTPS).status_code == 200
     hidden = account_clause((), ["lever:beta"], mine=False)
     assert hidden and asked == [hidden, None, hidden, None]
+
+
+# ---- the anonymous read limit (ADR-0262) ----
+
+
+def _spend_the_read_limit(module, client, path="/hot", **kwargs):
+    """Every request the read limit admits from one caller in one window, each let through."""
+    for n in range(module._READ_LIMIT_REQUESTS):
+        r = client.get(path, **kwargs)
+        assert r.status_code != 429, f"request {n + 1} was refused"
+
+
+def _refused(response) -> bool:
+    return response.status_code == 429
+
+
+def test_the_read_limit_is_sixty_requests_a_minute(auth_app):
+    # Pinned: the number is a decision ADR-0262 reasons out, not a tuning knob.
+    assert (auth_app._READ_LIMIT_REQUESTS, auth_app._READ_LIMIT_WINDOW_S) == (60, 60)
+
+
+def test_an_anonymous_caller_past_the_limit_is_told_when_to_retry(auth_app):
+    client = auth_app.app.test_client()
+    # The six routes share one count: ten requests on each spend it.
+    for path in _READ_ROUTES:
+        for _ in range(10):
+            assert not _refused(client.get(path)), path
+    r = client.get("/search?q=")
+    assert r.status_code == 429
+    assert r.json["error"] == "too many requests"
+    assert "retry in" in r.json["detail"]
+    # The MCP client (space_mcp.space_client) reads a 429 as this limit only with the marker,
+    # and says "retry in N s" only from a whole-seconds Retry-After.
+    assert r.headers["Retry-After"].isdigit()
+    assert 1 <= int(r.headers["Retry-After"]) <= 60
+    assert r.headers["X-HeadStart"] == _OWN_REPLY  # the app's refusal, not HF's edge
+    assert all(_refused(client.get(path)) for path in _READ_ROUTES)
+
+
+def test_the_window_frees_the_caller_again(auth_app, monkeypatch):
+    now = [1000.0]
+    monkeypatch.setattr(
+        auth_app,
+        "_READ_LIMIT",
+        rate_limit.RateLimit(
+            auth_app._READ_LIMIT_REQUESTS,
+            auth_app._READ_LIMIT_WINDOW_S,
+            clock=lambda: now[0],
+        ),
+    )
+    client = auth_app.app.test_client()
+    _spend_the_read_limit(auth_app, client)
+    now[0] += 59
+    r = client.get("/hot")
+    assert _refused(r) and r.headers["Retry-After"] == "1"
+    now[0] += 1
+    assert not _refused(client.get("/hot"))
+
+
+def test_a_signed_in_session_is_not_limited(auth_app, monkeypatch):
+    signed_in = _signed_in(auth_app, monkeypatch)
+    for _ in range(auth_app._READ_LIMIT_REQUESTS + 5):
+        assert not _refused(signed_in.get("/hot", base_url=_HTTPS))
+    # Nor did those count against the anonymous caller at the same address.
+    _spend_the_read_limit(auth_app, auth_app.app.test_client())
+
+
+def test_a_digest_search_the_limit_refuses_is_admitted_on_a_retry(auth_app):
+    """The Digest run reads /search with no session, one Subscription at a time, from one
+    runner (ADR-0035). A refused caller is admitted within one window, and the run's retry
+    ladder outlasts a window and does not give up on a 429, so the limit can slow a Digest but
+    never cost one."""
+    from headstart.alerts import space_query
+
+    assert 429 not in space_query._PERMANENT_HTTP
+    assert sum(space_query._WAITS) >= auth_app._READ_LIMIT_WINDOW_S
+
+
+def test_the_limit_leaves_every_other_path_alone(auth_app):
+    client = auth_app.app.test_client()
+    _spend_the_read_limit(auth_app, client)
+    assert _refused(client.get("/hot"))
+    assert client.get("/sets").status_code == 401  # the wall's answer, not the limit's
+    assert client.get("/me").status_code == 200
+    assert client.get("/").status_code == 200
+
+
+def test_the_caller_is_the_address_hugging_faces_edge_appended(auth_app):
+    """HF's edge appends the address it accepted the connection from to X-Forwarded-For and
+    keeps what the caller sent to its left (measured 2026-09-28), so the last entry is the
+    caller and an earlier one cannot buy a fresh count."""
+    client = auth_app.app.test_client()
+    via_edge = {"X-Forwarded-For": "198.51.100.1"}
+    _spend_the_read_limit(auth_app, client, headers=via_edge)
+    forged = {"X-Forwarded-For": "203.0.113.9, 198.51.100.1"}
+    assert _refused(client.get("/hot", headers=forged))
+    assert not _refused(client.get("/hot", headers={"X-Forwarded-For": "198.51.100.2"}))
 
 
 # ---- the app's own mark on every reply (ADR-0253) ----

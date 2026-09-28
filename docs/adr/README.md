@@ -257,6 +257,7 @@ supersedes it and note the supersession in both.
 | [0259](0259-sensehq-boards-land-from-a-probe-that-reads-the-listings-own-error.md) | SenseHQ Boards land from a probe that reads the listing's own error | 2026-09-28 |
 | [0260](0260-a-counting-change-says-what-we-did-and-what-it-did-to-the-counts.md) | A Trends counting change says what we did and what it did to the counts, in one sentence | 2026-09-28 |
 | [0261](0261-a-trends-view-nobody-has-asked-for-is-cheap-to-work-out-and-asked-for-ahead.md) | A Trends view nobody has asked for is cheap to work out, and asked for ahead | 2026-09-28 |
+| [0262](0262-a-caller-with-no-session-reads-the-public-routes-sixty-times-a-minute.md) | A caller with no session reads the public routes sixty times a minute | 2026-09-28 |
 
 *ADR-0037 was removed from the repository on 2026-09-24 by the owner's decision; its number is not
 reused.*
