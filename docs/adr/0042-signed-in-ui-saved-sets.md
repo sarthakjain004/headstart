@@ -28,8 +28,8 @@ Search and Trends are no longer anonymous — accepted deliberately, knowing it 
 visitors.
 
 **Sessions are a signed Flask cookie.** The Google credential is verified once at sign-in;
-the server then sets its own signed cookie (weeks-long). One new secret (`SECRET_KEY`) joins
-the Space. Re-sending the Google token per request was rejected: its ~1h expiry would bounce
+the server then sets its own signed cookie (a week, from sign-in). One new secret
+(`SECRET_KEY`) joins the Space. Re-sending the Google token per request was rejected: its ~1h expiry would bounce
 users mid-use.
 
 **A Saved set is the unit of personalisation, and the Subscription is the one with email
@@ -134,11 +134,15 @@ central choice and would put ranking rules in two places.
 and in Actions', neither of which CI can reach, so merging this changes nothing on its own.
 `docs/email-alerts.md` carries the setup and a curl that verifies it.
 
-## Amendment (2026-09-28): the cookie lives seven days (#593)
+## Amendment (2026-09-28): a session ends seven days after sign-in (#593)
 
-The session cookie's lifetime drops from 30 days to 7 (`PERMANENT_SESSION_LIFETIME`). The cookie
-is stateless, so `/signout` clears only the browser's copy and a copied cookie keeps working until
-it expires; nothing server-side can revoke one. A per-Account session generation checked on each
-request would revoke it, at the cost of an Account read per signed-in request and a new stored
-field; the owner chose the shorter lifetime instead. Users sign in weekly rather than monthly, and
-rotating `SECRET_KEY` remains the way to sign everyone out at once.
+The cookie is stateless, so `/signout` clears only the browser's copy and nothing server-side can
+revoke a copied one. Its lifetime was 30 days, and that did not bound a copy either: Flask
+re-signs the cookie on every response, so an expiry measured from the last response slides with
+use, and a copy replayed once a month never lapsed. The session now carries `signed_in_at`, set at
+`/auth/google`, and `_require_sign_in` clears any session whose sign-in is seven days old (or
+missing, as on every cookie issued before this), whatever path it asks for;
+`PERMANENT_SESSION_LIFETIME` is seven days too. A copied cookie works for at most a week, and users
+sign in weekly. A per-Account session generation would revoke a cookie outright, at the cost of an
+Account read per signed-in request and a new stored field; the owner chose the week. Rotating
+`SECRET_KEY` remains the way to sign everyone out at once.

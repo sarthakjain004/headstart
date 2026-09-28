@@ -374,6 +374,31 @@ def test_signin_flow(auth_app, monkeypatch):
     assert client.get("/sets", base_url=_HTTPS).status_code == 401
 
 
+def test_a_session_ends_a_week_after_sign_in_however_often_it_is_used(
+    auth_app, monkeypatch
+):
+    """#593: Flask re-signs the cookie on every response, so its own expiry slides with use;
+    the sign-in time is what bounds a copied cookie."""
+    clock = [1_000_000.0]
+    monkeypatch.setattr(auth_app.time, "time", lambda: clock[0])
+    client = _signed_in(auth_app, monkeypatch)
+    # Used every day for a week, each request re-signing the cookie: 7 x 86,399 s is one
+    # second short of the lifetime, and the next 7 s cross it.
+    for _ in range(7):
+        clock[0] += 86_399
+        assert client.get("/sets", base_url=_HTTPS).status_code != 401
+    clock[0] += 7
+    assert client.get("/sets", base_url=_HTTPS).status_code == 401
+    assert client.get("/me", base_url=_HTTPS).json["email"] is None
+
+
+def test_a_cookie_from_before_signed_in_at_signs_in_again(auth_app, monkeypatch):
+    client = _signed_in(auth_app, monkeypatch)
+    with client.session_transaction(base_url=_HTTPS) as sess:
+        del sess["signed_in_at"]
+    assert client.get("/sets", base_url=_HTTPS).status_code == 401
+
+
 def test_bad_credential_is_401(auth_app, monkeypatch):
     def refuse(cred, cid):
         raise auth_app.identity.IdentityError("not a credential")

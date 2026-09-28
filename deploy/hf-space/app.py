@@ -302,15 +302,18 @@ app = Flask(
 # The session is a signed cookie (ADR-0042): Google is verified once at /auth/google, then
 # the cookie is the identity for a week — re-sending the ~1h Google token would bounce users
 # mid-use. Lax + Secure: it never rides a cross-site POST, and only travels over https.
-# Nothing server-side can revoke one cookie: /signout clears only the browser's copy, so a
-# copied cookie works until it expires (#593). Seven days, not thirty, bounds that; rotating
-# SECRET_KEY signs everyone out at once (their cookies stop verifying); nothing else breaks.
+# Nothing server-side can revoke one cookie: /signout clears only the browser's copy (#593).
+# Flask re-signs the cookie on every response, so its own expiry slides with use and a replayed
+# copy never lapses; `_require_sign_in` also ends a session _SESSION_LIFETIME after sign-in,
+# which bounds a copied cookie however often it is used. Rotating SECRET_KEY signs everyone out
+# at once (their cookies stop verifying); nothing else breaks.
+_SESSION_LIFETIME = timedelta(days=7)
 app.config.update(
     SECRET_KEY=_SECRET_KEY or None,
     SESSION_COOKIE_SECURE=True,
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE="Lax",
-    PERMANENT_SESSION_LIFETIME=timedelta(days=7),
+    PERMANENT_SESSION_LIFETIME=_SESSION_LIFETIME,
 )
 
 
@@ -399,6 +402,23 @@ def _request_json_object() -> dict:
     reached ``.get()`` and answered 500 (#595); as ``{}`` it meets each route's own 400."""
     body = request.get_json(silent=True)
     return body if isinstance(body, dict) else {}
+
+
+@app.before_request
+def _end_a_week_old_session():
+    """Sign out a session ``_SESSION_LIFETIME`` after its sign-in, on every path (#593). It is
+    registered first, so the wall, ADR-0262's limit and ``/me`` all see such a caller signed out."""
+    if _AUTH_ON and session.get("email") and not _signed_in_recently():
+        session.clear()
+
+
+def _signed_in_recently() -> bool:
+    """Whether the session's sign-in is under ``_SESSION_LIFETIME`` old. A cookie from before
+    ``signed_in_at`` existed has none, and signs in again."""
+    signed_in_at = session.get("signed_in_at")
+    return isinstance(signed_in_at, int | float) and (
+        time.time() - signed_in_at < _SESSION_LIFETIME.total_seconds()
+    )
 
 
 @app.before_request
@@ -1515,6 +1535,7 @@ def auth_google():
         return jsonify({"error": str(exc)}), 401
     session.permanent = True
     session["email"] = email
+    session["signed_in_at"] = time.time()
     return jsonify({"ok": True, "email": email})
 
 
