@@ -322,7 +322,15 @@ def build_doc(job: dict) -> str:
 # "$", per ADR-0066: 296 move, none in amount — 271 USD->CAD, 17 USD->AUD, 1 USD->NZD, 3 USD->None
 # (MXN), 4 value->None (a USD and a CAD range in one posting, now declined as the ambiguous
 # multi-region case). Tier 1 is untouched, so a row whose field already answered keeps it.
-DERIVATIONS_VERSION = 17
+# v18: `jobs/experience.py`'s Tier 1 rejects a structured-field floor above 30 years
+# (`_MAX_PLAUSIBLE_FIELD_REQUIREMENT`, #697) — one commit on top of the v17 bump at `8a6f8f4b`
+# (`git log 8a6f8f4b..9b09eaec -- src/headstart/jobs/experience.py`, subject "Reject structured
+# experience floors above 30 years", in case it lands squashed). Measured old vs new `from_field()`
+# on every raw `experience` field in the served metadata pulled 2026-09-28 (132,631 rows, 1,899
+# distinct values), per ADR-0066: 1 row moves, "35 years" (35 -> None, which then falls through to
+# Tier 2/3). The regex rows #697 listed at 50/45/30 are no longer served, and no served regex row
+# is above Tier 2's existing cap of 20.
+DERIVATIONS_VERSION = 18
 
 
 def to_meta(job: dict) -> dict:
