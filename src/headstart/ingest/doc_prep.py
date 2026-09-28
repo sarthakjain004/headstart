@@ -355,7 +355,7 @@ def build_doc(job: dict) -> str:
 # Y" ranges, an hour mark on each figure, "/hour", a "k" on either figure, a bare "$" as USD, and a
 # period-less figure under 200 read hourly), and `_field_keka` reads a period-less INR range no
 # larger than 100 as lakhs — one commit on top of the v19 bump at `304630d2` (`git log
-# 304630d2..SHA -- src/headstart/jobs/salary.py`, subject "Read adp_recruiting pay strings and
+# 304630d2..ef12e825 -- src/headstart/jobs/salary.py`, subject "Read adp_recruiting pay strings and
 # keka lakhs ranges; bump DERIVATIONS_VERSION", in case it lands squashed). Measured old (v19) vs
 # new `extract()` on every adp_recruiting and keka row of the served table read 2026-09-28 (v469),
 # with its description from the store pulled the same day, per ADR-0066: adp_recruiting 228 of
