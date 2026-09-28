@@ -200,6 +200,65 @@ def test_listing_rows_skip_pages_that_are_not_postings():
     assert rows[0]["slug_title"] == "Senior Software Engineer VAULT"
 
 
+#: ea's `es_ES` sitemap entry for one posting (2026-09-29), trimmed to three of its 12 alternates.
+_EA_ES_ENTRY = (
+    '<urlset xmlns:xhtml="http://www.w3.org/1999/xhtml"><url>'
+    "<loc>https://jobs.ea.com/es_ES/careers/JobDetail/Software-Engineer/215808</loc>"
+    '<xhtml:link rel="alternate" href="https://jobs.ea.com/en_US/careers/JobDetail/'
+    'Software-Engineer/215808" hreflang="x-default"/>'
+    '<xhtml:link rel="alternate" href="https://jobs.ea.com/en_US/careers/JobDetail/'
+    'Software-Engineer/215808" hreflang="en-US"/>'
+    '<xhtml:link rel="alternate" href="https://jobs.ea.com/es_ES/careers/JobDetail/'
+    'Software-Engineer/215808" hreflang="es-ES"/>'
+    "</url></urlset>"
+)
+_EA_EN = "https://jobs.ea.com/en_US/careers/JobDetail/Software-Engineer/215808"
+
+
+def test_a_posting_is_read_at_its_english_alternate_when_the_english_sitemap_is_empty():
+    """ea's `en_US` sitemap answered 200 with an empty body and its `es_ES` one did not, so the
+    postings were served from Spanish pages that failed the English gate (#706)."""
+    robots = "Sitemap: https://jobs.ea.com/careers/sitemap_index.xml\n"
+    index = (
+        "<sitemapindex>"
+        "<sitemap><loc>https://jobs.ea.com/en_US/careers/sitemap.xml</loc></sitemap>"
+        "<sitemap><loc>https://jobs.ea.com/es_ES/careers/sitemap.xml</loc></sitemap>"
+        "</sitemapindex>"
+    )
+
+    def route(method, url, kwargs):
+        if url.endswith("robots.txt"):
+            return FakeResponse(200, robots)
+        if url.endswith("sitemap_index.xml"):
+            return FakeResponse(200, index)
+        if url == "https://jobs.ea.com/es_ES/careers/sitemap.xml":
+            return FakeResponse(200, _EA_ES_ENTRY)
+        if url == _EA_EN:
+            return FakeResponse(200, _FIXTURE["page"][_TECH])
+        return FakeResponse(200, "")  # the empty `en_US` sitemap, and any other page
+
+    scraper = get_scraper(
+        "avature", "ea", fetcher=FakeFetcher(route), have_details=set()
+    )
+    scraper.pacer = Pacer(0)
+    [job] = scraper.parse(scraper.fetch_raw(), _SCRAPED_AT)
+    assert job.url == _EA_EN
+
+
+def test_a_posting_with_no_english_alternate_or_already_in_english_keeps_its_url():
+    only_spanish = (
+        "<urlset><url><loc>https://manpowergroupco.avature.net/es_CO/careers/JobDetail/"
+        "ASESOR-SVR/57090</loc></url></urlset>"
+    )
+    british = _EA_ES_ENTRY.replace(
+        "/es_ES/careers/JobDetail/", "/en_GB/careers/JobDetail/"
+    )
+    [colombian] = listing_rows(only_spanish)
+    [kept] = listing_rows(british)
+    assert "/es_CO/" in colombian["url"]
+    assert "/en_GB/" in kept["url"]
+
+
 def test_json_ld_layout():
     fields = page_fields(_FIXTURE["layouts"]["ashfieldhealthcare_careers"])
     assert fields["title"] == "Medical Scientific Liaison Manager (m/w/d)"
