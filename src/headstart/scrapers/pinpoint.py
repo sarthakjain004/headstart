@@ -59,6 +59,7 @@ Board. The host is User-Agent-agnostic.
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from headstart.boards import company_name
@@ -83,9 +84,10 @@ def _description(item: dict) -> str | None:
 
 
 def _location(item: dict, country: str | None = None) -> str | None:
-    """`location.name`, then `city`, `province` and the page's country, each skipped only when it
+    """`location.name`, then `city`, `province` and the page's country, each skipped when it
     repeats a whole comma-separated part already written (case-insensitively) — "Denver" after
-    "Denver, CO", never "Indiana" after "Indianapolis". `name` leads because it is the tenant's
+    "Denver, CO", never "Indiana" after "Indianapolis" — or, for the province, when the name ended
+    in its two-letter code (`_abbreviated_in`). `name` leads because it is the tenant's
     own label, often a site name ("GM Tech", "Shipboard") that the structured fields do not
     repeat; there is one location per posting on every row measured."""
     place = item.get("location") or {}
@@ -93,10 +95,25 @@ def _location(item: dict, country: str | None = None) -> str | None:
     seen: set[str] = set()
     for value in (place.get("name"), place.get("city"), place.get("province"), country):
         value = (value or "").strip()
-        if value and value.lower() not in seen:
+        if value and value.lower() not in seen and not _abbreviated_in(parts, value):
             parts.append(value)
             seen.update(p.strip().lower() for p in value.split(","))
     return ", ".join(parts) or None
+
+
+def _abbreviated_in(parts: list[str], province: str) -> bool:
+    """Whether the place written so far ends in a two-letter code for ``province`` — "Maumee, OH"
+    then "Ohio". A code whose letters start the name and appear in it in order ("NM" in "New
+    Mexico") is read as its abbreviation: on trilongroup (2026-09-28) 886 of 929 names ended in
+    such a code over a province, and all 886 abbreviated it, so the location read "Maumee, OH,
+    Ohio, United States"."""
+    last = parts[-1].rsplit(",", 1)[-1].strip() if parts else ""
+    if not re.fullmatch(r"[A-Z]{2}", last):
+        return False
+    letters = iter(province.lower())
+    return province[0].lower() == last[0].lower() and all(
+        ch in letters for ch in last.lower()
+    )
 
 
 def _title(item: dict) -> str:
