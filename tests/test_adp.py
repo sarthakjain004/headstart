@@ -726,7 +726,7 @@ def test_the_location_is_the_address_tail_of_the_site_label():
     )
     # No address: the label is all there is.
     assert _place(loc("REMOTE, US", "", "")) == "REMOTE, US"
-    # An address the label does not end with: the label stays.
-    assert _place(loc("Head Office, Toronto, ON, CA", "Ottawa", "ON")) == (
-        "Head Office, Toronto, ON, CA"
+    # The label's own place names a neighbourhood; the address city wins, on a comma boundary.
+    assert _place(loc("West Bethesda, MD, Bethesda, MD, US", "Bethesda", "MD")) == (
+        "Bethesda, MD, US"
     )

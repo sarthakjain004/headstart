@@ -243,7 +243,8 @@ def _place(loc: dict) -> str | None:
     ).strip()
     head, _, country = short.rpartition(",")
     tail = ", ".join(p for p in (city, state) if p)
-    if city and head.strip().endswith(tail):
+    label = head.strip()
+    if city and (label == tail or label.endswith(f", {tail}")):
         return f"{tail}, {country.strip()}" if country.strip() else tail
     return short or None
 

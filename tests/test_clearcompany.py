@@ -327,3 +327,13 @@ def test_the_scraper_declares_a_detail_pass_below_the_measured_knee():
     assert scraper.has_detail_pass is True
     assert scraper.detail_workers == 16
     assert "clearcompany" in detail_pass_atses()
+
+
+def test_a_held_description_is_not_overwritten_by_the_teaser():
+    """The store keeps fresh text over held text, so a teaser for a Job whose full description
+    is already held would replace it for one run: the Job ships None and the store keeps it."""
+    scraper = _scraper("hbtbank")
+    scraper.have_details = {"clearcompany:hbtbank:3781556"}
+    raw = {"xml": _text("clearcompany_hbtbank.xml"), "details": {}}
+    jobs = {j.id.rsplit(":", 1)[1]: j for j in scraper.parse(raw, SCRAPED_AT)}
+    assert jobs["3781556"].description is None

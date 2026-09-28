@@ -53,8 +53,10 @@ answers ``application/json`` with no charset; its bytes are parsed as JSON, i.e.
 
 **The tech gate is exact** (ADR-0166): no surface states a department, and ``parse`` reads the
 listing's ``displayJobTitle``, which the ad's ``title`` equalled on 58 of 58. ADR-0048's skip of an
-already-described Job is taken too — the ad supplies nothing but the description. A gated,
-skipped or failed ad leaves the Job without a description, never without the Job.
+already-described Job is taken too — the ad supplies nothing but the description. A gated or
+skipped ad leaves the Job without a description (the store holds it, or the filter drops it); a
+failed ad ships the listing's ``externalDescription`` instead, shorter but better than nothing to
+embed. Never without the Job.
 
 Not on any surface, so never set: department, salary (75 of 924 ads end in a templated "Monthly
 Salary 25,000.00 - 28,000.00" prose line, 45 of them "0.00 - 0.00" — the description extractor's
@@ -469,7 +471,7 @@ class CornerstoneScraper(BaseScraper):
         return jobs
 
     @staticmethod
-    def _description(row: dict, ad: str | None, ad_lost: bool = False) -> str | None:
+    def _description(row: dict, ad: str | None, ad_lost: bool) -> str | None:
         """The job ad's text, else the listing's ``externalDescription``. A Job whose ad was not
         asked for (gated, or its description already stored) gets None, so the store keeps the
         full ad; one whose ad was asked for and lost gets the listing's text, lossier (``&``

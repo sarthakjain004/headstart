@@ -31,8 +31,9 @@ short of the Board on 97 of 161 Boards (3,597 vs 4,138 postings), served posting
 whose Board is gone (newest 2011-2025), answered ``[]`` for 11 hiring Boards, and every
 ClearCompany host's ``robots.txt`` is ``Disallow: /``. HRM Direct publishes no ``robots.txt``.
 
-**The description is detail-only.** xml.php's ``descriptionrich`` stops at exactly 1,000 chars
-(6,601 of 8,335 rows; none longer), so each posting's ``job-opening.php?req=N`` page supplies the
+**The full description is detail-only.** xml.php's ``descriptionrich`` stops at exactly 1,000
+chars (6,601 of 8,335 rows; none longer) — shipped only for a Job with no page read and nothing
+in the description store (``_description``) — so each posting's ``job-opening.php?req=N`` page supplies the
 body (the ``jobDesc`` block: 509 of 510 pages, p50 5,269 chars) and the tenant's ``Salary:`` row
 (15 of 510). The tech gate (ADR-0166) is **exact**: ``title`` and ``department`` come from xml.php
 and the detail overrides neither. ADR-0048's skip of the already-described is **not** taken: the
@@ -111,12 +112,14 @@ def _tag(row: str, tag: str) -> str | None:
     return value or None
 
 
-def _description(row: str, page: str | None) -> str | None:
-    """The page's ``jobDesc`` block; for a Job whose page was not read (gated, or lost), the
-    feed's own ``descriptionrich`` — its first 1,000 chars, better than nothing to embed. A page
-    that arrived and states no posting keeps None."""
+def _description(row: str, page: str | None, unheld: bool) -> str | None:
+    """The page's ``jobDesc`` block. A Job with no page read (gated, lost, or a page with no
+    posting on it) ships the feed's own ``descriptionrich`` — its first 1,000 chars, better than
+    nothing to embed — but only when the description store does not already hold its text
+    (``unheld``): the store keeps fresh text over held text, so a teaser would overwrite a full
+    description for one run and flip back on the next."""
     if page is None:
-        return html_to_text(_tag(row, "descriptionrich"))
+        return html_to_text(_tag(row, "descriptionrich")) if unheld else None
     return html_to_text(_job_desc(page))
 
 
@@ -265,7 +268,7 @@ class ClearCompanyScraper(BaseScraper):
                     url=self.job_url(req),
                     posted_at=_date(_tag(row, "date")),
                     scraped_at=scraped_at,
-                    description=_description(row, page),
+                    description=_description(row, page, self.needs_detail(req)),
                     salary=self._salary_field(page or ""),
                 )
             )
