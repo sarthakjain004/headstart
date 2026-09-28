@@ -1160,17 +1160,17 @@ def test_pinpoint_an_unknown_slug_is_a_404_and_dead(monkeypatch):
     assert cl.p_pinpoint("zzqqnotatenant8127", "") == (cl.DEAD, None)
 
 
-def test_pinpoint_an_unresolvable_host_is_dead_and_a_network_error_unknown(monkeypatch):
+def test_pinpoint_an_unresolvable_host_and_a_network_error_are_unknown(monkeypatch):
     def raising(exc):
         def _fetch(method, url, **kw):
             raise exc
 
         return _fetch
 
-    dns = cl.http.RequestsError("no such host")
-    dns.code = cl._DNS_ERR
+    dns = cl.http.RequestsError("no such host", code=cl._DNS_ERR)
     monkeypatch.setattr(cl, "_fetch", raising(dns))
-    assert cl.p_pinpoint("gone", "") == (cl.DEAD, None)
+    # UNKNOWN since 2026-09-28: *.pinpointhq.com resolves every label, so this is our resolver.
+    assert cl.p_pinpoint("gone", "") == (cl.UNKNOWN, None)
     monkeypatch.setattr(cl, "_fetch", raising(cl.http.RequestsError("reset")))
     assert cl.p_pinpoint("acme", "") == (cl.UNKNOWN, None)
 
@@ -2380,3 +2380,30 @@ def test_p_teamtailor_keeps_walking_when_a_page_repeats_a_few_ids(monkeypatch):
 
     monkeypatch.setattr(cl, "_get", get)
     assert cl.p_teamtailor("acme", "https://acme.teamtailor.com") == (cl.LIVE, 205)
+
+
+# A DNS failure on a host every tenant label resolves on is our resolver, never a dead tenant
+# (`_unknown_dns_on_a_shared_host`).
+@pytest.mark.parametrize(
+    "ats, tenant, url",
+    [
+        ("bamboohr", "acme", "https://acme.bamboohr.com"),
+        ("jazzhr", "acme", "https://acme.applytojob.com"),
+        ("keka", "acme", "https://acme.keka.com"),
+        ("zoho", "acme.zohorecruit.com", "https://acme.zohorecruit.com"),
+        ("freshteam", "acme", "https://acme.freshteam.com"),
+        ("pinpoint", "acme", "https://acme.pinpointhq.com"),
+        ("jobvite", "acme", "https://jobs.jobvite.com/acme"),
+    ],
+)
+def test_a_unknown_dns_on_a_shared_host_host_is_unknown(monkeypatch, ats, tenant, url):
+    dns = cl.http.RequestsError("Could not resolve host", code=cl._DNS_ERR)
+
+    def _fetch(method, url, **kw):
+        raise dns
+
+    notes = []
+    monkeypatch.setattr(cl, "_fetch", _fetch)
+    monkeypatch.setattr(cl, "_note", notes.append)
+    assert cl.PROBES[ats](tenant, url) == (cl.UNKNOWN, None)
+    assert notes == ["dns"]
