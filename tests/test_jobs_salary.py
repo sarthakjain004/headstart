@@ -2025,3 +2025,50 @@ def test_adp_recruiting_pay_transparency_amounts_read_annual_and_refuse_hourly()
         40_000, 141_700, "USD", "field"
     )
     assert from_field("20-25 USD", "adp_recruiting") is None
+
+
+# --- #698: the generic field reads European grouping and K / L / LPA units ----------------------
+
+
+@pytest.mark.parametrize(
+    ("field", "expected"),
+    [
+        # A period as the thousands separator: the range used to start inside "71.000".
+        ("71.000,00 - 105.000,00 EUR", SalarySpan(71000, 105000, "EUR", "field")),
+        # A unit on each figure, and one unit after the ceiling covering both.
+        ("45k - 50k GBP", SalarySpan(45000, 50000, "GBP", "field")),
+        ("72-80K CAD", SalarySpan(72000, 80000, "CAD", "field")),
+        (
+            "7 - 10 K INR",
+            None,
+        ),  # 7,000-10,000 INR a year is below the INR floor: monthly
+        ("10-13 LPA INR", SalarySpan(1_000_000, 1_300_000, "INR", "field")),
+        ("₹25-30 LPA INR", SalarySpan(2_500_000, 3_000_000, "INR", "field")),
+        ("5-8L INR", SalarySpan(500_000, 800_000, "INR", "field")),
+        ("10 - 15 L INR", SalarySpan(1_000_000, 1_500_000, "INR", "field")),
+        ("17 LPA INR", SalarySpan(1_700_000, None, "INR", "field")),
+        (
+            "12 LPA",
+            SalarySpan(1_200_000, None, "INR", "field"),
+        ),  # LPA names rupees itself
+        ("50K GBP", SalarySpan(50000, None, "GBP", "field")),
+        # Unchanged: a figure with no unit, and a monthly INR figure the floor still refuses.
+        ("30000-40000 INR", None),
+        ("120000-150000 USD", SalarySpan(120000, 150000, "USD", "field")),
+        ("Upto 20 LPA INR", None),  # a ceiling alone is never read as a floor
+        # A figure already written out in full ignores its repeated unit.
+        ("400000 - 700000 lpa INR", SalarySpan(400000, 700000, "INR", "field")),
+        ("£38,000 - £45,000k", SalarySpan(38000, 45000, "GBP", "field")),
+        # A "k" figure naming no currency at all is declined, often monthly rupees on zoho; a "$"
+        # keeps it.
+        ("10 K+", None),
+        ("20-25K", None),
+        ("$100k-$120k", SalarySpan(100000, 120000, None, "field")),
+        (
+            "65,000k -75,000k",
+            SalarySpan(65000, 75000, None, "field"),
+        ),  # the "k" scaled nothing
+    ],
+)
+def test_generic_field_reads_grouping_and_units(field, expected):
+    assert from_field(field, "zoho") == expected
