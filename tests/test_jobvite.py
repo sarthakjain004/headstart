@@ -228,15 +228,14 @@ def test_the_walk_follows_the_next_link_to_the_end(monkeypatch):
         },
     )
     scraper = JobviteScraper("acme")
-    assert scraper._listing_ids() == ["a", "b", "c"]
+    assert scraper._listing()[0] == ["a", "b", "c"]
     assert seen == [base, "https://jobs.jobvite.com/acme/search/?p=1"]
     assert scraper.truncated is None
 
 
 def test_the_walk_stops_when_a_page_repeats_itself(monkeypatch, caplog):
-    """A posting can occupy two pagination slots (`cascade`: 71 slots, 70 distinct), so ids are
-    de-duplicated — and a next link that yields nothing new ends the walk rather than looping,
-    saying so, since a loop and an end read alike otherwise."""
+    """A next link back to a page already read ends the walk rather than looping, saying so,
+    since a loop and an end read alike otherwise."""
     caplog.set_level(logging.INFO, logger="headstart.scrapers.jobvite")
     base = "https://jobs.jobvite.com/acme/search"
     page = _listing(jobs=("a", "b"), next_href="/acme/search/?p=1", total=2)
@@ -248,11 +247,11 @@ def test_the_walk_stops_when_a_page_repeats_itself(monkeypatch, caplog):
         },
     )
     scraper = JobviteScraper("acme")
-    assert scraper._listing_ids() == ["a", "b"]
+    assert scraper._listing()[0] == ["a", "b"]
     assert scraper.truncated is None
     assert (
-        "jobvite:acme: next link offered on page 2 but it added no ids — walk stopped at 2 "
-        "of 2" in caplog.text
+        "jobvite:acme: next link offered on page 2 but it served a page already read — walk "
+        "stopped at 2 of 2" in caplog.text
     )
 
 
@@ -263,7 +262,7 @@ def test_a_counter_with_no_job_links_is_named_as_unread(monkeypatch, caplog):
     _responses(
         monkeypatch, {base: (200, _listing(jobs=("a",), total=5, slug="x"), None)}
     )
-    assert JobviteScraper("acme")._listing_ids() == []
+    assert JobviteScraper("acme")._listing()[0] == []
     assert "jobvite:acme: read no jobs" in caplog.text
     assert "counter states 5" in caplog.text
 
@@ -273,7 +272,7 @@ def test_a_walk_ending_short_of_the_counter_says_so(monkeypatch, caplog):
     caplog.set_level(logging.INFO, logger="headstart.scrapers.jobvite")
     base = "https://jobs.jobvite.com/acme/search"
     _responses(monkeypatch, {base: (200, _listing(jobs=("a", "b"), total=120), None)})
-    assert JobviteScraper("acme")._listing_ids() == ["a", "b"]
+    assert JobviteScraper("acme")._listing()[0] == ["a", "b"]
     assert (
         "jobvite:acme: walk ended with no next link on page 1 of the 3 the counter implies "
         "— 2 of 120 ids read" in caplog.text
@@ -326,7 +325,7 @@ def test_the_walk_asks_for_no_redirects(monkeypatch):
         return SimpleNamespace(status_code=200, text=_listing(), headers={})
 
     monkeypatch.setattr(http, "fetch", _fetch)
-    JobviteScraper("acme")._listing_ids()
+    JobviteScraper("acme")._listing()
     assert captured["allow_redirects"] is False
 
 
@@ -458,3 +457,186 @@ def test_the_title_heading_ends_at_its_own_level():
     page = '<h3 class="jv-header">Designer</h3><h4>Seattle</h4>'
     assert _HTML_TITLE.search(page).group("title") == "Designer"
     assert _HTML_TITLE.search('<h3 class="jv-header">Designer</h4>') is None
+
+
+def _walks(monkeypatch, walks):
+    """Serve the board's pages from successive walks: `walks` is a list of {url: body}, one per
+    walk, advanced each time the walk asks for page 0 again."""
+    base = "https://jobs.jobvite.com/acme/search"
+    walk = {"n": -1}
+
+    def _fetch(method, url, **kwargs):
+        if url == base:
+            walk["n"] = min(walk["n"] + 1, len(walks) - 1)
+        return SimpleNamespace(status_code=200, text=walks[walk["n"]][url], headers={})
+
+    monkeypatch.setattr(http, "fetch", _fetch)
+    return walk
+
+
+def test_a_walk_short_of_the_counter_is_walked_again_until_the_union_reaches_it(
+    monkeypatch,
+):
+    """`/search` pagination is unstable between requests: on fprs (2026-09-28, counter 1,783)
+    four walks read 1,765, 1,735, 1,738 and 1,765 distinct ids, and their union 1,783 — each
+    repeated slot had pushed a live posting off every page. So a short walk is walked again."""
+    p1 = "https://jobs.jobvite.com/acme/search/?p=1"
+    walk = _walks(
+        monkeypatch,
+        [
+            {
+                "https://jobs.jobvite.com/acme/search": _listing(
+                    jobs=("a", "b"), next_href="/acme/search/?p=1", total=4
+                ),
+                p1: _listing(jobs=("b", "c"), total=4),
+            },
+            {
+                "https://jobs.jobvite.com/acme/search": _listing(
+                    jobs=("a", "d"), next_href="/acme/search/?p=1", total=4
+                ),
+                p1: _listing(jobs=("b", "c"), total=4),
+            },
+        ],
+    )
+    scraper = JobviteScraper("acme")
+    assert scraper._listing()[0] == ["a", "b", "c", "d"]
+    assert walk["n"] == 1
+    assert scraper.truncated is None
+
+
+def test_a_stable_shortfall_is_logged_not_marked(monkeypatch, caplog):
+    """A second walk that finds nothing new: nothing shows a posting is missing, so the Board
+    stays authoritative, as it was before walks were repeated."""
+    caplog.set_level(logging.INFO, logger="headstart.scrapers.jobvite")
+    page = _listing(jobs=("a", "b"), total=4)
+    _walks(monkeypatch, [{"https://jobs.jobvite.com/acme/search": page}])
+    scraper = JobviteScraper("acme")
+    assert scraper._listing()[0] == ["a", "b"]
+    assert scraper.truncated is None
+    assert "2 of 4 postings, and walk 2 found no new id" in caplog.text
+
+
+def test_a_board_still_growing_after_every_walk_is_marked_truncated(monkeypatch):
+    base = "https://jobs.jobvite.com/acme/search"
+    _walks(
+        monkeypatch,
+        [{base: _listing(jobs=(f"j{n}",), total=100)} for n in range(5)],
+    )
+    scraper = JobviteScraper("acme")
+    assert scraper._listing()[0] == ["j0", "j1", "j2", "j3"]
+    assert scraper.truncated and "4 of 100 postings after 4 walks" in scraper.truncated
+
+
+def test_a_walk_that_stops_growing_after_an_unstable_one_is_still_marked(monkeypatch):
+    """Walks 1 and 2 disagreed, so the listing is unstable; walk 3 finding nothing new does
+    not make the shortfall stable."""
+    base = "https://jobs.jobvite.com/acme/search"
+    _walks(
+        monkeypatch,
+        [
+            {base: _listing(jobs=("a",), total=100)},
+            {base: _listing(jobs=("b",), total=100)},
+            {base: _listing(jobs=("a",), total=100)},
+        ],
+    )
+    scraper = JobviteScraper("acme")
+    assert scraper._listing()[0] == ["a", "b"]
+    assert scraper.truncated and "2 of 100 postings after 3 walks" in scraper.truncated
+
+
+def test_a_next_link_cycle_across_pages_ends_the_walk(monkeypatch):
+    base = "https://jobs.jobvite.com/acme/search"
+    p1 = "https://jobs.jobvite.com/acme/search/?p=1"
+    seen = _responses(
+        monkeypatch,
+        {
+            base: (
+                200,
+                _listing(jobs=("a",), next_href="/acme/search/?p=1", total=2),
+                None,
+            ),
+            p1: (200, _listing(jobs=("b",), next_href="/acme/search", total=2), None),
+        },
+    )
+    scraper = JobviteScraper("acme")
+    assert scraper._listing()[0] == ["a", "b"]
+    assert len(seen) == 3
+    assert scraper.truncated is None
+
+
+def _gate_listing():
+    # Two of Jobvite's row templates: the classic anchor whose text is the title, and one whose
+    # anchor wraps the name element (aryaka), which states no plain title.
+    return (
+        "<html><body>"
+        '<tr><td class="jv-job-list-name"><a href="/acme/job/eng">Staff Software Engineer</a>'
+        "</td></tr>"
+        '<tr><td class="jv-job-list-name"><a href="/acme/job/drv">CDL-A Truck Driver</a>'
+        "</td></tr>"
+        '<a href="/acme/job/wrap"><div class="jv-job-list-name">Estimator</div></a>'
+        '<div class="jv-pagination-text">1-3 of 3</div>'
+        "</body></html>"
+    )
+
+
+def test_the_tech_gate_skips_a_title_no_department_could_make_tech(monkeypatch):
+    """The listing anchor states the title on 4 of 5 templates (1,242 of 1,242 anchored postings
+    on 30 boards, 2026-09-28, equal to the page's title). The page supplies the department, which
+    can promote a vague title (tech_filter rule 4), so the gate asks with the department that
+    promotes most: on those 30 boards it kept all 247 tech postings and skipped 515 of 1,242
+    anchored pages; a title-only gate lost 42."""
+    detail = "https://jobs.jobvite.com/acme/job/"
+    pages = {
+        "https://jobs.jobvite.com/acme/search": FakeResponse(text=_gate_listing()),
+        detail + "eng?nl=1": FakeResponse(
+            text='<h2 class="jv-header">Staff Software Engineer</h2>'
+        ),
+        detail + "wrap?nl=1": FakeResponse(text='<h2 class="jv-header">Estimator</h2>'),
+    }
+    fetcher = FakeFetcher(lambda method, url, kwargs: pages[url])
+    scraper = get_scraper("jobvite", "acme", fetcher=fetcher, have_details=set())
+    raw = scraper.fetch_raw()
+    fetched = sorted(r.url for r in fetcher.requests if "/job/" in r.url)
+    assert fetched == [detail + "eng?nl=1", detail + "wrap?nl=1"]
+    assert scraper.truncated is None
+    jobs = {job.id: job for job in scraper.parse(raw, SCRAPED_AT)}
+    # The gated posting still ships, from the listing, so the full set stays whole.
+    assert jobs["jobvite:acme:drv"].title == "CDL-A Truck Driver"
+    assert jobs["jobvite:acme:drv"].url == "https://jobs.jobvite.com/acme/job/drv"
+    assert jobs["jobvite:acme:eng"].title == "Staff Software Engineer"
+    assert jobs["jobvite:acme:wrap"].title == "Estimator"
+
+
+def test_no_department_promotes_a_title_the_gate_department_does_not():
+    """The gate is safe only while `_MOST_PROMOTING_DEPARTMENT` promotes at least as much as any
+    real department. These are the departments of tech postings on the 30 measured Boards, and
+    titles a title-only gate lost there."""
+    from headstart.jobs.tech_filter import is_tech
+    from headstart.scrapers.jobvite import _MOST_PROMOTING_DEPARTMENT
+
+    departments = [
+        "Engineering", "Software Engineering", "Information Technology", "IT",
+        "System Engineering", "Information Security", "Software Support", "Scientific/R&D",
+        "Computers/Software", "Technical Support", "QA", "SOC", "Business Intelligence",
+        "Customer Success, Technical Support & Professional Services",
+    ]  # fmt: skip
+    titles = [
+        "Estimator", "Senior Project Manager", "Client Support Specialist",
+        "Software Support Analyst", "IT Third-Party Risk Manager", "Branch Manager",
+        "Training Subject Matter Expert", "Cloud Migration Architect", "AI Integration Director",
+    ]  # fmt: skip
+    for title in titles:
+        if any(is_tech(title, d) for d in departments):
+            assert is_tech(title, _MOST_PROMOTING_DEPARTMENT), title
+
+
+def test_outside_the_pipeline_every_page_is_read(monkeypatch):
+    detail = "https://jobs.jobvite.com/acme/job/"
+    pages = {"https://jobs.jobvite.com/acme/search": FakeResponse(text=_gate_listing())}
+    for job_id in ("eng", "drv", "wrap"):
+        pages[detail + f"{job_id}?nl=1"] = FakeResponse(
+            text=f'<h2 class="jv-header">{job_id}</h2>'
+        )
+    fetcher = FakeFetcher(lambda method, url, kwargs: pages[url])
+    JobviteScraper("acme", fetcher=fetcher).fetch_raw()
+    assert sum("/job/" in r.url for r in fetcher.requests) == 3
