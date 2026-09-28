@@ -550,7 +550,7 @@ class TrendHistory:
         self._board_arrivals: dict[str, tuple[str, int]] = {}
         self._new_hold: dict[str, str] = {}
         # `_new_hold` as tick indexes, with the mapping they were read from (`_hold_ticks`).
-        self._hold_ticks_of: tuple[dict[str, str], np.ndarray] | None = None
+        self._hold_ticks_read: tuple[dict[str, str], np.ndarray] | None = None
         self._ledger_start: str | None = None
         self._turnover: dict[str, list[dict]] = {}
         self._unscoped_markers: dict[str, list[dict]] = {}
@@ -830,16 +830,16 @@ class TrendHistory:
     def _hold_ticks(self) -> np.ndarray:
         """Each Board's `new` hold as the index of the tick it ends at, by Board code (-1 for a
         Board with none). The same for every question, so it is read once rather than once a
-        question: rebuilding it cost ~45k lookups each time, half of a company's answer and of
-        Hot's boot ranking (issue #755). Keyed on the `_new_hold` it was read from, which is
-        only ever replaced whole."""
-        held = self._hold_ticks_of
+        question: rebuilding it cost ~45k lookups each time, a third of Hot's boot ranking,
+        which answers one question per company (41.7 s to 27.9 s here, issue #755). Keyed on
+        the `_new_hold` it was read from, which is only ever replaced whole."""
+        held = self._hold_ticks_read
         if held is None or held[0] is not self._new_hold:
             ticks = np.full(len(self._boards.names), -1, dtype=np.int64)
             for board, ts in self._new_hold.items():
                 if (code := self._boards.get(board)) is not None:
                     ticks[code] = bisect_left(self._ticks, ts)
-            held = self._hold_ticks_of = (self._new_hold, ticks)
+            held = self._hold_ticks_read = (self._new_hold, ticks)
         return held[1]
 
     def _watch_codes(self) -> np.ndarray:

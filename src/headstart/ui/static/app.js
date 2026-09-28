@@ -2210,9 +2210,13 @@ function trendRange(){
   const until = el('trends-until') && el('trends-until').value;
   if (since) r.since = new Date(since).toISOString();
   if (until) r.until = new Date(until).toISOString();
-  if (!r.since && !r.until && ['7', '30', '90'].includes(trendDays))
-    r.since = new Date(Date.now() - Number(trendDays) * 864e5).toISOString();
+  if (presetInForce()) r.since = new Date(Date.now() - Number(trendDays) * 864e5).toISOString();
   return r;
+}
+// Whether a preset window decides the range: one is picked, and no typed bound beats it.
+function presetInForce(){
+  const typed = (el('trends-since') && el('trends-since').value) || (el('trends-until') && el('trends-until').value);
+  return !typed && ['7', '30', '90'].includes(trendDays);
 }
 
 // Selecting the preset from code — the path a custom date takes, which has to drop the preset
@@ -2287,21 +2291,20 @@ function versioned(path, q){
 }
 
 // A Trends answer fetched ahead of the click that will ask for it, so the click is answered from
-// the browser's cache (ADR-0251). Only once the reader has stayed a second, and never past the
-// next load: the Space works out one answer at a time, so a prefetch still being worked out when
-// the reader clicks on puts their click behind it. Only a URL that will repeat is worth it: a
-// preset window is measured back from the moment of each click, so it never does. Low priority
-// and unreported: nothing waits on it, and a failure costs only the head start.
+// the browser's cache (ADR-0251). Only once the reader has stayed a second: the Space works out
+// one answer at a time, so a prefetch being worked out when the reader clicks on puts their
+// click behind it, and a load before the second is up drops the prefetch unsent. Only a URL that
+// will repeat is worth it: a preset window is measured back from the moment of each click, so it
+// never does. Low priority and unreported: nothing waits on it, and a failure costs only the
+// head start.
 const PREFETCH_AFTER = 1000;
-let trendPrefetch = null;
+let trendPrefetchTimer = null;
 function prefetchTrends(family, metric){
   if (!CFG.answers_version) return;
-  clearTimeout(trendPrefetch);
-  const preset = ['7', '30', '90'].includes(trendDays)
-    && !(el('trends-since') && el('trends-since').value) && !(el('trends-until') && el('trends-until').value);
-  if (preset) return;
+  clearTimeout(trendPrefetchTimer);
+  if (presetInForce()) return;
   const url = versioned('/trends', trendsQuery(family, metric));
-  trendPrefetch = setTimeout(() => fetch(url, { priority: 'low' }).catch(() => {}), PREFETCH_AFTER);
+  trendPrefetchTimer = setTimeout(() => fetch(url, { priority: 'low' }).catch(() => {}), PREFETCH_AFTER);
 }
 
 async function loadTrends(family){
@@ -2325,7 +2328,7 @@ async function loadTrends(family){
   // (committing the selection when the popover closes) is a change to what the control MEANS
   // and is left as a product call rather than smuggled in with a race fix.
   if (trendReq) trendReq.abort();
-  if (trendPrefetch) clearTimeout(trendPrefetch);   // the reader moved on before it left (prefetchTrends)
+  if (trendPrefetchTimer) clearTimeout(trendPrefetchTimer);   // the reader moved on before it was sent (prefetchTrends)
   const req = trendReq = new AbortController();
   const push = nextLoadPushesHistory; nextLoadPushesHistory = false;   // this load's, whatever becomes of it
   // The roles split only exists for families that HAVE watched roles. Carrying a sticky

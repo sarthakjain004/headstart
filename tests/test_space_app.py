@@ -26,6 +26,7 @@ import sys
 import tempfile
 import threading
 import types
+import weakref
 from collections import defaultdict
 from contextlib import contextmanager
 from dataclasses import replace
@@ -149,8 +150,9 @@ class _Model:
 
 # Every app this file has loaded, so each test starts with none of the /trends answers an earlier
 # one kept (ADR-0251). The Space never changes a history once loaded, so it keeps every answer
-# for the boot; these tests do change theirs, in place, to stage what they read.
-_LOADED_APPS = []
+# for the boot; these tests do change theirs, in place, to stage what they read. Weak, so a
+# module fixture's app still goes when its fixture does.
+_LOADED_APPS = weakref.WeakSet()
 
 
 def _forget_trends_answers():
@@ -194,7 +196,7 @@ def _space_app(state, env=None):
         spec = importlib.util.spec_from_file_location("space_app", APP)
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
-        _LOADED_APPS.append(module)
+        _LOADED_APPS.add(module)
         # `module.llm_router` is the real, shared `headstart.llm_router` (every app fixture in
         # this file imports the same singleton) — default `ask` off so a router-less test
         # environment can't attempt a real network call, and restore it so this fixture's
@@ -2313,6 +2315,45 @@ def test_an_answer_asked_for_under_this_boots_version_is_kept_by_the_browser(
     refused = company_trends.get(f"/trends?metric=bogus&v={version}")
     assert refused.status_code == 400
     assert "Cache-Control" not in refused.headers
+
+
+def test_the_answer_asked_for_most_recently_is_the_last_let_go(
+    company_trends, trends_app, monkeypatch
+):
+    """A preset window's `since` is a new millisecond on every click; were the oldest answer
+    let go first, those clicks would push out the opening view everyone asks for."""
+    monkeypatch.setattr(trends_app, "_TRENDS_KEPT", 2)
+    company_trends.get("/trends")  # the opening view
+    company_trends.get("/trends?since=2026-01-01T00:00:00.001Z")
+    company_trends.get("/trends")  # asked for again
+    company_trends.get("/trends?since=2026-01-01T00:00:00.002Z")
+    kept = {question for _, question in trends_app._TRENDS_ANSWERED}
+    assert trend_history.TrendQuestion() in kept
+    assert len(kept) == 2
+
+
+def test_a_kept_answer_neither_resigns_nor_varies_by_the_session_cookie(
+    auth_app, monkeypatch
+):
+    """Signed in, Flask re-signs the session cookie on every response and marks it `Vary:
+    Cookie`, so a kept answer keyed on that cookie would never be found again. Only an answer
+    asked for under the version is let off; every other response still slides the session."""
+    monkeypatch.setattr(auth_app, "_HOT", {"window": {}, "lenses": {}, "counts": {}})
+    client = _signed_in(auth_app, monkeypatch)
+    kept = client.get(f"/hot?v={auth_app._ANSWERS_VERSION}", base_url=_HTTPS)
+    plain = client.get("/hot", base_url=_HTTPS)
+    assert kept.status_code == plain.status_code == 200
+    assert "Cookie" not in kept.headers.get("Vary", "")
+    assert "Set-Cookie" not in kept.headers
+    assert "Cookie" in plain.headers["Vary"]
+    assert "Set-Cookie" in plain.headers
+    # still the account's own session: signed out, the kept URL is refused as before
+    assert (
+        auth_app.app.test_client()
+        .get(f"/hot?v={auth_app._ANSWERS_VERSION}", base_url=_HTTPS)
+        .status_code
+        == 401
+    )
 
 
 def test_the_page_hands_the_browser_this_boots_answers_version(app):

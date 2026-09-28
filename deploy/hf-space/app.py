@@ -27,12 +27,14 @@ import lancedb
 from flask import (
     Flask,
     Response,
+    g,
     jsonify,
     redirect,
     render_template,
     request,
     session,
 )
+from flask.sessions import SecureCookieSessionInterface
 from huggingface_hub import snapshot_download
 
 import headstart  # only for headstart.__file__, to locate ui/ beside this package (ADR-0153)
@@ -290,6 +292,25 @@ app.config.update(
     PERMANENT_SESSION_LIFETIME=timedelta(days=30),
 )
 
+
+class _AnswersLeaveTheSessionAlone(SecureCookieSessionInterface):
+    """The signed-cookie session, except on an answer the browser may keep (ADR-0251).
+
+    Flask re-signs a permanent session's cookie on every response and then marks the response
+    `Vary: Cookie`, as it does whenever the wall has read the session. A kept answer is the same
+    for every Account, but keyed on a cookie that changes each second it is never found again:
+    measured 2026-09-28 with the wall on, every revisit of a kept view went back to the network.
+    So such an answer neither re-signs the cookie nor varies by it; every other response still
+    re-signs it, so a session still slides forward with use."""
+
+    def save_session(self, app, session, response):
+        if g.get("answer_for_everyone"):
+            return
+        super().save_session(app, session, response)
+
+
+app.session_interface = _AnswersLeaveTheSessionAlone()
+
 # Paths that must answer signed out: the door itself, and the unsubscribe link every Digest
 # already delivered carries — a session wall must never break a mailed link. `/me` answers
 # from the caller's own cookie, so it can only tell you what you sent. `/privacy` is the URL
@@ -352,6 +373,17 @@ def _require_sign_in():
     return None
 
 
+def _gzip(data: bytes) -> bytes:
+    """``data`` gzipped at level 6 (ADR-0251): ~11 ms for the 376 KB `new` view here, where
+    level 9 took ~14.5 ms to save 0.6 KB more (measured 2026-09-28)."""
+    return gzip.compress(data, compresslevel=6)
+
+
+def _json_body(obj) -> bytes:
+    """``obj`` as exactly the bytes ``jsonify`` sends for it."""
+    return app.json.response(obj).get_data()
+
+
 # Each script and stylesheet gzipped, by path and ETag: compressed once a boot (`_gzip_static`).
 _GZIPPED_STATIC: dict[tuple[str, str | None], bytes] = {}
 
@@ -361,14 +393,16 @@ def _gzip_static(response):
     """The page's scripts and stylesheets gzipped where the browser takes it (ADR-0251): ~0.9 MB
     of them on a first visit, which the Space's proxy passes on uncompressed (measured
     2026-09-28), and the Trends chart waits on app.js. The ETag is weakened, since the gzipped
-    copy is not the file byte for byte; a revalidation still matches it and still answers 304."""
-    if (
-        request.endpoint != "static"
-        or response.status_code != 200
-        or response.mimetype
-        not in ("text/javascript", "application/javascript", "text/css")
-        or request.accept_encodings.quality("gzip") <= 0
+    copy is not the file byte for byte; a revalidation still matches it and still answers 304.
+    Every answer for one names the variants, a 304 as well."""
+    if request.endpoint != "static" or response.mimetype not in (
+        "text/javascript",
+        "application/javascript",
+        "text/css",
     ):
+        return response
+    response.vary.add("Accept-Encoding")
+    if response.status_code != 200 or request.accept_encodings.quality("gzip") <= 0:
         return response
     etag, _ = response.get_etag()
     response.direct_passthrough = False
@@ -377,10 +411,9 @@ def _gzip_static(response):
     )  # read even when kept: it closes the file send_file opened
     key = (request.path, etag)
     if key not in _GZIPPED_STATIC:
-        _GZIPPED_STATIC[key] = gzip.compress(data, compresslevel=6)
+        _GZIPPED_STATIC[key] = _gzip(data)
     response.set_data(_GZIPPED_STATIC[key])
     response.headers["Content-Encoding"] = "gzip"
-    response.vary.add("Accept-Encoding")
     if etag:
         response.set_etag(etag, weak=True)
     return response
@@ -500,6 +533,7 @@ def _answer_response(body: bytes, gzipped: bytes | None = None) -> Response:
         response.headers["Content-Encoding"] = "gzip"
     if request.args.get("v") == _ANSWERS_VERSION:
         response.headers["Cache-Control"] = "private, max-age=31536000, immutable"
+        g.answer_for_everyone = True  # _AnswersLeaveTheSessionAlone
     return response
 
 
@@ -514,8 +548,8 @@ def hot_companies():
     """
     if not _HOT:
         return jsonify({"error": "no hot list on this deployment yet"}), 503
-    body = app.json.response(_HOT).get_data()
-    return _answer_response(body, gzip.compress(body, compresslevel=6))
+    body = _json_body(_HOT)
+    return _answer_response(body, _gzip(body))
 
 
 @app.route("/facets")
@@ -1168,8 +1202,9 @@ def trends():
     return _answer_response(body, gzipped)
 
 
-# Each /trends body this boot has answered, oldest first, and the one lock answering takes
-# (`_served_trends`). At most _TRENDS_KEPT answers of at most ~0.6 MB, JSON and gzip together.
+# Each /trends body this boot has answered, least recently asked for first, and the one lock
+# answering takes (`_served_trends`). At most _TRENDS_KEPT answers of at most ~0.6 MB, JSON and
+# gzip together.
 _TRENDS_ANSWERED: OrderedDict[tuple, tuple[bytes, bytes]] = OrderedDict()
 _TRENDS_ANSWERING = threading.Lock()
 _TRENDS_KEPT = 128
@@ -1186,17 +1221,26 @@ def _served_trends(
     One answer is worked out at a time. Under the GIL two at once finish no sooner, and a click
     that repeats a prefetch still in flight then waits for that answer rather than working it
     out a second time beside it. An answer already kept is read without the lock, so it never
-    waits behind one being worked out."""
+    waits behind one being worked out.
+
+    The least recently asked for goes first, so a preset window, whose `since` is a new
+    millisecond on every click, cannot push out the opening views everyone asks for."""
     key = (history, question)
     kept = _TRENDS_ANSWERED.get(key)
     if kept is not None:
+        try:
+            _TRENDS_ANSWERED.move_to_end(key)
+        except (
+            KeyError
+        ):  # let go by an answer worked out meanwhile; it is still this one
+            pass
         return kept
     with _TRENDS_ANSWERING:
         if key not in _TRENDS_ANSWERED:
-            body = app.json.response(
+            body = _json_body(
                 _trends_payload(history.unnetted_answer(question), question)
-            ).get_data()
-            _TRENDS_ANSWERED[key] = (body, gzip.compress(body, compresslevel=6))
+            )
+            _TRENDS_ANSWERED[key] = (body, _gzip(body))
             if len(_TRENDS_ANSWERED) > _TRENDS_KEPT:
                 _TRENDS_ANSWERED.popitem(last=False)
         return _TRENDS_ANSWERED[key]
@@ -1227,23 +1271,29 @@ def _trends_payload(answer: dict, question: trend_history.TrendQuestion) -> dict
     return payload
 
 
-# The view every Trends visit opens on, under both Measures, answered before the first visitor
-# asks (ADR-0251): ~3 s of the Space's CPU once at boot rather than on someone's first clicks.
-# Never fatal: a question that fails here fails the same way when asked, and is answered there.
-if _HISTORY.ticks:
-    _started = time.monotonic()
+def _answer_opening_views() -> None:
+    """The view every Trends visit opens on, under both Measures, answered before the first
+    visitor asks (ADR-0251): ~3 s of the Space's CPU once at boot rather than on someone's first
+    clicks. Never fatal: a question that fails here fails the same way when asked, and is
+    answered there."""
+    started = time.monotonic()
     try:
-        for _metric in ("stock", "new"):
-            _served_trends(_HISTORY, trend_history.TrendQuestion(metric=_metric))
-        print(
-            f"trends: opening views answered in {time.monotonic() - _started:.1f}s",
-            flush=True,
-        )
+        for metric in ("stock", "new"):
+            _served_trends(_HISTORY, trend_history.TrendQuestion(metric=metric))
     except Exception as exc:  # noqa: BLE001 - the request path reports its own failure
         print(
             f"trends: opening views not answered ({type(exc).__name__}: {exc})",
             flush=True,
         )
+        return
+    print(
+        f"trends: opening views answered in {time.monotonic() - started:.1f}s",
+        flush=True,
+    )
+
+
+if _HISTORY.ticks:
+    _answer_opening_views()
 
 
 @app.route("/companies/suggest")
@@ -1262,9 +1312,9 @@ def suggest_companies():
     except ValueError:
         return jsonify(error="limit must be an integer"), 400
     return _answer_response(
-        app.json.response(
-            companies=_HISTORY.suggest_companies(request.args.get("q", ""), limit)
-        ).get_data()
+        _json_body(
+            {"companies": _HISTORY.suggest_companies(request.args.get("q", ""), limit)}
+        )
     )
 
 
