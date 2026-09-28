@@ -57,6 +57,12 @@ _MAX_PLAUSIBLE_YEARS = (
 # The anchor word says nothing about genre; the magnitude does.
 _MAX_PLAUSIBLE_REQUIREMENT = 20
 
+# The same guard for a *structured* field (Tier 1), set higher because a field carries no
+# narrative: it is a band a recruiter picked. Measured on the served metadata of 2026-09-28
+# (556,206 rows): the only field floors above 20 were RippleHire's "21 - 30 Years" band, a real
+# one, and "35 years" on a Zoho web-developer posting, which is not (#697).
+_MAX_PLAUSIBLE_FIELD_REQUIREMENT = 30
+
 # The smallest ceiling `_DIGITS`' third digit made reachable, hence the boundary ADR-0072 draws:
 # below it ADR-0013's ceiling rule stands (drop an absurd `hi`, keep the real floor).
 _SMALLEST_THREE_DIGIT_YEARS = 100
@@ -110,7 +116,7 @@ def from_field(value: str | None) -> ExperienceSpan | None:
         lo //= 12
     if hi is not None and match.group("hi_mo"):
         hi = -(-hi // 12)
-    if lo > _MAX_PLAUSIBLE_YEARS:
+    if lo > _MAX_PLAUSIBLE_FIELD_REQUIREMENT:
         return None
     if hi is not None and (
         hi < lo or hi > _MAX_PLAUSIBLE_YEARS

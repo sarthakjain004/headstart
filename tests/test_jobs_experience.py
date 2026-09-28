@@ -38,8 +38,12 @@ def test_field_malformed_range_drops_ceiling():
 def test_field_implausible_floor_rejected():
     # "100" must not silently truncate to 10 (\d{1,3} capture + plausibility guard, ADR-0013)
     assert from_field("100") is None
-    assert from_field("51") is None  # just over the 50-year ceiling
-    assert from_field("50") == ExperienceSpan(50, None, "field")  # boundary is kept
+    # #697: a stated floor over 30 is no requirement ("35 years" on a developer role); a real
+    # recruiter band up to 30 ("21 - 30 Years") is kept.
+    assert from_field("35 years") is None
+    assert from_field("31") is None  # just over the 30-year floor cap
+    assert from_field("30") == ExperienceSpan(30, None, "field")  # boundary is kept
+    assert from_field("21 - 30 Years") == ExperienceSpan(21, 30, "field")
 
 
 def test_field_implausible_ceiling_dropped():
