@@ -6,6 +6,17 @@
     </div>
     <button class="go" onclick="go()">Search</button>
   </div>
+  {# How the search bar's words are matched (ADR-0263): by meaning, or as words every job title
+     must hold. One row of native radios beside the box: one click, arrow keys to walk it, and
+     always in view, so the choice is found where the words are typed. #}
+  <div class="qmode" role="radiogroup" aria-labelledby="qmode-lbl">
+    <span class="flabel" id="qmode-lbl">Match</span>
+    <div class="segmented">
+      <label class="seg-opt"><input type="radio" name="qmode" value="meaning" checked><span>By meaning</span></label>
+      <label class="seg-opt"><input type="radio" name="qmode" value="title"><span>Words in the job title</span></label>
+    </div>
+    <span class="qmode-note" id="qmode-note" aria-live="polite"></span>
+  </div>
   {# Second stop in the tab order, because `#q` autofocuses and the ~20-control filter rail
      sits between it and the first job link. A skip link at the top of the document would be
      unreachable by forward tabbing for exactly that reason. #}

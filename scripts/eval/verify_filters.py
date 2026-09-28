@@ -455,6 +455,28 @@ def run_checks(base: str, atses: list[str]) -> list[dict]:
                 "",
             )
         )
+    # The search bar's Title words mode (ADR-0263): every word, as a substring of the title.
+    for words in ("rust", "staff frontend", "c++"):
+        cases.append(
+            (
+                f"title_words={words}",
+                {"q": words, "title_words": words, "k": 25},
+                lambda r, w=words: all(
+                    t in (r.get("title") or "").lower() for t in w.split()
+                ),
+                "",
+            )
+        )
+    cases.append(
+        (
+            "combo title_words=engineer+remote",
+            {"q": "engineer", "title_words": "engineer", "remote": "true", "k": 25},
+            lambda r: (
+                "engineer" in (r.get("title") or "").lower() and r.get("remote") is True
+            ),
+            "",
+        )
+    )
     # 500 is over the serving cap: it must come back clamped, not as the whole table. The
     # page-size assertion itself lives with the violations below.
     for k in (5, 50, 100, 500):

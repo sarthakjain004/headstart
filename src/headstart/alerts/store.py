@@ -103,6 +103,9 @@ ALLOWED_SEARCH_FILTERS = frozenset(
         "company",
         "has_salary",
         "posted_within",
+        # A set saved in the search bar's Title words mode (ADR-0263): its digest lists the same
+        # jobs the set does, titles holding every word, not every job near the words in meaning.
+        "title_words",
     }
 )
 

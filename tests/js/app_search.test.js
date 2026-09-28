@@ -55,10 +55,11 @@ const job = (id, extra) => ({
  * from outside is not seen inside. `respond(url)` decides what `/search` answers —
  * tests set it per case, so a page's content can depend on what was actually requested
  * (page, q) the same way the real server's pagination does. */
-function loadApp(respond, cfg = {}) {
+function loadApp(respond, cfg = {}, doc = {}) {
   const nodes = {};
   const logged = [];
   const fetches = [];
+  const posted = [];
   // Recorded, like an element's: the capped-row controls are one delegated document listener.
   const docHandlers = {};
   const ctx = {
@@ -68,6 +69,7 @@ function loadApp(respond, cfg = {}) {
       addEventListener(type, fn) { (docHandlers[type] ||= []).push(fn); },
       querySelector: () => null,
       querySelectorAll: () => [],
+      ...doc,   // e.g. the search bar's match-mode radios (qmodeRadios)
     },
     // app.js reads the page's config off `window.CFG` (the template sets it), so the stub
     // window carries it; the bare `CFG` global below is kept for any direct reference.
@@ -79,8 +81,9 @@ function loadApp(respond, cfg = {}) {
     CFG: cfg, URLSearchParams, Date, Math, isNaN, Number, Array,
     Event: class { constructor(type) { this.type = type; } },
     getComputedStyle: () => ({ getPropertyValue: () => '' }),   // setResultRows reads --cols
-    fetch: url => {
+    fetch: (url, init) => {
       fetches.push(String(url));
+      if (init && init.body) posted.push({ url: String(url), body: JSON.parse(init.body) });
       // /facets answers OK too: a refused one is read as no counts at all, never as counts.
       const ok = String(url) === '/sets' || String(url).startsWith('/facets');
       return Promise.resolve({ ok, json: () => Promise.resolve(respond(String(url))) });
@@ -90,9 +93,10 @@ function loadApp(respond, cfg = {}) {
   const src = fs.readFileSync(APP_JS, 'utf8')
     + '\n;globalThis.__t = { go, goToPage, loadSets, runSet, page: () => page, jobCard, savedRow,'
     + ' salStop, SALARY_STOPS, stops: () => SALARY_STOPS, sync: syncSalarySlider, slide: salSlide,'
-    + ' handleSetAction, searchCompany, dropFilter, readSearchHash, setCompany };';
+    + ' handleSetAction, searchCompany, dropFilter, readSearchHash, setCompany,'
+    + ' saveSearch, searchHash, queryMode };';
   vm.runInNewContext(src, ctx);
-  return { nodes, fetches, t: ctx.__t, ctx, docHandlers, logged };
+  return { nodes, fetches, posted, t: ctx.__t, ctx, docHandlers, logged };
 }
 
 /** The server's Keyword-filter scope map as index() puts it on CFG (ADR-0104). */
@@ -793,4 +797,98 @@ test('Back between two hand-offs of one company restores the query it had', asyn
   ctx.location.hash = ai;   // what Back does
   assert.equal(t.readSearchHash(), true);
   assert.equal(nodes['q'].value, 'AI / Machine Learning');
+});
+
+/* ---- the search bar's match mode (ADR-0263) ---- */
+
+/** The two match-mode radios as the template renders them, `mode` checked: what
+ * `queryMode()` and the switch's listener find through the document. */
+function qmodeRadios(mode) {
+  const radios = ['meaning', 'title'].map(value => ({ ...fakeEl(), value, checked: value === mode }));
+  return {
+    radios,
+    doc: {
+      querySelector: sel => sel === 'input[name="qmode"]:checked' ? radios.find(r => r.checked) || null : null,
+      querySelectorAll: sel => sel === 'input[name="qmode"]' ? radios : [],
+    },
+  };
+}
+const settle = () => new Promise(resolve => setTimeout(resolve, 0));
+
+test('Words in the job title sends the words as title_words beside q, to both /search and /facets', async () => {
+  const { doc } = qmodeRadios('title');
+  const { nodes, t, fetches } = loadApp(() => [], {}, doc);
+  await settle();
+  set(nodes, 'q', 'staff rust');
+  await t.go();
+  const search = fetches.filter(u => u.startsWith('/search?')).pop();
+  const facets = fetches.filter(u => u.startsWith('/facets?')).pop();
+  assert.equal(qs(search).title_words, 'staff rust');
+  assert.equal(qs(search).q, 'staff rust', 'the titles that hold the words are still ranked by them');
+  assert.equal(qs(facets).title_words, 'staff rust', 'the count is of the titles listed');
+});
+
+test('By meaning sends no title_words', async () => {
+  const { doc } = qmodeRadios('meaning');
+  const { nodes, t, fetches } = loadApp(() => [], {}, doc);
+  await settle();
+  set(nodes, 'q', 'staff rust');
+  await t.go();
+  assert.equal(qs(fetches.filter(u => u.startsWith('/search?')).pop()).title_words, undefined);
+});
+
+test('switching the mode re-runs what is typed: one click', async () => {
+  const { doc, radios } = qmodeRadios('meaning');
+  const { nodes, fetches } = loadApp(() => [], {}, doc);
+  await settle();
+  set(nodes, 'q', 'golang');
+  const before = fetches.length;
+  radios.forEach(r => { r.checked = r.value === 'title'; });
+  radios[1].fire('change');
+  await settle();
+  const search = fetches.slice(before).filter(u => u.startsWith('/search?')).pop();
+  assert.ok(search, 'a search ran on the switch');
+  assert.equal(qs(search).title_words, 'golang');
+  assert.equal(nodes.q.placeholder, 'Words the job title must have — e.g. staff backend engineer');
+});
+
+test('the mode rides in the hash, and a link carrying it searches the same way', async () => {
+  const { doc, radios } = qmodeRadios('title');
+  const { nodes, t, ctx } = loadApp(() => [], {}, doc);
+  await settle();
+  set(nodes, 'q', 'ios');
+  assert.equal(t.searchHash(), '#search?q=ios&match=title');
+  radios.forEach(r => { r.checked = r.value === 'meaning'; });
+  assert.equal(t.searchHash(), '#search', 'a plain meaning search keeps the bare hash');
+  ctx.location.hash = '#search?q=kubernetes&match=title';
+  assert.equal(t.readSearchHash(), true);
+  assert.equal(t.queryMode(), 'title');
+  assert.equal(nodes.q.value, 'kubernetes');
+});
+
+test('a set saved in title mode keeps it, and refining it switches the mode back on', async () => {
+  const { doc, radios } = qmodeRadios('title');
+  const sets = [{ id: 's1', name: 'Rust', query: 'rust', search_filters: { title_words: 'rust', remote: 'true' } }];
+  const { nodes, t, posted } = loadApp(url => url === '/sets' ? sets : [], {}, doc);
+  await settle();
+  set(nodes, 'q', 'rust');
+  set(nodes, 'savename', 'Rust');
+  await t.saveSearch();
+  const saved = posted.find(p => p.url === '/sets');
+  assert.equal(saved.body.query, 'rust');
+  assert.equal(saved.body.filters.title_words, 'rust');
+  radios.forEach(r => { r.checked = r.value === 'meaning'; });
+  await t.loadSets();
+  await t.handleSetAction('refine', 's1');
+  assert.equal(t.queryMode(), 'title');
+});
+
+test('nothing in title mode says which words no title holds, and offers meaning instead', async () => {
+  const { doc } = qmodeRadios('title');
+  const { nodes, t } = loadApp(url => url.startsWith('/facets?') ? { total: 0, blocking: null } : [], {}, doc);
+  await settle();
+  set(nodes, 'q', 'zzqx');
+  await t.go();
+  assert.match(nodes.results.innerHTML, /No job title has every word of “zzqx”/);
+  assert.match(nodes.results.innerHTML, /match by meaning/);
 });

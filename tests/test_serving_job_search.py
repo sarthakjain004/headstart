@@ -153,6 +153,14 @@ def test_an_unknown_filter_value_is_warned_about_once_per_request(caplog):
     assert build_filter(filters, searcher.capabilities) is None
 
 
+def test_title_words_are_parsed_trimmed_and_absent_when_blank():
+    searcher, _ = _searcher()
+    assert searcher.parse_filters({"title_words": "  staff rust "}).title_words == (
+        "staff rust"
+    )
+    assert searcher.parse_filters({"title_words": "  "}).title_words is None
+
+
 def test_an_unknown_india_place_is_warned_about_and_a_known_one_is_not(caplog):
     searcher, _ = _searcher()
     with caplog.at_level(logging.WARNING, logger="headstart.serving.job_search"):
