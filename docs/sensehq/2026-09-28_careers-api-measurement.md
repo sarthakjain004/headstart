@@ -66,3 +66,42 @@ The ledger's first probe returned 35 live and 47 dead.
 
 The 1,057 jobs serialise to 3.28 MB. The tech gate (`is_tech(title, department)`) keeps 250 of
 them, so the cost is about 13 KB per tech Job, against ADR-0158's accepted bar of about 2 MB.
+
+## Ledger checks
+
+- **Spot check, 5 live and 6 dead rows, re-asked by hand after the probe.** hccb, groww, bata and
+  ltts answered their counts and adani `count: 0`. addisongroupsf, cambayhealthcarejobdiva and
+  orionsearch answered the `career_page` body; datafortune, homelane and wisdmlabs answered the
+  `no organization` body. Every one matched its row.
+- **Duplicate Boards, the three mechanisms in CLAUDE.md:**
+  - **Redirects:** each label is its own API host, and no two live labels share an
+    `organization_id` (28 hiring Boards checked).
+  - **Key spelling:** every row is a bare lowercase label.
+  - **Casing:** no two labels differ only by case.
+
+## Commands
+
+Each was run from the repo root on 2026-09-28.
+
+```bash
+# Common Crawl: every *.sensehq.com URL in four indexes
+for c in CC-MAIN-2026-39 CC-MAIN-2026-34 CC-MAIN-2026-30 CC-MAIN-2025-51; do
+  curl -s "https://index.commoncrawl.org/$c-index?url=*.sensehq.com&output=json&fl=url&limit=5000"
+done
+# Wayback: sensehq.com-domain URLs mentioning careers
+curl -s "https://web.archive.org/cdx/search/cdx?url=sensehq.com&matchType=domain&fl=original&collapse=urlkey&filter=original:.*careers.*&limit=20000"
+# One label (the sieve asked this for each of 11,704 labels, 32 concurrent)
+curl -s "https://{label}.sensehq.com/careers/api/jobs?page=0"
+# The ledger
+PYTHONPATH=src python scripts/validate/check_liveness.py sensehq
+# Cost: fetch every hiring Board, count is_tech(title, department) and json bytes per Job
+PYTHONPATH=src python -c "
+import csv, json
+from headstart.scrapers.registry import get_scraper
+from headstart.jobs.tech_filter import is_tech
+rows = [r for r in csv.DictReader(open('data/validate/liveness/sensehq.csv'))
+        if r['status'] == 'live' and r['jobs'] != '0' and r['tenant'] != 'trm-dev']
+jobs = [j for r in rows for j in get_scraper('sensehq', r['tenant']).fetch()]
+print(len(jobs), sum(is_tech(j.title, j.department) for j in jobs),
+      sum(len(json.dumps(j.to_dict())) for j in jobs))"
+```

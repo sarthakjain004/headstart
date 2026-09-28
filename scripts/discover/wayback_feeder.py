@@ -417,9 +417,9 @@ ATS_HOSTS: dict[str, tuple[tuple[str, Style], ...]] = {
     "pyjamahr": _with_style("path", "jobs.pyjamahr.com"),
     "recruitee": _with_style("sub", "recruitee.com"),
     "ripplehire": _with_style("sub", "ripplehire.com"),
+    "rippling": _with_style("path", "ats.rippling.com"),
     # `*.sensehq.com` also hosts vendor labels (`auth`, `cdn`, `www`); p_sensehq reads them dead.
     "sensehq": _with_style("sub", "sensehq.com"),
-    "rippling": _with_style("path", "ats.rippling.com"),
     # Slugs are case-sensitive and mostly mixed-case (8,737 of 12,706 ledger slugs) — see
     # `extract`, which is why this ATS cannot use a lowercasing extractor.
     "smartrecruiters": _with_style(

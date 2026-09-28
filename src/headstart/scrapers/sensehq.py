@@ -3,6 +3,11 @@
 SenseHQ exposes a clean public JSON feed (no auth) — found by probing, not in any existing
 scraper repo:
     https://{slug}.sensehq.com/careers/api/jobs   ->  {"success", "data": {"rows": [...]}}
+
+Measured 2026-09-28 (`docs/sensehq/2026-09-28_careers-api-measurement.md`, ADR-0256): `count` is
+the Board's whole total on every page; no rate limit showed over a 9,897-label sweep at 32
+concurrent; pages default to 10 rows and `pageSize` is honoured but not used here. Boards are
+discovered from Common Crawl, Wayback and a label sieve, and probed by `p_sensehq`.
 """
 
 from __future__ import annotations
@@ -15,7 +20,9 @@ from headstart.jobs.job import Job, html_to_text, is_remote
 from headstart.network.fetcher import Fetcher
 from headstart.scrapers.base import BaseScraper
 
-_PAGE_SIZE = 10  # the API's fixed page size (0-indexed ?page=N)
+_PAGE_SIZE = (
+    10  # the API's default page size (0-indexed ?page=N); `pageSize` is not sent
+)
 _MAX_PAGES = 100  # our own ceiling — reaching it means the board went unread
 
 
@@ -121,8 +128,7 @@ class SenseHQScraper(BaseScraper):
         return jobs
 
     def _salary_field(self, raw: Any) -> str | None:
-        # Not yet measured: no structured compensation field has been looked for in this
-        # scraper's raw record shape. Needs its own measurement pass before this can claim more.
+        # No pay key in the listing row (all 18 keys read over 229 rows of 27 Boards, 2026-09-28).
         return None
 
 
