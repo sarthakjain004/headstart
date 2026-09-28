@@ -73,6 +73,9 @@ _DETAIL_WORKERS = 4
 _SITEMAP_LINE = re.compile(r"(?im)^Sitemap:\s*(\S+)")
 _LOC = re.compile(r"<loc>\s*([^<\s]+)\s*</loc>")
 _JOB_URL = re.compile(r"/JobDetail/([^/?#]+)/(\d+)/?$")
+#: A URL's locale segment, right after the host: `https://jobs.ea.com/es_ES/careers/…`.
+_LOCALE = re.compile(r"https?://[^/]+/([a-z]{2})_[A-Z]{2}/")
+_ALTERNATE_HREF = re.compile(r'<xhtml:link\b[^>]*\bhref="([^"]+)"')
 #: Portals whose pages redirect to a login, read last so a shared id keeps its public URL.
 _PRIVATE_PORTAL = re.compile(r"internal|employee|referral", re.IGNORECASE)
 #: Where a job page redirects when it is not public: `/Error` for a closed posting (a 404 once
@@ -357,17 +360,46 @@ def _moved_job_page(url: str, response: Any) -> str | None:
 
 
 def listing_rows(sitemap_xml: str) -> list[dict[str, str]]:
-    """``{id, url, slug_title}`` per JobDetail URL in one sitemap, deduped by id."""
+    """``{id, url, slug_title}`` per JobDetail URL in one sitemap, deduped by id.
+
+    A posting under another language's locale is read at its English alternate where the
+    sitemap states one (:func:`_english_alternates`)."""
+    english = _english_alternates(sitemap_xml)
     rows: dict[str, dict[str, str]] = {}
-    for url in _LOC.findall(sitemap_xml):
-        match = _JOB_URL.search(url)
-        if match and match.group(2) not in rows:
-            rows[match.group(2)] = {
-                "id": match.group(2),
-                "url": url,
-                "slug_title": match.group(1).replace("-", " "),
-            }
+    for loc in _LOC.findall(sitemap_xml):
+        match = _JOB_URL.search(loc)
+        if not match or match.group(2) in rows:
+            continue
+        url = loc if _in_english(loc) else english.get(match.group(2), loc)
+        rows[match.group(2)] = {
+            "id": match.group(2),
+            "url": url,
+            "slug_title": _JOB_URL.search(url).group(1).replace("-", " "),
+        }
     return list(rows.values())
+
+
+def _in_english(url: str) -> bool:
+    """Whether a URL names no locale (the tenant's default) or an English one (`en_GB`)."""
+    locale = _LOCALE.match(url)
+    return not locale or locale.group(1) == "en"
+
+
+def _english_alternates(sitemap_xml: str) -> dict[str, str]:
+    """Each posting's first English-locale JobDetail alternate, by id.
+
+    A tenant's locale sitemaps each list every posting under their own locale, with every other
+    locale's URL as an ``xhtml:link`` alternate. One can answer 200 with an empty body, so the
+    locale that answered first used to name the posting: ea's `en_US` sitemap came back empty,
+    its `es_ES` one did not, and those pages carry Spanish labels ("Información general
+    Ubicaciones") that failed the English gate on 124 of 126 served rows (2026-09-29)."""
+    english: dict[str, str] = {}
+    for href in _ALTERNATE_HREF.findall(sitemap_xml):
+        match = _JOB_URL.search(href)
+        locale = _LOCALE.match(href)
+        if match and locale and locale.group(1) == "en":
+            english.setdefault(match.group(2), href)
+    return english
 
 
 def _plain_text(fragment: str) -> str:
