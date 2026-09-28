@@ -94,6 +94,9 @@ from headstart.scrapers.cornerstone import (  # the site walk + token, single so
 from headstart.scrapers.darwinbox import (  # the data-centre TLDs, single source
     TLDS as _DARWINBOX_TLDS,
 )
+from headstart.scrapers.eightfold import (  # Eightfold's own group ids, single source
+    VENDOR_GROUP_IDS as _EF_VENDOR_GROUPS,
+)
 from headstart.scrapers.happydance import (  # the job-URL shape, single source
     sitemap_rows as _happydance_sitemap_rows,
 )
@@ -2710,9 +2713,8 @@ def _eightfold_is_vendor_board(text):
 
 
 _EF_GROUP_ID = re.compile(r'_EF_GROUP_ID\s*=\s*"([^"]+)"')
-# The vendor's own group ids. A host serving these has no tenant board of its own, whichever
-# surface you ask — `volkscience.com` is Eightfold's pre-rename identity and the portal default.
-_EF_VENDOR_GROUPS = {"volkscience.com", "eightfold.ai"}
+# `_EF_VENDOR_GROUPS` (imported): a host serving one has no tenant board of its own, whichever
+# surface you ask.
 
 
 def _eightfold_pcsx(t):

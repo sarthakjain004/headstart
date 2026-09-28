@@ -24,7 +24,7 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
-from headstart.mcp_protocol.stdio import ToolFailure
+from headstart.mcp_protocol.messages import ToolFailure
 from headstart.space_mcp import scraped_text
 from headstart.space_mcp.space_client import InvalidRequest, SpaceClient, SpaceRoute
 

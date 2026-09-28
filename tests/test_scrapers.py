@@ -6981,6 +6981,93 @@ def test_eightfold_reports_a_rate_limited_page_as_a_truncated_board():
     assert "429" in scraper.truncated and "30" in scraper.truncated
 
 
+def test_eightfold_reads_a_board_past_twenty_thousand_postings():
+    """starbucks.eightfold.ai states `count` 21,589 (2026-09-28) and the API serves offset 21,500
+    (count 21,584, 10 positions). A fixed 2,000-page bound read 20,000 of them and marked the
+    Board truncated on every run, so its closed postings were never evicted."""
+    from headstart.scrapers.eightfold import EightfoldScraper
+
+    total = 21_589
+
+    class _Resp:
+        status_code = 200
+
+        def __init__(self, start):
+            ids = range(start, min(start + 10, total))
+            self._body = {
+                "data": {"positions": [{"id": n} for n in ids], "count": total}
+            }
+
+        def json(self):
+            return self._body
+
+    scraper = EightfoldScraper("starbucks.eightfold.ai")
+    scraper._get = lambda url, **k: _Resp(int(url.rsplit("start=", 1)[1]))
+
+    assert len(scraper._api_search("starbucks.com")) == total
+    assert scraper.truncated is None
+
+
+def test_eightfold_a_later_page_that_is_not_json_truncates_rather_than_raising():
+    """Page one is guarded against a 200 with an HTML body; a later page raised, losing the whole
+    Board's postings for the run instead of keeping what was read."""
+    from headstart.scrapers.eightfold import EightfoldScraper
+
+    class _Json:
+        status_code = 200
+
+        def json(self):
+            return {"data": {"positions": [{"id": n} for n in range(10)], "count": 30}}
+
+    class _Html:
+        status_code = 200
+
+        def json(self):
+            raise ValueError("Expecting value: line 1 column 1 (char 0)")
+
+    pages = [_Json(), _Html()]
+    scraper = EightfoldScraper("acme.eightfold.ai")
+    scraper._get = lambda *a, **k: pages.pop(0)
+
+    assert len(scraper._api_search("acme.com")) == 10
+    assert scraper.truncated and "30" in scraper.truncated
+
+
+def test_eightfold_a_careers_page_naming_eightfolds_own_group_is_a_gone_board():
+    """accenture.eightfold.ai's careers page names `_EF_GROUP_ID = "volkscience.com"`
+    (2026-09-28): Eightfold's own default, whose PCSX search lists Eightfold's jobs (59, "Test
+    Architect"). Read as the Board, it would serve them under the company's name."""
+    from headstart.network import http
+    from headstart.scrapers.eightfold import EightfoldScraper
+
+    class _Page:
+        status_code = 200
+        text = (
+            "<script nonce=02484dad5f279a19a5303075767af9e7>\n"
+            '      window._EF_GROUP_ID = "volkscience.com";\n    </script>'
+        )
+
+    scraper = EightfoldScraper("accenture.eightfold.ai")
+    scraper._get = lambda *a, **k: _Page()
+    with pytest.raises(http.RequestsError, match="volkscience.com"):
+        scraper.fetch_raw()
+
+
+def test_eightfold_group_id_for_a_vendor_fallthrough_host_is_none(monkeypatch):
+    """`dedupe_eightfold_aliases.py` walks every live tenant through `group_id_for`; a host whose
+    page names Eightfold's own group clusters with nothing rather than stopping the walk."""
+    from headstart.scrapers import eightfold
+
+    class _Page:
+        status_code = 200
+        text = '      window._EF_GROUP_ID = "volkscience.com";'
+
+    monkeypatch.setattr(
+        eightfold.EightfoldScraper, "_get", lambda self, *a, **k: _Page()
+    )
+    assert eightfold.group_id_for("accenture.eightfold.ai") is None
+
+
 def test_eightfold_leaves_truncated_unset_on_a_complete_crawl():
     """The other half: a Board that really did list everything must NOT be protected, or eviction
     stops working and closed postings are served forever."""

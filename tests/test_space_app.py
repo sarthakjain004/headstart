@@ -169,12 +169,15 @@ def _no_kept_trends_answers():
 @pytest.fixture(autouse=True)
 def _no_spent_rate_limit(monkeypatch):
     """Each test starts with nothing counted against any rate limit: the app
-    fixtures are module-scoped, so one test's requests would otherwise 429 a later test's."""
+    fixtures are module-scoped, so one test's requests would otherwise 429 a later test's.
+    The `/mcp` limits likewise (ADR-0267)."""
     for module in _LOADED_APPS:
         for name, requests in (
             ("_READ_LIMIT", module._READ_LIMIT_REQUESTS),
             ("_WRITE_LIMIT", module._WRITE_LIMIT_REQUESTS),
             ("_SAVED_LIMIT", module._SAVED_LIMIT_REQUESTS),
+            ("_MCP_LIMIT", module._MCP_LIMIT_REQUESTS),
+            ("_ANTHROPIC_LIMIT", module._ANTHROPIC_LIMIT_REQUESTS),
         ):
             monkeypatch.setattr(
                 module,
@@ -463,6 +466,8 @@ _DOOR_PATHS = (
     "/privacy",
     "/static/logo_mark.svg",
 )
+# HeadStart's MCP server, hosted (ADR-0267): public, and POST only.
+_MCP_PATH = "/mcp"
 
 
 def _through_the_wall(response) -> bool:
@@ -473,10 +478,10 @@ def _through_the_wall(response) -> bool:
     }
 
 
-def test_the_public_paths_are_the_door_and_the_read_routes(auth_app):
+def test_the_public_paths_are_the_door_the_read_routes_and_the_mcp_endpoint(auth_app):
     # Pinned as a whole set, so opening one more path is a decision a test has to be told
     # about, never an accident of editing the set.
-    assert auth_app._PUBLIC_PATHS == {*_DOOR_PATHS, *_READ_ROUTES}
+    assert auth_app._PUBLIC_PATHS == {*_DOOR_PATHS, *_READ_ROUTES, _MCP_PATH}
 
 
 def test_every_read_route_answers_anyone_with_the_wall_on(auth_app):
@@ -499,6 +504,9 @@ def test_every_other_route_still_refuses_the_anonymous(auth_app):
             assert rule.methods - {"HEAD", "OPTIONS"} == {"GET"}, (
                 f"{path} {rule.methods}"
             )
+        if path == _MCP_PATH:
+            # One POST per MCP message; any other verb is the framework's 405.
+            assert rule.methods - {"OPTIONS"} == {"POST"}, rule.methods
         if path in auth_app._PUBLIC_PATHS:
             continue
         for method in sorted(rule.methods - {"HEAD", "OPTIONS"}):
@@ -660,6 +668,114 @@ def test_the_caller_is_the_address_hugging_faces_edge_appended(auth_app):
     forged = {"X-Forwarded-For": "203.0.113.9, 198.51.100.1"}
     assert _refused(client.get("/hot", headers=forged))
     assert not _refused(client.get("/hot", headers={"X-Forwarded-For": "198.51.100.2"}))
+
+
+# ---- the MCP endpoint's limits (ADR-0267) ----
+
+_MCP_LIST = {"jsonrpc": "2.0", "id": 1, "method": "tools/list"}
+
+
+def _post_mcp(client, message=_MCP_LIST, **kwargs):
+    return client.post("/mcp", json=message, **kwargs)
+
+
+def test_the_mcp_limits_are_pinned(auth_app):
+    # Pinned: each number is a decision ADR-0267 reasons out, not a tuning knob.
+    assert (auth_app._MCP_LIMIT_REQUESTS, auth_app._LIMIT_WINDOW_S) == (30, 60)
+    assert auth_app._ANTHROPIC_LIMIT_REQUESTS == 300
+    assert (auth_app._MCP_AT_ONCE, auth_app._MCP_PLACE_WAIT_S) == (4, 10)
+
+
+def test_mcp_answers_anyone_with_the_wall_on_and_only_by_post(auth_app):
+    client = auth_app.app.test_client()
+    r = _post_mcp(client)
+    assert r.status_code == 200 and r.json["result"]["tools"]
+    assert r.headers["X-HeadStart"] == _OWN_REPLY
+    assert client.get("/mcp").status_code == 405
+    assert client.delete("/mcp").status_code == 405
+
+
+def test_mcp_refuses_a_page_on_another_site(auth_app):
+    client = auth_app.app.test_client()
+    r = _post_mcp(client, headers={"Origin": "https://evil.example.com"})
+    assert r.status_code == 403
+    assert _post_mcp(client, headers={"Origin": "https://claude.ai"}).status_code == 200
+
+
+def test_one_address_past_the_mcp_limit_is_told_when_to_retry(auth_app):
+    client = auth_app.app.test_client()
+    caller = {"X-Forwarded-For": "198.51.100.1"}
+    for n in range(auth_app._MCP_LIMIT_REQUESTS):
+        assert _post_mcp(client, headers=caller).status_code == 200, n
+    r = _post_mcp(client, headers=caller)
+    assert r.status_code == 429 and r.headers["X-HeadStart"] == _OWN_REPLY
+    assert 1 <= int(r.headers["Retry-After"]) <= 60
+    assert "from one address" in r.json["detail"]
+    other = {"X-Forwarded-For": "198.51.100.2"}
+    assert _post_mcp(client, headers=other).status_code == 200
+
+
+def test_anthropics_range_shares_one_larger_mcp_budget(auth_app):
+    """Every claude.ai user arrives from Anthropic's one range, so its addresses are one caller
+    with a budget of its own, and it leaves every other address's untouched."""
+    client = auth_app.app.test_client()
+    for n in range(auth_app._ANTHROPIC_LIMIT_REQUESTS):
+        address = f"160.79.{104 + n % 8}.{n % 250 + 1}"
+        r = _post_mcp(client, headers={"X-Forwarded-For": address})
+        assert r.status_code == 200, n
+    r = _post_mcp(client, headers={"X-Forwarded-For": "160.79.111.254"})
+    assert r.status_code == 429 and "from Anthropic" in r.json["detail"]
+    outside = {"X-Forwarded-For": "160.79.112.1"}
+    assert _post_mcp(client, headers=outside).status_code == 200
+
+
+def test_a_busy_mcp_endpoint_says_so_rather_than_queueing_forever(
+    auth_app, monkeypatch
+):
+    monkeypatch.setattr(auth_app, "_MCP_PLACES", threading.BoundedSemaphore(1))
+    monkeypatch.setattr(auth_app, "_MCP_PLACE_WAIT_S", 0.01)
+    auth_app._MCP_PLACES.acquire()
+    r = _post_mcp(auth_app.app.test_client())
+    assert r.status_code == 503 and r.headers["Retry-After"]
+    auth_app._MCP_PLACES.release()
+    assert _post_mcp(auth_app.app.test_client()).status_code == 200
+
+
+def test_the_mcp_tools_reads_are_not_counted_against_the_read_limit(
+    auth_app, monkeypatch
+):
+    """A tool's reads reach the read routes in process with no forwarding header, so counted,
+    every MCP user would share one caller's 60. They are exempt, marked by an environ key no
+    caller can set: under a read limit of one request, a search (two reads, /search and
+    /facets) still answers, and one caller's own second read is still refused."""
+    monkeypatch.setattr(auth_app, "_READ_LIMIT", rate_limit.RateLimit(1, 60))
+    call = {
+        "jsonrpc": "2.0",
+        "id": 2,
+        "method": "tools/call",
+        "params": {"name": "search_jobs", "arguments": {"query": "engineer"}},
+    }
+    client = auth_app.app.test_client()
+    for _ in range(3):
+        r = _post_mcp(client, call)
+        assert r.status_code == 200 and "isError" not in r.json["result"], r.json
+    assert not _refused(client.get("/hot")) and _refused(client.get("/hot"))
+
+
+def test_an_mcp_post_is_not_counted_as_a_write(auth_app, monkeypatch):
+    """`/mcp` is a POST that writes nothing: it meets its own limit, never the write limit's."""
+    monkeypatch.setattr(auth_app, "_WRITE_LIMIT", rate_limit.RateLimit(1, 60))
+    client = auth_app.app.test_client()
+    for _ in range(3):
+        assert _post_mcp(client).status_code == 200
+
+
+def test_a_caller_cannot_claim_the_in_process_mark_with_a_header(auth_app, monkeypatch):
+    monkeypatch.setattr(auth_app, "_READ_LIMIT", rate_limit.RateLimit(1, 60))
+    client = auth_app.app.test_client()
+    forged = {"headstart.space_mcp.in_process_read": "1", "In-Process-Read": "1"}
+    assert not _refused(client.get("/hot", headers=forged))
+    assert _refused(client.get("/hot", headers=forged))
 
 
 # ---- the app's own mark on every reply (ADR-0253) ----

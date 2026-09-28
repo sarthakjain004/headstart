@@ -13,7 +13,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
-from headstart.mcp_protocol.stdio import READ_ONLY_ANNOTATIONS
+from headstart.mcp_protocol.messages import READ_ONLY_ANNOTATIONS
 from headstart.space_mcp.space_client import SpaceClient
 
 #: An answer: the Space as this call reads it, and the call's arguments (checked against the

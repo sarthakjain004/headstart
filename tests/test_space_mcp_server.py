@@ -22,8 +22,8 @@ import tomllib
 
 import pytest
 
-from headstart.mcp_protocol import stdio, tool_arguments
-from headstart.mcp_protocol.stdio import ToolFailure
+from headstart.mcp_protocol import messages, tool_arguments
+from headstart.mcp_protocol.messages import ToolFailure
 from headstart.space_mcp import server
 from headstart.space_mcp import space_client as sc
 from headstart.space_mcp.tools import REGISTRY
@@ -131,7 +131,9 @@ def test_the_server_needs_no_configuration_and_can_point_at_another_space():
     """The Space's read routes are public, so anyone can run this server as installed."""
     default = server.build_server(env={})
     assert default.unconfigured is None
-    listed = stdio.handle({"jsonrpc": "2.0", "id": 1, "method": "tools/list"}, default)
+    listed = messages.handle(
+        {"jsonrpc": "2.0", "id": 1, "method": "tools/list"}, default
+    )
     assert len(listed["result"]["tools"]) == len(REGISTRY)
 
 

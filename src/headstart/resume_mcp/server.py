@@ -2,7 +2,7 @@
 
 Run as ``python -m headstart.resume_mcp`` and spoken to over stdio. The transport is
 JSON-RPC 2.0, newline-delimited, which is all MCP's stdio transport is; it is written out by hand
-in :mod:`headstart.mcp_protocol.stdio`, shared with every HeadStart MCP server, rather than taken
+in :mod:`headstart.mcp_protocol`, shared with every HeadStart MCP server, rather than taken
 from the `mcp` SDK, because that SDK brings pydantic, anyio, starlette and uvicorn to a local
 subprocess that answers four method names, and this repo's base install is two packages. Nothing
 here needs a dependency the test suite does not already have — there is no `importorskip` in
@@ -27,8 +27,8 @@ import sys
 from typing import Any, TextIO
 
 from .. import log
-from ..mcp_protocol import stdio
-from ..mcp_protocol.stdio import ToolFailure
+from ..mcp_protocol import messages, stdio
+from ..mcp_protocol.messages import ToolFailure
 from .account import Account, Unconfigured, open_account
 from .inspection import Unreadable, read_document, render
 
@@ -40,7 +40,7 @@ VERSION = "1.0.0"
 
 #: The revision of MCP a client is answered with when it names none, or one the shared loop does
 #: not speak — the loop's newest. A client naming one the loop speaks gets that one instead.
-PROTOCOL_VERSION = stdio.NEWEST
+PROTOCOL_VERSION = messages.NEWEST_LEGACY
 
 #: Said once per answer, because it is the difference between this data and the screen the
 #: person is looking at, and an agent that does not know it will confidently report stale
@@ -59,7 +59,7 @@ SYNC_NOTE = (
 )
 
 #: Every tool here only reads (ADR-0137 §"What it may not do"), and says so to the client.
-READ_ONLY = stdio.READ_ONLY_ANNOTATIONS
+READ_ONLY = messages.READ_ONLY_ANNOTATIONS
 
 TOOLS: list[dict[str, Any]] = [
     {
@@ -248,11 +248,11 @@ def call(account: Account, name: str, arguments: dict[str, Any]) -> str:
 # ---- the transport --------------------------------------------------------------------
 
 
-def _server(account: Account | Unconfigured) -> stdio.Server:
+def _server(account: Account | Unconfigured) -> messages.Server:
     """This server as the shared loop sees it, bound to the one Account — or to the reason there
     isn't one, which every call then reports."""
     unconfigured = account if isinstance(account, Unconfigured) else None
-    return stdio.Server(
+    return messages.Server(
         name=NAME,
         version=VERSION,
         tools=TOOLS,
@@ -265,13 +265,13 @@ def _server(account: Account | Unconfigured) -> stdio.Server:
 def handle(
     message: dict[str, Any], account: Account | Unconfigured
 ) -> dict[str, Any] | None:
-    """One request in, one response out — or None for a notification (`mcp_protocol.stdio`).
+    """One request in, one response out — or None for a notification (`mcp_protocol.messages`).
 
     `account` is either the bound Account or the reason there isn't one. The server starts
     either way: a client whose server exits on a missing variable reports "failed to connect",
     which tells whoever has to fix it nothing at all.
     """
-    return stdio.handle(message, _server(account))
+    return messages.handle(message, _server(account))
 
 
 def serve(stdin: TextIO, stdout: TextIO, account: Account | Unconfigured) -> None:

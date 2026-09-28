@@ -274,3 +274,13 @@ def test_a_sitemap_two_portals_share_is_read_once():
     )
     scraper.fetch_raw()
     assert scraper.fake.urls().count(shared) == 1
+
+
+def test_the_requisition_is_the_pages_reference_label():
+    """Bloomberg's "Ref #", Brady's "Ref #" and Ashfield's "ID de la vacante" state the
+    requisition; it was never read."""
+    assert page_fields(_FIXTURE["page"][_TECH])["requisition"] == "10054136"
+    layouts = _FIXTURE["layouts"]
+    assert page_fields(layouts["bradyplus_careersmarketplace"])["requisition"] == "3053"
+    assert page_fields(layouts["ashfieldhealthcare_careers"])["requisition"] == "23234"
+    assert page_fields(layouts["astellasjapan_careers"])["requisition"] is None
