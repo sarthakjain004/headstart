@@ -274,6 +274,7 @@ supersedes it and note the supersession in both.
 | [0276](0276-a-hosted-mcp-call-ends-at-its-deadline-and-no-caller-holds-every-place.md) | A hosted MCP call ends at its deadline, and no caller holds every place | 2026-09-29 |
 | [0277](0277-an-agent-reads-a-posting-by-id-and-finds-jobs-like-one.md) | An agent reads a posting by id, and finds jobs like one | 2026-09-29 |
 | [0285](0285-a-vector-is-rebuilt-when-its-postings-text-changes.md) | A vector is rebuilt when its posting's text changes | 2026-09-29 |
+| [0290](0290-a-merge-deploys-the-space-only-when-it-changes-what-the-space-loads.md) | A merge deploys the Space only when it changes what the Space loads | 2026-09-29 |
 | [0292](0292-the-description-store-is-not-reaped-until-a-last-listed-signal-exists.md) | The description store is not reaped until a "last listed" signal exists | 2026-09-29 |
 | [0298](0298-the-space-runs-only-its-own-scripts-and-google-sign-in.md) | The Space runs only its own scripts and Google's sign-in | 2026-09-29 |
 

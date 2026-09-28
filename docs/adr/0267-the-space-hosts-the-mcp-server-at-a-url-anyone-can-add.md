@@ -7,7 +7,9 @@ rejection of topology C, an MCP endpoint served by the Space, and its deploy-tri
 [ADR-0258](0258-the-spaces-read-routes-answer-anyone.md) (the public read routes the tools read),
 [ADR-0262](0262-a-caller-with-no-session-reads-the-public-routes-sixty-times-a-minute.md) (how a
 caller is counted), [ADR-0137](0137-an-agent-reads-a-resume-by-running-the-resume-tabs-own-javascript.md)
-(the hand-written protocol loop)
+(the hand-written protocol loop) · **Amended by:**
+[ADR-0290](0290-a-merge-deploys-the-space-only-when-it-changes-what-the-space-loads.md) (the deploy
+trigger lists only what the Space loads)
 
 ## Context
 
