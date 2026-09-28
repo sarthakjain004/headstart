@@ -26,8 +26,8 @@ only 28 boards and is likewise a subset. ``/search`` pages at exactly **50 posti
 on the pool's largest board, which needs 57 pages. Reading only page 0, as the first draft of this
 investigation did, would have capped 65 of the 66 boards over 50 postings at 50.
 
-**The listing yields ids and nothing else, on purpose.** Five row templates are live and they
-disagree about where every field sits: ``<td class="jv-job-list-name"><a>`` (classic),
+**The listing yields ids, and a title where the row states one plainly.** Five row templates are
+live and they disagree about where every field sits: ``<td class="jv-job-list-name"><a>`` (classic),
 ``<div class="tr">`` with div cells (lhhcareers), an extra-column variant carrying
 ``jv-job-list-req``/``jv-job-list-type`` (von), an ``<a>`` that *wraps* the name element
 (aryaka), and one with no anchor at all — ``<tr onclick="window.location.href='…'">`` (agscareer).
@@ -35,18 +35,31 @@ Each successive row-shaped parse this investigation tried returned **zero rows**
 19%, 15% and 1.4% of boards, and did so silently. The one invariant every template shares is the
 ``/{slug}/job/{id}`` path itself, so that is what is scanned for. Validated against the boards'
 own counters: **395 of 434 exact, 6 short, 0 over** — no stray link is ever mistaken for a
-posting.
+posting. The title is read only off a classic anchor whose whole text is the title
+(``<a href="/{slug}/job/{id}">Title</a>``), for the tech gate below; on 30 random live Boards
+(2026-09-28) 1,242 of 1,378 postings had one, and all 1,242 equalled the page's own title.
 
-**A short walk is not what ``distinct ids < counter total`` means.** All 6 short boards were
-verified page by page: the counter is stable across every page, the last page is reached, and the
-shortfall is Jobvite serving one posting in two slots. Re-measured 2026-09-07 on ``fprs``, which
-is large enough that the effect is unmistakable: the counter says 1,933, the walk visits 1,933
-slots across 39 pages, and **1,896 ids are distinct — 37 postings appear twice**. (These are
-point-in-time counts on a live board; an earlier note cited ``cascade`` at 71/70 and its own
-capture recorded 71/69, which is board churn, not disagreement about the mechanism.) So the count
-is *not* wired to :meth:`~BaseScraper.mark_truncated` —
-only actually stopping with a next link still on offer is (ADR-0053; its exclusion has no drain,
-so a wrong mark is permanent).
+**The tech gate asks with the department that promotes most** (ADR-0166). The department is on
+the page alone, and ``tech_filter``'s rule 4 promotes a vague title under a technical department
+("Estimator" under "Engineering"), so a title-only gate is unsafe: on those 30 Boards it would
+have skipped 42 of the 247 tech postings. Asked with :data:`_MOST_PROMOTING_DEPARTMENT` it
+skipped none and still skipped 515 of the 1,242 titled pages (41%). A row with no plain title is
+always fetched, and a gated posting still ships as a Job carrying its listing title, so the full
+set stays whole and the tech filter drops it downstream exactly as before.
+
+**A short walk is what ``distinct ids < counter total`` means, so a short Board is walked again.**
+``/search`` pagination is not stable between requests: a posting can fill two slots of one walk,
+and the posting it displaced is then on no page of that walk. Measured 2026-09-28 on ``fprs``
+(counter ``1-50 of 1,783``, stable on every page): four walks minutes apart read 1,765, 1,735,
+1,738 and 1,765 distinct ids, and their union grew 1,765, 1,772, 1,777, 1,783 — exactly the
+counter. A missed id is a live posting (``o0CIAfwE?nl=1`` answered 200 with its JobPosting), so
+reading one walk as the Board flapped postings in and out of the index (ADR-0083 evicts on a
+second consecutive miss). This corrects the 2026-09-07 reading of the same shortfall as "one
+posting in two slots", which counted the repeated slot but not the posting it pushed out. So
+:meth:`_listing_ids` walks again, up to :data:`_MAX_WALKS`, while the union is short of the
+counter and each walk still finds something new, and a Board still short after that is reported
+through ``mark_truncated_unless_negligible`` (ADR-0121). Only a Board short on its first walk
+pays for a second.
 
 **ADR-0111's alias dedupe does not apply here, and deliberately gets no override.** Every Board is
 a path on one host, so :meth:`BaseScraper.alias_key`'s default returns ``jobs.jobvite.com`` for all
@@ -85,8 +98,8 @@ and a truncation mark, and the fix for one is in reading the page.
 
 ADR-0048's ``needs_detail`` skip-list is deliberately **not** consulted, unlike eightfold's and
 zwayam's. Those two skip the detail fetch for a Job whose description we already hold because
-their *listing* still supplies title, location and the rest; here the listing supplies an id and
-nothing else, so skipping the page would not save a request — it would drop the Job.
+their *listing* still supplies location and the rest; here the listing supplies at most a title,
+so skipping the page would serve a tech Job with no location, date or department.
 
 **Known property, not a defect: Jobvite tenants nest.** A parent tenant serves its subsidiaries'
 postings too (``ziffdavis`` ⊇ ``ookla``/``ign``/``spiceworks``, ``firstcash-holdings-inc`` ⊇
@@ -125,6 +138,14 @@ _DETAIL_WORKERS = 6
 _MAX_PAGES = 200
 #: Postings per ``/search`` page (module docstring), so a stated total implies a page count.
 _PAGE_SIZE = 50
+#: Walks of a Board whose distinct ids fall short of its counter (module docstring). On fprs
+#: (2026-09-28, counter 1,783) the union of successive walks reached 1,765, 1,772, 1,777 and
+#: 1,783: four walks closed the gap.
+_MAX_WALKS = 4
+#: The department :func:`~headstart.jobs.tech_filter.is_tech` promotes a vague title under most,
+#: which the listing-title gate asks with because only the page states the real one (module
+#: docstring).
+_MOST_PROMOTING_DEPARTMENT = "Software Engineering"
 
 _JOB_ID = r"[A-Za-z0-9]+"
 #: The ``jv-pagination-next`` anchor, which is how the walk advances. Attribute order varies by
@@ -219,6 +240,8 @@ class JobviteScraper(BaseScraper):
     url_shape = r"https://jobs\.jobvite\.com/[^/]+/job/[A-Za-z0-9]+"
     detail_workers = _DETAIL_WORKERS  # also the async stream width (base.fan_out_async)
     has_detail_pass = True  # per-Job fetch fills every field but the id (ADR-0050)
+    #: Each listed id's title, where its row's anchor states one (`_listing_ids`).
+    _listed_titles: dict[str, str] | None = None
 
     def url(self) -> str:
         return f"https://jobs.jobvite.com/{self.slug}/search"
@@ -241,18 +264,29 @@ class JobviteScraper(BaseScraper):
         ids = self._listing_ids()
         if not ids:
             return {"ids": [], "postings": {}}
-        # No tech gate and no ADR-0048 skip: the listing states ids alone (module docstring).
+        titles = self._listed_titles or {}
+        # The tech gate reads the listing's title under the department that promotes most; an id
+        # whose row states no plain title gates as None, which that department keeps. No ADR-0048
+        # skip: the page is the only source of every other field (module docstring).
+        wanted = self.tech_detail_wanted(
+            ids, titles.get, lambda job_id: _MOST_PROMOTING_DEPARTMENT
+        )
         postings = self.run_detail_pass(
-            ids, key_of=lambda job_id: job_id, what="detail pages"
+            wanted, key_of=lambda job_id: job_id, what="detail pages"
         )
         if postings.missing:
             # Load-bearing detail pass: the listing carries no title, so `parse` cannot build a
             # Job without the page and drops it. That is a short list for a reason `harvest`
             # cannot see, which is exactly what ADR-0053 exists to travel alongside it.
             self.mark_truncated(
-                f"{postings.missing}/{len(ids)} detail pages could not be read"
+                f"{postings.missing}/{len(wanted)} detail pages could not be read"
             )
-        return {"ids": ids, "postings": postings}
+        gated = set(ids) - set(wanted)
+        return {
+            "ids": ids,
+            "postings": postings,
+            "gated_titles": {job_id: titles[job_id] for job_id in gated},
+        }
 
     def _page(self, url: str) -> str:
         """GET one board page, refusing to follow a redirect.
@@ -284,39 +318,71 @@ class JobviteScraper(BaseScraper):
         return response.text
 
     def _listing_ids(self) -> list[str]:
-        """Every posting id on this board, walking ``/search`` by its own next link.
+        """Every posting id on this board, walking ``/search`` by its own next link, and again
+        while the ids read fall short of the board's own counter (module docstring).
 
-        Ids only: five row templates are live and each hides a different field somewhere else
-        (module docstring), while the ``/{slug}/job/{id}`` path is in all five. Order is the
-        board's own, de-duplicated — a posting can occupy two pagination slots.
+        Ids, plus the title a classic row's anchor states (kept on :attr:`_listed_titles` for the
+        tech gate): five row templates are live and each hides a different field somewhere else,
+        while the ``/{slug}/job/{id}`` path is in all five. Order is first sight, de-duplicated.
         """
-        job_path = re.compile(rf"/{re.escape(self.slug)}/job/({_JOB_ID})")
-        url: str | None = self.url()
         ids: list[str] = []
-        seen: set[str] = set()
-        pages, stated = 0, None
+        self._listed_titles = {}
+        stated = None
+        for walk in range(_MAX_WALKS):
+            before = len(ids)
+            stated, ended = self._walk(ids, self._listed_titles)
+            if not ended or not stated or len(ids) >= stated:
+                return ids
+            if walk and len(ids) == before:
+                break  # a walk that read nothing new: walking again would not either
+        if len(ids) < stated:
+            self.mark_truncated_unless_negligible(
+                len(ids),
+                stated,
+                f"{len(ids)} of {stated} postings after {walk + 1} walks — the rest is unread, "
+                "not absent",
+            )
+        return ids
+
+    def _walk(self, ids: list[str], titles: dict[str, str]) -> tuple[int | None, bool]:
+        """One walk of ``/search``, adding unseen ids to ``ids`` and their anchor titles to
+        ``titles``. Returns the counter's total and whether the walk reached its end — False
+        when it stopped at the page cap (marked truncated) or on a page that named no job."""
+        job_path = re.compile(rf"/{re.escape(self.slug)}/job/({_JOB_ID})")
+        anchor = re.compile(
+            rf'<a href="/{re.escape(self.slug)}/job/({_JOB_ID})"[^>]*>([^<]*)</a>'
+        )
+        seen = set(ids)
+        url: str | None = self.url()
+        pages, stated, read, previous = 0, None, 0, None
         while url and pages < _MAX_PAGES:
             page = self._page(url)
             pages += 1
             if stated is None:
                 stated = total_of(page)
-            new = 0
-            for job_id in job_path.findall(page):
-                if job_id in seen:
-                    continue
-                seen.add(job_id)
-                ids.append(job_id)
-                new += 1
+            for job_id, text in anchor.findall(page):
+                title = html_to_text(text)
+                if title:
+                    titles.setdefault(job_id, title)
+            page_ids = job_path.findall(page)
+            read += len(page_ids)
+            for job_id in page_ids:
+                if job_id not in seen:
+                    seen.add(job_id)
+                    ids.append(job_id)
             match = _NEXT.search(page)
-            # `new == 0` also stops the walk: a next link that returned nothing new is either the
-            # end or a loop, and either way there is nothing further to read.
-            if not match or not new:
-                if stated and not ids:
+            # A next link serving the page it came from is a loop: the same ids would come back
+            # on every later page. (A page of ids already seen is not: a later walk re-reads them.)
+            repeated = page_ids == previous
+            previous = page_ids
+            if not match or repeated:
+                if stated and not read:
                     self.note_unreadable_board(
                         f"job links matching /{self.slug}/job/{{id}}",
                         f"none on a page whose counter states {stated}",
                     )
-                elif match:
+                    return stated, False
+                if match:
                     self._log.info(
                         f"{self.board_key()}: next link offered on page {pages} but it added "
                         f"no ids — walk stopped at {len(ids)} of {stated}"
@@ -329,7 +395,7 @@ class JobviteScraper(BaseScraper):
                         f"the {math.ceil(stated / _PAGE_SIZE)} the counter implies — {len(ids)} of "
                         f"{stated} ids read"
                     )
-                return ids
+                return stated, True
             href = match.group(1)
             url = (
                 f"https:{href}"
@@ -340,7 +406,7 @@ class JobviteScraper(BaseScraper):
             f"stopped at the {_MAX_PAGES}-page cap after {len(ids)} postings with a next link "
             f"still offered (the board's own counter stated {stated})"
         )
-        return ids
+        return stated, False
 
     def job_url(self, job_id: str) -> str:
         return f"https://jobs.jobvite.com/{self.slug}/job/{job_id}"
@@ -403,12 +469,17 @@ class JobviteScraper(BaseScraper):
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
         postings = raw.get("postings") or {}
+        gated_titles = raw.get("gated_titles") or {}
         jobs: list[Job] = []
         for job_id in raw.get("ids") or []:
             posting = postings.get(job_id)
+            if not posting and job_id in gated_titles:
+                # Gated out by title (`fetch_raw`): the listing's title is all there is, which is
+                # enough for the full set and for the tech filter to drop it again.
+                posting = {"title": gated_titles[job_id]}
             if not posting:
-                # No page, no fields — not even a title, which the listing never carried.
-                # `fetch_raw` has already marked the Board truncated for exactly this count.
+                # No page, no fields — not even a title. `fetch_raw` has already marked the
+                # Board truncated for exactly this count.
                 continue
             location = _location(posting)
             jobs.append(

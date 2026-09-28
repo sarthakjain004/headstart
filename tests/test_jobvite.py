@@ -458,3 +458,111 @@ def test_the_title_heading_ends_at_its_own_level():
     page = '<h3 class="jv-header">Designer</h3><h4>Seattle</h4>'
     assert _HTML_TITLE.search(page).group("title") == "Designer"
     assert _HTML_TITLE.search('<h3 class="jv-header">Designer</h4>') is None
+
+
+def _walks(monkeypatch, walks):
+    """Serve the board's pages from successive walks: `walks` is a list of {url: body}, one per
+    walk, advanced each time the walk asks for page 0 again."""
+    base = "https://jobs.jobvite.com/acme/search"
+    walk = {"n": -1}
+
+    def _fetch(method, url, **kwargs):
+        if url == base:
+            walk["n"] = min(walk["n"] + 1, len(walks) - 1)
+        return SimpleNamespace(status_code=200, text=walks[walk["n"]][url], headers={})
+
+    monkeypatch.setattr(http, "fetch", _fetch)
+    return walk
+
+
+def test_a_walk_short_of_the_counter_is_walked_again_until_the_union_reaches_it(
+    monkeypatch,
+):
+    """`/search` pagination is unstable between requests: on fprs (2026-09-28, counter 1,783)
+    four walks read 1,765, 1,735, 1,738 and 1,765 distinct ids, and their union 1,783 — each
+    repeated slot had pushed a live posting off every page. So a short walk is walked again."""
+    p1 = "https://jobs.jobvite.com/acme/search/?p=1"
+    walk = _walks(
+        monkeypatch,
+        [
+            {
+                "https://jobs.jobvite.com/acme/search": _listing(
+                    jobs=("a", "b"), next_href="/acme/search/?p=1", total=4
+                ),
+                p1: _listing(jobs=("b", "c"), total=4),
+            },
+            {
+                "https://jobs.jobvite.com/acme/search": _listing(
+                    jobs=("a", "d"), next_href="/acme/search/?p=1", total=4
+                ),
+                p1: _listing(jobs=("b", "c"), total=4),
+            },
+        ],
+    )
+    scraper = JobviteScraper("acme")
+    assert scraper._listing_ids() == ["a", "b", "c", "d"]
+    assert walk["n"] == 1
+    assert scraper.truncated is None
+
+
+def test_a_board_still_short_after_its_walks_is_marked_truncated(monkeypatch):
+    page = _listing(jobs=("a", "b"), total=4)
+    _walks(monkeypatch, [{"https://jobs.jobvite.com/acme/search": page}])
+    scraper = JobviteScraper("acme")
+    assert scraper._listing_ids() == ["a", "b"]
+    assert scraper.truncated and "2 of 4" in scraper.truncated
+
+
+def _gate_listing():
+    # Two of Jobvite's row templates: the classic anchor whose text is the title, and one whose
+    # anchor wraps the name element (aryaka), which states no plain title.
+    return (
+        "<html><body>"
+        '<tr><td class="jv-job-list-name"><a href="/acme/job/eng">Staff Software Engineer</a>'
+        "</td></tr>"
+        '<tr><td class="jv-job-list-name"><a href="/acme/job/drv">CDL-A Truck Driver</a>'
+        "</td></tr>"
+        '<a href="/acme/job/wrap"><div class="jv-job-list-name">Estimator</div></a>'
+        '<div class="jv-pagination-text">1-3 of 3</div>'
+        "</body></html>"
+    )
+
+
+def test_the_tech_gate_skips_a_title_no_department_could_make_tech(monkeypatch):
+    """The listing anchor states the title on 4 of 5 templates (1,242 of 1,242 anchored postings
+    on 30 boards, 2026-09-28, equal to the page's title). The page supplies the department, which
+    can promote a vague title (tech_filter rule 4), so the gate asks with the department that
+    promotes most: on those 30 boards it kept all 247 tech postings and skipped 515 of 1,242
+    anchored pages; a title-only gate lost 42."""
+    detail = "https://jobs.jobvite.com/acme/job/"
+    pages = {
+        "https://jobs.jobvite.com/acme/search": FakeResponse(text=_gate_listing()),
+        detail + "eng?nl=1": FakeResponse(
+            text='<h2 class="jv-header">Staff Software Engineer</h2>'
+        ),
+        detail + "wrap?nl=1": FakeResponse(text='<h2 class="jv-header">Estimator</h2>'),
+    }
+    fetcher = FakeFetcher(lambda method, url, kwargs: pages[url])
+    scraper = get_scraper("jobvite", "acme", fetcher=fetcher, have_details=set())
+    raw = scraper.fetch_raw()
+    fetched = sorted(r.url for r in fetcher.requests if "/job/" in r.url)
+    assert fetched == [detail + "eng?nl=1", detail + "wrap?nl=1"]
+    assert scraper.truncated is None
+    jobs = {job.id: job for job in scraper.parse(raw, SCRAPED_AT)}
+    # The gated posting still ships, from the listing, so the full set stays whole.
+    assert jobs["jobvite:acme:drv"].title == "CDL-A Truck Driver"
+    assert jobs["jobvite:acme:drv"].url == "https://jobs.jobvite.com/acme/job/drv"
+    assert jobs["jobvite:acme:eng"].title == "Staff Software Engineer"
+    assert jobs["jobvite:acme:wrap"].title == "Estimator"
+
+
+def test_outside_the_pipeline_every_page_is_read(monkeypatch):
+    detail = "https://jobs.jobvite.com/acme/job/"
+    pages = {"https://jobs.jobvite.com/acme/search": FakeResponse(text=_gate_listing())}
+    for job_id in ("eng", "drv", "wrap"):
+        pages[detail + f"{job_id}?nl=1"] = FakeResponse(
+            text=f'<h2 class="jv-header">{job_id}</h2>'
+        )
+    fetcher = FakeFetcher(lambda method, url, kwargs: pages[url])
+    JobviteScraper("acme", fetcher=fetcher).fetch_raw()
+    assert sum("/job/" in r.url for r in fetcher.requests) == 3
