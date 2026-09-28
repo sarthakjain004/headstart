@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from collections import Counter
 from pathlib import Path
 
@@ -113,6 +114,35 @@ def test_department_reads_job_category_not_business_category():
 
 def test_employment_type_is_the_job_schedule_type_as_stated():
     assert _jobs()[AWS_ID].employment_type == "full-time"
+
+
+def _intern_jobs() -> dict[str, object]:
+    """Two real intern postings captured live 2026-09-28 from `search.json`, text fields cut to
+    300 characters: one the API types `part-time`, one `full-time`. `is_intern` is null on both,
+    as on all 319 rows of a live `base_query=intern` search that day."""
+    with open(FIXTURES / "amazon_intern_listing.json", encoding="utf-8") as fh:
+        rows = json.load(fh)
+    return {j.id.rsplit(":", 1)[1]: j for j in _scraper().parse(rows, SCRAPED_AT)}
+
+
+def test_an_intern_title_is_typed_intern_whatever_the_schedule_type():
+    """The API only states full-time/part-time, so 313 intern postings (live 2026-09-28) never
+    matched the internship filter. A whole-word "intern"/"internship" title wins, as on Apple."""
+    jobs = _intern_jobs()
+    assert (
+        jobs["10553923"].employment_type == "Intern"
+    )  # "UX Designer Intern", part-time
+    assert (
+        jobs["10554336"].employment_type == "Intern"
+    )  # "... Internship 2027", full-time
+
+
+def test_an_empty_title_slug_still_matches_the_url_shape():
+    """A Japanese title leaves the path's slug empty; the link still answers 200 (live
+    2026-09-28, `/en/jobs/10541723/`)."""
+    assert re.fullmatch(
+        AmazonScraper.url_shape, "https://www.amazon.jobs/en/jobs/10541723/"
+    )
 
 
 def test_posted_at_parses_the_human_date_string():

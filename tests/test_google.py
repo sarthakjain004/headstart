@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from headstart.network import http
 from headstart.scrapers.google import GoogleScraper, _ds1_data
 from headstart.scrapers.registry import get_scraper
 
@@ -106,8 +107,8 @@ def test_a_single_location_is_not_semicolon_joined():
 
 
 def test_remote_falls_back_to_the_location_string():
-    """No explicit remote/hybrid flag was found in the payload (module docstring) — every
-    posting here is a real office location, so both read not-remote."""
+    """Neither posting states a remote location (index 18) and both are real office
+    locations, so both read not-remote."""
     jobs = _jobs()
     assert jobs[SWE_ID].remote is False
     assert jobs[YT_ID].remote is False
@@ -124,9 +125,9 @@ def test_description_combines_about_qualifications_and_responsibilities():
     assert "<" not in job.description  # html_to_text stripped every tag
 
 
-def test_department_and_employment_type_are_unset():
-    """No team/org field was found in the listing payload, and the one enum field present has
-    no decoded label anywhere on the page — both stay None rather than guess."""
+def test_department_and_employment_type_are_unset_without_the_filter_walk():
+    """No team/org field was found in the listing payload. employment_type comes only from the
+    site's own employment_type filter, which `fetch` walks and a bare `parse` has not."""
     job = _jobs()[SWE_ID]
     assert job.department is None
     assert job.employment_type is None
@@ -373,3 +374,80 @@ def test_described_postings_log_nothing(caplog):
     caplog.set_level("INFO", logger="headstart.scrapers.google")
     _scraper().parse(_page1()["jobs"], SCRAPED_AT)
     assert "no description" not in caplog.text
+
+
+# ------------------------------------------------------------- remote and employment type
+
+
+REMOTE_ID, HYBRID_ID, OFFICE_ID = (
+    "73846483941499590",
+    "101921079911424710",
+    "128322892419998406",
+)
+INTERN_ID, PART_TIME_ID = "112499004540887750", "98862718525547206"
+
+
+def _typed_fixture():
+    """Five real postings captured live 2026-09-28, long HTML fields cut to 300 characters: a
+    fully remote one, one offering a remote location beside its offices, an office-only one, and
+    one each from the site's `employment_type=INTERN` and `=PART_TIME` filter results."""
+    with open(
+        FIXTURES / "google_remote_and_employment_type_jobs.json", encoding="utf-8"
+    ) as fh:
+        return json.load(fh)
+
+
+def test_remote_reads_the_remote_location_the_posting_states():
+    """Index 18 names a posting's remote location(s). Live 2026-09-28 it did on exactly the 63
+    postings the site's own `has_remote=true` filter returned, and on no other."""
+    jobs = {
+        j.id.rsplit(":", 1)[1]: j
+        for j in _scraper().parse(_typed_fixture()["jobs"], SCRAPED_AT)
+    }
+    assert jobs[REMOTE_ID].remote is True
+    assert jobs[HYBRID_ID].remote is True
+    assert jobs[OFFICE_ID].remote is False
+
+
+def _filtered_site(monkeypatch, fail_filter: str | None = None):
+    """A scraper whose pages come from the fixture: the unfiltered listing holds all five
+    postings, and each employment_type filter holds the ids the live site returned for it."""
+    fixture = _typed_fixture()
+    by_id = {job[0]: job for job in fixture["jobs"]}
+    filtered = {
+        "INTERN": fixture["intern_ids"],
+        "PART_TIME": fixture["part_time_ids"],
+        "TEMPORARY": [],
+    }
+    scraper = _scraper()
+
+    def get(url=None):
+        if "employment_type=" in url:
+            kind = url.split("employment_type=")[1].split("&")[0]
+            if kind == fail_filter:
+                raise http.RequestsError("boom")
+            jobs = [
+                by_id[i] for i in filtered[kind]
+            ] or None  # live: [null, null, 0, 20]
+        else:
+            jobs = fixture["jobs"]
+        return _wrap_ds1(f"[{json.dumps(jobs)}, null, {len(jobs or [])}, 20]")
+
+    monkeypatch.setattr(scraper, "_get", get)
+    return scraper
+
+
+def test_employment_type_comes_from_the_sites_own_filter(monkeypatch):
+    """Live 2026-09-28 the filters split the board exactly: FULL_TIME 3,201 + PART_TIME 4 +
+    INTERN 61 = the 3,266 listed, TEMPORARY 0 — so a posting in no smaller filter is full-time."""
+    jobs = {j.id.rsplit(":", 1)[1]: j for j in _filtered_site(monkeypatch).fetch()}
+    assert jobs[INTERN_ID].employment_type == "Intern"
+    assert jobs[PART_TIME_ID].employment_type == "Part-time"
+    assert jobs[OFFICE_ID].employment_type == "Full-time"
+
+
+def test_a_failed_filter_walk_leaves_employment_type_unset(monkeypatch):
+    """Without every smaller filter read, "Full-time" for the rest would be a guess."""
+    jobs = _filtered_site(monkeypatch, fail_filter="PART_TIME").fetch()
+    assert len(jobs) == 5
+    assert {j.employment_type for j in jobs} == {None}

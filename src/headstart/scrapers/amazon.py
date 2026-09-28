@@ -52,8 +52,10 @@ change — a lone, unhurried request right after the walk got a clean 200 JSON, 
 re-run of ``fetch_raw()`` immediately after (no concurrent bursts preceding it) returned 22,576
 of a fresh 22,576-job facet-sum, exactly. So: transient and load-triggered, not a hard per-IP
 ban, and the existing truncation guard is what actually protects a real pipeline run from ever
-reading this as delistings — nothing further was added here on the strength of one incident, but
-a run landing short should be read against this before being called a scraper bug.
+reading this as delistings. Later runs hit it again (4 truncated Boards across runs
+36200233818..36218633315), so CAPTCHA'd pages now get one re-fetch after
+``_CAPTCHA_WAIT_SECONDS``; a run landing short should still be read against this before being
+called a scraper bug.
 
 **Field mapping notes, all measured on live data:**
 
@@ -114,6 +116,9 @@ _CAPTCHA_WAIT_SECONDS = 120
 _CAPTCHA = "CAPTCHA HTML on a 200"
 
 _WS = re.compile(r"\s+")
+#: Whole-word "intern"/"internship" (plural too) in a title: 313 of 22,559 live titles
+#: (2026-09-28), a read of 25 of them found no false positive.
+_INTERN_TITLE = re.compile(r"\bintern(?:ship)?s?\b", re.IGNORECASE)
 
 
 class AmazonScraper(BaseScraper):
@@ -134,7 +139,9 @@ class AmazonScraper(BaseScraper):
     # scraper: f"https://{slug}{job_path}" where the SLUG IS THE BOARD HOST (ADR-0139, one
     # tenant) and job_path is the API's own field, e.g. "/en/jobs/10537803/data-center-...".
     # Live-verified 2026-09-11: that exact URL 200s.
-    url_shape = r"https://www\.amazon\.jobs/en/jobs/\d+/[\w-]+"
+    # The slug is empty when the title has no Latin characters (a Japanese title gives
+    # "/en/jobs/10541723/"), and that link 200s too (live 2026-09-28).
+    url_shape = r"https://www\.amazon\.jobs/en/jobs/\d+/[\w-]*"
     # The listing carries the full description; no second fetch needed.
     has_detail_pass = False
 
@@ -325,7 +332,7 @@ class AmazonScraper(BaseScraper):
                     posted_at=_posted_at(r.get("posted_date")),
                     scraped_at=scraped_at,
                     description=html_to_text(_full_description(r)),
-                    employment_type=r.get("job_schedule_type"),
+                    employment_type=_employment_type(title, r.get("job_schedule_type")),
                 )
             )
         self.note_unread_rows(untitled, len(raw), "carried no id or title")
@@ -335,6 +342,15 @@ class AmazonScraper(BaseScraper):
         # Not yet measured: no structured compensation field has been looked for in this
         # scraper's raw record shape. Needs its own measurement pass before this can claim more.
         return None
+
+
+def _employment_type(title: str, schedule_type: str | None) -> str | None:
+    """ "Intern" when the title says intern or internship as a whole word, else the API's own
+    ``job_schedule_type``. The API states only full-time/part-time, and its ``is_intern`` was
+    null on all 319 rows of a live ``base_query=intern`` search (2026-09-28), so without this
+    the 313 intern titles on the Board never matched the internship filter. Apple reads its
+    titles the same way."""
+    return "Intern" if _INTERN_TITLE.search(title) else schedule_type
 
 
 def _parsed_locations(r: dict) -> list[dict]:

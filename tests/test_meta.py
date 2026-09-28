@@ -190,7 +190,7 @@ def test_the_fixture_board_end_to_end() -> None:
         assert job.ats == "meta"
         assert job.company == "Meta"
         assert job.url.startswith("https://www.metacareers.com/profile/job_details/")
-        assert job.department is None  # not exposed by this surface (module docstring)
+        assert job.department is None  # these 2026-09-11 captures carry no relay data
         assert job.description
 
 
@@ -237,3 +237,45 @@ def test_a_sitemap_with_no_job_locs_says_so_before_returning_nothing(caplog):
         assert scraper.fetch_raw() == []
 
     assert "read no jobs — expected job <loc>s in the sitemap urlset" in caplog.text
+
+
+# --- the page's relay data: pay and department ------------------------------------------------
+
+_RELAY_PAGES = json.loads(
+    (
+        pathlib.Path(__file__).parent
+        / "fixtures"
+        / "meta_job_pages_with_relay_data.json"
+    ).read_text()
+)
+"""Two job pages captured live 2026-09-28 over the scraper's own transport, trimmed to the
+JSON-LD block and the one script carrying ``xcp_requisition_job_description``: a US posting
+stating pay (2486789151677735) and a London one stating none (1277398403727586)."""
+
+
+def _relay_jobs() -> dict[str, object]:
+    raw = [
+        {
+            "id": job_id,
+            "url": f"https://{_HOST}/profile/job_details/{job_id}/",
+            "lastmod": None,
+            "fields": _ld_fields(page),
+        }
+        for job_id, page in _RELAY_PAGES.items()
+    ]
+    jobs = get_scraper("meta", _HOST).parse(raw, _SCRAPED_AT)
+    return {j.id.rsplit(":", 1)[1]: j for j in jobs}
+
+
+def test_salary_is_the_pay_range_the_page_states() -> None:
+    """JSON-LD has no `baseSalary`, but the page's relay data states `public_compensation`
+    (live 2026-09-28: on 32/40 random postings, every one `$…/year` with country_code US)."""
+    assert _relay_jobs()["2486789151677735"].salary == "183997-257000 USD"
+
+
+def test_a_posting_stating_no_pay_has_no_salary() -> None:
+    assert _relay_jobs()["1277398403727586"].salary is None
+
+
+def test_department_is_the_pages_own_departments_list() -> None:
+    assert _relay_jobs()["2486789151677735"].department == "Software Engineering"
