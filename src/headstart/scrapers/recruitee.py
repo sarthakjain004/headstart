@@ -9,7 +9,7 @@ the largest Board known, answered 4,379 offers with unique ids in one 53 MB body
 An unknown slug answers 404 and raises; an empty Board answers ``{"offers": []}``. The host is a
 wildcard, so the liveness probe reads a DNS failure as unknown, not dead. Each offer carries
 every language the tenant wrote in ``translations``; a real English description is read over
-the primary one (``_description``, ADR-0254).
+the primary one (``_description``, ADR-0256).
 """
 
 from __future__ import annotations
@@ -77,7 +77,7 @@ def _description(offer: dict) -> str | None:
 
     Only a translation at least half the primary text's length is read, and the title stays the
     primary one: an English version can be a template of headings alone, and an English title can
-    be a stale copy of another offer's (measurements in ADR-0254).
+    be a stale copy of another offer's (measurements in ADR-0256).
     """
 
     def description_and_requirements(texts: dict) -> str | None:

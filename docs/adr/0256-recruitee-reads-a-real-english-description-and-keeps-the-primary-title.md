@@ -1,4 +1,4 @@
-# ADR-0254: Recruitee reads a real English description and keeps the primary title
+# ADR-0256: Recruitee reads a real English description and keeps the primary title
 
 **Status:** accepted · **Date:** 2026-09-28 · **Relates to:** [ADR-0017](0017-tech-role-filter.md) (the tech gate that reads the title)
 
