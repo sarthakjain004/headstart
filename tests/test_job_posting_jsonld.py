@@ -232,8 +232,29 @@ def _place(locality=None, region=None, country=None) -> dict:
         pytest.param(
             [_place("Berlin", None, "DE"), _place("Munich", None, "DE")],
             {},
+            "Berlin, DE; Munich, DE",
+            id="every-place",
+        ),
+        pytest.param(
+            [_place("Berlin", None, "DE"), _place("Berlin", None, "DE")],
+            {},
             "Berlin, DE",
-            id="first-place-only",
+            id="a-repeated-place-once",
+        ),
+        pytest.param(
+            [_place(None, None, None), {"name": "HQ"}, _place("Munich", None, "DE")],
+            {},
+            "Munich, DE",
+            id="placeless-entries-skipped",
+        ),
+        pytest.param(
+            [
+                _place("Buffalo", "UNAVAILABLE", "US"),
+                _place("Singapore", "Singapore", "SG"),
+            ],
+            {"placeholders": {"UNAVAILABLE"}, "drop_repeats": True},
+            "Buffalo, US; Singapore, SG",
+            id="options-apply-to-each-place",
         ),
         pytest.param(
             _place("Hsinchu", None, {"@type": "Country", "name": "TW"}),

@@ -142,17 +142,37 @@ def test_remote_is_none_with_no_location_type_and_no_locations():
     assert jobs[0].remote is None
 
 
-# --- location: first location, name preferred over city/isoCountry ------------------------------
+# --- location: every location, name preferred over city/isoCountry ------------------------------
 
 
-def test_location_uses_the_first_locations_own_name():
+def test_location_uses_the_locations_own_name():
     assert _jobs()[HYBRID_ID].location == "New York"
 
 
-def test_location_with_multiple_locations_uses_the_first_only():
-    job = _jobs()[MULTI_LOC_ID]
-    listed = next(j for j in _listing() if j["extId"] == MULTI_LOC_ID)
-    assert job.location == listed["locations"][0]["name"] == "San Francisco"
+def test_location_with_multiple_locations_keeps_every_one():
+    assert _jobs()[MULTI_LOC_ID].location == "San Francisco; New York"
+
+
+def test_location_names_a_repeated_location_once_and_falls_back_per_location():
+    jobs = _scraper().parse(
+        {
+            "jobs": [
+                {
+                    "extId": "x1",
+                    "title": "T",
+                    "job": {},
+                    "locations": [
+                        {"name": "Berlin", "city": "Berlin", "isoCountry": "DEU"},
+                        {"name": "", "city": "Munich", "isoCountry": "DEU"},
+                        {"name": "Berlin", "city": "Berlin", "isoCountry": "DEU"},
+                    ],
+                }
+            ],
+            "details": {},
+        },
+        SCRAPED_AT,
+    )
+    assert jobs[0].location == "Berlin; Munich, DEU"
 
 
 def test_location_falls_back_to_city_country_join_when_name_is_blank():

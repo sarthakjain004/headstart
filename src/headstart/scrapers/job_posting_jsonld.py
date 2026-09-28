@@ -7,7 +7,8 @@ Three things, smallest first:
 - :func:`jsonld_nodes` finds every node of one schema.org type in a page, and
   :func:`find_job_posting` the first ``JobPosting``;
 - :func:`job_posting_fields` maps the fields every such scraper reads the same way;
-- :func:`job_location_text` turns a ``jobLocation`` into the "Locality, Region, Country" string.
+- :func:`job_location_text` turns a ``jobLocation`` into its "Locality, Region, Country" strings,
+  one per Place, "; "-joined.
 
 The finder accepts every shape any one scraper's own copy accepted, save one — Jobvite's took its
 first block whatever its ``@type``, and every one of 25 live Jobvite JSON-LD pages states
@@ -123,20 +124,30 @@ def job_location_text(
     placeholders: Collection[str] = (),
     drop_repeats: bool = False,
 ) -> str | None:
-    """The first ``Place``'s "Locality, Region, Country", or None without an address.
+    """Every ``Place``'s "Locality, Region, Country", "; "-joined in order without repeats, or
+    None when no Place has an address.
 
-    Only the first Place is read: a posting listing several sites gives no signal to prefer one.
+    Every Place is kept (ADR-0196's amendment): the location filter is a substring match, so a
+    posting open in several sites should match each of them, and "; " is the separator every
+    multi-place scraper here uses. A Place without an address is skipped, not taken as the answer.
     An ``addressCountry`` given as a ``Country`` node contributes its ``name``. Each part is
     stripped and an empty one dropped; ``placeholders`` drops the literal values a tenant writes
     into unset parts (iCIMS's ``UNAVAILABLE``), and ``drop_repeats`` drops a part an earlier one
-    already holds, whole or as one of its comma-separated pieces ("Telangana,IN" already holds
-    "IN").
+    of the same Place already holds, whole or as one of its comma-separated pieces
+    ("Telangana,IN" already holds "IN").
     """
-    if isinstance(job_location, list):
-        job_location = job_location[0] if job_location else None
-    if not isinstance(job_location, dict):
+    places = job_location if isinstance(job_location, list) else [job_location]
+    texts = (_place_text(place, placeholders, drop_repeats) for place in places)
+    return "; ".join(dict.fromkeys(text for text in texts if text)) or None
+
+
+def _place_text(
+    place: Any, placeholders: Collection[str], drop_repeats: bool
+) -> str | None:
+    """One ``Place``'s "Locality, Region, Country" (:func:`job_location_text` has the rules)."""
+    if not isinstance(place, dict):
         return None
-    address = job_location.get("address")
+    address = place.get("address")
     if not isinstance(address, dict):
         return None
     country = address.get("addressCountry")
