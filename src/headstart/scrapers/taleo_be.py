@@ -500,6 +500,8 @@ class TaleoBEScraper(BaseScraper):
         # Pharmaceuticals HQ") where its label reads "Remote - US".
         posting = find_job_posting(page) or {}
         stated = job_posting_fields(posting)
+        # An object on TBE ({"name": ..., "value": "2517"}); schema.org also allows plain Text,
+        # which another page reader here already meets (jobs.takeda.com's "R0178385").
         identifier = posting.get("identifier")
         detail = {
             "description": _text(body) if body else None,

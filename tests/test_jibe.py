@@ -636,3 +636,12 @@ def test_a_portal_buried_onto_a_scraped_icims_board_is_covered(monkeypatch):
         }
     finally:
         jibe._scraped_icims_tenants.cache_clear()
+
+
+@pytest.mark.parametrize(
+    "title",
+    ["Remote Sensing Scientist", "Remote Patient Monitoring RN", "Remote Site Manager"],
+)
+def test_remote_as_a_technology_or_a_site_is_not_remote_work(title):
+    """Titles the round-2 review ran through the rule: each names a technology or a site role."""
+    assert jibe._title_says_remote(title) is False
