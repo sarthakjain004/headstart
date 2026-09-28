@@ -44,6 +44,9 @@ def test_field_implausible_floor_rejected():
     assert from_field("31") is None  # just over the 30-year floor cap
     assert from_field("30") == ExperienceSpan(30, None, "field")  # boundary is kept
     assert from_field("21 - 30 Years") == ExperienceSpan(21, 30, "field")
+    # ...and a ceiling over 30 is dropped with its floor kept (ADR-0013's rule): "8-45 years" is 8+.
+    assert from_field("8-45 years") == ExperienceSpan(8, None, "field")
+    assert from_field("12 - 50 Years") == ExperienceSpan(12, None, "field")
 
 
 def test_field_implausible_ceiling_dropped():
@@ -846,3 +849,13 @@ def test_a_noun_phrase_may_sit_between_the_number_and_experience():
     assert from_description(
         "3+ years of production-grade C++ and/or Rust experience"
     ) == ExperienceSpan(3, None, "regex")
+
+
+def test_description_ceiling_over_thirty_is_dropped_and_floor_kept():
+    """#697: "10-40 years" states a real floor and a top no requirement has; 30 is still a top."""
+    assert from_description("Requires 10-40 years of experience.") == ExperienceSpan(
+        10, None, "regex"
+    )
+    assert from_description("5-30 years of experience") == ExperienceSpan(
+        5, 30, "regex"
+    )
