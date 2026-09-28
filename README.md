@@ -542,7 +542,6 @@ reason), so a fork's Space may not be free.
 |---|---|---|
 | Actions secret | `HF_TOKEN` | write access to your dataset and Space (every pipeline stage, `deploy-space`) |
 | Actions secret | `SUBSCRIBERS_TOKEN`, variable `SUBSCRIBERS_REPO` | the private dataset holding Accounts and Subscriptions |
-| Actions secret | `ALERTS_TOKEN` | lets the digest run call the Space's `/search`; set the same value on the Space |
 | Actions secret | `RESEND_API_KEY`, variable `ALERTS_SENDER` | email digests ([`docs/email-alerts.md`](./docs/email-alerts.md)) |
 | Actions secret | `TELEGRAM_BOT_TOKEN` | Telegram alerts ([`docs/telegram-alerts.md`](./docs/telegram-alerts.md)) |
 | Actions variable | `SPACE_URL` | the public URL of your Space |

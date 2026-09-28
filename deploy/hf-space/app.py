@@ -337,11 +337,11 @@ app.session_interface = _AnswersLeaveTheSessionAlone()
 # is the one static file the door loads: its brand mark and its favicon (ADR-0249).
 #
 # The read routes answer anyone as well, so that anyone can use HeadStart's MCP server
-# (ADR-0253's amendment): Search and its Facet counts, Trends, Hot and the two company
-# lookups. None reads or writes an Account's records. A signed-in caller's session still
-# applies its follow/hide clause to /search and /facets (`_company_where`); an anonymous one
-# gets none. Every Account route stays behind the wall, and the page at `/` still shows the
-# door until its visitor signs in.
+# (ADR-0258): Search and its Facet counts, Trends, Hot and the two company lookups. None
+# writes, and none serves one Account's records to another: a signed-in caller's own session
+# still applies its follow/hide clause to /search and /facets (`_company_where`), and an
+# anonymous one gets none. Every Account route stays behind the wall, and the page at `/`
+# still shows the door until its visitor signs in.
 _PUBLIC_PATHS = {
     "/",
     "/auth/google",
@@ -368,35 +368,6 @@ _REPO = "https://github.com/sarthakjain004/headstart"
 # intake swings with which Boards the run happened to slice, and a tile that halves overnight
 # for no reason the visitor can see reads as broken rather than as honest.
 _DOOR_NEW_HOURS = 168
-
-# The Digest generator has no Google identity to offer, so it carries a shared secret,
-# compared in constant time exactly as the unsubscribe token is. It is a scheduled run that
-# must reach /search for every Subscription (ADR-0035; ADR-0042's amendment records why the
-# wall admitted it): `ALERTS_TOKEN` opens /search alone. /search now answers anyone
-# (`_PUBLIC_PATHS`), so the secret admits nothing an anonymous caller cannot reach; it stays,
-# with the alerts run that sends it, until a later cleanup retires both. Unset admits nobody,
-# as in alerts.access. It is bytes: see `_service_caller`.
-_ALERTS_TOKEN = (
-    (os.environ.get("ALERTS_TOKEN") or "").strip().encode("latin-1", "replace")
-)
-# The secret mapped to the paths it admits; unset, it is left out, so it admits nobody.
-_SERVICE_TOKENS = {_ALERTS_TOKEN: frozenset({"/search"})} if _ALERTS_TOKEN else {}
-
-
-def _service_caller() -> bool:
-    scheme, _, token = request.headers.get("Authorization", "").partition(" ")
-    if scheme != "Bearer":
-        return False
-    # Bytes, not str: headers decode as latin-1, and compare_digest raises TypeError on a
-    # non-ASCII str — which would turn a rejected credential into a 500 from in here. Both
-    # sides encode latin-1 so a token set identically really does compare equal; encoding
-    # the config as utf-8 instead would make any non-ASCII token 401 forever.
-    presented = token.strip().encode("latin-1", "replace")
-    return any(
-        request.path in paths and hmac.compare_digest(presented, secret)
-        for secret, paths in _SERVICE_TOKENS.items()
-    )
-
 
 #: Set on every answer (#595). Framing is limited, not forbidden: huggingface.co's Space page
 #: iframes this app, and its sign-in door is how a visitor there reaches the direct URL.
@@ -425,8 +396,6 @@ def _request_json_object() -> dict:
 @app.before_request
 def _require_sign_in():
     if not _AUTH_ON or request.path in _PUBLIC_PATHS:
-        return None
-    if _service_caller():
         return None
     if not session.get("email"):
         return jsonify({"error": "sign in first"}), 401
@@ -862,7 +831,7 @@ def unsubscribe():
         if (
             sub
             and sub.unsubscribe_token
-            # bytes: compare_digest raises TypeError on a non-ASCII str (see _service_caller)
+            # bytes: compare_digest raises TypeError on a non-ASCII str
             and hmac.compare_digest(sub.unsubscribe_token.encode(), token.encode())
         ):
             store.remove(sub.id)

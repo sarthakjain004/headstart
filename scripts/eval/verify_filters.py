@@ -11,13 +11,11 @@ live HTTP spot-checks on a sample of links.
 Streams per-check progress and writes a JSON report for analysis:
   data/eval/filter_checks/{UTC timestamp}.json
 
-The Space sits behind the sign-in wall (ADR-0042), so ``/search`` 401s an anonymous caller
-and every check would report the same meaningless error. The harness therefore runs as a
-signed-in user, presenting the Flask session cookie copied out of a browser — see
-:func:`_session_cookie`.
+``/search`` answers anyone (ADR-0258), so the harness runs anonymous: no Account's hidden
+companies narrow what it checks.
 
 Run:  python scripts/eval/verify_filters.py [--base https://... ] [--no-http]
-Exit: 0 clean, 1 when any check recorded violations, 2 when it could not sign in.
+Exit: 0 clean, 1 when any check recorded violations.
 """
 
 from __future__ import annotations
@@ -41,9 +39,6 @@ sys.path.insert(0, str(_ROOT / "src"))
 from headstart.scrapers.registry import DISABLED_ATS, SCRAPERS
 from headstart.search_filters import fx, india_gazetteer
 
-# Deliberately OUTSIDE the repo: this is a live credential for a real account, and a file
-# in the tree is one `git add` away from being published.
-_SESSION_FILE = Path.home() / ".headstart_session"
 # The page-size ceiling the serving path enforces (job_search.JobSearch's `max_k`), so a crafted
 # `k` can't dump the table. Asserted here, which means changing it there fails this run —
 # correct: a page-size change should be deliberate.
@@ -51,10 +46,6 @@ _MAX_K = 100
 # Statuses that mean the posting is GONE, as opposed to a bot wall (403/429) or a transport
 # error — only these fail the run; see the summary's url_dead_links.
 _DEAD_STATUSES = frozenset({404, 410})
-# The signed-in session, set once by main(). Read ONLY by the calls that talk to our own
-# base; the per-ATS probes in run_url_checks build their own Request precisely so a live
-# session credential is never sent to a third-party job board.
-_COOKIE = ""
 
 QUERIES = (
     "backend engineer",
@@ -79,32 +70,13 @@ QUERIES = (
 URL_SHAPES: dict[str, str] = {ats: cls.url_shape for ats, cls in SCRAPERS.items()}
 
 
-def _session_cookie(path: Path) -> str:
-    """The Flask session cookie copied out of a signed-in browser, or "".
-
-    The wall verifies Google once and then trusts this cookie for weeks (ADR-0042), so
-    presenting it is exactly what a real user's browser does — no bypass is added to the
-    app for the harness's benefit.
-    """
-    raw = path.read_text(encoding="utf-8").strip() if path.exists() else ""
-    # tolerate a whole `session=<value>` pasted from the devtools Cookie header
-    return raw.split("session=", 1)[-1].strip().strip('";')
-
-
-def _request(url: str) -> urllib.request.Request:
-    req = urllib.request.Request(url)
-    if _COOKIE:
-        req.add_header("Cookie", f"session={_COOKIE}")
-    return req
-
-
 def _read(url: str) -> list[dict]:
-    with urllib.request.urlopen(_request(url), timeout=120) as resp:
+    with urllib.request.urlopen(url, timeout=120) as resp:
         return json.load(resp)
 
 
 def _get(base: str, params: dict) -> list[dict]:
-    """One ``/search`` call as the signed-in user.
+    """One ``/search`` call.
 
     Retries once on a transport failure — the 2026-08-03 run logged two (a timeout and a
     connection reset) as check errors, which read as findings when they were only the
@@ -127,7 +99,7 @@ def _probe(base: str, path: str, params: dict) -> tuple[int, object]:
     """
     url = f"{base}{path}?" + urllib.parse.urlencode(params)
     try:
-        with urllib.request.urlopen(_request(url), timeout=120) as resp:
+        with urllib.request.urlopen(url, timeout=120) as resp:
             return resp.status, json.load(resp)
     except urllib.error.HTTPError as err:
         try:
@@ -238,15 +210,6 @@ def _etype_ok(value: str | None, canonical: str) -> bool:
         "contract": ("contract" in v or "freelance" in v),
         "internship": "intern" in v,
     }[canonical]
-
-
-def _preflight(base: str) -> tuple[bool, str | None]:
-    """``(wall is on, who we are)`` — from ``/me``, which answers from the caller's own
-    cookie and is public precisely so it can tell you that."""
-    status, body = _probe(base, "/me", {})
-    if status != 200 or not isinstance(body, dict):
-        return True, None  # can't confirm an identity; treat as not signed in
-    return bool(body.get("auth")), body.get("email")
 
 
 def run_checks(base: str, atses: list[str]) -> list[dict]:
@@ -707,35 +670,7 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--base", default=_DEFAULT_BASE)
     ap.add_argument("--no-http", action="store_true", help="skip live URL probes")
-    ap.add_argument(
-        "--cookie-file",
-        default=str(_SESSION_FILE),
-        help="file holding the browser `session` cookie (see _session_cookie)",
-    )
     args = ap.parse_args()
-
-    global _COOKIE
-    _COOKIE = _session_cookie(Path(args.cookie_file))
-    # Establish the identity BEFORE any check runs: behind the wall an anonymous run turns
-    # every single check into the same 401, which reads like a broken deployment instead of
-    # a missing cookie. One actionable line beats eighty misleading findings.
-    auth_on, who = _preflight(args.base)
-    if auth_on and not who:
-        print(
-            "not signed in — the wall (ADR-0042) will 401 every check.\n"
-            f"  Sign in at {args.base}, copy the `session` cookie from devtools\n"
-            f"  (Application → Cookies), and save its value to {args.cookie_file}.",
-            file=sys.stderr,
-            flush=True,
-        )
-        return 2
-    print(
-        f"[setup] signed in as {who}"
-        if who
-        else "[setup] wall off — running anonymous",
-        file=sys.stderr,
-        flush=True,
-    )
 
     # the ATSes actually present, straight from an unfiltered query sweep
     seen: set[str] = set()
@@ -759,9 +694,6 @@ def main() -> int:
     report = {
         "base": args.base,
         "ran_at": datetime.now(UTC).isoformat(),
-        # who, deliberately not recorded: the report is a shareable artifact and the
-        # address behind the session is not part of what was verified
-        "signed_in": bool(who),
         "atses": atses,
         "checks": checks,
         "url_checks": url_checks,

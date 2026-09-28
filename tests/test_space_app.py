@@ -237,14 +237,16 @@ def auth_app(tmp_path_factory):
 
 
 @pytest.fixture(scope="module")
-def service_app(tmp_path_factory):
-    """Wall on AND a service token set — the Digest generator's way in (ADR-0035)."""
+def retired_secrets_app(tmp_path_factory):
+    """Wall on, with both retired machine secrets still set, as on a Space nobody cleaned up
+    (ADR-0258)."""
     with _space_app(
         tmp_path_factory.mktemp("state"),
         env={
             "SECRET_KEY": "test-secret",
             "GOOGLE_CLIENT_ID": "client-id.example",
-            "ALERTS_TOKEN": "service-token",
+            "ALERTS_TOKEN": "alerts-token",
+            "AGENT_TOKEN": "agent-token",
         },
     ) as module:
         yield module
@@ -384,65 +386,21 @@ def test_unsubscribe_stays_reachable_signed_out(auth_app):
     assert auth_app.app.test_client().get("/unsubscribe").status_code == 503
 
 
-def test_digest_generator_reaches_search_through_the_wall(service_app):
-    """The sibling of the test above, and the one that was missing.
-
-    A mailed Digest's link must survive the wall — and so must the run that *generates*
-    the Digest, which calls /search for every Subscription (ADR-0035). It is a machine
-    with no Google identity to offer, so it carries the service token instead, exactly as
-    /unsubscribe carries its own. /search now answers anyone (ADR-0253's amendment); the
-    token the alerts run still sends must not make it refuse.
-    """
-    client = service_app.app.test_client()
-    ok = client.get("/search?q=", headers={"Authorization": "Bearer service-token"})
-    assert ok.status_code == 200 and len(ok.json) == 2  # browses (ADR-0074)
-
-
-def test_the_service_token_buys_search_and_nothing_else(service_app):
-    # Scoped deliberately: the alerts run needs /search and only /search, so a leaked
-    # token is not a session. Widening this is a decision, not an accident.
-    assert service_app._SERVICE_TOKENS == {b"service-token": frozenset({"/search"})}
-    client = service_app.app.test_client()
-    bearer = {"Authorization": "Bearer service-token"}
-    assert client.get("/sets", headers=bearer).status_code == 401
-    assert client.post("/subscribe", json={}, headers=bearer).status_code == 401
-
-
-def _admits(module, authorization: str) -> bool:
-    """Whether the wall's secret check admits this Authorization header on /search: asked
-    directly, since /search now answers anyone and its reply no longer tells."""
-    with module.app.test_request_context(
-        "/search", headers={"Authorization": authorization}
-    ):
-        return module._service_caller()
-
-
-def test_a_near_miss_token_is_not_a_match(service_app):
-    assert _admits(service_app, "Bearer service-token")  # the control
-    for bad in (
-        "Bearer service-toke",
-        "Bearer service-tokenX",
-        "service-token",
-        "Bearer",
-        # Headers decode as latin-1, and hmac.compare_digest raises TypeError on a
-        # non-ASCII str — which would turn a rejected credential into an unauthenticated
-        # 500 from inside before_request. Compare bytes, and this is a plain 401.
-        "Bearer café",
-    ):
-        assert not _admits(service_app, bad), f"{bad!r} got in"
-
-
-def test_an_unconfigured_service_token_admits_nobody(auth_app):
-    # Deny-by-default, as in alerts.access: "no token set" must mean the door is shut,
-    # never that an empty or absent credential compares equal to the empty config.
-    for header in ("Bearer ", "Bearer x", ""):
-        assert not _admits(auth_app, header), (
-            f"{header!r} got in with no ALERTS_TOKEN set"
+def test_a_retired_machine_secret_opens_nothing(retired_secrets_app):
+    """No machine secret opens the wall any more (ADR-0258): the read routes answer anyone,
+    and a Space still holding `ALERTS_TOKEN` or `AGENT_TOKEN` ignores both on every Account
+    route."""
+    client = retired_secrets_app.app.test_client()
+    for token in ("alerts-token", "agent-token"):
+        bearer = {"Authorization": f"Bearer {token}"}
+        assert client.get("/sets", headers=bearer).status_code == 401, token
+        assert client.post("/subscribe", json={}, headers=bearer).status_code == 401, (
+            token
         )
-    assert auth_app._SERVICE_TOKENS == {}
+        assert _through_the_wall(client.get("/search?q=", headers=bearer)), token
 
 
-# ---- the public read routes (ADR-0253's amendment) ----
+# ---- the public read routes (ADR-0258) ----
 
 # The read routes that answer without an Account, open to anyone so that anyone can use the
 # MCP server. Everything else the app routes, bar the door's own paths, stays walled.
@@ -492,6 +450,12 @@ def test_every_other_route_still_refuses_the_anonymous(auth_app):
     walled = set()
     for rule in auth_app.app.url_map.iter_rules():
         path = re.sub(r"<[^>]+>", "x", rule.rule)
+        if path in _READ_ROUTES:
+            # The wall is keyed on the path, so a write added to a read route would be
+            # public the day it lands. They read, and only read.
+            assert rule.methods - {"HEAD", "OPTIONS"} == {"GET"}, (
+                f"{path} {rule.methods}"
+            )
         if path in auth_app._PUBLIC_PATHS:
             continue
         for method in sorted(rule.methods - {"HEAD", "OPTIONS"}):
@@ -745,7 +709,7 @@ def test_unsubscribe_clears_the_emailing_flag(sets_app, hub, monkeypatch):
 
 def test_a_non_ascii_unsubscribe_token_is_a_404_not_a_500(sets_app, hub, monkeypatch):
     # compare_digest raises TypeError on a non-ASCII str, so the query-string token has to
-    # be compared as bytes — as _service_caller already does for the bearer token.
+    # be compared as bytes.
     import json as _json
 
     hub["subscriptions/allowlist.json"] = b'{"allowed": ["dev@example.com"]}'

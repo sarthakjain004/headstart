@@ -338,8 +338,8 @@ These guidelines are working if: fewer unnecessary changes in diffs, fewer rewri
   against `_schema()`. The `[dev]` extra includes the index runtime and CI checks those imports
   before pytest, so the schema checks run in quality CI. Run them locally with `[dev]` before
   opening a schema PR. When you touch that section, re-check the example rows against
-  real data rather than editing them from memory. The Space's `/search` needs a signed-in session
-  (it answers `{"error":"sign in first"}` without one, 2026-09-23), so read the served table itself
+  real data rather than editing them from memory. The Space's `/search` answers anyone
+  (ADR-0258), but its projection omits columns, so read the served table itself
   (`scripts/fetch/pull_lancedb.py`); `data/jobs/tech/*.jsonl` has the fields the API projection
   omits.
 - **"How many Boards do we have" has five defensible answers — use the names, not a number.**

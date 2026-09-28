@@ -61,16 +61,6 @@ def test_raises_once_the_budget_is_spent():
     assert waited == [15, 30, 60]  # three retries, then give up
 
 
-def test_auth_headers_carry_the_service_token_only_when_one_is_set(monkeypatch):
-    # The Space's wall gates /search (ADR-0042); this run has no Google identity, so the
-    # service token is its credential. Unset must send nothing rather than an empty
-    # bearer, which would read as a malformed credential rather than as "anonymous".
-    monkeypatch.delenv("ALERTS_TOKEN", raising=False)
-    assert sq.auth_headers() == {}
-    monkeypatch.setenv("ALERTS_TOKEN", "  service-token  ")
-    assert sq.auth_headers() == {"Authorization": "Bearer service-token"}
-
-
 def test_a_permanent_auth_failure_is_not_retried():
     # A 401 cannot become a 200 by waiting. The ladder is sized to a Space cold start,
     # so retrying an unauthorised call spends 105s per Subscription to fail anyway —
