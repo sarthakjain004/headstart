@@ -1,6 +1,6 @@
 # ADR-0119: The trends chart plots change, not level
 
-**Status:** accepted · **Date:** 2026-09-07 · **Refines the panel ADR-0040 introduced and ADR-0051 split by role; changes no ledger, no API field, and no stored data**
+**Status:** accepted · **Date:** 2026-09-07 · **Refines the panel ADR-0040 introduced and ADR-0051 split by role; changes no ledger, no API field, and no stored data** · **Amended by:** [ADR-0248](0248-the-trends-tab-speaks-to-a-job-seeker.md) — the reassignment caveat is shortened to one plain sentence and folded by default; the dashed line and its reason stay in the caption
 
 ## Context
 

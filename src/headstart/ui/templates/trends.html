@@ -60,10 +60,14 @@
       </span>
     </span>
     <span class="ctl">
-      <span class="ctl-label" id="trends-lbl-coverage">Coverage</span>
+      {# Named for a job seeker (ADR-0248): "Coverage" and "Comparable" were the pipeline's words.
+         Comparable keeps only the Boards counted at the window's start, so a site found later
+         cannot lift a line. #}
+      <span class="ctl-label" id="trends-lbl-coverage">Job sites</span>
       <span class="seg" id="trends-coverage" role="radiogroup" aria-labelledby="trends-lbl-coverage">
-        <button data-coverage="all" role="radio" aria-checked="true" tabindex="0">All coverage</button>
-        <button data-coverage="comparable" role="radio" aria-checked="false" tabindex="-1">Comparable from range start</button>
+        <button data-coverage="all" role="radio" aria-checked="true" tabindex="0">All</button>
+        <button data-coverage="comparable" role="radio" aria-checked="false" tabindex="-1"
+                title="Only sites tracked from the start date, so new ones can’t lift a line">Tracked from start</button>
       </span>
     </span>
     <span class="ctl">
@@ -107,14 +111,16 @@
      is measured in days. The presets above answer the question; the exact range is still
      here, one hairline down (dataviz skill, palette.md § Filter controls). #}
   <details class="trends-custom">
-    <summary>Custom range <span class="note">(your local time; the chart reads in UTC)</span></summary>
+    <summary>Custom dates</summary>
     {# Said, since every other time on the tab is UTC: Sep 15 00:00 typed in India asked for
-       Sep 14 18:30 UTC with nothing to say so (critic round 14). #}
+       Sep 14 18:30 UTC with nothing to say so (critic round 14). Beside the fields, not in the
+       summary, where it read as a sentence in place of a label (ADR-0248). #}
     <div class="trends-range">
       <input type="datetime-local" id="trends-since" aria-label="From, in your local time">
       <span class="note" aria-hidden="true">–</span>
       <input type="datetime-local" id="trends-until" aria-label="To, in your local time">
       <button class="ghost" id="trends-range-clear" type="button">Clear</button>
+      <span class="note">Your local time</span>
     </div>
   </details>
 
@@ -168,28 +174,28 @@
       <div class="trends-scroll"><table class="trends-table" id="trends-full-table"></table></div>
     </details>
   </div>
-  <!-- The two caveats read as one thing — how to read this chart — so they sit in one
-       bounded block rather than as loose grey prose orphaned under a full-width plot. The
-       reassignment caveat is 190 words and was the tallest block on the panel at 390px, so
-       it collapses on a phone; above 1100px it sits beside the caption and stays open. The
-       text inside is unchanged, because it is the honesty the chart depends on and
-       shortening it would cost meaning. -->
+  {# How to read the chart, in a job seeker's words (ADR-0248): a short caption that follows the
+     view, and a folded note that says what each unit means. It was 190 words on family
+     reassignment with an ADR link, open by default; the owner asked for it short and optional.
+     Each caveat a reader needs is one plain sentence, here or in the caption. #}
   <div class="chart-note" id="trends-chart-note">
   <div class="note" id="trends-foot"></div>
-  {# Open by default. ADR-0119's own Consequences say this caveat "gets more load-bearing, not
-     less" under an indexed chart — folding it shut was the one change that contradicted the
-     ADR it shipped with. On a wide panel it sits beside the caption rather than under it, so
-     being open costs no height at all. #}
-  <details class="note-more" id="trends-how" open>
+  <details class="note-more">
     <summary>How to read this</summary>
-    <p class="kind">A family's line moving is not the same as jobs opening or closing. Each job's
-    family is worked out from the meaning of its text, and that text can be filled in later — so
-    a job can move between families without changing at all, which looks exactly like one
-    closing here and another opening there. One investigated decline turned out to be mostly
-    that. This chart does not separate the two, so read the shape over weeks rather than a
-    single step. Watch-listed roles are matched by title instead and are not affected.
-    <a href="{{ repo }}/blob/main/docs/adr/0057-record-family-assignments-and-report-reassignment.md"
-       target="_blank" rel="noopener">ADR-0057</a></p>
+    <p class="kind"><b>Count</b> is the number of jobs. It also rises when HeadStart adds
+    companies, not only when they hire.</p>
+    <p class="kind"><b>Share</b> is each line’s slice of the whole (all jobs, or the companies you
+    picked), so adding companies doesn’t lift every line at once.</p>
+    <p class="kind"><b>Change</b> starts every line at 100, so 120 means 20% more openings. The
+    dashed line is the whole market, or the companies you picked: a line above it is growing
+    faster than the whole.</p>
+    <p class="kind">Grey vertical lines mark jumps that aren’t hiring. Opened and closed can be too
+    low: some sites don’t show when a job closes, and days when HeadStart changed how it counts
+    are left out.</p>
+    {# A category's line only (ADR-0057): a job can change category, never company or title. #}
+    <p class="kind" id="trends-how-moves">A job can move to another category when HeadStart learns
+    more about it, which looks like one job closing and another opening. Read a category’s trend
+    over weeks, not one day’s jump.</p>
   </details>
   </div>
 </section>
