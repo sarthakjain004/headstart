@@ -1,0 +1,294 @@
+{
+ "content": [
+  {
+   "id": "744000152085340",
+   "name": "Pilote de Performance et Maturit\u00e9 Fournisseurs \u2013 Environnement A\u00e9ronautique (H/F)",
+   "uuid": "8a350e56-695e-4fc0-a7d5-0eec76590634",
+   "jobAdId": "d339b1d0-27b1-41af-8d65-80f148b3d0da",
+   "defaultJobAd": true,
+   "refNumber": "REF19367L",
+   "company": {
+    "identifier": "ALTEN",
+    "name": "ALTEN"
+   },
+   "releasedDate": "2026-09-28T06:48:02.727Z",
+   "location": {
+    "city": "Vitrolles",
+    "region": "Provence-Alpes-C\u00f4te d'Azur",
+    "country": "fr",
+    "postalCode": "13127",
+    "remote": false,
+    "hybrid": false,
+    "latitude": "43.45859799999999",
+    "longitude": "5.249702999999999",
+    "fullLocation": "Vitrolles, Provence-Alpes-C\u00f4te d'Azur, France"
+   },
+   "industry": {
+    "id": "aviation_and_aerospace",
+    "label": "Aviation And Aerospace"
+   },
+   "department": {
+    "id": "3349789",
+    "label": "Aeronautics"
+   },
+   "function": {
+    "id": "engineering",
+    "label": "Engineering"
+   },
+   "typeOfEmployment": {
+    "id": "permanent",
+    "label": "Full-time"
+   },
+   "experienceLevel": {
+    "id": "mid_senior_level",
+    "label": "Mid-Senior Level"
+   },
+   "customField": [
+    {
+     "fieldId": "COUNTRY",
+     "fieldLabel": "Country/Region",
+     "valueId": "fr",
+     "valueLabel": "France"
+    },
+    {
+     "fieldId": "62b333a3db5d01178da3cbe3",
+     "fieldLabel": "Type of recruitment",
+     "valueId": "d93447ba-330e-43a2-b475-78bda9b06e30",
+     "valueLabel": "Specific"
+    },
+    {
+     "fieldId": "62b30f8a421f071e5e9eba71",
+     "fieldLabel": "Contract Type",
+     "valueId": "22425be8-d581-4efb-9b40-60aeafaed7dc",
+     "valueLabel": "Permanent"
+    },
+    {
+     "fieldId": "62b3336ab45fef7735c5eed4",
+     "fieldLabel": "Experience",
+     "valueId": "be07a78c-f0ad-48c3-af06-524f55e4a439",
+     "valueLabel": "Mid Level"
+    },
+    {
+     "fieldId": "61d557bdadf32000d59d5581",
+     "fieldLabel": "Brands",
+     "valueId": "default",
+     "valueLabel": "ALTEN"
+    },
+    {
+     "fieldId": "62b33101421f071e5e9eba77",
+     "fieldLabel": "Region",
+     "valueId": "9a3e8a59-8686-4c8e-ba31-77dbc703e441",
+     "valueLabel": "Provence-Alpes-C\u00f4te d'Azur"
+    },
+    {
+     "fieldId": "61d557bdadf32000d59d5582",
+     "fieldLabel": "Department",
+     "valueId": "3349789",
+     "valueLabel": "Aeronautics"
+    }
+   ],
+   "visibility": "PUBLIC",
+   "ref": "https://api.smartrecruiters.com/v1/companies/alten/postings/744000152085340",
+   "language": {
+    "code": "fr",
+    "label": "French",
+    "labelNative": "fran\u00e7ais"
+   }
+  },
+  {
+   "id": "744000151889479",
+   "name": "Infographiste 3D (PLM/CATIA) Junior",
+   "uuid": "e535d106-8798-4ef4-9927-5f82d58d6989",
+   "jobAdId": "a9a6c4d3-a483-4f5d-88b2-cbf36a15aec5",
+   "defaultJobAd": true,
+   "refNumber": "REF20956K",
+   "company": {
+    "identifier": "ALTEN",
+    "name": "ALTEN"
+   },
+   "releasedDate": "2026-09-25T15:45:08.589Z",
+   "location": {
+    "city": "Fes",
+    "region": "Fez-Mekn\u00e8s",
+    "country": "ma",
+    "remote": false,
+    "hybrid": true,
+    "latitude": "34.0181246",
+    "longitude": "-5.0078451",
+    "fullLocation": "Fes, Fez-Mekn\u00e8s, Morocco"
+   },
+   "industry": {
+    "id": "automotive",
+    "label": "Automotive"
+   },
+   "department": {
+    "id": "3413420",
+    "label": "Others"
+   },
+   "function": {
+    "id": "other",
+    "label": "Other"
+   },
+   "typeOfEmployment": {
+    "id": "permanent",
+    "label": "Full-time"
+   },
+   "experienceLevel": {
+    "id": "mid_senior_level",
+    "label": "Mid-Senior Level"
+   },
+   "customField": [
+    {
+     "fieldId": "COUNTRY",
+     "fieldLabel": "Country/Region",
+     "valueId": "ma",
+     "valueLabel": "Morocco"
+    },
+    {
+     "fieldId": "62b333a3db5d01178da3cbe3",
+     "fieldLabel": "Type of recruitment",
+     "valueId": "d93447ba-330e-43a2-b475-78bda9b06e30",
+     "valueLabel": "Specific"
+    },
+    {
+     "fieldId": "62b30f8a421f071e5e9eba71",
+     "fieldLabel": "Contract Type",
+     "valueId": "22425be8-d581-4efb-9b40-60aeafaed7dc",
+     "valueLabel": "Permanent"
+    },
+    {
+     "fieldId": "62b3336ab45fef7735c5eed4",
+     "fieldLabel": "Experience",
+     "valueId": "d19d80fb-f241-4b50-ac40-933eb26cc086",
+     "valueLabel": "Junior"
+    },
+    {
+     "fieldId": "61d557bdadf32000d59d5581",
+     "fieldLabel": "Brands",
+     "valueId": "default",
+     "valueLabel": "ALTEN"
+    },
+    {
+     "fieldId": "62b33101421f071e5e9eba77",
+     "fieldLabel": "Region",
+     "valueId": "1ecc79ea-8dcd-4332-a792-58867a3c8288",
+     "valueLabel": "Morocco"
+    },
+    {
+     "fieldId": "61d557bdadf32000d59d5582",
+     "fieldLabel": "Department",
+     "valueId": "3413420",
+     "valueLabel": "Others"
+    },
+    {
+     "fieldId": "698dc2e5450467ace60112ee",
+     "fieldLabel": "Diploma / Education",
+     "valueId": "c9c58669-37f0-4991-a537-b21fa03a1727",
+     "valueLabel": "License"
+    }
+   ],
+   "visibility": "PUBLIC",
+   "ref": "https://api.smartrecruiters.com/v1/companies/alten/postings/744000151889479",
+   "language": {
+    "code": "en",
+    "label": "English",
+    "labelNative": "English (US)"
+   }
+  },
+  {
+   "id": "744000151845124",
+   "name": "D\u00e9veloppeur Fullstack (H/F)",
+   "uuid": "642f35dc-da32-4a3e-af6b-365b982a3d2b",
+   "jobAdId": "29d32dea-f1a4-44c9-9bdc-b94f1bc87418",
+   "defaultJobAd": true,
+   "refNumber": "REF15777F",
+   "company": {
+    "identifier": "ALTEN",
+    "name": "ALTEN"
+   },
+   "releasedDate": "2026-09-25T12:59:26.077Z",
+   "location": {
+    "city": "Bezons",
+    "region": "IDF",
+    "country": "fr",
+    "postalCode": "95870",
+    "remote": true,
+    "hybrid": false,
+    "latitude": "48.925687",
+    "longitude": "2.215847",
+    "fullLocation": "Bezons, IDF, France"
+   },
+   "industry": {
+    "id": "it_and_services",
+    "label": "Information Technology And Services"
+   },
+   "department": {
+    "id": "3349874",
+    "label": "Energy & Environment"
+   },
+   "function": {
+    "id": "engineering",
+    "label": "Engineering"
+   },
+   "typeOfEmployment": {
+    "id": "permanent",
+    "label": "Full-time"
+   },
+   "experienceLevel": {
+    "id": "mid_senior_level",
+    "label": "Mid-Senior Level"
+   },
+   "customField": [
+    {
+     "fieldId": "COUNTRY",
+     "fieldLabel": "Country/Region",
+     "valueId": "fr",
+     "valueLabel": "France"
+    },
+    {
+     "fieldId": "62b333a3db5d01178da3cbe3",
+     "fieldLabel": "Type of recruitment",
+     "valueId": "d93447ba-330e-43a2-b475-78bda9b06e30",
+     "valueLabel": "Specific"
+    },
+    {
+     "fieldId": "62b30f8a421f071e5e9eba71",
+     "fieldLabel": "Contract Type",
+     "valueId": "22425be8-d581-4efb-9b40-60aeafaed7dc",
+     "valueLabel": "Permanent"
+    },
+    {
+     "fieldId": "62b3336ab45fef7735c5eed4",
+     "fieldLabel": "Experience",
+     "valueId": "6efd06f8-63ea-4853-a749-dd861b2e5764",
+     "valueLabel": "Senior"
+    },
+    {
+     "fieldId": "61d557bdadf32000d59d5581",
+     "fieldLabel": "Brands",
+     "valueId": "default",
+     "valueLabel": "ALTEN"
+    },
+    {
+     "fieldId": "62b33101421f071e5e9eba77",
+     "fieldLabel": "Region",
+     "valueId": "4c406837-db32-469a-badf-09fc2c6a0411",
+     "valueLabel": "\u00cele-de-France"
+    },
+    {
+     "fieldId": "61d557bdadf32000d59d5582",
+     "fieldLabel": "Department",
+     "valueId": "3349874",
+     "valueLabel": "Energy & Environment"
+    }
+   ],
+   "visibility": "PUBLIC",
+   "ref": "https://api.smartrecruiters.com/v1/companies/alten/postings/744000151845124",
+   "language": {
+    "code": "fr",
+    "label": "French",
+    "labelNative": "fran\u00e7ais"
+   }
+  }
+ ]
+}

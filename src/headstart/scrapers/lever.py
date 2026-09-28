@@ -116,6 +116,23 @@ def _description(j: dict) -> str | None:
     return html_to_text("\n".join(p for p in parts if p))
 
 
+def _remote(workplace: str, location: str | None) -> bool | None:
+    """Whether the posting is remote, from Lever's own ``workplaceType``.
+
+    Hybrid is neither remote nor on-site, so it is None, as ``ashby._remote`` answers it.
+    Measured live 2026-09-28: 40 random Boards, 1,081 postings, 420 hybrid, all served False
+    before. A remote location on an on-site posting still reads remote, as it did. An
+    unspecified type with no location is unknown (None), no longer a confident False.
+    """
+    if workplace == "hybrid":
+        return None
+    if workplace == "remote" or is_remote(location):
+        return True
+    if workplace == "onsite":
+        return False
+    return is_remote(location)
+
+
 class LeverScraper(BaseScraper):
     ats = "lever"
     url_shape = r"https://jobs(\.eu)?\.lever\.co/[^/]+/[0-9a-f-]{36}"
@@ -191,8 +208,7 @@ class LeverScraper(BaseScraper):
         for j in raw:
             categories = j.get("categories") or {}
             location = _location(categories, j.get("country"))
-            workplace = (j.get("workplaceType") or "").lower()
-            remote = workplace == "remote" or bool(is_remote(location))
+            remote = _remote((j.get("workplaceType") or "").lower(), location)
             jobs.append(
                 Job(
                     id=self.job_id(j["id"]),

@@ -67,6 +67,28 @@ def test_greenhouse_location_missing_name_stays_none():
     assert jobs[0].location is None
 
 
+def test_greenhouse_remote_reads_the_tenants_workplace_type():
+    """Real airbnb postings (2026-09-28): the tenant states `Workplace Type` in `metadata` while
+    the location names only a place ("United States"). The location word check read all three
+    as on-site; the tenant's own answer wins, and hybrid is neither (None), as ashby answers it."""
+    jobs = get_scraper("greenhouse", "airbnb", "Airbnb").parse(
+        _load("greenhouse_airbnb_workplace_type.json"), SCRAPED_AT
+    )
+    assert [(j.location, j.remote) for j in jobs] == [
+        ("United States", True),
+        ("London, United Kingdom", None),
+        ("Mexico City, Mexico", False),
+    ]
+
+
+def test_greenhouse_hybrid_location_is_not_read_as_on_site():
+    # Real location string, location-field audit 2026-08-24.
+    raw = {
+        "jobs": [{"id": 1, "title": "T", "location": {"name": "Hybrid in Boston, MA"}}]
+    }
+    assert get_scraper("greenhouse", "x", "X").parse(raw, SCRAPED_AT)[0].remote is None
+
+
 def test_greenhouse_salary_prefers_currency_range_over_currency_band():
     # Real live sample (doordashusa, "Account Manager, CPG", 2026-09-15): a currency_range "Pay
     # Transparency Range" entry beats two single-point currency "Band Midpoint"/"Minimum" entries
@@ -212,7 +234,7 @@ def test_lever_parse():
     # "Palo Alto, CA", so the fix appends it — this pins that the append actually fires here,
     # not just in a synthetic case.
     assert j.location == "Palo Alto, CA, US"
-    assert j.remote is False
+    assert j.remote is None  # the fixture's own workplaceType is hybrid
     assert j.department == "Administrative"
     assert j.url.startswith("https://jobs.lever.co/palantir/")
     assert j.employment_type == "Full-time"  # categories.commitment
@@ -386,6 +408,28 @@ def test_lever_location_country_recognizes_usa_short_form():
     ]
     jobs = get_scraper("lever", "freedompay", "FreedomPay").parse(raw, SCRAPED_AT)
     assert jobs[0].location == "Select USA Remote Locations"
+
+
+def test_lever_remote_reads_workplace_type():
+    """Real zoox postings (2026-09-28): `workplaceType` remote and onsite answer directly."""
+    jobs = get_scraper("lever", "zoox", "Zoox").parse(
+        _load("lever_zoox_workplace_type.json"), SCRAPED_AT
+    )
+    assert [j.remote for j in jobs] == [True, False]
+
+
+def test_lever_hybrid_is_neither_remote_nor_on_site():
+    """palantir's fixture postings state `workplaceType: hybrid`; hybrid is None (ashby's
+    convention), where the old code served False."""
+    jobs = get_scraper("lever", "palantir", "Palantir").parse(
+        _load("lever_palantir.json"), SCRAPED_AT
+    )
+    assert [j.remote for j in jobs] == [None, None]
+
+
+def test_lever_unstated_workplace_without_a_location_is_unknown():
+    raw = [{"id": "a", "text": "T", "categories": {}, "workplaceType": "unspecified"}]
+    assert get_scraper("lever", "x", "X").parse(raw, SCRAPED_AT)[0].remote is None
 
 
 def test_ashby_location_keeps_every_place_the_record_names():
@@ -971,10 +1015,21 @@ def test_workable_parse():
     assert j.title == "Account Manager- Enterprise Business"
     assert j.location == "Bengaluru, Karnataka, India"
     assert j.department == "Sales & Account Management"
-    assert j.url == "https://apply.workable.com/j/41CF6A5AAA/apply"
+    assert j.url == "https://apply.workable.com/j/41CF6A5AAA"  # the posting, not /apply
     assert j.experience == "Mid-Senior level"
     assert j.employment_type == "Full-time"
     assert j.description and "</" not in j.description  # populated, HTML-stripped
+
+
+def test_workable_url_is_the_posting_not_its_application_form():
+    """Real vizrt widget row (2026-09-28): `url` is the posting page, `application_url` its
+    `/apply` form. The served link is the posting, as `url_shape` states it."""
+    raw = _load("workable_apna.json")
+    jobs = get_scraper("workable", "apna", "Apna").parse(raw, SCRAPED_AT)
+    assert [j.url for j in jobs] == [
+        "https://apply.workable.com/j/41CF6A5AAA",
+        "https://apply.workable.com/j/01B0CB39DD",
+    ]
 
 
 def test_workable_multi_location_rows_collapse_into_one_job():
@@ -1054,6 +1109,15 @@ def test_smartrecruiters_parse():
     assert (
         j.description and "</" not in j.description
     )  # detail fetch; populated, HTML-stripped
+
+
+def test_smartrecruiters_remote_reads_hybrid_as_neither():
+    """Real alten listing rows (2026-09-28): `location.hybrid` is stated beside `remote`; a
+    hybrid posting is None (ashby's convention), not on-site."""
+    jobs = get_scraper("smartrecruiters", "alten", "Alten").parse(
+        _load("smartrecruiters_alten_workplace.json"), SCRAPED_AT
+    )
+    assert [j.remote for j in jobs] == [False, None, True]
 
 
 def test_smartrecruiters_department_falls_back_to_function_label():

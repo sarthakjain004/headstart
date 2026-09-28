@@ -8,12 +8,12 @@ project's BaseScraper contract:
 `offset`, and `totalFound` reports the board's true size. `_MAX_PAGES` bounds what one board
 can cost a shard on its first, uncosted run — the run ADR-0064's tech-per-minute gate cannot
 see, because it only judges a board that already has a measurement (ADR-0077) — but its
-enforcement is commented out below for the initial rollout: shipping uncapped on purpose, to
-measure real cost/impact across a few pipeline runs before deciding a cap from data rather
-than from #202's projection a second time (#227). Trivially reversible — restore the three
-commented-out conditions in `fetch_raw` (the loop's cap check, and the cap-naming branch of
-its truncation message, with its `mark_truncated` branch for a capped read) to re-enable the
-50-page cap.
+enforcement is commented out below. It shipped uncapped to measure real cost across pipeline
+runs (#227), and that was resolved 2026-08-23: stay uncapped, no static cap (ADR-0077's
+amendment). The constant and its tests stay in case a later measurement reverses that: restore
+the three commented-out conditions in `fetch_raw` (the loop's cap check, and the cap-naming
+branch of its truncation message, with its `mark_truncated` branch for a capped read) to
+re-enable the 50-page cap.
 
 The postings list has no description; a second pass fetches each posting's detail
 (GET .../postings/{id} -> jobAd.sections.jobDescription.text) in a bounded thread pool to
@@ -271,7 +271,13 @@ class SmartRecruitersScraper(BaseScraper):
                     company=(p.get("company") or {}).get("name") or self.company,
                     title=(p.get("name") or "").strip(),
                     location=location,
-                    remote=bool(loc.get("remote")) or is_remote(location),
+                    # Hybrid is neither remote nor on-site, so None, as `ashby._remote`
+                    # answers it. alten 2026-09-28: 5 of 100 listed postings hybrid.
+                    remote=True
+                    if loc.get("remote")
+                    else None
+                    if loc.get("hybrid")
+                    else is_remote(location),
                     department=_department_of(p),
                     url=self.job_url(p["id"]),
                     posted_at=p.get("releasedDate"),
