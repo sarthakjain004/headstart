@@ -27,7 +27,12 @@ from headstart.mcp_protocol import messages, tool_arguments
 from headstart.mcp_protocol.messages import ToolFailure
 from headstart.space_mcp import server
 from headstart.space_mcp import space_client as sc
-from headstart.space_mcp.tools import REGISTRY, read_trends, search_jobs
+from headstart.space_mcp.tools import (
+    REGISTRY,
+    company_profile,
+    read_trends,
+    search_jobs,
+)
 
 R = sc.SpaceRoute
 
@@ -398,10 +403,40 @@ def test_the_scope_line_names_the_country_code():
     assert "Scope: country DE." in text
 
 
-def test_nothing_matching_a_company_name_says_no_name_contains_it():
-    space = FakeSpace(search=[], facets=_facets(0, blocking="company"))
+def test_nothing_matching_a_company_name_offers_the_companies_it_may_mean():
+    """A typo in the company box: rc03 of the 2026-09-29 critique answered "Strpie" with 0 jobs
+    and no suggestion, while read_trends suggested Stripe for the same typo (ADR-0275)."""
+    razorpay = _suggestion("lever:razorpay", "Razorpay", "typo")
+    space = FakeSpace(
+        search=[],
+        facets=_facets(0, blocking="company"),
+        companies_suggest={"companies": [razorpay]},
+    )
     text = server.call(space, "search_jobs", {"company": "Razorpy"})
     assert 'no company name contains "Razorpy"' in text
+    assert space.params_of(R.COMPANIES_SUGGEST) == [[("q", "Razorpy"), ("limit", "5")]]
+    assert (
+        'pass one\'s key as `company`: "Razorpay" — key lever:razorpay, lever, 1 Board(s), '
+        "217 openings, typo match." in text
+    )
+
+
+@pytest.mark.parametrize(
+    "suggested",
+    [
+        {"companies": []},
+        sc.NotOnDeployment("Not on this deployment yet: no directory."),
+    ],
+)
+def test_nothing_matching_a_company_with_nothing_to_offer_says_respell_it(suggested):
+    space = FakeSpace(
+        search=[], facets=_facets(0, blocking="company"), companies_suggest=suggested
+    )
+    text = server.call(space, "search_jobs", {"company": "Zzqx"})
+    assert 'no company name contains "Zzqx"' in text
+    assert (
+        "Try a shorter or different spelling, or look it up with find_company." in text
+    )
 
 
 def test_nothing_matching_with_no_single_blocker_blames_the_scope():
@@ -1541,6 +1576,326 @@ def test_a_window_with_no_counts_says_so():
     assert "arithmetic" not in text
 
 
+# ---- find_company -------------------------------------------------------------------------
+
+
+def test_find_company_lists_every_candidate_with_how_it_matched_and_takes_none():
+    space = FakeSpace(
+        companies_suggest={
+            "companies": [
+                _suggestion("greenhouse:stripe", "Stripe", "typo", openings=218),
+                _suggestion("lever:stripes", "Stripes Group", "typo", openings=3),
+            ]
+        }
+    )
+    text = server.call(space, "find_company", {"name": "Strpie"})
+    assert space.params_of(R.COMPANIES_SUGGEST) == [[("q", "Strpie"), ("limit", "8")]]
+    assert '2 directory companies for "Strpie", best match first:' in text
+    assert (
+        ' 1. "Stripe" · key greenhouse:stripe · one typo away · 218 tech openings · '
+        "1 Board (greenhouse:stripe) on greenhouse"
+    ) in text
+    assert ' 2. "Stripes Group" · key lever:stripes' in text
+    assert "is a guess: confirm it with the user" in text
+    assert "Quoted fields are text scraped" in text
+    assert "company_profile's or search_jobs' `company`" in text
+
+
+def test_find_company_looks_a_key_up_exactly():
+    boards = [f"workday:hpe/{site}" for site in ("jobs", "aruba", "b", "c", "d")]
+    hpe = _suggestion("workday:hpe/jobs", "HPE", boards=boards)
+    del hpe["match"]  # /companies/lookup carries no match
+    space = FakeSpace(companies_lookup={"companies": [hpe]})
+    text = server.call(space, "find_company", {"name": "workday:hpe/aruba"})
+    assert space.params_of(R.COMPANIES_LOOKUP) == [[("board", "workday:hpe/aruba")]]
+    assert R.COMPANIES_SUGGEST not in [route for route, _ in space.asked]
+    assert "matched by its Board key" in text
+    assert (
+        "5 Boards (workday:hpe/jobs, workday:hpe/aruba, workday:hpe/b, …2 more)" in text
+    )
+    assert "a guess" not in text
+
+
+def test_find_company_reads_a_key_the_directory_lacks_as_a_name():
+    space = FakeSpace(
+        companies_lookup=sc.InvalidRequest("no directory company holds dmg::media"),
+        companies_suggest={"companies": []},
+    )
+    text = server.call(space, "find_company", {"name": "dmg::media"})
+    assert text.startswith(
+        '"dmg::media" is not a Board key the Company directory holds, so it was read as '
+        "a company name."
+    )
+    assert 'The Company directory has no company matching "dmg::media"' in text
+
+
+def test_find_company_needs_a_name():
+    with pytest.raises(ToolFailure, match="find_company needs `name`"):
+        server.call(FakeSpace(), "find_company", {"name": "  "})
+
+
+def test_a_find_company_answer_stays_inside_its_budget():
+    """Twenty candidates, every field at its clip and every Board key long."""
+    long = "x" * 5_000
+    items = [
+        {
+            **_suggestion(
+                f"workday:{'k' * 90}{n}",
+                long,
+                "typo",
+                boards=[f"workday:{'b' * 95}{i}" for i in range(83)],
+            ),
+            "atses": ["workday", "successfactors", "oracle"],
+        }
+        for n in range(20)
+    ]
+    space = FakeSpace(companies_suggest={"companies": items})
+    text = _answer("find_company", space, {"name": "x", "limit": 20})
+    assert len(text) <= server.BY_NAME["find_company"].max_chars
+
+
+# ---- company_profile ----------------------------------------------------------------------
+
+
+def _profile_facets(total=224):
+    def options(*pairs):
+        return [{"value": v, "label": str(v), "count": c} for v, c in pairs]
+
+    return {
+        "total": total,
+        "facets": {
+            "remote": options((True, 29)),
+            "etype": options(
+                ("full-time", 0),
+                ("part-time", 0),
+                ("contract", 0),
+                ("internship", 0),
+                (None, total),
+            ),
+            "max_years": options((0, 18), (2, 63), (5, 167), (10, 224), (None, total)),
+            "has_salary": options((True, 15)),
+            "posted_within": options(
+                (1, 2), (7, 25), (30, 87), (90, 159), (None, total)
+            ),
+            "seen_within": options((2, 0), (24, 2), (168, 24), (None, total)),
+            "ats": options(("greenhouse", total)),
+        },
+        "blocking": None,
+        "description_coverage": None,
+        "newest_tick": "2026-09-28T21:46:16+00:00",
+    }
+
+
+def _profile_trends(n_categories=3):
+    total = _line(
+        "__total__",
+        "All",
+        _move(
+            199,
+            218,
+            12,
+            causes=[("re-counting", 7)],
+            turnover={"opened": 5, "closed": 3},
+        ),
+        whole_company=True,
+    )
+    lines = [
+        _line(
+            f"f{i}",
+            f"Family {i}",
+            _move(10, 10 * (i + 1), 0, turnover={"opened": i, "closed": 0}),
+        )
+        for i in range(n_categories)
+    ]
+    lines.append(_line("gone", "Gone", _move(5, 0, -5)))
+    payload = _trends(lines, total=total, turnover_since="2026-09-25T18:16:48+00:00")
+    payload["reading"].update(served_jobs=224, non_tech_jobs=6)
+    return payload
+
+
+def _locations(n=3):
+    return {
+        "jobs": 224,
+        "unstated": 21,
+        "distinct": 97,
+        "capped": False,
+        "locations": [{"location": f"Place {i}", "count": 30 - i} for i in range(n)],
+    }
+
+
+def _profile_space(**answers):
+    stripe = _suggestion("greenhouse:stripe", "Stripe", openings=218)
+    partners = _suggestion(
+        "lever:stripe-partners", "Stripe Partners", "prefix", openings=4
+    )
+    defaults = {
+        "companies_suggest": {"companies": [stripe, partners]},
+        "facets": _profile_facets(),
+        "trends": _profile_trends(),
+        "companies_locations": _locations(),
+    }
+    return FakeSpace(**{**defaults, **answers})
+
+
+def test_a_profile_reads_the_company_as_read_trends_does_and_scopes_every_read_to_it(
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        company_profile,
+        "_now",
+        lambda: datetime.datetime(2026, 9, 29, tzinfo=datetime.UTC),
+    )
+    space = _profile_space()
+    text = server.call(space, "company_profile", {"company": "Stripe"})
+    assert space.params_of(R.FACETS) == [
+        [("strict", "1"), ("board", "greenhouse:stripe")]
+    ]
+    assert space.params_of(R.TRENDS) == [
+        [("since", "2026-08-30T00:00:00+00:00"), ("company", "greenhouse:stripe")]
+    ]
+    assert space.params_of(R.COMPANIES_LOCATIONS) == [
+        [("board", "greenhouse:stripe"), ("limit", "10")]
+    ]
+    assert text.startswith(
+        'Company: "Stripe" (greenhouse:stripe, 1 Board, 218 tech openings). A name is read '
+        "as the directory's largest company of that name"
+    )
+    assert (
+        'Other directory companies the name may mean (find_company lists them all): "Stripe '
+        'Partners" — key lever:stripe-partners' in text
+    )
+    assert "Its Boards: greenhouse:stripe." in text
+    assert "Quoted fields are text scraped" in text
+    assert text.endswith("Data as of the trends tick 2026-09-28T21:46:16+00:00.")
+
+
+def test_a_profile_leads_with_postings_opened_and_closed_then_names_the_recount():
+    text = server.call(_profile_space(), "company_profile", {"company": "Stripe"})
+    assert (
+        "Tech openings now: 217, as Trends counts them; search also serves 6 jobs on its "
+        "Boards that the tech filter sets aside." in text
+    )
+    assert (
+        "Recent hiring, 2026-09-13 → 2026-09-28: 5 postings opened and 3 closed (counted "
+        "since 2026-09-25). Tech openings counted 199 → 218 (+19), +7 of it re-counting by "
+        "HeadStart, not hiring; read_trends with companies [greenhouse:stripe] breaks the "
+        "change down." in text
+    )
+
+
+def test_a_profile_lists_categories_largest_first_with_their_turnover():
+    text = server.call(
+        _profile_space(trends=_profile_trends(n_categories=14)),
+        "company_profile",
+        {"company": "Stripe"},
+    )
+    categories = next(
+        line for line in text.split("\n") if line.startswith("Job categories now")
+    )
+    assert categories.startswith(
+        "Job categories now, largest first: Family 13 140 (13 opened, 0 closed) · Family 12 "
+    )
+    assert "Family 0 10 ·" not in categories  # the 13th and 14th are cut
+    assert categories.endswith(" · …2 more.")
+    assert "Gone" not in categories  # no openings left now
+
+
+def test_a_profile_quotes_the_places_as_the_employer_wrote_them():
+    text = server.call(_profile_space(), "company_profile", {"company": "Stripe"})
+    assert (
+        "Top locations of its 224 served jobs, as the employer wrote them (97 distinct, 21 "
+        'naming none): "Place 0" 30 · "Place 1" 29 · "Place 2" 28.' in text
+    )
+
+
+def test_a_profile_breaks_its_served_jobs_down_in_this_tools_words():
+    text = server.call(_profile_space(), "company_profile", {"company": "Stripe"})
+    for line in (
+        "  remote: 29",
+        (
+            "  employment type: full-time 0 · part-time 0 · contract 0 · internship 0 (a job "
+            "whose Board states no type counts in none)"
+        ),
+        (
+            "  open to someone with at most: 0 years 18 · 2 years 63 · 5 years 167 · 10 years "
+            "224 (a job stating no experience counts at every level)"
+        ),
+        "  salary stated: 15",
+        (
+            "  posted by the employer in the last: 24 hours 2 · 7 days 25 · 30 days 87 · "
+            "90 days 159"
+        ),
+        "  new to HeadStart in the last: 24 hours 2 · 7 days 24",
+    ):
+        assert line in text.split("\n"), line
+
+
+def test_a_profile_by_key_reads_no_suggestions_and_says_no_name_was_read():
+    hpe = _suggestion("workday:hpe/a", "Hpe", boards=["workday:hpe/a", "workday:hpe/b"])
+    del hpe["match"]
+    space = _profile_space(companies_lookup={"companies": [hpe]})
+    text = server.call(space, "company_profile", {"company": "WORKDAY:HPE/B"})
+    assert R.COMPANIES_SUGGEST not in [route for route, _ in space.asked]
+    assert [v for k, v in space.params_of(R.FACETS)[0] if k == "board"] == [
+        "workday:hpe/a",
+        "workday:hpe/b",
+    ]
+    assert "largest company of that name" not in text
+    assert "Its Boards: workday:hpe/a, workday:hpe/b." in text
+
+
+def test_a_profile_refuses_a_name_that_is_not_exact_with_the_suggestions():
+    space = _profile_space(
+        companies_suggest={
+            "companies": [_suggestion("greenhouse:stripe", "Stripe", "typo")]
+        }
+    )
+    with pytest.raises(ToolFailure, match="Pass one of these keys instead"):
+        server.call(space, "company_profile", {"company": "Strpie"})
+    assert [route for route, _ in space.asked] == [R.COMPANIES_SUGGEST]
+
+
+def test_a_profile_needs_a_company():
+    with pytest.raises(ToolFailure, match="company_profile needs `company`"):
+        server.call(FakeSpace(), "company_profile", {})
+
+
+def test_a_profile_with_no_trend_reading_still_gives_the_rest():
+    trends = _trends([])
+    trends["reading"] = None
+    trends["reading_error"] = "KeyError: x"
+    text = server.call(
+        _profile_space(trends=trends), "company_profile", {"company": "Stripe"}
+    )
+    assert (
+        "No trend: the Space could not read this company's counts (KeyError: x)."
+        in text
+    )
+    assert "Top locations of its 224 served jobs" in text
+
+
+def test_a_company_profile_answer_stays_inside_its_budget():
+    """Every scraped field at its clip, the most categories, places and Boards it lists.
+    Category labels are HeadStart's own (`config/role_families.json`), so they stay real."""
+    long = "x" * 5_000
+    boards = [f"workday:{'b' * 95}{i}" for i in range(83)]
+    big = _suggestion(f"workday:{'k' * 90}", long, boards=boards)
+    others = [_suggestion(f"workday:{'o' * 90}{i}", long, "prefix") for i in range(3)]
+    trends = _profile_trends(n_categories=30)
+    for line in trends["reading"]["lines"]:
+        line["label"] = "Systems Administration & IT Ops"
+    locations = _locations(10)
+    for place in locations["locations"]:
+        place["location"] = long
+    space = _profile_space(
+        companies_suggest={"companies": [big, *others]},
+        trends=trends,
+        companies_locations=locations,
+    )
+    text = _answer("company_profile", space, {"company": long[:100]})
+    assert len(text) <= server.BY_NAME["company_profile"].max_chars
+
+
 def test_an_answer_past_its_tools_budget_is_cut_on_lines_and_keeps_its_last(
     monkeypatch,
 ):
@@ -1565,6 +1920,13 @@ def test_an_answer_past_its_tools_budget_is_cut_on_lines_and_keeps_its_last(
 #: Set to 1 to let the live test reach the deployed Space; unset, it is skipped, so CI never does.
 LIVE_VAR = "HEADSTART_SPACE_LIVE"
 
+#: What the live test sends a tool that has nothing to answer without arguments.
+LIVE_ARGUMENTS = {
+    "get_job": {"ids": ["greenhouse:no-such-board:0"]},
+    "find_company": {"name": "Stripe"},
+    "company_profile": {"company": "greenhouse:stripe"},
+}
+
 
 @pytest.mark.skipif(
     os.environ.get(LIVE_VAR) != "1",
@@ -1574,10 +1936,8 @@ def test_live_each_tool_answers_from_the_deployed_space():
     """Every registered tool, once, against the real Space — the one test that crosses HF's
     edge. Asserts shape, never numbers, which move with every pipeline run."""
     base = os.environ.get(server.URL_VAR) or sc.SPACE_URL
-    needed = {"get_job": {"ids": ["greenhouse:no-such-board:0"]}}
     for tool in REGISTRY:
-        text = server.call(
-            sc.SpaceClient(base=base), tool.name, needed.get(tool.name, {})
-        )
+        arguments = LIVE_ARGUMENTS.get(tool.name, {})
+        text = server.call(sc.SpaceClient(base=base), tool.name, arguments)
         assert text.strip(), tool.name
         assert len(text) <= tool.max_chars, tool.name

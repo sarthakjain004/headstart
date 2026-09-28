@@ -27,7 +27,14 @@ plan's §13), since a public route can never carry one person's data.
 from __future__ import annotations
 
 from headstart.space_mcp.space_tool import SpaceTool
-from headstart.space_mcp.tools import get_job, hiring_now, read_trends, search_jobs
+from headstart.space_mcp.tools import (
+    company_profile,
+    find_company,
+    get_job,
+    hiring_now,
+    read_trends,
+    search_jobs,
+)
 
 #: Every tool the server offers, in the order `tools/list` serves them.
 REGISTRY: tuple[SpaceTool, ...] = (
@@ -35,4 +42,6 @@ REGISTRY: tuple[SpaceTool, ...] = (
     get_job.TOOL,
     read_trends.TOOL,
     hiring_now.TOOL,
+    find_company.TOOL,
+    company_profile.TOOL,
 )

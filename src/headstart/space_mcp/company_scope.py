@@ -16,6 +16,10 @@ looked up exactly (`/companies/lookup`), and stands for every Board of its compa
 browser's Trends and Hot hand-offs do. A colon alone does not make a key: 15 of the directory's
 38,673 names carry one ("dmg::media", "Ed:Za", measured 2026-09-28). So a value shaped like a key
 that the directory does not hold is read as a name after all, and the answer says so.
+
+**Looking a company up** (`find_company`, and a search whose company-box text matched no company)
+reads the picker's own suggestions, each with how it matched, and takes none of them: it offers
+them back (ADR-0275).
 """
 
 from __future__ import annotations
@@ -26,21 +30,32 @@ from typing import Any
 
 from headstart.mcp_protocol.messages import ToolFailure
 from headstart.space_mcp import scraped_text
-from headstart.space_mcp.space_client import InvalidRequest, SpaceClient, SpaceRoute
+from headstart.space_mcp.space_client import (
+    InvalidRequest,
+    SpaceClient,
+    SpaceError,
+    SpaceRoute,
+)
 
 #: The suggestion kinds a typed name may be taken as: its own name, or a name it is an alias of
 #: ("aws" → Amazon). A prefix, a word match or a typo is a guess, and is offered back instead.
 _ACCEPTED_MATCHES = ("exact", "alias")
 
+#: How many directory companies a search whose company matched no name offers instead.
+ALTERNATIVES_OFFERED = 5
+
 
 @dataclass(frozen=True)
 class DirectoryCompany:
-    """One Company directory entry as the Space serves it."""
+    """One Company directory entry as the Space serves it. ``match`` is how a suggestion matched
+    the typed name (`/companies/suggest`); None for a company looked up by a key."""
 
     key: str
     label: str
     board_keys: tuple[str, ...]
     openings: int
+    atses: tuple[str, ...] = ()
+    match: str | None = None
 
     @classmethod
     def from_item(cls, item: dict[str, Any]) -> DirectoryCompany:
@@ -49,6 +64,8 @@ class DirectoryCompany:
             label=item.get("label") or item.get("name") or item["key"],
             board_keys=tuple(item.get("board_keys") or (item["key"],)),
             openings=int(item.get("openings") or 0),
+            atses=tuple(item.get("atses") or ()),
+            match=item.get("match"),
         )
 
     def described(self) -> str:
@@ -56,6 +73,14 @@ class DirectoryCompany:
         return (
             f"{scraped_text.quoted(self.label)} ({self.key}, {boards} Board"
             f"{'' if boards == 1 else 's'}, {self.openings:,} tech openings)"
+        )
+
+    def offered(self) -> str:
+        """The company as a refusal or a zero answer offers it in place of a typed name."""
+        return (
+            f"{scraped_text.quoted(self.label)} — key {self.key}, {', '.join(self.atses)}, "
+            f"{len(self.board_keys)} Board(s), {self.openings:,} openings, "
+            f"{self.match or '?'} match"
         )
 
 
@@ -102,23 +127,25 @@ def lookup(client: SpaceClient, keys: list[str]) -> list[DirectoryCompany]:
     return [DirectoryCompany.from_item(item) for item in answer.get("companies", [])]
 
 
-def _suggestion_list(items: list[dict[str, Any]]) -> str:
-    return "; ".join(
-        f"{scraped_text.quoted(item.get('label') or item.get('name'))} — key {item['key']}, "
-        f"{', '.join(item.get('atses') or [])}, {item.get('boards', 1)} Board(s), "
-        f"{item.get('openings', 0):,} openings, {item.get('match', '?')} match"
-        for item in items
+def suggest(client: SpaceClient, value: str, limit: int = 8) -> list[DirectoryCompany]:
+    """The Trends picker's suggestions for ``value``, best first, each with how it matched."""
+    answer = client.read(
+        SpaceRoute.COMPANIES_SUGGEST, [("q", value), ("limit", str(limit))]
     )
+    return [DirectoryCompany.from_item(item) for item in answer.get("companies") or []]
+
+
+def _offered_list(companies: list[DirectoryCompany]) -> str:
+    return "; ".join(company.offered() for company in companies)
 
 
 def _by_name(client: SpaceClient, value: str, note: str = "") -> DirectoryCompany:
     """The directory company named ``value``, exactly or by alias, as the Trends picker offers it;
     a :class:`ToolFailure` with the suggestions otherwise. ``note`` leads any refusal."""
-    answer = client.read(SpaceRoute.COMPANIES_SUGGEST, [("q", value), ("limit", "8")])
-    items = answer.get("companies") or []
-    if items and items[0].get("match") in _ACCEPTED_MATCHES:
-        return DirectoryCompany.from_item(items[0])
-    if not items:
+    found = suggest(client, value)
+    if found and found[0].match in _ACCEPTED_MATCHES:
+        return found[0]
+    if not found:
         raise ToolFailure(
             f"{note}The Company directory has no company matching "
             f"{scraped_text.quoted(value)}. Trends reads directory companies only; "
@@ -126,7 +153,38 @@ def _by_name(client: SpaceClient, value: str, note: str = "") -> DirectoryCompan
         )
     raise ToolFailure(
         f"{note}No directory company is named exactly {scraped_text.quoted(value)}. Pass one "
-        f"of these keys instead: {_suggestion_list(items)}."
+        f"of these keys instead: {_offered_list(found)}."
+    )
+
+
+def find(
+    client: SpaceClient, value: str, limit: int
+) -> tuple[list[DirectoryCompany], str | None]:
+    """Every directory company ``value`` may mean, best first, none of them taken: a Board key's
+    own company, else the picker's suggestions for a name. The second item says when a value
+    shaped like a key was read as a name."""
+    value = value.strip()
+    if _looks_like_key(value):
+        try:
+            return lookup(client, [value]), None
+        except InvalidRequest:
+            return suggest(client, value, limit), _not_a_key(value)
+    return suggest(client, value, limit), None
+
+
+def alternatives(client: SpaceClient, value: str) -> str:
+    """What a search whose company-box text ``value`` matched no company name offers instead: the
+    directory companies it may mean (a typo, a prefix, a word of the name), or respelling it.
+    The offer is a courtesy, so a Space that cannot suggest leaves only the respelling."""
+    try:
+        found = suggest(client, value, ALTERNATIVES_OFFERED)
+    except SpaceError:
+        found = []
+    if not found:
+        return "Try a shorter or different spelling, or look it up with find_company."
+    return (
+        "Directory companies it may mean; pass one's key as `company`: "
+        f"{_offered_list(found)}."
     )
 
 

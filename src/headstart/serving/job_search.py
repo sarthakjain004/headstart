@@ -46,7 +46,7 @@ from headstart.search_filters.compiler import (
     build_filter,
     with_extra,
 )
-from headstart.serving import facets
+from headstart.serving import facets, location_counts
 
 # In the Space nothing calls `setup()` (ADR-0153's app.py boots straight into serving), which
 # is why the one boot line below is a WARNING — `logging.lastResort` carries WARNING and above
@@ -262,6 +262,10 @@ def request_account_clause(
 #: the largest measured is Hyatt's 83 (2026-09-24); the bound keeps a query string from growing
 #: the where-clause without limit.
 MAX_SCOPED_BOARDS = 200
+
+#: How many locations :meth:`JobSearch.locations` lists by default, and at most (ADR-0275).
+LOCATIONS_SHOWN = 10
+MAX_LOCATIONS = 50
 
 
 def scoped_boards_clause(args) -> str | None:
@@ -1385,3 +1389,18 @@ class JobSearch:
         return self._table.count_rows(
             filter=build_filter(SearchFilters(seen_within=hours), self.capabilities)
         )
+
+    def locations(self, args: Mapping[str, str]) -> dict[str, Any]:
+        """The locations the served jobs on ``board=`` (repeatable, required) carry most, at most
+        ``limit=`` of them (default :data:`LOCATIONS_SHOWN`) — see
+        :mod:`headstart.serving.location_counts`. A request naming no Board, too many, or a
+        ``limit`` outside 1 to :data:`MAX_LOCATIONS` is a :class:`ValueError`: without Boards it
+        would read every row's location."""
+        where = scoped_boards_clause(args)
+        if where is None:
+            raise ValueError("name at least one Board with board=")
+        limit = _int_arg(args)("limit")
+        limit = LOCATIONS_SHOWN if limit is None else limit
+        if not 1 <= limit <= MAX_LOCATIONS:
+            raise ValueError(f"limit must be from 1 to {MAX_LOCATIONS}")
+        return location_counts.top(self._table, where, limit)
