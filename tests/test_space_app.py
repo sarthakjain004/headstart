@@ -3755,3 +3755,38 @@ def test_a_window_is_one_scope_whatever_instant_inside_a_run_gap_asks(trends_app
     client = trends_app.app.test_client()
     first = client.get("/trends", query_string={"since": early}).get_json()
     assert client.get("/trends", query_string={"since": late}).get_json() == first
+
+
+def test_a_read_whose_count_cannot_be_written_never_reaches_the_router(
+    sets_app, hub, monkeypatch
+):
+    # #596: the counter was written after the router answered, so a failed write left a spent
+    # call uncounted and a retry read the old count. The slot is now reserved first: when that
+    # write fails, the router is never asked.
+    import headstart.alerts.store as st
+
+    client = _signed_in(sets_app, monkeypatch)
+    calls = []
+    monkeypatch.setattr(
+        sets_app.llm_router, "ask", lambda prompt: calls.append(prompt) or "{}"
+    )
+
+    def refuse(self, account, count):
+        raise st.StoreUnavailable("Hub commit failed")
+
+    monkeypatch.setattr(st.Store, "put_parses", refuse)
+    r = client.post("/profile/parse", json={"text": "résumé"}, base_url=_HTTPS)
+    assert r.status_code == 503
+    assert calls == []
+
+
+def test_a_too_long_resume_refunds_its_reserved_read(sets_app, hub, monkeypatch):
+    client = _signed_in(sets_app, monkeypatch)
+    _router_answers(sets_app, monkeypatch)
+    text = "x" * (sets_app.profile_extract.MAX_RESUME_CHARS + 1)
+    r = client.post("/profile/parse", json={"text": text}, base_url=_HTTPS)
+    assert r.status_code == 413
+    assert (
+        client.get("/profile", base_url=_HTTPS).json["parses_left"]
+        == sets_app.MAX_PARSES
+    )

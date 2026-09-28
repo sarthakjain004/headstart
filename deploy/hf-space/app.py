@@ -674,23 +674,31 @@ def _run_resume_read(email: str, store: Store, account: str):
             {"error": f"no résumé reads left — this account has used all {MAX_PARSES}"}
         ), 400
     body = request.get_json(silent=True) or {}
+    # The read is counted before the router is asked, not after it answers (#596): a counter
+    # write that failed after the call left it spent and uncounted. A failure here is a 503 with
+    # nothing spent. The count is handed back only where no call was made or none is known to
+    # have been: a refusal before the router, or `RouterUnavailable` — which also covers a call
+    # the router served and our side timed out on, left uncounted rather than charging every
+    # outage to the user.
+    store.put_parses(account, used + 1)
     try:
         fields = profile_extract.extract(
             str(body.get("text") or ""), ask=llm_router.ask
         )
     except profile_extract.ResumeTooLong as exc:
+        store.put_parses(account, used)
         return jsonify({"error": str(exc)}), 413
     except profile_extract.EmptyExtraction as exc:
         # The router answered — the call was spent, so it counts against the cap.
-        store.put_parses(account, used + 1)
         return jsonify({"error": str(exc)}), 502
     except profile_extract.ResumeError as exc:  # EmptyResume: refused before the router
+        store.put_parses(account, used)
         return jsonify({"error": str(exc)}), 400
     except llm_router.RouterUnavailable:
+        store.put_parses(account, used)
         # Detail stays in the container log's traceback-free world: the caller only needs
         # "temporarily off", and the reason may name internal hosts.
         return jsonify({"error": "résumé reading is temporarily unavailable"}), 503
-    store.put_parses(account, used + 1)
     updated = (store.get_profile(account) or Profile.blank(email)).revised(fields)
     store.put_profile(updated)
     return jsonify(_profile_out(updated, used + 1))
