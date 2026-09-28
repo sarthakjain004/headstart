@@ -925,12 +925,19 @@ class WorkdayScraper(BaseScraper):
         seen: set[str] = set()
         postings: list[dict[str, Any]] = []
 
+        by_key: dict[str, dict[str, Any]] = {}
+
         def absorb(batch: list[dict[str, Any]]) -> None:
             for item in batch:
                 key = _posting_key(item)
                 if key in seen:
+                    # A capped Board's root page is read unfiltered, before the family slice that
+                    # names the same posting's family: keep the family the slice learned.
+                    if item.get("jobFamilyGroup"):
+                        by_key[key].setdefault("jobFamilyGroup", item["jobFamilyGroup"])
                     continue
                 seen.add(key)
+                by_key[key] = item
                 postings.append(item)
 
         self._exhaust(_FIXED_FACETS_BY_SLUG.get(self.slug, {}), absorb, depth=0)
@@ -1425,10 +1432,14 @@ class WorkdayScraper(BaseScraper):
         total = int(first.get("total", 0))
         # Postings this slice handed over, before any dedup — for the shortfall line below.
         read = 0
+        family = _slice_family(applied, first.get("facets") or [])
 
         def counted(postings: list[dict]) -> None:
             nonlocal read
             read += len(postings)
+            if family:
+                for posting in postings:
+                    posting.setdefault("jobFamilyGroup", family)
             absorb(postings)
 
         counted(first.get("jobPostings") or [])
@@ -2033,6 +2044,42 @@ def _remote_from(remote_type: Any) -> bool | None:
         return True
     if "site" in norm or "office" in norm:
         return False
+    return None
+
+
+def listing_size(page: dict[str, Any]) -> int:
+    """A listing page's Board size: its ``total``, except where that is the 2,000 cap, which a
+    capped listing states whatever the real size — then the counts of the facet the crawl would
+    split on, which partition the Board (nvidia 2026-09-28: total 2000, ``jobFamilyGroup``
+    counts summing to 2,646, the crawl reading 2,646 unique postings)."""
+    total = int(page.get("total", 0))
+    if total != _QUERY_TOTAL_CAP:
+        return total
+    split = _pick_subdivision_facet(page.get("facets") or [], set())
+    return max(total, sum(count for _, count in split[1])) if split else total
+
+
+def _slice_family(
+    applied: dict[str, list[str]], facets: list[dict[str, Any]]
+) -> str | None:
+    """The family name every posting in this slice shares, when the slice pins exactly one
+    ``jobFamilyGroup`` — else None.
+
+    Listing items never carry their family (0 of 20 items on each of cmu, blackline, genmills,
+    accenture and nvidia, 2026-09-28) and neither does the detail's ``jobPostingInfo``, so this is
+    the only source of ``department``. It costs no request: a filtered page's own facet list
+    still names every family (nvidia's Facilities slice, 2026-09-28). It reaches only postings
+    read inside a one-family slice — capped Boards subdivided on ``jobFamilyGroup`` first, and
+    the single-family ``_FIXED_FACETS_BY_SLUG`` Boards. Slicing every Board by family to name the
+    rest would cost a listing query per family on every Board; that was not taken."""
+    ids = applied.get("jobFamilyGroup") or []
+    if len(ids) != 1:
+        return None
+    for facet in facets:
+        if isinstance(facet, dict) and facet.get("facetParameter") == "jobFamilyGroup":
+            for value in facet.get("values") or []:
+                if isinstance(value, dict) and value.get("id") == ids[0]:
+                    return (value.get("descriptor") or "").strip() or None
     return None
 
 

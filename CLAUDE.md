@@ -8,12 +8,14 @@ HeadStart surfaces job openings read directly from company ATS boards.
   to India.
 - **Roles: software-engineering / tech openings.** Only tech roles are embedded, indexed, and shown.
   Two layers were designed to optimise two different costs (ADR-0017). The **source query**, where
-  an ATS cheaply supports it, would trim *scraping* volume — but it is **not currently wired on any
-  scraper**, and it would only ever be a best-effort reducer, never authoritative (taxonomies are
-  inconsistent and it would drop tech jobs mis-filed under odd departments). Don't read the existing
-  ATS query params as that layer: Lever is fetched as a plain `?mode=json` board, and Workday's
-  `jobFamilyGroup` facet is the 2,000-cap subdivision whose *union covers the full board*, so it
-  reduces nothing. The **authoritative tech gate is a recall-biased post-hoc filter**
+  an ATS cheaply supports it, would trim *scraping* volume — it is wired on **exactly six Workday
+  Boards** (Walmart, CVS, Target, TJX, Loblaw, Lowe's: `_FIXED_FACETS_BY_SLUG`, ADR-0073), each a
+  human-approved recall trade pinned to its tech families and Full time, and nowhere else. It is
+  only ever a best-effort reducer, never authoritative (taxonomies are inconsistent and it drops
+  tech jobs mis-filed under odd departments). Don't read the other ATS query params as that layer:
+  Lever is fetched as a plain `?mode=json` board, and Workday's `jobFamilyGroup` facet on every
+  other Board is the 2,000-cap subdivision whose *union covers the full board*, so it reduces
+  nothing. The **authoritative tech gate is a recall-biased post-hoc filter**
   (`headstart.jobs.tech_filter`): the scrape writes the full set to `data/jobs/{ats}.jsonl`, the filter
   keeps the tech subset in `data/jobs/tech/{ats}.jsonl`, and everything downstream (feed, embedding,
   index, UI) reads that. Post-hoc saves no scraping, but it is the only layer that is uniform across

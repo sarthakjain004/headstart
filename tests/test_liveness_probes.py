@@ -330,6 +330,43 @@ def test_workday_migrated_recovered_on_sweep(monkeypatch):
     )
 
 
+def test_workday_capped_total_is_read_off_the_facet_it_would_split(monkeypatch):
+    """A capped listing states `total` 2,000 whatever the real size. nvidia, 2026-09-28: total
+    2000, its `jobFamilyGroup` counts summing to 2,646 (the scraper reads 2,646 unique). Values
+    trimmed to three; the probe must store the facet sum, not the cap."""
+    facets = [
+        {
+            "facetParameter": "jobFamilyGroup",
+            "values": [
+                {
+                    "descriptor": "Engineering",
+                    "id": "0c40f6bd1d8f10ae43ffaefd46dc7e78",
+                    "count": 1731,
+                },
+                {
+                    "descriptor": "Sales",
+                    "id": "0c40f6bd1d8f10ae43ffcac5bbec7e90",
+                    "count": 329,
+                },
+                {
+                    "descriptor": "Operations",
+                    "id": "0c40f6bd1d8f10ae43ffc3fc7d8c7e8a",
+                    "count": 122,
+                },
+            ],
+        }
+    ]
+    monkeypatch.setattr(
+        cl, "_post", lambda url, body, headers: (200, {"total": 2000, "facets": facets})
+    )
+    assert cl.p_workday(
+        "nvidia", "https://nvidia.wd5.myworkdayjobs.com/NVIDIAExternalCareerSite"
+    ) == (
+        cl.LIVE,
+        2182,
+    )
+
+
 def test_workday_gone_everywhere_is_dead(monkeypatch):
     # 422 on every data center -> definitive "not here" -> DEAD
     monkeypatch.setattr(
