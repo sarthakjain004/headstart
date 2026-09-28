@@ -35,8 +35,13 @@
   --serif:ui-serif,"Iowan Old Style",Georgia,serif;
   --step:.18s cubic-bezier(.2,.7,.3,1);
   /* The page's side gutter (ADR-0249's fluid-shell amendment): small and fluid, so the page
-     uses the screen it is on instead of centring a fixed-width box inside it. */
-  --gutter:clamp(12px, 1.5vw, 32px);
+     uses the screen it is on instead of centring a fixed-width box inside it. Not below 20px:
+     at 12px a 561px window sat closer to its edges than a 560px phone does (~31px). */
+  --shell-gutter:clamp(20px, 1.5vw, 32px);
+  /* Home's hero and step cards stop growing here: they are prose beside a picture, and past it
+     the picture grew 890px tall 1,600px from its text (measured at 3440). Chosen to hold text
+     and frame side by side at a 1920px window with the sidebar folded (1774px of content). */
+  --home-block-max:1720px;
   /* The wide-screen sidebar's column, its folded width, and the gap beside it (ADR-0249). */
   --nav-w:176px; --nav-folded-w:64px; --nav-gap:24px;
   /* What the guided tour dims the page with: dark in both themes, a touch lighter on light. */
@@ -77,13 +82,13 @@ body{
 }
 
 /* The whole viewport, less a small fluid gutter (ADR-0249's fluid-shell amendment). The
-   centred 1150px measure this replaces left 67px of background on each side at 1351 and 696
+   centred 1150px measure this replaces (#372) left 67px of background each side at 1351 and 696
    at 3440 — the owner's "too much empty space on left and right". Every block on the page is
    a descendant of this element and none sets a width of its own, so they all start and end on
    the same two x's at every viewport; readability is kept by capping prose (a ~70ch measure on
    paragraphs), never the layout. Past the ultrawide breakpoint the extra width buys a SECOND
    COLUMN of results rather than wider rows — see the min-width:1720px block. */
-.shell{ position:relative; z-index:1; padding:18px var(--gutter) 72px; }
+.shell{ position:relative; z-index:1; padding:18px var(--shell-gutter) 72px; }
 /* Deliberately not a narrowing rule: a cap here is how the ragged right edge got in before. */
 .content{ max-width:100%; }
 /* The filter rail is ~20 controls deep and sits before the results in the DOM, so a keyboard
@@ -211,6 +216,7 @@ textarea:focus{ border-color:var(--accent); }
 .ghost:hover{ border-color:var(--accent); transform:translateY(-1px); }
 .ghost:disabled{ opacity:.55; cursor:wait; transform:none; }
 .note{ color:var(--ink-3); font-size:12.5px; }
+p.note{ max-width:74ch; }   /* running text (Profile, Résumé): a measure, now the column is wide */
 
 /* ---- search layout: the filters beside the results on a wide screen, above them on a narrow
        one (ADR-0116, issue #755). ---- */
@@ -634,7 +640,8 @@ textarea:focus{ border-color:var(--accent); }
 /* Two columns where there is room: the caption block used 640px of a 1940px panel, so the note
    opens beside the caption rather than under it. */
 @media (min-width:1100px){
-  .chart-note{ display:grid; grid-template-columns:1fr 1fr; gap:4px 32px; align-items:start; }
+  .chart-note{ display:grid; grid-template-columns:1fr 1fr; gap:4px 32px; align-items:start;
+    max-width:calc(2 * 74ch + 32px); }   /* two measures side by side, however wide the panel */
   .chart-note #trends-foot, .chart-note .note-more{ margin:0; max-width:none; }
   .chart-note .kind{ margin:6px 0 0; max-width:none; }
 }
@@ -957,17 +964,23 @@ textarea:focus{ border-color:var(--accent); }
    reason — a one-result page gets a single full-width row, not a half-width card beside a
    void. */
 @media (min-width:1720px){
-  #results, #matches-results, #saved-results{ display:grid; grid-auto-flow:column;
+  #results, #matches-results, #saved-results{ --cols:2; display:grid; grid-auto-flow:column;
     grid-template-rows:repeat(var(--rows,10), min-content);
     grid-auto-columns:minmax(0,1fr); gap:0 14px; align-items:start; }
   .card{ grid-template-columns:minmax(0,1fr) 178px 52px 44px; gap:0 14px; }
   .card .pay{ font-size:12.5px; white-space:nowrap; }
 }
+/* A third column from 2560: two columns there made a ~1,480px card with its pay ~1,100px from its
+   title (measured at 3440). --cols tells app.js how deep each column is. */
+@media (min-width:2560px){
+  #results, #matches-results, #saved-results{ --cols:3; }
+}
 
 /* ---- phones. Checked against a 390px viewport: the counter used to wrap onto two lines and
    shove the wordmark, and the search field collapsed to about fifteen characters. ---- */
 @media (max-width:560px){
-  /* The phone layout as it was before the fluid shell (ADR-0249): 94vw, centred, 14px pad. */
+  /* A phone keeps the layout it had: 94vw, centred, 14px pad. The fluid gutter is for the
+     width a phone does not have, and the owner asked for the phone to stay as it was. */
   .shell{ max-width:94vw; margin:0 auto; padding:18px 14px 60px; }
   .count, #who{ display:none; }        /* the index size is context, not a control */
   /* Beside the field, not stacked under it. The stacked form was chosen when the button kept
@@ -1234,8 +1247,6 @@ textarea:focus{ border-color:var(--accent); }
   .nav-item[aria-current="page"]{ background:var(--raise); box-shadow:inset 3px 0 0 var(--accent); }
   .nav-ico{ display:block; }
 }
-/* Folding hands the sidebar's width straight to the content column: the shell has no ceiling
-   to shrink (ADR-0249's amendments). */
 
 /* ---- the folded sidebar (ADR-0249): a column of icons. `data-nav` on <html> is set before
        the first paint (base.html), so a reload opens at the right width instead of sliding into
@@ -1273,10 +1284,9 @@ textarea:focus{ border-color:var(--accent); }
 
 /* ---- the Home tab (ADR-0249). The landing view: what HeadStart is and the way into it. ---- */
 .home{ display:grid; gap:44px; padding:8px 0; }
-/* Capped as one composition, not as prose: past ~1720px the video frame grew to 890px tall and
-   the text sat 1,600px away from it (measured at 3440). The cards and sections below keep the
+/* Capped as one composition, not as prose (--home-block-max). The feature cards below keep the
    full width. */
-.home-hero{ display:grid; gap:28px; align-items:center; max-width:1720px; }
+.home-hero{ display:grid; gap:28px; align-items:center; max-width:var(--home-block-max); }
 @media (min-width:900px){
   .home-hero{ grid-template-columns:minmax(0,1.05fr) minmax(0,1fr); gap:40px; }
 }
@@ -1341,7 +1351,11 @@ textarea:focus{ border-color:var(--accent); }
   transition:border-color var(--step), transform var(--step); }
 .home-card b{ color:var(--ink); font-size:15px; font-weight:600; }
 .home-card:hover{ border-color:var(--accent); transform:translateY(-1px); }
+/* Three prose cards: uncapped at 3440 each ran ~150 characters a line. The cap is min()'d with
+   100% because auto-fit counts its tracks off a max-width: a bare 1720px laid three 240px
+   tracks side by side on a 390px phone and scrolled the page sideways (caught by ui_smoke). */
 .home-steps{ display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:12px;
+  max-width:min(100%, var(--home-block-max));
   margin:0; padding:0; list-style:none; counter-reset:step; }
 .home-steps li{ position:relative; padding:16px 18px 16px 58px; counter-increment:step;
   background:var(--raise); border:1px solid var(--rule); border-radius:var(--r-lg);
@@ -1351,7 +1365,7 @@ textarea:focus{ border-color:var(--accent); }
   background:var(--raise-2); border:1px solid var(--rule-2); color:var(--accent);
   font:700 13px var(--mono); }
 .home-steps b, .home-notes b{ display:block; margin-bottom:2px; color:var(--ink); font-weight:600; }
-.home-notes{ display:grid; gap:14px; max-width:70ch; margin:0; padding:0; list-style:none; }
+.home-notes{ display:grid; gap:14px; max-width:72ch; margin:0; padding:0; list-style:none; }
 .home-notes li{ padding-left:16px; border-left:2px solid var(--rule-2); color:var(--ink-2);
   font-size:14px; line-height:1.6; }
 .home-notes a{ color:var(--accent); }
