@@ -106,3 +106,45 @@ def test_to_telegram_escapes_markup_so_telegram_cannot_reject_the_message():
     assert "<dev>" not in only and "&lt;dev&gt;" in only
     assert "R&amp;D" in only
     assert "a=1&amp;b=2" in only
+
+
+UNSAFE = [
+    {"company": "Evil", "title": "A", "score": 1.0, "url": "javascript:alert(1)"},
+    {"company": "Evil", "title": "B", "score": 1.0, "url": " JavaScript:alert(2)"},
+    {"company": "Evil", "title": "C", "score": 1.0, "url": "data:text/html,<b>x"},
+    {"company": "Ok", "title": "D", "score": 1.0, "url": "HTTPS://jobs.example/4"},
+]
+
+
+def test_email_links_only_http_urls():
+    """Only http(s) ships as a link (#594), the rule `safeUrl` applies in app.js."""
+    digest = d.render(SUB, UNSAFE, "https://u/x")
+
+    for body in (digest.html, digest.text):
+        assert "javascript" not in body.lower() and "data:" not in body
+    assert (
+        "HTTPS://jobs.example/4" in digest.html
+        and "HTTPS://jobs.example/4" in digest.text
+    )
+
+
+def test_telegram_links_only_http_urls():
+    only = "\n".join(d.to_telegram(SUB, UNSAFE))
+
+    assert "javascript" not in only.lower() and "data:" not in only
+    assert 'href="HTTPS://jobs.example/4"' in only
+
+
+def test_xlsx_links_only_http_urls():
+    pytest.importorskip("xlsxwriter")
+    openpyxl = pytest.importorskip("openpyxl")
+    import io
+
+    sheet = openpyxl.load_workbook(io.BytesIO(d.to_xlsx(UNSAFE))).active
+    links = [sheet.cell(row=r, column=5).hyperlink for r in range(2, len(UNSAFE) + 2)]
+    assert [link.target if link else None for link in links] == [
+        None,
+        None,
+        None,
+        "HTTPS://jobs.example/4",
+    ]
