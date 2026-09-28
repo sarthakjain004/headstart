@@ -445,17 +445,41 @@ def test_no_share_change_off_a_share_of_zero_at_the_start() -> None:
     assert interns["index_base"] is None
 
 
-def test_with_no_pick_nothing_is_taken_out_and_changes_are_still_marked() -> None:
-    golden = _golden("index_marks_counting_changes_and_takes_nothing_out")
+def test_with_no_pick_a_counting_change_is_taken_out_and_every_change_is_marked() -> (
+    None
+):
+    """The index takes a counting change out as a pick does (ADR-0270): Software Engineering read
+    −36,426 (−34.4%) over a week, all of it three marked changes. The step is sized on the first
+    row; a change that moved no line is still marked."""
+    golden = _golden("index_takes_a_counting_change_out_and_marks_every_change")
     reading = golden["reading"]
-    points = {s["name"]: s["points"] for s in golden["answer_input"]["series"]}
-    for line in reading["lines"]:
-        assert line["move"]["not_hiring"] == []
-        assert line["move"]["hiring"] == line["move"]["latest"] - line["move"]["start"]
-        assert line["netted"] == points[line["name"]]
-        assert line["steps_at"] == []
-    assert [c["kind"] for c in reading["marked_changes"]] == ["counting", "counting"]
-    assert reading["day_markers"]
+    lines = {line["name"]: line["move"] for line in reading["lines"]}
+    swe = lines["software-engineering"]
+    assert (swe["start"], swe["latest"], swe["hiring"]) == (40000, 36200, 400)
+    assert [(c["kind"], c["size"]) for c in swe["not_hiring"]] == [("counting", -4200)]
+    assert lines["web-development"]["hiring"] == 200
+    assert reading["total"]["move"]["hiring"] == 600
+    filter_change, extraction = reading["marked_changes"]
+    assert filter_change["sizes"] == {"__total__": -3700}
+    assert extraction["fields"] == ["derivations_version"]
+    assert extraction["sizes"] == {}
+    [first_row] = reading["company_lines"]
+    assert (first_row["name"], first_row["label"]) == ("__total__", "All tech roles")
+    assert [d["changes"] for d in reading["day_markers"]] == [
+        [filter_change["id"], extraction["id"]]
+    ]
+
+
+def test_a_line_first_counted_inside_the_window_says_when() -> None:
+    """Hardware & Silicon, sorted in by the Sep 25 category-list change, withheld its percentage
+    for "a window under 3 days" on a 21-day window (#833)."""
+    reading = _golden("category_sorted_in_by_a_counting_change")["reading"]
+    web = next(line for line in reading["lines"] if line["name"] == "web")
+    assert web["arrived_by"] == CauseKind.COUNTING
+    assert web["move"]["percent_withheld"] == "first counted on Sep 15"
+    # A short window over a line counted all through it still says the window is short.
+    [short] = _golden("company_counted_before_a_one_day_window")["reading"]["lines"]
+    assert short["move"]["percent_withheld"] == f"a window under {MIN_SPAN_DAYS} days"
 
 
 # ---- the measured cases the golden answers carried (ADR-0230) ----------------------------------
@@ -592,16 +616,16 @@ def test_the_checker_catches_a_share_netted_a_second_time() -> None:
     assert any("share" in v for v in violations)
 
 
-def test_the_checker_catches_something_taken_out_with_no_pick() -> None:
+def test_the_checker_catches_an_index_first_row_not_sized_as_marked() -> None:
     def breaking(r):
-        move = r["lines"][0]["move"]
-        move["hiring"] -= 5
-        move["not_hiring"] = [
-            {"change": "counting@x", "kind": "counting", "label": "x", "size": 5}
-        ]
+        r["marked_changes"][0]["sizes"]["__total__"] += 1
 
-    violations = _broken("index_marks_counting_changes_and_takes_nothing_out", breaking)
-    assert any("no pick" in v for v in violations)
+    violations = _broken(
+        "index_takes_a_counting_change_out_and_marks_every_change", breaking
+    )
+    assert violations == [
+        "company line __total__: its Not hiring is not its Marked changes"
+    ]
 
 
 def test_the_checker_catches_a_not_hiring_total_that_is_not_its_causes() -> None:

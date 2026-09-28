@@ -4,7 +4,9 @@
 [ADR-0040](0040-role-trend-ledger.md) (the Space charts the newest version only) ·
 **Relates to:** [ADR-0143](0143-trends-retain-board-deltas-for-arbitrary-comparable-cohorts.md) (the Board-delta
 ledger), [ADR-0164](0164-mark-when-the-definition-changed-not-just-the-data.md) (epochs),
-[ADR-0185](0185-trends-narrow-to-companies-picked-from-a-directory-of-boards.md) (company trends)
+[ADR-0185](0185-trends-narrow-to-companies-picked-from-a-directory-of-boards.md) (company trends) ·
+**Amended by:** [ADR-0270](0270-the-index-view-takes-a-counting-change-out-too.md) (the index view
+takes a counting change out too)
 
 ## Context
 
@@ -59,7 +61,7 @@ company's tech total can step at it.
 
 - A refit costs the chart one marked step instead of its whole history.
 - The index view (no pick) shows the step too. It is marked, and its figures are not netted, as
-  before.
+  before. *(Amended by ADR-0270: the index takes the step out too, sized on its first row.)*
 - A category's line across a refit compares two taxonomies. That comparison is only as good as
   the taxonomies' overlap, and the marker is the only warning.
 - A whole company's tech line can move at a refit too, where rows move to or from the non-tech

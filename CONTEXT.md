@@ -342,11 +342,11 @@ What decides what a count means: the family list, the classifier head, the tech 
 _Avoid_: `centroid_version` or "series version" — both are gone since ADR-0230 step 6; a counting change is a tick whose Methodology moved.
 
 **Counting change** (ADR-0164, ADR-0188):
-A tick where a **Methodology** stamp moved, so its step in a line is a change in how the index counts, not hiring. Trends marks it on the chart and nets it out of a line's change.
+A tick where a **Methodology** stamp moved, so its step in a line is a change in how the index counts, not hiring. Trends marks it on the chart and nets it out of a line's change, the index's with no company picked included (ADR-0270).
 _Avoid_: calling it a data change — the Jobs may be the same; the rules that count them moved.
 
 **Netting** (ADR-0185, ADR-0230):
-Taking out of a line's change the steps that are not hiring — **Counting change**s, **Found Board**s' backlogs and dedup removals — so what is left reads as hiring. Decided once, by `trends.netting` inside `trend_history.answer`, when the history is read (ADR-0230); the Trends tab draws each line's `net` and `steps` as it is given them, and the Hot tab reads its figures off the same answers.
+Taking out of a line's change the steps that are not hiring — **Counting change**s, **Found Board**s' backlogs and dedup removals — so what is left reads as hiring. Decided once, by `trends.netting` inside `trend_history.answer`, when the history is read (ADR-0230); the Trends tab draws each line's `net` and `steps` as it is given them, and the Hot tab reads its figures off the same answers. With no company picked only **Counting change**s are netted: a Found Board's backlog and a dedup removal are sized per company, so the index's lines still carry them (ADR-0270).
 _Avoid_: storing a netted figure — the rule has changed in most of ADR-0185's rounds, so a stored net would go stale with it.
 
 **Line reading** (ADR-0233):

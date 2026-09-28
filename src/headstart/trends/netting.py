@@ -9,7 +9,9 @@ the latest value stays the real one and the history before a step is brought to 
 ``line_reading``'s private implementation (ADR-0233), which reads how ``_net`` took each step out
 (``_NetTrace``) into a line's hiring and its named causes; the Trends tab and Hot both read that.
 
-With no pick nothing is taken out: the index chart keeps a counting change's jump, marked.
+With no pick a counting change is taken out as under a pick (ADR-0270): the index is a view
+whose Boards any counting change can move, duplicate removal included. A Found Board and a
+duplicate removal are sized per company, so the index still keeps those.
 """
 
 from __future__ import annotations
@@ -283,12 +285,15 @@ class _View:
 def _notes(answer: dict) -> list[dict]:
     """Every point in the window where lines move for a reason that is not hiring.
 
-    - A counting change (ADR-0164) is listed on every chart with no pick. Under a pick it is
-      listed only where it moves the lines, and taken out of them: a taxonomy refit, a
+    - A counting change (ADR-0164) is taken out of the lines it moves: a taxonomy refit, a
       family-list or family-assignment change, a tech-filter change (Wipro's "+74.7%" held about
       +25% from the Sep 17 filter step alone), an extraction change on a Level breakdown, or
       duplicate removal (ADR-0188) at a pick it can touch. The run after each change is left out
-      too, since a change can land over two runs (Amazon's Sep 17: +308, then −439).
+      too, since a change can land over two runs (Amazon's Sep 17: +308, then −439). Under a pick
+      it is listed only where it moves the lines. With no pick it is taken out the same way
+      (ADR-0270), duplicate removal included, since the index holds every Board it can touch,
+      and every other change is still listed, marked and taken out of nothing: Software
+      Engineering read −36,426 (−34.4%) over a week, all of it three counting changes.
     - Under New a tech-filter change is also taken out a week later, when its openings age out.
     - A Board found later lands its backlog at once (``discovered``).
     - Duplicate rows removed at a pick's Boards (``evicted``, #649), sized exactly, per Board.
@@ -300,6 +305,8 @@ def _notes(answer: dict) -> list[dict]:
     picked = bool(companies)
     bands = bool(answer.get("family")) and answer.get("split_by") == "band"
     touched = [c["key"] for c in companies if dedup_touched(c.get("board_keys") or [])]
+    # The index holds every Board, so duplicate removal can always move some of it.
+    dedup_moves = bool(touched) or not picked
     notes: list[dict] = []
 
     def note(**given) -> dict:
@@ -351,7 +358,7 @@ def _notes(answer: dict) -> list[dict]:
                         i=k,
                         epoch=True,
                         echo=True,
-                        withhold=picked,
+                        withhold=True,
                         fields=[_TECH_FILTER],
                         source=epoch["ts"],
                         touched=touched,
@@ -372,16 +379,24 @@ def _notes(answer: dict) -> list[dict]:
         # The same fields, which its label is said from (`change_label`): a label joined from
         # each field's own sentence repeated "so some jobs …" once a field.
         named = [f for f in fields if not picked or f != _DEDUP or touched]
-        if not picked:
-            notes.append(note(i=i, epoch=True, changed=said, named=named))
-            continue
+        # With no pick a change the lines keep is still marked, on its own run.
+        marker = note(
+            i=i,
+            epoch=True,
+            fields=fields,
+            changed=said,
+            named=named,
+            source=epoch["ts"],
+        )
         lines_move = moves_lines(fields, bands)
-        dedup = not lines_move and bool(touched) and _DEDUP in fields
+        dedup = not lines_move and dedup_moves and _DEDUP in fields
         if not (lines_move or dedup):
+            if not picked:
+                notes.append(marker)
             continue
         dedup_only = fields == [_DEDUP]
         shared = {
-            "companies": touched if dedup else None,
+            "companies": touched if dedup and picked else None,
             # An extraction change re-sorts a category's levels, never its total.
             "bands_only": not any(
                 f in LINE_MOVING_FIELDS or f in (_DEDUP, NEW_BECAME_INFLOW)
@@ -406,6 +421,8 @@ def _notes(answer: dict) -> list[dict]:
                     **shared,
                 )
             )
+        elif not picked:
+            notes.append(marker)
         # Only for a change inside the window: at its first run the change's own jump is not on
         # the chart, so its settling run cannot be told from an ordinary one.
         if i > 0 and i + 1 < len(stamps):

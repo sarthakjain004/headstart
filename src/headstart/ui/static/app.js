@@ -1912,7 +1912,7 @@ function companyNote(d){
 // `marked`: which markers the chart actually drew (drawTrends), so no sentence here points at a
 // line that is not on it.
 function stepNote(d, marked){
-  if (!trendPicks.length || !d.series.length) return '';
+  if (!d.series.length) return '';
   const parts = [];
   if (marked.found)
     parts.push(`Solid grey lines mark jumps that aren’t hiring: ${
@@ -2002,14 +2002,15 @@ function verdictLines(d){
   if (!d.series.length || !d.stamps.length) return [];
   const reading = d.reading || {};
   // The index gets one sentence too: its turnover (ADR-0227), the figure a job hunter cannot read
-  // off a chart of levels. Its lines keep a counting change's jump, marked, so the net it gives is
-  // the hiring one, opened less closed, over the runs the Space kept.
+  // off a chart of levels. Its lines take a counting change out (ADR-0270) but keep Boards found
+  // later, so the net it gives is the hiring one, opened less closed, over the runs the Space
+  // kept.
   if (!trendPicks.length){
     const whole = reading.total;
     const t = whole && whole.move.turnover;
     if (!t) return [];
     // Its net is the hiring one, opened less closed; recounted jobs are not hiring. Said as
-    // opened against closed, never as "more openings": the lines keep a counting change's jump,
+    // opened against closed, never as "more openings": the lines keep a found Board's backlog,
     // so a line up 400 read "about 10 more openings" beside it. That the runs of such a change
     // are left out (`turnover_left_out`) is said under "How to read this", not here (ADR-0248).
     const net = t.net == null ? '' : t.net < 0 ? `about ${aboutCount(-t.net)} more closed than opened — `
@@ -2739,18 +2740,21 @@ function latestLevel(s){
   if (trendUnit !== 'share') return line.move.latest;
   return line.move.share ? line.move.share.latest : null;
 }
-// The stamp a picked company's category first held openings, when that is inside the window and
+// The stamp a category first held openings, when that is inside the window and, under a pick,
 // after every pick was counted: Micron's Architecture, new at the Sep 24 refit, read "→ +0
-// openings" over what looked like twelve flat days. Stock only — under New a line also starts
-// where a Board's first-week hold ends — and never a company's own line, which says when it
-// was counted. Whether a counting change sorted it in is the reading's `arrived_by`: Stripe's
-// "Web & .NET Development 16 new since Sep 24" was the Sep 24 family-assignment change sorting
-// 16 existing jobs into it, which "new since" read as hiring.
+// openings" over what looked like twelve flat days, and the index's Hardware & Silicon, new at
+// the Sep 25 list change, read "a window under 3 days" on a 21-day window (#833). Stock only —
+// under New a line also starts where a Board's first-week hold ends — and never a company's own
+// line, which says when it was counted. Whether a counting change sorted it in is the reading's
+// `arrived_by`: Stripe's "Web & .NET Development 16 new since Sep 24" was the Sep 24
+// family-assignment change sorting 16 existing jobs into it, which "new since" read as hiring.
 function firstSeen(s, d){
-  if (!d || !trendPicks.length || trendMetric !== 'stock' || !s || s.name === '__total__' || s.name === '__other__'
+  if (!d || trendMetric !== 'stock' || !s || s.name === '__total__' || s.name === '__other__'
     || VIEWS[viewKind(d)].split === 'company') return null;
   const first = s.points.findIndex(v => v != null);
   if (first < 1) return null;
+  // With no pick every line is counted from the window's first run (ADR-0270).
+  if (!trendPicks.length) return d.stamps[first];
   const counted = countedSince(d);
   const youngest = counted[counted.length - 1];
   return youngest && d.stamps[first] > youngest ? d.stamps[first] : null;
@@ -3320,8 +3324,8 @@ function drawTrends(){
   // company's line and a title-matched role's line cannot show.
   if (el('trends-how-moves')) el('trends-how-moves').hidden = ['total', 'company', 'roles'].includes(viewKind(d));
   // One short caption for the view on screen; "How to read this" defines all three units
-  // (ADR-0248). With no pick nothing is netted, so a found Board lifts every Change line, and
-  // that caption says why the dashed line is there.
+  // (ADR-0248). With no pick a found Board is not netted (ADR-0270), so it lifts every Change
+  // line, and that caption says why the dashed line is there.
   const parts = [];
   parts.push(trendMetric === 'new'
     ? `Jobs ${newCounts(d)}.`
@@ -3704,14 +3708,16 @@ function markedText(item){
 // same golden readings, so neither side can drift.
 // The page runs it on every reading it draws (problemsOf) and says when one fails.
 //   1. every line: latest − start = hiring + Σ not hiring;
-//   2. a company line's Not hiring is its Marked changes, change by change;
+//   2. a company line's Not hiring is its Marked changes, change by change; with no pick the
+//      first row is the index's company line (ADR-0270);
 //   3. a breakdown's rows, with its closing row, add up to its first row in start, latest, hiring
 //      and Not hiring; the closing row starts and ends at 0 and is one figure, hiring N and one
 //      counting-change cause −N, N ≠ 0;
 //   5. share is the netted count over the netted denominator, and the percentage hiring over the
 //      netted start, given only off INDEX_BASE_FLOOR openings or more, neither netted a second
 //      time; the share's own change is its latest over its start, withheld with the percentage;
-//   6. with no pick nothing is taken out;
+//   6. retired by ADR-0270, which takes a counting change out with no pick too ("with no pick
+//      nothing is taken out");
 //   7. a category, level or role line mostly re-counted in the window (MOSTLY_RECOUNTED: its
 //      counting changes took openings out, and took out more than was left, or left under
 //      INDEX_BASE_FLOOR of a start of MOVER_FLOOR or more) gives no percentage, in any unit, and no index base, and says it is
@@ -3794,10 +3800,8 @@ function checkReading(reading){
     if (isRecounted && m.percent != null) out.push(`${where}: it gives a percentage though mostly re-counted`);
     if ((m.percent_withheld === MOSTLY_RECOUNTED) !== isRecounted)
       out.push(`${where}: it is said to be mostly re-counted where it is not`);
-    if (!reading.picked && (m.not_hiring.length || m.hiring !== m.latest - m.start))
-      out.push(`${where}: with no pick, something was taken out`);
   }
-  if (reading.picked) (reading.company_lines || []).forEach(line => {
+  (reading.company_lines || []).forEach(line => {
     const causes = new Map(line.move.not_hiring.map(c => [c.change, c.size]));
     const listed = [...changes.values()].filter(c => line.name in c.sizes);
     if (causes.size !== listed.length || listed.some(c => causes.get(c.id) !== c.sizes[line.name]))

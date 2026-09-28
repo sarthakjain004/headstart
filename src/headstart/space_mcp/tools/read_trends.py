@@ -4,11 +4,12 @@ and closed, never the change in openings listed (ADR-0272).
 `/trends` serves every figure the Trends tab shows (`trends.line_reading`, ADR-0233): each line's
 start and latest openings, the counting steps the reading could size ("not hiring"), the rest it
 calls hiring, and the postings opened and closed (turnover, ADR-0227). That rest is not hiring.
-With no company picked nothing is sized at all, so a 30-day whole-index window read "hiring
-+111,851" while its postings opened and closed netted −514. So this answer leads with turnover,
-reports the change in openings listed separately, and names what neither turnover nor a sized
-step explains as change HeadStart could not size, with the window's counting changes, each label
-once. Where turnover is missing or partial it says so. The drawing arrays (``netted``,
+With no company picked nothing was sized at all, so a 30-day whole-index window read "hiring
++111,851" while its postings opened and closed netted −514; since ADR-0270 the index's counting
+changes are sized, but its found Boards and duplicate removals are not. So this answer leads with
+turnover, reports the change in openings listed separately, and names what neither turnover nor a
+sized step explains as change HeadStart could not size, with the window's counting changes, each
+label once. Where turnover is missing or partial it says so. The drawing arrays (``netted``,
 ``steps_at``, ``reference``, ``points``, ``day_markers``) are left out, which takes a 406 kB
 payload down to a few hundred words. A reading that fails the Space's arithmetic check is still
 reported, saying so; one the Space could not read at all reports no figures.

@@ -268,13 +268,13 @@ class TrendReading:
     breakdown, which has no first row). ``lines`` are the answer's series in its order, and
     ``other`` the lines past the first LINES_CHARTED added together, the page's Other row.
     ``company_lines`` are the lines Marked changes are sized on: each picked company's own line,
-    or inside a drill its part of the category. ``closing`` is the breakdown's closing row, the
-    openings a counting change moved between categories; ``breakdown`` says whether ``lines``
-    add up to ``total`` at all. ``reference`` is the share denominator netted run by run, the
-    Change plot's dashed line. ``openings`` is every line's latest openings added together (the
-    tile, and the count a hand-off to Search names); under a pick, ``served_jobs`` is every job
-    the picks serve at the latest run, non-tech included, and ``non_tech_jobs`` those the tech
-    filter sets aside. A reading that fails :func:`check_reading` is still served, with
+    or inside a drill its part of the category; with no pick, the first row (ADR-0270).
+    ``closing`` is the breakdown's closing row, the openings a counting change moved between
+    categories; ``breakdown`` says whether ``lines`` add up to ``total`` at all. ``reference``
+    is the share denominator netted run by run, the Change plot's dashed line. ``openings`` is
+    every line's latest openings added together (the tile, and the count a hand-off to Search
+    names); under a pick, ``served_jobs`` is every job the picks serve at the latest run,
+    non-tech included, and ``non_tech_jobs`` those the tech filter sets aside. A reading that fails :func:`check_reading` is still served, with
     ``violations`` (ADR-0233 decision 6)."""
 
     window: tuple[str, str] | None
@@ -520,6 +520,9 @@ class _Reader:
         # every change named on any line, and the change a growth cause belongs to
         self.changes: dict[str, MarkedChange] = {}
         self.parent_of: dict[str, str] = {}
+        # The first row's first counted run (`_first_row`): a line first counted after it began
+        # inside the window, and says so where that withholds its percentage.
+        self.first_run: int | None = None
 
     # -- lines --
 
@@ -554,6 +557,7 @@ class _Reader:
             else None,
         )
         origin = next((j for j, v in enumerate(line.points) if v is not None), None)
+        self.first_run = origin
         return line, origin, self._exact(line, origin)
 
     def first_row_move(self) -> LineMove | None:
@@ -570,10 +574,9 @@ class _Reader:
         series = self._series_lines()
         total_line, origin, total_exact = self._first_row(series)
         # Rows of a breakdown start where the first row does, 0 where they were not counted
-        # yet, so their starts and latests add up to the first row's.
-        breakdown = (
-            view.picked and not view.split_company and not self.is_tracked_roles_view
-        )
+        # yet, so their starts and latests add up to the first row's. The index's too
+        # (ADR-0270): Hardware & Silicon, sorted in by a counting change, starts at 0.
+        breakdown = not view.split_company and not self.is_tracked_roles_view
         rows_exact = [
             self._exact(line, origin if breakdown else None) for line in series
         ]
@@ -643,10 +646,9 @@ class _Reader:
     ) -> list[LineReading]:
         """The lines Marked changes are sized on (ADR-0233, "company totals only"): each line of
         a Company breakdown, the tracked roles (there is no company line there), each pick's
-        own line where several are summed, else the first row."""
+        own line where several are summed, else the first row: a company's, or with no pick the
+        index's, named as the page names it (ADR-0270)."""
         view = self.view
-        if not view.picked:
-            return []
         if view.split_company or self.is_tracked_roles_view:
             return [r for r in rows if r is not None]
         if len(view.pick_series) > 1:
@@ -662,6 +664,11 @@ class _Reader:
             return out
         if total is None:
             return []
+        if not view.picked:
+            family = self.answer.get("family_label") or self.answer.get("family")
+            return [
+                replace(total, label=f"All of {family}" if family else "All tech roles")
+            ]
         key = view.company_keys[0]
         label = self._company_label(key)
         if view.drilled:
@@ -868,6 +875,9 @@ class _Reader:
             else None,
             denominators=self._denominators_of(line, exact),
             whole_company=whole_company,
+            first_counted=_day(self.stamps[exact.first])
+            if self.first_run is not None and exact.first > self.first_run
+            else None,
         )
 
     def _in_date_order(self, causes: Iterable[Cause]) -> tuple[Cause, ...]:
@@ -968,25 +978,23 @@ class _Reader:
             return self._denominators[key]
         view = self.view
         raw = line.denominators or view.totals
-        if not view.picked:
-            netted = list(raw)
-        else:
-            # The denominator is every served job of the picks, so it is a whole company's
-            # line whatever the drill: its removals lift and scale by the count they came from.
-            several = not line.denominators and len(view.company_totals) > 1
-            whole = replace(
-                view,
-                drilled=False,
-                pick_series=view.company_totals if several else {},
-                pick_parts={},
-                _jump_cache={},
-            )
-            whose = (
-                _Line(line.name, raw, pick=True)
-                if line.denominators
-                else _Line(_TOTAL, raw)
-            )
-            netted = _net(whole, whose)
+        # The denominator is every served job in scope, the picks' or the index's, so it is a
+        # whole line whatever the drill: a pick's removals lift and scale by the count they came
+        # from.
+        several = not line.denominators and len(view.company_totals) > 1
+        whole = replace(
+            view,
+            drilled=False,
+            pick_series=view.company_totals if several else {},
+            pick_parts={},
+            _jump_cache={},
+        )
+        whose = (
+            _Line(line.name, raw, pick=True)
+            if line.denominators
+            else _Line(_TOTAL, raw)
+        )
+        netted = _net(whole, whose)
         self._denominators[key] = netted
         return netted
 
@@ -1120,22 +1128,27 @@ class _Reader:
         return change
 
     def _marked_changes(self, company: list[LineReading]) -> tuple[MarkedChange, ...]:
-        """Under a pick, every change with a size on a company line, sized on each; with no
-        pick every Counting change in the window, marked and sized on nothing (decision 6)."""
+        """Every change with a size on a company line, sized on each; with no pick every
+        Counting change in the window too, marked, sized where it moved the first row
+        (ADR-0270)."""
+        sizes: dict[str, list[tuple[str, int]]] = defaultdict(list)
+        for line in company:
+            for cause in line.move.not_hiring:
+                sizes[cause.change].append((line.name, cause.size))
+        listed = set(sizes)
         if not self.view.picked:
             for k, n in enumerate(self.notes):
                 if n["epoch"]:
-                    self.register_note_change(k)
-            listed = [c for c in self.changes.values() if c.kind == CauseKind.COUNTING]
-        else:
-            sizes: dict[str, list[tuple[str, int]]] = defaultdict(list)
-            for line in company:
-                for cause in line.move.not_hiring:
-                    sizes[cause.change].append((line.name, cause.size))
-            listed = [
-                replace(self.changes[c], sizes=tuple(s)) for c, s in sizes.items()
-            ]
-        return tuple(sorted(listed, key=lambda c: (c.ts, c.id)))
+                    listed.add(self.register_note_change(k))
+        return tuple(
+            sorted(
+                (
+                    replace(self.changes[c], sizes=tuple(sizes.get(c, ())))
+                    for c in listed
+                ),
+                key=lambda c: (c.ts, c.id),
+            )
+        )
 
     def _day_markers(
         self, marked: tuple[MarkedChange, ...], series: list[_Line]
@@ -1143,8 +1156,8 @@ class _Reader:
         """One marker per day, naming each Marked change on exactly one day: its own run's, or
         where its own run is before the window, its first run inside it (a week-later echo). A
         growth cause stands with the change it belongs to. The marker is drawn at the day's run
-        where the lines moved most, over every line and not just those drawn; with no pick
-        nothing is taken out, so the run's own change."""
+        where the lines' taken-out steps moved most, over every line and not just those drawn;
+        on a day none moved, at the first change's own run."""
         view, stamps = self.view, self.stamps
         landing: dict[str, int] = {}
         for k, n in enumerate(self.notes):
@@ -1157,18 +1170,12 @@ class _Reader:
                 return stamps.index(c.ts)
             return landing.get(c.id, landing.get(self.parent_of.get(c.id, "")))
 
-        jumps = [_count_jumps(view, line) for line in series] if view.picked else None
+        jumps = [_count_jumps(view, line) for line in series]
 
         def moved_at(i: int) -> float:
             if i < 1:
                 return 0
-            if jumps is not None:
-                return sum(abs(j[i].after - j[i].before) for j in jumps if i in j)
-            return sum(
-                abs(line.points[i] - line.points[i - 1])
-                for line in series
-                if line.points[i] is not None and line.points[i - 1] is not None
-            )
+            return sum(abs(j[i].after - j[i].before) for j in jumps if i in j)
 
         days: dict[str, dict] = {}
         for c in marked:
@@ -1416,10 +1423,14 @@ def _line_move(
     turnover: Turnover | None,
     denominators: tuple[int | None, int | None] | None,
     whole_company: bool = False,
+    first_counted: str | None = None,
 ) -> LineMove:
     """A line's move from its whole figures: its percentage, weekly rate and share, each read
     off them once. ``denominators`` is the share's, netted at the start and as counted now.
-    A ``whole_company`` line is never mostly re-counted (ADR-0238)."""
+    A ``whole_company`` line is never mostly re-counted (ADR-0238). ``first_counted`` is the
+    day a line was first counted, where that is after its view's first row began, which is then
+    why it has too few days or no start (ADR-0270): Hardware & Silicon, first counted on Sep 25,
+    read "a window under 3 days" on a 21-day window."""
     span_days = round(span_days, 4)
     netted_start = latest - hiring
     percent, withheld = None, None
@@ -1431,6 +1442,8 @@ def _line_move(
         start, netted_start, _counting(not_hiring)
     ):
         withheld = MOSTLY_RECOUNTED
+    elif first_counted and (span_days < MIN_SPAN_DAYS or not start):
+        withheld = f"first counted on {first_counted}"
     elif span_days < MIN_SPAN_DAYS:
         withheld = f"a window under {MIN_SPAN_DAYS} days"
     elif start < MOVER_FLOOR:
@@ -1549,7 +1562,8 @@ def check_reading(reading: dict) -> list[str]:
 
     1. For every line: latest − start == hiring + Σ not_hiring.
     2. A company line's "Not hiring" is its Marked changes: each cause is listed at that size,
-       and every size listed for it is one of its causes.
+       and every size listed for it is one of its causes. With no pick the first row is the
+       index's company line (ADR-0270).
     3. A breakdown's rows, with its closing row, add up to its first row in start, latest,
        hiring and Not hiring. The closing row starts and ends at 0 and is one figure: hiring N
        and one counting-change cause −N, N ≠ 0. Cause by cause the rows need not add up (a
@@ -1563,7 +1577,8 @@ def check_reading(reading: dict) -> list[str]:
        the netted start, given only off INDEX_BASE_FLOOR openings or more: neither is netted a
        second time. The share's own change is its latest
        over its start, and is withheld with the percentage.
-    6. With no pick nothing is taken out.
+    6. Retired by ADR-0270, which takes a counting change out with no pick too: "with no pick
+       nothing is taken out".
     7. A category, level or role line mostly re-counted in the window (MOSTLY_RECOUNTED: its
        counting changes took openings out, and took out more than was left, or left under
        INDEX_BASE_FLOOR of a start of MOVER_FLOOR or more) gives no percentage, in any unit, and no index base, and says it is
@@ -1720,32 +1735,23 @@ def check_reading(reading: dict) -> list[str]:
             out.append(f"{where}: it gives a percentage though mostly re-counted")
         if (m["percent_withheld"] == MOSTLY_RECOUNTED) != recounted:
             out.append(f"{where}: it is said to be mostly re-counted where it is not")
-        if not reading.get("picked") and (
-            m["not_hiring"] or m["hiring"] != m["latest"] - m["start"]
-        ):
-            out.append(f"{where}: with no pick, something was taken out")
-    if reading.get("picked"):
-        for line in reading.get("company_lines") or []:
-            name = line["name"]
-            causes = {c["change"]: c["size"] for c in line["move"]["not_hiring"]}
-            listed = {
-                cid: c["sizes"][name]
-                for cid, c in changes.items()
-                if name in c["sizes"]
-            }
-            if causes != listed:
-                out.append(
-                    f"company line {name}: its Not hiring is not its Marked changes"
-                )
-            ran = [
-                changes[c["change"]]["ts"]
-                for c in line["move"]["not_hiring"]
-                if c["change"] in changes
-            ]
-            if ran != sorted(ran):
-                out.append(
-                    f"company line {name}: its Not hiring is not in the order its changes ran"
-                )
+    for line in reading.get("company_lines") or []:
+        name = line["name"]
+        causes = {c["change"]: c["size"] for c in line["move"]["not_hiring"]}
+        listed = {
+            cid: c["sizes"][name] for cid, c in changes.items() if name in c["sizes"]
+        }
+        if causes != listed:
+            out.append(f"company line {name}: its Not hiring is not its Marked changes")
+        ran = [
+            changes[c["change"]]["ts"]
+            for c in line["move"]["not_hiring"]
+            if c["change"] in changes
+        ]
+        if ran != sorted(ran):
+            out.append(
+                f"company line {name}: its Not hiring is not in the order its changes ran"
+            )
     if breakdown and reading.get("total"):
         rows = [r["move"] for r in reading.get("lines") or []]
         if closing:
