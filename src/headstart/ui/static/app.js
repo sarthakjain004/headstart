@@ -25,6 +25,7 @@ window.addEventListener('unhandledrejection', e => {
 // Only the query: every field in the filter rail searches on its own `change` (see the rail's
 // listener), which a browser also fires on Enter — a second Enter handler there searched twice.
 el('q').addEventListener('keydown', e => { if (e.key === 'Enter') go(); });
+el('search-go').addEventListener('click', () => go());
 
 /* ---- the search bar's match mode (ADR-0263). "By meaning" ranks every job by how close it is to
    the words; "Words in the job title" keeps only the jobs whose title holds every word (the
@@ -162,8 +163,12 @@ function flipTheme(){
     || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
   document.documentElement.setAttribute('data-theme', now === 'dark' ? 'light' : 'dark');
 }
+// Every control is wired here rather than by an inline onclick, which the page's
+// Content-Security-Policy refuses to run (#595).
+el('theme').addEventListener('click', flipTheme);
 // The examples describe roles, so they run by meaning whichever mode was on.
 function tryIt(btn){ el('q').value = btn.textContent.trim(); setQueryMode('meaning'); go(); }
+document.querySelectorAll('.hint .chip').forEach(b => b.addEventListener('click', () => tryIt(b)));
 // The header identity. /me answers from the caller's own session cookie; when the sign-in
 // wall is off (or the caller somehow reached this page signed out) it stays blank.
 async function whoAmI(){
@@ -184,6 +189,7 @@ async function signOut(){
   if (r) logFail('POST', '/signout', r.status);
   window.alert('Sign-out didn\'t go through — you are still signed in. Try again.');
 }
+el('signout').addEventListener('click', signOut);
 const age = d => {
   const t = Date.parse(d || ''); if (isNaN(t)) return '';
   const days = Math.floor((Date.now() - t) / 86400000);
@@ -355,10 +361,10 @@ function drawActive(){
   box.innerHTML = (searchScope
     ? `<span class="pill" title="Every job HeadStart reads for this company${searchScope.category ? ', in the category its trend counted' : ''}. Not kept in a saved search."><b>Company</b> ${esc(searchScope.label)}${
         searchScope.category ? ` · ${esc(searchScope.category.label)}` : ''}` +
-      `<button onclick="dropFilter('board')" aria-label="Remove Company filter">×</button></span>` : '') +
+      `<button data-drop-filter="board" aria-label="Remove Company filter">×</button></span>` : '') +
     shown.map(([k,v]) =>
     `<span class="pill"><b>${esc(LABELS[k]||k)}</b> ${esc(chipValue(k, v, f))}` +
-    `<button onclick="dropFilter('${esc(k)}')" aria-label="Remove ${esc(LABELS[k]||k)} filter">×</button></span>`
+    `<button data-drop-filter="${esc(k)}" aria-label="Remove ${esc(LABELS[k]||k)} filter">×</button></span>`
   ).join('');
 }
 /* ---- Segmented selects (issue #755). A <select> of a handful of options costs a click to open
@@ -532,6 +538,7 @@ function clearAll(){
     if (c.type === 'checkbox') c.checked = false; else c.value = ''; });
   go();
 }
+el('clear-all').addEventListener('click', clearAll);
 
 // Pagination (ADR-0074): fixed page size, capped page count — matches the server's own
 // `max_k`/`max_page` clamp in headstart.serving.job_search.JobSearch, so a click here never asks for
@@ -814,11 +821,11 @@ function whyNothing(facets){
   // The title words are not a rail filter, so no blocking answer names them (ADR-0263).
   if (!key && searched && searched.mode === 'title' && searched.q)
     return `No job title has every word of “${esc(searched.q)}”. Try fewer words, or ` +
-      '<button class="linkish" onclick="setQueryMode(\'meaning\'); go()">match by meaning</button> instead.';
+      '<button class="linkish" data-match-by-meaning>match by meaning</button> instead.';
   if (!key) return 'Try loosening a filter, or describe the role more broadly.';
   const label = LABELS[key] || key;
   return `Your <b>${esc(label)}</b> filter is the one ruling everything out — ` +
-    `<button class="linkish" onclick="dropFilter('${esc(key)}')">remove it</button> ` +
+    `<button class="linkish" data-drop-filter="${esc(key)}">remove it</button> ` +
     'to see what comes back.';
 }
 
@@ -934,9 +941,9 @@ function drawPager(rowCount, facets){
   const hasNext = rowCount === PAGE_SIZE && page < MAX_PAGE &&
     (total === null || page * PAGE_SIZE < total);
   el('pager').innerHTML =
-    `<button class="ghost" ${hasPrev?'':'disabled'} onclick="goToPage(${page-1})">‹ Prev</button>` +
+    `<button class="ghost" ${hasPrev?'':'disabled'} data-goto-page="${page-1}">‹ Prev</button>` +
     `<span class="note">Page ${page}</span>` +
-    `<button class="ghost" ${hasNext?'':'disabled'} onclick="goToPage(${page+1})">Next ›</button>`;
+    `<button class="ghost" ${hasNext?'':'disabled'} data-goto-page="${page+1}">Next ›</button>`;
 }
 
 /* ---- ONE result card, rendered by Search, Matches and Saved alike.
@@ -1315,6 +1322,10 @@ async function saveSearch(){
     msg.textContent = '';
     el('n').textContent = `Saved — see Matches`;
   }catch(e){ logFail('POST', '/sets', 0, e); msg.textContent = 'That request didn\'t go through. Try again.'; }
+}
+if (el('savebtn')){   // the save controls render only where Saved sets are configured
+  el('savebtn').addEventListener('click', saveSearchToggle);
+  el('savego').addEventListener('click', saveSearch);
 }
 
 /* ---- Saved jobs (ADR-0042, ADR-0044): starring keeps a copy of the card's display
@@ -4403,6 +4414,11 @@ function initAlerts(){
   google.accounts.id.initialize({ client_id: CFG.google_client_id, callback: onGoogleCredential });
   google.accounts.id.renderButton(el('gsignin'), { theme: 'outline', size: 'medium' });
 }
+// Google's script (base.html's #gsi-client, after this file) reports here rather than through
+// inline onload/onerror attributes, which the Content-Security-Policy refuses (#595). Neither
+// event bubbles, but a capturing listener on the document hears both.
+document.addEventListener('load', e => { if (e.target.id === 'gsi-client') initAlerts(); }, true);
+document.addEventListener('error', e => { if (e.target.id === 'gsi-client') gsiFailed(); }, true);
 // One listener on the list itself — it survives every innerHTML redraw of its children.
 if (el('trends-legend')) {
   const legend = el('trends-legend');
@@ -4507,6 +4523,16 @@ if (el('salrmin')){
 if (el('sets-strip')) el('sets-strip').addEventListener('click', e => {
   const btn = e.target.closest('[data-act]');
   if (btn) handleSetAction(btn.dataset.act, btn.dataset.id);
+});
+// The buttons the Search tab draws as HTML (the filter pills, the pager, the empty result's
+// advice) say what they do in data attributes, read by this one listener: an inline onclick
+// is refused by the Content-Security-Policy (#595).
+document.addEventListener('click', e => {
+  const b = e.target.closest('button[data-drop-filter], button[data-goto-page], button[data-match-by-meaning]');
+  if (!b) return;
+  if (b.dataset.dropFilter) dropFilter(b.dataset.dropFilter);
+  else if (b.dataset.gotoPage) goToPage(Number(b.dataset.gotoPage));
+  else { setQueryMode('meaning'); go(); }
 });
 // Stars appear in three containers (Search, Matches, Saved); one document-level listener
 // survives every redraw of all of them.

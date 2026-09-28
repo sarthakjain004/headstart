@@ -2652,9 +2652,9 @@
      lands on Search or Trends still pays nothing.
 
      Deferring app.js instead would be the tidier seam, since the routing decision is its own. It
-     is not available: base.html loads Google's GSI client `async` with `onload="initAlerts()"`,
-     and that handler is defined in app.js — deferring it lets a third-party script call a
-     function that does not exist yet. */
+     is not available: base.html loads Google's GSI client `async`, and app.js's capturing `load`
+     listener is what calls initAlerts when it arrives — deferring app.js lets that script finish
+     loading before anything is listening for it. */
   const opened = document.getElementById('panel-resume');
   if (opened && !opened.hidden) shown();
 })(typeof globalThis !== 'undefined' ? globalThis : this);

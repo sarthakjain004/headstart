@@ -6,7 +6,7 @@
    it has run (ADR-0261): the Trends tab's opening view on a bare #trends, the ranking on any #hot.
    The same URL app.js asks for, so its fetch is answered by this one. Ahead of the stylesheets,
    since a script after them waits for them to load. #}
-{% if cfg.answers_version %}<script>
+{% if cfg.answers_version %}<script nonce="{{ csp_nonce }}">
 (() => {
   const v = {{ cfg.answers_version|tojson }}, hash = location.hash;
   const href = hash === '#trends' ? '/trends?v=' + v : hash.split('?')[0] === '#hot' ? '/hot?v=' + v : null;
@@ -19,11 +19,11 @@
 <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='logo_mark.svg') }}">
 {# The sidebar's folded state (ADR-0249), read before the stylesheet so the first paint already
    has the right width: set after load, the content column would jump sideways. #}
-<script>try { if (localStorage.getItem('hs.navCollapsed')) document.documentElement.dataset.nav = 'collapsed'; } catch (e) {}</script>
+<script nonce="{{ csp_nonce }}">try { if (localStorage.getItem('hs.navCollapsed')) document.documentElement.dataset.nav = 'collapsed'; } catch (e) {}</script>
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='resume.css') }}">
 </head><body>
-<script>window.CFG = {{ cfg|tojson }};</script>
+<script nonce="{{ csp_nonce }}">window.CFG = {{ cfg|tojson }};</script>
 <div class="shell">
 
   <header class="top">
@@ -33,9 +33,9 @@
     </div>
     <div class="top-right">
       <span class="note" id="who"></span>
-      <button class="ghost" id="signout" style="display:none" onclick="signOut()">Sign out</button>
+      <button class="ghost" id="signout" style="display:none">Sign out</button>
       <span class="count"><b>{{ njobs }}</b> jobs indexed</span>
-      <button class="icon-btn" id="theme" onclick="flipTheme()" aria-label="Switch light or dark theme" title="Switch theme">◐</button>
+      <button class="icon-btn" id="theme" aria-label="Switch light or dark theme" title="Switch theme">◐</button>
     </div>
     {# Its own row in the masthead grid, so a phone-width header pushes it down rather than
        dropping it — this is the one line that answers "what am I looking at". #}
@@ -125,5 +125,5 @@
 <script defer src="{{ url_for('static', filename='resume/resume_export.js') }}"></script>
 <script defer src="{{ url_for('static', filename='resume/resume_decorators.js') }}"></script>
 <script defer src="{{ url_for('static', filename='resume/resume_editor.js') }}"></script>
-{% if alerts_on %}<script src="https://accounts.google.com/gsi/client" async onload="initAlerts()" onerror="gsiFailed()"></script>{% endif %}
+{% if alerts_on %}<script id="gsi-client" src="https://accounts.google.com/gsi/client" async></script>{% endif %}
 </body></html>
