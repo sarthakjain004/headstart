@@ -39,3 +39,16 @@ quarantined.
   scraping it, and once parole re-confirms the verdict, ADR-0206's prune evicts its rows.
 - The liveness probe still calls these Boards live. Fixing `p_trakstar` to read the same notice
   is left to a ledger refresh.
+
+## Amendment (2026-09-28): the probe reads the notice too (#701)
+
+The Consequences above left `p_trakstar` calling these Boards live "to a ledger refresh". It now
+records DEAD on the same notice, read from the scraper's own `INACTIVE_ACCOUNT` constant. Sampled
+live on 2026-09-28: 17 of 25 `live, jobs=0` ledger rows carried it; 6 were active accounts saying
+"No jobs available", which stay live with 0 jobs; 2 answered 302.
+
+This is a second, faster exit than the one this ADR chose. A ledger `dead` verdict takes the Board
+out of `scrapable_boards.load` and `index_plan.live_keep_set`, so the next `index prune --apply`
+evicts its rows at once rather than after ADR-0058's five agreeing runs. That is the intended
+outcome here: every link these rows carry already 404s. It applies only once the trakstar ledger
+is re-probed, which this change does not do.

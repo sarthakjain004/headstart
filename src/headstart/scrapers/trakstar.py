@@ -89,8 +89,8 @@ while ``jsapi`` still lists their openings (`nowfloats1`: 395) and every ``hoste
 live jobs with dead links. The same careers-page read now raises ``HTTP Error 410`` for them, in
 the shape `board_failures.is_gone` matches, so ADR-0058's quarantine retires the Board after five
 agreeing runs — never a quiet ``[]``, which would evict through ADR-0200 on a signal no status
-code backs (ADR-0218). ``check_liveness.p_trakstar`` still records these Boards live: it counts
-cards on the same page, reads zero, and calls that an empty live board.
+code backs (ADR-0218). ``check_liveness.p_trakstar`` reads the same marker and records these
+Boards dead (#701).
 """
 
 from __future__ import annotations
@@ -120,7 +120,7 @@ _log = log.get(__name__)
 
 #: What the careers page says, at HTTP 200, for an employer that has left the product (module
 #: docstring); the page carries no job cards and no title.
-_INACTIVE_ACCOUNT = "This employer is no longer using Trakstar Hire"
+INACTIVE_ACCOUNT = "This employer is no longer using Trakstar Hire"
 
 # jsapi.recruiterbox.com — the primary listing surface (module docstring). Measured live
 # 2026-09-22: the server clamps `limit` to 250 regardless of a higher ask, so pagination steps by
@@ -293,7 +293,7 @@ class TrakstarScraper(BaseScraper):
 
     def fetch_raw(self) -> Any:
         page = self._careers_page()
-        if page is not None and _INACTIVE_ACCOUNT in page:
+        if page is not None and INACTIVE_ACCOUNT in page:
             # Raised in the shape `board_failures.is_gone` matches (module docstring): the API
             # still lists this account's openings, and every link it names is dead.
             raise gone_board_error(
