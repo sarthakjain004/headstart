@@ -2638,8 +2638,8 @@ def p_trakstar(t, u):
     page = body.decode("utf-8", "replace")
     if _TRAKSTAR_INACTIVE in page:
         # A 200 with no job cards: the employer left Trakstar, and every posting its API still
-        # lists 404s. The scraper raises gone on the same page (#662); 9 of 10 `live, jobs=0`
-        # rows sampled on 2026-09-28 carried it (#701).
+        # lists 404s. The scraper raises gone on the same page (#662); 17 of 25 `live, jobs=0`
+        # rows sampled on 2026-09-28 carried it (#701, ADR-0218's amendment).
         return DEAD, None
     n = len(page.split("js-careers-page-job-list-item")) - 1
     return LIVE, max(n, 0)

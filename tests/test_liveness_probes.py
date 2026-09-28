@@ -2199,7 +2199,7 @@ def test_radancy_inconclusive_answers_stay_unknown(monkeypatch):
 
 def test_trakstar_inactive_account_is_dead(monkeypatch):
     """#701: an inactive account's page answers 200 with no job cards; it is gone, not empty.
-    9 of 10 `live, jobs=0` Trakstar ledger rows sampled on 2026-09-28 carried this page."""
+    17 of 25 `live, jobs=0` Trakstar ledger rows sampled on 2026-09-28 carried this page."""
     page = (
         b"<html><head><title></title></head><body><h1>Inactive account.</h1>"
         b"<p>This employer is no longer using Trakstar Hire to collect applications.</p>"
@@ -2216,3 +2216,10 @@ def test_trakstar_live_page_counts_cards(monkeypatch):
     page = b'<div class="js-careers-page-job-list-item"></div>' * 3
     monkeypatch.setattr(cl, "_get", _stub_get(200, page))
     assert cl.p_trakstar("acme", "https://acme.hire.trakstar.com/") == (cl.LIVE, 3)
+
+
+def test_trakstar_active_account_with_no_openings_stays_live(monkeypatch):
+    """The other side of the marker: an active account's empty page is a live Board with 0 jobs."""
+    page = b"<html><head><title>Acme jobs</title></head><body>No jobs available</body></html>"
+    monkeypatch.setattr(cl, "_get", _stub_get(200, page))
+    assert cl.p_trakstar("acme", "https://acme.hire.trakstar.com/") == (cl.LIVE, 0)
