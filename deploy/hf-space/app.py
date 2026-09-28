@@ -582,7 +582,14 @@ def set_company():
     current = store.get_companies(account)
     boards = _company_boards(board)
     if current.would_evict(boards, action):
-        return jsonify({"error": f"at most {MAX_COMPANIES} boards in each list"}), 409
+        # Said on the page as it stands (setCompany), so in a job seeker's words (ADR-0255): the
+        # cap counts Boards, which a reader knows as a company's career sites.
+        return jsonify(
+            {
+                "error": f"That list is full: it holds up to {MAX_COMPANIES} company "
+                "career sites. Remove a company first."
+            }
+        ), 409
     prefs = current.with_boards(boards, action)
     store.put_companies(prefs)
     return jsonify(_companies_json(prefs))

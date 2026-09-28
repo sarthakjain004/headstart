@@ -1,0 +1,59 @@
+[
+ {
+  "@search.score": 1.9557755,
+  "Description": "<!DOCTYPE html> <html> <head> <title><p> Cleaned Document </p></title> </head> <body> <p> <strong> About the role and team </strong> </p> <p> Community Operations at Uber is where real people solve real problems in real time. As a Vendor Operations Manager, you will lead the performance and strategic relationship of our Business Process Outsourcing (BPO) network—a global community of thousands of agents who provide world-class support for our riders, drivers, and merchants. The pace is intense, </p></body></html>",
+  "AdditionalText": "Customer Support Customer Support",
+  "QuestionsRaw": null,
+  "Summary": null,
+  "AdditionalDescription1": null,
+  "DisplayDate": "2026-09-27T23:50:13Z",
+  "Reference": "302433",
+  "Teams": [
+   "Customer Support"
+  ],
+  "ContractType": "Full time",
+  "WorkPattern": "Regular",
+  "ExperienceLevel": null,
+  "Remote": false,
+  "Id": "302433",
+  "Title": "Service Delivery Manager",
+  "Salary": {
+   "MinValue": null,
+   "MaxValue": null,
+   "Currency": null,
+   "Period": null,
+   "Description": ""
+  },
+  "Locations": [
+   {
+    "Identifier": "",
+    "City": "Taguig City",
+    "Region": "NCR",
+    "Country": "Philippines",
+    "CountryCode": null,
+    "Address": "Taguig, Metro Manila, Philippines",
+    "PostalCode": null,
+    "LocationPoint": {
+     "type": "Point",
+     "coordinates": [
+      121.0575482,
+      14.5306317
+     ],
+     "crs": {
+      "type": "name",
+      "properties": {
+       "name": "EPSG:4326"
+      }
+     }
+    }
+   }
+  ],
+  "Urls": [
+   {
+    "Culture": "en-us",
+    "Url": "/en/jobs/302433/",
+    "IsDefault": true
+   }
+  ]
+ }
+]

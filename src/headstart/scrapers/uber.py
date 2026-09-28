@@ -68,6 +68,7 @@ Full measurement notes: ``docs/uber/2026-09-11_api-measurement.md``.
 from __future__ import annotations
 
 import json
+import re
 import urllib.parse
 from typing import Any
 
@@ -87,6 +88,10 @@ _MAX_PAGESIZE = 20_000
 #: Each attempt re-reads `totalJobs` fresh, so this is not a fixed page count — it is "how many
 #: times the target may move before giving up".
 _MAX_ATTEMPTS = 5
+#: A Description that is a whole HTML document carries a `<head>` whose `<title>` is
+#: "<p> Cleaned Document </p>" — an export artefact, not posting text (57 of 538 live rows,
+#: 2026-09-28). Dropped before the tags are stripped.
+_DOCUMENT_HEAD = re.compile(r"<head>.*?</head>", re.IGNORECASE | re.DOTALL)
 
 
 class UberScraper(BaseScraper):
@@ -163,7 +168,9 @@ class UberScraper(BaseScraper):
                     url=self.job_url(item.get("Urls")),
                     posted_at=item.get("DisplayDate"),
                     scraped_at=scraped_at,
-                    description=html_to_text(item.get("Description")),
+                    description=html_to_text(
+                        _DOCUMENT_HEAD.sub("", item.get("Description") or "")
+                    ),
                     employment_type=_employment_type(item),
                 )
             )

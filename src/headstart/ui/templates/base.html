@@ -25,7 +25,7 @@
     </div>
     {# Its own row in the masthead grid, so a phone-width header pushes it down rather than
        dropping it — this is the one line that answers "what am I looking at". #}
-    <p class="tagline">Tech jobs read straight from company career boards</p>
+    <p class="tagline">Tech jobs read straight from company career sites</p>
   </header>
 
   {# A sidebar on a wide screen and a scrolling strip across the top below that (ADR-0249); one
@@ -81,10 +81,9 @@
     <section class="panel" id="panel-resume" hidden>{% include "resume.html" %}</section>
   </div>
 
-  <div class="foot">Every job here is read straight from the board the employer runs — never
-    scraped from another job site. Some of those boards belong to staffing firms and
-    recruiters rather than the end employer; the <a href="#hot">Hiring now</a> tab labels the
-    ones we have identified. Your search is matched on meaning rather than
+  <div class="foot">Every job here comes straight from the employer's own career site — never
+    copied from a job board. Some employers are staffing firms or recruiters; the
+    <a href="#hot">Hiring now</a> tab labels the ones we know. Search matches meaning, not
     keywords. English-language tech roles, refreshed every couple of hours.
     <a href="{{ repo }}/blob/main/PRIVACY.md" target="_blank" rel="noopener">Privacy policy</a></div>
 </div>

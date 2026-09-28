@@ -72,7 +72,10 @@ The round-17 live critic of company trends (7.5/10) found two things the owner d
    Sutherland trade-union club).
 8. **A closed count over only some of a company's Boards says so.** Where every Board had a run
    whose closures went uncounted, no closed count is given; where some did, Hot and the trend
-   sentence give it as "3 closed (not counted on 1 of 2 boards)".
+   sentence give it as "3 closed (not counted on 1 of 2 boards)". *(Amended by
+   [ADR-0255](0255-every-tab-speaks-to-a-job-seeker.md): Hot gives the count bare, and a note
+   under the list says once that closed counts can be low. The trend sentence had already
+   dropped the fraction, ADR-0248.)*
 
 ## Consequences
 

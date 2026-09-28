@@ -15,9 +15,11 @@ sample — `theweitzcompany`, ~158 open jobs — returned every one in a single 
 "showing N of M" marker and no repeated ids. That isn't just a sample-size coincidence: unlike
 Zoho's JS-hydrated widget (a real 750-job ceiling, see ``zoho.py``'s docstring), this page is
 plain server-rendered HTML with no client-side "load more" — there is nowhere for a silent cap to
-hide the way Phenom's ``size=1000``-returning-500 or Zoho's ceiling do. Not proof for a tenant
-past ~160 jobs (none was found to test against), but the measured evidence and the mechanism
-agree, and there's nothing here resembling freshteam's hard 1000-job widget cap.
+hide the way Phenom's ``size=1000``-returning-500 or Zoho's ceiling do. Re-checked 2026-09-28 on
+the ledger's largest tenant, `upike`: 172 distinct ``bhrPositionID_`` ids, the same 172 its
+``/careers/list`` JSON lists. Not proof for a tenant past ~170 jobs (none was found to test
+against), but the measured evidence and the mechanism agree, and there's nothing here resembling
+freshteam's hard 1000-job widget cap.
 
 **Dead vs. live-but-empty, from the same HTTP 200.** A genuinely nonexistent tenant's widget
 answers `200` with an **empty body** (0 bytes) — checked against 5 fabricated slugs, all 0 bytes.

@@ -140,18 +140,18 @@ Two rules resolve most of it. **"live" describes a _row_, not a Board** — a se
 **Ledger row** — 312,236:
 One line in a `data/validate/liveness/{ats}.csv`. Includes `dead` and `unknown`. Never a Board count; a raw `wc -l` overstates by however many duplicates exist.
 
-**Live row** — 191,257:
+**Live row** — 191,254:
 A Ledger row whose last verdict is `live`. Still a row: pre-dedupe, and pre every deliberate exclusion.
 _Avoid_: "live Boards" for this number — that is the phrase this section exists to kill.
 
-**Unique Board** — 184,621:
+**Unique Board** — 184,618:
 Live rows collapsed to one entry per canonical `board_key` (ADR-0023) — the distinct Boards we know exist — less the 4 Boards with a `dead` row newer than their newest `live` row (ADR-0219). **Scrapable Board** and **Hiring Board** are subsets of it; nothing in that chain removes a duplicate, only Boards we choose not to read. The two *history* counts at the end are **not** subsets: 949 Scraped Boards are absent from it (measured 2026-09-25; `board_cost.csv` is HF-backed, so CI skips this figure), because a Board read months ago may have gone Dead since and left the live set.
 
-**Scrapable Board** — 157,444:
+**Scrapable Board** — 157,441:
 A Unique Board a run may actually pick: minus `registry.DISABLED_ATS` (−25,488, all of it `join`), `excluded_and_parked.EXCLUDED_BOARDS` (−210 vendor test Boards), the alias ledger (−1,172 Boards published under a second hostname or label, Taleo career sections and ADP Recruiting Management career sites whose every posting another section or site of the same tenant already lists, or Eightfold career sites whose backing ATS Board already serves them, ADR-0111, ADR-0182, ADR-0186, ADR-0202, ADR-0205 and ADR-0222) and `excluded_and_parked.PARKED_BOARDS` (−307). Computed by `scrapable_boards.load(min_jobs=0)` (ADR-0191, the one place that decides whether a Board is scraped) — which applies these in the *other* order, excluding before it dedupes, and lands on the same figure. The right default answer to "how many Boards do we have".
 _Avoid_: calling this "unique" — the 27,177 Boards between it and Unique Board are real and distinct, deliberately skipped rather than deduplicated. The alias subtraction is the one exception, and it is small: those 1,172 serve no posting a kept Board does not — one Board reached by more than one name, a Taleo career section or ADP Recruiting Management career site whose every posting another of its tenant already lists, or an Eightfold career site whose backing ATS Board lists its postings and serves every tech one (a distinct Board, but a redundant one).
 
-**Hiring Board** — 103,904:
+**Hiring Board** — 103,905:
 A Scrapable Board with at least one open posting (`scrapable_boards.load(min_jobs=1)`, the function's default). The other 53,540 are live but empty.
 
 **Slice** — 80,000:
@@ -568,8 +568,8 @@ _Avoid_: using it for a **shard**, which is the unit of _work_ a planner assigns
 - **"board" vs "careers page"** — distinct: **Board** is the ATS-hosted listing; **Careers page** is the company's own page that links or embeds it.
 - **"posting/opening" vs "Job"** — resolved: **Job** is the normalized record; "posting" names the raw ATS record before normalization.
 - **"active"** — overloaded between "the board responds" (**Live**) and "currently hiring" (Live with count > 0); resolved: the **Active list** is the Live set, and "hiring" is the count-filtered subset.
-- **"ATS provider" (UI label only)** — the search rail's ATS dropdown is labelled "ATS provider" for job-seekers (its values are greenhouse, lever, …). It briefly said "Board", which the glossary makes wrong — a **Board** is one company's listing, not the system hosting it. Internally the term stays **ATS** and the param stays `ats`; "provider" remains avoided in code and docs.
-- **"job site" (Trends UI label only)** — the Trends tab calls a **Board** a "job site" for job-seekers (the "Job sites" control, "N more job sites found", ADR-0248). It is the reader's word for one company's listing, never a **Portal** or a Workday site. Code, docs and data keep **Board**.
+- **"Source" and "hiring platform" (UI labels only)** — the search rail's ATS dropdown and the Trends menu are labelled "Source" / "All sources" for job-seekers (their values are greenhouse, lever, …; the rail said "ATS provider" until ADR-0255), and Home and the sign-in page count ATSes as "hiring platforms". The rail briefly said "Board", which the glossary makes wrong — a **Board** is one company's listing, not the system hosting it. Internally the term stays **ATS** and the param stays `ats`; "provider" and "platform" remain avoided in code and docs.
+- **"job site" (Trends UI label only)** — the Trends tab calls a **Board** a "job site" for job-seekers (the "Job sites" control, "N more job sites found", ADR-0248). It is the reader's word for one company's listing, never a **Portal** or a Workday site. Code, docs and data keep **Board**. Outside Trends the UI avoids naming a Board: it says "the employer's own site" or, as Home does, a company's "career site" — a reader's phrase, not a **Career front** — and only a Search scope handed over from Trends without a name keeps "N job sites" (ADR-0255).
 - **"Discover" (rejected tab name)** — the Search tab is called Search, not Discover: **Discovery** already names finding Companies on ATSes, and a UI label colliding with a glossary term would make every future conversation disambiguate.
 - **"match"** — three related things: a *match* is a **Job** a **Saved set**'s Query and filters admit; the Matches *tab* is that set run live; the **Match ring** is only the displayed score. None of them is the **Subscription**, which is the emailing Saved set.
 - **"Tenant"** — retired as a name for the `(ATS, slug)` pair, then re-defined by ADR-0185 as the ATS-hosted customer that can hold several **Board**s (a Workday company's sites, a Taleo host's sections). The old sense survives only in data names: the ledgers' `tenant` column, the `data/ats-tenants-merged/` dir and `slug_from(tenant, …)` still mean one Board's slug spelling — a code/data rename is a separate change, not yet done.

@@ -1160,17 +1160,17 @@ def test_pinpoint_an_unknown_slug_is_a_404_and_dead(monkeypatch):
     assert cl.p_pinpoint("zzqqnotatenant8127", "") == (cl.DEAD, None)
 
 
-def test_pinpoint_an_unresolvable_host_is_dead_and_a_network_error_unknown(monkeypatch):
+def test_pinpoint_an_unresolvable_host_and_a_network_error_are_unknown(monkeypatch):
     def raising(exc):
         def _fetch(method, url, **kw):
             raise exc
 
         return _fetch
 
-    dns = cl.http.RequestsError("no such host")
-    dns.code = cl._DNS_ERR
+    dns = cl.http.RequestsError("no such host", code=cl._DNS_ERR)
     monkeypatch.setattr(cl, "_fetch", raising(dns))
-    assert cl.p_pinpoint("gone", "") == (cl.DEAD, None)
+    # UNKNOWN since 2026-09-28: *.pinpointhq.com resolves every label, so this is our resolver.
+    assert cl.p_pinpoint("gone", "") == (cl.UNKNOWN, None)
     monkeypatch.setattr(cl, "_fetch", raising(cl.http.RequestsError("reset")))
     assert cl.p_pinpoint("acme", "") == (cl.UNKNOWN, None)
 
@@ -1726,6 +1726,79 @@ def test_darwinbox_probe_asks_the_scrapers_listing_on_each_tld(monkeypatch):
     assert cl.p_darwinbox("acme", "https://acme.darwinbox.com") == (cl.DEAD, None)
     scraper = get_scraper("darwinbox", "acme")
     assert asked == [scraper.listing_url_on("com"), scraper.listing_url_on("in")]
+
+
+def _darwinbox_answers(monkeypatch, by_tld):
+    """Serve each TLD's listing POST from `by_tld`: a (status, body) pair."""
+
+    class Answer:
+        def __init__(self, status, body):
+            self.status_code, self.text = status, body
+
+        def json(self):
+            return json.loads(self.text)
+
+    def fetch(method, url, **kwargs):
+        tld = "com" if ".darwinbox.com/" in url else "in"
+        return Answer(*by_tld[tld])
+
+    monkeypatch.setattr(cl.http, "fetch", fetch)
+
+
+# Bodies as live 2026-09-28 (accolitedigital, netmeds, zydushospital).
+_DBX_INVALID = (
+    500,
+    '{"status":"error","data":{"message":"Internal Server Error - Invalid subdomain: acme"}}',
+)
+_DBX_NO_TENANT_INFO = (
+    500,
+    (
+        '{"status":"error","data":{"message":"Internal Server Error - Error while getting '
+        'tenant info"}}'
+    ),
+)
+
+
+def test_darwinbox_probe_counts_the_boards_stated_total_not_one_page(monkeypatch):
+    """zydushospital, live 2026-09-28: page 1 at limit 100 held 100 rows, `job_counts` 135."""
+    page = json.dumps({"status": "success", "data": [{}] * 100, "job_counts": 135})
+    _darwinbox_answers(monkeypatch, {"in": (200, page), "com": _DBX_INVALID})
+    assert cl.p_darwinbox("acme", "https://acme.darwinbox.in") == (cl.LIVE, 135)
+
+
+def test_darwinbox_probe_reads_a_host_that_is_no_tenant_on_either_tld_as_dead(
+    monkeypatch,
+):
+    """Live 2026-09-28: 12/12 live tenants answer "Invalid subdomain" on their other TLD, and
+    hosts answering it or "Error while getting tenant info" redirect `/` to darwinbox.com's
+    marketing site where a tenant redirects to its own `/user/login`."""
+    _darwinbox_answers(monkeypatch, {"in": _DBX_NO_TENANT_INFO, "com": _DBX_INVALID})
+    assert cl.p_darwinbox("acme", "https://acme.darwinbox.in") == (cl.DEAD, None)
+
+
+def test_darwinbox_probe_does_not_read_cloudflares_530_as_no_tenant(monkeypatch):
+    """bobobox, live 2026-09-28: .in "Invalid subdomain", .com Cloudflare 530. A 530 means the
+    origin did not answer, which a real tenant's outage looks like too."""
+    no_origin = (
+        530,
+        '{"type":"https://developers.cloudflare.com/support/troubleshooting/"}',
+    )
+    _darwinbox_answers(monkeypatch, {"in": _DBX_INVALID, "com": no_origin})
+    assert cl.p_darwinbox("acme", "https://acme.darwinbox.in") == (cl.UNKNOWN, None)
+
+
+def test_darwinbox_probe_keeps_an_unexplained_answer_unknown(monkeypatch):
+    """insights.darwinbox.com answered 404 "invalid endpoint" (live 2026-09-28): not measured
+    to mean anything, so it settles nothing."""
+    not_measured = (
+        404,
+        (
+            '{"success":false,"errorMessage":"You seem to have called an invalid'
+            ' endpoint."}'
+        ),
+    )
+    _darwinbox_answers(monkeypatch, {"in": _DBX_INVALID, "com": not_measured})
+    assert cl.p_darwinbox("acme", "https://acme.darwinbox.in") == (cl.UNKNOWN, None)
 
 
 def test_ripplehire_probe_reads_the_scrapers_token_and_search(monkeypatch):
@@ -2389,3 +2462,28 @@ def test_p_recruitee_reads_a_dns_failure_as_unknown(monkeypatch):
     assert cl.p_recruitee("acme", "https://acme.recruitee.com") == (cl.UNKNOWN, None)
     monkeypatch.setattr(cl, "_get", _stub_get(404, b""))
     assert cl.p_recruitee("acme", "https://acme.recruitee.com") == (cl.DEAD, None)
+# A DNS failure on a host every tenant label resolves on is our resolver, never a dead tenant
+# (`_unknown_dns_on_a_shared_host`).
+@pytest.mark.parametrize(
+    "ats, tenant, url",
+    [
+        ("bamboohr", "acme", "https://acme.bamboohr.com"),
+        ("jazzhr", "acme", "https://acme.applytojob.com"),
+        ("keka", "acme", "https://acme.keka.com"),
+        ("zoho", "acme.zohorecruit.com", "https://acme.zohorecruit.com"),
+        ("freshteam", "acme", "https://acme.freshteam.com"),
+        ("pinpoint", "acme", "https://acme.pinpointhq.com"),
+        ("jobvite", "acme", "https://jobs.jobvite.com/acme"),
+    ],
+)
+def test_a_unknown_dns_on_a_shared_host_host_is_unknown(monkeypatch, ats, tenant, url):
+    dns = cl.http.RequestsError("Could not resolve host", code=cl._DNS_ERR)
+
+    def _fetch(method, url, **kw):
+        raise dns
+
+    notes = []
+    monkeypatch.setattr(cl, "_fetch", _fetch)
+    monkeypatch.setattr(cl, "_note", notes.append)
+    assert cl.PROBES[ats](tenant, url) == (cl.UNKNOWN, None)
+    assert notes == ["dns"]
