@@ -469,6 +469,36 @@ zoho tenants (`data/validate/liveness/zoho.csv`), listing vs. detail page, found
 across the wider field set `_merge_detail` actually overlays, not just the four originally measured. A
 future pass should still re-run `salary_sample.py` against zoho for an updated Tier-1 percentage.
 
+## 2026-09-29 (#698): a monthly reading, and no second read of the spliced field
+
+zoho's `Salary` and `Currency` state no period, and 113 served rows (v277: 95 INR, 10 AED, 4 GBP,
+2 MXN, 2 ZAR) showed what that cost. `_field_generic` refused "30000-40000 INR" as below INR's
+annual floor, and Tier 2 then read the same figure back out of the description, where
+`_description_text` appends it as "Salary: 30000-40000 Currency: INR". That second read has no
+currency and no floor, so the row was served as an annual 30,000-40,000 with no currency.
+
+Only 2 of those 113 descriptions restate the period, both as monthly, and none as annual. The
+evidence is the figure's size instead. Across every served salary string that names INR and a
+period, 352 of the 356 figures between a twelfth of INR's floor and the floor stated a month; the
+other currencies read the same way are listed, with their counts, at `_QUOTED_MONTHLY`.
+
+- **`_field_zoho`** reads a field that is only figures and a code, refused below its currency's
+  floor, as monthly pay when the currency is quoted by the month: "30000-40000 INR" is 360,000-
+  480,000 INR a year. On v277 that answers 664 zoho rows (SGD 226, INR 188, MYR 154, AED 33, NGN
+  29, PHP 17, EUR 10, MXN 5, SAR 1, PKR 1). A figure the floor admits stays annual.
+- **`extract`** serves nothing from the description when a zoho field names a code, fails to
+  parse, and the description's figure has no currency either: that figure is the splice. This
+  covers what the monthly reading cannot: words in the field ("40000 or depends on the skill
+  sets INR", "Net Plus Commission NGN"), day rates ("600 Euros/day GBP"), and QAR and ZAR, whose
+  period no served string states.
+- The field's code is still not stamped onto a description figure, as it is for the structured
+  ATSes: "600 Euros/day GBP" names one currency in its text and another in its code.
+
+The cost: where the field is a placeholder floor ("10 K+ INR") and the description states a fuller
+range with its own currency ("₹15,000 - ₹20,000 per month"), the field now answers, as it does for
+every other parsed field. That happened on 3 served rows. On a fourth, the field ("AED 22000") and
+the description ("AED 13,000 – 15,000 per month") disagree, and the field answers there too.
+
 ## Known gaps, left honestly unresolved rather than guessed at
 
 - **Non-English postings** (confirmed: Italian, Dutch, French) — out of scope per this repo's

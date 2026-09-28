@@ -46,6 +46,23 @@ _MAX_PLAUSIBLE_ANNUAL = {
     "ZAR": 15_000_000,
     "CZK": 20_000_000,
     "BRL": 4_500_000,
+    # The #698 codes (2026-09-29): each scaled from the USD ceiling at its config/fx_rates.json
+    # rate, except COP's, held under the served int32 columns' 2,147,483,647 (2.5 billion scaled).
+    "SGD": 1_000_000,
+    "MYR": 3_200_000,
+    "JPY": 125_000_000,
+    "PHP": 50_000_000,
+    "NGN": 1_000_000_000,
+    "RON": 3_600_000,
+    "HUF": 250_000_000,
+    "SAR": 3_000_000,
+    "CNY": 5_400_000,
+    "PKR": 220_000_000,
+    "NZD": 1_400_000,
+    "QAR": 3_000_000,
+    "COP": 2_000_000_000,
+    "NOK": 7_500_000,
+    "TWD": 25_000_000,
 }
 _MIN_PLAUSIBLE_ANNUAL = {
     "USD": 10_000,
@@ -69,6 +86,39 @@ _MIN_PLAUSIBLE_ANNUAL = {
     "ZAR": 40_000,
     "CZK": 150_000,
     "BRL": 15_000,
+    # The #698 codes, calibrated on every served salary string that names the code and a period
+    # (v277, 2026-09-29). Where pay is quoted by the month (`_QUOTED_MONTHLY`, and QAR), the floor
+    # sits above the monthly amounts written with no period, so they are refused rather than served
+    # as annual (AED's reasoning), yet under twelve times the stated monthly pay: of the 228 stated
+    # monthly figures in those currencies, the floors refuse one real one, "1000-3000 SGD
+    # per-month", so that zoho's "SGD 12000 - SGD 14000" is not read as annual. The others refused
+    # are placeholders ("0-40000 SAR 1 MONTH", "CNY 1-3000"), thousands typed as units ("800-950
+    # HUF 1 MONTH") or a floor under the minimum wage ("800000-7000000 COP 1 MONTH"). Every
+    # stated annual figure clears the floors; the smallest are SGD 121,340, MYR 63,750, PHP
+    # 2,160,000, RON 162,400, HUF 21,000,000, SAR 400,000, CNY 100,000 and COP 184,800,000 (NGN
+    # and PKR state none). Figures under a floor that are typed annual are monthly ones ("PHP
+    # 19000-20000 yearly", "25000-31000 SAR YEAR"). QAR states no period anywhere;
+    # zoho's 20 figures, all monthly-sized, top at 30,000, and QAR takes AED's floor. NGN's, RON's
+    # and HUF's floors stay under the national minimum wage annualised (70,000, 4,325 and about
+    # 322,000 a month). NZD, TWD and JPY are quoted by the year: their floors sit under the
+    # smallest stated annual figure (90,000, 1,529,300 and 4,000,000), about two thirds of the
+    # national minimum wage annualised. NOK (702,912) takes SEK's floor; Norway sets no national
+    # minimum.
+    "SGD": 20_000,
+    "MYR": 21_000,
+    "PHP": 200_000,
+    "NGN": 800_000,
+    "RON": 40_000,
+    "HUF": 2_500_000,
+    "SAR": 36_000,
+    "CNY": 30_000,
+    "PKR": 400_000,
+    "QAR": 30_000,
+    "COP": 12_000_000,
+    "NZD": 30_000,
+    "NOK": 150_000,
+    "TWD": 250_000,
+    "JPY": 1_500_000,
 }
 _HOURLY_TO_ANNUAL = 2080  # 40hr/wk * 52wk, the standard full-time-equivalent convention
 _DAILY_TO_ANNUAL = 260  # 5 days/wk * 52wk
@@ -101,20 +151,26 @@ def extract(
     On an ATS whose field is spelt from a structured currency (`_field_range_currency_interval`),
     a stated ISO code is the posting's currency even when the field's amount fails and the
     description supplies it (#698): "40-50 EUR 1 YEAR" (thousands unwritten) against a description
-    reading "40.000 € - 50.000 €". Measured 2026-09-28: 11 served rows, all EUR, all in bounds. A
-    free-text field (zoho's) is left out: its code sits beside monthly figures ("30000-40000 INR")
-    and contradicts its own text ("600 Euros/day GBP")."""
+    reading "40.000 € - 50.000 €". Measured 2026-09-28: 11 served rows, all EUR, all in bounds.
+
+    zoho's free-text field is not stamped: its code can contradict its own text ("600 Euros/day
+    GBP"). A zoho field that names a code and still fails to parse serves nothing from the
+    description when that figure has no currency either. zoho.py appends the field to the
+    description as "Salary: … Currency: …", so that figure is the field read again without its
+    currency or its currency's floor. It reached 26 rows on v277 (2026-09-29), among them "25000
+    QAR" and "45,000-55,000 NGN": monthly pay, served as annual with no currency."""
     field = from_field(salary, ats)
     if field:
         return field
     found = from_description(description)
     if found is None or found.currency is not None:
         return found
-    if _FIELD_PARSERS.get(ats or "") is not _field_range_currency_interval:
-        return found
+    parser = _FIELD_PARSERS.get(ats or "")
     code = _CURRENCY_CODE.search(salary or "")
-    if code is None:
+    if code is None or parser not in (_field_range_currency_interval, _field_zoho):
         return found
+    if parser is _field_zoho:
+        return None
     stated = _bounded(found.min_annual, found.max_annual, code.group(1).upper())
     return found if stated is None else replace(stated, source=found.source)
 
@@ -142,7 +198,12 @@ def extract(
 # pass today (keka's own period-omitted payload means they're correctly rejected either way), but
 # gives any genuinely-annual AED figure (here or on a future ATS) a properly-calibrated bound
 # instead of the coarser USD-shaped fallback.
-_CURRENCY_CODES = "USD|EUR|GBP|INR|CAD|AUD|HKD|SEK|PLN|CHF|AED|MXN|ZAR|CZK|BRL"
+# The last fifteen joined on #698 (2026-09-29): every code at least 10 served rows stated in
+# `salary` while `salary_currency` stayed null (1,146 of 1,258 such rows on v277).
+_CURRENCY_CODES = (
+    "USD|EUR|GBP|INR|CAD|AUD|HKD|SEK|PLN|CHF|AED|MXN|ZAR|CZK|BRL"
+    "|SGD|MYR|JPY|PHP|NGN|RON|HUF|SAR|CNY|PKR|NZD|QAR|COP|NOK|TWD"
+)
 
 _CURRENCY_CODE = re.compile(rf"\b({_CURRENCY_CODES})\b", re.IGNORECASE)
 # The shared currency-symbol fragment every `sym`/`sym2` capture group below interpolates,
@@ -180,11 +241,12 @@ _SYMBOL_CURRENCY = {
 # Measured on the 2026-09-26 description store, 11,811 descriptions with an upper-case three-letter
 # word before "$": USD 10,534, CAD 854, AUD 35, SGD 16, MXN 11, NZD 9, TWD/NTD 7, CLP/COP 4. A code
 # this module can emit names its currency; a peso or Taiwan-dollar code declines to None rather
-# than a wrong USD. Upper case only: "can $" is a verb.
+# than a wrong USD. Upper case only: "can $" is a verb. COP and TWD became emittable on #698, so
+# only CLP and the non-ISO "NTD" still decline.
 _EMITTABLE_CODES = frozenset(_CURRENCY_CODES.split("|")) | frozenset(
     _SYMBOL_CURRENCY.values()
 )
-_DECLINED_DOLLAR_CODES = frozenset({"CLP", "COP", "TWD", "NTD"})
+_DECLINED_DOLLAR_CODES = frozenset({"CLP", "NTD"})
 _CODE_BEFORE_DOLLAR = re.compile(
     rf"\b({'|'.join(sorted(_EMITTABLE_CODES | _DECLINED_DOLLAR_CODES))})\$?:?\s*$"
 )
@@ -662,6 +724,48 @@ def _field_adp_recruiting(value: str) -> SalarySpan | None:
     return _bounded(lo, hi if len(figures) == 2 else None, currency)
 
 
+#: The currencies whose pay is quoted by the month. Across every served salary string that names
+#: one and states a period (v277, 2026-09-29), a figure from a twelfth of its floor up to the floor
+#: stated a month, or else "year" on a figure too small to be annual pay, bar "10K INR per day"
+#: and "40000-55000 MXN per-hour": INR 352 of 356 (keka, pyjamahr, zoho, smartrecruiters,
+#: darwinbox), EUR 505 of 512, RON 47, AED 39, PHP 35 of 38, SAR 27 of 29, HUF 18 of 19, PKR 16,
+#: SGD 13, CNY 11, MYR 9, MXN 9 of 11, COP 5 of 6. NGN has one such row, monthly, and a zoho
+#: description restating "200k NGN" as "₦180,000 – ₦200,000 per month". USD is left out (13 of
+#: its 134 are weekly rates), as is GBP (day rates), and so are QAR and ZAR, which state no figure
+#: in that band.
+_QUOTED_MONTHLY = frozenset(
+    {"INR", "EUR", "RON", "AED", "PHP", "SAR", "HUF"}
+    | {"PKR", "SGD", "CNY", "MYR", "MXN", "COP", "NGN"}
+)
+#: A zoho field that is only figures and a currency code: "30000-40000 INR", "SGD 6000 - SGD
+#: 8500", "110K+ INR", "18000 to 21000 AED". A word ("per month", "/day", "Negotiable", "depends
+#: on") says something this reading would override.
+_FIGURES_AND_CODE_ONLY = re.compile(
+    rf"(?:\s|[-–+]|\d[\d.,]*\s*(?i:k\b)?|\b(?i:to)\b|\b(?i:{_CURRENCY_CODES})\b)+"
+)
+
+
+def _field_zoho(value: str) -> SalarySpan | None:
+    """`_field_generic`, then a monthly reading of a field it refuses as below its currency's floor.
+
+    zoho's Salary is free text beside a separate Currency (zoho.py's `_salary_field` joins them),
+    and neither states a period. A figure too small to be annual pay in a currency quoted by the
+    month (:data:`_QUOTED_MONTHLY`) is its monthly pay: "30000-40000 INR" is 360,000-480,000 a
+    year, not an annual 30,000-40,000. On the 113 zoho rows that shape reached on v277 (95 INR, 10
+    AED, 4 GBP, 2 MXN, 2 ZAR), 2 descriptions restate the period, both monthly ("₹30,000 in-hand
+    per month", "a competitive monthly salary within the range of 18,000 - 21,000"), and none
+    annual. A figure the floor admits stays annual, so the threshold is the floor itself: INR
+    figures from 100,000 to 199,999 stated a month 50 of 58 times across ATSes, too few to
+    override an annual reading that is in bounds."""
+    span = _field_generic(value)
+    if span is not None or not _FIGURES_AND_CODE_ONLY.fullmatch(value):
+        return span
+    code = _CURRENCY_CODE.search(value)
+    if code is None or code.group(1).upper() not in _QUOTED_MONTHLY:
+        return None
+    return _field_generic(value, mult=12)
+
+
 #: ATS -> its Tier-1 parser. An ATS not listed here (including one not yet given its own research
 #: pass) falls through to `_field_generic`.
 _FIELD_PARSERS = {
@@ -699,6 +803,7 @@ _FIELD_PARSERS = {
     # changes and no DERIVATIONS_VERSION bump.
     "jibe": _field_range_currency_interval,
     "adp_recruiting": _field_adp_recruiting,
+    "zoho": _field_zoho,
 }
 
 
@@ -716,12 +821,15 @@ def _currency_of_symbol_before(value: str, start: int) -> str | None:
 # `_RANGE` reads — it takes no "." inside a number, so the European range began inside "71.000",
 # and no unit, so "10-13 LPA" was 10 to 13 rupees a year. Kept apart from `_RANGE` because the
 # calibrated parsers read that one's groups by number. A number may group with "." or ",";
-# `_num_value` decides which is the decimal mark.
+# `_num_value` decides which is the decimal mark. The ceiling may carry its own code ("SGD 6000 -
+# SGD 8500") and the two figures may be joined by "to" ("$ 70,000.00 to 90,000.00 per year");
+# without either, only the floor was read. Served v277: 374 and 764 such fields on the ATSes that
+# reach this parser (zoho, ripplehire, bamboohr, taleo_be, pinpoint).
 _GROUPED_NUMBER = r"\d(?:[\d.,]*\d)?"
 _FIGURE_UNIT = r"(?i:k|lpa|lakhs?|lacs?|l)\b"
 _GENERIC_RANGE = re.compile(
-    rf"({_GROUPED_NUMBER})\s*({_FIGURE_UNIT})?\s*[-–]\s*{_SYM}?\s*({_GROUPED_NUMBER})"
-    rf"\s*({_FIGURE_UNIT})?"
+    rf"({_GROUPED_NUMBER})\s*({_FIGURE_UNIT})?\s*(?:[-–]|\b(?i:to)\b)\s*"
+    rf"(?:{_SYM}|(?i:{_CURRENCY_CODES})\b)?\s*({_GROUPED_NUMBER})\s*({_FIGURE_UNIT})?"
 )
 _GENERIC_SINGLE = re.compile(rf"({_GROUPED_NUMBER})\s*({_FIGURE_UNIT})?")
 
@@ -749,33 +857,37 @@ def _names_lakhs(*units: str | None) -> bool:
 
 
 def _declines_k_figure(
-    value: str, currency: str | None, *figures: tuple[str, str | None]
+    value: str, currency: str | None, mult: int, *figures: tuple[str, str | None]
 ) -> bool:
-    """Whether a figure a "k" scaled is refused: one in rupees, or one in a field naming no
-    currency by code or by any symbol.
+    """Whether a figure a "k" scaled is refused: one in rupees read as annual, or one in a field
+    naming no currency by code or by any symbol.
 
     Measured 2026-09-28 on zoho: a small "K" rupee figure is a monthly amount ("110K+ INR" on a
     six-month contract), since annual Indian pay is written in lakhs; and 294 fields naming no
     currency ("10 K+", "20-25K") sat mostly on Indian tenants. Read as annual, both would serve a
-    monthly figure. A "$" anywhere keeps an unnamed figure ("$100k-$120k", currency None as for any
-    bare dollar)."""
+    monthly figure. A rupee figure read by the month (``mult`` 12, stated or `_field_zoho`'s
+    reading) is what it is, so it stands. A "$" anywhere keeps an unnamed figure ("$100k-$120k",
+    currency None as for any bare dollar)."""
     scaled = any(
         unit and unit.lower() == "k" and _num_value(figure) < _FULL_FIGURE
         for figure, unit in figures
     )
     if not scaled:
         return False
-    return currency == "INR" or (currency is None and not re.search(_SYM, value))
+    return (currency == "INR" and mult != 12) or (
+        currency is None and not re.search(_SYM, value)
+    )
 
 
-def _field_generic(value: str) -> SalarySpan | None:
+def _field_generic(value: str, mult: int | None = None) -> SalarySpan | None:
     """Best-effort for an ATS with no calibrated parser yet: a range or single figure plus
     whatever currency code/period the string happens to state — an ISO code first, else a
     currency symbol on the figure itself. Deliberately conservative — no per-ATS quirk handling, so
-    it under-extracts rather than mis-extracts."""
+    it under-extracts rather than mis-extracts. ``mult`` overrides the stated period, for
+    `_field_zoho`'s monthly reading."""
     code_m = _CURRENCY_CODE.search(value)
     currency = code_m.group(1).upper() if code_m else None
-    mult = _period_multiplier(value)
+    mult = mult or _period_multiplier(value)
     m = _GENERIC_RANGE.search(value)
     if m:
         # One unit after the ceiling covers both figures ("7 - 10 K", "5-8L"); a floor's own unit
@@ -787,7 +899,7 @@ def _field_generic(value: str) -> SalarySpan | None:
             or ("INR" if _names_lakhs(lo_unit, hi_unit) else None)
         )
         if _declines_k_figure(
-            value, currency, (m.group(1), lo_unit), (m.group(3), hi_unit)
+            value, currency, mult, (m.group(1), lo_unit), (m.group(3), hi_unit)
         ):
             return None
         lo = _unit_value(m.group(1), lo_unit) * mult
@@ -807,7 +919,7 @@ def _field_generic(value: str) -> SalarySpan | None:
             or _currency_of_symbol_before(value, single.start(1))
             or ("INR" if _names_lakhs(unit) else None)
         )
-        if _declines_k_figure(value, currency, (single.group(1), unit)):
+        if _declines_k_figure(value, currency, mult, (single.group(1), unit)):
             return None
         v = _unit_value(single.group(1), unit) * mult
         return _bounded(v, None, currency)
