@@ -118,10 +118,11 @@ def _pay_range_field(ranges: list[dict] | None) -> str | None:
             continue
         if max(lo, hi) <= 0.01:
             continue
-        lo, hi = min(lo, hi), max(lo, hi)
+        # Both ends even when equal: a range stating one figure is that exact pay, not a floor,
+        # as the description read it before (airbnb's 151000 USD read 151000-151000).
         return salary.to_field(
-            _format_amount(lo),
-            None if lo == hi else _format_amount(hi),
+            _format_amount(min(lo, hi)),
+            _format_amount(max(lo, hi)),
             r.get("currency_type"),
             (r.get("title") or "").strip() or None,
         )
