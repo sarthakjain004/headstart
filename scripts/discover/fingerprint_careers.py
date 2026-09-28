@@ -80,7 +80,14 @@ from functools import lru_cache
 from pathlib import Path
 from re import _constants as re_constants
 from re import _parser as re_parser
-from urllib.parse import parse_qs, urlencode, urljoin, urlsplit, urlunsplit
+from urllib.parse import (
+    parse_qs,
+    unquote_plus,
+    urlencode,
+    urljoin,
+    urlsplit,
+    urlunsplit,
+)
 
 import certifi
 from curl_cffi import requests as _requests
@@ -164,8 +171,9 @@ PATTERNS: dict[str, tuple[str, list[str]]] = {
     "ashby": (
         "ats",
         [
-            r"api\.ashbyhq\.com/posting-api/job-board/([a-zA-Z0-9_-]+)",
-            r"jobs\.ashbyhq\.com/(?:embed\?[^\"'\s]{0,80}?board=)?([a-zA-Z0-9_-]+)",
+            # An Ashby Board name may hold a space, linked as %20 or + (#864).
+            r"api\.ashbyhq\.com/posting-api/job-board/((?:[a-zA-Z0-9_-]|%20|\+)+)",
+            r"jobs\.ashbyhq\.com/(?:embed\?[^\"'\s]{0,80}?board=)?((?:[a-zA-Z0-9_-]|%20|\+)+)",
         ],
     ),
     "zoho": (
@@ -1071,6 +1079,8 @@ def scan(
                     tok = got[0] if got else ""
                 else:
                     raw = (m.group(1) if m.lastindex else "") or ""
+                    if ats == "ashby":
+                        raw = unquote_plus(raw)  # the ledger spells "Blackpoint Cyber"
                     tok = raw if ats in KEEPS_SLUG_CASE else raw.lower()
                     if tok:
                         lo = tok.lower()

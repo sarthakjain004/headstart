@@ -1232,3 +1232,16 @@ def test_filtered_scan_equals_the_scan_that_runs_every_pattern(monkeypatch):
     assert {name for name, found in unfiltered.items() if not found} == {"none"}
     assert {ats for ats, *_rest in unfiltered["kelvin"]} == {"keka"}
     assert {ats for ats, *_rest in unfiltered["long-s"]} == {"smartrecruiters"}
+
+
+def test_an_ashby_board_name_with_a_space_is_kept_whole():
+    """#864: `Blackpoint%20Cyber` was cut to `blackpoint`, a Board that 404s; `+` is a space too."""
+    for link in ("Blackpoint%20Cyber", "Blackpoint+Cyber"):
+        found = {
+            (ats, tenant)
+            for ats, _kind, tenant, _n in fp.scan(
+                f'<a href="https://jobs.ashbyhq.com/{link}">Jobs</a>',
+                "blackpointcyber.com",
+            )
+        }
+        assert ("ashby", "blackpoint cyber") in found, link
