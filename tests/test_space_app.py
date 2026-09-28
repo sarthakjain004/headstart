@@ -237,14 +237,16 @@ def auth_app(tmp_path_factory):
 
 
 @pytest.fixture(scope="module")
-def service_app(tmp_path_factory):
-    """Wall on AND a service token set — the Digest generator's way in (ADR-0035)."""
+def retired_secrets_app(tmp_path_factory):
+    """Wall on, with both retired machine secrets still set, as on a Space nobody cleaned up
+    (ADR-0258)."""
     with _space_app(
         tmp_path_factory.mktemp("state"),
         env={
             "SECRET_KEY": "test-secret",
             "GOOGLE_CLIENT_ID": "client-id.example",
-            "ALERTS_TOKEN": "service-token",
+            "ALERTS_TOKEN": "alerts-token",
+            "AGENT_TOKEN": "agent-token",
         },
     ) as module:
         yield module
@@ -336,8 +338,6 @@ def test_wall_on_serves_the_door_and_gates_the_api(auth_app):
     # Google's sign-in can't complete and a Lax session cookie wouldn't be sent anyway, so
     # the door offers a new tab instead. Losing this strands every visitor arriving that way.
     assert b'id="openout"' in page
-    assert client.get("/search?q=x").status_code == 401
-    assert client.get("/trends").status_code == 401
     assert client.post("/profile/parse", json={}).status_code == 401
     assert client.post("/subscribe", json={}).status_code == 401
     assert client.post("/signout").status_code == 401
@@ -356,7 +356,7 @@ def test_signin_flow(auth_app, monkeypatch):
     assert b"jobs indexed" in client.get("/", base_url=_HTTPS).data
     assert client.get("/me", base_url=_HTTPS).json["email"] == "dev@example.com"
     client.post("/signout", base_url=_HTTPS)
-    assert client.get("/search?q=", base_url=_HTTPS).status_code == 401
+    assert client.get("/sets", base_url=_HTTPS).status_code == 401
 
 
 def test_bad_credential_is_401(auth_app, monkeypatch):
@@ -386,91 +386,40 @@ def test_unsubscribe_stays_reachable_signed_out(auth_app):
     assert auth_app.app.test_client().get("/unsubscribe").status_code == 503
 
 
-def test_digest_generator_reaches_search_through_the_wall(service_app):
-    """The sibling of the test above, and the one that was missing.
-
-    A mailed Digest's link must survive the wall — and so must the run that *generates*
-    the Digest, which calls /search for every Subscription (ADR-0035). It is a machine
-    with no Google identity to offer, so it carries the service token instead, exactly as
-    /unsubscribe carries its own. Without this the alerts workflow 401s on every run.
-    """
-    client = service_app.app.test_client()
-    assert client.get("/search?q=x").status_code == 401  # still shut to the anonymous
-    ok = client.get("/search?q=", headers={"Authorization": "Bearer service-token"})
-    assert ok.status_code == 200 and len(ok.json) == 2  # browses (ADR-0074)
-
-
-def test_the_service_token_buys_search_and_nothing_else(service_app):
-    # Scoped deliberately: the alerts run needs /search and only /search, so a leaked
-    # token is not a session. Widening this is a decision, not an accident.
-    client = service_app.app.test_client()
-    bearer = {"Authorization": "Bearer service-token"}
-    assert client.get("/trends", headers=bearer).status_code == 401
-    assert client.post("/subscribe", json={}, headers=bearer).status_code == 401
+def test_a_retired_machine_secret_opens_nothing(retired_secrets_app):
+    """No machine secret opens the wall any more (ADR-0258): the read routes answer anyone,
+    and a Space still holding `ALERTS_TOKEN` or `AGENT_TOKEN` ignores both on every Account
+    route."""
+    client = retired_secrets_app.app.test_client()
+    for token in ("alerts-token", "agent-token"):
+        bearer = {"Authorization": f"Bearer {token}"}
+        assert client.get("/sets", headers=bearer).status_code == 401, token
+        assert client.post("/subscribe", json={}, headers=bearer).status_code == 401, (
+            token
+        )
+        assert _through_the_wall(client.get("/search?q=", headers=bearer)), token
 
 
-def test_a_near_miss_token_is_not_a_match(service_app):
-    client = service_app.app.test_client()
-    for bad in (
-        "Bearer service-toke",
-        "Bearer service-tokenX",
-        "service-token",
-        "Bearer",
-        # Headers decode as latin-1, and hmac.compare_digest raises TypeError on a
-        # non-ASCII str — which would turn a rejected credential into an unauthenticated
-        # 500 from inside before_request. Compare bytes, and this is a plain 401.
-        "Bearer café",
-    ):
-        r = client.get("/search?q=", headers={"Authorization": bad})
-        assert r.status_code == 401, f"{bad!r} got in"
+# ---- the public read routes (ADR-0258) ----
 
-
-def test_an_unconfigured_service_token_admits_nobody(auth_app):
-    # Deny-by-default, as in alerts.access: "no token set" must mean the door is shut,
-    # never that an empty or absent credential compares equal to the empty config.
-    client = auth_app.app.test_client()
-    for header in ("Bearer ", "Bearer x", ""):
-        r = client.get("/search?q=", headers={"Authorization": header})
-        assert r.status_code == 401, f"{header!r} got in with no ALERTS_TOKEN set"
-    assert auth_app._SERVICE_TOKENS == {}
-
-
-# ---- the agent token (ADR-0253) ----
-
-_AGENT_BEARER = {"Authorization": "Bearer agent-token"}
-_ALERTS_BEARER = {"Authorization": "Bearer service-token"}
-# The read routes that answer without an Account: the whole of what AGENT_TOKEN opens, and
-# those of them ALERTS_TOKEN does not.
-_AGENT_ONLY_PATHS = (
+# The read routes that answer without an Account, open to anyone so that anyone can use the
+# MCP server. Everything else the app routes, bar the door's own paths, stays walled.
+_READ_ROUTES = (
+    "/search",
     "/facets",
     "/trends",
     "/hot",
     "/companies/suggest",
     "/companies/lookup",
 )
-_AGENT_PATHS = ("/search", *_AGENT_ONLY_PATHS)
-
-
-def _wall_env(**secrets):
-    """The sign-in wall on, with exactly the machine secrets given and no others: a module
-    fixture's env stays set until the module ends, so an unnamed secret must be pinned off."""
-    return {
-        "SECRET_KEY": "test-secret",
-        "GOOGLE_CLIENT_ID": "client-id.example",
-        "ALERTS_TOKEN": "",
-        "AGENT_TOKEN": "",
-        **secrets,
-    }
-
-
-@pytest.fixture
-def agent_app(tmp_path):
-    """Wall on AND both machine secrets set: the Digest generator's and an agent's. Loaded per
-    test, so its secrets are unset again before any later fixture imports the app."""
-    with _space_app(
-        tmp_path, env=_wall_env(ALERTS_TOKEN="service-token", AGENT_TOKEN="agent-token")
-    ) as module:
-        yield module
+_DOOR_PATHS = (
+    "/",
+    "/auth/google",
+    "/me",
+    "/unsubscribe",
+    "/privacy",
+    "/static/logo_mark.svg",
+)
 
 
 def _through_the_wall(response) -> bool:
@@ -481,63 +430,71 @@ def _through_the_wall(response) -> bool:
     }
 
 
-def test_each_machine_secret_admits_exactly_its_own_paths(agent_app):
-    # Pinned as whole sets, so widening either one is a decision a test has to be told
-    # about, never an accident of editing the map.
-    assert agent_app._SERVICE_TOKENS == {
-        b"service-token": frozenset({"/search"}),
-        b"agent-token": frozenset(_AGENT_PATHS),
-    }
+def test_the_public_paths_are_the_door_and_the_read_routes(auth_app):
+    # Pinned as a whole set, so opening one more path is a decision a test has to be told
+    # about, never an accident of editing the set.
+    assert auth_app._PUBLIC_PATHS == {*_DOOR_PATHS, *_READ_ROUTES}
 
 
-def test_the_agent_token_opens_every_read_route_it_names(agent_app):
-    client = agent_app.app.test_client()
-    for path in _AGENT_PATHS:
-        assert not _through_the_wall(client.get(path)), f"{path} open to the anonymous"
-        assert _through_the_wall(client.get(path, headers=_AGENT_BEARER)), path
+def test_every_read_route_answers_anyone_with_the_wall_on(auth_app):
+    client = auth_app.app.test_client()
+    for path in _READ_ROUTES:
+        assert _through_the_wall(client.get(path)), f"{path} refused the anonymous"
 
 
-@pytest.mark.parametrize(
-    "method, path",
-    [
-        ("GET", "/sets"),
-        ("GET", "/saved"),
-        ("GET", "/profile"),
-        ("GET", "/resumes"),
-        ("GET", "/companies"),
-        ("POST", "/companies"),
-        ("POST", "/subscribe"),
-    ],
-)
-def test_the_agent_token_opens_no_account_route(agent_app, method, path):
-    # A leaked agent token reads what any signed-in visitor can read, and nothing of an
-    # Account's own: no records, no follow or hide lists, and no write.
-    client = agent_app.app.test_client()
-    r = client.open(path, method=method, json={}, headers=_AGENT_BEARER)
-    assert r.status_code == 401 and r.json == {"error": "sign in first"}
+def test_every_other_route_still_refuses_the_anonymous(auth_app):
+    """Every route the app has, walked off its URL map so a new one is covered the day it
+    lands: outside the public set, each method answers the wall's 401. That is every Account
+    route (sets, saved, profile, résumés, subscribe, follow and hide), GET and POST alike."""
+    client = auth_app.app.test_client()
+    walled = set()
+    for rule in auth_app.app.url_map.iter_rules():
+        path = re.sub(r"<[^>]+>", "x", rule.rule)
+        if path in _READ_ROUTES:
+            # The wall is keyed on the path, so a write added to a read route would be
+            # public the day it lands. They read, and only read.
+            assert rule.methods - {"HEAD", "OPTIONS"} == {"GET"}, (
+                f"{path} {rule.methods}"
+            )
+        if path in auth_app._PUBLIC_PATHS:
+            continue
+        for method in sorted(rule.methods - {"HEAD", "OPTIONS"}):
+            r = client.open(path, method=method, json={})
+            assert r.status_code == 401, f"{method} {path} answered {r.status_code}"
+            assert r.json == {"error": "sign in first"}, f"{method} {path}"
+            walled.add((method, path))
+    # The walk reached the Account routes, rather than passing over an empty map.
+    assert {("GET", "/companies"), ("POST", "/companies"), ("GET", "/sets")} <= walled
 
 
-def test_the_alerts_token_still_opens_search_alone(agent_app):
-    client = agent_app.app.test_client()
-    assert client.get("/search?q=", headers=_ALERTS_BEARER).status_code == 200
-    for path in _AGENT_ONLY_PATHS:
-        assert client.get(path, headers=_ALERTS_BEARER).status_code == 401, path
-
-
-def test_an_agent_token_equal_to_the_alerts_token_admits_nothing_extra(
-    tmp_path, capsys
+def test_a_signed_in_session_still_applies_its_hidden_companies(
+    sets_app, hub, monkeypatch
 ):
-    # One secret would otherwise open both path sets. The Space still boots, and says so.
-    with _space_app(
-        tmp_path, env=_wall_env(ALERTS_TOKEN="same-token", AGENT_TOKEN="same-token")
-    ) as module:
-        assert module._SERVICE_TOKENS == {b"same-token": frozenset({"/search"})}
-        client = module.app.test_client()
-        bearer = {"Authorization": "Bearer same-token"}
-        assert client.get("/search?q=", headers=bearer).status_code == 200
-        for path in _AGENT_ONLY_PATHS:
-            assert client.get(path, headers=bearer).status_code == 401, path
-    assert "AGENT_TOKEN equals ALERTS_TOKEN" in capsys.readouterr().out
+    """The read routes are public, but a session still carries its Account: /search and
+    /facets apply its follow/hide clause (ADR-0171) to a signed-in caller, and none to an
+    anonymous one."""
+    from headstart.search_filters.compiler import account_clause
+
+    _stored_companies(sets_app, hub, hidden=["lever:beta"])
+    asked = []
+
+    def run(args, *, extra_where=None):
+        asked.append(extra_where)
+        return []
+
+    def facets(args, *, extra_where=None):
+        asked.append(extra_where)
+        return {}
+
+    monkeypatch.setattr(sets_app._searcher, "run", run)
+    monkeypatch.setattr(sets_app._searcher, "facets", facets)
+    signed_in = _signed_in(sets_app, monkeypatch)
+    anonymous = sets_app.app.test_client()
+    for path in ("/search?q=", "/facets"):
+        assert signed_in.get(path, base_url=_HTTPS).status_code == 200
+        assert anonymous.get(path, base_url=_HTTPS).status_code == 200
+    hidden = account_clause((), ["lever:beta"], mine=False)
+    assert hidden and asked == [hidden, None, hidden, None]
 
 
 # ---- the app's own mark on every reply (ADR-0253) ----
@@ -545,32 +502,32 @@ def test_an_agent_token_equal_to_the_alerts_token_admits_nothing_extra(
 _OWN_REPLY = "app; agent-api=1"
 
 
-def test_a_routes_own_answer_is_marked(agent_app):
-    r = agent_app.app.test_client().get("/search?q=", headers=_AGENT_BEARER)
+def test_a_routes_own_answer_is_marked(auth_app):
+    r = auth_app.app.test_client().get("/search?q=")
     assert r.status_code == 200 and r.headers["X-HeadStart"] == _OWN_REPLY
 
 
-def test_the_walls_refusal_is_marked(agent_app):
-    r = agent_app.app.test_client().get("/sets", headers=_AGENT_BEARER)
+def test_the_walls_refusal_is_marked(auth_app):
+    r = auth_app.app.test_client().get("/sets")
     assert r.status_code == 401 and r.headers["X-HeadStart"] == _OWN_REPLY
 
 
-def test_a_path_with_no_route_is_marked(agent_app, monkeypatch):
-    client = _signed_in(agent_app, monkeypatch)  # past the wall, which would answer 401
+def test_a_path_with_no_route_is_marked(auth_app, monkeypatch):
+    client = _signed_in(auth_app, monkeypatch)  # past the wall, which would answer 401
     r = client.get("/no-such-route", base_url=_HTTPS)
     assert r.status_code == 404 and r.headers["X-HeadStart"] == _OWN_REPLY
 
 
-def test_a_route_that_raises_is_marked(agent_app, monkeypatch):
+def test_a_route_that_raises_is_marked(auth_app, monkeypatch):
     # The fixture leaves `testing` off, as the Space does, so the exception becomes Flask's
     # 500 rather than propagating into the test: exactly the reply a caller would see.
-    assert not agent_app.app.testing
+    assert not auth_app.app.testing
 
     def broken(*args, **kwargs):
         raise RuntimeError("a bug in the search path")
 
-    monkeypatch.setattr(agent_app._searcher, "run", broken)
-    r = agent_app.app.test_client().get("/search?q=", headers=_AGENT_BEARER)
+    monkeypatch.setattr(auth_app._searcher, "run", broken)
+    r = auth_app.app.test_client().get("/search?q=")
     assert r.status_code == 500 and r.headers["X-HeadStart"] == _OWN_REPLY
 
 
@@ -752,7 +709,7 @@ def test_unsubscribe_clears_the_emailing_flag(sets_app, hub, monkeypatch):
 
 def test_a_non_ascii_unsubscribe_token_is_a_404_not_a_500(sets_app, hub, monkeypatch):
     # compare_digest raises TypeError on a non-ASCII str, so the query-string token has to
-    # be compared as bytes — as _service_caller already does for the bearer token.
+    # be compared as bytes.
     import json as _json
 
     hub["subscriptions/allowlist.json"] = b'{"allowed": ["dev@example.com"]}'
@@ -2502,13 +2459,6 @@ def test_a_kept_answer_neither_resigns_nor_varies_by_the_session_cookie(
     assert "Set-Cookie" not in kept.headers
     assert "Cookie" in plain.headers["Vary"]
     assert "Set-Cookie" in plain.headers
-    # still the account's own session: signed out, the kept URL is refused as before
-    assert (
-        auth_app.app.test_client()
-        .get(f"/hot?v={auth_app._ANSWERS_VERSION}", base_url=_HTTPS)
-        .status_code
-        == 401
-    )
 
 
 def test_the_page_hands_the_browser_this_boots_answers_version(app):
