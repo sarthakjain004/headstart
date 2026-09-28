@@ -45,13 +45,13 @@
    {
     "ts": "2026-08-13T00:00:00+00:00",
     "changed": [
-     "tech-job filter updated"
+     "we got better at spotting tech jobs, so some jobs were added to or dropped from the counts"
     ]
    },
    {
     "ts": "2026-08-13T12:00:00+00:00",
     "changed": [
-     "job categories redrawn"
+     "we redrew our job categories, so some jobs moved to a different category"
     ]
    }
   ],
@@ -206,10 +206,10 @@
     "id": "counting@2026-08-13T00:00:00+00:00",
     "kind": "counting",
     "ts": "2026-08-13T00:00:00+00:00",
-    "label": "tech-job filter updated",
+    "label": "we got better at spotting tech jobs, so some jobs were added to or dropped from the counts",
     "fields": [],
     "changed": [
-     "tech-job filter updated"
+     "we got better at spotting tech jobs, so some jobs were added to or dropped from the counts"
     ],
     "company": null,
     "boards": null,
@@ -219,10 +219,10 @@
     "id": "counting@2026-08-13T12:00:00+00:00",
     "kind": "counting",
     "ts": "2026-08-13T12:00:00+00:00",
-    "label": "job categories redrawn",
+    "label": "we redrew our job categories, so some jobs moved to a different category",
     "fields": [],
     "changed": [
-     "job categories redrawn"
+     "we redrew our job categories, so some jobs moved to a different category"
     ],
     "company": null,
     "boards": null,

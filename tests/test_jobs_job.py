@@ -177,3 +177,14 @@ def test_a_real_latin1_capital_a_tilde_is_left_alone():
     # a string that cannot be Latin-1 at all was not produced by this defect
     assert repaired_mojibake("cafÃ© â€™") == "cafÃ© â€™"
     assert repaired_mojibake(None) is None
+
+
+def test_http_url_keeps_only_web_links():
+    """One scheme test for every surface that ships a job's link (#594): the Digest, Telegram,
+    the spreadsheet and the Space MCP server's answers."""
+    from headstart.jobs.job import http_url
+
+    assert http_url(" https://jobs.example.com/1 ") == "https://jobs.example.com/1"
+    assert http_url("HTTP://Example.com") == "HTTP://Example.com"
+    for bad in ("javascript:alert(1)", "data:text/html,x", "ftp://x", "", None):
+        assert http_url(bad) == ""

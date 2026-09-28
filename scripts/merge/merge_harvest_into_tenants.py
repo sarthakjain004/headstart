@@ -32,13 +32,16 @@ RECONCILE = {"zohorecruit": "zoho", "sense": "sensehq", "recruiterbox": "traksta
 
 
 def load_existing(path: Path) -> dict[str, list[str]]:
-    rows: dict[str, list[str]] = {}  # tenant -> [url, source]
+    """``tenant.lower() -> [tenant, url, source]``: matched case-insensitively, but each tenant
+    written back as it was stored, because Lever reads a slug case-sensitively."""
+    rows: dict[str, list[str]] = {}
     if path.exists():
         with path.open(encoding="utf-8") as f:
             for r in csv.DictReader(f):
-                t = (r.get("tenant") or "").strip().lower()
+                t = (r.get("tenant") or "").strip()
                 if t:
-                    rows[t] = [
+                    rows[t.lower()] = [
+                        t,
                         (r.get("url") or "").strip(),
                         (r.get("source") or "").strip(),
                     ]
@@ -51,7 +54,7 @@ def main() -> int:
     MERGED.mkdir(parents=True, exist_ok=True)
 
     # accumulate harvest per target ATS (several by-provider files can map to one ats)
-    harvest: dict[str, dict[str, str]] = {}
+    harvest: dict[str, dict[str, tuple[str, str]]] = {}  # ats -> {key: (tenant, url)}
     for p in sorted(BYP.glob("*.csv")):
         if p.stem.startswith("_"):
             continue
@@ -59,7 +62,7 @@ def main() -> int:
         bucket = harvest.setdefault(ats, {})
         with p.open(encoding="utf-8") as f:
             for r in csv.DictReader(f):
-                t = (r.get("slug") or "").strip().strip("/").lower()
+                t = (r.get("slug") or "").strip().strip("/")
                 url = (r.get("url") or "").strip()
                 if t and ats == "oracle":
                     # The harvest's slug is a bare label (`bun`); the pool and ledger hold an
@@ -69,7 +72,7 @@ def main() -> int:
                     if not is_pod_host(t):
                         continue
                 if t:
-                    bucket.setdefault(t, url)
+                    bucket.setdefault(t.lower(), (t, url))
 
     print(f"{'ATS':<20}{'existing':>9}{'+new':>7}{'total':>8}  new-file")
     new_files = added_total = 0
@@ -78,21 +81,21 @@ def main() -> int:
         is_new = not path.exists()
         pool = load_existing(path)
         added = 0
-        for tenant, url in harvest[ats].items():
-            if tenant in pool:
-                cur_url, src = pool[tenant]
+        for key, (tenant, url) in harvest[ats].items():
+            if key in pool:
+                _, cur_url, src = pool[key]
                 if "harvest" not in src.split("+"):
-                    pool[tenant][1] = f"{src}+harvest" if src else "harvest"
+                    pool[key][2] = f"{src}+harvest" if src else "harvest"
                 if not cur_url and url:
-                    pool[tenant][0] = url
+                    pool[key][1] = url
             else:
-                pool[tenant] = [url, "harvest"]
+                pool[key] = [tenant, url, "harvest"]
                 added += 1
         with path.open("w", newline="", encoding="utf-8") as f:
             w = csv.writer(f)
             w.writerow(["ats", "tenant", "url", "source"])
-            for t in sorted(pool):
-                w.writerow([ats, t, pool[t][0], pool[t][1]])
+            for _, (tenant, url, source) in sorted(pool.items()):
+                w.writerow([ats, tenant, url, source])
         new_files += is_new
         added_total += added
         print(

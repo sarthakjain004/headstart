@@ -44,7 +44,7 @@
    {
     "ts": "2026-09-13T00:00:00+00:00",
     "changed": [
-     "tech-job filter updated"
+     "we got better at spotting tech jobs, so some jobs were added to or dropped from the counts"
     ],
     "fields": [
      "tech_filter_version"

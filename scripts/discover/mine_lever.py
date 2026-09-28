@@ -58,23 +58,24 @@ def main():
         mine(label, host)
 
     lever = WB / "lever.csv"
-    rows = {}
+    # Matched case-insensitively, written as captured: Lever reads a slug case-sensitively.
+    rows = {}  # tenant.lower() -> (tenant, url)
     if lever.exists():
         with lever.open(encoding="utf-8") as f:
             for r in csv.DictReader(f):
-                rows[r["tenant"].lower()] = r["url"]
+                rows[r["tenant"].lower()] = (r["tenant"], r["url"])
     before = len(rows)
     for label, _ in REGIONAL:
         fp = WB / f"{label}.csv"
         if fp.exists():
             with fp.open(encoding="utf-8") as f:
                 for r in csv.DictReader(f):
-                    rows.setdefault(r["tenant"].lower(), r["url"])
+                    rows.setdefault(r["tenant"].lower(), (r["tenant"], r["url"]))
     with lever.open("w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
         w.writerow(["ats", "tenant", "url"])
-        for t in sorted(rows):
-            w.writerow(["lever", t, rows[t]])
+        for _, (tenant, url) in sorted(rows.items()):
+            w.writerow(["lever", tenant, url])
     print(f"lever.csv: {before} -> {len(rows)} (+{len(rows) - before})", flush=True)
 
     for label, _ in REGIONAL:

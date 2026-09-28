@@ -252,9 +252,10 @@ LOCALE = re.compile(
 # ATSes whose board id keeps its capitals. The SmartRecruiters postings API itself is
 # case-INSENSITIVE (Zomato1 and zomato1 both 200), so this is not about the fetch — it is about
 # matching the ledger, where 8,736 of 12,644 smartrecruiters tenants carry capitals. Lower-casing
-# here would mint a second, non-matching row for a board we already hold. Every other supported
-# ATS keys on a lower-case slug.
-CASE_SENSITIVE = {"smartrecruiters"}
+# here would mint a second, non-matching row for a board we already hold. Lever's is about the
+# fetch: `api.lever.co/v0/postings/CesiumAstro` lists 309 postings and `.../cesiumastro` answers
+# "Document not found" (2026-09-28). Every other supported ATS keys on a lower-case slug.
+CASE_SENSITIVE = {"smartrecruiters", "lever"}
 
 # Careers paths worth fetching per company. Tested wider: over two 40-company miss diagnoses
 # (80 sites x 10 paths), every ATS signal reachable from /jobs, /careers/, /company/careers,
