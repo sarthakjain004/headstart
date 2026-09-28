@@ -52,6 +52,7 @@ function loadApp({ folded = false, storage = {} } = {}) {
       setItem(k, v) { if (storage === null) throw new Error('blocked'); storage[k] = v; },
     },
     matchMedia: () => ({ matches: false }),
+    getComputedStyle: () => ({ getPropertyValue: () => '' }),
     setTimeout, clearTimeout,
   };
   ctx.globalThis = ctx;

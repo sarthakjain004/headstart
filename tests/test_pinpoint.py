@@ -97,7 +97,7 @@ def test_location_joins_the_site_label_city_and_province_without_repeats():
     `city` on only 1,704 of 13,419 rows — so it leads, and `city`/`province` follow only when the
     label does not already say them."""
     jobs = _jobs()
-    assert jobs[ENGINEER].location == "Denver, CO, Colorado"
+    assert jobs[ENGINEER].location == "Denver, CO"
     assert jobs[LAWYER].location == "Tokyo, Minato-ku"
     assert jobs[DATA_ENTRY].location == "New York"
     assert jobs[ASSOCIATE].location == "US, Royal Oak, Michigan"
@@ -201,7 +201,7 @@ def test_posted_at_and_country_come_from_the_posting_page():
     assert fetcher.urls() == [scraper.url(), scraper.job_url(ENGINEER)]
     (job,) = scraper.parse(raw, SCRAPED_AT)
     assert job.posted_at == "2026-08-25T18:11:43+01:00"
-    assert job.location == "Denver, CO, Colorado, United States"
+    assert job.location == "Denver, CO, United States"
 
 
 def test_a_failed_page_is_a_counted_gap_and_the_job_still_ships():
@@ -374,3 +374,25 @@ def test_a_board_page_that_names_no_one_falls_back_to_its_postings(monkeypatch):
     scraper._posting_company = "Kharon"
     scraper.resolve_company()
     assert scraper.company == "Kharon"
+
+
+def test_a_province_the_name_already_abbreviates_is_not_repeated():
+    """trilongroup 2026-09-28: 886 names ended in a state code over its full province name."""
+    from headstart.scrapers.pinpoint import _location
+
+    maumee = {"location": {"name": "Maumee, OH", "city": "Maumee", "province": "Ohio"}}
+    assert _location(maumee, "United States") == "Maumee, OH, United States"
+    albuquerque = {
+        "location": {"name": "Albuquerque, NM", "province": "New Mexico"},
+    }
+    assert _location(albuquerque) == "Albuquerque, NM"
+    # Only a code that names this very province: a Moroccan "MA" is not Massachusetts.
+    casablanca = {
+        "location": {"name": "Casablanca, MA", "province": "Casablanca-Settat"}
+    }
+    assert _location(casablanca) == "Casablanca, MA, Casablanca-Settat"
+    # And only the province: a country after an abbreviated state is kept.
+    assert _location(maumee, "Ohio") == "Maumee, OH, Ohio"
+    # A name that is no code keeps its province (fixture: Bognor Regis, West Sussex).
+    bognor = {"location": {"name": "Bognor Regis", "province": "West Sussex"}}
+    assert _location(bognor) == "Bognor Regis, West Sussex"

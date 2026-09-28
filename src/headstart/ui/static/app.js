@@ -246,9 +246,12 @@ const busy = on => el('results').setAttribute('aria-busy', String(!!on));
 // The ultrawide card grids flow COLUMN-major so a vertical scan follows rank, which means each
 // one has to be told how deep its column is. Counted off what was actually rendered, never
 // PAGE_SIZE: a short last page (or a one-line empty state) otherwise fills a full 10-deep
-// column and leaves a tall empty one beside it. Halved because the block opens two columns.
+// column and leaves a tall empty one beside it. Divided by the columns the block opens: two,
+// or three on the widest screens (its --cols).
 const setResultRows = (n, id) => { const box = el(id || 'results');
-  if (box) box.style.setProperty('--rows', Math.max(1, Math.ceil(n / 2))); };
+  if (!box) return;
+  const cols = Number(getComputedStyle(box).getPropertyValue('--cols')) || 2;
+  box.style.setProperty('--rows', Math.max(1, Math.ceil(n / cols))); };
 const skeleton = () =>
   '<div class="skel"><div class="shim" style="width:52%"></div>' +
   '<div class="shim" style="width:30%; margin-top:10px"></div>' +

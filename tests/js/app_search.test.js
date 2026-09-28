@@ -78,6 +78,7 @@ function loadApp(respond, cfg = {}) {
     console: { log: console.log, warn: (...a) => logged.push(a), error: (...a) => logged.push(a) },
     CFG: cfg, URLSearchParams, Date, Math, isNaN, Number, Array,
     Event: class { constructor(type) { this.type = type; } },
+    getComputedStyle: () => ({ getPropertyValue: () => '' }),   // setResultRows reads --cols
     fetch: url => {
       fetches.push(String(url));
       // /facets answers OK too: a refused one is read as no counts at all, never as counts.

@@ -1,6 +1,6 @@
 # ADR-0249: A Home tab replaces the Data tab, and navigation moves to a sidebar
 
-**Status:** accepted, amended 2026-09-28 (the sidebar folds to its icons, below) · **Date:** 2026-09-28 · **Supersedes:** [ADR-0113](0113-publish-the-indexs-own-limits-in-the-product.md) (the Data tab) · **Supersedes in part:** [ADR-0116](0116-a-quiet-palette-and-a-scanning-layout.md) (its top tab strip, on wide screens only) · **Issue:** #755 items 1, 3, 10 and 16
+**Status:** accepted, amended 2026-09-28 (the sidebar folds to its icons; the shell is fluid — both below) · **Date:** 2026-09-28 · **Supersedes:** [ADR-0113](0113-publish-the-indexs-own-limits-in-the-product.md) (the Data tab) · **Supersedes in part:** [ADR-0116](0116-a-quiet-palette-and-a-scanning-layout.md) (its top tab strip, on wide screens only) · **Issue:** #755 items 1, 3, 10 and 16
 
 ## Context
 
@@ -41,8 +41,8 @@ the fallback it would have switched the reader to Home.
 
 **Navigation is a sidebar at 1280px and wider, and the existing scrolling strip below that.** One
 `<nav class="tabs">` list, laid out twice by CSS, so `app.js` reads the same links either way. The
-shell's ceiling grows by the sidebar's width so the content column keeps its measure; the sidebar
-is sticky, so a tab switch now starts the new tab at its top. A tab the deployment cannot serve is
+shell's ceiling grows by the sidebar's width so the content column keeps its measure (superseded
+by the fluid shell amendment below: there is no ceiling now); the sidebar is sticky, so a tab switch now starts the new tab at its top. A tab the deployment cannot serve is
 left out of the list rather than shown as a disabled "soon" entry (Apple's tab-bar guidance, per
 `docs/ux-research/2026-09-28_what-makes-users-stick.md`). The breakpoint is 1280px because Search
 has its own column: ADR-0247 puts the filters beside the results from 1100px, and with the
@@ -103,7 +103,8 @@ column's edge moves; a label is clipped while the column unfolds instead of spil
 content.
 
 **The shell keeps its unfolded ceiling when folded**, so folding hands its whole saving to the
-content column instead of shrinking the page. Measured on Search (fixture data, Chromium): the
+content column instead of shrinking the page. (Superseded by the fluid shell below, which has
+no ceiling at all.) Measured on Search (fixture data, Chromium): the
 results column goes from 631px to 743px at 1280 and from 782px to 894px at 1440 (+112px both).
 
 **The sidebar, folded or not, still starts at 1280px.** A folded sidebar below that always
@@ -115,3 +116,40 @@ floor) would add a third layout that gives the content less width than the strip
 for a row's worth of vertical space, so it was not built.
 
 **The tour's first step** points at the navigation in either state and names the fold button.
+
+## Amendment (2026-09-28): the shell fills the window
+
+The owner, looking at Home at 1351px with the sidebar folded: "too much empty space on left and
+right, make it adaptive to the user screen size". The shell was a centred box capped at the
+1150px measure #372 introduced (plus the sidebar), so the background either side grew with the window: 67px each
+side at 1351, 256 at 2560, 696 at 3440 (measured, fixture data, Chromium).
+
+**The shell has no maximum width.** It spans the viewport less a fluid gutter,
+`--shell-gutter: clamp(20px, 1.5vw, 32px)` (20px up to 1333, 29 at 1920, 32 from 2134 up; not
+below 20, or a 561px window sat closer to its edges than a 560px phone); the sidebar sits at that
+gutter on the left and the content column takes the rest. Readability is held by capping prose,
+not layout: paragraphs keep a ~72–74ch measure (Home's notes 78 → 72ch; Profile's and the résumé
+builder's paragraph notes and Trends' two-column caption, which the wider column had stretched,
+gain one), and grids, result lists, the filter column, the Trends chart and tables take the width.
+Home's feature cards use `auto-fit`, so a wide screen puts more of them on one row instead of
+leaving empty tracks. Search, Matches and Saved open a third column of results from 2560px, where
+two columns made a ~1,480px card with its pay ~1,100px from its title; `setResultRows` divides by
+the columns the CSS opens (`--cols`).
+
+**Still capped, deliberately.** Home's hero (text beside the video frame) and its three "how it
+works" cards stop at 1720px (`--home-block-max`): uncapped at 3440 the frame grew 890px tall with
+the text 1,600px away from it, and each step ran ~150 characters a line. Trends' KPI tiles keep
+their existing 1040px row (four stretched tiles were mostly air around a number). The sign-in
+page keeps a cap, raised from 1100px to 1440px with a fluid gutter: it is one argument in prose,
+not an app, and its point list gains a 72ch measure — at 1920 that still leaves 288px either
+side, which is the owner's call to lift.
+
+**The phone layout is unchanged** — at 560px and below the shell is still 94vw, centred, with its
+14px padding (390px: 26px each side, 339px of content, before and after). Between 561px and the
+sidebar's 1280px the page now uses the fluid gutter too.
+
+Measured before → after (sidebar open / folded, Search's results column): 1280 631 → 722 / 743 →
+834; 1351 698 → 791 / 810 → 903; 1920 1194 → 1342 / 1306 → 1454; 3440 1528 → 2856 / 1640 → 2968.
+Two result columns still start at 1720px, where the column is now ~1150px (~570px a card), and
+three at 2560. The
+Trends chart re-lays out at every width through the plot's ResizeObserver (#792).

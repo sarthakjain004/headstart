@@ -83,20 +83,53 @@ def _description(item: dict) -> str | None:
 
 
 def _location(item: dict, country: str | None = None) -> str | None:
-    """`location.name`, then `city`, `province` and the page's country, each skipped only when it
+    """`location.name`, then `city`, `province` and the page's country, each skipped when it
     repeats a whole comma-separated part already written (case-insensitively) — "Denver" after
-    "Denver, CO", never "Indiana" after "Indianapolis". `name` leads because it is the tenant's
+    "Denver, CO", never "Indiana" after "Indianapolis" — and the province is left out when the
+    name already ends in its postal code (`_abbreviated_in`). `name` leads because it is the tenant's
     own label, often a site name ("GM Tech", "Shipboard") that the structured fields do not
     repeat; there is one location per posting on every row measured."""
     place = item.get("location") or {}
     parts: list[str] = []
     seen: set[str] = set()
-    for value in (place.get("name"), place.get("city"), place.get("province"), country):
+    province = (place.get("province") or "").strip()
+    if _abbreviated_in(province, place.get("name")):
+        province = ""
+    for value in (place.get("name"), place.get("city"), province, country):
         value = (value or "").strip()
         if value and value.lower() not in seen:
             parts.append(value)
             seen.update(p.strip().lower() for p in value.split(","))
     return ", ".join(parts) or None
+
+
+#: US state and Canadian province postal codes, for `_abbreviated_in`.
+_POSTAL_CODES = {
+    "AL": "Alabama", "AK": "Alaska", "AZ": "Arizona", "AR": "Arkansas", "CA": "California",
+    "CO": "Colorado", "CT": "Connecticut", "DE": "Delaware", "DC": "District of Columbia",
+    "FL": "Florida", "GA": "Georgia", "HI": "Hawaii", "ID": "Idaho", "IL": "Illinois",
+    "IN": "Indiana", "IA": "Iowa", "KS": "Kansas", "KY": "Kentucky", "LA": "Louisiana",
+    "ME": "Maine", "MD": "Maryland", "MA": "Massachusetts", "MI": "Michigan", "MN": "Minnesota",
+    "MS": "Mississippi", "MO": "Missouri", "MT": "Montana", "NE": "Nebraska", "NV": "Nevada",
+    "NH": "New Hampshire", "NJ": "New Jersey", "NM": "New Mexico", "NY": "New York",
+    "NC": "North Carolina", "ND": "North Dakota", "OH": "Ohio", "OK": "Oklahoma", "OR": "Oregon",
+    "PA": "Pennsylvania", "RI": "Rhode Island", "SC": "South Carolina", "SD": "South Dakota",
+    "TN": "Tennessee", "TX": "Texas", "UT": "Utah", "VT": "Vermont", "VA": "Virginia",
+    "WA": "Washington", "WV": "West Virginia", "WI": "Wisconsin", "WY": "Wyoming",
+    "PR": "Puerto Rico", "AB": "Alberta", "BC": "British Columbia", "MB": "Manitoba",
+    "NB": "New Brunswick", "NL": "Newfoundland and Labrador", "NS": "Nova Scotia",
+    "ON": "Ontario", "PE": "Prince Edward Island", "QC": "Quebec", "SK": "Saskatchewan",
+}  # fmt: skip
+
+
+def _abbreviated_in(province: str, name: str | None) -> bool:
+    """Whether ``name`` ends in the postal code of ``province`` — "Maumee, OH" over "Ohio", so
+    the location does not read "Maumee, OH, Ohio, United States". On trilongroup (2026-09-28)
+    886 of 929 names ended in a two-letter code over a province, and every one was that
+    province's code. Only a US state or Canadian province code is read, and only when it names
+    this very province."""
+    last = (name or "").rsplit(",", 1)[-1].strip()
+    return bool(province) and _POSTAL_CODES.get(last, "").lower() == province.lower()
 
 
 def _title(item: dict) -> str:

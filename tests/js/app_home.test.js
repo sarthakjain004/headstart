@@ -67,6 +67,7 @@ function loadApp(hash) {
                     return Promise.resolve({ ok: true, json: () => Promise.resolve([]) }); },
     localStorage: { getItem: () => null, setItem() {} },
     matchMedia: () => ({ matches: false }),
+    getComputedStyle: () => ({ getPropertyValue: () => '' }),
     setTimeout, clearTimeout,
   };
   ctx.globalThis = ctx;
