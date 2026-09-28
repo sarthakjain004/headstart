@@ -343,6 +343,22 @@ def test_location_drops_the_unavailable_literal() -> None:
     assert _ld_fields(_ld_page(node))["location"] == "Buffalo, US"
 
 
+def test_every_location_of_a_multi_location_posting_is_kept() -> None:
+    node = {
+        "jobLocation": [
+            {"address": {"addressLocality": "Buffalo", "addressCountry": "US"}},
+            {
+                "address": {
+                    "addressLocality": "Austin",
+                    "addressRegion": "UNAVAILABLE",
+                    "addressCountry": "US",
+                }
+            },
+        ]
+    }
+    assert _ld_fields(_ld_page(node))["location"] == "Buffalo, US; Austin, US"
+
+
 def test_remote_reads_telecommute() -> None:
     assert _ld_fields(_ld_page({"jobLocationType": "TELECOMMUTE"}))["remote"] is True
     assert _ld_fields(_ld_page({}))["remote"] is None

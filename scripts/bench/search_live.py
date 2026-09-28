@@ -50,7 +50,6 @@ CASES = (
             "seen_within": 168,
         },
     ),
-    ("coverage", "/coverage", {}),
 )
 
 

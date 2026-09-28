@@ -1910,21 +1910,26 @@ _COMPANY_DIRECTORY = {
         "name": "Citi",
         "boards": ["eightfold:citi.eightfold.ai"],
     },
-    # a third "Citi", on the same ATS as the first: its ATS cannot tell them apart
+    # a third "Citi", on the same ATS as the first, and with no openings
     "workday:citibank/x": {"name": "Citi", "boards": ["workday:citibank/x"]},
 }
 
 
 def _company_history(
-    trends_app, monkeypatch, tmp_path, deltas=_COMPANY_DELTAS, hold=False
+    trends_app,
+    monkeypatch,
+    tmp_path,
+    deltas=_COMPANY_DELTAS,
+    hold=False,
+    companies=_COMPANY_DIRECTORY,
 ):
     """The three companies' history, served by the app: ``deltas`` with the fixture's ledger and
-    directory, with no `new` hold unless ``hold``."""
+    ``companies`` as the directory, with no `new` hold unless ``hold``."""
     history = _trend_history(
         tmp_path,
         ledger=_COMPANY_LEDGER,
         deltas=deltas,
-        companies=_COMPANY_DIRECTORY,
+        companies=companies,
     )
     # No holds by default: the fixture's runs span two days, inside every Board's first week.
     # The hold has its own tests below.
@@ -2079,8 +2084,8 @@ def test_split_by_company_draws_a_line_per_pick_and_tells_twins_apart(company_tr
     assert d["split_by"] == "company"
     by_label = {s["label"]: s["points"] for s in d["series"]}
     assert by_label == {
-        "Citi (workday)": [40, 40, 44],
-        "Citi (eightfold)": [None, 3, 3],  # a gap before its first delta, never a zero
+        "Citi (44 openings)": [40, 40, 44],
+        "Citi (3 openings)": [None, 3, 3],  # a gap before its first delta, never a zero
         "Hpe": [17, 18, 13],
     }
 
@@ -2110,16 +2115,31 @@ def test_each_pick_carries_its_own_share_denominator_and_start(company_trends):
     assert late["counted_since"] == {"eightfold:citi.eightfold.ai": _T2}
 
 
-def test_twins_on_one_ats_are_told_apart_by_key(company_trends):
-    d = company_trends.get(
-        "/trends?split=company&company=workday:citi/2&company=workday:citibank/x"
-        "&company=eightfold:citi.eightfold.ai"
-    ).get_json()
-    assert sorted(c["label"] for c in d["companies"]) == [
-        "Citi (eightfold)",
-        "Citi (workday:citi/2)",
-        "Citi (workday:citibank/x)",
-    ]
+def test_twins_are_told_apart_by_openings_never_by_ats(
+    trends_app, monkeypatch, tmp_path
+):
+    """ADR-0248: same-named companies are labelled by their tech openings, never by ATS or key;
+    two with the same openings too are numbered in key order."""
+    directory = {
+        **_COMPANY_DIRECTORY,
+        "workday:citicorp/y": {"name": "Citi", "boards": ["workday:citicorp/y"]},
+    }
+    _company_history(trends_app, monkeypatch, tmp_path, companies=directory)
+    d = (
+        trends_app.app.test_client()
+        .get(
+            "/trends?split=company&company=workday:citi/2&company=workday:citibank/x"
+            "&company=workday:citicorp/y&company=eightfold:citi.eightfold.ai"
+        )
+        .get_json()
+    )
+    labels = {c["key"]: c["label"] for c in d["companies"]}
+    assert labels == {
+        "workday:citi/2": "Citi (44 openings)",
+        "eightfold:citi.eightfold.ai": "Citi (3 openings)",
+        "workday:citibank/x": "Citi (0 openings, 1 of 2)",
+        "workday:citicorp/y": "Citi (0 openings, 2 of 2)",
+    }
 
 
 def test_company_combines_with_comparable_coverage(company_trends):
@@ -2130,7 +2150,7 @@ def test_company_combines_with_comparable_coverage(company_trends):
     ).get_json()
     assert d["base"] == _T1
     assert {s["label"]: s["points"] for s in d["series"]} == {
-        "Citi (workday)": [40, 40, 44]
+        "Citi (44 openings)": [40, 40, 44]
     }
 
 
@@ -2530,6 +2550,8 @@ def test_the_door_makes_its_case_before_asking_for_an_identity(auth_app):
     # The provenance claim, the removal policy, and the no-paid-placement claim.
     assert "employer's own board" in page
     assert "Closed roles get removed, and the exception is published." in page
+    # Staffing firms are labelled, not denied (ADR-0249): the footer, Hot and Home say so too.
+    assert "no agencies" not in page and "staffing firms" in page
     assert "22 days" in page  # checkable at the door, not only behind the wall
     assert "paid placement" in page
     # What signing in costs, stated before the button rather than in a policy page behind it.
@@ -2563,33 +2585,17 @@ def test_the_door_states_no_figure_it_cannot_count(auth_app, monkeypatch):
     assert "ATS providers read directly" in page
 
 
-def test_coverage_counts_the_served_table_rather_than_asserting(app):
-    """ADR-0113: the Data tab's numbers are measured, so they cannot go stale in prose."""
-    d = app.app.test_client().get("/coverage").json
-    assert d["total"] == 2
-    # One of two rows carries each field — a real ratio, not a placeholder. One count per
-    # field against the one total; `total` is not repeated onto every field.
-    assert d["fields"]["posted_at"] == 1
-    assert d["fields"]["min_years"] == 1
-    # `remote` is never a coverage field: it is a facet, not a gap — a share would answer
-    # "how many are remote", which the rail's own counts already answer. (Its provenance is
-    # mixed, and four successive drafts described it wrongly; see ADR-0113.)
-    assert "remote" not in d["fields"]
-    assert "atses" not in d  # nothing reads it; the template has its own list
-
-
-def test_coverage_is_behind_the_wall_like_everything_else(auth_app):
-    assert auth_app.app.test_client().get("/coverage").status_code == 401
-
-
-def test_coverage_reports_a_missing_column_as_unknown_not_zero(app, monkeypatch):
-    """A column the table lacks is None. Zero would read as 'measured, and none have it'."""
-    searcher = app.app.view_functions["coverage"].__globals__["_searcher"]
-    monkeypatch.setattr(
-        searcher, "capabilities", replace(searcher.capabilities, has_description=False)
-    )
-    monkeypatch.setattr(searcher, "_coverage", None)  # drop the per-process cache
-    assert app.app.test_client().get("/coverage").json["fields"]["description"] is None
+def test_the_data_tab_and_its_coverage_route_are_gone(app):
+    """ADR-0249 replaced the Data tab with Home: no tab, no panel, no route, no stale link."""
+    client = app.app.test_client()
+    page = client.get("/").data.decode()
+    assert 'data-tab="data"' not in page
+    assert 'id="panel-data"' not in page
+    assert 'href="#data"' not in page
+    assert client.get("/coverage").status_code == 404
+    ui = Path(__file__).resolve().parents[1] / "src" / "headstart" / "ui"
+    assert not (ui / "templates" / "data.html").exists()
+    assert 'href="#data"' not in (ui / "static" / "app.js").read_text()
 
 
 def test_the_signed_in_page_says_what_the_product_is(app):
@@ -2597,59 +2603,87 @@ def test_the_signed_in_page_says_what_the_product_is(app):
     page = app.app.test_client().get("/").data.decode()
     # On screen wherever they navigate, not only in the footer of a long results page.
     assert "Tech jobs read straight from company career boards" in page
-    # One repo URL, server-side: the door and the Data tab both link into it, and a rename
-    # must not be able to leave half the links dead.
-    assert page.count("github.com/sarthakjain004/headstart") >= 3
-    # The Data tab is always present — a limits page that can be switched off is not a
-    # commitment — and the footer points at it.
-    assert 'data-tab="data"' in page
-    assert "What's in the index, and what isn't" in page
+    # One repo URL, server-side: the footer and Home both link its privacy policy into it,
+    # and a rename must not be able to leave half the links dead.
+    assert page.count("github.com/sarthakjain004/headstart/blob/main/PRIVACY.md") >= 2
+    # Home is the first tab and the one the bare URL shows (ADR-0249): its panel is the only
+    # one the server renders visible, and it is the tab marked current before any script runs.
+    nav = page.split('<nav class="tabs"', 1)[1].split("</nav>", 1)[0]
+    assert nav.index('data-tab="home"') < nav.index('data-tab="search"')
+    assert 'data-tab="home" aria-current="page"' in nav
+    assert '<section class="panel" id="panel-home">' in page
+    assert '<section class="panel" id="panel-search" hidden>' in page
     # And the slot that names the current result list (browse vs ranked, ADR-0074).
     assert 'id="kind"' in page
 
 
-def test_the_data_tab_states_scope_gaps_and_provenance(app):
+def test_home_says_what_the_product_is_in_plain_words(app):
+    """ADR-0249: what HeadStart is, its figures read from the index, and the ways in."""
     page = app.app.test_client().get("/").data.decode()
-    assert "Where the jobs come from" in page
-    assert "What is deliberately left out" in page
-    assert "What the index does not know" in page
-    assert "How a closed job leaves" in page
-    assert "What is stored about you" in page
-    # The ATS list is rendered from the index's own whitelist, not typed in.
-    assert "Read from 2 providers" in page
-    assert ">greenhouse<" in page and ">lever<" in page
-    # ADR-0113: every claim links the decision behind it. The eviction section in particular
-    # must carry ADR-0053 as well as ADR-0083 — an earlier draft described the window as
-    # "hours, not minutes" and omitted the scope exclusion, which has no drain at all and was
-    # measured serving one board's closed jobs for 22 days.
-    assert "0083-evict-only-on-a-second-consecutive-absence.md" in page
-    assert "0053-scope-eviction-on-scrape-outcome.md" in page
-    # Whitespace-normalised: the template wraps these sentences, and HTML collapses the
-    # newlines anyway, so asserting on the raw source would only pin the line breaks.
-    flat = " ".join(page.split())
-    assert "105 closed jobs, the oldest 22 days old" in flat
-    assert "no-client-side-fix-for-replica-instability.md" in page
-    # The date of the measurement itself (the doc is headed 2026-08-24) — an earlier fix
-    # wrote 2026-08-23, which is ADR-0083's go-live date, not when this was measured.
-    assert "2026-08-24" in page
-    assert "hours, not minutes" not in flat
-    # CONTEXT.md reserves "listing"/"posting"/"opening" for the raw ATS record; the user-facing
-    # noun is "job". The word may still appear in this file's own explanation of that rule.
-    body = page.split('id="panel-data"', 1)[1].split("</section>", 1)[0]
+    home = page.split('id="panel-home"', 1)[1].split('id="panel-search"', 1)[0]
+    flat = " ".join(home.split())
+    # The figures are counted, not typed: the fake table holds two rows on two ATSes.
+    assert "<b>2</b> tech jobs from <b>2</b> hiring platforms" in flat
+    # The facts the Data tab carried that a visitor needs, in plain words.
+    assert "English-language tech roles only, for now" in flat
+    assert "refreshes every couple of hours" in flat
+    assert "not how well you fit the role" in flat
+    assert "PRIVACY.md" in home
+    # The ways in: a search box on the first screen, a link to browse, and the tour.
+    assert 'id="home-q"' in home
+    assert 'href="#search"' in home
+    assert "data-tour-start" in home
+    # The video slot holds a placeholder, never a player pointed at a file that is not there.
+    assert 'class="home-video"' in home
+    assert "<video" not in home
+    # No design-record citations and no internal vocabulary: this page is for job seekers.
+    assert "ADR" not in home
+    assert "docs/adr" not in home
+    # A card only for a tab this deployment has — this fixture renders neither Trends nor Hot,
+    # and the nav leaves out what it cannot serve rather than showing it disabled.
+    assert 'href="#trends"' not in home
+    assert 'href="#hot"' not in home
+    assert "Coming soon" not in page
+    # Staffing firms are named, not denied: the footer and Hot say some boards are theirs.
+    assert "no agencies" not in flat.lower()
+    # CONTEXT.md reserves "listing"/"posting"/"opening" for the raw ATS record; the
+    # user-facing noun is "job". The template's own comment names the rule, so read the
+    # rendered text only.
     for banned in ("listings", "openings", "postings"):
-        assert banned not in body, banned
+        assert banned not in flat, banned
+
+
+def test_links_that_pointed_at_the_data_tab_land_inside_home(app):
+    """The Search tab's match-score link and Hot's index link name sections of Home."""
+    page = app.app.test_client().get("/").data.decode()
+    home = page.split('id="panel-home"', 1)[1].split('id="panel-search"', 1)[0]
+    assert 'id="how-matching"' in home
+    assert 'id="good-to-know"' in home
+    ui = Path(__file__).resolve().parents[1] / "src" / "headstart" / "ui"
+    assert 'href="#how-matching"' in (ui / "static" / "app.js").read_text()
+    assert 'href="#good-to-know"' in (ui / "templates" / "hot.html").read_text()
+
+
+def test_the_logo_mark_is_served_to_the_door(auth_app):
+    """The door shows the mark and uses it as its favicon, signed out — so the wall lets that
+    one static file through, and nothing else under /static."""
+    client = auth_app.app.test_client()
+    door = client.get("/").data.decode()
+    assert 'rel="icon"' in door and "logo_mark.svg" in door
+    assert client.get("/static/logo_mark.svg").status_code == 200
+    assert client.get("/static/app.js").status_code == 401
 
 
 def test_the_resume_reader_says_the_text_leaves_the_service(sets_app, monkeypatch):
     """The one datum that goes to a third party is disclosed where it is pasted.
 
-    The Data tab lists it too, but a person pasting a résumé should not have to have read
-    another tab first — the disclosure belongs at the moment of the decision. Needs
+    The privacy policy lists it too, but a person pasting a résumé should not have to have
+    read it first — the disclosure belongs at the moment of the decision. Needs
     ``sets_app``: the Profile panel only renders where per-Account storage is configured."""
     page = _signed_in(sets_app, monkeypatch).get("/", base_url=_HTTPS).data.decode()
-    # Bounded at the panel's own end tag: unbounded, this reached the Data tab further down
-    # the document, which says "language model" too — so the assertion passed with the
-    # disclosure deleted from profile.html entirely.
+    # Bounded at the panel's own end tag: unbounded, this once reached the since-removed Data
+    # tab further down the document, which said "language model" too — so the assertion passed
+    # with the disclosure deleted from profile.html entirely.
     body = page.split('id="panel-profile"', 1)[1].split("</section>", 1)[0]
     assert "language model" in body
     assert "outside HeadStart" in body
@@ -2680,12 +2714,23 @@ def test_the_page_offers_a_skip_link_past_the_filter_rail(app):
     )
 
 
+def test_the_search_controls_are_one_click_each(app):
+    """Issue #755: the filter bar is always open (no Filters toggle), sort and the short selects
+    are rows of radios drawn beside a hidden <select>, and there is no density toggle."""
+    page = app.app.test_client().get("/").data.decode()
+    assert 'id="filtersbtn"' not in page and "toggleRail" not in page
+    assert 'id="density"' not in page
+    for control in ("sort", "kwin", "etype", "posted"):
+        assert f'<select id="{control}" hidden' in page
+        assert f'id="{control}-seg" role="radiogroup"' in page
+
+
 def test_the_page_hands_the_browser_the_rate_table_and_its_date(app):
     """The card labels convert client-side (ADR-0117), so the page needs the rates — the SAME
     table `build_filter` compiled the query from, handed over on window.CFG rather than
     fetched again, so a figure beside a row cannot disagree with the query that returned it.
     The date rides with them: a rate without its date is the defect the table exists to avoid,
-    and the Data tab prints it in prose as well."""
+    and the Search rail prints it beside the salary bracket as well."""
     import json
 
     from headstart.search_filters import fx
@@ -2696,54 +2741,6 @@ def test_the_page_hands_the_browser_the_rate_table_and_its_date(app):
     assert cfg["fx"]["rates"] == table["rates"]
     assert cfg["fx"]["as_of"] == table["as_of"]
     assert table["as_of"] in page
-
-
-def test_the_data_tab_discloses_the_conversion_and_never_a_dateless_rate(app):
-    """The one approximation on that page that changes which jobs come back rather than only
-    how many carry a field. With no table there is no conversion to disclose, and the page has
-    to say that instead — printing an empty date would be worse than saying nothing."""
-    tpl = app.app.jinja_env.get_template("data.html")
-    converted = " ".join(
-        tpl.render(
-            atses=["greenhouse"], repo="https://example.test", fx_as_of="2024-06-01"
-        ).split()
-    )
-    assert "dated <b>2024-06-01</b>" in converted
-    assert "not purchasing power" in converted
-    assert (
-        "left out of a converted bracket rather than compared one-to-one" in converted
-    )
-    assert "0117-the-salary-bracket-compares-across-currencies.md" in converted
-    # No table: the bracket degrades to a single currency, and the page says so rather than
-    # advertising a conversion that is not happening.
-    degraded = " ".join(
-        tpl.render(atses=["greenhouse"], repo="https://example.test").split()
-    )
-    assert "Nothing here converts one." in degraded
-    assert "dated" not in degraded
-
-
-def test_a_forgotten_auth_flag_cannot_produce_a_denial(app):
-    """Forgetting `auth_on` alone must not make the page claim nothing is stored.
-
-    Jinja renders an undefined name as falsy, so the conditional is written `if auth_on or
-    alerts_on` with the "Nothing" case in the `else`. Written the other way round, a renderer
-    that passed `alerts_on` but forgot `auth_on` printed a denial on a deployment that stores
-    plenty. Note the guarantee is exactly that and no wider: with *every* flag absent the page
-    still says "Nothing", which is correct — a caller supplying no flags at all is describing
-    a deployment with neither feature."""
-    tpl = app.app.jinja_env.get_template("data.html")
-    # Rendered with `auth_on` simply absent, exactly as a forgetful caller would.
-    out = tpl.render(atses=["greenhouse"], repo="https://example.test", alerts_on=True)
-    assert "Nothing." not in out
-    assert "email address" in out
-    # …and the alerts-only branch names what /subscribe actually keeps: `_project_subscription`
-    # stores the Query and the Search filters beside the address, not the address alone.
-    assert "the search and filters that alert is for" in " ".join(out.split())
-    # …and it still says "Nothing" when the deployment really does keep nothing.
-    bare = tpl.render(atses=["greenhouse"], repo="https://example.test")
-    assert "Nothing." in bare
-    assert "the key your saved work hangs off" not in bare
 
 
 def test_the_salary_tip_does_not_promise_conversion_without_rates(app, monkeypatch):

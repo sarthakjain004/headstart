@@ -89,7 +89,7 @@
      {
       "change": "found@2026-09-20T00:00:00+00:00/greenhouse:acme",
       "kind": "found_boards",
-      "label": "83 more boards found",
+      "label": "83 more job sites found",
       "size": 1048
      }
     ],
@@ -135,7 +135,7 @@
       {
        "change": "found@2026-09-20T00:00:00+00:00/greenhouse:acme",
        "kind": "found_boards",
-       "label": "83 more boards found",
+       "label": "83 more job sites found",
        "size": 850
       }
      ],
@@ -176,7 +176,7 @@
       {
        "change": "found@2026-09-20T00:00:00+00:00/greenhouse:acme",
        "kind": "found_boards",
-       "label": "83 more boards found",
+       "label": "83 more job sites found",
        "size": 5
       }
      ],
@@ -220,7 +220,7 @@
       {
        "change": "found@2026-09-20T00:00:00+00:00/greenhouse:acme",
        "kind": "found_boards",
-       "label": "83 more boards found",
+       "label": "83 more job sites found",
        "size": 1048
       }
      ],
@@ -271,7 +271,7 @@
     "id": "found@2026-09-20T00:00:00+00:00/greenhouse:acme",
     "kind": "found_boards",
     "ts": "2026-09-20T00:00:00+00:00",
-    "label": "83 more boards found",
+    "label": "83 more job sites found",
     "fields": [],
     "changed": [],
     "company": "greenhouse:acme",

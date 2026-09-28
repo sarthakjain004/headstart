@@ -22,16 +22,31 @@ window.addEventListener('unhandledrejection', e => {
   console.error('[app] unhandled', why && why.name === 'SyntaxError' ? why.name : why);
   e.preventDefault();
 });
-for (const id of ['q', 'kw']) el(id).addEventListener('keydown', e => { if (e.key === 'Enter') go(); });
+// Only the query: every field in the filter rail searches on its own `change` (see the rail's
+// listener), which a browser also fires on Enter — a second Enter handler there searched twice.
+el('q').addEventListener('keydown', e => { if (e.key === 'Enter') go(); });
 
-/* ---- tabs. The hash names the panel (#search, #trends); unknown hashes fall back to
-   search, so a stale link never strands anyone on a blank page. Trends data loads the
+/* ---- tabs. The hash names the panel (#search, #trends); the bare URL and any hash naming
+   neither a panel nor something inside one land on Home (ADR-0249), so a stale link — the
+   retired `#data` included — never strands anyone on a blank page. Trends data loads the
    first time its tab opens, not on page load. ---- */
+const DEFAULT_TAB = 'home';
+// A tab can carry its own state after a `?` (`#trends?company=…`, ADR-0185), so the hash is
+// named by what comes before it.
+const hashName = () => location.hash.replace('#','').split('?')[0];
 function currentTab(){
-  // A tab can carry its own state after a `?` (`#trends?company=…`, ADR-0185), so the panel
-  // is named by what comes before it.
-  const name = location.hash.replace('#','').split('?')[0];
-  return document.getElementById('panel-' + name) ? name : 'search';
+  const name = hashName();
+  if (document.getElementById('panel-' + name)) return name;
+  // An in-page anchor (the skip link's `#results`, Home's `#how-matching`) names an element
+  // rather than a panel: the tab is whichever panel holds it. Without this the skip link
+  // switched the page to Home the moment the default stopped being Search.
+  const panel = hashAnchor()?.closest('.panel');
+  return panel ? panel.id.slice('panel-'.length) : DEFAULT_TAB;
+}
+// The element a hash names when it names no panel, or null.
+function hashAnchor(){
+  const name = hashName();
+  return name && !document.getElementById('panel-' + name) ? document.getElementById(name) : null;
 }
 function showTab(name){
   document.querySelectorAll('.panel').forEach(p => { p.hidden = p.id !== 'panel-' + name; });
@@ -58,90 +73,40 @@ function showTab(name){
   }
   if (name === 'saved' && el('saved-results')) loadSaved();   // re-check "closed" on every visit
   if (name === 'profile' && el('pquery')) loadProfile();      // server truth on every visit
-  if (name === 'data' && el('cov') && !coverage) loadCoverage();
   // The résumé builder converts pixels to inches from the page's measured width, and a hidden
   // panel measures zero — so it re-paints on the way in rather than on page load.
   if (name === 'resume' && window.ResumeEditor) ResumeEditor.shown();
 }
-window.addEventListener('hashchange', () => { showTab(currentTab()); viaTabStrip = false; });
+// Home's search box (ADR-0249) hands its words to the Search tab and runs them there. Focus
+// follows to the results once the tab is open — the button it left is hidden with Home — and
+// to the list rather than the box, so a phone's keyboard does not come back over the jobs.
+if (el('home-search')) el('home-search').addEventListener('submit', e => {
+  e.preventDefault();
+  el('q').value = el('home-q').value;
+  window.addEventListener('hashchange', () => el('results').focus(), { once: true });
+  location.hash = '#search';
+  go();
+});
+let shownTab = null;
+window.addEventListener('hashchange', () => {
+  const tab = currentTab();
+  showTab(tab);
+  viaTabStrip = false;
+  // The browser scrolls to an anchor before this runs, while its panel is still hidden — so it
+  // scrolls nowhere, and the section is found here instead. A switch to another tab starts at
+  // its top: the sidebar stays in view down a long page, and a click there used to open the
+  // next tab at the scroll depth of the last one.
+  const anchor = hashAnchor();
+  if (anchor) anchor.scrollIntoView({ block: 'start' });
+  else if (shownTab !== tab) window.scrollTo(0, 0);
+  shownTab = tab;
+});
 // Whether the hash change about to land came from the tab strip's own link (showTab). Reset on
 // every hash change, so a click that changed nothing (a cmd-click, a tab already open) cannot
 // leave it set for a later Back.
 let viaTabStrip = false;
 document.addEventListener('click', e => { if (e.target.closest && e.target.closest('.tabs [data-tab]')) viaTabStrip = true; }, true);
 
-/* ---- The Data tab's coverage counts (ADR-0113). Fetched on first open, never on page load:
-   the tab is a minority of visits and the counts, though cheap, are not free on the first one.
-
-   Every row is a share of the served index, phrased as what a user would actually ask —
-   "how often will I see a salary" — rather than as a column name. A field the table does not
-   carry yet comes back null and is skipped entirely; rendering it as 0% would read as
-   "measured, and none have it", which is a different and wrong claim. ---- */
-let coverage = null;
-// `remote` is deliberately absent: it is a facet, not a gap. Nearly every row has a value, so
-// a percentage here would answer "how many are remote" — which the Search rail's own counts
-// already answer — rather than "how often is this unknown". Its provenance is mixed too (some
-// boards publish the field, others are read from the location text), which is why the rail's
-// caveat describes both and this row describes neither.
-const COV_ROWS = [
-  ['salary', 'state a salary', 'Most boards publish none. Filters that need one can only match these.'],
-  ['posted_at', 'carry the employer\u2019s posting date', 'Their date, in their format \u2014 not ours, and not always given.'],
-  ['min_years', 'have a years figure we could derive', 'Read from the posting where it states one \u2014 otherwise estimated from a seniority word like \u201cSenior\u201d in the title, which is a guess rather than the employer\u2019s stated requirement.'],
-  ['first_seen', 'record when HeadStart first saw them', 'Stamped on arrival, so older rows predate the field and cannot show a \u201cnew\u201d tag.'],
-  ['description', 'have their full text stored', 'Keyword search inside descriptions reaches only these.'],
-];
-
-async function loadCoverage(){
-  const box = el('cov');
-  // `r.ok` is checked, not just the parse. A 401 or 500 body parses perfectly well into an
-  // object with no `fields`, and the render below would then have reported "the index carries
-  // none of these fields yet" \u2014 a false claim, on the one page whose subject is not making any.
-  const fail = '<p class="aside">Couldn\u2019t reach the index to count just now. ' +
-    'Reload to try again \u2014 no figure is better than a guessed one.</p>';
-  let r;
-  try{
-    r = await fetch('/coverage');
-    if (!r.ok){ logFail('GET', '/coverage', r.status); box.innerHTML = fail; return; }
-    const d = await r.json();
-    if (!d || typeof d.total !== 'number' || !d.fields) throw new Error('shape');
-    coverage = d;
-  }catch(e){ logFail('GET', '/coverage', r ? r.status : 0, e); box.innerHTML = fail; return; }
-  const total = coverage.total;
-  // One count per field against the one total \u2014 the server used to repeat `total` on every
-  // field, which is one number said five times and five chances for them to disagree.
-  const rows = COV_ROWS
-    .filter(([key]) => typeof coverage.fields[key] === 'number')
-    .map(([key, what, why]) => {
-      const share = coverage.fields[key] / total;
-      const pct = Math.round(share * 100);
-      // A nonzero count must never print "0%": rounded down it reads as "measured, and none
-      // have it", which is the unknown-is-not-zero confusion one row over (ADR-0009).
-      const label = coverage.fields[key] > 0 && pct === 0 ? 'under 1%' : pct + '%';
-      return `<div class="cov-row">
-        <div class="cov-bar"><span style="width:${Math.max(pct, share > 0 ? 1 : 0)}%"></span></div>
-        <div class="cov-txt"><b>${label}</b> ${esc(what)}
-          <span class="aside">${esc(why)}</span></div>
-      </div>`; }).join('');
-  // An empty table would otherwise render "Of 0 jobs \u2026 0% state a salary" \u2014 exactly the
-  // "measured, and none have it" reading the unknown-is-not-zero rule exists to prevent.
-  box.innerHTML = !total
-    ? '<p class="aside">The index is empty right now, so there is nothing to measure.</p>'
-    : rows
-      ? `<p class="cov-total">Of <b>${total.toLocaleString()}</b> jobs in the index right now:</p>${rows}`
-      : '<p class="aside">The index carries none of these fields yet.</p>';
-}
-
-const DENSITY_KEY = 'hs.dense';
-function applyDensity(on){
-  const box = document.querySelector('.content'), btn = el('density');
-  if (box) box.classList.toggle('dense', on);
-  if (btn){ btn.setAttribute('aria-pressed', String(on)); btn.textContent = on ? 'Comfortable' : 'Compact'; }
-}
-function flipDensity(){
-  const on = !document.querySelector('.content').classList.contains('dense');
-  try { localStorage.setItem(DENSITY_KEY, on ? '1' : ''); } catch(e){}
-  applyDensity(on);
-}
 function flipTheme(){
   const now = document.documentElement.getAttribute('data-theme')
     || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
@@ -168,17 +133,6 @@ async function signOut(){
   if (r) logFail('POST', '/signout', r.status);
   window.alert('Sign-out didn\'t go through — you are still signed in. Try again.');
 }
-function toggleRail(){
-  const rail = el('rail');
-  const open = rail.classList.toggle('open');
-  const btn = el('filtersbtn');
-  if (btn) btn.setAttribute('aria-expanded', String(open));
-  // Deliberately no scrollIntoView. It was here because the panel used to open ABOVE its own
-  // button and take it off screen; now the panel opens directly below and its top is already
-  // in view, and `block:'nearest'` on a 761px panel scrolls the page 179px on every click —
-  // moving the page under the cursor, which is the thing this whole change was about.
-}
-
 const age = d => {
   const t = Date.parse(d || ''); if (isNaN(t)) return '';
   const days = Math.floor((Date.now() - t) / 86400000);
@@ -316,8 +270,7 @@ const LABELS = { remote:'Remote', has_salary:'Shows salary', max_years:'Your exp
   salary_min:'Salary from', salary_max:'Salary to' };
 // A chip should read as the sentence the user set, in the units the read-out and the results
 // use: "Salary from USD 60,000", not the raw "60000" out of the number field. The currency has
-// no chip of its own — it is not a filter, it is what both bounds are counted in, and a third
-// chip repeating it would also inflate the count on the Filters button by one.
+// no chip of its own — it is not a filter, it is what both bounds are counted in.
 const chipValue = (key, value, f) =>
   (key === 'salary_min' || key === 'salary_max')
     ? `${f.salary_currency || ''} ${salFmt(value)}`.trim()
@@ -335,15 +288,10 @@ function drawActive(){
   const f = currentFilters(), box = el('active');
   // Everything but the currency, which both bracket chips print for themselves.
   const shown = Object.entries(f).filter(([k]) => k !== 'salary_currency');
-  // The panel is closed by default now (ADR-0116), so the button has to carry how many
-  // filters are hiding behind it — otherwise a narrowed result set has no visible cause.
-  const btn = el('filtersbtn'), n = shown.length + (searchScope ? 1 : 0);
-  if (btn){
-    btn.textContent = n ? `Filters (${n})` : 'Filters';
-    btn.classList.toggle('has', n > 0);
-  }
+  // Every path that sets a control's value (clear, drop a pill, a Saved Set) comes through here.
+  syncSegmentedSelects();
   // A converted figure has to carry the date of the rates that made it (ADR-0117), and the
-  // rail's own tip saying so is behind a panel that is closed by default. Written on every
+  // rail's own tip saying so shows only while the bracket has focus. Written on every
   // draw, like #sortnote and #kind, so it can never describe a bracket that is no longer set.
   const fxnote = el('fxnote');
   if (fxnote) fxnote.textContent = (f.salary_currency && FX && FX.as_of)
@@ -358,6 +306,40 @@ function drawActive(){
     `<button onclick="dropFilter('${esc(k)}')" aria-label="Remove ${esc(LABELS[k]||k)} filter">×</button></span>`
   ).join('');
 }
+/* ---- Segmented selects (issue #755). A <select> of a handful of options costs a click to open
+   and one to pick; the same options as a row of radios cost one. The <select> stays, hidden, as
+   the control everything else reads and writes — currentFilters, CONTROL, the facet counts on its
+   options, a Saved Set — so this is only a view over it: `{id}-seg` is redrawn from the select's
+   options (labels, counts, disabled) and never holds a value of its own. Native radios, not
+   buttons: the browser brings the arrow-key walk, the skip over disabled options and the checked
+   state. A pick applies at once, as the sort <select> always did. ---- */
+const SEGMENTED_SELECTS = ['sort', 'kwin', 'etype', 'posted'];
+function syncSegmentedSelects(){
+  for (const id of SEGMENTED_SELECTS){
+    const sel = el(id), row = el(id + '-seg'); if (!sel || !row) continue;
+    const opts = [...sel.options];
+    // Rebuilt only when the options themselves change. Replacing a radio that has focus drops
+    // the focus, and every pick redraws through here — the arrow-key walk would stop at one step.
+    if (row.querySelectorAll('input').length !== opts.length)
+      row.innerHTML = opts.map(o => `<label class="seg-opt"><input type="radio" name="${id}-seg"
+        value="${esc(o.value)}"><span></span></label>`).join('');
+    row.querySelectorAll('input').forEach((input, k) => {
+      input.checked = opts[k].value === sel.value;
+      input.disabled = opts[k].disabled;
+      input.nextElementSibling.textContent = opts[k].textContent;
+    });
+  }
+}
+for (const id of SEGMENTED_SELECTS){
+  if (!el(id + '-seg')) continue;
+  el(id + '-seg').addEventListener('change', e => { el(id).value = e.target.value; go(); });
+}
+// Every other rail control searches on `change` too, so no filter waits for the Search button
+// (issue #755): a switch or a <select> on the pick, a typed field on Enter or on leaving it. The
+// radio rows and the salary slider have their own listeners, so they are left out here.
+if (el('rail')) el('rail').addEventListener('change', e => {
+  if (e.target.matches('select, input:not([type="radio"]):not([type="range"])')) go();
+});
 /* ---- the salary bracket's slider. Two native ranges over one track; `#salmin`/`#salmax`
    stay the values every other part of this file reads (currentFilters, clearAll, dropFilter,
    applySetToControls), so the slider is an input method for them and never a second source of
@@ -677,7 +659,7 @@ async function fetchPage(){
 function drawResultKind(q, shown){
   const node = el('kind');
   if (!node || !shown) { if (node) node.textContent = ''; return; }
-  const explain = ' <a href="#data">How the match score works \u2192</a>';
+  const explain = ' <a href="#how-matching">How the match score works \u2192</a>';
   // Three states, not two. A date sort re-orders the best matches, so claiming similarity
   // order there would contradict #sortnote, which sits two lines above this in the same
   // column and already says exactly that.
@@ -805,6 +787,7 @@ function applyFacets(facets){
   countSwitch('remote', f.remote);
   countSwitch('hassalary', f.has_salary);
   countYears(f.max_years);
+  syncSegmentedSelects();   // the counts just written onto the options, onto their radios
 }
 
 // The Keyword filter's disclaimer (ADR-0104). Not every Job carries a description — none indexed
@@ -889,17 +872,14 @@ function drawPager(rowCount, facets){
    second branch — the card knows about rows, not about where they came from.
 
    A Saved row carries the two facts only it has — whether the job has closed, and when it
-   was starred — and `canHide` is the one thing about the row that is about WHERE it is being
-   drawn: the × belongs to the Search list, which is the one with the hidden-count note and the
-   "show" toggle beside it. On Saved the equivalent gesture is unstarring, and two controls for
-   one intent would disagree about which list the row is in. ---- */
-function jobCard(r, i, canHide, canHideCompany){
+   was starred — and `canHideCompany` is the one thing about the row that is about WHERE it is
+   being drawn: Saved is a list the user built, so it offers no "hide this company". ---- */
+function jobCard(r, i, canHideCompany){
   // A browsed row (no query) was never ranked, so it carries no score (ADR-0074) — the
   // match ring would otherwise show a misleading "0%" rather than "not applicable".
   const ranked = r.score != null;
   const s = Number(r.score) || 0, pct = matchPct(s);
-  const hidden = r.id && dismissed.has(r.id);
-  const cls = ['card', r.closed && 'gone', hidden && 'dismissed'].filter(Boolean).join(' ');
+  const cls = ['card', r.closed && 'gone'].filter(Boolean).join(' ');
   return `
     <div class="${cls}" style="${ranked?`--tone:${tone(s)}; `:''}animation-delay:${Math.min(i,12)*35}ms">
       <div class="who">
@@ -915,10 +895,14 @@ function jobCard(r, i, canHide, canHideCompany){
             : ''}${
           // Into Trends already picked (ADR-0185). The Board is boardOf's guess, which names no
           // directory company for ~2% of rows; the picker then says so rather than failing.
+          // A glyph rather than an underlined word on every row (issue #755); the accessible
+          // name still says what it opens.
           el('trends') && boardOf(r.id)
-            ? ` <button class="linkish see-trend" data-trend="${esc(boardOf(r.id))}"
+            ? ` <button class="see-trend" data-trend="${esc(boardOf(r.id))}"
                  data-trend-name="${esc(r.company)}" aria-label="Hiring trend at ${esc(r.company)}"
-                 >trend</button>`
+                 title="See hiring trend"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor"
+                 stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"
+                 ><path d="M2 12.5 6 8.5l2.5 2.5L14 5M10 5h4v4"/></svg></button>`
             : ''}</div>
         <div class="tags">
           ${r.closed? '<span class="tag closed" title="No longer in HeadStart\u2019s index \u2014 almost always because the employer took it down. The link still goes to them.">closed</span>':''}
@@ -928,10 +912,9 @@ function jobCard(r, i, canHide, canHideCompany){
           ${r.min_years!=null? '<span class="tag mono">'+(Number(r.min_years)||0)+'+ yrs</span>':''}
           ${age(r.posted_at)? '<span class="tag mono" title="The date the employer put on it, in their own format \u2014 not when HeadStart saw it">'+age(r.posted_at)+'</span>':''}
           ${age(r.starred_at)? '<span class="tag mono">saved '+age(r.starred_at)+'</span>':''}
-          ${r.ats? '<span class="src" title="Read directly from this company\'s '+esc(r.ats)+' board \u2014 not a repost">via '+esc(r.ats)+'</span>':''}
         </div>
       </div>
-      <div class="pay">${payLabel(r)? esc(payLabel(r)) : '<span class="nopay" title="This board did not publish one">\u2014</span>'}${convLabel(r)? `<span class="conv">${esc(convLabel(r))}</span>` : ''}</div>
+      <div class="pay">${esc(payLabel(r))}${convLabel(r)? `<span class="conv">${esc(convLabel(r))}</span>` : ''}</div>
       ${ranked? `<div class="match" role="img"
              aria-label="Match ${pct} percent \u2014 how close this job is to your search, on a fixed scale that gives the same job the same number every time"
              title="Match strength \u2014 semantic similarity ${s.toFixed(2)}, scaled to this index's real range">
@@ -947,7 +930,6 @@ function jobCard(r, i, canHide, canHideCompany){
       // they cannot align across two different grids.
       : '<div class="match" aria-hidden="true"></div>'}
       ${starBtn(r.id, r.starred_at ? true : undefined)}
-      ${canHide ? dismissBtn(r.id) : ''}
     </div>`;
 }
 
@@ -1024,8 +1006,8 @@ function capRows(rows, target){
   rows.forEach((r, i) => {
     const board = boardOf(r.id);
     // `(r, i) => …` and an explicit third argument, never a bare `rows.map(jobCard)`: map passes
-    // the array as a third argument, which would land on `canHide` and put a × on every list.
-    const html = jobCard(r, i, !target, true);
+    // the array as a third argument, which would land on `canHideCompany`.
+    const html = jobCard(r, i, true);
     if (!board){ chunks.push(html); return; }
     const n = (seen.get(board) || 0) + 1;
     seen.set(board, n);
@@ -1073,7 +1055,6 @@ function draw(rows, target){
   rows.forEach(r => { if (r.id) drawnRows.set(r.id, r); });   // starring needs the row later
   el(target || 'results').innerHTML = capRows(rows, target).join('');
   setResultRows(rows.length, target);
-  if (!target) drawHidden(pageRows = rows);
 }
 
 /* ---- Saved sets (ADR-0043): the Matches tab runs one live; "Save this search" creates
@@ -1262,51 +1243,6 @@ async function saveSearch(){
    fields, so the Saved tab survives the index churn and marks evicted postings "closed".
    Stars flip optimistically — an HF write is ~1s, too slow for a click — and revert with
    a message if the server refuses. ---- */
-/* ---- Dismissed rows. Every result leaves for the employer's own board, so the return trip
-   lands on a list with no memory of what has already been dealt with — the main cost of the
-   loop. `:visited` on the title says "opened"; this says "done with". Browser-local on
-   purpose: it is a scanning aid over one session's list, not a preference worth an account
-   round trip, and storage can throw outright in a private window. Rows are hidden rather than
-   dropped, so the server's own "showing 1-20 of N" stays true and one click puts them back.
-   ---- */
-const DISMISS_KEY = 'hs.dismissed';
-let revealDismissed = false;
-const dismissed = new Set((() => {
-  try { return JSON.parse(localStorage.getItem(DISMISS_KEY) || '[]'); } catch(e){ return []; }
-})());
-function saveDismissed(){
-  try { localStorage.setItem(DISMISS_KEY, JSON.stringify([...dismissed])); } catch(e){}
-}
-const dismissBtn = id => !id ? '' :
-  `<button class="dismiss" data-dismiss="${esc(id)}" title="Hide this job"
-    aria-label="Hide this job from the results">\u00d7</button>`;
-
-// The count of what is hidden, beside the result count that no longer matches what is on
-// screen. Written on every draw, including when it is zero — a stale "3 hidden" is worse
-// than none. It counts the Search page on screen, never `drawnRows`: that holds every row of
-// every page and both lists drawn this session.
-let pageRows = [];
-function drawHidden(rows){
-  const node = el('hidden'), box = el('results'); if (!node || !box) return;
-  const n = rows.filter(r => r.id && dismissed.has(r.id)).length;
-  node.innerHTML = !n ? '' :
-    `${n} hidden <button class="linkish" onclick="toggleDismissed()">` +
-    `${revealDismissed ? 'hide again' : 'show'}</button>`;
-  box.classList.toggle('reveal', revealDismissed);
-}
-function toggleDismissed(){
-  revealDismissed = !revealDismissed;
-  drawHidden(pageRows);
-}
-function dismissRow(id){
-  if (dismissed.has(id)) dismissed.delete(id); else dismissed.add(id);
-  saveDismissed();
-  document.querySelectorAll('[data-dismiss]').forEach(b => {
-    if (b.dataset.dismiss === id) b.closest('.card').classList.toggle('dismissed', dismissed.has(id));
-  });
-  drawHidden(pageRows);
-}
-
 const CAN_STAR = !!el('saved-results');   // the Saved tab only renders when configured
 // Follow/hide is gated separately from starring: the local dev renderer serves /companies over
 // one in-memory record even though it has no Accounts at all (ADR-0042 keeps the two mirrors).
@@ -1382,7 +1318,7 @@ function renderSaved(){
   // No "hide" here, and no capping: the Saved tab lists jobs this Account chose one at a time,
   // so a company-level control would either do nothing visible or remove something deliberately
   // kept. It is the one list that does NOT go through `draw`/`capRows`.
-  box.innerHTML = jobs.map((j, i) => jobCard(savedRow(j), i, false, false)).join('');
+  box.innerHTML = jobs.map((j, i) => jobCard(savedRow(j), i, false)).join('');
 }
 
 // A stored star, in the shape jobCard reads. The record is a display copy taken at star time
@@ -1863,9 +1799,9 @@ function viewKind(d){
 // what a share is a share of. The index with no pick; the company, or all picks, with some.
 function pickScope(){
   const n = trendPicks.length;
-  return !n ? { ref: 'whole index', whole: 'the whole index', share: 'a share of the index' }
-    : n === 1 ? { ref: 'whole company', whole: 'the company’s own total', share: 'a share of the company’s openings' }
-    : { ref: 'all picked', whole: 'the picked companies’ combined total', share: 'a share of the picked companies’ openings' };
+  return !n ? { ref: 'whole market', whole: 'the whole market', share: 'a share of all jobs' }
+    : n === 1 ? { ref: 'whole company', whole: 'the whole company', share: 'a share of the company’s openings' }
+    : { ref: 'all picked', whole: 'all picked companies together', share: 'a share of the picked companies’ openings' };
 }
 
 // What a company chart must say about its own line. It begins at the first run that counted
@@ -1885,11 +1821,12 @@ function companyNote(d){
     const counted = datedPicks(d.counted_since, 'since');
     if (counted) parts.push(`HeadStart has counted ${counted}; there is nothing before that.`);
   }
-  if (d.partial) parts.push(`${d.partial} run${d.partial === 1 ? '' : 's'} where a board was read only partly — a leap one run put straight back — ${d.partial === 1 ? 'is' : 'are'} left out of the lines.`);
+  // A run where a Board was read only partly: a leap one run put straight back.
+  if (d.partial) parts.push(`${d.partial} incomplete update${d.partial === 1 ? ' is' : 's are'} left out of the lines.`);
   // Under New, every Board's first week is held out by the Space (its backlog reads as new), so
   // a line begins a week after counting did and must say why.
   const fresh = trendMetric === 'new' && datedPicks(d.new_counted_from, 'from');
-  if (fresh) parts.push(`New openings count for ${fresh}: a board's first week reads its whole backlog as new, so none counts before then.`);
+  if (fresh) parts.push(`New openings count for ${fresh}, a week after tracking began, so older listings don’t count as new.`);
   return parts.filter(Boolean).join(' ');
 }
 
@@ -1900,20 +1837,20 @@ function stepNote(d, marked){
   if (!trendPicks.length || !d.series.length) return '';
   const parts = [];
   if (marked.found)
-    parts.push(`A solid grey vertical line marks openings that joined or left the count at once — ${
-      marked.removal ? 'duplicate postings removed, ' : ''}boards found later, or a company counted from a later date — not hiring.`);
+    parts.push(`Solid grey lines mark jumps that aren’t hiring: ${
+      marked.removal ? 'duplicates removed, ' : ''}job sites found later, or a company added later.`);
   // Said only where a line carries a step and has a figure read off it: Zomato, with no
   // percentage, and a Count view, whose lines are real levels, both got the Change sentence.
-  // Only where a step is marked on the chart ("Point at a marked line" over a chart with none
-  // pointed at nothing) and a line has a percentage read net of it.
+  // Only where a step is marked on the chart ("Point at one" over a chart with none points at
+  // nothing) and a line has a percentage read net of it.
   if ((marked.epoch || marked.found)
       && chartedAndOther(d).charted.some(s => {
         const line = lineReading(s);
         return line && line.move.not_hiring.length && lineMove(s).dl != null;
       }))
     parts.push(trendUnit === 'change'
-      ? 'Lines and percentages leave out the jumps at marked lines, so they show hiring between them. Point at a marked line, or open “Marked changes” below the chart, to see what changed there.'
-      : 'Lines break at each marked jump, and the percentages leave the jumps out, so they measure hiring between them. Point at a marked line, or open “Marked changes” below the chart, to see what changed there.');
+      ? 'Lines and percentages skip the marked jumps. Point at one, or open “Marked changes”, to see what happened.'
+      : 'Lines break at the marked jumps, and percentages skip them. Point at one, or open “Marked changes”, to see what happened.');
   return parts.filter(Boolean).join(' ');
 }
 
@@ -1954,7 +1891,7 @@ function uncountedNote(d){
   if (trendCoverage === 'comparable' && d.base && out.every(p => since[p.key] && since[p.key] > d.base))
     return `${list} ${isnt} in this view: HeadStart began counting ${them} after ${stampLabel(d.base, true)}.`;
   if (trendAtsSelected() && out.every(p => !(p.atses || []).some(a => trendAtsSelected().includes(a))))
-    return `${list} ${isnt} in this view: none of ${their} boards are on the selected sources.`;
+    return `${list} ${isnt} in this view: none of ${their} jobs come from the selected sources.`;
   // A window ending before counting began read "0 companies · 0 measurements" with no date.
   const until = trendRange().until;
   const began = out.map(p => since[p.key] || d.ledger_start).filter(Boolean).sort()[0];
@@ -1972,8 +1909,8 @@ function comparableNote(d){
   // runs is "before the base" by minutes, and Google's 7-day Comparable view read that its base
   // was moved to "the first run it counted by board" when it was not (critic round 15).
   const moved = asked && d.ledger_start && asked < d.ledger_start;
-  return `Comparable follows only the boards HeadStart counted at ${stampLabel(d.base, true)}${
-    moved ? ', the first run it counted by board, rather than at the window’s start' : ''}.`;
+  return `Only job sites HeadStart already tracked on ${stampLabel(d.base, true)}${
+    moved ? ', the earliest date this works from,' : ''} are counted.`;
 }
 function viewNotes(d){ return [comparableNote(d), companyNote(d)].filter(Boolean).join(' '); }
 
@@ -1993,13 +1930,14 @@ function verdictLines(d){
     const whole = reading.total;
     const t = whole && whole.move.turnover;
     if (!t) return [];
-    // Its net is the hiring one, opened less closed; recounted jobs are not hiring. The chart's
-    // own lines keep a counting change's jump, marked, so this sentence says when the figures
-    // leave one out.
-    const left = (d.turnover_left_out || []).length
-      ? ', runs where HeadStart changed how it counts left out' : '';
+    // Its net is the hiring one, opened less closed; recounted jobs are not hiring. Said as
+    // opened against closed, never as "more openings": the lines keep a counting change's jump,
+    // so a line up 400 read "about 10 more openings" beside it. That the runs of such a change
+    // are left out (`turnover_left_out`) is said under "How to read this", not here (ADR-0248).
+    const net = t.net == null ? '' : t.net < 0 ? `about ${aboutCount(-t.net)} more closed than opened — `
+      : t.net > 0 ? `about ${aboutCount(t.net)} more opened than closed — ` : 'as many opened as closed — ';
     return [{ name: viewKind(d) === 'bands' ? drillLabel() : 'All tech roles', days: 0,
-      text: `about ${t.net < 0 ? '−' : '+'}${aboutCount(Math.abs(t.net))} net from hiring — ${turnoverPhrase(whole, d)}${left}.` }];
+      text: `${net}${turnoverPhrase(whole, d)}.` }];
   }
   const kind = viewKind(d);
   const counted = trendPicks.filter(p => !(d.uncounted || []).includes(p.key));
@@ -2045,20 +1983,17 @@ function aboutCount(n){
 }
 // "about 1,500 opened, 1,500 closed", or '' with no turnover: the jobs a line reading opened and
 // closed over the runs its hiring move counts (ADR-0227). A net change alone read Amazon's week
-// as "+17" while it opened 914–1,532. It adds from when, if turnover began inside the window. It
-// also adds how many of the line's Boards had a run whose closures went uncounted (ADR-0053):
-// their scrape could not show an absence, so the line can read as opening more than it closed.
+// as "+17" while it opened 914–1,532. It adds from when, if turnover began inside the window.
+// Boards whose closures went uncounted on a run (ADR-0053) are not named here: "(not counted on
+// 3571 of 5747 boards)" buried the answer. "How to read this" says closed can run low (ADR-0248).
 function turnoverPhrase(line, d){
   const t = line && line.move.turnover;
   if (!t) return '';
   const since = d.turnover_since && d.turnover_since > d.stamps[0] ? ` since ${stampLabel(d.turnover_since, true)}` : '';
-  const whose = counts => VIEWS[viewKind(d)].split === 'company' ? (counts || {})[line.name] || 0
-    : Object.values(counts || {}).reduce((sum, n) => sum + n, 0);
   // Where every Board's closures went uncounted the reading gives no closed count, and the
   // sentence none: Google, one Board, read "18 closed … closures not counted on 1 board".
   if (t.closed == null) return `about ${aboutCount(t.opened)} opened${since}; closures not counted`;
-  return `about ${aboutCount(t.opened)} opened, ${aboutCount(t.closed)} closed${
-    notCountedOn(whose(d.closures_unseen), whose(d.boards_in_scope))}${since}`;
+  return `about ${aboutCount(t.opened)} opened, ${aboutCount(t.closed)} closed${since}`;
 }
 // " (not counted on 1 of 2 boards)" after a closed count read over only some of the Boards: the
 // rest had a run whose closures went uncounted (ADR-0227). '' when every Board counted them.
@@ -2671,7 +2606,7 @@ function moveText(mv){
 }
 // What a mostly re-counted line says beside its hiring, and why, as a title.
 const RECOUNTED_NOTE = 'mostly re-counted in this window';
-const RECOUNTED_WHY = 'Changes to how HeadStart counts took out more of this line’s openings than are left of its start, so a percentage off what is left would be arithmetic, not hiring';
+const RECOUNTED_WHY = 'Changes in how HeadStart counts moved more jobs out of this line than it had left from its start, so a percentage would not mean anything';
 // "+3 openings", "−1 opening": every place a change is given in openings.
 function signedOpenings(n){
   return `${n < 0 ? '−' : '+'}${Math.abs(n).toLocaleString()} opening${Math.abs(n) === 1 ? '' : 's'}`;
@@ -2756,12 +2691,13 @@ function fmtAxis(v, dec){
 }
 
 // A hover row's reading. Under Change the plotted number and the magnitude are different
-// numbers, so both are given, the index named as one — a bare "1,739 · 113" left the reader to
-// guess what 113 was. Where a marked step lands on this line, its size in openings is given
-// too: "Counting changed here" alone never said by how much.
+// numbers, so both are given, the index said against its start — a bare "1,739 · 113" left the
+// reader to guess what 113 was, and "index 113" named it in jargon (ADR-0248). Where a marked
+// step lands on this line, its size in openings is given too: "Counting changed here" alone
+// never said by how much.
 function rowText(r){
   const lvl = r.value == null ? '—' : fmtLevel(r.value);
-  return trendUnit === 'change' && r.index != null ? `${lvl} · index ${r.index.toFixed(0)}` : lvl;
+  return trendUnit === 'change' && r.index != null ? `${lvl} · ${r.index.toFixed(0)} vs 100 at start` : lvl;
 }
 
 // The legend, table and tooltip always speak the level, whatever the plot is drawing.
@@ -2827,7 +2763,7 @@ function drawTrends(){
   const ageHours = runs ? (Date.now() - new Date(d.stamps[runs - 1])) / 36e5 : 0;
   // Only for a window running to now: a custom range ending last week is old by choice.
   const asOf = !runs ? '' : ` · latest ${stampLabel(d.stamps[runs - 1])} UTC${
-    !trendRange().until && ageHours >= staleAfterHours(d.stamps) ? ` — ${Math.round(ageHours)} hours ago: the pipeline has written no newer count, though Search, which reads the job list itself, can be newer` : ''}`;
+    !trendRange().until && ageHours >= staleAfterHours(d.stamps) ? ` — ${Math.round(ageHours)} hours ago; Search may have newer jobs` : ''}`;
 
   // The legend is built BEFORE the plot, not after: it is a pure function of the series, and
   // the plot's height floor is measured off it (below). Built after, the first paint would
@@ -2861,7 +2797,7 @@ function drawTrends(){
       >${swatchHtml(c, slot)}
       <span class="nm" title="${esc(s.label)}">${esc(s.label)}</span>
       <span class="ct">${latest == null ? '—' : fmtCompact(latest)}</span>
-      ${noBase && 'dl' in mv ? '<span class="dl flat" title="Under 5 openings at the start of this window, too few to index against">started under 5</span>'
+      ${noBase && 'dl' in mv ? '<span class="dl flat" title="Under 5 openings at the start of this window, too few to draw a change line">started under 5</span>'
                : `<span class="dl ${moveClass(mv)}"${mv.count == null ? '' : mv.recounted ? ` title="${RECOUNTED_WHY}"` : mv.short ? ' title="Too short a window for a percentage to mean much, so the change in openings"' : ' title="Too few openings for a percentage to mean much, so the change in openings"'}>${moveText(mv)}</span>`}
       ${hasRoles ? '<span class="drill" role="img" aria-label="has tracked roles" title="Opens the named roles tracked inside this category">▸ roles</span>' : ''}</span>
       ${view === VIEWS.roles && trendPicks.length ? `<button class="linkish role-jobs" type="button" data-role="${esc(s.name)}"
@@ -3148,7 +3084,7 @@ function drawTrends(){
     `Line chart. ${trendMetric === 'new' ? `Openings ${newCounts(d)}` : 'All live openings'}${where}`
     + `${view.grouping ? ` by ${view.grouping(trendDrill)}` : ', every category summed into one line'}, as ${
         trendUnit === 'share' ? (view.split === 'company' ? 'a share of each company’s own openings' : pickScope().share)
-        : trendUnit === 'change' ? 'an index against each line’s own count at the window’s start'
+        : trendUnit === 'change' ? 'change from each line’s own count at the window’s start, which is 100'
         : 'a count'}`
     + `${atsPick ? `, ${atsPick.length} of the ATS sources` : ''}, over ${measured}.`
     + ` ${drawn.length} line${drawn.length === 1 ? '' : 's'}.`
@@ -3162,29 +3098,30 @@ function drawTrends(){
       // Comparable keeps the Boards counted at the window's start, and per-Board counting has
       // a start of its own: a window opening before it has no cohort at all, so "widen" is the
       // wrong advice there.
-      ? `Comparable coverage follows only boards already counted when the window starts, and counting by board began ${stampLabel(d.ledger_start, true)} — choose a window that starts after that.`
+      ? `“Tracked from start” works only from ${stampLabel(d.ledger_start, true)} — choose a later start date.`
       // A window ending before counting began: the date it could not reach, not just "widen".
       : trendPicks.length && d.ledger_start && trendRange().until && trendRange().until < d.ledger_start
-      ? `This window ends before HeadStart began counting companies, on ${stampLabel(d.ledger_start, true)} — choose dates after that.`
-      : 'No measurements inside this window — widen the dates, or clear them to see the whole history.')
+      ? `These dates end before HeadStart began tracking companies on ${stampLabel(d.ledger_start, true)} — choose later dates.`
+      : 'No data for these dates — widen them, or clear them to see everything.')
     : runs < 2 && trendPicks.length
-    ? `${viewNotes(d)} A trend line needs a few more runs.`.trim()
+    ? `${viewNotes(d)} A trend line appears after a few more updates.`.trim()
     : runs < 2
     ? (atsPick
-        ? `Only ${runs} measurement${runs === 1 ? '' : 's'} for this ATS selection — per-ATS history starts from when this filter shipped, not before. Broaden the selection to see more.`
-        : 'Only one measurement so far — trend lines appear once the pipeline has run a few more times.')
+        // Per-ATS history starts from the run the filter shipped in (ADR-0075), not before.
+        ? `Only ${runs} update${runs === 1 ? '' : 's'} for these sources so far — their history starts later. Select more sources to see more.`
+        : 'Only one update so far — trend lines appear after a few more.')
     : (trendDrill && trendSplit === 'roles' && !d.series.length
       // "not tracked" would be wrong and self-contradictory next to a marker that just said
       // roles ARE tracked here: the watchlist is config, the rows are measurements, and between
       // a deploy and the next pipeline run the first exists without the second.
-      ? 'These roles have not been measured yet — they appear after the next pipeline run.'
+      ? 'These roles haven’t been measured yet — check back after the next update.'
       : trendDrill && trendRaw && trendRaw.family_known === false
       // A name the data holds no category by, said as such, not as "no openings counted".
       ? `HeadStart has no category called “${trendDrill}”. Go back to all categories to pick one.`
       : trendPicks.length && !d.series.length
       ? (trendMetric === 'new'
         // The Space holds a found Board's first week out of `new`: its backlog is not hiring.
-        ? `Nothing counts as new${where} yet. A board's openings count as new only after HeadStart has read it for a week, so a backlog is not mistaken for hiring.`
+        ? `Nothing counts as new${where} yet. Jobs count as new only after HeadStart has tracked a site for a week, so older listings aren’t mistaken for new ones.`
         : `No openings counted${where} in this window. ${viewNotes(d)}`.trim())
       : viewNotes(d));
   drawVerdict(d);
@@ -3199,27 +3136,25 @@ function drawTrends(){
   if (runs === 0 && el('trends-verdict')) el('trends-verdict').hidden = true;
   // The reassignment caveat is about a job's category moving, which a Total line, a whole
   // company's line and a title-matched role's line cannot show.
-  if (el('trends-how')) el('trends-how').hidden = ['total', 'company', 'roles'].includes(viewKind(d));
-  const nt = d.non_tech.filter(v => v != null).pop();
+  if (el('trends-how-moves')) el('trends-how-moves').hidden = ['total', 'company', 'roles'].includes(viewKind(d));
+  // One short caption for the view on screen; "How to read this" defines all three units
+  // (ADR-0248). With no pick nothing is netted, so a found Board lifts every Change line, and
+  // that caption says why the dashed line is there.
   const parts = [];
   parts.push(trendMetric === 'new'
-    ? `Openings ${newCounts(d)}, re-measured every pipeline run.`
+    ? `Jobs ${newCounts(d)}.`
     : (trendUnit === 'share'
-      ? (view.split === 'company'
-        ? 'Each line is a share of that company’s own live openings, so companies of very different size compare directly.'
-        : trendPicks.length
-        ? `Each line is a category’s share of all live openings ${at}.`
-        : 'Each line is a category’s share of all live openings in the index — immune to the index itself growing or shrinking.')
+      ? `Each line is a share of ${view.split === 'company' ? 'its company’s own openings'
+        : trendPicks.length ? `all openings ${at}` : 'all open jobs'}.`
       : trendUnit === 'change'
-      ? `Each line starts at 100 — its own count of live openings at ${stampLabel(d.stamps[0], true)}, or at its own first measurement if it has none there — so ${
-          view.split === 'company' ? 'companies' : 'lines'} of very different size become comparable shapes. 120 means a fifth more openings than at the start, not 120 openings; the count itself is in the legend and the table.${
-          refShown ? ` The index grows as coverage does, and a run that adds a board lifts every line without a job having been posted — so read a ${
-            trendDrill ? 'line' : 'category'} against the dashed line, which is ${pickScope().whole} on the same base.` : ''} Move the window and every line is re-based to the new start.`
-      : 'Counts are live openings in the index, re-measured every pipeline run. The index itself grows as coverage does, which lifts every count.'));
+      // A line with no count at the window's start is based on its own first one.
+      ? `Lines start at 100 on ${stampLabel(d.stamps[0], true)} (or where they first appear), so 120 means 20% more openings.${
+          !refShown ? '' : trendPicks.length ? ` The dashed line is ${pickScope().whole}.`
+          : ` Adding companies lifts every line, so compare each with the dashed line, ${pickScope().whole}.`}`
+      : 'Each line counts open jobs.'));
   const steps = stepNote(d, marked);
   if (steps) parts.push(steps);
   drawChangeList(d, runs === 0 ? [] : marked.list);
-  if (nt && trendMetric === 'stock') parts.push(`${nt.toLocaleString()} further ${nt === 1 ? 'row sits' : 'rows sit'} in non-tech categories and ${nt === 1 ? 'is' : 'are'} excluded here.`);
   // With nothing measured there is no line to explain, and the Change sentence named a start
   // date that did not exist ("live openings at , or…").
   el('trends-foot').textContent = runs === 0 ? '' : parts.join(' ');
@@ -3257,7 +3192,7 @@ function drawReconcileNote(d){
   const host = el('trends-reconcile'); if (!host) return;
   const reconciles = !d.stamps.length || !problemsOf(d.reading).length;
   host.hidden = reconciles;
-  host.textContent = reconciles ? '' : 'These figures don’t fully reconcile.';
+  host.textContent = reconciles ? '' : 'Some of these figures don’t add up exactly.';
 }
 
 // The legend column's own content height, and only when it IS a column — stacked under the
@@ -3491,7 +3426,7 @@ function buildTrendsTable(){
     const t = move && move.turnover;
     if (!t) return dash + dash;
     return `<td>${esc(t.opened.toLocaleString())}</td>` + (t.closed == null
-      ? '<td class="flat" title="Every board’s closures went uncounted on a run in this window">not counted</td>'
+      ? '<td class="flat" title="HeadStart couldn’t see these sites close jobs in this window">not counted</td>'
       : `<td>${esc(t.closed.toLocaleString())}</td>`);
   };
   const cell = v => `<td>${v == null ? '—' : esc(fmtLevel(v))}</td>`;
@@ -3848,7 +3783,7 @@ function changeLock(){
   if (!trendData) return '';
   const { charted } = chartedAndOther(trendData);
   return !charted.length || charted.some(s => indexBase(s) != null) ? ''
-    : `Change is off here — no line starts with ${INDEX_BASE_FLOOR} or more openings to index against, so counts are shown.`;
+    : `Change is off here — no line starts with ${INDEX_BASE_FLOOR} or more openings, so counts are shown.`;
 }
 // A lock moves the reader off a unit only while it holds: the unit they chose is kept in
 // `unitWanted` and comes back when the view can show it again.
@@ -3959,7 +3894,7 @@ function drawPicks(){
     // Inside a category the link names it and hands its name to Search as the query, so Google ›
     // AI / Machine Learning leads to Google's AI roles first rather than to every Google job.
     const its = trendPicks.length > 1 ? 'their' : 'its';
-    roles.textContent = roles.disabled ? `Too many boards to list at once (${boards.length}) — remove a company`
+    roles.textContent = roles.disabled ? `Too many job sites to list at once (${boards.length}) — remove a company`
       : trendDrill && trendSplit === 'roles' ? `See all ${its} ${drillLabel()} roles`
       : trendDrill ? `See ${its} ${drillLabel()} roles` : `See ${its} open roles`;
   }
@@ -3998,8 +3933,10 @@ function followedOption(){
 function optionHtml(o){
   if (o.followed) return '<span class="co-opt-name">Add the companies you follow</span>';
   const c = o.company;
+  // No ATS names: a job seeker does not care which system hosts a company's jobs (ADR-0248).
+  // Same-named companies are told apart in `label` itself, by their openings.
   const meta = `${c.openings.toLocaleString()} tech opening${c.openings === 1 ? '' : 's'} · `
-    + `${c.boards} board${c.boards === 1 ? '' : 's'} · ${c.atses.join(', ')}`;
+    + `${c.boards} job site${c.boards === 1 ? '' : 's'}`;
   return `<span class="co-opt-name">${esc(c.label)}</span><span class="co-opt-meta">${esc(meta)}</span>`;
 }
 
@@ -4300,9 +4237,8 @@ if (el('salrmin')){
   // The currency is part of the where-clause, not a label on it (ADR-0117): the bounds are
   // restated in it before anything is compared, so changing it changes which jobs match.
   // Bound to `syncSalarySlider` alone, it relabelled the read-out and left the previous
-  // currency's results on screen underneath — USD rows under an INR heading. `go()` redraws
-  // the read-out and the chips on its way through drawActive, so this is the whole fix.
-  if (el('salcur')) el('salcur').addEventListener('change', go);
+  // currency's results on screen underneath — USD rows under an INR heading. The rail's change
+  // listener searches on it, and `go()` redraws the read-out and the chips via drawActive.
 }
 if (el('sets-strip')) el('sets-strip').addEventListener('click', e => {
   const btn = e.target.closest('[data-act]');
@@ -4313,10 +4249,6 @@ if (el('sets-strip')) el('sets-strip').addEventListener('click', e => {
 document.addEventListener('click', e => {
   const b = e.target.closest('button[data-star]');
   if (b) toggleStar(b.dataset.star);
-});
-document.addEventListener('click', e => {
-  const b = e.target.closest('button[data-dismiss]');
-  if (b) dismissRow(b.dataset.dismiss);
 });
 // Whole-row click, without an overlay. A real element is never covered, so text stays
 // selectable and every title/tooltip underneath stays reachable. Three guards: a drag that
@@ -4488,7 +4420,6 @@ function hotRow(r, i, lens){
   const m = HOT_MEASURE[lens](r);
   const op = HOT_OPERATOR[r.operator];
   const followed = hotFollowed(r);
-  const boards = r.boards.length === 1 ? 'board' : `${r.boards.length} boards`;
   // The rank is decorative — the list is already ordered and screen readers announce <ol>
   // position — so it is hidden from the accessibility tree rather than read out twice.
   return `
@@ -4497,7 +4428,6 @@ function hotRow(r, i, lens){
       <div class="hot-who">
         <div class="hot-name">${esc(r.company)}</div>
         <div class="hot-tags">
-          <span class="src" title="Read directly from this company’s ${esc(r.atses.join(' and '))} ${boards}">via ${esc(r.atses.join(', '))}</span>
           ${op ? `<span class="tag flag" title="${esc(op.hint)}">${esc(op.label)}</span>` : ''}
         </div>
       </div>
@@ -4608,13 +4538,11 @@ function drawMyCompanies(){
   });
 }
 
-if (el('mine')) el('mine').addEventListener('change', () => go());
-
-try { applyDensity(!!localStorage.getItem(DENSITY_KEY)); } catch(e){ applyDensity(false); }
 readSearchHash();   // a reloaded or shared hand-off (`#search?board=…`) scopes the first search
 go();   // an empty query browses the newest jobs (ADR-0074) — the Search tab is never empty
 whoAmI();
 showTab(currentTab());
+shownTab = currentTab();
 // Result cards need star states before the Saved tab is ever opened; landing ON the tab
 // already loads via showTab above.
 if (CAN_STAR && currentTab() !== 'saved') loadSaved();

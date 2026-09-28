@@ -1,6 +1,8 @@
 # ADR-0116: A quiet palette, and a layout built for scanning
 
-**Status:** accepted · **Date:** 2026-09-07 · **Replaces the visual language ADR-0042 shipped; keeps every decision ADR-0112 and ADR-0113 made about what the product says**
+**Status:** accepted · **Date:** 2026-09-07 · **Navigation superseded on wide screens by:** [ADR-0249](0249-a-home-tab-replaces-the-data-tab-and-navigation-moves-to-a-sidebar.md) · **Replaces the visual language ADR-0042 shipped; keeps every decision ADR-0112 and ADR-0113 made about what the product says**
+
+- Amended by: [ADR-0247](0247-search-filters-are-always-open-beside-the-results.md) — the filters are always open (beside the results on a wide screen), and the per-row dismiss and the compact-density toggle are removed.
 
 ## Context
 

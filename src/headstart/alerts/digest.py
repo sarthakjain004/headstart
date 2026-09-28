@@ -30,6 +30,17 @@ class Digest:
     html: str
 
 
+def _http_url(value: Any) -> str:
+    """A job link if it is http(s), else "" — rendered like a job with no link.
+
+    A scraped `javascript:` or `data:` URL must not ship as a link (#594). The scheme test is
+    `safeUrl`'s in the web UI's app.js; surrounding whitespace is stripped first, as a browser
+    strips it from an href.
+    """
+    url = str(value or "").strip()
+    return url if url.lower().startswith(("http://", "https://")) else ""
+
+
 def _line(job: dict[str, Any]) -> str:
     bits = [str(job.get("company") or "?"), str(job.get("title") or "Role")]
     if job.get("location"):
@@ -72,7 +83,7 @@ def render(
     for job in jobs:
         score = job.get("score")
         score_text = f"{float(score):.3f}" if isinstance(score, (int, float)) else "—"
-        url = str(job.get("url") or "")
+        url = _http_url(job.get("url"))
         text_rows.append(f"- {_line(job)}  [{score_text}]\n  {url}")
         html_rows.append(
             f'<li style="margin:0 0 14px 0">'
@@ -139,7 +150,7 @@ def to_telegram(
             score_text = (
                 f"{float(score):.3f}" if isinstance(score, (int, float)) else "—"
             )
-            url = html.escape(str(job.get("url") or ""), quote=True)
+            url = html.escape(_http_url(job.get("url")), quote=True)
             lines.append(
                 f'• <a href="{url}">{html.escape(_line(job))}</a> · {score_text}'
             )
@@ -172,8 +183,10 @@ def to_xlsx(jobs: list[dict[str, Any]]) -> bytes:
     for row, job in enumerate(jobs, start=1):
         for column, name in enumerate(COLUMNS):
             value = job.get(name)
-            if name == "url" and value:
-                sheet.write_url(row, column, str(value), link, "apply")
+            if name == "url" and (url := _http_url(value)):
+                sheet.write_url(row, column, url, link, "apply")
+            elif name == "url":
+                sheet.write(row, column, "")
             else:
                 sheet.write(row, column, "" if value is None else value)
     sheet.set_column(0, 2, 34)

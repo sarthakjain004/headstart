@@ -138,6 +138,9 @@ USA", "Toronto (Remote)") and is usually richer than the raw `city`/`isoCountry`
 tried first. Only the first location is used for multi-location postings, matching upstream's own
 choice — real multi-location postings were a small minority of the sample.
 
+**Superseded 2026-09-28:** every location is now kept, "; "-joined. 46 of 212 live postings
+sampled gained places ([ADR-0196's amendment](../adr/0196-a-job-pages-json-ld-job-posting-is-read-by-one-reader.md)).
+
 ### `employment_type`: passed through raw, no normalization
 
 `Job.employment_type`'s own docstring says values are "kept as the provider phrases them" — so

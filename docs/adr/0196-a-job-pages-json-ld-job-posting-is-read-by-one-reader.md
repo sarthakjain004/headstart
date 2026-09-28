@@ -144,3 +144,50 @@ sample.
   above is the measurement to repeat before changing the finder.
 - Job ids, URLs and every served field are unchanged, so no `DERIVATIONS_VERSION` bump and no
   re-scrape is needed.
+
+## Amendment (2026-09-28): every Place is kept
+
+`job_location_text` now returns every Place's "Locality, Region, Country", "; "-joined in order
+without repeats; a Place with no address is skipped rather than ending the read, and `placeholders`
+and `drop_repeats` apply within each Place. Gem's own `_location` does the same over its
+`locations`. The first-Place rule dropped a real location on a large share of postings, and the
+location filter is a substring match that should find a posting under each place it is open in.
+"; " is the separator the scrapers that already join places use (Workday, Workable, Radancy and
+the rest).
+
+Measured live 2026-09-28: a seeded sample of four Boards per ATS, 20-150 postings each, read
+through each scraper's own `fetch()` on `main` and on this change and compared by id. Meta is one
+Board, so 120 of its 1,019 sitemap pages were captured once and parsed by both.
+
+| ATS | postings compared | location gained places | most places |
+| --- | ---: | ---: | ---: |
+| Meta | 120 | 62 | 12 |
+| Gem | 212 | 46 | 5 |
+| iCIMS | 134 | 31 | 12 |
+| Eightfold | 323 | 0 | 1 |
+| SuccessFactors | 270 | 0 | 1 |
+| Avature | 193 | 0 | 1 |
+
+In every changed row the old value is the new one's first place, so the change only adds places.
+iCIMS's "4 of 207 sampled" understated it: 31 of 134 here. On Eightfold, SuccessFactors and
+Avature the change is inert on the path the sample read, which says nothing about how many
+locations their postings have. Eightfold reads JSON-LD only in its sitemap fallback, which no
+sampled Board took. SuccessFactors pages carry no JSON-LD (above).
+
+Eightfold's API path, which is not this reader, kept only the first non-empty place of its
+`locations` in the same way. It now keeps every one, each repaired from its own
+`standardizedLocations` entry as before (`eightfold._location`). Measured the same way on four
+seeded Boards (symetra, corteva, vialto, paypal): 168 of 624 postings gained places, up to 19;
+every old value was the new one's first place. `remote` comes from `workLocationOption`, else
+from `is_remote(location)`, so that fallback now sees every place too; it changed on none of the
+624, and it reaches an already-indexed row only on a sweep (ADR-0118), as for Meta and iCIMS.
+
+Meta and iCIMS fall back to `is_remote(location)` when the page states no remote type, and that
+check now sees every place, so a posting with a "Remote" place among others now reads as remote.
+`remote` changed on none of the sampled postings.
+
+`location` is a fact that `update_meta` re-observes on every scrape (ADR-0061), and `country` is
+re-derived when it moves (ADR-0138), so an already-indexed row picks this up the next time its
+Board is scraped; no `DERIVATIONS_VERSION` bump. `remote` is refreshed only on a sweep or
+re-derive (ADR-0118). A place in India anywhere in the string now classifies the row as India,
+where before only the first place counted.

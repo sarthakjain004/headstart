@@ -1893,24 +1893,25 @@ class TrendHistory:
         """Each company's name, told apart from any other in ``keys`` that shares it.
 
         The directory keeps same-named employers apart when nothing proves them one (ADR-0185),
-        so "Citi" on Workday and "Citi" on Eightfold both appear, labelled by ATS. Two on the
-        *same* ATS (220 name pairs measured) are labelled by their key, the one thing they
-        cannot share.
+        so two "Citi"s can both be in ``keys``. They are told apart by their tech openings, a
+        figure a job seeker can weigh, and never by ATS or key (ADR-0248): "Citi (44 openings)".
+        Two with the same openings too are numbered in key order: "Citi (0 openings, 1 of 2)".
         """
         names = Counter(self._companies[key]["name"] for key in keys)
-        with_ats = {
-            key: f"{self._companies[key]['name']} ("
-            f"{', '.join(sorted({ats_of(b) for b in self._companies[key]['boards']}))})"
-            for key in keys
-        }
-        still_shared = Counter(with_ats.values())
+        openings = {key: self._company_openings(self._companies[key]) for key in keys}
+        sharing = Counter((self._companies[key]["name"], openings[key]) for key in keys)
+        numbered: Counter = Counter()
         labels = {}
-        for key in keys:
-            name = self._companies[key]["name"]
+        for key in sorted(keys):
+            name, n = self._companies[key]["name"], openings[key]
+            size = f"{n:,} opening{'' if n == 1 else 's'}"
             if names[name] == 1:
                 labels[key] = name
-            elif still_shared[with_ats[key]] == 1:
-                labels[key] = with_ats[key]
+            elif sharing[name, n] == 1:
+                labels[key] = f"{name} ({size})"
             else:
-                labels[key] = f"{name} ({key})"
-        return labels
+                numbered[name, n] += 1
+                labels[key] = (
+                    f"{name} ({size}, {numbered[name, n]} of {sharing[name, n]})"
+                )
+        return {key: labels[key] for key in keys}

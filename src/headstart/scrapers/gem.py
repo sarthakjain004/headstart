@@ -407,23 +407,24 @@ class GemScraper(BaseScraper):
 
 
 def _location(locations: list[dict[str, Any]]) -> str | None:
-    """The first location's own rendered name, falling back to a city/country join.
+    """Every location's own rendered name, each falling back to a city/country join, "; "-joined
+    in order without repeats.
 
-    Only the first of possibly several locations is used, matching the upstream scraper's own
-    choice — real multi-location postings were a small minority of those sampled. ``name`` is
-    usually the richer field (Gem's own normalisation already renders "Remote - USA", "San
-    Francisco (On-Site)"); ``city``/``isoCountry`` is the fallback for the postings where it isn't
-    set.
+    Every location is kept, not just the first: the location filter is a substring match, so a
+    posting open in several places should match each. ``name`` is usually the richer field (Gem's
+    own normalisation already renders "Remote - USA", "San Francisco (On-Site)");
+    ``city``/``isoCountry`` is the fallback for the locations where it isn't set.
     """
-    if not locations or not isinstance(locations[0], dict):
-        return None
-    first = locations[0]
-    name = (first.get("name") or "").strip()
+    names = (_location_name(loc) for loc in locations if isinstance(loc, dict))
+    return "; ".join(dict.fromkeys(name for name in names if name)) or None
+
+
+def _location_name(location: dict[str, Any]) -> str | None:
+    name = (location.get("name") or "").strip()
     if name:
         return name
-    parts = [first.get("city"), first.get("isoCountry")]
-    joined = ", ".join(p for p in parts if p)
-    return joined or None
+    parts = [location.get("city"), location.get("isoCountry")]
+    return ", ".join(p for p in parts if p) or None
 
 
 def _remote(location_type: str | None, locations: list[dict[str, Any]]) -> bool | None:

@@ -94,6 +94,9 @@ applies to its own — there is no ranking signal in the JSON-LD to prefer one s
 `Job.location` is one string, so the alternative is inventing a "N locations" summary this repo has
 no precedent for.
 
+**Superseded 2026-09-28:** every `Place` is now kept, "; "-joined, which is the form the other
+multi-place scrapers use ([ADR-0196's amendment](../adr/0196-a-job-pages-json-ld-job-posting-is-read-by-one-reader.md)).
+
 ## 6. Two fields this scraper cannot supply, both measured absent
 
 **No `department` or team anywhere.** Zero of 80 sampled JSON-LD payloads carry

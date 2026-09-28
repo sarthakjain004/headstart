@@ -43,7 +43,7 @@ They outrank every field defect below.
 | **recruitee** | **FIXED** 2026-08-25 — localized remote marker swallowed the structured city/country | |
 | **successfactors** | **FIXED** 2026-08-25 — slug-encoder glue, plus a `streetAddress` tier | |
 | **greenhouse, keka, darwinbox** | **FIXED** 2026-08-24 — untrimmed values, embedded `\r`, trailing spaces | |
-| **eightfold** | `_first_location` truncation known and left alone; ashby's was strictly worse and is now fixed | |
+| **eightfold** | `_first_location` truncation known and left alone; ashby's was strictly worse and is now fixed. Resolved 2026-09-28: every location kept (ADR-0196's amendment) | |
 
 ## The claim that was wrong, recorded so it is not repeated
 

@@ -6,7 +6,7 @@
        state, not taste: job searching is a long, repetitive, high-rejection scanning task, usually
        done tired and often anxiously. High-chroma surfaces and glowing accents raise arousal and
        eye-fatigue across a forty-minute session, and — for this product specifically — the neon
-       "AI startup" register contradicts what the product now says about itself on the Data tab.
+       "AI startup" register contradicts what the product says about itself.
        Hue is spent on exceptions (pay, remote, alert), never on chrome. ---- */
 :root{
   --ground:#0A0B0D; --raise:#1F2329; --raise-2:#272C34; --rule:#3A4150; --rule-2:#4A5265;
@@ -40,6 +40,10 @@
      880px on one tab and 1276px on another is the same component at two sizes. --shell-pad
      is the shell's own gutter, named so the two cannot drift apart in the calc below. */
   --measure:1150px; --shell-pad:26px;
+  /* The wide-screen sidebar's column and the gap beside it (ADR-0249). */
+  --nav-w:176px; --nav-gap:24px;
+  /* What the guided tour dims the page with: dark in both themes, a touch lighter on light. */
+  --scrim:rgba(6,7,9,.62);
 }
 /* Dark is the default above. Light is written twice — once for the OS preference, once for
    the explicit toggle — because a media query and a plain selector cannot share one rule.
@@ -54,6 +58,7 @@
     --series-1:#2A78D6; --series-2:#EB6834; --series-3:#1BAF7A; --series-4:#EDA100;
     --series-5:#E87BA4; --series-6:#008300; --series-7:#4A3AA7; --series-8:#E34948;
     --shadow:0 8px 22px rgba(40,34,24,.08);
+    --scrim:rgba(20,22,26,.48);
   }
 }
 :root[data-theme="light"]{
@@ -63,6 +68,7 @@
     --series-1:#2A78D6; --series-2:#EB6834; --series-3:#1BAF7A; --series-4:#EDA100;
     --series-5:#E87BA4; --series-6:#008300; --series-7:#4A3AA7; --series-8:#E34948;
     --shadow:0 8px 22px rgba(40,34,24,.08);
+    --scrim:rgba(20,22,26,.48);
 }
 
 *{ box-sizing:border-box; }
@@ -74,7 +80,7 @@ body{
 }
 
 /* Fluid to a ceiling, and the ceiling IS the content measure. Every block on the page —
-   masthead, tab strip, search bar, toolbar, filter panel, cards, trends, the Data document —
+   masthead, tab strip, search bar, toolbar, filter panel, cards, trends, the Home page —
    is a descendant of this element and none of them sets a width of its own any more, so they
    all start and end on the same two x's at every viewport. That is the whole point of doing
    it here. Capping the PANELS instead (`main`/`.saved`/`.matches`/`.doc` at --measure) is what
@@ -111,10 +117,8 @@ body{
   grid-template-areas:"brand right" "tagline tagline"; margin-bottom:14px; }
 .top-right{ grid-area:right; }
 .brand{ grid-area:brand; display:flex; align-items:center; gap:11px; }
-.mark{ width:30px; height:30px; border-radius:9px; flex:none; position:relative;
-  background:var(--accent); }
-.mark::after{ content:""; position:absolute; inset:9px 9px auto auto; width:7px; height:7px;
-  border-radius:50%; background:var(--ground); }
+/* The logo mark (static/logo_mark.svg, ADR-0249) — one file for the brand and the favicon. */
+.mark{ width:30px; height:30px; flex:none; display:block; }
 .brand h1{ font:600 21px/1 var(--serif); letter-spacing:-.01em; margin:0; }
 /* What this product is, kept on screen wherever the user goes — the footer sentence is at
    the bottom of a long results page and a first-time user never reaches it. It has its own
@@ -137,7 +141,9 @@ body{
 
 /* ---- the shell: a tab strip across the top, content beneath it at full width (ADR-0116).
        The sidebar cost 184px of permanent chrome on every viewport for six links; as a strip
-       it costs one row and returns the width to the results. ---- */
+       it costs one row and returns the width to the results. ADR-0249 brings the sidebar back
+       on wide screens only — see "the app shell" section at the end of this file; below its
+       breakpoint this strip is still the navigation. ---- */
 .tabs{ display:flex; gap:2px; margin:0 0 16px; border-bottom:1px solid var(--rule);
   overflow-x:auto; scrollbar-width:none;
   /* A tab was scrolling off a 390px screen with no sign it existed. The mask fades the
@@ -147,16 +153,12 @@ body{
 @supports not (mask-image:linear-gradient(90deg,#000,transparent)){ .tabs{ -webkit-mask-image:none; mask-image:none; } }
 .tabs::-webkit-scrollbar{ display:none; }
 .nav-item{ display:flex; align-items:center; gap:8px; padding:10px 14px; white-space:nowrap;
+  min-height:44px;
   color:var(--ink-2); text-decoration:none; font-size:14px; font-weight:500;
   border-bottom:2px solid transparent; margin-bottom:-1px;
   transition:color var(--step), border-color var(--step); }
 .nav-item:hover{ color:var(--ink); }
 .nav-item[aria-current="page"]{ color:var(--ink); border-bottom-color:var(--accent); }
-.nav-item.soon{ color:var(--ink-3); cursor:default; }
-.nav-item.soon:hover{ color:var(--ink-3); }
-.chip-soon{ font:600 9.5px/1 var(--sans); letter-spacing:.08em;
-  text-transform:uppercase; color:var(--ink-3); border:1px solid var(--rule);
-  padding:3px 6px; border-radius:var(--r-pill); }
 .panel[hidden]{ display:none !important; }
 
 /* ---- search ---- */
@@ -219,46 +221,81 @@ textarea:focus{ border-color:var(--accent); }
 .ghost:disabled{ opacity:.55; cursor:wait; transform:none; }
 .note{ color:var(--ink-3); font-size:12.5px; }
 
-/* ---- search layout: filter panel above, results below (ADR-0116). ---- */
-/* The filter panel (ADR-0116). Above the results rather than beside them, full width, and
-   closed until asked for — so the default view is the thing the user came for. Open, the
-   groups flow into as many columns as the width allows rather than one tall column. */
-.rail{ display:none; background:var(--raise); border:1px solid var(--rule);
-  border-radius:var(--r-lg); padding:18px 20px; margin-bottom:16px; }
-/* Balanced columns, not grid tracks. The five groups are wildly different heights (214 to
-   403px measured), and a grid gives every column the height of the tallest thing in its row:
-   four tracks left the panel 824px tall and half empty, and splitting Pay out of Role made it
-   858 by starting a second row for one group. Multi-column fills in order to whatever height
-   makes all five fit, so a short group and a tall one share a column instead of one padding
-   out the other. */
-.rail.open{ display:block; columns:4 190px; column-gap:24px; }
-/* A group is one block or it is nothing — a filter split down the middle of a column is worse
-   than an uneven column. */
-.rail.open .set{ break-inside:avoid; margin-bottom:16px; }
-/* Uncapped, and that is the trade being made rather than an omission. The 46vh cap it had was
-   written while the panel sat ABOVE its own button: it kept the results on screen, but measured
-   at 1440x950 it put 761px of controls in a 338px box with no scrollbar to say so — 55% of the
-   panel, including the salary bracket and "Clear all filters", behind a scroller nothing marked.
-   Now that the panel opens BELOW the toolbar, the Filters button stays put at the top of the
-   page whatever the panel does, so shutting it is one click on a control that never moves —
-   which is a cheaper way back to the rows than discovering a hidden scroll region. */
-.rail h2{ font:600 11px/1 var(--sans); letter-spacing:.12em; text-transform:uppercase;
-  color:var(--ink-3); margin:0 0 10px; }
-/* Each group is a column of the panel grid, so the vertical rules that separated them in a
-   single stacked column would now draw between unrelated things. The stacked-column rule that
-   used to follow this one undid it — measured, three of the four heads sat at y=320 against
-   Keywords' 285, under a stray rule. */
-.set + .set{ margin-top:0; padding-top:0; border-top:0; }
-/* `display:block` is not cosmetic: a spanner has to be block-level, and a <button> is
-   inline-block by default, so without it the rule computes to `all` and is ignored — the
-   button lands inside whichever column it fell in, 192px wide. */
-.clear{ column-span:all; display:block; }
+/* ---- search layout: the filters beside the results on a wide screen, above them on a narrow
+       one (ADR-0116, issue #755). ---- */
+/* Always open: a Filters button to open the panel and again to shut it was two clicks per
+   change. The groups dissolve into one run of fields, and each field's caveat shows only while
+   that field has focus. The two media blocks below lay the run out as a column or a row. */
+.rail{ display:flex; flex-wrap:wrap; align-items:flex-end; gap:12px 18px; background:var(--raise);
+  border:1px solid var(--rule); border-radius:var(--r-lg); padding:14px 16px; margin-bottom:16px; }
+.rail .set{ display:contents; }
+/* A group of its own layout, not a wrapper: `contents` would drop its flex row. */
+.rail .set.my-companies-row{ display:flex; }
+.rail .f{ margin:0; }
+.rail .f > input[type="text"]{ width:190px; }
+.rail .f > input[type="number"]{ width:110px; }
+.rail .f > select{ width:auto; max-width:220px; }
+.rail .sw{ margin:0; min-height:38px; }
+/* Caveats on focus, so the bar is short at rest; a description reaches a screen reader through
+   aria-describedby, hidden or not. Floated under the field rather than in the flow: in the flow,
+   the tip appearing and vanishing re-wrapped the bar, and a click on the next control landed
+   wherever that control had just moved from. `pointer-events:none` so the float never takes a
+   click meant for the control it covers. */
+.rail .f{ position:relative; }
+.rail .tip{ display:none; }
+/* :focus-visible, not :focus-within: a chip picked with the mouse keeps focus, and a caveat
+   popping over the next field on every click is noise. Typing and the keyboard still bring it. */
+.rail .f:has(:focus-visible) .tip:not(.counts):not(:empty){ display:block; position:absolute; top:calc(100% + 6px); left:0; z-index:5;
+  width:36ch; max-width:80vw; padding:8px 10px; background:var(--raise-2);
+  border:1px solid var(--rule-2); border-radius:var(--r-md); box-shadow:var(--shadow);
+  pointer-events:none; }
+/* The years input's per-option counts (countYears) are facts about the answer, not a caveat:
+   always shown, in place. Likewise the keyword note, a live status about the search just run. */
+.rail .f .counts{ display:block; }
+.rail .f #kwnote:not(:empty){ display:block; position:static; width:auto; max-width:36ch; padding:0;
+  background:none; border:0; box-shadow:none; }
+/* The salary bracket is the bar's tallest field, so it packs into one line: currency, from, to
+   side by side, the slider under them. */
+.rail .bracket{ grid-template-columns:auto 1fr 1fr; width:300px; }
+.rail .bracket select{ grid-column:auto; }
+.rail .slider{ margin-top:4px; }
+/* Narrow screens: one row that scrolls sideways. Wrapped, the fields stacked 1,300px deep above
+   the first job on a phone; in one row the bar costs its tallest field, and the field cut off at
+   the edge says there is more. A caveat cannot float out of a scrolling row without being
+   clipped, so it docks to the foot of the screen while its field has focus. */
+@media (max-width:1099px){
+  .rail{ flex-wrap:nowrap; overflow:auto hidden; align-items:flex-start; overscroll-behavior-x:contain; }
+  .rail .f, .rail .sw, .rail .clear, .rail .my-companies-row{ flex:none; }
+  .rail .segmented{ flex-wrap:nowrap; }
+  /* The slider is a convenience over the two figures beside it (see the template), and it alone
+     would make the row twice as tall as every other field in it. */
+  .rail .slider, .rail .slider-caps, .rail .slider-read{ display:none; }
+  .rail .f:has(:focus-visible) .tip:not(.counts):not(:empty){ position:fixed; top:auto; left:16px; right:16px; bottom:16px;
+    width:auto; max-width:none; }
+  .rail .f #kwnote:not(:empty){ width:28ch; max-width:none; }
+}
+/* Wide screens: the bar becomes a column beside the results, so the rows start at the top of
+   the page and the filters cost no height above them. Not sticky: the column is taller than a
+   laptop window, and a sticky one would need its own scroller — the unmarked scroll region that
+   hid half the old panel's controls (ADR-0116's note on the cap it dropped). */
+@media (min-width:1100px){
+  .search-layout{ display:grid; grid-template-columns:296px minmax(0,1fr); gap:0 24px;
+    align-items:start; }
+  .search-layout > .rail{ flex-direction:column; flex-wrap:nowrap; align-items:stretch;
+    gap:14px; margin:0; }
+  .rail .f > input[type="text"], .rail .f > input[type="number"], .rail .f > select{ width:100%;
+    max-width:none; }
+  .rail .bracket{ width:auto; }
+  /* Two chips to a line in the column, counts included, rather than one. */
+  .rail .seg-opt span{ padding:0 10px; font-size:12px; }
+  /* The float takes the column's width rather than 36ch, so it never runs over the results. */
+  .rail .f:has(:focus-visible) .tip:not(.counts):not(:empty){ width:100%; max-width:none; }
+  .rail .clear{ margin:0; align-self:flex-start; }
+}
 .f{ display:flex; flex-direction:column; gap:5px; margin-bottom:11px; }
 .f:last-child{ margin-bottom:0; }
-.f label{ font-size:12px; color:var(--ink-2); font-weight:500; }
-.f .tip, .set > .tip{ font-size:11px; line-height:1.4; color:var(--ink-3); }
-/* A switch's caveat has no `.f` to live in; indent it under the label it qualifies. */
-.set > .tip{ display:block; margin:-4px 0 11px 25px; }
+.f label, .f .flabel{ font-size:12px; color:var(--ink-2); font-weight:500; }
+.f .tip{ font-size:11px; line-height:1.4; color:var(--ink-3); }
 .f select,.f input{ width:100%; padding:9px 11px; border-radius:var(--r-md); font:inherit;
   font-size:13px; background:var(--raise-2); color:var(--ink); border:1px solid var(--rule);
   transition:border-color var(--step); }
@@ -271,9 +308,9 @@ textarea:focus{ border-color:var(--accent); }
   border-radius:50%; background:#fff; transition:transform var(--step); }
 .sw input:checked{ background:var(--accent); }
 .sw input:checked::after{ transform:translateX(15px); }
-/* Capped and pushed right. Spanning every column of the panel, this was a 1090px-wide button
-   at 2692 — a destructive action given more visual weight than anything it clears. */
-.clear{ width:100%; max-width:220px; margin:14px 0 0 auto; padding:9px; border-radius:var(--r-md); cursor:pointer;
+/* Pushed to the row's end, and no wider than its words — a destructive action given no more
+   weight than anything it clears. */
+.clear{ margin-left:auto; padding:9px 14px; border-radius:var(--r-md); cursor:pointer;
   background:transparent; border:1px solid var(--rule); color:var(--ink-3); font:inherit;
   font-size:12.5px; transition:border-color var(--step), color var(--step); }
 .clear:hover{ border-color:var(--alert); color:var(--alert); }
@@ -282,17 +319,30 @@ textarea:focus{ border-color:var(--accent); }
 /* The counts and caveats, on their own line under the controls. Inside the toolbar the result
    count was ~300px of prose in a flex row of buttons, so at 880px of content one control was
    always pushed onto a second line by itself — measured 86px of toolbar with "Save this
-   search", and 86px again with "Compact" once Save moved. Out of the row, the toolbar is one
-   40px line and these sit where they belong, immediately above the rows they count. */
+   search". Out of the row, the toolbar is one 40px line and these sit where they belong,
+   immediately above the rows they count. */
 .status{ display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin-bottom:12px; }
 .status .n{ font:500 13px var(--mono); font-variant-numeric:tabular-nums; color:var(--ink-2); }
 .toolbar .spacer{ flex:1; }
-.toolbar select{ padding:8px 11px; border-radius:var(--r-md); background:var(--raise);
-  color:var(--ink); border:1px solid var(--rule); font:inherit; font-size:12.5px; }
-.filters-btn{ display:inline-block; }
-/* A filter that is applied but out of sight needs to announce itself on the control that
-   hides it. */
-.filters-btn.has{ border-color:var(--accent); color:var(--accent); }
+/* A <select> of a handful of options drawn as one row of radios (syncSegmentedSelects): one
+   click, not two. Separate chips that wrap rather than a joined bar, so a long row (counts on
+   every option) reflows instead of clipping. The radio itself covers its chip, invisible, so
+   it keeps the click, the focus and the arrow keys. */
+.segmented{ display:flex; flex-wrap:wrap; gap:5px; }
+.seg-opt{ position:relative; display:inline-flex; }
+.seg-opt input{ appearance:none; position:absolute; inset:0; width:100%; height:100%; margin:0;
+  padding:0; border:0; opacity:0; cursor:pointer; }
+.seg-opt span{ display:inline-flex; align-items:center; min-height:34px; padding:0 12px;
+  border:1px solid var(--rule); border-radius:var(--r-pill); background:var(--raise-2);
+  color:var(--ink-2); font-size:12.5px; white-space:nowrap;
+  transition:border-color var(--step), color var(--step), background var(--step); }
+.seg-opt:hover input:not(:disabled) + span{ border-color:var(--rule-2); color:var(--ink); }
+.seg-opt input:checked + span{ border-color:var(--accent); color:var(--ink); font-weight:600;
+  background:color-mix(in srgb, var(--accent) 16%, var(--raise-2)); }
+.seg-opt input:focus-visible + span{ outline:2px solid var(--accent); outline-offset:2px; }
+.seg-opt input:disabled{ cursor:not-allowed; }
+.seg-opt input:disabled + span{ color:var(--ink-3); border-style:dashed; }
+@media (pointer:coarse){ .seg-opt span{ min-height:44px; } }
 .active{ display:flex; gap:7px; flex-wrap:wrap; margin-bottom:14px; }
 .pill{ display:inline-flex; align-items:center; gap:7px; font-size:12px; padding:5px 10px;
   border-radius:var(--r-pill); background:var(--raise-2); border:1px solid var(--rule-2);
@@ -338,7 +388,9 @@ textarea:focus{ border-color:var(--accent); }
 .card a.title .ext{ width:11px; height:11px; margin-left:5px; vertical-align:baseline;
   color:var(--ink-3); }
 .card a.title:hover .ext{ color:var(--accent); }
-.sr{ position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden;
+/* The rail's group names too: they stay for a screen reader's heading walk, and in the bar's
+   one run of fields they labelled nothing a sighted reader needs. */
+.sr, .rail h2{ position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden;
   clip-path:inset(50%); white-space:nowrap; border:0; }
 .card .org{ color:var(--ink-2); font-size:13px; margin-top:2px; }
 .card .org span{ color:var(--ink-3); }
@@ -349,26 +401,6 @@ textarea:focus{ border-color:var(--accent); }
   color:var(--ink); text-align:right; }
 /* 44x44: the most-repeated control on the page was a 34x23 hit area. */
 .card .star{ width:44px; height:44px; display:grid; place-items:center; font-size:17px; }
-.card .nopay{ color:var(--ink-3); font-weight:400; }
-.card .dismiss{ position:absolute; top:3px; right:6px; width:22px; height:22px; padding:0;
-  background:none; border:0; cursor:pointer; line-height:1; font-size:15px; color:var(--ink-3);
-  opacity:0; transition:opacity var(--step), color var(--step); }
-.card:hover .dismiss, .card:focus-within .dismiss{ opacity:1; }
-.card .dismiss:hover{ color:var(--alert); }
-/* No hover to reveal it on, so it is simply there. */
-@media (hover:none){ .card .dismiss{ opacity:.7; } }
-/* Hidden by default, and shown dimmed while "show" is on — so undoing one is a click on the
-   row it was, not a hunt through a settings list. */
-#results:not(.reveal) .card.dismissed{ display:none; }
-/* .75, not the .45 this started at: opacity on the card composites every child against the
-   page ground, and .45 took the `.org` line to 2.58:1 dark / 2.37 light — a revealed row is
-   still text somebody is reading. Measured, .75 is the floor that clears 4.5 in both themes
-   (4.81 / 4.82 on that same weakest line). */
-/* `animation:none` is load-bearing: `.card`'s entry animation is `both`-filled, so its final
-   keyframe keeps `opacity:1` applied for the life of the row and the declaration below never
-   showed. Measured 1, not .75, before this line. */
-.card.dismissed{ opacity:.75; animation:none; }
-.card.dismissed .dismiss{ opacity:1; color:var(--accent); }
 
 /* the Match ring (ADR-0042): fill + number, so it reads at a glance and survives
    colour-blindness. pathLength=100 on the circles makes the dasharray a straight percent. */
@@ -401,7 +433,6 @@ textarea:focus{ border-color:var(--accent); }
   border-color:color-mix(in srgb, var(--accent) 34%, transparent); font-weight:600; }
 .tag.rem{ background:color-mix(in srgb, var(--remote) 15%, transparent); color:var(--remote);
   border-color:color-mix(in srgb, var(--remote) 32%, transparent); }
-.card .src{ font:500 11px var(--sans); color:var(--ink-3); }
 
 .pager{ display:flex; align-items:center; justify-content:center; gap:14px; margin-top:18px; }
 .pager .ghost{ padding:8px 16px; }
@@ -424,16 +455,6 @@ textarea:focus{ border-color:var(--accent); }
   var(--raise-2) 25%, var(--rule) 45%, var(--raise-2) 65%); background-size:200% 100%;
   animation:shim 1.2s linear infinite; }
 @keyframes shim{ from{ background-position:200% 0; } to{ background-position:-200% 0; } }
-
-/* ---- compact rows (B7). The ui-ux-pro-max design-system generator models density as the
-       spacing scale alone (its dense tier roughly halves every step), so this touches padding,
-       row gap and the ring's diameter and leaves the content untouched. ---- */
-.dense .card{ padding:7px 16px 7px 18px; margin-bottom:4px; }
-.dense .card .org{ margin-top:0; }
-.dense .card .tags{ margin-top:4px; gap:5px; }
-.dense .card .match, .dense .card .ring{ width:40px; height:40px; }
-.dense .card .star{ height:34px; }
-.dense .kind, .dense .active{ margin-bottom:8px; }
 
 /* ---- the Matches tab (ADR-0043): saved-set strip + live results ---- */
 .matches-head{ display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; margin-bottom:12px; }
@@ -606,11 +627,9 @@ textarea:focus{ border-color:var(--accent); }
 .kpi-delta, .kpi-note{ font-size:11.5px; }
 .kpi-note{ color:var(--ink-3); }
 
-/* The chart's two caveats, as one bounded block. Loose under a full-width plot they read as
-   leftover text; given an edge and a surface they read as the note they are — which matters,
-   because the second one is the reassignment caveat that keeps a reader from misreading a
-   line's fall as jobs closing. That caveat is 190 words, and at 390px it was the tallest thing
-   on the panel, so it folds to one summary line. The words behind it are untouched. */
+/* The chart's caption and its "How to read this" note, as one bounded block. Loose under a
+   full-width plot they read as leftover text; given an edge and a surface they read as the note
+   they are. The note folds to one summary line: it is optional reading (ADR-0248). */
 .chart-note{ margin-top:26px; padding:14px 18px; background:var(--raise-2);
   border-left:2px solid var(--rule-2); border-radius:0 var(--r-md) var(--r-md) 0; }
 .chart-note #trends-foot{ margin:0; max-width:74ch; line-height:1.5; }
@@ -621,9 +640,8 @@ textarea:focus{ border-color:var(--accent); }
 .chart-note .note-more > summary::before{ content:"▸ "; }
 .chart-note .note-more[open] > summary::before{ content:"▾ "; }
 .chart-note .kind{ margin:8px 0 0; max-width:74ch; }
-/* Two columns where there is room. The caption block used 640px of a 1940px panel, so the
-   ADR-0057 caveat can be visible for free rather than folded to save height — which is what
-   ADR-0119 asks for when it says that caveat gets more load-bearing under an indexed chart. */
+/* Two columns where there is room: the caption block used 640px of a 1940px panel, so the note
+   opens beside the caption rather than under it. */
 @media (min-width:1100px){
   .chart-note{ display:grid; grid-template-columns:1fr 1fr; gap:4px 32px; align-items:start; }
   .chart-note #trends-foot, .chart-note .note-more{ margin:0; max-width:none; }
@@ -917,8 +935,8 @@ textarea:focus{ border-color:var(--accent); }
   border-bottom:1px solid var(--rule-2); }
 .foot a:hover{ color:var(--accent); border-bottom-color:var(--accent); }
 
-/* The tab strip is horizontal at every width now, so it needs no breakpoint of its own —
-   it simply scrolls when the tabs outgrow the viewport. */
+/* Below the sidebar breakpoint (ADR-0249) the tab strip is horizontal and needs no breakpoint
+   of its own — it simply scrolls when the tabs outgrow the viewport. */
 
 /* The row layout needs width to be a row. Below this the aligned columns cost more than
    they buy, so the card folds: text on the left, pay and match on a second line under it. */
@@ -929,6 +947,9 @@ textarea:focus{ border-color:var(--accent); }
   .card .pay{ grid-area:pay; text-align:left; align-self:center; }
   .card .match{ grid-area:match; }
   .card .star{ grid-area:star; }
+  /* No salary and no ranking: nothing to put on the second line, so it takes no height. Folded,
+     there is no column for an empty cell to hold in line. */
+  .card .pay:empty, .card .match:empty{ display:none; }
 }
 
 /* Ultrawide: spend the width on MORE jobs, not wider ones (ADR-0116's rule that full width
@@ -1076,64 +1097,6 @@ textarea:focus{ border-color:var(--accent); }
   color:var(--accent); text-decoration:underline; }
 .linkish:hover{ opacity:.8; }
 
-/* ---- the Data tab (ADR-0112). Running prose, so it gets a measure and a type scale of its
-       own — the rest of this page is controls and cards, which want neither. ---- */
-/* The document spans the shell like every other block — its section rules are what draw the
-   page's right edge on this tab — and the measure moves inside, onto the running text alone.
-   Capping `.doc` itself ended Data 400px inside every other tab on the same screen. */
-.doc{ max-width:none; }
-.doc-hd p, .doc-sec p, .doc-list li, .cov-row{ max-width:72ch; }
-.doc-hd h2{ font:600 22px/1.25 var(--serif); margin:0 0 8px; letter-spacing:-.01em; }
-.doc-hd p{ color:var(--ink-2); font-size:14.5px; margin:0 0 30px; text-wrap:pretty; }
-.doc-sec{ border-top:1px solid var(--rule); padding-top:22px; margin-bottom:26px; }
-.doc-sec h3{ font:600 14px/1.3 var(--sans); margin:0 0 12px; letter-spacing:.005em; }
-.doc-sec p{ color:var(--ink-2); font-size:14px; margin:0 0 12px; text-wrap:pretty; }
-.doc-sec b{ color:var(--ink); font-weight:600; }
-.doc-list{ list-style:none; margin:0; padding:0; display:grid; gap:11px; }
-.doc-list li{ color:var(--ink-2); font-size:14px; padding-left:15px; position:relative;
-  text-wrap:pretty; }
-.doc-list li::before{ content:""; position:absolute; left:0; top:8px; width:5px; height:5px;
-  border-radius:50%; background:var(--rule-2); }
-/* Set one size down, NOT one ink down. --ink-3 measures 3.5–4.3:1 against these surfaces,
-   under the 4.5:1 body-text floor — and a caveat nobody can read is exactly the defect this
-   page exists to avoid, so the hierarchy is carried by size alone. */
-.aside{ color:var(--ink-2); font-size:12.5px; line-height:1.5; }
-.doc-sec .aside{ display:block; }
-.ats-line{ line-height:2.1; }
-.ats-line .lbl{ color:var(--ink-3); font-size:13px; margin-right:6px; }
-/* Not `.pill` — that name belongs to the active-filter chip above, which carries a `pop`
-   animation and a remove button these must not inherit. */
-.ats-pill{ display:inline-block; font:500 11.5px var(--mono); padding:3px 9px; margin-right:5px;
-  border-radius:var(--r-pill); background:var(--raise-2); border:1px solid var(--rule);
-  color:var(--ink-2); }
-/* The inline ADR citations (ADR-0112). They were falling through to the browser's default
-   blue, which is both off-system and unreadable on the dark ground. Set as a quiet citation:
-   the aqua measures 10.04:1 dark / 4.56:1 light against the page ground, and the rule
-   underneath keeps it identifiable as a link without colour being the only signal. */
-.doc-sec a{ color:var(--accent); text-decoration:none; font-weight:500; white-space:nowrap;
-  border-bottom:1px solid color-mix(in srgb, var(--accent) 42%, transparent); }
-.doc-sec a:hover{ border-bottom-color:var(--accent); }
-
-.doc-ft{ border-top:1px solid var(--rule); padding-top:18px; color:var(--ink-3);
-  font-size:13px; display:flex; flex-wrap:wrap; gap:14px; align-items:center; }
-.doc-ft a{ color:var(--ink-2); text-decoration:none; border-bottom:1px solid var(--rule-2); }
-.doc-ft a:hover{ color:var(--accent); border-bottom-color:var(--accent); }
-
-/* Coverage bars. A share of the index, so one hue at varying length — never a category
-   palette, and never red/green, which would read as pass/fail on facts that are neither. */
-.doc-sec .cov-total{ margin-bottom:14px; }
-.cov-row{ display:grid; grid-template-columns:64px 1fr; gap:14px; align-items:start;
-  margin-bottom:13px; }
-.cov-bar{ height:7px; border-radius:var(--r-pill); background:var(--rule); overflow:hidden;
-  margin-top:6px; }
-.cov-bar span{ display:block; height:100%; border-radius:var(--r-pill);
-  background:var(--accent); }
-.cov-txt{ color:var(--ink-2); font-size:14px; line-height:1.45; }
-.cov-txt b{ color:var(--ink); font:600 14px var(--mono); font-variant-numeric:tabular-nums;
-  margin-right:2px; }
-.cov-txt .aside{ margin-top:2px; }
-@media (max-width:520px){ .cov-row{ grid-template-columns:48px 1fr; gap:10px; } }
-
 /* ---- "Hiring now" (hot_ranking) -----------------------------------------------------------
    A leaderboard, so the row is a grid with the ranking number in its own column: the measure
    is the thing being compared and it stays on one right-aligned axis down the list, which is
@@ -1175,7 +1138,6 @@ textarea:focus{ border-color:var(--accent); }
   text-align:right; }
 .hot-name{ font:600 14.5px var(--sans); color:var(--ink); }
 .hot-tags{ display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin-top:5px; }
-.hot-tags .src{ font:500 11px var(--sans); color:var(--ink-3); }
 /* The label never carries the meaning in colour alone — it says "staffing / services" in
    words, and the tint is only there to make it findable while scanning. */
 .tag.flag{ background:color-mix(in srgb, var(--alert) 14%, transparent); color:var(--alert);
@@ -1220,7 +1182,18 @@ textarea:focus{ border-color:var(--accent); }
   background:color-mix(in srgb, var(--accent) 12%, transparent); }
 /* The hide control rides the company line, so it is present on every result rather than only
    on a capped one — and it is a link, not a button, so it never competes with the apply link. */
-.org .hide-co, .org .see-trend{ margin-left:6px; font-size:11.5px; }
+.org .hide-co{ margin-left:6px; font-size:11.5px; }
+/* A glyph, not the underlined word "trend" on every row (issue #755). Bordered so it reads as a
+   control; its accessible name and tooltip say what it opens. */
+.org .see-trend{ display:inline-grid; place-items:center; width:26px; height:26px; padding:0;
+  margin-left:6px; vertical-align:middle; background:none; border:1px solid var(--rule);
+  border-radius:var(--r-md); color:var(--ink-2); cursor:pointer;
+  transition:border-color var(--step), color var(--step); }
+.org .see-trend svg{ width:15px; height:15px; }
+.org .see-trend:hover{ border-color:var(--accent); color:var(--accent); }
+/* A fingertip gets the 44px target (the coarse-pointer rule above); a 44px bordered box beside
+   the company name would outweigh the name, so the border goes and the glyph stays its size. */
+@media (pointer:coarse){ .org .see-trend{ border-color:transparent; margin-left:12px; } }
 
 /* The marked lines as a list under the chart (drawChangeList): a phone's only way to them. */
 .trends-changes{ margin-top:10px; font-size:12.5px; color:var(--ink-2); }
@@ -1239,3 +1212,145 @@ textarea:focus{ border-color:var(--accent); }
 /* On a 320px phone a long reading ("1,032 · marked change −264") wraps under its name rather than
    pushing the row past the edge. */
 .trends-tooltip.under .tt-row{ flex-wrap:wrap; }
+
+/* ---- the app shell: navigation in a sidebar on wide screens (ADR-0249) -------------------------
+   The same <nav class="tabs"> list as the strip above, re-laid as a column beside the content.
+   ADR-0116 removed a sidebar for costing width on every viewport; this one appears only where
+   the width exists, and the shell's ceiling grows by the sidebar's own width so the content
+   column keeps its measure. 1280px, not lower: Search puts its filter column beside the results
+   from 1100px (ADR-0247), and at 1180px the three columns left the results 525px — measured. `screen` only: a printout has no navigation to reserve a column
+   for (resume.css hides .tabs in print). The icons are shown here and not in the strip, where
+   they would only push more tabs off a phone's edge. */
+.nav-ico{ display:none; width:18px; height:18px; flex:none; fill:none; stroke:currentColor;
+  stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
+@media screen and (min-width:1280px){
+  .shell{ display:grid; grid-template-columns:var(--nav-w) minmax(0,1fr);
+    column-gap:var(--nav-gap); align-items:start;
+    grid-template-areas:"top top" "nav content" "nav foot"; }
+  .top{ grid-area:top; }
+  .content{ grid-area:content; min-width:0; }
+  .foot{ grid-area:foot; }
+  .tabs{ grid-area:nav; position:sticky; top:18px; flex-direction:column; gap:2px; margin:0;
+    border-bottom:0; overflow:visible; -webkit-mask-image:none; mask-image:none; }
+  .nav-item{ gap:11px; padding:10px 12px; margin-bottom:0; border-bottom:0;
+    border-radius:var(--r-md); transition:color var(--step), background var(--step); }
+  .nav-item:hover{ background:var(--raise); }
+  .nav-item[aria-current="page"]{ background:var(--raise); box-shadow:inset 3px 0 0 var(--accent); }
+  .nav-ico{ display:block; }
+}
+/* Below the ultrawide breakpoint only: that block sets its own, wider ceiling. */
+@media screen and (min-width:1280px) and (max-width:1719.98px){
+  .shell{ max-width:min(calc(var(--measure) + var(--nav-w) + var(--nav-gap) + 2 * var(--shell-pad)), 94vw); }
+}
+
+/* ---- the Home tab (ADR-0249). The landing view: what HeadStart is and the way into it. ---- */
+.home{ display:grid; gap:44px; padding:8px 0; }
+.home-hero{ display:grid; gap:28px; align-items:center; }
+@media (min-width:900px){
+  .home-hero{ grid-template-columns:minmax(0,1.05fr) minmax(0,1fr); gap:40px; }
+}
+.home-eyebrow{ margin:0 0 10px; font:600 12px/1.3 var(--sans); letter-spacing:.1em;
+  text-transform:uppercase; color:var(--accent); }
+.home-title{ margin:0 0 14px; max-width:20ch; font:600 clamp(28px,4vw,42px)/1.15 var(--serif);
+  letter-spacing:-.015em; text-wrap:balance; }
+.home-lede{ margin:0 0 24px; max-width:54ch; color:var(--ink-2); font-size:16.5px; line-height:1.6;
+  text-wrap:pretty; }
+.home-actions{ display:flex; flex-wrap:wrap; gap:10px; }
+/* The one filled button outside the search bar: Home's way in, and the tour's Next. */
+.btn-primary{ display:inline-flex; align-items:center; justify-content:center; min-height:44px;
+  padding:0 22px; border:0; border-radius:var(--r-md); background:var(--accent);
+  color:var(--ground); font:700 14.5px/1 var(--sans); text-decoration:none; cursor:pointer;
+  transition:transform var(--step), filter var(--step); }
+.btn-primary:hover{ transform:translateY(-1px); filter:brightness(1.06); }
+.home-secondary{ display:inline-flex; align-items:center; min-height:44px; text-decoration:none; }
+/* Home's own search box: the first thing a visitor can do, on the first screen. */
+.home-search{ display:flex; gap:8px; max-width:560px; margin:0 0 12px; }
+.home-search input{ flex:1; min-width:0; min-height:48px; padding:0 16px; font:inherit;
+  font-size:15.5px; background:var(--raise); color:var(--ink); border:1px solid var(--rule-2);
+  border-radius:var(--r-md); outline:none; transition:border-color var(--step), box-shadow var(--step); }
+.home-search input::placeholder{ color:var(--ink-3); }
+.home-search input:focus{ border-color:var(--accent); box-shadow:0 0 0 3px var(--rule-2); }
+.home-search .btn-primary{ min-height:48px; }
+.home-facts{ margin:20px 0 0; color:var(--ink-2); font-size:13.5px; }
+.home-facts b{ color:var(--ink); font:600 13.5px var(--mono); font-variant-numeric:tabular-nums; }
+/* Two facts, a dot between them — and on a phone one per line, rather than a dot left
+   dangling at the end of the first. */
+.home-facts span + span::before{ content:"\00B7"; margin:0 8px 0 4px; color:var(--ink-3); }
+@media (max-width:560px){
+  .home-facts span + span{ display:block; margin-top:2px; }
+  .home-facts span + span::before{ content:none; }
+}
+
+/* The product video's frame, holding a sketch of the Search tab until the video exists. */
+.home-video{ margin:0; }
+.home-video video, .home-sketch{ display:block; width:100%; aspect-ratio:16/9;
+  border:1px solid var(--rule); border-radius:var(--r-lg); background:var(--raise); }
+.home-sketch{ display:flex; flex-direction:column; justify-content:center; gap:8px;
+  padding:18px 22px; overflow:hidden; box-shadow:var(--shadow); }
+.sketch-search{ margin-bottom:4px; padding:9px 16px; border:1px solid var(--rule-2);
+  border-radius:var(--r-pill); background:var(--raise-2); color:var(--ink-2); font-size:13px;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.sketch-row{ display:grid; grid-template-columns:minmax(0,1fr) auto 40px; gap:12px;
+  align-items:center; padding:9px 12px; border:1px solid var(--rule); border-radius:var(--r-md);
+  background:var(--raise-2); }
+.sketch-lines{ display:grid; gap:6px; }
+.sketch-lines i{ display:block; width:72%; height:7px; border-radius:var(--r-pill);
+  background:var(--rule-2); }
+.sketch-lines i + i{ width:44%; background:var(--rule); }
+.sketch-pay{ color:var(--pay); font:600 12px var(--mono); }
+.sketch-match{ color:var(--accent); font:700 12px var(--mono); text-align:right; }
+.home-video figcaption{ margin-top:10px; color:var(--ink-2); font-size:12.5px; text-align:center; }
+@media (max-width:480px){ .sketch-row:last-child{ display:none; } }
+
+.home-sec h3{ margin:0 0 16px; font:600 20px/1.3 var(--serif); letter-spacing:-.005em; }
+.home-cards{ display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:12px; }
+.home-card{ display:flex; flex-direction:column; gap:6px; padding:16px 18px;
+  background:var(--raise); border:1px solid var(--rule); border-radius:var(--r-lg);
+  color:var(--ink-2); font-size:14px; line-height:1.5; text-decoration:none;
+  transition:border-color var(--step), transform var(--step); }
+.home-card b{ color:var(--ink); font-size:15px; font-weight:600; }
+.home-card:hover{ border-color:var(--accent); transform:translateY(-1px); }
+.home-steps{ display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:12px;
+  margin:0; padding:0; list-style:none; counter-reset:step; }
+.home-steps li{ position:relative; padding:16px 18px 16px 58px; counter-increment:step;
+  background:var(--raise); border:1px solid var(--rule); border-radius:var(--r-lg);
+  color:var(--ink-2); font-size:14px; line-height:1.55; }
+.home-steps li::before{ content:counter(step); position:absolute; left:18px; top:15px;
+  display:grid; place-items:center; width:26px; height:26px; border-radius:50%;
+  background:var(--raise-2); border:1px solid var(--rule-2); color:var(--accent);
+  font:700 13px var(--mono); }
+.home-steps b, .home-notes b{ display:block; margin-bottom:2px; color:var(--ink); font-weight:600; }
+.home-notes{ display:grid; gap:14px; max-width:78ch; margin:0; padding:0; list-style:none; }
+.home-notes li{ padding-left:16px; border-left:2px solid var(--rule-2); color:var(--ink-2);
+  font-size:14px; line-height:1.6; }
+.home-notes a{ color:var(--accent); }
+/* Home's in-page anchors, reached from other tabs' links (app.js hashAnchor). */
+#good-to-know, #how-matching{ scroll-margin-top:16px; }
+.home-end{ display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between;
+  gap:14px 24px; padding:22px 24px; background:var(--raise); border:1px solid var(--rule);
+  border-radius:var(--r-xl); }
+.home-end p{ margin:0; font:600 18px/1.3 var(--serif); }
+
+/* ---- the guided tour (ADR-0249, static/guided_tour.js). The spotlight's shadow dims the page;
+       the page itself is `inert` underneath, so the dimming is only the visible half of it. ---- */
+.tour-spot{ position:fixed; z-index:1000; pointer-events:none; border-radius:var(--r-md);
+  box-shadow:0 0 0 2px var(--accent), 0 0 0 9999px var(--scrim);
+  transition:top .22s ease, left .22s ease, width .22s ease, height .22s ease; }
+.tour-pop{ position:fixed; z-index:1001; width:min(340px, calc(100vw - 32px)); padding:18px 18px 14px;
+  background:var(--raise); color:var(--ink); border:1px solid var(--rule-2);
+  border-radius:var(--r-lg); box-shadow:var(--shadow); }
+.tour-pop.docked{ top:auto; left:16px; right:16px; bottom:16px; width:auto; }
+.tour-count{ margin:0 0 6px; color:var(--ink-3); font:600 11px/1 var(--sans); letter-spacing:.1em;
+  text-transform:uppercase; }
+.tour-title{ margin:0 0 6px; font:600 17px/1.3 var(--serif); }
+.tour-body{ margin:0 0 14px; color:var(--ink-2); font-size:14px; line-height:1.55; }
+.tour-actions{ display:flex; align-items:center; gap:8px; }
+.tour-actions .tour-skip{ margin-right:auto; min-height:44px; }
+.tour-actions .ghost{ min-height:44px; }
+.tour-actions .ghost:disabled{ cursor:default; }
+/* The first-visit offer: a corner card, not a modal — the page stays usable around it. */
+.tour-offer{ position:fixed; z-index:990; right:16px; bottom:16px; display:flex; flex-wrap:wrap;
+  align-items:center; gap:10px; width:min(340px, calc(100vw - 32px)); padding:14px 16px;
+  background:var(--raise); border:1px solid var(--rule-2); border-radius:var(--r-lg);
+  box-shadow:var(--shadow); }
+.tour-offer p{ flex:1 0 100%; margin:0; color:var(--ink); font-size:14px; }
