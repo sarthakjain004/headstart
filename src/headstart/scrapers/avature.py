@@ -54,7 +54,7 @@ from typing import Any
 from urllib.parse import urljoin
 
 from headstart.boards import company_name
-from headstart.jobs.job import Job, html_to_text, is_remote
+from headstart.jobs.job import Job, html_to_text, is_remote, requisition_of
 from headstart.network import http
 from headstart.scrapers.base import USER_AGENT, BaseScraper, DetailRequest
 from headstart.scrapers.job_posting_jsonld import (
@@ -140,6 +140,14 @@ _EMPLOYMENT = (
 )
 #: A title stated as a label, where `og:title` is empty (bradyplus: "Name").
 _TITLE = (re.compile(r"^(?:name|job name|job title|求人名)$", re.IGNORECASE),)
+# bloomberg and bradyplus "Ref #", ashfieldhealthcare "ID de la vacante" (fixture pages, 2026-09-26).
+_REQUISITION = (
+    re.compile(
+        r"^(?:ref(?:erence)? ?(?:#|no\.?|number)|requisition(?: id| number)?"
+        r"|job (?:id|number)|id de la vacante)$",
+        re.IGNORECASE,
+    ),
+)
 _REMOTE = (
     re.compile(r"remote|workplace|work model|work mode|home office", re.IGNORECASE),
 )
@@ -314,6 +322,7 @@ class AvatureScraper(BaseScraper):
                     scraped_at=scraped_at,
                     description=page.get("description"),
                     employment_type=page.get("employment_type"),
+                    requisition=page.get("requisition"),
                     salary=None,
                 )
             )
@@ -410,4 +419,5 @@ def page_fields(page: str) -> dict[str, Any]:
         "posted_at": ld.get("posted_at") or None,
         "remote": ld.get("remote") or (is_remote(remote_text) if remote_text else None),
         "description": html_to_text(body) if body else None,
+        "requisition": requisition_of(_labelled(labels, _REQUISITION)),
     }

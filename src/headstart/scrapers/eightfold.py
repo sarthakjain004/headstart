@@ -41,6 +41,7 @@ from __future__ import annotations
 
 import html
 import json
+import math
 import re
 import urllib.parse
 from datetime import UTC, datetime
@@ -55,6 +56,7 @@ from headstart.scrapers.base import (
     DetailLost,
     DetailRequest,
     DetailWithoutDescription,
+    gone_board_error,
 )
 from headstart.scrapers.job_posting_jsonld import (
     find_job_posting,
@@ -72,9 +74,15 @@ _DETAIL_WORKERS = 6  # sync-path detail fetches; bounded since they hit one host
 # trades wall-clock for recovered fetches in both directions.
 _DETAIL_STREAMS = 25
 _PAGE = 10  # PCSX search page size is fixed at 10 (num_items is ignored)
-_MAX_PAGES = (
-    2000  # fetch bound across all sweeps: 2000 x 10 = 20k jobs, above any real board
-)
+# Fetch bound across all sweeps. A fixed 2,000 (20k postings) was below starbucks.eightfold.ai's
+# 21,589 (2026-09-28), so that Board was truncated every run; the bound now scales with the Board's
+# own stated count (:func:`_page_limit`) and this stays only as the ceiling against a garbled one.
+_MAX_PAGES = 10_000
+#: Group ids a careers page names when it has fallen through to Eightfold's own portal: the
+#: pre-rename identity and the current one. Their search lists Eightfold's jobs, not the Board's
+#: (accenture.eightfold.ai, 2026-09-28: 59 postings, "Test Architect"). Public: the liveness probe
+#: reads the same set.
+VENDOR_GROUP_IDS = frozenset({"volkscience.com", "eightfold.ai"})
 # Full re-crawls to reassemble a complete list when replica orderings disagree (#142). Two extra
 # sweeps close a ~6% per-sweep miss almost surely; a board still short after three is reported.
 _MAX_SWEEPS = 3
@@ -247,6 +255,12 @@ class EightfoldScraper(BaseScraper):
         if not m:
             self._fallback_reason = "no group id on the careers page"
             return None
+        if m.group(1).lower() in VENDOR_GROUP_IDS:
+            # The tenant has left Eightfold; reading on would serve the vendor's own postings.
+            raise gone_board_error(
+                f"{self.board_key()}: the careers page names Eightfold's own group "
+                f"{m.group(1)!r}, not the Board's"
+            )
         return m.group(1)
 
     # --- primary: PCSX JSON API ---------------------------------------------------------------
@@ -306,12 +320,13 @@ class EightfoldScraper(BaseScraper):
         for pos in data.get("positions") or []:
             seen.setdefault(str(pos.get("id")), pos)
         pages = 1
+        limit = _page_limit(total, _MAX_SWEEPS)
         for sweep in range(_MAX_SWEEPS):
             # Sweep 1 continues from the first page already fetched; later sweeps restart, since
             # the point is to see the same offsets dealt by a differently-ordered replica.
             start = _PAGE if sweep == 0 else 0
             before = len(seen)
-            while len(seen) < total and start < total and pages < _MAX_PAGES:
+            while len(seen) < total and start < total and pages < limit:
                 r = self._get(self._search_url(group_id, start))
                 if r.status_code != 200:
                     self.mark_truncated_unless_negligible(
@@ -324,7 +339,17 @@ class EightfoldScraper(BaseScraper):
                         ),
                     )
                     return list(seen.values())
-                batch = (r.json().get("data") or {}).get("positions") or []
+                try:
+                    batch = (r.json().get("data") or {}).get("positions") or []
+                except ValueError:
+                    self.mark_truncated_unless_negligible(
+                        len(seen),
+                        total,
+                        _short_reason(
+                            f"an unparseable 200 on page {pages + 1}", len(seen), total
+                        ),
+                    )
+                    return list(seen.values())
                 if not batch:
                     # The list ended early; whether that is a truncation is decided below, on
                     # what the sweeps collectively found — not per page.
@@ -349,14 +374,12 @@ class EightfoldScraper(BaseScraper):
                         f"{total - before} posting(s) a differently-ordered replica then dealt"
                     )
                 break
-            if pages >= _MAX_PAGES:
+            if pages >= limit:
                 # Unconditional: a ceiling is a hard cap, so the unread remainder is
                 # unreachable on every run and no share of it is negligible — the class
                 # ADR-0121 keeps outside the tolerance.
                 self.mark_truncated(
-                    _short_reason(
-                        f"hit the {_MAX_PAGES}-page ceiling", len(seen), total
-                    )
+                    _short_reason(f"hit the {limit}-page ceiling", len(seen), total)
                 )
                 break
             if sweep and len(seen) == before:
@@ -428,7 +451,8 @@ class EightfoldScraper(BaseScraper):
             seen.setdefault(str(pos.get("id")), pos)
         start = _PAGE
         pages = 1
-        while len(seen) < total and start < total and pages < _MAX_PAGES:
+        limit = _page_limit(total, sweeps=1)
+        while len(seen) < total and start < total and pages < limit:
             r = self._get(self._smartapply_url(group_id, start))
             if r.status_code != 200:
                 self.mark_truncated_unless_negligible(
@@ -441,7 +465,19 @@ class EightfoldScraper(BaseScraper):
                     ),
                 )
                 return [_smartapply_to_pcsx_shape(p) for p in seen.values()]
-            batch = r.json().get("positions") or []
+            try:
+                batch = r.json().get("positions") or []
+            except ValueError:
+                self.mark_truncated_unless_negligible(
+                    len(seen),
+                    total,
+                    _short_reason(
+                        f"an unparseable SmartApply 200 on page {pages + 1}",
+                        len(seen),
+                        total,
+                    ),
+                )
+                return [_smartapply_to_pcsx_shape(p) for p in seen.values()]
             if not batch:
                 break
             for pos in batch:
@@ -449,12 +485,13 @@ class EightfoldScraper(BaseScraper):
             start += _PAGE
             pages += 1
         if len(seen) < total:
+            ceiling = pages >= limit
             reason = (
-                f"hit the {_MAX_PAGES}-page ceiling"
-                if pages >= _MAX_PAGES
+                f"hit the {limit}-page ceiling"
+                if ceiling
                 else "SmartApply's list ended short"
             )
-            if pages >= _MAX_PAGES:
+            if ceiling:
                 self.mark_truncated(_short_reason(reason, len(seen), total))
             else:
                 self.mark_truncated_unless_negligible(
@@ -728,8 +765,14 @@ class EightfoldScraper(BaseScraper):
 def group_id_for(slug: str) -> str | None:
     """The board's ``_EF_GROUP_ID`` — the tenant identity the PCSX API keys on, independent of
     which vanity hostname is asking. Two live hostnames sharing one group_id are the same board
-    (#154)."""
-    return EightfoldScraper(slug)._group_id()
+    (#154). None for a host whose page names Eightfold's own group: it has no Board of its own,
+    so it clusters with nothing."""
+    try:
+        return EightfoldScraper(slug)._group_id()
+    except (
+        http.RequestsError
+    ):  # the only raise left in `_group_id`: the vendor-group gone
+        return None
 
 
 def sitemap_ids_for(slug: str) -> set[str]:
@@ -814,6 +857,12 @@ def _department_of(pos: dict[str, Any]) -> str | None:
     ``title`` needs no such helper: ``classify`` strips it exactly as ``parse`` does.
     """
     return (pos.get("department") or "").strip() or None
+
+
+def _page_limit(total: int, sweeps: int) -> int:
+    """Pages a listing walk of ``sweeps`` full sweeps may fetch: each reading the Board's stated
+    ``total`` once, plus the first page, capped at :data:`_MAX_PAGES` against a garbled count."""
+    return min(sweeps * math.ceil(total / _PAGE) + 1, _MAX_PAGES)
 
 
 def _short_reason(cause: str, got: int, total: int) -> str:
