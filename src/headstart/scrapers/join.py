@@ -3,11 +3,13 @@
 A company's openings live at ``https://join.com/companies/{slug}``. That careers page embeds a
 Next.js ``__NEXT_DATA__`` blob carrying the numeric ``companyId``; the public jobs API then
 lists the openings (paginated):
-    https://join.com/api/public/companies/{companyId}/jobs?locale=en&page=N&pageSize=50
+    https://join.com/api/public/companies/{companyId}/jobs?locale=en&page=N&pageSize=5
+(larger page sizes answer "Invalid value": 10, 50 and 100 checked 2026-09-28)
 The list is summary-only for description, so each posting's description is fetched from its
 detail endpoint
     https://join.com/api/public/jobs/{id}?locale=en
-in a bounded thread pool. A failed detail fetch leaves description None — the job is still kept.
+for tech postings whose description the store does not hold yet. A failed detail fetch leaves
+description None — the job is still kept.
 Compensation (``salaryAmountFrom``/``salaryAmountTo``/``salaryFrequency``) is NOT summary-only,
 though — it's already on the listing item itself (see ``_salary_field``), so ``salary`` doesn't
 depend on the detail pass at all.
@@ -127,10 +129,16 @@ class JoinScraper(BaseScraper):
             )
         # Each posting's description, keyed by its id; a failed fetch leaves it out and the Job
         # is still kept.
+        # The detail supplies only the description, so the ADR-0166 tech gate and the ADR-0048
+        # held-description skip are both safe here. Without them every posting cost a detail
+        # GET every run (allocator 2026-09-28: 34 postings, 42 requests).
         descriptions = self.run_detail_pass(
             items,
             key_of=lambda item: str(item["id"]) if item.get("id") else None,
             what="descriptions",
+            title_of=lambda item: item.get("title"),
+            department_of=lambda item: (item.get("category") or {}).get("name"),
+            skip_held=True,
         )
         return {"company": company, "items": items, "descriptions": descriptions}
 

@@ -207,6 +207,18 @@ class GemScraper(BaseScraper):
     def job_url(self, native_id: str) -> str:
         return f"https://jobs.gem.com/{self.slug}/{native_id}"
 
+    def _raise_if_board_is_gone(self) -> None:
+        """Raise gone when the board page 404s. The listing answers ``[]`` for any slug, so an
+        empty one says nothing alone; the board page is a real 404 for a Board that does not
+        exist (``jobs.gem.com/this-slug-does-not-exist-hs-critique``, 2026-09-28), which the
+        liveness probe already reads. Asked only for an empty listing, so a Board with postings
+        pays no extra request. Raised in the shape ``board_failures.is_gone`` matches."""
+        response = self._fetch("GET", self.url())
+        if response.status_code in (404, 410):
+            raise http.RequestsError(
+                f"HTTP Error {response.status_code}: no Gem board for {self.slug}"
+            )
+
     # --- listing ------------------------------------------------------------------------------
 
     def _graphql(self, payload: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -312,6 +324,8 @@ class GemScraper(BaseScraper):
 
     def fetch_raw(self) -> Any:
         listed = self._listing()
+        if not listed:
+            self._raise_if_board_is_gone()
         # No ADR-0048 skip here — see the module docstring: posted_at and compensationHtml are
         # detail-only, so skipping a previously-seen Job would silently null them on every later
         # run rather than merely re-fetch a description we already store.

@@ -38,7 +38,9 @@ def _department_of(record: dict[str, Any]) -> str | None:
     classify on a different string than ``filter_tech`` does."""
     dept = record.get("department")
     if isinstance(dept, dict):
-        dept = dept.get("label") or dept.get("id")
+        # The detail states `{"name", "base_department", "department_tree"}` instead
+        # (acceleration-academies e24eed49, 2026-09-28), which `parse` falls back to.
+        dept = dept.get("label") or dept.get("name") or dept.get("id")
     return dept or None
 
 

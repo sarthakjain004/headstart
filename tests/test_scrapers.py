@@ -4983,6 +4983,42 @@ def test_join_fetch_raw_keys_each_description_by_its_posting_id(
     assert jobs["Analyst"].description is None
 
 
+def test_join_details_skip_non_tech_and_held_postings(monkeypatch):
+    """The detail supplies only the description, so the ADR-0166 tech gate and the ADR-0048
+    held-description skip are both safe; without them allocator's 34 postings cost 34 detail
+    GETs every run (2026-09-28)."""
+    from headstart.scrapers.join import JoinScraper
+
+    monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", "0")
+    careers_page = (
+        '<script id="__NEXT_DATA__" type="application/json">'
+        + json.dumps({"props": {"pageProps": {"initialState": {"company": {"id": 7}}}}})
+        + "</script>"
+    )
+    listed = [
+        {"id": 11, "idParam": "11-a", "title": "Backend Engineer"},
+        {"id": 12, "idParam": "12-b", "title": "Receptionist"},
+        {"id": 13, "idParam": "13-c", "title": "Data Engineer"},
+    ]
+
+    def route(method, url, kwargs):
+        if url == "https://join.com/companies/acme":
+            return FakeResponse(text=careers_page)
+        if url.startswith("https://join.com/api/public/companies/7/jobs"):
+            page = {"items": listed, "pagination": {"pageCount": 1}}
+            return FakeResponse(text=json.dumps(page))
+        return FakeResponse(text=json.dumps({"description": "<p>Build.</p>"}))
+
+    fetcher = FakeFetcher(route)
+    scraper = JoinScraper("acme", fetcher=fetcher)
+    # Arms both; 13's description is held.
+    scraper.have_details = frozenset({f"{scraper.board_key()}:13"})
+    scraper.fetch_raw()
+    assert [r.url for r in fetcher.requests if "/api/public/jobs/" in r.url] == [
+        "https://join.com/api/public/jobs/11?locale=en"
+    ]
+
+
 def test_join_location_uses_the_city_objects_city_and_country_names():
     raw = deepcopy(_load("join_indie-solutions.json"))
     raw["items"][0]["city"]["countryName"] = "City-country"
@@ -12864,3 +12900,19 @@ def test_eightfold_reads_the_brand_when_the_title_is_a_slogan(monkeypatch):
     bare = EightfoldScraper("acme.eightfold.ai")
     bare.resolve_company()
     assert bare.company == "acme.eightfold.ai"
+
+
+def test_rippling_department_reads_the_details_name_key():
+    """Real acceleration-academies detail e24eed49 (2026-09-28): the detail states `department`
+    as `{"name", "base_department", "department_tree"}`, not the listing's `{id, label}`, so the
+    detail fallback read None."""
+    from headstart.scrapers.rippling import _department_of
+
+    detail = {
+        "department": {
+            "name": "Academy Operations",
+            "base_department": "Academy Operations",
+            "department_tree": ["Academy Operations"],
+        }
+    }
+    assert _department_of(detail) == "Academy Operations"
