@@ -2400,9 +2400,9 @@ def _personio_fetch(status, location=None, content=b"", calls=None):
     def _fetch(method, url, **kw):
         if calls is not None:
             calls.append(kw)
-        resp = _Resp(status, content=content)
-        resp.headers = {"location": location} if location else {}
-        return resp
+        return _Resp(
+            status, headers={"location": location} if location else {}, content=content
+        )
 
     return _fetch
 
@@ -2431,3 +2431,8 @@ def test_p_personio_counts_positions(monkeypatch):
     feed = b"<workzag-jobs><position></position><position></position></workzag-jobs>"
     monkeypatch.setattr(cl, "_fetch", _personio_fetch(200, content=feed))
     assert cl.p_personio("acme", "https://acme.jobs.personio.de") == (cl.LIVE, 2)
+
+
+def test_p_personio_a_429_on_the_board_host_is_unknown(monkeypatch):
+    monkeypatch.setattr(cl, "_fetch", _personio_fetch(429))
+    assert cl.p_personio("acme", "https://acme.jobs.personio.de") == (cl.UNKNOWN, None)

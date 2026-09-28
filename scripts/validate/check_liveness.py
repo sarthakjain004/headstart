@@ -110,10 +110,10 @@ from headstart.scrapers.oracle import (  # the pod-host spelling, single source
     is_pod_host,
 )
 from headstart.scrapers.personio import (  # which redirect is a departed tenant, single source
-    _REDIRECTS as _PERSONIO_REDIRECTS,
+    REDIRECT_STATUSES as _PERSONIO_REDIRECTS,
 )
 from headstart.scrapers.personio import (
-    _redirect_host as _personio_redirect_host,
+    redirect_leaves_board as _personio_redirect_leaves_board,
 )
 from headstart.scrapers.radancy import (  # the job-URL shape, single source
     sitemap_rows as _radancy_sitemap_rows,
@@ -2699,7 +2699,7 @@ def p_personio(t, u):
     # answers `307 https://personio.com/`, whose marketing site answers 429 to this client, and
     # following it banned the whole jobs.personio.de gate so every later row read UNKNOWN (5,182
     # of 9,656 rows were unknown on 2026-09-28). An off-host target is gone; a same-host one
-    # decides nothing (`personio._redirect_host`).
+    # decides nothing (`personio.redirect_leaves_board`).
     board = _scraper_for_row("personio", t, u)
     try:
         r = _fetch(
@@ -2714,8 +2714,7 @@ def p_personio(t, u):
         _note("breaker-open")
         return UNKNOWN, None
     if r.status_code in _PERSONIO_REDIRECTS:
-        target = _personio_redirect_host(r.headers.get("location"))
-        if target and target != board.slug.lower():
+        if _personio_redirect_leaves_board(r.headers.get("location"), board.slug):
             return DEAD, None
         _note(f"http-{r.status_code}")
         return UNKNOWN, None

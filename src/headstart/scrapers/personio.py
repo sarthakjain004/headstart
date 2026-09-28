@@ -26,7 +26,7 @@ from headstart.scrapers.base import USER_AGENT, BaseScraper
 #: serves its own feed directly: of 600 live Boards sampled 2026-08-26, 8 redirected and every
 #: one went to the marketing site — none to another host, and none that redirected and still
 #: served a feed. So an **off-host** redirect means the Board is not where the ledger says it is.
-_REDIRECTS = frozenset({301, 302, 303, 307, 308})
+REDIRECT_STATUSES = frozenset({301, 302, 303, 307, 308})
 
 
 def _redirect_host(location: str | None) -> str:
@@ -51,6 +51,15 @@ def _redirect_host(location: str | None) -> str:
     elif "://" not in text:
         return ""
     return host_of(text).lower().partition(":")[0].rstrip(".")
+
+
+def redirect_leaves_board(location: str | None, board_host: str) -> bool:
+    """Whether a redirect's ``Location`` names a host other than the Board's own: the sign of a
+    departed tenant (``/xml`` answers ``307 https://personio.com/``). A relative or same-host
+    target is a path normalisation and says nothing. The scraper and the liveness probe both
+    read a redirect by this."""
+    target = _redirect_host(location)
+    return bool(target) and target != board_host.lower()
 
 
 _log = log.get(__name__)
@@ -274,7 +283,7 @@ class PersonioScraper(BaseScraper):
             timeout=30,
             allow_redirects=False,
         )
-        if response.status_code in _REDIRECTS:
+        if response.status_code in REDIRECT_STATUSES:
             target = _redirect_host(response.headers.get("location"))
             # Only an **off-host** target says the Board is gone. A same-host or relative
             # Location is a path normalisation, and reading one as gone would age a live Board
@@ -286,7 +295,7 @@ class PersonioScraper(BaseScraper):
             # This branch's message is built only from values we control, never from `Location`:
             # it is matched by `board_failures._GONE`, so echoing origin-controlled text here
             # would let the origin flip the verdict to the direction that quarantines.
-            if not target or target == self.slug.lower():
+            if not redirect_leaves_board(response.headers.get("location"), self.slug):
                 raise http.RequestsError(
                     f"personio answered {response.status_code} for {self.url()} with a "
                     f"{'relative' if not target else 'same-host'} Location — not off the board "

@@ -4533,6 +4533,20 @@ def test_personio_remote_reads_every_office_not_only_the_first():
     ]
 
 
+def test_personio_a_hybrid_office_is_neither_remote_nor_on_site():
+    """A live shape from the `_location` measurement (2026-08-25): `office="Leipzig"` with
+    `additionalOffices=["Dubai", "Hybrid"]`. Hybrid is None, as `remote_from_workplace` reads it."""
+    raw = ET.fromstring(
+        b"<workzag-jobs><position><id>1</id><name>T</name><office>Leipzig</office>"
+        b"<additionalOffices><office>Dubai</office><office>Hybrid</office>"
+        b"</additionalOffices></position></workzag-jobs>"
+    )
+    job = get_scraper("personio", "acme.jobs.personio.de", "Acme").parse(
+        raw, SCRAPED_AT
+    )[0]
+    assert (job.location, job.remote) == ("Leipzig, Dubai, Hybrid", None)
+
+
 def test_personio_slug_from_keeps_only_the_host():
     """Discovery stored the raw Common Crawl capture for host-shaped ATSes, so 634 rows in the
     personio ledger carry a job deep link with tracking params instead of the board. A path alone
