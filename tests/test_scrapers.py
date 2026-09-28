@@ -4231,7 +4231,7 @@ def test_teamtailor_walks_every_page_not_just_the_first(monkeypatch):
     )  # 2 listing pages, stopped on the short one, + 1 rss enrichment call
 
 
-def test_teamtailor_single_page_board_costs_one_request(monkeypatch):
+def test_teamtailor_single_page_board_costs_one_listing_request(monkeypatch):
     """The common case must not pay for pagination — 748 of 766 Boards are one page. It does pay
     one further request for the jobs.rss enrichment join (+1 request per Board, module
     docstring), so this Board costs two requests total, not one."""
@@ -4301,6 +4301,23 @@ def test_teamtailor_parse():
     assert j.url.startswith("https://1komma5.teamtailor.com/jobs/")
     assert j.posted_at.startswith("2026-")
     assert j.description and "</" not in j.description  # populated, HTML-stripped
+
+
+def test_teamtailor_salary_reads_a_single_value_amount():
+    """Real lovisacareers item (2026-09-28): schema.org states one amount as `value.value`, not
+    `minValue`/`maxValue`. 38 of that Board's first 100 items state pay this way."""
+    jobs = get_scraper("teamtailor", "lovisacareers", "Lovisa").parse(
+        _load("teamtailor_lovisacareers_single_value_salary.json"), SCRAPED_AT
+    )
+    assert jobs[0].salary == "12.31 EUR HOUR"
+
+
+def test_teamtailor_location_keeps_every_place():
+    """Real wspcentraleurope item (2026-09-28): two `jobLocation` Places, Bern and Zürich."""
+    jobs = get_scraper("teamtailor", "wspcentraleurope", "WSP").parse(
+        _load("teamtailor_wspcentraleurope_two_places.json"), SCRAPED_AT
+    )
+    assert jobs[0].location == "Bern, Bern, CH; Zürich, Zürich, CH"
 
 
 def test_teamtailor_parse_with_no_rss_enrichment_falls_back_to_the_location_guess():

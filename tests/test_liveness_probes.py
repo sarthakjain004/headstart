@@ -2223,3 +2223,44 @@ def test_trakstar_active_account_with_no_openings_stays_live(monkeypatch):
     page = b"<html><head><title>Acme jobs</title></head><body>No jobs available</body></html>"
     monkeypatch.setattr(cl, "_get", _stub_get(200, page))
     assert cl.p_trakstar("acme", "https://acme.hire.trakstar.com/") == (cl.LIVE, 0)
+
+
+def test_p_teamtailor_counts_every_page_not_the_first_hundred(monkeypatch):
+    """`jobs.json` serves 100 items a page; the probe recorded 100 for lovisacareers, whose
+    scrape reads 1,301 (2026-09-28). It walks `?page=N` as the scraper does."""
+    pages = {1: 100, 2: 100, 3: 7}
+    asked = []
+
+    def get(url, headers=None):
+        asked.append(url)
+        page = int(url.rsplit("page=", 1)[1]) if "page=" in url else 1
+        items = [{"id": f"{page}-{i}"} for i in range(pages.get(page, 0))]
+        return 200, json.dumps({"items": items}).encode()
+
+    monkeypatch.setattr(cl, "_get", get)
+    assert cl.p_teamtailor("acme", "https://acme.teamtailor.com") == (cl.LIVE, 207)
+    assert len(asked) == 3
+
+
+def test_p_teamtailor_a_later_page_failing_keeps_what_was_counted(monkeypatch):
+    def get(url, headers=None):
+        if "page=" in url:
+            return 503, b""
+        return 200, json.dumps({"items": [{"id": i} for i in range(100)]}).encode()
+
+    monkeypatch.setattr(cl, "_get", get)
+    assert cl.p_teamtailor("acme", "https://acme.teamtailor.com") == (cl.LIVE, 100)
+
+
+def test_p_teamtailor_keeps_walking_when_a_page_repeats_a_few_ids(monkeypatch):
+    """A full page that repeats a few ids an earlier page listed (a feed shifting while it is
+    walked) still means more pages follow; the count is of distinct ids, as the scraper's."""
+    pages = {1: range(100), 2: range(98, 198), 3: range(198, 205)}
+
+    def get(url, headers=None):
+        page = int(url.rsplit("page=", 1)[1]) if "page=" in url else 1
+        items = [{"id": i} for i in pages.get(page, ())]
+        return 200, json.dumps({"items": items}).encode()
+
+    monkeypatch.setattr(cl, "_get", get)
+    assert cl.p_teamtailor("acme", "https://acme.teamtailor.com") == (cl.LIVE, 205)
