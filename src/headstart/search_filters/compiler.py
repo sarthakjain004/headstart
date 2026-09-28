@@ -98,6 +98,10 @@ class SearchFilters:
     first_seen_after: str | None = None
     kw: str | None = None
     kw_in: str | None = None
+    # The search bar's "Title words" mode (ADR-0263): every word must appear in the title, by
+    # the Keyword filter's own substring rule. Its own field rather than the rail's `kw`, so the
+    # two can be set together and a Saved Set keeps which one the user typed where.
+    title_words: str | None = None
 
 
 @dataclass(frozen=True)
@@ -583,12 +587,17 @@ def build_filter(filters: SearchFilters, capabilities: IndexCapabilities) -> str
         clauses.append(f"lower(location) LIKE '%{_like(filters.location)}%'")
     if filters.company:
         clauses.append(f"lower(company) LIKE '%{_like(filters.company)}%'")
-    # These four append in order, and that order is part of the string this returns —
+    # These five append in order, and that order is part of the string this returns —
     # `" AND ".join` below is not a set. SQL's AND commutes, so reordering reads as harmless and
     # is not: every test asserting a whole where-clause would fail, and so would any caller
     # comparing two compiled filters for equality.
     clauses += _keyword_clauses(
         kw=filters.kw, kw_in=filters.kw_in, has_description=capabilities.has_description
+    )
+    clauses += _keyword_clauses(
+        kw=filters.title_words,
+        kw_in="title",
+        has_description=capabilities.has_description,
     )
     clauses += _salary_clauses(
         has_salary=filters.has_salary,

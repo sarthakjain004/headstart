@@ -26,6 +26,34 @@ window.addEventListener('unhandledrejection', e => {
 // listener), which a browser also fires on Enter — a second Enter handler there searched twice.
 el('q').addEventListener('keydown', e => { if (e.key === 'Enter') go(); });
 
+/* ---- the search bar's match mode (ADR-0263). "By meaning" ranks every job by how close it is to
+   the words; "Words in the job title" keeps only the jobs whose title holds every word (the
+   Keyword filter's substring rule, sent as `title_words`) and ranks those the same way. The
+   radios are the one place the mode lives: readSearch, the hash and a Saved Set read them. ---- */
+const MEANING_PROMPT = { placeholder: el('q').placeholder, label: el('q').getAttribute('aria-label') };
+const TITLE_PROMPT = { placeholder: 'Words the job title must have — e.g. staff backend engineer',
+  label: 'Words the job title must have' };
+function queryMode(){
+  const on = document.querySelector('input[name="qmode"]:checked');
+  return on && on.value === 'title' ? 'title' : 'meaning';
+}
+function setQueryMode(mode){
+  document.querySelectorAll('input[name="qmode"]').forEach(r => { r.checked = r.value === mode; });
+  drawQueryMode();
+}
+function drawQueryMode(){
+  const title = queryMode() === 'title', prompt = title ? TITLE_PROMPT : MEANING_PROMPT;
+  el('q').placeholder = prompt.placeholder;
+  el('q').setAttribute('aria-label', prompt.label);
+  if (el('qmode-note')) el('qmode-note').textContent = title
+    ? 'Every word must be in the title, inside longer words too (“java” also finds JavaScript).' : '';
+}
+// A switch re-runs what is typed at once, so trying the other mode is the one click.
+document.querySelectorAll('input[name="qmode"]').forEach(r => r.addEventListener('change', () => {
+  drawQueryMode();
+  if (el('q').value.trim()) go(); else writeSearchHash();
+}));
+
 /* ---- tabs. The hash names the panel (#search, #trends); the bare URL and any hash naming
    neither a panel nor something inside one land on Home (ADR-0249), so a stale link — the
    retired `#data` included — never strands anyone on a blank page. Trends data loads the
@@ -83,6 +111,7 @@ function showTab(name){
 if (el('home-search')) el('home-search').addEventListener('submit', e => {
   e.preventDefault();
   el('q').value = el('home-q').value;
+  setQueryMode('meaning');   // Home asks for a role described in words
   window.addEventListener('hashchange', () => el('results').focus(), { once: true });
   location.hash = '#search';
   go();
@@ -133,7 +162,8 @@ function flipTheme(){
     || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
   document.documentElement.setAttribute('data-theme', now === 'dark' ? 'light' : 'dark');
 }
-function tryIt(btn){ el('q').value = btn.textContent.trim(); go(); }
+// The examples describe roles, so they run by meaning whichever mode was on.
+function tryIt(btn){ el('q').value = btn.textContent.trim(); setQueryMode('meaning'); go(); }
 // The header identity. /me answers from the caller's own session cookie; when the sign-in
 // wall is off (or the caller somehow reached this page signed out) it stays blank.
 async function whoAmI(){
@@ -540,46 +570,57 @@ function searchCompany(boards, label, q, category, aside, counted){
   go();
 }
 function searchHash(){
-  if (!searchScope) return '#search';
+  // The Title words mode rides in the hash with its words (ADR-0263), so a reload or a shared
+  // link searches the same way; a meaning search with no hand-off keeps the bare `#search`.
+  const title = queryMode() === 'title';
+  if (!searchScope && !title) return '#search';
   const p = new URLSearchParams();
-  searchScope.boards.forEach(b => p.append('board', b));
-  if (searchScope.label) p.set('label', searchScope.label);
-  if (searchScope.category){
-    if (searchScope.category.role) p.set('role', searchScope.category.role);
-    else p.set('family', searchScope.category.family);
-    p.set('family_label', searchScope.category.label);
-  } else if (searchScope.aside) p.set('aside', String(searchScope.aside));
-  if (searchScope.counted){ p.set('trend_n', String(searchScope.counted.n)); p.set('trend_at', searchScope.counted.at); }
+  if (searchScope){
+    searchScope.boards.forEach(b => p.append('board', b));
+    if (searchScope.label) p.set('label', searchScope.label);
+    if (searchScope.category){
+      if (searchScope.category.role) p.set('role', searchScope.category.role);
+      else p.set('family', searchScope.category.family);
+      p.set('family_label', searchScope.category.label);
+    } else if (searchScope.aside) p.set('aside', String(searchScope.aside));
+    if (searchScope.counted){ p.set('trend_n', String(searchScope.counted.n)); p.set('trend_at', searchScope.counted.at); }
+  }
   if (el('q').value.trim()) p.set('q', el('q').value.trim());
+  if (title) p.set('match', 'title');
   return '#search?' + p;
 }
-// A hand-off arriving by link or reload. True when it changed the scope, so the caller runs it.
+// A hand-off or a Title words search arriving by link or reload. True when it changed what is
+// searched, so the caller runs it.
 function readSearchHash(){
   const at = location.hash.indexOf('?');
   if (currentTab() !== 'search' || at < 0) return false;
   const p = new URLSearchParams(location.hash.slice(at + 1));
   const boards = p.getAll('board');
+  const title = p.get('match') === 'title';
   // The whole hand-off, not only its Boards: Back from Google › Data to Google › AI names the
   // same Boards with another query, and comparing the Boards alone left the page on Data.
-  if (!boards.length || location.hash === searchHash()) return false;
-  searchScope = { boards, label: p.get('label') || `${boards.length} job site${boards.length === 1 ? '' : 's'}`,
-                  category: p.get('role') ? { role: p.get('role'), label: p.get('family_label') || p.get('role') }
-                    : p.get('family') ? { family: p.get('family'), label: p.get('family_label') || p.get('family') } : null,
-                  aside: Number(p.get('aside')) || 0,
-                  counted: p.get('trend_at') && p.get('trend_n') ? { n: Number(p.get('trend_n')), at: p.get('trend_at') } : null };
-  el('company').value = '';
+  if ((!boards.length && !title) || location.hash === searchHash()) return false;
+  searchScope = !boards.length ? null
+    : { boards, label: p.get('label') || `${boards.length} job site${boards.length === 1 ? '' : 's'}`,
+        category: p.get('role') ? { role: p.get('role'), label: p.get('family_label') || p.get('role') }
+          : p.get('family') ? { family: p.get('family'), label: p.get('family_label') || p.get('family') } : null,
+        aside: Number(p.get('aside')) || 0,
+        counted: p.get('trend_at') && p.get('trend_n') ? { n: Number(p.get('trend_n')), at: p.get('trend_at') } : null };
+  if (boards.length) el('company').value = '';
   el('q').value = p.get('q') || '';
+  setQueryMode(title ? 'title' : 'meaning');
   return true;
 }
 // Kept in step with what was searched: the query as run, and the scope gone once dropped.
 function writeSearchHash(){
   if (currentTab() !== 'search' || typeof history === 'undefined') return;
-  if (!searchScope && location.hash.indexOf('?') < 0) return;   // nothing to keep, or to drop
+  // nothing to keep, or to drop
+  if (!searchScope && queryMode() !== 'title' && location.hash.indexOf('?') < 0) return;
   const hash = searchHash();
   if (location.hash !== hash) history.replaceState(null, '', hash);
 }
 function readSearch(){
-  return { q: el('q').value.trim(), filters: currentFilters(), sort: el('sort').value,
+  return { q: el('q').value.trim(), mode: queryMode(), filters: currentFilters(), sort: el('sort').value,
            mine: !!(el('mine') && el('mine').checked), scope: searchScope,
            currency: el('salcur') ? el('salcur').value : '' };
 }
@@ -590,9 +631,12 @@ async function goToPage(n){ page = Math.max(1, Math.min(n, MAX_PAGE)); await fet
 
 async function fetchPage(){
   const request = ++searchRequest;
-  const { q, filters, sort, mine, currency, scope } = searched;
+  const { q, mode, filters, sort, mine, currency, scope } = searched;
   const p = new URLSearchParams({ q, k: PAGE_SIZE, page });
   for (const [key, value] of Object.entries(filters)) p.set(key, value);
+  // The same words both keep only the titles holding them and rank those by meaning, so the
+  // facet counts (sent the same parameters) count exactly the titles listed.
+  if (mode === 'title' && q) p.set('title_words', q);
   if (sort !== 'rel') p.set('sort', sort);
   // A salary sort is stated in one currency — the picker's — even with no bound set, which is
   // why this is not in currentFilters(): there the currency means "the bracket is counted in".
@@ -686,7 +730,11 @@ function drawResultKind(q, shown){
   // Three states, not two. A date sort re-orders the best matches, so claiming similarity
   // order there would contradict #sortnote, which sits two lines above this in the same
   // column and already says exactly that.
-  if (q && searched.sort !== 'rel'){
+  if (q && searched.mode === 'title'){
+    // Filtered first, then ranked: every row's title holds every word (ADR-0263).
+    node.innerHTML = 'Jobs whose title has every word you typed, ' + (searched.sort !== 'rel'
+      ? 're-ordered by date rather than by closeness.' : 'closest in meaning first.') + explain;
+  } else if (q && searched.sort !== 'rel'){
     node.innerHTML = 'Your best matches for what you described, re-ordered by date rather ' +
       'than by closeness.' + explain;
   } else if (q){
@@ -762,6 +810,10 @@ function drawSortNote(){
 // removal recovers the most results (headstart.serving.facets), so the advice is measured, not guessed.
 function whyNothing(facets){
   const key = facets && facets.blocking;
+  // The title words are not a rail filter, so no blocking answer names them (ADR-0263).
+  if (!key && searched && searched.mode === 'title' && searched.q)
+    return `No job title has every word of “${esc(searched.q)}”. Try fewer words, or ` +
+      '<button class="linkish" onclick="setQueryMode(\'meaning\'); go()">match by meaning</button> instead.';
   if (!key) return 'Try loosening a filter, or describe the role more broadly.';
   const label = LABELS[key] || key;
   return `Your <b>${esc(label)}</b> filter is the one ruling everything out — ` +
@@ -1176,6 +1228,7 @@ async function runSet(id){
 
 function applySetToControls(s){
   el('q').value = s.query;
+  setQueryMode((s.search_filters || {}).title_words ? 'title' : 'meaning');
   Object.values(CONTROL).forEach(cid => { const c = el(cid); if (!c) return;
     if (c.type === 'checkbox') c.checked = false; else c.value = ''; });
   for (const [key, value] of Object.entries(s.search_filters || {})){
@@ -1250,7 +1303,9 @@ async function saveSearch(){
   if (!name){ msg.textContent = 'Give it a name.'; return; }
   try{
     const r = await fetch('/sets', { method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ name, query: q, filters: currentFilters() }) });
+      // A Title words set keeps its mode as the filter it is (ADR-0263).
+      body: JSON.stringify({ name, query: q, filters: { ...currentFilters(),
+        ...(queryMode() === 'title' ? { title_words: q } : {}) } }) });
     const d = await r.json().catch(() => ({}));
     if (!r.ok){ logFail('POST', '/sets', r.status); msg.textContent = d.error || ('Failed (' + r.status + ')'); return; }
     mySets = null;                       // the strip reloads next time Matches opens

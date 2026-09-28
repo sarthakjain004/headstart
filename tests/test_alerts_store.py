@@ -389,6 +389,16 @@ def test_saved_set_create_normalizes_and_keys_by_account():
     assert saved.path() == f"sets/{saved.account}/{saved.id}.json"
 
 
+def test_a_title_words_set_keeps_its_words_for_its_digest_too():
+    """ADR-0263: a set saved in the search bar's Title words mode lists titles holding every
+    word, and its emailed digest (the Subscription projection) must list the same jobs."""
+    saved = st.SavedSet.create(
+        "ada@example.com", "rust", "rust", {"title_words": "rust"}
+    )
+    assert saved.search_filters == {"title_words": "rust"}
+    assert "title_words" in st.ALLOWED_SEARCH_FILTERS
+
+
 def test_saved_set_revised_keeps_identity_and_email_flag():
     saved = st.SavedSet.create("ada@example.com", "backend", "backend engineer", {})
     flagged = st.replace(saved, emails=True)

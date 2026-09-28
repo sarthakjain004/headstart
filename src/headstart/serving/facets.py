@@ -240,6 +240,10 @@ NEVER_BLOCKING = frozenset(
         # The keyword's scope, not a filter: `parse_filters` already nulls it without a keyword,
         # and with one it is the `kw` entry that would be named.
         "kw_in",
+        # The search bar's Title words (ADR-0263): not a rail control, so `dropFilter` has nothing
+        # to clear, and "Clear all" must not empty the search bar. The empty state names it in its
+        # own words instead ("No job title has every word of …").
+        "title_words",
         # The salary bracket's scope, for the same reason and with a sharper consequence. Unsetting
         # it does not remove the bracket — it re-scopes it to `SALARY_DEFAULT_CURRENCY` — so the
         # recovery `_blocking` measures would be one no control can perform: the empty state's button

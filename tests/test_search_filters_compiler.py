@@ -184,6 +184,17 @@ def test_keyword_terms_are_anded_and_each_may_land_in_any_scoped_column():
     )
 
 
+def test_title_words_hold_every_word_in_the_title_beside_the_rails_keyword():
+    """ADR-0263: the search bar's Title words mode compiles as a title-scoped keyword of its own,
+    ANDed with whatever the rail's Keyword filter says — even a description-scoped one."""
+    assert _clause(title_words="Staff Rust") == (
+        "(lower(title) LIKE '%staff%') AND (lower(title) LIKE '%rust%')"
+    )
+    assert _clause(
+        kw="tokio", kw_in="description", title_words="rust", has_description=True
+    ) == ("(lower(description) LIKE '%tokio%') AND (lower(title) LIKE '%rust%')")
+
+
 def test_keyword_description_scope_stays_dark_without_the_column():
     # Same dark-until-migrated rule as first_seen and the salary columns: a table that predates
     # the ADR-0104 column must not 500 on kw_in=description — it simply filters nothing.

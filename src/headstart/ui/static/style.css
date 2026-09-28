@@ -172,6 +172,10 @@ body{
   transition:transform var(--step), box-shadow var(--step), filter var(--step); }
 .go:hover{ transform:translateY(-2px); filter:brightness(1.06); }
 .go:active{ transform:translateY(0); }
+/* The search bar's match mode (ADR-0263): the same radio chips as the rail's segmented rows. */
+.qmode{ display:flex; align-items:center; gap:6px 10px; margin-top:10px; flex-wrap:wrap; }
+.qmode .flabel{ font-size:12px; color:var(--ink-2); font-weight:500; }
+.qmode-note{ font-size:12px; line-height:1.4; color:var(--ink-3); }
 /* One scrollable row, not three stacked ones: on a phone these suggestions cost 3 lines of
    the first screen, above any actual job. */
 .hint{ display:flex; align-items:center; gap:8px; margin-top:10px; flex-wrap:nowrap;

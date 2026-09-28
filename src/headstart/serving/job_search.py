@@ -881,6 +881,7 @@ class JobSearch:
             kw_in=(kw_in if kw_in in KEYWORD_SCOPES else KEYWORD_DEFAULT_SCOPE)
             if kw
             else None,
+            title_words=(args.get("title_words") or "").strip() or None,
         )
         # The one place a request is parsed, and so the one place a dropped filter can be
         # reported without `facets.counts` repeating it once per option — see the helper. Under
