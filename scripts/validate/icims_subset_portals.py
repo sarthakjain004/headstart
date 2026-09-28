@@ -10,8 +10,11 @@ Two shapes of the same fact (ADR-0254):
   scraper reads that portal's list under this host. Buried onto the redirect's target.
 - **subset-reqs**: the portal answers its own sitemap, but every posting it lists another portal
   of the same customer already lists. `careers-redlobster` and `hourly-spanish-redlobster` list the
-  same 2,399 postings with no redirect (2026-09-28). The election is `alias_ledger.bury_contained`,
-  as for Taleo Enterprise sections (ADR-0186) and ADP career sites (ADR-0202).
+  same 2,399 postings with no redirect (2026-09-28). The election is
+  `alias_ledger.bury_contained_keeping_public`, as for Taleo Enterprise sections (ADR-0186's
+  amendment): a portal whose label names it non-public (`internal-beaumonthospital`) is never the
+  kept one, so its employee-only links are not served in place of the public portals it lists
+  (#794). A redirect is iCIMS's own: the scraper reads the target's list either way.
 
 A posting is its `(job id, title slug)` pair off the sitemap URL `/jobs/{id}/{slug}/job`, and a
 portal's customer is its host label's last hyphen-separated word (`redlobster`). The customer key
@@ -40,6 +43,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from headstart.boards import alias_ledger, liveness_ledger
 from headstart.boards.excluded_and_parked import EXCLUDED_BOARDS
+from headstart.ingest.index_plan import site_is_non_public
 from headstart.network import http
 from headstart.scrapers.base import USER_AGENT
 from headstart.scrapers.icims import ICIMSScraper, sitemap_rows
@@ -68,8 +72,10 @@ def burials(
         for portal, target in landed_on.items()
         if target != portal and target in postings
     }
-    contained = alias_ledger.bury_contained(
-        {p: ids for p, ids in postings.items() if p not in redirects}, customer_of
+    contained = alias_ledger.bury_contained_keeping_public(
+        {p: ids for p, ids in postings.items() if p not in redirects},
+        customer_of,
+        lambda portal: site_is_non_public(portal.split(".", 1)[0]),
     )
     return {
         **{dup: (keep, "subset-reqs") for dup, keep in contained.items()},

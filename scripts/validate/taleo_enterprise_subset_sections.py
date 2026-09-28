@@ -62,31 +62,17 @@ def burials(reqs_by_section: Mapping[str, Collection[str]]) -> dict[str, str]:
     """``{buried section: kept section}`` for every section another one of its tenant contains.
 
     ``reqs_by_section`` maps a section's canonical URL to its full requisition ids; the tenant is
-    the URL's host. The election is `alias_ledger.bury_contained`, shared with ADP Recruiting
-    Management's (ADR-0202), run over the public sections only; a non-public section is then
-    buried onto the largest kept public section of its tenant that lists all its reqs, then the
-    lowest URL, and left unburied when none does (module docstring)."""
+    the URL's host. The election is `alias_ledger.bury_contained_keeping_public`: ADR-0186's, shared
+    with ADP Recruiting Management's (ADR-0202) and iCIMS's, where a non-public section is never
+    the kept one (module docstring)."""
 
-    def tenant(section: str) -> str | None:
-        return urlsplit(section).hostname
-
-    def non_public(section: str) -> bool:
-        return is_non_public(TaleoEnterpriseScraper(section).board_key().lower())
-
-    public = {s: r for s, r in reqs_by_section.items() if not non_public(s)}
-    buried = alias_ledger.bury_contained(public, tenant)
-    kept = {s: frozenset(r) for s, r in public.items() if r and s not in buried}
-    for section, reqs in reqs_by_section.items():
-        if section in public or not reqs:
-            continue
-        hosts = [
-            s
-            for s, own in kept.items()
-            if tenant(s) == tenant(section) and own >= set(reqs)
-        ]
-        if hosts:
-            buried[section] = min(hosts, key=lambda s: (-len(kept[s]), s))
-    return buried
+    return alias_ledger.bury_contained_keeping_public(
+        reqs_by_section,
+        lambda section: urlsplit(section).hostname,
+        lambda section: is_non_public(
+            TaleoEnterpriseScraper(section).board_key().lower()
+        ),
+    )
 
 
 def write_aliases(

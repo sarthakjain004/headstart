@@ -190,3 +190,22 @@ def test_a_row_missing_its_canonical_is_skipped_and_counted(tmp_path, caplog):
     assert caplog.messages == [
         f"{path}: skipped 1 row(s) missing duplicate or canonical"
     ]
+
+
+def test_a_non_public_board_is_never_the_kept_one():
+    """#794: the public Boards elect among themselves; a non-public superset stays unburied."""
+    buried = alias_ledger.bury_contained_keeping_public(
+        {"a/1": {"1", "2"}, "a/10880": {"1", "2"}, "a/x_internal": {"1", "2", "3"}},
+        lambda board: board.split("/")[0],
+        lambda board: "internal" in board,
+    )
+    assert buried == {"a/10880": "a/1"}
+
+
+def test_a_non_public_subset_is_buried_onto_the_largest_public_superset():
+    buried = alias_ledger.bury_contained_keeping_public(
+        {"a/pub": {"1", "2", "3"}, "a/pub2": {"1", "9"}, "a/internal": {"1"}},
+        lambda board: board.split("/")[0],
+        lambda board: "internal" in board,
+    )
+    assert buried == {"a/internal": "a/pub"}
