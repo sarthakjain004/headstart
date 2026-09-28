@@ -1043,5 +1043,44 @@ PARKED_BOARDS: frozenset[str] = frozenset(
         "phenom:jobs.corecivic.com",
         "phenom:careers.associaonline.com",
         "phenom:careers.soprasteria.co.uk",
+        # Happydance career fronts whose Backing Board is a Scrapable Board (ADR-0264): each
+        # would serve its postings a second time under the front's key. Measured 2026-09-28 by
+        # the apply URLs of up to 25 sampled job pages each, by Greenhouse job id (Box, Dropbox,
+        # Pinterest and Coupang: 100% of the front's reqs on the held Board) or, for fronts that
+        # apply on the front itself, by employer and registrable domain (Fidelity, Warburtons,
+        # Aristocrat); the per-front shares are in the ADR. Landing them or not is the owner's
+        # open decision (Radancy lands every front and logs its duplication; Phenom lands none
+        # of these). Un-park one to land it.
+        "happydance:careers.aristocrat.com",
+        "happydance:careers.box.com",
+        "happydance:careers.caterpillar.com",
+        "happydance:careers.coupa.com",
+        "happydance:careers.criteo.com",
+        "happydance:careers.draftkings.com",
+        "happydance:careers.equifax.com",
+        "happydance:careers.fluttergroup.com",
+        "happydance:careers.flutteruki.com",
+        "happydance:careers.hilti.group",
+        "happydance:careers.ingrammicro.com",
+        "happydance:careers.mgmresorts.com",
+        "happydance:careers.mimecast.com",
+        "happydance:careers.prismahealth.org",
+        "happydance:careers.regeneron.com",
+        "happydance:careers.richemont.com",
+        "happydance:careers.rjet.com",
+        "happydance:careers.thrivent.com",
+        "happydance:careers.warburtons.co.uk",
+        "happydance:jobs.centene.com",
+        "happydance:jobs.fidelity.com",
+        "happydance:jobs.nationalgrid.com",
+        "happydance:mycareer.verizon.com",
+        "happydance:retailcareers.paddypower.com",
+        "happydance:www.bairdcareers.com",
+        "happydance:www.careers.astemo.com",
+        "happydance:www.careers.jnj.com",
+        "happydance:www.coupang.jobs",
+        "happydance:www.dropbox.jobs",
+        "happydance:www.grab.careers",
+        "happydance:www.pinterestcareers.com",
     }
 )

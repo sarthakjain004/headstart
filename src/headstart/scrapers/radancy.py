@@ -63,17 +63,15 @@ from __future__ import annotations
 import html
 import re
 import urllib.robotparser
-from collections import Counter
 from datetime import date
-from functools import cache
-from pathlib import Path
 from typing import Any
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import urlsplit
 
 from headstart.boards import company_name
 from headstart.jobs.job import Job, host_of, html_to_text, is_remote, requisition_of
 from headstart.jobs.salary import to_field
 from headstart.network import http
+from headstart.scrapers import front_duplication
 from headstart.scrapers.base import (
     USER_AGENT,
     BaseScraper,
@@ -257,30 +255,11 @@ class RadancyScraper(BaseScraper):
         return int(stated.group(1)) if stated else None
 
     def _report_front_duplication(self, items: list[dict[str, Any]]) -> None:
-        """Log and record the share of this front's postings whose Backing Board is a Scrapable
-        Board — **Front duplication** (CONTEXT.md), measured every run and never acted on, by the
-        owner's decision of 2026-09-26. One INFO line per Board: a WARNING is an Actions
-        annotation against a quota of ten per step (ADR-0039)."""
-        held = _scrapable_boards()
-        if not held.identities:
-            # No committed ledger beside this checkout: say it was not measured, never "0%".
-            self._log.info(
-                f"{self.board_key()}: Front duplication not measured (no ledger)"
-            )
-            return
-        read = [item["fields"] for item in items if item.get("fields")]
-        backing = Counter(
-            board
-            for board in (backing_board(f.get("apply_url"), held) for f in read)
-            if board
-        )
-        duplicated = sum(backing.values())
-        self.telemetry["front_postings"] = len(read)
-        self.telemetry["front_duplicated"] = duplicated
-        boards = ", ".join(f"{board} {n}" for board, n in backing.most_common(3))
-        self._log.info(
-            f"{self.board_key()}: Front duplication at least {duplicated}/{len(read)} postings "
-            f"apply on a Scrapable Board" + (f" ({boards})" if boards else "")
+        """**Front duplication** (CONTEXT.md) over the pages read, measured every run and never
+        acted on, by the owner's decision of 2026-09-26 (:func:`front_duplication.report`)."""
+        front_duplication.report(
+            self,
+            (item["fields"].get("apply_url") for item in items if item.get("fields")),
         )
 
     def resolve_company(self) -> None:
@@ -540,95 +519,3 @@ def _number(value: Any) -> float | None:
 
 def _fmt(value: float) -> str:
     return f"{value:g}" if value != int(value) else str(int(value))
-
-
-class _ScrapableBoardIndex:
-    """The Scrapable Boards, as what an apply URL is matched against: every lowercased identity,
-    and those whose slug is a bare host indexed by that host."""
-
-    def __init__(self, identities: frozenset[str]) -> None:
-        self.identities = identities
-        self.by_host = {
-            identity.split(":", 1)[1]: identity
-            for identity in identities
-            if _is_host(identity.split(":", 1)[1])
-            and not identity.startswith("radancy:")
-        }
-
-
-def _is_host(slug: str) -> bool:
-    return "." in slug and "/" not in slug and ":" not in slug
-
-
-@cache
-def _scrapable_boards() -> _ScrapableBoardIndex:
-    """Every Scrapable Board, read once per process from the committed ledger the way
-    ``scrapable_boards.load`` reads it (Jibe's `_scraped_icims_tenants` is the precedent)."""
-    # Imported here: `scrapable_boards` reaches the scraper registry, which imports this module.
-    from headstart.boards import liveness_ledger, scrapable_boards
-
-    ledger = liveness_ledger.dir_for(Path(__file__).resolve().parents[3])
-    return _ScrapableBoardIndex(
-        frozenset(
-            board.lowercase_identity
-            for board in scrapable_boards.load(ledger, min_jobs=0)
-        )
-    )
-
-
-_WORKDAY_HOST = re.compile(r"^[^.]+\.wd\d+\.myworkdayjobs\.com$")
-_LOCALE = re.compile(r"^[a-z]{2}-[a-z]{2}$", re.IGNORECASE)
-
-
-def backing_board(apply_url: str | None, held: _ScrapableBoardIndex) -> str | None:
-    """The Scrapable Board an apply URL hands off to, as its lowercased identity, or None.
-
-    Built the way the ledger spells each ATS's row and read through that ATS's own ``slug_from``
-    (``registry.company_from_row``), so the identity is the one ``scrapable_boards`` computes. The
-    apply URLs of 6,816 sampled postings named Workday on 69 of 177 fronts, then iCIMS, Oracle,
-    Avature, Taleo, SmartRecruiters and SuccessFactors. A host-keyed Board (iCIMS, SuccessFactors
-    RMK, Eightfold, Phenom, Oracle) matches on the apply URL's host; Avature's is its tenant label.
-    SuccessFactors' own apply form (``career2.successfactors.eu/…?company=cargill``) names a company
-    id, not the RMK host its Board is keyed by, so it resolves to nothing: an undercount, stated as
-    such.
-    """
-    parts = urlsplit(apply_url or "")
-    host = (parts.hostname or "").lower()
-    if not host:
-        return None
-    if host in held.by_host:
-        return held.by_host[host]
-    segments = [s for s in parts.path.split("/") if s]
-    row: tuple[str, str, str] | None = None
-    if _WORKDAY_HOST.match(host):
-        sites = [s for s in segments if not _LOCALE.match(s)]
-        if sites:
-            row = ("workday", "", f"https://{host}/{sites[0]}")
-    elif host.endswith(".taleo.net") and segments[:1] == ["careersection"]:
-        if len(segments) > 1:
-            row = (
-                "taleo_enterprise",
-                "",
-                f"https://{host}/careersection/{segments[1]}",
-            )
-    elif host in {"jobs.smartrecruiters.com", "careers.smartrecruiters.com"}:
-        if segments:
-            row = ("smartrecruiters", segments[0], apply_url or "")
-    elif host.endswith("greenhouse.io") and segments:
-        # An embedded board names its slug in `for=` (`/embed/job_app?for=acme`).
-        embedded = parse_qs(parts.query).get("for", [""])[0]
-        slug = embedded if segments[0] == "embed" else segments[0]
-        if slug:
-            row = ("greenhouse", slug, apply_url or "")
-    elif host in {"jobs.lever.co", "jobs.eu.lever.co"} and segments:
-        row = ("lever", segments[0], apply_url or "")
-    elif host.endswith(".avature.net"):
-        row = ("avature", host.removesuffix(".avature.net"), apply_url or "")
-    if row is None:
-        return None
-    # Imported here for the same cycle `_scrapable_boards` avoids.
-    from headstart.boards.board_identity import board_identity, lower_key
-    from headstart.scrapers.registry import company_from_row
-
-    identity = lower_key(board_identity(company_from_row(*row)))
-    return identity if identity in held.identities else None

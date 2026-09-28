@@ -94,6 +94,9 @@ from headstart.scrapers.cornerstone import (  # the site walk + token, single so
 from headstart.scrapers.darwinbox import (  # the data-centre TLDs, single source
     TLDS as _DARWINBOX_TLDS,
 )
+from headstart.scrapers.happydance import (  # the job-URL shape, single source
+    sitemap_rows as _happydance_sitemap_rows,
+)
 from headstart.scrapers.jobvite import (  # counter parse, single source
     total_of,
 )
@@ -2597,6 +2600,62 @@ def p_radancy(t, u):
     return (LIVE, int(stated.group(1))) if stated else (DEAD, None)
 
 
+_HAPPYDANCE_LOC = re.compile(rb"<loc>\s*([^<\s]+)\s*</loc>", re.IGNORECASE)
+
+
+def p_happydance(t, u):
+    """The front's `/sitemap.xml` (and, on the Next.js template, its `<sitemapindex>` children on
+    the front's own host), counted by the scraper's own job-URL shape (ADR-0264).
+
+    A DNS failure is DEAD: fronts sit on the customer's own hosts, not a wildcard zone. A sitemap
+    with no job URL is UNKNOWN, not dead or empty: all six such fronts measured 2026-09-28 list
+    postings in a shape the scraper does not read (`/jobs/job/{slug}/` on `jobs.gartner.com`),
+    and no front was found empty. The root sitemap was never rate-walled when the fronts' pages
+    were; a child sitemap can be (`careers.warburtons.co.uk/jobs/sitemap.xml` answered 429), and
+    reads UNKNOWN.
+    """
+    slug = _slug_of("happydance", t, u)
+    status, body = _happydance_get(f"https://{slug}/sitemap.xml")
+    if status in ("dns", 404, 410):
+        return DEAD, None
+    if status != 200:
+        return UNKNOWN, None
+    xml = body.decode("utf-8-sig", "replace")
+    if "<sitemapindex" in xml[:2000]:
+        parts = []
+        for child in _HAPPYDANCE_LOC.findall(body):
+            child = child.decode("utf-8", "replace")
+            if (urllib.parse.urlsplit(child).hostname or "").lower() != slug:
+                continue
+            status, child_body = _happydance_get(child)
+            if status != 200:
+                return UNKNOWN, None
+            parts.append(child_body.decode("utf-8-sig", "replace"))
+        xml = "".join(parts)
+    jobs = len(_happydance_sitemap_rows(xml, slug))
+    if not jobs:
+        _note("no-job-of-the-read-shape")
+        return UNKNOWN, None
+    return LIVE, jobs
+
+
+def _happydance_get(url):
+    """`(status, body)`, with "dns" for a host that does not resolve."""
+    try:
+        r = _fetch("GET", url, headers={"User-Agent": UA})
+    except http.RequestsError as e:
+        if _is_dns(e):
+            return "dns", b""
+        _note(_net_reason(e))
+        return None, b""
+    if r is None:
+        _note("breaker-open")
+        return None, b""
+    if r.status_code not in (200, 404, 410):
+        _note(f"http-{r.status_code}")
+    return r.status_code, r.content
+
+
 def _rippling_posting_count(body):
     """Distinct postings: the listing has one row per work location, so rows overcount
     (rippling: 628 rows, 331 postings; petfolk 581 rows, 282 = the board page's `totalItems`,
@@ -3163,6 +3222,7 @@ PROBES = {
     "taleo_be": p_taleo_be,
     "taleo_enterprise": p_taleo_enterprise,
     "gem": p_gem,
+    "happydance": p_happydance,
 }
 
 

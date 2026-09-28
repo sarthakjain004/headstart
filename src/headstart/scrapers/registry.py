@@ -24,6 +24,7 @@ from headstart.scrapers.freshteam import FreshteamScraper
 from headstart.scrapers.gem import GemScraper
 from headstart.scrapers.google import GoogleScraper
 from headstart.scrapers.greenhouse import GreenhouseScraper
+from headstart.scrapers.happydance import HappydanceScraper
 from headstart.scrapers.icims import ICIMSScraper
 from headstart.scrapers.jazzhr import JazzHRScraper
 from headstart.scrapers.jibe import JibeScraper
@@ -95,6 +96,7 @@ SCRAPERS: dict[str, type[BaseScraper]] = {
         PinpointScraper,
         PyjamaHRScraper,
         RadancyScraper,
+        HappydanceScraper,
         JazzHRScraper,
         JibeScraper,
         JobviteScraper,

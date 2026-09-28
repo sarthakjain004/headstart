@@ -2455,6 +2455,92 @@ def test_radancy_inconclusive_answers_stay_unknown(monkeypatch):
     assert cl.p_radancy("jobs.intuit.com", "") == (cl.UNKNOWN, None)
 
 
+# --- happydance: the sitemap (or its index's children) counted by the scraper's job shape ----
+
+_COGNIZANT_JOB = (
+    "https://careers.cognizant.com/us-en/jobs/00064794373/databricks-with-aws-pyspark/"
+)
+
+
+def test_happydance_counts_one_job_per_req_across_locales(monkeypatch):
+    sitemap = (
+        "<urlset><url><loc>https://careers.cognizant.com/us-en/jobs/</loc></url>"
+        f"<url><loc>{_COGNIZANT_JOB}</loc></url>"
+        f"<url><loc>{_COGNIZANT_JOB.replace('/us-en/jobs/', '/latam-pt/vagas/')}</loc></url>"
+        "</urlset>"
+    )
+    monkeypatch.setattr(
+        cl, "_fetch", _radancy_fetch({"/sitemap.xml": (200, "", sitemap.encode())})
+    )
+    assert cl.p_happydance(
+        "careers.cognizant.com", "https://careers.cognizant.com"
+    ) == (
+        cl.LIVE,
+        1,
+    )
+
+
+def test_happydance_reads_a_sitemap_index_on_its_own_host(monkeypatch):
+    index = (
+        "<sitemapindex><sitemap><loc>https://careers.rjet.com/pages.xml</loc></sitemap>"
+        "<sitemap><loc>https://careers.rjet.com/jobs/sitemap.xml</loc></sitemap>"
+        "<sitemap><loc>https://elsewhere.example/jobs/sitemap.xml</loc></sitemap>"
+        "</sitemapindex>"
+    )
+    jobs = (
+        "<urlset><url><loc>https://careers.rjet.com/jobs/jr-007731/material-handler/</loc>"
+        "</url></urlset>"
+    )
+    calls = []
+    monkeypatch.setattr(
+        cl,
+        "_fetch",
+        _radancy_fetch(
+            {
+                "/sitemap.xml": (200, "", index.encode()),
+                "/pages.xml": (200, "", b"<urlset></urlset>"),
+                "/jobs/sitemap.xml": (200, "", jobs.encode()),
+            },
+            calls,
+        ),
+    )
+    assert cl.p_happydance("careers.rjet.com", "") == (cl.LIVE, 1)
+    assert "https://elsewhere.example/jobs/sitemap.xml" not in calls
+
+
+def test_happydance_a_front_with_no_job_of_the_read_shape_is_unknown(monkeypatch):
+    """jobs.gartner.com lists `/jobs/job/{id-slug}/`, a shape the scraper does not read."""
+    sitemap = b"<urlset><url><loc>https://jobs.gartner.com/jobs/job/100776-community-program-manager/</loc></url></urlset>"
+    monkeypatch.setattr(
+        cl, "_fetch", _radancy_fetch({"/sitemap.xml": (200, "", sitemap)})
+    )
+    assert cl.p_happydance("jobs.gartner.com", "") == (cl.UNKNOWN, None)
+
+
+def test_happydance_a_walled_child_sitemap_is_unknown(monkeypatch):
+    index = b"<sitemapindex><sitemap><loc>https://careers.warburtons.co.uk/jobs/sitemap.xml</loc></sitemap></sitemapindex>"
+    monkeypatch.setattr(
+        cl,
+        "_fetch",
+        _radancy_fetch(
+            {"/sitemap.xml": (200, "", index), "/jobs/sitemap.xml": (429, "", b"")}
+        ),
+    )
+    assert cl.p_happydance("careers.warburtons.co.uk", "") == (cl.UNKNOWN, None)
+
+
+def test_happydance_a_gone_host_is_dead(monkeypatch):
+    monkeypatch.setattr(cl, "_fetch", _radancy_fetch({"/sitemap.xml": (404, "", b"")}))
+    assert cl.p_happydance("careers.example.com", "") == (cl.DEAD, None)
+
+    def dns_failure(method, url, **kw):
+        raise cl.http.RequestsError("Could not resolve host: careers.example.com")
+
+    monkeypatch.setattr(cl, "_fetch", dns_failure)
+    monkeypatch.setattr(cl, "_is_dns", lambda exc: True)
+    assert cl.p_happydance("careers.example.com", "") == (cl.DEAD, None)
+
+
 def test_trakstar_inactive_account_is_dead(monkeypatch):
     """#701: an inactive account's page answers 200 with no job cards; it is gone, not empty.
     17 of 25 `live, jobs=0` Trakstar ledger rows sampled on 2026-09-28 carried this page."""

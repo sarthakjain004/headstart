@@ -18,13 +18,12 @@ import pytest
 from fake_fetcher import FakeFetcher, FakeResponse
 
 from headstart.jobs.salary import from_field
-from headstart.scrapers import radancy
+from headstart.scrapers import front_duplication, radancy
+from headstart.scrapers.front_duplication import ScrapableBoardIndex
 from headstart.scrapers.radancy import (
     _iso_date,
     _page_fields,
     _salary,
-    _ScrapableBoardIndex,
-    backing_board,
     sitemap_rows,
 )
 from headstart.scrapers.registry import get_scraper
@@ -34,7 +33,7 @@ _FIXTURE = json.loads(
 )
 _HOST = _FIXTURE["host"]
 _SCRAPED_AT = "2026-09-26T00:00:00+00:00"
-_HELD = _ScrapableBoardIndex(
+_HELD = ScrapableBoardIndex(
     frozenset(
         {
             "workday:takeda/external",
@@ -65,7 +64,7 @@ def _route(method: str, url: str, kwargs: dict) -> FakeResponse:
 
 @pytest.fixture(autouse=True)
 def _held_boards(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(radancy, "_scrapable_boards", lambda: _HELD)
+    monkeypatch.setattr(front_duplication, "scrapable_boards", lambda: _HELD)
 
 
 # --- the listing ---------------------------------------------------------------------------
@@ -306,67 +305,6 @@ def test_emitted_salary_round_trips_through_the_repo_parser() -> None:
 # --- Front duplication ---------------------------------------------------------------------
 
 
-@pytest.mark.parametrize(
-    ("apply_url", "board"),
-    [
-        (
-            "https://takeda.wd502.myworkdayjobs.com/External/job/CZE---Most/LKA-KA--pro-plazma-centrum-CHOMUTOV---FLEXIBILN-VAZEK_R0181856/apply",
-            "workday:takeda/external",
-        ),
-        (
-            "https://stemcell.wd3.myworkdayjobs.com/en-US/External_Careers/job/Canada---Ontario-Remote-Home-Office/Account-Manager--Immunology_R0007253/apply",
-            "workday:stemcell/external_careers",
-        ),
-        (
-            "https://experienced-arm.icims.com/jobs/18903/senior-infrastructure-automation-tools-engineer/job/login",
-            "icims:experienced-arm.icims.com",
-        ),
-        (
-            "https://uhg.taleo.net/careersection/10000/jobapply.ftl?job=2382212",
-            "taleo_enterprise:https://uhg.taleo.net/careersection/10000",
-        ),
-        (
-            "https://jobs.smartrecruiters.com/MattelInc/744000150773689-american-girl-restaurant-dish-washer-seasonal-part-time-?oga=true",
-            "smartrecruiters:mattelinc",
-        ),
-        (
-            "https://jobs.netapp.com/job/San-Jose-Director%2C-Software-Engineer-CA-95128/1422658200/?feedId=386800&tcsource=apply",
-            "successfactors:jobs.netapp.com",
-        ),
-        # SuccessFactors' own apply form names a company id, not the RMK host: unresolved.
-        (
-            "https://career2.successfactors.eu/sfcareer/jobreqcareer?jobId=331288&company=cargill&locale=en_US",
-            None,
-        ),
-        (
-            "https://intuit.avature.net/externalCareers/JobApplication?pipelineId=23933",
-            None,
-        ),
-        (
-            "https://synopsys.avature.net/careers/Login?jobId=18266&source=&tags=&user=&formValues",
-            "avature:synopsys",
-        ),
-        (
-            "https://amgen.wd1.myworkdayjobs.com/Careers/job/US---California---Thousand-Oaks/Associate-Manufacturing_R-256887/apply",
-            None,  # not held
-        ),
-        (
-            "https://jobs.sanofi.com/sys/apply/job/application/2649/44048303680?languageCode=en",
-            None,  # TalentBrew's own apply form, on the front itself
-        ),
-        (
-            "https://boards.greenhouse.io/embed/job_app?for=acme&token=1",
-            "greenhouse:acme",
-        ),
-        (None, None),
-    ],
-)
-def test_backing_board_resolves_held_boards_only(
-    apply_url: str | None, board: str | None
-) -> None:
-    assert backing_board(apply_url, _HELD) == board
-
-
 def test_front_duplication_is_logged_and_recorded(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
@@ -387,7 +325,7 @@ def test_front_duplication_says_it_was_not_measured_without_a_ledger(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
     monkeypatch.setattr(
-        radancy, "_scrapable_boards", lambda: _ScrapableBoardIndex(frozenset())
+        front_duplication, "scrapable_boards", lambda: ScrapableBoardIndex(frozenset())
     )
     scraper = get_scraper("radancy", _HOST, fetcher=FakeFetcher(_route))
     with caplog.at_level(logging.INFO):
