@@ -366,6 +366,21 @@ def test_a_walk_short_of_the_stated_count_is_marked_truncated(monkeypatch):
     assert scraper.truncated and "read 10 of 19" in scraper.truncated
 
 
+def test_a_full_first_page_with_no_count_is_marked_truncated(monkeypatch):
+    """No `count` ends the walk after page 1; a full page means more may follow unread, which
+    must not be read as the whole Board (as `adp`'s `_walk` already does). Not seen live: `count`
+    was present on 4 of 4 Boards read, 2026-09-28."""
+    page = {
+        k: v
+        for k, v in FIXTURES["churchmutual_listing_top10_skip0"].items()
+        if k != "count"
+    }
+    scraper, _ = _wired(monkeypatch, _fixture_route({0: page}))
+    raw = scraper.fetch_raw()
+    assert len(raw["rows"]) == 10
+    assert scraper.truncated and "no stated count" in scraper.truncated
+
+
 def test_an_abbreviated_work_level_is_labelled_for_the_filter():
     from headstart.search_filters import employment_type_filter
 

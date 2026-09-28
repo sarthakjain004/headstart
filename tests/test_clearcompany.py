@@ -175,9 +175,17 @@ def test_a_detail_label_matches_whatever_case_and_colon_either_side_uses():
         assert _field(page, asked) == "$74513 - $120394 Per Year"
 
 
-def test_a_job_with_no_detail_still_ships_without_description_or_salary():
-    job = _jobs(_kab())["3781760"]
-    assert job.description is None
+def test_a_job_with_no_detail_ships_the_feed_teaser_and_no_salary():
+    """Changed 2026-09-28: a Job whose page was not read shipped no description, though xml.php's
+    `descriptionrich` (the first 1,000 chars) was in the same response. Salary is on the page
+    alone. Only in the pipeline, for a Job the store does not hold."""
+    scraper = _scraper("hbtbank")
+    scraper.have_details = set()
+    raw = {"xml": _text("clearcompany_hbtbank.xml"), "details": {}}
+    job = {j.id.rsplit(":", 1)[1]: j for j in scraper.parse(raw, SCRAPED_AT)}["3781556"]
+    assert job.description and job.description.startswith(
+        'Text "2682" to (309) 322-9911'
+    )
     assert job.salary is None
 
 
@@ -185,7 +193,9 @@ def test_a_closed_req_page_carries_no_posting_and_yields_no_description():
     """An unknown or closed req answers 200 with the tenant's page chrome and no posting on it
     (no `jobDesc`, no `<h2>`) — a soft 404, not an error."""
     job = _jobs(_kab({"3813473": _text("clearcompany_detail_closed.html")}))["3813473"]
-    assert job.description is None
+    assert (
+        job.description is None
+    )  # a page that arrived and states nothing: not a lost page
 
 
 # --------------------------------------------------------------------------- fetch_raw
@@ -224,6 +234,7 @@ def test_fetch_raw_reads_the_feed_bytes_and_every_detail_outside_the_pipeline():
     jobs = {j.id.rsplit(":", 1)[1]: j for j in scraper.parse(raw, SCRAPED_AT)}
     assert len(jobs) == 3
     assert "others’ point of view" in jobs["3813473"].description
+    # Outside the pipeline nothing says the store lacks the text, so no teaser.
     assert jobs["3781760"].description is None
     assert scraper.truncated is None
 
@@ -317,3 +328,13 @@ def test_the_scraper_declares_a_detail_pass_below_the_measured_knee():
     assert scraper.has_detail_pass is True
     assert scraper.detail_workers == 16
     assert "clearcompany" in detail_pass_atses()
+
+
+def test_a_held_description_is_not_overwritten_by_the_teaser():
+    """The store keeps fresh text over held text, so a teaser for a Job whose full description
+    is already held would replace it for one run: the Job ships None and the store keeps it."""
+    scraper = _scraper("hbtbank")
+    scraper.have_details = {"clearcompany:hbtbank:3781556"}
+    raw = {"xml": _text("clearcompany_hbtbank.xml"), "details": {}}
+    jobs = {j.id.rsplit(":", 1)[1]: j for j in scraper.parse(raw, SCRAPED_AT)}
+    assert jobs["3781556"].description is None
