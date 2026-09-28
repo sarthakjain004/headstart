@@ -19,14 +19,14 @@ does import could miss a deploy.
 that 34 of them changed no file the Space loads or reads. They were a scraper, an ingest stage, a
 ledger module or the alerts sender.
 
-**What the Space loads.** Loading `deploy/hf-space/app.py` and reading `sys.modules` gives 51
-`headstart` modules. They are four top-level modules (`__init__`, `embedding_conventions`,
-`llm_router`, `log`), plus every module of `mcp_protocol`, `search_filters`, `serving` and
-`trends`, and every module of `space_mcp` except `__main__`. The Space also loads 4 of the 15
-modules in `alerts`, 4 of the 13 in `boards` and 2 of the 6 in `jobs`. It loads nothing from
-`scrapers`, `network` or `ingest`. One function in `boards.board_identity` imports
-`scrapers.registry` when called, but the Space calls only `ats_of`, `lower_key` and `tenant` from
-that module. The Space also reads `src/headstart/ui/` and `config/` as files.
+**What the Space loads.** Loading `deploy/hf-space/app.py` and reading `sys.modules` gave 51
+`headstart` modules on 2026-09-28. They are four top-level modules (`__init__`,
+`embedding_conventions`, `llm_router`, `log`), plus every module of `mcp_protocol`,
+`search_filters`, `serving` and `trends`, and every module of `space_mcp` except `__main__`. The
+Space also loads 4 of the 15 modules in `alerts`, 4 of the 13 in `boards` and 2 of the 6 in `jobs`.
+It loads nothing from `scrapers`, `network` or `ingest`. One function in `boards.board_identity`
+imports `scrapers.registry` when called, but the Space calls only `ats_of`, `lower_key` and
+`tenant` from that module. The Space also reads `src/headstart/ui/` and `config/` as files.
 
 **What a deploy costs.** Every deploy boots a new container, and a boot is long. #842's image
 built in 17 s from cached layers. Its container logged its startup at 22:20:17 UTC on 2026-09-28
