@@ -15,8 +15,9 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from headstart.mcp_protocol.stdio import ToolFailure
-from headstart.space_mcp import company_scope, scraped_text
+from headstart.space_mcp import company_scope, role_families, scraped_text
 from headstart.space_mcp.space_client import SpaceClient, SpaceRoute
+from headstart.space_mcp.space_tool import SpaceTool
 
 #: `breakdown` as this tool spells it -> `/trends`' `split` (None: the default per-category view).
 SPLITS = {"category": None, "level": "bands", "role": "roles", "company": "company"}
@@ -213,3 +214,56 @@ def answer(client: SpaceClient, arguments: dict[str, Any]) -> str:
     if window:
         lines.append(f"Newest trends tick {window['to']}.")
     return "\n".join(lines)
+
+
+TOOL = SpaceTool(
+    name="read_trends",
+    title="Read how tech hiring is changing",
+    description=(
+        "How the number of open tech jobs changed over a window, with the changes that "
+        "are not hiring (counting changes, newly found boards, duplicate removals) "
+        "separated out; whole index by default, or one job category, or up to 10 named "
+        "companies. A company is a directory company: a key such as "
+        "'greenhouse:stripe', or its exact name (read as the site's Trends picker "
+        "reads it). Company counts begin 2026-09-13. Each line reports start and latest "
+        "openings, hiring, percent, per week, and jobs opened and closed."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "companies": {
+                "type": "array",
+                "items": {"type": "string", "maxLength": 100},
+                "maxItems": 10,
+            },
+            "category": role_families.schema("One job category."),
+            "breakdown": {
+                "type": "string",
+                "enum": list(SPLITS),
+                "description": (
+                    "Lines by category, seniority level, watched role or company. "
+                    "Default: company with two or more companies, level with a "
+                    "category, else category."
+                ),
+            },
+            "days": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 365,
+                "default": 30,
+            },
+            "detail": {
+                "type": "string",
+                "enum": ["concise", "full"],
+                "default": "concise",
+                "description": "full lists every line with every cause.",
+            },
+        },
+        "additionalProperties": False,
+    },
+    when_to_use=(
+        "Use read_trends for how the number of openings is changing overall, in a job category, or at named companies."
+    ),
+    answer=answer,
+    max_chars=20_000,
+)

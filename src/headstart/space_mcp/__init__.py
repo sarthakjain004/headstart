@@ -4,8 +4,10 @@ Three read-only tools — `search_jobs`, `read_trends`, `hiring_now` — served 
 on the same machine. Every answer comes from the Space's own read routes, reached with a
 read-scoped `AGENT_TOKEN`, so its numbers are the website's.
 
-`server.py` is the tools and the entry point; `space_client.py` is how a request reaches the
-Space; `company_scope.py` is what a typed company means to each tool; the `*_answer.py` modules
-each read and render one tool's answer; `scraped_text.py` is how text from employers' job boards
-appears in one. How to install it: `docs/agents/space-mcp-server.md`.
+`tools/` is the tools, one module each, registered in `tools.REGISTRY` — adding one is a module and a
+line (its docstring says how); `space_tool.py` is what a tool is; `server.py` serves the registry;
+`space_client.py` is how a request reaches the Space; `company_scope.py` is what a typed company
+means to a tool; `role_families.py` is the categories a tool may name; `scraped_text.py` is how
+text from employers' job boards appears in an answer. How to install it, and to add a tool:
+`docs/agents/space-mcp-server.md`.
 """

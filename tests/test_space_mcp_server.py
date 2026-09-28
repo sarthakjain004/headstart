@@ -1,14 +1,16 @@
-"""The Space MCP server's three tools, through their interface — `headstart/space_mcp/server.py`.
+"""The Space MCP server's tools, through their interface — `headstart/space_mcp/server.py`.
 
 Every test calls ``server.call(space, name, arguments)``, the one entry point the tools have,
 against a fake Space that answers each route with a synthetic payload in the shape the real
 routes serve (never a recording of the live Space: its rows sit behind the sign-in wall and this
 repository is public). What the real app makes of what this server sends is tested against the
-app itself in `tests/test_space_mcp_against_space_app.py`.
+app itself in `tests/test_space_mcp_against_space_app.py`; the rules every registered tool obeys
+are `tests/test_space_mcp_tools.py`.
 """
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import os
 import pathlib
@@ -112,49 +114,6 @@ def _search_space(rows, total=None, **answers):
 
 
 # ---- the tool list ----------------------------------------------------------------------
-
-
-def test_three_read_only_tools_with_titles_and_closed_schemas():
-    assert [tool["name"] for tool in server.TOOLS] == [
-        "search_jobs",
-        "read_trends",
-        "hiring_now",
-    ]
-    for tool in server.TOOLS:
-        assert tool["title"]
-        assert tool["annotations"]["readOnlyHint"] is True
-        assert tool["annotations"]["destructiveHint"] is False
-        assert tool["inputSchema"]["additionalProperties"] is False
-        assert set(tool) == {
-            "name",
-            "title",
-            "annotations",
-            "description",
-            "inputSchema",
-        }
-    assert set(server.HANDLERS) == {tool["name"] for tool in server.TOOLS}
-
-
-def test_descriptions_and_instructions_stay_under_the_clients_cut():
-    """Claude Code cuts a tool description and a server's instructions at 2,048 characters, so
-    what matters most comes first and nothing needed sits past the cut."""
-    for tool in server.TOOLS:
-        assert len(tool["description"]) <= 2048
-    assert len(server.INSTRUCTIONS) <= 1000
-    search = server.TOOLS[0]["description"]
-    assert search.index("never in `query`") < 300
-
-
-def test_categories_are_the_spaces_own_role_families():
-    families = json.loads(server._FAMILIES_FILE.read_text(encoding="utf-8"))["families"]
-    schema = server.TOOLS[0]["inputSchema"]["properties"]["category"]
-    assert schema["enum"] == [family["name"] for family in families]
-
-
-def test_without_the_families_file_category_is_a_free_string(monkeypatch, tmp_path):
-    monkeypatch.setattr(server, "_FAMILIES_FILE", tmp_path / "missing.json")
-    schema = server._tools()[1]["inputSchema"]["properties"]["category"]
-    assert "enum" not in schema and schema["type"] == "string"
 
 
 def test_an_unconfigured_server_lists_its_tools_and_names_the_variable():
@@ -768,3 +727,17 @@ def test_a_window_with_no_counts_says_so():
         in text
     )
     assert "reconcile" not in text
+
+
+def test_an_answer_past_its_tools_budget_is_cut_and_says_so(monkeypatch):
+    """The guard behind every tool's budget test: a rendering that grows past what was measured
+    is cut before it reaches the client's output cap, never sent whole."""
+    tool = server.BY_NAME["hiring_now"]
+    monkeypatch.setitem(
+        server.BY_NAME,
+        "hiring_now",
+        dataclasses.replace(tool, answer=lambda client, arguments: "x" * 100_000),
+    )
+    text = server.call(FakeSpace(), "hiring_now", {})
+    assert len(text) == tool.max_chars
+    assert text.endswith("narrow the question.")

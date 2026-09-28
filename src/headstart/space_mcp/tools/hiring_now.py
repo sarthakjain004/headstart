@@ -12,6 +12,7 @@ from typing import Any
 
 from headstart.space_mcp import scraped_text
 from headstart.space_mcp.space_client import SpaceClient, SpaceRoute
+from headstart.space_mcp.space_tool import SpaceTool
 
 _LENS_WORDS = {
     "expansion": "net growth in tech openings, with the steps that are not hiring removed",
@@ -85,3 +86,43 @@ def answer(client: SpaceClient, arguments: dict[str, Any]) -> str:
     if window.get("to"):
         lines.append(f"Newest trends tick {window['to']}.")
     return "\n".join(lines)
+
+
+TOOL = SpaceTool(
+    name="hiring_now",
+    title="Which companies are hiring hardest this week",
+    description=(
+        "Companies ranked over the trailing week on one Lens — `expansion` (net growth "
+        "in tech openings with non-hiring steps removed), `volume` (jobs opened) or "
+        "`rate` (jobs opened as a share of the company's openings); whole tech index; "
+        "companies under 25 openings or counted for under 3 days are not ranked. "
+        "Staffing firms and job boards are left out unless asked for, as on the site. "
+        "Each row carries a key that search_jobs and read_trends accept."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "lens": {
+                "type": "string",
+                "enum": ["expansion", "volume", "rate"],
+                "default": "expansion",
+            },
+            "limit": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 50,
+                "default": 15,
+            },
+            "include_hidden_operators": {
+                "type": "boolean",
+                "description": "Also show staffing firms and job boards.",
+            },
+        },
+        "additionalProperties": False,
+    },
+    when_to_use=(
+        "Use hiring_now for which companies are expanding or opening the most roles this week."
+    ),
+    answer=answer,
+    max_chars=14_000,
+)

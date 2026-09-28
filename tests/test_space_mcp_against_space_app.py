@@ -17,8 +17,9 @@ import test_space_app as space_tests
 from test_space_app import agent_app, trends_app  # noqa: F401 — fixtures, reused
 
 from headstart.mcp_protocol.stdio import ToolFailure
-from headstart.space_mcp import server, trends_answer
+from headstart.space_mcp import server
 from headstart.space_mcp import space_client as sc
+from headstart.space_mcp.tools import read_trends
 
 #: A day after the fixture history's last tick (`test_space_app._T3`, 2026-08-13), so a window
 #: counted back from "now" means the same ticks whatever day the suite runs.
@@ -49,7 +50,7 @@ def _client(module, token="agent-token") -> sc.SpaceClient:
 def companies_app(trends_app, monkeypatch, tmp_path):  # noqa: F811 — the imported fixture
     """The trends app with the three-company history installed, and the globals boot derives
     from a history rebuilt from it by the app's own `_derive_from_history`."""
-    monkeypatch.setattr(trends_answer, "_now", lambda: _FIXTURE_NOW)
+    monkeypatch.setattr(read_trends, "_now", lambda: _FIXTURE_NOW)
     history = space_tests._company_history(trends_app, monkeypatch, tmp_path)
     company_boards, hot = trends_app._derive_from_history(history)
     monkeypatch.setattr(trends_app, "_COMPANY_BOARDS", company_boards)
@@ -174,7 +175,7 @@ def test_a_window_with_no_counts_says_so_rather_than_reconciling_nothing(
     companies_app, monkeypatch
 ):
     """A window that starts after the fixture's last tick (2026-08-13) holds none of them."""
-    monkeypatch.setattr(trends_answer, "_now", lambda: datetime(2026, 9, 1, tzinfo=UTC))
+    monkeypatch.setattr(read_trends, "_now", lambda: datetime(2026, 9, 1, tzinfo=UTC))
     text = server.call(_client(companies_app), "read_trends", {"days": 3})
     assert "No trend counts fall in the last 3 days" in text
     assert "reconcile" not in text

@@ -98,8 +98,35 @@ tools accept.
   serves; a Space older than this server is reported as needing a deploy, because it would ignore
   the strictness that keeps a mistyped filter from quietly widening a search.
 
+## Adding a tool
+
+The server is built to grow: a tool is **one module and one registry line**, and nothing else in the
+server changes.
+
+1. Write `src/headstart/space_mcp/tools/<tool_name>.py` (the module's name is the tool's name). It
+   holds the answer function and ends with `TOOL = SpaceTool(...)`: title, description (the rule
+   that matters most first; at most 2,048 characters), a closed input schema in the portable JSON
+   Schema keywords, the one `when_to_use` sentence the server's instructions will carry, and
+   `max_chars`, the answer's size at the tool's largest input.
+2. Add `<tool_name>.TOOL` to `REGISTRY` in `src/headstart/space_mcp/tools/__init__.py`. The server
+   lists it, puts its `when_to_use` in its instructions, checks its arguments against its schema,
+   fills its defaults, and cuts any answer past its `max_chars`.
+3. A Space route no tool read before also needs: a `SpaceRoute` member; `AGENT_TOKEN` admitted on
+   it in the Space's token map (`deploy/hf-space/app.py`, ADR-0253); and, when it is new contract,
+   the Space's agent contract version and this server's `AGENT_API` raised together, so an older
+   Space is refused rather than half-understood.
+4. `tests/test_space_mcp_tools.py` holds every registered tool to the rules above without being
+   edited. Add what the tool does to `tests/test_space_mcp_server.py` (against a fake Space) and,
+   where it depends on the real app's answer, `tests/test_space_mcp_against_space_app.py`.
+5. Describe it here, and give the evaluation (`scripts/eval/`) a task for it.
+
+A tool that **writes** or reads **one Account's records** is a decision, not an addition: every tool
+today is read-only and Account-free, the token opens read routes only, and the contract tests pin
+both. It needs its own credential first (per-Account tokens are the deferred design).
+
 ## Where it lives
 
-`src/headstart/space_mcp/` — `server.py` (the tools), `space_client.py` (the one way it reaches the
-Space), `company_scope.py`, the `*_answer.py` modules and `scraped_text.py` — on the shared loop in
+`src/headstart/space_mcp/` — `tools/` (one module per tool, and `REGISTRY`), `space_tool.py` (what a
+tool is), `server.py` (serves the registry), `space_client.py` (the one way it reaches the Space),
+`company_scope.py`, `role_families.py` and `scraped_text.py` — on the shared loop in
 `src/headstart/mcp_protocol/`. Tests: `tests/test_space_mcp_*.py`.

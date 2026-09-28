@@ -13,8 +13,14 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from headstart.mcp_protocol.stdio import ToolFailure
-from headstart.space_mcp import company_scope, scraped_text
+from headstart.search_filters import (
+    employment_type_filter,
+    india_filter,
+    india_gazetteer,
+)
+from headstart.space_mcp import company_scope, role_families, scraped_text
 from headstart.space_mcp.space_client import SpaceClient, SpaceRoute
+from headstart.space_mcp.space_tool import SpaceTool
 
 #: `sort` as this tool spells it -> as `/search` does; relevance is the query's own order.
 SORTS = {
@@ -76,6 +82,14 @@ _FACET_OPTIONS_SHOWN = 12
 
 #: A company or location past this is cut; a title keeps `scraped_text.FIELD_LIMIT`.
 SHORT_FIELD = 60
+
+
+#: Every place the Space's India filter names: the whole country, its region, its cities.
+_INDIA_PLACES = [
+    india_filter.WHOLE_COUNTRY,
+    *india_gazetteer.REGIONS,
+    *india_gazetteer.CITIES,
+]
 
 
 def _params(
@@ -317,3 +331,140 @@ def answer(client: SpaceClient, arguments: dict[str, Any]) -> str:
     if tick := facets.get("newest_tick"):
         lines.append(f"Data as of the trends tick {tick}.")
     return "\n".join(lines)
+
+
+TOOL = SpaceTool(
+    name="search_jobs",
+    title="Find open tech jobs",
+    description=(
+        "Search HeadStart's tech job index: `query` describes only the role ('backend "
+        "engineer at a climate startup'); years, pay, place, company, employment type "
+        "and dates go in their own fields, never in `query`. Omit `query` to list the "
+        "newest jobs that match the filters. With a `query`, `sort` orders only the "
+        "2,000 closest matches — for a global order (the highest salary anywhere, the "
+        "newest anywhere) omit `query` and narrow with `keyword` and the filters. "
+        "`company` matches as the site's company box does (any company name containing "
+        "the text) unless `category` is set, which needs a directory company: a key "
+        "such as 'greenhouse:stripe', or an exact name. A salary sort without a "
+        "currency is ordered in USD. No account applies, so a user's hidden companies "
+        "are not removed. Returns the total, one page of jobs with their links, and — "
+        "when nothing matches — the filter costing the most."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "query": {
+                "type": "string",
+                "maxLength": 200,
+                "description": "The role only. Omit to list the newest jobs.",
+            },
+            "company": {
+                "type": "string",
+                "maxLength": 100,
+                "description": (
+                    "A company name (matched as a substring), or a Board key from "
+                    "an earlier answer such as 'lever:razorpay'."
+                ),
+            },
+            "category": role_families.schema(
+                "A job category within `company`'s jobs; needs `company`."
+            ),
+            "remote": {"type": "boolean", "description": "Remote jobs only."},
+            "max_years": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 30,
+                "description": "Open to someone with at most this many years.",
+            },
+            "employment_type": {
+                "type": "string",
+                "enum": list(employment_type_filter.RULES),
+            },
+            "india_place": {
+                "type": "string",
+                "enum": _INDIA_PLACES,
+                "description": "An Indian city or region, or 'india' for anywhere in India.",
+            },
+            "location": {
+                "type": "string",
+                "maxLength": 60,
+                "description": "Text the job's location contains, any country.",
+            },
+            "salary_min": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Annual; needs salary_currency (30 lakh = 3000000 INR).",
+            },
+            "salary_max": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Annual; needs salary_currency.",
+            },
+            "salary_currency": {
+                "type": "string",
+                "maxLength": 3,
+                "description": "ISO 4217 code, such as USD, INR, EUR, GBP.",
+            },
+            "has_salary": {
+                "type": "boolean",
+                "description": "Only jobs that state a salary.",
+            },
+            "posted_within_days": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 365,
+                "description": "Posted by the employer within this many days.",
+            },
+            "first_seen_within_hours": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 720,
+                "description": "New to HeadStart within this many hours.",
+            },
+            "keyword": {
+                "type": "string",
+                "maxLength": 60,
+                "description": "An exact word or phrase the job must contain.",
+            },
+            "keyword_in": {
+                "type": "string",
+                "enum": ["title", "description", "both"],
+                "description": "Where keyword must appear; title by default.",
+            },
+            "ats": {
+                "type": "string",
+                "maxLength": 40,
+                "description": "One ATS, such as greenhouse or workday.",
+            },
+            "sort": {
+                "type": "string",
+                "enum": list(SORTS),
+                "default": "relevance",
+            },
+            "limit": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 50,
+                "default": 10,
+            },
+            "page": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": LAST_PAGE,
+                "default": 1,
+            },
+            "detail": {
+                "type": "string",
+                "enum": ["concise", "full"],
+                "default": "concise",
+                "description": "full adds the count behind each filter's options.",
+            },
+        },
+        "additionalProperties": False,
+    },
+    when_to_use=(
+        "Use search_jobs to find openings: put the role in `query`, and years, pay, place, company and dates in their own fields — never in `query`."
+    ),
+    answer=answer,
+    max_chars=36_000,
+)
