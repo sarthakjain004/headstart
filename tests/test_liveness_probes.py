@@ -330,6 +330,99 @@ def test_workday_migrated_recovered_on_sweep(monkeypatch):
     )
 
 
+def test_workday_capped_total_is_read_off_the_facet_it_would_split(monkeypatch):
+    """A capped listing states `total` 2,000 whatever the real size. nvidia, 2026-09-28: total
+    2000, its `jobFamilyGroup` counts summing to 2,646 (the scraper reads 2,646 unique). Values
+    trimmed to three; the probe must store the facet sum, not the cap."""
+    facets = [
+        {
+            "facetParameter": "jobFamilyGroup",
+            "values": [
+                {
+                    "descriptor": "Engineering",
+                    "id": "0c40f6bd1d8f10ae43ffaefd46dc7e78",
+                    "count": 1731,
+                },
+                {
+                    "descriptor": "Sales",
+                    "id": "0c40f6bd1d8f10ae43ffcac5bbec7e90",
+                    "count": 329,
+                },
+                {
+                    "descriptor": "Operations",
+                    "id": "0c40f6bd1d8f10ae43ffc3fc7d8c7e8a",
+                    "count": 122,
+                },
+            ],
+        }
+    ]
+    monkeypatch.setattr(
+        cl, "_post", lambda url, body, headers: (200, {"total": 2000, "facets": facets})
+    )
+    assert cl.p_workday(
+        "nvidia", "https://nvidia.wd5.myworkdayjobs.com/NVIDIAExternalCareerSite"
+    ) == (
+        cl.LIVE,
+        2182,
+    )
+
+
+def test_workday_capped_total_stays_at_the_cap_when_no_facet_partitions_the_board(
+    monkeypatch,
+):
+    """nvidia's location group, 2026-09-28 (two leaves each): Office 2,508 + Remote 567 = 3,075
+    against 2,651 real postings — a posting can sit in both. Summing a location facet would
+    overstate, so the cap stands."""
+    facets = [
+        {
+            "facetParameter": "locationMainGroup",
+            "values": [
+                {
+                    "facetParameter": "locationHierarchy2",
+                    "descriptor": "Location Type",
+                    "values": [
+                        {
+                            "descriptor": "Office",
+                            "id": "0c3f5f117e9a0101f6422f0fe79d0000",
+                            "count": 2508,
+                        },
+                        {
+                            "descriptor": "Remote",
+                            "id": "0c3f5f117e9a0101f63dc469c3010000",
+                            "count": 567,
+                        },
+                    ],
+                },
+                {
+                    "facetParameter": "locationHierarchy1",
+                    "descriptor": "Locations",
+                    "values": [
+                        {
+                            "descriptor": "Armenia",
+                            "id": "d21cf68980ad0128000fd2c6b107c000",
+                            "count": 2,
+                        },
+                        {
+                            "descriptor": "Australia",
+                            "id": "2fcb99c455831013ea528dce556b3224",
+                            "count": 13,
+                        },
+                    ],
+                },
+            ],
+        }
+    ]
+    monkeypatch.setattr(
+        cl, "_post", lambda url, body, headers: (200, {"total": 2000, "facets": facets})
+    )
+    assert cl.p_workday(
+        "nvidia", "https://nvidia.wd5.myworkdayjobs.com/NVIDIAExternalCareerSite"
+    ) == (
+        cl.LIVE,
+        2000,
+    )
+
+
 def test_workday_gone_everywhere_is_dead(monkeypatch):
     # 422 on every data center -> definitive "not here" -> DEAD
     monkeypatch.setattr(

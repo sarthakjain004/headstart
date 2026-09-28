@@ -247,6 +247,7 @@ supersedes it and note the supersession in both.
 | [0249](0249-a-home-tab-replaces-the-data-tab-and-navigation-moves-to-a-sidebar.md) | A Home tab replaces the Data tab, and navigation moves to a sidebar | 2026-09-28 |
 | [0250](0250-a-board-silent-for-two-years-is-dormant-and-leaves-the-tech-subset.md) | A Board silent for two years is Dormant, and its Jobs leave the Tech subset | 2026-09-28 |
 | [0251](0251-trends-answers-are-worked-out-once-a-boot-and-kept-by-the-browser.md) | Trends answers are worked out once a boot and kept by the browser | 2026-09-28 |
+| [0252](0252-a-workday-department-is-read-off-the-family-slice-that-listed-it.md) | A Workday department is read off the family slice that listed it | 2026-09-28 |
 
 *ADR-0037 was removed from the repository on 2026-09-24 by the owner's decision; its number is not
 reused.*

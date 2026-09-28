@@ -5479,6 +5479,45 @@ def test_successfactors_a_job_page_names_its_company_after_the_last_pipe():
     assert _page_fields(page)["company"] == "Computacenter AG & Co. oHG"
 
 
+# careers.rogerscorp.com job 1379444800, live 2026-09-28: the two labelled tokens verbatim.
+_ROGERS_TOKENS = (
+    '<span class="joblayouttoken-label">Job Category:\xa0\n        </span>\n\n    '
+    '<span xml:lang="en-US" lang="en-US" data-careersite-propertyid="customfield1" '
+    'class="rtltextaligneligible">Operations\n    </span>'
+    '<span class="joblayouttoken-label">Full Time / Part Time:\xa0\n        </span>\n\n    '
+    '<span xml:lang="en-US" lang="en-US" data-careersite-propertyid="customfield4" '
+    'class="rtltextaligneligible">Full-Time\n    </span>'
+)
+
+
+def test_successfactors_reads_department_and_employment_type_off_the_labelled_tokens():
+    """Both fields were None on every Job read from a job page (rogerscorp 0/104, schott 0/246)
+    while the page states them as labelled tokens; the labels are the tenant's own, so the
+    reader walks a measured list of them."""
+    from headstart.scrapers.successfactors import _page_fields
+
+    fields = _page_fields(
+        _sf_page("Bear Production Operator | rogersco") + _ROGERS_TOKENS
+    )
+    assert fields["department"] == "Operations"
+    assert fields["employment_type"] == "Full-Time"
+
+
+def test_successfactors_prefers_department_over_job_category():
+    """yourcareer.rathbones.com states both, live 2026-09-28 (the two tokens verbatim)."""
+    from headstart.scrapers.successfactors import _page_fields
+
+    page = _sf_page("Analyst | Rathbones") + (
+        '<span class="joblayouttoken-label">Department:\xa0\n        </span>\n\n    '
+        '<span xml:lang="en-GB" lang="en-GB" data-careersite-propertyid="dept" '
+        'class="rtltextaligneligible">RFP Advice Delivery\n    </span>'
+        '<span class="joblayouttoken-label">Job Category:\xa0\n        </span>\n\n    '
+        '<span xml:lang="en-GB" lang="en-GB" data-careersite-propertyid="department" '
+        'class="rtltextaligneligible">Support\n    </span>'
+    )
+    assert _page_fields(page)["department"] == "RFP Advice Delivery"
+
+
 def test_successfactors_a_title_with_no_company_falls_back_to_the_microdata():
     from headstart.scrapers.successfactors import _page_company
 
@@ -8246,6 +8285,108 @@ def test_workday_reports_a_capped_query_it_cannot_subdivide(monkeypatch):
     monkeypatch.setattr(whole, "_post_async", _fake_post_async)
     whole._exhaust({}, lambda batch: None, depth=0)
     assert whole.truncated is None
+
+
+def test_workday_names_the_department_of_a_posting_read_inside_a_family_slice(
+    monkeypatch,
+):
+    """Listing items never carry ``jobFamilyGroup`` (0 of 20 on cmu, blackline, genmills,
+    accenture and nvidia, 2026-09-28), so `department` read None on every Workday Job. A posting
+    read inside a one-family slice does have a known family: the slice's own facet list names it.
+    nvidia's root page and its Facilities slice, trimmed from the live CXS API 2026-09-28."""
+    monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", "0")
+    scraper = _workday_scraper()
+    facets = [
+        {
+            "facetParameter": "jobFamilyGroup",
+            "values": [
+                {
+                    "descriptor": "Engineering",
+                    "id": "0c40f6bd1d8f10ae43ffaefd46dc7e78",
+                    "count": 1731,
+                },
+                {
+                    "descriptor": "Facilities",
+                    "id": "0c40f6bd1d8f10ae43ffb3a6aaac7e7c",
+                    "count": 4,
+                },
+            ],
+        }
+    ]
+    engineer = {
+        "title": "AI Infra Development Intern - 2027",
+        "externalPath": "/job/China-Shanghai/AI-Infra-Development-Intern---2027_JR2026402",
+        "locationsText": "China, Shanghai",
+        "postedOn": "Posted Today",
+        "bulletFields": ["JR2026402"],
+    }
+    safety = {
+        "title": "Senior Environment Health and Safety Specialist - EMEA",
+        "externalPath": "/job/Germany-Munich/Senior-Environment-Health-and-Safety-Specialist---EMEA_JR2018280-1",
+        "locationsText": "Germany, Munich",
+        "postedOn": "Posted 9 Days Ago",
+        "bulletFields": ["JR2018280"],
+    }
+
+    def post(applied, offset, *, raise_gone=False):
+        family = (applied.get("jobFamilyGroup") or [None])[0]
+        if family is None:
+            return {"total": 2000, "jobPostings": [dict(engineer)], "facets": facets}
+        if family.endswith("7e78"):
+            return {"total": 1, "jobPostings": [dict(engineer)], "facets": facets}
+        return {"total": 1, "jobPostings": [dict(safety)], "facets": facets}
+
+    monkeypatch.setattr(scraper, "_post", post)
+    monkeypatch.setattr(scraper, "_resolve_instance", lambda: None)
+    monkeypatch.setattr(scraper, "_job_detail", lambda path, classes: {})
+
+    jobs = scraper.parse(scraper.fetch_raw(), SCRAPED_AT)
+
+    # the root page read the engineer first, untagged: its slice must still name it
+    assert {j.title: j.department for j in jobs} == {
+        engineer["title"]: "Engineering",
+        safety["title"]: "Facilities",
+    }
+
+
+def test_workday_leaves_department_unknown_outside_a_one_family_slice(monkeypatch):
+    """An uncapped Board is read unfiltered, so no family is known — never a guess. genmills'
+    first page, live 2026-09-28 (one item, two facet values kept): total 337, uncapped."""
+    scraper = _workday_scraper()
+    page = {
+        "total": 1,
+        "jobPostings": [
+            {
+                "title": "Territory Sales Executive, Chennai",
+                "externalPath": "/job/Bangalore-KA/Territory-Sales-Executive--Chennai_10128468",
+                "locationsText": "Bangalore, KA",
+                "postedOn": "Posted Today",
+                "remoteType": "Field Based",
+                "bulletFields": ["10128468"],
+            }
+        ],
+        "facets": [
+            {
+                "facetParameter": "jobFamilyGroup",
+                "values": [
+                    {
+                        "descriptor": "Information Technology",
+                        "id": "69985ce51bb001a20fcb003bce475807",
+                        "count": 74,
+                    },
+                    {
+                        "descriptor": "Plant Production",
+                        "id": "69985ce51bb0015466a0153bce476407",
+                        "count": 67,
+                    },
+                ],
+            }
+        ],
+    }
+    monkeypatch.setattr(scraper, "_post", lambda applied, offset, **_: page)
+    absorbed: list[dict] = []
+    scraper._exhaust({}, absorbed.extend, depth=0)
+    assert "jobFamilyGroup" not in absorbed[0]
 
 
 # --- listing-level errors must raise, never read as an empty board (ADR-0058) -----------------

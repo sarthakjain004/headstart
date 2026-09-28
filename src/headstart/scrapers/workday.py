@@ -922,18 +922,21 @@ class WorkdayScraper(BaseScraper):
         """Crawl the tenant (paginate + recursively subdivide capped queries) and
         return a flat, de-duplicated list of raw posting dicts."""
         self._resolve_instance()  # follow data-center migrations before crawling
-        seen: set[str] = set()
-        postings: list[dict[str, Any]] = []
+        by_key: dict[str, dict[str, Any]] = {}
 
         def absorb(batch: list[dict[str, Any]]) -> None:
             for item in batch:
                 key = _posting_key(item)
-                if key in seen:
+                if key in by_key:
+                    # A capped Board's root page is read unfiltered, before the family slice that
+                    # names the same posting's family: keep the family the slice learned.
+                    if item.get("jobFamilyGroup"):
+                        by_key[key].setdefault("jobFamilyGroup", item["jobFamilyGroup"])
                     continue
-                seen.add(key)
-                postings.append(item)
+                by_key[key] = item
 
         self._exhaust(_FIXED_FACETS_BY_SLUG.get(self.slug, {}), absorb, depth=0)
+        postings = list(by_key.values())
         # Second pass: fill each posting's detail fields concurrently (bounded); a failed
         # fetch leaves ``_detail`` empty so the job is still kept.
         # What the lost details were lost to. The count on its own cannot tell a throttled
@@ -947,8 +950,10 @@ class WorkdayScraper(BaseScraper):
         self._detail_pass_broken = False
         # `parse` reads `title` and `jobFamilyGroup` off this same listing item and never off
         # `_detail`, so the gate's verdict is the one `filter_tech` will reach — exact, not
-        # approximate. A gated posting still becomes a Job, with `description=None`; the Board's
-        # list stays whole, so no truncation denominator moves.
+        # approximate. A family `_exhaust` learned from a slice (:func:`_slice_family`) counts
+        # here too, so a vague title under a technical family earns its detail fetch. A gated
+        # posting still becomes a Job, with `description=None`; the Board's list stays whole, so
+        # no truncation denominator moves.
         wanted = self.tech_detail_wanted(
             postings,
             lambda item: item.get("title"),
@@ -1425,10 +1430,14 @@ class WorkdayScraper(BaseScraper):
         total = int(first.get("total", 0))
         # Postings this slice handed over, before any dedup — for the shortfall line below.
         read = 0
+        family = _slice_family(applied, first.get("facets") or [])
 
         def counted(postings: list[dict]) -> None:
             nonlocal read
             read += len(postings)
+            if family:
+                for posting in postings:
+                    posting.setdefault("jobFamilyGroup", family)
             absorb(postings)
 
         counted(first.get("jobPostings") or [])
@@ -2033,6 +2042,50 @@ def _remote_from(remote_type: Any) -> bool | None:
         return True
     if "site" in norm or "office" in norm:
         return False
+    return None
+
+
+#: Facets whose counts partition a Board: a posting has one family and one time type (nvidia
+#: 2026-09-28: families sum to 2,646 and Full time 2,649 + Part time 2 to 2,651, against 2,651
+#: postings read). A posting can name several locations, so a location facet's counts overstate it.
+_PARTITIONING_FACETS = frozenset({"jobFamilyGroup", "timeType"})
+
+
+def estimated_board_size(page: dict[str, Any]) -> int:
+    """A listing page's Board size: its ``total``, except where that is the 2,000 cap, which a
+    capped listing states whatever the real size — then the counts of the facet the crawl would
+    split on, where that facet partitions the Board (nvidia 2026-09-28: total 2000,
+    ``jobFamilyGroup`` counts summing to 2,646, the crawl reading 2,646 unique postings)."""
+    total = int(page.get("total", 0))
+    if total != _QUERY_TOTAL_CAP:
+        return total
+    split = _pick_subdivision_facet(page.get("facets") or [], set())
+    if not split or split[0] not in _PARTITIONING_FACETS:
+        return total
+    return max(total, sum(count for _, count in split[1]))
+
+
+def _slice_family(
+    applied: dict[str, list[str]], facets: list[dict[str, Any]]
+) -> str | None:
+    """The family name every posting in this slice shares, when the slice pins exactly one
+    ``jobFamilyGroup`` — else None.
+
+    Listing items never carry their family (0 of 20 items on each of cmu, blackline, genmills,
+    accenture and nvidia, 2026-09-28) and neither does the detail's ``jobPostingInfo``, so this is
+    the only source of ``department``. It costs no request: a filtered page's own facet list
+    still names every family (nvidia's Facilities slice, 2026-09-28). It reaches only postings
+    read inside a one-family slice — capped Boards subdivided on ``jobFamilyGroup`` first, and
+    the single-family ``_FIXED_FACETS_BY_SLUG`` Boards. Slicing every Board by family to name the
+    rest would cost a listing query per family on every Board; that was not taken (ADR-0252)."""
+    ids = applied.get("jobFamilyGroup") or []
+    if len(ids) != 1:
+        return None
+    for facet in facets:
+        if isinstance(facet, dict) and facet.get("facetParameter") == "jobFamilyGroup":
+            for value in facet.get("values") or []:
+                if isinstance(value, dict) and value.get("id") == ids[0]:
+                    return (value.get("descriptor") or "").strip() or None
     return None
 
 

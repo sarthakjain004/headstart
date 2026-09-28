@@ -134,6 +134,9 @@ from headstart.scrapers.workday import (  # careers-URL parts + the DC list, sin
 from headstart.scrapers.workday import (
     INSTANCES as _WD_INSTANCES,
 )
+from headstart.scrapers.workday import (  # the capped-total estimate, single source
+    estimated_board_size as _wd_board_size,
+)
 from headstart.scrapers.zoho import (  # the listing's jobs <input>, single source
     JOBS_INPUT as _ZOHO_JOBS,
 )
@@ -1722,7 +1725,7 @@ def p_workday(t, u):
                 "Accept": "application/json",
             },
         )
-        total = int(data.get("total", 0)) if status == 200 and data else None
+        total = _wd_board_size(data) if status == 200 and data else None
         return total, status
 
     # Probe the hinted DC, then sweep the rest (tenant may have migrated). Any 200 -> LIVE, found.

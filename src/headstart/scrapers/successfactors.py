@@ -1,5 +1,5 @@
-"""SuccessFactors RMK scraper (career sites on customer vanity domains: jobs.sap.com,
-careers.wipro.com, jobsearch.alstom.com, ...).
+"""SuccessFactors RMK scraper (career sites on customer vanity domains: careers.wipro.com,
+jobsearch.alstom.com, ...).
 
 RMK ("Recruiting Marketing") is the crawlable SEO surface most SuccessFactors customers put in
 front of the modern CSB job search, whose DWR POST-RPC we deliberately don't touch — CSB-only
@@ -26,15 +26,19 @@ The list surfaces otherwise carry no indexable fields — the one exception is s
 is already being paid for; a bounded detail pass fetches every job page and extracts every other
 field from its markup: schema.org microdata (``itemprop="title"`` / ``"description"``),
 ``og:title``, a ``<title>`` of the form "{Job Title} Job Details | {Co}", and per-tenant
-``joblayouttoken`` label/value spans (City / State/Province / Posting Start Date) — each field
-falls back independently, since tenants mix the shapes. The reader tries a JSON-LD ``JobPosting``
+``joblayouttoken`` label/value spans (City / State/Province / Posting Start Date, and the
+department and employment-type labels in :data:`_DEPARTMENT_LABELS` /
+:data:`_EMPLOYMENT_TYPE_LABELS`) — each field falls back independently, since tenants mix the
+shapes. The reader tries a JSON-LD ``JobPosting``
 first, and this docstring used to say classic RMK pages embed one; no page measured does today:
 none of 50 pages from the 10 largest Boards nor the probe pages of 195 more (ADR-0196), and none of
 113 pages from 60 more Boards sampled 2026-09-24 (two carried an ``ld+json`` block, neither a
-``JobPosting``). The branch stays because it costs nothing where absent. No detail markup sampled
-carries a department field at all, which is why ``department`` was hardcoded ``None`` until this
-RSS-feed field was found — see :func:`_job_functions_from`'s docstring. A page that yields no
-title drops that job for the run (there is nothing to keep it by); it returns next scrape.
+``JobPosting``). The branch stays because it costs nothing where absent. A department, where a
+page states one, is a tenant-named label token ("Job Category:" on careers.rogerscorp.com,
+"Department:" on yourcareer.rathbones.com); the RSS stream's ``g:job_function``
+(:func:`_job_functions_from`) wins over it where the Board was read off that stream. A page that
+yields no title drops that job for the run (there is nothing to keep it by); it returns next
+scrape.
 
 One title-less page is not a failure: RMK's unavailable shell, a ``<p class="jobErrMsg">`` reading
 "You can't view this job because it's not available at this time.", served with a 200 for an id
@@ -627,10 +631,8 @@ class SuccessFactorsScraper(BaseScraper):
                 f"{lost}/{len(open_listed)} job pages unreadable — those Jobs are listed but "
                 "unbuilt",
             )
-        # `department` folded in here, not read on the job page — the detail markup (JSON-LD
-        # and the CSB microdata/label-span fallbacks) carries no department field on any tenant
-        # sampled (module docstring), so the RSS feed's own `g:job_function` is the only source
-        # there is, and it exists only for the `job_functions` this Board's surface populated.
+        # `department`: the RSS feed's own `g:job_function` where this Board's surface populated
+        # `job_functions`, else the page's own department label token (module docstring).
         # `/sitemal.xml` states `g:job_function` too, but :func:`_sitemal_items` reads only the
         # fallback's title/description/location, so this applies whichever source filled a Job.
         items = [
@@ -638,7 +640,11 @@ class SuccessFactorsScraper(BaseScraper):
                 "url": url,
                 "id": job_id,
                 "fields": (
-                    {**page_fields, "department": job_functions.get(job_id)}
+                    {
+                        **page_fields,
+                        "department": job_functions.get(job_id)
+                        or page_fields.get("department"),
+                    }
                     if page_fields is not None
                     else None
                 ),
@@ -907,10 +913,12 @@ def _job_functions_from(text: str) -> dict[str, str]:
 
     ``g:job_function`` is a Google-jobs-feed extension field carried only on the RSS-shaped
     listing surface (module docstring's surfaces 2/3) — the plain urlset surface (most tenants)
-    has no such field, and neither does any job-page markup sampled (classic JSON-LD or the CSB
-    microdata/label-span fallbacks). Verified live 2026-09-22 on jobs.sap.com and
-    jobs.tetrapak.com: `g:id` matches the same numeric id `_JOB_PATH` reads off the item's own
-    `<link>`, and `g:job_function` states a clean label ("Sales", "Market Operations & Finance").
+    has no such field; a job page states one only as a tenant-named label token
+    (:data:`_DEPARTMENT_LABELS`), read on the page instead. Verified live 2026-09-22 on
+    jobs.sap.com and jobs.tetrapak.com: `g:id` matches the same numeric id `_JOB_PATH` reads off
+    the item's own `<link>`, and `g:job_function` states a clean label ("Sales", "Market
+    Operations & Finance").
+    (jobs.sap.com has since left RMK: its sitemap is a Cloudflare-walled site's index, 2026-09-28.)
 
     A minority of tenants state an internal ATS configuration token here instead of a real
     department (e.g. ``ATS_WCMS_WEBFORM``, ``ATS_TALEO_APAC`` — measured live, basf.jobs,
@@ -978,6 +986,9 @@ def _page_fields(page: str, url: str | None = None) -> dict[str, Any]:
         fields["location"] = _location_from_street_address(page)
     if not fields.get("posted_at"):
         fields["posted_at"] = _csb_posted_at(page)
+    if not fields.get("employment_type"):
+        fields["employment_type"] = _label_value(page, *_EMPLOYMENT_TYPE_LABELS)
+    fields["department"] = _label_value(page, *_DEPARTMENT_LABELS)
     requisition = _INTERNAL_ID.search(page)
     fields["requisition"] = requisition_of(requisition and requisition.group(1))
     fields["company"] = _page_company(page)
@@ -1083,6 +1094,20 @@ def _matched_content(page: str, open_match: re.Match) -> str:
         if depth == 0:
             return page[open_match.end() : match.start()]
     return page[open_match.end() :]
+
+
+# The tenant names its own tokens, so these are the labels a 38-Board sample of job pages used
+# (2026-09-28), most specific first: rogerscorp "Job Category:" / "Full Time / Part Time:",
+# rathbones "Department:" beside "Job Category:", gatewayfoundation "Position Type:", biagroup
+# "Contract Type:", celcomdigi "Employment Type:". A Board using none of them reads None, as before.
+_DEPARTMENT_LABELS = ("Department:", "Departamento:", "Job Category:", "Job Function:")
+_EMPLOYMENT_TYPE_LABELS = (
+    "Employment Type:",
+    "Full Time / Part Time:",
+    "Position Type:",
+    "Contract Type:",
+    "Job Type:",
+)
 
 
 def _label_value(page: str, *labels: str) -> str | None:
