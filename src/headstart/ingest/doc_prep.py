@@ -364,7 +364,20 @@ def build_doc(job: dict) -> str:
 # annualising); 3 of 9 regex->field change value or currency (one "75k-95k" loses the
 # description's USD). keka 366 of 6,388 — 365 none->field lakhs, 1 regex->field where the field
 # states 3-5.5 lakhs and the description 3.6-6. No other ATS's field parse moves.
-DERIVATIONS_VERSION = 20
+# v21: `jobs/salary.py` keeps an hourly or monthly figure's fraction until after annualising
+# (`_field_range_currency_interval`, `_field_gem`: "12.31 EUR HOUR" is 25,605, not 12 x 2,080),
+# refuses a MONTH figure above `_MONTHLY_CEILING` (an annual pay typed under MONTH, "26728 GBP
+# MONTH"), and emits MXN, ZAR, CZK and BRL with their own bounds — one commit on top of the v20
+# bump at `fdb78685` (`git log fdb78685..4981881a -- src/headstart/jobs/salary.py`, subject "salary:
+# keep hourly decimals, refuse an annual figure typed as MONTH, emit MXN/ZAR/CZK/BRL", in case it
+# lands squashed). Measured old vs new `from_field()` on every served row with a salary (46,199,
+# table read 2026-09-28), per ADR-0066: 533 move — 421 value only (the kept fraction, e.g.
+# "46.26-59.68 USD 1 HOUR" 95,680-124,800 -> 96,221-124,134), 45 currency only (None -> MXN,
+# BRL, CZK, ZAR), 46 none -> value (MXN/ZAR figures the USD-shaped bound refused), 21 value ->
+# none (9 MONTH-typed annual pays, and 12 zoho/ashby ZAR or MXN figures below their currency's
+# floor, e.g. "25000 MXN": monthly amounts that had been served as annual). Tier 2 moves only
+# where a description names MXN before a bare "$".
+DERIVATIONS_VERSION = 21
 
 
 def to_meta(job: dict) -> dict:
