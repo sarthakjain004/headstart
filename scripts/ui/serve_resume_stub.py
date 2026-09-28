@@ -48,6 +48,7 @@ def index():
         repo="https://github.com/sarthakjain004/headstart",
         njobs="0",
         atses=[],
+        country_opts=[],
         india_opts=[],
         has_first_seen=True,
         currencies=[],

@@ -53,9 +53,9 @@ _log = log.get(__name__)
 SPACE_URL = "https://imposeidon-headstart-search.hf.space"
 
 #: The agent contract this server needs (ADR-0253): `strict=1`, `/companies/lookup`, and each
-#: suggestion's `match` and `board_keys`; since 2, `counts=total` on `/facets` (ADR-0274). The app
-#: states the one it serves on every reply.
-AGENT_API = 2
+#: suggestion's `match` and `board_keys`; since 2, `counts=total` on `/facets` (ADR-0274); since
+#: 3, `country` (ADR-0273). The app states the one it serves on every reply.
+AGENT_API = 3
 
 #: The measured boot, said when a call gives up waiting for one.
 BOOT_MEASURED = "a boot measured 4 min 13 s on 2026-09-28"

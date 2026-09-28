@@ -171,6 +171,13 @@ the filter costing the most.
   name that fits several categories or none is refused with the ids and labels to choose from
   (ADR-0274). `read_trends` reads `category` the same way.
 - A salary bound needs `salary_currency` (30 lakh is `salary_min: 3000000`, `salary_currency: INR`).
+- **Place, three ways.** `country` is an ISO 3166-1 alpha-2 code (`US`, `GB`, `DE`, `IN`; the
+  schema lists the 94 it knows). It matches every way a job's location names the country — its
+  name, its states or provinces, its cities, its codes — so "Austin, TX" is in `US` and "München"
+  in `DE`; `IN` is the same rule as `india_place: "india"`. `india_place` narrows to an Indian city
+  or region. `location` is plain text the location contains, for a city outside India or a place
+  the gazetteer does not know. A location naming several countries is in each of them. How it
+  matches, its measured precision and recall, and its costs: ADR-0273.
 - **With a `query`, `sort` orders only the 2,000 closest matches.** For the highest salary or the
   newest anywhere, omit `query` and narrow with `keyword` and the filters.
 - `detail: "full"` adds how many jobs each filter option would give, each option written as the

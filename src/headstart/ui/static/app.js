@@ -296,6 +296,7 @@ function currentFilters(){
   if (el('maxyears').value) f.max_years = el('maxyears').value;
   if (el('ats').value) f.ats = el('ats').value;
   if (el('etype').value) f.etype = el('etype').value;
+  if (el('country').value) f.country = el('country').value;
   if (el('india').value) f.india = el('india').value;
   if (el('location').value.trim()) f.location = el('location').value.trim();
   if (el('company').value.trim()) f.company = el('company').value.trim();
@@ -319,7 +320,7 @@ function currentFilters(){
 }
 const LABELS = { remote:'Remote', has_salary:'Shows salary', max_years:'Your experience',
   kw:'Keyword', kw_in:'Look in',
-  ats:'Source', etype:'Type', india:'India', location:'Location', company:'Company',
+  ats:'Source', etype:'Type', country:'Country', india:'India', location:'Location', company:'Company',
   posted_within:'Posted ≤', seen_within:'First seen ≤',
   salary_min:'Salary from', salary_max:'Salary to' };
 // A chip should read as the sentence the user set, in the units the read-out and the results
@@ -335,7 +336,7 @@ const chipValue = (key, value, f) =>
 // `kw_in` is likewise absent: it has a default (Title), not an empty state — dropping the
 // keyword is what switches the scope off, so dropFilter maps it onto `kw` below.
 const CONTROL = { remote:'remote', has_salary:'hassalary', max_years:'maxyears', ats:'ats', kw:'kw',
-  etype:'etype', india:'india', location:'location', company:'company',
+  etype:'etype', country:'country', india:'india', location:'location', company:'company',
   posted_within:'posted', seen_within:'seen', salary_min:'salmin', salary_max:'salmax' };
 function drawActive(){
   syncSalarySlider();

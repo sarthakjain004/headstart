@@ -22,6 +22,7 @@ from typing import Any
 
 from headstart.mcp_protocol.messages import ToolFailure
 from headstart.search_filters import (
+    country_filter,
     employment_type_filter,
     india_filter,
     india_gazetteer,
@@ -58,6 +59,7 @@ SPACE_NAME = {
     "max_years": "max_years",
     "employment_type": "etype",
     "india_place": "india",
+    "country": "country",
     "location": "location",
     "company": "company",
     "salary_min": "salary_min",
@@ -322,7 +324,7 @@ def _scope_line(
             f"open to someone with at most {arguments['max_years']} years, jobs that state "
             "no experience included"
         )
-    for argument in ("employment_type", "india_place", "ats"):
+    for argument in ("employment_type", "country", "india_place", "ats"):
         if arguments.get(argument):
             said.append(f"{argument} {arguments[argument]}")
     if arguments.get("location"):
@@ -560,6 +562,15 @@ TOOL = SpaceTool(
             "employment_type": {
                 "type": "string",
                 "enum": list(employment_type_filter.RULES),
+            },
+            "country": {
+                "type": "string",
+                "enum": list(country_filter.CODES),
+                "description": (
+                    "ISO 3166-1 alpha-2 code (US, GB, DE, IN). Matches every way a job's "
+                    "location names the country: its name, states, cities and codes. IN is "
+                    "india_place 'india'."
+                ),
             },
             "india_place": {
                 "type": "string",

@@ -26,6 +26,7 @@ from urllib.parse import urlsplit
 from headstart import log
 from headstart.embedding_conventions import encode_query
 from headstart.search_filters import (
+    country_filter,
     employment_type_filter,
     experience_filter,
     fx,
@@ -509,8 +510,8 @@ def _warn_unknown_filters(
     bad parameter from any crawler with a stale link. :meth:`JobSearch.parse_filters` parses a
     request exactly once, so this is said exactly once.
 
-    At most one line per parameter it checks — six a request (ats, employment_type, india,
-    salary_currency, kw_in, sort).
+    At most one line per parameter it checks — seven a request (ats, employment_type, india,
+    country, salary_currency, kw_in, sort).
 
     Rendered through ``%r`` and clipped: the value comes from the query string, so it is never
     the format string itself and cannot open a second line in the log.
@@ -524,6 +525,10 @@ def _warn_unknown_filters(
         )
     if india and india not in _INDIA_PLACES:
         _log.warning("filter dropped: india %.40r is not a known place", india)
+    if filters.country and filters.country not in country_filter.CODES:
+        _log.warning(
+            "filter dropped: country %.40r is not a known code", filters.country
+        )
     # `build_filter`'s bracket fallback: an unserved currency is re-scoped to the default, and
     # with the default unserved too the bracket compiles to nothing. Only once a bound is set —
     # the currency alone is a modifier, not a filter.
@@ -578,6 +583,11 @@ def _refuse_what_strict_forbids(
     if india and india not in _INDIA_PLACES:
         raise ValueError(
             f"india {india!r} is not a known place; known: {_listed(_INDIA_PLACES)}"
+        )
+    if filters.country and filters.country not in country_filter.CODES:
+        raise ValueError(
+            f"country {filters.country!r} is not a supported ISO 3166-1 alpha-2 code; "
+            f"supported: {_listed(country_filter.CODES)}"
         )
     if kw_in and kw_in not in KEYWORD_SCOPES:
         raise ValueError(
@@ -853,12 +863,14 @@ class JobSearch:
         ats = (args.get("ats") or "").strip() or None
         etype = (args.get("etype") or "").strip() or None
         india = (args.get("india") or "").strip().lower() or None
+        country = (args.get("country") or "").strip().upper() or None
         filters = SearchFilters(
             remote=args.get("remote") == "true",
             max_years=_int("max_years"),
             ats=ats,
             etype=etype,
             india=india,
+            country=country,
             location=(args.get("location") or "").strip() or None,
             company=(args.get("company") or "").strip() or None,
             has_salary=args.get("has_salary") == "true",
@@ -941,7 +953,8 @@ class JobSearch:
             # never the keyword text (ADR-0032).
             _log.warning(
                 f"slow facets {elapsed_ms:.0f} ms: blocking={counted.get('blocking') is not None} "
-                f"india={bool(filters.india)} kw_scope={filters.kw_in} "
+                f"india={bool(filters.india)} country={bool(filters.country)} "
+                f"kw_scope={filters.kw_in} "
                 f"extra_where={extra_where is not None} only_total={only_total}"
             )
         _cache_put(

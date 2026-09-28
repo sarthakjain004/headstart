@@ -63,7 +63,7 @@ from headstart.alerts.store import (
     subscription_id,
 )
 from headstart.mcp_protocol import streamable_http
-from headstart.search_filters import fx, india_gazetteer
+from headstart.search_filters import country_filter, fx, india_gazetteer
 from headstart.search_filters.compiler import (
     KEYWORD_DEFAULT_SCOPE,
     keyword_scope_options,
@@ -596,7 +596,9 @@ def _keep_static_for_the_boot(response):
 # 1: `strict=1` on /search and /facets, `match` and `board_keys` on each /companies/suggest item,
 # /companies/lookup, and `newest_tick` on /facets.
 # 2: `counts=total` on /facets, the total without any option's count (ADR-0274).
-_AGENT_API_VERSION = 2
+# 3: `country` (an ISO 3166-1 alpha-2 code, ADR-0273) on /search and /facets, refused under
+# `strict=1` when unknown.
+_AGENT_API_VERSION = 3
 
 
 @app.after_request
@@ -1840,6 +1842,7 @@ def index():
         },
         njobs=f"{_table.count_rows():,}",
         atses=capabilities.atses,
+        country_opts=country_filter.options(),
         india_opts=india_gazetteer.dropdown_options(),
         has_first_seen=capabilities.has_first_seen,
         # the Keyword filter (ADR-0104): its scopes from the one map, and whether the served

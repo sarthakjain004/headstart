@@ -174,6 +174,22 @@ def test_an_unknown_india_place_is_warned_about_and_a_known_one_is_not(caplog):
     ]
 
 
+def test_a_country_is_read_as_an_upper_case_code_and_an_unknown_one_is_warned_about(
+    caplog,
+):
+    searcher, _ = _searcher()
+    with caplog.at_level(logging.WARNING, logger="headstart.serving.job_search"):
+        caplog.clear()
+        assert searcher.parse_filters({"country": " de "}).country == "DE"
+        assert searcher.parse_filters({"country": "IN"}).country == "IN"
+        assert searcher.parse_filters({"country": ""}).country is None
+        assert not caplog.records
+        searcher.parse_filters({"country": "zz"})
+    assert [r.getMessage() for r in caplog.records] == [
+        "filter dropped: country 'ZZ' is not a known code"
+    ]
+
+
 def test_boot_names_unmaterialized_flags_a_capped_whitelist_and_unpriced_currencies(
     caplog, monkeypatch
 ):
@@ -1286,6 +1302,7 @@ def _strict_searcher(currencies=("INR",)):
         ({"ats": "workdya"}, ["'workdya'", "darwinbox"]),
         ({"etype": "gig"}, ["'gig'", "full-time, part-time, contract, internship"]),
         ({"india": "atlantis"}, ["'atlantis'", "india, delhi ncr", "bengaluru"]),
+        ({"country": "uk"}, ["'UK'", "ISO 3166-1 alpha-2", "US, IN, GB"]),
         ({"kw": "go", "kw_in": "body"}, ["'body'", "title, description, both"]),
         ({"kw_in": "body"}, ["'body'"]),  # refused with or without a keyword to scope
         ({"sort": "newest"}, ["'newest'", "posted, seen, salary"]),
@@ -1326,6 +1343,7 @@ def test_strict_accepts_what_the_table_serves():
             "ats": "darwinbox",
             "etype": "full-time",
             "india": "bengaluru",
+            "country": "IN",
             "kw": "go",
             "kw_in": "title",
             "salary_min": "5",
