@@ -2719,6 +2719,8 @@ def test_p_trakstar_reads_a_capped_page_s_total_off_jsapi(monkeypatch):
 
     monkeypatch.setattr(cl, "_get", get)
     assert cl.p_trakstar("acme", "https://acme.hire.trakstar.com/") == (cl.LIVE, 365)
+
+
 # --- wp_job_openings: the site's own REST route, one row asked ---------------------------------
 
 

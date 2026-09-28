@@ -225,10 +225,17 @@ approximation, recorded in CONTEXT.md's **Detail pass** entry.
   type in a guid link, REST route or sitemap name, or the plugin's asset directory — kept 2,689 of
   2,887 captured URLs in the first two crawls and dropped 123 hosts (90 of them wordpress.org's
   localised plugin pages). Hosts per crawl, and new over the newer crawls: `CC-MAIN-2026-39` 552,
-  `CC-MAIN-2026-34` 540 (326 new), `CC-MAIN-2026-30` (171 new on its first 60%).
+  `CC-MAIN-2026-34` 540 (326 new), `CC-MAIN-2026-30` 596 (308), `CC-MAIN-2026-25` 531 (207), and
+  348 of `CC-MAIN-2026-21`'s 600 part files 180 (64): 1,457 hosts. Each crawl still adds hundreds,
+  so the older crawls are the first follow-up; the checkpoint resumes where this stopped.
 - **urlscan.io** (`mine_wp_job_openings.py urlscan`): `filename:wp-job-openings` returns the scans
   whose page loaded a file of the plugin's, 100 a query, paged with `search_after`; the search
-  reports 10,000+ such scans.
+  reports 10,000+ such scans. 84 pages (8,400 scans) named 3,239 hosts before urlscan answered 503.
 - **The fingerprinter** (`fingerprint_careers.py`) now recognises the plugin's asset path and names
-  the page's own host as the Board.
+  the page's own host as the Board; its 32 seed sites were folded in.
+- **Pool**: the sources' 4,564 hosts resolved to 4,532 sites. 58 were copies, not sites — a
+  hosting platform's staging domain (`*.kinsta.cloud`, `*.wpenginepowered.com`,
+  `*.hostingersite.com`, …) or a staging label (`staging.`, `stg-`, `dev.`, `beta.`, `demo.`,
+  `template.`), 42 of them live with 301 postings copied from real sites — and are not landed
+  (`NONPRODUCTION`). The ledger holds the other 4,474.
 - **Wayback** has no fit: its CDX API cannot search a path across hosts.
