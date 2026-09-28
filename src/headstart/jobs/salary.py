@@ -40,6 +40,12 @@ _MAX_PLAUSIBLE_ANNUAL = {
     # more generous in real terms, a deliberate choice given Swiss finance/pharma pay, not a
     # same-tier match (code review finding, PR #241: the original comment implied equivalence)
     "AED": 3_000_000,  # scaled from the USD ceiling via ~3.67 AED/USD, not independently sourced
+    # MXN/ZAR/CZK/BRL (2026-09-28, stated by greenhouse pay_input_ranges and others): ceilings
+    # scaled from the USD one at ~18.5 MXN, ~18 ZAR, ~23 CZK, ~5.5 BRL to the dollar.
+    "MXN": 15_000_000,
+    "ZAR": 15_000_000,
+    "CZK": 20_000_000,
+    "BRL": 4_500_000,
 }
 _MIN_PLAUSIBLE_ANNUAL = {
     "USD": 10_000,
@@ -57,6 +63,12 @@ _MIN_PLAUSIBLE_ANNUAL = {
     # means these can't be annualized, so this floor is set to comfortably reject them as
     # implausible-if-treated-as-annual (the correct, safe outcome) while still admitting a
     # genuinely low but real annual figure, not independently sourced from a UAE minimum wage.
+    # Floors below each 2026 national minimum wage, annualised: MXN ~101,000 (278.80/day), ZAR
+    # ~58,000 (28.79/hour), CZK ~250,000 (20,800/month), BRL ~19,700 (1,518/month x 13).
+    "MXN": 60_000,
+    "ZAR": 40_000,
+    "CZK": 150_000,
+    "BRL": 15_000,
 }
 _HOURLY_TO_ANNUAL = 2080  # 40hr/wk * 52wk, the standard full-time-equivalent convention
 _DAILY_TO_ANNUAL = 260  # 5 days/wk * 52wk
@@ -130,7 +142,7 @@ def extract(
 # pass today (keka's own period-omitted payload means they're correctly rejected either way), but
 # gives any genuinely-annual AED figure (here or on a future ATS) a properly-calibrated bound
 # instead of the coarser USD-shaped fallback.
-_CURRENCY_CODES = "USD|EUR|GBP|INR|CAD|AUD|HKD|SEK|PLN|CHF|AED"
+_CURRENCY_CODES = "USD|EUR|GBP|INR|CAD|AUD|HKD|SEK|PLN|CHF|AED|MXN|ZAR|CZK|BRL"
 
 _CURRENCY_CODE = re.compile(rf"\b({_CURRENCY_CODES})\b", re.IGNORECASE)
 # The shared currency-symbol fragment every `sym`/`sym2` capture group below interpolates,
@@ -172,7 +184,7 @@ _SYMBOL_CURRENCY = {
 _EMITTABLE_CODES = frozenset(_CURRENCY_CODES.split("|")) | frozenset(
     _SYMBOL_CURRENCY.values()
 )
-_DECLINED_DOLLAR_CODES = frozenset({"MXN", "CLP", "COP", "TWD", "NTD"})
+_DECLINED_DOLLAR_CODES = frozenset({"CLP", "COP", "TWD", "NTD"})
 _CODE_BEFORE_DOLLAR = re.compile(
     rf"\b({'|'.join(sorted(_EMITTABLE_CODES | _DECLINED_DOLLAR_CODES))})\$?:?\s*$"
 )
@@ -407,14 +419,27 @@ def _field_range_currency_interval(value: str) -> SalarySpan | None:
     currency = code_m.group(1).upper() if code_m else None
     mult = _period_multiplier_structured(value)
     m = _RANGE.search(value)
-    if m:
-        lo, hi = _num(m.group(1)) * mult, _num(m.group(2)) * mult
-        return _bounded(min(lo, hi), max(lo, hi), currency)
-    single = _SINGLE_NUM.search(value)
-    if single:
-        v = _num(single.group(1)) * mult
-        return _bounded(v, None, currency)
-    return None
+    figures = (
+        [_num_value(m.group(1)), _num_value(m.group(2))]
+        if m
+        else [_num_value(single.group(1))]
+        if (single := _SINGLE_NUM.search(value))
+        else []
+    )
+    if not figures:
+        return None
+    if mult == 12 and max(figures) > _MONTHLY_CEILING.get(currency or "", float("inf")):
+        return None
+    # Rounded after the period, not before: "12.31 EUR HOUR" is 25,605 a year, not 12 x 2,080.
+    lo, hi = round(min(figures) * mult), round(max(figures) * mult)
+    return _bounded(lo, hi if m else None, currency)
+
+
+#: A monthly figure above this is an annual one typed under MONTH, and is refused rather than
+#: served x12. Served table 2026-09-28: every GBP or EUR "MONTH" figure at 25,000 or more was an
+#: annual pay ("26728 GBP MONTH" for a UK store manager, "38000-45000 EUR month"); the largest USD
+#: monthly figure was 15,000; genuine monthly GBP/EUR pay sat under 15,000.
+_MONTHLY_CEILING = {"USD": 20_000, "GBP": 20_000, "EUR": 20_000, "CHF": 25_000}
 
 
 def _field_keka(value: str) -> SalarySpan | None:
@@ -549,14 +574,15 @@ def _field_gem(value: str) -> SalarySpan | None:
     m = _GEM_RANGE.search(value)
     if m:
         currency = _currency_for_symbol(m.group("sym"), value, bare_dollar="USD")
-        lo, hi = _num(m.group("lo")) * mult, _num(m.group("hi")) * mult
+        lo = round(_num_value(m.group("lo")) * mult)
+        hi = round(_num_value(m.group("hi")) * mult)
         return _bounded(min(lo, hi), max(lo, hi), currency)
     single = _GEM_SINGLE.search(value)
     if single:
         if _states_a_ceiling_only(value, single.start("lo")):
             return None
         currency = _currency_for_symbol(single.group("sym"), value, bare_dollar="USD")
-        v = _num(single.group("lo")) * mult
+        v = round(_num_value(single.group("lo")) * mult)
         return _bounded(v, None, currency)
     return None
 

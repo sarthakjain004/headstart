@@ -329,8 +329,9 @@ def test_field_teamtailor_bare_unit_word_period_markers():
     # correctly-but-wrongly failed the plausibility bounds (a genuine £15-18/hr rate read as an
     # absurd £15-18/year). Recovered ~1,885 jobs once fixed — the single highest-value fix in this
     # pass. Day had no Tier-1 handling at all before this fix, not just a boundary miss.
+    # Since 2026-09-28 the fraction survives: 17.5 x 2,080 (it was rounded to 18 first).
     assert from_field("15-17.5 GBP HOUR", "teamtailor") == SalarySpan(
-        15 * 2080, round(17.5) * 2080, "GBP", "field"
+        15 * 2080, 36_400, "GBP", "field"
     )
     assert from_field("1500-1800 EUR MONTH", "teamtailor") == SalarySpan(
         1500 * 12, 1800 * 12, "EUR", "field"
@@ -470,7 +471,7 @@ def test_field_range_currency_interval_smartrecruiters_structured_tier():
         70000, 85000, "EUR", "field"
     )
     assert from_field("15-17.5 GBP 1 HOUR", "smartrecruiters") == SalarySpan(
-        15 * 2080, round(17.5) * 2080, "GBP", "field"
+        15 * 2080, 36_400, "GBP", "field"
     )
     assert from_field("3500-4000 EUR 1 MONTH", "smartrecruiters") == SalarySpan(
         3500 * 12, 4000 * 12, "EUR", "field"
@@ -552,7 +553,8 @@ def test_field_generic_reads_symbol_currency_and_a_symbol_prefixed_ceiling():
     assert from_field(
         "$85,000 - $135,000 depending on experience", "zoho"
     ) == SalarySpan(85_000, 135_000, None, "field")
-    assert from_field("$69,601.28 - $92,802.13 MXN", "zoho").currency is None
+    # MXN is emitted since 2026-09-28, so the stated code names it.
+    assert from_field("$69,601.28 - $92,802.13 MXN", "zoho").currency == "MXN"
     assert from_field("CA$85,000 - CA$95,000", "zoho") == SalarySpan(
         85_000, 95_000, "CAD", "field"
     )
@@ -1784,9 +1786,9 @@ def test_description_iso_code_before_a_bare_dollar_names_the_currency():
     assert from_description(
         "Salary range CAD: $102,500 to $124,700 annually"
     ) == SalarySpan(102_500, 124_700, "CAD", "regex")
-    # A peso code this module cannot emit is not a US dollar either.
+    # A peso code names the peso (emitted since 2026-09-28), not a US dollar.
     assert from_description("MXN $50,000 - $60,000 per month") == SalarySpan(
-        600_000, 720_000, None, "regex"
+        600_000, 720_000, "MXN", "regex"
     )
     # The prefixed symbols already named their currency; unchanged.
     assert from_description("Pay Range: C$150,000 - $185,000 per year") == SalarySpan(
@@ -2207,3 +2209,20 @@ def test_adp_recruiting_still_refuses_a_ceiling_and_a_per_credit_hour_rate():
     # "N/A" (ruralmetrofire) and "0" (served 2026-09-28): live strings with no pay in them.
     assert from_field("N/A", "adp_recruiting") is None
     assert from_field("0", "adp_recruiting") is None
+
+
+def test_hourly_decimals_monthly_ceiling_and_new_currencies():
+    # Agent A's notes, 2026-09-28 (teamtailor, greenhouse live strings).
+    assert from_field("12.31 EUR HOUR", "teamtailor") == SalarySpan(
+        25_605, None, "EUR", "field"
+    )
+    # An annual pay typed under MONTH (lovisacareers, UK store manager) is refused, not x12.
+    assert from_field("26728 GBP MONTH", "teamtailor") is None
+    assert from_field("38000-45000 EUR month", "recruitee") is None
+    # Genuine monthly pay still annualises.
+    assert from_field("1500-1800 EUR MONTH", "teamtailor") == SalarySpan(
+        18_000, 21_600, "EUR", "field"
+    )
+    assert from_field("40000-50000 MXN 1 MONTH", "smartrecruiters") == SalarySpan(
+        480_000, 600_000, "MXN", "field"
+    )
