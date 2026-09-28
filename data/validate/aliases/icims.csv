@@ -24,6 +24,7 @@ icims,careers-ads-pipe.icims.com,careers-adspipe.icims.com,redirect,careers-adsp
 icims,careers-alaskausa.icims.com,careers-globalcu.icims.com,redirect,careers-globalcu.icims.com,2026-09-28
 icims,careers-alc.icims.com,careers-adstra.icims.com,redirect,careers-adstra.icims.com,2026-09-28
 icims,careers-americanconsulting.icims.com,careers-mec.icims.com,redirect,careers-mec.icims.com,2026-09-28
+icims,careers-apetito.icims.com,wiltshirefarmfoods-apetito.icims.com,subset-reqs,wiltshirefarmfoods-apetito.icims.com,2026-09-28
 icims,careers-ardent-eagle.icims.com,careers-ardenteagle.icims.com,redirect,careers-ardenteagle.icims.com,2026-09-28
 icims,careers-atrion.icims.com,careers-carousel.icims.com,redirect,careers-carousel.icims.com,2026-09-28
 icims,careers-avantus.icims.com,careers-qinetiqus.icims.com,redirect,careers-qinetiqus.icims.com,2026-09-28
@@ -274,7 +275,6 @@ icims,full-time-cymca.icims.com,full-time-ymcanj.icims.com,redirect,full-time-ym
 icims,generaladministrative-yelp.icims.com,globalcareers-yelp.icims.com,redirect,globalcareers-yelp.icims.com,2026-09-28
 icims,germancareers-celanese.icims.com,europecareers-celanese.icims.com,subset-reqs,europecareers-celanese.icims.com,2026-09-28
 icims,germany-sas.icims.com,jmp-sas.icims.com,redirect,jmp-sas.icims.com,2026-09-28
-icims,global-nyu.icims.com,careers-nyu.icims.com,subset-reqs,careers-nyu.icims.com,2026-09-28
 icims,global-sas.icims.com,globalcareers-sas.icims.com,subset-reqs,globalcareers-sas.icims.com,2026-09-28
 icims,globalcareers-ivans-appliedsystems.icims.com,careers-appliedsystems.icims.com,subset-reqs,careers-appliedsystems.icims.com,2026-09-28
 icims,globalcareers-ivansinsurance.icims.com,careers-appliedsystems.icims.com,redirect,careers-appliedsystems.icims.com,2026-09-28
@@ -411,7 +411,6 @@ icims,volunteers-cgl.icims.com,volunteers-changegrowlive.icims.com,redirect,volu
 icims,warehouse-ryder.icims.com,rydercareers-ryder.icims.com,subset-reqs,rydercareers-ryder.icims.com,2026-09-28
 icims,washington-harleymarine.icims.com,jobs-centerlinelogistics.icims.com,redirect,jobs-centerlinelogistics.icims.com,2026-09-28
 icims,wellframe-healthedge.icims.com,careers-healthedge.icims.com,subset-reqs,careers-healthedge.icims.com,2026-09-28
-icims,wiltshirefarmfoods-apetito.icims.com,careers-apetito.icims.com,subset-reqs,careers-apetito.icims.com,2026-09-28
 icims,wisconsinearlyautismproject-learnitsystems.icims.com,wisconsinearlyautismproject-learnbehavioral.icims.com,redirect,wisconsinearlyautismproject-learnbehavioral.icims.com,2026-09-28
 icims,wwcareers-bruker.icims.com,internationalcareers-bruker.icims.com,redirect,internationalcareers-bruker.icims.com,2026-09-28
 icims,yearround-usta.icims.com,careers-usta.icims.com,subset-reqs,careers-usta.icims.com,2026-09-28
