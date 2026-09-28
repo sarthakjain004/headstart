@@ -278,6 +278,17 @@ class SpaceClient:
             raise InvalidRequest(text or "The HeadStart Space refused this request.")
         if reply.status in (401, 403):
             raise SpaceTooOld(_STILL_WALLED)
+        if reply.status == 429:
+            wait = reply.headers.get("retry-after", "").strip()
+            raise RateLimited(
+                "The HeadStart Space is limiting how often one client may ask"
+                + (
+                    f"; retry in {wait} s"
+                    if wait.isdigit()
+                    else "; wait a minute and retry"
+                )
+                + "."
+            )
         if reply.status == 503:
             raise NotOnDeployment(
                 f"Not on this deployment yet: {text or 'the Space has no data for this'}."

@@ -213,3 +213,18 @@ def test_the_client_asks_for_gzip_and_unzips_what_the_space_zipped():
     fetch = Script(clock, _reply(body={}))
     _client(clock, fetch).read(sc.SpaceRoute.TRENDS)
     assert fetch.headers[0]["Accept-Encoding"] == "gzip"
+
+
+def test_the_spaces_own_rate_limit_is_answered_at_once_with_its_wait():
+    """The public routes carry a per-client limit on the Space; its 429 is the app speaking
+    (marker set), so it is not retried here, and the wait it names is passed on."""
+    clock = Clock()
+    fetch = Script(
+        clock,
+        _reply(
+            429, {"error": "too many requests"}, headers={**APP, "retry-after": "30"}
+        ),
+    )
+    with pytest.raises(sc.RateLimited, match="retry in 30 s"):
+        _client(clock, fetch).read(sc.SpaceRoute.SEARCH)
+    assert len(fetch.urls) == 1 and clock.slept == []
