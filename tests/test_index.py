@@ -712,6 +712,94 @@ def test_sync_refreshes_materialized_search_flags_with_their_sources(
     assert row["posted_at_comparable"] is True
 
 
+# ---- the served posting date (ADR-0268) ----
+
+
+@pytest.mark.parametrize(
+    ("posted_at", "first_seen", "served"),
+    [
+        # A repost or refresh date after we first held the posting: the day we first saw it.
+        ("2026-09-22T00:00:00Z", "2026-08-23T11:02:03+00:00", "2026-08-23"),
+        # A closing date read as the posting date lies in the future: bounded the same way.
+        ("2026-12-04", "2026-09-10T00:00:00+00:00", "2026-09-10"),
+        # A date on or before the day we first saw it is the ATS's own, kept as written.
+        ("2026-08-23T23:59:59Z", "2026-08-23T00:00:00+00:00", "2026-08-23T23:59:59Z"),
+        ("2021-03-01", "2026-09-01T00:00:00+00:00", "2021-03-01"),
+        # A row from before `first_seen` existed has nothing to bound it by.
+        ("2026-12-04", None, "2026-12-04"),
+        # Null sentinels are no date at all.
+        ("0001-01-01T00:00:00", "2026-09-01T00:00:00+00:00", None),
+        ("1900-01-01", None, None),
+        # A non-ISO string is left to its guard, which keeps it out of every date filter.
+        ("03-Jul-2026", "2026-06-01T00:00:00+00:00", "03-Jul-2026"),
+        (None, "2026-06-01T00:00:00+00:00", None),
+    ],
+)
+def test_served_posted_at_is_never_after_first_seen_nor_a_sentinel(
+    posted_at, first_seen, served
+):
+    assert idx._served_posted_at(posted_at, first_seen) == served
+
+
+def _only_row(tmp_path: Path) -> dict:
+    return (
+        lancedb.connect(str(tmp_path / "db"))
+        .open_table(idx.PROD_TABLE)
+        .search()
+        .limit(1)
+        .to_list()[0]
+    )
+
+
+def test_an_added_row_serves_no_date_later_than_its_first_seen(tmp_path, monkeypatch):
+    _sync(
+        tmp_path, monkeypatch, ["greenhouse:a:1"], meta_over={"posted_at": "2099-01-01"}
+    )
+    row = _only_row(tmp_path)
+    assert row["posted_at"] == row["first_seen"][:10]
+    assert row["posted_at_comparable"] is True
+
+
+def test_a_null_sentinel_date_is_served_as_no_date(tmp_path, monkeypatch):
+    _sync(
+        tmp_path,
+        monkeypatch,
+        ["keka:minfy:154507"],
+        meta_over={"posted_at": "0001-01-01T00:00:00"},
+    )
+    row = _only_row(tmp_path)
+    assert row["posted_at"] is None
+    assert row["posted_at_comparable"] is False
+
+
+def test_a_repost_date_that_keeps_moving_rewrites_nothing(
+    tmp_path, monkeypatch, caplog
+):
+    """The bound also stops churn: a refresh date that moves forward every run still serves the
+    day we first saw the posting, so the served row already matches and is not rewritten."""
+    ids = ["successfactors:jobs.example.com:1"]
+    _sync(tmp_path, monkeypatch, ids, meta_over={"posted_at": "2099-01-01"})
+    first = _only_row(tmp_path)
+    caplog.set_level("INFO")
+    _sync(tmp_path, monkeypatch, ids, meta_over={"posted_at": "2099-02-01"})
+    assert any("already matches the store" in r.getMessage() for r in caplog.records)
+    assert _only_row(tmp_path)["posted_at"] == first["first_seen"][:10]
+
+
+def test_a_stored_future_date_is_bounded_on_the_next_refresh(tmp_path, monkeypatch):
+    """Rows indexed before ADR-0268 serve the raw date; the metadata refresh bounds them."""
+    ids = ["zoho:leegality.zohorecruit.in:1"]
+    _sync(tmp_path, monkeypatch, ids)
+    table = lancedb.connect(str(tmp_path / "db")).open_table(idx.PROD_TABLE)
+    table.update(
+        where="true", values={"posted_at": "2099-01-01"}
+    )  # as an old table holds it
+
+    _sync(tmp_path, monkeypatch, ids, meta_over={"posted_at": "2099-01-01"})
+    row = _only_row(tmp_path)
+    assert row["posted_at"] == row["first_seen"][:10]
+
+
 def test_a_requisition_reaches_a_row_indexed_before_the_column_existed(
     tmp_path, monkeypatch
 ):

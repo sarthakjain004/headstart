@@ -259,12 +259,33 @@ def _schema(dim: int) -> pa.Schema:
     )
 
 
-def _served_meta(meta: dict) -> dict:
-    """Store metadata plus the Search-only materialized filter verdicts."""
+def _served_posted_at(posted_at: str | None, first_seen: str | None) -> str | None:
+    """The posting date a row serves: the ATS's own, but never after the day we first saw it
+    and never a pre-2000 sentinel (ADR-0268).
+
+    SuccessFactors, Workday and others move ``posted_at`` forward on a repost or refresh, and a
+    few ATSes put a closing date or a null sentinel (``0001-01-01``) there. We held the posting
+    on ``first_seen``, so it was posted on or before that day. Only ISO-shaped dates are
+    touched; a non-ISO string is already kept out of the date filters by its guard.
+    """
+    if not posted_date_guard.is_comparable(posted_at):
+        return posted_at
+    if posted_at[:4] < "2000":
+        return None
+    if first_seen and posted_at[:10] > first_seen[:10]:
+        return first_seen[:10]
+    return posted_at
+
+
+def _served_meta(meta: dict, first_seen: str | None) -> dict:
+    """Store metadata plus the Search-only materialized filter verdicts.
+
+    ``first_seen`` is the row's own stamp, which bounds the date it serves (ADR-0268)."""
     row = dict(meta)
+    row["posted_at"] = _served_posted_at(meta.get("posted_at"), first_seen)
     row.update(employment_type_filter.flags(meta.get("employment_type")))
     row.update(salary_known_filter.flags(meta.get("min_salary_annual")))
-    row.update(posted_date_guard.flags(meta.get("posted_at")))
+    row.update(posted_date_guard.flags(row["posted_at"]))
     row.update(experience_filter.flags(meta.get("min_years")))
     return row
 
@@ -549,10 +570,10 @@ def _refresh_metadata(
         storeless += index is None
         if index is None or job_id in just_added:
             continue
-        stored = _served_meta(metas[index])
         kept = _Held(
             job_id, row[_FIRST_SEEN_FIELD.name], row.get(_DESCRIPTION_FIELD.name)
         )
+        stored = _served_meta(metas[index], kept.first_seen)
         if all(row.get(field) == stored.get(field) for field in columns):
             current[job_id] = kept
         else:
@@ -588,7 +609,8 @@ def _refresh_metadata(
         rows = []
         for kept in batch:
             index = row_of[kept.job_id]
-            fresh = {field: _served_meta(metas[index]).get(field) for field in columns}
+            served = _served_meta(metas[index], kept.first_seen)
+            fresh = {field: served.get(field) for field in columns}
             fresh[_FIRST_SEEN_FIELD.name] = kept.first_seen
             # The corpus's text first: an edited posting's fresh text must not lose to the
             # table's copy of the old one, and no text this run keeps what the row had.
@@ -1088,13 +1110,14 @@ def sync(args: argparse.Namespace) -> int:
         chunk = add_ids[start : start + _ADD_CHUNK]
         rows = []
         for job_id in chunk:
-            row = _served_meta(metas[row_of[job_id]])
+            first_seen = taken.get(job_id) or stamp
+            row = _served_meta(metas[row_of[job_id]], first_seen)
             for field in PLANNER_ONLY_FIELDS:
                 row.pop(
                     field, None
                 )  # store-only meta; the table's schema has no column for it
             row["vector"] = vectors[row_of[job_id]].tolist()
-            row[_FIRST_SEEN_FIELD.name] = taken.get(job_id) or stamp
+            row[_FIRST_SEEN_FIELD.name] = first_seen
             description = texts.get(job_id)
             row[_DESCRIPTION_FIELD.name] = description
             row[_DESCRIPTION_STORED_FIELD.name] = description is not None
