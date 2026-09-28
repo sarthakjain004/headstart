@@ -152,8 +152,6 @@ Evidence for the first two is in `docs/discovery/2026-09-23_indeed-sweep-landing
   the landing rule above. Open: reading `/search-jobs/results` on capped fronts whose robots.txt
   allows it (ADR-0246 §Alternatives), and revisiting the no-gate decision from each run's **Front
   duplication** lines.
-- **SenseHQ** — the scraper is registered but has no ledger and no liveness probe, so none of its
-  Boards can land.
 - **TurboHire** — token flow: `/api/token/noauth` (needs Referer), then `POST
   /api/careerpagev2/filteredjobs?orgId={GUID}` (verified live 2026-07-21; Cleartrip, Flipkart, Ola).
 - **Jobsoid** (`{slug}.jobsoid.com/api/v1/jobs`, low yield) — opportunistic.

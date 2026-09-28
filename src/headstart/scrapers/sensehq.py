@@ -63,9 +63,12 @@ class SenseHQScraper(BaseScraper):
             # untestable speculation, the opposite of what CLAUDE.md's measure-first rule asks.
             if len(batch) < _PAGE_SIZE or len(rows) >= data.get("count", 0):
                 if len(rows) < stated:
-                    self._log.info(
-                        f"{self.board_key()}: read {len(rows)} of {stated} listed — "
-                        "a short page ended the walk"
+                    # The rest are unread, not closed (ADR-0053); a negligible gap is left to
+                    # ADR-0083's grace period (ADR-0121).
+                    self.mark_truncated_unless_negligible(
+                        len(rows),
+                        stated,
+                        f"read {len(rows)} of {stated} listed — a short page ended the walk",
                     )
                 break
             if self._page > _MAX_PAGES:
@@ -80,13 +83,17 @@ class SenseHQScraper(BaseScraper):
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
         jobs: list[Job] = []
-        for r in (raw.get("data") or {}).get("rows", []):
+        rows = (raw.get("data") or {}).get("rows", [])
+        for r in rows:
+            title = (r.get("title") or "").strip()
+            if not r.get("id") or not title:
+                continue
             posted = None
             if r.get("created_on"):
                 posted = datetime.fromtimestamp(
                     r["created_on"] / 1000, tz=UTC
                 ).isoformat()
-            location = r.get("location")
+            location = _location(r)
             workplace = r.get("workplace_type") or ""
             start, end = r.get("experience_start"), r.get("experience_end")
             experience = (
@@ -97,7 +104,7 @@ class SenseHQScraper(BaseScraper):
                     id=self.job_id(r["id"]),
                     ats=self.ats,
                     company=self.company,
-                    title=(r.get("title") or "").strip(),
+                    title=title,
                     location=location,
                     remote="remote" in workplace.lower() or is_remote(location),
                     department=r.get("department"),
@@ -107,11 +114,28 @@ class SenseHQScraper(BaseScraper):
                     description=html_to_text(r.get("description_external")),
                     experience=experience,
                     employment_type=r.get("job_type"),
+                    requisition=r.get("code"),
                 )
             )
+        self.note_unread_rows(len(rows) - len(jobs), len(rows), "with no id or title")
         return jobs
 
     def _salary_field(self, raw: Any) -> str | None:
         # Not yet measured: no structured compensation field has been looked for in this
         # scraper's raw record shape. Needs its own measurement pass before this can claim more.
         return None
+
+
+def _location(row: dict) -> str | None:
+    """The posting's ``location``, runs of spaces collapsed, with its office's country appended
+    when it names a single place. ``location`` is free text and often lists several places
+    (nishith-desai: nine, across four countries), while ``office`` is the one hiring office, so
+    its country is only safe on a single place. An empty ``location`` falls back to that country
+    (zee). Measured 2026-09-28 over 229 rows of 27 live Boards: 209 offices state a country."""
+    location = " ".join((row.get("location") or "").split())
+    country = ((row.get("office") or {}).get("country") or "").strip()
+    if not location:
+        return country or None
+    if country and "," not in location and country.lower() not in location.lower():
+        return f"{location}, {country}"
+    return location

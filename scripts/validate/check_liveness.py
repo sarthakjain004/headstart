@@ -2224,6 +2224,34 @@ def _peoplestrong_verdict(r):
     return UNKNOWN, None
 
 
+#: What `{label}.sensehq.com/careers/api/jobs` answers, as HTTP 500, for a label with no career
+#: page (live 2026-09-28, 101 labels): an unknown or never-tenant label answers the first
+#: (`nonexistent-tenant-xyz`, `auth`), a label an organization once held the second (`embitel`,
+#: `livspace`). Neither ever came back as a listing.
+_SENSEHQ_NO_BOARD = (
+    b"master.career_page' doesn't exist",
+    b"no organization found with subdomain",
+)
+
+
+def p_sensehq(t, u):
+    # The listing's page 0 carries `data.count`, the Board's whole total. An unknown label never
+    # answers 200 (it answers a 500 in `_SENSEHQ_NO_BOARD`), so a 200 with `count: 0` is a real,
+    # empty Board.
+    # `*.sensehq.com` is a wildcard zone, so a DNS failure is the local resolver, not an answer.
+    status, body = _get(_scraper_for_row("sensehq", t, u).url())
+    if status == 500 and any(m in body for m in _SENSEHQ_NO_BOARD):
+        return DEAD, None
+    if status != 200:
+        return UNKNOWN, None
+    try:
+        count = json.loads(body)["data"]["count"]
+    except (ValueError, KeyError, TypeError):
+        _note("body-unparseable")
+        return UNKNOWN, None
+    return (LIVE, count) if isinstance(count, int) else (UNKNOWN, None)
+
+
 def p_pyjamahr(t, u):
     # Two questions, cheapest first. The listing (`limit=1`, a ~200-byte envelope) says how many
     # postings the Board has, and a non-zero count is proof of a tenant. A zero is NOT proof of
@@ -3123,6 +3151,7 @@ PROBES = {
     "phenom": p_phenom,
     "pinpoint": p_pinpoint,
     "pyjamahr": p_pyjamahr,
+    "sensehq": p_sensehq,
     "radancy": p_radancy,
     "taleo_be": p_taleo_be,
     "taleo_enterprise": p_taleo_enterprise,
