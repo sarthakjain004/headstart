@@ -122,6 +122,12 @@ belong in README and CONTEXT.md, where `tests/test_board_counts.py` checks them.
   `WFNPJL…`, `… BVT4` or `TEST CODE`. Read that client's postings before you exclude it: the name
   is a lead, not proof. `WFN - The McDonnel Group` is a real employer, and a test client can
   carry no such name at all.
+- **Workday: re-run `scripts/validate/workday_company_names.py --new-since origin/main` after
+  landing Workday rows,** on the landing branch, and commit what it adds to
+  `data/validate/company_names/workday.csv`. A Board not on file names itself live on every run,
+  one extra GET each, and its name can move between runs (ADR-0216). `--new-since` reads only the
+  Boards the ledger did not hold at that ref; without it the script reads every uncached Hiring
+  Board, 3,923 on 2026-09-29.
 - **Radancy holds canonical front hosts only — no alias, QA or employee-only host.** A Radancy
   TalentBrew front is a Career front, not an ATS (ADR-0246); its Board is its host. Land the host its
   own sitemap's job URLs carry (`scripts/discover/mine_radancy.py` resolves it): vanity and country

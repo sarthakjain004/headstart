@@ -9,20 +9,25 @@ the scraper runs live. Only named Boards get a row, and a Board with a curated n
 (`config/company_names.csv`) is skipped, since that name overrides the cache. One the cascade
 cannot name keeps resolving live until it is curated or a later run names it.
 
-By default it reads the Workday Hiring Boards not yet on file, so re-run it after a Workday landing.
-`--all` re-reads every Hiring Board, for a periodic refresh: a Board it names gets the new row, and
-one it no longer names keeps the old one. Rows are appended
-as each Board finishes, so an interrupted run keeps its progress; the file is rewritten sorted at
-the end.
+After a Workday landing, run it with `--new-since REF`, where REF is the commit the landing started
+from (`origin/main` on the landing branch): it reads only the Hiring Boards the Workday ledger did
+not hold at REF and that are not yet on file. Without it the script reads every Hiring Board not
+yet on file, and that is not a landing's size: 3,923 on 2026-09-29, nearly all held before the
+cache existed, because the ADR-0216 sweep read only the 4,175 Boards then serving a slug. `--all`
+re-reads every Hiring Board, for a periodic refresh: a Board it names gets the new row, and one it
+no longer names keeps the old one. Rows are appended as each Board finishes, so an interrupted run
+keeps its progress; the file is rewritten sorted at the end.
 
-    python scripts/validate/workday_company_names.py [--all]
+    python scripts/validate/workday_company_names.py [--new-since REF | --all]
 """
 
 from __future__ import annotations
 
 import argparse
 import csv
+import subprocess
 import sys
+import tempfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import UTC, datetime
 from pathlib import Path
@@ -36,6 +41,7 @@ from headstart.scrapers.base import USER_AGENT
 from headstart.scrapers.workday import WorkdayScraper
 
 OUT = ROOT / workday_company_name.RESOLVED_NAMES
+LEDGER = "data/validate/liveness/workday.csv"
 FIELDS = ("board_key", "name", "source", "checked_at")
 #: Details read per Board: enough postings to vote over, measured at 8-12 on 2026-09-24.
 _DETAILS = 8
@@ -66,6 +72,19 @@ def resolve(slug: str) -> tuple[str, str | None, str]:
     return scraper.board_key(), name, source
 
 
+def _held_at(ref: str) -> set[str]:
+    """The Workday Boards (lowercased identities) the ledger held at git ``ref``."""
+    ledger = subprocess.run(
+        ["git", "-C", str(ROOT), "show", f"{ref}:{LEDGER}"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    with tempfile.TemporaryDirectory() as tmp:
+        (Path(tmp) / "workday.csv").write_text(ledger, encoding="utf-8")
+        return {b.lowercase_identity for b in scrapable_boards.load(tmp, min_jobs=0)}
+
+
 def _read(path: Path) -> dict[str, dict[str, str]]:
     if not path.exists():
         return {}
@@ -75,17 +94,25 @@ def _read(path: Path) -> dict[str, dict[str, str]]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
-    parser.add_argument(
+    scope = parser.add_mutually_exclusive_group()
+    scope.add_argument(
         "--all", action="store_true", help="re-read Boards already on file"
+    )
+    scope.add_argument(
+        "--new-since",
+        metavar="REF",
+        help="read only Boards the ledger did not hold at git REF (a landing's base)",
     )
     args = parser.parse_args()
 
     held = _read(OUT)
+    landed_before = _held_at(args.new_since) if args.new_since else set()
     boards = [
         b
         for b in scrapable_boards.load(ROOT / "data/validate/liveness", min_jobs=1)
         if b.ats == "workday"
         and (args.all or b.lowercase_identity not in held)
+        and b.lowercase_identity not in landed_before
         # A curated name overrides the cache, so a Board with one needs no cached answer.
         and not company_name.curated(b.identity)
     ]
