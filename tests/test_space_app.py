@@ -2854,6 +2854,23 @@ def test_home_says_what_the_product_is_in_plain_words(app):
         assert banned not in flat, banned
 
 
+def test_the_sidebar_fold_is_applied_before_the_first_paint(app):
+    """ADR-0249: a stored fold is read in <head>, before the stylesheet, so a reload opens at the
+    right width instead of sliding into it; the button names what it does and what it controls."""
+    page = app.app.test_client().get("/").data.decode()
+    head = page.split("</head>", 1)[0]
+    assert "hs.navCollapsed" in head
+    assert head.index("hs.navCollapsed") < head.index("style.css")
+    button = page.split('id="nav-toggle"', 1)[1].split(">", 1)[0]
+    assert 'aria-controls="site-nav"' in button
+    assert 'aria-expanded="true"' in button
+    assert 'aria-label="Collapse navigation"' in button
+    assert '<nav class="tabs" id="site-nav"' in page
+    # Every entry keeps its name as text inside the link, so the folded rail still announces it.
+    nav = page.split('id="site-nav"', 1)[1].split("</nav>", 1)[0]
+    assert nav.count('<span class="nav-label">') == nav.count('class="nav-item"')
+
+
 def test_links_that_pointed_at_the_data_tab_land_inside_home(app):
     """The Search tab's match-score link and Hot's index link name sections of Home."""
     page = app.app.test_client().get("/").data.decode()

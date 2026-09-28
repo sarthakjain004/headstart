@@ -56,6 +56,7 @@ function loadApp(hash) {
       },
       addEventListener() {}, querySelector: () => null,
       querySelectorAll: sel => (sel === '.panel' ? Object.values(panels) : []),
+      documentElement: { dataset: {} },
     },
     window: { addEventListener() {}, location, CFG: {}, scrollTo() {} },
     location,

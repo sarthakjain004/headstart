@@ -1,6 +1,6 @@
 # ADR-0249: A Home tab replaces the Data tab, and navigation moves to a sidebar
 
-**Status:** accepted · **Date:** 2026-09-28 · **Supersedes:** [ADR-0113](0113-publish-the-indexs-own-limits-in-the-product.md) (the Data tab) · **Supersedes in part:** [ADR-0116](0116-a-quiet-palette-and-a-scanning-layout.md) (its top tab strip, on wide screens only) · **Issue:** #755 items 1, 3, 10 and 16
+**Status:** accepted, amended 2026-09-28 (the sidebar folds to a rail, below) · **Date:** 2026-09-28 · **Supersedes:** [ADR-0113](0113-publish-the-indexs-own-limits-in-the-product.md) (the Data tab) · **Supersedes in part:** [ADR-0116](0116-a-quiet-palette-and-a-scanning-layout.md) (its top tab strip, on wide screens only) · **Issue:** #755 items 1, 3, 10 and 16
 
 ## Context
 
@@ -78,12 +78,35 @@ through, so the door shows it signed out.
 - ADR-0113's commitment — every number counted live, every claim linked to its decision — no
   longer has a page in the product. The privacy disclosures it carried per deployment are now the
   privacy policy's, which Home and the footer link.
-- On a 1280–1439px screen the content column is narrower than before by the sidebar's width,
-  and a 1100–1279px window keeps the top strip.
-  The sidebar cannot be collapsed yet; the UX research asks for "collapsible but open by
-  default", which is left for a follow-up rather than built with an icon-only mode now.
+- On a 1280–1439px screen the content column is narrower than before by the sidebar's width
+  unless the sidebar is folded (see the amendment), and a 1100–1279px window keeps the top strip.
 - A step whose target another change renames is silently skipped, so the tour needs its selectors
   re-checked when the Search tab's markup changes (`tests/js/guided_tour.test.js`,
   `scripts/eval/ui_smoke.py`).
 - The product video drops into Home's hero by naming its file in `home.html`
   (`intro_video`); until then the frame holds a sketch of the Search tab.
+
+## Amendment (2026-09-28): the sidebar folds to a rail of icons
+
+The owner asked for the sidebar to be collapsible so more of the screen shows content, which the
+UX research had also asked for ("collapsible but open by default").
+
+**A button at the top of the sidebar folds it to a 64px rail and back.** Icons stay; each entry's
+name stays in the link as its accessible name and shows as a tooltip on hover or keyboard focus;
+the current tab keeps its marker. The fold is on `<html data-nav="collapsed">`, set by a
+one-line script in `<head>` before the stylesheet from `localStorage` (`hs.navCollapsed`, in
+try/catch; unfolded by default), so a reload opens at the right width with no sideways jump. The
+width change animates, and not at all under reduced motion (the global rule).
+
+**The shell keeps its unfolded ceiling when folded**, so the rail hands its whole saving to the
+content column instead of shrinking the page. Measured on Search (fixture data, Chromium): the
+results column goes from 631px to 743px at 1280 and from 782px to 894px at 1440 (+112px both).
+
+**The sidebar, folded or not, still starts at 1280px.** A rail below that always costs Search
+88px against the top strip those windows get today — results 662 → 574px at 1100, 737 → 649 at
+1180, 830 → 742 at 1279 (measured by forcing the rail layout). At 1100 that is under the 631px
+this ADR already treats as Search's floor, and at every width the strip leaves the content wider
+— which is the point of folding. A rail-only band between 1180 and 1279 would add a third layout
+for a row's worth of vertical space, so it was not built.
+
+**The tour's first step** points at the navigation in either state and names the fold button.

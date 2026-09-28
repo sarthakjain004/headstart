@@ -64,6 +64,7 @@ function loadApp(respond, cfg = {}) {
   const ctx = {
     document: {
       getElementById: id => (nodes[id] ||= fakeEl()),
+      documentElement: { dataset: {} },   // the sidebar's folded state (ADR-0249)
       addEventListener(type, fn) { (docHandlers[type] ||= []).push(fn); },
       querySelector: () => null,
       querySelectorAll: () => [],

@@ -176,6 +176,24 @@ def main() -> None:
                 expect(
                     page.get_by_role("heading", name="What you can do here")
                 ).to_be_visible()
+                # The sidebar fold (ADR-0249): only a wide screen has the sidebar to fold, and
+                # a fold survives a reload, applied before the first paint.
+                toggle = page.locator("#nav-toggle")
+                if width >= 1280:
+                    toggle.click()
+                    expect(toggle).to_have_attribute("aria-expanded", "false")
+                    page.reload()
+                    expect(page.locator("#nav-toggle")).to_have_attribute(
+                        "aria-label", "Expand navigation"
+                    )
+                    page.get_by_role("link", name="Search", exact=True).click()
+                    expect(page.locator("#panel-search")).to_be_visible()
+                    page.locator("#nav-toggle").press("Enter")
+                    expect(page.locator("#nav-toggle")).to_have_attribute(
+                        "aria-expanded", "true"
+                    )
+                else:
+                    expect(toggle).to_be_hidden()
                 assert page.evaluate(
                     "document.documentElement.scrollWidth <= innerWidth"
                 ), "horizontal page overflow"
