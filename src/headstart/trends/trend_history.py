@@ -491,7 +491,8 @@ def record_tick(
     never a baseline. Raises ValueError when ``ts`` is not newer than the newest tick; an OSError
     propagates. Written beside its path and renamed over it, so a killed run leaves no half.
 
-    ``replayed`` is :func:`board_levels` of ``state_dir`` when the caller already has it:
+    ``replayed`` is :func:`board_levels` of this same ``state_dir``, read with no tick written
+    since, when the caller already has it:
     replaying the history is the costly part (1.2 s over 377 ticks on 2026-09-28, growing with
     every tick), and ``role_trends`` reads it for the same tick before writing (#716)."""
     import pyarrow as pa

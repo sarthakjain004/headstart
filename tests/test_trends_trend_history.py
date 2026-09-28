@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -486,15 +487,13 @@ def test_all_openings_carry_no_switch_of_new(tmp_path):
     assert all("new_became_inflow" not in e["fields"] for e in answer["epochs"])
 
 
-def test_a_tick_written_from_the_callers_replay_is_the_tick_it_replays_itself(tmp_path):
+def test_a_tick_written_from_a_given_replay_is_the_one_written_unaided(tmp_path):
     """#716: `role_trends` hands `record_tick` the replay it already made; the file is the same."""
     _write_ticks(tmp_path)
     replayed = trend_history.board_levels(tmp_path)
     moved, *kept = sorted(replayed[1])  # one group moves, one drops to 0, the rest hold
     levels = {moved: replayed[1][moved] + 3, **{k: replayed[1][k] for k in kept[1:]}}
     other = tmp_path / "copy"
-    import shutil
-
     shutil.copytree(tmp_path / trend_history.DELTAS, other / trend_history.DELTAS)
     ts = _stamp(20)
     trend_history.record_tick(

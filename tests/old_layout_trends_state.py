@@ -1,5 +1,6 @@
-"""A small Trends `data/state` in the layout before ADR-0230 step 6, shared by the tests of
-`history_migration`, the migration script and `trend_history`'s reading of it.
+"""A small Trends `data/state` in the layout before ADR-0230 step 6. The migration and the
+reading path it served are gone (#745, #716); this state is kept as the input the tests of
+`old_layout_trends_state_converter` convert, the converter Trends tests still author state in.
 
 It is written the way the old writer wrote it: a Board-delta file per tick, counted against the
 running total **at its own series version**, so a new version's first tick is a baseline; the
