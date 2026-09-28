@@ -40,10 +40,10 @@
 
   <ol class="hot-list" id="hot-results" aria-live="polite"></ol>
 
-  <p class="kind">A company is ranked on the roles HeadStart can see on its boards, so a company
-    whose boards we do not read yet cannot appear here, and one the last run did not re-read
-    shows no change rather than a fall. Companies we have only just begun counting are left
-    out, and a board we find later is not counted as hiring — its whole backlog would otherwise
-    read as a hiring spree.
-    <a href="#good-to-know">What's in the index →</a></p>
+  {# In a job seeker's words (ADR-0255): no boards, runs or index. Each caveat is one short
+     sentence; closed counts running low replaces the per-row "not counted on N of M boards". #}
+  <p class="kind">Only companies HeadStart reads can appear here. Companies we have just started
+    tracking are left out, and jobs we find later at a company don't count as new hiring.
+    Closed counts can be low, because some sites don't show when a job closes.
+    <a href="#good-to-know">Good to know →</a></p>
 </section>

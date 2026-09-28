@@ -142,6 +142,23 @@ def test_taleo_enterprise_liveness_counts_the_scraper_listing(monkeypatch):
     assert fetched == ["https://acme.taleo.net/careersection/2/jobsearch.ftl?lang=en"]
 
 
+def test_taleo_enterprise_liveness_calls_an_unresolvable_host_dead(monkeypatch):
+    """danaher.taleo.net has no DNS record (`dig @1.1.1.1` empty, curl code 6, 2026-09-28); 52 of 60
+    sampled hosts behind the ledger's 6,763 `unknown` rows answer the same. A host that does not
+    exist is an answer, as `p_taleo_be` already reads it, not a retryable failure."""
+
+    def fetch(method, url, **kwargs):
+        raise cl.http.RequestsError(
+            "Failed to perform, curl: (6) Could not resolve host: danaher.taleo.net",
+            code=cl._DNS_ERR,
+        )
+
+    monkeypatch.setattr(cl.http, "fetch", fetch)
+    assert cl.p_taleo_enterprise(
+        "danaher", "https://danaher.taleo.net/careersection/2/jobsearch.ftl"
+    ) == (cl.DEAD, None)
+
+
 def _join_stub(page_props, jobs_rowcount=None):
     """Stub _get for p_join: the company page carries __NEXT_DATA__.pageProps; the jobs API returns
     a pagination.rowCount."""
@@ -1160,17 +1177,17 @@ def test_pinpoint_an_unknown_slug_is_a_404_and_dead(monkeypatch):
     assert cl.p_pinpoint("zzqqnotatenant8127", "") == (cl.DEAD, None)
 
 
-def test_pinpoint_an_unresolvable_host_is_dead_and_a_network_error_unknown(monkeypatch):
+def test_pinpoint_an_unresolvable_host_and_a_network_error_are_unknown(monkeypatch):
     def raising(exc):
         def _fetch(method, url, **kw):
             raise exc
 
         return _fetch
 
-    dns = cl.http.RequestsError("no such host")
-    dns.code = cl._DNS_ERR
+    dns = cl.http.RequestsError("no such host", code=cl._DNS_ERR)
     monkeypatch.setattr(cl, "_fetch", raising(dns))
-    assert cl.p_pinpoint("gone", "") == (cl.DEAD, None)
+    # UNKNOWN since 2026-09-28: *.pinpointhq.com resolves every label, so this is our resolver.
+    assert cl.p_pinpoint("gone", "") == (cl.UNKNOWN, None)
     monkeypatch.setattr(cl, "_fetch", raising(cl.http.RequestsError("reset")))
     assert cl.p_pinpoint("acme", "") == (cl.UNKNOWN, None)
 
@@ -1631,7 +1648,6 @@ def _scraper_url(ats, tenant, url):
         ("gem", "acme", "https://jobs.gem.com/acme"),
         # Host-slugged: a stored deep link must not carry its path or query into the probe.
         ("zoho", "acme", "https://acme.zohorecruit.in/jobs/Careers/1?source=x"),
-        ("personio", "acme", "https://acme.jobs.personio.com/job/1?language=de"),
     ],
 )
 def test_probe_asks_the_url_its_scraper_reads(monkeypatch, ats, tenant, url):
@@ -1639,6 +1655,21 @@ def test_probe_asks_the_url_its_scraper_reads(monkeypatch, ats, tenant, url):
     monkeypatch.setattr(cl, "_get", _recording_get(asked))
     cl.PROBES[ats](tenant, url)
     assert asked[0] == _scraper_url(ats, tenant, url)
+
+
+def test_personio_probe_asks_the_url_its_scraper_reads(monkeypatch):
+    """The parametrized case above, for personio, which fetches through `_fetch` (it must see a
+    redirect's Location, which `_get` does not return)."""
+    tenant, url = "acme", "https://acme.jobs.personio.com/job/1?language=de"
+    asked = []
+
+    def fetch(method, target, **kw):
+        asked.append(target)
+        return _Resp(404)
+
+    monkeypatch.setattr(cl, "_fetch", fetch)
+    cl.PROBES["personio"](tenant, url)
+    assert asked[0] == _scraper_url("personio", tenant, url)
 
 
 @pytest.mark.parametrize(
@@ -1726,6 +1757,79 @@ def test_darwinbox_probe_asks_the_scrapers_listing_on_each_tld(monkeypatch):
     assert cl.p_darwinbox("acme", "https://acme.darwinbox.com") == (cl.DEAD, None)
     scraper = get_scraper("darwinbox", "acme")
     assert asked == [scraper.listing_url_on("com"), scraper.listing_url_on("in")]
+
+
+def _darwinbox_answers(monkeypatch, by_tld):
+    """Serve each TLD's listing POST from `by_tld`: a (status, body) pair."""
+
+    class Answer:
+        def __init__(self, status, body):
+            self.status_code, self.text = status, body
+
+        def json(self):
+            return json.loads(self.text)
+
+    def fetch(method, url, **kwargs):
+        tld = "com" if ".darwinbox.com/" in url else "in"
+        return Answer(*by_tld[tld])
+
+    monkeypatch.setattr(cl.http, "fetch", fetch)
+
+
+# Bodies as live 2026-09-28 (accolitedigital, netmeds, zydushospital).
+_DBX_INVALID = (
+    500,
+    '{"status":"error","data":{"message":"Internal Server Error - Invalid subdomain: acme"}}',
+)
+_DBX_NO_TENANT_INFO = (
+    500,
+    (
+        '{"status":"error","data":{"message":"Internal Server Error - Error while getting '
+        'tenant info"}}'
+    ),
+)
+
+
+def test_darwinbox_probe_counts_the_boards_stated_total_not_one_page(monkeypatch):
+    """zydushospital, live 2026-09-28: page 1 at limit 100 held 100 rows, `job_counts` 135."""
+    page = json.dumps({"status": "success", "data": [{}] * 100, "job_counts": 135})
+    _darwinbox_answers(monkeypatch, {"in": (200, page), "com": _DBX_INVALID})
+    assert cl.p_darwinbox("acme", "https://acme.darwinbox.in") == (cl.LIVE, 135)
+
+
+def test_darwinbox_probe_reads_a_host_that_is_no_tenant_on_either_tld_as_dead(
+    monkeypatch,
+):
+    """Live 2026-09-28: 12/12 live tenants answer "Invalid subdomain" on their other TLD, and
+    hosts answering it or "Error while getting tenant info" redirect `/` to darwinbox.com's
+    marketing site where a tenant redirects to its own `/user/login`."""
+    _darwinbox_answers(monkeypatch, {"in": _DBX_NO_TENANT_INFO, "com": _DBX_INVALID})
+    assert cl.p_darwinbox("acme", "https://acme.darwinbox.in") == (cl.DEAD, None)
+
+
+def test_darwinbox_probe_does_not_read_cloudflares_530_as_no_tenant(monkeypatch):
+    """bobobox, live 2026-09-28: .in "Invalid subdomain", .com Cloudflare 530. A 530 means the
+    origin did not answer, which a real tenant's outage looks like too."""
+    no_origin = (
+        530,
+        '{"type":"https://developers.cloudflare.com/support/troubleshooting/"}',
+    )
+    _darwinbox_answers(monkeypatch, {"in": _DBX_INVALID, "com": no_origin})
+    assert cl.p_darwinbox("acme", "https://acme.darwinbox.in") == (cl.UNKNOWN, None)
+
+
+def test_darwinbox_probe_keeps_an_unexplained_answer_unknown(monkeypatch):
+    """insights.darwinbox.com answered 404 "invalid endpoint" (live 2026-09-28): not measured
+    to mean anything, so it settles nothing."""
+    not_measured = (
+        404,
+        (
+            '{"success":false,"errorMessage":"You seem to have called an invalid'
+            ' endpoint."}'
+        ),
+    )
+    _darwinbox_answers(monkeypatch, {"in": _DBX_INVALID, "com": not_measured})
+    assert cl.p_darwinbox("acme", "https://acme.darwinbox.in") == (cl.UNKNOWN, None)
 
 
 def test_ripplehire_probe_reads_the_scrapers_token_and_search(monkeypatch):
@@ -2380,3 +2484,77 @@ def test_p_teamtailor_keeps_walking_when_a_page_repeats_a_few_ids(monkeypatch):
 
     monkeypatch.setattr(cl, "_get", get)
     assert cl.p_teamtailor("acme", "https://acme.teamtailor.com") == (cl.LIVE, 205)
+
+
+def _personio_fetch(status, location=None, content=b"", calls=None):
+    def _fetch(method, url, **kw):
+        if calls is not None:
+            calls.append(kw)
+        return _Resp(
+            status, headers={"location": location} if location else {}, content=content
+        )
+
+    return _fetch
+
+
+def test_p_personio_reads_a_redirect_off_the_board_host_as_dead(monkeypatch):
+    """A departed tenant's `/xml` answers `307 https://personio.com/` (13c-venture, 2026-09-28).
+    Following it reached the marketing site's 429, which banned all of jobs.personio.de and left
+    every later row UNKNOWN. The probe no longer follows it, as the scraper does not."""
+    calls = []
+    monkeypatch.setattr(
+        cl, "_fetch", _personio_fetch(307, "https://personio.com/", calls=calls)
+    )
+    assert cl.p_personio("13c-venture", "https://13c-venture.jobs.personio.de") == (
+        cl.DEAD,
+        None,
+    )
+    assert calls[0]["allow_redirects"] is False
+
+
+def test_p_personio_a_same_host_redirect_is_not_gone(monkeypatch):
+    monkeypatch.setattr(cl, "_fetch", _personio_fetch(301, "/xml/"))
+    assert cl.p_personio("acme", "https://acme.jobs.personio.de") == (cl.UNKNOWN, None)
+
+
+def test_p_personio_counts_positions(monkeypatch):
+    feed = b"<workzag-jobs><position></position><position></position></workzag-jobs>"
+    monkeypatch.setattr(cl, "_fetch", _personio_fetch(200, content=feed))
+    assert cl.p_personio("acme", "https://acme.jobs.personio.de") == (cl.LIVE, 2)
+
+
+def test_p_personio_a_429_on_the_board_host_is_unknown(monkeypatch):
+    monkeypatch.setattr(cl, "_fetch", _personio_fetch(429))
+    assert cl.p_personio("acme", "https://acme.jobs.personio.de") == (cl.UNKNOWN, None)
+def test_p_recruitee_reads_a_dns_failure_as_unknown(monkeypatch):
+    """`*.recruitee.com` is a wildcard: an invented slug resolves (35.186.220.63 on 1.1.1.1,
+    2026-09-28) and answers 404. So a DNS failure is a resolver fault, not a gone tenant."""
+    monkeypatch.setattr(cl, "_get", _stub_get("dns", b""))
+    assert cl.p_recruitee("acme", "https://acme.recruitee.com") == (cl.UNKNOWN, None)
+    monkeypatch.setattr(cl, "_get", _stub_get(404, b""))
+    assert cl.p_recruitee("acme", "https://acme.recruitee.com") == (cl.DEAD, None)
+# A DNS failure on a host every tenant label resolves on is our resolver, never a dead tenant
+# (`_unknown_dns_on_a_shared_host`).
+@pytest.mark.parametrize(
+    "ats, tenant, url",
+    [
+        ("bamboohr", "acme", "https://acme.bamboohr.com"),
+        ("jazzhr", "acme", "https://acme.applytojob.com"),
+        ("keka", "acme", "https://acme.keka.com"),
+        ("zoho", "acme.zohorecruit.com", "https://acme.zohorecruit.com"),
+        ("freshteam", "acme", "https://acme.freshteam.com"),
+        ("pinpoint", "acme", "https://acme.pinpointhq.com"),
+        ("jobvite", "acme", "https://jobs.jobvite.com/acme"),
+    ],
+)
+def test_a_unknown_dns_on_a_shared_host_host_is_unknown(monkeypatch, ats, tenant, url):
+    dns = cl.http.RequestsError("Could not resolve host", code=cl._DNS_ERR)
+
+    def _fetch(method, url, **kw):
+        raise dns
+
+    notes = []
+    monkeypatch.setattr(cl, "_fetch", _fetch)
+    monkeypatch.setattr(cl, "_note", notes.append)
+    assert cl.PROBES[ats](tenant, url) == (cl.UNKNOWN, None)
+    assert notes == ["dns"]

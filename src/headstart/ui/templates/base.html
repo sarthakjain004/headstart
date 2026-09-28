@@ -3,6 +3,9 @@
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>HeadStart — semantic job search</title>
 <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='logo_mark.svg') }}">
+{# The sidebar's folded state (ADR-0249), read before the stylesheet so the first paint already
+   has the right width: set after load, the content column would jump sideways. #}
+<script>try { if (localStorage.getItem('hs.navCollapsed')) document.documentElement.dataset.nav = 'collapsed'; } catch (e) {}</script>
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='resume.css') }}">
 </head><body>
@@ -22,33 +25,38 @@
     </div>
     {# Its own row in the masthead grid, so a phone-width header pushes it down rather than
        dropping it — this is the one line that answers "what am I looking at". #}
-    <p class="tagline">Tech jobs read straight from company career boards</p>
+    <p class="tagline">Tech jobs read straight from company career sites</p>
   </header>
 
   {# A sidebar on a wide screen and a scrolling strip across the top below that (ADR-0249); one
      list either way, so the tab logic in app.js reads the same links. The icons are decoration:
      every entry carries its name as text. A tab this deployment cannot serve is left out rather
      than shown disabled. #}
-  <nav class="tabs" aria-label="Sections">
-      <a class="nav-item" href="#home" data-tab="home" aria-current="page"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3.5 10.5 12 3.5l8.5 7"/><path d="M5.5 9v11h13V9"/></svg>Home</a>
-      <a class="nav-item" href="#search" data-tab="search" aria-current="false"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.4-4.4"/></svg>Search</a>
+  <nav class="tabs" id="site-nav" aria-label="Sections">
+      {# Folds the sidebar to its icons (ADR-0249). Shown only where the nav is a sidebar. #}
+      <button type="button" class="nav-toggle" id="nav-toggle" aria-controls="site-nav"
+              aria-expanded="true" aria-label="Collapse navigation"
+              title="Collapse navigation"><svg class="nav-toggle-ico"
+              viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><path d="M9 4.5v15M15.5 9.5 13 12l2.5 2.5"/></svg></button>
+      <a class="nav-item" href="#home" data-tab="home" aria-current="page"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3.5 10.5 12 3.5l8.5 7"/><path d="M5.5 9v11h13V9"/></svg><span class="nav-label">Home</span></a>
+      <a class="nav-item" href="#search" data-tab="search" aria-current="false"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.4-4.4"/></svg><span class="nav-label">Search</span></a>
       {% if sets_on %}
-      <a class="nav-item" href="#matches" data-tab="matches" aria-current="false"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3.5"/></svg>Matches</a>
+      <a class="nav-item" href="#matches" data-tab="matches" aria-current="false"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3.5"/></svg><span class="nav-label">Matches</span></a>
       {% endif %}
       {% if saved_on %}
-      <a class="nav-item" href="#saved" data-tab="saved" aria-current="false"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6.5 3.5h11v17l-5.5-4-5.5 4z"/></svg>Saved</a>
+      <a class="nav-item" href="#saved" data-tab="saved" aria-current="false"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6.5 3.5h11v17l-5.5-4-5.5 4z"/></svg><span class="nav-label">Saved</span></a>
       {% endif %}
       {% if hot_on %}
-      <a class="nav-item" href="#hot" data-tab="hot" aria-current="false"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 3.5c.8 3.6 5 5.4 5 10.2a5 5 0 0 1-10 0c0-2.4 1.2-3.9 2.3-4.9.3 1.9 1.3 2.9 2.4 3.1-.4-3.1-.6-5.6.3-8.4z"/></svg>Hiring now</a>
+      <a class="nav-item" href="#hot" data-tab="hot" aria-current="false"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 3.5c.8 3.6 5 5.4 5 10.2a5 5 0 0 1-10 0c0-2.4 1.2-3.9 2.3-4.9.3 1.9 1.3 2.9 2.4 3.1-.4-3.1-.6-5.6.3-8.4z"/></svg><span class="nav-label">Hiring now</span></a>
       {% endif %}
       {% if trends_on %}
-      <a class="nav-item" href="#trends" data-tab="trends" aria-current="false"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3.5 3.5v17h17"/><path d="m7.5 14.5 3.5-4 3 2.5 5-6"/></svg>Trends</a>
+      <a class="nav-item" href="#trends" data-tab="trends" aria-current="false"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3.5 3.5v17h17"/><path d="m7.5 14.5 3.5-4 3 2.5 5-6"/></svg><span class="nav-label">Trends</span></a>
       {% endif %}
       {# No server support and no feature flag: the builder is entirely client-side and stores
          nothing on our side, so it works on the Space and on the local dev renderer alike. #}
-      <a class="nav-item" href="#resume" data-tab="resume" aria-current="false"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6 3.5h8l4.5 4.5v12.5H6z"/><path d="M13.5 3.5V8.5h5M9 13h6M9 16.5h6"/></svg>Résumé</a>
+      <a class="nav-item" href="#resume" data-tab="resume" aria-current="false"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6 3.5h8l4.5 4.5v12.5H6z"/><path d="M13.5 3.5V8.5h5M9 13h6M9 16.5h6"/></svg><span class="nav-label">Résumé</span></a>
       {% if profile_on %}
-      <a class="nav-item" href="#profile" data-tab="profile" aria-current="false"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="8.5" r="4"/><path d="M4.5 20.5c1.4-3.6 4.2-5.5 7.5-5.5s6.1 1.9 7.5 5.5"/></svg>Profile</a>
+      <a class="nav-item" href="#profile" data-tab="profile" aria-current="false"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="8.5" r="4"/><path d="M4.5 20.5c1.4-3.6 4.2-5.5 7.5-5.5s6.1 1.9 7.5 5.5"/></svg><span class="nav-label">Profile</span></a>
       {% endif %}
   </nav>
 
@@ -73,10 +81,9 @@
     <section class="panel" id="panel-resume" hidden>{% include "resume.html" %}</section>
   </div>
 
-  <div class="foot">Every job here is read straight from the board the employer runs — never
-    scraped from another job site. Some of those boards belong to staffing firms and
-    recruiters rather than the end employer; the <a href="#hot">Hiring now</a> tab labels the
-    ones we have identified. Your search is matched on meaning rather than
+  <div class="foot">Every job here comes straight from the employer's own career site — never
+    copied from a job board. Some employers are staffing firms or recruiters; the
+    <a href="#hot">Hiring now</a> tab labels the ones we know. Search matches meaning, not
     keywords. English-language tech roles, refreshed every couple of hours.
     <a href="{{ repo }}/blob/main/PRIVACY.md" target="_blank" rel="noopener">Privacy policy</a></div>
 </div>

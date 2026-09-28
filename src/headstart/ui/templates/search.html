@@ -27,7 +27,7 @@
     <summary><span class="dot"></span><span class="ttl">Email me new matches</span><span class="sub">invite only</span></summary>
     <div class="body">
       <p>We'll email you the best 30 new jobs matching the search and filters you've set here,
-         every time the index refreshes — with a spreadsheet attached. Every email has an
+         every time the jobs refresh — with a spreadsheet attached. Every email has an
          unsubscribe link.</p>
       <div class="row">
         <div id="gsignin"></div>
@@ -81,9 +81,9 @@
           <span class="tip" id="maxyears-tip">Hides jobs asking for more years than this. Jobs that don't state a
             requirement are kept.</span></div>
         <div class="f"><label class="sw"><input type="checkbox" id="remote" aria-describedby="remote-tip"> Remote only</label>
-          <span class="tip" id="remote-tip">Some boards carry a real remote setting and we use it; the rest are read
-            from how the employer worded the location. Either way a role described as remote only in
-            the body text can be missed.</span></div>
+          <span class="tip" id="remote-tip">Some employers mark a job as remote and we use that; for the rest we
+            read the location they wrote. A job that says it's remote only in its description can be
+            missed.</span></div>
       </div>
 
       {# Pay is its own group, not the tail of Role: a currency, two bounds, a slider, its scale
@@ -138,9 +138,9 @@
       <div class="set">
         <h2>Where</h2>
         <div class="f"><label for="india">India — city or region</label>
-          <span class="tip" id="india-tip">India has a gazetteer behind it, so picking a city also matches its
-            neighbourhoods and alternative spellings. Location below matches text anywhere in the
-            world, just without that expansion. The index is worldwide either way.</span>
+          <span class="tip" id="india-tip">Picking an Indian city also matches its neighbourhoods and other
+            spellings. Location below matches any place in the world, just without that. Jobs from
+            every country are included either way.</span>
           <select id="india" aria-describedby="india-tip"><option value="">Anywhere</option>
             <option value="india">All India</option>
             {% for value, label in india_opts %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
@@ -180,7 +180,7 @@
             {% for value, label in seen_opts %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
           </select></div>
         {% endif %}
-        <div class="f"><label for="ats">ATS provider</label>
+        <div class="f"><label for="ats">Source</label>
           <select id="ats"><option value="">Any</option>
             {% for a in atses %}<option value="{{ a }}">{{ a }}</option>{% endfor %}
           </select></div>

@@ -40,8 +40,8 @@
      880px on one tab and 1276px on another is the same component at two sizes. --shell-pad
      is the shell's own gutter, named so the two cannot drift apart in the calc below. */
   --measure:1150px; --shell-pad:26px;
-  /* The wide-screen sidebar's column and the gap beside it (ADR-0249). */
-  --nav-w:176px; --nav-gap:24px;
+  /* The wide-screen sidebar's column, its folded width, and the gap beside it (ADR-0249). */
+  --nav-w:176px; --nav-folded-w:64px; --nav-gap:24px;
   /* What the guided tour dims the page with: dark in both themes, a touch lighter on light. */
   --scrim:rgba(6,7,9,.62);
 }
@@ -1218,9 +1218,10 @@ textarea:focus{ border-color:var(--accent); }
    ADR-0116 removed a sidebar for costing width on every viewport; this one appears only where
    the width exists, and the shell's ceiling grows by the sidebar's own width so the content
    column keeps its measure. 1280px, not lower: Search puts its filter column beside the results
-   from 1100px (ADR-0247), and at 1180px the three columns left the results 525px — measured. `screen` only: a printout has no navigation to reserve a column
-   for (resume.css hides .tabs in print). The icons are shown here and not in the strip, where
-   they would only push more tabs off a phone's edge. */
+   from 1100px (ADR-0247), and at 1180px the three columns left the results 525px — measured.
+   `screen` only: a printout has no navigation to reserve a column for (resume.css hides .tabs
+   in print). The icons are shown here and not in the strip, where they would only push more
+   tabs off a phone's edge. */
 .nav-ico{ display:none; width:18px; height:18px; flex:none; fill:none; stroke:currentColor;
   stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
 @media screen and (min-width:1280px){
@@ -1230,17 +1231,52 @@ textarea:focus{ border-color:var(--accent); }
   .top{ grid-area:top; }
   .content{ grid-area:content; min-width:0; }
   .foot{ grid-area:foot; }
-  .tabs{ grid-area:nav; position:sticky; top:18px; flex-direction:column; gap:2px; margin:0;
-    border-bottom:0; overflow:visible; -webkit-mask-image:none; mask-image:none; }
-  .nav-item{ gap:11px; padding:10px 12px; margin-bottom:0; border-bottom:0;
-    border-radius:var(--r-md); transition:color var(--step), background var(--step); }
+  /* z-index: a sticky box is its own stacking context, and without one above the content the
+     folded sidebar's tooltips painted under Search's filter rail beside it (measured at 1280). */
+  .tabs{ grid-area:nav; position:sticky; top:18px; z-index:3; flex-direction:column; gap:2px;
+    margin:0; border-bottom:0; overflow:visible; -webkit-mask-image:none; mask-image:none; }
+  /* The icon sits 23px in, which is the centre of the folded 64px column, so folding and
+     unfolding only slide the column's edge: nothing inside it jumps. `overflow:hidden` clips a
+     label the column is still too narrow for while it unfolds; the folded state lifts it for
+     the tooltips. */
+  .nav-item{ gap:11px; padding:10px 12px 10px 23px; margin-bottom:0; border-bottom:0;
+    overflow:hidden; border-radius:var(--r-md);
+    transition:color var(--step), background var(--step); }
   .nav-item:hover{ background:var(--raise); }
   .nav-item[aria-current="page"]{ background:var(--raise); box-shadow:inset 3px 0 0 var(--accent); }
   .nav-ico{ display:block; }
 }
+/* The ceiling stays the unfolded one in both states, so folding the sidebar hands its whole
+   width to the content column rather than shrinking the page (ADR-0249's amendment). */
 /* Below the ultrawide breakpoint only: that block sets its own, wider ceiling. */
 @media screen and (min-width:1280px) and (max-width:1719.98px){
   .shell{ max-width:min(calc(var(--measure) + var(--nav-w) + var(--nav-gap) + 2 * var(--shell-pad)), 94vw); }
+}
+
+/* ---- the folded sidebar (ADR-0249): a column of icons. `data-nav` on <html> is set before
+       the first paint (base.html), so a reload opens at the right width instead of sliding into
+       it. Each entry's name stays in the DOM as its accessible name and doubles as its tooltip.
+       The button sits centred in the folded width (10px in), and stays there unfolded. ---- */
+.nav-toggle{ display:none; place-items:center; width:44px; height:44px; margin:0 0 6px 10px;
+  padding:0; border:1px solid var(--rule); border-radius:var(--r-md); background:var(--raise);
+  color:var(--ink-2); cursor:pointer; transition:color var(--step), border-color var(--step); }
+.nav-toggle:hover{ color:var(--accent); border-color:var(--accent); }
+.nav-toggle-ico{ width:20px; height:20px; fill:none; stroke:currentColor; stroke-width:1.8;
+  stroke-linecap:round; stroke-linejoin:round; transition:transform var(--step); }
+@media screen and (min-width:1280px){
+  .nav-toggle{ display:grid; }
+  .shell{ transition:grid-template-columns var(--step); }
+  :root[data-nav="collapsed"] .shell{ grid-template-columns:var(--nav-folded-w) minmax(0,1fr); }
+  :root[data-nav="collapsed"] .nav-toggle-ico{ transform:scaleX(-1); }
+  :root[data-nav="collapsed"] .nav-item{ position:relative; overflow:visible; }
+  :root[data-nav="collapsed"] .nav-label{ position:absolute; width:1px; height:1px; overflow:hidden;
+    clip-path:inset(50%); white-space:nowrap; }
+  :root[data-nav="collapsed"] .nav-item:hover .nav-label,
+  :root[data-nav="collapsed"] .nav-item:focus-visible .nav-label{ left:calc(100% + 10px); top:50%;
+    width:auto; height:auto; overflow:visible; clip-path:none; transform:translateY(-50%);
+    z-index:20; padding:6px 10px; border:1px solid var(--rule-2); border-radius:var(--r-md);
+    background:var(--raise-2); color:var(--ink); font-size:13px; box-shadow:var(--shadow);
+    pointer-events:none; }
 }
 
 /* ---- the Home tab (ADR-0249). The landing view: what HeadStart is and the way into it. ---- */

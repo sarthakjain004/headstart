@@ -1,4 +1,5 @@
 import re
+from pathlib import Path
 
 import pytest
 from fake_fetcher import FakeFetcher, FakeResponse
@@ -438,3 +439,34 @@ def test_a_failed_feed_leaves_the_board_key():
     scraper, _ = _feed_board(_Feed("", status_code=404))
     scraper.resolve_company()
     assert scraper.company == BOARD_KEY
+
+
+def test_primary_work_location_and_the_json_ld_fill_what_the_labels_missed():
+    """AGIOS rid 2517, live 2026-09-28 (scripts/styles stripped): its place is labelled "Primary
+    Work Location", which the reader never tried, so location and remote fell back to the
+    listing's site label on 8 of 18 postings; its JSON-LD states `employmentType` (read on 0 of 18)
+    and its `identifier` is the requisition (read on none)."""
+    page = (
+        Path(__file__).parent
+        / "fixtures"
+        / "taleo_be_detail_primary_work_location.html"
+    ).read_text()
+    board = (
+        "https://phe.tbe.taleo.net/phe03/ats/careers/v2/searchResults?org=AGIOS&cws=37"
+    )
+    scraper = TaleoBEScraper(board, "Agios Pharmaceuticals Inc")
+    item = {
+        "id": "2517",
+        "url": board.replace("searchResults", "viewRequisition") + "&rid=2517",
+        "title": "Hemolytic Anemia Specialist (Michigan)",
+        "location": "Agios Pharmaceuticals HQ",
+        "department": None,
+        "company": None,
+    }
+    [job] = scraper.parse(
+        [(item, scraper.read_detail(item, FakeResponse(text=page)))], "t"
+    )
+    assert job.location == "Remote - US"
+    assert job.remote is True
+    assert job.employment_type == "Full time"
+    assert job.requisition == "2517"

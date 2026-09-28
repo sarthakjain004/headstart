@@ -456,24 +456,6 @@ def test_malformed_params_are_refused_and_logged_by_type_only(account, caplog, p
     assert record.levelname == "INFO" and "resume text" not in record.getMessage()
 
 
-def test_a_bug_in_handle_answers_an_internal_error_and_serving_continues(
-    account, monkeypatch, caplog
-):
-    monkeypatch.setattr(srv, "_result", lambda *a: 1 / 0)
-    stdin = io.StringIO(
-        json.dumps({"jsonrpc": "2.0", "id": 1, "method": "ping"})
-        + "\n"
-        + json.dumps({"jsonrpc": "2.0", "id": 2, "method": "nope"})
-        + "\n"
-    )
-    stdout = io.StringIO()
-    srv.serve(stdin, stdout, account)
-    replies = [json.loads(line) for line in stdout.getvalue().splitlines()]
-    assert [r["error"]["code"] for r in replies] == [-32603, -32601]
-    [record] = [r for r in caplog.records if r.name == srv.__name__]
-    assert record.levelname == "ERROR" and record.exc_info is not None
-
-
 def test_every_tool_call_leaves_one_debug_line_with_its_outcome(account, caplog):
     caplog.set_level("DEBUG", logger="headstart")
     srv.handle(
@@ -627,3 +609,17 @@ def test_a_node_crash_logs_its_frames_but_never_the_message(monkeypatch, caplog)
         inspection.read_document({"id": "doc-1"})
     assert "at render (/app/resume_document.js:12:9)" in caplog.text
     assert "Initech" not in caplog.text
+
+
+def test_an_unknown_tool_is_a_protocol_error_not_a_result(account):
+    """ADR-0137's 2026-09-28 amendment: the shared loop answers a tool this server does not
+    have as JSON-RPC -32602, configured or not — there is no argument to correct, only a name."""
+    message = {
+        "jsonrpc": "2.0",
+        "id": 9,
+        "method": "tools/call",
+        "params": {"name": "delete_resume", "arguments": {}},
+    }
+    for bound in (account, acct.Unconfigured("set HEADSTART_ACCOUNT_EMAIL")):
+        answer = srv.handle(message, bound)
+        assert answer["error"]["code"] == -32602 and "result" not in answer

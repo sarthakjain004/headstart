@@ -1,0 +1,115 @@
+{
+ "listings": [
+  {
+   "id": "224501",
+   "t": "AI Engineer, Manipulation, Optimus",
+   "dp": "3",
+   "f": "74",
+   "l": "401022",
+   "y": 1,
+   "sp": 1,
+   "pu": null
+  },
+  {
+   "id": "284953",
+   "t": "Vehicle Operator Supervisor",
+   "dp": "7",
+   "f": "77",
+   "l": "4255",
+   "y": 1,
+   "sp": 53,
+   "pu": null
+  },
+  {
+   "id": "280488",
+   "t": " KFZ-Mechatroniker / Service Technician (m/w/d) - Frankfurt Ostend",
+   "dp": "1",
+   "f": "76",
+   "l": "20906",
+   "y": 1,
+   "sp": 141,
+   "pu": null
+  },
+  {
+   "id": "232316",
+   "t": "Sales Trainer",
+   "dp": "2",
+   "f": "68",
+   "l": "31322",
+   "y": 1,
+   "sp": 1412,
+   "pu": null
+  }
+ ],
+ "lookup": {
+  "locations": {
+   "401022": "Palo Alto, California",
+   "20906": "Frankfurt Am Main",
+   "4255": "Kowloon"
+  },
+  "departments": {
+   "2": "Sales & Customer Support",
+   "3": "Tesla AI",
+   "1": "Vehicle Service",
+   "7": "Vehicle Software"
+  },
+  "types": {
+   "1": "fulltime",
+   "2": "parttime",
+   "3": "intern",
+   "4": "seasonal"
+  },
+  "sites": {
+   "DE": "Germany",
+   "HK": "Hong Kong",
+   "US": "United States of America"
+  }
+ },
+ "geo": [
+  {
+   "id": "5",
+   "sites": [
+    {
+     "id": "US",
+     "states": [
+      {
+       "id": "CA",
+       "name": "California",
+       "cities": {
+        "Palo Alto": [
+         "401022"
+        ]
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "3",
+   "sites": [
+    {
+     "id": "DE",
+     "cities": {
+      "Frankfurt Am Main": [
+       "20906"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "id": "2",
+   "sites": [
+    {
+     "id": "HK",
+     "cities": {
+      "Kowloon": [
+       "4255"
+      ]
+     }
+    }
+   ]
+  }
+ ]
+}

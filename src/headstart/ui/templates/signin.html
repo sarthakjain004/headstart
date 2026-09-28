@@ -1,8 +1,8 @@
 <!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>HeadStart — tech jobs read straight from company career boards</title>
-<meta name="description" content="Software-engineering openings read directly from companies' own applicant tracking systems, searched by meaning rather than keywords.">
+<title>HeadStart — tech jobs read straight from company career sites</title>
+<meta name="description" content="Software-engineering openings read directly from companies' own career sites, searched by meaning rather than keywords.">
 <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='logo_mark.svg') }}">
 <style>
   /* A subset of style.css's tokens — just enough for one page. Deliberately self-contained:
@@ -112,11 +112,10 @@
   </div>
 
   <h1>Jobs with nothing in between.</h1>
-  <p class="lede">HeadStart reads software-engineering openings <b>straight from the applicant
-    tracking system each company runs its own hiring on</b> — Greenhouse, Lever, Workday, Ashby
-    among them. No reposts and nothing bought to the top; boards that belong to staffing firms
-    are labelled where we have identified them. You describe the role you want in plain words,
-    and it matches on meaning rather than keywords.</p>
+  <p class="lede">HeadStart reads software-engineering openings <b>straight from each company's
+    own career site</b>, where you would apply anyway. No reposts and nothing bought to the top;
+    staffing firms are labelled where we have spotted them. You describe the role you want in
+    plain words, and it matches on meaning rather than keywords.</p>
 
   {# Every tile is an exact count. An earlier pair of drafts put an employer count here and
      then a board count; neither can be counted exactly from the served table (`company` is a
@@ -129,7 +128,7 @@
     {% if n_new is not none %}
     <div class="stat"><div class="v">{{ "{:,}".format(n_new) }}</div><div class="k">of them added in the last {{ new_days }} days</div></div>
     {% endif %}
-    <div class="stat"><div class="v">{{ n_atses }}</div><div class="k">ATS providers read directly</div></div>
+    <div class="stat"><div class="v">{{ n_atses }}</div><div class="k">hiring platforms read directly</div></div>
   </div>
 
   <div class="card">
@@ -137,15 +136,15 @@
     <ul class="points">
       <li>
         <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M4 10.5 8 14.5 16 6" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        <span><b>Every link opens on the employer's own board.</b> HeadStart never hosts an
+        <span><b>Every link opens on the employer's own site.</b> HeadStart never hosts an
         application, and there is no page in between the result and the company.</span>
       </li>
       <li>
         <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M4 10.5 8 14.5 16 6" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        <span><b>Closed roles get removed, and the exception is published.</b> A job missing
-        from its board twice running comes out of the index — but a board we cannot read
-        properly is skipped rather than emptied, so some dead entries do persist — one such
-        board was measured serving closed jobs for 22 days.</span>
+        <span><b>Closed roles get removed, and the exception is published.</b> A job comes off
+        once it is missing from the company's site twice in a row. When we can't read a site
+        properly we leave its jobs up rather than wipe them, so some closed ones linger — one
+        site kept showing closed jobs for 22 days.</span>
       </li>
       <li>
         <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M4 10.5 8 14.5 16 6" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -173,7 +172,7 @@
   <p class="checkable">None of this has to be taken on faith —
     <a href="{{ repo }}" target="_blank" rel="noopener">the code that gathers it is public</a><span class="sep">·</span>
     <a href="{{ repo }}/tree/main/docs/adr" target="_blank" rel="noopener">so is every design decision</a><span class="sep">·</span>
-    <a href="{{ repo }}/actions" target="_blank" rel="noopener">and every pipeline run</a>
+    <a href="{{ repo }}/actions" target="_blank" rel="noopener">and every refresh</a>
   </p>
 
 </div>

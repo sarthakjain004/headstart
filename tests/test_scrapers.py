@@ -4518,6 +4518,35 @@ def test_personio_salary_from_structured_salary_information(position_xml, expect
     assert get_scraper("personio", "acme")._salary_field(pos) == expected
 
 
+def test_personio_remote_reads_every_office_not_only_the_first():
+    """Real 1komma5grad positions (2026-09-28): 2749999 names Hamburg with `Remote` and Berlin as
+    additional offices, and was served on-site; 47 of 307 positions there carry such an entry."""
+    raw = ET.fromstring(
+        (FIXTURES / "personio_1komma5grad_remote_additional_office.xml").read_bytes()
+    )
+    jobs = get_scraper("personio", "1komma5grad.jobs.personio.com", "1K5").parse(
+        raw, SCRAPED_AT
+    )
+    assert [(j.location, j.remote) for j in jobs] == [
+        ("Hamburg, Remote, Berlin", True),
+        ("Riederich", False),
+    ]
+
+
+def test_personio_a_hybrid_office_is_neither_remote_nor_on_site():
+    """A live shape from the `_location` measurement (2026-08-25): `office="Leipzig"` with
+    `additionalOffices=["Dubai", "Hybrid"]`. Hybrid is None, as `remote_from_workplace` reads it."""
+    raw = ET.fromstring(
+        b"<workzag-jobs><position><id>1</id><name>T</name><office>Leipzig</office>"
+        b"<additionalOffices><office>Dubai</office><office>Hybrid</office>"
+        b"</additionalOffices></position></workzag-jobs>"
+    )
+    job = get_scraper("personio", "acme.jobs.personio.de", "Acme").parse(
+        raw, SCRAPED_AT
+    )[0]
+    assert (job.location, job.remote) == ("Leipzig, Dubai, Hybrid", None)
+
+
 def test_personio_slug_from_keeps_only_the_host():
     """Discovery stored the raw Common Crawl capture for host-shaped ATSes, so 634 rows in the
     personio ledger carry a job deep link with tracking params instead of the board. A path alone
@@ -10695,6 +10724,37 @@ def test_oracle_pages_past_the_first_200():
     assert seen == [0, 200]  # the offset really advanced
     assert len(jobs) == 299
     assert len({j.id for j in jobs}) == 299
+
+
+def test_oracle_serves_every_place_a_posting_names():
+    """fa-esfc req 16121, live 2026-09-28 (trimmed): primary Innisfail, secondary Stettler. Only
+    the primary was served, so the posting was invisible to a search for its second place (6 of
+    200 listing rows on this Board name more than one)."""
+    from headstart.scrapers.oracle import OracleScraper
+
+    listed = {
+        "Id": "16121",
+        "Title": "Maintenance Worker",
+        "PrimaryLocation": "Innisfail, AB, Canada",
+    }
+    detail = {
+        "PrimaryLocation": "Innisfail, AB, Canada",
+        "secondaryLocations": [
+            {
+                "RequisitionLocationId": 300000703579716,
+                "Name": "Stettler, AB, Canada",
+                "CountryCode": "CA",
+            }
+        ],
+    }
+    s = OracleScraper("fa-esfc-saasfaprod1.fa.ocs.oraclecloud.com", "ESFC")
+    [job] = s.parse(
+        {"requisitionList": [listed], "details": {"16121": detail}}, SCRAPED_AT
+    )
+    assert job.location == "Innisfail, AB, Canada; Stettler, AB, Canada"
+    # a posting naming one place is served as before
+    [single] = s.parse({"requisitionList": [listed], "details": {}}, SCRAPED_AT)
+    assert single.location == "Innisfail, AB, Canada"
 
 
 def test_zwayam_parse():

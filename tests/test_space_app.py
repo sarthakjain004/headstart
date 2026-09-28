@@ -804,6 +804,21 @@ def _stored_companies(app_module, hub, followed=(), hidden=()):
     return path
 
 
+def test_a_full_list_is_refused_in_a_job_seekers_words(sets_app, hub, monkeypatch):
+    """The page prints this refusal as it stands (setCompany), so it names no Board (ADR-0255)."""
+    import headstart.alerts.store as st
+
+    followed = [f"greenhouse:c{n}" for n in range(st.MAX_COMPANIES)]
+    _stored_companies(sets_app, hub, followed=followed)
+    client = _signed_in(sets_app, monkeypatch)
+    r = client.post(
+        "/companies", json={"board": "lever:new", "action": "follow"}, base_url=_HTTPS
+    )
+    assert r.status_code == 409
+    assert "list is full" in r.json["error"]
+    assert "board" not in r.json["error"].lower()
+
+
 def test_a_company_click_during_a_failed_read_never_blanks_the_lists(
     sets_app, hub, monkeypatch
 ):
@@ -2870,7 +2885,7 @@ def test_the_door_makes_its_case_before_asking_for_an_identity(auth_app):
     # The proof numbers are counted, not written: the fake table holds two rows and two
     # ATSes, so a hardcoded marketing figure would not survive this.
     assert '<div class="v">2</div><div class="k">tech jobs indexed' in page
-    assert '<div class="v">2</div><div class="k">ATS providers read directly' in page
+    assert '<div class="v">2</div><div class="k">hiring platforms read directly' in page
     # The freshness tile: an EXACT count, because a row without `first_seen` predates the
     # column and so cannot be new. The fake answers 1 to any filtered count, so a real
     # ratio shows rather than the total repeated — which a wrong denominator would give.
@@ -2883,7 +2898,7 @@ def test_the_door_makes_its_case_before_asking_for_an_identity(auth_app):
     assert "~6h" not in page and "refreshes" not in page
     assert "employers" not in page and "boards indexed" not in page
     # The provenance claim, the removal policy, and the no-paid-placement claim.
-    assert "employer's own board" in page
+    assert "employer's own site" in page
     assert "Closed roles get removed, and the exception is published." in page
     # Staffing firms are labelled, not denied (ADR-0249): the footer, Hot and Home say so too.
     assert "no agencies" not in page and "staffing firms" in page
@@ -2917,7 +2932,7 @@ def test_the_door_states_no_figure_it_cannot_count(auth_app, monkeypatch):
     assert tiles and all(t.strip() and "None" not in t for t in tiles), tiles
     # …and the tiles that CAN be counted are still there.
     assert "tech jobs indexed right now" in page
-    assert "ATS providers read directly" in page
+    assert "hiring platforms read directly" in page
 
 
 def test_the_data_tab_and_its_coverage_route_are_gone(app):
@@ -2937,7 +2952,7 @@ def test_the_signed_in_page_says_what_the_product_is(app):
     """A user inside the app should never have to guess what they are looking at."""
     page = app.app.test_client().get("/").data.decode()
     # On screen wherever they navigate, not only in the footer of a long results page.
-    assert "Tech jobs read straight from company career boards" in page
+    assert "Tech jobs read straight from company career sites" in page
     # One repo URL, server-side: the footer and Home both link its privacy policy into it,
     # and a rename must not be able to leave half the links dead.
     assert page.count("github.com/sarthakjain004/headstart/blob/main/PRIVACY.md") >= 2
@@ -2961,7 +2976,7 @@ def test_home_says_what_the_product_is_in_plain_words(app):
     assert "<b>2</b> tech jobs from <b>2</b> hiring platforms" in flat
     # The facts the Data tab carried that a visitor needs, in plain words.
     assert "English-language tech roles only, for now" in flat
-    assert "refreshes every couple of hours" in flat
+    assert "refresh every couple of hours" in flat
     assert "not how well you fit the role" in flat
     assert "PRIVACY.md" in home
     # The ways in: a search box on the first screen, a link to browse, and the tour.
@@ -2986,6 +3001,23 @@ def test_home_says_what_the_product_is_in_plain_words(app):
     # rendered text only.
     for banned in ("listings", "openings", "postings"):
         assert banned not in flat, banned
+
+
+def test_the_sidebar_fold_is_applied_before_the_first_paint(app):
+    """ADR-0249: a stored fold is read in <head>, before the stylesheet, so a reload opens at the
+    right width instead of sliding into it; the button names what it does and what it controls."""
+    page = app.app.test_client().get("/").data.decode()
+    head = page.split("</head>", 1)[0]
+    assert "hs.navCollapsed" in head
+    assert head.index("hs.navCollapsed") < head.index("style.css")
+    button = page.split('id="nav-toggle"', 1)[1].split(">", 1)[0]
+    assert 'aria-controls="site-nav"' in button
+    assert 'aria-expanded="true"' in button
+    assert 'aria-label="Collapse navigation"' in button
+    assert '<nav class="tabs" id="site-nav"' in page
+    # Every entry keeps its name as text inside the link, so the folded sidebar still announces it.
+    nav = page.split('id="site-nav"', 1)[1].split("</nav>", 1)[0]
+    assert nav.count('<span class="nav-label">') == nav.count('class="nav-item"')
 
 
 def test_links_that_pointed_at_the_data_tab_land_inside_home(app):
@@ -3032,10 +3064,11 @@ def test_the_closed_tag_is_presented_as_an_inference(sets_app, monkeypatch):
     still-open row — so the tab says what the tag actually means rather than asserting it."""
     page = _signed_in(sets_app, monkeypatch).get("/", base_url=_HTTPS).data.decode()
     body = page.split('id="panel-saved"', 1)[1]
-    assert "no longer in our index" in body
+    assert "no longer listed on HeadStart" in body
     # The mechanism, right way round: an unreadable board is why a job STAYS (ADR-0053), so
-    # the second cause is ADR-0023's wholesale board sweep, not a failed read.
-    assert "dropped the whole board" in body
+    # the second cause is ADR-0023's wholesale board sweep, not a failed read. The tab says it
+    # in the reader's words, "a change on our side" (ADR-0255), and never blames a failed read.
+    assert "a change on our side" in body
     assert "stopped being able to read that" not in body
 
 
@@ -3924,3 +3957,50 @@ def test_a_too_long_resume_refunds_its_reserved_read(sets_app, hub, monkeypatch)
         client.get("/profile", base_url=_HTTPS).json["parses_left"]
         == sets_app.MAX_PARSES
     )
+
+
+def test_every_response_carries_the_hardening_headers(sets_app, monkeypatch):
+    """#595: nosniff, a referrer policy, and framing limited to the Space's own page on
+    huggingface.co, which iframes the app — never 'none', or that frame goes blank."""
+    client = _signed_in(sets_app, monkeypatch)
+    for r in (
+        client.get("/profile", base_url=_HTTPS),
+        client.get("/static/app.js", base_url=_HTTPS),
+    ):
+        assert r.headers["X-Content-Type-Options"] == "nosniff"
+        assert r.headers["Referrer-Policy"] == "strict-origin-when-cross-origin"
+        assert (
+            r.headers["Content-Security-Policy"]
+            == "frame-ancestors 'self' https://huggingface.co"
+        )
+
+
+def test_the_hardening_headers_leave_a_gzipped_static_304_alone(sets_app, monkeypatch):
+    client = _signed_in(sets_app, monkeypatch)
+    first = client.get(
+        "/static/app.js", base_url=_HTTPS, headers={"Accept-Encoding": "gzip"}
+    )
+    assert first.headers.get("Content-Encoding") == "gzip"
+    again = client.get(
+        "/static/app.js",
+        base_url=_HTTPS,
+        headers={"Accept-Encoding": "gzip", "If-None-Match": first.headers["ETag"]},
+    )
+    assert again.status_code == 304
+    assert again.headers["X-Content-Type-Options"] == "nosniff"
+
+
+@pytest.mark.parametrize("path", ["/profile", "/profile/parse", "/subscribe"])
+def test_a_json_array_body_is_read_as_an_empty_object_not_a_500(
+    sets_app, hub, monkeypatch, path
+):
+    """#595: `request.get_json() or {}` let a JSON array through to `.get()`."""
+    client = _signed_in(sets_app, monkeypatch)
+    r = client.post(path, json=[], base_url=_HTTPS)
+    assert r.status_code < 500  # a 400 from the route, or /profile's no-op save
+
+
+def test_a_non_string_query_is_refused_not_a_500(sets_app, hub, monkeypatch):
+    client = _signed_in(sets_app, monkeypatch)
+    r = client.post("/subscribe", json={"query": 5}, base_url=_HTTPS)
+    assert r.status_code < 500

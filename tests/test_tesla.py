@@ -82,6 +82,29 @@ def test_location_resolves_through_the_lookup():
     assert job.location == "Palo Alto, California"
 
 
+def _geo_jobs():
+    """A capture of 2026-09-28 trimmed to four listings (Palo Alto, Frankfurt, Kowloon and one
+    whose location id nothing names) with the `lookup` and `geo` nodes they reach."""
+    with open(FIXTURES / "tesla_careers_state_with_geo.json", encoding="utf-8") as fh:
+        raw = json.load(fh)
+    scraper = get_scraper("tesla", SLUG, "Tesla")
+    return {j.id.rsplit(":", 1)[1]: j for j in scraper.parse(raw, SCRAPED_AT)}
+
+
+def test_location_carries_the_country_the_geo_tree_files_it_under():
+    """`lookup.locations` is only "City, Region"; the state document's `geo` tree files each
+    location id under a site whose code `lookup.sites` names (live 2026-09-28: 8,324 of 8,333
+    listings reached a country this way)."""
+    jobs = _geo_jobs()
+    assert jobs["224501"].location == "Palo Alto, California, United States of America"
+    assert jobs["280488"].location == "Frankfurt Am Main, Germany"
+    assert jobs["284953"].location == "Kowloon, Hong Kong"
+
+
+def test_a_location_id_nothing_names_stays_none_with_the_geo_tree():
+    assert _geo_jobs()["232316"].location is None
+
+
 def test_a_location_id_missing_from_the_lookup_resolves_to_none():
     # id 32046 (on "Delivery Operations Advisor") is one of the 4 ids a live listing set
     # referenced that `lookup.locations` did not carry (module docstring).

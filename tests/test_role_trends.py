@@ -1034,3 +1034,30 @@ def test_a_failed_snapshot_takes_the_ticks_file_back_out(tmp_path, monkeypatch):
     with pytest.raises(RuntimeError):  # any failure, not only an OSError
         _run(tmp_path, monkeypatch)
     assert not list((tmp_path / "state" / "role_trend_board_deltas").glob("*.parquet"))
+
+
+def test_a_tick_replays_the_history_once(tmp_path, monkeypatch):
+    """#716: the history was replayed twice a run, once for the counted Boards and once more
+    inside `record_tick`; the replay is the costly part and grows with every tick."""
+    _taxonomy(tmp_path / "head", tmp_path / "families.json")
+    _table(
+        tmp_path / "db",
+        [
+            {
+                "id": "a",
+                "title": "Backend Dev",
+                "employment_type": None,
+                "min_years": 5,
+                "vector": [1.0, 0.0, 0.0, 0.0],
+            }
+        ],
+    )
+    replays = []
+    real = trend_history.board_levels
+    monkeypatch.setattr(
+        trend_history,
+        "board_levels",
+        lambda state_dir: replays.append(state_dir) or real(state_dir),
+    )
+    _run(tmp_path, monkeypatch)
+    assert len(replays) == 1

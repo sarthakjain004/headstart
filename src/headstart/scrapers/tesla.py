@@ -48,7 +48,8 @@ resolvable to a name anywhere in this payload, so it is not carried onto ``Job``
 index, not a real field), and ``pu`` (an ISO application deadline, non-null on only 39 of 8,105 —
 kept out; it is not a posting date). ``lookup.locations`` resolves 13,234 ids to "City, Region"
 strings (no country) and is not exhaustive: 4 of the 1,309 location ids a live listing set
-referenced were absent from it, so a resolved ``location`` can be ``None``.
+referenced were absent from it, so a resolved ``location`` can be ``None``. The country comes from
+the same document's ``geo`` tree (:func:`_country_by_location`, measured 2026-09-28).
 
 **No ``posted_at``.** Neither the listing nor the per-job detail payload (below) states when a
 posting went up — only ``postUntilDate``, an application deadline, which is a different fact and
@@ -449,6 +450,27 @@ def _read_batch(urls: Sequence[str], page_url: str) -> list[dict[str, Any]]:
     return _run(go(), timeout=2 * (_NAV_TIMEOUT_S + _SETTLE_S + _BATCH_TIMEOUT_S))
 
 
+def _country_by_location(geo: Any, sites: dict[str, str]) -> dict[str, str]:
+    """Location id -> country name. ``lookup.locations`` is only "City, Region"; the state
+    document's ``geo`` tree files every location id under a site (a country code, sometimes via
+    a state), and ``lookup.sites`` names that code. Live 2026-09-28 it reached a country for
+    8,324 of 8,333 listings; the other 9 carry a location id nothing names."""
+    countries: dict[str, str] = {}
+    for region in geo if isinstance(geo, list) else []:
+        for site in region.get("sites") or []:
+            name = sites.get(site.get("id"))
+            if not name:
+                continue
+            groups = [state.get("cities") for state in site.get("states") or []]
+            groups.append(site.get("cities"))
+            for cities in groups:
+                # China's site carries `cities: []` rather than a mapping (live 2026-09-28).
+                if isinstance(cities, dict):
+                    for ids in cities.values():
+                        countries.update((location_id, name) for location_id in ids)
+    return countries
+
+
 class TeslaScraper(BaseScraper):
     """Tesla's own in-house careers system — a single-source ats (ADR-0139)."""
 
@@ -575,6 +597,7 @@ class TeslaScraper(BaseScraper):
         locations = lookup.get("locations") or {}
         departments = lookup.get("departments") or {}
         types = lookup.get("types") or {}
+        countries = _country_by_location(raw.get("geo"), lookup.get("sites") or {})
         details = raw.get("details") or {}
         jobs: list[Job] = []
         for entry in listings:
@@ -583,6 +606,9 @@ class TeslaScraper(BaseScraper):
             if not job_id or not title:
                 continue
             location = locations.get(entry.get("l"))
+            country = countries.get(entry.get("l"))
+            if location and country:
+                location = f"{location}, {country}"
             jobs.append(
                 Job(
                     id=self.job_id(job_id),
