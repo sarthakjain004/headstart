@@ -1071,6 +1071,19 @@ def test_a_peoplestrong_portal_link_yields_the_scrapers_lowercased_label():
     ]
 
 
+def test_a_lever_link_keeps_its_slugs_casing():
+    """Lever reads a slug case-sensitively: `jobs.lever.co/Onehouse` lists and `.../onehouse` 404s
+    (2026-09-28), so a lowercased slug would be verified as a dead Board."""
+    page = (
+        '<a href="https://jobs.lever.co/Onehouse">Jobs</a>'
+        '<script>fetch("https://api.lever.co/v0/postings/CesiumAstro")</script>'
+    )
+    assert {tenant for ats, _kind, tenant, _n in fp.scan(page, "onehouse.ai")} == {
+        "Onehouse",
+        "CesiumAstro",
+    }
+
+
 def test_script_urls_resolve_relative_srcs_against_the_pages_base_href():
     page_url = "https://careers.acme.com/jobs/view/123"
     with_base = '<head><base href="/app/"><script src="main.js"></script></head>'
