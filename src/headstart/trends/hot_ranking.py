@@ -36,8 +36,8 @@ of the company's change, as the trend does.
 
 Staffing firms and job boards are ranked like any company, and the payload's
 ``hidden_by_default`` (``HIDDEN_BY_DEFAULT``) names them as the Operators the tab hides unless
-asked (ADR-0238), never IT services, which employ the people they post for. The page and an
-agent reading ``/hot`` hide by that one list.
+asked (ADR-0238), never IT services, which employ the people they post for. The page, and any
+other reader of ``/hot``, hides by that one list.
 """
 
 from __future__ import annotations
@@ -51,6 +51,7 @@ from headstart.boards.board_identity import ats_of
 from headstart.trends import line_reading
 
 if TYPE_CHECKING:
+    from headstart.boards.board_operator import Operator
     from headstart.trends.trend_history import TrendHistory
 
 #: Rows kept per lens. Enough to scroll, small enough that the companies on it can be adjudicated
@@ -65,7 +66,7 @@ MIN_STOCK = 25
 MIN_COUNTED_DAYS = 3
 
 #: The Operators the tab hides unless asked, in the order its "hidden" note names them (ADR-0238).
-HIDDEN_BY_DEFAULT = ("staffing", "aggregator")
+HIDDEN_BY_DEFAULT: tuple[Operator, ...] = ("staffing", "aggregator")
 
 
 def rank(

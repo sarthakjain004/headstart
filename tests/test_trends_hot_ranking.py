@@ -9,6 +9,7 @@ design's invariant 4)."""
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -20,6 +21,14 @@ from headstart.trends import hot_ranking, line_reading, trend_history
 from headstart.trends.line_reading import CompanyMove, LineMove, Turnover
 
 _CONFIG = Path(__file__).resolve().parents[1] / "config"
+_APP_JS = (
+    Path(__file__).resolve().parents[1]
+    / "src"
+    / "headstart"
+    / "ui"
+    / "static"
+    / "app.js"
+)
 
 _NOW = "2026-09-25T05:15:02+00:00"
 _LONG_AGO = "2026-09-13T00:00:00+00:00"
@@ -278,12 +287,28 @@ def test_rows_carry_the_directorys_operator_and_the_counts_say_how_many() -> Non
 
 
 def test_the_payload_names_the_operators_the_tab_hides_unless_asked() -> None:
-    """ADR-0238: staffing firms and job boards, never IT services. The page and an agent reading
-    ``/hot`` hide by this one list."""
+    """ADR-0238: staffing firms and job boards, never IT services. The page, and any other
+    reader of ``/hot``, hides by this one list."""
     directory = {"gh:acme": _company("Acme", "gh:acme")}
     history = _History({"gh:acme": 100}, {"gh:acme": _Move(net=10, opened=12)})
     payload = hot_ranking.rank(history, directory)
     assert payload["hidden_by_default"] == ["staffing", "aggregator"]
+
+
+def test_the_page_has_a_noun_for_every_operator_it_hides() -> None:
+    """The page names what it hides in its own words, ``HOT_OPERATOR``'s ``noun``. An Operator
+    added to ``HIDDEN_BY_DEFAULT`` without one would throw as its first row is hidden, and leave
+    the tab blank."""
+    block = re.search(
+        r"^const HOT_OPERATOR = \{\n(.*?)^\};",
+        _APP_JS.read_text(encoding="utf-8"),
+        re.MULTILINE | re.DOTALL,
+    )
+    assert block, "app.js declares no HOT_OPERATOR"
+    with_noun = set(
+        re.findall(r"^\s+(\w+): \{[^\n]*\bnoun: \[", block.group(1), re.MULTILINE)
+    )
+    assert set(hot_ranking.HIDDEN_BY_DEFAULT) <= with_noun
 
 
 def test_a_closed_count_not_counted_stays_none() -> None:

@@ -2899,7 +2899,7 @@ test('Hot hides staffing firms and job boards only, and names what it hides', ()
 });
 
 test('Hot hides the Operators its payload names, not a list of its own', () => {
-  // hot_ranking.HIDDEN_BY_DEFAULT is the one list the page and an agent reading /hot hide by.
+  // hot_ranking.HIDDEN_BY_DEFAULT is the one list every reader of /hot hides by.
   const { t, ctx, nodes } = loadApp();
   ctx.document.querySelector = selector => selector.includes('hot-lens') ? { value: 'expansion' } : null;
   nodes['hot-show-all'].checked = false;
