@@ -135,6 +135,9 @@ def _workplace_type(loc: dict) -> str | None:
 class SmartRecruitersScraper(BaseScraper):
     ats = "smartrecruiters"
     url_shape = r"https://jobs\.smartrecruiters\.com/[^/]+/\d+"
+    #: The API answers `01Systems` and `01systems` alike (2026-09-29), but the ledger holds most
+    #: Boards under their capitals, so a lower-cased slug lands as a second row (ADR-0271).
+    keeps_slug_case = True
     detail_workers = _DETAIL_WORKERS
     has_detail_pass = True  # per-Job fetch fills `description` (ADR-0050)
 

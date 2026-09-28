@@ -23,6 +23,8 @@ from pathlib import Path
 
 from curl_cffi.requests import AsyncSession
 
+from headstart.scrapers.registry import SCRAPERS
+
 ROOT = Path(__file__).resolve().parent.parent.parent
 SEED = ROOT / "config" / "seed_india.csv"
 DEFAULT_OUT = ROOT / "data" / "resolve" / "fingerprint_results.csv"
@@ -249,13 +251,10 @@ LOCALE = re.compile(
     re.IGNORECASE,
 )
 
-# ATSes whose board id keeps its capitals. The SmartRecruiters postings API itself is
-# case-INSENSITIVE (Zomato1 and zomato1 both 200), so this is not about the fetch — it is about
-# matching the ledger, where 8,736 of 12,644 smartrecruiters tenants carry capitals. Lower-casing
-# here would mint a second, non-matching row for a board we already hold. Lever's is about the
-# fetch: `api.lever.co/v0/postings/CesiumAstro` lists 309 postings and `.../cesiumastro` answers
-# "Document not found" (2026-09-28). Every other supported ATS keys on a lower-case slug.
-CASE_SENSITIVE = {"smartrecruiters", "lever"}
+# ATSes whose captured slug keeps its capitals; every other slug is lower-cased. Each scraper
+# declares it as `keeps_slug_case`, and fingerprint_careers.py reads the same attribute, so the two
+# fingerprinters cannot disagree on an ATS both detect (ADR-0271).
+KEEPS_SLUG_CASE = frozenset(ats for ats, cls in SCRAPERS.items() if cls.keeps_slug_case)
 
 # Careers paths worth fetching per company. Tested wider: over two 40-company miss diagnoses
 # (80 sites x 10 paths), every ATS signal reachable from /jobs, /careers/, /company/careers,
@@ -270,7 +269,7 @@ def detect(html):
         for p in pats:
             for m in re.finditer(p, html, re.IGNORECASE):
                 raw = m.group(1) or ""
-                tok = raw if ats in CASE_SENSITIVE else raw.lower()
+                tok = raw if ats in KEEPS_SLUG_CASE else raw.lower()
                 # require len 3-60: a 1-2 char token is almost always garbage from a minified
                 # JS path (e.g. a stray `apply.workable.com/j` -> "j"), not a real board slug.
                 # The split() check also screens host-shaped tokens (personio/eightfold), where
