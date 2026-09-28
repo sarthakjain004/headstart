@@ -184,8 +184,8 @@ def _int_arg(args: Mapping[str, str]) -> Callable[[str], int | None]:
 class ScopeUnavailable(LookupError):
     """What a ``strict=1`` request asked for cannot be applied on this deployment yet: no role
     assignments, watchlist or family taxonomy loaded, or a column the served table has not
-    migrated onto. A state
-    of the deployment, not the caller's error, so :func:`refusal` answers it 503 (ADR-0253)."""
+    migrated onto. A state of the deployment, not the caller's error, so :func:`refusal`
+    answers it 503 (ADR-0253)."""
 
 
 def refusal(exc: ValueError | ScopeUnavailable) -> tuple[dict[str, str], int]:
@@ -309,9 +309,9 @@ def scoped_jobs_clause(
     caller's errors are a :class:`ValueError`: ``family=`` or ``role=`` without ``board=``, both
     at once, a role with no watch pattern, or a family ``known_families`` does not configure.
     A deployment that cannot apply one is a :class:`ScopeUnavailable`: no watchlist, no family
-    taxonomy, or no role assignments, loaded. ``known_families`` are the families the taxonomy configures
-    (``trend_history.family_labels``), so a configured family with no Jobs assigned yet still
-    answers zero rows, as it does without ``strict``.
+    taxonomy, or no role assignments, loaded. ``known_families`` are the families the taxonomy
+    configures (``trend_history.family_labels``), so a configured family with no Jobs assigned
+    yet still answers zero rows, as it does without ``strict``.
     """
     family = (args.get("family") or "").strip()
     boards = sorted({b.lower() + ":" for b in args.getlist("board") if b.strip()})

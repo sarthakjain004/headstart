@@ -85,7 +85,8 @@ on a route's own answer (measured, and pinned by tests on all four). The header 
   argument silently ignored.
 
 The header was introduced at `agent-api=0`, and the change that landed the contract below set it
-to 1, so `agent-api=1` is only ever served by an app that has all of it.
+to 1, so `agent-api=1` is only ever served by an app that has all of it. That includes `/hot`'s
+`hidden_by_default` (#776, ADR-0238's amendment), which landed before the version was raised.
 
 ### Strictness and company lookup (`agent-api=1`)
 
