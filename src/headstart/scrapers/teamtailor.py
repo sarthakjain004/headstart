@@ -7,7 +7,7 @@ URL, the publish date, the full ``content_html`` (the description), and a schema
 is inline — no per-job detail fetch.
 
 **The feed is paginated and one page is not the Board.** ``jobs.json`` returns at most
-:data:`_PAGE_SIZE` items; ``?page=N`` walks the rest. Measured 2026-08-25 over 766 live Boards:
+:data:`PAGE_SIZE` items; ``?page=N`` walks the rest. Measured 2026-08-25 over 766 live Boards:
 27 of them (3.5%) sat at exactly 100 items, and paging those out found **4,046 Jobs — 26.4% of
 that sample's true corpus — that had never been scraped at all** (``lovisacareers`` serves 779;
 we read 100). That is a bigger hole than any field defect, because a Job never fetched cannot be
@@ -49,9 +49,10 @@ from headstart.jobs import salary
 from headstart.jobs.job import Job, html_to_text, is_remote
 from headstart.network import http
 from headstart.scrapers.base import BaseScraper
+from headstart.scrapers.job_posting_jsonld import job_location_text
 
 #: Items per page the feed serves. A full page means there is probably another.
-_PAGE_SIZE = 100
+PAGE_SIZE = 100
 
 _RSS_NS = {"tt": "https://teamtailor.com/locations"}
 
@@ -59,20 +60,6 @@ _RSS_NS = {"tt": "https://teamtailor.com/locations"}
 #: resolve an explicit "hybrid" flag: True/False on the unambiguous ends, None (unknown) on the
 #: middle rather than guessing.
 _REMOTE_STATUS = {"fully": True, "none": False, "onsite": False}
-
-
-def _location(jobposting: dict) -> str | None:
-    """Join the first jobLocation's city/region/country from the schema.org block."""
-    locs = jobposting.get("jobLocation") or []
-    if not isinstance(locs, list) or not locs:
-        return None
-    addr = (locs[0] or {}).get("address") or {}
-    parts = (
-        addr.get("addressLocality"),
-        addr.get("addressRegion"),
-        addr.get("addressCountry"),
-    )
-    return ", ".join(p for p in parts if p) or None
 
 
 class TeamtailorScraper(BaseScraper):
@@ -146,7 +133,7 @@ class TeamtailorScraper(BaseScraper):
             fresh = [i for i in items if i.get("id") not in seen]
             seen.update(i.get("id") for i in fresh)
             merged.extend(fresh)
-            if len(items) < _PAGE_SIZE:
+            if len(items) < PAGE_SIZE:
                 break
             if not fresh:
                 self.mark_truncated(
@@ -165,7 +152,9 @@ class TeamtailorScraper(BaseScraper):
         jobs: list[Job] = []
         for it in raw.get("items", []):
             jp = it.get("_jobposting") or {}
-            location = _location(jp)
+            # Every Place, not the first (wspcentraleurope 2026-09-28: 39 of 100 items name
+            # more than one), as every multi-place scraper here joins them.
+            location = job_location_text(jp.get("jobLocation"))
             enriched = enrichment.get(it["id"]) or {}
             jobs.append(
                 Job(
@@ -194,10 +183,13 @@ class TeamtailorScraper(BaseScraper):
         return jobs
 
     def _salary_field(self, raw: dict) -> str | None:
-        """Format the schema.org baseSalary MonetaryAmount, e.g. '40000-60000 EUR YEAR'."""
+        """Format the schema.org baseSalary MonetaryAmount, e.g. '40000-60000 EUR YEAR'.
+
+        A single amount is ``value.value``, not a range: lovisacareers states 38 of its first
+        100 items' pay that way and 3 as ``minValue``/``maxValue`` (2026-09-28)."""
         base = raw.get("baseSalary") or {}
         val = base.get("value") or {}
-        lo, hi = val.get("minValue"), val.get("maxValue")
+        lo, hi = val.get("minValue") or val.get("value"), val.get("maxValue")
         if not lo and not hi:
             return None
         return salary.to_field(

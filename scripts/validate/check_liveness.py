@@ -122,6 +122,9 @@ from headstart.scrapers.ripplehire import (  # the careers redirect's token, sin
 from headstart.scrapers.taleo_be import (  # the next-ten-rows link, single source
     NEXT_PAGE_LINK as _TALEO_NEXT,
 )
+from headstart.scrapers.teamtailor import (  # jobs.json page size, single source
+    PAGE_SIZE as _TEAMTAILOR_PAGE_SIZE,
+)
 from headstart.scrapers.trakstar import (  # the inactive-account page, single source
     INACTIVE_ACCOUNT as _TRAKSTAR_INACTIVE,
 )
@@ -1888,10 +1891,33 @@ def p_smartrecruiters(t, u):
     return (LIVE, 0) if served else (DEAD, None)
 
 
+def _teamtailor_ids(body):
+    """The item ids on one `jobs.json` page, or None if the body is not a JSON Feed."""
+    try:
+        return [item.get("id") for item in json.loads(body).get("items") or []]
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def p_teamtailor(t, u):
-    return _classify(
-        _scraper_for_row("teamtailor", t, u).url(), lambda b: _len_of(b, "items")
-    )
+    """Every page's items, as the scraper walks them: `jobs.json` serves 100 a page, and page 1
+    alone recorded 100 for lovisacareers, whose scrape reads 1,301 (2026-09-28). A later page
+    that fails or repeats only ids already seen ends the count at what was read."""
+    url = _scraper_for_row("teamtailor", t, u).url()
+    status, body = _get(url)
+    verdict, n = _verdict(status, _len_of(body, "items") if status == 200 else None)
+    listed = _teamtailor_ids(body) if verdict == LIVE else None
+    ids = set(listed or ())
+    page = 1
+    while listed is not None and len(listed) == _TEAMTAILOR_PAGE_SIZE:
+        page += 1
+        status, body = _get(f"{url}?page={page}")
+        listed = _teamtailor_ids(body) if status == 200 else None
+        fresh = set(listed or ()) - ids
+        if not fresh:
+            break
+        ids |= fresh
+    return verdict, (len(ids) if page > 1 else n)
 
 
 def p_freshteam(t, u):

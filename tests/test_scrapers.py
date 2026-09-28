@@ -89,6 +89,49 @@ def test_greenhouse_hybrid_location_is_not_read_as_on_site():
     assert get_scraper("greenhouse", "x", "X").parse(raw, SCRAPED_AT)[0].remote is None
 
 
+def test_greenhouse_salary_reads_the_pay_transparency_range():
+    """Real airbnb postings (2026-09-28): `&pay_transparency=true` adds `pay_input_ranges`, in
+    cents, with a title that can name the period ("United Kingdom Annual Pay Range")."""
+    jobs = get_scraper("greenhouse", "airbnb", "Airbnb").parse(
+        _load("greenhouse_airbnb_workplace_type.json"), SCRAPED_AT
+    )
+    assert [j.salary for j in jobs] == [
+        "87000-102000 USD Pay Range",
+        "46000-54000 GBP United Kingdom Annual Pay Range",
+        "52000-65000 MXN Mexico Monthly Pay Range",
+    ]
+
+
+def test_greenhouse_pay_range_title_carries_an_hourly_period():
+    """Real sonyinteractiveentertainmentglobal posting: the title says "this is an hourly
+    rate", which `salary.from_field` reads, so $36-$48 annualises instead of being declined."""
+    from headstart.jobs import salary
+
+    job = get_scraper("greenhouse", "sie", "SIE").parse(
+        _load("greenhouse_sonyinteractive_hourly_pay_range.json"), SCRAPED_AT
+    )[0]
+    assert job.salary.startswith("36-48 USD ")
+    assert salary.from_field(job.salary, "greenhouse").min_annual == 36 * 2080
+
+
+def test_greenhouse_metadata_pay_wins_over_the_first_level_range():
+    """Real doordashusa posting (2026-09-28): `pay_input_ranges` lists levels I4, I5 and I6;
+    its metadata "USA: Pay Transparency Range" names the I6 band the req is hired at."""
+    job = get_scraper("greenhouse", "doordashusa", "DoorDash").parse(
+        _load("greenhouse_doordashusa_levels_pay_range.json"), SCRAPED_AT
+    )[0]
+    assert job.salary == "198600-292000 USD"
+
+
+def test_greenhouse_on_target_earnings_is_not_base_salary():
+    """Real agilysys posting: its only range is titled "OTE Range" (base + commission), while
+    its description states the base. Declined, so the description's base figure is read."""
+    job = get_scraper("greenhouse", "agilysys", "Agilysys").parse(
+        _load("greenhouse_agilysys_ote_pay_range.json"), SCRAPED_AT
+    )[0]
+    assert job.salary is None
+
+
 def test_greenhouse_salary_prefers_currency_range_over_currency_band():
     # Real live sample (doordashusa, "Account Manager, CPG", 2026-09-15): a currency_range "Pay
     # Transparency Range" entry beats two single-point currency "Band Midpoint"/"Minimum" entries
@@ -4219,11 +4262,11 @@ def test_teamtailor_walks_every_page_not_just_the_first(monkeypatch):
     from headstart.scrapers import teamtailor as tt
 
     s = get_scraper("teamtailor", "big", "Big")
-    full = list(range(tt._PAGE_SIZE))
+    full = list(range(tt.PAGE_SIZE))
     asked = _teamtailor_pages(monkeypatch, s, [full, [900, 901]])
 
     jobs = s.parse(s.fetch_raw(), SCRAPED_AT)
-    assert len(jobs) == tt._PAGE_SIZE + 2
+    assert len(jobs) == tt.PAGE_SIZE + 2
     assert len({j.id for j in jobs}) == len(jobs)  # no page overlap
     assert "page=2" in asked[1]
     assert (
@@ -4231,7 +4274,7 @@ def test_teamtailor_walks_every_page_not_just_the_first(monkeypatch):
     )  # 2 listing pages, stopped on the short one, + 1 rss enrichment call
 
 
-def test_teamtailor_single_page_board_costs_one_request(monkeypatch):
+def test_teamtailor_single_page_board_costs_one_listing_request(monkeypatch):
     """The common case must not pay for pagination — 748 of 766 Boards are one page. It does pay
     one further request for the jobs.rss enrichment join (+1 request per Board, module
     docstring), so this Board costs two requests total, not one."""
@@ -4253,11 +4296,11 @@ def test_teamtailor_stops_if_the_feed_ignores_the_page_parameter(monkeypatch):
     from headstart.scrapers import teamtailor as tt
 
     s = get_scraper("teamtailor", "stuck", "Stuck")
-    full = list(range(tt._PAGE_SIZE))
+    full = list(range(tt.PAGE_SIZE))
     asked = _teamtailor_pages(monkeypatch, s, [full, full, full])
 
     jobs = s.parse(s.fetch_raw(), SCRAPED_AT)
-    assert len(jobs) == tt._PAGE_SIZE  # the repeat contributed nothing
+    assert len(jobs) == tt.PAGE_SIZE  # the repeat contributed nothing
     assert len(asked) == 3  # 2 listing pages before it stopped, + 1 rss enrichment call
     assert s.truncated and "no new ids" in s.truncated
 
@@ -4273,14 +4316,14 @@ def test_teamtailor_walks_past_the_old_page_cap_when_the_board_is_genuinely_that
     s = get_scraper("teamtailor", "huge", "Huge")
     n_pages = 210  # past the old 200-page bound this scraper used to stop at
     pages = [
-        list(range(page * tt._PAGE_SIZE, (page + 1) * tt._PAGE_SIZE))
+        list(range(page * tt.PAGE_SIZE, (page + 1) * tt.PAGE_SIZE))
         for page in range(n_pages)
     ]
     pages.append([])  # the genuine last, short page
     asked = _teamtailor_pages(monkeypatch, s, pages)
 
     raw = s.fetch_raw()
-    assert len(raw["items"]) == tt._PAGE_SIZE * n_pages
+    assert len(raw["items"]) == tt.PAGE_SIZE * n_pages
     assert (
         len(asked) == n_pages + 2
     )  # every listing page + the short last one + 1 rss call
@@ -4301,6 +4344,23 @@ def test_teamtailor_parse():
     assert j.url.startswith("https://1komma5.teamtailor.com/jobs/")
     assert j.posted_at.startswith("2026-")
     assert j.description and "</" not in j.description  # populated, HTML-stripped
+
+
+def test_teamtailor_salary_reads_a_single_value_amount():
+    """Real lovisacareers item (2026-09-28): schema.org states one amount as `value.value`, not
+    `minValue`/`maxValue`. 38 of that Board's first 100 items state pay this way."""
+    jobs = get_scraper("teamtailor", "lovisacareers", "Lovisa").parse(
+        _load("teamtailor_lovisacareers_single_value_salary.json"), SCRAPED_AT
+    )
+    assert jobs[0].salary == "12.31 EUR HOUR"
+
+
+def test_teamtailor_location_keeps_every_place():
+    """Real wspcentraleurope item (2026-09-28): two `jobLocation` Places, Bern and Zürich."""
+    jobs = get_scraper("teamtailor", "wspcentraleurope", "WSP").parse(
+        _load("teamtailor_wspcentraleurope_two_places.json"), SCRAPED_AT
+    )
+    assert jobs[0].location == "Bern, Bern, CH; Zürich, Zürich, CH"
 
 
 def test_teamtailor_parse_with_no_rss_enrichment_falls_back_to_the_location_guess():

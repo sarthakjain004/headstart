@@ -4,18 +4,22 @@ The bare ``/jobs`` list is metadata-only. ``?content=true`` inlines each posting
 description (and a ``departments`` array) in the same single request — ~12x the payload but
 no per-job fetch — so we use it to populate description and department. It also inlines each
 posting's per-tenant ``metadata`` custom fields, which carry compensation data on a real
-minority of tenants (see ``_salary_field``).
+minority of tenants (see ``_salary_field``). ``&pay_transparency=true`` adds Greenhouse's own
+pay-range field (``_pay_range_field``), read when ``metadata`` states no pay. It costs 5-11%
+more bytes (airbnb 2.38 to 2.49 MB, databricks 9.7 to 10.5 MB, robinhood 1.96 to 2.18 MB,
+2026-09-28).
 
 Reading ``metadata`` into ``salary`` does NOT need a `doc_prep.DERIVATIONS_VERSION` bump: like
 smartrecruiters' own native-compensation field (see that scraper's docstring), ``salary`` is a
 re-observed FACT_FIELD, so once a Board is rescraped its now-populated raw ``Job.salary`` differs
 from the stored one and `refresh_row`'s `salary_inputs_moved` reprocesses it — no version sweep
 required. A bump is for when unchanged input starts parsing differently; here the input itself
-changes from ``None`` to a real string.
+changes from ``None`` to a real string. The same holds for ``pay_input_ranges``.
 """
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from headstart.jobs import salary
@@ -38,6 +42,13 @@ _PREFERRED_NAME_WORDS = ("transparency", "range", "pay")
 # like a real salary field, and non-zero on 146/455 sampled jobs (real grant values, $50k-$100k),
 # so it would otherwise win by elimination whenever the real salary fields are absent for a job.
 _EXCLUDED_NAME_WORDS = ("equity",)
+# A pay-transparency range titled as on-target earnings is base plus commission, not the base
+# salary every other field here states: agilysys's only range is "OTE Range" ($200k-$230k) while
+# its description states a $100k-$115k base; doordashusa lists "total on-target earnings" second,
+# after its base range (2026-09-28). 41 of 2,449 sampled first ranges carry such a title, all
+# "On Target Earnings" or "OTE ..."; a bare "commission" is not matched, since a base range
+# may mention one.
+_ON_TARGET_EARNINGS_TITLE = re.compile(r"on[- ]target|\bote\b", re.IGNORECASE)
 
 
 def _workplace_type(metadata: list[dict] | None) -> str | None:
@@ -84,6 +95,43 @@ def _compensation_range(value_type: str, value: Any) -> tuple[float, float] | No
     return min(lo, hi), max(lo, hi)
 
 
+def _pay_range_field(ranges: list[dict] | None) -> str | None:
+    """``Job.salary`` from the first base-pay range ``&pay_transparency=true`` adds.
+
+    Greenhouse's own pay-transparency field: ``{min_cents, max_cents, currency_type, title}``.
+    Measured live 2026-09-28 (6 named + 120 random live Boards, 124 answered, 38 carry ranges,
+    2,449 postings): against the description's own figure it agrees on 1,787, states the
+    currency the description misread on 30 (robinhood's "Toronto, ON" ranges are CAD, read as
+    USD), and adds pay to 226 whose description names none.
+
+    Several ranges are several zones, countries or levels; the first is kept, as
+    ``_salary_field`` keeps the first of a tie. A tenant's ``metadata`` range wins when it states
+    one: doordashusa lists levels I4, I5 and I6 here, and its metadata names the one the req is
+    hired at. The title goes in as the period: it is where a tenant says "Hourly" or
+    "Annual" ("Georgia Hourly Pay Range"), and ``salary.from_field`` reads those words, so an
+    hourly range annualises instead of being declined as an implausible annual one. A title that
+    names none reads as annual, as ``_salary_field``'s own figures do."""
+    for r in ranges or []:
+        if _ON_TARGET_EARNINGS_TITLE.search(r.get("title") or ""):
+            continue
+        try:
+            lo, hi = r["min_cents"] / 100, r["max_cents"] / 100
+        except (KeyError, TypeError):
+            continue
+        if max(lo, hi) <= 0.01:
+            continue
+        # Both ends even when equal: a range stating one figure is that exact pay, not a floor,
+        # as the description read it before (airbnb's 151000 USD read 151000-151000). Unlike
+        # `_salary_field`'s lone `currency` point, which is a band landmark, not a stated range.
+        return salary.to_field(
+            _format_amount(min(lo, hi)),
+            _format_amount(max(lo, hi)),
+            r.get("currency_type"),
+            (r.get("title") or "").strip() or None,
+        )
+    return None
+
+
 class GreenhouseScraper(BaseScraper):
     ats = "greenhouse"
     # Two legitimate shapes. The second is the EMBED form: a tenant may configure its own
@@ -97,7 +145,8 @@ class GreenhouseScraper(BaseScraper):
 
     def url(self) -> str:
         return (
-            f"https://boards-api.greenhouse.io/v1/boards/{self.slug}/jobs?content=true"
+            f"https://boards-api.greenhouse.io/v1/boards/{self.slug}/jobs"
+            "?content=true&pay_transparency=true"
         )
 
     def job_url(self, url: str) -> str:
@@ -162,7 +211,8 @@ class GreenhouseScraper(BaseScraper):
                     posted_at=j.get("first_published") or j.get("updated_at"),
                     scraped_at=scraped_at,
                     description=html_to_text(j.get("content")),
-                    salary=self._salary_field(j.get("metadata")),
+                    salary=self._salary_field(j.get("metadata"))
+                    or _pay_range_field(j.get("pay_input_ranges")),
                     # What an Eightfold site in front of this Board states as `atsJobId`
                     # (ADR-0210). One internal job can carry several posts, one per location.
                     requisition=requisition_of(j.get("internal_job_id")),
