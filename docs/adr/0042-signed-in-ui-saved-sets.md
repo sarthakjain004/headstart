@@ -133,3 +133,12 @@ central choice and would put ranking rules in two places.
 **The cost, stated plainly:** `ALERTS_TOKEN` must be set identically in the Space's secrets
 and in Actions', neither of which CI can reach, so merging this changes nothing on its own.
 `docs/email-alerts.md` carries the setup and a curl that verifies it.
+
+## Amendment (2026-09-28): the cookie lives seven days (#593)
+
+The session cookie's lifetime drops from 30 days to 7 (`PERMANENT_SESSION_LIFETIME`). The cookie
+is stateless, so `/signout` clears only the browser's copy and a copied cookie keeps working until
+it expires; nothing server-side can revoke one. A per-Account session generation checked on each
+request would revoke it, at the cost of an Account read per signed-in request and a new stored
+field; the owner chose the shorter lifetime instead. Users sign in weekly rather than monthly, and
+rotating `SECRET_KEY` remains the way to sign everyone out at once.

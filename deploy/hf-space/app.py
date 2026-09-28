@@ -300,15 +300,17 @@ app = Flask(
     static_folder=str(_UI / "static"),
 )
 # The session is a signed cookie (ADR-0042): Google is verified once at /auth/google, then
-# the cookie is the identity for weeks — re-sending the ~1h Google token would bounce users
+# the cookie is the identity for a week — re-sending the ~1h Google token would bounce users
 # mid-use. Lax + Secure: it never rides a cross-site POST, and only travels over https.
-# Rotating SECRET_KEY signs everyone out (their cookies stop verifying); nothing else breaks.
+# Nothing server-side can revoke one cookie: /signout clears only the browser's copy, so a
+# copied cookie works until it expires (#593). Seven days, not thirty, bounds that; rotating
+# SECRET_KEY signs everyone out at once (their cookies stop verifying); nothing else breaks.
 app.config.update(
     SECRET_KEY=_SECRET_KEY or None,
     SESSION_COOKIE_SECURE=True,
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE="Lax",
-    PERMANENT_SESSION_LIFETIME=timedelta(days=30),
+    PERMANENT_SESSION_LIFETIME=timedelta(days=7),
 )
 
 
