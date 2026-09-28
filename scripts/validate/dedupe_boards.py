@@ -118,6 +118,7 @@ def main() -> int:
         "clearcompany": "clearcompany_shared_accounts.py (ADR-0182)",
         "taleo_enterprise": "taleo_enterprise_subset_sections.py (ADR-0186)",
         "eightfold": "eightfold_backing_boards.py (ADR-0205)",
+        "icims": "icims_subset_portals.py (ADR-0254)",
     }
     if args.apply and args.ats in written_elsewhere:
         raise SystemExit(

@@ -1,4 +1,4 @@
-"""Which iCIMS portals are buried onto another (ADR-0222, ADR-0249).
+"""Which iCIMS portals are buried onto another (ADR-0222, ADR-0254).
 
 The script is `scripts/validate/icims_subset_portals.py`. Its election, `burials`, is pure, so each
 rule is tested here without a network. Postings are real `(id, title slug)` pairs read off the

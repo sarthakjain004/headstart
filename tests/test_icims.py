@@ -55,7 +55,7 @@ def _raw_from_fixture() -> list[dict]:
 # --- the listing surface ------------------------------------------------------------------
 
 
-def testsitemap_rows_reads_id_url_and_lastmod() -> None:
+def test_sitemap_rows_reads_id_url_and_lastmod() -> None:
     rows = sitemap_rows(_FIXTURE["sitemap_xml"])
     assert rows, "fixture sitemap should list postings"
     for job_id, url, lastmod in rows:
@@ -64,7 +64,7 @@ def testsitemap_rows_reads_id_url_and_lastmod() -> None:
         assert lastmod is None or lastmod[:4].isdigit()
 
 
-def testsitemap_rows_skips_non_posting_urls() -> None:
+def test_sitemap_rows_skips_non_posting_urls() -> None:
     """All 35 sitemaps sampled carry a non-posting URL — `/jobs/intro` or `/jobs/search`."""
     locs = re.findall(r"<loc>([^<]+)</loc>", _FIXTURE["sitemap_xml"])
     non_postings = [u for u in locs if not re.search(r"/jobs/\d+/[^/]*/job", u)]
@@ -75,7 +75,7 @@ def testsitemap_rows_skips_non_posting_urls() -> None:
     assert len(kept) == len(locs) - len(non_postings)
 
 
-def testsitemap_rows_dedupes_repeated_ids() -> None:
+def test_sitemap_rows_dedupes_repeated_ids() -> None:
     xml = (
         "<url><loc>https://h.icims.com/jobs/1/a/job</loc><lastmod>2026-01-01</lastmod></url>"
         "<url><loc>https://h.icims.com/jobs/1/a-renamed/job</loc><lastmod>2026-02-02</lastmod></url>"
@@ -564,8 +564,6 @@ def test_a_ledger_name_outranks_both():
 def test_a_locality_with_a_trailing_comma_is_not_served_a_double_comma() -> None:
     """abudhabi-nyu's JSON-LD, live 2026-09-28 (jobLocation verbatim): "Abu Dhabi," served as
     "Abu Dhabi,, AE" on 29 of 29 Jobs."""
-    from headstart.scrapers.icims import _ld_fields
-
     location = [
         {
             "address": {

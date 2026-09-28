@@ -610,10 +610,29 @@ def test_a_title_that_states_remote_makes_the_job_remote():
     }
 
 
-def test_a_portal_buried_onto_a_scraped_icims_board_is_covered():
+def test_a_portal_buried_onto_a_scraped_icims_board_is_covered(monkeypatch):
     """hourly-spanish-redlobster lists the same postings as careers-redlobster (2,399 of 2,399,
-    2026-09-28) and is buried onto it, so a Jibe row applying there is served by iCIMS already."""
+    2026-09-28) and is buried onto it, so a Jibe row applying there is served by iCIMS already. A
+    portal buried onto a Board we do not scrape is not covered."""
+    from headstart.boards import alias_ledger, scrapable_boards
+
+    kept = SimpleNamespace(
+        ats="icims", lowercase_identity="icims:careers-redlobster.icims.com"
+    )
+    monkeypatch.setattr(scrapable_boards, "load", lambda ledger, min_jobs: [kept])
+    monkeypatch.setattr(
+        alias_ledger,
+        "load_for",
+        lambda ledger, ats: {
+            "hourly-spanish-redlobster.icims.com": "careers-redlobster.icims.com",
+            "careers-concorde.icims.com": "careers-uti.icims.com",
+        },
+    )
     jibe._scraped_icims_tenants.cache_clear()
-    covered = jibe._scraped_icims_tenants()
-    assert "careers-redlobster.icims.com" in covered
-    assert "hourly-spanish-redlobster.icims.com" in covered
+    try:
+        assert jibe._scraped_icims_tenants() == {
+            "careers-redlobster.icims.com",
+            "hourly-spanish-redlobster.icims.com",
+        }
+    finally:
+        jibe._scraped_icims_tenants.cache_clear()

@@ -373,6 +373,7 @@ def _detail_url(job_url: str) -> str:
 
 
 def _one_comma(location: str | None) -> str | None:
+    """``location`` with each run of commas collapsed to one ("Abu Dhabi,, AE" -> "Abu Dhabi, AE")."""
     return re.sub(r",(?:\s*,)+", ",", location) if location else location
 
 

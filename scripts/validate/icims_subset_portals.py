@@ -4,7 +4,7 @@
 An iCIMS Board is one portal host, `{portal}-{customer}.icims.com`, and a customer often runs
 several. iCIMS job ids belong to the customer, so every portal lists a shared posting under the same
 id and `index_plan.evict_duplicate`, which groups only within a Board, serves it once per portal.
-Two shapes of the same fact (ADR-0249):
+Two shapes of the same fact (ADR-0254):
 
 - **redirect** (ADR-0222): the portal's `/sitemap.xml` redirects to another Live portal, so the
   scraper reads that portal's list under this host. Buried onto the redirect's target.

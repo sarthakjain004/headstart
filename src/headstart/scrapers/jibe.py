@@ -176,7 +176,8 @@ def _apply_host(row: dict) -> str:
 
 def _iso(value: str | None) -> str | None:
     """`posted_date` as ISO-8601: "2026-09-18T12:07:00+0000" or "September 22, 2026". A year
-    before 2000 is no date: smoothieking states all 793 of its dates in year 0026."""
+    before 2000 is no date: smoothieking states many of its dates in year 0026 (all 793 on
+    2026-09-24; 27 of page one's 100 on 2026-09-28, each that day's date)."""
     text = (value or "").strip()
     for fmt in ("%Y-%m-%dT%H:%M:%S%z", "%B %d, %Y"):
         try:
@@ -189,13 +190,11 @@ def _iso(value: str | None) -> str | None:
     return None
 
 
-# "remote" standing for the work arrangement in a title, not negated and not a technical term.
+# "remote" standing for the work arrangement in a title, not negated.
 # uhs, 2026-09-28: 14 of its 92 `keywords=remote` rows name remote in the title, among them
 # "Manager - Coding (REMOTE)", "RN (PRN - Not Remote)" and "... - NON REMOTE".
 _NEGATED_REMOTE = re.compile(r"\b(?:not|non)[\s-]+remote\b", re.IGNORECASE)
-_REMOTE_WORD = re.compile(
-    r"\bremote\b(?!\s+(?:sensing|desktop|monitoring|pilot|access))", re.IGNORECASE
-)
+_REMOTE_WORD = re.compile(r"\bremote\b", re.IGNORECASE)
 
 
 def _title_says_remote(title: str | None) -> bool:
@@ -339,13 +338,14 @@ class JibeScraper(BaseScraper):
         Board has not read: 6 client board pages redirect off-host (an employer site, an SSO
         login). robots.txt itself is the exception, as RFC 9309 asks: its redirects are followed
         up to five hops, onto any host and any path, and none of them is gated on robots.txt."""
-        # A caller asking for fewer attempts (`_fetch_once`, one) gets that many, paced here.
-        attempts = min(kwargs.pop("attempts", _ATTEMPTS), _ATTEMPTS)
+        # A caller asking for fewer attempts (`_fetch_once`, one) gets that many, paced here; the
+        # transport itself is always asked for one.
+        paced_attempts = min(kwargs.pop("attempts", _ATTEMPTS), _ATTEMPTS)
         kwargs = {"timeout": 30, **kwargs, "attempts": 1, "allow_redirects": False}
         kwargs.setdefault("headers", {"User-Agent": USER_AGENT})
         robots = urlsplit(url).path == "/robots.txt"
         response = None
-        for attempt in range(attempts):
+        for attempt in range(paced_attempts):
             for _hop in range(5):
                 path = urlsplit(url).path
                 if not robots and self.robots_verdict_for(path) != ALLOW:
@@ -358,7 +358,7 @@ class JibeScraper(BaseScraper):
                 except http.RequestsError as exc:
                     if (
                         getattr(exc, "code", None) == _NO_SUCH_HOST
-                        or attempt == attempts - 1
+                        or attempt == paced_attempts - 1
                     ):
                         raise
                     response = None
