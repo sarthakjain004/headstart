@@ -19,9 +19,10 @@ import test_space_app as space_tests
 from test_space_app import auth_app, trends_app  # noqa: F401 — fixtures, reused
 
 from headstart.mcp_protocol.messages import ToolFailure
+from headstart.serving import job_search
 from headstart.space_mcp import server
 from headstart.space_mcp import space_client as sc
-from headstart.space_mcp.tools import read_trends
+from headstart.space_mcp.tools import get_job, read_trends
 
 #: A day after the fixture history's last tick (`test_space_app._T3`, 2026-08-13), so a window
 #: counted back from "now" means the same ticks whatever day the suite runs.
@@ -382,11 +383,63 @@ def test_hot_rows_the_tab_hides_are_left_out_by_the_apps_own_list(
     assert "1 aggregator and staffing rows hidden" in text
 
 
+# ---- get_job and similar_to (ADR-0277) ----
+
+
+def test_get_job_restates_the_spaces_own_bounds():
+    assert get_job.MAX_IDS == job_search.MAX_JOB_IDS
+    assert get_job.ID_MAX_CHARS == job_search.JOB_ID_MAX_CHARS
+    assert get_job.SPACE_DESCRIPTION_LIMIT == job_search.JOB_DESCRIPTION_LIMIT
+
+
+def test_get_job_reads_a_posting_and_names_the_missing_at_the_app(
+    companies_app, monkeypatch
+):
+    monkeypatch.setattr(companies_app, "_UNCONFIRMED", frozenset({"greenhouse:acme:1"}))
+    text = server.call(
+        _client(companies_app),
+        "get_job",
+        {"ids": ["greenhouse:acme:1", "greenhouse:gone:9"]},
+    )
+    assert text.startswith("Read 1 of 2 jobs.")
+    assert '1. "Backend Engineer" at "Acme"' in text
+    assert 'department "Engineering"' in text
+    assert '"Build the payments API."\n"Own it end to end."' in text
+    assert "latest scrape did not find it" in text
+    assert 'Not in the index: "greenhouse:gone:9".' in text
+    assert "Data as of the trends tick" in text
+
+
+def test_similar_to_reaches_the_app_as_like_on_both_routes(companies_app, monkeypatch):
+    asked = []
+
+    def recorded(name):
+        real = getattr(companies_app._searcher, name)
+
+        def recording(args, *rest, **kwargs):
+            asked.append((name, args.get("like"), args.get("q")))
+            return real(args, *rest, **kwargs)
+
+        return recording
+
+    for name in ("run", "facets"):
+        monkeypatch.setattr(companies_app._searcher, name, recorded(name))
+    text = server.call(
+        _client(companies_app), "search_jobs", {"similar_to": "greenhouse:acme:1"}
+    )
+    assert sorted(asked) == [
+        ("facets", "greenhouse:acme:1", None),
+        ("run", "greenhouse:acme:1", None),
+    ]
+    assert 'Ordered by similarity to job "greenhouse:acme:1" (itself left out)' in text
+
+
 # ---- the Space's own /mcp, in both protocol eras (ADR-0267) ----
 
 #: One call of each registered tool, and a phrase its answer carries.
 _EACH_TOOL = [
     ("search_jobs", {"query": "backend engineer"}, '"Backend Engineer"'),
+    ("get_job", {"ids": ["greenhouse:acme:1"]}, '"Build the payments API."'),
     ("read_trends", {"days": 7}, "Newest trends tick"),
     ("hiring_now", {}, "No company qualified on this Lens this week."),
 ]

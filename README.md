@@ -326,7 +326,7 @@ fails if this table drifts from it.
 | `ats` | string | `greenhouse`, `workday`, `ashby`, `darwinbox`, … |
 | `company` | string | the company's name: a curated one, else the one its Board states, else its humanised tenant; empty where the tenant is only a code (see *ATS coverage*, above; ADR-0212) |
 | `title` | string | embedded, with the description |
-| `description` | string | the Job's description text, so the Keyword filter can match inside it (ADR-0104). Follows the posting: when a run fetches different text, the row is rewritten to serve it, while an empty fetch leaves it alone (ADR-0207). The `vector` is not re-embedded then, so it can encode an older revision. **Nullable** — null on rows indexed before the column existed and on Jobs whose detail pass found nothing. Stored, not served: the API omits it |
+| `description` | string | the Job's description text, so the Keyword filter can match inside it (ADR-0104). Follows the posting: when a run fetches different text, the row is rewritten to serve it, while an empty fetch leaves it alone (ADR-0207). The `vector` is not re-embedded then, so it can encode an older revision. **Nullable** — null on rows indexed before the column existed and on Jobs whose detail pass found nothing. `/search` omits it; `/job` serves its first 12,000 characters (ADR-0277) |
 | `description_stored` | bool | whether this row carries `description`; materialized and bitmap-indexed so coverage does not scan the text column (ADR-0173) |
 | `location` | string | raw ATS text; the India filter maps it via a gazetteer (ADR-0024) |
 | `country` | string | `"IN"` when `location` matches the India gazetteer's country-level rule, else null. Materialized so the India filter's whole-country case is a plain equality instead of a large regex alternation (ADR-0138) |
@@ -336,9 +336,9 @@ fails if this table drifts from it.
 | `is_part_time` | bool | materialized verdict of the Search filter's `part` substring rule; bitmap-indexed (ADR-0173) |
 | `is_contract` | bool | materialized verdict of the Search filter's `contract` / `freelance` substring rule; bitmap-indexed (ADR-0173) |
 | `is_internship` | bool | materialized verdict of the guarded `intern` substring rule (`international` excluded); bitmap-indexed (ADR-0173) |
-| `experience` | string | raw ATS text — not served to the API, but read on every merge to detect whether a posting's stated experience changed, which is what triggers re-deriving `min_years`/`max_years` for that row |
+| `experience` | string | raw ATS text — served by `/job` (ADR-0277), not by `/search`, and read on every merge to detect whether a posting's stated experience changed, which is what triggers re-deriving `min_years`/`max_years` for that row |
 | `min_years` | int32 | parsed from `experience`; **nullable** — null means unknown, not zero (ADR-0009) |
-| `max_years` | int32 | parsed alongside `min_years`, but not currently read by any filter, sort, or the API — the `max_years` *query parameter* filters on `min_years` instead. Kept in the schema; see the note below |
+| `max_years` | int32 | parsed alongside `min_years`, and served by `/job` (ADR-0277), but not read by any filter or sort — the `max_years` *query parameter* filters on `min_years` instead |
 | `experience_source` | string | `field` \| `regex` \| `seniority` \| null — how the years were derived. Not served to the API, but read during re-derivation: it's what lets the pipeline tell a description-sourced value apart from a title-only guess when deciding whether to trust or re-guess a row (ADR-0018) |
 | `experience_at_most_0` | bool | whether the Job passes the “Entry level” ceiling, including unknown experience; bitmap-indexed (ADR-0173) |
 | `experience_at_most_2` | bool | whether the Job passes the 2-years-or-less facet; bitmap-indexed (ADR-0173) |
@@ -350,20 +350,13 @@ fails if this table drifts from it.
 | `salary_currency` | string | ISO 4217 code where determinable (`"USD"`, `"INR"`, `"EUR"`, …); null if a number was found but the currency wasn't |
 | `salary_source` | string | `field` \| `regex` \| null — how it was derived; no seniority-style tier exists for salary (ADR-0082) |
 | `salary_known` | bool | whether `min_salary_annual` is known; materialized and bitmap-indexed for the “Shows salary” filter (ADR-0173) |
-| `department` | string | raw ATS text. Not served to the API and not currently read from this table by any filter, sort, or downstream logic — its one real consumer is the tech filter, which reads it off the *raw scrape record*, before a row ever reaches this table. See the note below |
+| `department` | string | raw ATS text, served by `/job` (ADR-0277). Not read from this table by any filter, sort, or downstream logic — the tech filter reads it off the *raw scrape record*, before a row ever reaches this table |
 | `url` | string | the job-detail link |
 | `requisition` | string | the ATS's own requisition id, kept only on rows whose Board `data/validate/eightfold_backing.csv` names — an Eightfold career site, or a Board behind one (any site of a Workday tenant). On an Eightfold row it is the id its backing Board states (`atsJobId`, or `displayJobId` over Oracle); on a backing row, that Board's own. **Nullable**: null everywhere else and on rows not re-scraped since the column arrived, and null never matches. Not served to the API; `index sync`/`prune` read it to serve a posting once when an Eightfold career site and its backing Board both list it (ADR-0210) |
 | `posted_at` | string | **the company's** posting date as the ATS states it — inconsistent in shape across ATSes (`2026-01-09T00:46:44.672+00:00`, `03-Jul-2026`) and null on a meaningful share of rows. An ISO date is never served later than the row's `first_seen` day (a repost or closing date becomes that day), and a pre-2000 sentinel is served as null (ADR-0268) |
 | `posted_at_comparable` | bool | whether `posted_at` has the `____-__-__` prefix the date filters can compare; materialized and bitmap-indexed (ADR-0173) |
 | `first_seen` | string | **ours** — ISO-8601 UTC, stamped when `index sync` first adds the row. Write-once, and null on rows added before the column existed (ADR-0031) |
 | `vector` | list\<float32\>[768] | `title + cleaned description`, L2-normalized |
-
-**Two columns look like candidates for removal, on a careful read of every consumer** —
-filters, sorts, the API projection (`job_search.RESULT_COLUMNS`), and the internal re-derivation
-logic in `update_meta.py` — none of which read `max_years` or `department` off this table today.
-Both are still written and stored on every row. This is a finding, not a change: dropping either
-is a live schema change against a deployed table and API, worth its own ADR and a deliberate
-decision rather than a docs-cleanup side effect. Flagged here so the option is visible.
 
 Two rows, fetched live from the index:
 

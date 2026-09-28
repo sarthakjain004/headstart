@@ -118,6 +118,8 @@ def _params(
     params: list[tuple[str, str]] = [("strict", "1")]
     if query := (arguments.get("query") or "").strip():
         params.append(("q", query))
+    if similar_to := (arguments.get("similar_to") or "").strip():
+        params.append(("like", similar_to))
     if scope is not None:
         params += scope.params()
     if category := arguments.get("category"):
@@ -143,6 +145,12 @@ def _params(
 
 def _refuse_by_policy(arguments: dict[str, Any]) -> None:
     """What the schema cannot say: combinations the Space would misread."""
+    if (arguments.get("query") or "").strip() and (
+        arguments.get("similar_to") or ""
+    ).strip():
+        raise ToolFailure(
+            "similar_to ranks by one job and query by a description of the role; send one."
+        )
     bounded = (
         arguments.get("salary_min") is not None
         or arguments.get("salary_max") is not None
@@ -372,13 +380,21 @@ def _order_line(arguments: dict[str, Any]) -> str:
     words = _SORT_WORDS.get(sort, "")
     if sort == "salary":
         words += f", in {currency}" if currency else ", compared in USD"
-    if query and sort != "relevance":
+    similar_to = (arguments.get("similar_to") or "").strip()
+    # That job's own vector ranks as a query's does (ADR-0277), so it is worded as one.
+    ranked_by = (
+        f"job {scraped_text.quoted(similar_to)} (itself left out)"
+        if similar_to
+        else "the query"
+    )
+    ranking = "similar_to" if similar_to else "query"
+    if (query or similar_to) and sort != "relevance":
         return (
-            f"Ordered {words} among the {SORT_WINDOW:,} closest matches to the query, not "
-            "across the whole index; omit query for a global order."
+            f"Ordered {words} among the {SORT_WINDOW:,} closest matches to {ranked_by}, not "
+            f"across the whole index; omit {ranking} for a global order."
         )
-    if query:
-        return "Ordered by similarity to the query, which orders the matches but does not narrow them."
+    if query or similar_to:
+        return f"Ordered by similarity to {ranked_by}, which orders the matches but does not narrow them."
     return f"Ordered {words or 'newest to HeadStart first'} across every match."
 
 
@@ -515,7 +531,8 @@ TOOL = SpaceTool(
         "jobs that state no experience ('experience not stated'). `salary_min` keeps a "
         "job whose stated range reaches it, `salary_max` one whose range starts at or "
         "below it; other currencies are converted at fixed rates. Omit `query` to list the "
-        "newest jobs that match the filters. With a `query`, `sort` orders only the "
+        "newest jobs that match the filters; `similar_to` a job id ranks by that "
+        "job instead. With a `query`, `sort` orders only the "
         "2,000 closest matches — for a global order (the highest salary anywhere, the "
         "newest anywhere) omit `query` and narrow with `keyword` and the filters. "
         "`company` matches as the site's company box does (any company name containing "
@@ -537,6 +554,14 @@ TOOL = SpaceTool(
                 "type": "string",
                 "maxLength": 200,
                 "description": "The role only. Omit to list the newest jobs.",
+            },
+            "similar_to": {
+                "type": "string",
+                "maxLength": 300,
+                "description": (
+                    "A job id from an earlier answer: rank by that job instead of "
+                    "`query`, leaving it out. Not with `query`."
+                ),
             },
             "company": {
                 "type": "string",

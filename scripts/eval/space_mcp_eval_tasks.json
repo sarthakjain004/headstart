@@ -203,6 +203,31 @@
         "query_must_not_contain": ["germany", "deutschland", "remote"]
       },
       "why": "Round-1 critique P1-3 (ADR-0273): a country outside India is the country filter, not a location substring or a word in query. Germany is country DE, which also takes rows written only 'Berlin' or 'München'; remote is its own filter."
+    },
+    {
+      "id": "t17",
+      "prompt": "Pick one remote backend engineering job and tell me what its posting says about visa sponsorship.",
+      "verifier": "tool_args",
+      "expect": {
+        "tool": "get_job",
+        "must": {
+          "ids": {"op": "contains", "value": ":"}
+        }
+      },
+      "why": "Critique P0-3 (ADR-0277): what a posting says about sponsorship is in its description, which only get_job serves; a search row carries none. Every job id names its ATS and Board before a colon, so any get_job call reading an id from a search passes. Which job is picked is the agent's choice, so the answer itself is not checked."
+    },
+    {
+      "id": "t18",
+      "prompt": "Find me a machine learning engineer job, then show me five more jobs like that one.",
+      "verifier": "tool_args",
+      "expect": {
+        "tool": "search_jobs",
+        "must": {
+          "similar_to": {"op": "contains", "value": ":"},
+          "limit": {"op": ">=", "value": 5}
+        }
+      },
+      "why": "Critique P0-3 (ADR-0277): 'jobs like that one' ranks by the posting's own stored vector, which similar_to sends as like=; describing the job again in query would rank by the words instead. search_jobs refuses query beside similar_to, so a successful call with similar_to was ranked by the job alone."
     }
   ],
   "heldout_sha256": "801e7149bc71c42e7b346dcf089ea20f87d1e0035d989b3dba8ffb50fe055e4d"

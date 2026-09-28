@@ -137,6 +137,9 @@ def _pull_index(attempts: int = 5) -> None:
                     # duplicate removals per run and Board (#649), so a company's line can leave
                     # them out exactly — small, and absent until a run writes one
                     "data/state/dedup_evictions.csv",
+                    # the ids the latest scrape of their Board missed (ADR-0083), which `/job`
+                    # reports (ADR-0277) — ~100 KB, published in the table's own commit
+                    "data/state/unconfirmed_ids.txt",
                 ],
                 token=os.environ.get("HF_TOKEN"),
             )
@@ -174,6 +177,21 @@ _searcher = job_search.JobSearch(_model, _table)
 # from this process's freshly-opened table before accepting traffic; every pipeline publication
 # restarts the Space, so a new table necessarily gets new caches.
 _searcher.warm()
+
+# The served Jobs the latest scrape of their Board missed (ADR-0083): still served, and evicted
+# only if the next scrape of that Board misses them too. `index_publish` commits this file with
+# the table, so it describes exactly the table above. None when the pull found no file, so `/job`
+# reports "not known" rather than "not missed" (ADR-0277).
+_UNCONFIRMED_FILE = _STATE / "data" / "state" / "unconfirmed_ids.txt"
+_UNCONFIRMED: frozenset[str] | None = (
+    frozenset(
+        line.strip()
+        for line in _UNCONFIRMED_FILE.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    )
+    if _UNCONFIRMED_FILE.is_file()
+    else None
+)
 
 # Role trends (ADR-0040): everything /trends and the company picker answer from, read by one
 # module, `headstart.trends.trend_history` (ADR-0230). Same dark-until-ready shape as the two above:
@@ -353,12 +371,12 @@ app.session_interface = _AnswersLeaveTheSessionAlone()
 # is the one static file the door loads: its brand mark and its favicon (ADR-0249).
 #
 # The read routes answer anyone as well, so that anyone can use HeadStart's MCP server
-# (ADR-0258): Search and its Facet counts, Trends, Hot and the two company lookups. None
-# writes, and none serves one Account's records to another: a signed-in caller's own session
-# still applies its follow/hide clause to /search and /facets (`_company_where`), and an
-# anonymous one gets none. Every Account route stays behind the wall, and the page at `/`
-# still shows the door until its visitor signs in. Every caller is rate-limited on them
-# (`_limit_each_caller`).
+# (ADR-0258): Search and its Facet counts, Trends, Hot, the two company lookups, and a Job read
+# by id (ADR-0277). None writes, and none serves one Account's records to another: a signed-in
+# caller's own session still applies its follow/hide clause to /search and /facets
+# (`_company_where`), and an anonymous one gets none. Every Account route stays behind the wall,
+# and the page at `/` still shows the door until its visitor signs in. Every caller is
+# rate-limited on them (`_limit_each_caller`).
 _READ_ROUTES = frozenset(
     {
         "/search",
@@ -367,6 +385,7 @@ _READ_ROUTES = frozenset(
         "/hot",
         "/companies/suggest",
         "/companies/lookup",
+        "/job",
     }
 )
 _PUBLIC_PATHS = {
@@ -442,7 +461,7 @@ def _require_sign_in():
     return None
 
 
-# How often one caller may read `_READ_ROUTES` (ADR-0262): 60 requests in any 60 s, the six
+# How often one caller may read `_READ_ROUTES` (ADR-0262): 60 requests in any 60 s, the read
 # routes together. The page's own busiest minute fits: a Search is two requests (/search and
 # /facets, again on each page turn), and the Trends tab asks twice for a quick burst of boxes in
 # its Source picker; what it asks ahead for is kept, and a kept answer is not counted (ADR-0269).
@@ -598,7 +617,9 @@ def _keep_static_for_the_boot(response):
 # 2: `counts=total` on /facets, the total without any option's count (ADR-0274).
 # 3: `country` (an ISO 3166-1 alpha-2 code, ADR-0273) on /search and /facets, refused under
 # `strict=1` when unknown.
-_AGENT_API_VERSION = 3
+# 4: /job (a Job read by id, with its description and whether the latest scrape missed it), and
+# `like=` on /search and /facets (ADR-0277).
+_AGENT_API_VERSION = 4
 
 
 @app.after_request
@@ -744,6 +765,38 @@ def hot_companies():
         return jsonify({"error": "no hot list on this deployment yet"}), 503
     body = _json_body(_HOT)
     return _answer_response(body, _gzip(body))
+
+
+@app.route("/job")
+def read_jobs():
+    """Up to five served Jobs by ``id=`` (repeatable), whole enough to read (ADR-0277): each
+    search field plus the description (cut at ``description_limit``), department, the raw stated
+    experience and ``unconfirmed`` — whether the latest scrape of its Board missed it, or null
+    where this deployment does not know. An id the table does not hold is listed in ``missing``,
+    not refused: a posting HeadStart evicted has most likely closed, which is an answer."""
+    ids = list(
+        dict.fromkeys(i.strip() for i in request.args.getlist("id") if i.strip())
+    )
+    try:
+        found = _searcher.jobs_by_id(ids)
+    except ValueError as exc:
+        return jsonify(error="invalid request", detail=str(exc)), 400
+    ticks = _HISTORY.ticks
+    return jsonify(
+        {
+            "jobs": [
+                {
+                    **found[i],
+                    "unconfirmed": None if _UNCONFIRMED is None else i in _UNCONFIRMED,
+                }
+                for i in ids
+                if i in found
+            ],
+            "missing": [i for i in ids if i not in found],
+            "description_limit": job_search.JOB_DESCRIPTION_LIMIT,
+            "newest_tick": ticks[-1] if ticks else None,
+        }
+    )
 
 
 @app.route("/facets")

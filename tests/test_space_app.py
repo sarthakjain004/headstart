@@ -116,6 +116,9 @@ class _Table:
                 "first_seen": "2026-08-10T00:00:00+00:00",
                 "url": "https://example.test/1",
                 "id": "greenhouse:acme:1",
+                "department": "Engineering",
+                "description": "Build the payments API.\nOwn it end to end.",
+                "vector": [0.1, 0.2],
             },
             {
                 "_distance": 0.2,
@@ -131,6 +134,7 @@ class _Table:
                 "first_seen": "2026-08-11T00:00:00+00:00",
                 "url": "https://example.test/2",
                 "id": "lever:beta:2",
+                "vector": [0.2, 0.1],
             },
         ]
 
@@ -461,6 +465,7 @@ _READ_ROUTES = (
     "/hot",
     "/companies/suggest",
     "/companies/lookup",
+    "/job",
 )
 _DOOR_PATHS = (
     "/",
@@ -573,10 +578,10 @@ def test_the_read_limit_is_sixty_requests_a_minute(auth_app):
 
 def test_an_anonymous_caller_past_the_limit_is_told_when_to_retry(auth_app):
     client = auth_app.app.test_client()
-    # The six routes share one count: ten requests on each spend it.
-    for path in _READ_ROUTES:
-        for _ in range(10):
-            assert not _refused(client.get(path)), path
+    # The read routes share one count: sixty requests spread across them spend it.
+    for n in range(auth_app._READ_LIMIT_REQUESTS):
+        path = _READ_ROUTES[n % len(_READ_ROUTES)]
+        assert not _refused(client.get(path)), path
     r = client.get("/search?q=")
     assert r.status_code == 429
     assert r.json["error"] == "too many requests"
@@ -833,7 +838,7 @@ def test_a_caller_cannot_claim_the_in_process_mark_with_a_header(auth_app, monke
 
 # ---- the app's own mark on every reply (ADR-0253) ----
 
-_OWN_REPLY = "app; agent-api=3"
+_OWN_REPLY = "app; agent-api=4"
 
 
 def test_a_routes_own_answer_is_marked(auth_app):
@@ -3955,6 +3960,52 @@ def test_search_narrows_to_the_boards_a_trend_hands_over(app):
     client = app.app.test_client()
     assert client.get("/search?" + many).status_code == 400
     assert client.get("/facets?" + many).status_code == 400
+
+
+# ---- a Job read by id, and like= (ADR-0277) ----
+
+
+def test_a_job_read_by_id_answers_its_detail_and_lists_what_is_missing(app):
+    r = app.app.test_client().get(
+        "/job?id=greenhouse:acme:1&id=gone:x:9&id=greenhouse:acme:1"
+    )
+    assert r.status_code == 200
+    body = r.get_json()
+    (job,) = body["jobs"]
+    assert job["id"] == "greenhouse:acme:1" and job["title"] == "Backend Engineer"
+    assert job["department"] == "Engineering"
+    assert job["description"] == "Build the payments API.\nOwn it end to end."
+    assert job["description_chars"] == 42 and job["description_cut"] is False
+    assert job["unconfirmed"] is None  # no grace set pulled on this deployment
+    assert body["missing"] == ["gone:x:9"]
+    assert body["description_limit"] == 12_000 and body["newest_tick"] is None
+
+
+def test_a_job_read_by_id_says_whether_the_latest_scrape_missed_it(app, monkeypatch):
+    monkeypatch.setattr(app, "_UNCONFIRMED", frozenset({"lever:beta:2"}))
+    body = app.app.test_client().get("/job?id=greenhouse:acme:1&id=lever:beta:2").json
+    assert [(j["id"], j["unconfirmed"]) for j in body["jobs"]] == [
+        ("greenhouse:acme:1", False),
+        ("lever:beta:2", True),
+    ]
+
+
+def test_a_job_read_by_id_names_one_to_five_ids(app):
+    client = app.app.test_client()
+    six = "&".join(f"id=a:b:{n}" for n in range(6))
+    for query in ("", "id=%20", six, "id=" + "x" * 301):
+        r = client.get(f"/job?{query}")
+        assert r.status_code == 400, query
+        assert r.get_json()["error"] == "invalid request"
+
+
+def test_like_with_a_query_is_refused_on_both_routes(app):
+    client = app.app.test_client()
+    for route in ("/search", "/facets"):
+        r = client.get(f"{route}?like=greenhouse:acme:1&q=backend")
+        assert r.status_code == 400, route
+        assert "send one of them" in r.get_json()["detail"]
+    assert client.get("/search?like=greenhouse:acme:1").status_code == 200
 
 
 # ---- strict=1 through the real app (ADR-0253) ----
