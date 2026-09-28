@@ -1450,9 +1450,10 @@ class TrendHistory:
                 for board, pick in scope.items()
                 if self._in_cohort(board, base_stamp)
             }
-        # With no pick the lines keep a counting change's jump, marked, but its turnover is not
-        # hiring. The index leaves out, Board by Board, the runs each company's own line leaves
-        # out, so the index's opened and closed are the sum of what every company's view shows.
+        # With no pick a counting change's turnover is not hiring either (its jump is netted out
+        # of the lines, ADR-0270). The index leaves out, Board by Board, the runs each company's
+        # own line leaves out, so the index's opened and closed are the sum of what every
+        # company's view shows.
         left_out: tuple[set[int], set[int]] = (
             netting.left_out_runs(epochs, stamps, key == "band")
             if company_of is None

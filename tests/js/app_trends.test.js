@@ -820,7 +820,7 @@ test('a short history with no ATS filter keeps the generic too-few-updates messa
 
 test('a methodology epoch draws a marker at its matching stamp', () => {
   const { t, nodes } = loadApp();
-  t.set(golden('index_marks_counting_changes_and_takes_nothing_out'), null);
+  t.set(golden('index_takes_a_counting_change_out_and_marks_every_change'), null);
   t.draw();
   const svg = nodes['trends-chart'].innerHTML;
   assert.match(svg, /class="epoch-marker"/);
@@ -1995,11 +1995,26 @@ test('under Share a small line is no tile riser, and a short window gives no ope
 
 test('markers on one day are drawn as one, titled with every change', () => {
   const { t, nodes } = loadApp();
-  t.set(golden('index_marks_counting_changes_and_takes_nothing_out'), null);
+  t.set(golden('index_takes_a_counting_change_out_and_marks_every_change'), null);
   t.draw();
   const svg = nodes['trends-chart'].innerHTML;
   assert.equal((svg.match(/class="epoch-marker"/g) || []).length, 1);
-  assert.match(svg, /Aug 13 00:00 we got better at spotting tech jobs, so some jobs were added to or dropped from the counts\nAug 13 12:00 we redrew our job categories, so some jobs moved to a different category/, 'each change at its own time');
+  // With no pick a change is sized on the first row (ADR-0270); one that moved no line is not.
+  assert.match(svg, /Aug 13 00:00 we got better at spotting tech jobs, so some jobs were added to or dropped from the counts — All tech roles −3,700 openings\nAug 13 12:00 we read experience and salary from job posts more accurately, so some jobs moved to a different experience level</, 'each change at its own time');
+});
+
+test('with no pick a counting change is taken out of the lines, and the Marked changes list sizes it', () => {
+  // Software Engineering read −36,426 (−34.4%) over a week, all of it three marked changes
+  // (#833).
+  const { t, nodes } = loadApp();
+  t.setPicks([]);
+  t.set(golden('index_takes_a_counting_change_out_and_marks_every_change'), null);
+  t.setUnit('count', false);
+  t.draw();
+  assert.match(nodes['trends-legend'].innerHTML, /software-engineering[\s\S]*\+400 openings/);
+  assert.match(nodes['trends-changes'].innerHTML, /<li><b>Aug 13 00:00<\/b> we got better at spotting tech jobs, so some jobs were added to or dropped from the counts — All tech roles −3,700 openings<\/li>/);
+  assert.match(nodes['trends-changes'].innerHTML, /<li><b>Aug 13 12:00<\/b> we read experience and salary from job posts more accurately, so some jobs moved to a different experience level<\/li>/);
+  assert.match(nodes['trends-foot'].textContent, /Lines break at the marked jumps, and percentages skip them\./);
 });
 
 // ---- critique round 12 ------------------------------------------------------------------------
@@ -2731,17 +2746,9 @@ test('the page catches each broken invariant with the checker\'s own sentence', 
   same(broken('duplicate_removal_scales_the_history_before_it', r => { r.company_lines[0].move.share.start *= 1.5; }),
     ['company line eightfold:micron: its share at the start is not its netted count over the netted denominator',
       'company line eightfold:micron: its share\'s change is not its latest share over its start']);
-  same(broken('index_marks_counting_changes_and_takes_nothing_out', r => {
-    const move = r.lines[0].move;
-    move.hiring -= 5;
-    move.not_hiring = [{ change: 'counting@x', kind: 'counting', label: 'x', size: 5 }];
-  }), [
-    'line software-engineering: its Not hiring reads 0, its causes sum to 5',
-    'line software-engineering: its weekly rate is not its hiring over its days',
-    'line software-engineering: its share at the start is not its netted count over the netted denominator',
-    'line software-engineering: its percentage is not hiring over the netted start',
-    'line software-engineering: with no pick, something was taken out',
-  ]);
+  same(broken('index_takes_a_counting_change_out_and_marks_every_change', r => {
+    r.marked_changes[0].sizes.__total__ += 1;
+  }), ['company line __total__: its Not hiring is not its Marked changes']);
   same(broken('refit_moving_more_than_a_category_held_closes_the_table', r => {
     r.breakdown.closing.not_hiring[0].kind = 'growth_scaled_by_a_change';
   }), ['closing row: it is not one figure moved between categories by a counting change']);
@@ -2915,8 +2922,9 @@ test('over every golden reading, each company\'s Not hiring is the reading\'s, a
   for (const name of GOLDEN_NAMES) {
     const { nodes, d } = drawGolden(name);
     const verdict = nodes['trends-verdict'].innerHTML;
-    // The tracked roles have no company line: their sentence names no figure.
-    if (!d.companies || /roles matched by job title/.test(verdict)) continue;
+    // The tracked roles have no company line: their sentence names no figure. Nor does the
+    // index's, which gives its turnover alone.
+    if (!(d.companies || []).length || /roles matched by job title/.test(verdict)) continue;
     const sentences = [...verdict.matchAll(/<li><b>([^<]*)<\/b>: ([^<]*)(<details class="verdict-why"><summary>Not hiring: ([^<]*)<\/summary>)?/g)];
     const listed = listedSizes(nodes['trends-changes'].innerHTML);
     const lines = d.reading.company_lines;

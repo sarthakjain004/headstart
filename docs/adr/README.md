@@ -265,6 +265,7 @@ supersedes it and note the supersession in both.
 | [0267](0267-the-space-hosts-the-mcp-server-at-a-url-anyone-can-add.md) | The Space hosts the MCP server at a URL anyone can add (budgets and refusals amended by 0276) | 2026-09-28 |
 | [0268](0268-a-served-posting-date-is-never-later-than-first-seen.md) | A served posting date is never later than the day we first saw the Job | 2026-09-29 |
 | [0269](0269-every-trends-control-is-answered-from-the-browser.md) | Every Trends control is answered from the browser | 2026-09-29 |
+| [0270](0270-the-index-view-takes-a-counting-change-out-too.md) | The index view takes a counting change out too | 2026-09-29 |
 | [0271](0271-a-scraper-declares-whether-discovery-keeps-its-slugs-casing.md) | A scraper declares whether discovery keeps its slug's casing | 2026-09-29 |
 | [0272](0272-an-agent-reads-hiring-as-postings-opened-and-closed.md) | An agent reads hiring as postings opened and closed, not the change in openings listed | 2026-09-29 |
 | [0273](0273-a-country-filter-matches-every-way-a-location-names-a-country.md) | A country filter matches every way a location names a country | 2026-09-29 |
