@@ -1,6 +1,7 @@
 # ADR-0253: An agent reads the Space's read routes through a read-scoped token
 
-**Status:** accepted · **Date:** 2026-09-28 · **Amends:**
+**Status:** accepted, amended 2026-09-28 (the read routes are public and `AGENT_TOKEN` is
+retired, below) · **Date:** 2026-09-28 · **Amends:**
 [ADR-0042](0042-signed-in-ui-saved-sets.md) (its 2026-08-13 amendment: the wall admits a second
 machine, on the read routes), [ADR-0156](0156-the-space-installs-headstart-as-a-real-package.md)
 (the deploy trigger leaves out the three MCP packages) · **Relates to:**
@@ -180,3 +181,55 @@ one of them, its negation must go in the same change.
   its version; the Space tests pin each secret's exact path set, the agent token's refusal on the
   Account routes, and the header on all four kinds of reply.
 - Every reply carries one more header. The browser does not read it.
+
+## Amendment (2026-09-28): the read routes answer anyone, and `AGENT_TOKEN` is retired
+
+The owner's decision, the same day: "i want anyone to use the mcp server of headstart, if that
+cant be done because of th sign in wall on search and trends then remove that from there".
+
+**Why the token could not do it.** `AGENT_TOKEN` is one shared secret. Handing it to anyone who
+wants to run the server would make it a public password, and rotating it would break every copy
+at once. Per-person credentials (the per-Account minted tokens rejected above) would be new
+Account machinery, and each person would still have to sign in to get one. And the wall never
+guarded what these routes serve: it checked identity, not entitlement. Sign-up is open to any
+Google address (ADR-0042), so every answer these routes give was already one Google sign-in away
+from anyone.
+
+**So the read routes join `_PUBLIC_PATHS`:** `/search`, `/facets`, `/trends`, `/hot`,
+`/companies/suggest` and `/companies/lookup`. This reverses the option rejected above, "Make the
+read routes public", and ADR-0042's amendment's "Make `/search` public again". Both were rejected
+because opening the routes would silently un-ship the wall's widest change. The owner reverses
+that on purpose, for the reason above.
+
+**What stays walled**, unchanged: every Account route and `/signout`. The Account routes are
+Saved sets, Saved jobs, the Profile and its résumé parse, résumés, `/subscribe`, and `/companies`
+both ways: its GET reads the follow and hide lists, its POST follows, hides or clears. The page at `/` still shows the door until its
+visitor signs in; only the JSON read routes open. A test walks the app's URL map and asserts the
+wall's 401 on every route outside the pinned public set, so a new route is walled unless someone
+opens it by name.
+
+**A session still applies its Account.** A signed-in caller's `/search` and `/facets` still carry
+its follow and hide clause, which `_company_where` reads from the session as before. An anonymous
+caller, the MCP server among them, gets none. The cost stated above for an agent's search now
+holds for every anonymous caller.
+
+**`AGENT_TOKEN` is retired.** With its whole path set public it unlocks nothing, so it leaves
+`_SERVICE_TOKENS`, and its equal-secrets check, README's secret row and CONTEXT.md's entry go with
+it. A Space that still has it set ignores it. `ALERTS_TOKEN` stays with `/search` alone, which now
+admits nothing an anonymous caller cannot reach; retiring it with its sender,
+`alerts/space_query.py`, is a later cleanup. The `X-HeadStart` marker and `agent-api=1` are
+unchanged: they describe the routes' contract, not who may call them.
+
+**The risk, stated plainly:**
+
+- **Anonymous load on a free CPU Space.** Every new query is an encoder call and a vector search
+  on the one Space the product runs on, and a Trends question not yet asked this boot costs up to
+  ~1.5 s of its CPU (ADR-0251). A caller that hammers these routes slows the product for everyone.
+  Nothing throttles it.
+- **Bulk copying, page by page.** The index can be read out through `/search`. It is bounded
+  today only per request: `k` ≤ 100 rows and `page` ≤ 20, so one filter set yields at most 2,000
+  rows, but a caller may walk as many filter sets as it likes.
+
+**Proposed follow-up: a per-client rate limit on the public routes**, keyed on the caller's
+address, generous enough for a person or an agent, and refusing with a 429 the MCP server can
+name. It is not built here: this amendment opens the routes and does nothing else.

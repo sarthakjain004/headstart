@@ -335,6 +335,13 @@ app.session_interface = _AnswersLeaveTheSessionAlone()
 # from the caller's own cookie, so it can only tell you what you sent. `/privacy` is the URL
 # Google's OAuth consent screen points strangers at before they have an Account. The logo mark
 # is the one static file the door loads: its brand mark and its favicon (ADR-0249).
+#
+# The read routes answer anyone as well, so that anyone can use HeadStart's MCP server
+# (ADR-0253's amendment): Search and its Facet counts, Trends, Hot and the two company
+# lookups. None reads or writes an Account's records. A signed-in caller's session still
+# applies its follow/hide clause to /search and /facets (`_company_where`); an anonymous one
+# gets none. Every Account route stays behind the wall, and the page at `/` still shows the
+# door until its visitor signs in.
 _PUBLIC_PATHS = {
     "/",
     "/auth/google",
@@ -342,6 +349,12 @@ _PUBLIC_PATHS = {
     "/unsubscribe",
     "/privacy",
     "/static/logo_mark.svg",
+    "/search",
+    "/facets",
+    "/trends",
+    "/hot",
+    "/companies/suggest",
+    "/companies/lookup",
 }
 
 # The public repository, named once *for the Space*. ADR-0112's door, the app's privacy-policy
@@ -356,51 +369,18 @@ _REPO = "https://github.com/sarthakjain004/headstart"
 # for no reason the visitor can see reads as broken rather than as honest.
 _DOOR_NEW_HOURS = 168
 
-# Two callers have no Google identity to offer, so each carries a shared secret, compared in
-# constant time exactly as the unsubscribe token is, and each secret admits only the paths
-# its work needs. The Digest generator is a scheduled run that must reach /search for every
-# Subscription (ADR-0035; ADR-0042's amendment records why the wall admits it): `ALERTS_TOKEN`
-# opens /search alone, so a leaked token buys a search rather than a session. An agent reading
-# HeadStart for its owner (ADR-0253) carries `AGENT_TOKEN`, which opens the read routes that
-# answer without an Account and nothing else: no write, no Account's records. Unset admits
-# nobody, as in alerts.access. Both are bytes: see `_service_caller`.
+# The Digest generator has no Google identity to offer, so it carries a shared secret,
+# compared in constant time exactly as the unsubscribe token is. It is a scheduled run that
+# must reach /search for every Subscription (ADR-0035; ADR-0042's amendment records why the
+# wall admitted it): `ALERTS_TOKEN` opens /search alone. /search now answers anyone
+# (`_PUBLIC_PATHS`), so the secret admits nothing an anonymous caller cannot reach; it stays,
+# with the alerts run that sends it, until a later cleanup retires both. Unset admits nobody,
+# as in alerts.access. It is bytes: see `_service_caller`.
 _ALERTS_TOKEN = (
     (os.environ.get("ALERTS_TOKEN") or "").strip().encode("latin-1", "replace")
 )
-_AGENT_TOKEN = (
-    (os.environ.get("AGENT_TOKEN") or "").strip().encode("latin-1", "replace")
-)
-if _AGENT_TOKEN and _AGENT_TOKEN == _ALERTS_TOKEN:
-    # One secret would then open both path sets, so the agent's is dropped rather than either
-    # widened. Not fatal: Search is the product, and a misconfigured agent secret must not
-    # take it down.
-    print(
-        "WARNING: AGENT_TOKEN equals ALERTS_TOKEN, so AGENT_TOKEN is ignored and admits "
-        "nothing; set it to a secret of its own",
-        flush=True,
-    )
-    _AGENT_TOKEN = b""
-# Each secret mapped to the paths it admits; an unset secret is left out, so it admits nobody.
-_SERVICE_TOKENS = {
-    secret: paths
-    for secret, paths in (
-        (_ALERTS_TOKEN, frozenset({"/search"})),
-        (
-            _AGENT_TOKEN,
-            frozenset(
-                {
-                    "/search",
-                    "/facets",
-                    "/trends",
-                    "/hot",
-                    "/companies/suggest",
-                    "/companies/lookup",
-                }
-            ),
-        ),
-    )
-    if secret
-}
+# The secret mapped to the paths it admits; unset, it is left out, so it admits nobody.
+_SERVICE_TOKENS = {_ALERTS_TOKEN: frozenset({"/search"})} if _ALERTS_TOKEN else {}
 
 
 def _service_caller() -> bool:
@@ -499,9 +479,9 @@ def _gzip_static(response):
     return response
 
 
-# The agent contract this app serves (ADR-0253): what an agent may rely on in the read routes
-# `AGENT_TOKEN` opens. Raised whenever that contract changes, so an agent can tell an app too
-# old for it from one that serves it, rather than have a newer argument silently ignored.
+# The agent contract this app serves (ADR-0253): what an agent may rely on in the public read
+# routes (`_PUBLIC_PATHS`). Raised whenever that contract changes, so an agent can tell an app
+# too old for it from one that serves it, rather than have a newer argument silently ignored.
 # 1: `strict=1` on /search and /facets, `match` and `board_keys` on each /companies/suggest item,
 # /companies/lookup, and `newest_tick` on /facets.
 _AGENT_API_VERSION = 1
@@ -903,9 +883,10 @@ def _account_gate() -> tuple[str, Store] | None:
     """The signed-in address and a store, or None when per-Account records can't function
     — shared by the sets and the saved-jobs endpoints, which have the same prerequisites.
 
-    Reached only with a session when the wall is on (before_request), so None here means
-    the feature is unconfigured — the caller answers 503, mirroring the other dark
-    features."""
+    An Account route reaches it only with a session when the wall is on (before_request), so
+    None there means the feature is unconfigured — the caller answers 503, mirroring the other
+    dark features. `_company_where` also asks it on the public read routes, where None means
+    no Account's clause applies: the caller is signed out, or Accounts are off."""
     email = session.get("email") if _AUTH_ON else None
     if not (_SETS_ON and email):
         return None

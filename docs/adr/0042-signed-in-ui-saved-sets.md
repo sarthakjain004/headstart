@@ -98,6 +98,9 @@ Profile one PR each.
 (2026-09-28) — a second machine secret, `AGENT_TOKEN`, opens the read routes that answer without an
 Account; `ALERTS_TOKEN` still opens `/search` alone.
 
+**Reversed in part by:** [ADR-0253's amendment](0253-an-agent-reads-the-spaces-read-routes-through-a-read-scoped-token.md)
+(2026-09-28): the read routes, `/search` among them, answer anyone, and `AGENT_TOKEN` is retired.
+
 **Status:** accepted. "The whole app sits behind Google sign-in" (above) is now false in one
 narrow, deliberate place, and this records why.
 
