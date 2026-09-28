@@ -585,7 +585,7 @@ class TrendHistory:
         # `_index` summed over every ATS as `_index_cells`, which is what a question with no ATS
         # picked reads: its window is then a slice, not a sum over millions of rows (#755).
         self._every_ats_cells = (
-            np.zeros((0, 2, 0, 0), dtype=bool),
+            np.zeros((0, 2, 0, 0), dtype=np.int64),
             np.zeros((0, 2, 0, 0), dtype=np.int64),
         )
         # Every Board delta of a level metric, in file order.
@@ -1641,7 +1641,7 @@ class TrendHistory:
         self, rows: np.ndarray | None, lo: int, hi: int
     ) -> tuple[np.ndarray, np.ndarray]:
         """The index ``rows`` (a mask, or None for every row) at ticks ``[lo, hi)`` as cells
-        ``(tick - lo, metric, family rank, band rank)``: whether each cell holds a row, and the
+        ``(tick - lo, metric, family rank, band rank)``: how many rows each cell holds, and the
         count it sums to."""
         index = (
             self._index
@@ -1662,7 +1662,7 @@ class TrendHistory:
         held = np.bincount(keys, minlength=int(np.prod(sizes)))
         # summed as floats, exact for any count below 2**53
         counts = np.bincount(keys, index["count"], len(held)).astype(np.int64)
-        return (held > 0).reshape(sizes), counts.reshape(sizes)
+        return held.reshape(sizes), counts.reshape(sizes)
 
     def _index_rows(
         self,
@@ -1678,11 +1678,21 @@ class TrendHistory:
         lo, hi = self._window(since, until)
         if ats:
             index = self._index
-            rows = (index["tick"] >= lo) & (index["tick"] < hi)
-            rows &= np.isin(index["ats"], self._ats_codes(ats))
-            held, counts = self._index_cells(rows, lo, hi)
+            window = (index["tick"] >= lo) & (index["tick"] < hi)
+            chosen = np.isin(index["ats"], self._ats_codes(ats))
+            if 2 * np.count_nonzero(chosen) > len(chosen):
+                # Most rows chosen, as when a Source or two is unticked: every ATS's cells less
+                # the few rows left out, rather than a sum over millions of rows.
+                left_out = self._index_cells(window & ~chosen, lo, hi)
+                held, counts = (
+                    every[lo:hi] - out
+                    for every, out in zip(self._every_ats_cells, left_out)
+                )
+            else:
+                held, counts = self._index_cells(window & chosen, lo, hi)
         else:
             held, counts = (cells[lo:hi] for cells in self._every_ats_cells)
+        held = held > 0
         ranks = self._families.ranks(), self._bands.ranks()
         # the cells are by family rank, the mask by family code
         keeps_bands = np.empty(len(ranks[0]), dtype=bool)

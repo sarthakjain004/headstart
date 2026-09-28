@@ -162,9 +162,11 @@ test('the comparable-coverage control sends its explicit scope', async () => {
 });
 
 /** A page served under a boot's answers version (ADR-0251), its timers held for the test to run:
- * `run()` fires every timer still pending, as if the reader had stayed. */
+ * `run()` fires every timer still pending, as if the reader had stayed. The history's newest
+ * tick is Sep 20, which the date presets are measured back from (ADR-0269). */
+const NEWEST = '2026-09-20T12:00:00+00:00';
 function versionedApp() {
-  const app = loadApp(null, { answers_version: 'b00t' });
+  const app = loadApp(null, { answers_version: 'b00t', trends_newest_tick: NEWEST });
   const timers = new Map();
   let next = 0;
   app.ctx.setTimeout = (fn, ms) => { timers.set(++next, { fn, ms }); return next; };
@@ -179,35 +181,85 @@ function versionedApp() {
   return app;
 }
 
-test('a Trends answer is asked for under the boot, and the other Measure is asked ahead of its click', async () => {
-  const { t, asked, run, timers } = versionedApp();
+test('a Trends answer is asked for under the boot, and every view a click away is asked ahead at once', async () => {
+  const { t, asked, timers } = versionedApp();
   await t.load(null);
-  assert.deepStrictEqual(asked.map(a => a.url), ['/trends?v=b00t']);
-  assert.deepStrictEqual([...timers.values()].map(x => x.ms), [1000]);   // only once the reader stays
-  run();
-  assert.deepStrictEqual(asked[1], { url: '/trends?metric=new&v=b00t', priority: 'low' });
-  // The toggle then asks for exactly what was fetched ahead, so the browser answers it.
+  const since = days => encodeURIComponent(new Date(Date.parse(NEWEST) - days * 864e5).toISOString());
+  assert.deepStrictEqual(asked, [
+    { url: '/trends?v=b00t', priority: undefined },
+    // the Space answers these ahead itself (ADR-0269), so they go now, not after a second
+    ...['/trends?metric=new&v=b00t', `/trends?since=${since(7)}&v=b00t`, `/trends?since=${since(30)}&v=b00t`,
+      `/trends?since=${since(90)}&v=b00t`, '/trends?coverage=comparable&v=b00t'].map(url => ({ url, priority: 'low' })),
+  ]);
+  assert.strictEqual(timers.size, 0);
+  // Each control then asks for exactly what was fetched ahead, so the browser answers it.
+  const ahead = new Set(asked.filter(a => a.priority === 'low').map(a => a.url));
   t.metricSet('new');
   await t.load(null);
-  assert.strictEqual(asked[2].url, asked[1].url);
+  t.metricSet('stock'); t.rangeSet('30');
+  await t.load(null);
+  t.rangeSet('all'); t.coverageSet('comparable');
+  await t.load(null);
+  const clicks = asked.filter(a => a.priority !== 'low').slice(1).map(a => a.url);
+  assert.equal(clicks.length, 3);
+  clicks.forEach(url => assert.ok(ahead.has(url), url));
 });
 
-test('a load before the Measure prefetch leaves takes it back', async () => {
-  const { t, asked, timers } = versionedApp();
+test('a narrowed view asks only for its other Measure, once the reader stays', async () => {
+  // The Space works each of its neighbours out afresh, so only the likeliest is asked for.
+  const { t, nodes, asked, timers, run } = versionedApp();
+  fakeAtsMenu(nodes, [['greenhouse', true], ['lever', false]]);
+  await t.load(null);
+  assert.deepStrictEqual(asked.map(a => a.url), ['/trends?ats=greenhouse&v=b00t']);
+  assert.deepStrictEqual([...timers.values()].map(x => x.ms), [1000]);
+  run();
+  assert.deepStrictEqual(asked.slice(1), [{ url: '/trends?metric=new&ats=greenhouse&v=b00t', priority: 'low' }]);
+});
+
+test('a load before the neighbours leave takes them back', async () => {
+  const { t, nodes, asked, timers } = versionedApp();
+  fakeAtsMenu(nodes, [['greenhouse', true], ['lever', false]]);
   await t.load(null);
   assert.strictEqual(timers.size, 1);
   const next = t.load('software-engineering');
   assert.strictEqual(timers.size, 0);   // the reader moved on: nobody waits behind it
   await next;
   assert.deepStrictEqual(asked.map(a => a.url),
-    ['/trends?v=b00t', '/trends?family=software-engineering&split=bands&v=b00t']);
+    ['/trends?ats=greenhouse&v=b00t', '/trends?family=software-engineering&split=bands&ats=greenhouse&v=b00t']);
 });
 
-test('a preset window is never asked ahead: its URL is measured from each click', async () => {
-  const { t, timers } = versionedApp();
+test('a preset is one URL all boot, measured back from the newest tick, not the click', async () => {
+  const { t, asked, ctx } = versionedApp();
   t.rangeSet('30');
   await t.load(null);
-  assert.strictEqual(timers.size, 0);
+  const first = asked[0].url;
+  ctx.Date = class extends Date { static now() { return Date.now() + 5 * 36e5; } };   // five hours on
+  await t.load(null);
+  assert.strictEqual(asked.filter(a => a.priority !== 'low')[1].url, first);
+  assert.match(first, new RegExp(`since=${encodeURIComponent(new Date(Date.parse(NEWEST) - 30 * 864e5).toISOString())}&`));
+});
+
+test('inside a category with named roles, the other breakdown is a neighbour too', async () => {
+  const { t, asked } = versionedApp();
+  await t.load('software-engineering');
+  assert.ok(asked.some(a => a.url === '/trends?family=software-engineering&split=roles&v=b00t' && a.priority === 'low'),
+    JSON.stringify(asked));
+});
+
+test('a named-roles breakdown is narrowed: only its other Measure is asked for, after a second', async () => {
+  const { t, asked, timers, run } = versionedApp();
+  t.splitSet('roles');
+  await t.load('software-engineering');
+  assert.deepStrictEqual(asked.map(a => a.url), ['/trends?family=software-engineering&split=roles&v=b00t']);
+  run();
+  assert.deepStrictEqual(asked.slice(1).map(a => a.url), ['/trends?family=software-engineering&split=roles&metric=new&v=b00t']);
+});
+
+test('under Save-Data nothing is asked ahead', async () => {
+  const { t, asked, ctx } = versionedApp();
+  ctx.navigator = { connection: { saveData: true } };
+  await t.load(null);
+  assert.deepStrictEqual(asked.map(a => a.url), ['/trends?v=b00t']);
 });
 
 test('a category row the pointer rests on has its levels asked for ahead, once', async () => {
@@ -669,24 +721,50 @@ const settle = () => new Promise(r => setTimeout(r, 0));
 /** The fixture, tagged so a test can say WHICH request's answer reached the panel. */
 const tagged = n => ({ ...fixture(), version: n });
 
-test('a burst of selections repaints once, not once per checkbox', async () => {
+test('a box asks at once, and a quick burst after it asks once, for the selection at its last box', async () => {
   const { calls, impl } = deferredTrends();
-  const { nodes, t } = loadApp(impl);
+  const { nodes, t, ctx } = loadApp(impl);
+  const timers = new Map();
+  let next = 0;
+  ctx.setTimeout = (fn, ms) => { timers.set(++next, { fn, ms }); return next; };
+  ctx.clearTimeout = id => { timers.delete(id); };
   const boxes = fakeAtsMenu(nodes, [['greenhouse', true], ['lever', true], ['workday', true],
                                     ['ashby', true], ['zoho', true], ['keka', true]]);
   calls.length = 0;                 // drop anything the page asked for as it loaded
   // Through the picker's own `change` handler, not the loader behind it: this is the wiring
-  // the bug report named. Five boxes unchecked before the first answer can land.
+  // the bug report named. Five boxes unchecked in one quick burst.
   for (let i = 0; i < 5; i++) {
     boxes[i].checked = false;
     nodes['trends-ats-menu'].fire('change');
   }
-  assert.equal(calls.length, 5, 'each selection still asks the server for its own answer');
-  assert.match(calls[4].url, /ats=keka/, 'and asks for the selection as it stood at that click');
-  calls.forEach((c, i) => c.answer(tagged(i)));   // every answer comes back, oldest first
+  // The first box at once; a request the page cancels is still worked out by the Space
+  // (ADR-0269), so the four after it wait for the burst to stop.
+  assert.equal(calls.length, 1);
+  assert.doesNotMatch(calls[0].url, /ats=greenhouse/);
+  assert.match(nodes['trends-ats-trigger'].textContent, /^1 source/);   // the label follows each box
+  assert.deepStrictEqual([...timers.values()].map(x => x.ms), [300]);
+  [...timers.values()].forEach(x => x.fn());
+  assert.equal(calls.length, 2);
+  assert.match(calls[1].url, /\?ats=keka&?/);
+  calls.forEach((c, i) => c.answer(tagged(i)));
   await settle();
-  assert.equal(t.draws(), 1);       // was 5: one full chart+legend+KPI rewrite per answer
-  assert.equal(t.data().version, 4);
+  assert.equal(t.draws(), 1);       // the first was cancelled by the second: one paint
+  assert.equal(t.data().version, 1);
+});
+
+test('a burst that lands on a view the browser holds asks at once', async () => {
+  const app = versionedApp();
+  const { t, nodes, asked, timers } = app;
+  const boxes = fakeAtsMenu(nodes, [['greenhouse', true], ['lever', true], ['workday', true]]);
+  await t.load(null);   // every Source: the browser now holds it
+  timers.clear();
+  asked.length = 0;
+  boxes[0].checked = false;
+  nodes['trends-ats-menu'].fire('change');
+  boxes[0].checked = true;
+  nodes['trends-ats-menu'].fire('change');   // back to every Source, in the same burst
+  assert.deepStrictEqual(asked.map(a => a.url), ['/trends?ats=lever&ats=workday&v=b00t', '/trends?v=b00t']);
+  assert.equal(timers.size, 0);
 });
 
 test('an answer that arrives after a newer one never paints over it', async () => {
@@ -1806,6 +1884,21 @@ test('the table heads a company\'s categories with its own total, and says they 
   const html = nodes['trends-table'].innerHTML;
   assert.match(html, /<caption>“All tech roles” covers the whole company; the categories below add up to it/);
   assert.match(html, /<tr class="total"><th scope="row"><b>All tech roles<\/b><\/th><td>165<\/td>/);
+});
+
+test('the every-measurement grid is built only while its fold is open', () => {
+  const { t, nodes } = loadApp();
+  t.set(fixture(), null);
+  t.draw();
+  nodes['trends-error'] = Object.assign(fakeEl(), { hidden: true });
+  t.table(true);
+  assert.notEqual(nodes['trends-table'].innerHTML, '');
+  assert.equal(nodes['trends-full-table'].innerHTML, '');   // folded: ~1,000 columns not built
+  nodes['trends-full'].open = true;
+  nodes['trends-full'].fire('toggle');
+  assert.match(nodes['trends-full-table'].innerHTML, /<thead><tr><th scope="col">/);
+  t.draw();   // a redraw while open keeps it built, from the answer on screen
+  assert.match(nodes['trends-full-table'].innerHTML, /<tbody><tr>/);
 });
 
 test('a refit that moves openings between categories leaves them adding up to the company', () => {

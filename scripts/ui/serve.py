@@ -89,6 +89,8 @@ def index():
             # No answers version (ADR-0251): this renderer serves no Trends or Hot answers to
             # cache, so the page asks as it always did.
             "answers_version": None,
+            # No trends history either, so the date presets measure back from the clock.
+            "trends_newest_tick": None,
         },
         # The privacy-policy links point into the public repo. Hardcoded here rather than
         # imported: this file is the local dev renderer and shares no config with the Space.
