@@ -26,8 +26,8 @@ from headstart.scrapers.icims import (
     _ld_fields,
     _public_url,
     _salary,
-    _sitemap_rows,
     _stated_date,
+    sitemap_rows,
 )
 from headstart.scrapers.registry import get_scraper
 
@@ -47,7 +47,7 @@ def _raw_from_fixture() -> list[dict]:
             "posted_at": lastmod,
             "fields": _ld_fields(_FIXTURE["pages"][job_id]),
         }
-        for job_id, url, lastmod in _sitemap_rows(_FIXTURE["sitemap_xml"])
+        for job_id, url, lastmod in sitemap_rows(_FIXTURE["sitemap_xml"])
         if job_id in _FIXTURE["pages"]
     ]
 
@@ -55,8 +55,8 @@ def _raw_from_fixture() -> list[dict]:
 # --- the listing surface ------------------------------------------------------------------
 
 
-def test_sitemap_rows_reads_id_url_and_lastmod() -> None:
-    rows = _sitemap_rows(_FIXTURE["sitemap_xml"])
+def testsitemap_rows_reads_id_url_and_lastmod() -> None:
+    rows = sitemap_rows(_FIXTURE["sitemap_xml"])
     assert rows, "fixture sitemap should list postings"
     for job_id, url, lastmod in rows:
         assert job_id.isdigit()
@@ -64,23 +64,23 @@ def test_sitemap_rows_reads_id_url_and_lastmod() -> None:
         assert lastmod is None or lastmod[:4].isdigit()
 
 
-def test_sitemap_rows_skips_non_posting_urls() -> None:
+def testsitemap_rows_skips_non_posting_urls() -> None:
     """All 35 sitemaps sampled carry a non-posting URL — `/jobs/intro` or `/jobs/search`."""
     locs = re.findall(r"<loc>([^<]+)</loc>", _FIXTURE["sitemap_xml"])
     non_postings = [u for u in locs if not re.search(r"/jobs/\d+/[^/]*/job", u)]
     assert non_postings, "fixture should contain a non-posting URL to skip"
 
-    kept = {url for _, url, _ in _sitemap_rows(_FIXTURE["sitemap_xml"])}
+    kept = {url for _, url, _ in sitemap_rows(_FIXTURE["sitemap_xml"])}
     assert kept.isdisjoint(non_postings)
     assert len(kept) == len(locs) - len(non_postings)
 
 
-def test_sitemap_rows_dedupes_repeated_ids() -> None:
+def testsitemap_rows_dedupes_repeated_ids() -> None:
     xml = (
         "<url><loc>https://h.icims.com/jobs/1/a/job</loc><lastmod>2026-01-01</lastmod></url>"
         "<url><loc>https://h.icims.com/jobs/1/a-renamed/job</loc><lastmod>2026-02-02</lastmod></url>"
     )
-    rows = _sitemap_rows(xml)
+    rows = sitemap_rows(xml)
     assert [r[0] for r in rows] == ["1"]
     assert rows[0][2] == "2026-01-01", "first occurrence wins"
 
@@ -228,7 +228,7 @@ def test_the_fixture_board_states_real_dates_and_they_win() -> None:
 
     jobs = get_scraper("icims", _HOST).parse(_raw_from_fixture(), _SCRAPED_AT)
     lastmods = {
-        job_id: lastmod for job_id, _, lastmod in _sitemap_rows(_FIXTURE["sitemap_xml"])
+        job_id: lastmod for job_id, _, lastmod in sitemap_rows(_FIXTURE["sitemap_xml"])
     }
     assert jobs
     differed = 0
@@ -400,7 +400,7 @@ def test_fetch_raw_reads_every_listed_page_and_names_each_loss(
     for with `in_iframe=1`, a page that arrives as the branded wrapper and a page that 404s are
     each a named loss, and a lost page marks the Board truncated, since the page is the Job."""
     monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", async_fanout)
-    rows = _sitemap_rows(_FIXTURE["sitemap_xml"])
+    rows = sitemap_rows(_FIXTURE["sitemap_xml"])
     gone_id = next(job_id for job_id, _, _ in rows if job_id not in _FIXTURE["pages"])
 
     def route(method, url, kwargs):
@@ -559,3 +559,32 @@ def test_a_title_naming_an_office_falls_through_to_the_postings():
 
 def test_a_ledger_name_outranks_both():
     assert _named("SYSTRA", company="Systra Group") == "Systra Group"
+
+
+def test_a_locality_with_a_trailing_comma_is_not_served_a_double_comma() -> None:
+    """abudhabi-nyu's JSON-LD, live 2026-09-28 (jobLocation verbatim): "Abu Dhabi," served as
+    "Abu Dhabi,, AE" on 29 of 29 Jobs."""
+    from headstart.scrapers.icims import _ld_fields
+
+    location = [
+        {
+            "address": {
+                "addressCountry": "AE",
+                "streetAddress": "UNAVAILABLE",
+                "@type": "PostalAddress",
+                "postalCode": "UNAVAILABLE",
+                "addressLocality": "Abu Dhabi,",
+                "addressRegion": "UNAVAILABLE",
+                "postOfficeBoxNumber": "UNAVAILABLE",
+            },
+            "@type": "Place",
+        }
+    ]
+    page = (
+        '<script type="application/ld+json">'
+        + json.dumps(
+            {"@type": "JobPosting", "title": "Analyst", "jobLocation": location}
+        )
+        + "</script>"
+    )
+    assert _ld_fields(page)["location"] == "Abu Dhabi, AE"

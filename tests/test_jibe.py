@@ -366,6 +366,16 @@ def test_a_transient_status_is_retried_at_the_crawl_delay(clock):
     assert len(listing) == 2 and listing[1] - listing[0] >= jibe.CRAWL_DELAY
 
 
+def test_a_one_attempt_request_is_sent_once(clock):
+    """The company-name page is fetched through `_fetch_once`, which asks for one attempt so a
+    display name never spends the retry ladder; `_send` used to override that with its own three."""
+    routes = _routes([_page([_row("3713")], 1)])
+    routes[("rmeducation.jibeapply.com", "/jobs")] = [(503, ""), (503, ""), (503, "")]
+    scraper, fetcher = _scraper(routes, clock)
+    scraper.fetch()
+    assert len([url for _t, url in fetcher.log if urlsplit(url).path == "/jobs"]) == 1
+
+
 def test_the_company_is_the_board_page_title(clock):
     routes = _routes([_page([_row("3713")], 1)])
     scraper, _ = _scraper(routes, clock)
@@ -583,3 +593,27 @@ def test_a_robots_redirect_to_a_page_is_read_once_not_recursively(clock):
     )
     assert [j.id for j in scraper.fetch()] == ["jibe:rmeducation:3713"]
     assert sum(url == "https://www.example-parent.com/" for _, url in fetcher.log) == 1
+
+
+def test_a_title_that_states_remote_makes_the_job_remote():
+    """uhs, live 2026-09-28 (`/api/jobs?keywords=remote`, four rows trimmed): the place names a
+    city, so the location read False on every one; a title stating remote is the Board's own
+    answer, and a title negating it ("Not Remote", "NON REMOTE") keeps the location's."""
+    with open(FIXTURES / "jibe_uhs_remote_titles.json", encoding="utf-8") as fh:
+        rows = [j["data"] for j in json.load(fh)["jobs"]]
+    jobs = JibeScraper("uhs").parse({"rows": rows, "icims_scraped": {}}, SCRAPED_AT)
+    assert {j.title: j.remote for j in jobs} == {
+        "Manager - Coding (REMOTE)": True,
+        "Remote Therapist- Part-Time": True,
+        "RN (PRN - Not Remote)": False,
+        "Recruiter - Healthcare Experience Required - NON REMOTE": False,
+    }
+
+
+def test_a_portal_buried_onto_a_scraped_icims_board_is_covered():
+    """hourly-spanish-redlobster lists the same postings as careers-redlobster (2,399 of 2,399,
+    2026-09-28) and is buried onto it, so a Jibe row applying there is served by iCIMS already."""
+    jibe._scraped_icims_tenants.cache_clear()
+    covered = jibe._scraped_icims_tenants()
+    assert "careers-redlobster.icims.com" in covered
+    assert "hourly-spanish-redlobster.icims.com" in covered

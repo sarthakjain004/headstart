@@ -1,0 +1,233 @@
+{
+ "jobs": [
+  {
+   "data": {
+    "slug": "365276",
+    "language": "en-us",
+    "languages": [
+     "en-us"
+    ],
+    "req_id": "365276",
+    "title": "RN (PRN - Not Remote)",
+    "location_name": "RIVENDELL BHS-ARKANSAS",
+    "street_address": "100 RIVENDELL DRIVE",
+    "city": "BENTON",
+    "state": "Arkansas",
+    "country": "United States",
+    "country_code": "US",
+    "postal_code": "72015",
+    "location_type": "LAT_LNG",
+    "latitude": 34.6134959,
+    "longitude": -92.53248289999999,
+    "categories": [
+     {
+      "name": "Nurse Practitioner"
+     }
+    ],
+    "tags1": [
+     "Per Diem"
+    ],
+    "tags2": [
+     "Professional"
+    ],
+    "tags3": [
+     "PRN"
+    ],
+    "promotion_value": 0,
+    "posted_date": "2026-08-20T13:33:00+0000",
+    "apply_url": "https://careers-uhsinc.icims.com/jobs/365276/login",
+    "internal": false,
+    "external": false,
+    "searchable": true,
+    "applyable": true,
+    "li_easy_applyable": true,
+    "ats_code": "icims",
+    "isFrontLineAIJob": false,
+    "isApplyFlowJob": false,
+    "update_date": "2026-09-16T07:14:54+0000",
+    "create_date": "2026-08-20T13:34:02+0000",
+    "category": [
+     " Nurse Practitioner"
+    ],
+    "full_location": "BENTON, Arkansas",
+    "short_location": "BENTON, Arkansas",
+    "multipleLocations": false
+   }
+  },
+  {
+   "data": {
+    "slug": "366506",
+    "language": "en-us",
+    "languages": [
+     "en-us",
+     "es-mx"
+    ],
+    "req_id": "366506",
+    "title": "Remote Therapist- Part-Time",
+    "location_name": "CORAL SHORES BEHAVIORAL HEALTH",
+    "street_address": "5995 SE COMMUNITY DRIVE",
+    "city": "STUART",
+    "state": "Florida",
+    "country": "United States",
+    "country_code": "US",
+    "postal_code": "34997",
+    "location_type": "LAT_LNG",
+    "latitude": 27.1316464,
+    "longitude": -80.22104569999999,
+    "categories": [
+     {
+      "name": "Behavioral Health - Therapist"
+     }
+    ],
+    "tags1": [
+     "Part Time"
+    ],
+    "tags2": [
+     "Professional"
+    ],
+    "tags3": [
+     "Varied"
+    ],
+    "promotion_value": 0,
+    "employment_type": "PART_TIME",
+    "posted_date": "2026-08-27T19:08:00+0000",
+    "apply_url": "https://careers-uhsinc.icims.com/jobs/366506/login",
+    "internal": false,
+    "external": false,
+    "searchable": true,
+    "applyable": true,
+    "li_easy_applyable": true,
+    "ats_code": "icims",
+    "isFrontLineAIJob": false,
+    "isApplyFlowJob": false,
+    "update_date": "2026-09-16T07:18:08+0000",
+    "create_date": "2026-08-27T19:09:00+0000",
+    "category": [
+     " Behavioral Health - Therapist"
+    ],
+    "full_location": "STUART, Florida",
+    "short_location": "STUART, Florida",
+    "multipleLocations": false
+   }
+  },
+  {
+   "data": {
+    "slug": "349768",
+    "language": "en-us",
+    "languages": [
+     "en-us"
+    ],
+    "req_id": "349768",
+    "title": "Manager - Coding (REMOTE)",
+    "location_name": "INDEPENDENCE SHARED SRVS- CORE",
+    "street_address": "1250 DRUMMERS LANE",
+    "city": "WAYNE",
+    "state": "Pennsylvania",
+    "country": "United States",
+    "country_code": "US",
+    "postal_code": "19087",
+    "location_type": "LAT_LNG",
+    "latitude": 40.0839128,
+    "longitude": -75.41448179999999,
+    "categories": [
+     {
+      "name": "Medical Coding"
+     }
+    ],
+    "tags1": [
+     "Full Time"
+    ],
+    "tags2": [
+     "Corporate"
+    ],
+    "tags3": [
+     "Day"
+    ],
+    "promotion_value": 0,
+    "employment_type": "FULL_TIME",
+    "posted_date": "2026-04-20T14:12:00+0000",
+    "apply_url": "https://careers-uhsinc.icims.com/jobs/349768/login",
+    "internal": false,
+    "external": false,
+    "searchable": true,
+    "applyable": true,
+    "li_easy_applyable": true,
+    "ats_code": "icims",
+    "isFrontLineAIJob": false,
+    "isApplyFlowJob": false,
+    "update_date": "2026-09-16T06:59:46+0000",
+    "create_date": "2026-04-20T14:12:43+0000",
+    "category": [
+     " Medical Coding"
+    ],
+    "full_location": "WAYNE, Pennsylvania",
+    "short_location": "WAYNE, Pennsylvania",
+    "multipleLocations": false
+   }
+  },
+  {
+   "data": {
+    "slug": "366696",
+    "language": "en-us",
+    "languages": [
+     "en-us",
+     "es-mx"
+    ],
+    "req_id": "366696",
+    "title": "Recruiter - Healthcare Experience Required - NON REMOTE",
+    "location_name": "GEORGE WASHINGTON UNIV HOSP",
+    "street_address": "900 23RD STREET, NW",
+    "city": "WASHINGTON",
+    "state": "Washington, DC",
+    "country": "United States",
+    "country_code": "US",
+    "postal_code": "20037",
+    "location_type": "LAT_LNG",
+    "latitude": 38.9012445,
+    "longitude": -77.0507271,
+    "categories": [
+     {
+      "name": "Customer Service"
+     },
+     {
+      "name": "Human Resources"
+     },
+     {
+      "name": "Human Resources - Recruitment"
+     }
+    ],
+    "tags1": [
+     "Full Time"
+    ],
+    "tags2": [
+     "Professional"
+    ],
+    "tags3": [
+     "Day"
+    ],
+    "promotion_value": 0,
+    "employment_type": "FULL_TIME",
+    "posted_date": "2026-08-28T19:13:00+0000",
+    "apply_url": "https://careers-uhsinc.icims.com/jobs/366696/login",
+    "internal": false,
+    "external": false,
+    "searchable": true,
+    "applyable": true,
+    "li_easy_applyable": true,
+    "ats_code": "icims",
+    "isFrontLineAIJob": false,
+    "isApplyFlowJob": false,
+    "update_date": "2026-09-16T07:18:37+0000",
+    "create_date": "2026-08-28T19:18:03+0000",
+    "category": [
+     " Customer Service",
+     " Human Resources",
+     " Human Resources - Recruitment"
+    ],
+    "full_location": "WASHINGTON, Washington, DC",
+    "short_location": "WASHINGTON, Washington, DC",
+    "multipleLocations": false
+   }
+  }
+ ]
+}

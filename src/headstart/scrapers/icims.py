@@ -194,7 +194,7 @@ class ICIMSScraper(BaseScraper):
         # opt-out boards. It is a settled answer, not a transient one, so it raises like any other
         # non-200 and the Board earns a liveness verdict rather than looking empty.
         response.raise_for_status()
-        listed = _sitemap_rows(response.text)
+        listed = sitemap_rows(response.text)
         if not listed:
             # INFO on the empty exit only: the count on every other Board is the gap line's
             # own denominator. A Board with nothing open also lands here, so this names what
@@ -316,7 +316,7 @@ class ICIMSScraper(BaseScraper):
 
     def job_url(self, job_url: str) -> str:
         """Delegates to the module-level :func:`_public_url` — the sitemap parsing that builds
-        each row (:func:`_sitemap_rows`) runs ahead of any per-job ``self``, the same reason
+        each row (:func:`sitemap_rows`) runs ahead of any per-job ``self``, the same reason
         :meth:`_salary_field` below delegates to a free function."""
         return _public_url(job_url)
 
@@ -331,7 +331,7 @@ class ICIMSScraper(BaseScraper):
         return _salary(raw)
 
 
-def _sitemap_rows(xml: str) -> list[tuple[str, str, str | None]]:
+def sitemap_rows(xml: str) -> list[tuple[str, str, str | None]]:
     """``(job_id, public_url, lastmod)`` per posting, deduped, in sitemap order.
 
     Non-job entries are skipped: all 35 sitemaps sampled carry at least one non-posting URL
@@ -372,6 +372,10 @@ def _detail_url(job_url: str) -> str:
     return urlunsplit((parts.scheme, parts.netloc, parts.path, "in_iframe=1", ""))
 
 
+def _one_comma(location: str | None) -> str | None:
+    return re.sub(r",(?:\s*,)+", ",", location) if location else location
+
+
 def _ld_fields(page: str) -> dict[str, Any] | None:
     """The JobPosting fields from a job page's JSON-LD, or None if it carries none.
 
@@ -386,9 +390,10 @@ def _ld_fields(page: str) -> dict[str, Any] | None:
         **job_posting_fields(kept),
         # Every place of a multi-location posting is kept, "; "-joined (31 of 134 sampled carry
         # more than one, ADR-0196's amendment), and the literal `UNAVAILABLE` iCIMS writes into
-        # unset address parts is dropped rather than shown.
-        "location": job_location_text(
-            kept.get("jobLocation"), placeholders={"UNAVAILABLE"}
+        # unset address parts is dropped rather than shown. A part the tenant ends with its own
+        # comma ("Abu Dhabi," on abudhabi-nyu, 2026-09-28) would otherwise serve ",,".
+        "location": _one_comma(
+            job_location_text(kept.get("jobLocation"), placeholders={"UNAVAILABLE"})
         ),
         "department": kept.get("occupationalCategory"),
         "salary": _salary(kept.get("baseSalary")),

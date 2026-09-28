@@ -706,8 +706,12 @@ PARKED_BOARDS: frozenset[str] = frozenset(
         # commonspirit 515 s, selectmedicalcorp and aus 205 s each. Measured 2026-09-26 by walking
         # each Scrapable client's whole listing (`scripts/validate/jibe_icims_covered_clients.py`):
         # 288 of 1,121 clients, 73,027 postings, every one on a Scrapable iCIMS Board. A client
-        # with a single posting elsewhere is not here (peraton, 1 of 1,559). Un-park a client
-        # whose postings move off those Boards, or once cross-ATS dedup exists.
+        # with a single posting elsewhere is not here. Un-park a client whose postings move off
+        # those Boards, or once cross-ATS dedup exists. Re-walked 2026-09-28 after the iCIMS
+        # ledger refresh and ADR-0254's burials: curo (144 of 144) and peraton (1,559 of 1,559)
+        # joined; goauto and uti left, because their iCIMS Boards (careersen-goauto,
+        # careers-concorde, careers-uti) now serve `Disallow: /` and 403 their sitemaps, so
+        # iCIMS reads none of their postings.
         "jibe:1supply",
         "jibe:actslife",
         "jibe:adastragrp",
@@ -773,6 +777,7 @@ PARKED_BOARDS: frozenset[str] = frozenset(
         "jibe:crashchampions",
         "jibe:csuglobal",
         "jibe:curanahealth",
+        "jibe:curo",
         "jibe:daddario",
         "jibe:dallascatholic",
         "jibe:damar",
@@ -804,7 +809,6 @@ PARKED_BOARDS: frozenset[str] = frozenset(
         "jibe:getchampion",
         "jibe:gilbaneco",
         "jibe:globalcu",
-        "jibe:goauto",
         "jibe:goodshepherdhospice",
         "jibe:gr8affinity",
         "jibe:granicus",
@@ -898,6 +902,7 @@ PARKED_BOARDS: frozenset[str] = frozenset(
         "jibe:peagroup",
         "jibe:pennentertainment",
         "jibe:pepperpointe",
+        "jibe:peraton",
         "jibe:petsuppliesplus",
         "jibe:phypartners",
         "jibe:piedmont",
@@ -973,7 +978,6 @@ PARKED_BOARDS: frozenset[str] = frozenset(
         "jibe:unisonglobal",
         "jibe:unitypoint",
         "jibe:usap",
-        "jibe:uti",
         "jibe:valiantsolutions",
         "jibe:verathon",
         "jibe:versiti",
