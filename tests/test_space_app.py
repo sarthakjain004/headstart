@@ -39,7 +39,7 @@ import pyarrow.parquet as pq
 import pytest
 
 from headstart.llm_router import RouterUnavailable
-from headstart.serving import rate_limit
+from headstart.serving import concurrency_limit, rate_limit
 from headstart.trends import line_reading, netting, trend_history
 
 pytest.importorskip("flask")  # in [dev] so this runs in CI; guards a bare env
@@ -680,10 +680,11 @@ def _post_mcp(client, message=_MCP_LIST, **kwargs):
 
 
 def test_the_mcp_limits_are_pinned(auth_app):
-    # Pinned: each number is a decision ADR-0267 reasons out, not a tuning knob.
+    # Pinned: each number is a decision ADR-0267 or ADR-0276 reasons out, not a tuning knob.
     assert (auth_app._MCP_LIMIT_REQUESTS, auth_app._LIMIT_WINDOW_S) == (30, 60)
     assert auth_app._ANTHROPIC_LIMIT_REQUESTS == 300
     assert (auth_app._MCP_AT_ONCE, auth_app._MCP_PLACE_WAIT_S) == (4, 10)
+    assert auth_app._MCP_AT_ONCE_EACH == 2
 
 
 def test_mcp_answers_anyone_with_the_wall_on_and_only_by_post(auth_app):
@@ -702,15 +703,23 @@ def test_mcp_refuses_a_page_on_another_site(auth_app):
     assert _post_mcp(client, headers={"Origin": "https://claude.ai"}).status_code == 200
 
 
+def _mcp_refusal_says(r, status, words):
+    """`r` is ADR-0276's refusal: `status`, `Retry-After`, the app's marker, and a JSON-RPC error
+    carrying the posted request's id whose message holds `words`."""
+    assert r.status_code == status and r.headers["X-HeadStart"] == _OWN_REPLY
+    assert float(r.headers["Retry-After"]) > 0
+    assert r.json["jsonrpc"] == "2.0" and r.json["id"] == _MCP_LIST["id"]
+    assert r.json["error"]["code"] == status and words in r.json["error"]["message"]
+
+
 def test_one_address_past_the_mcp_limit_is_told_when_to_retry(auth_app):
     client = auth_app.app.test_client()
     caller = {"X-Forwarded-For": "198.51.100.1"}
     for n in range(auth_app._MCP_LIMIT_REQUESTS):
         assert _post_mcp(client, headers=caller).status_code == 200, n
     r = _post_mcp(client, headers=caller)
-    assert r.status_code == 429 and r.headers["X-HeadStart"] == _OWN_REPLY
+    _mcp_refusal_says(r, 429, "from one address; retry in")
     assert 1 <= int(r.headers["Retry-After"]) <= 60
-    assert "from one address" in r.json["detail"]
     other = {"X-Forwarded-For": "198.51.100.2"}
     assert _post_mcp(client, headers=other).status_code == 200
 
@@ -724,7 +733,7 @@ def test_anthropics_range_shares_one_larger_mcp_budget(auth_app):
         r = _post_mcp(client, headers={"X-Forwarded-For": address})
         assert r.status_code == 200, n
     r = _post_mcp(client, headers={"X-Forwarded-For": "160.79.111.254"})
-    assert r.status_code == 429 and "from Anthropic" in r.json["detail"]
+    _mcp_refusal_says(r, 429, "from Anthropic's range")
     outside = {"X-Forwarded-For": "160.79.112.1"}
     assert _post_mcp(client, headers=outside).status_code == 200
 
@@ -732,13 +741,53 @@ def test_anthropics_range_shares_one_larger_mcp_budget(auth_app):
 def test_a_busy_mcp_endpoint_says_so_rather_than_queueing_forever(
     auth_app, monkeypatch
 ):
-    monkeypatch.setattr(auth_app, "_MCP_PLACES", threading.BoundedSemaphore(1))
+    places = concurrency_limit.ConcurrencyLimit(1, 1)
+    monkeypatch.setattr(auth_app, "_MCP_PLACES", places)
     monkeypatch.setattr(auth_app, "_MCP_PLACE_WAIT_S", 0.01)
-    auth_app._MCP_PLACES.acquire()
+    places.take("198.51.100.9", 0)
     r = _post_mcp(auth_app.app.test_client())
-    assert r.status_code == 503 and r.headers["Retry-After"]
-    auth_app._MCP_PLACES.release()
+    _mcp_refusal_says(r, 503, "busy")
+    places.give_back("198.51.100.9")
     assert _post_mcp(auth_app.app.test_client()).status_code == 200
+
+
+@pytest.mark.parametrize(
+    "address, caller, who",
+    [
+        ("198.51.100.3", "198.51.100.3", "from one address"),
+        # Every claude.ai user shares Anthropic's range, so the range holds one caller's share.
+        ("160.79.104.9", "anthropic", "from Anthropic's range"),
+    ],
+)
+def test_one_caller_cannot_hold_every_mcp_place(
+    auth_app, monkeypatch, address, caller, who
+):
+    places = concurrency_limit.ConcurrencyLimit(
+        auth_app._MCP_AT_ONCE, auth_app._MCP_AT_ONCE_EACH
+    )
+    monkeypatch.setattr(auth_app, "_MCP_PLACES", places)
+    monkeypatch.setattr(auth_app, "_MCP_PLACE_WAIT_S", 0.01)
+    for _ in range(auth_app._MCP_AT_ONCE_EACH):  # two slow calls still being answered
+        assert places.take(caller, 0) is None
+    client = auth_app.app.test_client()
+    r = _post_mcp(client, headers={"X-Forwarded-For": address})
+    _mcp_refusal_says(r, 429, f"at most 2 at a time {who}")
+    other = {"X-Forwarded-For": "198.51.100.4"}
+    assert _post_mcp(client, headers=other).status_code == 200
+    places.give_back(caller)
+    assert _post_mcp(client, headers={"X-Forwarded-For": address}).status_code == 200
+
+
+def test_an_mcp_place_is_given_back_when_answering_fails(auth_app, monkeypatch):
+    places = concurrency_limit.ConcurrencyLimit(1, 1)
+    monkeypatch.setattr(auth_app, "_MCP_PLACES", places)
+
+    def broken(*args):
+        raise RuntimeError("a bug below the route")
+
+    monkeypatch.setattr(auth_app.streamable_http, "answer", broken)
+    assert _post_mcp(auth_app.app.test_client()).status_code == 500
+    assert not places._held
 
 
 def test_the_mcp_tools_reads_are_not_counted_against_the_read_limit(
