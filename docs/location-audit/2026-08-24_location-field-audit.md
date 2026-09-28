@@ -204,6 +204,9 @@ want every location a job spans, or the first one is fine?), not a data-quality 
 audit's mandate was "are we missing or mangling data," not "should this ATS report multi-location
 postings differently than it does today."
 
+**Resolved 2026-09-28:** Eightfold now keeps every location, "; "-joined (`eightfold._location`,
+ADR-0196's amendment).
+
 **Zoho's `remote=True, location=None`** is the correct representation of a fully-remote posting in
 Zoho's own data model — confirmed by measuring the correlation directly (100% of null-location zoho
 jobs, n=502) rather than assumed. Worth flagging as a *product* question, not a bug: other ATSes

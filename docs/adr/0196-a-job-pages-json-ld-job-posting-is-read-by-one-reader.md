@@ -172,8 +172,15 @@ In every changed row the old value is the new one's first place, so the change o
 iCIMS's "4 of 207 sampled" understated it: 31 of 134 here. On Eightfold, SuccessFactors and
 Avature the change is inert on the path the sample read, which says nothing about how many
 locations their postings have. Eightfold reads JSON-LD only in its sitemap fallback, which no
-sampled Board took; its API path keeps the first place through its own `_first_location`, which
-this amendment does not change. SuccessFactors pages carry no JSON-LD (above).
+sampled Board took. SuccessFactors pages carry no JSON-LD (above).
+
+Eightfold's API path, which is not this reader, kept only the first non-empty place of its
+`locations` in the same way. It now keeps every one, each repaired from its own
+`standardizedLocations` entry as before (`eightfold._location`). Measured the same way on four
+seeded Boards (symetra, corteva, vialto, paypal): 168 of 624 postings gained places, up to 19;
+every old value was the new one's first place. `remote` comes from `workLocationOption`, else
+from `is_remote(location)`, so that fallback now sees every place too; it changed on none of the
+624, and it reaches an already-indexed row only on a sweep (ADR-0118), as for Meta and iCIMS.
 
 Meta and iCIMS fall back to `is_remote(location)` when the page states no remote type, and that
 check now sees every place, so a posting with a "Remote" place among others now reads as remote.
