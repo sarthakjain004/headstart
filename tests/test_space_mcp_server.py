@@ -139,6 +139,30 @@ def test_the_server_needs_no_configuration_and_can_point_at_another_space():
     assert len(listed["result"]["tools"]) == len(REGISTRY)
 
 
+def test_in_process_a_read_may_take_the_calls_whole_deadline_and_says_when_it_did():
+    """ADR-0276: served by the Space, a read has no connection to lose, so it is not cut at one
+    HTTPS attempt's 20 s; past the call's deadline the agent reads the deadline's sentence."""
+    timeouts = []
+
+    def past_the_deadline(url, headers, timeout_s):
+        timeouts.append(timeout_s)
+        raise sc.DeadlinePassed(sc._PAST_DEADLINE)
+
+    hosted = server.build_server(env={}, fetch=past_the_deadline)
+    reply = messages.handle(
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {"name": "hiring_now", "arguments": {}},
+        },
+        hosted,
+    )
+    assert reply["result"]["isError"] is True
+    assert reply["result"]["content"][0]["text"] == sc._PAST_DEADLINE
+    assert timeouts and timeouts[0] > 20 and timeouts[0] <= sc.CALL_DEADLINE_S
+
+
 def test_a_real_client_handshake_over_a_real_subprocess():
     requests = "".join(
         json.dumps(m) + "\n"

@@ -656,6 +656,19 @@ def test_the_run_registers_this_checkouts_server_and_nothing_else(ev):
     )
 
 
+def test_the_http_mode_registers_the_hosted_endpoint_and_nothing_else(
+    ev, monkeypatch, capsys
+):
+    url = "https://imposeidon-headstart-search.hf.space/mcp"
+    assert ev.mcp_config({}, url) == {
+        "mcpServers": {"headstart-space": {"type": "http", "url": url}}
+    }
+    monkeypatch.setattr(ev.subprocess, "Popen", _no_process)
+    assert ev.main(["--dry-run", "--http", url]) == 0
+    out = capsys.readouterr().out
+    assert f'"url": "{url}"' in out and "headstart.space_mcp" not in out
+
+
 def test_the_run_allows_every_registered_tool_and_nothing_else(ev):
     argv = ev.command("a prompt", "mcp.json")
     allowed = argv[argv.index("--allowedTools") + 1].split(",")

@@ -28,7 +28,10 @@ Run (a live run needs only the network and a signed-in ``claude``):
   python scripts/eval/space_mcp_eval.py --dry-run
   python scripts/eval/space_mcp_eval.py --only t03
   python scripts/eval/space_mcp_eval.py --heldout <sealed file>
+  python scripts/eval/space_mcp_eval.py --http https://imposeidon-headstart-search.hf.space/mcp
 ``HEADSTART_SPACE_URL``, when set, points both the server and the verifiers at another Space.
+``--http`` registers the hosted Streamable HTTP endpoint (ADR-0267) in place of the stdio server;
+the verifiers still read ``HEADSTART_SPACE_URL`` or the deployed Space.
 """
 
 from __future__ import annotations
@@ -75,7 +78,7 @@ TOOL_PREFIX = f"mcp__{NAME}__"
 LARGE_RESULT_CHARS = ANSWER_CEILING_CHARS
 #: §9's bar for median tool calls.
 MEDIAN_CALLS_BAR = 3
-#: A run is killed past this: each tool call waits at most 90 s for the Space.
+#: A run is killed past this: each tool call waits at most 45 s for the Space (ADR-0276).
 TASK_TIMEOUT_S = 600
 
 #: Tool errors that are the Space or the setup failing, not the tool refusing the arguments the
@@ -89,6 +92,8 @@ _INFRASTRUCTURE_ERRORS = (
     "with non-JSON",
     "requests this minute",
     "Not on this deployment yet",
+    "did not answer within",
+    "still finishing earlier searches",
 )
 
 
@@ -499,10 +504,13 @@ VERIFIERS: dict[str, Verifier] = {
 # --- running -------------------------------------------------------------------------------
 
 
-def mcp_config(env: dict[str, str]) -> dict[str, Any]:
-    """The one server a run may use: this checkout's ``python -m headstart.space_mcp``. Another
+def mcp_config(env: dict[str, str], http_url: str | None = None) -> dict[str, Any]:
+    """The one server a run may use: this checkout's ``python -m headstart.space_mcp``, or with
+    ``http_url`` the Streamable HTTP endpoint at that URL (ADR-0267's hosted ``/mcp``). Another
     Space's URL, when set, is written as ``${HEADSTART_SPACE_URL}``, which Claude Code expands
     from its own environment."""
+    if http_url:
+        return {"mcpServers": {NAME: {"type": "http", "url": http_url}}}
     server_env = {"PYTHONPATH": str(_ROOT / "src")}
     if env.get(URL_VAR):
         server_env[URL_VAR] = "${" + URL_VAR + "}"
@@ -586,7 +594,11 @@ def judge(
 
 
 def run_task(
-    task: dict[str, Any], env: dict[str, str], prefix: Path, space: Callable[[], Space]
+    task: dict[str, Any],
+    env: dict[str, str],
+    prefix: Path,
+    space: Callable[[], Space],
+    http_url: str | None = None,
 ) -> dict[str, Any]:
     """Run one task, saving its transcript as it streams, and return its result record."""
     transcript_path = prefix.with_name(f"{prefix.name}_{task['id']}_transcript.jsonl")
@@ -595,7 +607,7 @@ def run_task(
     started = time.monotonic()
     with tempfile.TemporaryDirectory(prefix="space-mcp-eval-") as scratch:
         config_path = Path(scratch) / "mcp.json"
-        config_path.write_text(json.dumps(mcp_config(env)), encoding="utf-8")
+        config_path.write_text(json.dumps(mcp_config(env, http_url)), encoding="utf-8")
         with (
             transcript_path.open("w", encoding="utf-8") as saved,
             stderr_path.open("w", encoding="utf-8") as stderr,
@@ -688,10 +700,15 @@ def load_heldout(path: Path, sealed: str | None) -> list[dict[str, Any]]:
     return json.loads(raw)["tasks"]
 
 
-def _dry_run(tasks: list[dict[str, Any]], sealed: bool, env: dict[str, str]) -> None:
+def _dry_run(
+    tasks: list[dict[str, Any]],
+    sealed: bool,
+    env: dict[str, str],
+    http_url: str | None = None,
+) -> None:
     config_path = "<a scratch directory>/mcp.json"
     print(f"MCP config ({config_path}):", flush=True)
-    print(json.dumps(mcp_config(env), indent=2), flush=True)
+    print(json.dumps(mcp_config(env, http_url), indent=2), flush=True)
     for task in tasks:
         prompt = "<sealed prompt>" if sealed else task["prompt"]
         print(f"\n{task['id']} [{task['verifier']}]", flush=True)
@@ -710,6 +727,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--only", help="run one task id")
     parser.add_argument("--dry-run", action="store_true", help="print, run nothing")
+    parser.add_argument(
+        "--http",
+        metavar="URL",
+        help="register the Streamable HTTP endpoint at URL (the Space's /mcp) instead of "
+        "this checkout's stdio server",
+    )
     args = parser.parse_args(argv)
 
     if args.heldout:
@@ -729,19 +752,21 @@ def main(argv: list[str] | None = None) -> int:
 
     env = dict(os.environ)
     if args.dry_run:
-        _dry_run(tasks, sealed=bool(args.heldout), env=env)
+        _dry_run(tasks, sealed=bool(args.heldout), env=env, http_url=args.http)
         return 0
     base = (env.get(URL_VAR) or "").strip() or SPACE_URL
 
     ARTIFACTS.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now(UTC).strftime("%Y-%m-%dT%H%MZ")
-    prefix = ARTIFACTS / f"{stamp}_{label}"
+    prefix = ARTIFACTS / f"{stamp}_{label}{'_http' if args.http else ''}"
     results_path = prefix.with_name(f"{prefix.name}_results.jsonl")
     print(f"{len(tasks)} {label} tasks; results to {results_path}", flush=True)
     records = []
     with results_path.open("a", encoding="utf-8") as results:
         for task in tasks:
-            record = run_task(task, env, prefix, lambda: SpaceClient(base=base))
+            record = run_task(
+                task, env, prefix, lambda: SpaceClient(base=base), args.http
+            )
             records.append(record)
             results.write(json.dumps(record, ensure_ascii=False) + "\n")
             results.flush()

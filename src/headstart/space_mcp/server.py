@@ -24,6 +24,7 @@ from .. import log
 from ..mcp_protocol import messages, stdio, tool_arguments
 from ..mcp_protocol.messages import ToolFailure
 from .space_client import (
+    CALL_DEADLINE_S,
     SPACE_URL,
     Fetch,
     RequestBudget,
@@ -121,14 +122,18 @@ def build_server(
     ``fetch`` is how a read reaches the Space: over HTTPS by default, or in process when the Space
     serves this server itself (``space_client.wsgi_fetch``, ADR-0267). There the per-process
     budget would be one budget for every caller, so each call gets its own and the Space's limit
-    on ``/mcp`` bounds the callers."""
+    on ``/mcp`` bounds the callers. And there is no connection to lose or boot to wait out, so one
+    read may take the call's whole deadline rather than one attempt's (ADR-0276)."""
     env = dict(os.environ) if env is None else env
     base = (env.get(URL_VAR) or "").strip() or SPACE_URL
     budget = RequestBudget() if fetch is None else None
+    in_process = {} if fetch is None else {"attempt_timeout_s": CALL_DEADLINE_S}
 
     def call_with_a_fresh_client(name: str, arguments: dict[str, Any]) -> str:
         # One client per call: its deadline and "the app has answered" are this call's own.
-        client = SpaceClient(base=base, fetch=fetch or urllib_fetch, budget=budget)
+        client = SpaceClient(
+            base=base, fetch=fetch or urllib_fetch, budget=budget, **in_process
+        )
         return call(client, name, arguments)
 
     return messages.Server(

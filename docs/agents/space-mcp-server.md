@@ -38,13 +38,29 @@ It needs no account, token or sign-in.
     https://imposeidon-headstart-search.hf.space/mcp --transport http --method tools/list
   ```
 
-**Limits.** 30 requests a minute from one address, and 300 a minute shared by everyone arriving
-from Anthropic's published range (`160.79.104.0/21`, which is every claude.ai user); a refusal is a
-429 with `Retry-After`. At most 4 requests are answered at once across all callers; one more waits
-up to 10 s, then gets a 503 with `Retry-After`. A request from a web page on any other site (an
-`Origin` other than claude.ai, claude.com or the Space's own) is refused with a 403. Answers are
-capped as the local server's are, and the Space's boot and sleep apply: while it starts, the URL
-answers with Hugging Face's own error instead of a sentence, so ask again in a few minutes.
+**Limits** (ADR-0267, ADR-0276).
+
+- **How often.** 30 requests a minute from one address, and 300 a minute shared by everyone arriving
+  from Anthropic's published range (`160.79.104.0/21`, which is every claude.ai user). Past it the
+  answer is a 429.
+- **How many at once.** At most 4 requests are answered at once across all callers, and at most 2
+  of them from one caller. Anthropic's range counts as one caller here too, because nothing in a
+  claude.ai request identifies the person. A request waits up to 10 s for a place. If its caller
+  already holds 2, it then gets a 429. If every place is held, it gets a 503.
+- **How refusals look.** Every refusal is a JSON-RPC error carrying the request's `id`, with the
+  HTTP status as its `code` and a sentence as its `message`, plus `Retry-After`. Claude Code shows
+  it to the model as `Streamable HTTP error: Error POSTing to endpoint: {…}` and does not retry.
+- **How long.** A tool call gets 45 s. Past that the call answers "HeadStart did not answer within
+  this call's 45 s…" and asks for narrower filters or the concise detail: a description keyword
+  with `detail: "full"` is the likeliest to meet it. The work it started runs on to its end, so
+  while two such reads are still running, a new call is told HeadStart is still finishing earlier
+  searches. Claude Code and the MCP Inspector give up on any request at 60 s (measured
+  2026-09-29), which is why the deadline sits under it.
+- **Other sites.** A request from a web page on any other site is refused with a 403. That means an
+  `Origin` other than claude.ai, claude.com or the Space's own.
+- **Size, boot and sleep.** Answers are capped as the local server's are, and the Space's boot and
+  sleep apply. While the Space starts, the URL answers with Hugging Face's own error instead of a
+  sentence, so ask again in a few minutes.
 
 ## Install it
 
@@ -197,7 +213,7 @@ tools accept.
   company at the Space; `read_trends` with a `category` and named `companies` answers it for the
   companies you name.
 - **A cold Space takes minutes.** The Space restarts after every pipeline run and sleeps when idle;
-  a boot measured 4 min 13 s on 2026-09-28. A call waits at most 90 s, then says the Space is
+  a boot measured 4 min 13 s on 2026-09-28. A call waits at most 45 s, then says the Space is
   starting — ask again in a few minutes.
 - **An older Space is refused, not trusted.** Every reply from the app states the agent contract it
   serves; a Space older than this server is reported as needing a deploy, because it would ignore

@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
+import time
 
 import pytest
 
@@ -145,7 +147,7 @@ def test_the_deadline_ends_the_wait_with_the_measured_boot():
     fetch = Script(clock, *[edge] * 50)
     with pytest.raises(sc.SpaceWaking, match="4 min 13 s"):
         _client(clock, fetch).read(sc.SpaceRoute.HOT)
-    assert clock.now <= 90.0
+    assert clock.now <= sc.CALL_DEADLINE_S
     assert all(timeout <= 20.0 for timeout in fetch.timeouts)
 
 
@@ -228,3 +230,86 @@ def test_the_spaces_own_rate_limit_is_answered_at_once_with_its_wait():
     with pytest.raises(sc.RateLimited, match="retry in 30 s"):
         _client(clock, fetch).read(sc.SpaceRoute.SEARCH)
     assert len(fetch.urls) == 1 and clock.slept == []
+
+
+# ---- the deadline in process (ADR-0276) ----
+
+
+class SlowApp:
+    """A WSGI app that holds every request until `release` is set, then answers `{}` as the app
+    would. What it was asked is kept, so a refused read can be shown never to have started."""
+
+    def __init__(self):
+        self.release = threading.Event()
+        self.paths: list[str] = []
+
+    def __call__(self, environ, start_response):
+        self.paths.append(environ["PATH_INFO"])
+        self.release.wait(10)
+        start_response("200 OK", [("Content-Type", "application/json"), *APP.items()])
+        return [b"{}"]
+
+    def finish(self):
+        """Let every held read end, and wait until each has."""
+        self.release.set()
+        for thread in threading.enumerate():
+            if thread.name == "space-mcp-read":
+                thread.join(10)
+
+
+@pytest.fixture
+def slow_app():
+    app = SlowApp()
+    yield app
+    app.finish()
+
+
+def test_an_in_process_read_past_its_timeout_ends_with_a_sentence(slow_app, caplog):
+    caplog.set_level(logging.WARNING, logger=sc.__name__)
+    fetch = sc.wsgi_fetch(slow_app)
+    started = time.monotonic()
+    with pytest.raises(sc.DeadlinePassed, match="Narrow the filters"):
+        fetch(f"{sc.SPACE_URL}/search?q=secret+words", {}, 0.05)
+    assert time.monotonic() - started < 2
+    assert "/search" in caplog.text and "secret" not in caplog.text
+
+
+def test_while_abandoned_reads_are_at_the_cap_a_new_read_is_refused_unstarted(
+    slow_app, caplog
+):
+    caplog.set_level(logging.WARNING, logger=sc.__name__)
+    fetch = sc.wsgi_fetch(slow_app, abandoned_cap=1)
+    with pytest.raises(sc.DeadlinePassed):
+        fetch(f"{sc.SPACE_URL}/facets", {}, 0.05)
+    with pytest.raises(sc.SpaceBusy, match="still finishing"):
+        fetch(f"{sc.SPACE_URL}/hot", {}, 5)
+    assert slow_app.paths == ["/facets"]  # the refused read never reached the app
+    slow_app.finish()
+    assert "finished after" in caplog.text
+    assert fetch(f"{sc.SPACE_URL}/hot", {}, 5).status == 200
+
+
+def test_an_in_process_read_in_time_answers_and_counts_nothing_abandoned(slow_app):
+    slow_app.release.set()
+    fetch = sc.wsgi_fetch(slow_app, abandoned_cap=1)
+    for _ in range(3):
+        assert fetch(f"{sc.SPACE_URL}/hot", {}, 5).status == 200
+
+
+def test_what_the_app_raises_in_process_is_raised_on_the_calling_thread():
+    def broken(environ, start_response):
+        raise LookupError("a bug in a route")
+
+    with pytest.raises(LookupError, match="a bug in a route"):
+        sc.wsgi_fetch(broken)(f"{sc.SPACE_URL}/hot", {}, 5)
+
+
+def test_a_call_whose_reads_used_its_deadline_says_so_not_that_the_space_is_starting():
+    clock = Clock()
+    fetch = Script(clock, _reply(body={"companies": []}))
+    client = _client(clock, fetch)
+    client.read(sc.SpaceRoute.COMPANIES_SUGGEST)
+    clock.now = sc.CALL_DEADLINE_S
+    with pytest.raises(sc.DeadlinePassed, match="Narrow the filters"):
+        client.read(sc.SpaceRoute.SEARCH)
+    assert len(fetch.urls) == 1

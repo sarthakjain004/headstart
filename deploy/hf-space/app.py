@@ -67,7 +67,13 @@ from headstart.search_filters.compiler import (
     KEYWORD_DEFAULT_SCOPE,
     keyword_scope_options,
 )
-from headstart.serving import facets, job_search, profile_extract, rate_limit
+from headstart.serving import (
+    concurrency_limit,
+    facets,
+    job_search,
+    profile_extract,
+    rate_limit,
+)
 from headstart.space_mcp import server as space_mcp_server
 from headstart.space_mcp import space_client
 from headstart.trends import hot_ranking, line_reading, trend_history
@@ -1647,9 +1653,13 @@ _ANTHROPIC_LIMIT = rate_limit.RateLimit(_ANTHROPIC_LIMIT_REQUESTS, _LIMIT_WINDOW
 
 # At most 4 `/mcp` requests at once across every caller, on the Space's 2 vCPU: each fans out to
 # two to four reads on threads, so 4 costs about what four people searching in the page at once
-# do. One more waits up to 10 s for a place, then is told to retry.
+# do. At most 2 of them from one caller (ADR-0276), counted as the request limit counts it, so
+# Anthropic's range is one caller: a call can hold its place for its whole 45 s deadline, and
+# one caller's slow searches must not hold every place. One more waits up to 10 s for a place,
+# then is told to retry.
 _MCP_AT_ONCE = 4
-_MCP_PLACES = threading.BoundedSemaphore(_MCP_AT_ONCE)
+_MCP_AT_ONCE_EACH = 2
+_MCP_PLACES = concurrency_limit.ConcurrencyLimit(_MCP_AT_ONCE, _MCP_AT_ONCE_EACH)
 _MCP_PLACE_WAIT_S = 10
 
 # Each distinct Origin `/mcp` has received this boot, logged once, so the first real connection
@@ -1679,9 +1689,11 @@ def _note_mcp_origin(origin: str | None, address: str) -> None:
     )
 
 
-def _mcp_refusal(status: int, detail: str, wait_s: int):
-    error = "too many requests" if status == 429 else "busy"
-    return jsonify(error=error, detail=detail), status, {"Retry-After": str(wait_s)}
+def _mcp_refusal(body: bytes, status: int, message: str, wait_s: int):
+    """A JSON-RPC error carrying the request's id, with `Retry-After` (ADR-0276): an MCP client
+    shows its message to the model, in either protocol era."""
+    status, headers, out = streamable_http.refusal(body, status, message)
+    return Response(out, status, {**headers, "Retry-After": str(wait_s)})
 
 
 @app.route("/mcp", methods=["POST"])
@@ -1689,28 +1701,43 @@ def mcp():
     """One MCP message over Streamable HTTP, answered by `streamable_http.answer` (ADR-0267)."""
     address = _client_address()
     _note_mcp_origin(request.headers.get("Origin"), address)
+    body = request.stream.read(streamable_http.MAX_BODY_BYTES + 1)
     if _from_anthropic(address):
-        wait_s = _ANTHROPIC_LIMIT.admit("anthropic")
-        limit = f"{_ANTHROPIC_LIMIT_REQUESTS} requests in {_LIMIT_WINDOW_S} s from Anthropic"
+        caller, who = "anthropic", "Anthropic's range"
+        wait_s = _ANTHROPIC_LIMIT.admit(caller)
+        per_minute = _ANTHROPIC_LIMIT_REQUESTS
     else:
-        wait_s = _MCP_LIMIT.admit(address)
-        limit = (
-            f"{_MCP_LIMIT_REQUESTS} requests in {_LIMIT_WINDOW_S} s from one address"
-        )
+        caller, who = address, "one address"
+        wait_s = _MCP_LIMIT.admit(caller)
+        per_minute = _MCP_LIMIT_REQUESTS
     if wait_s:
-        return _mcp_refusal(429, f"at most {limit}; retry in {wait_s} s", wait_s)
-    if not _MCP_PLACES.acquire(timeout=_MCP_PLACE_WAIT_S):
-        return _mcp_refusal(503, "HeadStart is busy; retry shortly", _MCP_PLACE_WAIT_S)
+        return _mcp_refusal(
+            body,
+            429,
+            f"Too many requests: at most {per_minute} in {_LIMIT_WINDOW_S} s from {who}; "
+            f"retry in {wait_s} s.",
+            wait_s,
+        )
+    refused = _MCP_PLACES.take(caller, _MCP_PLACE_WAIT_S)
+    if refused is concurrency_limit.Refused.CALLER:
+        return _mcp_refusal(
+            body,
+            429,
+            f"Too many requests at once: at most {_MCP_AT_ONCE_EACH} at a time from {who}; "
+            "retry when one of them is answered.",
+            _MCP_PLACE_WAIT_S,
+        )
+    if refused:
+        return _mcp_refusal(
+            body, 503, "HeadStart is busy; retry shortly.", _MCP_PLACE_WAIT_S
+        )
     try:
-        status, headers, body = streamable_http.answer(
-            request.headers,
-            request.stream.read(streamable_http.MAX_BODY_BYTES + 1),
-            _MCP_SERVER,
-            _MCP_ORIGINS,
+        status, headers, out = streamable_http.answer(
+            request.headers, body, _MCP_SERVER, _MCP_ORIGINS
         )
     finally:
-        _MCP_PLACES.release()
-    return Response(body, status, headers)
+        _MCP_PLACES.give_back(caller)
+    return Response(out, status, headers)
 
 
 @app.route("/auth/google", methods=["POST"])
