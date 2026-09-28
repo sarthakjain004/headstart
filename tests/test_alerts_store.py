@@ -846,3 +846,66 @@ def test_would_evict_counts_every_board_a_company_adds():
     company = ["workday:boeing/a", "workday:boeing/b"]
     assert prefs.would_evict(company[:1], "follow") is False
     assert prefs.would_evict(company, "follow") is True
+
+
+class _CountingApi:
+    """An `HfApi` stand-in that counts listings and records uploads."""
+
+    def __init__(self, files):
+        self.files, self.listings = files, 0
+
+    def list_repo_files(self, repo, repo_type, revision=None):
+        self.listings += 1
+        return list(self.files)
+
+    def upload_file(self, path_or_fileobj, path_in_repo, repo_id, repo_type):
+        self.files.append(path_in_repo)
+
+
+@pytest.fixture
+def counting_api(monkeypatch):
+    api = _CountingApi(["saved/a.json"])
+    monkeypatch.setattr(st, "_hf", lambda token: api)
+    monkeypatch.setattr(st, "_listings", {})
+    monkeypatch.setattr(st, "_listing_generations", {})
+    return api
+
+
+def test_a_listing_of_the_head_is_reused_for_a_few_seconds(counting_api, monkeypatch):
+    """#592: `GET /saved` lists the whole repo, so a looping client would spend the token's
+    API budget one listing per request."""
+    now = [100.0]
+    monkeypatch.setattr(st.time, "monotonic", lambda: now[0])
+    assert st._list_files("r", "t") == st._list_files("r", "t") == ["saved/a.json"]
+    assert counting_api.listings == 1
+    now[0] += st._LISTING_TTL_SECONDS
+    st._list_files("r", "t")
+    assert counting_api.listings == 2
+
+
+def test_a_write_is_never_followed_by_a_listing_that_misses_it(counting_api):
+    st._list_files("r", "t")
+    st._write("r", "saved/b.json", b"{}", "t")
+    assert "saved/b.json" in st._list_files("r", "t")
+
+
+def test_a_listing_at_a_revision_is_never_cached(counting_api):
+    st._list_files("r", "t", revision="abc")
+    st._list_files("r", "t", revision="abc")
+    assert counting_api.listings == 2
+
+
+def test_a_listing_a_write_lands_during_is_not_kept(counting_api):
+    """Requests overlap on the Space's threads: a listing taken before a write lands must not
+    be kept past it, or the next request would list without the write for a few seconds."""
+    listing = counting_api.list_repo_files
+
+    def a_write_lands_meanwhile(repo, repo_type, revision=None):
+        files = listing(repo, repo_type, revision)
+        st._write("r", "saved/b.json", b"{}", "t")
+        return files
+
+    counting_api.list_repo_files = a_write_lands_meanwhile
+    assert "saved/b.json" not in st._list_files("r", "t")
+    counting_api.list_repo_files = listing
+    assert "saved/b.json" in st._list_files("r", "t")

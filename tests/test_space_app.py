@@ -167,17 +167,20 @@ def _no_kept_trends_answers():
 
 
 @pytest.fixture(autouse=True)
-def _no_spent_read_limit(monkeypatch):
-    """Each test starts with nothing counted against the anonymous read limit: the app
+def _no_spent_rate_limit(monkeypatch):
+    """Each test starts with nothing counted against any rate limit: the app
     fixtures are module-scoped, so one test's requests would otherwise 429 a later test's."""
     for module in _LOADED_APPS:
-        monkeypatch.setattr(
-            module,
-            "_READ_LIMIT",
-            rate_limit.RateLimit(
-                module._READ_LIMIT_REQUESTS, module._READ_LIMIT_WINDOW_S
-            ),
-        )
+        for name, requests in (
+            ("_READ_LIMIT", module._READ_LIMIT_REQUESTS),
+            ("_WRITE_LIMIT", module._WRITE_LIMIT_REQUESTS),
+            ("_SAVED_LIMIT", module._SAVED_LIMIT_REQUESTS),
+        ):
+            monkeypatch.setattr(
+                module,
+                name,
+                rate_limit.RateLimit(requests, module._LIMIT_WINDOW_S),
+            )
 
 
 @contextmanager
@@ -537,7 +540,7 @@ def test_a_signed_in_session_still_applies_its_hidden_companies(
     assert hidden and asked == [hidden, None, hidden, None]
 
 
-# ---- the anonymous read limit (ADR-0262) ----
+# ---- the rate limits (ADR-0262, #592) ----
 
 
 def _spend_the_read_limit(module, client, path="/hot", **kwargs):
@@ -553,7 +556,7 @@ def _refused(response) -> bool:
 
 def test_the_read_limit_is_sixty_requests_a_minute(auth_app):
     # Pinned: the number is a decision ADR-0262 reasons out, not a tuning knob.
-    assert (auth_app._READ_LIMIT_REQUESTS, auth_app._READ_LIMIT_WINDOW_S) == (60, 60)
+    assert (auth_app._READ_LIMIT_REQUESTS, auth_app._LIMIT_WINDOW_S) == (60, 60)
 
 
 def test_an_anonymous_caller_past_the_limit_is_told_when_to_retry(auth_app):
@@ -581,7 +584,7 @@ def test_the_window_frees_the_caller_again(auth_app, monkeypatch):
         "_READ_LIMIT",
         rate_limit.RateLimit(
             auth_app._READ_LIMIT_REQUESTS,
-            auth_app._READ_LIMIT_WINDOW_S,
+            auth_app._LIMIT_WINDOW_S,
             clock=lambda: now[0],
         ),
     )
@@ -594,12 +597,37 @@ def test_the_window_frees_the_caller_again(auth_app, monkeypatch):
     assert not _refused(client.get("/hot"))
 
 
-def test_a_signed_in_session_is_not_limited(auth_app, monkeypatch):
+def test_a_signed_in_session_is_counted_as_its_account(auth_app, monkeypatch):
+    """#592: sign-up is open, so an unlimited session would let one client out-read the
+    address limit by signing in. Its Account has its own 60, apart from its address's."""
     signed_in = _signed_in(auth_app, monkeypatch)
-    for _ in range(auth_app._READ_LIMIT_REQUESTS + 5):
-        assert not _refused(signed_in.get("/hot", base_url=_HTTPS))
+    _spend_the_read_limit(auth_app, signed_in, base_url=_HTTPS)
+    r = signed_in.get("/hot", base_url=_HTTPS)
+    assert _refused(r) and "from one Account" in r.json["detail"]
     # Nor did those count against the anonymous caller at the same address.
     _spend_the_read_limit(auth_app, auth_app.app.test_client())
+
+
+def test_an_account_writes_thirty_times_a_minute(sets_app, monkeypatch, hub):
+    """#592: every write is its own HF commit on the token every Account shares. Signing in
+    counts against the address, not the Account it creates."""
+    client = _signed_in(sets_app, monkeypatch)
+    for n in range(sets_app._WRITE_LIMIT_REQUESTS):
+        r = client.post("/saved", json=_star_payload(f"a:b:{n}"), base_url=_HTTPS)
+        assert r.status_code == 200, f"write {n + 1} answered {r.status_code}"
+    r = client.delete("/saved/anything", base_url=_HTTPS)
+    assert _refused(r) and r.headers["Retry-After"].isdigit()
+    assert not _refused(client.get("/hot", base_url=_HTTPS))  # reads count apart
+
+
+def test_an_account_lists_its_saved_jobs_twenty_times_a_minute(
+    sets_app, monkeypatch, hub
+):
+    """#592: `GET /saved` lists the whole Subscriptions repo."""
+    client = _signed_in(sets_app, monkeypatch)
+    for _ in range(sets_app._SAVED_LIMIT_REQUESTS):
+        assert not _refused(client.get("/saved", base_url=_HTTPS))
+    assert _refused(client.get("/saved", base_url=_HTTPS))
 
 
 def test_a_digest_search_the_limit_refuses_is_admitted_on_a_retry(auth_app):
@@ -610,7 +638,7 @@ def test_a_digest_search_the_limit_refuses_is_admitted_on_a_retry(auth_app):
     from headstart.alerts import space_query
 
     assert 429 not in space_query._PERMANENT_HTTP
-    assert sum(space_query._WAITS) >= auth_app._READ_LIMIT_WINDOW_S
+    assert sum(space_query._WAITS) >= auth_app._LIMIT_WINDOW_S
 
 
 def test_the_limit_leaves_every_other_path_alone(auth_app):
@@ -1374,6 +1402,12 @@ def test_restar_overwrites_and_refreshes_the_copy(sets_app, hub, monkeypatch):
 
 
 def test_saved_are_capped_but_a_restar_never_hits_the_cap(sets_app, hub, monkeypatch):
+    # MAX_SAVED stars inside one minute would meet the write limit (#592) first.
+    monkeypatch.setattr(
+        sets_app,
+        "_WRITE_LIMIT",
+        rate_limit.RateLimit(10_000, sets_app._LIMIT_WINDOW_S),
+    )
     client = _signed_in(sets_app, monkeypatch)
     for i in range(sets_app.MAX_SAVED):
         r = client.post("/saved", json=_star_payload(f"a:b:{i}"), base_url=_HTTPS)

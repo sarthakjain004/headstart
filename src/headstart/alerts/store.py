@@ -30,6 +30,8 @@ import hashlib
 import json
 import re
 import secrets
+import threading
+import time
 from collections.abc import Iterable, Iterator
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
@@ -623,8 +625,37 @@ def _hf(token: str):
     return HfApi(token=token)
 
 
+#: How long a listing of the head revision is reused (#592). `GET /saved` lists the whole repo on
+#: every call, so a client looping it spends the token's HF API budget; a few seconds' reuse caps
+#: that at one listing per window. Every write through this module drops the cached listing once it
+#: lands and bumps the repo's generation, and a listing is kept only if no write landed while it
+#: was taken, so a request that follows a write never lists without it. Another process's write
+#: (the Space's, seen from a Digest run, or the reverse) can go unseen for up to the TTL.
+_LISTING_TTL_SECONDS = 5.0
+_listings: dict[str, tuple[float, list[str]]] = {}
+_listing_generations: dict[str, int] = {}
+_listings_lock = threading.Lock()
+
+
 def _list_files(repo: str, token: str, revision: str | None = None) -> list[str]:
-    return _hf(token).list_repo_files(repo, repo_type="dataset", revision=revision)
+    if revision is not None:
+        return _hf(token).list_repo_files(repo, repo_type="dataset", revision=revision)
+    with _listings_lock:
+        cached = _listings.get(repo)
+        generation = _listing_generations.get(repo, 0)
+    if cached and time.monotonic() - cached[0] < _LISTING_TTL_SECONDS:
+        return list(cached[1])
+    files = _hf(token).list_repo_files(repo, repo_type="dataset")
+    with _listings_lock:
+        if _listing_generations.get(repo, 0) == generation:
+            _listings[repo] = (time.monotonic(), files)
+    return list(files)
+
+
+def _forget_listing(repo: str) -> None:
+    with _listings_lock:
+        _listings.pop(repo, None)
+        _listing_generations[repo] = _listing_generations.get(repo, 0) + 1
 
 
 def _head_revision(repo: str, token: str) -> str:
@@ -693,16 +724,22 @@ def _read_at_revision(repo: str, path: str, token: str, revision: str | None) ->
 def _write(repo: str, path: str, data: bytes, token: str) -> None:
     import io
 
-    _hf(token).upload_file(
-        path_or_fileobj=io.BytesIO(data),
-        path_in_repo=path,
-        repo_id=repo,
-        repo_type="dataset",
-    )
+    try:
+        _hf(token).upload_file(
+            path_or_fileobj=io.BytesIO(data),
+            path_in_repo=path,
+            repo_id=repo,
+            repo_type="dataset",
+        )
+    finally:
+        _forget_listing(repo)
 
 
 def _delete(repo: str, path: str, token: str) -> None:
-    _hf(token).delete_file(path_in_repo=path, repo_id=repo, repo_type="dataset")
+    try:
+        _hf(token).delete_file(path_in_repo=path, repo_id=repo, repo_type="dataset")
+    finally:
+        _forget_listing(repo)
 
 
 def _commit(
@@ -750,6 +787,8 @@ def _commit(
         raise
     except Exception as exc:
         raise StoreUnavailable("Subscription update could not be confirmed") from exc
+    finally:
+        _forget_listing(repo)
 
 
 def read_bytes(repo: str, path: str, token: str) -> bytes:
