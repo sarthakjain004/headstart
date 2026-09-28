@@ -15,6 +15,7 @@ attempt a real network call. Auth requests ride `base_url="https://localhost"` b
 session cookie is `Secure` and the test client honours that over plain http.
 """
 
+import ast
 import csv
 import gzip
 import importlib.util
@@ -26,6 +27,8 @@ import sys
 import tempfile
 import threading
 import types
+import urllib.error
+import urllib.request
 import weakref
 from collections import defaultdict
 from contextlib import contextmanager
@@ -43,6 +46,7 @@ from headstart.serving import concurrency_limit, rate_limit
 from headstart.trends import line_reading, netting, trend_history
 
 pytest.importorskip("flask")  # in [dev] so this runs in CI; guards a bare env
+waitress = pytest.importorskip("waitress")  # likewise; app.py serves through it (#595)
 old_layout_converter = pytest.importorskip("old_layout_trends_state_converter")
 
 APP = Path(__file__).resolve().parents[1] / "deploy" / "hf-space" / "app.py"
@@ -4741,6 +4745,63 @@ def test_every_response_carries_the_hardening_headers(sets_app, monkeypatch):
             r.headers["Content-Security-Policy"]
             == "frame-ancestors 'self' https://huggingface.co"
         )
+
+
+def test_python_app_py_serves_through_waitress_not_the_dev_server():
+    """#595: `start.sh` runs `python app.py`, whose main block started Werkzeug's development
+    server. It serves the one app object through waitress, in one process, with `_SERVE`."""
+    tree = ast.parse(APP.read_text(encoding="utf-8"))
+    main = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.If)
+        and ast.unparse(node.test) == "__name__ == '__main__'"
+    )
+    assert "waitress.serve(app, **_SERVE)" in ast.unparse(main)
+    assert "app.run" not in ast.unparse(main)
+
+
+@contextmanager
+def _served_by_waitress(module):
+    """``module``'s app behind a real waitress server with the Space's own settings, on a free
+    loopback port instead of 7860."""
+    server = waitress.create_server(
+        module.app, **{**module._SERVE, "host": "127.0.0.1", "port": 0}
+    )
+    thread = threading.Thread(target=server.run, daemon=True)
+    thread.start()
+    try:
+        yield f"http://127.0.0.1:{server.effective_port}"
+    finally:
+        # closed from its own loop thread: closing it from this one races that thread's select
+        server.trigger.pull_trigger(server.close)
+        thread.join(timeout=5)
+        server.task_dispatcher.shutdown()
+
+
+def test_waitress_counts_each_forwarded_address_as_its_own_caller(app, monkeypatch):
+    """HF's edge names the caller in `X-Forwarded-For` (ADR-0262). Waitress 3 deletes that
+    header unless a trusted proxy is named, and then every anonymous caller would be the
+    edge's one address, sharing one budget. The count is kept across waitress's threads."""
+    monkeypatch.setattr(
+        app, "_READ_LIMIT", rate_limit.RateLimit(1, app._LIMIT_WINDOW_S)
+    )
+
+    def status(base, address):
+        request = urllib.request.Request(
+            base + "/hot", headers={"X-Forwarded-For": f"198.51.100.9, {address}"}
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=10) as reply:
+                return reply.status
+        except urllib.error.HTTPError as exc:
+            exc.close()
+            return exc.code
+
+    with _served_by_waitress(app) as base:
+        assert status(base, "203.0.113.1") != 429
+        assert status(base, "203.0.113.1") == 429
+        assert status(base, "203.0.113.2") != 429
 
 
 def test_the_hardening_headers_leave_a_gzipped_static_304_alone(sets_app, monkeypatch):

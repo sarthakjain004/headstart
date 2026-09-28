@@ -1,7 +1,7 @@
 """How often one client may ask the Space's public read routes (ADR-0262).
 
 A sliding window per client: at most ``limit`` requests admitted in any ``window_s`` seconds. The
-Space is one process serving requests on threads (``app.run``), so a count held in memory behind
+Space is one process serving requests on threads (waitress), so a count held in memory behind
 one lock is authoritative, as the résumé-read guard in ``app.py`` is. A refused request is not
 counted, so a client that keeps asking while refused is let in again as soon as its oldest admitted
 request leaves the window. Who a client is, and which requests are limited, is the app's to say.

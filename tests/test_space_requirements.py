@@ -68,3 +68,11 @@ def test_transformers_is_pinned_not_left_to_float():
         f"{line!r} does not bound the resolved version — an unbounded or >=-only spec "
         "still floats onto a future break"
     )
+
+
+def test_the_server_app_py_runs_is_installed_and_pinned():
+    """`python app.py` serves through waitress (#595). The tests install it from the `dev`
+    extra, never from this file, so an image without it would pass them all and then fail to
+    boot."""
+    lines = [entry.strip() for entry in _SPACE_REQUIREMENTS.read_text().splitlines()]
+    assert any(line.startswith("waitress==") for line in lines)

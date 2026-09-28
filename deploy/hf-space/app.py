@@ -25,6 +25,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 import lancedb
+import waitress
 from flask import (
     Flask,
     Response,
@@ -831,7 +832,7 @@ def save_profile():
 
 
 # Accounts with a parse in flight. The cap check reads the counter before the router call and
-# writes it after, and `app.run` serves requests on threads — so parallel parses would all read
+# writes it after, and waitress serves requests on threads — so parallel parses would all read
 # the same count and all pass the cap, each spending a router call. One read per Account at a
 # time closes that window; the Space is a single process, so an in-process set is authoritative.
 _PARSING: set[str] = set()
@@ -1875,5 +1876,34 @@ def index():
     )
 
 
+# How `python app.py` (start.sh) serves (#595): waitress, where it used to be Werkzeug's
+# development server. One process, on purpose: the résumé-read guard (`_PARSING`), every
+# `RateLimit`, the `/mcp` places and the kept Trends and facet answers live in this process's
+# memory, and a second worker process would keep a second copy of each.
+#
+# 16 threads on the Space's 2 vCPUs. No more than two requests can compute at once, so the other
+# threads are there to wait: a résumé read waits on the router for up to 120 s, each Saved set or
+# Profile write on an HF commit, and a `/mcp` request up to 10 s for one of its 4 places. With
+# every `/mcp` place taken and four more queued, 8 threads are still left for the page. The
+# development server started a thread per connection with no bound. Waitress reads each request
+# whole before a thread takes it, so a client that never finishes sending holds a connection,
+# not a thread: 40 such clients cost the development server 41 threads and waitress none
+# (measured locally, 2026-09-29).
+#
+# `clear_untrusted_proxy_headers` is off because waitress 3 otherwise deletes `X-Forwarded-For`
+# whenever no trusted proxy is named, and `_client_address` reads the caller from that header
+# (ADR-0262): without it, every caller would count as the edge's one address.
+_SERVE = {
+    "host": "0.0.0.0",
+    "port": 7860,
+    "threads": 16,
+    "clear_untrusted_proxy_headers": False,
+}
+
+
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=7860)
+    print(
+        f"serving on port {_SERVE['port']} with waitress, {_SERVE['threads']} threads",
+        flush=True,
+    )
+    waitress.serve(app, **_SERVE)
