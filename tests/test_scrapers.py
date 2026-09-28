@@ -1744,6 +1744,14 @@ def test_sensehq_parse():
     assert j.description and "</" not in j.description  # populated, HTML-stripped
 
 
+def test_ripplehire_location_writes_a_repeated_city_once():
+    from headstart.scrapers.ripplehire import _location
+
+    assert _location({"locations": "Dallas TX, Dallas TX", "jobLocation": "USA"}) == (
+        "Dallas TX, USA"
+    )
+
+
 def test_ripplehire_parse():
     jobs = get_scraper("ripplehire", "7-eleven-gsc", "7-Eleven GSC").parse(
         _load("ripplehire_7-eleven-gsc.json"), SCRAPED_AT
@@ -1753,7 +1761,16 @@ def test_ripplehire_parse():
     assert j.id == "ripplehire:7-eleven-gsc:10454"
     assert j.title == "Analyst - RO"
     assert j.location == "Bengaluru"
+    # The fixture's rows carry no token (captured before 2026-09-28), so the board page.
     assert j.url == "https://7-eleven-gsc.ripplehire.com/candidate/careers"
+    tokened = get_scraper("ripplehire", "7-eleven-gsc").parse(
+        [{**_load("ripplehire_7-eleven-gsc.json")[0], "_board_token": "tok_1"}],
+        SCRAPED_AT,
+    )[0]
+    assert tokened.url == (
+        "https://7-eleven-gsc.ripplehire.com/candidate/?token=tok_1&source=CAREERSITE"
+        "#detail/job/10454"
+    )
     assert j.experience == "3 - 5 Years"  # jobReqExp
     # this tenant leaves jobDesc/jobType empty — fields stay None, job still emitted
     assert j.description is None

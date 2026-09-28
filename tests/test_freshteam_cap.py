@@ -51,3 +51,18 @@ def test_the_cap_does_not_route_through_the_adr_0121_tolerance():
     scraper.parse(_raw(_WIDGET_CAP), "2026-09-16T00:00:00Z")
     assert "widget cap" in (scraper.truncated or "")
     assert "within tolerance" not in (scraper.truncated or "")
+
+
+def test_a_job_link_off_the_freshteam_host_is_served_as_the_freshteam_page():
+    """framemediaexcel, live 2026-09-28: the widget's url went to clapby.com, a news page with no
+    posting; its Freshteam route rendered it. A url on the tenant's own Freshteam host is kept."""
+    from headstart.scrapers.freshteam import FreshteamScraper
+
+    scraper = FreshteamScraper("framemediaexcel")
+    assert (
+        scraper.job_url("https://clapby.com/?jobId=XesRBgfuDXMu", "XesRBgfuDXMu")
+        == "https://framemediaexcel.freshteam.com/jobs/XesRBgfuDXMu"
+    )
+    own = "https://framemediaexcel.freshteam.com/jobs/XesRBgfuDXMu/accounting-clerk-remote"
+    assert scraper.job_url(own, "XesRBgfuDXMu") == own
+    assert scraper.job_url(None, "XesRBgfuDXMu").endswith("/jobs/XesRBgfuDXMu")

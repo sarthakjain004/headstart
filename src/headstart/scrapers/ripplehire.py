@@ -58,7 +58,11 @@ def _location(j: dict) -> str | None:
     or as ``jobLocation`` itself, and appending it unconditionally would duplicate it onto the
     end (measured: 300 jobs, 1.61%, need this de-dupe).
     """
-    parts = [p.strip() for p in (j.get("locations") or "").split(",") if p.strip()]
+    parts: list[str] = []
+    for part in (j.get("locations") or "").split(","):
+        # A city listed twice (citiustech, 2026-09-28: "Dallas TX, Dallas TX") is written once.
+        if part.strip() and part.strip().lower() not in (p.lower() for p in parts):
+            parts.append(part.strip())
     country = (j.get("jobLocation") or "").strip()
     if country and country.lower() not in ", ".join(parts).lower():
         parts.append(country)
@@ -67,8 +71,11 @@ def _location(j: dict) -> str | None:
 
 class RippleHireScraper(BaseScraper):
     ats = "ripplehire"
+    # scraper: job_url below — the SPA's own detail route, `#detail/job/{jobSeq}` under the
+    # site's token; the board page only for a row read without one.
     url_shape = (
-        r"https://[^.]+\.ripplehire\.com/candidate/careers/?$"  # board-level: known gap
+        r"https://[^.]+\.ripplehire\.com/candidate/"
+        r"(?:\?token=[A-Za-z0-9_-]+&source=CAREERSITE#detail/job/\d+|careers/?$)"
     )
     detail_workers = _DETAIL_WORKERS  # also the async stream width (base.fan_out_async)
     has_detail_pass = True  # per-Job fetch fills `description` (ADR-0050)
@@ -83,10 +90,20 @@ class RippleHireScraper(BaseScraper):
         """The job-search endpoint the careers page's token unlocks."""
         return f"https://{self.slug}.ripplehire.com/candidate/candidatejobsearch"
 
-    def job_url(self) -> str:
-        """No per-job route exists on this ATS's public site (known gap, tracked in
-        ``url_shape``'s own comment) — every Job serves the board-level careers page."""
-        return self.url()
+    def job_url(self, job_seq: Any = None, token: str | None = None) -> str:
+        """The portal's own detail route, ``#detail/job/{jobSeq}`` under the site's token (its
+        ``app.js`` routes that hash to the job-description view). Rendered in Chromium on
+        2026-09-28, 6 of 6 postings on citiustech and 7-eleven-gsc showed their own title and
+        body. The token is one per site (the careers URL redirected with the same one on
+        repeated GETs) and is required: a made-up token rendered an empty page, and the plain
+        careers URL drops the hash and lands on the list. A row read without a token keeps the
+        careers page."""
+        if job_seq is None or not token:
+            return self.url()
+        return (
+            f"https://{self.slug}.ripplehire.com/candidate/?token={token}"
+            f"&source=CAREERSITE#detail/job/{job_seq}"
+        )
 
     def board_page(self) -> str:
         """The careers URL again — its ``<title>`` opens with ``"{Name} Careers |"``.
@@ -194,6 +211,8 @@ class RippleHireScraper(BaseScraper):
         # which also carries department/posted_at/employment_type/salary that `parse` needs
         # (see `read_detail`). No tech gate: it is deferred for this ATS (ADR-0166).
         self._board_token = token
+        for listing_row in jobs:
+            listing_row["_board_token"] = token
         need = [j for j in jobs if j.get("jobSeq") and not j.get("jobDesc")]
         records = self.run_detail_pass(
             need,
@@ -268,7 +287,7 @@ class RippleHireScraper(BaseScraper):
                     department=detail.get("bussinessUnit")
                     or j.get("bussinessUnit")
                     or None,
-                    url=self.job_url(),
+                    url=self.job_url(j.get("jobSeq"), j.get("_board_token")),
                     # `publishDetails.CAREER_SITE` is a real ISO-8601 timestamp for the same
                     # posting `jobPostingDate` gives non-ISO ("23-Jun-2020") — prefer it per
                     # Job.posted_at's own contract ("ISO-8601 if the source provides it").
