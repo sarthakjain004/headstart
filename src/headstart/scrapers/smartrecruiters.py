@@ -123,7 +123,7 @@ _STRUCTURED_PERIOD = {
 }
 
 
-def _workplace_of(loc: dict) -> str | None:
+def _workplace_type(loc: dict) -> str | None:
     """The workplace type a listing posting's ``location`` flags state, if either is set."""
     if loc.get("remote"):
         return "remote"
@@ -282,7 +282,7 @@ class SmartRecruitersScraper(BaseScraper):
                     location=location,
                     # The listing states `hybrid` beside `remote`; hybrid is None
                     # (`remote_from_workplace`). alten 2026-09-28: 5 of 100 hybrid.
-                    remote=remote_from_workplace(_workplace_of(loc), location),
+                    remote=remote_from_workplace(_workplace_type(loc), location),
                     department=_department_of(p),
                     url=self.job_url(p["id"]),
                     posted_at=p.get("releasedDate"),
