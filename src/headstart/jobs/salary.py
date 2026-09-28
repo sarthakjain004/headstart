@@ -22,7 +22,7 @@ for company-tenure phrases.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 _MAX_PLAUSIBLE_ANNUAL = {
     "USD": 800_000,
@@ -84,8 +84,27 @@ def extract(
     salary: str | None, description: str | None, ats: str | None = None
 ) -> SalarySpan | None:
     """Run the cascade: a concrete figure from the structured field, then from the description.
-    None if neither yields one — never a fabricated estimate (see module docstring)."""
-    return from_field(salary, ats) or from_description(description)
+    None if neither yields one — never a fabricated estimate (see module docstring).
+
+    On an ATS whose field is spelt from a structured currency (`_field_range_currency_interval`),
+    a stated ISO code is the posting's currency even when the field's amount fails and the
+    description supplies it (#698): "40-50 EUR 1 YEAR" (thousands unwritten) against a description
+    reading "40.000 € - 50.000 €". Measured 2026-09-28: 11 served rows, all EUR, all in bounds. A
+    free-text field (zoho's) is left out: its code sits beside monthly figures ("30000-40000 INR")
+    and contradicts its own text ("600 Euros/day GBP")."""
+    field = from_field(salary, ats)
+    if field:
+        return field
+    found = from_description(description)
+    if found is None or found.currency is not None:
+        return found
+    if _FIELD_PARSERS.get(ats or "") is not _field_range_currency_interval:
+        return found
+    code = _CURRENCY_CODE.search(salary or "")
+    if code is None:
+        return found
+    stated = _bounded(found.min_annual, found.max_annual, code.group(1).upper())
+    return found if stated is None else replace(stated, source=found.source)
 
 
 # --- Tier 1: parse Job.salary, a string we already formatted per-scraper -----------------------
@@ -589,6 +608,11 @@ _GENERIC_RANGE = re.compile(
 _GENERIC_SINGLE = re.compile(rf"({_GROUPED_NUMBER})\s*({_FIGURE_UNIT})?")
 
 
+#: A figure at or above this is written out in full, so a unit after it repeats rather than scales
+#: ("400000 - 700000 lpa", "£45,000k"); a "k" or lakh figure is written small ("45k", "12 LPA").
+_FULL_FIGURE = 1000
+
+
 def _unit_value(figure: str, unit: str | None) -> int:
     """A figure times its own unit: thousands for "k", a lakh for "L"/"LPA"/"lakh"/"lac".
 
@@ -596,7 +620,7 @@ def _unit_value(figure: str, unit: str | None) -> int:
     £45,000k" state the whole amount and then name its unit again, and multiplying them turned a
     value the field states correctly into one the bounds refuse (13 served rows, 2026-09-28)."""
     value = _num_value(figure)
-    if not unit or value >= 1000:
+    if not unit or value >= _FULL_FIGURE:
         return round(value)
     return round(value * (1000 if unit.lower() == "k" else 100_000))
 
@@ -606,22 +630,24 @@ def _names_lakhs(*units: str | None) -> bool:
     return any(unit and unit.lower() != "k" for unit in units)
 
 
-def _unmarked_thousands(
+def _declines_k_figure(
     value: str, currency: str | None, *figures: tuple[str, str | None]
 ) -> bool:
-    """A figure a "k" scaled, in a field that names no currency by code or by any symbol: declined.
+    """Whether a figure a "k" scaled is refused: one in rupees, or one in a field naming no
+    currency by code or by any symbol.
 
-    Measured 2026-09-28: 294 such zoho fields ("10 K+", "20-25K") would have been served, mostly on
-    Indian tenants, where a small "K" figure is a monthly rupee amount read here as annual. A "$"
-    anywhere keeps the figure ("$100k-$120k" stays, currency None as for any bare dollar)."""
-    return (
-        currency is None
-        and any(
-            unit and unit.lower() == "k" and _num_value(figure) < 1000
-            for figure, unit in figures
-        )
-        and not re.search(_SYM, value)
+    Measured 2026-09-28 on zoho: a small "K" rupee figure is a monthly amount ("110K+ INR" on a
+    six-month contract), since annual Indian pay is written in lakhs; and 294 fields naming no
+    currency ("10 K+", "20-25K") sat mostly on Indian tenants. Read as annual, both would serve a
+    monthly figure. A "$" anywhere keeps an unnamed figure ("$100k-$120k", currency None as for any
+    bare dollar)."""
+    scaled = any(
+        unit and unit.lower() == "k" and _num_value(figure) < _FULL_FIGURE
+        for figure, unit in figures
     )
+    if not scaled:
+        return False
+    return currency == "INR" or (currency is None and not re.search(_SYM, value))
 
 
 def _field_generic(value: str) -> SalarySpan | None:
@@ -642,7 +668,7 @@ def _field_generic(value: str) -> SalarySpan | None:
             or _currency_of_symbol_before(value, m.start(1))
             or ("INR" if _names_lakhs(lo_unit, hi_unit) else None)
         )
-        if _unmarked_thousands(
+        if _declines_k_figure(
             value, currency, (m.group(1), lo_unit), (m.group(3), hi_unit)
         ):
             return None
@@ -663,7 +689,7 @@ def _field_generic(value: str) -> SalarySpan | None:
             or _currency_of_symbol_before(value, single.start(1))
             or ("INR" if _names_lakhs(unit) else None)
         )
-        if _unmarked_thousands(value, currency, (single.group(1), unit)):
+        if _declines_k_figure(value, currency, (single.group(1), unit)):
             return None
         v = _unit_value(single.group(1), unit) * mult
         return _bounded(v, None, currency)

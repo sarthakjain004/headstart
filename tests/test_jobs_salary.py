@@ -2038,10 +2038,9 @@ def test_adp_recruiting_pay_transparency_amounts_read_annual_and_refuse_hourly()
         # A unit on each figure, and one unit after the ceiling covering both.
         ("45k - 50k GBP", SalarySpan(45000, 50000, "GBP", "field")),
         ("72-80K CAD", SalarySpan(72000, 80000, "CAD", "field")),
-        (
-            "7 - 10 K INR",
-            None,
-        ),  # 7,000-10,000 INR a year is below the INR floor: monthly
+        # A "K" rupee figure is monthly: annual Indian pay is written in lakhs.
+        ("7 - 10 K INR", None),
+        ("110K+ INR", None),
         ("10-13 LPA INR", SalarySpan(1_000_000, 1_300_000, "INR", "field")),
         ("₹25-30 LPA INR", SalarySpan(2_500_000, 3_000_000, "INR", "field")),
         ("5-8L INR", SalarySpan(500_000, 800_000, "INR", "field")),
@@ -2071,4 +2070,14 @@ def test_adp_recruiting_pay_transparency_amounts_read_annual_and_refuse_hourly()
     ],
 )
 def test_generic_field_reads_grouping_and_units(field, expected):
-    assert from_field(field, "zoho") == expected
+    assert from_field(field, "some-new-ats") == expected
+
+
+def test_a_structured_code_names_the_currency_of_a_description_figure():
+    """#698: "40-50 EUR 1 YEAR" writes its thousands nowhere, so the field fails and the
+    description supplies the amount; the structured code still names its currency. A free-text
+    field's code does not (zoho's sits beside monthly figures)."""
+    text = "Gross Annual Salary range : 40.000 € - 50.000 €"  # smartrecruiters, served
+    assert from_description(text).currency is None  # the premise
+    assert extract("40-50 EUR 1 YEAR", text, "smartrecruiters").currency == "EUR"
+    assert extract("40-50 EUR 1 YEAR", text, "some-new-ats").currency is None
