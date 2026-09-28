@@ -545,7 +545,7 @@ class EightfoldScraper(BaseScraper):
                     "fields": {
                         "title": position.get("name"),
                         "description": descriptions.get(position_id) or None,
-                        "location": _first_location(
+                        "location": _locations(
                             position.get("locations"),
                             position.get("standardizedLocations"),
                         ),
@@ -778,7 +778,7 @@ def _smartapply_to_pcsx_shape(pos: dict[str, Any]) -> dict[str, Any]:
     hybrid/remote_local/remote_global, all already in ``_REMOTE_OPTION``). ``t_create`` ->
     ``postedTs``: SmartApply carries no ``postedTs`` of its own, and ``t_create`` (when the
     posting was created) is the closer match than ``t_update`` (which moves on every edit).
-    ``standardizedLocations`` is simply absent — ``_first_location``'s dirty-location repair tier
+    ``standardizedLocations`` is simply absent — ``_locations``'s dirty-location repair tier
     is skipped, not broken, without it. ``positionUrl`` is deliberately left out too: SmartApply's
     own ``canonicalPositionUrl`` sometimes points at a *different* vanity host than ``self.slug``
     (e.g. bayer.eightfold.ai's is ``talent.bayer.com``), while the existing ``/careers/job/{id}``
@@ -874,12 +874,14 @@ def _repair_location(dirty_value: str, standardized_entry: Any) -> str | None:
     return candidate
 
 
-def _first_location(locations: Any, standardized: Any = None) -> str | None:
-    """The first non-empty place `locations` names (not always index 0 — some tenants ship a
-    blank first entry with real ones after it, e.g. ascendion), repaired from the matching
-    `standardizedLocations` entry when it's dirty (see `_dirty_location`/`_repair_location`).
-    This is a repair tier, not a wholesale swap of `locations` for `standardizedLocations` — a
-    clean `locations` entry is left exactly as it is."""
+def _locations(locations: Any, standardized: Any = None) -> str | None:
+    """Every non-empty place `locations` names, "; "-joined in order without repeats (blank
+    entries are skipped — some tenants ship a blank first entry with real ones after it, e.g.
+    ascendion). Each is repaired from its index-matched `standardizedLocations` entry when it's
+    dirty (see `_dirty_location`/`_repair_location`). This is a repair tier, not a wholesale swap
+    of `locations` for `standardizedLocations` — a clean `locations` entry is left exactly as it
+    is. Every place is kept because the location filter is a substring match that should find a
+    posting under each place it is open in (ADR-0196's amendment)."""
     if isinstance(locations, list):
         places = locations
     elif isinstance(locations, str):
@@ -887,17 +889,16 @@ def _first_location(locations: Any, standardized: Any = None) -> str | None:
     else:
         places = []
     std_places = standardized if isinstance(standardized, list) else []
+    kept: list[str] = []
     for i, raw in enumerate(places):
         value = str(raw).strip() if raw is not None else ""
         if not value:
             continue
         if _dirty_location(value):
             std_entry = std_places[i] if i < len(std_places) else None
-            repaired = _repair_location(value, std_entry)
-            if repaired is not None:
-                return repaired
-        return value
-    return None
+            value = _repair_location(value, std_entry) or value
+        kept.append(value)
+    return "; ".join(dict.fromkeys(kept)) or None
 
 
 def _ts_to_iso(ts: Any) -> str | None:
