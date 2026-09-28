@@ -335,18 +335,22 @@ def build_doc(job: dict) -> str:
 # ((10, 40), (2, 35), (18, 35)) move to an open ceiling, same tier, same floor — a deterministic
 # consequence of the rule, not re-run over their text. No served regex floor is above Tier 2's own
 # cap of 20, and the regex rows #697 listed at 50/45/30 are no longer served.
-# v19: `jobs/salary.py`'s `_field_generic` (every ATS with no calibrated Tier-1 parser: zoho,
-# bamboohr, adp_recruiting, taleo_be, ...) reads a "."-grouped figure ("71.000,00 - 105.000,00 EUR")
-# and a figure's own k / L / LPA / lakh / lac unit ("45k - 50k GBP", "10-13 LPA INR"), ignores a unit
-# repeated after a figure already written in full, and declines a "k" figure in a field naming no
-# currency (#698) — one commit on top of the v18 bump at `65045ff9` (`git log 65045ff9..fa6c1693 --
-# src/headstart/jobs/salary.py`, subject "Read European grouping and k/L/LPA units in free-text
-# salary fields", in case it lands squashed). Measured old vs new `from_field()` on every raw
-# `salary` field in the served metadata pulled 2026-09-28 (46,497 rows), per ADR-0066: 1,671 move —
-# 1,662 None -> value (zoho 1,409, bamboohr 241, adp_recruiting 9, taleo_be 3; by currency INR
-# 1,134, none 342, GBP 95, CAD 45, USD 26, EUR 12, AUD 6, AED 1, CHF 1), 6 currency None -> INR
-# ("1,20,000 LPA"), 2 gain the ceiling they dropped ("$80,200k - $110,000K"), and 1 value -> None
-# ("30.000.000 IDR", read as 30,000 before). Tier 2 is untouched.
+# v19: `jobs/salary.py` (#698), two commits on top of the v18 bump at `65045ff9` (`git log
+# 65045ff9..7aa3b5f2 -- src/headstart/jobs/salary.py`, subjects "Read European grouping and k/L/LPA
+# units in free-text salary fields" and "Apply code-review: INR k figures are monthly; structured
+# code names currency", in case they land squashed). `_field_generic` (every ATS with no calibrated
+# Tier-1 parser: zoho, bamboohr, adp_recruiting, taleo_be, ...) reads a "."-grouped figure
+# ("71.000,00 - 105.000,00 EUR") and a figure's own k / L / LPA / lakh / lac unit ("45k - 50k GBP",
+# "10-13 LPA INR"), ignores a unit repeated after a figure written in full, and declines a "k"
+# figure in rupees or in a field naming no currency (a monthly amount). And `extract()` gives a
+# description figure the ISO code a structured-currency field states when the field's own amount
+# fails ("40-50 EUR 1 YEAR"). Measured per ADR-0066 on the served metadata pulled 2026-09-28: old vs
+# new `from_field()` on every raw `salary` (46,497 rows) moves 1,658 — 1,649 None -> value (zoho
+# 1,396, bamboohr 241, adp_recruiting 9, taleo_be 3; INR 1,121, none 342, GBP 95, CAD 45, USD 26,
+# EUR 12, AUD 6, AED 1, CHF 1), 6 currency None -> INR ("1,20,000 LPA"), 2 gain a dropped ceiling
+# ("$80,200k - $110,000K") and 1 value -> None ("30.000.000 IDR", read as 30,000 before); the
+# structured-code rule moves 11 more, currency None -> EUR (recruitee 6, smartrecruiters 5), all of
+# the served rows it can reach. Tier 2 is untouched.
 DERIVATIONS_VERSION = 19
 
 

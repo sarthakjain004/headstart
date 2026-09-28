@@ -450,7 +450,7 @@ e.g. `"250,000 - 300,000 USD"`. **This is not the same as getting a calibrated p
 deliberately conservative fallback ("under-extracts rather than mis-extracts") every uncalibrated ATS
 gets, not a zoho-specific parser like keka's or darwinbox's own lakhs-aware ones. Traced against this
 doc's own "Patterns found" examples: `"$35.00 per hour"` correctly annualizes; `"5-10 Lakhs"` and
-`"DOE"` correctly decline (no ISO code, no digits) and still fall through to the unchanged Tier-2
+`"DOE"` correctly decline (no ISO code, no digits) *(superseded 2026-09-28, #698: `_field_generic` now reads lakh, LPA and k units, so `"5-10 Lakhs"` parses as INR 500,000-1,000,000; see `DERIVATIONS_VERSION` 19)* and still fall through to the unchanged Tier-2
 splice, which is why this is additive rather than a replacement — `_description_text` (née part of
 `_description_of`) keeps appending `Salary`/`Currency` to the description exactly as documented above,
 so any phrasing `_field_generic` misses still has a shot at Tier 2. Note this doc's earlier claim that
