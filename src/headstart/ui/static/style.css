@@ -1261,6 +1261,14 @@ textarea:focus{ border-color:var(--accent); }
   padding:0; border:1px solid var(--rule); border-radius:var(--r-md); background:var(--raise);
   color:var(--ink-2); cursor:pointer; transition:color var(--step), border-color var(--step); }
 .nav-toggle:hover{ color:var(--accent); border-color:var(--accent); }
+/* What a click does, as a tooltip drawn from data-tip rather than a `title`, which a screen
+   reader would announce as a description that flips with the state. */
+.nav-toggle{ position:relative; }
+.nav-toggle:hover::after, .nav-toggle:focus-visible::after{ content:attr(data-tip);
+  position:absolute; left:calc(100% + 10px); top:50%; transform:translateY(-50%); z-index:20;
+  padding:6px 10px; border:1px solid var(--rule-2); border-radius:var(--r-md);
+  background:var(--raise-2); color:var(--ink); font:500 13px var(--sans); white-space:nowrap;
+  box-shadow:var(--shadow); pointer-events:none; }
 .nav-toggle-ico{ width:20px; height:20px; fill:none; stroke:currentColor; stroke-width:1.8;
   stroke-linecap:round; stroke-linejoin:round; transition:transform var(--step); }
 @media screen and (min-width:1280px){

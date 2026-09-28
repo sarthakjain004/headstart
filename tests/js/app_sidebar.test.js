@@ -63,14 +63,13 @@ test('the sidebar opens unfolded, and its button says so', () => {
   const { root, button } = loadApp();
   assert.equal(root.dataset.nav, undefined);
   assert.equal(button['aria-expanded'], 'true');
-  assert.equal(button['aria-label'], 'Collapse navigation');
-  assert.equal(button.title, 'Collapse navigation', 'an icon-only button carries its name as a tooltip');
+  assert.equal(button['data-tip'], 'Collapse navigation', 'the tooltip says what a click will do');
 });
 
 test('a fold applied before the first paint is what the button reports at load', () => {
   const { button } = loadApp({ folded: true });
   assert.equal(button['aria-expanded'], 'false');
-  assert.equal(button['aria-label'], 'Expand navigation');
+  assert.equal(button['data-tip'], 'Expand navigation');
 });
 
 test('each click flips the sidebar, and the choice is remembered for the next visit', () => {
@@ -78,7 +77,8 @@ test('each click flips the sidebar, and the choice is remembered for the next vi
   button.fire('click');
   assert.equal(root.dataset.nav, 'collapsed');
   assert.equal(button['aria-expanded'], 'false');
-  assert.equal(button['aria-label'], 'Expand navigation');
+  assert.equal(button['aria-label'], undefined,
+    'a disclosure keeps the one name base.html gives it; only aria-expanded flips');
   assert.equal(storage['hs.navCollapsed'], '1');
   button.fire('click');
   assert.equal(root.dataset.nav, undefined);

@@ -65,6 +65,8 @@ function fakeEl() {
  * alone passes either way, because 'bands' is also the fallback. */
 function loadApp(fetchImpl, cfg = {}) {
   const nodes = {};
+  // The chart's box watcher: a test fires what the browser would when the box changes width.
+  const observers = [];
   const logged = [];
   const fetches = [];
   const ctx = {
@@ -91,6 +93,7 @@ function loadApp(fetchImpl, cfg = {}) {
     // Node's real one, not a stub: the abort tests below need a signal that genuinely fires.
     AbortController,
     getComputedStyle: () => ({ getPropertyValue: () => '#000000' }),
+    ResizeObserver: class { constructor(cb) { this.cb = cb; observers.push(this); } observe() {} },
     fetch: (url, opts) => {
       fetches.push(String(url));
       return fetchImpl ? fetchImpl(String(url), opts) : Promise.resolve({ ok: false });
@@ -126,7 +129,7 @@ function loadApp(fetchImpl, cfg = {}) {
   // The page fetches on load (the feed, the trends chart). Those are not what any test here is
   // asserting about, so the log starts empty from the caller's point of view.
   fetches.length = 0;
-  return { t: ctx.__t, nodes, fetches, ctx };
+  return { t: ctx.__t, nodes, fetches, ctx, observers };
 }
 
 test('a late Trends response cannot overwrite a newer chart', async () => {
@@ -2966,3 +2969,28 @@ test('on a phone the tooltip under the chart is scrolled into view when it falls
     'below the screen’s foot: scrolled into view, and kept through that scroll');
 });
 
+
+test('a plot drawn at another width is redrawn once it settles, from the data it holds', () => {
+  // A sidebar fold or a window resize; scaling the old drawing grew the axis type ~19%.
+  const app = versionedApp();
+  const { t, nodes, observers } = app;
+  const host = { clientWidth: 600 };
+  nodes['trends-chart'].parentElement = host;
+  t.set(fixture(), null);
+  t.draw();                                    // drawn at 600
+  app.run();
+  const [box] = observers;
+  const before = t.draws(), asked = app.asked.length;
+  box.cb([]);                                  // same width: nothing to do
+  app.run();
+  assert.equal(t.draws(), before, 'no redraw at the width it was drawn at');
+  host.clientWidth = 700; box.cb([]);
+  host.clientWidth = 812; box.cb([]);          // still animating: one timer, reset
+  app.run();
+  assert.equal(t.draws(), before + 1, 'one redraw, after the width stops changing');
+  assert.equal(t.geom().W, 812);
+  assert.equal(app.asked.length, asked, 'a redraw, never a refetch');
+  host.clientWidth = 0; box.cb([]);            // the panel hidden
+  app.run();
+  assert.equal(t.draws(), before + 1, 'a hidden panel is left alone until it shows again');
+});
