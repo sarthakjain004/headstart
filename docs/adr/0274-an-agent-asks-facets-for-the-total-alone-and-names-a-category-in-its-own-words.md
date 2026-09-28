@@ -107,6 +107,19 @@ refuses an older Space instead of receiving a full strip it did not ask for. A c
 - The hosted and `uvx` servers list the 25 current families as `category`'s enum. A label or close
   name is read as its id, and a refusal lists the ids with their labels.
 - A concise `search_jobs` under a description keyword no longer waits on the facet strip.
+  Measured through the hosted `/mcp` after the deploy (2026-09-29, one call each, the Space
+  freshly booted so nothing was cached):
+
+  | Call | Before | After |
+  | --- | --- | --- |
+  | "software engineer", "visa sponsorship" in descriptions, location Germany | 124.8 s | 22.6 s |
+  | "data engineer", "relocation" in titles or descriptions | 113.0 s | 15.6 s |
+  | "kubernetes" in descriptions, remote only | 22.9 s | 4.0 s |
+
+  The first "before" is the critique's call with the same arguments, since the edge answered 502
+  to every re-measurement of it that day. Read directly, `/facets?counts=total` took 15.1 s and
+  `/search` 11.0 s for "sponsorship" in descriptions in Germany, so what is left is the scan both
+  routes pay, which a full-text index on `description` would cut.
 - `tests/test_space_mcp_role_families.py` covers the layouts and the reading;
   `tests/test_serving_facets.py`, `tests/test_serving_job_search.py` and
   `tests/test_space_mcp_against_space_app.py` cover `counts=total` through the real app;
