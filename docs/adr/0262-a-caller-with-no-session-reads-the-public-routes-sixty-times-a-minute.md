@@ -143,3 +143,22 @@ Why 60:
 - After deploy, check it on the live Space: 60 requests to a cheap route answer, the 61st answers
   429 with the marker, and the same request with a forged first `X-Forwarded-For` entry still
   answers 429.
+
+## Amendment (2026-09-28): an Account is a caller too, and writes are limited (#592)
+
+A signed-in session is no longer exempt. Sign-up is open to any Google account, so an unlimited
+session let one client out-read the address limit by signing in, and each distinct `/search` query
+runs the encoder. `_limit_the_anonymous` is now `_limit_each_caller`: a caller with a session is
+counted as its Account, one without as its address, and the two are counted apart, so a reader
+signing in starts a fresh window rather than inheriting its address's. Two limits join the read
+limit, both per caller over the same 60 s:
+
+- **30 writes** (`POST`, `PUT`, `DELETE`, any path). Every Account write is its own HF commit on
+  the one token every Account shares. A résumé pushes at most once every three minutes, so the
+  busiest real writer is a reader starring jobs.
+- **20 `GET /saved`**. It lists the whole Subscriptions repo. `store._list_files` also reuses a
+  listing of the head for 5 s, dropped by every write through the store, so a request after a write
+  never lists without it.
+
+The 429 names the unit: "from one Account" or "from one address". The owner chose this in-process
+window over flask-limiter, which would be a new pin in the production image.
