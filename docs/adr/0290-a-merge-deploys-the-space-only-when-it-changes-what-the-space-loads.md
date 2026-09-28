@@ -31,25 +31,24 @@ that module. The Space also reads `src/headstart/ui/` and `config/` as files.
 **What a deploy costs.** Every deploy boots a new container, and a boot is long. #842's image
 built in 17 s from cached layers. Its container logged its startup at 22:20:17 UTC on 2026-09-28
 and answered its first request at 22:26:37. Pulling the index and loading the encoder took about
-five minutes of that, and the Hot ranking took 51 s. Whether HF keeps sending traffic to the old
-container during that boot is not settled yet. The evidence so far:
+five minutes of that, and the Hot ranking took 51 s. The old container keeps serving during the
+boot, so a deploy does not take the app down. Both measurements polled `POST /mcp` every 5 s:
 
-- **A pipeline `restart_space` rolls.** Polling `POST /mcp` every 5 s through the restart at
-  21:54:10 UTC gave 307 polls. The old boot answered throughout, apart from 2 single-poll HF edge
-  502s.
-- **A deploy seemed not to roll during the MCP eval.** The Space rebuilt at 12:03, 12:38, 12:56
-  and 13:13 UTC, and the eval's stdio client reported the Space as "starting" during each boot
-  (`docs/mcp/2026-09-28_space-mcp-eval-results.md`). That is a report from a client, not a poll.
-- **The poll through #839's and #842's deploys was confounded.** From 22:13:45 until #842's boot
-  answered at 22:26:37, only 21 of 125 polls reached the app. But the errors went on after the new
-  boot was up: the container logged a 200 for every request that reached it, while most polls got
-  502s with no `x-proxied-host`. Four popular Spaces also answered 502 or 503 from here at
-  22:41, and four of five outside probes (check-host.net) got a 502 from ours. That was HF's edge
-  failing across Spaces, so this window says nothing about deploys.
+- **Two deploys in a row roll.** #849 was committed to the Space at 22:58:39 and #843 at 23:04:37.
+  From 22:58:39 to 23:30 there were 266 polls. The old replica answered every app reply until
+  23:10:54, and the new one answered from 23:10:59 on. There was no gap at the swap. The 26 polls
+  that failed were HF edge 502s, never more than 3 in a row. The control Spaces polled in the same
+  window failed at about the same rate (8 of 88).
+- **A pipeline `restart_space` rolls.** The restart at 21:54:10 UTC gave 307 polls. The old boot
+  answered throughout, apart from 2 single-poll edge 502s.
 
-The no-op deploys are worth removing either way. Each one starts a boot of more than six
-minutes on a 2 vCPU Space, and each one loses what the boot computed: the Hot ranking, the Trends
-answers and the per-caller rate-limit windows.
+An earlier window looked like an outage and was not one. From 22:13:45 to about 22:58, most polls got
+502s. They came from HF's edge, which was failing across Spaces at the time: popular control
+Spaces answered 502 or 503 too, and four of five check-host.net nodes got a 502 from ours.
+
+So a no-op deploy does not take the app down. It still costs a boot of more than six minutes on a
+2 vCPU Space, running beside the serving container, and it throws away what the old boot computed:
+the Hot ranking, the Trends answers and the per-caller rate-limit windows.
 
 ## Decision
 
@@ -75,8 +74,9 @@ still uploading cancels the earlier one. The newer checkout holds every earlier 
 `upload_folder` makes one commit, so a cancelled run leaves the Space on either the old commit or
 the new one, never a mix. This buys little, and the gain is stated here so that nobody counts on
 it. A run takes a median 17 s, and only 3 of the 62 runs on 2026-09-28 started while an earlier
-one was still running. The minutes of errors come from HF booting each commit, and the group
-cannot merge commits that land minutes apart.
+one was still running. The cost is the boot HF runs for each commit, and the group cannot merge
+commits that land minutes apart. Deploys roll, so merging more of them would save boots, not
+downtime.
 
 ## Options rejected
 
@@ -90,7 +90,7 @@ cannot merge commits that land minutes apart.
   cost is that every change reaches the Space N minutes later. This is left to the owner.
 - **Keep `src/headstart/**`** (ADR-0156). ADR-0156's reason was the staleness risk of a curated
   list. The test now catches that risk before merge. And a wasted deploy costs a six-minute boot
-  and everything that boot had computed, not only idle CI minutes.
+  and everything the old boot had computed, not only idle CI minutes.
 
 ## Consequences
 
@@ -98,5 +98,5 @@ cannot merge commits that land minutes apart.
   A PR that adds a module the Space never loads to a package listed by a `**` glob fails the test
   until the module gets a `!` negation.
 - On 2026-09-28, 34 of the 62 deploys would not have happened.
-- Narrowing the trigger makes deploys rarer. It does not change what one deploy does to the app.
-  That still needs a clean measurement. ADR-0267's §Risks is where it is recorded (#837).
+- A deploy that does run still rolls: the old container serves until the new one answers.
+  ADR-0267's §Risks records the measurements (#837).
