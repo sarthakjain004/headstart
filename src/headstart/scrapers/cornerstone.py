@@ -85,6 +85,7 @@ from headstart.network import http
 from headstart.scrapers.base import (
     USER_AGENT,
     BaseScraper,
+    BoardUnreadable,
     classify_exception,
     loss_breakdown,
 )
@@ -340,12 +341,21 @@ class CornerstoneScraper(BaseScraper):
         return list(postings.values())
 
     def fetch_raw(self) -> Any:
+        # Every career-site page on ids 1-3 redirecting to /ui/error is NOT an empty Board here.
+        # `p_cornerstone` already calls that answer DEAD, so a Scrapable Board had a career site
+        # when probed. CI read 14 such Boards as empty on 2026-09-27/28 (12 of them in one run),
+        # and all 14 answered their page from a clean address, alone, twice and 12 at once; 4
+        # of them served rows. An empty read is in eviction scope (ADR-0200). So ask once more,
+        # then raise: the Board is Unauthoritative this run and keeps its rows (ADR-0053, #702).
+        # A departed tenant still leaves through the ledger re-probe, which reads `listing()`.
         rows = self.listing()
         if rows is None:
-            self.note_unreadable_board(
-                "a career-site page on site ids 1-3", "a redirect to /ui/error on each"
+            rows = self.listing()
+        if rows is None:
+            raise BoardUnreadable(
+                f"{self.board_key()}: every career-site page on ids 1-3 redirected to "
+                "/ui/error twice — unread, not empty"
             )
-            return {"postings": [], "ads": {}}
         self._read_company(rows)
         # Ads only for what the tech filter will keep (exact here) and the description store
         # does not already hold (module docstring).
