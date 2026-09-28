@@ -24,7 +24,8 @@ sample; ``p_keka`` also records where it comes from (the careers SPA's own call,
 ``$.ajax('/api/jobs/${apiPortalName}/active')``). Keep the three in step.
 Measurements: `docs/keka/2026-09-22_direct-jobs-endpoint-measurement.md`.
 
-Keka soft-errors at HTTP 200 with an HTML page ("Invalid Tenant" for an unknown slug,
+Keka soft-errors with an HTML page that ends at HTTP 200 ("Invalid Tenant" for an unknown slug —
+reached, as measured 2026-09-28, through a 302 to ``/careers/Content/TenantNotFound.html``,
 "Forbidden Access" for a disabled portal) — either means no public board, so we yield no jobs
 rather than misreading the HTML. Any *other* non-JSON 200 raises out of ``fetch`` rather than
 degrading to an empty list: a board that raises is a per-company failure and is not evicted,
@@ -66,7 +67,8 @@ from headstart.jobs import salary
 from headstart.jobs.job import Job, html_to_text, is_remote
 from headstart.scrapers.base import BaseScraper
 
-# Keka renders these at HTTP 200 (not 404/403): an unknown slug -> "Invalid Tenant", a disabled
+# Keka renders these at a final HTTP 200 (not 404/403; an unknown slug 302s to TenantNotFound.html
+# first, 2026-09-28): an unknown slug -> "Invalid Tenant", a disabled
 # careers portal -> "Forbidden Access". Either means there is no public board to read.
 _DEAD_MARKERS = ("Invalid Tenant", "Forbidden Access")
 
