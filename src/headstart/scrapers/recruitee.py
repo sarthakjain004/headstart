@@ -8,8 +8,8 @@ One request returns every published offer; no pagination or cap has been seen (r
 the largest Board known, answered 4,379 offers with unique ids in one 53 MB body, 2026-09-28).
 An unknown slug answers 404 and raises; an empty Board answers ``{"offers": []}``. The host is a
 wildcard, so the liveness probe reads a DNS failure as unknown, not dead. Each offer carries
-every language the tenant wrote in ``translations``, and the English one is read first
-(``_description``).
+every language the tenant wrote in ``translations``; a real English description is read over
+the primary one (``_description``, ADR-0254).
 """
 
 from __future__ import annotations
@@ -71,27 +71,29 @@ def _description(offer: dict) -> str | None:
 
     The top-level text is the offer's primary language; ``translations`` holds every language
     the tenant wrote, keyed by code. Search holds non-English text out of its index, so a Dutch
-    offer with an English version was lost to it: 35 of 516 offers in a 30-Board sample (the
-    critique, 2026-09-28; voortman's "Lead Software Developer XR"). Where the top-level text is
+    offer with an English version was lost to it: 35 of 516 offers in a 30-Board sample
+    (2026-09-28; voortman's "Lead Software Developer XR"). Where the top-level text is
     already English the ``en`` translation equals it (119 of 119 offers, 40 Boards, 2026-09-28).
 
     Only a translation at least half the primary text's length is read: voortman's
     "BBL: Logistiek" carries an English template of headings alone (1% of its Dutch text). The
     title stays the primary one: an English title is sometimes a stale copy of another offer's
     (dnata's "Cargo Agent" carries "Ramp Coordinator – Schiphol"; voortman's "Service Engineer"
-    carries "Service Monteur"), and a wrong title misleads more than a Dutch one. 1 of the 27
+    carries "Service Monteur"), and a wrong title misleads more than a Dutch one (ADR-0254). 1 of the 27
     translated offers on voortman and dnata has such a mismatched English description.
     """
 
-    def joined(texts: dict) -> str | None:
+    def description_and_requirements(texts: dict) -> str | None:
         return html_to_text(
             "\n".join(
                 t for t in (texts.get("description"), texts.get("requirements")) if t
             )
         )
 
-    primary = joined(offer)
-    english = joined((offer.get("translations") or {}).get("en") or {})
+    primary = description_and_requirements(offer)
+    english = description_and_requirements(
+        (offer.get("translations") or {}).get("en") or {}
+    )
     if english and len(english) >= len(primary or "") / 2:
         return english
     return primary
@@ -170,7 +172,7 @@ class RecruiteeScraper(BaseScraper):
                     # own flag is the authoritative remote signal and was set on every one of
                     # ~2.3k observed markers, so reading the marker here would buy nothing while
                     # letting a mis-detected city silently mark an on-site Job remote.
-                    # Hybrid is None (`remote_from_workplace`); it was read as on-site.
+                    # Hybrid is None (`remote_from_workplace`).
                     remote=remote_from_workplace(_workplace_type(o), location),
                     department=o.get("department"),
                     url=self.job_url(o),
