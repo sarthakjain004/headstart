@@ -2380,3 +2380,12 @@ def test_p_teamtailor_keeps_walking_when_a_page_repeats_a_few_ids(monkeypatch):
 
     monkeypatch.setattr(cl, "_get", get)
     assert cl.p_teamtailor("acme", "https://acme.teamtailor.com") == (cl.LIVE, 205)
+
+
+def test_p_recruitee_reads_a_dns_failure_as_unknown(monkeypatch):
+    """`*.recruitee.com` is a wildcard: an invented slug resolves (35.186.220.63 on 1.1.1.1,
+    2026-09-28) and answers 404. So a DNS failure is a resolver fault, not a gone tenant."""
+    monkeypatch.setattr(cl, "_get", _stub_get("dns", b""))
+    assert cl.p_recruitee("acme", "https://acme.recruitee.com") == (cl.UNKNOWN, None)
+    monkeypatch.setattr(cl, "_get", _stub_get(404, b""))
+    assert cl.p_recruitee("acme", "https://acme.recruitee.com") == (cl.DEAD, None)

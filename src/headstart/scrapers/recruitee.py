@@ -3,6 +3,13 @@
 Adapted from jobhive's Recruitee scraper (kalil0321/ats-scrapers, MIT) to this project's
 BaseScraper contract:
     https://{slug}.recruitee.com/api/offers/
+
+One request returns every published offer; no pagination or cap has been seen (rebootmonkey,
+the largest Board known, answered 4,379 offers with unique ids in one 53 MB body, 2026-09-28).
+An unknown slug answers 404 and raises; an empty Board answers ``{"offers": []}``. The host is a
+wildcard, so the liveness probe reads a DNS failure as unknown, not dead. Each offer carries
+every language the tenant wrote in ``translations``, and the English one is read first
+(``_description``).
 """
 
 from __future__ import annotations
@@ -10,7 +17,7 @@ from __future__ import annotations
 from typing import Any
 
 from headstart.jobs import salary
-from headstart.jobs.job import Job, html_to_text, is_remote
+from headstart.jobs.job import Job, html_to_text, remote_from_workplace
 from headstart.scrapers.base import BaseScraper
 
 
@@ -57,6 +64,51 @@ def _is_remote_sentinel(location: str | None, city: str | None) -> bool:
     which is why ``parse`` does not let this decide ``remote``.
     """
     return bool(location) and bool(city) and city.lower() not in location.lower()
+
+
+def _description(offer: dict) -> str | None:
+    """Description plus requirements, from the English translation when it is a real one.
+
+    The top-level text is the offer's primary language; ``translations`` holds every language
+    the tenant wrote, keyed by code. Search holds non-English text out of its index, so a Dutch
+    offer with an English version was lost to it: 35 of 516 offers in a 30-Board sample (the
+    critique, 2026-09-28; voortman's "Lead Software Developer XR"). Where the top-level text is
+    already English the ``en`` translation equals it (119 of 119 offers, 40 Boards, 2026-09-28).
+
+    Only a translation at least half the primary text's length is read: voortman's
+    "BBL: Logistiek" carries an English template of headings alone (1% of its Dutch text). The
+    title stays the primary one: an English title is sometimes a stale copy of another offer's
+    (dnata's "Cargo Agent" carries "Ramp Coordinator – Schiphol"; voortman's "Service Engineer"
+    carries "Service Monteur"), and a wrong title misleads more than a Dutch one. 1 of the 27
+    translated offers on voortman and dnata has such a mismatched English description.
+    """
+
+    def joined(texts: dict) -> str | None:
+        return html_to_text(
+            "\n".join(
+                t for t in (texts.get("description"), texts.get("requirements")) if t
+            )
+        )
+
+    primary = joined(offer)
+    english = joined((offer.get("translations") or {}).get("en") or {})
+    if english and len(english) >= len(primary or "") / 2:
+        return english
+    return primary
+
+
+def _workplace_type(offer: dict) -> str | None:
+    """The workplace type the offer's ``remote``/``hybrid``/``on_site`` flags state.
+
+    Several can be set at once (a 40-Board sample, 2026-09-28: remote with hybrid 34, hybrid with
+    on-site 26, of 610 offers); remote wins, then hybrid, as ``remote_from_workplace`` reads them."""
+    if offer.get("remote"):
+        return "remote"
+    if offer.get("hybrid"):
+        return "hybrid"
+    if offer.get("on_site"):
+        return "onsite"
+    return None
 
 
 class RecruiteeScraper(BaseScraper):
@@ -118,20 +170,15 @@ class RecruiteeScraper(BaseScraper):
                     # own flag is the authoritative remote signal and was set on every one of
                     # ~2.3k observed markers, so reading the marker here would buy nothing while
                     # letting a mis-detected city silently mark an on-site Job remote.
-                    remote=bool(o.get("remote")) or is_remote(location),
+                    # Hybrid is None (`remote_from_workplace`); it was read as on-site.
+                    remote=remote_from_workplace(_workplace_type(o), location),
                     department=o.get("department"),
                     url=self.job_url(o),
                     posted_at=o.get("published_at") or o.get("created_at"),
                     scraped_at=scraped_at,
                     # requirements is a separate field — dropping it starves experience
                     # extraction and the embedding of the qualifications text
-                    description=html_to_text(
-                        "\n".join(
-                            s
-                            for s in (o.get("description"), o.get("requirements"))
-                            if s
-                        )
-                    ),
+                    description=_description(o),
                     experience=o.get("experience_code"),
                     employment_type=o.get("employment_type_code"),
                     salary=self._salary_field(o.get("salary")),
