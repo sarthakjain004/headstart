@@ -2605,9 +2605,112 @@ def test_the_opening_views_and_their_charted_drills_are_answered_at_boot(
     for metric in ("stock", "new"):
         opening = history.unnetted_answer(trend_history.TrendQuestion(metric=metric))
         assert history.answer_key(trend_history.TrendQuestion(metric=metric)) in kept
-        for line in opening["series"][: trends_app._CHARTED]:
+        for line in opening["series"][: trends_app._CHART_MAX]:
             drill = trend_history.TrendQuestion(metric=metric, family=line["name"])
             assert history.answer_key(drill) in kept
+
+
+def test_the_boot_answers_as_many_drills_as_the_page_charts(app):
+    """The drills answered at boot are the charted categories', so the count is app.js's."""
+    app_js = (Path(app.app.static_folder) / "app.js").read_text(encoding="utf-8")
+    assert re.search(r"const CHART_MAX = (\d+);", app_js).group(1) == str(
+        app._CHART_MAX
+    )
+
+
+def _folded_and_unfolded(history, monkeypatch, questions):
+    """Each question's answer as served, then with every family's rows kept by band: the band
+    fold (ADR-0257) must never move a figure."""
+    folded = [history.unnetted_answer(q) for q in questions]
+    whole = trend_history.TrendHistory
+    monkeypatch.setattr(
+        history,
+        "_index_rows",
+        lambda ats, since, until, banded: whole._index_rows(
+            history, ats, since, until, None
+        ),
+    )
+    monkeypatch.setattr(
+        history,
+        "_replay_rows",
+        lambda *args: whole._replay_rows(history, *args[:6], None),
+    )
+    return folded, [history.unnetted_answer(q) for q in questions]
+
+
+def test_summing_unread_bands_moves_no_figure(trends_app, monkeypatch, tmp_path):
+    """ADR-0257 sums the bands of every family a question does not drill into. Retired names
+    beside their successors, a watched role, non-tech and several bands, over the index and a
+    company's replay, drilled by old name and new, under both Measures: all as before."""
+    successors = trend_history.family_successors(_REPO_FAMILIES)
+    watched = trend_history.watched_roles(_REPO_FAMILIES.parent / "role_watchlist.json")
+    watch = min(watched)
+    families = [
+        "ai-ml",
+        "data-science",
+        "ai-ml-data-science",
+        "java-development",
+        "software-engineering",
+        watch,
+        "non-tech",
+    ]
+    bands = ("entry", "mid", "senior")
+    ledger = [
+        {
+            "ts": ts,
+            "version": 2,
+            "metric": metric,
+            "family": family,
+            "band": band,
+            "ats": "workday",
+            "count": 1 + (i * 7 + j * 3 + k) % 5,
+        }
+        for i, ts in enumerate((_T1, _T2, _T3))
+        for j, family in enumerate(families)
+        for k, band in enumerate(bands)
+        for metric in ("stock", "new")
+        if (i + j + k) % 4
+    ]
+    deltas = [
+        {
+            **_delta(ts, board, 1 + (i + j + k) % 3, family=family, metric=metric),
+            "band": band,
+        }
+        for i, ts in enumerate((_T1, _T2, _T3))
+        for j, family in enumerate(families)
+        for k, band in enumerate(bands)
+        for metric in ("stock", "new")
+        for board in ("workday:hpe/a", "workday:citi/2")
+        if (i * j + k) % 3
+    ]
+    history = _trend_history(
+        tmp_path, ledger=ledger, deltas=deltas, companies=_COMPANY_DIRECTORY
+    )
+    history._family_successor = successors
+    history._watch = watched
+    history._new_hold = {}
+    questions = [
+        trend_history.TrendQuestion(
+            metric=metric,
+            family=family,
+            split=split,
+            companies=picks,
+            coverage=coverage,
+        )
+        for metric in ("stock", "new")
+        for picks in ((), ("workday:hpe/a",), ("workday:hpe/a", "workday:citi/2"))
+        for coverage in ("all", "comparable")
+        for family, split in [
+            (None, "bands"),
+            *((f, "bands") for f in families if f != "non-tech"),
+            ("ai-ml-data-science", "roles"),
+            ("software-engineering", "roles"),
+            *(((f, "company") for f in (None, "ai-ml")) if len(picks) > 1 else ()),
+        ]
+    ]
+    folded, unfolded = _folded_and_unfolded(history, monkeypatch, questions)
+    for question, a, b in zip(questions, folded, unfolded, strict=True):
+        assert a == b, question
 
 
 def test_no_directory_answers_503(trends_app, monkeypatch):

@@ -1,6 +1,6 @@
 # ADR-0257: A Trends view nobody has asked for is cheap to work out, and asked for ahead
 
-**Status:** accepted · **Date:** 2026-09-28 · **Relates to:** [ADR-0251](0251-trends-answers-are-worked-out-once-a-boot-and-kept-by-the-browser.md) (answers kept for the boot, by the Space and the browser), [ADR-0230](0230-trends-keeps-one-board-delta-history-and-decides-rules-when-reading-it.md) (the history), [ADR-0185](0185-trends-narrow-to-companies-picked-from-a-directory-of-boards.md) (company picks and the picker), [ADR-0220](0220-a-trained-title-classifier-decides-a-role-family.md) (retired families renamed into their successors)
+**Status:** accepted · **Date:** 2026-09-28 · **Amends:** [ADR-0251](0251-trends-answers-are-worked-out-once-a-boot-and-kept-by-the-browser.md) (its answers are now kept by `answer_key`, not the question, and asked for ahead on intent as well as after a second) · **Relates to:** [ADR-0251](0251-trends-answers-are-worked-out-once-a-boot-and-kept-by-the-browser.md) (answers kept for the boot, by the Space and the browser), [ADR-0230](0230-trends-keeps-one-board-delta-history-and-decides-rules-when-reading-it.md) (the history), [ADR-0185](0185-trends-narrow-to-companies-picked-from-a-directory-of-boards.md) (company picks and the picker), [ADR-0220](0220-a-trained-title-classifier-decides-a-role-family.md) (retired families renamed into their successors)
 
 ## Context
 
@@ -43,14 +43,17 @@ the time went here:
    answer. `unnetted_answer` notes that a new reading of those three must be read there too.
 6. **The boot also answers each charted category's levels** under both Measures: what a click on
    the opening view opens.
-7. **The page asks earlier.** A bare `#trends` or `#hot` preloads its first answer from the head,
-   beside `app.js`. Hiring now's ranking is prefetched a second after any page loads, as the
-   opening Trends view already was. A category row the pointer rests on for 100 ms, or that takes
-   the focus, has its levels asked for. The picker's top company for a first pick has its trend
-   asked for as the suggestions arrive, since that is what Enter picks.
-8. **Scripts and stylesheets are named under the boot's version and kept for the boot**, like
-   the answers: only a deploy changes one, and a deploy restarts the Space. They neither re-sign
-   the session cookie nor vary by it.
+7. **The page asks earlier.** A bare `#trends`, or `#hot`, preloads its first answer from the
+   head, beside `app.js`. Hiring now's ranking is prefetched a second after any page loads, as
+   the opening Trends view already was. A category row the pointer or the focus rests on for
+   100 ms has its levels asked for, and the picker's top company for a first pick (with no
+   Source narrowed) has its trend asked for as the suggestions arrive, since that is what Enter
+   picks. One such guess is out at a time, the latest wanted next: the Space works out one
+   answer at a time (ADR-0251), so a queue of guesses would stand in front of the click.
+8. **Every static file is named under the boot's version and kept for the boot**, like the
+   answers: only a deploy changes one, and a deploy restarts the Space. It neither re-signs the
+   session cookie nor varies by it. A repeat visit then reads its scripts from the browser,
+   where each was revalidated before, a round trip every visit.
 
 Every served figure is unchanged: 118 questions, the picker's suggestions and Hot's whole ranking
 dump byte-identical to main's, 540 seeded random questions (companies, comparable coverage, ATS
@@ -70,7 +73,12 @@ suggest the same, and 204 pairs of questions keyed alike answer alike.
 - **Rounding a preset's clock** so its URL repeats: it moves the window's edge, a change of what
   the window means. The answer key gives the Space the same sharing without it.
 - **The opening answer inlined into the page:** it would ride every page load, whichever tab it
-  opens on, and a preload already asks for it beside `app.js`.
+  opens on, and it cannot be drawn before `app.js` runs anyway. With the preload the answer
+  already lands with `app.js` (measured: answer 1.33-1.53 s, `app.js` 1.35-1.54 s into the load).
+  A stateful link (`#trends?company=…`) gets no preload: its query is `app.js`'s to build.
+- **Aggregates kept per company:** dense cells by tick, family and band for ~38,700 companies
+  are far past the Space's memory, and sparse ones are the delta ledger the replay already
+  reads. A company's replay now takes ~20-30 ms here, and a company view once answered is kept.
 - **Asking ahead for every charted drill on the page:** ~320 KB a visit for views few open; the
   boot answers them for everyone instead, and a pointer resting on a row asks for the one it will
   likely open.

@@ -1359,23 +1359,23 @@ def _trends_payload(answer: dict, question: trend_history.TrendQuestion) -> dict
 
 
 #: How many of a view's lines the page charts, and so how many a click can open: app.js's
-#: CHART_MAX. Only a charted category drills.
-_CHARTED = 8
+#: CHART_MAX, which a test holds this to. Only a charted category drills.
+_CHART_MAX = 8
 
 
 def _answer_opening_views() -> None:
     """The view every Trends visit opens on, under both Measures, answered before the first
     visitor asks (ADR-0251), and each charted category's levels under it, which are what a
-    click on the opening view opens (ADR-0257): ~2 s of this Mac's CPU at boot, ~7 s of the
-    Space's, rather than ~2 s on someone's first click each. Never fatal: a question that fails
-    here fails the same way when asked, and is answered there."""
+    click on the opening view opens (ADR-0257): 18 answers at boot, the boot log says how long,
+    rather than one on each first click. Never fatal: a question that fails here fails the
+    same way when asked, and is answered there."""
     started = time.monotonic()
     try:
         for metric in ("stock", "new"):
             body, _ = _served_trends(
                 _HISTORY, trend_history.TrendQuestion(metric=metric)
             )
-            for line in json.loads(body)["series"][:_CHARTED]:
+            for line in json.loads(body)["series"][:_CHART_MAX]:
                 _served_trends(
                     _HISTORY,
                     trend_history.TrendQuestion(metric=metric, family=line["name"]),

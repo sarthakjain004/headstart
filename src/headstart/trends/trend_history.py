@@ -311,6 +311,28 @@ def _held_at_zero(values: list[int | None], metric: str | None) -> list[int | No
     return out
 
 
+def _window_stamps(
+    question: TrendQuestion,
+) -> tuple[str | None, str | None, str | None]:
+    """``question``'s ``since``, ``until`` and ``base`` as the ledger spells a tick; ValueError
+    on a malformed one."""
+    try:
+        return tuple(
+            _norm_stamp(raw) if raw is not None else None
+            for raw in (question.since, question.until, question.base)
+        )
+    except ValueError:
+        raise ValueError("since/until/base must be ISO-8601") from None
+
+
+def _echo_start(since: str) -> str:
+    """How far back a New window's counting changes echo into it: its start less the flow
+    window, when openings a change let in age out of `new`."""
+    return (datetime.fromisoformat(since) - timedelta(days=NEW_WINDOW_DAYS)).isoformat(
+        timespec="seconds"
+    )
+
+
 def _fold_unbanded(
     cells: np.ndarray, summed: np.ndarray, kept: np.ndarray
 ) -> np.ndarray:
@@ -989,21 +1011,14 @@ class TrendHistory:
         its start. A new reading of those three there must be read here too. A malformed stamp
         keys the question as it came, so the answer refuses it in its own words and order."""
         try:
-            since = _norm_stamp(question.since) if question.since is not None else None
-            until = _norm_stamp(question.until) if question.until is not None else None
-            base = _norm_stamp(question.base) if question.base is not None else None
+            since, until, base = _window_stamps(question)
         except ValueError:
             return (question,)
         lo, hi = self._window(since, until)
         # the first tick whose epoch a New window echoes; no start echoes every one
-        echo_from = 0 if question.metric == "new" else None
-        if since and question.metric == "new":
-            echo_from = bisect_left(
-                self._ticks,
-                (
-                    datetime.fromisoformat(since) - timedelta(days=NEW_WINDOW_DAYS)
-                ).isoformat(timespec="seconds"),
-            )
+        echo_from = None
+        if question.metric == "new":
+            echo_from = bisect_left(self._ticks, _echo_start(since)) if since else 0
         base_at = None
         if question.coverage == "comparable" and self._first_delta < len(self._ticks):
             first_delta = self._ticks[self._first_delta]
@@ -1089,12 +1104,7 @@ class TrendHistory:
             raise ValueError("split=company needs at least one company")
         # `answer_key` says which ticks these three fall between, and no more: read them only
         # as ticks, or read the new use there too.
-        try:
-            since = _norm_stamp(question.since) if question.since is not None else None
-            until = _norm_stamp(question.until) if question.until is not None else None
-            base = _norm_stamp(question.base) if question.base is not None else None
-        except ValueError:
-            raise ValueError("since/until/base must be ISO-8601") from None
+        since, until, base = _window_stamps(question)
         ats = list(question.ats)
 
         # Only a band drill reads a row's band, and only its family's: every other family's rows
@@ -1133,11 +1143,7 @@ class TrendHistory:
         if since:
             # Under New a change a week before the window still echoes inside it (its openings
             # age out of "new" there), so its epoch comes along for the page to mark that echo.
-            earliest = since
-            if metric == "new":
-                earliest = (
-                    datetime.fromisoformat(since) - timedelta(days=NEW_WINDOW_DAYS)
-                ).isoformat(timespec="seconds")
+            earliest = _echo_start(since) if metric == "new" else since
             epochs = [e for e in epochs if e["ts"] >= earliest]
         if until:
             epochs = [e for e in epochs if e["ts"] <= until]
@@ -1618,6 +1624,15 @@ class TrendHistory:
                     grew = True
         return frozenset(group)
 
+    def _keeps_bands(self, banded: frozenset[str] | None) -> np.ndarray:
+        """By family code, whether a family's rows keep their bands: those in ``banded``, or
+        every family's with None."""
+        if banded is None:
+            return np.ones(len(self._families.names), dtype=bool)
+        keeps = np.zeros(len(self._families.names), dtype=bool)
+        keeps[[c for n in banded if (c := self._families.get(n)) is not None]] = True
+        return keeps
+
     def _ats_codes(self, ats: list[str]) -> np.ndarray:
         return np.array(
             [code for name in ats if (code := self._atses.get(name)) is not None],
@@ -1651,7 +1666,7 @@ class TrendHistory:
         ats: list[str],
         since: str | None,
         until: str | None,
-        banded: frozenset[str] | None = None,
+        banded: frozenset[str] | None,
     ) -> list[dict]:
         """The index's rows in the window and the ATS selection, summed over ATS: every
         ``(ts, metric, family, band)`` group holding a row, each tick's in name order, as the
@@ -1666,18 +1681,12 @@ class TrendHistory:
         else:
             held, counts = (cells[lo:hi] for cells in self._every_ats_cells)
         ranks = self._families.ranks(), self._bands.ranks()
-        kept = np.ones(len(ranks[0]), dtype=bool)
+        # the cells are by family rank, the mask by family code
+        keeps_bands = np.empty(len(ranks[0]), dtype=bool)
+        keeps_bands[ranks[0]] = self._keeps_bands(banded)
         if banded is not None:
-            kept[:] = False
-            kept[
-                [
-                    ranks[0][c]
-                    for n in banded
-                    if (c := self._families.get(n)) is not None
-                ]
-            ] = True
-            held = _fold_unbanded(held, held.any(axis=3), kept)
-            counts = _fold_unbanded(counts, counts.sum(axis=3), kept)
+            held = _fold_unbanded(held, held.any(axis=3), keeps_bands)
+            counts = _fold_unbanded(counts, counts.sum(axis=3), keeps_bands)
         tick, metric, family, band = np.nonzero(held)
         families = np.array(self._families.names, dtype=object)[np.argsort(ranks[0])]
         bands = np.array(self._bands.names, dtype=object)[np.argsort(ranks[1])]
@@ -1693,7 +1702,7 @@ class TrendHistory:
                 tick.tolist(),
                 metric.tolist(),
                 families[family].tolist(),
-                np.where(kept[family], bands[band], None).tolist(),
+                np.where(keeps_bands[family], bands[band], None).tolist(),
                 counts[tick, metric, family, band].tolist(),
             )
         ]
@@ -1805,10 +1814,7 @@ class TrendHistory:
         bands = [*self._bands.names, None]  # None: a family's bands summed
         band = d["band"][rows]
         if banded is not None:
-            keeps_bands = np.zeros(len(self._families.names), dtype=bool)
-            keeps_bands[
-                [c for n in banded if (c := self._families.get(n)) is not None]
-            ] = True
+            keeps_bands = self._keeps_bands(banded)
             band = np.where(keeps_bands[d["family"][rows]], band, len(bands) - 1)
         sizes = (len(companies), 2, len(self._families.names), len(bands))
         flat = np.ravel_multi_index(

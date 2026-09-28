@@ -2327,16 +2327,27 @@ function prefetchTrends(family, metric){
   const url = versioned('/trends', trendsQuery(family, metric));
   trendPrefetchTimer = setTimeout(() => fetch(url, { priority: 'low' }).catch(() => {}), PREFETCH_AFTER);
 }
-// The view a click is about to ask for, asked for at once, on a sign it is coming: the pointer
+// The view a click is about to ask for, asked for on a sign it is coming: the pointer or focus
 // resting on a category's row, or a company offered at the top of the picker's list, which is
-// what Enter picks (ADR-0257). Once a URL a page: the browser keeps each answer anyway.
+// what Enter picks (ADR-0257). Once a URL a page: the browser keeps each answer anyway. One at
+// a time, the latest wanted next: the Space works out one answer at a time, so a queue of
+// guesses would stand in front of the reader's own click.
 const askedAhead = new Set();
+let intentInFlight = false, intentNext = null;
 function prefetchIntent(q){
   if (!CFG.answers_version || presetInForce()) return;
-  const url = versioned('/trends', q);
+  askAhead(versioned('/trends', q));
+}
+function askAhead(url){
   if (askedAhead.has(url)) return;
+  if (intentInFlight){ intentNext = url; return; }
   askedAhead.add(url);
-  fetch(url, { priority: 'low' }).catch(() => askedAhead.delete(url));
+  intentInFlight = true;
+  fetch(url, { priority: 'low' }).catch(() => askedAhead.delete(url)).finally(() => {
+    intentInFlight = false;
+    const next = intentNext; intentNext = null;
+    if (next) askAhead(next);
+  });
 }
 
 async function loadTrends(family){
@@ -4077,8 +4088,9 @@ async function suggestCompanies(q){
   const options = (found || []).filter(c => !picked.has(c.key.toLowerCase())).map(company => ({ company }));
   openCoList(options);
   // The top company's trend (prefetchIntent), in the one case whose URL a pick is sure to ask
-  // for: a first pick at the top level.
-  if (options.length && !trendPicks.length && !trendDrill)
+  // for: a first pick at the top level, with no Source narrowed (a pick narrows the Source list,
+  // and with it the URL).
+  if (options.length && !trendPicks.length && !trendDrill && !trendAtsSelected())
     prefetchIntent(trendsQuery(null, trendMetric, [options[0].company]));
   if (coEnterPending){ coEnterPending = false; if (options.length){ chooseCo(0); return; } }
   // Said in the status line, not as a fake option: a listbox should only hold choices.
@@ -4322,12 +4334,17 @@ if (el('trends-legend')) {
     trendClick(row.dataset.name);
   });
   // A charted category's levels, what `trendClick` opens from the top, asked for once the
-  // pointer has rested on its row, or as the focus reaches it (prefetchIntent). A pointer only
-  // passing over rows on its way elsewhere asks for none of them.
+  // pointer or the focus has rested on its row (prefetchIntent). A pointer passing over rows on
+  // its way elsewhere, or a Tab through them, asks for none of them.
   const HOVER_INTENT = 100;
   let drillAheadTimer = null;
+  const restDrillAhead = target => {
+    clearTimeout(drillAheadTimer);
+    const row = target.closest('.row[data-name][role="button"]');
+    if (row) drillAheadTimer = setTimeout(() => askDrillAhead(row), HOVER_INTENT);
+  };
   const askDrillAhead = row => {
-    if (row && row.isConnected && !trendDrill && trendData && VIEWS[viewKind(trendData)].drills)
+    if (row.isConnected && !trendDrill && trendData && VIEWS[viewKind(trendData)].drills)
       prefetchIntent(trendsQuery(row.dataset.name, trendMetric, trendPicks, 'bands'));
   };
   // Hover-highlight (dataviz skill; design-research doc §2): a legend row's mouse hover reaches
@@ -4337,9 +4354,7 @@ if (el('trends-legend')) {
   legend.addEventListener('pointerover', e => {
     const row = e.target.closest('.row[data-name]');
     if (row && hoveredSeries !== row.dataset.name){ hoveredSeries = row.dataset.name; applyEmphasis(); }
-    clearTimeout(drillAheadTimer);
-    const drillable = e.target.closest('.row[data-name][role="button"]');
-    if (drillable) drillAheadTimer = setTimeout(() => askDrillAhead(drillable), HOVER_INTENT);
+    restDrillAhead(e.target);
   });
   legend.addEventListener('pointerout', e => {
     const row = e.target.closest('.row[data-name]');
@@ -4351,11 +4366,11 @@ if (el('trends-legend')) {
   legend.addEventListener('focusin', e => {
     const row = e.target.closest('.row[role="button"]');
     if (row){ hoveredSeries = row.dataset.name; applyEmphasis(); }
-    askDrillAhead(e.target.closest('.row[data-name][role="button"]'));
+    restDrillAhead(e.target);
   });
   legend.addEventListener('focusout', e => {
     const row = e.target.closest('.row[role="button"]');
-    if (row){ hoveredSeries = null; applyEmphasis(); }
+    if (row){ clearTimeout(drillAheadTimer); hoveredSeries = null; applyEmphasis(); }
   });
 }
 if (el('salrmin')){
