@@ -48,10 +48,15 @@ import re
 import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
+from typing import NamedTuple
 
-# Bumped whenever a pattern change below moves the tech/not-tech line for input that's already
-# been scraped and filtered — the same discipline as `doc_prep.DERIVATIONS_VERSION`, and for the
+from headstart.boards.board_identity import board_end
+
+# Bumped whenever a pattern change below, or a change to the rule that picks the Boards
+# `filter_jobs` leaves out, moves the tech/not-tech line for input that's already been scraped
+# and filtered — the same discipline as `doc_prep.DERIVATIONS_VERSION`, and for the
 # same reason: this gate's output feeds `role_trends`, whose per-tick counts silently absorb a
 # widened or narrowed regex as if the market moved. Reading this value once per tick lets a
 # reader tell "we changed who counts" from "conditions changed" instead of conflating the two.
@@ -91,7 +96,14 @@ from pathlib import Path
 # was not yet in v654: `jibe:costco` alone carried 1,581 such rows (live keyword sample 2026-09-24:
 # 1,213 of 2,500 hits were its only two kept titles). The blind hold-out is unchanged (recall
 # 84.6%, precision 82.0%). See docs/pipeline/2026-09-24_five-run-log-review.md finding 1.
-TECH_FILTER_VERSION = 5
+# 6 (2026-09-28, `git log 19b8984b..5c57ae9b -- src/headstart/ingest src/headstart/jobs`):
+# no pattern changed. `filter_tech` now leaves out every row on a Dormant Board, one whose newest
+# posting is over two years old (ADR-0250). Purely subtractive: on the served table (v448,
+# 533,799 rows) at most **-54,661 out, 0 in**, on 3,871 Boards, 47,152 of the rows SmartRecruiters.
+# That is an upper bound, because the served rows are tech only and a Board's non-tech postings can
+# keep it in. On a live scrape of 24 Boards, 16 were Dormant and 10,369 of their served rows would
+# go; the six controls lost none.
+TECH_FILTER_VERSION = 6
 
 # 1. Strong, software-specific signals. A match here means tech regardless of any disqualifier.
 _STRONG_TERMS = [
@@ -796,14 +808,26 @@ def is_tech(title: str | None, department: str | None = None) -> bool:
     return classify(title, department).is_tech
 
 
-def _filter_file(pair: tuple[Path, Path]) -> tuple[str, int, int]:
-    """Filter one ``{ats}.jsonl`` into its tech subset, returning ``(ats, kept, total)``.
+class FileCounts(NamedTuple):
+    """One ``{ats}.jsonl``'s rows: written to the tech subset, read, and left out unjudged because
+    their Board is Dormant (ADR-0250). ``total - kept - dormant`` is what the gate dropped."""
 
-    Module-level and single-argument so :func:`filter_jobs` can hand it to a process pool; the
-    body is what that loop always did, lifted unchanged.
+    kept: int
+    total: int
+    dormant: int
+
+
+def _filter_file(
+    pair: tuple[Path, Path], *, dormant_boards: frozenset[str]
+) -> tuple[str, FileCounts]:
+    """Filter one ``{ats}.jsonl`` into its tech subset, returning ``(ats, its counts)``.
+
+    Module-level so :func:`filter_jobs` can hand it to a process pool, with ``dormant_boards``
+    bound beforehand so the pool still passes one argument. A row on one of those Boards is not
+    written and never reaches the gate.
     """
     src, dst = pair
-    kept = total = 0
+    kept = total = dormant = 0
     with (
         src.open(encoding="utf-8") as fin,
         dst.open("w", encoding="utf-8") as fout,
@@ -817,11 +841,16 @@ def _filter_file(pair: tuple[Path, Path]) -> tuple[str, int, int]:
                 job = json.loads(line)
             except ValueError as exc:
                 raise ValueError(f"{src}:{lineno}: malformed JSON ({exc})") from exc
-            if is_tech(job.get("title"), job.get("department")):
+            if (
+                dormant_boards
+                and board_end(str(job.get("id", "")), dormant_boards) is not None
+            ):
+                dormant += 1
+            elif is_tech(job.get("title"), job.get("department")):
                 fout.write(json.dumps(job, ensure_ascii=False) + "\n")
                 kept += 1
         fout.flush()
-    return src.stem, kept, total
+    return src.stem, FileCounts(kept, total, dormant)
 
 
 def filter_jobs(
@@ -830,12 +859,17 @@ def filter_jobs(
     *,
     workers: int | None = None,
     logger: logging.Logger | None = None,
-) -> dict[str, tuple[int, int]]:
+    dormant_boards: frozenset[str] = frozenset(),
+) -> dict[str, FileCounts]:
     """Filter every ``{src_dir}/{ats}.jsonl`` down to its tech rows in ``{dst_dir}/{ats}.jsonl``.
 
     Streams line-by-line (never buffering a whole file) and flushes per file, per the repo's
-    incremental-output rule. Returns ``{ats: (kept, total)}``. Non-tech rows are dropped; the source
+    incremental-output rule. Returns ``{ats: FileCounts}``. Non-tech rows are dropped; the source
     files (the full scrape output) are left untouched.
+
+    ``dormant_boards`` holds the lowercased keys of the Boards ``scrape_join`` judged Dormant
+    (ADR-0250), whose rows are not written at all, whatever their title. Only
+    ``headstart.ingest.filter_tech`` passes any; the curated feed passes none.
 
     **On a mid-file failure (a malformed line), one difference from the prior single-threaded
     version**: pooled, sibling files already in flight still finish and get written before the
@@ -896,25 +930,31 @@ def filter_jobs(
             f"filtering {len(pairs)} files ({megabytes:.0f} MB) across "
             f"{max(1, min(workers, len(pairs)))} worker(s)"
         )
-    stats: dict[str, tuple[int, int]] = {}
+    stats: dict[str, FileCounts] = {}
+    worker = partial(_filter_file, dormant_boards=dormant_boards)
 
-    def landed(ats: str, kept: int, total: int) -> None:
-        stats[ats] = (kept, total)
+    def landed(ats: str, counts: FileCounts) -> None:
+        stats[ats] = counts
         if logger:
+            dormant = (
+                f"{counts.dormant} on Dormant Boards left out, "
+                if counts.dormant
+                else ""
+            )
             logger.info(
-                f"filtered {ats}: {kept}/{total} kept, "
+                f"filtered {ats}: {counts.kept}/{counts.total} kept, {dormant}"
                 f"{time.monotonic() - started:.1f}s elapsed ({len(stats)}/{len(pairs)} files)"
             )
 
     if workers <= 1 or len(pairs) <= 1:
         for pair in pairs:
-            landed(*_filter_file(pair))
+            landed(*worker(pair))
         return stats
     ctx = multiprocessing.get_context("spawn")
     with ProcessPoolExecutor(
         max_workers=min(workers, len(pairs)), mp_context=ctx
     ) as pool:
-        futures = [pool.submit(_filter_file, pair) for pair in pairs]
+        futures = [pool.submit(worker, pair) for pair in pairs]
         # Results collected as each file lands, not blocking on the slowest submitted first
         # (a plain `pool.map` would preserve submission order and wait on shard 0 even if shard 3
         # finishes first), so each file's progress line lands as soon as the file does.
@@ -924,7 +964,7 @@ def filter_jobs(
 
 
 def report(
-    stats: dict[str, tuple[int, int]], dst_dir: str | Path, logger: logging.Logger
+    stats: dict[str, FileCounts], dst_dir: str | Path, logger: logging.Logger
 ) -> None:
     """Log ``filter_jobs``' per-run table plus the two zero-output warnings, through ``logger``.
 
@@ -934,11 +974,13 @@ def report(
     tag, unchanged from before this reporting logic lived here.
     """
     logger.info(f"{'ATS':<16}{'kept':>9}{'total':>9}{'kept%':>8}")
-    kept = total = 0
+    kept = total = dormant = 0
     empty = []
-    for ats, (k, t) in sorted(stats.items()):
+    for ats, counts in sorted(stats.items()):
+        k, t = counts.kept, counts.total
         kept += k
         total += t
+        dormant += counts.dormant
         if t:
             logger.info(f"{ats:<16}{k:>9}{t:>9}{100 * k / t:>7.1f}%")
         else:
@@ -964,8 +1006,12 @@ def report(
     if total:
         logger.info(
             f"{'TOTAL':<16}{kept:>9}{total:>9}{100 * kept / total:>7.1f}%"
-            f"  (dropped {total - kept} non-tech) -> {dst_dir}"
+            f"  (dropped {total - kept - dormant} non-tech) -> {dst_dir}"
         )
+        if dormant:
+            logger.info(
+                f"left {dormant} row(s) on Dormant Boards out of {dst_dir} unjudged (ADR-0250)"
+            )
     else:
         # A zero-row run used to be near-silent: the table printed its header and stopped, which
         # is a hard shape to notice in a green log. Everything downstream reads this corpus, so
@@ -974,9 +1020,13 @@ def report(
 
 
 def filter_jobs_and_report(
-    src_dir: str | Path, dst_dir: str | Path, logger: logging.Logger
-) -> dict[str, tuple[int, int]]:
+    src_dir: str | Path,
+    dst_dir: str | Path,
+    logger: logging.Logger,
+    *,
+    dormant_boards: frozenset[str] = frozenset(),
+) -> dict[str, FileCounts]:
     """``filter_jobs`` plus its run report (see ``report``) — what ``filter_tech.main()`` runs."""
-    stats = filter_jobs(src_dir, dst_dir, logger=logger)
+    stats = filter_jobs(src_dir, dst_dir, logger=logger, dormant_boards=dormant_boards)
     report(stats, dst_dir, logger)
     return stats

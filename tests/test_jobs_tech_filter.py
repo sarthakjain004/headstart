@@ -19,6 +19,7 @@ from headstart.jobs import tech_filter
 from headstart.jobs.tech_filter import (
     _STRONG,
     TECH_FILTER_VERSION,
+    FileCounts,
     classify,
     filter_jobs,
     filter_jobs_and_report,
@@ -175,7 +176,7 @@ def test_filter_jobs_writes_tech_only_and_leaves_source(tmp_path):
         "".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8"
     )
     stats = filter_jobs(src, tmp_path / "tech")
-    assert stats["greenhouse"] == (2, 3)  # 2 kept of 3
+    assert stats["greenhouse"] == (2, 3, 0)  # 2 kept of 3, none left out
     out = [
         json.loads(x)
         for x in (tmp_path / "tech" / "greenhouse.jsonl").read_text().splitlines()
@@ -215,7 +216,7 @@ def test_filter_jobs_is_identical_pooled_and_inline(tmp_path):
     pooled = filter_jobs(src, tmp_path / "pooled", workers=4)
 
     assert inline == pooled
-    assert pooled == {ats: (n // 2, n) for ats, n in sizes.items()}
+    assert pooled == {ats: (n // 2, n, 0) for ats, n in sizes.items()}
     for ats in sizes:
         name = f"{ats}.jsonl"
         assert (tmp_path / "pooled" / name).read_text() == (
@@ -236,9 +237,9 @@ def test_filter_jobs_submits_largest_file_first(tmp_path, monkeypatch):
     _write_corpus(src, {"aaa": 4, "mmm": 20, "zzz": 60})
     seen: list[str] = []
 
-    def recording(pair):
+    def recording(pair, **kwargs):
         seen.append(pair[0].stem)
-        return real(pair)
+        return real(pair, **kwargs)
 
     real = tech_filter._filter_file
     monkeypatch.setattr(tech_filter, "_filter_file", recording)
@@ -297,7 +298,7 @@ def test_filter_jobs_submits_largest_file_first_to_the_pool(tmp_path, monkeypatc
 
 def test_report_logs_per_ats_table_and_grand_total(caplog):
     logger = logging.getLogger("test_tech_filter.report")
-    stats = {"greenhouse": (2, 3), "lever": (5, 5)}
+    stats = {"greenhouse": FileCounts(2, 3, 0), "lever": FileCounts(5, 5, 0)}
     with caplog.at_level(logging.INFO):
         report(stats, "data/jobs/tech", logger)
     infos = [r.getMessage() for r in caplog.records if r.levelno == logging.INFO]
@@ -318,7 +319,7 @@ def test_report_warns_on_an_ats_that_contributed_zero_rows(caplog):
     in this run's slice at all — is a different case and must not be named.
     """
     logger = logging.getLogger("test_tech_filter.report")
-    stats = {"greenhouse": (2, 3), "jazzhr": (0, 0)}
+    stats = {"greenhouse": FileCounts(2, 3, 0), "jazzhr": FileCounts(0, 0, 0)}
     with caplog.at_level(logging.INFO):
         report(stats, "data/jobs/tech", logger)
     warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
@@ -337,7 +338,7 @@ def test_report_warns_when_the_whole_corpus_is_zero(caplog):
     and "is the whole run broken") are answered separately, and no TOTAL line fires. WARNING,
     not ERROR: ERROR is an abort (ADR-0039), and this stage does not abort on it."""
     logger = logging.getLogger("test_tech_filter.report")
-    stats = {"jazzhr": (0, 0), "jobvite": (0, 0)}
+    stats = {"jazzhr": FileCounts(0, 0, 0), "jobvite": FileCounts(0, 0, 0)}
     with caplog.at_level(logging.INFO):
         report(stats, "data/jobs/tech", logger)
     assert not any(r.levelno >= logging.ERROR for r in caplog.records)
@@ -357,7 +358,7 @@ def test_report_logs_through_the_callers_logger_so_the_tag_is_preserved(caplog):
     logger that entry point hands it."""
     logger = logging.getLogger("headstart.ingest.filter_tech")
     with caplog.at_level(logging.INFO):
-        report({"greenhouse": (1, 1)}, "data/jobs/tech", logger)
+        report({"greenhouse": FileCounts(1, 1, 0)}, "data/jobs/tech", logger)
     assert caplog.records
     assert all(r.name == "headstart.ingest.filter_tech" for r in caplog.records)
 
@@ -375,7 +376,7 @@ def test_filter_jobs_and_report_filters_then_reports(tmp_path, caplog):
     logger = logging.getLogger("test_tech_filter.combined")
     with caplog.at_level(logging.INFO):
         stats = filter_jobs_and_report(src, tmp_path / "tech", logger)
-    assert stats["greenhouse"] == (1, 2)
+    assert stats["greenhouse"] == (1, 2, 0)
     assert (tmp_path / "tech" / "greenhouse.jsonl").exists()
     infos = [r.getMessage() for r in caplog.records if r.levelno == logging.INFO]
     assert any(m.startswith("TOTAL") for m in infos)
@@ -383,6 +384,43 @@ def test_filter_jobs_and_report_filters_then_reports(tmp_path, caplog):
     (progress,) = [m for m in infos if m.startswith("filtered ")]
     assert progress.startswith("filtered greenhouse: 1/2 kept, ")
     assert progress.endswith("(1/1 files)")
+
+
+def test_rows_on_a_dormant_board_are_neither_written_nor_judged(tmp_path):
+    """`filter_tech` leaves out the Boards `scrape_join` judged Dormant (ADR-0250), whatever the
+    titles say. A native id may carry colons (ADR-0049), so the Board is matched at any colon."""
+    src = tmp_path / "jobs"
+    src.mkdir()
+    rows = [
+        {"id": "workday:acme/External:REQ: 228", "title": "Backend Engineer"},
+        {"id": "workday:acme/External:2", "title": "Warehouse Associate"},
+        {"id": "workday:Acme/Careers:3", "title": "Backend Engineer"},
+        {"id": "workday:acme/Careers:4", "title": "Chef de Partie"},
+    ]
+    (src / "workday.jsonl").write_text(
+        "".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8"
+    )
+    dormant = frozenset({"workday:acme/external"})
+
+    inline = filter_jobs(src, tmp_path / "inline", workers=1, dormant_boards=dormant)
+    pooled = filter_jobs(src, tmp_path / "pooled", workers=4, dormant_boards=dormant)
+
+    assert inline == pooled == {"workday": (1, 4, 2)}
+    out = (tmp_path / "pooled" / "workday.jsonl").read_text().splitlines()
+    assert [json.loads(x)["id"] for x in out] == ["workday:Acme/Careers:3"]
+
+
+def test_report_counts_dormant_rows_apart_from_the_non_tech_ones(caplog):
+    logger = logging.getLogger("test_tech_filter.dormant")
+    with caplog.at_level(logging.INFO):
+        report({"smartrecruiters": FileCounts(10, 100, 60)}, "data/jobs/tech", logger)
+    infos = [r.getMessage() for r in caplog.records]
+    (total,) = [m for m in infos if m.startswith("TOTAL")]
+    assert total.endswith("(dropped 30 non-tech) -> data/jobs/tech")
+    assert (
+        "left 60 row(s) on Dormant Boards out of data/jobs/tech unjudged (ADR-0250)"
+        in infos
+    )
 
 
 def test_a_malformed_line_names_its_file_and_line(tmp_path):
@@ -606,7 +644,7 @@ def test_a_non_software_department_still_vetoes_a_generic_title():
 
 def test_the_version_counter_moved_with_the_line():
     """`role_trends` reads this to tell "we changed who counts" from "the market moved"."""
-    assert TECH_FILTER_VERSION == 5, (
+    assert TECH_FILTER_VERSION == 6, (
         "bump this and its comment together — the comment carries the commit range and the "
         "measured effect, and a bump without one is what CLAUDE.md's DERIVATIONS_VERSION rule "
         "exists to stop"

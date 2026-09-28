@@ -31,8 +31,9 @@ last colon-separated segment. This is a **guess**, not an exact answer (ADR-0049
 can itself contain a colon, and for those this returns a Board that does not exist. Safe only
 where both sides of a comparison run through this same function (so a phantom Board is produced
 identically on each), or where the answer only ever falls back for an id on no *known* Board
-(``index_plan.resolve_board``, which matches by prefix against a real keep-set first and reaches
-this only when nothing in the keep-set matches).
+(``index_plan.resolve_board``, which reaches this only when :func:`board_end` finds none of a
+real keep-set's Boards at the front of the id). :func:`board_end` is the exact answer for a known
+set of Boards: the colon where the longest of them ends, matched by prefix.
 
 Plus the two small conveniences duplicated ad hoc at a dozen-plus call sites each:
 :func:`ats_of` (the ATS prefix of any ``{ats}:...``-shaped key — a board key, a Job id, or a
@@ -44,6 +45,7 @@ casing and a freshly-built ``board_key()`` need not agree, ADR-0049).
 from __future__ import annotations
 
 import re
+from collections.abc import Container
 from urllib.parse import parse_qs, urlsplit
 
 from headstart import log
@@ -298,3 +300,24 @@ def tenant(board_key: str) -> str:
     if _URLISH.match(slug):
         slug = slug.split("//", 1)[1]
     return slug.split("/", 1)[0]
+
+
+def board_end(job_id: str, boards: Container[str]) -> int | None:
+    """Index of the colon separating a Board in ``boards`` (lowercased keys) from the native id, or
+    None if the id is on none of them.
+
+    Returns a **position in the original string**, not a length: ``boards``' keys are lowercased and
+    ``str.lower()`` is not length-preserving for every character (``'İ'.lower()`` is two chars), so
+    slicing the original id by the lowercased key's length would silently eat a character of the
+    native id — on the eviction path, that is a live row deleted as someone else's duplicate.
+
+    Longest match wins as defence in depth rather than because anything needs it today: no two live
+    Board keys currently nest at a colon, so first-match would give the same answer. (Workday's
+    ``co/site`` tenants nest at a *slash*, which is never a candidate position.) Taking the longest
+    keeps the answer right if a Board key ever gains a colon.
+    """
+    best: int | None = None
+    for pos, char in enumerate(job_id):
+        if char == ":" and lower_key(job_id[:pos]) in boards:
+            best = pos
+    return best

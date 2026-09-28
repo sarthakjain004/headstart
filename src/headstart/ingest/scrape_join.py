@@ -16,6 +16,10 @@ The union is also the last stage that *needs* the full records, so it records th
 of re-deriving it from the whole pre-tech-filter snapshot, which is what kept ~9 GB of job text on
 the critical path between the two jobs.
 
+For the same reason it judges which Boards are Dormant, reading each line's ``posted_at`` off the
+parse the union already does (ADR-0250). ``filter_tech`` leaves those Boards' rows out of the Tech
+subset.
+
 Run: python -m headstart.ingest.scrape_join [--shards DIR] [--out DIR]
 """
 
@@ -24,14 +28,17 @@ from __future__ import annotations
 import argparse
 import json
 from collections import Counter
+from datetime import UTC, datetime
 from pathlib import Path
 
 from headstart import log
 from headstart.boards.board_identity import board_key_of, lower_key
 from headstart.ingest import (
+    DORMANT_BOARDS_PATH,
     REPO_ROOT,
     UNAUTHORITATIVE_BOARD_IDS_PATH,
     UNAUTHORITATIVE_BOARDS_PATH,
+    board_dormancy,
     observability,
     shard_speedup,
     write_id_list,
@@ -112,6 +119,29 @@ def write_unauthoritative_boards(
     return unauthoritative
 
 
+def _judge_dormant(
+    dates: board_dormancy.PostedDates, unauthoritative: set[str], path: Path
+) -> None:
+    """Write this run's Dormant Boards for `filter_tech`, and name the biggest in the log."""
+    today = datetime.now(UTC).date()
+    verdict = dates.dormant(today, unauthoritative)
+    board_dormancy.write(verdict, path)
+    biggest = sorted(verdict, key=lambda board: (-dates.jobs(board), board))
+    jobs = sum(dates.jobs(board) for board in verdict)
+    _log.info(
+        f"judged {len(verdict)} Board(s) Dormant, no Job posted since "
+        f"{today - board_dormancy.DORMANT_AFTER}, holding {jobs} scraped line(s) -> {path}"
+        + (
+            ": "
+            + log.named_sample(
+                [f"{b} ({verdict[b]}, {dates.jobs(b)})" for b in biggest]
+            )
+            if verdict
+            else ""
+        )
+    )
+
+
 def write_scraped_boards(boards: set[str], path: Path) -> None:
     """Persist the Boards this run's union covered — the eviction scope itself (ADR-0161).
 
@@ -171,6 +201,13 @@ def main() -> int:
         "(default: data/state/scraped_boards.json)",
     )
     ap.add_argument(
+        "--dormant-boards",
+        default=str(DORMANT_BOARDS_PATH),
+        help="where to record the Boards judged Dormant, for `filter_tech` to leave out of the "
+        "Tech subset and `index sync` to name apart (ADR-0250; default: "
+        "data/state/dormant_boards.json)",
+    )
+    ap.add_argument(
         "--ledger",
         default=str(_LEDGER),
         help="liveness ledger dir, for resolving ids to live Boards the way `index sync` does "
@@ -224,6 +261,7 @@ def main() -> int:
         )
     }
     seen_on_unauthoritative: list[str] = []
+    dates = board_dormancy.PostedDates()
 
     total = 0
     for ats_file, sources in sorted(per_ats.items()):
@@ -235,13 +273,23 @@ def main() -> int:
                         if line.strip():
                             dst.write(line if line.endswith("\n") else line + "\n")
                             try:
-                                job_id = json.loads(line)["id"]
+                                record = json.loads(line)
+                                job_id = record["id"]
                             except (json.JSONDecodeError, KeyError, TypeError) as exc:
                                 # Still fatal — a torn fragment must not join — but named, so
                                 # the abort says which shard's file and line to open.
                                 log.fail(_log, f"{src} line {lineno}: {exc!r}")
                             board = resolve_board(job_id, live)
                             boards.add(board)
+                            # An id on no live Board resolves through `board_of`'s guess, which
+                            # splits a colon-bearing native id into a phantom Board of one Job,
+                            # so such a Board is never judged: it reads as undated.
+                            dates.see(
+                                board,
+                                record.get("posted_at")
+                                if lower_key(board) in live
+                                else None,
+                            )
                             if lower_key(board) in unauthoritative:
                                 seen_on_unauthoritative.append(job_id)
                             n += 1
@@ -254,6 +302,7 @@ def main() -> int:
         f"recorded {len(seen_on_unauthoritative)} id(s) returned by Unauthoritative Board(s) "
         f"-> {args.unauthoritative_ids}"
     )
+    _judge_dormant(dates, unauthoritative, Path(args.dormant_boards))
     # A Board scraped clean with zero jobs writes no line above, so it would never enter the
     # scope and its closed postings would be served forever. `boards_ok` is that evidence; keyed
     # through `board_key_of`, it is the prefix the Board's own ids carry. A truncated Board is in

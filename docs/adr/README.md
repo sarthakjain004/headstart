@@ -245,6 +245,7 @@ supersedes it and note the supersession in both.
 | [0247](0247-search-filters-are-always-open-beside-the-results.md) | Search filters are always open, beside the results on a wide screen | 2026-09-28 |
 | [0248](0248-the-trends-tab-speaks-to-a-job-seeker.md) | The Trends tab speaks to a job seeker: plain words, no ATS names, one caption, a folded note | 2026-09-28 |
 | [0249](0249-a-home-tab-replaces-the-data-tab-and-navigation-moves-to-a-sidebar.md) | A Home tab replaces the Data tab, and navigation moves to a sidebar | 2026-09-28 |
+| [0250](0250-a-board-silent-for-two-years-is-dormant-and-leaves-the-tech-subset.md) | A Board silent for two years is Dormant, and its Jobs leave the Tech subset | 2026-09-28 |
 
 *ADR-0037 was removed from the repository on 2026-09-24 by the owner's decision; its number is not
 reused.*

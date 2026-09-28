@@ -13,6 +13,7 @@ import pytest
 from headstart.boards import board_identity
 from headstart.boards.board_identity import (
     ats_of,
+    board_end,
     board_key,
     board_key_of,
     board_of,
@@ -170,3 +171,17 @@ def test_board_key_of_says_once_when_it_stops_naming_drops(monkeypatch, caplog):
     assert len([r for r in mine if "board_key() failed" in r.message]) == cap
     assert len([r for r in mine if "further board_key_of()" in r.message]) == 1
     assert len(mine) == cap + 1
+
+
+def test_the_longest_nesting_board_owns_the_row():
+    """Defence in depth, asserted on the helper because no live Board key nests at a colon today.
+
+    Workday's ``co/site`` tenants nest at a *slash*, which is never a candidate position, so
+    ``plan_prune``'s output cannot currently tell first-match from longest-match — only the split
+    point can. If a Board key ever gains a colon, first-match would hand the longer Board's rows a
+    native id carrying the rest of the Board key.
+    """
+    live = {"ats:a": "ats:a", "ats:a:b": "ats:a:b"}
+    assert board_end("ats:a:b:R1", live) == 7  # "ats:a:b", not "ats:a" at 5
+    assert board_end("ats:a:zz", live) == 5
+    assert board_end("other:x:1", live) is None

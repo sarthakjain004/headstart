@@ -40,6 +40,8 @@ still holds: the **curated feed** (``python -m headstart`` -> ``harvest``) may n
 here, and ``alerts`` is not the feed::
 
     binpack        LPT packing + shard sizing, shared by both planners
+    board_dormancy Which Boards are Dormant (ADR-0250), judged in scrape_join and read by
+                   filter_tech and index sync
     board_failures The consecutive-gone quarantine ledger (ADR-0058), written in the join
                    and read by scrape_plan
     corpus         A jobs dir read into canonical Job dicts for the embed and index stages
@@ -132,6 +134,11 @@ UNAUTHORITATIVE_BOARDS_PATH = (
 UNAUTHORITATIVE_BOARD_IDS_PATH = (
     REPO_ROOT / "data" / "state" / "unauthoritative_board_ids.txt"
 )
+
+# The Boards this run judged Dormant (ADR-0250), each with its newest posting date, written by
+# `scrape_join` and read by `filter_tech` and `index sync`. Under data/state so it rides the
+# corpus-state artifact to the merge job; it also lands on HF, a record of which Boards were Dormant.
+DORMANT_BOARDS_PATH = REPO_ROOT / "data" / "state" / "dormant_boards.json"
 
 # How many times a fetch replaced each Job's held description, and a hash of the text it held
 # before the last replacement (ADR-0207). Written by `update_descriptions`, rewritten in full each

@@ -417,6 +417,9 @@ def _join_snapshot(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         "data/jobs",
         "--unauthoritative-boards",
         "data/state/unauthoritative_boards.json",
+        # Pinned under tmp_path: it defaults to the repo's real data/state/ (ADR-0250).
+        "--dormant-boards",
+        "data/state/dormant_boards.json",
         "--speedup-ledger",
         "data/state/shard_speedup.csv",
     )
@@ -445,7 +448,16 @@ def _tech_gate(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     )
     for ats in ("jazzhr", "jobvite", "sensehq"):
         _jsonl(Path(f"data/jobs/{ats}.jsonl"), ())
-    _run_main(filter_tech, monkeypatch, "--src", "data/jobs", "--dst", "data/jobs/tech")
+    _run_main(
+        filter_tech,
+        monkeypatch,
+        "--src",
+        "data/jobs",
+        "--dst",
+        "data/jobs/tech",
+        "--dormant-boards",
+        "data/state/dormant_boards.json",
+    )
 
 
 def _tech_gate_nothing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -455,7 +467,16 @@ def _tech_gate_nothing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.chdir(tmp_path)
     for ats in ("jazzhr", "jobvite", "sensehq"):
         _jsonl(Path(f"data/jobs/{ats}.jsonl"), ())
-    _run_main(filter_tech, monkeypatch, "--src", "data/jobs", "--dst", "data/jobs/tech")
+    _run_main(
+        filter_tech,
+        monkeypatch,
+        "--src",
+        "data/jobs",
+        "--dst",
+        "data/jobs/tech",
+        "--dormant-boards",
+        "data/state/dormant_boards.json",
+    )
 
 
 def _descriptions(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1253,6 +1274,7 @@ def _index_paths(**over: object) -> argparse.Namespace:
         upgrades="data/state/pending_upgrades.txt",
         unauthoritative_boards="data/state/unauthoritative_boards.json",
         unauthoritative_ids="data/state/unauthoritative_board_ids.txt",
+        dormant_boards="data/state/dormant_boards.json",
         unconfirmed="data/state/unconfirmed_ids.txt",
         eviction_queue="data/state/eviction_queue.tsv",
         **over,
