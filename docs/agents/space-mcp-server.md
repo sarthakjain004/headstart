@@ -40,7 +40,7 @@ to it — so a company you hid on the website is **not** hidden from an agent's 
    into `~/.claude.json`; to keep it out of that file, export `HEADSTART_AGENT_TOKEN` in your shell
    and use a project `.mcp.json` whose `env` says `"HEADSTART_AGENT_TOKEN": "${HEADSTART_AGENT_TOKEN}"`.
 
-3. **Check it.** `/mcp` in Claude Code lists `headstart-space` with three tools. Without a client:
+3. **Check it.** `/mcp` in Claude Code lists `headstart-space` and its tools. Without a client:
 
    ```bash
    npx @modelcontextprotocol/inspector@2.8.0 --cli \

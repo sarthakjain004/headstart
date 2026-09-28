@@ -42,6 +42,9 @@ TOOLS: list[dict[str, Any]] = [tool.listing() for tool in REGISTRY]
 
 #: Loaded at startup even when a client's tool search defers the tool definitions, so it names
 #: every tool and when to use it — built from the tools themselves, so a new tool is in it.
+#: What a client reads of the instructions: Claude Code cuts them at 2,048 characters.
+INSTRUCTIONS_LIMIT = 2048
+
 _INSTRUCTIONS_OPENING = (
     "HeadStart indexes software and tech job openings read directly from company ATS boards, "
     "worldwide, English-language postings only."
@@ -61,15 +64,27 @@ INSTRUCTIONS = " ".join(
 
 
 def _within_budget(tool: SpaceTool, text: str) -> str:
-    """``text`` cut at the tool's budget, saying so — a guard for a rendering that grows past
-    what its tests measured, so no answer reaches the client's output cap."""
+    """``text`` cut to the tool's budget, saying so — a guard for a rendering that grows past
+    what its tests measured, so no answer reaches the client's output cap. It drops whole lines
+    from the end of the body, never the last line (every answer's freshness line), and never cuts
+    inside a line, so no quoted field is split."""
     if len(text) <= tool.max_chars:
         return text
     _log.warning(
         "%s answer cut: %d > %d characters", tool.name, len(text), tool.max_chars
     )
-    note = f"\n…answer cut at {tool.max_chars:,} characters; narrow the question."
-    return text[: tool.max_chars - len(note)] + note
+    *body, last = text.split("\n")
+    note = "…answer cut to fit; narrow the question to see the rest."
+    if len(last) + len(note) + 2 > tool.max_chars:
+        # No line structure to cut along: keep what fits, then say so.
+        return text[: tool.max_chars - len(note) - 1] + "\n" + note
+    kept, size = [], len(last) + len(note) + 2
+    for line in body:
+        if size + len(line) + 1 > tool.max_chars:
+            break
+        kept.append(line)
+        size += len(line) + 1
+    return "\n".join([*kept, note, last])
 
 
 def call(client: SpaceClient, name: str, arguments: dict[str, Any]) -> str:

@@ -14,6 +14,9 @@ from headstart.space_mcp import scraped_text
 from headstart.space_mcp.space_client import SpaceClient, SpaceRoute
 from headstart.space_mcp.space_tool import SpaceTool
 
+#: A company name past this is cut, as search cuts one.
+COMPANY_FIELD = 60
+
 _LENS_WORDS = {
     "expansion": "net growth in tech openings, with the steps that are not hiring removed",
     "volume": "jobs opened",
@@ -32,7 +35,8 @@ def _count(value: int | None) -> str:
 def _row(rank: int, row: dict[str, Any]) -> str:
     rate = "not counted" if row.get("rate") is None else f"{row['rate']}%"
     return (
-        f"{rank:>2}. {scraped_text.quoted(row.get('company'))} · key {row.get('key')} · "
+        f"{rank:>2}. {scraped_text.quoted(row.get('company'), COMPANY_FIELD)} · key "
+        f"{row.get('key')} · "
         f"{row.get('operator')} · {row.get('stock', 0):,} open now · net "
         f"{_change(row.get('net'))} · opened {_count(row.get('opened'))} · closed "
         f"{_count(row.get('closed'))} · rate {rate}"

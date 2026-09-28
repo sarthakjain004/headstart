@@ -25,6 +25,10 @@ SPLITS = {"category": None, "level": "bands", "role": "roles", "company": "compa
 #: How many lines a concise answer lists, largest moves first.
 CONCISE_LINES = 8
 
+#: How many of a window's Marked changes a full answer names, newest last: a long window can hold
+#: dozens.
+MARKED_CHANGES_SHOWN = 20
+
 #: Why a line's percentage is withheld, in words (`line_reading.MOSTLY_RECOUNTED`).
 _WITHHELD_WORDS = {
     "mostly_recounted": "most of this line's change is re-counting, not hiring",
@@ -130,7 +134,7 @@ def answer(client: SpaceClient, arguments: dict[str, Any]) -> str:
             "Companies: "
             + "; ".join(pick.described() for pick in picks)
             + ". A name is read as the directory's largest company of that name, as the site's "
-            "Trends picker reads it."
+            "Trends picker reads it; a different employer with the same name is not included."
         )
     if category:
         head.append(f"Category: {payload.get('family_label') or category}.")
@@ -194,12 +198,14 @@ def answer(client: SpaceClient, arguments: dict[str, Any]) -> str:
             f"  {_label(line, breakdown)}: {_move(line['move'], causes=full)}"
             for line in shown
         ]
-    if full and reading.get("marked_changes"):
+    if full and (changes := reading.get("marked_changes")):
+        shown_changes = changes[-MARKED_CHANGES_SHOWN:]
+        earlier = len(changes) - len(shown_changes)
         lines.append(
             "Marked changes: "
+            + (f"…{earlier} earlier; " if earlier else "")
             + "; ".join(
-                f"{change['ts'][:10]} {change['label']}"
-                for change in reading["marked_changes"]
+                f"{change['ts'][:10]} {change['label']}" for change in shown_changes
             )
             + "."
         )

@@ -9,6 +9,7 @@ test client — the port's second adapter — and what is asserted is the text a
 
 from __future__ import annotations
 
+import dataclasses
 from datetime import UTC, datetime
 from urllib.parse import urlsplit
 
@@ -186,3 +187,168 @@ def test_the_agent_token_opens_the_wall_and_no_token_is_refused(agent_app):  # n
     assert "jobs match these filters" in through
     with pytest.raises(ToolFailure, match="rejected the agent token"):
         server.call(_client(agent_app, token="wrong"), "search_jobs", {})
+
+
+@pytest.fixture
+def salaried(companies_app, monkeypatch):
+    """The fixture table as a migrated one: the ADR-0082 salary columns present and two
+    currencies served — `JobSearch.capabilities` is the one object a test swaps for that."""
+    capabilities = dataclasses.replace(
+        companies_app._searcher.capabilities,
+        has_min_salary_annual=True,
+        currencies=["INR", "USD"],
+    )
+    monkeypatch.setattr(companies_app._searcher, "capabilities", capabilities)
+    return companies_app
+
+
+def test_every_search_argument_reaches_the_app_as_the_filter_it_names(salaried, parsed):
+    server.call(
+        _client(salaried),
+        "search_jobs",
+        {
+            "query": "backend engineer",
+            "company": "Acme",
+            "remote": True,
+            "has_salary": True,
+            "max_years": 5,
+            "employment_type": "contract",
+            "india_place": "bengaluru",
+            "location": "Pune",
+            "salary_min": 3_000_000,
+            "salary_max": 9_000_000,
+            "salary_currency": "INR",
+            "posted_within_days": 7,
+            "first_seen_within_hours": 24,
+            "keyword": "rust",
+            "keyword_in": "title",
+            "ats": "greenhouse",
+            "sort": "salary",
+        },
+    )
+    got = {
+        field: getattr(parsed[0], field)
+        for field in (
+            "company",
+            "remote",
+            "has_salary",
+            "max_years",
+            "etype",
+            "india",
+            "location",
+            "salary_min",
+            "salary_max",
+            "salary_currency",
+            "posted_within",
+            "seen_within",
+            "kw",
+            "kw_in",
+            "ats",
+        )
+    }
+    assert got == {
+        "company": "Acme",
+        "remote": True,
+        "has_salary": True,
+        "max_years": 5,
+        "etype": "contract",
+        "india": "bengaluru",
+        "location": "Pune",
+        "salary_min": 3_000_000,
+        "salary_max": 9_000_000,
+        "salary_currency": "INR",
+        "posted_within": 7,
+        "seen_within": 24,
+        "kw": "rust",
+        "kw_in": "title",
+        "ats": "greenhouse",
+    }
+
+
+def test_a_salary_bound_on_a_migrated_table_reaches_it(salaried, parsed):
+    text = server.call(
+        _client(salaried),
+        "search_jobs",
+        {"salary_min": 3_000_000, "salary_currency": "INR", "sort": "salary"},
+    )
+    assert parsed[0].salary_min == 3_000_000
+    assert "salary at least 3,000,000 INR a year" in text
+    assert "highest salary first, in INR across every match" in text
+
+
+def test_a_category_hands_over_one_companys_jobs_of_that_category(
+    companies_app, monkeypatch
+):
+    """`category` needs a directory company: "Citi" is read as the picker's Citi, and the app
+    narrows its Board to that company's jobs of the category by id (ADR-0057)."""
+    monkeypatch.setattr(
+        companies_app,
+        "_FAMILY_IDS",
+        {"software-engineering": ["workday:citi/2:7", "workday:hpe/a:1"]},
+    )
+    monkeypatch.setattr(
+        companies_app, "_KNOWN_FAMILIES", frozenset({"software-engineering"})
+    )
+    clauses = []
+    real = companies_app.job_search.scoped_jobs_clause
+
+    def recording(*args, **kwargs):
+        clause = real(*args, **kwargs)
+        clauses.append(clause)
+        return clause
+
+    monkeypatch.setattr(companies_app.job_search, "scoped_jobs_clause", recording)
+    text = server.call(
+        _client(companies_app),
+        "search_jobs",
+        {"company": "Citi", "category": "software-engineering"},
+    )
+    assert clauses and all(
+        "workday:citi/2:7" in clause and "hpe" not in clause for clause in clauses
+    )
+    assert "category needs a directory company" in text
+
+
+def test_hot_rows_the_tab_hides_are_left_out_by_the_apps_own_list(
+    companies_app, monkeypatch
+):
+    """The app names the Operators it hides (`hidden_by_default`, ADR-0238's amendment); the
+    server reads that list, so the page and the agent leave out the same rows."""
+    row = {
+        "boards": ["workday:x"],
+        "atses": ["workday"],
+        "stock": 300,
+        "net": 20,
+        "opened": 40,
+        "closed": 20,
+        "closures_uncounted_boards": 0,
+        "boards_in_scope": 1,
+        "rate": 13,
+    }
+    hot = {
+        "window": {"base": "2026-08-11", "from": "2026-08-12", "to": "2026-08-13"},
+        "lenses": {
+            "expansion": [
+                {
+                    **row,
+                    "key": "workday:acme",
+                    "company": "Acme",
+                    "operator": "employer",
+                },
+                {
+                    **row,
+                    "key": "workday:temps",
+                    "company": "Temps Inc",
+                    "operator": "staffing",
+                },
+            ],
+            "volume": [],
+            "rate": [],
+        },
+        "counts": {"ranked": 2, "min_stock": 25},
+        "hidden_by_default": ["staffing", "aggregator"],
+    }
+    monkeypatch.setattr(companies_app, "_HOT", hot)
+    text = server.call(_client(companies_app), "hiring_now", {})
+    assert '"Acme"' in text and '"Temps Inc"' not in text
+    assert "1 aggregator and staffing rows hidden" in text

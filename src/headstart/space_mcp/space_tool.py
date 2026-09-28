@@ -20,9 +20,10 @@ from headstart.space_mcp.space_client import SpaceClient
 #: schema and with its defaults filled) -> the text the model reads.
 Answer = Callable[[SpaceClient, dict[str, Any]], str]
 
-#: The most any answer may run: about 10,000 tokens, Claude Code's warning threshold. A tool's
-#: own `max_chars` is at most this.
-ANSWER_CEILING_CHARS = 40_000
+#: The most any answer may run: under Claude Code's 10,000-token warning even for text dense with
+#: links and ids, which tokenizes nearer 3 characters a token than 4. A tool's own `max_chars` is
+#: at most this.
+ANSWER_CEILING_CHARS = 30_000
 
 
 @dataclass(frozen=True)

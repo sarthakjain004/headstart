@@ -444,7 +444,7 @@ TOOL = SpaceTool(
             "limit": {
                 "type": "integer",
                 "minimum": 1,
-                "maximum": 50,
+                "maximum": 40,
                 "default": 10,
             },
             "page": {
@@ -466,5 +466,5 @@ TOOL = SpaceTool(
         "Use search_jobs to find openings: put the role in `query`, and years, pay, place, company and dates in their own fields — never in `query`."
     ),
     answer=answer,
-    max_chars=36_000,
+    max_chars=30_000,
 )

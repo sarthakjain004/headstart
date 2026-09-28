@@ -20,10 +20,11 @@ import sys
 
 import pytest
 
-from headstart.mcp_protocol import stdio
+from headstart.mcp_protocol import stdio, tool_arguments
 from headstart.mcp_protocol.stdio import ToolFailure
 from headstart.space_mcp import server
 from headstart.space_mcp import space_client as sc
+from headstart.space_mcp.tools import REGISTRY
 
 R = sc.SpaceRoute
 
@@ -105,6 +106,14 @@ def _suggestion(key, label, match="exact", boards=None, openings=217):
     }
 
 
+def _answer(name, space, arguments):
+    """A tool's own rendering, before the server's size guard: what its budget measures."""
+    tool = server.BY_NAME[name]
+    return tool.answer(
+        space, tool_arguments.with_defaults(tool.input_schema, arguments)
+    )
+
+
 def _search_space(rows, total=None, **answers):
     return FakeSpace(
         search=rows,
@@ -121,7 +130,7 @@ def test_an_unconfigured_server_lists_its_tools_and_names_the_variable():
     listed = stdio.handle(
         {"jsonrpc": "2.0", "id": 1, "method": "tools/list"}, unconfigured
     )
-    assert len(listed["result"]["tools"]) == 3
+    assert len(listed["result"]["tools"]) == len(REGISTRY)
     called = stdio.handle(
         {
             "jsonrpc": "2.0",
@@ -158,9 +167,7 @@ def test_a_real_client_handshake_over_a_real_subprocess():
     assert [r["id"] for r in replies] == [1, 2], done.stderr
     assert replies[0]["result"]["instructions"] == server.INSTRUCTIONS
     assert [t["name"] for t in replies[1]["result"]["tools"]] == [
-        "search_jobs",
-        "read_trends",
-        "hiring_now",
+        tool.name for tool in REGISTRY
     ]
 
 
@@ -171,7 +178,7 @@ def test_a_real_client_handshake_over_a_real_subprocess():
     ("arguments", "words"),
     [
         ({"account": "me"}, "unknown argument(s) account"),
-        ({"limit": 500}, "from 1 to 50"),
+        ({"limit": 500}, "from 1 to 40"),
         ({"india_place": "bangalore"}, "`india_place` must be one of"),
         ({"salary_min": 3_000_000}, "need salary_currency"),
         ({"keyword_in": "title"}, "send keyword too"),
@@ -378,9 +385,9 @@ def test_full_detail_adds_the_facet_counts_capped_per_dimension():
     assert "…8 more" in text
 
 
-#: Worst case — every field at its clip and 300-character links — and still under Claude Code's
-#: 10,000-token warning (about 40,000 characters) at the largest page.
-@pytest.mark.parametrize(("limit", "budget"), [(10, 8_000), (50, 36_000)])
+#: Worst case — every field at its clip and 300-character links — at the largest page, measured on
+#: the tool's own rendering (`_answer`), not after the server's cut, which would make it pass.
+@pytest.mark.parametrize(("limit", "budget"), [(10, 8_000), (40, 30_000)])
 def test_a_search_answer_stays_inside_its_budget(limit, budget):
     long = "x" * 5_000
     rows = [
@@ -712,10 +719,8 @@ def test_a_count_the_space_did_not_measure_is_not_shown_as_zero():
 
 def test_a_hiring_now_answer_stays_inside_its_budget():
     rows = [_hot_row(n, company="y" * 5_000) for n in range(60)]
-    assert (
-        len(server.call(FakeSpace(hot=_hot(rows)), "hiring_now", {"limit": 50}))
-        <= 14_000
-    )
+    text = _answer("hiring_now", FakeSpace(hot=_hot(rows)), {"limit": 50})
+    assert len(text) <= server.BY_NAME["hiring_now"].max_chars
 
 
 def test_a_window_with_no_counts_says_so():
@@ -729,15 +734,37 @@ def test_a_window_with_no_counts_says_so():
     assert "reconcile" not in text
 
 
-def test_an_answer_past_its_tools_budget_is_cut_and_says_so(monkeypatch):
+def test_an_answer_past_its_tools_budget_is_cut_on_lines_and_keeps_its_last(
+    monkeypatch,
+):
     """The guard behind every tool's budget test: a rendering that grows past what was measured
-    is cut before it reaches the client's output cap, never sent whole."""
+    is cut along lines before it reaches the client's output cap — never inside a quoted field,
+    and never losing the last line, where every answer says how fresh it is."""
     tool = server.BY_NAME["hiring_now"]
+    long_answer = "\n".join(f'{n}. "Company {n}" · ' + "x" * 200 for n in range(1_000))
+    long_answer += "\nNewest trends tick 2026-09-28T06:23:08+00:00."
     monkeypatch.setitem(
         server.BY_NAME,
         "hiring_now",
-        dataclasses.replace(tool, answer=lambda client, arguments: "x" * 100_000),
+        dataclasses.replace(tool, answer=lambda client, arguments: long_answer),
     )
     text = server.call(FakeSpace(), "hiring_now", {})
-    assert len(text) == tool.max_chars
-    assert text.endswith("narrow the question.")
+    assert len(text) <= tool.max_chars
+    assert text.endswith("\nNewest trends tick 2026-09-28T06:23:08+00:00.")
+    assert "answer cut to fit; narrow the question" in text
+    assert all(line in long_answer.split("\n") for line in text.split("\n")[:-2])
+
+
+@pytest.mark.skipif(
+    not os.environ.get(server.TOKEN_VAR),
+    reason=f"live: set {server.TOKEN_VAR} to the Space's AGENT_TOKEN to run against the Space",
+)
+def test_live_each_tool_answers_from_the_deployed_space():
+    """Every registered tool, once, against the real Space — the one test that crosses HF's
+    edge. Asserts shape, never numbers, which move with every pipeline run."""
+    token = os.environ[server.TOKEN_VAR]
+    base = os.environ.get(server.URL_VAR) or sc.SPACE_URL
+    for tool in REGISTRY:
+        text = server.call(sc.SpaceClient(token, base=base), tool.name, {})
+        assert text.strip(), tool.name
+        assert len(text) <= tool.max_chars, tool.name

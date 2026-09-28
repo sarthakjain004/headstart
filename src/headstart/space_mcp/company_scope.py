@@ -75,8 +75,9 @@ class CompanyScope:
         return [("company", self.substring or "")]
 
 
-#: A Board key's shape: a lower-case ATS name, a colon, then a slug with no spaces.
-_KEY_SHAPE = re.compile(r"[a-z][a-z0-9_]*:\S+")
+#: A Board key's shape: an ATS name, a colon, then a slug with no spaces. Case-blind, as the
+#: lookup is ("Lever:Razorpay" is a key); a name of that shape ("Ed:Za") costs one lookup.
+_KEY_SHAPE = re.compile(r"[A-Za-z][A-Za-z0-9_]*:\S+")
 
 
 def _looks_like_key(value: str) -> bool:
@@ -104,8 +105,8 @@ def lookup(client: SpaceClient, keys: list[str]) -> list[DirectoryCompany]:
 def _suggestion_list(items: list[dict[str, Any]]) -> str:
     return "; ".join(
         f"{scraped_text.quoted(item.get('label') or item.get('name'))} — key {item['key']}, "
-        f"{', '.join(item.get('atses') or [])}, {item.get('openings', 0):,} openings, "
-        f"{item.get('match', '?')} match"
+        f"{', '.join(item.get('atses') or [])}, {item.get('boards', 1)} Board(s), "
+        f"{item.get('openings', 0):,} openings, {item.get('match', '?')} match"
         for item in items
     )
 

@@ -99,11 +99,13 @@ def test_a_tool_is_read_only_and_its_listing_says_so(tool):
 def test_a_tool_is_introduced_by_the_server_instructions(tool):
     assert tool.when_to_use in server.INSTRUCTIONS
     assert tool.name in tool.when_to_use
-    assert len(tool.when_to_use) <= 250
+    assert len(tool.when_to_use) <= 200
 
 
 def test_the_instructions_stay_under_the_clients_cut():
-    assert len(server.INSTRUCTIONS) <= 1000
+    """Built from every tool's sentence, so they grow with the registry: at 200 characters a
+    tool, the cut leaves room for about six more before sentences must shorten."""
+    assert len(server.INSTRUCTIONS) <= server.INSTRUCTIONS_LIMIT
 
 
 def test_a_tools_budget_is_under_the_clients_warning(tool):
@@ -124,5 +126,22 @@ def test_categories_are_the_spaces_own_role_families():
 
 def test_without_the_families_file_category_is_a_free_string(monkeypatch, tmp_path):
     monkeypatch.setattr(role_families, "FILE", tmp_path / "missing.json")
-    schema = role_families.schema("A category.")
+    role_families.names.cache_clear()
+    try:
+        schema = role_families.schema("A category.")
+    finally:
+        role_families.names.cache_clear()
     assert "enum" not in schema and schema["type"] == "string"
+
+
+def test_the_families_are_read_once_so_a_missing_file_warns_once(
+    monkeypatch, tmp_path, caplog
+):
+    monkeypatch.setattr(role_families, "FILE", tmp_path / "missing.json")
+    role_families.names.cache_clear()
+    try:
+        role_families.schema("One.")
+        role_families.schema("Two.")
+    finally:
+        role_families.names.cache_clear()
+    assert caplog.text.count("role families not readable") == 1

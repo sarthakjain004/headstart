@@ -1,6 +1,6 @@
 """A local MCP server that reads the deployed HeadStart Space for an agent (ADR-0253).
 
-Three read-only tools — `search_jobs`, `read_trends`, `hiring_now` — served over stdio to an agent
+Read-only tools — today `search_jobs`, `read_trends` and `hiring_now` — served over stdio to an agent
 on the same machine. Every answer comes from the Space's own read routes, reached with a
 read-scoped `AGENT_TOKEN`, so its numbers are the website's.
 
