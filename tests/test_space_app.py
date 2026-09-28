@@ -3790,3 +3790,49 @@ def test_a_too_long_resume_refunds_its_reserved_read(sets_app, hub, monkeypatch)
         client.get("/profile", base_url=_HTTPS).json["parses_left"]
         == sets_app.MAX_PARSES
     )
+
+
+def test_every_response_carries_the_hardening_headers(sets_app, monkeypatch):
+    """#595: nosniff, a referrer policy, and framing limited to the Space's own page on
+    huggingface.co, which iframes the app — never 'none', or that frame goes blank."""
+    client = _signed_in(sets_app, monkeypatch)
+    for r in (
+        client.get("/profile", base_url=_HTTPS),
+        client.get("/static/app.js", base_url=_HTTPS),
+    ):
+        assert r.headers["X-Content-Type-Options"] == "nosniff"
+        assert r.headers["Referrer-Policy"] == "strict-origin-when-cross-origin"
+        assert (
+            r.headers["Content-Security-Policy"]
+            == "frame-ancestors 'self' https://huggingface.co"
+        )
+
+
+def test_the_hardening_headers_leave_a_gzipped_static_304_alone(sets_app, monkeypatch):
+    client = _signed_in(sets_app, monkeypatch)
+    first = client.get(
+        "/static/app.js", base_url=_HTTPS, headers={"Accept-Encoding": "gzip"}
+    )
+    assert first.headers.get("Content-Encoding") == "gzip"
+    again = client.get(
+        "/static/app.js",
+        base_url=_HTTPS,
+        headers={"Accept-Encoding": "gzip", "If-None-Match": first.headers["ETag"]},
+    )
+    assert again.status_code == 304
+    assert again.headers["X-Content-Type-Options"] == "nosniff"
+
+
+@pytest.mark.parametrize(
+    ("method", "path"),
+    [("post", "/profile"), ("post", "/profile/parse"), ("post", "/subscribe")],
+)
+def test_a_json_array_body_is_refused_not_a_500(
+    sets_app, hub, monkeypatch, method, path
+):
+    """#595: `request.get_json() or {}` let a JSON array through to `.get()`."""
+    client = _signed_in(sets_app, monkeypatch)
+    r = getattr(client, method)(path, json=[], base_url=_HTTPS)
+    assert (
+        r.status_code < 500
+    )  # read as an empty object: a 400, or /profile's no-op save

@@ -362,6 +362,30 @@ def _service_caller() -> bool:
     )
 
 
+#: Set on every answer (#595). Framing is limited, not forbidden: huggingface.co's Space page
+#: iframes this app, and its sign-in door is how a visitor there reaches the direct URL.
+_HARDENING_HEADERS = {
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "strict-origin-when-cross-origin",
+    "Content-Security-Policy": "frame-ancestors 'self' https://huggingface.co",
+}
+
+
+@app.after_request
+def _hardening_headers(response):
+    """Headers only: a gzipped body, a 304 and the cache headers pass through untouched."""
+    for name, value in _HARDENING_HEADERS.items():
+        response.headers.setdefault(name, value)
+    return response
+
+
+def _json_object() -> dict:
+    """The request's JSON body when it is an object, else ``{}``: a JSON array or scalar
+    reached ``.get()`` and answered 500 (#595); as ``{}`` it meets each route's own 400."""
+    body = request.get_json(silent=True)
+    return body if isinstance(body, dict) else {}
+
+
 @app.before_request
 def _require_sign_in():
     if not _AUTH_ON or request.path in _PUBLIC_PATHS:
@@ -503,7 +527,7 @@ def set_company():
     if not gate:
         return jsonify({"error": "accounts are not configured here"}), 503
     email, store = gate
-    body = request.get_json(silent=True) or {}
+    body = _json_object()
     board = str(body.get("board") or "").strip()
     action = str(body.get("action") or "").strip()
     if not board or action not in ("follow", "hide", "clear"):
@@ -621,7 +645,7 @@ def save_profile():
     used = _parses(store, account)
     if used is None:
         return jsonify({"error": "profile is temporarily unavailable — try again"}), 503
-    body = request.get_json(silent=True) or {}
+    body = _json_object()
     body["query"] = profile_extract.scrub_query(str(body.get("query") or ""))
     current = store.get_profile(account) or Profile.blank(email)
     updated = current.revised(body)
@@ -673,7 +697,7 @@ def _run_resume_read(email: str, store: Store, account: str):
         return jsonify(
             {"error": f"no résumé reads left — this account has used all {MAX_PARSES}"}
         ), 400
-    body = request.get_json(silent=True) or {}
+    body = _json_object()
     # Reserved before the router is asked, and handed back only where ADR-0041 says nothing is
     # spent (#596): a failed reservation is a 503 with the router never reached.
     store.put_parses(account, used + 1)
@@ -732,7 +756,7 @@ def subscribe():
     caller-supplied address would let anyone sign a stranger up."""
     if not _ALERTS_ON:
         return jsonify({"error": "email alerts are not configured"}), 503
-    body = request.get_json(silent=True) or {}
+    body = _json_object()
 
     query = (body.get("query") or "").strip()
     if not query:
@@ -865,7 +889,7 @@ def save_set():
         return jsonify({"error": "saved sets are not configured"}), 503
     email, store = gate
     with store.atomic():
-        body = request.get_json(silent=True) or {}
+        body = _json_object()
         name = str(body.get("name") or "").strip()
         query = str(body.get("query") or "").strip()
         if not name:
@@ -931,7 +955,7 @@ def set_email(set_id: str):
         current = store.get_set(account, set_id)
         if not current:
             return jsonify({"error": "no such set"}), 404
-        body = request.get_json(silent=True) or {}
+        body = _json_object()
         turn_on = bool(body.get("on"))
 
         if turn_on:
@@ -985,7 +1009,7 @@ def star_job():
     email, store = gate
     # `job_id`, not `id`: the response's `id` is the RECORD id, and one key meaning two
     # things across request and response was a trap waiting for a caller.
-    body = request.get_json(silent=True) or {}
+    body = _json_object()
     job_id = str(body.get("job_id") or "").strip()
     title = str(body.get("title") or "").strip()
     if not job_id or not title:
@@ -1330,7 +1354,7 @@ def auth_google():
     their own gates — this wall is identity, not entitlement."""
     if not _AUTH_ON:
         return jsonify({"error": "sign-in is not configured"}), 503
-    body = request.get_json(silent=True) or {}
+    body = _json_object()
     try:
         email = identity.verify(str(body.get("credential") or ""), _GOOGLE_CLIENT_ID)
     except identity.IdentityError as exc:
