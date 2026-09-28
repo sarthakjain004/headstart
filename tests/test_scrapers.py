@@ -10726,6 +10726,37 @@ def test_oracle_pages_past_the_first_200():
     assert len({j.id for j in jobs}) == 299
 
 
+def test_oracle_serves_every_place_a_posting_names():
+    """fa-esfc req 16121, live 2026-09-28 (trimmed): primary Innisfail, secondary Stettler. Only
+    the primary was served, so the posting was invisible to a search for its second place (6 of
+    200 listing rows on this Board name more than one)."""
+    from headstart.scrapers.oracle import OracleScraper
+
+    listed = {
+        "Id": "16121",
+        "Title": "Maintenance Worker",
+        "PrimaryLocation": "Innisfail, AB, Canada",
+    }
+    detail = {
+        "PrimaryLocation": "Innisfail, AB, Canada",
+        "secondaryLocations": [
+            {
+                "RequisitionLocationId": 300000703579716,
+                "Name": "Stettler, AB, Canada",
+                "CountryCode": "CA",
+            }
+        ],
+    }
+    s = OracleScraper("fa-esfc-saasfaprod1.fa.ocs.oraclecloud.com", "ESFC")
+    [job] = s.parse(
+        {"requisitionList": [listed], "details": {"16121": detail}}, SCRAPED_AT
+    )
+    assert job.location == "Innisfail, AB, Canada; Stettler, AB, Canada"
+    # a posting naming one place is served as before
+    [single] = s.parse({"requisitionList": [listed], "details": {}}, SCRAPED_AT)
+    assert single.location == "Innisfail, AB, Canada"
+
+
 def test_zwayam_parse():
     raw = _load("zwayam_tavant.json")
     jobs = get_scraper("zwayam", "careers.tavant.com", "Tavant").parse(raw, SCRAPED_AT)

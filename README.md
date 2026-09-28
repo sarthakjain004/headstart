@@ -134,8 +134,8 @@ Board no source names is served under its humanised tenant (`nvidia.wd5.myworkda
 a vendor's code (Oracle's pods, ADP's GUIDs). A name is a display value, never an identity, which
 is why `CompanyPrefs` is keyed by **board_key** and never by company name.
 
-The liveness pipeline has probed **312,236 ledger rows**: 191,254 live, 104,128 dead, 16,854 unknown
-— rows, not boards; they collapse to 184,618 Unique Boards once duplicate spellings of the same
+The liveness pipeline has probed **312,236 ledger rows**: 191,257 live, 109,794 dead, 11,185 unknown
+— rows, not boards; they collapse to 184,621 Unique Boards once duplicate spellings of the same
 board are folded together and the 4 with a `dead` row newer than their newest `live` row are dropped (`CONTEXT.md` §Counting
 Boards).
 

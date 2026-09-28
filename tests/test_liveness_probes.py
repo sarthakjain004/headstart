@@ -142,6 +142,23 @@ def test_taleo_enterprise_liveness_counts_the_scraper_listing(monkeypatch):
     assert fetched == ["https://acme.taleo.net/careersection/2/jobsearch.ftl?lang=en"]
 
 
+def test_taleo_enterprise_liveness_calls_an_unresolvable_host_dead(monkeypatch):
+    """danaher.taleo.net has no DNS record (`dig @1.1.1.1` empty, curl code 6, 2026-09-28); 52 of 60
+    sampled hosts behind the ledger's 6,763 `unknown` rows answer the same. A host that does not
+    exist is an answer, as `p_taleo_be` already reads it, not a retryable failure."""
+
+    def fetch(method, url, **kwargs):
+        raise cl.http.RequestsError(
+            "Failed to perform, curl: (6) Could not resolve host: danaher.taleo.net",
+            code=cl._DNS_ERR,
+        )
+
+    monkeypatch.setattr(cl.http, "fetch", fetch)
+    assert cl.p_taleo_enterprise(
+        "danaher", "https://danaher.taleo.net/careersection/2/jobsearch.ftl"
+    ) == (cl.DEAD, None)
+
+
 def _join_stub(page_props, jobs_rowcount=None):
     """Stub _get for p_join: the company page carries __NEXT_DATA__.pageProps; the jobs API returns
     a pagination.rowCount."""
