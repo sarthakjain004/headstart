@@ -866,10 +866,10 @@ def is_non_public(board: str) -> bool:
     decides between them. A Taleo Business Edition ``cws`` and an ADP ``ccId`` are numbers, which
     name nothing. Any other ATS's groups hold one Board, so the answer never decides anything
     there."""
-    return names_non_public(board.partition("/")[2])
+    return site_is_non_public(board.partition("/")[2])
 
 
-def names_non_public(site: str) -> bool:
+def site_is_non_public(site: str) -> bool:
     """Whether ``site`` — a lowercased Board key's site segment, or an iCIMS portal's host label,
     whose key has no ``/`` — carries a :data:`_NON_PUBLIC_SITE_TOKENS` token."""
     return any(token in site for token in _NON_PUBLIC_SITE_TOKENS)

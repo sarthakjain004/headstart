@@ -64,8 +64,18 @@ The four public Beaumont portals the Consequences above bury onto `internal-beau
 defect #794 found in Taleo's section burials: kept, a portal's own links are served, and these are
 the internal portal's. The containment election is now `alias_ledger.bury_contained_keeping_public`
 (ADR-0186's amendment): the public portals elect among themselves, and a portal whose host label
-carries a non-public token (`index_plan.names_non_public`: `internal`, `confidential`, ...) is
+carries a non-public token (`index_plan.site_is_non_public`: `internal`, `confidential`, ...) is
 buried onto the largest kept public portal of its customer that lists all its postings, or left
 unburied. Redirect burials are unchanged: a portal whose sitemap iCIMS redirects to an
 internal-named one (`application-chesterton` to `internalcareers-chesterton`) is read from that
 list either way.
+
+The re-run of 2026-09-28 shows what this costs on iCIMS. Beaumont's public portals are disjoint
+slices (3, 8, 3 and 2 postings) of `internal-beaumonthospital` (19), so none contains it and all
+five stay: the 16 postings they share are served twice, once per portal. Taleo pays nothing for the
+same rule, because `index_plan` groups its sections' rows by Tenant requisition; iCIMS is not in
+`_TENANT_REQUISITION_ATSES`, so each portal's rows are their own group. Keeping the internal portal
+instead would bring back #794 itself, since a superset read one posting ahead and a real one look
+the same. Beaumont's internal job pages open without a sign-in; `internal-instructional-scsk12`'s
+(549 postings) do not, and whether an internal portal belongs in `PARKED_BOARDS` is a separate
+question.

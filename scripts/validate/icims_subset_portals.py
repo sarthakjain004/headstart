@@ -43,7 +43,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from headstart.boards import alias_ledger, liveness_ledger
 from headstart.boards.excluded_and_parked import EXCLUDED_BOARDS
-from headstart.ingest.index_plan import names_non_public
+from headstart.ingest.index_plan import site_is_non_public
 from headstart.network import http
 from headstart.scrapers.base import USER_AGENT
 from headstart.scrapers.icims import ICIMSScraper, sitemap_rows
@@ -75,7 +75,7 @@ def burials(
     contained = alias_ledger.bury_contained_keeping_public(
         {p: ids for p, ids in postings.items() if p not in redirects},
         customer_of,
-        lambda portal: names_non_public(portal.split(".", 1)[0]),
+        lambda portal: site_is_non_public(portal.split(".", 1)[0]),
     )
     return {
         **{dup: (keep, "subset-reqs") for dup, keep in contained.items()},

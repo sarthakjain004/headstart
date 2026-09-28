@@ -103,8 +103,8 @@ def test_the_customer_is_the_last_word_of_the_host_label(mod):
 
 def test_a_public_portal_is_not_buried_onto_an_internal_one(mod):
     """#794, as ADR-0254's Consequences recorded it: four public Beaumont portals were buried onto
-    `internal-beaumonthospital`, serving its employee-only links. The internal portal is now
-    buried onto the public one it mirrors instead."""
+    `internal-beaumonthospital`, serving its employee-only links. An internal portal a public one
+    contains is now buried onto that public one instead."""
     internal, general = (
         "internal-beaumonthospital.icims.com",
         "general-beaumonthospital.icims.com",
@@ -116,3 +116,19 @@ def test_a_public_portal_is_not_buried_onto_an_internal_one(mod):
     assert mod.burials(_unredirected(postings), postings) == {
         internal: (general, "subset-reqs")
     }
+
+
+def test_an_internal_portal_no_public_portal_contains_stays_with_its_slices(mod):
+    """The shape the 2026-09-28 re-run measured: Beaumont's public portals are disjoint slices of
+    the internal one, so nothing is buried and the postings they share are served twice."""
+    internal, general, nurses = (
+        "internal-beaumonthospital.icims.com",
+        "general-beaumonthospital.icims.com",
+        "nurses-beaumonthospital.icims.com",
+    )
+    postings = {
+        internal: frozenset({("1", "rn"), ("2", "md"), ("3", "hr")}),
+        general: frozenset({("2", "md")}),
+        nurses: frozenset({("1", "rn")}),
+    }
+    assert mod.burials(_unredirected(postings), postings) == {}
