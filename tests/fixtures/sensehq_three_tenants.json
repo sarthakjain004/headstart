@@ -1,0 +1,88 @@
+{
+ "data": {
+  "count": 3,
+  "rows": [
+   {
+    "id": 56380,
+    "created_on": 1788956242846,
+    "organization_id": 202,
+    "job_status": "OPEN",
+    "updated_on": 1789563369846,
+    "department": "North America Business",
+    "department_id": 38483,
+    "title": "Lead - Quality",
+    "location": "Rudrapur",
+    "open_positions": 1,
+    "experience_end": 7,
+    "experience_start": 5,
+    "description_external": "<p><strong>About Zetwerk</strong></p>\n<p>Founded in 2018, Zetwerk is a global manufacturing platform that enables businesses to bring world-class products to life through a network of trusted supplier",
+    "job_type": "FULLTIME",
+    "code": "QUA04014",
+    "is_critical": false,
+    "workplace_type": null,
+    "office": {
+     "city": "Delhi",
+     "country": "India",
+     "location": "Delhi",
+     "name": "Delhi",
+     "state": "Delhi",
+     "pin_code": "110001"
+    }
+   },
+   {
+    "id": 53886,
+    "created_on": 1740632366358,
+    "organization_id": 279,
+    "job_status": "OPEN",
+    "updated_on": 1740632387406,
+    "department": "Legal Professionals - Associates",
+    "department_id": 37731,
+    "title": "Full Time Member ",
+    "location": "Mumbai,     Mumbai - BKC,     Bangalore,     New Delhi,     Palo Alto,     Singapore,     Munich,     New York,   GIFT City – Gandhinagar",
+    "open_positions": 1,
+    "experience_end": 0,
+    "experience_start": 0,
+    "description_external": "<div style=\"\">Candidate from law school with excellent research and communication skills.&nbsp;</div><div style=\"\"><br></div><div style=\"\">A full time employee with the firm and work from any of its o",
+    "job_type": "FULLTIME",
+    "code": "ASS00039",
+    "is_critical": false,
+    "workplace_type": "ONSITE",
+    "office": {
+     "city": "Mumbai",
+     "country": "India",
+     "location": "93 B, Mittal Court, Nariman Point",
+     "name": "Mumbai",
+     "state": "Maharashtra",
+     "pin_code": "400021"
+    }
+   },
+   {
+    "id": 5800,
+    "created_on": 1790314466791,
+    "organization_id": 5045,
+    "job_status": "OPEN",
+    "updated_on": 1790580524809,
+    "department": "ZBULLET ENTERPRISES LIMITED - Z Bullet - Micro Series - Micro Series - Marketing",
+    "department_id": 4811,
+    "title": "Associate Director - Product - Z bullet",
+    "location": "",
+    "open_positions": 1,
+    "experience_end": 0,
+    "experience_start": 0,
+    "description_external": "",
+    "job_type": "FULLTIME",
+    "code": "5898",
+    "is_critical": false,
+    "workplace_type": null,
+    "office": {
+     "city": "",
+     "country": "India",
+     "location": "Bangalore - M G Road",
+     "name": "ZB03/2203-Bangalore - M G Road",
+     "state": "",
+     "pin_code": null
+    }
+   }
+  ]
+ }
+}

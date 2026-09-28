@@ -418,6 +418,8 @@ ATS_HOSTS: dict[str, tuple[tuple[str, Style], ...]] = {
     "recruitee": _with_style("sub", "recruitee.com"),
     "ripplehire": _with_style("sub", "ripplehire.com"),
     "rippling": _with_style("path", "ats.rippling.com"),
+    # `*.sensehq.com` also hosts vendor labels (`auth`, `cdn`, `www`); p_sensehq reads them dead.
+    "sensehq": _with_style("sub", "sensehq.com"),
     # Slugs are case-sensitive and mostly mixed-case (8,737 of 12,706 ledger slugs) — see
     # `extract`, which is why this ATS cannot use a lowercasing extractor.
     "smartrecruiters": _with_style(
@@ -467,9 +469,6 @@ ATS_HOSTS: dict[str, tuple[tuple[str, Style], ...]] = {
 # Deliberately absent, so nobody re-derives them from scratch:
 #   join    — `join.com/companies/{slug}` is a two-segment path, so `path` would harvest
 #             "companies" for every row. Also in `registry.DISABLED_ATS` (~99.99% non-tech).
-#   sensehq — has a scraper (`registry.SCRAPERS`) and an enumerable `{slug}.sensehq.com`, but no
-#             liveness ledger, so there is nothing to check a sweep against yet. Add it here once
-#             `data/validate/liveness/sensehq.csv` exists.
 #   phenom, zwayam — no enumerable host namespace (per-tenant pods, or boards that live on
 #             customer domains). Oracle was listed here until its pods turned out to be
 #             enumerable after all; it now has 17 entries above. pyjamahr was listed here too, on

@@ -1735,7 +1735,7 @@ def test_sensehq_parse():
     j = jobs[0]
     assert j.id == "sensehq:zetwerk:56117"
     assert j.title == "CA Industrial Trainee"
-    assert j.location == "Bangalore"
+    assert j.location == "Bangalore, India"  # office country appended (test_sensehq.py)
     assert j.department == "Aerospace & Defence"
     assert j.posted_at == "2026-06-13T03:19:29.434000+00:00"  # epoch ms -> ISO
     assert j.url == "https://zetwerk.sensehq.com/careers/jobs/56117"

@@ -851,6 +851,37 @@ def _pyjamahr_get(api_status, api_body, page_status=None, calls=None):
     return _get
 
 
+# Bodies as live 2026-09-28: an unknown label (and one never a tenant, e.g. `auth`) answers the
+# first; a label an organization once held answers the second; zetwerk answers the third.
+_SENSEHQ_NO_CAREER_PAGE = b'{"error":"Table \'master.career_page\' doesn\'t exist"}'
+_SENSEHQ_NO_ORGANIZATION = b'{"error":"no organization found with subdomain embitel"}'
+
+
+def test_sensehq_a_listing_counts_its_stated_total(monkeypatch):
+    body = b'{"success":true,"data":{"count":32,"rows":[{"id":56380}]}}'
+    monkeypatch.setattr(cl, "_get", _stub_get(200, body))
+    assert cl.p_sensehq("zetwerk", "https://zetwerk.sensehq.com") == (cl.LIVE, 32)
+
+
+def test_sensehq_an_empty_listing_is_a_live_empty_board(monkeypatch):
+    """pretium, live 2026-09-28: 200 with `count: 0`. An unknown label never answers 200."""
+    body = b'{"success":true,"data":{"count":0,"rows":[]},"error":null}'
+    monkeypatch.setattr(cl, "_get", _stub_get(200, body))
+    assert cl.p_sensehq("pretium", "https://pretium.sensehq.com") == (cl.LIVE, 0)
+
+
+@pytest.mark.parametrize("body", [_SENSEHQ_NO_CAREER_PAGE, _SENSEHQ_NO_ORGANIZATION])
+def test_sensehq_a_label_with_no_career_page_is_dead(monkeypatch, body):
+    monkeypatch.setattr(cl, "_get", _stub_get(500, body))
+    assert cl.p_sensehq("acme", "https://acme.sensehq.com") == (cl.DEAD, None)
+
+
+def test_sensehq_an_unexplained_error_settles_nothing(monkeypatch):
+    """a2z-jobs-consultancy answered a 502 gateway page once (live 2026-09-28)."""
+    monkeypatch.setattr(cl, "_get", _stub_get(502, b"<html>502 Bad Gateway</html>"))
+    assert cl.p_sensehq("acme", "https://acme.sensehq.com") == (cl.UNKNOWN, None)
+
+
 def test_pyjamahr_a_nonzero_count_is_live_without_touching_the_board_page(monkeypatch):
     """`count` is the Board's whole total whatever `limit` the probe asked for; a positive one is
     proof of a tenant, so the second request is never spent."""
