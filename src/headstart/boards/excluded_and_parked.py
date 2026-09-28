@@ -24,6 +24,12 @@ EXCLUDED_BOARDS: frozenset[str] = frozenset(
         # but serve 0 postings, so there is no content to confirm and nothing to remove —
         # `company_name._PLACEHOLDER` refuses their names instead.
         "ashby:krakensandbox",
+        # Woolworths' Avature development instance, read 2026-09-28: `devwoolworths1` lists one
+        # posting, "Store Manager - 74225", on three portals (`apply`, `apply2` twice), and req
+        # 74225 is not among the 2,097 rows production `avature:woolworths` lists: a req that
+        # exists only on the dev instance. One label is too few to justify a `dev` arm in
+        # `_AVATURE_NONPROD`; its posting, not its name, is the evidence.
+        "avature:devwoolworths1",
         # Jobvite's own automation tenant, found by reading its board rather than its slug:
         # `jobs.jobvite.com/jvauto` titles itself "Jobvite Automation Careers" and serves exactly
         # 10,000 postings whose titles are generated ids ("0000AAABBB_0Ja700iin3"). The round

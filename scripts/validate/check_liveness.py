@@ -1280,11 +1280,16 @@ def p_ashby(t, u):
 _AVATURE_LOC = re.compile(r"<loc>\s*([^<\s]+)\s*</loc>")
 _AVATURE_SITEMAP = re.compile(r"(?im)^sitemap:\s*(\S+)")
 _AVATURE_REDIRECTS = (301, 302, 303, 307, 308)
-#: Avature names a customer's non-production instance by prefixing its label, undelimited, so
-#: ADR-0034's token rule misses it: `sandboxtql` lists 434 JobDetail ids, 329 of them `tql`'s own
-#: (measured 2026-09-26) — a stale copy of the production Board. 20 such labels probed live with
-#: 3,700 postings between them (sandbox3uskpmg 990, sandboxfonterrakf 921, uatauspost 5).
-_AVATURE_NONPROD = re.compile(r"(?:sandbox|uat)", re.IGNORECASE)
+#: Avature names a customer's non-production instance with an undelimited marker in its label,
+#: so ADR-0034's token rule misses it: `sandboxtql` lists 434 JobDetail ids, 329 of them `tql`'s
+#: own (measured 2026-09-26) — a stale copy of the production Board. 20 such labels probed live
+#: with 3,700 postings between them (sandbox3uskpmg 990, sandboxfonterrakf 921, uatauspost 5).
+#: The marker is a prefix or a suffix (docs/avature/2026-09-28_full-ledger-note.md lists the
+#: pool's labels). `uat` is anchored because it sits inside "graduate". A new label ending in an
+#: English word like "latest" would match `test$` and die unprobed; none of the pool's labels does.
+_AVATURE_NONPROD = re.compile(
+    r"sandbox|^uat|uat\d*$|^staging|stageats$|test\d*$", re.IGNORECASE
+)
 #: How long the avature.net gate rests when a request is answered 406 and no spare egress can be
 #: had: the spent budget answered 406 to every tenant for ~3-4 minutes (see `_SPANNING`).
 _AVATURE_REFILL_S = 240
@@ -1387,11 +1392,12 @@ def p_avature(t, u):
       redirects to a host whose CNAME does (`genesys` -> `jobs.opptly.com` -> `opptly`). Four
       labels redirect to their own vanity host instead (deloitteglobal, dttl, opptly, unops) and
       are read there.
-    - A `sandbox…`/`uat…` label is a non-production copy of a tenant (`_AVATURE_NONPROD`): DEAD.
+    - A label with a non-production marker (`sandbox` anywhere; `uat`/`staging` prefix; `uat`,
+      `stageats` or `test` suffix) is a copy of a tenant (`_AVATURE_NONPROD`): DEAD.
     - 403, 202, 5xx, timeouts and refused connections are unexplained -> UNKNOWN.
     """
     label = _slug_of("avature", t, u)
-    if _AVATURE_NONPROD.match(label):
+    if _AVATURE_NONPROD.search(label):
         return DEAD, None
     host = f"{label}.avature.net"
     if _public_resolver_has_no_a_record(host):
