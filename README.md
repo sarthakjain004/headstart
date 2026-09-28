@@ -19,7 +19,7 @@ Not from a feed employers had to opt in to. Not from a list ranked by who paid.
 
 ### It costs nothing to run. All of it.
 
-Discovery. 50 scrapers. Embeddings. Vector search. Email and Telegram alerts.
+Discovery. 51 scrapers. Embeddings. Vector search. Email and Telegram alerts.
 
 Fork it, add your tokens, and the whole pipeline is yours — running on free tiers, end to
 end. No card. No trial. Not a stripped tier of something else: the same code that serves the
@@ -88,12 +88,12 @@ unparseable input with a 400 rather than silently ignoring it.
 
 ## ATS coverage
 
-**50 scrapers**, selected from a registry by the `ats` key: `adp`, `adp_recruiting`, `amazon`, `apple`, `ashby`,
+**51 scrapers**, selected from a registry by the `ats` key: `adp`, `adp_recruiting`, `amazon`, `apple`, `ashby`,
 `avature`, `bamboohr`, `breezy`, `bytedance`, `clearcompany`, `cornerstone`, `darwinbox`, `eightfold`, `freshteam`, `gem`, `google`, `greenhouse`,
 `happydance`, `icims`, `jazzhr`, `jibe`, `jobvite`, `join`, `keka`, `lever`, `meta`, `oracle`, `peoplestrong`, `personio`, `phenom`,
 `pinpoint`, `pyjamahr`, `radancy`, `recruitee`, `ripplehire`, `rippling`, `sensehq`, `smartrecruiters`, `successfactors`,
 `taleo_be`, `taleo_enterprise`, `teamtailor`, `tesla`, `tiktok`, `trakstar`, `uber`, `workable`,
-`workday`, `zoho`, `zwayam`. All but `join` are active: `join`'s boards run ~1 tech job in ~10k (German-SMB
+`workday`, `wp_job_openings`, `zoho`, `zwayam`. All but `join` are active: `join`'s boards run ~1 tech job in ~10k (German-SMB
 listings, almost entirely non-tech), pure noise for a tech-only index, so `registry.DISABLED_ATS`
 skips it — the scraper class and tests stay intact, and re-enabling it is a one-line change.
 `adp` and `adp_recruiting` are two separate ADP products, ADP Workforce Now and ADP Recruiting
@@ -101,9 +101,10 @@ Management, each with its own host, API and Board identity. `radancy` is not an 
 a **Career front**: Radancy's TalentBrew sites (`jobs.intuit.com`) mirror a company's real ATS
 Boards and hand the Apply button off to them, and are scraped as Boards keyed by their host
 (ADR-0246), as `phenom`'s are; so is `happydance`, Ph.Creative's Happydance sites
-(`careers.cognizant.com`, ADR-0264).
+(`careers.cognizant.com`, ADR-0264). `wp_job_openings` is a WordPress plugin a company runs on its
+own site, which takes applications itself, so each site is a Board keyed by its host (ADR-0266).
 
-Eight of the 50 — `amazon`, `apple`, `bytedance`, `google`, `meta`, `tesla`, `tiktok`, `uber`
+Eight of the 51 — `amazon`, `apple`, `bytedance`, `google`, `meta`, `tesla`, `tiktok`, `uber`
 (ADR-0139) — are **Single source scrapers**: each company's own in-house careers system, not a
 multi-tenant platform, so there's no discovery step and each carries a fixed, hand-entered slug
 rather than a crawled tenant roster. `phenom` is a career-site skin over other ATSes rather than a
@@ -195,7 +196,7 @@ flowchart TB
     subgraph P["② Ingest &nbsp;·&nbsp; GitHub Actions, back-to-back &nbsp;·&nbsp; ADR-0025 / ADR-0026"]
         direction LR
         P1["<b>scrape-plan</b><br/>1 VM<br/>pick a board slice, LPT pack"]
-        P2["<b>scrape</b><br/>≤15 VMs · 75m budget<br/>49 enabled scrapers → fragments"]
+        P2["<b>scrape</b><br/>≤15 VMs · 75m budget<br/>50 enabled scrapers → fragments"]
         P3["<b>join</b><br/>1 VM<br/>union · tech-filter · descriptions<br/>ledgers · plan embed"]
         P4["<b>embed</b><br/>≤15 VMs · 180m budget<br/>nomic on CPU → fragments"]
         P5["<b>merge</b><br/>1 VM · single writer<br/>concat · meta refresh · sync · prune · trends · companies · index"]
@@ -422,7 +423,7 @@ Note the raw corpus files under `data/jobs/` carry a few fields the served table
 ## Layout
 
 - `src/headstart/` — shared library, used by both the pipeline and the curated feed:
-  `scrapers/` (50 per-ATS + `base`/`registry`, the scrape engine `harvest.py`, and
+  `scrapers/` (51 per-ATS + `base`/`registry`, the scrape engine `harvest.py`, and
   `country_codes.py`, the ISO table two scrapers read), `llm_router.py`, the one seam every LLM
   call goes through, `embedding_conventions.py`, the model and prefixes the index and the query
   share, and `log.py`.

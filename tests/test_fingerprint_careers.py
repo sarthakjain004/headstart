@@ -642,6 +642,26 @@ def test_radancy_and_real_workdaysite_shapes():
     )
 
 
+def test_a_wp_job_openings_site_is_its_own_host():
+    # The plugin's asset path on a real careers page (finac.io, 2026-09-28); the Board is the
+    # page's host, whichever host served the stylesheet.
+    page = (
+        '<link rel="stylesheet" href="https://cdn.example.net/wp-content/plugins/'
+        'wp-job-openings/assets/css/style.min.css?ver=4.1.0" />'
+    )
+    hits = fp.scan(page, "finac.io")
+    assert [hit[:2] for hit in hits] == [("wp_job_openings", "ats")]
+    assert (
+        fp.normalise_tenant("wp_job_openings", hits[0][2], "https://finac.io/careers/")
+        == "finac.io"
+    )
+    # wordpress.org's own page for the plugin is not a site running it.
+    assert (
+        fp.scan('<a href="https://wordpress.org/plugins/wp-job-openings/">', "a.com")
+        == []
+    )
+
+
 def test_social_page_cannot_supply_an_employers_ats(monkeypatch):
     monkeypatch.setattr(fp, "cname_chain", lambda _: [])
     calls = []

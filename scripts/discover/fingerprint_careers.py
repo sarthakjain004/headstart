@@ -199,6 +199,10 @@ PATTERNS: dict[str, tuple[str, list[str]]] = {
             + r"([a-z0-9-]+)\.(wd\d+)\.myworkdayjobs\.com/wday/cxs/[^/\s]+/([a-zA-Z0-9_-]+)",
         ],
     ),
+    # A WordPress plugin, so no host names it: the tell is its asset directory on the site that
+    # runs it (32 of the 600 hosts rated `none` on 2026-09-28 loaded it). Captures nothing — the
+    # Board is the page's own host (HOST_SLUG_ATS), never whatever CDN served the file.
+    "wp_job_openings": ("ats", [r"wp-content/plugins/wp-job-openings/[^\"'\s<>]*"]),
     "workable": (
         "ats",
         [
@@ -851,7 +855,8 @@ SLUG_PROBES = {
 QUERY_HOST_ATS = frozenset({"successfactors", "zwayam", "phenom", "icims"})
 # zoho's slug is a full host as well, but a matched `*.zohorecruit.*` host is already correct —
 # only the vanity-domain fingerprint (which captures nothing) needs the evidence host instead.
-HOST_SLUG_ATS = frozenset({"zoho"})
+# wp_job_openings' fingerprint never captures a host: its Board is always the evidence host.
+HOST_SLUG_ATS = frozenset({"zoho", "wp_job_openings"})
 # ATSes whose slug is a full host inside the provider's own zone (oracle.py: "the slug is the
 # careers host"; eightfold and personio the same), so the CNAME target *is* the right answer.
 PROVIDER_HOST_ATS = frozenset({"oracle", "eightfold", "personio"})
