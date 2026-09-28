@@ -22,7 +22,9 @@ window.addEventListener('unhandledrejection', e => {
   console.error('[app] unhandled', why && why.name === 'SyntaxError' ? why.name : why);
   e.preventDefault();
 });
-for (const id of ['q', 'kw']) el(id).addEventListener('keydown', e => { if (e.key === 'Enter') go(); });
+// Only the query: every field in the filter rail searches on its own `change` (see the rail's
+// listener), which a browser also fires on Enter — a second Enter handler there searched twice.
+el('q').addEventListener('keydown', e => { if (e.key === 'Enter') go(); });
 
 /* ---- tabs. The hash names the panel (#search, #trends); unknown hashes fall back to
    search, so a stale link never strands anyone on a blank page. Trends data loads the
@@ -131,17 +133,6 @@ async function loadCoverage(){
       : '<p class="aside">The index carries none of these fields yet.</p>';
 }
 
-const DENSITY_KEY = 'hs.dense';
-function applyDensity(on){
-  const box = document.querySelector('.content'), btn = el('density');
-  if (box) box.classList.toggle('dense', on);
-  if (btn){ btn.setAttribute('aria-pressed', String(on)); btn.textContent = on ? 'Comfortable' : 'Compact'; }
-}
-function flipDensity(){
-  const on = !document.querySelector('.content').classList.contains('dense');
-  try { localStorage.setItem(DENSITY_KEY, on ? '1' : ''); } catch(e){}
-  applyDensity(on);
-}
 function flipTheme(){
   const now = document.documentElement.getAttribute('data-theme')
     || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
@@ -168,17 +159,6 @@ async function signOut(){
   if (r) logFail('POST', '/signout', r.status);
   window.alert('Sign-out didn\'t go through — you are still signed in. Try again.');
 }
-function toggleRail(){
-  const rail = el('rail');
-  const open = rail.classList.toggle('open');
-  const btn = el('filtersbtn');
-  if (btn) btn.setAttribute('aria-expanded', String(open));
-  // Deliberately no scrollIntoView. It was here because the panel used to open ABOVE its own
-  // button and take it off screen; now the panel opens directly below and its top is already
-  // in view, and `block:'nearest'` on a 761px panel scrolls the page 179px on every click —
-  // moving the page under the cursor, which is the thing this whole change was about.
-}
-
 const age = d => {
   const t = Date.parse(d || ''); if (isNaN(t)) return '';
   const days = Math.floor((Date.now() - t) / 86400000);
@@ -316,8 +296,7 @@ const LABELS = { remote:'Remote', has_salary:'Shows salary', max_years:'Your exp
   salary_min:'Salary from', salary_max:'Salary to' };
 // A chip should read as the sentence the user set, in the units the read-out and the results
 // use: "Salary from USD 60,000", not the raw "60000" out of the number field. The currency has
-// no chip of its own — it is not a filter, it is what both bounds are counted in, and a third
-// chip repeating it would also inflate the count on the Filters button by one.
+// no chip of its own — it is not a filter, it is what both bounds are counted in.
 const chipValue = (key, value, f) =>
   (key === 'salary_min' || key === 'salary_max')
     ? `${f.salary_currency || ''} ${salFmt(value)}`.trim()
@@ -335,15 +314,10 @@ function drawActive(){
   const f = currentFilters(), box = el('active');
   // Everything but the currency, which both bracket chips print for themselves.
   const shown = Object.entries(f).filter(([k]) => k !== 'salary_currency');
-  // The panel is closed by default now (ADR-0116), so the button has to carry how many
-  // filters are hiding behind it — otherwise a narrowed result set has no visible cause.
-  const btn = el('filtersbtn'), n = shown.length + (searchScope ? 1 : 0);
-  if (btn){
-    btn.textContent = n ? `Filters (${n})` : 'Filters';
-    btn.classList.toggle('has', n > 0);
-  }
+  // Every path that sets a control's value (clear, drop a pill, a Saved Set) comes through here.
+  syncSegmentedSelects();
   // A converted figure has to carry the date of the rates that made it (ADR-0117), and the
-  // rail's own tip saying so is behind a panel that is closed by default. Written on every
+  // rail's own tip saying so shows only while the bracket has focus. Written on every
   // draw, like #sortnote and #kind, so it can never describe a bracket that is no longer set.
   const fxnote = el('fxnote');
   if (fxnote) fxnote.textContent = (f.salary_currency && FX && FX.as_of)
@@ -358,6 +332,40 @@ function drawActive(){
     `<button onclick="dropFilter('${esc(k)}')" aria-label="Remove ${esc(LABELS[k]||k)} filter">×</button></span>`
   ).join('');
 }
+/* ---- Segmented selects (issue #755). A <select> of a handful of options costs a click to open
+   and one to pick; the same options as a row of radios cost one. The <select> stays, hidden, as
+   the control everything else reads and writes — currentFilters, CONTROL, the facet counts on its
+   options, a Saved Set — so this is only a view over it: `{id}-seg` is redrawn from the select's
+   options (labels, counts, disabled) and never holds a value of its own. Native radios, not
+   buttons: the browser brings the arrow-key walk, the skip over disabled options and the checked
+   state. A pick applies at once, as the sort <select> always did. ---- */
+const SEGMENTED_SELECTS = ['sort', 'kwin', 'etype', 'posted'];
+function syncSegmentedSelects(){
+  for (const id of SEGMENTED_SELECTS){
+    const sel = el(id), row = el(id + '-seg'); if (!sel || !row) continue;
+    const opts = [...sel.options];
+    // Rebuilt only when the options themselves change. Replacing a radio that has focus drops
+    // the focus, and every pick redraws through here — the arrow-key walk would stop at one step.
+    if (row.querySelectorAll('input').length !== opts.length)
+      row.innerHTML = opts.map(o => `<label class="seg-opt"><input type="radio" name="${id}-seg"
+        value="${esc(o.value)}"><span></span></label>`).join('');
+    row.querySelectorAll('input').forEach((input, k) => {
+      input.checked = opts[k].value === sel.value;
+      input.disabled = opts[k].disabled;
+      input.nextElementSibling.textContent = opts[k].textContent;
+    });
+  }
+}
+for (const id of SEGMENTED_SELECTS){
+  if (!el(id + '-seg')) continue;
+  el(id + '-seg').addEventListener('change', e => { el(id).value = e.target.value; go(); });
+}
+// Every other rail control searches on `change` too, so no filter waits for the Search button
+// (issue #755): a switch or a <select> on the pick, a typed field on Enter or on leaving it. The
+// radio rows and the salary slider have their own listeners, so they are left out here.
+if (el('rail')) el('rail').addEventListener('change', e => {
+  if (e.target.matches('select, input:not([type="radio"]):not([type="range"])')) go();
+});
 /* ---- the salary bracket's slider. Two native ranges over one track; `#salmin`/`#salmax`
    stay the values every other part of this file reads (currentFilters, clearAll, dropFilter,
    applySetToControls), so the slider is an input method for them and never a second source of
@@ -805,6 +813,7 @@ function applyFacets(facets){
   countSwitch('remote', f.remote);
   countSwitch('hassalary', f.has_salary);
   countYears(f.max_years);
+  syncSegmentedSelects();   // the counts just written onto the options, onto their radios
 }
 
 // The Keyword filter's disclaimer (ADR-0104). Not every Job carries a description — none indexed
@@ -889,17 +898,14 @@ function drawPager(rowCount, facets){
    second branch — the card knows about rows, not about where they came from.
 
    A Saved row carries the two facts only it has — whether the job has closed, and when it
-   was starred — and `canHide` is the one thing about the row that is about WHERE it is being
-   drawn: the × belongs to the Search list, which is the one with the hidden-count note and the
-   "show" toggle beside it. On Saved the equivalent gesture is unstarring, and two controls for
-   one intent would disagree about which list the row is in. ---- */
-function jobCard(r, i, canHide, canHideCompany){
+   was starred — and `canHideCompany` is the one thing about the row that is about WHERE it is
+   being drawn: Saved is a list the user built, so it offers no "hide this company". ---- */
+function jobCard(r, i, canHideCompany){
   // A browsed row (no query) was never ranked, so it carries no score (ADR-0074) — the
   // match ring would otherwise show a misleading "0%" rather than "not applicable".
   const ranked = r.score != null;
   const s = Number(r.score) || 0, pct = matchPct(s);
-  const hidden = r.id && dismissed.has(r.id);
-  const cls = ['card', r.closed && 'gone', hidden && 'dismissed'].filter(Boolean).join(' ');
+  const cls = ['card', r.closed && 'gone'].filter(Boolean).join(' ');
   return `
     <div class="${cls}" style="${ranked?`--tone:${tone(s)}; `:''}animation-delay:${Math.min(i,12)*35}ms">
       <div class="who">
@@ -915,10 +921,14 @@ function jobCard(r, i, canHide, canHideCompany){
             : ''}${
           // Into Trends already picked (ADR-0185). The Board is boardOf's guess, which names no
           // directory company for ~2% of rows; the picker then says so rather than failing.
+          // A glyph rather than an underlined word on every row (issue #755); the accessible
+          // name still says what it opens.
           el('trends') && boardOf(r.id)
-            ? ` <button class="linkish see-trend" data-trend="${esc(boardOf(r.id))}"
+            ? ` <button class="see-trend" data-trend="${esc(boardOf(r.id))}"
                  data-trend-name="${esc(r.company)}" aria-label="Hiring trend at ${esc(r.company)}"
-                 >trend</button>`
+                 title="See hiring trend"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor"
+                 stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"
+                 ><path d="M2 12.5 6 8.5l2.5 2.5L14 5M10 5h4v4"/></svg></button>`
             : ''}</div>
         <div class="tags">
           ${r.closed? '<span class="tag closed" title="No longer in HeadStart\u2019s index \u2014 almost always because the employer took it down. The link still goes to them.">closed</span>':''}
@@ -928,10 +938,9 @@ function jobCard(r, i, canHide, canHideCompany){
           ${r.min_years!=null? '<span class="tag mono">'+(Number(r.min_years)||0)+'+ yrs</span>':''}
           ${age(r.posted_at)? '<span class="tag mono" title="The date the employer put on it, in their own format \u2014 not when HeadStart saw it">'+age(r.posted_at)+'</span>':''}
           ${age(r.starred_at)? '<span class="tag mono">saved '+age(r.starred_at)+'</span>':''}
-          ${r.ats? '<span class="src" title="Read directly from this company\'s '+esc(r.ats)+' board \u2014 not a repost">via '+esc(r.ats)+'</span>':''}
         </div>
       </div>
-      <div class="pay">${payLabel(r)? esc(payLabel(r)) : '<span class="nopay" title="This board did not publish one">\u2014</span>'}${convLabel(r)? `<span class="conv">${esc(convLabel(r))}</span>` : ''}</div>
+      <div class="pay">${esc(payLabel(r))}${convLabel(r)? `<span class="conv">${esc(convLabel(r))}</span>` : ''}</div>
       ${ranked? `<div class="match" role="img"
              aria-label="Match ${pct} percent \u2014 how close this job is to your search, on a fixed scale that gives the same job the same number every time"
              title="Match strength \u2014 semantic similarity ${s.toFixed(2)}, scaled to this index's real range">
@@ -947,7 +956,6 @@ function jobCard(r, i, canHide, canHideCompany){
       // they cannot align across two different grids.
       : '<div class="match" aria-hidden="true"></div>'}
       ${starBtn(r.id, r.starred_at ? true : undefined)}
-      ${canHide ? dismissBtn(r.id) : ''}
     </div>`;
 }
 
@@ -1024,8 +1032,8 @@ function capRows(rows, target){
   rows.forEach((r, i) => {
     const board = boardOf(r.id);
     // `(r, i) => …` and an explicit third argument, never a bare `rows.map(jobCard)`: map passes
-    // the array as a third argument, which would land on `canHide` and put a × on every list.
-    const html = jobCard(r, i, !target, true);
+    // the array as a third argument, which would land on `canHideCompany`.
+    const html = jobCard(r, i, true);
     if (!board){ chunks.push(html); return; }
     const n = (seen.get(board) || 0) + 1;
     seen.set(board, n);
@@ -1073,7 +1081,6 @@ function draw(rows, target){
   rows.forEach(r => { if (r.id) drawnRows.set(r.id, r); });   // starring needs the row later
   el(target || 'results').innerHTML = capRows(rows, target).join('');
   setResultRows(rows.length, target);
-  if (!target) drawHidden(pageRows = rows);
 }
 
 /* ---- Saved sets (ADR-0043): the Matches tab runs one live; "Save this search" creates
@@ -1262,51 +1269,6 @@ async function saveSearch(){
    fields, so the Saved tab survives the index churn and marks evicted postings "closed".
    Stars flip optimistically — an HF write is ~1s, too slow for a click — and revert with
    a message if the server refuses. ---- */
-/* ---- Dismissed rows. Every result leaves for the employer's own board, so the return trip
-   lands on a list with no memory of what has already been dealt with — the main cost of the
-   loop. `:visited` on the title says "opened"; this says "done with". Browser-local on
-   purpose: it is a scanning aid over one session's list, not a preference worth an account
-   round trip, and storage can throw outright in a private window. Rows are hidden rather than
-   dropped, so the server's own "showing 1-20 of N" stays true and one click puts them back.
-   ---- */
-const DISMISS_KEY = 'hs.dismissed';
-let revealDismissed = false;
-const dismissed = new Set((() => {
-  try { return JSON.parse(localStorage.getItem(DISMISS_KEY) || '[]'); } catch(e){ return []; }
-})());
-function saveDismissed(){
-  try { localStorage.setItem(DISMISS_KEY, JSON.stringify([...dismissed])); } catch(e){}
-}
-const dismissBtn = id => !id ? '' :
-  `<button class="dismiss" data-dismiss="${esc(id)}" title="Hide this job"
-    aria-label="Hide this job from the results">\u00d7</button>`;
-
-// The count of what is hidden, beside the result count that no longer matches what is on
-// screen. Written on every draw, including when it is zero — a stale "3 hidden" is worse
-// than none. It counts the Search page on screen, never `drawnRows`: that holds every row of
-// every page and both lists drawn this session.
-let pageRows = [];
-function drawHidden(rows){
-  const node = el('hidden'), box = el('results'); if (!node || !box) return;
-  const n = rows.filter(r => r.id && dismissed.has(r.id)).length;
-  node.innerHTML = !n ? '' :
-    `${n} hidden <button class="linkish" onclick="toggleDismissed()">` +
-    `${revealDismissed ? 'hide again' : 'show'}</button>`;
-  box.classList.toggle('reveal', revealDismissed);
-}
-function toggleDismissed(){
-  revealDismissed = !revealDismissed;
-  drawHidden(pageRows);
-}
-function dismissRow(id){
-  if (dismissed.has(id)) dismissed.delete(id); else dismissed.add(id);
-  saveDismissed();
-  document.querySelectorAll('[data-dismiss]').forEach(b => {
-    if (b.dataset.dismiss === id) b.closest('.card').classList.toggle('dismissed', dismissed.has(id));
-  });
-  drawHidden(pageRows);
-}
-
 const CAN_STAR = !!el('saved-results');   // the Saved tab only renders when configured
 // Follow/hide is gated separately from starring: the local dev renderer serves /companies over
 // one in-memory record even though it has no Accounts at all (ADR-0042 keeps the two mirrors).
@@ -1382,7 +1344,7 @@ function renderSaved(){
   // No "hide" here, and no capping: the Saved tab lists jobs this Account chose one at a time,
   // so a company-level control would either do nothing visible or remove something deliberately
   // kept. It is the one list that does NOT go through `draw`/`capRows`.
-  box.innerHTML = jobs.map((j, i) => jobCard(savedRow(j), i, false, false)).join('');
+  box.innerHTML = jobs.map((j, i) => jobCard(savedRow(j), i, false)).join('');
 }
 
 // A stored star, in the shape jobCard reads. The record is a display copy taken at star time
@@ -4300,9 +4262,8 @@ if (el('salrmin')){
   // The currency is part of the where-clause, not a label on it (ADR-0117): the bounds are
   // restated in it before anything is compared, so changing it changes which jobs match.
   // Bound to `syncSalarySlider` alone, it relabelled the read-out and left the previous
-  // currency's results on screen underneath — USD rows under an INR heading. `go()` redraws
-  // the read-out and the chips on its way through drawActive, so this is the whole fix.
-  if (el('salcur')) el('salcur').addEventListener('change', go);
+  // currency's results on screen underneath — USD rows under an INR heading. The rail's change
+  // listener searches on it, and `go()` redraws the read-out and the chips via drawActive.
 }
 if (el('sets-strip')) el('sets-strip').addEventListener('click', e => {
   const btn = e.target.closest('[data-act]');
@@ -4313,10 +4274,6 @@ if (el('sets-strip')) el('sets-strip').addEventListener('click', e => {
 document.addEventListener('click', e => {
   const b = e.target.closest('button[data-star]');
   if (b) toggleStar(b.dataset.star);
-});
-document.addEventListener('click', e => {
-  const b = e.target.closest('button[data-dismiss]');
-  if (b) dismissRow(b.dataset.dismiss);
 });
 // Whole-row click, without an overlay. A real element is never covered, so text stays
 // selectable and every title/tooltip underneath stays reachable. Three guards: a drag that
@@ -4488,7 +4445,6 @@ function hotRow(r, i, lens){
   const m = HOT_MEASURE[lens](r);
   const op = HOT_OPERATOR[r.operator];
   const followed = hotFollowed(r);
-  const boards = r.boards.length === 1 ? 'board' : `${r.boards.length} boards`;
   // The rank is decorative — the list is already ordered and screen readers announce <ol>
   // position — so it is hidden from the accessibility tree rather than read out twice.
   return `
@@ -4497,7 +4453,6 @@ function hotRow(r, i, lens){
       <div class="hot-who">
         <div class="hot-name">${esc(r.company)}</div>
         <div class="hot-tags">
-          <span class="src" title="Read directly from this company’s ${esc(r.atses.join(' and '))} ${boards}">via ${esc(r.atses.join(', '))}</span>
           ${op ? `<span class="tag flag" title="${esc(op.hint)}">${esc(op.label)}</span>` : ''}
         </div>
       </div>
@@ -4608,9 +4563,6 @@ function drawMyCompanies(){
   });
 }
 
-if (el('mine')) el('mine').addEventListener('change', () => go());
-
-try { applyDensity(!!localStorage.getItem(DENSITY_KEY)); } catch(e){ applyDensity(false); }
 readSearchHash();   // a reloaded or shared hand-off (`#search?board=…`) scopes the first search
 go();   // an empty query browses the newest jobs (ADR-0074) — the Search tab is never empty
 whoAmI();

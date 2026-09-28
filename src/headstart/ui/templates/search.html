@@ -39,41 +39,11 @@
 {% endif %}
 
 
-<main>
-    <div class="toolbar">
-      <button class="ghost filters-btn" id="filtersbtn" onclick="toggleRail()" aria-expanded="false" aria-controls="rail">Filters</button>
-      {# Beside Filters rather than after the sort controls: last in the row it was the item
-         the flex wrap pushed onto a second line of its own, 48px below everything else in a
-         toolbar that then measured 86px tall. It also belongs with Filters — both act on the
-         query the user has built, where Sort and Compact act on the rows that came back. #}
-      {% if sets_on %}
-      <button class="ghost" id="savebtn" onclick="saveSearchToggle()">Save this search</button>
-      {% endif %}
-      <span class="spacer"></span>
-      <label class="note" for="sort">Sort</label>
-      <select id="sort" onchange="go()">
-        <option value="rel">Best match</option>
-        {% if has_first_seen %}<option value="seen">Newest first seen</option>{% endif %}
-        <option value="posted">Newest posted</option>
-        {# Dark until the ADR-0082 salary columns exist on the served table, exactly like the
-           first-seen options above — the server whitelists the same condition. #}
-        {% if has_min_salary %}<option value="salary">Highest salary</option>{% endif %}
-      </select>
-      <button class="ghost" id="density" onclick="flipDensity()" aria-pressed="false"
-              title="Tighter rows, same fields">Compact</button>
-    </div>
-    {% if sets_on %}
-    <div class="row saverow" id="saverow" style="display:none">
-      <input id="savename" type="text" placeholder="Name this search — e.g. backend roles" maxlength="60">
-      <button class="ghost" onclick="saveSearch()">Save</button>
-      <span class="note" id="savemsg" role="status"></span>
-      <span class="note">Keyword filters and numeric salary brackets aren't saved yet.</span>
-    </div>
-    {% endif %}
-  {# Below the Filters button that opens it and above the results it narrows, collapsed by
-       default. Placed after `.saverow` rather than immediately after the toolbar so the
-       "Save this search" input stays next to the button that reveals it — with the panel
-       between them, an open panel put 340px of controls in the gap. #}
+<main class="search-layout">
+  {# Always shown, never behind a Filters button (issue #755: opening the panel and shutting it
+     again was two clicks per change). A column beside the results on a wide screen, so the rows
+     still start at the top of the page; one sideways-scrolling row above them on a narrow one
+     (ADR-0247). Each field's caveat shows only while that field has keyboard or typing focus. #}
     <aside class="rail" id="rail">
       {# The Keyword filter (ADR-0104): a deterministic where-clause, not a Query — it narrows, the
          Query ranks. The options are rendered from headstart.search_filters.compiler.keyword_scope_options(), never
@@ -86,35 +56,38 @@
           <input id="kw" type="text" placeholder="e.g. kubernetes terraform" aria-describedby="kwnote">
           <span class="tip">Every word (up to five) must appear. Matches inside words too — "java"
             also finds JavaScript.</span></div>
-        <div class="f"><label for="kwin">Look in</label>
-          <select id="kwin" onchange="go()">
+        {# A select of three is two clicks; its options as one row of radios is one. The hidden
+           select stays the value everything reads (see syncSegmentedSelects). #}
+        <div class="f"><span class="flabel" id="kwin-lbl">Look in</span>
+          <select id="kwin" hidden>
             {% for value, label, needs_description in keyword_scopes %}
             <option value="{{ value }}"{% if value == keyword_default_scope %} selected{% endif %}{% if needs_description and not has_description %} disabled{% endif %}>{{ label }}</option>
             {% endfor %}
           </select>
+          <div class="segmented" id="kwin-seg" role="radiogroup" aria-labelledby="kwin-lbl"></div>
           <span class="tip" id="kwnote" role="status"></span></div>
       </div>
 
       <div class="set">
         <h2>Role</h2>
-        <div class="f"><label for="etype">Employment type</label>
-          <select id="etype"><option value="">Any</option>
+        <div class="f"><span class="flabel" id="etype-lbl">Employment type</span>
+          <select id="etype" hidden><option value="">Any</option>
             <option value="full-time">Full-time</option><option value="part-time">Part-time</option>
             <option value="contract">Contract</option><option value="internship">Internship</option>
-          </select></div>
+          </select>
+          <div class="segmented" id="etype-seg" role="radiogroup" aria-labelledby="etype-lbl"></div></div>
         <div class="f"><label for="maxyears">Your experience (years)</label>
-          <input id="maxyears" type="number" min="0" placeholder="Any">
-          <span class="tip">Hides jobs asking for more years than this. Jobs that don't state a
+          <input id="maxyears" type="number" min="0" placeholder="Any" aria-describedby="maxyears-tip">
+          <span class="tip" id="maxyears-tip">Hides jobs asking for more years than this. Jobs that don't state a
             requirement are kept.</span></div>
-        <label class="sw"><input type="checkbox" id="remote"> Remote only</label>
-        <span class="tip">Some boards carry a real remote setting and we use it; the rest are read
-          from how the employer worded the location. Either way a role described as remote only in
-          the body text can be missed.</span>
+        <div class="f"><label class="sw"><input type="checkbox" id="remote" aria-describedby="remote-tip"> Remote only</label>
+          <span class="tip" id="remote-tip">Some boards carry a real remote setting and we use it; the rest are read
+            from how the employer worded the location. Either way a role described as remote only in
+            the body text can be missed.</span></div>
       </div>
 
-      {# Pay is its own group, not the tail of Role. It is by far the tallest thing in the
-         panel — a currency, two bounds, a slider, its scale and two caveats — and sitting
-         inside Role it made one column 729px tall next to a 214px one. #}
+      {# Pay is its own group, not the tail of Role: a currency, two bounds, a slider, its scale
+         and a caveat, the tallest field in the bar. #}
       <div class="set">
         <h2>Pay</h2>
         <label class="sw"><input type="checkbox" id="hassalary"> Shows salary</label>
@@ -125,7 +98,8 @@
               {% for c in currencies %}<option value="{{ c }}"{% if c == 'USD' %} selected{% endif %}>{{ c }}</option>{% endfor %}
             </select>
             <input id="salmin" type="number" min="0" step="1000" placeholder="Min" aria-label="Minimum salary">
-            <input id="salmax" type="number" min="0" step="1000" placeholder="Max" aria-label="Maximum salary">
+            <input id="salmax" type="number" min="0" step="1000" placeholder="Max" aria-label="Maximum salary"
+                   aria-describedby="salary-tip">
           </div>
           {# Two native <input type="range"> stacked over one track, not a div you drag: the
              native control brings keyboard operation, touch handling and the slider role with
@@ -151,7 +125,7 @@
              conversion would then be describing something that is not happening. The date is
              not an optional decoration on the first branch — it is what makes an approximate
              rate checkable, so the two cannot be separated. #}
-          <span class="tip">{% if fx_converts %}Jobs priced in other currencies are converted so they
+          <span class="tip" id="salary-tip">{% if fx_converts %}Jobs priced in other currencies are converted so they
             still match, at approximate rates from {{ fx_as_of }}. That is currency conversion, not
             cost of living — the same figure buys very different lives in different places, so read
             a converted salary as "roughly this much money", not as a comparable offer.{% else %}Compared
@@ -164,10 +138,10 @@
       <div class="set">
         <h2>Where</h2>
         <div class="f"><label for="india">India — city or region</label>
-          <span class="tip">India has a gazetteer behind it, so picking a city also matches its
+          <span class="tip" id="india-tip">India has a gazetteer behind it, so picking a city also matches its
             neighbourhoods and alternative spellings. Location below matches text anywhere in the
             world, just without that expansion. The index is worldwide either way.</span>
-          <select id="india"><option value="">Anywhere</option>
+          <select id="india" aria-describedby="india-tip"><option value="">Anywhere</option>
             <option value="india">All India</option>
             {% for value, label in india_opts %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
           </select></div>
@@ -191,11 +165,13 @@
 
       <div class="set">
         <h2>Freshness</h2>
-        <div class="f"><label for="posted">Posted by the employer</label>
-          <select id="posted"><option value="">Any time</option>
+        <div class="f"><span class="flabel" id="posted-lbl">Posted by the employer</span>
+          <select id="posted" hidden><option value="">Any time</option>
             {% for value, label in posted_opts %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
           </select>
-          <span class="tip">Their date, in their format. Jobs without one are hidden by this
+          <div class="segmented" id="posted-seg" role="radiogroup" aria-labelledby="posted-lbl"
+               aria-describedby="posted-tip"></div>
+          <span class="tip" id="posted-tip">Their date, in their format. Jobs without one are hidden by this
             filter rather than kept, and so are any whose date is written in a shape we cannot
             compare against a cutoff — so it keeps somewhat fewer than the Data tab's
             posting-date figure would suggest.</span></div>
@@ -213,6 +189,34 @@
 
       <button class="clear" onclick="clearAll()">Clear all filters</button>
     </aside>
+  <div class="search-results">
+    <div class="toolbar">
+      {% if sets_on %}
+      <button class="ghost" id="savebtn" onclick="saveSearchToggle()">Save this search</button>
+      {% endif %}
+      <span class="spacer"></span>
+      {# Sort as a one-click row of options, not a <select> to open first (issue #755). The
+         hidden <select> stays the value every reader uses; syncSegmentedSelects draws the row
+         from its options, so the conditional ones below appear in both or neither. #}
+      <span class="note" id="sort-lbl">Sort</span>
+      <select id="sort" hidden>
+        <option value="rel">Best match</option>
+        {% if has_first_seen %}<option value="seen">Newest first seen</option>{% endif %}
+        <option value="posted">Newest posted</option>
+        {# Dark until the ADR-0082 salary columns exist on the served table, exactly like the
+           first-seen options above — the server whitelists the same condition. #}
+        {% if has_min_salary %}<option value="salary">Highest salary</option>{% endif %}
+      </select>
+      <div class="segmented" id="sort-seg" role="radiogroup" aria-labelledby="sort-lbl"></div>
+    </div>
+    {% if sets_on %}
+    <div class="row saverow" id="saverow" style="display:none">
+      <input id="savename" type="text" placeholder="Name this search — e.g. backend roles" maxlength="60">
+      <button class="ghost" onclick="saveSearch()">Save</button>
+      <span class="note" id="savemsg" role="status"></span>
+      <span class="note">Keyword filters and numeric salary brackets aren't saved yet.</span>
+    </div>
+    {% endif %}
 
     {# The three status texts, below the controls rather than among them: in the toolbar row
        they were ~300px of prose between the buttons, and whichever control fell off the end
@@ -221,9 +225,6 @@
     <div class="status">
       <span class="n" id="n"></span>
       <span class="note sortnote" id="sortnote" role="status"></span>
-      {# What the × on a row did with it. The rows are hidden rather than dropped, so the
-         count beside this stays the server's own answer and one click puts them back. #}
-      <span class="note" id="hidden" role="status"></span>
     </div>
     <div class="active" id="active"></div>
     {# Says what the list below actually is. A no-Query browse and a ranked search look
@@ -231,11 +232,12 @@
        missing ring as a bug rather than as "this was never ranked" (ADR-0074). #}
     <p class="kind" id="kind" role="status"></p>
     {# The rates' own date, next to the rows that were converted at them (ADR-0117). The rail
-       carries the full caveat, but it is closed by default — and a converted figure with no
-       date beside it is precisely the defect the dated table exists to avoid. #}
+       carries the full caveat, but only while the bracket has focus — and a converted figure
+       with no date beside it is precisely the defect the dated table exists to avoid. #}
     <p class="note fxnote" id="fxnote" role="status"></p>
     {# tabindex="-1" so the skip link above actually MOVES focus here. Without it WebKit
        scrolls the results into view and leaves the tab position back in the filter rail. #}
     <div id="results" tabindex="-1" aria-live="polite"></div>
     <div class="pager" id="pager"></div>
+  </div>
 </main>

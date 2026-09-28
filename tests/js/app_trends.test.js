@@ -28,7 +28,7 @@ function fakeEl() {
     // `value: ''` so the load-time `go()` call (ADR-0074 — the Search tab browses on load,
     // reading `#q` even when this harness only cares about Trends) sees an empty query
     // rather than throwing on `undefined.trim()`.
-    innerHTML: '', textContent: '', hidden: false, value: '',
+    innerHTML: '', textContent: '', hidden: false, value: '', options: [],   // go() redraws the segmented selects from `options`
     // `style` needs the methods the code actually calls on it. A bare `{}` let
     // `style.setProperty` throw asynchronously, and Node reports that as an
     // unhandledRejection AFTER the test ends — so 24 tests failed at once with no
