@@ -16,7 +16,9 @@ first block whatever its ``@type``, and every one of 25 live Jobvite JSON-LD pag
 
 - every ``<script … application/ld+json>`` block, whatever the tag's other attributes or quoting
   — Meta's tags carry more than ``type`` (50 of 50 pages sampled 2026-09-24), and JazzHR serves
-  its ``Organization`` block before the ``JobPosting`` one (33 of 33);
+  its ``Organization`` block before the ``JobPosting`` one (33 of 33) — including a type whose
+  ``+`` is HTML-escaped, ``application/ld&#x2B;json``, as Happydance's classic template writes it
+  (13 of 22 fronts sampled 2026-09-28);
 - JSON parsed with ``strict=False``: Trakstar embeds literal newlines inside string values, which
   strict parsing rejects (45 of 45 of its JSON-LD pages);
 - ``@type`` as a string or a list, and a top-level array of nodes — both valid JSON-LD, and each
@@ -38,7 +40,8 @@ from collections.abc import Collection, Iterator
 from typing import Any, TypedDict
 
 _JSONLD_BLOCK = re.compile(
-    r"<script[^>]*application/ld\+json[^>]*>(.*?)</script>", re.DOTALL | re.IGNORECASE
+    r"<script[^>]*application/ld(?:\+|&#x2B;)json[^>]*>(.*?)</script>",
+    re.DOTALL | re.IGNORECASE,
 )
 
 

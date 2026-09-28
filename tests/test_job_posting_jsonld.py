@@ -87,6 +87,14 @@ def _script(
             id="upper-case-tag",
         ),
         pytest.param(
+            # Happydance's tag, 2026-09-28: the "+" HTML-escaped inside the attribute.
+            _script(
+                POSTING, '<script id="js-job-posting" type="application/ld&#x2B;json">'
+            ),
+            "Backend Engineer",
+            id="html-escaped-plus-in-the-type",
+        ),
+        pytest.param(
             _script({**POSTING, "title": "First"})
             + _script({**POSTING, "title": "Second"}),
             "First",
