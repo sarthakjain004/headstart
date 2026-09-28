@@ -44,7 +44,6 @@ from itertools import pairwise
 
 from headstart.trends import netting
 from headstart.trends.netting import (
-    _DEDUP,
     _TOTAL,
     _birth_note,
     _count_jumps,
@@ -1044,26 +1043,21 @@ class _Reader:
                 change,
                 CauseKind.COUNTING,
                 stamps[n["i"]],
-                f"the week-later echo of the {_day(source)} "
-                + " and ".join(_words(f)[1] for f in n["fields"]),
+                netting.echo_label(n["fields"], _day(source)),
                 fields=tuple(n["fields"]),
                 changed=tuple(n["changed"]),
             )
             return change
         change = f"counting@{source}"
-        # Under a pick, a duplicate-removal change is named only where a pick can be touched,
-        # as the note's own `changed` is: Google's marker read "duplicate removal changed",
-        # which moved nothing at Google.
-        named = [
-            f
-            for f in n["fields"]
-            if f != _DEDUP or not self.view.picked or n["touched"]
-        ]
+        # Under a pick, a duplicate-removal change is named only where a pick can be touched
+        # (the note's `named`, as its `changed`): Google's marker read "duplicate removal
+        # changed", which moved nothing at Google.
         self._register(
             change,
             CauseKind.COUNTING,
             source,
-            ", ".join(_words(f)[0] for f in named) or ", ".join(n["changed"]),
+            (n["named"] and netting.change_label(n["named"]))
+            or ", ".join(n["changed"]),
             fields=tuple(n["fields"]),
             changed=tuple(n["changed"]),
         )
@@ -1521,12 +1515,6 @@ def _index_base(points, netted: tuple[float | None, ...]) -> float | None:
     if first is None or first < INDEX_BASE_FLOOR or base is None:
         return None
     return base if base >= INDEX_BASE_FLOOR else None
-
-
-def _words(field: str) -> tuple[str, str]:
-    """A Methodology field in words, as a change and as a noun. A field with no words keeps its
-    id, which :func:`check_reading` refuses, so a new field cannot reach a reader unnamed."""
-    return netting.METHODOLOGY_WORDS.get(field, (field, field))
 
 
 _MONTHS = (

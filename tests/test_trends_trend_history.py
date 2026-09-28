@@ -185,7 +185,9 @@ def test_a_counting_change_is_a_tick_whose_methodology_moved(tmp_path):
     assert epochs == [
         {
             "ts": _stamp(4),
-            "changed": ["job categories re-sorted"],
+            "changed": [
+                "we sorted jobs into categories more accurately, so some jobs moved to a different category"
+            ],
             "fields": ["family_classifier_version"],
         }
     ]

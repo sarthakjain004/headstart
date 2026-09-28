@@ -19,7 +19,7 @@
    {
     "ts": "2026-09-16T00:00:00+00:00",
     "changed": [
-     "tech-job filter updated"
+     "we got better at spotting tech jobs, so some jobs were added to or dropped from the counts"
     ],
     "fields": [
      "tech_filter_version"
@@ -95,13 +95,13 @@
      {
       "change": "counting@2026-09-16T00:00:00+00:00",
       "kind": "counting",
-      "label": "tech-job filter updated",
+      "label": "we got better at spotting tech jobs, so some jobs were added to or dropped from the counts",
       "size": -145
      },
      {
       "change": "growth_scaled_by_counting@2026-09-16T00:00:00+00:00",
       "kind": "growth_scaled_by_a_change",
-      "label": "growth rescaled when tech-job filter updated",
+      "label": "growth rescaled when we got better at spotting tech jobs, so some jobs were added to or dropped from the counts",
       "size": 120
      }
     ],
@@ -154,13 +154,13 @@
       {
        "change": "counting@2026-09-16T00:00:00+00:00",
        "kind": "counting",
-       "label": "tech-job filter updated",
+       "label": "we got better at spotting tech jobs, so some jobs were added to or dropped from the counts",
        "size": -145
       },
       {
        "change": "growth_scaled_by_counting@2026-09-16T00:00:00+00:00",
        "kind": "growth_scaled_by_a_change",
-       "label": "growth rescaled when tech-job filter updated",
+       "label": "growth rescaled when we got better at spotting tech jobs, so some jobs were added to or dropped from the counts",
        "size": 120
       }
      ],
@@ -208,13 +208,13 @@
       {
        "change": "counting@2026-09-16T00:00:00+00:00",
        "kind": "counting",
-       "label": "tech-job filter updated",
+       "label": "we got better at spotting tech jobs, so some jobs were added to or dropped from the counts",
        "size": -145
       },
       {
        "change": "growth_scaled_by_counting@2026-09-16T00:00:00+00:00",
        "kind": "growth_scaled_by_a_change",
-       "label": "growth rescaled when tech-job filter updated",
+       "label": "growth rescaled when we got better at spotting tech jobs, so some jobs were added to or dropped from the counts",
        "size": 120
       }
      ],
@@ -246,12 +246,12 @@
     "id": "counting@2026-09-16T00:00:00+00:00",
     "kind": "counting",
     "ts": "2026-09-16T00:00:00+00:00",
-    "label": "tech-job filter updated",
+    "label": "we got better at spotting tech jobs, so some jobs were added to or dropped from the counts",
     "fields": [
      "tech_filter_version"
     ],
     "changed": [
-     "tech-job filter updated"
+     "we got better at spotting tech jobs, so some jobs were added to or dropped from the counts"
     ],
     "company": null,
     "boards": null,
@@ -263,7 +263,7 @@
     "id": "growth_scaled_by_counting@2026-09-16T00:00:00+00:00",
     "kind": "growth_scaled_by_a_change",
     "ts": "2026-09-16T00:00:00+00:00",
-    "label": "growth rescaled when tech-job filter updated",
+    "label": "growth rescaled when we got better at spotting tech jobs, so some jobs were added to or dropped from the counts",
     "fields": [],
     "changed": [],
     "company": null,

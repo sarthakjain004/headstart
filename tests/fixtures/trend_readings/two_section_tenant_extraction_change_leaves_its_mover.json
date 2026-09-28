@@ -29,7 +29,7 @@
    {
     "ts": "2026-09-20T00:00:00+00:00",
     "changed": [
-     "experience and salary reading updated"
+     "we read experience and salary from job posts more accurately, so some jobs moved to a different experience level"
     ],
     "fields": [
      "derivations_version"

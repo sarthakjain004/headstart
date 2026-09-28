@@ -156,7 +156,10 @@ def test_no_label_is_a_raw_field_id() -> None:
     change. It reads as the echo it is, at its own run."""
     reading = _golden("new_echo_of_a_change_before_the_window")["reading"]
     [echo] = reading["marked_changes"]
-    assert echo["label"] == "the week-later echo of the Sep 11 tech-job filter update"
+    assert echo["label"] == (
+        "a week after we got better at spotting tech jobs on Sep 11, "
+        "the jobs that change moved stopped being new"
+    )
     assert echo["ts"] == "2026-09-19T00:00:00+00:00"
     for path in GOLDEN:
         reading = json.loads(path.read_text(encoding="utf-8"))["reading"]
@@ -331,8 +334,14 @@ def test_the_categories_add_up_to_the_company_with_a_closing_row() -> None:
         "the refit at its size, then the growth"
     )
     assert [c["label"] for c in change] == [
-        "job categories re-sorted",
-        "growth rescaled when job categories re-sorted",
+        (
+            "we sorted jobs into categories more accurately, so some jobs moved to a "
+            "different category"
+        ),
+        (
+            "growth rescaled when we sorted jobs into categories more accurately, so some "
+            "jobs moved to a different category"
+        ),
     ]
 
 

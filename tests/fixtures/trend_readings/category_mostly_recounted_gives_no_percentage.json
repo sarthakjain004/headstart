@@ -9,7 +9,7 @@
    {
     "ts": "2026-09-15T00:00:00+00:00",
     "changed": [
-     "tech-job filter updated"
+     "we got better at spotting tech jobs, so some jobs were added to or dropped from the counts"
     ],
     "fields": [
      "tech_filter_version"
@@ -126,7 +126,7 @@
      {
       "change": "counting@2026-09-15T00:00:00+00:00",
       "kind": "counting",
-      "label": "tech-job filter updated",
+      "label": "we got better at spotting tech jobs, so some jobs were added to or dropped from the counts",
       "size": -158
      }
     ],
@@ -217,7 +217,7 @@
       {
        "change": "counting@2026-09-15T00:00:00+00:00",
        "kind": "counting",
-       "label": "tech-job filter updated",
+       "label": "we got better at spotting tech jobs, so some jobs were added to or dropped from the counts",
        "size": -150
       }
      ],
@@ -262,7 +262,7 @@
       {
        "change": "counting@2026-09-15T00:00:00+00:00",
        "kind": "counting",
-       "label": "tech-job filter updated",
+       "label": "we got better at spotting tech jobs, so some jobs were added to or dropped from the counts",
        "size": -7
       }
      ],
@@ -307,7 +307,7 @@
       {
        "change": "counting@2026-09-15T00:00:00+00:00",
        "kind": "counting",
-       "label": "tech-job filter updated",
+       "label": "we got better at spotting tech jobs, so some jobs were added to or dropped from the counts",
        "size": -1
       }
      ],
@@ -355,7 +355,7 @@
       {
        "change": "counting@2026-09-15T00:00:00+00:00",
        "kind": "counting",
-       "label": "tech-job filter updated",
+       "label": "we got better at spotting tech jobs, so some jobs were added to or dropped from the counts",
        "size": -158
       }
      ],
@@ -387,12 +387,12 @@
     "id": "counting@2026-09-15T00:00:00+00:00",
     "kind": "counting",
     "ts": "2026-09-15T00:00:00+00:00",
-    "label": "tech-job filter updated",
+    "label": "we got better at spotting tech jobs, so some jobs were added to or dropped from the counts",
     "fields": [
      "tech_filter_version"
     ],
     "changed": [
-     "tech-job filter updated"
+     "we got better at spotting tech jobs, so some jobs were added to or dropped from the counts"
     ],
     "company": null,
     "boards": null,
