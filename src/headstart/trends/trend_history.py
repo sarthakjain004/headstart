@@ -687,9 +687,7 @@ class TrendHistory:
             name: np.concatenate([part[name] for part in parts])
             for name in _INDEX_TYPES
         }
-        self._every_ats_cells = self._index_cells(
-            np.ones(len(self._index["tick"]), dtype=bool), 0, len(self._ticks)
-        )
+        self._every_ats_cells = self._index_cells(None, 0, len(self._ticks))
         self._new_measured = {
             self._ticks[t]
             for t in np.unique(self._index["tick"][self._index["metric"] == 0]).tolist()
@@ -1640,25 +1638,30 @@ class TrendHistory:
         )
 
     def _index_cells(
-        self, rows: np.ndarray, lo: int, hi: int
+        self, rows: np.ndarray | None, lo: int, hi: int
     ) -> tuple[np.ndarray, np.ndarray]:
-        """The index ``rows`` (a mask) at ticks ``[lo, hi)`` as cells ``(tick - lo, metric,
-        family rank, band rank)``: whether each cell holds a row, and the count it sums to."""
-        index = self._index
+        """The index ``rows`` (a mask, or None for every row) at ticks ``[lo, hi)`` as cells
+        ``(tick - lo, metric, family rank, band rank)``: whether each cell holds a row, and the
+        count it sums to."""
+        index = (
+            self._index
+            if rows is None
+            else {name: column[rows] for name, column in self._index.items()}
+        )
         sizes = (max(hi - lo, 1), 2, len(self._families.names), len(self._bands.names))
         ranks = self._families.ranks(), self._bands.ranks()
         keys = np.ravel_multi_index(
             (
-                index["tick"][rows] - lo,
-                index["metric"][rows],
-                ranks[0][index["family"][rows]],
-                ranks[1][index["band"][rows]],
+                index["tick"] - lo,
+                index["metric"],
+                ranks[0][index["family"]],
+                ranks[1][index["band"]],
             ),
             sizes,
         )
         held = np.bincount(keys, minlength=int(np.prod(sizes)))
         # summed as floats, exact for any count below 2**53
-        counts = np.bincount(keys, index["count"][rows], len(held)).astype(np.int64)
+        counts = np.bincount(keys, index["count"], len(held)).astype(np.int64)
         return (held > 0).reshape(sizes), counts.reshape(sizes)
 
     def _index_rows(
