@@ -78,6 +78,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
+from re import _constants as re_constants
+from re import _parser as re_parser
 from urllib.parse import parse_qs, urlencode, urljoin, urlsplit, urlunsplit
 
 import certifi
@@ -115,7 +117,11 @@ except Exception:  # noqa: BLE001
 
 UA = "headstart/0.1"
 PAGE_CAP = 900_000
-BUNDLE_CAP = 1_500_000
+# An SPA's main bundle is routinely several MB and names its ATS wherever its bundler put the
+# config, often late: Microland's Angular main.js is 3.4 MB and its only `public.zwayam.com` sits
+# past the 1.7 MB mark, which the old 1.5 MB cap cut off. `get` downloads the whole body anyway,
+# so the cap bounds only what `scan` reads, not the network.
+BUNDLE_CAP = 8_000_000
 TIMEOUT = 12
 
 # The ATSes with a scraper. Read from the registry rather than restated, so this script can never
@@ -391,6 +397,58 @@ PATTERNS: dict[str, tuple[str, list[str]]] = {
         ],
     ),
 }
+
+
+def required_words(pattern: str) -> tuple[str, ...]:
+    """The lower-cased literal runs of 4+ characters that every match of `pattern` contains.
+
+    Walks the parsed pattern: a literal extends the current run, a group is walked in place, and a
+    repeat's body is walked only when it must occur at least once. Anything else (a branch, a
+    class, `.`, an anchor, a lookaround) can match without any fixed text, so it ends the run and
+    contributes nothing. Missing a word only costs speed; claiming one a match can lack would drop
+    that match, so every rule here errs towards fewer words.
+    """
+    words: list[str] = []
+    run: list[str] = []
+
+    def end_run() -> None:
+        if len(run) >= 4:
+            words.append("".join(run).lower())
+        run.clear()
+
+    def walk(items) -> None:
+        for op, arg in items:
+            if op is re_constants.LITERAL:
+                run.append(chr(arg))
+            elif op is re_constants.SUBPATTERN:
+                walk(arg[-1])
+            elif op in (
+                re_constants.MAX_REPEAT,
+                re_constants.MIN_REPEAT,
+                re_constants.POSSESSIVE_REPEAT,
+            ):
+                end_run()
+                if arg[0] >= 1:
+                    walk(arg[2])
+                end_run()
+            else:
+                end_run()
+
+    walk(re_parser.parse(pattern))
+    end_run()
+    return tuple(words)
+
+
+# scan() runs every pattern over every page and bundle, which was most of a host's CPU (~0.44 s a
+# call). A pattern cannot match a text that lacks one of its required words, so scan() skips it
+# there. HOST and scan()'s trailing lookahead add no literals, so the words of `p` are exact.
+PATTERN_REQUIRED_WORDS: dict[str, list[tuple[str, ...]]] = {
+    ats: [required_words(p) for p in pats] for ats, (_kind, pats) in PATTERNS.items()
+}
+# The non-ASCII characters re.IGNORECASE matches against an ASCII letter, over all of Unicode:
+# dotted capital I, dotless i, long s and the Kelvin sign. `str.lower()` does not map the first
+# three onto that letter, so a text holding any of them takes the unfiltered scan.
+IGNORECASE_ASCII_FOLDS = "\u0130\u0131\u017f\u212a"
 
 # Taleo's hostname identifies the platform, not the Board. Enterprise needs its Career Section;
 # Business Edition needs shard/instance plus org/cws. A host-only signal remains generic `taleo`
@@ -699,6 +757,10 @@ HREF = re.compile(
 SCRIPT_SRC = re.compile(
     r"""<script[^>]{0,200}?\ssrc\s*=\s*["']([^"'>\s]{1,400})["']""", re.IGNORECASE
 )
+BASE_HREF = re.compile(
+    r"""<base\s(?:[^>]{0,200}?\s)?href\s*=\s*["']([^"'>\s]{0,400})["']""",
+    re.IGNORECASE,
+)
 # Real Workday URLs carry a locale segment ("/en-US/AcmeCareers"). Without re-checking the site
 # capture against this, every localed board resolves to ".../en-US" instead of its real site. The
 # bare form is an explicit language list, NOT any two letters: real site names are two letters too
@@ -907,6 +969,19 @@ def reg_domain(host: str) -> str:
     return public_domain(host)
 
 
+def script_urls(body: str, page_url: str) -> list[str]:
+    """Every `<script src>` in `body`, resolved as a browser resolves it.
+
+    A page's first `<base href>` (itself relative to the page) replaces the page URL as the root
+    for relative srcs. Without that, a deep SPA route such as Microland's
+    `/microland/jobview/{job}` under `<base href="/microland/">` resolves `main.js` to a route
+    that serves the HTML shell, and the bundle naming the ATS is never read.
+    """
+    base = BASE_HREF.search(body)
+    root = urljoin(page_url, base.group(1)) if base else page_url
+    return [urljoin(root, m.group(1)) for m in SCRIPT_SRC.finditer(body)]
+
+
 def scan(
     text: str, self_domain: str, *, allow_provider_host: bool = False
 ) -> list[tuple[str, str, str, int]]:
@@ -927,10 +1002,15 @@ def scan(
         if key not in counts:
             hits.append(key)
         counts[key] += 1
+    # Lower-cased once for the required-word test. A character IGNORECASE folds onto an ASCII
+    # letter could complete a match that the lowered text hides, so such a text runs every pattern.
+    lowered = None if any(c in text for c in IGNORECASE_ASCII_FOLDS) else text.lower()
     for ats, (kind, pats) in PATTERNS.items():
         if not allow_provider_host and rd in PROVIDER_DOMAINS.get(ats, set()):
             continue
-        for p in pats:
+        for p, words in zip(pats, PATTERN_REQUIRED_WORDS[ats], strict=True):
+            if lowered is not None and not all(w in lowered for w in words):
+                continue
             for m in re.finditer(
                 HOST + "(?:" + p + r")(?![a-z0-9_.-])", text, re.IGNORECASE
             ):
@@ -1445,7 +1525,7 @@ def probe(
     # same-origin scripts, because this is the expensive signal (bundles run to megabytes).
     if not has_candidate() and best_careers_page:
         body, final = best_careers_page
-        srcs = [urljoin(final, m.group(1)) for m in SCRIPT_SRC.finditer(body)]
+        srcs = script_urls(body, final)
         srcs = [u for u in srcs if reg_domain(urlsplit(u).netloc) == reg_domain(domain)]
         srcs.sort(
             key=lambda u: (

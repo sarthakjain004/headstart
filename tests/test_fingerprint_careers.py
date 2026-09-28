@@ -1069,3 +1069,93 @@ def test_a_peoplestrong_portal_link_yields_the_scrapers_lowercased_label():
     assert fp.scan(page, "hdfcergo.com") == [
         ("peoplestrong", "ats", "hdfcergocareers", 1)
     ]
+
+
+def test_script_urls_resolve_relative_srcs_against_the_pages_base_href():
+    page_url = "https://careers.acme.com/jobs/view/123"
+    with_base = '<head><base href="/app/"><script src="main.js"></script></head>'
+    without_base = '<head><script src="main.js"></script></head>'
+
+    assert fp.script_urls(with_base, page_url) == [
+        "https://careers.acme.com/app/main.js"
+    ]
+    assert fp.script_urls(without_base, page_url) == [
+        "https://careers.acme.com/jobs/view/main.js"
+    ]
+
+
+def test_bundle_rung_fetches_the_bundle_the_base_href_names(monkeypatch):
+    """The SPA shell sits on a deep route; only `<base href>` names where its bundle lives."""
+    monkeypatch.setattr(fp, "cname_chain", lambda _host: [])
+
+    def get(url, cap=fp.PAGE_CAP):
+        if url == "https://acme.com/careers":
+            return '<base href="/app/"><script src="main.js"></script>', url, ""
+        if url == "https://acme.com/app/main.js":
+            return 'api="https://boards.greenhouse.io/acmeexample"', url, ""
+        return "", url, "http404"
+
+    monkeypatch.setattr(fp, "get", get)
+    row = fp.probe("Acme", "acme.com", generated_career_hosts=False)
+
+    assert (row["ats"], row["tenant"], row["signal"]) == (
+        "greenhouse",
+        "acmeexample",
+        "jsbundle",
+    )
+
+
+def test_required_words_keep_only_literals_every_match_contains():
+    # An optional group contributes nothing; the literals around it still count.
+    assert fp.required_words(r"jobs(?:\.europe)?\.lever\.co/") == (
+        "jobs",
+        ".lever.co/",
+    )
+    # An alternation contributes nothing, and ends the run it interrupts.
+    assert fp.required_words(r"(?:alpha|bravo)\.example") == (".example",)
+    # A repeat that must occur keeps its literals; one that may not does not.
+    assert fp.required_words(r"(?:acme-)+jobs") == ("acme-", "jobs")
+    assert fp.required_words(r"(?:acme-)*jobs") == ("jobs",)
+    # An escaped dot is a literal; a bare dot matches anything and ends the run.
+    assert fp.required_words(r"jobs\.lever\.co") == ("jobs.lever.co",)
+    assert fp.required_words(r"jobs.lever.co") == ("jobs", "lever")
+    # Words are lower-cased, since scan() tests them against the lower-cased text.
+    assert fp.required_words(r"Boards\.Greenhouse\.io") == ("boards.greenhouse.io",)
+
+
+def test_ignorecase_ascii_folds_lists_every_character_matching_an_ascii_letter():
+    ascii_letter = fp.re.compile(
+        "|".join("abcdefghijklmnopqrstuvwxyz"), fp.re.IGNORECASE
+    )
+    folds = [chr(x) for x in range(128, 0x110000) if ascii_letter.fullmatch(chr(x))]
+
+    assert "".join(folds) == fp.IGNORECASE_ASCII_FOLDS
+
+
+def test_filtered_scan_equals_the_scan_that_runs_every_pattern(monkeypatch):
+    texts = {
+        "greenhouse": '<a href="https://boards.greenhouse.io/acme">Jobs</a>'
+        '<iframe src="https://job-boards.greenhouse.io/embed/job_board?for=acme">',
+        "lever": "https://jobs.lever.co/acme/1234 api.lever.co/v0/postings/acme",
+        "mixed": "https://acme.wd1.myworkdayjobs.com/AcmeCareers"
+        " https://careers-acme.icims.com/ https://acme.keka.com/careers"
+        " mailto:careers@acme.com",
+        "none": "<html><body>We are hiring. Email us your CV.</body></html>",
+        # The Kelvin sign matches `k` under IGNORECASE, so this names keka.
+        "kelvin": "https://acme.\u212aeka.com/careers",
+        # The long s matches `s` under IGNORECASE but `str.lower()` keeps it, so only the
+        # unfiltered fallback finds this smartrecruiters board.
+        "long-s": "https://jobs.\u017fmartrecruiters.com/Acme",
+    }
+    filtered = {name: fp.scan(text, "acme.com") for name, text in texts.items()}
+    monkeypatch.setattr(
+        fp,
+        "PATTERN_REQUIRED_WORDS",
+        {ats: [()] * len(pats) for ats, (_kind, pats) in fp.PATTERNS.items()},
+    )
+    unfiltered = {name: fp.scan(text, "acme.com") for name, text in texts.items()}
+
+    assert filtered == unfiltered
+    assert {name for name, found in unfiltered.items() if not found} == {"none"}
+    assert {ats for ats, *_rest in unfiltered["kelvin"]} == {"keka"}
+    assert {ats for ats, *_rest in unfiltered["long-s"]} == {"smartrecruiters"}
