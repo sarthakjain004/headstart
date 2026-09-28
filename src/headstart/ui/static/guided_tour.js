@@ -12,7 +12,8 @@
 
   const STEPS = [
     { tab: null, targets: ['nav.tabs'], title: 'Everything is one click away',
-      body: 'Search, your saved jobs, hiring trends and the résumé builder all live here.' },
+      body: 'Search, your saved jobs, hiring trends and the résumé builder all live here. On a ' +
+            'wide screen, the button at the top folds it to icons and back.' },
     { tab: 'search', targets: ['#q'], title: 'Describe the job you want',
       body: 'Write it the way you would say it, like “backend engineer at a climate startup”. ' +
             'Results are matched on meaning, not exact words.' },

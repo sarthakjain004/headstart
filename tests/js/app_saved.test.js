@@ -60,6 +60,7 @@ function loadApp(saved, stars) {
   const ctx = {
     document: {
       getElementById: id => (nodes[id] ||= fakeEl()),
+      documentElement: { dataset: {} },   // the sidebar's folded state (ADR-0249)
       addEventListener() {}, querySelector: () => null,
       querySelectorAll: sel => (sel === 'button[data-star]' && stars ? stars : []),
     },

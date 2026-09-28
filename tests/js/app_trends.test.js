@@ -76,7 +76,7 @@ function loadApp(fetchImpl, cfg = {}) {
       // seriesColor() reads categorical-slot custom properties off :root at draw time (a theme
       // flip repaints correctly instead of freezing on a hardcoded hex array — see app.js). The
       // stub's exact color is irrelevant to every test here; only the structural HTML is asserted.
-      documentElement: { getAttribute: () => null, setAttribute() {} },
+      documentElement: { getAttribute: () => null, setAttribute() {}, dataset: {} },
     },
     // app.js reads its config off `window.CFG`, so tests set flags there.
     // Listeners recorded, as an element's are: the tooltip test fires the page's scroll.

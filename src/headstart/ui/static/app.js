@@ -107,6 +107,26 @@ window.addEventListener('hashchange', () => {
 let viaTabStrip = false;
 document.addEventListener('click', e => { if (e.target.closest && e.target.closest('.tabs [data-tab]')) viaTabStrip = true; }, true);
 
+// The sidebar folds to its icons and back (ADR-0249). base.html applies the stored state before
+// the first paint; this keeps the button's own state in step with it and remembers each flip.
+const NAV_KEY = 'hs.navCollapsed';
+function drawNavToggle(){
+  const btn = el('nav-toggle');
+  const folded = document.documentElement.dataset.nav === 'collapsed';
+  const label = folded ? 'Expand navigation' : 'Collapse navigation';
+  btn.setAttribute('aria-expanded', String(!folded));
+  btn.setAttribute('aria-label', label);
+  btn.setAttribute('title', label);   // an icon-only button, like the theme switch beside it
+}
+function flipNav(){
+  const fold = document.documentElement.dataset.nav !== 'collapsed';
+  if (fold) document.documentElement.dataset.nav = 'collapsed';
+  else delete document.documentElement.dataset.nav;
+  try { localStorage.setItem(NAV_KEY, fold ? '1' : ''); } catch(e){}
+  drawNavToggle();
+}
+el('nav-toggle').addEventListener('click', flipNav);
+drawNavToggle();
 function flipTheme(){
   const now = document.documentElement.getAttribute('data-theme')
     || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
