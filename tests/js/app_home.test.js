@@ -25,7 +25,7 @@ function fakeEl(extra) {
   const classes = new Set();
   const handlers = {};
   return {
-    innerHTML: '', textContent: '', hidden: false, value: '', checked: false,
+    innerHTML: '', textContent: '', hidden: false, value: '', checked: false, dataset: {}, options: [],
     style: { setProperty() {}, getPropertyValue: () => '', removeProperty() {} },
     querySelector: () => null, querySelectorAll: () => [],
     setAttribute(k, v) { this[k] = v; }, getAttribute: () => null,

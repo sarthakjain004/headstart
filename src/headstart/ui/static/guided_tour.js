@@ -16,7 +16,7 @@
     { tab: 'search', targets: ['#q'], title: 'Describe the job you want',
       body: 'Write it the way you would say it, like “backend engineer at a climate startup”. ' +
             'Results are matched on meaning, not exact words.' },
-    { tab: 'search', targets: ['#filtersbtn', '#rail'], title: 'Narrow it down',
+    { tab: 'search', targets: ['#rail'], title: 'Narrow it down',
       body: 'Filters narrow the list — experience, salary, remote, location and how ' +
             'recent. Keep those out of the search box.' },
     { tab: 'search', targets: ['#results .card', '#results'], title: 'Open a job at the source',
@@ -136,7 +136,9 @@
     tour.body.textContent = STEPS[i].body;
     tour.back.disabled = n === 0;
     tour.next.textContent = n === shown.length - 1 ? 'Finish' : 'Next';
-    target.scrollIntoView({ block: 'center', inline: 'nearest' });
+    // A target taller than the window (the filter column) is shown from its top, not its middle.
+    const tall = target.getBoundingClientRect().height > root.innerHeight * 0.8;
+    target.scrollIntoView({ block: tall ? 'start' : 'center', inline: 'nearest' });
     place();
     tour.next.focus();
   }

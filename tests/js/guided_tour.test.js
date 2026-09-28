@@ -46,8 +46,7 @@ function loadTour({ missing = [], stored = null, storageThrows = false, trendsLi
   const targets = {
     'nav.tabs': fakeNode('nav'),
     '#q': onSearch(fakeNode('input')),
-    '#filtersbtn': onSearch(fakeNode('button')),
-    '#rail': onSearch(fakeNode('aside', false)),        // closed: display:none, no boxes
+    '#rail': onSearch(fakeNode('aside')),
     '#results .card': onSearch(fakeNode('div')),
     '#results': onSearch(fakeNode('div')),
     '.tabs [data-tab="trends"]': trendsLink ? fakeNode('a') : null,
@@ -134,9 +133,9 @@ test('the tour walks its steps in order, switching to the tab each one lives on'
 });
 
 test('a missing target costs that step, never the tour', async () => {
-  // Another change renames the Filters button and keeps the rail closed: neither selector finds
-  // a visible element, so the tour waits out its limit and moves on to the results.
-  const t = loadTour({ missing: ['#filtersbtn'] });
+  // Another change renames the filter rail: its selector finds nothing, so the tour waits out
+  // its limit and moves on to the results.
+  const t = loadTour({ missing: ['#rail'] });
   t.ctx.GuidedTour.start();
   await t.tick();
   t.next().click();

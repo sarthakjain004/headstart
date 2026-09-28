@@ -39,12 +39,15 @@ to the Search tab that holds it. This was needed, not extra: the skip link on Se
 `href="#results"`, and it had stayed on Search only because Search was the fallback. With Home as
 the fallback it would have switched the reader to Home.
 
-**Navigation is a sidebar at 1180px and wider, and the existing scrolling strip below that.** One
+**Navigation is a sidebar at 1280px and wider, and the existing scrolling strip below that.** One
 `<nav class="tabs">` list, laid out twice by CSS, so `app.js` reads the same links either way. The
 shell's ceiling grows by the sidebar's width so the content column keeps its measure; the sidebar
 is sticky, so a tab switch now starts the new tab at its top. A tab the deployment cannot serve is
 left out of the list rather than shown as a disabled "soon" entry (Apple's tab-bar guidance, per
-`docs/ux-research/2026-09-28_what-makes-users-stick.md`).
+`docs/ux-research/2026-09-28_what-makes-users-stick.md`). The breakpoint is 1280px because Search
+has its own column: ADR-0247 puts the filters beside the results from 1100px, and with the
+sidebar too, a 1180px window left the results 525px wide (measured); at 1280px they get 631px,
+about what ADR-0247 accepted at its own 1100px edge.
 
 **The tour is a plain script with no library** (`static/guided_tour.js`). A step names its tab and
 selectors tried in order; a target missing or hidden after a short wait is skipped, never pointed
@@ -75,7 +78,8 @@ through, so the door shows it signed out.
 - ADR-0113's commitment — every number counted live, every claim linked to its decision — no
   longer has a page in the product. The privacy disclosures it carried per deployment are now the
   privacy policy's, which Home and the footer link.
-- On a 1180–1439px screen the content column is narrower than before by the sidebar's width.
+- On a 1280–1439px screen the content column is narrower than before by the sidebar's width,
+  and a 1100–1279px window keeps the top strip.
   The sidebar cannot be collapsed yet; the UX research asks for "collapsible but open by
   default", which is left for a follow-up rather than built with an icon-only mode now.
 - A step whose target another change renames is silently skipped, so the tour needs its selectors

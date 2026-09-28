@@ -41,7 +41,7 @@
      is the shell's own gutter, named so the two cannot drift apart in the calc below. */
   --measure:1150px; --shell-pad:26px;
   /* The wide-screen sidebar's column and the gap beside it (ADR-0249). */
-  --nav-w:184px; --nav-gap:28px;
+  --nav-w:176px; --nav-gap:24px;
   /* What the guided tour dims the page with: dark in both themes, a touch lighter on light. */
   --scrim:rgba(6,7,9,.62);
 }
@@ -1217,12 +1217,13 @@ textarea:focus{ border-color:var(--accent); }
    The same <nav class="tabs"> list as the strip above, re-laid as a column beside the content.
    ADR-0116 removed a sidebar for costing width on every viewport; this one appears only where
    the width exists, and the shell's ceiling grows by the sidebar's own width so the content
-   column keeps its measure. `screen` only: a printout has no navigation to reserve a column
+   column keeps its measure. 1280px, not lower: Search puts its filter column beside the results
+   from 1100px (ADR-0247), and at 1180px the three columns left the results 525px — measured. `screen` only: a printout has no navigation to reserve a column
    for (resume.css hides .tabs in print). The icons are shown here and not in the strip, where
    they would only push more tabs off a phone's edge. */
 .nav-ico{ display:none; width:18px; height:18px; flex:none; fill:none; stroke:currentColor;
   stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
-@media screen and (min-width:1180px){
+@media screen and (min-width:1280px){
   .shell{ display:grid; grid-template-columns:var(--nav-w) minmax(0,1fr);
     column-gap:var(--nav-gap); align-items:start;
     grid-template-areas:"top top" "nav content" "nav foot"; }
@@ -1238,7 +1239,7 @@ textarea:focus{ border-color:var(--accent); }
   .nav-ico{ display:block; }
 }
 /* Below the ultrawide breakpoint only: that block sets its own, wider ceiling. */
-@media screen and (min-width:1180px) and (max-width:1719.98px){
+@media screen and (min-width:1280px) and (max-width:1719.98px){
   .shell{ max-width:min(calc(var(--measure) + var(--nav-w) + var(--nav-gap) + 2 * var(--shell-pad)), 94vw); }
 }
 
