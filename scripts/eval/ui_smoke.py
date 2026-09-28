@@ -213,6 +213,13 @@ def main() -> None:
                     expect(page.locator("#nav-toggle")).to_have_attribute(
                         "aria-expanded", "true"
                     )
+                    # The fluid shell (ADR-0249): the page reaches the window's edges bar the
+                    # --shell-gutter (at most 32px), instead of centring a capped box.
+                    edges = page.evaluate(
+                        "(() => { const b = document.querySelector('.top').getBoundingClientRect();"
+                        " return [b.left, innerWidth - b.right]; })()"
+                    )
+                    assert max(edges) <= 32, f"shell capped again: gutters {edges}"
                 else:
                     expect(toggle).to_be_hidden()
                 assert page.evaluate(

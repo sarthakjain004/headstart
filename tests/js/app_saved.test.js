@@ -71,6 +71,7 @@ function loadApp(saved, stars) {
     console: { log: console.log, warn: (...a) => logged.push(a), error: (...a) => logged.push(a) },
     CFG: {}, URLSearchParams, Date, Math, isNaN, Number, Array,
     Event: class { constructor(type) { this.type = type; } },
+    getComputedStyle: () => ({ getPropertyValue: () => '' }),   // setResultRows reads --cols
     fetch: url => {
       if (String(url) !== '/saved') return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
       // `ok`, not just a body: `loadSaved` gives up on a non-ok response, which is how a
