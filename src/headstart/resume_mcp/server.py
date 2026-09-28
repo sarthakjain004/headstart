@@ -1,11 +1,13 @@
 """The Résumé MCP server — three read-only tools over one Account's Résumé documents.
 
 Run as ``python -m headstart.resume_mcp`` and spoken to over stdio. The transport is
-JSON-RPC 2.0, newline-delimited, which is all MCP's stdio transport is; it is written out here
-rather than taken from the `mcp` SDK because that SDK brings pydantic, anyio, starlette and
-uvicorn to a local subprocess that answers four method names, and this repo's base install is
-two packages. Nothing here needs a dependency the test suite does not already have — there is
-no `importorskip` in `tests/test_resume_mcp.py` and there is not meant to be one.
+JSON-RPC 2.0, newline-delimited, which is all MCP's stdio transport is; it is written out by hand
+in :mod:`headstart.mcp_protocol.stdio`, shared with every HeadStart MCP server, rather than taken
+from the `mcp` SDK, because that SDK brings pydantic, anyio, starlette and uvicorn to a local
+subprocess that answers four method names, and this repo's base install is two packages. Nothing
+here needs a dependency the test suite does not already have — there is no `importorskip` in
+`tests/test_resume_mcp.py` and there is not meant to be one. This module is the three tools and
+what binds them, and the one Account, into that loop.
 
 **Read-only, on purpose.** ADR-0137 §"What it may not do": the browser is the working copy, a
 push carries a revision the store checks, and a writer here would be a second client of that
@@ -22,10 +24,11 @@ from __future__ import annotations
 
 import json
 import sys
-import time
 from typing import Any, TextIO
 
 from .. import log
+from ..mcp_protocol import stdio
+from ..mcp_protocol.stdio import ToolFailure
 from .account import Account, Unconfigured, open_account
 from .inspection import Unreadable, read_document, render
 
@@ -35,9 +38,9 @@ _log = log.get(__name__, __spec__)
 NAME = "headstart-resume"
 VERSION = "1.0.0"
 
-#: The revision of MCP this speaks. A client asking for another is answered with this one,
-#: which is what the spec says to do — it may then decide it cannot talk to us.
-PROTOCOL_VERSION = "2025-06-18"
+#: The revision of MCP a client that names none is answered with — the shared loop's newest.
+#: A client naming another the loop speaks gets that one (`mcp_protocol.stdio`).
+PROTOCOL_VERSION = stdio.NEWEST
 
 #: Said once per answer, because it is the difference between this data and the screen the
 #: person is looking at, and an agent that does not know it will confidently report stale
@@ -55,9 +58,19 @@ SYNC_NOTE = (
     "all — this server cannot see it and cannot tell you how many there are."
 )
 
+#: Every tool here only reads (ADR-0137 §"What it may not do"), and says so to the client.
+READ_ONLY = {
+    "readOnlyHint": True,
+    "destructiveHint": False,
+    "idempotentHint": True,
+    "openWorldHint": False,
+}
+
 TOOLS: list[dict[str, Any]] = [
     {
         "name": "list_resumes",
+        "title": "List synced résumés",
+        "annotations": READ_ONLY,
         "description": (
             "The Résumé documents this account keeps a synced copy of — id, name, layout, "
             "when it was last edited, and how many tailored versions it carries. Start here: "
@@ -72,6 +85,8 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "get_resume",
+        "title": "Get a résumé's stored document",
+        "annotations": READ_ONLY,
         "description": (
             "One Résumé document whole, as the stored JSON: the node tree, the content map, "
             "every variant and tailoring, the layout id and the theme. The exact bytes the "
@@ -92,6 +107,8 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "inspect_resume",
+        "title": "Inspect what a résumé says",
+        "annotations": READ_ONLY,
         "description": (
             "What is actually set in a résumé, block by block: every block in document "
             "order with its component type, the fields that type declares, their current "
@@ -119,12 +136,6 @@ TOOLS: list[dict[str, Any]] = [
         },
     },
 ]
-
-
-class ToolFailure(Exception):
-    """Something the caller should read and act on — reported as a failed tool result with a
-    sentence in it, never as a JSON-RPC error. A protocol error says the server is broken; a
-    missing token, an unknown id or an absent `node` are all answers to the question asked."""
 
 
 # ---- the tools ------------------------------------------------------------------------
@@ -242,129 +253,35 @@ def call(account: Account, name: str, arguments: dict[str, Any]) -> str:
 # ---- the transport --------------------------------------------------------------------
 
 
-def _result(request_id: Any, payload: dict[str, Any]) -> dict[str, Any]:
-    return {"jsonrpc": "2.0", "id": request_id, "result": payload}
-
-
-def _error(request_id: Any, code: int, message: str) -> dict[str, Any]:
-    return {
-        "jsonrpc": "2.0",
-        "id": request_id,
-        "error": {"code": code, "message": message},
-    }
-
-
-def _text(text: str, failed: bool = False) -> dict[str, Any]:
-    payload: dict[str, Any] = {"content": [{"type": "text", "text": text}]}
-    if failed:
-        payload["isError"] = True
-    return payload
+def _server(account: Account | Unconfigured) -> stdio.Server:
+    """This server as the shared loop sees it, bound to the one Account — or to the reason there
+    isn't one, which every call then reports."""
+    unconfigured = account if isinstance(account, Unconfigured) else None
+    return stdio.Server(
+        name=NAME,
+        version=VERSION,
+        tools=TOOLS,
+        call=lambda name, arguments: call(account, name, arguments),
+        log=_log,
+        unconfigured=unconfigured,
+    )
 
 
 def handle(
     message: dict[str, Any], account: Account | Unconfigured
 ) -> dict[str, Any] | None:
-    """One request in, one response out — or None for a notification, which takes no reply.
+    """One request in, one response out — or None for a notification (`mcp_protocol.stdio`).
 
     `account` is either the bound Account or the reason there isn't one. The server starts
     either way: a client whose server exits on a missing variable reports "failed to connect",
     which tells whoever has to fix it nothing at all.
     """
-    method = message.get("method")
-    request_id = message.get("id")
-    if request_id is None:  # a notification — `initialized`, `cancelled`, anything else
-        return None
-
-    if method == "initialize":
-        return _result(
-            request_id,
-            {
-                "protocolVersion": PROTOCOL_VERSION,
-                "capabilities": {"tools": {}},
-                "serverInfo": {"name": NAME, "version": VERSION},
-            },
-        )
-    if method == "ping":
-        return _result(request_id, {})
-    if method == "tools/list":
-        return _result(request_id, {"tools": TOOLS})
-    if method == "tools/call":
-        params = message.get("params") or {}
-        args = (params.get("arguments") or {}) if isinstance(params, dict) else None
-        if not isinstance(args, dict):
-            # Type names only: the malformed value may carry résumé text.
-            _log.info(
-                "tools/call refused: params %s, arguments %s",
-                type(params).__name__,
-                type(args).__name__,
-            )
-            return _error(request_id, -32602, "invalid params")
-        if isinstance(account, Unconfigured):
-            return _result(request_id, _text(str(account), failed=True))
-        name = params.get("name")
-        started = time.monotonic()
-        outcome = "error"
-        try:
-            text = call(account, name, args)
-            outcome = "ok"
-        except ToolFailure as exc:
-            outcome = "refused"
-            return _result(request_id, _text(str(exc), failed=True))
-        except Exception as exc:  # noqa: BLE001 — a traceback down stdio is a dead server
-            # The client gets one sentence; the stack goes to stderr. Argument names only —
-            # their values are document ids and version names, and may be résumé wording.
-            _log.error("tool %s failed (args %s)", name, sorted(args), exc_info=True)
-            return _result(
-                request_id,
-                _text(f"{type(exc).__name__}: {exc}", failed=True),
-            )
-        finally:
-            # No values: the outcome is the only trace a refusal leaves on stderr.
-            _log.debug(
-                "tool %s -> %s in %.0fms",
-                name,
-                outcome,
-                (time.monotonic() - started) * 1000,
-            )
-        return _result(request_id, _text(text))
-    return _error(request_id, -32601, f"method not found: {method}")
+    return stdio.handle(message, _server(account))
 
 
 def serve(stdin: TextIO, stdout: TextIO, account: Account | Unconfigured) -> None:
-    """The stdio loop. Every line is one JSON-RPC message; every reply is flushed as it is
-    written, because a client blocked on a buffered answer looks exactly like a hung server."""
-    for line in stdin:
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            message = json.loads(line)
-        except ValueError as exc:
-            # Length only, as below: the line may carry résumé text.
-            _log.info("unparseable JSON-RPC line dropped: length %d", len(line))
-            reply: dict[str, Any] | None = _error(None, -32700, f"parse error: {exc}")
-        else:
-            if isinstance(message, dict):
-                try:
-                    reply = handle(message, account)
-                except Exception:  # noqa: BLE001 — one bad request must not end the session
-                    # The method name only; the message may carry résumé text.
-                    _log.error(
-                        "request %s failed", message.get("method"), exc_info=True
-                    )
-                    reply = _error(message.get("id"), -32603, "internal error")
-            else:
-                # Type and size only: the message itself may carry résumé text. INFO, not
-                # WARNING: this is per message, and ADR-0039 bounds annotations per loop.
-                _log.info(
-                    "non-object JSON-RPC message dropped: %s of length %d",
-                    type(message).__name__,
-                    len(line),
-                )
-                reply = _error(None, -32600, "invalid request: not a JSON object")
-        if reply is not None:
-            stdout.write(json.dumps(reply) + "\n")
-            stdout.flush()
+    """The stdio loop (`mcp_protocol.stdio.serve`), bound to this server."""
+    stdio.serve(stdin, stdout, _server(account))
 
 
 def main() -> None:
