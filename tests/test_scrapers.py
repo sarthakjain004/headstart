@@ -89,6 +89,40 @@ def test_greenhouse_hybrid_location_is_not_read_as_on_site():
     assert get_scraper("greenhouse", "x", "X").parse(raw, SCRAPED_AT)[0].remote is None
 
 
+def test_greenhouse_salary_reads_the_pay_transparency_range():
+    """Real airbnb postings (2026-09-28): `&pay_transparency=true` adds `pay_input_ranges`, in
+    cents, with a title that can name the period ("United Kingdom Annual Pay Range")."""
+    jobs = get_scraper("greenhouse", "airbnb", "Airbnb").parse(
+        _load("greenhouse_airbnb_workplace_type.json"), SCRAPED_AT
+    )
+    assert [j.salary for j in jobs] == [
+        "87000-102000 USD Pay Range",
+        "46000-54000 GBP United Kingdom Annual Pay Range",
+        "52000-65000 MXN Mexico Monthly Pay Range",
+    ]
+
+
+def test_greenhouse_pay_range_title_carries_an_hourly_period():
+    """Real sonyinteractiveentertainmentglobal posting: the title says "this is an hourly
+    rate", which `salary.from_field` reads, so $36-$48 annualises instead of being declined."""
+    from headstart.jobs import salary
+
+    job = get_scraper("greenhouse", "sie", "SIE").parse(
+        _load("greenhouse_sonyinteractive_hourly_pay_range.json"), SCRAPED_AT
+    )[0]
+    assert job.salary.startswith("36-48 USD ")
+    assert salary.from_field(job.salary, "greenhouse").min_annual == 36 * 2080
+
+
+def test_greenhouse_on_target_earnings_is_not_base_salary():
+    """Real agilysys posting: its only range is titled "OTE Range" (base + commission), while
+    its description states the base. Declined, so the description's base figure is read."""
+    job = get_scraper("greenhouse", "agilysys", "Agilysys").parse(
+        _load("greenhouse_agilysys_ote_pay_range.json"), SCRAPED_AT
+    )[0]
+    assert job.salary is None
+
+
 def test_greenhouse_salary_prefers_currency_range_over_currency_band():
     # Real live sample (doordashusa, "Account Manager, CPG", 2026-09-15): a currency_range "Pay
     # Transparency Range" entry beats two single-point currency "Band Midpoint"/"Minimum" entries
