@@ -210,6 +210,83 @@ test('a preset window is never asked ahead: its URL is measured from each click'
   assert.strictEqual(timers.size, 0);
 });
 
+test('a category row the pointer rests on has its levels asked for ahead, once', async () => {
+  const app = versionedApp();
+  const { t, nodes, asked, run } = app;
+  await t.load(null);
+  asked.length = 0;
+  const row = { dataset: { name: 'software-engineering' }, isConnected: true };
+  const over = { target: { closest: sel => sel.startsWith('.row[data-name]') ? row : null } };
+  const legend = nodes['trends-legend'];
+  legend.listeners.pointerover.forEach(fn => fn(over));
+  assert.deepStrictEqual(asked, []);   // only once it rests there
+  run();
+  const drill = '/trends?family=software-engineering&split=bands&v=b00t';
+  assert.ok(asked.some(a => a.url === drill && a.priority === 'low'), JSON.stringify(asked));
+  const before = asked.length;
+  legend.listeners.pointerover.forEach(fn => fn(over));
+  run();
+  assert.equal(asked.filter(a => a.url === drill).length, 1);
+  assert.equal(asked.length, before);
+});
+
+test('the top suggestion for a first pick has its trend asked for ahead', async () => {
+  const app = versionedApp();
+  const { t, ctx, asked } = app;
+  ctx.fetch = (url, opts) => {
+    asked.push({ url: String(url), priority: opts && opts.priority });
+    const body = String(url).startsWith('/companies/suggest')
+      ? { companies: [{ key: 'greenhouse:acme', label: 'Acme', name: 'Acme', openings: 5, boards: 1, atses: ['greenhouse'] }] }
+      : fixture();
+    return Promise.resolve({ ok: true, json: () => Promise.resolve(body) });
+  };
+  await t.suggest('acme');
+  assert.deepStrictEqual(asked.map(a => a.url),
+    ['/companies/suggest?q=acme&v=b00t', '/trends?company=greenhouse%3Aacme&v=b00t']);
+  assert.equal(asked[1].priority, 'low');
+});
+
+test('only one view is asked for ahead at a time, and the latest wanted goes next', async () => {
+  const app = versionedApp();
+  const { t, nodes, asked, run, ctx, timers } = app;
+  await t.load(null);
+  timers.clear();   // the Measure prefetch's own timer: not this test's
+  asked.length = 0;
+  const answers = [];
+  ctx.fetch = (url, opts) => {
+    asked.push({ url: String(url), priority: opts && opts.priority });
+    return new Promise(resolve => answers.push(() => resolve({ ok: true, json: () => Promise.resolve(fixture()) })));
+  };
+  const legend = nodes['trends-legend'];
+  const rest = name => {
+    const row = { dataset: { name }, isConnected: true };
+    legend.listeners.pointerover.forEach(fn => fn({ target: { closest: sel => sel.startsWith('.row[data-name]') ? row : null } }));
+    run();
+  };
+  rest('a'); rest('b'); rest('c');
+  assert.deepStrictEqual(asked.map(a => new URLSearchParams(a.url.split('?')[1]).get('family')), ['a']);
+  answers.shift()();
+  await new Promise(r => setImmediate(r));
+  // b was overtaken by c while a was out: only c, the latest, goes next
+  assert.deepStrictEqual(asked.map(a => new URLSearchParams(a.url.split('?')[1]).get('family')), ['a', 'c']);
+});
+
+test('with a Source narrowed, the top suggestion is not asked for ahead', async () => {
+  const app = versionedApp();
+  const { t, ctx, asked, nodes } = app;
+  const boxes = [true, false].map((checked, i) => ({ checked, value: `ats${i}`, parentElement: { hidden: false } }));
+  nodes['trends-ats-menu'].querySelectorAll = () => boxes;
+  ctx.fetch = (url, opts) => {
+    asked.push({ url: String(url), priority: opts && opts.priority });
+    const body = String(url).startsWith('/companies/suggest')
+      ? { companies: [{ key: 'greenhouse:acme', label: 'Acme', name: 'Acme', openings: 5, boards: 1, atses: ['greenhouse'] }] }
+      : fixture();
+    return Promise.resolve({ ok: true, json: () => Promise.resolve(body) });
+  };
+  await t.suggest('acme');
+  assert.deepStrictEqual(asked.map(a => a.url), ['/companies/suggest?q=acme&v=b00t']);
+});
+
 test('a page with no answers version asks as it always did, and nothing ahead', async () => {
   const { t, ctx } = loadApp();
   const asked = answering(ctx, fixture());

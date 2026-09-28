@@ -2,6 +2,20 @@
 <html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>HeadStart — semantic job search</title>
+{# The answer the tab the page opens on draws first, asked for beside app.js rather than after
+   it has run (ADR-0261): the Trends tab's opening view on a bare #trends, the ranking on any #hot.
+   The same URL app.js asks for, so its fetch is answered by this one. Ahead of the stylesheets,
+   since a script after them waits for them to load. #}
+{% if cfg.answers_version %}<script>
+(() => {
+  const v = {{ cfg.answers_version|tojson }}, hash = location.hash;
+  const href = hash === '#trends' ? '/trends?v=' + v : hash.split('?')[0] === '#hot' ? '/hot?v=' + v : null;
+  if (!href) return;
+  const link = Object.assign(document.createElement('link'), { rel: 'preload', as: 'fetch', href });
+  link.crossOrigin = 'anonymous';
+  document.head.appendChild(link);
+})();
+</script>{% endif %}
 <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='logo_mark.svg') }}">
 {# The sidebar's folded state (ADR-0249), read before the stylesheet so the first paint already
    has the right width: set after load, the content column would jump sideways. #}

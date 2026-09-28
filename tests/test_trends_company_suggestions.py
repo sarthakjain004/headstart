@@ -4,7 +4,13 @@ from __future__ import annotations
 
 import pytest
 
-from headstart.trends.company_suggestions import Candidate, normalize, suggest, tier
+from headstart.trends.company_suggestions import (
+    Candidate,
+    CandidatesByInitial,
+    normalize,
+    suggest,
+    tier,
+)
 
 
 def _company(name: str, openings: int = 1, key: str | None = None) -> Candidate:
@@ -196,3 +202,58 @@ def test_an_alias_labels_only_what_it_ranked() -> None:
     ]
     got = {s.candidate.key: s.match for s in suggest("chase", companies, 5)}
     assert got == {"oracle:jpmc": "alias", "gh:chase-bank": "prefix"}
+
+
+def test_candidates_filed_by_initial_suggest_exactly_what_the_full_scan_does() -> None:
+    """#755: the picker reads only the candidates filed under the query's first letter (and an
+    alias's), and every kind of match — exact, prefix, a later word, a typo, a split word, an
+    alias — is still found, ranked and folded as over every candidate."""
+    companies = [
+        _company(name, openings, key=f"k:{i}")
+        for i, (name, openings) in enumerate(
+            [
+                ("Lockheed Martin", 90),
+                ("Martin Marietta", 12),
+                ("Google", 400),
+                ("Goggles Co", 3),
+                ("Microsoft", 300),
+                ("JP Morgan Chase", 50),
+                ("JPMorgan Chase", 80),
+                ("Amazon", 500),
+                ("Amazonia Foods", 2),
+                ("Meta", 70),
+                ("Metaview", 4),
+                ("Tata Consultancy Services", 60),
+                ("Nvidia Sandbox2", 0),
+                ("Nvidia", 120),
+                ("Discovery", 9),
+                ("!!!", 1),
+            ]
+        )
+    ]
+    filed = CandidatesByInitial(companies)
+    queries = [
+        "lockheed martin",
+        "lockh",
+        "martin",
+        "lokheed",
+        "googel",
+        "gogle",
+        "micro soft",
+        "jp morgan",
+        "jpmorgan",
+        "aws",
+        "facebook",
+        "tcs",
+        "chase",
+        "nvidia",
+        "cisco",
+        "am",
+        "m",
+        "",
+        "   ",
+        "!!!",
+        "zzz",
+    ]
+    for query in queries:
+        assert filed.suggest(query, 5) == suggest(query, companies, 5), query

@@ -448,6 +448,30 @@ def _gzip_static(response):
     return response
 
 
+@app.url_defaults
+def _static_under_this_boot(endpoint, values):
+    """Every static URL the page names carries this boot's version, as the answers do."""
+    if endpoint == "static":
+        values.setdefault("v", _ANSWERS_VERSION)
+
+
+@app.after_request
+def _keep_static_for_the_boot(response):
+    """A static file asked for under this boot's version, kept by the browser until the next
+    boot (ADR-0261): only a deploy changes one, and a deploy restarts the Space, which gives the
+    page a new version. A revisit then reads app.js and the rest from the browser, where each
+    file was revalidated before, a round trip every visit. Like a kept answer, it neither
+    re-signs the session cookie nor varies by it (`_AnswersLeaveTheSessionAlone`)."""
+    if (
+        request.endpoint == "static"
+        and response.status_code == 200
+        and request.args.get("v") == _ANSWERS_VERSION
+    ):
+        response.headers["Cache-Control"] = "private, max-age=31536000, immutable"
+        g.answer_for_everyone = True
+    return response
+
+
 # The agent contract this app serves (ADR-0253): what an agent may rely on in the public read
 # routes (`_PUBLIC_PATHS`). Raised whenever that contract changes, so an agent can tell an app
 # too old for it from one that serves it, rather than have a newer argument silently ignored.
@@ -1284,9 +1308,11 @@ def _served_trends(
     out a second time beside it. An answer already kept is read without the lock, so it never
     waits behind one being worked out.
 
-    The least recently asked for goes first, so a preset window, whose `since` is a new
-    millisecond on every click, cannot push out the opening views everyone asks for."""
-    key = (history, question)
+    Kept by what the answer reads of the question (`TrendHistory.answer_key`, ADR-0261): a
+    preset window's `since` is a new millisecond on every click, but every click between the
+    same two ticks gets the answer the first one did. The least recently asked for goes first,
+    so windows that do differ cannot push out the opening views everyone asks for."""
+    key = (history, history.answer_key(question))
     kept = _TRENDS_ANSWERED.get(key)
     if kept is not None:
         try:
@@ -1332,15 +1358,28 @@ def _trends_payload(answer: dict, question: trend_history.TrendQuestion) -> dict
     return payload
 
 
+#: How many of a view's lines the page charts, and so how many a click can open: app.js's
+#: CHART_MAX, which a test holds this to. Only a charted category drills.
+_CHART_MAX = 8
+
+
 def _answer_opening_views() -> None:
     """The view every Trends visit opens on, under both Measures, answered before the first
-    visitor asks (ADR-0251): ~3 s of the Space's CPU once at boot rather than on someone's first
-    clicks. Never fatal: a question that fails here fails the same way when asked, and is
-    answered there."""
+    visitor asks (ADR-0251), and each charted category's levels under it, which are what a
+    click on the opening view opens (ADR-0261): 18 answers at boot, the boot log says how long,
+    rather than one on each first click. Never fatal: a question that fails here fails the
+    same way when asked, and is answered there."""
     started = time.monotonic()
     try:
         for metric in ("stock", "new"):
-            _served_trends(_HISTORY, trend_history.TrendQuestion(metric=metric))
+            body, _ = _served_trends(
+                _HISTORY, trend_history.TrendQuestion(metric=metric)
+            )
+            for line in json.loads(body)["series"][:_CHART_MAX]:
+                _served_trends(
+                    _HISTORY,
+                    trend_history.TrendQuestion(metric=metric, family=line["name"]),
+                )
     except Exception as exc:  # noqa: BLE001 - the request path reports its own failure
         print(
             f"trends: opening views not answered ({type(exc).__name__}: {exc})",
