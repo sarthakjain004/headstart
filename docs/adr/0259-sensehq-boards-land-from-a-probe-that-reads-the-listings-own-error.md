@@ -1,4 +1,4 @@
-# ADR-0256: SenseHQ Boards land from a probe that reads the listing's own error
+# ADR-0259: SenseHQ Boards land from a probe that reads the listing's own error
 
 **Status:** accepted · **Date:** 2026-09-28 · **Relates to:**
 [ADR-0012](0012-liveness-ledger.md) (the liveness ledger),
