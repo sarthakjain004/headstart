@@ -69,6 +69,12 @@ complete upstream, uncounted. Accepted: that path is rare, throttled by the time
 and bounded by retries a human is willing to make. Two concurrent parses under the cap can
 also both pass the check — one-record overshoot per race, same acceptance as ADR-0044's cap.
 
+*Amendment (2026-09-28, #596):* the counter was written after the router answered, so a failed
+counter write left a spent call uncounted. The read is now **reserved before** the router is asked
+and handed back for the three cases above that spend nothing (empty or oversized paste,
+`RouterUnavailable`). A failed reservation answers 503 without reaching the router. A failed
+hand-back leaves the read spent: an over-count, the direction this cap accepts.
+
 **The scrub guards every door.** The Query rule is enforced in code on the extracted
 sentence *and* on hand-edited saves (`profile_extract.scrub_query` runs in both routes), so
 a Profile cannot smuggle years or salary into ranking whichever way the sentence arrived.

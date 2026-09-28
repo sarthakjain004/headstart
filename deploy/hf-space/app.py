@@ -644,8 +644,8 @@ def parse_resume():
     The pasted text is used for this single call and never stored or logged; only the
     extraction is kept. Capped per Account for its lifetime: the cap bounds router spend,
     so any attempt that reached the router counts, even one that extracted nothing — and
-    the counter is written *before* the profile, so a crash between the two writes can
-    only over-count, never under-count."""
+    the counter is written *before* the router is asked and before the profile, so a
+    failure anywhere after it can only over-count, never under-count (ADR-0041, #596)."""
     gate = _account_gate()
     if not gate:
         return jsonify({"error": "profiles are not configured"}), 503
@@ -674,12 +674,8 @@ def _run_resume_read(email: str, store: Store, account: str):
             {"error": f"no résumé reads left — this account has used all {MAX_PARSES}"}
         ), 400
     body = request.get_json(silent=True) or {}
-    # The read is counted before the router is asked, not after it answers (#596): a counter
-    # write that failed after the call left it spent and uncounted. A failure here is a 503 with
-    # nothing spent. The count is handed back only where no call was made or none is known to
-    # have been: a refusal before the router, or `RouterUnavailable` — which also covers a call
-    # the router served and our side timed out on, left uncounted rather than charging every
-    # outage to the user.
+    # Reserved before the router is asked, and handed back only where ADR-0041 says nothing is
+    # spent (#596): a failed reservation is a 503 with the router never reached.
     store.put_parses(account, used + 1)
     try:
         fields = profile_extract.extract(

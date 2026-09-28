@@ -1001,8 +1001,8 @@ def test_failed_extraction_still_spends_a_read(sets_app, hub, monkeypatch):
 def test_a_router_answer_the_reader_chokes_on_still_spends_a_read(
     sets_app, hub, monkeypatch, reply
 ):
-    # The router answered, so the call was spent — a 500 before put_parses would make the
-    # lifetime cap unbounded for any reply shaped like this.
+    # The router answered, so the call was spent — it must stay counted however the reader
+    # fails on the reply, or the lifetime cap is unbounded for any reply shaped like this.
     client = _signed_in(sets_app, monkeypatch)
     monkeypatch.setattr(sets_app.llm_router, "ask", lambda prompt: reply)
     r = client.post("/profile/parse", json={"text": "r"}, base_url=_HTTPS)
