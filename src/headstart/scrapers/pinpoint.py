@@ -90,8 +90,8 @@ def _location(item: dict, country: str | None = None) -> str | None:
     own label, often a site name ("GM Tech", "Shipboard") that the structured fields do not
     repeat; there is one location per posting on every row measured."""
     place = item.get("location") or {}
-    seen: set[str] = set()
     parts: list[str] = []
+    seen: set[str] = set()
     province = (place.get("province") or "").strip()
     if _abbreviated_in(province, place.get("name")):
         province = ""
@@ -104,7 +104,7 @@ def _location(item: dict, country: str | None = None) -> str | None:
 
 
 #: US state and Canadian province postal codes, for `_abbreviated_in`.
-_STATE_CODES = {
+_POSTAL_CODES = {
     "AL": "Alabama", "AK": "Alaska", "AZ": "Arizona", "AR": "Arkansas", "CA": "California",
     "CO": "Colorado", "CT": "Connecticut", "DE": "Delaware", "DC": "District of Columbia",
     "FL": "Florida", "GA": "Georgia", "HI": "Hawaii", "ID": "Idaho", "IL": "Illinois",
@@ -129,7 +129,7 @@ def _abbreviated_in(province: str, name: str | None) -> bool:
     province's code. Only a US state or Canadian province code is read, and only when it names
     this very province."""
     last = (name or "").rsplit(",", 1)[-1].strip()
-    return bool(province) and _STATE_CODES.get(last, "").lower() == province.lower()
+    return bool(province) and _POSTAL_CODES.get(last, "").lower() == province.lower()
 
 
 def _title(item: dict) -> str:
