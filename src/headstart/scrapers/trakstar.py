@@ -71,7 +71,7 @@ The feed is NOT universal — unreachable (404, or a CSB-rendered ``/search/``) 
 result rather than losing the Board outright. It is marked ``truncated`` (ADR-0053) only when the
 page's own total proved the shortfall — reaching the cap used to be treated as ambiguous evidence
 not worth marking, and stays that way on the rare template with no total to compare against: the
-bare card-count fallback (``_is_capped``) is the same ambiguous signal as before, so it still
+bare card-count fallback (``is_capped``) is the same ambiguous signal as before, so it still
 doesn't mark_truncated on its own. ``fetch_via_feed`` below remains a separate, complete
 investigative entry point (``scripts/eval/trakstar_feed_compare.py`` still uses it to compare
 both paths at scale) built on the same ``_fetch_feed``/``_feed_items`` primitives
@@ -131,8 +131,8 @@ _API_LIMIT = 250
 #: (demoaccount, 365).
 _API_MAX_PAGES = 50
 
-#: The careers page renders at most this many job cards. Fallback-only cap heuristic, used when
-#: a page carries no "View N Openings" total to compare against (see ``_total_openings``) — a
+#: The careers page renders at most this many job cards. ``is_capped``'s fallback, used when a
+#: page carries no "View N Openings" total to compare against (see ``_total_openings``) — a
 #: Board landing exactly on it with no total is very likely truncated.
 CARD_CAP = 25
 
@@ -320,10 +320,10 @@ class TrakstarScraper(BaseScraper):
         # title and department, and `parse` re-reads the same blocks.
         cards = _job_cards(html)
         codes = [code for _block, code in cards]
-        if _is_capped(html, len(codes)):
+        if is_capped(html, len(codes)):
             # This Board's card list is short of its real total (the page's own "View N
             # Openings" count says so, or — on the rare template without that button — the
-            # card count alone hit the render cap; see _is_capped). Try the RSS feed BEFORE the
+            # card count alone hit the render cap; see is_capped). Try the RSS feed BEFORE the
             # per-job detail pass below: the feed is a confirmed superset wherever it's
             # reachable and embeds its own description inline, so if it answers here, the
             # detail pass — DataDome-guarded, one request per card — would be pure waste
@@ -355,7 +355,7 @@ class TrakstarScraper(BaseScraper):
             # docs/location-audit/2026-08-26_trakstar-cap-verification.md for measured examples).
             # The capped HTML list below is the best we have.
             # Only mark_truncated (ADR-0053) when the page's own total proves the shortfall —
-            # when _is_capped instead fell back to the bare card-count heuristic (no "View N
+            # when is_capped instead fell back to the bare card-count heuristic (no "View N
             # Openings" total on the page), that's the exact same ambiguous "landed on the cap"
             # signal the pre-fix code deliberately declined to mark_truncated for, and a wrong
             # call here is permanent (ADR-0053 exclusion has no drain).
@@ -462,6 +462,12 @@ class TrakstarScraper(BaseScraper):
         364 of 365 on demoaccount (2026-09-28), so one more request per Board dates them."""
         feed_xml = self._fetch_feed()
         items = _feed_items(feed_xml) if feed_xml is not None else None
+        if items is None:
+            _log.info(
+                f"{self.board_key()}: job feed "
+                f"{'unreachable (' + str(self._feed_failure) + ')' if feed_xml is None else 'did not parse'}"
+                " — jsapi jobs served undated"
+            )
         return {i["code"]: i["posted_at"] for i in items or [] if i["posted_at"]}
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
@@ -474,7 +480,7 @@ class TrakstarScraper(BaseScraper):
                 self.company,
                 raw["api_items"],
                 scraped_at,
-                raw.get("posted_at") or {},
+                raw.get("posted_at"),
             )
             self.note_unread_rows(
                 len(raw["api_items"]) - len(jobs),
@@ -564,7 +570,7 @@ def _total_openings(html: str) -> int | None:
     return int(m.group(1)) if m else None
 
 
-def _is_capped(html: str, n_codes: int) -> bool:
+def is_capped(html: str, n_codes: int) -> bool:
     """Whether this Board's rendered card list (``n_codes`` long) is short of its real total.
     Prefers the page's own "View N Openings" total — exact, and self-adjusting if Trakstar ever
     changes the render cap, unlike a hardcoded count — falling back to the card-count heuristic

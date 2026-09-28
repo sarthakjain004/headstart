@@ -3953,10 +3953,10 @@ def _trakstar_cards_page(n_cards, total=None):
 
 
 def test_trakstar_is_capped_true_when_total_exceeds_cards():
-    from headstart.scrapers.trakstar import _is_capped
+    from headstart.scrapers.trakstar import is_capped
 
     html = _trakstar_cards_page(25, total=40)
-    assert _is_capped(html, 25) is True
+    assert is_capped(html, 25) is True
 
 
 def test_trakstar_is_capped_false_when_total_matches_cards_at_the_render_cap():
@@ -3964,17 +3964,17 @@ def test_trakstar_is_capped_false_when_total_matches_cards_at_the_render_cap():
     # interglobalhomes, 2workonline1, dataentrydirect) -- the card count alone can't tell that
     # apart from a truncated one, but the page's own total can, and must not trigger a wasted
     # RSS fetch.
-    from headstart.scrapers.trakstar import _is_capped
+    from headstart.scrapers.trakstar import is_capped
 
     html = _trakstar_cards_page(25, total=25)
-    assert _is_capped(html, 25) is False
+    assert is_capped(html, 25) is False
 
 
 def test_trakstar_is_capped_falls_back_to_card_count_without_a_total():
-    from headstart.scrapers.trakstar import _is_capped
+    from headstart.scrapers.trakstar import is_capped
 
-    assert _is_capped(_trakstar_cards_page(25), 25) is True
-    assert _is_capped(_trakstar_cards_page(24), 24) is False
+    assert is_capped(_trakstar_cards_page(25), 25) is True
+    assert is_capped(_trakstar_cards_page(24), 24) is False
 
 
 def test_trakstar_fetch_raw_uses_feed_when_capped_and_skips_the_detail_pass():

@@ -131,13 +131,15 @@ from headstart.scrapers.taleo_be import (  # the next-ten-rows link, single sour
 from headstart.scrapers.teamtailor import (  # jobs.json page size, single source
     PAGE_SIZE as _TEAMTAILOR_PAGE_SIZE,
 )
-from headstart.scrapers.trakstar import (  # the card cap and the jsapi total, single source
-    CARD_CAP as _TRAKSTAR_CARD_CAP,
-)
 from headstart.scrapers.trakstar import (  # the inactive-account page, single source
     INACTIVE_ACCOUNT as _TRAKSTAR_INACTIVE,
 )
-from headstart.scrapers.trakstar import api_listing_url as _trakstar_api_url
+from headstart.scrapers.trakstar import (  # the jsapi listing that states the total
+    api_listing_url as _trakstar_api_url,
+)
+from headstart.scrapers.trakstar import (  # whether the card list is capped, single source
+    is_capped as _trakstar_is_capped,
+)
 from headstart.scrapers.workday import (  # careers-URL parts + the DC list, single source
     CAREERS_URL_PATTERN as _WD_URL,
 )
@@ -2742,7 +2744,7 @@ def p_trakstar(t, u):
         # rows sampled on 2026-09-28 carried it (#701, ADR-0218's amendment).
         return DEAD, None
     n = max(len(page.split("js-careers-page-job-list-item")) - 1, 0)
-    if n >= _TRAKSTAR_CARD_CAP:
+    if _trakstar_is_capped(page, n):
         # The careers page renders at most 25 cards (87 live rows recorded exactly 25;
         # demoaccount's real count was 365, 2026-09-28). The jsapi listing states the total.
         status, body = _get(_trakstar_api_url(_slug_of("trakstar", t, u), 0, 1))
