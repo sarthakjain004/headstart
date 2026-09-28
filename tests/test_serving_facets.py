@@ -103,12 +103,20 @@ def test_counts_never_need_the_query_or_the_encoder():
 
     `extra_where` (ADR-0171) is keyword-only and is a *clause*, not a query — it exists so the
     Account's follow/hide narrowing reaches the counts as well as the list they describe.
+    `only_total` (ADR-0274) is keyword-only too, and says how much to count, not what.
     """
     import inspect
 
     params = inspect.signature(facets.counts).parameters
-    assert list(params) == ["table", "filters", "capabilities", "extra_where"]
+    assert list(params) == [
+        "table",
+        "filters",
+        "capabilities",
+        "extra_where",
+        "only_total",
+    ]
     assert params["extra_where"].kind is inspect.Parameter.KEYWORD_ONLY
+    assert params["only_total"].kind is inspect.Parameter.KEYWORD_ONLY
     assert not {"q", "query", "model", "encoder"} & set(params), "no query, no encoder"
     a, b = _CountingTable(), _CountingTable()
     without = facets.counts(a, *_kwargs())
@@ -221,6 +229,40 @@ def test_the_recency_facet_stays_dark_without_the_first_seen_column():
 
 
 # ---- the Keyword filter's disclaimer (ADR-0104) ----
+
+
+def test_only_the_total_counts_no_option_but_keeps_the_totals_three_answers():
+    """ADR-0274: an agent printing only the total asks for it alone. Under a description
+    keyword each option re-scans the matches, so the full strip took 98.7 s to the page's
+    10.6 s; the count-only answer is the total, `blocking` and the coverage, counted as ever."""
+    table = _CountingTable()
+    args = _kwargs(remote=True, kw="visa", kw_in="description")
+    out = facets.counts(table, *args, only_total=True)
+    unkeyed = build_filter(*_kwargs(remote=True))
+    assert sorted(table.seen, key=str) == sorted(
+        [build_filter(*args), f"({unkeyed}) AND description IS NOT NULL", unkeyed],
+        key=str,
+    )
+    assert out == {
+        "total": 42,
+        "facets": {},
+        "blocking": None,
+        "description_coverage": {"covered": 42, "total": 42},
+    }
+    full = facets.counts(_CountingTable(), *args)
+    assert {
+        key: full[key] for key in ("total", "blocking", "description_coverage")
+    } == {key: out[key] for key in ("total", "blocking", "description_coverage")}
+
+
+def test_only_the_total_still_names_the_blocking_filter_when_nothing_matched():
+    def rule(where):
+        return 0 if where and "company" in where else 5000
+
+    out = facets.counts(
+        _CountingTable(rule), *_kwargs(remote=True, company="nope"), only_total=True
+    )
+    assert out["total"] == 0 and out["blocking"] == "company"
 
 
 def test_description_coverage_is_counted_with_the_keyword_lifted():

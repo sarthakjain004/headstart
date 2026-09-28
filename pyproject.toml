@@ -80,6 +80,12 @@ headstart-space-mcp = "headstart.space_mcp.server:main"
 [tool.hatch.build.targets.wheel]
 packages = ["src/headstart"]
 
+# The role families the Space MCP server's `category` names (ADR-0274). A wheel carries no
+# `config/`, so a `uvx` install would otherwise offer no category list; `role_families.py` reads
+# this copy first and the repository's or the Space image's `config/` otherwise.
+[tool.hatch.build.targets.wheel.force-include]
+"config/role_families.json" = "headstart/space_mcp/role_families.json"
+
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]

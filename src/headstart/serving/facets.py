@@ -99,6 +99,7 @@ def counts(
     capabilities: IndexCapabilities,
     *,
     extra_where: str | None = None,
+    only_total: bool = False,
 ) -> dict[str, Any]:
     """Every facet's per-option count, plus the total, for one request's filters.
 
@@ -117,6 +118,11 @@ def counts(
     the same counting machinery already pays for. ``description_coverage`` is the Keyword
     filter's disclaimer (ADR-0104): ``{"covered": int, "total": int}`` counted with the keyword
     lifted only while the active keyword scope uses descriptions; otherwise ``None``.
+
+    ``only_total`` counts no option (ADR-0274): ``facets`` is ``{}``, and the total, ``blocking``
+    and ``description_coverage`` are as above. An agent that prints only the total asks this,
+    because each option re-scans every row the other filters match, so under a description
+    keyword the full strip was measured at 98.7 s against 10.6 s for the ranked page itself.
     """
 
     def where_for(**overrides: Any) -> str | None:
@@ -167,7 +173,9 @@ def counts(
 
     # `total` rides the same pool rather than being counted first — it is one more count, and
     # serialising it ahead of the rest would add its latency to every request for no reason.
-    counted = [(d, v, lbl, where_for(**ov)) for d, v, lbl, ov in plan]
+    counted = (
+        [] if only_total else [(d, v, lbl, where_for(**ov)) for d, v, lbl, ov in plan]
+    )
     with ThreadPoolExecutor(max_workers=_WORKERS) as pool:
         totals = pool.submit(_count, table, where_for())
         # The Keyword filter's disclaimer (ADR-0104): of the rows the *other* filters match, how

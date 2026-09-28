@@ -588,7 +588,8 @@ def _keep_static_for_the_boot(response):
 # too old for it from one that serves it, rather than have a newer argument silently ignored.
 # 1: `strict=1` on /search and /facets, `match` and `board_keys` on each /companies/suggest item,
 # /companies/lookup, and `newest_tick` on /facets.
-_AGENT_API_VERSION = 1
+# 2: `counts=total` on /facets, the total without any option's count (ADR-0274).
+_AGENT_API_VERSION = 2
 
 
 @app.after_request
@@ -750,6 +751,9 @@ def search_facets():
     ``newest_tick`` is the newest Trends tick, or null (ADR-0253). The pipeline writes the table
     and the tick in one run and this process loaded both at one boot, so it dates the data an
     answer came from. The page does not read it.
+
+    ``counts=total`` counts no option (ADR-0274): the total, ``blocking`` and
+    ``description_coverage`` only, for an agent that prints nothing else. The page never sends it.
     """
     try:
         counted = _searcher.facets(

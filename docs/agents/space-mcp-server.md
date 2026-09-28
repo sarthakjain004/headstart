@@ -98,9 +98,9 @@ connection is not left waiting on the download (it exits when its input ends):
 uvx --from https://github.com/sarthakjain004/headstart/archive/refs/heads/main.tar.gz headstart-space-mcp < /dev/null
 ```
 
-Installed this way the package carries no `config/`, so the tools' `category` is a free string
-rather than the list of role families; the server says so once on stderr when it starts. A name
-that is not a role family is still refused, by the Space.
+The wheel carries the list of role families (`pyproject.toml` force-includes
+`config/role_families.json`, ADR-0274), so installed this way the tools' `category` lists every
+family, as it does from a checkout and on the hosted server.
 
 ### From a checkout
 
@@ -150,11 +150,33 @@ the filter costing the most.
   earlier answer (`lever:razorpay`, or the start of a result id) means every Board of that company.
 - `category` narrows one company's jobs to a job category, so it needs a directory company: a key,
   or an exact name, which is then read as the directory's largest company of that name — the
-  answer says so.
+  answer says so. The schema lists the current ids; a label ("AI, ML & Data Science"), a close name
+  ("AI/ML", "machine learning") or a retired id (`python-development`) is read as the id, and a
+  name that fits several categories or none is refused with the ids and labels to choose from
+  (ADR-0274). `read_trends` reads `category` the same way.
 - A salary bound needs `salary_currency` (30 lakh is `salary_min: 3000000`, `salary_currency: INR`).
 - **With a `query`, `sort` orders only the 2,000 closest matches.** For the highest salary or the
   newest anywhere, omit `query` and narrow with `keyword` and the filters.
-- `detail: "full"` adds how many jobs each filter option would give.
+- `detail: "full"` adds how many jobs each filter option would give, each option written as the
+  argument that selects it (`max_years=0: 2,334`, `first_seen_within_hours=24: 374`). A concise
+  answer asks the Space for the total alone (`/facets?counts=total`, ADR-0274), since every option's
+  count re-scans the matches: under a description keyword the full strip took 98.7 s against
+  10.6 s for the page itself.
+- **What a row says.** Each row gives the posting's age ("posted 2026-09-24 (5 days ago)") and
+  flags one over a year old; its employment type as the employer wrote it, beside the
+  `employment_type` values it counts as (`type "FULL_TIME" (full-time)`); and every scraped field,
+  the id included, quoted. Rows on one page with the same company and title, brackets aside (one
+  posting copied per country), are listed under the first as `also #N`, giving only what differs;
+  every id and link stays, and paging is the Space's.
+- **What the filters mean.** `max_years` also keeps jobs that state no experience, and marks them
+  "experience not stated". `salary_min` keeps a job whose stated range reaches the bound (the top
+  of the range counts), `salary_max` one whose range starts at or below it, and other currencies
+  are converted at HeadStart's fixed rates, a currency with no rate left out. A keyword in
+  descriptions can only match jobs with a stored description; the answer says how many of the
+  matches have one, as the page does.
+- **Its totals run higher than `read_trends`'.** A search counts every job the index serves; the
+  trends count only the jobs the role-family classifier places in a tech category, leaving out
+  those it calls non-tech (`ingest/role_trends.py`).
 
 **`read_trends`** — how the number of open tech jobs changed over a window, with the changes that
 are not hiring (counting changes, newly found boards, duplicate removals) separated out. Whole
@@ -190,7 +212,9 @@ server changes.
    holds the answer function and ends with `TOOL = SpaceTool(...)`: title, description (the rule
    that matters most first; at most 2,048 characters), a closed input schema in the portable JSON
    Schema keywords, the one `when_to_use` sentence the server's instructions will carry, and
-   `max_chars`, the answer's size at the tool's largest input.
+   `max_chars`, the answer's size at the tool's largest input. An argument whose caller's words
+   need reading before the schema check (a category's label) names its reader in
+   `argument_readers`, as `category` does with `role_families.resolve`.
 2. Add `<tool_name>.TOOL` to `REGISTRY` in `src/headstart/space_mcp/tools/__init__.py`. The server
    lists it, puts its `when_to_use` in its instructions, checks its arguments against its schema,
    fills its defaults, and cuts any answer past its `max_chars`.

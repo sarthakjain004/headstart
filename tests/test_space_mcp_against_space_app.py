@@ -93,6 +93,28 @@ def test_search_arguments_reach_the_app_as_the_filters_they_name(companies_app, 
     assert "Ordered by similarity to the query" in text
 
 
+def test_a_concise_search_asks_the_app_for_the_total_alone(companies_app, monkeypatch):
+    """ADR-0274: `counts=total` reaches the app, which counts no option; `detail=full` still
+    gets every option's count."""
+    answered = []
+    real = companies_app._searcher.facets
+
+    def recording(args, **kwargs):
+        counted = real(args, **kwargs)
+        answered.append((args.get("counts"), counted))
+        return counted
+
+    monkeypatch.setattr(companies_app._searcher, "facets", recording)
+    client = _client(companies_app)
+    concise = server.call(client, "search_jobs", {"query": "engineer"})
+    full = server.call(client, "search_jobs", {"query": "engineer", "detail": "full"})
+    [(asked, total_only), (asked_full, strip)] = answered
+    assert asked == "total" and total_only["facets"] == {} and total_only["total"]
+    assert asked_full is None and strip["facets"]["remote"]
+    assert strip["total"] == total_only["total"]
+    assert "remote=true: " in full and "remote=true: " not in concise
+
+
 def test_a_company_name_is_the_company_boxs_substring_at_the_app(companies_app, parsed):
     text = server.call(_client(companies_app), "search_jobs", {"company": "Citi"})
     assert parsed and all(f.company == "Citi" for f in parsed)
@@ -268,7 +290,7 @@ def test_a_salary_bound_on_a_migrated_table_reaches_it(salaried, parsed):
         {"salary_min": 3_000_000, "salary_currency": "INR", "sort": "salary"},
     )
     assert parsed[0].salary_min == 3_000_000
-    assert "salary at least 3,000,000 INR a year" in text
+    assert "salary range reaching 3,000,000 INR a year or more" in text
     assert "highest salary first, in INR across every match" in text
 
 
