@@ -238,3 +238,29 @@ def suggest(query: str, candidates: list[Candidate], limit: int) -> list[Suggest
             seen.add(suggestion.candidate.words)
             kept.append(suggestion)
     return kept[:limit]
+
+
+class CandidatesByInitial:
+    """The directory's candidates filed under the first letter of each word of their names, so
+    a query reads only the few thousand it could match rather than all ~38,000 (#755).
+
+    Every match starts a word with the query's first letter: an exact name, a name prefix and a
+    word prefix plainly do, a typo is never in the first letter (:func:`_near`), and a space-
+    blind prefix starts the name's first word. An alias is looked up under its own letter. So
+    :meth:`suggest` answers exactly what :func:`suggest` over every candidate does."""
+
+    def __init__(self, candidates: list[Candidate]) -> None:
+        self._filed: dict[str, list[Candidate]] = {}
+        for candidate in candidates:
+            for initial in {word[0] for word in candidate.words}:
+                self._filed.setdefault(initial, []).append(candidate)
+
+    def suggest(self, query: str, limit: int) -> list[Suggestion]:
+        typed = normalize(query)
+        alias = QUERY_ALIASES.get(" ".join(typed))
+        initials = {
+            words[0][0] for words in (typed, normalize(alias) if alias else []) if words
+        }
+        # one of each, whichever letters it is filed under
+        matchable = {id(c): c for i in sorted(initials) for c in self._filed.get(i, ())}
+        return suggest(query, list(matchable.values()), limit)

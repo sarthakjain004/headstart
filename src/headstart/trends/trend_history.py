@@ -311,6 +311,17 @@ def _held_at_zero(values: list[int | None], metric: str | None) -> list[int | No
     return out
 
 
+def _fold_unbanded(
+    cells: np.ndarray, summed: np.ndarray, kept: np.ndarray
+) -> np.ndarray:
+    """Index ``cells`` ``(tick, metric, family rank, band rank)`` with each family outside
+    ``kept`` (a mask by family rank) folded into its first band: ``summed`` there, nothing in the
+    rest. A new array: ``cells`` may be the history's own."""
+    out = cells * kept[:, None]
+    out[..., 0] = np.where(kept, cells[..., 0], summed)
+    return out
+
+
 def _family_weights(rows: list[dict]) -> Counter[str]:
     """Openings per family over ``rows`` — how much of the data each name holds."""
     weights: Counter[str] = Counter()
@@ -549,6 +560,12 @@ class TrendHistory:
         # archive's replay, then the tick files' (`_index_levels`). Codes and counts in the
         # narrowest type that holds them: 6.6M rows on 2026-09-25.
         self._index = _columns(_INDEX_TYPES)
+        # `_index` summed over every ATS as `_index_cells`, which is what a question with no ATS
+        # picked reads: its window is then a slice, not a sum over millions of rows (#755).
+        self._every_ats_cells = (
+            np.zeros((0, 2, 0, 0), dtype=bool),
+            np.zeros((0, 2, 0, 0), dtype=np.int64),
+        )
         # Every Board delta of a level metric, in file order.
         self._deltas = _columns(_DELTA_TYPES)
         self._new_measured: set[str] = set()
@@ -569,7 +586,7 @@ class TrendHistory:
         self._company_of: dict[str, str] = {}
         # `_company_of` keyed case-folded, with the mapping it was read from (`company_of`).
         self._company_of_folded: tuple[dict[str, str], dict[str, str]] | None = None
-        self._candidates: list[company_suggestions.Candidate] = []
+        self._suggestions = company_suggestions.CandidatesByInitial([])
         self._watch: dict[str, dict[str, str]] = {}
         self._family_labels: dict[str, str] = {}
         self._family_successor: dict[str, str] = {}
@@ -648,6 +665,9 @@ class TrendHistory:
             name: np.concatenate([part[name] for part in parts])
             for name in _INDEX_TYPES
         }
+        self._every_ats_cells = self._index_cells(
+            np.ones(len(self._index["tick"]), dtype=bool), 0, len(self._ticks)
+        )
         self._new_measured = {
             self._ticks[t]
             for t in np.unique(self._index["tick"][self._index["metric"] == 0]).tolist()
@@ -825,15 +845,17 @@ class TrendHistory:
             ).isoformat(timespec="seconds")
             at = bisect_left(self._ticks, full)
             self._new_inflow_from = self._ticks[at] if at < len(self._ticks) else None
-        self._candidates = [
-            company_suggestions.Candidate(
-                key=key,
-                name=entry["name"],
-                words=tuple(company_suggestions.normalize(entry["name"])),
-                openings=self._company_openings(entry),
-            )
-            for key, entry in self._companies.items()
-        ]
+        self._suggestions = company_suggestions.CandidatesByInitial(
+            [
+                company_suggestions.Candidate(
+                    key=key,
+                    name=entry["name"],
+                    words=tuple(company_suggestions.normalize(entry["name"])),
+                    openings=self._company_openings(entry),
+                )
+                for key, entry in self._companies.items()
+            ]
+        )
 
     def _hold_ticks(self) -> np.ndarray:
         """Each Board's `new` hold as the index of the tick it ends at, by Board code (-1 for a
@@ -902,7 +924,7 @@ class TrendHistory:
         """Directory companies matching ``query`` for the Trends company picker (ADR-0185), best
         first, each as :meth:`describe_companies` gives it, with how it matched (``match``, a
         :data:`company_suggestions.MATCH_KINDS` name or ``alias``, ADR-0253)."""
-        found = company_suggestions.suggest(query, self._candidates, limit)
+        found = self._suggestions.suggest(query, limit)
         described = self.describe_companies([s.candidate.key for s in found])
         return [
             {**item, "match": s.match} for s, item in zip(found, described, strict=True)
@@ -1034,17 +1056,21 @@ class TrendHistory:
             raise ValueError("since/until/base must be ISO-8601") from None
         ats = list(question.ats)
 
+        # Only a band drill reads a row's band, and only its family's: every other family's rows
+        # are summed over bands, a sixth as many (#755). Its family's lineage keeps its bands,
+        # since a retired name is renamed into its successor below, or the other way round.
+        banded = self._lineage(family) if family and split == "bands" else frozenset()
         base_stamp = None
         if coverage == "comparable" or company_of is not None:
             # A company's counts exist only per Board, so a pick replays the delta ledger too;
             # its history therefore starts at that ledger's first tick, 2026-09-13 (ADR-0185).
             trends_rows, first_charted = self._replay_rows(
-                base, coverage == "comparable", company_of, ats, since, until
+                base, coverage == "comparable", company_of, ats, since, until, banded
             )
             if coverage == "comparable":
                 base_stamp = first_charted
         else:
-            trends_rows = self._index_rows(ats, since, until)
+            trends_rows = self._index_rows(ats, since, until, banded)
         # `new` is the jobs Opened over the trailing week from `_new_inflow_from` on (ADR-0230
         # decision 5); before it, the level it always was. The switch is a counting change.
         # Watched roles have no Opened facts (turnover is booked per family, ADR-0227), so the
@@ -1126,7 +1152,11 @@ class TrendHistory:
                 {**r, "family": rename[r["family"]]} if r["family"] in rename else r
                 for r in trends_rows
             ]
-            present = _family_weights(trends_rows)
+            # the renamed rows' weights, summed from the weights already counted
+            renamed: Counter[str] = Counter()
+            for name, weight in present.items():
+                renamed[rename.get(name, name)] += weight
+            present = renamed
         family = _resolve_family(family, present, successors)
 
         # A watched role's parent as the data holds it: its v3 parent, or while that has no
@@ -1429,11 +1459,15 @@ class TrendHistory:
                 line["turnover"] = by_line[line["name"]]
             # Each pick's own turnover where its own line is served (`pick_series`), so a line
             # summing several picks counts each pick's turnover over the runs its line counts.
-            pick_turnover = self._turnover_series(
-                turnover_rows,
-                stamps,
-                lambda row, pick: pick if line_of(row, pick) is not None else None,
-                list(pick_series),
+            pick_turnover = (
+                self._turnover_series(
+                    turnover_rows,
+                    stamps,
+                    lambda row, pick: pick if line_of(row, pick) is not None else None,
+                    list(pick_series),
+                )
+                if pick_series
+                else {}
             )
         # Which families have watched sub-roles, so the page can offer the roles drill only
         # there, under the names the data holds as well as the config's.
@@ -1531,23 +1565,30 @@ class TrendHistory:
             hi += 1
         return lo, hi
 
+    def _lineage(self, family: str) -> frozenset[str]:
+        """``family`` and every family a successor link joins it to, either way (ADR-0220): the
+        names whose rows the Trends rename can make ``family``'s, or make it into."""
+        group, grew = {family}, True
+        while grew:
+            grew = False
+            for old, new in self._family_successor.items():
+                if (old in group) != (new in group):
+                    group |= {old, new}
+                    grew = True
+        return frozenset(group)
+
     def _ats_codes(self, ats: list[str]) -> np.ndarray:
         return np.array(
             [code for name in ats if (code := self._atses.get(name)) is not None],
             dtype=np.int64,
         )
 
-    def _index_rows(
-        self, ats: list[str], since: str | None, until: str | None
-    ) -> list[dict]:
-        """The index's rows in the window and the ATS selection, summed over ATS: every
-        ``(ts, metric, family, band)`` group holding a row, each tick's in name order, as the
-        aggregate ledger lists them."""
-        lo, hi = self._window(since, until)
+    def _index_cells(
+        self, rows: np.ndarray, lo: int, hi: int
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """The index ``rows`` (a mask) at ticks ``[lo, hi)`` as cells ``(tick - lo, metric,
+        family rank, band rank)``: whether each cell holds a row, and the count it sums to."""
         index = self._index
-        rows = (index["tick"] >= lo) & (index["tick"] < hi)
-        if ats:
-            rows &= np.isin(index["ats"], self._ats_codes(ats))
         sizes = (max(hi - lo, 1), 2, len(self._families.names), len(self._bands.names))
         ranks = self._families.ranks(), self._bands.ranks()
         keys = np.ravel_multi_index(
@@ -1562,8 +1603,41 @@ class TrendHistory:
         held = np.bincount(keys, minlength=int(np.prod(sizes)))
         # summed as floats, exact for any count below 2**53
         counts = np.bincount(keys, index["count"][rows], len(held)).astype(np.int64)
-        present = np.nonzero(held)[0]
-        tick, metric, family, band = np.unravel_index(present, sizes)
+        return (held > 0).reshape(sizes), counts.reshape(sizes)
+
+    def _index_rows(
+        self,
+        ats: list[str],
+        since: str | None,
+        until: str | None,
+        banded: frozenset[str] | None = None,
+    ) -> list[dict]:
+        """The index's rows in the window and the ATS selection, summed over ATS: every
+        ``(ts, metric, family, band)`` group holding a row, each tick's in name order, as the
+        aggregate ledger lists them. A family outside ``banded`` is one row a tick and metric,
+        summed over its bands, with band None; None keeps every family's bands."""
+        lo, hi = self._window(since, until)
+        if ats:
+            index = self._index
+            rows = (index["tick"] >= lo) & (index["tick"] < hi)
+            rows &= np.isin(index["ats"], self._ats_codes(ats))
+            held, counts = self._index_cells(rows, lo, hi)
+        else:
+            held, counts = (cells[lo:hi] for cells in self._every_ats_cells)
+        ranks = self._families.ranks(), self._bands.ranks()
+        kept = np.ones(len(ranks[0]), dtype=bool)
+        if banded is not None:
+            kept[:] = False
+            kept[
+                [
+                    ranks[0][c]
+                    for n in banded
+                    if (c := self._families.get(n)) is not None
+                ]
+            ] = True
+            held = _fold_unbanded(held, held.any(axis=3), kept)
+            counts = _fold_unbanded(counts, counts.sum(axis=3), kept)
+        tick, metric, family, band = np.nonzero(held)
         families = np.array(self._families.names, dtype=object)[np.argsort(ranks[0])]
         bands = np.array(self._bands.names, dtype=object)[np.argsort(ranks[1])]
         return [
@@ -1578,8 +1652,8 @@ class TrendHistory:
                 tick.tolist(),
                 metric.tolist(),
                 families[family].tolist(),
-                bands[band].tolist(),
-                counts[present].tolist(),
+                np.where(kept[family], bands[band], None).tolist(),
+                counts[tick, metric, family, band].tolist(),
             )
         ]
 
@@ -1591,13 +1665,15 @@ class TrendHistory:
         ats: list[str],
         since: str | None,
         until: str | None,
+        banded: frozenset[str] | None = None,
     ) -> tuple[list[dict], str | None]:
         """Rebuild counts from the Board-delta ledger for a chosen set of Boards.
 
         ``comparable`` keeps only Boards first observed by ``base`` (ADR-0143). ``company_of``
         keeps only the picked companies' Boards and tags every row with its company key, so the
         answer can split by company (ADR-0185); None means every Board. The two combine: picked
-        companies, counted only over the Boards already known at the base.
+        companies, counted only over the Boards already known at the base. ``banded`` is as
+        :meth:`_counts_at_charted_ticks` takes it.
 
         Returns the rows in the window and the ATS selection, summed over ATS, and the first
         measurement charted (the base, when ``comparable``)."""
@@ -1653,7 +1729,7 @@ class TrendHistory:
         start, end = self._first_delta, len(self._ticks)
         charted = range(max(start, first), min(end, hi))
         out = self._counts_at_charted_ticks(
-            np.nonzero(rows)[0], company, companies, hold, charted
+            np.nonzero(rows)[0], company, companies, hold, charted, banded
         )
         return out, base_stamp
 
@@ -1664,12 +1740,15 @@ class TrendHistory:
         companies: list[str],
         hold: np.ndarray,
         charted: range,
+        banded: frozenset[str] | None = None,
     ) -> list[dict]:
         """The groups the delta ``rows`` replay to, at the ``charted`` ticks.
 
         Each group lists in the order its first delta was applied, which is the order the old
         per-row replay listed it in (so ties between lines sort the same): a tick's held `new`
-        deltas first, Board by Board, then its own deltas in file order."""
+        deltas first, Board by Board, then its own deltas in file order. A family outside
+        ``banded`` is one group, its bands summed, with band None; None keeps every family's
+        bands."""
         if not len(rows) or not len(charted):
             return []
         start, end = self._first_delta, len(self._ticks)
@@ -1682,39 +1761,47 @@ class TrendHistory:
         rows, board, tick, held, applied = (
             a[kept] for a in (rows, board, tick, held, applied)
         )
-        # the order each delta is applied in: by tick; held deltas first, each Board's after the
-        # Board first held before it; then file order
+        bands = [*self._bands.names, None]  # None: a family's bands summed
+        band = d["band"][rows]
+        if banded is not None:
+            keeps_bands = np.zeros(len(self._families.names), dtype=bool)
+            keeps_bands[
+                [c for n in banded if (c := self._families.get(n)) is not None]
+            ] = True
+            band = np.where(keeps_bands[d["family"][rows]], band, len(bands) - 1)
+        sizes = (len(companies), 2, len(self._families.names), len(bands))
+        flat = np.ravel_multi_index(
+            (company[rows], d["metric"][rows], d["family"][rows], band), sizes
+        )
+        # The groups in key order and each delta's group, as np.unique answers, by a lookup
+        # over the key space, a few hundred keys a company, rather than a sort of every delta.
+        seen = np.zeros(int(np.prod(sizes)), dtype=bool)
+        seen[flat] = True
+        keys = np.flatnonzero(seen)
+        inverse = (np.cumsum(seen) - 1)[flat]
+        # The order each delta is applied in: by tick; held deltas first, each Board's after the
+        # Board first held before it; then file order. A group lists at its first delta in that
+        # order: its least (tick, held first, held Board's first, file) key, found a key at a
+        # time rather than by sorting every delta.
         first_held = np.full(len(self._boards.names), len(d["tick"]), dtype=np.int64)
         np.minimum.at(first_held, board[held], rows[held])
-        order = np.lexsort(
-            (rows, np.where(held, first_held[board], rows), ~held, applied)
-        )
-        rank = np.empty(len(rows), dtype=np.int64)
-        rank[order] = np.arange(len(rows))
-        sizes = (
-            len(companies),
-            2,
-            len(self._families.names),
-            len(self._bands.names),
-        )
-        keys, inverse = np.unique(
-            np.ravel_multi_index(
-                (company[rows], d["metric"][rows], d["family"][rows], d["band"][rows]),
-                sizes,
-            ),
-            return_inverse=True,
-        )
-        first_touch = np.full(len(keys), len(rows), dtype=np.int64)
-        np.minimum.at(first_touch, inverse, rank)
-        level = np.zeros((end - start, len(keys)), dtype=np.int32)
-        touched = np.zeros((end - start, len(keys)), dtype=np.int32)
-        np.add.at(level, (applied - start, inverse), d["delta"][rows])
-        np.add.at(touched, (applied - start, inverse), 1)
-        np.cumsum(level, axis=0, out=level)
-        touched = np.cumsum(touched, axis=0, out=touched) > 0
-        listed = np.argsort(first_touch)
+        firsts, tied = [], np.ones(len(rows), dtype=bool)
+        for key in (applied, ~held, np.where(held, first_held[board], rows), rows):
+            least = np.full(len(keys), np.iinfo(np.int64).max)
+            np.minimum.at(least, inverse[tied], key[tied].astype(np.int64))
+            firsts.append(least)
+            tied &= key == least[inverse]
+        listed = np.lexsort(firsts[::-1])
+        # every group's count and whether it was touched yet, at every tick
+        cells = (applied - start) * len(keys) + inverse
+        shape = (end - start, len(keys))
+        # summed as floats, exact for any count below 2**53
+        level = np.bincount(cells, d["delta"][rows], shape[0] * shape[1])
+        level = np.cumsum(level.astype(np.int64).reshape(shape), axis=0)
+        touched = np.bincount(cells, minlength=shape[0] * shape[1]).reshape(shape)
+        touched = np.cumsum(touched, axis=0) > 0
         c, m, f, b = (a.tolist() for a in np.unravel_index(keys[listed], sizes))
-        families, bands = self._families.names, self._bands.names
+        families = self._families.names
         out = []
         for t in charted:
             here = touched[t - start, listed].tolist()
