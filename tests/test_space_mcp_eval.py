@@ -420,6 +420,43 @@ def test_trend_sign_fails_when_the_space_cannot_read_the_trend(ev):
     assert not verdict.passed and "could not read" in verdict.detail
 
 
+def _turnover_space(hiring, opened, closed):
+    move = {
+        "hiring": hiring,
+        "turnover": {"opened": opened, "closed": closed, "net": opened - closed},
+    }
+    return _trends_space(reading={"total": {"move": move}, "lines": []})
+
+
+def test_trend_sign_takes_hiring_from_postings_opened_and_closed(ev):
+    """ADR-0272: the whole index's netted "hiring" read +111,851 while opened less closed was
+    −514. The answer that followed the netted figure is wrong."""
+    space = _turnover_space(111_851, 17_032, 17_546)
+    followed_the_stock = "Hiring is up sharply: hiring +111,851 (+42%)."
+    followed_turnover = "Roughly flat: 17,032 opened and 17,546 closed, net −514."
+    said_down = "Slightly down: more postings closed than opened."
+
+    assert not ev.verify_trend_sign(
+        _T03, _transcript(ev, answer=followed_the_stock), space
+    ).passed
+    verdict = ev.verify_trend_sign(
+        _T03, _transcript(ev, answer=followed_turnover), space
+    )
+    assert verdict.passed and "-514 (down or flat)" in verdict.detail
+    assert ev.verify_trend_sign(_T03, _transcript(ev, answer=said_down), space).passed
+
+
+def test_trend_sign_calls_a_large_net_by_its_sign_only(ev):
+    space = _turnover_space(-40, 100, 20)
+
+    assert not ev.verify_trend_sign(
+        _T03, _transcript(ev, answer="Flat, more or less."), space
+    ).passed
+    assert ev.verify_trend_sign(
+        _T03, _transcript(ev, answer="Growing: net +80."), space
+    ).passed
+
+
 @pytest.mark.parametrize(
     ("answer", "direction"),
     [

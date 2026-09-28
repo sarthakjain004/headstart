@@ -320,27 +320,43 @@ _ECHO = re.compile(r"\bmore or less\b|\bmore or fewer\b", re.IGNORECASE)
 _SIGNED_HIRING = re.compile(
     r"(?<!not )\bhiring(?:\s+(?:is|was|of|at))?\W{0,3}([+−-])\s?\d", re.IGNORECASE
 )
+#: Postings opened less closed as read_trends writes it and answers quote it: "net −514",
+#: "a net of +2" (ADR-0272).
+_SIGNED_NET = re.compile(
+    r"\bnet(?:\s+(?:of|is|was))?\W{0,3}([+−-])\s?\d", re.IGNORECASE
+)
+#: A net of opened less closed within this share of everything opened and closed may be called
+#: flat as well as by its sign: −514 on 34,578 opened and closed is 1.5%.
+FLAT_SHARE = 0.05
 
 
 def stated_direction(answer: str) -> tuple[str | None, str | None]:
     """The direction an answer states ("up", "down" or "flat") and the text that states it.
 
-    A quoted signed hiring figure decides first: it is the netted figure itself, where a
-    direction word may describe raw openings ("openings fell, but hiring is +3"). Otherwise the
-    first direction word decides; answers lead with their verdict."""
-    if signed := _SIGNED_HIRING.search(answer):
-        return ("up" if signed.group(1) == "+" else "down"), signed.group(0)
+    A quoted signed figure decides first: the net of postings opened and closed, then a signed
+    hiring figure, where a direction word may describe raw openings ("openings fell, but hiring
+    is +3"). Otherwise the first direction word decides; answers lead with their verdict."""
+    for signed_figure in (_SIGNED_NET, _SIGNED_HIRING):
+        if signed := signed_figure.search(answer):
+            return ("up" if signed.group(1) == "+" else "down"), signed.group(0)
     match = _DIRECTION_RE.search(_ECHO.sub(" ", answer))
     if match is None:
         return None, None
     return _DIRECTION[match.group(1).lower()], match.group(1)
 
 
+def _sign(value: int) -> str:
+    return "up" if value > 0 else "down" if value < 0 else "flat"
+
+
 def verify_trend_sign(
     expect: dict[str, Any], transcript: Transcript, space: Space
 ) -> Verdict:
-    """The sign of the Space's own netted hiring for these companies, category and days, against
-    the direction the final answer states."""
+    """The direction of hiring for these companies, category and days, as the Space's own
+    postings opened and closed give it (ADR-0272), against the direction the final answer
+    states. Where the reading has no net of opened and closed, its netted hiring decides, and
+    the verdict says so. A net within FLAT_SHARE of everything opened and closed may be called
+    flat too."""
     picks = [company_scope.for_trends(space, c) for c in expect.get("companies") or []]
     days = int(expect.get("days") or 30)
     since = (datetime.now(UTC) - timedelta(days=days)).isoformat(timespec="seconds")
@@ -360,12 +376,23 @@ def verify_trend_sign(
         move = reading["lines"][0]["move"]
     if move is None:
         return Verdict(False, "the reading has neither a total nor a single line")
-    hiring = move.get("hiring") or 0
-    want = "up" if hiring > 0 else "down" if hiring < 0 else "flat"
     said, word = stated_direction(transcript.final_answer)
+    turnover = move.get("turnover") or {}
+    if turnover.get("net") is None:
+        hiring = move.get("hiring") or 0
+        return Verdict(
+            said == _sign(hiring),
+            f"no net of opened and closed; the Space's hiring is {hiring:+,} "
+            f"({_sign(hiring)}); the answer says {said} ({word!r})",
+        )
+    net = turnover["net"]
+    want = {_sign(net)}
+    if abs(net) <= FLAT_SHARE * (turnover["opened"] + turnover["closed"]):
+        want.add("flat")
     return Verdict(
-        said == want,
-        f"the Space's hiring is {hiring:+,} ({want}); the answer says {said} ({word!r})",
+        said in want,
+        f"postings opened less closed is {net:+,} ({' or '.join(sorted(want))}); the "
+        f"answer says {said} ({word!r})",
     )
 
 

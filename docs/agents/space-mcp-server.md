@@ -178,16 +178,60 @@ the filter costing the most.
   trends count only the jobs the role-family classifier places in a tech category, leaving out
   those it calls non-tech (`ingest/role_trends.py`).
 
-**`read_trends`** — how the number of open tech jobs changed over a window, with the changes that
-are not hiring (counting changes, newly found boards, duplicate removals) separated out. Whole
-index by default; or one `category`; or up to 10 `companies` (keys or exact names). `breakdown`
-lists the lines by category, seniority `level`, watched `role` or `company`. A company's counts
-begin 2026-09-13, when per-Board counting began, and the answer says so when you ask for more.
+**`read_trends`** — how tech hiring changed over a window. **Hiring is postings opened and closed,
+and their net; the change in openings listed is not hiring** (ADR-0272). Whole index by default;
+or one `category`; or up to 10 `companies` (keys or exact names). `breakdown` lists the lines by
+category, seniority `level`, watched `role` or `company`.
 
-**`hiring_now`** — companies ranked over the trailing week on one Lens: `expansion` (net growth),
-`volume` (jobs opened) or `rate` (jobs opened as a share of openings). Staffing firms and job
-boards are left out unless you ask for them, as on the site. Each row carries a key the other two
-tools accept.
+- **Hiring comes first.** An answer leads with "Hiring, as postings opened and closed: O opened,
+  C closed, net N".
+- **Then the change in openings listed, split three ways.** An answer then gives "Openings listed:
+  A → B" and splits that change into three parts:
+  - what turnover accounts for;
+  - what the counting changes HeadStart sized account for;
+  - **the unsized rest**, which is not a hiring figure. It holds re-counting (Boards found or
+    dropped, duplicates removed, counting changes HeadStart did not size) and any hiring before
+    turnover began.
+
+  The whole index sizes none of its counting changes, so its rest is most of the change: on
+  2026-09-29 the 30-day window listed +111,851 openings while postings opened and closed netted
+  −514.
+- **Turnover's gaps are said.** It began on 2026-09-25 18:16, so for now it covers only part of
+  any window. It leaves out the runs where a counting change landed. Some closures go uncounted,
+  so closed can run low.
+- **Each counting change is named once**, numbered, and figures refer to it by number.
+- **The closing line is an arithmetic check.** It says each line's parts add up to its change.
+  That checks sums, not that any figure is hiring.
+- **The site's own "hiring" figure appears only with `detail: full`**, labelled as including the
+  unsized change.
+- **The window.** It is `days` back from now, or `since`/`until` dates. The answer says when the
+  history starts later than asked. A company's counts begin 2026-09-13, when per-Board counting
+  began.
+- **Coverage.** `coverage: comparable` counts only the Boards tracked at the window's start, as
+  the site's toggle does. The default `all` is what the site lists.
+- **Measure.** `measure: new` reads postings first seen in the trailing 7 days, the site's New
+  this week. It is not a count of postings opened.
+- **A role breakdown** is the watched roles within a category, not the category. The answer also
+  gives the category's own figures, and says when a category has no watched roles.
+
+**`hiring_now`** — companies ranked over the trailing week on one Lens: `expansion` (the site's
+net change, less the counting steps it could size), `volume` (postings opened) or `rate`
+(postings opened as a share of openings). Rows keep the site's order and numbers, and each row
+also gives opened less closed.
+
+- **Net not backed by postings opened.** A row is flagged when its net is more than its postings
+  opened and closed could make, even at their pace over the whole week. Such a net is mostly
+  re-counting, so report the row's opened and closed.
+- **Small base.** On `rate`, a row with under 50 openings is flagged, and so is one with more
+  postings opened than are open now.
+- **Operators.** `operator` is who posts the jobs:
+  - `employer`: the company itself, and any company not on the curated list;
+  - `services`: an IT services firm posting client work;
+  - `staffing`: a staffing agency;
+  - `aggregator`: a job board.
+
+  Staffing firms and job boards are left out unless you ask for them, as on the site.
+- **Keys.** Each row carries a key the other two tools accept.
 
 ## What it cannot tell you, and why
 
