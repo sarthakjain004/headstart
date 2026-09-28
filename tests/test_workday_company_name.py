@@ -176,3 +176,85 @@ def test_a_description_about_the_reader_names_nothing():
 
 def test_a_bare_page_label_title_is_not_a_name():
     assert board_name([], _page("Careers"), "acme/External") == (None, "none")
+
+
+@pytest.mark.parametrize(
+    ("entity", "cleaned"),
+    [
+        ("001_BCBSA Blue Cross and Blue Shield Association",
+         "BCBSA Blue Cross and Blue Shield Association"),
+        ("800_ilani Cowlitz Tribal Gaming Authority",
+         "ilani Cowlitz Tribal Gaming Authority"),
+    ],
+)  # fmt: skip
+def test_clean_strips_a_code_joined_to_the_name_by_an_underscore(entity, cleaned):
+    """Both values as bcbsa and cowlitz served them live on 2026-09-29; the cache had kept
+    their codes as "001 Bcbsa" and "800 ilani"."""
+    assert clean(entity) == cleaned
+
+
+def test_a_run_never_starts_on_a_connector_or_a_bare_number():
+    """Woodward's values are code lists ("01 & 04"); the cache served "& 04 Woodward"."""
+    entities = [
+        "47 Woodward Aken GmbH",
+        "11 & A1 Woodward HRT, Inc.",
+        "01 & 04 Woodward, Inc.",
+        "01 & 04 Woodward, Inc.",
+        "01 & 04 Woodward, Inc.",
+        "86 Woodward Canada Inc.",
+    ]
+    page = _page(
+        None, "What does it mean to be part of Woodward? It means contributing."
+    )
+    assert board_name(entities, page, "woodward/woodward") == (
+        "Woodward",
+        "hiringOrganization",
+    )
+
+
+def test_a_code_hyphened_onto_the_name_is_skipped():
+    """Zoetis's "6J6 - Zoetis LLC" is not a `_HYPHEN_CODE`; the cache served "- Zoetis"."""
+    entities = [
+        "110 - Zoetis US LLC",
+        "6J2 - Zoetis Services LLC",
+        "6J6 - Zoetis LLC",
+        "6J6 - Zoetis LLC",
+        "6J6 - Zoetis LLC",
+    ]
+    page = _page(
+        None, "Join Zoetis – and build your career. Why Zoetis Zoetis has more"
+    )
+    assert board_name(entities, page, "zoetis/broadbean_external") == (
+        "Zoetis",
+        "hiringOrganization",
+    )
+
+
+def test_a_double_escaped_og_tag_still_vouches():
+    """Core & Main's page writes ``Core &amp;amp; Main``; read once, the vote fell to "& MAIN"."""
+    page = _page(None, "Based in St. Louis, Core &amp;amp; Main is a leader in water.")
+    assert board_name(["CORE & MAIN LP"] * 8, page, "coreandmain/coreandmain") == (
+        "Core & Main",
+        "hiringOrganization",
+    )
+
+
+def test_a_legal_form_that_ends_the_brand_is_kept():
+    """Cohen & Co's page, read once unescaped, names "Cohen & Co"; dropping "Co" as a legal
+    form would serve "Cohen &"."""
+    page = _page(
+        "Careers",
+        "Ask your connection at Cohen &amp;amp; Co about our referral process!",
+    )
+    entities = ["LE0008 Cohen & Co Advisory, LLC"] * 8
+    assert board_name(entities, page, "cohenco/CC") == (
+        "Cohen & Co",
+        "hiringOrganization",
+    )
+
+
+def test_a_wrapped_og_title_drops_the_separator_before_careers():
+    """lsu's page titles itself "Louisiana State University - Careers"; the cache served the
+    name with its " -" (2026-09-24)."""
+    page = _page("Louisiana State University - Careers")
+    assert board_name([], page, "lsu/lsu") == ("Louisiana State University", "og:title")
