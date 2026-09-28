@@ -21,7 +21,7 @@ import time
 import traceback
 from collections import OrderedDict
 from dataclasses import replace
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import lancedb
@@ -437,9 +437,10 @@ def _require_sign_in():
 
 # How often one caller may read `_READ_ROUTES` (ADR-0262): 60 requests in any 60 s, the six
 # routes together. The page's own busiest minute fits: a Search is two requests (/search and
-# /facets, again on each page turn), and the Trends tab's worst burst is one /trends per box
-# unticked in its ATS picker, about 20. The MCP server holds itself to the same 60 a minute, so
-# one server process meets its own limit before this one.
+# /facets, again on each page turn), and the Trends tab asks twice for a quick burst of boxes in
+# its Source picker; what it asks ahead for is kept, and a kept answer is not counted (ADR-0269).
+# The MCP server holds itself to the same 60 a minute, so one server process meets its own
+# limit before this one.
 _READ_LIMIT_REQUESTS = 60
 _LIMIT_WINDOW_S = 60
 _READ_LIMIT = rate_limit.RateLimit(_READ_LIMIT_REQUESTS, _LIMIT_WINDOW_S)
@@ -484,9 +485,14 @@ def _limit_each_caller():
     """A 429 with `Retry-After` for a caller past its limit. A caller is its Account when it has
     a session (#592: sign-up is open, so an address alone would let one client multiply itself
     by signing in), else its address; the two are counted apart. A read the app's own `/mcp`
-    tools make in process is not counted again: `/mcp` is limited itself (ADR-0267)."""
+    tools make in process is not counted again: `/mcp` is limited itself (ADR-0267). Nor is a
+    Trends answer already worked out this boot (ADR-0269): the limit is for what a question costs
+    the Space, and a kept one costs a lookup, as a static file does. The page asks ahead for
+    each drawn view's neighbours, and counted, those alone passed sixty a minute."""
     found = _request_limit()
     if found is None or request.environ.get(space_client.IN_PROCESS_READ):
+        return None
+    if request.path == "/trends" and _trends_kept(_trends_question(request.args)):
         return None
     limit, requests = found
     if _AUTH_ON and session.get("email"):
@@ -1371,8 +1377,18 @@ def trends():
     ``comparable``; ``?ats=`` and ``?company=`` (both repeatable). A bad question is a 400; a
     deployment without the ledger yet, or without the company directory a pick needs, is a 503.
     """
-    args = request.args
-    question = trend_history.TrendQuestion(
+    try:
+        body, gzipped = _served_trends(_HISTORY, _trends_question(request.args))
+    except trend_history.TrendsUnavailable as exc:
+        return jsonify(error=str(exc)), 503
+    except ValueError as exc:
+        return jsonify(error=str(exc)), 400
+    return _answer_response(body, gzipped)
+
+
+def _trends_question(args) -> trend_history.TrendQuestion:
+    """The ``/trends`` question ``args`` ask, as the page and the MCP tools spell it."""
+    return trend_history.TrendQuestion(
         metric=args.get("metric", "stock"),
         coverage=args.get("coverage", "all"),
         family=args.get("family"),
@@ -1383,21 +1399,20 @@ def trends():
         base=args.get("base"),
         ats=tuple(args.getlist("ats")),
     )
-    try:
-        body, gzipped = _served_trends(_HISTORY, question)
-    except trend_history.TrendsUnavailable as exc:
-        return jsonify(error=str(exc)), 503
-    except ValueError as exc:
-        return jsonify(error=str(exc)), 400
-    return _answer_response(body, gzipped)
+
+
+def _trends_kept(question: trend_history.TrendQuestion) -> bool:
+    """Whether ``question``'s answer is already worked out and kept this boot."""
+    return (_HISTORY, _HISTORY.answer_key(question)) in _TRENDS_ANSWERED
 
 
 # Each /trends body this boot has answered, least recently asked for first, and the one lock
 # answering takes (`_served_trends`). At most _TRENDS_KEPT answers of at most ~0.6 MB, JSON and
-# gzip together.
+# gzip together: room for the 144 answered ahead (`_answer_views_a_click_away`) and several
+# hundred more a boot's readers ask for.
 _TRENDS_ANSWERED: OrderedDict[tuple, tuple[bytes, bytes]] = OrderedDict()
 _TRENDS_ANSWERING = threading.Lock()
-_TRENDS_KEPT = 128
+_TRENDS_KEPT = 512
 
 
 def _served_trends(
@@ -1466,6 +1481,10 @@ def _trends_payload(answer: dict, question: trend_history.TrendQuestion) -> dict
 #: How many of a view's lines the page charts, and so how many a click can open: app.js's
 #: CHART_MAX, which a test holds this to. Only a charted category drills.
 _CHART_MAX = 8
+#: The Trends tab's date presets in days, app.js's `#trends-range`, each measured back from the
+#: history's newest tick (`trends_newest_tick` in the page's config), not from the click's
+#: moment, so a preset is one URL all boot (ADR-0269).
+_PRESET_DAYS = (7, 30, 90)
 
 
 def _answer_opening_views() -> None:
@@ -1497,8 +1516,52 @@ def _answer_opening_views() -> None:
     )
 
 
+def _answer_views_a_click_away() -> None:
+    """Every top-level view the tab's controls reach, and each charted category's levels under
+    each, answered in the background once the opening views are (ADR-0269): both Measures,
+    both Job sites and every date preset, 16 views and 128 drills. The page asks ahead for a
+    drawn view's neighbours, and these are they, so a click on any of those controls is read
+    from the browser, and the asking ahead from these kept answers. A thread, so the Space
+    starts serving without waiting for them; one answer at a time under the one lock, so a
+    reader's own new question waits behind at most one. Never fatal, as the opening views."""
+    started = time.monotonic()
+    newest = datetime.fromisoformat(_HISTORY.ticks[-1])
+    windows = [None, *((newest - timedelta(days=d)).isoformat() for d in _PRESET_DAYS)]
+    views = [
+        trend_history.TrendQuestion(
+            metric=metric,
+            coverage=coverage,
+            since=window if coverage == "all" else None,
+            base=window if coverage == "comparable" else None,
+        )
+        for window in windows
+        for coverage in ("all", "comparable")
+        for metric in ("stock", "new")
+    ]
+    try:
+        for view in views:
+            _served_trends(_HISTORY, view)
+        for view in views:
+            body, _ = _served_trends(_HISTORY, view)
+            for line in json.loads(body)["series"][:_CHART_MAX]:
+                _served_trends(_HISTORY, replace(view, family=line["name"]))
+    except Exception as exc:  # noqa: BLE001 - the request path reports its own failure
+        print(
+            f"trends: views a click away not answered ({type(exc).__name__}: {exc})",
+            flush=True,
+        )
+        return
+    print(
+        f"trends: views a click away answered in {time.monotonic() - started:.1f}s",
+        flush=True,
+    )
+
+
 if _HISTORY.ticks:
     _answer_opening_views()
+    threading.Thread(
+        target=_answer_views_a_click_away, name="trends-ahead", daemon=True
+    ).start()
 
 
 @app.route("/companies/suggest")
@@ -1740,6 +1803,8 @@ def index():
             # What the Trends, Hot and company-picker requests send as `v=`, so the browser may
             # keep their answers until the next boot (ADR-0251).
             "answers_version": _ANSWERS_VERSION,
+            # What the Trends tab's date presets are measured back from (ADR-0269).
+            "trends_newest_tick": _HISTORY.ticks[-1] if _HISTORY.ticks else None,
         },
         njobs=f"{_table.count_rows():,}",
         atses=capabilities.atses,

@@ -2279,19 +2279,24 @@ function chartedAndOther(d){
 // preset, so the two can never both be in force and disagree. `datetime-local` reads in the
 // browser's local zone; converted to UTC so the filter lines up with the chart's own UTC axis
 // (stampLabel already renders in UTC).
-function trendRange(){
+// `days` is the panel's own preset unless a neighbour's is asked for (prefetchNeighbours), and
+// a preset click clears any typed bound, so only the panel's own window reads the fields.
+function trendRange(days = trendDays){
   const r = {};
-  const since = el('trends-since') && el('trends-since').value;
-  const until = el('trends-until') && el('trends-until').value;
+  const own = days === trendDays;
+  const since = own && el('trends-since') && el('trends-since').value;
+  const until = own && el('trends-until') && el('trends-until').value;
   if (since) r.since = new Date(since).toISOString();
   if (until) r.until = new Date(until).toISOString();
-  if (presetInForce()) r.since = new Date(Date.now() - Number(trendDays) * 864e5).toISOString();
+  if (!since && !until && ['7', '30', '90'].includes(days)) r.since = presetSince(days);
   return r;
 }
-// Whether a preset window decides the range: one is picked, and no typed bound beats it.
-function presetInForce(){
-  const typed = (el('trends-since') && el('trends-since').value) || (el('trends-until') && el('trends-until').value);
-  return !typed && ['7', '30', '90'].includes(trendDays);
+// A preset's start: its days before the history's newest tick, which the Space names at boot
+// (ADR-0269), so every click on it asks for one URL all boot and the browser keeps its answer.
+// Measured back from each click's moment, it was a new URL every time, asked for afresh.
+function presetSince(days){
+  const newest = CFG.trends_newest_tick ? Date.parse(CFG.trends_newest_tick) : Date.now();
+  return new Date(newest - Number(days) * 864e5).toISOString();
 }
 
 // Selecting the preset from code — the path a custom date takes, which has to drop the preset
@@ -2331,6 +2336,9 @@ function trendAtsLabel(){
   el('trends-ats-trigger').textContent = (sel ? `${sel.length} source${sel.length === 1 ? '' : 's'}` : 'All sources') + ' ▾';
 }
 
+// How soon after a Source box the next counts as the same burst, and how long a burst waits
+// after its last box before it asks (ADR-0269).
+const ATS_SETTLE = 300;
 function toggleAtsPopover(force){
   const open = force ?? el('trends-ats-menu').hidden;
   el('trends-ats-menu').hidden = !open;
@@ -2339,16 +2347,17 @@ function toggleAtsPopover(force){
 
 // The /trends question for the panel's state, with `metric` as the Measure: every request for the
 // panel is built here, so two builds of one view are the same URL.
-// `picks` and `split` default to the panel's own; a prefetch passes the ones a click would set.
-function trendsQuery(family, metric, picks = trendPicks, split = trendSplit){
+// `picks`, `split`, `coverage` and `days` default to the panel's own; a prefetch passes the ones a
+// click would set.
+function trendsQuery(family, metric, picks = trendPicks, split = trendSplit, coverage = trendCoverage, days = trendDays){
   const q = new URLSearchParams();
   picks.forEach(p => q.append('company', p.key));
   if (family) { q.set('family', family); q.set('split', split); }
   else if (topSplitNow() === 'company') q.set('split', 'company');
   if (metric !== 'stock') q.set('metric', metric);
-  const range = trendRange();
-  if (trendCoverage === 'comparable') {
-    q.set('coverage', trendCoverage);
+  const range = trendRange(days);
+  if (coverage === 'comparable') {
+    q.set('coverage', coverage);
     if (range.since) q.set('base', range.since);
   } else if (range.since) q.set('since', range.since);
   if (range.until) q.set('until', range.until);
@@ -2367,20 +2376,46 @@ function versioned(path, q){
 }
 
 // A Trends answer fetched ahead of the click that will ask for it, so the click is answered from
-// the browser's cache (ADR-0251). Only once the reader has stayed a second: the Space works out
-// one answer at a time, so a prefetch being worked out when the reader clicks on puts their
-// click behind it, and a load before the second is up drops the prefetch unsent. Only a URL that
-// will repeat is worth it: a preset window is measured back from the moment of each click, so it
-// never does. Low priority and unreported: nothing waits on it, and a failure costs only the
-// head start.
+// the browser's cache (ADR-0251): the opening view, for a page that opened on another tab. Only
+// once the reader has stayed a second: the Space works out one answer at a time, so a prefetch
+// being worked out when the reader clicks on puts their click behind it, and a load before the
+// second is up drops the prefetch unsent. Low priority and unreported: nothing waits on it, and
+// a failure costs only the head start.
 const PREFETCH_AFTER = 1000;
 let trendPrefetchTimer = null;
 function prefetchTrends(family, metric){
   if (!CFG.answers_version) return;
   clearTimeout(trendPrefetchTimer);
-  if (presetInForce()) return;
   const url = versioned('/trends', trendsQuery(family, metric));
   trendPrefetchTimer = setTimeout(() => fetch(url, { priority: 'low' }).catch(() => {}), PREFETCH_AFTER);
+}
+// A drawn view's neighbours, the views one click on its controls asks for, asked for ahead
+// (ADR-0269): the other Measure, every other date preset, the other Job sites and, inside a
+// category with named roles, the other breakdown. All at once, since the Space answers them
+// ahead itself when no company, Source, typed date or named-roles breakdown narrows the view, so
+// asking costs it no work and is not counted against the reader's limit. A narrowed view's
+// neighbours are its own to work out, one each, so only the other Measure is asked for there,
+// once the reader has stayed a second (prefetchTrends). None under Save-Data: they are ~0.3 MB
+// a view.
+function prefetchNeighbours(){
+  if (!CFG.answers_version) return;
+  const other = trendMetric === 'stock' ? 'new' : 'stock';
+  const typed = ['trends-since', 'trends-until'].some(id => el(id) && el(id).value);
+  if (trendPicks.length || trendAtsSelected() || typed || (trendDrill && trendSplit === 'roles')){
+    prefetchTrends(trendDrill, other); return;
+  }
+  if (typeof navigator !== 'undefined' && navigator.connection && navigator.connection.saveData) return;
+  const at = (over = {}) => versioned('/trends', trendsQuery(trendDrill, over.metric || trendMetric,
+    trendPicks, over.split || trendSplit, over.coverage || trendCoverage, over.days || trendDays));
+  const urls = [at({ metric: other }),
+    ...['all', '7', '30', '90'].filter(days => days !== trendDays).map(days => at({ days })),
+    at({ coverage: trendCoverage === 'all' ? 'comparable' : 'all' })];
+  if (trendDrill && trendData && (trendData.watch_parents || []).includes(trendDrill))
+    urls.push(at({ split: trendSplit === 'roles' ? 'bands' : 'roles' }));
+  urls.filter(url => !askedAhead.has(url)).forEach(url => {
+    askedAhead.add(url);
+    fetch(url, { priority: 'low' }).catch(() => askedAhead.delete(url));
+  });
 }
 // The view a click is about to ask for, asked for on a sign it is coming: the pointer or focus
 // resting on a category's row, or a company offered at the top of the picker's list, which is
@@ -2390,7 +2425,7 @@ function prefetchTrends(family, metric){
 const askedAhead = new Set();
 let intentInFlight = false, intentNext = null;
 function prefetchIntent(q){
-  if (!CFG.answers_version || presetInForce()) return;
+  if (!CFG.answers_version) return;
   askAhead(versioned('/trends', q));
 }
 function askAhead(url){
@@ -2407,9 +2442,10 @@ function askAhead(url){
 
 async function loadTrends(family){
   // Exactly one request owns the panel. Every Trends control calls this, and the ATS picker
-  // calls it once per checkbox — so unchecking 20 of 21 boxes to reach "1 ATS" starts 20
-  // round trips that all used to run to completion and paint, in arrival order. Measured in
-  // Chromium against a stub serving the real templates at the Space's own latency: 20
+  // called it once per checkbox (a quick burst now asks once, ADR-0269) — so unchecking 20 of
+  // 21 boxes to reach "1 ATS" started 20 round trips that all used to run to completion and
+  // paint, in arrival order.
+  // Measured in Chromium against a stub serving the real templates at the Space's own latency: 20
   // requests, 20 repaints, and the numbers churning non-monotonically (32k, 33k, 35k, 30k,
   // 37k, 28k …) because 6-11 of the 20 answers arrived out of the order they were asked in.
   // Worse than the flicker, the panel then settled on whichever answer landed last, which in
@@ -2463,6 +2499,7 @@ async function loadTrends(family){
   try {
     r = await fetch(versioned('/trends', q), { signal: req.signal });
     if (r.ok){
+      askedAhead.add(versioned('/trends', q));   // kept by the browser now: no neighbour asks again
       payload = await r.json();
       // A 200 of the wrong shape would pass here and throw inside drawTrends instead.
       if (!payload || !Array.isArray(payload.series) || !Array.isArray(payload.stamps)) throw new Error('shape');
@@ -2507,8 +2544,7 @@ async function loadTrends(family){
   trendData = trendView(payload, trendDrill);
   drawPicks(); applyUnitLocks(); writeTrendHash(drilled || push);
   drawTrends();
-  // The Measure toggle beside the chart, answered ahead for this view.
-  prefetchTrends(trendDrill, trendMetric === 'stock' ? 'new' : 'stock');
+  prefetchNeighbours();
 }
 
 // Nothing of the last answer stays on screen: drawTrends draws nothing without an answer, which
@@ -3823,9 +3859,13 @@ function buildTrendsFull(){
   return `<thead>${head}</thead><tbody>${body}</tbody>`;
 }
 
+// The every-measurement grid only while its fold is open (ADR-0269): a column a measurement,
+// ~1,000 of them, cost 0.1 s a build, paid on every toggle and redraw of Table view behind a
+// fold most readers never open.
 function renderTrendsTables(){
   if (el('trends-table')) el('trends-table').innerHTML = buildTrendsTable();
-  if (el('trends-full-table')) el('trends-full-table').innerHTML = buildTrendsFull();
+  const full = el('trends-full');
+  if (el('trends-full-table')) el('trends-full-table').innerHTML = full && full.open ? buildTrendsFull() : '';
 }
 
 function toggleTrendsTable(force){
@@ -4003,9 +4043,25 @@ if (el('trends-range-clear')) el('trends-range-clear').addEventListener('click',
 if (el('trends-back')) el('trends-back').addEventListener('click', () => { trendSplit = 'bands'; loadTrends(null); });
 if (el('trends-retry')) el('trends-retry').addEventListener('click', () => loadTrends(trendDrill));
 if (el('trends-table-toggle')) el('trends-table-toggle').addEventListener('click', () => toggleTrendsTable());
+if (el('trends-full')) el('trends-full').addEventListener('toggle', () => {
+  if (el('trends-full').open && el('trends-full-table')) el('trends-full-table').innerHTML = buildTrendsFull();
+});
 if (el('trends-ats-trigger')) {
   el('trends-ats-trigger').addEventListener('click', () => toggleAtsPopover());
-  el('trends-ats-menu').addEventListener('change', () => { trendAtsLabel(); loadTrends(trendDrill); });
+  // A box asks at once; the boxes that follow it quickly ask once between them, when they stop
+  // (ADR-0269). A request the page cancels is still worked out by the Space, one answer at a
+  // time, so five quick unticks queued five answers in front of the one the reader wanted. A
+  // view the browser already holds costs the Space nothing, so it never waits.
+  let atsSettle = null, atsLast = -Infinity;
+  el('trends-ats-menu').addEventListener('change', () => {
+    trendAtsLabel();
+    clearTimeout(atsSettle);
+    const burst = Date.now() - atsLast < ATS_SETTLE;
+    atsLast = Date.now();
+    if (burst && !askedAhead.has(versioned('/trends', trendsQuery(trendDrill, trendMetric))))
+      atsSettle = setTimeout(() => loadTrends(trendDrill), ATS_SETTLE);
+    else loadTrends(trendDrill);
+  });
   document.addEventListener('click', e => {
     if (!el('trends-ats-menu').hidden && !e.target.closest('#trends-ats')) toggleAtsPopover(false);
   });

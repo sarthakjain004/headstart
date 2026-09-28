@@ -2897,6 +2897,64 @@ def test_the_opening_views_and_their_charted_drills_are_answered_at_boot(
             assert history.answer_key(drill) in kept
 
 
+def test_every_view_a_click_away_is_answered_ahead(company_trends, trends_app):
+    """ADR-0269: both Measures, both Job sites and every date preset, measured back from the
+    newest tick in the page's own spelling (Date.toISOString), and each charted category's
+    levels under each: what the page asks ahead for as a view is drawn."""
+    trends_app._answer_views_a_click_away()
+    history = trends_app._HISTORY
+    kept = {key for held, key in trends_app._TRENDS_ANSWERED if held is history}
+    newest = datetime.fromisoformat(history.ticks[-1])
+    for days in (None, *trends_app._PRESET_DAYS):
+        start = (
+            None
+            if days is None
+            else (newest - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+        )
+        for coverage in ("all", "comparable"):
+            for metric in ("stock", "new"):
+                view = trend_history.TrendQuestion(
+                    metric=metric,
+                    coverage=coverage,
+                    since=start if coverage == "all" else None,
+                    base=start if coverage == "comparable" else None,
+                )
+                assert history.answer_key(view) in kept
+                answer = history.unnetted_answer(view)
+                for line in answer["series"][: trends_app._CHART_MAX]:
+                    drill = replace(view, family=line["name"])
+                    assert history.answer_key(drill) in kept
+
+
+def test_a_kept_trends_answer_is_not_counted_against_the_callers_limit(
+    trends_app, monkeypatch
+):
+    """ADR-0269: the limit is for what a question costs the Space, and a kept answer costs a
+    lookup. A question not yet worked out still counts."""
+    monkeypatch.setattr(trends_app, "_READ_LIMIT", rate_limit.RateLimit(2, 60))
+    client = trends_app.app.test_client()
+    client.get("/trends")  # worked out: counted
+    for _ in range(5):
+        assert client.get("/trends").status_code == 200  # kept: not counted
+    assert client.get("/trends?metric=new").status_code == 200  # the second counted
+    assert client.get("/trends?family=ai-ml").status_code == 429
+
+
+def test_the_page_names_the_tick_its_date_presets_are_measured_from(trends_app):
+    page = trends_app.app.test_client().get("/").data.decode()
+    cfg = json.loads(re.search(r"window\.CFG = (.*?);</script>", page).group(1))
+    assert cfg["trends_newest_tick"] == trends_app._HISTORY.ticks[-1]
+
+
+def test_the_presets_answered_ahead_are_the_pages(app):
+    """The date presets answered ahead are the Trends tab's own buttons."""
+    template = (Path(app.app.template_folder) / "trends.html").read_text(
+        encoding="utf-8"
+    )
+    days = re.findall(r'data-days="(\d+)"', template)
+    assert tuple(int(d) for d in days) == app._PRESET_DAYS
+
+
 def test_the_boot_answers_as_many_drills_as_the_page_charts(app):
     """The drills answered at boot are the charted categories', so the count is app.js's."""
     app_js = (Path(app.app.static_folder) / "app.js").read_text(encoding="utf-8")
@@ -3248,6 +3306,42 @@ def test_trends_multiple_ats_params_union(ats_trends_app):
     assert d["stamps"] == [_U2]
     by_name = {s["name"]: s for s in d["series"]}
     assert by_name["software-engineering"]["points"] == [110]  # 60 + 50, U2 only
+
+
+def test_trends_ats_filter_holding_most_rows_is_every_ats_less_the_rest(
+    tmp_path_factory,
+):
+    """Most rows chosen, as when a Source is unticked, is answered as every ATS's cells less the
+    rows left out (ADR-0269): a cell only a left-out ATS held drops out rather than reading 0."""
+    state = tmp_path_factory.mktemp("ats-most-state")
+    _write_trends(
+        state,
+        [
+            "ts,version,metric,family,band,ats,count",
+            f"{_U1},2,stock,software-engineering,mid,greenhouse,10",
+            f"{_U1},2,stock,software-engineering,senior,greenhouse,3",
+            f"{_U1},2,stock,ai-ml,mid,lever,4",
+            f"{_U2},2,stock,software-engineering,mid,greenhouse,12",
+            f"{_U2},2,stock,software-engineering,senior,greenhouse,2",
+            f"{_U2},2,stock,software-engineering,mid,lever,8",
+            f"{_U2},2,stock,ai-ml,mid,greenhouse,6",
+        ],
+    )
+    history = trend_history.TrendHistory.load(
+        old_layout_converter.store_in_current_layout(state / "data" / "state"),
+        _SPACE_CONFIG,
+    )
+    d = history.unnetted_answer(trend_history.TrendQuestion(ats=("greenhouse",)))
+    points = {s["name"]: s["points"] for s in d["series"]}
+    assert points == {"software-engineering": [13, 14], "ai-ml": [None, 6]}
+    assert d["totals"] == [13, 20]
+    levels = history.unnetted_answer(
+        trend_history.TrendQuestion(ats=("greenhouse",), family="software-engineering")
+    )
+    assert {s["name"]: s["points"] for s in levels["series"]} == {
+        "mid": [10, 12],
+        "senior": [3, 2],
+    }
 
 
 _METHODOLOGY = {

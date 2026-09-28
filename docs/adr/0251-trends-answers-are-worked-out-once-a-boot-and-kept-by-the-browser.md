@@ -1,6 +1,6 @@
 # ADR-0251: Trends answers are worked out once a boot and kept by the browser
 
-**Status:** accepted, amended by [ADR-0261](0261-a-trends-view-nobody-has-asked-for-is-cheap-to-work-out-and-asked-for-ahead.md) (answers kept by what they read of a question; asked for ahead on intent too) · **Date:** 2026-09-28 · **Relates to:** [ADR-0020](0020-free-tier-deployment.md) (the free-tier Space), [ADR-0042](0042-signed-in-ui-saved-sets.md) (the sign-in wall and its session cookie), [ADR-0230](0230-trends-keeps-one-board-delta-history-and-decides-rules-when-reading-it.md) (the history the Space reads once at boot), [ADR-0233](0233-trends-serves-reconciled-line-readings-and-the-page-only-formats.md) (the reading every answer carries)
+**Status:** accepted, amended by [ADR-0261](0261-a-trends-view-nobody-has-asked-for-is-cheap-to-work-out-and-asked-for-ahead.md) (answers kept by what they read of a question; asked for ahead on intent too), and by [ADR-0269](0269-every-trends-control-is-answered-from-the-browser.md) (a preset window is one URL a boot and asked ahead; 512 answers kept) · **Date:** 2026-09-28 · **Relates to:** [ADR-0020](0020-free-tier-deployment.md) (the free-tier Space), [ADR-0042](0042-signed-in-ui-saved-sets.md) (the sign-in wall and its session cookie), [ADR-0230](0230-trends-keeps-one-board-delta-history-and-decides-rules-when-reading-it.md) (the history the Space reads once at boot), [ADR-0233](0233-trends-serves-reconciled-line-readings-and-the-page-only-formats.md) (the reading every answer carries)
 
 ## Context
 
