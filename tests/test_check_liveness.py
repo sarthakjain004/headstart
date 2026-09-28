@@ -711,7 +711,7 @@ def test_a_workday_row_records_the_data_centre_that_answered(cl, tmp_path, monke
         ["check_liveness", "--dir", str(pool), "--ledger-dir", str(ledger), "workday"],
     )
     cl.main()
-    after = cl.liveness.load(ledger / "workday.csv")
+    after = cl.liveness_ledger.load(ledger / "workday.csv")
     assert list(after) == [tenant]
     assert after[tenant].url == "https://acme.wd5.myworkdayjobs.com/External"
     assert (after[tenant].status, after[tenant].jobs) == (cl.LIVE, 4)

@@ -125,6 +125,8 @@ Boards, with `--force`. The elected data centre refused while another answered o
 the run. After the run it refused on 0 with the new prober, and on 108 with `main`'s. So
 re-dating the rows does not fix the election; recording the data centre does. The run rewrote 430
 urls, and it left the tenant set, the row count and the Scrapable set unchanged.
+Re-measured on 2026-09-29, before merging, on a seeded sample of 40 of the same 344 Boards (122
+rows): 13 before, 0 after the new prober, 18 after `main`'s.
 
 ## Consequences
 

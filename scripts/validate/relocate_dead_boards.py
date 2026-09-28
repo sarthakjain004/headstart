@@ -138,7 +138,7 @@ def search(slug: str, workers: int) -> list[tuple[str, int]]:
         for done in as_completed(
             [pool.submit(probe, a) for a in SLUG_ADDRESSABLE if a in PROBES]
         ):
-            ats, (verdict, jobs) = done.result()
+            ats, (verdict, jobs, *_) = done.result()
             if verdict == "live" and (jobs or 0) > 0:
                 found.append((ats, jobs))
     return sorted(found, key=lambda x: -x[1])
