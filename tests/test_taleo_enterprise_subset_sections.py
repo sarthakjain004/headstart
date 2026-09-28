@@ -170,3 +170,23 @@ def test_a_bug_in_the_read_is_not_taken_for_an_unreadable_section(mod, tmp_path)
 
     with pytest.raises(KeyError):
         mod.write_aliases(liveness, reqs_of, "2026-09-24")
+
+
+def test_an_internal_section_is_never_the_kept_one(mod):
+    """#794: an internal section that lists one req more at read time won the election and served
+    employee-only links. It now sits out the comparison: neither kept nor buried, and the index's
+    public-first Tenant rule (ADR-0223) serves its shared reqs from the public section."""
+    hyatt = "https://hyatt.taleo.net/careersection"
+    buried = mod.burials(
+        {
+            f"{hyatt}/1": {"1", "2"},
+            f"{hyatt}/10880": {"1", "2"},
+            f"{hyatt}/wallstreet_internal": {"1", "2", "3"},
+        }
+    )
+    assert buried == {f"{hyatt}/10880": f"{hyatt}/1"}
+
+
+def test_an_internal_section_is_not_buried_onto_a_public_one_either(mod):
+    mol = "https://molgroup.taleo.net/careersection"
+    assert mod.burials({f"{mol}/external": {"1", "2"}, f"{mol}/internal": {"1"}}) == {}

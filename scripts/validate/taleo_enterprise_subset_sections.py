@@ -19,6 +19,10 @@ the kept section's own job URLs are the ones served. The rules, all in `burials`
 - **An empty section is never buried.** The empty set is a subset of everything, so it is no
   evidence, and an empty section can post a req nobody else lists tomorrow.
 - **An unreadable section is never buried**, and nothing is buried onto it.
+- **A non-public section sits out the comparison** (`index_plan.is_non_public`: `internal`,
+  `confidential`, ...): never kept, so it cannot win on one extra req at read time and serve
+  employee-only links (Hyatt's `wallstreet_internal`, MOL Group's `internal`, #794), and never
+  buried. The index serves a req it shares with a public section from the public one (ADR-0223).
 
 Reads every `live` row of the liveness ledger, including the sections the last run buried (the alias
 ledger leaves their liveness rows in place), so each run re-derives every verdict and a buried
@@ -42,6 +46,7 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
 from headstart.boards import alias_ledger, liveness_ledger, scrapable_boards
+from headstart.ingest.index_plan import is_non_public
 from headstart.network import http
 from headstart.scrapers.taleo_enterprise import TaleoEnterpriseScraper
 
@@ -57,9 +62,14 @@ def burials(reqs_by_section: Mapping[str, Collection[str]]) -> dict[str, str]:
 
     ``reqs_by_section`` maps a section's canonical URL to its full requisition ids; the tenant is
     the URL's host. The election is `alias_ledger.bury_contained`, shared with ADP Recruiting
-    Management's (ADR-0202)."""
+    Management's (ADR-0202). A non-public section is left out of it (module docstring)."""
+    public = {
+        section: reqs
+        for section, reqs in reqs_by_section.items()
+        if not is_non_public(f"{ATS}:{section}".lower())
+    }
     return alias_ledger.bury_contained(
-        reqs_by_section, lambda section: urlsplit(section).hostname
+        public, lambda section: urlsplit(section).hostname
     )
 
 

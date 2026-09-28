@@ -853,10 +853,10 @@ def _survivor_precedence(board: str) -> tuple[bool, bool]:
     :func:`_survivor_board`'s first keys, and all a displacement compares. A backing Board
     outranks the Eightfold site in front of it (ADR-0210), and a public site a non-public one
     (ADR-0187, ADR-0223); a group holding one Board never reaches either."""
-    return board.startswith("eightfold:"), _is_non_public(board)
+    return board.startswith("eightfold:"), is_non_public(board)
 
 
-def _is_non_public(board: str) -> bool:
+def is_non_public(board: str) -> bool:
     """Whether a lowercased Board key's site segment (after the first ``/``) names it non-public
     (:data:`_NON_PUBLIC_SITE_TOKENS`). Both callers pass the lowercased key :func:`_placement`
     builds, which is what makes the match case-insensitive. A Taleo Enterprise key's segment is
