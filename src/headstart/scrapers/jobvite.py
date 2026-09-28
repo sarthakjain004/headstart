@@ -59,7 +59,7 @@ posting in two slots", which counted the repeated slot but not the posting it pu
 :meth:`_listing` walks again, up to :data:`_MAX_WALKS`, while the union is short of the
 counter and each walk still finds something new. A Board whose re-walks proved the listing
 unstable and is still short is reported through ``mark_truncated_unless_negligible`` (ADR-0121);
-one whose first re-walk found nothing new is short stably and only logged (ADR-0256). Only a
+one whose first re-walk found nothing new is short stably and only logged (ADR-0257). Only a
 Board short on its first walk pays for a second.
 
 **ADR-0111's alias dedupe does not apply here, and deliberately gets no override.** Every Board is
