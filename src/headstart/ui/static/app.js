@@ -2329,7 +2329,7 @@ function prefetchTrends(family, metric){
 }
 // The view a click is about to ask for, asked for at once, on a sign it is coming: the pointer
 // resting on a category's row, or a company offered at the top of the picker's list, which is
-// what Enter picks (ADR-0252). Once a URL a page: the browser keeps each answer anyway.
+// what Enter picks (ADR-0257). Once a URL a page: the browser keeps each answer anyway.
 const askedAhead = new Set();
 function prefetchIntent(q){
   if (!CFG.answers_version || presetInForce()) return;

@@ -458,7 +458,7 @@ def _static_under_this_boot(endpoint, values):
 @app.after_request
 def _keep_static_for_the_boot(response):
     """A static file asked for under this boot's version, kept by the browser until the next
-    boot (ADR-0254): only a deploy changes one, and a deploy restarts the Space, which gives the
+    boot (ADR-0257): only a deploy changes one, and a deploy restarts the Space, which gives the
     page a new version. A revisit then reads app.js and the rest from the browser, where each
     file was revalidated before, a round trip every visit. Like a kept answer, it neither
     re-signs the session cookie nor varies by it (`_AnswersLeaveTheSessionAlone`)."""
@@ -1308,7 +1308,7 @@ def _served_trends(
     out a second time beside it. An answer already kept is read without the lock, so it never
     waits behind one being worked out.
 
-    Kept by what the answer reads of the question (`TrendHistory.answer_key`, ADR-0254): a
+    Kept by what the answer reads of the question (`TrendHistory.answer_key`, ADR-0257): a
     preset window's `since` is a new millisecond on every click, but every click between the
     same two ticks gets the answer the first one did. The least recently asked for goes first,
     so windows that do differ cannot push out the opening views everyone asks for."""
@@ -1366,7 +1366,7 @@ _CHARTED = 8
 def _answer_opening_views() -> None:
     """The view every Trends visit opens on, under both Measures, answered before the first
     visitor asks (ADR-0251), and each charted category's levels under it, which are what a
-    click on the opening view opens (ADR-0254): ~2 s of this Mac's CPU at boot, ~7 s of the
+    click on the opening view opens (ADR-0257): ~2 s of this Mac's CPU at boot, ~7 s of the
     Space's, rather than ~2 s on someone's first click each. Never fatal: a question that fails
     here fails the same way when asked, and is answered there."""
     started = time.monotonic()

@@ -2449,7 +2449,7 @@ def test_the_answer_asked_for_most_recently_is_the_last_let_go(
 def test_windows_between_the_same_ticks_share_one_kept_answer(
     company_trends, trends_app, monkeypatch
 ):
-    """ADR-0254: a preset window is measured back from each click's moment, a new instant every
+    """ADR-0257: a preset window is measured back from each click's moment, a new instant every
     time, and every one between the same two ticks is answered by the one worked out first."""
     history = trends_app._HISTORY
     asked = []
