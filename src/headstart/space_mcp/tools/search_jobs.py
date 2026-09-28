@@ -399,13 +399,16 @@ def _order_line(arguments: dict[str, Any]) -> str:
 
 
 def _nothing_matched(
-    facets: dict[str, Any], scope: company_scope.CompanyScope | None, arguments
+    client: SpaceClient,
+    facets: dict[str, Any],
+    scope: company_scope.CompanyScope | None,
+    arguments,
 ) -> str:
     blocking = facets.get("blocking")
     if blocking == "company" and scope is not None and scope.substring is not None:
         return (
-            f"0 jobs: no company name contains {scraped_text.quoted(scope.substring)}. Try a "
-            "shorter or different spelling, or a key from read_trends or hiring_now."
+            f"0 jobs: no company name contains {scraped_text.quoted(scope.substring)}. "
+            + company_scope.alternatives(client, scope.substring)
         )
     if blocking:
         name = _ARGUMENT_OF.get(blocking, blocking)
@@ -479,7 +482,7 @@ def answer(client: SpaceClient, arguments: dict[str, Any]) -> str:
     if not rows:
         lines.insert(
             0,
-            _nothing_matched(facets, scope, arguments)
+            _nothing_matched(client, facets, scope, arguments)
             if total == 0
             else f"{total:,} jobs match these filters, but page {page} is past them.",
         )

@@ -466,6 +466,7 @@ _READ_ROUTES = (
     "/companies/suggest",
     "/companies/lookup",
     "/job",
+    "/companies/locations",
 )
 _DOOR_PATHS = (
     "/",
@@ -838,7 +839,7 @@ def test_a_caller_cannot_claim_the_in_process_mark_with_a_header(auth_app, monke
 
 # ---- the app's own mark on every reply (ADR-0253) ----
 
-_OWN_REPLY = "app; agent-api=4"
+_OWN_REPLY = "app; agent-api=5"
 
 
 def test_a_routes_own_answer_is_marked(auth_app):
@@ -3184,6 +3185,52 @@ def test_lookup_takes_one_to_ten_boards(company_trends):
         assert r.get_json()["error"] == "invalid lookup"
     ten = "&".join(["board=workday:hpe/a"] * 10)
     assert company_trends.get(f"/companies/lookup?{ten}").status_code == 200
+
+
+# ---- a company's locations (ADR-0275) ----
+
+
+def test_locations_are_counted_over_the_named_boards_only(app, monkeypatch):
+    """The Board clause is the whole scope: no Account's list and no other filter reaches it."""
+    scoped = []
+    real = app.job_search.location_counts.top
+
+    def recording(table, where, limit):
+        scoped.append((where, limit))
+        return real(table, where, limit)
+
+    monkeypatch.setattr(app.job_search.location_counts, "top", recording)
+    r = app.app.test_client().get(
+        "/companies/locations?board=workday:hpe/a&board=workday:hpe/b&limit=3&remote=true"
+    )
+    assert r.status_code == 200
+    assert scoped == [
+        (
+            "(lower(id) LIKE 'workday:hpe/a:%' OR lower(id) LIKE 'workday:hpe/b:%')",
+            3,
+        )
+    ]
+    # The fake table answers its two rows, Berlin and Remote, whatever it is asked.
+    assert r.get_json() == {
+        "jobs": 2,
+        "unstated": 0,
+        "distinct": 2,
+        "capped": False,
+        "locations": [
+            {"location": "Berlin", "count": 1},
+            {"location": "Remote", "count": 1},
+        ],
+    }
+
+
+@pytest.mark.parametrize(
+    "query",
+    ["", "board=%20", "board=a:b&limit=0", "board=a:b&limit=51", "board=a:b&limit=x"],
+)
+def test_locations_need_a_board_and_a_bounded_limit(app, query):
+    r = app.app.test_client().get(f"/companies/locations?{query}")
+    assert r.status_code == 400, query
+    assert r.get_json()["error"] == "invalid filter"
 
 
 def test_facets_carry_the_newest_trends_tick(company_trends, trends_app, app):

@@ -270,6 +270,7 @@ supersedes it and note the supersession in both.
 | [0272](0272-an-agent-reads-hiring-as-postings-opened-and-closed.md) | An agent reads hiring as postings opened and closed, not the change in openings listed | 2026-09-29 |
 | [0273](0273-a-country-filter-matches-every-way-a-location-names-a-country.md) | A country filter matches every way a location names a country | 2026-09-29 |
 | [0274](0274-an-agent-asks-facets-for-the-total-alone-and-names-a-category-in-its-own-words.md) | An agent asks `/facets` for the total alone, and names a category in its own words | 2026-09-29 |
+| [0275](0275-an-agent-looks-a-company-up-and-reads-its-hiring-profile.md) | An agent looks a company up and reads its hiring profile | 2026-09-29 |
 | [0276](0276-a-hosted-mcp-call-ends-at-its-deadline-and-no-caller-holds-every-place.md) | A hosted MCP call ends at its deadline, and no caller holds every place | 2026-09-29 |
 | [0277](0277-an-agent-reads-a-posting-by-id-and-finds-jobs-like-one.md) | An agent reads a posting by id, and finds jobs like one | 2026-09-29 |
 | [0285](0285-a-vector-is-rebuilt-when-its-postings-text-changes.md) | A vector is rebuilt when its posting's text changes | 2026-09-29 |

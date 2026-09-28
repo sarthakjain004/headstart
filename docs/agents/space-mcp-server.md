@@ -165,6 +165,8 @@ the filter costing the most.
 
 - `company` is the site's company box: any company name *containing* the text. A Board key from an
   earlier answer (`lever:razorpay`, or the start of a result id) means every Board of that company.
+  When no company name contains the text ("Strpie"), the answer offers up to five directory
+  companies it may mean, with their keys.
 - `category` narrows one company's jobs to a job category, so it needs a directory company: a key,
   or an exact name, which is then read as the directory's largest company of that name — the
   answer says so. The schema lists the current ids; a label ("AI, ML & Data Science"), a close name
@@ -275,6 +277,31 @@ also gives opened less closed.
   Staffing firms and job boards are left out unless you ask for them, as on the site.
 - **Keys.** Each row carries a key the other two tools accept.
 
+**`find_company`** — look a company up by `name`, typos, prefixes and known aliases allowed. It
+lists every Company directory entry the name may mean, best match first, each with its key, its
+Boards, its tech openings and how it matched (exact name, alias, prefix, every word, one typo, or
+spaces ignored). It picks none of them: one employer can be several entries (one per ATS, or a
+regional arm), and anything but an exact name or alias is a guess to confirm with the user. As in
+the site's picker, of the entries sharing one name only the largest is listed; a smaller one is
+reached by its Board key, which `find_company` also looks up exactly.
+
+**`company_profile`** — one company's hiring, for a recruiter or a researcher. `company` is a key
+from `find_company` or an exact name, read as `read_trends` reads one; the answer names the
+company, its Boards and any other directory company the name may mean. It gives:
+
+- its tech openings now, and the jobs its Boards serve that the tech filter sets aside;
+- the last 30 days: postings **opened and closed** first (counted since 2026-09-25, when turnover
+  counting began), then the change in openings with its re-counting part named;
+- its job categories now, largest first, each with the postings opened and closed in it;
+- the ten places its served jobs name most, as each employer wrote them — "Seattle, WA" and
+  "Seattle, Washington, USA" are two places — with how many distinct places and how many jobs name
+  none (`/companies/locations`, ADR-0275);
+- how many of its served jobs are remote, of each employment type, open to someone with at most
+  0, 2, 5 or 10 years (a job stating no experience counts at every level), state a salary, were
+  posted in the last day, week, month or quarter, and are new to HeadStart this day or week.
+
+To list the jobs behind any of these, pass the key to `search_jobs` as `company`.
+
 ## What it cannot tell you, and why
 
 - **No last-seen date.** The served table has no per-Job "last seen"; `get_job` says only whether
@@ -330,5 +357,6 @@ since a public route can never carry one person's data.
 tool is), `server.py` (serves the registry), `space_client.py` (the one way it reaches the Space),
 `company_scope.py`, `role_families.py` and `scraped_text.py` — on the shared protocol module in
 `src/headstart/mcp_protocol/` (`messages.py`, and the `stdio.py` and `streamable_http.py`
-transports). The hosted route is `/mcp` in `deploy/hf-space/app.py`. Tests:
+transports). The hosted route is `/mcp` in `deploy/hf-space/app.py`, and the one route only the
+tools read, `/companies/locations`, is answered by `src/headstart/serving/location_counts.py`. Tests:
 `tests/test_space_mcp_*.py` and `tests/test_mcp_protocol_*.py`.

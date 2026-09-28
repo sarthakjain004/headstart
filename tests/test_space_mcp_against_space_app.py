@@ -22,7 +22,7 @@ from headstart.mcp_protocol.messages import ToolFailure
 from headstart.serving import job_search
 from headstart.space_mcp import server
 from headstart.space_mcp import space_client as sc
-from headstart.space_mcp.tools import get_job, read_trends
+from headstart.space_mcp.tools import company_profile, get_job, read_trends
 
 #: A day after the fixture history's last tick (`test_space_app._T3`, 2026-08-13), so a window
 #: counted back from "now" means the same ticks whatever day the suite runs.
@@ -38,6 +38,7 @@ def companies_app(trends_app, monkeypatch, tmp_path):  # noqa: F811 — the impo
     """The trends app with the three-company history installed, and the globals boot derives
     from a history rebuilt from it by the app's own `_derive_from_history`."""
     monkeypatch.setattr(read_trends, "_now", lambda: _FIXTURE_NOW)
+    monkeypatch.setattr(company_profile, "_now", lambda: _FIXTURE_NOW)
     history = space_tests._company_history(trends_app, monkeypatch, tmp_path)
     company_boards, hot = trends_app._derive_from_history(history)
     monkeypatch.setattr(trends_app, "_COMPANY_BOARDS", company_boards)
@@ -434,6 +435,62 @@ def test_similar_to_reaches_the_app_as_like_on_both_routes(companies_app, monkey
     assert 'Ordered by similarity to job "greenhouse:acme:1" (itself left out)' in text
 
 
+# ---- a company looked up, and its profile (ADR-0275) ----
+
+
+def test_find_company_offers_one_entry_per_name_as_the_picker_does(companies_app):
+    """Three directory companies are named Citi; the picker offers only the largest, and so
+    does the tool, saying a smaller one of the same name is reached by its Board key."""
+    text = server.call(_client(companies_app), "find_company", {"name": "Citi"})
+    assert '1 directory company for "Citi"' in text
+    assert "key workday:citi/2 · exact name · 44 tech openings" in text
+    assert "eightfold:citi.eightfold.ai" not in text
+    assert "only the largest is listed" in text
+
+
+def test_a_search_whose_company_matched_nothing_offers_the_directory_companies(
+    companies_app, monkeypatch
+):
+    """The fixture table matches every clause, so the app's nothing-matched answer is staged.
+    The fixture's names are too short for a typo match (five letters), so "Hp" is a prefix."""
+    monkeypatch.setattr(companies_app._searcher, "run", lambda args, **_: [])
+    monkeypatch.setattr(
+        companies_app._searcher,
+        "facets",
+        lambda args, **_: {"total": 0, "facets": {}, "blocking": "company"},
+    )
+    text = server.call(_client(companies_app), "search_jobs", {"company": "Hp"})
+    assert 'no company name contains "Hp"' in text
+    assert (
+        '"Hpe" — key workday:hpe/a, workday, 2 Board(s), 13 openings, prefix match'
+        in text
+    )
+
+
+def test_a_profile_reads_every_route_for_every_board_of_its_company(
+    companies_app, scoped_boards
+):
+    """HPE is one Tenant split into two Workday sites: either site's key means both, in the
+    facet counts and in the locations alike."""
+    text = server.call(
+        _client(companies_app), "company_profile", {"company": "workday:hpe/b"}
+    )
+    assert len(scoped_boards) == 2 and all(
+        sorted(boards) == ["workday:hpe/a", "workday:hpe/b"] for boards in scoped_boards
+    )
+    assert text.startswith('Company: "Hpe" (workday:hpe/a, 2 Boards,')
+    assert "Its Boards: workday:hpe/a, workday:hpe/b." in text
+    assert "Job categories now, largest first:" in text
+    # The fixture table answers its two rows, Berlin and Remote, to every scan, and 1 to every
+    # filtered count.
+    assert '"Berlin" 1 · "Remote" 1' in text
+    assert "Of the 1 jobs search serves on its Boards" in text
+    assert (
+        "search also serves 7 jobs on its Boards that the tech filter sets aside"
+        in text
+    )
+
+
 # ---- the Space's own /mcp, in both protocol eras (ADR-0267) ----
 
 #: One call of each registered tool, and a phrase its answer carries.
@@ -442,6 +499,8 @@ _EACH_TOOL = [
     ("get_job", {"ids": ["greenhouse:acme:1"]}, '"Build the payments API."'),
     ("read_trends", {"days": 7}, "Newest trends tick"),
     ("hiring_now", {}, "No company qualified on this Lens this week."),
+    ("find_company", {"name": "Citi"}, "key workday:citi/2"),
+    ("company_profile", {"company": "workday:hpe/b"}, '"Berlin" 1'),
 ]
 
 _MODERN_META = {

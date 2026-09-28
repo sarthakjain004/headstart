@@ -228,6 +228,40 @@
         }
       },
       "why": "Critique P0-3 (ADR-0277): 'jobs like that one' ranks by the posting's own stored vector, which similar_to sends as like=; describing the job again in query would rank by the words instead. search_jobs refuses query beside similar_to, so a successful call with similar_to was ranked by the job alone."
+    },
+    {
+      "id": "t19",
+      "prompt": "Is Strpie hiring engineers right now? Not sure I spelled it right.",
+      "verifier": "mentions",
+      "expect": {
+        "all": ["stripe"],
+        "tool_results_all": ["greenhouse:stripe"]
+      },
+      "why": "ADR-0275, critique rc03: a misspelt company must be found, not answered with 0 jobs. find_company, or search_jobs' nothing-matched answer, offers Stripe with its key; the answer must name Stripe, and some tool result must carry its key greenhouse:stripe."
+    },
+    {
+      "id": "t20",
+      "prompt": "I'm a recruiter. Where is Amazon hiring tech people, and how many of its openings are remote?",
+      "verifier": "tool_args",
+      "expect": {
+        "tool": "company_profile",
+        "must": {
+          "company": {"op": "contains", "value": "amazon"}
+        }
+      },
+      "why": "ADR-0275, critique P1-5: where a company is hiring and its remote share is company_profile, the only tool that reads locations. One call must name Amazon, by name or by its key amazon:www.amazon.jobs."
+    },
+    {
+      "id": "t21",
+      "prompt": "Give me Stripe's hiring profile: its openings, which job categories they are in, and the seniority mix.",
+      "verifier": "tool_args",
+      "expect": {
+        "tool": "company_profile",
+        "must": {
+          "company": {"op": "contains", "value": "stripe"}
+        }
+      },
+      "why": "ADR-0275: a company's category mix and seniority mix together are one company_profile call; read_trends answers one of them per call. One call must name Stripe, by name or by its key greenhouse:stripe."
     }
   ],
   "heldout_sha256": "801e7149bc71c42e7b346dcf089ea20f87d1e0035d989b3dba8ffb50fe055e4d"

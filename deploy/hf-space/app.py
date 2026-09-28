@@ -371,12 +371,12 @@ app.session_interface = _AnswersLeaveTheSessionAlone()
 # is the one static file the door loads: its brand mark and its favicon (ADR-0249).
 #
 # The read routes answer anyone as well, so that anyone can use HeadStart's MCP server
-# (ADR-0258): Search and its Facet counts, Trends, Hot, the two company lookups, and a Job read
-# by id (ADR-0277). None writes, and none serves one Account's records to another: a signed-in
-# caller's own session still applies its follow/hide clause to /search and /facets
-# (`_company_where`), and an anonymous one gets none. Every Account route stays behind the wall,
-# and the page at `/` still shows the door until its visitor signs in. Every caller is
-# rate-limited on them (`_limit_each_caller`).
+# (ADR-0258): Search and its Facet counts, Trends, Hot, the two company lookups, a Job read
+# by id (ADR-0277) and a company's locations (ADR-0275). None writes, and none serves one
+# Account's records to another: a signed-in caller's own session still applies its follow/hide
+# clause to /search and /facets (`_company_where`), and an anonymous one gets none. Every Account
+# route stays behind the wall, and the page at `/` still shows the door until its visitor signs
+# in. Every caller is rate-limited on them (`_limit_each_caller`).
 _READ_ROUTES = frozenset(
     {
         "/search",
@@ -386,6 +386,7 @@ _READ_ROUTES = frozenset(
         "/companies/suggest",
         "/companies/lookup",
         "/job",
+        "/companies/locations",
     }
 )
 _PUBLIC_PATHS = {
@@ -619,7 +620,8 @@ def _keep_static_for_the_boot(response):
 # `strict=1` when unknown.
 # 4: /job (a Job read by id, with its description and whether the latest scrape missed it), and
 # `like=` on /search and /facets (ADR-0277).
-_AGENT_API_VERSION = 4
+# 5: /companies/locations (ADR-0275).
+_AGENT_API_VERSION = 5
 
 
 @app.after_request
@@ -1684,6 +1686,19 @@ def lookup_companies():
             detail=f"no directory company holds {', '.join(unknown)}",
         ), 400
     return jsonify(companies=_HISTORY.describe_companies(list(dict.fromkeys(keys))))
+
+
+@app.route("/companies/locations")
+def company_locations():
+    """The locations the served jobs on the ``?board=`` Boards (repeatable, 1 to 200) name most,
+    most first, for an agent's company profile (ADR-0275): ``JobSearch.locations`` documents
+    the answer. ``?limit=`` defaults to 10, at most 50. Scoped by Boards alone, so no Account's
+    follow or hide list reaches it; a request naming no Board is a 400."""
+    try:
+        return jsonify(_searcher.locations(request.args))
+    except ValueError as exc:
+        body, status = job_search.refusal(exc)
+        return jsonify(body), status
 
 
 # HeadStart's MCP server, hosted (ADR-0267): the tools of `headstart.space_mcp` over Streamable
