@@ -23,7 +23,7 @@ from headstart.jobs.job import (
     Job,
     epoch_ms_to_iso,
     html_to_text,
-    is_remote,
+    remote_from_workplace,
     requisition_of,
 )
 from headstart.network import http
@@ -191,8 +191,9 @@ class LeverScraper(BaseScraper):
         for j in raw:
             categories = j.get("categories") or {}
             location = _location(categories, j.get("country"))
-            workplace = (j.get("workplaceType") or "").lower()
-            remote = workplace == "remote" or bool(is_remote(location))
+            # Hybrid is None (`remote_from_workplace`). Measured live 2026-09-28: 40 random
+            # Boards, 1,081 postings, 420 hybrid, all served False before.
+            remote = remote_from_workplace(j.get("workplaceType"), location)
             jobs.append(
                 Job(
                     id=self.job_id(j["id"]),

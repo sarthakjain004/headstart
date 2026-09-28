@@ -19,7 +19,12 @@ from __future__ import annotations
 from typing import Any
 
 from headstart.jobs import salary
-from headstart.jobs.job import Job, html_to_text, is_remote, requisition_of
+from headstart.jobs.job import (
+    Job,
+    html_to_text,
+    remote_from_workplace,
+    requisition_of,
+)
 from headstart.scrapers.base import BaseScraper
 
 # Names carrying a genuine currency-range/point disclosure (real minority of tenants) score
@@ -33,6 +38,20 @@ _PREFERRED_NAME_WORDS = ("transparency", "range", "pay")
 # like a real salary field, and non-zero on 146/455 sampled jobs (real grant values, $50k-$100k),
 # so it would otherwise win by elimination whenever the real salary fields are absent for a job.
 _EXCLUDED_NAME_WORDS = ("equity",)
+
+
+def _workplace_type(metadata: list[dict] | None) -> str | None:
+    """The tenant's own ``Workplace Type`` field, when it states one in ``metadata``.
+
+    Greenhouse has no standard workplace field. Measured live 2026-09-28: airbnb states this
+    one on all 160 postings (Remote 133, Hybrid 23, Onsite 4), and 115 of the Remote ones name
+    only a place ("United States"), which the location word check read as on-site. It is rare
+    elsewhere (0 of 40 random live Boards), so the location stays the fallback.
+    """
+    for m in metadata or []:
+        if (m.get("name") or "").strip().lower() == "workplace type":
+            return str(m.get("value") or "")
+    return None
 
 
 def _format_amount(v: float) -> str:
@@ -135,7 +154,9 @@ class GreenhouseScraper(BaseScraper):
                     company=j.get("company_name") or self.company,
                     title=(j.get("title") or "").strip(),
                     location=location,
-                    remote=is_remote(location),
+                    remote=remote_from_workplace(
+                        _workplace_type(j.get("metadata")), location
+                    ),
                     department=department,
                     url=self.job_url(j.get("absolute_url", "")),
                     posted_at=j.get("first_published") or j.get("updated_at"),

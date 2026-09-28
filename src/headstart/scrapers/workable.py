@@ -58,10 +58,12 @@ class WorkableScraper(BaseScraper):
     def url(self) -> str:
         return f"https://apply.workable.com/api/v1/widget/accounts/{self.slug}?details=true"
 
-    def job_url(self, application_url: str | None, fallback_url: str) -> str:
-        """The widget's own ``application_url`` when present, else its ``url``; nothing to
-        build, so this simply names the ATS's own fields as the declared source (ADR-0153)."""
-        return application_url or fallback_url
+    def job_url(self, posting_url: str | None, application_url: str | None) -> str:
+        """The widget's own posting ``url``, else its ``application_url``; nothing to build, so
+        this names the ATS's own fields as the declared source (ADR-0153). ``application_url``
+        is the posting's ``/apply`` form, which ``url_shape`` does not describe; every widget
+        row checked 2026-09-28 (kreyco 4,880, vizrt 15) carries ``url``."""
+        return posting_url or application_url or ""
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
         listed = raw.get("jobs")
@@ -100,7 +102,7 @@ class WorkableScraper(BaseScraper):
                     location=location,
                     remote=bool(j.get("telecommuting")) or is_remote(location),
                     department=j.get("department"),
-                    url=self.job_url(j.get("application_url"), j.get("url", "")),
+                    url=self.job_url(j.get("url"), j.get("application_url")),
                     posted_at=j.get("published_on") or j.get("created_at"),
                     scraped_at=scraped_at,
                     description=html_to_text(j.get("description")),
