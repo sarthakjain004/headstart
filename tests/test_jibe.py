@@ -646,7 +646,12 @@ def test_remote_naming_a_technology_or_a_service_is_not_remote_work(title):
 
 
 @pytest.mark.parametrize(
-    "title", ["Remote Site Reliability Engineer", "Remote Database Administrator"]
+    "title",
+    [
+        "Remote Site Reliability Engineer",
+        "Remote Database Administrator",
+        "Remote Sensing Engineer (Remote)",
+    ],
 )
 def test_remote_before_a_tech_role_is_still_remote_work(title):
     assert jibe._title_says_remote(title) is True

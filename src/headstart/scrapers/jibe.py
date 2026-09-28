@@ -197,8 +197,9 @@ _NEGATED_REMOTE = re.compile(r"\b(?:not|non)[\s-]+remote\b", re.IGNORECASE)
 _REMOTE_WORD = re.compile(r"\bremote\b", re.IGNORECASE)
 #: "remote" that names a technology or a service in a title, not where the work is ("Remote
 #: Sensing Scientist", "Remote Patient Monitoring RN"). Kept to the two terms that never mean
-#: remote work in a title: "Remote Site Reliability Engineer" and "Remote Database Administrator"
-#: usually do, so `remote.py`'s wider `_JARGON`, tuned for descriptions, is not reused here.
+#: remote work in a title: `remote.py`'s wider `_JARGON`, tuned for descriptions, also vetoes
+#: "Remote Database Administrator", which usually does. Only the span is dropped, so a title that
+#: also says "(Remote)" elsewhere is still remote.
 _REMOTE_JARGON = re.compile(
     r"\bremote\s+(?:sensing|(?:patient\s+)?monitoring)\b", re.IGNORECASE
 )
@@ -208,9 +209,9 @@ def _title_says_remote(title: str | None) -> bool:
     """Whether the title itself states the posting is remote. The place a row names is a city
     even on a remote posting, so `is_remote(location)` read False on all of these."""
     text = title or ""
-    if _NEGATED_REMOTE.search(text) or _REMOTE_JARGON.search(text):
+    if _NEGATED_REMOTE.search(text):
         return False
-    return bool(_REMOTE_WORD.search(text))
+    return bool(_REMOTE_WORD.search(_REMOTE_JARGON.sub(" ", text)))
 
 
 def _location(row: dict) -> str | None:
