@@ -21,7 +21,10 @@ any TLS fingerprint, any IP — while admitting a real Chrome from the same addr
 serving page 1 and one of them answered 403, that 403 is the wall on the tenant's real host, and
 the Board routes through `browser_http`: navigate the careers page once to clear the wall, then
 call the same `alljobs` API via an in-page fetch on the warmed tab. Same JSON, same `parse`;
-curl stays primary, so the browser costs nothing wherever (or whenever) the wall is down.
+curl stays primary, so the browser costs nothing wherever (or whenever) the wall is down. As of
+2026-09-28 the wall was down: curl_cffi's Chrome impersonation read zydushospital,
+visteon-panorama and 2xpeople, and a re-probe of the whole ledger settled 587 of 602 hosts, all
+with no browser. A request without impersonation still drew the 403.
 
 Scope worth knowing: only that first-page failure escalates. A 403 arriving mid-pagination — the
 wall coming up between pages — still raises, so the Board reports a truncated read rather than

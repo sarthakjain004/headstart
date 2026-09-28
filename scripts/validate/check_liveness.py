@@ -1819,6 +1819,13 @@ def p_ripplehire(t, u):
         return UNKNOWN, None
 
 
+#: What a Darwinbox host answers on a TLD it is no tenant on (live 2026-09-28): 12/12 live
+#: tenants answer "Invalid subdomain" on their other TLD, and hosts answering either message
+#: redirect ``/`` to darwinbox.com's marketing site, where a tenant redirects to its own
+#: ``/user/login``. Cloudflare's 530 is a host with no origin at all.
+_DARWINBOX_NO_TENANT = ("Invalid subdomain", "Error while getting tenant info")
+
+
 def p_darwinbox(t, u):
     # The scraper tries `TLDS` in its own order; the probe starts from the one the row's url
     # names, and asks each host the same listing the scrape pages through.
@@ -1826,7 +1833,7 @@ def p_darwinbox(t, u):
     hinted = next(
         (tld for tld in _DARWINBOX_TLDS if f".darwinbox.{tld}" in u), _DARWINBOX_TLDS[0]
     )
-    dns_fails = 0
+    no_tenant = 0
     for tld in _hinted_first(hinted, _DARWINBOX_TLDS):
         api = scraper.listing_url_on(tld)
         try:
@@ -1846,15 +1853,22 @@ def p_darwinbox(t, u):
             )
         except http.RequestsError as e:
             if _is_dns(e):
-                dns_fails += 1
+                no_tenant += 1
             continue
         if r.status_code == 200:
             try:
-                return LIVE, len(r.json().get("data") or [])
+                body = r.json()
             except Exception:  # noqa: BLE001
                 return UNKNOWN, None
-        # 404/other on this tld -> try the other tld
-    return (DEAD, None) if dns_fails == len(_DARWINBOX_TLDS) else (UNKNOWN, None)
+            # `job_counts` is the Board's own total; page 1 holds at most 100 of it.
+            stated = body.get("job_counts")
+            return LIVE, stated if isinstance(stated, int) else len(
+                body.get("data") or []
+            )
+        if r.status_code == 530 or any(m in r.text for m in _DARWINBOX_NO_TENANT):
+            no_tenant += 1
+        # anything else on this tld settles nothing -> try the other tld
+    return (DEAD, None) if no_tenant == len(_DARWINBOX_TLDS) else (UNKNOWN, None)
 
 
 # The Board host's redirect target, for slugs the posting API can't settle (see p_smartrecruiters).

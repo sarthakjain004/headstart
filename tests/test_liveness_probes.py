@@ -1728,6 +1728,68 @@ def test_darwinbox_probe_asks_the_scrapers_listing_on_each_tld(monkeypatch):
     assert asked == [scraper.listing_url_on("com"), scraper.listing_url_on("in")]
 
 
+def _darwinbox_answers(monkeypatch, by_tld):
+    """Serve each TLD's listing POST from `by_tld`: a (status, body) pair."""
+
+    class Answer:
+        def __init__(self, status, body):
+            self.status_code, self.text = status, body
+
+        def json(self):
+            return json.loads(self.text)
+
+    def fetch(method, url, **kwargs):
+        tld = "com" if ".darwinbox.com/" in url else "in"
+        return Answer(*by_tld[tld])
+
+    monkeypatch.setattr(cl.http, "fetch", fetch)
+
+
+# Bodies as live 2026-09-28 (accolitedigital, netmeds, zydushospital).
+_DBX_INVALID = (
+    500,
+    '{"status":"error","data":{"message":"Internal Server Error - Invalid subdomain: acme"}}',
+)
+_DBX_NO_TENANT_INFO = (
+    500,
+    (
+        '{"status":"error","data":{"message":"Internal Server Error - Error while getting '
+        'tenant info"}}'
+    ),
+)
+
+
+def test_darwinbox_probe_counts_the_boards_stated_total_not_one_page(monkeypatch):
+    """zydushospital, live 2026-09-28: page 1 at limit 100 held 100 rows, `job_counts` 135."""
+    page = json.dumps({"status": "success", "data": [{}] * 100, "job_counts": 135})
+    _darwinbox_answers(monkeypatch, {"in": (200, page), "com": _DBX_INVALID})
+    assert cl.p_darwinbox("acme", "https://acme.darwinbox.in") == (cl.LIVE, 135)
+
+
+def test_darwinbox_probe_reads_a_host_that_is_no_tenant_on_either_tld_as_dead(
+    monkeypatch,
+):
+    """Live 2026-09-28: 12/12 live tenants answer "Invalid subdomain" on their other TLD, and
+    hosts answering it or "Error while getting tenant info" redirect `/` to darwinbox.com's
+    marketing site where a tenant redirects to its own `/user/login`."""
+    _darwinbox_answers(monkeypatch, {"in": _DBX_NO_TENANT_INFO, "com": _DBX_INVALID})
+    assert cl.p_darwinbox("acme", "https://acme.darwinbox.in") == (cl.DEAD, None)
+
+
+def test_darwinbox_probe_keeps_an_unexplained_answer_unknown(monkeypatch):
+    """insights.darwinbox.com answered 404 "invalid endpoint" (live 2026-09-28): not measured
+    to mean anything, so it settles nothing."""
+    not_measured = (
+        404,
+        (
+            '{"success":false,"errorMessage":"You seem to have called an invalid'
+            ' endpoint."}'
+        ),
+    )
+    _darwinbox_answers(monkeypatch, {"in": _DBX_INVALID, "com": not_measured})
+    assert cl.p_darwinbox("acme", "https://acme.darwinbox.in") == (cl.UNKNOWN, None)
+
+
 def test_ripplehire_probe_reads_the_scrapers_token_and_search(monkeypatch):
     asked = []
 
