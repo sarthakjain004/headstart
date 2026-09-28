@@ -82,7 +82,8 @@ _log = log.get(__name__, __spec__)
 #: 7 — iCIMS redirect aliases, 270 Boards (ADR-0222).
 #: 8 — the Eightfold fronts the first pairs file left out: 25 pairs across 22 fronts
 #:     (ADR-0210's amendment).
-DEDUP_VERSION = 8
+#: 9 — Radancy ``subset-reqs`` aliases, the signal's first ledger for Radancy: 5 fronts (ADR-0265).
+DEDUP_VERSION = 9
 
 
 @dataclass(frozen=True, slots=True)

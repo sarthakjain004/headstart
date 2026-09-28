@@ -259,6 +259,7 @@ supersedes it and note the supersession in both.
 | [0261](0261-a-trends-view-nobody-has-asked-for-is-cheap-to-work-out-and-asked-for-ahead.md) | A Trends view nobody has asked for is cheap to work out, and asked for ahead | 2026-09-28 |
 | [0262](0262-a-caller-with-no-session-reads-the-public-routes-sixty-times-a-minute.md) | A caller with no session reads the public routes sixty times a minute | 2026-09-28 |
 | [0263](0263-the-search-bar-can-match-words-in-the-job-title.md) | The search bar can match words in the job title: a By meaning / Words in the job title switch | 2026-09-28 |
+| [0265](0265-a-radancy-front-listing-only-what-another-front-lists-is-an-alias.md) | A Radancy front listing only what another front lists is an alias | 2026-09-28 |
 
 *ADR-0037 was removed from the repository on 2026-09-24 by the owner's decision; its number is not
 reused.*

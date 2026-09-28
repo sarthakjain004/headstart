@@ -514,3 +514,54 @@ def test_a_probe_that_lands_off_any_prefix_says_which_default_it_built_on(
     assert "locale probe landed on https://jobs.tjx.com/ — building links on us/en" in (
         caplog.text
     )
+
+
+# --- fields ledger Boards state under their own keys (live 2026-09-28) -------------------------
+#
+# One real listing row per case, trimmed to the keys the case reads, from `refineSearch` page one
+# of each Board.
+
+
+def _ledger_rows() -> dict[str, dict]:
+    with open(FIXTURES / "phenom_ledger_rows_2026-09-28.json", encoding="utf-8") as fh:
+        return {f"{r['host']}:{r['row']['jobId']}": r["row"] for r in json.load(fh)}
+
+
+def _ledger_job(key: str):
+    [job] = _scraper().parse({"jobs": [_ledger_rows()[key]], "details": {}}, SCRAPED_AT)
+    return job
+
+
+def test_a_stated_salary_range_is_the_salary_field():
+    """Honda states `salaryRange` on 92 of 100 rows; Goodwill Colorado a `payRate`; One Life
+    Fitness a `minPay`/`maxPay` pair on every row. All were dropped."""
+    assert _ledger_job("careers.honda.com:10098").salary == "$90,000.00 - $120,000.00"
+    assert _ledger_job("careers.goodwillcolorado.org:DIAAI021254").salary == (
+        "$ 20.5  USD Per Hour"
+    )
+    assert (
+        _ledger_job("careers.onelifefitness.com:P-102372").salary == "34,000 - 111,000"
+    )
+
+
+def test_every_measured_workplace_key_decides_remote():
+    """genmab `checkRemote`, lanxess `workArrangement`, newmont `workplaceType`, Goodwill
+    Colorado `JobLocationType` — all read None before. "Partially Remote" is hybrid: None."""
+    assert _ledger_job("careers.genmab.com:R17217").remote is True
+    assert _ledger_job("career.lanxess.com:8303").remote is True
+    assert _ledger_job("career.lanxess.com:8180").remote is None
+    assert _ledger_job("jobs.newmont.com:44729").remote is True
+    assert _ledger_job("careers.goodwillcolorado.org:DIAAI021254").remote is False
+
+
+def test_every_place_a_multi_location_posting_names_is_served():
+    """mitre: 19 of 100 rows name two or more places; only the first was served."""
+    job = _ledger_job("careers.mitre.org:R116590")
+    assert job.location == (
+        "McLean, Virginia, United States of America; "
+        "Bedford, Massachusetts, United States of America"
+    )
+
+
+def test_the_requisition_is_the_listed_req_id():
+    assert _ledger_job("careers.genmab.com:R17217").requisition == "R17217"

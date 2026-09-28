@@ -20,8 +20,8 @@ alone is the native id.
 **The listing is ``/sitemap.xml``, and on some fronts it is capped.** Across 188 live fronts it
 listed 175,485 postings against the 205,214 the fronts' own ``/search-jobs`` pages state
 (``data-total-job-results``): 160 matched exactly and 169 to within five, and 14 were short by
-more — 12 capped at exactly 500, one at 10,000 and one short by chance (``jobs.walgreens.com``
-lists 500 of 22,544).
+more — 12 capped at exactly 500 (``jobs.walgreens.com`` lists 500 of 22,544), one at 10,000 and
+one short by chance.
 No paging parameter reaches past the cap (``?page=2``, ``?p=2`` and ``sitemap-2.xml`` all return
 the same 500). ``robots.txt`` on 151 of the 188 says ``Disallow: /search-jobs/``, where
 TalentBrew's paginated results endpoint lives, so the sitemap is the one listing this scraper
@@ -62,6 +62,7 @@ from __future__ import annotations
 
 import html
 import re
+import urllib.robotparser
 from collections import Counter
 from datetime import date
 from functools import cache
@@ -70,7 +71,7 @@ from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
 from headstart.boards import company_name
-from headstart.jobs.job import Job, host_of, html_to_text, is_remote
+from headstart.jobs.job import Job, host_of, html_to_text, is_remote, requisition_of
 from headstart.jobs.salary import to_field
 from headstart.network import http
 from headstart.scrapers.base import (
@@ -149,6 +150,12 @@ class RadancyScraper(BaseScraper):
         return f"https://{self.slug}/sitemap.xml"
 
     def fetch_raw(self) -> Any:
+        robots = self._read_robots()
+        if not robots.can_fetch("*", self.url()):
+            # www.intel-jobs.com: `Disallow: /` (2026-09-28, parked). Nothing on such a front may
+            # be read, so it lists nothing to us.
+            self.note_unreadable_board("robots.txt allowing the sitemap", "Disallow")
+            return []
         response = self._fetch(
             "GET", self.url(), headers={"User-Agent": USER_AGENT}, timeout=60
         )
@@ -156,26 +163,35 @@ class RadancyScraper(BaseScraper):
         # `text/xml` with no charset and a UTF-8 BOM: decoding by header would read the BOM as
         # Latin-1 into the first <loc>'s prefix.
         xml = response.content.decode("utf-8-sig", "replace")
-        listed = sitemap_rows(xml, self.slug)
-        if not listed:
+        rows = sitemap_rows(xml, self.slug)
+        listed = [(job_id, url) for job_id, url in rows if robots.can_fetch("*", url)]
+        self.note_unread_rows(
+            len(rows) - len(listed), len(rows), "sat on a path robots.txt disallows"
+        )
+        stated = self._stated_total(robots)
+        if not rows:
             # A front with nothing open lands here too (three measured, each stating
-            # `data-total-job-results="0"`), so this names what the sitemap held.
+            # `data-total-job-results="0"`), so this names what the sitemap held; one that
+            # states postings is short, not empty (ADR-0053).
             self.note_unreadable_board(
                 "TalentBrew job URLs in the sitemap",
                 f"{len(_SITEMAP_LOC.findall(xml))} <loc> entries, none of the job shape",
             )
+            if stated:
+                self.mark_truncated(
+                    f"the sitemap lists 0 of the {stated} postings the front states"
+                )
             return []
-        stated = self._stated_total()
-        if stated is not None and stated > len(listed):
-            why = f"the sitemap lists {len(listed)} of the {stated} postings the front states"
-            if len(listed) in _SITEMAP_CAPS:
+        if stated is not None and stated > len(rows):
+            why = f"the sitemap lists {len(rows)} of the {stated} postings the front states"
+            if len(rows) in _SITEMAP_CAPS:
                 # A hard cap is the same unreachable remainder every run, however small a
                 # share it is, so it truncates outright (ADR-0053).
                 self.mark_truncated(why)
             else:
                 # A posting added between the two reads: a measured, usually negligible
                 # shortfall, left to ADR-0083's grace period when it is (ADR-0121).
-                self.mark_truncated_unless_negligible(len(listed), stated, why)
+                self.mark_truncated_unless_negligible(len(rows), stated, why)
         pages = self.run_detail_pass(
             listed, key_of=lambda row: row[0], what="job pages"
         )
@@ -196,10 +212,31 @@ class RadancyScraper(BaseScraper):
         self._report_front_duplication(items)
         return items
 
-    def _stated_total(self) -> int | None:
+    def _read_robots(self) -> urllib.robotparser.RobotFileParser:
+        """The front's robots.txt. A 4xx means no rule applies (RFC 9309); a 5xx or a failed
+        fetch fails the Board for the run rather than reading a front it may not read."""
+        response = self._fetch(
+            "GET",
+            f"https://{self.slug}/robots.txt",
+            headers={"User-Agent": USER_AGENT},
+            timeout=30,
+        )
+        if response.status_code >= 500:
+            raise http.RequestsError(
+                f"{self.slug}/robots.txt answered {response.status_code}"
+            )
+        parser = urllib.robotparser.RobotFileParser()
+        parser.parse(response.text.splitlines() if response.status_code == 200 else [])
+        return parser
+
+    def _stated_total(self, robots: urllib.robotparser.RobotFileParser) -> int | None:
         """The count the front's own ``/search-jobs`` page states, or None where it states none
-        on this host. That page is not the ``/search-jobs/`` results endpoint robots.txt
-        disallows; a page that lands on another host is another front's filtered view."""
+        on this host or robots.txt disallows the page (3 of 188 fronts, ``jobs.bd.com`` among
+        them, 2026-09-28). That page is not the ``/search-jobs/`` results endpoint most fronts'
+        robots.txt disallows; a page that lands on another host is another front's filtered
+        view."""
+        if not robots.can_fetch("*", f"https://{self.slug}/search-jobs"):
+            return None
         try:
             response = self._fetch(
                 "GET",
@@ -291,6 +328,7 @@ class RadancyScraper(BaseScraper):
                     description=html_to_text(fields.get("description")),
                     employment_type=fields.get("employment_type"),
                     salary=fields.get("salary"),
+                    requisition=fields.get("requisition"),
                 )
             )
         self.note_unread_rows(untitled, len(raw), "had a JobPosting with no title")
@@ -344,7 +382,17 @@ def _page_fields(page: str) -> dict[str, Any] | None:
         "company": hiring_organization(node.get("hiringOrganization")),
         "title_company": _title_company(title.group(1)) if title else None,
         "apply_url": _apply_url(page),
+        "requisition": _requisition(node.get("identifier"))
+        or requisition_of(_meta(page, "gtm_reqid")),
     }
+
+
+def _requisition(identifier: Any) -> str | None:
+    """JSON-LD ``identifier``: a bare string on jobs.takeda.com ("R0178385"), a
+    ``PropertyValue`` on other templates."""
+    if isinstance(identifier, dict):
+        identifier = identifier.get("value")
+    return requisition_of(identifier) if isinstance(identifier, str | int) else None
 
 
 def _meta_fields(page: str) -> dict[str, Any] | None:
@@ -382,6 +430,7 @@ def _meta_fields(page: str) -> dict[str, Any] | None:
         "company": None,
         "title_company": _title_company(page_title.group(1)) if page_title else None,
         "apply_url": _apply_url(page),
+        "requisition": requisition_of(_meta(page, "gtm_reqid")),
     }
 
 

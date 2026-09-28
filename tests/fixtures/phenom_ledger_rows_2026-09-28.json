@@ -1,0 +1,120 @@
+[
+ {
+  "host": "careers.honda.com",
+  "row": {
+   "jobId": "10098",
+   "title": "Facilities Electrical Engineer Multiple Levels",
+   "reqId": "10098",
+   "cityStateCountry": "Russells Point, Ohio, United States",
+   "location": "6964 State Route 235 N, Russells Point, Ohio, United States",
+   "type": "Full Time",
+   "category": "Manufacturing Engineering",
+   "postedDate": "2026-02-12T00:00:00.000+0000",
+   "salaryRange": "$90,000.00 - $120,000.00",
+   "jobPostingSalaryRange": "$90,000.00 - $120,000.00"
+  }
+ },
+ {
+  "host": "careers.onelifefitness.com",
+  "row": {
+   "jobId": "P-102372",
+   "title": "Membership Manager",
+   "reqId": "P-102372",
+   "cityStateCountry": "Arlington, Virginia, United States",
+   "location": "Arlington, Virginia, United States",
+   "type": "Full Time",
+   "category": "Sales",
+   "postedDate": "2026-07-23T00:00:00.000+0000",
+   "minPay": "34,000",
+   "maxPay": "111,000"
+  }
+ },
+ {
+  "host": "careers.goodwillcolorado.org",
+  "row": {
+   "jobId": "DIAAI021254",
+   "title": "Airport Queue Line Attendant - Denver International Airport",
+   "reqId": "DIAAI021254",
+   "cityStateCountry": "Denver, Colorado, United States",
+   "location": "8500 Pena Blvd, Denver, Colorado, 80249, United States",
+   "type": "Full-Time",
+   "category": "Goodwill Staffing Services",
+   "postedDate": "2026-07-17T17:18:25.000+0000",
+   "payRate": "$ 20.5  USD Per Hour",
+   "JobLocationType": "On-Site"
+  }
+ },
+ {
+  "host": "careers.genmab.com",
+  "row": {
+   "jobId": "R17217",
+   "title": "Director, Data Quality and Process, External Data Clinical Data Management",
+   "reqId": "R17217",
+   "cityStateCountry": "Princeton, New Jersey, United States of America",
+   "location": "Princeton, New Jersey, United States of America",
+   "type": "Full time",
+   "category": "Development Operations",
+   "postedDate": "2026-07-17T00:00:00.000+0000",
+   "checkRemote": "Remote"
+  }
+ },
+ {
+  "host": "career.lanxess.com",
+  "row": {
+   "jobId": "8180",
+   "title": "Senior Analyst - SAP PPDS",
+   "reqId": "8180",
+   "cityStateCountry": "Thane (W), IN-MH, India",
+   "location": "Thane (W), IN-MH, India",
+   "type": "Full Time",
+   "category": "Information Technology",
+   "postedDate": "2026-08-11T08:00:33.000+0000",
+   "workArrangement": "Partially Remote"
+  }
+ },
+ {
+  "host": "career.lanxess.com",
+  "row": {
+   "jobId": "8303",
+   "title": "Director Business Development",
+   "reqId": "8303",
+   "cityStateCountry": "Pittsburgh, US-PA, United States",
+   "location": "Pittsburgh, US-PA, United States",
+   "type": "Full Time",
+   "category": "Sales",
+   "postedDate": "2026-09-22T19:33:49.000+0000",
+   "workArrangement": "Fully Remote"
+  }
+ },
+ {
+  "host": "jobs.newmont.com",
+  "row": {
+   "jobId": "44729",
+   "title": "Purchaser",
+   "reqId": "44729",
+   "cityStateCountry": "Dease Lake, British Columbia, Canada",
+   "location": "Dease Lake, British Columbia, Canada",
+   "category": "Other",
+   "postedDate": "2026-09-21T16:26:03.000+0000",
+   "workplaceType": "Remote"
+  }
+ },
+ {
+  "host": "careers.mitre.org",
+  "row": {
+   "jobId": "R116590",
+   "title": "Critical Infrastructure Risk Management Lead",
+   "reqId": "R116590",
+   "cityStateCountry": "McLean, Virginia, United States of America",
+   "location": "McLean, Virginia, United States of America",
+   "type": "Full time",
+   "category": "Engineering",
+   "postedDate": "2026-08-28T00:00:00.000+0000",
+   "multi_location": [
+    "McLean, Virginia, United States of America",
+    "Bedford, Massachusetts, United States of America"
+   ],
+   "isMultiLocation": true
+  }
+ }
+]

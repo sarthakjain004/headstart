@@ -52,6 +52,8 @@ _HELD = _ScrapableBoardIndex(
 
 
 def _route(method: str, url: str, kwargs: dict) -> FakeResponse:
+    if url.endswith("/robots.txt"):
+        return FakeResponse(404, text="")  # RFC 9309: no rule applies
     if url.endswith("/search-jobs"):
         return FakeResponse(
             text='<section id="search-results" data-total-job-results="4">'
@@ -427,3 +429,79 @@ def test_meta_places_split_on_the_pipe() -> None:
     assert fields["location"] == (
         "Sherman, Illinois, United States; Grafton, Illinois, United States"
     )
+
+
+# --- robots.txt, requisition, and a sitemap that lists nothing (critique 2026-09-28) -----------
+
+# www.intel-jobs.com/robots.txt, verbatim (2026-09-28): the whole site is disallowed.
+_ROBOTS_DISALLOW_ALL = "User-agent: *\r\nDisallow: /\r\nDisallow:/search-jobs/\r\n\r\n"
+# jobs.bd.com/robots.txt, first two rules verbatim: the stated-total page is disallowed.
+_ROBOTS_DISALLOW_SEARCH = (
+    "User-agent: *\nDisallow:/search-jobs\nDisallow:/en/search-jobs\n"
+)
+
+
+def _route_with_robots(robots: str, seen: list[str]):
+    def route(method: str, url: str, kwargs: dict) -> FakeResponse:
+        seen.append(url)
+        if url.endswith("/robots.txt"):
+            return FakeResponse(text=robots)
+        return _route(method, url, kwargs)
+
+    return route
+
+
+def test_a_front_whose_robots_disallows_everything_is_not_read() -> None:
+    seen: list[str] = []
+    scraper = get_scraper(
+        "radancy",
+        _HOST,
+        fetcher=FakeFetcher(_route_with_robots(_ROBOTS_DISALLOW_ALL, seen)),
+    )
+    assert scraper.fetch() == []
+    assert [url.rsplit("/", 1)[1] for url in seen] == ["robots.txt"]
+
+
+def test_a_disallowed_search_page_is_not_asked_for_its_total() -> None:
+    seen: list[str] = []
+    scraper = get_scraper(
+        "radancy",
+        _HOST,
+        fetcher=FakeFetcher(_route_with_robots(_ROBOTS_DISALLOW_SEARCH, seen)),
+    )
+    assert len(scraper.fetch()) == 4
+    assert not any(url.endswith("/search-jobs") for url in seen)
+
+
+def test_a_job_page_robots_disallows_is_not_read() -> None:
+    """A rule over one job path keeps that page unread; the rest of the front is read."""
+    seen: list[str] = []
+    robots = "User-agent: *\nDisallow: /job/mumbai/\n"
+    scraper = get_scraper(
+        "radancy", _HOST, fetcher=FakeFetcher(_route_with_robots(robots, seen))
+    )
+    jobs = scraper.fetch()
+    assert len(jobs) == 3
+    assert not any("/job/mumbai/" in url for url in seen)
+    assert scraper.truncated is None
+
+
+def test_the_requisition_is_the_jsonld_identifier() -> None:
+    scraper = get_scraper("radancy", _HOST, fetcher=FakeFetcher(_route))
+    jobs = {job.id: job for job in scraper.fetch()}
+    assert jobs["radancy:jobs.takeda.com:94242537120"].requisition == "R0178385"
+
+
+def test_a_sitemap_listing_nothing_on_a_front_stating_postings_is_truncated() -> None:
+    """A template change that drops the job URLs would otherwise read as a clean empty Board and
+    evict its rows over two runs."""
+    xml = "<urlset><url><loc>https://jobs.takeda.com/saved-jobs</loc></url></urlset>"
+
+    def route(method: str, url: str, kwargs: dict) -> FakeResponse:
+        if url.endswith("/sitemap.xml"):
+            return FakeResponse(text=xml)
+        return _route(method, url, kwargs)
+
+    scraper = get_scraper("radancy", _HOST, fetcher=FakeFetcher(route))
+    assert scraper.fetch() == []
+    assert scraper.truncated == "the sitemap lists 0 of the 4 postings the front states"
