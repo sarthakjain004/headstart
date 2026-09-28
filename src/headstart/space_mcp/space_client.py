@@ -7,8 +7,8 @@ answers the decoded JSON or raises a :class:`SpaceError` whose message is a sent
 There is no way to name a path, a verb or a body: the client is read-only by its shape, which is
 ADR-0137's argument for `resume_mcp.account.Account` applied to the Space.
 
-**No credential.** The routes it reads are public (ADR-0253's amendment: the owner wants anyone
-to be able to use this server), so it sends none; a 401 means the Space has not deployed that yet.
+**No credential.** The routes it reads are public (ADR-0258: the owner wants anyone to be able
+to use this server), so it sends none; a 401 means the Space has not deployed that yet.
 
 **Who answered.** The app marks every reply ``X-HeadStart: app; agent-api=N`` (ADR-0253). A reply
 without it came from Hugging Face's edge in front of a Space that is booting or asleep — or from an

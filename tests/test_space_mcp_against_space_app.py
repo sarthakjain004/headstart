@@ -184,7 +184,7 @@ def test_a_window_with_no_counts_says_so_rather_than_reconciling_nothing(
 
 def test_the_read_routes_answer_anyone_with_the_wall_on(auth_app):  # noqa: F811
     """The sign-in wall is on (both of its secrets set), and the server sends no credential: the
-    read routes are public so that anyone can use this server (ADR-0253's amendment)."""
+    read routes are public so that anyone can use this server (ADR-0258)."""
     text = server.call(_client(auth_app), "search_jobs", {"query": "engineer"})
     assert "jobs match these filters" in text
 

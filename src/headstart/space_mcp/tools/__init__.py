@@ -10,8 +10,8 @@
    the tool's largest input.
 2. Add ``<tool_name>.TOOL`` to :data:`REGISTRY` below; its place is its place in `tools/list`.
 3. If it reads a Space route no tool read before: add the route to `SpaceRoute`, make it public
-   on the Space (`_PUBLIC_PATHS` in `deploy/hf-space/app.py`; read-only and Account-free routes
-   only, ADR-0253), and raise the Space's agent contract version with this server's `AGENT_API`
+   on the Space (`_PUBLIC_PATHS` in `deploy/hf-space/app.py`; GET-only, Account-free routes
+   only, ADR-0258), and raise the Space's agent contract version with this server's `AGENT_API`
    when the route is new contract.
 4. Tests: `tests/test_space_mcp_tools.py` holds every registered tool to these rules without
    being told about it; add the tool's behaviour to `tests/test_space_mcp_server.py` and, where

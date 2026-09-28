@@ -4,7 +4,7 @@ A local MCP server that lets an agent read HeadStart the way the website does: f
 see how the number of openings is changing, and see which companies are hiring hardest this week.
 It runs on your own machine as a subprocess of your agent client and answers from the deployed
 Space's own read routes, so every number is the one the website shows. The decision and its
-alternatives are ADR-0253 and `docs/mcp/2026-09-28_space-mcp-server-plan.md`; this file is the
+alternatives are ADR-0253, ADR-0258 and `docs/mcp/2026-09-28_space-mcp-server-plan.md`; this file is the
 how-to.
 
 It is **read-only**. It cannot save, follow, hide or subscribe to anything, and no account applies
@@ -12,7 +12,7 @@ to it — so a company you hid on the website is **not** hidden from an agent's 
 
 ## Install it
 
-Anyone can run it: the Space's read routes are public (ADR-0253's amendment), so it needs no
+Anyone can run it: the Space's read routes are public (ADR-0258), so it needs no
 account, token or key — only a checkout of this repository and Python 3.12.
 
 1. **Install** the base package from a checkout (no torch, no index):
@@ -99,8 +99,8 @@ server changes.
    lists it, puts its `when_to_use` in its instructions, checks its arguments against its schema,
    fills its defaults, and cuts any answer past its `max_chars`.
 3. A Space route no tool read before also needs: a `SpaceRoute` member; the route public on the
-   Space (`_PUBLIC_PATHS` in `deploy/hf-space/app.py` — read-only, Account-free routes only,
-   ADR-0253); and, when it is new contract,
+   Space (`_PUBLIC_PATHS` in `deploy/hf-space/app.py` — GET-only, Account-free routes only,
+   ADR-0258); and, when it is new contract,
    the Space's agent contract version and this server's `AGENT_API` raised together, so an older
    Space is refused rather than half-understood.
 4. `tests/test_space_mcp_tools.py` holds every registered tool to the rules above without being
