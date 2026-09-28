@@ -40,6 +40,10 @@
      880px on one tab and 1276px on another is the same component at two sizes. --shell-pad
      is the shell's own gutter, named so the two cannot drift apart in the calc below. */
   --measure:1150px; --shell-pad:26px;
+  /* The wide-screen sidebar's column and the gap beside it (ADR-0249). */
+  --nav-w:184px; --nav-gap:28px;
+  /* What the guided tour dims the page with: dark in both themes, a touch lighter on light. */
+  --scrim:rgba(6,7,9,.62);
 }
 /* Dark is the default above. Light is written twice — once for the OS preference, once for
    the explicit toggle — because a media query and a plain selector cannot share one rule.
@@ -54,6 +58,7 @@
     --series-1:#2A78D6; --series-2:#EB6834; --series-3:#1BAF7A; --series-4:#EDA100;
     --series-5:#E87BA4; --series-6:#008300; --series-7:#4A3AA7; --series-8:#E34948;
     --shadow:0 8px 22px rgba(40,34,24,.08);
+    --scrim:rgba(20,22,26,.48);
   }
 }
 :root[data-theme="light"]{
@@ -63,6 +68,7 @@
     --series-1:#2A78D6; --series-2:#EB6834; --series-3:#1BAF7A; --series-4:#EDA100;
     --series-5:#E87BA4; --series-6:#008300; --series-7:#4A3AA7; --series-8:#E34948;
     --shadow:0 8px 22px rgba(40,34,24,.08);
+    --scrim:rgba(20,22,26,.48);
 }
 
 *{ box-sizing:border-box; }
@@ -1214,7 +1220,6 @@ textarea:focus{ border-color:var(--accent); }
    column keeps its measure. `screen` only: a printout has no navigation to reserve a column
    for (resume.css hides .tabs in print). The icons are shown here and not in the strip, where
    they would only push more tabs off a phone's edge. */
-:root{ --nav-w:184px; --nav-gap:28px; }
 .nav-ico{ display:none; width:18px; height:18px; flex:none; fill:none; stroke:currentColor;
   stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
 @media screen and (min-width:1180px){
@@ -1328,7 +1333,7 @@ textarea:focus{ border-color:var(--accent); }
 /* ---- the guided tour (ADR-0249, static/guided_tour.js). The spotlight's shadow dims the page;
        the page itself is `inert` underneath, so the dimming is only the visible half of it. ---- */
 .tour-spot{ position:fixed; z-index:1000; pointer-events:none; border-radius:var(--r-md);
-  box-shadow:0 0 0 2px var(--accent), 0 0 0 9999px rgba(6,7,9,.62);
+  box-shadow:0 0 0 2px var(--accent), 0 0 0 9999px var(--scrim);
   transition:top .22s ease, left .22s ease, width .22s ease, height .22s ease; }
 .tour-pop{ position:fixed; z-index:1001; width:min(340px, calc(100vw - 32px)); padding:18px 18px 14px;
   background:var(--raise); color:var(--ink); border:1px solid var(--rule-2);

@@ -145,6 +145,8 @@ test('a missing target costs that step, never the tour', async () => {
   t.next().click();
   await t.tick(3000);
   assert.equal(t.title(), 'Open a job at the source');
+  // …and the count stops promising the step it skipped.
+  assert.equal(t.count(), '3 of 4');
 });
 
 test('a step on every tab whose target is absent is neither shown nor counted', async () => {

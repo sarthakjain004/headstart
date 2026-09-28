@@ -17,7 +17,7 @@
       body: 'Write it the way you would say it, like “backend engineer at a climate startup”. ' +
             'Results are matched on meaning, not exact words.' },
     { tab: 'search', targets: ['#filtersbtn', '#rail'], title: 'Narrow it down',
-      body: 'Filters handle the hard limits — experience, salary, remote, location and how ' +
+      body: 'Filters narrow the list — experience, salary, remote, location and how ' +
             'recent. Keep those out of the search box.' },
     { tab: 'search', targets: ['#results .card', '#results'], title: 'Open a job at the source',
       body: 'Each result opens on the company’s own careers page, where you apply. The ' +
@@ -32,12 +32,15 @@
 
   let tour = null;   // the open tour's elements and state; null when closed
   let seq = 0;       // bumped on every move, so a slow wait cannot land after a newer one
+  // Steps whose target never showed up this run. A tab's targets cannot be looked for until the
+  // tab is open, so a step is counted until it is skipped, and not after.
+  const skipped = new Set();
 
   const visible = node => !!node && node.getClientRects().length > 0;
   const panelOf = tab => document.getElementById('panel-' + tab);
   // A step on a tab this deployment does not render, or a step on every tab whose target is
   // absent (the Trends link, where Trends is dark), is never shown and not counted in "2 of 5".
-  const usable = step => (step.tab ? !!panelOf(step.tab) : !!targetOf(step));
+  const usable = step => !skipped.has(step) && (step.tab ? !!panelOf(step.tab) : !!targetOf(step));
 
   function targetOf(step){
     for (const sel of step.targets){
@@ -67,7 +70,10 @@
 
   function start(){
     if (tour) return;
+    // Before the offer goes: when it started the tour, its button is the opener.
+    const opener = document.activeElement;
     dismissOffer();
+    skipped.clear();
     const spot = make('div', 'tour-spot');
     const pop = make('div', 'tour-pop');
     pop.setAttribute('role', 'dialog');
@@ -94,8 +100,7 @@
 
     const shell = document.querySelector('.shell');
     if (shell) shell.inert = true;
-    tour = { spot, pop, count, title, body, back, next, shell, at: -1, target: null,
-             opener: document.activeElement };
+    tour = { spot, pop, count, title, body, back, next, shell, at: -1, target: null, opener };
     document.addEventListener('keydown', onKey);
     root.addEventListener('resize', place);
     root.addEventListener('scroll', place, true);
@@ -117,6 +122,7 @@
       const target = await waitForTarget(step);
       if (!tour || mine !== seq) return;
       if (target) { render(i, target); return; }
+      skipped.add(step);
     }
     if (dir > 0) close();
   }
@@ -183,7 +189,7 @@
     // Back to the button that opened it; if that tab is gone, into the search box, which is
     // where a finished tour leaves the reader.
     const q = document.getElementById('q');
-    if (visible(opener)) opener.focus();
+    if (opener !== document.body && visible(opener)) opener.focus();
     else if (visible(q)) q.focus();
   }
 
@@ -207,6 +213,8 @@
     no.addEventListener('click', dismissOffer);
     offer.append(text, yes, no);
     document.body.append(offer);
+    // An offer is for the page it was made on: moving to another tab declines it.
+    root.addEventListener('hashchange', dismissOffer, { once: true });
   }
   function dismissOffer(){
     const offer = document.querySelector('.tour-offer');
@@ -219,5 +227,5 @@
   });
   offerOnce();
 
-  root.GuidedTour = { start, close, STEPS };
+  root.GuidedTour = { start };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

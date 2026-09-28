@@ -1,8 +1,8 @@
 {# The Home tab (ADR-0249): what HeadStart is, in plain words, and the way into it. It replaced
    the Data tab as the landing view. Two rules from that tab survive here: every figure is read
    from the index at request time rather than typed in, and a card only links to a tab this
-   deployment actually has. What the Data tab did not keep is its ADR citations and its live
-   field counts — a visitor reads this page to learn what the product does, not how it is built.
+   deployment actually has. What Home does not carry over is the Data tab's ADR citations and
+   its live field counts — a visitor reads this page to learn what the product does, not how it is built.
 
    Vocabulary: CONTEXT.md reserves "listing", "posting" and "opening" for the raw record an ATS
    returns. The thing a user sees is a Job, so this page says "job". #}
@@ -14,7 +14,7 @@
 <div class="home">
 
   <section class="home-hero">
-    <div class="home-hero-text">
+    <div>
       <p class="home-eyebrow">For everyone in tech</p>
       <h2 class="home-title">Get a head start on your next tech job.</h2>
       <p class="home-lede">HeadStart reads jobs directly from the career sites companies hire
@@ -32,7 +32,7 @@
         <button type="button" class="ghost home-secondary" data-tour-start>Take a tour</button>
       </div>
       <p class="home-facts"><span><b>{{ njobs }}</b> tech jobs{% if atses %} from
-        <b>{{ atses|length }}</b> hiring systems{% endif %}</span>
+        <b>{{ atses|length }}</b> hiring platforms{% endif %}</span>
         <span>refreshed every couple of hours</span></p>
     </div>
 
@@ -63,9 +63,9 @@
           back by how close they are to what you mean, not by matching exact words.</span>
       </a>
       <a class="home-card" href="#search">
-        <b>Filter precisely</b>
-        <span>Experience, salary, remote, location and how recent. Filters are exact; the search
-          box only decides the order.</span>
+        <b>Narrow with filters</b>
+        <span>Experience, salary, remote, location and how recent. Filters narrow the list; the
+          search box only decides the order.</span>
       </a>
       {% if saved_on and sets_on %}
       <a class="home-card" href="#saved">
@@ -97,11 +97,12 @@
   <section class="home-sec" aria-labelledby="home-how">
     <h3 id="home-how">How it works</h3>
     <ol class="home-steps">
-      <li><b>We read company career sites.</b> Every job comes from the hiring system a company
+      <li><b>We read company career sites.</b> Every job comes from the careers site a company
         runs itself — not copied from another job board, and never paid to be placed. Some of
         those companies are staffing firms or recruiters rather than the end employer.</li>
       <li><b>We keep the tech roles.</b> Software engineering and the roles around it, in English
-        for now, so what you search is all relevant.</li>
+        for now. The check leans towards keeping a borderline role, so a few non-tech jobs slip
+        through rather than a tech one going missing.</li>
       <li><b>You apply at the source.</b> Each result opens the job on the company's own
         careers page, where it is always current and you apply directly.</li>
     </ol>

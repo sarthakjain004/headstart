@@ -2550,6 +2550,8 @@ def test_the_door_makes_its_case_before_asking_for_an_identity(auth_app):
     # The provenance claim, the removal policy, and the no-paid-placement claim.
     assert "employer's own board" in page
     assert "Closed roles get removed, and the exception is published." in page
+    # Staffing firms are labelled, not denied (ADR-0249): the footer, Hot and Home say so too.
+    assert "no agencies" not in page and "staffing firms" in page
     assert "22 days" in page  # checkable at the door, not only behind the wall
     assert "paid placement" in page
     # What signing in costs, stated before the button rather than in a policy page behind it.
@@ -2621,7 +2623,7 @@ def test_home_says_what_the_product_is_in_plain_words(app):
     home = page.split('id="panel-home"', 1)[1].split('id="panel-search"', 1)[0]
     flat = " ".join(home.split())
     # The figures are counted, not typed: the fake table holds two rows on two ATSes.
-    assert "<b>2</b> tech jobs from <b>2</b> hiring systems" in flat
+    assert "<b>2</b> tech jobs from <b>2</b> hiring platforms" in flat
     # The facts the Data tab carried that a visitor needs, in plain words.
     assert "English-language tech roles only, for now" in flat
     assert "refreshes every couple of hours" in flat

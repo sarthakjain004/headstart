@@ -31,10 +31,11 @@ el('q').addEventListener('keydown', e => { if (e.key === 'Enter') go(); });
    retired `#data` included — never strands anyone on a blank page. Trends data loads the
    first time its tab opens, not on page load. ---- */
 const DEFAULT_TAB = 'home';
+// A tab can carry its own state after a `?` (`#trends?company=…`, ADR-0185), so the hash is
+// named by what comes before it.
+const hashName = () => location.hash.replace('#','').split('?')[0];
 function currentTab(){
-  // A tab can carry its own state after a `?` (`#trends?company=…`, ADR-0185), so the panel
-  // is named by what comes before it.
-  const name = location.hash.replace('#','').split('?')[0];
+  const name = hashName();
   if (document.getElementById('panel-' + name)) return name;
   // An in-page anchor (the skip link's `#results`, Home's `#how-matching`) names an element
   // rather than a panel: the tab is whichever panel holds it. Without this the skip link
@@ -42,10 +43,10 @@ function currentTab(){
   const panel = hashAnchor()?.closest('.panel');
   return panel ? panel.id.slice('panel-'.length) : DEFAULT_TAB;
 }
+// The element a hash names when it names no panel, or null.
 function hashAnchor(){
-  const name = location.hash.replace('#','').split('?')[0];
-  if (!name || document.getElementById('panel-' + name)) return null;
-  return document.getElementById(name);
+  const name = hashName();
+  return name && !document.getElementById('panel-' + name) ? document.getElementById(name) : null;
 }
 function showTab(name){
   document.querySelectorAll('.panel').forEach(p => { p.hidden = p.id !== 'panel-' + name; });
@@ -76,16 +77,20 @@ function showTab(name){
   // panel measures zero — so it re-paints on the way in rather than on page load.
   if (name === 'resume' && window.ResumeEditor) ResumeEditor.shown();
 }
-// Home's search box (ADR-0249) hands its words to the Search tab and runs them there.
+// Home's search box (ADR-0249) hands its words to the Search tab and runs them there. Focus
+// follows to the results once the tab is open — the button it left is hidden with Home — and
+// to the list rather than the box, so a phone's keyboard does not come back over the jobs.
 if (el('home-search')) el('home-search').addEventListener('submit', e => {
   e.preventDefault();
   el('q').value = el('home-q').value;
+  window.addEventListener('hashchange', () => el('results').focus(), { once: true });
   location.hash = '#search';
   go();
 });
 let shownTab = null;
 window.addEventListener('hashchange', () => {
-  showTab(currentTab());
+  const tab = currentTab();
+  showTab(tab);
   viaTabStrip = false;
   // The browser scrolls to an anchor before this runs, while its panel is still hidden — so it
   // scrolls nowhere, and the section is found here instead. A switch to another tab starts at
@@ -93,8 +98,8 @@ window.addEventListener('hashchange', () => {
   // next tab at the scroll depth of the last one.
   const anchor = hashAnchor();
   if (anchor) anchor.scrollIntoView({ block: 'start' });
-  else if (shownTab !== currentTab()) window.scrollTo(0, 0);
-  shownTab = currentTab();
+  else if (shownTab !== tab) window.scrollTo(0, 0);
+  shownTab = tab;
 });
 // Whether the hash change about to land came from the tab strip's own link (showTab). Reset on
 // every hash change, so a click that changed nothing (a cmd-click, a tab already open) cannot
