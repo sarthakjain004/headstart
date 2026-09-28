@@ -1,7 +1,8 @@
 """The Space MCP server — its registered tools over the deployed HeadStart Space (ADR-0253).
 
-Run as ``python -m headstart.space_mcp`` and spoken to over stdio through the loop every
-HeadStart MCP server shares (`headstart.mcp_protocol.stdio`). Every answer comes from the Space's
+Run as ``python -m headstart.space_mcp`` and spoken to over stdio, or served by the Space itself
+at ``POST /mcp`` (ADR-0267); both go through the protocol module every HeadStart MCP server shares
+(`headstart.mcp_protocol`). Every answer comes from the Space's
 own read routes, so its numbers are the ones the website shows: the tools encode arguments, map
 company names the way the site's controls do, and render text for a model — they hold no search,
 trends or ranking rule of their own.
@@ -20,9 +21,16 @@ import sys
 from typing import Any
 
 from .. import log
-from ..mcp_protocol import stdio, tool_arguments
-from ..mcp_protocol.stdio import ToolFailure
-from .space_client import SPACE_URL, RequestBudget, SpaceClient, SpaceError
+from ..mcp_protocol import messages, stdio, tool_arguments
+from ..mcp_protocol.messages import ToolFailure
+from .space_client import (
+    SPACE_URL,
+    Fetch,
+    RequestBudget,
+    SpaceClient,
+    SpaceError,
+    urllib_fetch,
+)
 from .space_tool import SpaceTool
 from .tools import REGISTRY
 
@@ -99,18 +107,26 @@ def call(client: SpaceClient, name: str, arguments: dict[str, Any]) -> str:
         raise ToolFailure(str(exc)) from exc
 
 
-def build_server(env: dict[str, str] | None = None) -> stdio.Server:
-    """This server as the shared loop sees it. It needs no configuration: the Space's read routes
-    are public. ``HEADSTART_SPACE_URL`` points it at another deployment."""
+def build_server(
+    env: dict[str, str] | None = None, fetch: Fetch | None = None
+) -> messages.Server:
+    """This server as the protocol module sees it. It needs no configuration: the Space's read
+    routes are public. ``HEADSTART_SPACE_URL`` points it at another deployment.
+
+    ``fetch`` is how a read reaches the Space: over HTTPS by default, or in process when the Space
+    serves this server itself (``space_client.wsgi_fetch``, ADR-0267). There the per-process
+    budget would be one budget for every caller, so each call gets its own and the Space's limit
+    on ``/mcp`` bounds the callers."""
     env = dict(os.environ) if env is None else env
     base = (env.get(URL_VAR) or "").strip() or SPACE_URL
-    budget = RequestBudget()
+    budget = RequestBudget() if fetch is None else None
 
     def call_with_a_fresh_client(name: str, arguments: dict[str, Any]) -> str:
         # One client per call: its deadline and "the app has answered" are this call's own.
-        return call(SpaceClient(base=base, budget=budget), name, arguments)
+        client = SpaceClient(base=base, fetch=fetch or urllib_fetch, budget=budget)
+        return call(client, name, arguments)
 
-    return stdio.Server(
+    return messages.Server(
         name=NAME,
         version=VERSION,
         tools=TOOLS,

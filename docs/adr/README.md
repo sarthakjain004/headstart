@@ -248,7 +248,7 @@ supersedes it and note the supersession in both.
 | [0250](0250-a-board-silent-for-two-years-is-dormant-and-leaves-the-tech-subset.md) | A Board silent for two years is Dormant, and its Jobs leave the Tech subset | 2026-09-28 |
 | [0251](0251-trends-answers-are-worked-out-once-a-boot-and-kept-by-the-browser.md) | Trends answers are worked out once a boot and kept by the browser | 2026-09-28 |
 | [0252](0252-a-workday-department-is-read-off-the-family-slice-that-listed-it.md) | A Workday department is read off the family slice that listed it | 2026-09-28 |
-| [0253](0253-an-agent-reads-the-spaces-read-routes-through-a-read-scoped-token.md) | An agent reads the Space's read routes through a read-scoped token (credential superseded by 0258) | 2026-09-28 |
+| [0253](0253-an-agent-reads-the-spaces-read-routes-through-a-read-scoped-token.md) | An agent reads the Space's read routes through a read-scoped token (credential superseded by 0258; Space-route rejection by 0267) | 2026-09-28 |
 | [0254](0254-an-icims-portal-listing-only-what-a-sibling-lists-is-an-alias.md) | An iCIMS portal listing only what a sibling portal lists is an alias | 2026-09-28 |
 | [0255](0255-every-tab-speaks-to-a-job-seeker.md) | Every tab speaks to a job seeker: no pipeline words, short sentences, short table headers | 2026-09-28 |
 | [0256](0256-recruitee-reads-a-real-english-description-and-keeps-the-primary-title.md) | Recruitee reads a real English description and keeps the primary title | 2026-09-28 |
@@ -261,6 +261,7 @@ supersedes it and note the supersession in both.
 | [0263](0263-the-search-bar-can-match-words-in-the-job-title.md) | The search bar can match words in the job title: a By meaning / Words in the job title switch | 2026-09-28 |
 | [0264](0264-a-happydance-career-front-is-a-board-keyed-by-its-host-paced-across-fronts.md) | A Happydance career front is a Board keyed by its host, paced across fronts | 2026-09-28 |
 | [0265](0265-a-radancy-front-listing-only-what-another-front-lists-is-an-alias.md) | A Radancy front listing only what another front lists is an alias | 2026-09-28 |
+| [0267](0267-the-space-hosts-the-mcp-server-at-a-url-anyone-can-add.md) | The Space hosts the MCP server at a URL anyone can add | 2026-09-28 |
 
 *ADR-0037 was removed from the repository on 2026-09-24 by the owner's decision; its number is not
 reused.*

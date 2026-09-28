@@ -1,4 +1,4 @@
-"""How the Space MCP server reaches the deployed Space: read routes only, over HTTPS.
+"""How the Space MCP server reaches the Space: read routes only, over HTTPS or in process.
 
 :class:`SpaceClient` is built once per tool call, which is what gives a call its **deadline**
 (90 s in all) and lets it know whether **the app has already answered in this call**. Its one
@@ -28,6 +28,7 @@ may be someone's search.
 
 from __future__ import annotations
 
+import contextvars
 import gzip
 import json
 import re
@@ -102,6 +103,38 @@ def urllib_fetch(url: str, headers: Mapping[str, str], timeout_s: float) -> Repl
     except urllib.error.HTTPError as exc:
         named = {k.lower(): v for k, v in (exc.headers or {}).items()}
         return Reply(exc.code, named, _decoded(named, exc.read()))
+
+
+#: The WSGI environ key :func:`wsgi_fetch` sets on every read it makes, so the app can tell its
+#: own tools' reads from a caller's. A caller sets only the ``HTTP_*`` keys of an environ, through
+#: its headers, never this one.
+IN_PROCESS_READ = "headstart.space_mcp.in_process_read"
+
+
+def wsgi_fetch(wsgi_app: Callable) -> Fetch:
+    """The :data:`Fetch` for this server when the Space itself serves it (ADR-0267): each read is
+    a request to ``wsgi_app`` in process, with no cookie, so no Account reaches an answer.
+    ``timeout_s`` has no hold on an in-process call; the outer ``/mcp`` request's own limits bound
+    it. Werkzeug is imported here, not at the top: the stdio install has no Werkzeug."""
+    from werkzeug.test import Client
+
+    client = Client(wsgi_app, use_cookies=False)
+
+    def fetch(url: str, headers: Mapping[str, str], timeout_s: float) -> Reply:
+        parts = urllib.parse.urlsplit(url)
+        # In an empty context, so the read gets an app context of its own: Flask reuses one
+        # already pushed on the thread, which would share the outer `/mcp` request's `g`.
+        answer = contextvars.Context().run(
+            client.get,
+            parts.path,
+            query_string=parts.query,
+            headers=dict(headers),
+            environ_overrides={IN_PROCESS_READ: True},
+        )
+        named = {k.lower(): v for k, v in answer.headers.items()}
+        return Reply(answer.status_code, named, _decoded(named, answer.get_data()))
+
+    return fetch
 
 
 class SpaceError(Exception):
