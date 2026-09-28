@@ -11,7 +11,6 @@ from pathlib import Path
 
 import pytest
 
-from headstart.space_mcp.server import build_server
 from headstart.space_mcp.space_client import InvalidRequest, SpaceRoute
 from headstart.space_mcp.tools import REGISTRY
 
@@ -572,10 +571,9 @@ def test_the_iteration_tasks_use_known_verifiers_and_real_arguments(ev):
 
 
 def test_the_sentences_the_harness_reads_are_the_servers_own(ev):
-    # The server's sentences, as written in its source, plus the one it builds without a token.
+    # The server's sentences, as written in its source.
     package = _SCRIPT.parents[2] / "src" / "headstart" / "space_mcp"
     text = "\n".join(p.read_text(encoding="utf-8") for p in package.rglob("*.py"))
-    text += str(build_server({}).unconfigured)
 
     for marker in ev._INFRASTRUCTURE_ERRORS:
         assert marker in text, marker
@@ -636,7 +634,6 @@ def _no_process(*args, **kwargs):
 
 def test_dry_run_prints_the_command_and_runs_nothing(ev, monkeypatch, capsys):
     monkeypatch.setattr(ev.subprocess, "Popen", _no_process)
-    monkeypatch.delenv("HEADSTART_AGENT_TOKEN", raising=False)
 
     assert ev.main(["--dry-run"]) == 0
 
@@ -644,8 +641,19 @@ def test_dry_run_prints_the_command_and_runs_nothing(ev, monkeypatch, capsys):
     assert "t01 [search_args]" in out and "t12 [blocking_named]" in out
     assert "claude -p 'Find me remote backend" in out
     assert "--strict-mcp-config" in out and "--tools ''" in out
-    assert '"HEADSTART_AGENT_TOKEN": "${HEADSTART_AGENT_TOKEN}"' in out
     assert "nothing was run" in out
+
+
+def test_the_run_registers_this_checkouts_server_and_nothing_else(ev):
+    server = ev.mcp_config({})["mcpServers"]
+
+    assert list(server) == ["headstart-space"]
+    assert server["headstart-space"]["args"] == ["-m", "headstart.space_mcp"]
+    assert server["headstart-space"]["env"] == {"PYTHONPATH": str(ev._ROOT / "src")}
+    elsewhere = ev.mcp_config({"HEADSTART_SPACE_URL": "http://127.0.0.1:8765"})
+    assert elsewhere["mcpServers"]["headstart-space"]["env"]["HEADSTART_SPACE_URL"] == (
+        "${HEADSTART_SPACE_URL}"  # expanded by Claude Code, as the verifiers read it
+    )
 
 
 def test_the_run_allows_every_registered_tool_and_nothing_else(ev):
@@ -674,11 +682,3 @@ def test_dry_run_of_a_heldout_file_keeps_its_prompts_sealed(
     out = capsys.readouterr().out
     assert "h1 [mentions]" in out and "<sealed prompt>" in out
     assert "a sealed question" not in out
-
-
-def test_a_live_run_needs_the_token(ev, monkeypatch):
-    monkeypatch.setattr(ev.subprocess, "Popen", _no_process)
-    monkeypatch.delenv("HEADSTART_AGENT_TOKEN", raising=False)
-
-    with pytest.raises(SystemExit, match="HEADSTART_AGENT_TOKEN is not set"):
-        ev.main(["--only", "t01"])

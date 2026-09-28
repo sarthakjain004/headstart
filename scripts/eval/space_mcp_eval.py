@@ -6,8 +6,8 @@ server as the only MCP server, no built-in tools, and only the server's register
 allowed. The run's stream-json transcript is saved line by line as it arrives, then parsed into
 tool calls (name and arguments), tool results (their characters and whether they were errors)
 and the final answer, and judged by the task's verifier. ``trend_sign`` and ``hot_top`` re-read
-the Space themselves, with the same token the server uses, so they check the answer against the
-Space's own figures rather than against what the agent was told. ``tool_args`` (``search_args``
+the Space's public read routes themselves, as the server does, so they check the answer against
+the Space's own figures rather than against what the agent was told. ``tool_args`` (``search_args``
 in the brief's fixed schema) checks the arguments instead and trusts the Space to apply them:
 ``strict=1`` makes it refuse any it would drop.
 
@@ -23,11 +23,11 @@ summary under ``docs/mcp/`` is written by hand from the results file.
 A held-out file (``--heldout``) is read only after its sha256 matches the ``heldout_sha256`` the
 committed iteration tasks file seals, so tuning against the iteration tasks cannot see it.
 
-Run:
-  HEADSTART_AGENT_TOKEN=... python scripts/eval/space_mcp_eval.py
+Run (a live run needs only the network and a signed-in ``claude``):
+  python scripts/eval/space_mcp_eval.py
   python scripts/eval/space_mcp_eval.py --dry-run
-  HEADSTART_AGENT_TOKEN=... python scripts/eval/space_mcp_eval.py --only t03
-  HEADSTART_AGENT_TOKEN=... python scripts/eval/space_mcp_eval.py --heldout <sealed file>
+  python scripts/eval/space_mcp_eval.py --only t03
+  python scripts/eval/space_mcp_eval.py --heldout <sealed file>
 ``HEADSTART_SPACE_URL``, when set, points both the server and the verifiers at another Space.
 """
 
@@ -56,7 +56,7 @@ sys.path.insert(0, str(_ROOT / "src"))
 from headstart.mcp_protocol import tool_arguments
 from headstart.mcp_protocol.stdio import ToolFailure
 from headstart.space_mcp import company_scope
-from headstart.space_mcp.server import BY_NAME, NAME, TOKEN_VAR, URL_VAR
+from headstart.space_mcp.server import BY_NAME, NAME, URL_VAR
 from headstart.space_mcp.space_client import (
     SPACE_URL,
     SpaceClient,
@@ -82,10 +82,7 @@ TASK_TIMEOUT_S = 600
 #: agent sent (`space_client`'s and the server's own sentences). Every other tool error is a
 #: refusal the agent should correct in its next call.
 _INFRASTRUCTURE_ERRORS = (
-    f"Set {TOKEN_VAR}",
     "The HeadStart Space is starting",
-    "does not accept the agent token",
-    "rejected the agent token",
     "is older than this server",
     "failed on this request",
     "stopped answering",
@@ -503,10 +500,10 @@ VERIFIERS: dict[str, Verifier] = {
 
 
 def mcp_config(env: dict[str, str]) -> dict[str, Any]:
-    """The one server a run may use: this checkout's ``python -m headstart.space_mcp``. The token
-    is written as ``${HEADSTART_AGENT_TOKEN}``, which Claude Code expands from its own
-    environment, so the secret never reaches the config file."""
-    server_env = {"PYTHONPATH": str(_ROOT / "src"), TOKEN_VAR: "${" + TOKEN_VAR + "}"}
+    """The one server a run may use: this checkout's ``python -m headstart.space_mcp``. Another
+    Space's URL, when set, is written as ``${HEADSTART_SPACE_URL}``, which Claude Code expands
+    from its own environment."""
+    server_env = {"PYTHONPATH": str(_ROOT / "src")}
     if env.get(URL_VAR):
         server_env[URL_VAR] = "${" + URL_VAR + "}"
     return {
@@ -734,11 +731,6 @@ def main(argv: list[str] | None = None) -> int:
     if args.dry_run:
         _dry_run(tasks, sealed=bool(args.heldout), env=env)
         return 0
-    token = (env.get(TOKEN_VAR) or "").strip()
-    if not token:
-        raise SystemExit(
-            f"{TOKEN_VAR} is not set; every tool call would only ask for it"
-        )
     base = (env.get(URL_VAR) or "").strip() or SPACE_URL
 
     ARTIFACTS.mkdir(parents=True, exist_ok=True)
@@ -749,7 +741,7 @@ def main(argv: list[str] | None = None) -> int:
     records = []
     with results_path.open("a", encoding="utf-8") as results:
         for task in tasks:
-            record = run_task(task, env, prefix, lambda: SpaceClient(token, base=base))
+            record = run_task(task, env, prefix, lambda: SpaceClient(base=base))
             records.append(record)
             results.write(json.dumps(record, ensure_ascii=False) + "\n")
             results.flush()
