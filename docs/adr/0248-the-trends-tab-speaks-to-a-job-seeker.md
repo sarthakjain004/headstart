@@ -2,8 +2,10 @@
 
 **Status:** accepted · **Date:** 2026-09-28 · **Amends:**
 [ADR-0119](0119-the-trends-chart-plots-change-not-level.md) (its reassignment caveat, kept
-verbatim and open) and [ADR-0227](0227-trends-record-each-boards-opened-and-closed-jobs-not-only-its-net.md)
-§"What the page shows" (its turnover sentences) · **Relates to:**
+verbatim and open), [ADR-0227](0227-trends-record-each-boards-opened-and-closed-jobs-not-only-its-net.md)
+§"What the page shows" (its turnover sentences) and
+[ADR-0185](0185-trends-narrow-to-companies-picked-from-a-directory-of-boards.md) (same-named
+companies labelled by ATS) · **Relates to:**
 [ADR-0057](0057-record-family-assignments-and-report-reassignment.md) (reassignment),
 [ADR-0053](0053-scope-eviction-on-scrape-outcome.md) (closures a scrape cannot see),
 [ADR-0233](0233-trends-serves-reconciled-line-readings-and-the-page-only-formats.md) (the reading) · changes no
@@ -32,6 +34,14 @@ pipeline's words (boards counted, runs, rows, families, reassignment, coverage).
 role family is a "category", and Comparable coverage is "Job sites: Tracked from start". The one
 Python label a reader sees with a Board in it, a Marked change's "N more boards found", reads "N
 more job sites found".
+
+**No ATS names** (issue #755, item 14: a job seeker does not care which system hosts a company's
+jobs). A company picker option reads "9,214 tech openings · 3 job sites", with no ATS list. The
+directory keeps same-named employers apart (ADR-0185), and they used to be labelled by ATS
+("Citi (workday)") or by key ("Citi (workday:citi/2)"). They are now labelled by their current
+openings, "Citi (44 openings)", in the picker, the chips and the chart. Two that share those too are
+numbered in key order, "Citi (0 openings, 1 of 2)". The Source filter still lists ATSes, as
+Search's "ATS provider" filter does: there the ATS is what the reader chose to filter by.
 
 **The answer carries its figures, not their method.** The index sentence gives its net as opened
 against closed, "about 650 more opened than closed — about 9,300 opened, 8,600 closed since Sep

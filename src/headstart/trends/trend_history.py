@@ -1893,24 +1893,29 @@ class TrendHistory:
         """Each company's name, told apart from any other in ``keys`` that shares it.
 
         The directory keeps same-named employers apart when nothing proves them one (ADR-0185),
-        so "Citi" on Workday and "Citi" on Eightfold both appear, labelled by ATS. Two on the
-        *same* ATS (220 name pairs measured) are labelled by their key, the one thing they
-        cannot share.
+        so "Citi" on Workday and "Citi" on Eightfold both appear. They are told apart by their
+        openings now, which a job seeker can weigh, never by ATS or key (ADR-0248): "Citi (44
+        openings)". Two that share that too are numbered in key order, "Citi (0 openings, 1 of 2)".
         """
         names = Counter(self._companies[key]["name"] for key in keys)
-        with_ats = {
-            key: f"{self._companies[key]['name']} ("
-            f"{', '.join(sorted({ats_of(b) for b in self._companies[key]['boards']}))})"
-            for key in keys
-        }
-        still_shared = Counter(with_ats.values())
+        sized = {}
+        for key in keys:
+            n = self._company_openings(self._companies[key])
+            sized[key] = (
+                f"{self._companies[key]['name']} ({n:,} opening{'' if n == 1 else 's'})"
+            )
+        twins: dict[str, list[str]] = {}
+        for key in sorted(keys):
+            twins.setdefault(sized[key], []).append(key)
         labels = {}
         for key in keys:
-            name = self._companies[key]["name"]
-            if names[name] == 1:
-                labels[key] = name
-            elif still_shared[with_ats[key]] == 1:
-                labels[key] = with_ats[key]
+            same = twins[sized[key]]
+            if names[self._companies[key]["name"]] == 1:
+                labels[key] = self._companies[key]["name"]
+            elif len(same) == 1:
+                labels[key] = sized[key]
             else:
-                labels[key] = f"{name} ({key})"
+                labels[key] = (
+                    f"{sized[key][:-1]}, {same.index(key) + 1} of {len(same)})"
+                )
         return labels

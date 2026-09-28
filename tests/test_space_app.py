@@ -2079,8 +2079,8 @@ def test_split_by_company_draws_a_line_per_pick_and_tells_twins_apart(company_tr
     assert d["split_by"] == "company"
     by_label = {s["label"]: s["points"] for s in d["series"]}
     assert by_label == {
-        "Citi (workday)": [40, 40, 44],
-        "Citi (eightfold)": [None, 3, 3],  # a gap before its first delta, never a zero
+        "Citi (44 openings)": [40, 40, 44],
+        "Citi (3 openings)": [None, 3, 3],  # a gap before its first delta, never a zero
         "Hpe": [17, 18, 13],
     }
 
@@ -2110,16 +2110,36 @@ def test_each_pick_carries_its_own_share_denominator_and_start(company_trends):
     assert late["counted_since"] == {"eightfold:citi.eightfold.ai": _T2}
 
 
-def test_twins_on_one_ats_are_told_apart_by_key(company_trends):
-    d = company_trends.get(
+def test_twins_are_told_apart_by_openings_never_by_ats(
+    trends_app, monkeypatch, tmp_path
+):
+    """ADR-0248: same-named companies are labelled by their openings now, never by ATS or key;
+    two that share those too are numbered in key order."""
+    directory = {
+        **_COMPANY_DIRECTORY,
+        "workday:citicorp/y": {"name": "Citi", "boards": ["workday:citicorp/y"]},
+    }
+    history = _trend_history(
+        tmp_path, ledger=_COMPANY_LEDGER, deltas=_COMPANY_DELTAS, companies=directory
+    )
+    history._new_hold = {}
+    monkeypatch.setattr(trends_app, "_HISTORY", history)
+    client = trends_app.app.test_client()
+    d = client.get(
         "/trends?split=company&company=workday:citi/2&company=workday:citibank/x"
-        "&company=eightfold:citi.eightfold.ai"
+        "&company=workday:citicorp/y&company=eightfold:citi.eightfold.ai"
     ).get_json()
-    assert sorted(c["label"] for c in d["companies"]) == [
-        "Citi (eightfold)",
-        "Citi (workday:citi/2)",
-        "Citi (workday:citibank/x)",
-    ]
+    labels = {c["key"]: c["label"] for c in d["companies"]}
+    assert labels == {
+        "workday:citi/2": "Citi (44 openings)",
+        "eightfold:citi.eightfold.ai": "Citi (3 openings)",
+        "workday:citibank/x": "Citi (0 openings, 1 of 2)",
+        "workday:citicorp/y": "Citi (0 openings, 2 of 2)",
+    }
+    suggested = client.get("/companies/suggest?q=citi").get_json()["companies"]
+    assert not any(
+        ats in s["label"] for s in suggested for ats in ("workday", "eightfold")
+    )
 
 
 def test_company_combines_with_comparable_coverage(company_trends):
@@ -2130,7 +2150,7 @@ def test_company_combines_with_comparable_coverage(company_trends):
     ).get_json()
     assert d["base"] == _T1
     assert {s["label"]: s["points"] for s in d["series"]} == {
-        "Citi (workday)": [40, 40, 44]
+        "Citi (44 openings)": [40, 40, 44]
     }
 
 

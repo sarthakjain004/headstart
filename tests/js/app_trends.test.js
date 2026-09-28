@@ -959,14 +959,15 @@ test('the chart says where a company history starts', async () => {
   assert.doesNotMatch(nodes['trends-empty'].textContent, /counted Acme/);
 });
 
-test('suggestions leave out what is picked and show openings and Boards', async () => {
+test('suggestions leave out what is picked and show openings and job sites, never an ATS', async () => {
   const { t, ctx, nodes } = loadApp();
   const c = (key, label, openings, boards) => ({ key, label, openings, boards, atses: ['workday'] });
   answering(ctx, { companies: [c('workday:acme', 'Acme', 9214, 3), c('lever:beta', 'Beta', 1, 1)] });
   t.setPicks([{ key: 'lever:beta', label: 'Beta' }]);
   await t.suggest('ac');
   assert.equal(t.options().length, 1);
-  assert.match(nodes['trends-co-list'].innerHTML, /9,214 tech openings · 3 boards · workday/);
+  assert.match(nodes['trends-co-list'].innerHTML, /9,214 tech openings · 3 job sites</);
+  assert.doesNotMatch(nodes['trends-co-list'].innerHTML, /workday/);
   assert.equal(nodes['trends-co-list'].hidden, false);
 });
 

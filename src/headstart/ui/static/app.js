@@ -3959,8 +3959,10 @@ function followedOption(){
 function optionHtml(o){
   if (o.followed) return '<span class="co-opt-name">Add the companies you follow</span>';
   const c = o.company;
+  // No ATS names: a job seeker does not care which system hosts a company's jobs (ADR-0248).
+  // Same-named companies are told apart in `label` itself, by their openings.
   const meta = `${c.openings.toLocaleString()} tech opening${c.openings === 1 ? '' : 's'} · `
-    + `${c.boards} board${c.boards === 1 ? '' : 's'} · ${c.atses.join(', ')}`;
+    + `${c.boards} job site${c.boards === 1 ? '' : 's'}`;
   return `<span class="co-opt-name">${esc(c.label)}</span><span class="co-opt-meta">${esc(meta)}</span>`;
 }
 
