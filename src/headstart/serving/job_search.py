@@ -181,6 +181,42 @@ def _int_arg(args: Mapping[str, str]) -> Callable[[str], int | None]:
     return read
 
 
+class ScopeUnavailable(LookupError):
+    """What a ``strict=1`` request asked for cannot be applied on this deployment yet: no role
+    assignments, watchlist or family taxonomy loaded, or a column the served table has not
+    migrated onto. A state of the deployment, not the caller's error, so :func:`refusal`
+    answers it 503 (ADR-0253)."""
+
+
+def refusal(exc: ValueError | ScopeUnavailable) -> tuple[dict[str, str], int]:
+    """The body and status ``/search`` and ``/facets`` answer a refused request with, in both
+    apps: an invalid filter (the caller's error, named in ``detail``) is a 400, and a scope this
+    deployment cannot apply (:class:`ScopeUnavailable`) a 503."""
+    if isinstance(exc, ScopeUnavailable):
+        return {"error": str(exc)}, 503
+    return {"error": "invalid filter", "detail": str(exc)}, 400
+
+
+def _is_strict(args: Mapping[str, str]) -> bool:
+    """Whether the request asked for ``strict=1``: every value this module would otherwise drop,
+    re-scope or widen with only a log line is refused instead (ADR-0253). An agent sends it; the
+    browser never does, so a stale bookmark still never errors."""
+    return args.get("strict") == "1"
+
+
+def _listed(values: Collection[str]) -> str:
+    """``values`` for a refusal's sentence: what the request could have said instead."""
+    return ", ".join(values) if values else "none"
+
+
+def _unmigrated(asked: str, column: str) -> ScopeUnavailable:
+    """The refusal of a ``strict=1`` filter or sort keyed on a column this table lacks, which
+    without ``strict`` goes dark rather than failing (ADR-0031)."""
+    return ScopeUnavailable(
+        f"{asked} needs the served table's {column} column, which it does not have yet"
+    )
+
+
 def request_account_clause(
     args: Mapping[str, str], followed: Collection[str], hidden: Collection[str]
 ) -> str | None:
@@ -255,6 +291,8 @@ def scoped_jobs_clause(
     args,
     family_ids: Mapping[str, Sequence[str]] | None,
     watch_patterns: Mapping[str, Sequence[str]] | None = None,
+    *,
+    known_families: Collection[str] = (),
 ) -> str | None:
     """The Jobs a Trends hand-off names beside ``board=``: one role family's (``family=``), one
     tracked role's (``role=``), or None.
@@ -266,16 +304,58 @@ def scoped_jobs_clause(
     jobs. Only with
     ``board=``: a family across the whole index is a Trends view, not a search. A category past
     :data:`MAX_FAMILY_IDS` is refused as an invalid filter rather than widened.
+
+    Under ``strict=1`` (ADR-0253) a hand-off this would ignore or widen is refused instead. The
+    caller's errors are a :class:`ValueError`: ``family=`` or ``role=`` without ``board=``, both
+    at once, a role with no watch pattern, or a family ``known_families`` does not configure.
+    A deployment that cannot apply one is a :class:`ScopeUnavailable`: no watchlist, no family
+    taxonomy, or no role assignments, loaded. ``known_families`` are the families the taxonomy
+    configures (``trend_history.family_labels``), so a configured family with no Jobs assigned
+    yet still answers zero rows, as it does without ``strict``.
     """
     family = (args.get("family") or "").strip()
     boards = sorted({b.lower() + ":" for b in args.getlist("board") if b.strip()})
     # `role=`: a tracked role's jobs, by the same title patterns role_trends counts it by
     # (ADR-0051). Trends showed "LLM / GenAI 84" at Google with no way to open those 84.
     role = (args.get("role") or "").strip()
-    if role and boards:
-        patterns = (watch_patterns or {}).get(
+    patterns = (
+        (watch_patterns or {}).get(
             role if role.startswith("watch:") else "watch:" + role
         )
+        if role
+        else None
+    )
+    if _is_strict(args):
+        if (family or role) and not boards:
+            raise ValueError(
+                f"{'family' if family else 'role'}= needs board=: a category is searched "
+                "within one company's Boards"
+            )
+        if family and role:
+            raise ValueError("family= and role= name one scope each; send one of them")
+        if role and not watch_patterns:
+            raise ScopeUnavailable(
+                "role= needs the role watchlist, which this deployment has not loaded"
+            )
+        if role and not patterns:
+            watched = sorted(name.removeprefix("watch:") for name in watch_patterns)
+            raise ValueError(
+                f"role {role!r} has no watch pattern; watched roles: {_listed(watched)}"
+            )
+        if family and not known_families:
+            raise ScopeUnavailable(
+                "family= needs the family taxonomy, which this deployment has not loaded"
+            )
+        if family and family not in known_families:
+            raise ValueError(
+                f"family {family!r} is not a configured family; configured: "
+                f"{_listed(sorted(known_families))}"
+            )
+        if family and family_ids is None:
+            raise ScopeUnavailable(
+                "family= needs the role assignments, which this deployment has not loaded"
+            )
+    if role and boards:
         if patterns:
             joined = "|".join(f"(?:{p})" for p in patterns).replace("'", "''")
             return f"regexp_like(title, '(?i){joined}')"
@@ -400,6 +480,15 @@ def _canonical_url(ats: str | None, url: str | None, job_id: str | None) -> str 
     return url
 
 
+#: Every value the India place filter knows, in `india_gazetteer.where`'s own lookup order: the
+#: whole country, a region, else a city.
+_INDIA_PLACES = (
+    india_filter.WHOLE_COUNTRY,
+    *india_gazetteer.REGIONS,
+    *india_gazetteer.CITIES,
+)
+
+
 def _warn_unknown_filters(
     filters: SearchFilters, kw_in: str, sort: str, capabilities: IndexCapabilities
 ) -> None:
@@ -430,12 +519,7 @@ def _warn_unknown_filters(
         _log.warning(
             "filter dropped: employment_type %.40r is not a known value", etype
         )
-    # `india_gazetteer.where`'s own lookup order: the whole country, a region, else a city.
-    if india and india not in (
-        india_filter.WHOLE_COUNTRY,
-        *india_gazetteer.REGIONS,
-        *india_gazetteer.CITIES,
-    ):
+    if india and india not in _INDIA_PLACES:
         _log.warning("filter dropped: india %.40r is not a known place", india)
     # `build_filter`'s bracket fallback: an unserved currency is re-scoped to the default, and
     # with the default unserved too the bracket compiles to nothing. Only once a bound is set —
@@ -465,6 +549,82 @@ def _warn_unknown_filters(
         )
     if sort and sort not in SORT_COLUMNS:
         _log.warning("sort dropped: %.40r is not a known sort; default order", sort)
+
+
+def _refuse_what_strict_forbids(
+    filters: SearchFilters, kw_in: str, sort: str, capabilities: IndexCapabilities
+) -> None:
+    """Under ``strict=1`` (ADR-0253), raise where :func:`_warn_unknown_filters` would only warn,
+    and where :func:`build_filter` would compile a filter to nothing on a column this table has
+    not migrated onto.
+
+    A value outside its whitelist is the caller's :class:`ValueError`, naming the value and the
+    ones accepted. A filter on an unmigrated column is :class:`ScopeUnavailable`. The salary
+    currency is checked last, because a table without the salary columns serves no currency.
+    """
+    ats, etype, india = filters.ats, filters.etype, filters.india
+    if ats and ats not in capabilities.atses:
+        raise ValueError(
+            f"ats {ats!r} is not in this index; it serves: {_listed(capabilities.atses)}"
+        )
+    if etype and etype not in employment_type_filter.RULES:
+        raise ValueError(
+            f"etype {etype!r} is not a known employment type; known: "
+            f"{_listed(employment_type_filter.RULES)}"
+        )
+    if india and india not in _INDIA_PLACES:
+        raise ValueError(
+            f"india {india!r} is not a known place; known: {_listed(_INDIA_PLACES)}"
+        )
+    if kw_in and kw_in not in KEYWORD_SCOPES:
+        raise ValueError(
+            f"kw_in {kw_in!r} is not a known scope; known: {_listed(KEYWORD_SCOPES)}"
+        )
+    if sort and sort not in SORT_COLUMNS:
+        raise ValueError(
+            f"sort {sort!r} is not a known sort; known: {_listed(SORT_COLUMNS)} "
+            "(omit it to rank by relevance)"
+        )
+    in_description = (
+        filters.kw and "description" in KEYWORD_SCOPES[filters.kw_in].columns
+    )
+    if in_description and not capabilities.has_description:
+        raise _unmigrated("a description keyword scope", "description")
+    bracket = filters.salary_min is not None or filters.salary_max is not None
+    if (bracket or filters.has_salary) and not capabilities.has_min_salary_annual:
+        raise _unmigrated("a salary filter", "min_salary_annual")
+    seen = (
+        filters.seen_within is not None
+        or filters.first_seen_after
+        or filters.seen_after
+        or filters.seen_before
+    )
+    if seen and not capabilities.has_first_seen:
+        raise _unmigrated("a first-seen filter", "first_seen")
+    if bracket:
+        _refuse_an_unserved_currency(
+            filters.salary_currency, "a salary bound", capabilities
+        )
+
+
+def _refuse_an_unserved_currency(
+    asked: str | None, what: str, capabilities: IndexCapabilities
+) -> None:
+    """Refuse ``what`` in a currency this table does not serve, where the bracket and the salary
+    sort would silently fall back to :data:`SALARY_DEFAULT_CURRENCY`, or with that unserved too
+    drop the bracket and order the sort unconverted."""
+    currency = asked or SALARY_DEFAULT_CURRENCY
+    if currency in capabilities.currencies:
+        return
+    said = (
+        f"salary_currency {currency!r}"
+        if asked
+        else f"{what} with no salary_currency is priced in {currency}, which"
+    )
+    raise ValueError(
+        f"{said} is not served by this index; it serves: "
+        f"{_listed(capabilities.currencies)}"
+    )
 
 
 def _result_row(row: Mapping[str, Any], query: str) -> dict[str, Any]:
@@ -723,10 +883,12 @@ class JobSearch:
             else None,
         )
         # The one place a request is parsed, and so the one place a dropped filter can be
-        # reported without `facets.counts` repeating it once per option — see the helper.
-        _warn_unknown_filters(
-            filters, kw_in, (args.get("sort") or "").strip(), self.capabilities
-        )
+        # reported without `facets.counts` repeating it once per option — see the helper. Under
+        # `strict=1` it is refused instead (ADR-0253).
+        sort = (args.get("sort") or "").strip()
+        if _is_strict(args):
+            _refuse_what_strict_forbids(filters, kw_in, sort, self.capabilities)
+        _warn_unknown_filters(filters, kw_in, sort, self.capabilities)
         return filters
 
     def facets(
@@ -808,9 +970,15 @@ class JobSearch:
         # Whitelisted to a column name, never taken from the query string — this reaches an
         # ORDER BY. An unknown value is no sort at all, which is the existing behaviour.
         sort = SORT_COLUMNS.get((args.get("sort") or "").strip())
+        # Under `strict=1` each fallback below is refused rather than taken (ADR-0253).
+        strict = _is_strict(args)
         if sort == "first_seen" and not self.capabilities.has_first_seen:
+            if strict:
+                raise _unmigrated("sort=seen", "first_seen")
             sort = None  # same dark-until-migrated rule as the filters above
         if sort == "min_salary_annual" and not self.capabilities.has_min_salary_annual:
+            if strict:
+                raise _unmigrated("sort=salary", "min_salary_annual")
             sort = None  # likewise: the ADR-0082 columns arrive by migration
         # Salary is stored in the employer's own currency (ADR-0082), so ordering the raw
         # column ranked ₹40,00,000 above $300,000 — the first 400 rows of a salary sort were
@@ -818,6 +986,10 @@ class JobSearch:
         # bracket's; a table with no such currency keeps the raw ordering it always had.
         sort_currency = None
         if sort == "min_salary_annual":
+            if strict:
+                _refuse_an_unserved_currency(
+                    filters.salary_currency, "a salary sort", self.capabilities
+                )
             sort_currency = (
                 filters.salary_currency
                 if filters.salary_currency in self.capabilities.currencies

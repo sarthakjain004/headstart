@@ -175,6 +175,9 @@ _HISTORY = trend_history.TrendHistory.load(_STATE / "data" / "state", _CONFIG)
 # retired family's successor, so a Trends category hands Search the Jobs its line counts.
 _WATCH = trend_history.watched_roles(_CONFIG / "role_watchlist.json")
 _FAMILY_SUCCESSOR = trend_history.family_successors(_CONFIG / "role_families.json")
+# Every family the taxonomy names, retired ones included, so a `strict=1` hand-off can refuse a
+# name nothing configures while a configured family with no Jobs assigned yet answers zero rows.
+_KNOWN_FAMILIES = frozenset(trend_history.family_labels(_CONFIG / "role_families.json"))
 # What every answer read from the history above is versioned by (ADR-0251): this process's boot.
 # The history is read once and never changes after, and every pipeline publication and every
 # deploy restarts the Space, so one boot names one fixed set of answers. The page sends it back
@@ -210,7 +213,23 @@ def _rank_hot(history: trend_history.TrendHistory) -> dict:
     return ranked
 
 
-_HOT = _rank_hot(_HISTORY)
+def _derive_from_history(
+    history: trend_history.TrendHistory,
+) -> tuple[dict[str, tuple[str, ...]], dict]:
+    """What boot derives from the Trends history, as ``(company_boards, hot)``: each Board's
+    company as every Board of its Company directory entry, keyed case-blind as the follow and
+    hide lists compare Boards (Follow and Hide act on a whole company, ADR-0230), and the Hot
+    ranking (``_rank_hot``). The one derivation, so a history installed after import (a test's)
+    rebuilds the same globals boot built."""
+    company_boards = {
+        board.lower(): tuple(entry["boards"])
+        for entry in history.companies.values()
+        for board in entry["boards"]
+    }
+    return company_boards, _rank_hot(history)
+
+
+_COMPANY_BOARDS, _HOT = _derive_from_history(_HISTORY)
 
 
 def _with_predecessors(
@@ -368,7 +387,16 @@ _SERVICE_TOKENS = {
         (_ALERTS_TOKEN, frozenset({"/search"})),
         (
             _AGENT_TOKEN,
-            frozenset({"/search", "/facets", "/trends", "/hot", "/companies/suggest"}),
+            frozenset(
+                {
+                    "/search",
+                    "/facets",
+                    "/trends",
+                    "/hot",
+                    "/companies/suggest",
+                    "/companies/lookup",
+                }
+            ),
         ),
     )
     if secret
@@ -474,7 +502,9 @@ def _gzip_static(response):
 # The agent contract this app serves (ADR-0253): what an agent may rely on in the read routes
 # `AGENT_TOKEN` opens. Raised whenever that contract changes, so an agent can tell an app too
 # old for it from one that serves it, rather than have a newer argument silently ignored.
-_AGENT_API_VERSION = 0
+# 1: `strict=1` on /search and /facets, `match` and `board_keys` on each /companies/suggest item,
+# /companies/lookup, and `newest_tick` on /facets.
+_AGENT_API_VERSION = 1
 
 
 @app.after_request
@@ -504,7 +534,10 @@ def _company_where(args) -> str | None:
     scoped = job_search.with_extra(
         job_search.scoped_boards_clause(args),
         job_search.scoped_jobs_clause(
-            args, _FAMILY_IDS, {n: m["match"] for n, m in _WATCH.items()}
+            args,
+            _FAMILY_IDS,
+            {n: m["match"] for n, m in _WATCH.items()},
+            known_families=_KNOWN_FAMILIES,
         ),
     )
     gate = _account_gate()
@@ -524,17 +557,9 @@ def search_jobs():
         return jsonify(
             _searcher.run(request.args, extra_where=_company_where(request.args))
         )
-    except ValueError:
-        return jsonify({"error": "invalid filter"}), 400
-
-
-# Each Board's company as every Board of its Company directory entry, keyed case-blind as the
-# follow and hide lists compare Boards. Follow and Hide act on a whole company (ADR-0230).
-_COMPANY_BOARDS = {
-    board.lower(): tuple(entry["boards"])
-    for entry in _HISTORY.companies.values()
-    for board in entry["boards"]
-}
+    except (ValueError, job_search.ScopeUnavailable) as exc:
+        body, status = job_search.refusal(exc)
+        return jsonify(body), status
 
 
 def _company_boards(board: str) -> tuple[str, ...]:
@@ -637,13 +662,20 @@ def search_facets():
     have coupled ~40 counts to every ranked request and changed that route's response from the
     bare array its clients already read. The browser fires both at once, so the counts cost the
     user nothing beyond the search they were already waiting for.
+
+    ``newest_tick`` is the newest Trends tick, or null (ADR-0253). The pipeline writes the table
+    and the tick in one run and this process loaded both at one boot, so it dates the data an
+    answer came from. The page does not read it.
     """
     try:
-        return jsonify(
-            _searcher.facets(request.args, extra_where=_company_where(request.args))
+        counted = _searcher.facets(
+            request.args, extra_where=_company_where(request.args)
         )
-    except ValueError:
-        return jsonify({"error": "invalid filter"}), 400
+    except (ValueError, job_search.ScopeUnavailable) as exc:
+        body, status = job_search.refusal(exc)
+        return jsonify(body), status
+    ticks = _HISTORY.ticks
+    return jsonify({**counted, "newest_tick": ticks[-1] if ticks else None})
 
 
 def _parses(store: Store, account: str) -> int | None:
@@ -1381,8 +1413,9 @@ def suggest_companies():
     first, or 503 until the pipeline has written a directory.
 
     Each carries its current tech openings and Board count, so a real company is told apart
-    from a one-posting slug collision of the same name. ``?limit=`` defaults to 8, at most 20.
-    A suggestion is only a candidate: nothing here resolves a typed name to a company.
+    from a one-posting slug collision of the same name, its Board keys, and how it matched the
+    typed name (``match``, ADR-0253). ``?limit=`` defaults to 8, at most 20. A suggestion is
+    only a candidate: nothing here resolves a typed name to a company.
     """
     if not _HISTORY.companies:
         return jsonify(error="no company directory on this deployment yet"), 503
@@ -1395,6 +1428,39 @@ def suggest_companies():
             {"companies": _HISTORY.suggest_companies(request.args.get("q", ""), limit)}
         )
     )
+
+
+# The most Board keys one /companies/lookup names: an agent reads at most ten companies at once.
+_MAX_LOOKUP_BOARDS = 10
+
+
+@app.route("/companies/lookup")
+def lookup_companies():
+    """The directory company holding each ``?board=`` (repeatable, at most ten), for an agent
+    holding a Board key, such as the ``ats:slug`` prefix of a result id (ADR-0253).
+
+    Any Board of a company names it, case-blind, as ``/trends`` accepts any Board of a pick.
+    Each company comes once, in the order first named, shaped as a ``/companies/suggest`` item
+    without ``match``. A key no directory company holds is a 400 naming it; no directory on this
+    deployment yet is a 503.
+    """
+    if not _HISTORY.companies:
+        return jsonify(error="no company directory on this deployment yet"), 503
+    boards = [b.strip() for b in request.args.getlist("board") if b.strip()]
+    if not boards or len(boards) > _MAX_LOOKUP_BOARDS:
+        return jsonify(
+            error="invalid lookup",
+            detail=f"name 1 to {_MAX_LOOKUP_BOARDS} Board keys with board=; "
+            f"got {len(boards)}",
+        ), 400
+    keys = [_HISTORY.company_of(board) for board in boards]
+    unknown = [board for board, key in zip(boards, keys) if key is None]
+    if unknown:
+        return jsonify(
+            error="unknown company",
+            detail=f"no directory company holds {', '.join(unknown)}",
+        ), 400
+    return jsonify(companies=_HISTORY.describe_companies(list(dict.fromkeys(keys))))
 
 
 @app.route("/auth/google", methods=["POST"])

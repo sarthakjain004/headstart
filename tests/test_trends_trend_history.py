@@ -348,7 +348,7 @@ def test_retired_families_keep_their_labels(tmp_path):
         ),
         encoding="utf-8",
     )
-    labels = trend_history._family_labels(path)
+    labels = trend_history.family_labels(path)
     assert labels == {
         "frontend-web": "Frontend & Web",
         "web-development": "Web & .NET Development",

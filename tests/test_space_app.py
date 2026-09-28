@@ -441,7 +441,13 @@ _AGENT_BEARER = {"Authorization": "Bearer agent-token"}
 _ALERTS_BEARER = {"Authorization": "Bearer service-token"}
 # The read routes that answer without an Account: the whole of what AGENT_TOKEN opens, and
 # those of them ALERTS_TOKEN does not.
-_AGENT_ONLY_PATHS = ("/facets", "/trends", "/hot", "/companies/suggest")
+_AGENT_ONLY_PATHS = (
+    "/facets",
+    "/trends",
+    "/hot",
+    "/companies/suggest",
+    "/companies/lookup",
+)
 _AGENT_PATHS = ("/search", *_AGENT_ONLY_PATHS)
 
 
@@ -536,7 +542,7 @@ def test_an_agent_token_equal_to_the_alerts_token_admits_nothing_extra(
 
 # ---- the app's own mark on every reply (ADR-0253) ----
 
-_OWN_REPLY = "app; agent-api=0"
+_OWN_REPLY = "app; agent-api=1"
 
 
 def test_a_routes_own_answer_is_marked(agent_app):
@@ -2535,6 +2541,78 @@ def test_no_directory_answers_503(trends_app, monkeypatch):
     client = trends_app.app.test_client()
     assert client.get("/companies/suggest?q=a").status_code == 503
     assert client.get("/trends?company=workday:hpe/a").status_code == 503
+    assert client.get("/companies/lookup?board=workday:hpe/a").status_code == 503
+
+
+# ---- what an agent reads about a company (ADR-0253) ----
+
+
+def test_a_suggestion_says_how_it_matched_and_carries_its_boards(company_trends):
+    (citi,) = company_trends.get("/companies/suggest?q=citi").get_json()["companies"]
+    assert (citi["key"], citi["match"], citi["board_keys"]) == (
+        "workday:citi/2",
+        "exact",
+        ["workday:citi/2"],
+    )
+    (hpe,) = company_trends.get("/companies/suggest?q=hp").get_json()["companies"]
+    assert (hpe["key"], hpe["match"], hpe["board_keys"]) == (
+        "workday:hpe/a",
+        "prefix",
+        ["workday:hpe/a", "workday:hpe/b"],
+    )
+
+
+def test_lookup_finds_a_company_by_any_of_its_boards_case_blind(company_trends):
+    d = company_trends.get("/companies/lookup?board=WORKDAY:HPE/B").get_json()
+    (hpe,) = d["companies"]
+    assert hpe["key"] == "workday:hpe/a"
+    assert hpe["board_keys"] == ["workday:hpe/a", "workday:hpe/b"]
+    # The same shape as a suggestion, less how a typed name matched it.
+    (suggested,) = company_trends.get("/companies/suggest?q=hpe").get_json()[
+        "companies"
+    ]
+    assert hpe == {k: v for k, v in suggested.items() if k != "match"}
+
+
+def test_lookup_answers_each_company_once_in_the_order_first_named(company_trends):
+    d = company_trends.get(
+        "/companies/lookup?board=workday:hpe/b&board=eightfold:citi.eightfold.ai"
+        "&board=workday:hpe/a"
+    ).get_json()
+    assert [c["key"] for c in d["companies"]] == [
+        "workday:hpe/a",
+        "eightfold:citi.eightfold.ai",
+    ]
+
+
+def test_lookup_refuses_a_board_no_directory_company_holds(company_trends):
+    r = company_trends.get(
+        "/companies/lookup?board=workday:hpe/a&board=greenhouse:nobody"
+    )
+    assert r.status_code == 400
+    assert r.get_json() == {
+        "error": "unknown company",
+        "detail": "no directory company holds greenhouse:nobody",
+    }
+
+
+def test_lookup_takes_one_to_ten_boards(company_trends):
+    eleven = "&".join(f"board=workday:hpe/{i}" for i in range(11))
+    for query in (eleven, "", "board=%20"):
+        r = company_trends.get(f"/companies/lookup?{query}")
+        assert r.status_code == 400, query
+        assert r.get_json()["error"] == "invalid lookup"
+    ten = "&".join(["board=workday:hpe/a"] * 10)
+    assert company_trends.get(f"/companies/lookup?{ten}").status_code == 200
+
+
+def test_facets_carry_the_newest_trends_tick(company_trends, trends_app, app):
+    assert (
+        company_trends.get("/facets").get_json()["newest_tick"]
+        == (trends_app._HISTORY.ticks[-1])
+    )
+    # No Trends history on this deployment: said as null, never a guess.
+    assert app.app.test_client().get("/facets").get_json()["newest_tick"] is None
 
 
 def test_trends_rejects_unknown_coverage(trends_app):
@@ -3260,6 +3338,54 @@ def test_search_narrows_to_the_boards_a_trend_hands_over(app):
     assert client.get("/facets?" + many).status_code == 400
 
 
+# ---- strict=1 through the real app (ADR-0253) ----
+
+
+def test_a_strict_caller_error_is_a_400_naming_the_value_on_both_routes(app):
+    client = app.app.test_client()
+    refused = {
+        "error": "invalid filter",
+        "detail": "ats 'workdya' is not in this index; it serves: greenhouse, lever",
+    }
+    for route in ("/search", "/facets"):
+        r = client.get(f"{route}?ats=workdya&strict=1")
+        assert (r.status_code, r.get_json()) == (400, refused), route
+        # Without strict a stale value still never errors: it is dropped, as before.
+        assert client.get(f"{route}?ats=workdya").status_code == 200, route
+
+
+def test_a_strict_scope_this_deployment_lacks_is_a_503_saying_so(app):
+    # The fixture's table has no salary columns, so a salary filter would go dark.
+    client = app.app.test_client()
+    for route in ("/search", "/facets"):
+        r = client.get(f"{route}?has_salary=true&strict=1")
+        assert r.status_code == 503, route
+        assert r.get_json() == {
+            "error": "a salary filter needs the served table's min_salary_annual "
+            "column, which it does not have yet"
+        }
+        assert client.get(f"{route}?has_salary=true").status_code == 200, route
+
+
+def test_a_strict_category_hand_off_is_checked_against_the_configured_families(
+    app, monkeypatch
+):
+    """The checkout has no config/ beside app.py, so the families are pinned here."""
+    monkeypatch.setattr(app, "_KNOWN_FAMILIES", frozenset({"ai-ml", "security"}))
+    monkeypatch.setattr(app, "_FAMILY_IDS", {"ai-ml": ["b:x:1"]})
+    client = app.app.test_client()
+    unknown = client.get("/search?board=b:x&family=nonsense&strict=1")
+    assert unknown.status_code == 400
+    assert "'nonsense'" in unknown.get_json()["detail"]
+    assert "ai-ml, security" in unknown.get_json()["detail"]
+    # Configured, and no Job assigned to it yet: an empty answer, not a refusal.
+    assert client.get("/search?board=b:x&family=security&strict=1").status_code == 200
+    monkeypatch.setattr(app, "_FAMILY_IDS", None)
+    unloaded = client.get("/facets?board=b:x&family=ai-ml&strict=1")
+    assert unloaded.status_code == 503
+    assert "role assignments" in unloaded.get_json()["error"]
+
+
 def test_a_found_boards_backlog_waits_out_the_new_window(
     company_trends, trends_app, monkeypatch, tmp_path
 ):
@@ -3515,7 +3641,7 @@ def test_a_v3_family_before_its_data_is_all_its_predecessors(
     ]
     history = _trend_history(tmp_path, ledger=rows)
     history._family_successor = trend_history.family_successors(_REPO_FAMILIES)
-    history._family_labels = trend_history._family_labels(_REPO_FAMILIES)
+    history._family_labels = trend_history.family_labels(_REPO_FAMILIES)
     monkeypatch.setattr(trends_app, "_HISTORY", history)
     client = trends_app.app.test_client()
     d = client.get("/trends?family=ai-ml-data-science").get_json()
@@ -3547,6 +3673,31 @@ def test_hot_is_ranked_at_boot_from_the_history_the_trends_tab_reads(
     assert trends_app.app.test_client().get("/hot").get_json() == ranked
 
 
+def test_boot_derives_its_company_boards_and_hot_through_the_one_function(
+    monkeypatch, tmp_path
+):
+    """What boot builds from the history is exactly `_derive_from_history`'s answer, so a test
+    that installs a history after import rebuilds the same globals by calling it."""
+    (tmp_path / "history").mkdir()
+    (tmp_path / "state").mkdir()
+    history = _trend_history(
+        tmp_path / "history",
+        ledger=_COMPANY_LEDGER,
+        deltas=_COMPANY_DELTAS,
+        companies=_COMPANY_DIRECTORY,
+    )
+    # `_STATE` is the hardcoded /app/state, so boot is handed the fixture history directly.
+    monkeypatch.setattr(trend_history.TrendHistory, "load", lambda *a, **k: history)
+    with _space_app(
+        tmp_path / "state", env={"SECRET_KEY": "", "GOOGLE_CLIENT_ID": ""}
+    ) as module:
+        assert module._HISTORY is history
+        company_boards, hot = module._derive_from_history(history)
+        assert (module._COMPANY_BOARDS, module._HOT) == (company_boards, hot)
+        assert company_boards["workday:hpe/b"] == ("workday:hpe/a", "workday:hpe/b")
+        assert hot["window"]["to"] == history.ticks[-1]
+
+
 def test_a_hot_ranking_that_fails_darkens_hot_only(trends_app, monkeypatch, tmp_path):
     history = _company_history(trends_app, monkeypatch, tmp_path)
 
@@ -3567,7 +3718,7 @@ def test_every_category_hands_search_the_jobs_its_trend_counts(
     from headstart.serving import job_search
 
     successors = trend_history.family_successors(_REPO_FAMILIES)
-    labels = trend_history._family_labels(_REPO_FAMILIES)
+    labels = trend_history.family_labels(_REPO_FAMILIES)
     # The data mid-transition: every retired name still assigned, and a few new ones too; then
     # a scope holding only some of a family's predecessors (Data Science, not AI / ML).
     everything = [

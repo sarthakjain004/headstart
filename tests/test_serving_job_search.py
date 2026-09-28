@@ -20,7 +20,10 @@ from headstart.serving.job_search import (
     RESULT_COLUMNS,
     SORT_COLUMNS,
     JobSearch,
+    ScopeUnavailable,
+    refusal,
     request_account_clause,
+    scoped_jobs_clause,
 )
 
 # ---- JobSearch: through its interface, with fakes ----
@@ -1234,3 +1237,199 @@ def test_a_missing_role_assignment_snapshot_is_named_at_boot(caplog, tmp_path) -
     with caplog.at_level(logging.WARNING, logger="headstart.serving.job_search"):
         assert load_family_ids(missing) is None
     assert str(missing) in caplog.records[0].getMessage()
+
+
+# ---- strict=1: refuse what would otherwise be dropped, re-scoped or widened (ADR-0253) ----
+
+
+def _strict_searcher(currencies=("INR",)):
+    """A searcher whose table serves one ATS (darwinbox) and only the given currencies."""
+    searcher, table = _searcher()
+    searcher.capabilities = replace(searcher.capabilities, currencies=list(currencies))
+    return searcher, table
+
+
+@pytest.mark.parametrize(
+    ("args", "named"),
+    [
+        ({"ats": "workdya"}, ["'workdya'", "darwinbox"]),
+        ({"etype": "gig"}, ["'gig'", "full-time, part-time, contract, internship"]),
+        ({"india": "atlantis"}, ["'atlantis'", "india, delhi ncr", "bengaluru"]),
+        ({"kw": "go", "kw_in": "body"}, ["'body'", "title, description, both"]),
+        ({"kw_in": "body"}, ["'body'"]),  # refused with or without a keyword to scope
+        ({"sort": "newest"}, ["'newest'", "posted, seen, salary"]),
+        ({"salary_min": "5", "salary_currency": "XYZ"}, ["'XYZ'", "it serves: INR"]),
+        # no currency asked: the bracket is priced in USD, which this table does not serve
+        ({"salary_max": "5"}, ["priced in USD", "it serves: INR"]),
+    ],
+)
+def test_strict_refuses_a_value_outside_its_whitelist_naming_both(args, named):
+    searcher, _ = _strict_searcher()
+    for ask in (searcher.run, searcher.facets):
+        with pytest.raises(ValueError) as refused:
+            ask({**args, "strict": "1"})
+        body, status = refusal(refused.value)
+        assert status == 400 and body["error"] == "invalid filter"
+        assert all(part in body["detail"] for part in named), body["detail"]
+    searcher.run(args)  # without strict: dropped or re-scoped, as before, never refused
+
+
+def test_strict_refuses_a_salary_sort_in_a_currency_the_table_does_not_serve():
+    searcher, _ = _strict_searcher()
+    for args, named in (
+        ({"sort": "salary", "salary_currency": "XYZ"}, "'XYZ'"),
+        ({"sort": "salary"}, "a salary sort with no salary_currency is priced in USD"),
+    ):
+        with pytest.raises(ValueError) as refused:
+            searcher.run({**args, "strict": "1"})
+        body, status = refusal(refused.value)
+        assert status == 400 and named in body["detail"], body["detail"]
+        searcher.run(args)  # without strict: USD, else the raw order, as before
+    searcher.run({"sort": "salary", "salary_currency": "INR", "strict": "1"})
+
+
+def test_strict_accepts_what_the_table_serves():
+    searcher, table = _strict_searcher(currencies=("INR", "USD"))
+    searcher.run(
+        {
+            "ats": "darwinbox",
+            "etype": "full-time",
+            "india": "bengaluru",
+            "kw": "go",
+            "kw_in": "title",
+            "salary_min": "5",
+            "sort": "posted",
+            "strict": "1",
+        }
+    )
+    assert "darwinbox" in table.last_where
+
+
+@pytest.mark.parametrize(
+    ("args", "column"),
+    [
+        ({"kw": "go", "kw_in": "description"}, "description"),
+        (
+            {"kw": "go", "kw_in": "both"},
+            "description",
+        ),  # would narrow to the title alone
+        ({"has_salary": "true"}, "min_salary_annual"),
+        ({"salary_min": "5", "salary_currency": "USD"}, "min_salary_annual"),
+        ({"seen_within": "24"}, "first_seen"),
+        ({"first_seen_after": "2026-09-01T00:00:00"}, "first_seen"),
+        ({"seen_after": "2026-09-01"}, "first_seen"),
+        ({"seen_before": "2026-09-01"}, "first_seen"),
+        ({"sort": "seen"}, "first_seen"),
+        ({"sort": "salary"}, "min_salary_annual"),
+    ],
+)
+def test_strict_refuses_a_filter_or_sort_on_a_column_the_table_lacks(args, column):
+    table = _Table([dict(_ROW)])
+    table.schema = types.SimpleNamespace(names=["ats", "title"])
+    searcher = JobSearch(_Model(), table)
+    asks = [searcher.run] if "sort" in args else [searcher.run, searcher.facets]
+    for ask in asks:
+        with pytest.raises(ScopeUnavailable) as refused:
+            ask({**args, "strict": "1"})
+        body, status = refusal(refused.value)
+        assert status == 503 and body == {"error": str(refused.value)}
+        assert f"{column} column" in body["error"]
+    searcher.run(args)  # without strict: dark, as before
+
+
+_WATCHED = {"watch:llm-genai": [r"\bLLM\b"]}
+_CONFIGURED = {"ai-ml", "security"}
+
+
+def _hand_off(pairs, family_ids, watch=_WATCHED, strict=True):
+    from werkzeug.datastructures import MultiDict
+
+    return scoped_jobs_clause(
+        MultiDict([*pairs, *([("strict", "1")] if strict else [])]),
+        family_ids,
+        watch,
+        known_families=_CONFIGURED,
+    )
+
+
+@pytest.mark.parametrize(
+    ("pairs", "family_ids", "watch", "status", "named"),
+    [
+        ([("family", "ai-ml")], {"ai-ml": []}, _WATCHED, 400, "family= needs board="),
+        ([("role", "llm-genai")], None, _WATCHED, 400, "role= needs board="),
+        (
+            [("board", "b:x"), ("family", "ai-ml"), ("role", "llm-genai")],
+            {"ai-ml": []},
+            _WATCHED,
+            400,
+            "send one of them",
+        ),
+        ([("board", "b:x"), ("role", "nope")], None, _WATCHED, 400, "'nope'"),
+        (
+            [("board", "b:x"), ("family", "nonsense")],
+            {"ai-ml": []},
+            _WATCHED,
+            400,
+            "'nonsense'",
+        ),
+        (
+            [("board", "b:x"), ("family", "ai-ml")],
+            None,
+            _WATCHED,
+            503,
+            "role assignments",
+        ),
+        ([("board", "b:x"), ("role", "llm-genai")], None, {}, 503, "role watchlist"),
+    ],
+)
+def test_strict_refuses_a_hand_off_it_would_ignore_or_widen(
+    pairs, family_ids, watch, status, named
+):
+    with pytest.raises((ValueError, ScopeUnavailable)) as refused:
+        _hand_off(pairs, family_ids, watch)
+    body, answered = refusal(refused.value)
+    assert answered == status
+    assert named in (body.get("detail") or body["error"])
+    # Without strict the same hand-off is served as it always was, never refused.
+    _hand_off(pairs, family_ids, watch, strict=False)
+
+
+def test_strict_reads_no_family_taxonomy_as_the_deployments_state_not_the_callers():
+    """A missing config/role_families.json leaves nothing configured: every family would read
+    as a typo, so it is the 503 of a deployment that cannot check one."""
+    from werkzeug.datastructures import MultiDict
+
+    args = MultiDict([("board", "b:x"), ("family", "ai-ml"), ("strict", "1")])
+    with pytest.raises(ScopeUnavailable, match="family taxonomy"):
+        scoped_jobs_clause(args, {"ai-ml": []}, _WATCHED, known_families=())
+
+
+def test_strict_names_the_accepted_roles_and_families():
+    for pairs, accepted in (
+        ([("board", "b:x"), ("role", "nope")], "watched roles: llm-genai"),
+        ([("board", "b:x"), ("family", "nonsense")], "configured: ai-ml, security"),
+    ):
+        with pytest.raises(ValueError, match=accepted):
+            _hand_off(pairs, {"ai-ml": []})
+
+
+def test_strict_serves_a_configured_family_with_no_jobs_assigned_as_zero_rows():
+    """The classifier's warm-up: a family the taxonomy names but no Job carries yet is an
+    empty answer, not an error, so strict only refuses a name nothing configures."""
+    ids = {"ai-ml": ["b:x:1"]}
+    assert _hand_off([("board", "b:x"), ("family", "security")], ids) == "id IN ('')"
+    assert _hand_off([("board", "b:x"), ("family", "ai-ml")], ids) == "id IN ('b:x:1')"
+    assert _hand_off([("board", "b:x"), ("role", "llm-genai")], None) == (
+        r"regexp_like(title, '(?i)(?:\bLLM\b)')"
+    )
+
+
+def test_a_refusal_is_a_400_with_detail_or_a_503():
+    assert refusal(ValueError("ats 'x' is not in this index")) == (
+        {"error": "invalid filter", "detail": "ats 'x' is not in this index"},
+        400,
+    )
+    assert refusal(ScopeUnavailable("no role assignments")) == (
+        {"error": "no role assignments"},
+        503,
+    )

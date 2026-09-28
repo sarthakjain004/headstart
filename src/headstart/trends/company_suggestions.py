@@ -80,6 +80,22 @@ class Candidate:
     openings: int
 
 
+#: What each :func:`tier` is called, best first, as a suggestion says how it matched (ADR-0253).
+MATCH_KINDS = ("exact", "prefix", "words", "typo", "joined")
+#: A suggestion ranked by :data:`QUERY_ALIASES`, not by the words typed.
+ALIAS_MATCH = "alias"
+
+
+@dataclass(frozen=True)
+class Suggestion:
+    """One company offered for a typed name, and how it matched: one of :data:`MATCH_KINDS`,
+    or :data:`ALIAS_MATCH`. The match is what lets a caller accept a name only when it names
+    the company exactly, without re-deriving the ranking that found it."""
+
+    candidate: Candidate
+    match: str
+
+
 def tier(query: list[str], words: tuple[str, ...]) -> int | None:
     """How well ``query`` matches a company's words, best first: 0 exact, 1 name prefix,
     2 every query word starts a name word, 3 the same allowing one typo per long word, 4 a
@@ -172,8 +188,9 @@ QUERY_ALIASES: dict[str, str] = {
 }
 
 
-def suggest(query: str, candidates: list[Candidate], limit: int) -> list[Candidate]:
-    """The best ``limit`` companies for ``query``: by tier, then most openings, then name.
+def suggest(query: str, candidates: list[Candidate], limit: int) -> list[Suggestion]:
+    """The best ``limit`` companies for ``query``: by tier, then most openings, then name, each
+    with how it matched.
 
     A test tenant is never offered (see :func:`_is_test_tenant`). One suggestion per name: of
     the entries whose names normalize alike, only the one with the
@@ -188,17 +205,26 @@ def suggest(query: str, candidates: list[Candidate], limit: int) -> list[Candida
     ranked = []
     for candidate in candidates:
         rank = tier(typed, candidate.words)
+        match = MATCH_KINDS[rank] if rank is not None else None
         if also is not None:
             # An alias names one company, so only its exact name counts, ranked with the typed
             # name's prefix tier: "aws" means Amazon. A prefix hit made "facebook" offer every
             # name starting "meta" (Metabase, Metaview). A two-word alias may still match as a
             # prefix, since "tata consultancy" is how "Tata Consultancy Services" begins.
             aliased = tier(also, candidate.words)
-            if aliased == 0 or (aliased == 1 and len(also) > 1):
-                rank = 1 if rank is None else min(rank, 1)
+            if (aliased == 0 or (aliased == 1 and len(also) > 1)) and (
+                rank is None or rank > 1
+            ):
+                rank, match = 1, ALIAS_MATCH
         if rank is not None and not _is_test_tenant(candidate):
             ranked.append(
-                (rank, -candidate.openings, candidate.name, candidate.key, candidate)
+                (
+                    rank,
+                    -candidate.openings,
+                    candidate.name,
+                    candidate.key,
+                    Suggestion(candidate, match),
+                )
             )
     ranked.sort(key=lambda item: item[:4])
     # Equal words match at an equal tier, so the first of each name is its largest. Exactly
@@ -207,8 +233,8 @@ def suggest(query: str, candidates: list[Candidate], limit: int) -> list[Candida
     # Blackstone Technology Group), to catch one mirror (Micron).
     seen: set[tuple[str, ...]] = set()
     kept = []
-    for *_, candidate in ranked:
-        if candidate.words not in seen:
-            seen.add(candidate.words)
-            kept.append(candidate)
+    for *_, suggestion in ranked:
+        if suggestion.candidate.words not in seen:
+            seen.add(suggestion.candidate.words)
+            kept.append(suggestion)
     return kept[:limit]

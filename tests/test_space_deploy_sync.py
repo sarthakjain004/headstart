@@ -31,6 +31,8 @@ What this file checks changed to match:
    `has_min_salary` drift this PR fixed (the "Highest salary" sort option silently missing
    from local dev only) and a second one found alongside it in `cfg`
    (`keyword_scopes`/`keyword_default_scope`, which `app.js` reads off `window.CFG`).
+4. Both answer a refused `/search` or `/facets` through `job_search.refusal` (ADR-0253), the
+   one place that decides what `strict=1`'s 400 and 503 say.
 
 Stdlib-only and file-based, so it runs in CI's quality job with no Docker and no YAML
 dependency.
@@ -162,3 +164,31 @@ def test_app_and_serve_pass_the_same_base_html_context():
         f"client-side) to base.html. Only in app.py's cfg: {sorted(app_cfg - serve_cfg)}; "
         f"only in serve.py's cfg: {sorted(serve_cfg - app_cfg)}"
     )
+
+
+def _route_calls(path: Path, route: str) -> set[str]:
+    """The names every function handling ``route`` in ``path`` calls, attribute calls included."""
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    for node in ast.walk(tree):
+        if isinstance(node, ast.FunctionDef) and any(
+            isinstance(d, ast.Call)
+            and d.args
+            and isinstance(d.args[0], ast.Constant)
+            and d.args[0].value == route
+            for d in node.decorator_list
+        ):
+            return {
+                call.func.attr if isinstance(call.func, ast.Attribute) else call.func.id
+                for call in ast.walk(node)
+                if isinstance(call, ast.Call)
+                and isinstance(call.func, (ast.Attribute, ast.Name))
+            }
+    raise AssertionError(f"no {route} route in {path.name}")
+
+
+def test_app_and_serve_answer_a_refused_search_through_the_one_refusal():
+    """ADR-0253: `strict=1`'s 400 and 503 are built by `job_search.refusal`, so neither app
+    carries its own copy of what a refused /search or /facets answers (ADR-0194)."""
+    for path in (APP, SERVE):
+        for route in ("/search", "/facets"):
+            assert "refusal" in _route_calls(path, route), f"{path.name} {route}"
