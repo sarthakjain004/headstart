@@ -7,18 +7,17 @@ on:
     branches: [main]
     # ADR-0156: the Space installs the whole src/headstart package (below), so this list is
     # the tree that ships, not a curated subset of it — a change anywhere under src/headstart/
-    # or config/ can change what the Space serves. The three MCP packages are the exception
-    # (ADR-0253): they run on an agent's machine and the Space never imports them, so a change
-    # to one would restart the Space for nothing. They are left out of the trigger only; the
-    # copy below still ships them with the next real deploy. Negations, not `paths-ignore`
-    # (the two cannot both be set for one event), and each must follow the positive patterns.
+    # or config/ can change what the Space serves. The Résumé MCP package is the exception
+    # (ADR-0253): it runs on an agent's machine and the Space never imports it, so a change to
+    # it would restart the Space for nothing. It is left out of the trigger only; the copy below
+    # still ships it with the next real deploy. `space_mcp` and `mcp_protocol` trigger a deploy,
+    # since the Space serves them at /mcp (ADR-0266). A negation, not `paths-ignore` (the two
+    # cannot both be set for one event), and it must follow the positive patterns.
     paths:
       - "deploy/hf-space/**"
       - "src/headstart/**"
       - "config/**"
-      - "!src/headstart/space_mcp/**"
       - "!src/headstart/resume_mcp/**"
-      - "!src/headstart/mcp_protocol/**"
   workflow_dispatch: {}
 
 permissions:

@@ -57,8 +57,9 @@ the link's token. Hugging Face, which hosts the site, keeps these logs.
 
 **Request counts.** So that no one caller can overload the site, it counts how often each network
 address asks for search results, trends or company data without being signed in, and refuses an
-address past 60 requests a minute. It holds the address in memory for at most a minute after that
-address's last counted request, and never writes it down or logs it.
+address past 60 requests a minute. Its MCP endpoint, `/mcp`, is counted the same way, at 30
+requests a minute. It holds the address in memory for at most a minute after that address's last
+counted request, and never writes it down or logs it.
 
 ## What HeadStart doesn't do
 

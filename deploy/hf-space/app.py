@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import gzip
 import hmac
+import ipaddress
 import json
 import os
 import threading
@@ -60,12 +61,15 @@ from headstart.alerts.store import (
     is_resume_id,
     subscription_id,
 )
+from headstart.mcp_protocol import streamable_http
 from headstart.search_filters import fx, india_gazetteer
 from headstart.search_filters.compiler import (
     KEYWORD_DEFAULT_SCOPE,
     keyword_scope_options,
 )
 from headstart.serving import facets, job_search, profile_extract, rate_limit
+from headstart.space_mcp import server as space_mcp_server
+from headstart.space_mcp import space_client
 from headstart.trends import hot_ranking, line_reading, trend_history
 
 DATASET = os.environ.get("HF_DATASET", "imPoseidon/headstart-index")
@@ -365,6 +369,7 @@ _PUBLIC_PATHS = {
     "/unsubscribe",
     "/privacy",
     "/static/logo_mark.svg",
+    "/mcp",  # HeadStart's MCP server, POST only, over the read routes (ADR-0266)
     *_READ_ROUTES,
 }
 
@@ -461,7 +466,10 @@ def _client_address() -> str:
 
 
 def _request_limit() -> tuple[rate_limit.RateLimit, int] | None:
-    """The limit this request counts against, and its size; None when it counts against none."""
+    """The limit this request counts against, and its size; None when it counts against none.
+    `/mcp` is a POST that writes nothing, and is limited by its own route (ADR-0266)."""
+    if request.path == "/mcp":
+        return None
     if request.method in ("POST", "PUT", "DELETE") or request.path == "/unsubscribe":
         return _WRITE_LIMIT, _WRITE_LIMIT_REQUESTS
     if request.path == "/saved":
@@ -475,9 +483,10 @@ def _request_limit() -> tuple[rate_limit.RateLimit, int] | None:
 def _limit_each_caller():
     """A 429 with `Retry-After` for a caller past its limit. A caller is its Account when it has
     a session (#592: sign-up is open, so an address alone would let one client multiply itself
-    by signing in), else its address; the two are counted apart."""
+    by signing in), else its address; the two are counted apart. A read the app's own `/mcp`
+    tools make in process is not counted again: `/mcp` is limited itself (ADR-0266)."""
     found = _request_limit()
-    if found is None:
+    if found is None or request.environ.get(space_client.IN_PROCESS_READ):
         return None
     limit, requests = found
     if _AUTH_ON and session.get("email"):
@@ -1546,6 +1555,95 @@ def lookup_companies():
             detail=f"no directory company holds {', '.join(unknown)}",
         ), 400
     return jsonify(companies=_HISTORY.describe_companies(list(dict.fromkeys(keys))))
+
+
+# HeadStart's MCP server, hosted (ADR-0266): the tools of `headstart.space_mcp` over Streamable
+# HTTP, each reading the routes above in process, with no cookie. Anyone may add it to Claude by
+# URL. The Origins it answers: none (a server-side client such as claude.ai's connector or Claude
+# Code), Claude's two web origins, and this Space's own; any other is a page on another site,
+# refused with a 403, because HF's edge reflects every Origin in its CORS preflight.
+_MCP_SERVER = space_mcp_server.build_server(env={}, fetch=space_client.wsgi_fetch(app))
+_MCP_ORIGINS = frozenset(
+    {"https://claude.ai", "https://claude.com", space_client.SPACE_URL}
+)
+
+# How often one caller may ask `/mcp` (ADR-0266): 30 requests in any 60 s from one address,
+# counted as ADR-0262 counts the read routes. A tool call reads two to five routes in process,
+# none of them counted again, so 30 is already more reading than the 60 route requests one
+# address may make directly, and a person's chat makes a few calls a minute. Every claude.ai
+# user arrives from Anthropic's one published range, so that range shares 300 as one caller.
+_MCP_LIMIT_REQUESTS = 30
+_MCP_LIMIT = rate_limit.RateLimit(_MCP_LIMIT_REQUESTS, _LIMIT_WINDOW_S)
+_ANTHROPIC_NETWORK = ipaddress.ip_network("160.79.104.0/21")
+_ANTHROPIC_LIMIT_REQUESTS = 300
+_ANTHROPIC_LIMIT = rate_limit.RateLimit(_ANTHROPIC_LIMIT_REQUESTS, _LIMIT_WINDOW_S)
+
+# At most 4 `/mcp` requests at once across every caller, on the Space's 2 vCPU: each fans out to
+# two to four reads on threads, so 4 costs about what four people searching in the page at once
+# do. One more waits up to 10 s for a place, then is told to retry.
+_MCP_AT_ONCE = 4
+_MCP_PLACES = threading.BoundedSemaphore(_MCP_AT_ONCE)
+_MCP_PLACE_WAIT_S = 10
+
+# Each distinct Origin `/mcp` has received this boot, logged once, so the first real connection
+# shows what Anthropic's clients send. Bounded, since the header is the caller's to write.
+_MCP_ORIGINS_SEEN: set[str] = set()
+_MCP_ORIGINS_LOGGED = 50
+
+
+def _from_anthropic(address: str) -> bool:
+    try:
+        return ipaddress.ip_address(address) in _ANTHROPIC_NETWORK
+    except ValueError:
+        return False
+
+
+def _note_mcp_origin(origin: str | None, address: str) -> None:
+    key = "(none)" if origin is None else origin
+    if key in _MCP_ORIGINS_SEEN or len(_MCP_ORIGINS_SEEN) >= _MCP_ORIGINS_LOGGED:
+        return
+    _MCP_ORIGINS_SEEN.add(key)
+    allowed = origin is None or origin in _MCP_ORIGINS
+    print(
+        f"[mcp] first request with Origin {key!r}: "
+        f"{'allowed' if allowed else 'refused'}, "
+        f"from Anthropic's range: {_from_anthropic(address)}",
+        flush=True,
+    )
+
+
+def _mcp_refusal(status: int, detail: str, wait_s: int):
+    error = "too many requests" if status == 429 else "busy"
+    return jsonify(error=error, detail=detail), status, {"Retry-After": str(wait_s)}
+
+
+@app.route("/mcp", methods=["POST"])
+def mcp():
+    """One MCP message over Streamable HTTP, answered by `streamable_http.answer` (ADR-0266)."""
+    address = _client_address()
+    _note_mcp_origin(request.headers.get("Origin"), address)
+    if _from_anthropic(address):
+        wait_s = _ANTHROPIC_LIMIT.admit("anthropic")
+        limit = f"{_ANTHROPIC_LIMIT_REQUESTS} requests in {_LIMIT_WINDOW_S} s from Anthropic"
+    else:
+        wait_s = _MCP_LIMIT.admit(address)
+        limit = (
+            f"{_MCP_LIMIT_REQUESTS} requests in {_LIMIT_WINDOW_S} s from one address"
+        )
+    if wait_s:
+        return _mcp_refusal(429, f"at most {limit}; retry in {wait_s} s", wait_s)
+    if not _MCP_PLACES.acquire(timeout=_MCP_PLACE_WAIT_S):
+        return _mcp_refusal(503, "HeadStart is busy; retry shortly", _MCP_PLACE_WAIT_S)
+    try:
+        status, headers, body = streamable_http.answer(
+            request.headers,
+            request.stream.read(streamable_http.MAX_BODY_BYTES + 1),
+            _MCP_SERVER,
+            _MCP_ORIGINS,
+        )
+    finally:
+        _MCP_PLACES.release()
+    return Response(body, status, headers)
 
 
 @app.route("/auth/google", methods=["POST"])

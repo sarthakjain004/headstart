@@ -463,11 +463,13 @@ Note the raw corpus files under `data/jobs/` carry a few fields the served table
   `identity` (Google token verification), `transports`, `mail` and `telegram` (senders), `bot`
   (Telegram enrolment), `telegram_bot_api` (the polling client the bot uses), `digest`,
   `shortlist`, `space_query`, `run`.
-- `src/headstart/mcp_protocol/` — the JSON-RPC loop over stdio every HeadStart MCP server speaks
-  (`stdio.py`; ADR-0137's amendment of 2026-09-28) and `tool_arguments.py`, which checks a call's
-  arguments against the tool's schema.
+- `src/headstart/mcp_protocol/` — how every HeadStart MCP server speaks the protocol:
+  `messages.py` answers one JSON-RPC message in either protocol era, `stdio.py` (ADR-0137's
+  amendment of 2026-09-28) and `streamable_http.py` (the Space's `/mcp`, ADR-0266) are the two
+  transports, and `tool_arguments.py` checks a call's arguments against the tool's schema.
 - `src/headstart/space_mcp/` — the Space MCP server (ADR-0253): `search_jobs`, `read_trends` and
-  `hiring_now` for an agent, answered from the deployed Space's read routes. One module per tool in
+  `hiring_now` for an agent, answered from the deployed Space's read routes, over stdio or hosted
+  by the Space itself at `/mcp` (ADR-0266). One module per tool in
   `tools/`, registered in `tools.REGISTRY`. How to install it and add a tool:
   `docs/agents/space-mcp-server.md`.
 - `src/headstart/ingest/` — **the back-to-back pipeline run**, one module per stage step, invoked

@@ -1,7 +1,9 @@
 # ADR-0253: An agent reads the Space's read routes through a read-scoped token
 
 **Status:** accepted; its credential, `AGENT_TOKEN`, is superseded by
-[ADR-0258](0258-the-spaces-read-routes-answer-anyone.md) (the read routes answer anyone) ·
+[ADR-0258](0258-the-spaces-read-routes-answer-anyone.md) (the read routes answer anyone); its
+rejection of a Space route (C) and the trigger negations for `space_mcp` and `mcp_protocol` are
+superseded by [ADR-0266](0266-the-space-hosts-the-mcp-server-at-a-url-anyone-can-add.md) ·
 **Date:** 2026-09-28 · **Amends:**
 [ADR-0042](0042-signed-in-ui-saved-sets.md) (its 2026-08-13 amendment: the wall admits a second
 machine, on the read routes), [ADR-0156](0156-the-space-installs-headstart-as-a-real-package.md)

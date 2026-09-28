@@ -3,21 +3,22 @@
 `tests/test_space_app.py` loads the real `deploy/hf-space/app.py` with only its heavy dependencies
 stubbed. Its fixtures and history writers are imported here, not copied or moved, so the app this
 server is tested against is the one the Space's own tests load, and a 3,500-line file other work
-edits stays where it is. Each tool runs through a :class:`SpaceClient` whose `Fetch` is Flask's
-test client — the port's second adapter — and what is asserted is the text an agent would read.
+edits stays where it is. Each tool runs through a :class:`SpaceClient` whose `Fetch` is
+`space_client.wsgi_fetch` — the port's in-process adapter, the one the Space's own `/mcp` serves
+through (ADR-0266) — and what is asserted is the text an agent would read. The last section posts
+MCP messages to that route itself, in both protocol eras.
 """
 
 from __future__ import annotations
 
 import dataclasses
 from datetime import UTC, datetime
-from urllib.parse import urlsplit
 
 import pytest
 import test_space_app as space_tests
 from test_space_app import auth_app, trends_app  # noqa: F401 — fixtures, reused
 
-from headstart.mcp_protocol.stdio import ToolFailure
+from headstart.mcp_protocol.messages import ToolFailure
 from headstart.space_mcp import server
 from headstart.space_mcp import space_client as sc
 from headstart.space_mcp.tools import read_trends
@@ -27,24 +28,8 @@ from headstart.space_mcp.tools import read_trends
 _FIXTURE_NOW = datetime(2026, 8, 14, tzinfo=UTC)
 
 
-def flask_fetch(test_client) -> sc.Fetch:
-    """The `Fetch` port answered by the real app in-process, as HF's proxy would pass it on."""
-
-    def fetch(url, headers, timeout_s):
-        parts = urlsplit(url)
-        answer = test_client.get(
-            parts.path, query_string=parts.query, headers=dict(headers)
-        )
-        named = {k.lower(): v for k, v in answer.headers.items()}
-        return sc.Reply(
-            answer.status_code, named, sc._decoded(named, answer.get_data())
-        )
-
-    return fetch
-
-
 def _client(module) -> sc.SpaceClient:
-    return sc.SpaceClient(fetch=flask_fetch(module.app.test_client()))
+    return sc.SpaceClient(fetch=sc.wsgi_fetch(module.app))
 
 
 @pytest.fixture
@@ -91,9 +76,7 @@ def scoped_boards(companies_app, monkeypatch):
 def test_every_reply_says_it_is_the_app_and_serves_this_servers_contract(
     companies_app,
 ):
-    reply = flask_fetch(companies_app.app.test_client())(
-        f"{sc.SPACE_URL}/facets", {}, 5
-    )
+    reply = sc.wsgi_fetch(companies_app.app)(f"{sc.SPACE_URL}/facets", {}, 5)
     assert reply.headers["x-headstart"] == f"app; agent-api={sc.AGENT_API}"
 
 
@@ -365,3 +348,104 @@ def test_hot_rows_the_tab_hides_are_left_out_by_the_apps_own_list(
     text = server.call(_client(companies_app), "hiring_now", {})
     assert '"Acme"' in text and '"Temps Inc"' not in text
     assert "1 aggregator and staffing rows hidden" in text
+
+
+# ---- the Space's own /mcp, in both protocol eras (ADR-0266) ----
+
+#: One call of each registered tool, and a phrase its answer carries.
+_EACH_TOOL = [
+    ("search_jobs", {"query": "backend engineer"}, '"Backend Engineer"'),
+    ("read_trends", {"days": 7}, "Newest trends tick"),
+    ("hiring_now", {}, "No company qualified on this Lens this week."),
+]
+
+_MODERN_META = {
+    "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+    "io.modelcontextprotocol/clientCapabilities": {},
+}
+
+
+def test_every_tool_is_registered_in_this_list():
+    assert [name for name, _, _ in _EACH_TOOL] == list(server.BY_NAME)
+
+
+def _post(client, message, headers=None):
+    return client.post("/mcp", json=message, headers=headers or {})
+
+
+def test_a_legacy_client_initializes_lists_and_calls_every_tool(companies_app):
+    """claude.ai's connector setup and older clients: the 2025-11-25 handshake, then one POST
+    per message, with the negotiated version in a header after it."""
+    client = companies_app.app.test_client()
+    hello = _post(
+        client,
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {"protocolVersion": "2025-11-25", "capabilities": {}},
+        },
+    )
+    assert hello.status_code == 200
+    assert hello.json["result"]["serverInfo"]["name"] == server.NAME
+    assert "Mcp-Session-Id" not in hello.headers
+    after = {"MCP-Protocol-Version": "2025-11-25"}
+    initialized = _post(
+        client, {"jsonrpc": "2.0", "method": "notifications/initialized"}, after
+    )
+    assert initialized.status_code == 202 and initialized.get_data() == b""
+    listed = _post(client, {"jsonrpc": "2.0", "id": 2, "method": "tools/list"}, after)
+    assert listed.json["result"]["tools"] == server.TOOLS
+    for n, (name, arguments, phrase) in enumerate(_EACH_TOOL, start=3):
+        called = _post(
+            client,
+            {
+                "jsonrpc": "2.0",
+                "id": n,
+                "method": "tools/call",
+                "params": {"name": name, "arguments": arguments},
+            },
+            after,
+        )
+        result = called.json["result"]
+        assert called.status_code == 200 and "isError" not in result, (name, result)
+        assert phrase in result["content"][0]["text"], name
+
+
+def test_a_modern_client_discovers_lists_and_calls_every_tool_statelessly(
+    companies_app,
+):
+    """claude.ai's chats and Claude Code: 2026-07-28, every request carrying its version in
+    `_meta` and mirrored into headers, no handshake."""
+    client = companies_app.app.test_client()
+
+    def modern(method, request_id, headers=None, **params):
+        return _post(
+            client,
+            {
+                "jsonrpc": "2.0",
+                "id": request_id,
+                "method": method,
+                "params": {**params, "_meta": _MODERN_META},
+            },
+            {
+                "MCP-Protocol-Version": "2026-07-28",
+                "Mcp-Method": method,
+                **(headers or {}),
+            },
+        )
+
+    discovered = modern("server/discover", 1)
+    assert discovered.status_code == 200
+    assert "2026-07-28" in discovered.json["result"]["supportedVersions"]
+    assert discovered.json["result"]["instructions"] == server.INSTRUCTIONS
+    listed = modern("tools/list", 2).json["result"]
+    assert listed["tools"] == server.TOOLS and listed["resultType"] == "complete"
+    for n, (name, arguments, phrase) in enumerate(_EACH_TOOL, start=3):
+        called = modern(
+            "tools/call", n, {"Mcp-Name": name}, name=name, arguments=arguments
+        )
+        result = called.json["result"]
+        assert called.status_code == 200 and "isError" not in result, (name, result)
+        assert result["resultType"] == "complete"
+        assert phrase in result["content"][0]["text"], name

@@ -12,7 +12,7 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
-from headstart.mcp_protocol.stdio import ToolFailure
+from headstart.mcp_protocol.messages import ToolFailure
 from headstart.search_filters import (
     employment_type_filter,
     india_filter,

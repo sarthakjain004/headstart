@@ -1,14 +1,50 @@
 # The Space MCP server — search, trends and hiring now for an agent
 
-A local MCP server that lets an agent read HeadStart the way the website does: find open tech jobs,
+An MCP server that lets an agent read HeadStart the way the website does: find open tech jobs,
 see how the number of openings is changing, and see which companies are hiring hardest this week.
-It runs on your own machine as a subprocess of your agent client and answers from the deployed
-Space's own read routes, so every number is the one the website shows. The decision and its
-alternatives are ADR-0253, ADR-0258 and `docs/mcp/2026-09-28_space-mcp-server-plan.md`; this file is the
-how-to.
+The Space hosts it at a URL anyone can add to Claude, and it also runs on your own machine as a
+subprocess of your agent client. Either way it answers from the deployed Space's own read routes,
+so every number is the one the website shows. The decision and its alternatives are ADR-0253,
+ADR-0258, ADR-0266, `docs/mcp/2026-09-28_space-mcp-server-plan.md` and
+`docs/mcp/2026-09-28_hosted-mcp-endpoint-options.md`; this file is the how-to.
 
 It is **read-only**. It cannot save, follow, hide or subscribe to anything, and no account applies
 to it — so a company you hid on the website is **not** hidden from an agent's search.
+
+## Use it without installing
+
+The Space serves the same tools over Streamable HTTP (ADR-0266). The connector URL is:
+
+```text
+https://imposeidon-headstart-search.hf.space/mcp
+```
+
+It needs no account, token or sign-in.
+
+- **claude.ai** (web, desktop and mobile apps): **Customize → Connectors → Add custom connector**,
+  name it HeadStart, paste the URL, and choose no sign-in. A Free plan may add one custom
+  connector. A connector added on the web is also in the mobile and desktop apps.
+- **Claude Code**:
+
+  ```bash
+  claude mcp add --transport http headstart https://imposeidon-headstart-search.hf.space/mcp
+  ```
+
+- **Any other client** that speaks Streamable HTTP, in the 2025-11-25 handshake or the 2026-07-28
+  stateless revision. To check it without a client:
+
+  ```bash
+  npx @modelcontextprotocol/inspector@2.8.0 --cli \
+    https://imposeidon-headstart-search.hf.space/mcp --transport http --method tools/list
+  ```
+
+**Limits.** 30 requests a minute from one address, and 300 a minute shared by everyone arriving
+from Anthropic's published range (`160.79.104.0/21`, which is every claude.ai user); a refusal is a
+429 with `Retry-After`. At most 4 requests are answered at once across all callers; one more waits
+up to 10 s, then gets a 503 with `Retry-After`. A request from a web page on any other site (an
+`Origin` other than claude.ai, claude.com or the Space's own) is refused with a 403. Answers are
+capped as the local server's are, and the Space's boot and sleep apply: while it starts, the URL
+answers with Hugging Face's own error instead of a sentence, so ask again in a few minutes.
 
 ## Install it
 
@@ -168,6 +204,8 @@ server changes.
    where it depends on the real app's answer, `tests/test_space_mcp_against_space_app.py`.
 5. Describe it here, and give the evaluation (`scripts/eval/`) a task for it.
 
+The Space hosts the registry at `/mcp`, so merging a tool deploys the Space (ADR-0266).
+
 A tool that **writes** or reads **one Account's records** is a decision, not an addition: every tool
 today is read-only and Account-free, reading public routes with no credential, and the contract
 tests pin both. It needs a credential design first (per-Account tokens are the deferred design),
@@ -177,5 +215,7 @@ since a public route can never carry one person's data.
 
 `src/headstart/space_mcp/` — `tools/` (one module per tool, and `REGISTRY`), `space_tool.py` (what a
 tool is), `server.py` (serves the registry), `space_client.py` (the one way it reaches the Space),
-`company_scope.py`, `role_families.py` and `scraped_text.py` — on the shared loop in
-`src/headstart/mcp_protocol/`. Tests: `tests/test_space_mcp_*.py`.
+`company_scope.py`, `role_families.py` and `scraped_text.py` — on the shared protocol module in
+`src/headstart/mcp_protocol/` (`messages.py`, and the `stdio.py` and `streamable_http.py`
+transports). The hosted route is `/mcp` in `deploy/hf-space/app.py`. Tests:
+`tests/test_space_mcp_*.py` and `tests/test_mcp_protocol_*.py`.
