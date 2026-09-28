@@ -25,6 +25,7 @@ from headstart.jobs.job import Job, html_to_text, is_remote
 from headstart.scrapers.base import (
     USER_AGENT,
     BaseScraper,
+    BoardUnreadable,
     DetailLost,
     DetailRequest,
     DetailWithoutDescription,
@@ -82,6 +83,8 @@ class RippleHireScraper(BaseScraper):
     #: The per-site token the careers URL redirects with; `fetch_raw` reads it before the Detail
     #: pass, and every detail URL carries it.
     _board_token: str | None = None
+    #: Where the last careers GET landed, for the error that names a token-less landing.
+    _landed: str = ""
 
     def url(self) -> str:
         return f"https://{self.slug}.ripplehire.com/candidate/careers"
@@ -113,9 +116,10 @@ class RippleHireScraper(BaseScraper):
         only when no detail record named the company first (:meth:`fetch_raw`)."""
         return self.url()
 
-    def fetch_raw(self) -> Any:
-        # step 1: the careers URL redirects to /candidate/?token=… — grab the token (the pooled
-        # session follows the redirect and keeps the session cookie for the search call)
+    def _careers_token(self) -> re.Match[str] | None:
+        """Step 1: the careers URL redirects to /candidate/?token=…; the token it lands on, or
+        None when it lands without one. The pooled session follows the redirect and keeps the
+        session cookie for the search call."""
         response = self._fetch(
             "GET",
             self.url(),
@@ -123,15 +127,23 @@ class RippleHireScraper(BaseScraper):
             timeout=30,
         )
         # An HTTP error here must raise, not read as an empty board (ADR-0058 needs the 404).
-        # A 200 that redirects somewhere without a token still returns [] — that is the
-        # portal's shape for "no public board", not a fetch failure.
         response.raise_for_status()
-        m = CAREERS_TOKEN.search(response.url)
+        self._landed = response.url
+        return CAREERS_TOKEN.search(response.url)
+
+    def fetch_raw(self) -> Any:
+        # A 200 that lands on /candidate/careers with no token is NOT an empty Board. Runs
+        # 36470443904-36482634879 (2026-09-28) read 13-17 live Boards that way per run, and each
+        # "clean" empty read evicted rows after the ADR-0083 grace period (197 by then, ltimindtree's
+        # 715 one read away); the same 11 Boards redirected to a token from a clean address. A
+        # departed tenant mostly fails DNS, which raises already. So ask once more, then raise:
+        # the Board is Unauthoritative this run and keeps its rows (ADR-0053), as #702 asks.
+        m = self._careers_token() or self._careers_token()
         if not m:
-            self.note_unreadable_board(
-                "a redirect to /candidate/?token=", f"landed on {response.url[:60]}"
+            raise BoardUnreadable(
+                f"{self.board_key()}: careers page landed on {self._landed[:80]} twice, with no "
+                "/candidate/?token= — unread, not empty"
             )
-            return []
         token = m.group(1)
         api = self.search_url()
         headers = {

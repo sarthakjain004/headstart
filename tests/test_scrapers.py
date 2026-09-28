@@ -10827,6 +10827,50 @@ def test_ripplehire_marks_its_page_cap_but_not_a_board_that_ended():
     assert capped.truncated and f"{rh._MAX_PAGES}-page cap" in capped.truncated
 
 
+def _ripple_landings(*landed: str):
+    """A RippleHire Board whose careers GETs land on ``landed`` in turn; the search answers one
+    Job (with its jobDesc, so no detail pass). Returns the scraper and the GETs it made."""
+    from headstart.scrapers import ripplehire as rh
+
+    gets: list[str] = []
+    page = [{"jobSeq": 1, "jobDesc": "x"}]
+
+    def route(method, url, kwargs):
+        if method == "GET":
+            gets.append(url)
+            return FakeResponse(url=landed[len(gets) - 1])
+        return _RippleResp(page, 1)
+
+    return rh.RippleHireScraper("acme", fetcher=FakeFetcher(route)), gets
+
+
+def test_ripplehire_a_careers_page_with_no_token_is_unread_not_empty():
+    """#702: CI read live Boards whose careers GET landed on /candidate/careers with no token,
+    and the old `[]` evicted their rows after the grace period. Twice token-less must raise, so
+    the Board is Unauthoritative (ADR-0053) and keeps what it serves."""
+    from headstart.ingest import board_failures
+    from headstart.scrapers.base import BoardUnreadable
+
+    careers = "https://acme.ripplehire.com/candidate/careers"
+    scraper, gets = _ripple_landings(careers, careers)
+    with pytest.raises(BoardUnreadable, match="unread, not empty") as raised:
+        scraper.fetch_raw()
+    assert len(gets) == 2
+    # Recorded as harvest records it, it is no gone strike: an unread Board is not a 404.
+    reason = f"{type(raised.value).__name__}: {raised.value}"
+    assert not board_failures.is_gone(reason)
+
+
+def test_ripplehire_a_second_careers_get_that_lands_on_a_token_reads_the_board():
+    scraper, gets = _ripple_landings(
+        "https://acme.ripplehire.com/candidate/careers",
+        "https://acme.ripplehire.com/candidate/?token=TOK",
+    )
+    rows = scraper.fetch_raw()
+    assert len(gets) == 2
+    assert [r["jobSeq"] for r in rows] == [1]
+
+
 # --- oracle: the requisition list is paged, not one shot -------------------------------------
 #
 # Measured live 2026-08-24 on fa-etvl-saasfaprod1: TotalJobsCount 299 against a 200-row first
