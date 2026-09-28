@@ -48,12 +48,22 @@ outright (:meth:`~headstart.scrapers.base.BaseScraper.fan_out`'s own ``None`` de
 treated as that page's true, short content — the frontier stays at the last page that actually
 returned data, so the walk below still starts from the real end and retries the failed page too.
 
-**No employment_type, no department.** The per-job array has two unlabelled enum fields (indices
-11 and 20 here) with no accompanying string table found anywhere on the page — guessing what they
-encode would misrepresent them, so both stay unset, same call Eightfold's PCSX API made for
-``employment_type`` ("not exposed"). ``remote`` falls back to
-:func:`~headstart.jobs.job.is_remote` on the location string; no explicit remote/hybrid flag was
-found in the payload.
+**``employment_type`` comes from the site's own filter, not the payload.** The per-job array has
+no employment-type field: index 20, the likeliest enum, is the target level (1 early career to 4
+director), and 2 of the 61 interns carry 1 (measured 2026-09-28). The site's
+``employment_type=`` filter is authoritative, and live 2026-09-28 it split the board exactly:
+FULL_TIME 3,201 + PART_TIME 4 + INTERN 61 = the 3,266 listed, TEMPORARY 0. So :meth:`fetch` walks
+the three small filters (about six requests) and a posting in none of them is full-time. If any
+of those walks fails, every posting's type stays unset rather than guessed. The filter walks run
+before the listing, so an intern posting published after them reads as full-time until the next
+run. No department field was found.
+
+**``remote`` reads the remote location a posting states.** Index 18 is a note that names the
+posting's remote location(s): either ``<b>Remote location: Sweden.</b>`` alone, or a "preferred
+working location" note listing in-office locations beside ``Remote location(s)``. Live
+2026-09-28 the phrase "Remote location" appeared on exactly the 63 postings the site's own
+``has_remote=true`` filter returned, and nowhere else in the payload. A posting without it falls
+back to :func:`~headstart.jobs.job.is_remote` on the location string.
 
 **``company`` is read per-job, not hardcoded "Google".** The careers site serves several
 Alphabet brands through one board (measured: "Google" and "YouTube" both appear on page 1) — the
@@ -80,8 +90,8 @@ _JOB_URL = (
 
 #: Fixed by the site; echoed as ``data[3]`` on every page sampled, never observed to vary.
 _PAGE_SIZE = 20
-#: Concurrent page fetches once page 1's total is known. Measured clean at this width 2026-09-11:
-#: 20 concurrent requests, 20/20 HTTP 200, ~3.85 req/s aggregate, no 429/403.
+#: Concurrent page fetches once page 1's total is known. Half the width measured clean
+#: 2026-09-11 (20 concurrent requests, 20/20 HTTP 200, ~3.85 req/s aggregate, no 429/403).
 _PAGE_WORKERS = 10
 #: Ceiling on pages fetched. The board measured at 171 pages (3,414 postings) 2026-09-11; this
 #: gives ~4x headroom before a runaway page count is treated as a hard cap rather than walked.
@@ -91,6 +101,17 @@ _NO_DS1 = "no ds:1 on a 200"
 #: Above this share of postings with no description, the layout is suspected rather than the
 #: postings (see ``parse``).
 _UNDESCRIBED_SHARE = 0.2
+
+#: The site's own employment_type filter values smaller than FULL_TIME, and the label each
+#: gives, checked in this order; a posting in none of them is full-time (module docstring).
+_EMPLOYMENT_FILTERS = (
+    ("INTERN", "Intern"),
+    ("PART_TIME", "Part-time"),
+    ("TEMPORARY", "Temporary"),
+)
+#: The phrase index 18 carries on every remote-eligible posting and on no other (module
+#: docstring).
+_REMOTE_NOTE = "Remote location"
 
 _DS1_MARKER = "AF_initDataCallback({key: 'ds:1'"
 _DS1_END = ");</script>"
@@ -231,8 +252,39 @@ class GoogleScraper(BaseScraper):
     def job_url(self, native_id: str) -> str:
         return _JOB_URL.format(id=native_id)
 
-    def _page_url(self, page: int) -> str:
-        return f"{_LISTING_URL}?hl=en_US&page={page}"
+    def _page_url(self, page: int, query: str = "") -> str:
+        return f"{_LISTING_URL}?hl=en_US{query}&page={page}"
+
+    def fetch(self) -> list[Job]:
+        self._employment_by_id = self._employment_types()
+        return super().fetch()
+
+    def _employment_types(self) -> dict[str, str] | None:
+        """Native id -> employment type for every posting in a filter smaller than FULL_TIME,
+        or None if any of those walks failed (module docstring)."""
+        types: dict[str, str] = {}
+        for value, label in reversed(_EMPLOYMENT_FILTERS):
+            for page in range(1, _MAX_PAGES + 1):
+                url = self._page_url(page, f"&employment_type={value}")
+                try:
+                    data = _ds1_data(self._get(url))
+                except http.RequestsError as exc:
+                    data, why = None, classify_exception(exc)
+                else:
+                    why = _NO_DS1
+                if data is None:
+                    self._log.info(
+                        f"{self.board_key()}: employment_type={value} page {page}: {why} "
+                        "— employment_type left unset"
+                    )
+                    return None
+                # An empty filter answers [null, null, 0, 20] (live 2026-09-28, TEMPORARY).
+                jobs = _field(data, 0) or []
+                # Reversed order, so the first filter in _EMPLOYMENT_FILTERS wins an overlap.
+                types.update((job[0], label) for job in jobs if _field(job, 0))
+                if len(jobs) < _PAGE_SIZE:
+                    break
+        return types
 
     def alias_key(self) -> str | None:
         """No sibling host to alias against — a Single source scraper's board resolves to itself
@@ -350,6 +402,7 @@ class GoogleScraper(BaseScraper):
                 untitled += 1
                 continue
             location = _location(_field(item, 9))
+            remote_note = _pair(_field(item, 18))
             jobs.append(
                 Job(
                     id=self.job_id(native_id),
@@ -357,13 +410,16 @@ class GoogleScraper(BaseScraper):
                     company=_field(item, 7) or self.company,
                     title=str(title).strip(),
                     location=location,
-                    remote=is_remote(location),
+                    remote=(
+                        isinstance(remote_note, str) and _REMOTE_NOTE in remote_note
+                    )
+                    or is_remote(location),
                     department=None,  # no team/org field found in the listing payload
                     url=self.job_url(native_id),
                     posted_at=_posted_at(_field(item, 12)),
                     scraped_at=scraped_at,
                     description=_description(item),
-                    employment_type=None,  # the enum field found has no decoded label anywhere
+                    employment_type=self._employment_type(native_id),
                 )
             )
             undescribed += jobs[-1].description is None
@@ -377,6 +433,12 @@ class GoogleScraper(BaseScraper):
                 "— ds:1 layout may have moved"
             )
         return jobs
+
+    def _employment_type(self, native_id: str) -> str | None:
+        types = getattr(self, "_employment_by_id", None)
+        if types is None:
+            return None
+        return types.get(native_id, "Full-time")
 
     def _salary_field(self, raw: Any) -> str | None:
         # Not yet measured: no structured compensation field has been looked for in the

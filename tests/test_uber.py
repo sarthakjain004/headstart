@@ -120,6 +120,16 @@ def test_remote_is_read_as_the_stated_boolean():
     assert _jobs()["301347"].remote is False
 
 
+def test_the_html_document_head_is_not_part_of_the_description():
+    """57 of 538 live Descriptions (2026-09-28) are a whole HTML document whose `<title>` is
+    "<p> Cleaned Document </p>"; that title is an export artefact, not posting text. The
+    fixture is live row 302433, its Description cut after 500 characters."""
+    with open(FIXTURES / "uber_cleaned_document_row.json", encoding="utf-8") as fh:
+        (job,) = _scraper().parse(json.load(fh), SCRAPED_AT)
+    assert job.description.startswith("About the role and team")
+    assert "Cleaned Document" not in job.description
+
+
 def test_employment_type_joins_contract_type_and_work_pattern_when_they_disagree():
     """The measured case this exists for: an Intern posting states `ContractType="Full time"`
     (hours) and `WorkPattern="Intern"` (arrangement) at once. Preferring either alone would drop
