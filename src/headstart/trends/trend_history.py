@@ -27,7 +27,7 @@ import json
 from bisect import bisect_left
 from collections import Counter, defaultdict
 from collections.abc import Mapping
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -977,6 +977,45 @@ class TrendHistory:
             else None,
         }
 
+    def answer_key(self, question: TrendQuestion) -> tuple:
+        """What :meth:`unnetted_answer` reads of ``question``: two questions with the same key
+        get the same answer, so an answer kept for one serves the other (#755).
+
+        ``since``, ``until`` and ``base`` count only as the ticks they fall between. The answer
+        reads them as its window (:meth:`_window`), a comparable cohort's base tick, and in
+        comparisons with epochs and the inflow switch, which are ticks too; under New the window
+        start less the flow window is compared with epochs as well. So a preset window measured
+        back from each click's moment, a new instant every time, keys alike until a tick crosses
+        its start. A new reading of those three there must be read here too. A malformed stamp
+        keys the question as it came, so the answer refuses it in its own words and order."""
+        try:
+            since = _norm_stamp(question.since) if question.since is not None else None
+            until = _norm_stamp(question.until) if question.until is not None else None
+            base = _norm_stamp(question.base) if question.base is not None else None
+        except ValueError:
+            return (question,)
+        lo, hi = self._window(since, until)
+        # the first tick whose epoch a New window echoes; no start echoes every one
+        echo_from = 0 if question.metric == "new" else None
+        if since and question.metric == "new":
+            echo_from = bisect_left(
+                self._ticks,
+                (
+                    datetime.fromisoformat(since) - timedelta(days=NEW_WINDOW_DAYS)
+                ).isoformat(timespec="seconds"),
+            )
+        base_at = None
+        if question.coverage == "comparable" and self._first_delta < len(self._ticks):
+            first_delta = self._ticks[self._first_delta]
+            base_at = bisect_left(self._ticks, max(base or first_delta, first_delta))
+        return (
+            replace(question, since=None, until=None, base=None),
+            lo,
+            hi,
+            echo_from,
+            base_at,
+        )
+
     def unnetted_answer(self, question: TrendQuestion) -> dict:
         """Role counts over time (ADR-0040, ADR-0051), before any line is netted: what
         ``line_reading`` reads (ADR-0233).
@@ -1048,6 +1087,8 @@ class TrendHistory:
             }
         if split == "company" and not picked:
             raise ValueError("split=company needs at least one company")
+        # `answer_key` says which ticks these three fall between, and no more: read them only
+        # as ticks, or read the new use there too.
         try:
             since = _norm_stamp(question.since) if question.since is not None else None
             until = _norm_stamp(question.until) if question.until is not None else None

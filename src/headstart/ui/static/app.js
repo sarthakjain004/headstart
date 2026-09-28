@@ -2284,10 +2284,11 @@ function toggleAtsPopover(force){
 
 // The /trends question for the panel's state, with `metric` as the Measure: every request for the
 // panel is built here, so two builds of one view are the same URL.
-function trendsQuery(family, metric){
+// `picks` and `split` default to the panel's own; a prefetch passes the ones a click would set.
+function trendsQuery(family, metric, picks = trendPicks, split = trendSplit){
   const q = new URLSearchParams();
-  trendPicks.forEach(p => q.append('company', p.key));
-  if (family) { q.set('family', family); q.set('split', trendSplit); }
+  picks.forEach(p => q.append('company', p.key));
+  if (family) { q.set('family', family); q.set('split', split); }
   else if (topSplitNow() === 'company') q.set('split', 'company');
   if (metric !== 'stock') q.set('metric', metric);
   const range = trendRange();
@@ -2325,6 +2326,17 @@ function prefetchTrends(family, metric){
   if (presetInForce()) return;
   const url = versioned('/trends', trendsQuery(family, metric));
   trendPrefetchTimer = setTimeout(() => fetch(url, { priority: 'low' }).catch(() => {}), PREFETCH_AFTER);
+}
+// The view a click is about to ask for, asked for at once, on a sign it is coming: the pointer
+// resting on a category's row, or a company offered at the top of the picker's list, which is
+// what Enter picks (ADR-0252). Once a URL a page: the browser keeps each answer anyway.
+const askedAhead = new Set();
+function prefetchIntent(q){
+  if (!CFG.answers_version || presetInForce()) return;
+  const url = versioned('/trends', q);
+  if (askedAhead.has(url)) return;
+  askedAhead.add(url);
+  fetch(url, { priority: 'low' }).catch(() => askedAhead.delete(url));
 }
 
 async function loadTrends(family){
@@ -4064,6 +4076,10 @@ async function suggestCompanies(q){
   const picked = pickedKeys();
   const options = (found || []).filter(c => !picked.has(c.key.toLowerCase())).map(company => ({ company }));
   openCoList(options);
+  // The top company's trend (prefetchIntent), in the one case whose URL a pick is sure to ask
+  // for: a first pick at the top level.
+  if (options.length && !trendPicks.length && !trendDrill)
+    prefetchIntent(trendsQuery(null, trendMetric, [options[0].company]));
   if (coEnterPending){ coEnterPending = false; if (options.length){ chooseCo(0); return; } }
   // Said in the status line, not as a fake option: a listbox should only hold choices.
   setCoNote(missing ? 'Company search isn’t available here yet.'
@@ -4305,6 +4321,15 @@ if (el('trends-legend')) {
     e.preventDefault();
     trendClick(row.dataset.name);
   });
+  // A charted category's levels, what `trendClick` opens from the top, asked for once the
+  // pointer has rested on its row, or as the focus reaches it (prefetchIntent). A pointer only
+  // passing over rows on its way elsewhere asks for none of them.
+  const HOVER_INTENT = 100;
+  let drillAheadTimer = null;
+  const askDrillAhead = row => {
+    if (row && row.isConnected && !trendDrill && trendData && VIEWS[viewKind(trendData)].drills)
+      prefetchIntent(trendsQuery(row.dataset.name, trendMetric, trendPicks, 'bands'));
+  };
   // Hover-highlight (dataviz skill; design-research doc §2): a legend row's mouse hover reaches
   // the chart, not just its own background. `pointerover`/`pointerout` bubble (mouseenter/leave
   // don't), so this is one delegated pair rather than one listener per row; `relatedTarget` is
@@ -4312,16 +4337,21 @@ if (el('trends-legend')) {
   legend.addEventListener('pointerover', e => {
     const row = e.target.closest('.row[data-name]');
     if (row && hoveredSeries !== row.dataset.name){ hoveredSeries = row.dataset.name; applyEmphasis(); }
+    clearTimeout(drillAheadTimer);
+    const drillable = e.target.closest('.row[data-name][role="button"]');
+    if (drillable) drillAheadTimer = setTimeout(() => askDrillAhead(drillable), HOVER_INTENT);
   });
   legend.addEventListener('pointerout', e => {
     const row = e.target.closest('.row[data-name]');
     if (row && !(e.relatedTarget && e.relatedTarget.closest('.row[data-name]'))){ hoveredSeries = null; applyEmphasis(); }
+    if (row) clearTimeout(drillAheadTimer);
   });
   // Same emphasis on keyboard focus as on hover (dataviz skill, interaction.md: "same details
   // on keyboard focus as on hover") — charted rows are already tabindex="0".
   legend.addEventListener('focusin', e => {
     const row = e.target.closest('.row[role="button"]');
     if (row){ hoveredSeries = row.dataset.name; applyEmphasis(); }
+    askDrillAhead(e.target.closest('.row[data-name][role="button"]'));
   });
   legend.addEventListener('focusout', e => {
     const row = e.target.closest('.row[role="button"]');
@@ -4648,6 +4678,9 @@ showTab(currentTab());
 shownTab = currentTab();
 // The Trends tab's opening view, so opening the tab is answered from the browser's cache.
 if (el('trends') && currentTab() !== 'trends') prefetchTrends(null, trendMetric);
+// And the Hiring now ranking, 11 KB, the same way.
+if (el('hot-results') && currentTab() !== 'hot' && CFG.answers_version)
+  setTimeout(() => fetch(versioned('/hot'), { priority: 'low' }).catch(() => {}), PREFETCH_AFTER);
 // Result cards need star states before the Saved tab is ever opened; landing ON the tab
 // already loads via showTab above.
 if (CAN_STAR && currentTab() !== 'saved') loadSaved();

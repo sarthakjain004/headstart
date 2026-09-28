@@ -2432,16 +2432,78 @@ def test_an_answer_asked_for_under_this_boots_version_is_kept_by_the_browser(
 def test_the_answer_asked_for_most_recently_is_the_last_let_go(
     company_trends, trends_app, monkeypatch
 ):
-    """A preset window's `since` is a new millisecond on every click; were the oldest answer
-    let go first, those clicks would push out the opening view everyone asks for."""
+    """Were the oldest answer let go first, windows asked for once each would push out the
+    opening view everyone asks for."""
     monkeypatch.setattr(trends_app, "_TRENDS_KEPT", 2)
+    history = trends_app._HISTORY
     company_trends.get("/trends")  # the opening view
-    company_trends.get("/trends?since=2026-01-01T00:00:00.001Z")
+    company_trends.get(f"/trends?since={quote(_T2)}")
     company_trends.get("/trends")  # asked for again
-    company_trends.get("/trends?since=2026-01-01T00:00:00.002Z")
-    kept = {question for _, question in trends_app._TRENDS_ANSWERED}
-    assert trend_history.TrendQuestion() in kept
+    company_trends.get(f"/trends?since={quote(_T3)}")
+    kept = {key for _, key in trends_app._TRENDS_ANSWERED}
+    assert history.answer_key(trend_history.TrendQuestion()) in kept
+    assert history.answer_key(trend_history.TrendQuestion(since=_T3)) in kept
     assert len(kept) == 2
+
+
+def test_windows_between_the_same_ticks_share_one_kept_answer(
+    company_trends, trends_app, monkeypatch
+):
+    """ADR-0254: a preset window is measured back from each click's moment, a new instant every
+    time, and every one between the same two ticks is answered by the one worked out first."""
+    history = trends_app._HISTORY
+    asked = []
+    answer = history.unnetted_answer
+    monkeypatch.setattr(
+        history,
+        "unnetted_answer",
+        lambda question: asked.append(question) or answer(question),
+    )
+    first = company_trends.get("/trends?since=2026-08-11T12:00:00.001Z&metric=new")
+    again = company_trends.get("/trends?since=2026-08-11T23:59:59.999Z&metric=new")
+    assert first.data == again.data
+    assert len(asked) == 1
+    # a window that starts past a tick is another answer
+    company_trends.get(f"/trends?since={quote(_T3)}&metric=new")
+    assert len(asked) == 2
+
+
+@pytest.mark.parametrize(
+    "a, b",
+    [
+        # the same ticks inside: one answer
+        ({"since": "2026-08-11T01:00:01Z"}, {"since": "2026-08-12T00:59:59Z"}),
+        ({"until": "2026-08-12T01:00:00Z"}, {"until": "2026-08-12T23:00:00.5Z"}),
+        ({"since": "2020-01-01T00:00:00Z"}, {}),
+        (
+            {"coverage": "comparable", "base": "2020-01-01T00:00:00Z"},
+            {"coverage": "comparable"},
+        ),
+        (
+            {"since": "2026-08-11T12:00:00Z", "base": "2020-01-01T00:00:00Z"},
+            {"since": _T2},
+        ),
+    ],
+)
+def test_questions_keyed_alike_are_answered_alike(company_trends, trends_app, a, b):
+    """`TrendHistory.answer_key` promises equal answers for equal keys; the answers here, over
+    stock and New, with a pick and without, hold it to that."""
+    history = trends_app._HISTORY
+    for extra in ({}, {"metric": "new"}, {"companies": ("workday:hpe/a",)}):
+        qa = trend_history.TrendQuestion(**{**a, **extra})
+        qb = trend_history.TrendQuestion(**{**b, **extra})
+        assert history.answer_key(qa) == history.answer_key(qb)
+        assert history.unnetted_answer(qa) == history.unnetted_answer(qb)
+
+
+def test_a_new_window_a_week_on_is_keyed_apart_where_its_echo_differs(trends_app):
+    """Under New the window's start less a week is read as well (its epochs' echo), so two starts
+    between the same ticks but a week-earlier tick apart are two keys."""
+    history = trends_app._HISTORY
+    a = trend_history.TrendQuestion(metric="new", since="2026-08-18T00:59:59Z")
+    b = trend_history.TrendQuestion(metric="new", since="2026-08-18T01:00:01Z")
+    assert history.answer_key(a)[1:3] == history.answer_key(b)[1:3]  # the same window
+    assert history.answer_key(a) != history.answer_key(b)
 
 
 def test_a_kept_answer_neither_resigns_nor_varies_by_the_session_cookie(
