@@ -127,8 +127,11 @@ belong in README and CONTEXT.md, where `tests/test_board_counts.py` checks them.
   own sitemap's job URLs carry (`scripts/discover/mine_radancy.py` resolves it): vanity and country
   hosts redirect to it and probe DEAD. `*.runmytests.com`/`.eu` is Radancy's QA estate and mirrors
   real fronts. Employee-only fronts (`internal.commonspirit.careers`) go in `PARKED_BOARDS`. A
-  front is landed whether or not its Backing Board is held — the opposite of Phenom's rule, by the
-  owner's decision of 2026-09-26; each run logs its Front duplication instead.
+  front listing only what another front lists (a language twin, a brand front inside a group's) is
+  buried by `scripts/validate/radancy_subset_fronts.py` (ADR-0265); re-run it after every refresh
+  of the ledger. A front is landed whether or not its Backing Board is held — the opposite of
+  Phenom's rule, by the owner's decision of 2026-09-26; each run logs its Front duplication
+  instead.
 - **SuccessFactors holds RMK sites only.** `p_successfactors` accepts any `<urlset>`, so a corporate
   site or a Radancy career front probes `live`, and the scraper reads it as 0 jobs or as page titles
   ("Working at TUI"). Before landing a host, confirm a `/job/` page from its sitemap (urlset, RSS or

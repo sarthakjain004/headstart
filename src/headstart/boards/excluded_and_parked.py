@@ -1026,5 +1026,22 @@ PARKED_BOARDS: frozenset[str] = frozenset(
         "radancy:internal.jobs.chsinc.com",
         "radancy:internal.santanderjobsus.com",
         "radancy:internalcareers.primark.com",
+        # A front whose robots.txt is `Disallow: /` (2026-09-28): nothing on it may be read.
+        # Un-park if its robots.txt opens the sitemap.
+        "radancy:www.intel-jobs.com",
+        # Phenom skins over a Board we already hold (CLAUDE.md's Phenom landing rule): every
+        # posting's `applyUrl` sits on that Board, so each would be served twice under two ATS
+        # labels. Measured 2026-09-28 by walking each skin's whole listing: jobs.sutterhealth.org
+        # 1,232 of 1,232 on `wd1.myworkdaysite.com` (1,224 of its req ids are on the held
+        # `workday:sutterhealth/sh`, 1,226 postings); jobs.corecivic.com 488 of 488 on
+        # `corecivic.csod.com` (held `cornerstone:corecivic`, 495); careers.associaonline.com
+        # 378 of 378 on `recruiting.adp.com` (held `adp_recruiting:associacareers`, 364);
+        # careers.soprasteria.co.uk 84 of 84 on `soprasteria-uk.csod.com` (held
+        # `cornerstone:soprasteria-uk`, 148). Un-park if the held Board goes dead, or once
+        # cross-ATS deduplication exists.
+        "phenom:jobs.sutterhealth.org",
+        "phenom:jobs.corecivic.com",
+        "phenom:careers.associaonline.com",
+        "phenom:careers.soprasteria.co.uk",
     }
 )

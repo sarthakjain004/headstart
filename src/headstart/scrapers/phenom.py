@@ -32,8 +32,9 @@ Measured on ``jobs.cvshealth.com`` (19,649 postings): ``from=9000&size=500`` rea
 reports 19,649; ``from=9500&size=500`` reads 0 and reports 0. Five of the 91 seed tenants are over
 the wall, so this is not a theoretical cap — such a Board is truncated by construction and says so
 (:meth:`~BaseScraper.mark_truncated`, ADR-0053), which is what keeps ``index sync`` from reading
-the unreachable tail as a mass delisting. None of those five is in the shipped ledger (the largest
-Board there is ~9.4k), so that arm is exercised by the tests rather than in production today.
+the unreachable tail as a mass delisting. None of those five is in the shipped ledger, but
+``careers.dhl.com`` states 9,968 (2026-09-28), 32 under the wall, so that arm is one hiring week
+from production.
 """
 
 from __future__ import annotations
@@ -42,7 +43,7 @@ import re
 from typing import Any, ClassVar
 
 from headstart.boards import company_name
-from headstart.jobs.job import Job, host_of, html_to_text
+from headstart.jobs.job import Job, host_of, html_to_text, requisition_of
 from headstart.network import http
 from headstart.network.fetcher import Fetcher
 from headstart.scrapers.base import (
@@ -461,31 +462,41 @@ class PhenomScraper(BaseScraper):
                         or None
                     ),
                     salary=self._salary_field({"listed": row, "detail": detail}),
+                    requisition=requisition_of(row.get("reqId") or detail.get("reqId")),
                 )
             )
         return jobs
 
     def _salary_field(self, raw: Any) -> str | None:
-        """No native compensation field exists on this ATS — measured, not assumed.
+        """The pay a Board states under one of the keys measured to carry an amount, else None.
 
         Phenom stores no compensation of its own: it passes through whatever custom fields the
-        tenant's backing ATS happens to send, under names the tenant invents. Across the 91
-        reachable seed tenants, 43 carry *some* salary-ish key and not one of them is usable as a
-        field:
+        tenant's backing ATS sends, under names the tenant invents. Most of those are no field:
+        ``salary: "Salary"``, ``payment: "0"``, ``compensationGrade: "C5"`` (labels, flags and
+        bands), or prose (``compensationRange: "The pay range for this role is $19.88 -
+        $33.94 hourly. ..."``) that `salary.extract`'s Tier-2 regex reads from the description.
+        So only keys whose value is an amount on the Boards that state them are read, measured on
+        page one of ledger Boards 2026-09-28:
 
-        - ``salary: "Salary"``, ``salaryHourly: "false"``, ``payment: "0"``,
-          ``salaryVisibility``, ``compensationGrade: "C5"``, ``compensationGradeId:
-          "Grade 6 - Manager / Consultant"`` — labels, flags and internal bands, no amounts.
-        - ``compensationRange: "The pay range for this role is $19.88 - $33.94 hourly. Individual
-          compensation will be determined by..."`` — a real number, inside a prose paragraph.
-        - ``psStartingWageRate: "From $37.86+ per hour"`` beside ``psMaximumWageRate: "53.44"`` —
-          real, but a tenant-private pair of differently-shaped strings.
-
-        There is no key that means the same thing on two tenants, so there is nothing to dispatch
-        on. The prose cases are not lost: they sit in the description this scraper does fetch, and
-        `salary.extract`'s Tier-2 regex reads them there. Returning a tenant-specific guess here
-        would only put a grade label or a bare ``0`` in front of that.
+        - ``salaryRange`` / ``jobPostingSalaryRange`` — careers.honda.com, "$71,100.00 -
+          $106,600.00" on 92 of 100 rows (``salary`` carries the same string there, but on other
+          tenants it is the label "Salary", so it is not read);
+        - ``payRate`` — careers.goodwillcolorado.org, "$ 15.95  USD Per Hour" on 94 of 100;
+        - ``minPay`` / ``maxPay`` — careers.onelifefitness.com, on every row ("34,000" /
+          "111,000"), joined as a range.
         """
+        for payload in (raw.get("listed") or {}, raw.get("detail") or {}):
+            for key in ("salaryRange", "jobPostingSalaryRange", "payRate"):
+                value = payload.get(key)
+                if isinstance(value, str) and re.search(r"\d", value):
+                    return value.strip()
+            low, high = payload.get("minPay"), payload.get("maxPay")
+            if (
+                isinstance(low, str)
+                and isinstance(high, str)
+                and re.search(r"\d", low + high)
+            ):
+                return f"{low.strip()} - {high.strip()}"
         return None
 
 
@@ -496,6 +507,14 @@ def _location(listed: dict, detail: dict) -> str | None:
     carries a postcode (``"Colombo, Sri Lanka, 00400"``), while the first is Phenom's own
     normalised join (``"Pune, Mahārāshtra, India"``).
     """
+    places = listed.get("multi_location") or detail.get("multi_location") or []
+    # Every place, "; "-joined as workday.py joins a posting's extra places: mitre names two or
+    # more on 19 of 100 rows (2026-09-28), and only the first was served.
+    if not isinstance(places, list):
+        places = []
+    named = [p.strip() for p in places if isinstance(p, str) and p.strip()]
+    if len(named) > 1:
+        return "; ".join(dict.fromkeys(named))
     for value in (
         listed.get("cityStateCountry"),
         detail.get("cityStateCountry"),
@@ -506,6 +525,22 @@ def _location(listed: dict, detail: dict) -> str | None:
         if isinstance(value, str) and value.strip():
             return value.strip()
     return None
+
+
+#: The keys tenants state a workplace under. The first three from the module's own samples; the
+#: rest measured on page one of ledger Boards, 2026-09-28: careers.genmab.com ``checkRemote``
+#: (Remote 26, Hybrid 63, On-site 10), career.lanxess.com ``workArrangement`` (Fully Remote 4,
+#: Partially Remote 19, Onsite 47), jobs.newmont.com ``workplaceType`` (Remote 3, Hybrid 17,
+#: Onsite 80), careers.goodwillcolorado.org ``JobLocationType`` (On-Site 88, Hybrid 4).
+_WORKPLACE_KEYS = (
+    "remote",
+    "RemoteType",
+    "remoteType",
+    "checkRemote",
+    "workArrangement",
+    "workplaceType",
+    "JobLocationType",
+)
 
 
 def _remote(listed: dict, detail: dict) -> bool | None:
@@ -522,17 +557,16 @@ def _remote(listed: dict, detail: dict) -> bool | None:
     hybrid by the same convention, not remote.
     """
     for value in (
-        listed.get("remote"),
-        listed.get("RemoteType"),
-        listed.get("remoteType"),
-        detail.get("remote"),
-        detail.get("RemoteType"),
-        detail.get("remoteType"),
+        payload.get(key) for payload in (listed, detail) for key in _WORKPLACE_KEYS
     ):
         if not isinstance(value, str) or not value.strip():
             continue
         normalised = value.strip().lower()
-        if "hybrid" in normalised or ("%" in normalised and "100%" not in normalised):
+        if (
+            "hybrid" in normalised
+            or "partially" in normalised
+            or ("%" in normalised and "100%" not in normalised)
+        ):
             return None
         if "remote" in normalised or "work from home" in normalised:
             return True
