@@ -174,8 +174,8 @@ def test_a_bug_in_the_read_is_not_taken_for_an_unreadable_section(mod, tmp_path)
 
 def test_an_internal_section_is_never_the_kept_one(mod):
     """#794: an internal section that lists one req more at read time won the election and served
-    employee-only links. It now sits out the comparison: neither kept nor buried, and the index's
-    public-first Tenant rule (ADR-0223) serves its shared reqs from the public section."""
+    employee-only links. The public mirrors now elect among themselves, and the internal superset,
+    which no public section contains, stays unburied."""
     hyatt = "https://hyatt.taleo.net/careersection"
     buried = mod.burials(
         {
@@ -187,6 +187,15 @@ def test_an_internal_section_is_never_the_kept_one(mod):
     assert buried == {f"{hyatt}/10880": f"{hyatt}/1"}
 
 
-def test_an_internal_section_is_not_buried_onto_a_public_one_either(mod):
+def test_an_internal_subset_is_still_buried_onto_a_public_section(mod):
+    """Burying it is what keeps its links unserved: Hyatt's internal sections sit under
+    `careersection/1` today, and unburied they would be scraped and serve employee-only links."""
     mol = "https://molgroup.taleo.net/careersection"
-    assert mod.burials({f"{mol}/external": {"1", "2"}, f"{mol}/internal": {"1"}}) == {}
+    assert mod.burials({f"{mol}/external": {"1", "2"}, f"{mol}/internal": {"1"}}) == {
+        f"{mol}/internal": f"{mol}/external"
+    }
+
+
+def test_an_internal_section_no_public_one_contains_is_left_unburied(mod):
+    mol = "https://molgroup.taleo.net/careersection"
+    assert mod.burials({f"{mol}/external": {"1", "2"}, f"{mol}/internal": {"3"}}) == {}

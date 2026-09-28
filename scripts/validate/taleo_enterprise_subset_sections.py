@@ -19,10 +19,11 @@ the kept section's own job URLs are the ones served. The rules, all in `burials`
 - **An empty section is never buried.** The empty set is a subset of everything, so it is no
   evidence, and an empty section can post a req nobody else lists tomorrow.
 - **An unreadable section is never buried**, and nothing is buried onto it.
-- **A non-public section sits out the comparison** (`index_plan.is_non_public`: `internal`,
-  `confidential`, ...): never kept, so it cannot win on one extra req at read time and serve
-  employee-only links (Hyatt's `wallstreet_internal`, MOL Group's `internal`, #794), and never
-  buried. The index serves a req it shares with a public section from the public one (ADR-0223).
+- **A non-public section is never the kept one** (`index_plan.is_non_public`: `internal`,
+  `confidential`, ...), so it cannot win on one extra req at read time and serve employee-only
+  links (MOL Group's `internal`, Hyatt's `wallstreet_internal`, #794). The public sections elect
+  among themselves; a non-public section is then buried onto the largest kept public section
+  that lists all its reqs, and left unburied when none does (ADR-0186's amendment).
 
 Reads every `live` row of the liveness ledger, including the sections the last run buried (the alias
 ledger leaves their liveness rows in place), so each run re-derives every verdict and a buried
@@ -62,15 +63,30 @@ def burials(reqs_by_section: Mapping[str, Collection[str]]) -> dict[str, str]:
 
     ``reqs_by_section`` maps a section's canonical URL to its full requisition ids; the tenant is
     the URL's host. The election is `alias_ledger.bury_contained`, shared with ADP Recruiting
-    Management's (ADR-0202). A non-public section is left out of it (module docstring)."""
-    public = {
-        section: reqs
-        for section, reqs in reqs_by_section.items()
-        if not is_non_public(f"{ATS}:{section}".lower())
-    }
-    return alias_ledger.bury_contained(
-        public, lambda section: urlsplit(section).hostname
-    )
+    Management's (ADR-0202), run over the public sections only; a non-public section is then
+    buried onto the largest kept public section of its tenant that lists all its reqs, then the
+    lowest URL, and left unburied when none does (module docstring)."""
+
+    def tenant(section: str) -> str | None:
+        return urlsplit(section).hostname
+
+    def non_public(section: str) -> bool:
+        return is_non_public(TaleoEnterpriseScraper(section).board_key().lower())
+
+    public = {s: r for s, r in reqs_by_section.items() if not non_public(s)}
+    buried = alias_ledger.bury_contained(public, tenant)
+    kept = {s: frozenset(r) for s, r in public.items() if r and s not in buried}
+    for section, reqs in reqs_by_section.items():
+        if section in public or not reqs:
+            continue
+        hosts = [
+            s
+            for s, own in kept.items()
+            if tenant(s) == tenant(section) and own >= set(reqs)
+        ]
+        if hosts:
+            buried[section] = min(hosts, key=lambda s: (-len(kept[s]), s))
+    return buried
 
 
 def write_aliases(

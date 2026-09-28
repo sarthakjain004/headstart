@@ -858,8 +858,9 @@ def _survivor_precedence(board: str) -> tuple[bool, bool]:
 
 def is_non_public(board: str) -> bool:
     """Whether a lowercased Board key's site segment (after the first ``/``) names it non-public
-    (:data:`_NON_PUBLIC_SITE_TOKENS`). Both callers pass the lowercased key :func:`_placement`
-    builds, which is what makes the match case-insensitive. A Taleo Enterprise key's segment is
+    (:data:`_NON_PUBLIC_SITE_TOKENS`). Callers pass a lowercased Board key — the one
+    :func:`_placement` builds, or ``taleo_enterprise_subset_sections.py``'s (#794) — which is
+    what makes the match case-insensitive. A Taleo Enterprise key's segment is
     ``/{host}/careersection/{section}``, and its internal sections (``mp_internal``) rank after
     the public ones (ADR-0223); the host part is shared by every Board of the Tenant, so it never
     decides between them. A Taleo Business Edition ``cws`` and an ADP ``ccId`` are numbers, which
