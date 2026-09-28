@@ -2,6 +2,7 @@
 <html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>HeadStart — semantic job search</title>
+<link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='logo_mark.svg') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='resume.css') }}">
 </head><body>
@@ -10,7 +11,7 @@
 
   <header class="top">
     <div class="brand">
-      <div class="mark"></div>
+      <img class="mark" src="{{ url_for('static', filename='logo_mark.svg') }}" alt="" width="30" height="30">
       <h1>Head<em>Start</em></h1>
     </div>
     <div class="top-right">
@@ -24,37 +25,36 @@
     <p class="tagline">Tech jobs read straight from company career boards</p>
   </header>
 
+  {# A sidebar on a wide screen and a scrolling strip across the top below that (ADR-0249); one
+     list either way, so the tab logic in app.js reads the same links. The icons are decoration:
+     every entry carries its name as text. A tab this deployment cannot serve is left out rather
+     than shown disabled. #}
   <nav class="tabs" aria-label="Sections">
-      <a class="nav-item" href="#search" data-tab="search" aria-current="page">Search</a>
+      <a class="nav-item" href="#home" data-tab="home" aria-current="page"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3.5 10.5 12 3.5l8.5 7"/><path d="M5.5 9v11h13V9"/></svg>Home</a>
+      <a class="nav-item" href="#search" data-tab="search" aria-current="false"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.4-4.4"/></svg>Search</a>
       {% if sets_on %}
-      <a class="nav-item" href="#matches" data-tab="matches" aria-current="false">Matches</a>
-      {% else %}
-      <span class="nav-item soon" title="Coming soon">Matches<span class="chip-soon">soon</span></span>
+      <a class="nav-item" href="#matches" data-tab="matches" aria-current="false"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3.5"/></svg>Matches</a>
       {% endif %}
       {% if saved_on %}
-      <a class="nav-item" href="#saved" data-tab="saved" aria-current="false">Saved</a>
-      {% else %}
-      <span class="nav-item soon" title="Coming soon">Saved<span class="chip-soon">soon</span></span>
+      <a class="nav-item" href="#saved" data-tab="saved" aria-current="false"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6.5 3.5h11v17l-5.5-4-5.5 4z"/></svg>Saved</a>
       {% endif %}
       {% if hot_on %}
-      <a class="nav-item" href="#hot" data-tab="hot" aria-current="false">Hiring now</a>
+      <a class="nav-item" href="#hot" data-tab="hot" aria-current="false"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 3.5c.8 3.6 5 5.4 5 10.2a5 5 0 0 1-10 0c0-2.4 1.2-3.9 2.3-4.9.3 1.9 1.3 2.9 2.4 3.1-.4-3.1-.6-5.6.3-8.4z"/></svg>Hiring now</a>
       {% endif %}
       {% if trends_on %}
-      <a class="nav-item" href="#trends" data-tab="trends" aria-current="false">Trends</a>
+      <a class="nav-item" href="#trends" data-tab="trends" aria-current="false"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3.5 3.5v17h17"/><path d="m7.5 14.5 3.5-4 3 2.5 5-6"/></svg>Trends</a>
       {% endif %}
       {# No server support and no feature flag: the builder is entirely client-side and stores
          nothing on our side, so it works on the Space and on the local dev renderer alike. #}
-      <a class="nav-item" href="#resume" data-tab="resume" aria-current="false">Résumé</a>
-      <a class="nav-item" href="#data" data-tab="data" aria-current="false">Data</a>
+      <a class="nav-item" href="#resume" data-tab="resume" aria-current="false"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6 3.5h8l4.5 4.5v12.5H6z"/><path d="M13.5 3.5V8.5h5M9 13h6M9 16.5h6"/></svg>Résumé</a>
       {% if profile_on %}
-      <a class="nav-item" href="#profile" data-tab="profile" aria-current="false">Profile</a>
-      {% else %}
-      <span class="nav-item soon" title="Coming soon">Profile<span class="chip-soon">soon</span></span>
+      <a class="nav-item" href="#profile" data-tab="profile" aria-current="false"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="8.5" r="4"/><path d="M4.5 20.5c1.4-3.6 4.2-5.5 7.5-5.5s6.1 1.9 7.5 5.5"/></svg>Profile</a>
       {% endif %}
   </nav>
 
   <div class="content">
-    <section class="panel" id="panel-search">{% include "search.html" %}</section>
+    <section class="panel" id="panel-home">{% include "home.html" %}</section>
+    <section class="panel" id="panel-search" hidden>{% include "search.html" %}</section>
     {% if sets_on %}
     <section class="panel" id="panel-matches" hidden>{% include "matches.html" %}</section>
       {% endif %}
@@ -71,7 +71,6 @@
     <section class="panel" id="panel-trends" hidden>{% include "trends.html" %}</section>
       {% endif %}
     <section class="panel" id="panel-resume" hidden>{% include "resume.html" %}</section>
-    <section class="panel" id="panel-data" hidden>{% include "data.html" %}</section>
   </div>
 
   <div class="foot">Every job here is read straight from the board the employer runs — never
@@ -79,9 +78,10 @@
     recruiters rather than the end employer; the <a href="#hot">Hiring now</a> tab labels the
     ones we have identified. Your search is matched on meaning rather than
     keywords. English-language tech roles, refreshed every couple of hours.
-    <a href="#data">What's in the index, and what isn't →</a></div>
+    <a href="{{ repo }}/blob/main/PRIVACY.md" target="_blank" rel="noopener">Privacy policy</a></div>
 </div>
 <script src="{{ url_for('static', filename='app.js') }}"></script>
+<script src="{{ url_for('static', filename='guided_tour.js') }}"></script>
 {# The résumé builder's three layers, in dependency order. Plain scripts, like app.js: no build
    step and no module loader. A new layout is one more line here and one more file. #}
 <script defer src="{{ url_for('static', filename='resume/resume_components.js') }}"></script>

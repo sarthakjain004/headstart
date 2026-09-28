@@ -278,11 +278,19 @@ app.config.update(
 # Paths that must answer signed out: the door itself, and the unsubscribe link every Digest
 # already delivered carries — a session wall must never break a mailed link. `/me` answers
 # from the caller's own cookie, so it can only tell you what you sent. `/privacy` is the URL
-# Google's OAuth consent screen points strangers at before they have an Account.
-_PUBLIC_PATHS = {"/", "/auth/google", "/me", "/unsubscribe", "/privacy"}
+# Google's OAuth consent screen points strangers at before they have an Account. The logo mark
+# is the one static file the door loads: its brand mark and its favicon (ADR-0249).
+_PUBLIC_PATHS = {
+    "/",
+    "/auth/google",
+    "/me",
+    "/unsubscribe",
+    "/privacy",
+    "/static/logo_mark.svg",
+}
 
-# The public repository, named once *for the Space*. Both trust surfaces (ADR-0112's door,
-# ADR-0113's Data tab) and the `/privacy` redirect link into it, and "check it yourself" is the
+# The public repository, named once *for the Space*. ADR-0112's door, the app's privacy-policy
+# links and the `/privacy` redirect all link into it, and "check it yourself" is the
 # claim they rest on, so a rename must not leave half of one page's links dead.
 # `scripts/ui/serve.py` necessarily keeps its own copy — it is the local renderer and shares no
 # config with this module — and PRIVACY.md names the URL in prose.
@@ -1177,18 +1185,6 @@ def me():
     )
 
 
-@app.route("/coverage")
-def coverage():
-    """What the served table actually carries, counted live (ADR-0113).
-
-    The Data tab reads this. Its own route rather than a field on ``index`` because the tab
-    is opened by a minority of visits and the counts, though cheap, are not free on the
-    first one — and because a number rendered into the page at boot would freeze at
-    whatever the table held then, which is the staleness this ADR exists to avoid.
-    """
-    return jsonify(_searcher.coverage())
-
-
 @app.route("/privacy")
 def privacy():
     """The privacy policy — one canonical copy, `PRIVACY.md` in the repository."""
@@ -1268,10 +1264,7 @@ def index():
         # the recency dropdowns, from the same tuples headstart.serving.facets counts (ADR-0084)
         seen_opts=facets.SEEN_OPTIONS,
         posted_opts=facets.POSTED_OPTIONS,
-        repo=_REPO,  # the Data tab's "check any of it" links (ADR-0113)
-        # The Data tab's storage list must describe THIS deployment. With the wall off there
-        # is no account, so it says so rather than listing what a different one would keep.
-        auth_on=_AUTH_ON,
+        repo=_REPO,  # links into the public repository, the privacy policy among them
         resume_sync_on=_SETS_ON,
         trends_on=bool(_HISTORY.ticks),
         hot_on=bool(_HOT),

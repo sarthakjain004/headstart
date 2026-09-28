@@ -578,10 +578,6 @@ class JobSearch:
         #: :data:`RESULT_COLUMNS` narrowed to what this table actually has — see that constant
         #: for why the intersection is mandatory rather than defensive.
         self.projection = tuple(c for c in RESULT_COLUMNS if c in names)
-        # The Data tab's coverage counts (ADR-0113), filled on first use. Not counted here:
-        # boot is the one moment a cold Space has a visitor waiting on it, and nobody has
-        # asked for the tab yet.
-        self._coverage: dict[str, Any] | None = None
         # Facets ignore the semantic query and the served table is immutable for this process's
         # lifetime (the Space restarts when a new table lands). Cache only the parsed structured
         # filters, bounded so arbitrary public requests cannot grow memory without limit.
@@ -1070,61 +1066,3 @@ class JobSearch:
         return self._table.count_rows(
             filter=build_filter(SearchFilters(seen_within=hours), self.capabilities)
         )
-
-    def coverage(self) -> dict[str, Any]:
-        """What share of the served table actually carries each field (ADR-0113).
-
-        The Data tab's numbers. Every one is counted here rather than written down, because a
-        coverage figure in prose is stale the moment the next run lands — README §"The served
-        table" already carries two dated to 2026-08-18 for exactly that reason. A number the
-        product measures about itself gets worse on the page when the pipeline gets worse,
-        which is the only incentive a limits page should have.
-
-        Only fields a Job may legitimately be *missing* belong here. ``remote`` was removed
-        after review: it is a facet, not a gap — a share here would answer "how many are
-        remote", which the Search rail's own counts already answer, rather than "how often do
-        we not know". Its provenance is also mixed — many scrapers read a board-supplied
-        workplace-type field, others fall back to ``jobs.job.is_remote`` over the location text,
-        several OR the two — so no single sentence describes the column. Successive revisions
-        of this docstring asserted "the board's flag" and then "an inference" with equal
-        confidence, and two attempts to count the split were both wrong; see ADR-0113.
-
-        Costs one :meth:`count_rows` for the total plus one per field — six in all, not five.
-        `headstart.serving.facets` measured that primitive at 4–6 ms against a 316,606-row table,
-        so the whole panel is cheaper than a single ranked search — and it is cached per
-        process anyway: a new index arrives with a Space restart, never under a running one.
-
-        A field whose column arrives with a migration (``first_seen``, the salary columns,
-        ``description``) is reported as ``None`` on a table that predates it — never as zero,
-        which would read as "measured, and none have it" (ADR-0009's unknown-is-not-zero rule).
-        ``posted_at`` and ``min_years`` need no such guard: they are in the base ``_schema()``
-        and every served table has carried them.
-        """
-        if self._coverage is None:
-            fields = {
-                "posted_at": "posted_at IS NOT NULL AND posted_at != ''",
-                "first_seen": "first_seen IS NOT NULL AND first_seen != ''"
-                if self.capabilities.has_first_seen
-                else None,
-                "salary": salary_known_filter.clause(self.capabilities.has_salary_known)
-                if self.capabilities.has_min_salary_annual
-                else None,
-                "min_years": "min_years IS NOT NULL",
-                "description": (
-                    "description_stored = true"
-                    if self.capabilities.has_description_stored
-                    else "description IS NOT NULL AND description != ''"
-                )
-                if self.capabilities.has_description
-                else None,
-            }
-            self._coverage = {
-                "total": self._table.count_rows(),
-                "fields": {
-                    name: (
-                        None if where is None else self._table.count_rows(filter=where)
-                    )
-                    for name, where in fields.items()
-                },
-            }
-        return self._coverage

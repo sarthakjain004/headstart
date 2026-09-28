@@ -58,7 +58,6 @@ def main() -> None:
             saved_on=False,
             profile_on=False,
             trends_on=False,
-            auth_on=False,
             repo="https://example.invalid",
         )
 
@@ -104,10 +103,6 @@ def main() -> None:
     def me():
         return jsonify({"email": ""})
 
-    @app.get("/coverage")
-    def coverage():
-        return jsonify({"total": 1, "fields": {"description": 1}})
-
     logging.getLogger("werkzeug").setLevel(logging.ERROR)
     server = make_server("127.0.0.1", 0, app, threaded=True)
     worker = threading.Thread(target=server.serve_forever, daemon=True)
@@ -133,6 +128,29 @@ def main() -> None:
                     ),
                 )
                 page.goto(base)
+                # The bare URL is Home (ADR-0249), and a first visit is offered the tour once.
+                expect(page.locator("#panel-home")).to_be_visible()
+                expect(page.locator("#panel-search")).to_be_hidden()
+                page.get_by_role("button", name="No thanks", exact=True).click()
+                expect(page.locator(".tour-offer")).to_have_count(0)
+                # The tour: it opens on the navigation, Next moves it to Search's box, Back
+                # returns, and Escape closes it and gives the page back.
+                page.locator("#panel-home [data-tour-start]").first.click()
+                expect(page.locator(".tour-pop")).to_be_visible()
+                expect(page.locator(".tour-title")).to_have_text(
+                    "Everything is one click away"
+                )
+                page.get_by_role("button", name="Next", exact=True).click()
+                expect(page.locator(".tour-title")).to_have_text(
+                    "Describe the job you want"
+                )
+                expect(page.locator("#panel-search")).to_be_visible()
+                page.keyboard.press("ArrowLeft")
+                expect(page.locator(".tour-count")).to_have_text("1 of 4")
+                page.keyboard.press("Escape")
+                expect(page.locator(".tour-pop")).to_have_count(0)
+                assert not page.evaluate("document.querySelector('.shell').inert")
+                page.get_by_role("link", name="Search", exact=True).click()
                 expect(page.locator("#results .title")).to_contain_text("BROWSE")
                 query = page.get_by_label("Describe the role you want", exact=True)
                 query.fill("old")
@@ -154,11 +172,9 @@ def main() -> None:
                 ).to_be_visible()
                 page.get_by_role("link", name="Matches", exact=True).click()
                 expect(page.locator("#matches-results .title")).to_contain_text("SAVED")
-                page.get_by_role("link", name="Data", exact=True).click()
+                page.get_by_role("link", name="Home", exact=True).click()
                 expect(
-                    page.get_by_role(
-                        "heading", name="Saved searches and delivery limits"
-                    )
+                    page.get_by_role("heading", name="What you can do here")
                 ).to_be_visible()
                 assert page.evaluate(
                     "document.documentElement.scrollWidth <= innerWidth"

@@ -1,0 +1,137 @@
+{# The Home tab (ADR-0249): what HeadStart is, in plain words, and the way into it. It replaced
+   the Data tab as the landing view. Two rules from that tab survive here: every figure is read
+   from the index at request time rather than typed in, and a card only links to a tab this
+   deployment actually has. What Home does not carry over is the Data tab's ADR citations and
+   its live field counts — a visitor reads this page to learn what the product does, not how it is built.
+
+   Vocabulary: CONTEXT.md reserves "listing", "posting" and "opening" for the raw record an ATS
+   returns. The thing a user sees is a Job, so this page says "job". #}
+
+{# The product video (issue #755). To ship it, put the file in static/ and name it here: the
+   <video> then takes the sketch's place inside the same 16:9 frame, so nothing else moves. #}
+{% set intro_video = none %}
+
+<div class="home">
+
+  <section class="home-hero">
+    <div>
+      <p class="home-eyebrow">For everyone in tech</p>
+      <h2 class="home-title">Get a head start on your next tech job.</h2>
+      <p class="home-lede">HeadStart reads jobs directly from the career sites companies hire
+        through, keeps the tech roles, and lets you search them by describing the job you want
+        in your own words.</p>
+      {# The search box on the first screen, not only a link to one: the words go to the Search
+         tab and run there (app.js), so Home keeps no results of its own. #}
+      <form class="home-search" id="home-search" role="search">
+        <input id="home-q" type="text" aria-label="Search tech jobs"
+               placeholder="Describe the role you want" autocomplete="off">
+        <button type="submit" class="btn-primary">Search</button>
+      </form>
+      <div class="home-actions">
+        <a class="ghost home-secondary" href="#search">Browse all jobs</a>
+        <button type="button" class="ghost home-secondary" data-tour-start>Take a tour</button>
+      </div>
+      <p class="home-facts"><span><b>{{ njobs }}</b> tech jobs{% if atses %} from
+        <b>{{ atses|length }}</b> hiring platforms{% endif %}</span>
+        <span>refreshed every couple of hours</span></p>
+    </div>
+
+    <figure class="home-video">
+      {% if intro_video %}
+      <video controls muted preload="metadata" playsinline
+             src="{{ url_for('static', filename=intro_video) }}"></video>
+      {% else %}
+      {# A sketch of the Search tab, not a screenshot: it cannot go stale when the real tab
+         changes, and it says what the product does before anyone has pressed play. #}
+      <div class="home-sketch" aria-hidden="true">
+        <div class="sketch-search">backend engineer at a climate startup</div>
+        <div class="sketch-row"><span class="sketch-lines"><i></i><i></i></span><span class="sketch-pay">$150k–190k</span><span class="sketch-match">92%</span></div>
+        <div class="sketch-row"><span class="sketch-lines"><i></i><i></i></span><span class="sketch-pay">$140k–175k</span><span class="sketch-match">88%</span></div>
+        <div class="sketch-row"><span class="sketch-lines"><i></i><i></i></span><span class="sketch-pay"></span><span class="sketch-match">84%</span></div>
+      </div>
+      <figcaption>A short video walkthrough is on its way.</figcaption>
+      {% endif %}
+    </figure>
+  </section>
+
+  <section class="home-sec" aria-labelledby="home-can-do">
+    <h3 id="home-can-do">What you can do here</h3>
+    <div class="home-cards">
+      <a class="home-card" href="#search">
+        <b>Search by meaning</b>
+        <span>Describe the role — “backend engineer at a climate startup” — and results come
+          back by how close they are to what you mean, not by matching exact words.</span>
+      </a>
+      <a class="home-card" href="#search">
+        <b>Narrow with filters</b>
+        <span>Experience, salary, remote, location and how recent. Filters narrow the list; the
+          search box only decides the order.</span>
+      </a>
+      {% if saved_on and sets_on %}
+      <a class="home-card" href="#saved">
+        <b>Save jobs and searches</b>
+        <span>Star a job to keep it. Save a search, and Matches re-runs it against the newest
+          jobs every time you come back.</span>
+      </a>
+      {% endif %}
+      {% if hot_on %}
+      <a class="home-card" href="#hot">
+        <b>See who is hiring</b>
+        <span>Hiring now shows which companies are adding the most tech roles right now.</span>
+      </a>
+      {% endif %}
+      {% if trends_on %}
+      <a class="home-card" href="#trends">
+        <b>Follow the trends</b>
+        <span>See which kinds of tech roles are growing or shrinking over time.</span>
+      </a>
+      {% endif %}
+      <a class="home-card" href="#resume">
+        <b>Build your résumé</b>
+        <span>Write it in your browser, pick a layout, and tailor a copy for each job you apply
+          to.</span>
+      </a>
+    </div>
+  </section>
+
+  <section class="home-sec" aria-labelledby="home-how">
+    <h3 id="home-how">How it works</h3>
+    <ol class="home-steps">
+      <li><b>We read company career sites.</b> Every job comes from the careers site a company
+        runs itself — not copied from another job board, and never paid to be placed. Some of
+        those companies are staffing firms or recruiters rather than the end employer.</li>
+      <li><b>We keep the tech roles.</b> Software engineering and the roles around it, in English
+        for now. The check leans towards keeping a borderline role, so a few non-tech jobs slip
+        through rather than a tech one going missing.</li>
+      <li><b>You apply at the source.</b> Each result opens the job on the company's own
+        careers page, where it is always current and you apply directly.</li>
+    </ol>
+  </section>
+
+  <section class="home-sec" id="good-to-know" aria-labelledby="home-know">
+    <h3 id="home-know">Good to know</h3>
+    <ul class="home-notes">
+      <li><b>Fresh, not instant.</b> The index refreshes every couple of hours. A job that closes
+        drops out once its company's site has been checked and it is missing twice in a row, so a
+        closed job can linger for a while — the company's page always has the final word.</li>
+      <li id="how-matching"><b>What the match score means.</b> The percentage on a result is how
+        close the job is to the words you typed — not how well you fit the role. With the search
+        box empty, jobs are simply listed, with no score.</li>
+      <li><b>Salaries appear when employers share them.</b> Many don't, so plenty of good jobs
+        show no pay.</li>
+      <li><b>English-language tech roles only, for now.</b> Jobs written in other languages are
+        held back until search handles them well.</li>
+      <li><b>Your data.</b> What is stored and where is in the
+        <a href="{{ repo }}/blob/main/PRIVACY.md" target="_blank" rel="noopener">privacy policy</a>.</li>
+    </ul>
+  </section>
+
+  <section class="home-end">
+    <p>Ready? Describe the job you want.</p>
+    <div class="home-actions">
+      <a class="btn-primary" href="#search">Search jobs</a>
+      <button type="button" class="ghost home-secondary" data-tour-start>Take a tour</button>
+    </div>
+  </section>
+
+</div>

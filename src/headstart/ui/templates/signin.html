@@ -3,10 +3,11 @@
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>HeadStart — tech jobs read straight from company career boards</title>
 <meta name="description" content="Software-engineering openings read directly from companies' own applicant tracking systems, searched by meaning rather than keywords.">
+<link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='logo_mark.svg') }}">
 <style>
   /* A subset of style.css's tokens — just enough for one page. Deliberately self-contained:
      signed-out requests can't fetch /static (the wall gates it), so the door inlines all it
-     needs. ADR-0112 grew this page from a card to an argument, which makes the constraint
+     needs — all but the logo mark, the one static file the wall lets through (ADR-0249). ADR-0112 grew this page from a card to an argument, which makes the constraint
      load-bearing: nothing below is decoration, and every token here is one the door uses.
 
      These values are a COPY of style.css's and must move with it. They have drifted once
@@ -38,10 +39,7 @@
     padding:48px 22px 64px; }
 
   .brand{ display:flex; align-items:center; gap:11px; margin-bottom:38px; }
-  .mark{ width:30px; height:30px; border-radius:9px; flex:none; position:relative;
-    background:var(--accent); }
-  .mark::after{ content:""; position:absolute; inset:9px 9px auto auto; width:7px; height:7px;
-    border-radius:50%; background:var(--ground); }
+  .mark{ width:30px; height:30px; flex:none; display:block; }
   .brand .name{ font:600 21px/1 var(--serif); letter-spacing:-.01em; }
   .brand .name em{ font-style:normal; color:var(--accent); }
 
@@ -109,15 +107,16 @@
 <div class="wrap">
 
   <div class="brand">
-    <div class="mark"></div>
+    <img class="mark" src="{{ url_for('static', filename='logo_mark.svg') }}" alt="" width="30" height="30">
     <div class="name">Head<em>Start</em></div>
   </div>
 
   <h1>Jobs with nothing in between.</h1>
   <p class="lede">HeadStart reads software-engineering openings <b>straight from the applicant
     tracking system each company runs its own hiring on</b> — Greenhouse, Lever, Workday, Ashby
-    among them. No reposts, no agencies, nothing bought to the top. You describe the role you
-    want in plain words, and it matches on meaning rather than keywords.</p>
+    among them. No reposts and nothing bought to the top; boards that belong to staffing firms
+    are labelled where we have identified them. You describe the role you want in plain words,
+    and it matches on meaning rather than keywords.</p>
 
   {# Every tile is an exact count. An earlier pair of drafts put an employer count here and
      then a board count; neither can be counted exactly from the served table (`company` is a
@@ -146,14 +145,7 @@
         <span><b>Closed roles get removed, and the exception is published.</b> A job missing
         from its board twice running comes out of the index — but a board we cannot read
         properly is skipped rather than emptied, so some dead entries do persist — one such
-        board was measured serving closed jobs for 22 days. The Data tab inside shows the
-        mechanism.</span>
-      </li>
-      <li>
-        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M4 10.5 8 14.5 16 6" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        <span><b>The gaps are published too.</b> Inside, a Data tab reports what share of jobs
-        carry a salary, a posting date or an experience level — counted off the live index
-        each time, not written down once.</span>
+        board was measured serving closed jobs for 22 days.</span>
       </li>
       <li>
         <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M4 10.5 8 14.5 16 6" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -172,8 +164,9 @@
     <p class="terms">Signing in stores your email address — that is the whole of what sign-in
       itself keeps. After that, only what you save on purpose: searches, starred jobs, a profile
       if you make one. Nothing is posted anywhere, no email is sent unless you switch one on
-      yourself, and signing out drops the session. The Data tab lists all of it, and the
-      <a href="/privacy" target="_blank" rel="noopener">privacy policy</a> says where it goes.</p>
+      yourself, and signing out drops the session. The
+      <a href="/privacy" target="_blank" rel="noopener">privacy policy</a> lists all of it and says
+      where it goes.</p>
     <div class="note" id="msg" role="status"></div>
   </div>
 

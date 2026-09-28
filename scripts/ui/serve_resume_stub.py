@@ -46,7 +46,6 @@ def index():
         "base.html",
         cfg={"google_client_id": "", "has_first_seen": True, "fx": None},
         repo="https://github.com/sarthakjain004/headstart",
-        auth_on=False,
         njobs="0",
         atses=[],
         india_opts=[],

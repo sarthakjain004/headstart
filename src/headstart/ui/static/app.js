@@ -26,14 +26,27 @@ window.addEventListener('unhandledrejection', e => {
 // listener), which a browser also fires on Enter — a second Enter handler there searched twice.
 el('q').addEventListener('keydown', e => { if (e.key === 'Enter') go(); });
 
-/* ---- tabs. The hash names the panel (#search, #trends); unknown hashes fall back to
-   search, so a stale link never strands anyone on a blank page. Trends data loads the
+/* ---- tabs. The hash names the panel (#search, #trends); the bare URL and any hash naming
+   neither a panel nor something inside one land on Home (ADR-0249), so a stale link — the
+   retired `#data` included — never strands anyone on a blank page. Trends data loads the
    first time its tab opens, not on page load. ---- */
+const DEFAULT_TAB = 'home';
+// A tab can carry its own state after a `?` (`#trends?company=…`, ADR-0185), so the hash is
+// named by what comes before it.
+const hashName = () => location.hash.replace('#','').split('?')[0];
 function currentTab(){
-  // A tab can carry its own state after a `?` (`#trends?company=…`, ADR-0185), so the panel
-  // is named by what comes before it.
-  const name = location.hash.replace('#','').split('?')[0];
-  return document.getElementById('panel-' + name) ? name : 'search';
+  const name = hashName();
+  if (document.getElementById('panel-' + name)) return name;
+  // An in-page anchor (the skip link's `#results`, Home's `#how-matching`) names an element
+  // rather than a panel: the tab is whichever panel holds it. Without this the skip link
+  // switched the page to Home the moment the default stopped being Search.
+  const panel = hashAnchor()?.closest('.panel');
+  return panel ? panel.id.slice('panel-'.length) : DEFAULT_TAB;
+}
+// The element a hash names when it names no panel, or null.
+function hashAnchor(){
+  const name = hashName();
+  return name && !document.getElementById('panel-' + name) ? document.getElementById(name) : null;
 }
 function showTab(name){
   document.querySelectorAll('.panel').forEach(p => { p.hidden = p.id !== 'panel-' + name; });
@@ -60,78 +73,39 @@ function showTab(name){
   }
   if (name === 'saved' && el('saved-results')) loadSaved();   // re-check "closed" on every visit
   if (name === 'profile' && el('pquery')) loadProfile();      // server truth on every visit
-  if (name === 'data' && el('cov') && !coverage) loadCoverage();
   // The résumé builder converts pixels to inches from the page's measured width, and a hidden
   // panel measures zero — so it re-paints on the way in rather than on page load.
   if (name === 'resume' && window.ResumeEditor) ResumeEditor.shown();
 }
-window.addEventListener('hashchange', () => { showTab(currentTab()); viaTabStrip = false; });
+// Home's search box (ADR-0249) hands its words to the Search tab and runs them there. Focus
+// follows to the results once the tab is open — the button it left is hidden with Home — and
+// to the list rather than the box, so a phone's keyboard does not come back over the jobs.
+if (el('home-search')) el('home-search').addEventListener('submit', e => {
+  e.preventDefault();
+  el('q').value = el('home-q').value;
+  window.addEventListener('hashchange', () => el('results').focus(), { once: true });
+  location.hash = '#search';
+  go();
+});
+let shownTab = null;
+window.addEventListener('hashchange', () => {
+  const tab = currentTab();
+  showTab(tab);
+  viaTabStrip = false;
+  // The browser scrolls to an anchor before this runs, while its panel is still hidden — so it
+  // scrolls nowhere, and the section is found here instead. A switch to another tab starts at
+  // its top: the sidebar stays in view down a long page, and a click there used to open the
+  // next tab at the scroll depth of the last one.
+  const anchor = hashAnchor();
+  if (anchor) anchor.scrollIntoView({ block: 'start' });
+  else if (shownTab !== tab) window.scrollTo(0, 0);
+  shownTab = tab;
+});
 // Whether the hash change about to land came from the tab strip's own link (showTab). Reset on
 // every hash change, so a click that changed nothing (a cmd-click, a tab already open) cannot
 // leave it set for a later Back.
 let viaTabStrip = false;
 document.addEventListener('click', e => { if (e.target.closest && e.target.closest('.tabs [data-tab]')) viaTabStrip = true; }, true);
-
-/* ---- The Data tab's coverage counts (ADR-0113). Fetched on first open, never on page load:
-   the tab is a minority of visits and the counts, though cheap, are not free on the first one.
-
-   Every row is a share of the served index, phrased as what a user would actually ask —
-   "how often will I see a salary" — rather than as a column name. A field the table does not
-   carry yet comes back null and is skipped entirely; rendering it as 0% would read as
-   "measured, and none have it", which is a different and wrong claim. ---- */
-let coverage = null;
-// `remote` is deliberately absent: it is a facet, not a gap. Nearly every row has a value, so
-// a percentage here would answer "how many are remote" — which the Search rail's own counts
-// already answer — rather than "how often is this unknown". Its provenance is mixed too (some
-// boards publish the field, others are read from the location text), which is why the rail's
-// caveat describes both and this row describes neither.
-const COV_ROWS = [
-  ['salary', 'state a salary', 'Most boards publish none. Filters that need one can only match these.'],
-  ['posted_at', 'carry the employer\u2019s posting date', 'Their date, in their format \u2014 not ours, and not always given.'],
-  ['min_years', 'have a years figure we could derive', 'Read from the posting where it states one \u2014 otherwise estimated from a seniority word like \u201cSenior\u201d in the title, which is a guess rather than the employer\u2019s stated requirement.'],
-  ['first_seen', 'record when HeadStart first saw them', 'Stamped on arrival, so older rows predate the field and cannot show a \u201cnew\u201d tag.'],
-  ['description', 'have their full text stored', 'Keyword search inside descriptions reaches only these.'],
-];
-
-async function loadCoverage(){
-  const box = el('cov');
-  // `r.ok` is checked, not just the parse. A 401 or 500 body parses perfectly well into an
-  // object with no `fields`, and the render below would then have reported "the index carries
-  // none of these fields yet" \u2014 a false claim, on the one page whose subject is not making any.
-  const fail = '<p class="aside">Couldn\u2019t reach the index to count just now. ' +
-    'Reload to try again \u2014 no figure is better than a guessed one.</p>';
-  let r;
-  try{
-    r = await fetch('/coverage');
-    if (!r.ok){ logFail('GET', '/coverage', r.status); box.innerHTML = fail; return; }
-    const d = await r.json();
-    if (!d || typeof d.total !== 'number' || !d.fields) throw new Error('shape');
-    coverage = d;
-  }catch(e){ logFail('GET', '/coverage', r ? r.status : 0, e); box.innerHTML = fail; return; }
-  const total = coverage.total;
-  // One count per field against the one total \u2014 the server used to repeat `total` on every
-  // field, which is one number said five times and five chances for them to disagree.
-  const rows = COV_ROWS
-    .filter(([key]) => typeof coverage.fields[key] === 'number')
-    .map(([key, what, why]) => {
-      const share = coverage.fields[key] / total;
-      const pct = Math.round(share * 100);
-      // A nonzero count must never print "0%": rounded down it reads as "measured, and none
-      // have it", which is the unknown-is-not-zero confusion one row over (ADR-0009).
-      const label = coverage.fields[key] > 0 && pct === 0 ? 'under 1%' : pct + '%';
-      return `<div class="cov-row">
-        <div class="cov-bar"><span style="width:${Math.max(pct, share > 0 ? 1 : 0)}%"></span></div>
-        <div class="cov-txt"><b>${label}</b> ${esc(what)}
-          <span class="aside">${esc(why)}</span></div>
-      </div>`; }).join('');
-  // An empty table would otherwise render "Of 0 jobs \u2026 0% state a salary" \u2014 exactly the
-  // "measured, and none have it" reading the unknown-is-not-zero rule exists to prevent.
-  box.innerHTML = !total
-    ? '<p class="aside">The index is empty right now, so there is nothing to measure.</p>'
-    : rows
-      ? `<p class="cov-total">Of <b>${total.toLocaleString()}</b> jobs in the index right now:</p>${rows}`
-      : '<p class="aside">The index carries none of these fields yet.</p>';
-}
 
 function flipTheme(){
   const now = document.documentElement.getAttribute('data-theme')
@@ -685,7 +659,7 @@ async function fetchPage(){
 function drawResultKind(q, shown){
   const node = el('kind');
   if (!node || !shown) { if (node) node.textContent = ''; return; }
-  const explain = ' <a href="#data">How the match score works \u2192</a>';
+  const explain = ' <a href="#how-matching">How the match score works \u2192</a>';
   // Three states, not two. A date sort re-orders the best matches, so claiming similarity
   // order there would contradict #sortnote, which sits two lines above this in the same
   // column and already says exactly that.
@@ -4568,6 +4542,7 @@ readSearchHash();   // a reloaded or shared hand-off (`#search?board=…`) scope
 go();   // an empty query browses the newest jobs (ADR-0074) — the Search tab is never empty
 whoAmI();
 showTab(currentTab());
+shownTab = currentTab();
 // Result cards need star states before the Saved tab is ever opened; landing ON the tab
 // already loads via showTab above.
 if (CAN_STAR && currentTab() !== 'saved') loadSaved();
