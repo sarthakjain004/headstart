@@ -1654,7 +1654,7 @@ _ANTHROPIC_LIMIT = rate_limit.RateLimit(_ANTHROPIC_LIMIT_REQUESTS, _LIMIT_WINDOW
 # At most 4 `/mcp` requests at once across every caller, on the Space's 2 vCPU: each fans out to
 # two to four reads on threads, so 4 costs about what four people searching in the page at once
 # do. At most 2 of them from one caller (ADR-0276), counted as the request limit counts it, so
-# Anthropic's range is one caller: a call can hold its place for its whole 90 s deadline, and
+# Anthropic's range is one caller: a call can hold its place for its whole 45 s deadline, and
 # one caller's slow searches must not hold every place. One more waits up to 10 s for a place,
 # then is told to retry.
 _MCP_AT_ONCE = 4

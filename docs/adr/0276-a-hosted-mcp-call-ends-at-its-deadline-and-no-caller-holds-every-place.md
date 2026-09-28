@@ -44,8 +44,8 @@ stubbed as its tests stub them (`/search` held for 150 s), and against probe ser
   bare sentence.
 - **Nothing identifies one claude.ai user.** Claude Code over HTTP sends the legacy `initialize`
   and no `Mcp-Session-Id`, since this server mints none. The 2026-07-28 revision removes sessions,
-  and claude.ai's chats speak it (ADR-0267). A server there MUST NOT mint a session id. The request's
-  `clientInfo` is unauthenticated and names the client program, not the person.
+  and claude.ai's chats speak it (ADR-0267). A server there should neither mint nor echo a session
+  id. The request's `clientInfo` is unauthenticated and names the client program, not the person.
 
 ## Decision
 
@@ -54,9 +54,8 @@ each read on a thread of its own (`space-mcp-read`) and waits at most `timeout_s
 raises `DeadlinePassed`. The tool then answers with a result carrying `isError` and this sentence:
 "HeadStart did not answer within this call's 45 s, so it stopped waiting. Narrow the filters, or
 ask for the concise detail, and try again: a description keyword over a broad search is the
-slowest kind." `build_server` gives an
-in-process read the call's whole deadline, because there is no connection to lose there. Over HTTPS
-one attempt is still cut at 20 s and retried. `SpaceClient` also answers `DeadlinePassed`, not
+slowest kind." `build_server` gives an in-process read the call's whole deadline, because there is
+no connection to lose there. Over HTTPS one attempt is still cut at 20 s and retried. `SpaceClient` also answers `DeadlinePassed`, not
 "the Space is starting", when earlier reads in the same call have used up the time, since the app
 has plainly answered.
 
