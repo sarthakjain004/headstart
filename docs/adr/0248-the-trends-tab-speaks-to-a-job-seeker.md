@@ -39,9 +39,14 @@ more job sites found".
 jobs). A company picker option reads "9,214 tech openings · 3 job sites", with no ATS list. The
 directory keeps same-named employers apart (ADR-0185), and they used to be labelled by ATS
 ("Citi (workday)") or by key ("Citi (workday:citi/2)"). They are now labelled by their current
-openings, "Citi (44 openings)", in the picker, the chips and the chart. Two that share those too are
-numbered in key order, "Citi (0 openings, 1 of 2)". The Source filter still lists ATSes, as
-Search's "ATS provider" filter does: there the ATS is what the reader chose to filter by.
+tech openings, "Citi (44 openings)", wherever two are picked together: the chips, the chart and the
+sentences. (The picker itself offers one company per name.) Two with the same openings too are
+numbered in key order, "Citi (0 openings, 1 of 2)". On 2026-09-28 the directory held 1,303 names
+more than once, and 408 of them had two or more companies at the same openings (38 of those at
+zero). A tie of that kind is often one employer listed twice, which nothing else the page has
+tells apart. The count is the company's whole tech
+total, so inside a category it is larger than the line beside it. The Source filter still lists
+ATSes, as Search's "ATS provider" filter does: there the ATS is what the reader chose to filter by.
 
 **The answer carries its figures, not their method.** The index sentence gives its net as opened
 against closed, "about 650 more opened than closed — about 9,300 opened, 8,600 closed since Sep

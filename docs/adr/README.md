@@ -243,7 +243,7 @@ supersedes it and note the supersession in both.
 | [0245](0245-an-avature-board-is-its-tenant-host-read-through-its-portal-sitemaps.md) | An Avature Board is its tenant host, read through its portals' sitemaps | 2026-09-26 |
 | [0246](0246-a-radancy-career-front-is-a-board-keyed-by-its-host-scraped-in-full.md) | A Radancy career front is a Board keyed by its host, scraped in full | 2026-09-26 |
 | [0247](0247-search-filters-are-always-open-beside-the-results.md) | Search filters are always open, beside the results on a wide screen | 2026-09-28 |
-| [0248](0248-the-trends-tab-speaks-to-a-job-seeker.md) | The Trends tab speaks to a job seeker: plain words, one caption, a folded note | 2026-09-28 |
+| [0248](0248-the-trends-tab-speaks-to-a-job-seeker.md) | The Trends tab speaks to a job seeker: plain words, no ATS names, one caption, a folded note | 2026-09-28 |
 
 *ADR-0037 was removed from the repository on 2026-09-24 by the owner's decision; its number is not
 reused.*

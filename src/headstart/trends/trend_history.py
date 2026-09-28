@@ -1893,29 +1893,25 @@ class TrendHistory:
         """Each company's name, told apart from any other in ``keys`` that shares it.
 
         The directory keeps same-named employers apart when nothing proves them one (ADR-0185),
-        so "Citi" on Workday and "Citi" on Eightfold both appear. They are told apart by their
-        openings now, which a job seeker can weigh, never by ATS or key (ADR-0248): "Citi (44
-        openings)". Two that share that too are numbered in key order, "Citi (0 openings, 1 of 2)".
+        so two "Citi"s can both be in ``keys``. They are told apart by their tech openings, a
+        figure a job seeker can weigh, and never by ATS or key (ADR-0248): "Citi (44 openings)".
+        Two with the same openings too are numbered in key order: "Citi (0 openings, 1 of 2)".
         """
         names = Counter(self._companies[key]["name"] for key in keys)
-        sized = {}
-        for key in keys:
-            n = self._company_openings(self._companies[key])
-            sized[key] = (
-                f"{self._companies[key]['name']} ({n:,} opening{'' if n == 1 else 's'})"
-            )
-        twins: dict[str, list[str]] = {}
-        for key in sorted(keys):
-            twins.setdefault(sized[key], []).append(key)
+        openings = {key: self._company_openings(self._companies[key]) for key in keys}
+        sharing = Counter((self._companies[key]["name"], openings[key]) for key in keys)
+        numbered: Counter = Counter()
         labels = {}
-        for key in keys:
-            same = twins[sized[key]]
-            if names[self._companies[key]["name"]] == 1:
-                labels[key] = self._companies[key]["name"]
-            elif len(same) == 1:
-                labels[key] = sized[key]
+        for key in sorted(keys):
+            name, n = self._companies[key]["name"], openings[key]
+            size = f"{n:,} opening{'' if n == 1 else 's'}"
+            if names[name] == 1:
+                labels[key] = name
+            elif sharing[name, n] == 1:
+                labels[key] = f"{name} ({size})"
             else:
+                numbered[name, n] += 1
                 labels[key] = (
-                    f"{sized[key][:-1]}, {same.index(key) + 1} of {len(same)})"
+                    f"{name} ({size}, {numbered[name, n]} of {sharing[name, n]})"
                 )
-        return labels
+        return {key: labels[key] for key in keys}
