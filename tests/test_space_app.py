@@ -2548,6 +2548,68 @@ def test_a_script_or_stylesheet_is_gzipped_and_still_revalidates(app, name):
     assert again.status_code == 304
 
 
+def test_the_page_names_its_files_under_this_boot_and_the_browser_keeps_them(
+    auth_app, monkeypatch
+):
+    """ADR-0257: every script and stylesheet the page names carries this boot's version, and a
+    file asked for under it is kept for the boot, re-signing no session cookie and varying by
+    none; one asked for without it still revalidates."""
+    client = _signed_in(auth_app, monkeypatch)
+    version = auth_app._ANSWERS_VERSION
+    page = client.get("/", base_url=_HTTPS).data.decode()
+    named = re.findall(r'(?:src|href)="(/static/[^"]+)"', page)
+    assert named and all(f"v={version}" in url for url in named)
+    kept = client.get(
+        f"/static/app.js?v={version}",
+        base_url=_HTTPS,
+        headers={"Accept-Encoding": "gzip"},
+    )
+    assert kept.headers["Cache-Control"] == "private, max-age=31536000, immutable"
+    assert kept.headers["Content-Encoding"] == "gzip"
+    assert "Set-Cookie" not in kept.headers
+    assert "Cookie" not in kept.headers.get("Vary", "")
+    plain = client.get("/static/app.js", base_url=_HTTPS)
+    assert "immutable" not in plain.headers.get("Cache-Control", "")
+    assert (
+        client.get(
+            f"/static/app.js?v={version}",
+            base_url=_HTTPS,
+            headers={"If-None-Match": plain.headers["ETag"]},
+        ).status_code
+        == 304
+    )
+
+
+def test_the_page_asks_for_the_answer_it_opens_on_beside_its_scripts(
+    auth_app, monkeypatch
+):
+    """ADR-0257: a bare #trends or #hot preloads the one answer that tab draws first, under the
+    same URL app.js asks for, from the head, before the stylesheets."""
+    app = auth_app
+    page = _signed_in(app, monkeypatch).get("/", base_url=_HTTPS).data.decode()
+    head = page[: page.index("</head>")]
+    assert "rel: 'preload', as: 'fetch'" in head
+    assert head.index("rel: 'preload'") < head.index('rel="stylesheet"')
+    assert "'/trends?v=' + v" in head and "'/hot?v=' + v" in head
+    assert json.dumps(app._ANSWERS_VERSION) in head
+
+
+def test_the_opening_views_and_their_charted_drills_are_answered_at_boot(
+    company_trends, trends_app
+):
+    """ADR-0257: the opening view under both Measures, and each charted category's levels
+    under it, which is what a click on the opening view opens."""
+    trends_app._answer_opening_views()
+    history = trends_app._HISTORY
+    kept = {key for held, key in trends_app._TRENDS_ANSWERED if held is history}
+    for metric in ("stock", "new"):
+        opening = history.unnetted_answer(trend_history.TrendQuestion(metric=metric))
+        assert history.answer_key(trend_history.TrendQuestion(metric=metric)) in kept
+        for line in opening["series"][: trends_app._CHARTED]:
+            drill = trend_history.TrendQuestion(metric=metric, family=line["name"])
+            assert history.answer_key(drill) in kept
+
+
 def test_no_directory_answers_503(trends_app, monkeypatch):
     monkeypatch.setattr(trends_app._HISTORY, "_companies", {})
     client = trends_app.app.test_client()
