@@ -922,7 +922,6 @@ class WorkdayScraper(BaseScraper):
         """Crawl the tenant (paginate + recursively subdivide capped queries) and
         return a flat, de-duplicated list of raw posting dicts."""
         self._resolve_instance()  # follow data-center migrations before crawling
-        postings: list[dict[str, Any]] = []
         by_key: dict[str, dict[str, Any]] = {}
 
         def absorb(batch: list[dict[str, Any]]) -> None:
@@ -935,9 +934,9 @@ class WorkdayScraper(BaseScraper):
                         by_key[key].setdefault("jobFamilyGroup", item["jobFamilyGroup"])
                     continue
                 by_key[key] = item
-                postings.append(item)
 
         self._exhaust(_FIXED_FACETS_BY_SLUG.get(self.slug, {}), absorb, depth=0)
+        postings = list(by_key.values())
         # Second pass: fill each posting's detail fields concurrently (bounded); a failed
         # fetch leaves ``_detail`` empty so the job is still kept.
         # What the lost details were lost to. The count on its own cannot tell a throttled
@@ -952,8 +951,9 @@ class WorkdayScraper(BaseScraper):
         # `parse` reads `title` and `jobFamilyGroup` off this same listing item and never off
         # `_detail`, so the gate's verdict is the one `filter_tech` will reach — exact, not
         # approximate. A family `_exhaust` learned from a slice (:func:`_slice_family`) counts
-        # here too, so a vague title under a technical family now earns its detail fetch. A gated posting still becomes a Job, with `description=None`; the Board's
-        # list stays whole, so no truncation denominator moves.
+        # here too, so a vague title under a technical family earns its detail fetch. A gated
+        # posting still becomes a Job, with `description=None`; the Board's list stays whole, so
+        # no truncation denominator moves.
         wanted = self.tech_detail_wanted(
             postings,
             lambda item: item.get("title"),
@@ -2045,8 +2045,9 @@ def _remote_from(remote_type: Any) -> bool | None:
     return None
 
 
-#: Facets whose counts partition a Board: a posting has one family and one time type. A
-#: posting can name several locations, so a location facet's counts overstate it.
+#: Facets whose counts partition a Board: a posting has one family and one time type (nvidia
+#: 2026-09-28: families sum to 2,646 and Full time 2,649 + Part time 2 to 2,651, against 2,651
+#: postings read). A posting can name several locations, so a location facet's counts overstate it.
 _PARTITIONING_FACETS = frozenset({"jobFamilyGroup", "timeType"})
 
 

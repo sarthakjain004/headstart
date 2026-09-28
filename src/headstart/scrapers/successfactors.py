@@ -36,8 +36,9 @@ none of 50 pages from the 10 largest Boards nor the probe pages of 195 more (ADR
 ``JobPosting``). The branch stays because it costs nothing where absent. A department, where a
 page states one, is a tenant-named label token ("Job Category:" on careers.rogerscorp.com,
 "Department:" on yourcareer.rathbones.com); the RSS stream's ``g:job_function``
-(:func:`_job_functions_from`) wins over it where the Board was read off that stream. A page that yields no
-title drops that job for the run (there is nothing to keep it by); it returns next scrape.
+(:func:`_job_functions_from`) wins over it where the Board was read off that stream. A page that
+yields no title drops that job for the run (there is nothing to keep it by); it returns next
+scrape.
 
 One title-less page is not a failure: RMK's unavailable shell, a ``<p class="jobErrMsg">`` reading
 "You can't view this job because it's not available at this time.", served with a 200 for an id
@@ -914,8 +915,9 @@ def _job_functions_from(text: str) -> dict[str, str]:
     listing surface (module docstring's surfaces 2/3) — the plain urlset surface (most tenants)
     has no such field; a job page states one only as a tenant-named label token
     (:data:`_DEPARTMENT_LABELS`), read on the page instead. Verified live 2026-09-22 on
-    jobs.sap.com and jobs.tetrapak.com: `g:id` matches the same numeric id `_JOB_PATH` reads off the item's own
-    `<link>`, and `g:job_function` states a clean label ("Sales", "Market Operations & Finance").
+    jobs.sap.com and jobs.tetrapak.com: `g:id` matches the same numeric id `_JOB_PATH` reads off
+    the item's own `<link>`, and `g:job_function` states a clean label ("Sales", "Market
+    Operations & Finance").
     (jobs.sap.com has since left RMK: its sitemap is a Cloudflare-walled site's index, 2026-09-28.)
 
     A minority of tenants state an internal ATS configuration token here instead of a real

@@ -152,7 +152,7 @@ A Unique Board a run may actually pick: minus `registry.DISABLED_ATS` (−25,488
 _Avoid_: calling this "unique" — the 27,176 Boards between it and Unique Board are real and distinct, deliberately skipped rather than deduplicated. The alias subtraction is the one exception, and it is small: those 1,172 serve no posting a kept Board does not — one Board reached by more than one name, a Taleo career section or ADP Recruiting Management career site whose every posting another of its tenant already lists, or an Eightfold career site whose backing ATS Board lists its postings and serves every tech one (a distinct Board, but a redundant one).
 
 **Hiring Board** — 103,837:
-A Scrapable Board with at least one open posting (`scrapable_boards.load(min_jobs=1)`, the function's default). The other 53,470 are live but empty.
+A Scrapable Board with at least one open posting (`scrapable_boards.load(min_jobs=1)`, the function's default). The other 53,473 are live but empty.
 
 **Slice** — 80,000:
 The Boards one run picks (`scrape_plan --max-boards`), split 70/30 by `pick_boards` into a **Head** (up to 56,000 **Scored Boards**, score-descending; on 2026-09-25 that held every Scrapable one, ADR-0229 has the count) and a **Tail** (the rest). The Tail rotates through everything not in the Head, the Boards looked at longest ago first, by the cost ledger's `updated_at` (ADR-0229); ADR-0062 reserves a share of it for Boards with unsettled descriptions. Only the Slice is scraped, which is why **Eviction**'s unit is *scrapes of a Board*, never runs.
