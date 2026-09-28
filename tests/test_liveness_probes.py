@@ -2062,11 +2062,34 @@ def test_avature_a_label_whose_cname_names_another_tenant_is_dead_unprobed(monke
     assert asked == []
 
 
-@pytest.mark.parametrize("label", ["sandboxtql", "sandbox3uskpmg", "uatauspost"])
+@pytest.mark.parametrize(
+    "label",
+    [
+        "sandboxtql",
+        "sandbox3uskpmg",
+        "uatauspost",
+        "ibmsandbox1",
+        "newsandboxjusticejobs",
+        "mckinseyuat",
+        "stagingikea",
+        "ciscostageats",
+        "dbgrouptest",
+        "kpmguat2",
+    ],
+)
 def test_avature_a_non_production_label_is_dead_unprobed(monkeypatch, label):
     asked = _avature(monkeypatch, {})
     assert cl.p_avature(label, "") == (cl.DEAD, None)
     assert asked == []
+
+
+@pytest.mark.parametrize(
+    "label", ["graduatecareers", "latestart", "backstage", "bloomberg"]
+)
+def test_avature_a_production_label_is_probed(monkeypatch, label):
+    asked = _avature(monkeypatch, {})
+    cl.p_avature(label, "")
+    assert asked != []
 
 
 def test_avature_an_unreadable_cname_is_unknown(monkeypatch):
