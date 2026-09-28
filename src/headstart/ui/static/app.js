@@ -285,7 +285,7 @@ function currentFilters(){
 }
 const LABELS = { remote:'Remote', has_salary:'Shows salary', max_years:'Your experience',
   kw:'Keyword', kw_in:'Look in',
-  ats:'ATS provider', etype:'Type', india:'India', location:'Location', company:'Company',
+  ats:'Source', etype:'Type', india:'India', location:'Location', company:'Company',
   posted_within:'Posted ≤', seen_within:'First seen ≤',
   salary_min:'Salary from', salary_max:'Salary to' };
 // A chip should read as the sentence the user set, in the units the read-out and the results
@@ -318,7 +318,7 @@ function drawActive(){
     ? `Other currencies are converted at rates from ${FX.as_of} \u2014 currency conversion, not cost of living.`
     : '';
   box.innerHTML = (searchScope
-    ? `<span class="pill" title="The boards HeadStart counts for this company${searchScope.category ? ', in the category its trend counted' : ''}. Not kept in a saved search."><b>Company</b> ${esc(searchScope.label)}${
+    ? `<span class="pill" title="Every job HeadStart reads for this company${searchScope.category ? ', in the category its trend counted' : ''}. Not kept in a saved search."><b>Company</b> ${esc(searchScope.label)}${
         searchScope.category ? ` · ${esc(searchScope.category.label)}` : ''}` +
       `<button onclick="dropFilter('board')" aria-label="Remove Company filter">×</button></span>` : '') +
     shown.map(([k,v]) =>
@@ -558,7 +558,7 @@ function readSearchHash(){
   // The whole hand-off, not only its Boards: Back from Google › Data to Google › AI names the
   // same Boards with another query, and comparing the Boards alone left the page on Data.
   if (!boards.length || location.hash === searchHash()) return false;
-  searchScope = { boards, label: p.get('label') || `${boards.length} board${boards.length === 1 ? '' : 's'}`,
+  searchScope = { boards, label: p.get('label') || `${boards.length} job site${boards.length === 1 ? '' : 's'}`,
                   category: p.get('role') ? { role: p.get('role'), label: p.get('family_label') || p.get('role') }
                     : p.get('family') ? { family: p.get('family'), label: p.get('family_label') || p.get('family') } : null,
                   aside: Number(p.get('aside')) || 0,
@@ -711,7 +711,7 @@ function drawResultKind(q, shown){
       ? ` — including ${searched.scope.aside.toLocaleString()} its trend leaves out as non-tech` : '';
     const scope = searched.scope
       ? `Jobs from ${searched.scope.label}${searched.scope.category ? `, ${searched.scope.category.label}` : ''}${aside}`
-      : Object.keys(searched.filters).length ? 'Jobs matching the filters above' : 'Jobs from across every board';
+      : Object.keys(searched.filters).length ? 'Jobs matching the filters above' : 'Jobs from every company';
     const counted = searched.scope && searched.scope.counted;
     node.textContent = `${scope}, ${order} \u2014 no search yet, so nothing is ranked. ` +
       'Describe a role above to rank by meaning.' + (counted
@@ -831,7 +831,7 @@ function drawKeywordNote(facets){
     note.textContent = 'Only jobs with a stored description can match a keyword here — not every job has one.';
     return; }
   if (facets.description_coverage === null || facets.description_coverage === undefined){
-    note.textContent = 'Matching inside descriptions isn\'t available yet — descriptions are still being added to the index.';
+    note.textContent = 'Matching inside descriptions isn\'t available yet — job descriptions are still being added.';
     return; }
   const { covered, total } = facets.description_coverage;
   note.textContent = typeof covered === 'number' && typeof total === 'number'
@@ -903,7 +903,7 @@ function jobCard(r, i, canHideCompany){
   return `
     <div class="${cls}" style="${ranked?`--tone:${tone(s)}; `:''}animation-delay:${Math.min(i,12)*35}ms">
       <div class="who">
-        <a class="title" href="${esc(safeUrl(r.url))}" target="_blank" rel="noopener">${esc(r.title)}<svg class="ext" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M6.5 3.5H3.5v9h9v-3M9.5 3.5h3v3M12.5 3.5 7 9" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="sr">, opens on the employer's own board</span></a>
+        <a class="title" href="${esc(safeUrl(r.url))}" target="_blank" rel="noopener">${esc(r.title)}<svg class="ext" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M6.5 3.5H3.5v9h9v-3M9.5 3.5h3v3M12.5 3.5 7 9" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="sr">, opens on the employer's own site</span></a>
         <div class="org">${esc(r.company)}${r.location? ' <span>·</span> '+esc(r.location) : ''}${
           // On every card, not only on a capped one: hiding a company is how a user acts on a
           // result they do not want, and the first such result is rarely the third from that
@@ -925,8 +925,8 @@ function jobCard(r, i, canHideCompany){
                  ><path d="M2 12.5 6 8.5l2.5 2.5L14 5M10 5h4v4"/></svg></button>`
             : ''}</div>
         <div class="tags">
-          ${r.closed? '<span class="tag closed" title="No longer in HeadStart\u2019s index \u2014 almost always because the employer took it down. The link still goes to them.">closed</span>':''}
-          ${isNew(r.first_seen)? '<span class="tag new" title="New to HeadStart\u2019s index within your chosen window \u2014 not necessarily newly posted by the employer">new</span>':''}
+          ${r.closed? '<span class="tag closed" title="No longer listed on HeadStart \u2014 almost always because the employer took it down. The link still goes to them.">closed</span>':''}
+          ${isNew(r.first_seen)? '<span class="tag new" title="New on HeadStart within your chosen window \u2014 not necessarily newly posted by the employer">new</span>':''}
           ${r.remote? '<span class="tag rem">remote</span>':''}
           ${r.employment_type? '<span class="tag">'+esc(r.employment_type)+'</span>':''}
           ${r.min_years!=null? '<span class="tag mono">'+(Number(r.min_years)||0)+'+ yrs</span>':''}
@@ -937,7 +937,7 @@ function jobCard(r, i, canHideCompany){
       <div class="pay">${esc(payLabel(r))}${convLabel(r)? `<span class="conv">${esc(convLabel(r))}</span>` : ''}</div>
       ${ranked? `<div class="match" role="img"
              aria-label="Match ${pct} percent \u2014 how close this job is to your search, on a fixed scale that gives the same job the same number every time"
-             title="Match strength \u2014 semantic similarity ${s.toFixed(2)}, scaled to this index's real range">
+             title="Match strength \u2014 how close this job is to what you typed (similarity ${s.toFixed(2)})">
           <svg class="ring" viewBox="0 0 40 40" aria-hidden="true">
             <circle class="ring-track" cx="20" cy="20" r="16" pathLength="100"/>
             <circle class="ring-fill" cx="20" cy="20" r="16" pathLength="100" style="--p:${pct}"/>
@@ -1969,7 +1969,7 @@ function verdictLines(d){
   // read only "HeadStart has counted Google since Sep 13", with nothing it qualified.
   if (kind === 'roles')
     return [{ name: `${counted.length === 1 ? counted[0].label || 'This company' : `These ${counted.length} companies`} · ${drillLabel()}`,
-      days: 0, text: 'roles tracked by their titles inside this category. A job can match more than one, so they need not add up to the category — its levels view has the category’s total and move.' }];
+      days: 0, text: 'roles matched by job title in this category. A job can match more than one, so they don’t add up to the category; Level shows its total.' }];
   // Several picks summed: the reading's first row, the sum of each company's own netted line, so
   // the move is exactly the Company breakdown's total. It read only "summed here — break down
   // by Company", no move and no direction.
@@ -2015,20 +2015,19 @@ function turnoverPhrase(line, d){
   if (t.closed == null) return `about ${aboutCount(t.opened)} opened${since}; closures not counted`;
   return `about ${aboutCount(t.opened)} opened, ${aboutCount(t.closed)} closed${since}`;
 }
-// " (not counted on 1 of 2 boards)" after a closed count read over only some of the Boards: the
-// rest had a run whose closures went uncounted (ADR-0227). '' when every Board counted them.
-function notCountedOn(unseen, boards){
-  if (!unseen) return '';
-  return ` (not counted on ${unseen} of ${boards || unseen} board${(boards || unseen) === 1 ? '' : 's'})`;
-}
 // One company sentence from a line reading (ADR-0233): its openings, its hiring move, its
 // percentage and weekly rate, and its "Not hiring" by cause, each as the reading gives it.
+// Two short sentences (ADR-0255): the answer with its figures, then what was opened and closed.
+// "growing — 1,254 tech openings; up 5.4% over 15 days (+64 openings, about +30 a week) — about
+// 48 opened since Sep 25; closures not counted" was one sentence of four clauses.
 function verdictOf(line, d){
   if (!line) return { text: '—', detail: null, days: 0 };
   const m = line.move;
   const now = m.latest;
   const days = m.span_days;
-  const over = `over ${Math.round(days)} days`;
+  const inDays = `in ${Math.round(days)} days`;
+  // The sentence already says "tech openings", so a change is a bare signed figure after it.
+  const signed = v => `${v < 0 ? '−' : '+'}${Math.abs(v).toLocaleString()}`;
   const what = `tech opening${now === 1 ? '' : 's'}${trendMetric === 'new' ? ` ${newCounts(d)}` : ''}`;
   // Short because of the window, or because of the company: a company counted for 11 days
   // under a 2-day custom range was called "too new".
@@ -2049,20 +2048,20 @@ function verdictOf(line, d){
   let lead, move;
   if (days < MIN_SPAN_DAYS){
     const hours = Math.max(1, Math.round(days * 24));
-    const span = days < 1.5 ? `over the last ${hours} hour${hours === 1 ? '' : 's'}` : over;
+    const span = days < 1.5 ? `in the last ${hours} hour${hours === 1 ? '' : 's'}` : inDays;
     // An older company with one run in the window has no change to give; it is the window
     // that is short, not the company that is new.
     // The lead says it; the rest gives only the figure it has, never the lead again ("too new to
     // tell — …; too new to show a direction yet").
     lead = young ? 'too new to tell' : 'too short a window to tell';
-    move = [young || !days ? '' : `${signedOpenings(n)} ${span}`,
+    move = [young || !days ? '' : `${signed(n)} ${span}`,
       m.percent_withheld === MOSTLY_RECOUNTED ? RECOUNTED_NOTE : ''].filter(Boolean).join(', ');
   }
   else if (m.percent == null){
     // From a small start the change is stated, not judged — "a few more" read beside +50.
     const why = m.percent_withheld === MOSTLY_RECOUNTED ? `, ${RECOUNTED_NOTE}`
       : n && m.start < MOVER_FLOOR ? ', too few to call a trend' : '';
-    move = `${n ? signedOpenings(n) : 'unchanged'} ${over}${why}`;
+    move = `${n ? signed(n) : 'unchanged'} ${inDays}${why}`;
     lead = n > 0 ? 'more openings' : n < 0 ? 'fewer openings' : 'unchanged';
   }
   else {
@@ -2073,14 +2072,15 @@ function verdictOf(line, d){
     // Nor over a window of about a week, where it restates the change: HCLTech read "−1,282
     // openings, about −1,281 a week".
     const weekly = trendMetric === 'new' || Math.round(days) === 7 ? 0 : m.per_week || 0;
-    const count = signedOpenings(n) + (weekly ? `, about ${weekly < 0 ? '−' : '+'}${Math.abs(weekly).toLocaleString()} a week` : '');
-    move = Math.abs(shown(pct)) < FLAT_PCT ? `about flat ${over} (${pct < 0 ? '−' : '+'}${Math.abs(pct).toFixed(1)}%, ${count})`
-      : `${pct > 0 ? 'up' : 'down'} ${Math.abs(pct).toFixed(1)}% ${over} (${count})`;
+    const count = signed(n) + (weekly ? `, about ${signed(weekly)} a week` : '');
+    move = Math.abs(shown(pct)) < FLAT_PCT ? `about flat ${inDays} (${pct < 0 ? '−' : '+'}${Math.abs(pct).toFixed(1)}%, ${count})`
+      : `${pct > 0 ? 'up' : 'down'} ${Math.abs(pct).toFixed(1)}% ${inDays} (${count})`;
     const newer = trendMetric === 'new';
     lead = Math.abs(shown(pct)) < FLAT_PCT ? 'holding steady'
       : pct > 0 ? (newer ? 'opening more new roles' : 'growing') : (newer ? 'opening fewer new roles' : 'shrinking');
   }
-  return { text: `${lead} — ${now.toLocaleString()} ${what}${move ? `; ${move}` : ''}${phrase ? ` — ${phrase}` : ''}.`, detail, days };
+  const opened = phrase ? ` ${phrase[0].toUpperCase()}${phrase.slice(1)}.` : '';
+  return { text: `${lead} — ${now.toLocaleString()} ${what}${move ? `, ${move}` : ''}.${opened}`, detail, days };
 }
 // One cause of a line's "Not hiring", as its disclosure lists it: the day of its Marked change,
 // what it was and its size ("Sep 24 duplicate postings removed: −1,858 openings"). Where one
@@ -2112,7 +2112,7 @@ function drawVerdict(d){
   // when turns "too short" from a dead end into a date.
   const month = firsts.length ? stampLabel(new Date(new Date(firsts[firsts.length - 1]).getTime() + 30 * 864e5).toISOString(), true) : '';
   const early = `HeadStart has counted ${who}${days < 14
-    ? ` — too short to tell a trend from noise, so read this as an early sign.${month ? ` A month of counting arrives ${month}.` : ''}`
+    ? ` — too soon to call a trend, so treat this as an early sign.${month ? ` A month of data arrives ${month}.` : ''}`
     : '; there is nothing before that.'}`;
   const tail = early && trendPicks.length ? `<p class="verdict-early">${esc(early)}</p>` : '';
   // Up to five sentences in the legend's order (largest first), then the rest folded, keeping
@@ -2269,11 +2269,11 @@ function trendAtsSelected(){
 
 // The trigger reads its state off trendAtsSelected rather than counting the boxes a second
 // time, so "no filter" is decided in exactly one place: both ends of the range — every box
-// checked and none checked — say "All ATS", because both are what the panel is showing.
+// checked and none checked — say "All sources", because both are what the panel is showing.
 function trendAtsLabel(){
   const menu = el('trends-ats-menu'); if (!menu) return;
   const sel = trendAtsSelected();
-  el('trends-ats-trigger').textContent = (sel ? `${sel.length} ATS` : 'All ATS') + ' ▾';
+  el('trends-ats-trigger').textContent = (sel ? `${sel.length} source${sel.length === 1 ? '' : 's'}` : 'All sources') + ' ▾';
 }
 
 function toggleAtsPopover(force){
@@ -3146,7 +3146,7 @@ function drawTrends(){
         trendUnit === 'share' ? (view.split === 'company' ? 'a share of each company’s own openings' : pickScope().share)
         : trendUnit === 'change' ? 'change from each line’s own count at the window’s start, which is 100'
         : 'a count'}`
-    + `${atsPick ? `, ${atsPick.length} of the ATS sources` : ''}, over ${measured}.`
+    + `${atsPick ? `, ${atsPick.length} of the sources` : ''}, over ${measured}.`
     + ` ${drawn.length} line${drawn.length === 1 ? '' : 's'}.`
     + ' Arrow keys read the values; Table view lists them all.');
   // A narrow ATS selection has its own reason for a short history (ADR-0075): per-ATS rows
@@ -3472,14 +3472,22 @@ function buildTrendsTable(){
   const withTurnover = trendMetric === 'stock' && rows.some(s => { const line = lineReading(s); return line && line.move.turnover; });
   // The hiring change, the rest of the move and the start are in openings whatever the unit, so
   // under Count a row's start, hiring and "Not hiring" add up to its latest.
-  const head = `<tr><th scope="col">${VIEWS[kind].column}</th><th scope="col">Latest</th>`
+  // Short headers, the detail in each one's title (ADR-0255): "Hiring, openings", "Not hiring,
+  // openings" and "Start, openings" were a wall of commas above the figures.
+  const th = (label, title) => `<th scope="col" title="${title}">${label}</th>`;
+  const head = `<tr><th scope="col">${VIEWS[kind].column}</th>`
+    + th('Now', trendUnit === 'share' ? 'The latest share' : 'Open jobs now')
     // Under Share the percentage is the share's own change, which can fall while openings rise.
     // "Share, change +6.2%" did not say whether that was points or a relative change.
-    + `<th scope="col">${trendUnit === 'share' ? 'Share, relative change' : 'Hiring, %'}</th>`
-    + '<th scope="col">Hiring, openings</th><th scope="col">Not hiring, openings</th>'
+    + (trendUnit === 'share'
+      ? th('Share change', 'How much the share grew or shrank, relative to where it started — not percentage points')
+      : th('Hiring %', 'Change from hiring since the start, as a percentage'))
+    + th('Hiring', 'Openings gained or lost through hiring')
+    + th('Not hiring', 'Jumps that aren’t hiring, like duplicates removed or job sites found later')
     // What the hiring move is made of (ADR-0227), on the runs that move counts.
-    + (withTurnover ? '<th scope="col">Opened</th><th scope="col">Closed</th>' : '')
-    + '<th scope="col">Start, openings</th><th scope="col">Min</th><th scope="col">Max</th></tr>';
+    + (withTurnover ? th('Opened', 'Jobs opened in this window') + th('Closed', 'Jobs closed in this window') : '')
+    + th('At start', 'Openings at the start of the window')
+    + th('Low', 'The lowest figure in the window') + th('High', 'The highest figure in the window') + '</tr>';
   const dash = '<td class="flat">—</td>';
   const turnoverCells = move => {
     if (!withTurnover) return '';
@@ -3496,8 +3504,9 @@ function buildTrendsTable(){
   const withTotal = trendPicks.length && (kind === 'families' || kind === 'bands') && rows.length > 1 && reading.total;
   // Under Share the first row is a share of every opening the company has, non-tech included:
   // "All tech roles 97%" read as an error without it.
+  const firstLabel = kind === 'bands' ? `All of ${drillLabel()}` : 'All tech roles';
   const total = withTotal ? [{ name: '__total__', points: reading.total.points,
-    label: (kind === 'bands' ? `All of ${drillLabel()}` : 'All tech roles') + (trendUnit === 'share' ? ' (of all its openings)' : '') }] : [];
+    label: firstLabel + (trendUnit === 'share' ? ' (of all its openings)' : '') }] : [];
   const body = [...total, ...rows].map(s => {
     const line = lineReading(s), move = line && line.move;
     const vals = (s.points || []).map((v, j) => levelValue(v, j, s)).filter(v => v != null);
@@ -3513,7 +3522,7 @@ function buildTrendsTable(){
   // The closing row (ADR-0233 decision 4): what a counting change moved between categories that
   // the categories took out and the company line counts, one figure, so the rows add up.
   const closing = withTotal && reading.breakdown && reading.breakdown.closing;
-  const closingRow = closing ? `<tr class="closing"><th scope="row">Moved between categories by a counting change</th>`
+  const closingRow = closing ? `<tr class="closing"><th scope="row" title="Jobs a counting change moved from one category to another">Moved between categories</th>`
     // One figure, in the hiring column: the rows took it out as a counting change's and the
     // company line counts it, and saying so twice read as two figures (the owner's call).
     + dash + dash + openings(closing.hiring) + dash
@@ -3525,10 +3534,11 @@ function buildTrendsTable(){
   // they are never said to.
   // With a closing row only the hiring is said to add up: that row gives one figure (its Not
   // hiring cell is blank), so the other columns of the rows do not reach the first row's.
+  // Named by its label, not as "the first row" (ADR-0255).
   const addsUp = !problemsOf(reading).length
-    ? `; the ${many} below${closing ? ' and the closing row add up to its hiring' : ' add up to it'}` : '';
-  const note = withTotal ? `<caption>The first row is ${whose} hiring${addsUp}.${
-    withTurnover ? ' Opened and closed are counted line by line, so they need not add up.' : ''}</caption>` : '';
+    ? `; the ${many} below${closing ? ' and “Moved between categories” add up to its hiring' : ' add up to it'}` : '';
+  const note = withTotal ? `<caption>“${esc(firstLabel)}” is ${whose} total${kind === 'bands' ? ' in this category' : ''}${addsUp}.${
+    withTurnover ? ' Opened and closed are counted for each line, so they may not add up.' : ''}</caption>` : '';
   return `${note}<thead>${head}</thead><tbody>${body}${closingRow}</tbody>`;
 }
 
@@ -4051,7 +4061,7 @@ async function suggestCompanies(q){
   // Said in the status line, not as a fake option: a listbox should only hold choices.
   setCoNote(missing ? 'Company search isn’t available here yet.'
     : !found ? 'Suggestions didn’t load — keep typing to try again.'
-    : !options.length ? `No company matches “${q}”. HeadStart may not read its board yet, or knows it by another name — try part of it.` : '');
+    : !options.length ? `No company matches “${q}”. HeadStart may not read its job site yet, or knows it by another name — try part of it.` : '');
 }
 
 if (el('trends-co-q')){
@@ -4381,7 +4391,7 @@ async function loadHot(){
       // 503 is "no history to rank yet", which is a different thing from a failure and is the
       // only case the tab can be opened in without data.
       el('hot-msg').textContent = r.status === 503
-        ? 'No ranking yet — the next pipeline run will build one.'
+        ? 'No ranking yet — check back after the next update.'
         : 'Couldn’t load the ranking.';
       return;
     }
@@ -4410,10 +4420,9 @@ function hotLens(){
 // measured. Volume and Rate need no such case: they rank only a counted, positive opened.
 // A row's closed count is null too where every Board of its company had its closures go
 // uncounted (hot_ranking): Amazon, one Board, read "0 closed" beside a trend saying "closures not
-// counted on 1 board". Where only some did, the count says so: "3 closed (not counted on 1 of 2
-// boards)".
-const hotClosed = r => r.closed == null ? 'closures not counted'
-  : `${r.closed} closed${notCountedOn(r.closures_uncounted_boards, r.boards_in_scope)}`;
+// counted on 1 board". Where only some did, the count is given bare, as on Trends (ADR-0248),
+// and the note under the list says closed counts can be low (ADR-0255).
+const hotClosed = r => r.closed == null ? 'closures not counted' : `${r.closed} closed`;
 const HOT_MEASURE = {
   expansion: r => ({ big: (r.net > 0 ? '+' : '') + r.net, unit: 'net tech roles',
     sub: r.opened == null ? `${r.stock} open now`
@@ -4519,12 +4528,11 @@ function drawHotProvenance(){
   // Turnover began with ADR-0227, so for its first week it covers less than the net change does.
   const turnoverLate = w.turnover_from && w.from && w.turnover_from > w.from;
   const turnover = !hotTurnoverCounted() ? 'opened and closed are not counted yet'
-    : turnoverLate ? `opened and closed are counted since ${day(w.turnover_from)}` : 'opened and closed over the same runs';
+    : turnoverLate ? `opened and closed since ${day(w.turnover_from)}` : 'opened and closed over the same time';
   el('hot-provenance').textContent =
-    `Net change measured over ${span}; ${turnover}. ${x.ranked ?? 0} companies ranked; ` +
-    `${x.below_min_stock ?? 0} with fewer than ${x.min_stock ?? '?'} open tech roles and ` +
-    `${x.too_new ?? 0} ` +
-    `we had only just begun counting were left out.`;
+    `Change over ${span}; ${turnover}. ${x.ranked ?? 0} companies ranked. ` +
+    `Left out: ${x.below_min_stock ?? 0} with fewer than ${x.min_stock ?? '?'} open tech roles, and ` +
+    `${x.too_new ?? 0} we have just started tracking.`;
 }
 
 /* One delegated listener for the whole panel, like the sets strip — never an inline handler

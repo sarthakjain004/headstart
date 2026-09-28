@@ -513,7 +513,7 @@ test('a saved job renders through the same card as a search result', async () =>
   }), 0);
   assert.ok(html.includes('<div class="pay">EUR 90,000/yr</div>'));
   assert.ok(html.includes('class="ext"'));                       // it leaves for the employer
-  assert.ok(html.includes("opens on the employer's own board"));
+  assert.ok(html.includes("opens on the employer's own site"));
   assert.ok(html.includes('class="tag rem"'));
   assert.ok(html.includes('class="star on"'));
 });

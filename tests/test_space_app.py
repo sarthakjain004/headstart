@@ -2870,7 +2870,7 @@ def test_the_door_makes_its_case_before_asking_for_an_identity(auth_app):
     # The proof numbers are counted, not written: the fake table holds two rows and two
     # ATSes, so a hardcoded marketing figure would not survive this.
     assert '<div class="v">2</div><div class="k">tech jobs indexed' in page
-    assert '<div class="v">2</div><div class="k">ATS providers read directly' in page
+    assert '<div class="v">2</div><div class="k">hiring platforms read directly' in page
     # The freshness tile: an EXACT count, because a row without `first_seen` predates the
     # column and so cannot be new. The fake answers 1 to any filtered count, so a real
     # ratio shows rather than the total repeated — which a wrong denominator would give.
@@ -2883,7 +2883,7 @@ def test_the_door_makes_its_case_before_asking_for_an_identity(auth_app):
     assert "~6h" not in page and "refreshes" not in page
     assert "employers" not in page and "boards indexed" not in page
     # The provenance claim, the removal policy, and the no-paid-placement claim.
-    assert "employer's own board" in page
+    assert "employer's own site" in page
     assert "Closed roles get removed, and the exception is published." in page
     # Staffing firms are labelled, not denied (ADR-0249): the footer, Hot and Home say so too.
     assert "no agencies" not in page and "staffing firms" in page
@@ -2917,7 +2917,7 @@ def test_the_door_states_no_figure_it_cannot_count(auth_app, monkeypatch):
     assert tiles and all(t.strip() and "None" not in t for t in tiles), tiles
     # …and the tiles that CAN be counted are still there.
     assert "tech jobs indexed right now" in page
-    assert "ATS providers read directly" in page
+    assert "hiring platforms read directly" in page
 
 
 def test_the_data_tab_and_its_coverage_route_are_gone(app):
@@ -2937,7 +2937,7 @@ def test_the_signed_in_page_says_what_the_product_is(app):
     """A user inside the app should never have to guess what they are looking at."""
     page = app.app.test_client().get("/").data.decode()
     # On screen wherever they navigate, not only in the footer of a long results page.
-    assert "Tech jobs read straight from company career boards" in page
+    assert "Tech jobs read straight from company career sites" in page
     # One repo URL, server-side: the footer and Home both link its privacy policy into it,
     # and a rename must not be able to leave half the links dead.
     assert page.count("github.com/sarthakjain004/headstart/blob/main/PRIVACY.md") >= 2
@@ -2961,7 +2961,7 @@ def test_home_says_what_the_product_is_in_plain_words(app):
     assert "<b>2</b> tech jobs from <b>2</b> hiring platforms" in flat
     # The facts the Data tab carried that a visitor needs, in plain words.
     assert "English-language tech roles only, for now" in flat
-    assert "refreshes every couple of hours" in flat
+    assert "refresh every couple of hours" in flat
     assert "not how well you fit the role" in flat
     assert "PRIVACY.md" in home
     # The ways in: a search box on the first screen, a link to browse, and the tour.
@@ -3049,10 +3049,11 @@ def test_the_closed_tag_is_presented_as_an_inference(sets_app, monkeypatch):
     still-open row — so the tab says what the tag actually means rather than asserting it."""
     page = _signed_in(sets_app, monkeypatch).get("/", base_url=_HTTPS).data.decode()
     body = page.split('id="panel-saved"', 1)[1]
-    assert "no longer in our index" in body
+    assert "no longer listed on HeadStart" in body
     # The mechanism, right way round: an unreadable board is why a job STAYS (ADR-0053), so
-    # the second cause is ADR-0023's wholesale board sweep, not a failed read.
-    assert "dropped the whole board" in body
+    # the second cause is ADR-0023's wholesale board sweep, not a failed read — said in the
+    # reader's words (ADR-0255).
+    assert "a change on our side" in body
     assert "stopped being able to read that" not in body
 
 
