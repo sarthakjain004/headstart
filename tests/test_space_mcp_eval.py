@@ -11,8 +11,9 @@ from pathlib import Path
 
 import pytest
 
-from headstart.space_mcp.server import TOOLS, build_server
+from headstart.space_mcp.server import build_server
 from headstart.space_mcp.space_client import InvalidRequest, SpaceRoute
+from headstart.space_mcp.tools import REGISTRY
 
 _SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "eval" / "space_mcp_eval.py"
 
@@ -169,6 +170,23 @@ def test_metrics_count_a_refusal_corrected_by_the_next_call(ev):
     )
 
 
+def test_a_refusal_is_corrected_only_by_a_successful_retry_of_the_same_tool(ev):
+    refused = ("search_jobs", {"salary_min": 1}, "needs salary_currency", True)
+    elsewhere = ("hiring_now", {}, "Hiring now, expansion: ...", False)
+    retried = (
+        "search_jobs",
+        {"salary_min": 1, "salary_currency": "INR"},
+        "3 jobs",
+        False,
+    )
+
+    def corrected(*calls):
+        return ev._metrics(_transcript(ev, calls))["refusals_corrected"]
+
+    assert corrected(refused, retried) == 1
+    assert corrected(refused, elsewhere, retried) == 0
+
+
 def test_a_space_failure_is_not_counted_as_a_refusal(ev):
     call = ev.ToolCall(
         "search_jobs", {}, "The HeadStart Space is starting. It restarts ...", True
@@ -215,7 +233,7 @@ _T01 = {
 }
 
 
-def test_search_args_passes_when_one_successful_call_meets_every_rule(ev):
+def test_tool_args_passes_when_one_successful_call_meets_every_rule(ev):
     good = {
         "query": "Backend engineer",
         "remote": True,
@@ -231,10 +249,10 @@ def test_search_args_passes_when_one_successful_call_meets_every_rule(ev):
         ],
     )
 
-    assert ev.verify_search_args(_T01, transcript, None).passed
+    assert ev.verify_tool_args(_T01, transcript, None).passed
 
 
-def test_search_args_fails_a_constraint_left_in_the_query(ev):
+def test_tool_args_fails_a_constraint_left_in_the_query(ev):
     args = {
         "query": "backend engineer bengaluru 30 lakh",
         "remote": True,
@@ -242,7 +260,7 @@ def test_search_args_fails_a_constraint_left_in_the_query(ev):
         "salary_min": 3000000,
         "salary_currency": "INR",
     }
-    verdict = ev.verify_search_args(
+    verdict = ev.verify_tool_args(
         _T01, _transcript(ev, [("search_jobs", args, "0 jobs", False)]), None
     )
 
@@ -252,12 +270,12 @@ def test_search_args_fails_a_constraint_left_in_the_query(ev):
     )
 
 
-def test_search_args_ignores_a_refused_call_even_when_its_arguments_fit(ev):
+def test_tool_args_ignores_a_refused_call_even_when_its_arguments_fit(ev):
     args = {
         **{k: v for k, v in _T01["must"].items() if k != "query"},
         "query": "backend",
     }
-    verdict = ev.verify_search_args(
+    verdict = ev.verify_tool_args(
         _T01, _transcript(ev, [("search_jobs", args, "the Space refused", True)]), None
     )
 
@@ -290,7 +308,7 @@ def test_holds(ev, value, rule, holds):
     assert ev.holds(value, rule) is holds
 
 
-def test_search_args_needs_one_must_any_alternative(ev):
+def test_tool_args_needs_one_must_any_alternative(ev):
     expect = {
         "must_any": [
             {"india_place": "pune"},
@@ -299,7 +317,7 @@ def test_search_args_needs_one_must_any_alternative(ev):
     }
 
     def verdict(args):
-        return ev.verify_search_args(
+        return ev.verify_tool_args(
             expect, _transcript(ev, [("search_jobs", args, "5 jobs", False)]), None
         )
 
@@ -308,22 +326,20 @@ def test_search_args_needs_one_must_any_alternative(ev):
     assert not verdict({"india_place": "mumbai"}).passed
 
 
-def test_search_args_judges_a_left_out_argument_at_its_schema_default(ev):
+def test_tool_args_judges_a_left_out_argument_at_its_schema_default(ev):
     expect = {"tool": "read_trends", "must": {"days": {"op": ">=", "value": 25}}}
     call = ("read_trends", {"companies": ["Google", "Microsoft"]}, "Total ...", False)
 
-    assert ev.verify_search_args(
-        expect, _transcript(ev, [call]), None
-    ).passed  # days 30
+    assert ev.verify_tool_args(expect, _transcript(ev, [call]), None).passed  # days 30
 
 
-def test_search_args_reads_the_tool_it_names(ev):
+def test_tool_args_reads_the_tool_it_names(ev):
     expect = {"tool": "read_trends", "must": {"category": "data-engineering"}}
     search = ("search_jobs", {"category": "data-engineering"}, "5 jobs", False)
     trends = ("read_trends", {"category": "data-engineering"}, "Total ...", False)
 
-    assert ev.verify_search_args(expect, _transcript(ev, [search, trends]), None).passed
-    assert not ev.verify_search_args(expect, _transcript(ev, [search]), None).passed
+    assert ev.verify_tool_args(expect, _transcript(ev, [search, trends]), None).passed
+    assert not ev.verify_tool_args(expect, _transcript(ev, [search]), None).passed
 
 
 # --- trend_sign ----------------------------------------------------------------------------
@@ -409,9 +425,14 @@ def test_trend_sign_fails_when_the_space_cannot_read_the_trend(ev):
     ("answer", "direction"),
     [
         ("Hiring is up slightly; they are expanding.", "up"),
+        ("Stripe's hiring is up 4%.", "up"),
         ("Openings declined.", "down"),
         ("Roughly flat over the window.", "flat"),
         ("Regardless of the window, it is unless ...", None),  # no whole-word direction
+        ("It lists up to 40 roles.", None),  # an amount, not a direction
+        # The netted figure outranks a word about raw openings, and "Not hiring" is not it.
+        ("Openings fell from 217 to 199, but hiring is +3.", "up"),
+        ("Not hiring +7 (re-counting); hiring −4 net.", "down"),
     ],
 )
 def test_stated_direction(ev, answer, direction):
@@ -478,6 +499,10 @@ def test_blocking_named_needs_the_result_to_name_it_and_the_answer_to_mention_it
     assert not verdict(
         {"argument": None}, "There are no Haskell jobs in Indore."
     ).passed
+    # A ₹1 crore answer says "salary" whatever it concludes; that alone names no filter.
+    assert not verdict(
+        {"argument": None}, "No Haskell jobs in Indore at that salary."
+    ).passed
 
 
 def test_blocking_named_reads_the_company_form(ev):
@@ -530,13 +555,13 @@ def test_judge_marks_a_verifier_that_could_not_read_the_space_as_error(ev):
 def test_the_iteration_tasks_use_known_verifiers_and_real_arguments(ev):
     tasks_file = json.loads(ev.ITERATION_TASKS.read_text(encoding="utf-8"))
     tasks = tasks_file["tasks"]
-    arguments = {tool["name"]: set(tool["inputSchema"]["properties"]) for tool in TOOLS}
+    arguments = {tool.name: set(tool.input_schema["properties"]) for tool in REGISTRY}
 
     assert [t["id"] for t in tasks] == [f"t{n:02d}" for n in range(1, 13)]
     assert {t["verifier"] for t in tasks} == set(ev.VERIFIERS)
     for task in tasks:
         assert task["prompt"].strip() and task["why"].strip()
-        if task["verifier"] == "search_args":
+        if task["verifier"] in ("search_args", "tool_args"):
             expect = task["expect"]
             named = set(expect.get("must", {}))
             named |= {
@@ -549,7 +574,7 @@ def test_the_iteration_tasks_use_known_verifiers_and_real_arguments(ev):
 def test_the_sentences_the_harness_reads_are_the_servers_own(ev):
     # The server's sentences, as written in its source, plus the one it builds without a token.
     package = _SCRIPT.parents[2] / "src" / "headstart" / "space_mcp"
-    text = "\n".join(p.read_text(encoding="utf-8") for p in package.glob("*.py"))
+    text = "\n".join(p.read_text(encoding="utf-8") for p in package.rglob("*.py"))
     text += str(build_server({}).unconfigured)
 
     for marker in ev._INFRASTRUCTURE_ERRORS:
@@ -579,15 +604,30 @@ def test_heldout_refuses_a_changed_file_before_parsing_it(ev, tmp_path):
         ev.load_heldout(path, "0" * 64)
 
 
-def test_main_refuses_a_heldout_file_whose_hash_is_not_sealed(ev, tmp_path):
+def _seal(ev, monkeypatch, tmp_path, digest):
+    """Point the iteration tasks file, whose hash is the only seal, at one sealing ``digest``."""
+    sealed = tmp_path / "iteration_tasks.json"
+    sealed.write_text(json.dumps({"tasks": [], "heldout_sha256": digest}), "utf-8")
+    monkeypatch.setattr(ev, "ITERATION_TASKS", sealed)
+
+
+def test_main_refuses_a_heldout_file_whose_hash_is_not_sealed(
+    ev, monkeypatch, tmp_path
+):
     path, _ = _heldout(tmp_path, json.dumps({"tasks": []}))
-    tasks = tmp_path / "tasks.json"
-    tasks.write_text(
-        json.dumps({"tasks": [], "heldout_sha256": "0" * 64}), encoding="utf-8"
-    )
+    _seal(ev, monkeypatch, tmp_path, "0" * 64)
 
     with pytest.raises(SystemExit, match="not the sealed"):
-        ev.main(["--tasks", str(tasks), "--heldout", str(path), "--dry-run"])
+        ev.main(["--heldout", str(path), "--dry-run"])
+
+
+def test_the_seal_cannot_come_from_a_tasks_file_the_caller_names(ev, tmp_path):
+    path, digest = _heldout(tmp_path, json.dumps({"tasks": []}))
+    forged = tmp_path / "forged.json"
+    forged.write_text(json.dumps({"tasks": [], "heldout_sha256": digest}), "utf-8")
+
+    with pytest.raises(SystemExit):  # argparse: --tasks and --heldout are exclusive
+        ev.main(["--tasks", str(forged), "--heldout", str(path), "--dry-run"])
 
 
 def _no_process(*args, **kwargs):
@@ -608,6 +648,14 @@ def test_dry_run_prints_the_command_and_runs_nothing(ev, monkeypatch, capsys):
     assert "nothing was run" in out
 
 
+def test_the_run_allows_every_registered_tool_and_nothing_else(ev):
+    argv = ev.command("a prompt", "mcp.json")
+    allowed = argv[argv.index("--allowedTools") + 1].split(",")
+
+    assert allowed == [f"mcp__headstart-space__{tool.name}" for tool in REGISTRY]
+    assert argv[argv.index("--tools") + 1] == ""  # no built-in tool
+
+
 def test_dry_run_of_a_heldout_file_keeps_its_prompts_sealed(
     ev, monkeypatch, capsys, tmp_path
 ):
@@ -619,12 +667,9 @@ def test_dry_run_of_a_heldout_file_keeps_its_prompts_sealed(
         "expect": {},
     }
     path, digest = _heldout(tmp_path, json.dumps({"tasks": [task]}))
-    tasks = tmp_path / "tasks.json"
-    tasks.write_text(
-        json.dumps({"tasks": [], "heldout_sha256": digest}), encoding="utf-8"
-    )
+    _seal(ev, monkeypatch, tmp_path, digest)
 
-    assert ev.main(["--tasks", str(tasks), "--heldout", str(path), "--dry-run"]) == 0
+    assert ev.main(["--heldout", str(path), "--dry-run"]) == 0
 
     out = capsys.readouterr().out
     assert "h1 [mentions]" in out and "<sealed prompt>" in out

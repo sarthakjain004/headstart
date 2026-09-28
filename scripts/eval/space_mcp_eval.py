@@ -2,12 +2,14 @@
 """Run the Space MCP server's evaluation tasks with Claude Code as the client (plan §9).
 
 Each task is one ``claude -p`` run in an empty scratch directory, with the ``headstart-space``
-server as the only MCP server, no built-in tools, and only the server's three tools allowed. The
-run's stream-json transcript is saved line by line as it arrives, then parsed into tool calls
-(name and arguments), tool results (their characters and whether they were errors) and the final
-answer, and judged by the task's verifier. ``trend_sign`` and ``hot_top`` re-read the Space
-themselves, with the same token the server uses, so they check the answer against the Space's own
-figures rather than against what the agent was told.
+server as the only MCP server, no built-in tools, and only the server's registered tools
+allowed. The run's stream-json transcript is saved line by line as it arrives, then parsed into
+tool calls (name and arguments), tool results (their characters and whether they were errors)
+and the final answer, and judged by the task's verifier. ``trend_sign`` and ``hot_top`` re-read
+the Space themselves, with the same token the server uses, so they check the answer against the
+Space's own figures rather than against what the agent was told. ``tool_args`` (``search_args``
+in the brief's fixed schema) checks the arguments instead and trusts the Space to apply them:
+``strict=1`` makes it refuse any it would drop.
 
 It invokes Claude Code, the MCP client under test, not an LLM API from project code, so it does
 not route through the llm-router. The plan lists that reading for the owner (§12, item 8).
@@ -15,10 +17,11 @@ not route through the llm-router. The plan lists that reading for the owner (§1
 One JSON line per task goes to ``experiment/space-mcp-eval/artifacts/<stamp>_<set>_results.jsonl``
 as each task finishes, with its transcript and stderr beside it, and one verdict line is printed.
 The end prints §9's bar: correct count, median tool calls, the largest tool result (flagged past
-40,000 characters, about 10,000 tokens) and tool refusals corrected within one call.
+40,000 characters, about 10,000 tokens) and tool refusals corrected within one call. §9's dated
+summary under ``docs/mcp/`` is written by hand from the results file.
 
 A held-out file (``--heldout``) is read only after its sha256 matches the ``heldout_sha256`` the
-tasks file seals, so tuning against the iteration tasks cannot see it.
+committed iteration tasks file seals, so tuning against the iteration tasks cannot see it.
 
 Run:
   HEADSTART_AGENT_TOKEN=... python scripts/eval/space_mcp_eval.py
@@ -42,33 +45,34 @@ import sys
 import tempfile
 import threading
 import time
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 _ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_ROOT / "src"))
 from headstart.mcp_protocol import tool_arguments
 from headstart.mcp_protocol.stdio import ToolFailure
 from headstart.space_mcp import company_scope
-from headstart.space_mcp.server import NAME, TOKEN_VAR, TOOLS, URL_VAR
+from headstart.space_mcp.server import BY_NAME, NAME, TOKEN_VAR, URL_VAR
 from headstart.space_mcp.space_client import (
     SPACE_URL,
     SpaceClient,
     SpaceError,
     SpaceRoute,
 )
+from headstart.space_mcp.space_tool import ANSWER_CEILING_CHARS
+from headstart.space_mcp.tools import REGISTRY
 
 ITERATION_TASKS = _ROOT / "scripts" / "eval" / "space_mcp_eval_tasks.json"
 ARTIFACTS = _ROOT / "experiment" / "space-mcp-eval" / "artifacts"
 
 TOOL_PREFIX = f"mcp__{NAME}__"
-TOOL_NAMES = ("search_jobs", "read_trends", "hiring_now")
 
-#: §9's "no result over 10,000 tokens", at about four characters a token.
-LARGE_RESULT_CHARS = 40_000
+#: §9's "no result over 10,000 tokens": the ceiling every tool's answer is held to.
+LARGE_RESULT_CHARS = ANSWER_CEILING_CHARS
 #: §9's bar for median tool calls.
 MEDIAN_CALLS_BAR = 3
 #: A run is killed past this: each tool call waits at most 90 s for the Space.
@@ -186,12 +190,24 @@ class Verdict:
     detail: str
 
 
-#: What a verifier reads the Space through: `SpaceClient`, or a fake in tests.
-Space = Any
+class Space(Protocol):
+    """What a verifier reads the Space through: `SpaceClient`, or a fake in tests."""
+
+    def read(
+        self, route: SpaceRoute, params: Sequence[tuple[str, str]] = ()
+    ) -> Any: ...
+
+
 Verifier = Callable[[dict[str, Any], Transcript, Space], Verdict]
 
 
-# --- search_args ---------------------------------------------------------------------------
+def _found(text: str, term: str | list[str]) -> bool:
+    """``term`` in ``text``, case-blind; a list is alternatives, any one of which will do."""
+    terms = term if isinstance(term, list) else [term]
+    return any(t and t.casefold() in text.casefold() for t in terms)
+
+
+# --- tool_args (and search_args, its name in the brief's fixed schema) ---------------------
 
 
 def _same(value: Any, want: Any) -> bool:
@@ -202,11 +218,9 @@ def _same(value: Any, want: Any) -> bool:
 
 def _contains(value: Any, want: str) -> bool:
     if isinstance(value, str):
-        return want.casefold() in value.casefold()
+        return _found(value, want)
     if isinstance(value, list):
-        return any(
-            isinstance(v, str) and want.casefold() in v.casefold() for v in value
-        )
+        return any(isinstance(v, str) and _found(v, want) for v in value)
     return False
 
 
@@ -245,23 +259,23 @@ def _misses(expect: dict[str, Any], arguments: dict[str, Any]) -> list[str]:
         for alternative in alternatives
     ):
         misses.append(f"none of must_any {alternatives!r} holds")
-    query = (arguments.get("query") or "").casefold()
+    query = arguments.get("query") or ""
     misses += [
-        f"query {arguments.get('query')!r} contains {word!r}"
+        f"query {query!r} contains {word!r}"
         for word in expect.get("query_must_not_contain") or []
-        if word.casefold() in query
+        if _found(query, word)
     ]
     return misses
 
 
-def verify_search_args(
+def verify_tool_args(
     expect: dict[str, Any], transcript: Transcript, space: Space
 ) -> Verdict:
     """One successful call of ``expect["tool"]`` (search_jobs by default) whose arguments meet
     every ``must`` rule, one ``must_any`` alternative when given, and ``query_must_not_contain``.
     An argument the call left out is judged at its schema default, as the server reads it."""
     tool = expect.get("tool") or "search_jobs"
-    schema = next(t["inputSchema"] for t in TOOLS if t["name"] == tool)
+    schema = BY_NAME[tool].input_schema
     calls = [c for c in transcript.calls if c.name == tool and c.succeeded]
     if not calls:
         return Verdict(False, f"no successful {tool} call")
@@ -284,29 +298,41 @@ def verify_search_args(
 
 # --- trend_sign ----------------------------------------------------------------------------
 
-#: Words that state a direction, by direction. "up" and "down" are left out: "up to" and
-#: "down the list" state none.
+#: Words that state a direction, by direction.
 _DIRECTION_WORDS = {
     "up": (
-        "more", "growing", "grew", "grown", "increase", "increased", "increasing", "rising",
-        "rose", "expanding", "expanded", "gained", "gaining", "higher",
+        "up", "more", "growing", "grew", "grown", "increase", "increased", "increasing",
+        "rising", "rose", "expanding", "expanded", "gained", "gaining", "higher",
     ),
     "down": (
-        "less", "fewer", "shrinking", "shrank", "shrunk", "decline", "declined", "declining",
-        "decrease", "decreased", "decreasing", "falling", "fell", "dropped", "contracting",
-        "contracted", "lower", "slowing", "slowed",
+        "down", "less", "fewer", "shrinking", "shrank", "shrunk", "decline", "declined",
+        "declining", "decrease", "decreased", "decreasing", "falling", "fell", "dropped",
+        "contracting", "contracted", "lower", "slowing", "slowed",
     ),
     "flat": ("flat", "unchanged", "steady"),
 }  # fmt: skip
 _DIRECTION = {word: sign for sign, words in _DIRECTION_WORDS.items() for word in words}
-_DIRECTION_RE = re.compile(r"\b(" + "|".join(_DIRECTION) + r")\b", re.IGNORECASE)
+#: "up to 40" and "down to 199" state an amount, not a direction.
+_DIRECTION_RE = re.compile(
+    r"\b(" + "|".join(_DIRECTION) + r")\b(?! to\b)", re.IGNORECASE
+)
 #: The question's own wording, which an answer often repeats before answering it.
 _ECHO = re.compile(r"\bmore or less\b|\bmore or fewer\b", re.IGNORECASE)
+#: The netted figure as the tool writes it and answers quote it: "hiring +11", "Hiring: −4",
+#: "hiring is +3"; never "Not hiring +7", which is the counting changes set apart from it.
+_SIGNED_HIRING = re.compile(
+    r"(?<!not )\bhiring(?:\s+(?:is|was|of|at))?\W{0,3}([+−-])\s?\d", re.IGNORECASE
+)
 
 
 def stated_direction(answer: str) -> tuple[str | None, str | None]:
-    """The direction an answer states first ("up", "down" or "flat") and the word that states
-    it; answers lead with their verdict, and later words are often the other side's contrast."""
+    """The direction an answer states ("up", "down" or "flat") and the text that states it.
+
+    A quoted signed hiring figure decides first: it is the netted figure itself, where a
+    direction word may describe raw openings ("openings fell, but hiring is +3"). Otherwise the
+    first direction word decides; answers lead with their verdict."""
+    if signed := _SIGNED_HIRING.search(answer):
+        return ("up" if signed.group(1) == "+" else "down"), signed.group(0)
     match = _DIRECTION_RE.search(_ECHO.sub(" ", answer))
     if match is None:
         return None, None
@@ -325,6 +351,8 @@ def verify_trend_sign(
     if expect.get("category"):
         params.append(("family", expect["category"]))
     params += [("company", pick.key) for pick in picks]
+    # No `split`: the reading's total is the same under every breakdown, and the total is all
+    # this checks. Built here, not borrowed from read_trends, so a bug there cannot hide here.
     reading = space.read(SpaceRoute.TRENDS, params).get("reading")
     if reading is None:
         return Verdict(
@@ -354,14 +382,16 @@ _COMPANY_SUFFIX = re.compile(
 
 def _named(answer: str, row: dict[str, Any]) -> bool:
     company = str(row.get("company") or "")
-    spellings = {company, _COMPANY_SUFFIX.sub("", company), str(row.get("key") or "")}
-    return any(s and s.casefold() in answer.casefold() for s in spellings)
+    return _found(
+        answer, [company, _COMPANY_SUFFIX.sub("", company), str(row.get("key") or "")]
+    )
 
 
 def verify_hot_top(
     expect: dict[str, Any], transcript: Transcript, space: Space
 ) -> Verdict:
-    """At least N-1 of /hot's top N on the Lens named, after the Operators the Hot tab hides."""
+    """At least N-1 of /hot's top N on the Lens named, after the Operators the Hiring now tab
+    hides."""
     lens, top = expect.get("lens") or "expansion", int(expect.get("top") or 5)
     hot = space.read(SpaceRoute.HOT)
     hidden = set(hot.get("hidden_by_default") or ())
@@ -386,9 +416,11 @@ _COMPANY_BLOCKING = "0 jobs: no company name contains"
 
 #: Plain words an answer may use for an argument besides its own name.
 _ARGUMENT_WORDS = {
-    "salary_min": ("salary",),
-    "salary_max": ("salary",),
-    "india_place": ("location", "city"),
+    # Never a bare "salary" or "location": an answer about "₹1 crore in Indore" says those
+    # anyway, so only a phrase that names the filter counts.
+    "salary_min": ("salary filter", "minimum salary", "salary minimum", "salary floor"),
+    "salary_max": ("salary filter", "maximum salary", "salary maximum", "salary cap"),
+    "india_place": ("location filter", "city filter", "place filter"),
 }
 
 
@@ -400,8 +432,8 @@ def _blocking_named_in(result: str) -> str | None:
 
 
 def _mentions_argument(answer: str, argument: str) -> bool:
-    words = (argument, argument.replace("_", " "), *_ARGUMENT_WORDS.get(argument, ()))
-    return any(word.casefold() in answer.casefold() for word in words)
+    words = [argument, argument.replace("_", " "), *_ARGUMENT_WORDS.get(argument, ())]
+    return _found(answer, words)
 
 
 def verify_blocking_named(
@@ -436,12 +468,6 @@ def verify_blocking_named(
 # --- mentions ------------------------------------------------------------------------------
 
 
-def _found(text: str, term: str | list[str]) -> bool:
-    """``term`` in ``text``, case-blind; a list is alternatives, any one of which will do."""
-    terms = term if isinstance(term, list) else [term]
-    return any(t.casefold() in text.casefold() for t in terms)
-
-
 def verify_mentions(
     expect: dict[str, Any], transcript: Transcript, space: Space
 ) -> Verdict:
@@ -463,7 +489,9 @@ def verify_mentions(
 
 
 VERIFIERS: dict[str, Verifier] = {
-    "search_args": verify_search_args,
+    "tool_args": verify_tool_args,
+    # The brief's fixed name, which the sealed held-out file uses; the same check.
+    "search_args": verify_tool_args,
     "trend_sign": verify_trend_sign,
     "hot_top": verify_hot_top,
     "blocking_named": verify_blocking_named,
@@ -495,8 +523,8 @@ def mcp_config(env: dict[str, str]) -> dict[str, Any]:
 def command(prompt: str, config_path: str) -> list[str]:
     """The ``claude`` invocation for one task. ``--tools ""`` removes every built-in tool (Bash,
     web search, files), so the answer can only come from this server; ``--strict-mcp-config``
-    drops every other configured MCP server; ``--allowedTools`` lets the three tools run
-    without a permission prompt."""
+    drops every other configured MCP server; ``--allowedTools`` lets every tool in the
+    server's registry run without a permission prompt, so a tool added later needs no edit here."""
     return [
         "claude",
         "-p",
@@ -508,7 +536,7 @@ def command(prompt: str, config_path: str) -> list[str]:
         config_path,
         "--strict-mcp-config",
         "--allowedTools",
-        ",".join(TOOL_PREFIX + name for name in TOOL_NAMES),
+        ",".join(TOOL_PREFIX + tool.name for tool in REGISTRY),
         "--tools",
         "",
         "--no-session-persistence",
@@ -519,7 +547,14 @@ def _metrics(transcript: Transcript) -> dict[str, Any]:
     calls = transcript.calls
     sizes = [len(call.result or "") for call in calls]
     refused = [i for i, call in enumerate(calls) if call.refused]
-    corrected = [i for i in refused if i + 1 < len(calls) and calls[i + 1].succeeded]
+    # Corrected: the very next call retries the same tool and is answered.
+    corrected = [
+        i
+        for i in refused
+        if i + 1 < len(calls)
+        and calls[i + 1].name == calls[i].name
+        and calls[i + 1].succeeded
+    ]
     return {
         "tool_calls": len(calls),
         "tool_result_chars": sum(sizes),
@@ -542,8 +577,8 @@ def _metrics(transcript: Transcript) -> dict[str, Any]:
 def judge(
     task: dict[str, Any], transcript: Transcript, space: Space
 ) -> tuple[str, str]:
-    """``("pass" | "fail" | "error", detail)``; error is a verifier that could not read the Space
-    or resolve a company, so the task was not judged."""
+    """The task's outcome, ``"pass" | "fail" | "error"``, and why; error is a verifier that could
+    not read the Space or resolve a company, so the task was not judged."""
     try:
         verdict = VERIFIERS[task["verifier"]](
             task.get("expect") or {}, transcript, space
@@ -593,11 +628,11 @@ def run_task(
             proc.wait()
     wall_s = time.monotonic() - started
     transcript = parse(lines)
-    verdict, detail = judge(task, transcript, space())
+    outcome, detail = judge(task, transcript, space())
     return {
         "id": task["id"],
         "verifier": task["verifier"],
-        "verdict": verdict,
+        "verdict": outcome,
         "detail": detail,
         **_metrics(transcript),
         "wall_s": round(wall_s, 1),
@@ -669,20 +704,25 @@ def _dry_run(tasks: list[dict[str, Any]], sealed: bool, env: dict[str, str]) -> 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("--tasks", type=Path, default=ITERATION_TASKS)
+    tasks_from = parser.add_mutually_exclusive_group()
+    tasks_from.add_argument("--tasks", type=Path, default=ITERATION_TASKS)
+    tasks_from.add_argument(
+        "--heldout",
+        type=Path,
+        help="a sealed held-out tasks file, checked against the iteration file's hash",
+    )
     parser.add_argument("--only", help="run one task id")
     parser.add_argument("--dry-run", action="store_true", help="print, run nothing")
-    parser.add_argument("--heldout", type=Path, help="a sealed held-out tasks file")
     args = parser.parse_args(argv)
 
-    tasks_file = json.loads(args.tasks.read_text(encoding="utf-8"))
     if args.heldout:
-        tasks, label = (
-            load_heldout(args.heldout, tasks_file.get("heldout_sha256")),
-            "heldout",
-        )
+        # The seal is always the committed iteration file's, never a file the caller names.
+        sealed = json.loads(ITERATION_TASKS.read_text(encoding="utf-8"))
+        tasks = load_heldout(args.heldout, sealed.get("heldout_sha256"))
+        label = "heldout"
     else:
-        tasks, label = tasks_file["tasks"], "iteration"
+        tasks = json.loads(args.tasks.read_text(encoding="utf-8"))["tasks"]
+        label = "iteration"
     if args.only:
         tasks = [task for task in tasks if task["id"] == args.only]
         if not tasks:

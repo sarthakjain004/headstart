@@ -26,9 +26,15 @@
         "must": {
           "first_seen_within_hours": {"op": "<=", "value": 24}
         },
+        "must_any": [
+          {"query": {"op": "contains", "value": "machine learning"}},
+          {"query": {"op": "contains", "value": "ml"}},
+          {"keyword": {"op": "contains", "value": "machine learning"}},
+          {"keyword": {"op": "contains", "value": "ml"}}
+        ],
         "query_must_not_contain": ["24", "hour", "today", "recent", "new "]
       },
-      "why": "Plan §9 checks every row's first_seen is inside the window. \"New ... in the last 24 hours\" is New to HeadStart, the first_seen filter, which the Space applies to every row; posted_within_days is the employer's date and would not bound first_seen."
+      "why": "Plan §9 checks every row's first_seen is inside the window. \"New ... in the last 24 hours\" is New to HeadStart, the first_seen filter, which the Space applies to every row; posted_within_days is the employer's date and would not bound first_seen. The role must reach query or keyword as ML or machine learning."
     },
     {
       "id": "t03",
@@ -47,7 +53,7 @@
     {
       "id": "t05",
       "prompt": "Compare Google's and Microsoft's tech hiring over this month.",
-      "verifier": "search_args",
+      "verifier": "tool_args",
       "expect": {
         "tool": "read_trends",
         "must": {
@@ -61,7 +67,7 @@
     {
       "id": "t06",
       "prompt": "How are AI and machine learning roles trending across the whole job index?",
-      "verifier": "search_args",
+      "verifier": "tool_args",
       "expect": {
         "tool": "read_trends",
         "must": {
@@ -80,9 +86,10 @@
           "citi",
           ["contain", "substring"],
           ["directory", "largest company", "one company"]
-        ]
+        ],
+        "tool_results_all": ["company name contains", "Companies: "]
       },
-      "why": "Plan §9: the answer must say the search matched company names containing \"Citi\" and the trend read one directory company. Text checks on the final answer: a 'contains'/'substring' wording for the search, and a 'directory'/'largest company'/'one company' wording for the trend."
+      "why": "Plan §9: the answer must say the search matched company names containing \"Citi\" and the trend read one directory company. Text checks on the final answer: a 'contains'/'substring' wording for the search, and a 'directory'/'largest company'/'one company' wording for the trend. The tool results must show both happened: search_jobs' scope line 'company name contains' (a substring search, not a directory company) and read_trends' 'Companies: ' line (a directory company read)."
     },
     {
       "id": "t08",
@@ -103,7 +110,7 @@
     {
       "id": "t09",
       "prompt": "Which seniority levels grew in data engineering over the last month?",
-      "verifier": "search_args",
+      "verifier": "tool_args",
       "expect": {
         "tool": "read_trends",
         "must": {
@@ -150,7 +157,7 @@
       "prompt": "Find Haskell jobs in Indore paying ₹1 crore.",
       "verifier": "blocking_named",
       "expect": {"argument": null},
-      "why": "Plan §9: must name the Blocking filter, not say nothing exists. Which filter blocks is data-dependent (/facets drops each filter in turn and names the one recovering the most rows), so argument null accepts whichever one the search_jobs result named; the final answer must mention it. Pin the argument once a live run shows which it is. If no single filter blocks, no result names one and the task fails; revise it then."
+      "why": "Plan §9: must name the Blocking filter, not say nothing exists. Which filter blocks is data-dependent (/facets drops each filter in turn and names the one recovering the most rows), so argument null accepts whichever one the search_jobs result named; the final answer must mention it by name or as that filter ('salary filter', 'minimum salary', not a bare 'salary', which a ₹1 crore answer says anyway). Pin the argument once a live run shows which it is. If no single filter blocks, no result names one and the task fails; revise it then."
     }
   ],
   "heldout_sha256": "801e7149bc71c42e7b346dcf089ea20f87d1e0035d989b3dba8ffb50fe055e4d"
