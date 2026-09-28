@@ -249,6 +249,7 @@ supersedes it and note the supersession in both.
 | [0251](0251-trends-answers-are-worked-out-once-a-boot-and-kept-by-the-browser.md) | Trends answers are worked out once a boot and kept by the browser | 2026-09-28 |
 | [0252](0252-a-workday-department-is-read-off-the-family-slice-that-listed-it.md) | A Workday department is read off the family slice that listed it | 2026-09-28 |
 | [0253](0253-an-agent-reads-the-spaces-read-routes-through-a-read-scoped-token.md) | An agent reads the Space's read routes through a read-scoped token | 2026-09-28 |
+| [0254](0254-recruitee-reads-a-real-english-description-and-keeps-the-primary-title.md) | Recruitee reads a real English description and keeps the primary title | 2026-09-28 |
 | [0255](0255-every-tab-speaks-to-a-job-seeker.md) | Every tab speaks to a job seeker: no pipeline words, short sentences, short table headers | 2026-09-28 |
 
 *ADR-0037 was removed from the repository on 2026-09-24 by the owner's decision; its number is not

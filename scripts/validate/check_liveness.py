@@ -1466,9 +1466,13 @@ def p_avature(t, u):
 
 
 def p_recruitee(t, u):
-    return _classify(
-        _scraper_for_row("recruitee", t, u).url(), lambda b: _len_of(b, "offers")
-    )
+    """`*.recruitee.com` is a wildcard (an invented slug resolves and answers 404, 2026-09-28),
+    so a DNS failure is the resolver's, not a gone tenant: UNKNOWN, never DEAD."""
+    status, body = _get(_scraper_for_row("recruitee", t, u).url())
+    if status == "dns":
+        _note("dns-wildcard")
+        return UNKNOWN, None
+    return _verdict(status, _len_of(body, "offers") if status == 200 else None)
 
 
 def p_workable(t, u):
