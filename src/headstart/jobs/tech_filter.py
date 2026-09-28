@@ -95,7 +95,13 @@ from headstart.boards.board_identity import lower_key
 # was not yet in v654: `jibe:costco` alone carried 1,581 such rows (live keyword sample 2026-09-24:
 # 1,213 of 2,500 hits were its only two kept titles). The blind hold-out is unchanged (recall
 # 84.6%, precision 82.0%). See docs/pipeline/2026-09-24_five-run-log-review.md finding 1.
-TECH_FILTER_VERSION = 5
+# 6 (2026-09-28, `git log 19b8984b..c28a5178 -- src/headstart/ingest src/headstart/jobs/tech_filter.py`):
+# no pattern changed. `filter_tech` now leaves out every row on a Dormant Board, one whose newest
+# posting is over two years old (ADR-0248). Purely subtractive: on the served table (v448, 533,799
+# rows) at most **-55,080 out, 0 in**, 47,152 of them SmartRecruiters, an upper bound because the
+# served rows are tech only and a Board's non-tech postings can keep it in. On a live scrape of 24
+# Boards, 16 were Dormant and -10,369 of their served rows would go; the six controls lost none.
+TECH_FILTER_VERSION = 6
 
 # 1. Strong, software-specific signals. A match here means tech regardless of any disqualifier.
 _STRONG_TERMS = [
