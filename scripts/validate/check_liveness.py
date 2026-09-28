@@ -122,6 +122,9 @@ from headstart.scrapers.ripplehire import (  # the careers redirect's token, sin
 from headstart.scrapers.taleo_be import (  # the next-ten-rows link, single source
     NEXT_PAGE_LINK as _TALEO_NEXT,
 )
+from headstart.scrapers.trakstar import (  # the inactive-account page, single source
+    INACTIVE_ACCOUNT as _TRAKSTAR_INACTIVE,
+)
 from headstart.scrapers.workday import (  # careers-URL parts + the DC list, single source
     CAREERS_URL_PATTERN as _WD_URL,
 )
@@ -2632,7 +2635,13 @@ def p_trakstar(t, u):
         return DEAD, None
     if status != 200:
         return UNKNOWN, None
-    n = len(body.decode("utf-8", "replace").split("js-careers-page-job-list-item")) - 1
+    page = body.decode("utf-8", "replace")
+    if _TRAKSTAR_INACTIVE in page:
+        # A 200 with no job cards: the employer left Trakstar, and every posting its API still
+        # lists 404s. The scraper raises gone on the same page (#662); 9 of 10 `live, jobs=0`
+        # rows sampled on 2026-09-28 carried it (#701).
+        return DEAD, None
+    n = len(page.split("js-careers-page-job-list-item")) - 1
     return LIVE, max(n, 0)
 
 

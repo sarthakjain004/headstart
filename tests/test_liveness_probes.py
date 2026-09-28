@@ -2195,3 +2195,24 @@ def test_radancy_inconclusive_answers_stay_unknown(monkeypatch):
         ),
     )
     assert cl.p_radancy("jobs.intuit.com", "") == (cl.UNKNOWN, None)
+
+
+def test_trakstar_inactive_account_is_dead(monkeypatch):
+    """#701: an inactive account's page answers 200 with no job cards; it is gone, not empty.
+    9 of 10 `live, jobs=0` Trakstar ledger rows sampled on 2026-09-28 carried this page."""
+    page = (
+        b"<html><head><title></title></head><body><h1>Inactive account.</h1>"
+        b"<p>This employer is no longer using Trakstar Hire to collect applications.</p>"
+        b"</body></html>"
+    )
+    monkeypatch.setattr(cl, "_get", _stub_get(200, page))
+    assert cl.p_trakstar("calendly", "https://calendly.hire.trakstar.com/") == (
+        cl.DEAD,
+        None,
+    )
+
+
+def test_trakstar_live_page_counts_cards(monkeypatch):
+    page = b'<div class="js-careers-page-job-list-item"></div>' * 3
+    monkeypatch.setattr(cl, "_get", _stub_get(200, page))
+    assert cl.p_trakstar("acme", "https://acme.hire.trakstar.com/") == (cl.LIVE, 3)
