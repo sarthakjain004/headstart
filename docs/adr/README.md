@@ -252,6 +252,7 @@ supersedes it and note the supersession in both.
 | [0254](0254-an-icims-portal-listing-only-what-a-sibling-lists-is-an-alias.md) | An iCIMS portal listing only what a sibling portal lists is an alias | 2026-09-28 |
 | [0255](0255-every-tab-speaks-to-a-job-seeker.md) | Every tab speaks to a job seeker: no pipeline words, short sentences, short table headers | 2026-09-28 |
 | [0256](0256-recruitee-reads-a-real-english-description-and-keeps-the-primary-title.md) | Recruitee reads a real English description and keeps the primary title | 2026-09-28 |
+| [0257](0257-jobvite-walks-a-short-board-again-and-gates-on-the-listing-title.md) | Jobvite walks a short Board again and gates its detail pages on the listing title | 2026-09-28 |
 
 *ADR-0037 was removed from the repository on 2026-09-24 by the owner's decision; its number is not
 reused.*

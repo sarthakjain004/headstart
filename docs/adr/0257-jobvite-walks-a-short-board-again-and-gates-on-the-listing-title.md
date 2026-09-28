@@ -1,4 +1,4 @@
-# ADR-0254: Jobvite walks a short Board again and gates its detail pages on the listing title
+# ADR-0257: Jobvite walks a short Board again and gates its detail pages on the listing title
 
 **Status:** accepted · **Date:** 2026-09-28 · **Amends:**
 [ADR-0231](0231-a-jobvite-job-is-read-from-its-detail-page-or-not-at-all.md) · **Relates to:**
