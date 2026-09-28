@@ -1138,6 +1138,35 @@ def test_bundle_rung_fetches_the_bundle_the_base_href_names(monkeypatch):
     )
 
 
+def test_a_careers_link_to_a_script_never_becomes_the_bundle_source(monkeypatch):
+    """careers.microland.com's first careers-ish link that loaded was Akamai's `/akam/13/…`
+    script; read as the careers page, it hid the homepage shell whose `main.js` names Zwayam."""
+    monkeypatch.setattr(fp, "cname_chain", lambda _host: [])
+    shell = (
+        '<!DOCTYPE html><html><head><base href="/acme/">'
+        '<script src="https://careers.acme.com/akam/13/7e77"></script>'
+        '<script src="main.js"></script></head></html>'
+    )
+
+    def get(url, cap=fp.PAGE_CAP):
+        if url == "https://careers.acme.com/":
+            return shell, "https://careers.acme.com/acme/", ""
+        if url == "https://careers.acme.com/akam/13/7e77":
+            return "(function(){var _=['\\x70'];})();", url, ""
+        if url == "https://careers.acme.com/acme/main.js":
+            return 'api="https://boards.greenhouse.io/acmeexample"', url, ""
+        return "", url, "http404"
+
+    monkeypatch.setattr(fp, "get", get)
+    row = fp.probe("Acme", "careers.acme.com", generated_career_hosts=False)
+
+    assert (row["ats"], row["tenant"], row["signal"]) == (
+        "greenhouse",
+        "acmeexample",
+        "jsbundle",
+    )
+
+
 def test_required_words_keep_only_literals_every_match_contains():
     # An optional group contributes nothing; the literals around it still count.
     assert fp.required_words(r"jobs(?:\.europe)?\.lever\.co/") == (
