@@ -644,8 +644,8 @@ def parse_resume():
     The pasted text is used for this single call and never stored or logged; only the
     extraction is kept. Capped per Account for its lifetime: the cap bounds router spend,
     so any attempt that reached the router counts, even one that extracted nothing — and
-    the counter is written *before* the profile, so a crash between the two writes can
-    only over-count, never under-count."""
+    the counter is written *before* the router is asked and before the profile, so a
+    failure anywhere after it can only over-count, never under-count (ADR-0041, #596)."""
     gate = _account_gate()
     if not gate:
         return jsonify({"error": "profiles are not configured"}), 503
@@ -674,23 +674,27 @@ def _run_resume_read(email: str, store: Store, account: str):
             {"error": f"no résumé reads left — this account has used all {MAX_PARSES}"}
         ), 400
     body = request.get_json(silent=True) or {}
+    # Reserved before the router is asked, and handed back only where ADR-0041 says nothing is
+    # spent (#596): a failed reservation is a 503 with the router never reached.
+    store.put_parses(account, used + 1)
     try:
         fields = profile_extract.extract(
             str(body.get("text") or ""), ask=llm_router.ask
         )
     except profile_extract.ResumeTooLong as exc:
+        store.put_parses(account, used)
         return jsonify({"error": str(exc)}), 413
     except profile_extract.EmptyExtraction as exc:
         # The router answered — the call was spent, so it counts against the cap.
-        store.put_parses(account, used + 1)
         return jsonify({"error": str(exc)}), 502
     except profile_extract.ResumeError as exc:  # EmptyResume: refused before the router
+        store.put_parses(account, used)
         return jsonify({"error": str(exc)}), 400
     except llm_router.RouterUnavailable:
+        store.put_parses(account, used)
         # Detail stays in the container log's traceback-free world: the caller only needs
         # "temporarily off", and the reason may name internal hosts.
         return jsonify({"error": "résumé reading is temporarily unavailable"}), 503
-    store.put_parses(account, used + 1)
     updated = (store.get_profile(account) or Profile.blank(email)).revised(fields)
     store.put_profile(updated)
     return jsonify(_profile_out(updated, used + 1))
