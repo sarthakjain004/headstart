@@ -1776,14 +1776,15 @@ def test_darwinbox_probe_reads_a_host_that_is_no_tenant_on_either_tld_as_dead(
     assert cl.p_darwinbox("acme", "https://acme.darwinbox.in") == (cl.DEAD, None)
 
 
-def test_darwinbox_probe_reads_cloudflares_530_as_no_tenant(monkeypatch):
-    """bobobox, live 2026-09-28: .in "Invalid subdomain", .com Cloudflare 530."""
+def test_darwinbox_probe_does_not_read_cloudflares_530_as_no_tenant(monkeypatch):
+    """bobobox, live 2026-09-28: .in "Invalid subdomain", .com Cloudflare 530. A 530 means the
+    origin did not answer, which a real tenant's outage looks like too."""
     no_origin = (
         530,
         '{"type":"https://developers.cloudflare.com/support/troubleshooting/"}',
     )
     _darwinbox_answers(monkeypatch, {"in": _DBX_INVALID, "com": no_origin})
-    assert cl.p_darwinbox("acme", "https://acme.darwinbox.in") == (cl.DEAD, None)
+    assert cl.p_darwinbox("acme", "https://acme.darwinbox.in") == (cl.UNKNOWN, None)
 
 
 def test_darwinbox_probe_keeps_an_unexplained_answer_unknown(monkeypatch):
