@@ -64,3 +64,18 @@ def test_a_walk_short_of_the_stated_count_is_marked_truncated(monkeypatch):
     )
     scraper.fetch_raw()
     assert scraper.truncated and "3 of 40" in scraper.truncated
+
+
+def test_a_negligible_shortfall_is_left_to_the_grace_period(monkeypatch):
+    """ADR-0121: 995 of 1,000 is inside the shared tolerance, so the Board keeps its eviction
+    scope and the 5 unread ids take the per-Job grace period instead."""
+    scraper = SenseHQScraper("acme")
+
+    def page(self):
+        start = self._page * 10
+        batch = [{"id": i} for i in range(start, min(start + 10, 995))]
+        return json.dumps({"data": {"rows": batch, "count": 1000}})
+
+    monkeypatch.setattr(type(scraper), "_get", page)
+    scraper.fetch_raw()
+    assert scraper.truncated is None
