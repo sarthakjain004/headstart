@@ -7,11 +7,15 @@ answers the decoded JSON or raises a :class:`SpaceError` whose message is a sent
 There is no way to name a path, a verb or a body: the client is read-only by its shape, which is
 ADR-0137's argument for `resume_mcp.account.Account` applied to the Space.
 
+**No credential.** The routes it reads are public (ADR-0253's amendment: the owner wants anyone
+to be able to use this server), so it sends none; a 401 means the Space has not deployed that yet.
+
 **Who answered.** The app marks every reply ``X-HeadStart: app; agent-api=N`` (ADR-0253). A reply
 without it came from Hugging Face's edge in front of a Space that is booting or asleep — or from an
-app older than the marker, which is told apart because it refuses an unknown bearer with its own
-JSON 401. An app reply whose ``agent-api`` is below :data:`AGENT_API` stops the call: an older Space
-would silently ignore ``strict=1``, and "stricter than the browser, never looser" is the promise.
+app older than the marker, which is told apart because it answers with its own JSON 401 (its
+sign-in wall). An app reply whose ``agent-api`` is below :data:`AGENT_API` stops the call: an older
+Space would silently ignore ``strict=1``, and "stricter than the browser, never looser" is the
+promise.
 
 **Waiting.** A boot measured 4 min 13 s (2026-09-28, the Space's own run log), longer than any
 agent should sit silently, so a call waits at most ``deadline_s`` and then says the Space is
@@ -56,7 +60,7 @@ _AGENT_API_IN_MARKER = re.compile(r"agent-api=(\d+)")
 
 
 class SpaceRoute(StrEnum):
-    """Every route this server may read — all read-only, all admitted by `AGENT_TOKEN`."""
+    """Every route this server may read — all read-only, Account-free and public."""
 
     SEARCH = "/search"
     FACETS = "/facets"
@@ -105,10 +109,6 @@ class SpaceError(Exception):
 
 
 class SpaceWaking(SpaceError):
-    pass
-
-
-class SpaceRefused(SpaceError):
     pass
 
 
@@ -183,7 +183,6 @@ class SpaceClient:
 
     def __init__(
         self,
-        token: str,
         *,
         base: str = SPACE_URL,
         fetch: Fetch = urllib_fetch,
@@ -195,7 +194,6 @@ class SpaceClient:
         sleep: Callable[[float], None] = time.sleep,
     ) -> None:
         self._headers = {
-            "Authorization": f"Bearer {token}",
             "Accept": "application/json",
             "Accept-Encoding": "gzip",
             "User-Agent": "headstart-space-mcp",
@@ -258,10 +256,7 @@ class SpaceClient:
         marker = reply.headers.get(_MARKER)
         if marker is None:
             if reply.status == 401 and isinstance(_json(reply.body), dict):
-                raise SpaceRefused(
-                    "The HeadStart Space does not accept the agent token: it predates the agent "
-                    "token, or AGENT_TOKEN is not set among the Space's secrets."
-                )
+                raise SpaceTooOld(_STILL_WALLED)
             return _EDGE
         self._app_answered = True
         served = _AGENT_API_IN_MARKER.search(marker)
@@ -282,9 +277,7 @@ class SpaceClient:
         if reply.status == 400:
             raise InvalidRequest(text or "The HeadStart Space refused this request.")
         if reply.status in (401, 403):
-            raise SpaceRefused(
-                "The HeadStart Space rejected the agent token; it may have been rotated."
-            )
+            raise SpaceTooOld(_STILL_WALLED)
         if reply.status == 503:
             raise NotOnDeployment(
                 f"Not on this deployment yet: {text or 'the Space has no data for this'}."
@@ -294,6 +287,12 @@ class SpaceClient:
             "logged there."
         )
 
+
+#: Said when the app answers a read route with its sign-in wall: the route is public on `main`.
+_STILL_WALLED = (
+    "The HeadStart Space still asks for sign-in on this route: it predates the public read "
+    "routes this server needs; deploy main to the Space."
+)
 
 #: What :meth:`SpaceClient._answer` returns for a reply that came from the edge, not the app.
 _EDGE = object()

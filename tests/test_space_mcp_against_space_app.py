@@ -15,7 +15,7 @@ from urllib.parse import urlsplit
 
 import pytest
 import test_space_app as space_tests
-from test_space_app import agent_app, trends_app  # noqa: F401 — fixtures, reused
+from test_space_app import auth_app, trends_app  # noqa: F401 — fixtures, reused
 
 from headstart.mcp_protocol.stdio import ToolFailure
 from headstart.space_mcp import server
@@ -43,8 +43,8 @@ def flask_fetch(test_client) -> sc.Fetch:
     return fetch
 
 
-def _client(module, token="agent-token") -> sc.SpaceClient:
-    return sc.SpaceClient(token, fetch=flask_fetch(module.app.test_client()))
+def _client(module) -> sc.SpaceClient:
+    return sc.SpaceClient(fetch=flask_fetch(module.app.test_client()))
 
 
 @pytest.fixture
@@ -182,11 +182,11 @@ def test_a_window_with_no_counts_says_so_rather_than_reconciling_nothing(
     assert "reconcile" not in text
 
 
-def test_the_agent_token_opens_the_wall_and_no_token_is_refused(agent_app):  # noqa: F811
-    through = server.call(_client(agent_app), "search_jobs", {"query": "engineer"})
-    assert "jobs match these filters" in through
-    with pytest.raises(ToolFailure, match="rejected the agent token"):
-        server.call(_client(agent_app, token="wrong"), "search_jobs", {})
+def test_the_read_routes_answer_anyone_with_the_wall_on(auth_app):  # noqa: F811
+    """The sign-in wall is on (both of its secrets set), and the server sends no credential: the
+    read routes are public so that anyone can use this server (ADR-0253's amendment)."""
+    text = server.call(_client(auth_app), "search_jobs", {"query": "engineer"})
+    assert "jobs match these filters" in text
 
 
 @pytest.fixture

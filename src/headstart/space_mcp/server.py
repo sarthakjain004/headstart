@@ -31,7 +31,6 @@ _log = log.get(__name__, __spec__)
 NAME = "headstart-space"
 VERSION = "1.0.0"
 
-TOKEN_VAR = "HEADSTART_AGENT_TOKEN"
 URL_VAR = "HEADSTART_SPACE_URL"
 
 #: Each registered tool by name.
@@ -101,25 +100,16 @@ def call(client: SpaceClient, name: str, arguments: dict[str, Any]) -> str:
 
 
 def build_server(env: dict[str, str] | None = None) -> stdio.Server:
-    """This server as the shared loop sees it. Without a token it still starts and lists its
-    tools, and every call says which variable to set."""
+    """This server as the shared loop sees it. It needs no configuration: the Space's read routes
+    are public. ``HEADSTART_SPACE_URL`` points it at another deployment."""
     env = dict(os.environ) if env is None else env
-    token = (env.get(TOKEN_VAR) or "").strip()
     base = (env.get(URL_VAR) or "").strip() or SPACE_URL
     budget = RequestBudget()
 
     def call_with_a_fresh_client(name: str, arguments: dict[str, Any]) -> str:
         # One client per call: its deadline and "the app has answered" are this call's own.
-        return call(SpaceClient(token, base=base, budget=budget), name, arguments)
+        return call(SpaceClient(base=base, budget=budget), name, arguments)
 
-    unconfigured = (
-        None
-        if token
-        else RuntimeError(
-            f"Set {TOKEN_VAR} in this MCP server's environment to the Space's AGENT_TOKEN "
-            "secret; see docs/agents/space-mcp-server.md."
-        )
-    )
     return stdio.Server(
         name=NAME,
         version=VERSION,
@@ -127,14 +117,10 @@ def build_server(env: dict[str, str] | None = None) -> stdio.Server:
         call=call_with_a_fresh_client,
         log=_log,
         instructions=INSTRUCTIONS,
-        unconfigured=unconfigured,
     )
 
 
 def main() -> None:
     # headstart.log writes to stderr, never stdout: stdout is the protocol.
     log.setup()
-    server = build_server()
-    if server.unconfigured is not None:
-        _log.warning("%s: %s", NAME, server.unconfigured)
-    stdio.serve(sys.stdin, sys.stdout, server)
+    stdio.serve(sys.stdin, sys.stdout, build_server())

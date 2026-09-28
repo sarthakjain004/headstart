@@ -60,12 +60,10 @@ def _reply(status=200, body=None, headers=APP):
 
 
 def _client(clock, fetch, **kwargs):
-    return sc.SpaceClient(
-        "agent-token", fetch=fetch, clock=clock, sleep=clock.sleep, **kwargs
-    )
+    return sc.SpaceClient(fetch=fetch, clock=clock, sleep=clock.sleep, **kwargs)
 
 
-def test_an_app_answer_is_its_json_and_the_request_carries_the_token():
+def test_an_app_answer_is_its_json_and_the_request_carries_no_credential():
     clock = Clock()
     fetch = Script(clock, _reply(body={"companies": []}))
     got = _client(clock, fetch).read(
@@ -73,7 +71,7 @@ def test_an_app_answer_is_its_json_and_the_request_carries_the_token():
     )
     assert got == {"companies": []}
     assert fetch.urls == [f"{sc.SPACE_URL}/companies/suggest?q=stripe&limit=8"]
-    assert fetch.headers[0]["Authorization"] == "Bearer agent-token"
+    assert "Authorization" not in fetch.headers[0]
 
 
 def test_repeated_keys_stay_repeated():
@@ -107,7 +105,7 @@ def test_only_the_listed_routes_can_be_read():
             sc.InvalidRequest,
             "unknown company",
         ),
-        (401, {"error": "sign in first"}, sc.SpaceRefused, "rotated"),
+        (401, {"error": "sign in first"}, sc.SpaceTooOld, "still asks for sign-in"),
         (503, {"error": "no trend data yet"}, sc.NotOnDeployment, "no trend data yet"),
         (500, None, sc.SpaceFailed, "HTTP 500"),
     ],
@@ -179,7 +177,7 @@ def test_an_app_404_on_a_route_this_server_needs_is_an_older_space():
 def test_an_app_from_before_the_marker_is_recognised_by_its_json_401():
     clock = Clock()
     fetch = Script(clock, _reply(401, {"error": "sign in first"}, headers={}))
-    with pytest.raises(sc.SpaceRefused, match="predates the agent token"):
+    with pytest.raises(sc.SpaceTooOld, match="predates the public read routes"):
         _client(clock, fetch).read(sc.SpaceRoute.SEARCH)
     assert clock.slept == []
 

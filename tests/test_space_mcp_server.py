@@ -125,23 +125,12 @@ def _search_space(rows, total=None, **answers):
 # ---- the tool list ----------------------------------------------------------------------
 
 
-def test_an_unconfigured_server_lists_its_tools_and_names_the_variable():
-    unconfigured = server.build_server(env={})
-    listed = stdio.handle(
-        {"jsonrpc": "2.0", "id": 1, "method": "tools/list"}, unconfigured
-    )
+def test_the_server_needs_no_configuration_and_can_point_at_another_space():
+    """The Space's read routes are public, so anyone can run this server as installed."""
+    default = server.build_server(env={})
+    assert default.unconfigured is None
+    listed = stdio.handle({"jsonrpc": "2.0", "id": 1, "method": "tools/list"}, default)
     assert len(listed["result"]["tools"]) == len(REGISTRY)
-    called = stdio.handle(
-        {
-            "jsonrpc": "2.0",
-            "id": 2,
-            "method": "tools/call",
-            "params": {"name": "hiring_now", "arguments": {}},
-        },
-        unconfigured,
-    )
-    assert called["result"]["isError"] is True
-    assert server.TOKEN_VAR in called["result"]["content"][0]["text"]
 
 
 def test_a_real_client_handshake_over_a_real_subprocess():
@@ -161,7 +150,7 @@ def test_a_real_client_handshake_over_a_real_subprocess():
         timeout=60,
         check=False,
         cwd=pathlib.Path(__file__).resolve().parent.parent,
-        env={**os.environ, "PYTHONPATH": "src", server.TOKEN_VAR: ""},
+        env={**os.environ, "PYTHONPATH": "src"},
     )
     replies = [json.loads(line) for line in done.stdout.splitlines()]
     assert [r["id"] for r in replies] == [1, 2], done.stderr
@@ -755,16 +744,19 @@ def test_an_answer_past_its_tools_budget_is_cut_on_lines_and_keeps_its_last(
     assert all(line in long_answer.split("\n") for line in text.split("\n")[:-2])
 
 
+#: Set to 1 to let the live test reach the deployed Space; unset, it is skipped, so CI never does.
+LIVE_VAR = "HEADSTART_SPACE_LIVE"
+
+
 @pytest.mark.skipif(
-    not os.environ.get(server.TOKEN_VAR),
-    reason=f"live: set {server.TOKEN_VAR} to the Space's AGENT_TOKEN to run against the Space",
+    os.environ.get(LIVE_VAR) != "1",
+    reason=f"live: set {LIVE_VAR}=1 to run against the deployed Space",
 )
 def test_live_each_tool_answers_from_the_deployed_space():
     """Every registered tool, once, against the real Space — the one test that crosses HF's
     edge. Asserts shape, never numbers, which move with every pipeline run."""
-    token = os.environ[server.TOKEN_VAR]
     base = os.environ.get(server.URL_VAR) or sc.SPACE_URL
     for tool in REGISTRY:
-        text = server.call(sc.SpaceClient(token, base=base), tool.name, {})
+        text = server.call(sc.SpaceClient(base=base), tool.name, {})
         assert text.strip(), tool.name
         assert len(text) <= tool.max_chars, tool.name

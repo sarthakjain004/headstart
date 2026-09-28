@@ -12,48 +12,35 @@ to it — so a company you hid on the website is **not** hidden from an agent's 
 
 ## Install it
 
-1. **Get the token.** The Space admits this server with its `AGENT_TOKEN` secret, a read-scoped
-   token separate from `ALERTS_TOKEN`. If it is not set yet, generate one and add it to the Space
-   (this restarts the Space, which takes about four minutes to boot):
+Anyone can run it: the Space's read routes are public (ADR-0253's amendment), so it needs no
+account, token or key — only a checkout of this repository and Python 3.12.
+
+1. **Install** the base package from a checkout (no torch, no index):
 
    ```bash
-   python -c "import secrets; print(secrets.token_urlsafe(32))"
-   .venv/bin/python -c "
-   from huggingface_hub import HfApi
-   HfApi().add_space_secret('imPoseidon/headstart-search', 'AGENT_TOKEN', '<the token>')"
+   git clone https://github.com/sarthakjain004/headstart && cd headstart
+   python -m venv .venv && .venv/bin/pip install -e .
    ```
 
-   It must differ from `ALERTS_TOKEN`: if the two are equal, the Space ignores `AGENT_TOKEN`.
-
-2. **Add the server** from a checkout installed with `pip install -e .` (the base install is
-   enough — no torch, no index):
+2. **Add the server** to Claude Code:
 
    ```bash
    claude mcp add headstart-space --scope user --transport stdio \
-     --env HEADSTART_AGENT_TOKEN=<the token> \
-     -- /absolute/path/to/HeadStart/.venv/bin/python -m headstart.space_mcp
+     -- "$PWD/.venv/bin/python" -m headstart.space_mcp
    ```
 
-   The name comes first: the CLI reads a name placed right after `--env` as another pair and
-   rejects it. Use the checkout's own interpreter by absolute path, because a user-scoped server
-   starts from every project's directory. `claude mcp add --env` writes the token in plain text
-   into `~/.claude.json`; to keep it out of that file, export `HEADSTART_AGENT_TOKEN` in your shell
-   and use a project `.mcp.json` whose `env` says `"HEADSTART_AGENT_TOKEN": "${HEADSTART_AGENT_TOKEN}"`.
+   Use the checkout's own interpreter by absolute path, because a user-scoped server starts from
+   every project's directory. Any MCP client that runs stdio servers can use the same command.
 
 3. **Check it.** `/mcp` in Claude Code lists `headstart-space` and its tools. Without a client:
 
    ```bash
    npx @modelcontextprotocol/inspector@2.8.0 --cli \
-     /absolute/path/to/HeadStart/.venv/bin/python -m headstart.space_mcp --method tools/list
+     "$PWD/.venv/bin/python" -m headstart.space_mcp --method tools/list
    ```
 
 `HEADSTART_SPACE_URL` points it at another deployment; the default is
 `https://imposeidon-headstart-search.hf.space`.
-
-### When the token is absent
-
-The server still starts and lists its tools, and every call answers with the variable to set —
-not a client that reports "failed to connect" and says nothing.
 
 ## The tools
 
@@ -111,8 +98,9 @@ server changes.
 2. Add `<tool_name>.TOOL` to `REGISTRY` in `src/headstart/space_mcp/tools/__init__.py`. The server
    lists it, puts its `when_to_use` in its instructions, checks its arguments against its schema,
    fills its defaults, and cuts any answer past its `max_chars`.
-3. A Space route no tool read before also needs: a `SpaceRoute` member; `AGENT_TOKEN` admitted on
-   it in the Space's token map (`deploy/hf-space/app.py`, ADR-0253); and, when it is new contract,
+3. A Space route no tool read before also needs: a `SpaceRoute` member; the route public on the
+   Space (`_PUBLIC_PATHS` in `deploy/hf-space/app.py` — read-only, Account-free routes only,
+   ADR-0253); and, when it is new contract,
    the Space's agent contract version and this server's `AGENT_API` raised together, so an older
    Space is refused rather than half-understood.
 4. `tests/test_space_mcp_tools.py` holds every registered tool to the rules above without being
@@ -121,8 +109,9 @@ server changes.
 5. Describe it here, and give the evaluation (`scripts/eval/`) a task for it.
 
 A tool that **writes** or reads **one Account's records** is a decision, not an addition: every tool
-today is read-only and Account-free, the token opens read routes only, and the contract tests pin
-both. It needs its own credential first (per-Account tokens are the deferred design).
+today is read-only and Account-free, reading public routes with no credential, and the contract
+tests pin both. It needs a credential design first (per-Account tokens are the deferred design),
+since a public route can never carry one person's data.
 
 ## Where it lives
 
