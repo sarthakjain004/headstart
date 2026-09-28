@@ -215,8 +215,8 @@ def _ld_fields(page: str) -> dict[str, Any] | None:
     if node is None:
         return None
     # `posted_at` is the page's `datePosted`, measured real and stable, not fabricated. The
-    # location is the first of the many alternative sites a posting often names (module
-    # docstring: mean 2.24, one posting listing 14): there is no signal to prefer another.
+    # location is every site a posting names, "; "-joined (module docstring: mean 2.24, one
+    # posting listing 14).
     return {**job_posting_fields(node), "description": _full_description(node)}
 
 

@@ -83,7 +83,6 @@ from headstart.scrapers.job_posting_jsonld import (
     find_job_posting,
     has_unparseable_jsonld,
     hiring_organization,
-    job_location_text,
     job_posting_fields,
 )
 
@@ -336,15 +335,9 @@ def _page_fields(page: str) -> dict[str, Any] | None:
     if node is None:
         return _meta_fields(page)
     title = _PAGE_TITLE.search(page)
-    places = node.get("jobLocation")
-    places = places if isinstance(places, list) else [places]
-    location = "; ".join(
-        dict.fromkeys(text for text in map(job_location_text, places) if text)
-    )
     return {
+        # Its `location` keeps every place, "; "-joined: 126 of 990 pages name more than one.
         **job_posting_fields(node),
-        # 126 of 990 pages name more than one place; each is kept, "; "-joined.
-        "location": location or None,
         "department": _meta(page, "gtm_tbcn_jobcategory"),
         "posted_at": _iso_date(node.get("datePosted")),
         "salary": _salary(node.get("baseSalary")),

@@ -1,6 +1,6 @@
 # ADR-0196: A job page's JSON-LD JobPosting is read by one reader
 
-**Status:** accepted · **Date:** 2026-09-24 · **Amended:** 2026-09-28 (every Place is kept) · **Relates to:**
+**Status:** accepted · **Date:** 2026-09-24 · **Relates to:**
 [ADR-0099](0099-a-404d-workday-detail-falls-back-to-the-public-pages-json-ld.md) (Workday's
 public-page fallback, one of the readers replaced),
 [ADR-0184](0184-a-pinpoint-board-is-read-from-its-listing-and-dated-from-its-page.md) (Pinpoint's
@@ -168,13 +168,19 @@ Board, so 120 of its 1,019 sitemap pages were captured once and parsed by both.
 | SuccessFactors | 270 | 0 | 1 |
 | Avature | 193 | 0 | 1 |
 
-In every changed row the old value is the new one's first place, so the change only adds places,
-and `remote` changed on none. iCIMS's "4 of 207 sampled" understated it: 31 of 134 here. On
-Eightfold, SuccessFactors and Avature the change is inert on the path the sample read: Eightfold
-reads JSON-LD only in its sitemap fallback, which no sampled Board took, and SuccessFactors pages
-carry none (above).
+In every changed row the old value is the new one's first place, so the change only adds places.
+iCIMS's "4 of 207 sampled" understated it: 31 of 134 here. On Eightfold, SuccessFactors and
+Avature the change is inert on the path the sample read, which says nothing about how many
+locations their postings have. Eightfold reads JSON-LD only in its sitemap fallback, which no
+sampled Board took; its API path keeps the first place through its own `_first_location`, which
+this amendment does not change. SuccessFactors pages carry no JSON-LD (above).
 
-`location` is a Fact that `update_meta` re-observes, and `country` is re-derived when it moves
-(ADR-0138), so an already-indexed row picks this up the next time its Board is scraped; no
-`DERIVATIONS_VERSION` bump. A place in India anywhere in the string now classifies the row as
-India, where before only the first place counted.
+Meta and iCIMS fall back to `is_remote(location)` when the page states no remote type, and that
+check now sees every place, so a posting with a "Remote" place among others now reads as remote.
+`remote` changed on none of the sampled postings.
+
+`location` is a fact that `update_meta` re-observes on every scrape (ADR-0061), and `country` is
+re-derived when it moves (ADR-0138), so an already-indexed row picks this up the next time its
+Board is scraped; no `DERIVATIONS_VERSION` bump. `remote` is refreshed only on a sweep or
+re-derive (ADR-0118). A place in India anywhere in the string now classifies the row as India,
+where before only the first place counted.
