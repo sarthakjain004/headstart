@@ -3673,6 +3673,31 @@ def test_hot_is_ranked_at_boot_from_the_history_the_trends_tab_reads(
     assert trends_app.app.test_client().get("/hot").get_json() == ranked
 
 
+def test_boot_derives_its_company_boards_and_hot_through_the_one_function(
+    monkeypatch, tmp_path
+):
+    """What boot builds from the history is exactly `_derive_from_history`'s answer, so a test
+    that installs a history after import rebuilds the same globals by calling it."""
+    (tmp_path / "history").mkdir()
+    (tmp_path / "state").mkdir()
+    history = _trend_history(
+        tmp_path / "history",
+        ledger=_COMPANY_LEDGER,
+        deltas=_COMPANY_DELTAS,
+        companies=_COMPANY_DIRECTORY,
+    )
+    # `_STATE` is the hardcoded /app/state, so boot is handed the fixture history directly.
+    monkeypatch.setattr(trend_history.TrendHistory, "load", lambda *a, **k: history)
+    with _space_app(
+        tmp_path / "state", env={"SECRET_KEY": "", "GOOGLE_CLIENT_ID": ""}
+    ) as module:
+        assert module._HISTORY is history
+        company_boards, hot = module._derive_from_history(history)
+        assert (module._COMPANY_BOARDS, module._HOT) == (company_boards, hot)
+        assert company_boards["workday:hpe/b"] == ("workday:hpe/a", "workday:hpe/b")
+        assert hot["window"]["to"] == history.ticks[-1]
+
+
 def test_a_hot_ranking_that_fails_darkens_hot_only(trends_app, monkeypatch, tmp_path):
     history = _company_history(trends_app, monkeypatch, tmp_path)
 

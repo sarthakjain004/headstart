@@ -213,7 +213,23 @@ def _rank_hot(history: trend_history.TrendHistory) -> dict:
     return ranked
 
 
-_HOT = _rank_hot(_HISTORY)
+def _derive_from_history(
+    history: trend_history.TrendHistory,
+) -> tuple[dict[str, tuple[str, ...]], dict]:
+    """What boot derives from the Trends history, as ``(company_boards, hot)``: each Board's
+    company as every Board of its Company directory entry, keyed case-blind as the follow and
+    hide lists compare Boards (Follow and Hide act on a whole company, ADR-0230), and the Hot
+    ranking (``_rank_hot``). The one derivation, so a history installed after import (a test's)
+    rebuilds the same globals boot built."""
+    company_boards = {
+        board.lower(): tuple(entry["boards"])
+        for entry in history.companies.values()
+        for board in entry["boards"]
+    }
+    return company_boards, _rank_hot(history)
+
+
+_COMPANY_BOARDS, _HOT = _derive_from_history(_HISTORY)
 
 
 def _with_predecessors(
@@ -544,15 +560,6 @@ def search_jobs():
     except (ValueError, job_search.ScopeUnavailable) as exc:
         body, status = job_search.refusal(exc)
         return jsonify(body), status
-
-
-# Each Board's company as every Board of its Company directory entry, keyed case-blind as the
-# follow and hide lists compare Boards. Follow and Hide act on a whole company (ADR-0230).
-_COMPANY_BOARDS = {
-    board.lower(): tuple(entry["boards"])
-    for entry in _HISTORY.companies.values()
-    for board in entry["boards"]
-}
 
 
 def _company_boards(board: str) -> tuple[str, ...]:
