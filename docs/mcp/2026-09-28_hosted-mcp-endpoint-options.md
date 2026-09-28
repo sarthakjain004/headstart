@@ -1,6 +1,6 @@
 # A hosted MCP endpoint for HeadStart: options
 
-**Status:** accepted, Option A, as [ADR-0266](../adr/0266-the-space-hosts-the-mcp-server-at-a-url-anyone-can-add.md) · **Date:** 2026-09-28 · **Builds on:** the Space MCP server
+**Status:** accepted, Option A, as [ADR-0267](../adr/0267-the-space-hosts-the-mcp-server-at-a-url-anyone-can-add.md) · **Date:** 2026-09-28 · **Builds on:** the Space MCP server
 (draft PR #793, `src/headstart/space_mcp/`), `docs/mcp/2026-09-28_space-mcp-server-plan.md` §7.1
 and §13, ADR-0253 and its public-read-routes amendment
 

@@ -1,4 +1,4 @@
-"""MCP's Streamable HTTP transport, as one POST in and one JSON answer out (ADR-0266).
+"""MCP's Streamable HTTP transport, as one POST in and one JSON answer out (ADR-0267).
 
 :func:`answer` is framework-free: the Space's `/mcp` route hands it the request's headers and
 body and sends back the status, headers and body it returns. Every request is answered with one

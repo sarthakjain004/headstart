@@ -112,7 +112,7 @@ IN_PROCESS_READ = "headstart.space_mcp.in_process_read"
 
 
 def wsgi_fetch(wsgi_app: Callable) -> Fetch:
-    """The :data:`Fetch` for this server when the Space itself serves it (ADR-0266): each read is
+    """The :data:`Fetch` for this server when the Space itself serves it (ADR-0267): each read is
     a request to ``wsgi_app`` in process, with no cookie, so no Account reaches an answer.
     ``timeout_s`` has no hold on an in-process call; the outer ``/mcp`` request's own limits bound
     it. Werkzeug is imported here, not at the top: the stdio install has no Werkzeug."""

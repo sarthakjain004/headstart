@@ -5,7 +5,7 @@ stubbed. Its fixtures and history writers are imported here, not copied or moved
 server is tested against is the one the Space's own tests load, and a 3,500-line file other work
 edits stays where it is. Each tool runs through a :class:`SpaceClient` whose `Fetch` is
 `space_client.wsgi_fetch` — the port's in-process adapter, the one the Space's own `/mcp` serves
-through (ADR-0266) — and what is asserted is the text an agent would read. The last section posts
+through (ADR-0267) — and what is asserted is the text an agent would read. The last section posts
 MCP messages to that route itself, in both protocol eras.
 """
 
@@ -350,7 +350,7 @@ def test_hot_rows_the_tab_hides_are_left_out_by_the_apps_own_list(
     assert "1 aggregator and staffing rows hidden" in text
 
 
-# ---- the Space's own /mcp, in both protocol eras (ADR-0266) ----
+# ---- the Space's own /mcp, in both protocol eras (ADR-0267) ----
 
 #: One call of each registered tool, and a phrase its answer carries.
 _EACH_TOOL = [

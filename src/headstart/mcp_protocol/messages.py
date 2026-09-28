@@ -2,7 +2,7 @@
 
 `handle` is the seam between the protocol and a transport. `stdio.serve` feeds it newline-delimited
 lines for a local install (ADR-0137); `streamable_http.answer` feeds it one POST body for the
-Space's hosted endpoint (ADR-0266). It is written out here rather than taken from the `mcp` SDK,
+Space's hosted endpoint (ADR-0267). It is written out here rather than taken from the `mcp` SDK,
 which brings pydantic, anyio, starlette, uvicorn and more to a base install of two packages.
 
 **Two eras, chosen per request.** A request whose ``params._meta`` names
@@ -11,7 +11,7 @@ which brings pydantic, anyio, starlette, uvicorn and more to a base install of t
 ``server/discover`` and ``tools/list``. Anything else is **legacy** (2025-11-25 and earlier): the
 ``initialize`` handshake, ``ping``, and results as that era shaped them. claude.ai's connector
 setup probes with a legacy ``initialize`` and its chats speak modern, so both are served
-(ADR-0266). A legacy ``server/discover`` — one with no ``_meta`` — is an unknown method, which is
+(ADR-0267). A legacy ``server/discover`` — one with no ``_meta`` — is an unknown method, which is
 the error a dual-era client falls back to ``initialize`` on.
 
 **Two kinds of failure, kept apart.** A protocol fault (an unknown method or tool, malformed

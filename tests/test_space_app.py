@@ -170,7 +170,7 @@ def _no_kept_trends_answers():
 def _no_spent_rate_limit(monkeypatch):
     """Each test starts with nothing counted against any rate limit: the app
     fixtures are module-scoped, so one test's requests would otherwise 429 a later test's.
-    The `/mcp` limits likewise (ADR-0266)."""
+    The `/mcp` limits likewise (ADR-0267)."""
     for module in _LOADED_APPS:
         for name, requests in (
             ("_READ_LIMIT", module._READ_LIMIT_REQUESTS),
@@ -466,7 +466,7 @@ _DOOR_PATHS = (
     "/privacy",
     "/static/logo_mark.svg",
 )
-# HeadStart's MCP server, hosted (ADR-0266): public, and POST only.
+# HeadStart's MCP server, hosted (ADR-0267): public, and POST only.
 _MCP_PATH = "/mcp"
 
 
@@ -670,7 +670,7 @@ def test_the_caller_is_the_address_hugging_faces_edge_appended(auth_app):
     assert not _refused(client.get("/hot", headers={"X-Forwarded-For": "198.51.100.2"}))
 
 
-# ---- the MCP endpoint's limits (ADR-0266) ----
+# ---- the MCP endpoint's limits (ADR-0267) ----
 
 _MCP_LIST = {"jsonrpc": "2.0", "id": 1, "method": "tools/list"}
 
@@ -680,7 +680,7 @@ def _post_mcp(client, message=_MCP_LIST, **kwargs):
 
 
 def test_the_mcp_limits_are_pinned(auth_app):
-    # Pinned: each number is a decision ADR-0266 reasons out, not a tuning knob.
+    # Pinned: each number is a decision ADR-0267 reasons out, not a tuning knob.
     assert (auth_app._MCP_LIMIT_REQUESTS, auth_app._LIMIT_WINDOW_S) == (30, 60)
     assert auth_app._ANTHROPIC_LIMIT_REQUESTS == 300
     assert (auth_app._MCP_AT_ONCE, auth_app._MCP_PLACE_WAIT_S) == (4, 10)

@@ -1,4 +1,4 @@
-"""One POST to the hosted MCP endpoint — `headstart/mcp_protocol/streamable_http.py` (ADR-0266).
+"""One POST to the hosted MCP endpoint — `headstart/mcp_protocol/streamable_http.py` (ADR-0267).
 
 Framework-free, so these pass headers and bytes straight in; the stand-in server is
 `tests/test_mcp_protocol_messages.py`'s. The Space's own route is tested against the real app in

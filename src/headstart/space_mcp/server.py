@@ -1,7 +1,7 @@
 """The Space MCP server — its registered tools over the deployed HeadStart Space (ADR-0253).
 
 Run as ``python -m headstart.space_mcp`` and spoken to over stdio, or served by the Space itself
-at ``POST /mcp`` (ADR-0266); both go through the protocol module every HeadStart MCP server shares
+at ``POST /mcp`` (ADR-0267); both go through the protocol module every HeadStart MCP server shares
 (`headstart.mcp_protocol`). Every answer comes from the Space's
 own read routes, so its numbers are the ones the website shows: the tools encode arguments, map
 company names the way the site's controls do, and render text for a model — they hold no search,
@@ -114,7 +114,7 @@ def build_server(
     routes are public. ``HEADSTART_SPACE_URL`` points it at another deployment.
 
     ``fetch`` is how a read reaches the Space: over HTTPS by default, or in process when the Space
-    serves this server itself (``space_client.wsgi_fetch``, ADR-0266). There the per-process
+    serves this server itself (``space_client.wsgi_fetch``, ADR-0267). There the per-process
     budget would be one budget for every caller, so each call gets its own and the Space's limit
     on ``/mcp`` bounds the callers."""
     env = dict(os.environ) if env is None else env

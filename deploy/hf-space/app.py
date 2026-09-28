@@ -369,7 +369,7 @@ _PUBLIC_PATHS = {
     "/unsubscribe",
     "/privacy",
     "/static/logo_mark.svg",
-    "/mcp",  # HeadStart's MCP server, POST only, over the read routes (ADR-0266)
+    "/mcp",  # HeadStart's MCP server, POST only, over the read routes (ADR-0267)
     *_READ_ROUTES,
 }
 
@@ -467,7 +467,7 @@ def _client_address() -> str:
 
 def _request_limit() -> tuple[rate_limit.RateLimit, int] | None:
     """The limit this request counts against, and its size; None when it counts against none.
-    `/mcp` is a POST that writes nothing, and is limited by its own route (ADR-0266)."""
+    `/mcp` is a POST that writes nothing, and is limited by its own route (ADR-0267)."""
     if request.path == "/mcp":
         return None
     if request.method in ("POST", "PUT", "DELETE") or request.path == "/unsubscribe":
@@ -484,7 +484,7 @@ def _limit_each_caller():
     """A 429 with `Retry-After` for a caller past its limit. A caller is its Account when it has
     a session (#592: sign-up is open, so an address alone would let one client multiply itself
     by signing in), else its address; the two are counted apart. A read the app's own `/mcp`
-    tools make in process is not counted again: `/mcp` is limited itself (ADR-0266)."""
+    tools make in process is not counted again: `/mcp` is limited itself (ADR-0267)."""
     found = _request_limit()
     if found is None or request.environ.get(space_client.IN_PROCESS_READ):
         return None
@@ -1557,7 +1557,7 @@ def lookup_companies():
     return jsonify(companies=_HISTORY.describe_companies(list(dict.fromkeys(keys))))
 
 
-# HeadStart's MCP server, hosted (ADR-0266): the tools of `headstart.space_mcp` over Streamable
+# HeadStart's MCP server, hosted (ADR-0267): the tools of `headstart.space_mcp` over Streamable
 # HTTP, each reading the routes above in process, with no cookie. Anyone may add it to Claude by
 # URL. The Origins it answers: none (a server-side client such as claude.ai's connector or Claude
 # Code), Claude's two web origins, and this Space's own; any other is a page on another site,
@@ -1567,7 +1567,7 @@ _MCP_ORIGINS = frozenset(
     {"https://claude.ai", "https://claude.com", space_client.SPACE_URL}
 )
 
-# How often one caller may ask `/mcp` (ADR-0266): 30 requests in any 60 s from one address,
+# How often one caller may ask `/mcp` (ADR-0267): 30 requests in any 60 s from one address,
 # counted as ADR-0262 counts the read routes. A tool call reads two to five routes in process,
 # none of them counted again, so 30 is already more reading than the 60 route requests one
 # address may make directly, and a person's chat makes a few calls a minute. Every claude.ai
@@ -1619,7 +1619,7 @@ def _mcp_refusal(status: int, detail: str, wait_s: int):
 
 @app.route("/mcp", methods=["POST"])
 def mcp():
-    """One MCP message over Streamable HTTP, answered by `streamable_http.answer` (ADR-0266)."""
+    """One MCP message over Streamable HTTP, answered by `streamable_http.answer` (ADR-0267)."""
     address = _client_address()
     _note_mcp_origin(request.headers.get("Origin"), address)
     if _from_anthropic(address):

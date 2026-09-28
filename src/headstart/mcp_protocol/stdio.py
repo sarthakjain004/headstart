@@ -2,7 +2,7 @@
 a subprocess's stdin and stdout, each message answered by `messages.handle`.
 
 It is how a server runs on the user's own machine. The Space's hosted endpoint is the other
-transport (`streamable_http`, ADR-0266); both answer through the same `handle`, so a protocol
+transport (`streamable_http`, ADR-0267); both answer through the same `handle`, so a protocol
 revision is one change for both. Every line here is written through the server's own logger, to
 stderr, and names types and sizes — never the caller's text.
 """

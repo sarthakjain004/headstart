@@ -5,7 +5,7 @@ see how the number of openings is changing, and see which companies are hiring h
 The Space hosts it at a URL anyone can add to Claude, and it also runs on your own machine as a
 subprocess of your agent client. Either way it answers from the deployed Space's own read routes,
 so every number is the one the website shows. The decision and its alternatives are ADR-0253,
-ADR-0258, ADR-0266, `docs/mcp/2026-09-28_space-mcp-server-plan.md` and
+ADR-0258, ADR-0267, `docs/mcp/2026-09-28_space-mcp-server-plan.md` and
 `docs/mcp/2026-09-28_hosted-mcp-endpoint-options.md`; this file is the how-to.
 
 It is **read-only**. It cannot save, follow, hide or subscribe to anything, and no account applies
@@ -13,7 +13,7 @@ to it — so a company you hid on the website is **not** hidden from an agent's 
 
 ## Use it without installing
 
-The Space serves the same tools over Streamable HTTP (ADR-0266). The connector URL is:
+The Space serves the same tools over Streamable HTTP (ADR-0267). The connector URL is:
 
 ```text
 https://imposeidon-headstart-search.hf.space/mcp
@@ -204,7 +204,7 @@ server changes.
    where it depends on the real app's answer, `tests/test_space_mcp_against_space_app.py`.
 5. Describe it here, and give the evaluation (`scripts/eval/`) a task for it.
 
-The Space hosts the registry at `/mcp`, so merging a tool deploys the Space (ADR-0266).
+The Space hosts the registry at `/mcp`, so merging a tool deploys the Space (ADR-0267).
 
 A tool that **writes** or reads **one Account's records** is a decision, not an addition: every tool
 today is read-only and Account-free, reading public routes with no credential, and the contract

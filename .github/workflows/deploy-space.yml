@@ -11,7 +11,7 @@ on:
     # (ADR-0253): it runs on an agent's machine and the Space never imports it, so a change to
     # it would restart the Space for nothing. It is left out of the trigger only; the copy below
     # still ships it with the next real deploy. `space_mcp` and `mcp_protocol` trigger a deploy,
-    # since the Space serves them at /mcp (ADR-0266). A negation, not `paths-ignore` (the two
+    # since the Space serves them at /mcp (ADR-0267). A negation, not `paths-ignore` (the two
     # cannot both be set for one event), and it must follow the positive patterns.
     paths:
       - "deploy/hf-space/**"

@@ -1,4 +1,4 @@
-# ADR-0266: The Space hosts the MCP server at a URL anyone can add
+# ADR-0267: The Space hosts the MCP server at a URL anyone can add
 
 **Status:** accepted · **Date:** 2026-09-28 · **Supersedes in part:**
 [ADR-0253](0253-an-agent-reads-the-spaces-read-routes-through-a-read-scoped-token.md) (its
