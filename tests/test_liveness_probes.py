@@ -2581,3 +2581,17 @@ def test_p_join_reads_a_next_js_soft_404_as_dead(monkeypatch):
     )
     monkeypatch.setattr(cl, "_get", _stub_get(200, page))
     assert cl.p_join("acme", "https://join.com/companies/acme") == (cl.DEAD, None)
+
+
+def test_p_trakstar_reads_a_capped_page_s_total_off_jsapi(monkeypatch):
+    """The careers page renders at most 25 cards; demoaccount's jsapi `meta.total` was 365
+    (2026-09-28)."""
+    cards = b'<div class="js-careers-page-job-list-item"></div>' * 25
+
+    def get(url, headers=None):
+        if "jsapi.recruiterbox.com" in url:
+            return 200, b'{"meta": {"total": 365}, "objects": [{}]}'
+        return 200, cards
+
+    monkeypatch.setattr(cl, "_get", get)
+    assert cl.p_trakstar("acme", "https://acme.hire.trakstar.com/") == (cl.LIVE, 365)

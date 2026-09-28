@@ -251,6 +251,17 @@ EXCLUDED_BOARDS: frozenset[str] = frozenset(
         "trakstar:bbtest",  # 1 posting
         "trakstar:smoketest",  # 66 postings (jobfeeds RSS count)
         "trakstar:testbass",  # 1 posting
+        # More of the vendor's own, read 2026-09-28 off jsapi: `demoaccount` serves 365 postings
+        # titled "Test from API", "xml test", "indeed question test", "label test"; `test5694`'s
+        # one "Senior Engineer" reads "Blah blah blah"; `novtest`'s "IT admin" says "I'm trying to
+        # test this IT admin!"; `rectestcam` posts "hkhk" in "hkjh"; `rbdemo` posts a "Childcare
+        # Provider" in "Anytown". Kept on the same reading: `abctest`, `ecgtest`, `99tests`,
+        # `garamdealstest`, `testsite3`, `pushtotest`, `thetestpeople` read as real postings.
+        "trakstar:demoaccount",  # 365 postings
+        "trakstar:novtest",  # 8 postings
+        "trakstar:rbdemo",  # 2 postings
+        "trakstar:rectestcam",  # 1 posting
+        "trakstar:test5694",  # 1 posting
         # SenseHQ's own dev/test tenant (found during sensehq's salary-extraction pass,
         # 2026-08-23, reading real board content). Confirmed by content: 204 postings, the
         # large majority QA/testing-tool placeholder titles — "Cypress 1" (41), "QA test" (13),

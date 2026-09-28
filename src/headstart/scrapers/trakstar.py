@@ -36,7 +36,7 @@ clamps to 250, not the 100 an earlier measurement reported** — re-measured tod
 (365 postings): `limit=250` returns 250 objects, `limit=300`/`500`/`1000` all still return exactly
 250, so pagination steps by whatever the server actually handed back rather than trusting a fixed
 number. No posting-date field exists anywhere in this surface's objects (confirmed across every
-tenant sampled) — a Job filled from here always carries ``posted_at=None``. A prior sample found 3 large boards
+tenant sampled), so the job feed's ``pubDate`` dates each one by code. A prior sample found 3 large boards
 hitting a transient ``IncompleteRead`` where the RSS path succeeded, all matching exactly on retry
 — not proof the API is less reliable per request, but reason enough to keep the HTML+RSS+detail
 path below rather than delete it: it is now the fallback for the ``offset=0`` case, used only when
@@ -134,7 +134,7 @@ _API_MAX_PAGES = 50
 #: The careers page renders at most this many job cards. Fallback-only cap heuristic, used when
 #: a page carries no "View N Openings" total to compare against (see ``_total_openings``) — a
 #: Board landing exactly on it with no total is very likely truncated.
-_CARD_CAP = 25
+CARD_CAP = 25
 
 _ITEM = "js-careers-page-job-list-item"
 _CODE = re.compile(r'data-href="/jobs/([^/"]+)/?"')
@@ -180,6 +180,11 @@ _FEED_POSITION_TYPE = {
 }
 
 
+def api_listing_url(slug: str, offset: int, limit: int) -> str:
+    """One page of the jsapi listing; its ``meta.total`` is the Board's whole count."""
+    return f"{_API_URL}?client_name={quote(slug)}&offset={offset}&limit={limit}"
+
+
 class TrakstarScraper(BaseScraper):
     ats = "trakstar"
     url_shape = r"https://[^.]+\.hire\.trakstar\.com/jobs/[0-9a-z]+/?"
@@ -200,7 +205,7 @@ class TrakstarScraper(BaseScraper):
         """One page of ``jsapi.recruiterbox.com`` (module docstring), or ``None`` on anything
         short of a clean, parseable 200 — a 400 (this tenant has no board there, or the slug is
         wrong), a network failure, or a body that isn't JSON."""
-        url = f"{_API_URL}?client_name={quote(self.slug)}&offset={offset}&limit={_API_LIMIT}"
+        url = api_listing_url(self.slug, offset, _API_LIMIT)
         self._api_failure = None
         try:
             response = self._fetch(
@@ -306,8 +311,9 @@ class TrakstarScraper(BaseScraper):
         if api_items is not None:
             # The whole point of this surface (module docstring): listing IS the detail — every
             # object already carries its own description, so there is no per-job fetch to gate
-            # with ADR-0017 the way the HTML+detail path below still needs.
-            return {"api_items": api_items}
+            # with ADR-0017 the way the HTML+detail path below still needs. It states no date,
+            # so the job feed supplies each one's `pubDate` by code (`_feed_dates`).
+            return {"api_items": api_items, "posted_at": self._feed_dates()}
         # The careers page HTML (job cards), fetched again only if the first read failed.
         html = page if page is not None else self._get()
         # Split once: the cap check needs the count, the tech gate below needs each card's own
@@ -450,12 +456,25 @@ class TrakstarScraper(BaseScraper):
             raise DetailLost("no JSON-LD and no description on a 200")
         return {"description": description}
 
+    def _feed_dates(self) -> dict[str, str]:
+        """Each posting's date from the job feed, by code, or ``{}`` when the feed is not
+        reachable. jsapi states none, and its ``id`` is the feed's code: 34 of 34 on exotel and
+        364 of 365 on demoaccount (2026-09-28), so one more request per Board dates them."""
+        feed_xml = self._fetch_feed()
+        items = _feed_items(feed_xml) if feed_xml is not None else None
+        return {i["code"]: i["posted_at"] for i in items or [] if i["posted_at"]}
+
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
         if isinstance(raw, dict) and "api_items" in raw:
             # fetch_raw() reached jsapi.recruiterbox.com successfully — already-complete Job
             # dicts, no HTML card and no per-job detail fetch involved.
             jobs = _jobs_from_api(
-                self.ats, self.slug, self.company, raw["api_items"], scraped_at
+                self.ats,
+                self.slug,
+                self.company,
+                raw["api_items"],
+                scraped_at,
+                raw.get("posted_at") or {},
             )
             self.note_unread_rows(
                 len(raw["api_items"]) - len(jobs),
@@ -558,7 +577,7 @@ def _is_capped(html: str, n_codes: int) -> bool:
     total = _total_openings(html)
     if total is not None:
         return total > n_codes
-    return n_codes >= _CARD_CAP
+    return n_codes >= CARD_CAP
 
 
 def _isolate_div(html: str, opening_div: re.Pattern) -> str | None:
@@ -685,13 +704,18 @@ def _api_location(location: Any) -> str | None:
 
 
 def _jobs_from_api(
-    ats: str, slug: str, company: str | None, items: list[dict], scraped_at: str
+    ats: str,
+    slug: str,
+    company: str | None,
+    items: list[dict],
+    scraped_at: str,
+    posted_at_by_code: dict[str, str] | None = None,
 ) -> list[Job]:
     """Build ``Job``s directly from ``jsapi.recruiterbox.com``'s ``objects`` (module docstring)
     — every field the HTML-card + JSON-LD-detail path assembles across up to two fetches, from
     the one listing call. A free function (not a method), matching :func:`_jobs_from_feed`, so
-    it's testable against a plain items list with no live scraper instance needed. No
-    ``posted_at``: this surface states no posting date on any object sampled."""
+    it's testable against a plain items list with no live scraper instance needed. This surface
+    states no posting date, so ``posted_at_by_code`` (the job feed's) supplies it."""
     jobs: list[Job] = []
     for item in items:
         code = item.get("id")
@@ -708,7 +732,7 @@ def _jobs_from_api(
                 remote=item.get("allows_remote"),
                 department=item.get("team") or None,
                 url=_job_url(slug, code),
-                posted_at=None,
+                posted_at=(posted_at_by_code or {}).get(str(code)),
                 scraped_at=scraped_at,
                 employment_type=_FEED_POSITION_TYPE.get(item.get("position_type")),
                 description=html_to_text(item.get("description")),

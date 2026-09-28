@@ -3688,10 +3688,11 @@ def test_trakstar_fetch_raw_prefers_the_api_and_never_reads_the_page_cards(
         raise AssertionError("must not re-fetch the careers page when the API answered")
 
     monkeypatch.setattr(scraper, "_get", boom_get)
+    monkeypatch.setattr(scraper, "_fetch_feed", lambda: None)  # the dates' feed
 
     raw = scraper.fetch_raw()
 
-    assert raw == {"api_items": [{"id": "1", "title": "Engineer"}]}
+    assert raw == {"api_items": [{"id": "1", "title": "Engineer"}], "posted_at": {}}
     jobs = scraper.parse(raw, SCRAPED_AT)
     assert jobs[0].id == "trakstar:acme:1"
 
