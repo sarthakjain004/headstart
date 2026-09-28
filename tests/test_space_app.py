@@ -2680,6 +2680,17 @@ def test_the_page_offers_a_skip_link_past_the_filter_rail(app):
     )
 
 
+def test_the_search_controls_are_one_click_each(app):
+    """Issue #755: the filter bar is always open (no Filters toggle), sort and the short selects
+    are rows of radios drawn beside a hidden <select>, and there is no density toggle."""
+    page = app.app.test_client().get("/").data.decode()
+    assert 'id="filtersbtn"' not in page and "toggleRail" not in page
+    assert 'id="density"' not in page
+    for control in ("sort", "kwin", "etype", "posted"):
+        assert f'<select id="{control}" hidden' in page
+        assert f'id="{control}-seg" role="radiogroup"' in page
+
+
 def test_the_page_hands_the_browser_the_rate_table_and_its_date(app):
     """The card labels convert client-side (ADR-0117), so the page needs the rates — the SAME
     table `build_filter` compiled the query from, handed over on window.CFG rather than

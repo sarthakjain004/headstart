@@ -32,7 +32,7 @@ function fakeEl() {
     // binding at the foot of app.js untestable, which is how a currency picker that never
     // re-searched shipped.
     addEventListener(type, fn) { (handlers[type] ||= []).push(fn); },
-    fire(type) { (handlers[type] || []).forEach(fn => fn.call(this, { type })); },
+    fire(type, extra) { (handlers[type] || []).forEach(fn => fn.call(this, { type, ...extra })); },
     dispatchEvent() {},
     classList: {
       add: c => classes.add(c), remove: c => classes.delete(c),
@@ -88,7 +88,7 @@ function loadApp(respond, cfg = {}) {
   const src = fs.readFileSync(APP_JS, 'utf8')
     + '\n;globalThis.__t = { go, goToPage, loadSets, runSet, page: () => page, jobCard, savedRow,'
     + ' salStop, SALARY_STOPS, stops: () => SALARY_STOPS, sync: syncSalarySlider, slide: salSlide,'
-    + ' dismiss: dismissRow, dismissed, handleSetAction, searchCompany, dropFilter, readSearchHash, setCompany };';
+    + ' handleSetAction, searchCompany, dropFilter, readSearchHash, setCompany };';
   vm.runInNewContext(src, ctx);
   return { nodes, fetches, t: ctx.__t, ctx, docHandlers, logged };
 }
@@ -416,13 +416,13 @@ test('a description-only (Tier-2) salary still reaches the pay column', async ()
   assert.ok(nodes.results.innerHTML.includes('<div class="pay">EUR 90,000–110,000/yr</div>'));
 });
 
-test('a row with no salary signal at all still renders the pay column, as an em dash', async () => {
-  // The column is reserved either way: an empty cell keeps every other row's pay on the same
-  // x, and "we were not told" is a different answer from "this pays nothing".
+test('a row with no salary signal at all keeps an empty pay column — no dash in it', async () => {
+  // The column is reserved either way, so every other row's pay stays on the same x; but an
+  // empty cell says nothing rather than a "—" on most rows of every page (issue #755).
   const { t, nodes } = loadApp(() => [job('a', { salary: null })]);
   await t.go();
-  assert.ok(!nodes.results.innerHTML.includes('<div class="pay">EUR'));
-  assert.ok(nodes.results.innerHTML.includes('class="nopay"'));
+  assert.ok(nodes.results.innerHTML.includes('<div class="pay"></div>'), nodes.results.innerHTML);
+  assert.ok(!nodes.results.innerHTML.includes('\u2014</span>'));
 });
 
 
@@ -525,32 +525,6 @@ test('a saved job the index has dropped is marked closed — from `open`, not a 
                 location: '', remote: false, salary: '', starred_at: '', open: false };
   assert.ok(t.jobCard(t.savedRow(rec), 0).includes('class="tag closed"'));
   assert.ok(t.jobCard(t.savedRow({ ...rec, open: true }), 0).includes('class="tag closed"') === false);
-});
-
-test('a dismissed row is marked, not dropped — the server\'s own count stays true', async () => {
-  const { t, nodes } = loadApp(() => [job('a'), job('b')]);
-  await t.go();
-  t.dismissed.add('a');
-  await t.go();
-  const cards = nodes.results.innerHTML.split('<div class="card').slice(1);
-  assert.strictEqual(cards.length, 2, 'both rows are still rendered');
-  assert.ok(cards[0].includes('dismissed'));
-  assert.ok(!cards[1].includes('dismissed'));
-  t.dismissed.delete('a');
-});
-
-test('the "N hidden" note counts the page on screen, not every row drawn this session', async () => {
-  // The recount on hide went over every row ever drawn — both lists, every page — so hiding one
-  // row on page 2 after three on page 1 read "4 hidden" with one hidden row in view.
-  const { t, nodes } = loadApp(url => (qs(url).page === '2' ? [job('p2a'), job('p2b')]
-    : [job('p1a'), job('p1b'), job('p1c')]));
-  await t.go();
-  for (const id of ['p1a', 'p1b', 'p1c']) t.dismiss(id);
-  assert.ok(nodes.hidden.innerHTML.startsWith('3 hidden'));
-  await t.goToPage(2);
-  t.dismiss('p2a');
-  assert.ok(nodes.hidden.innerHTML.startsWith('1 hidden'), 'the note says: ' + nodes.hidden.innerHTML);
-  for (const id of ['p1a', 'p1b', 'p1c', 'p2a']) t.dismissed.delete(id);
 });
 
 // ── The bracket's cross-currency labels (ADR-0117) ───────────────────────────────────────────
@@ -700,14 +674,11 @@ test('the handles cannot cross, and an end stop means unbounded rather than zero
   assert.strictEqual(nodes.salmax.value, '');
 });
 
-test('the hide control is drawn on the Search list only', async () => {
-  // `rows.map(jobCard)` would pass the array itself as the third argument and put a × on every
-  // list — including Saved, where the gesture is unstarring and a second control for the same
-  // intent would disagree with it about which list the row is in.
-  const { t, nodes } = loadApp(() => [job('a')]);
+test('a result card offers no "hide this job" control and names no ATS (issue #755)', async () => {
+  const { t, nodes } = loadApp(() => [job('a', { ats: 'workday' })]);
   await t.go();
-  assert.ok(nodes.results.innerHTML.includes('data-dismiss='));
-  assert.ok(!t.jobCard(job('a'), 0, false).includes('data-dismiss='));
+  assert.ok(!nodes.results.innerHTML.includes('data-dismiss='));
+  assert.ok(!/\bvia workday\b/.test(nodes.results.innerHTML), 'the provider label is back');
 });
 
 test('hiding a company from a Matches card takes it off the Matches list', async () => {
@@ -747,7 +718,36 @@ test('a result card links its company into Trends by the Board its id names (ADR
   assert.match(html, /data-trend="greenhouse:acme"/);
   assert.match(html, /data-trend-name="Acme"/);
   assert.match(html, /aria-label="Hiring trend at Acme"/);
+  assert.match(html, /title="See hiring trend"><svg/, 'an icon, not the underlined word');
   assert.ok(!t.jobCard(job('noboard'), 0).includes('data-trend='), 'no Board, no link');
+});
+
+// ── Segmented selects (issue #755) ───────────────────────────────────────────────────────────
+
+test('a short <select> is drawn as one row of radios, and a pick searches at once', async () => {
+  const { t, nodes, fetches } = loadApp(() => []);
+  nodes.etype.options = [{ value: '', textContent: 'Any' },
+    { value: 'contract', textContent: 'Contract (0)', disabled: true },
+    { value: 'full-time', textContent: 'Full-time (12)' }];
+  await t.go();
+  const row = nodes['etype-seg'].innerHTML;
+  same(Array.from(row.matchAll(/value="([^"]*)"/g), m => m[1]), ['', 'contract', 'full-time']);
+  assert.ok(row.includes('name="etype-seg"'));
+
+  fetches.length = 0;
+  nodes['etype-seg'].fire('change', { target: { value: 'full-time' } });
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.strictEqual(nodes.etype.value, 'full-time', 'the hidden select holds the value');
+  assert.strictEqual(qs(fetches.filter(u => u.startsWith('/search?')).at(-1)).etype, 'full-time');
+});
+
+test('the sort row is one click: a pick re-runs the search in that order', async () => {
+  const { nodes, fetches } = loadApp(() => []);
+  await new Promise(resolve => setTimeout(resolve, 0));
+  fetches.length = 0;
+  nodes['sort-seg'].fire('change', { target: { value: 'posted' } });
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.strictEqual(qs(fetches.filter(u => u.startsWith('/search?')).at(-1)).sort, 'posted');
 });
 
 

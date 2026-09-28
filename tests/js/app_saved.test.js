@@ -30,7 +30,7 @@ function fakeEl() {
   return {
     // `value: ''` so the load-time `go()` (ADR-0074 — Search browses on load) reads an empty
     // query rather than throwing on `undefined.trim()`.
-    innerHTML: '', textContent: '', hidden: false, value: '', checked: false,
+    innerHTML: '', textContent: '', hidden: false, value: '', checked: false, options: [],
     style: { setProperty(k, v) { this[k] = String(v); }, getPropertyValue(k) { return this[k] ?? ''; },
              removeProperty(k) { delete this[k]; } },
     querySelector: () => null, querySelectorAll: () => [],
