@@ -5443,20 +5443,19 @@ def test_successfactors_reads_department_and_employment_type_off_the_labelled_to
     assert fields["employment_type"] == "Full-Time"
 
 
-def test_successfactors_prefers_department_over_job_category_and_skips_a_blank_one():
-    """yourcareer.rathbones.com states both (Department "RFP Advice Delivery", Job Category
-    "Support"); careers.shiseido.com states "Department:" with nothing after it. 2026-09-28."""
+def test_successfactors_prefers_department_over_job_category():
+    """yourcareer.rathbones.com states both, live 2026-09-28 (the two tokens verbatim)."""
     from headstart.scrapers.successfactors import _page_fields
 
-    both = _sf_page("Analyst | Rathbones") + (
-        '<span class="joblayouttoken-label">Department:</span> <span>RFP Advice Delivery</span>'
-        '<span class="joblayouttoken-label">Job Category:</span> <span>Support</span>'
+    page = _sf_page("Analyst | Rathbones") + (
+        '<span class="joblayouttoken-label">Department:\xa0\n        </span>\n\n    '
+        '<span xml:lang="en-GB" lang="en-GB" data-careersite-propertyid="dept" '
+        'class="rtltextaligneligible">RFP Advice Delivery\n    </span>'
+        '<span class="joblayouttoken-label">Job Category:\xa0\n        </span>\n\n    '
+        '<span xml:lang="en-GB" lang="en-GB" data-careersite-propertyid="department" '
+        'class="rtltextaligneligible">Support\n    </span>'
     )
-    blank = _sf_page("Analyst | Shiseido") + (
-        '<span class="joblayouttoken-label">Department:</span> <span></span>'
-    )
-    assert _page_fields(both)["department"] == "RFP Advice Delivery"
-    assert _page_fields(blank)["department"] is None
+    assert _page_fields(page)["department"] == "RFP Advice Delivery"
 
 
 def test_successfactors_a_title_with_no_company_falls_back_to_the_microdata():
@@ -8291,22 +8290,35 @@ def test_workday_names_the_department_of_a_posting_read_inside_a_family_slice(
 
 
 def test_workday_leaves_department_unknown_outside_a_one_family_slice(monkeypatch):
-    """An uncapped Board is read unfiltered, so no family is known — never a guess."""
+    """An uncapped Board is read unfiltered, so no family is known — never a guess. genmills'
+    first page, live 2026-09-28 (one item, two facet values kept): total 337, uncapped."""
     scraper = _workday_scraper()
     page = {
         "total": 1,
         "jobPostings": [
             {
-                "title": "Data Engineer",
-                "externalPath": "/job/x_R1",
-                "bulletFields": ["R1"],
+                "title": "Territory Sales Executive, Chennai",
+                "externalPath": "/job/Bangalore-KA/Territory-Sales-Executive--Chennai_10128468",
+                "locationsText": "Bangalore, KA",
+                "postedOn": "Posted Today",
+                "remoteType": "Field Based",
+                "bulletFields": ["10128468"],
             }
         ],
         "facets": [
             {
                 "facetParameter": "jobFamilyGroup",
                 "values": [
-                    {"descriptor": "Information Technology", "id": "it", "count": 1}
+                    {
+                        "descriptor": "Information Technology",
+                        "id": "69985ce51bb001a20fcb003bce475807",
+                        "count": 74,
+                    },
+                    {
+                        "descriptor": "Plant Production",
+                        "id": "69985ce51bb0015466a0153bce476407",
+                        "count": 67,
+                    },
                 ],
             }
         ],

@@ -1,5 +1,5 @@
-"""SuccessFactors RMK scraper (career sites on customer vanity domains: jobs.sap.com,
-careers.wipro.com, jobsearch.alstom.com, ...).
+"""SuccessFactors RMK scraper (career sites on customer vanity domains: careers.wipro.com,
+jobsearch.alstom.com, ...).
 
 RMK ("Recruiting Marketing") is the crawlable SEO surface most SuccessFactors customers put in
 front of the modern CSB job search, whose DWR POST-RPC we deliberately don't touch — CSB-only
@@ -913,9 +913,10 @@ def _job_functions_from(text: str) -> dict[str, str]:
     ``g:job_function`` is a Google-jobs-feed extension field carried only on the RSS-shaped
     listing surface (module docstring's surfaces 2/3) — the plain urlset surface (most tenants)
     has no such field; a job page states one only as a tenant-named label token
-    (:data:`_DEPARTMENT_LABELS`), read on the page instead. Verified live 2026-09-22 on jobs.sap.com and
-    jobs.tetrapak.com: `g:id` matches the same numeric id `_JOB_PATH` reads off the item's own
+    (:data:`_DEPARTMENT_LABELS`), read on the page instead. Verified live 2026-09-22 on
+    jobs.sap.com and jobs.tetrapak.com: `g:id` matches the same numeric id `_JOB_PATH` reads off the item's own
     `<link>`, and `g:job_function` states a clean label ("Sales", "Market Operations & Finance").
+    (jobs.sap.com has since left RMK: its sitemap is a Cloudflare-walled site's index, 2026-09-28.)
 
     A minority of tenants state an internal ATS configuration token here instead of a real
     department (e.g. ``ATS_WCMS_WEBFORM``, ``ATS_TALEO_APAC`` — measured live, basf.jobs,
