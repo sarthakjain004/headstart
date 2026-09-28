@@ -1457,7 +1457,7 @@ def p_recruitee(t, u):
     so a DNS failure is the resolver's, not a gone tenant: UNKNOWN, never DEAD."""
     status, body = _get(_scraper_for_row("recruitee", t, u).url())
     if status == "dns":
-        _note("dns-on-wildcard-host")
+        _note("dns-wildcard")
         return UNKNOWN, None
     return _verdict(status, _len_of(body, "offers") if status == 200 else None)
 

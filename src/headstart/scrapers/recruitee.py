@@ -75,12 +75,9 @@ def _description(offer: dict) -> str | None:
     (2026-09-28; voortman's "Lead Software Developer XR"). Where the top-level text is
     already English the ``en`` translation equals it (119 of 119 offers, 40 Boards, 2026-09-28).
 
-    Only a translation at least half the primary text's length is read: voortman's
-    "BBL: Logistiek" carries an English template of headings alone (1% of its Dutch text). The
-    title stays the primary one: an English title is sometimes a stale copy of another offer's
-    (dnata's "Cargo Agent" carries "Ramp Coordinator – Schiphol"; voortman's "Service Engineer"
-    carries "Service Monteur"), and a wrong title misleads more than a Dutch one (ADR-0254). 1 of the 27
-    translated offers on voortman and dnata has such a mismatched English description.
+    Only a translation at least half the primary text's length is read, and the title stays the
+    primary one: an English version can be a template of headings alone, and an English title can
+    be a stale copy of another offer's (measurements in ADR-0254).
     """
 
     def description_and_requirements(texts: dict) -> str | None:
