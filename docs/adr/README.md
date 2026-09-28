@@ -265,6 +265,7 @@ supersedes it and note the supersession in both.
 | [0267](0267-the-space-hosts-the-mcp-server-at-a-url-anyone-can-add.md) | The Space hosts the MCP server at a URL anyone can add | 2026-09-28 |
 | [0268](0268-a-served-posting-date-is-never-later-than-first-seen.md) | A served posting date is never later than the day we first saw the Job | 2026-09-29 |
 | [0269](0269-every-trends-control-is-answered-from-the-browser.md) | Every Trends control is answered from the browser | 2026-09-29 |
+| [0281](0281-a-lever-board-whose-hosted-pages-are-off-serves-nothing.md) | A Lever Board whose hosted pages are off serves nothing | 2026-09-29 |
 
 *ADR-0037 was removed from the repository on 2026-09-24 by the owner's decision; its number is not
 reused.*
