@@ -123,8 +123,7 @@ def http_url(value: Any) -> str:
 
     A scraped `javascript:` or `data:` URL must not ship as a link (#594). The scheme test is
     `safeUrl`'s in the web UI's app.js; surrounding whitespace is stripped first, as a browser
-    strips it from an href. The Digest, Telegram and spreadsheet links and the Space MCP server's
-    answers all pass a job's `url` through here.
+    strips it from an href. Every Python surface that ships a job's link passes it through here.
     """
     url = str(value or "").strip()
     return url if url.lower().startswith(("http://", "https://")) else ""

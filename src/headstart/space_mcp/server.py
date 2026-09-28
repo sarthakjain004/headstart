@@ -56,12 +56,7 @@ INSTRUCTIONS = (
 )
 
 #: Every tool here only reads, and says so (ADR-0253).
-READ_ONLY = {
-    "readOnlyHint": True,
-    "destructiveHint": False,
-    "idempotentHint": True,
-    "openWorldHint": False,
-}
+READ_ONLY = stdio.READ_ONLY_ANNOTATIONS
 
 
 def _categories() -> list[str] | None:
@@ -326,6 +321,7 @@ def call(client: SpaceClient, name: str, arguments: dict[str, Any]) -> str:
     tool = next(t for t in TOOLS if t["name"] == name)
     if problems := tool_arguments.problems(tool["inputSchema"], arguments):
         raise ToolFailure(" ".join(problems))
+    arguments = tool_arguments.with_defaults(tool["inputSchema"], arguments)
     try:
         return HANDLERS[name](client, arguments)
     except SpaceError as exc:

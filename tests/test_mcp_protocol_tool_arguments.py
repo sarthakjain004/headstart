@@ -46,3 +46,17 @@ def test_each_breach_is_a_sentence_naming_the_argument(arguments, words):
     assert any(
         words in problem for problem in tool_arguments.problems(SCHEMA, arguments)
     )
+
+
+def test_defaults_come_from_the_schema_and_never_override_what_was_sent():
+    schema = {
+        "properties": {
+            "limit": {"type": "integer", "default": 10},
+            "sort": {"type": "string", "default": "relevance"},
+            "query": {"type": "string"},
+        }
+    }
+    assert tool_arguments.with_defaults(schema, {"limit": 3}) == {
+        "limit": 3,
+        "sort": "relevance",
+    }

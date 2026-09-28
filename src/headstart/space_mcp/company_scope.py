@@ -39,7 +39,6 @@ class DirectoryCompany:
 
     key: str
     label: str
-    atses: tuple[str, ...]
     board_keys: tuple[str, ...]
     openings: int
 
@@ -48,7 +47,6 @@ class DirectoryCompany:
         return cls(
             key=item["key"],
             label=item.get("label") or item.get("name") or item["key"],
-            atses=tuple(item.get("atses") or ()),
             board_keys=tuple(item.get("board_keys") or (item["key"],)),
             openings=int(item.get("openings") or 0),
         )
@@ -81,7 +79,7 @@ class CompanyScope:
 _KEY_SHAPE = re.compile(r"[a-z][a-z0-9_]*:\S+")
 
 
-def looks_like_key(value: str) -> bool:
+def _looks_like_key(value: str) -> bool:
     """Shaped like a Board key (``ats:slug``). Only the lookup can say it is one."""
     return bool(_KEY_SHAPE.fullmatch(value))
 
@@ -135,7 +133,7 @@ def for_trends(client: SpaceClient, value: str) -> DirectoryCompany:
     """The directory company a typed name or key means, the way the site's Trends picker reads
     it; a :class:`ToolFailure` with the suggestions when a name is not exact."""
     value = value.strip()
-    if looks_like_key(value):
+    if _looks_like_key(value):
         try:
             return lookup(client, [value])[0]
         except InvalidRequest:
@@ -149,7 +147,7 @@ def for_search(client: SpaceClient, value: str, *, needs_boards: bool) -> Compan
     company box's substring, exactly as the site's Search sends it."""
     value = value.strip()
     read_as = None
-    if looks_like_key(value):
+    if _looks_like_key(value):
         try:
             return CompanyScope(company=lookup(client, [value])[0])
         except InvalidRequest:

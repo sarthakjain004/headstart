@@ -20,7 +20,7 @@ _LENS_WORDS = {
 }
 
 
-def _signed(value: int | None) -> str:
+def _change(value: int | None) -> str:
     return "not counted" if value is None else f"{value:+,}"
 
 
@@ -33,14 +33,14 @@ def _row(rank: int, row: dict[str, Any]) -> str:
     return (
         f"{rank:>2}. {scraped_text.quoted(row.get('company'))} · key {row.get('key')} · "
         f"{row.get('operator')} · {row.get('stock', 0):,} open now · net "
-        f"{_signed(row.get('net'))} · opened {_count(row.get('opened'))} · closed "
+        f"{_change(row.get('net'))} · opened {_count(row.get('opened'))} · closed "
         f"{_count(row.get('closed'))} · rate {rate}"
     )
 
 
 def answer(client: SpaceClient, arguments: dict[str, Any]) -> str:
-    lens = arguments.get("lens") or "expansion"
-    limit = int(arguments.get("limit") or 15)
+    lens = arguments["lens"]
+    limit = int(arguments["limit"])
     show_hidden = bool(arguments.get("include_hidden_operators"))
     hot = client.read(SpaceRoute.HOT)
     hidden = set(hot.get("hidden_by_default") or ())

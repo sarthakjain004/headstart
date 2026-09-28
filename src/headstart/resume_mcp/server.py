@@ -59,12 +59,7 @@ SYNC_NOTE = (
 )
 
 #: Every tool here only reads (ADR-0137 §"What it may not do"), and says so to the client.
-READ_ONLY = {
-    "readOnlyHint": True,
-    "destructiveHint": False,
-    "idempotentHint": True,
-    "openWorldHint": False,
-}
+READ_ONLY = stdio.READ_ONLY_ANNOTATIONS
 
 TOOLS: list[dict[str, Any]] = [
     {

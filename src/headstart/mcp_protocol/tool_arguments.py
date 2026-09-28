@@ -61,6 +61,19 @@ def _value_problem(name: str, schema: dict[str, Any], value: Any) -> str | None:
     return None
 
 
+def with_defaults(
+    input_schema: dict[str, Any], arguments: dict[str, Any]
+) -> dict[str, Any]:
+    """``arguments`` with every property the call left out set to its schema ``default`` — so a
+    default is written once, in the schema the client reads, and the code reads it from there."""
+    defaults = {
+        name: schema["default"]
+        for name, schema in input_schema.get("properties", {}).items()
+        if "default" in schema
+    }
+    return {**defaults, **arguments}
+
+
 def problems(input_schema: dict[str, Any], arguments: dict[str, Any]) -> list[str]:
     """Every way ``arguments`` breaks ``input_schema``, as sentences; empty when they fit."""
     properties: dict[str, Any] = input_schema.get("properties", {})

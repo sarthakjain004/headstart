@@ -101,5 +101,5 @@ tools accept.
 ## Where it lives
 
 `src/headstart/space_mcp/` — `server.py` (the tools), `space_client.py` (the one way it reaches the
-Space), `company_names.py`, the `*_answer.py` modules and `scraped_text.py` — on the shared loop in
+Space), `company_scope.py`, the `*_answer.py` modules and `scraped_text.py` — on the shared loop in
 `src/headstart/mcp_protocol/`. Tests: `tests/test_space_mcp_*.py`.

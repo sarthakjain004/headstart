@@ -15,7 +15,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from headstart.mcp_protocol.stdio import ToolFailure
-from headstart.space_mcp import company_names, scraped_text
+from headstart.space_mcp import company_scope, scraped_text
 from headstart.space_mcp.space_client import SpaceClient, SpaceRoute
 
 #: `breakdown` as this tool spells it -> `/trends`' `split` (None: the default per-category view).
@@ -96,18 +96,18 @@ def _label(line: dict[str, Any], breakdown: str) -> str:
 
 def _pick(
     client: SpaceClient, values: list[str]
-) -> list[company_names.DirectoryCompany]:
+) -> list[company_scope.DirectoryCompany]:
     if not values:
         return []
     with ThreadPoolExecutor(max_workers=min(len(values), 4)) as pool:
-        return list(pool.map(lambda v: company_names.for_trends(client, v), values))
+        return list(pool.map(lambda v: company_scope.for_trends(client, v), values))
 
 
 def answer(client: SpaceClient, arguments: dict[str, Any]) -> str:
     asked_companies = [c.strip() for c in arguments.get("companies") or [] if c.strip()]
     breakdown = _breakdown(arguments, asked_companies)
     picks = _pick(client, asked_companies)
-    days = int(arguments.get("days") or 30)
+    days = int(arguments["days"])
     since = (datetime.now(UTC) - timedelta(days=days)).isoformat(timespec="seconds")
     params: list[tuple[str, str]] = [("since", since)]
     if category := arguments.get("category"):
@@ -148,7 +148,7 @@ def answer(client: SpaceClient, arguments: dict[str, Any]) -> str:
         )
         return "\n".join(head)
 
-    full = arguments.get("detail") == "full"
+    full = arguments["detail"] == "full"
     lines = head
     if picks and breakdown == "company":
         lines.append(scraped_text.SCRAPED_NOTE)

@@ -13,7 +13,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from headstart.mcp_protocol.stdio import ToolFailure
-from headstart.space_mcp import company_names, scraped_text
+from headstart.space_mcp import company_scope, scraped_text
 from headstart.space_mcp.space_client import SpaceClient, SpaceRoute
 
 #: `sort` as this tool spells it -> as `/search` does; relevance is the query's own order.
@@ -30,29 +30,48 @@ _SORT_WORDS = {
     "salary": "highest salary first",
 }
 
-#: `/search` addresses at most `max_k * max_page` rows of one query (`JobSearch`, ADR-0074).
+#: `JobSearch` pages at most 20 deep, and a query's sort re-orders its `max_k * max_page` = 2,000
+#: nearest matches (ADR-0074, `JobSearch.run`) — the Space's figures, restated for the wording.
 LAST_PAGE = 20
 SORT_WINDOW = 2_000
 
-#: A Blocking filter as `/facets` names it (a `SearchFilters` field) -> as this tool names it.
-_ARGUMENT_OF_FILTER = {
-    "etype": "employment_type",
-    "india": "india_place",
-    "posted_within": "posted_within_days",
-    "seen_within": "first_seen_within_hours",
-    "kw": "keyword",
-}
-
-#: Facet dimensions, in the order the answer lists them, as this tool names them.
-_FACET_NAMES = {
+#: Every filter argument as this tool names it -> as the Space does: the query-string name
+#: `JobSearch.parse_filters` reads, which is also the `SearchFilters` field `/facets` names a
+#: facet dimension or a Blocking filter by. One map, read both ways.
+SPACE_NAME = {
     "remote": "remote",
-    "etype": "employment_type",
-    "max_years": "max_years",
     "has_salary": "has_salary",
-    "posted_within": "posted_within_days",
-    "seen_within": "first_seen_within_hours",
+    "max_years": "max_years",
+    "employment_type": "etype",
+    "india_place": "india",
+    "location": "location",
+    "company": "company",
+    "salary_min": "salary_min",
+    "salary_max": "salary_max",
+    "salary_currency": "salary_currency",
+    "posted_within_days": "posted_within",
+    "first_seen_within_hours": "seen_within",
+    "keyword": "kw",
+    "keyword_in": "kw_in",
     "ats": "ats",
 }
+_ARGUMENT_OF = {space: argument for argument, space in SPACE_NAME.items()}
+
+#: Sent as the literal "true" `parse_filters` compares against; the company and the keyword are
+#: sent by their own rules below.
+_FLAGS = ("remote", "has_salary")
+_SENT_ELSEWHERE = (*_FLAGS, "company", "keyword", "keyword_in")
+
+#: Facet dimensions in the order the answer lists them (the Space's own names).
+_FACET_ORDER = (
+    "remote",
+    "etype",
+    "max_years",
+    "has_salary",
+    "posted_within",
+    "seen_within",
+    "ats",
+)
 _FACET_OPTIONS_SHOWN = 12
 
 #: A company or location past this is cut; a title keeps `scraped_text.FIELD_LIMIT`.
@@ -60,7 +79,7 @@ SHORT_FIELD = 60
 
 
 def _params(
-    arguments: dict[str, Any], scope: company_names.CompanyScope | None
+    arguments: dict[str, Any], scope: company_scope.CompanyScope | None
 ) -> list[tuple[str, str]]:
     """The query string both routes are asked, in `JobSearch.parse_filters`' own names."""
     params: list[tuple[str, str]] = [("strict", "1")]
@@ -70,32 +89,22 @@ def _params(
         params += scope.params()
     if category := arguments.get("category"):
         params.append(("family", category))
-    # `parse_filters` compares both flags to the literal "true".
-    for flag in ("remote", "has_salary"):
+    for flag in _FLAGS:
         if arguments.get(flag):
-            params.append((flag, "true"))
-    plain = {
-        "max_years": "max_years",
-        "employment_type": "etype",
-        "india_place": "india",
-        "location": "location",
-        "salary_min": "salary_min",
-        "salary_max": "salary_max",
-        "salary_currency": "salary_currency",
-        "posted_within_days": "posted_within",
-        "first_seen_within_hours": "seen_within",
-        "ats": "ats",
-    }
-    for argument, name in plain.items():
-        if arguments.get(argument) is not None and arguments.get(argument) != "":
-            params.append((name, str(arguments[argument])))
+            params.append((SPACE_NAME[flag], "true"))
+    for argument, name in SPACE_NAME.items():
+        value = arguments.get(argument)
+        if argument not in _SENT_ELSEWHERE and value is not None and value != "":
+            params.append((name, str(value)))
     if keyword := (arguments.get("keyword") or "").strip():
-        params.append(("kw", keyword))
-        params.append(("kw_in", arguments.get("keyword_in") or "title"))
-    if sort := SORTS[arguments.get("sort") or "relevance"]:
+        params.append((SPACE_NAME["keyword"], keyword))
+        params.append(
+            (SPACE_NAME["keyword_in"], arguments.get("keyword_in") or "title")
+        )
+    if sort := SORTS[arguments["sort"]]:
         params.append(("sort", sort))
-    params.append(("k", str(arguments.get("limit") or 10)))
-    params.append(("page", str(arguments.get("page") or 1)))
+    params.append(("k", str(arguments["limit"])))
+    params.append(("page", str(arguments["page"])))
     return params
 
 
@@ -162,7 +171,7 @@ def _row(number: int, row: dict[str, Any]) -> str:
 
 
 def _scope_line(
-    arguments: dict[str, Any], scope: company_names.CompanyScope | None
+    arguments: dict[str, Any], scope: company_scope.CompanyScope | None
 ) -> str:
     said = []
     if scope is not None:
@@ -212,7 +221,7 @@ def _scope_line(
 
 def _order_line(arguments: dict[str, Any]) -> str:
     query = (arguments.get("query") or "").strip()
-    sort = arguments.get("sort") or "relevance"
+    sort = arguments["sort"]
     currency = arguments.get("salary_currency")
     words = _SORT_WORDS.get(sort, "")
     if sort == "salary":
@@ -228,7 +237,7 @@ def _order_line(arguments: dict[str, Any]) -> str:
 
 
 def _nothing_matched(
-    facets: dict[str, Any], scope: company_names.CompanyScope | None, arguments
+    facets: dict[str, Any], scope: company_scope.CompanyScope | None, arguments
 ) -> str:
     blocking = facets.get("blocking")
     if blocking == "company" and scope is not None and scope.substring is not None:
@@ -237,7 +246,7 @@ def _nothing_matched(
             "shorter or different spelling, or a key from read_trends or hiring_now."
         )
     if blocking:
-        name = _ARGUMENT_OF_FILTER.get(blocking, blocking)
+        name = _ARGUMENT_OF.get(blocking, blocking)
         return f"0 jobs. The filter costing the most is `{name}`; try without it."
     scoped = scope is not None or arguments.get("category")
     return (
@@ -249,7 +258,8 @@ def _nothing_matched(
 def _facet_lines(facets: dict[str, Any]) -> list[str]:
     lines = ["Counts if only that one filter changed:"]
     by_dimension = facets.get("facets") or {}
-    for dimension, name in _FACET_NAMES.items():
+    for dimension in _FACET_ORDER:
+        name = _ARGUMENT_OF.get(dimension, dimension)
         options = by_dimension.get(dimension)
         if not options:
             continue
@@ -267,7 +277,7 @@ def answer(client: SpaceClient, arguments: dict[str, Any]) -> str:
     _refuse_by_policy(arguments)
     scope = None
     if company := (arguments.get("company") or "").strip():
-        scope = company_names.for_search(
+        scope = company_scope.for_search(
             client, company, needs_boards=bool(arguments.get("category"))
         )
     params = _params(arguments, scope)
@@ -276,7 +286,7 @@ def answer(client: SpaceClient, arguments: dict[str, Any]) -> str:
         facets_asked = pool.submit(client.read, SpaceRoute.FACETS, params)
         rows, facets = rows_asked.result(), facets_asked.result()
     total = int(facets.get("total") or 0)
-    k, page = int(arguments.get("limit") or 10), int(arguments.get("page") or 1)
+    k, page = int(arguments["limit"]), int(arguments["page"])
     lines = [_scope_line(arguments, scope)]
     if not rows:
         lines.insert(
@@ -297,8 +307,8 @@ def answer(client: SpaceClient, arguments: dict[str, Any]) -> str:
         shown_to = first + len(rows) - 1
         if shown_to < total:
             lines.append(
-                f"This is the last reachable page ({SORT_WINDOW:,} rows); narrow the filters to "
-                "see others."
+                f"This is the last reachable page: the Space pages {LAST_PAGE} deep, "
+                f"{LAST_PAGE * k:,} rows at limit {k}; narrow the filters to see others."
                 if page >= LAST_PAGE
                 else f"More: page={page + 1}."
             )
