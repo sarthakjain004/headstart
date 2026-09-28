@@ -270,6 +270,7 @@ supersedes it and note the supersession in both.
 | [0274](0274-an-agent-asks-facets-for-the-total-alone-and-names-a-category-in-its-own-words.md) | An agent asks `/facets` for the total alone, and names a category in its own words | 2026-09-29 |
 | [0276](0276-a-hosted-mcp-call-ends-at-its-deadline-and-no-caller-holds-every-place.md) | A hosted MCP call ends at its deadline, and no caller holds every place | 2026-09-29 |
 | [0285](0285-a-vector-is-rebuilt-when-its-postings-text-changes.md) | A vector is rebuilt when its posting's text changes | 2026-09-29 |
+| [0292](0292-the-description-store-is-not-reaped-until-a-last-listed-signal-exists.md) | The description store is not reaped until a "last listed" signal exists | 2026-09-29 |
 
 *ADR-0037 was removed from the repository on 2026-09-24 by the owner's decision; its number is not
 reused.*
