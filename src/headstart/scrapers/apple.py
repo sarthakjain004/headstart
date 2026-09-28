@@ -38,7 +38,8 @@ full-board walks (2026-09-12, ~305 pages / 2-2.5 minutes each) read **98.7% REQ 
 **A full walk sees a handful of duplicate ids, from the board reshuffling mid-scrape** — measured
 on those same two full walks: 2 and 5 duplicate ids respectively (of 6,088), all with the *same*
 fields under both sightings. Four of the five in the second walk were evergreen ``PIPE`` rows,
-whose request-clock ``postDateInGMT`` re-sorts them past the walk's current page; the fifth was a ``REQ`` row seen twice with an identical timestamp. Same shape as Eightfold's
+whose request-clock ``postDateInGMT`` re-sorts them past the walk's current page; the fifth was a
+``REQ`` row seen twice with an identical timestamp. Same shape as Eightfold's
 replica-ordering problem, at a much smaller scale — ``_listing`` dedupes by ``id`` as it reads
 rather than needing Eightfold's multi-sweep reconciliation, since a duplicate here just overwrites
 itself rather than costing a row.
@@ -132,9 +133,9 @@ _SEARCH_FORMAT = {"longDate": "MMMM D, YYYY", "mediumDate": "MMM D, YYYY"}
 #: sampled live carry `standardWeeklyHours: 40`, which the hours split alone reads as full-time.
 #: `\b` excludes "International"/"internal" (measured: 20/2,080 titles matched, zero false
 #: positives).
+_INTERN_TITLE_RE = re.compile(r"\bintern\b", re.IGNORECASE)
 #: A PIPE row's id is ``PIPE-{positionId}``; a REQ's is ``{positionId}-{reqSuffix}``.
 _PIPE_PREFIX = "PIPE-"
-_INTERN_TITLE_RE = re.compile(r"\bintern\b", re.IGNORECASE)
 
 
 def _is_pipe(native_id: str) -> bool:

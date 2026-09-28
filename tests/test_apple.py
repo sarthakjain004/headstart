@@ -161,7 +161,7 @@ def test_a_pipe_url_uses_the_position_id():
 
 def _multi_location_req() -> dict:
     """Live 2026-09-28: the two listing rows of positionId 200685976 (New York City `-2459`,
-    Culver City `-0670`) and the detail of `-2459`, trimmed to fewer keys; plus the detail of
+    Culver City `-0670`) and the detail of `-2459`, trimmed (long text cut); plus the detail of
     `200674647-0836`, whose qualifications text carries a bare "<"."""
     with open(FIXTURES / "apple_multi_location_req.json", encoding="utf-8") as fh:
         raw = json.load(fh)
