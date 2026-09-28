@@ -479,6 +479,7 @@ def record_tick(
     levels: Mapping[tuple[str, str, str, str], int],
     turnover: Mapping[tuple[str, str, str, str], int],
     methodology: Methodology,
+    replayed: tuple[str | None, Mapping[tuple[str, str, str, str], int]] | None = None,
 ) -> int:
     """Write the tick stamped ``ts`` as one file under ``state_dir``: its level changes against
     the history replayed to its newest tick, then its ``turnover`` and markers (ADR-0227) as
@@ -488,11 +489,16 @@ def record_tick(
     metrics; a group it leaves out is at 0. The file is written even when nothing moved, so the
     history holds one file per tick, and a new classifier head writes a delta like any other tick,
     never a baseline. Raises ValueError when ``ts`` is not newer than the newest tick; an OSError
-    propagates. Written beside its path and renamed over it, so a killed run leaves no half."""
+    propagates. Written beside its path and renamed over it, so a killed run leaves no half.
+
+    ``replayed`` is :func:`board_levels` of this same ``state_dir``, read with no tick written
+    since, when the caller already has it:
+    replaying the history is the costly part (1.2 s over 377 ticks on 2026-09-28, growing with
+    every tick), and ``role_trends`` reads it for the same tick before writing (#716)."""
     import pyarrow as pa
     import pyarrow.parquet as pq
 
-    newest, current = board_levels(state_dir)
+    newest, current = replayed if replayed is not None else board_levels(state_dir)
     if newest is not None and ts <= newest:
         raise ValueError(f"tick {ts} is not newer than the history's newest, {newest}")
     rows = [
@@ -1494,8 +1500,9 @@ class TrendHistory:
             "closures_unseen": closures_unseen,
             # The picks for which that is every Board they have in scope: no closed count.
             "closures_uncounted": self._closures_uncounted(unscoped, closures_unseen),
-            # Per pick, its Boards in scope, so a closed count read over some of them says so:
-            # "3 closed (not counted on 1 of 2 boards)".
+            # Per pick, its Boards in scope, so a closed count read over some of them can say
+            # so. The page no longer does (ADR-0248, ADR-0255): "How to read this" says closed
+            # can run low.
             "boards_in_scope": dict(Counter(unscoped.values()))
             if with_turnover
             else {},

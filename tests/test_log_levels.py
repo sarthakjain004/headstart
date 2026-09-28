@@ -314,9 +314,10 @@ _LOOPED_OK: dict[str, str] = {
         "the line is the whole tail it is about to discard. The loop is how it finds the first "
         "unparseable metadata line, not how often it can report one."
     ),
-    "resume_mcp/server.py:serve": (
-        "The Résumé MCP server's stdio loop (ADR-0137) runs on a user's machine under an MCP "
-        "client, never under Actions, so no annotation budget applies. The ERROR fires only "
+    "mcp_protocol/stdio.py:serve": (
+        "The stdio loop every HeadStart MCP server shares (ADR-0137) runs on a user's machine "
+        "under an MCP client, never under Actions, so no annotation budget applies. The ERROR "
+        "fires only "
         "when `handle()` itself raises — a bug, not a per-request outcome — and it keeps the "
         "session alive with a -32603 reply instead of killing the server."
     ),

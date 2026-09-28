@@ -1,6 +1,8 @@
 # ADR-0112: The door earns the sign-in before it asks for it
 
 **Status:** accepted · **Date:** 2026-09-07 · **Extends ADR-0042 (the wall itself is unchanged)**
+· **Amended by:** [ADR-0255](0255-every-tab-speaks-to-a-job-seeker.md) (the door's words: no ATS
+names or boards, "hiring platforms read directly", "and every refresh")
 
 ## Context
 

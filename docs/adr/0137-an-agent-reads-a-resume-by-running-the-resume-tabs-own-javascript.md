@@ -120,3 +120,31 @@ the tests need nothing CI does not already install and none of them is an `impor
   `resumes_for` skips what it cannot parse — so the id listing, which lies about neither, is
   what separates "not there" from "there and unreadable" instead of the two being reported as
   one.
+
+## Amendment (2026-09-28): the loop is shared, and it negotiates the revision
+
+**Status:** accepted. A second local MCP server — one that reads the Space's Search, Trends and
+Hiring now for an agent (`docs/mcp/2026-09-28_space-mcp-server-plan.md`) — needs the same
+hand-written loop, so the loop left `server.py` for `headstart.mcp_protocol.stdio` rather than
+being written a second time. Nothing about the decision above changes: no SDK, one Account, read
+only. Four things about the loop do:
+
+- **It moved.** `stdio.Server` is a server as the loop sees it — its tools, a `call`, and its own
+  logger, so every log record still carries `headstart.resume_mcp.server`. `server.py` keeps
+  `handle`, `serve`, `call`, `ToolFailure` (re-exported) and its constants, as adapters that bind
+  the Account into a `Server`. One test moved with the loop it tests
+  (`test_a_bug_in_handle_answers_an_internal_error_and_serving_continues`, which patched the
+  loop's private `_result`); the other 32 in `tests/test_resume_mcp.py` did not change.
+- **It negotiates the revision.** `initialize` echoes a client's `protocolVersion` when the loop
+  speaks it (`2025-11-25` or `2025-06-18`) and otherwise answers the newest, `2025-11-25`; it used
+  to answer `2025-06-18` whatever was asked. The two differ in nothing a tools-only server uses.
+  The 2026-07-28 revision, which drops the handshake, is not spoken yet: Claude Code keeps stdio
+  servers on the legacy handshake unless told otherwise, and a 2026 client's `server/discover`
+  probe is answered as an unknown method, which the spec defines as the cue to fall back.
+- **An unknown tool is a protocol error** (`-32602`), as 2025-11-25 lists it, not an `isError`
+  result: there is no argument for the model to correct, only a name. That holds for an
+  unconfigured server too, which used to answer an unknown tool with its missing-credentials
+  sentence. No test pinned the old answer; one pins the new.
+- **The tools say they only read.** Each carries a `title` and the annotations `readOnlyHint`,
+  `idempotentHint`, `destructiveHint: false` and `openWorldHint: false`, and `initialize` may
+  carry the server's `instructions`.
