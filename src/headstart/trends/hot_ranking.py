@@ -33,6 +33,11 @@ their size*, the only lens that surfaces a small company a user would never othe
 
 A found Board inside the window needs no rule here: its backlog is a step the history nets out
 of the company's change, as the trend does.
+
+Staffing firms and job boards are ranked like any company, and the payload's
+``hidden_by_default`` (``HIDDEN_BY_DEFAULT``) names them as the Operators the tab hides unless
+asked (ADR-0238), never IT services, which employ the people they post for. The page and an
+agent reading ``/hot`` hide by that one list.
 """
 
 from __future__ import annotations
@@ -59,12 +64,15 @@ MIN_STOCK = 25
 #: MIN_SPAN_DAYS, under which the trend a row opens reads "too new to show a direction yet".
 MIN_COUNTED_DAYS = 3
 
+#: The Operators the tab hides unless asked, in the order its "hidden" note names them (ADR-0238).
+HIDDEN_BY_DEFAULT = ("staffing", "aggregator")
+
 
 def rank(
     history: TrendHistory, directory: Mapping[str, Mapping[str, Any]]
 ) -> dict[str, Any]:
-    """The ``/hot`` payload: ``{window, lenses, counts}``, or ``{}`` when there is no measured
-    window yet, which keeps the tab dark rather than ranking nothing.
+    """The ``/hot`` payload: ``{window, lenses, counts, hidden_by_default}``, or ``{}`` when
+    there is no measured window yet, which keeps the tab dark rather than ranking nothing.
 
     ``history`` is a :class:`headstart.trends.trend_history.TrendHistory`, read through
     :meth:`~headstart.trends.trend_history.TrendHistory.openings`,
@@ -152,7 +160,12 @@ def rank(
         "staffing": operators["staffing"],
         "aggregator": operators["aggregator"],
     }
-    return {"window": window, "lenses": lenses, "counts": counts}
+    return {
+        "window": window,
+        "lenses": lenses,
+        "counts": counts,
+        "hidden_by_default": list(HIDDEN_BY_DEFAULT),
+    }
 
 
 def _top(candidates: list[dict[str, Any]], figure: str) -> list[dict[str, Any]]:

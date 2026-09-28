@@ -82,3 +82,13 @@ The round-17 live critic of company trends (7.5/10) found two things the owner d
   No reading fails the checker.
 * `check_reading` and the page's `checkReading` state rules 1 to 3 as their invariant 7.
 * A new tag in `board_operator` reaches Hot at the Space's next boot, not the next run.
+
+## Amendment (2026-09-28): the hidden-by-default set lives in `hot_ranking`
+
+Decision 5's set of hidden Operators was written only in `app.js`, as `hidden: true` flags on its
+Operator labels. It is now `hot_ranking.HIDDEN_BY_DEFAULT`, `("staffing", "aggregator")`, and
+`/hot` serves it in its payload as `hidden_by_default`. The page hides the rows, and names them in
+its "hidden" note, by that list; the labels, nouns and hints stay in the page, which is wording.
+The Hot tab hides the same rows and prints the same notes. One list serves the page and the agent
+MCP server planned in `docs/mcp/2026-09-28_space-mcp-server-plan.md`, so an agent's "hiring now"
+cannot hide something other than what the tab hides.

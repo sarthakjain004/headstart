@@ -277,6 +277,15 @@ def test_rows_carry_the_directorys_operator_and_the_counts_say_how_many() -> Non
     assert (counts["aggregator"], counts["services"], counts["staffing"]) == (1, 1, 1)
 
 
+def test_the_payload_names_the_operators_the_tab_hides_unless_asked() -> None:
+    """ADR-0238: staffing firms and job boards, never IT services. The page and an agent reading
+    ``/hot`` hide by this one list."""
+    directory = {"gh:acme": _company("Acme", "gh:acme")}
+    history = _History({"gh:acme": 100}, {"gh:acme": _Move(net=10, opened=12)})
+    payload = hot_ranking.rank(history, directory)
+    assert payload["hidden_by_default"] == ["staffing", "aggregator"]
+
+
 def test_a_closed_count_not_counted_stays_none() -> None:
     """Amazon, one Board whose closures went uncounted, read "0 closed" (ADR-0227): a closed
     count a company's line gives as None reaches the row as None, never 0."""

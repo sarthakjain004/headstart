@@ -4340,15 +4340,17 @@ if (el('matches-controls')){
    re-polled. ---- */
 let hotData = null;
 
-// `hidden` marks the kinds of row the list hides unless asked (the owner's call, ADR-0238):
+// How each Operator reads on a row. Which kinds the list hides unless asked comes with the
+// ranking, as `hidden_by_default` (hot_ranking.HIDDEN_BY_DEFAULT, the owner's call, ADR-0238):
 // staffing firms and job boards, never an IT services employer such as Wipro, Infosys or TCS.
 // `noun` names a hidden row's kind in the "hidden" note, one and many.
 const HOT_OPERATOR = {
   services: { label: 'IT services', hint: 'This company is an IT services firm: it employs the people it hires, though most of its roles are on client projects.' },
-  staffing: { label: 'staffing firm', hidden: true, noun: ['staffing firm', 'staffing firms'], hint: 'This company is a staffing firm, so most roles are placements with its clients rather than jobs at the company itself.' },
-  aggregator: { label: 'job board', hidden: true, noun: ['job board', 'job boards'], hint: 'This company re-posts other companies’ jobs. The employer behind a given role is somebody else.' },
+  staffing: { label: 'staffing firm', noun: ['staffing firm', 'staffing firms'], hint: 'This company is a staffing firm, so most roles are placements with its clients rather than jobs at the company itself.' },
+  aggregator: { label: 'job board', noun: ['job board', 'job boards'], hint: 'This company re-posts other companies’ jobs. The employer behind a given role is somebody else.' },
 };
-const hotHidden = r => !!(HOT_OPERATOR[r.operator] || {}).hidden;
+const hotHiddenOperators = () => hotData.hidden_by_default || [];
+const hotHidden = r => hotHiddenOperators().includes(r.operator);
 
 async function loadHot(){
   el('hot-msg').textContent = 'Loading…';
@@ -4446,7 +4448,7 @@ function drawHot(){
 const HOT_HIDDEN_NAMED = 3;
 function hotHiddenNote(hidden){
   if (!hidden.length) return 'nothing hidden on this view';
-  const parts = Object.keys(HOT_OPERATOR).filter(op => HOT_OPERATOR[op].hidden).map(op => {
+  const parts = hotHiddenOperators().map(op => {
     const of = hidden.filter(r => r.operator === op);
     if (!of.length) return '';
     const names = of.slice(0, HOT_HIDDEN_NAMED).map(r => r.company).join(', ');

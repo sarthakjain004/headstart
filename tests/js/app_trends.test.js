@@ -2841,10 +2841,11 @@ test('where every board had its closures go uncounted, no closed count is given'
   assert.match(nodes['trends-table'].innerHTML, /<td>500<\/td><td class="flat" title="[^"]+">not counted<\/td>/);
 });
 
-/** Hot's payload: one lens of rows, over a week whose turnover began `turnoverFrom`. */
-function hotWith(rows, turnoverFrom) {
+/** Hot's payload: one lens of rows, over a week whose turnover began `turnoverFrom`, hiding what
+ * hot_ranking.HIDDEN_BY_DEFAULT hides unless `hidden` says otherwise. */
+function hotWith(rows, turnoverFrom, hidden = ['staffing', 'aggregator']) {
   return { window: { from: '2026-09-19T06:00:29+00:00', to: '2026-09-26T05:30:19+00:00', turnover_from: turnoverFrom },
-    lenses: { expansion: rows, volume: rows, rate: rows }, counts: {} };
+    lenses: { expansion: rows, volume: rows, rate: rows }, counts: {}, hidden_by_default: hidden };
 }
 const hotRowOf = (key, company, operator, extra) => ({ key, company, boards: [key], atses: [key.split(':')[0]],
   operator, stock: 900, net: 100, opened: 2, closed: 0, rate: 0, ...extra });
@@ -2895,6 +2896,22 @@ test('Hot hides staffing firms and job boards only, and names what it hides', ()
   nodes['hot-show-all'].checked = true;
   t.drawHot();
   assert.match(nodes['hot-results'].innerHTML, /Mindlance[\s\S]*staffing firm/);
+});
+
+test('Hot hides the Operators its payload names, not a list of its own', () => {
+  // hot_ranking.HIDDEN_BY_DEFAULT is the one list the page and an agent reading /hot hide by.
+  const { t, ctx, nodes } = loadApp();
+  ctx.document.querySelector = selector => selector.includes('hot-lens') ? { value: 'expansion' } : null;
+  nodes['hot-show-all'].checked = false;
+  t.setHotData(hotWith([
+    hotRowOf('smartrecruiters:mindlance2', 'Mindlance', 'staffing'),
+    hotRowOf('lever:jobgether', 'Jobgether', 'aggregator'),
+  ], '2026-09-19T06:00:29+00:00', ['staffing']));
+  t.drawHot();
+  const html = nodes['hot-results'].innerHTML;
+  assert.doesNotMatch(html, /Mindlance/);
+  assert.match(html, /Jobgether[\s\S]*job board/, 'a job board shows, labelled, when the payload does not hide it');
+  assert.equal(nodes['hot-filtered'].textContent, 'Hidden: 1 staffing firm (Mindlance).');
 });
 
 test('a failed load takes the last company’s sentence, list and table with it', async () => {
