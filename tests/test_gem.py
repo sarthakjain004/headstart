@@ -413,3 +413,36 @@ def test_a_short_batch_answer_labels_the_ids_it_ran_out_before():
         "a": {"id": "a"}
     }
     assert scraper.detail_losses == {"short batch answer": 2}
+
+
+def _board_page_answers(monkeypatch, scraper, status):
+    asked = []
+
+    def fetch(method, url, **kw):
+        asked.append(url)
+        return SimpleNamespace(status_code=status, text="")
+
+    monkeypatch.setattr(scraper, "_listing", list)
+    monkeypatch.setattr(scraper, "_fetch", fetch)
+    return asked
+
+
+def test_an_empty_listing_on_a_board_page_that_404s_is_gone(monkeypatch):
+    """The listing answers `[]` for any slug; the board page 404s for one that does not exist
+    (`jobs.gem.com/this-slug-does-not-exist-hs-critique`, 2026-09-28). Read as empty, a gone
+    Board never reached ADR-0058's quarantine."""
+    import pytest
+
+    from headstart.network import http
+
+    scraper = _scraper()
+    asked = _board_page_answers(monkeypatch, scraper, 404)
+    with pytest.raises(http.RequestsError, match="HTTP Error 410"):
+        scraper.fetch_raw()
+    assert asked == [scraper.url()]
+
+
+def test_an_empty_listing_on_a_live_board_page_is_an_empty_board(monkeypatch):
+    scraper = _scraper()
+    _board_page_answers(monkeypatch, scraper, 200)
+    assert scraper.fetch_raw() == {"jobs": [], "details": {}}

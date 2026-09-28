@@ -28,7 +28,8 @@ answer HTTP 200 with an empty ``jobPostings`` list. Measured directly: a deliber
 slug (`this-slug-definitely-does-not-exist-xyz123`) returns the identical empty-list shape a real,
 currently-zero-openings board does. The board page (``jobs.gem.com/{slug}``) is what actually
 distinguishes them — 200 for real, 404 for fake — which is why the liveness probe (below) checks the
-page before trusting the API's job count. Of the 119 seed slugs the API reported zero jobs for, 104
+page before trusting the API's job count, and the scraper asks it when the listing is empty
+(``_raise_if_board_is_gone``). Of the 119 seed slugs the API reported zero jobs for, 104
 (87%) have a real 200 board page (a live company with nothing open right now — the same "many live
 Boards read 0 jobs" shape this repo already accepts for freshteam/keka) and 15 (13%) 404 outright.
 
@@ -111,7 +112,7 @@ from typing import Any
 
 from headstart.jobs.job import Job, html_to_text
 from headstart.network import http
-from headstart.scrapers.base import USER_AGENT, BaseScraper
+from headstart.scrapers.base import USER_AGENT, BaseScraper, gone_board_error
 
 GRAPHQL_URL = "https://jobs.gem.com/api/public/graphql/batch"
 
@@ -206,6 +207,16 @@ class GemScraper(BaseScraper):
 
     def job_url(self, native_id: str) -> str:
         return f"https://jobs.gem.com/{self.slug}/{native_id}"
+
+    def _raise_if_board_is_gone(self) -> None:
+        """Raise gone when the board page 404s. The listing answers ``[]`` for any slug, so an
+        empty one says nothing alone; the board page is a real 404 for a Board that does not
+        exist (``jobs.gem.com/this-slug-does-not-exist-hs-critique``, 2026-09-28), which the
+        liveness probe already reads. Asked only for an empty listing, so a Board with postings
+        pays no extra request. Raised in the shape ``board_failures.is_gone`` matches."""
+        response = self._fetch("GET", self.url())
+        if response.status_code in (404, 410):
+            raise gone_board_error(f"no Gem board for {self.slug}")
 
     # --- listing ------------------------------------------------------------------------------
 
@@ -312,6 +323,8 @@ class GemScraper(BaseScraper):
 
     def fetch_raw(self) -> Any:
         listed = self._listing()
+        if not listed:
+            self._raise_if_board_is_gone()
         # No ADR-0048 skip here — see the module docstring: posted_at and compensationHtml are
         # detail-only, so skipping a previously-seen Job would silently null them on every later
         # run rather than merely re-fetch a description we already store.

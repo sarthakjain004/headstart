@@ -2556,11 +2556,25 @@ def p_radancy(t, u):
     return (LIVE, int(stated.group(1))) if stated else (DEAD, None)
 
 
-def p_rippling(t, u):
-    return _classify(
-        _scraper_for_row("rippling", t, u).url(),
-        lambda b: _len_of(b, "items", "jobs"),
+def _rippling_posting_count(body):
+    """Distinct postings: the listing has one row per work location, so rows overcount
+    (rippling: 628 rows, 331 postings; petfolk 581 rows, 282 = the board page's `totalItems`,
+    2026-09-28). None if the body is not the listing."""
+    try:
+        data = json.loads(body)
+    except Exception:  # noqa: BLE001
+        return None
+    if isinstance(data, dict):
+        data = data.get("items") or data.get("jobs") or []
+    if not isinstance(data, list):
+        return None
+    return len(
+        {row["uuid"] for row in data if isinstance(row, dict) and row.get("uuid")}
     )
+
+
+def p_rippling(t, u):
+    return _classify(_scraper_for_row("rippling", t, u).url(), _rippling_posting_count)
 
 
 # Eightfold's own careers board, served as the fallthrough for any {slug}.eightfold.ai host that
