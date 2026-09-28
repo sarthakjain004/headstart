@@ -2258,6 +2258,52 @@ function toggleAtsPopover(force){
   el('trends-ats-trigger').setAttribute('aria-expanded', open);
 }
 
+// The /trends question for the panel's state, with `metric` as the Measure: every request for the
+// panel is built here, so two builds of one view are the same URL.
+function trendsQuery(family, metric){
+  const q = new URLSearchParams();
+  trendPicks.forEach(p => q.append('company', p.key));
+  if (family) { q.set('family', family); q.set('split', trendSplit); }
+  else if (topSplitNow() === 'company') q.set('split', 'company');
+  if (metric !== 'stock') q.set('metric', metric);
+  const range = trendRange();
+  if (trendCoverage === 'comparable') {
+    q.set('coverage', trendCoverage);
+    if (range.since) q.set('base', range.since);
+  } else if (range.since) q.set('since', range.since);
+  if (range.until) q.set('until', range.until);
+  const ats = trendAtsSelected();
+  if (ats) ats.forEach(a => q.append('ats', a));
+  return q;
+}
+
+// A read-only answer's URL under this boot's version, so the browser may keep the answer until
+// the Space next boots and a view asked for again costs no round trip (ADR-0250). A page served
+// without one (the local renderer) asks as it always did.
+function versioned(path, q){
+  const p = new URLSearchParams(q);
+  if (CFG.answers_version) p.set('v', CFG.answers_version);
+  return path + (p.size ? '?' + p : '');
+}
+
+// A Trends answer fetched ahead of the click that will ask for it, so the click is answered from
+// the browser's cache (ADR-0250). Only once the reader has stayed a second, and never past the
+// next load: the Space works out one answer at a time, so a prefetch still being worked out when
+// the reader clicks on puts their click behind it. Only a URL that will repeat is worth it: a
+// preset window is measured back from the moment of each click, so it never does. Low priority
+// and unreported: nothing waits on it, and a failure costs only the head start.
+const PREFETCH_AFTER = 1000;
+let trendPrefetch = null;
+function prefetchTrends(family, metric){
+  if (!CFG.answers_version) return;
+  clearTimeout(trendPrefetch);
+  const preset = ['7', '30', '90'].includes(trendDays)
+    && !(el('trends-since') && el('trends-since').value) && !(el('trends-until') && el('trends-until').value);
+  if (preset) return;
+  const url = versioned('/trends', trendsQuery(family, metric));
+  trendPrefetch = setTimeout(() => fetch(url, { priority: 'low' }).catch(() => {}), PREFETCH_AFTER);
+}
+
 async function loadTrends(family){
   // Exactly one request owns the panel. Every Trends control calls this, and the ATS picker
   // calls it once per checkbox — so unchecking 20 of 21 boxes to reach "1 ATS" starts 20
@@ -2279,9 +2325,9 @@ async function loadTrends(family){
   // (committing the selection when the popover closes) is a change to what the control MEANS
   // and is left as a product call rather than smuggled in with a race fix.
   if (trendReq) trendReq.abort();
+  if (trendPrefetch) clearTimeout(trendPrefetch);   // the reader moved on before it left (prefetchTrends)
   const req = trendReq = new AbortController();
   const push = nextLoadPushesHistory; nextLoadPushesHistory = false;   // this load's, whatever becomes of it
-  const q = new URLSearchParams();
   // The roles split only exists for families that HAVE watched roles. Carrying a sticky
   // 'roles' into one that doesn't returns an empty series with its toggle hidden — nothing
   // to click, nothing to go back from, and only a reload escapes. Company is the same for a
@@ -2292,18 +2338,7 @@ async function loadTrends(family){
     if (trendSplit === 'company') trendSplit = 'bands';
     if (topSplit.chosen === 'company') topSplit.chosen = 'auto';
   }
-  trendPicks.forEach(p => q.append('company', p.key));
-  if (family) { q.set('family', family); q.set('split', trendSplit); }
-  else if (topSplitNow() === 'company') q.set('split', 'company');
-  if (trendMetric !== 'stock') q.set('metric', trendMetric);
-  const range = trendRange();
-  if (trendCoverage === 'comparable') {
-    q.set('coverage', trendCoverage);
-    if (range.since) q.set('base', range.since);
-  } else if (range.since) q.set('since', range.since);
-  if (range.until) q.set('until', range.until);
-  const ats = trendAtsSelected();
-  if (ats) ats.forEach(a => q.append('ats', a));
+  const q = trendsQuery(family, trendMetric);
   // Refetch keeps the frame (dataviz skill, interaction.md): the previous render stays up,
   // dimmed, rather than the panel blanking — a filter change must never read as "it broke"
   // while the round trip is in flight, and a genuine failure must never look like a dead toggle.
@@ -2325,7 +2360,7 @@ async function loadTrends(family){
   // all, leaving the panel dimmed for good instead of saying anything.
   let payload, err, refused, r;
   try {
-    r = await fetch('/trends' + (q.size ? '?' + q : ''), { signal: req.signal });
+    r = await fetch(versioned('/trends', q), { signal: req.signal });
     if (r.ok){
       payload = await r.json();
       // A 200 of the wrong shape would pass here and throw inside drawTrends instead.
@@ -2373,6 +2408,8 @@ async function loadTrends(family){
   trendData = trendView(payload, trendDrill);
   drawPicks(); applyUnitLocks(); writeTrendHash(drilled || push);
   drawTrends();
+  // The Measure toggle beside the chart, answered ahead for this view.
+  prefetchTrends(trendDrill, trendMetric === 'stock' ? 'new' : 'stock');
 }
 
 // Nothing of the last answer stays on screen: drawTrends draws nothing without an answer, which
@@ -3979,7 +4016,7 @@ async function suggestCompanies(q){
   const req = coReq = new AbortController();
   let found = null, missing = false, r;
   try {
-    r = await fetch('/companies/suggest?' + new URLSearchParams({ q }), { signal: req.signal });
+    r = await fetch(versioned('/companies/suggest', { q }), { signal: req.signal });
     if (r.ok) found = (await r.json()).companies || [];
     else { missing = r.status === 503 || r.status === 404; logFail('GET', '/companies/suggest', r.status); }
   } catch(e){ logFail('GET', '/companies/suggest', r ? r.status : 0, e); /* reported below, unless a newer query replaced this one */ }
@@ -4313,7 +4350,7 @@ const hotHidden = r => !!(HOT_OPERATOR[r.operator] || {}).hidden;
 async function loadHot(){
   el('hot-msg').textContent = 'Loading…';
   try{
-    const r = await fetch('/hot');
+    const r = await fetch(versioned('/hot'));
     if (!r.ok){
       if (r.status !== 503) logFail('GET', '/hot', r.status);
       // 503 is "no history to rank yet", which is a different thing from a failure and is the
@@ -4543,6 +4580,8 @@ go();   // an empty query browses the newest jobs (ADR-0074) — the Search tab 
 whoAmI();
 showTab(currentTab());
 shownTab = currentTab();
+// The Trends tab's opening view, so opening the tab is answered from the browser's cache.
+if (el('trends') && currentTab() !== 'trends') prefetchTrends(null, trendMetric);
 // Result cards need star states before the Saved tab is ever opened; landing ON the tab
 // already loads via showTab above.
 if (CAN_STAR && currentTab() !== 'saved') loadSaved();

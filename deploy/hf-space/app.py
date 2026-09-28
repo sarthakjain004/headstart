@@ -11,18 +11,28 @@ modules down flat (ADR-0153), so there is exactly one import path to keep in syn
 
 from __future__ import annotations
 
+import gzip
 import hmac
 import json
 import os
 import threading
 import time
 import traceback
+from collections import OrderedDict
 from dataclasses import replace
 from datetime import timedelta
 from pathlib import Path
 
 import lancedb
-from flask import Flask, jsonify, redirect, render_template, request, session
+from flask import (
+    Flask,
+    Response,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    session,
+)
 from huggingface_hub import snapshot_download
 
 import headstart  # only for headstart.__file__, to locate ui/ beside this package (ADR-0153)
@@ -163,6 +173,11 @@ _HISTORY = trend_history.TrendHistory.load(_STATE / "data" / "state", _CONFIG)
 # retired family's successor, so a Trends category hands Search the Jobs its line counts.
 _WATCH = trend_history.watched_roles(_CONFIG / "role_watchlist.json")
 _FAMILY_SUCCESSOR = trend_history.family_successors(_CONFIG / "role_families.json")
+# What every answer read from the history above is versioned by (ADR-0250): this process's boot.
+# The history is read once and never changes after, and every pipeline publication and every
+# deploy restarts the Space, so one boot names one fixed set of answers. The page sends it back
+# as `v=`, and an answer asked for under it may be kept by the browser for good.
+_ANSWERS_VERSION = f"{time.time_ns():x}"
 
 
 def _rank_hot(history: trend_history.TrendHistory) -> dict:
@@ -438,6 +453,22 @@ def set_company():
     return jsonify(_companies_json(prefs))
 
 
+def _answer_response(body: bytes, gzipped: bytes | None = None) -> Response:
+    """One read-only answer as its response (ADR-0250): gzipped where the browser takes it and a
+    gzipped copy is given, since the Space's proxy compresses nothing (measured 2026-09-28), and
+    kept by the browser for good when asked for under this boot's ``_ANSWERS_VERSION``, since
+    nothing it reads changes until the next boot, which gives the page a new one."""
+    zipped = gzipped is not None and request.accept_encodings.quality("gzip") > 0
+    response = Response(gzipped if zipped else body, mimetype="application/json")
+    if gzipped is not None:
+        response.vary.add("Accept-Encoding")
+    if zipped:
+        response.headers["Content-Encoding"] = "gzip"
+    if request.args.get("v") == _ANSWERS_VERSION:
+        response.headers["Cache-Control"] = "private, max-age=31536000, immutable"
+    return response
+
+
 @app.route("/hot")
 def hot_companies():
     """The actively-hiring companies ranked at boot (``_rank_hot``), or 503 with nothing ranked.
@@ -449,7 +480,8 @@ def hot_companies():
     """
     if not _HOT:
         return jsonify({"error": "no hot list on this deployment yet"}), 503
-    return jsonify(_HOT)
+    body = app.json.response(_HOT).get_data()
+    return _answer_response(body, gzip.compress(body, compresslevel=6))
 
 
 @app.route("/facets")
@@ -1094,12 +1126,46 @@ def trends():
         ats=tuple(args.getlist("ats")),
     )
     try:
-        answer = _HISTORY.unnetted_answer(question)
+        body, gzipped = _served_trends(_HISTORY, question)
     except trend_history.TrendsUnavailable as exc:
         return jsonify(error=str(exc)), 503
     except ValueError as exc:
         return jsonify(error=str(exc)), 400
-    return jsonify(_trends_payload(answer, question))
+    return _answer_response(body, gzipped)
+
+
+# Each /trends body this boot has answered, oldest first, and the one lock answering takes
+# (`_served_trends`). At most _TRENDS_KEPT answers of at most ~0.6 MB, JSON and gzip together.
+_TRENDS_ANSWERED: OrderedDict[tuple, tuple[bytes, bytes]] = OrderedDict()
+_TRENDS_ANSWERING = threading.Lock()
+_TRENDS_KEPT = 128
+
+
+def _served_trends(
+    history: trend_history.TrendHistory, question: trend_history.TrendQuestion
+) -> tuple[bytes, bytes]:
+    """``question``'s ``/trends`` body over ``history``, as JSON and gzipped, answered once per
+    boot (ADR-0250): a history never changes once loaded, so neither does any answer read from
+    it, and the index-wide one costs ~1.5 s of the Space's CPU. Keyed on the history as well, so
+    one loaded in its place answers afresh; a question that raises is not kept.
+
+    One answer is worked out at a time. Under the GIL two at once finish no sooner, and a click
+    that repeats a prefetch still in flight then waits for that answer rather than working it
+    out a second time beside it. An answer already kept is read without the lock, so it never
+    waits behind one being worked out."""
+    key = (history, question)
+    kept = _TRENDS_ANSWERED.get(key)
+    if kept is not None:
+        return kept
+    with _TRENDS_ANSWERING:
+        if key not in _TRENDS_ANSWERED:
+            body = app.json.response(
+                _trends_payload(history.unnetted_answer(question), question)
+            ).get_data()
+            _TRENDS_ANSWERED[key] = (body, gzip.compress(body, compresslevel=6))
+            if len(_TRENDS_ANSWERED) > _TRENDS_KEPT:
+                _TRENDS_ANSWERED.popitem(last=False)
+        return _TRENDS_ANSWERED[key]
 
 
 def _trends_payload(answer: dict, question: trend_history.TrendQuestion) -> dict:
@@ -1127,6 +1193,25 @@ def _trends_payload(answer: dict, question: trend_history.TrendQuestion) -> dict
     return payload
 
 
+# The view every Trends visit opens on, under both Measures, answered before the first visitor
+# asks (ADR-0250): ~3 s of the Space's CPU once at boot rather than on someone's first clicks.
+# Never fatal: a question that fails here fails the same way when asked, and is answered there.
+if _HISTORY.ticks:
+    _started = time.monotonic()
+    try:
+        for _metric in ("stock", "new"):
+            _served_trends(_HISTORY, trend_history.TrendQuestion(metric=_metric))
+        print(
+            f"trends: opening views answered in {time.monotonic() - _started:.1f}s",
+            flush=True,
+        )
+    except Exception as exc:  # noqa: BLE001 - the request path reports its own failure
+        print(
+            f"trends: opening views not answered ({type(exc).__name__}: {exc})",
+            flush=True,
+        )
+
+
 @app.route("/companies/suggest")
 def suggest_companies():
     """Directory companies matching ``?q=`` for the Trends company picker (ADR-0185), best
@@ -1142,8 +1227,10 @@ def suggest_companies():
         limit = max(1, min(int(request.args.get("limit", 8)), 20))
     except ValueError:
         return jsonify(error="limit must be an integer"), 400
-    return jsonify(
-        companies=_HISTORY.suggest_companies(request.args.get("q", ""), limit)
+    return _answer_response(
+        app.json.response(
+            companies=_HISTORY.suggest_companies(request.args.get("q", ""), limit)
+        ).get_data()
     )
 
 
@@ -1237,6 +1324,9 @@ def index():
             # Whether a Trends category can hand over as its exact Jobs, and up to how many.
             "family_handoff": _FAMILY_IDS is not None,
             "max_family_ids": job_search.MAX_FAMILY_IDS,
+            # What the Trends, Hot and company-picker requests send as `v=`, so the browser may
+            # keep their answers until the next boot (ADR-0250).
+            "answers_version": _ANSWERS_VERSION,
         },
         njobs=f"{_table.count_rows():,}",
         atses=capabilities.atses,

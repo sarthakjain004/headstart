@@ -16,6 +16,7 @@ session cookie is `Secure` and the test client honours that over plain http.
 """
 
 import csv
+import gzip
 import importlib.util
 import io
 import json
@@ -23,6 +24,7 @@ import os
 import re
 import sys
 import tempfile
+import threading
 import types
 from collections import defaultdict
 from contextlib import contextmanager
@@ -145,6 +147,22 @@ class _Model:
         return [_Vector()]
 
 
+# Every app this file has loaded, so each test starts with none of the /trends answers an earlier
+# one kept (ADR-0250). The Space never changes a history once loaded, so it keeps every answer
+# for the boot; these tests do change theirs, in place, to stage what they read.
+_LOADED_APPS = []
+
+
+def _forget_trends_answers():
+    for module in _LOADED_APPS:
+        module._TRENDS_ANSWERED.clear()
+
+
+@pytest.fixture(autouse=True)
+def _no_kept_trends_answers():
+    _forget_trends_answers()
+
+
 @contextmanager
 def _space_app(state, env=None):
     """Load the Space app from its path with the heavy imports stubbed (module docstring).
@@ -176,6 +194,7 @@ def _space_app(state, env=None):
         spec = importlib.util.spec_from_file_location("space_app", APP)
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
+        _LOADED_APPS.append(module)
         # `module.llm_router` is the real, shared `headstart.llm_router` (every app fixture in
         # this file imports the same singleton) — default `ask` off so a router-less test
         # environment can't attempt a real network call, and restore it so this fixture's
@@ -2180,6 +2199,128 @@ def test_suggest_ranks_and_labels_companies(company_trends):
     assert company_trends.get("/companies/suggest?limit=x").status_code == 400
 
 
+_SERVED_QUESTIONS = [
+    ("", trend_history.TrendQuestion()),
+    ("metric=new", trend_history.TrendQuestion(metric="new")),
+    (
+        "family=software-engineering&split=bands",
+        trend_history.TrendQuestion(family="software-engineering"),
+    ),
+    (
+        "company=workday:hpe/b",
+        trend_history.TrendQuestion(companies=("workday:hpe/b",)),
+    ),
+    (
+        "company=workday:hpe/a&company=workday:citi/2&split=company&metric=new",
+        trend_history.TrendQuestion(
+            metric="new",
+            split="company",
+            companies=("workday:hpe/a", "workday:citi/2"),
+        ),
+    ),
+]
+
+
+@pytest.mark.parametrize(("query", "question"), _SERVED_QUESTIONS)
+def test_a_kept_or_gzipped_trends_answer_is_the_answer_worked_out_afresh(
+    company_trends, trends_app, query, question
+):
+    """ADR-0250: keeping an answer for the boot and gzipping it change how fast it arrives,
+    never a byte of what it says."""
+    history = trends_app._HISTORY
+    with trends_app.app.app_context():
+        fresh = trends_app.jsonify(
+            trends_app._trends_payload(history.unnetted_answer(question), question)
+        ).get_data()
+    first = company_trends.get(f"/trends?{query}")
+    kept = company_trends.get(f"/trends?{query}")
+    zipped = company_trends.get(f"/trends?{query}", headers={"Accept-Encoding": "gzip"})
+    assert first.data == kept.data == fresh
+    assert "Content-Encoding" not in first.headers
+    assert zipped.headers["Content-Encoding"] == "gzip"
+    assert zipped.headers["Vary"] == "Accept-Encoding"
+    assert gzip.decompress(zipped.data) == fresh
+
+
+def test_a_trends_answer_is_worked_out_once_a_boot(
+    company_trends, trends_app, monkeypatch
+):
+    history = trends_app._HISTORY
+    asked = []
+    answer = history.unnetted_answer
+    monkeypatch.setattr(
+        history,
+        "unnetted_answer",
+        lambda question: asked.append(question) or answer(question),
+    )
+    for _ in range(3):
+        assert company_trends.get("/trends?metric=new").status_code == 200
+    assert len(asked) == 1
+    # a refusal is not kept: the same bad question is refused afresh each time
+    for _ in range(2):
+        assert company_trends.get("/trends?metric=bogus").status_code == 400
+    assert len(asked) == 3
+
+
+def test_a_click_on_an_answer_being_worked_out_waits_for_it(trends_app, monkeypatch):
+    """Two askers of one answer at once, as a click racing the prefetch of the same view: it
+    is worked out once, and both get it."""
+    history = trends_app._HISTORY
+    started, release, asked = threading.Event(), threading.Event(), []
+    answer = history.unnetted_answer
+
+    def slow(question):
+        asked.append(question)
+        started.set()
+        release.wait(5)
+        return answer(question)
+
+    monkeypatch.setattr(history, "unnetted_answer", slow)
+    question = trend_history.TrendQuestion(metric="new")
+    got = []
+    askers = [
+        threading.Thread(
+            target=lambda: got.append(trends_app._served_trends(history, question))
+        )
+        for _ in range(2)
+    ]
+    askers[0].start()
+    started.wait(5)
+    askers[1].start()
+    release.set()
+    for asker in askers:
+        asker.join(5)
+    assert len(asked) == 1
+    assert len(got) == 2 and got[0] == got[1]
+
+
+def test_an_answer_asked_for_under_this_boots_version_is_kept_by_the_browser(
+    company_trends, trends_app, monkeypatch
+):
+    """ADR-0250: the page sends the boot's version as `v=`; only an answer asked for under it
+    may be kept for good, since the next boot gives the page a new one. A refusal never is."""
+    version = trends_app._ANSWERS_VERSION
+    forever = "private, max-age=31536000, immutable"
+    monkeypatch.setattr(trends_app, "_HOT", {"window": {}, "lenses": {}, "counts": {}})
+    for path in ("/trends?metric=new", "/companies/suggest?q=citi", "/hot?"):
+        sep = "" if path.endswith("?") else "&"
+        kept = company_trends.get(f"{path}{sep}v={version}")
+        assert kept.status_code == 200
+        assert kept.headers["Cache-Control"] == forever
+        assert kept.data == company_trends.get(path).data
+        assert "Cache-Control" not in company_trends.get(path).headers
+        assert "Cache-Control" not in company_trends.get(f"{path}{sep}v=stale").headers
+    refused = company_trends.get(f"/trends?metric=bogus&v={version}")
+    assert refused.status_code == 400
+    assert "Cache-Control" not in refused.headers
+
+
+def test_the_page_hands_the_browser_this_boots_answers_version(app):
+    page = app.app.test_client().get("/").data.decode()
+    cfg = json.loads(re.search(r"window\.CFG = (.*?);</script>", page).group(1))
+    assert cfg["answers_version"] == app._ANSWERS_VERSION
+
+
 def test_no_directory_answers_503(trends_app, monkeypatch):
     monkeypatch.setattr(trends_app._HISTORY, "_companies", {})
     client = trends_app.app.test_client()
@@ -2905,6 +3046,7 @@ def test_a_found_boards_backlog_waits_out_the_new_window(
     ).get_json()
     assert held["series"] == []  # nothing new yet: the three were its backlog
     monkeypatch.setattr(history, "_new_hold", {})
+    _forget_trends_answers()  # the history changed under the Space, which a boot never does
     counted = company_trends.get(
         "/trends?company=eightfold:citi.eightfold.ai&metric=new"
     ).get_json()

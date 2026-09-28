@@ -63,7 +63,7 @@ function fakeEl() {
  * `fetches` records every URL requested. It is the only way to tell "the click was ignored"
  * from "the click ran and happened to land on the same split" — asserting on `trendSplit`
  * alone passes either way, because 'bands' is also the fallback. */
-function loadApp(fetchImpl) {
+function loadApp(fetchImpl, cfg = {}) {
   const nodes = {};
   const logged = [];
   const fetches = [];
@@ -81,7 +81,7 @@ function loadApp(fetchImpl) {
     // app.js reads its config off `window.CFG`, so tests set flags there.
     // Listeners recorded, as an element's are: the tooltip test fires the page's scroll.
     window: { listeners: {}, addEventListener(type, fn) { (this.listeners[type] ||= []).push(fn); },
-      location: { hash: '' }, CFG: {} },
+      location: { hash: '' }, CFG: cfg },
     location: { hash: '' },
     // Recorded, not printed: app.js reports every failed request, and the stub fetches fail most
     // of the page-load ones on purpose.
@@ -104,6 +104,7 @@ function loadApp(fetchImpl) {
     + ' hasIndexBase: hasIndexBase,'
     + ' atsSelected: trendAtsSelected, atsLabel: trendAtsLabel, atsToggle: toggleAtsPopover,'
     + ' coverageSet: value => { trendCoverage = value; }, metricSet: value => { trendMetric = value; },'
+    + ' rangeSet: value => { trendDays = value; },'
     + ' colorSlot: name => seriesColorAssignment.get(name), setUnit: setUnit,'
     + ' load: loadTrends,'
     + ' data: () => trendData,'
@@ -155,6 +156,62 @@ test('the comparable-coverage control sends its explicit scope', async () => {
   };
   await t.load(null);
   assert.match(requested, /coverage=comparable/);
+});
+
+/** A page served under a boot's answers version (ADR-0250), its timers held for the test to run:
+ * `run()` fires every timer still pending, as if the reader had stayed. */
+function versionedApp() {
+  const app = loadApp(null, { answers_version: 'b00t' });
+  const timers = new Map();
+  let next = 0;
+  app.ctx.setTimeout = (fn, ms) => { timers.set(++next, { fn, ms }); return next; };
+  app.ctx.clearTimeout = id => { timers.delete(id); };
+  app.asked = [];
+  app.ctx.fetch = (url, opts) => {
+    app.asked.push({ url: String(url), priority: opts && opts.priority });
+    return Promise.resolve({ ok: true, json: () => Promise.resolve(fixture()) });
+  };
+  app.timers = timers;
+  app.run = () => { const due = [...timers.values()]; timers.clear(); due.forEach(t => t.fn()); };
+  return app;
+}
+
+test('a Trends answer is asked for under the boot, and the other Measure is asked ahead of its click', async () => {
+  const { t, asked, run, timers } = versionedApp();
+  await t.load(null);
+  assert.deepStrictEqual(asked.map(a => a.url), ['/trends?v=b00t']);
+  assert.deepStrictEqual([...timers.values()].map(x => x.ms), [1000]);   // only once the reader stays
+  run();
+  assert.deepStrictEqual(asked[1], { url: '/trends?metric=new&v=b00t', priority: 'low' });
+  // The toggle then asks for exactly what was fetched ahead, so the browser answers it.
+  t.metricSet('new');
+  await t.load(null);
+  assert.strictEqual(asked[2].url, asked[1].url);
+});
+
+test('a load before the Measure prefetch leaves takes it back', async () => {
+  const { t, asked, timers } = versionedApp();
+  await t.load(null);
+  assert.strictEqual(timers.size, 1);
+  const next = t.load('software-engineering');
+  assert.strictEqual(timers.size, 0);   // the reader moved on: nobody waits behind it
+  await next;
+  assert.deepStrictEqual(asked.map(a => a.url),
+    ['/trends?v=b00t', '/trends?family=software-engineering&split=bands&v=b00t']);
+});
+
+test('a preset window is never asked ahead: its URL is measured from each click', async () => {
+  const { t, timers } = versionedApp();
+  t.rangeSet('30');
+  await t.load(null);
+  assert.strictEqual(timers.size, 0);
+});
+
+test('a page with no answers version asks as it always did, and nothing ahead', async () => {
+  const { t, ctx } = loadApp();
+  const asked = answering(ctx, fixture());
+  await t.load(null);
+  assert.deepStrictEqual(asked.map(q => q.toString()), ['']);
 });
 
 const mk = (name, label, latest) => ({ name, label, points: [latest, latest], latest });
