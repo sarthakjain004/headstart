@@ -127,9 +127,10 @@ def _abbreviated_in(province: str, name: str | None) -> bool:
     the location does not read "Maumee, OH, Ohio, United States". On trilongroup (2026-09-28)
     886 of 929 names ended in a two-letter code over a province, and every one was that
     province's code. Only a US state or Canadian province code is read, and only when it names
-    this very province."""
+    this very province, in any letter case: mybrio writes "Ypsilanti, Mi" over "Michigan"."""
     last = (name or "").rsplit(",", 1)[-1].strip()
-    return bool(province) and _POSTAL_CODES.get(last, "").lower() == province.lower()
+    code = _POSTAL_CODES.get(last.upper(), "")
+    return bool(province) and code.lower() == province.lower()
 
 
 def _title(item: dict) -> str:
