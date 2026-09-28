@@ -30,6 +30,12 @@ _WITHHELD_WORDS = {
 }
 
 
+def _now() -> datetime:
+    """Now, in UTC: where a `days` window is counted back from. Its own function so a test can
+    pin it to its fixture's ticks."""
+    return datetime.now(UTC)
+
+
 def _signed(value: float | None) -> str:
     return "?" if value is None else f"{value:+,.0f}"
 
@@ -108,7 +114,7 @@ def answer(client: SpaceClient, arguments: dict[str, Any]) -> str:
     breakdown = _breakdown(arguments, asked_companies)
     picks = _pick(client, asked_companies)
     days = int(arguments["days"])
-    since = (datetime.now(UTC) - timedelta(days=days)).isoformat(timespec="seconds")
+    since = (_now() - timedelta(days=days)).isoformat(timespec="seconds")
     params: list[tuple[str, str]] = [("since", since)]
     if category := arguments.get("category"):
         params.append(("family", category))
@@ -135,9 +141,14 @@ def answer(client: SpaceClient, arguments: dict[str, Any]) -> str:
         head.append(f"Window {window['from'][:10]} → {window['to'][:10]}.")
     counted = payload.get("counted_since") or {}
     if counted and max(counted.values()) > since:
+        began = max(counted.values())
+        why = (
+            ", when per-Board counting began"
+            if began == payload.get("ledger_start")
+            else ""
+        )
         head.append(
-            f"You asked for {days} days; a company is counted only from "
-            f"{max(counted.values())[:10]}, when per-Board counting began."
+            f"You asked for {days} days; a company is counted only from {began[:10]}{why}."
         )
     if reading is None:
         why = payload.get("reading_error") or "no reason given"
@@ -145,6 +156,15 @@ def answer(client: SpaceClient, arguments: dict[str, Any]) -> str:
             f"The Space has this trend's counts but could not read them into figures ({why}). "
             "No figures are reported rather than unchecked ones; a narrower question (one "
             "category, fewer companies) may read."
+        )
+        return "\n".join(head)
+
+    if not window:
+        start = payload.get("ledger_start")
+        head.append(
+            f"No trend counts fall in the last {days} days"
+            + (f"; per-company counts begin {start[:10]}" if start else "")
+            + ". Ask for more days."
         )
         return "\n".join(head)
 

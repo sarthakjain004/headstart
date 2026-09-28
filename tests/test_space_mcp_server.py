@@ -757,3 +757,14 @@ def test_a_hiring_now_answer_stays_inside_its_budget():
         len(server.call(FakeSpace(hot=_hot(rows)), "hiring_now", {"limit": 50}))
         <= 14_000
     )
+
+
+def test_a_window_with_no_counts_says_so():
+    payload = _trends([], ledger_start="2026-09-13T12:00:39+00:00")
+    payload["reading"]["window"] = None
+    text = server.call(FakeSpace(trends=payload), "read_trends", {"days": 5})
+    assert (
+        "No trend counts fall in the last 5 days; per-company counts begin 2026-09-13"
+        in text
+    )
+    assert "reconcile" not in text
