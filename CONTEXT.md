@@ -359,7 +359,7 @@ _Avoid_: reading a line's move off its points — the points include the steps t
 A signed-in person, identified by the verified address their Google sign-in proves. The whole UI sits behind sign-in and anyone may create an Account; the costly paths keep their own gates — **Digest** delivery stays invite-only, **Résumé** parsing is capped per Account.
 _Avoid_: user, subscriber — an Account is the identity; whether it receives email is the **Subscription**'s question. Also "ATS account" for an ATS's customer — that is a **Tenant**.
 
-**Agent token** (ADR-0252):
+**Agent token** (ADR-0253):
 The shared secret (`AGENT_TOKEN`, a Space secret) an agent reading HeadStart for its owner carries past the sign-in wall. It opens only the read routes that answer without an **Account** — `/search`, `/facets`, `/trends`, `/hot` and `/companies/suggest` — so it reads what any signed-in visitor can read, and no Account's records; it writes nothing. It is not an Account: no follow or hide list applies to what it reads. Separate from `ALERTS_TOKEN`, the **Digest** run's secret, which opens `/search` alone; set equal to it, the agent token is ignored.
 _Avoid_: session or API key — it names no person and buys no Account; one leaked reads only what open sign-up already offers.
 

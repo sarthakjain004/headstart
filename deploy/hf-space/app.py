@@ -342,7 +342,7 @@ _DOOR_NEW_HOURS = 168
 # its work needs. The Digest generator is a scheduled run that must reach /search for every
 # Subscription (ADR-0035; ADR-0042's amendment records why the wall admits it): `ALERTS_TOKEN`
 # opens /search alone, so a leaked token buys a search rather than a session. An agent reading
-# HeadStart for its owner (ADR-0252) carries `AGENT_TOKEN`, which opens the read routes that
+# HeadStart for its owner (ADR-0253) carries `AGENT_TOKEN`, which opens the read routes that
 # answer without an Account and nothing else: no write, no Account's records. Unset admits
 # nobody, as in alerts.access. Both are bytes: see `_service_caller`.
 _ALERTS_TOKEN = (
@@ -447,7 +447,7 @@ def _gzip_static(response):
     return response
 
 
-# The agent contract this app serves (ADR-0252): what an agent may rely on in the read routes
+# The agent contract this app serves (ADR-0253): what an agent may rely on in the read routes
 # `AGENT_TOKEN` opens. Raised whenever that contract changes, so an agent can tell an app too
 # old for it from one that serves it, rather than have a newer argument silently ignored.
 _AGENT_API_VERSION = 0

@@ -3,7 +3,7 @@
 **Status:** proposed, plan v4 · **Date:** 2026-09-28 · **Written for:** the owner, and the agent
 that implements it · **Verified against:** `origin/main` at `65045ff9` (after #757, #759–#766) ·
 **Relates to:** ADR-0035, ADR-0042 (and its 2026-08-13 amendment), ADR-0137, ADR-0156, ADR-0185,
-ADR-0194, ADR-0230, ADR-0232/0235, ADR-0233, ADR-0238, ADR-0249 · **Proposed ADR:** ADR-0252
+ADR-0194, ADR-0230, ADR-0232/0235, ADR-0233, ADR-0238, ADR-0249 · **Proposed ADR:** ADR-0253
 (0247–0250 are taken on `main`; re-check at landing, since ADR numbers collide across branches)
 
 The owner was away while this was written and could not answer questions. Every fork they would
@@ -933,7 +933,7 @@ applied (CLAUDE.md).
 
 | PR | Contents | Verified by |
 | --- | --- | --- |
-| 1a | The token map (equal secrets disable the agent token); the `X-HeadStart` header at `agent-api=0`; `deploy-space.yml` negated paths. ADR-0252 (amends ADR-0042's amendment and ADR-0156). CONTEXT.md entry **Agent token**. | Space tests; after deploy, `curl` every read route with and without the token, an Account route with it (must be 401), and a live reply showing `X-HeadStart` survives HF's proxy |
+| 1a | The token map (equal secrets disable the agent token); the `X-HeadStart` header at `agent-api=0`; `deploy-space.yml` negated paths. ADR-0253 (amends ADR-0042's amendment and ADR-0156). CONTEXT.md entry **Agent token**. | Space tests; after deploy, `curl` every read route with and without the token, an Account route with it (must be 401), and a live reply showing `X-HeadStart` survives HF's proxy |
 | 1b | `strict=1` (with `ScopeUnavailable`, `known_families`, `refusal`); `match` and `board_keys` on suggestions; `/companies/lookup`; `newest_tick` on `/facets`; `agent-api=1` | Space, serving and suggestion tests; a live `strict` refusal |
 | 1c | `hidden_by_default` in `hot_ranking` and `/hot`; `app.js` reads it. ADR-0238 amendment. | Python and JS tests; the Hot tab still hides the same rows |
 | 2 | `mcp_protocol` package; `resume_mcp` rebased onto it; version negotiation; unknown tool as a protocol error. ADR-0137 amendment. | `test_mcp_protocol_stdio.py`; 32 resume tests unchanged, one moved |

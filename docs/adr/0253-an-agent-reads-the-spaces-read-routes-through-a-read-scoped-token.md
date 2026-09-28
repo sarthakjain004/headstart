@@ -1,4 +1,4 @@
-# ADR-0252: An agent reads the Space's read routes through a read-scoped token
+# ADR-0253: An agent reads the Space's read routes through a read-scoped token
 
 **Status:** accepted · **Date:** 2026-09-28 · **Amends:**
 [ADR-0042](0042-signed-in-ui-saved-sets.md) (its 2026-08-13 amendment: the wall admits a second
@@ -138,6 +138,6 @@ one of them, its negation must go in the same change.
   restarts the Space) and configures the local server. Unset admits nobody, so this is safe to merge
   first.
 - The Space's read routes become a contract with a client outside the browser. `agent-api` names
-  its version; the Space tests pin each secret's exact path set, its refusals on every Account
-  route, and the header on all four kinds of reply.
+  its version; the Space tests pin each secret's exact path set, the agent token's refusal on the
+  Account routes, and the header on all four kinds of reply.
 - Every reply carries one more header. The browser does not read it.

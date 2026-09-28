@@ -435,12 +435,14 @@ def test_an_unconfigured_service_token_admits_nobody(auth_app):
     assert auth_app._SERVICE_TOKENS == {}
 
 
-# ---- the agent token (ADR-0252) ----
+# ---- the agent token (ADR-0253) ----
 
 _AGENT_BEARER = {"Authorization": "Bearer agent-token"}
 _ALERTS_BEARER = {"Authorization": "Bearer service-token"}
-# The read routes that answer without an Account: the whole of what AGENT_TOKEN opens.
-_AGENT_PATHS = ("/search", "/facets", "/trends", "/hot", "/companies/suggest")
+# The read routes that answer without an Account: the whole of what AGENT_TOKEN opens, and
+# those of them ALERTS_TOKEN does not.
+_AGENT_ONLY_PATHS = ("/facets", "/trends", "/hot", "/companies/suggest")
+_AGENT_PATHS = ("/search", *_AGENT_ONLY_PATHS)
 
 
 def _wall_env(**secrets):
@@ -455,12 +457,12 @@ def _wall_env(**secrets):
     }
 
 
-@pytest.fixture(scope="module")
-def agent_app(tmp_path_factory):
-    """Wall on AND both machine secrets set: the Digest generator's and an agent's."""
+@pytest.fixture
+def agent_app(tmp_path):
+    """Wall on AND both machine secrets set: the Digest generator's and an agent's. Loaded per
+    test, so its secrets are unset again before any later fixture imports the app."""
     with _space_app(
-        tmp_path_factory.mktemp("state"),
-        env=_wall_env(ALERTS_TOKEN="service-token", AGENT_TOKEN="agent-token"),
+        tmp_path, env=_wall_env(ALERTS_TOKEN="service-token", AGENT_TOKEN="agent-token")
     ) as module:
         yield module
 
@@ -512,7 +514,7 @@ def test_the_agent_token_opens_no_account_route(agent_app, method, path):
 def test_the_alerts_token_still_opens_search_alone(agent_app):
     client = agent_app.app.test_client()
     assert client.get("/search?q=", headers=_ALERTS_BEARER).status_code == 200
-    for path in _AGENT_PATHS[1:]:
+    for path in _AGENT_ONLY_PATHS:
         assert client.get(path, headers=_ALERTS_BEARER).status_code == 401, path
 
 
@@ -527,12 +529,12 @@ def test_an_agent_token_equal_to_the_alerts_token_admits_nothing_extra(
         client = module.app.test_client()
         bearer = {"Authorization": "Bearer same-token"}
         assert client.get("/search?q=", headers=bearer).status_code == 200
-        for path in _AGENT_PATHS[1:]:
+        for path in _AGENT_ONLY_PATHS:
             assert client.get(path, headers=bearer).status_code == 401, path
     assert "AGENT_TOKEN equals ALERTS_TOKEN" in capsys.readouterr().out
 
 
-# ---- the app's own mark on every reply (ADR-0252) ----
+# ---- the app's own mark on every reply (ADR-0253) ----
 
 _OWN_REPLY = "app; agent-api=0"
 
