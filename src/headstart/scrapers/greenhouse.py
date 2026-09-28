@@ -5,8 +5,9 @@ description (and a ``departments`` array) in the same single request — ~12x th
 no per-job fetch — so we use it to populate description and department. It also inlines each
 posting's per-tenant ``metadata`` custom fields, which carry compensation data on a real
 minority of tenants (see ``_salary_field``). ``&pay_transparency=true`` adds Greenhouse's own
-pay-range field, read first (``_pay_range_field``); it costs 5-11% more bytes (airbnb 2.38 to
-2.49 MB, databricks 9.7 to 10.5 MB, robinhood 1.96 to 2.18 MB, 2026-09-28).
+pay-range field (``_pay_range_field``), read when ``metadata`` states no pay. It costs 5-11%
+more bytes (airbnb 2.38 to 2.49 MB, databricks 9.7 to 10.5 MB, robinhood 1.96 to 2.18 MB,
+2026-09-28).
 
 Reading ``metadata`` into ``salary`` does NOT need a `doc_prep.DERIVATIONS_VERSION` bump: like
 smartrecruiters' own native-compensation field (see that scraper's docstring), ``salary`` is a
@@ -100,8 +101,11 @@ def _pay_range_field(ranges: list[dict] | None) -> str | None:
     2,449 postings): against the description's own figure it agrees on 1,787, states the
     currency the description misread on 30 (robinhood's "Toronto, ON" ranges are CAD, read as
     USD), and adds pay to 226 whose description names none.
-    Several ranges are several zones or countries; the first is kept, as ``_salary_field`` keeps
-    the first of a tie. The title goes in as the period: it is where a tenant says "Hourly" or
+
+    Several ranges are several zones, countries or levels; the first is kept, as
+    ``_salary_field`` keeps the first of a tie. A tenant's ``metadata`` range wins when it states
+    one: doordashusa lists levels I4, I5 and I6 here, and its metadata names the one the req is
+    hired at. The title goes in as the period: it is where a tenant says "Hourly" or
     "Annual" ("Georgia Hourly Pay Range"), and ``salary.from_field`` reads those words, so an
     hourly range annualises instead of being declined as an implausible annual one. A title that
     names none reads as annual, as ``_salary_field``'s own figures do."""
@@ -203,8 +207,8 @@ class GreenhouseScraper(BaseScraper):
                     posted_at=j.get("first_published") or j.get("updated_at"),
                     scraped_at=scraped_at,
                     description=html_to_text(j.get("content")),
-                    salary=_pay_range_field(j.get("pay_input_ranges"))
-                    or self._salary_field(j.get("metadata")),
+                    salary=self._salary_field(j.get("metadata"))
+                    or _pay_range_field(j.get("pay_input_ranges")),
                     # What an Eightfold site in front of this Board states as `atsJobId`
                     # (ADR-0210). One internal job can carry several posts, one per location.
                     requisition=requisition_of(j.get("internal_job_id")),

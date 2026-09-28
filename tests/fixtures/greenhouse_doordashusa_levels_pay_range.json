@@ -1,0 +1,218 @@
+{
+ "jobs": [
+  {
+   "absolute_url": "https://job-boards.greenhouse.io/doordashusa/jobs/8225722",
+   "data_compliance": [
+    {
+     "type": "gdpr",
+     "requires_consent": false,
+     "requires_processing_consent": false,
+     "requires_retention_consent": false,
+     "retention_period": null,
+     "demographic_data_consent_applies": false
+    }
+   ],
+   "education": "education_optional",
+   "internal_job_id": 3559899,
+   "location": {
+    "name": "San Francisco, CA"
+   },
+   "metadata": [
+    {
+     "id": 875125,
+     "name": "Availability Date",
+     "value": "2026-09-23",
+     "value_type": "date"
+    },
+    {
+     "id": 875200,
+     "name": "Earliest Hire Date",
+     "value": "2026-09-23",
+     "value_type": "date"
+    },
+    {
+     "id": 170345,
+     "name": "Business Line",
+     "value": "Marketplace",
+     "value_type": "single_select"
+    },
+    {
+     "id": 170346,
+     "name": "Market",
+     "value": "Corporate",
+     "value_type": "single_select"
+    },
+    {
+     "id": 172948,
+     "name": "Entity",
+     "value": "DoorDash, Inc.",
+     "value_type": "single_select"
+    },
+    {
+     "id": 174556,
+     "name": "Job Family",
+     "value": "Autonomy Engineering",
+     "value_type": "single_select"
+    },
+    {
+     "id": 1495483,
+     "name": "Engineering Discipline",
+     "value": [],
+     "value_type": "multi_select"
+    },
+    {
+     "id": 172717,
+     "name": "Job Location",
+     "value": "RO, USA, CA, San Francisco, Boardman Pl",
+     "value_type": "single_select"
+    },
+    {
+     "id": 875215,
+     "name": "Time Type",
+     "value": "Full time",
+     "value_type": "single_select"
+    },
+    {
+     "id": 923113,
+     "name": "Hiring Manager with Job Title",
+     "value": "Parisa Khorsand - Principal Engineer",
+     "value_type": "single_select"
+    },
+    {
+     "id": 172248,
+     "name": "Careers Page Sorting: Department",
+     "value": "DoorDash Labs",
+     "value_type": "single_select"
+    },
+    {
+     "id": 32781020,
+     "name": "US1 - Base Salary Band Midpoint",
+     "value": {
+      "unit": "USD",
+      "amount": "292000.0"
+     },
+     "value_type": "currency"
+    },
+    {
+     "id": 32794284,
+     "name": "US4 - Base Salary Band Minimum",
+     "value": {
+      "unit": "USD",
+      "amount": "198600.0"
+     },
+     "value_type": "currency"
+    },
+    {
+     "id": 32794304,
+     "name": "US1 - Equity Band Midpoint",
+     "value": {
+      "unit": null,
+      "amount": "0.0"
+     },
+     "value_type": "currency"
+    },
+    {
+     "id": 32796921,
+     "name": "USA: Pay Transparency Range",
+     "value": {
+      "unit": "USD",
+      "max_value": "292000.0",
+      "min_value": "198600.0"
+     },
+     "value_type": "currency_range"
+    },
+    {
+     "id": 33181307,
+     "name": "Canada: Pay Transparency Range",
+     "value": null,
+     "value_type": "currency_range"
+    },
+    {
+     "id": 40636812,
+     "name": "Umbrella Corp:",
+     "value": "DoorDash",
+     "value_type": "single_select"
+    },
+    {
+     "id": 40689956,
+     "name": "Wolt: Careers Site Department",
+     "value": null,
+     "value_type": "single_select"
+    },
+    {
+     "id": 50331873,
+     "name": "Business Title",
+     "value": null,
+     "value_type": "short_text"
+    },
+    {
+     "id": 54550527,
+     "name": "Fountain HVH",
+     "value": null,
+     "value_type": "yes_no"
+    },
+    {
+     "id": 54550663,
+     "name": "Fountain Opening ID",
+     "value": null,
+     "value_type": "short_text"
+    }
+   ],
+   "id": 8225722,
+   "updated_at": "2026-09-25T10:04:37-04:00",
+   "requisition_id": "2026.08113",
+   "title": "Autonomy Platform Engineer",
+   "pay_input_ranges": [
+    {
+     "min_cents": 13740000,
+     "max_cents": 20200000,
+     "currency_type": "USD",
+     "title": "I4",
+     "blurb": "<p><span style=\"font-size: 32px;\"><strong>Compensation<br></strong></span></p>\n<p>The successful candidate's starting pay will fall within the pay range listed below and is determined based on job-related factors including, but not limited to, skills, experience, qualifications, work location, and market conditions.&nbsp; Base salary is localized according to an employee\u2019s work location. Ranges are market-dependent and may be modified in the future.</p>\n<p>In addition to base salary, the compensation for this role includes opportunities for equity grants. Talk to your recruiter for more information.</p>\n<p>DoorDash cares about you and your overall well-being. That\u2019s why we offer a comprehensive benefits package to all regular employees, which includes a 401(k) plan with employer matching, 16 weeks of paid parental leave, wellness benefits, commuter benefits match, paid time off and paid sick leave in compliance with applicable laws (e.g. Colorado Healthy Families and Workplaces Act). DoorDash also offers medical, dental, and vision benefits, 11 paid holidays, disability and basic life insurance, family-forming assistance, and a mental health program, among others.</p>\n<p>To learn more about our benefits, visit our careers page <a href=\"https://careers.doordash.com/\">here</a>.</p>\n<p>See below for paid time off details:</p>\n<ul>\n<li><strong>For salaried roles:</strong> flexible paid time off/vacation, plus 80 hours of paid sick time per year.</li>\n<li><strong>For hourly roles:</strong> vacation accrued at about 1 hour for every 25.97 hours worked (e.g. about 6.7 hours/month if working 40 hours/week; about 3.4 hours/month if working 20 hours/week), and paid sick time accrued at 1 hour for every 30 hours worked (e.g. about 5.8 hours/month if working 40 hours/week; about 2.9 hours/month if working 20 hours/week).</li>\n</ul>\n<p><strong>The national base pay ranges for this position within the United States, including Illinois and Colorado.</strong></p>"
+    },
+    {
+     "min_cents": 16800000,
+     "max_cents": 24700000,
+     "currency_type": "USD",
+     "title": "I5",
+     "blurb": ""
+    },
+    {
+     "min_cents": 19860000,
+     "max_cents": 29200000,
+     "currency_type": "USD",
+     "title": "I6",
+     "blurb": ""
+    }
+   ],
+   "company_name": "DoorDash USA",
+   "first_published": "2026-09-23T14:04:38-04:00",
+   "language": "en",
+   "application_deadline": null,
+   "content": "&lt;div class=&quot;content-intro&quot;&gt;&lt;p&gt;&lt;img style=&quot;display: none; max-width: 100%;&quot; src=&quot;https://click.appcast.io/greenhouse-te8/a31.png?ent=34&amp;amp;e=22630&amp;amp;t=1701374353806&quot; width=&quot;1px&quot;&gt; &lt;img style=&quot;display: none; max-width: 100%;&quot; src=&quot;https://track.jobadx.com/v1/i.gif?utm_pixel=224e990b-8ff4-4287-8d5d-2ff09647f181&amp;amp;utm_ptz=EST&amp;amp;utm_rqt=track&quot; alt=&quot;&quot; width=&quot;1&quot;&gt;&lt;/p&gt;&lt;/div&gt;&lt;h2&gt;&lt;strong&gt;About the Team&lt;/strong&gt;&lt;/h2&gt;\n&lt;p&gt;DoorDash Labs is an independent team within DoorDash. We explore robotics and automation to transform last mile logistics in the long term. If you have a passion for applying robotics solutions in a service used by millions of people, then we want to talk to you!&lt;/p&gt;\n&lt;h2&gt;&lt;strong&gt;About the Role&lt;/strong&gt;&lt;/h2&gt;\n&lt;p&gt;We are hiring an Autonomy Platform Engineer to build and evolve the foundational software that runs our autonomy stack across robot and compute platforms. The Autonomy Platform team works&amp;nbsp; across embedded Linux, compute and sensor enablement, robotics middleware, process orchestration, data capture and replay, system observability, and performance.&lt;/p&gt;\n&lt;p&gt;You will develop production software and tooling that enables autonomy engineers to bring up new hardware, deploy services reliably, diagnose failures, and validate system performance across robot generations. You will work closely with autonomy, firmware, electrical, hardware, manufacturing, and validation engineers and report to the Autonomy Platform Lead. We expect this role to be hybrid with some time in-office and some time remote.&lt;/p&gt;\n&lt;h2&gt;&lt;strong&gt;You\u2019re excited about this opportunity because you will\u2026&lt;/strong&gt;&lt;/h2&gt;\n&lt;ul&gt;\n&lt;li&gt;Build and maintain core runtime, middleware, and platform services used by autonomy applications.&lt;/li&gt;\n&lt;li&gt;Enable new compute, camera, lidar, and other sensor platforms.&lt;/li&gt;\n&lt;li&gt;Improve process orchestration, messaging, configuration, startup and shutdown behavior, resource isolation, and fault recovery.&lt;/li&gt;\n&lt;li&gt;Develop system observability, tracing, performance measurement, diagnostics, and regression-detection capabilities.&lt;/li&gt;\n&lt;li&gt;Build reliable data capture, replay, and debugging workflows.&lt;/li&gt;\n&lt;li&gt;Create provisioning, packaging, deployment, integration-test, and platform-readiness tooling.&lt;/li&gt;\n&lt;li&gt;Lead complex debugging across application, middleware, OS, driver, networking, timing, and hardware boundaries.&lt;/li&gt;\n&lt;/ul&gt;\n&lt;h2&gt;&lt;strong&gt;We\u2019re excited about you because\u2026&lt;/strong&gt;&lt;/h2&gt;\n&lt;ul&gt;\n&lt;li&gt;Strong production C++ and Python experience.&lt;/li&gt;\n&lt;li&gt;Experience with embedded Linux, robotics, autonomous vehicles, or complex mechatronic systems.&lt;/li&gt;\n&lt;li&gt;Solid understanding of several of these areas: operating systems, concurrency, networking, middleware, drivers, GPU acceleration, storage, or real-time performance.&lt;/li&gt;\n&lt;li&gt;Experience debugging complex problems across multiple software and hardware layers.&lt;/li&gt;\n&lt;li&gt;Experience with profiling, tracing, observability, automated testing, and CI.&lt;/li&gt;\n&lt;li&gt;Familiarity with Bazel, Git, and modern software-development practices.&lt;/li&gt;\n&lt;li&gt;ROS/ROS2 or comparable robotics middleware experience is preferred.&lt;/li&gt;\n&lt;li&gt;Bonus: You have experience collaborating in multi-disciplinary teams spanning software, controls, and hardware, and can communicate technical details across domains effectively.&lt;/li&gt;\n&lt;/ul&gt;&lt;div class=&quot;content-pay-transparency&quot;&gt;&lt;div class=&quot;pay-input&quot;&gt;&lt;div class=&quot;description&quot;&gt;&lt;p&gt;&lt;span style=&quot;font-size: 32px;&quot;&gt;&lt;strong&gt;Compensation&lt;br&gt;&lt;/strong&gt;&lt;/span&gt;&lt;/p&gt;\n&lt;p&gt;The successful candidate&#39;s starting pay will fall within the pay range listed below and is determined based on job-related factors including, but not limited to, skills, experience, qualifications, work location, and market conditions.&amp;nbsp; Base salary is localized according to an employee\u2019s work location. Ranges are market-dependent and may be modified in the future.&lt;/p&gt;\n&lt;p&gt;In addition to base salary, the compensation for this role includes opportunities for equity grants. Talk to your recruiter for more information.&lt;/p&gt;\n&lt;p&gt;DoorDash cares about you and your overall well-being. That\u2019s why we offer a comprehensive benefits package to all regular employees, which includes a 401(k) plan with employer matching, 16 weeks of paid parental leave, wellness benefits, commuter benefits match, paid time off and paid sick leave in compliance with applicable laws (e.g. Colorado Healthy Families and Workplaces Act). DoorDash also offers medical, dental, and vision benefits, 11 paid holidays, disability and basic life insurance, family-forming assistance, and a mental health program, among others.&lt;/p&gt;\n&lt;p&gt;To learn more about our benefits, visit our careers page &lt;a href=&quot;https://careers.doordash.com/&quot;&gt;here&lt;/a&gt;.&lt;/p&gt;\n&lt;p&gt;See below for paid time off details:&lt;/p&gt;\n&lt;ul&gt;\n&lt;li&gt;&lt;strong&gt;For salaried roles:&lt;/strong&gt; flexible paid time off/vacation, plus 80 hours of paid sick time per year.&lt;/li&gt;\n&lt;li&gt;&lt;strong&gt;For hourly roles:&lt;/strong&gt; vacation accrued at about 1 hour for every 25.97 hours worked (e.g. about 6.7 hours/month if working 40 hours/week; about 3.4 hours/month if working 20 hours/week), and paid sick time accrued at 1 hour for every 30 hours worked (e.g. about 5.8 hours/month if working 40 hours/week; about 2.9 hours/month if working 20 hours/week).&lt;/li&gt;\n&lt;/ul&gt;\n&lt;p&gt;&lt;strong&gt;The national base pay ranges for this position within the United States, including Illinois and Colorado.&lt;/strong&gt;&lt;/p&gt;&lt;/div&gt;&lt;div class=&quot;title&quot;&gt;I4&lt;/div&gt;&lt;div class=&quot;pay-range&quot;&gt;&lt;span&gt;$137,400&lt;/span&gt;&lt;span class=&quot;divider&quot;&gt;&amp;mdash;&lt;/span&gt;&lt;span&gt;$202,000 USD&lt;/span&gt;&lt;/div&gt;&lt;/div&gt;&lt;div class=&quot;pay-input&quot;&gt;&lt;div class=&quot;title&quot;&gt;I5&lt;/div&gt;&lt;div class=&quot;pay-range&quot;&gt;&lt;span&gt;$168,000&lt;/span&gt;&lt;span class=&quot;divider&quot;&gt;&amp;mdash;&lt;/span&gt;&lt;span&gt;$247,000 USD&lt;/span&gt;&lt;/div&gt;&lt;/div&gt;&lt;div class=&quot;pay-input&quot;&gt;&lt;div class=&quot;title&quot;&gt;I6&lt;/div&gt;&lt;div class=&quot;pay-range&quot;&gt;&lt;span&gt;$198,600&lt;/span&gt;&lt;span class=&quot;divider&quot;&gt;&amp;mdash;&lt;/span&gt;&lt;span&gt;$292,000 USD&lt;/span&gt;&lt;/div&gt;&lt;/div&gt;&lt;/div&gt;&lt;div class=&quot;content-conclusion&quot;&gt;&lt;h2&gt;About DoorDash&lt;/h2&gt;\n&lt;p&gt;At DoorDash, our mission to empower local economies shapes how our team members move quickly, learn, and reiterate in order to make impactful decisions that display empathy for our range of users\u2014from Dashers to merchant partners to consumers. We are a technology and logistics company that started by enabling door-to-door delivery, and we are looking for team members who can help us go from a company that is known as the place you order food to a company that people turn to for any and all goods.&lt;br&gt;&lt;br&gt;DoorDash is growing rapidly and changing constantly, which gives our team members the opportunity to share their unique perspectives, solve new challenges, and own their careers. We&#39;re committed to supporting employees\u2019 happiness, healthiness, and overall well-being by providing comprehensive benefits and perks including premium healthcare, wellness expense reimbursement, paid parental leave and more.&lt;/p&gt;\n&lt;h2&gt;Our Commitment to Diversity and Inclusion&lt;/h2&gt;\n&lt;p&gt;We\u2019re committed to growing and empowering a more inclusive community within our company, industry, and cities. That\u2019s why we hire and cultivate diverse teams of people from all backgrounds, experiences, and perspectives. We believe that true innovation happens when everyone has room at the table and the tools, resources, and opportunity to excel.&lt;/p&gt;\n&lt;p&gt;Statement of Non-Discrimination: In keeping with our beliefs and goals, no employee or applicant will face discrimination or harassment based on: race, color, ancestry, national origin, religion, age, gender, marital/domestic partner status, sexual orientation, gender identity or expression, disability status, or veteran status. Above and beyond discrimination and harassment based on \u201cprotected categories,\u201d we also strive to prevent other subtler forms of inappropriate behavior (i.e., stereotyping) from ever gaining a foothold in our office. Whether blatant or hidden, barriers to success have no place at DoorDash. We value a diverse workforce \u2013 people who identify as women, non-binary or gender non-conforming, LGBTQIA+, American Indian or Native Alaskan, Black or African American, Hispanic or Latinx, Native Hawaiian or Other Pacific Islander, differently-abled, caretakers and parents, and veterans are strongly encouraged to apply. Thank you to the Level Playing Field Institute for this statement of non-discrimination.&lt;/p&gt;\n&lt;p&gt;Pursuant to the San Francisco Fair Chance Ordinance, Los Angeles Fair Chance Initiative for Hiring Ordinance, and any other state or local hiring regulations, we will consider for employment any qualified applicant, including those with arrest and conviction records, in a manner consistent with the applicable regulation.&lt;/p&gt;\n&lt;p&gt;&lt;strong&gt;If you need any accommodations, please inform your recruiting contact upon initial connection.&lt;br&gt;&lt;br&gt;&lt;/strong&gt;&lt;/p&gt;\n&lt;p&gt;Notice to Applicants for Jobs Located in NYC or Remote Jobs Associated With Office in NYC Only&lt;/p&gt;\n&lt;p&gt;We used Covey as part of our hiring and/or promotional process for jobs in NYC and certain features may qualify it as an AEDT in NYC. As part of the hiring and/or promotion process, we provided Covey with job requirements and candidate submitted applications. We began using Covey Scout for Inbound from August 21, 2023, through December 21, 2023.&amp;nbsp; We resumed using Covey Scout for Inbound again on June 29, 2024, and ceased using Covey Scout for Inbound on April 30, 2026.&lt;/p&gt;\n&lt;p&gt;The Covey tool has been reviewed by an independent auditor. Results of the audit may be viewed here:&lt;strong&gt;&amp;nbsp;&lt;a href=&quot;https://getcovey.com/nyc-local-law-144&quot;&gt;https://getcovey.com/nyc-local-law-144&lt;/a&gt;.&lt;br&gt;&lt;/strong&gt;&lt;em&gt;Beware of recruitment scams: DoorDash, Deliveroo, and Wolt will never ask you to pay money or share sensitive financial information during hiring \u2014 learn more about our legitimate recruiting process at &lt;span class=&quot;_80om1qgj _1e0c1nu9&quot; data-testid=&quot;smart-link-draggable-inline&quot;&gt;&lt;span class=&quot;loader-wrapper&quot;&gt;&lt;span class=&quot;hover-card-trigger-wrapper&quot; data-testid=&quot;hover-card-trigger-wrapper&quot;&gt;&lt;a class=&quot;_1yt4x7n9 _2rko1ssi _v56415x0 _1e0c1nu9 _16d9qvcn _syaz13af _1rkwglyw _4cvx1w55 _19itia51 _bfhkhp5a _1a3b18uv _4fprglyw _5goinqa1 _9oik18uv _1bnxglyw _jf4cnqa1 _1nrm18uv _c2waglyw _1iohnqa1 _uizt1kdv _nt751r31 _49pcglyw _1hvw1o36 _1372tlke _7ehiw5lj _1j5pglyw _1di615s3&quot; href=&quot;https://careersatdoordash.com/recruitment-scam-awareness&quot; data-testid=&quot;inline-card-resolved-view&quot;&gt;&lt;span class=&quot;_19itglyw _vchhusvi _r06hglyw _o5721jtm _1nmz9jpi _16d9qvcn _ca0qv77o _u5f31b66 _n3tdv77o _19bv1b66&quot; data-testid=&quot;inline-card-icon-and-title&quot;&gt;&lt;span class=&quot;_19itglyw _vchhusvi _r06hglyw&quot;&gt;Recruitment Scam Awareness - DoorDash&lt;/span&gt;&lt;/span&gt;&lt;/a&gt;&lt;/span&gt;&lt;/span&gt;&lt;/span&gt; .&lt;/em&gt;&lt;/p&gt;&lt;/div&gt;",
+   "departments": [
+    {
+     "id": 60552,
+     "name": "311 Autonomy",
+     "child_ids": [],
+     "parent_id": 2438
+    }
+   ],
+   "offices": [
+    {
+     "id": 308574,
+     "name": "San Francisco, CA",
+     "location": null,
+     "child_ids": [],
+     "parent_id": 79324
+    }
+   ],
+   "ai_disclaimer": null,
+   "include_ai_disclaimer": null,
+   "ai_opt_out_request_url": null
+  }
+ ],
+ "meta": {
+  "total": 1
+ }
+}

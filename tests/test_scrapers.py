@@ -114,6 +114,15 @@ def test_greenhouse_pay_range_title_carries_an_hourly_period():
     assert salary.from_field(job.salary, "greenhouse").min_annual == 36 * 2080
 
 
+def test_greenhouse_metadata_pay_wins_over_the_first_level_range():
+    """Real doordashusa posting (2026-09-28): `pay_input_ranges` lists levels I4, I5 and I6;
+    its metadata "USA: Pay Transparency Range" names the I6 band the req is hired at."""
+    job = get_scraper("greenhouse", "doordashusa", "DoorDash").parse(
+        _load("greenhouse_doordashusa_levels_pay_range.json"), SCRAPED_AT
+    )[0]
+    assert job.salary == "198600-292000 USD"
+
+
 def test_greenhouse_on_target_earnings_is_not_base_salary():
     """Real agilysys posting: its only range is titled "OTE Range" (base + commission), while
     its description states the base. Declined, so the description's base figure is read."""

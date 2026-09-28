@@ -60,7 +60,7 @@ def _methods_and_urls(fake: FakeFetcher) -> list[tuple[str, str]]:
 
 
 def test_greenhouse_fetch_raw_uses_the_injected_fetcher() -> None:
-    url = "https://boards-api.greenhouse.io/v1/boards/acme/jobs?content=true"
+    url = "https://boards-api.greenhouse.io/v1/boards/acme/jobs?content=true&pay_transparency=true"
     payload = {
         "jobs": [
             {
