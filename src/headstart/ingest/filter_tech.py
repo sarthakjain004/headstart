@@ -9,7 +9,7 @@ is not) into ``data/jobs/tech/``, which is what the embedding / index / UI consu
 non-tech ~83% means the embedding model only ever works on the jobs the product actually serves.
 
 It also leaves out every row on a Board ``scrape_join`` judged Dormant, one whose newest posting is
-more than two years old (``headstart.ingest.dormant_boards``, ADR-0248). With no verdict to read, it
+more than two years old (``headstart.ingest.board_dormancy``, ADR-0248). With no verdict to read, it
 leaves nothing out.
 
 Run from repo root:
@@ -23,7 +23,7 @@ import argparse
 from pathlib import Path
 
 from headstart import log
-from headstart.ingest import DORMANT_BOARDS_PATH, REPO_ROOT, dormant_boards
+from headstart.ingest import DORMANT_BOARDS_PATH, REPO_ROOT, board_dormancy
 from headstart.jobs.tech_filter import filter_jobs_and_report
 
 _log = log.get(__name__, __spec__)
@@ -44,7 +44,7 @@ def main() -> int:
     args = ap.parse_args()
     if not args.src.is_dir():
         log.fail(_log, f"no source dir at {args.src}")
-    dormant = dormant_boards.read(args.dormant_boards)
+    dormant = board_dormancy.read(args.dormant_boards)
     if dormant is None:
         _log.warning(
             f"no readable Dormant-Board verdict at {args.dormant_boards} — leaving no Board out "
@@ -53,7 +53,7 @@ def main() -> int:
 
     try:
         filter_jobs_and_report(
-            args.src, args.dst, _log, leave_out=dormant or frozenset()
+            args.src, args.dst, _log, dormant_boards=dormant or frozenset()
         )
     except ValueError as exc:
         # a torn line raises with its file:line; say so as an abort, not a bare traceback

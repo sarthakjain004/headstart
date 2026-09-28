@@ -36,22 +36,28 @@ Measured on served table v448 (2026-09-28, 533,799 rows, read straight off HF):
 ## Decision
 
 1. **A Board is Dormant when its newest posting is more than 730 days old** on the day of the run
-   (`dormant_boards.DORMANT_AFTER`; a newest posting exactly 730 days old is not Dormant). It is
+   (`board_dormancy.DORMANT_AFTER`; a newest posting exactly 730 days old is not Dormant). It is
    judged only on evidence. A Board whose scrape this run was not authoritative is not judged,
    since a truncated list may have lost the newest page. A Board with any posting that has no
    usable date is not judged, since an undated posting may be last week's. A usable date is an
    ISO `posted_at` on or after 2000-01-01; Keka's `0001-01-01` and `1900-01-01` placeholders read
-   as undated.
+   as undated. Two more cases read as undated, because the lines cannot show the whole Board. One
+   is an id on no live Board, which resolves through `board_of`'s guess and so can split a
+   colon-bearing native id into a phantom Board of one Job. The other is any Jibe Board, whose
+   scraper drops each posting an iCIMS Board already serves before it becomes a line (ADR-0240).
 2. **`scrape_join` judges every Board**, reading each line's `posted_at` off the parse the union
    already does. It judges from the full scrape, non-tech postings included, because a company
-   posting sales jobs this month is hiring, and its older tech opening may be real. The verdict
-   goes to `data/jobs/dormant_boards.json`, beside the snapshot it was judged from, not under
-   `data/state/`, which the merge uploads to HF whole. Only `filter_tech`, in the same job, reads it.
+   posting sales jobs this month is hiring, and its older tech opening may be real. The verdict,
+   each Dormant Board with its newest posting date, goes to `data/state/dormant_boards.json`. It
+   rides the corpus-state artifact to the merge job, and lands on HF as a record of which Boards
+   were Dormant (about 200 KB).
 3. **`filter_tech` leaves every row on a Dormant Board out of the Tech subset**, before the gate
    judges it. Its report counts these apart from the non-tech rows. With no readable verdict it
-   warns and leaves nothing out, which is the Tech subset as it was before this ADR.
-4. **Nothing else changes.** The rows are seen by the scrape, so they stay in the eviction scope
-   (ADR-0243). Their first absence from the Tech subset makes them Unconfirmed, and the next
+   warns and leaves nothing out, which is the Tech subset as it was before this ADR. `index sync`
+   reads the same verdict and names a Dormant Board's newly Unconfirmed rows on a line of their
+   own, instead of among the Boards that "returned no tech Job this scrape".
+4. **Eviction is unchanged.** The Board was scraped, so it is in the eviction scope, and its rows
+   are missing from the Tech subset. Their first absence makes them Unconfirmed, and the next
    scrape of the Board evicts them (ADR-0083). The priority ledger's EWMA (0.7 on the latest run)
    leaves the Board scored after one zero-tech run, so it is read again next run and the
    eviction lands one run after the verdict. It stays in the head until its score falls below the
@@ -77,10 +83,14 @@ Measured on served table v448 (2026-09-28, 533,799 rows, read straight off HF):
 * **Hide the rows at search time** (a per-row flag, excluded by default). It is fully reversible,
   but the rows keep their storage, the Boards keep leading the scrape, and Trends and the company
   directory keep counting them. Rejected.
-* **Judge inside `filter_tech` with a second pass over each file.** That is a second full parse of
-  ~2.1M rows on the join job's critical path, which `scrape_join` already parses. And
-  `tech_filter.filter_jobs` is reachable from the curated feed, which must not import `ingest`.
-  Rejected. `filter_jobs` only takes a set of Boards to leave out.
+* **A new pipeline step after `filter_tech`.** The owner chose to keep the rule inside the
+  existing stages. A new step would also have rewritten the Tech subset a second time on the join
+  job's critical path.
+* **Judge inside `filter_tech` itself, with a second pass over each file.** That honours the same
+  choice, but it is a second full parse of ~2.1M rows on the critical path, and `scrape_join`
+  already parses every line. `tech_filter.filter_jobs` is also reachable from the curated feed,
+  which must not import `ingest`. So `scrape_join` judges, and `filter_jobs` only takes the set of
+  Boards to leave out.
 * **Another threshold.** One, two and three years remove 60,571, 55,101 and 52,505 served rows.
   The answer barely moves, so the longer window, which protects a company that posts rarely, costs
   little.
@@ -105,13 +115,14 @@ Zoho Board, and a Keka Board carrying placeholder dates.
   served rows on the Dormant Boards Unconfirmed on the first, then evicted them on the second.
   The only other deletions were 9 Bosch postings missing from the day's full scrape, which are
   ordinary closures.
-* The judgement run over all of served v448 finds 3,893 Dormant Boards and 55,080 rows, 21 fewer
-  than Context counts because Keka's placeholder dates read as undated. It sees tech rows only,
-  so it is the upper bound.
+* The judgement run over all of served v448 finds 3,871 Dormant Boards and 54,661 rows. That is
+  440 fewer rows than Context counts: 419 on 22 Jibe Boards, never judged, and 21 on three Boards
+  (one SmartRecruiters, two Zoho) that hold an undated row. It sees tech rows only, so it is the
+  upper bound.
 
 ## Consequences
 
-* The served rows on Dormant Boards leave the index over the two runs after this ships. 55,080 is
+* The served rows on Dormant Boards leave the index over the two runs after this ships. 54,661 is
   an upper bound from the served table, whose rows are tech only; a Board's non-tech postings and
   the evidence rule keep some Boards in.
 * **A revived Board brings its old postings back.** If SonsoftInc posts once, its 2017 postings
@@ -120,5 +131,18 @@ Zoho Board, and a Keka Board carrying placeholder dates.
 * **A Dormant Board is still scraped**, in the Tail rotation rather than every run. The
   SmartRecruiters ones cost ~1.4 h of Board-time per full read. ADR-0242's back-off does not
   reach them, because their listings are not empty. Backing them off too is a possible follow-up.
+* **A Board that cannot be judged keeps its rows, and may churn.** An Unauthoritative scrape, or a
+  lost verdict, leaves the Board's rows in the Tech subset for that run. Rows already evicted are
+  then added and embedded again, and evicted two scrapes later. On 2026-09-28, 10 of the Dormant
+  Boards (294 served rows) were scope-excluded, almost all on every run (`freshteam:abnhire` 310
+  runs in a row). Those are never judged, so they never churn, and their rows stay until they
+  scrape clean. Carrying the verdict forward across runs would close the gap, and was not worth
+  its state at this size.
+* **Trends books a later Dormancy as Closed.** Only the run that brought in the rule and the one
+  after it are left out. A Board that crosses the two-year line later has its Jobs booked as
+  Closed, a small, steady flow.
+* **`fanout_corpus`'s per-ATS kept% steps down once**, mostly on SmartRecruiters, because its
+  denominator still counts every scraped row. It is the new baseline, like any `TECH_FILTER_VERSION`
+  bump.
 * #570's other two findings are not addressed here: the `function.label` fallback's non-software
   "Engineering" rows (option A) and the plural trade titles `_NON_SOFTWARE` misses (option D).

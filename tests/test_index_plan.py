@@ -12,7 +12,6 @@ import pytest
 
 from headstart.boards.scrapable_boards import load as load_scrapable_boards
 from headstart.ingest.index_plan import (
-    _live_board_end,
     aliased_boards,
     apply_sync,
     boards_by_canon,
@@ -317,20 +316,6 @@ def test_prune_keeps_rows_whose_native_id_contains_a_colon():
         ids[2]
     ]  # not in this test's keep-set, so correctly off-Board here
     assert duplicate == []
-
-
-def test_the_longest_nesting_board_owns_the_row():
-    """Defence in depth, asserted on the helper because no live Board key nests at a colon today.
-
-    Workday's ``co/site`` tenants nest at a *slash*, which is never a candidate position, so
-    ``plan_prune``'s output cannot currently tell first-match from longest-match — only the split
-    point can. If a Board key ever gains a colon, first-match would hand the longer Board's rows a
-    native id carrying the rest of the Board key.
-    """
-    live = {"ats:a": "ats:a", "ats:a:b": "ats:a:b"}
-    assert _live_board_end("ats:a:b:R1", live) == 7  # "ats:a:b", not "ats:a" at 5
-    assert _live_board_end("ats:a:zz", live) == 5
-    assert _live_board_end("other:x:1", live) is None
 
 
 def test_prune_slices_the_native_id_from_the_original_casing():

@@ -298,7 +298,7 @@ def test_filter_jobs_submits_largest_file_first_to_the_pool(tmp_path, monkeypatc
 
 def test_report_logs_per_ats_table_and_grand_total(caplog):
     logger = logging.getLogger("test_tech_filter.report")
-    stats = {"greenhouse": (2, 3), "lever": (5, 5)}
+    stats = {"greenhouse": FileCounts(2, 3), "lever": FileCounts(5, 5)}
     with caplog.at_level(logging.INFO):
         report(stats, "data/jobs/tech", logger)
     infos = [r.getMessage() for r in caplog.records if r.levelno == logging.INFO]
@@ -319,7 +319,7 @@ def test_report_warns_on_an_ats_that_contributed_zero_rows(caplog):
     in this run's slice at all — is a different case and must not be named.
     """
     logger = logging.getLogger("test_tech_filter.report")
-    stats = {"greenhouse": (2, 3), "jazzhr": (0, 0)}
+    stats = {"greenhouse": FileCounts(2, 3), "jazzhr": FileCounts(0, 0)}
     with caplog.at_level(logging.INFO):
         report(stats, "data/jobs/tech", logger)
     warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
@@ -338,7 +338,7 @@ def test_report_warns_when_the_whole_corpus_is_zero(caplog):
     and "is the whole run broken") are answered separately, and no TOTAL line fires. WARNING,
     not ERROR: ERROR is an abort (ADR-0039), and this stage does not abort on it."""
     logger = logging.getLogger("test_tech_filter.report")
-    stats = {"jazzhr": (0, 0), "jobvite": (0, 0)}
+    stats = {"jazzhr": FileCounts(0, 0), "jobvite": FileCounts(0, 0)}
     with caplog.at_level(logging.INFO):
         report(stats, "data/jobs/tech", logger)
     assert not any(r.levelno >= logging.ERROR for r in caplog.records)
@@ -358,7 +358,7 @@ def test_report_logs_through_the_callers_logger_so_the_tag_is_preserved(caplog):
     logger that entry point hands it."""
     logger = logging.getLogger("headstart.ingest.filter_tech")
     with caplog.at_level(logging.INFO):
-        report({"greenhouse": (1, 1)}, "data/jobs/tech", logger)
+        report({"greenhouse": FileCounts(1, 1)}, "data/jobs/tech", logger)
     assert caplog.records
     assert all(r.name == "headstart.ingest.filter_tech" for r in caplog.records)
 
@@ -386,7 +386,7 @@ def test_filter_jobs_and_report_filters_then_reports(tmp_path, caplog):
     assert progress.endswith("(1/1 files)")
 
 
-def test_rows_on_a_left_out_board_are_neither_written_nor_judged(tmp_path):
+def test_rows_on_a_dormant_board_are_neither_written_nor_judged(tmp_path):
     """`filter_tech` leaves out the Boards `scrape_join` judged Dormant (ADR-0248), whatever the
     titles say. A native id may carry colons (ADR-0049), so the Board is matched at any colon."""
     src = tmp_path / "jobs"
@@ -400,18 +400,18 @@ def test_rows_on_a_left_out_board_are_neither_written_nor_judged(tmp_path):
     (src / "workday.jsonl").write_text(
         "".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8"
     )
-    leave_out = frozenset({"workday:acme/external"})
+    dormant = frozenset({"workday:acme/external"})
 
-    inline = filter_jobs(src, tmp_path / "inline", workers=1, leave_out=leave_out)
-    pooled = filter_jobs(src, tmp_path / "pooled", workers=4, leave_out=leave_out)
+    inline = filter_jobs(src, tmp_path / "inline", workers=1, dormant_boards=dormant)
+    pooled = filter_jobs(src, tmp_path / "pooled", workers=4, dormant_boards=dormant)
 
     assert inline == pooled == {"workday": (1, 4, 2)}
     out = (tmp_path / "pooled" / "workday.jsonl").read_text().splitlines()
     assert [json.loads(x)["id"] for x in out] == ["workday:Acme/Careers:3"]
 
 
-def test_report_counts_left_out_rows_apart_from_the_non_tech_ones(caplog):
-    logger = logging.getLogger("test_tech_filter.left_out")
+def test_report_counts_dormant_rows_apart_from_the_non_tech_ones(caplog):
+    logger = logging.getLogger("test_tech_filter.dormant")
     with caplog.at_level(logging.INFO):
         report({"smartrecruiters": FileCounts(10, 100, 60)}, "data/jobs/tech", logger)
     infos = [r.getMessage() for r in caplog.records]

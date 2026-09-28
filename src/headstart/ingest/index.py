@@ -100,12 +100,14 @@ from headstart.boards import eightfold_backing
 from headstart.boards.board_identity import ats_of, lower_key
 from headstart.embedding_conventions import PROD_TABLE
 from headstart.ingest import (
+    DORMANT_BOARDS_PATH,
     EVICTION_QUEUE_PATH,
     PENDING_UPGRADES_PATH,
     REPO_ROOT,
     UNAUTHORITATIVE_BOARD_IDS_PATH,
     UNAUTHORITATIVE_BOARDS_PATH,
     UNCONFIRMED_PATH,
+    board_dormancy,
     board_failures,
     board_freshness,
     dedup_evictions,
@@ -1005,17 +1007,31 @@ def sync(args: argparse.Namespace) -> int:
         # row it served in the grace set at once. That is more often a read that came back empty
         # than a mass closure (19 SuccessFactors Boards behind run 36218633315's 983), and it
         # evicts next scrape unless the Board comes back — so name those Boards apart.
+        # A Dormant Board empties the same way on purpose (ADR-0248), so it is named on a line of
+        # its own rather than as a read that came back empty.
         answered = {lower_key(resolve_board(i, live)) for i in corpus_ids}
+        dormant = board_dormancy.read(Path(args.dormant_boards)) or frozenset()
         emptied: Counter[str] = Counter()
+        went_dormant: Counter[str] = Counter()
         for job_id in plan.unconfirmed - was_unconfirmed - rejected:
             board = resolve_board(job_id, live)
-            if lower_key(board) not in answered:
+            if lower_key(board) in dormant:
+                went_dormant[board] += 1
+            elif lower_key(board) not in answered:
                 emptied[board] += 1
         if emptied:
             _log.info(
                 f"  {sum(emptied.values())} newly unconfirmed on {len(emptied)} Board(s) that "
                 "returned no tech Job this scrape, emptying at once: "
                 + log.named_sample([f"{b} ({n})" for b, n in emptied.most_common()])
+            )
+        if went_dormant:
+            _log.info(
+                f"  {sum(went_dormant.values())} newly unconfirmed on {len(went_dormant)} "
+                "Dormant Board(s), left out of the Tech subset (ADR-0248): "
+                + log.named_sample(
+                    [f"{b} ({n})" for b, n in went_dormant.most_common()]
+                )
             )
         # Which Boards dominate the unconfirmed set. A grace period spread thinly over many Boards
         # is ordinary churn; one concentrated on a handful is a scrape that keeps coming back
@@ -1509,6 +1525,12 @@ def main() -> int:
         default=str(UNAUTHORITATIVE_BOARD_IDS_PATH),
         help="ids the scrape returned on those Boards, written by scrape_join; any the tech "
         "filter rejected take the grace period despite the Board's exclusion (ADR-0243)",
+    )
+    p_sync.add_argument(
+        "--dormant-boards",
+        default=str(DORMANT_BOARDS_PATH),
+        help="JSON of the Boards scrape_join judged Dormant; their newly Unconfirmed rows are "
+        "named apart from Boards that came back empty (ADR-0248)",
     )
     p_sync.add_argument(
         "--upgrades",

@@ -97,8 +97,20 @@ def test_join_unions_per_ats_across_shards(tmp_path):
 
 def test_join_judges_dormant_boards_off_the_lines_it_unions(tmp_path):
     """The union already parses every line, so it is where each Board's newest posting is read
-    (ADR-0248). A Board with a recent posting, or with an undated one, is not Dormant."""
+    (ADR-0248). A Board with a recent posting, or with an undated one, is not Dormant, and nor is
+    one on no live Board, whose ids resolve through `board_of`'s guess."""
     today = datetime.now(UTC).date().isoformat()
+    ledger = tmp_path / "liveness"
+    ledger.mkdir()
+    header = "ats,tenant,url,status,jobs,checked_at"
+    (ledger / "smartrecruiters.csv").write_text(
+        f"{header}\nsmartrecruiters,SonsoftInc,,live,5,2026-09-16\n"
+        "smartrecruiters,boschgroup,,live,5,2026-09-16\n",
+        encoding="utf-8",
+    )
+    (ledger / "lever.csv").write_text(
+        f"{header}\nlever,quiet,,live,5,2026-09-16\n", encoding="utf-8"
+    )
     frags = tmp_path / "frags"
     _shard(
         frags,
@@ -107,6 +119,7 @@ def test_join_judges_dormant_boards_off_the_lines_it_unions(tmp_path):
             "smartrecruiters.jsonl": [
                 '{"id":"smartrecruiters:SonsoftInc:1","posted_at":"2016-05-01"}',
                 '{"id":"smartrecruiters:SonsoftInc:2","posted_at":"2017-09-14"}',
+                '{"id":"smartrecruiters:ghost:REQ: 1","posted_at":"2017-01-01"}',
                 '{"id":"smartrecruiters:boschgroup:1","posted_at":"2019-01-01"}',
                 f'{{"id":"smartrecruiters:boschgroup:2","posted_at":"{today}"}}',
             ],
@@ -118,7 +131,7 @@ def test_join_judges_dormant_boards_off_the_lines_it_unions(tmp_path):
     )
     out = tmp_path / "jobs"
 
-    _run(frags, out)
+    _run(frags, out, ledger=ledger)
 
     verdict = json.loads(out.joinpath("dormant_boards.json").read_text())
     assert verdict == {"smartrecruiters:sonsoftinc": "2017-09-14"}

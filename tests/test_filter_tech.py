@@ -10,7 +10,7 @@ import logging
 import sys
 from pathlib import Path
 
-from headstart.ingest import dormant_boards, filter_tech
+from headstart.ingest import board_dormancy, filter_tech
 
 
 def _run(tmp_path: Path, verdict: Path) -> list[str]:
@@ -43,7 +43,7 @@ def _run(tmp_path: Path, verdict: Path) -> list[str]:
 
 def test_the_stage_leaves_out_the_boards_scrape_join_judged_dormant(tmp_path):
     verdict = tmp_path / "dormant_boards.json"
-    dormant_boards.write({"smartrecruiters:sonsoftinc": "2017-09-14"}, verdict)
+    board_dormancy.write({"smartrecruiters:sonsoftinc": "2017-09-14"}, verdict)
     assert _run(tmp_path, verdict) == ["smartrecruiters:boschgroup:1"]
 
 

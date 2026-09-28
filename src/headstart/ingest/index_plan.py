@@ -45,7 +45,13 @@ from typing import Any
 
 from headstart import log
 from headstart.boards import scrapable_boards
-from headstart.boards.board_identity import ats_of, board_key, board_of, lower_key
+from headstart.boards.board_identity import (
+    ats_of,
+    board_end,
+    board_key,
+    board_of,
+    lower_key,
+)
 from headstart.boards.board_operator import tenant
 from headstart.ingest.corpus import iter_jobs
 
@@ -327,7 +333,7 @@ def _placement(
     (:func:`_backing_copies`) joins the group of the backing row that carries its requisition
     instead (ADR-0210).
     """
-    end = _live_board_end(job_id, live)
+    end = board_end(job_id, live)
     if end is None:
         return None
     canon, native = lower_key(job_id[:end]), job_id[end + 1 :]
@@ -622,27 +628,6 @@ def aliased_boards(ledger_dir: str | Path) -> dict[str, str]:
     return out
 
 
-def _live_board_end(job_id: str, live: dict[str, str]) -> int | None:
-    """Index of the colon separating a live Board prefix from the native id, or None if the id is
-    on no live Board.
-
-    Returns a **position in the original string**, not a length: ``live``'s keys are lowercased and
-    ``str.lower()`` is not length-preserving for every character (``'İ'.lower()`` is two chars), so
-    slicing the original id by the lowercased key's length would silently eat a character of the
-    native id — on the eviction path, that is a live row deleted as someone else's duplicate.
-
-    Longest match wins as defence in depth rather than because anything needs it today: no two live
-    Board keys currently nest at a colon, so first-match would give the same answer. (Workday's
-    ``co/site`` tenants nest at a *slash*, which is never a candidate position.) Taking the longest
-    keeps the answer right if a Board key ever gains a colon.
-    """
-    best: int | None = None
-    for pos, char in enumerate(job_id):
-        if char == ":" and lower_key(job_id[:pos]) in live:
-            best = pos
-    return best
-
-
 def boards_by_canon(keep: Iterable[str]) -> dict[str, str]:
     """``{canonical (lowercased) Board: the live casing}`` — the lookup both planners match ids
     against.
@@ -711,7 +696,7 @@ def resolve_board(job_id: str, live: dict[str, str]) -> str:
     (ADR-0243), so a fossil-cased row with no live-cased twin, which prune never reaches, is still
     evicted once two scrapes of its Board miss it.
     """
-    end = _live_board_end(job_id, live)
+    end = board_end(job_id, live)
     return job_id[:end] if end is not None else board_of(job_id)
 
 

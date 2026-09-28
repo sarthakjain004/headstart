@@ -38,7 +38,7 @@ from headstart.ingest import (
     REPO_ROOT,
     UNAUTHORITATIVE_BOARD_IDS_PATH,
     UNAUTHORITATIVE_BOARDS_PATH,
-    dormant_boards,
+    board_dormancy,
     observability,
     shard_speedup,
     write_id_list,
@@ -120,21 +120,21 @@ def write_unauthoritative_boards(
 
 
 def _judge_dormant(
-    dates: dormant_boards.PostingDates, unauthoritative: set[str], path: Path
+    dates: board_dormancy.PostingDates, unauthoritative: set[str], path: Path
 ) -> None:
     """Write this run's Dormant Boards for `filter_tech`, and name the biggest in the log."""
     today = datetime.now(UTC).date()
     verdict = dates.dormant(today, unauthoritative)
-    dormant_boards.write(verdict, path)
-    biggest = sorted(verdict, key=lambda board: (-dates.postings(board), board))
-    postings = sum(dates.postings(board) for board in verdict)
+    board_dormancy.write(verdict, path)
+    biggest = sorted(verdict, key=lambda board: (-dates.jobs(board), board))
+    jobs = sum(dates.jobs(board) for board in verdict)
     _log.info(
         f"judged {len(verdict)} Board(s) Dormant, newest posting before "
-        f"{today - dormant_boards.DORMANT_AFTER}, holding {postings} scraped line(s) -> {path}"
+        f"{today - board_dormancy.DORMANT_AFTER}, holding {jobs} scraped line(s) -> {path}"
         + (
             ": "
             + log.named_sample(
-                [f"{b} ({verdict[b]}, {dates.postings(b)})" for b in biggest]
+                [f"{b} ({verdict[b]}, {dates.jobs(b)})" for b in biggest]
             )
             if verdict
             else ""
@@ -204,7 +204,8 @@ def main() -> int:
         "--dormant-boards",
         default=str(DORMANT_BOARDS_PATH),
         help="where to record the Boards judged Dormant, for `filter_tech` to leave out of the "
-        "Tech subset (ADR-0248; default: data/jobs/dormant_boards.json)",
+        "Tech subset and `index sync` to name apart (ADR-0248; default: "
+        "data/state/dormant_boards.json)",
     )
     ap.add_argument(
         "--ledger",
@@ -260,7 +261,7 @@ def main() -> int:
         )
     }
     seen_on_unauthoritative: list[str] = []
-    dates = dormant_boards.PostingDates()
+    dates = board_dormancy.PostingDates()
 
     total = 0
     for ats_file, sources in sorted(per_ats.items()):
@@ -280,7 +281,15 @@ def main() -> int:
                                 log.fail(_log, f"{src} line {lineno}: {exc!r}")
                             board = resolve_board(job_id, live)
                             boards.add(board)
-                            dates.see(board, record.get("posted_at"))
+                            # An id on no live Board resolves through `board_of`'s guess, which
+                            # splits a colon-bearing native id into a phantom Board of one Job,
+                            # so such a Board is never judged: it reads as undated.
+                            dates.see(
+                                board,
+                                record.get("posted_at")
+                                if lower_key(board) in live
+                                else None,
+                            )
                             if lower_key(board) in unauthoritative:
                                 seen_on_unauthoritative.append(job_id)
                             n += 1
