@@ -150,6 +150,10 @@ usual detail-pass width (16).
 
 ## 7. Job URL
 
+**Superseded 2026-09-28:** the positionId-only form below redirects a multi-location position to
+one req of Apple's choosing. The scraper now links a REQ by its full `{positionId}-{reqSuffix}` id
+and a PIPE by its positionId (module docstring of `headstart.scrapers.apple`).
+
 `https://jobs.apple.com/en-us/details/{positionId}/{transformedPostingTitle}` — verified live: the
 page answers `200` and its `<title>` carries the exact posting title
 ("Apple Vision Pro Hardware System EE Intern - Jobs - Careers at Apple").

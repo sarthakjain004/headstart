@@ -37,10 +37,13 @@ already carries the description it would add.
 offsets 0-590) all returned 200, ~2.3-4.3s each — server-side latency, not throttling; no 429s, no
 slowdown pattern.
 
-**Job detail page:** ``https://jobs.bytedance.com/en/position/{id}`` answers 200 for a real id
-(verified: the id from a live search result). It is itself a client-rendered shell like the search
-page, so a bogus id also answers 200 — this scraper does not depend on that page's content, only
-on it being the stable link shape ByteDance's own site would route a person to.
+**Job detail page:** ``https://joinbytedance.com/search/{id}``. Rendered in real Chrome on
+2026-09-28, it shows the posting (title, location, team, Job Code), and its static HTML already
+carries the posting title in ``<title>``, where a bogus id carries none.
+``https://jobs.bytedance.com/en/position/{id}/detail`` 302s to it. The earlier link,
+``https://jobs.bytedance.com/en/position/{id}``, was a dead end: it answers 200, as does a bogus id,
+but in Chrome it renders "The page you are looking for is missing" (3/3 ids checked), so a 200
+check could not tell.
 """
 
 from __future__ import annotations
@@ -55,11 +58,11 @@ class ByteDanceScraper(SupplierSearchScraper):
     COMPANY = "ByteDance"
 
     ats = "bytedance"
-    # scraper: f"https://jobs.bytedance.com/en/position/{id}" (job_url below). A Single source
+    # scraper: f"https://joinbytedance.com/search/{id}" (job_url below). A Single source
     # scraper (ADR-0139) — one fixed host, so unlike the platform ATSes above there is nothing
-    # to leave host-agnostic. Verified live 2026-09-11: the route answers 200 for a real id
-    # pulled from the search API; ids are numeric strings (e.g. "7673941558289205509").
-    url_shape = r"https://jobs\.bytedance\.com/en/position/\d+"
+    # to leave host-agnostic. Verified live 2026-09-28 in real Chrome: the page renders the
+    # posting and its static <title> is the posting title; ids are numeric strings.
+    url_shape = r"https://joinbytedance\.com/search/\d+"
 
     search_url = "https://jobs.bytedance.com/api/v1/public/supplier/search/job/posts"
     website_path = "en"
@@ -68,4 +71,4 @@ class ByteDanceScraper(SupplierSearchScraper):
         return self.search_url
 
     def job_url(self, job_id: str) -> str:
-        return f"https://jobs.bytedance.com/en/position/{job_id}"
+        return f"https://joinbytedance.com/search/{job_id}"

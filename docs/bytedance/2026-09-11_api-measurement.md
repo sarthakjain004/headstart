@@ -142,6 +142,11 @@ bogus id (`1`) also answers 200 — so this scraper depends only on the route sh
 own, not on the page's rendered content; `scripts/eval/verify_filters.py`'s `bytedance` entry
 checks exactly that shape.
 
+**Superseded 2026-09-28: that link was dead.** Rendered in real Chrome, `/en/position/{id}` shows
+"The page you are looking for is missing" for 3/3 real ids. `https://joinbytedance.com/search/{id}`
+renders the posting, carries its title in the static `<title>`, and is where
+`/en/position/{id}/detail` 302s. The scraper now links there.
+
 ## 8. Does TikTok's careers site share this platform?
 
 **Settled 2026-09-24 by [ADR-0198](../adr/0198-tiktok-and-bytedance-share-one-scraper-and-keep-two-ats-values.md):

@@ -28,16 +28,18 @@ evergreen "pipeline" role — mostly Retail — that keeps taking applications w
 opening (``id`` shaped ``PIPE-{positionId}``). Both render identically on jobs.apple.com's own
 search page, so both are scraped. **The split is heavily skewed toward ``REQ``, not the near-even
 41/59 an early 15-page sample suggested** — that sample was biased by ``sort: "newest"``:
-evergreen ``PIPE`` rows appear to get their ``postDateInGMT`` touched often, so they cluster at the
-front of a newest-first listing out of proportion to their share of the board. Two independent
+a ``PIPE`` row's ``postDateInGMT`` is the server clock at request time (measured 2026-09-28: 20/20
+PIPE rows on page 1 carried the request's own second, 81/81 of a full walk the scrape day), so
+they sort to the front of a newest-first listing out of proportion to their share of the board,
+and a PIPE Job has no ``posted_at``. Two independent
 full-board walks (2026-09-12, ~305 pages / 2-2.5 minutes each) read **98.7% REQ / 1.3% PIPE** across
 6,088 postings both times.
 
 **A full walk sees a handful of duplicate ids, from the board reshuffling mid-scrape** — measured
 on those same two full walks: 2 and 5 duplicate ids respectively (of 6,088), all with the *same*
-fields under both sightings. Four of the five in the second walk were evergreen ``PIPE`` rows whose
-``postDateInGMT`` advanced by ~345ms between two reads, re-sorting them past the walk's current
-page; the fifth was a ``REQ`` row seen twice with an identical timestamp. Same shape as Eightfold's
+fields under both sightings. Four of the five in the second walk were evergreen ``PIPE`` rows,
+whose request-clock ``postDateInGMT`` re-sorts them past the walk's current page; the fifth was a
+``REQ`` row seen twice with an identical timestamp. Same shape as Eightfold's
 replica-ordering problem, at a much smaller scale — ``_listing`` dedupes by ``id`` as it reads
 rather than needing Eightfold's multi-sweep reconciliation, since a duplicate here just overwrites
 itself rather than costing a row.
@@ -89,8 +91,17 @@ origin meters per connection — see :attr:`AppleScraper.async_fanout` and
 `experiment/apple-detail-transport/LOG.md`. 64 is not taken: the gain flattens and the width is
 already past what one company's careers site should be asked for.
 
-**Job URL**: ``https://jobs.apple.com/en-us/details/{positionId}/{transformedPostingTitle}`` —
-verified live: the page 200s and its ``<title>`` carries the posting title.
+**Job URL**: ``https://jobs.apple.com/en-us/details/{id}/{transformedPostingTitle}``, where ``id``
+is a REQ's full ``{positionId}-{reqSuffix}`` and a PIPE's bare ``positionId``. One position is
+often listed as several REQs, one per location, sharing the positionId (measured 2026-09-28: 848
+URLs covered 2,096 rows when the link used the positionId alone). The bare positionId form
+redirects to one req of Apple's choosing: ``/details/200685976/...`` lands on the Culver City
+``-0670``, so the New York ``-2459`` row sent its reader to the wrong location. Both forms, verified
+live 2026-09-28, 200 with no redirect, and the page's ``jobNumber`` is the row's own.
+
+**Pay is prose in the detail's ``postingFooters``**, one footer per location of the position,
+each with a "Pay & Benefits" entry whose range differs by location. The footer matching the row's
+own ``postLocationId`` is appended to the description; there is no structured pay field.
 """
 
 from __future__ import annotations
@@ -123,6 +134,28 @@ _SEARCH_FORMAT = {"longDate": "MMMM D, YYYY", "mediumDate": "MMM D, YYYY"}
 #: `\b` excludes "International"/"internal" (measured: 20/2,080 titles matched, zero false
 #: positives).
 _INTERN_TITLE_RE = re.compile(r"\bintern\b", re.IGNORECASE)
+#: A PIPE row's id is ``PIPE-{positionId}``; a REQ's is ``{positionId}-{reqSuffix}``.
+_PIPE_PREFIX = "PIPE-"
+
+
+def _is_pipe(native_id: str) -> bool:
+    return native_id.startswith(_PIPE_PREFIX)
+
+
+def _pay_footer(detail: dict, item: dict) -> str | None:
+    """The "Pay & Benefits" footer of the listing row's own location. The detail carries one
+    footer per location of the position, and pay differs by location (New York $184,700-$324,800
+    vs Culver City $175,000-$308,500 on positionId 200685976, live 2026-09-28). The other
+    footers (EEO Statement, Accessibility, Application Deadline) are boilerplate and skipped."""
+    location_ids = {loc.get("postLocationId") for loc in item.get("locations") or []}
+    for footer in detail.get("postingFooters") or []:
+        if footer.get("postLocationId") not in location_ids:
+            continue
+        for entries in (footer.get("localizations") or {}).values():
+            for entry in entries:
+                if entry.get("name") == "Pay & Benefits" and entry.get("content"):
+                    return entry["content"]
+    return None
 
 
 class AppleScraper(BaseScraper):
@@ -132,13 +165,13 @@ class AppleScraper(BaseScraper):
     COMPANY = "Apple"
 
     ats = "apple"
-    # scraper: f"https://{slug}/en-us/details/{positionId}/{transformedPostingTitle}" (job_url
-    # below) — slug is the fixed host jobs.apple.com (ADR-0139, a Single source scraper: one
-    # company, never discovered). Verified live 2026-09-11: the page 200s and its <title>
-    # carries the posting title. positionId is numeric on every sampled row; the title slug
-    # can in theory be empty (job_url falls back to "" when transformedPostingTitle is
-    # missing) so it is loose.
-    url_shape = r"https://jobs\.apple\.com/en-us/details/\d+/[\w-]*"
+    # scraper: f"https://{slug}/en-us/details/{id}/{transformedPostingTitle}" (job_url below),
+    # id being the REQ's full "{positionId}-{reqSuffix}" or a PIPE's bare positionId — slug is
+    # the fixed host jobs.apple.com (ADR-0139, a Single source scraper: one company, never
+    # discovered). Verified live 2026-09-28: both forms 200 with no redirect and the page's
+    # jobNumber is the row's own. The title slug can in theory be empty (job_url falls back to
+    # "" when transformedPostingTitle is missing) so it is loose.
+    url_shape = r"https://jobs\.apple\.com/en-us/details/\d+(?:-\d+)?/[\w-]*"
     has_detail_pass = True  # per-Job fetch fills description only (ADR-0048/ADR-0050)
     detail_workers = _DETAIL_WORKERS
 
@@ -191,8 +224,8 @@ class AppleScraper(BaseScraper):
 
         Deduped by ``id`` as it's read, not after: measured live 2026-09-12, a `"sort": "newest"`
         walk over ~305 pages (~2-2.5 minutes) sees 2-5 duplicate ids per run out of ~6,088 — a few
-        evergreen `PIPE` postings had their `postDateInGMT` bumped mid-walk (two reads ~345ms
-        apart), which re-sorts them into a page the walk had already passed, and one `REQ` row
+        evergreen `PIPE` postings, whose `postDateInGMT` is the request clock (module docstring),
+        re-sort into a page the walk had already passed, and one `REQ` row
         repeated with an identical timestamp. Both sightings carry the same fields, so the later
         one simply overwrites the earlier — the same shape as Eightfold's replica-ordering fix,
         scaled down: nothing here needs Eightfold's multi-sweep reconciliation, since the
@@ -260,7 +293,7 @@ class AppleScraper(BaseScraper):
     def detail_request(self, row: dict) -> DetailRequest:
         # PIPE's id carries the vendor-type prefix the detail endpoint does not want; REQ's id
         # (already "{positionId}-{reqSuffix}") is the jobNumber verbatim.
-        job_number = row["id"].removeprefix("PIPE-")
+        job_number = row["id"].removeprefix(_PIPE_PREFIX)
         return DetailRequest(f"https://{self.slug}/api/v1/jobDetails/{job_number}")
 
     def read_detail(self, row: dict, response: Any) -> dict:
@@ -270,18 +303,30 @@ class AppleScraper(BaseScraper):
         return detail
 
     def job_url(self, item: dict) -> str:
+        """A REQ's page is its full ``{positionId}-{reqSuffix}`` id: the bare positionId
+        redirects to one req of Apple's choosing, not necessarily this row's location (module
+        docstring). A PIPE role has no suffix, so its page is the bare positionId."""
+        native_id = item.get("id") or ""
+        page_id = item.get("positionId") if _is_pipe(native_id) else native_id
         return (
             f"https://{self.slug}/{_LOCALE}/details/"
-            f"{item.get('positionId')}/{item.get('transformedPostingTitle') or ''}"
+            f"{page_id}/{item.get('transformedPostingTitle') or ''}"
         )
 
     def _location(self, item: dict) -> str | None:
-        names = [
-            loc.get("name") or loc.get("countryName")
-            for loc in item.get("locations") or []
-            if loc.get("name") or loc.get("countryName")
-        ]
-        return "; ".join(names) or None
+        """Each place as ``name, countryName`` — ``name`` is a city or metro on a REQ
+        (``Minato``, ``Cambridge``), so without the country a country search misses it. A
+        country-level place (``level`` 1) keeps its ``name`` alone: its ``countryName`` is the
+        same country spelt differently (``United States`` / ``United States of America``,
+        ``Korea (Republic of)`` / ``Korea, Republic of``, live 2026-09-28)."""
+        places = []
+        for loc in item.get("locations") or []:
+            name, country = loc.get("name"), loc.get("countryName")
+            parts = [name] if name and loc.get("level") == 1 else [name, country]
+            place = ", ".join(dict.fromkeys(p for p in parts if p))
+            if place:
+                places.append(place)
+        return "; ".join(places) or None
 
     def _employment_type(self, item: dict) -> str | None:
         """ "Intern"/"Full-time"/"Part-time" from the listing alone — never the detail's
@@ -298,16 +343,20 @@ class AppleScraper(BaseScraper):
             return None
         return "Full-time" if hours >= 30 else "Part-time"
 
-    def _description(self, detail: dict) -> str | None:
+    def _description(self, detail: dict, item: dict) -> str | None:
         # jobSummary is the team-level boilerplate (module docstring) — not used here, so the
         # description is only what the detail endpoint states about this specific posting.
         parts = [
             detail.get("description"),
             detail.get("minimumQualifications"),
             detail.get("preferredQualifications"),
+            _pay_footer(detail, item),
         ]
-        joined = "\n\n".join(p for p in parts if p)
-        return html_to_text(joined) if joined else None
+        # Each part stripped on its own: plain text can carry a bare "<" ("needed(<10%)"), and
+        # stripped together with the HTML footer after it, that "<" opens a tag running to the
+        # footer's first ">" and swallows everything between (live 2026-09-28).
+        texts = [text for p in parts if (text := html_to_text(p))]
+        return " ".join(texts) or None
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
         items = raw.get("searchResults") or []
@@ -331,9 +380,13 @@ class AppleScraper(BaseScraper):
                     remote=item.get("homeOffice"),
                     department=(item.get("team") or {}).get("teamName"),
                     url=self.job_url(item),
-                    posted_at=item.get("postDateInGMT"),
+                    # A PIPE row's postDateInGMT is the server clock at request time (module
+                    # docstring), so only a REQ carries a posting date.
+                    posted_at=None
+                    if _is_pipe(native_id)
+                    else item.get("postDateInGMT"),
                     scraped_at=scraped_at,
-                    description=self._description(detail),
+                    description=self._description(detail, item),
                     employment_type=self._employment_type(item),
                 )
             )
@@ -341,6 +394,6 @@ class AppleScraper(BaseScraper):
         return jobs
 
     def _salary_field(self, raw: Any) -> str | None:
-        # Not yet measured: no structured compensation field has been looked for in this
-        # scraper's raw record shape. Needs its own measurement pass before this can claim more.
+        # No structured pay field: pay is prose in the detail's "Pay & Benefits" footer, which
+        # _description folds in for salary.extract's description tier (module docstring).
         return None
