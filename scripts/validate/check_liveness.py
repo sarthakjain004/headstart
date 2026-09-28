@@ -155,6 +155,9 @@ from headstart.scrapers.workday import (
 from headstart.scrapers.workday import (  # the capped-total estimate, single source
     estimated_board_size as _wd_board_size,
 )
+from headstart.scrapers.wp_job_openings import (  # the TLS fingerprint, single source
+    IMPERSONATE as _WPJO_IMPERSONATE,
+)
 from headstart.scrapers.zoho import (  # the listing's jobs <input>, single source
     JOBS_INPUT as _ZOHO_JOBS,
 )
@@ -761,13 +764,17 @@ def _fetch(method, url, **kw):
     netloc = urllib.parse.urlsplit(url).netloc
     gate = _gate_for(netloc)
     key = _gate_key(netloc)
+    # Unverified unless a probe asks: every vendor host's certificate is the vendor's concern, but
+    # a Board on its company's own host with a broken one is a Board the scraper, which verifies,
+    # cannot read (`p_wp_job_openings`).
+    verify = kw.pop("verify", False)
     r = _through_gate(
         gate,
         lambda: http.fetch(
             method,
             url,
             timeout=TIMEOUT,
-            verify=False,
+            verify=verify,
             attempts=_ATTEMPTS,
             egress_group=key,
             egress_on=_EGRESS_ON,
@@ -3183,6 +3190,77 @@ def p_taleo_enterprise(t, u):
         return (DEAD, None) if gone else (UNKNOWN, None)
 
 
+_REDIRECTS = frozenset({301, 302, 303, 307, 308})
+
+
+def p_wp_job_openings(t, u):
+    """The site's REST route, asked for one row: ``X-WP-Total`` is the Board's published count.
+
+    Measured over 481 candidate sites on 2026-09-28, each answer settles as follows:
+
+    * a JSON list — LIVE at ``X-WP-Total`` (326 sites, every one stating it), unless its row links
+      to another host (2): WordPress lists that site's postings under the host it links, which is
+      the Board, so this one is an alias and DEAD;
+    * 404 — DEAD: ``rest_no_route`` is WordPress without the plugin (24 of 25 sampled had no
+      ``awsm_job_openings`` route at all, the 25th none by the time it was re-read), and a 404 page
+      is a site no longer serving WordPress's REST API;
+    * 200 without JSON — DEAD: 30 of 30 such sites no longer ran the plugin, 27 no longer ran
+      WordPress (Framer, Astro, Discourse and hand-built pages answer every query with a page);
+    * a redirect to another host — DEAD: the Board is the host it names, and discovery lands that
+      host (`mine_wp_job_openings.py`); a redirect on the same host is followed, as the scraper
+      follows it;
+    * a DNS failure — DEAD: every Board is its company's own host, never a wildcard zone;
+    * 401 or 403 — UNKNOWN: a security plugin refusing the REST API to anonymous callers
+      (``rest_cannot_access``, ``itsec_rest_api_access_restricted``, ``wp_die``). 10 of the 11
+      such sites still ran the plugin, so they are Boards this scraper cannot read, not dead ones;
+    * a certificate that does not verify — UNKNOWN, for the same reason: the scraper verifies it,
+      and 7 of 427 Hiring Boards first probed live failed every read on theirs.
+
+    Asked with the scraper's own TLS fingerprint (`IMPERSONATE`): under the session's Chrome one
+    Hostinger's CDN answers 403 to 22 of these sites.
+    """
+    board = _scraper_for_row("wp_job_openings", t, u)
+    url = f"{board.url()}&per_page=1&_fields=link"
+    ask = {
+        "headers": {"User-Agent": UA, "Accept": "application/json"},
+        "impersonate": _WPJO_IMPERSONATE,
+        "verify": True,
+    }
+    try:
+        r = _fetch("GET", url, allow_redirects=False, **ask)
+        if r is not None and r.status_code in _REDIRECTS:
+            target = urllib.parse.urlsplit(r.headers.get("location") or "").hostname
+            if target and target.lower() != board.slug:
+                return DEAD, None
+            r = _fetch("GET", url, **ask)
+    except http.RequestsError as e:
+        if _is_dns(e):
+            return DEAD, None
+        _note(_net_reason(e))
+        return UNKNOWN, None
+    if r is None:
+        _note("breaker-open")
+        return UNKNOWN, None
+    if r.status_code in (404, 410):
+        return DEAD, None
+    if r.status_code != 200:
+        _note(f"http-{r.status_code}")
+        return UNKNOWN, None
+    try:
+        rows = json.loads(r.content)
+    except ValueError:
+        return DEAD, None
+    total = r.headers.get("x-wp-total")
+    if not isinstance(rows, list) or not (total or "").isdigit():
+        _note("body-unparseable")
+        return UNKNOWN, None
+    link = rows[0].get("link") if rows and isinstance(rows[0], dict) else None
+    linked = urllib.parse.urlsplit(link if isinstance(link, str) else "").hostname
+    if linked and linked.lower() != board.slug:
+        return DEAD, None
+    return LIVE, int(total)
+
+
 PROBES = {
     "greenhouse": p_greenhouse,
     "lever": p_lever,
@@ -3198,6 +3276,7 @@ PROBES = {
     "workable": p_workable,
     "zoho": p_zoho,
     "workday": p_workday,
+    "wp_job_openings": p_wp_job_openings,
     "keka": p_keka,
     "ripplehire": p_ripplehire,
     "darwinbox": p_darwinbox,

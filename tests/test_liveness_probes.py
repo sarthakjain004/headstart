@@ -2719,3 +2719,125 @@ def test_p_trakstar_reads_a_capped_page_s_total_off_jsapi(monkeypatch):
 
     monkeypatch.setattr(cl, "_get", get)
     assert cl.p_trakstar("acme", "https://acme.hire.trakstar.com/") == (cl.LIVE, 365)
+
+
+# --- wp_job_openings: the site's own REST route, one row asked ---------------------------------
+
+
+def _wpjo_fetch(*answers, calls=None):
+    """`_fetch` answering each call with the next of ``answers``: a `_Resp` or an exception."""
+    queue = list(answers)
+
+    def _fetch(method, url, **kw):
+        if calls is not None:
+            calls.append((url, kw))
+        answer = queue.pop(0)
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
+
+    return _fetch
+
+
+def _wpjo_list(total, link="https://finac.io/jobs/senior-accountant/"):
+    rows = [{"link": link}] if int(total) else []
+    return _Resp(200, {"x-wp-total": str(total)}, json.dumps(rows).encode())
+
+
+def test_p_wp_job_openings_reads_the_stated_total_off_the_rest_route(monkeypatch):
+    calls = []
+    monkeypatch.setattr(cl, "_fetch", _wpjo_fetch(_wpjo_list(64), calls=calls))
+    assert cl.p_wp_job_openings("finac.io", "https://finac.io/") == (cl.LIVE, 64)
+    url, kw = calls[0]
+    assert url == (
+        "https://finac.io/?rest_route=/wp/v2/awsm_job_openings&per_page=1&_fields=link"
+    )
+    assert kw["impersonate"] == "firefox"  # Hostinger's CDN 403s Chrome's fingerprint
+    assert kw["allow_redirects"] is False
+    assert kw["verify"] is True  # the scraper verifies the site's certificate too
+
+
+def test_p_wp_job_openings_a_certificate_that_does_not_verify_is_unknown(monkeypatch):
+    # The scraper cannot read such a site (7 of 427 Hiring Boards first probed, 2026-09-28).
+    notes = []
+    monkeypatch.setattr(
+        cl,
+        "_fetch",
+        _wpjo_fetch(cl.http.RequestsError("SSL certificate problem", code=60)),
+    )
+    monkeypatch.setattr(cl, "_note", notes.append)
+    assert cl.p_wp_job_openings("beryllus.net", "") == (cl.UNKNOWN, None)
+    assert notes == ["tls-cert"]
+
+
+def test_p_wp_job_openings_a_site_with_nothing_published_is_live_at_zero(monkeypatch):
+    monkeypatch.setattr(cl, "_fetch", _wpjo_fetch(_wpjo_list(0)))
+    assert cl.p_wp_job_openings("ocubeservices.com", "") == (cl.LIVE, 0)
+
+
+def test_p_wp_job_openings_rows_linking_another_host_are_that_hosts_board(monkeypatch):
+    # www.adridgemedia.com lists adridgemedia.com's postings (2026-09-28).
+    monkeypatch.setattr(
+        cl,
+        "_fetch",
+        _wpjo_fetch(_wpjo_list(5, "https://adridgemedia.com/jobs/seo-executive/")),
+    )
+    assert cl.p_wp_job_openings("www.adridgemedia.com", "") == (cl.DEAD, None)
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        # WordPress without the plugin.
+        _Resp(404, {}, b'{"code":"rest_no_route","data":{"status":404}}'),
+        # A site no longer on WordPress answers every query with its page.
+        _Resp(200, {}, b"<!doctype html><!-- Made in Framer -->"),
+        cl.http.RequestsError("Could not resolve host", code=cl._DNS_ERR),
+    ],
+)
+def test_p_wp_job_openings_a_site_without_the_route_is_dead(monkeypatch, answer):
+    monkeypatch.setattr(cl, "_fetch", _wpjo_fetch(answer))
+    assert cl.p_wp_job_openings("fenfar.com", "") == (cl.DEAD, None)
+
+
+def test_p_wp_job_openings_a_redirect_to_another_host_is_an_alias(monkeypatch):
+    # acude.uy 301s to www.acude.uy, the host discovery lands.
+    monkeypatch.setattr(
+        cl,
+        "_fetch",
+        _wpjo_fetch(
+            _Resp(301, {"location": "https://www.acude.uy/?rest_route=/wp/v2/x"})
+        ),
+    )
+    assert cl.p_wp_job_openings("acude.uy", "") == (cl.DEAD, None)
+
+
+def test_p_wp_job_openings_follows_a_redirect_on_its_own_host(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        cl,
+        "_fetch",
+        _wpjo_fetch(
+            _Resp(302, {"location": "/fr/?rest_route=/wp/v2/awsm_job_openings"}),
+            _wpjo_list(2, "https://nwrctportal.ca/jobs/clerk/"),
+            calls=calls,
+        ),
+    )
+    assert cl.p_wp_job_openings("nwrctportal.ca", "") == (cl.LIVE, 2)
+    assert "allow_redirects" not in calls[1][1]
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        # A security plugin refusing the REST API to anonymous callers: the plugin is still there.
+        _Resp(401, {}, b'{"code":"rest_cannot_access","data":{"status":401}}'),
+        _Resp(403, {}, b"<html><title>Forbidden</title></html>"),
+        _Resp(503, {}, b""),
+        _Resp(200, {}, b'{"code":"unexpected"}'),
+    ],
+)
+def test_p_wp_job_openings_a_refusal_is_unknown(monkeypatch, answer):
+    monkeypatch.setattr(cl, "_fetch", _wpjo_fetch(answer))
+    monkeypatch.setattr(cl, "_note", lambda reason: None)
+    assert cl.p_wp_job_openings("woxacorp.com", "") == (cl.UNKNOWN, None)

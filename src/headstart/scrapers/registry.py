@@ -55,6 +55,7 @@ from headstart.scrapers.trakstar import TrakstarScraper
 from headstart.scrapers.uber import UberScraper
 from headstart.scrapers.workable import WorkableScraper
 from headstart.scrapers.workday import WorkdayScraper
+from headstart.scrapers.wp_job_openings import WpJobOpeningsScraper
 from headstart.scrapers.zoho import ZohoScraper
 from headstart.scrapers.zwayam import ZwayamScraper
 
@@ -68,6 +69,7 @@ SCRAPERS: dict[str, type[BaseScraper]] = {
         AvatureScraper,
         ZohoScraper,
         WorkdayScraper,
+        WpJobOpeningsScraper,
         WorkableScraper,
         SmartRecruitersScraper,
         RecruiteeScraper,

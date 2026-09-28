@@ -261,6 +261,7 @@ supersedes it and note the supersession in both.
 | [0263](0263-the-search-bar-can-match-words-in-the-job-title.md) | The search bar can match words in the job title: a By meaning / Words in the job title switch | 2026-09-28 |
 | [0264](0264-a-happydance-career-front-is-a-board-keyed-by-its-host-paced-across-fronts.md) | A Happydance career front is a Board keyed by its host, paced across fronts | 2026-09-28 |
 | [0265](0265-a-radancy-front-listing-only-what-another-front-lists-is-an-alias.md) | A Radancy front listing only what another front lists is an alias | 2026-09-28 |
+| [0266](0266-a-wp-job-openings-site-is-an-ats-board-read-through-its-rest-route.md) | A WP Job Openings site is an ATS Board, read through its own REST route | 2026-09-28 |
 | [0267](0267-the-space-hosts-the-mcp-server-at-a-url-anyone-can-add.md) | The Space hosts the MCP server at a URL anyone can add | 2026-09-28 |
 
 *ADR-0037 was removed from the repository on 2026-09-24 by the owner's decision; its number is not

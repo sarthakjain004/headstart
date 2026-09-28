@@ -137,6 +137,13 @@ belong in README and CONTEXT.md, where `tests/test_board_counts.py` checks them.
   land held-backed fronts (Radancy's rule) or not (Phenom's) is open, so they sit in
   `PARKED_BOARDS` with the measured share in the ADR. Resolve the Backing Board by apply URL, and
   by employer where the front takes the application itself (Greenhouse embeds share its job ids).
+- **WP Job Openings lands a site under the host its own REST API names.** Its Boards are
+  companies' own WordPress sites (ADR-0266). Land hosts through
+  `scripts/discover/mine_wp_job_openings.py pool`, which resolves each candidate to its postings'
+  link host, else its REST index's `home`: a `www`/apex spelling or a redirecting domain would
+  otherwise land as a second row. The probe reads such a spelling DEAD only once the site has a
+  posting to link, so an empty pair can sit in the ledger as two live rows at 0. The vendor's demo
+  sites (`demo.hirezoot.com`, `demo.wpjobopenings.com`) are in `EXCLUDED_BOARDS`.
 - **SuccessFactors holds RMK sites only.** `p_successfactors` accepts any `<urlset>`, so a corporate
   site or a Radancy career front probes `live`, and the scraper reads it as 0 jobs or as page titles
   ("Working at TUI"). Before landing a host, confirm a `/job/` page from its sitemap (urlset, RSS or

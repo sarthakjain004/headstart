@@ -551,6 +551,12 @@ EXCLUDED_BOARDS: frozenset[str] = frozenset(
         "adp:aeb4c75f-7753-4ed5-9ee0-84cc931df3cd/19000101_000001",  # "WFNQAEM6", 17 postings
         "adp:3c19fd9b-0d5e-449a-81a8-b59357c53950/19000101_000001",  # "NAS WFN Prod Enablement -testnas030", 11 postings
         "adp:096c8f5e-1be4-44f5-858d-6b11303c27f2/19000101_000001",  # "NAS TEST CODE- Prod Enablement", 5 postings
+        # WP Job Openings' own demo sites (ADR-0266), read 2026-09-28: the vendor's sample
+        # postings, mostly tech titles ("UI/UX Designer", "DevOps Engineer", "QA Tester"), dated
+        # 2018-2022 — 17 on `demo.wpjobopenings.com`, 16 on `demo.hirezoot.com`. The vendor's own
+        # hiring site, `awsm.in`, is a real employer and is not here.
+        "wp_job_openings:demo.hirezoot.com",
+        "wp_job_openings:demo.wpjobopenings.com",
     }
 )
 
@@ -1082,5 +1088,11 @@ PARKED_BOARDS: frozenset[str] = frozenset(
         "happydance:www.dropbox.jobs",
         "happydance:www.grab.careers",
         "happydance:www.pinterestcareers.com",
+        # A content site using WP Job Openings for its articles (ADR-0266): 8,008 "postings",
+        # and of the newest 100 read 2026-09-28, 8 were job-ad-shaped rewrites of other
+        # employers' ads ("LPN Jobs in Lloydminster 2026 – Apply Online") and the rest articles
+        # ("NY SPORTS SCHEDULE TODAY", "ALL NEW YORK SPORTS TEAMS"). Un-park if it ever lists
+        # openings of its own.
+        "wp_job_openings:ndangira.net",
     }
 )
