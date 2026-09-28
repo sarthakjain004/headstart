@@ -55,8 +55,8 @@ director), and 2 of the 61 interns carry 1 (measured 2026-09-28). The site's
 FULL_TIME 3,201 + PART_TIME 4 + INTERN 61 = the 3,266 listed, TEMPORARY 0. So :meth:`fetch` walks
 the three small filters (about six requests) and a posting in none of them is full-time. If any
 of those walks fails, every posting's type stays unset rather than guessed. The filter walks run
-after the listing, so an intern posting published between the two reads as full-time until the
-next run. No department field was found.
+before the listing, so an intern posting published after them reads as full-time until the next
+run. No department field was found.
 
 **``remote`` reads the remote location a posting states.** Index 18 is a note that names the
 posting's remote location(s): either ``<b>Remote location: Sweden.</b>`` alone, or a "preferred

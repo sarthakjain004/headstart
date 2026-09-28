@@ -52,7 +52,7 @@ change — a lone, unhurried request right after the walk got a clean 200 JSON, 
 re-run of ``fetch_raw()`` immediately after (no concurrent bursts preceding it) returned 22,576
 of a fresh 22,576-job facet-sum, exactly. So: transient and load-triggered, not a hard per-IP
 ban, and the existing truncation guard is what actually protects a real pipeline run from ever
-reading this as delistings. Later runs hit it again (it truncated the Board on 4 of runs
+reading this as delistings. Later runs hit it again (it truncated the Board on 4 of the runs in
 36200233818..36218633315), so CAPTCHA'd pages now get one re-fetch after
 ``_CAPTCHA_WAIT_SECONDS``; a run landing short should still be read against this before being
 called a scraper bug.
