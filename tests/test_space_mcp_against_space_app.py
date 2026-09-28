@@ -148,7 +148,7 @@ def test_a_whole_index_trend_is_reported_without_its_drawing_arrays(companies_ap
         _client(companies_app), "read_trends", {"detail": "full", "days": 7}
     )
     assert "The whole index." in text and "Window " in text
-    assert "reconcile" in text
+    assert "arithmetic check passed" in text and "Openings listed: " in text
     assert "netted" not in text and "steps_at" not in text
 
 
@@ -158,10 +158,17 @@ def test_a_trend_category_the_app_does_not_know_is_refused(companies_app):
     app's `family_known` instead; called past the schema, as that install's calls arrive."""
     client = _client(companies_app)
     known = server.call(client, "read_trends", {"category": "software-engineering"})
-    assert "Category: " in known and "reconcile" in known
+    assert "Category: " in known and "arithmetic check" in known
     with pytest.raises(ToolFailure, match="'nonsense-family'"):
         read_trends.answer(
-            client, {"category": "nonsense-family", "days": 30, "detail": "concise"}
+            client,
+            {
+                "category": "nonsense-family",
+                "days": 30,
+                "detail": "concise",
+                "coverage": "all",
+                "measure": "openings",
+            },
         )
 
 
@@ -196,8 +203,8 @@ def test_a_window_with_no_counts_says_so_rather_than_reconciling_nothing(
     """A window that starts after the fixture's last tick (2026-08-13) holds none of them."""
     monkeypatch.setattr(read_trends, "_now", lambda: datetime(2026, 9, 1, tzinfo=UTC))
     text = server.call(_client(companies_app), "read_trends", {"days": 3})
-    assert "No trend counts fall in the last 3 days" in text
-    assert "reconcile" not in text
+    assert "No trend counts fall between 2026-08-29 and now" in text
+    assert "arithmetic" not in text
 
 
 def test_the_read_routes_answer_anyone_with_the_wall_on(auth_app):  # noqa: F811

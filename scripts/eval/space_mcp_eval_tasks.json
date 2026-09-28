@@ -41,7 +41,7 @@
       "prompt": "Is Stripe hiring more or less than it was two weeks ago?",
       "verifier": "trend_sign",
       "expect": {"companies": ["Stripe"], "category": null, "days": 14},
-      "why": "Plan §9 checks the sign of the netted hiring. The verifier reads /trends for Stripe over 14 days itself and compares the sign of reading.total.move.hiring with the direction the answer states."
+      "why": "Plan §9 checks the sign of hiring, which ADR-0272 makes postings opened less closed. The verifier reads /trends for Stripe over 14 days itself and compares the sign of reading.total.move.turnover.net (the netted hiring where the reading has no net) with the direction the answer states; a net within 5% of everything opened and closed may also be called flat."
     },
     {
       "id": "t04",
@@ -181,6 +181,13 @@
         }
       },
       "why": "ADR-0274: the category the site and the answers print as a label reaches search_jobs as its id or as that label, which the server reads as the id; either names the same category."
+    },
+    {
+      "id": "t15",
+      "prompt": "Is tech hiring across the whole index rising or falling over the last month?",
+      "verifier": "trend_sign",
+      "expect": {"companies": [], "category": null, "days": 30},
+      "why": "ADR-0272: on 2026-09-29 the whole index's openings listed rose +111,851 over 30 days while postings opened and closed netted -514, and nothing in that rise was sized, so it was re-counting, not hiring. The answer must take its direction from postings opened and closed, which the verifier reads from /trends itself; a net within 5% of everything opened and closed may also be called flat."
     }
   ],
   "heldout_sha256": "801e7149bc71c42e7b346dcf089ea20f87d1e0035d989b3dba8ffb50fe055e4d"
