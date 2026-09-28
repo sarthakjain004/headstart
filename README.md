@@ -462,6 +462,8 @@ Note the raw corpus files under `data/jobs/` carry a few fields the served table
   `identity` (Google token verification), `transports`, `mail` and `telegram` (senders), `bot`
   (Telegram enrolment), `telegram_bot_api` (the polling client the bot uses), `digest`,
   `shortlist`, `space_query`, `run`.
+- `src/headstart/mcp_protocol/` — the JSON-RPC loop over stdio every HeadStart MCP server speaks
+  (`stdio.py`; ADR-0137's amendment of 2026-09-28).
 - `src/headstart/ingest/` — **the back-to-back pipeline run**, one module per stage step, invoked
   as `python -m headstart.ingest.<module>` (ADR-0028): `scrape_plan`, `scrape_run`, `scrape_join`,
   `filter_tech`, `update_descriptions` (ADR-0050), `update_ledgers`

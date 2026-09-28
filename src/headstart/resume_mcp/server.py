@@ -38,8 +38,8 @@ _log = log.get(__name__, __spec__)
 NAME = "headstart-resume"
 VERSION = "1.0.0"
 
-#: The revision of MCP a client that names none is answered with — the shared loop's newest.
-#: A client naming another the loop speaks gets that one (`mcp_protocol.stdio`).
+#: The revision of MCP a client is answered with when it names none, or one the shared loop does
+#: not speak — the loop's newest. A client naming one the loop speaks gets that one instead.
 PROTOCOL_VERSION = stdio.NEWEST
 
 #: Said once per answer, because it is the difference between this data and the screen the

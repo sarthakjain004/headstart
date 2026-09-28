@@ -609,3 +609,17 @@ def test_a_node_crash_logs_its_frames_but_never_the_message(monkeypatch, caplog)
         inspection.read_document({"id": "doc-1"})
     assert "at render (/app/resume_document.js:12:9)" in caplog.text
     assert "Initech" not in caplog.text
+
+
+def test_an_unknown_tool_is_a_protocol_error_not_a_result(account):
+    """ADR-0137's 2026-09-28 amendment: the shared loop answers a tool this server does not
+    have as JSON-RPC -32602, configured or not — there is no argument to correct, only a name."""
+    message = {
+        "jsonrpc": "2.0",
+        "id": 9,
+        "method": "tools/call",
+        "params": {"name": "delete_resume", "arguments": {}},
+    }
+    for bound in (account, acct.Unconfigured("set HEADSTART_ACCOUNT_EMAIL")):
+        answer = srv.handle(message, bound)
+        assert answer["error"]["code"] == -32602 and "result" not in answer

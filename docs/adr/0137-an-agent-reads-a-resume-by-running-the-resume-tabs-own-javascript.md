@@ -142,8 +142,9 @@ only. Four things about the loop do:
   servers on the legacy handshake unless told otherwise, and a 2026 client's `server/discover`
   probe is answered as an unknown method, which the spec defines as the cue to fall back.
 - **An unknown tool is a protocol error** (`-32602`), as 2025-11-25 lists it, not an `isError`
-  result: there is no argument for the model to correct, only a name. No test pinned the old
-  answer.
+  result: there is no argument for the model to correct, only a name. That holds for an
+  unconfigured server too, which used to answer an unknown tool with its missing-credentials
+  sentence. No test pinned the old answer; one pins the new.
 - **The tools say they only read.** Each carries a `title` and the annotations `readOnlyHint`,
   `idempotentHint`, `destructiveHint: false` and `openWorldHint: false`, and `initialize` may
   carry the server's `instructions`.

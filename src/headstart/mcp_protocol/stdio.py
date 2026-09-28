@@ -83,7 +83,7 @@ def _text(text: str, failed: bool = False) -> dict[str, Any]:
     return payload
 
 
-def _initialized(request_id: Any, params: Any, server: Server) -> dict[str, Any]:
+def _initialize_reply(request_id: Any, params: Any, server: Server) -> dict[str, Any]:
     """The ``initialize`` answer: the client's revision when this loop speaks it, else the
     newest one it does — which is what the spec says to do; the client may then decide it cannot
     talk to us."""
@@ -98,7 +98,7 @@ def _initialized(request_id: Any, params: Any, server: Server) -> dict[str, Any]
     return _result(request_id, result)
 
 
-def _called(request_id: Any, params: Any, server: Server) -> dict[str, Any]:
+def _tool_call_reply(request_id: Any, params: Any, server: Server) -> dict[str, Any]:
     args = (params.get("arguments") or {}) if isinstance(params, dict) else None
     if not isinstance(args, dict):
         # Type names only: the malformed value may carry the caller's text.
@@ -111,7 +111,10 @@ def _called(request_id: Any, params: Any, server: Server) -> dict[str, Any]:
     name = params.get("name")
     if not any(tool["name"] == name for tool in server.tools):
         # A protocol error by the spec's own list (2025-11-25): no tool of that name exists
-        # here, so there is nothing for the model to correct but the name.
+        # here, so there is nothing for the model to correct but the name. Checked before the
+        # unconfigured reason, which is about the tools this server does have. The name is the
+        # caller's text, so the trace this leaves does not repeat it.
+        server.log.debug("tools/call refused: unknown tool")
         return _error(request_id, -32602, f"unknown tool: {name}")
     if server.unconfigured is not None:
         return _result(request_id, _text(str(server.unconfigured), failed=True))
@@ -125,7 +128,11 @@ def _called(request_id: Any, params: Any, server: Server) -> dict[str, Any]:
         return _result(request_id, _text(str(exc), failed=True))
     except Exception as exc:  # a traceback down stdio is a dead server
         # The client gets one sentence; the stack goes to stderr. Argument names only.
-        server.log.exception("tool %s failed (args %s)", name, sorted(args))
+        # `.error`, not `.exception`, here and in `serve`: tests/test_log_levels.py finds
+        # annotation-level lines by that name.
+        server.log.error(  # noqa: G201
+            "tool %s failed (args %s)", name, sorted(args), exc_info=True
+        )
         return _result(request_id, _text(f"{type(exc).__name__}: {exc}", failed=True))
     finally:
         # No values: the outcome is the only trace a refusal leaves on stderr.
@@ -146,13 +153,13 @@ def handle(message: dict[str, Any], server: Server) -> dict[str, Any] | None:
         return None
     params = message.get("params")
     if method == "initialize":
-        return _initialized(request_id, params, server)
+        return _initialize_reply(request_id, params, server)
     if method == "ping":
         return _result(request_id, {})
     if method == "tools/list":
         return _result(request_id, {"tools": server.tools})
     if method == "tools/call":
-        return _called(request_id, params or {}, server)
+        return _tool_call_reply(request_id, params or {}, server)
     return _error(request_id, -32601, f"method not found: {method}")
 
 
@@ -174,8 +181,7 @@ def serve(stdin: TextIO, stdout: TextIO, server: Server) -> None:
                 try:
                     reply = handle(message, server)
                 except Exception:  # one bad request must not end the session
-                    # The method name only; the message may carry the caller's text. `.error`,
-                    # not `.exception`: tests/test_log_levels.py finds looped ERRORs by that name.
+                    # The method name only; the message may carry the caller's text.
                     server.log.error(  # noqa: G201
                         "request %s failed", message.get("method"), exc_info=True
                     )
