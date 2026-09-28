@@ -171,3 +171,19 @@ the first 10 reqs, which is why containment is computed on the full listing.
   and hkmu/ouhk. v654 serves 82 reqs on both hosts of these pairs. A tenant is one host, so this
   signal never compares them, and no redirect joins them either; the 274 above counts same-host
   duplicates only. Both sides stay scraped and served. It is out of scope here.
+
+## Amendment (2026-09-28): a non-public section is never the kept one (#794)
+
+A re-run for #790 elected internal sections as the kept ones: Hyatt's `wallstreet_internal` over
+its public mirrors, MOL Group's `internal` over `external`, each listing one req more at the moment
+it was read. Kept, a section's own job links are served, and these are employee-only.
+
+The election now runs over the **public** sections alone. A **non-public** section — its name
+carries a token `index_plan.is_non_public` reads (`internal`, `confidential`, ...), the same test
+the index ranks sections by (ADR-0223) — is then buried onto the largest kept public section of
+its tenant that lists all its reqs, and left unburied when none does. Buried is where it should be:
+nothing scrapes it, so none of its links is served (Hyatt's `clearwater_internal` sits under
+`careersection/1`). Left out of the comparison entirely, it would never be buried and its
+internal-only reqs would be scraped and served. A section whose name carries no token
+(`dasstateoh/oh_int`, "Internal Career Portal") is still read as public — the token list's known
+gap, recorded in ADR-0223.
