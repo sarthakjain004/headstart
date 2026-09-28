@@ -2570,3 +2570,14 @@ def test_p_rippling_counts_postings_not_location_rows(monkeypatch):
     rows = [{"uuid": "a"}, {"uuid": "a"}, {"uuid": "b"}]
     monkeypatch.setattr(cl, "_get", _stub_get(200, json.dumps(rows).encode()))
     assert cl.p_rippling("acme", "https://ats.rippling.com/acme/jobs") == (cl.LIVE, 2)
+
+
+def test_p_join_reads_a_next_js_soft_404_as_dead(monkeypatch):
+    """join.com answers 200 with a Next.js error page (`pageProps.statusCode` 404) for a gone
+    company."""
+    page = (
+        b'<script id="__NEXT_DATA__" type="application/json">'
+        b'{"props":{"pageProps":{"statusCode":404}}}</script>'
+    )
+    monkeypatch.setattr(cl, "_get", _stub_get(200, page))
+    assert cl.p_join("acme", "https://join.com/companies/acme") == (cl.DEAD, None)

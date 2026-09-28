@@ -111,7 +111,7 @@ from typing import Any
 
 from headstart.jobs.job import Job, html_to_text
 from headstart.network import http
-from headstart.scrapers.base import USER_AGENT, BaseScraper
+from headstart.scrapers.base import USER_AGENT, BaseScraper, gone_board_error
 
 GRAPHQL_URL = "https://jobs.gem.com/api/public/graphql/batch"
 
@@ -215,9 +215,7 @@ class GemScraper(BaseScraper):
         pays no extra request. Raised in the shape ``board_failures.is_gone`` matches."""
         response = self._fetch("GET", self.url())
         if response.status_code in (404, 410):
-            raise http.RequestsError(
-                f"HTTP Error {response.status_code}: no Gem board for {self.slug}"
-            )
+            raise gone_board_error(f"no Gem board for {self.slug}")
 
     # --- listing ------------------------------------------------------------------------------
 

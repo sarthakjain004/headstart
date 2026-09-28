@@ -4983,10 +4983,9 @@ def test_join_fetch_raw_keys_each_description_by_its_posting_id(
     assert jobs["Analyst"].description is None
 
 
-def test_join_details_skip_non_tech_and_held_postings(monkeypatch):
-    """The detail supplies only the description, so the ADR-0166 tech gate and the ADR-0048
-    held-description skip are both safe; without them allocator's 34 postings cost 34 detail
-    GETs every run (2026-09-28)."""
+def test_join_details_skip_non_tech_postings(monkeypatch):
+    """The detail supplies only the description, so the ADR-0166 tech gate is safe; without it
+    allocator's 34 postings cost 34 detail GETs every run (2026-09-28)."""
     from headstart.scrapers.join import JoinScraper
 
     monkeypatch.setenv("HEADSTART_ASYNC_FANOUT", "0")
@@ -5011,11 +5010,11 @@ def test_join_details_skip_non_tech_and_held_postings(monkeypatch):
 
     fetcher = FakeFetcher(route)
     scraper = JoinScraper("acme", fetcher=fetcher)
-    # Arms both; 13's description is held.
-    scraper.have_details = frozenset({f"{scraper.board_key()}:13"})
+    scraper.have_details = frozenset()  # arms the gate
     scraper.fetch_raw()
     assert [r.url for r in fetcher.requests if "/api/public/jobs/" in r.url] == [
-        "https://join.com/api/public/jobs/11?locale=en"
+        "https://join.com/api/public/jobs/11?locale=en",
+        "https://join.com/api/public/jobs/13?locale=en",
     ]
 
 

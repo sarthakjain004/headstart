@@ -437,7 +437,7 @@ def test_an_empty_listing_on_a_board_page_that_404s_is_gone(monkeypatch):
 
     scraper = _scraper()
     asked = _board_page_answers(monkeypatch, scraper, 404)
-    with pytest.raises(http.RequestsError, match="HTTP Error 404"):
+    with pytest.raises(http.RequestsError, match="HTTP Error 410"):
         scraper.fetch_raw()
     assert asked == [scraper.url()]
 
