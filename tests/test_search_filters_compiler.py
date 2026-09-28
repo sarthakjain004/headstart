@@ -172,6 +172,20 @@ def test_india_country_level_falls_back_to_the_gazetteer_without_the_column():
     )  # has_country defaults False
 
 
+def test_country_compiles_through_the_country_filter_and_india_through_its_column():
+    """ADR-0273: a code the filter knows is its gazetteer clause, `IN` is the India filter's
+    whole-country rule, and an unknown code compiles to nothing (parse_filters reports it)."""
+    from headstart.search_filters import country_gazetteer
+
+    assert _clause(country="DE") == country_gazetteer.where("DE")
+    assert _clause(country="IN", has_country=True) == "country = 'IN'"
+    assert _clause(country="ZZ") is None
+    both = _clause(country="GB", location="london")
+    assert both == (
+        f"{country_gazetteer.where('GB')} AND lower(location) LIKE '%london%'"
+    )
+
+
 def test_keyword_defaults_to_the_title_scope():
     assert _clause(kw="kubernetes") == "(lower(title) LIKE '%kubernetes%')"
 

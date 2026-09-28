@@ -18,6 +18,7 @@ from datetime import UTC, date, datetime, timedelta
 from typing import NamedTuple
 
 from headstart.search_filters import (
+    country_filter,
     employment_type_filter,
     experience_filter,
     fx,
@@ -82,6 +83,8 @@ class SearchFilters:
     ats: str | None = None
     etype: str | None = None
     india: str | None = None
+    # An ISO 3166-1 alpha-2 code (ADR-0273), matched on `location` through the world gazetteer.
+    country: str | None = None
     location: str | None = None
     company: str | None = None
     has_salary: bool = False
@@ -583,6 +586,13 @@ def build_filter(filters: SearchFilters, capabilities: IndexCapabilities) -> str
         india_clause = india_filter.clause(filters.india, capabilities.has_country)
         if india_clause:
             clauses.append(india_clause)
+    if filters.country:
+        # `IN` is the India filter's whole-country rule, materialized column and all.
+        country_clause = country_filter.clause(
+            filters.country, capabilities.has_country
+        )
+        if country_clause:
+            clauses.append(country_clause)
     if filters.location:
         clauses.append(f"lower(location) LIKE '%{_like(filters.location)}%'")
     if filters.company:

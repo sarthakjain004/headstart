@@ -207,6 +207,7 @@ def test_the_console_script_a_no_clone_install_runs_is_this_servers_main():
         ({"account": "me"}, "unknown argument(s) account"),
         ({"limit": 500}, "from 1 to 40"),
         ({"india_place": "bangalore"}, "`india_place` must be one of"),
+        ({"country": "UK"}, "`country` must be one of"),
         ({"salary_min": 3_000_000}, "need salary_currency"),
         ({"keyword_in": "title"}, "send keyword too"),
         ({"category": "software-engineering"}, "needs company"),
@@ -242,6 +243,7 @@ def test_search_sends_both_routes_the_same_strict_query_in_the_spaces_own_names(
             "max_years": 5,
             "employment_type": "full-time",
             "india_place": "bengaluru",
+            "country": "IN",
             "salary_min": 3_000_000,
             "salary_currency": "INR",
             "posted_within_days": 7,
@@ -263,6 +265,7 @@ def test_search_sends_both_routes_the_same_strict_query_in_the_spaces_own_names(
         ("max_years", "5"),
         ("etype", "full-time"),
         ("india", "bengaluru"),
+        ("country", "IN"),
         ("salary_min", "3000000"),
         ("salary_currency", "INR"),
         ("posted_within", "7"),
@@ -380,6 +383,7 @@ def test_the_last_reachable_page_says_so():
         ("etype", "costing the most is `employment_type`"),
         ("seen_within", "costing the most is `first_seen_within_hours`"),
         ("salary_min", "costing the most is `salary_min`"),
+        ("country", "costing the most is `country`"),
     ],
 )
 def test_nothing_matching_names_the_blocking_filter_as_this_tool_names_it(
@@ -387,6 +391,11 @@ def test_nothing_matching_names_the_blocking_filter_as_this_tool_names_it(
 ):
     space = FakeSpace(search=[], facets=_facets(0, blocking=blocking))
     assert words in server.call(space, "search_jobs", {"query": "haskell"})
+
+
+def test_the_scope_line_names_the_country_code():
+    text = server.call(_search_space([_job(1)]), "search_jobs", {"country": "DE"})
+    assert "Scope: country DE." in text
 
 
 def test_nothing_matching_a_company_name_says_no_name_contains_it():

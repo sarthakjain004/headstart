@@ -148,6 +148,13 @@
 
       <div class="set">
         <h2>Where</h2>
+        <div class="f"><label for="country">Country</label>
+          <span class="tip" id="country-tip">Matches every way a job names the country: its name,
+            its states or provinces, its cities and its codes, so "Austin, TX" is in the United
+            States and "München" is in Germany.</span>
+          <select id="country" aria-describedby="country-tip"><option value="">Anywhere</option>
+            {% for value, label in country_opts %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+          </select></div>
         <div class="f"><label for="india">India — city or region</label>
           <span class="tip" id="india-tip">Picking an Indian city also matches its neighbourhoods and other
             spellings. Location below matches any place in the world, just without that. Jobs from
