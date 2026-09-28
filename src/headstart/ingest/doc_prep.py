@@ -351,7 +351,20 @@ def build_doc(job: dict) -> str:
 # ("$80,200k - $110,000K") and 1 value -> None ("30.000.000 IDR", read as 30,000 before); the
 # structured-code rule moves 11 more, currency None -> EUR (recruitee 6, smartrecruiters 5), all of
 # the served rows it can reach. Tier 2 is untouched.
-DERIVATIONS_VERSION = 19
+# v20: `jobs/salary.py` gives adp_recruiting its own Tier-1 parser (`_field_adp_recruiting`: "X to
+# Y" ranges, an hour mark on each figure, "/hour", a "k" on either figure, a bare "$" as USD, and a
+# period-less figure under 200 read hourly), and `_field_keka` reads a period-less INR range no
+# larger than 100 as lakhs — one commit on top of the v19 bump at `304630d2` (`git log
+# 304630d2..ef12e825 -- src/headstart/jobs/salary.py`, subject "Read adp_recruiting pay strings and
+# keka lakhs ranges; bump DERIVATIONS_VERSION", in case it lands squashed). Measured old (v19) vs
+# new `extract()` on every adp_recruiting and keka row of the served table read 2026-09-28 (v469),
+# with its description from the store pulled the same day, per ADR-0066: adp_recruiting 228 of
+# 3,030 rows move — 86 none->field; 139 field->field (123 currency only, None->USD or CAD; 6
+# value only and 10 both, a recovered ceiling or an hourly figure no longer rounded before
+# annualising); 3 of 9 regex->field change value or currency (one "75k-95k" loses the
+# description's USD). keka 366 of 6,388 — 365 none->field lakhs, 1 regex->field where the field
+# states 3-5.5 lakhs and the description 3.6-6. No other ATS's field parse moves.
+DERIVATIONS_VERSION = 20
 
 
 def to_meta(job: dict) -> dict:

@@ -92,6 +92,32 @@ def test_field_keka_low_magnitude_no_period_word_correctly_unresolved():
     assert from_field("25000-30000 INR", "keka") is None
 
 
+def test_field_keka_small_inr_range_with_no_period_reads_as_lakhs():
+    # kpgroup 2026-09-28: "12-18 INR" at salaryPeriod 4 (Annual). Served keka rows 2026-09-28:
+    # 365 period-less INR ranges top at 1-2 digits, none at 4 digits, and every description that
+    # restates the figure says lakhs ("ctc offered-2.5l-6l" beside "2.5-6 INR").
+    assert from_field("12-18 INR", "keka") == SalarySpan(
+        1_200_000, 1_800_000, "INR", "field"
+    )
+    assert from_field("1-1.5 INR", "keka") == SalarySpan(
+        100_000, 150_000, "INR", "field"
+    )
+    # pramana 5007, served 2026-09-28: the largest period-less range at or under the ceiling.
+    assert from_field("70-100 INR", "keka") == SalarySpan(
+        7_000_000, 10_000_000, "INR", "field"
+    )
+
+
+def test_field_keka_lakhs_reading_stops_at_a_crore_and_skips_stated_periods():
+    # "100-150 INR" sat on a teacher's posting: 1-1.5 crore is not a teacher's pay, so past
+    # 100 (one crore in lakhs) the figure stays unread.
+    assert from_field("100-150 INR", "keka") is None
+    # A stated period is a figure keka already scaled; lakhs is an annual notation only.
+    # Synthetic boundary probes: a monthly word, and a currency other than INR.
+    assert from_field("10-12 INR monthly", "keka") is None
+    assert from_field("12-18 USD", "keka") is None
+
+
 def test_field_keka_monthly_period_word_annualizes():
     # salaryPeriod=3 ("Monthly", live-confirmed 2026-09-22: 179/215 sampled period-3 values were
     # monthly-scale) — KekaScraper._salary_field appends "monthly", and this parser must
@@ -2017,14 +2043,17 @@ def test_every_currency_salary_can_emit_has_an_fx_rate():
     assert emittable - fx.table()["rates"].keys() == set()
 
 
-def test_adp_recruiting_pay_transparency_amounts_read_annual_and_refuse_hourly():
+def test_adp_recruiting_pay_transparency_amounts_read_annual_or_hourly_by_scale():
     # `ADPRecruitingScraper._salary_field` emits the pay-transparency pair with no period, as
-    # "40000-141700 USD" (Follett, 2026-09-24): the annual default reads it, and the plausibility
-    # floor refuses an hourly-scale pair rather than serving it 2,080x too low.
+    # "40000-141700 USD" (Follett, 2026-09-24): an annual-scale pair reads annual, and an
+    # hourly-scale pair (below `_ADP_RECRUITING_HOURLY_BELOW`) reads hourly — it was refused
+    # until 2026-09-28.
     assert from_field("40000-141700 USD", "adp_recruiting") == SalarySpan(
         40_000, 141_700, "USD", "field"
     )
-    assert from_field("20-25 USD", "adp_recruiting") is None
+    assert from_field("20-25 USD", "adp_recruiting") == SalarySpan(
+        20 * 2080, 25 * 2080, "USD", "field"
+    )
 
 
 # --- #698: the generic field reads European grouping and K / L / LPA units ----------------------
@@ -2081,3 +2110,100 @@ def test_a_structured_code_names_the_currency_of_a_description_figure():
     assert from_description(text).currency is None  # the premise
     assert extract("40-50 EUR 1 YEAR", text, "smartrecruiters").currency == "EUR"
     assert extract("40-50 EUR 1 YEAR", text, "some-new-ats").currency is None
+
+
+def test_adp_recruiting_reads_a_to_range_to_its_ceiling():
+    # churchmutual 2026-09-28: 17 of 21 compensationDetails strings say "X to Y", and
+    # `_field_generic`'s dash-only `_RANGE` kept the floor and dropped the ceiling.
+    assert from_field("107,000 to 160,400", "adp_recruiting") == SalarySpan(
+        107_000, 160_400, None, "field"
+    )
+    assert from_field("$68000 to $85000", "adp_recruiting") == SalarySpan(
+        68_000, 85_000, "USD", "field"
+    )
+
+
+def test_adp_recruiting_reads_a_period_less_hourly_scale_figure_as_hourly():
+    # Live compensationDetails and pay-transparency amounts, 2026-09-28: every period-less figure
+    # under 200 sat on an hourly role (CNA, bus driver, key holder) — never a salary.
+    assert from_field("17 to 23.80", "adp_recruiting") == SalarySpan(
+        35_360, 49_504, None, "field"
+    )
+    assert from_field("$19.75-$24.50", "adp_recruiting") == SalarySpan(
+        41_080, 50_960, "USD", "field"
+    )
+    assert from_field("21.53-34.45 USD", "adp_recruiting") == SalarySpan(
+        44_782, 71_656, "USD", "field"
+    )
+    assert from_field("19.00", "adp_recruiting") == SalarySpan(
+        39_520, None, None, "field"
+    )
+
+
+def test_adp_recruiting_reads_hour_marks_on_each_figure_and_after_the_range():
+    assert from_field("$29/hr - $35/hr DOE", "adp_recruiting") == SalarySpan(
+        60_320, 72_800, "USD", "field"
+    )
+    assert from_field("$25/Hr-$30/Hr", "adp_recruiting") == SalarySpan(
+        52_000, 62_400, "USD", "field"
+    )
+    assert from_field("MA: $22.54 - $29.87/hour", "adp_recruiting") == SalarySpan(
+        46_883, 62_130, "USD", "field"
+    )
+    # Synthetic: "per hr" is a spelling `_period_multiplier` lacks; the live sample had "/hr".
+    assert from_field("$24 to $28 per hr", "adp_recruiting") == SalarySpan(
+        49_920, 58_240, "USD", "field"
+    )
+    assert from_field("$22 an hour", "adp_recruiting") == SalarySpan(
+        45_760, None, "USD", "field"
+    )
+    assert from_field("$15.00/ per hour", "adp_recruiting") == SalarySpan(
+        31_200, None, "USD", "field"
+    )
+    assert from_field("Starting at $21.75/hr.", "adp_recruiting") == SalarySpan(
+        45_240, None, "USD", "field"
+    )
+
+
+def test_adp_recruiting_reads_a_thousands_k_on_either_figure():
+    assert from_field("$100-$115k", "adp_recruiting") == SalarySpan(
+        100_000, 115_000, "USD", "field"
+    )
+    assert from_field("$140K-160K", "adp_recruiting") == SalarySpan(
+        140_000, 160_000, "USD", "field"
+    )
+    assert from_field("$60-65K", "adp_recruiting") == SalarySpan(
+        60_000, 65_000, "USD", "field"
+    )
+
+
+def test_adp_recruiting_reads_a_bare_dollar_as_usd_and_a_named_one_as_named():
+    assert from_field("C$ -106,818 - 144,500", "adp_recruiting") == SalarySpan(
+        106_818, 144_500, "CAD", "field"
+    )
+    assert from_field("$40,000-60,000", "adp_recruiting") == SalarySpan(
+        40_000, 60_000, "USD", "field"
+    )
+
+
+def test_adp_recruiting_still_refuses_a_ceiling_and_a_per_credit_hour_rate():
+    assert from_field("Up to $46/hr", "adp_recruiting") is None
+    # An adjunct's per-credit-hour rate is not an hourly wage: not annualised, and read as an
+    # annual figure it is below the floor.
+    assert (
+        from_field("Between $331.50 and $603.64 per credit hour", "adp_recruiting")
+        is None
+    )
+    assert from_field("$150- $200 per trip", "adp_recruiting") is None
+    # Kimpton's benefits sentence, trimmed off a live string: "401k" is not pay.
+    kimpton_benefits = (
+        "We offer a comprehensive package of benefits including paid time off, "
+        "medical/dental/vision insurance, 401k, and many other benefits to eligible employees."
+    )
+    assert from_field(kimpton_benefits, "adp_recruiting") is None
+    assert from_field("$20.00 + " + kimpton_benefits, "adp_recruiting") == SalarySpan(
+        41_600, None, "USD", "field"
+    )
+    # "N/A" (ruralmetrofire) and "0" (served 2026-09-28): live strings with no pay in them.
+    assert from_field("N/A", "adp_recruiting") is None
+    assert from_field("0", "adp_recruiting") is None

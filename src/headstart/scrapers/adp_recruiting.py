@@ -410,11 +410,12 @@ class ADPRecruitingScraper(BaseScraper):
         """``Job.salary`` from the detail's pay-transparency amounts, else its
         ``compensationDetails`` string (module docstring).
 
-        The amounts become ``"40000-141700 USD"`` with no period: they state none, and the
-        parser's annual default with its plausibility floor refuses an hourly figure rather
-        than serving it 2,080x too low. ``compensationDetails`` is the tenant's own free text
-        ("$85,000 – $95,000/year", "$21.00-25.00 per hour") and is passed through as stated,
-        which ``salary._field_generic`` reads.
+        The amounts become ``"40000-141700 USD"`` with no period: they state none, and
+        ``salary._field_adp_recruiting`` reads a figure below
+        ``_ADP_RECRUITING_HOURLY_BELOW`` as hourly and a larger one as annual.
+        ``compensationDetails`` is the tenant's own free text ("$85,000 – $95,000/year",
+        "107,000 to 160,400", "$29/hr - $35/hr") and is passed through as stated, for that same
+        parser to read.
         """
         if not raw:
             return None

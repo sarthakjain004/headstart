@@ -424,15 +424,31 @@ def _field_keka(value: str) -> SalarySpan | None:
     only for the three ``salaryPeriod`` values a live re-measurement confirmed by magnitude — see
     that method's docstring). Applying `_period_multiplier` here is what turns a real monthly or
     hourly figure into a plausible annual one instead of one small enough to fail `_bounded`'s
-    floor and be silently dropped."""
+    floor and be silently dropped.
+
+    A period-less INR range no larger than :data:`_KEKA_LAKHS_CEILING` is lakhs: "12-18 INR" is
+    1,200,000-1,800,000 (see that constant for the evidence)."""
     m = _RANGE.search(value)
     if not m:
         return None
     code_m = _CURRENCY_CODE.search(value)
     currency = code_m.group(1).upper() if code_m else None
     mult = _period_multiplier(value)
-    lo, hi = _num(m.group(1)) * mult, _num(m.group(2)) * mult
+    raw_lo, raw_hi = _num_value(m.group(1)), _num_value(m.group(2))
+    if currency == "INR" and mult == 1 and max(raw_lo, raw_hi) <= _KEKA_LAKHS_CEILING:
+        mult = 100_000
+    lo, hi = round(raw_lo * mult), round(raw_hi * mult)
     return _bounded(min(lo, hi), max(lo, hi), currency)
+
+
+#: keka tenants type lakhs into the amount boxes: "12-18 INR" with ``salaryPeriod`` 4 (Annual)
+#: on kpgroup, 2026-09-28. In the served table that day, 365 of the 1,952 period-less INR ranges
+#: topped at 1-2 digits, 3 at 3 digits and none at 4 — the absolute-rupee ranges start at 5
+#: digits. Every description that restated such a figure said lakhs ("ctc offered-2.5l-6l" beside
+#: "2.5-6 INR", "up to 7 lpa" beside "2.4-7 INR"); none said monthly or thousands. The ceiling is
+#: one crore (100 lakhs): "100-150 INR" sat on a teacher's posting, where 1-1.5 crore is not the
+#: pay, so past it the figure stays unread.
+_KEKA_LAKHS_CEILING = 100
 
 
 #: darwinbox pass (2026-08-22): "INR 3 - 5 (Annual)" (ADR-0019's original documented example) is
@@ -545,6 +561,81 @@ def _field_gem(value: str) -> SalarySpan | None:
     return None
 
 
+#: adp_recruiting's ``compensationDetails`` is the tenant's own free text, and on 2026-09-28 (103
+#: live strings over 60 sites, plus the 357 served rows) it was written five ways `_field_generic`
+#: misread: "X to Y" (floor kept, ceiling lost), an hour mark on each figure ("$29/hr - $35/hr",
+#: floor only), "/hour" (not one of `_period_multiplier`'s phrases), a "k" on one or both figures
+#: ("$60-65K", "$100-$115k"), and no period at all on an hourly wage ("$19.75-$24.50", "17 to
+#: 23.80", and the pay-transparency amounts "21.53-34.45 USD"). A figure under
+#: `_ADP_RECRUITING_HOURLY_BELOW` with no period stated is read hourly: every one in that sample
+#: sat on an hourly role (CNA, bus driver, key holder), and no annual or monthly USD pay is that
+#: small. The detail's own pay-type code agrees: on six sites that state amounts (79 postings),
+#: every amount under 200 carried ``payTransPayType`` 00002000 (hourly) and every 00001000
+#: (salaried) amount was 40,000 or more. The code is not read instead because it is not reliable
+#: the other way: wsb_careers types 00002000 on "100000-120000" salaries. A figure with any other "per" unit ("per trip", "per credit hour") is not inferred.
+_ADP_RECRUITING_HOURLY_BELOW = 200
+_ADP_RECRUITING_FIGURE = r"(\d(?:[\d,]*\d)?(?:\.\d+)?)\s*(k\b)?"
+# `_period_multiplier`'s hourly phrases, plus the spellings it lacks ("/hour", "per hr") and
+# which this ATS writes; a mark may also sit on the first figure of a range ("$29/hr - $35/hr").
+_ADP_RECRUITING_HOUR_MARK = (
+    r"(?:/\s*h(?:ou)?r\b|\bper[\s-]+h(?:ou)?r\b|\bhourly\b|\ban\s+hour\b)"
+)
+_ADP_RECRUITING_HOUR_MARK_RE = re.compile(_ADP_RECRUITING_HOUR_MARK, re.IGNORECASE)
+_ADP_RECRUITING_RANGE = re.compile(
+    rf"{_ADP_RECRUITING_FIGURE}\s*(?:{_ADP_RECRUITING_HOUR_MARK}\s*)?(?:[-–—]|\bto\b)\s*"
+    rf"{_SYM}?\s*{_ADP_RECRUITING_FIGURE}",
+    re.IGNORECASE,
+)
+_ADP_RECRUITING_SINGLE = re.compile(_ADP_RECRUITING_FIGURE, re.IGNORECASE)
+#: Any other stated "per" unit ("per trip", "per credit hour"): no wage period to infer.
+_ADP_RECRUITING_OTHER_UNIT = re.compile(r"\bper\s+\w", re.IGNORECASE)
+#: The benefits boilerplate some tenants append ("medical/dental/vision insurance, 401k"): a
+#: figure, but never pay.
+_ADP_RECRUITING_401K = re.compile(r"\b401\s*\(?k\)?", re.IGNORECASE)
+
+
+def _field_adp_recruiting(value: str) -> SalarySpan | None:
+    """See :data:`_ADP_RECRUITING_HOURLY_BELOW`'s comment. Currency is an ISO code, else the
+    symbol before the figure, and a bare "$" is USD here: of the 176 served rows (2026-09-28) whose
+    string carried a "$", 174 were on a US location, one had none, and the one Canadian posting
+    wrote "C$", which names CAD."""
+    code_m = _CURRENCY_CODE.search(value)
+    currency = code_m.group(1).upper() if code_m else None
+    value = _ADP_RECRUITING_401K.sub(" ", value)
+    m = _ADP_RECRUITING_RANGE.search(value)
+    if m:
+        start = m.start(1)
+        figures = [_num_value(m.group(1)), _num_value(m.group(3))]
+        # One "k" names the pair's magnitude when the other figure is too small to stand alone.
+        k_lo, k_hi = bool(m.group(2)), bool(m.group(4))
+        if k_lo or k_hi:
+            figures = [
+                f * 1000 if (k or f < 1000) else f
+                for f, k in zip(figures, (k_lo, k_hi), strict=True)
+            ]
+    else:
+        single = _ADP_RECRUITING_SINGLE.search(value)
+        if not single or _states_a_ceiling_only(value, single.start(1)):
+            return None
+        start = single.start(1)
+        figures = [_num_value(single.group(1)) * (1000 if single.group(2) else 1)]
+    if _ADP_RECRUITING_HOUR_MARK_RE.search(value):
+        mult = _HOURLY_TO_ANNUAL
+    else:
+        mult = _period_multiplier(value)
+        other_unit = _ADP_RECRUITING_OTHER_UNIT.search(value)
+        if mult == 1 and not other_unit and max(figures) < _ADP_RECRUITING_HOURLY_BELOW:
+            mult = _HOURLY_TO_ANNUAL
+    if not currency:
+        # Any symbol before the figure, not only one touching it: "C$ -106,818 - 144,500".
+        symbols = re.findall(_SYM, value[:start])
+        currency = _currency_for_symbol(
+            symbols[-1] if symbols else None, "", bare_dollar="USD"
+        )
+    lo, hi = round(min(figures) * mult), round(max(figures) * mult)
+    return _bounded(lo, hi if len(figures) == 2 else None, currency)
+
+
 #: ATS -> its Tier-1 parser. An ATS not listed here (including one not yet given its own research
 #: pass) falls through to `_field_generic`.
 _FIELD_PARSERS = {
@@ -581,6 +672,7 @@ _FIELD_PARSERS = {
     # parser annualises (docs/jibe/2026-09-24_api-jobs-measurement.md). A new key, so no stored row
     # changes and no DERIVATIONS_VERSION bump.
     "jibe": _field_range_currency_interval,
+    "adp_recruiting": _field_adp_recruiting,
 }
 
 

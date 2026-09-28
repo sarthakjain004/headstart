@@ -153,7 +153,7 @@ def test_the_compensation_string_is_passed_through_as_stated():
     stated = scraper._salary_field(_detail("churchmutual_detail_5001222115706"))
     assert stated == "107,000 to 160,400"
     span = salary.extract(stated, None, ats="adp_recruiting")
-    assert span is not None and span.min_annual == 107000
+    assert span is not None and (span.min_annual, span.max_annual) == (107000, 160400)
 
 
 def test_a_lone_pay_bound_falls_back_to_the_string_and_no_detail_is_no_salary():
