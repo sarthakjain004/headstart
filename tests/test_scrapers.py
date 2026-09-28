@@ -4518,6 +4518,35 @@ def test_personio_salary_from_structured_salary_information(position_xml, expect
     assert get_scraper("personio", "acme")._salary_field(pos) == expected
 
 
+def test_personio_remote_reads_every_office_not_only_the_first():
+    """Real 1komma5grad positions (2026-09-28): 2749999 names Hamburg with `Remote` and Berlin as
+    additional offices, and was served on-site; 47 of 307 positions there carry such an entry."""
+    raw = ET.fromstring(
+        (FIXTURES / "personio_1komma5grad_remote_additional_office.xml").read_bytes()
+    )
+    jobs = get_scraper("personio", "1komma5grad.jobs.personio.com", "1K5").parse(
+        raw, SCRAPED_AT
+    )
+    assert [(j.location, j.remote) for j in jobs] == [
+        ("Hamburg, Remote, Berlin", True),
+        ("Riederich", False),
+    ]
+
+
+def test_personio_a_hybrid_office_is_neither_remote_nor_on_site():
+    """A live shape from the `_location` measurement (2026-08-25): `office="Leipzig"` with
+    `additionalOffices=["Dubai", "Hybrid"]`. Hybrid is None, as `remote_from_workplace` reads it."""
+    raw = ET.fromstring(
+        b"<workzag-jobs><position><id>1</id><name>T</name><office>Leipzig</office>"
+        b"<additionalOffices><office>Dubai</office><office>Hybrid</office>"
+        b"</additionalOffices></position></workzag-jobs>"
+    )
+    job = get_scraper("personio", "acme.jobs.personio.de", "Acme").parse(
+        raw, SCRAPED_AT
+    )[0]
+    assert (job.location, job.remote) == ("Leipzig, Dubai, Hybrid", None)
+
+
 def test_personio_slug_from_keeps_only_the_host():
     """Discovery stored the raw Common Crawl capture for host-shaped ATSes, so 634 rows in the
     personio ledger carry a job deep link with tracking params instead of the board. A path alone
