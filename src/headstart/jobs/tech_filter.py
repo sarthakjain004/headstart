@@ -95,7 +95,7 @@ from headstart.boards.board_identity import board_end
 # was not yet in v654: `jibe:costco` alone carried 1,581 such rows (live keyword sample 2026-09-24:
 # 1,213 of 2,500 hits were its only two kept titles). The blind hold-out is unchanged (recall
 # 84.6%, precision 82.0%). See docs/pipeline/2026-09-24_five-run-log-review.md finding 1.
-# 6 (2026-09-28, `git log 19b8984b..c28a5178 -- src/headstart/ingest src/headstart/jobs`):
+# 6 (2026-09-28, `git log 19b8984b..5c57ae9b -- src/headstart/ingest src/headstart/jobs`):
 # no pattern changed. `filter_tech` now leaves out every row on a Dormant Board, one whose newest
 # posting is over two years old (ADR-0248). Purely subtractive: on the served table (v448,
 # 533,799 rows) at most **-54,661 out, 0 in**, on 3,871 Boards, 47,152 of the rows SmartRecruiters.
