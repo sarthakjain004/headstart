@@ -5,8 +5,8 @@ scraper repo:
     https://{slug}.sensehq.com/careers/api/jobs   ->  {"success", "data": {"rows": [...]}}
 
 Measured 2026-09-28 (`docs/sensehq/2026-09-28_careers-api-measurement.md`, ADR-0256): `count` is
-the Board's whole total on every page; no rate limit showed over a 9,897-label sweep at 32
-concurrent; pages default to 10 rows and `pageSize` is honoured but not used here. Boards are
+the Board's whole total on every page; no rate limit showed over an 11,704-label sweep at up to
+32 concurrent; pages default to 10 rows and `pageSize` is honoured but not used here. Boards are
 discovered from Common Crawl, Wayback and a label sieve, and probed by `p_sensehq`.
 """
 
@@ -20,9 +20,8 @@ from headstart.jobs.job import Job, html_to_text, is_remote
 from headstart.network.fetcher import Fetcher
 from headstart.scrapers.base import BaseScraper
 
-_PAGE_SIZE = (
-    10  # the API's default page size (0-indexed ?page=N); `pageSize` is not sent
-)
+# The API's default page size (0-indexed ?page=N); `pageSize` is honoured but not sent.
+_PAGE_SIZE = 10
 _MAX_PAGES = 100  # our own ceiling — reaching it means the board went unread
 
 

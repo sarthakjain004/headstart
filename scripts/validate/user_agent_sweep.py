@@ -19,10 +19,9 @@ Boards are drawn small (1-20 jobs) so a full sweep is minutes, and the seed is f
 reproducible; `--seed` draws a different sample when a second opinion is wanted.
 
 **It does not cover every ATS, and says so on every run.** The sample comes from the liveness
-ledgers, so an ATS without one cannot be sampled at all — `join` is in
-`DISABLED_ATS`. Calling this "every ATS" is the same overstatement
-that had to be corrected once already, so the header prints the uncovered names rather than a
-count a reader has to trust.
+ledgers, so an ATS without one cannot be sampled at all — `join` is in `DISABLED_ATS`. Calling
+this "every ATS" is the same overstatement that had to be corrected once already, so the header
+prints the uncovered names rather than a count a reader has to trust.
 
 **Two things the output will not tell you, and both matter.**
 
