@@ -183,7 +183,8 @@ def _int_arg(args: Mapping[str, str]) -> Callable[[str], int | None]:
 
 class ScopeUnavailable(LookupError):
     """What a ``strict=1`` request asked for cannot be applied on this deployment yet: no role
-    assignments or watchlist loaded, or a column the served table has not migrated onto. A state
+    assignments, watchlist or family taxonomy loaded, or a column the served table has not
+    migrated onto. A state
     of the deployment, not the caller's error, so :func:`refusal` answers it 503 (ADR-0253)."""
 
 
@@ -307,8 +308,8 @@ def scoped_jobs_clause(
     Under ``strict=1`` (ADR-0253) a hand-off this would ignore or widen is refused instead. The
     caller's errors are a :class:`ValueError`: ``family=`` or ``role=`` without ``board=``, both
     at once, a role with no watch pattern, or a family ``known_families`` does not configure.
-    A deployment that cannot apply one is a :class:`ScopeUnavailable`: no watchlist, or no role
-    assignments, loaded. ``known_families`` are the families the taxonomy configures
+    A deployment that cannot apply one is a :class:`ScopeUnavailable`: no watchlist, no family
+    taxonomy, or no role assignments, loaded. ``known_families`` are the families the taxonomy configures
     (``trend_history.family_labels``), so a configured family with no Jobs assigned yet still
     answers zero rows, as it does without ``strict``.
     """
@@ -340,6 +341,10 @@ def scoped_jobs_clause(
             watched = sorted(name.removeprefix("watch:") for name in watch_patterns)
             raise ValueError(
                 f"role {role!r} has no watch pattern; watched roles: {_listed(watched)}"
+            )
+        if family and not known_families:
+            raise ScopeUnavailable(
+                "family= needs the family taxonomy, which this deployment has not loaded"
             )
         if family and family not in known_families:
             raise ValueError(
@@ -475,6 +480,15 @@ def _canonical_url(ats: str | None, url: str | None, job_id: str | None) -> str 
     return url
 
 
+#: Every value the India place filter knows, in `india_gazetteer.where`'s own lookup order: the
+#: whole country, a region, else a city.
+_INDIA_PLACES = (
+    india_filter.WHOLE_COUNTRY,
+    *india_gazetteer.REGIONS,
+    *india_gazetteer.CITIES,
+)
+
+
 def _warn_unknown_filters(
     filters: SearchFilters, kw_in: str, sort: str, capabilities: IndexCapabilities
 ) -> None:
@@ -505,12 +519,7 @@ def _warn_unknown_filters(
         _log.warning(
             "filter dropped: employment_type %.40r is not a known value", etype
         )
-    # `india_gazetteer.where`'s own lookup order: the whole country, a region, else a city.
-    if india and india not in (
-        india_filter.WHOLE_COUNTRY,
-        *india_gazetteer.REGIONS,
-        *india_gazetteer.CITIES,
-    ):
+    if india and india not in _INDIA_PLACES:
         _log.warning("filter dropped: india %.40r is not a known place", india)
     # `build_filter`'s bracket fallback: an unserved currency is re-scoped to the default, and
     # with the default unserved too the bracket compiles to nothing. Only once a bound is set —
@@ -563,14 +572,9 @@ def _refuse_what_strict_forbids(
             f"etype {etype!r} is not a known employment type; known: "
             f"{_listed(employment_type_filter.RULES)}"
         )
-    places = (
-        india_filter.WHOLE_COUNTRY,
-        *india_gazetteer.REGIONS,
-        *india_gazetteer.CITIES,
-    )
-    if india and india not in places:
+    if india and india not in _INDIA_PLACES:
         raise ValueError(
-            f"india {india!r} is not a known place; known: {_listed(places)}"
+            f"india {india!r} is not a known place; known: {_listed(_INDIA_PLACES)}"
         )
     if kw_in and kw_in not in KEYWORD_SCOPES:
         raise ValueError(

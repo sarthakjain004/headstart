@@ -109,7 +109,8 @@ built.
     - a `family` the taxonomy does not configure;
     - a `role` with no watch pattern.
   - **A `job_search.ScopeUnavailable` (a `LookupError`), a state of the deployment:**
-    - `family=` with no role assignments loaded;
+    - `family=` with no role assignments loaded, or with no family taxonomy loaded, so a
+      missing `config/role_families.json` is not read as the caller's typo;
     - `role=` with no watchlist loaded;
     - a filter or sort keyed on a column the table has not migrated onto: `description` for a
       keyword scope that reads it, `min_salary_annual` for a salary bound, `has_salary` or the

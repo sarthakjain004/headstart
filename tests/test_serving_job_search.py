@@ -1256,6 +1256,7 @@ def _strict_searcher(currencies=("INR",)):
         ({"etype": "gig"}, ["'gig'", "full-time, part-time, contract, internship"]),
         ({"india": "atlantis"}, ["'atlantis'", "india, delhi ncr", "bengaluru"]),
         ({"kw": "go", "kw_in": "body"}, ["'body'", "title, description, both"]),
+        ({"kw_in": "body"}, ["'body'"]),  # refused with or without a keyword to scope
         ({"sort": "newest"}, ["'newest'", "posted, seen, salary"]),
         ({"salary_min": "5", "salary_currency": "XYZ"}, ["'XYZ'", "it serves: INR"]),
         # no currency asked: the bracket is priced in USD, which this table does not serve
@@ -1316,6 +1317,8 @@ def test_strict_accepts_what_the_table_serves():
         ({"salary_min": "5", "salary_currency": "USD"}, "min_salary_annual"),
         ({"seen_within": "24"}, "first_seen"),
         ({"first_seen_after": "2026-09-01T00:00:00"}, "first_seen"),
+        ({"seen_after": "2026-09-01"}, "first_seen"),
+        ({"seen_before": "2026-09-01"}, "first_seen"),
         ({"sort": "seen"}, "first_seen"),
         ({"sort": "salary"}, "min_salary_annual"),
     ],
@@ -1389,6 +1392,16 @@ def test_strict_refuses_a_hand_off_it_would_ignore_or_widen(
     assert named in (body.get("detail") or body["error"])
     # Without strict the same hand-off is served as it always was, never refused.
     _hand_off(pairs, family_ids, watch, strict=False)
+
+
+def test_strict_reads_no_family_taxonomy_as_the_deployments_state_not_the_callers():
+    """A missing config/role_families.json leaves nothing configured: every family would read
+    as a typo, so it is the 503 of a deployment that cannot check one."""
+    from werkzeug.datastructures import MultiDict
+
+    args = MultiDict([("board", "b:x"), ("family", "ai-ml"), ("strict", "1")])
+    with pytest.raises(ScopeUnavailable, match="family taxonomy"):
+        scoped_jobs_clause(args, {"ai-ml": []}, _WATCHED, known_families=())
 
 
 def test_strict_names_the_accepted_roles_and_families():

@@ -567,6 +567,8 @@ class TrendHistory:
         self._evictions: dict[str, list[tuple[str, int]]] = {}
         self._companies: dict[str, dict] = {}
         self._company_of: dict[str, str] = {}
+        # `_company_of` keyed case-folded, with the mapping it was read from (`company_of`).
+        self._company_of_folded: tuple[dict[str, str], dict[str, str]] | None = None
         self._candidates: list[company_suggestions.Candidate] = []
         self._watch: dict[str, dict[str, str]] = {}
         self._family_labels: dict[str, str] = {}
@@ -916,11 +918,18 @@ class TrendHistory:
     def company_of(self, board: str) -> str | None:
         """The directory key of the company holding ``board``, or None when none does. Board
         keys compare case-blind, as the directory joins them: a hand-typed
-        `company=GOOGLE:careers.google.com` was "not in the company directory"."""
+        `company=GOOGLE:careers.google.com` was "not in the company directory". The case-folded
+        map is built once, keyed on the `_company_of` it was read from, which is only ever
+        replaced whole."""
         if board in self._company_of:
             return self._company_of[board]
-        folded = {held.lower(): key for held, key in self._company_of.items()}
-        return folded.get(board.lower())
+        folded = self._company_of_folded
+        if folded is None or folded[0] is not self._company_of:
+            folded = self._company_of_folded = (
+                self._company_of,
+                {held.lower(): key for held, key in self._company_of.items()},
+            )
+        return folded[1].get(board.lower())
 
     def trailing_week(self) -> dict[str, str | None]:
         """The window Hot ranks over (ADR-0230), the trailing ``NEW_WINDOW_DAYS``, as
