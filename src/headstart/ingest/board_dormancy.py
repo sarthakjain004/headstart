@@ -1,4 +1,4 @@
-"""Dormant Boards: a Board whose newest posting is more than two years old is not hiring (ADR-0248).
+"""Dormant Boards: a Board that has posted no Job in two years is not hiring (ADR-0250).
 
 An ATS serves a posting until someone closes it, and nobody closes anything on a Board nobody
 tends. SmartRecruiters still serves all 6,519 of SonsoftInc's postings as open, every one from
@@ -7,22 +7,25 @@ On served table v448 (2026-09-28), 55,101 rows (10.3%) sat on 3,896 such Boards,
 of the rows whose title says "Java".
 
 `scrape_join` judges every Board as the snapshot streams past and writes the verdict to
-:data:`headstart.ingest.DORMANT_BOARDS_PATH`, `filter_tech` leaves a Dormant Board's rows out of the
-Tech subset, and `index sync` names the Boards apart when their rows go Unconfirmed. The rest follows
-from machinery that already exists: the Board was scraped, so its rows missing from the Tech subset
-are evicted through the Unconfirmed grace period (ADR-0083), and the priority ledger, which counts
-the Tech subset, decays the Board out of the head. A Board that
-posts again is not Dormant on its next scrape, and its postings come back with it.
+:data:`headstart.ingest.DORMANT_BOARDS_PATH`, `filter_tech` leaves a Dormant Board's Jobs out of the
+Tech subset, and `index sync` names the Boards apart when their rows go Unconfirmed and when they
+are evicted. The rest follows from machinery that already exists: the Board was scraped, so its
+rows missing from the Tech subset are evicted through the Unconfirmed grace period (ADR-0083), and
+the priority ledger, which counts the Tech subset, decays the Board out of the head. A Board that
+posts again is not Dormant on its next scrape, and its Jobs come back with it.
 
-A Board is judged only on evidence. It is not Dormant when its scrape this run was not
-authoritative, since a truncated list may have lost the newest page. It is not Dormant when any
-posting on it has no usable date, since an undated posting may be last week's. A Jibe Board is
-never judged, because its lines are not its whole listing (:data:`_PARTIAL_LISTING_ATSES`).
+A Board is judged only on evidence, and four things keep it out of the verdict:
 
-Judged per Board, never per posting. A real opening on a Board that still posts can carry an old
-date: Databricks' 2021 "Senior Software Engineer - Database Engine Internals", or Netlight's
-"Software Engineering Consultant (2026/27 Graduate)" dated 2021. A posting-age cutoff would
-delete them.
+* its scrape this run was not authoritative, since a truncated list may have lost the newest page;
+* any Job on it has no usable ``posted_at``, since an undated Job may be last week's;
+* its ATS drops some Jobs before they become lines (:data:`_PARTIAL_LISTING_ATSES`);
+* its ids sit on no live Board, so they resolve through ``board_of``'s guess, which can split a
+  colon-bearing native id into a phantom Board of one Job. ``scrape_join`` applies this one,
+  because it holds the live Boards, by passing such a Job to :meth:`PostedDates.see` undated.
+
+Judged per Board, never per Job. A real opening on a Board that still posts can carry an old date:
+Databricks' 2021 "Senior Software Engineer - Database Engine Internals", or Netlight's "Software
+Engineering Consultant (2026/27 Graduate)" dated 2021. A cutoff on each Job's age would delete them.
 """
 
 from __future__ import annotations
@@ -35,30 +38,33 @@ from pathlib import Path
 from headstart.boards.board_identity import ats_of, lower_key
 from headstart.search_filters.posted_date_guard import is_comparable
 
-#: A Board whose newest posting is older than this is Dormant.
+# A change to either rule below changes which Jobs the Tech subset holds, so it bumps
+# `tech_filter.TECH_FILTER_VERSION` in the same change, like a pattern change there does.
+
+#: A Board whose most recently posted Job is older than this is Dormant.
 DORMANT_AFTER = timedelta(days=730)
 
-# Below this a date is a placeholder, not a posting date: keka serves `0001-01-01` and `1900-01-01`
-# (19 rows in served v448). It reads as undated, so it can never make a Board look Dormant.
-_EARLIEST_POSTING_DATE = "2000-01-01"
-
-# ATSes whose scraper drops postings before they become lines, so a Board's lines are not its whole
-# listing and its newest posting may be among the dropped ones. Jibe drops every posting a Scrapable
+# ATSes whose scraper drops Jobs before they become lines, so a Board's lines are not its whole
+# listing and its most recent Job may be among the dropped ones. Jibe drops every Job a Scrapable
 # iCIMS Board already serves (ADR-0240). Their Boards read as undated, so none is ever Dormant.
 _PARTIAL_LISTING_ATSES = frozenset({"jibe"})
 
+# Below this a date is a placeholder, not the day a Job was posted: keka serves `0001-01-01` and
+# `1900-01-01` (19 rows in served v448). It reads as undated, so it can never make a Board Dormant.
+_EARLIEST_POSTED_DAY = "2000-01-01"
 
-def posting_date(posted_at: object) -> str | None:
-    """The ``YYYY-MM-DD`` a posting went up, or None when its ``posted_at`` gives no usable date."""
+
+def posted_day(posted_at: object) -> str | None:
+    """The ``YYYY-MM-DD`` a Job was posted, or None when its ``posted_at`` gives no usable date."""
     if not isinstance(posted_at, str) or not is_comparable(posted_at):
         return None
     day = posted_at[:10]
-    return day if day >= _EARLIEST_POSTING_DATE else None
+    return day if day >= _EARLIEST_POSTED_DAY else None
 
 
-class PostingDates:
-    """Each Board's newest posting date, gathered one posting at a time. A Board with any undated
-    posting holds None, and nothing seen after that changes it."""
+class PostedDates:
+    """Each Board's most recent posted day, gathered one Job at a time. A Board with any undated Job
+    holds None, and nothing seen after that changes it."""
 
     def __init__(self) -> None:
         self._newest: dict[str, str | None] = {}
@@ -67,7 +73,7 @@ class PostingDates:
     def see(self, board: str, posted_at: object) -> None:
         key = lower_key(board)
         self._jobs[key] = self._jobs.get(key, 0) + 1
-        day = None if ats_of(key) in _PARTIAL_LISTING_ATSES else posting_date(posted_at)
+        day = None if ats_of(key) in _PARTIAL_LISTING_ATSES else posted_day(posted_at)
         if day is None:
             self._newest[key] = None
         elif (
@@ -82,7 +88,7 @@ class PostingDates:
         return self._jobs.get(lower_key(board), 0)
 
     def dormant(self, today: date, unauthoritative: Collection[str]) -> dict[str, str]:
-        """``{lowercased Board: its newest posting date}`` for every Board judged Dormant.
+        """``{lowercased Board: its most recent posted day}`` for every Board judged Dormant.
 
         ``unauthoritative`` holds lowercased Board keys, as ``scrape_join`` already has them.
         """
@@ -104,8 +110,9 @@ def read(path: Path) -> frozenset[str] | None:
     """The lowercased Dormant Board keys at ``path``, or None when there is no usable verdict.
 
     None leaves every Board in, which is the Tech subset as it was before this rule. That is the
-    safe direction to fail: a lost verdict costs one run of stale rows, while a wrong one would
-    evict live postings.
+    safe direction to fail. A lost verdict serves stale rows for a run, and a Dormant Board's rows
+    that were already evicted come back, embedded again, until the next verdict evicts them. A
+    wrong verdict would evict live Jobs.
     """
     try:
         data = json.loads(path.read_text(encoding="utf-8"))

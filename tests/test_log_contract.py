@@ -417,7 +417,7 @@ def _join_snapshot(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         "data/jobs",
         "--unauthoritative-boards",
         "data/state/unauthoritative_boards.json",
-        # Pinned under tmp_path: it defaults to the repo's real data/state/ (ADR-0248).
+        # Pinned under tmp_path: it defaults to the repo's real data/state/ (ADR-0250).
         "--dormant-boards",
         "data/state/dormant_boards.json",
         "--speedup-ledger",

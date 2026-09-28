@@ -56,7 +56,7 @@ def _run(
         "--scraped-boards",
         str(scraped_boards_path or out.parent / "scraped_boards.json"),
         "--dormant-boards",
-        str(out / "dormant_boards.json"),
+        str(out.parent / "dormant_boards.json"),
         "--ledger",
         str(ledger or out.parent / "no-such-ledger"),
         "--scrape-health",
@@ -97,7 +97,7 @@ def test_join_unions_per_ats_across_shards(tmp_path):
 
 def test_join_judges_dormant_boards_off_the_lines_it_unions(tmp_path):
     """The union already parses every line, so it is where each Board's newest posting is read
-    (ADR-0248). A Board with a recent posting, or with an undated one, is not Dormant, and nor is
+    (ADR-0250). A Board with a recent posting, or with an undated one, is not Dormant, and nor is
     one on no live Board, whose ids resolve through `board_of`'s guess."""
     today = datetime.now(UTC).date().isoformat()
     ledger = tmp_path / "liveness"
@@ -133,7 +133,7 @@ def test_join_judges_dormant_boards_off_the_lines_it_unions(tmp_path):
 
     _run(frags, out, ledger=ledger)
 
-    verdict = json.loads(out.joinpath("dormant_boards.json").read_text())
+    verdict = json.loads((out.parent / "dormant_boards.json").read_text())
     assert verdict == {"smartrecruiters:sonsoftinc": "2017-09-14"}
 
 

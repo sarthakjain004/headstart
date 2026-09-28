@@ -1,4 +1,4 @@
-# ADR-0248: A Board silent for two years is Dormant, and its Jobs leave the Tech subset
+# ADR-0250: A Board silent for two years is Dormant, and its Jobs leave the Tech subset
 
 **Status:** accepted · **Date:** 2026-09-28 · **Relates to:**
 [ADR-0017](0017-tech-role-filter.md) (the post-hoc tech gate),
@@ -32,13 +32,21 @@ Measured on served table v448 (2026-09-28, 533,799 rows, read straight off HF):
 * **Nothing removes them.** A random 40 of the small ones, across 13 ATSes, all answered 200 with
   no closed or expired text. They never leave their Board's listing, so `index sync` never sees
   them go.
+* **The case #570 asked to protect**, a small company that keeps one opening up for years, is the
+  long tail: 1,922 of the 3,896 Boards hold a single served row (1,922 rows, 3.5% of the 55,101),
+  and 1,198 more hold two to five (3,434 rows). 77 Boards of over a hundred rows hold 37,566. The
+  40 small ones read were roles dated 2018-2024 and a few placeholders ("Test", "Copy of Senior
+  Armourer"), all still served as open. The two-year window is for them: a Board that posts once
+  a year is never Dormant.
 
 ## Decision
 
 1. **A Board is Dormant when its newest posting is more than 730 days old** on the day of the run
    (`board_dormancy.DORMANT_AFTER`; a newest posting exactly 730 days old is not Dormant). It is
    judged only on evidence. A Board whose scrape this run was not authoritative is not judged,
-   since a truncated list may have lost the newest page. A Board with any posting that has no
+   since a truncated list may have lost the newest page. A shortfall ADR-0121 tolerates (a read
+   of at least 99%) still counts as authoritative; if the Job it missed was the only recent one,
+   the ADR-0083 grace period holds the rows until the next complete read clears the verdict. A Board with any posting that has no
    usable date is not judged, since an undated posting may be last week's. A usable date is an
    ISO `posted_at` on or after 2000-01-01; Keka's `0001-01-01` and `1900-01-01` placeholders read
    as undated. Two more cases read as undated, because the lines cannot show the whole Board. One
@@ -55,7 +63,8 @@ Measured on served table v448 (2026-09-28, 533,799 rows, read straight off HF):
    judges it. Its report counts these apart from the non-tech rows. With no readable verdict it
    warns and leaves nothing out, which is the Tech subset as it was before this ADR. `index sync`
    reads the same verdict and names a Dormant Board's newly Unconfirmed rows on a line of their
-   own, instead of among the Boards that "returned no tech Job this scrape".
+   own, instead of among the Boards that "returned no tech Job this scrape", and names them again
+   on the run that evicts them.
 4. **Eviction is unchanged.** The Board was scraped, so it is in the eviction scope, and its rows
    are missing from the Tech subset. Their first absence makes them Unconfirmed, and the next
    scrape of the Board evicts them (ADR-0083). The priority ledger's EWMA (0.7 on the latest run)
@@ -131,8 +140,9 @@ Zoho Board, and a Keka Board carrying placeholder dates.
 * **A Dormant Board is still scraped**, in the Tail rotation rather than every run. The
   SmartRecruiters ones cost ~1.4 h of Board-time per full read. ADR-0242's back-off does not
   reach them, because their listings are not empty. Backing them off too is a possible follow-up.
-* **A Board that cannot be judged keeps its rows, and may churn.** An Unauthoritative scrape, or a
-  lost verdict, leaves the Board's rows in the Tech subset for that run. Rows already evicted are
+* **A Board that cannot be judged keeps its rows, and may churn.** An Unauthoritative scrape, a
+  lost verdict, or one Job whose date depends on a detail fetch that failed (Workday's
+  `posted_at` is the detail's `startDate`) leaves the Board's rows in the Tech subset for that run. Rows already evicted are
   then added and embedded again, and evicted two scrapes later. On 2026-09-28, 10 of the Dormant
   Boards (294 served rows) were scope-excluded, almost all on every run (`freshteam:abnhire` 310
   runs in a row). Those are never judged, so they never churn, and their rows stay until they

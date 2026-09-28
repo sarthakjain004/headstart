@@ -298,7 +298,7 @@ def test_filter_jobs_submits_largest_file_first_to_the_pool(tmp_path, monkeypatc
 
 def test_report_logs_per_ats_table_and_grand_total(caplog):
     logger = logging.getLogger("test_tech_filter.report")
-    stats = {"greenhouse": FileCounts(2, 3), "lever": FileCounts(5, 5)}
+    stats = {"greenhouse": FileCounts(2, 3, 0), "lever": FileCounts(5, 5, 0)}
     with caplog.at_level(logging.INFO):
         report(stats, "data/jobs/tech", logger)
     infos = [r.getMessage() for r in caplog.records if r.levelno == logging.INFO]
@@ -319,7 +319,7 @@ def test_report_warns_on_an_ats_that_contributed_zero_rows(caplog):
     in this run's slice at all — is a different case and must not be named.
     """
     logger = logging.getLogger("test_tech_filter.report")
-    stats = {"greenhouse": FileCounts(2, 3), "jazzhr": FileCounts(0, 0)}
+    stats = {"greenhouse": FileCounts(2, 3, 0), "jazzhr": FileCounts(0, 0, 0)}
     with caplog.at_level(logging.INFO):
         report(stats, "data/jobs/tech", logger)
     warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
@@ -338,7 +338,7 @@ def test_report_warns_when_the_whole_corpus_is_zero(caplog):
     and "is the whole run broken") are answered separately, and no TOTAL line fires. WARNING,
     not ERROR: ERROR is an abort (ADR-0039), and this stage does not abort on it."""
     logger = logging.getLogger("test_tech_filter.report")
-    stats = {"jazzhr": FileCounts(0, 0), "jobvite": FileCounts(0, 0)}
+    stats = {"jazzhr": FileCounts(0, 0, 0), "jobvite": FileCounts(0, 0, 0)}
     with caplog.at_level(logging.INFO):
         report(stats, "data/jobs/tech", logger)
     assert not any(r.levelno >= logging.ERROR for r in caplog.records)
@@ -358,7 +358,7 @@ def test_report_logs_through_the_callers_logger_so_the_tag_is_preserved(caplog):
     logger that entry point hands it."""
     logger = logging.getLogger("headstart.ingest.filter_tech")
     with caplog.at_level(logging.INFO):
-        report({"greenhouse": FileCounts(1, 1)}, "data/jobs/tech", logger)
+        report({"greenhouse": FileCounts(1, 1, 0)}, "data/jobs/tech", logger)
     assert caplog.records
     assert all(r.name == "headstart.ingest.filter_tech" for r in caplog.records)
 
@@ -387,7 +387,7 @@ def test_filter_jobs_and_report_filters_then_reports(tmp_path, caplog):
 
 
 def test_rows_on_a_dormant_board_are_neither_written_nor_judged(tmp_path):
-    """`filter_tech` leaves out the Boards `scrape_join` judged Dormant (ADR-0248), whatever the
+    """`filter_tech` leaves out the Boards `scrape_join` judged Dormant (ADR-0250), whatever the
     titles say. A native id may carry colons (ADR-0049), so the Board is matched at any colon."""
     src = tmp_path / "jobs"
     src.mkdir()
@@ -418,7 +418,7 @@ def test_report_counts_dormant_rows_apart_from_the_non_tech_ones(caplog):
     (total,) = [m for m in infos if m.startswith("TOTAL")]
     assert total.endswith("(dropped 30 non-tech) -> data/jobs/tech")
     assert (
-        "left 60 row(s) on Dormant Boards out of data/jobs/tech unjudged (ADR-0248)"
+        "left 60 row(s) on Dormant Boards out of data/jobs/tech unjudged (ADR-0250)"
         in infos
     )
 

@@ -1,4 +1,4 @@
-"""Tests for the tech-filter stage (headstart.ingest.filter_tech): the Dormant-Board hop (ADR-0248).
+"""Tests for the tech-filter stage (headstart.ingest.filter_tech): the Dormant-Board hop (ADR-0250).
 
 The gate itself is tested in ``test_jobs_tech_filter.py``; this is what the stage adds to it.
 """

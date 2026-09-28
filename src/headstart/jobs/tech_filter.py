@@ -55,7 +55,8 @@ from typing import NamedTuple
 from headstart.boards.board_identity import board_end
 
 # Bumped whenever a pattern change below, or a change to the rule that picks the Boards
-# `filter_jobs` leaves out, moves the tech/not-tech line for input that's already been scraped and filtered — the same discipline as `doc_prep.DERIVATIONS_VERSION`, and for the
+# `filter_jobs` leaves out, moves the tech/not-tech line for input that's already been scraped
+# and filtered — the same discipline as `doc_prep.DERIVATIONS_VERSION`, and for the
 # same reason: this gate's output feeds `role_trends`, whose per-tick counts silently absorb a
 # widened or narrowed regex as if the market moved. Reading this value once per tick lets a
 # reader tell "we changed who counts" from "conditions changed" instead of conflating the two.
@@ -97,7 +98,7 @@ from headstart.boards.board_identity import board_end
 # 84.6%, precision 82.0%). See docs/pipeline/2026-09-24_five-run-log-review.md finding 1.
 # 6 (2026-09-28, `git log 19b8984b..5c57ae9b -- src/headstart/ingest src/headstart/jobs`):
 # no pattern changed. `filter_tech` now leaves out every row on a Dormant Board, one whose newest
-# posting is over two years old (ADR-0248). Purely subtractive: on the served table (v448,
+# posting is over two years old (ADR-0250). Purely subtractive: on the served table (v448,
 # 533,799 rows) at most **-54,661 out, 0 in**, on 3,871 Boards, 47,152 of the rows SmartRecruiters.
 # That is an upper bound, because the served rows are tech only and a Board's non-tech postings can
 # keep it in. On a live scrape of 24 Boards, 16 were Dormant and 10,369 of their served rows would
@@ -809,15 +810,15 @@ def is_tech(title: str | None, department: str | None = None) -> bool:
 
 class FileCounts(NamedTuple):
     """One ``{ats}.jsonl``'s rows: written to the tech subset, read, and left out unjudged because
-    their Board is Dormant (ADR-0248). ``total - kept - dormant`` is what the gate dropped."""
+    their Board is Dormant (ADR-0250). ``total - kept - dormant`` is what the gate dropped."""
 
     kept: int
     total: int
-    dormant: int = 0
+    dormant: int
 
 
 def _filter_file(
-    pair: tuple[Path, Path], dormant_boards: frozenset[str] = frozenset()
+    pair: tuple[Path, Path], *, dormant_boards: frozenset[str]
 ) -> tuple[str, FileCounts]:
     """Filter one ``{ats}.jsonl`` into its tech subset, returning ``(ats, its counts)``.
 
@@ -867,7 +868,7 @@ def filter_jobs(
     files (the full scrape output) are left untouched.
 
     ``dormant_boards`` holds the lowercased keys of the Boards ``scrape_join`` judged Dormant
-    (ADR-0248), whose rows are not written at all, whatever their title. Only
+    (ADR-0250), whose rows are not written at all, whatever their title. Only
     ``headstart.ingest.filter_tech`` passes any; the curated feed passes none.
 
     **On a mid-file failure (a malformed line), one difference from the prior single-threaded
@@ -1009,7 +1010,7 @@ def report(
         )
         if dormant:
             logger.info(
-                f"left {dormant} row(s) on Dormant Boards out of {dst_dir} unjudged (ADR-0248)"
+                f"left {dormant} row(s) on Dormant Boards out of {dst_dir} unjudged (ADR-0250)"
             )
     else:
         # A zero-row run used to be near-silent: the table printed its header and stopped, which
@@ -1022,6 +1023,7 @@ def filter_jobs_and_report(
     src_dir: str | Path,
     dst_dir: str | Path,
     logger: logging.Logger,
+    *,
     dormant_boards: frozenset[str] = frozenset(),
 ) -> dict[str, FileCounts]:
     """``filter_jobs`` plus its run report (see ``report``) — what ``filter_tech.main()`` runs."""

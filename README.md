@@ -269,7 +269,7 @@ creeping in is acceptable; dropping a tech job is not, so a two-part verificatio
 recall: a deterministic self-consistency check plus an independent LLM reasoning gate that judges a
 sample of the *dropped* pile and flags anything the regex missed (ADR-0017). The subset also
 leaves out every job on a Dormant Board, one that has posted nothing in two years while its ATS
-still serves its old postings as open (ADR-0248). A language-detection
+still serves its old postings as open (ADR-0250). A language-detection
 gate then holds non-English descriptions out of the index before embedding — the scrape and the
 curated feed keep them; only retrieval is English-only.
 

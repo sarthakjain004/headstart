@@ -63,7 +63,7 @@ jobs:
       - name: Cycle 1 — a healthy two-Board scrape, written as shard fragments
         run: |
           python - <<'PY'
-          import json, pathlib
+          import datetime, json, pathlib
           from headstart.boards import scrapable_boards
 
           # Real Boards taken from the committed liveness ledger, not invented slugs: `index prune`
@@ -83,7 +83,9 @@ jobs:
                   "title": f"{title} {n}", "location": "Remote", "remote": True,
                   "employment_type": "full-time", "experience": None, "salary": None,
                   "department": "Engineering", "url": f"https://example.test/{board.ats}/{n}",
-                  "posted_at": "2026-07-01", "description": base * reps,
+                  # Today, so no fixture Board ever turns Dormant (ADR-0250).
+                  "posted_at": datetime.date.today().isoformat(),
+                  "description": base * reps,
               }
 
           def write_shard(k, ats, slug, jobs, error=None):

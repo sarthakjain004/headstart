@@ -1007,7 +1007,7 @@ def sync(args: argparse.Namespace) -> int:
         # row it served in the grace set at once. That is more often a read that came back empty
         # than a mass closure (19 SuccessFactors Boards behind run 36218633315's 983), and it
         # evicts next scrape unless the Board comes back — so name those Boards apart.
-        # A Dormant Board empties the same way on purpose (ADR-0248), so it is named on a line of
+        # A Dormant Board empties the same way on purpose (ADR-0250), so it is named on a line of
         # its own rather than as a read that came back empty.
         answered = {lower_key(resolve_board(i, live)) for i in corpus_ids}
         dormant = board_dormancy.read(Path(args.dormant_boards)) or frozenset()
@@ -1028,9 +1028,23 @@ def sync(args: argparse.Namespace) -> int:
         if went_dormant:
             _log.info(
                 f"  {sum(went_dormant.values())} newly unconfirmed on {len(went_dormant)} "
-                "Dormant Board(s), left out of the Tech subset (ADR-0248): "
+                "Dormant Board(s), left out of the Tech subset (ADR-0250): "
                 + log.named_sample(
                     [f"{b} ({n})" for b, n in went_dormant.most_common()]
+                )
+            )
+        # The run that evicts them names them too, or its evict line reads as closures.
+        evicted_dormant = Counter(
+            board
+            for board in (resolve_board(i, live) for i in plan.delete)
+            if lower_key(board) in dormant
+        )
+        if evicted_dormant:
+            _log.info(
+                f"  {sum(evicted_dormant.values())} of this run's evictions are on "
+                f"{len(evicted_dormant)} Dormant Board(s) (ADR-0250): "
+                + log.named_sample(
+                    [f"{b} ({n})" for b, n in evicted_dormant.most_common()]
                 )
             )
         # Which Boards dominate the unconfirmed set. A grace period spread thinly over many Boards
@@ -1530,7 +1544,7 @@ def main() -> int:
         "--dormant-boards",
         default=str(DORMANT_BOARDS_PATH),
         help="JSON of the Boards scrape_join judged Dormant; their newly Unconfirmed rows are "
-        "named apart from Boards that came back empty (ADR-0248)",
+        "named apart from Boards that came back empty (ADR-0250)",
     )
     p_sync.add_argument(
         "--upgrades",

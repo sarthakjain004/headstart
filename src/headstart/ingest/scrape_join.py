@@ -17,7 +17,7 @@ of re-deriving it from the whole pre-tech-filter snapshot, which is what kept ~9
 the critical path between the two jobs.
 
 For the same reason it judges which Boards are Dormant, reading each line's ``posted_at`` off the
-parse the union already does (ADR-0248). ``filter_tech`` leaves those Boards' rows out of the Tech
+parse the union already does (ADR-0250). ``filter_tech`` leaves those Boards' rows out of the Tech
 subset.
 
 Run: python -m headstart.ingest.scrape_join [--shards DIR] [--out DIR]
@@ -120,7 +120,7 @@ def write_unauthoritative_boards(
 
 
 def _judge_dormant(
-    dates: board_dormancy.PostingDates, unauthoritative: set[str], path: Path
+    dates: board_dormancy.PostedDates, unauthoritative: set[str], path: Path
 ) -> None:
     """Write this run's Dormant Boards for `filter_tech`, and name the biggest in the log."""
     today = datetime.now(UTC).date()
@@ -129,7 +129,7 @@ def _judge_dormant(
     biggest = sorted(verdict, key=lambda board: (-dates.jobs(board), board))
     jobs = sum(dates.jobs(board) for board in verdict)
     _log.info(
-        f"judged {len(verdict)} Board(s) Dormant, newest posting before "
+        f"judged {len(verdict)} Board(s) Dormant, no Job posted since "
         f"{today - board_dormancy.DORMANT_AFTER}, holding {jobs} scraped line(s) -> {path}"
         + (
             ": "
@@ -204,7 +204,7 @@ def main() -> int:
         "--dormant-boards",
         default=str(DORMANT_BOARDS_PATH),
         help="where to record the Boards judged Dormant, for `filter_tech` to leave out of the "
-        "Tech subset and `index sync` to name apart (ADR-0248; default: "
+        "Tech subset and `index sync` to name apart (ADR-0250; default: "
         "data/state/dormant_boards.json)",
     )
     ap.add_argument(
@@ -261,7 +261,7 @@ def main() -> int:
         )
     }
     seen_on_unauthoritative: list[str] = []
-    dates = board_dormancy.PostingDates()
+    dates = board_dormancy.PostedDates()
 
     total = 0
     for ats_file, sources in sorted(per_ats.items()):

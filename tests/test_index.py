@@ -148,7 +148,7 @@ def _sync(
             unauthoritative_boards=str(tmp_path / "unauthoritative_boards.json"),
             # Absent unless a test writes it: no Unauthoritative Board returned an id (ADR-0243).
             unauthoritative_ids=str(tmp_path / "unauthoritative_board_ids.txt"),
-            # Absent unless a test writes it: no Board is Dormant (ADR-0248).
+            # Absent unless a test writes it: no Board is Dormant (ADR-0250).
             dormant_boards=str(tmp_path / "dormant_boards.json"),
             # Pinned into tmp_path for the same reason as `upgrades`. The grace period is left
             # ON so these tests exercise the real production path; the file starts absent, which
@@ -227,7 +227,7 @@ def test_the_grace_line_names_boards_that_emptied_at_once(
 
 
 def test_the_grace_line_names_dormant_boards_apart(tmp_path, monkeypatch, caplog):
-    """A Dormant Board's rows all leave the Tech subset at once too (ADR-0248), but that is the
+    """A Dormant Board's rows all leave the Tech subset at once too (ADR-0250), but that is the
     rule working, not a read that came back empty, so it gets a line of its own."""
     ids = ["greenhouse:a:1", "greenhouse:b:1", "greenhouse:b:2"]
     assert _sync(tmp_path, monkeypatch, ids) == 0
@@ -240,9 +240,17 @@ def test_the_grace_line_names_dormant_boards_apart(tmp_path, monkeypatch, caplog
     lines = [r.getMessage() for r in caplog.records]
     assert (
         "  2 newly unconfirmed on 1 Dormant Board(s), left out of the Tech subset "
-        "(ADR-0248): greenhouse:b (2)" in lines
+        "(ADR-0250): greenhouse:b (2)" in lines
     )
     assert not any("emptying at once" in line for line in lines)
+    caplog.clear()
+    assert _sync(tmp_path, monkeypatch, ids, corpus=ids[:1], scope=scope) == 0
+    lines = [r.getMessage() for r in caplog.records]
+    assert (
+        "  2 of this run's evictions are on 1 Dormant Board(s) (ADR-0250): greenhouse:b (2)"
+        in lines
+    )
+    assert set(_rows(tmp_path)) == {"greenhouse:a:1"}
 
 
 def test_sync_stamps_every_row_it_adds(tmp_path, monkeypatch):

@@ -9,7 +9,7 @@ is not) into ``data/jobs/tech/``, which is what the embedding / index / UI consu
 non-tech ~83% means the embedding model only ever works on the jobs the product actually serves.
 
 It also leaves out every row on a Board ``scrape_join`` judged Dormant, one whose newest posting is
-more than two years old (``headstart.ingest.board_dormancy``, ADR-0248). With no verdict to read, it
+more than two years old (``headstart.ingest.board_dormancy``, ADR-0250). With no verdict to read, it
 leaves nothing out.
 
 Run from repo root:
@@ -39,7 +39,7 @@ def main() -> int:
         "--dormant-boards",
         type=Path,
         default=DORMANT_BOARDS_PATH,
-        help="the Boards scrape_join judged Dormant, whose rows are left out (ADR-0248)",
+        help="the Boards scrape_join judged Dormant, whose rows are left out (ADR-0250)",
     )
     args = ap.parse_args()
     if not args.src.is_dir():
@@ -48,7 +48,7 @@ def main() -> int:
     if dormant is None:
         _log.warning(
             f"no readable Dormant-Board verdict at {args.dormant_boards} — leaving no Board out "
-            "this run (ADR-0248)"
+            "this run (ADR-0250)"
         )
 
     try:

@@ -31,8 +31,9 @@ last colon-separated segment. This is a **guess**, not an exact answer (ADR-0049
 can itself contain a colon, and for those this returns a Board that does not exist. Safe only
 where both sides of a comparison run through this same function (so a phantom Board is produced
 identically on each), or where the answer only ever falls back for an id on no *known* Board
-(``index_plan.resolve_board``, which matches by prefix against a real keep-set first and reaches
-this only when nothing in the keep-set matches).
+(``index_plan.resolve_board``, which reaches this only when :func:`board_end` finds none of a
+real keep-set's Boards at the front of the id). :func:`board_end` is the exact answer for a known
+set of Boards: the colon where the longest of them ends, matched by prefix.
 
 Plus the two small conveniences duplicated ad hoc at a dozen-plus call sites each:
 :func:`ats_of` (the ATS prefix of any ``{ats}:...``-shaped key — a board key, a Job id, or a

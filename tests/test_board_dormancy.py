@@ -1,4 +1,4 @@
-"""Tests for judging Dormant Boards (headstart.ingest.board_dormancy, ADR-0248)."""
+"""Tests for judging Dormant Boards (headstart.ingest.board_dormancy, ADR-0250)."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from datetime import date
 import pytest
 
 from headstart.ingest import board_dormancy
-from headstart.ingest.board_dormancy import PostingDates, posting_date
+from headstart.ingest.board_dormancy import PostedDates, posted_day
 
 TODAY = date(2026, 9, 28)  # the cutoff is 2024-09-28
 
@@ -25,18 +25,18 @@ TODAY = date(2026, 9, 28)  # the cutoff is 2024-09-28
         ("1900-01-01", None),
     ],
 )
-def test_posting_date_reads_only_a_real_iso_date(posted_at, day):
-    assert posting_date(posted_at) == day
+def test_posted_day_reads_only_a_real_iso_date(posted_at, day):
+    assert posted_day(posted_at) == day
 
 
-def _dates(*postings: tuple[str, object]) -> PostingDates:
-    dates = PostingDates()
-    for board, posted_at in postings:
+def _dates(*jobs: tuple[str, object]) -> PostedDates:
+    dates = PostedDates()
+    for board, posted_at in jobs:
         dates.see(board, posted_at)
     return dates
 
 
-def test_a_board_whose_every_posting_is_over_two_years_old_is_dormant():
+def test_a_board_whose_every_job_is_over_two_years_old_is_dormant():
     dates = _dates(
         ("smartrecruiters:SonsoftInc", "2016-05-01"),
         ("smartrecruiters:SonsoftInc", "2017-09-14"),
@@ -44,7 +44,7 @@ def test_a_board_whose_every_posting_is_over_two_years_old_is_dormant():
     assert dates.dormant(TODAY, set()) == {"smartrecruiters:sonsoftinc": "2017-09-14"}
 
 
-def test_one_recent_posting_keeps_every_old_one_on_its_board():
+def test_one_recent_job_keeps_every_old_one_on_its_board():
     """Judged per Board: Databricks' 2021 req is a real opening on a Board that still posts."""
     dates = _dates(
         ("greenhouse:databricks", "2021-01-26"),
@@ -59,9 +59,9 @@ def test_the_cutoff_is_two_years_to_the_day():
 
 
 @pytest.mark.parametrize("undated_first", [True, False])
-def test_an_undated_posting_keeps_its_board_whenever_it_comes(undated_first):
-    postings = [("zoho:quiet", "2019-03-01"), ("zoho:quiet", None)]
-    dates = _dates(*(postings[::-1] if undated_first else postings))
+def test_an_undated_job_keeps_its_board_whenever_it_comes(undated_first):
+    jobs = [("zoho:quiet", "2019-03-01"), ("zoho:quiet", None)]
+    dates = _dates(*(jobs[::-1] if undated_first else jobs))
     assert dates.dormant(TODAY, set()) == {}
 
 
@@ -92,7 +92,7 @@ def test_board_keys_are_case_folded():
 
 
 def test_the_verdict_round_trips(tmp_path):
-    path = tmp_path / "jobs" / "dormant_boards.json"
+    path = tmp_path / "state" / "dormant_boards.json"
     board_dormancy.write({"smartrecruiters:sonsoftinc": "2017-09-14"}, path)
     assert board_dormancy.read(path) == frozenset({"smartrecruiters:sonsoftinc"})
 
