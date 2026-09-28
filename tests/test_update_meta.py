@@ -945,3 +945,81 @@ def test_a_none_requisition_still_clears_the_stored_one():
     facts = {f: meta.get(f) for f in um.FACT_FIELDS} | {"requisition": None}
     row, facts_changed, _ = um.refresh_row(meta, facts, {}, sweep=False)
     assert row["requisition"] is None and facts_changed
+
+
+# --- ADR-0285: rows embedded before `doc_hash` are fingerprinted once ----------------------------
+
+
+def _one_row_store(tmp_path, **over):
+    store = tmp_path / "store"
+    store.mkdir(exist_ok=True)
+    (store / "meta.jsonl").write_text(
+        json.dumps(_meta(**over)) + "\n", encoding="utf-8"
+    )
+    jobs = tmp_path / "jobs"
+    jobs.mkdir(exist_ok=True)
+    return store, jobs
+
+
+def _only_meta(store) -> dict:
+    return json.loads((store / "meta.jsonl").read_text(encoding="utf-8"))
+
+
+def test_a_row_with_no_fingerprint_is_stamped_from_this_runs_text(tmp_path):
+    store, jobs = _one_row_store(tmp_path)
+    job = {
+        "id": "greenhouse:acme:1",
+        "title": "Backend Engineer",
+        "description": "Build services.",
+    }
+    (jobs / "greenhouse.jsonl").write_text(json.dumps(job) + "\n", encoding="utf-8")
+    um.refresh(store, jobs, tmp_path / "none", tmp_path / "wm.json")
+    assert _only_meta(store)["doc_hash"] == um.doc_hash(job)
+
+
+def test_a_rows_fingerprint_is_only_ever_set_by_its_embed(tmp_path):
+    """Refreshed from this run's text, an edit could never show as a changed fingerprint."""
+    store, jobs = _one_row_store(tmp_path, doc_hash="embedded")
+    job = {"id": "greenhouse:acme:1", "title": "Staff Engineer", "description": "New."}
+    (jobs / "greenhouse.jsonl").write_text(json.dumps(job) + "\n", encoding="utf-8")
+    um.refresh(store, jobs, tmp_path / "none", tmp_path / "wm.json")
+    assert _only_meta(store)["doc_hash"] == "embedded"
+
+
+def test_a_row_on_the_stale_list_is_stamped_stale_without_being_scraped(tmp_path):
+    """The one-off repair: its vector encodes another posting's text, so no fingerprint of its own
+    text is true of it. Stamped even outside this run's Slice; re-embedded when next read."""
+    store, jobs = _one_row_store(tmp_path)
+    stale = tmp_path / "stale.txt"
+    stale.write_text("greenhouse:acme:1\n", encoding="utf-8")
+    um.refresh(
+        store, jobs, tmp_path / "none", tmp_path / "wm.json", stale_vectors=stale
+    )
+    assert _only_meta(store)["doc_hash"] == um.STALE_DOC_HASH
+
+
+def test_a_row_outside_this_run_and_off_the_list_stays_unstamped(tmp_path):
+    store, jobs = _one_row_store(tmp_path)
+    um.refresh(store, jobs, tmp_path / "none", tmp_path / "wm.json")
+    assert "doc_hash" not in _only_meta(store)
+
+
+def test_a_job_the_change_ledger_saw_edited_is_stamped_stale(tmp_path):
+    """Its description was replaced after it was embedded (ADR-0207 counts each replacement), so
+    its vector encodes the old text; a fingerprint of the new text would hide that for good."""
+    import gzip
+
+    store, jobs = _one_row_store(tmp_path)
+    job = {"id": "greenhouse:acme:1", "title": "Backend Engineer", "description": "v2"}
+    (jobs / "greenhouse.jsonl").write_text(json.dumps(job) + "\n", encoding="utf-8")
+    ledger = tmp_path / "description_changes.tsv.gz"
+    with gzip.open(ledger, "wt", encoding="utf-8") as fh:
+        fh.write("greenhouse:acme:1\t1\t0123456789abcdef\n")
+    um.refresh(
+        store,
+        jobs,
+        tmp_path / "none",
+        tmp_path / "wm.json",
+        description_changes=ledger,
+    )
+    assert _only_meta(store)["doc_hash"] == um.STALE_DOC_HASH

@@ -42,6 +42,7 @@ from headstart.ingest.doc_prep import (
     MAX_SEQ_TOKENS,
     bucket_for,
     build_doc,
+    doc_hash,
     is_english,
     to_meta,
 )
@@ -83,11 +84,19 @@ _MAX_SHARDS = 15  # == pipeline.yml `max-parallel`; Phase 1 runs one shard per l
 # plans the shards they ran on six of the seven (36218633315 would take 2, not 1). Keeping 300 s
 # would have halved the fan-out on the same work.
 _TARGET_SECONDS = 165.0
+# The most edited Jobs re-embedded per run (ADR-0285). An ordinary run edits about 190 (#638's
+# measurement after the Zoho fix, #639); the bound is for a scraper change that rewrites every
+# description of an ATS at once. The rest are re-embedded when their Board is next in a Slice,
+# since their stored fingerprint still differs.
+_MAX_EDIT_REEMBEDS = 2000
 
 
-def _prior_rows(path: Path) -> tuple[set[str], set[str]]:
-    """``(embedded ids, ids whose vector was built without a description)`` — both empty on a
-    first run (no meta.jsonl yet).
+def _prior_rows(path: Path) -> tuple[set[str], set[str], dict[str, str]]:
+    """``(embedded ids, ids whose vector was built without a description, {id: doc_hash})`` — all
+    empty on a first run (no meta.jsonl yet).
+
+    ``doc_hash`` is the fingerprint of the text each vector encodes (ADR-0285); a row embedded
+    before it existed has none until ``update_meta`` stamps it.
 
     The second set is what makes a title-only vector repairable (ADR-0050), and it is now read
     straight from ``has_description`` on every row. It used to be **inferred** where the flag was
@@ -99,9 +108,10 @@ def _prior_rows(path: Path) -> tuple[set[str], set[str]]:
     (ADR-0062), so there is nothing left to guess about.
     """
     if not path.exists():
-        return set(), set()
+        return set(), set(), {}
     ids: set[str] = set()
     degraded: set[str] = set()
+    hashes: dict[str, str] = {}
     with path.open(encoding="utf-8") as fh:
         for line in fh:
             line = line.strip()
@@ -111,7 +121,9 @@ def _prior_rows(path: Path) -> tuple[set[str], set[str]]:
             ids.add(row["id"])
             if row.get("has_description") is False:
                 degraded.add(row["id"])
-    return ids, degraded
+            if row.get("doc_hash"):
+                hashes[row["id"]] = row["doc_hash"]
+    return ids, degraded, hashes
 
 
 def _load_tokenizer():
@@ -192,7 +204,7 @@ def main() -> int:
     )
     args = ap.parse_args()
 
-    prior, degraded = _prior_rows(Path(args.prior_meta))
+    prior, degraded, hashes = _prior_rows(Path(args.prior_meta))
     scores = load_scores(Path(args.priority))
     # An empty ledger is not an error — ordering just degrades to corpus order — so say it here.
     _log.info(f"priority: {len(scores)} Board scores from {args.priority}")
@@ -207,18 +219,28 @@ def main() -> int:
     boards: list[str] = []
     upgrades: list[str] = []
     scanned = already = dropped = 0
+    edited = deferred = 0
     progress = observability.PreparationProgress(_log)
     for job in iter_jobs(args.source):
         scanned += 1
         jid = job.get("id") or ""
         upgrading = False
+        is_edit = False
         if jid in prior:
-            # A Job already in the store is normally done. The exception is a vector built
-            # without a description whose description we now have — re-embed it, and record the
-            # id so the merge stage evicts the stale row first (ADR-0050). Nothing else can
-            # reach these: `embed_plan` skips by id, so they would stay title-only forever.
-            if not (jid in degraded and (job.get("description") or "").strip()):
+            # A Job already in the store is normally done. Two exceptions are re-embedded, their
+            # ids recorded so the merge stage evicts the stale row first. A vector built without
+            # a description whose description we now have (ADR-0050). And a vector whose text
+            # has changed since, which `doc_hash` shows (ADR-0285): an edited posting, or a
+            # clone that was rewritten. `embed_plan` skips by id, so nothing else reaches them.
+            described = jid in degraded and (job.get("description") or "").strip()
+            stored = hashes.get(jid)
+            is_edit = not described and stored is not None and stored != doc_hash(job)
+            if not (described or is_edit):
                 already += 1
+                progress.report(scanned, len(docs), already, dropped)
+                continue
+            if is_edit and edited >= _MAX_EDIT_REEMBEDS:
+                deferred += 1
                 progress.report(scanned, len(docs), already, dropped)
                 continue
             upgrading = True
@@ -232,6 +254,7 @@ def main() -> int:
         # those would be held on every run forever while `index sync` churned their rows.
         if upgrading:
             upgrades.append(jid)
+            edited += is_edit
         ids.append(jid)
         docs.append(build_doc(job))
         metas.append(to_meta(job))
@@ -241,6 +264,16 @@ def main() -> int:
         f"new Docs: {len(docs)} (scanned {scanned}, already {already}, non-English {dropped}, "
         f"upgraded {len(upgrades)})"
     )
+    if edited:
+        # Its own line: `scripts/runlog/fanout_plan.py` parses the one above to its closing paren.
+        _log.info(
+            f"edited Jobs: {edited} of the upgrades re-embed changed text (ADR-0285)"
+        )
+    if deferred:
+        _log.info(
+            f"edited Jobs: {deferred} more deferred past the cap of {_MAX_EDIT_REEMBEDS} a run "
+            "(ADR-0285) — re-embedded when their Board is next read"
+        )
     # Always rewritten, empty included: a stale list from a prior run would have the merge stage
     # evict rows nothing is re-embedding this time.
     upgrades_path = Path(args.upgrades_out)
