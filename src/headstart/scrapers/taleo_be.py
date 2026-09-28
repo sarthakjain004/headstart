@@ -500,7 +500,11 @@ class TaleoBEScraper(BaseScraper):
         # Pharmaceuticals HQ") where its label reads "Remote - US".
         posting = find_job_posting(page) or {}
         stated = job_posting_fields(posting)
+        # A PropertyValue on the TBE pages read ({"name": ..., "value": "2517"}); schema.org
+        # also allows plain Text, which is read as it stands.
         identifier = posting.get("identifier")
+        if isinstance(identifier, dict):
+            identifier = identifier.get("value")
         detail = {
             "description": _text(body) if body else None,
             "location": _field(labels, *_LOCATION_LABELS) or stated["location"],
@@ -508,7 +512,7 @@ class TaleoBEScraper(BaseScraper):
             "employment_type": _field(labels, *_EMPLOYMENT_TYPE_LABELS)
             or stated["employment_type"],
             "requisition": requisition_of(
-                identifier.get("value") if isinstance(identifier, dict) else None
+                identifier if isinstance(identifier, str | int) else None
             ),
             "posted_at": _posted_at(
                 _field(labels, "Date Posted", "Posting Date")

@@ -72,8 +72,8 @@ belong in README and CONTEXT.md, where `tests/test_board_counts.py` checks them.
   exactly what a sibling does without redirecting (`subset-reqs`: `hourly-spanish-redlobster`,
   2,399 of 2,399, ADR-0254). The script re-reads every live portal and rewrites
   `data/validate/aliases/icims.csv` with both, and it is the only thing that notices when a buried
-  portal starts listing a posting of its own. `dedupe_boards.py` refuses `--apply` for this ATS
-  now.
+  portal starts listing a posting of its own. `dedupe_boards.py` refuses `--apply` for this
+  ATS.
 - **Jibe lands a vanity career site as its client id, and parks clients on Boards already held.**
   A Board is `{client}.jibeapply.com`; resolve a vanity host (`careers.costco.com`) to its client
   with `scripts/discover/mine_jibe.py --vanity`, which reads the rows' `client_code`, else the

@@ -636,3 +636,22 @@ def test_a_portal_buried_onto_a_scraped_icims_board_is_covered(monkeypatch):
         }
     finally:
         jibe._scraped_icims_tenants.cache_clear()
+
+
+@pytest.mark.parametrize(
+    "title", ["Remote Sensing Scientist", "Remote Patient Monitoring RN"]
+)
+def test_remote_naming_a_technology_or_a_service_is_not_remote_work(title):
+    assert jibe._title_says_remote(title) is False
+
+
+@pytest.mark.parametrize(
+    "title",
+    [
+        "Remote Site Reliability Engineer",
+        "Remote Database Administrator",
+        "Remote Sensing Engineer (Remote)",
+    ],
+)
+def test_remote_before_a_tech_role_is_still_remote_work(title):
+    assert jibe._title_says_remote(title) is True

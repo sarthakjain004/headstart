@@ -148,7 +148,7 @@ def robots_verdict(status: int | None, text: str, path: str, agent: str) -> str:
 def _scraped_icims_tenants() -> frozenset[str]:
     """The iCIMS tenant hosts whose postings the iCIMS scraper serves, lowercased, read once per
     process from the committed ledgers: every Scrapable iCIMS Board, and every portal buried onto
-    one in the iCIMS alias ledger (ADR-0222) — its postings are served under the Board it is
+    one in the iCIMS alias ledger (ADR-0222, ADR-0254) — its postings are served under the Board it is
     buried onto, so a Jibe row applying there is covered too."""
     # Imported here: `scrapable_boards` reaches the scraper registry, which imports this module.
     from headstart.boards import alias_ledger, liveness_ledger, scrapable_boards
@@ -195,13 +195,23 @@ def _iso(value: str | None) -> str | None:
 # "Manager - Coding (REMOTE)", "RN (PRN - Not Remote)" and "... - NON REMOTE".
 _NEGATED_REMOTE = re.compile(r"\b(?:not|non)[\s-]+remote\b", re.IGNORECASE)
 _REMOTE_WORD = re.compile(r"\bremote\b", re.IGNORECASE)
+#: "remote" that names a technology or a service in a title, not where the work is ("Remote
+#: Sensing Scientist", "Remote Patient Monitoring RN"). Kept to the two terms that never mean
+#: remote work in a title: `remote.py`'s wider `_JARGON`, tuned for descriptions, also vetoes
+#: "Remote Database Administrator", which usually does. Only the span is dropped, so a title that
+#: also says "(Remote)" elsewhere is still remote.
+_REMOTE_JARGON = re.compile(
+    r"\bremote\s+(?:sensing|(?:patient\s+)?monitoring)\b", re.IGNORECASE
+)
 
 
 def _title_says_remote(title: str | None) -> bool:
     """Whether the title itself states the posting is remote. The place a row names is a city
     even on a remote posting, so `is_remote(location)` read False on all of these."""
     text = title or ""
-    return not _NEGATED_REMOTE.search(text) and bool(_REMOTE_WORD.search(text))
+    if _NEGATED_REMOTE.search(text):
+        return False
+    return bool(_REMOTE_WORD.search(_REMOTE_JARGON.sub(" ", text)))
 
 
 def _location(row: dict) -> str | None:
@@ -338,8 +348,8 @@ class JibeScraper(BaseScraper):
         Board has not read: 6 client board pages redirect off-host (an employer site, an SSO
         login). robots.txt itself is the exception, as RFC 9309 asks: its redirects are followed
         up to five hops, onto any host and any path, and none of them is gated on robots.txt."""
-        # A caller asking for fewer attempts (`_fetch_once`, one) gets that many, paced here; the
-        # transport itself is always asked for one.
+        # A caller asking for fewer attempts (`_fetch_once`, one) gets that many, paced here, and
+        # one asking for more is held to `_ATTEMPTS`; the transport itself is always asked for one.
         paced_attempts = min(kwargs.pop("attempts", _ATTEMPTS), _ATTEMPTS)
         kwargs = {"timeout": 30, **kwargs, "attempts": 1, "allow_redirects": False}
         kwargs.setdefault("headers", {"User-Agent": USER_AGENT})

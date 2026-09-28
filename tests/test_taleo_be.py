@@ -441,23 +441,20 @@ def test_a_failed_feed_leaves_the_board_key():
     assert scraper.company == BOARD_KEY
 
 
-def test_primary_work_location_and_the_json_ld_fill_what_the_labels_missed():
-    """AGIOS rid 2517, live 2026-09-28 (scripts/styles stripped): its place is labelled "Primary
-    Work Location", which the reader never tried, so location and remote fell back to the
-    listing's site label on 8 of 18 postings; its JSON-LD states `employmentType` (read on 0 of 18)
-    and its `identifier` is the requisition (read on none)."""
-    page = (
-        Path(__file__).parent
-        / "fixtures"
-        / "taleo_be_detail_primary_work_location.html"
-    ).read_text()
-    board = (
-        "https://phe.tbe.taleo.net/phe03/ats/careers/v2/searchResults?org=AGIOS&cws=37"
-    )
-    scraper = TaleoBEScraper(board, "Agios Pharmaceuticals Inc")
+_AGIOS_BOARD = (
+    "https://phe.tbe.taleo.net/phe03/ats/careers/v2/searchResults?org=AGIOS&cws=37"
+)
+_AGIOS_PAGE = (
+    Path(__file__).parent / "fixtures" / "taleo_be_detail_primary_work_location.html"
+)
+
+
+def _agios_job(page: str):
+    """AGIOS rid 2517 parsed from its detail ``page`` and its listing row."""
+    scraper = TaleoBEScraper(_AGIOS_BOARD, "Agios Pharmaceuticals Inc")
     item = {
         "id": "2517",
-        "url": board.replace("searchResults", "viewRequisition") + "&rid=2517",
+        "url": _AGIOS_BOARD.replace("searchResults", "viewRequisition") + "&rid=2517",
         "title": "Hemolytic Anemia Specialist (Michigan)",
         "location": "Agios Pharmaceuticals HQ",
         "department": None,
@@ -466,7 +463,28 @@ def test_primary_work_location_and_the_json_ld_fill_what_the_labels_missed():
     [job] = scraper.parse(
         [(item, scraper.read_detail(item, FakeResponse(text=page)))], "t"
     )
+    return job
+
+
+def test_primary_work_location_and_the_json_ld_fill_what_the_labels_missed():
+    """AGIOS rid 2517, live 2026-09-28 (scripts/styles stripped): its place is labelled "Primary
+    Work Location", which the reader never tried, so location and remote fell back to the
+    listing's site label on 8 of 18 postings; its JSON-LD states `employmentType` (read on 0 of 18)
+    and its `identifier` is the requisition (read on none)."""
+    job = _agios_job(_AGIOS_PAGE.read_text())
     assert job.location == "Remote - US"
     assert job.remote is True
     assert job.employment_type == "Full time"
     assert job.requisition == "2517"
+
+
+def test_a_plain_text_identifier_is_the_requisition():
+    """schema.org allows `identifier` as plain Text as well as a PropertyValue: the AGIOS page with
+    its PropertyValue replaced by the bare value reads the same requisition."""
+    page = _AGIOS_PAGE.read_text().replace(
+        '"identifier" : {\n"name" : "Agios Pharmaceuticals Inc",\n"value" : "2517",\n'
+        '"@type" : "PropertyValue"\n}',
+        '"identifier" : "2517"',
+    )
+    assert '"identifier" : "2517"' in page
+    assert _agios_job(page).requisition == "2517"
