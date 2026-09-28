@@ -13,7 +13,9 @@
   const STEPS = [
     { tab: null, targets: ['nav.tabs'], title: 'Everything is one click away',
       body: 'Search, your saved jobs, hiring trends and the résumé builder all live here. On a ' +
-            'wide screen, the button at the top folds it to icons and back.' },
+            'wide screen, the button at the top folds it to icons and back.',
+      bodyFolded: 'These icons lead to Search, your saved jobs, hiring trends and the résumé ' +
+                  'builder. Hover one to see its name, or use the button at the top to show the names.' },
     { tab: 'search', targets: ['#q'], title: 'Describe the job you want',
       body: 'Write it the way you would say it, like “backend engineer at a climate startup”. ' +
             'Results are matched on meaning, not exact words.' },
@@ -38,6 +40,10 @@
   const skipped = new Set();
 
   const visible = node => !!node && node.getClientRects().length > 0;
+  // The nav shows only its icons: folded, and wide enough to be a sidebar (the fold button is
+  // hidden where it is a strip, which shows every name whatever was stored).
+  const navFolded = () => document.documentElement.dataset.nav === 'collapsed'
+    && visible(document.getElementById('nav-toggle'));
   const panelOf = tab => document.getElementById('panel-' + tab);
   // A step on a tab this deployment does not render, or a step on every tab whose target is
   // absent (the Trends link, where Trends is dark), is never shown and not counted in "2 of 5".
@@ -134,7 +140,7 @@
     Object.assign(tour, { at: i, target });
     tour.count.textContent = (n + 1) + ' of ' + shown.length;
     tour.title.textContent = STEPS[i].title;
-    tour.body.textContent = STEPS[i].body;
+    tour.body.textContent = STEPS[i].bodyFolded && navFolded() ? STEPS[i].bodyFolded : STEPS[i].body;
     tour.back.disabled = n === 0;
     tour.next.textContent = n === shown.length - 1 ? 'Finish' : 'Next';
     // A target taller than the window (the filter column) is shown from its top, not its middle.

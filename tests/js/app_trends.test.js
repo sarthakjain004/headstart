@@ -65,6 +65,8 @@ function fakeEl() {
  * alone passes either way, because 'bands' is also the fallback. */
 function loadApp(fetchImpl, cfg = {}) {
   const nodes = {};
+  // The chart's box watcher: a test fires what the browser would when the box changes width.
+  const observers = [];
   const logged = [];
   const fetches = [];
   const ctx = {
@@ -91,6 +93,7 @@ function loadApp(fetchImpl, cfg = {}) {
     // Node's real one, not a stub: the abort tests below need a signal that genuinely fires.
     AbortController,
     getComputedStyle: () => ({ getPropertyValue: () => '#000000' }),
+    ResizeObserver: class { constructor(cb) { this.cb = cb; observers.push(this); } observe() {} },
     fetch: (url, opts) => {
       fetches.push(String(url));
       return fetchImpl ? fetchImpl(String(url), opts) : Promise.resolve({ ok: false });
@@ -126,7 +129,7 @@ function loadApp(fetchImpl, cfg = {}) {
   // The page fetches on load (the feed, the trends chart). Those are not what any test here is
   // asserting about, so the log starts empty from the caller's point of view.
   fetches.length = 0;
-  return { t: ctx.__t, nodes, fetches, ctx };
+  return { t: ctx.__t, nodes, fetches, ctx, observers };
 }
 
 test('a late Trends response cannot overwrite a newer chart', async () => {
@@ -2965,3 +2968,20 @@ test('on a phone the tooltip under the chart is scrolled into view when it falls
     'below the screen’s foot: scrolled into view, and kept through that scroll');
 });
 
+
+test('a new plot width redraws the chart once it settles, from the data it holds', async () => {
+  // A sidebar fold or a window resize. Scaling the old drawing grew the axis type ~19%.
+  const { t, fetches, observers } = loadApp();
+  t.set(fixture(), null);
+  const [box] = observers;
+  const before = t.draws();
+  box.cb([{ contentRect: { width: 700 } }]);
+  box.cb([{ contentRect: { width: 812 } }]);   // still animating
+  await new Promise(resolve => setTimeout(resolve, 220));
+  assert.equal(t.draws(), before + 1, 'one redraw, after the width stops changing');
+  assert.equal(fetches.length, 0, 'a redraw, never a refetch');
+  box.cb([{ contentRect: { width: 812 } }]);   // unchanged
+  box.cb([{ contentRect: { width: 0 } }]);     // the panel hidden
+  await new Promise(resolve => setTimeout(resolve, 220));
+  assert.equal(t.draws(), before + 1, 'no redraw for an unchanged or hidden box');
+});

@@ -39,7 +39,10 @@ function fakeNode(tag, shown = true) {
 
 /** The page: Home and Search panels, a nav, and the Search targets — minus `missing`.
  *  Setting `location.hash` shows that panel, as app.js's router does. */
-function loadTour({ missing = [], stored = null, storageThrows = false, trendsLink = true } = {}) {
+function loadTour({ missing = [], stored = null, storageThrows = false, trendsLink = true,
+                   folded = false, sidebar = true } = {}) {
+  // Shown only where the nav is a sidebar; a narrow window's strip hides it.
+  const foldButton = fakeNode('button', sidebar);
   const panels = { home: fakeNode('section'), search: fakeNode('section') };
   panels.search.hidden = true;
   const onSearch = node => { node.hiddenBy = panels.search; return node; };
@@ -76,7 +79,8 @@ function loadTour({ missing = [], stored = null, storageThrows = false, trendsLi
       createElement: tag => fakeNode(tag),
       querySelector: find,
       getElementById: id => (id.startsWith('panel-') ? panels[id.slice(6)] || null
-        : id === 'q' ? targets['#q'] : null),
+        : id === 'q' ? targets['#q'] : id === 'nav-toggle' ? foldButton : null),
+      documentElement: { dataset: folded ? { nav: 'collapsed' } : {} },
       addEventListener(type, fn) { (docHandlers[type] ||= []).push(fn); },
       removeEventListener(type, fn) { docHandlers[type] = (docHandlers[type] || []).filter(f => f !== fn); },
     },
@@ -195,4 +199,17 @@ test('starting the tour takes the offer down', async () => {
   t.ctx.GuidedTour.start();
   await t.tick();
   assert.equal(t.ctx.document.querySelector('.tour-offer'), null);
+});
+
+test('folded to icons, the first step describes icons, not names it cannot see', async () => {
+  const body = t => t.pop().children[2].textContent;
+  const folded = loadTour({ folded: true });
+  folded.ctx.GuidedTour.start();
+  await folded.tick();
+  assert.match(body(folded), /Hover one to see its name/);
+  // A stored fold on a window too narrow for the sidebar shows the strip, names and all.
+  const strip = loadTour({ folded: true, sidebar: false });
+  strip.ctx.GuidedTour.start();
+  await strip.tick();
+  assert.match(body(strip), /résumé builder all live here/);
 });

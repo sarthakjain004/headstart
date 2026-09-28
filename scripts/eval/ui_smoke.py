@@ -194,8 +194,13 @@ def main() -> None:
                     )
                     page.reload()
                     expect(page.locator("#nav-toggle")).to_have_attribute(
-                        "aria-label", "Expand navigation"
+                        "aria-expanded", "false"
                     )
+                    expect(
+                        page.get_by_role(
+                            "button", name="Navigation labels", expanded=False
+                        )
+                    ).to_have_count(1)
                     page.get_by_role("link", name="Home", exact=True).click()
                     page.get_by_role("link", name="Search", exact=True).click()
                     expect(page.locator("#panel-search")).to_be_visible()

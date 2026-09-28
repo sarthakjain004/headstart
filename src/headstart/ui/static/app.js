@@ -113,10 +113,10 @@ const NAV_KEY = 'hs.navCollapsed';
 function drawNavToggle(){
   const btn = el('nav-toggle');
   const folded = document.documentElement.dataset.nav === 'collapsed';
-  const label = folded ? 'Expand navigation' : 'Collapse navigation';
+  // Only the state flips; the name stays "Navigation labels" (base.html). Changing both read as
+  // "Expand navigation, collapsed". The visible tooltip still says what a click will do.
   btn.setAttribute('aria-expanded', String(!folded));
-  btn.setAttribute('aria-label', label);
-  btn.setAttribute('title', label);   // an icon-only button, like the theme switch beside it
+  btn.setAttribute('title', folded ? 'Expand navigation' : 'Collapse navigation');
 }
 function flipNav(){
   const fold = document.documentElement.dataset.nav !== 'collapsed';
@@ -2792,6 +2792,22 @@ function deltaText(dl){
 function setRadioChecked(btn, on){
   btn.setAttribute('aria-checked', on);
   btn.tabIndex = on ? 0 : -1;
+}
+
+// The plot's box changes width after it was drawn when the sidebar folds or the window is
+// resized, and the SVG then scaled its old drawing — measured 1.19x on a fold at 1280, so the
+// 12px axis type read at ~14px. Redraw from the data already held (never a refetch), once, after
+// the width settles; a hidden panel measures 0 and waits until it is shown again. No chart
+// element where the deployment renders no Trends tab.
+if (typeof ResizeObserver === 'function' && el('trends-chart')){
+  let plotWidth = 0, redraw = null;
+  new ResizeObserver(([entry]) => {
+    const width = Math.round(entry.contentRect.width);
+    if (!width || width === plotWidth) return;
+    plotWidth = width;
+    clearTimeout(redraw);
+    redraw = setTimeout(() => { if (trendData) drawTrends(); }, 150);
+  }).observe(el('trends-chart').parentElement);
 }
 
 function drawTrends(){
