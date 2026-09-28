@@ -172,6 +172,11 @@ def answer(client: SpaceClient, arguments: dict[str, Any]) -> str:
         ),
         f"{counts.get('unnamed', 0):,} Boards no directory company holds",
     ]
+    if lens == "rate":
+        left_out.append(
+            f"{counts.get('closures_uncounted', 0):,} whose closures were not counted, so "
+            "their postings opened may be the same postings listed again"
+        )
     hidden_here = len(ranked) - len(rows)
     if hidden_here:
         left_out.append(
