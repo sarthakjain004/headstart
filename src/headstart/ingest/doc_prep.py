@@ -394,7 +394,27 @@ def build_doc(job: dict) -> str:
 # none (9 MONTH-typed annual pays, and 12 zoho/ashby ZAR or MXN figures below their currency's
 # floor, e.g. "25000 MXN": monthly amounts that had been served as annual). Tier 2 moves only
 # where a description names MXN before a bare "$".
-DERIVATIONS_VERSION = 21
+# v22: `jobs/salary.py` names 15 more currencies (SGD MYR JPY PHP NGN RON HUF SAR CNY PKR NZD QAR
+# COP NOK TWD) with their own bounds, reads a period-less zoho figure below a monthly-quoted
+# currency's floor as monthly pay (`_field_zoho`: "30000-40000 INR" is 360,000-480,000), serves no
+# currency-less description figure for a zoho field naming a code it cannot parse (zoho.py splices
+# that field into the description), and reads a "to" range and a code before the ceiling in
+# `_field_generic` — one commit on top of the v21 bump at `0db2b433` (`git log 0db2b433..3cbc4f15 --
+# src/headstart/jobs/salary.py`, subject "salary: read 15 more currencies and zoho's monthly figures
+# (#698)", in case it lands squashed). Measured old vs new `extract()` on all 498,853 rows of served
+# v277 with the description store pulled 2026-09-29, per ADR-0066: 2,016 move. By tier: none->field
+# 611, none->regex 134, regex->field 145, field->none 54, regex->none 14, field->regex 1, and within
+# a tier field 1,027 and regex 30. By what moved: 745 none -> value (477 on zoho, 442 of them
+# monthly readings; the new codes' figures the USD-shaped bound refused); 705 value only (a ceiling
+# recovered by "to" or a code before it: ripplehire 473, zoho 120, bamboohr 101); 235 currency only
+# (None -> a new code); 236 value and currency (216 on zoho, where a currency-less reading of the
+# field or of its splice gives way to the monthly one); 27 tier only or tier and value (zoho "to"
+# ranges, LPA and "10 K+ INR" now read by the field; on 4 the description had stated another
+# figure); 68 value -> none, figures served with no currency that the new floors or the zoho guard
+# refuse, nearly all monthly pay read as annual (zoho 34, bamboohr PHP 14, greenhouse JPY/PHP 8,
+# monthly pay typed YEAR 5), with zoho's 4 GBP day rates and one stated "1000-3000 SGD per-month"
+# among them. Figures naming a code with a null currency fall from 526 to 31.
+DERIVATIONS_VERSION = 22
 
 
 def to_meta(job: dict) -> dict:
