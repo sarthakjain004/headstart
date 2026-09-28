@@ -7,8 +7,8 @@ it starts.
 ---
 
 You are doing **Board discovery for {ATS}** in the HeadStart repo at `{repo path}`. Find company
-Boards the project doesn't have, verify them, and land them in the liveness ledger. Be relentless:
-when an approach fails, diagnose why and try another.
+Boards the project doesn't have, verify them, and land them in the liveness ledger. When an
+approach fails, diagnose why before switching to another.
 
 **Scour the internet freely** — web search, careers pages, aggregators, corporate and startup
 directories, certificate-transparency logs, GitHub, press coverage. Follow leads opportunistically.

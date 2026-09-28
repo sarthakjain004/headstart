@@ -41,11 +41,8 @@ Built providers are listed in README §"ATS coverage". What each one's scraper h
 its module docstring, its measurement doc under `docs/{ats}/` and its ADR; its Boards live in
 `data/validate/liveness/{ats}.csv`; discovery playbooks live in `docs/discovery/`
 (`shared-cert-tenant-rosters.md` is the general one). **Don't keep a built provider's Board counts
-in this file.** Nothing checks them here, so every ledger change can move them. This section used
-to carry ✅ DONE entries with live/hiring figures for twelve providers: on 2026-09-23 three were
-already wrong (the SuccessFactors entry quoted 26; its ledger held 2,214 Live rows), and one
-discovery landing (#576) moved five more. Board totals belong in README and CONTEXT.md, where
-`tests/test_board_counts.py` checks them.
+in this file.** Nothing checks them here, so every ledger change can move them. Board totals
+belong in README and CONTEXT.md, where `tests/test_board_counts.py` checks them.
 
 ### Landing rules the ledgers' code does not enforce
 
@@ -256,9 +253,8 @@ build it.
 These guidelines are working if: fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
 
 ## Git Conventions
-- **Do add a `Co-Authored-By` trailer to agent-authored commit messages.** A session-level
-  instruction mandates it. Until 2026-09-09 this file forbade it, and the contradiction split
-  identical PRs (#390 carried it, #391 did not). Don't re-tighten it from memory.
+- **Add a `Co-Authored-By` trailer to agent-authored commit messages**, as the session-level
+  attribution instruction specifies.
 - Do NOT add "Generated with Claude Code" (or any similar attribution line) to PR descriptions.
 - Keep commit messages to a maximum of 50 words.
 - **Run the `code-review` skill on every code-changing PR before it merges** (the two-axis
