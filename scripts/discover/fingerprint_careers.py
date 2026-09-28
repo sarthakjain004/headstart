@@ -587,11 +587,12 @@ BLOCK = {
     "http",
     "https",
 }
-# SmartRecruiters board ids keep their capitals (8,736 of 12,644 ledger tenants carry them), so
-# lower-casing would mint a second, non-matching row for a board we already hold. Lever's is about
-# the fetch: `jobs.lever.co/Onehouse` lists and `.../onehouse` 404s (2026-09-28), so a lowercased
-# slug verifies as a dead Board.
-CASE_SENSITIVE = {"smartrecruiters", "pyjamahr", "lever"}
+# ATSes whose captured slug keeps its capitals; every other slug is lower-cased. Each scraper
+# declares it as `keeps_slug_case`, and resolve/fingerprint.py reads the same attribute, so the two
+# fingerprinters cannot disagree on an ATS both detect (ADR-0271).
+KEEPS_SLUG_CASE = frozenset(
+    ats for ats, cls in registry.SCRAPERS.items() if cls.keeps_slug_case
+)
 
 # Each provider's own registrable domains, so scanning the provider's own site (or a company that
 # IS the provider — zoho.com is in this very seed) doesn't self-match its infra as a tenant board.
@@ -1070,7 +1071,7 @@ def scan(
                     tok = got[0] if got else ""
                 else:
                     raw = (m.group(1) if m.lastindex else "") or ""
-                    tok = raw if ats in CASE_SENSITIVE else raw.lower()
+                    tok = raw if ats in KEEPS_SLUG_CASE else raw.lower()
                     if tok:
                         lo = tok.lower()
                         # 3-60 chars: a 1-2 char token is almost always minified-JS debris (a

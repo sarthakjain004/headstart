@@ -119,6 +119,9 @@ def _description(j: dict) -> str | None:
 class LeverScraper(BaseScraper):
     ats = "lever"
     url_shape = r"https://jobs(\.eu)?\.lever\.co/[^/]+/[0-9a-f-]{36}"
+    #: `jobs.lever.co/Onehouse` lists and `.../onehouse` 404s (2026-09-29): the slug is read
+    #: case-sensitively and keeps its capitals (ADR-0271).
+    keeps_slug_case = True
     #: The API host that answered `fetch_raw`, which says which instance the Board lives on.
     _api_host = GLOBAL_API_HOST
     #: One posting's hosted page, for a Board whose board page is disabled (module docstring).

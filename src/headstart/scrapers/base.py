@@ -347,6 +347,16 @@ class BaseScraper(ABC):
     #: no-default-here contract :attr:`ats` already uses.
     url_shape: str
 
+    #: Whether discovery keeps a captured slug for this ATS in the casing it was found in, rather
+    #: than lower-casing it. Both fingerprinters (``scripts/resolve/fingerprint.py`` and
+    #: ``scripts/discover/fingerprint_careers.py``) read their set of such ATSes from here, so the
+    #: two cannot drift apart again (ADR-0271). True only where a live measurement showed that
+    #: lower-casing loses the Board: Lever reads a slug case-sensitively and its slugs are
+    #: mixed-case, and the SmartRecruiters ledger holds Boards under their capitals. It is not the
+    #: same as the ATS being case-sensitive: PyjamaHR is, but every PyjamaHR slug is lower-case, so
+    #: lower-casing a captured one is what finds the Board.
+    keeps_slug_case: bool = False
+
     #: This scraper's politeness bound for its detail pass, as **thread-pool workers** — what
     #: :meth:`fan_out` is called with. Declared on the class rather than kept as a module constant
     #: so :meth:`fan_out_async` can fall back to it: a scraper that bounds its sync path to 6

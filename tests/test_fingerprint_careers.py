@@ -1104,6 +1104,17 @@ def test_a_lever_link_keeps_its_slugs_casing():
     }
 
 
+def test_a_pyjamahr_link_is_lower_cased_to_the_slug_the_api_answers():
+    """PyjamaHR reads a slug case-sensitively, and every slug it has is lower-case: 3 of 3 tenants
+    re-cased (`8Byte`, `1-Percent-Group`, `7th-Sky-Technologies-LLC`) answer `count: 0`, and none
+    of the 676 slugs in its jobs sitemap carries a capital (2026-09-29). A kept capital names no
+    Board (ADR-0271)."""
+    page = '<a href="https://jobs.pyjamahr.com/8Byte">Jobs</a>'
+    assert {(ats, tenant) for ats, _kind, tenant, _n in fp.scan(page, "8byte.ai")} == {
+        ("pyjamahr", "8byte")
+    }
+
+
 def test_script_urls_resolve_relative_srcs_against_the_pages_base_href():
     page_url = "https://careers.acme.com/jobs/view/123"
     with_base = '<head><base href="/app/"><script src="main.js"></script></head>'
