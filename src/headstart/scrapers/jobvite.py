@@ -240,8 +240,6 @@ class JobviteScraper(BaseScraper):
     url_shape = r"https://jobs\.jobvite\.com/[^/]+/job/[A-Za-z0-9]+"
     detail_workers = _DETAIL_WORKERS  # also the async stream width (base.fan_out_async)
     has_detail_pass = True  # per-Job fetch fills every field but the id (ADR-0050)
-    #: Each listed id's title, where its row's anchor states one (`_listing_ids`).
-    _listed_titles: dict[str, str] | None = None
 
     def url(self) -> str:
         return f"https://jobs.jobvite.com/{self.slug}/search"
@@ -261,13 +259,13 @@ class JobviteScraper(BaseScraper):
         return self.url()
 
     def fetch_raw(self) -> Any:
-        ids = self._listing_ids()
+        ids, titles = self._listing()
         if not ids:
             return {"ids": [], "postings": {}}
-        titles = self._listed_titles or {}
         # The tech gate reads the listing's title under the department that promotes most; an id
-        # whose row states no plain title gates as None, which that department keeps. No ADR-0048
-        # skip: the page is the only source of every other field (module docstring).
+        # whose row states no plain title gates as None, which that department keeps
+        # (`is_tech(None, _MOST_PROMOTING_DEPARTMENT)`), so every gated id has a title. No
+        # ADR-0048 skip: the page is the only source of every other field (module docstring).
         wanted = self.tech_detail_wanted(
             ids, titles.get, lambda job_id: _MOST_PROMOTING_DEPARTMENT
         )
@@ -275,9 +273,9 @@ class JobviteScraper(BaseScraper):
             wanted, key_of=lambda job_id: job_id, what="detail pages"
         )
         if postings.missing:
-            # Load-bearing detail pass: the listing carries no title, so `parse` cannot build a
-            # Job without the page and drops it. That is a short list for a reason `harvest`
-            # cannot see, which is exactly what ADR-0053 exists to travel alongside it.
+            # Load-bearing detail pass for a Job the gate kept: `parse` builds no Job without its
+            # page (ADR-0231) and drops it. That is a short list for a reason `harvest` cannot
+            # see, which is exactly what ADR-0053 exists to travel alongside it.
             self.mark_truncated(
                 f"{postings.missing}/{len(wanted)} detail pages could not be read"
             )
@@ -317,32 +315,39 @@ class JobviteScraper(BaseScraper):
             )
         return response.text
 
-    def _listing_ids(self) -> list[str]:
-        """Every posting id on this board, walking ``/search`` by its own next link, and again
-        while the ids read fall short of the board's own counter (module docstring).
+    def _listing(self) -> tuple[list[str], dict[str, str]]:
+        """Every posting id on this board, walking ``/search`` by its own next link, and the
+        title each classic row's anchor states (for the tech gate).
 
-        Ids, plus the title a classic row's anchor states (kept on :attr:`_listed_titles` for the
-        tech gate): five row templates are live and each hides a different field somewhere else,
-        while the ``/{slug}/job/{id}`` path is in all five. Order is first sight, de-duplicated.
+        Ids only otherwise: five row templates are live and each hides a different field
+        somewhere else, while the ``/{slug}/job/{id}`` path is in all five. Order is first sight,
+        de-duplicated. A walk short of the board's own counter is walked again, up to
+        :data:`_MAX_WALKS`, while each walk still finds new ids (module docstring). A Board still
+        short while walks were finding ids is reported through
+        ``mark_truncated_unless_negligible``; one whose last walk found nothing new is short
+        stably, and is only logged, as it always was — nothing shows it is missing a posting.
         """
         ids: list[str] = []
-        self._listed_titles = {}
+        titles: dict[str, str] = {}
         stated = None
         for walk in range(_MAX_WALKS):
             before = len(ids)
-            stated, ended = self._walk(ids, self._listed_titles)
+            stated, ended = self._walk(ids, titles)
             if not ended or not stated or len(ids) >= stated:
-                return ids
+                return ids, titles
             if walk and len(ids) == before:
-                break  # a walk that read nothing new: walking again would not either
-        if len(ids) < stated:
-            self.mark_truncated_unless_negligible(
-                len(ids),
-                stated,
-                f"{len(ids)} of {stated} postings after {walk + 1} walks — the rest is unread, "
-                "not absent",
-            )
-        return ids
+                self._log.info(
+                    f"{self.board_key()}: {len(ids)} of {stated} postings, and walk {walk + 1} "
+                    "found no new id — a stable shortfall, left as the Board states it"
+                )
+                return ids, titles
+        self.mark_truncated_unless_negligible(
+            len(ids),
+            stated,
+            f"{len(ids)} of {stated} postings after {_MAX_WALKS} walks still finding new ids — "
+            "the rest is unread, not absent",
+        )
+        return ids, titles
 
     def _walk(self, ids: list[str], titles: dict[str, str]) -> tuple[int | None, bool]:
         """One walk of ``/search``, adding unseen ids to ``ids`` and their anchor titles to
@@ -354,7 +359,8 @@ class JobviteScraper(BaseScraper):
         )
         seen = set(ids)
         url: str | None = self.url()
-        pages, stated, read, previous = 0, None, 0, None
+        pages, stated, read = 0, None, 0
+        served: set[tuple[str, ...]] = set()
         while url and pages < _MAX_PAGES:
             page = self._page(url)
             pages += 1
@@ -371,10 +377,11 @@ class JobviteScraper(BaseScraper):
                     seen.add(job_id)
                     ids.append(job_id)
             match = _NEXT.search(page)
-            # A next link serving the page it came from is a loop: the same ids would come back
-            # on every later page. (A page of ids already seen is not: a later walk re-reads them.)
-            repeated = page_ids == previous
-            previous = page_ids
+            # A next link back to a page this walk already served is a loop: the same pages would
+            # come back forever. (A page of ids seen on an earlier walk is not: this walk re-reads
+            # them.)
+            repeated = tuple(page_ids) in served
+            served.add(tuple(page_ids))
             if not match or repeated:
                 if stated and not read:
                     self.note_unreadable_board(
@@ -384,8 +391,8 @@ class JobviteScraper(BaseScraper):
                     return stated, False
                 if match:
                     self._log.info(
-                        f"{self.board_key()}: next link offered on page {pages} but it added "
-                        f"no ids — walk stopped at {len(ids)} of {stated}"
+                        f"{self.board_key()}: next link offered on page {pages} but it served a "
+                        f"page already read — walk stopped at {len(ids)} of {stated}"
                     )
                 elif stated and pages < math.ceil(stated / _PAGE_SIZE):
                     # A template change that stops `_NEXT` matching would otherwise serve page 0
