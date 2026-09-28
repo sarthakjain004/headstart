@@ -2,8 +2,8 @@
 
 `config/role_families.json` sits beside the package on an editable install, which is how
 `docs/agents/space-mcp-server.md` installs this server. Without it (a non-editable install),
-`category` becomes a free string that the Space checks itself under `strict=1`, and the server
-says so once on stderr.
+`category` becomes a free string that the Space checks itself (`strict=1` on a search, and
+`family_known` on a trend), and the server says so once on stderr.
 """
 
 from __future__ import annotations

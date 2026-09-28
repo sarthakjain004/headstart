@@ -147,6 +147,19 @@ def test_a_whole_index_trend_is_reported_without_its_drawing_arrays(companies_ap
     assert "netted" not in text and "steps_at" not in text
 
 
+def test_a_trend_category_the_app_does_not_know_is_refused(companies_app):
+    """`/trends` has no `strict`: an unknown family answers an empty window that reconciles.
+    Installed without `config/` (uvx), `category` is a free string, so the server reads the
+    app's `family_known` instead; called past the schema, as that install's calls arrive."""
+    client = _client(companies_app)
+    known = server.call(client, "read_trends", {"category": "software-engineering"})
+    assert "Category: " in known and "reconcile" in known
+    with pytest.raises(ToolFailure, match="'nonsense-family'"):
+        read_trends.answer(
+            client, {"category": "nonsense-family", "days": 30, "detail": "concise"}
+        )
+
+
 def test_a_value_the_app_would_drop_is_refused_in_the_apps_own_words(companies_app):
     with pytest.raises(ToolFailure, match="workdya"):
         server.call(_client(companies_app), "search_jobs", {"ats": "workdya"})

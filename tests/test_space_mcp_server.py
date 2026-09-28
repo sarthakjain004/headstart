@@ -11,12 +11,14 @@ are `tests/test_space_mcp_tools.py`.
 from __future__ import annotations
 
 import dataclasses
+import importlib
 import json
 import os
 import pathlib
 import re
 import subprocess
 import sys
+import tomllib
 
 import pytest
 
@@ -158,6 +160,14 @@ def test_a_real_client_handshake_over_a_real_subprocess():
     assert [t["name"] for t in replies[1]["result"]["tools"]] == [
         tool.name for tool in REGISTRY
     ]
+
+
+def test_the_console_script_a_no_clone_install_runs_is_this_servers_main():
+    """`uvx --from git+…/headstart headstart-space-mcp` runs whatever pyproject names."""
+    pyproject = pathlib.Path(__file__).resolve().parent.parent / "pyproject.toml"
+    scripts = tomllib.loads(pyproject.read_text(encoding="utf-8"))["project"]["scripts"]
+    module, _, attribute = scripts["headstart-space-mcp"].partition(":")
+    assert getattr(importlib.import_module(module), attribute) is server.main
 
 
 # ---- arguments ---------------------------------------------------------------------------
@@ -537,6 +547,13 @@ def test_trends_breakdown_defaults(arguments, split):
 def test_trends_breakdowns_that_cannot_answer_are_refused(arguments, words):
     with pytest.raises(ToolFailure, match=words):
         server.call(FakeSpace(), "read_trends", arguments)
+
+
+def test_a_category_the_space_does_not_know_is_refused_not_reported_empty():
+    """Past the schema, as a free-string `category` (an install without `config/`) arrives."""
+    space = FakeSpace(trends=_trends([], family_known=False))
+    with pytest.raises(ToolFailure, match="'nonsense-family'"):
+        _answer("read_trends", space, {"category": "nonsense-family"})
 
 
 def test_a_company_name_is_read_as_the_picker_reads_it_and_the_clamp_is_said():

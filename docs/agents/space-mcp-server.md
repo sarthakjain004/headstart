@@ -13,9 +13,40 @@ to it — so a company you hid on the website is **not** hidden from an agent's 
 ## Install it
 
 Anyone can run it: the Space's read routes are public (ADR-0258), so it needs no
-account, token or key — only a checkout of this repository and Python 3.12.
+account, token or key.
 
-1. **Install** the base package from a checkout (no torch, no index):
+### One command, no clone
+
+With [uv](https://docs.astral.sh/uv/) installed, add it to Claude Code:
+
+```bash
+claude mcp add headstart-space --scope user -- \
+  uvx --from git+https://github.com/sarthakjain004/headstart headstart-space-mcp
+```
+
+`uvx` builds the base package from GitHub into a cached environment of its own — two
+dependencies, `curl_cffi` and `requests`, no torch and no index — and runs its
+`headstart-space-mcp` command. Any MCP client that runs stdio servers can use the same
+`uvx --from git+https://github.com/sarthakjain004/headstart headstart-space-mcp` command.
+`uvx --refresh …` picks up a newer commit; append `@<branch-or-tag>` to the URL to pin one.
+
+**The first run takes minutes; later runs start in about 2 s.** Before the server can start, uv
+clones this repository with its whole history (about 106 MB) and downloads `curl_cffi`: two
+first runs on a slow link on 2026-09-28 took 207 s and 670 s, most of each the clone. Later runs
+start from uv's cache. Run the command once in a terminal first, so your client's first
+connection is not left waiting on the download (it exits when its input ends):
+
+```bash
+uvx --from git+https://github.com/sarthakjain004/headstart headstart-space-mcp < /dev/null
+```
+
+Installed this way the package carries no `config/`, so the tools' `category` is a free string
+rather than the list of role families; the server says so once on stderr when it starts. A name
+that is not a role family is still refused, by the Space.
+
+### From a checkout
+
+1. **Install** the base package from a checkout, with Python 3.12 or newer:
 
    ```bash
    git clone https://github.com/sarthakjain004/headstart && cd headstart
@@ -30,14 +61,17 @@ account, token or key — only a checkout of this repository and Python 3.12.
    ```
 
    Use the checkout's own interpreter by absolute path, because a user-scoped server starts from
-   every project's directory. Any MCP client that runs stdio servers can use the same command.
+   every project's directory.
 
-3. **Check it.** `/mcp` in Claude Code lists `headstart-space` and its tools. Without a client:
+### Check it
 
-   ```bash
-   npx @modelcontextprotocol/inspector@2.8.0 --cli \
-     "$PWD/.venv/bin/python" -m headstart.space_mcp --method tools/list
-   ```
+`/mcp` in Claude Code lists `headstart-space` and its tools. Without a client:
+
+```bash
+npx @modelcontextprotocol/inspector@2.8.0 --cli \
+  uvx --from git+https://github.com/sarthakjain004/headstart headstart-space-mcp \
+  --method tools/list
+```
 
 `HEADSTART_SPACE_URL` points it at another deployment; the default is
 `https://imposeidon-headstart-search.hf.space`.
