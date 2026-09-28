@@ -297,12 +297,12 @@ table in lockstep with the committed ledger:
 | − case-variant dedupe | −6,629 | `company/External` and `company/external` are one board (ADR-0023) |
 | − newer `dead` row | −4 | a board is read only if no `dead` row is newer than its newest `live` one; all 4 re-probed dead (ADR-0219) |
 | − `excluded_and_parked.PARKED_BOARDS` | −307 | real boards withheld for now — six for scrape cost, two for near-duplicate spam, six Jibe clients whose every posting is on a Workday or Oracle board already held, 288 whose every posting is on an iCIMS board we scrape (ADR-0240), five employee-only Radancy fronts (ADR-0246) |
-| = **Scrapable Board** | **160,021** | |
+| = **Scrapable Board** | **160,025** | |
 
 That order matters: excluding before deduping reads −218 and −6,629, deduping first reads −215,
-because three excluded boards were themselves duplicates. Both land on 160,021.
+because three excluded boards were themselves duplicates. Both land on 160,025.
 
-Of those, **105,982 are currently hiring** — the 54,039 live-but-empty boards are skipped as having
+Of those, **105,986 are currently hiring** — the 54,039 live-but-empty boards are skipped as having
 nothing to read. A run takes a bounded slice and splits it between a scored head (top boards by a
 sticky measure of tech-job yield, large enough to hold every board that yields tech) and a tail
 that rotates through everything else, the boards looked at longest ago first, so
