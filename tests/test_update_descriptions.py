@@ -330,6 +330,75 @@ def test_a_replacement_back_to_the_previous_text_is_counted_as_reverted(tmp_path
     assert changes["eightfold:acme:1"].count == 2
 
 
+def test_a_fetch_that_only_read_non_ascii_as_question_marks_keeps_the_held_text(
+    tmp_path,
+):
+    """#709: careers.microland.com now stores `?` where the text we hold has `’` or `–`, so a
+    re-fetch comes back the same length with a `?` at each such character and nothing else
+    changed (5 of 5 live, 2026-09-29). That is a worse rendering, not an edit: the held text
+    stays in the store and in the corpus row, and nothing is learned or re-derived."""
+    jobs = tmp_path / "tech" / "zwayam.jsonl"
+    store = tmp_path / "store" / "zwayam"
+    held = "Drive the customer’s strategy – end to end. Why us?"
+    _corpus(jobs, [_job("zwayam:careers.microland.com:1", held)])
+    ud.reconcile(jobs, store, {})
+
+    _corpus(
+        jobs,
+        [
+            _job(
+                "zwayam:careers.microland.com:1",
+                "Drive the customer?s strategy ? end to end. Why us?",
+            )
+        ],
+    )
+    changes: dict = {}
+    done = ud.reconcile(jobs, store, changes)
+
+    assert (done.question_marked, done.learned, done.replaced) == (1, 0, 0)
+    assert done.rederive_ids == [] and changes == {}
+    assert ud.read_store(store) == {"zwayam:careers.microland.com:1": held}
+    assert _rows(jobs)[0]["description"] == held
+    assert len(list(store.glob("*.jsonl.gz"))) == 1  # no fragment for a kept text
+
+
+@pytest.mark.parametrize(
+    "fresh",
+    [
+        "Drive the customer?s strategy - end to end.",  # `–` became `-`, not `?`
+        "Drive the customer?s strategy – end to end, now.",  # a `?` beside a real edit
+        "Drive the customer?s strategy – end to end",  # a character dropped
+    ],
+)
+def test_any_other_difference_beside_a_question_mark_still_replaces(tmp_path, fresh):
+    jobs = tmp_path / "tech" / "zwayam.jsonl"
+    store = tmp_path / "store" / "zwayam"
+    _corpus(jobs, [_job("zwayam:a:1", "Drive the customer’s strategy – end to end.")])
+    ud.reconcile(jobs, store, {})
+
+    _corpus(jobs, [_job("zwayam:a:1", fresh)])
+    done = ud.reconcile(jobs, store, {})
+
+    assert (done.question_marked, done.replaced) == (0, 1)
+    assert ud.read_store(store)["zwayam:a:1"] == fresh
+
+
+def test_a_fetch_that_restores_the_characters_replaces_a_question_marked_text(
+    tmp_path,
+):
+    """The guard runs one way. A held `?` coming back as `’` is the better rendering."""
+    jobs = tmp_path / "tech" / "zwayam.jsonl"
+    store = tmp_path / "store" / "zwayam"
+    _corpus(jobs, [_job("zwayam:a:1", "The customer?s strategy.")])
+    ud.reconcile(jobs, store, {})
+
+    _corpus(jobs, [_job("zwayam:a:1", "The customer’s strategy.")])
+    done = ud.reconcile(jobs, store, {})
+
+    assert (done.question_marked, done.replaced) == (0, 1)
+    assert ud.read_store(store)["zwayam:a:1"] == "The customer’s strategy."
+
+
 def test_an_empty_fetch_is_no_change(tmp_path):
     jobs = tmp_path / "tech" / "eightfold.jsonl"
     store = tmp_path / "store" / "eightfold"
@@ -527,6 +596,32 @@ def test_a_re_fetch_that_comes_back_empty_keeps_the_held_text_and_waits_a_period
         "eightfold:acme:1": "Held."
     }
     assert "eightfold:acme:1" in _skip_list(tmp_path)
+
+
+def test_a_run_says_how_many_held_texts_it_kept_over_question_marks(
+    tmp_path, monkeypatch, caplog
+):
+    """A re-fetch of a held Job that only turned `’` into `?` keeps the held text, still counts
+    as a check, and the run says so on its own line, which is absent when the count is zero."""
+    _rotation_run(tmp_path, monkeypatch, [_job("eightfold:acme:1", "It’s held.")], _AT)
+    later = _AT + _PERIOD
+    with caplog.at_level("INFO", logger=ud.__name__):
+        _rotation_run(
+            tmp_path, monkeypatch, [_job("eightfold:acme:1", "It?s held.")], later
+        )
+
+    assert ud.read_store(tmp_path / "store" / "eightfold") == {
+        "eightfold:acme:1": "It’s held."
+    }
+    assert "eightfold:acme:1" in _skip_list(tmp_path)  # checked this run
+    assert (
+        "eightfold: kept 1 held description(s) over a fetch that read their non-ASCII "
+        "characters as '?' and changed nothing else (ADR-0211)"
+    ) in caplog.messages
+    assert (
+        "eightfold: replaced 0 held description(s) with different text, 0 of them back "
+        "to the text held before"
+    ) in caplog.messages
 
 
 def test_a_torn_corpus_line_names_its_file_and_line(tmp_path):

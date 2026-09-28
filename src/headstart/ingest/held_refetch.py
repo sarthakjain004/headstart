@@ -1,10 +1,10 @@
 """Which held descriptions the next scrape re-fetches (ADR-0211).
 
-Six Scrapers skip a Job's detail fetch once the ADR-0050 store holds its description (ADR-0048):
-ADP, Apple, Cornerstone, Eightfold, Phenom and Tesla. On those, an edited posting was never fetched
-again, so no edit could reach the store or the served table (ADR-0207). This rotation takes a slice of
-their held Jobs off the skip-list each run, so every held Job is fetched again once its last fetch
-is :data:`PERIOD_DAYS` old, on the first scrape of its Board after that.
+Seven Scrapers skip a Job's detail fetch once the ADR-0050 store holds its description (ADR-0048):
+ADP, Apple, Cornerstone, Eightfold, Phenom, Tesla and Zwayam. On those, an edited posting was never
+fetched again, so no edit could reach the store or the served table (ADR-0207). This rotation takes
+a slice of their held Jobs off the skip-list each run, so every held Job is fetched again once its
+last fetch is :data:`PERIOD_DAYS` old, on the first scrape of its Board after that.
 
 The state is one ledger, ``data/state/description_checked.tsv.gz``: a held Job's id and the UTC
 hour a fetch last reached it. Hours, not days, so the Jobs one run fetched fall due together in one
@@ -18,11 +18,13 @@ A due Job's fetch is recorded as a check whatever it returns: a fetch that comes
 leaves the held text in place (ADR-0050, ADR-0089) and is not retried until the next period, which
 keeps a posting whose detail always answers empty from being fetched on every scrape.
 
-**Zwayam is left out.** Its detail path sits behind an Akamai per-IP request quota (refusals from
-~500 cumulative requests, 2026-09-17), 27.5% of its Boards were last scraped more than a day ago
-on 2026-09-24, and a live re-fetch of 15 held Jobs on careers.microland.com returned 6 whose only
-difference was `’` read back as `?`, a worse rendering rather than an edit. ADR-0211 has the
-measurements behind the period and the per-run budget it implies.
+**Zwayam joined on 2026-09-29 (#709).** It was left out at first: its detail path sits behind an
+Akamai per-IP request quota (refusals from ~500 cumulative requests, 2026-09-17), and a re-fetch on
+careers.microland.com read the held text back with its `’` as `?`. The `?` is in the tenant's own
+stored text, so ``update_descriptions`` keeps the held text over a fetch that differs from it only
+that way. Its Boards are now all scraped within a day, and its steady share, ~27 re-fetches a run
+spread over the scrape shards, is small beside the ~165 detail requests a run it already makes.
+ADR-0211 and its amendment have the measurements behind the period and the budget.
 """
 
 from __future__ import annotations
@@ -41,8 +43,10 @@ _log = log.get(__name__, __spec__)
 
 #: The Scrapers whose Detail pass skips held Jobs and whose re-fetch cost was measured to fit.
 #: Tesla's detail pass skips held Jobs too (`tesla.py`, `skip_held=True`) and was left off until
-#: 2026-09-26, so no edit to a held Tesla posting could reach the store.
-ATSES = frozenset({"adp", "apple", "cornerstone", "eightfold", "phenom", "tesla"})
+#: 2026-09-26, so no edit to a held Tesla posting could reach the store. Zwayam joined 2026-09-29.
+ATSES = frozenset(
+    {"adp", "apple", "cornerstone", "eightfold", "phenom", "tesla", "zwayam"}
+)
 
 #: Days between two fetches of one held Job: about 1/190 of each ATS's held Jobs a run, ~240 for
 #: Eightfold across its shards (ADR-0211).
