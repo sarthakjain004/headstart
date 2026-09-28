@@ -42,7 +42,11 @@ _log = log.get(__name__, __spec__)
 #: The Scrapers whose Detail pass skips held Jobs and whose re-fetch cost was measured to fit.
 #: Tesla's detail pass skips held Jobs too (`tesla.py`, `skip_held=True`) and was left off until
 #: 2026-09-26, so no edit to a held Tesla posting could reach the store.
-ATSES = frozenset({"adp", "apple", "cornerstone", "eightfold", "phenom", "tesla"})
+#: Join joined on 2026-09-28 with its skip; it is disabled in the registry, so it costs nothing
+#: until it is re-enabled.
+ATSES = frozenset(
+    {"adp", "apple", "cornerstone", "eightfold", "join", "phenom", "tesla"}
+)
 
 #: Days between two fetches of one held Job: about 1/190 of each ATS's held Jobs a run, ~240 for
 #: Eightfold across its shards (ADR-0211).
