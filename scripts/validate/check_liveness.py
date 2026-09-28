@@ -2714,6 +2714,7 @@ def p_personio(t, u):
         _note("breaker-open")
         return UNKNOWN, None
     if r.status_code in _PERSONIO_REDIRECTS:
+        # A personio slug is its Board's host.
         if _personio_redirect_leaves_board(r.headers.get("location"), board.slug):
             return DEAD, None
         _note(f"http-{r.status_code}")
