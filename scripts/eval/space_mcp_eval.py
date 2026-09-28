@@ -54,7 +54,7 @@ from typing import Any, Protocol
 _ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_ROOT / "src"))
 from headstart.mcp_protocol import tool_arguments
-from headstart.mcp_protocol.stdio import ToolFailure
+from headstart.mcp_protocol.messages import ToolFailure
 from headstart.space_mcp import company_scope
 from headstart.space_mcp.server import BY_NAME, NAME, URL_VAR
 from headstart.space_mcp.space_client import (
