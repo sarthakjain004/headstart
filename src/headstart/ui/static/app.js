@@ -114,9 +114,10 @@ function drawNavToggle(){
   const btn = el('nav-toggle');
   const folded = document.documentElement.dataset.nav === 'collapsed';
   // Only the state flips; the name stays "Navigation labels" (base.html). Changing both read as
-  // "Expand navigation, collapsed". The visible tooltip still says what a click will do.
+  // "Expand navigation, collapsed". The visible tooltip still says what a click will do, drawn
+  // by CSS from data-tip — a `title` would be read out as a description that flips too.
   btn.setAttribute('aria-expanded', String(!folded));
-  btn.setAttribute('title', folded ? 'Expand navigation' : 'Collapse navigation');
+  btn.setAttribute('data-tip', folded ? 'Expand navigation' : 'Collapse navigation');
 }
 function flipNav(){
   const fold = document.documentElement.dataset.nav !== 'collapsed';
@@ -2794,34 +2795,22 @@ function setRadioChecked(btn, on){
   btn.tabIndex = on ? 0 : -1;
 }
 
-// The plot's box changes width after it was drawn when the sidebar folds or the window is
-// resized, and the SVG then scaled its old drawing — measured 1.19x on a fold at 1280, so the
-// 12px axis type read at ~14px. Redraw from the data already held (never a refetch), once, after
-// the width settles; a hidden panel measures 0 and waits until it is shown again. No chart
-// element where the deployment renders no Trends tab.
-if (typeof ResizeObserver === 'function' && el('trends-chart')){
-  let plotWidth = 0, redraw = null;
-  new ResizeObserver(([entry]) => {
-    const width = Math.round(entry.contentRect.width);
-    if (!width || width === plotWidth) return;
-    plotWidth = width;
-    clearTimeout(redraw);
-    redraw = setTimeout(() => { if (trendData) drawTrends(); }, 150);
-  }).observe(el('trends-chart').parentElement);
-}
-
-function drawTrends(){
-  const d = trendData; if (!d) return;
-  // Measured from the box it is drawn into rather than fixed at 720: the chart used to
-  // ignore the width the page had, so on a wide display every one of the 471 stamps was
-  // squeezed into a 720-unit space and then scaled up, which is what made the line work
-  // look coarse.
-  const host = el('trends-chart') && el('trends-chart').parentElement;  // .trends-chart-wrap — the legend is a sibling column, not part of the plot
+// Measured from the box it is drawn into rather than fixed at 720: the chart used to
+// ignore the width the page had, so on a wide display every one of the 471 stamps was
+// squeezed into a 720-unit space and then scaled up, which is what made the line work
+// look coarse.
+function trendPlotWidth(host = el('trends-chart') && el('trends-chart').parentElement){  // .trends-chart-wrap — the legend is a sibling column, not part of the plot
   // 1 SVG unit == 1 CSS pixel wherever the container allows it, so the axis type renders at
   // the size the stylesheet asks for. A floor above the real container width does not make a
   // phone's chart bigger — it makes the whole viewBox scale down, and 12px labels arrive as
   // 6px. The floor is only a guard against a zero/undetached measurement.
-  const W = Math.max(280, Math.round(host && host.clientWidth ? host.clientWidth : 720));
+  return Math.max(280, Math.round(host && host.clientWidth ? host.clientWidth : 720));
+}
+
+function drawTrends(){
+  const d = trendData; if (!d) return;
+  const host = el('trends-chart') && el('trends-chart').parentElement;
+  const W = trendPlotWidth(host);
   const { charted, other, shown } = chartedAndOther(d);
 
   assignSeriesColors(charted.map(s => s.name));   // Other is a bucket, not an entity — no slot
@@ -4155,6 +4144,32 @@ function openCompanyTrend(board, name, since){
   if (name) pickLabels.set(board, name);
   location.hash = '#trends?company=' + encodeURIComponent(board)
     + (since ? '&since=' + encodeURIComponent(since.slice(0, 16)) : '');
+}
+
+// The plot's box changes width after it was drawn when the sidebar folds or the window is
+// resized, and the SVG then scaled its old drawing — measured 1.19x on a fold at 1280, so the
+// 12px axis type read at ~14px. Redrawn from the data already held (never a refetch), once the
+// width settles, whenever it differs from the width the chart was DRAWN at — so a drawing made
+// while the panel was hidden (at the 720 fallback) is redone when the panel shows again. A
+// keyboard reader keeps their place: focus in the legend and the parked crosshair survive it.
+// Guarded like the résumé editor's: the node test harnesses supply no ResizeObserver.
+if (typeof ResizeObserver === 'function' && el('trends-chart')) {
+  let redrawTimer = null;
+  new ResizeObserver(() => {
+    const host = el('trends-chart').parentElement;
+    if (!trendData || !host.clientWidth || (lastGeom && lastGeom.W === trendPlotWidth(host))) return;
+    clearTimeout(redrawTimer);
+    redrawTimer = setTimeout(() => {
+      const legend = el('trends-legend'), active = document.activeElement;
+      const refocus = active && legend.contains(active) && (active.dataset.hide != null
+        ? `button[data-hide="${CSS.escape(active.dataset.hide)}"]`
+        : active.dataset.name != null ? `[data-name="${CSS.escape(active.dataset.name)}"]` : null);
+      const parked = hoverIndex;
+      drawTrends();
+      if (refocus && legend.querySelector(refocus)) legend.querySelector(refocus).focus();
+      if (parked != null && document.activeElement === el('trends-chart')) positionHoverLayer(parked);
+    }, 150);
+  }).observe(el('trends-chart').parentElement);
 }
 
 // Pointer tracking for the crosshair+tooltip lives on the SVG element itself, wired once: an

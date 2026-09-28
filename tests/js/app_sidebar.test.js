@@ -63,13 +63,13 @@ test('the sidebar opens unfolded, and its button says so', () => {
   const { root, button } = loadApp();
   assert.equal(root.dataset.nav, undefined);
   assert.equal(button['aria-expanded'], 'true');
-  assert.equal(button.title, 'Collapse navigation', 'the tooltip says what a click will do');
+  assert.equal(button['data-tip'], 'Collapse navigation', 'the tooltip says what a click will do');
 });
 
 test('a fold applied before the first paint is what the button reports at load', () => {
   const { button } = loadApp({ folded: true });
   assert.equal(button['aria-expanded'], 'false');
-  assert.equal(button.title, 'Expand navigation');
+  assert.equal(button['data-tip'], 'Expand navigation');
 });
 
 test('each click flips the sidebar, and the choice is remembered for the next visit', () => {

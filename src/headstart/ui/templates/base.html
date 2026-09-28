@@ -35,9 +35,11 @@
   <nav class="tabs" id="site-nav" aria-label="Sections">
       {# Folds the sidebar to its icons (ADR-0249). Shown only where the nav is a sidebar. A
          disclosure: its name never changes and `aria-expanded` is the one state that flips —
-         read aloud as "Navigation labels, expanded". The `title` tooltip says what a click does. #}
+         read aloud as "Navigation labels, expanded". No aria-controls: what folds is eight
+         labels, not one element, and the nav it once named holds the button itself. The hover
+         tooltip saying what a click does is CSS (data-tip), so it adds no spoken description. #}
       <button type="button" class="nav-toggle" id="nav-toggle" aria-label="Navigation labels"
-              aria-expanded="true" title="Collapse navigation"><svg class="nav-toggle-ico"
+              aria-expanded="true" data-tip="Collapse navigation"><svg class="nav-toggle-ico"
               viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><path d="M9 4.5v15M15.5 9.5 13 12l2.5 2.5"/></svg></button>
       <a class="nav-item" href="#home" data-tab="home" aria-current="page"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3.5 10.5 12 3.5l8.5 7"/><path d="M5.5 9v11h13V9"/></svg><span class="nav-label">Home</span></a>
       <a class="nav-item" href="#search" data-tab="search" aria-current="false"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.4-4.4"/></svg><span class="nav-label">Search</span></a>

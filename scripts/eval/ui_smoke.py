@@ -193,9 +193,6 @@ def main() -> None:
                         "folding gave the results column no width"
                     )
                     page.reload()
-                    expect(page.locator("#nav-toggle")).to_have_attribute(
-                        "aria-expanded", "false"
-                    )
                     expect(
                         page.get_by_role(
                             "button", name="Navigation labels", expanded=False

@@ -2969,19 +2969,27 @@ test('on a phone the tooltip under the chart is scrolled into view when it falls
 });
 
 
-test('a new plot width redraws the chart once it settles, from the data it holds', async () => {
-  // A sidebar fold or a window resize. Scaling the old drawing grew the axis type ~19%.
-  const { t, fetches, observers } = loadApp();
+test('a plot drawn at another width is redrawn once it settles, from the data it holds', () => {
+  // A sidebar fold or a window resize; scaling the old drawing grew the axis type ~19%.
+  const app = versionedApp();
+  const { t, nodes, observers } = app;
+  const host = { clientWidth: 600 };
+  nodes['trends-chart'].parentElement = host;
   t.set(fixture(), null);
+  t.draw();                                    // drawn at 600
+  app.run();
   const [box] = observers;
-  const before = t.draws();
-  box.cb([{ contentRect: { width: 700 } }]);
-  box.cb([{ contentRect: { width: 812 } }]);   // still animating
-  await new Promise(resolve => setTimeout(resolve, 220));
+  const before = t.draws(), asked = app.asked.length;
+  box.cb([]);                                  // same width: nothing to do
+  app.run();
+  assert.equal(t.draws(), before, 'no redraw at the width it was drawn at');
+  host.clientWidth = 700; box.cb([]);
+  host.clientWidth = 812; box.cb([]);          // still animating: one timer, reset
+  app.run();
   assert.equal(t.draws(), before + 1, 'one redraw, after the width stops changing');
-  assert.equal(fetches.length, 0, 'a redraw, never a refetch');
-  box.cb([{ contentRect: { width: 812 } }]);   // unchanged
-  box.cb([{ contentRect: { width: 0 } }]);     // the panel hidden
-  await new Promise(resolve => setTimeout(resolve, 220));
-  assert.equal(t.draws(), before + 1, 'no redraw for an unchanged or hidden box');
+  assert.equal(t.geom().W, 812);
+  assert.equal(app.asked.length, asked, 'a redraw, never a refetch');
+  host.clientWidth = 0; box.cb([]);            // the panel hidden
+  app.run();
+  assert.equal(t.draws(), before + 1, 'a hidden panel is left alone until it shows again');
 });
