@@ -2568,7 +2568,9 @@ def _rippling_posting_count(body):
         data = data.get("items") or data.get("jobs") or []
     if not isinstance(data, list):
         return None
-    return len({row.get("uuid") for row in data if isinstance(row, dict)})
+    return len(
+        {row["uuid"] for row in data if isinstance(row, dict) and row.get("uuid")}
+    )
 
 
 def p_rippling(t, u):
