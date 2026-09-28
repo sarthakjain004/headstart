@@ -63,7 +63,8 @@ change what you can't verify*.
 `experience.py` goes from 0% to full unit coverage. `from_field` and `from_description` now enforce
 identical plausibility rules. *(Amended by [ADR-0060](0060-narrative-guards-for-the-work-word-patterns.md):
 the tiers are deliberately asymmetric since Tier 2's work-word patterns gained a separate,
-lower requirement ceiling. The `_MAX_PLAUSIBLE_YEARS = 50` bound below is still shared.)*
+lower requirement ceiling. The `_MAX_PLAUSIBLE_YEARS` bound below is still shared; it is 30, not
+50, since ADR-0060's 2026-09-28 amendment.)*
 One known false-positive class (`"N years ago … experience"`) remains,
 now *documented and test-pinned* rather than silently present, with its fix gated on corpus access.
 No change to the ADR-0009 cascade design or the LanceDB schema join.
