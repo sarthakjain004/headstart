@@ -51,6 +51,8 @@ config/*
 !config/role_family_classifier/
 # The hand-curated Board -> company name map (ADR-0212).
 !config/company_names.csv
+# Rows whose vector encodes another posting's text, re-embedded once (ADR-0285).
+!config/stale_shared_vectors.txt
 
 # Regenerable pipeline scratch — run logs and superseded intermediates; safe to delete
 data/scratch/

@@ -266,6 +266,7 @@ supersedes it and note the supersession in both.
 | [0268](0268-a-served-posting-date-is-never-later-than-first-seen.md) | A served posting date is never later than the day we first saw the Job | 2026-09-29 |
 | [0269](0269-every-trends-control-is-answered-from-the-browser.md) | Every Trends control is answered from the browser | 2026-09-29 |
 | [0274](0274-an-agent-asks-facets-for-the-total-alone-and-names-a-category-in-its-own-words.md) | An agent asks `/facets` for the total alone, and names a category in its own words | 2026-09-29 |
+| [0285](0285-a-vector-is-rebuilt-when-its-postings-text-changes.md) | A vector is rebuilt when its posting's text changes | 2026-09-29 |
 
 *ADR-0037 was removed from the repository on 2026-09-24 by the owner's decision; its number is not
 reused.*
