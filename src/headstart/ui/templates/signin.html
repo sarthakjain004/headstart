@@ -3,6 +3,7 @@
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>HeadStart — tech jobs read straight from company career boards</title>
 <meta name="description" content="Software-engineering openings read directly from companies' own applicant tracking systems, searched by meaning rather than keywords.">
+<link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='logo_mark.svg') }}">
 <style>
   /* A subset of style.css's tokens — just enough for one page. Deliberately self-contained:
      signed-out requests can't fetch /static (the wall gates it), so the door inlines all it
@@ -38,10 +39,7 @@
     padding:48px 22px 64px; }
 
   .brand{ display:flex; align-items:center; gap:11px; margin-bottom:38px; }
-  .mark{ width:30px; height:30px; border-radius:9px; flex:none; position:relative;
-    background:var(--accent); }
-  .mark::after{ content:""; position:absolute; inset:9px 9px auto auto; width:7px; height:7px;
-    border-radius:50%; background:var(--ground); }
+  .mark{ width:30px; height:30px; flex:none; display:block; }
   .brand .name{ font:600 21px/1 var(--serif); letter-spacing:-.01em; }
   .brand .name em{ font-style:normal; color:var(--accent); }
 
@@ -109,7 +107,7 @@
 <div class="wrap">
 
   <div class="brand">
-    <div class="mark"></div>
+    <img class="mark" src="{{ url_for('static', filename='logo_mark.svg') }}" alt="" width="30" height="30">
     <div class="name">Head<em>Start</em></div>
   </div>
 
@@ -146,14 +144,7 @@
         <span><b>Closed roles get removed, and the exception is published.</b> A job missing
         from its board twice running comes out of the index — but a board we cannot read
         properly is skipped rather than emptied, so some dead entries do persist — one such
-        board was measured serving closed jobs for 22 days. The Data tab inside shows the
-        mechanism.</span>
-      </li>
-      <li>
-        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M4 10.5 8 14.5 16 6" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        <span><b>The gaps are published too.</b> Inside, a Data tab reports what share of jobs
-        carry a salary, a posting date or an experience level — counted off the live index
-        each time, not written down once.</span>
+        board was measured serving closed jobs for 22 days.</span>
       </li>
       <li>
         <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M4 10.5 8 14.5 16 6" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -172,8 +163,9 @@
     <p class="terms">Signing in stores your email address — that is the whole of what sign-in
       itself keeps. After that, only what you save on purpose: searches, starred jobs, a profile
       if you make one. Nothing is posted anywhere, no email is sent unless you switch one on
-      yourself, and signing out drops the session. The Data tab lists all of it, and the
-      <a href="/privacy" target="_blank" rel="noopener">privacy policy</a> says where it goes.</p>
+      yourself, and signing out drops the session. The
+      <a href="/privacy" target="_blank" rel="noopener">privacy policy</a> lists all of it and says
+      where it goes.</p>
     <div class="note" id="msg" role="status"></div>
   </div>
 

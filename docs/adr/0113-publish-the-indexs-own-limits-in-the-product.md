@@ -1,6 +1,6 @@
 # ADR-0113: Publish the index's own limits in the product, measured live
 
-**Status:** accepted · **Date:** 2026-09-07 · **Extends ADR-0084's counting rule to coverage; makes README §"What this optimises for" reachable from the UI**
+**Status:** superseded · **Date:** 2026-09-07 · **Superseded by:** [ADR-0249](0249-a-home-tab-replaces-the-data-tab-and-navigation-moves-to-a-sidebar.md) — the Data tab is removed and Home carries its plain-words facts · **Extends ADR-0084's counting rule to coverage; makes README §"What this optimises for" reachable from the UI**
 
 ## Context
 

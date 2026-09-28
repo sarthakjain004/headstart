@@ -6,7 +6,7 @@
        state, not taste: job searching is a long, repetitive, high-rejection scanning task, usually
        done tired and often anxiously. High-chroma surfaces and glowing accents raise arousal and
        eye-fatigue across a forty-minute session, and — for this product specifically — the neon
-       "AI startup" register contradicts what the product now says about itself on the Data tab.
+       "AI startup" register contradicts what the product says about itself.
        Hue is spent on exceptions (pay, remote, alert), never on chrome. ---- */
 :root{
   --ground:#0A0B0D; --raise:#1F2329; --raise-2:#272C34; --rule:#3A4150; --rule-2:#4A5265;
@@ -74,7 +74,7 @@ body{
 }
 
 /* Fluid to a ceiling, and the ceiling IS the content measure. Every block on the page —
-   masthead, tab strip, search bar, toolbar, filter panel, cards, trends, the Data document —
+   masthead, tab strip, search bar, toolbar, filter panel, cards, trends, the Home page —
    is a descendant of this element and none of them sets a width of its own any more, so they
    all start and end on the same two x's at every viewport. That is the whole point of doing
    it here. Capping the PANELS instead (`main`/`.saved`/`.matches`/`.doc` at --measure) is what
@@ -111,10 +111,8 @@ body{
   grid-template-areas:"brand right" "tagline tagline"; margin-bottom:14px; }
 .top-right{ grid-area:right; }
 .brand{ grid-area:brand; display:flex; align-items:center; gap:11px; }
-.mark{ width:30px; height:30px; border-radius:9px; flex:none; position:relative;
-  background:var(--accent); }
-.mark::after{ content:""; position:absolute; inset:9px 9px auto auto; width:7px; height:7px;
-  border-radius:50%; background:var(--ground); }
+/* The logo mark (static/logo_mark.svg, ADR-0249) — one file for the brand and the favicon. */
+.mark{ width:30px; height:30px; flex:none; display:block; }
 .brand h1{ font:600 21px/1 var(--serif); letter-spacing:-.01em; margin:0; }
 /* What this product is, kept on screen wherever the user goes — the footer sentence is at
    the bottom of a long results page and a first-time user never reaches it. It has its own
@@ -137,7 +135,9 @@ body{
 
 /* ---- the shell: a tab strip across the top, content beneath it at full width (ADR-0116).
        The sidebar cost 184px of permanent chrome on every viewport for six links; as a strip
-       it costs one row and returns the width to the results. ---- */
+       it costs one row and returns the width to the results. ADR-0249 brings the sidebar back
+       on wide screens only — see "the app shell" section at the end of this file; below its
+       breakpoint this strip is still the navigation. ---- */
 .tabs{ display:flex; gap:2px; margin:0 0 16px; border-bottom:1px solid var(--rule);
   overflow-x:auto; scrollbar-width:none;
   /* A tab was scrolling off a 390px screen with no sign it existed. The mask fades the
@@ -147,16 +147,12 @@ body{
 @supports not (mask-image:linear-gradient(90deg,#000,transparent)){ .tabs{ -webkit-mask-image:none; mask-image:none; } }
 .tabs::-webkit-scrollbar{ display:none; }
 .nav-item{ display:flex; align-items:center; gap:8px; padding:10px 14px; white-space:nowrap;
+  min-height:44px;
   color:var(--ink-2); text-decoration:none; font-size:14px; font-weight:500;
   border-bottom:2px solid transparent; margin-bottom:-1px;
   transition:color var(--step), border-color var(--step); }
 .nav-item:hover{ color:var(--ink); }
 .nav-item[aria-current="page"]{ color:var(--ink); border-bottom-color:var(--accent); }
-.nav-item.soon{ color:var(--ink-3); cursor:default; }
-.nav-item.soon:hover{ color:var(--ink-3); }
-.chip-soon{ font:600 9.5px/1 var(--sans); letter-spacing:.08em;
-  text-transform:uppercase; color:var(--ink-3); border:1px solid var(--rule);
-  padding:3px 6px; border-radius:var(--r-pill); }
 .panel[hidden]{ display:none !important; }
 
 /* ---- search ---- */
@@ -933,8 +929,8 @@ textarea:focus{ border-color:var(--accent); }
   border-bottom:1px solid var(--rule-2); }
 .foot a:hover{ color:var(--accent); border-bottom-color:var(--accent); }
 
-/* The tab strip is horizontal at every width now, so it needs no breakpoint of its own —
-   it simply scrolls when the tabs outgrow the viewport. */
+/* Below the sidebar breakpoint (ADR-0249) the tab strip is horizontal and needs no breakpoint
+   of its own — it simply scrolls when the tabs outgrow the viewport. */
 
 /* The row layout needs width to be a row. Below this the aligned columns cost more than
    they buy, so the card folds: text on the left, pay and match on a second line under it. */
@@ -1095,64 +1091,6 @@ textarea:focus{ border-color:var(--accent); }
   color:var(--accent); text-decoration:underline; }
 .linkish:hover{ opacity:.8; }
 
-/* ---- the Data tab (ADR-0112). Running prose, so it gets a measure and a type scale of its
-       own — the rest of this page is controls and cards, which want neither. ---- */
-/* The document spans the shell like every other block — its section rules are what draw the
-   page's right edge on this tab — and the measure moves inside, onto the running text alone.
-   Capping `.doc` itself ended Data 400px inside every other tab on the same screen. */
-.doc{ max-width:none; }
-.doc-hd p, .doc-sec p, .doc-list li, .cov-row{ max-width:72ch; }
-.doc-hd h2{ font:600 22px/1.25 var(--serif); margin:0 0 8px; letter-spacing:-.01em; }
-.doc-hd p{ color:var(--ink-2); font-size:14.5px; margin:0 0 30px; text-wrap:pretty; }
-.doc-sec{ border-top:1px solid var(--rule); padding-top:22px; margin-bottom:26px; }
-.doc-sec h3{ font:600 14px/1.3 var(--sans); margin:0 0 12px; letter-spacing:.005em; }
-.doc-sec p{ color:var(--ink-2); font-size:14px; margin:0 0 12px; text-wrap:pretty; }
-.doc-sec b{ color:var(--ink); font-weight:600; }
-.doc-list{ list-style:none; margin:0; padding:0; display:grid; gap:11px; }
-.doc-list li{ color:var(--ink-2); font-size:14px; padding-left:15px; position:relative;
-  text-wrap:pretty; }
-.doc-list li::before{ content:""; position:absolute; left:0; top:8px; width:5px; height:5px;
-  border-radius:50%; background:var(--rule-2); }
-/* Set one size down, NOT one ink down. --ink-3 measures 3.5–4.3:1 against these surfaces,
-   under the 4.5:1 body-text floor — and a caveat nobody can read is exactly the defect this
-   page exists to avoid, so the hierarchy is carried by size alone. */
-.aside{ color:var(--ink-2); font-size:12.5px; line-height:1.5; }
-.doc-sec .aside{ display:block; }
-.ats-line{ line-height:2.1; }
-.ats-line .lbl{ color:var(--ink-3); font-size:13px; margin-right:6px; }
-/* Not `.pill` — that name belongs to the active-filter chip above, which carries a `pop`
-   animation and a remove button these must not inherit. */
-.ats-pill{ display:inline-block; font:500 11.5px var(--mono); padding:3px 9px; margin-right:5px;
-  border-radius:var(--r-pill); background:var(--raise-2); border:1px solid var(--rule);
-  color:var(--ink-2); }
-/* The inline ADR citations (ADR-0112). They were falling through to the browser's default
-   blue, which is both off-system and unreadable on the dark ground. Set as a quiet citation:
-   the aqua measures 10.04:1 dark / 4.56:1 light against the page ground, and the rule
-   underneath keeps it identifiable as a link without colour being the only signal. */
-.doc-sec a{ color:var(--accent); text-decoration:none; font-weight:500; white-space:nowrap;
-  border-bottom:1px solid color-mix(in srgb, var(--accent) 42%, transparent); }
-.doc-sec a:hover{ border-bottom-color:var(--accent); }
-
-.doc-ft{ border-top:1px solid var(--rule); padding-top:18px; color:var(--ink-3);
-  font-size:13px; display:flex; flex-wrap:wrap; gap:14px; align-items:center; }
-.doc-ft a{ color:var(--ink-2); text-decoration:none; border-bottom:1px solid var(--rule-2); }
-.doc-ft a:hover{ color:var(--accent); border-bottom-color:var(--accent); }
-
-/* Coverage bars. A share of the index, so one hue at varying length — never a category
-   palette, and never red/green, which would read as pass/fail on facts that are neither. */
-.doc-sec .cov-total{ margin-bottom:14px; }
-.cov-row{ display:grid; grid-template-columns:64px 1fr; gap:14px; align-items:start;
-  margin-bottom:13px; }
-.cov-bar{ height:7px; border-radius:var(--r-pill); background:var(--rule); overflow:hidden;
-  margin-top:6px; }
-.cov-bar span{ display:block; height:100%; border-radius:var(--r-pill);
-  background:var(--accent); }
-.cov-txt{ color:var(--ink-2); font-size:14px; line-height:1.45; }
-.cov-txt b{ color:var(--ink); font:600 14px var(--mono); font-variant-numeric:tabular-nums;
-  margin-right:2px; }
-.cov-txt .aside{ margin-top:2px; }
-@media (max-width:520px){ .cov-row{ grid-template-columns:48px 1fr; gap:10px; } }
-
 /* ---- "Hiring now" (hot_ranking) -----------------------------------------------------------
    A leaderboard, so the row is a grid with the ranking number in its own column: the measure
    is the thing being compared and it stays on one right-aligned axis down the list, which is
@@ -1268,3 +1206,145 @@ textarea:focus{ border-color:var(--accent); }
 /* On a 320px phone a long reading ("1,032 · marked change −264") wraps under its name rather than
    pushing the row past the edge. */
 .trends-tooltip.under .tt-row{ flex-wrap:wrap; }
+
+/* ---- the app shell: navigation in a sidebar on wide screens (ADR-0249) -------------------------
+   The same <nav class="tabs"> list as the strip above, re-laid as a column beside the content.
+   ADR-0116 removed a sidebar for costing width on every viewport; this one appears only where
+   the width exists, and the shell's ceiling grows by the sidebar's own width so the content
+   column keeps its measure. `screen` only: a printout has no navigation to reserve a column
+   for (resume.css hides .tabs in print). The icons are shown here and not in the strip, where
+   they would only push more tabs off a phone's edge. */
+:root{ --nav-w:184px; --nav-gap:28px; }
+.nav-ico{ display:none; width:18px; height:18px; flex:none; fill:none; stroke:currentColor;
+  stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
+@media screen and (min-width:1180px){
+  .shell{ display:grid; grid-template-columns:var(--nav-w) minmax(0,1fr);
+    column-gap:var(--nav-gap); align-items:start;
+    grid-template-areas:"top top" "nav content" "nav foot"; }
+  .top{ grid-area:top; }
+  .content{ grid-area:content; min-width:0; }
+  .foot{ grid-area:foot; }
+  .tabs{ grid-area:nav; position:sticky; top:18px; flex-direction:column; gap:2px; margin:0;
+    border-bottom:0; overflow:visible; -webkit-mask-image:none; mask-image:none; }
+  .nav-item{ gap:11px; padding:10px 12px; margin-bottom:0; border-bottom:0;
+    border-radius:var(--r-md); transition:color var(--step), background var(--step); }
+  .nav-item:hover{ background:var(--raise); }
+  .nav-item[aria-current="page"]{ background:var(--raise); box-shadow:inset 3px 0 0 var(--accent); }
+  .nav-ico{ display:block; }
+}
+/* Below the ultrawide breakpoint only: that block sets its own, wider ceiling. */
+@media screen and (min-width:1180px) and (max-width:1719.98px){
+  .shell{ max-width:min(calc(var(--measure) + var(--nav-w) + var(--nav-gap) + 2 * var(--shell-pad)), 94vw); }
+}
+
+/* ---- the Home tab (ADR-0249). The landing view: what HeadStart is and the way into it. ---- */
+.home{ display:grid; gap:44px; padding:8px 0; }
+.home-hero{ display:grid; gap:28px; align-items:center; }
+@media (min-width:900px){
+  .home-hero{ grid-template-columns:minmax(0,1.05fr) minmax(0,1fr); gap:40px; }
+}
+.home-eyebrow{ margin:0 0 10px; font:600 12px/1.3 var(--sans); letter-spacing:.1em;
+  text-transform:uppercase; color:var(--accent); }
+.home-title{ margin:0 0 14px; max-width:20ch; font:600 clamp(28px,4vw,42px)/1.15 var(--serif);
+  letter-spacing:-.015em; text-wrap:balance; }
+.home-lede{ margin:0 0 24px; max-width:54ch; color:var(--ink-2); font-size:16.5px; line-height:1.6;
+  text-wrap:pretty; }
+.home-actions{ display:flex; flex-wrap:wrap; gap:10px; }
+/* The one filled button outside the search bar: Home's way in, and the tour's Next. */
+.btn-primary{ display:inline-flex; align-items:center; justify-content:center; min-height:44px;
+  padding:0 22px; border:0; border-radius:var(--r-md); background:var(--accent);
+  color:var(--ground); font:700 14.5px/1 var(--sans); text-decoration:none; cursor:pointer;
+  transition:transform var(--step), filter var(--step); }
+.btn-primary:hover{ transform:translateY(-1px); filter:brightness(1.06); }
+.home-secondary{ display:inline-flex; align-items:center; min-height:44px; text-decoration:none; }
+/* Home's own search box: the first thing a visitor can do, on the first screen. */
+.home-search{ display:flex; gap:8px; max-width:560px; margin:0 0 12px; }
+.home-search input{ flex:1; min-width:0; min-height:48px; padding:0 16px; font:inherit;
+  font-size:15.5px; background:var(--raise); color:var(--ink); border:1px solid var(--rule-2);
+  border-radius:var(--r-md); outline:none; transition:border-color var(--step), box-shadow var(--step); }
+.home-search input::placeholder{ color:var(--ink-3); }
+.home-search input:focus{ border-color:var(--accent); box-shadow:0 0 0 3px var(--rule-2); }
+.home-search .btn-primary{ min-height:48px; }
+.home-facts{ margin:20px 0 0; color:var(--ink-2); font-size:13.5px; }
+.home-facts b{ color:var(--ink); font:600 13.5px var(--mono); font-variant-numeric:tabular-nums; }
+/* Two facts, a dot between them — and on a phone one per line, rather than a dot left
+   dangling at the end of the first. */
+.home-facts span + span::before{ content:"\00B7"; margin:0 8px 0 4px; color:var(--ink-3); }
+@media (max-width:560px){
+  .home-facts span + span{ display:block; margin-top:2px; }
+  .home-facts span + span::before{ content:none; }
+}
+
+/* The product video's frame, holding a sketch of the Search tab until the video exists. */
+.home-video{ margin:0; }
+.home-video video, .home-sketch{ display:block; width:100%; aspect-ratio:16/9;
+  border:1px solid var(--rule); border-radius:var(--r-lg); background:var(--raise); }
+.home-sketch{ display:flex; flex-direction:column; justify-content:center; gap:8px;
+  padding:18px 22px; overflow:hidden; box-shadow:var(--shadow); }
+.sketch-search{ margin-bottom:4px; padding:9px 16px; border:1px solid var(--rule-2);
+  border-radius:var(--r-pill); background:var(--raise-2); color:var(--ink-2); font-size:13px;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.sketch-row{ display:grid; grid-template-columns:minmax(0,1fr) auto 40px; gap:12px;
+  align-items:center; padding:9px 12px; border:1px solid var(--rule); border-radius:var(--r-md);
+  background:var(--raise-2); }
+.sketch-lines{ display:grid; gap:6px; }
+.sketch-lines i{ display:block; width:72%; height:7px; border-radius:var(--r-pill);
+  background:var(--rule-2); }
+.sketch-lines i + i{ width:44%; background:var(--rule); }
+.sketch-pay{ color:var(--pay); font:600 12px var(--mono); }
+.sketch-match{ color:var(--accent); font:700 12px var(--mono); text-align:right; }
+.home-video figcaption{ margin-top:10px; color:var(--ink-2); font-size:12.5px; text-align:center; }
+@media (max-width:480px){ .sketch-row:last-child{ display:none; } }
+
+.home-sec h3{ margin:0 0 16px; font:600 20px/1.3 var(--serif); letter-spacing:-.005em; }
+.home-cards{ display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:12px; }
+.home-card{ display:flex; flex-direction:column; gap:6px; padding:16px 18px;
+  background:var(--raise); border:1px solid var(--rule); border-radius:var(--r-lg);
+  color:var(--ink-2); font-size:14px; line-height:1.5; text-decoration:none;
+  transition:border-color var(--step), transform var(--step); }
+.home-card b{ color:var(--ink); font-size:15px; font-weight:600; }
+.home-card:hover{ border-color:var(--accent); transform:translateY(-1px); }
+.home-steps{ display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:12px;
+  margin:0; padding:0; list-style:none; counter-reset:step; }
+.home-steps li{ position:relative; padding:16px 18px 16px 58px; counter-increment:step;
+  background:var(--raise); border:1px solid var(--rule); border-radius:var(--r-lg);
+  color:var(--ink-2); font-size:14px; line-height:1.55; }
+.home-steps li::before{ content:counter(step); position:absolute; left:18px; top:15px;
+  display:grid; place-items:center; width:26px; height:26px; border-radius:50%;
+  background:var(--raise-2); border:1px solid var(--rule-2); color:var(--accent);
+  font:700 13px var(--mono); }
+.home-steps b, .home-notes b{ display:block; margin-bottom:2px; color:var(--ink); font-weight:600; }
+.home-notes{ display:grid; gap:14px; max-width:78ch; margin:0; padding:0; list-style:none; }
+.home-notes li{ padding-left:16px; border-left:2px solid var(--rule-2); color:var(--ink-2);
+  font-size:14px; line-height:1.6; }
+.home-notes a{ color:var(--accent); }
+/* Home's in-page anchors, reached from other tabs' links (app.js hashAnchor). */
+#good-to-know, #how-matching{ scroll-margin-top:16px; }
+.home-end{ display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between;
+  gap:14px 24px; padding:22px 24px; background:var(--raise); border:1px solid var(--rule);
+  border-radius:var(--r-xl); }
+.home-end p{ margin:0; font:600 18px/1.3 var(--serif); }
+
+/* ---- the guided tour (ADR-0249, static/guided_tour.js). The spotlight's shadow dims the page;
+       the page itself is `inert` underneath, so the dimming is only the visible half of it. ---- */
+.tour-spot{ position:fixed; z-index:1000; pointer-events:none; border-radius:var(--r-md);
+  box-shadow:0 0 0 2px var(--accent), 0 0 0 9999px rgba(6,7,9,.62);
+  transition:top .22s ease, left .22s ease, width .22s ease, height .22s ease; }
+.tour-pop{ position:fixed; z-index:1001; width:min(340px, calc(100vw - 32px)); padding:18px 18px 14px;
+  background:var(--raise); color:var(--ink); border:1px solid var(--rule-2);
+  border-radius:var(--r-lg); box-shadow:var(--shadow); }
+.tour-pop.docked{ top:auto; left:16px; right:16px; bottom:16px; width:auto; }
+.tour-count{ margin:0 0 6px; color:var(--ink-3); font:600 11px/1 var(--sans); letter-spacing:.1em;
+  text-transform:uppercase; }
+.tour-title{ margin:0 0 6px; font:600 17px/1.3 var(--serif); }
+.tour-body{ margin:0 0 14px; color:var(--ink-2); font-size:14px; line-height:1.55; }
+.tour-actions{ display:flex; align-items:center; gap:8px; }
+.tour-actions .tour-skip{ margin-right:auto; min-height:44px; }
+.tour-actions .ghost{ min-height:44px; }
+.tour-actions .ghost:disabled{ cursor:default; }
+/* The first-visit offer: a corner card, not a modal — the page stays usable around it. */
+.tour-offer{ position:fixed; z-index:990; right:16px; bottom:16px; display:flex; flex-wrap:wrap;
+  align-items:center; gap:10px; width:min(340px, calc(100vw - 32px)); padding:14px 16px;
+  background:var(--raise); border:1px solid var(--rule-2); border-radius:var(--r-lg);
+  box-shadow:var(--shadow); }
+.tour-offer p{ flex:1 0 100%; margin:0; color:var(--ink); font-size:14px; }

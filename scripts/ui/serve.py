@@ -70,7 +70,7 @@ def index():
             # "needs description" disabling and its default-scope comparison.
             "keyword_scopes": {value: needs for value, _, needs in scopes},
             "keyword_default_scope": KEYWORD_DEFAULT_SCOPE,
-            # The Data tab's browse line reads this to name the ordering actually in force.
+            # The Search tab's browse line reads this to name the ordering actually in force.
             "has_first_seen": capabilities.has_first_seen,
             # The salary bracket's rate table (ADR-0117), so the page can print what a row
             # in another currency comes to in the one the user asked in — the SAME table the
@@ -84,10 +84,9 @@ def index():
             "family_handoff": _FAMILY_IDS is not None,
             "max_family_ids": MAX_FAMILY_IDS,
         },
-        # The Data tab links out to the public repo (ADR-0113). Hardcoded here rather than
+        # The privacy-policy links point into the public repo. Hardcoded here rather than
         # imported: this file is the local dev renderer and shares no config with the Space.
         repo="https://github.com/sarthakjain004/headstart",
-        auth_on=False,  # the local renderer has no sign-in, so nothing is stored
         njobs=f"{_table.count_rows():,}",
         atses=capabilities.atses,
         india_opts=india_gazetteer.dropdown_options(),
@@ -126,12 +125,6 @@ def index():
         profile_on=False,
         resume_sync_on=False,  # no sign-in here, so there is no account to keep a copy on
     )
-
-
-@app.route("/coverage")
-def coverage():
-    """The Data tab's live counts (ADR-0113) — the Space route's local twin."""
-    return jsonify(_searcher.coverage())
 
 
 # Follow/hide (ADR-0171). The Space keeps these per Account in the HF-backed store; there are
