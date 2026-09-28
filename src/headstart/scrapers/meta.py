@@ -237,28 +237,28 @@ def _ld_fields(page: str) -> dict[str, Any] | None:
     # `posted_at` is the page's `datePosted`, measured real and stable, not fabricated. The
     # location is every site a posting names, "; "-joined (module docstring: mean 2.24, one
     # posting listing 14).
-    departments = _relay_value(page, "departments")
+    requisition = _requisition(page)
+    departments = requisition.get("departments")
     return {
         **job_posting_fields(node),
         "description": _full_description(node),
         "department": ", ".join(departments) if isinstance(departments, list) else None,
-        "public_compensation": _relay_value(page, "public_compensation"),
+        "public_compensation": requisition.get("public_compensation"),
     }
 
 
-def _relay_value(page: str, key: str) -> Any:
-    """One key's JSON value from the page's ``xcp_requisition_job_description`` relay data, or
-    None when the page carries no such object (module docstring)."""
-    start = page.find('"xcp_requisition_job_description":')
+def _requisition(page: str) -> dict[str, Any]:
+    """The page's ``xcp_requisition_job_description`` relay object, or ``{}`` when the page
+    carries none (module docstring)."""
+    marker = '"xcp_requisition_job_description":'
+    start = page.find(marker)
     if start == -1:
-        return None
-    at = page.find(f'"{key}":', start)
-    if at == -1:
-        return None
+        return {}
     try:
-        return _JSON.raw_decode(page, at + len(key) + 3)[0]
+        value = _JSON.raw_decode(page, start + len(marker))[0]
     except ValueError:
-        return None
+        return {}
+    return value if isinstance(value, dict) else {}
 
 
 def _full_description(node: dict[str, Any]) -> str | None:

@@ -120,13 +120,6 @@ def test_remote_is_read_as_the_stated_boolean():
     assert _jobs()["301347"].remote is False
 
 
-def test_a_missing_remote_field_is_unknown_not_on_site():
-    row = dict(_listing()["jobs"][0])
-    del row["Remote"]
-    (job,) = _scraper().parse([row], SCRAPED_AT)
-    assert job.remote is None
-
-
 def test_the_html_document_head_is_not_part_of_the_description():
     """57 of 538 live Descriptions (2026-09-28) are a whole HTML document whose `<title>` is
     "<p> Cleaned Document </p>"; that title is an export artefact, not posting text. The

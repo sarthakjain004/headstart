@@ -162,10 +162,8 @@ class UberScraper(BaseScraper):
                     title=title,
                     location=_location(item.get("Locations")),
                     # A real, always-present boolean (module docstring) — read as stated rather
-                    # than guessed from location text; absent reads as unknown, not on-site.
-                    remote=remote
-                    if isinstance(remote := item.get("Remote"), bool)
-                    else None,
+                    # than guessed from location text.
+                    remote=bool(item.get("Remote")),
                     department=_department(item.get("Teams")),
                     url=self.job_url(item.get("Urls")),
                     posted_at=item.get("DisplayDate"),
