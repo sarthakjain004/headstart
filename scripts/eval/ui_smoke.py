@@ -218,6 +218,14 @@ def main() -> None:
                 assert page.evaluate(
                     "document.documentElement.scrollWidth <= innerWidth"
                 ), "horizontal page overflow"
+                # The fluid shell (ADR-0249): the page reaches the window's edges bar a small
+                # gutter, instead of centring a capped box. A phone keeps its own padding.
+                edges = page.evaluate(
+                    "(() => { const b = document.querySelector('.top').getBoundingClientRect();"
+                    " return [b.left, innerWidth - b.right]; })()"
+                )
+                if width >= 1280:
+                    assert max(edges) <= 32, f"shell capped again: gutters {edges}"
                 assert not errors, errors
                 print(
                     f"browser smoke: {width}px, keyboard/search race/navigation/disclosures passed",

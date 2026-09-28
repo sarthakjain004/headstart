@@ -34,12 +34,9 @@
   --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
   --serif:ui-serif,"Iowan Old Style",Georgia,serif;
   --step:.18s cubic-bezier(.2,.7,.3,1);
-  /* One content width for the whole page (D1). A row's own needs set it — a ~74ch text
-     measure plus the pay/match/star columns — and it is now applied ONCE, to .shell, rather
-     than to each panel: Search, Matches and Saved render the same card, so a card that is
-     880px on one tab and 1276px on another is the same component at two sizes. --shell-pad
-     is the shell's own gutter, named so the two cannot drift apart in the calc below. */
-  --measure:1150px; --shell-pad:26px;
+  /* The page's side gutter (ADR-0249's fluid-shell amendment): small and fluid, so the page
+     uses the screen it is on instead of centring a fixed-width box inside it. */
+  --gutter:clamp(12px, 1.5vw, 32px);
   /* The wide-screen sidebar's column, its folded width, and the gap beside it (ADR-0249). */
   --nav-w:176px; --nav-folded-w:64px; --nav-gap:24px;
   /* What the guided tour dims the page with: dark in both themes, a touch lighter on light. */
@@ -79,21 +76,15 @@ body{
   transition:background .3s ease, color .3s ease;
 }
 
-/* Fluid to a ceiling, and the ceiling IS the content measure. Every block on the page —
-   masthead, tab strip, search bar, toolbar, filter panel, cards, trends, the Home page —
-   is a descendant of this element and none of them sets a width of its own any more, so they
-   all start and end on the same two x's at every viewport. That is the whole point of doing
-   it here. Capping the PANELS instead (`main`/`.saved`/`.matches`/`.doc` at --measure) is what
-   this replaces, and it was measured giving one page three right edges at once: at 1800 Search
-   ended at 1654, Saved and Matches at 1226 and Data at 807, and at 1440 the search bar ran
-   222px past the toolbar and cards directly beneath it. Past the ultrawide breakpoint the
-   ceiling lifts and the extra width buys a SECOND COLUMN of results rather than wider rows —
-   see the min-width:1720px block. */
-.shell{ position:relative; z-index:1;
-  max-width:min(calc(var(--measure) + 2 * var(--shell-pad)), 94vw); margin:0 auto;
-  padding:18px var(--shell-pad) 72px; }
-/* Deliberately not a narrowing rule: the one measure lives on .shell, and a second cap here
-   is exactly how the ragged right edge got in last time. */
+/* The whole viewport, less a small fluid gutter (ADR-0249's fluid-shell amendment). The
+   centred 1150px measure this replaces left 67px of background on each side at 1351 and 696
+   at 3440 — the owner's "too much empty space on left and right". Every block on the page is
+   a descendant of this element and none sets a width of its own, so they all start and end on
+   the same two x's at every viewport; readability is kept by capping prose (a ~70ch measure on
+   paragraphs), never the layout. Past the ultrawide breakpoint the extra width buys a SECOND
+   COLUMN of results rather than wider rows — see the min-width:1720px block. */
+.shell{ position:relative; z-index:1; padding:18px var(--gutter) 72px; }
+/* Deliberately not a narrowing rule: a cap here is how the ragged right edge got in before. */
 .content{ max-width:100%; }
 /* The filter rail is ~20 controls deep and sits before the results in the DOM, so a keyboard
    user otherwise tabs all of it to reach the first job. Placed after the search bar rather
@@ -608,7 +599,7 @@ textarea:focus{ border-color:var(--accent); }
 /* The row is capped rather than the tracks: on a 2,000px display four 1fr tiles came out
    430px wide, most of it air around a two-digit number. A definite max inside minmax() is
    what auto-fit counts repetitions with, so `minmax(130px, 250px)` collapses to ONE column at
-   390px — measured, not assumed. 1fr keeps the count honest and --measure caps the row. */
+   390px — measured, not assumed. 1fr keeps the count honest and the max-width caps the row. */
 /* The answer in words, at body size and ink: the reason a reader picked the company. */
 .trends-verdict{ margin:14px 0 0; max-width:74ch; font-size:14px; line-height:1.45; color:var(--ink-2); }
 .trends-verdict[hidden]{ display:none !important; }
@@ -953,12 +944,9 @@ textarea:focus{ border-color:var(--accent); }
 }
 
 /* Ultrawide: spend the width on MORE jobs, not wider ones (ADR-0116's rule that full width
-   is worth having only if it buys density), and lift the shell's ceiling to pay for it —
-   1560px on a 2692px display left 42% of the screen as background, which is the complaint
-   this block exists to answer.
-   The trigger is a VIEWPORT width but the thing that has to be wide enough is the shell, so
-   it fires at 1720 rather than 1560: at 1560 the shell was 94vw = 1466 and a card halved from
-   1080 to 700 in one pixel of viewport. At 1720 the shell is already 1582.
+   is worth having only if it buys density). The trigger is a VIEWPORT width but the thing that
+   has to be wide enough is the results column: at 1720 with the sidebar open it is ~1150px, so
+   each of the two columns keeps a ~570px card.
    Column-major, not row-major. Filling by rows put ranks 1 and 2 side by side, so reading
    straight down the left column gave 1, 3, 5 — the scan no longer followed the ranking it
    was sorted by. Flowing down the columns puts 1-10 in the left and 11-20 in the right, so a
@@ -969,7 +957,6 @@ textarea:focus{ border-color:var(--accent); }
    reason — a one-result page gets a single full-width row, not a half-width card beside a
    void. */
 @media (min-width:1720px){
-  .shell{ max-width:min(2100px, 92vw); }
   #results, #matches-results, #saved-results{ display:grid; grid-auto-flow:column;
     grid-template-rows:repeat(var(--rows,10), min-content);
     grid-auto-columns:minmax(0,1fr); gap:0 14px; align-items:start; }
@@ -980,7 +967,8 @@ textarea:focus{ border-color:var(--accent); }
 /* ---- phones. Checked against a 390px viewport: the counter used to wrap onto two lines and
    shove the wordmark, and the search field collapsed to about fifteen characters. ---- */
 @media (max-width:560px){
-  .shell{ padding:18px 14px 60px; }
+  /* The phone layout as it was before the fluid shell (ADR-0249): 94vw, centred, 14px pad. */
+  .shell{ max-width:94vw; margin:0 auto; padding:18px 14px 60px; }
   .count, #who{ display:none; }        /* the index size is context, not a control */
   /* Beside the field, not stacked under it. The stacked form was chosen when the button kept
      its 30px side padding and squeezed the field to about fifteen characters; trimming the
@@ -1216,8 +1204,8 @@ textarea:focus{ border-color:var(--accent); }
 /* ---- the app shell: navigation in a sidebar on wide screens (ADR-0249) -------------------------
    The same <nav class="tabs"> list as the strip above, re-laid as a column beside the content.
    ADR-0116 removed a sidebar for costing width on every viewport; this one appears only where
-   the width exists, and the shell's ceiling grows by the sidebar's own width so the content
-   column keeps its measure. 1280px, not lower: Search puts its filter column beside the results
+   the width exists, pinned to the viewport's left edge (the shell's gutter), with the content
+   column taking the rest. 1280px, not lower: Search puts its filter column beside the results
    from 1100px (ADR-0247), and at 1180px the three columns left the results 525px — measured.
    `screen` only: a printout has no navigation to reserve a column for (resume.css hides .tabs
    in print). The icons are shown here and not in the strip, where they would only push more
@@ -1246,12 +1234,8 @@ textarea:focus{ border-color:var(--accent); }
   .nav-item[aria-current="page"]{ background:var(--raise); box-shadow:inset 3px 0 0 var(--accent); }
   .nav-ico{ display:block; }
 }
-/* The ceiling stays the unfolded one in both states, so folding the sidebar hands its whole
-   width to the content column rather than shrinking the page (ADR-0249's amendment). */
-/* Below the ultrawide breakpoint only: that block sets its own, wider ceiling. */
-@media screen and (min-width:1280px) and (max-width:1719.98px){
-  .shell{ max-width:min(calc(var(--measure) + var(--nav-w) + var(--nav-gap) + 2 * var(--shell-pad)), 94vw); }
-}
+/* Folding hands the sidebar's width straight to the content column: the shell has no ceiling
+   to shrink (ADR-0249's amendments). */
 
 /* ---- the folded sidebar (ADR-0249): a column of icons. `data-nav` on <html> is set before
        the first paint (base.html), so a reload opens at the right width instead of sliding into
@@ -1289,7 +1273,10 @@ textarea:focus{ border-color:var(--accent); }
 
 /* ---- the Home tab (ADR-0249). The landing view: what HeadStart is and the way into it. ---- */
 .home{ display:grid; gap:44px; padding:8px 0; }
-.home-hero{ display:grid; gap:28px; align-items:center; }
+/* Capped as one composition, not as prose: past ~1720px the video frame grew to 890px tall and
+   the text sat 1,600px away from it (measured at 3440). The cards and sections below keep the
+   full width. */
+.home-hero{ display:grid; gap:28px; align-items:center; max-width:1720px; }
 @media (min-width:900px){
   .home-hero{ grid-template-columns:minmax(0,1.05fr) minmax(0,1fr); gap:40px; }
 }
@@ -1347,7 +1334,7 @@ textarea:focus{ border-color:var(--accent); }
 @media (max-width:480px){ .sketch-row:last-child{ display:none; } }
 
 .home-sec h3{ margin:0 0 16px; font:600 20px/1.3 var(--serif); letter-spacing:-.005em; }
-.home-cards{ display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:12px; }
+.home-cards{ display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:12px; }
 .home-card{ display:flex; flex-direction:column; gap:6px; padding:16px 18px;
   background:var(--raise); border:1px solid var(--rule); border-radius:var(--r-lg);
   color:var(--ink-2); font-size:14px; line-height:1.5; text-decoration:none;
@@ -1364,7 +1351,7 @@ textarea:focus{ border-color:var(--accent); }
   background:var(--raise-2); border:1px solid var(--rule-2); color:var(--accent);
   font:700 13px var(--mono); }
 .home-steps b, .home-notes b{ display:block; margin-bottom:2px; color:var(--ink); font-weight:600; }
-.home-notes{ display:grid; gap:14px; max-width:78ch; margin:0; padding:0; list-style:none; }
+.home-notes{ display:grid; gap:14px; max-width:70ch; margin:0; padding:0; list-style:none; }
 .home-notes li{ padding-left:16px; border-left:2px solid var(--rule-2); color:var(--ink-2);
   font-size:14px; line-height:1.6; }
 .home-notes a{ color:var(--accent); }
