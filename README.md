@@ -449,8 +449,9 @@ Note the raw corpus files under `data/jobs/` carry a few fields the served table
   gazetteer, ADR-0024) and `fx.py` (the salary bracket's dated rates, ADR-0117). The run imports
   it to write the materialized columns, so the serving path is a separate package.
 - `src/headstart/serving/` — the serving path the Space and the local dev server run:
-  `job_search.py` (`JobSearch`, ADR-0042), `facets.py` (ADR-0084) and `profile_extract.py` (Résumé
-  to Profile, ADR-0041).
+  `job_search.py` (`JobSearch`, ADR-0042), `facets.py` (ADR-0084), `profile_extract.py` (Résumé
+  to Profile, ADR-0041) and `rate_limit.py` (how often one address may read the Space's public
+  routes without a session, ADR-0262).
 - `src/headstart/trends/` — what Trends reads from its history (ADR-0230, ADR-0233):
   `trend_history.py` (the one reader of the Board-delta history), `netting.py` (**Netting**),
   `line_reading.py` (the **Line reading** each chart draws), `hot_ranking.py` (the Hot tab's
