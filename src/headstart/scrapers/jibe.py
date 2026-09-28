@@ -195,13 +195,12 @@ def _iso(value: str | None) -> str | None:
 # "Manager - Coding (REMOTE)", "RN (PRN - Not Remote)" and "... - NON REMOTE".
 _NEGATED_REMOTE = re.compile(r"\b(?:not|non)[\s-]+remote\b", re.IGNORECASE)
 _REMOTE_WORD = re.compile(r"\bremote\b", re.IGNORECASE)
-#: "remote" that names a technology or a service, not where the work is: `remote.py`'s own
-#: `_JARGON` terms, plus the healthcare ones Jibe's hospital clients post ("Remote Patient
-#: Monitoring RN").
+#: "remote" that names a technology or a service in a title, not where the work is ("Remote
+#: Sensing Scientist", "Remote Patient Monitoring RN"). Kept to the two terms that never mean
+#: remote work in a title: "Remote Site Reliability Engineer" and "Remote Database Administrator"
+#: usually do, so `remote.py`'s wider `_JARGON`, tuned for descriptions, is not reused here.
 _REMOTE_JARGON = re.compile(
-    r"\bremote\s+(?:sensing|desktop|procedure|hands|attestation|server|host|database"
-    r"|patient\s+monitoring|monitoring|site)\b",
-    re.IGNORECASE,
+    r"\bremote\s+(?:sensing|(?:patient\s+)?monitoring)\b", re.IGNORECASE
 )
 
 

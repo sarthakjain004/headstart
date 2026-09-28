@@ -3061,7 +3061,8 @@ def p_taleo_enterprise(t, u):
     except Exception as exc:  # noqa: BLE001 - network/shape failure stays retryable
         status = getattr(getattr(exc, "response", None), "status_code", None)
         # A host with no DNS record is gone: `*.taleo.net` resolves no invented label, so unlike
-        # a wildcard vendor domain (`_unknown_dns_on_a_shared_host`) a failed lookup is the tenant.
+        # a wildcard vendor domain (`_unknown_dns_on_a_shared_host`) a failed lookup is the tenant
+        # (an invented label had no answer on 1.1.1.1, 2026-09-28).
         # 52 of 60 sampled `unknown` hosts had none on 1.1.1.1, and 1,131 of the 1,133 hosts the
         # 2026-09-28 re-probe settled dead had none there either.
         gone = status in (404, 410) or _is_dns(exc)

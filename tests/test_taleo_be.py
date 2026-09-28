@@ -470,3 +470,38 @@ def test_primary_work_location_and_the_json_ld_fill_what_the_labels_missed():
     assert job.remote is True
     assert job.employment_type == "Full time"
     assert job.requisition == "2517"
+
+
+def test_a_plain_text_identifier_is_the_requisition():
+    """schema.org allows `identifier` as plain Text as well as a PropertyValue: the AGIOS page with
+    its PropertyValue replaced by the bare value reads the same requisition."""
+    page = (
+        (
+            Path(__file__).parent
+            / "fixtures"
+            / "taleo_be_detail_primary_work_location.html"
+        )
+        .read_text()
+        .replace(
+            '"identifier" : {\n"name" : "Agios Pharmaceuticals Inc",\n"value" : "2517",\n'
+            '"@type" : "PropertyValue"\n}',
+            '"identifier" : "2517"',
+        )
+    )
+    board = (
+        "https://phe.tbe.taleo.net/phe03/ats/careers/v2/searchResults?org=AGIOS&cws=37"
+    )
+    scraper = TaleoBEScraper(board, "Agios Pharmaceuticals Inc")
+    item = {
+        "id": "2517",
+        "url": board.replace("searchResults", "viewRequisition") + "&rid=2517",
+        "title": "Hemolytic Anemia Specialist (Michigan)",
+        "location": "Agios Pharmaceuticals HQ",
+        "department": None,
+        "company": None,
+    }
+    assert '"identifier" : "2517"' in page
+    [job] = scraper.parse(
+        [(item, scraper.read_detail(item, FakeResponse(text=page)))], "t"
+    )
+    assert job.requisition == "2517"
