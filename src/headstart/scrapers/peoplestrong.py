@@ -56,13 +56,15 @@ Not mapped, on purpose:
     sets ``ctcMaxRendered`` (365 of 35,732 postings), bare, with no currency or period and in
     mixed units ("800000-1000000" beside "23-37"). A figure the employer does not publish stays
     unpublished; the description's own figures still reach Tier 2.
-  - ``company``: nothing names the employer — ``urlinfo.title`` is empty on 100 of 104 live
-    portals — so the label, which is readable ("hdfcergocareers"), stays the name.
+  - ``company`` at Board level: nothing names the employer — ``urlinfo.title`` is empty on 100 of
+    104 live portals — so the label stays the Board's name. Each posting's own employer is the
+    root of its ``organizationUnitComplete`` path when that root is a company name (`_employer`).
 """
 
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from headstart.jobs.job import Job, host_of, html_to_text, is_remote
@@ -127,6 +129,26 @@ def _location(row: dict) -> str | None:
         if place and place.lower() not in (p.lower() for p in places):
             places.append(place)
     return ", ".join(places) or None
+
+
+#: A legal or group name at the end of an org-path root ("Atul Auto Ltd.", "Apollo Group").
+_COMPANY_SUFFIX = re.compile(
+    r"\b(?:Ltd\.?|Limited|Pvt\.?|Inc\.?|LLC|Group|Bank|Hospital)$", re.IGNORECASE
+)
+#: A short unit code some tenants put before the entity ("LT-Larsen & Toubro Limited").
+_UNIT_CODE = re.compile(r"^[A-Z]{2,3}-(?=\S)")
+
+
+def _employer(row: dict) -> str | None:
+    """The root of ``organizationUnitComplete`` when it names a company. Across the 56 live
+    Boards with postings (2026-09-28), roots that end in a legal or group suffix name the employer
+    ("Amara Raja Group", "Tata Motors PV Limited", Lodha's two entities "Lodha Developers Ltd" and
+    "NOVERRA HOSPITALITY PRIVATE LIMITED"); roots without one are often a business line instead
+    ("Apparel", "Financial Services", "Quality Engineering", "Chairman of Board"), so they are not
+    read and the Board's name stays."""
+    root = (row.get("organizationUnitComplete") or "").split(">", 1)[0].strip()
+    root = _UNIT_CODE.sub("", root)
+    return root if _COMPANY_SUFFIX.search(root) else None
 
 
 class PeopleStrongScraper(BaseScraper):
@@ -306,7 +328,7 @@ class PeopleStrongScraper(BaseScraper):
                 Job(
                     id=self.job_id(native_id),
                     ats=self.ats,
-                    company=self.company,
+                    company=_employer(row) or self.company,
                     title=(row.get("jobTitle") or "").strip(),
                     location=location,
                     remote=is_remote(location),

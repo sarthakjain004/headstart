@@ -480,3 +480,23 @@ def test_the_alias_key_is_the_label_the_portal_names_itself(monkeypatch):
         is None
     )
     assert _scraper(lambda m, u, k: FakeResponse(503, "")).alias_key() is None
+
+
+def test_a_posting_names_its_employer_from_its_org_path_root():
+    from headstart.scrapers.peoplestrong import _employer
+
+    # Roots as served on live Boards, 2026-09-28.
+    def path(root):
+        return {"organizationUnitComplete": f"{root}>Unit>Team"}
+
+    assert _employer(path("Amara Raja Group")) == "Amara Raja Group"
+    assert (
+        _employer(path("BMW TechWorks India Pvt. Ltd."))
+        == "BMW TechWorks India Pvt. Ltd."
+    )
+    assert _employer(path("LT-Larsen & Toubro Limited")) == "Larsen & Toubro Limited"
+    assert _employer(path("Sobha ltd")) == "Sobha ltd"
+    # A business line, not an employer: the Board's name stays.
+    assert _employer(path("Financial Services")) is None
+    assert _employer(path("Chairman of Board")) is None
+    assert _employer({}) is None
