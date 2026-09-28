@@ -109,6 +109,12 @@ from headstart.scrapers.lever import (
 from headstart.scrapers.oracle import (  # the pod-host spelling, single source
     is_pod_host,
 )
+from headstart.scrapers.personio import (  # which redirect is a departed tenant, single source
+    _REDIRECTS as _PERSONIO_REDIRECTS,
+)
+from headstart.scrapers.personio import (
+    _redirect_host as _personio_redirect_host,
+)
 from headstart.scrapers.radancy import (  # the job-URL shape, single source
     sitemap_rows as _radancy_sitemap_rows,
 )
@@ -2688,12 +2694,37 @@ def p_personio(t, u):
     # Personio served the ordinary HTML job page with a 200 and this counted zero `<position>`
     # entries. Every one of the 312 such rows was recorded live with jobs=0 — probed as alive
     # while the scraper could never read them.
-    status, body = _get(_scraper_for_row("personio", t, u).url())
-    if status == "dns" or status in (404, 410):
-        return DEAD, None
-    if status != 200:
+    #
+    # A redirect is not followed, as the scraper does not follow it: a departed tenant's `/xml`
+    # answers `307 https://personio.com/`, whose marketing site answers 429 to this client, and
+    # following it banned the whole jobs.personio.de gate so every later row read UNKNOWN (5,182
+    # of 9,656 rows were unknown on 2026-09-28). An off-host target is gone; a same-host one
+    # decides nothing (`personio._redirect_host`).
+    board = _scraper_for_row("personio", t, u)
+    try:
+        r = _fetch(
+            "GET", board.url(), headers={"User-Agent": UA}, allow_redirects=False
+        )
+    except http.RequestsError as e:
+        if _is_dns(e):
+            return DEAD, None
+        _note(_net_reason(e))
         return UNKNOWN, None
-    return LIVE, body.decode("utf-8", "replace").count("<position>")
+    if r is None:
+        _note("breaker-open")
+        return UNKNOWN, None
+    if r.status_code in _PERSONIO_REDIRECTS:
+        target = _personio_redirect_host(r.headers.get("location"))
+        if target and target != board.slug.lower():
+            return DEAD, None
+        _note(f"http-{r.status_code}")
+        return UNKNOWN, None
+    if r.status_code in (404, 410):
+        return DEAD, None
+    if r.status_code != 200:
+        _note(f"http-{r.status_code}")
+        return UNKNOWN, None
+    return LIVE, r.content.decode("utf-8", "replace").count("<position>")
 
 
 def p_join(t, u):

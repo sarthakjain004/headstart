@@ -1631,7 +1631,6 @@ def _scraper_url(ats, tenant, url):
         ("gem", "acme", "https://jobs.gem.com/acme"),
         # Host-slugged: a stored deep link must not carry its path or query into the probe.
         ("zoho", "acme", "https://acme.zohorecruit.in/jobs/Careers/1?source=x"),
-        ("personio", "acme", "https://acme.jobs.personio.com/job/1?language=de"),
     ],
 )
 def test_probe_asks_the_url_its_scraper_reads(monkeypatch, ats, tenant, url):
@@ -1639,6 +1638,21 @@ def test_probe_asks_the_url_its_scraper_reads(monkeypatch, ats, tenant, url):
     monkeypatch.setattr(cl, "_get", _recording_get(asked))
     cl.PROBES[ats](tenant, url)
     assert asked[0] == _scraper_url(ats, tenant, url)
+
+
+def test_personio_probe_asks_the_url_its_scraper_reads(monkeypatch):
+    """The parametrized case above, for personio, which fetches through `_fetch` (it must see a
+    redirect's Location, which `_get` does not return)."""
+    tenant, url = "acme", "https://acme.jobs.personio.com/job/1?language=de"
+    asked = []
+
+    def fetch(method, target, **kw):
+        asked.append(target)
+        return _Resp(404)
+
+    monkeypatch.setattr(cl, "_fetch", fetch)
+    cl.PROBES["personio"](tenant, url)
+    assert asked[0] == _scraper_url("personio", tenant, url)
 
 
 @pytest.mark.parametrize(
@@ -2380,3 +2394,40 @@ def test_p_teamtailor_keeps_walking_when_a_page_repeats_a_few_ids(monkeypatch):
 
     monkeypatch.setattr(cl, "_get", get)
     assert cl.p_teamtailor("acme", "https://acme.teamtailor.com") == (cl.LIVE, 205)
+
+
+def _personio_fetch(status, location=None, content=b"", calls=None):
+    def _fetch(method, url, **kw):
+        if calls is not None:
+            calls.append(kw)
+        resp = _Resp(status, content=content)
+        resp.headers = {"location": location} if location else {}
+        return resp
+
+    return _fetch
+
+
+def test_p_personio_reads_a_redirect_off_the_board_host_as_dead(monkeypatch):
+    """A departed tenant's `/xml` answers `307 https://personio.com/` (13c-venture, 2026-09-28).
+    Following it reached the marketing site's 429, which banned all of jobs.personio.de and left
+    every later row UNKNOWN. The probe no longer follows it, as the scraper does not."""
+    calls = []
+    monkeypatch.setattr(
+        cl, "_fetch", _personio_fetch(307, "https://personio.com/", calls=calls)
+    )
+    assert cl.p_personio("13c-venture", "https://13c-venture.jobs.personio.de") == (
+        cl.DEAD,
+        None,
+    )
+    assert calls[0]["allow_redirects"] is False
+
+
+def test_p_personio_a_same_host_redirect_is_not_gone(monkeypatch):
+    monkeypatch.setattr(cl, "_fetch", _personio_fetch(301, "/xml/"))
+    assert cl.p_personio("acme", "https://acme.jobs.personio.de") == (cl.UNKNOWN, None)
+
+
+def test_p_personio_counts_positions(monkeypatch):
+    feed = b"<workzag-jobs><position></position><position></position></workzag-jobs>"
+    monkeypatch.setattr(cl, "_fetch", _personio_fetch(200, content=feed))
+    assert cl.p_personio("acme", "https://acme.jobs.personio.de") == (cl.LIVE, 2)

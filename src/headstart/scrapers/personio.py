@@ -18,7 +18,7 @@ from typing import Any
 from headstart import log
 from headstart.jobs import salary
 from headstart.jobs.experience import from_field
-from headstart.jobs.job import Job, host_of, html_to_text, is_remote
+from headstart.jobs.job import Job, host_of, html_to_text, remote_from_workplace
 from headstart.network import http
 from headstart.scrapers.base import USER_AGENT, BaseScraper
 
@@ -351,7 +351,7 @@ class PersonioScraper(BaseScraper):
             jid = _text(pos, "id")
             if not jid:
                 continue
-            office = _text(pos, "office")
+            location = _location(pos)
             etype, sched = _text(pos, "employmentType"), _text(pos, "schedule")
             jobs.append(
                 Job(
@@ -359,11 +359,12 @@ class PersonioScraper(BaseScraper):
                     ats=self.ats,
                     company=_text(pos, "subcompany") or self.company,
                     title=_text(pos, "name") or "",
-                    location=_location(pos),
-                    # Deliberately from the bare `<office>`, not the joined location: a marker
-                    # like "Home Office" carries no "remote" substring today, and joining in
-                    # `additionalOffices` (real places) must not change that verdict either way.
-                    remote=is_remote(office),
+                    location=location,
+                    # Every office, not the bare `<office>` alone: the feed has no other remote
+                    # field, and a tenant lists "Remote" among `additionalOffices` (1komma5grad
+                    # 2026-09-28: 47 of 307 positions, served on-site). A "Hybrid" office is
+                    # None, as `remote_from_workplace` reads a hybrid location.
+                    remote=remote_from_workplace(None, location),
                     department=_text(pos, "department"),
                     url=self.job_url(jid),
                     posted_at=_text(pos, "createdAt"),
