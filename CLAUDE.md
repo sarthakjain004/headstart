@@ -66,11 +66,14 @@ belong in README and CONTEXT.md, where `tests/test_board_counts.py` checks them.
 - **iCIMS holds tenant hosts only.** Every live row has a hyphen in its tenant label; single-word
   `{customer}.icims.com` hosts are vendor infrastructure (`docs/icims/`) or recruiter logins
   (#576). A vanity career site on Jibe, iCIMS's own career-site layer, is not an iCIMS tenant.
-- **iCIMS: re-run `scripts/validate/dedupe_boards.py --ats icims --apply` after every refresh of
-  its ledger.** Many of a customer's portals redirect their sitemap to its main portal, so the
-  scraper reads the same postings twice under two hosts. The scan rewrites
-  `data/validate/aliases/icims.csv` with `redirect` rows only. That makes `--apply` safe for this
-  ATS. It is the only thing that notices when a buried portal stops redirecting (ADR-0222).
+- **iCIMS: re-run `scripts/validate/icims_subset_portals.py` after every refresh of its ledger,
+  then `jibe_icims_covered_clients.py`.** A customer's portals list its postings under the same
+  ids: many redirect their sitemap to the main portal (`redirect`, ADR-0222), and others list
+  exactly what a sibling does without redirecting (`subset-reqs`: `hourly-spanish-redlobster`,
+  2,399 of 2,399, ADR-0254). The script re-reads every live portal and rewrites
+  `data/validate/aliases/icims.csv` with both, and it is the only thing that notices when a buried
+  portal starts listing a posting of its own. `dedupe_boards.py` refuses `--apply` for this ATS
+  now.
 - **Jibe lands a vanity career site as its client id, and parks clients on Boards already held.**
   A Board is `{client}.jibeapply.com`; resolve a vanity host (`careers.costco.com`) to its client
   with `scripts/discover/mine_jibe.py --vanity`, which reads the rows' `client_code`, else the

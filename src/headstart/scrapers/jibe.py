@@ -66,6 +66,7 @@ Field mappings, each on the measured distribution (151,619 rows, 277 hosts):
 
 from __future__ import annotations
 
+import re
 import time
 import urllib.robotparser
 from datetime import datetime
@@ -145,16 +146,22 @@ def robots_verdict(status: int | None, text: str, path: str, agent: str) -> str:
 
 @cache
 def _scraped_icims_tenants() -> frozenset[str]:
-    """The iCIMS tenant hosts the iCIMS scraper reads: every Scrapable iCIMS Board, lowercased, read
-    once per process from the committed ledger."""
+    """The iCIMS tenant hosts whose postings the iCIMS scraper serves, lowercased, read once per
+    process from the committed ledgers: every Scrapable iCIMS Board, and every portal buried onto
+    one in the iCIMS alias ledger (ADR-0222) — its postings are served under the Board it is
+    buried onto, so a Jibe row applying there is covered too."""
     # Imported here: `scrapable_boards` reaches the scraper registry, which imports this module.
-    from headstart.boards import liveness_ledger, scrapable_boards
+    from headstart.boards import alias_ledger, liveness_ledger, scrapable_boards
 
     ledger = liveness_ledger.dir_for(Path(__file__).resolve().parents[3])
-    return frozenset(
+    scraped = {
         board.lowercase_identity.removeprefix("icims:")
         for board in scrapable_boards.load(ledger, min_jobs=0)
         if board.ats == "icims"
+    }
+    buried = alias_ledger.load_for(ledger, "icims")
+    return frozenset(
+        scraped | {dup for dup, keep in buried.items() if keep.lower() in scraped}
     )
 
 
@@ -169,7 +176,8 @@ def _apply_host(row: dict) -> str:
 
 def _iso(value: str | None) -> str | None:
     """`posted_date` as ISO-8601: "2026-09-18T12:07:00+0000" or "September 22, 2026". A year
-    before 2000 is no date: smoothieking states all 793 of its dates in year 0026."""
+    before 2000 is no date: smoothieking states many of its dates in year 0026 (all 793 on
+    2026-09-24; 27 of page one's 100 on 2026-09-28, each that day's date)."""
     text = (value or "").strip()
     for fmt in ("%Y-%m-%dT%H:%M:%S%z", "%B %d, %Y"):
         try:
@@ -180,6 +188,20 @@ def _iso(value: str | None) -> str | None:
             return None
         return parsed.isoformat() if parsed.tzinfo else parsed.date().isoformat()
     return None
+
+
+# "remote" standing for the work arrangement in a title, not negated.
+# uhs, 2026-09-28: 14 of its 92 `keywords=remote` rows name remote in the title, among them
+# "Manager - Coding (REMOTE)", "RN (PRN - Not Remote)" and "... - NON REMOTE".
+_NEGATED_REMOTE = re.compile(r"\b(?:not|non)[\s-]+remote\b", re.IGNORECASE)
+_REMOTE_WORD = re.compile(r"\bremote\b", re.IGNORECASE)
+
+
+def _title_says_remote(title: str | None) -> bool:
+    """Whether the title itself states the posting is remote. The place a row names is a city
+    even on a remote posting, so `is_remote(location)` read False on all of these."""
+    text = title or ""
+    return not _NEGATED_REMOTE.search(text) and bool(_REMOTE_WORD.search(text))
 
 
 def _location(row: dict) -> str | None:
@@ -316,11 +338,14 @@ class JibeScraper(BaseScraper):
         Board has not read: 6 client board pages redirect off-host (an employer site, an SSO
         login). robots.txt itself is the exception, as RFC 9309 asks: its redirects are followed
         up to five hops, onto any host and any path, and none of them is gated on robots.txt."""
+        # A caller asking for fewer attempts (`_fetch_once`, one) gets that many, paced here; the
+        # transport itself is always asked for one.
+        paced_attempts = min(kwargs.pop("attempts", _ATTEMPTS), _ATTEMPTS)
         kwargs = {"timeout": 30, **kwargs, "attempts": 1, "allow_redirects": False}
         kwargs.setdefault("headers", {"User-Agent": USER_AGENT})
         robots = urlsplit(url).path == "/robots.txt"
         response = None
-        for attempt in range(_ATTEMPTS):
+        for attempt in range(paced_attempts):
             for _hop in range(5):
                 path = urlsplit(url).path
                 if not robots and self.robots_verdict_for(path) != ALLOW:
@@ -333,7 +358,7 @@ class JibeScraper(BaseScraper):
                 except http.RequestsError as exc:
                     if (
                         getattr(exc, "code", None) == _NO_SUCH_HOST
-                        or attempt == _ATTEMPTS - 1
+                        or attempt == paced_attempts - 1
                     ):
                         raise
                     response = None
@@ -491,7 +516,7 @@ class JibeScraper(BaseScraper):
                     company=self.company,
                     title=(row.get("title") or "").strip(),
                     location=location,
-                    remote=is_remote(location),
+                    remote=_title_says_remote(row.get("title")) or is_remote(location),
                     department=_department(row),
                     url=self.job_url(native_id),
                     posted_at=_iso(row.get("posted_date")),

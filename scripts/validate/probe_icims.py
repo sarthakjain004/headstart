@@ -123,6 +123,9 @@ def main() -> int:
             fh.flush()
             done += 1
             live += row["status"] == "live"
+            if row.get("why"):
+                # The ledger has six columns and no room for it, so the reason is logged here.
+                print(f"{row['tenant']} unknown: {row['why']}", flush=True)
             if done % 100 == 0 or row["status"] == "live":
                 print(
                     f"[{done}/{len(tenants)}] live={live} {row['tenant']} "
