@@ -625,11 +625,9 @@ textarea:focus{ border-color:var(--accent); }
 .kpi-delta, .kpi-note{ font-size:11.5px; }
 .kpi-note{ color:var(--ink-3); }
 
-/* The chart's two caveats, as one bounded block. Loose under a full-width plot they read as
-   leftover text; given an edge and a surface they read as the note they are — which matters,
-   because the second one is the reassignment caveat that keeps a reader from misreading a
-   line's fall as jobs closing. That caveat is 190 words, and at 390px it was the tallest thing
-   on the panel, so it folds to one summary line. The words behind it are untouched. */
+/* The chart's caption and its "How to read this" note, as one bounded block. Loose under a
+   full-width plot they read as leftover text; given an edge and a surface they read as the note
+   they are. The note folds to one summary line: it is optional reading (#755). */
 .chart-note{ margin-top:26px; padding:14px 18px; background:var(--raise-2);
   border-left:2px solid var(--rule-2); border-radius:0 var(--r-md) var(--r-md) 0; }
 .chart-note #trends-foot{ margin:0; max-width:74ch; line-height:1.5; }
@@ -640,9 +638,8 @@ textarea:focus{ border-color:var(--accent); }
 .chart-note .note-more > summary::before{ content:"▸ "; }
 .chart-note .note-more[open] > summary::before{ content:"▾ "; }
 .chart-note .kind{ margin:8px 0 0; max-width:74ch; }
-/* Two columns where there is room. The caption block used 640px of a 1940px panel, so the
-   ADR-0057 caveat can be visible for free rather than folded to save height — which is what
-   ADR-0119 asks for when it says that caveat gets more load-bearing under an indexed chart. */
+/* Two columns where there is room: the caption block used 640px of a 1940px panel, so the note
+   opens beside the caption rather than under it. */
 @media (min-width:1100px){
   .chart-note{ display:grid; grid-template-columns:1fr 1fr; gap:4px 32px; align-items:start; }
   .chart-note #trends-foot, .chart-note .note-more{ margin:0; max-width:none; }

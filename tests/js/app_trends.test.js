@@ -331,7 +331,7 @@ test('an unmeasured roles drill says so, rather than claiming nothing is tracked
   t.click('software-engineering', 'roles');
   t.set({ ...fixture(), series: [] }, 'software-engineering');
   t.draw();
-  assert.match(nodes['trends-empty'].textContent, /have not been measured yet/);
+  assert.match(nodes['trends-empty'].textContent, /haven’t been measured yet/);
 });
 
 test('an unknown series name is ignored rather than drilled', () => {
@@ -456,7 +456,7 @@ test('a short history with nothing checked blames the pipeline, not a selection'
   fakeAtsMenu(nodes, [['greenhouse', false], ['lever', false]]);
   t.set(oneStampFixture(), null);
   t.draw();
-  assert.doesNotMatch(nodes['trends-empty'].textContent, /ATS selection/);
+  assert.doesNotMatch(nodes['trends-empty'].textContent, /these sources/);
 });
 
 test('a narrowed selection is sent as repeated ats params', () => {
@@ -589,7 +589,7 @@ test('a short history under an active ATS filter names the filter as the cause',
   fakeAtsMenu(nodes, [['greenhouse', true], ['lever', false]]);   // narrowed
   t.set(oneStampFixture(), null);
   t.draw();
-  assert.match(nodes['trends-empty'].textContent, /ATS selection/);
+  assert.match(nodes['trends-empty'].textContent, /for these sources so far/);
 });
 
 test('a short history with no ATS filter keeps the generic pipeline-is-new message', () => {
@@ -597,8 +597,8 @@ test('a short history with no ATS filter keeps the generic pipeline-is-new messa
   fakeAtsMenu(nodes, [['greenhouse', true], ['lever', true]]);    // all checked = no filter
   t.set(oneStampFixture(), null);
   t.draw();
-  assert.doesNotMatch(nodes['trends-empty'].textContent, /ATS selection/);
-  assert.match(nodes['trends-empty'].textContent, /pipeline has run a few more times/);
+  assert.doesNotMatch(nodes['trends-empty'].textContent, /these sources/);
+  assert.match(nodes['trends-empty'].textContent, /Only one update so far/);
 });
 
 // ---- methodology epochs (ADR-0164) -------------------------------------------------------
@@ -1114,8 +1114,8 @@ test('a Board found after a company began is marked where its backlog lands', as
   await t.load(null);
   const svg = nodes['trends-chart'].innerHTML;
   assert.match(svg, /class="found-marker"/);
-  assert.match(svg, /83 more boards found — Acme \+1,048 openings/, 'the marker says what the list says');
-  assert.match(nodes['trends-foot'].textContent, /boards found later/, 'explained under the chart');
+  assert.match(svg, /83 more job sites found — Acme \+1,048 openings/, 'the marker says what the list says');
+  assert.match(nodes['trends-foot'].textContent, /job sites found later/, 'explained under the chart');
   assert.ok(!nodes['trends-kpi'].innerHTML.includes('Biggest'), 'a found Board is no riser');
 });
 
@@ -1196,7 +1196,7 @@ test('a company counted for one run keeps its own note, not a pipeline one', asy
   t.setPicks([{ key: 'greenhouse:acme', label: 'Acme' }]);
   await t.load(null);
   assert.match(nodes['trends-verdict'].innerHTML, /counted Acme since Sep 20/);
-  assert.match(nodes['trends-empty'].textContent, /a few more runs/);
+  assert.match(nodes['trends-empty'].textContent, /a few more updates/);
   assert.ok(!/pipeline/.test(nodes['trends-empty'].textContent));
 });
 
@@ -1228,7 +1228,7 @@ test('an empty comparable window says where per-board counting began', async () 
   t.coverageSet('comparable');
   answering(ctx, { ...fixture(), stamps: [], totals: [], non_tech: [], series: [], ledger_start: STAMPS[0] });
   await t.load(null);
-  assert.match(nodes['trends-empty'].textContent, /counting by board began Sep 13/);
+  assert.match(nodes['trends-empty'].textContent, /works only from Sep 13/);
 });
 
 test('a refusal note clears on the next pick the reader makes', async () => {
@@ -1417,12 +1417,12 @@ test('the notes fit the view: no dashed line or reassignment caveat on whole com
   t.draw();
   assert.doesNotMatch(nodes['trends-foot'].textContent, /dashed line/);
   assert.doesNotMatch(nodes['trends-chart'].innerHTML, /ref-line/);
-  assert.equal(nodes['trends-how'].hidden, true);
+  assert.equal(nodes['trends-how-moves'].hidden, true);
   t.set(fixture(), null);
   t.setPicks([]);
   t.draw();
   assert.match(nodes['trends-foot'].textContent, /dashed line/);
-  assert.equal(nodes['trends-how'].hidden, false);
+  assert.equal(nodes['trends-how-moves'].hidden, false);
 });
 
 test('with nothing measured, no caption describes a line', () => {
@@ -1467,7 +1467,7 @@ test('a pick the ATS selection drops is told so, even under Comparable', () => {
     { uncounted: ['lever:beta'], base: FOUR[0], coverage: 'comparable',
       counted_since: { 'greenhouse:acme': FOUR[0], 'lever:beta': FOUR[0] } }));
   t.draw();
-  assert.match(nodes['trends-empty'].textContent, /Beta isn’t in this view: none of its boards are on the selected sources/);
+  assert.match(nodes['trends-empty'].textContent, /Beta isn’t in this view: none of its jobs come from the selected sources/);
 });
 
 test('how long a company has been counted comes from its counting, not the window', () => {
@@ -1487,7 +1487,7 @@ test('the sentence says how much of the chart’s move was not hiring', () => {
   showGolden(t, 'found_board_on_a_category_line');
   t.draw();
   assert.match(nodes['trends-verdict'].innerHTML,
-    /Acme<\/b>: [^—<]*— 1,700 tech openings; about flat over 3 days \(\+0\.0%, \+0 openings\)\.<details class="verdict-why"><summary>Not hiring: \+200 openings<\/summary><ul><li>Sep 15 3 more boards found: \+200 openings<\/li><\/ul>/);
+    /Acme<\/b>: [^—<]*— 1,700 tech openings; about flat over 3 days \(\+0\.0%, \+0 openings\)\.<details class="verdict-why"><summary>Not hiring: \+200 openings<\/summary><ul><li>Sep 15 3 more job sites found: \+200 openings<\/li><\/ul>/);
 });
 
 test('compared company by company, the heading asks how hiring compares', () => {
@@ -1595,7 +1595,7 @@ test('a leap one run puts straight back is a partial read, not hiring', async ()
   answering(ctx, { ...golden('partial_read_put_straight_back'), partial: 1 });
   t.setPicks([ACME]);
   await t.load(null);
-  assert.match(nodes['trends-empty'].textContent, /1 run where a board was read only partly/);
+  assert.match(nodes['trends-empty'].textContent, /1 incomplete update is left out of the lines/);
 });
 
 
@@ -1846,7 +1846,7 @@ test('the scope line says as of when, and how old a paused count is', () => {
   t.setPicks([ACME]);
   t.set(companies([['greenhouse:acme', 'Acme', [100, 100, 100, 100]]]));
   t.draw();
-  assert.match(nodes['trends-scope'].textContent, /latest Sep 16 00:00 UTC — \d+ hours ago: the pipeline has written no newer count/);
+  assert.match(nodes['trends-scope'].textContent, /latest Sep 16 00:00 UTC — \d+ hours ago; Search may have newer jobs/);
 });
 
 test('a hand-off tells Search what the trend counted, and when', () => {
@@ -1931,7 +1931,7 @@ test('a window ending before counting began says so', () => {
   t.set({ ...companies([]), stamps: [], series: [], uncounted: ['greenhouse:acme'],
     counted_since: { 'greenhouse:acme': FOUR[0] }, ledger_start: FOUR[0] });
   t.draw();
-  assert.match(nodes['trends-empty'].textContent, /This window ends before HeadStart began counting companies, on Sep 13/);
+  assert.match(nodes['trends-empty'].textContent, /These dates end before HeadStart began tracking companies on Sep 13/);
 });
 
 // ---- critique round 14 ------------------------------------------------------------------------
@@ -2199,7 +2199,7 @@ test('a company sentence gives the jobs its net change is made of', () => {
   t.draw();
   // #684's shape: the answer first, then the move, then what it is made of, in the main text.
   assert.match(nodes['trends-verdict'].innerHTML,
-    /<b>Acme<\/b>: holding steady — 1,000 tech openings; [^<]* — about 500 opened, 490 closed \(not counted on 1 of 2 boards\)\./);
+    /<b>Acme<\/b>: holding steady — 1,000 tech openings; [^<]* — about 500 opened, 490 closed\./);
 });
 
 test('turnover stays in the main text, never in the not-hiring disclosure', () => {
@@ -2236,7 +2236,8 @@ test('the table gives each line its opened and closed', () => {
 
 test('the index gets a hiring net from its turnover, and table columns too', () => {
   // The Space has already left the Sep 15 change's runs out (gaps), Board by Board, and names
-  // them in `turnover_left_out`, which is what the sentence's closing clause rests on.
+  // them in `turnover_left_out`. The sentence says neither that nor how many Boards' closures
+  // went uncounted (#755): "How to read this" carries both, once.
   const { t, nodes } = loadApp();
   t.setPicks([]);
   const index = golden('index_turnover_with_a_counting_change_left_out');
@@ -2244,15 +2245,17 @@ test('the index gets a hiring net from its turnover, and table columns too', () 
   t.setUnit('count', false);
   t.draw();
   assert.match(nodes['trends-verdict'].innerHTML,
-    /<b>All tech roles<\/b>: about \+10 net from hiring — about 50 opened, 40 closed \(not counted on 3 of 120 boards\), runs where HeadStart changed how it counts left out\./);
-  assert.doesNotMatch(nodes['trends-verdict'].innerHTML, /HeadStart has counted/);
+    /<b>All tech roles<\/b>: about 10 more openings — about 50 opened, 40 closed\./);
+  assert.doesNotMatch(nodes['trends-verdict'].innerHTML, /HeadStart has counted|boards?\b|runs?\b/);
   nodes['trends-error'] = Object.assign(fakeEl(), { hidden: true });
   t.table(true);
   assert.match(nodes['trends-table'].innerHTML, /<td>50<\/td><td>40<\/td>/);
-  t.set({ ...index, turnover_left_out: [], epochs: [], notes: [], closures_unseen: {} });
+  // A net fall is said as fewer openings, its figure unsigned.
+  const fewer = structuredClone(index);
+  Object.assign(fewer.reading.total.move.turnover, { opened: 40, closed: 50, net: -10 });
+  t.set(fewer);
   t.draw();
-  assert.match(nodes['trends-verdict'].innerHTML, /about \+10 net from hiring — about 50 opened, 40 closed\./,
-    'no counting change in the window, so nothing is said about one');
+  assert.match(nodes['trends-verdict'].innerHTML, /about 10 fewer openings — about 40 opened, 50 closed\./);
 });
 
 test('a Hot row shows the week’s opened and closed, and Volume leads with opened', () => {
@@ -2348,7 +2351,7 @@ test('Comparable says its base moved only when the window starts before counting
   nodes['trends-since'] = Object.assign(fakeEl(), { value: '2026-09-13T12:00' });
   t.set({ ...companies([['greenhouse:acme', 'Acme', [100, 100, 100, 100]]]), base: FOUR[1], ledger_start: FOUR[0] });
   t.draw();
-  assert.doesNotMatch(nodes['trends-empty'].textContent, /the first run it counted by board/);
+  assert.doesNotMatch(nodes['trends-empty'].textContent, /the earliest date this works from/);
 });
 
 test('a link’s values are read case-blind, as its company keys are', () => {
@@ -2746,7 +2749,7 @@ test('a reading that does not reconcile is drawn with a note that says so, and n
     t.set(d, null);
     assert.doesNotThrow(() => t.draw(), what);
     assert.equal(nodes['trends-reconcile'].hidden, false, what);
-    assert.match(nodes['trends-reconcile'].textContent, /These figures don’t fully reconcile/, what);
+    assert.match(nodes['trends-reconcile'].textContent, /Some of these figures don’t add up exactly/, what);
   }
 });
 
