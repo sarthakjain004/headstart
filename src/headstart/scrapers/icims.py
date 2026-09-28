@@ -384,9 +384,9 @@ def _ld_fields(page: str) -> dict[str, Any] | None:
     kept = {key: value for key, value in node.items() if key in _LD_KEEP}
     return {
         **job_posting_fields(kept),
-        # Only the first of a multi-location posting is used (4 of 207 sampled carry more than
-        # one), and the literal `UNAVAILABLE` iCIMS writes into unset address parts is dropped
-        # rather than shown.
+        # Every place of a multi-location posting is kept, "; "-joined (4 of 207 sampled carry
+        # more than one), and the literal `UNAVAILABLE` iCIMS writes into unset address parts is
+        # dropped rather than shown.
         "location": job_location_text(
             kept.get("jobLocation"), placeholders={"UNAVAILABLE"}
         ),

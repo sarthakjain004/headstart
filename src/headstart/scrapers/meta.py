@@ -41,9 +41,9 @@ from the same GraphQL listing this scraper cannot reach without a browser), and 
 (zero of 80 carry `baseSalary`, unlike icims/oracle where it is merely inconsistently present).
 
 `jobLocation` is a list — often a long one (mean 2.24 across the 50-id random sample, 54% single-
-location, one posting listing 14 sites) — and only the first is used, the same policy icims and
-eightfold's sitemap fallback already apply to a multi-location posting, for the same reason: there
-is no ranking signal to prefer one site over another, and Job.location is one string.
+location, one posting listing 14 sites) — and every site is kept, "; "-joined, as icims and
+eightfold's sitemap fallback keep theirs (`job_location_text`): there is no ranking signal to prefer
+one site over another, and the location filter is a substring match that should find each.
 `jobLocationType == "TELECOMMUTE"` is Meta's own remote signal when present (2 of 50 sampled);
 `is_remote(location)` is the fallback, matching every other ATS here.
 """

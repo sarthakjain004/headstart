@@ -135,14 +135,17 @@ def test_posted_at_falls_back_to_the_sitemaps_lastmod() -> None:
     assert scraper.parse(raw, _SCRAPED_AT)[0].posted_at == "2026-01-01T00:00:00-07:00"
 
 
-# --- locations: often a list, only the first is used ------------------------------------------
+# --- locations: often a list, every one is kept -----------------------------------------------
 
 
-def test_first_location_is_used_when_a_posting_lists_many() -> None:
-    """This posting's captured JSON-LD lists 9 sites; only the first is kept (module docstring:
-    no ranking signal exists to prefer one, matching icims/eightfold)."""
+def test_every_location_is_kept_when_a_posting_lists_many() -> None:
+    """This posting's captured JSON-LD lists 9 sites; each is kept, "; "-joined in order."""
     fields = _ld_fields(_FIXTURE["pages"]["998357492128826"])
-    assert fields["location"] == "Sunnyvale, CA, US"
+    assert fields["location"] == (
+        "Sunnyvale, CA, US; Remote, US, US; Bellevue, WA, US; Menlo Park, CA, US; "
+        "Seattle, WA, US; Burlingame, CA, US; New York, NY, US; San Francisco, CA, US; "
+        "Mountain View, CA, US"
+    )
 
 
 def test_telecommute_job_location_type_sets_remote_true() -> None:
