@@ -337,28 +337,56 @@ _REPO = "https://github.com/sarthakjain004/headstart"
 # for no reason the visitor can see reads as broken rather than as honest.
 _DOOR_NEW_HOURS = 168
 
-# The Digest generator is the one caller with no Google identity to offer: it is a
-# scheduled run, not a person, and it must reach /search for every Subscription
-# (ADR-0035; ADR-0042's amendment records why the wall admits it). So it carries a shared
-# secret, compared in constant time exactly as the unsubscribe token is. Scoped to /search
-# alone — that is the whole of what the alerts run needs, so a leaked token buys a search
-# rather than a session. Unset admits nobody, as in alerts.access.
+# Two callers have no Google identity to offer, so each carries a shared secret, compared in
+# constant time exactly as the unsubscribe token is, and each secret admits only the paths
+# its work needs. The Digest generator is a scheduled run that must reach /search for every
+# Subscription (ADR-0035; ADR-0042's amendment records why the wall admits it): `ALERTS_TOKEN`
+# opens /search alone, so a leaked token buys a search rather than a session. An agent reading
+# HeadStart for its owner (ADR-0253) carries `AGENT_TOKEN`, which opens the read routes that
+# answer without an Account and nothing else: no write, no Account's records. Unset admits
+# nobody, as in alerts.access. Both are bytes: see `_service_caller`.
 _ALERTS_TOKEN = (
     (os.environ.get("ALERTS_TOKEN") or "").strip().encode("latin-1", "replace")
 )
-_SERVICE_PATHS = {"/search"}
+_AGENT_TOKEN = (
+    (os.environ.get("AGENT_TOKEN") or "").strip().encode("latin-1", "replace")
+)
+if _AGENT_TOKEN and _AGENT_TOKEN == _ALERTS_TOKEN:
+    # One secret would then open both path sets, so the agent's is dropped rather than either
+    # widened. Not fatal: Search is the product, and a misconfigured agent secret must not
+    # take it down.
+    print(
+        "WARNING: AGENT_TOKEN equals ALERTS_TOKEN, so AGENT_TOKEN is ignored and admits "
+        "nothing; set it to a secret of its own",
+        flush=True,
+    )
+    _AGENT_TOKEN = b""
+# Each secret mapped to the paths it admits; an unset secret is left out, so it admits nobody.
+_SERVICE_TOKENS = {
+    secret: paths
+    for secret, paths in (
+        (_ALERTS_TOKEN, frozenset({"/search"})),
+        (
+            _AGENT_TOKEN,
+            frozenset({"/search", "/facets", "/trends", "/hot", "/companies/suggest"}),
+        ),
+    )
+    if secret
+}
 
 
 def _service_caller() -> bool:
-    if not _ALERTS_TOKEN or request.path not in _SERVICE_PATHS:
-        return False
     scheme, _, token = request.headers.get("Authorization", "").partition(" ")
+    if scheme != "Bearer":
+        return False
     # Bytes, not str: headers decode as latin-1, and compare_digest raises TypeError on a
     # non-ASCII str — which would turn a rejected credential into a 500 from in here. Both
     # sides encode latin-1 so a token set identically really does compare equal; encoding
     # the config as utf-8 instead would make any non-ASCII token 401 forever.
-    return scheme == "Bearer" and hmac.compare_digest(
-        token.strip().encode("latin-1", "replace"), _ALERTS_TOKEN
+    presented = token.strip().encode("latin-1", "replace")
+    return any(
+        request.path in paths and hmac.compare_digest(presented, secret)
+        for secret, paths in _SERVICE_TOKENS.items()
     )
 
 
@@ -416,6 +444,22 @@ def _gzip_static(response):
     response.headers["Content-Encoding"] = "gzip"
     if etag:
         response.set_etag(etag, weak=True)
+    return response
+
+
+# The agent contract this app serves (ADR-0253): what an agent may rely on in the read routes
+# `AGENT_TOKEN` opens. Raised whenever that contract changes, so an agent can tell an app too
+# old for it from one that serves it, rather than have a newer argument silently ignored.
+_AGENT_API_VERSION = 0
+
+
+@app.after_request
+def _mark_own_reply(response):
+    """Mark every reply this app produces, so a caller can tell it from one HF's edge gives
+    in front of a booting or sleeping Space, and read the agent contract it serves. Flask runs
+    this on an unhandled-exception 500, a 404 and the wall's 401 too, not only on a route's
+    own answer."""
+    response.headers["X-HeadStart"] = f"app; agent-api={_AGENT_API_VERSION}"
     return response
 
 

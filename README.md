@@ -547,6 +547,7 @@ reason), so a fork's Space may not be free.
 | Space secret | `HF_TOKEN`, `HF_DATASET` | read access to the index dataset; `HF_DATASET` defaults to this project's own (`deploy/hf-space/app.py`) |
 | Space secret | `SECRET_KEY`, `GOOGLE_CLIENT_ID` | session signing and Google sign-in; both unset = no sign-in wall |
 | Space secret | `SUBSCRIBERS_REPO`, `SUBSCRIBERS_TOKEN` | with sign-in on, turn on Accounts: saved searches, starred jobs, Profile, alerts |
+| Space secret | `AGENT_TOKEN` | with sign-in on, lets an agent read Search, Trends and Hot through the wall, and nothing of an Account's ([ADR-0253](./docs/adr/0253-an-agent-reads-the-spaces-read-routes-through-a-read-scoped-token.md)); unset = no agent access |
 | Space secret | `LLM_ROUTER_BASE`, `LLM_ROUTER_MODEL`, `LITELLM_MASTER_KEY` | an OpenAI-compatible endpoint for résumé parsing (optional; unset = that one feature answers 503). `start.sh` can instead open an SSH tunnel to a private router (`OCI_SSH_KEY`, `LLM_ROUTER_SSH`) |
 
 Every alert and account feature is inert until its secrets are set. The dataset and Space ids are
