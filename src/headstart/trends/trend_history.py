@@ -1494,8 +1494,9 @@ class TrendHistory:
             "closures_unseen": closures_unseen,
             # The picks for which that is every Board they have in scope: no closed count.
             "closures_uncounted": self._closures_uncounted(unscoped, closures_unseen),
-            # Per pick, its Boards in scope, so a closed count read over some of them says so:
-            # "3 closed (not counted on 1 of 2 boards)".
+            # Per pick, its Boards in scope, so a closed count read over some of them can say
+            # so. The page no longer does (ADR-0248, ADR-0255): "How to read this" says closed
+            # can run low.
             "boards_in_scope": dict(Counter(unscoped.values()))
             if with_turnover
             else {},

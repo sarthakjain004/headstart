@@ -2026,8 +2026,6 @@ function verdictOf(line, d){
   const now = m.latest;
   const days = m.span_days;
   const inDays = `in ${Math.round(days)} days`;
-  // The sentence already says "tech openings", so a change is a bare signed figure after it.
-  const signed = v => `${v < 0 ? '−' : '+'}${Math.abs(v).toLocaleString()}`;
   const what = `tech opening${now === 1 ? '' : 's'}${trendMetric === 'new' ? ` ${newCounts(d)}` : ''}`;
   // Short because of the window, or because of the company: a company counted for 11 days
   // under a 2-day custom range was called "too new".
@@ -2054,14 +2052,14 @@ function verdictOf(line, d){
     // The lead says it; the rest gives only the figure it has, never the lead again ("too new to
     // tell — …; too new to show a direction yet").
     lead = young ? 'too new to tell' : 'too short a window to tell';
-    move = [young || !days ? '' : `${signed(n)} ${span}`,
+    move = [young || !days ? '' : `${signedCount(n)} ${span}`,
       m.percent_withheld === MOSTLY_RECOUNTED ? RECOUNTED_NOTE : ''].filter(Boolean).join(', ');
   }
   else if (m.percent == null){
     // From a small start the change is stated, not judged — "a few more" read beside +50.
     const why = m.percent_withheld === MOSTLY_RECOUNTED ? `, ${RECOUNTED_NOTE}`
       : n && m.start < MOVER_FLOOR ? ', too few to call a trend' : '';
-    move = `${n ? signed(n) : 'unchanged'} ${inDays}${why}`;
+    move = `${n ? signedCount(n) : 'unchanged'} ${inDays}${why}`;
     lead = n > 0 ? 'more openings' : n < 0 ? 'fewer openings' : 'unchanged';
   }
   else {
@@ -2072,15 +2070,15 @@ function verdictOf(line, d){
     // Nor over a window of about a week, where it restates the change: HCLTech read "−1,282
     // openings, about −1,281 a week".
     const weekly = trendMetric === 'new' || Math.round(days) === 7 ? 0 : m.per_week || 0;
-    const count = signed(n) + (weekly ? `, about ${signed(weekly)} a week` : '');
+    const count = signedCount(n) + (weekly ? `, about ${signedCount(weekly)} a week` : '');
     move = Math.abs(shown(pct)) < FLAT_PCT ? `about flat ${inDays} (${pct < 0 ? '−' : '+'}${Math.abs(pct).toFixed(1)}%, ${count})`
       : `${pct > 0 ? 'up' : 'down'} ${Math.abs(pct).toFixed(1)}% ${inDays} (${count})`;
     const newer = trendMetric === 'new';
     lead = Math.abs(shown(pct)) < FLAT_PCT ? 'holding steady'
       : pct > 0 ? (newer ? 'opening more new roles' : 'growing') : (newer ? 'opening fewer new roles' : 'shrinking');
   }
-  const opened = phrase ? ` ${phrase[0].toUpperCase()}${phrase.slice(1)}.` : '';
-  return { text: `${lead} — ${now.toLocaleString()} ${what}${move ? `, ${move}` : ''}.${opened}`, detail, days };
+  const turnoverSentence = phrase ? ` ${phrase[0].toUpperCase()}${phrase.slice(1)}.` : '';
+  return { text: `${lead} — ${now.toLocaleString()} ${what}${move ? `, ${move}` : ''}.${turnoverSentence}`, detail, days };
 }
 // One cause of a line's "Not hiring", as its disclosure lists it: the day of its Marked change,
 // what it was and its size ("Sep 24 duplicate postings removed: −1,858 openings"). Where one
@@ -2667,9 +2665,14 @@ function moveText(mv){
 // What a mostly re-counted line says beside its hiring, and why, as a title.
 const RECOUNTED_NOTE = 'mostly re-counted in this window';
 const RECOUNTED_WHY = 'Changes in how HeadStart counts moved more jobs out of this line than it had left from its start, so a percentage would not mean anything';
+// "+3", "−1": a change as a bare signed figure, where the sentence already says "tech openings"
+// (a company sentence, ADR-0255).
+function signedCount(n){
+  return `${n < 0 ? '−' : '+'}${Math.abs(n).toLocaleString()}`;
+}
 // "+3 openings", "−1 opening": every place a change is given in openings.
 function signedOpenings(n){
-  return `${n < 0 ? '−' : '+'}${Math.abs(n).toLocaleString()} opening${Math.abs(n) === 1 ? '' : 's'}`;
+  return `${signedCount(n)} opening${Math.abs(n) === 1 ? '' : 's'}`;
 }
 
 // "Aug 12 09:00" from an ISO stamp — enough to anchor the axis without a timezone lecture.
@@ -3476,7 +3479,7 @@ function buildTrendsTable(){
   // openings" and "Start, openings" were a wall of commas above the figures.
   const th = (label, title) => `<th scope="col" title="${title}">${label}</th>`;
   const head = `<tr><th scope="col">${VIEWS[kind].column}</th>`
-    + th('Now', trendUnit === 'share' ? 'The latest share' : 'Open jobs now')
+    + th('Now', trendUnit === 'share' ? 'The latest share' : trendMetric === 'new' ? `Jobs ${newCounts(d)}` : 'Open jobs now')
     // Under Share the percentage is the share's own change, which can fall while openings rise.
     // "Share, change +6.2%" did not say whether that was points or a relative change.
     + (trendUnit === 'share'
@@ -3504,9 +3507,9 @@ function buildTrendsTable(){
   const withTotal = trendPicks.length && (kind === 'families' || kind === 'bands') && rows.length > 1 && reading.total;
   // Under Share the first row is a share of every opening the company has, non-tech included:
   // "All tech roles 97%" read as an error without it.
-  const firstLabel = kind === 'bands' ? `All of ${drillLabel()}` : 'All tech roles';
-  const total = withTotal ? [{ name: '__total__', points: reading.total.points,
-    label: firstLabel + (trendUnit === 'share' ? ' (of all its openings)' : '') }] : [];
+  const totalLabel = (kind === 'bands' ? `All of ${drillLabel()}` : 'All tech roles')
+    + (trendUnit === 'share' ? ' (of all its openings)' : '');
+  const total = withTotal ? [{ name: '__total__', points: reading.total.points, label: totalLabel }] : [];
   const body = [...total, ...rows].map(s => {
     const line = lineReading(s), move = line && line.move;
     const vals = (s.points || []).map((v, j) => levelValue(v, j, s)).filter(v => v != null);
@@ -3528,7 +3531,7 @@ function buildTrendsTable(){
     + dash + dash + openings(closing.hiring) + dash
     + (withTurnover ? dash + dash : '') + dash + dash + dash + '</tr>' : '';
   const many = kind === 'bands' ? 'levels' : 'categories';
-  const whose = trendPicks.length > 1 ? 'the companies’' : 'the company’s';
+  const whole = kind === 'bands' ? 'the whole category' : trendPicks.length > 1 ? 'all the companies' : 'the whole company';
   // The rows are said to add up only where the reading's checks say they do. Opened and closed
   // are counted line by line (a category leaves out a Found Board's run the company counts), so
   // they are never said to.
@@ -3537,7 +3540,7 @@ function buildTrendsTable(){
   // Named by its label, not as "the first row" (ADR-0255).
   const addsUp = !problemsOf(reading).length
     ? `; the ${many} below${closing ? ' and “Moved between categories” add up to its hiring' : ' add up to it'}` : '';
-  const note = withTotal ? `<caption>“${esc(firstLabel)}” is ${whose} total${kind === 'bands' ? ' in this category' : ''}${addsUp}.${
+  const note = withTotal ? `<caption>“${esc(totalLabel)}” covers ${whole}${addsUp}.${
     withTurnover ? ' Opened and closed are counted for each line, so they may not add up.' : ''}</caption>` : '';
   return `${note}<thead>${head}</thead><tbody>${body}${closingRow}</tbody>`;
 }

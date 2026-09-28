@@ -24,11 +24,14 @@ row" and "the closing row".
 
 ## Decision
 
-**Words.** Outside Trends the page does not name a Board at all. It says what a reader already
+**Words.** Outside Trends the page avoids naming a Board. It says what a reader already
 knows: a company's own "career site" (as Home already did), "the employer's own site", or just
 "companies HeadStart reads". Trends keeps its own label, "job site" (ADR-0248), and so does a
-Search scope handed over from Trends with no name. "The index" becomes "HeadStart" ("no longer
-listed on HeadStart"), a run becomes an update or a refresh, and the sign-in page's ATS names go.
+Search scope handed over from Trends with no name. "Job board" stays Hot's word for an
+aggregator, so the footer's "never copied from another job site" reads "never copied from a job
+board". "The index" becomes "HeadStart" ("no longer listed on HeadStart"), a run becomes an
+update or a refresh, and the sign-in page's ATS names go. The one Space message the page prints
+as it stands, a full follow or hide list, says "company career sites" where it said "boards".
 
 **Hot's closed count is given bare.** "3 closed (not counted on 1 of 2 boards)" becomes "3
 closed", as ADR-0248 did for the Trends sentences, and the note under the list says once that
@@ -43,8 +46,9 @@ closures not counted." Every figure stays.
 
 **Short headers.** The table view's columns are Now, Hiring % (Share change under Share),
 Hiring, Not hiring, Opened, Closed, At start, Low and High. Each header's `title` says what it
-counts. Its caption names the total's row by its label ("“All tech roles” is the company's total;
-the categories below add up to it"), not as "the first row", and the closing row reads "Moved
+counts. Its caption names the total's row by its label, as the row reads under the unit ("“All
+tech roles” covers the whole company; the categories below add up to it"), not as "the first
+row", and the closing row reads "Moved
 between categories", with "by a counting change" in its `title`.
 
 **Source, not ATS.** Search's "ATS provider" filter and Trends' "All ATS" menu are labelled

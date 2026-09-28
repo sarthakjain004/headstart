@@ -804,6 +804,21 @@ def _stored_companies(app_module, hub, followed=(), hidden=()):
     return path
 
 
+def test_a_full_list_is_refused_in_a_job_seekers_words(sets_app, hub, monkeypatch):
+    """The page prints this refusal as it stands (setCompany), so it names no Board (ADR-0255)."""
+    import headstart.alerts.store as st
+
+    followed = [f"greenhouse:c{n}" for n in range(st.MAX_COMPANIES)]
+    _stored_companies(sets_app, hub, followed=followed)
+    client = _signed_in(sets_app, monkeypatch)
+    r = client.post(
+        "/companies", json={"board": "lever:new", "action": "follow"}, base_url=_HTTPS
+    )
+    assert r.status_code == 409
+    assert "list is full" in r.json["error"]
+    assert "board" not in r.json["error"].lower()
+
+
 def test_a_company_click_during_a_failed_read_never_blanks_the_lists(
     sets_app, hub, monkeypatch
 ):
@@ -3051,8 +3066,8 @@ def test_the_closed_tag_is_presented_as_an_inference(sets_app, monkeypatch):
     body = page.split('id="panel-saved"', 1)[1]
     assert "no longer listed on HeadStart" in body
     # The mechanism, right way round: an unreadable board is why a job STAYS (ADR-0053), so
-    # the second cause is ADR-0023's wholesale board sweep, not a failed read — said in the
-    # reader's words (ADR-0255).
+    # the second cause is ADR-0023's wholesale board sweep, not a failed read. The tab says it
+    # in the reader's words, "a change on our side" (ADR-0255), and never blames a failed read.
     assert "a change on our side" in body
     assert "stopped being able to read that" not in body
 

@@ -126,7 +126,8 @@ def rank(
                 "opened": opened,
                 "closed": closed,
                 # Where some of its Boards' closures went uncounted, how many of how many: its
-                # closed count is then theirs only, and the row says so.
+                # closed count is then theirs only. The page no longer prints the fraction; a
+                # note under the list says closed counts can be low (ADR-0255).
                 "closures_uncounted_boards": company.closures_uncounted_boards,
                 "boards_in_scope": company.boards_in_scope,
                 # Percent rather than a fraction: it is a display value, and rounding it here

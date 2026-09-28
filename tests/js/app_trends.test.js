@@ -1724,7 +1724,7 @@ test('the table heads a company\'s categories with its own total, and says they 
   nodes['trends-error'] = Object.assign(fakeEl(), { hidden: true });
   t.table(true);
   const html = nodes['trends-table'].innerHTML;
-  assert.match(html, /<caption>“All tech roles” is the company’s total; the categories below add up to it/);
+  assert.match(html, /<caption>“All tech roles” covers the whole company; the categories below add up to it/);
   assert.match(html, /<tr class="total"><th scope="row"><b>All tech roles<\/b><\/th><td>165<\/td>/);
 });
 
@@ -2049,7 +2049,7 @@ test('a refit leaves a company’s categories adding up to it, settling run and 
   t.draw();
   nodes['trends-error'] = Object.assign(fakeEl(), { hidden: true });
   t.table(true);
-  assert.match(nodes['trends-table'].innerHTML, /<caption>“All tech roles” is the company’s total; the categories below add up to it\.<\/caption>/);
+  assert.match(nodes['trends-table'].innerHTML, /<caption>“All tech roles” covers the whole company; the categories below add up to it\.<\/caption>/);
 });
 
 test('several picks in a drill leave an extraction change in the level total', () => {
@@ -2825,8 +2825,8 @@ test('the table says its rows add up only where the reading reconciles', () => {
     t.table(true);
     return nodes['trends-table'].innerHTML.match(/<caption>([^<]*)<\/caption>/)[1];
   };
-  assert.equal(caption(() => {}), '“All tech roles” is the company’s total; the categories below and “Moved between categories” add up to its hiring.');
-  assert.equal(caption(d => { d.reading.lines[0].move.hiring += 1; }), '“All tech roles” is the company’s total.');
+  assert.equal(caption(() => {}), '“All tech roles” covers the whole company; the categories below and “Moved between categories” add up to its hiring.');
+  assert.equal(caption(d => { d.reading.lines[0].move.hiring += 1; }), '“All tech roles” covers the whole company.');
 });
 
 // ---- critique round 17 ------------------------------------------------------------------------
@@ -2863,7 +2863,8 @@ test('a Hot row says over how long its opened and closed were counted, and no cl
   assert.equal(t.hotMeasure.expansion(amazon).sub, '66 opened in the last 11 hours · closures not counted · 900 open now');
   assert.match(t.hotMeasure.volume(amazon).sub, /^closures not counted · \+100 net/);
   assert.match(t.hotMeasure.rate(amazon).sub, /· closures not counted$/);
-  // Some Boards' closures uncounted: the count stands, and says over how many (review of #731).
+  // Some Boards' closures uncounted: the count stands, bare (review of #731); the note under the
+  // list says closed counts can be low, not each row (ADR-0255).
   const hpe = hotRowOf('workday:hpe/a', 'HPE', 'employer', { opened: 9, closed: 3,
     closures_uncounted_boards: 1, boards_in_scope: 2 });
   assert.equal(t.hotMeasure.expansion(hpe).sub, '9 opened · 3 closed in the last 11 hours · 900 open now');
