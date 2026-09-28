@@ -322,7 +322,20 @@ def build_doc(job: dict) -> str:
 # "$", per ADR-0066: 296 move, none in amount — 271 USD->CAD, 17 USD->AUD, 1 USD->NZD, 3 USD->None
 # (MXN), 4 value->None (a USD and a CAD range in one posting, now declined as the ambiguous
 # multi-region case). Tier 1 is untouched, so a row whose field already answered keeps it.
-DERIVATIONS_VERSION = 17
+# v18: `jobs/experience.py` bounds a structured field's floor and every ceiling, in both tiers, at
+# 30 years (`_MAX_PLAUSIBLE_YEARS`, was 50; #697) — two commits on top of the v17 bump at
+# `8a6f8f4b` (`git log 8a6f8f4b..c7fff428 -- src/headstart/jobs/experience.py`, subjects "Reject
+# structured experience floors above 30 years" and "Cap every experience ceiling and a field floor
+# at 30 years", in case they land squashed). Measured per ADR-0066 on the served metadata pulled
+# 2026-09-28 (556,206 rows). Tier 1, old vs new `from_field()` on every raw `experience` field
+# (132,631 of those rows carry one, 1,899 distinct values): 10 rows move, all field -> field save
+# one: "35 years" 35 -> no answer (field -> none: the title "Web Application Developer (pending)"
+# gives Tier 3 nothing), and 9 ceilings dropped with the floor kept ("8-45 years" (8, 45) -> (8,
+# None), "12 - 50 Years", "10-40 years"). Tier 2: the 3 served regex rows with a ceiling above 30
+# ((10, 40), (2, 35), (18, 35)) move to an open ceiling, same tier, same floor — a deterministic
+# consequence of the rule, not re-run over their text. No served regex floor is above Tier 2's own
+# cap of 20, and the regex rows #697 listed at 50/45/30 are no longer served.
+DERIVATIONS_VERSION = 18
 
 
 def to_meta(job: dict) -> dict:

@@ -87,3 +87,15 @@ experience-anchored pattern, which by this decision carries no guard.
 
 Nothing here reaches rows already in the index — `min_years` is written at embed time and
 `embed_plan` skips embedded ids (see #162).
+
+## Amendment (2026-09-28): Tier 1 and every ceiling get a genre cap too
+
+The Consequences above said Tier 1's "only real risk is arithmetic nonsense", which
+`_MAX_PLAUSIBLE_YEARS = 50` covered. The served table showed otherwise (#697): a field "35 years"
+on a web-developer posting, and bands such as "8-45 years" and "12 - 50 Years" whose tops no
+requirement has. `_MAX_PLAUSIBLE_YEARS` is now **30** and bounds a structured field's floor and
+every ceiling in both tiers; a ceiling above it is dropped and its floor kept, ADR-0013's rule.
+A description's floor keeps `_MAX_PLAUSIBLE_REQUIREMENT = 20`. The field floor gets more room
+because a field is a band a recruiter picked and carries no narrative: RippleHire's "21 - 30 Years"
+is a real band. Measured old vs new on the served metadata of 2026-09-28: 10 field rows and 3 regex
+rows move (`DERIVATIONS_VERSION` 18 has the breakdown).

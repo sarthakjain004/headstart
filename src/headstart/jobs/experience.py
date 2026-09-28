@@ -39,13 +39,18 @@ import re
 from dataclasses import dataclass
 from typing import NamedTuple
 
-_MAX_PLAUSIBLE_YEARS = (
-    50  # reject absurd matches ("100 years"), almost always a parse error
-)
+# The largest bound a stated range can carry: a structured field's floor and every ceiling, in both
+# tiers (#697). Measured on the served metadata of 2026-09-28 (556,206 rows): the field floors
+# above 20 were RippleHire's "21 - 30 Years" band, a real one, and "35 years" on a Zoho
+# web-developer posting, which is not; the ceilings above 30 were bands like "8-45 years" and
+# "12 - 50 Years", and regex spans like "10-40 years", whose floors are real and whose tops are not.
+# A field is a band a recruiter picked, so it gets more room than Tier 2's narrative-prone floor
+# below. It was 50 until #697, a guard against arithmetic nonsense ("100 years") only.
+_MAX_PLAUSIBLE_YEARS = 30
 
 # A stated *requirement* above this is never real — it is corporate narrative ("a combined 40+ years
-# at Palantir building …"). Deliberately far below _MAX_PLAUSIBLE_YEARS, which guards arithmetic
-# absurdity rather than genre.
+# at Palantir building …"). A description's floor only; a field's floor and every ceiling face
+# _MAX_PLAUSIBLE_YEARS instead.
 #
 # Applied to **every** pattern, not only the guarded ones. ADR-0060 restricted it on the grounds
 # that "25 years of experience" is "a real, if rare, requirement" where a pattern is anchored on
