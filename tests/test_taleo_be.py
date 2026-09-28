@@ -1,4 +1,5 @@
 import re
+from pathlib import Path
 
 import pytest
 from fake_fetcher import FakeFetcher, FakeResponse
@@ -445,8 +446,6 @@ def test_primary_work_location_and_the_json_ld_fill_what_the_labels_missed():
     Work Location", which the reader never tried, so location and remote fell back to the
     listing's site label on 8 of 18 postings; its JSON-LD states `employmentType` (read on 0 of 18)
     and its `identifier` is the requisition (read on none)."""
-    from pathlib import Path
-
     page = (
         Path(__file__).parent
         / "fixtures"

@@ -13,7 +13,9 @@ scraper's own ``cwsJobDescription`` read, so it rescues nothing there) while CLI
 and YKHC rid=18951 carry neither JSON-LD nor a readable ``cwsJobDescription`` anchor — a second
 layout, read from its ``col-md-8`` column since 2026-09-25 (:func:`_description_html`). JSON-LD
 turns up on some pages of both layouts (INVXIS carries it) and not on others, so it is a path
-neither layout can rely on.
+neither layout can rely on for the description — but where it is present it fills the fields the
+labels miss: employment type (27 of 48 pages over 25 Boards, 2026-09-28), requisition and, last,
+location.
 """
 
 from __future__ import annotations
@@ -221,9 +223,10 @@ def _column(
     return None
 
 
-# Label spellings measured on 48 detail pages over 25 live Boards (2026-09-28), most specific
-# first: AGIOS "Primary Work Location", CITYBURNABY "All Location(s)", AXIOSOLU "Location(s)",
-# CPOFNYS "Search Location(s)" and "Type of Position".
+# Label spellings measured on 48 detail pages over 25 live Boards (2026-09-28), a Board's primary
+# place first: AGIOS "Primary Work Location", CITYBURNABY "All Location(s)", AXIOSOLU
+# "Location(s)", CPOFNYS "Search Location(s)"; for the employment type, CPOFNYS "Type of
+# Position".
 _LOCATION_LABELS = (
     "Primary Location",
     "Primary Work Location",

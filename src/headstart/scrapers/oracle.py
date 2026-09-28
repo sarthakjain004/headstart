@@ -143,9 +143,7 @@ def _places(primary: str | None, detail: dict) -> str | None:
     eubt 2 of 200, 2026-09-28)."""
     places = [primary] if primary else []
     for secondary in detail.get("secondaryLocations") or []:
-        name = (
-            (secondary.get("Name") or "").strip() if isinstance(secondary, dict) else ""
-        )
+        name = (secondary.get("Name") or "").strip()
         if name and name not in places:
             places.append(name)
     return "; ".join(places) or None
