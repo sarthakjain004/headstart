@@ -549,6 +549,13 @@ def test_trends_breakdowns_that_cannot_answer_are_refused(arguments, words):
         server.call(FakeSpace(), "read_trends", arguments)
 
 
+def test_a_category_the_space_does_not_know_is_refused_not_reported_empty():
+    """Past the schema, as a free-string `category` (an install without `config/`) arrives."""
+    space = FakeSpace(trends=_trends([], family_known=False))
+    with pytest.raises(ToolFailure, match="'nonsense-family'"):
+        _answer("read_trends", space, {"category": "nonsense-family"})
+
+
 def test_a_company_name_is_read_as_the_picker_reads_it_and_the_clamp_is_said():
     stripe = _suggestion("greenhouse:stripe", "Stripe")
     space = FakeSpace(

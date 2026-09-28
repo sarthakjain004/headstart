@@ -31,7 +31,8 @@ dependencies, `curl_cffi` and `requests`, no torch and no index — and runs its
 `uvx --refresh …` picks up a newer commit; append `@<branch-or-tag>` to the URL to pin one.
 
 Installed this way the package carries no `config/`, so the tools' `category` is a free string
-rather than the list of role families; the server says so once on stderr when it starts.
+rather than the list of role families; the server says so once on stderr when it starts. A name
+that is not a role family is still refused, by the Space.
 
 ### From a checkout
 

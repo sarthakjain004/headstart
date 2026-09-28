@@ -127,6 +127,10 @@ def answer(client: SpaceClient, arguments: dict[str, Any]) -> str:
         params.append(("split", split))
     params += [("company", pick.key) for pick in picks]
     payload = client.read(SpaceRoute.TRENDS, params)
+    # `/trends` answers an unknown family with an empty window that reconciles; without
+    # `config/`, `category` is a free string, so the Space's own word is what refuses it.
+    if category and payload.get("family_known") is False:
+        raise ToolFailure(f"No job category is called {category!r}.")
 
     head = []
     if picks:
