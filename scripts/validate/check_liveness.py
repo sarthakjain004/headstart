@@ -123,7 +123,7 @@ from headstart.scrapers.taleo_be import (  # the next-ten-rows link, single sour
     NEXT_PAGE_LINK as _TALEO_NEXT,
 )
 from headstart.scrapers.teamtailor import (  # jobs.json page size, single source
-    _PAGE_SIZE as TEAMTAILOR_PAGE_SIZE,
+    PAGE_SIZE as TEAMTAILOR_PAGE_SIZE,
 )
 from headstart.scrapers.trakstar import (  # the inactive-account page, single source
     INACTIVE_ACCOUNT as _TRAKSTAR_INACTIVE,

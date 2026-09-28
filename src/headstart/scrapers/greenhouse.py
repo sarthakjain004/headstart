@@ -14,7 +14,7 @@ smartrecruiters' own native-compensation field (see that scraper's docstring), `
 re-observed FACT_FIELD, so once a Board is rescraped its now-populated raw ``Job.salary`` differs
 from the stored one and `refresh_row`'s `salary_inputs_moved` reprocesses it — no version sweep
 required. A bump is for when unchanged input starts parsing differently; here the input itself
-changes from ``None`` to a real string.
+changes from ``None`` to a real string. The same holds for ``pay_input_ranges``.
 """
 
 from __future__ import annotations
@@ -45,8 +45,10 @@ _EXCLUDED_NAME_WORDS = ("equity",)
 # A pay-transparency range titled as on-target earnings is base plus commission, not the base
 # salary every other field here states: agilysys's only range is "OTE Range" ($200k-$230k) while
 # its description states a $100k-$115k base; doordashusa lists "total on-target earnings" second,
-# after its base range (2026-09-28). 41 of 2,449 sampled first ranges carry such a title.
-_ON_TARGET_EARNINGS = re.compile(r"on[- ]target|\bote\b|commission", re.IGNORECASE)
+# after its base range (2026-09-28). 41 of 2,449 sampled first ranges carry such a title, all
+# "On Target Earnings" or "OTE ..."; a bare "commission" is not matched, since a base range
+# may mention one.
+_ON_TARGET_EARNINGS_TITLE = re.compile(r"on[- ]target|\bote\b", re.IGNORECASE)
 
 
 def _workplace_type(metadata: list[dict] | None) -> str | None:
@@ -110,7 +112,7 @@ def _pay_range_field(ranges: list[dict] | None) -> str | None:
     hourly range annualises instead of being declined as an implausible annual one. A title that
     names none reads as annual, as ``_salary_field``'s own figures do."""
     for r in ranges or []:
-        if _ON_TARGET_EARNINGS.search(r.get("title") or ""):
+        if _ON_TARGET_EARNINGS_TITLE.search(r.get("title") or ""):
             continue
         try:
             lo, hi = r["min_cents"] / 100, r["max_cents"] / 100
@@ -119,7 +121,8 @@ def _pay_range_field(ranges: list[dict] | None) -> str | None:
         if max(lo, hi) <= 0.01:
             continue
         # Both ends even when equal: a range stating one figure is that exact pay, not a floor,
-        # as the description read it before (airbnb's 151000 USD read 151000-151000).
+        # as the description read it before (airbnb's 151000 USD read 151000-151000). Unlike
+        # `_salary_field`'s lone `currency` point, which is a band landmark, not a stated range.
         return salary.to_field(
             _format_amount(min(lo, hi)),
             _format_amount(max(lo, hi)),

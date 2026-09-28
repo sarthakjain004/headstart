@@ -7,7 +7,7 @@ URL, the publish date, the full ``content_html`` (the description), and a schema
 is inline — no per-job detail fetch.
 
 **The feed is paginated and one page is not the Board.** ``jobs.json`` returns at most
-:data:`_PAGE_SIZE` items; ``?page=N`` walks the rest. Measured 2026-08-25 over 766 live Boards:
+:data:`PAGE_SIZE` items; ``?page=N`` walks the rest. Measured 2026-08-25 over 766 live Boards:
 27 of them (3.5%) sat at exactly 100 items, and paging those out found **4,046 Jobs — 26.4% of
 that sample's true corpus — that had never been scraped at all** (``lovisacareers`` serves 779;
 we read 100). That is a bigger hole than any field defect, because a Job never fetched cannot be
@@ -52,7 +52,7 @@ from headstart.scrapers.base import BaseScraper
 from headstart.scrapers.job_posting_jsonld import job_location_text
 
 #: Items per page the feed serves. A full page means there is probably another.
-_PAGE_SIZE = 100
+PAGE_SIZE = 100
 
 _RSS_NS = {"tt": "https://teamtailor.com/locations"}
 
@@ -133,7 +133,7 @@ class TeamtailorScraper(BaseScraper):
             fresh = [i for i in items if i.get("id") not in seen]
             seen.update(i.get("id") for i in fresh)
             merged.extend(fresh)
-            if len(items) < _PAGE_SIZE:
+            if len(items) < PAGE_SIZE:
                 break
             if not fresh:
                 self.mark_truncated(

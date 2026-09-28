@@ -4262,11 +4262,11 @@ def test_teamtailor_walks_every_page_not_just_the_first(monkeypatch):
     from headstart.scrapers import teamtailor as tt
 
     s = get_scraper("teamtailor", "big", "Big")
-    full = list(range(tt._PAGE_SIZE))
+    full = list(range(tt.PAGE_SIZE))
     asked = _teamtailor_pages(monkeypatch, s, [full, [900, 901]])
 
     jobs = s.parse(s.fetch_raw(), SCRAPED_AT)
-    assert len(jobs) == tt._PAGE_SIZE + 2
+    assert len(jobs) == tt.PAGE_SIZE + 2
     assert len({j.id for j in jobs}) == len(jobs)  # no page overlap
     assert "page=2" in asked[1]
     assert (
@@ -4296,11 +4296,11 @@ def test_teamtailor_stops_if_the_feed_ignores_the_page_parameter(monkeypatch):
     from headstart.scrapers import teamtailor as tt
 
     s = get_scraper("teamtailor", "stuck", "Stuck")
-    full = list(range(tt._PAGE_SIZE))
+    full = list(range(tt.PAGE_SIZE))
     asked = _teamtailor_pages(monkeypatch, s, [full, full, full])
 
     jobs = s.parse(s.fetch_raw(), SCRAPED_AT)
-    assert len(jobs) == tt._PAGE_SIZE  # the repeat contributed nothing
+    assert len(jobs) == tt.PAGE_SIZE  # the repeat contributed nothing
     assert len(asked) == 3  # 2 listing pages before it stopped, + 1 rss enrichment call
     assert s.truncated and "no new ids" in s.truncated
 
@@ -4316,14 +4316,14 @@ def test_teamtailor_walks_past_the_old_page_cap_when_the_board_is_genuinely_that
     s = get_scraper("teamtailor", "huge", "Huge")
     n_pages = 210  # past the old 200-page bound this scraper used to stop at
     pages = [
-        list(range(page * tt._PAGE_SIZE, (page + 1) * tt._PAGE_SIZE))
+        list(range(page * tt.PAGE_SIZE, (page + 1) * tt.PAGE_SIZE))
         for page in range(n_pages)
     ]
     pages.append([])  # the genuine last, short page
     asked = _teamtailor_pages(monkeypatch, s, pages)
 
     raw = s.fetch_raw()
-    assert len(raw["items"]) == tt._PAGE_SIZE * n_pages
+    assert len(raw["items"]) == tt.PAGE_SIZE * n_pages
     assert (
         len(asked) == n_pages + 2
     )  # every listing page + the short last one + 1 rss call
