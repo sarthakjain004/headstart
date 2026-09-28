@@ -2278,7 +2278,7 @@ function trendsQuery(family, metric){
 }
 
 // A read-only answer's URL under this boot's version, so the browser may keep the answer until
-// the Space next boots and a view asked for again costs no round trip (ADR-0250). A page served
+// the Space next boots and a view asked for again costs no round trip (ADR-0251). A page served
 // without one (the local renderer) asks as it always did.
 function versioned(path, q){
   const p = new URLSearchParams(q);
@@ -2287,7 +2287,7 @@ function versioned(path, q){
 }
 
 // A Trends answer fetched ahead of the click that will ask for it, so the click is answered from
-// the browser's cache (ADR-0250). Only once the reader has stayed a second, and never past the
+// the browser's cache (ADR-0251). Only once the reader has stayed a second, and never past the
 // next load: the Space works out one answer at a time, so a prefetch still being worked out when
 // the reader clicks on puts their click behind it. Only a URL that will repeat is worth it: a
 // preset window is measured back from the moment of each click, so it never does. Low priority

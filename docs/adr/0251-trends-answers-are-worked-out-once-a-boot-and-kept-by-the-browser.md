@@ -1,4 +1,4 @@
-# ADR-0250: Trends answers are worked out once a boot and kept by the browser
+# ADR-0251: Trends answers are worked out once a boot and kept by the browser
 
 **Status:** accepted · **Date:** 2026-09-28 · **Relates to:** [ADR-0020](0020-free-tier-deployment.md) (the free-tier Space), [ADR-0230](0230-trends-keeps-one-board-delta-history-and-decides-rules-when-reading-it.md) (the history the Space reads once at boot), [ADR-0233](0233-trends-serves-reconciled-line-readings-and-the-page-only-formats.md) (the reading every answer carries)
 

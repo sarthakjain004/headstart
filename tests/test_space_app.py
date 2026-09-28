@@ -148,7 +148,7 @@ class _Model:
 
 
 # Every app this file has loaded, so each test starts with none of the /trends answers an earlier
-# one kept (ADR-0250). The Space never changes a history once loaded, so it keeps every answer
+# one kept (ADR-0251). The Space never changes a history once loaded, so it keeps every answer
 # for the boot; these tests do change theirs, in place, to stage what they read.
 _LOADED_APPS = []
 
@@ -2225,7 +2225,7 @@ _SERVED_QUESTIONS = [
 def test_a_kept_or_gzipped_trends_answer_is_the_answer_worked_out_afresh(
     company_trends, trends_app, query, question
 ):
-    """ADR-0250: keeping an answer for the boot and gzipping it change how fast it arrives,
+    """ADR-0251: keeping an answer for the boot and gzipping it change how fast it arrives,
     never a byte of what it says."""
     history = trends_app._HISTORY
     with trends_app.app.app_context():
@@ -2297,7 +2297,7 @@ def test_a_click_on_an_answer_being_worked_out_waits_for_it(trends_app, monkeypa
 def test_an_answer_asked_for_under_this_boots_version_is_kept_by_the_browser(
     company_trends, trends_app, monkeypatch
 ):
-    """ADR-0250: the page sends the boot's version as `v=`; only an answer asked for under it
+    """ADR-0251: the page sends the boot's version as `v=`; only an answer asked for under it
     may be kept for good, since the next boot gives the page a new one. A refusal never is."""
     version = trends_app._ANSWERS_VERSION
     forever = "private, max-age=31536000, immutable"
@@ -2323,7 +2323,7 @@ def test_the_page_hands_the_browser_this_boots_answers_version(app):
 
 @pytest.mark.parametrize("name", ["app.js", "style.css"])
 def test_a_script_or_stylesheet_is_gzipped_and_still_revalidates(app, name):
-    """ADR-0250: the same file, compressed where the browser takes it, and a revalidation of
+    """ADR-0251: the same file, compressed where the browser takes it, and a revalidation of
     the gzipped copy still answers 304 rather than sending the file again."""
     client = app.app.test_client()
     on_disk = (Path(app.app.static_folder) / name).read_bytes()

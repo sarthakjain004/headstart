@@ -158,7 +158,7 @@ test('the comparable-coverage control sends its explicit scope', async () => {
   assert.match(requested, /coverage=comparable/);
 });
 
-/** A page served under a boot's answers version (ADR-0250), its timers held for the test to run:
+/** A page served under a boot's answers version (ADR-0251), its timers held for the test to run:
  * `run()` fires every timer still pending, as if the reader had stayed. */
 function versionedApp() {
   const app = loadApp(null, { answers_version: 'b00t' });

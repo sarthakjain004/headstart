@@ -173,7 +173,7 @@ _HISTORY = trend_history.TrendHistory.load(_STATE / "data" / "state", _CONFIG)
 # retired family's successor, so a Trends category hands Search the Jobs its line counts.
 _WATCH = trend_history.watched_roles(_CONFIG / "role_watchlist.json")
 _FAMILY_SUCCESSOR = trend_history.family_successors(_CONFIG / "role_families.json")
-# What every answer read from the history above is versioned by (ADR-0250): this process's boot.
+# What every answer read from the history above is versioned by (ADR-0251): this process's boot.
 # The history is read once and never changes after, and every pipeline publication and every
 # deploy restarts the Space, so one boot names one fixed set of answers. The page sends it back
 # as `v=`, and an answer asked for under it may be kept by the browser for good.
@@ -358,7 +358,7 @@ _GZIPPED_STATIC: dict[tuple[str, str | None], bytes] = {}
 
 @app.after_request
 def _gzip_static(response):
-    """The page's scripts and stylesheets gzipped where the browser takes it (ADR-0250): ~0.9 MB
+    """The page's scripts and stylesheets gzipped where the browser takes it (ADR-0251): ~0.9 MB
     of them on a first visit, which the Space's proxy passes on uncompressed (measured
     2026-09-28), and the Trends chart waits on app.js. The ETag is weakened, since the gzipped
     copy is not the file byte for byte; a revalidation still matches it and still answers 304."""
@@ -488,7 +488,7 @@ def set_company():
 
 
 def _answer_response(body: bytes, gzipped: bytes | None = None) -> Response:
-    """One read-only answer as its response (ADR-0250): gzipped where the browser takes it and a
+    """One read-only answer as its response (ADR-0251): gzipped where the browser takes it and a
     gzipped copy is given, since the Space's proxy compresses nothing (measured 2026-09-28), and
     kept by the browser for good when asked for under this boot's ``_ANSWERS_VERSION``, since
     nothing it reads changes until the next boot, which gives the page a new one."""
@@ -1179,7 +1179,7 @@ def _served_trends(
     history: trend_history.TrendHistory, question: trend_history.TrendQuestion
 ) -> tuple[bytes, bytes]:
     """``question``'s ``/trends`` body over ``history``, as JSON and gzipped, answered once per
-    boot (ADR-0250): a history never changes once loaded, so neither does any answer read from
+    boot (ADR-0251): a history never changes once loaded, so neither does any answer read from
     it, and the index-wide one costs ~1.5 s of the Space's CPU. Keyed on the history as well, so
     one loaded in its place answers afresh; a question that raises is not kept.
 
@@ -1228,7 +1228,7 @@ def _trends_payload(answer: dict, question: trend_history.TrendQuestion) -> dict
 
 
 # The view every Trends visit opens on, under both Measures, answered before the first visitor
-# asks (ADR-0250): ~3 s of the Space's CPU once at boot rather than on someone's first clicks.
+# asks (ADR-0251): ~3 s of the Space's CPU once at boot rather than on someone's first clicks.
 # Never fatal: a question that fails here fails the same way when asked, and is answered there.
 if _HISTORY.ticks:
     _started = time.monotonic()
@@ -1359,7 +1359,7 @@ def index():
             "family_handoff": _FAMILY_IDS is not None,
             "max_family_ids": job_search.MAX_FAMILY_IDS,
             # What the Trends, Hot and company-picker requests send as `v=`, so the browser may
-            # keep their answers until the next boot (ADR-0250).
+            # keep their answers until the next boot (ADR-0251).
             "answers_version": _ANSWERS_VERSION,
         },
         njobs=f"{_table.count_rows():,}",
