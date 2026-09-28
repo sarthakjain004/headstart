@@ -702,3 +702,31 @@ def test_adps_own_build_verification_client_is_not_scraped_or_kept():
     assert scrapable_boards.is_excluded(
         "adp", "77f11391-62d0-44e8-bcdb-802b2798d815/19000101_000001"
     )
+
+
+def test_the_location_is_the_address_tail_of_the_site_label():
+    """Zel Technologies, live 2026-09-28: the site label repeats the city or names an office."""
+    from headstart.scrapers.adp import _place
+
+    def loc(short, city, state):
+        return {
+            "nameCode": {"shortName": short},
+            "address": {
+                "cityName": city,
+                "countrySubdivisionLevel1": {"codeValue": state},
+            },
+        }
+
+    assert _place(loc("Rome, NY, Rome, NY, US", "Rome", "NY")) == "Rome, NY, US"
+    assert _place(loc("Melbourne ZEL OFC, Melbourne, FL, US", "Melbourne", "FL")) == (
+        "Melbourne, FL, US"
+    )
+    assert _place(loc(" Virginia Beach, VA, US", "Virginia Beach", "VA")) == (
+        "Virginia Beach, VA, US"
+    )
+    # No address: the label is all there is.
+    assert _place(loc("REMOTE, US", "", "")) == "REMOTE, US"
+    # An address the label does not end with: the label stays.
+    assert _place(loc("Head Office, Toronto, ON, CA", "Ottawa", "ON")) == (
+        "Head Office, Toronto, ON, CA"
+    )

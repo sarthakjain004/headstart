@@ -222,10 +222,30 @@ def _ext_id(row: dict) -> str | None:
 def _location(row: dict) -> str | None:
     places: list[str] = []
     for loc in row.get("requisitionLocations") or []:
-        place = ((loc.get("nameCode") or {}).get("shortName") or "").strip()
+        place = _place(loc)
         if place and place not in places:
             places.append(place)
     return "; ".join(places) or None
+
+
+def _place(loc: dict) -> str | None:
+    """``nameCode.shortName`` is ``"{the tenant's site label}, {city}, {state}, {country}"``
+    ("Rome, NY, Rome, NY, US", "RTG Knoxville, Knoxville, TN, US", " Rome, NY, US"): the label
+    repeats the city or names an office. When the structured ``address`` states the city, the place
+    is the ``{city}, {state}, {country}`` tail it ends with — 647 of 676 locations on 37 random
+    live Boards (2026-09-28), every one of which did end with it. Otherwise (29, e.g. "REMOTE,
+    US", with an empty address) the label stays."""
+    short = ((loc.get("nameCode") or {}).get("shortName") or "").strip()
+    address = loc.get("address") or {}
+    city = (address.get("cityName") or "").strip()
+    state = (
+        (address.get("countrySubdivisionLevel1") or {}).get("codeValue") or ""
+    ).strip()
+    head, _, country = short.rpartition(",")
+    tail = ", ".join(p for p in (city, state) if p)
+    if city and head.strip().endswith(tail):
+        return f"{tail}, {country.strip()}" if country.strip() else tail
+    return short or None
 
 
 class ADPScraper(BaseScraper):

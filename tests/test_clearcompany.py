@@ -175,9 +175,16 @@ def test_a_detail_label_matches_whatever_case_and_colon_either_side_uses():
         assert _field(page, asked) == "$74513 - $120394 Per Year"
 
 
-def test_a_job_with_no_detail_still_ships_without_description_or_salary():
-    job = _jobs(_kab())["3781760"]
-    assert job.description is None
+def test_a_job_with_no_detail_ships_the_feed_teaser_and_no_salary():
+    """Changed 2026-09-28: a Job whose page was not read shipped no description, though xml.php's
+    `descriptionrich` (the first 1,000 chars) was in the same response. Salary is on the page
+    alone."""
+    job = _jobs({"xml": _text("clearcompany_hbtbank.xml"), "details": {}}, "hbtbank")[
+        "3781556"
+    ]
+    assert job.description and job.description.startswith(
+        'Text "2682" to (309) 322-9911'
+    )
     assert job.salary is None
 
 
@@ -185,7 +192,9 @@ def test_a_closed_req_page_carries_no_posting_and_yields_no_description():
     """An unknown or closed req answers 200 with the tenant's page chrome and no posting on it
     (no `jobDesc`, no `<h2>`) — a soft 404, not an error."""
     job = _jobs(_kab({"3813473": _text("clearcompany_detail_closed.html")}))["3813473"]
-    assert job.description is None
+    assert (
+        job.description is None
+    )  # a page that arrived and states nothing: not a lost page
 
 
 # --------------------------------------------------------------------------- fetch_raw
@@ -224,7 +233,8 @@ def test_fetch_raw_reads_the_feed_bytes_and_every_detail_outside_the_pipeline():
     jobs = {j.id.rsplit(":", 1)[1]: j for j in scraper.parse(raw, SCRAPED_AT)}
     assert len(jobs) == 3
     assert "others’ point of view" in jobs["3813473"].description
-    assert jobs["3781760"].description is None
+    # A refused detail ships the feed's 1,000-char teaser (changed 2026-09-28; was None).
+    assert jobs["3781760"].description.startswith("Meet Us: King Arthur Baking")
     assert scraper.truncated is None
 
 

@@ -311,6 +311,14 @@ def test_a_failed_job_ad_still_ships_the_job_without_a_description():
     assert scraper.truncated is None  # a missing field, not a missing posting
 
 
+def test_a_failed_job_ad_ships_the_listing_text_when_it_is_real():
+    """eckesgranini's listing states 598 chars of real text: a lost ad no longer ships None."""
+    jobs, _, scraper = _scrape("eckesgranini", fail_ads={"1/102"})
+    job = _by_id(jobs)["102"]
+    assert job.description.startswith("Verantwortung für die Umsetzung")
+    assert scraper.telemetry["detail_losses"] == 1
+
+
 def test_a_job_ad_with_no_fields_is_a_labelled_loss():
     """A 200 whose body lacks `data[0].items[0].fields` is named, not counted `unlabelled`."""
     fake = _FakeCsod("ama-assn", _boards()["ama-assn"])

@@ -111,6 +111,15 @@ def _tag(row: str, tag: str) -> str | None:
     return value or None
 
 
+def _description(row: str, page: str | None) -> str | None:
+    """The page's ``jobDesc`` block; for a Job whose page was not read (gated, or lost), the
+    feed's own ``descriptionrich`` — its first 1,000 chars, better than nothing to embed. A page
+    that arrived and states no posting keeps None."""
+    if page is None:
+        return html_to_text(_tag(row, "descriptionrich"))
+    return html_to_text(_job_desc(page))
+
+
 def _place(row: str) -> str | None:
     parts = [
         p for p in (_tag(row, "city"), _tag(row, "state"), _tag(row, "country")) if p
@@ -243,7 +252,7 @@ class ClearCompanyScraper(BaseScraper):
             row = rows[0]
             location = _location(rows)
             office = _tag(row, "office")
-            page = details.get(req) or ""
+            page = details.get(req)
             jobs.append(
                 Job(
                     id=self.job_id(req),
@@ -256,8 +265,8 @@ class ClearCompanyScraper(BaseScraper):
                     url=self.job_url(req),
                     posted_at=_date(_tag(row, "date")),
                     scraped_at=scraped_at,
-                    description=html_to_text(_job_desc(page)),
-                    salary=self._salary_field(page),
+                    description=_description(row, page),
+                    salary=self._salary_field(page or ""),
                 )
             )
         return jobs

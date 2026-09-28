@@ -335,13 +335,13 @@ class ADPRecruitingScraper(BaseScraper):
             return rows, total or 0
         self.note_unread_rows(unkeyed, listed, "carried no reqId")
         if rows and not total:
-            # No `count` ends the walk after page 1 (`len(seen) >= 0`), so nothing past it is
-            # read. Said, not marked truncated: whether that should shield the Board from
-            # eviction, as `adp`'s `_walk` does, is a scope decision this line doesn't take.
-            self._log.info(
-                f"{self.board_key()}: {len(seen)} postings on a page with no stated count — "
-                "walk stopped after page 1"
-            )
+            # No `count` ends the walk after page 1 (`len(seen) >= 0`). A full page may have more
+            # behind it, so the Board is not read as whole, as `adp`'s `_walk` does.
+            why = f"{len(seen)} postings on a page with no stated count — walk stopped after page 1"
+            if listed >= top:
+                self.mark_truncated(why)
+            else:
+                self._log.info(f"{self.board_key()}: {why}")
         elif total and len(seen) < total:
             self.mark_truncated_unless_negligible(
                 len(seen),

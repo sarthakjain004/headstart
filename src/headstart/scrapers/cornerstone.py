@@ -364,6 +364,10 @@ class CornerstoneScraper(BaseScraper):
             "ads": {
                 str(r["requisitionId"]): a for r, a in zip(wanted, ads) if a is not None
             },
+            # Asked for and lost: these ship the listing's shorter text rather than none.
+            "lost_ads": [
+                str(r["requisitionId"]) for r, a in zip(wanted, ads) if a is None
+            ],
         }
 
     def _read_company(self, rows: list[dict]) -> None:
@@ -441,6 +445,7 @@ class CornerstoneScraper(BaseScraper):
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
         ads = raw.get("ads") or {}
+        lost = set(raw.get("lost_ads") or ())
         jobs: list[Job] = []
         for row in raw.get("postings") or []:
             rid = str(row["requisitionId"])
@@ -457,17 +462,19 @@ class CornerstoneScraper(BaseScraper):
                     url=self.job_url(row["_site"], rid),
                     posted_at=_posted_at(row.get("postingEffectiveDate")),
                     scraped_at=scraped_at,
-                    description=self._description(row, ads.get(rid)),
+                    description=self._description(row, ads.get(rid), rid in lost),
                     salary=self._salary_field(row),
                 )
             )
         return jobs
 
     @staticmethod
-    def _description(row: dict, ad: str | None) -> str | None:
-        if (
-            ad is None
-        ):  # gated, already stored, or failed: the store or the next run fills it
+    def _description(row: dict, ad: str | None, ad_lost: bool = False) -> str | None:
+        """The job ad's text, else the listing's ``externalDescription``. A Job whose ad was not
+        asked for (gated, or its description already stored) gets None, so the store keeps the
+        full ad; one whose ad was asked for and lost gets the listing's text, lossier (``&``
+        deleted, the ad is a median 3.24x longer) but better than nothing to embed."""
+        if ad is None and not ad_lost:
             return None
         return _real_text(ad) or _real_text(row.get("externalDescription"))
 
