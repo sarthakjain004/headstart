@@ -1,0 +1,330 @@
+{
+ "offers": [
+  {
+   "country": "Nederland",
+   "options_salutation": "off",
+   "position": 307,
+   "options_cover_letter": "optional",
+   "careers_url": "https://careers.voortman.net/o/lead-software-developer-xr",
+   "published_at": "2026-09-08 12:23:58 UTC",
+   "options_title": "off",
+   "education_code": "bachelor_degree",
+   "locations": [
+    {
+     "id": 186202,
+     "name": "Voortman NL",
+     "state": "Overijssel",
+     "country": "Nederland",
+     "city": "Rijssen",
+     "translations": {
+      "en": {
+       "name": "Voortman NL",
+       "city": "Rijssen",
+       "postal_code": null,
+       "street": null,
+       "note": "What started in a small chickenshed in the Netherlands in 1968 has grown into a world player in CNC steel processing machines. With a team of more than 750 colleagues worldwide, we develop and build not only high-end machines, but also smart software and service that customers can rely on. These 3 powerful building blocks make our international family business unique."
+      },
+      "nl": {
+       "name": "Voortman NL",
+       "city": "Rijssen",
+       "postal_code": null,
+       "street": null,
+       "note": "Wat in 1968 begon in een kippenschuur in Rijssen, is uitgegroeid tot wereldspeler in CNC-staalbewerkingsmachines. Met een team van meer dan 750 collega\u2019s wereldwijd ontwikkelen en bouwen we niet alleen high-end machines, maar ook slimme software en service waarop klanten kunnen vertrouwen. Deze 3 krachtige bouwstenen maken ons Twentse, internationale familiebedrijf uniek."
+      }
+     },
+     "country_code": "NL",
+     "state_code": "OV",
+     "postal_code": null,
+     "street": null,
+     "note": "Wat in 1968 begon in een kippenschuur in Rijssen, is uitgegroeid tot wereldspeler in CNC-staalbewerkingsmachines. Met een team van meer dan 750 collega\u2019s wereldwijd ontwikkelen en bouwen we niet alleen high-end machines, maar ook slimme software en service waarop klanten kunnen vertrouwen. Deze 3 krachtige bouwstenen maken ons Twentse, internationale familiebedrijf uniek."
+    }
+   ],
+   "min_hours": null,
+   "country_code": "NL",
+   "requirements": "<h2>Wij vragen</h2><ul><li><p class=\"MsoNoSpacing\">Ervaring met het aansturen of begeleiden van een softwaredevelopmentteam;</p></li><li><p class=\"MsoNoSpacing\">Ruime ontwikkelervaring met C# en Unity;</p></li><li><p class=\"MsoNoSpacing\">Kennis van OpenXR en AR Foundation;</p></li><li><p class=\"MsoNoSpacing\">Ervaring met XR-, AR- of headsettechnologie, bij voorkeur Magic Leap 2 of een vergelijkbaar platform;</p></li><li><p class=\"MsoNoSpacing\">Ervaring met mobile of iOS development in combinatie met augmented reality;</p></li><li><p class=\"MsoNoSpacing\">Kennis van softwaretesting en het vroegtijdig meenemen van kwaliteit in het ontwikkelproces;</p></li><li><p class=\"MsoNoSpacing\">Het vermogen om werkzaamheden te plannen, prioriteiten te stellen en de uitvoering binnen een developmentteam te begeleiden;</p></li><li><p class=\"MsoNoSpacing\">Een coachende manier van leidinggeven, waarmee je developers ondersteunt in hun technische en professionele ontwikkeling;</p></li><li><p class=\"MsoNoSpacing\">Ervaring met AI-tooling; kennis van cloud development, source control en CI/CD is een pre.</p></li></ul><h2>Wij bieden</h2><p class=\"MsoNoSpacing\" style=\"text-align:start;\">Voortman is een bedrijf waar iedereen voor elkaar klaar staat. Een bedrijf met een prettige werksfeer. We zijn ervan overtuigd dat dit bijdraagt aan de prestaties van elk van ons. We zijn een fanatiek team en willen samen goed werk afleveren. Natuurlijk is er ook ruimte voor gezelligheid en hebben we als team aandacht voor elkaar.</p><p style=\"text-align:start;min-height: 1.7em;\"></p><p class=\"MsoNoSpacing\" style=\"text-align:start;\">Daarnaast bieden we:</p><ul><li><p class=\"MsoNoSpacing\">Een goed salaris en maar liefst 40 vakantiedagen;</p></li><li><p class=\"MsoNoSpacing\">Flexibele werktijden voor een goede werk-priv\u00e9 balans;</p></li><li><p class=\"MsoNoSpacing\">Een inhoudelijke leadrol waarin je technische verantwoordelijkheid combineert met het begeleiden van een developmentteam;</p></li><li><p class=\"MsoNoSpacing\">De ruimte om minimaal 50% van je tijd zelf software te blijven ontwikkelen;</p></li><li><p class=\"MsoNoSpacing\">Invloed op de architectuur, ontwikkelstandaarden, tooling en technische koers van onze XR-oplossingen;</p></li><li><p class=\"MsoNoSpacing\">Samenwerking met developers, Product Owners, QA Engineers, Solution Architects en andere technische specialisten;</p></li><li><p class=\"MsoNoSpacing\">Een werkomgeving waarin codekwaliteit, testen, kennisdeling en continue verbetering onderdeel zijn van het dagelijkse werk;</p></li><li><p class=\"MsoNoSpacing\">De mogelijkheid om te werken met C#, Unity, OpenXR, AR Foundation, headsettechnologie en AI-tooling;</p></li><li><p class=\"MsoNoSpacing\">Een functie in Rijssen, centraal in Twente, waarin jouw bijdrage direct invloed heeft op de kwaliteit van XR-oplossingen en de ontwikkeling van het team.</p></li></ul><figure><img style=\"width:1920px\" alt=\"Voortman Nederland\" src=\"https://recruitee-main.s3.eu-central-1.amazonaws.com/uploads/58lgk3d2db/Voortman_Nederland-R.jpg\"></figure><h2>Over Voortman</h2><p>Wat in 1968 begon in een kippenschuur in Rijssen, is uitgegroeid tot wereldspeler in CNC-staalbewerkingsmachines. Met een team van meer dan 750 collega\u2019s wereldwijd ontwikkelen en bouwen we niet alleen high-end machines, maar ook slimme software en service waarop klanten kunnen vertrouwen. Deze 3 krachtige bouwstenen maken ons Twentse, internationale familiebedrijf uniek.</p>",
+   "highlight": "<p>Combineer hands-on development in C# en Unity met technisch leiderschap en bouw samen met jouw team aan XR-oplossingen voor klanten wereldwijd.</p>",
+   "dynamic_fields": [],
+   "max_hours_per_week": null,
+   "locations_question_type": "multiple_choice",
+   "options_phone": "optional",
+   "updated_at": "2026-09-16 10:58:49 UTC",
+   "created_at": "2026-09-08 12:06:43 UTC",
+   "cover_image": {
+    "url": "https://careers.recruiteecdn.com/image/upload/ats-production/offers/2738624/offer_cover_image_pe42k6nesgev.jpg"
+   },
+   "postal_code": null,
+   "title": "Lead Software Developer XR",
+   "sharing_description": "Wat ga je doen?Als Lead Software Developer XR geef je richting aan ons in-house XR-developmentteam. Je werkt aan de verdere ontwikkeling en verbetering van onze bestaande XR-applicatie en vertaalt tec",
+   "location": "Rijssen, Overijssel, Nederland",
+   "locations_question": "Welke werklocatie heeft je voorkeur?",
+   "locations_question_required": true,
+   "close_at": null,
+   "sharing_image": null,
+   "state_code": "OV",
+   "company_name": "Voortman Steel Machinery",
+   "city": "Rijssen",
+   "slug": "lead-software-developer-xr",
+   "translations": {
+    "en": {
+     "description": "<h2>What will you do?</h2><p class=\"MsoNoSpacing\">As a Lead Software Developer XR, you will provide direction to our in-house XR development team. You will contribute to the further development and enhancement of our existing XR application and translate technical challenges into reliable solutions for customers worldwide. In this role, you combine software development with technical leadership: at least half of your time will be spent actively contributing to the codebase.</p><p class=\"MsoNoSpacing\">&nbsp;</p><p class=\"MsoNoSpacing\">You will take the lead in technical design and architectural decisions while safeguarding the quality, security, and maintainability of the software. You will work with technologies such as C#, Unity, OpenXR, and AR Foundation. You will also be involved with headset technology, mobile and iOS development, augmented reality, mixed reality, and AI tooling.</p><p class=\"MsoNoSpacing\">&nbsp;</p><p class=\"MsoNoSpacing\">In addition to your technical contributions, you will help the team work effectively and predictably. You will mentor developers with varying levels of experience, organize the development process, and foster knowledge sharing and continuous improvement. Together with Product Owners, QA Engineers, Solution Architects, and other development teams, you will ensure that dependencies and technical impediments are addressed in a timely manner.</p><p class=\"MsoNoSpacing\">&nbsp;</p><p class=\"MsoNoSpacing\">Your responsibilities include:</p><ul><li><p class=\"MsoNoSpacing\">Developing, testing, and maintaining XR functionalities in C# and Unity;</p></li><li><p class=\"MsoNoSpacing\">Leading sprint planning sessions, retrospectives, and backlog refinement activities;</p></li><li><p class=\"MsoNoSpacing\">Conducting code reviews and ensuring compliance with coding and security standards;</p></li><li><p class=\"MsoNoSpacing\">Making decisions regarding technical design, architecture, tooling, and frameworks;</p></li><li><p class=\"MsoNoSpacing\">Analyzing and resolving complex technical issues and production incidents;</p></li><li><p class=\"MsoNoSpacing\">Coaching and supporting Developers;</p></li><li><p class=\"MsoNoSpacing\">Distributing work and monitoring team capacity together with the Development Manager;</p></li><li><p class=\"MsoNoSpacing\">Promoting shift-left testing, collaboration, and continuous improvement.</p></li></ul>",
+     "title": "XR Lead Software Developer",
+     "highlight": "<p>Combine hands-on development in C# and Unity with technical leadership, and work with your team to build XR solutions for customers around the world.</p><p style=\"min-height: 1.7em;\"></p>",
+     "requirements": "<h2>What do we ask?</h2><ul><li><p class=\"MsoNoSpacing\">Experience leading or mentoring a software development team;</p></li><li><p class=\"MsoNoSpacing\">Extensive development experience with C# and Unity;</p></li><li><p class=\"MsoNoSpacing\">Knowledge of OpenXR and AR Foundation;</p></li><li><p class=\"MsoNoSpacing\">Experience with XR, AR, or headset technologies, preferably Magic Leap 2 or a comparable platform;</p></li><li><p class=\"MsoNoSpacing\">Experience with mobile or iOS development combined with augmented reality;</p></li><li><p class=\"MsoNoSpacing\">Knowledge of software testing and integrating quality early in the development process;</p></li><li><p class=\"MsoNoSpacing\">The ability to plan work, set priorities, and guide execution within a development team;</p></li><li><p class=\"MsoNoSpacing\">A coaching leadership style that supports developers in their technical and professional growth;</p></li><li><p class=\"MsoNoSpacing\">Experience with AI tooling; knowledge of cloud development, source control, and CI/CD is considered a plus.</p></li></ul><h2>We offer</h2><p class=\"MsoNoSpacing\">Voortman is a company where people are always willing to help one another. We believe that a positive and supportive work environment contributes to the success of every individual and the team as a whole. We are an ambitious team that takes pride in delivering high-quality work, while also making time for team spirit and enjoying what we do together.</p><p class=\"MsoNoSpacing\">In addition, we offer:</p><ul><li><p class=\"MsoNoSpacing\">A competitive salary and 40 days of annual leave;</p></li><li><p class=\"MsoNoSpacing\">Flexible working hours that support a healthy work-life balance;</p></li><li><p class=\"MsoNoSpacing\">A lead role where you combine technical responsibility with guiding a development team;</p></li><li><p class=\"MsoNoSpacing\">The opportunity to continue hands-on software development for at least 50% of your time;</p></li><li><p class=\"MsoNoSpacing\">Influence over the architecture, development standards, tooling, and technical direction of our XR solutions;</p></li><li><p class=\"MsoNoSpacing\">Collaboration with Developers, Product Owners, QA Engineers, Solution Architects, and other technical specialists;</p></li><li><p class=\"MsoNoSpacing\">A working environment where code quality, testing, knowledge sharing, and continuous improvement are part of everyday work;</p></li><li><p class=\"MsoNoSpacing\">The opportunity to work with C#, Unity, OpenXR, AR Foundation, headset technologies, and AI tooling;</p></li><li><p class=\"MsoNoSpacing\">A position based in Rijssen, centrally located in the Twente region, where your contribution has a direct impact on both the quality of our XR solutions and the development of the team.</p></li></ul>",
+     "sharing_image": null,
+     "sharing_title": "XR Lead Software Developer",
+     "sharing_description": "What will you do?As a Lead Software Developer XR, you will provide direction to our in-house XR development team. You will contribute to the further development and enhancement of our existing XR appl",
+     "locations_question": "Welke werklocatie heeft je voorkeur?"
+    },
+    "nl": {
+     "description": "<h2>Wat ga je doen?</h2><p class=\"MsoNoSpacing\">Als Lead Software Developer XR geef je richting aan ons in-house XR-developmentteam. Je werkt aan de verdere ontwikkeling en verbetering van onze bestaande <a rel=\"noopener\" target=\"_blank\" href=\"https://www.voortman.net/nl/logicsteel/xr\">XR-applicatie</a> en vertaalt technische vraagstukken naar betrouwbare oplossingen voor klanten wereldwijd. Daarbij combineer je softwareontwikkeling met technisch leiderschap: minimaal de helft van je tijd werk je zelf hands-on mee aan de codebase.</p><p class=\"MsoNoSpacing\">&nbsp;</p><p class=\"MsoNoSpacing\">Je neemt het voortouw bij technische ontwerp- en architectuurkeuzes en bewaakt de kwaliteit, veiligheid en onderhoudbaarheid van de software. Je werkt onder andere met C#, Unity, OpenXR en AR Foundation. Ook krijg je te maken met headsettechnologie, mobile en iOS development, augmented reality, mixed reality en AI-tooling.</p><p class=\"MsoNoSpacing\">&nbsp;</p><p class=\"MsoNoSpacing\">Naast je technische bijdrage help je het team om voorspelbaar en effectief te werken. Je begeleidt developers op verschillende ervaringsniveaus, organiseert het ontwikkelproces en cre\u00ebert ruimte voor kennisdeling en continue verbetering. Samen met onder andere de Product Owner, QA Engineers, Solution Architects en andere developmentteams zorg je dat afhankelijkheden en technische belemmeringen tijdig worden opgelost.</p><p class=\"MsoNoSpacing\">&nbsp;</p><p class=\"MsoNoSpacing\">Je werkzaamheden bestaan onder meer uit:</p><ul><li><p class=\"MsoNoSpacing\">Zelf ontwikkelen, testen en onderhouden van XR-functionaliteiten in C# en Unity;</p></li><li><p class=\"MsoNoSpacing\">Leiden van sprintplanningen, retrospectives en backlog refinement;</p></li><li><p class=\"MsoNoSpacing\">Uitvoeren van code reviews en bewaken van coding- en securitystandaarden;</p></li><li><p class=\"MsoNoSpacing\">Maken van technische ontwerp-, architectuur-, tooling- en frameworkkeuzes;</p></li><li><p class=\"MsoNoSpacing\">Analyseren en oplossen van complexe technische problemen en productie-incidenten;</p></li><li><p class=\"MsoNoSpacing\">Coachen en ondersteunen van Senior Developers, Developers en Junior Developers;</p></li><li><p class=\"MsoNoSpacing\">Verdelen van werkzaamheden en bewaken van de teamcapaciteit in samenwerking met de Development Manager;</p></li><li><p class=\"MsoNoSpacing\">Stimuleren van shift-left testing, samenwerking en continue verbetering.</p></li></ul>",
+     "title": "Lead Software Developer XR",
+     "highlight": "<p>Combineer hands-on development in C# en Unity met technisch leiderschap en bouw samen met jouw team aan XR-oplossingen voor klanten wereldwijd.</p>",
+     "requirements": "<h2>Wij vragen</h2><ul><li><p class=\"MsoNoSpacing\">Ervaring met het aansturen of begeleiden van een softwaredevelopmentteam;</p></li><li><p class=\"MsoNoSpacing\">Ruime ontwikkelervaring met C# en Unity;</p></li><li><p class=\"MsoNoSpacing\">Kennis van OpenXR en AR Foundation;</p></li><li><p class=\"MsoNoSpacing\">Ervaring met XR-, AR- of headsettechnologie, bij voorkeur Magic Leap 2 of een vergelijkbaar platform;</p></li><li><p class=\"MsoNoSpacing\">Ervaring met mobile of iOS development in combinatie met augmented reality;</p></li><li><p class=\"MsoNoSpacing\">Kennis van softwaretesting en het vroegtijdig meenemen van kwaliteit in het ontwikkelproces;</p></li><li><p class=\"MsoNoSpacing\">Het vermogen om werkzaamheden te plannen, prioriteiten te stellen en de uitvoering binnen een developmentteam te begeleiden;</p></li><li><p class=\"MsoNoSpacing\">Een coachende manier van leidinggeven, waarmee je developers ondersteunt in hun technische en professionele ontwikkeling;</p></li><li><p class=\"MsoNoSpacing\">Ervaring met AI-tooling; kennis van cloud development, source control en CI/CD is een pre.</p></li></ul><h2>Wij bieden</h2><p class=\"MsoNoSpacing\" style=\"text-align:start;\">Voortman is een bedrijf waar iedereen voor elkaar klaar staat. Een bedrijf met een prettige werksfeer. We zijn ervan overtuigd dat dit bijdraagt aan de prestaties van elk van ons. We zijn een fanatiek team en willen samen goed werk afleveren. Natuurlijk is er ook ruimte voor gezelligheid en hebben we als team aandacht voor elkaar.</p><p style=\"text-align:start;min-height: 1.7em;\"></p><p class=\"MsoNoSpacing\" style=\"text-align:start;\">Daarnaast bieden we:</p><ul><li><p class=\"MsoNoSpacing\">Een goed salaris en maar liefst 40 vakantiedagen;</p></li><li><p class=\"MsoNoSpacing\">Flexibele werktijden voor een goede werk-priv\u00e9 balans;</p></li><li><p class=\"MsoNoSpacing\">Een inhoudelijke leadrol waarin je technische verantwoordelijkheid combineert met het begeleiden van een developmentteam;</p></li><li><p class=\"MsoNoSpacing\">De ruimte om minimaal 50% van je tijd zelf software te blijven ontwikkelen;</p></li><li><p class=\"MsoNoSpacing\">Invloed op de architectuur, ontwikkelstandaarden, tooling en technische koers van onze XR-oplossingen;</p></li><li><p class=\"MsoNoSpacing\">Samenwerking met developers, Product Owners, QA Engineers, Solution Architects en andere technische specialisten;</p></li><li><p class=\"MsoNoSpacing\">Een werkomgeving waarin codekwaliteit, testen, kennisdeling en continue verbetering onderdeel zijn van het dagelijkse werk;</p></li><li><p class=\"MsoNoSpacing\">De mogelijkheid om te werken met C#, Unity, OpenXR, AR Foundation, headsettechnologie en AI-tooling;</p></li><li><p class=\"MsoNoSpacing\">Een functie in Rijssen, centraal in Twente, waarin jouw bijdrage direct invloed heeft op de kwaliteit van XR-oplossingen en de ontwikkeling van het team.</p></li></ul><figure><img style=\"width:1920px\" alt=\"Voortman Nederland\" src=\"https://recruitee-main.s3.eu-central-1.amazonaws.com/uploads/58lgk3d2db/Voortman_Nederland-R.jpg\"></figure><h2>Over Voortman</h2><p>Wat in 1968 begon in een kippenschuur in Rijssen, is uitgegroeid tot wereldspeler in CNC-staalbewerkingsmachines. Met een team van meer dan 750 collega\u2019s wereldwijd ontwikkelen en bouwen we niet alleen high-end machines, maar ook slimme software en service waarop klanten kunnen vertrouwen. Deze 3 krachtige bouwstenen maken ons Twentse, internationale familiebedrijf uniek.</p>",
+     "sharing_image": null,
+     "sharing_title": "Lead Software Developer XR",
+     "sharing_description": "Wat ga je doen?Als Lead Software Developer XR geef je richting aan ons in-house XR-developmentteam. Je werkt aan de verdere ontwikkeling en verbetering van onze bestaande XR-applicatie en vertaalt tec",
+     "locations_question": "Welke werklocatie heeft je voorkeur?"
+    }
+   },
+   "on_site": true,
+   "mailbox_email": "job.r3naf@voortman.recruitee.com",
+   "description": "<h2>Wat ga je doen?</h2><p class=\"MsoNoSpacing\">Als Lead Software Developer XR geef je richting aan ons in-house XR-developmentteam. Je werkt aan de verdere ontwikkeling en verbetering van onze bestaande <a rel=\"noopener\" target=\"_blank\" href=\"https://www.voortman.net/nl/logicsteel/xr\">XR-applicatie</a> en vertaalt technische vraagstukken naar betrouwbare oplossingen voor klanten wereldwijd. Daarbij combineer je softwareontwikkeling met technisch leiderschap: minimaal de helft van je tijd werk je zelf hands-on mee aan de codebase.</p><p class=\"MsoNoSpacing\">&nbsp;</p><p class=\"MsoNoSpacing\">Je neemt het voortouw bij technische ontwerp- en architectuurkeuzes en bewaakt de kwaliteit, veiligheid en onderhoudbaarheid van de software. Je werkt onder andere met C#, Unity, OpenXR en AR Foundation. Ook krijg je te maken met headsettechnologie, mobile en iOS development, augmented reality, mixed reality en AI-tooling.</p><p class=\"MsoNoSpacing\">&nbsp;</p><p class=\"MsoNoSpacing\">Naast je technische bijdrage help je het team om voorspelbaar en effectief te werken. Je begeleidt developers op verschillende ervaringsniveaus, organiseert het ontwikkelproces en cre\u00ebert ruimte voor kennisdeling en continue verbetering. Samen met onder andere de Product Owner, QA Engineers, Solution Architects en andere developmentteams zorg je dat afhankelijkheden en technische belemmeringen tijdig worden opgelost.</p><p class=\"MsoNoSpacing\">&nbsp;</p><p class=\"MsoNoSpacing\">Je werkzaamheden bestaan onder meer uit:</p><ul><li><p class=\"MsoNoSpacing\">Zelf ontwikkelen, testen en onderhouden van XR-functionaliteiten in C# en Unity;</p></li><li><p class=\"MsoNoSpacing\">Leiden van sprintplanningen, retrospectives en backlog refinement;</p></li><li><p class=\"MsoNoSpacing\">Uitvoeren van code reviews en bewaken van coding- en securitystandaarden;</p></li><li><p class=\"MsoNoSpacing\">Maken van technische ontwerp-, architectuur-, tooling- en frameworkkeuzes;</p></li><li><p class=\"MsoNoSpacing\">Analyseren en oplossen van complexe technische problemen en productie-incidenten;</p></li><li><p class=\"MsoNoSpacing\">Coachen en ondersteunen van Senior Developers, Developers en Junior Developers;</p></li><li><p class=\"MsoNoSpacing\">Verdelen van werkzaamheden en bewaken van de teamcapaciteit in samenwerking met de Development Manager;</p></li><li><p class=\"MsoNoSpacing\">Stimuleren van shift-left testing, samenwerking en continue verbetering.</p></li></ul>",
+   "options_photo": "off",
+   "careers_apply_url": "https://careers.voortman.net/o/lead-software-developer-xr/c/new",
+   "experience_code": "experienced",
+   "remote": false,
+   "options_cv": "optional",
+   "salary": {
+    "max": null,
+    "min": null,
+    "period": "month",
+    "currency": "EUR"
+   },
+   "employment_type_code": "fulltime_permanent",
+   "guid": "r3naf",
+   "id": 2738624,
+   "open_questions": [],
+   "department": "Software Development",
+   "state_name": "Overijssel",
+   "location_question_visible": false,
+   "category_code": "engineering",
+   "sharing_title": "Lead Software Developer XR",
+   "hybrid": false,
+   "status": "published",
+   "min_hours_per_week": null,
+   "tags": [],
+   "max_hours": null
+  },
+  {
+   "country": "Verenigde Staten",
+   "options_salutation": "off",
+   "position": 275,
+   "options_cover_letter": "optional",
+   "careers_url": "https://careers.voortman.net/o/cnc-commissioning-field-technician-3",
+   "published_at": "2026-07-08 18:13:09 UTC",
+   "options_title": "off",
+   "education_code": "high_school",
+   "locations": [
+    {
+     "id": 290494,
+     "name": "Voortman US",
+     "state": "Georgia",
+     "country": "United States",
+     "city": "Atlanta",
+     "translations": {
+      "en": {
+       "name": "Voortman US",
+       "city": "Atlanta",
+       "postal_code": null,
+       "street": null,
+       "note": null
+      }
+     },
+     "country_code": "US",
+     "state_code": "GA",
+     "postal_code": null,
+     "street": null,
+     "note": null
+    }
+   ],
+   "min_hours": 40,
+   "country_code": "US",
+   "requirements": "<h2>We ask</h2><ul><li><p>Check installation is done according to order confirmation.</p></li><li><p>Check the installation if everything is working correctly.</p></li><li><p>Setup the software for the machine to run production.</p></li><li><p>Test machines during production.</p></li><li><p>Daily report back to Project management on the status</p></li><li><p>Ensure clear communication with colleagues and the customer</p></li><li><p>Run the Site acceptance test</p></li><li><p>Train customers</p></li></ul><p style=\"text-align:start;\"><strong>Requirements</strong></p><ul><li><p>High School Education or equivalent.</p></li><li><p>Minimum of two years of relevant work experience in CNC machine repair, maintenance or operations.</p></li><li><p>Have a passion for technology and enjoy doing both mechanical and electrical work</p></li><li><p>Strong communication skill</p></li><li><p>Strong electrical trouble shooting skills</p></li><li><p>Computer knowledge</p></li><li><p>Able to read Electrical drawings / Hydraulic drawings / Mechanic manuals</p></li><li><p>Basic Microsoft Office knowledge and/or Computerized Maintenance Management System knowledge.</p></li><li><p>Fast learner in technique</p></li><li><p>Team player</p></li><li><p>Able to travel (internationally) for training purposes</p></li><li><p>Ability to work overtime or on off shifts as needed.</p></li><li><p>An adventurous individual who likes to see some of the world and is willing to be away from home for two to three consecutive weeks at a time.</p></li><li><p>Current Passport for international travel.</p></li><li><p>Experience in machine tooling is a plus</p></li><li><p>Valid driver\u2019s license</p></li></ul><p style=\"min-height: 1.7em;\"></p><p style=\"min-height: 1.7em;\"></p><p style=\"min-height: 1.7em;\"></p><h2>We offer</h2><ul><li><p>Paid Time Off (i.e., PTO) that can be used as it\u2019s accrued</p></li><li><p>Paid Holidays effective date of hire</p></li><li><p>Medical insurance (i.e., three plans available, PPO, HMO*, and PPO with HSA) effective date of hire</p></li><li><p>Dental care</p></li><li><p>Vision care</p></li><li><p>100% Voortman USA LLC paid life insurance</p></li><li><p>Additional voluntary life insurance option</p></li><li><p>100% Voortman USA LLC paid short-term disability</p></li><li><p>50/50 premium split between Voortman USA LLC and employee for long-term disability (i.e., LTD)</p></li><li><p>401K plan available with Company contribution</p></li></ul><p><br></p><figure><img alt=\"Voortman USA expansion update #2 | Voortman Steel Machinery\" src=\"https://www.voortman.net/en/storage/images/2.0/PAGES/NEWS/2025-07-23-Voortman-USA-expansion-update-2/_1200x630_crop_center-center_82_none/News-2025-07-23-expansion-USA-update-2-social-share.jpg?mtime=1754987053\"></figure><h2>About Voortman</h2><p><strong>Join Voortman \u2013 </strong></p><p class=\"MsoNormal\">As part of a global organization headquartered in the Netherlands with more than 750 employees worldwide, Voortman offers the opportunity to collaborate across international teams, gain exposure to global expertise, and build a career within a well-established and innovative leader in the steel processing industry.</p><p class=\"MsoNormal\">&nbsp;</p><p class=\"MsoNormal\">Having recently moved into our new, state-of-the-art production facility and offices, Voortman is entering an exciting new phase of growth in the United States. This milestone reflects our ongoing commitment to expanding our presence across North America, enhancing our capabilities, and delivering even greater value to our customers. As we scale our operations, we are rapidly growing our team and actively seeking talented, driven individuals who are eager to contribute to a dynamic and forward-thinking organization. This is a unique opportunity to join Voortman at a pivotal moment and play a key role in shaping the future of our U.S. operations.</p><p style=\"min-height: 1.7em;\"></p><p><strong>Be part of our next chapter. Grow with Voortman.</strong></p>",
+   "highlight": "<p>Work with customers from start to finish by making small installations and complex large machine lines successful.</p>",
+   "dynamic_fields": [],
+   "max_hours_per_week": null,
+   "locations_question_type": "multiple_choice",
+   "options_phone": "required",
+   "updated_at": "2026-09-07 13:53:23 UTC",
+   "created_at": "2026-07-08 18:12:37 UTC",
+   "cover_image": null,
+   "postal_code": null,
+   "title": "CNC Commissioning Field Technician",
+   "sharing_description": "What are you going to do?You\u2019ll be at the helm of commissioning and ensuring the safe delivery and installation of our standalone steel processing machinery or full production lines, according to cust",
+   "location": "Atlanta, Georgia, Verenigde Staten",
+   "locations_question": "What is your preferred work location?",
+   "locations_question_required": true,
+   "close_at": null,
+   "sharing_image": null,
+   "state_code": "GA",
+   "company_name": "Voortman Steel Machinery",
+   "city": "Atlanta",
+   "slug": "cnc-commissioning-field-technician-3",
+   "translations": {
+    "en": {
+     "description": "<h2>What are you going to do?</h2><p style=\"text-align:start;\">You\u2019ll be at the helm of commissioning and ensuring the safe delivery and installation of our standalone steel processing machinery or full production lines, according to customer specifications. You\u2019ll also have the ability to effectively train operators at customers location so that they can maximize the use of their investment.</p><p style=\"text-align:start;\">In this pivotal position, you\u2019ll also embrace the opportunity to serve as person of contact for technical aspects of our commissioning process when at customer locations.</p><p style=\"min-height: 1.7em;\"></p><p style=\"min-height: 1.7em;\"></p>",
+     "title": "CNC Commissioning Field Technician",
+     "highlight": "<p>Work with customers from start to finish by making small installations and complex large machine lines successful.</p>",
+     "requirements": "<h2>We ask</h2><ul><li><p>Check installation is done according to order confirmation.</p></li><li><p>Check the installation if everything is working correctly.</p></li><li><p>Setup the software for the machine to run production.</p></li><li><p>Test machines during production.</p></li><li><p>Daily report back to Project management on the status</p></li><li><p>Ensure clear communication with colleagues and the customer</p></li><li><p>Run the Site acceptance test</p></li><li><p>Train customers</p></li></ul><p style=\"text-align:start;\"><strong>Requirements</strong></p><ul><li><p>High School Education or equivalent.</p></li><li><p>Minimum of two years of relevant work experience in CNC machine repair, maintenance or operations.</p></li><li><p>Have a passion for technology and enjoy doing both mechanical and electrical work</p></li><li><p>Strong communication skill</p></li><li><p>Strong electrical trouble shooting skills</p></li><li><p>Computer knowledge</p></li><li><p>Able to read Electrical drawings / Hydraulic drawings / Mechanic manuals</p></li><li><p>Basic Microsoft Office knowledge and/or Computerized Maintenance Management System knowledge.</p></li><li><p>Fast learner in technique</p></li><li><p>Team player</p></li><li><p>Able to travel (internationally) for training purposes</p></li><li><p>Ability to work overtime or on off shifts as needed.</p></li><li><p>An adventurous individual who likes to see some of the world and is willing to be away from home for two to three consecutive weeks at a time.</p></li><li><p>Current Passport for international travel.</p></li><li><p>Experience in machine tooling is a plus</p></li><li><p>Valid driver\u2019s license</p></li></ul><p style=\"min-height: 1.7em;\"></p><p style=\"min-height: 1.7em;\"></p><p style=\"min-height: 1.7em;\"></p><h2>We offer</h2><ul><li><p>Paid Time Off (i.e., PTO) that can be used as it\u2019s accrued</p></li><li><p>Paid Holidays effective date of hire</p></li><li><p>Medical insurance (i.e., three plans available, PPO, HMO*, and PPO with HSA) effective date of hire</p></li><li><p>Dental care</p></li><li><p>Vision care</p></li><li><p>100% Voortman USA LLC paid life insurance</p></li><li><p>Additional voluntary life insurance option</p></li><li><p>100% Voortman USA LLC paid short-term disability</p></li><li><p>50/50 premium split between Voortman USA LLC and employee for long-term disability (i.e., LTD)</p></li><li><p>401K plan available with Company contribution</p></li></ul><p><br></p><figure><img alt=\"Voortman USA expansion update #2 | Voortman Steel Machinery\" src=\"https://www.voortman.net/en/storage/images/2.0/PAGES/NEWS/2025-07-23-Voortman-USA-expansion-update-2/_1200x630_crop_center-center_82_none/News-2025-07-23-expansion-USA-update-2-social-share.jpg?mtime=1754987053\"></figure><h2>About Voortman</h2><p><strong>Join Voortman \u2013 </strong></p><p class=\"MsoNormal\">As part of a global organization headquartered in the Netherlands with more than 750 employees worldwide, Voortman offers the opportunity to collaborate across international teams, gain exposure to global expertise, and build a career within a well-established and innovative leader in the steel processing industry.</p><p class=\"MsoNormal\">&nbsp;</p><p class=\"MsoNormal\">Having recently moved into our new, state-of-the-art production facility and offices, Voortman is entering an exciting new phase of growth in the United States. This milestone reflects our ongoing commitment to expanding our presence across North America, enhancing our capabilities, and delivering even greater value to our customers. As we scale our operations, we are rapidly growing our team and actively seeking talented, driven individuals who are eager to contribute to a dynamic and forward-thinking organization. This is a unique opportunity to join Voortman at a pivotal moment and play a key role in shaping the future of our U.S. operations.</p><p style=\"min-height: 1.7em;\"></p><p><strong>Be part of our next chapter. Grow with Voortman.</strong></p>",
+     "sharing_image": null,
+     "sharing_title": "CNC Commissioning Field Technician",
+     "sharing_description": "What are you going to do?You\u2019ll be at the helm of commissioning and ensuring the safe delivery and installation of our standalone steel processing machinery or full production lines, according to cust",
+     "locations_question": "What is your preferred work location?"
+    }
+   },
+   "on_site": true,
+   "mailbox_email": "job.fm23g@voortman.recruitee.com",
+   "description": "<h2>What are you going to do?</h2><p style=\"text-align:start;\">You\u2019ll be at the helm of commissioning and ensuring the safe delivery and installation of our standalone steel processing machinery or full production lines, according to customer specifications. You\u2019ll also have the ability to effectively train operators at customers location so that they can maximize the use of their investment.</p><p style=\"text-align:start;\">In this pivotal position, you\u2019ll also embrace the opportunity to serve as person of contact for technical aspects of our commissioning process when at customer locations.</p><p style=\"min-height: 1.7em;\"></p><p style=\"min-height: 1.7em;\"></p>",
+   "options_photo": "off",
+   "careers_apply_url": "https://careers.voortman.net/o/cnc-commissioning-field-technician-3/c/new",
+   "experience_code": "entry_level",
+   "remote": false,
+   "options_cv": "required",
+   "salary": {
+    "max": "30",
+    "min": "20",
+    "period": "hour",
+    "currency": "USD"
+   },
+   "employment_type_code": "fulltime_permanent",
+   "guid": "fm23g",
+   "id": 2671414,
+   "open_questions": [],
+   "department": "Field Service",
+   "state_name": "Georgia",
+   "location_question_visible": false,
+   "category_code": "other",
+   "sharing_title": "CNC Commissioning Field Technician",
+   "hybrid": true,
+   "status": "published",
+   "min_hours_per_week": "40",
+   "tags": [],
+   "max_hours": null
+  },
+  {
+   "state_name": "Overijssel",
+   "country": "Nederland",
+   "position": 310,
+   "options_title": "off",
+   "title": "BBL: Logistiek",
+   "guid": "ftwtb",
+   "locations_question": "Welke werklocatie heeft je voorkeur?",
+   "published_at": "2026-05-13 13:46:46 UTC",
+   "max_hours_per_week": null,
+   "requirements": "<h2>Wij vragen</h2><ul><li><p>Je volgt of gaat starten met een BBL-opleiding in de richting van Logistiek;</p></li><li><p>Je hebt interesse in magazijnbeheer, goederenstromen en logistieke processen;</p></li><li><p>Je werkt nauwkeurig en hebt oog voor kwaliteit;</p></li><li><p>Je bent leergierig en wilt jezelf ontwikkelen binnen het logistieke vakgebied;</p></li><li><p>Je vindt het prettig om zowel zelfstandig als in teamverband te werken;</p></li><li><p>Je bent praktisch ingesteld en steekt graag de handen uit de mouwen;</p></li><li><p>Je woont bij voorkeur in de regio Rijssen, Twente of Overijssel.</p><p style=\"min-height: 1.7em;\"></p></li></ul><h2>Wij bieden</h2><ul><li><p>Een leerzame BBL-plek waarin werken en leren worden gecombineerd;</p></li><li><p>Begeleiding door ervaren collega's die je ondersteunen tijdens je opleiding;</p></li><li><p>Praktijkervaring binnen diverse logistieke processen;</p></li><li><p>De mogelijkheid om ervaring op te doen met logistieke systemen en magazijnbeheer;</p></li><li><p>Een afwisselende werkomgeving waarin geen dag hetzelfde is;</p></li><li><p>Een passende BBL-vergoeding;</p></li><li><p>Perspectief om na het behalen van je diploma door te groeien binnen de organisatie.</p></li></ul><p style=\"min-height: 1.7em;\"></p><figure><img style=\"width:1920px\" alt=\"Voortman Nederland\" src=\"https://recruitee-main.s3.eu-central-1.amazonaws.com/uploads/58lgk3d2db/Voortman_Nederland-R.jpg\"></figure><h2>Over Voortman</h2><p>Wat in 1968 begon in een kippenschuur in Rijssen, is uitgegroeid tot wereldspeler in CNC-staalbewerkingsmachines. Met een team van meer dan 750 collega\u2019s wereldwijd ontwikkelen en bouwen we niet alleen high-end machines, maar ook slimme software en service waarop klanten kunnen vertrouwen. Deze 3 krachtige bouwstenen maken ons Twentse, internationale familiebedrijf uniek.</p>",
+   "open_questions": [],
+   "slug": "bbl-logistiek-1",
+   "postal_code": null,
+   "locations_question_type": "multiple_choice",
+   "created_at": "2026-05-13 13:36:12 UTC",
+   "location_question_visible": false,
+   "employment_type_code": "internship",
+   "translations": {
+    "en": {
+     "description": "<h2><strong>WHAT ARE YOU GOING TO DO?</strong></h2>",
+     "title": "BBL: Logistiek",
+     "highlight": "<p><em>Wil jij een logistieke opleiding combineren met praktijkervaring? Tijdens deze BBL-plek leer je alle facetten van logistiek kennen en draag je bij aan een soepel verloop van onze goederenstromen.</em></p>",
+     "requirements": "<h2>WE ASK</h2><p style=\"min-height: 1.7em;\"></p><p style=\"min-height: 1.7em;\"></p><h2>WE OFFER</h2>",
+     "sharing_image": null,
+     "sharing_title": "BBL: Logistiek",
+     "sharing_description": "WHAT ARE YOU GOING TO DO?",
+     "locations_question": "Welke werklocatie heeft je voorkeur?"
+    },
+    "nl": {
+     "description": "<h2>Wat ga je doen?</h2><p>Als BBL Leerling Logistiek werk je mee in het logistieke hart van onze organisatie. Je combineert werken en leren en krijgt de kans om praktijkervaring op te doen binnen verschillende logistieke processen. Daarbij word je begeleid door ervaren collega's die je stap voor stap meenemen in het vak en je helpen je verder te ontwikkelen.</p><p style=\"min-height: 1.7em;\"></p><p>Je bent betrokken bij de ontvangst, opslag en uitgifte van goederen en leert hoe belangrijk nauwkeurigheid, veiligheid en kwaliteit zijn binnen een logistieke omgeving. Naast de praktische werkzaamheden krijg je inzicht in logistieke processen, administratieve handelingen en kwaliteitsbewaking. Zo bouw je een brede basis op voor een toekomst in de logistiek.</p><p style=\"min-height: 1.7em;\"></p><p>Tijdens je BBL-traject werk je samen met collega's van logistiek, productie en planning. Hierdoor krijg je een goed beeld van hoe goederenstromen bijdragen aan een effici\u00ebnt productieproces en ontdek je waar jouw interesses en talenten binnen de logistiek liggen.</p><p style=\"min-height: 1.7em;\"></p><p>Je werkzaamheden bestaan onder andere uit:</p><ul><li><p>Het laden en lossen van binnenkomende goederen en controleren van aantallen, kwaliteit en staat van levering;</p></li><li><p>Het opslaan, verzamelen en verwerken van materialen en onderdelen in het magazijn;</p></li><li><p>Het verzendklaar maken van uitgaande goederen en verzorgen van de bijbehorende documentatie;</p></li><li><p>Het uitvoeren van kwaliteitscontroles en signaleren van afwijkingen;</p></li><li><p>Het werken met logistieke systemen en interne procedures;</p></li><li><p>Het ondersteunen bij voorraadbeheer en magazijnwerkzaamheden;</p></li><li><p>Het samenwerken met collega's van logistiek, productie en planning om processen soepel te laten verlopen.</p></li></ul>",
+     "title": "BBL: Logistiek",
+     "highlight": "<p><em>Wil jij een logistieke opleiding combineren met praktijkervaring? Tijdens deze BBL-plek leer je alle facetten van logistiek kennen en draag je bij aan een soepel verloop van onze goederenstromen.</em></p>",
+     "requirements": "<h2>Wij vragen</h2><ul><li><p>Je volgt of gaat starten met een BBL-opleiding in de richting van Logistiek;</p></li><li><p>Je hebt interesse in magazijnbeheer, goederenstromen en logistieke processen;</p></li><li><p>Je werkt nauwkeurig en hebt oog voor kwaliteit;</p></li><li><p>Je bent leergierig en wilt jezelf ontwikkelen binnen het logistieke vakgebied;</p></li><li><p>Je vindt het prettig om zowel zelfstandig als in teamverband te werken;</p></li><li><p>Je bent praktisch ingesteld en steekt graag de handen uit de mouwen;</p></li><li><p>Je woont bij voorkeur in de regio Rijssen, Twente of Overijssel.</p><p style=\"min-height: 1.7em;\"></p></li></ul><h2>Wij bieden</h2><ul><li><p>Een leerzame BBL-plek waarin werken en leren worden gecombineerd;</p></li><li><p>Begeleiding door ervaren collega's die je ondersteunen tijdens je opleiding;</p></li><li><p>Praktijkervaring binnen diverse logistieke processen;</p></li><li><p>De mogelijkheid om ervaring op te doen met logistieke systemen en magazijnbeheer;</p></li><li><p>Een afwisselende werkomgeving waarin geen dag hetzelfde is;</p></li><li><p>Een passende BBL-vergoeding;</p></li><li><p>Perspectief om na het behalen van je diploma door te groeien binnen de organisatie.</p></li></ul><p style=\"min-height: 1.7em;\"></p><figure><img style=\"width:1920px\" alt=\"Voortman Nederland\" src=\"https://recruitee-main.s3.eu-central-1.amazonaws.com/uploads/58lgk3d2db/Voortman_Nederland-R.jpg\"></figure><h2>Over Voortman</h2><p>Wat in 1968 begon in een kippenschuur in Rijssen, is uitgegroeid tot wereldspeler in CNC-staalbewerkingsmachines. Met een team van meer dan 750 collega\u2019s wereldwijd ontwikkelen en bouwen we niet alleen high-end machines, maar ook slimme software en service waarop klanten kunnen vertrouwen. Deze 3 krachtige bouwstenen maken ons Twentse, internationale familiebedrijf uniek.</p>",
+     "sharing_image": null,
+     "sharing_title": "BBL: Logistiek",
+     "sharing_description": "Wat ga je doen?Als BBL Leerling Logistiek werk je mee in het logistieke hart van onze organisatie. Je combineert werken en leren en krijgt de kans om praktijkervaring op te doen binnen verschillende l",
+     "locations_question": "Welke werklocatie heeft je voorkeur?"
+    }
+   },
+   "options_cover_letter": "optional",
+   "updated_at": "2026-09-14 12:10:00 UTC",
+   "options_cv": "optional",
+   "education_code": "high_school_coursework",
+   "on_site": true,
+   "sharing_title": "BBL: Logistiek",
+   "careers_url": "https://careers.voortman.net/o/bbl-logistiek-1",
+   "max_hours": null,
+   "company_name": "Voortman Steel Machinery",
+   "options_photo": "off",
+   "country_code": "NL",
+   "department": "BBL",
+   "state_code": "OV",
+   "sharing_image": null,
+   "close_at": null,
+   "description": "<h2>Wat ga je doen?</h2><p>Als BBL Leerling Logistiek werk je mee in het logistieke hart van onze organisatie. Je combineert werken en leren en krijgt de kans om praktijkervaring op te doen binnen verschillende logistieke processen. Daarbij word je begeleid door ervaren collega's die je stap voor stap meenemen in het vak en je helpen je verder te ontwikkelen.</p><p style=\"min-height: 1.7em;\"></p><p>Je bent betrokken bij de ontvangst, opslag en uitgifte van goederen en leert hoe belangrijk nauwkeurigheid, veiligheid en kwaliteit zijn binnen een logistieke omgeving. Naast de praktische werkzaamheden krijg je inzicht in logistieke processen, administratieve handelingen en kwaliteitsbewaking. Zo bouw je een brede basis op voor een toekomst in de logistiek.</p><p style=\"min-height: 1.7em;\"></p><p>Tijdens je BBL-traject werk je samen met collega's van logistiek, productie en planning. Hierdoor krijg je een goed beeld van hoe goederenstromen bijdragen aan een effici\u00ebnt productieproces en ontdek je waar jouw interesses en talenten binnen de logistiek liggen.</p><p style=\"min-height: 1.7em;\"></p><p>Je werkzaamheden bestaan onder andere uit:</p><ul><li><p>Het laden en lossen van binnenkomende goederen en controleren van aantallen, kwaliteit en staat van levering;</p></li><li><p>Het opslaan, verzamelen en verwerken van materialen en onderdelen in het magazijn;</p></li><li><p>Het verzendklaar maken van uitgaande goederen en verzorgen van de bijbehorende documentatie;</p></li><li><p>Het uitvoeren van kwaliteitscontroles en signaleren van afwijkingen;</p></li><li><p>Het werken met logistieke systemen en interne procedures;</p></li><li><p>Het ondersteunen bij voorraadbeheer en magazijnwerkzaamheden;</p></li><li><p>Het samenwerken met collega's van logistiek, productie en planning om processen soepel te laten verlopen.</p></li></ul>",
+   "category_code": "engineering",
+   "locations_question_required": true,
+   "city": "Rijssen",
+   "options_phone": "optional",
+   "highlight": "<p><em>Wil jij een logistieke opleiding combineren met praktijkervaring? Tijdens deze BBL-plek leer je alle facetten van logistiek kennen en draag je bij aan een soepel verloop van onze goederenstromen.</em></p>",
+   "options_salutation": "off",
+   "remote": false,
+   "min_hours": 40,
+   "min_hours_per_week": "40",
+   "location": "Rijssen, Overijssel, Nederland",
+   "id": 2603217,
+   "sharing_description": "Wat ga je doen?Als BBL Leerling Logistiek werk je mee in het logistieke hart van onze organisatie. Je combineert werken en leren en krijgt de kans om praktijkervaring op te doen binnen verschillende l",
+   "salary": {
+    "max": null,
+    "min": null,
+    "period": "month",
+    "currency": "EUR"
+   },
+   "hybrid": false,
+   "careers_apply_url": "https://careers.voortman.net/o/bbl-logistiek-1/c/new",
+   "dynamic_fields": [],
+   "experience_code": "student_college",
+   "cover_image": {
+    "url": "https://careers.recruiteecdn.com/image/upload/ats-production/offers/2603217/offer_cover_image_nmbkn85oedrl.jpg"
+   },
+   "locations": [
+    {
+     "id": 186202,
+     "name": "Voortman NL",
+     "state": "Overijssel",
+     "country": "Nederland",
+     "city": "Rijssen",
+     "translations": {
+      "en": {
+       "name": "Voortman NL",
+       "city": "Rijssen",
+       "postal_code": null,
+       "street": null,
+       "note": "What started in a small chickenshed in the Netherlands in 1968 has grown into a world player in CNC steel processing machines. With a team of more than 750 colleagues worldwide, we develop and build not only high-end machines, but also smart software and service that customers can rely on. These 3 powerful building blocks make our international family business unique."
+      },
+      "nl": {
+       "name": "Voortman NL",
+       "city": "Rijssen",
+       "postal_code": null,
+       "street": null,
+       "note": "Wat in 1968 begon in een kippenschuur in Rijssen, is uitgegroeid tot wereldspeler in CNC-staalbewerkingsmachines. Met een team van meer dan 750 collega\u2019s wereldwijd ontwikkelen en bouwen we niet alleen high-end machines, maar ook slimme software en service waarop klanten kunnen vertrouwen. Deze 3 krachtige bouwstenen maken ons Twentse, internationale familiebedrijf uniek."
+      }
+     },
+     "country_code": "NL",
+     "state_code": "OV",
+     "postal_code": null,
+     "street": null,
+     "note": "Wat in 1968 begon in een kippenschuur in Rijssen, is uitgegroeid tot wereldspeler in CNC-staalbewerkingsmachines. Met een team van meer dan 750 collega\u2019s wereldwijd ontwikkelen en bouwen we niet alleen high-end machines, maar ook slimme software en service waarop klanten kunnen vertrouwen. Deze 3 krachtige bouwstenen maken ons Twentse, internationale familiebedrijf uniek."
+    }
+   ],
+   "status": "published",
+   "mailbox_email": "job.ftwtb@voortman.recruitee.com",
+   "tags": []
+  }
+ ]
+}

@@ -9,7 +9,9 @@ companies labelled by ATS) · **Relates to:**
 [ADR-0057](0057-record-family-assignments-and-report-reassignment.md) (reassignment),
 [ADR-0053](0053-scope-eviction-on-scrape-outcome.md) (closures a scrape cannot see),
 [ADR-0233](0233-trends-serves-reconciled-line-readings-and-the-page-only-formats.md) (the reading) · changes no
-figure, reading field, API field or stored data
+figure, reading field, API field or stored data · **Extended by:**
+[ADR-0255](0255-every-tab-speaks-to-a-job-seeker.md) (every other tab, the company sentence and
+the table's headers)
 
 ## Context
 

@@ -1,0 +1,629 @@
+{
+ "jobs": [
+  [
+   "73846483941499590",
+   "Senior Staff Software Engineer, Cloud CISO",
+   "https://www.google.com/about/careers/applications/signin?jobId=CiUAL2FckTabzXevWHb7_Gzl-E8VBgoZaHjVqawwN3MK9bNmBmdyEjsA9yzvgv9X85vaZjKM2ubTM5RI-owN6BrpKd8JKnD8cQEeU4BcBMJayfx85keHdF5l7aXEGa9VgsP2Mw%3D%3D_V2&loc=US&title=Senior+Staff+Software+Engineer",
+   [
+    null,
+    "<ul>\n<li>Define the multi-year technical goal and architectural roadmap for high-efficiency, formally verified systems across Google Cloud CISO.</li>\n<li>Lead the end-to-end architecture and implementation of distributed transactional systems, storage layers, and query engines built in Rust and veri"
+   ],
+   [
+    null,
+    "<h3>Minimum qualifications:</h3><ul>\n<li>Bachelor's degree in Computer Science, a related technical field, or equivalent practical experience.</li>\n<li>8 years of experience architecting, implementing, and operating large-scale distributed systems, transactional storage engines, or high-performance "
+   ],
+   "projects/gweb-careers-proto/tenants/60107626-8e00-0000-0000-0071646e0806/companies/ebbbf0d1-8121-483c-8f99-ee92597591fc",
+   null,
+   "Google",
+   "en-US",
+   [
+    [
+     "Sweden",
+     [
+      "Sweden"
+     ],
+     null,
+     null,
+     null,
+     "SE"
+    ]
+   ],
+   [
+    null,
+    "<p>Google's software engineers develop the next-generation technologies that change how billions of users connect, explore, and interact with information and one another. Our products need to handle information at massive scale, and extend well beyond web search. We're looking for engineers who brin"
+   ],
+   [
+    2,
+    4
+   ],
+   [
+    1789747864,
+    106000000
+   ],
+   [
+    1789747864,
+    106000000
+   ],
+   [
+    1789747864,
+    638000000
+   ],
+   [
+    null,
+    ""
+   ],
+   1,
+   null,
+   [
+    null,
+    "<b>Remote location: Sweden.</b>"
+   ],
+   [
+    null,
+    "<ul>\n<li>Bachelor's degree in Computer Science, a related technical field, or equivalent practical experience.</li>\n<li>8 years of experience architecting, implementing, and operating large-scale distributed systems, transactional storage engines, or high-performance database internals.</li>\n<li>5 years of experience developing production-critical systems in Rust.</li>\n<li>3 years of experience in technical leadership, setting multi-year architectural roadmaps, and driving cross-organizational technical initiatives.</li>\n<li>Experience with formal specification, formal methods, or verified systems development (e.g., Verus, TLA+, SMT verification, or proof-carrying code).</li>\n</ul>"
+   ],
+   3
+  ],
+  [
+   "101921079911424710",
+   "Senior Incident Response Security Consultant, Mandiant, Google Cloud",
+   "https://www.google.com/about/careers/applications/signin?jobId=CiUAL2Fcke2HCdsC88tSirh35VU8G43NTJxNdi2wVTfQN7tQ2j-rEjsA1Ny_iyQ6dH5LDw5Rx2dmgoLk8d7YVOlMETnvgSN4HfJLqa8igT7cRaox2bxGS8cku2dxsPBKXVxymw%3D%3D_V2&loc=US&title=Senior+Incident+Response+Security+Consultant",
+   [
+    null,
+    "<ul>\n<li><span dir=\"ltr\">Collaborate with internal and customer teams to investigate and contain incidents.</span><br></li>\n<li><span dir=\"ltr\">Recognize and codify attacker Tools, Tactics, and Procedures (TTPs) and Indicators of Compromise (IOCs) that can be applied to current and future investigat"
+   ],
+   [
+    null,
+    "<h3>Minimum qualifications:</h3><ul>\n<li>Bachelor's degree in Computer Science, Information Systems, Cybersecurity, related technical field, or equivalent practical experience.</li>\n<li>5 years of experience working on end-to-end incident response investigations, analysis, or containment actions.</l"
+   ],
+   "projects/gweb-careers-proto/tenants/60107626-8e00-0000-0000-0071646e0806/companies/ebbbf0d1-8121-483c-8f99-ee92597591fc",
+   null,
+   "Google",
+   "en-US",
+   [
+    [
+     "Ontario, CA",
+     [
+      "111 Richmond St W, Toronto, ON M5H 3K6, Canada"
+     ],
+     "Toronto",
+     "M5H 3K6",
+     "ON",
+     "CA"
+    ],
+    [
+     "Alberta, CA",
+     [
+      "Alberta, Canada"
+     ],
+     null,
+     null,
+     "AB",
+     "CA"
+    ],
+    [
+     "British Columbia, CA",
+     [
+      "British Columbia, Canada"
+     ],
+     null,
+     null,
+     "BC",
+     "CA"
+    ],
+    [
+     "New Brunswick, CA",
+     [
+      "New Brunswick, Canada"
+     ],
+     null,
+     null,
+     "NB",
+     "CA"
+    ]
+   ],
+   [
+    null,
+    "<p>Mandiant Services provides industry-leading incident response, assessment, transformation, managed detection and response, and training services with in-depth tactical support. Mandiant helps organizations effectively detect and respond to threats and reduce overall impact of business risk before"
+   ],
+   [
+    2
+   ],
+   [
+    1788449971,
+    431000000
+   ],
+   [
+    1788451673,
+    342000000
+   ],
+   [
+    1788451673,
+    608000000
+   ],
+   [
+    null,
+    "This posting is for an existing vacancy.<br><br>Google utilizes AI tools to assist in assessing candidates in our hiring processes.<br>"
+   ],
+   1,
+   null,
+   [
+    null,
+    "Note: By applying to this position you will have an opportunity to share your preferred working location from the following:<br><br><b>Remote locations: Ontario, CA; Alberta, CA; British Columbia, CA; New Brunswick, CA.</b>"
+   ],
+   [
+    null,
+    "<ul>\n<li>Bachelor's degree in Computer Science, Information Systems, Cybersecurity, related technical field, or equivalent practical experience.</li>\n<li>5 years of experience working on end-to-end incident response investigations, analysis, or containment actions.</li>\n<li>5 years of investigative experience with network forensics, malware triage analysis, cloud forensics, or disk and memory forensics.</li>\n<li>Ability to travel up to 30%.</li>\n</ul>"
+   ],
+   2
+  ],
+  [
+   "128322892419998406",
+   "Trust and Safety Analyst, Developer Experience and Ecosystem Programs",
+   "https://www.google.com/about/careers/applications/signin?jobId=CiUAL2FckY-ccZn554YtFjHOwYJYAkLCQv9CD9aOalCZmQhYoXqwEjsA1Ny_i7JqifFpdtnlOY_gKsBEm1z17HZ4VdrajPQTySboihnRISch9vIWoIsL3dJV7PP-PsOFew5V8Q%3D%3D_V2&loc=US&title=Trust+and+Safety+Analyst",
+   [
+    null,
+    "<ul>\n<li>Drive customer-facing initiatives for program operations.<br></li><li>Serve as Subject Matter Expert (SME) for ecosystem programs requirements and procedures.</li><li>Handle escalations and complex cases from developers and cross-functional teams.</li><li>Support an AI-first operation by pr"
+   ],
+   [
+    null,
+    "<h3>Minimum qualifications:</h3><ul>\n<li>Bachelor's degree or equivalent practical experience.<br></li>\n<li>4 years of experience in data analytics, Trust and Safety, policy, cybersecurity, or related fields. </li>\n</ul><br><h3>Preferred qualifications:</h3><ul>\n<li>Master's degree in a relevant fie"
+   ],
+   "projects/gweb-careers-proto/tenants/60107626-8e00-0000-0000-0071646e0806/companies/ebbbf0d1-8121-483c-8f99-ee92597591fc",
+   null,
+   "Google",
+   "en-US",
+   [
+    [
+     "Atlanta, GA, USA",
+     [
+      "Atlanta, GA, USA"
+     ],
+     "Atlanta",
+     null,
+     "GA",
+     "US"
+    ],
+    [
+     "Austin, TX, USA",
+     [
+      "Austin, TX, USA"
+     ],
+     "Austin",
+     null,
+     "TX",
+     "US"
+    ],
+    [
+     "Kirkland, WA, USA",
+     [
+      "Kirkland, WA, USA"
+     ],
+     "Kirkland",
+     null,
+     "WA",
+     "US"
+    ]
+   ],
+   [
+    null,
+    "<p>As a Trust and Safety Analyst focused on developer experience programs and ecosystem success, you will play a pivotal role in enabling developers to build, publish, and scale safe applications across the broader ecosystem. You will act as the subject matter expert and specialist for Android devel"
+   ],
+   [
+    2,
+    3
+   ],
+   [
+    1789025834,
+    683000000
+   ],
+   [
+    1790325470,
+    246000000
+   ],
+   [
+    1790325470,
+    324000000
+   ],
+   [
+    null,
+    "In accordance with Washington state law, we are highlighting our comprehensive benefits package, which is available to all eligible US based employees. Benefits for this role include:<br><ul><li>Health, dental, vision, life, disability insurance</li><li>Retirement Benefits: 401(k) with company match</li><li>Paid Time Off: 20 days of vacation per year, accruing at a rate of 6.15 hours per pay period for the first five years of employment</li><li>Sick Time: 40 hours/year (increased to 69 hours/year for Seattle) including 5 discretionary sick days per instance </li><li>Maternity Leave (Short-Term Disability + Baby Bonding): 28-30 weeks</li><li>Baby Bonding Leave: 18 weeks</li><li>Holidays: 13 paid days per year</li></ul>"
+   ],
+   null,
+   null,
+   [
+    null,
+    "Note: By applying to this position you will have an opportunity to share your preferred working location from the following: <b>Atlanta, GA, USA; Austin, TX, USA; Kirkland, WA, USA</b>."
+   ],
+   [
+    null,
+    "<ul>\n<li>Bachelor's degree or equivalent practical experience.<br></li>\n<li>4 years of experience in data analytics, Trust and Safety, policy, cybersecurity, or related fields. </li>\n</ul>"
+   ],
+   2
+  ],
+  [
+   "112499004540887750",
+   "User Experience Engineer Intern, BS/MS, Summer 2027",
+   "https://www.google.com/about/careers/applications/signin?jobId=CiUAL2FckbD-c6El5JhVcGkrlpV1MDmY4bpvUBF6cwKVvSmbtu29EjsA9yzvgvq2fZ8BnS0GqW2hWI8bTx6SKPJ1gqJ6RX4rqG6eoMtRQHalqbl03ZBLG4z-ixqEDB0HYYIFTA%3D%3D_V2&loc=US&title=User+Experience+Engineer+Intern",
+   [
+    null,
+    "<ul>\n<li>Work closely with UX designers, project managers and back-end engineers to implement versatile front-end solutions to web development issues.\n</li>\n<li>Launch, iterate and make a difference. Provide front-end coding expertise, and help make our products better for users.\n</li>\n<li>Manage yo"
+   ],
+   [
+    null,
+    "<h3>Minimum qualifications:</h3><ul>\n<li>Currently pursuing a Bachelor's or Master's degree in Computer Science, HCI, Design, or a related technical field.</li>\n<li>Experience with JavaScript, HTML, and CSS.\n</li>\n<li>Experience in designing and implementing user interfaces (UIs).\n</li>\n</ul><br><h3"
+   ],
+   "projects/gweb-careers-proto/tenants/60107626-8e00-0000-0000-0071646e0806/companies/ebbbf0d1-8121-483c-8f99-ee92597591fc",
+   null,
+   "Google",
+   "en-US",
+   [
+    [
+     "Mountain View, CA, USA",
+     [
+      "NASA Ames Building N-255, 100 Bay Vw Dr, Mountain View, CA 94043, USA"
+     ],
+     "Mountain View",
+     "94043",
+     "CA",
+     "US"
+    ],
+    [
+     "Atlanta, GA, USA",
+     [
+      "Atlanta, GA, USA"
+     ],
+     "Atlanta",
+     null,
+     "GA",
+     "US"
+    ],
+    [
+     "Austin, TX, USA",
+     [
+      "Austin, TX, USA"
+     ],
+     "Austin",
+     null,
+     "TX",
+     "US"
+    ],
+    [
+     "Boulder, CO, USA",
+     [
+      "Boulder, CO, USA"
+     ],
+     "Boulder",
+     null,
+     "CO",
+     "US"
+    ],
+    [
+     "Bellevue, WA, USA",
+     [
+      "Bellevue, WA, USA"
+     ],
+     "Bellevue",
+     null,
+     "WA",
+     "US"
+    ],
+    [
+     "Cambridge, MA, USA",
+     [
+      "Cambridge, MA, USA"
+     ],
+     "Cambridge",
+     null,
+     "MA",
+     "US"
+    ],
+    [
+     "Chicago, IL, USA",
+     [
+      "Chicago, IL, USA"
+     ],
+     "Chicago",
+     null,
+     "IL",
+     "US"
+    ],
+    [
+     "Irvine, CA, USA",
+     [
+      "Irvine, CA, USA"
+     ],
+     "Irvine",
+     null,
+     "CA",
+     "US"
+    ],
+    [
+     "Kirkland, WA, USA",
+     [
+      "Kirkland, WA, USA"
+     ],
+     "Kirkland",
+     null,
+     "WA",
+     "US"
+    ],
+    [
+     "Los Angeles, CA, USA",
+     [
+      "Los Angeles, CA, USA"
+     ],
+     "Los Angeles",
+     null,
+     "CA",
+     "US"
+    ],
+    [
+     "Madison, WI, USA",
+     [
+      "Madison, WI, USA"
+     ],
+     "Madison",
+     null,
+     "WI",
+     "US"
+    ],
+    [
+     "New York, NY, USA",
+     [
+      "New York, NY, USA"
+     ],
+     "New York",
+     null,
+     "NY",
+     "US"
+    ],
+    [
+     "Palo Alto, CA, USA",
+     [
+      "Palo Alto, CA, USA"
+     ],
+     "Palo Alto",
+     null,
+     "CA",
+     "US"
+    ],
+    [
+     "Portland, OR, USA",
+     [
+      "Portland, OR, USA"
+     ],
+     "Portland",
+     null,
+     "OR",
+     "US"
+    ],
+    [
+     "Pittsburgh, PA, USA",
+     [
+      "Pittsburgh, PA, USA"
+     ],
+     "Pittsburgh",
+     null,
+     "PA",
+     "US"
+    ],
+    [
+     "Reston, VA, USA",
+     [
+      "Reston, VA, USA"
+     ],
+     "Reston",
+     null,
+     "VA",
+     "US"
+    ],
+    [
+     "Redmond, WA, USA",
+     [
+      "Redmond, WA, USA"
+     ],
+     "Redmond",
+     null,
+     "WA",
+     "US"
+    ],
+    [
+     "San Diego, CA, USA",
+     [
+      "San Diego, CA, USA"
+     ],
+     "San Diego",
+     null,
+     "CA",
+     "US"
+    ],
+    [
+     "Goleta, CA, USA",
+     [
+      "Goleta, CA, USA"
+     ],
+     "Goleta",
+     null,
+     "CA",
+     "US"
+    ],
+    [
+     "San Bruno, CA, USA",
+     [
+      "San Bruno, CA, USA"
+     ],
+     "San Bruno",
+     null,
+     "CA",
+     "US"
+    ],
+    [
+     "Seattle, WA, USA",
+     [
+      "Seattle, WA, USA"
+     ],
+     "Seattle",
+     null,
+     "WA",
+     "US"
+    ],
+    [
+     "San Francisco, CA, USA",
+     [
+      "San Francisco, CA, USA"
+     ],
+     "San Francisco",
+     null,
+     "CA",
+     "US"
+    ],
+    [
+     "Santa Cruz, CA, USA",
+     [
+      "Santa Cruz, CA, USA"
+     ],
+     "Santa Cruz",
+     null,
+     "CA",
+     "US"
+    ],
+    [
+     "Sunnyvale, CA, USA",
+     [
+      "Sunnyvale, CA, USA"
+     ],
+     "Sunnyvale",
+     null,
+     "CA",
+     "US"
+    ],
+    [
+     "Washington D.C., DC, USA",
+     [
+      "Washington, DC, USA"
+     ],
+     "Washington",
+     null,
+     "DC",
+     "US"
+    ]
+   ],
+   [
+    null,
+    "<p>Google User Experience (UX) is made up of multi-disciplinary teams of UX Designers, Researchers, Writers, Content Strategists, Program Managers, and Engineers: we care deeply about the people who use our products. The UX team plays an integral part in gathering insights about the attitudes, emoti"
+   ],
+   [
+    2,
+    3
+   ],
+   [
+    1789391904,
+    143000000
+   ],
+   [
+    1789391904,
+    143000000
+   ],
+   [
+    1789391904,
+    210000000
+   ],
+   [
+    null,
+    "<p>Please complete your application before <b>October 9, 2026.</b></p><div>Applications will be reviewed on a rolling basis and it’s in a candidate’s best interest to apply early.<p>Timing on when you can hear back will vary and can take upwards of 90+ days. If you haven’t heard from us in three months about your application, we likely proceeded with other candidates for the role. </p><p>Participation in the internship program requires that you are located in the United States for the duration of the internship program.</p><p>This internship is intended for students who are currently pursuing a Bachelor’s or Master's degree program ​​in Computer Science, HCI, Design or related technical field.</p><p>Google is a global company and, in order to facilitate efficient collaboration and communication globally, English proficiency is a requirement for this internship program.</p>To start the application process, you will need an updated CV or resume and a current unofficial or official transcript in English. Click on the “Apply” button on this page and provide the required materials in the appropriate sections (PDFs preferred):<ol><li>In the “Resume Section:” attach an updated CV or resume.</li><ul><li>Please ensure your resume includes your anticipated graduation date (in MM/YY) and list experience with coding language(s), along with any technical experience or projects.</li></ul><li>In the “Education Section:” attach a current or recent unofficial or official transcript in English.</li><ul><li>Under “Degree Status,” select “Now attending” to upload a transcript.</li></ul></ol><div>In accordance with Washington state law, we are highlighting our comprehensive benefits package, which is available to all eligible US based Interns. Benefits for this role include: <br><ul><li>Health, dental, vision insurance</li><li>Sick Time: 40 hours/year (increased to 69 hours/year for Seattle) including 5 discretionary sick days per instance </li><li>Holidays: 13 paid days per year</li></ul><div><p>This role may also be located in our Playa Vista, CA campus.</p><p>Applicants in the County of Los Angeles: Qualified applications with arrest or conviction records will be considered for employment in accordance with the Los Angeles County Fair Chance Ordinance for Employers and the California Fair Chance Act.</p><p>Applicants in San Francisco: Qualified applications with arrest or conviction records will be considered for employment in accordance with the San Francisco Fair Chance Ordinance for Employers and the California Fair Chance Act.</p></div></div></div>"
+   ],
+   null,
+   null,
+   [
+    null,
+    "Note: By applying to this position you will have an opportunity to share your preferred working location from the following: <b>Mountain View, CA, USA; Atlanta, GA, USA; Austin, TX, USA; Boulder, CO, USA; Bellevue, WA, USA; Cambridge, MA, USA; Chicago, IL, USA; Irvine, CA, USA; Kirkland, WA, USA; Los Angeles, CA, USA; Madison, WI, USA; New York, NY, USA; Palo Alto, CA, USA; Portland, OR, USA; Pittsburgh, PA, USA; Reston, VA, USA; Redmond, WA, USA; San Diego, CA, USA; Goleta, CA, USA; San Bruno, CA, USA; Seattle, WA, USA; San Francisco, CA, USA; Santa Cruz, CA, USA; Sunnyvale, CA, USA; Washington D.C., DC, USA</b>."
+   ],
+   [
+    null,
+    "<ul>\n<li>Currently pursuing a Bachelor's or Master's degree in Computer Science, HCI, Design, or a related technical field.</li>\n<li>Experience with JavaScript, HTML, and CSS.\n</li>\n<li>Experience in designing and implementing user interfaces (UIs).\n</li>\n</ul>"
+   ],
+   5
+  ],
+  [
+   "98862718525547206",
+   "Google Student Ambassador",
+   "https://www.google.com/about/careers/applications/signin?jobId=CiUAL2Fckb9FP1LlpbFH9hfh730raHcR94ZnIsg0dsUmvcmyeZHgEjsA9yzvgtyA8MhrsoZZJPSOIX-356wRwq0g4w4avsGdTVGU7DuYY56eizyn_-lbLk1Soc3Cd9vJGWPSLA%3D%3D_V2&loc=US&title=Google+Student+Ambassador",
+   [
+    null,
+    "<ul>\n<li>Organize and lead engaging on-campus events (e.g., student-led hackathons, AI study halls, peer-to-peer trainings, etc.).</li>\n<li>Establish and manage a dedicated Gemini Campus Club where members can learn about Google AI products, engage in workshops and projects, and build community on c"
+   ],
+   [
+    null,
+    "<h3>Minimum qualifications:</h3><ul>\n<li>Currently enrolled as a full-time undergraduate student at an accredited university in the U.S.</li>\n</ul><br><h3>Preferred qualifications:</h3><ul>\n<li>Experience in on-campus event planning or workshop facilitation including public speaking, presentation, a"
+   ],
+   "projects/gweb-careers-proto/tenants/60107626-8e00-0000-0000-0071646e0806/companies/ebbbf0d1-8121-483c-8f99-ee92597591fc",
+   null,
+   "Google",
+   "en-US",
+   [
+    [
+     "California, USA",
+     [
+      "Google Building QD5, 399 N Whisman Rd, Mountain View, CA 94043, USA"
+     ],
+     "Mountain View",
+     "94043",
+     "CA",
+     "US"
+    ],
+    [
+     "United States",
+     [
+      "United States"
+     ],
+     null,
+     null,
+     null,
+     "US"
+    ]
+   ],
+   [
+    null,
+    "<p>Lead a Gemini Campus Club and Bring the Google AI Movement to Your Campus!</p><div><p>Studying, staying organized, and balancing campus life can be overwhelming. We're looking for creative, well-connected student leaders who want to show their peers how Google's AI tools—like the Gemini App—can m"
+   ],
+   [
+    2,
+    1
+   ],
+   [
+    1789996190,
+    109000000
+   ],
+   [
+    1789996190,
+    109000000
+   ],
+   [
+    1789996190,
+    215000000
+   ],
+   [
+    null,
+    "<p>The anticipated application window is open until <b>October 5, 2026</b>.</p><div><p>To participate in the Google Student Ambassador program, you must be located in the United States and have valid legal work authorization for the duration of the program. This is a remote paid position. If your status requires Curricular Practical Training (CPT) authorization, please consult with your school to confirm your eligibility to participate in this program before applying.</p><p>While this is a remote paid position, Ambassadors are required to be physically present on their currently enrolled university or college campus throughout the program.</p><p>Google is a global company and, in order to facilitate efficient collaboration and communication globally, English proficiency is a requirement for this Ambassador program.</p><p>All fields of study are encouraged to apply.</p><p>To start the application process, you will need an updated CV or resume and a current unofficial or official transcript in English. Click on the “Apply” button on this page and provide the required materials in the appropriate sections (PDFs preferred).</p><p>1. In the “Resume Section:” attach an updated CV or resume.</p><p>2. In the “Education Section:” attach a current or recent unofficial or official transcript in English. </p><ul><li><p>Under “Degree Status,” select “Now attending” to upload a transcript.</p></li></ul><div>Applicants in the County of Los Angeles: Qualified applications with arrest or conviction records will be considered for employment in accordance with the Los Angeles County Fair Chance Ordinance for Employers and the California Fair Chance Act.</div><div><br></div><div>Applicants in San Francisco: Qualified applications with arrest or conviction records will be considered for employment in accordance with the San Francisco Fair Chance Ordinance for Employers and the California Fair Chance Act.</div></div>"
+   ],
+   1,
+   null,
+   [
+    null,
+    "Note: By applying to this position you will have an opportunity to share your preferred working location from the following:<br><br><b>Remote locations: California, USA; United States.</b>"
+   ],
+   [
+    null,
+    "<ul>\n<li>Currently enrolled as a full-time undergraduate student at an accredited university in the U.S.</li>\n</ul>"
+   ],
+   5
+  ]
+ ],
+ "intern_ids": [
+  "112499004540887750"
+ ],
+ "part_time_ids": [
+  "98862718525547206"
+ ]
+}

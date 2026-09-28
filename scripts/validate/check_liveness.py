@@ -1125,7 +1125,9 @@ def _is_dns(exc):
 
 def _get(url, headers=None):
     """GET via the reliable-fetch seam (shared-host gated). Returns (status, body): the HTTP code,
-    "dns" if the host can't resolve (definitive), or None for an exhausted transient failure.
+    "dns" if the host can't resolve (definitive for a tenant-owned host; on a shared or wildcard
+    host the caller reads it as `_unknown_dns_on_a_shared_host`), or None for an exhausted
+    transient failure.
     Reads the full body (Zoho parks its jobs <input> at the end of a ~1.7MB page)."""
     h = {"User-Agent": UA, **(headers or {})}
     try:
@@ -1141,6 +1143,17 @@ def _get(url, headers=None):
     if r.status_code not in (200, 404, 410):  # 404/410 settle as DEAD, not a failure
         _note(f"http-{r.status_code}")
     return r.status_code, r.content
+
+
+def _unknown_dns_on_a_shared_host():
+    """UNKNOWN, noted: the verdict for a failed lookup on a vendor domain that resolves every
+    tenant label, or on one fixed host every Board shares. Invented labels on bamboohr.com,
+    applytojob.com, pinpointhq.com, keka.com, freshteam.com and eight zohorecruit TLDs all
+    resolved on 1.1.1.1 and 8.8.8.8 (2026-09-28, one or two labels each), and jobvite is the one
+    host jobs.jobvite.com. A failure there is the local resolver under the prober's concurrency,
+    which wrote 41 live breezy Boards dead (`p_breezy`, ADR-0181) — so it is retried, not DEAD."""
+    _note("dns")
+    return UNKNOWN, None
 
 
 def _post(url, json_body, headers):
@@ -1459,9 +1472,13 @@ def p_avature(t, u):
 
 
 def p_recruitee(t, u):
-    return _classify(
-        _scraper_for_row("recruitee", t, u).url(), lambda b: _len_of(b, "offers")
-    )
+    """`*.recruitee.com` is a wildcard (an invented slug resolves and answers 404, 2026-09-28),
+    so a DNS failure is the resolver's, not a gone tenant: UNKNOWN, never DEAD."""
+    status, body = _get(_scraper_for_row("recruitee", t, u).url())
+    if status == "dns":
+        _note("dns-wildcard")
+        return UNKNOWN, None
+    return _verdict(status, _len_of(body, "offers") if status == 200 else None)
 
 
 def p_workable(t, u):
@@ -1527,7 +1544,9 @@ def p_zoho(t, u):
     # ledger carries 44 pathy / 19 query rows, where appending `/jobs/Careers` to the raw url
     # would land inside a path or a query.
     status, body = _get(_scraper_for_row("zoho", t, u).url())
-    if status == "dns" or status in (404, 410):
+    if status == "dns":
+        return _unknown_dns_on_a_shared_host()
+    if status in (404, 410):
         return DEAD, None
     if status != 200:
         return UNKNOWN, None
@@ -1600,11 +1619,13 @@ def p_bamboohr(t, u):
     # Verified live 2026-09-16 (5 fabricated slugs + 3 confirmed-live-but-jobless tenants): a
     # dead tenant's widget answers 200 with an EMPTY body, while a live tenant — jobs or not —
     # always serves the BambooHR-ATS-board wrapper (a "no open positions" blank state when
-    # empty). DNS/404 never happen here (the *.bamboohr.com wildcard resolves for anything), so
-    # the wrapper's presence, not the status code, is the real signal. See bamboohr.py's module
-    # docstring for the full measurement.
+    # empty). A 404 never happens here and a DNS failure is our resolver (the *.bamboohr.com
+    # wildcard resolves for anything), so the wrapper's presence, not the status code, is the
+    # real signal. See bamboohr.py's module docstring for the full measurement.
     status, body = _get(_scraper_for_row("bamboohr", t, u).url())
-    if status == "dns" or status in (404, 410):
+    if status == "dns":
+        return _unknown_dns_on_a_shared_host()
+    if status in (404, 410):
         return DEAD, None
     if status != 200:
         return UNKNOWN, None
@@ -1701,7 +1722,9 @@ def p_keka(t, u):
     # Measured 2026-07-27: 25 of 25 sampled ledger-UNKNOWNs answered LIVE here, with real count
     # variance; dead slugs and garbage controls were unchanged.
     status, body = _get(_scraper_for_row("keka", t, u).url())
-    if status == "dns" or status in (404, 410):
+    if status == "dns":
+        return _unknown_dns_on_a_shared_host()
+    if status in (404, 410):
         return DEAD, None
     if status != 200:
         return UNKNOWN, None
@@ -1806,6 +1829,14 @@ def p_ripplehire(t, u):
         return UNKNOWN, None
 
 
+#: What a Darwinbox host answers on a TLD it is no tenant on (live 2026-09-28): 12/12 live
+#: tenants answer "Invalid subdomain" on their other TLD, and hosts answering either message
+#: redirect ``/`` to darwinbox.com's marketing site, where a tenant redirects to its own
+#: ``/user/login``. Cloudflare's 530 (origin unreachable, seen on .com for armstrongasiahris and
+#: bobobox) is not one: an outage on a real tenant's origin answers it too, so it settles nothing.
+_DARWINBOX_NO_TENANT = ("Invalid subdomain", "Error while getting tenant info")
+
+
 def p_darwinbox(t, u):
     # The scraper tries `TLDS` in its own order; the probe starts from the one the row's url
     # names, and asks each host the same listing the scrape pages through.
@@ -1813,7 +1844,7 @@ def p_darwinbox(t, u):
     hinted = next(
         (tld for tld in _DARWINBOX_TLDS if f".darwinbox.{tld}" in u), _DARWINBOX_TLDS[0]
     )
-    dns_fails = 0
+    no_tenant = 0
     for tld in _hinted_first(hinted, _DARWINBOX_TLDS):
         api = scraper.listing_url_on(tld)
         try:
@@ -1833,15 +1864,22 @@ def p_darwinbox(t, u):
             )
         except http.RequestsError as e:
             if _is_dns(e):
-                dns_fails += 1
+                no_tenant += 1
             continue
         if r.status_code == 200:
             try:
-                return LIVE, len(r.json().get("data") or [])
+                body = r.json()
             except Exception:  # noqa: BLE001
                 return UNKNOWN, None
-        # 404/other on this tld -> try the other tld
-    return (DEAD, None) if dns_fails == len(_DARWINBOX_TLDS) else (UNKNOWN, None)
+            # `job_counts` is the Board's own total; page 1 holds at most 100 of it.
+            stated = body.get("job_counts")
+            return LIVE, stated if isinstance(stated, int) else len(
+                body.get("data") or []
+            )
+        if any(m in r.text for m in _DARWINBOX_NO_TENANT):
+            no_tenant += 1
+        # anything else on this tld settles nothing -> try the other tld
+    return (DEAD, None) if no_tenant == len(_DARWINBOX_TLDS) else (UNKNOWN, None)
 
 
 # The Board host's redirect target, for slugs the posting API can't settle (see p_smartrecruiters).
@@ -1938,9 +1976,12 @@ def p_teamtailor(t, u):
 def p_freshteam(t, u):
     # The public careers widget: a real board always returns JSON with a "jobs" key (0 == live but
     # empty). An unknown/parked slug soft-errors at HTTP 200 with an HTML 404 page off the
-    # *.freshteam.com wildcard (so it never 404s / DNS-fails) — non-JSON at 200 is definitively DEAD.
+    # *.freshteam.com wildcard (so it never 404s, and a DNS failure is our resolver) — non-JSON at
+    # 200 is definitively DEAD.
     status, body = _get(_scraper_for_row("freshteam", t, u).url())
-    if status == "dns" or status in (404, 410):
+    if status == "dns":
+        return _unknown_dns_on_a_shared_host()
+    if status in (404, 410):
         return DEAD, None
     if status != 200:
         return UNKNOWN, None
@@ -2037,7 +2078,7 @@ def p_pinpoint(t, u):
         lands = [_pinpoint_lands(base, path, bool(postings)) for path in paths]
     except http.RequestsError as e:
         if _is_dns(e):
-            return DEAD, None
+            return _unknown_dns_on_a_shared_host()
         _note(_net_reason(e))
         return UNKNOWN, None
     if True in lands:
@@ -2780,7 +2821,7 @@ def p_jobvite(t, u):
         )
     except http.RequestsError as e:
         if _is_dns(e):
-            return DEAD, None
+            return _unknown_dns_on_a_shared_host()
         _note(_net_reason(e))
         return UNKNOWN, None
     if r is None:  # breaker open -> transient
@@ -2880,7 +2921,9 @@ def p_jazzhr(t, u):
     miscounted.
     """
     status, body = _get(_scraper_for_row("jazzhr", t, u).url())
-    if status == "dns" or status in (404, 410):
+    if status == "dns":
+        return _unknown_dns_on_a_shared_host()
+    if status in (404, 410):
         return DEAD, None
     if status != 200:
         return UNKNOWN, None

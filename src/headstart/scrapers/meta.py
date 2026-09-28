@@ -34,11 +34,16 @@ possible) case it is absent. `validThrough` **is fabricated**: the same two fetc
 values 5 seconds apart, moving by roughly the elapsed time — so, as with every other ATS that
 exhibits this, it is not read at all.
 
-Two fields this scraper cannot supply, both measured absent rather than assumed: **no `department`
-or team anywhere** (zero of 80 sampled JSON-LD payloads carry `occupationalCategory`, `industry`,
-`department` or `team` — the sibling `kalil0321/ats-scrapers` project reads `teams`/`sub_teams`
-from the same GraphQL listing this scraper cannot reach without a browser), and **no salary**
-(zero of 80 carry `baseSalary`, unlike icims/oracle where it is merely inconsistently present).
+The JSON-LD carries no department and no pay (zero of 80 sampled payloads carry
+`occupationalCategory`, `industry`, `department`, `team` or `baseSalary`). **The same page's relay
+data does**, measured 2026-09-28: a page fetched with a Chrome TLS fingerprint, which this repo's
+transport sends, carries a server-streamed ``xcp_requisition_job_description`` object whose
+``departments`` list and ``public_compensation`` range are what the page renders. A plain curl
+gets a page without that script, which is why the 2026-09-11 measurement missed it. On 40 random
+postings, 40/40 carried ``departments`` and 32/40 a one-entry ``public_compensation``, every one
+``$…/year`` with ``country_code`` US; the other 8 carried ``[]``. So ``department`` is the
+``departments`` list, ", "-joined, and ``salary`` is the US range; any other currency or period
+is left unset until one is seen.
 
 `jobLocation` is a list — often a long one (mean 2.24 across the 50-id random sample, 54% single-
 location, one posting listing 14 sites) — and every site is kept, "; "-joined, as icims and
@@ -50,9 +55,11 @@ one site over another, and the location filter is a substring match that should 
 
 from __future__ import annotations
 
+import json
 import re
 from typing import Any
 
+from headstart.jobs import salary
 from headstart.jobs.job import Job, host_of, html_to_text, is_remote
 from headstart.scrapers.base import USER_AGENT, BaseScraper, DetailLost, DetailRequest
 from headstart.scrapers.job_posting_jsonld import find_job_posting, job_posting_fields
@@ -63,6 +70,9 @@ _SITEMAP_URL = re.compile(
     r"<url>\s*<loc>([^<]+)</loc>\s*(?:<lastmod>([^<]+)</lastmod>)?", re.IGNORECASE
 )
 _JOB_ID = re.compile(r"/profile/job_details/(\d+)/")
+#: One ``public_compensation`` amount: ``"$183,997/year"`` (module docstring).
+_US_YEARLY_PAY = re.compile(r"^\$([\d,]+)/year$")
+_JSON = json.JSONDecoder()
 
 
 class MetaScraper(BaseScraper):
@@ -170,7 +180,7 @@ class MetaScraper(BaseScraper):
                     title=title,
                     location=location,
                     remote=remote,
-                    department=None,  # not exposed by this surface (module docstring)
+                    department=fields.get("department"),
                     url=self.job_url(item["url"]),
                     # The board's own `datePosted` — measured stable, not fabricated — falling
                     # back to the sitemap's `<lastmod>` only if a detail page omits it.
@@ -178,6 +188,7 @@ class MetaScraper(BaseScraper):
                     scraped_at=scraped_at,
                     description=html_to_text(fields.get("description")),
                     employment_type=fields.get("employment_type"),
+                    salary=self._salary_field(fields.get("public_compensation")),
                 )
             )
         self.note_unread_rows(
@@ -188,8 +199,17 @@ class MetaScraper(BaseScraper):
         return jobs
 
     def _salary_field(self, raw: Any) -> str | None:
-        # Zero of 80 sampled JSON-LD payloads carry `baseSalary` (module docstring) — unlike
-        # icims/oracle where it is merely inconsistently present, this is genuinely absent here.
+        """The page's first US ``public_compensation`` range, as ``"LOW-HIGH USD"`` (annual),
+        or None. Only the ``$…/year`` / US shape has been seen (module docstring)."""
+        for entry in raw if isinstance(raw, list) else []:
+            if entry.get("country_code") != "US":
+                continue
+            low = _US_YEARLY_PAY.match(entry.get("compensation_amount_minimum") or "")
+            high = _US_YEARLY_PAY.match(entry.get("compensation_amount_maximum") or "")
+            if low and high:
+                return salary.to_field(
+                    low.group(1).replace(",", ""), high.group(1).replace(",", ""), "USD"
+                )
         return None
 
 
@@ -217,7 +237,28 @@ def _ld_fields(page: str) -> dict[str, Any] | None:
     # `posted_at` is the page's `datePosted`, measured real and stable, not fabricated. The
     # location is every site a posting names, "; "-joined (module docstring: mean 2.24, one
     # posting listing 14).
-    return {**job_posting_fields(node), "description": _full_description(node)}
+    requisition = _requisition(page)
+    departments = requisition.get("departments")
+    return {
+        **job_posting_fields(node),
+        "description": _full_description(node),
+        "department": ", ".join(departments) if isinstance(departments, list) else None,
+        "public_compensation": requisition.get("public_compensation"),
+    }
+
+
+def _requisition(page: str) -> dict[str, Any]:
+    """The page's ``xcp_requisition_job_description`` relay object, or ``{}`` when the page
+    carries none (module docstring)."""
+    marker = '"xcp_requisition_job_description":'
+    start = page.find(marker)
+    if start == -1:
+        return {}
+    try:
+        value = _JSON.raw_decode(page, start + len(marker))[0]
+    except ValueError:
+        return {}
+    return value if isinstance(value, dict) else {}
 
 
 def _full_description(node: dict[str, Any]) -> str | None:
