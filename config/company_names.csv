@@ -614,3 +614,9 @@ workday:bcbsa/Careers,Blue Cross Blue Shield Association,"og:description ""Begin
 workday:evotecgroup/just_bio_career_site,Just – Evotec Biologics,"og:description ""Just – Evotec Biologics, wholly owned by Evotec SE, is a first-to-industry biologics platform""; the cascade's vote splits between Evotec and Sandoz entities (2026-09-29)"
 workday:cowlitz/ilani,ilani,"og:description ""…in Ridgefield, Washington, ilani, is the Pacific Northwest’s premier gaming, dining, entertainment and meeting destination""; postings' hiringOrganization ""800_ilani Cowlitz Tribal Gaming Authority"" (2026-09-29)"
 workday:exactsciences/Exact_Sciences,Exact Sciences,"Site sidebar (cxs .../sidebar) is titled ""Exact Sciences is now Abbott""; site og:title empty (2026-09-29)"
+# Workday Boards landed since the cascade cache was written (#710), where the cascade's answer is
+# partial or wrong, or it gives none (2026-09-29).
+workday:aampower/AAM-Career-Site,Dauch Corporation,"og:description ""Dauch Corporation is a premier Driveline and Metal Forming supplier serving the global automotive industry""; the cascade voted ""GKN"" from one subsidiary's postings (2026-09-29)"
+workday:sutterhealth/SH,Sutter Health,"og:description ""Working at Sutter Health""; the cascade gave ""Sutter"" from its hospitals' names (2026-09-29)"
+workday:jamfsoftware/Jamf,Jamf,"og:description ""Jamf is a culmination of passion, commitment and really smart people""; postings' hiringOrganization ""JAMF Software, LLC"" (2026-09-29)"
+workday:vhr_otsuka/MegaFood,MegaFood,"og:description ""MegaFood has been crafting high-quality""; postings' hiringOrganization ""FoodState, Inc."" (2026-09-29)"
