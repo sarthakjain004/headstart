@@ -19,6 +19,7 @@ from headstart.jobs import tech_filter
 from headstart.jobs.tech_filter import (
     _STRONG,
     TECH_FILTER_VERSION,
+    FileCounts,
     classify,
     filter_jobs,
     filter_jobs_and_report,
@@ -175,7 +176,7 @@ def test_filter_jobs_writes_tech_only_and_leaves_source(tmp_path):
         "".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8"
     )
     stats = filter_jobs(src, tmp_path / "tech")
-    assert stats["greenhouse"] == (2, 3)  # 2 kept of 3
+    assert stats["greenhouse"] == (2, 3, 0)  # 2 kept of 3, none left out
     out = [
         json.loads(x)
         for x in (tmp_path / "tech" / "greenhouse.jsonl").read_text().splitlines()
@@ -215,7 +216,7 @@ def test_filter_jobs_is_identical_pooled_and_inline(tmp_path):
     pooled = filter_jobs(src, tmp_path / "pooled", workers=4)
 
     assert inline == pooled
-    assert pooled == {ats: (n // 2, n) for ats, n in sizes.items()}
+    assert pooled == {ats: (n // 2, n, 0) for ats, n in sizes.items()}
     for ats in sizes:
         name = f"{ats}.jsonl"
         assert (tmp_path / "pooled" / name).read_text() == (
@@ -236,9 +237,9 @@ def test_filter_jobs_submits_largest_file_first(tmp_path, monkeypatch):
     _write_corpus(src, {"aaa": 4, "mmm": 20, "zzz": 60})
     seen: list[str] = []
 
-    def recording(pair):
+    def recording(pair, **kwargs):
         seen.append(pair[0].stem)
-        return real(pair)
+        return real(pair, **kwargs)
 
     real = tech_filter._filter_file
     monkeypatch.setattr(tech_filter, "_filter_file", recording)
@@ -375,7 +376,7 @@ def test_filter_jobs_and_report_filters_then_reports(tmp_path, caplog):
     logger = logging.getLogger("test_tech_filter.combined")
     with caplog.at_level(logging.INFO):
         stats = filter_jobs_and_report(src, tmp_path / "tech", logger)
-    assert stats["greenhouse"] == (1, 2)
+    assert stats["greenhouse"] == (1, 2, 0)
     assert (tmp_path / "tech" / "greenhouse.jsonl").exists()
     infos = [r.getMessage() for r in caplog.records if r.levelno == logging.INFO]
     assert any(m.startswith("TOTAL") for m in infos)
@@ -383,6 +384,43 @@ def test_filter_jobs_and_report_filters_then_reports(tmp_path, caplog):
     (progress,) = [m for m in infos if m.startswith("filtered ")]
     assert progress.startswith("filtered greenhouse: 1/2 kept, ")
     assert progress.endswith("(1/1 files)")
+
+
+def test_rows_on_a_left_out_board_are_neither_written_nor_judged(tmp_path):
+    """`filter_tech` leaves out the Boards `scrape_join` judged Dormant (ADR-0248), whatever the
+    titles say. A native id may carry colons (ADR-0049), so the Board is matched at any colon."""
+    src = tmp_path / "jobs"
+    src.mkdir()
+    rows = [
+        {"id": "workday:acme/External:REQ: 228", "title": "Backend Engineer"},
+        {"id": "workday:acme/External:2", "title": "Warehouse Associate"},
+        {"id": "workday:Acme/Careers:3", "title": "Backend Engineer"},
+        {"id": "workday:acme/Careers:4", "title": "Chef de Partie"},
+    ]
+    (src / "workday.jsonl").write_text(
+        "".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8"
+    )
+    leave_out = frozenset({"workday:acme/external"})
+
+    inline = filter_jobs(src, tmp_path / "inline", workers=1, leave_out=leave_out)
+    pooled = filter_jobs(src, tmp_path / "pooled", workers=4, leave_out=leave_out)
+
+    assert inline == pooled == {"workday": (1, 4, 2)}
+    out = (tmp_path / "pooled" / "workday.jsonl").read_text().splitlines()
+    assert [json.loads(x)["id"] for x in out] == ["workday:Acme/Careers:3"]
+
+
+def test_report_counts_left_out_rows_apart_from_the_non_tech_ones(caplog):
+    logger = logging.getLogger("test_tech_filter.left_out")
+    with caplog.at_level(logging.INFO):
+        report({"smartrecruiters": FileCounts(10, 100, 60)}, "data/jobs/tech", logger)
+    infos = [r.getMessage() for r in caplog.records]
+    (total,) = [m for m in infos if m.startswith("TOTAL")]
+    assert total.endswith("(dropped 30 non-tech) -> data/jobs/tech")
+    assert (
+        "left 60 row(s) on Dormant Boards out of data/jobs/tech unjudged (ADR-0248)"
+        in infos
+    )
 
 
 def test_a_malformed_line_names_its_file_and_line(tmp_path):

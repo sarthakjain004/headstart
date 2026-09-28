@@ -53,8 +53,8 @@ def main() -> None:
     # — the feed, and the embedding/index/UI — reads the tech subset, not the full scrape, so the
     # embedding model only ever works on the jobs the product actually serves.
     tech = filter_jobs(_JOBS_DIR, _TECH_DIR)
-    kept = sum(k for k, _ in tech.values())
-    total = sum(t for _, t in tech.values())
+    kept = sum(counts.kept for counts in tech.values())
+    total = sum(counts.total for counts in tech.values())
     if total:
         _log.info(
             f"tech filter: kept {kept}/{total} ({100 * kept / total:.0f}% tech) "

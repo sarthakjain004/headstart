@@ -133,6 +133,11 @@ UNAUTHORITATIVE_BOARD_IDS_PATH = (
     REPO_ROOT / "data" / "state" / "unauthoritative_board_ids.txt"
 )
 
+# The Boards this run judged Dormant (ADR-0248), written by `scrape_join` and read by `filter_tech`
+# in the same job. Beside the snapshot it was judged from rather than under data/state, which the
+# merge uploads to HF whole: nothing after `filter_tech` reads it.
+DORMANT_BOARDS_PATH = REPO_ROOT / "data" / "jobs" / "dormant_boards.json"
+
 # How many times a fetch replaced each Job's held description, and a hash of the text it held
 # before the last replacement (ADR-0207). Written by `update_descriptions`, rewritten in full each
 # run. It lists only Jobs that have changed at least once.

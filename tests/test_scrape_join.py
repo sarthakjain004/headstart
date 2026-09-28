@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import logging
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -54,6 +55,8 @@ def _run(
         str(out.parent / "unauthoritative_board_ids.txt"),
         "--scraped-boards",
         str(scraped_boards_path or out.parent / "scraped_boards.json"),
+        "--dormant-boards",
+        str(out / "dormant_boards.json"),
         "--ledger",
         str(ledger or out.parent / "no-such-ledger"),
         "--scrape-health",
@@ -90,6 +93,35 @@ def test_join_unions_per_ats_across_shards(tmp_path):
     assert out.joinpath("greenhouse.jsonl").read_text().splitlines() == [
         '{"id":"gh:x:1"}'
     ]
+
+
+def test_join_judges_dormant_boards_off_the_lines_it_unions(tmp_path):
+    """The union already parses every line, so it is where each Board's newest posting is read
+    (ADR-0248). A Board with a recent posting, or with an undated one, is not Dormant."""
+    today = datetime.now(UTC).date().isoformat()
+    frags = tmp_path / "frags"
+    _shard(
+        frags,
+        0,
+        {
+            "smartrecruiters.jsonl": [
+                '{"id":"smartrecruiters:SonsoftInc:1","posted_at":"2016-05-01"}',
+                '{"id":"smartrecruiters:SonsoftInc:2","posted_at":"2017-09-14"}',
+                '{"id":"smartrecruiters:boschgroup:1","posted_at":"2019-01-01"}',
+                f'{{"id":"smartrecruiters:boschgroup:2","posted_at":"{today}"}}',
+            ],
+            "lever.jsonl": [
+                '{"id":"lever:quiet:1","posted_at":"2018-01-01"}',
+                '{"id":"lever:quiet:2","posted_at":null}',
+            ],
+        },
+    )
+    out = tmp_path / "jobs"
+
+    _run(frags, out)
+
+    verdict = json.loads(out.joinpath("dormant_boards.json").read_text())
+    assert verdict == {"smartrecruiters:sonsoftinc": "2017-09-14"}
 
 
 def test_join_no_shards_is_empty(tmp_path):

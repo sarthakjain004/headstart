@@ -227,8 +227,12 @@ _Avoid_: alert, notification — a Digest is one batched message per run, not on
 ### Search
 
 **Tech filter**:
-The recall-biased gate that keeps only software/tech Jobs (ADR-0017). The scrape writes every Job to `data/jobs/{ats}.jsonl`; the filter derives the **Tech subset** in `data/jobs/tech/{ats}.jsonl`, which is what the Feed, the embedding, the **Search index**, and the UI read. Recall-first: a non-tech Job creeping in is tolerated, dropping a tech Job is not — a hard rule the verification gate guards.
+The recall-biased gate that keeps only software/tech Jobs (ADR-0017). The scrape writes every Job to `data/jobs/{ats}.jsonl`; the filter derives the **Tech subset** in `data/jobs/tech/{ats}.jsonl`, which is what the Feed, the embedding, the **Search index**, and the UI read. Recall-first: a non-tech Job creeping in is tolerated, dropping a tech Job is not — a hard rule the verification gate guards. The stage that runs it also leaves out every Job on a **Dormant Board**, whatever its title.
 _Avoid_: category filter, keyword filter — it is a role classifier, not a taxonomy lookup.
+
+**Dormant Board** (ADR-0248):
+A **Board** whose newest posting is more than two years old. An ATS keeps serving a posting until someone closes it, so an abandoned Board looks open forever: SmartRecruiters served SonsoftInc's 6,519 postings, every one from 2016-17, as live. `scrape_join` judges each Board from its full scrape (tech and non-tech postings alike) and `filter_tech` leaves its Jobs out of the **Tech subset**; **Eviction** then removes them like any posting its Board stopped listing, and the Board's priority decays out of the head. A Board is judged only on evidence: never when it is an **Unauthoritative Board**, and never when any of its postings has no usable date. It is judged per Board, never per posting, because a Board that still posts can hold a real opening with an old date. A Dormant Board is still scraped, so one that posts again is back on its next run, old postings included.
+_Avoid_: dead Board — a Dormant Board is `live` in the liveness ledger and still answers with postings; "dead" is the prober's verdict on a Board that no longer answers.
 
 **Search index**:
 The embedded, deduped set of Jobs the semantic query runs against — the corpus the AI search actually serves. Built from the **Tech subset** (`data/jobs/tech/{ats}.jsonl`) and kept current by **Eviction**. Distinct from the **Feed** (the dashboard's assembled JSON) and from the **eval benchmark** — a frozen, labelled slice of Jobs used to *measure* search quality, deliberately held stable and *not* the live served corpus.
