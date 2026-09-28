@@ -1168,18 +1168,41 @@ def test_smartrecruiters_department_falls_back_to_function_label():
     100% of those (module docstring). No `team` field — `filter_tech` only reads `department`."""
     from headstart.scrapers.smartrecruiters import _department_of
 
+    it = {"id": "information_technology", "label": "Information Technology"}
     assert _department_of({"department": {"label": "Engineering"}}) == "Engineering"
-    assert _department_of({"function": {"label": "Information Technology"}}) == (
-        "Information Technology"
-    )
+    assert _department_of({"function": it}) == "Information Technology"
     # department present wins over function, even when both are stated
     assert (
         _department_of(
-            {"department": {"label": "Engineering"}, "function": {"label": "Sales"}}
+            {
+                "department": {"label": "Engineering"},
+                "function": {"id": "sales", "label": "Sales"},
+            }
         )
         == "Engineering"
     )
+    assert (
+        _department_of({"department": {}, "function": it}) == "Information Technology"
+    )
     assert _department_of({}) is None
+
+
+@pytest.mark.parametrize(
+    "function",
+    [
+        # SmartRecruiters' own taxonomy: "Engineering" is civil, mechanical and construction
+        # work as often as software (ADR-0291: 13 of 180 sampled rows were tech)
+        {"id": "engineering", "label": "Engineering"},
+        {"id": "sales", "label": "Sales"},
+        {"id": "manufacturing", "label": "Manufacturing"},
+        # the id decides, not the label
+        {"id": "other", "label": "Information Technology"},
+    ],
+)
+def test_smartrecruiters_only_the_it_function_stands_in_for_a_department(function):
+    from headstart.scrapers.smartrecruiters import _department_of
+
+    assert _department_of({"department": {}, "function": function}) is None
 
 
 def test_smartrecruiters_parse_uses_function_when_department_is_null():
@@ -1189,7 +1212,10 @@ def test_smartrecruiters_parse_uses_function_when_department_is_null():
             {
                 "id": "1",
                 "name": "IT Support Specialist",
-                "function": {"label": "Information Technology"},
+                "function": {
+                    "id": "information_technology",
+                    "label": "Information Technology",
+                },
             }
         ]
     }
@@ -1197,20 +1223,58 @@ def test_smartrecruiters_parse_uses_function_when_department_is_null():
     assert job.department == "Information Technology"
 
 
+def test_smartrecruiters_an_engineering_function_leaves_a_vague_title_out():
+    """#570: a "Senior Construction Manager" whose only technical word is SmartRecruiters'
+    "Engineering" function is not a tech Job (ADR-0291)."""
+    from headstart.jobs.tech_filter import is_tech
+
+    scraper = get_scraper("smartrecruiters", "aecom2", "AECOM")
+    raw = {
+        "content": [
+            {
+                "id": "1",
+                "name": "Senior Construction Manager",
+                "department": {},
+                "function": {"id": "engineering", "label": "Engineering"},
+            }
+        ]
+    }
+    (job,) = scraper.parse(raw, SCRAPED_AT)
+    assert job.department is None
+    assert is_tech(job.title, job.department) is False
+
+
 def test_smartrecruiters_tech_gate_reads_function_when_department_is_null():
     """The gate and `parse` must reach the same verdict — both go through `_department_of`."""
     from headstart.scrapers.smartrecruiters import SmartRecruitersScraper
 
     postings = [
-        # vague title, no department, tech function -> rule 4 promotes it (gate must fetch it)
-        {"id": "1", "name": "Associate", "function": {"label": "Engineering"}},
+        # vague title, no department, IT function -> rule 4 promotes it (gate must fetch it)
+        {
+            "id": "1",
+            "name": "Associate",
+            "function": {
+                "id": "information_technology",
+                "label": "Information Technology",
+            },
+        },
         # vague title, no department, non-tech function -> stays gated out
-        {"id": "2", "name": "Associate", "function": {"label": "Retail"}},
+        {
+            "id": "2",
+            "name": "Associate",
+            "function": {"id": "retail", "label": "Retail"},
+        },
+        # ...and so does the Engineering function since ADR-0291
+        {
+            "id": "3",
+            "name": "Associate",
+            "function": {"id": "engineering", "label": "Engineering"},
+        },
     ]
 
     def route(method, url, kwargs):
         if "/postings?" in url:
-            return FakeResponse(text=json.dumps({"content": postings, "totalFound": 2}))
+            return FakeResponse(text=json.dumps({"content": postings, "totalFound": 3}))
         return FakeResponse(text=json.dumps({"jobAd": {}}))
 
     fetcher = FakeFetcher(route)

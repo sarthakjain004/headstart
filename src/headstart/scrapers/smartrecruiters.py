@@ -41,6 +41,13 @@ this change only supplies `department` where none existed, it does not touch how
 read. Net across both samples: 105 gained, 2-3 lost — a real, disclosed trade in the gate's
 recall-biased direction, not a silent one.
 
+**Since 2026-09-29 only the Information Technology function stands in (ADR-0291, #570).**
+`function` is SmartRecruiters' own fixed taxonomy, and its "Engineering" is civil, mechanical and
+construction work as often as software: on 180 served rows promoted through it, two labellers
+agreed 13 were tech and 153 were not (AECOM, Bosch, City of New York). On 105 promoted through
+Information Technology, 63 were tech and 26 were not. The gain samples above counted gains
+without reading them, which is how the Engineering creep got in.
+
 Reading this field does NOT need a `doc_prep.DERIVATIONS_VERSION` bump: `salary` is a
 re-observed FACT_FIELD (`update_meta.py`), so once a Board is rescraped its now-populated raw
 `Job.salary` differs from the stored one, `refresh_row`'s `salary_inputs_moved` fires, and the
@@ -89,14 +96,21 @@ _COMPENSATION_FIELD_LABEL = re.compile(
 )
 
 
+# The one `function` whose label stands in for a missing department (ADR-0291). Matched on the
+# taxonomy's own id, which SmartRecruiters fixes, rather than on the label.
+_IT_FUNCTION = "information_technology"
+
+
 def _department_of(p: dict) -> str | None:
     """``department.label``, falling back to ``function.label`` when the posting states no
-    department (module docstring) — read by both the pre-detail tech gate and ``parse()`` so
-    the two can never disagree. No new ``Job`` field: the whole value here is that
-    ``filter_tech`` reads ``department``."""
-    return (p.get("department") or {}).get("label") or (p.get("function") or {}).get(
-        "label"
-    )
+    department and its function is Information Technology (module docstring, ADR-0291) — read
+    by both the pre-detail tech gate and ``parse()`` so the two can never disagree. No new
+    ``Job`` field: the whole value here is that ``filter_tech`` reads ``department``."""
+    department = (p.get("department") or {}).get("label")
+    if department:
+        return department
+    function = p.get("function") or {}
+    return function.get("label") if function.get("id") == _IT_FUNCTION else None
 
 
 def _compensation_custom_fields(custom_field: Any) -> str:
