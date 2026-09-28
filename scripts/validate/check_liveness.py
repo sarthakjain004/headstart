@@ -1822,7 +1822,8 @@ def p_ripplehire(t, u):
 #: What a Darwinbox host answers on a TLD it is no tenant on (live 2026-09-28): 12/12 live
 #: tenants answer "Invalid subdomain" on their other TLD, and hosts answering either message
 #: redirect ``/`` to darwinbox.com's marketing site, where a tenant redirects to its own
-#: ``/user/login``. Cloudflare's 530 is a host with no origin at all.
+#: ``/user/login``. Cloudflare's 530 (origin unreachable) came back on .com for armstrongasiahris
+#: and bobobox, both "Invalid subdomain" on .in.
 _DARWINBOX_NO_TENANT = ("Invalid subdomain", "Error while getting tenant info")
 
 
