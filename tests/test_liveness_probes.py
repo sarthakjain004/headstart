@@ -2526,6 +2526,8 @@ def test_p_personio_counts_positions(monkeypatch):
 def test_p_personio_a_429_on_the_board_host_is_unknown(monkeypatch):
     monkeypatch.setattr(cl, "_fetch", _personio_fetch(429))
     assert cl.p_personio("acme", "https://acme.jobs.personio.de") == (cl.UNKNOWN, None)
+
+
 def test_p_recruitee_reads_a_dns_failure_as_unknown(monkeypatch):
     """`*.recruitee.com` is a wildcard: an invented slug resolves (35.186.220.63 on 1.1.1.1,
     2026-09-28) and answers 404. So a DNS failure is a resolver fault, not a gone tenant."""
@@ -2533,6 +2535,8 @@ def test_p_recruitee_reads_a_dns_failure_as_unknown(monkeypatch):
     assert cl.p_recruitee("acme", "https://acme.recruitee.com") == (cl.UNKNOWN, None)
     monkeypatch.setattr(cl, "_get", _stub_get(404, b""))
     assert cl.p_recruitee("acme", "https://acme.recruitee.com") == (cl.DEAD, None)
+
+
 # A DNS failure on a host every tenant label resolves on is our resolver, never a dead tenant
 # (`_unknown_dns_on_a_shared_host`).
 @pytest.mark.parametrize(
