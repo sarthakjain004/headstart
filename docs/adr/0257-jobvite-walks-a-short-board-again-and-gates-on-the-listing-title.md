@@ -31,12 +31,14 @@ The 2026-09-28 scraper critique found two faults in Jobvite's scraper, and both 
 
 - **Walk again while short.** When the ids read fall short of the counter, the Board is walked
   again, up to four walks, while each walk still finds new ids.
-  - If walks are still finding new ids at the cap, the Board goes through
-    `mark_truncated_unless_negligible` (ADR-0121).
-  - If a walk finds nothing new, the shortfall is stable. It is only logged, as before: nothing
-    shows a posting is missing, and ADR-0053's exclusion has no drain.
-  - A walk also stops on a next link back to any page it already served. The old rule, stop on a
-    page with no new ids, would end every re-walk on its first page.
+  - If a re-walk found ids the walks before it missed, the listing is proven unstable, and a
+    Board still short when walking stops goes through `mark_truncated_unless_negligible`
+    (ADR-0121).
+  - If the first re-walk finds nothing new, the shortfall is stable. It is only logged, as
+    before: nothing shows a posting is missing, and ADR-0053's exclusion has no drain.
+  - A walk also stops on a next link to a page whose ids it already served, keyed by the ids and
+    not the URL. The old rule, stop on a page with no new ids, would end every re-walk on its
+    first page.
 - **Gate on the listing title under the most-promoting department.** The tech gate asks
   `is_tech(listing title, "Software Engineering")`.
   - On the 30 Boards it skipped 515 of the 1,242 titled pages and no tech posting.

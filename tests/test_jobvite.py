@@ -325,7 +325,7 @@ def test_the_walk_asks_for_no_redirects(monkeypatch):
         return SimpleNamespace(status_code=200, text=_listing(), headers={})
 
     monkeypatch.setattr(http, "fetch", _fetch)
-    JobviteScraper("acme")._listing()[0]
+    JobviteScraper("acme")._listing()
     assert captured["allow_redirects"] is False
 
 
@@ -525,6 +525,23 @@ def test_a_board_still_growing_after_every_walk_is_marked_truncated(monkeypatch)
     scraper = JobviteScraper("acme")
     assert scraper._listing()[0] == ["j0", "j1", "j2", "j3"]
     assert scraper.truncated and "4 of 100 postings after 4 walks" in scraper.truncated
+
+
+def test_a_walk_that_stops_growing_after_an_unstable_one_is_still_marked(monkeypatch):
+    """Walks 1 and 2 disagreed, so the listing is unstable; walk 3 finding nothing new does
+    not make the shortfall stable."""
+    base = "https://jobs.jobvite.com/acme/search"
+    _walks(
+        monkeypatch,
+        [
+            {base: _listing(jobs=("a",), total=100)},
+            {base: _listing(jobs=("b",), total=100)},
+            {base: _listing(jobs=("a",), total=100)},
+        ],
+    )
+    scraper = JobviteScraper("acme")
+    assert scraper._listing()[0] == ["a", "b"]
+    assert scraper.truncated and "2 of 100 postings after 3 walks" in scraper.truncated
 
 
 def test_a_next_link_cycle_across_pages_ends_the_walk(monkeypatch):

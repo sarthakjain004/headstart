@@ -56,7 +56,7 @@ counter. A missed id is a live posting (``o0CIAfwE?nl=1`` answered 200 with its 
 reading one walk as the Board flapped postings in and out of the index (ADR-0083 evicts on a
 second consecutive miss). This corrects the 2026-09-07 reading of the same shortfall as "one
 posting in two slots", which counted the repeated slot but not the posting it pushed out. So
-:meth:`_listing_ids` walks again, up to :data:`_MAX_WALKS`, while the union is short of the
+:meth:`_listing` walks again, up to :data:`_MAX_WALKS`, while the union is short of the
 counter and each walk still finds something new, and a Board still short after that is reported
 through ``mark_truncated_unless_negligible`` (ADR-0121). Only a Board short on its first walk
 pays for a second.
@@ -330,36 +330,43 @@ class JobviteScraper(BaseScraper):
         ids: list[str] = []
         titles: dict[str, str] = {}
         stated = None
+        grew = False  # a re-walk found ids the walks before it missed: the pagination is unstable
         for walk in range(_MAX_WALKS):
             before = len(ids)
-            stated, ended = self._walk(ids, titles)
+            stated, ended = self._walk(ids, titles, first=not walk)
             if not ended or not stated or len(ids) >= stated:
                 return ids, titles
             if walk and len(ids) == before:
+                if grew:
+                    break
                 self._log.info(
                     f"{self.board_key()}: {len(ids)} of {stated} postings, and walk {walk + 1} "
-                    "found no new id — a stable shortfall, left as the Board states it"
+                    "found no new id — a stable shortfall, left as read"
                 )
                 return ids, titles
+            grew = grew or bool(walk)
         self.mark_truncated_unless_negligible(
             len(ids),
             stated,
-            f"{len(ids)} of {stated} postings after {_MAX_WALKS} walks still finding new ids — "
+            f"{len(ids)} of {stated} postings after {walk + 1} walks of an unstable listing — "
             "the rest is unread, not absent",
         )
         return ids, titles
 
-    def _walk(self, ids: list[str], titles: dict[str, str]) -> tuple[int | None, bool]:
+    def _walk(
+        self, ids: list[str], titles: dict[str, str], *, first: bool
+    ) -> tuple[int | None, bool]:
         """One walk of ``/search``, adding unseen ids to ``ids`` and their anchor titles to
         ``titles``. Returns the counter's total and whether the walk reached its end — False
-        when it stopped at the page cap (marked truncated) or on a page that named no job."""
+        when it stopped at the page cap (marked truncated) or on a page that named no job. A
+        re-walk (``first`` False) logs none of what the first walk already said."""
         job_path = re.compile(rf"/{re.escape(self.slug)}/job/({_JOB_ID})")
         anchor = re.compile(
             rf'<a href="/{re.escape(self.slug)}/job/({_JOB_ID})"[^>]*>([^<]*)</a>'
         )
         seen = set(ids)
         url: str | None = self.url()
-        pages, stated, read = 0, None, 0
+        pages, stated, slots_read = 0, None, 0
         served: set[tuple[str, ...]] = set()
         while url and pages < _MAX_PAGES:
             page = self._page(url)
@@ -371,30 +378,31 @@ class JobviteScraper(BaseScraper):
                 if title:
                     titles.setdefault(job_id, title)
             page_ids = job_path.findall(page)
-            read += len(page_ids)
+            slots_read += len(page_ids)
             for job_id in page_ids:
                 if job_id not in seen:
                     seen.add(job_id)
                     ids.append(job_id)
             match = _NEXT.search(page)
-            # A next link back to a page this walk already served is a loop: the same pages would
-            # come back forever. (A page of ids seen on an earlier walk is not: this walk re-reads
-            # them.)
+            # A next link to a page whose ids this walk already served is a loop: the same pages
+            # would come back forever. Pages are keyed by their ids, not their URL, since a loop
+            # can change the query string. (A page of ids seen on an earlier walk is not a loop:
+            # this walk re-reads them.)
             repeated = tuple(page_ids) in served
             served.add(tuple(page_ids))
             if not match or repeated:
-                if stated and not read:
+                if stated and not slots_read and first:
                     self.note_unreadable_board(
                         f"job links matching /{self.slug}/job/{{id}}",
                         f"none on a page whose counter states {stated}",
                     )
                     return stated, False
-                if match:
+                if match and first:
                     self._log.info(
                         f"{self.board_key()}: next link offered on page {pages} but it served a "
                         f"page already read — walk stopped at {len(ids)} of {stated}"
                     )
-                elif stated and pages < math.ceil(stated / _PAGE_SIZE):
+                elif first and stated and pages < math.ceil(stated / _PAGE_SIZE):
                     # A template change that stops `_NEXT` matching would otherwise serve page 0
                     # alone as the whole Board, with nothing in the log to say so.
                     self._log.info(

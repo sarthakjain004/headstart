@@ -386,6 +386,13 @@ def test_a_province_the_name_already_abbreviates_is_not_repeated():
         "location": {"name": "Albuquerque, NM", "province": "New Mexico"},
     }
     assert _location(albuquerque) == "Albuquerque, NM"
+    # Only a code that names this very province: a Moroccan "MA" is not Massachusetts.
+    casablanca = {
+        "location": {"name": "Casablanca, MA", "province": "Casablanca-Settat"}
+    }
+    assert _location(casablanca) == "Casablanca, MA, Casablanca-Settat"
+    # And only the province: a country after an abbreviated state is kept.
+    assert _location(maumee, "Ohio") == "Maumee, OH, Ohio"
     # A name that is no code keeps its province (fixture: Bognor Regis, West Sussex).
     bognor = {"location": {"name": "Bognor Regis", "province": "West Sussex"}}
     assert _location(bognor) == "Bognor Regis, West Sussex"
