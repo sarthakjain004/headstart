@@ -21,23 +21,45 @@ With [uv](https://docs.astral.sh/uv/) installed, add it to Claude Code:
 
 ```bash
 claude mcp add headstart-space --scope user -- \
-  uvx --from git+https://github.com/sarthakjain004/headstart headstart-space-mcp
+  uvx --from https://github.com/sarthakjain004/headstart/archive/refs/heads/main.tar.gz headstart-space-mcp
 ```
 
-`uvx` builds the base package from GitHub into a cached environment of its own — two
-dependencies, `curl_cffi` and `requests`, no torch and no index — and runs its
-`headstart-space-mcp` command. Any MCP client that runs stdio servers can use the same
-`uvx --from git+https://github.com/sarthakjain004/headstart headstart-space-mcp` command.
-`uvx --refresh …` picks up a newer commit; append `@<branch-or-tag>` to the URL to pin one.
+`uvx` downloads GitHub's archive of `main` and builds the base package from it into a cached
+environment of its own — two dependencies, `curl_cffi` and `requests`, no torch and no index —
+and runs its `headstart-space-mcp` command. Any MCP client that runs stdio servers can use the
+same command. In Claude Desktop, add it to `claude_desktop_config.json`:
 
-**The first run takes minutes; later runs start in about 2 s.** Before the server can start, uv
-clones this repository with its whole history (about 106 MB) and downloads `curl_cffi`: two
-first runs on a slow link on 2026-09-28 took 207 s and 670 s, most of each the clone. Later runs
-start from uv's cache. Run the command once in a terminal first, so your client's first
+```json
+{
+  "mcpServers": {
+    "headstart-space": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "https://github.com/sarthakjain004/headstart/archive/refs/heads/main.tar.gz",
+        "headstart-space-mcp"
+      ]
+    }
+  }
+}
+```
+
+**Updates arrive on their own.** Every start asks GitHub whether the archive changed (uv
+revalidates it against its `ETag`); when `main` has moved, uv downloads the new archive and
+rebuilds before the server starts, so no `--refresh` is needed. To pin a version instead, name a
+fixed archive: `https://github.com/sarthakjain004/headstart/archive/refs/tags/<tag>.tar.gz` or
+`https://github.com/sarthakjain004/headstart/archive/<commit-sha>.tar.gz`. An archive URL takes
+no `@<branch>` suffix; another branch is `archive/refs/heads/<branch>.tar.gz`.
+
+**The first run downloads about 13 MB; later runs start in 1–2 s.** The archive holds only the
+current tree, not the repository's history (about 106 MB, which a `git+https://…` install
+clones). On 2026-09-28 a cold install took 4 s from the archive against 11 s from the `git+` URL
+on a ~4.6 MB/s link, and 42 s against 207 s on a ~250 KB/s link. A start after `main` moves pays
+the archive download again. Run the command once in a terminal first, so your client's first
 connection is not left waiting on the download (it exits when its input ends):
 
 ```bash
-uvx --from git+https://github.com/sarthakjain004/headstart headstart-space-mcp < /dev/null
+uvx --from https://github.com/sarthakjain004/headstart/archive/refs/heads/main.tar.gz headstart-space-mcp < /dev/null
 ```
 
 Installed this way the package carries no `config/`, so the tools' `category` is a free string
@@ -65,13 +87,17 @@ that is not a role family is still refused, by the Space.
 
 ### Check it
 
-`/mcp` in Claude Code lists `headstart-space` and its tools. Without a client:
+`/mcp` in Claude Code lists `headstart-space` and its tools. Without a client, save the Claude
+Desktop snippet above as `headstart-space.json` and list the tools through the Inspector:
 
 ```bash
 npx @modelcontextprotocol/inspector@2.8.0 --cli \
-  uvx --from git+https://github.com/sarthakjain004/headstart headstart-space-mcp \
-  --method tools/list
+  --config headstart-space.json --server headstart-space --method tools/list
 ```
+
+Use the config file, not a command after `--cli`: Inspector 2.8.0 answers `Connection closed`
+when that command carries `--from` (measured 2026-09-28, with the archive and the `git+` URL
+alike), while the same server lists its three tools from the config.
 
 `HEADSTART_SPACE_URL` points it at another deployment; the default is
 `https://imposeidon-headstart-search.hf.space`.

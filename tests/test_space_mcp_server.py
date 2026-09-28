@@ -163,7 +163,7 @@ def test_a_real_client_handshake_over_a_real_subprocess():
 
 
 def test_the_console_script_a_no_clone_install_runs_is_this_servers_main():
-    """`uvx --from git+…/headstart headstart-space-mcp` runs whatever pyproject names."""
+    """`uvx --from …/archive/refs/heads/main.tar.gz headstart-space-mcp` runs whatever pyproject names."""
     pyproject = pathlib.Path(__file__).resolve().parent.parent / "pyproject.toml"
     scripts = tomllib.loads(pyproject.read_text(encoding="utf-8"))["project"]["scripts"]
     module, _, attribute = scripts["headstart-space-mcp"].partition(":")
