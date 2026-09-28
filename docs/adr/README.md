@@ -255,7 +255,7 @@ supersedes it and note the supersession in both.
 | [0257](0257-jobvite-walks-a-short-board-again-and-gates-on-the-listing-title.md) | Jobvite walks a short Board again and gates its detail pages on the listing title | 2026-09-28 |
 | [0258](0258-the-spaces-read-routes-answer-anyone.md) | The Space's read routes answer anyone | 2026-09-28 |
 | [0260](0260-a-counting-change-says-what-we-did-and-what-it-did-to-the-counts.md) | A Trends counting change says what we did and what it did to the counts, in one sentence | 2026-09-28 |
-| [0257](0257-a-trends-view-nobody-has-asked-for-is-cheap-to-work-out-and-asked-for-ahead.md) | A Trends view nobody has asked for is cheap to work out, and asked for ahead | 2026-09-28 |
+| [0261](0261-a-trends-view-nobody-has-asked-for-is-cheap-to-work-out-and-asked-for-ahead.md) | A Trends view nobody has asked for is cheap to work out, and asked for ahead | 2026-09-28 |
 
 *ADR-0037 was removed from the repository on 2026-09-24 by the owner's decision; its number is not
 reused.*

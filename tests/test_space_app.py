@@ -2449,7 +2449,7 @@ def test_the_answer_asked_for_most_recently_is_the_last_let_go(
 def test_windows_between_the_same_ticks_share_one_kept_answer(
     company_trends, trends_app, monkeypatch
 ):
-    """ADR-0257: a preset window is measured back from each click's moment, a new instant every
+    """ADR-0261: a preset window is measured back from each click's moment, a new instant every
     time, and every one between the same two ticks is answered by the one worked out first."""
     history = trends_app._HISTORY
     asked = []
@@ -2551,7 +2551,7 @@ def test_a_script_or_stylesheet_is_gzipped_and_still_revalidates(app, name):
 def test_the_page_names_its_files_under_this_boot_and_the_browser_keeps_them(
     auth_app, monkeypatch
 ):
-    """ADR-0257: every script and stylesheet the page names carries this boot's version, and a
+    """ADR-0261: every script and stylesheet the page names carries this boot's version, and a
     file asked for under it is kept for the boot, re-signing no session cookie and varying by
     none; one asked for without it still revalidates."""
     client = _signed_in(auth_app, monkeypatch)
@@ -2583,7 +2583,7 @@ def test_the_page_names_its_files_under_this_boot_and_the_browser_keeps_them(
 def test_the_page_asks_for_the_answer_it_opens_on_beside_its_scripts(
     auth_app, monkeypatch
 ):
-    """ADR-0257: a bare #trends or #hot preloads the one answer that tab draws first, under the
+    """ADR-0261: a bare #trends or #hot preloads the one answer that tab draws first, under the
     same URL app.js asks for, from the head, before the stylesheets."""
     app = auth_app
     page = _signed_in(app, monkeypatch).get("/", base_url=_HTTPS).data.decode()
@@ -2597,7 +2597,7 @@ def test_the_page_asks_for_the_answer_it_opens_on_beside_its_scripts(
 def test_the_opening_views_and_their_charted_drills_are_answered_at_boot(
     company_trends, trends_app
 ):
-    """ADR-0257: the opening view under both Measures, and each charted category's levels
+    """ADR-0261: the opening view under both Measures, and each charted category's levels
     under it, which is what a click on the opening view opens."""
     trends_app._answer_opening_views()
     history = trends_app._HISTORY
@@ -2620,7 +2620,7 @@ def test_the_boot_answers_as_many_drills_as_the_page_charts(app):
 
 def _folded_and_unfolded(history, monkeypatch, questions):
     """Each question's answer as served, then with every family's rows kept by band: the band
-    fold (ADR-0257) must never move a figure."""
+    fold (ADR-0261) must never move a figure."""
     folded = [history.unnetted_answer(q) for q in questions]
     whole = trend_history.TrendHistory
     monkeypatch.setattr(
@@ -2639,7 +2639,7 @@ def _folded_and_unfolded(history, monkeypatch, questions):
 
 
 def test_summing_unread_bands_moves_no_figure(trends_app, monkeypatch, tmp_path):
-    """ADR-0257 sums the bands of every family a question does not drill into. Retired names
+    """ADR-0261 sums the bands of every family a question does not drill into. Retired names
     beside their successors, a watched role, non-tech and several bands, over the index and a
     company's replay, drilled by old name and new, under both Measures: all as before."""
     successors = trend_history.family_successors(_REPO_FAMILIES)

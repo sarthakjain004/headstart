@@ -2329,7 +2329,7 @@ function prefetchTrends(family, metric){
 }
 // The view a click is about to ask for, asked for on a sign it is coming: the pointer or focus
 // resting on a category's row, or a company offered at the top of the picker's list, which is
-// what Enter picks (ADR-0257). Once a URL a page: the browser keeps each answer anyway. One at
+// what Enter picks (ADR-0261). Once a URL a page: the browser keeps each answer anyway. One at
 // a time, the latest wanted next: the Space works out one answer at a time, so a queue of
 // guesses would stand in front of the reader's own click.
 const askedAhead = new Set();
