@@ -339,14 +339,22 @@ TOOL = SpaceTool(
     description=(
         "Search HeadStart's tech job index: `query` describes only the role ('backend "
         "engineer at a climate startup'); years, pay, place, company, employment type "
-        "and dates go in their own fields, never in `query`. Omit `query` to list the "
+        "and dates go in their own fields, never in `query`. `query` ranks jobs by "
+        "similarity but never narrows them: the total counts every job the filters "
+        "allow, and less similar rows follow the close ones. To require a word (a "
+        "language, 'ML', a title word), use `keyword`. `max_years` is the user's own "
+        "experience ('3+ years' is 3): it keeps jobs asking for at most that many. "
+        "Omit `query` to list the "
         "newest jobs that match the filters. With a `query`, `sort` orders only the "
         "2,000 closest matches — for a global order (the highest salary anywhere, the "
         "newest anywhere) omit `query` and narrow with `keyword` and the filters. "
         "`company` matches as the site's company box does (any company name containing "
         "the text) unless `category` is set, which needs a directory company: a key "
-        "such as 'greenhouse:stripe', or an exact name. A salary sort without a "
-        "currency is ordered in USD. No account applies, so a user's hidden companies "
+        "such as 'greenhouse:stripe', or an exact name. When `company` matched as "
+        "text, tell the user so, since it also takes in any other employer whose "
+        "name contains that text. `sort` salary orders by "
+        "the low end of each stated range; without a currency it is ordered in USD. "
+        "No account applies, so a user's hidden companies "
         "are not removed. Returns the total, one page of jobs with their links, and — "
         "when nothing matches — the filter costing the most."
     ),
@@ -374,7 +382,10 @@ TOOL = SpaceTool(
                 "type": "integer",
                 "minimum": 0,
                 "maximum": 30,
-                "description": "Open to someone with at most this many years.",
+                "description": (
+                    "The user's own years of experience ('3+ years' is 3): keeps "
+                    "jobs asking for at most this many."
+                ),
             },
             "employment_type": {
                 "type": "string",

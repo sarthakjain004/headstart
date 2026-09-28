@@ -1,0 +1,164 @@
+{
+  "tasks": [
+    {
+      "id": "t01",
+      "prompt": "Find me remote backend engineering jobs in Bengaluru that pay at least ₹30 lakh a year.",
+      "verifier": "search_args",
+      "expect": {
+        "tool": "search_jobs",
+        "must": {
+          "remote": true,
+          "india_place": "bengaluru",
+          "salary_min": 3000000,
+          "salary_currency": "INR",
+          "query": {"op": "contains", "value": "backend"}
+        },
+        "query_must_not_contain": ["bengaluru", "bangalore", "lakh", "₹", "30", "remote"]
+      },
+      "why": "Plan §9 checks that every row satisfies the filters. The Space enforces a filter it is sent (strict=1), so rows satisfy the filters exactly when they reach their own fields: remote, india_place, and ₹30 lakh as salary_min 3000000 with salary_currency INR (without the currency it is priced in USD)."
+    },
+    {
+      "id": "t02",
+      "prompt": "What new ML engineer jobs have shown up in the last 24 hours?",
+      "verifier": "search_args",
+      "expect": {
+        "tool": "search_jobs",
+        "must": {
+          "first_seen_within_hours": {"op": "<=", "value": 24}
+        },
+        "must_any": [
+          {"query": {"op": "contains", "value": "machine learning"}},
+          {"query": {"op": "contains", "value": "ml"}},
+          {"keyword": {"op": "contains", "value": "machine learning"}},
+          {"keyword": {"op": "contains", "value": "ml"}}
+        ],
+        "query_must_not_contain": ["24", "hour", "today", "recent", "new "]
+      },
+      "why": "Plan §9 checks every row's first_seen is inside the window. \"New ... in the last 24 hours\" is New to HeadStart, the first_seen filter, which the Space applies to every row; posted_within_days is the employer's date and would not bound first_seen. The role must reach query or keyword as ML or machine learning."
+    },
+    {
+      "id": "t03",
+      "prompt": "Is Stripe hiring more or less than it was two weeks ago?",
+      "verifier": "trend_sign",
+      "expect": {"companies": ["Stripe"], "category": null, "days": 14},
+      "why": "Plan §9 checks the sign of the netted hiring. The verifier reads /trends for Stripe over 14 days itself and compares the sign of reading.total.move.hiring with the direction the answer states."
+    },
+    {
+      "id": "t04",
+      "prompt": "Which companies are expanding their tech hiring fastest this week?",
+      "verifier": "hot_top",
+      "expect": {"lens": "expansion", "top": 5},
+      "why": "Plan §9: the top five equal /hot's, hidden Operators out. The verifier reads /hot itself, drops the hidden_by_default Operators, and needs at least four of the top five named."
+    },
+    {
+      "id": "t05",
+      "prompt": "Compare Google's and Microsoft's tech hiring over this month.",
+      "verifier": "tool_args",
+      "expect": {
+        "tool": "read_trends",
+        "must": {
+          "companies": {"op": "contains", "value": ["google", "microsoft"]},
+          "breakdown": {"op": "in", "value": [null, "company"]},
+          "days": {"op": ">=", "value": 25}
+        }
+      },
+      "why": "Plan §9 checks breakdown: company. One read_trends call must name both companies, split by company (the default with two or more, so an absent breakdown passes), over about a month: 30 days, or the days since the month began."
+    },
+    {
+      "id": "t06",
+      "prompt": "How are AI and machine learning roles trending across the whole job index?",
+      "verifier": "tool_args",
+      "expect": {
+        "tool": "read_trends",
+        "must": {
+          "category": "ai-ml-data-science",
+          "companies": {"op": "in", "value": [null, []]}
+        }
+      },
+      "why": "Plan §9 checks category. The whole index read in the ai-ml-data-science category, with no company scope."
+    },
+    {
+      "id": "t07",
+      "prompt": "Find entry-level frontend jobs at Citi, and then tell me how Citi's hiring is trending.",
+      "verifier": "mentions",
+      "expect": {
+        "all": [
+          "citi",
+          ["contain", "substring"],
+          ["directory", "largest company", "one company"]
+        ],
+        "tool_results_all": ["company name contains", "Companies: "]
+      },
+      "why": "Plan §9: the answer must say the search matched company names containing \"Citi\" and the trend read one directory company. Text checks on the final answer: a 'contains'/'substring' wording for the search, and a 'directory'/'largest company'/'one company' wording for the trend. The tool results must show both happened: search_jobs' scope line 'company name contains' (a substring search, not a directory company) and read_trends' 'Companies: ' line (a directory company read)."
+    },
+    {
+      "id": "t08",
+      "prompt": "Find remote contract roles with \"Rust\" in the job title.",
+      "verifier": "search_args",
+      "expect": {
+        "tool": "search_jobs",
+        "must": {
+          "remote": true,
+          "employment_type": "contract",
+          "keyword": {"op": "contains", "value": "rust"},
+          "keyword_in": {"op": "in", "value": [null, "title"]}
+        },
+        "query_must_not_contain": ["remote", "contract", "title"]
+      },
+      "why": "Plan §9 checks keyword. \"Rust in the title\" is keyword Rust in the title (the default scope), with remote and employment_type contract as filters. Rust may also appear in query, which describes the role."
+    },
+    {
+      "id": "t09",
+      "prompt": "Which seniority levels grew in data engineering over the last month?",
+      "verifier": "tool_args",
+      "expect": {
+        "tool": "read_trends",
+        "must": {
+          "category": "data-engineering",
+          "breakdown": {"op": "in", "value": [null, "level"]}
+        }
+      },
+      "why": "Plan §9 checks breakdown: level. One read_trends call in data-engineering split by level (the default with a category, so an absent breakdown passes)."
+    },
+    {
+      "id": "t10",
+      "prompt": "What are the highest-paying staff engineer roles anywhere, in USD?",
+      "verifier": "search_args",
+      "expect": {
+        "tool": "search_jobs",
+        "must": {
+          "query": {"op": "in", "value": [null, ""]},
+          "keyword": {"op": "contains", "value": "staff"},
+          "sort": "salary",
+          "salary_currency": {"op": "in", "value": [null, "USD"]}
+        }
+      },
+      "why": "Plan §9's check is against a global /search browse. A search_jobs call with no query, a staff keyword and a salary sort is that browse by construction, so its arguments are what is checked. Stricter than §9: the plan's other branch (a query plus a salary sort, with the answer saying the order is among the 2,000 closest matches) fails here, because it does not answer 'anywhere'."
+    },
+    {
+      "id": "t11",
+      "prompt": "3+ years senior backend in Pune",
+      "verifier": "search_args",
+      "expect": {
+        "tool": "search_jobs",
+        "must": {
+          "max_years": {"op": ">=", "value": 3}
+        },
+        "must_any": [
+          {"india_place": "pune"},
+          {"location": {"op": "contains", "value": "pune"}}
+        ],
+        "query_must_not_contain": ["3", "year", "yrs", "+", "pune"]
+      },
+      "why": "Plan §9: years and place must land in filters, not in query. Years as max_years of at least 3; Pune as india_place or as location, either being a filter; neither in query."
+    },
+    {
+      "id": "t12",
+      "prompt": "Find Haskell jobs in Indore paying ₹1 crore.",
+      "verifier": "blocking_named",
+      "expect": {"argument": null},
+      "why": "Plan §9: must name the Blocking filter, not say nothing exists. Which filter blocks is data-dependent (/facets drops each filter in turn and names the one recovering the most rows), so argument null accepts whichever one the search_jobs result named; the final answer must mention it by name or as that filter ('salary filter', 'minimum salary', not a bare 'salary', which a ₹1 crore answer says anyway). Pin the argument once a live run shows which it is. If no single filter blocks, no result names one and the task fails; revise it then."
+    }
+  ],
+  "heldout_sha256": "801e7149bc71c42e7b346dcf089ea20f87d1e0035d989b3dba8ffb50fe055e4d"
+}
