@@ -211,6 +211,29 @@ def test_rate_is_the_weeks_openings_as_a_share_of_openings_now() -> None:
     assert [row["rate"] for row in payload["lenses"]["rate"]] == [75, 30]
 
 
+def test_rate_leaves_out_a_company_whose_closures_were_not_counted() -> None:
+    """New York Life led Rate at 2,016% (#835): 504 opened on 25 open now, a net change of −47,
+    and its closures not counted, so its jobs Opened were the same jobs listed again. It is
+    counted as left out of Rate, and keeps its row on Volume."""
+    directory = {
+        "eightfold:churn": _company("Churn", "eightfold:churn"),
+        "b:grower": _company("Grower", "b:grower"),
+    }
+    history = _History(
+        {"eightfold:churn": 25, "b:grower": 40},
+        {
+            "eightfold:churn": _Move(net=-47, opened=504, closed=None),
+            "b:grower": _Move(net=12, opened=20, closed=8),
+        },
+    )
+    payload = hot_ranking.rank(history, directory)
+    assert _keys(payload, "rate") == ["b:grower"]
+    assert _keys(payload, "volume") == ["eightfold:churn", "b:grower"]
+    churn = payload["lenses"]["volume"][0]
+    assert (churn["opened"], churn["closed"], churn["rate"]) == (504, None, None)
+    assert payload["counts"]["closures_uncounted"] == 1
+
+
 def test_a_company_counted_for_under_three_days_is_too_new_to_rank() -> None:
     """SiTime, counted from Sep 23, ranked on Hot while its trend called it too new to read."""
     directory = {

@@ -30,6 +30,10 @@ their size*, the only lens that surfaces a small company a user would never othe
   nothing counted in the window has no line to read, and is counted with these.
 - **A Board no directory entry holds.** The directory names only companies someone can name
   (ADR-0212), so such a Board cannot be a row.
+- **From Rate, a company whose closures were not counted** (#835). Its jobs Opened cannot be
+  told from the same jobs listed again, so its rate measures churn rather than hiring. New York
+  Life led Rate on 2026-09-28 at 2,016%: 504 opened against 25 open now, at a net change of −47.
+  The other Lenses still rank it, and its row there says its closures were not counted.
 
 A found Board inside the window needs no rule here: its backlog is a step the history nets out
 of the company's change, as the trend does.
@@ -131,9 +135,9 @@ def rank(
                 "closures_uncounted_boards": company.closures_uncounted_boards,
                 "boards_in_scope": company.boards_in_scope,
                 # Percent rather than a fraction: it is a display value, and rounding it here
-                # keeps every consumer from inventing its own precision. None, as opened is,
-                # where the company's turnover was not counted.
-                "rate": None if opened is None else round(100 * opened / open_now),
+                # keeps every consumer from inventing its own precision. None, as closed is,
+                # where the company's turnover or its closures were not counted.
+                "rate": None if closed is None else round(100 * opened / open_now),
             }
         )
     # Ties break on the key, so the same history always ranks the same list.
@@ -157,6 +161,10 @@ def rank(
             1
             for board, n in openings.items()
             if n >= MIN_STOCK and board not in in_directory
+        ),
+        # Left out of Rate only: they opened jobs, but their closures were not counted.
+        "closures_uncounted": sum(
+            1 for row in candidates if row["opened"] and row["closed"] is None
         ),
         "services": operators["services"],
         "staffing": operators["staffing"],

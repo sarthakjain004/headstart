@@ -1170,6 +1170,7 @@ def _hot(rows, turnover_from="2026-09-21T12:00:00+00:00"):
             "below_min_stock": 312,
             "min_stock": 25,
             "unnamed": 9,
+            "closures_uncounted": 23,
             "services": 30,
             "staffing": 12,
             "aggregator": 1,
@@ -1273,6 +1274,15 @@ def test_a_rate_row_on_a_small_base_is_flagged():
         "FLAG more postings opened than are open now" in text
     )
     assert "1 of these rows rank on a small base" in text
+
+
+def test_the_rate_lens_says_it_left_out_companies_whose_closures_were_not_counted():
+    """New York Life led Rate at 2,016% on jobs that closed uncounted and came back (#835)."""
+    rows = [_hot_row(n) for n in range(1, 4)]
+    rate = server.call(FakeSpace(hot=_hot(rows)), "hiring_now", {"lens": "rate"})
+    assert "23 whose closures were not counted" in rate
+    volume = server.call(FakeSpace(hot=_hot(rows)), "hiring_now", {"lens": "volume"})
+    assert "closures were not counted" not in volume
 
 
 def test_a_count_the_space_did_not_measure_is_not_shown_as_zero():
