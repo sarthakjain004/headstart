@@ -42,9 +42,9 @@ and the message body as it really appears. Five checks run over it:
    either in this table or in :data:`EXEMPT` with a reason. Adding an analyser regex without a
    contract entry is what fails, so no human has to remember.
 
-**Emitter-verified vs source-verified, and why the mix.** 82 of the 103 entries carry `emit=`,
+**Emitter-verified vs source-verified, and why the mix.** 83 of the 104 entries carry `emit=`,
 so their `body` is a line the emitter was watched producing rather than a line someone believed
-it produced. 27 of those 82 are marked `heavy`: they need a dependency CI does not install
+it produced. 27 of those 83 are marked `heavy`: they need a dependency CI does not install
 (`.[dev]` and nothing else — no numpy, torch, pyarrow, lancedb or langdetect), so they run for
 anyone editing `index`, `role_trends` or `embed_*` locally and skip in CI. That is weaker than a
 check that always runs, and it is the same trade `tests/test_readme_schema.py` already makes here.
@@ -493,6 +493,48 @@ def _descriptions(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         # has to carry the learned ids or `queued` is 0 whatever the store learned.
         embedded += filled + learned
     _jsonl(Path("data/embeddings/jobs/meta.jsonl"), ({"id": i} for i in embedded))
+    _run_main(
+        update_descriptions,
+        monkeypatch,
+        "--jobs",
+        "data/jobs/tech",
+        "--store",
+        "data/descriptions",
+        "--held-details",
+        "data/state/held_details.txt.gz",
+        "--pending-rederive",
+        "data/state/pending_rederive.txt",
+        "--prior-meta",
+        "data/embeddings/jobs/meta.jsonl",
+        "--changes",
+        "data/state/description_changes.tsv.gz",
+        "--checked",
+        "data/state/description_checked.tsv.gz",
+        "--refetch-due",
+        "data/state/refetch_due.txt",
+    )
+
+
+def _descriptions_replaced(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A reconcile pass whose fresh text differs from the held text for 1,003 Jobs, so the
+    per-ATS `replaced N held description(s)` line (#638) carries a four-figure count and check 3
+    sees its separator."""
+    import gzip
+
+    from headstart.ingest import update_descriptions
+
+    monkeypatch.chdir(tmp_path)
+    ids = [f"lever:beta:e{n}" for n in range(1003)]
+    _jsonl(
+        Path("data/jobs/tech/lever.jsonl"),
+        [{"id": i, "description": "the edited posting"} for i in ids],
+    )
+    ats_dir = Path("data/descriptions/lever")
+    ats_dir.mkdir(parents=True)
+    with gzip.open(ats_dir / "0001.jsonl.gz", "wt", encoding="utf-8") as fh:
+        for job_id in ids:
+            fh.write(json.dumps({"id": job_id, "description": "held text"}) + "\n")
+    _jsonl(Path("data/embeddings/jobs/meta.jsonl"), ({"id": i} for i in ids))
     _run_main(
         update_descriptions,
         monkeypatch,
@@ -2028,6 +2070,16 @@ CONTRACT: tuple[Line, ...] = (
         body="skip-list: 4,418 Jobs held",
         why="the ADR-0048 detail skip-list size",
         emit=_descriptions,
+    ),
+    Line(
+        consumer="fanout_corpus.EDITED",
+        emitter=_DESCRIPTIONS,
+        body=(
+            "lever: replaced 1,003 held description(s) with different text, "
+            "0 of them back to the text held before"
+        ),
+        why="the #638 edit line, its own line every run: both counts are `{n:,}`",
+        emit=_descriptions_replaced,
     ),
     # -- embed_plan ---------------------------------------------------------------------------
     Line(
