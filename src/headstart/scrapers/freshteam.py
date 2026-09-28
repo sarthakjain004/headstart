@@ -108,7 +108,8 @@ def _preferred_location(value: Any) -> str | None:
 
 class FreshteamScraper(BaseScraper):
     ats = "freshteam"
-    # scraper passes through the API's own url field; tenants live on {slug}.freshteam.com
+    # scraper: the widget's own url when it is on {slug}.freshteam.com, else that host's
+    # /jobs/{unique_id} route
     url_shape = r"https://[\w-]+\.freshteam\.com/jobs/[\w-]+"
     #: The og:title sits in the first ~3 KB of a page that runs to 1.7 MB (module docstring).
     board_page_head = 16_384
@@ -117,8 +118,17 @@ class FreshteamScraper(BaseScraper):
         return f"https://{self.slug}.freshteam.com/hire/widgets/jobs.json"
 
     def job_url(self, native_url: str | None, unique_id: str) -> str:
-        """The widget's own ``url`` field when present, else the derived jobs page route."""
-        return native_url or f"https://{self.slug}.freshteam.com/jobs/{unique_id}"
+        """The widget's own ``url`` when it is on the tenant's Freshteam host, else that host's
+        ``/jobs/{unique_id}`` page.
+
+        A tenant can point ``url`` at its own site, and there the posting is not always
+        rendered: on 3 of 26 live Boards (2026-09-28) every ``url`` was off Freshteam, and
+        framemediaexcel's went to an unrelated news page. The Freshteam route rendered the
+        posting's title on 10 of 10 postings sampled across those three and outsidehire."""
+        host = f"https://{self.slug}.freshteam.com/"
+        if native_url and native_url.lower().startswith(host):
+            return native_url
+        return f"{host}jobs/{unique_id}"
 
     def board_page(self) -> str:
         """The careers page, whose ``og:title`` names the company (module docstring)."""
