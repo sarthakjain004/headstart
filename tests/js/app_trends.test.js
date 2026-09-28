@@ -669,13 +669,13 @@ test('a methodology epoch draws a marker at its matching stamp', () => {
   t.draw();
   const svg = nodes['trends-chart'].innerHTML;
   assert.match(svg, /class="epoch-marker"/);
-  assert.match(svg, /Aug 13 00:00 tech-job filter updated/);
+  assert.match(svg, /Aug 13 00:00 we got better at spotting tech jobs, so some jobs were added to or dropped from the counts/);
 });
 
 test('an epoch with no matching stamp draws nothing, and does not crash the chart', () => {
   const { t, nodes } = loadApp();
   const f = fixture();
-  f.epochs = [{ ts: '1999-01-01T00:00:00+00:00', changed: ['tech-job filter updated'] }];
+  f.epochs = [{ ts: '1999-01-01T00:00:00+00:00', changed: ['we got better at spotting tech jobs, so some jobs were added to or dropped from the counts'] }];
   t.set(f, null);
   assert.doesNotThrow(() => t.draw());
   assert.doesNotMatch(nodes['trends-chart'].innerHTML, /class="epoch-marker"/);
@@ -1676,7 +1676,7 @@ test('a run with duplicates removed beside a counting change names each by its s
   t.draw();
   // The refit run moved −2,000: −2,041 duplicates, +41 from the family change beside them.
   assert.match(nodes['trends-verdict'].innerHTML,
-    /<\/summary><ul><li>Sep 15 duplicate postings removed: −2,041 openings<\/li><li>Sep 15 duplicate postings detection updated, job categories re-sorted: \+41 openings<\/li><\/ul>/);
+    /<\/summary><ul><li>Sep 15 duplicate postings removed: −2,041 openings<\/li><li>Sep 15 we got better at spotting the same job posted twice and sorted jobs into categories more accurately, so some jobs were added to or dropped from the counts or moved to a different category: \+41 openings<\/li><\/ul>/);
 });
 
 
@@ -1765,8 +1765,8 @@ test('a duplicate-removal change is named only on the line of a pick it can touc
   t.setUnit('count', false);
   t.draw();
   const [acme, micron] = nodes['trends-verdict'].innerHTML.split('</li></ul></details></li>');
-  assert.match(acme, /<li>Sep 15 duplicate postings detection updated, job categories re-sorted: \+20 openings$/);
-  assert.match(micron, /<li>Sep 15 duplicate postings detection updated, job categories re-sorted: −20 openings$/);
+  assert.match(acme, /<li>Sep 15 we got better at spotting the same job posted twice and sorted jobs into categories more accurately, so some jobs were added to or dropped from the counts or moved to a different category: \+20 openings$/);
+  assert.match(micron, /<li>Sep 15 we got better at spotting the same job posted twice and sorted jobs into categories more accurately, so some jobs were added to or dropped from the counts or moved to a different category: −20 openings$/);
   assert.match(nodes['trends-changes'].innerHTML, /— Acme \+20 openings, Micron −20 openings</,
     'one change, sized on each company line it moved');
 });
@@ -1777,7 +1777,7 @@ test('counting changes are named in words that read, and counted once each', () 
   t.setUnit('count', false);
   t.draw();
   assert.match(nodes['trends-verdict'].innerHTML,
-    /<summary>Not hiring: \+50 openings<\/summary><ul><li>Sep 15 job categories redrawn: \+20 openings<\/li><li>Sep 17 tech-job filter updated, job category list edited: \+30 openings<\/li><\/ul>/);
+    /<summary>Not hiring: \+50 openings<\/summary><ul><li>Sep 15 we redrew our job categories, so some jobs moved to a different category: \+20 openings<\/li><li>Sep 17 we got better at spotting tech jobs and changed our list of job categories, so some jobs were added to or dropped from the counts or moved to a different category: \+30 openings<\/li><\/ul>/);
 });
 
 test('under New a filter change and its week-later echo are one change', () => {
@@ -1787,7 +1787,7 @@ test('under New a filter change and its week-later echo are one change', () => {
   t.setUnit('count', false);
   t.draw();
   const html = nodes['trends-verdict'].innerHTML;
-  assert.equal((html.match(/<li>Sep 2 tech-job filter updated: \+10 openings<\/li>/g) || []).length, 1, html);
+  assert.equal((html.match(/<li>Sep 2 we got better at spotting tech jobs, so some jobs were added to or dropped from the counts: \+10 openings<\/li>/g) || []).length, 1, html);
 });
 
 test('a rise over a duplicate-removal run is hiring, not a removal', () => {
@@ -1829,7 +1829,7 @@ test('markers on one day are drawn as one, titled with every change', () => {
   t.draw();
   const svg = nodes['trends-chart'].innerHTML;
   assert.equal((svg.match(/class="epoch-marker"/g) || []).length, 1);
-  assert.match(svg, /Aug 13 00:00 tech-job filter updated\nAug 13 12:00 job categories redrawn/, 'each change at its own time');
+  assert.match(svg, /Aug 13 00:00 we got better at spotting tech jobs, so some jobs were added to or dropped from the counts\nAug 13 12:00 we redrew our job categories, so some jobs moved to a different category/, 'each change at its own time');
 });
 
 // ---- critique round 12 ------------------------------------------------------------------------
@@ -1842,7 +1842,7 @@ test('a whole company’s line takes a counting change out by openings, as Hot d
   // Scaled, the history before the step doubled and the line read +50; Hot sums the runs
   // outside the change: +10 + 20 = +30.
   assert.match(nodes['trends-verdict'].innerHTML, /\(\+30[ ,)]/);
-  assert.match(nodes['trends-verdict'].innerHTML, /<li>Sep 15 tech-job filter updated: \+100 openings<\/li>/);
+  assert.match(nodes['trends-verdict'].innerHTML, /<li>Sep 15 we got better at spotting tech jobs, so some jobs were added to or dropped from the counts: \+100 openings<\/li>/);
 });
 
 test('the five largest sentences stand, with the tiles’ riser, and the rest fold', () => {
@@ -1926,7 +1926,7 @@ test('a counting change that did not move a line is not named for it', () => {
   showGolden(t, 'two_filter_changes_only_one_moves_the_line');
   t.setUnit('count', false);
   t.draw();
-  assert.match(nodes['trends-verdict'].innerHTML, /<ul><li>Sep 17 tech-job filter updated: \+60 openings<\/li><\/ul>/);
+  assert.match(nodes['trends-verdict'].innerHTML, /<ul><li>Sep 17 we got better at spotting tech jobs, so some jobs were added to or dropped from the counts: \+60 openings<\/li><\/ul>/);
 });
 
 test('under New, an echo whose change fell before the window is dated by that change', () => {
@@ -1936,7 +1936,7 @@ test('under New, an echo whose change fell before the window is dated by that ch
   t.setUnit('count', false);
   t.draw();
   assert.match(nodes['trends-verdict'].innerHTML,
-    /<summary>Not hiring: −40 openings<\/summary><ul><li>Sep 19 the week-later echo of the Sep 11 tech-job filter update: −40 openings<\/li><\/ul>/);
+    /<summary>Not hiring: −40 openings<\/summary><ul><li>Sep 19 a week after we got better at spotting tech jobs on Sep 11, the jobs that change moved stopped being new: −40 openings<\/li><\/ul>/);
 });
 
 test('a category sorted in by a counting change reads so, and its openings count as that change', () => {
@@ -1982,7 +1982,7 @@ test('the marked-changes list gives each change’s size on each line, and count
   showGolden(t, 'filter_change_sized_in_the_marked_changes_list');
   t.setUnit('count', false);
   t.draw();
-  assert.match(nodes['trends-changes'].innerHTML, /Sep 15 00:00<\/b> tech-job filter updated — Acme \+40 openings/);
+  assert.match(nodes['trends-changes'].innerHTML, /Sep 15 00:00<\/b> we got better at spotting tech jobs, so some jobs were added to or dropped from the counts — Acme \+40 openings/);
 });
 
 test('a window ending before counting began says so', () => {
@@ -2003,7 +2003,7 @@ test('a change named for a line is every change whose left-out runs moved it, si
   showGolden(t, 'change_whose_settling_run_alone_moved_the_line');
   t.setUnit('count', false);
   t.draw();
-  assert.match(nodes['trends-verdict'].innerHTML, /<\/summary><ul><li>Sep 15 tech-job filter updated: −3 openings<\/li><\/ul>/);
+  assert.match(nodes['trends-verdict'].innerHTML, /<\/summary><ul><li>Sep 15 we got better at spotting tech jobs, so some jobs were added to or dropped from the counts: −3 openings<\/li><\/ul>/);
   assert.match(nodes['trends-changes'].innerHTML, /— Acme −3 openings/);
 });
 
@@ -2013,7 +2013,7 @@ test('the list gives a counting change without the duplicates removed on its run
   t.setUnit('count', false);
   t.draw();
   const list = nodes['trends-changes'].innerHTML;
-  assert.match(list, /duplicate postings detection updated, job categories re-sorted — NVIDIA −97 openings/, '−2,138 less the 2,041 removed');
+  assert.match(list, /we got better at spotting the same job posted twice and sorted jobs into categories more accurately, so some jobs were added to or dropped from the counts or moved to a different category — NVIDIA −97 openings/, '−2,138 less the 2,041 removed');
   assert.match(list, /duplicate postings removed — NVIDIA −2,041 openings/, 'its own size, not the run’s −2,138');
 });
 
@@ -2040,7 +2040,7 @@ test('a change landing one run late is still left out whole (Amazon’s Sep 17 s
   showGolden(t, 'filter_change_landing_one_run_late');
   t.setUnit('count', false);
   t.draw();
-  assert.match(nodes['trends-verdict'].innerHTML, /<\/summary><ul><li>Sep 15 tech-job filter updated: −400 openings<\/li><\/ul>/);
+  assert.match(nodes['trends-verdict'].innerHTML, /<\/summary><ul><li>Sep 15 we got better at spotting tech jobs, so some jobs were added to or dropped from the counts: −400 openings<\/li><\/ul>/);
   assert.doesNotMatch(nodes['trends-verdict'].innerHTML, /down 80/);
 });
 
@@ -2071,8 +2071,8 @@ test('a marker names duplicate removal only where a pick can be touched', () => 
   showGolden(t, 'duplicate_removal_change_named_only_where_a_pick_can_be_touched');
   t.setUnit('count', false);
   t.draw();
-  assert.match(nodes['trends-chart'].innerHTML, /Sep 15 00:00 job categories re-sorted/);
-  assert.doesNotMatch(nodes['trends-chart'].innerHTML, /duplicate postings detection updated/);
+  assert.match(nodes['trends-chart'].innerHTML, /Sep 15 00:00 we sorted jobs into categories more accurately, so some jobs moved to a different category/);
+  assert.doesNotMatch(nodes['trends-chart'].innerHTML, /spotting the same job posted twice/);
 });
 
 test('a breakdown change is a step Back can undo', () => {
@@ -2146,7 +2146,7 @@ test('the marked-changes list sizes each change on the company alone, as the sen
   t.setUnit('count', false);
   t.draw();
   const list = nodes['trends-changes'].innerHTML;
-  assert.match(list, /tech-job filter updated — Acme \+90 openings<\/li>/, 'the company alone, no category beside it');
+  assert.match(list, /we got better at spotting tech jobs, so some jobs were added to or dropped from the counts — Acme \+90 openings<\/li>/, 'the company alone, no category beside it');
   assert.match(nodes['trends-verdict'].innerHTML, /Not hiring: \+90 openings/, 'the same +90');
 });
 test('a category a counting change sorted into existence reads so, and the list gives the company’s size', () => {
@@ -2156,7 +2156,7 @@ test('a category a counting change sorted into existence reads so, and the list 
   t.draw();
   assert.match(row(nodes['trends-legend'].innerHTML, 'web'), /sorted in by a counting change, Sep 15/);
   // The company moved 0 at the change and +1 at its settling run.
-  assert.match(nodes['trends-changes'].innerHTML, /job categories re-sorted — Acme \+1 opening<\/li>/);
+  assert.match(nodes['trends-changes'].innerHTML, /we sorted jobs into categories more accurately, so some jobs moved to a different category — Acme \+1 opening<\/li>/);
 });
 test('each sentence opens with the answer in plain words', () => {
   const { t, nodes } = loadApp();
@@ -2185,7 +2185,7 @@ test('under New a duplicate-removal change is named as one, as under All opening
   showGolden(t, 'new_duplicate_removal_change_named_as_one');
   t.setUnit('count', false);
   t.draw();
-  assert.match(nodes['trends-verdict'].innerHTML, /<\/summary><ul><li>Sep 15 duplicate postings detection updated: −20 openings<\/li><\/ul>/);
+  assert.match(nodes['trends-verdict'].innerHTML, /<\/summary><ul><li>Sep 15 we got better at spotting the same job posted twice, so some jobs were added to or dropped from the counts: −20 openings<\/li><\/ul>/);
 });
 
 
@@ -2196,7 +2196,7 @@ test('the crosshair on a marker says what the list says, the company’s size in
   showGolden(t, 'micron_filter_change_sized_with_its_settling_run');
   t.setUnit('count', false);
   t.draw();
-  assert.deepEqual(t.tooltipNotes(t.geom(), 2), ['Sep 15 00:00 tech-job filter updated — Acme −264 openings']);
+  assert.deepEqual(t.tooltipNotes(t.geom(), 2), ['Sep 15 00:00 we got better at spotting tech jobs, so some jobs were added to or dropped from the counts — Acme −264 openings']);
   assert.match(nodes['trends-changes'].innerHTML, /Acme −264 openings/);
 });
 
@@ -2209,8 +2209,8 @@ test('a day’s marker names every change that day at its own time', () => {
   assert.equal(at.length, 1, 'one marker for the day');
   const notes = t.tooltipNotes(t.geom(), at[0]);
   assert.equal(notes.length, 2);
-  assert.match(notes[0], /^Sep 24 11:32 tech-job filter updated — Acme −11 openings$/);
-  assert.match(notes[1], /^Sep 24 21:19 job categories re-sorted — Acme \+10 openings$/);
+  assert.match(notes[0], /^Sep 24 11:32 we got better at spotting tech jobs, so some jobs were added to or dropped from the counts — Acme −11 openings$/);
+  assert.match(notes[1], /^Sep 24 21:19 we sorted jobs into categories more accurately, so some jobs moved to a different category — Acme \+10 openings$/);
 });
 test('no percentage is read off a netted start under five openings, and no tile names it', () => {
   // NVIDIA's Internships, inside Hardware: 14 hired after a change took 56 of its 60 openings,
@@ -2430,7 +2430,7 @@ test('a company counted from a later run is not sized by a change before it (Zom
   t.setUnit('count', false);
   t.draw();
   const list = nodes['trends-changes'].innerHTML;
-  assert.match(list, /tech-job filter updated — Acme \+10 openings<\/li>/);
+  assert.match(list, /we got better at spotting tech jobs, so some jobs were added to or dropped from the counts — Acme \+10 openings<\/li>/);
   assert.doesNotMatch(list, /Zomato/, 'its first run is when counting began, not a change');
 });
 
@@ -2441,7 +2441,7 @@ showGolden(t, 'change_before_a_removal_counts_at_the_scale_it_leaves');
   t.setUnit('count', false);
   t.draw();
   const list = nodes['trends-changes'].innerHTML;
-  assert.match(list, /tech-job filter updated — Micron \+200 openings/, 'one size in every window (ADR-0233)');
+  assert.match(list, /we got better at spotting tech jobs, so some jobs were added to or dropped from the counts — Micron \+200 openings/, 'one size in every window (ADR-0233)');
   assert.match(list, /duplicate postings removed — Micron −1,100 openings/);
   assert.match(nodes['trends-verdict'].innerHTML, /Not hiring: −900 openings/);
 });
@@ -2475,7 +2475,7 @@ showGolden(t, 'change_settling_on_a_removal_run_is_sized_at_that_runs_scale');
   const total = [...list.matchAll(/— Micron ([−+][\d,]+) opening/g)].reduce((a, m) => a + Number(m[1].replace('−', '-').replace(',', '')), 0);
   const said = nodes['trends-verdict'].innerHTML.match(/Not hiring: ([−+][\d,]+) opening/)[1];
   assert.equal(total, Number(said.replace('−', '-').replace(',', '')), 'the list sums to the sentence');
-  assert.match(list, /tech-job filter updated — Micron \+250 openings/);
+  assert.match(list, /we got better at spotting tech jobs, so some jobs were added to or dropped from the counts — Micron \+250 openings/);
 });
 
 test('with several picks each category scales by its own companies’ removals and they add up to the Total', () => {
@@ -2526,7 +2526,7 @@ test('the roles view marks the changes that moved its roles', () => {
   showGolden(t, 'roles_view_marks_the_changes_that_moved_its_roles');
   t.draw();
   assert.match(nodes['trends-chart'].innerHTML, /class="epoch-marker"/);
-  assert.match(nodes['trends-changes'].innerHTML, /tech-job filter updated — watch:llm \+16 openings/);
+  assert.match(nodes['trends-changes'].innerHTML, /we got better at spotting tech jobs, so some jobs were added to or dropped from the counts — watch:llm \+16 openings/);
 });
 
 /* Golden readings (tests/fixtures/trend_readings/, ADR-0233): the page's checkReading states the

@@ -44,7 +44,7 @@
    {
     "ts": "2026-09-15T00:00:00+00:00",
     "changed": [
-     "tech-job filter updated"
+     "we got better at spotting tech jobs, so some jobs were added to or dropped from the counts"
     ],
     "fields": [
      "tech_filter_version"
@@ -188,10 +188,10 @@
     "id": "counting@2026-09-15T00:00:00+00:00",
     "kind": "counting",
     "ts": "2026-09-15T00:00:00+00:00",
-    "label": "tech-job filter updated",
+    "label": "we got better at spotting tech jobs, so some jobs were added to or dropped from the counts",
     "fields": [],
     "changed": [
-     "tech-job filter updated"
+     "we got better at spotting tech jobs, so some jobs were added to or dropped from the counts"
     ],
     "company": null,
     "boards": null,

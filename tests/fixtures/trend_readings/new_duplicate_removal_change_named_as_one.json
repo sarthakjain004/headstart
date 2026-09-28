@@ -26,7 +26,7 @@
    {
     "ts": "2026-09-15T00:00:00+00:00",
     "changed": [
-     "duplicate postings detection updated"
+     "we got better at spotting the same job posted twice, so some jobs were added to or dropped from the counts"
     ],
     "fields": [
      "dedup_version"
@@ -97,7 +97,7 @@
       {
        "change": "counting@2026-09-15T00:00:00+00:00",
        "kind": "counting",
-       "label": "duplicate postings detection updated",
+       "label": "we got better at spotting the same job posted twice, so some jobs were added to or dropped from the counts",
        "size": -20
       }
      ],
@@ -145,7 +145,7 @@
       {
        "change": "counting@2026-09-15T00:00:00+00:00",
        "kind": "counting",
-       "label": "duplicate postings detection updated",
+       "label": "we got better at spotting the same job posted twice, so some jobs were added to or dropped from the counts",
        "size": -20
       }
      ],
@@ -175,12 +175,12 @@
     "id": "counting@2026-09-15T00:00:00+00:00",
     "kind": "counting",
     "ts": "2026-09-15T00:00:00+00:00",
-    "label": "duplicate postings detection updated",
+    "label": "we got better at spotting the same job posted twice, so some jobs were added to or dropped from the counts",
     "fields": [
      "dedup_version"
     ],
     "changed": [
-     "duplicate postings detection updated"
+     "we got better at spotting the same job posted twice, so some jobs were added to or dropped from the counts"
     ],
     "company": null,
     "boards": null,

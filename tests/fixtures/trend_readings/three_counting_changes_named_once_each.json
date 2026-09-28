@@ -26,7 +26,7 @@
    {
     "ts": "2026-09-15T00:00:00+00:00",
     "changed": [
-     "job categories redrawn"
+     "we redrew our job categories, so some jobs moved to a different category"
     ],
     "fields": [
      "centroid_version"
@@ -35,8 +35,8 @@
    {
     "ts": "2026-09-17T00:00:00+00:00",
     "changed": [
-     "tech-job filter updated",
-     "job category list edited"
+     "we got better at spotting tech jobs, so some jobs were added to or dropped from the counts",
+     "we changed our list of job categories, so some jobs moved to a different category"
     ],
     "fields": [
      "tech_filter_version",
@@ -108,13 +108,13 @@
       {
        "change": "counting@2026-09-15T00:00:00+00:00",
        "kind": "counting",
-       "label": "job categories redrawn",
+       "label": "we redrew our job categories, so some jobs moved to a different category",
        "size": 20
       },
       {
        "change": "counting@2026-09-17T00:00:00+00:00",
        "kind": "counting",
-       "label": "tech-job filter updated, job category list edited",
+       "label": "we got better at spotting tech jobs and changed our list of job categories, so some jobs were added to or dropped from the counts or moved to a different category",
        "size": 30
       }
      ],
@@ -163,13 +163,13 @@
       {
        "change": "counting@2026-09-15T00:00:00+00:00",
        "kind": "counting",
-       "label": "job categories redrawn",
+       "label": "we redrew our job categories, so some jobs moved to a different category",
        "size": 20
       },
       {
        "change": "counting@2026-09-17T00:00:00+00:00",
        "kind": "counting",
-       "label": "tech-job filter updated, job category list edited",
+       "label": "we got better at spotting tech jobs and changed our list of job categories, so some jobs were added to or dropped from the counts or moved to a different category",
        "size": 30
       }
      ],
@@ -199,12 +199,12 @@
     "id": "counting@2026-09-15T00:00:00+00:00",
     "kind": "counting",
     "ts": "2026-09-15T00:00:00+00:00",
-    "label": "job categories redrawn",
+    "label": "we redrew our job categories, so some jobs moved to a different category",
     "fields": [
      "centroid_version"
     ],
     "changed": [
-     "job categories redrawn"
+     "we redrew our job categories, so some jobs moved to a different category"
     ],
     "company": null,
     "boards": null,
@@ -216,14 +216,14 @@
     "id": "counting@2026-09-17T00:00:00+00:00",
     "kind": "counting",
     "ts": "2026-09-17T00:00:00+00:00",
-    "label": "tech-job filter updated, job category list edited",
+    "label": "we got better at spotting tech jobs and changed our list of job categories, so some jobs were added to or dropped from the counts or moved to a different category",
     "fields": [
      "tech_filter_version",
      "family_map_fingerprint"
     ],
     "changed": [
-     "tech-job filter updated",
-     "job category list edited"
+     "we got better at spotting tech jobs, so some jobs were added to or dropped from the counts",
+     "we changed our list of job categories, so some jobs moved to a different category"
     ],
     "company": null,
     "boards": null,

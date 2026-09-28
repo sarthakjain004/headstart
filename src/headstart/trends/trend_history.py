@@ -71,9 +71,9 @@ _DIRECTORY = "company_directory.json"
 
 # Each Methodology field under the name the payload's `epochs[].fields` gives it, which is the
 # retired epoch ledger's column name (ADR-0164), and what a chart says when it moves: its words
-# in `netting.METHODOLOGY_WORDS`, the one home of every Trends label.
+# from `netting.change_label`, the one home of every Trends label.
 _EPOCH_LABELS = tuple(
-    (field, netting.METHODOLOGY_WORDS[field][0])
+    (field, netting.change_label([field]))
     for field in (
         "family_map_fingerprint",
         "tech_filter_version",
@@ -1084,9 +1084,7 @@ class TrendHistory:
                     *epochs,
                     {
                         "ts": inflow_from,
-                        "changed": [
-                            netting.METHODOLOGY_WORDS[netting.NEW_BECAME_INFLOW][0]
-                        ],
+                        "changed": [netting.change_label([netting.NEW_BECAME_INFLOW])],
                         "fields": [netting.NEW_BECAME_INFLOW],
                     },
                 ],

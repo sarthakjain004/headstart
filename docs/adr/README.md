@@ -254,6 +254,7 @@ supersedes it and note the supersession in both.
 | [0256](0256-recruitee-reads-a-real-english-description-and-keeps-the-primary-title.md) | Recruitee reads a real English description and keeps the primary title | 2026-09-28 |
 | [0257](0257-jobvite-walks-a-short-board-again-and-gates-on-the-listing-title.md) | Jobvite walks a short Board again and gates its detail pages on the listing title | 2026-09-28 |
 | [0258](0258-the-spaces-read-routes-answer-anyone.md) | The Space's read routes answer anyone | 2026-09-28 |
+| [0260](0260-a-counting-change-says-what-we-did-and-what-it-did-to-the-counts.md) | A Trends counting change says what we did and what it did to the counts, in one sentence | 2026-09-28 |
 
 *ADR-0037 was removed from the repository on 2026-09-24 by the owner's decision; its number is not
 reused.*

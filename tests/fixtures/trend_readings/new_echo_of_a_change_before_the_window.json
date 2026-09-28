@@ -40,7 +40,7 @@
    {
     "ts": "2026-09-11T12:00:00+00:00",
     "changed": [
-     "tech-job filter updated"
+     "we got better at spotting tech jobs, so some jobs were added to or dropped from the counts"
     ],
     "fields": [
      "tech_filter_version"
@@ -125,7 +125,7 @@
       {
        "change": "echo@2026-09-11T12:00:00+00:00",
        "kind": "counting",
-       "label": "the week-later echo of the Sep 11 tech-job filter update",
+       "label": "a week after we got better at spotting tech jobs on Sep 11, the jobs that change moved stopped being new",
        "size": -40
       }
      ],
@@ -179,7 +179,7 @@
       {
        "change": "echo@2026-09-11T12:00:00+00:00",
        "kind": "counting",
-       "label": "the week-later echo of the Sep 11 tech-job filter update",
+       "label": "a week after we got better at spotting tech jobs on Sep 11, the jobs that change moved stopped being new",
        "size": -40
       }
      ],
@@ -209,7 +209,7 @@
     "id": "echo@2026-09-11T12:00:00+00:00",
     "kind": "counting",
     "ts": "2026-09-19T00:00:00+00:00",
-    "label": "the week-later echo of the Sep 11 tech-job filter update",
+    "label": "a week after we got better at spotting tech jobs on Sep 11, the jobs that change moved stopped being new",
     "fields": [
      "tech_filter_version"
     ],

@@ -32,35 +32,82 @@ LINE_MOVING_FIELDS = (
 # The tick `new` stops being a level and becomes the Opened inflow (ADR-0230 decision 5): a
 # counting change of its own, marked on every `new` line and taken out of it like a refit.
 NEW_BECAME_INFLOW = "new_became_inflow"
-# What each Methodology field is called where it moved (ADR-0164), as a change ("tech filter
-# updated") and as a noun ("the week-later echo of the Sep 17 tech-job filter update"): the one
-# home of the words every Trends label is built from, so no label is a raw field id. Plain words,
-# not the pipeline's: "role family map edited, duplicate removal changed, role family assignment
-# changed" was how the tab named one Sep 25 change (critic round 17).
+# What each Methodology field is called where it moved (ADR-0164), in a job seeker's words
+# (ADR-0260): what HeadStart did, then what that did to the jobs counted, so a reader knows why a
+# line jumped. The one home of the words every Trends label is built from (`change_label`,
+# `echo_label`), so no label is a raw field id. "tech-job filter updated" named the change and
+# left the reader to guess what it meant for the line (issue #756). The second word is what
+# "some jobs" did, or None where the first already says what the line did.
 METHODOLOGY_WORDS = {
-    "centroid_version": ("job categories redrawn", "redrawing of the job categories"),
+    "centroid_version": ("redrew our job categories", "moved to a different category"),
     "family_map_fingerprint": (
-        "job category list edited",
-        "edit to the job category list",
+        "changed our list of job categories",
+        "moved to a different category",
     ),
-    "tech_filter_version": ("tech-job filter updated", "tech-job filter update"),
+    "tech_filter_version": (
+        "got better at spotting tech jobs",
+        "were added to or dropped from the counts",
+    ),
     "derivations_version": (
-        "experience and salary reading updated",
-        "experience and salary reading update",
+        "read experience and salary from job posts more accurately",
+        "moved to a different experience level",
     ),
     "dedup_version": (
-        "duplicate postings detection updated",
-        "duplicate postings detection update",
+        "got better at spotting the same job posted twice",
+        "were added to or dropped from the counts",
     ),
     "family_classifier_version": (
-        "job categories re-sorted",
-        "re-sorting of jobs into categories",
+        "sorted jobs into categories more accurately",
+        "moved to a different category",
     ),
     NEW_BECAME_INFLOW: (
-        "new openings became the jobs opened in the week",
-        "change of new openings to the jobs opened in the week",
+        (
+            "started counting “New this week” as the jobs opened that week, not the jobs "
+            "first seen, so this line jumps once here"
+        ),
+        None,
     ),
 }
+
+
+def _joined(phrases: list[str], last: str) -> str:
+    """ "a, b and c": ``phrases`` joined, ``last`` before the final one."""
+    if len(phrases) == 1:
+        return phrases[0]
+    return f"{', '.join(phrases[:-1])} {last} {phrases[-1]}"
+
+
+def _did(fields) -> str:
+    """What HeadStart did, field by field, each said once. A field with no words keeps its id,
+    which ``line_reading.check_reading`` refuses, so a new field cannot reach a reader unnamed."""
+    return _joined(
+        list(dict.fromkeys(METHODOLOGY_WORDS.get(f, (f, None))[0] for f in fields)),
+        "and",
+    )
+
+
+def change_label(fields) -> str:
+    """A counting change of ``fields`` as the Trends tab says it: "we changed our list of job
+    categories and sorted jobs into categories more accurately, so some jobs moved to a
+    different category"."""
+    effects = list(
+        dict.fromkeys(
+            effect for f in fields if (effect := METHODOLOGY_WORDS.get(f, (f, None))[1])
+        )
+    )
+    said = f"we {_did(fields)}"
+    return f"{said}, so some jobs {_joined(effects, 'or')}" if effects else said
+
+
+def echo_label(fields, day: str) -> str:
+    """Under New, a counting change of ``fields`` on ``day`` a week later, where the jobs it
+    moved in or out stop being new either way."""
+    return (
+        f"a week after we {_did(fields)} on {day}, "
+        "the jobs that change moved stopped being new"
+    )
+
+
 _DERIVATIONS = "derivations_version"
 _DEDUP = "dedup_version"
 _TECH_FILTER = "tech_filter_version"
@@ -272,6 +319,7 @@ def _notes(answer: dict) -> list[dict]:
             "boards": None,
             "fields": [],
             "changed": [],
+            "named": [],
             "source": None,
             "touched": [],
             "bands_only": False,
@@ -321,8 +369,11 @@ def _notes(answer: dict) -> list[dict]:
             or (fields[k] if k < len(fields) else None) != _DEDUP
             or touched
         ]
+        # The same fields, which its label is said from (`change_label`): a label joined from
+        # each field's own sentence repeated "so some jobs …" once a field.
+        named = [f for f in fields if not picked or f != _DEDUP or touched]
         if not picked:
-            notes.append(note(i=i, epoch=True, changed=said))
+            notes.append(note(i=i, epoch=True, changed=said, named=named))
             continue
         lines_move = moves_lines(fields, bands)
         dedup = not lines_move and bool(touched) and _DEDUP in fields
@@ -349,6 +400,7 @@ def _notes(answer: dict) -> list[dict]:
                     withhold=True,
                     fields=fields,
                     changed=said,
+                    named=named,
                     source=epoch["ts"],
                     touched=touched,
                     **shared,

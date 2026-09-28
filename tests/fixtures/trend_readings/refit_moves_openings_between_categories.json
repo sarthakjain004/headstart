@@ -35,7 +35,7 @@
    {
     "ts": "2026-09-15T00:00:00+00:00",
     "changed": [
-     "job categories re-sorted"
+     "we sorted jobs into categories more accurately, so some jobs moved to a different category"
     ],
     "fields": [
      "family_classifier_version"
@@ -146,7 +146,7 @@
       {
        "change": "counting@2026-09-15T00:00:00+00:00",
        "kind": "counting",
-       "label": "job categories re-sorted",
+       "label": "we sorted jobs into categories more accurately, so some jobs moved to a different category",
        "size": -24
       }
      ],
@@ -190,7 +190,7 @@
       {
        "change": "counting@2026-09-15T00:00:00+00:00",
        "kind": "counting",
-       "label": "job categories re-sorted",
+       "label": "we sorted jobs into categories more accurately, so some jobs moved to a different category",
        "size": 24
       }
      ],

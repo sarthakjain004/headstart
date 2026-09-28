@@ -26,7 +26,7 @@
    {
     "ts": "2026-09-15T00:00:00+00:00",
     "changed": [
-     "duplicate postings detection updated"
+     "we got better at spotting the same job posted twice, so some jobs were added to or dropped from the counts"
     ],
     "fields": [
      "dedup_version"

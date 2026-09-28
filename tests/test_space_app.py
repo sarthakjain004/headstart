@@ -2793,21 +2793,23 @@ def test_trends_epochs_drops_the_baseline_and_names_what_moved(epochs_trends_app
     served = client.get("/trends").get_json()
     assert "epochs" not in served, "the reading marks them; the page never read them"
     assert [c["label"] for c in served["reading"]["marked_changes"]] == [
-        "tech-job filter updated",
-        "job category list edited, experience and salary reading updated",
+        "we got better at spotting tech jobs, so some jobs were added to or dropped from the counts",
+        "we changed our list of job categories and read experience and salary from job posts more accurately, so some jobs moved to a different category or moved to a different experience level",
     ]
     d = _answer(client, "")
     assert d["epochs"] == [
         {
             "ts": _T2,
-            "changed": ["tech-job filter updated"],
+            "changed": [
+                "we got better at spotting tech jobs, so some jobs were added to or dropped from the counts"
+            ],
             "fields": ["tech_filter_version"],
         },
         {
             "ts": _T3,
             "changed": [
-                "job category list edited",
-                "experience and salary reading updated",
+                "we changed our list of job categories, so some jobs moved to a different category",
+                "we read experience and salary from job posts more accurately, so some jobs moved to a different experience level",
             ],
             "fields": ["family_map_fingerprint", "derivations_version"],
         },
@@ -2821,8 +2823,8 @@ def test_trends_epochs_are_narrowed_by_since_and_until(epochs_trends_app):
         {
             "ts": _T3,
             "changed": [
-                "job category list edited",
-                "experience and salary reading updated",
+                "we changed our list of job categories, so some jobs moved to a different category",
+                "we read experience and salary from job posts more accurately, so some jobs moved to a different experience level",
             ],
             "fields": ["family_map_fingerprint", "derivations_version"],
         }
@@ -2831,7 +2833,9 @@ def test_trends_epochs_are_narrowed_by_since_and_until(epochs_trends_app):
     assert d["epochs"] == [
         {
             "ts": _T2,
-            "changed": ["tech-job filter updated"],
+            "changed": [
+                "we got better at spotting tech jobs, so some jobs were added to or dropped from the counts"
+            ],
             "fields": ["tech_filter_version"],
         }
     ]
@@ -2851,7 +2855,9 @@ def test_trends_epochs_name_a_dedup_change(tmp_path):
     assert _epochs_of(state) == [
         {
             "ts": _T2,
-            "changed": ["duplicate postings detection updated"],
+            "changed": [
+                "we got better at spotting the same job posted twice, so some jobs were added to or dropped from the counts"
+            ],
             "fields": ["dedup_version"],
         }
     ]
@@ -2868,7 +2874,9 @@ def test_trends_epochs_name_a_family_assignment_change(tmp_path):
     assert _epochs_of(state) == [
         {
             "ts": _T2,
-            "changed": ["job categories re-sorted"],
+            "changed": [
+                "we sorted jobs into categories more accurately, so some jobs moved to a different category"
+            ],
             "fields": ["family_classifier_version"],
         }
     ]
@@ -3902,7 +3910,9 @@ def test_the_index_shows_what_every_companys_view_shows_after_runs_are_left_out(
     _with_turnover(trends_app, monkeypatch, tmp_path, _HPE_TURNOVER)
     epoch = {
         "ts": _T3,
-        "changed": ["duplicate postings detection updated"],
+        "changed": [
+            "we got better at spotting the same job posted twice, so some jobs were added to or dropped from the counts"
+        ],
         "fields": ["dedup_version"],
     }
     monkeypatch.setattr(trends_app._HISTORY, "_epochs", [epoch])

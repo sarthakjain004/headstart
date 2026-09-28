@@ -26,7 +26,7 @@
    {
     "ts": "2026-09-24T18:00:00+00:00",
     "changed": [
-     "duplicate postings detection updated"
+     "we got better at spotting the same job posted twice, so some jobs were added to or dropped from the counts"
     ],
     "fields": [
      "family_classifier_version"
@@ -35,7 +35,7 @@
    {
     "ts": "2026-09-24T21:19:00+00:00",
     "changed": [
-     "job categories re-sorted"
+     "we sorted jobs into categories more accurately, so some jobs moved to a different category"
     ],
     "fields": [
      "family_classifier_version"
@@ -106,13 +106,13 @@
       {
        "change": "counting@2026-09-24T18:00:00+00:00",
        "kind": "counting",
-       "label": "job categories re-sorted",
+       "label": "we sorted jobs into categories more accurately, so some jobs moved to a different category",
        "size": 1
       },
       {
        "change": "counting@2026-09-24T21:19:00+00:00",
        "kind": "counting",
-       "label": "job categories re-sorted",
+       "label": "we sorted jobs into categories more accurately, so some jobs moved to a different category",
        "size": 199
       }
      ],
@@ -161,13 +161,13 @@
       {
        "change": "counting@2026-09-24T18:00:00+00:00",
        "kind": "counting",
-       "label": "job categories re-sorted",
+       "label": "we sorted jobs into categories more accurately, so some jobs moved to a different category",
        "size": 1
       },
       {
        "change": "counting@2026-09-24T21:19:00+00:00",
        "kind": "counting",
-       "label": "job categories re-sorted",
+       "label": "we sorted jobs into categories more accurately, so some jobs moved to a different category",
        "size": 199
       }
      ],
@@ -197,12 +197,12 @@
     "id": "counting@2026-09-24T18:00:00+00:00",
     "kind": "counting",
     "ts": "2026-09-24T18:00:00+00:00",
-    "label": "job categories re-sorted",
+    "label": "we sorted jobs into categories more accurately, so some jobs moved to a different category",
     "fields": [
      "family_classifier_version"
     ],
     "changed": [
-     "duplicate postings detection updated"
+     "we got better at spotting the same job posted twice, so some jobs were added to or dropped from the counts"
     ],
     "company": null,
     "boards": null,
@@ -214,12 +214,12 @@
     "id": "counting@2026-09-24T21:19:00+00:00",
     "kind": "counting",
     "ts": "2026-09-24T21:19:00+00:00",
-    "label": "job categories re-sorted",
+    "label": "we sorted jobs into categories more accurately, so some jobs moved to a different category",
     "fields": [
      "family_classifier_version"
     ],
     "changed": [
-     "job categories re-sorted"
+     "we sorted jobs into categories more accurately, so some jobs moved to a different category"
     ],
     "company": null,
     "boards": null,

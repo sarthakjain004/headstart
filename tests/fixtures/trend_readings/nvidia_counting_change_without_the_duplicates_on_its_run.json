@@ -33,8 +33,8 @@
    {
     "ts": "2026-09-15T00:00:00+00:00",
     "changed": [
-     "duplicate postings detection updated",
-     "job categories re-sorted"
+     "we got better at spotting the same job posted twice, so some jobs were added to or dropped from the counts",
+     "we sorted jobs into categories more accurately, so some jobs moved to a different category"
     ],
     "fields": [
      "dedup_version",
@@ -111,7 +111,7 @@
       {
        "change": "counting@2026-09-15T00:00:00+00:00",
        "kind": "counting",
-       "label": "duplicate postings detection updated, job categories re-sorted",
+       "label": "we got better at spotting the same job posted twice and sorted jobs into categories more accurately, so some jobs were added to or dropped from the counts or moved to a different category",
        "size": -97
       }
      ],
@@ -165,7 +165,7 @@
       {
        "change": "counting@2026-09-15T00:00:00+00:00",
        "kind": "counting",
-       "label": "duplicate postings detection updated, job categories re-sorted",
+       "label": "we got better at spotting the same job posted twice and sorted jobs into categories more accurately, so some jobs were added to or dropped from the counts or moved to a different category",
        "size": -97
       }
      ],
@@ -195,14 +195,14 @@
     "id": "counting@2026-09-15T00:00:00+00:00",
     "kind": "counting",
     "ts": "2026-09-15T00:00:00+00:00",
-    "label": "duplicate postings detection updated, job categories re-sorted",
+    "label": "we got better at spotting the same job posted twice and sorted jobs into categories more accurately, so some jobs were added to or dropped from the counts or moved to a different category",
     "fields": [
      "dedup_version",
      "family_classifier_version"
     ],
     "changed": [
-     "duplicate postings detection updated",
-     "job categories re-sorted"
+     "we got better at spotting the same job posted twice, so some jobs were added to or dropped from the counts",
+     "we sorted jobs into categories more accurately, so some jobs moved to a different category"
     ],
     "company": null,
     "boards": null,
