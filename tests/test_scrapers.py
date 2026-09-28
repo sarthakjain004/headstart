@@ -6291,7 +6291,7 @@ def test_eightfold_parse():
 
 def test_eightfold_api_field_helpers():
     from headstart.scrapers.eightfold import (
-        _locations,
+        _location,
         _remote_from,
         _ts_to_iso,
     )
@@ -6305,10 +6305,10 @@ def test_eightfold_api_field_helpers():
     assert _remote_from("Remote") is True
     assert _remote_from("hybrid") is None  # neither -> defer to the location signal
     assert (
-        _locations(["Bangalore, India", "Pune, India"])
+        _location(["Bangalore, India", "Pune, India"])
         == "Bangalore, India; Pune, India"
     )
-    assert _locations([]) is None and _locations(None) is None
+    assert _location([]) is None and _location(None) is None
 
 
 def test_eightfold_remote_from_covers_the_live_vocabulary():
@@ -6326,19 +6326,19 @@ def test_eightfold_remote_from_covers_the_live_vocabulary():
 def test_eightfold_locations_skips_blank_entries_and_repeats():
     """ascendion.eightfold.ai ships `locations[0] == ""` with real cities after it: every
     non-empty place is kept, in order, each once."""
-    from headstart.scrapers.eightfold import _locations
+    from headstart.scrapers.eightfold import _location
 
     assert (
-        _locations(["", "bangalore", "hyderabad", "pune", "bangalore"])
+        _location(["", "bangalore", "hyderabad", "pune", "bangalore"])
         == "bangalore; hyderabad; pune"
     )
 
 
 def test_eightfold_locations_repairs_each_place_from_its_own_standardized_entry():
-    from headstart.scrapers.eightfold import _locations
+    from headstart.scrapers.eightfold import _location
 
     assert (
-        _locations(
+        _location(
             ["Pune, India", "US-CA-Fremont (1003)"], ["Pune, MH, IN", "Fremont, CA, US"]
         )
         == "Pune, India; Fremont, CA, US"
@@ -6348,21 +6348,19 @@ def test_eightfold_locations_repairs_each_place_from_its_own_standardized_entry(
 def test_eightfold_locations_repairs_a_site_code():
     """`US-CA-Fremont (1003)` is an internal site code, not a place name — repaired from the
     index-matched `standardizedLocations` entry (measured live on lamresearch)."""
-    from headstart.scrapers.eightfold import _locations
+    from headstart.scrapers.eightfold import _location
 
-    assert (
-        _locations(["US-CA-Fremont (1003)"], ["Fremont, CA, US"]) == "Fremont, CA, US"
-    )
+    assert _location(["US-CA-Fremont (1003)"], ["Fremont, CA, US"]) == "Fremont, CA, US"
 
 
 def test_eightfold_locations_repairs_an_empty_comma_segment():
     """astrazeneca.eightfold.ai's `"Riyadh, , Saudi Arabia"` shape — same defect class
     darwinbox was fixed for on 2026-08-24 (keka's fix that day was the neighboring
     dirty-whitespace shape, not an empty segment)."""
-    from headstart.scrapers.eightfold import _locations
+    from headstart.scrapers.eightfold import _location
 
     assert (
-        _locations(["Riyadh, , Saudi Arabia"], ["Riyadh, Riyadh Province, SA"])
+        _location(["Riyadh, , Saudi Arabia"], ["Riyadh, Riyadh Province, SA"])
         == "Riyadh, Riyadh Province, SA"
     )
 
@@ -6371,10 +6369,10 @@ def test_eightfold_locations_is_a_repair_tier_not_a_wholesale_swap():
     """A clean `locations[0]` is left exactly as it is, even when `standardizedLocations` differs
     — this is the central distinction from a blanket swap, which the audit measured costs India
     matches on some boards and collapses 3.91% of jobs to a bare country code."""
-    from headstart.scrapers.eightfold import _locations
+    from headstart.scrapers.eightfold import _location
 
     assert (
-        _locations(["Bengaluru, Karnataka, India"], ["Bengaluru, KA, IN"])
+        _location(["Bengaluru, Karnataka, India"], ["Bengaluru, KA, IN"])
         == "Bengaluru, Karnataka, India"
     )
 
@@ -6383,18 +6381,18 @@ def test_eightfold_locations_repair_rejects_a_bare_country_code():
     """`'SG-Singapore (3301)'` -> `'SG'` measured live on lamresearch: the repair would collapse
     a city-state's only place name to its bare country code — a real information loss, so the
     dirty original is kept instead."""
-    from headstart.scrapers.eightfold import _locations
+    from headstart.scrapers.eightfold import _location
 
-    assert _locations(["SG-Singapore (3301)"], ["SG"]) == "SG-Singapore (3301)"
+    assert _location(["SG-Singapore (3301)"], ["SG"]) == "SG-Singapore (3301)"
 
 
 def test_eightfold_locations_repair_rejects_a_still_site_code_shaped_value():
     """lamresearch's `standardizedLocations` sometimes just lowercases the same site code instead
     of translating it (`'KR-Yongin-02 (3821)'` -> `'kr-yongin-02 (3821)'`) — not a real repair."""
-    from headstart.scrapers.eightfold import _locations
+    from headstart.scrapers.eightfold import _location
 
     assert (
-        _locations(["KR-Yongin-02 (3821)"], ["kr-yongin-02 (3821)"])
+        _location(["KR-Yongin-02 (3821)"], ["kr-yongin-02 (3821)"])
         == "KR-Yongin-02 (3821)"
     )
 
@@ -6404,10 +6402,10 @@ def test_eightfold_locations_repair_rejects_a_country_mismatch():
     `standardizedLocations: ['Lancaster, VIC, AU']` — a bad tenant-side site mapping that would
     swap Malaysia for Australia. The site code's own 2-letter prefix disagreeing with the
     repair's country is the tell."""
-    from headstart.scrapers.eightfold import _locations
+    from headstart.scrapers.eightfold import _location
 
     assert (
-        _locations(["MY-LMM KM [3620] (3832)"], ["Lancaster, VIC, AU"])
+        _location(["MY-LMM KM [3620] (3832)"], ["Lancaster, VIC, AU"])
         == "MY-LMM KM [3620] (3832)"
     )
 
@@ -6416,10 +6414,10 @@ def test_eightfold_locations_repair_uses_the_index_matched_standardized_entry():
     """`locations`/`standardizedLocations` are parallel arrays (measured live: same length on
     10,694/10,694 jobs where both are present) — a dirty entry at index 1 must repair from
     `standardizedLocations[1]`, not `[0]`."""
-    from headstart.scrapers.eightfold import _locations
+    from headstart.scrapers.eightfold import _location
 
     assert (
-        _locations(["", "US-CA-Fremont (1003)"], ["", "Fremont, CA, US"])
+        _location(["", "US-CA-Fremont (1003)"], ["", "Fremont, CA, US"])
         == "Fremont, CA, US"
     )
 

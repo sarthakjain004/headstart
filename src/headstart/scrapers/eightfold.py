@@ -545,7 +545,7 @@ class EightfoldScraper(BaseScraper):
                     "fields": {
                         "title": position.get("name"),
                         "description": descriptions.get(position_id) or None,
-                        "location": _locations(
+                        "location": _location(
                             position.get("locations"),
                             position.get("standardizedLocations"),
                         ),
@@ -778,7 +778,7 @@ def _smartapply_to_pcsx_shape(pos: dict[str, Any]) -> dict[str, Any]:
     hybrid/remote_local/remote_global, all already in ``_REMOTE_OPTION``). ``t_create`` ->
     ``postedTs``: SmartApply carries no ``postedTs`` of its own, and ``t_create`` (when the
     posting was created) is the closer match than ``t_update`` (which moves on every edit).
-    ``standardizedLocations`` is simply absent — ``_locations``'s dirty-location repair tier
+    ``standardizedLocations`` is simply absent — ``_location``'s dirty-location repair tier
     is skipped, not broken, without it. ``positionUrl`` is deliberately left out too: SmartApply's
     own ``canonicalPositionUrl`` sometimes points at a *different* vanity host than ``self.slug``
     (e.g. bayer.eightfold.ai's is ``talent.bayer.com``), while the existing ``/careers/job/{id}``
@@ -874,7 +874,7 @@ def _repair_location(dirty_value: str, standardized_entry: Any) -> str | None:
     return candidate
 
 
-def _locations(locations: Any, standardized: Any = None) -> str | None:
+def _location(locations: Any, standardized: Any = None) -> str | None:
     """Every non-empty place `locations` names, "; "-joined in order without repeats (blank
     entries are skipped — some tenants ship a blank first entry with real ones after it, e.g.
     ascendion). Each is repaired from its index-matched `standardizedLocations` entry when it's

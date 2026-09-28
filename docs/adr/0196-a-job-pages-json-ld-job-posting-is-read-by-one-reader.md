@@ -176,10 +176,11 @@ sampled Board took. SuccessFactors pages carry no JSON-LD (above).
 
 Eightfold's API path, which is not this reader, kept only the first non-empty place of its
 `locations` in the same way. It now keeps every one, each repaired from its own
-`standardizedLocations` entry as before (`eightfold._locations`). Measured the same way on four
+`standardizedLocations` entry as before (`eightfold._location`). Measured the same way on four
 seeded Boards (symetra, corteva, vialto, paypal): 168 of 624 postings gained places, up to 19;
-every old value was the new one's first place, and `remote`, which comes from
-`workLocationOption`, changed on none.
+every old value was the new one's first place. `remote` comes from `workLocationOption`, else
+from `is_remote(location)`, so that fallback now sees every place too; it changed on none of the
+624, and it reaches an already-indexed row only on a sweep (ADR-0118), as for Meta and iCIMS.
 
 Meta and iCIMS fall back to `is_remote(location)` when the page states no remote type, and that
 check now sees every place, so a posting with a "Remote" place among others now reads as remote.

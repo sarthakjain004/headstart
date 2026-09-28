@@ -55,7 +55,7 @@ position. Sampled live across the 23 tenants (230 positions, first page of each)
 |---|---|---|
 | `name` | `name` | same key |
 | `locations` | `locations` | same key, same shape |
-| `standardizedLocations` | *(absent)* | repair tier in `_first_location` is skipped, not broken |
+| `standardizedLocations` | *(absent)* | repair tier in `_location` is skipped, not broken |
 | `department` | `department` | same key, **but list-shaped on 1/23 tenants** (fluor — every sampled position had `["Quality"]`-style values; all 22 others were plain strings) |
 | `postedTs` | *(absent — synthesized from `t_create`)* | see below |
 | `workLocationOption` | `work_location_option` | same value vocabulary (see below) |
