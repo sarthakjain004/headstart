@@ -11,6 +11,7 @@ build the detail endpoint's `jobNumber`.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -160,7 +161,8 @@ def test_a_pipe_url_uses_the_position_id():
 
 def _multi_location_req() -> dict:
     """Live 2026-09-28: the two listing rows of positionId 200685976 (New York City `-2459`,
-    Culver City `-0670`) and the detail of `-2459`, trimmed to the keys the scraper reads."""
+    Culver City `-0670`) and the detail of `-2459`, trimmed to fewer keys; plus the detail of
+    `200674647-0836`, whose qualifications text carries a bare "<"."""
     with open(FIXTURES / "apple_multi_location_req.json", encoding="utf-8") as fh:
         raw = json.load(fh)
     raw["details"] = {k: v["res"] for k, v in raw["details"].items()}
@@ -187,10 +189,55 @@ def test_the_description_carries_the_pay_footer_of_the_rows_own_location():
     assert "EEO" not in job.description  # only the Pay & Benefits footer is read
 
 
+def test_a_bare_angle_bracket_in_the_text_does_not_swallow_what_follows():
+    """`200674647-0836`'s minimum qualifications end "needed(<10%)" in plain text, and the pay
+    footer after them is HTML. Stripped as one string, the "<" opened a tag that ran to the
+    footer's first ">" and the preferred qualifications vanished (live 2026-09-28)."""
+    raw = _multi_location_req()
+    raw["searchResults"] = [
+        {
+            "id": "200674647-0836",
+            "positionId": "200674647",
+            "postingTitle": "Noise and Vibration EPM",
+            "locations": [{"postLocationId": "postLocation-CUP", "name": "Cupertino"}],
+        }
+    ]
+    (job,) = _scraper().parse(raw, SCRAPED_AT)
+    assert "Masters in Engineering is a plus" in job.description
+    assert "base pay range" in job.description
+
+
 def test_location_carries_the_country_after_the_place_name():
     assert _multi_location_jobs()["200685976-2459"].location == (
         "New York City, United States of America"
     )
+
+
+def test_a_country_level_place_is_not_written_twice():
+    """A country-level place's `name` and `countryName` spell the same country differently
+    (live 2026-09-28 PIPE row PIPE-114438158)."""
+    listed = [
+        {
+            "id": "PIPE-114438158",
+            "positionId": "114438158",
+            "postingTitle": "US-Specialist",
+            "locations": [
+                {
+                    "postLocationId": "postLocation-USA",
+                    "countryName": "United States of America",
+                    "name": "United States",
+                    "level": 1,
+                }
+            ],
+        }
+    ]
+    (job,) = _scraper().parse({"searchResults": listed, "details": {}}, SCRAPED_AT)
+    assert job.location == "United States"
+
+
+@pytest.mark.parametrize("native_id", [REQ_ID, PIPE_ID])
+def test_the_job_url_matches_the_declared_url_shape(native_id):
+    assert re.fullmatch(AppleScraper.url_shape, _jobs()[native_id].url)
 
 
 def test_a_pipe_row_has_no_posted_date():
