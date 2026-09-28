@@ -89,9 +89,31 @@ Measured locally over the same history with the sign-in wall on, over HTTP/2 as 
 it, its round trip and CPU simulated (every response held back by 650 ms plus 2.64x its own server
 time; 20 Mbit/s down), main and this change run alternately:
 
-{RESULTS}
+Two fresh boots of each, the first visitor after the boot, figures on screen identical at
+every step (ms; the machine was shared and loaded, so both sides are slow alike):
 
-What it costs: ~7 MB of cells and ~5 s more of the Space's CPU at boot for the 16 drills, which
-the replay's own speed-up gives back several times in Hot's ranking; ~11 KB a page load for the
+| | main | this change |
+| --- | ---: | ---: |
+| cold load of `#trends` to a drawn chart | 2,347 / 2,291 | 1,617 / 1,608 |
+| a repeat visit to a drawn chart | 1,394 / 1,371 | 720 / 710 |
+| first drill into a category | 3,243 / 2,388 | 720 / 712 |
+| first drill into another, the pointer resting 300 ms | 2,750 / 2,610 | 487 / 477 |
+| first 30-day window | 2,480 / 2,436 | 1,262 / 1,328 |
+| first comparable-coverage view | 2,386 / 2,128 | 1,344 / 1,302 |
+| company suggestions ("google") | 1,004 / 979 | 869 / 871 |
+| first company picked | 1,057 / 980 | 788 / 794 |
+| that company's New | 1,009 / 928 | 802 / 796 |
+| Hiring now tab | 728 / 720 | 69 / 70 |
+| bytes on the wire, cold load | 476 KB | 429 KB |
+
+On this Mac's CPU alone (the Space's is ~3.6x slower), a first-time answer: 30-day window 352 to
+64 ms, comparable 334 to 115, roles drill 469 to 89, one company 86 to 33, two companies 175 to
+32; suggestions 33 to 3.4 ms. Boot 32.6 to 20.8 s, Hot's ranking 29.1 to 17.3 s, the opening
+views and their drills 1.4 s (1.1 s for the views alone before). Peak memory 1,177 to 1,379 MB in
+the boot process; the kept cells are 7.1 MB of it, and resident memory once the views are
+answered was 1,027 MB before and 947-992 MB after, well inside the free tier's 16 GB.
+
+What it costs: 7.1 MB of cells, ~200 MB more peak memory at boot, and the 16 drills at boot, which the
+replay's own speed-up gives back several times over in Hot's ranking; ~11 KB a page load for the
 prefetched ranking; one drill asked for per row a pointer rests on. A preset's answer is shared
 only until a tick crosses its start, which is the point at which its figures really change.
