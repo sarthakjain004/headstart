@@ -83,6 +83,9 @@ def index():
             # Whether a Trends category can hand over as its exact Jobs, and up to how many.
             "family_handoff": _FAMILY_IDS is not None,
             "max_family_ids": MAX_FAMILY_IDS,
+            # No answers version (ADR-0250): this renderer serves no Trends or Hot answers to
+            # cache, so the page asks as it always did.
+            "answers_version": None,
         },
         # The privacy-policy links point into the public repo. Hardcoded here rather than
         # imported: this file is the local dev renderer and shares no config with the Space.
