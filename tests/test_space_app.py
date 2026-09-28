@@ -3823,16 +3823,17 @@ def test_the_hardening_headers_leave_a_gzipped_static_304_alone(sets_app, monkey
     assert again.headers["X-Content-Type-Options"] == "nosniff"
 
 
-@pytest.mark.parametrize(
-    ("method", "path"),
-    [("post", "/profile"), ("post", "/profile/parse"), ("post", "/subscribe")],
-)
-def test_a_json_array_body_is_refused_not_a_500(
-    sets_app, hub, monkeypatch, method, path
+@pytest.mark.parametrize("path", ["/profile", "/profile/parse", "/subscribe"])
+def test_a_json_array_body_is_read_as_an_empty_object_not_a_500(
+    sets_app, hub, monkeypatch, path
 ):
     """#595: `request.get_json() or {}` let a JSON array through to `.get()`."""
     client = _signed_in(sets_app, monkeypatch)
-    r = getattr(client, method)(path, json=[], base_url=_HTTPS)
-    assert (
-        r.status_code < 500
-    )  # read as an empty object: a 400, or /profile's no-op save
+    r = client.post(path, json=[], base_url=_HTTPS)
+    assert r.status_code < 500  # a 400 from the route, or /profile's no-op save
+
+
+def test_a_non_string_query_is_refused_not_a_500(sets_app, hub, monkeypatch):
+    client = _signed_in(sets_app, monkeypatch)
+    r = client.post("/subscribe", json={"query": 5}, base_url=_HTTPS)
+    assert r.status_code < 500
