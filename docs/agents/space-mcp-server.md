@@ -30,6 +30,16 @@ dependencies, `curl_cffi` and `requests`, no torch and no index — and runs its
 `uvx --from git+https://github.com/sarthakjain004/headstart headstart-space-mcp` command.
 `uvx --refresh …` picks up a newer commit; append `@<branch-or-tag>` to the URL to pin one.
 
+**The first run takes minutes; later runs start in about 2 s.** Before the server can start, uv
+clones this repository with its whole history (about 106 MB) and downloads `curl_cffi`: on
+2026-09-28 that took 670 s on a slow link, 433 s of it the clone. Later runs start from uv's
+cache. Run the command once in a terminal first, so your client's first connection is not left
+waiting on the download (it exits when its input ends):
+
+```bash
+uvx --from git+https://github.com/sarthakjain004/headstart headstart-space-mcp < /dev/null
+```
+
 Installed this way the package carries no `config/`, so the tools' `category` is a free string
 rather than the list of role families; the server says so once on stderr when it starts. A name
 that is not a role family is still refused, by the Space.
