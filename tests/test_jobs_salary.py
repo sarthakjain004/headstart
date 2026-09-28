@@ -166,7 +166,11 @@ def test_field_darwinbox_unrecognized_currency_still_declines():
     # Not every currency darwinbox states is in salary.py's _CURRENCY_CODES yet (real, live:
     # MAD/CNY/MXN/KRW/THB/SGD/MYR/IDR/BRL/CZK) — this fix widens the gate to codes salary.py
     # already recognizes, not to every code darwinbox's own salary_currency field can state.
-    assert from_field("MYR 5000-7000 (Monthly)", "darwinbox") is None
+    # MYR became one on #698, so MAD stands in for the codes it still does not.
+    assert from_field("MAD 5000-7000 (Monthly)", "darwinbox") is None
+    assert from_field("MYR 5000-7000 (Monthly)", "darwinbox") == SalarySpan(
+        60_000, 84_000, "MYR", "field"
+    )
 
 
 def test_field_darwinbox_monthly_timeframe_honored():
@@ -2226,3 +2230,93 @@ def test_hourly_decimals_monthly_ceiling_and_new_currencies():
     assert from_field("40000-50000 MXN 1 MONTH", "smartrecruiters") == SalarySpan(
         480_000, 600_000, "MXN", "field"
     )
+
+
+# --- #698: the deferred currencies, and zoho's period-less monthly figures ----------------------
+
+
+def test_the_deferred_currencies_are_named_and_bounded():
+    # Structured strings as smartrecruiters, ashby and recruitee spell them (served v277).
+    assert from_field("5000-7000 SGD 1 MONTH", "smartrecruiters") == SalarySpan(
+        60_000, 84_000, "SGD", "field"
+    )
+    assert from_field("10500 RON 1 MONTH", "smartrecruiters") == SalarySpan(
+        126_000, None, "RON", "field"
+    )
+    assert from_field("8500000-13074000 JPY 1 YEAR", "ashby") == SalarySpan(
+        8_500_000, 13_074_000, "JPY", "field"
+    )
+    assert from_field("150000-190000 NZD per year", "recruitee") == SalarySpan(
+        150_000, 190_000, "NZD", "field"
+    )
+    # A monthly pay typed under YEAR falls under its currency's floor instead of being served.
+    assert from_field("PHP 19000-20000 yearly", "personio") is None
+    assert from_field("25000-31000 SAR YEAR", "teamtailor") is None
+    # The description tier names them too.
+    assert from_description("Salary: MYR 8,000 - 10,000 per month") == SalarySpan(
+        96_000, 120_000, "MYR", "regex"
+    )
+
+
+def test_a_peso_or_taiwan_dollar_code_before_a_bare_dollar_names_it_now():
+    assert (
+        salary_module._currency_for_symbol(
+            "$", "", bare_dollar="USD", preceding="Pay: COP "
+        )
+        == "COP"
+    )
+    assert (
+        salary_module._currency_for_symbol(
+            "$", "", bare_dollar="USD", preceding="Pay: TWD "
+        )
+        == "TWD"
+    )
+    assert (
+        salary_module._currency_for_symbol("$", "", bare_dollar="USD", preceding="CLP ")
+        is None
+    )
+
+
+def test_zoho_reads_a_figure_below_its_currencys_floor_as_monthly_pay():
+    # zoho's Salary and Currency state no period; these were served as an annual 30,000-40,000
+    # with no currency (cynosurejobs, v277).
+    assert from_field("30000-40000 INR", "zoho") == SalarySpan(
+        360_000, 480_000, "INR", "field"
+    )
+    assert from_field("110K+ INR", "zoho") == SalarySpan(
+        1_320_000, None, "INR", "field"
+    )
+    assert from_field("SGD 6000 - SGD 8500", "zoho") == SalarySpan(
+        72_000, 102_000, "SGD", "field"
+    )
+    assert from_field("18000 to 21000 AED", "zoho") == SalarySpan(
+        216_000, 252_000, "AED", "field"
+    )
+    # A figure the floor admits stays annual.
+    assert from_field("100000-120000 INR", "zoho") == SalarySpan(
+        100_000, 120_000, "INR", "field"
+    )
+    # Words, a day rate, or a currency not quoted monthly get no monthly reading.
+    assert from_field("40000 or depends on the skill sets INR", "zoho") is None
+    assert from_field("600/day GBP", "zoho") is None
+    assert from_field("27500-45000 ZAR", "zoho") is None
+    assert from_field("5000 USD", "zoho") is None
+    # Only zoho: the same string elsewhere is read as written.
+    assert from_field("30000-40000 INR", "bamboohr") is None
+
+
+def test_zoho_serves_no_currencyless_figure_for_a_field_naming_a_code():
+    # zoho.py appends "Salary: … Currency: …" to the description, so Tier 2 read the refused
+    # field again without its currency or floor (swan.zohorecruit.com, v277).
+    spliced = "Senior accountant role in Doha. Salary: 25000 Currency: QAR"
+    assert extract("25000 QAR", spliced, "zoho") is None
+    # A description figure that states its own currency still stands.
+    assert extract(
+        "25000 QAR", "Compensation: ₹40,000 per month.", "zoho"
+    ) == SalarySpan(480_000, None, "INR", "regex")
+
+
+def test_every_plausible_annual_figure_fits_the_served_int32_columns():
+    # `min_salary_annual`/`max_salary_annual` are int32 in `index._schema()`; COP's ceiling scaled
+    # from USD's (2.5 billion) would not fit.
+    assert max(salary_module._MAX_PLAUSIBLE_ANNUAL.values()) <= 2**31 - 1

@@ -1,7 +1,7 @@
 {
   "_comment": "Units of each currency per 1 USD, for the salary bracket's cross-currency comparison (ADR-0117). A committed table, not a live lookup, so a search never depends on a third-party call at request time. `as_of` is surfaced in the UI beside the filter — if it goes stale the user can see that it has. Refresh by replacing `rates` and `as_of` together; a rate without its date is the defect this file exists to avoid. A currency absent from `rates` is not converted and its jobs are left out of a cross-currency bracket rather than silently compared at 1:1.",
   "as_of": "2026-09-07",
-  "source": "exchangerate-api.com (open.er-api.com, updated 2026-09-07T00:02Z), cross-checked against the ECB via frankfurter.dev (2026-09-04): 28 of 33 currencies agreed within 2%; the rest are carried by only one source.",
+  "source": "exchangerate-api.com (open.er-api.com, updated 2026-09-07T00:02Z), cross-checked against the ECB via frankfurter.dev (2026-09-04): 28 of 33 currencies agreed within 2%; the rest are carried by only one source. NGN, PKR, QAR and COP (added 2026-09-29, #698) are the same day's rates from the fawazahmed0 currency-api snapshot for 2026-09-07, which agreed with every other rate here within 0.22%.",
   "base": "USD",
   "rates": {
     "USD": 1.0,
@@ -36,6 +36,10 @@
     "IDR": 17655.31,
     "MYR": 4.0443,
     "THB": 32.92,
-    "VND": 25999.42
+    "VND": 25999.42,
+    "NGN": 1321.99,
+    "PKR": 277.39,
+    "QAR": 3.64,
+    "COP": 3131.92
   }
 }
