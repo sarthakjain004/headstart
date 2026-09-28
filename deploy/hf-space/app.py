@@ -11,18 +11,30 @@ modules down flat (ADR-0153), so there is exactly one import path to keep in syn
 
 from __future__ import annotations
 
+import gzip
 import hmac
 import json
 import os
 import threading
 import time
 import traceback
+from collections import OrderedDict
 from dataclasses import replace
 from datetime import timedelta
 from pathlib import Path
 
 import lancedb
-from flask import Flask, jsonify, redirect, render_template, request, session
+from flask import (
+    Flask,
+    Response,
+    g,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    session,
+)
+from flask.sessions import SecureCookieSessionInterface
 from huggingface_hub import snapshot_download
 
 import headstart  # only for headstart.__file__, to locate ui/ beside this package (ADR-0153)
@@ -163,6 +175,11 @@ _HISTORY = trend_history.TrendHistory.load(_STATE / "data" / "state", _CONFIG)
 # retired family's successor, so a Trends category hands Search the Jobs its line counts.
 _WATCH = trend_history.watched_roles(_CONFIG / "role_watchlist.json")
 _FAMILY_SUCCESSOR = trend_history.family_successors(_CONFIG / "role_families.json")
+# What every answer read from the history above is versioned by (ADR-0251): this process's boot.
+# The history is read once and never changes after, and every pipeline publication and every
+# deploy restarts the Space, so one boot names one fixed set of answers. The page sends it back
+# as `v=`, and an answer asked for under it may be kept by the browser for good.
+_ANSWERS_VERSION = f"{time.time_ns():x}"
 
 
 def _rank_hot(history: trend_history.TrendHistory) -> dict:
@@ -275,6 +292,25 @@ app.config.update(
     PERMANENT_SESSION_LIFETIME=timedelta(days=30),
 )
 
+
+class _AnswersLeaveTheSessionAlone(SecureCookieSessionInterface):
+    """The signed-cookie session, except on an answer the browser may keep (ADR-0251).
+
+    Flask re-signs a permanent session's cookie on every response and then marks the response
+    `Vary: Cookie`, as it does whenever the wall has read the session. A kept answer is the same
+    for every Account, but keyed on a cookie that changes each second it is never found again:
+    measured 2026-09-28 with the wall on, every revisit of a kept view went back to the network.
+    So such an answer neither re-signs the cookie nor varies by it; every other response still
+    re-signs it, so a session still slides forward with use."""
+
+    def save_session(self, app, session, response):
+        if g.get("answer_for_everyone"):
+            return
+        super().save_session(app, session, response)
+
+
+app.session_interface = _AnswersLeaveTheSessionAlone()
+
 # Paths that must answer signed out: the door itself, and the unsubscribe link every Digest
 # already delivered carries — a session wall must never break a mailed link. `/me` answers
 # from the caller's own cookie, so it can only tell you what you sent. `/privacy` is the URL
@@ -335,6 +371,52 @@ def _require_sign_in():
     if not session.get("email"):
         return jsonify({"error": "sign in first"}), 401
     return None
+
+
+def _gzip(data: bytes) -> bytes:
+    """``data`` gzipped at level 6 (ADR-0251): ~11 ms for the 376 KB `new` view here, where
+    level 9 took ~14.5 ms to save 0.6 KB more (measured 2026-09-28)."""
+    return gzip.compress(data, compresslevel=6)
+
+
+def _json_body(obj) -> bytes:
+    """``obj`` as exactly the bytes ``jsonify`` sends for it."""
+    return app.json.response(obj).get_data()
+
+
+# Each script and stylesheet gzipped, by path and ETag: compressed once a boot (`_gzip_static`).
+_GZIPPED_STATIC: dict[tuple[str, str | None], bytes] = {}
+
+
+@app.after_request
+def _gzip_static(response):
+    """The page's scripts and stylesheets gzipped where the browser takes it (ADR-0251): ~0.9 MB
+    of them on a first visit, which the Space's proxy passes on uncompressed (measured
+    2026-09-28), and the Trends chart waits on app.js. The ETag is weakened, since the gzipped
+    copy is not the file byte for byte; a revalidation still matches it and still answers 304.
+    Every answer for one names the variants, a 304 as well."""
+    if request.endpoint != "static" or response.mimetype not in (
+        "text/javascript",
+        "application/javascript",
+        "text/css",
+    ):
+        return response
+    response.vary.add("Accept-Encoding")
+    if response.status_code != 200 or request.accept_encodings.quality("gzip") <= 0:
+        return response
+    etag, _ = response.get_etag()
+    response.direct_passthrough = False
+    data = (
+        response.get_data()
+    )  # read even when kept: it closes the file send_file opened
+    key = (request.path, etag)
+    if key not in _GZIPPED_STATIC:
+        _GZIPPED_STATIC[key] = _gzip(data)
+    response.set_data(_GZIPPED_STATIC[key])
+    response.headers["Content-Encoding"] = "gzip"
+    if etag:
+        response.set_etag(etag, weak=True)
+    return response
 
 
 def _company_where(args) -> str | None:
@@ -438,6 +520,23 @@ def set_company():
     return jsonify(_companies_json(prefs))
 
 
+def _answer_response(body: bytes, gzipped: bytes | None = None) -> Response:
+    """One read-only answer as its response (ADR-0251): gzipped where the browser takes it and a
+    gzipped copy is given, since the Space's proxy compresses nothing (measured 2026-09-28), and
+    kept by the browser for good when asked for under this boot's ``_ANSWERS_VERSION``, since
+    nothing it reads changes until the next boot, which gives the page a new one."""
+    zipped = gzipped is not None and request.accept_encodings.quality("gzip") > 0
+    response = Response(gzipped if zipped else body, mimetype="application/json")
+    if gzipped is not None:
+        response.vary.add("Accept-Encoding")
+    if zipped:
+        response.headers["Content-Encoding"] = "gzip"
+    if request.args.get("v") == _ANSWERS_VERSION:
+        response.headers["Cache-Control"] = "private, max-age=31536000, immutable"
+        g.answer_for_everyone = True  # _AnswersLeaveTheSessionAlone
+    return response
+
+
 @app.route("/hot")
 def hot_companies():
     """The actively-hiring companies ranked at boot (``_rank_hot``), or 503 with nothing ranked.
@@ -449,7 +548,8 @@ def hot_companies():
     """
     if not _HOT:
         return jsonify({"error": "no hot list on this deployment yet"}), 503
-    return jsonify(_HOT)
+    body = _json_body(_HOT)
+    return _answer_response(body, _gzip(body))
 
 
 @app.route("/facets")
@@ -1094,12 +1194,56 @@ def trends():
         ats=tuple(args.getlist("ats")),
     )
     try:
-        answer = _HISTORY.unnetted_answer(question)
+        body, gzipped = _served_trends(_HISTORY, question)
     except trend_history.TrendsUnavailable as exc:
         return jsonify(error=str(exc)), 503
     except ValueError as exc:
         return jsonify(error=str(exc)), 400
-    return jsonify(_trends_payload(answer, question))
+    return _answer_response(body, gzipped)
+
+
+# Each /trends body this boot has answered, least recently asked for first, and the one lock
+# answering takes (`_served_trends`). At most _TRENDS_KEPT answers of at most ~0.6 MB, JSON and
+# gzip together.
+_TRENDS_ANSWERED: OrderedDict[tuple, tuple[bytes, bytes]] = OrderedDict()
+_TRENDS_ANSWERING = threading.Lock()
+_TRENDS_KEPT = 128
+
+
+def _served_trends(
+    history: trend_history.TrendHistory, question: trend_history.TrendQuestion
+) -> tuple[bytes, bytes]:
+    """``question``'s ``/trends`` body over ``history``, as JSON and gzipped, answered once per
+    boot (ADR-0251): a history never changes once loaded, so neither does any answer read from
+    it, and the index-wide one costs ~1.5 s of the Space's CPU. Keyed on the history as well, so
+    one loaded in its place answers afresh; a question that raises is not kept.
+
+    One answer is worked out at a time. Under the GIL two at once finish no sooner, and a click
+    that repeats a prefetch still in flight then waits for that answer rather than working it
+    out a second time beside it. An answer already kept is read without the lock, so it never
+    waits behind one being worked out.
+
+    The least recently asked for goes first, so a preset window, whose `since` is a new
+    millisecond on every click, cannot push out the opening views everyone asks for."""
+    key = (history, question)
+    kept = _TRENDS_ANSWERED.get(key)
+    if kept is not None:
+        try:
+            _TRENDS_ANSWERED.move_to_end(key)
+        except (
+            KeyError
+        ):  # let go by an answer worked out meanwhile; it is still this one
+            pass
+        return kept
+    with _TRENDS_ANSWERING:
+        if key not in _TRENDS_ANSWERED:
+            body = _json_body(
+                _trends_payload(history.unnetted_answer(question), question)
+            )
+            _TRENDS_ANSWERED[key] = (body, _gzip(body))
+            if len(_TRENDS_ANSWERED) > _TRENDS_KEPT:
+                _TRENDS_ANSWERED.popitem(last=False)
+        return _TRENDS_ANSWERED[key]
 
 
 def _trends_payload(answer: dict, question: trend_history.TrendQuestion) -> dict:
@@ -1127,6 +1271,31 @@ def _trends_payload(answer: dict, question: trend_history.TrendQuestion) -> dict
     return payload
 
 
+def _answer_opening_views() -> None:
+    """The view every Trends visit opens on, under both Measures, answered before the first
+    visitor asks (ADR-0251): ~3 s of the Space's CPU once at boot rather than on someone's first
+    clicks. Never fatal: a question that fails here fails the same way when asked, and is
+    answered there."""
+    started = time.monotonic()
+    try:
+        for metric in ("stock", "new"):
+            _served_trends(_HISTORY, trend_history.TrendQuestion(metric=metric))
+    except Exception as exc:  # noqa: BLE001 - the request path reports its own failure
+        print(
+            f"trends: opening views not answered ({type(exc).__name__}: {exc})",
+            flush=True,
+        )
+        return
+    print(
+        f"trends: opening views answered in {time.monotonic() - started:.1f}s",
+        flush=True,
+    )
+
+
+if _HISTORY.ticks:
+    _answer_opening_views()
+
+
 @app.route("/companies/suggest")
 def suggest_companies():
     """Directory companies matching ``?q=`` for the Trends company picker (ADR-0185), best
@@ -1142,8 +1311,10 @@ def suggest_companies():
         limit = max(1, min(int(request.args.get("limit", 8)), 20))
     except ValueError:
         return jsonify(error="limit must be an integer"), 400
-    return jsonify(
-        companies=_HISTORY.suggest_companies(request.args.get("q", ""), limit)
+    return _answer_response(
+        _json_body(
+            {"companies": _HISTORY.suggest_companies(request.args.get("q", ""), limit)}
+        )
     )
 
 
@@ -1237,6 +1408,9 @@ def index():
             # Whether a Trends category can hand over as its exact Jobs, and up to how many.
             "family_handoff": _FAMILY_IDS is not None,
             "max_family_ids": job_search.MAX_FAMILY_IDS,
+            # What the Trends, Hot and company-picker requests send as `v=`, so the browser may
+            # keep their answers until the next boot (ADR-0251).
+            "answers_version": _ANSWERS_VERSION,
         },
         njobs=f"{_table.count_rows():,}",
         atses=capabilities.atses,
