@@ -989,6 +989,25 @@ def script_urls(body: str, page_url: str) -> list[str]:
     return [urljoin(root, m.group(1)) for m in SCRIPT_SRC.finditer(body)]
 
 
+# A path ending in one of these names an asset, never a page that could name the SPA's bundle.
+ASSET_PATH = re.compile(
+    r"\.(?:m?js|css|json|map|xml|txt|png|jpe?g|gif|svg|ico|webp|woff2?|ttf|pdf)$",
+    re.IGNORECASE,
+)
+
+
+def is_html_page(body: str, url: str) -> bool:
+    """Whether a fetched careers candidate is an HTML document the bundle rung may read.
+
+    A careers-ish link can point at a script: on careers.microland.com the first one that loaded
+    was Akamai's `/akam/13/…`, extensionless and served as JS, so its real `main.js` was never
+    read. `get` drops the content-type, so the body stands in for it: HTML opens with a tag.
+    """
+    if ASSET_PATH.search(urlsplit(url).path):
+        return False
+    return body.lstrip("\ufeff \t\r\n").startswith("<")
+
+
 def scan(
     text: str, self_domain: str, *, allow_provider_host: bool = False
 ) -> list[tuple[str, str, str, int]]:
@@ -1448,6 +1467,7 @@ def probe(
         body, final, e = fetch_and_record(f"https://{domain}/", "homepage")
     if e:
         notes.append(f"root:{e}")
+    homepage = (body, final) if body and not e and is_html_page(body, final) else None
     links = [
         urljoin(final or f"https://{domain}/", m.group(1))
         for m in HREF.finditer(body or "")
@@ -1499,7 +1519,7 @@ def probe(
         # Re-record redirect evidence with its stronger signal; page evidence is already retained.
         if offsite:
             record(scan_here(final), "redirect", final)
-        if best_careers_page is None and not _e:
+        if best_careers_page is None and not _e and is_html_page(body, final):
             best_careers_page = (body, final)
         if second_hop < SECOND_HOP and re.search(
             r"career|job|hiring|opening", final, re.IGNORECASE
@@ -1529,9 +1549,11 @@ def probe(
             continue
 
     # --- 6. last rung: the SPA's own JS bundle. Only for companies still unresolved, capped at 3
-    # same-origin scripts, because this is the expensive signal (bundles run to megabytes).
-    if not has_candidate() and best_careers_page:
-        body, final = best_careers_page
+    # same-origin scripts, because this is the expensive signal (bundles run to megabytes). With
+    # no HTML careers page, the homepage is the page whose bundle is read.
+    bundle_page = best_careers_page or homepage
+    if not has_candidate() and bundle_page:
+        body, final = bundle_page
         srcs = script_urls(body, final)
         srcs = [u for u in srcs if reg_domain(urlsplit(u).netloc) == reg_domain(domain)]
         srcs.sort(
