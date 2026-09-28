@@ -3,6 +3,7 @@ from headstart.jobs.job import (
     epoch_ms_to_iso,
     html_to_text,
     is_remote,
+    remote_from_workplace,
     repaired_mojibake,
     requisition_of,
 )
@@ -74,6 +75,18 @@ def test_is_remote():
     assert is_remote("Remote - US") is True
     assert is_remote("San Francisco, CA") is False
     assert is_remote(None) is None
+
+
+def test_remote_from_workplace():
+    # Stated types as Lever ("hybrid", "onsite"), airbnb's Greenhouse metadata ("Onsite") and
+    # SmartRecruiters' flags state them; hybrid is neither remote nor on-site.
+    assert remote_from_workplace("hybrid", "Remote or Mississauga, CA") is None
+    assert remote_from_workplace("Remote", "United States") is True
+    assert remote_from_workplace("onsite", "Foster City, CA") is False
+    assert remote_from_workplace("onsite", "Remote (United States)") is True
+    assert remote_from_workplace(None, "Hybrid in Boston, MA") is None
+    assert remote_from_workplace("unspecified", "San Francisco, CA") is False
+    assert remote_from_workplace("unspecified", None) is None
 
 
 def test_epoch_ms_to_iso():

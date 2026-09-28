@@ -140,6 +140,26 @@ def is_remote(location: str | None) -> bool | None:
     return "remote" in location.lower()
 
 
+def remote_from_workplace(workplace: str | None, location: str | None) -> bool | None:
+    """Whether a posting is remote, from the workplace type its ATS states, else the location.
+
+    Hybrid is neither remote nor on-site, so it is None, as ``ashby._remote`` and
+    ``workday._remote_from`` answer it; a location saying so ("Hybrid in Boston, MA") counts.
+    A remote location still reads remote under a stated on-site type, as it always did. With
+    nothing stated, the location decides (``is_remote``), None when there is none.
+    """
+    stated = (workplace or "").lower()
+    if "hybrid" in stated:
+        return None
+    if "remote" in stated or is_remote(location):
+        return True
+    if "site" in stated or "office" in stated:
+        return False
+    if location and "hybrid" in location.lower():
+        return None
+    return is_remote(location)
+
+
 def epoch_ms_to_iso(ms: int | None) -> str | None:
     """Convert a millisecond Unix timestamp to an ISO-8601 UTC string."""
     if ms is None:

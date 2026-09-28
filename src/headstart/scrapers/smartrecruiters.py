@@ -56,7 +56,7 @@ import re
 from typing import Any
 
 from headstart.jobs import salary
-from headstart.jobs.job import Job, html_to_text, is_remote
+from headstart.jobs.job import Job, html_to_text, remote_from_workplace
 from headstart.scrapers.base import (
     USER_AGENT,
     BaseScraper,
@@ -121,6 +121,15 @@ _STRUCTURED_PERIOD = {
     "WEEKLY": "1 WEEK",
     "DAILY": "1 DAY",
 }
+
+
+def _workplace_of(loc: dict) -> str | None:
+    """The workplace type a listing posting's ``location`` flags state, if either is set."""
+    if loc.get("remote"):
+        return "remote"
+    if loc.get("hybrid"):
+        return "hybrid"
+    return None
 
 
 class SmartRecruitersScraper(BaseScraper):
@@ -271,13 +280,9 @@ class SmartRecruitersScraper(BaseScraper):
                     company=(p.get("company") or {}).get("name") or self.company,
                     title=(p.get("name") or "").strip(),
                     location=location,
-                    # Hybrid is neither remote nor on-site, so None, as `ashby._remote`
-                    # answers it. alten 2026-09-28: 5 of 100 listed postings hybrid.
-                    remote=True
-                    if loc.get("remote")
-                    else None
-                    if loc.get("hybrid")
-                    else is_remote(location),
+                    # The listing states `hybrid` beside `remote`; hybrid is None
+                    # (`remote_from_workplace`). alten 2026-09-28: 5 of 100 hybrid.
+                    remote=remote_from_workplace(_workplace_of(loc), location),
                     department=_department_of(p),
                     url=self.job_url(p["id"]),
                     posted_at=p.get("releasedDate"),

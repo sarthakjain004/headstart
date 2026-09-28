@@ -19,7 +19,12 @@ from __future__ import annotations
 from typing import Any
 
 from headstart.jobs import salary
-from headstart.jobs.job import Job, html_to_text, is_remote, requisition_of
+from headstart.jobs.job import (
+    Job,
+    html_to_text,
+    remote_from_workplace,
+    requisition_of,
+)
 from headstart.scrapers.base import BaseScraper
 
 # Names carrying a genuine currency-range/point disclosure (real minority of tenants) score
@@ -35,29 +40,18 @@ _PREFERRED_NAME_WORDS = ("transparency", "range", "pay")
 _EXCLUDED_NAME_WORDS = ("equity",)
 
 
-def _remote(metadata: list[dict] | None, location: str | None) -> bool | None:
-    """Whether the posting is remote: the tenant's own ``Workplace Type`` field, else the location.
+def _workplace_type(metadata: list[dict] | None) -> str | None:
+    """The tenant's own ``Workplace Type`` field, when it states one in ``metadata``.
 
-    Greenhouse has no standard workplace field, but a tenant may state one in ``metadata``.
-    Measured live 2026-09-28: airbnb states it on all 160 postings (Remote 133, Hybrid 23,
-    Onsite 4), and 115 of the Remote ones name only a place ("United States"), which the
-    location word check read as on-site. It is rare elsewhere (0 of 40 random live Boards), so
-    the location stays the fallback. Hybrid is neither remote nor on-site, so it is None, as
-    ``ashby._remote`` answers it; that holds for a location saying so ("Hybrid in Boston, MA").
+    Greenhouse has no standard workplace field. Measured live 2026-09-28: airbnb states this
+    one on all 160 postings (Remote 133, Hybrid 23, Onsite 4), and 115 of the Remote ones name
+    only a place ("United States"), which the location word check read as on-site. It is rare
+    elsewhere (0 of 40 random live Boards), so the location stays the fallback.
     """
     for m in metadata or []:
-        if "workplace" not in (m.get("name") or "").lower():
-            continue
-        value = str(m.get("value") or "").lower()
-        if "hybrid" in value:
-            return None
-        if "remote" in value:
-            return True
-        if "site" in value or "office" in value:
-            return False
-    if location and "hybrid" in location.lower():
-        return None
-    return is_remote(location)
+        if (m.get("name") or "").strip().lower() == "workplace type":
+            return str(m.get("value") or "")
+    return None
 
 
 def _format_amount(v: float) -> str:
@@ -160,7 +154,9 @@ class GreenhouseScraper(BaseScraper):
                     company=j.get("company_name") or self.company,
                     title=(j.get("title") or "").strip(),
                     location=location,
-                    remote=_remote(j.get("metadata"), location),
+                    remote=remote_from_workplace(
+                        _workplace_type(j.get("metadata")), location
+                    ),
                     department=department,
                     url=self.job_url(j.get("absolute_url", "")),
                     posted_at=j.get("first_published") or j.get("updated_at"),

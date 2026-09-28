@@ -1022,8 +1022,8 @@ def test_workable_parse():
 
 
 def test_workable_url_is_the_posting_not_its_application_form():
-    """Real vizrt widget row (2026-09-28): `url` is the posting page, `application_url` its
-    `/apply` form. The served link is the posting, as `url_shape` states it."""
+    """Real apna widget rows: `url` is the posting page, `application_url` its `/apply` form.
+    The served link is the posting, as `url_shape` states it."""
     raw = _load("workable_apna.json")
     jobs = get_scraper("workable", "apna", "Apna").parse(raw, SCRAPED_AT)
     assert [j.url for j in jobs] == [
