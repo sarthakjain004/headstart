@@ -22,6 +22,7 @@ from typing import Any
 from headstart.mcp_protocol.messages import ToolFailure
 from headstart.space_mcp import (
     company_scope,
+    noun_counts,
     role_families,
     scraped_text,
     search_arguments,
@@ -29,9 +30,6 @@ from headstart.space_mcp import (
 )
 from headstart.space_mcp.space_client import SpaceClient, SpaceRoute
 from headstart.space_mcp.space_tool import SpaceTool
-
-#: A company name past this is cut, as search cuts one.
-SHORT_FIELD = 60
 
 #: The rows the Space reads for a sample (`JobSearch.REQUIREMENTS_SAMPLE`), restated for the
 #: description, which is written before any answer; an answer states its own.
@@ -123,7 +121,8 @@ def _lead(arguments: dict[str, Any], counted: dict[str, Any]) -> list[str]:
     if over:
         lines.append(
             f"At most {counted['per_company']} postings of one company are counted, so one "
-            f"company's wording cannot speak for the role: {over:,} more were left out."
+            "company's wording cannot speak for the role, which left out "
+            f"{noun_counts.counted(over, 'more posting')}."
         )
     if query and not category:
         lines.append(
@@ -166,7 +165,7 @@ def _skill_lines(counted: dict[str, Any]) -> list[str]:
     for skill in skills:
         grouped.setdefault(skill["kind"], []).append(
             f"{skill['skill']} {_share(skill['jobs'], described)} "
-            f"({skill['employers']:,} employer{'' if skill['employers'] == 1 else 's'})"
+            f"({noun_counts.counted(skill['employers'], 'employer')})"
         )
     lines += [
         f"  {kinds.get(kind, kind)}: {' · '.join(named)}"
@@ -210,7 +209,7 @@ def _salary_line(counted: dict[str, Any]) -> str:
     if not salary["stating"]:
         return f"Salary: none of the {counted['distinct']:,} states one."
     currencies = " · ".join(
-        f"{c['currency']}, {c['jobs']:,} posting{'' if c['jobs'] == 1 else 's'}: "
+        f"{c['currency']}, {noun_counts.counted(c['jobs'], 'posting')}: "
         f"{c['p25']:,} / {c['median']:,} / {c['p75']:,}"
         for c in salary["currencies"]
     )
@@ -227,9 +226,9 @@ def _company_count(company: dict[str, Any]) -> str:
     return f"{jobs:,}" if kept == jobs else f"{jobs:,} sampled, {kept:,} counted"
 
 
-def _company_line(counted: dict[str, Any]) -> list[str]:
+def _companies_lines(counted: dict[str, Any]) -> list[str]:
     named = " · ".join(
-        shown_company.tagged(c, c["board"], SHORT_FIELD)
+        shown_company.tagged(c, c["board"], scraped_text.SHORT_FIELD)
         + f" (key {scraped_text.quoted(c['board'], 300)}) {_company_count(c)}"
         for c in counted["companies"]
     )
@@ -330,7 +329,7 @@ def answer(client: SpaceClient, arguments: dict[str, Any]) -> str:
         )
         if stances := _work_authorization_line(counted):
             lines.append(stances)
-        lines += _company_line(counted)
+        lines += _companies_lines(counted)
         lines.append(_country_line(counted))
         lines.append(
             f"Skills are matched against HeadStart's list of {counted['vocabulary_size']:,} "

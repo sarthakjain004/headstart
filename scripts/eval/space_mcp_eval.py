@@ -684,16 +684,21 @@ def _days_between(start: str, end: str) -> float:
     ).total_seconds() / 86400
 
 
-def _found_late(row: dict[str, Any]) -> bool:
+def _opened_mostly_found_late(row: dict[str, Any]) -> bool:
     """Whether most of ``row``'s postings opened were found late, posted weeks before HeadStart
-    first saw them (ADR-0351): of 10 or more opened, its served postings first seen in the window
+    first saw them (ADR-0351): of `hiring_now.FOUND_LATE_MIN_OPENED` or more opened, its served postings first seen in the window
     and posted long before are at least half, and those posted since fewer than half."""
     opened, fresh, late = (
         row.get("opened"),
         row.get("opened_fresh"),
         row.get("opened_found_late"),
     )
-    if opened is None or fresh is None or late is None or opened < 10:
+    if (
+        opened is None
+        or fresh is None
+        or late is None
+        or opened < hiring_now.FOUND_LATE_MIN_OPENED
+    ):
         return False
     return 2 * fresh < opened <= 2 * late
 
@@ -705,7 +710,7 @@ def _disowned(
     fields rather than borrowed from the tool, so a bug in the tool's order cannot hide here.
     Every Lens flags opened mostly found late (ADR-0351); Opened less closed flags nothing else,
     since nothing else questions its figure."""
-    if _found_late(row):
+    if _opened_mostly_found_late(row):
         return True
     if lens == "opened_less_closed":
         return False
@@ -763,19 +768,46 @@ _FOUND_LATE_SAID = re.compile(
 
 def unflagged_found_late(answer: str, rows: list[dict[str, Any]]) -> list[str]:
     """The companies among ``rows`` whose opened was mostly found late (ADR-0351) that the
-    answer names without saying so anywhere: reported as hiring this week."""
-    if _FOUND_LATE_SAID.search(answer):
-        return []
-    return [row["company"] for row in rows if _found_late(row) and _named(answer, row)]
+    answer names without saying so on a line that names them: reported as hiring this week. A
+    caveat elsewhere in the answer does not reach the row (round-4 review SP4)."""
+    lines = answer.splitlines()
+    return [
+        row["company"]
+        for row in rows
+        if _opened_mostly_found_late(row)
+        and _named(answer, row)
+        and not any(_named(line, row) and _FOUND_LATE_SAID.search(line) for line in lines)
+    ]
+
+
+def out_of_order(answer: str, rows: list[dict[str, Any]]) -> list[str]:
+    """The companies among ``rows``, in the order hiring_now lists them, that the answer names
+    before a row the tool lists above them (by where each is first named): a flagged row, found
+    late or otherwise disowned, presented above an unflagged one (round-4 review SP4)."""
+    named = [
+        (at, row["company"])
+        for row in rows
+        if (
+            at := _found_at(
+                answer, _names(str(row.get("company") or ""), str(row.get("key") or ""))
+            )
+        )
+        is not None
+    ]
+    return [
+        company
+        for i, (at, company) in enumerate(named)
+        if any(earlier > at for earlier, _ in named[:i])
+    ]
 
 
 def verify_hot_top(
     expect: dict[str, Any], transcript: Transcript, space: Space
 ) -> Verdict:
     """At least N-1 of the top N on the Lens named, in the order a correct hiring_now answer
-    lists them (`expected_hot_order`, at the call's own `limit`), the answer does not lead with
-    a row the tool flagged on that Lens, and it names no row listed whose opened was mostly
-    found late without saying so (ADR-0351)."""
+    lists them (`expected_hot_order`, at the call's own `limit`), none named before a row listed
+    above it, the answer does not lead with a row the tool flagged on that Lens, and it names no
+    row listed whose opened was mostly found late without saying so beside it (ADR-0351)."""
     lens = expect.get("lens") or hiring_now.DEFAULT_LENS
     top = int(expect.get("top") or 5)
     calls = _hiring_now_calls(transcript, lens)
@@ -787,8 +819,9 @@ def verify_hot_top(
     named = [row["company"] for row in rows if _named(transcript.final_answer, row)]
     headline = flagged_headline(transcript, lens)
     found_late = unflagged_found_late(transcript.final_answer, listed)
+    early = out_of_order(transcript.final_answer, rows)
     return Verdict(
-        len(named) >= need and headline is None and not found_late,
+        len(named) >= need and headline is None and not found_late and not early,
         f"names {len(named)} of the top {len(rows)} on {lens} (needs {need}): "
         f"{', '.join(r['company'] for r in rows)}"
         + (f"; leads with {headline!r}, a row hiring_now flagged" if headline else "")
@@ -796,6 +829,11 @@ def verify_hot_top(
             f"; reports {', '.join(found_late)} as hiring, though most of what each opened "
             "was found late"
             if found_late
+            else ""
+        )
+        + (
+            f"; names {', '.join(early)} above a row hiring_now lists before it"
+            if early
             else ""
         ),
     )

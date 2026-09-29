@@ -26,6 +26,10 @@ SCRAPED_NOTE = (
 #: The longest a scraped field may run before it is cut, with an ellipsis, inside its quotes.
 FIELD_LIMIT = 120
 
+#: A company, location, department, place or employment type past this is cut; a title keeps
+#: :data:`FIELD_LIMIT`.
+SHORT_FIELD = 60
+
 
 def _visible(value: Any) -> str:
     """``value`` as one line: every control character (newlines, tabs, escapes) becomes a space,

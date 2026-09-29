@@ -9,8 +9,8 @@ company's kept rows, still in similarity order. Nothing is dropped, so the total
 page can reach are the search's own, and the order is one fixed list over the window, so every
 page cuts the same list.
 
-A company is its name case-folded, or its Board when it names none, as a requirements sample
-counts employers (`requirement_counts`). A row that copies a kept row of its company
+A company is its name case-folded, or its Board when it names none (:func:`company`, which a
+requirements sample's employer counts use too, `requirement_counts`). A row that copies a kept row of its company
 (`requisition_copies.copies`: one posting on two Boards, or per country) is kept with it without
 taking a place, since a search page lists it under that row anyway.
 
@@ -21,6 +21,7 @@ carries ``past_company_cap``.
 from __future__ import annotations
 
 from collections import Counter
+from collections.abc import Mapping
 from typing import Any
 
 from headstart.boards.board_identity import board_of
@@ -32,10 +33,13 @@ MORE_FROM_COMPANY = "more_from_company"
 PAST_COMPANY_CAP = "past_company_cap"
 
 
-def company(row: dict[str, Any]) -> str:
-    """Who a row is at: its company case-folded, or its Board when it names none."""
+def company(row: Mapping[str, Any]) -> str:
+    """Who a row is at: its company case-folded, or its Board when it names none, so rows naming
+    no company are not all one employer. The Board is the row's ``board`` when it carries one (a
+    requirements sample's, the Company directory's), else `board_of` its id. The one employer key
+    of a per-company cap, a requirements sample's employer counts and a search page's held line."""
     name = " ".join(str(row.get("company") or "").split()).casefold()
-    return name or board_of(str(row.get("id") or "")).casefold()
+    return name or str(row.get("board") or board_of(str(row.get("id") or ""))).casefold()
 
 
 def spread(rows: list[dict[str, Any]], per_company: int) -> list[dict[str, Any]]:

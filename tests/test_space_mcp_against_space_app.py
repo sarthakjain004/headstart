@@ -22,7 +22,7 @@ from headstart.mcp_protocol.messages import ToolFailure
 from headstart.serving import job_search
 from headstart.space_mcp import server
 from headstart.space_mcp import space_client as sc
-from headstart.space_mcp.tools import company_profile, get_job, read_trends
+from headstart.space_mcp.tools import company_profile, get_job, read_trends, search_jobs
 
 #: A day after the fixture history's last tick (`test_space_app._T3`, 2026-08-13), so a window
 #: counted back from "now" means the same ticks whatever day the suite runs.
@@ -423,6 +423,10 @@ def test_get_job_restates_the_spaces_own_bounds():
     assert get_job.SPACE_DESCRIPTION_LIMIT == job_search.JOB_DESCRIPTION_LIMIT
 
 
+def test_search_jobs_restates_the_spaces_places_value():
+    assert search_jobs.FACET_PLACES == job_search.FACET_PLACES
+
+
 def test_get_job_reads_a_posting_and_names_the_missing_at_the_app(
     companies_app, monkeypatch
 ):
@@ -494,7 +498,7 @@ def test_a_search_whose_company_matched_nothing_offers_the_directory_companies(
     text = server.call(_client(companies_app), "search_jobs", {"company": "Hp"})
     assert 'no company name contains "Hp"' in text
     assert (
-        '"Hpe" — key workday:hpe/a, workday, 2 Board(s), 13 openings, prefix match'
+        '"Hpe" — key workday:hpe/a, workday, 2 Boards, 13 openings, prefix match'
         in text
     )
 

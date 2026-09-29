@@ -63,3 +63,10 @@ def test_a_company_is_its_name_case_and_spacing_blind_else_its_board():
     ]
     out = spread(rows, 1)
     assert [r["id"] for r in out] == ["workday:a/x:1", "workday:b/x:1", "workday:a/x:2"]
+
+
+def test_a_row_carrying_its_board_is_that_board_not_its_ids_guess():
+    """A requirements sample's row carries the directory's Board (round-4 review S2): one key
+    serves the cap, the sample's employer counts and a search page's held line."""
+    row = {"company": "", "id": "oracle:egud.fa.us2.oraclecloud.com:9", "board": "Oracle:Kotak"}
+    assert company(row) == "oracle:kotak"

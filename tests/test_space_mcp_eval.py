@@ -639,12 +639,17 @@ def test_hot_top_fails_an_answer_that_leads_with_a_row_hiring_now_flagged(ev):
         "Acme Robotics, Borealis Data, Cobalt Payments and Dune Analytics lead."
     )
     unflagged_first = (
-        "Borealis Data leads, then Cobalt Payments and Dune Analytics; Acme Robotics ranks "
-        "first on the site, but that is re-counting."
+        "Borealis Data leads, then Cobalt Payments, Dune Analytics and Ember Health; Acme "
+        "Robotics ranks first on the site, but that is re-counting."
+    )
+    space = _hot_space()
+    # /hot's own figures for the re-counting hiring_now flagged, so the order it lists agrees.
+    space.answers[SpaceRoute.HOT]["lenses"]["expansion"][0].update(
+        stock=958, net=442, opened=23, closed=33
     )
 
-    led = ev.verify_hot_top(expect, _hot_answer(ev, in_site_order), _hot_space())
-    passed = ev.verify_hot_top(expect, _hot_answer(ev, unflagged_first), _hot_space())
+    led = ev.verify_hot_top(expect, _hot_answer(ev, in_site_order), space)
+    passed = ev.verify_hot_top(expect, _hot_answer(ev, unflagged_first), space)
 
     assert not led.passed and "leads with 'Acme Robotics'" in led.detail
     assert passed.passed, passed.detail
@@ -746,7 +751,16 @@ def test_hot_top_fails_an_answer_that_reports_a_found_late_row_as_hiring(ev):
         space,
     )
     left_out = ev.verify_hot_top(expect, _transcript(ev, answer=f"{top} lead."), space)
+    said_elsewhere = ev.verify_hot_top(
+        expect,
+        _transcript(
+            ev,
+            answer=f"Some rows were found late.\n{top} lead.\nStarbucks opened 50.",
+        ),
+        space,
+    )
 
+    assert not said_elsewhere.passed  # the caveat must sit beside the row it is about
     assert not reported.passed
     assert "reports Starbucks as hiring" in reported.detail
     assert said.passed, said.detail
@@ -1884,3 +1898,26 @@ def test_the_recording_covers_every_task_whose_verifier_reads_tool_results(ev):
     recorded = {task_id for task_id, _, _ in _RECORDED_RUNS}
     wanted = {t["id"] for t in tasks if reads_results(t)}
     assert wanted <= recorded, wanted - recorded
+
+
+def test_hot_top_fails_an_answer_that_lists_a_found_late_row_above_an_unflagged_one(ev):
+    """Round-4 review SP4: the tool lists a found-late row after every unflagged one, and an
+    answer that presents it higher fails even when it says it was found late."""
+    space = _hot_space()
+    rows = space.answers[SpaceRoute.HOT]["lenses"]["expansion"]
+    rows[0].update(company="Starbucks", opened=50, opened_fresh=22, opened_found_late=28)
+    expect = {"lens": "expansion", "top": 6}
+    rest = "Borealis Data\n3. Cobalt Payments\n4. Dune Analytics\n5. Ember Health\n6. Fjord"
+    above = ev.verify_hot_top(
+        expect,
+        _transcript(ev, answer=f"1. Starbucks (opened mostly found late)\n2. {rest} Security"),
+        space,
+    )
+    below = ev.verify_hot_top(
+        expect,
+        _transcript(ev, answer=f"1. {rest} Security\n6. Starbucks (opened mostly found late)"),
+        space,
+    )
+    assert not above.passed
+    assert "names Starbucks above a row hiring_now lists before it" in above.detail
+    assert below.passed, below.detail

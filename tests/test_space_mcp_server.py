@@ -741,7 +741,7 @@ def test_nothing_matching_a_company_name_offers_the_companies_it_may_mean():
     assert 'no company name contains "Razorpy"' in text
     assert space.params_of(R.COMPANIES_SUGGEST) == [[("q", "Razorpy"), ("limit", "5")]]
     assert (
-        'pass one\'s key as `company`: "Razorpay" — key lever:razorpay, lever, 1 Board(s), '
+        'pass one\'s key as `company`: "Razorpay" — key lever:razorpay, lever, 1 Board, '
         "217 openings, typo match." in text
     )
 
@@ -3654,7 +3654,7 @@ def test_a_requirements_sample_caps_one_company_unless_one_is_named_and_says_so(
     assert "(300 postings read; 37 copies of one counted once)." in text
     assert (
         "At most 8 postings of one company are counted, so one company's wording cannot "
-        "speak for the role: 8 more were left out."
+        "speak for the role, which left out 8 more postings."
     ) in text
     assert (
         '"DigitalXNode" (key "wp_job_openings:digitalxnode.com") 16 sampled, 8 counted · '

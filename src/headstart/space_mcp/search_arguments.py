@@ -21,7 +21,12 @@ from headstart.search_filters import (
     india_filter,
     india_gazetteer,
 )
-from headstart.space_mcp import company_scope, role_families, scraped_text
+from headstart.space_mcp import (
+    company_scope,
+    noun_counts,
+    role_families,
+    scraped_text,
+)
 from headstart.trends.hot_ranking import HIDDEN_BY_DEFAULT
 
 #: Every filter argument as the tools name it -> as the Space does: the query-string name
@@ -360,7 +365,7 @@ def _operators_said(arguments: dict[str, Any], left_out: int | None) -> str | No
         return None
     dropped = " and ".join(_OPERATOR_WORDS[op] for op in OPERATORS if op not in kept)
     counted = (
-        "" if left_out is None else f": {left_out:,} job{'' if left_out == 1 else 's'}"
+        "" if left_out is None else f": {noun_counts.counted(left_out, 'job')}"
     )
     if kept == DEFAULT_OPERATORS:
         return (

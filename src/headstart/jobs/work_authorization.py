@@ -35,7 +35,8 @@ sample; they are not the employer's structured answer, and an answer that serves
 from __future__ import annotations
 
 import re
-from functools import lru_cache
+from collections.abc import Iterable
+from enum import Enum, StrEnum
 
 from headstart.search_filters import country_gazetteer
 
@@ -292,12 +293,6 @@ def _named_countries(window: str) -> frozenset[str]:
     return frozenset(codes)
 
 
-@lru_cache(maxsize=65_536)
-def _countries_of(location: str) -> frozenset[str]:
-    """The countries a job's ``location`` is in, by the ``country`` filter's gazetteer."""
-    return frozenset(country_gazetteer.classify(location))
-
-
 # Levels by rank, as a title or a scoped offer names them. A title naming none of these ranks as
 # an engineer with no level word (2); a manager's rank is not read, since ladders place it apart.
 _LEVELS = (
@@ -318,17 +313,21 @@ _MANAGER = re.compile(r"(?i)\bmanag(?:er|ement)\b")
 # A level an offer is limited to: "Principal-level roles and above", "senior positions only",
 # "for roles at the Staff level or higher".
 _LEVEL_SCOPE = re.compile(
-    r"(?i)\b(?P<level>"
-    + "|".join(words for words, _ in _LEVELS)
+    r"(?i)\b(?:"
+    + "|".join(f"(?P<l{rank}>{words})" for words, rank in _LEVELS)
     + r")(?:[- ]level)?\s+(?:level\s+)?(?:(?:and|or) (?:above|higher)|\+|"
     r"(?:roles?|positions?|jobs?|hires|candidates|employees)(?:\s+(?:and|or) (?:above|higher))?)"
 )
 
 
-def _rank(word: str) -> int:
-    match = _LEVEL_WORD.fullmatch(word)
-    assert match, word
-    return next(int(name[1:]) for name, value in match.groupdict().items() if value)
+def _rank(match: re.Match[str]) -> int:
+    """The rank of the level word ``match`` (of :data:`_LEVEL_WORD` or :data:`_LEVEL_SCOPE`)
+    found: the one ``l{rank}`` group of it that matched."""
+    return min(
+        int(name[1:])
+        for name, value in match.groupdict().items()
+        if value and name[1:].isdigit()
+    )
 
 
 def _title_rank(title: str | None) -> int | None:
@@ -336,33 +335,53 @@ def _title_rank(title: str | None) -> int | None:
     title or no title."""
     if not title:
         return None
-    ranks = [_rank(m.group()) for m in _LEVEL_WORD.finditer(title)]
+    ranks = [_rank(m) for m in _LEVEL_WORD.finditer(title)]
     if _MANAGER.search(title) and not any(rank >= 5 for rank in ranks):
         return None
     return max(ranks, default=2)
 
 
-def _scoped(window: str, location: str | None, title: str | None) -> str:
-    """Whether an offer read in ``window`` covers the job: ``"in"``, ``"out"`` (it offers
-    nothing here), ``"refused"`` (it is the only scope, and the job is outside it) or
-    ``"unknown"`` (a scope is named but the job's country or level cannot be read). An offer
-    naming no scope is ``"in"``."""
+class _Scope(StrEnum):
+    """Whether an offer covers the job (:func:`_scoped`)."""
+
+    IN = "in"
+    #: It offers nothing here.
+    OUT = "out"
+    #: It is the only scope, and the job is outside it.
+    REFUSED = "refused"
+    #: A scope is named but the job's country or level cannot be read.
+    UNKNOWN = "unknown"
+
+
+class _Tier(Enum):
+    """How firmly a mention offers sponsorship."""
+
+    OFFERS = "offers"
+    MAY = "may"
+
+
+def _scoped(window: str, *, title: str | None, location: str | None) -> _Scope:
+    """Whether an offer read in ``window`` covers the job titled ``title`` at ``location``. An
+    offer naming no scope is :attr:`_Scope.IN`."""
     verdicts = []
     if named := _named_countries(window):
-        countries = _countries_of(location) if location else frozenset()
+        countries = country_gazetteer.classify(location)
         verdicts.append(
-            "unknown" if not countries else "in" if named & countries else "out"
+            _Scope.UNKNOWN
+            if not countries
+            else _Scope.IN
+            if named & countries
+            else _Scope.OUT
         )
     if level := _LEVEL_SCOPE.search(window):
         rank = _title_rank(title)
-        least = _rank(level.group("level"))
-        verdicts.append("unknown" if rank is None else "in" if rank >= least else "out")
         # A level named is a limit whether or not "only" says so: why else name it.
-        if verdicts[-1] == "out":
-            return "refused"
-    if "out" in verdicts:
-        return "refused" if _ONLY.search(window) else "out"
-    return "unknown" if "unknown" in verdicts else "in"
+        if rank is not None and rank < _rank(level):
+            return _Scope.REFUSED
+        verdicts.append(_Scope.UNKNOWN if rank is None else _Scope.IN)
+    if _Scope.OUT in verdicts:
+        return _Scope.REFUSED if _ONLY.search(window) else _Scope.OUT
+    return _Scope.UNKNOWN if _Scope.UNKNOWN in verdicts else _Scope.IN
 
 
 # An offer must name what it sponsors: "sponsorship" alone is often a sales or mentoring word
@@ -541,7 +560,7 @@ def _window(sentence: str, start: int, end: int) -> tuple[str, str]:
 
 
 def _sponsorship(
-    sentence: str, location: str | None, title: str | None
+    sentence: str, *, title: str | None, location: str | None
 ) -> tuple[bool, bool, bool]:
     """Whether ``sentence`` offers, may offer, and refuses visa sponsorship to the job at
     ``location`` titled ``title``."""
@@ -570,7 +589,7 @@ def _sponsorship(
         if _CLEARANCE.search(window) and not _VISA_NAMED.search(window):
             continue
         if _HEDGE.search(window):
-            tier = "may" if not _FOR_LATER.search(window) else None
+            tier = _Tier.MAY if not _FOR_LATER.search(window) else None
         elif _NEGATION.search(window) or _REFUSAL.search(window):
             refuses = True
             continue
@@ -579,17 +598,17 @@ def _sponsorship(
             and (_OFFER_NAMES_A_VISA.search(window) or _FIELD_YES.search(offer_window))
             and not _AUTHORIZATION_REQUIRED.search(window)
         ):
-            tier = "may" if _MAY.search(window) else "offers"
+            tier = _Tier.MAY if _MAY.search(window) else _Tier.OFFERS
         else:
             continue
         if tier is None:
             continue
-        scope = _scoped(window, location, title)
-        if scope == "refused":
+        scope = _scoped(window, title=title, location=location)
+        if scope is _Scope.REFUSED:
             refuses = True
-        elif scope == "unknown" or (scope == "in" and tier == "may"):
+        elif scope is _Scope.UNKNOWN or (scope is _Scope.IN and tier is _Tier.MAY):
             may_offer = True
-        elif scope == "in":
+        elif scope is _Scope.IN:
             offers = True
     return offers, may_offer, refuses
 
@@ -615,7 +634,7 @@ def _relocation(sentence: str) -> tuple[bool, bool]:
 
 
 def stances(
-    description: str | None, title: str | None = None, location: str | None = None
+    description: str | None, *, title: str | None = None, location: str | None = None
 ) -> frozenset[str]:
     """The text-derived stances ``description`` holds for the job titled ``title`` at
     ``location``, among :data:`STANCES`.
@@ -628,7 +647,9 @@ def stances(
     sponsor_offer = sponsor_may = sponsor_refusal = False
     relocation_offer = relocation_refusal = False
     for sentence in _sentences(description or ""):
-        offers, may_offer, refuses = _sponsorship(sentence, location, title)
+        offers, may_offer, refuses = _sponsorship(
+            sentence, title=title, location=location
+        )
         sponsor_offer |= offers
         sponsor_may |= may_offer
         sponsor_refusal |= refuses
@@ -644,6 +665,16 @@ def stances(
     if relocation_offer and not relocation_refusal:
         found.add(OFFERS_RELOCATION)
     return frozenset(found)
+
+
+def filtered_stances(held: Iterable[str]) -> frozenset[str]:
+    """The stances the ``work_authorization`` filter keeps a job under, given those it ``held``
+    (:func:`stances`): its own, and ``may_offer_sponsorship`` too when it offers sponsorship,
+    since that filter keeps every job that at least may offer it (ADR-0353)."""
+    held = frozenset(held)
+    if OFFERS_SPONSORSHIP in held:
+        return held | {MAY_OFFER_SPONSORSHIP}
+    return held
 
 
 # -- mentions --------------------------------------------------------------------------------
