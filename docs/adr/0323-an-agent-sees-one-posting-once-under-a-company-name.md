@@ -37,7 +37,7 @@ The second critique of the Space MCP server (2026-09-29, 6.0/10) found five outp
 ## Decision
 
 **A copy is the same title under one company, or the same title and first place under two
-spellings of it** (`space_mcp.posting_copies`). ADR-0274's rule stays: the same company and title,
+spellings of it** (`jobs.requisition_copies`, moved and renamed by ADR-0332). ADR-0274's rule stays: the same company and title,
 brackets aside. A second rule adds rows whose company names, with their legal suffixes dropped
 ("Inc", "LLC", "Corporation"), are one the other's first words ("EVERSOURCE" and "Eversource
 Energy"). That match is loose, so the rule also needs the same title stem and the same first

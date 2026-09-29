@@ -932,7 +932,7 @@ def test_a_caller_cannot_claim_the_in_process_mark_with_a_header(auth_app, monke
 
 # ---- the app's own mark on every reply (ADR-0253) ----
 
-_OWN_REPLY = "app; agent-api=10"
+_OWN_REPLY = "app; agent-api=11"
 
 
 def test_a_routes_own_answer_is_marked(auth_app):
@@ -3403,18 +3403,18 @@ def test_requirements_count_a_sample_and_carry_no_description_text(app):
     r = app.app.test_client().get("/requirements?q=backend+engineer&strict=1")
     assert r.status_code == 200
     body = r.get_json()
-    assert (body["order"], body["sampled"], body["described"]) == ("closest", 2, 1)
+    assert (body["order"], body["distinct"], body["described"]) == ("closest", 2, 1)
     assert body["newest_tick"] is None and body["vocabulary_size"] >= 300
     assert "Build the payments API" not in r.get_data(as_text=True)
 
 
 @pytest.mark.parametrize(
     ("query", "status"),
-    [("", 400), ("q=x&n=5", 400), ("q=x&n=x", 400), ("family=security", 503)],
+    [("", 400), ("q=x&country=ZZ&strict=1", 400), ("family=security", 503)],
 )
 def test_requirements_refuse_what_they_cannot_count(app, query, status):
-    """No role or category, a sample outside its bounds, or a category on a deployment without
-    role assignments (the fixture pulls none)."""
+    """No role or category, a filter the strict read refuses, or a category on a deployment
+    without role assignments (the fixture pulls none)."""
     r = app.app.test_client().get(f"/requirements?{query}")
     assert r.status_code == status, query
 

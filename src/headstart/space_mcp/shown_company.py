@@ -10,40 +10,27 @@ other rows ("Kotak" for `oracle:hcbt.fa.em2.oraclecloud.com`), so such a row is 
 directory's name, marked as the directory's. A Board the directory was asked about and does not
 name is shown as naming no company, never under its host.
 
-A served name only counts as naming the Board when it is lowercase and `company_name.echoes_board`
-reads it as the Board's key, URL, host or path: "Checkout.com" on `ashby:checkout.com` is a
+A served name names no company when `company_name.names_no_company` reads it as the Board's key,
+URL, host or path, lowercase: "Checkout.com" on `ashby:checkout.com` is a
 company, "egud.fa.us2.oraclecloud.com" on its own pod is not. Looking the directory up is a
 courtesy: a Board the Space could not be asked about keeps its served name, whatever it is.
 """
 
 from __future__ import annotations
 
-import re
 from typing import Any
 
 from headstart.boards.board_identity import board_of
-from headstart.boards.company_name import echoes_board
+from headstart.boards.company_name import (
+    FROM_DIRECTORY,
+    names_no_company,
+    with_directory_name,
+)
 from headstart.space_mcp import company_scope, scraped_text
 from headstart.space_mcp.space_client import InvalidRequest, SpaceClient, SpaceError
 
-#: The row key saying its ``company`` is the directory's name for its Board, not a served one.
-_FROM_DIRECTORY = "company_from_directory"
-
 #: The most Boards one answer looks up: `/companies/lookup`'s own bound.
 _MAX_BOARDS_LOOKED_UP = 10
-
-#: What a served name must hold to be read as a host, URL or path rather than a word.
-_HOST_OR_PATH = re.compile(r"[./:@]")
-
-
-def _names_no_company(name: Any, board: str) -> bool:
-    """Whether a served company name is empty or only the Board's own key, host or path."""
-    text = str(name or "").strip()
-    return not text or (
-        text == text.lower()
-        and bool(_HOST_OR_PATH.search(text))
-        and echoes_board(text, board)
-    )
 
 
 def _directory_labels(client: SpaceClient, boards: list[str]) -> dict[str, str | None]:
@@ -79,7 +66,7 @@ def named(client: SpaceClient, rows: list[dict[str, Any]]) -> list[dict[str, Any
     unnamed: dict[int, str] = {}
     for i, row in enumerate(rows):
         board = board_of(str(row.get("id") or ""))
-        if _names_no_company(row.get("company"), board):
+        if names_no_company(row.get("company"), board):
             unnamed[i] = board
     if not unnamed:
         return rows
@@ -88,8 +75,7 @@ def named(client: SpaceClient, rows: list[dict[str, Any]]) -> list[dict[str, Any
     out = list(rows)
     for i, board in unnamed.items():
         if board.casefold() in labels:
-            label = labels[board.casefold()]
-            out[i] = {**rows[i], "company": label, _FROM_DIRECTORY: label is not None}
+            out[i] = with_directory_name(rows[i], board, labels[board.casefold()])
     return out
 
 
@@ -99,4 +85,4 @@ def said(row: dict[str, Any], limit: int) -> str:
     if not str(row.get("company") or "").strip():
         return "no company name"
     text = scraped_text.quoted(row["company"], limit)
-    return f"{text} (directory name)" if row.get(_FROM_DIRECTORY) else text
+    return f"{text} (directory name)" if row.get(FROM_DIRECTORY) else text

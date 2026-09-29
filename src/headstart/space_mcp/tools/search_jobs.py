@@ -10,8 +10,8 @@ total alone (``counts=total``, ADR-0274); only ``detail=full`` pays for every op
 A row carries its posting's age, flagged past a year, and its employment type as scraped beside
 the `employment_type` values it counts as, and its company as the Company directory names it when
 the served name is only its Board's host (`shown_company`). Rows on one page that copy one
-posting — per country, or on two Boards of its employer (`posting_copies`) — are listed
-under the first of them, with only what differs; every id and link stays.
+posting — per country, or on two Boards of its employer (`requisition_copies`) — are listed under
+the first of them, with only what differs; every id and link stays.
 """
 
 from __future__ import annotations
@@ -20,18 +20,16 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, date, datetime
 from typing import Any
 
+from headstart.jobs import requisition_copies
 from headstart.mcp_protocol.messages import ToolFailure
 from headstart.search_filters import (
-    country_filter,
     employment_type_filter,
-    india_filter,
-    india_gazetteer,
 )
 from headstart.space_mcp import (
     company_scope,
-    posting_copies,
     role_families,
     scraped_text,
+    search_arguments,
     shown_company,
 )
 from headstart.space_mcp.space_client import (
@@ -61,40 +59,12 @@ _SORT_WORDS = {
 LAST_PAGE = 20
 SORT_WINDOW = 2_000
 
-#: Every filter argument as this tool names it -> as the Space does: the query-string name
-#: `JobSearch.parse_filters` reads, which is also the `SearchFilters` field `/facets` names a
-#: facet dimension or a Blocking filter by. One map, read both ways.
-SPACE_NAME = {
-    "remote": "remote",
-    "has_salary": "has_salary",
-    "max_years": "max_years",
-    "employment_type": "etype",
-    "india_place": "india",
-    "country": "country",
-    "location": "location",
-    "company": "company",
-    "salary_min": "salary_min",
-    "salary_max": "salary_max",
-    "salary_currency": "salary_currency",
-    "posted_within_days": "posted_within",
-    "first_seen_within_hours": "seen_within",
-    "keyword": "kw",
-    "keyword_in": "kw_in",
-    "ats": "ats",
-    "max_age_days": "max_age_days",
-    "required_years_at_least": "required_years_at_least",
-    "exclude_company": "exclude_company",
+_ARGUMENT_OF = {
+    space: argument for argument, space in search_arguments.SPACE_NAME.items()
 }
-_ARGUMENT_OF = {space: argument for argument, space in SPACE_NAME.items()}
 
-#: Sent as the literal "true" `parse_filters` compares against; the company, the keyword and
-#: `max_age_days` (0 is sent as nothing) are sent by their own rules below.
-_FLAGS = ("remote", "has_salary")
-_SENT_ELSEWHERE = (*_FLAGS, "company", "keyword", "keyword_in", "max_age_days")
-
-#: `max_age_days` when the caller sends none (ADR-0322): a relevance search led with Jobs posted
-#: in 2022 (round-2 critique P1-6). 0 is any age, and is not sent.
-DEFAULT_MAX_AGE_DAYS = 365
+#: `max_age_days` when the caller sends none (ADR-0322), which the scope line also names.
+DEFAULT_MAX_AGE_DAYS = search_arguments.DEFAULT_MAX_AGE_DAYS
 
 #: Facet dimensions in the order the answer lists them (the Space's own names).
 _FACET_ORDER = (
@@ -132,14 +102,6 @@ _DESCRIPTION_PAST_DEADLINE = (
 )
 
 
-#: Every place the Space's India filter names: the whole country, its region, its cities.
-_INDIA_PLACES = [
-    india_filter.WHOLE_COUNTRY,
-    *india_gazetteer.REGIONS,
-    *india_gazetteer.CITIES,
-]
-
-
 def _params(
     arguments: dict[str, Any], scope: company_scope.CompanyScope | None
 ) -> list[tuple[str, str]]:
@@ -153,19 +115,16 @@ def _params(
         params += scope.params()
     if category := arguments.get("category"):
         params.append(("family", category))
-    for flag in _FLAGS:
-        if arguments.get(flag):
-            params.append((SPACE_NAME[flag], "true"))
-    for argument, name in SPACE_NAME.items():
-        value = arguments.get(argument)
-        if argument not in _SENT_ELSEWHERE and value is not None and value != "":
-            params.append((name, str(value)))
+    params += search_arguments.filter_params(arguments)
     if max_age := arguments.get("max_age_days"):
-        params.append((SPACE_NAME["max_age_days"], str(max_age)))
+        params.append((search_arguments.SPACE_NAME["max_age_days"], str(max_age)))
     if keyword := (arguments.get("keyword") or "").strip():
-        params.append((SPACE_NAME["keyword"], keyword))
+        params.append((search_arguments.SPACE_NAME["keyword"], keyword))
         params.append(
-            (SPACE_NAME["keyword_in"], arguments.get("keyword_in") or "title")
+            (
+                search_arguments.SPACE_NAME["keyword_in"],
+                arguments.get("keyword_in") or "title",
+            )
         )
     if sort := SORTS[arguments["sort"]]:
         params.append(("sort", sort))
@@ -194,13 +153,6 @@ def _refuse_by_policy(arguments: dict[str, Any]) -> None:
         )
     if arguments.get("keyword_in") and not (arguments.get("keyword") or "").strip():
         raise ToolFailure("keyword_in only scopes a keyword; send keyword too.")
-
-
-def _read_country(asked: Any) -> Any:
-    """The code a caller's country means — "UK", "USA", "Germany" (ADR-0322) — or ``asked``
-    unchanged, for the schema's enum to refuse with the codes it knows."""
-    code = country_filter.code_for(asked) if isinstance(asked, str) else None
-    return code or asked
 
 
 def _money(row: dict[str, Any]) -> str | None:
@@ -313,11 +265,11 @@ def _page_lines(
     first: int, rows: list[dict[str, Any]], experience_filtered: bool
 ) -> tuple[list[str], bool]:
     """One page's rows numbered from ``first``, and whether any went under another: a row copying
-    an earlier row's posting (`posting_copies`) is listed under it as "also #N". Only within
-    the page, so paging and the header's row numbers are the Space's."""
+    an earlier row's posting (`requisition_copies`) is listed under it as "also #N". Only within the
+    page, so paging and the header's row numbers are the Space's."""
     today = _today()
     facts = [_facts(row, today, experience_filtered) for row in rows]
-    groups = posting_copies.groups(rows)
+    groups = requisition_copies.groups(rows)
     lines = []
     for head, *others in groups:
         lines.append(_row(first + head, rows[head], facts[head]))
@@ -325,90 +277,6 @@ def _page_lines(
             _also(first + i, rows[i], facts[i], rows[head], facts[head]) for i in others
         ]
     return lines, len(groups) < len(rows)
-
-
-def _scope_line(
-    arguments: dict[str, Any], scope: company_scope.CompanyScope | None
-) -> str:
-    said = []
-    if scope is not None:
-        if scope.company is not None:
-            said.append(f"company {scope.company.described()}")
-        else:
-            said.append(
-                f"company name contains {scraped_text.quoted(scope.substring)} "
-                "(the site's company box)"
-            )
-        if scope.read_as:
-            said.append(scope.read_as)
-    if exclude := (arguments.get("exclude_company") or "").strip():
-        said.append(f"no company name containing {scraped_text.quoted(exclude)}")
-    if category := arguments.get("category"):
-        named = role_families.label(category)
-        said.append(f"category {category}" + (f" ({named})" if named else ""))
-    if arguments.get("remote"):
-        said.append("remote only")
-    if arguments.get("max_years") is not None:
-        said.append(
-            f"open to someone with at most {arguments['max_years']} years, jobs that state "
-            "no experience included"
-        )
-    if arguments.get("required_years_at_least") is not None:
-        said.append(
-            f"jobs asking for at least {arguments['required_years_at_least']} years (as "
-            "stated, else estimated from the title's seniority), jobs whose experience is "
-            "unknown left out"
-        )
-    for argument in ("employment_type", "country", "india_place", "ats"):
-        if arguments.get(argument):
-            said.append(f"{argument} {arguments[argument]}")
-    if arguments.get("location"):
-        said.append(f"location contains {scraped_text.quoted(arguments['location'])}")
-    currency = arguments.get("salary_currency")
-    if arguments.get("salary_min") is not None:
-        said.append(
-            f"salary range reaching {arguments['salary_min']:,} {currency} a year or more"
-        )
-    if arguments.get("salary_max") is not None:
-        said.append(
-            f"salary range starting at {arguments['salary_max']:,} {currency} a year or less"
-        )
-    if (
-        arguments.get("salary_min") is not None
-        or arguments.get("salary_max") is not None
-    ):
-        said.append(
-            "a range overlapping the bounds counts; other currencies are converted at "
-            "HeadStart's fixed rates, and one with no rate is left out"
-        )
-    if (
-        arguments.get("salary_min") is not None
-        or arguments.get("salary_max") is not None
-        or arguments.get("has_salary")
-    ):
-        said.append("only jobs that state a salary can match")
-    if arguments.get("posted_within_days"):
-        said.append(f"posted in the last {arguments['posted_within_days']} days")
-    if arguments.get("first_seen_within_hours"):
-        said.append(
-            f"new to HeadStart in the last {arguments['first_seen_within_hours']} hours"
-        )
-    if max_age := arguments.get("max_age_days"):
-        # 365 is the default whether or not the caller sent it, so the sentence holds either way.
-        said.append(
-            f"posted in the last {max_age:,} days"
-            + (
-                ", the default; send max_age_days 0 for any age"
-                if max_age == DEFAULT_MAX_AGE_DAYS
-                else ""
-            )
-            + " (a job with no readable posted date counts from its first-seen day)"
-        )
-    if keyword := (arguments.get("keyword") or "").strip():
-        said.append(
-            f"keyword {scraped_text.quoted(keyword)} in {arguments.get('keyword_in') or 'title'}"
-        )
-    return "Scope: " + (" · ".join(said) if said else "the whole index") + "."
 
 
 def _order_line(arguments: dict[str, Any]) -> str:
@@ -540,7 +408,7 @@ def answer(client: SpaceClient, arguments: dict[str, Any]) -> str:
     rows = shown_company.named(client, rows)
     total = int(facets.get("total") or 0)
     k, page = int(arguments["limit"]), int(arguments["page"])
-    lines = [_scope_line(arguments, scope)]
+    lines = [search_arguments.scope_line(arguments, scope)]
     if coverage := _coverage_line(arguments, facets):
         lines.append(coverage)
     if not rows:
@@ -634,28 +502,13 @@ TOOL = SpaceTool(
                     "`query`, leaving it out. Not with `query`."
                 ),
             },
-            "company": {
-                "type": "string",
-                "maxLength": 100,
-                "description": (
-                    "A company name (matched as a substring), or a Board key from "
-                    "an earlier answer such as 'lever:razorpay'."
-                ),
-            },
+            "company": search_arguments.PROPERTIES["company"],
             "category": role_families.schema(
                 "A job category, across the whole index or, with `company`, within that "
                 "company's jobs."
             ),
-            "remote": {"type": "boolean", "description": "Remote jobs only."},
-            "max_years": {
-                "type": "integer",
-                "minimum": 0,
-                "maximum": 30,
-                "description": (
-                    "The user's own years of experience ('3+ years' is 3): keeps "
-                    "jobs asking for at most this many."
-                ),
-            },
+            "remote": search_arguments.PROPERTIES["remote"],
+            "max_years": search_arguments.PROPERTIES["max_years"],
             "required_years_at_least": {
                 "type": "integer",
                 "minimum": 1,
@@ -671,26 +524,9 @@ TOOL = SpaceTool(
                 "type": "string",
                 "enum": list(employment_type_filter.RULES),
             },
-            "country": {
-                "type": "string",
-                "enum": list(country_filter.CODES),
-                "description": (
-                    "ISO 3166-1 alpha-2 code (US, GB, DE, IN); a country's name or 'UK', "
-                    "'USA', 'UAE' is read as its code. Matches every way a job's "
-                    "location names the country: its name, states, cities and codes. IN is "
-                    "india_place 'india'."
-                ),
-            },
-            "india_place": {
-                "type": "string",
-                "enum": _INDIA_PLACES,
-                "description": "An Indian city or region, or 'india' for anywhere in India.",
-            },
-            "location": {
-                "type": "string",
-                "maxLength": 60,
-                "description": "Text the job's location contains, any country.",
-            },
+            "country": search_arguments.PROPERTIES["country"],
+            "india_place": search_arguments.PROPERTIES["india_place"],
+            "location": search_arguments.PROPERTIES["location"],
             "salary_min": {
                 "type": "integer",
                 "minimum": 0,
@@ -790,5 +626,8 @@ TOOL = SpaceTool(
     ),
     answer=answer,
     max_chars=30_000,
-    argument_readers={"category": role_families.resolve, "country": _read_country},
+    argument_readers={
+        "category": role_families.resolve,
+        "country": search_arguments.read_country,
+    },
 )

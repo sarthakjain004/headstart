@@ -1,5 +1,5 @@
-"""Which rows of one search page copy one posting — `headstart.space_mcp.posting_copies`
-(ADR-0274, ADR-0323).
+"""Which served Jobs copy one requisition — `headstart.jobs.requisition_copies` (ADR-0274,
+ADR-0323, ADR-0331, ADR-0332).
 
 Contracts: the same company and title stem, brackets aside, anywhere; rows naming no company only
 on one Board; another spelling of the company only with the same words once legal and generic
@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import pytest
 
-from headstart.space_mcp.posting_copies import groups
+from headstart.jobs.requisition_copies import groups, title_stem
 
 _EVERSOURCE_FRONT = (
     "Berlin, CT, United States of America; Westwood, Massachusetts, United States; "
@@ -118,3 +118,7 @@ def test_rows_naming_no_company_are_copies_only_on_one_board():
 def test_a_title_with_nothing_but_brackets_groups_with_nothing():
     rows = [_row(1, "(Remote)"), _row(2, "(Remote)")]
     assert groups(rows) == [[0], [1]]
+
+
+def test_a_title_stem_drops_brackets_and_case():
+    assert title_stem("Backend Developer (Peru) [Remote]") == "backend developer"

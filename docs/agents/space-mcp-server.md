@@ -404,15 +404,17 @@ To list the jobs behind any of these, pass the key to `search_jobs` as `company`
 of them, for a career switcher's "what does a data engineer typically need" (ADR-0324). It reads
 `/requirements`, one route, and returns counts only.
 
-- **The sample.** `query` is the role, as in `search_jobs`; the sample is the 300 postings closest
-  to it among those the filters admit. `category` alone samples the category's 300 newest postings
-  across the whole index; with `query` too, the closest within the category among the 2,000
-  closest to the query. The answer's first line says which, over how many, of how many: "counted
-  over 300 postings, of 514,163 that the filters admit". A query does not narrow, so that total is
-  every posting the filters admit; the answer gives the similarity range of the sample instead.
-- **Filters.** `company` (a name matched as the company box matches, or a Board key), `country`,
-  `india_place`, `location`, `remote` and `max_years`, each meaning what it means in
-  `search_jobs`.
+- **The sample.** `query` is the role, as in `search_jobs`; the sample is the 300 rows closest to
+  it among those the filters admit. `category` alone samples the category's 300 newest rows across
+  the whole index; with `query` too, the closest within the category among the 2,000 closest to the
+  query. Rows that copy one posting, per country or on two Boards of its employer, count once, by
+  the rule a search page groups them by (ADR-0323). The answer's first line says which, over how
+  many, of how many: "counted over 263 distinct postings, of 514,163 postings that the filters
+  admit, copies included (300 postings read; 37 copies of one counted once)" (a local copy of the
+  served table, 2026-09-29; ADR-0332). A query does not narrow, so that total is every
+  posting the filters admit; the answer gives the similarity range of the sample instead.
+- **Filters.** `company`, `country`, `india_place`, `location`, `remote` and `max_years`, the same
+  schema as `search_jobs`' and read the same way.
 - **Skills.** The tech skills the sampled descriptions mention, from a fixed list of about 380
   (`config/tech_skills.json`, matched by `serving/tech_skills.py`), each as a share of the sampled
   postings that carry a description, with how many distinct employers mention it. A posting counts
@@ -423,7 +425,8 @@ of them, for a career switcher's "what does a data engineer typically need" (ADR
 - **The rest.** Minimum years in bands (0–1, 2–4, 5–7, 8+), kept apart by source: stated by the
   posting, estimated from the title's seniority, or not stated. Salary quartiles per currency, a
   year, over the middle of each stated range. The remote share, the companies with the most
-  sampled postings (with a key), the countries their locations name (ADR-0273), and, for a query,
+  sampled postings (with a key; a Board that names no company under the Company directory's name,
+  ADR-0323), the countries their locations name (ADR-0273), and, for a query,
   the job categories of the sample.
 - **No description text.** Descriptions are scraped and read only on the Space; the answer carries
   counts, the list's own skill names and quoted company names.
@@ -485,8 +488,10 @@ since a public route can never carry one person's data.
 
 `src/headstart/space_mcp/` — `tools/` (one module per tool, and `REGISTRY`), `space_tool.py` (what a
 tool is), `server.py` (serves the registry), `space_client.py` (the one way it reaches the Space),
-`company_scope.py`, `shown_company.py`, `posting_copies.py`, `role_families.py` and
-`scraped_text.py` — on the shared protocol module in `src/headstart/mcp_protocol/` (`messages.py`,
+`company_scope.py`, `shown_company.py`, `role_families.py`, `search_arguments.py` (the filter
+arguments `search_jobs` and `role_requirements` share) and `scraped_text.py` (the rule for copies of
+one requisition is `headstart/jobs/requisition_copies.py`, which the Space's `/requirements` reads
+too) — on the shared protocol module in `src/headstart/mcp_protocol/` (`messages.py`,
 and the `stdio.py` and `streamable_http.py` transports). The hosted route is `/mcp` in
 `deploy/hf-space/app.py`, and the three routes only the tools read are `/companies/locations` and
 `/companies/levels`, answered by `src/headstart/serving/location_counts.py` and `level_counts.py`,

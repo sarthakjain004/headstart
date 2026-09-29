@@ -922,6 +922,42 @@ def echoes_board(name: str, board_key: str) -> bool:
     return text in {slug, tenant(board_key), *re.split(r"[/.:@?=&]", slug)}
 
 
+#: What a served name must hold to be read as a host, URL or path rather than a word.
+_HOST_OR_PATH = re.compile(r"[./:@]")
+
+
+def names_no_company(name: object, board_key: str) -> bool:
+    """Whether a *served* company name is empty or only the Board's own key, host or path
+    (ADR-0323): lowercase, holding a dot, slash, colon or at-sign, and `echoes_board`. "Checkout.com"
+    on `ashby:checkout.com` names a company; "egud.fa.us2.oraclecloud.com" on its own pod does not.
+    """
+    text = str(name or "").strip()
+    return not text or (
+        text == text.lower()
+        and bool(_HOST_OR_PATH.search(text))
+        and echoes_board(text, board_key)
+    )
+
+
+#: The row key saying its ``company`` is the Company directory's name for its Board, not a served
+#: one (ADR-0323).
+FROM_DIRECTORY = "company_from_directory"
+
+
+def with_directory_name(row: dict, board_key: str, directory_name: str | None) -> dict:
+    """``row`` shown under ``directory_name`` (marked :data:`FROM_DIRECTORY`), or under no name
+    when that is None, if its served company names nothing but ``board_key`` (ADR-0323); else
+    ``row`` itself. The one rule, whether the Space names a row from its own directory or an agent
+    tool names it from `/companies/lookup`."""
+    if not names_no_company(row.get("company"), board_key):
+        return row
+    return {
+        **row,
+        "company": directory_name,
+        FROM_DIRECTORY: directory_name is not None,
+    }
+
+
 def is_identifier(name: str, board_key: str) -> bool:
     """Whether a name the scraper was *constructed* with is an identifier rather than a
     company's name: lowercase identifier text ("wipro", "careers.persistent.com"), or it

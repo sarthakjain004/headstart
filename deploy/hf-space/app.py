@@ -286,9 +286,15 @@ _FAMILY_IDS = _with_predecessors(
     job_search.load_family_ids(_STATE / "data" / "state" / "role_assignments.parquet"),
     _FAMILY_SUCCESSOR,
 )
-# The families the taxonomy lists now, retired ones left out: what `/requirements` names a
-# sampled Job's category by, and accepts as `family=` (ADR-0324).
-_CURRENT_FAMILIES = _KNOWN_FAMILIES - frozenset(_FAMILY_SUCCESSOR)
+# The same assignments with the families the taxonomy lists now, retired ones left out: what
+# `/requirements` names a sampled Job's category by, and accepts as `family=` (ADR-0324).
+_ROLE_ASSIGNMENTS = (
+    None
+    if _FAMILY_IDS is None
+    else job_search.RoleAssignments(
+        _FAMILY_IDS, _KNOWN_FAMILIES - frozenset(_FAMILY_SUCCESSOR)
+    )
+)
 # A category across the whole index (`family=` without `board=`) reads each family's rows from
 # a table built on its first request (ADR-0322).
 if _FAMILY_IDS is not None:
@@ -707,7 +713,10 @@ def _keep_static_for_the_boot(response):
 # `required_years_at_least` and `exclude_company` on /search and /facets (ADR-0322).
 # 10: /companies/locations lists each country's cities, a place's first city merged across its
 # spellings ("Dublin" and "Dublin, Ireland"), not its places as written (ADR-0331).
-_AGENT_API_VERSION = 10
+# 11: /requirements counts one Job per requisition under `jobs` keys, names a Board that names no
+# company by the directory, and says its `read`, `distinct`, `sample_size` and `category_window`
+# (ADR-0332).
+_AGENT_API_VERSION = 11
 
 
 @app.after_request
@@ -1813,11 +1822,14 @@ def company_levels():
 def role_requirements():
     """What a sample of the served jobs for a role (``q=``) and/or a category (``family=``) ask
     for, for an agent's requirements view (ADR-0324): ``JobSearch.requirements`` documents the
-    sample and ``requirement_counts`` the counts. Takes every search filter and ``board=``, and
-    ``n=`` (50 to 500, default 300). Scoped by Boards and filters alone, so no Account's follow
-    or hide list reaches it. Counts only: no description text is served."""
+    sample and ``requirement_counts`` the counts. Takes every search filter and ``board=``. A
+    Board that names no company is named by the Company directory (ADR-0323). Scoped by Boards
+    and filters alone, so no Account's follow or hide list reaches it. Counts only: no
+    description text is served."""
     try:
-        answer = _searcher.requirements(request.args, _FAMILY_IDS, _CURRENT_FAMILIES)
+        answer = _searcher.requirements(
+            request.args, _ROLE_ASSIGNMENTS, _HISTORY.board_and_name_of_job
+        )
     except (ValueError, job_search.ScopeUnavailable) as exc:
         body, status = job_search.refusal(exc)
         return jsonify(body), status

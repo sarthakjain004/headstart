@@ -2748,20 +2748,23 @@ def test_a_company_profile_answer_stays_inside_its_budget():
 # ---- role_requirements --------------------------------------------------------------------
 
 
-def _requirements(sampled=300, matching=12_400, **overrides):
+def _requirements(distinct=263, read=300, matching=12_400, **overrides):
     """A `/requirements` answer in the route's shape (ADR-0324)."""
     answer = {
         "matching": matching,
         "order": "closest",
+        "sample_size": 300,
+        "category_window": None,
         "closest_score": 0.87,
         "farthest_score": 0.81,
-        "sampled": sampled,
-        "described": sampled - 4 if sampled else 0,
+        "read": read,
+        "distinct": distinct,
+        "described": distinct - 4 if distinct else 0,
         "skills": [
-            {"skill": "SQL", "kind": "data", "postings": 219, "employers": 162},
-            {"skill": "Python", "kind": "language", "postings": 215, "employers": 160},
-            {"skill": "Spark", "kind": "data", "postings": 143, "employers": 105},
-            {"skill": "AWS", "kind": "cloud", "postings": 140, "employers": 106},
+            {"skill": "SQL", "kind": "data", "jobs": 191, "employers": 162},
+            {"skill": "Python", "kind": "language", "jobs": 189, "employers": 160},
+            {"skill": "Spark", "kind": "data", "jobs": 123, "employers": 105},
+            {"skill": "AWS", "kind": "cloud", "jobs": 120, "employers": 106},
         ],
         "kinds": {
             "language": "Languages",
@@ -2770,35 +2773,52 @@ def _requirements(sampled=300, matching=12_400, **overrides):
         },
         "vocabulary_size": 376,
         "experience": {
-            "stated": {"0-1": 10, "2-4": 122, "5-7": 53, "8+": 8},
-            "estimated_from_title": 42,
-            "not_stated": 65,
+            "stated": {"0-1": 10, "2-4": 110, "5-7": 45, "8+": 8},
+            "estimated_from_title": 35,
+            "not_stated": 55,
         },
         "salary": {
-            "stating": 59,
+            "stating": 50,
             "currencies": [
                 {
                     "currency": "USD",
-                    "postings": 51,
+                    "jobs": 44,
                     "p25": 122500,
                     "median": 126800,
                     "p75": 132704,
                 }
             ],
         },
-        "remote": 47,
+        "remote": 42,
         "companies": [
-            {"company": "Capgemini", "board": "workday:capgemini", "postings": 13}
+            {
+                "company": "Capgemini",
+                "board": "workday:capgemini",
+                "company_from_directory": False,
+                "jobs": 13,
+            },
+            {
+                "company": "Capital One",
+                "board": "workday:capitalone.wd1.myworkdayjobs.com/capital_one",
+                "company_from_directory": True,
+                "jobs": 4,
+            },
+            {
+                "company": None,
+                "board": "oracle:egud.fa.us2.oraclecloud.com",
+                "company_from_directory": False,
+                "jobs": 2,
+            },
         ],
         "countries": [
-            {"code": "IN", "name": "India", "postings": 88},
-            {"code": "US", "name": "United States", "postings": 86},
+            {"code": "IN", "name": "India", "jobs": 80},
+            {"code": "US", "name": "United States", "jobs": 76},
         ],
         "no_country": 11,
         "categories": [
-            {"family": "data-engineering", "postings": 238},
-            {"family": "software-engineering", "postings": 2},
-            {"family": "unclassified-tech", "postings": 5},
+            {"family": "data-engineering", "jobs": 210},
+            {"family": "software-engineering", "jobs": 2},
+            {"family": "unclassified-tech", "jobs": 5},
         ],
         "newest_tick": "2026-09-29T04:04:35+00:00",
     }
@@ -2823,15 +2843,29 @@ def test_requirements_send_the_role_the_category_and_the_filters_in_the_spaces_n
     assert space.params_of(R.REQUIREMENTS) == [
         [
             ("strict", "1"),
-            ("n", "300"),
             ("q", "data engineer"),
             ("family", "ai-ml-data-science"),
             ("remote", "true"),
+            ("max_years", "3"),
             ("country", "DE"),
             ("location", "Berlin"),
-            ("max_years", "3"),
         ]
     ]
+
+
+def test_requirements_filters_are_search_jobs_own():
+    """The same schema, so a filter reads the same way in both tools."""
+    mine = server.BY_NAME["role_requirements"].input_schema["properties"]
+    search = server.BY_NAME["search_jobs"].input_schema["properties"]
+    for name in (
+        "company",
+        "remote",
+        "country",
+        "india_place",
+        "location",
+        "max_years",
+    ):
+        assert mine[name] == search[name], name
 
 
 def test_requirements_need_a_role_or_a_category():
@@ -2843,24 +2877,27 @@ def test_requirements_say_what_was_counted_over_how_many_and_how_picked():
     space = FakeSpace(requirements=_requirements())
     text = server.call(space, "role_requirements", {"query": "data engineer"})
     assert text.startswith(
-        'What postings closest to "data engineer" ask for: counted over 300 postings, '
-        "of 12,400 that the filters admit."
+        'What postings closest to "data engineer" ask for: counted over 263 distinct '
+        "postings, of 12,400 postings that the filters admit, copies included (300 postings "
+        "read; 37 copies of one counted once)."
     )
     assert "ranks postings but does not narrow them" in text
     assert "0.87 (the closest) to 0.81 (the farthest counted)" in text
-    # Unclassified tech is hidden (ADR-0306): its 5 count with the 55 in no tech category.
+    # Unclassified tech is hidden (ADR-0306): its 5 count with the 46 in no tech category.
     assert (
-        "Data Engineering (data-engineering) 238 · Software Engineering "
-        "(software-engineering) 2; other or no tech category: 60." in text
+        "Data Engineering (data-engineering) 210 · Software Engineering "
+        "(software-engineering) 2; other or no tech category: 51." in text
     )
     assert "nclassified" not in text
     assert "  Data engineering and analytics: SQL 74% (162 employers)" in text
     assert "  Languages: Python 73% (160 employers)" in text
-    assert "0–1: 10 · 2–4: 122 · 5–7: 53 · 8+: 8" in text
-    assert "USD, 51 postings: 122,500 / 126,800 / 132,704" in text
-    assert "Remote: 47 of 300 (16%)." in text
+    assert "0–1: 10 · 2–4: 110 · 5–7: 45 · 8+: 8" in text
+    assert "USD, 44 postings: 122,500 / 126,800 / 132,704" in text
+    assert "Remote: 42 of 263 (16%)." in text
     assert '"Capgemini" (key "workday:capgemini") 13' in text
-    assert "India (IN) 88 · United States (US) 86; no known country: 11." in text
+    assert '"Capital One" (directory name) (key ' in text
+    assert 'no company name (key "oracle:egud.fa.us2.oraclecloud.com") 2' in text
+    assert "India (IN) 80 · United States (US) 76; no known country: 11." in text
     assert "376 tech skills" in text
     assert text.endswith("Data as of the trends tick 2026-09-29T04:04:35+00:00.")
 
@@ -2868,25 +2905,38 @@ def test_requirements_say_what_was_counted_over_how_many_and_how_picked():
 def test_a_category_alone_is_its_newest_postings_and_lists_no_category_mix():
     space = FakeSpace(
         requirements=_requirements(
-            order="newest", closest_score=None, farthest_score=None
+            order="newest", closest_score=None, farthest_score=None, read=263
         )
     )
     text = server.call(space, "role_requirements", {"category": "security"})
     assert text.startswith(
-        "What the newest postings in Security (security) ask for: counted over 300 "
-        "postings, of 12,400 in the category that the filters admit."
+        "What the newest postings in Security (security) ask for: counted over 263 "
+        "distinct postings, of 12,400 postings in the category that the filters admit, "
+        "copies included."
     )
     assert "Similarity" not in text and "Job categories" not in text
 
 
 def test_a_query_within_a_category_says_when_the_window_held_fewer():
-    space = FakeSpace(requirements=_requirements(sampled=120))
+    space = FakeSpace(
+        requirements=_requirements(distinct=110, read=120, category_window=2_000)
+    )
     text = server.call(
         space,
         "role_requirements",
         {"query": "data engineer", "category": "data-engineering"},
     )
-    assert "Only 120 of the category's postings are among the 2,000 closest" in text
+    assert (
+        "Only 120 of the category's postings, copies included, are among the 2,000 closest"
+        in text
+    )
+    full = FakeSpace(requirements=_requirements(category_window=2_000))
+    text = server.call(
+        full,
+        "role_requirements",
+        {"query": "data engineer", "category": "data-engineering"},
+    )
+    assert "Only" not in text
 
 
 def test_a_company_key_scopes_every_board_and_a_name_is_the_company_box():
@@ -2910,7 +2960,7 @@ def test_a_company_key_scopes_every_board_and_a_name_is_the_company_box():
 
 def test_nothing_to_count_says_so_and_offers_the_companies_a_name_may_mean():
     space = FakeSpace(
-        requirements=_requirements(sampled=0, matching=0, skills=[]),
+        requirements=_requirements(distinct=0, read=0, matching=0, skills=[]),
         companies_suggest={
             "companies": [_suggestion("greenhouse:stripe", "Stripe", "typo")]
         },
@@ -2929,27 +2979,32 @@ def test_a_role_requirements_answer_stays_inside_its_budget():
         {
             "skill": "Infrastructure as code and more",
             "kind": f"kind{i % 17}",
-            "postings": 300,
+            "jobs": 300,
             "employers": 300,
         }
         for i in range(40)
     ]
     companies = [
-        {"company": long, "board": f"workday:{'b' * 280}", "postings": 300}
+        {
+            "company": long,
+            "board": f"workday:{'b' * 280}",
+            "company_from_directory": True,
+            "jobs": 300,
+        }
         for _ in range(10)
     ]
     countries = [
-        {"code": "CD", "name": "Congo, The Democratic Republic of the", "postings": 300}
+        {"code": "CD", "name": "Congo, The Democratic Republic of the", "jobs": 300}
         for _ in range(10)
     ]
     categories = [
-        {"family": "systems-administration-it-operations", "postings": 12}
+        {"family": "systems-administration-it-operations", "jobs": 12}
         for _ in range(25)
     ]
     currencies = [
         {
             "currency": "IDR",
-            "postings": 300,
+            "jobs": 300,
             "p25": 999_999_999,
             "median": 999_999_999,
             "p75": 999_999_999,
@@ -2958,13 +3013,13 @@ def test_a_role_requirements_answer_stays_inside_its_budget():
     ]
     space = FakeSpace(
         requirements=_requirements(
-            sampled=500,
+            distinct=150,
             skills=skills,
             kinds=kinds,
             companies=companies,
             countries=countries,
             categories=categories,
-            salary={"stating": 500, "currencies": currencies},
+            salary={"stating": 300, "currencies": currencies},
         )
     )
     text = _answer(

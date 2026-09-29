@@ -535,7 +535,8 @@ def test_requirements_reach_the_app_as_a_role_and_its_filters(companies_app, par
     )
     assert parsed[-1].remote is True and parsed[-1].country == "DE"
     assert text.startswith(
-        'What postings closest to "backend engineer" ask for: counted over 2 postings, of 1 '
+        'What postings closest to "backend engineer" ask for: counted over 2 distinct '
+        "postings, of 1 "
     )
     assert "as a share of the 1 sampled postings with a description" in text
     assert "Remote: 2 of 2 (100%)." in text
@@ -562,7 +563,7 @@ _EACH_TOOL = [
     ("hiring_now", {}, "No company qualified on this Lens this week."),
     ("find_company", {"name": "Citi"}, "key workday:citi/2"),
     ("company_profile", {"company": "workday:hpe/b"}, 'Germany 1 ("Berlin" 1)'),
-    ("role_requirements", {"query": "backend engineer"}, "counted over 2 postings"),
+    ("role_requirements", {"query": "backend engineer"}, "counted over 2 distinct"),
 ]
 
 _MODERN_META = {

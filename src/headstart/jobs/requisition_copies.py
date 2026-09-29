@@ -1,12 +1,12 @@
-"""Which rows of one search page are copies of one posting, so the page lists each once
-(ADR-0274, widened by ADR-0323 and ADR-0331).
+"""Which served Jobs are copies of one requisition, so a search page lists each once (ADR-0274,
+widened by ADR-0323 and ADR-0331) and a requirements sample counts each once (ADR-0332).
 
-Two kinds of copy reach a page:
+Two kinds of copy are grouped:
 
-- **One posting per country**: the same company and title, brackets aside — "Backend Developer
+- **One requisition per country**: the same company and title, brackets aside — "Backend Developer
   (Peru)", "Backend Developer (Chile)" at "Anyone AI" — placed apart. Rows naming no company are
   copies only on one Board: two unnamed Boards are not one company.
-- **One posting on two Boards** of its employer, such as a Radancy career front and the Workday
+- **One requisition on two Boards** of its employer, such as a Radancy career front and the Workday
   Board behind it, under two spellings of the company: "EVERSOURCE" and "Eversource Energy" (the
   round-2 critique, 2026-09-29). Two spellings are one company when they are the same words once
   legal forms and three generic words ("Group", "Technologies", "Energy") drop. That is looser
@@ -14,8 +14,8 @@ Two kinds of copy reach a page:
   location string names first) and the same countries, as the `country` filter's gazetteer reads
   the whole location.
 
-Grouping only lists a copy under the row it repeats: every row keeps its number, id and link, and
-paging is the Space's.
+On a search page, grouping only lists a copy under the row it repeats: every row keeps its number,
+id and link, and paging is the Space's.
 """
 
 from __future__ import annotations

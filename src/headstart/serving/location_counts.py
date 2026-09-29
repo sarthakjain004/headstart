@@ -28,6 +28,7 @@ from functools import lru_cache
 from typing import Any
 
 from headstart.search_filters import country_gazetteer
+from headstart.serving.count_ranking import most_first
 
 #: The most rows one answer reads. A company's Boards are bounded (`job_search.MAX_SCOPED_BOARDS`)
 #: and the largest measured is Amazon's 9,651 rows, so this is five of those; past it the counts
@@ -74,11 +75,6 @@ def _city(place: str, code: str) -> str:
     return head if head and _countries_of(head) <= {code} else place
 
 
-def _ranked(counted: Counter[str]) -> list[tuple[str, int]]:
-    """Most first, ties by name."""
-    return sorted(counted.items(), key=lambda item: (-item[1], item[0]))
-
-
 def _places(ranked: list[tuple[str, int]]) -> list[dict[str, Any]]:
     return [
         {"location": place, "count": count}
@@ -106,12 +102,12 @@ def _by_country(ranked: list[tuple[str, int]]) -> dict[str, Any]:
             no_country[place] += count
     return {
         "countries": [
-            {"code": code, "jobs": count, "places": _places(_ranked(places[code]))}
-            for code, count in _ranked(jobs)
+            {"code": code, "jobs": count, "places": _places(most_first(places[code]))}
+            for code, count in most_first(jobs)
         ],
         "no_country": {
             "jobs": sum(no_country.values()),
-            "places": _places(_ranked(no_country)),
+            "places": _places(most_first(no_country)),
         },
         "places_unread": sum(count for _, count in ranked[MAX_PLACES_READ:]),
     }
@@ -128,7 +124,7 @@ def top(table: Any, where: str, limit: int) -> dict[str, Any]:
     for row in rows:
         if place := " ".join(str(row.get("location") or "").split()):
             counted[place] += 1
-    ranked = _ranked(counted)
+    ranked = most_first(counted)
     return {
         "jobs": len(rows),
         "unstated": len(rows) - sum(counted.values()),
