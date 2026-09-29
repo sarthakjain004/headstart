@@ -43,7 +43,8 @@ def test_raw_clauses_keep_the_filter_contract():
         "(lower(employment_type) LIKE '%cdi%' AND "
         "lower(employment_type) NOT LIKE '%part%') OR "
         "(lower(employment_type) LIKE '%fte%' AND "
-        "lower(employment_type) NOT LIKE '%after%'))"
+        "lower(employment_type) NOT LIKE '%after%') OR "
+        "lower(employment_type) IN ('f', 'ft'))"
     )
     assert RULES["internship"].raw_clause() == (
         "((lower(employment_type) LIKE '%intern%' OR "
@@ -127,8 +128,9 @@ def test_raw_values_that_read_as_none_are_mapped_where_unambiguous():
     assert flags("Fixed Term")["is_contract"] is True
     assert flags("fulltime_fixed_term") == {**full, "is_contract": True}
     assert flags("Co-op")["is_internship"] is True
-    # Left unread: ambiguous at the source.
-    for value in ("OTHER", "Temporary", "Employee", "F"):
+    # Left unread: ambiguous at the source. ("Temporary" and "F" were here until ADR-0340 read
+    # them: Temporary as contract, F as a whole value.)
+    for value in ("OTHER", "Employee"):
         assert not any(flags(value).values()), value
 
 
@@ -141,3 +143,75 @@ def test_clause_prefers_the_flag_and_ignores_an_unknown_value():
     assert clause("contract", False) == RULES["contract"].raw_clause()
     assert clause("bogus", True) is None
     assert clause(None, False) is None
+
+
+def test_a_single_letter_code_counts_only_as_the_whole_value():
+    """Radancy's "F" (Applied Materials, 1,009 rows) and a bare "FT" (ADP): a substring rule
+    would read "soft", "left" and "effort" as full-time."""
+    assert flags("F")["is_full_time"] is True
+    assert flags("ft")["is_full_time"] is True
+    for value in ("Freelance", "Software", "Left", "Effort", "Soft skills"):
+        assert RULES["full-time"].matches(value) is False, value
+
+
+def test_temporary_counts_as_contract():
+    for value in ("Temporary", "TEMPORARY", "Temporary Employee"):
+        assert flags(value)["is_contract"] is True, value
+    assert flags("Permanent")["is_contract"] is False
+
+
+def test_a_title_says_internship_when_the_employment_type_does_not():
+    """Workday says "Full time" for an intern, Greenhouse says nothing: 9,354 of 11,993
+    intern-titled rows were unflagged (2026-09-29)."""
+    assert flags(None, "Software Engineering Intern")["is_internship"] is True
+    assert flags("Full time", "2027 Summer Internship Program - Engineering")[
+        "is_internship"
+    ]
+    assert (
+        flags("Full time", "Machine Learning Interns (Summer)")["is_internship"] is True
+    )
+    assert flags("Intern")["is_internship"] is True
+    assert flags("Intern", "Engineer")["is_internship"] is True
+
+
+def test_the_title_cue_is_a_whole_word():
+    for title in (
+        "International Sales Engineer",
+        "Internal Tools Engineer",
+        "Internet Architect",
+        "Internist",
+        "Interning Manager",
+        None,
+        "",
+    ):
+        assert flags(None, title)["is_internship"] is False, title
+    # the title never sets the hours flags
+    assert flags(None, "Software Intern")["is_full_time"] is False
+
+
+def test_the_title_cue_does_not_reach_the_sql_fallback():
+    """A table that predates the columns keeps the raw-value clause; the title is not a column
+    the fallback can pattern-match, and the materialized flag is what carries the cue."""
+    assert "title" not in RULES["internship"].raw_clause()
+
+
+def test_the_index_hands_the_title_to_the_flags():
+    """`_served_meta` is the one place every written row's flags come from (new rows, refreshed
+    rows, and the comparison `_refresh_metadata` rewrites a stale row on): the title must reach
+    `flags`, or an intern-titled row would be rewritten with the old verdict on every run."""
+    from headstart.ingest.index import _served_meta
+
+    row = _served_meta(
+        {"employment_type": "Full time", "title": "Software Engineering Intern"}, None
+    )
+    assert row["is_internship"] is True and row["is_full_time"] is True
+    plain = _served_meta({"employment_type": "Full time", "title": "Engineer"}, None)
+    assert plain["is_internship"] is False
+
+
+def test_no_flag_is_a_response_field():
+    """The flags are index columns, not API fields: `/search` and `/job` project explicit lists."""
+    from headstart.serving.job_search import JOB_DETAIL_COLUMNS, RESULT_COLUMNS
+
+    served = set(RESULT_COLUMNS) | set(JOB_DETAIL_COLUMNS)
+    assert served.isdisjoint(rule.column for rule in RULES.values())

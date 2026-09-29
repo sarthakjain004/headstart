@@ -1,9 +1,11 @@
 """The employment-type Search filter (``etype``) and its materialized flags (ADR-0173, ADR-0193).
 
 Normalizes the ATSes' free-text employment types into filterable flags. The raw value stays
-untouched for display. These flags are the exact materialized form of the Search filter's
-long-standing substring rules, including the ``intern``/``international`` guard. They exist so a
-bitmap index can serve the filter without lowercasing and scanning every row.
+untouched for display. The flags are the materialized form of the Search filter's rules on the raw
+value (substrings with the ``intern``/``international`` guard, plus whole-value codes such as
+``ft``), and ``is_internship`` also reads the title (ADR-0340). The SQL fallback for a table that
+predates the columns evaluates the raw-value part only. They exist so a bitmap index can serve
+the filter without lowercasing and scanning every row.
 
 Everything the filter restated across modules lives here once: the canonical values and their
 Facet labels, the four ``is_*`` columns, the Python verdict the index writes, the SQL an old
@@ -12,6 +14,7 @@ table is migrated with, and the clause :func:`headstart.search_filters.compiler.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Collection
 from typing import NamedTuple
 
@@ -33,20 +36,40 @@ class EmploymentTypeRule(NamedTuple):
     excludes: tuple[str, ...] = ()
     #: ``(term, veto)`` pairs: ``term`` includes only where ``veto`` is absent.
     includes_unless: tuple[tuple[str, str], ...] = ()
+    #: Whole values (lowercased, compared as written) that count on their own: codes too short to
+    #: be a substring, since "f" or "ft" would match "soft", "left" and "effort". Not trimmed:
+    #: Lance answers `TRIM(lower(x))` with "not supported SQL" (lance-datafusion 7.0.0, measured
+    #: 2026-09-29), and the fallback clause must match the Python verdict.
+    whole_values: tuple[str, ...] = ()
+    #: Words in the *title* that count as well as the raw value. Read only by the materialized
+    #: flag: the SQL fallback for a table without the columns cannot pattern-match a title, so it
+    #: keeps the raw-value clause.
+    title_pattern: re.Pattern[str] | None = None
 
-    def matches(self, value: str | None) -> bool:
+    def matches(self, value: str | None, title: str | None = None) -> bool:
         text = (value or "").lower()
-        included = any(term in text for term in self.includes) or any(
-            term in text and veto not in text for term, veto in self.includes_unless
+        included = (
+            any(term in text for term in self.includes)
+            or any(
+                term in text and veto not in text for term, veto in self.includes_unless
+            )
+            or text in self.whole_values
         )
-        return included and not any(term in text for term in self.excludes)
+        if included and not any(term in text for term in self.excludes):
+            return True
+        return bool(self.title_pattern and title and self.title_pattern.search(title))
 
     def raw_clause(self, column: str = "employment_type") -> str:
         lowered = f"lower({column})"
-        arms = [f"{lowered} LIKE {_contains(term)}" for term in self.includes] + [
+        arms = [f"{lowered} LIKE {_contains(term)}" for term in self.includes]
+        arms += [
             f"({lowered} LIKE {_contains(term)} AND {lowered} NOT LIKE {_contains(veto)})"
             for term, veto in self.includes_unless
         ]
+        if self.whole_values:
+            arms.append(
+                f"{lowered} IN ({', '.join(repr(v) for v in self.whole_values)})"
+            )
         included = " OR ".join(arms)
         excluded = " AND ".join(
             f"{lowered} NOT LIKE {_contains(term)}" for term in self.excludes
@@ -83,13 +106,24 @@ RULES = {
             ("cdi", "part"),
             ("fte", "after"),
         ),
+        # Radancy's "F" (Applied Materials, 1,009 rows) and a bare "FT" (ADP, ~95): whole values,
+        # since a substring rule cannot tell them from any word (ADR-0340).
+        whole_values=("f", "ft"),
     ),
     "part-time": EmploymentTypeRule("is_part_time", "Part-time", ("part", "_pt")),
     "contract": EmploymentTypeRule(
-        "is_contract", "Contract", ("contract", "freelance", "fixed")
+        "is_contract", "Contract", ("contract", "freelance", "fixed", "temporary")
     ),
+    # The title says "Intern" where Workday's timeType says "Full time" and Greenhouse says
+    # nothing: 9,354 of 11,993 intern-titled rows were unflagged (2026-09-29). A whole word, so
+    # "International", "Internal" and "Internet" never match; 40 of 40 unflagged titles read were
+    # real internships, and "Internship Program" titles are the postings themselves (ADR-0340).
     "internship": EmploymentTypeRule(
-        "is_internship", "Internship", ("intern", "co-op", "coop"), ("international",)
+        "is_internship",
+        "Internship",
+        ("intern", "co-op", "coop"),
+        ("international",),
+        title_pattern=re.compile(r"\bintern(?:ship)?s?\b", re.IGNORECASE),
     ),
 }
 
@@ -102,9 +136,9 @@ FACET_OPTIONS = tuple((value, rule.label) for value, rule in RULES.items())
 MIGRATION_SQL = {rule.column: rule.raw_clause() for rule in RULES.values()}
 
 
-def flags(value: str | None) -> dict[str, bool]:
-    """The four served boolean columns for one raw employment-type value."""
-    return {rule.column: rule.matches(value) for rule in RULES.values()}
+def flags(value: str | None, title: str | None = None) -> dict[str, bool]:
+    """The four served boolean columns for one raw employment-type value and the Job's title."""
+    return {rule.column: rule.matches(value, title) for rule in RULES.values()}
 
 
 def has_flags(schema_names: Collection[str]) -> bool:
