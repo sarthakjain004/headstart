@@ -146,6 +146,10 @@ def build_doc(job: dict) -> str:
 # watermarks; the wasted recompute on an unrelated bump is cheap regex work, not network/LLM cost
 # — revisit only if that stops being true).
 #
+# Each entry cites a fixed commit range ending at the change. A squash merge replaces the branch's
+# commits, so a branch SHA written before the merge is always wrong (v21 and v22 both needed a
+# follow-up). Cite the PR number until the merge, then the squash-merged SHA.
+#
 # `remote` is a fourth family with a different shape (ADR-0118 amends ADR-0061's fact/derivation
 # table for it): its raw ATS-native value IS a fact, but the served column holds
 # `headstart.jobs.remote.extract`'s overlay on top of that fact rather than the fact itself, and —

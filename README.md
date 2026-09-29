@@ -387,7 +387,7 @@ Two rows, fetched live from the index:
   "ats": "smartrecruiters", "company": "Xplor",
   "title": "Backend Engineer",
   "location": "Kuala Lumpur, Federal Territory of Kuala Lumpur, Malaysia",
-  "remote": false, "employment_type": "Full-time",
+  "remote": null, "employment_type": "Full-time",
   "is_full_time": true, "is_part_time": false,
   "is_contract": false, "is_internship": false,
   "description_stored": true,
@@ -395,7 +395,7 @@ Two rows, fetched live from the index:
   "experience_at_most_0": false, "experience_at_most_2": false,
   "experience_at_most_5": true, "experience_at_most_10": true,
   "salary": "108000-125000 MYR 1 YEAR",
-  "min_salary_annual": 108000, "max_salary_annual": 125000, "salary_currency": null,
+  "min_salary_annual": 108000, "max_salary_annual": 125000, "salary_currency": "MYR",
   "salary_known": true,
   "url": "https://jobs.smartrecruiters.com/xplor/744000140844907",
   "requisition": null,                                    // null off the paired Boards

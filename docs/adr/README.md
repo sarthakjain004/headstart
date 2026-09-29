@@ -89,7 +89,7 @@ supersedes it and note the supersession in both.
 | [0079](0079-smallest-stated-experience-requirement-wins.md) | The smallest stated experience requirement wins | 2026-08-20 |
 | [0080](0080-trends-chart-redesign.md) | Trends chart redesign — validated palette, Other bucket, hover layer, radiogroup ARIA | 2026-08-20 |
 | [0081](0081-the-spare-egress-pool-is-deep-not-1-3-addresses.md) | The spare-egress pool is deep, not 1–3 addresses | 2026-08-21 |
-| [0082](0082-salary-extraction-a-two-tier-cascade-no-estimate.md) | Salary extraction — a two-tier cascade, period-normalized, no estimate tier | 2026-08-21 |
+| [0082](0082-salary-extraction-a-two-tier-cascade-no-estimate.md) | Salary extraction — a two-tier cascade, period-normalized, no estimate tier (period-less figures amended by 0293) | 2026-08-21 |
 | [0083](0083-evict-only-on-a-second-consecutive-absence.md) | Evict only on a second consecutive absence | 2026-08-23 |
 | [0084](0084-facet-counts-are-filter-shaped-not-query-shaped.md) | Facet counts are filter-shaped, not query-shaped | 2026-08-25 |
 | [0085](0085-pull-hf-data-over-raw-ranged-http.md) | Pull HF data over raw, ranged HTTP — not snapshot_download | 2026-08-25 |
@@ -277,6 +277,7 @@ supersedes it and note the supersession in both.
 | [0285](0285-a-vector-is-rebuilt-when-its-postings-text-changes.md) | A vector is rebuilt when its posting's text changes | 2026-09-29 |
 | [0290](0290-a-merge-deploys-the-space-only-when-it-changes-what-the-space-loads.md) | A merge deploys the Space only when it changes what the Space loads | 2026-09-29 |
 | [0292](0292-the-description-store-is-not-reaped-until-a-last-listed-signal-exists.md) | The description store is not reaped until a "last listed" signal exists | 2026-09-29 |
+| [0293](0293-a-period-less-salary-figure-is-read-by-its-size-only-as-far-as-the-evidence-goes.md) | A period-less salary figure is read by its size only as far as the evidence goes | 2026-09-29 |
 | [0298](0298-the-space-runs-only-its-own-scripts-and-google-sign-in.md) | The Space runs only its own scripts and Google's sign-in | 2026-09-29 |
 | [0299](0299-a-keyword-word-matches-where-a-word-starts-and-quotes-keep-a-phrase.md) | A keyword word matches where a word starts, and quotes keep a phrase together | 2026-09-29 |
 | [0301](0301-a-recruitee-label-that-redirects-to-another-is-an-alias.md) | A Recruitee label that redirects to another is an alias | 2026-09-29 |
