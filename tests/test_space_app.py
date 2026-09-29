@@ -469,6 +469,7 @@ _READ_ROUTES = (
     "/job",
     "/companies/locations",
     "/companies/levels",
+    "/requirements",
 )
 _DOOR_PATHS = (
     "/",
@@ -901,7 +902,7 @@ def test_a_caller_cannot_claim_the_in_process_mark_with_a_header(auth_app, monke
 
 # ---- the app's own mark on every reply (ADR-0253) ----
 
-_OWN_REPLY = "app; agent-api=6"
+_OWN_REPLY = "app; agent-api=7"
 
 
 def test_a_routes_own_answer_is_marked(auth_app):
@@ -3362,6 +3363,30 @@ def test_levels_need_a_board(app, query):
     r = app.app.test_client().get(f"/companies/levels?{query}")
     assert r.status_code == 400, query
     assert r.get_json()["error"] == "invalid filter"
+
+
+# ---- what a role's postings ask for (ADR-0324) ----
+
+
+def test_requirements_count_a_sample_and_carry_no_description_text(app):
+    """The fake table answers its two rows to every read; one carries a description."""
+    r = app.app.test_client().get("/requirements?q=backend+engineer&strict=1")
+    assert r.status_code == 200
+    body = r.get_json()
+    assert (body["order"], body["sampled"], body["described"]) == ("closest", 2, 1)
+    assert body["newest_tick"] is None and body["vocabulary_size"] >= 300
+    assert "Build the payments API" not in r.get_data(as_text=True)
+
+
+@pytest.mark.parametrize(
+    ("query", "status"),
+    [("", 400), ("q=x&n=5", 400), ("q=x&n=x", 400), ("family=security", 503)],
+)
+def test_requirements_refuse_what_they_cannot_count(app, query, status):
+    """No role or category, a sample outside its bounds, or a category on a deployment without
+    role assignments (the fixture pulls none)."""
+    r = app.app.test_client().get(f"/requirements?{query}")
+    assert r.status_code == status, query
 
 
 def test_facets_carry_the_newest_trends_tick(company_trends, trends_app, app):

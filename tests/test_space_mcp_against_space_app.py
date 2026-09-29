@@ -500,6 +500,33 @@ def test_a_profile_reads_every_route_for_every_board_of_its_company(
     )
 
 
+def test_requirements_reach_the_app_as_a_role_and_its_filters(companies_app, parsed):
+    """The fixture table answers its two rows to every read: the sample is both, one of them
+    described, and the filters reach the app as the search filters they name (ADR-0324)."""
+    text = server.call(
+        _client(companies_app),
+        "role_requirements",
+        {"query": "backend engineer", "remote": True, "country": "DE"},
+    )
+    assert parsed[-1].remote is True and parsed[-1].country == "DE"
+    assert text.startswith(
+        'What postings closest to "backend engineer" ask for: counted over 2 postings, of 1 '
+    )
+    assert "as a share of the 1 sampled postings with a description" in text
+    assert "Remote: 2 of 2 (100%)." in text
+
+
+def test_a_requirements_category_without_role_assignments_is_the_deployments_state(
+    companies_app,
+):
+    """The fixture pulls no role assignments, so the app cannot sample a category, and says so
+    as a deployment's state rather than an empty answer."""
+    with pytest.raises(ToolFailure, match="role assignments"):
+        server.call(
+            _client(companies_app), "role_requirements", {"category": "security"}
+        )
+
+
 # ---- the Space's own /mcp, in both protocol eras (ADR-0267) ----
 
 #: One call of each registered tool, and a phrase its answer carries.
@@ -510,6 +537,7 @@ _EACH_TOOL = [
     ("hiring_now", {}, "No company qualified on this Lens this week."),
     ("find_company", {"name": "Citi"}, "key workday:citi/2"),
     ("company_profile", {"company": "workday:hpe/b"}, 'Germany 1 ("Berlin" 1)'),
+    ("role_requirements", {"query": "backend engineer"}, "counted over 2 postings"),
 ]
 
 _MODERN_META = {

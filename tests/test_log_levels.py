@@ -173,6 +173,12 @@ _ALLOWED: dict[str, str] = {
         "extra_where, where-clause length), never query text "
         "(ADR-0032). Space-only, so never an annotation."
     ),
+    "serving/job_search.py:requirements": (
+        "Fires only when an uncached requirements answer exceeds `SLOW_SEARCH_MS` (2 s), and "
+        "each answer is kept for the boot, so once per request shape at most. Shapes only "
+        "(has-query, has-family, n, where-clause length), never query text (ADR-0032, "
+        "ADR-0324). Space-only, so never an annotation."
+    ),
     "serving/profile_extract.py:_reply_json": (
         "Bound: at most 1 per `extract()` call, i.e. per POST /profile — every branch raises "
         "right after its line (no text / no JSON / unparseable / not an object). Shapes and "
