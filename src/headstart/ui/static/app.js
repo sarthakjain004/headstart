@@ -1640,6 +1640,11 @@ let trendReq = null;        // the /trends request in flight, so a newer one can
 const hiddenSeries = new Set();   // legend toggle-to-hide; keyed by name, so a re-rank keeps it
 const CHART_MAX = 8;        // matches the 8-slot validated categorical palette;
                             // line_reading.LINES_CHARTED
+// The lines the Space keeps in an answer but no reader lists: a hidden family's (ADR-0306), always
+// the last series. They count in every total and fold into Other whatever their size, so the
+// lines drawn one by one are the top CHART_MAX of the rest, and a category count leaves them out.
+function listedCount(d){ return d.series.length - (d.unlisted_series || []).length; }
+function chartedCount(d){ return Math.min(CHART_MAX, listedCount(d)); }
 // The kinds of Marked change that are a counting change, drawn as a dashed marker; every other
 // kind moved openings into or out of the count at once, drawn solid (line_reading.CauseKind).
 const COUNTING_KINDS = new Set(['counting', 'growth_scaled_by_a_change']);
@@ -1722,12 +1727,15 @@ function swatchHtml(color, slot){
 // skill anti-patterns, "cycling past 8" — fold the tail into "Other," don't seat a 9th). Its
 // figures are the reading's `other`, the folded lines added together in Python (ADR-0233), so
 // the table's rows, Other among them, add up to its first row.
-function otherSeries(d, rest){
-  if (!rest) return null;
+// `folded` is every line it holds, `named` those a reader could count: an unlisted line adds to
+// Other's figures and never to its count of smaller categories.
+function otherSeries(d, folded, named){
+  if (!folded) return null;
+  if (!named) return { name: '__other__', label: 'Other' };
   const noun = d.split_by === 'company'
-    ? (rest === 1 ? 'company' : 'companies')
-    : (rest === 1 ? 'category' : 'categories');
-  return { name: '__other__', label: `Other (${rest} smaller ${noun})` };
+    ? (named === 1 ? 'company' : 'companies')
+    : (named === 1 ? 'category' : 'categories');
+  return { name: '__other__', label: `Other (${named} smaller ${noun})` };
 }
 
 // What the chart draws from what the Space sent (ADR-0185). Total is not asked for: the
@@ -2281,8 +2289,9 @@ function countedSince(d, key){
 // The chart and the table view both need "the top CHART_MAX, plus Other" — one place computes
 // it so the split can't quietly drift between the two renderers.
 function chartedAndOther(d){
-  const charted = d.series.slice(0, CHART_MAX);
-  const other = otherSeries(d, Math.max(0, d.series.length - CHART_MAX));
+  const chartedN = chartedCount(d);
+  const charted = d.series.slice(0, chartedN);
+  const other = otherSeries(d, d.series.length - chartedN, listedCount(d) - chartedN);
   return { charted, other, shown: other ? [...charted, other] : charted };
 }
 
@@ -3275,7 +3284,7 @@ function drawTrends(){
   // No runs in the window: say so under the picked chips, not "0 companies · 0 measurements".
   el('trends-scope').textContent = !runs && trendPicks.length
     ? `${trendPicks.length} compan${trendPicks.length === 1 ? 'y' : 'ies'} picked · no measurements in this window`
-    : view.scope(d.series.length, where, measured + asOf);
+    : view.scope(listedCount(d), where, measured + asOf);
   // The SVG's own name for itself, written from the same facts. It was a fixed "Open roles over
   // time by category" in the template, which stayed that after every Measure, Unit, ATS and
   // drill change — right in exactly one state and stale in every other.
@@ -3438,7 +3447,7 @@ function buildKpis(d, charted, measured){
       : trendMetric === 'new' ? 'New tech openings' : 'Tech openings',
     value: openings == null ? '—' : openings.toLocaleString(), note: measured });
   const { tracked } = VIEWS[kind];
-  if (tracked) tiles.push({ label: tracked, value: String(d.series.length) });
+  if (tracked) tiles.push({ label: tracked, value: String(listedCount(d)) });
   if (!tiles.length) return false;
   host.innerHTML = tiles.map(t => `<div class="kpi"><span class="kpi-label">${esc(t.label)}</span>
     <span class="kpi-value">${esc(t.value)}</span>
@@ -3840,10 +3849,11 @@ function checkReading(reading){
       if (summed !== total) out.push(`breakdown: its rows' ${k} add up to ${summed}, its first row's is ${total}`);
     });
   }
-  const folded = (reading.lines || []).slice(CHART_MAX).map(r => r.move);
+  const charted = reading.charted ?? CHART_MAX;
+  const folded = (reading.lines || []).slice(charted).map(r => r.move);
   const other = reading.other;
   if (!!folded.length !== !!other)
-    out.push(`other row: ${folded.length ? 'missing' : 'present'} with ${folded.length} lines past the first ${CHART_MAX}`);
+    out.push(`other row: ${folded.length ? 'missing' : 'present'} with ${folded.length} lines past the first ${charted}`);
   else if (other){
     const m = other.move;
     ['start', 'latest', 'hiring', 'not_hiring_total'].forEach(k => {
@@ -3905,10 +3915,10 @@ function trendClick(name, split){
   if (trendDrill) { trendSplit = 'bands'; loadTrends(null); return; }   // drilled in — go back up
   // A company line and the Total line are not categories: nothing opens below them.
   if (!VIEWS[viewKind(trendData)].drills) return;
-  // Only charted rows drill. `< 0` as well as `>= CHART_MAX`: findIndex returns -1 for a name
+  // Only charted rows drill. `< 0` as well as `>= chartedCount`: findIndex returns -1 for a name
   // that is not in the series at all, and -1 passes a bare upper-bound check.
   const i = trendData.series.findIndex(x => x.name === name);
-  if (i < 0 || i >= CHART_MAX) return;
+  if (i < 0 || i >= chartedCount(trendData)) return;
   // A row opens its levels, which add up to the category: landing on watched roles, a few named
   // titles inside it, showed "155" under a row that had just said 243. The "▸ roles" marker
   // opens the roles it names (`split`), so that affordance still leads where it says.

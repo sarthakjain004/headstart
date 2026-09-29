@@ -9,7 +9,7 @@ page's ``checkReading`` states the same ones in JavaScript.
 
 The page only formats and draws (ADR-0233 step 3), so the reading also carries what it draws:
 each line's counts with its steps taken out and the runs its steps land on, the first row's
-counts, the lines past the page's eighth added together (its Other row), and the share
+counts, the lines past the ones the page charts added together (its Other row), and the share
 denominator netted run by run (the dashed line). :func:`trends_payload` is what ``/trends``
 serves: the answer as the page draws it, with its reading.
 
@@ -266,7 +266,10 @@ class TrendReading:
 
     ``total`` is the first row: every line added together, netted as a whole (None on a Company
     breakdown, which has no first row). ``lines`` are the answer's series in its order, and
-    ``other`` the lines past the first LINES_CHARTED added together, the page's Other row.
+    ``other`` the lines past the first ``charted`` added together, the page's Other row.
+    ``charted`` is LINES_CHARTED, or fewer where the answer lists fewer lines: a hidden family's
+    line (the answer's ``unlisted_series``, always last) is never charted, so it is always in
+    Other.
     ``company_lines`` are the lines Marked changes are sized on: each picked company's own line,
     or inside a drill its part of the category; with no pick, the first row (ADR-0270).
     ``closing`` is the breakdown's closing row, the openings a counting change moved between
@@ -287,6 +290,7 @@ class TrendReading:
     marked_changes: tuple[MarkedChange, ...]
     day_markers: tuple[DayMarker, ...]
     other: LineReading | None = None
+    charted: int = LINES_CHARTED
     reference: tuple[float | None, ...] = ()
     openings: int = 0
     served_jobs: int | None = None
@@ -331,6 +335,7 @@ class TrendReading:
             "total": line(self.total),
             "lines": [line(r) for r in self.lines],
             "other": line(self.other),
+            "charted": self.charted,
             "company_lines": [line(r) for r in self.company_lines],
             "breakdown": {"closing": move(self.closing)} if self.breakdown else None,
             "marked_changes": [
@@ -616,6 +621,8 @@ class _Reader:
         ]
         marked = self._marked_changes(company)
         lines = tuple(r for r in rows if r is not None)
+        unlisted = set(answer.get("unlisted_series") or ())
+        charted = min(LINES_CHARTED, sum(r.name not in unlisted for r in lines))
         openings = sum(r.move.latest for r in lines)
         served = (
             sum(t[-1] or 0 for t in self.company_totals.values())
@@ -632,7 +639,8 @@ class _Reader:
             closing=closing,
             marked_changes=marked,
             day_markers=self._day_markers(marked, series),
-            other=self._other(lines[LINES_CHARTED:]),
+            other=self._other(lines[charted:]),
+            charted=charted,
             reference=_rounded_for_drawing(self._netted_denominator(total_line)),
             openings=openings,
             served_jobs=served,
@@ -1601,7 +1609,7 @@ def check_reading(reading: dict) -> list[str]:
     Plus: every count is a whole number; a line's "Not hiring" total is its causes' sum; its
     weekly rate is its hiring over the days it was counted, withheld under MIN_SPAN_DAYS; its
     turnover's net is opened less closed, and neither is given where closed is not; the Other
-    row is the lines past LINES_CHARTED added together; a line's index base, where given, is its
+    row is the lines past the first ``charted`` added together; a line's index base, where given, is its
     first netted count and at least INDEX_BASE_FLOOR; ``openings`` is every line's latest added
     together, and ``non_tech_jobs`` the served jobs less those; no change is one the reading
     could not name; no label is a raw field id; a company line's causes stand in the order their
@@ -1799,12 +1807,13 @@ def check_reading(reading: dict) -> list[str]:
                 out.append(
                     f"breakdown: its rows' {k} add up to {summed}, its first row's is {total}"
                 )
-    folded = [r["move"] for r in (reading.get("lines") or [])[LINES_CHARTED:]]
+    charted = reading.get("charted", LINES_CHARTED)
+    folded = [r["move"] for r in (reading.get("lines") or [])[charted:]]
     other = reading.get("other")
     if bool(folded) != bool(other):
         out.append(
             f"other row: {'missing' if folded else 'present'} with "
-            f"{len(folded)} lines past the first {LINES_CHARTED}"
+            f"{len(folded)} lines past the first {charted}"
         )
     elif other:
         m = other["move"]

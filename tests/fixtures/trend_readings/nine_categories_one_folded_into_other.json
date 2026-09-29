@@ -673,6 +673,7 @@
    "index_base": null,
    "arrived_by": null
   },
+  "charted": 8,
   "company_lines": [
    {
     "name": "greenhouse:acme",

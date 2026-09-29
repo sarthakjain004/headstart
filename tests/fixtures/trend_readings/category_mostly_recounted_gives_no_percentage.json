@@ -341,6 +341,7 @@
    }
   ],
   "other": null,
+  "charted": 4,
   "company_lines": [
    {
     "name": "greenhouse:acme",

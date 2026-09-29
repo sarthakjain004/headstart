@@ -110,3 +110,27 @@ def test_the_curated_family_list_loads():
         Path(__file__).resolve().parent.parent / "config" / "role_families.json"
     )
     assert "unclassified-tech" in names and "software-engineering" in names
+
+
+def test_a_hidden_family_is_read_from_the_list_and_is_no_counting_change(tmp_path):
+    """A family the readers count but never list: the flag changes no count, so it must not move
+    the fingerprint, which would declare a counting change on the tick it ships."""
+    plain = _families(
+        tmp_path, [{"name": "qa-test"}, {"name": "mystery"}], "plain.json"
+    )
+    hidden = _families(
+        tmp_path,
+        [{"name": "qa-test"}, {"name": "mystery", "hidden": True}],
+        "hidden.json",
+    )
+    assert role_taxonomy.hidden_families(plain) == frozenset()
+    assert role_taxonomy.hidden_families(hidden) == frozenset({"mystery"})
+    assert role_taxonomy.hidden_families(tmp_path / "absent.json") == frozenset()
+    assert role_taxonomy.family_list_fingerprint(
+        plain
+    ) == role_taxonomy.family_list_fingerprint(hidden)
+
+
+def test_the_shipped_list_hides_unclassified_tech_and_nothing_else():
+    shipped = Path(__file__).resolve().parent.parent / "config" / "role_families.json"
+    assert role_taxonomy.hidden_families(shipped) == frozenset({"unclassified-tech"})

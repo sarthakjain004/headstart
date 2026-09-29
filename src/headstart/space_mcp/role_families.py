@@ -58,7 +58,13 @@ def _taxonomy() -> tuple[dict[str, str], tuple[tuple[str, str, str], ...]] | Non
     each retired one followed to the current family that took it over. None when unreadable."""
     try:
         taxonomy = json.loads(FILE.read_text(encoding="utf-8"))
-        labels = {family["name"]: family["label"] for family in taxonomy["families"]}
+        # A hidden family (ADR-0306) is counted but never offered: not in the enum, and a caller
+        # who names it is told there is no such category.
+        labels = {
+            family["name"]: family["label"]
+            for family in taxonomy["families"]
+            if not family.get("hidden")
+        }
         retired = {
             family["name"]: (family["label"], family["successor"])
             for family in taxonomy.get("retired", [])

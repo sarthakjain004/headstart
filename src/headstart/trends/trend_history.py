@@ -36,7 +36,13 @@ import numpy as np
 from headstart.boards.board_identity import ats_of
 from headstart.boards.board_operator import company_operator
 from headstart.trends import company_suggestions, netting
-from headstart.trends.role_taxonomy import BAND_LABELS, NON_TECH, WATCH_PREFIX
+from headstart.trends.role_taxonomy import (
+    BAND_LABELS,
+    HIDDEN_FAMILY_LABEL,
+    NON_TECH,
+    WATCH_PREFIX,
+    hidden_families,
+)
 
 # The `new` flow window (ADR-0051), in days: how long a found Board's backlog is held out of
 # `new`, and how far a `new` view's counting changes echo. The pipeline counts `new` over the
@@ -612,6 +618,7 @@ class TrendHistory:
         self._watch: dict[str, dict[str, str]] = {}
         self._family_labels: dict[str, str] = {}
         self._family_successor: dict[str, str] = {}
+        self._hidden_families: frozenset[str] = frozenset()
 
     # ---- loading -------------------------------------------------------------------------
 
@@ -630,6 +637,7 @@ class TrendHistory:
         history._watch = watched_roles(config_dir / "role_watchlist.json")
         history._family_labels = family_labels(config_dir / "role_families.json")
         history._family_successor = family_successors(config_dir / "role_families.json")
+        history._hidden_families = hidden_families(config_dir / "role_families.json")
         history._evictions = _load_evictions(state_dir / _DEDUP_EVICTIONS)
         history._companies = _load_directory(state_dir / _DIRECTORY)
         history._company_of = {
@@ -1304,11 +1312,18 @@ class TrendHistory:
         if counting_from and stamps and stamps[-1] >= counting_from:
             stamps = [ts for ts in stamps if ts >= counting_from]
 
+        # A hidden family (ADR-0306) keeps its line in the answer, so every total still adds up,
+        # but it goes last whatever its size and wears the Other label: the page and the reading
+        # fold everything past the lines they list, so it always lands in the Other row.
+        unlisted = self._hidden_families if key == "family" else frozenset()
+
         def _series_label(name: str) -> str:
             if key == "company":
                 return company_labels[name]
             if key == "band":
                 return BAND_LABELS.get(name, name)
+            if name in unlisted:
+                return HIDDEN_FAMILY_LABEL
             if name in self._watch:
                 return self._watch[name]["label"]
             return self._family_labels.get(name, name)
@@ -1343,7 +1358,7 @@ class TrendHistory:
                 for name, points in series.items()
             )
         ]
-        out.sort(key=lambda s: -(s["latest"] or 0))
+        out.sort(key=lambda s: (s["name"] in unlisted, -(s["latest"] or 0)))
         # Each pick's own line under a view that sums several, so the page takes a company's
         # steps out of that company's part of the sum only.
         pick_series: dict[str, list[int | None]] = {}
@@ -1535,6 +1550,7 @@ class TrendHistory:
             "metric": metric,
             "stamps": stamps,
             "series": out,
+            "unlisted_series": [s["name"] for s in out if s["name"] in unlisted],
             "totals": [totals.get(ts) for ts in stamps],
             "non_tech": [non_tech.get(ts) for ts in stamps],
             "split_by": key,

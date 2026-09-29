@@ -26,7 +26,10 @@ REPO = pathlib.Path(__file__).resolve().parents[1]
 FAMILIES = json.loads(
     (REPO / "config" / "role_families.json").read_text(encoding="utf-8")
 )
-CURRENT = [family["name"] for family in FAMILIES["families"]]
+#: the families a caller may name: every one in the file but the hidden ones (ADR-0306)
+CURRENT = [
+    family["name"] for family in FAMILIES["families"] if not family.get("hidden")
+]
 
 #: Run in the layout under test: where the module found the list, and the ids it read.
 _PROBE = (
@@ -139,7 +142,8 @@ def test_an_unknown_name_is_refused_listing_every_current_id_with_its_label():
     said = str(refused.value)
     assert re.findall(r"([a-z0-9-]+) \(", said) == CURRENT
     for family in FAMILIES["families"]:
-        assert f"{family['name']} ({family['label']})" in said
+        listed = f"{family['name']} ({family['label']})" in said
+        assert listed is not family.get("hidden", False)
 
 
 def test_only_current_families_are_offered():
@@ -159,3 +163,13 @@ def test_a_name_the_server_cannot_read_is_refused_before_the_space_is_asked():
 
     with pytest.raises(ToolFailure, match="Send one of these ids"):
         server.call(Space(), "read_trends", {"category": "gardening"})
+
+
+def test_a_hidden_family_is_not_offered_and_is_not_a_category_a_caller_may_name():
+    """ADR-0306: the flag in the list is read; the family stays in the counts but not the enum."""
+    assert "unclassified-tech" in [f["name"] for f in FAMILIES["families"]]
+    assert "unclassified-tech" not in role_families.names()
+    assert "unclassified-tech" not in role_families.schema("One job category.")["enum"]
+    assert role_families.label("unclassified-tech") is None
+    with pytest.raises(ToolFailure, match="No job category is called"):
+        role_families.resolve("unclassified-tech")

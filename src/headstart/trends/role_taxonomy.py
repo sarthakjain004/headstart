@@ -28,6 +28,9 @@ _log = log.get(__name__)
 _INTERN = re.compile(r"\bintern(ship)?\b|\btrainee\b", re.IGNORECASE)
 
 NON_TECH = "non-tech"  # the reserved family: counted as a diagnostic, never charted
+# What a hidden family's series is called wherever a reader could see its line: it folds into
+# the page's Other row, and a reader never learns it was a family of its own.
+HIDDEN_FAMILY_LABEL = "Other"
 
 
 def load_families(path: Path) -> list[str]:
@@ -50,6 +53,17 @@ def load_families(path: Path) -> list[str]:
             "that name would collide with it in the ledger"
         )
     return names
+
+
+def hidden_families(path: Path) -> frozenset[str]:
+    """The families the readers count but never list (``"hidden": true`` in the list): their Jobs
+    stay in every total and fold into the Other row, and no chart, table or tool names them. The
+    flag moves no count, so :func:`family_list_fingerprint` ignores it. A missing list hides
+    nothing."""
+    if not path.exists():
+        return frozenset()
+    spec = json.loads(path.read_text(encoding="utf-8"))
+    return frozenset(f["name"] for f in spec["families"] if f.get("hidden"))
 
 
 def family_list_fingerprint(path: Path) -> str:
