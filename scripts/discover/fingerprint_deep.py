@@ -131,13 +131,15 @@ def browser_page(url: str) -> tuple[str, str, list[str], str]:
 def api_signatures(
     host: str, page: str, get, post
 ) -> tuple[list[tuple[str, str, str]], list[str]]:
-    """At most four read-only listing calls, stopping on a schema-confirmed provider.
+    """At most five read-only listing calls, stopping on a schema-confirmed provider.
 
     Returns (ats, scraper-tenant, endpoint) evidence. Phenom/Zwayam request payloads come from
     the actual scrapers, so the discovery code cannot silently drift to a different API dialect.
+    Zwayam is asked on each of the scraper's API clusters, because each holds only its own
+    tenants and the others answer `data: null` for them (ADR-0303).
     """
     from headstart.scrapers.phenom import PhenomScraper
-    from headstart.scrapers.zwayam import body_error_code, search_request
+    from headstart.scrapers.zwayam import API_HOSTS, body_error_code, search_request
 
     errors = []
     endpoint = f"https://{host}/widgets"
@@ -157,19 +159,20 @@ def api_signatures(
     ):
         return [("phenom", host, endpoint)], errors
 
-    endpoint, headers, body = search_request(host)
-    data, error = post(endpoint, headers, body)
-    if error:
-        errors.append(error)
-    listing = data.get("data") if isinstance(data, dict) else None
-    if (
-        isinstance(data, dict)
-        and body_error_code(data) is None
-        and isinstance(listing, dict)
-        and isinstance(listing.get("totalCount"), int)
-        and isinstance(listing.get("data"), list)
-    ):
-        return [("zwayam", host, endpoint)], errors
+    for api_host in API_HOSTS:
+        endpoint, headers, body = search_request(host, api_host=api_host)
+        data, error = post(endpoint, headers, body)
+        if error:
+            errors.append(error)
+        listing = data.get("data") if isinstance(data, dict) else None
+        if (
+            isinstance(data, dict)
+            and body_error_code(data) is None
+            and isinstance(listing, dict)
+            and isinstance(listing.get("totalCount"), int)
+            and isinstance(listing.get("data"), list)
+        ):
+            return [("zwayam", host, endpoint)], errors
 
     group = re.search(r'_EF_GROUP_ID\s*=\s*["\']([^"\']+)', page)
     domain = group.group(1) if group else public_domain(host)

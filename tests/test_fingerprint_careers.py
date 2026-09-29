@@ -827,6 +827,57 @@ def test_zwayam_api_rejects_null_and_generic_count_objects():
     assert hits[0][:2] == ("zwayam", "careers.acme.com")
 
 
+def test_zwayam_api_signature_asks_every_cluster_the_scraper_asks():
+    """A Board on the last cluster is found there; the others answer `data: null` (ADR-0303)."""
+    from fingerprint_deep import api_signatures
+
+    from headstart.scrapers.zwayam import API_HOSTS
+
+    asked = []
+
+    def post(url, headers, body):
+        if url.endswith("/widgets"):
+            return {"code": 200}, ""
+        asked.append(url)
+        if url == f"https://{API_HOSTS[-1]}/jobs/search":
+            return {"code": 200, "data": {"totalCount": 47, "data": []}}, ""
+        return {"code": 200, "data": None}, ""
+
+    hits, _ = api_signatures("careers.acme.com", "", None, post)
+    assert asked == [f"https://{api}/jobs/search" for api in API_HOSTS]
+    assert hits == [("zwayam", "careers.acme.com", asked[-1])]
+
+
+def test_zwayam_job_check_reads_every_page_from_the_cluster_holding_the_board():
+    from fingerprint_job_evidence import check_jobs
+
+    from headstart.scrapers.zwayam import API_HOSTS
+
+    held_on = f"https://{API_HOSTS[-1]}/jobs/search"
+    asked = []
+
+    def post(url, headers, body):
+        asked.append(url)
+        if url != held_on:
+            return {"code": 200, "data": None}, ""
+        return {"code": 200, "data": {"data": [{"_source": {"jobUrl": "role-1"}}]}}, ""
+
+    def check(source):
+        asked.clear()
+        return check_jobs(
+            "zwayam", "careers.acme.com", {source}, lambda u: ("", u, "http404"), post
+        )
+
+    assert check("https://careers.acme.com/jobview/role-1") == (
+        "matched-job",
+        ["https://careers.acme.com/jobview/role-1"],
+    )
+    assert check("https://careers.acme.com/jobview/missing")[0] == (
+        "no-match-in-bounded-sample"
+    )
+    assert asked == [f"https://{api}/jobs/search" for api in API_HOSTS] + [held_on] * 2
+
+
 def test_frozen_mixed_employer_wrapper_is_never_a_mapping(monkeypatch):
     monkeypatch.setattr(fp, "cname_chain", lambda _: [])
     monkeypatch.setattr(
