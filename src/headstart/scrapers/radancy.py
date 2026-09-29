@@ -99,7 +99,8 @@ from headstart.scrapers.job_posting_jsonld import (
 
 #: Well below the measured knee: one front answered 128 concurrent job-page GETs at 91.5 req/s
 #: with 500 of 500 200s, and twelve fronts at once did the same (600 of 600), with no refusal at
-#: any width tried, from a laptop; a runner's IP is refused at 16 (ADR-0346).
+#: any width tried, from a laptop. A runner's IP was refused after about 260 pages per Board in 15
+#: of 47 walled Boards at 16; whether the rate matters is unverified (ADR-0346).
 #: `harvest` multiplies this by the Boards it reads at once.
 _DETAIL_WORKERS = 16
 
