@@ -39,10 +39,13 @@ scrapes a buried label, so the scan is the only thing that notices one that stop
 
 ## Evidence
 
-Three scans of the 4,010 Live rows of the committed ledger ran on 2026-09-29 and agreed pair for
-pair. The first was a `dedupe_boards.py` dry run with 4 workers. The second was an independent
-first-hop `HEAD` scan that retried each of its 255 × 429 until it got a verdict. The third was
-the `--apply` run.
+Two full scans of the 4,010 Live rows of the committed ledger ran on 2026-09-29 and agreed pair
+for pair. The first was a `dedupe_boards.py` dry run with 4 workers. The second was an
+independent first-hop `HEAD` scan that retried each of its 255 × 429 until it got a verdict. Two
+`--apply` runs were cut short by session restarts, at 1,521 and 3,865 of 4,010, and every
+redirect they printed (164 and 373) matched. The committed ledger was written from the first-hop
+scan's keys through the same `alias_ledger.resolve` and `write`, and it equals the dry run's
+burials row for row.
 
 - **418 labels redirect**, and every one lands on another `*.recruitee.com` label. None of the
   targets redirects again.
@@ -85,8 +88,9 @@ target is landed, the next scan buries the group onto it.
 
 ## Consequences
 
-- **Scrapable Board** and **Hiring Board** fall by the buried labels (README and CONTEXT.md,
-  recomputed with this change). `index prune` evicts their rows through its existing off-Board
+- **Scrapable Board** falls 164,287 → 163,931 (−356) and **Hiring Board** 109,233 → 108,912
+  (−321), against the ledger at merge. One of the 357, `democompany`, is already excluded as a
+  vendor test Board. `index prune` evicts the buried labels' rows through its existing off-Board
   path, booked as `alias:redirect` in `dedup_evictions.csv`.
 - **`DEDUP_VERSION` goes to 10.** This is the `redirect` signal's first ledger for Recruitee, the
   case ADR-0222 made a bump.
