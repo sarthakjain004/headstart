@@ -123,6 +123,33 @@ def test_a_company_name_is_the_company_boxs_substring_at_the_app(companies_app, 
     assert 'company name contains "Citi" (the site\'s company box)' in text
 
 
+def test_a_category_alone_is_read_from_its_family_table_at_the_app(
+    companies_app, parsed, monkeypatch
+):
+    """P1-5 of the round-2 critique (ADR-0322): `family=` without `board=` passes `strict=1` and
+    reads the family's table; the age window and the experience floor arrive parsed."""
+    read = []
+
+    class Tables:
+        def table(self, family):
+            read.append(family)
+            return space_tests._Table()
+
+    monkeypatch.setattr(companies_app, "_KNOWN_FAMILIES", frozenset({"security"}))
+    monkeypatch.setattr(companies_app, "_FAMILY_IDS", {"security": []})
+    monkeypatch.setattr(companies_app._searcher, "families", Tables())
+    text = server.call(
+        _client(companies_app),
+        "search_jobs",
+        {"category": "security", "required_years_at_least": 5},
+    )
+    assert read and set(read) == {"security"}
+    assert parsed and all(
+        f.max_age_days == 365 and f.required_years_at_least == 5 for f in parsed
+    )
+    assert "category security" in text and '"Backend Engineer"' in text
+
+
 def test_a_board_key_scopes_every_board_of_its_company(companies_app, scoped_boards):
     """HPE is one Tenant split into two Workday sites; either site's key means both."""
     text = server.call(

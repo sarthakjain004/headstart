@@ -283,6 +283,18 @@ def counts(
     }
 
 
+def description_coverage(
+    table: Any, where: str | None, materialized: bool
+) -> dict[str, int]:
+    """The Keyword filter's disclaimer for rows ``where`` matches, the keyword lifted: how many
+    carry a stored description, of how many. :func:`counts` makes it in its pool; a category
+    across the whole index, which matches the keyword before counting (ADR-0322), here."""
+    return {
+        "covered": _count(table, _with_description(where, materialized)),
+        "total": _count(table, where),
+    }
+
+
 def _with_description(where: str | None, materialized: bool) -> str:
     """A where-clause narrowed to rows whose description is stored."""
     present = "description_stored = true" if materialized else "description IS NOT NULL"
@@ -344,7 +356,8 @@ NEVER_BLOCKING = frozenset(
         # `applyProfile()` sweep wholesale — would have one tab blanking another's controls, and
         # `first_seen_after` is machine-set by the alerts run and has no input at all. If the Search
         # tab ever grows its own range controls, drop them from here in the same change;
-        # `tests/test_serving_facets.py` fails on a filter that is in neither this set nor those maps.
+        # `tests/test_serving_facets.py` fails on a filter that is in neither this set, nor
+        # `AGENT_ONLY` below, nor those maps.
         "posted_after",
         "posted_before",
         "seen_after",
@@ -352,6 +365,12 @@ NEVER_BLOCKING = frozenset(
         "first_seen_after",
     }
 )
+
+
+#: Filters only an agent sends (ADR-0322). Unlike :data:`NEVER_BLOCKING` they may be named: an
+#: agent's answer names the filter costing everything as the agent spelled it. The page has no
+#: control for them and never sends them, so its empty state never meets one.
+AGENT_ONLY = frozenset({"max_age_days", "required_years_at_least", "exclude_company"})
 
 
 def _blocking(

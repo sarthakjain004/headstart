@@ -288,6 +288,10 @@ _FAMILY_IDS = _with_predecessors(
 # The families the taxonomy lists now, retired ones left out: what `/requirements` names a
 # sampled Job's category by, and accepts as `family=` (ADR-0324).
 _CURRENT_FAMILIES = _KNOWN_FAMILIES - frozenset(_FAMILY_SUCCESSOR)
+# A category across the whole index (`family=` without `board=`) reads each family's rows from
+# a table built on its first request (ADR-0322).
+if _FAMILY_IDS is not None:
+    _searcher.families = job_search.FamilyTables(_table, _FAMILY_IDS)
 # Email alerts (ADR-0035) — invite-only, so all three must be set before the panel appears:
 # the Google client id the sign-in button needs, and a token scoped to the Subscriptions
 # dataset alone (never the index token, which is read-only by design).
@@ -669,7 +673,9 @@ def _keep_static_for_the_boot(response):
 # 7: /requirements, what a sample of a role's or a category's postings ask for (ADR-0324).
 # 8: the `opened_less_closed` lens on /hot, its rows' `opened_less_closed` and the count
 # `closures_partly_uncounted` (ADR-0321).
-_AGENT_API_VERSION = 8
+# 9: `family=` without `board=` (a category across the whole index), `max_age_days`,
+# `required_years_at_least` and `exclude_company` on /search and /facets (ADR-0322).
+_AGENT_API_VERSION = 9
 
 
 @app.after_request

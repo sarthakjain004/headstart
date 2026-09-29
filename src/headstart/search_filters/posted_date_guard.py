@@ -2,8 +2,9 @@
 
 ``posted_at`` is a raw string the ATSes write, and the 3% that are not ISO (darwinbox's legacy
 ``21-Apr-2026``) sort lexicographically above any ISO cutoff. So every clause keyed on it — the
-``posted_within`` window, the ``posted_after``/``posted_before`` range and the posted-date sort —
-ANDs in the guard ``posted_at LIKE '____-__-__%'``. ADR-0173 materialized that verdict as
+``posted_within`` window, the ``posted_after``/``posted_before`` range, the posted-date sort and
+``max_age_days`` (which reads first seen where the guard fails, ADR-0322) — ANDs in the guard
+``posted_at LIKE '____-__-__%'``. ADR-0173 materialized that verdict as
 ``posted_at_comparable``. The column, the Python verdict the index writes, the SQL an old table is
 migrated with, and the guard :func:`headstart.search_filters.compiler.build_filter` compiles live here; the date
 clauses themselves stay with the compiler, which shares their date arithmetic with ``first_seen``.

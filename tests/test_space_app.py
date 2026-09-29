@@ -902,7 +902,7 @@ def test_a_caller_cannot_claim_the_in_process_mark_with_a_header(auth_app, monke
 
 # ---- the app's own mark on every reply (ADR-0253) ----
 
-_OWN_REPLY = "app; agent-api=8"
+_OWN_REPLY = "app; agent-api=9"
 
 
 def test_a_routes_own_answer_is_marked(auth_app):

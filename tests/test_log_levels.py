@@ -159,13 +159,20 @@ _ALLOWED: dict[str, str] = {
     ),
     "serving/job_search.py:scoped_jobs_clause": (
         "Bound: 1 per call, and it is called once per /search or /facets request (app.py's "
-        "`_company_where`). Six mutually exclusive branches: a hand-off with no `board=` "
+        "`_company_where`). Six mutually exclusive branches: a role with no `board=` "
         "(ignored), a role with no watchlist loaded or no watch pattern (scope widened), a "
         "family with no role "
         "assignments loaded (widened), an unknown family (zero results), a category past "
         "`MAX_FAMILY_IDS` (refused). Values come from the query string, so they are "
         "`%.40r`-clipped. "
         "Space-only: no annotations exist there, and `lastResort` shows WARNING and above only."
+    ),
+    "serving/job_search.py:_family_scope": (
+        "Bound: 1 per call, and it is called once per /search or /facets request. Fires only "
+        "when a request names `family=` with no `board=` on a deployment with no role "
+        "assignments loaded, where `strict=1` has already been refused (ADR-0322). The family "
+        "comes from the query string, so it is `%.40r`-clipped. Space-only, so never an "
+        "annotation."
     ),
     "serving/job_search.py:run": (
         "Fires only when an uncached request exceeds `SLOW_SEARCH_MS` (2 s), so rare by "

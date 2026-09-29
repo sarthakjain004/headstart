@@ -193,20 +193,26 @@ the filter costing the most.
   earlier answer (`lever:razorpay`, or the start of a result id) means every Board of that company.
   When no company name contains the text ("Strpie"), the answer offers up to five directory
   companies it may mean, with their keys.
-- `category` narrows one company's jobs to a job category, so it needs a directory company: a key,
-  or an exact name, which is then read as the directory's largest company of that name — the
-  answer says so. The schema lists the current ids; a label ("AI, ML & Data Science"), a close name
-  ("AI/ML", "machine learning") or a retired id (`python-development`) is read as the id, and a
-  name that fits several categories or none is refused with the ids and labels to choose from
-  (ADR-0274). `read_trends` reads `category` the same way.
+- `category` narrows to one job category: across the whole index on its own ("ML jobs in
+  Germany" is `category` plus `country: DE`), or within one company's jobs beside `company`, which
+  then needs a directory company — a key, or an exact name, read as the directory's largest
+  company of that name, and the answer says so. The schema lists the current ids; a label ("AI, ML
+  & Data Science"), a close name ("AI/ML", "machine learning") or a retired id
+  (`python-development`) is read as the id, and a name that fits several categories or none is
+  refused with the ids and labels to choose from (ADR-0274). A category is the pipeline's role
+  assignment, the one Trends counts, so its totals are exact; the Space reads a whole-index
+  category from an in-memory copy of that family's rows (ADR-0322). `read_trends` reads `category`
+  the same way.
 - A salary bound needs `salary_currency` (30 lakh is `salary_min: 3000000`, `salary_currency: INR`).
 - **Place, three ways.** `country` is an ISO 3166-1 alpha-2 code (`US`, `GB`, `DE`, `IN`; the
-  schema lists the 94 it knows). It matches every way a job's location names the country — its
+  schema lists the 95 it knows). It matches every way a job's location names the country — its
   name, its states or provinces, its cities, its codes — so "Austin, TX" is in `US` and "München"
   in `DE`; `IN` is the same rule as `india_place: "india"`. `india_place` narrows to an Indian city
   or region. `location` is plain text the location contains, for a city outside India or a place
   the gazetteer does not know. A location naming several countries is in each of them. How it
-  matches, its measured precision and recall, and its costs: ADR-0273.
+  matches, its measured precision and recall, and its costs: ADR-0273. `country` also takes a
+  country's English name or a common abbreviation ("UK", "USA", "UAE"), read as the code
+  (ADR-0322).
 - **With a `query`, `sort` orders only the 2,000 closest matches.** For the highest salary or the
   newest anywhere, omit `query` and narrow with `keyword` and the filters.
 - `detail: "full"` adds how many jobs each filter option would give, each option written as the
@@ -229,8 +235,15 @@ the filter costing the most.
   pod, or nothing) is shown by the Company directory's name for its Board, marked
   `(directory name)`; a Board the directory does not name either reads "no company name"
   (ADR-0323).
+- **Postings over a year old are left out by default.** `max_age_days` (365 unless sent) keeps a
+  job posted within that many days, reading the day HeadStart first saw it where the posted date is
+  missing or unreadable; a job with neither is left out. `max_age_days: 0` is any age. The scope
+  line says when the default applied. The website keeps its own behaviour (ADR-0322).
 - **What the filters mean.** `max_years` also keeps jobs that state no experience, and marks them
-  "experience not stated". `salary_min` keeps a job whose stated range reaches the bound (the top
+  "experience not stated". `required_years_at_least` is the opposite end, a floor on the job's
+  required experience: it keeps jobs asking for at least that many years, as stated or, where
+  none is stated, estimated from the title's seniority ("Senior" reads as 5, ADR-0018), and
+  leaves out jobs whose experience is unknown. `salary_min` keeps a job whose stated range reaches the bound (the top
   of the range counts), `salary_max` one whose range starts at or below it, and other currencies
   are converted at HeadStart's fixed rates, a currency with no rate left out. A keyword in
   descriptions can only match jobs with a stored description; the answer says how many of the
@@ -240,7 +253,8 @@ the filter costing the most.
   those it calls non-tech (`ingest/role_trends.py`).
 - **`similar_to` a job id** ranks by that job's own stored vector instead of a `query`, and leaves
   the job itself out; every filter applies as usual, and the total excludes it too. It cannot be
-  sent with `query` (ADR-0277).
+  sent with `query` (ADR-0277). `exclude_company` leaves out every job whose company name contains
+  the text (the company box, negated), so similar jobs need not all be that employer's (ADR-0322).
 
 **`get_job`** — up to 5 postings in full, by the ids `search_jobs` prints: title, company, place,
 remote, employment type, department, the experience the posting states and the years read from
