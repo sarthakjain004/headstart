@@ -103,7 +103,7 @@ from headstart.boards.board_identity import board_end
 # That is an upper bound, because the served rows are tech only and a Board's non-tech postings can
 # keep it in. On a live scrape of 24 Boards, 16 were Dormant and 10,369 of their served rows would
 # go; the six controls lost none.
-# 7 (2026-09-29, `git log 099dd3f9..ffbdbc8a -- src/headstart/jobs src/headstart/scrapers`):
+# 7 (2026-09-29, `git log 50e02fb7..72b06c47 -- src/headstart/jobs src/headstart/scrapers src/headstart/ingest`):
 # #570's options A and D (ADR-0291).
 # SmartRecruiters' `_department_of` falls back only to the Information Technology function, no
 # longer to "Engineering" (rule 4 promoted civil and construction work) or to Sales and
