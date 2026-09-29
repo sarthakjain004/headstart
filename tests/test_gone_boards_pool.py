@@ -1,8 +1,9 @@
 """Tests for scripts/validate/gone_boards_pool.py: the pool of Boards the scrape keeps finding gone.
 
-The property that matters: every ledger row of a struck Board goes to the probe, casing variants
-and other Workday data centres included. A row left out keeps its old `live` verdict, and one such
-row is enough to keep the Board Scrapable (ADR-0219).
+The property that matters: every ledger row of a Board at the strike threshold (consecutive gone
+scrapes, ADR-0058) goes to the probe, casing variants and other Workday data centres included. A
+row left out keeps its old `live` verdict, and one such row is enough to keep the Board Scrapable
+(ADR-0219).
 """
 
 from __future__ import annotations
@@ -31,8 +32,9 @@ def _write(path: Path, header: str, rows: list[str]) -> None:
 
 
 def test_every_row_of_a_struck_board_and_nothing_else(mod, tmp_path):
-    """A struck Board's rows all go, across casings and data centres. A Board under the strike
-    threshold, one never struck, and one with no live row left are not re-probed."""
+    """A Board's rows all go, across casings and data centres, once it reaches the strike
+    threshold. A Board under it, one never found gone, and one with no live row left are not
+    re-probed."""
     ledger, failures = tmp_path / "liveness", tmp_path / "board_failures.csv"
     header = "ats,tenant,url,status,jobs,checked_at"
     _write(
