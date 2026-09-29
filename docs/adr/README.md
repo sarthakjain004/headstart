@@ -278,6 +278,7 @@ supersedes it and note the supersession in both.
 | [0292](0292-the-description-store-is-not-reaped-until-a-last-listed-signal-exists.md) | The description store is not reaped until a "last listed" signal exists | 2026-09-29 |
 | [0298](0298-the-space-runs-only-its-own-scripts-and-google-sign-in.md) | The Space runs only its own scripts and Google's sign-in | 2026-09-29 |
 | [0299](0299-a-keyword-word-matches-where-a-word-starts-and-quotes-keep-a-phrase.md) | A keyword word matches where a word starts, and quotes keep a phrase together | 2026-09-29 |
+| [0301](0301-a-recruitee-label-that-redirects-to-another-is-an-alias.md) | A Recruitee label that redirects to another is an alias | 2026-09-29 |
 | [0302](0302-an-oracle-board-whose-title-names-no-one-is-named-by-its-sites-seo-name.md) | An Oracle Board whose title names no one is named by its site's SEO name | 2026-09-29 |
 | [0303](0303-a-zwayam-board-is-read-from-the-api-cluster-that-holds-it.md) | A Zwayam Board is read from the API cluster that holds it | 2026-09-29 |
 | [0304](0304-the-index-view-takes-boards-found-out-of-each-line-by-its-own-openings.md) | The index view takes Boards found out of each line by its own openings | 2026-09-29 |

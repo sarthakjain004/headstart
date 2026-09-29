@@ -794,8 +794,9 @@ class BaseScraper(ABC):
         Override where the redirect off :meth:`url` is not the signal: Workday follows its public
         careers page instead, and each single source scraper (``google``, ``apple``, ``meta``, …)
         is its own key without a request. Where the redirect is the signal but the landing host is
-        the wrong key, override only :meth:`alias_key_of_landing` (both Taleo editions). This is
-        the same default-here-override-there shape as :meth:`board_key` and :meth:`slug_from`.
+        the wrong key, override only :meth:`alias_key_of_landing` (both Taleo editions, and
+        Recruitee). This is the same default-here-override-there shape as :meth:`board_key` and
+        :meth:`slug_from`.
 
         **The default's return value must be comparable to this ATS's own ``slug``, and for the
         default that means the slug has to BE a host.** ``alias_ledger.resolve`` decides a Board
@@ -815,7 +816,10 @@ class BaseScraper(ABC):
         4xx/5xx rather than raising (:class:`~headstart.network.fetcher.Fetcher`'s contract, kept from
         ``http.fetch``), so a Board whose own host answers 503 records itself, not
         None — which reads as "nothing points away from it" and leaves it unburied. That is the
-        conservative direction: it can miss a duplicate, never invent one.
+        conservative direction: it can miss a duplicate, never invent one. Recruitee overrides
+        this method for that reason alone: its Boards share one origin's rate limit, so a
+        settled 429 there un-buried a duplicate whenever a re-scan was rate-limited. It returns
+        None on a 429 or 5xx instead (ADR-0301).
 
         Streamed and closed unread — only the redirect chain is wanted, and a SuccessFactors
         sitemap body runs to megabytes. Only the final host survives, not the chain that reached

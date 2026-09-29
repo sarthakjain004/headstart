@@ -74,6 +74,14 @@ belong in README and CONTEXT.md, where `tests/test_board_counts.py` checks them.
   `data/validate/aliases/icims.csv` with both, and it is the only thing that notices when a buried
   portal starts listing a posting of its own. `dedupe_boards.py` refuses `--apply` for this
   ATS.
+- **Recruitee: re-run `scripts/validate/dedupe_boards.py --ats recruitee --workers 4 --apply`
+  after every refresh of its ledger.** A renamed account keeps its old label, whose offers API
+  answers 302 to the new one (`thesjefgroup` → `elockers`), so both labels probe live and every
+  posting is served twice. The scan rewrites `data/validate/aliases/recruitee.csv` with
+  `redirect` rows only, so `--apply` is safe, and it is the only thing that notices a buried label
+  that stops redirecting. Keep `--workers 4`: Recruitee rate-limits per address, and a label
+  that answers 429 is reported `unreachable`. `--apply` writes only what the scan resolved, so
+  apply a run whose summary shows no `unreachable` (ADR-0301).
 - **Jibe lands a vanity career site as its client id, and parks clients on Boards already held.**
   A Board is `{client}.jibeapply.com`; resolve a vanity host (`careers.costco.com`) to its client
   with `scripts/discover/mine_jibe.py --vanity`, which reads the rows' `client_code`, else the
