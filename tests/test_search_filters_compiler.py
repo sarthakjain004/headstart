@@ -15,6 +15,7 @@ from headstart.search_filters.compiler import (
     SearchFilters,
     account_clause,
     board_clause,
+    board_pattern_clause,
     build_filter,
     keyword_clause,
 )
@@ -705,6 +706,46 @@ def test_boards_are_deduplicated_and_ordered(exclude: bool) -> None:
     assert once.index("lever:a") < once.index("lever:b"), (
         "sorted, so the clause is stable"
     )
+
+
+def test_the_pattern_clause_names_no_boards_as_no_clause() -> None:
+    assert board_pattern_clause([], exclude=True) is None
+    assert board_pattern_clause([""], exclude=False) is None
+
+
+@pytest.mark.parametrize("exclude", [True, False])
+def test_the_pattern_clause_keeps_the_rows_the_like_clause_keeps(
+    exclude: bool, tmp_path
+) -> None:
+    """ADR-0335: one regexp pass in place of a LIKE a Board, matching the same rows — case
+    folded, each Board ending at its colon, every regex and quote character literal."""
+    lancedb = pytest.importorskip("lancedb")
+    pa = pytest.importorskip("pyarrow")
+    ids = [
+        "greenhouse:acme:1",
+        "greenhouse:acmecorp:2",
+        "Workday:NGC/Northrop_Grumman+External.Site:3",
+        "workday:ngcx/northrop_grumman+external.site:4",
+        "taleo_be:https://x.tbe.taleo.net/p?org=A(B)|C:5",
+        "lever:o'neil:6",
+        "lever:oxneil:7",
+    ]
+    table = lancedb.connect(tmp_path).create_table("jobs", data=pa.table({"id": ids}))
+    boards = [
+        "GREENHOUSE:acme",
+        "workday:ngc/Northrop_Grumman+External.Site",
+        "taleo_be:https://x.tbe.taleo.net/p?org=A(B)|C",
+        "lever:o'neil",
+    ]
+
+    def kept(clause: str) -> list[str]:
+        return sorted(r["id"] for r in table.search().where(clause).limit(20).to_list())
+
+    by_pattern = kept(board_pattern_clause(boards, exclude=exclude))
+    assert by_pattern == kept(board_clause(boards, exclude=exclude))
+    assert ("greenhouse:acme:1" in by_pattern) is not exclude
+    assert ("greenhouse:acmecorp:2" in by_pattern) is exclude
+    assert ("lever:oxneil:7" in by_pattern) is exclude
 
 
 def test_account_clause_states_the_rule_once_for_both_apps():

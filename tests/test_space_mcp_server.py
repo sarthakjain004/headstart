@@ -309,6 +309,8 @@ def test_search_sends_both_routes_the_same_strict_query_in_the_spaces_own_names(
         ("max_age_days", "90"),
         ("required_years_at_least", "2"),
         ("exclude_company", "Acme"),
+        # The default: the Operators the Hiring now tab shows (ADR-0335).
+        ("operators", "employer,services"),
         ("etype", "full-time"),
         ("india", "bengaluru"),
         ("country", "IN"),
@@ -480,6 +482,43 @@ def test_nothing_matching_names_the_blocking_filter_as_this_tool_names_it(
 def test_the_scope_line_names_the_country_code():
     text = server.call(_search_space([_job(1)]), "search_jobs", {"country": "DE"})
     assert "Scope: country DE · posted in the last 365 days, the default;" in text
+
+
+def _operators_sent(space):
+    return [dict(params).get("operators") for params in space.params_of(R.SEARCH)]
+
+
+def test_a_search_leaves_out_staffing_firms_and_job_boards_and_says_how_many():
+    """P1-1 of the round-3 critique: Jobgether held 6 of 8 rows of a sorted search (ADR-0335)."""
+    space = FakeSpace(search=[_job(1)], facets=_facets(1, operators_left_out=1_803))
+    text = server.call(space, "search_jobs", {"query": "data analyst"})
+    assert _operators_sent(space) == ["employer,services"]
+    assert dict(space.params_of(R.FACETS)[0])["operators"] == "employer,services"
+    assert (
+        "staffing firms and job boards left out, as the site's Hiring now tab hides "
+        "them: 1,803 jobs (name them in operators to include them)."
+    ) in text
+
+
+def test_operators_are_sent_as_named_and_not_at_all_when_every_one_is():
+    space = _search_space([_job(1)])
+    every = ["aggregator", "staffing", "services", "employer"]
+    server.call(space, "search_jobs", {"operators": every})
+    server.call(space, "search_jobs", {"operators": ["staffing", "employer"]})
+    # A company named is asked for whoever posts for it, unless another list is sent.
+    server.call(space, "search_jobs", {"company": "Jobgether"})
+    server.call(
+        space, "search_jobs", {"company": "Jobgether", "operators": ["aggregator"]}
+    )
+    assert _operators_sent(space) == [None, "employer,staffing", None, "aggregator"]
+    with pytest.raises(ToolFailure, match="send at least one of"):
+        server.BY_NAME["search_jobs"].answer(space, {"operators": []})
+
+
+def test_nothing_left_but_what_operators_left_out_is_said():
+    space = FakeSpace(search=[], facets=_facets(0, operators_left_out=12))
+    text = server.call(space, "search_jobs", {"query": "x", "remote": True})
+    assert "0 jobs: the 12 that match are all posted by companies `operators`" in text
 
 
 @pytest.mark.parametrize(
@@ -2405,6 +2444,33 @@ def test_on_the_sites_lenses_flagged_rows_follow_the_unflagged_in_the_sites_orde
     assert "1 of these rows had their closures go uncounted" in text
 
 
+def test_an_unverified_operator_is_flagged_and_listed_last_on_every_lens():
+    """jr05 of the round-3 critique: Vrinda International, a staffing agency no list named,
+    ranked #3 as an employer on the default Lens (ADR-0335)."""
+    rows = [
+        _hot_row(1),
+        _hot_row(2, company="Vrinda International", operator_unverified=True),
+        _hot_row(3),
+    ]
+    for lens in ("opened_less_closed", "expansion"):
+        text = server.call(FakeSpace(hot=_hot(rows)), "hiring_now", {"lens": lens})
+        listed = _listed(text)
+        assert [line.split('"')[1] for line in listed] == [
+            "Company 1",
+            "Company 3",
+            "Vrinda International",
+        ]
+        assert listed[2].startswith(" 3. site #2 · ")
+        assert listed[2].endswith(
+            "employer · 398 open now · net +48 · opened 90 · closed 40 "
+            "(opened less closed +50) · rate 22% · FLAG operator unverified"
+        )
+        assert (
+            "1 of these rows are named like a staffing firm or recruiter, and HeadStart has "
+            "not checked who posts for them" in text
+        )
+
+
 def test_the_sites_order_is_kept_and_unnumbered_when_no_flagged_row_leads():
     rows = [_hot_row(1), _hot_row(2), _hot_row(3, net=435, opened=20, closed=32)]
     text = server.call(FakeSpace(hot=_hot(rows)), "hiring_now", {"lens": "expansion"})
@@ -2470,7 +2536,15 @@ def test_a_count_the_space_did_not_measure_is_not_shown_as_zero():
 
 def test_a_hiring_now_answer_stays_inside_its_budget():
     rows = [
-        _hot_row(n, company="y" * 5_000, stock=30, net=500, rate=300, closed=None)
+        _hot_row(
+            n,
+            company="y" * 5_000,
+            stock=30,
+            net=500,
+            rate=300,
+            closed=None,
+            operator_unverified=True,
+        )
         for n in range(60)
     ]
     text = _answer(
@@ -2482,7 +2556,15 @@ def test_a_hiring_now_answer_stays_inside_its_budget():
 def test_a_reordered_hiring_now_answer_stays_inside_its_budget():
     """The worst case with every row moved, so each also carries "site #N · "."""
     flagged = [
-        _hot_row(n, company="y" * 5_000, stock=30, net=500, rate=300, closed=None)
+        _hot_row(
+            n,
+            company="y" * 5_000,
+            stock=30,
+            net=500,
+            rate=300,
+            closed=None,
+            operator_unverified=True,
+        )
         for n in range(60)
     ]
     real = [_hot_row(100 + n, company="z" * 5_000, net=10) for n in range(30)]
@@ -3179,6 +3261,7 @@ def test_requirements_send_the_role_the_category_and_the_filters_in_the_spaces_n
             ("country", "DE"),
             ("location", "Berlin"),
             ("max_age_days", "365"),
+            ("operators", "employer,services"),
         ]
     ]
 
@@ -3196,6 +3279,23 @@ def test_requirements_leave_out_what_search_leaves_out_by_age_unless_told_otherw
     assert sent == ["365", None]
 
 
+def test_a_requirements_answer_says_how_many_postings_operators_left_out():
+    """P1-1 of the round-3 critique: DigitalXNode and FindMyJob.lk led a DevOps sample."""
+    space = FakeSpace(requirements=_requirements(operators_left_out=412))
+    text = server.call(space, "role_requirements", {"category": "devops"})
+    assert (
+        " · staffing firms and job boards left out, as the site's Hiring now tab hides "
+        "them: 412 jobs"
+    ) in text
+    every = ["employer", "services", "staffing", "aggregator"]
+    plain = server.call(
+        FakeSpace(requirements=_requirements()),
+        "role_requirements",
+        {"category": "devops", "operators": every},
+    )
+    assert "left out, as the site's Hiring now tab" not in plain
+
+
 def test_requirements_filters_are_search_jobs_own():
     """The same schema, so a filter reads the same way in both tools."""
     mine = server.BY_NAME["role_requirements"].input_schema["properties"]
@@ -3208,6 +3308,7 @@ def test_requirements_filters_are_search_jobs_own():
         "location",
         "max_years",
         "max_age_days",
+        "operators",
     ):
         assert mine[name] == search[name], name
 

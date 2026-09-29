@@ -9,12 +9,14 @@ from __future__ import annotations
 
 import pytest
 
+from headstart.boards import board_operator
 from headstart.boards.board_operator import (
     AGGREGATORS,
     SERVICES,
     STAFFING,
     classify,
     tenant,
+    unverified,
 )
 
 
@@ -237,3 +239,40 @@ def test_another_company_carrying_an_entrys_word_stays_an_employer(
 def test_a_narrowed_entry_still_labels_its_own_board() -> None:
     assert classify("zoho:maarutinc.zohorecruit.com", "Maarut") == "staffing"
     assert classify("freshteam:simera-talent", "Simera") == "staffing"
+
+
+@pytest.mark.parametrize(
+    ("boards", "name", "flagged"),
+    [
+        # ADR-0335: jr05's #3, an agency posting psychologists in Oman as an employer.
+        (["zoho:vrinda-international.zohorecruit.in"], "Vrinda International", True),
+        (["zoho:acme.zohorecruit.com"], "Acme Consultancy Services", True),
+        (["jazzhr:acme"], "Acme HR Solutions", True),
+        # A Board's tenant counts too: HIKINEX posts from `breezy:recruiting`.
+        (["breezy:recruiting"], "HIKINEX", True),
+        # Only at the start of a word: none of these names says "consult" or "hr".
+        (["greenhouse:cerebras"], "Cerebras Systems", False),
+        (["greenhouse:shrine"], "Shrine Technologies", False),
+        (["lever:talentsoft"], "Talentsoft", False),
+        # Already labelled, or an exception to the lists: not a default, so checked.
+        (["lever:bluelightconsulting"], "Bluelight Consulting", False),
+        (["greenhouse:accenturefederalservices"], "Accenture Federal Services", False),
+    ],
+)
+def test_an_employer_named_like_an_agency_is_unverified(
+    boards: list[str], name: str, flagged: bool
+) -> None:
+    assert unverified(boards, name) is flagged
+
+
+def test_a_verified_employer_is_not_unverified(monkeypatch) -> None:
+    """An employer adjudicated from its postings is listed, and so no longer flagged."""
+    name = "Odyssey Systems Consulting Group, Ltd."
+    boards = ["icims:careers-odysseyconsult.icims.com"]
+    assert unverified(boards, name)
+    monkeypatch.setattr(
+        board_operator,
+        "VERIFIED_EMPLOYERS",
+        frozenset({"odysseysystemsconsultinggroupltd"}),
+    )
+    assert not unverified(boards, name)

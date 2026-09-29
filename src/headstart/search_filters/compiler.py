@@ -228,6 +228,22 @@ def board_clause(boards: Collection[str], *, exclude: bool) -> str | None:
     return f"NOT ({joined})" if exclude else f"({joined})"
 
 
+def board_pattern_clause(boards: Collection[str], *, exclude: bool) -> str | None:
+    """:func:`board_clause` as one ``regexp_like`` pass, for a list of Boards too long for one
+    LIKE each (ADR-0335): the same Boards, compared case-blind, each ending at its colon.
+
+    A LIKE is one pass over the table per Board. Counting the 498,000-row served table less 109
+    Boards took 218 ms as LIKEs and 49 ms as one alternation (2026-09-29), ADR-0024's
+    single-automaton rule again.
+    """
+    keys = sorted({board.lower() for board in boards if board})
+    if not keys:
+        return None
+    pattern = "|".join(_escape_regex(key + ":") for key in keys)
+    clause = f"regexp_like(lower(id), '^({pattern})')"
+    return f"NOT {clause}" if exclude else clause
+
+
 def with_extra(where: str | None, extra: str | None) -> str | None:
     """``where`` narrowed by ``extra``, either of which may be absent.
 

@@ -174,6 +174,12 @@ _ALLOWED: dict[str, str] = {
         "comes from the query string, so it is `%.40r`-clipped. Space-only, so never an "
         "annotation."
     ),
+    "serving/job_search.py:_operators_where": (
+        "Bound: 1 per call, and it is called once per /search, /facets or /requirements "
+        "request. Fires only when a request that is not strict names `operators=` on a "
+        "deployment whose app set no Operator Boards (ADR-0335); the Space always sets them. "
+        "No request text in it. Space-only, so never an annotation."
+    ),
     "serving/job_search.py:run": (
         "Fires only when an uncached request exceeds `SLOW_SEARCH_MS` (2 s), so rare by "
         "construction. Shapes only (path, encode_ms, indexed, page, k, sort, has-query, "
