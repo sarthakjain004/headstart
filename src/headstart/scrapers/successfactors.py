@@ -1101,7 +1101,11 @@ def _csb_description(page: str) -> str | None:
 
 
 #: The label a tenant's job layout puts its whole posting under, where the page has no
-#: ``itemprop="description"`` at all: seagatecareers.com, 135 of 135 tech pages (2026-09-29).
+#: ``itemprop="description"`` at all: seagatecareers.com, 135 of 135 tech pages (2026-09-29). Read
+#: over the 137 pages of the 74 Boards serving a row with no description that day, it fills 30 pages
+#: on 14 Boards; of the other 107, three carry another description-like label ("Stellenbeschreibung:",
+#: "Description:") whose value is a link or empty, so those are not read. Over 119 pages that
+#: already read a description, on 34 other Boards, none read differently.
 _DESCRIPTION_LABELS = ("Job Description:",)
 
 
