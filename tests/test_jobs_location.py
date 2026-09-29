@@ -28,17 +28,41 @@ def test_junk_separators_alone_name_nothing():
 
 
 @pytest.mark.parametrize(
-    ("stated", "tidied"),
+    "stated",
     [
-        ("Mumbai, Mumbai, India", "Mumbai, India"),
-        ("Singapore, Singapore, Singapore", "Singapore"),
-        ("Hong Kong, Hong Kong", "Hong Kong"),
-        ("New York, NEW YORK, United States", "New York, United States"),
-        ("Auckland, Auckland, New Zealand", "Auckland, New Zealand"),
-        ("ChengDu, Sichuan, Sichuan", "ChengDu, Sichuan"),
+        "New York, New York, United States",
+        "New York, NEW YORK, United States",
+        "New York, New York",
+        "Delhi, Delhi, India",
+        "Washington, Washington, DC",
+        "Mumbai, Mumbai, India",
+        "Berlin, Berlin, Germany",
+        "Lisbon, Lisbon, Portugal",
+        "Shanghai, Shanghai",
+        "Bangalore, Bangalore, Karnataka, India",
+        "Auckland, Auckland, New Zealand",
     ],
 )
-def test_a_repeated_neighbouring_token_is_said_once(stated, tidied):
+def test_a_city_and_the_region_of_its_name_are_both_kept(stated):
+    # 11,572 served rows read "City, Region, Country" with the region named for the city: the
+    # region is a level of its own, and a filter for "New York, New York" matches 3,335 of them
+    assert tidy(stated) == stated
+
+
+@pytest.mark.parametrize(
+    ("stated", "tidied"),
+    [
+        ("Singapore, Singapore, Singapore", "Singapore"),
+        ("Singapore, Singapore", "Singapore"),
+        ("Hong Kong, Hong Kong", "Hong Kong"),
+        ("Taiwan, Taiwan, Taiwan", "Taiwan"),
+        ("London, United Kingdom, United Kingdom", "London, United Kingdom"),
+        ("Bengaluru, Karnataka, India, India", "Bengaluru, Karnataka, India"),
+        ("San Juan, Puerto Rico, Puerto Rico", "San Juan, Puerto Rico"),
+        ("Aguadilla, PR, PR", "Aguadilla, PR"),
+    ],
+)
+def test_a_country_said_twice_at_the_end_is_said_once(stated, tidied):
     assert tidy(stated) == tidied
 
 
@@ -79,9 +103,9 @@ def test_a_location_with_nothing_to_drop_keeps_its_spacing(stated):
 
 
 def test_dropping_a_repeat_keeps_the_separators_around_what_stays():
-    assert tidy("Mumbai,Mumbai,India") == "Mumbai,India"
-    assert tidy("Noida,UP,UP, India") == "Noida,UP, India"
-    assert tidy("Santa Clara,CA,CA; Austin,TX") == "Santa Clara,CA; Austin,TX"
+    assert tidy("Aguadilla,PR,PR") == "Aguadilla,PR"
+    assert tidy("Kolkata,India,India; Pune, India") == "Kolkata,India; Pune, India"
+    assert tidy("BLANK,BLANK,Pune,India") == "Pune,India"
 
 
 @pytest.mark.parametrize(

@@ -142,12 +142,13 @@ def test_job_location_drops_tags_and_lists_lines():
 
 
 def test_job_location_loses_template_tokens_and_repeated_places():
-    """15,628 served rows on 2026-09-29 (ADR-0345): greenhouse's BLANK template, a city said
-    twice, a place listed twice."""
+    """Served on 2026-09-29 (ADR-0345): greenhouse's BLANK template, a country said twice, a place
+    listed twice. A city and the region of its name are both kept."""
     assert (
         _job(location="BLANK,BLANK,Multiple Locations").location == "Multiple Locations"
     )
-    assert _job(location="Mumbai, Mumbai, India").location == "Mumbai, India"
+    assert _job(location="Singapore, Singapore, Singapore").location == "Singapore"
+    assert _job(location="Mumbai, Mumbai, India").location == "Mumbai, Mumbai, India"
     assert _job(location="Pune, IN; Pune, IN").location == "Pune, IN"
     assert _job(location="BLANK,BLANK").location is None
     # a country shared by two places is not a repeat

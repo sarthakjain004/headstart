@@ -1255,9 +1255,9 @@ def test_workable_multi_location_rows_collapse_into_one_job():
     assert len(jobs) == 2  # 4 rows, one shortcode grouped -> one Job
     multi = next(j for j in jobs if j.id == "workable:zyte:6DCFF04CD6")
     assert multi.location == (
-        "Sao Paulo, Brazil; "
+        "Sao Paulo, Sao Paulo, Brazil; "
         "Montevideo, Montevideo Department, Uruguay; "
-        "Buenos Aires, Argentina"
+        "Buenos Aires, Buenos Aires, Argentina"
     )
     single = next(j for j in jobs if j.id == "workable:zyte:OTHERJOB01")
     assert single.location == "Remote"
@@ -4509,7 +4509,7 @@ def test_teamtailor_location_keeps_every_place():
     jobs = get_scraper("teamtailor", "wspcentraleurope", "WSP").parse(
         _load("teamtailor_wspcentraleurope_two_places.json"), SCRAPED_AT
     )
-    assert jobs[0].location == "Bern, CH; Zürich, CH"
+    assert jobs[0].location == "Bern, Bern, CH; Zürich, Zürich, CH"
 
 
 def test_teamtailor_parse_with_no_rss_enrichment_falls_back_to_the_location_guess():

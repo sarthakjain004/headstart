@@ -5,11 +5,16 @@ Two jobs, both about the served ``location`` column and neither about what a pla
 
 :func:`tidy` cleans a location an ATS stated. ``Job.__post_init__`` calls it, so every scraper's
 Job passes through it once. It drops the template token ``BLANK`` (greenhouse writes
-``BLANK,BLANK,Multiple Locations``: 17 rows on the audited table, 2026-09-29), says a repeated
-neighbouring token once (``Mumbai, Mumbai, India`` is ``Mumbai, India``: 15,371 rows) and lists a
-place once when it is listed twice (268 rows). Nothing else moves: a country shared by two places
-of a list (``Boston, Massachusetts, USA; Irvine, California, USA``) is not a repeat, and neither is
-a token that recurs without touching itself, so no place is ever lost, only the stutter.
+``BLANK,BLANK,Multiple Locations``) and an empty token (``Mohali,, PB, India``), lists a place once
+when it is listed twice (``Noida; Noida; Dehradun``), and says a *country* once when it closes an
+entry twice (``Singapore, Singapore, Singapore``, ``London, United Kingdom, United Kingdom``): where
+an ATS states a real region it spells it otherwise (``Central Singapore``, ``Luxembourg District``,
+``Panamá Province``), so the same country name twice is one entity said twice. It does not touch a city and the region
+of its name (``New York, New York, United States``, ``Delhi, Delhi, India``): the region is a level
+of its own, a filter for ``New York, New York`` matches 3,335 served rows and would match about 170
+after collapsing it, so only the country stutter is a stutter. A country shared by two places of a
+list is not a repeat either. What stays is written as it was stated, separators and spacing
+included. The counts are in ADR-0345.
 
 :func:`from_description` reads a location from the description of a Job whose ATS stated none: an
 explicit ``Location: <place>`` line, and only that. It is a *fact* fallback, not a derivation:
@@ -39,6 +44,14 @@ from headstart.search_filters import country_gazetteer, india_gazetteer
 #: measured (17 rows, 2026-09-29); ``N/A`` and ``NA`` are not here because SuccessFactors writes
 #: ISO country codes and ``NA`` is Namibia (23 rows).
 _TEMPLATE_TOKENS = frozenset({"blank"})
+_COUNTRY_NAMES = frozenset(
+    {country.name.lower() for country in country_gazetteer.COUNTRIES.values()}
+    | {"india", "usa", "uk", "us", "u.s.", "u.s.a.", "uae"}
+)
+#: What names a country when it closes an entry: its name and its ISO code ("Singapore", "PR").
+_COUNTRY_LEVEL = (
+    _COUNTRY_NAMES | {code.lower() for code in country_gazetteer.COUNTRIES} | {"in"}
+)
 
 _ENTRY_SEPARATOR = re.compile(r"(\s*;\s*)")
 _TOKEN_SEPARATOR = re.compile(r"(\s*,\s*)")
@@ -50,23 +63,27 @@ def _key(text: str) -> str:
 
 
 def _tidy_entry(entry: str) -> str:
-    """One place without its template tokens and neighbouring repeats, the separators around
-    what stays as written."""
+    """One place without its template tokens and a country named twice at its end, the
+    separators around what stays as written."""
     parts = _TOKEN_SEPARATOR.split(entry)
-    kept: list[str] = []  # separator before each token, then the token
-    last = None
+    tokens: list[tuple[str, str]] = []  # (separator before, token)
     for index in range(0, len(parts), 2):
         token = parts[index].strip()
-        if not token or _key(token) in _TEMPLATE_TOKENS or _key(token) == last:
-            continue
-        kept.append((parts[index - 1] if kept and index else "") + token)
-        last = _key(token)
-    return "".join(kept)
+        if token and _key(token) not in _TEMPLATE_TOKENS:
+            tokens.append((parts[index - 1] if tokens and index else "", token))
+    while (
+        len(tokens) >= 2
+        and _key(tokens[-1][1]) == _key(tokens[-2][1])
+        and _key(tokens[-1][1]) in _COUNTRY_LEVEL
+    ):
+        tokens.pop()
+    return "".join(separator + token for separator, token in tokens)
 
 
 def tidy(location: str | None) -> str | None:
-    """``location`` without template tokens, neighbouring repeats or a repeated place; None when
-    nothing is left. What stays is written as it was stated: separators and spacing are kept."""
+    """``location`` without template tokens, a country named twice at the end of a place, or a
+    place listed twice; None when nothing is left. What stays is written as it was stated:
+    separators and spacing are kept."""
     if not location or not location.strip():
         return None
     parts = _ENTRY_SEPARATOR.split(location.strip())
@@ -92,10 +109,6 @@ _PARTICLES = frozenset(
 _DIRECTIONS = frozenset({"east", "west", "north", "south", "central"})
 #: Words the gazetteers resolve that name no place on their own.
 _NOT_PLACES = frozenset({"indian", "american", "european", "asian", "african"})
-_COUNTRY_NAMES = frozenset(
-    {country.name.lower() for country in country_gazetteer.COUNTRIES.values()}
-    | {"india", "usa", "uk", "us", "u.s.", "u.s.a.", "uae"}
-)
 _PIECE_SEPARATOR = re.compile(
     r"(\s*(?:,\s*(?:and|or)\b|,|/|;|&|\band\b|\bor\b)\s*)", re.IGNORECASE
 )
