@@ -504,10 +504,10 @@ the description ("AED 13,000 – 15,000 per month") disagree, and the field answ
 "A figure the floor admits stays annual" did not hold for a "k" rupee figure. `_field_generic`
 refuses "110K+ INR" as annual (`_declines_k_figure`), and the monthly reading then took it,
 however large: "800K INR" read 9.6M a year. Nine served rows take that path on v45: eight "110K+
-INR" (techblissdigital, six-month contracts for five to nine years' experience) and one "120k+ INR"
-(selah). Every "k" rupee figure a served string gives a period for says a month: 26 of them, 3
-fields and 23 descriptions, up to "Budget: ₹ 270K per month". So those nine keep their monthly
-reading. Past 300K (`_MONTHLY_K_RUPEES_BELOW`) no evidence says which period applies, so the
+INR" (techblissdigital) and one "120k+ INR" (selah). Six of their descriptions say contract, three
+of them six months, and the four that state experience ask for three to nine years. Every "k"
+rupee figure a served string gives a period for says a month: 26 of them, 3 fields and 23
+descriptions, up to "Budget: ₹ 270K per month". So those nine keep their monthly reading. Past 300K (`_MONTHLY_K_RUPEES_BELOW`) no evidence says which period applies, so the
 figure reads as nothing. No served row moves (ADR-0293).
 
 ## Known gaps, left honestly unresolved rather than guessed at

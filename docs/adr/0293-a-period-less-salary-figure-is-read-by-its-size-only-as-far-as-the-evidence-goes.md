@@ -25,9 +25,10 @@ The #859 review found that the zoho reading went past its evidence. It read mont
 `_declines_k_figure` refuses. So "800K INR" read 9.6M a year and "600K - 900K INR" read
 7.2M-10.8M.
 
-Nine served rows took that path on 2026-09-29 (v45): eight "110K+ INR" and one "120k+ INR". Their
-descriptions say six-month contracts for five to nine years' experience. An annual 110,000 rupees
-would be about ₹9,000 a month, so the monthly reading is the right one. Every "k" rupee figure a
+Nine served rows took that path on 2026-09-29 (v45): eight "110K+ INR" and one "120k+ INR". Six
+of their descriptions say contract (three of them six months), and the four that state experience
+ask for three to nine years. An annual 110,000 rupees would be about ₹9,000 a month, so the
+monthly reading is the right one. Every "k" rupee figure a
 served string gives a period for says a month, up to 270K. There are 26 of them: 3 salary fields
 and 23 held descriptions. None says a year, and no larger figure states a period. No served row
 states "800K INR".
