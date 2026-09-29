@@ -69,6 +69,8 @@ def _run(tmp_path: Path, *extra: str) -> int:
         str(tmp_path / "db"),
         "--source",
         str(tmp_path / "tech"),
+        "--facts",
+        str(tmp_path / "facts"),
         *extra,
     ]
     try:
@@ -112,3 +114,57 @@ def test_a_table_that_moved_since_its_last_writer_is_not_pruned_against(tmp_path
     assert _run(tmp_path, "--apply") == 1
 
     assert len(_read_store(tmp_path / "store")) == 5
+
+
+def _archived(tmp_path: Path) -> dict[str, float]:
+    import pyarrow.parquet as pq
+
+    from headstart.ingest import job_facts
+
+    files = list((tmp_path / "facts" / job_facts.JOB_VECTORS).glob("*.parquet"))
+    if not files:
+        return {}
+    (path,) = files
+    table = pq.read_table(path)
+    assert pq.read_schema(path).metadata[b"vector_model"] == ep.MODEL.encode()
+    vectors = table["vector"].combine_chunks().flatten().to_numpy().reshape(-1, _DIM)
+    assert vectors.dtype == np.float16
+    return {
+        i: float(v[0]) for i, v in zip(table["id"].to_pylist(), vectors, strict=True)
+    }
+
+
+def test_the_dropped_vectors_are_archived_before_the_store_forgets_them(tmp_path):
+    """ADR-0330: a later classifier re-sorts the past from these, so each keeps its own vector."""
+    _setup(tmp_path, served=["a:1", "b:1"], corpus=["c:1"])
+
+    assert _run(tmp_path, "--apply") == 0
+
+    assert _archived(tmp_path) == {"a:2": 1.0, "b:2": 3.0}
+    assert set(_read_store(tmp_path / "store")) == {"a:1", "b:1", "c:1"}
+
+
+def test_a_dry_run_archives_nothing(tmp_path):
+    _setup(tmp_path, served=["a:1", "b:1"], corpus=["c:1"])
+
+    assert _run(tmp_path) == 0
+
+    assert _archived(tmp_path) == {}
+
+
+def test_an_archive_that_cannot_be_written_leaves_the_store_whole(
+    tmp_path, monkeypatch
+):
+    """Evicting first would lose the vectors for good; the store keeps them for the next run."""
+    from headstart.ingest import job_facts
+
+    _setup(tmp_path, served=["a:1", "b:1"], corpus=["c:1"])
+
+    def fail(*args, **kwargs):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(job_facts, "archive_vectors", fail)
+    with pytest.raises(OSError):
+        _run(tmp_path, "--apply")
+
+    assert set(_read_store(tmp_path / "store")) == {"a:1", "a:2", "b:1", "b:2", "c:1"}

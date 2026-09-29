@@ -1,6 +1,6 @@
 # ADR-0330: Trends are recomputed from recorded Job facts whenever a rule changes
 
-**Status:** accepted; step 1 built · **Date:** 2026-09-29 · **Amends:**
+**Status:** accepted; steps 1–2 built · **Date:** 2026-09-29 · **Amends:**
 [ADR-0230](0230-trends-keeps-one-board-delta-history-and-decides-rules-when-reading-it.md) (it
 rejected storing each Job's history), [ADR-0292](0292-the-description-store-is-not-reaped-until-a-last-listed-signal-exists.md)
 (the description store's future reaper) · **Relates to:**
@@ -69,8 +69,12 @@ whenever a rule changes, so a rule change moves the whole history and draws no s
    publishes its scrape: the facts are written all or nothing, and the next run records the
    changes.
 2. **Archive closed Jobs' description vectors** before `embed_prune` drops them, at half
-   precision (the owner's choice, 2026-09-29), so a classifier change can re-sort the past. The
-   PR measures how many family decisions flip against full precision before it merges.
+   precision (the owner's choice, 2026-09-29), so a classifier change can re-sort the past
+   (built: `data/facts/job_vectors/{tick}.parquet`, each file naming its embedder). Measured before
+   it merged on 40,000 rows of the 2026-09-23 served table (37,515 with cached title logits): the
+   head (v3) decided the same family for all 40,000 at either precision, and no component moved by
+   more than 1.0e-4. An archive that cannot be written stops the prune, so no vector is dropped
+   unarchived.
    The description store keeps every Job's text: ADR-0292's reaper, if ever built, archives
    rather than deletes.
 3. **Restate.** A pure function of (facts, rules) rebuilds each tick's per-Board counts. It is

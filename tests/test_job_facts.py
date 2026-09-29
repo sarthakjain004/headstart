@@ -392,3 +392,8 @@ def test_the_fields_hash_is_stable_and_ignores_fields_no_rule_reads():
     # A field a Job does not state leaves the hash alone, so adding one to `Job` does not turn
     # every listed Job into a changed fact.
     assert jf.fields_hash(job) == jf.fields_hash(dict(job, salary=None))
+
+
+def test_no_vector_is_archived_when_nothing_is_dropped(tmp_path):
+    assert jf.archive_vectors(tmp_path, T1, [], None, "model") == 0
+    assert not (tmp_path / jf.JOB_VECTORS).exists()
