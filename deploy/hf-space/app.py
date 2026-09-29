@@ -1984,6 +1984,30 @@ def index():
     )
 
 
+_STARTED = "headstart.started"
+
+
+@app.before_request
+def _note_the_start():
+    request.environ[_STARTED] = time.monotonic()
+
+
+@app.after_request
+def _log_the_request(response):
+    """One run-log line per request, as the development server printed and waitress does not:
+    the run log is how an edge outage is told from the app failing. The path only, since a query
+    string carries a search's words. A read `/mcp` makes in process is not a request anyone sent.
+    Kept on the environ, not on `g`, which an in-process read shares with the `/mcp` request."""
+    if not request.environ.get(space_client.IN_PROCESS_READ):
+        started = request.environ.get(_STARTED, time.monotonic())
+        print(
+            f'"{request.method} {request.path}" {response.status_code} '
+            f"{time.monotonic() - started:.3f}s",
+            flush=True,
+        )
+    return response
+
+
 # How `python app.py` (start.sh) serves (#595): waitress, where it used to be Werkzeug's
 # development server. One process, on purpose: the résumé-read guard (`_PARSING`), every
 # `RateLimit`, the `/mcp` places and the kept Trends and facet answers live in this process's
