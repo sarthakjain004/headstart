@@ -128,3 +128,106 @@ def test_without_a_keep_set_every_board_counts(tmp_path):
     steps = [([(BOARD_A, _job(A1)), (BOARD_B, _job(B1))], {BOARD_A, BOARD_B})]
 
     assert set(_served(tmp_path, steps)) == {A1, B1}
+
+
+DAYS = [f"2026-09-{d:02d}T00:00:00+00:00" for d in (1, 3, 6, 9, 12)]
+
+
+def _dated(job_id: str, posted_at: str | None, title: str = "Backend Engineer") -> dict:
+    return {
+        "id": job_id,
+        "title": title,
+        "department": "Engineering",
+        "posted_at": posted_at,
+    }
+
+
+def _clipped(tmp_path: Path, steps) -> dict[str, list[tuple]]:
+    facts = tmp_path / "facts"
+    for stamp, (jobs, read) in zip(DAYS, steps, strict=False):
+        _record(facts, stamp, jobs, read)
+    versions = rr.job_versions(facts)
+    served = rs.served_intervals(
+        versions,
+        rr.board_reads(facts),
+        is_tech=lambda title, department: "Cashier" not in (title or ""),
+        live={},
+        keep_set=None,
+    )
+    clipped = rs.clip_dormant(served, rs.dormant_periods(versions, rr.runs(facts), {}))
+    out: dict[str, list[tuple]] = {}
+    for row in clipped.to_pylist():
+        out.setdefault(row["id"], []).append(
+            (row["served_from"], row["served_to"], row["ended_as"], row["starts_as"])
+        )
+    return out
+
+
+def test_a_board_whose_newest_posting_is_years_old_never_counts(tmp_path):
+    served = _clipped(tmp_path, [([(BOARD_A, _dated(A1, "2020-01-01"))], {BOARD_A})])
+
+    assert served == {}
+
+
+def test_a_board_turns_dormant_on_the_first_run_two_years_after_its_newest_posting(
+    tmp_path,
+):
+    """Posted 2024-09-04: still hiring on Sep 1 and 3, Dormant from the Sep 6 run on."""
+    served = _clipped(
+        tmp_path,
+        [([(BOARD_A, _dated(A1, "2024-09-04"))], {BOARD_A})] + [([], set())] * 4,
+    )
+
+    assert served == {A1: [(DAYS[0], DAYS[2], "dormant", None)]}
+
+
+def test_an_undated_job_keeps_its_board_from_being_dormant(tmp_path):
+    served = _clipped(
+        tmp_path,
+        [
+            (
+                [(BOARD_A, _dated(A1, "2020-01-01")), (BOARD_A, _dated(A2, None))],
+                {BOARD_A},
+            )
+        ],
+    )
+
+    assert set(served) == {A1, A2}
+
+
+def test_a_non_tech_posting_is_evidence_the_board_still_posts(tmp_path):
+    """Dormancy is judged over every listed Job, as scrape_join judges it."""
+    served = _clipped(
+        tmp_path,
+        [
+            (
+                [
+                    (BOARD_A, _dated(A1, "2020-01-01")),
+                    (BOARD_A, _dated(A2, "2026-08-30", "Cashier")),
+                ],
+                {BOARD_A},
+            )
+        ],
+    )
+
+    assert served == {A1: [(DAYS[0], None, None, None)]}
+
+
+def test_a_dormant_board_that_posts_again_revives_its_old_jobs(tmp_path):
+    served = _clipped(
+        tmp_path,
+        [
+            ([(BOARD_A, _dated(A1, "2020-01-01"))], {BOARD_A}),
+            ([(BOARD_A, _dated(A1, "2020-01-01"))], {BOARD_A}),
+            (
+                [
+                    (BOARD_A, _dated(A1, "2020-01-01")),
+                    (BOARD_A, _dated(A2, "2026-09-05")),
+                ],
+                {BOARD_A},
+            ),
+        ],
+    )
+
+    assert served[A1] == [(DAYS[2], None, None, "revived")]
+    assert served[A2] == [(DAYS[2], None, None, None)]

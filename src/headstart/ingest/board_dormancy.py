@@ -87,6 +87,11 @@ class PostedDates:
         """How many Jobs this Board's scrape emitted."""
         return self._jobs.get(lower_key(board), 0)
 
+    def newest(self, board: str) -> str | None:
+        """The Board's most recent posted day, or None when any Job on it is undated or it has
+        none: the day :meth:`dormant` judges it by."""
+        return self._newest.get(lower_key(board))
+
     def dormant(self, today: date, unauthoritative: Collection[str]) -> dict[str, str]:
         """``{lowercased Board: its most recent posted day}`` for every Board judged Dormant.
 
