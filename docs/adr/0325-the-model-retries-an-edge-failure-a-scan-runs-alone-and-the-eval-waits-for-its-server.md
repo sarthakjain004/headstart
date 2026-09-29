@@ -1,6 +1,8 @@
-# ADR-0325: The model retries an edge failure, and a description scan runs alone
+# ADR-0325: The model retries an edge failure, a scan runs alone, and the eval waits for its server
 
-**Status:** accepted · **Date:** 2026-09-29 · **Amends:**
+**Status:** accepted; revised the same day by the code review of the PR that shipped it, before
+anything relied on it (the scan place now waits for abandoned reads before a scan starts) ·
+**Date:** 2026-09-29 · **Amends:**
 [ADR-0276](0276-a-hosted-mcp-call-ends-at-its-deadline-and-no-caller-holds-every-place.md) (the
 `/mcp` places, and its claim that the hosted eval ran) · **Relates to:**
 [ADR-0267](0267-the-space-hosts-the-mcp-server-at-a-url-anyone-can-add.md) (the hosted MCP
@@ -53,8 +55,8 @@ results doc for a run that could not have happened. And the verifiers checked ar
 ## Decision
 
 **1. The server's instructions tell the model to retry an edge failure.** One sentence joins
-`INSTRUCTIONS` (`space_mcp.server._INSTRUCTIONS_EDGE_RETRY`, 198 characters, before the closing
-sentence; the whole stays under the 2,048 Claude Code reads):
+`INSTRUCTIONS` (`space_mcp.server._INSTRUCTIONS_EDGE_RETRY`, 198 characters, last, where it was
+measured; the whole stays under the 2,048 Claude Code reads):
 
 > A Hugging Face error page (it says 500) or an HTTP 502 or 503 is a passing fault in Hugging
 > Face's edge, not HeadStart; every tool only reads, so retry the same call up to twice before
@@ -66,7 +68,7 @@ model sees (the page's "500"), since Claude Code's error text carries the body, 
 *Measured with a control* (`scripts/eval/space_mcp_edge_retry.py`). Each run is one `claude -p`
 task against a Streamable HTTP endpoint on the measuring machine. The endpoint serves the real
 server (`build_server()`, reading the deployed Space) and answers the first two `tools/call`
-POSTs of the run with the page a real edge 502 carried (`space_mcp_edge_retry_page.html`), with
+POSTs of the run with the page a real edge 502 carried (`space_mcp_edge_retry_hf_502_page.html`), with
 HTTP 502 and no `X-HeadStart`. It answers everything else. The two arms differ only in the
 instructions. The hosted connector would have been the weaker control. Its edge fails at random,
 about 14% of calls, so ten tasks meet one or two failures and the two arms meet different ones.
@@ -79,15 +81,16 @@ default model, 2026-09-29:
 | before (no sentence) | 20 | 14 | 5 | 1 |
 | after (the sentence) | 20 | 20 | 0 | 0 |
 
-"Recovered by retrying": the call after the second failure repeated the failed tool and was
-answered. "Recovered elsewhere": a later call to another tool was answered. Without the sentence
-the model mostly retried anyway. The run that gave up (t04, `hiring_now` twice) told the user
-"The HeadStart data service is down right now", as the critique's run did. In the 5 runs that
-recovered elsewhere, `find_company` failed twice and the model went to `search_jobs` or
-`company_profile` without the lookup it had asked for. With the sentence, all 20 repeated the
-same call and got the answer. The measured gain is small, 1 give-up in 20 against 0. It is how
-one model behaved, not a guarantee. Claude Code's transport sent exactly one POST per tool call
-in every run, so every retry was the model's.
+A run recovered when some call after the second failure was answered: "by retrying" when the
+call right after that failure repeated the failed tool, "elsewhere" when it went to another
+tool. Without the sentence the model mostly retried anyway. The run that gave up (t04,
+`hiring_now` twice) told the user "The HeadStart data service is down right now", as the
+critique's run did. In the 5 runs that recovered elsewhere, `find_company` failed twice and the
+model went to `search_jobs` or `company_profile` without the lookup it had asked for. With the
+sentence, all 20 repeated the failed call and reached an answer; in one (t16) the repeat was
+refused for its arguments, and a later search was answered. The measured gain is small, 1
+give-up in 20 against 0. It is how one model behaved, not a guarantee. Claude Code's transport
+sent exactly one POST per tool call in every run, so every retry was the model's.
 
 **2. The installed server is the path that retries the edge itself.** `space_client.SpaceClient`
 already treats a reply without `X-HeadStart` as the edge and re-reads it for up to the call's 45 s
@@ -105,13 +108,16 @@ description-keyword search at a time, and another is running; retry in about 20 
 keyword in titles (keyword_in: title), which is fast." Every other call keeps the 4 places, 2 per
 caller, with Anthropic's range one caller, unchanged.
 
-The place is given back only once no in-process read is running past its call's deadline. A scan
-whose call answers at the 45 s deadline leaves its reads running (ADR-0276 cannot stop them), and
-a scan started then would share the CPU with them, as the critique's cold-replica pair did. So
-the route waits on `space_client.AbandonedReads`, the count `wsgi_fetch` already kept for its cap,
-before it frees the place. It waits at most 120 s (`_MCP_SCAN_HELD_PAST_ANSWER_S`), past the
-slowest read measured (118.6 s), so a read that never ends cannot hold the place forever. A read
-another call abandoned holds the place too, since it burns the same CPU.
+Nor does a scan start while any in-process read is running past its call's deadline. A call
+that answers at the 45 s deadline leaves its reads running (ADR-0276 cannot stop them), and a
+scan started then would share the CPU with them, as the critique's cold-replica pair did. So a
+scan that has its place then waits, within the same 10 s, until `space_client.AbandonedReads`
+(the count `wsgi_fetch` keeps for its cap, now shared with the route) is empty. Past that it gives
+the place back and gets a 503 with `Retry-After: 60`: "HeadStart is still finishing an earlier
+search that ran past its time limit, and starts a description-keyword search only once it has;
+retry in about a minute, or match the keyword in titles (keyword_in: title), which is fast."
+Every abandoned read counts, a fast call's too, since each burns the same CPU. A fast call does
+not wait for them: its reads are refused only at `wsgi_fetch`'s cap of 2, as before.
 
 Why one: the table. A second scan at once finishes neither sooner, and past a cold boot it makes
 both miss the deadline. Queued, the first finishes in about 18 s and the second is told to come
@@ -208,10 +214,10 @@ the owner's call. The design:
 
 ## Consequences
 
-- `tests/test_space_app.py` pins the scan place (1, a 20 s retry, held at most 120 s past its
-  answer), tells a scan from the body, checks that a scan waits only for its own place and a full
-  house of fast calls does not keep it out, and that the place is held until reads past their
-  deadline finish. `tests/test_space_mcp_space_client.py` covers `AbandonedReads`,
+- `tests/test_space_app.py` pins the scan place (1, a 20 s retry, a 60 s retry while reads past
+  their deadline run), tells a scan from the body, checks that a scan waits only for its own place
+  and a full house of fast calls does not keep it out, and that a scan does not start while a read
+  past its deadline runs. `tests/test_space_mcp_space_client.py` covers `AbandonedReads`,
   `tests/test_mcp_protocol_streamable_http.py` covers `tool_call`, and
   `tests/test_space_mcp_tools.py` checks the instructions' budget with the new sentence.
 - `tests/test_space_mcp_eval.py` covers the init status, `run_env`, a run left unjudged and

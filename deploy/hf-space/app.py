@@ -1834,16 +1834,16 @@ _MCP_PLACE_WAIT_S = 10
 # second at once finishes neither sooner, and under a cold cache both pass the 45 s deadline.
 # Out of the 4 places above, it never holds one for a fast call to queue behind: a fast search
 # took 5.2 s alone and 7.7 s beside a scan. It waits 10 s like any call, then is told to retry
-# in about the time one scan takes. The place is given back only once no read is running past
-# its call's deadline: a scan's call answers at 45 s, but its reads run on, and a scan started
-# then would share the CPU with them. It waits at most 120 s for them, past the slowest read
-# measured (118.6 s, ADR-0276), so a read that never ends cannot keep the place forever.
+# in about the time one scan takes. Nor does a scan start while any read is running past its
+# call's deadline: a call answers at 45 s, but its reads run on (ADR-0276), and a scan started
+# then would share the CPU with them. It waits for them within the same 10 s, then is told to
+# retry in a minute, as `wsgi_fetch` tells a read refused at its cap.
 _MCP_SCANS_AT_ONCE = 1
 _MCP_SCAN_PLACES = concurrency_limit.ConcurrencyLimit(
     _MCP_SCANS_AT_ONCE, _MCP_SCANS_AT_ONCE
 )
 _MCP_SCAN_RETRY_S = 20
-_MCP_SCAN_HELD_PAST_ANSWER_S = 120
+_MCP_FINISHING_RETRY_S = 60
 
 # Each distinct Origin `/mcp` has received this boot, logged once, so the first real connection
 # shows what Anthropic's clients send. Bounded, since the header is the caller's to write.
@@ -1878,30 +1878,9 @@ def _scans_descriptions(body: bytes) -> bool:
     called = streamable_http.tool_call(body)
     return (
         called is not None
-        and called[0] == space_mcp_search_jobs.TOOL.name
-        and space_mcp_search_jobs.scans_descriptions(called[1])
+        and called.name == space_mcp_search_jobs.TOOL.name
+        and space_mcp_search_jobs.scans_descriptions(called.arguments)
     )
-
-
-def _give_back_scan_place(caller: str) -> None:
-    """Give the description-scan place back once no in-process read is running past its call's
-    deadline (ADR-0325): at once when none is, else from a thread that waits for them."""
-
-    def once_reads_finish() -> None:
-        if not _MCP_ABANDONED_READS.wait_until_none(_MCP_SCAN_HELD_PAST_ANSWER_S):
-            print(
-                f"[mcp] scan place given back with reads still running after "
-                f"{_MCP_SCAN_HELD_PAST_ANSWER_S} s",
-                flush=True,
-            )
-        _MCP_SCAN_PLACES.give_back(caller)
-
-    if _MCP_ABANDONED_READS.wait_until_none(0):
-        _MCP_SCAN_PLACES.give_back(caller)
-    else:
-        threading.Thread(
-            target=once_reads_finish, name="mcp-scan-place", daemon=True
-        ).start()
 
 
 def _mcp_refusal(body: bytes, status: int, message: str, wait_s: int):
@@ -1935,6 +1914,7 @@ def mcp():
         )
     scan = _scans_descriptions(body)
     places = _MCP_SCAN_PLACES if scan else _MCP_PLACES
+    asked = time.monotonic()
     refused = places.take(caller, _MCP_PLACE_WAIT_S)
     if refused and scan:
         return _mcp_refusal(
@@ -1957,15 +1937,23 @@ def mcp():
         return _mcp_refusal(
             body, 503, "HeadStart is busy; retry shortly.", _MCP_PLACE_WAIT_S
         )
+    left_s = max(0.0, _MCP_PLACE_WAIT_S - (time.monotonic() - asked))
+    if scan and not _MCP_ABANDONED_READS.wait_until_none(left_s):
+        places.give_back(caller)
+        return _mcp_refusal(
+            body,
+            503,
+            "HeadStart is still finishing an earlier search that ran past its time limit, "
+            "and starts a description-keyword search only once it has; retry in about a "
+            "minute, or match the keyword in titles (keyword_in: title), which is fast.",
+            _MCP_FINISHING_RETRY_S,
+        )
     try:
         status, headers, out = streamable_http.answer(
             request.headers, body, _MCP_SERVER, _MCP_ORIGINS
         )
     finally:
-        if scan:
-            _give_back_scan_place(caller)
-        else:
-            places.give_back(caller)
+        places.give_back(caller)
     return Response(out, status, headers)
 
 

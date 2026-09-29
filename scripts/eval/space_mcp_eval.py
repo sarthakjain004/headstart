@@ -986,7 +986,8 @@ def summary(records: list[dict[str, Any]]) -> list[str]:
     most three tool calls, no result past ~10,000 tokens, and every refusal corrected next call.
     The bars score only the runs that were judged. A run not judged (its server was not
     connected, or its verifier could not read the Space) says nothing about the model, so it is
-    named on a line of its own, first, and that line is missed while any is left."""
+    named on a line of its own, first, and that line is missed while any is left. With nothing
+    judged, no bar is met."""
     unjudged = [r["id"] for r in records if r["verdict"] == "error"]
     judged = [r for r in records if r["verdict"] != "error"]
     n = len(judged)
@@ -997,13 +998,13 @@ def summary(records: list[dict[str, Any]]) -> list[str]:
     corrected = sum(r["refusals_corrected"] for r in judged)
 
     def mark(met: bool) -> str:
-        return "met" if met else "MISSED"
+        return "met" if met and judged else "MISSED"
 
     tokens = f"{LARGE_RESULT_CHARS:,}, about 10,000 tokens"
     return [
         f"not judged: {len(unjudged)} of {len(records)}"
         + (f" ({', '.join(unjudged)})" if unjudged else "")
-        + f" — {mark(not unjudged)}",
+        + f" — {'MISSED' if unjudged else 'met'}",
         (
             f"correct: {correct} of {n} judged (bar: at most one wrong) — "
             f"{mark(correct >= n - 1)}"
@@ -1024,13 +1025,15 @@ def summary(records: list[dict[str, Any]]) -> list[str]:
 
 
 def tally(passes: list[list[dict[str, Any]]]) -> list[str]:
-    """Each task's verdicts across passes: "t03: 2 of 3 passed (pass, fail, pass)"."""
+    """Each task's verdicts across passes, scored over its judged runs only, as the summary is:
+    "t03: 1 of 2 judged passed (pass, fail, error)"."""
     by_task: dict[str, list[str]] = {}
     for records in passes:
         for record in records:
             by_task.setdefault(record["id"], []).append(record["verdict"])
     return [
-        f"{task}: {verdicts.count('pass')} of {len(verdicts)} passed ({', '.join(verdicts)})"
+        f"{task}: {verdicts.count('pass')} of {len(verdicts) - verdicts.count('error')} "
+        f"judged passed ({', '.join(verdicts)})"
         for task, verdicts in by_task.items()
     ]
 

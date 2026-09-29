@@ -136,20 +136,52 @@ IN_PROCESS_READ = "headstart.space_mcp.in_process_read"
 
 
 class AbandonedReads:
-    """The in-process reads whose call stopped waiting and which are still running (ADR-0276):
-    the count :func:`wsgi_fetch` caps at ``cap``, and a wait until none is left, which the Space's
-    `/mcp` route holds its description-scan place for (ADR-0325). ``changed`` guards ``running``
-    and is notified whenever it falls."""
+    """The in-process reads whose call stopped waiting and which are still running (ADR-0276).
+    :func:`wsgi_fetch` refuses a new read while ``cap`` of them run, and the Space's `/mcp` route
+    starts a description scan only when none does (ADR-0325). A read is known by the
+    ``threading.Event`` it sets when it finishes; one lock orders giving up on it against its
+    finishing, so a read is counted exactly when its call gave up on it before it finished."""
 
     def __init__(self, cap: int = ABANDONED_READS_CAP) -> None:
         self.cap = cap
-        self.running = 0
-        self.changed = threading.Condition()
+        self._abandoned: set[threading.Event] = set()
+        self._changed = threading.Condition()
 
-    def wait_until_none(self, timeout_s: float | None = None) -> bool:
+    @property
+    def running(self) -> int:
+        with self._changed:
+            return len(self._abandoned)
+
+    def full(self) -> bool:
+        with self._changed:
+            return len(self._abandoned) >= self.cap
+
+    def give_up(self, finished: threading.Event) -> int | None:
+        """Count the read that sets ``finished`` as abandoned, unless it has finished meanwhile:
+        how many are now running, or None when it had finished."""
+        with self._changed:
+            if finished.is_set():
+                return None
+            self._abandoned.add(finished)
+            return len(self._abandoned)
+
+    def finish(self, finished: threading.Event) -> bool:
+        """Set ``finished``; True when its call had given up on the read, which then stops
+        counting."""
+        with self._changed:
+            finished.set()
+            if finished not in self._abandoned:
+                return False
+            self._abandoned.discard(finished)
+            self._changed.notify_all()
+            return True
+
+    def wait_until_none(self, timeout_s: float) -> bool:
         """True once no abandoned read is running; False if ``timeout_s`` passed first."""
-        with self.changed:
-            return self.changed.wait_for(lambda: self.running == 0, timeout=timeout_s)
+        with self._changed:
+            return self._changed.wait_for(
+                lambda: not self._abandoned, timeout=timeout_s
+            )
 
 
 def wsgi_fetch(wsgi_app: Callable, abandoned: AbandonedReads | None = None) -> Fetch:
@@ -166,16 +198,13 @@ def wsgi_fetch(wsgi_app: Callable, abandoned: AbandonedReads | None = None) -> F
 
     client = Client(wsgi_app, use_cookies=False)
     reads = abandoned or AbandonedReads()
-    lock = reads.changed
 
     def fetch(url: str, headers: Mapping[str, str], timeout_s: float) -> Reply:
         path, query = urllib.parse.urlsplit(url)[2:4]
-        with lock:
-            if reads.running >= reads.cap:
-                raise SpaceBusy(_STILL_FINISHING)
+        if reads.full():
+            raise SpaceBusy(_STILL_FINISHING)
         finished = threading.Event()
         outcome: list[Any] = []  # the answer, or what the read raised
-        given_up = False
         started = time.monotonic()
 
         def read() -> None:
@@ -194,11 +223,7 @@ def wsgi_fetch(wsgi_app: Callable, abandoned: AbandonedReads | None = None) -> F
             except Exception as exc:  # noqa: BLE001 — raised again on the waiting thread
                 outcome.append(exc)
             finally:
-                with lock:
-                    finished.set()
-                    if given_up:
-                        reads.running -= 1
-                        lock.notify_all()
+                given_up = reads.finish(finished)
             if given_up:
                 _log.warning(
                     "%s: a read past its call's deadline finished after %.0f s",
@@ -208,12 +233,8 @@ def wsgi_fetch(wsgi_app: Callable, abandoned: AbandonedReads | None = None) -> F
 
         threading.Thread(target=read, name="space-mcp-read", daemon=True).start()
         if not finished.wait(timeout_s):
-            with lock:
-                if not finished.is_set():
-                    given_up = True
-                    reads.running += 1
-                    running = reads.running
-            if given_up:
+            running = reads.give_up(finished)
+            if running is not None:
                 _log.warning(
                     "%s: no answer within %.0f s; %d reads past their deadline running",
                     path,

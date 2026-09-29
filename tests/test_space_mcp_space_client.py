@@ -303,6 +303,18 @@ def test_abandoned_reads_say_when_the_last_one_has_finished(slow_app):
     assert abandoned.wait_until_none(5) and abandoned.running == 0
 
 
+def test_a_read_is_abandoned_only_if_its_call_gave_up_before_it_finished():
+    abandoned = sc.AbandonedReads(cap=1)
+    in_time, too_late = threading.Event(), threading.Event()
+
+    assert not abandoned.finish(in_time)  # finished while its call still waited
+    assert abandoned.give_up(in_time) is None
+    assert abandoned.give_up(too_late) == 1 and abandoned.full()
+    assert (
+        abandoned.finish(too_late) and abandoned.running == 0 and not abandoned.full()
+    )
+
+
 def test_an_in_process_read_in_time_answers_and_counts_nothing_abandoned(slow_app):
     slow_app.release.set()
     fetch = sc.wsgi_fetch(slow_app, sc.AbandonedReads(cap=1))

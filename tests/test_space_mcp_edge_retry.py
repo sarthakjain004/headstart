@@ -76,27 +76,33 @@ def test_the_edge_page_is_the_one_a_real_502_carried(probe):
     assert "<h1>500</h1>" in page and "Sorry, there is an error on our side." in page
 
 
+#: What one tool call met: the edge page, an answer, or a refusal of its arguments.
+EDGE, ANSWERED, REFUSED = "edge", "answered", "refused"
+
+
 def _calls(probe, *steps):
-    """Tool calls: (name, answered) or (name, "edge") for one that met the edge page."""
-    ev = probe.space_mcp_eval
-    page = probe.EDGE_PAGE.decode()
-    return [
-        ev.ToolCall(name, {}, page, True)
-        if how == "edge"
-        else ev.ToolCall(name, {}, "an answer", not how)
-        for name, how in steps
-    ]
+    """Tool calls from (tool name, what the call met) pairs."""
+    tool_call = probe.space_mcp_eval.ToolCall
+    result = {
+        EDGE: probe.EDGE_PAGE.decode(),
+        ANSWERED: "an answer",
+        REFUSED: "a refusal",
+    }
+    return [tool_call(name, {}, result[met], met != ANSWERED) for name, met in steps]
 
 
 @pytest.mark.parametrize(
     "steps, said",
     [
-        ([("find_company", "edge"), ("find_company", "edge"), ("find_company", True)],
+        ([("find_company", EDGE), ("find_company", EDGE), ("find_company", ANSWERED)],
          "recovered by retrying"),
-        ([("find_company", "edge"), ("find_company", "edge"), ("search_jobs", True)],
+        # After-arm t16 on 2026-09-29: the retry was refused, and a later search answered.
+        ([("search_jobs", EDGE), ("search_jobs", EDGE), ("search_jobs", REFUSED),
+          ("search_jobs", ANSWERED)], "recovered by retrying"),
+        ([("find_company", EDGE), ("find_company", EDGE), ("search_jobs", ANSWERED)],
          "recovered elsewhere"),
-        ([("hiring_now", "edge"), ("hiring_now", "edge")], "gave up"),
-        ([("hiring_now", "edge"), ("hiring_now", False)], "gave up"),  # refused, not answered
+        ([("hiring_now", EDGE), ("hiring_now", EDGE)], "gave up"),
+        ([("hiring_now", EDGE), ("hiring_now", REFUSED)], "gave up"),
         ([], "no failure met"),
     ],
 )  # fmt: skip
@@ -104,9 +110,13 @@ def test_outcome(probe, steps, said):
     assert probe.outcome(_calls(probe, *steps)) == said
 
 
-def test_the_arms_differ_only_by_the_retry_sentence(probe):
+def test_the_after_arm_serves_the_shipped_instructions_and_before_drops_one_sentence(
+    probe,
+):
+    """The arms differ only by the retry sentence, and the endpoint serves the arm's text."""
     before, after = probe.instructions("before"), probe.instructions("after")
     sentence = probe.space_server._INSTRUCTIONS_EDGE_RETRY
 
+    assert after == probe.space_server.INSTRUCTIONS
     assert sentence in after and sentence not in before
     assert after.replace(" " + sentence, "") == before

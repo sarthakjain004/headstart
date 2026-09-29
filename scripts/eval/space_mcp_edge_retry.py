@@ -8,9 +8,10 @@ the page saying 500), before the Space sees the request, and no MCP client retri
 Each run is one ``claude -p`` task, as ``space_mcp_eval.py`` runs it, against a Streamable HTTP
 endpoint on this machine. The endpoint serves the real server (``build_server()``, reading the
 deployed Space over HTTPS) and answers the first ``--failures`` ``tools/call`` POSTs of the run
-with ``space_mcp_edge_retry_page.html``: the page a real 502 carried on 2026-09-29, sent with
-HTTP 502, ``text/html`` and no ``X-HeadStart``, as the edge sends it. Every other request is
-answered. The two arms differ only in the instructions: ``before`` drops the retry sentence,
+with ``space_mcp_edge_retry_hf_502_page.html``: the page a real 502 carried on 2026-09-29, sent
+with
+HTTP 502, ``text/html`` and no ``X-HeadStart``, as the edge sends it. Every other request
+is answered. The two arms differ only in the instructions: ``before`` drops the retry sentence,
 ``after`` keeps it.
 
 Why not the hosted connector: its edge fails at random, about 14% of calls, so ten tasks meet one
@@ -31,6 +32,7 @@ from __future__ import annotations
 
 import argparse
 import collections
+import dataclasses
 import importlib.util
 import json
 import os
@@ -57,7 +59,9 @@ space_mcp_eval = importlib.util.module_from_spec(_spec)
 sys.modules[_spec.name] = space_mcp_eval  # @dataclass looks its own module up
 _spec.loader.exec_module(space_mcp_eval)
 
-EDGE_PAGE = Path(__file__).with_name("space_mcp_edge_retry_page.html").read_bytes()
+EDGE_PAGE = (
+    Path(__file__).with_name("space_mcp_edge_retry_hf_502_page.html").read_bytes()
+)
 ARTIFACTS = _ROOT / "experiment" / "space-mcp-edge-retry" / "artifacts"
 #: The iteration tasks measured on 2026-09-29: every tool but get_job, no description scan.
 DEFAULT_TASKS = "t01,t02,t03,t04,t05,t09,t14,t16,t19,t21"
@@ -90,7 +94,7 @@ class EdgeFailingEndpoint:
                     calls = sum(p["tool"] is not None for p in endpoint.posts)
                     failed = called is not None and calls < failures
                     endpoint.posts.append(
-                        {"tool": called and called[0], "failed": failed}
+                        {"tool": called and called.name, "failed": failed}
                     )
                 if failed:
                     status, headers, out = 502, {"Content-Type": "text/html"}, EDGE_PAGE
@@ -122,20 +126,20 @@ def _edge_page(call: Any) -> bool:
 
 
 def outcome(calls: list[Any]) -> str:
-    """What the model did with the edge failures a run's calls met: ``recovered by retrying``
-    (the call after the last failure repeated the failed tool and was answered), ``recovered
-    elsewhere`` (some later call to another tool was answered), ``gave up`` (no call after the
-    failures was answered), or ``no failure met`` (it never called a tool)."""
+    """What the model did with the edge failures a run's calls met. When some call after the last
+    failure was answered, ``recovered by retrying`` if the call right after that failure repeated
+    the failed tool (whatever it was answered), else ``recovered elsewhere``. ``gave up`` when no
+    call after the failures was answered; ``no failure met`` when it never called a tool."""
     failed = [i for i, call in enumerate(calls) if _edge_page(call)]
     if not failed:
         return "no failure met"
     last = failed[-1]
     after = calls[last + 1 :]
-    if after and after[0].name == calls[last].name and after[0].succeeded:
+    if not any(call.succeeded for call in after):
+        return "gave up"
+    if after[0].name == calls[last].name:
         return "recovered by retrying"
-    if any(call.succeeded for call in after):
-        return "recovered elsewhere"
-    return "gave up"
+    return "recovered elsewhere"
 
 
 def instructions(arm: str) -> str:
@@ -149,7 +153,10 @@ def instructions(arm: str) -> str:
 
 def run(task: dict[str, Any], arm: str, failures: int, stem: Path) -> dict[str, Any]:
     """One ``claude -p`` run of ``task`` against a fresh endpoint; its record."""
-    endpoint = EdgeFailingEndpoint(space_server.build_server(env={}), failures)
+    server = dataclasses.replace(
+        space_server.build_server(env={}), instructions=instructions(arm)
+    )
+    endpoint = EdgeFailingEndpoint(server, failures)
     started = time.monotonic()
     try:
         with tempfile.TemporaryDirectory(prefix="space-mcp-edge-retry-") as scratch:
@@ -196,7 +203,6 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--workers", type=int, default=2)
     args = parser.parse_args(argv)
 
-    space_server.INSTRUCTIONS = instructions(args.arm)  # build_server reads it per call
     wanted = args.tasks.split(",")
     every = json.loads(space_mcp_eval.ITERATION_TASKS.read_text(encoding="utf-8"))
     tasks = [t for t in every["tasks"] if t["id"] in wanted]

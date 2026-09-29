@@ -1095,10 +1095,19 @@ def test_tally_counts_each_tasks_passes_across_repeats(ev):
         [_record("t01", "error"), _record("t02", "pass")],
     ]
 
-    assert ev.tally(passes) == [
-        "t01: 2 of 3 passed (pass, pass, error)",
-        "t02: 2 of 3 passed (fail, pass, pass)",
-    ]
+    assert (
+        ev.tally(passes)
+        == [
+            "t01: 2 of 2 judged passed (pass, pass, error)",  # the unjudged run is not scored
+            "t02: 2 of 3 judged passed (fail, pass, pass)",
+        ]
+    )
+
+
+def test_a_summary_with_nothing_judged_meets_no_bar(ev):
+    lines = ev.summary([_record("t01", "error"), _record("t02", "error")])
+
+    assert all(line.endswith("MISSED") for line in lines), lines
 
 
 def test_the_run_allows_every_registered_tool_and_nothing_else(ev):
