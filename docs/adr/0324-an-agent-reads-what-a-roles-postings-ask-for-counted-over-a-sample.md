@@ -39,7 +39,8 @@ LLM and no pipeline stage: the Space counts a sample of served postings at reque
   by the posting, estimated from the title's seniority, not stated); salary quartiles per currency
   over each stated range's midpoint, a year; the remote share; the companies with the most sampled
   postings; the countries their locations name (ADR-0273); and, with a family lookup, each sampled
-  posting's category. The query path also returns the sample's similarity range.
+  posting's category (the tool names none that ADR-0306 hides: those count with "other or no
+  tech category"). The query path also returns the sample's similarity range.
 - **The answer states its sample**: "counted over 300 postings, of 514,163 that the filters
   admit", how they were picked, and the similarity range.
 - **Skills come from a curated vocabulary**, `config/tech_skills.json`: 376 skills in 17 kinds

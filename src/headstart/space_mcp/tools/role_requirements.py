@@ -215,7 +215,14 @@ def _country_line(counted: dict[str, Any]) -> str:
 
 
 def _category_line(counted: dict[str, Any]) -> str | None:
-    categories = counted.get("categories")
+    """The sample's categories, each one this server offers named; a hidden one (ADR-0306) is
+    counted with the postings in no tech category, as the site's Other row counts it."""
+    offered = role_families.names()
+    categories = [
+        c
+        for c in counted.get("categories") or []
+        if offered is None or c["family"] in offered
+    ]
     if not categories:
         return None
     placed = sum(c["postings"] for c in categories)
@@ -223,7 +230,7 @@ def _category_line(counted: dict[str, Any]) -> str | None:
         f"{_category(c['family'])} {c['postings']:,}" for c in categories
     )
     return (
-        f"Job categories of the sampled postings: {named}; in no tech category: "
+        f"Job categories of the sampled postings: {named}; other or no tech category: "
         f"{counted['sampled'] - placed:,}."
     )
 

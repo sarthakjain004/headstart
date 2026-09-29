@@ -2291,6 +2291,7 @@ def _requirements(sampled=300, matching=12_400, **overrides):
         "categories": [
             {"family": "data-engineering", "postings": 238},
             {"family": "software-engineering", "postings": 2},
+            {"family": "unclassified-tech", "postings": 5},
         ],
         "newest_tick": "2026-09-29T04:04:35+00:00",
     }
@@ -2340,10 +2341,12 @@ def test_requirements_say_what_was_counted_over_how_many_and_how_picked():
     )
     assert "ranks postings but does not narrow them" in text
     assert "0.87 (the closest) to 0.81 (the farthest counted)" in text
+    # Unclassified tech is hidden (ADR-0306): its 5 count with the 55 in no tech category.
     assert (
         "Data Engineering (data-engineering) 238 · Software Engineering "
-        "(software-engineering) 2; in no tech category: 60." in text
+        "(software-engineering) 2; other or no tech category: 60." in text
     )
+    assert "nclassified" not in text
     assert "  Data engineering and analytics: SQL 74% (162 employers)" in text
     assert "  Languages: Python 73% (160 employers)" in text
     assert "0–1: 10 · 2–4: 122 · 5–7: 53 · 8+: 8" in text
