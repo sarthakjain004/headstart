@@ -52,6 +52,18 @@ does not spare the page (``skip_held`` stays off, as on Oracle).
 category ("Senior Architect" under Technology), which the sitemap never states. That is a recall
 loss well past Avature's accepted 9.6%, so every page is fetched (CONTEXT.md §Detail pass).
 
+**A 403 is the runner's IP refused, not a client the front rejects** (ADR-0346). In each of 47
+runs from 2026-09-27 to 09-29, 12.1% to 36.0% (median 23.7%) of 109,522 to 123,107 detail pages
+answered HTTP 403, and a few sitemaps did. The loss is uneven across the 15 shards of one run (0 of
+9,742 pages on one, 5,270 of 10,736 on another), and 43 of the 67 Boards walled in one of three
+runs read clean in another. Walled Boards still served 251-265 pages before the first refusal on
+15 of 47. From a laptop this scraper's own client read 1,920 of 1,920 pages of six walled Boards,
+and Chrome 16 of 16 pages at 0.95 s each (median), against ~0.12 s a page on the multiplexed path.
+The fronts sit behind Akamai (host -> ``{slug}.talentbrew.com`` -> ``edgekey.net``), so this is
+Eightfold's shape (ADR-0063): a 403 moves the group onto the spare egress
+(:attr:`egress_fallback_on`), not onto a browser that leaves from the same IP.
+``docs/radancy/2026-09-29_detail-page-403-wall.md`` has every count.
+
 **Front duplication is measured, not gated.** The owner's decision of 2026-09-26: every front is
 scraped in full, including postings whose Backing Board a Scrapable Board already serves, and each
 run logs the share per front (:meth:`RadancyScraper._report_front_duplication`) so the decision can
@@ -87,7 +99,9 @@ from headstart.scrapers.job_posting_jsonld import (
 
 #: Well below the measured knee: one front answered 128 concurrent job-page GETs at 91.5 req/s
 #: with 500 of 500 200s, and twelve fronts at once did the same (600 of 600), with no refusal at
-#: any width tried. `harvest` multiplies this by the Boards it reads at once.
+#: any width tried, from a laptop. A runner's IP was refused after about 260 pages per Board in 15
+#: of 47 walled Boards at 16; whether the rate matters is unverified (ADR-0346).
+#: `harvest` multiplies this by the Boards it reads at once.
 _DETAIL_WORKERS = 16
 
 #: ``[/{lang}]/{word}/{place}/{title}/{companyId}/{jobId}``. The title segment must hold a
@@ -206,6 +220,10 @@ class RadancyScraper(BaseScraper):
     has_detail_pass = True  # every field lives on the job page (ADR-0050)
     detail_workers = _DETAIL_WORKERS
     detail_streams = _DETAIL_WORKERS
+    #: Akamai answers a refused runner IP with a bare 403 (module docstring, ADR-0346), on the
+    #: sitemap and job pages alike. Retrying on the same IP cannot fix it; the same host serves
+    #: 200 from another one.
+    egress_fallback_on = frozenset({403})
     #: The name this Board's job pages agree on, read by `fetch_raw` (:func:`_agreed_company`).
     _pages_company: str | None = None
 
