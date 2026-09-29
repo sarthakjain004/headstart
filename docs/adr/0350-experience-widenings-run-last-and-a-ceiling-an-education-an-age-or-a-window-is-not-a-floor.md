@@ -73,9 +73,10 @@ beside a substitution is at least as often the requirement in the first two.
 - **Lost 396:** a wrong read is withdrawn and nothing replaces it (167 to unknown, 229 back to the title
   estimate).
 - **Same tier 1,385** (regex to regex): 752 floors fall, 609 rise, 24 change only the ceiling, 651 move by
-  three years or more. Bucketed by the text around the old match: 392 degree substitution, 328 ceiling word, 253
-  decimal or thousands, 240 education, 72 window, 54 age, 16 contract, and 426 that no single rule names
-  (mostly a second number that now wins under ADR-0079's smallest floor).
+  three years or more. The 1,781 rows that lose or change a value (these 1,385 and the 396 lost), bucketed by the
+  text around the old match: 392 degree substitution, 328 ceiling word, 253 decimal or thousands, 240 education,
+  72 window, 54 age, 16 contract, and 426 that no single rule names (in the 25 read, a second number that now
+  sets a smaller floor under ADR-0079, or a ceiling clause).
 
 **ADR-0066's rule holds for the widenings, and the ablation proves it.** With the same module and the third pass
 switched off, the pass changes 9,518 rows, **all** none/seniority to regex, and **0** where the first two passes
