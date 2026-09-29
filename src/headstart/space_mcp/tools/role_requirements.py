@@ -7,8 +7,8 @@ minimum years they state, their salaries, how many are remote, and where and at 
 The Space picks the sample (the postings closest to `query`, or a category's newest), counts each
 requisition once however many Boards or countries copy it, and names a Board that names no company
 by the Company directory's name (ADR-0332). This module only sends the arguments, which are the
-Search filters `search_jobs` takes, read by the same rules (`search_arguments`), and says what was
-counted, over how many, of how many.
+Search filters `search_jobs` takes, read by the same rules (`search_arguments`), `max_age_days`'s
+default among them (ADR-0338), and says what was counted, over how many, of how many.
 Descriptions are scraped text, so the answer carries none of it: counts, the vocabulary's own
 skill names, and the quoted company names search already shows.
 """
@@ -35,8 +35,17 @@ SHORT_FIELD = 60
 #: description, which is written before any answer; an answer states its own.
 SAMPLE_SIZE = 300
 
-#: The Search filters this tool takes, each as `search_jobs` takes it.
-_FILTERS = ("company", "remote", "country", "india_place", "location", "max_years")
+#: The Search filters this tool takes, each as `search_jobs` takes it; `max_age_days` too, so a
+#: sample leaves out what search leaves out by default (ADR-0338).
+_FILTERS = (
+    "company",
+    "remote",
+    "country",
+    "india_place",
+    "location",
+    "max_years",
+    "max_age_days",
+)
 
 
 def _params(
@@ -241,6 +250,8 @@ def answer(client: SpaceClient, arguments: dict[str, Any]) -> str:
         # The category is the lead's own subject, so the scope line leaves it out.
         filters = {k: v for k, v in arguments.items() if k != "category"}
         lines.append(search_arguments.scope_line(filters, scope))
+    if note := search_arguments.query_constraints_note(arguments.get("query") or ""):
+        lines.append(note)
     if not counted["distinct"]:
         lines.append(_no_postings(client, counted, scope))
     else:

@@ -21,6 +21,7 @@ from headstart.serving.job_search import (
     REQUIREMENTS_CATEGORY_WINDOW,
     RESULT_COLUMNS,
     SORT_COLUMNS,
+    SORT_FLOOR,
     JobSearch,
     RoleAssignments,
     ScopeUnavailable,
@@ -1007,6 +1008,28 @@ def test_sorting_a_ranked_search_keeps_the_query_and_reorders_the_window():
     )  # the query still ran — ranking was not discarded
     assert table.last_order is None  # ...and no ORDER BY was pushed down to override it
     assert table.last_k == searcher.max_k * searcher.max_page  # the whole window
+
+
+def test_a_sorted_search_reorders_only_the_rows_above_the_floor():
+    """cs03 of the round-3 critique: the 2,000-row window reached 0.55 under narrow filters,
+    and a date sort led with a Database Administrator for "junior data analyst" (ADR-0338).
+    A browse or a relevance order keeps every row."""
+    below = 1 - SORT_FLOOR + 0.01
+    rows = [
+        {**_ROW, "id": "close-old", "posted_at": "2026-01-01"},
+        {**_ROW, "id": "far-new", "posted_at": "2026-09-01", "_distance": below},
+        {
+            **_ROW,
+            "id": "at-floor",
+            "posted_at": "2026-05-01",
+            "_distance": 1 - SORT_FLOOR,
+        },
+    ]
+    searcher = JobSearch(_Model(), _Table(rows))
+    out = searcher.run({"q": "data analyst", "sort": "posted", "k": "3"})
+    assert [r["id"] for r in out] == ["at-floor", "close-old"]
+    ranked = JobSearch(_Model(), _Table(rows)).run({"q": "data analyst", "k": "3"})
+    assert len(ranked) == 3
 
 
 def test_sorting_a_ranked_search_still_paginates_without_repeating():

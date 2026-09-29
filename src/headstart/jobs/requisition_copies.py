@@ -1,7 +1,7 @@
 """Which served Jobs are copies of one requisition, so a search page lists each once (ADR-0274,
-widened by ADR-0323 and ADR-0331) and a requirements sample counts each once (ADR-0332).
+widened by ADR-0323, ADR-0331 and ADR-0338) and a requirements sample counts each once (ADR-0332).
 
-Two kinds of copy are grouped:
+Three kinds of copy are grouped:
 
 - **One requisition per country**: the same company and title, brackets aside — "Backend Developer
   (Peru)", "Backend Developer (Chile)" at "Anyone AI" — placed apart. Rows naming no company are
@@ -13,6 +13,12 @@ Two kinds of copy are grouped:
   than one spelling, so it also needs the same title stem, the same first place (the city a
   location string names first) and the same countries, as the `country` filter's gazetteer reads
   the whole location.
+- **One requisition under a short and a long name** of its employer: "TSMC" on SuccessFactors and
+  "TSMC - Taiwan Semiconductor Manufacturing Company Limited" on Avature (the round-3 critique),
+  where one name's words begin the other's. A longer name is as often another company ("GE" and
+  "GE HealthCare"), so this needs the same title stem, the same countries and the same stated
+  annual pay range, currency included, on both rows (ADR-0338). The first place is not compared:
+  "Vancouver, WA, US" and "USA-Washington" are one place written two ways.
 
 On a search page, grouping only lists a copy under the row it repeats: every row keeps its number,
 id and link, and paging is the Space's.
@@ -102,12 +108,35 @@ def _copies(head: dict[str, Any], row: dict[str, Any]) -> bool:
         return not one and not other and _same_board(head, row)
     if one == other:
         return True
-    words = _company_words(one)
+    words, other_words = _company_words(one), _company_words(other)
+    if not words or not other_words:
+        return False
+    if words == other_words:
+        return _one_place(head.get("location"), row.get("location"))
+    shorter, longer = sorted((words, other_words), key=len)
     return (
-        bool(words)
-        and words == _company_words(other)
-        and _one_place(head.get("location"), row.get("location"))
+        longer[: len(shorter)] == shorter
+        and _one_pay(head, row)
+        and _same_countries(head.get("location"), row.get("location"))
     )
+
+
+def _one_pay(head: dict[str, Any], row: dict[str, Any]) -> bool:
+    """The same stated annual pay range, in the same currency, on both rows."""
+    pay = [
+        (job.get("min_salary_annual"), job.get("max_salary_annual"))
+        for job in (head, row)
+    ]
+    return (
+        pay[0] != (None, None)
+        and pay[0] == pay[1]
+        and head.get("salary_currency") == row.get("salary_currency")
+    )
+
+
+def _same_countries(one: Any, other: Any) -> bool:
+    countries = country_gazetteer.classify(str(one or ""))
+    return bool(countries) and countries == country_gazetteer.classify(str(other or ""))
 
 
 def _same_board(head: dict[str, Any], row: dict[str, Any]) -> bool:

@@ -354,6 +354,14 @@ REQUIREMENTS_CATEGORY_WINDOW = 2_000
 #: How many requirements answers one boot keeps; the table does not change until the next boot.
 REQUIREMENTS_CACHE_SIZE = 64
 
+#: The least similarity a row needs to be re-ordered by a sort under a query or ``like=``
+#: (ADR-0338). The 2,000-row window is always full, so under narrow filters it reached rows of
+#: other roles: "junior data analyst", remote and at most a year of experience, reached 0.55 and
+#: a date sort led with a Database Administrator. Measured on 20 live queries (2026-09-29): 16
+#: windows stay above 0.67 and keep every row; in the other 4 the share of rows on the role went
+#: from 26% to 76% (that query), 46% to 93%, 1% to 86% and 6% to 36%. 0.68 cut a broad window.
+SORT_FLOOR = 0.67
+
 
 def scoped_boards_clause(args) -> str | None:
     """The Boards a request names with ``board=`` (repeatable), or None (ADR-0185).
@@ -1542,6 +1550,10 @@ class JobSearch:
             # matches" — the alternative, scanning by date, answers a question the user did
             # not ask by throwing their query away.
             window = search.limit(self.max_k * self.max_page).to_list()
+            # Only rows at least :data:`SORT_FLOOR` similar are re-ordered (ADR-0338): the window
+            # is always full, so under narrow filters its tail held other roles, which a date or
+            # salary sort then led with.
+            window = [r for r in window if round(1 - r["_distance"], 3) >= SORT_FLOOR]
             # `reverse=True`, so the stand-in for a missing value has to be the smallest thing
             # in its own type — `""` for the date columns, -inf for a numeric one — which puts
             # rows that have no value last either way.

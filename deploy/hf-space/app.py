@@ -719,7 +719,9 @@ def _keep_static_for_the_boot(response):
 # 12: /trends gives a category's opened and closed as the index's line for it, in the category's
 # own view too; only its level lines leave out an extraction change's runs (ADR-0336).
 # 13: `strict=1` on /search and /facets refuses a parameter neither reads, naming it (ADR-0334).
-_AGENT_API_VERSION = 13
+# 14: a sorted /search under `q` or `like` orders only rows scoring at least SORT_FLOOR, and
+# /requirements groups a short and a long name of one employer as one requisition (ADR-0338).
+_AGENT_API_VERSION = 14
 
 
 @app.after_request

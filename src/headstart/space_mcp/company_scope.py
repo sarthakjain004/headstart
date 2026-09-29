@@ -72,14 +72,18 @@ class DirectoryCompany:
         boards = len(self.board_keys)
         return (
             f"{scraped_text.quoted(self.label)} ({self.key}, {boards} Board"
-            f"{'' if boards == 1 else 's'}, {self.openings:,} tech openings)"
+            f"{'' if boards == 1 else 's'}, {self.tech_openings()})"
         )
+
+    def tech_openings(self) -> str:
+        return f"{self.openings:,} tech opening{'' if self.openings == 1 else 's'}"
 
     def offered(self) -> str:
         """The company as a refusal or a zero answer offers it in place of a typed name."""
         return (
             f"{scraped_text.quoted(self.label)} — key {self.key}, {', '.join(self.atses)}, "
-            f"{len(self.board_keys)} Board(s), {self.openings:,} openings, "
+            f"{len(self.board_keys)} Board(s), {self.openings:,} opening"
+            f"{'' if self.openings == 1 else 's'}, "
             f"{self.match or '?'} match"
         )
 

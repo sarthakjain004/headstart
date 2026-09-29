@@ -500,11 +500,12 @@ def test_a_profile_reads_every_route_for_every_board_of_its_company(
     companies_app, scoped_boards
 ):
     """HPE is one Tenant split into two Workday sites: either site's key means both, in the
-    facet counts, the locations and the levels alike."""
+    facet counts (every age, and within a year: ADR-0338), the locations and the levels
+    alike."""
     text = server.call(
         _client(companies_app), "company_profile", {"company": "workday:hpe/b"}
     )
-    assert len(scoped_boards) == 3 and all(
+    assert len(scoped_boards) == 4 and all(
         sorted(boards) == ["workday:hpe/a", "workday:hpe/b"] for boards in scoped_boards
     )
     assert text.startswith('Company: "Hpe" (workday:hpe/a, 2 Boards,')

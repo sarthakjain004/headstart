@@ -1,14 +1,21 @@
 """The Search filters as the Space MCP server's tools take them: each filter argument's schema,
 the name the Space reads it by, the query string it becomes, and how an answer says it.
-`search_jobs` takes every one and `role_requirements` a subset (ADR-0332), so a filter reads the
-same way in both.
+`search_jobs` takes every one and `role_requirements` a subset (ADR-0332), `max_age_days` among
+them (ADR-0338), so a filter reads the same way in both. So does the note a query gets when it
+holds what only a filter narrows by (ADR-0338).
 """
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
-from headstart.search_filters import country_filter, india_filter, india_gazetteer
+from headstart.search_filters import (
+    country_filter,
+    country_gazetteer,
+    india_filter,
+    india_gazetteer,
+)
 from headstart.space_mcp import company_scope, role_families, scraped_text
 
 #: Every filter argument as the tools name it -> as the Space does: the query-string name
@@ -35,10 +42,10 @@ SPACE_NAME = {
     "required_years_at_least": "required_years_at_least",
     "exclude_company": "exclude_company",
 }
-#: Sent as the literal "true" `parse_filters` compares against; the company, the keyword and
-#: `max_age_days` (0 is sent as nothing) are sent by their own rules below.
+#: Sent as the literal "true" `parse_filters` compares against; the company and the keyword are
+#: sent by their own rules below, and `max_age_days` 0 (any age) as nothing.
 FLAGS = ("remote", "has_salary")
-_SENT_ELSEWHERE = (*FLAGS, "company", "keyword", "keyword_in", "max_age_days")
+_SENT_ELSEWHERE = (*FLAGS, "company", "keyword", "keyword_in")
 
 #: `max_age_days` when the caller sends none (ADR-0322): a relevance search led with Jobs posted
 #: in 2022 (round-2 critique P1-6). 0 is any age, and is not sent.
@@ -92,6 +99,16 @@ PROPERTIES: dict[str, dict[str, Any]] = {
         "maxLength": 60,
         "description": "Text the job's location contains, any country.",
     },
+    "max_age_days": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 3650,
+        "default": DEFAULT_MAX_AGE_DAYS,
+        "description": (
+            "Leaves out postings older than this many days: the posted date, else "
+            "the day HeadStart first saw the job. 365 unless sent; 0 for any age."
+        ),
+    },
 }
 
 
@@ -100,6 +117,47 @@ def read_country(asked: Any) -> Any:
     unchanged, for the schema's enum to refuse with the codes it knows."""
     code = country_filter.code_for(asked) if isinstance(asked, str) else None
     return code or asked
+
+
+#: What a query holds that only a filter narrows by (ADR-0338), each with the filter to use:
+#: years of experience, and pay (a currency, a "k" or lakh figure, or a bare number of 4+ digits
+#: that is not a year such as 2027).
+_YEARS = re.compile(
+    r"(?:\d+\s*\+?\s*(?:-\s*\d+\s*)?)?\b(?:years?|yrs?)\b", re.IGNORECASE
+)
+_PAY = re.compile(
+    r"[$€£₹¥]\s*\d[\d,.]*\s*k?\b|\b\d[\d,.]*\s*(?:k|lpa|lakhs?|crores?)\b"
+    r"|\b(?:usd|eur|gbp|inr|cad|aud|chf|sgd)\b|\b(?!(?:19|20)\d\d\b)\d{4,}\b",
+    re.IGNORECASE,
+)
+_REMOTE = re.compile(r"\bremote\b", re.IGNORECASE)
+
+
+def query_constraints_note(query: str) -> str | None:
+    """A line for a query holding years, pay, a known place or "remote": the query only ranks,
+    and each of those narrows only as its filter (ADR-0338). None for a query holding none."""
+    found = []
+    if years := _YEARS.search(query):
+        found.append(
+            f"{scraped_text.quoted(years.group().strip())} (years: send max_years for the "
+            "user's own, or required_years_at_least)"
+        )
+    if pay := _PAY.search(query):
+        found.append(
+            f"{scraped_text.quoted(pay.group().strip())} (pay: send salary_min with "
+            "salary_currency)"
+        )
+    if places := country_gazetteer.classify(query):
+        named = ", ".join(sorted(country_filter.name(code) for code in places))
+        found.append(f"a place read as {named} (send country or location)")
+    if _REMOTE.search(query):
+        found.append('"remote" (send remote true)')
+    if not found:
+        return None
+    return (
+        "The query only ranks jobs and narrows nothing, yet it holds what only a filter "
+        "narrows by: " + "; ".join(found) + "."
+    )
 
 
 def filter_params(arguments: dict[str, Any]) -> list[tuple[str, str]]:
@@ -111,7 +169,9 @@ def filter_params(arguments: dict[str, Any]) -> list[tuple[str, str]]:
             params.append((SPACE_NAME[flag], "true"))
     for argument, name in SPACE_NAME.items():
         value = arguments.get(argument)
-        if argument not in _SENT_ELSEWHERE and value is not None and value != "":
+        # `max_age_days` 0 is any age, which is sent as nothing.
+        sent = value not in (None, "") and (argument != "max_age_days" or value)
+        if argument not in _SENT_ELSEWHERE and sent:
             params.append((name, str(value)))
     return params
 
@@ -194,6 +254,8 @@ def scope_line(
             )
             + " (a job with no readable posted date counts from its first-seen day)"
         )
+    elif max_age == 0:
+        said.append("any age (max_age_days 0)")
     if keyword := (arguments.get("keyword") or "").strip():
         said.append(
             f"keyword {scraped_text.quoted(keyword)} in {arguments.get('keyword_in') or 'title'}"
