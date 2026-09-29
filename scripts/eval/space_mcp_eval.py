@@ -33,6 +33,7 @@ Run (a live run needs only the network and a signed-in ``claude``):
   python scripts/eval/space_mcp_eval.py
   python scripts/eval/space_mcp_eval.py --dry-run
   python scripts/eval/space_mcp_eval.py --only t03
+  python scripts/eval/space_mcp_eval.py --only t07,t12 --http <url> --repeat 2
   python scripts/eval/space_mcp_eval.py --heldout <sealed file>
   python scripts/eval/space_mcp_eval.py --http https://imposeidon-headstart-search.hf.space/mcp
   python scripts/eval/space_mcp_eval.py --repeat 3
@@ -57,7 +58,8 @@ import sys
 import tempfile
 import threading
 import time
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Iterable, Iterator, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -69,14 +71,23 @@ from headstart.mcp_protocol import tool_arguments
 from headstart.mcp_protocol.messages import ToolFailure
 from headstart.space_mcp import company_scope
 from headstart.space_mcp.server import BY_NAME, NAME, URL_VAR
+from headstart.space_mcp.server import call as call_tool
 from headstart.space_mcp.space_client import (
     SPACE_URL,
+    Fetch,
     SpaceClient,
     SpaceError,
     SpaceRoute,
 )
 from headstart.space_mcp.space_tool import ANSWER_CEILING_CHARS
-from headstart.space_mcp.tools import REGISTRY, get_job, hiring_now
+from headstart.space_mcp.tools import (
+    REGISTRY,
+    company_profile,
+    get_job,
+    hiring_now,
+    read_trends,
+    search_jobs,
+)
 
 ITERATION_TASKS = _ROOT / "scripts" / "eval" / "space_mcp_eval_tasks.json"
 ARTIFACTS = _ROOT / "experiment" / "space-mcp-eval" / "artifacts"
@@ -139,6 +150,8 @@ class Transcript:
     #: The server's status in the run's init event ("connected", "pending", "failed"), or None
     #: when the init event did not name it.
     server_status: str | None = None
+    #: The tools the init event lists, each as the model calls it (``mcp__<server>__<tool>``).
+    tools: list[str] = field(default_factory=list)
 
 
 def _text(content: Any) -> str:
@@ -168,6 +181,9 @@ def parse(lines: Iterable[str]) -> Transcript:
         kind = event.get("type")
         if kind == "system" and event.get("subtype") == "init":
             transcript.model = event.get("model")
+            transcript.tools = [
+                tool for tool in event.get("tools") or [] if isinstance(tool, str)
+            ]
             transcript.server_status = next(
                 (
                     server.get("status")
@@ -225,13 +241,20 @@ Verifier = Callable[[dict[str, Any], Transcript, Space], Verdict]
 
 def why_not_connected(transcript: Transcript) -> str | None:
     """Why the model had no tools in this run, or None when the server was connected at its
-    start. Such a run says nothing about the model or the tools, so it is not judged."""
-    if transcript.server_status == "connected":
-        return None
-    return (
-        f"the {NAME} server was {transcript.server_status or 'not named'} at the run's start, "
-        "so the model had no tools: not judged"
-    )
+    start and listed its tools. Such a run says nothing about the model or the tools, so it is
+    not judged. A server can connect and still list none: round 3's t24 r2 had its `tools/list`
+    refused by the Space's rate limit, and the model then made HeadStart figures up (ADR-0334)."""
+    if transcript.server_status != "connected":
+        return (
+            f"the {NAME} server was {transcript.server_status or 'not named'} at the run's "
+            "start, so the model had no tools: not judged"
+        )
+    if not any(tool.startswith(TOOL_PREFIX) for tool in transcript.tools):
+        return (
+            f"the {NAME} server connected but the run's start listed none of its tools, so "
+            "the model had none: not judged"
+        )
+    return None
 
 
 def _found_at(text: str, term: str | list[str]) -> int | None:
@@ -341,8 +364,14 @@ def verify_tool_args(
 ) -> Verdict:
     """One successful call of ``expect["tool"]`` (search_jobs by default) whose arguments meet
     every ``must`` rule, one ``must_any`` alternative when given, and ``query_must_not_contain``.
-    An argument the call left out is judged at its schema default, as the server reads it."""
-    return _call_meeting_the_rules(expect, transcript)[1]
+    An argument the call left out is judged at its schema default, as the server reads it.
+    ``answer_any``, when given, is terms one of which the final answer must say: what a path
+    those arguments take obliges the answer to tell the user (ADR-0334)."""
+    call, verdict = _call_meeting_the_rules(expect, transcript)
+    terms = expect.get("answer_any")
+    if call is None or not terms or _found(transcript.final_answer, terms):
+        return verdict
+    return Verdict(False, f"{verdict.detail}; the answer says none of {terms!r}")
 
 
 # --- title_keyword_rows --------------------------------------------------------------------
@@ -749,28 +778,39 @@ def verify_blocking_named(
     expect: dict[str, Any], transcript: Transcript, space: Space
 ) -> Verdict:
     """A search_jobs result named ``expect["argument"]`` (any argument when null) as the
-    Blocking filter, and the final answer mentions it."""
+    Blocking filter, and the final answer mentions it. With ``value_names_it``, the value that
+    call sent for it counts as naming it too: "no Haskell jobs in Indore at any pay" names the
+    place filter by its place (round-3 critique P1-6, ADR-0334)."""
     want = expect.get("argument")
     named = [
-        argument
+        (argument, call.arguments.get(argument))
         for call in transcript.calls
         if call.name == "search_jobs" and call.succeeded
         if (argument := _blocking_named_in(call.result or ""))
     ]
-    candidates = [a for a in named if want is None or a == want]
+    candidates = [(a, v) for a, v in named if want is None or a == want]
     if not candidates:
         return Verdict(
             False,
-            f"no search_jobs result named {want or 'any'} as blocking (named: {named})",
+            f"no search_jobs result named {want or 'any'} as blocking "
+            f"(named: {[a for a, _ in named]})",
         )
-    for argument in candidates:
+    for argument, value in candidates:
         if _mentions_argument(transcript.final_answer, argument):
             return Verdict(
                 True, f"a result named {argument} and the answer mentions it"
             )
+        if (
+            expect.get("value_names_it")
+            and isinstance(value, str)
+            and _found(transcript.final_answer, value)
+        ):
+            return Verdict(
+                True, f"a result named {argument} and the answer names its {value!r}"
+            )
     return Verdict(
         False,
-        f"a result named {candidates[0]}, but the final answer does not mention it",
+        f"a result named {candidates[0][0]}, but the final answer does not mention it",
     )
 
 
@@ -780,8 +820,11 @@ def verify_blocking_named(
 def verify_mentions(
     expect: dict[str, Any], transcript: Transcript, space: Space
 ) -> Verdict:
-    """Every ``all`` term (a list is alternatives) and one ``any`` term in the final answer, and
-    every ``tool_results_all`` term in the tool results."""
+    """Every ``all`` term (a list is alternatives) and one ``any`` term in the final answer,
+    every ``tool_results_all`` term in the tool results, and for each ``answer_carries``
+    pattern (a list is alternatives) a value its first group captured in the tool results said
+    in the final answer: the figure or name the tool gave, whatever it is today, rather than one
+    frozen into the task (ADR-0334)."""
     answer = transcript.final_answer
     results = "\n".join(call.result or "" for call in transcript.calls)
     missing = [
@@ -794,7 +837,60 @@ def verify_mentions(
         for t in expect.get("tool_results_all") or []
         if not _found(results, t)
     ]
+    missing += [
+        miss
+        for pattern in expect.get("answer_carries") or []
+        if (miss := _carried(pattern, results, answer))
+    ]
     return Verdict(not missing, "; ".join(missing) or "every term found")
+
+
+def _carried(pattern: str | list[str], results: str, answer: str) -> str | None:
+    """Why the answer does not say a value ``pattern``'s first group captures in ``results``,
+    or None when it says one. A figure counts written with or without its thousands commas."""
+    patterns = pattern if isinstance(pattern, list) else [pattern]
+    values = list(
+        dict.fromkeys(
+            match.group(1).strip()
+            for p in patterns
+            for match in re.finditer(p, results)
+        )
+    )
+    if not values:
+        return f"tool results match none of {patterns!r}"
+    said = [v for v in values if _states(answer, v)]
+    return None if said else f"answer states none of the tool results' {values!r}"
+
+
+def _states(answer: str, value: str) -> bool:
+    """``value`` in ``answer``, case-blind; a figure whole ("271" is not in "1,271" or "2710"),
+    with or without its thousands commas."""
+    if not re.fullmatch(r"[\d,]+", value):
+        return _found(answer, value)
+    return any(
+        re.search(rf"(?<![\d,]){re.escape(form)}(?![\d]|,\d)", answer)
+        for form in (value, value.replace(",", ""))
+    )
+
+
+# --- any_of --------------------------------------------------------------------------------
+
+
+def verify_any_of(
+    expect: dict[str, Any], transcript: Transcript, space: Space
+) -> Verdict:
+    """The first of ``expect["checks"]`` (each ``{"verifier", "expect"}``) that passes: a task
+    two right paths answer, each judged by its own truth, rather than one path frozen in as the
+    only right one (round-3 critique P1-6, ADR-0334)."""
+    failed = []
+    for n, check in enumerate(expect["checks"], 1):
+        verdict = VERIFIERS[check["verifier"]](
+            check.get("expect") or {}, transcript, space
+        )
+        if verdict.passed:
+            return Verdict(True, f"path {n} ({check['verifier']}): {verdict.detail}")
+        failed.append(f"path {n} ({check['verifier']}): {verdict.detail}")
+    return Verdict(False, " | ".join(failed))
 
 
 VERIFIERS: dict[str, Verifier] = {
@@ -806,7 +902,57 @@ VERIFIERS: dict[str, Verifier] = {
     "hot_top": verify_hot_top,
     "blocking_named": verify_blocking_named,
     "mentions": verify_mentions,
+    "any_of": verify_any_of,
 }
+
+
+# --- replaying recorded calls: the verifier self-test (ADR-0334) --------------------------
+
+#: The eval's recorded tool calls, each task's runs with the final answer a right run gives, and
+#: the Space's replies behind them: `record_space_mcp_eval_calls.py` writes it, and
+#: `tests/test_space_mcp_eval.py` replays it, so a change to a tool's output that breaks a
+#: verifier fails the PR that makes it rather than the next hosted eval.
+RECORDED_CALLS = _ROOT / "tests" / "fixtures" / "space_mcp_eval_recorded_calls.json"
+
+
+@contextmanager
+def tools_clock_at(when: datetime) -> Iterator[None]:
+    """Every tool's "now" held at ``when`` while inside: a window or an age is counted back
+    from it into the URLs a tool reads, which a replay must build exactly as recorded."""
+    patched = [
+        (company_profile, "_now", lambda: when),
+        (read_trends, "_now", lambda: when),
+        (search_jobs, "_today", lambda: when.date()),
+    ]
+    saved = [(module, name, getattr(module, name)) for module, name, _ in patched]
+    for module, name, value in patched:
+        setattr(module, name, value)
+    try:
+        yield
+    finally:
+        for module, name, value in saved:
+            setattr(module, name, value)
+
+
+def replayed(run: dict[str, Any], fetch: Fetch) -> Transcript:
+    """A transcript of ``run``'s calls (``{"name", "arguments"}`` each), answered by the tools
+    themselves reading the Space through ``fetch``, and ending in ``run["answer"]``: what a
+    connected run that made those calls would have been judged on."""
+    transcript = Transcript(
+        final_answer=run["answer"],
+        server_status="connected",
+        tools=[TOOL_PREFIX + tool.name for tool in REGISTRY],
+    )
+    for asked in run["calls"]:
+        client = SpaceClient(base=SPACE_URL, fetch=fetch)
+        try:
+            result, failed = call_tool(client, asked["name"], asked["arguments"]), False
+        except ToolFailure as exc:
+            result, failed = str(exc), True
+        transcript.calls.append(
+            ToolCall(asked["name"], asked["arguments"], result, failed)
+        )
+    return transcript
 
 
 # --- running -------------------------------------------------------------------------------
@@ -1078,7 +1224,9 @@ def main(argv: list[str] | None = None) -> int:
         type=Path,
         help="a sealed held-out tasks file, checked against the iteration file's hash",
     )
-    parser.add_argument("--only", help="run one task id")
+    parser.add_argument(
+        "--only", help="run only these task ids, comma-separated (t07,t12)"
+    )
     parser.add_argument("--dry-run", action="store_true", help="print, run nothing")
     parser.add_argument(
         "--http",
@@ -1104,10 +1252,16 @@ def main(argv: list[str] | None = None) -> int:
         tasks = json.loads(args.tasks.read_text(encoding="utf-8"))["tasks"]
         label = "iteration"
     if args.only:
-        tasks = [task for task in tasks if task["id"] == args.only]
-        if not tasks:
-            raise SystemExit(f"no task {args.only!r}")
-    if unknown := sorted({t["verifier"] for t in tasks} - VERIFIERS.keys()):
+        wanted = [i.strip() for i in args.only.split(",") if i.strip()]
+        if missing := sorted(set(wanted) - {task["id"] for task in tasks}):
+            raise SystemExit(f"no task {', '.join(missing)}")
+        tasks = [task for task in tasks if task["id"] in wanted]
+    kinds = {t["verifier"] for t in tasks} | {
+        check["verifier"]
+        for t in tasks
+        for check in (t.get("expect") or {}).get("checks") or []
+    }
+    if unknown := sorted(kinds - VERIFIERS.keys()):
         raise SystemExit(f"unknown verifier kinds: {', '.join(unknown)}")
 
     env = dict(os.environ)

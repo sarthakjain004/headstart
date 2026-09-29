@@ -243,3 +243,28 @@ def test_a_route_reads_which_tool_a_call_names_before_answering(body, called):
     """ADR-0325: the Space's /mcp route sends a description scan to a place of its own."""
     assert streamable_http.tool_call(json.dumps(body).encode()) == called
     assert streamable_http.tool_call(b"not json") is None
+
+
+_LIST = {"jsonrpc": "2.0", "id": 1, "method": "tools/list"}
+
+
+@pytest.mark.parametrize(
+    "body, handshake",
+    [
+        (_LIST, True),
+        ({"jsonrpc": "2.0", "id": 1, "method": "initialize"}, True),
+        ({"jsonrpc": "2.0", "id": 1, "method": "ping"}, True),
+        ({"jsonrpc": "2.0", "id": 1, "method": "server/discover"}, True),
+        ({"jsonrpc": "2.0", "method": "notifications/cancelled"}, True),
+        # A tool call sent as a notification is acknowledged and never run.
+        ({"jsonrpc": "2.0", "method": "tools/call"}, True),
+        (_call({"name": "search_jobs"}), False),
+        ({"jsonrpc": "2.0", "id": 1, "method": "resources/list"}, False),
+        ([_LIST], False),  # a batch is not one request
+        ({"jsonrpc": "2.0", "id": 1}, False),
+    ],
+)
+def test_a_route_tells_connecting_from_calling_before_answering(body, handshake):
+    """ADR-0334: the Space's /mcp route counts connecting apart from tool calls."""
+    assert streamable_http.is_handshake(json.dumps(body).encode()) is handshake
+    assert streamable_http.is_handshake(b"not json") is False

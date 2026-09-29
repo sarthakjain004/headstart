@@ -80,16 +80,30 @@
     {
       "id": "t07",
       "prompt": "Find entry-level frontend jobs at Citi, and then tell me how Citi's hiring is trending.",
-      "verifier": "mentions",
+      "verifier": "any_of",
       "expect": {
-        "all": [
-          "citi",
-          ["contain", "substring"],
-          ["directory", "largest company", "one company"]
-        ],
-        "tool_results_all": ["company name contains", "Companies: "]
+        "checks": [
+          {
+            "verifier": "mentions",
+            "expect": {
+              "all": [
+                "citi",
+                ["contain", "substring"],
+                ["directory", "largest company", "one company"]
+              ],
+              "tool_results_all": ["company name contains", "Companies: "]
+            }
+          },
+          {
+            "verifier": "mentions",
+            "expect": {
+              "all": ["citi"],
+              "tool_results_all": ["Scope: company \"", "Companies: "]
+            }
+          }
+        ]
       },
-      "why": "Plan §9: the answer must say the search matched company names containing \"Citi\" and the trend read one directory company. Text checks on the final answer: a 'contains'/'substring' wording for the search, and a 'directory'/'largest company'/'one company' wording for the trend. The tool results must show both happened: search_jobs' scope line 'company name contains' (a substring search, not a directory company) and read_trends' 'Companies: ' line (a directory company read)."
+      "why": "Plan §9: the search and the trend must not read two different Citis unsaid. Two paths are right (ADR-0334). Path 1, the substring search: search_jobs' scope line 'company name contains' and read_trends' 'Companies: ' line (one directory company), and the answer says the one is a substring match ('contains'/'substring') and the other one company ('directory'/'largest company'/'one company'). Path 2, find_company then its key: search_jobs' scope line names one directory company ('Scope: company \"'), the same kind of read the trend makes, so there is no difference to explain."
     },
     {
       "id": "t08",
@@ -124,17 +138,36 @@
     {
       "id": "t10",
       "prompt": "What are the highest-paying staff engineer roles anywhere, in USD?",
-      "verifier": "search_args",
+      "verifier": "any_of",
       "expect": {
-        "tool": "search_jobs",
-        "must": {
-          "query": {"op": "in", "value": [null, ""]},
-          "keyword": {"op": "contains", "value": "staff"},
-          "sort": "salary",
-          "salary_currency": {"op": "in", "value": [null, "USD"]}
-        }
+        "checks": [
+          {
+            "verifier": "search_args",
+            "expect": {
+              "tool": "search_jobs",
+              "must": {
+                "query": {"op": "in", "value": [null, ""]},
+                "keyword": {"op": "contains", "value": "staff"},
+                "sort": "salary",
+                "salary_currency": {"op": "in", "value": [null, "USD"]}
+              }
+            }
+          },
+          {
+            "verifier": "search_args",
+            "expect": {
+              "tool": "search_jobs",
+              "must": {
+                "query": {"op": "contains", "value": "staff"},
+                "sort": "salary",
+                "salary_currency": {"op": "in", "value": [null, "USD"]}
+              },
+              "answer_any": ["closest", "most similar", "nearest", "2,000", "2000"]
+            }
+          }
+        ]
       },
-      "why": "Plan §9's check is against a global /search browse. A search_jobs call with no query, a staff keyword and a salary sort is that browse by construction, so its arguments are what is checked. Stricter than §9: the plan's other branch (a query plus a salary sort, with the answer saying the order is among the 2,000 closest matches) fails here, because it does not answer 'anywhere'."
+      "why": "Plan §9's two branches, each judged by what it obliges the answer to say (ADR-0334). Path 1, the global browse: a search_jobs call with no query, a staff keyword and a salary sort, which answers 'anywhere' by construction. Path 2, a staff query with a salary sort: the tool orders only the 2,000 closest matches and says so, so the answer must pass that on ('closest', '2,000')."
     },
     {
       "id": "t11",
@@ -157,8 +190,8 @@
       "id": "t12",
       "prompt": "Find Haskell jobs in Indore paying ₹1 crore.",
       "verifier": "blocking_named",
-      "expect": {"argument": null},
-      "why": "Plan §9: must name the Blocking filter, not say nothing exists. Which filter blocks is data-dependent (/facets drops each filter in turn and names the one recovering the most rows), so argument null accepts whichever one the search_jobs result named; the final answer must mention it by name or as that filter ('salary filter', 'minimum salary', not a bare 'salary', which a ₹1 crore answer says anyway). Pin the argument once a live run shows which it is. If no single filter blocks, no result names one and the task fails; revise it then."
+      "expect": {"argument": null, "value_names_it": true},
+      "why": "Plan §9: must name the Blocking filter, not say nothing exists. Which filter blocks is data-dependent (/facets drops each filter in turn and names the one recovering the most rows), so argument null accepts whichever one the search_jobs result named; the final answer must mention it by name or as that filter ('salary filter', 'minimum salary', not a bare 'salary', which a ₹1 crore answer says anyway), or by the value the call sent for it (value_names_it, ADR-0334). The live runs of 2026-09-29 named india_place, and every answer said there are no Haskell jobs in Indore at any pay, which names the place: the verifier had failed them for not writing 'india_place'. The cost: an answer that names Indore only in restating the question also passes. If no single filter blocks, no result names one and the task fails; revise it then."
     },
     {
       "id": "t13",
@@ -317,10 +350,15 @@
       "prompt": "What do cybersecurity job postings typically require? Say how many postings your answer is based on.",
       "verifier": "mentions",
       "expect": {
-        "all": [["300", "three hundred"]],
-        "tool_results_all": ["counted over 300 postings"]
+        "tool_results_all": ["distinct postings"],
+        "answer_carries": [
+          [
+            "counted over ([\\d,]+) distinct postings",
+            "share of the ([\\d,]+) sampled postings"
+          ]
+        ]
       },
-      "why": "ADR-0324: the answer must state its sample honestly. role_requirements counts over 300 postings and says so in its first line; the final answer must carry that number."
+      "why": "ADR-0324: the answer must state its sample honestly. role_requirements says in its first line how many distinct postings it counted over, one per requisition since ADR-0332 (271 of 300 read on 2026-09-29), and how many of them had a description; the final answer must carry one of those numbers as the tool gave it today (ADR-0334), not a number frozen into this task."
     },
     {
       "id": "t27",
@@ -342,10 +380,10 @@
       "prompt": "Did tech hiring rise or fall between 1 and 7 September 2026?",
       "verifier": "mentions",
       "expect": {
-        "any": ["cannot say", "can't say", "cannot tell", "can't tell", "not able to say", "unable to say", "no hiring figure", "doesn't measure", "does not measure", "only since", "only from"],
+        "any": ["cannot say", "can't say", "cannot tell", "can't tell", "not able to say", "unable to say", "cannot answer", "can't answer", "not able to answer", "unable to answer", "cannot determine", "can't determine", "can't be determined", "cannot be determined", "no hiring figure", "doesn't measure", "does not measure", "didn't measure", "did not measure", "not measured", "only since", "only from"],
         "tool_results_all": ["cannot say whether hiring rose or fell"]
       },
-      "why": "ADR-0321, critique round 2 P1-2: HeadStart counts postings opened and closed only from 2026-09-25 18:16, so a window before it has no hiring figure, only openings listed, which mix hiring with re-counting. The trend answer must lead with that, and the final answer must pass it on rather than call the change in openings a rise."
+      "why": "ADR-0321, critique round 2 P1-2: HeadStart counts postings opened and closed only from 2026-09-25 18:16, so a window before it has no hiring figure, only openings listed, which mix hiring with re-counting. The trend answer must lead with that, and the final answer must pass it on rather than call the change in openings a rise. Round 3's r2 wrote 'HeadStart can't answer this', which says it; the word list now takes 'answer' and 'determine' beside 'say' and 'tell' (ADR-0334)."
     },
     {
       "id": "t29",
@@ -402,10 +440,11 @@
       "prompt": "Which company is behind the job board oracle:hcbt.fa.em2.oraclecloud.com, and what tech roles does it have open?",
       "verifier": "mentions",
       "expect": {
-        "all": ["Kotak"],
-        "tool_results_all": ["(directory name)"]
+        "answer_carries": [
+          "\"([^\"\\n]+)\"(?: \\(directory name\\))? (?:\\(|· key )oracle:hcbt\\.fa\\.em2\\.oraclecloud\\.com"
+        ]
       },
-      "why": "Round-2 critique js08b (ADR-0323): that Oracle pod serves its jobs with no company name, so search_jobs shows the Company directory's name for it, marked '(directory name)'. The answer must name Kotak, not the pod's host."
+      "why": "Round-2 critique js08b (ADR-0323): that Oracle pod names no company on its own. The answer must name the company the tools name for the Board, as search_jobs' scope line, find_company or company_profile gives it (answer_carries, ADR-0334): the directory's name, once marked '(directory name)', which the Board now serves as its own ('Kotak', 2026-09-29), so the task no longer fixes which. Not the pod's host."
     },
     {
       "id": "t34",

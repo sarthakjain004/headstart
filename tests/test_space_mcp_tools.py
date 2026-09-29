@@ -92,6 +92,8 @@ def test_a_tool_is_read_only_and_its_listing_says_so(tool):
     listed = tool.listing()
     assert listed["annotations"]["readOnlyHint"] is True
     assert listed["annotations"]["destructiveHint"] is False
+    # ADR-0334: it quotes postings thousands of employers wrote, as a web search quotes pages.
+    assert listed["annotations"]["openWorldHint"] is True
     for word in ("account", "email", "token", "url", "path"):
         assert word not in tool.input_schema["properties"], word
 

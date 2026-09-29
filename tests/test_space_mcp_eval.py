@@ -1136,3 +1136,224 @@ def test_dry_run_of_a_heldout_file_keeps_its_prompts_sealed(
     out = capsys.readouterr().out
     assert "h1 [mentions]" in out and "<sealed prompt>" in out
     assert "a sealed question" not in out
+
+
+# --- a connected server that lists no tools (round-3 critique P1-4, ADR-0334) ---------------
+
+
+def test_a_connected_server_that_listed_no_tools_is_not_judged(ev):
+    """Round 3's t24 r2: the Space refused `tools/list` for its rate limit, the init event said
+    `connected` with `tools: []`, and the model made figures up. That says nothing about the
+    model or the tools."""
+    empty = ev.parse(_init_line("connected"))
+    listed = ev.parse(_transcript_lines())
+
+    assert empty.server_status == "connected" and empty.tools == []
+    assert "listed none of its tools" in ev.why_not_connected(empty)
+    assert listed.tools == ["mcp__headstart-space__search_jobs"]
+    assert ev.why_not_connected(listed) is None
+
+
+def test_a_run_with_no_tools_is_scored_error_not_fail(ev, monkeypatch, tmp_path):
+    lines = _init_line("connected") + [
+        json.dumps(
+            {"type": "result", "subtype": "success", "result": "~1,900 postings"}
+        )
+    ]
+
+    class _Proc:
+        def __init__(self, *args, **kwargs):
+            self.stdout = iter(line + "\n" for line in lines)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def wait(self):
+            return 0
+
+        def kill(self):
+            pass
+
+    monkeypatch.setattr(ev.subprocess, "Popen", _Proc)
+    monkeypatch.setattr(
+        ev, "_ROOT", tmp_path
+    )  # the record names its transcript from here
+    task = {
+        "id": "t24",
+        "prompt": "p",
+        "verifier": "mentions",
+        "expect": {"all": ["x"]},
+    }
+    record = ev.run_task(task, {}, tmp_path / "run", lambda: FakeSpace({}))
+
+    assert record["verdict"] == "error" and "listed none" in record["detail"]
+
+
+# --- the new verifier shapes (ADR-0334) -------------------------------------------------------
+
+
+def test_any_of_passes_on_the_first_path_that_passes_and_names_every_miss(ev):
+    expect = {
+        "checks": [
+            {"verifier": "mentions", "expect": {"all": ["directory"]}},
+            {"verifier": "mentions", "expect": {"all": ["citi"]}},
+        ]
+    }
+    passed = ev.verify_any_of(expect, _transcript(ev, answer="Citi has 37."), None)
+    failed = ev.verify_any_of(expect, _transcript(ev, answer="Nothing."), None)
+
+    assert passed.passed and passed.detail.startswith("path 2 (mentions)")
+    assert not failed.passed
+    assert "path 1 (mentions): answer lacks 'directory'" in failed.detail
+    assert "path 2 (mentions): answer lacks 'citi'" in failed.detail
+
+
+def test_answer_carries_needs_the_figure_the_tool_gave_whole(ev):
+    expect = {"answer_carries": [["counted over ([\\d,]+) distinct postings"]]}
+    result = ("role_requirements", {}, "…counted over 1,271 distinct postings…", False)
+
+    def verdict(answer):
+        return ev.verify_mentions(expect, _transcript(ev, [result], answer), None)
+
+    assert verdict("Based on 1,271 postings.").passed
+    assert verdict("Based on 1271 postings.").passed
+    assert not verdict(
+        "Based on 271 postings."
+    ).passed  # a part of the figure is not it
+    assert not verdict("Based on 300 postings.").passed
+    none = ev.verify_mentions(expect, _transcript(ev, answer="1,271"), None)
+    assert not none.passed and "tool results match none" in none.detail
+
+
+def test_answer_carries_reads_a_name_case_blind(ev):
+    expect = {"answer_carries": ['"([^"]+)" · key oracle:x']}
+    result = ("find_company", {}, ' 1. "Kotak" · key oracle:x · 256', False)
+
+    assert ev.verify_mentions(expect, _transcript(ev, [result], "KOTAK"), None).passed
+
+
+def test_blocking_named_by_the_value_sent_only_when_the_task_allows_it(ev):
+    result = (
+        "search_jobs",
+        {"india_place": "indore", "salary_min": 10000000},
+        "0 jobs. The filter costing the most is `india_place`; try without it.",
+        False,
+    )
+    transcript = _transcript(ev, [result], "No Haskell jobs in Indore at any pay.")
+
+    assert not ev.verify_blocking_named({"argument": None}, transcript, None).passed
+    by_value = ev.verify_blocking_named(
+        {"argument": None, "value_names_it": True}, transcript, None
+    )
+    assert by_value.passed and "'indore'" in by_value.detail
+
+
+def test_tool_args_answer_any_asks_the_answer_to_say_what_the_path_obliges(ev):
+    expect = {
+        "tool": "search_jobs",
+        "must": {"sort": "salary"},
+        "answer_any": ["closest", "2,000"],
+    }
+    call = ("search_jobs", {"query": "staff", "sort": "salary"}, "5 jobs", False)
+
+    said = _transcript(ev, [call], "Among the 2,000 closest matches: …")
+    unsaid = _transcript(ev, [call], "The top-paying staff roles: …")
+    assert ev.verify_tool_args(expect, said, None).passed
+    verdict = ev.verify_tool_args(expect, unsaid, None)
+    assert not verdict.passed and "says none of" in verdict.detail
+
+
+def test_only_takes_several_task_ids(ev, monkeypatch, capsys):
+    monkeypatch.setattr(ev.subprocess, "Popen", _no_process)
+
+    assert ev.main(["--only", "t07,t12", "--dry-run"]) == 0
+    out = capsys.readouterr().out
+    assert "t07 [any_of]" in out and "t12 [blocking_named]" in out
+    assert "2 tasks; nothing was run." in out
+    with pytest.raises(SystemExit, match="no task t99"):
+        ev.main(["--only", "t07,t99", "--dry-run"])
+
+
+# --- the verifier self-test: recorded tool results (ADR-0334) ---------------------------------
+
+_RECORDED = (
+    Path(__file__).resolve().parent / "fixtures" / "space_mcp_eval_recorded_calls.json"
+)
+_RECORDED_RUNS = [
+    (task_id, n, run)
+    for task_id, runs in json.loads(_RECORDED.read_text(encoding="utf-8"))[
+        "runs"
+    ].items()
+    for n, run in enumerate(runs, 1)
+]
+
+
+def _replay_fetch(replies):
+    """The Space as it answered when the fixture was recorded, stamped with this checkout's
+    agent contract; a URL it did not read is a failure naming the re-record script."""
+    from headstart.space_mcp.space_client import AGENT_API, Reply
+
+    def fetch(url, headers, timeout_s):
+        if url not in replies:
+            raise AssertionError(
+                f"no recorded reply for {url}: a tool reads differently now; run "
+                "scripts/eval/record_space_mcp_eval_calls.py"
+            )
+        reply = replies[url]
+        return Reply(
+            reply["status"],
+            {**reply["headers"], "x-headstart": f"app; agent-api={AGENT_API}"},
+            reply["body"].encode("utf-8"),
+        )
+
+    return fetch
+
+
+@pytest.mark.parametrize(
+    "task_id, n, run",
+    _RECORDED_RUNS,
+    ids=[f"{task_id}-run{n}" for task_id, n, _ in _RECORDED_RUNS],
+)
+def test_a_right_run_passes_its_tasks_verifier_on_recorded_tool_results(
+    ev, task_id, n, run
+):
+    """Round-3 critique P1-6: four verifiers went stale when the tools' output changed, and
+    only the next hosted eval showed it. Each run here is a right answer's calls, answered by
+    today's tools from the Space's recorded replies, and its verifier must pass it: a tool
+    whose output change breaks a verifier fails the PR that makes it."""
+    from datetime import datetime
+
+    fixture = json.loads(_RECORDED.read_text(encoding="utf-8"))
+    tasks = {t["id"]: t for t in json.loads(ev.ITERATION_TASKS.read_text())["tasks"]}
+    fetch = _replay_fetch(fixture["replies"])
+    with ev.tools_clock_at(datetime.fromisoformat(fixture["recorded_at"])):
+        transcript = ev.replayed(run, fetch)
+        outcome, detail = ev.judge(
+            tasks[task_id], transcript, ev.SpaceClient(base=ev.SPACE_URL, fetch=fetch)
+        )
+
+    assert ev.why_not_connected(transcript) is None
+    assert not any(call.is_error for call in transcript.calls), transcript.calls
+    assert outcome == "pass", detail
+
+
+def test_the_recording_covers_every_task_whose_verifier_reads_tool_results(ev):
+    """A task that judges the tools' words is in the self-test, so its words cannot drift from
+    the verifier unseen."""
+
+    def reads_results(task):
+        checks = (task.get("expect") or {}).get("checks") or [task]
+        return any(
+            c["verifier"] in ("blocking_named", "title_keyword_rows")
+            or {"tool_results_all", "answer_carries", "answer_any"}
+            & set(c.get("expect") or {})
+            for c in checks
+        )
+
+    tasks = json.loads(ev.ITERATION_TASKS.read_text())["tasks"]
+    recorded = {task_id for task_id, _, _ in _RECORDED_RUNS}
+    wanted = {t["id"] for t in tasks if reads_results(t)}
+    assert wanted <= recorded, wanted - recorded

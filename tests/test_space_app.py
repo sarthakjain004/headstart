@@ -188,6 +188,8 @@ def _no_spent_rate_limit(monkeypatch):
             ("_SAVED_LIMIT", module._SAVED_LIMIT_REQUESTS),
             ("_MCP_LIMIT", module._MCP_LIMIT_REQUESTS),
             ("_ANTHROPIC_LIMIT", module._ANTHROPIC_LIMIT_REQUESTS),
+            ("_MCP_HANDSHAKE_LIMIT", module._MCP_HANDSHAKE_REQUESTS),
+            ("_ANTHROPIC_HANDSHAKE_LIMIT", module._ANTHROPIC_HANDSHAKE_REQUESTS),
         ):
             monkeypatch.setattr(
                 module,
@@ -687,9 +689,17 @@ def test_the_caller_is_the_address_hugging_faces_edge_appended(auth_app):
 # ---- the MCP endpoint's limits (ADR-0267) ----
 
 _MCP_LIST = {"jsonrpc": "2.0", "id": 1, "method": "tools/list"}
+# A tool call answered without reading the Space (the tool is unknown), which the limits count
+# as a call: `tools/list` and the other handshake messages are counted apart (ADR-0334).
+_MCP_CALL = {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "tools/call",
+    "params": {"name": "no_such_tool", "arguments": {}},
+}
 
 
-def _post_mcp(client, message=_MCP_LIST, **kwargs):
+def _post_mcp(client, message=_MCP_CALL, **kwargs):
     return client.post("/mcp", json=message, **kwargs)
 
 
@@ -697,8 +707,11 @@ def test_the_mcp_limits_are_pinned(auth_app):
     # Pinned: each number is a decision ADR-0267 or ADR-0276 reasons out, not a tuning knob.
     assert (auth_app._MCP_LIMIT_REQUESTS, auth_app._LIMIT_WINDOW_S) == (30, 60)
     assert auth_app._ANTHROPIC_LIMIT_REQUESTS == 300
+    # ADR-0334: connecting is counted apart, on a budget four times the calls'.
+    assert auth_app._MCP_HANDSHAKE_REQUESTS == 120
+    assert auth_app._ANTHROPIC_HANDSHAKE_REQUESTS == 1200
     assert (auth_app._MCP_AT_ONCE, auth_app._MCP_PLACE_WAIT_S) == (4, 10)
-    assert auth_app._MCP_AT_ONCE_EACH == 2
+    assert (auth_app._MCP_AT_ONCE_EACH, auth_app._ANTHROPIC_AT_ONCE) == (2, 3)
     # ADR-0325: one description-keyword search at a time, on a place of its own.
     assert (auth_app._MCP_SCANS_AT_ONCE, auth_app._MCP_SCAN_RETRY_S) == (1, 20)
     assert auth_app._MCP_FINISHING_RETRY_S == 60
@@ -706,7 +719,7 @@ def test_the_mcp_limits_are_pinned(auth_app):
 
 def test_mcp_answers_anyone_with_the_wall_on_and_only_by_post(auth_app):
     client = auth_app.app.test_client()
-    r = _post_mcp(client)
+    r = _post_mcp(client, _MCP_LIST)
     assert r.status_code == 200 and r.json["result"]["tools"]
     assert r.headers["X-HeadStart"] == _OWN_REPLY
     assert client.get("/mcp").status_code == 405
@@ -741,6 +754,62 @@ def test_one_address_past_the_mcp_limit_is_told_when_to_retry(auth_app):
     assert _post_mcp(client, headers=other).status_code == 200
 
 
+_MCP_HANDSHAKE = [
+    {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "initialize",
+        "params": {"protocolVersion": "2025-06-18", "capabilities": {}},
+    },
+    {"jsonrpc": "2.0", "method": "notifications/initialized"},
+    _MCP_LIST,
+    {"jsonrpc": "2.0", "id": 1, "method": "ping"},
+]
+
+
+@pytest.mark.parametrize(
+    "address", ["198.51.100.5", "160.79.104.20"], ids=["address", "anthropic"]
+)
+def test_a_caller_past_its_call_budget_still_gets_its_tool_list(auth_app, address):
+    """Round-3 critique P1-4: a `tools/list` refused for the calls' budget left a client with no
+    tools, and its model made HeadStart figures up. Connecting is counted apart (ADR-0334)."""
+    client = auth_app.app.test_client()
+    caller = {"X-Forwarded-For": address}
+    calls = (
+        auth_app._ANTHROPIC_LIMIT_REQUESTS
+        if address.startswith("160.79.")
+        else auth_app._MCP_LIMIT_REQUESTS
+    )
+    for _ in range(calls):
+        assert _post_mcp(client, headers=caller).status_code == 200
+    assert _post_mcp(client, headers=caller).status_code == 429  # the calls are spent
+
+    for message in _MCP_HANDSHAKE:
+        r = _post_mcp(client, message, headers=caller)
+        assert r.status_code in (200, 202), (message, r.status_code)
+    r = _post_mcp(client, _MCP_LIST, headers=caller)
+    assert [t["name"] for t in r.json["result"]["tools"]] == [
+        t["name"] for t in auth_app._MCP_SERVER.tools
+    ]
+
+
+def test_connecting_has_a_limit_of_its_own_and_takes_no_place(auth_app, monkeypatch):
+    places = concurrency_limit.ConcurrencyLimit(1, 1)
+    monkeypatch.setattr(auth_app, "_MCP_PLACES", places)
+    monkeypatch.setattr(auth_app, "_MCP_PLACE_WAIT_S", 0.01)
+    places.take("198.51.100.9", 0)  # every place held by a slow call
+    client = auth_app.app.test_client()
+    caller = {"X-Forwarded-For": "198.51.100.6"}
+    assert _post_mcp(client, headers=caller).status_code == 503
+    for n in range(auth_app._MCP_HANDSHAKE_REQUESTS - 1):
+        assert _post_mcp(client, _MCP_LIST, headers=caller).status_code == 200, n
+    r = _post_mcp(client, _MCP_LIST, headers=caller)
+    assert r.status_code == 200  # the 120th
+    r = _post_mcp(client, _MCP_LIST, headers=caller)
+    _mcp_refusal_says(r, 429, "Too many connection requests: at most 120")
+    places.give_back("198.51.100.9")
+
+
 def test_anthropics_range_shares_one_larger_mcp_budget(auth_app):
     """Every claude.ai user arrives from Anthropic's one range, so its addresses are one caller
     with a budget of its own, and it leaves every other address's untouched."""
@@ -769,30 +838,38 @@ def test_a_busy_mcp_endpoint_says_so_rather_than_queueing_forever(
 
 
 @pytest.mark.parametrize(
-    "address, caller, who",
+    "address, caller, who, share",
     [
-        ("198.51.100.3", "198.51.100.3", "from one address"),
-        # Every claude.ai user shares Anthropic's range, so the range holds one caller's share.
-        ("160.79.104.9", "anthropic", "from Anthropic's range"),
+        ("198.51.100.3", "198.51.100.3", "from one address", 2),
+        # Every claude.ai user shares Anthropic's range, so the range holds 3 of the 4 places
+        # (ADR-0334), and one is always left for a caller outside it.
+        ("160.79.104.9", "anthropic", "from Anthropic's range", 3),
     ],
 )
 def test_one_caller_cannot_hold_every_mcp_place(
-    auth_app, monkeypatch, address, caller, who
+    auth_app, monkeypatch, address, caller, who, share
 ):
     places = concurrency_limit.ConcurrencyLimit(
-        auth_app._MCP_AT_ONCE, auth_app._MCP_AT_ONCE_EACH
+        auth_app._MCP_AT_ONCE,
+        auth_app._MCP_AT_ONCE_EACH,
+        {"anthropic": auth_app._ANTHROPIC_AT_ONCE},
     )
     monkeypatch.setattr(auth_app, "_MCP_PLACES", places)
     monkeypatch.setattr(auth_app, "_MCP_PLACE_WAIT_S", 0.01)
-    for _ in range(auth_app._MCP_AT_ONCE_EACH):  # two slow calls still being answered
+    for _ in range(share):  # slow calls still being answered
         assert places.take(caller, 0) is None
     client = auth_app.app.test_client()
     r = _post_mcp(client, headers={"X-Forwarded-For": address})
-    _mcp_refusal_says(r, 429, f"at most 2 at a time {who}")
+    _mcp_refusal_says(r, 429, f"at most {share} at a time {who}")
     other = {"X-Forwarded-For": "198.51.100.4"}
     assert _post_mcp(client, headers=other).status_code == 200
     places.give_back(caller)
     assert _post_mcp(client, headers={"X-Forwarded-For": address}).status_code == 200
+
+
+def test_the_apps_places_give_anthropics_range_its_share(auth_app):
+    assert auth_app._MCP_PLACES.share("anthropic") == auth_app._ANTHROPIC_AT_ONCE
+    assert auth_app._MCP_PLACES.share("198.51.100.3") == auth_app._MCP_AT_ONCE_EACH
 
 
 def _search_call(**arguments):
@@ -932,7 +1009,7 @@ def test_a_caller_cannot_claim_the_in_process_mark_with_a_header(auth_app, monke
 
 # ---- the app's own mark on every reply (ADR-0253) ----
 
-_OWN_REPLY = "app; agent-api=12"
+_OWN_REPLY = "app; agent-api=13"
 
 
 def test_a_routes_own_answer_is_marked(auth_app):

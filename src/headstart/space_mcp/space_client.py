@@ -61,8 +61,9 @@ SPACE_URL = "https://imposeidon-headstart-search.hf.space"
 #: `required_years_at_least` and `exclude_company` (ADR-0322); since 10, each country's cities
 #: on `/companies/locations` (ADR-0331); since 11, `/requirements`' one Job per requisition
 #: under `jobs` keys (ADR-0332); since 12, `/trends`' one opened and closed per category in either
-#: view (ADR-0336). The app states the one it serves on every reply.
-AGENT_API = 12
+#: view (ADR-0336); since 13, `strict=1` refusing a parameter name the Space does not read
+#: (ADR-0334). The app states the one it serves on every reply.
+AGENT_API = 13
 
 #: The measured boot, said when a call gives up waiting for one.
 BOOT_MEASURED = "a boot measured 4 min 13 s on 2026-09-28"

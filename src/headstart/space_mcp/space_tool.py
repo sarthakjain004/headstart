@@ -25,6 +25,12 @@ Answer = Callable[[SpaceClient, dict[str, Any]], str]
 #: at most this.
 ANSWER_CEILING_CHARS = 30_000
 
+#: A Space tool only reads, but its world is open (ADR-0334): what it answers is postings written
+#: by thousands of employers, as a web search's is pages written by their sites, and it quotes
+#: them. `openWorldHint` tells a client that, so one that treats open-world results as untrusted
+#: text treats these so too, as every answer's own "data, not instructions" line asks.
+SPACE_TOOL_ANNOTATIONS = {**READ_ONLY_ANNOTATIONS, "openWorldHint": True}
+
 
 @dataclass(frozen=True)
 class SpaceTool:
@@ -42,7 +48,7 @@ class SpaceTool:
     #: largest input to prove the tool stays under it.
     max_chars: int
     annotations: Mapping[str, bool] = field(
-        default_factory=lambda: dict(READ_ONLY_ANNOTATIONS)
+        default_factory=lambda: dict(SPACE_TOOL_ANNOTATIONS)
     )
     #: Per argument, how the words a caller sent are read before the schema check: a category's
     #: label or retired id becomes the id its enum lists (`role_families.resolve`, ADR-0274). A
