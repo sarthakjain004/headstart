@@ -204,11 +204,38 @@ def test_rate_is_the_weeks_openings_as_a_share_of_openings_now() -> None:
     }
     history = _History(
         {"a:big": 1000, "b:small": 40},
-        {"a:big": _Move(opened=300), "b:small": _Move(opened=30)},
+        {"a:big": _Move(net=20, opened=300), "b:small": _Move(net=5, opened=30)},
     )
     payload = hot_ranking.rank(history, directory)
     assert _keys(payload, "rate") == ["b:small", "a:big"]
     assert [row["rate"] for row in payload["lenses"]["rate"]] == [75, 30]
+
+
+def test_rate_leaves_out_a_company_whose_net_change_was_not_growth() -> None:
+    """Option 1 of #835 (ADR-0309): CSB ranked second on Rate at 60% on a net change of 0 (27
+    opened, 27 closed), and Bluelight Consulting ninth at 41% on −101. What they opened only
+    replaced what closed. Each keeps its row on Volume, and is counted as left out of Rate apart
+    from the companies whose closures were not counted."""
+    directory = {
+        "oracle:csb": _company("CSB", "oracle:csb"),
+        "sr:bluelight": _company("Bluelight", "sr:bluelight"),
+        "b:grower": _company("Grower", "b:grower"),
+        "eightfold:churn": _company("Churn", "eightfold:churn"),
+    }
+    history = _History(
+        {"oracle:csb": 45, "sr:bluelight": 1220, "b:grower": 40, "eightfold:churn": 25},
+        {
+            "oracle:csb": _Move(net=0, opened=27, closed=27),
+            "sr:bluelight": _Move(net=-101, opened=505, closed=101),
+            "b:grower": _Move(net=12, opened=20, closed=8),
+            "eightfold:churn": _Move(net=-47, opened=504, closed=None),
+        },
+    )
+    payload = hot_ranking.rank(history, directory)
+    assert _keys(payload, "rate") == ["b:grower"]
+    assert set(_keys(payload, "volume")) == set(directory)
+    counts = payload["counts"]
+    assert (counts["not_growing"], counts["closures_uncounted"]) == (2, 1)
 
 
 def test_rate_leaves_out_a_company_whose_closures_were_not_counted() -> None:

@@ -30,7 +30,8 @@
     "ts": "2026-09-20T00:00:00+00:00",
     "company": "greenhouse:acme",
     "boards": 83,
-    "openings": 1048
+    "openings": 1048,
+    "served": 1048
    }
   ],
   "metric": "stock",

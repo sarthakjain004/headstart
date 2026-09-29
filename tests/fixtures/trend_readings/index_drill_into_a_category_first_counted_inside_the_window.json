@@ -1,0 +1,310 @@
+{
+ "description": "Hardware & Silicon by level over a window that starts before the category existed: the first row itself is first counted at Sep 25, and so is every level, so no level was first counted after its view began and none carries `first_counted`. The page's own rule, keyed on the window's first run, read every level \"new since Sep 25\" (#854 review).",
+ "answer_input": {
+  "stamps": [
+   "2026-09-20T00:00:00+00:00",
+   "2026-09-22T00:00:00+00:00",
+   "2026-09-25T17:07:46+00:00",
+   "2026-09-27T00:00:00+00:00",
+   "2026-09-29T00:00:00+00:00"
+  ],
+  "totals": [
+   10000,
+   10000,
+   10000,
+   10000,
+   10000
+  ],
+  "series": [
+   {
+    "name": "mid",
+    "label": "mid",
+    "points": [
+     null,
+     null,
+     50,
+     51,
+     53
+    ],
+    "latest": 53
+   },
+   {
+    "name": "senior",
+    "label": "senior",
+    "points": [
+     null,
+     null,
+     30,
+     31,
+     32
+    ],
+    "latest": 32
+   }
+  ],
+  "epochs": [
+   {
+    "ts": "2026-09-25T17:07:46+00:00",
+    "changed": [
+     "we changed our list of job categories, so some jobs moved to a different category"
+    ],
+    "fields": [
+     "family_map_fingerprint"
+    ]
+   }
+  ],
+  "metric": "stock",
+  "coverage": "all",
+  "new_window_days": 7,
+  "family": "hardware-engineering",
+  "split_by": "band",
+  "companies": [],
+  "discovered": [],
+  "evicted": [],
+  "pick_series": {},
+  "pick_parts": {},
+  "pick_turnover": {},
+  "counted_since": {},
+  "non_tech": [
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "watch_parents": [],
+  "uncounted": [],
+  "company_totals": {}
+ },
+ "reading": {
+  "window": {
+   "from": "2026-09-20T00:00:00+00:00",
+   "to": "2026-09-29T00:00:00+00:00"
+  },
+  "picked": false,
+  "total": {
+   "name": "__total__",
+   "label": "",
+   "whole_company": false,
+   "estimated": false,
+   "move": {
+    "start": 80,
+    "latest": 85,
+    "hiring": 3,
+    "not_hiring": [
+     {
+      "change": "counting@2026-09-25T17:07:46+00:00",
+      "kind": "counting",
+      "label": "we changed our list of job categories, so some jobs moved to a different category",
+      "size": 2
+     }
+    ],
+    "not_hiring_total": 2,
+    "percent": 3.6585365853658534,
+    "percent_withheld": null,
+    "span_days": 3.2863,
+    "per_week": 6,
+    "turnover": null,
+    "share": {
+     "start": 0.8200000000000001,
+     "latest": 0.8500000000000001,
+     "denominator_start": 10000,
+     "denominator_latest": 10000,
+     "percent": 3.658536585365857
+    }
+   },
+   "netted": [
+    null,
+    null,
+    82,
+    82,
+    85
+   ],
+   "steps_at": [
+    3
+   ],
+   "index_base": 82,
+   "arrived_by": null,
+   "points": [
+    null,
+    null,
+    80,
+    82,
+    85
+   ]
+  },
+  "lines": [
+   {
+    "name": "mid",
+    "label": "mid",
+    "whole_company": false,
+    "estimated": false,
+    "move": {
+     "start": 50,
+     "latest": 53,
+     "hiring": 2,
+     "not_hiring": [
+      {
+       "change": "counting@2026-09-25T17:07:46+00:00",
+       "kind": "counting",
+       "label": "we changed our list of job categories, so some jobs moved to a different category",
+       "size": 1
+      }
+     ],
+     "not_hiring_total": 1,
+     "percent": 3.9215686274509802,
+     "percent_withheld": null,
+     "span_days": 3.2863,
+     "per_week": 4,
+     "turnover": null,
+     "share": {
+      "start": 0.51,
+      "latest": 0.53,
+      "denominator_start": 10000,
+      "denominator_latest": 10000,
+      "percent": 3.921568627450984
+     }
+    },
+    "netted": [
+     null,
+     null,
+     51,
+     51,
+     53
+    ],
+    "steps_at": [
+     3
+    ],
+    "index_base": 51,
+    "arrived_by": null
+   },
+   {
+    "name": "senior",
+    "label": "senior",
+    "whole_company": false,
+    "estimated": false,
+    "move": {
+     "start": 30,
+     "latest": 32,
+     "hiring": 1,
+     "not_hiring": [
+      {
+       "change": "counting@2026-09-25T17:07:46+00:00",
+       "kind": "counting",
+       "label": "we changed our list of job categories, so some jobs moved to a different category",
+       "size": 1
+      }
+     ],
+     "not_hiring_total": 1,
+     "percent": 3.225806451612903,
+     "percent_withheld": null,
+     "span_days": 3.2863,
+     "per_week": 2,
+     "turnover": null,
+     "share": {
+      "start": 0.31,
+      "latest": 0.32,
+      "denominator_start": 10000,
+      "denominator_latest": 10000,
+      "percent": 3.2258064516129057
+     }
+    },
+    "netted": [
+     null,
+     null,
+     31,
+     31,
+     32
+    ],
+    "steps_at": [
+     3
+    ],
+    "index_base": 31,
+    "arrived_by": null
+   }
+  ],
+  "other": null,
+  "charted": 2,
+  "company_lines": [
+   {
+    "name": "__total__",
+    "label": "All of hardware-engineering",
+    "whole_company": false,
+    "estimated": false,
+    "move": {
+     "start": 80,
+     "latest": 85,
+     "hiring": 3,
+     "not_hiring": [
+      {
+       "change": "counting@2026-09-25T17:07:46+00:00",
+       "kind": "counting",
+       "label": "we changed our list of job categories, so some jobs moved to a different category",
+       "size": 2
+      }
+     ],
+     "not_hiring_total": 2,
+     "percent": 3.6585365853658534,
+     "percent_withheld": null,
+     "span_days": 3.2863,
+     "per_week": 6,
+     "turnover": null,
+     "share": {
+      "start": 0.8200000000000001,
+      "latest": 0.8500000000000001,
+      "denominator_start": 10000,
+      "denominator_latest": 10000,
+      "percent": 3.658536585365857
+     }
+    },
+    "netted": [],
+    "steps_at": [],
+    "index_base": null,
+    "arrived_by": null
+   }
+  ],
+  "breakdown": {
+   "closing": null
+  },
+  "marked_changes": [
+   {
+    "id": "counting@2026-09-25T17:07:46+00:00",
+    "kind": "counting",
+    "ts": "2026-09-25T17:07:46+00:00",
+    "label": "we changed our list of job categories, so some jobs moved to a different category",
+    "fields": [
+     "family_map_fingerprint"
+    ],
+    "changed": [
+     "we changed our list of job categories, so some jobs moved to a different category"
+    ],
+    "company": null,
+    "boards": null,
+    "sizes": {
+     "__total__": 2
+    },
+    "drawn": true
+   }
+  ],
+  "day_markers": [
+   {
+    "day": "2026-09-25",
+    "at": "2026-09-25T17:07:46+00:00",
+    "changes": [
+     "counting@2026-09-25T17:07:46+00:00"
+    ]
+   }
+  ],
+  "reference": [
+   10000,
+   10000,
+   10000,
+   10000,
+   10000
+  ],
+  "openings": 85,
+  "served_jobs": null,
+  "non_tech_jobs": null,
+  "reconciles": true,
+  "violations": []
+ }
+}

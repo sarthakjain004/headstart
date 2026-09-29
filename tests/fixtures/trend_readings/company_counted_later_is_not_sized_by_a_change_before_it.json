@@ -185,7 +185,8 @@
     ],
     "steps_at": [],
     "index_base": null,
-    "arrived_by": null
+    "arrived_by": null,
+    "first_counted": "2026-09-16T00:00:00+00:00"
    }
   ],
   "other": null,
@@ -254,7 +255,8 @@
     "netted": [],
     "steps_at": [],
     "index_base": null,
-    "arrived_by": null
+    "arrived_by": null,
+    "first_counted": "2026-09-16T00:00:00+00:00"
    }
   ],
   "breakdown": null,

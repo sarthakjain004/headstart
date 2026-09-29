@@ -2763,24 +2763,21 @@ function latestLevel(s){
   if (trendUnit !== 'share') return line.move.latest;
   return line.move.share ? line.move.share.latest : null;
 }
-// The stamp a category first held openings, when that is inside the window and, under a pick,
-// after every pick was counted: Micron's Architecture, new at the Sep 24 refit, read "→ +0
-// openings" over what looked like twelve flat days, and the index's Hardware & Silicon, new at
-// the Sep 25 list change, read "a window under 3 days" on a 21-day window (#833). Stock only —
-// under New a line also starts where a Board's first-week hold ends — and never a company's own
-// line, which says when it was counted. Whether a counting change sorted it in is the reading's
-// `arrived_by`: Stripe's "Web & .NET Development 16 new since Sep 24" was the Sep 24
-// family-assignment change sorting 16 existing jobs into it, which "new since" read as hiring.
+// The stamp a category was first counted at, where that is after its view's first row began:
+// the reading's `first_counted` (ADR-0270), which the page formats and never works out
+// (ADR-0233). Micron's Architecture, new at the Sep 24 refit, read "→ +0 openings" over what
+// looked like twelve flat days, and the index's Hardware & Silicon, new at the Sep 25 list
+// change, read "a window under 3 days" on a 21-day window (#833). The page's own rule, keyed on
+// the window's first run, read every level of Hardware & Silicon "new since Sep 25" where the
+// category itself began then (#854 review). Never a company's own line, which says when it was
+// counted, nor a pick joining a summed line, whose counting starts. Whether a counting change
+// sorted it in is the reading's `arrived_by`: Stripe's "Web & .NET Development 16 new since
+// Sep 24" was the Sep 24 family-assignment change sorting 16 existing jobs into it, which "new
+// since" read as hiring.
 function firstSeen(s, d){
-  if (!d || trendMetric !== 'stock' || !s || s.name === '__total__' || s.name === '__other__'
-    || VIEWS[viewKind(d)].split === 'company') return null;
-  const first = s.points.findIndex(v => v != null);
-  if (first < 1) return null;
-  // With no pick every line is counted from the window's first run (ADR-0270).
-  if (!trendPicks.length) return d.stamps[first];
-  const counted = countedSince(d);
-  const youngest = counted[counted.length - 1];
-  return youngest && d.stamps[first] > youngest ? d.stamps[first] : null;
+  if (!d || !s || VIEWS[viewKind(d)].split === 'company') return null;
+  const line = lineReading(s);
+  return line && line.first_counted && line.arrived_by !== 'pick_joined' ? line.first_counted : null;
 }
 // Whether HeadStart has counted the company of line `name` (a summed line: its youngest) for
 // under MIN_SPAN_DAYS, as against the window being short. The index is no company: a window of a

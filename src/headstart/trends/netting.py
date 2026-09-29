@@ -10,9 +10,11 @@ the latest value stays the real one and the history before a step is brought to 
 (``_NetTrace``) into a line's hiring and its named causes; the Trends tab and Hot both read that.
 
 With no pick a counting change is taken out as under a pick (ADR-0270): the index is a view
-whose Boards any counting change can move, duplicate removal included. A Found Board is taken out
-of each index line by the openings it brought that line (ADR-0304), a step on nearly every run,
-so it is not drawn. A duplicate removal is sized per company, and the index keeps it.
+whose Boards any counting change can move, a change to the duplicate check (``dedup_version``)
+included. A Found Board is taken out of each index line by the openings it brought that line
+(ADR-0304), a step on nearly every run, so it is not drawn, and out of the share denominator by
+every job it brought. The duplicate rows a removal takes out (``evicted``) are sized per company,
+and the index keeps them.
 """
 
 from __future__ import annotations
@@ -277,6 +279,8 @@ class _View:
     stamps: list[str]
     totals: list
     notes: list[dict]
+    # The notes the share denominator is netted by (`_notes` with ``served``).
+    served_notes: list[dict]
     pick_series: dict[str, list]
     pick_parts: dict[str, dict[str, list]]
     pick_turnover: dict[str, dict]
@@ -287,8 +291,9 @@ class _View:
     _jump_cache: dict = field(default_factory=dict)
 
 
-def _notes(answer: dict) -> list[dict]:
-    """Every point in the window where lines move for a reason that is not hiring.
+def _notes(answer: dict, served: bool = False) -> list[dict]:
+    """Every point in the window where lines move for a reason that is not hiring; with
+    ``served``, where the share denominator does, which counts every served job in scope.
 
     - A counting change (ADR-0164) is taken out of the lines it moves: a taxonomy refit, a
       family-list or family-assignment change, a tech-filter change (Wipro's "+74.7%" held about
@@ -301,8 +306,11 @@ def _notes(answer: dict) -> list[dict]:
       Engineering read −36,426 (−34.4%) over a week, all of it three counting changes.
     - Under New a tech-filter change is also taken out a week later, when its openings age out.
     - A Board found later lands its backlog at once (``discovered``). On the index each run's
-      Boards found are one step with each line's own size (``lines``, ADR-0304), and quiet: they
-      land on nearly every run, so no marker is drawn for them and no line breaks there.
+      Boards found are one step with each line's own size (``lines``, ADR-0304), drawn nowhere
+      (`drawn_nowhere`): they land on nearly every run, so no marker is drawn for them and no
+      line breaks there. In the share denominator the step is every job they brought
+      (``served``), non-tech and every category included: netted by the view's own lines'
+      openings, the index's share read −4.17% over a week where its hiring read −1.35%.
     - Duplicate rows removed at a pick's Boards (``evicted``, #649), sized exactly, per Board.
     - In a view that sums several picks, one counted from a later date joins the sum at once.
     """
@@ -340,9 +348,8 @@ def _notes(answer: dict) -> list[dict]:
             "dedup_only": False,
             "whole_only": False,
             # each line's own size, where a step is known line by line (the index's Found
-            # Boards, ADR-0304), and whether it is left off the chart (`quiet`)
+            # Boards, ADR-0304), which is then drawn nowhere (`drawn_nowhere`)
             "sizes": None,
-            "quiet": False,
         }
         out.update(given)
         return out
@@ -439,7 +446,9 @@ def _notes(answer: dict) -> list[dict]:
         if i > 0 and i + 1 < len(stamps):
             notes.append(note(i=i + 1, settle=True, withhold=True, **shared))
     for found in answer.get("discovered") or []:
-        if found["ts"] not in stamps:
+        size = found["served"] if served else found["openings"]
+        # A run whose Boards brought the lines nothing moved only the denominator.
+        if found["ts"] not in stamps or not size:
             continue
         # Found openings are added back, not scaled: they were open all along. A handful is left
         # in the line, unmarked.
@@ -448,12 +457,11 @@ def _notes(answer: dict) -> list[dict]:
                 i=stamps.index(found["ts"]),
                 kind="found",
                 found=True,
-                withhold=found["openings"] >= SMALLEST_STEP_TAKEN_OUT,
+                withhold=size >= SMALLEST_STEP_TAKEN_OUT,
                 company=found["company"],
-                size=found["openings"],
+                size=size,
                 boards=found["boards"],
-                sizes=found.get("lines"),
-                quiet=found.get("lines") is not None,
+                sizes=None if served else found.get("lines"),
             )
         )
     # Duplicates removed are sized per Board, not per category, so only a whole company's line
@@ -506,6 +514,12 @@ def _notes(answer: dict) -> list[dict]:
                 )
             )
     return notes
+
+
+def drawn_nowhere(n: dict) -> bool:
+    """Whether note ``n`` is a step known line by line, the index's Boards found (ADR-0304):
+    it lands on nearly every run, so it gets no marker and breaks no line."""
+    return n["sizes"] is not None
 
 
 def _is_whole(view: _View, line: _Line) -> bool:
@@ -902,13 +916,19 @@ def _viewed(answer: dict) -> tuple[dict, _View]:
         for line in answer["series"]:
             line["points"] = list(line["points"])
         answer["partial"] = drop_partial_reads(answer["series"])
+    notes = _notes(answer)
     view = _View(
         metric=answer["metric"],
         drilled=bool(answer.get("family")),
         split_company=answer.get("split_by") == "company",
         stamps=answer["stamps"],
         totals=answer.get("totals") or [],
-        notes=_notes(answer),
+        notes=notes,
+        # Under New a found Board is dated where its hold ends, not where its jobs joined the
+        # denominator, so there the denominator keeps the view's own notes (#927).
+        served_notes=_notes(answer, served=True)
+        if answer["metric"] == "stock"
+        else notes,
         pick_series=answer.get("pick_series") or {},
         pick_parts=answer.get("pick_parts") or {},
         pick_turnover=answer.get("pick_turnover") or {},

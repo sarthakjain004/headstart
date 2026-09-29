@@ -74,6 +74,8 @@ TICK_COLUMNS = ("board", "metric", "family", "band", "delta")
 ARCHIVE_COLUMNS = ("ts", "metric", "family", "band", "ats", "delta")
 _DEDUP_EVICTIONS = "dedup_evictions.csv"
 _DIRECTORY = "company_directory.json"
+# The Board-delta columns a found Board's first rows keep (`_found_rows`).
+_FOUND_COLUMNS = ("tick", "board", "family", "band", "ats", "delta")
 
 # Each Methodology field under the name the payload's `epochs[].fields` gives it, which is the
 # retired epoch ledger's column name (ADR-0164), and what a chart says when it moves: its words
@@ -599,8 +601,12 @@ class TrendHistory:
         self._new_measured: set[str] = set()
         self._openings: Counter[str] = Counter()
         self._board_arrivals: dict[str, tuple[str, int]] = {}
+        # Every served job each Board arrived with, non-tech included: what it lands in the share
+        # denominator (`_served_arrivals`).
+        self._served_arrivals: dict[str, int] = {}
         # Every Board's rows at its first tick after the ledger's own first, tick-ordered: the
-        # backlog a Board found later lands with, by category and level (`_index_found`).
+        # backlog a Board found later lands with, by category and level, non-tech included
+        # (`_index_found`).
         self._found_rows: dict[str, np.ndarray] = {}
         self._new_hold: dict[str, str] = {}
         # `_new_hold` as tick indexes, with the mapping they were read from (`_hold_ticks`).
@@ -845,20 +851,28 @@ class TrendHistory:
             boards[b]: (self._ticks[first[b]], int(arrived[b]))
             for b in np.nonzero(first < len(self._ticks))[0].tolist()
         }
-        # The same first ticks' rows, every family but non-tech, so the index can take a found
-        # Board's backlog out of each line it reaches (ADR-0304). A Board at the ledger's own
-        # first tick is its baseline, which continues the archive, not a Board found.
-        found_rows = (
+        # The share denominator is every served job, non-tech included (ADR-0051), so a found
+        # Board lands its whole backlog in it, not only its tech openings.
+        served_rows = (
             stock
-            & (d["family"] != self._families.code(NON_TECH))
+            & ~np.isin(d["family"], self._watch_codes())
             & (d["tick"] == first[d["board"]])
-            & (d["tick"] > self._first_delta)
+        )
+        served = np.bincount(
+            d["board"][served_rows], d["delta"][served_rows], len(boards)
+        )
+        self._served_arrivals = {
+            boards[b]: int(served[b])
+            for b in np.nonzero(first < len(self._ticks))[0].tolist()
+        }
+        # The same first ticks' rows, so the index can take a found Board's backlog out of each
+        # line it reaches (ADR-0304), and all of it out of the share denominator. A Board at the
+        # ledger's own first tick is its baseline, which continues the archive, not a Board found.
+        found_rows = (
+            stock & (d["tick"] == first[d["board"]]) & (d["tick"] > self._first_delta)
         )
         order = np.argsort(d["tick"][found_rows], kind="stable")
-        self._found_rows = {
-            name: d[name][found_rows][order]
-            for name in ("tick", "board", "family", "band", "ats", "delta")
-        }
+        self._found_rows = {name: d[name][found_rows][order] for name in _FOUND_COLUMNS}
         # When each Board may count toward `new`: its first tick plus the flow window (ADR-0185).
         # Every Board, the first tick's baseline included: the ledger's first week reads a
         # Board's whole backlog as new wherever the Board was found.
@@ -1457,6 +1471,8 @@ class TrendHistory:
         if coverage != "comparable" and stamps:
             for board, pick in counted.items():
                 ts, openings = self._board_arrivals[board]
+                # A Board with no tech openings still lands its jobs in the share denominator.
+                served = self._served_arrivals[board]
                 if metric == "new":
                     ts = self._new_hold.get(board, ts)
                     # A found Board's backlog is Recounted, never Opened: no step in the inflow.
@@ -1464,7 +1480,7 @@ class TrendHistory:
                         continue
                 at = bisect_left(stamps, ts)
                 if (
-                    openings <= 0
+                    served <= 0
                     or at == len(stamps)
                     # the pick's line begins at its own first counted run: under `new`, where
                     # its first Board's hold ends, not where it arrived
@@ -1474,9 +1490,10 @@ class TrendHistory:
                     )
                 ):
                     continue
-                bucket = found.setdefault((stamps[at], pick), [0, 0])
-                bucket[0] += 1
+                bucket = found.setdefault((stamps[at], pick), [0, 0, 0])
+                bucket[0] += openings > 0
                 bucket[1] += openings
+                bucket[2] += served
         # Each line's turnover (ADR-0227): the jobs opened and closed that its net change is made
         # of. On every line of every view on stock, the index's included, and summed from the
         # same rows, so the index's is exactly the sum of every company's. Not on the roles
@@ -1573,8 +1590,8 @@ class TrendHistory:
             self._closures_unseen(unscoped, stamps) if with_turnover else {}
         )
         # Boards first counted inside the window land their backlogs in the index's lines at
-        # once: 68,535 openings on 9,253 Boards in one week, most of the index's rise. The index
-        # takes each out of the lines it lands in (ADR-0304). A pick's are `found` above;
+        # once: in the week to 2026-09-29 04:10, 68,409 openings on 9,149 Boards, most of the
+        # index's rise. The index takes each out of the lines it lands in (ADR-0304). A pick's are `found` above;
         # comparable coverage holds no Board found later; and under New a found Board's backlog
         # is Recounted, never Opened, once New is the inflow.
         index_found = (
@@ -1633,8 +1650,14 @@ class TrendHistory:
             "ledger_start": self._ledger_start,
             "new_counted_from": new_from,
             "discovered": [
-                {"ts": ts, "company": pick, "boards": n, "openings": openings}
-                for (ts, pick), (n, openings) in sorted(found.items())
+                {
+                    "ts": ts,
+                    "company": pick,
+                    "boards": n,
+                    "openings": openings,
+                    "served": served,
+                }
+                for (ts, pick), (n, openings, served) in sorted(found.items())
             ]
             + index_found,
             # Duplicate rows removed from each pick's Boards, per charted run (#649). Under
@@ -1674,10 +1697,14 @@ class TrendHistory:
         self, stamps: list[str], ats: list[str], line_of, names: set[str]
     ) -> list[dict]:
         """The Boards first counted after the window's first run, per charted run, as the index's
-        lines hold them (ADR-0304): ``[{ts, company: None, boards, openings, lines}]``, with
-        ``lines`` each line's openings from those Boards and ``openings`` their sum, the first
-        row's. A Board lands on the first charted run at or after its first tick, as a pick's
-        does. ``line_of(row, "")`` names the line a row belongs to, as for turnover."""
+        lines hold them (ADR-0304): ``[{ts, company: None, boards, openings, lines, served}]``,
+        with ``lines`` each line's openings from those Boards, ``openings`` their sum, the first
+        row's, and ``boards`` the Boards that brought any. ``served`` is every job they brought
+        the share denominator, in every category and, with no ATS narrowed, non-tech too: it
+        counts every served job in scope whatever the view's lines are, so a run can bring it
+        jobs and the lines none. A
+        Board lands on the first charted run at or after its first tick, as a pick's does.
+        ``line_of(row, "")`` names the line a row belongs to, as for turnover."""
         rows = self._found_rows
         if not stamps or not len(rows.get("tick", ())):
             return []
@@ -1689,33 +1716,39 @@ class TrendHistory:
             self._bands.names,
             self._atses.names,
         )
-        runs: dict[int, tuple[set[int], Counter[str]]] = {}
+        # The denominator's own rows: `watch:` rows re-count their family's jobs (ADR-0051), and
+        # the index holds non-tech as one row over every ATS (`_index_levels`), so a view
+        # narrowed to some ATSes has none in its denominator.
+        left_out = set(self._watch_codes().tolist())
+        if ats:
+            left_out.add(self._families.code(NON_TECH))
+        found: defaultdict[int, set[int]] = defaultdict(set)
+        lines: defaultdict[int, Counter[str]] = defaultdict(Counter)
+        served: Counter[int] = Counter()
         for tick, board, family, band, ats_code, delta in zip(
-            *(
-                rows[c][lo:hi].tolist()
-                for c in ("tick", "board", "family", "band", "ats", "delta")
-            )
+            *(rows[c][lo:hi].tolist() for c in _FOUND_COLUMNS)
         ):
             if not delta or (ats and atses[ats_code] not in ats):
-                continue
-            line = line_of({"family": families[family], "band": bands[band]}, "")
-            if line not in names:
                 continue
             k = bisect_left(stamps, self._ticks[tick])
             if not 0 < k < len(stamps):
                 continue
-            found, lines = runs.setdefault(k, (set(), Counter()))
-            found.add(board)
-            lines[line] += delta
+            if family not in left_out:
+                served[k] += delta
+            line = line_of({"family": families[family], "band": bands[band]}, "")
+            if line in names:
+                found[k].add(board)
+                lines[k][line] += delta
         return [
             {
                 "ts": stamps[k],
                 "company": None,
-                "boards": len(found),
-                "openings": sum(lines.values()),
-                "lines": dict(lines),
+                "boards": len(found[k]),
+                "openings": sum(lines[k].values()),
+                "lines": dict(lines[k]),
+                "served": served[k],
             }
-            for k, (found, lines) in sorted(runs.items())
+            for k in sorted(served.keys() | lines.keys())
         ]
 
     # ---- the rows a question reads -----------------------------------------------------------

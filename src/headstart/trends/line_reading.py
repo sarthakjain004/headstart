@@ -49,6 +49,7 @@ from headstart.trends.netting import (
     _count_jumps,
     _hiring_turnover,
     _is_whole,
+    _Jump,
     _Line,
     _line_company,
     _line_notes,
@@ -57,6 +58,7 @@ from headstart.trends.netting import (
     _summed_picks,
     _View,
     _viewed,
+    drawn_nowhere,
     js_round,
     note_size,
 )
@@ -221,7 +223,10 @@ class LineReading:
     ``whole_company`` when the line is a whole company's own (or several picks' summed): the
     first row under a pick, a pick's own line, a company under the Company breakdown, and never
     inside a category. Such a line is never mostly re-counted (ADR-0238): the netting keeps it
-    sound, and Hot ranks by it."""
+    sound, and Hot ranks by it. ``first_counted`` is the run a line was first counted at, where
+    that is after its view's first row began (ADR-0270), which the page says as "new since" and
+    reads from here rather than working out (ADR-0233): its own rule keyed on the window's first
+    run read every level of a category first counted inside the window "new since" that day."""
 
     name: str
     label: str
@@ -233,6 +238,7 @@ class LineReading:
     index_base: float | None = None
     arrived_by: CauseKind | None = None
     points: tuple[int | None, ...] | None = None
+    first_counted: str | None = None
 
 
 @dataclass(frozen=True)
@@ -329,6 +335,8 @@ class TrendReading:
             }
             if r.points is not None:
                 out["points"] = list(r.points)
+            if r.first_counted:
+                out["first_counted"] = r.first_counted
             return out
 
         return {
@@ -532,9 +540,6 @@ class _Reader:
         self.parent_of: dict[str, str] = {}
         # Each note's change, once worked out: a line's every run asks for its owner's again.
         self._note_changes: dict[int, str] = {}
-        # The first row's first counted run (`_first_row`): a line first counted after it began
-        # inside the window, and says so where that withholds its percentage.
-        self.first_run: int | None = None
 
     # -- lines --
 
@@ -569,7 +574,6 @@ class _Reader:
             else None,
         )
         origin = next((j for j, v in enumerate(line.points) if v is not None), None)
-        self.first_run = origin
         return line, origin, self._exact(line, origin)
 
     def first_row_move(self) -> LineMove | None:
@@ -579,7 +583,7 @@ class _Reader:
         line, _, exact = self._first_row(self._series_lines())
         if exact is None:
             return None
-        return self._rounded_move(line, exact, self._rounded_hiring(exact))
+        return self._rounded_move(line, exact, self._rounded_hiring(exact), None)
 
     def read(self) -> TrendReading:
         view, answer, stamps = self.view, self.answer, self.stamps
@@ -604,12 +608,12 @@ class _Reader:
         total = (
             None
             if view.split_company
-            else self._reading(total_line, "", total_exact, total_hiring)
+            else self._reading(total_line, "", total_exact, total_hiring, origin)
         )
         if total is not None:
             total = replace(total, points=tuple(total_line.points))
         rows = [
-            self._reading(line, s["label"], exact, hiring)
+            self._reading(line, s["label"], exact, hiring, origin)
             for line, s, exact, hiring in zip(
                 series, answer["series"], rows_exact, rows_hiring
             )
@@ -672,7 +676,11 @@ class _Reader:
                 line = _Line(key, points, True, view.pick_turnover.get(key))
                 exact = self._exact(line, origin)
                 reading = self._reading(
-                    line, self._company_label(key), exact, self._rounded_hiring(exact)
+                    line,
+                    self._company_label(key),
+                    exact,
+                    self._rounded_hiring(exact),
+                    origin,
                 )
                 if reading is not None:
                     out.append(reading)
@@ -813,12 +821,24 @@ class _Reader:
         return {**own, **dict(zip(growth, sizes))}
 
     def _reading(
-        self, line: _Line, label: str, exact: _Exact | None, hiring: int | None
+        self,
+        line: _Line,
+        label: str,
+        exact: _Exact | None,
+        hiring: int | None,
+        first_row_origin: int | None,
     ) -> LineReading | None:
+        """``line`` read in full. ``first_row_origin`` is the run its view's first row was
+        first counted at: a line first counted after it says when."""
         if exact is None:
             return None
         netted = _rounded_for_drawing(_net(self.view, line))
-        move = self._rounded_move(line, exact, hiring)
+        first_counted = (
+            self.stamps[exact.first]
+            if first_row_origin is not None and exact.first > first_row_origin
+            else None
+        )
+        move = self._rounded_move(line, exact, hiring, first_counted)
         return LineReading(
             name=line.name,
             label=label,
@@ -826,21 +846,24 @@ class _Reader:
             whole_company=self._is_whole_company(line),
             estimated=exact.estimated,
             netted=netted,
-            # A quiet step (the index's Boards found) moves the line but breaks nothing drawn.
+            # The index's Boards found move the line but break nothing drawn.
             steps_at=tuple(
                 sorted(
                     j
                     for j, jump in _count_jumps(self.view, line).items()
-                    if not all(self.notes[k]["quiet"] for k in jump.notes)
+                    if not self.jump_drawn_nowhere(jump)
                 )
             ),
             index_base=None
             if move.percent_withheld == MOSTLY_RECOUNTED
             else _index_base(line.points, netted),
             arrived_by=exact.arrived_by,
+            first_counted=first_counted,
         )
 
-    def _rounded_move(self, line: _Line, exact: _Exact, hiring: int) -> LineMove:
+    def _rounded_move(
+        self, line: _Line, exact: _Exact, hiring: int, first_counted: str | None
+    ) -> LineMove:
         """``line``'s move in whole openings: its causes rounded to add up to its figures less
         ``hiring``."""
         return self._move(
@@ -849,6 +872,7 @@ class _Reader:
             hiring,
             self._round_to_openings(exact, hiring),
             self._is_whole_company(line),
+            first_counted,
         )
 
     def _is_whole_company(self, line: _Line) -> bool:
@@ -869,6 +893,7 @@ class _Reader:
         hiring: int,
         causes: dict[str, int],
         whole_company: bool,
+        first_counted: str | None,
     ) -> LineMove:
         span = (
             datetime.fromisoformat(self.stamps[-1])
@@ -897,9 +922,7 @@ class _Reader:
             else None,
             denominators=self._denominators_of(line, exact),
             whole_company=whole_company,
-            first_counted=_day(self.stamps[exact.first])
-            if self.first_run is not None and exact.first > self.first_run
-            else None,
+            first_counted=_day(first_counted) if first_counted else None,
         )
 
     def _in_date_order(self, causes: Iterable[Cause]) -> tuple[Cause, ...]:
@@ -1007,6 +1030,7 @@ class _Reader:
         whole = replace(
             view,
             drilled=False,
+            notes=view.served_notes,
             pick_series=view.company_totals if several else {},
             pick_parts={},
             _jump_cache={},
@@ -1045,7 +1069,7 @@ class _Reader:
             return self.register_removal(n["company"], n["i"])
         if n["join"]:
             return self.register_joining(n["company"], n["i"])
-        if n["quiet"]:
+        if drawn_nowhere(n):
             return self.register_found_through_window()
         if n["found"]:
             change = f"found@{stamps[n['i']]}/{n['company']}"
@@ -1101,14 +1125,18 @@ class _Reader:
         )
         return change
 
+    def jump_drawn_nowhere(self, jump: _Jump) -> bool:
+        """Whether ``jump`` is only the index's Boards found, which no line breaks at."""
+        return all(drawn_nowhere(self.notes[k]) for k in jump.notes)
+
     def register_found_through_window(self) -> str:
         """The index's Boards found through the window, one change for every run they land on
         (ADR-0304): they land on nearly every run, so the change is dated at their first and
         drawn nowhere."""
         change = "found@window"
         # the Boards taken out; a run's handful left in the line is not (SMALLEST_STEP_TAKEN_OUT)
-        quiet = [n for n in self.notes if n["quiet"] and n["withhold"]] or [
-            n for n in self.notes if n["quiet"]
+        quiet = [n for n in self.notes if drawn_nowhere(n) and n["withhold"]] or [
+            n for n in self.notes if drawn_nowhere(n)
         ]
         boards = sum(n["boards"] for n in quiet)
         self._register(
@@ -1411,14 +1439,14 @@ class _Split:
         nothing by the change that made the step, the nearest one landing at or after ``c``. A
         run only the index's Boards found land on is none: they add openings, which never cut a
         line (ADR-0304)."""
-        notes = self.reader.notes
-
-        def found_only(j: int) -> bool:
-            jump = self.trace.jumps.get(j)
-            return bool(jump) and all(notes[k]["quiet"] for k in jump.notes)
-
+        jumps = self.trace.jumps
         at = min(
-            (j for j in self.trace.withheld if j >= c and not found_only(j)),
+            (
+                j
+                for j in self.trace.withheld
+                if j >= c
+                and not (j in jumps and self.reader.jump_drawn_nowhere(jumps[j]))
+            ),
             default=None,
         )
         if at is None:

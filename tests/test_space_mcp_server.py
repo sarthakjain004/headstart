@@ -1626,6 +1626,43 @@ def test_a_companys_sized_causes_are_said_once_each_with_their_sizes_summed():
     assert "a Board dropped or read differently from before" in text
 
 
+def test_boards_found_are_said_apart_from_the_counting_changes():
+    """The index listed "[1] 9,322 more job sites found through Sep 29" under "Counting
+    changes", and its +69,873 inside "counting changes HeadStart sized for": a Found Board is
+    not a Counting change (CONTEXT.md, #889 review)."""
+    found = "9,322 more job sites found through Sep 29"
+    causes = [(found, 69_873), (_FILTER, -44_596)]
+    total = _move(390_484, 378_528, -5_181, causes)
+    total["not_hiring"][0]["kind"] = "found_boards"
+    payload = _trends(
+        [],
+        total=_line("__total__", "", total),
+        marked=[
+            {
+                **_marked("2026-09-22T07:07:01+00:00", found, {"__total__": 69_873}),
+                "id": "found@window",
+                "kind": "found_boards",
+            },
+            _marked("2026-09-28T08:26:00+00:00", _FILTER, {"__total__": -44_596}),
+        ],
+    )
+    text = server.call(FakeSpace(trends=payload), "read_trends", {})
+    assert "counting changes HeadStart sized for -44,596 ([1] -44,596)" in text
+    assert (
+        "Boards found, whose existing postings HeadStart counted when it began reading "
+        "them, for +69,873 ([2] +69,873)" in text
+    )
+    [counting] = [
+        line for line in text.split("\n") if line.startswith("Counting changes")
+    ]
+    assert counting.endswith(": [1] tech filter (2026-09-28).")
+    assert (
+        "Boards found, not a counting change: Boards HeadStart began reading, whose existing "
+        f"postings it counted at once, none of it hiring: [2] {found} (2026-09-22)."
+        in text
+    )
+
+
 def test_closed_not_counted_is_said_and_the_change_is_not_split_by_it():
     total = _move(100, 130, 30, turnover={"opened": 18, "closed": None, "net": None})
     payload = _trends(
@@ -2026,6 +2063,7 @@ def _hot(rows, turnover_from="2026-09-21T12:00:00+00:00"):
             "unnamed": 9,
             "closures_uncounted": 23,
             "closures_partly_uncounted": 7,
+            "not_growing": 9,
             "services": 30,
             "staffing": 12,
             "aggregator": 1,
@@ -2272,6 +2310,29 @@ def test_the_rate_lens_says_it_left_out_companies_whose_closures_were_not_counte
     assert "23 whose closures were not counted" in rate
     volume = server.call(FakeSpace(hot=_hot(rows)), "hiring_now", {"lens": "volume"})
     assert "closures were not counted" not in volume
+
+
+def test_a_lenss_own_exclusions_are_said_as_part_of_the_companies_ranked():
+    """ "Ranked 2,196 companies; not ranked: … 334 whose closures were not counted" read the 334
+    as outside the 2,196, which already held them. And CSB ranked second on Rate on a net change
+    of 0 (ADR-0309)."""
+    rows = [_hot_row(n) for n in range(1, 4)]
+    rate = server.call(FakeSpace(hot=_hot(rows)), "hiring_now", {"lens": "rate"})
+    [line] = [line for line in rate.split("\n") if line.startswith("Ranked ")]
+    not_ranked, of_those = line.split(" Of those ")
+    assert "closures" not in not_ranked
+    assert of_those == (
+        "2,341, rate leaves out 23 whose closures were not counted, so their postings opened "
+        "may be the same postings listed again; 9 whose net change was 0 or less, so what they "
+        "opened only replaced what closed."
+    )
+    default = server.call(FakeSpace(hot=_hot(rows)), "hiring_now", {})
+    assert (
+        "Of those 2,341, opened_less_closed leaves out 23 whose closures were not counted"
+        in default
+    )
+    volume = server.call(FakeSpace(hot=_hot(rows)), "hiring_now", {"lens": "volume"})
+    assert "Of those" not in volume
 
 
 def test_a_count_the_space_did_not_measure_is_not_shown_as_zero():

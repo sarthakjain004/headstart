@@ -2128,13 +2128,32 @@ test('the five largest sentences stand, with the tiles’ riser, and the rest fo
 
 test('a category first seen inside the window reads as new, not flat', () => {
   const { t, nodes } = loadApp();
-  t.setPicks([ACME]);
-  t.set({ ...picked({ old: [50, 50], arch: [null, 32] }), stamps: STAMPS,
-    counted_since: { 'greenhouse:acme': '2026-09-01T00:00:00+00:00' } });
+  showGolden(t, 'category_first_counted_inside_the_window_by_hiring');
   t.setUnit('count', false);
   t.draw();
   assert.match(row(nodes['trends-legend'].innerHTML, 'arch'), /new since Sep 20/);
   assert.doesNotMatch(row(nodes['trends-legend'].innerHTML, 'arch'), /\+0/);
+});
+
+test('with no pick, a category first counted inside the window says so from the reading', () => {
+  const { t, nodes } = loadApp();
+  showGolden(t, 'index_category_first_counted_inside_the_window');
+  t.setUnit('count', false);
+  t.draw();
+  assert.match(row(nodes['trends-legend'].innerHTML, 'hardware-engineering'),
+    /sorted in by a counting change, Sep 25/);
+  assert.doesNotMatch(row(nodes['trends-legend'].innerHTML, 'software-engineering'), /since/);
+});
+
+test('the levels of a category first counted inside the window are not new since its first run', () => {
+  // The page's own rule read every level "new since Sep 25", where the category itself began
+  // then; the reading gives no level a `first_counted` (#854 review).
+  const { t, nodes } = loadApp();
+  showGolden(t, 'index_drill_into_a_category_first_counted_inside_the_window');
+  t.setUnit('count', false);
+  t.draw();
+  for (const level of ['mid', 'senior'])
+    assert.doesNotMatch(row(nodes['trends-legend'].innerHTML, level), /since/, level);
 });
 
 test('one opening is one opening', () => {

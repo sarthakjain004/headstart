@@ -45,7 +45,8 @@
     "ts": "2026-09-15T00:00:00+00:00",
     "company": "greenhouse:acme",
     "boards": 1,
-    "openings": 200
+    "openings": 200,
+    "served": 200
    }
   ],
   "turnover_since": "2026-09-13T00:00:00+00:00",

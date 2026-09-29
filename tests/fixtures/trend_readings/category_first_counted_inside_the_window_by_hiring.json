@@ -1,0 +1,223 @@
+{
+ "description": "Acme's Architecture is first counted a week into the window with 32 openings, and no counting change sorted them in: it reads as new since that run, never flat (\"→ +0 openings\" over what looked like a flat week). The run is the reading's `first_counted`, which the page reads.",
+ "answer_input": {
+  "stamps": [
+   "2026-09-13T00:00:00+00:00",
+   "2026-09-20T00:00:00+00:00"
+  ],
+  "series": [
+   {
+    "name": "old",
+    "label": "old",
+    "points": [
+     50,
+     50
+    ],
+    "latest": 50
+   },
+   {
+    "name": "arch",
+    "label": "arch",
+    "points": [
+     null,
+     32
+    ],
+    "latest": 32
+   }
+  ],
+  "counted_since": {
+   "greenhouse:acme": "2026-09-01T00:00:00+00:00"
+  },
+  "epochs": [],
+  "metric": "stock",
+  "coverage": "all",
+  "new_window_days": 7,
+  "family": null,
+  "split_by": "family",
+  "companies": [
+   {
+    "key": "greenhouse:acme",
+    "label": "Acme",
+    "board_keys": [
+     "greenhouse:acme"
+    ],
+    "atses": [
+     "greenhouse"
+    ]
+   }
+  ],
+  "discovered": [],
+  "evicted": [],
+  "pick_series": {},
+  "pick_parts": {},
+  "pick_turnover": {},
+  "totals": [
+   1000,
+   1000
+  ],
+  "non_tech": [
+   10,
+   10
+  ],
+  "watch_parents": [],
+  "uncounted": [],
+  "company_totals": {}
+ },
+ "reading": {
+  "window": {
+   "from": "2026-09-13T00:00:00+00:00",
+   "to": "2026-09-20T00:00:00+00:00"
+  },
+  "picked": true,
+  "total": {
+   "name": "__total__",
+   "label": "",
+   "whole_company": true,
+   "estimated": false,
+   "move": {
+    "start": 50,
+    "latest": 82,
+    "hiring": 32,
+    "not_hiring": [],
+    "not_hiring_total": 0,
+    "percent": 64.0,
+    "percent_withheld": null,
+    "span_days": 7.0,
+    "per_week": 32,
+    "turnover": null,
+    "share": {
+     "start": 5.0,
+     "latest": 8.200000000000001,
+     "denominator_start": 1000,
+     "denominator_latest": 1000,
+     "percent": 64.00000000000003
+    }
+   },
+   "netted": [
+    50,
+    82
+   ],
+   "steps_at": [],
+   "index_base": 50,
+   "arrived_by": null,
+   "points": [
+    50,
+    82
+   ]
+  },
+  "lines": [
+   {
+    "name": "old",
+    "label": "old",
+    "whole_company": false,
+    "estimated": false,
+    "move": {
+     "start": 50,
+     "latest": 50,
+     "hiring": 0,
+     "not_hiring": [],
+     "not_hiring_total": 0,
+     "percent": 0.0,
+     "percent_withheld": null,
+     "span_days": 7.0,
+     "per_week": 0,
+     "turnover": null,
+     "share": {
+      "start": 5.0,
+      "latest": 5.0,
+      "denominator_start": 1000,
+      "denominator_latest": 1000,
+      "percent": 0.0
+     }
+    },
+    "netted": [
+     50,
+     50
+    ],
+    "steps_at": [],
+    "index_base": 50,
+    "arrived_by": null
+   },
+   {
+    "name": "arch",
+    "label": "arch",
+    "whole_company": false,
+    "estimated": false,
+    "move": {
+     "start": 0,
+     "latest": 32,
+     "hiring": 32,
+     "not_hiring": [],
+     "not_hiring_total": 0,
+     "percent": null,
+     "percent_withheld": "first counted on Sep 20",
+     "span_days": 0.0,
+     "per_week": null,
+     "turnover": null,
+     "share": {
+      "start": 0.0,
+      "latest": 3.2,
+      "denominator_start": 1000,
+      "denominator_latest": 1000,
+      "percent": null
+     }
+    },
+    "netted": [
+     null,
+     32
+    ],
+    "steps_at": [],
+    "index_base": 32,
+    "arrived_by": null,
+    "first_counted": "2026-09-20T00:00:00+00:00"
+   }
+  ],
+  "other": null,
+  "charted": 2,
+  "company_lines": [
+   {
+    "name": "greenhouse:acme",
+    "label": "Acme",
+    "whole_company": true,
+    "estimated": false,
+    "move": {
+     "start": 50,
+     "latest": 82,
+     "hiring": 32,
+     "not_hiring": [],
+     "not_hiring_total": 0,
+     "percent": 64.0,
+     "percent_withheld": null,
+     "span_days": 7.0,
+     "per_week": 32,
+     "turnover": null,
+     "share": {
+      "start": 5.0,
+      "latest": 8.200000000000001,
+      "denominator_start": 1000,
+      "denominator_latest": 1000,
+      "percent": 64.00000000000003
+     }
+    },
+    "netted": [],
+    "steps_at": [],
+    "index_base": null,
+    "arrived_by": null
+   }
+  ],
+  "breakdown": {
+   "closing": null
+  },
+  "marked_changes": [],
+  "day_markers": [],
+  "reference": [
+   1000,
+   1000
+  ],
+  "openings": 82,
+  "served_jobs": null,
+  "non_tech_jobs": null,
+  "reconciles": true,
+  "violations": []
+ }
+}
