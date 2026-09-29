@@ -332,10 +332,10 @@ fails if this table drifts from it.
 | `country` | string | `"IN"` when `location` matches the India gazetteer's country-level rule, else null. Materialized so the India filter's whole-country case is a plain equality instead of a large regex alternation (ADR-0138) |
 | `remote` | bool | the scraper's own ATS-native field, **unless** the description confidently reads as remote — then `true` wins regardless of what the field said (ADR-0061). One-directional: a description read as onsite or hybrid never overrides the field |
 | `employment_type` | string | raw per-ATS text (`FullTime`, `Full Time`, `Contract`, …), retained for display |
-| `is_full_time` | bool | materialized verdict of the Search filter's `full` / `permanent` substring rule; bitmap-indexed (ADR-0173) |
-| `is_part_time` | bool | materialized verdict of the Search filter's `part` substring rule; bitmap-indexed (ADR-0173) |
-| `is_contract` | bool | materialized verdict of the Search filter's `contract` / `freelance` substring rule; bitmap-indexed (ADR-0173) |
-| `is_internship` | bool | materialized verdict of the guarded `intern` substring rule (`international` excluded); bitmap-indexed (ADR-0173) |
+| `is_full_time` | bool | materialized verdict of the Search filter's full-time rule: `full`, `permanent` and `regular` (each unless `part`) plus the whole values `salaried_ft`, `hourly_ft`, `f`, `ft`, `fte`, `cdi`, `tiempo completo`, `全职`; a row with no stated type is False; bitmap-indexed (ADR-0173, ADR-0340) |
+| `is_part_time` | bool | materialized verdict of the Search filter's `part` substring rule (and the whole values `salaried_pt`, `hourly_pt`); bitmap-indexed (ADR-0173, ADR-0340) |
+| `is_contract` | bool | materialized verdict of the Search filter's `contract` / `freelance` / `temporary` / `fixed` substring rule; bitmap-indexed (ADR-0173, ADR-0340) |
+| `is_internship` | bool | materialized verdict of the guarded `intern` substring rule (`international` excluded) on `employment_type`, or `intern`/`internship`/`interns` as a whole word in the `title`; bitmap-indexed (ADR-0173, ADR-0340) |
 | `experience` | string | raw ATS text — served by `/job` (ADR-0277), not by `/search`, and read on every merge to detect whether a posting's stated experience changed, which is what triggers re-deriving `min_years`/`max_years` for that row |
 | `min_years` | int32 | parsed from `experience`; **nullable** — null means unknown, not zero (ADR-0009) |
 | `max_years` | int32 | parsed alongside `min_years`, and served by `/job` (ADR-0277), but not read by any filter or sort — the `max_years` *query parameter* filters on `min_years` instead |

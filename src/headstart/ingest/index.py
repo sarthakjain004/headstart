@@ -288,7 +288,9 @@ def _served_meta(meta: dict, first_seen: str | None) -> dict:
     ``first_seen`` is the row's own stamp, which bounds the date it serves (ADR-0268)."""
     row = dict(meta)
     row["posted_at"] = _served_posted_at(meta.get("posted_at"), first_seen)
-    row.update(employment_type_filter.flags(meta.get("employment_type")))
+    row.update(
+        employment_type_filter.flags(meta.get("employment_type"), meta.get("title"))
+    )
     row.update(salary_known_filter.flags(meta.get("min_salary_annual")))
     row.update(posted_date_guard.flags(row["posted_at"]))
     row.update(experience_filter.flags(meta.get("min_years")))

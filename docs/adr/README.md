@@ -302,6 +302,7 @@ supersedes it and note the supersession in both.
 | [0331](0331-a-copy-needs-one-companys-words-and-a-missing-id-gets-one-account.md) | A copy needs one company's words, and a missing id gets one account of why (amends 0323) | 2026-09-29 |
 | [0332](0332-a-requirements-sample-counts-each-requisition-once-under-its-directory-name.md) | A requirements sample counts each requisition once, under its directory name | 2026-09-29 |
 | [0336](0336-a-categorys-turnover-is-one-figure-in-every-view.md) | A category's turnover is one figure in every view (amends 0227) | 2026-09-29 |
+| [0340](0340-the-employment-type-flags-read-the-title-and-more-raw-values.md) | The employment-type flags read the title and more raw values | 2026-09-29 |
 
 *ADR-0037 was removed from the repository on 2026-09-24 by the owner's decision; its number is not
 reused.*

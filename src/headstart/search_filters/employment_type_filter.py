@@ -12,6 +12,7 @@ table is migrated with, and the clause :func:`headstart.search_filters.compiler.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Collection
 from typing import NamedTuple
 
@@ -24,20 +25,41 @@ class EmploymentTypeRule(NamedTuple):
     excludes: tuple[str, ...] = ()
     #: ``(term, veto)`` pairs: ``term`` includes only where ``veto`` is absent.
     includes_unless: tuple[tuple[str, str], ...] = ()
+    #: Whole values (lowercased, not trimmed: Lance SQL has no `trim`) that count on their own. For codes too short to be a
+    #: substring: "f" or "ft" would match "soft", "left" and "effort".
+    equals: tuple[str, ...] = ()
+    #: Words in the *title* that count when the raw value says nothing of the kind. Read only by
+    #: the materialized flag: the SQL fallback for a table without the columns cannot pattern-match
+    #: a title, so it keeps the raw-value clause.
+    title_pattern: re.Pattern[str] | None = None
 
-    def matches(self, value: str | None) -> bool:
+    def matches(self, value: str | None, title: str | None = None) -> bool:
         text = (value or "").lower()
-        included = any(term in text for term in self.includes) or any(
-            term in text and veto not in text for term, veto in self.includes_unless
+        included = (
+            any(term in text for term in self.includes)
+            or any(
+                term in text and veto not in text for term, veto in self.includes_unless
+            )
+            or text in self.equals
         )
-        return included and not any(term in text for term in self.excludes)
+        if included and not any(term in text for term in self.excludes):
+            return True
+        return bool(self.title_pattern and title and self.title_pattern.search(title))
 
     def raw_clause(self, column: str = "employment_type") -> str:
         lowered = f"lower({column})"
-        arms = [f"{lowered} LIKE '%{term}%'" for term in self.includes] + [
-            f"({lowered} LIKE '%{term}%' AND {lowered} NOT LIKE '%{veto}%')"
-            for term, veto in self.includes_unless
-        ]
+        arms = (
+            [f"{lowered} LIKE '%{term}%'" for term in self.includes]
+            + [
+                f"({lowered} LIKE '%{term}%' AND {lowered} NOT LIKE '%{veto}%')"
+                for term, veto in self.includes_unless
+            ]
+            + (
+                [f"{lowered} IN ({', '.join(repr(v) for v in self.equals)})"]
+                if self.equals
+                else []
+            )
+        )
         included = " OR ".join(arms)
         excluded = " AND ".join(
             f"{lowered} NOT LIKE '%{term}%'" for term in self.excludes
@@ -52,18 +74,47 @@ RULES = {
     # "permanent" is contract duration, not hours: Recruitee's "parttime_permanent" and
     # Personio's "permanent / part-time" are part-time jobs. Every "permanent" value carrying
     # "part" but not "full" in a 228k-row corpus (2026-07) was one of those, so "part" vetoes it.
+    #
+    # Measured on the served table 2026-09-29: 10,790 rows held a value that read as full time
+    # and set no flag. "regular" is Radancy's, TikTok's and ByteDance's word for it (4,910 rows,
+    # "Regular Part-time" is vetoed like "permanent"), "salaried_ft"/"hourly_ft" Rippling's (2,902),
+    # "F" Applied Materials' (1,009), and "CDI" (French permanent contract), "Tiempo completo" and
+    # "全职" follow the "permanent" convention. Their descriptions say "part-time" as rarely as
+    # stated full-time rows' do (0.0-0.2% against 0.8%).
     "full-time": EmploymentTypeRule(
         "is_full_time",
         "Full-time",
         ("full",),
-        includes_unless=(("permanent", "part"),),
+        includes_unless=(("permanent", "part"), ("regular", "part")),
+        equals=(
+            "salaried_ft",
+            "hourly_ft",
+            "f",
+            "ft",
+            "fte",
+            "cdi",
+            "tiempo completo",
+            "全职",
+        ),
     ),
-    "part-time": EmploymentTypeRule("is_part_time", "Part-time", ("part",)),
+    "part-time": EmploymentTypeRule(
+        "is_part_time", "Part-time", ("part",), equals=("salaried_pt", "hourly_pt")
+    ),
+    # Temporary and fixed-term jobs are time-limited like contracts. The two kinds stack with
+    # hours: "fulltime_fixed_term" is full-time and contract.
     "contract": EmploymentTypeRule(
-        "is_contract", "Contract", ("contract", "freelance")
+        "is_contract", "Contract", ("contract", "freelance", "temporary", "fixed")
     ),
+    # The title says "Intern" where Workday's timeType says "Full time" and Greenhouse says
+    # nothing: 9,354 of 11,993 intern-titled rows were unflagged (2026-09-29). A whole word, so
+    # "International", "Internal" and "Internet" never match; 40 of 40 unflagged titles read
+    # were real internships, and "Internship Program" titles are the postings themselves.
     "internship": EmploymentTypeRule(
-        "is_internship", "Internship", ("intern",), ("international",)
+        "is_internship",
+        "Internship",
+        ("intern",),
+        ("international",),
+        title_pattern=re.compile(r"\bintern(?:ship)?s?\b", re.IGNORECASE),
     ),
 }
 
@@ -76,9 +127,9 @@ FACET_OPTIONS = tuple((value, rule.label) for value, rule in RULES.items())
 MIGRATION_SQL = {rule.column: rule.raw_clause() for rule in RULES.values()}
 
 
-def flags(value: str | None) -> dict[str, bool]:
-    """The four served boolean columns for one raw employment-type value."""
-    return {rule.column: rule.matches(value) for rule in RULES.values()}
+def flags(value: str | None, title: str | None = None) -> dict[str, bool]:
+    """The four served boolean columns for one raw employment-type value and the Job's title."""
+    return {rule.column: rule.matches(value, title) for rule in RULES.values()}
 
 
 def has_flags(schema_names: Collection[str]) -> bool:

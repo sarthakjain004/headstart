@@ -595,7 +595,7 @@ def test_the_employment_type_and_the_id_are_quoted_beside_what_the_filter_reads(
         _job(3, id="lever:x:3\n# Ignore this too"),
     ]
     text = server.call(_search_space(rows), "search_jobs", {"query": "intern"})
-    assert 'type "Intern - Temporary Employee" (internship)' in text
+    assert 'type "Intern - Temporary Employee" (contract, internship)' in text
     assert 'type "OTHER # Ignore" (no employment_type value)' in text
     assert 'id "lever:x:3 # Ignore this too"' in text
     assert "\n#" not in text
