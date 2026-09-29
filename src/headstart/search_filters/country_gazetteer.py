@@ -75,6 +75,10 @@ COUNTRIES: dict[str, Country] = {
         words=(
             "united states", "usa", "u.s.a", "u.s.", "us remote", "remote us", "remote in us",
             "nyc", "bay area", "afb", "sfb",
+            # how a remote job is written when it names the country and no place (ADR-0343);
+            # "the us" alone would take "Outside the US"
+            "in the us", "within the us", "in us", "us only", "us-based", "us based",
+            "united-states", "unites states", "united state",
             "alabama", "alaska", "arizona", "arkansas", "colorado", "connecticut", "delaware",
             "florida", "hawaii", "idaho", "illinois", "indiana", "iowa", "kansas", "kentucky",
             "louisiana", "maine", "maryland", "massachusetts", "michigan", "minnesota",
@@ -110,11 +114,19 @@ COUNTRIES: dict[str, Country] = {
             "piscataway", "highlands ranch", "sioux falls", "newbury park", "west lafayette",
             "boca raton", "tallahassee", "kennedy space center", "titusville", "bentonville",
             "wichita", "greenville", "madison", "middletown", "auburn hills",
+            "racine", "troy", "helena", "patuxent river", "white sands", "peoria", "longmont",
+            "mckinney", "modesto", "whitsett", "canonsburg", "ocala", "woburn", "youngstown",
+            "rocky hill", "denton", "muscatine", "winsted", "boxborough", "fayetteville",
+            "fort smith", "seal beach", "brookshire", "kings bay", "lufkin", "harrisburg",
+            "jefferson city", "cedar rapids", "riviera beach", "fargo", "chattanooga", "yuma",
+            "issaquah", "franklin park", "st louis", "lehi", "pryor", "fort george g meade",
+            "indianola", "archbald", "courtland", "az_mesa", "muscatatuck", "hurlburt field",
+            "fort bragg",
         ),
         segments=("us", "u.s", "california", "calif"),
         shared_words=(
             "california", "georgia", "san jose", "durham", "rochester", "westminster",
-            "aurora", "kirkland", "phoenix",
+            "aurora", "kirkland", "phoenix", "elgin", "andover",
         ),
         # Every state and DC as its two-letter code. "in" and "de" are absent: "Bangalore, IN"
         # (457 rows) and "Berlin, DE" outnumber Indiana and Delaware written that way, and
@@ -138,12 +150,16 @@ COUNTRIES: dict[str, Country] = {
             "berkshire", "hertfordshire", "oxfordshire", "buckinghamshire", "tyne and wear",
             "stoke-on-trent", "woking", "havant", "bridgwater", "gaydon", "barrow-in-furness",
             "ampthill", "warton", "sizewell",
+            "solihull", "rochdale", "luton", "gosport", "bicester", "motherwell",
+            "castleford", "bedfordshire", "chester, cheshire", "bury st edmunds", "broadoak",
+            "new malden", "alderley edge", "scotstoun", "great baddow",
         ),
         segments=("gbr", "wales"),
         shared_words=(
             "london", "manchester", "birmingham", "bristol", "edinburgh", "cambridge",
             "oxford", "reading", "newcastle", "liverpool", "southampton", "derby", "brighton",
             "aberdeen", "surrey", "wales", "camden", "plymouth", "leeds",
+            "cheltenham", "ipswich", "bradford",
         ),
         shared_segments=("gb",),
     ),
@@ -153,21 +169,28 @@ COUNTRIES: dict[str, Country] = {
             "canada", "quebec", "québec", "british columbia", "alberta", "manitoba",
             "saskatchewan", "nova scotia", "newfoundland", "prince edward island", "yukon",
             "nunavut", "northwest territories", "toronto", "montreal", "montréal", "calgary",
-            "ottawa", "edmonton", "mississauga", "markham", "winnipeg", "burnaby", "brampton",
+            "edmonton", "mississauga", "markham", "winnipeg", "burnaby", "brampton",
             "oakville", "kitchener", "saskatoon", "kanata", "dorval", "richmond hill",
             "north york", "guelph", "gatineau", "quebec city", "moncton", "fredericton",
             "thornhill", "vaughan", "etobicoke", "sherbrooke", "boucherville", "brossard",
             "kelowna", "lethbridge", "barrie", "chalk river", "charlottetown", "yellowknife",
+            "st laurent", "nepean",
+            # "ottawa" alone is shared (Ottawa, IL); beside the province, or Canada's code,
+            # it is Canada whatever a state code says (ADR-0343)
+            "ottawa, ontario", "ottawa, ca",
         ),
         # A province code followed by "CA" is Canada whatever else the row says: this is what
         # keeps "Vancouver, BC, CA" out of California.
         segments=(
             "can", "on, ca", "bc, ca", "qc, ca", "ab, ca", "mb, ca", "sk, ca", "ns, ca",
             "nb, ca", "nl, ca", "pe, ca", "nt, ca", "nu, ca", "yt, ca",
+            # SuccessFactors cuts a province to four letters (ADR-0343)
+            "onta, ca", "brit, ca", "nova, ca", "queb, ca", "albe, ca", "mani, ca",
+            "sask, ca", "newf, ca",
         ),
         shared_words=(
             "ontario", "vancouver", "waterloo", "halifax", "laval", "burlington", "dartmouth",
-            "windsor", "kingston", "regina", "scarborough", "new brunswick",
+            "windsor", "kingston", "regina", "scarborough", "new brunswick", "ottawa",
         ),
         shared_segments=("on", "bc", "ab", "qc", "mb", "ns", "nb", "pei", "nu", "yt"),
     ),
@@ -194,6 +217,9 @@ COUNTRIES: dict[str, Country] = {
             "duisburg", "metzingen", "braunschweig", "göttingen", "bielefeld", "ratingen",
             "eschborn", "bad homburg", "garching", "böblingen", "sindelfingen", "neckarsulm",
             "oberpfaffenhofen",
+            "hanau", "ismaning", "friedrichshafen", "remscheid", "neuss", "weiterstadt",
+            "ludwigsburg", "bensheim", "melsungen", "hennigsdorf", "sankt augustin",
+            "bad mergentheim", "pfaffenhofen an der ilm", "bitterfeld wolfen", "schönaich",
         ),
         segments=("deu",),
         # Also Berlin, CT, New Berlin, WI and Berlin, NJ (ADR-0322).
@@ -209,6 +235,7 @@ COUNTRIES: dict[str, Country] = {
             "qingdao", "jinan", "changsha", "dongguan", "changzhou", "taicang", "foshan",
             "guangdong", "jiangsu", "zhejiang", "sichuan", "shandong", "fujian", "anhui",
             "hubei", "shaanxi", "mainland china",
+            "zhuhai", "kunshan", "zhangjiagang", "深圳", "西安", "中国",
         ),
         segments=("china", "chn", "prc"),
         shared_words=("china",),
@@ -223,6 +250,7 @@ COUNTRIES: dict[str, Country] = {
             "north sydney", "new south wales", "queensland", "western australia",
             "south australia", "tasmania", "australian capital territory",
             "northern territory",
+            "mawson lakes", "cooma", "enoggera",
         ),
         segments=("aus", "nsw", "vic", "qld", "tas", "act"),
         # "perth" is also Perth, Scotland and Perth Amboy, NJ (ADR-0322).
@@ -236,6 +264,7 @@ COUNTRIES: dict[str, Country] = {
             "gdańsk", "poznan", "poznań", "lodz", "łódź", "katowice", "gliwice", "szczecin",
             "lublin", "bydgoszcz", "rzeszow", "rzeszów", "gdynia", "masovian voivodeship",
             "mazowieckie", "lesser poland", "jasionka",
+            "tajęcina",
         ),
         segments=("pol",),
         shared_words=("warsaw",),
@@ -268,6 +297,7 @@ COUNTRIES: dict[str, Country] = {
             "spain", "españa", "espana", "madrid", "barcelona", "málaga", "malaga", "seville",
             "sevilla", "bilbao", "zaragoza", "catalonia", "cataluña", "catalunya", "getafe",
             "tres cantos", "las rozas", "alcobendas", "alicante", "murcia",
+            "sant cugat", "rubí", "marchamalo",
         ),
         segments=("esp",),
         shared_words=("valencia", "granada", "toledo"),
@@ -280,6 +310,7 @@ COUNTRIES: dict[str, Country] = {
             "guadalajara", "monterrey", "jalisco", "nuevo león", "nuevo leon", "tijuana",
             "baja california", "querétaro", "queretaro", "puebla", "chihuahua", "hermosillo",
             "ciudad juárez", "ciudad juarez", "zapopan", "mexicali",
+            "silao",
         ),
         segments=("mexico", "mex"),
         shared_words=("mexico",),
@@ -292,6 +323,8 @@ COUNTRIES: dict[str, Country] = {
             "the hague", "den haag", "delft", "hoofddorp", "noord-holland", "north holland",
             "zuid-holland", "south holland", "noord-brabant", "north brabant", "gelderland",
             "groningen", "leiden", "amstelveen", "veldhoven", "nijmegen", "amersfoort",
+            "papendrecht", "hengelo", "niederlande", "zoetermeer", "hilversum", "breda",
+            "schiphol", "wageningen", "s hertogenbosch", "randstad",
         ),
         segments=("nld",),
         shared_words=("holland",),
@@ -302,6 +335,7 @@ COUNTRIES: dict[str, Country] = {
         words=(
             "republic of ireland", "cork", "galway", "limerick", "county dublin",
             "co. dublin", "leinster", "munster", "waterford",
+            "donegal", "kilkenny", "nenagh",
         ),
         segments=("ireland", "irl"),
         shared_words=("ireland", "dublin"),
@@ -311,8 +345,9 @@ COUNTRIES: dict[str, Country] = {
         "United Arab Emirates",
         words=(
             "united arab emirates", "uae", "u.a.e", "dubai", "abu dhabi", "sharjah", "dubayy",
-            "ras al khaimah", "ajman",
+            "ras al khaimah", "ajman", "al ain", "al-ain",
         ),
+        segments=("are",),
         shared_segments=("ae",),
     ),
     "TW": Country(
@@ -320,6 +355,7 @@ COUNTRIES: dict[str, Country] = {
         words=(
             "taiwan", "taipei", "hsinchu", "taichung", "tainan", "taoyuan", "kaohsiung",
             "new taipei", "jubei", "新竹",
+            "台北", "台中", "台南", "台灣",
         ),
         segments=("twn",),
         shared_segments=("tw",),
@@ -329,6 +365,7 @@ COUNTRIES: dict[str, Country] = {
         words=(
             "japan", "tokyo", "osaka", "yokohama", "kyoto", "nagoya", "fukuoka", "kobe",
             "hiroshima", "sapporo", "kanagawa", "aichi",
+            "chiyoda-ku", "chiyoda", "shinagawa", "kagoshima", "yamagata",
         ),
         segments=("jpn",),
         shared_segments=("jp",),
@@ -356,6 +393,7 @@ COUNTRIES: dict[str, Country] = {
             "brazil", "brasil", "são paulo", "sao paulo", "rio de janeiro", "campinas",
             "belo horizonte", "curitiba", "porto alegre", "brasília", "brasilia", "recife",
             "florianópolis", "florianopolis", "minas gerais",
+            "indaiatuba", "sao jose dos campos", "são josé dos campos",
         ),
         segments=("bra",),
         shared_segments=("br",),
@@ -382,6 +420,7 @@ COUNTRIES: dict[str, Country] = {
             "france", "île-de-france", "ile-de-france", "toulouse", "grenoble", "bordeaux",
             "nantes", "lille", "marseille", "strasbourg", "sophia antipolis", "montpellier",
             "rennes", "courbevoie",
+            "villeurbanne", "genas", "clichy la garenne",
         ),
         segments=("fra",),
         shared_words=("paris", "lyon"),
@@ -394,6 +433,7 @@ COUNTRIES: dict[str, Country] = {
             "petah tikva", "petach tikva", "yokneam", "rehovot", "netanya", "beer sheva",
             "hod hasharon", "ramat gan", "caesarea", "kfar saba", "airport city", "or yehuda",
             "modiin", "migdal haemek",
+            "ra’anana",
         ),
         # A segment, because "Beth Israel Lahey Health" is a Boston hospital.
         segments=("israel", "isr"),
@@ -413,6 +453,7 @@ COUNTRIES: dict[str, Country] = {
         words=(
             "south africa", "johannesburg", "cape town", "durban", "pretoria", "sandton",
             "centurion", "gauteng", "western cape", "kwazulu-natal", "stellenbosch",
+            "melrose arch",
         ),
         segments=("zaf",),
         shared_segments=("za",),
@@ -424,6 +465,7 @@ COUNTRIES: dict[str, Country] = {
             "antwerpen", "ghent", "gent", "leuven", "mechelen", "liège", "liege", "flanders",
             "vlaanderen", "wallonia", "vlaams gewest", "diegem", "zaventem", "charleroi",
             "louvain-la-neuve",
+            "zedelgem", "ternat", "groot bijgaarden", "erembodegem",
         ),
         shared_segments=("be",),
     ),
@@ -433,6 +475,8 @@ COUNTRIES: dict[str, Country] = {
             "italy", "italia", "milan", "milano", "turin", "torino", "bologna", "firenze",
             "napoli", "genova", "catania", "bari", "pisa", "padova", "padua", "lombardy",
             "lombardia", "lazio", "piedmont",
+            "modena", "san giovanni valdarno", "sant agata bolognese", "brugherio", "bozen",
+            "bolzano", "vicenza",
         ),
         segments=("ita",),
         shared_words=("rome", "roma", "florence", "naples", "genoa"),
@@ -444,6 +488,7 @@ COUNTRIES: dict[str, Country] = {
             "switzerland", "schweiz", "suisse", "zurich", "zürich", "zuerich", "geneva",
             "genève", "geneve", "lausanne", "basel", "zug", "lugano", "winterthur",
             "st. gallen", "vaud", "aargau",
+            "allschwil", "pfäffikon", "pfaffikon", "mägenwil", "näfels",
         ),
         segments=("che",),
         shared_words=("bern",),
@@ -464,6 +509,7 @@ COUNTRIES: dict[str, Country] = {
         words=(
             "thailand", "bangkok", "chon buri", "chonburi", "rayong", "phuket", "chiang mai",
             "lamphun", "กรุงเทพ",
+            "samut prakan", "chachoengsao", "laem chabang",
         ),
         segments=("tha",),
         shared_segments=("th",),
@@ -473,6 +519,7 @@ COUNTRIES: dict[str, Country] = {
         words=(
             "greece", "athina", "αθηνα", "thessaloniki", "attica", "attiki", "attikí",
             "heraklion", "patras",
+            "ελλάδα", "αττική",
         ),
         segments=("grc",),
         shared_words=("athens",),
@@ -489,13 +536,13 @@ COUNTRIES: dict[str, Country] = {
     ),
     "HK": Country(
         "Hong Kong",
-        words=("hong kong", "kowloon", "hksar"),
+        words=("hong kong", "kowloon", "hksar", "香港"),
         segments=("hkg",),
         shared_segments=("hk",),
     ),
     "AR": Country(
         "Argentina",
-        words=("argentina", "buenos aires", "rosario", "mendoza"),
+        words=("argentina", "buenos aires", "caba", "rosario", "mendoza"),
         segments=("arg",),
         shared_words=("córdoba", "cordoba"),
     ),
@@ -525,27 +572,34 @@ COUNTRIES: dict[str, Country] = {
         "Indonesia",
         words=(
             "indonesia", "jakarta", "bandung", "surabaya", "batam", "bekasi", "tangerang",
-            "yogyakarta", "karawang", "makassar",
+            "yogyakarta", "karawang", "makassar", "kalimantan", "gendalo gendang",
+            "gendalo gandang",
+            "cikarang", "cilegon",
         ),
         segments=("idn",),
         shared_words=("bali",),
     ),
     "NZ": Country(
         "New Zealand",
-        words=("new zealand", "auckland", "christchurch", "waikato", "north island"),
+        words=("new zealand", "auckland", "christchurch", "waikato", "north island", "east tamaki"),
         segments=("nzl",),
         shared_words=("wellington", "hamilton", "canterbury"),
         shared_segments=("nz",),
     ),
     "NG": Country(
         "Nigeria",
-        words=("nigeria", "lagos", "abuja", "ikeja", "lekki", "port harcourt"),
+        words=(
+            "nigeria", "lagos", "abuja", "ikeja", "lekki", "port harcourt", "kaduna", "sokoto",
+            "kebbi", "zamfara",
+        ),
         segments=("nga",),
         shared_segments=("ng",),
     ),
     "UA": Country(
         "Ukraine",
-        words=("ukraine", "kyiv", "kiev", "lviv", "kharkiv", "dnipro", "odesa"),
+        words=(
+            "ukraine", "kyiv", "kiev", "lviv", "kharkiv", "dnipro", "odesa", "україна", "украина",
+        ),
         segments=("ukr",),
         shared_segments=("ua",),
     ),
@@ -563,6 +617,7 @@ COUNTRIES: dict[str, Country] = {
         words=(
             "denmark", "danmark", "copenhagen", "københavn", "kobenhavn", "aarhus", "odense",
             "aalborg", "lyngby",
+            "smørum", "ballerup",
         ),
         segments=("dnk",),
         shared_segments=("dk",),
@@ -625,7 +680,7 @@ COUNTRIES: dict[str, Country] = {
     ),
     "TR": Country(
         "Türkiye",
-        words=("turkey", "türkiye", "turkiye", "istanbul", "ankara", "izmir"),
+        words=("turkey", "türkiye", "turkiye", "istanbul", "ankara", "izmir", "bursa"),
         segments=("tur",),
         shared_segments=("tr",),
     ),
@@ -634,6 +689,9 @@ COUNTRIES: dict[str, Country] = {
         words=(
             "sri lanka", "colombo", "cololmbo", "nugegoda", "battaramulla", "rajagiriya",
             "nawala",
+            "kandy", "galle", "dehiwala", "katunayake", "mount lavinia", "avissawella", "biyagama",
+            "malabe", "pannipitiya", "kelaniya", "boralesgamuwa", "maharagama", "athurugiriya",
+            "seeduwa", "moratuwa", "polonnaruwa", "kotte",
         ),
         segments=("lka",),
         shared_segments=("lk",),
@@ -642,7 +700,7 @@ COUNTRIES: dict[str, Country] = {
         "Chile", words=("chile",), segments=("chl",), shared_words=("santiago",),
         shared_segments=("cl",),
     ),
-    "PE": Country("Peru", words=("perú",), shared_words=("peru", "lima")),
+    "PE": Country("Peru", words=("perú", "arequipa"), shared_words=("peru", "lima")),
     "LB": Country(
         "Lebanon", words=("beirut",), segments=("lbn",), shared_words=("lebanon",),
         shared_segments=("lb",),
@@ -665,7 +723,9 @@ COUNTRIES: dict[str, Country] = {
     "MT": Country(
         "Malta",
         # "Malta" is shared: "USA - New York - Malta" is a GlobalFoundries fab in New York.
-        words=("valletta", "sliema", "san ġiljan", "gżira", "birkirkara", "gozo", "mosta"),
+        words=(
+            "valletta", "sliema", "san ġiljan", "gżira", "birkirkara", "gozo", "mosta", "mriehel",
+        ),
         segments=("mlt",),
         shared_words=("malta",),
     ),
@@ -718,7 +778,8 @@ COUNTRIES: dict[str, Country] = {
     "SV": Country("El Salvador", words=("el salvador", "san salvador"), segments=("slv",)),
     "OM": Country("Oman", words=("oman", "muscat"), segments=("omn",)),
     "MA": Country(
-        "Morocco", words=("morocco", "casablanca", "rabat", "marrakech", "tangier")
+        "Morocco",
+        words=("morocco", "casablanca", "rabat", "marrakech", "tangier", "sala al jadida"),
     ),
     "NI": Country("Nicaragua", words=("nicaragua", "managua"), segments=("nic",)),
     "AL": Country("Albania", words=("albania", "tirana"), segments=("alb",)),
@@ -738,6 +799,78 @@ COUNTRIES: dict[str, Country] = {
     ),
     "MK": Country("North Macedonia", words=("north macedonia", "skopje"), segments=("mkd",)),
     "TZ": Country("Tanzania", words=("tanzania", "dar es salaam"), segments=("tza",)),
+    # ADR-0343: named by fewer than ADR-0273's 50 Jobs, each by at least 15 that named no country.
+    "GY": Country("Guyana", words=("guyana",)),
+    "SR": Country(
+        "Suriname", words=("suriname", "paramaribo", "brokopondo", "nieuw nickerie")
+    ),
+    "IQ": Country(
+        "Iraq",
+        words=("iraq", "baghdad", "basra", "erbil", "mosul"),
+        shared_segments=("iq",),
+    ),
+    "DZ": Country(
+        "Algeria",
+        words=("algeria", "algiers", "hassi messaoud"),
+        shared_segments=("dz",),
+    ),
+    "XK": Country(
+        "Kosovo",
+        words=("kosovo", "pristina", "prishtina", "prishtine"),
+        shared_segments=("xk",),
+    ),
+    "NP": Country("Nepal", words=("nepal", "kathmandu", "bagmati", "pokhara")),
+    "ZM": Country("Zambia", words=("zambia", "lusaka", "kalumbila", "solwezi")),
+    "UG": Country("Uganda", words=("uganda", "kampala")),
+    "BZ": Country("Belize", words=("belize", "belmopan")),
+    "KH": Country(
+        "Cambodia",
+        words=("cambodia", "phnom penh", "siem reap"),
+        shared_segments=("kh",),
+    ),
+    "IS": Country(
+        "Iceland",
+        words=("iceland", "reykjavik", "reykjavík", "keflavik", "keflavík", "reykjanesbaer"),
+    ),
+    "BY": Country("Belarus", words=("belarus", "minsk")),
+    "RW": Country("Rwanda", words=("rwanda", "kigali"), shared_segments=("rw",)),
+    "ZW": Country("Zimbabwe", words=("zimbabwe", "harare", "bulawayo")),
+    "UZ": Country("Uzbekistan", words=("uzbekistan", "tashkent"), shared_segments=("uz",)),
+    "KY": Country("Cayman Islands", words=("cayman islands", "grand cayman", "cayman")),
+    "MV": Country("Maldives", words=("maldives", "hulhule", "kaafu")),
+    "CI": Country(
+        "Ivory Coast",
+        words=("ivory coast", "ivoire", "divoire", "abidjan", "yamoussoukro"),
+    ),
+    "LY": Country("Libya", words=("libya", "benghazi", "tobruk")),
+    "SY": Country("Syria", words=("syria", "aleppo", "latakia")),
+    "MM": Country("Myanmar", words=("myanmar", "yangon", "rangoon", "naypyidaw")),
+    "MG": Country("Madagascar", words=("madagascar", "antananarivo", "toamasina")),
+    "ET": Country("Ethiopia", words=("ethiopia", "addis ababa")),
+    "CM": Country("Cameroon", words=("cameroon", "douala", "yaoundé", "yaounde")),
+    "BS": Country("Bahamas", words=("bahamas", "grand bahama")),
+    "TO": Country("Tonga", words=("tonga", "tongatapu")),
+    "BN": Country("Brunei", words=("brunei", "bandar seri begawan")),
+    "PG": Country("Papua New Guinea", words=("papua new guinea", "port moresby")),
+    "TT": Country("Trinidad and Tobago", words=("trinidad and tobago", "trinidad & tobago")),
+    "LI": Country("Liechtenstein", words=("liechtenstein", "vaduz")),
+    # "Jamaica, NY" is Queens: the bare name is shared, so a state code takes it, and Kingston
+    # (also Kingston, Ontario) is Jamaica's only beside "Jamaica" or its parish.
+    "JM": Country(
+        "Jamaica",
+        words=("kingston, jamaica", "kingston 10", "kingston, saint andrew", "montego bay"),
+        shared_words=("jamaica",),
+    ),
+    # The West Bank's own names: "Al-Bireh" would be read as a hyphenated "AL", Alabama.
+    "PS": Country(
+        "Palestine",
+        words=(
+            "palestine", "palestinian territory", "palestinian territories", "ramallah",
+            "al-bireh", "al bireh", "west bank", "gaza", "nablus",
+        ),
+    ),
+    # "AZ" is Arizona: Baku takes the row from it, and Azerbaijan has no code of its own.
+    "AZ": Country("Azerbaijan", words=("azerbaijan", "baku")),
 }
 # fmt: on
 
@@ -762,7 +895,7 @@ INDIA = Country(
 #: "Louvain-la-Neuve" is never Louisiana. Whitespace alone never separates, so the "de" of
 #: "Rio de Janeiro" is never Germany.
 _LEFT = r"(?:^|[,;|/():]|\s[-–])\s*"
-_RIGHT = r"\s*(?:$|[,;|/():]|[-–]\s)"
+_RIGHT = r"(?:\s*(?:$|[,;|/():]|[-–]\s)|\s+or\s+remote(?:[^a-z0-9]|$))"
 _HYPHEN_ENDS = (r"^\s*(?:{0})\s*[-–]", r"[-–]\s*(?:{0})\s*$")
 
 
