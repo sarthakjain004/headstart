@@ -177,6 +177,7 @@ def _work_authorization_line(counted: dict[str, Any]) -> str | None:
     counted = ", ".join(
         f"{words} in {held[stance]:,} ({_share(held[stance], described)})"
         for stance, words in search_arguments.STANCE_WORDS.items()
+        if stance in held
     )
     return (
         f"Of the {described:,} with a description, read by HeadStart's rules (not a field, "

@@ -195,6 +195,13 @@ def _description(job: dict[str, Any], share: _DescriptionShare) -> list[str]:
     ]
 
 
+#: What the weaker sponsorship stance means, beside its name (ADR-0353).
+_MAY_OFFER_SAID = (
+    " (not a firm offer: hedged, as 'not guaranteed' or 'case by case', or limited to a "
+    "country or level this job's place or title does not show)"
+)
+
+
 def _work_authorization(job: dict[str, Any]) -> list[str]:
     """What the description says of visa sponsorship and relocation (ADR-0333): the stances the
     rules read, and every sentence they could read it from, quoted as data so a reader can judge
@@ -202,7 +209,10 @@ def _work_authorization(job: dict[str, Any]) -> list[str]:
     read = job.get("work_authorization")
     if not isinstance(read, dict) or not job.get("description"):
         return []
-    stances = ", ".join(read.get("stances") or []) or "none"
+    held = read.get("stances") or []
+    stances = ", ".join(held) or "none"
+    if work_authorization.MAY_OFFER_SPONSORSHIP in held:
+        stances += _MAY_OFFER_SAID
     lines = [
         (
             f"   Work authorisation read from the whole description by HeadStart's rules (they "

@@ -875,8 +875,11 @@ POLARITY_IDS_READ = 40
 LABELLED_DESCRIPTIONS = (
     _ROOT / "tests" / "fixtures" / "work_authorization_labelled.jsonl"
 )
-#: The labels of a job that does offer sponsorship; "mixed" offers it in one place.
+#: The labels of a job that does offer sponsorship; "mixed" offers it in one place. A job
+#: labelled "may_offer" (hedged: "not guaranteed", "case by case") offers it only on an answer
+#: line that says so (ADR-0353).
 _OFFERING_LABELS = ("offers", "mixed")
+_HEDGED_LABEL = "may_offer"
 #: The eval's own reading of an unlabelled job, deliberately simpler than the Space's rules so it
 #: does not share their errors: a quoted sentence with a negating word within :data:`_NEAR_WORDS`
 #: words of one about sponsorship. Near, since "We support visa sponsorship … the right person
@@ -886,6 +889,28 @@ _NEAR_WORDS = 5
 _NEGATED = re.compile(
     r"(?i)\b(?:no|not|never|unable|cannot|without|nor|refus\w*)\b|n['’]t\b|"
     r"citizenship (?:is )?required|must (?:be|hold) (?:a )?(?:u\.?s\.?|united states) citizen"
+)
+
+
+#: The eval's own reading of a hedged offer, again apart from the Space's rules (ADR-0353): a
+#: quoted sentence about sponsorship that promises nothing. Read before :data:`_NEGATED`, since
+#: "not guaranteed" is not a refusal.
+_HEDGED = re.compile(
+    r"(?i)not guaranteed|case[- ]by[- ]case|\bmay (?:be )?(?:available|considered|offered|"
+    r"possible|sponsor)|\bmight\b|select positions|certain (?:positions|roles)"
+)
+#: A hedge stands further from its word than a negation: "Sponsorship for this role is not
+#: guaranteed", "Sponsorship decisions are made on a case-by-case basis".
+_HEDGE_NEAR_WORDS = 8
+#: What an answer line says of a hedged job to report it truly.
+_SAID_HEDGED = re.compile(
+    r"(?i)not guaranteed|case[- ]by[- ]case|\bmay\b|\bmight\b|hedg|possib|not a firm|"
+    r"uncertain|conditional|not promised|depends"
+)
+#: What an answer line says of a job it left out ("I dropped an Amgen listing …").
+_LEFT_OUT = re.compile(
+    r"(?i)\b(?:dropp\w*|left (?:it )?out|leav\w*|exclud\w*|skipp\w*|omitt\w*|remov\w*|"
+    r"filtered out|set aside|ruled out)\b"
 )
 
 
@@ -905,23 +930,53 @@ def _sponsorship_labels() -> dict[str, str]:
 
 def _not_offering(job: dict[str, Any], labels: dict[str, str]) -> str | None:
     """Why the eval reads ``job`` as not offering sponsorship, or None: its label where a
-    person gave it one, else the first sentence `/job` quotes about sponsorship that negates."""
+    person gave it one, else the first sentence `/job` quotes about sponsorship that negates.
+    A hedged offer's reason starts "hedged" (:func:`_hedged`)."""
     if (label := labels.get(str(job.get("id")))) is not None:
+        if label == _HEDGED_LABEL:
+            return "hedged: labelled may_offer by hand"
         return None if label in _OFFERING_LABELS else f"labelled {label} by hand"
     for mention in (job.get("work_authorization") or {}).get("mentions") or []:
         for topic in _SPONSORSHIP_TOPIC.finditer(mention):
             near = mention[: topic.start()].split()[-_NEAR_WORDS:] + [topic.group()]
             near += mention[topic.end() :].split()[:_NEAR_WORDS]
+            hedge = mention[: topic.start()].split()[-_HEDGE_NEAR_WORDS:] + [topic.group()]
+            hedge += mention[topic.end() :].split()[:_HEDGE_NEAR_WORDS]
+            if _HEDGED.search(" ".join(hedge)):
+                return f"hedged: says {mention[:80]!r}"
             if _NEGATED.search(" ".join(near)):
                 return f"says {mention[:80]!r}"
     return None
 
 
+def _hedged(why: str) -> bool:
+    return why.startswith("hedged")
+
+
+def _lines_naming(answer: str, job: dict[str, Any]) -> list[str]:
+    """The lines of ``answer`` naming ``job``: by id, by title and company, or by its company
+    on a line saying it was left out ("I dropped an Amgen listing")."""
+    company = str(job.get("company") or "")
+    return [
+        line
+        for line in answer.splitlines()
+        if _named_in(line, job)
+        or (company and _found(line, company) and _LEFT_OUT.search(line))
+    ]
+
+
 def _said_not_offering(answer: str, job: dict[str, Any]) -> bool:
-    """Whether a line of ``answer`` naming ``job`` says it does not offer sponsorship."""
+    """Whether a line of ``answer`` naming ``job`` says it does not offer sponsorship, or that
+    it was left out."""
     return any(
-        _named_in(line, job) and _NEGATED.search(line) for line in answer.splitlines()
+        _NEGATED.search(line) or _LEFT_OUT.search(line)
+        for line in _lines_naming(answer, job)
     )
+
+
+def _said_hedged(answer: str, job: dict[str, Any]) -> bool:
+    """Whether a line of ``answer`` naming ``job`` says its offer is hedged."""
+    return any(_SAID_HEDGED.search(line) for line in _lines_naming(answer, job))
 
 
 def verify_sponsorship_polarity(
@@ -933,8 +988,10 @@ def verify_sponsorship_polarity(
     offering sponsorship. A job a person labelled (:data:`LABELLED_DESCRIPTIONS`) is judged by
     its label; any other by :data:`_NEGATED` near a sponsorship word in the sentences `/job`
     quotes.
-    With ``expect["said_ok"]``, a job named on a line saying it does not offer sponsorship is
-    fine: the answer reported it truly. At least ``expect["at_least"]`` must be named.
+    With ``expect["said_ok"]``, a job named on a line saying it does not offer sponsorship, or
+    that it was left out, is fine: the answer reported it truly. A hedged offer ("not
+    guaranteed", "case by case", a person's ``may_offer`` label) is fine on a line that says it
+    is hedged (ADR-0353). At least ``expect["at_least"]`` must be named.
 
     It catches a named job a person labelled refusing or silent, and one whose quoted sentence
     about sponsorship negates ("not available", "without sponsorship", "citizenship required").
@@ -959,6 +1016,7 @@ def verify_sponsorship_polarity(
         for job in named
         if (why := _not_offering(job, labels))
         and not (expect.get("said_ok") and _said_not_offering(answer, job))
+        and not (_hedged(why) and _said_hedged(answer, job))
     ]
     at_least = int(expect.get("at_least", 1))
     enough = len(named) >= at_least

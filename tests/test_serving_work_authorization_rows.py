@@ -22,11 +22,17 @@ _ROWS = [
 def _table(tmp_path, rows, *, with_description=True):
     lancedb = pytest.importorskip("lancedb")
     pa = pytest.importorskip("pyarrow")
-    fields = [("id", pa.string())]
+    fields = [("id", pa.string()), ("title", pa.string()), ("location", pa.string())]
     if with_description:
         fields.append(("description", pa.string()))
     data = [
-        {"id": i, **({"description": d} if with_description else {})} for i, d in rows
+        {
+            "id": i,
+            "title": "Software Engineer",
+            "location": "Austin, TX",
+            **({"description": d} if with_description else {}),
+        }
+        for i, d in rows
     ]
     db = lancedb.connect(tmp_path)
     return db.create_table("jobs", data=pa.Table.from_pylist(data, pa.schema(fields)))
@@ -57,6 +63,28 @@ def test_each_stance_names_its_jobs(tmp_path):
     assert _kept(table, rows.clause(work_authorization.OFFERS_RELOCATION)) == [
         "lever:b:3",
         "lever:o'c:5",
+    ]
+
+
+def test_may_offer_keeps_the_hedged_the_out_of_reach_and_the_firm_offers(tmp_path):
+    # ADR-0353: a hedged offer, and one scoped to a country the job's place does not name,
+    # may offer; the filter keeps the firm offers with them. One scoped to another country only
+    # offers nothing here.
+    table = _table(
+        tmp_path,
+        [
+            ("lever:a:1", "Visa sponsorship is available for this role."),
+            ("lever:a:2", "Sponsorship for this role is not guaranteed."),
+            ("lever:a:3", "We can sponsor visas to Germany."),
+        ],
+    )
+    rows = _read(table)
+    assert _kept(table, rows.clause(work_authorization.OFFERS_SPONSORSHIP)) == [
+        "lever:a:1"
+    ]
+    assert _kept(table, rows.clause(work_authorization.MAY_OFFER_SPONSORSHIP)) == [
+        "lever:a:1",
+        "lever:a:2",
     ]
 
 

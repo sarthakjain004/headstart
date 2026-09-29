@@ -2336,7 +2336,10 @@ def test_a_stance_costing_everything_is_named_as_the_blocking_filter(families_se
 
 
 def test_an_unknown_stance_is_refused_naming_the_known_ones(families_served):
-    with pytest.raises(ValueError, match="offers_sponsorship, refuses_sponsorship"):
+    with pytest.raises(
+        ValueError,
+        match="offers_sponsorship, may_offer_sponsorship, refuses_sponsorship",
+    ):
         families_served.run({"work_authorization": "sponsors"})
 
 
@@ -2351,6 +2354,24 @@ def test_a_read_by_id_says_what_its_whole_description_states(families_served):
     assert job["work_authorization"] == {
         "stances": ["offers_sponsorship"],
         "mentions": ["We sponsor visas."],
+    }
+
+
+def test_a_read_by_id_judges_a_scoped_offer_against_its_own_place():
+    # ADR-0353: an offer scoped to Germany offers nothing to a job in the United States.
+    from headstart.serving.job_search import _job_row
+
+    row = {
+        "id": "lever:n8n:1",
+        "title": "Senior Developer Advocate, US",
+        "description": "We can sponsor visas to Germany.",
+    }
+    assert _job_row({**row, "location": "Berlin, Germany"})["work_authorization"][
+        "stances"
+    ] == ["offers_sponsorship"]
+    assert _job_row({**row, "location": "New York, NY"})["work_authorization"] == {
+        "stances": [],
+        "mentions": ["We can sponsor visas to Germany."],
     }
 
 

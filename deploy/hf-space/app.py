@@ -786,7 +786,8 @@ def _keep_static_for_the_boot(response):
 # it is sent, and /facets and /requirements say how many as `non_tech_left_out` (ADR-0349).
 # 19: each /hot row's `opened_fresh` and `opened_found_late`, its served postings first seen since
 # turnover began posted within 14 days of first sight and longer before (ADR-0351).
-_AGENT_API_VERSION = 19
+# 20: `may_offer_sponsorship`, and offers read against each Job's place and title (ADR-0353).
+_AGENT_API_VERSION = 20
 
 
 @app.after_request

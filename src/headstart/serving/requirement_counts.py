@@ -222,12 +222,18 @@ def _on_its_board(
 
 
 def _work_authorization(jobs: list[Mapping[str, Any]]) -> dict[str, int]:
-    """How many of ``jobs`` hold each work-authorisation stance its description states."""
+    """How many of ``jobs`` hold each work-authorisation stance its description states. As the
+    filter does, ``may_offer_sponsorship`` counts the Jobs that offer it too (ADR-0353)."""
     held = Counter(
         stance
         for job in jobs
-        for stance in work_authorization.stances(job.get("description"))
+        for stance in work_authorization.stances(
+            job.get("description"), job.get("title"), job.get("location")
+        )
     )
+    held[work_authorization.MAY_OFFER_SPONSORSHIP] += held[
+        work_authorization.OFFERS_SPONSORSHIP
+    ]
     return {stance: held[stance] for stance in work_authorization.STANCES}
 
 
