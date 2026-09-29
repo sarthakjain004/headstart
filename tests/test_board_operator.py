@@ -244,12 +244,12 @@ def test_a_narrowed_entry_still_labels_its_own_board() -> None:
 @pytest.mark.parametrize(
     ("boards", "name", "flagged"),
     [
-        # ADR-0335: jr05's #3, an agency posting psychologists in Oman as an employer.
-        (["zoho:vrinda-international.zohorecruit.in"], "Vrinda International", True),
+        # ADR-0335: a consultancy its postings did not settle, so on no list.
+        (["pyjamahr:zorba-consulting-india"], "Zorba Consulting India", True),
         (["zoho:acme.zohorecruit.com"], "Acme Consultancy Services", True),
         (["jazzhr:acme"], "Acme HR Solutions", True),
-        # A Board's tenant counts too: HIKINEX posts from `breezy:recruiting`.
-        (["breezy:recruiting"], "HIKINEX", True),
+        # A Board's tenant counts too, as HIKINEX's `breezy:recruiting` did.
+        (["breezy:recruiting"], "Acme", True),
         # Only at the start of a word: none of these names says "consult" or "hr".
         (["greenhouse:cerebras"], "Cerebras Systems", False),
         (["greenhouse:shrine"], "Shrine Technologies", False),
@@ -265,14 +265,80 @@ def test_an_employer_named_like_an_agency_is_unverified(
     assert unverified(boards, name) is flagged
 
 
+@pytest.mark.parametrize(
+    ("board", "company", "operator"),
+    [
+        (
+            "zoho:vrinda-international.zohorecruit.in",
+            "Vrinda International",
+            "staffing",
+        ),
+        ("zoho:flintex.zohorecruit.com", "Flintex Consulting Pte Ltd", "staffing"),
+        ("workable:gramian", "Gramian Consulting Group", "staffing"),
+        ("zoho:2coms.zohorecruit.in", "2COMS", "staffing"),
+        ("zwayam:2coms.openings.co", "2COMS", "staffing"),
+        ("ashby:clera", "Clera", "staffing"),
+        ("zoho:astra-north.zohorecruit.ca", "Astra North Infoteck Inc.", "staffing"),
+        ("jazzhr:inabia", "Inabia Software & Consulting Inc.", "staffing"),
+        ("lever:tsmg", "TSMG", "staffing"),
+        ("workable:weekday-1", "Weekday AI", "staffing"),
+        ("breezy:recruiting", "HIKINEX", "staffing"),
+        ("jazzhr:omegahires", "OmegaHires", "staffing"),
+        ("zoho:technopride.zohorecruit.eu", "Technopride Ltd", "staffing"),
+        ("wp_job_openings:dawninfotek.com", "Dawn InfoTek Inc.", "staffing"),
+        ("wp_job_openings:acmehr.com", "ACME HR Consulting", "staffing"),
+        ("wp_job_openings:angelandgenie.com", "Angel and Genie", "staffing"),
+        ("smartrecruiters:AngelAndGenie1", "Angel and Genie", "staffing"),
+        ("wp_job_openings:findmyjob.lk", "FindMyJob.lk", "aggregator"),
+        ("wp_job_openings:board.vals.services", "Chimney Sweep Masters", "aggregator"),
+        ("smartrecruiters:fusionconsulting", "Fusion Consulting", "services"),
+        (
+            "jazzhr:abeamconsultingsingapore",
+            "ABeam Consulting (Singapore)",
+            "services",
+        ),
+    ],
+)
+def test_hiring_nows_head_of_2026_09_29_is_labelled(
+    board: str, company: str, operator: str
+) -> None:
+    """Adjudicated from the four Lenses' top 100s and the critic's DevOps sample, each by five
+    live postings (ADR-0335)."""
+    assert classify(board, company) == operator
+
+
+@pytest.mark.parametrize(
+    ("board", "company"),
+    [
+        (
+            "icims:careers-odysseyconsult.icims.com",
+            "Odyssey Systems Consulting Group, Ltd.",
+        ),
+        ("greenhouse:blackcanyonconsulting", "Black Canyon Consulting"),
+        ("smartrecruiters:msxinternational", "MSX International"),
+    ],
+)
+def test_adjudicated_employers_named_like_agencies_are_verified(
+    board: str, company: str
+) -> None:
+    assert classify(board, company) == "employer"
+    assert not unverified([board], company)
+
+
+def test_verified_employers_are_spelled_as_entries_and_on_no_list() -> None:
+    for token in board_operator.VERIFIED_EMPLOYERS:
+        assert token.isalnum() and token.islower(), token
+    assert not board_operator.VERIFIED_EMPLOYERS & (SERVICES | STAFFING | AGGREGATORS)
+
+
 def test_a_verified_employer_is_not_unverified(monkeypatch) -> None:
     """An employer adjudicated from its postings is listed, and so no longer flagged."""
-    name = "Odyssey Systems Consulting Group, Ltd."
-    boards = ["icims:careers-odysseyconsult.icims.com"]
+    name = "Omniscius Consulting"
+    boards = ["jazzhr:omnisciusconsulting"]
     assert unverified(boards, name)
     monkeypatch.setattr(
         board_operator,
         "VERIFIED_EMPLOYERS",
-        frozenset({"odysseysystemsconsultinggroupltd"}),
+        frozenset({"omnisciusconsulting"}),
     )
     assert not unverified(boards, name)

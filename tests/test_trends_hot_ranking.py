@@ -383,7 +383,7 @@ def test_a_row_says_whether_its_employer_label_is_only_the_default() -> None:
     """ADR-0335: an employer no list names, whose name reads like an agency's, is unverified;
     one whose name does not, or that a list labels, is not."""
     directory = {
-        "zoho:vrinda": _company("Vrinda International", "zoho:vrinda"),
+        "zoho:zorba": _company("Zorba Consulting India", "zoho:zorba"),
         "gh:acme": _company("Acme", "gh:acme"),
         "lever:bluelightconsulting": _company(
             "Bluelight Consulting", "lever:bluelightconsulting", operator="staffing"
@@ -395,7 +395,7 @@ def test_a_row_says_whether_its_employer_label_is_only_the_default() -> None:
     )
     rows = hot_ranking.rank(history, directory)["lenses"]["expansion"]
     assert {row["key"]: row["operator_unverified"] for row in rows} == {
-        "zoho:vrinda": True,
+        "zoho:zorba": True,
         "gh:acme": False,
         "lever:bluelightconsulting": False,
     }

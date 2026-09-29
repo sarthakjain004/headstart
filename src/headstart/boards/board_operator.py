@@ -32,7 +32,8 @@ this file ships** flag 92% of the net growth in the top 20 rows, 87% of the top 
 the top 100 as not an employer's, and the staffing firms and job boards the tab hides hold
 89/83/78% of it — decreasing, because the tail is endless. On 2026-09-25's window the list then
 shipped flagged 86/72/61, and before that day's ten additions 59/49/42 (79/62/48 on
-2026-09-21's). Those figures move with the list and must be
+2026-09-21's). On 2026-09-29's window it flags 28/23/20 (the hidden Operators 18/14/12), against 26/20/17 (16/11/8)
+before that day's entries. Those figures move with the list and must be
 re-measured when names are added: the 45-entry draft in the research doc measured 73/52/40, and
 quoting a number that describes a list nobody shipped is exactly the kind of borrowed fact this
 repo has been caught by before. Method:
@@ -73,6 +74,12 @@ AGGREGATORS: Final[frozenset[str]] = frozenset(
         # A job platform re-posting other employers' roles, nurses and call centres among
         # them (sampled live 2026-09-26).
         "jobsforhumanity",
+        # Adjudicated 2026-09-29 by five live postings each (ADR-0335): a Sri Lankan job board
+        # re-posting Codification's, InSync's and Triolem's roles, and a WP Job Openings site
+        # posting cashiers beside ad-server and CPU-design engineers under one invented name
+        # ("Chimney Sweep Masters" on board.vals.services).
+        "findmyjoblk",
+        "boardvalsservices",
     }
 )
 
@@ -140,6 +147,11 @@ SERVICES: Final[frozenset[str]] = frozenset(
         "concentrix",
         "alorica",
         "taskus",
+        # Consultancies on Hot's employer-labelled head of 2026-09-29, each by five live
+        # postings (ADR-0335): a life-sciences IT consultancy's client projects (Fusion) and
+        # ABeam's Singapore consultants.
+        "fusionconsulting",
+        "abeamconsultingsingapore",
     }
 )
 
@@ -258,6 +270,32 @@ STAFFING: Final[frozenset[str]] = frozenset(
         "andela",
         "toptal",
         "crossover",
+        # Adjudicated from the four Lenses' top 100s of 2026-09-29, each by five live postings
+        # (ADR-0335): psychologists in Oman beside Salesforce developers (Vrinda); a masked
+        # client's construction and 6-month IT contracts (Flintex); "engineering talent
+        # solutions" (Gramian); "2COMS Payroll… for a leading MNC" (2COMS); unnamed startups'
+        # founding roles (Clera); 6-12 month client roles (Astra North); W2/C2C rates and a
+        # named client (Inabia); AI data-collection crowd work, as Welo Global (TSMG); "for one
+        # of Weekday's clients" (Weekday AI); "(Fastwater Staffing)… Our client" (HIKINEX, whose
+        # Board is `breezy:recruiting`); $80-90/hr contracts (OmegaHires); "for our renowned IT
+        # client… share your CV" (Technopride); and the recruiters whose WP Job Openings sites
+        # led a DevOps requirements sample: Dawn InfoTek ("recruiting all levels of IT positions
+        # for our clients"), ACME HR Consulting and Angel and Genie (CTC in every title).
+        "vrindainternational",
+        "flintex",
+        "gramianconsultinggroup",
+        "2coms",
+        "clera",
+        "astranorthinfoteckinc",
+        "inabia",
+        "tsmg",
+        "weekdayai",
+        "hikinex",
+        "omegahires",
+        "technopride",
+        "dawninfotek",
+        "acmehr",
+        "angelandgenie",
     }
 )
 
@@ -286,7 +324,16 @@ EXCEPTIONS: Final[frozenset[str]] = frozenset(
 #: Employers adjudicated from their own postings whose names still read like an agency's
 #: (:func:`unverified`), spelled as SERVICES is, so `hiring_now` stops flagging them. Not a
 #: label: `classify` never reads it (ADR-0335).
-VERIFIED_EMPLOYERS: Final[frozenset[str]] = frozenset()
+VERIFIED_EMPLOYERS: Final[frozenset[str]] = frozenset(
+    {
+        # 2026-09-29, five live postings each: Air Force test engineers under the TMAS III
+        # contract (Odyssey), a federal contractor's analysts in Bethesda (Black Canyon), and
+        # MSX International's own automotive helpdesk engineers.
+        "odysseysystemsconsultinggroupltd",
+        "blackcanyonconsulting",
+        "msxinternational",
+    }
+)
 
 #: The words that make a company's name read like a staffing firm's or a recruiter's, each at
 #: the start of a word. A lead, never a label: of the 12 employer-labelled companies it named on
