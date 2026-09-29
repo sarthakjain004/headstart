@@ -76,6 +76,20 @@ Measured on the HF trends state (newest tick 2026-09-29 04:04), over the 7 days 
    per-Board counting began only where the window starts before it. The page's `isYoung`, which
    read every index line "too new" in a window under 3 days, now reads no line of the index as
    young.
+8. **The share denominator takes out every served job the Boards found brought.** *(Added
+   2026-09-29 in the review follow-up to #889.)* As first shipped, the denominator was netted by
+   the openings found Boards brought the view's own lines, while it counts every served job in
+   scope (ADR-0233 decision 2): non-tech, and under a drill every other category. So the share
+   was biased down. Over the week to 2026-09-29 06:19 All tech roles read a share of −4.17% on
+   −1.35% hiring, and Software Engineering by level −17.24% on −7.35%, its netted denominator
+   447,138 where the index's was 486,260. Each found entry now carries `served`, every job its
+   Boards brought, and the denominator is netted by it (`netting._notes` with `served`): both
+   views read a denominator of 505,754, and shares of −0.33% and −6.39%. A view narrowed to some
+   ATSes counts no non-tech in its denominator (the index holds non-tech as one row over every
+   ATS), so neither does its `served`. A pick's found Boards carry it too, and a Board of a pick
+   that brought only non-tech jobs now lands in its denominator: 13 of 9,615 companies' 7-day
+   denominators moved, one share. Under New a found Board is dated where its hold ends, not where
+   its jobs joined the denominator, so New keeps the lines' own netting there (#927).
 
 ## Measured
 

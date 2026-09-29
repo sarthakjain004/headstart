@@ -84,7 +84,8 @@
     "lines": {
      "software-engineering": 80,
      "web-development": 40
-    }
+    },
+    "served": 120
    },
    {
     "ts": "2026-09-23T00:00:00+00:00",
@@ -93,7 +94,8 @@
     "openings": 2,
     "lines": {
      "data-engineering": 2
-    }
+    },
+    "served": 2
    },
    {
     "ts": "2026-09-24T00:00:00+00:00",
@@ -102,7 +104,8 @@
     "openings": 30,
     "lines": {
      "software-engineering": 30
-    }
+    },
+    "served": 30
    }
   ],
   "evicted": [],

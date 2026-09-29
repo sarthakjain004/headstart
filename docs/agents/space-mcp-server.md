@@ -282,13 +282,15 @@ category, seniority `level`, watched `role` or `company`.
 
 - **Hiring comes first.** An answer leads with "Hiring, as postings opened and closed: O opened,
   C closed, net N".
-- **Then the change in openings listed, split three ways.** An answer then gives "Openings listed:
-  A → B" and splits that change into three parts:
+- **Then the change in openings listed, split four ways.** An answer then gives "Openings listed:
+  A → B" and splits that change into four parts:
   - what turnover accounts for;
   - what the counting changes HeadStart sized account for;
-  - **the unsized rest**, which is not a hiring figure. It holds re-counting (Boards found or
-    dropped, duplicates removed, counting changes HeadStart did not size) and any hiring before
-    turnover began.
+  - what the Boards found account for: Boards HeadStart began reading, whose existing postings
+    it counted at once. They are not a counting change, and are listed apart from them;
+  - **the unsized rest**, which is not a hiring figure. It holds re-counting (Boards dropped or
+    read differently, duplicates removed, counting changes HeadStart did not size) and any
+    hiring before turnover began.
 
   The whole index sizes its counting changes (ADR-0270) and, from the first per-Board count on
   2026-09-13, its Boards found (ADR-0304), but not its duplicate removals. Before ADR-0304, on
@@ -307,7 +309,8 @@ category, seniority `level`, watched `role` or `company`.
 - **Each counting change is named once**, numbered, by short tags ("[4] category list + duplicate
   check + category sorting"), and figures refer to it by number. One line glosses each tag once,
   and "growth rescaled by [n]": where taking change [n] out would have left a line below zero,
-  HeadStart scaled the line's earlier growth down instead.
+  HeadStart scaled the line's earlier growth down instead. Boards found are numbered the same
+  way, in a legend of their own.
 - **A retired category names its successor.** A window from before the category list changed on
   2026-09-25 reads the old categories: "Security Engineering (retired; now Security)". Its jobs
   were re-sorted, so it does not line up with the successor's figures in a later window.

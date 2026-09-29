@@ -9,7 +9,7 @@ With no company picked nothing was sized at all, so a 30-day whole-index window 
 index's counting changes and Boards found are sized, but not its duplicate removals. So this
 answer leads with turnover, reports the change in openings listed separately, and names what
 neither turnover nor a sized step explains as change HeadStart could not size, with the window's
-counting changes, each label once. Where turnover is missing or partial it says so. The drawing arrays (``netted``,
+counting changes, each label once, and its Boards found apart from them. Where turnover is missing or partial it says so. The drawing arrays (``netted``,
 ``steps_at``, ``reference``, ``points``, ``day_markers``) are left out, which takes a 406 kB
 payload down to a few hundred words. A reading that fails the Space's arithmetic check is still
 reported, saying so; one the Space could not read at all reports no figures.
@@ -187,17 +187,27 @@ def _tagged(label: str) -> list[tuple[str, str]]:
     return [(tag, did) for _, tag, did in found]
 
 
+#: A Marked change's kind for Boards found (``line_reading.CauseKind.FOUND_BOARDS``): Boards
+#: HeadStart began reading, not a change in how it counts.
+_FOUND_BOARDS = "found_boards"
+
+
 class _Changes:
-    """The counting changes an answer names, numbered once each by label: a window repeats
-    labels ("we got better at spotting tech jobs…" four times in 30 days), so each is said once
-    and every figure refers to it by number, with the sizes of one label summed. The legend names
-    each by short tags and glosses every tag once: a whole-index answer's legend of near-identical
-    sentences was 1,325 characters of its 3,706 (ADR-0321)."""
+    """The changes an answer names, numbered once each by label: a window repeats labels ("we
+    got better at spotting tech jobs…" four times in 30 days), so each is said once and every
+    figure refers to it by number, with the sizes of one label summed. The legend names each
+    counting change by short tags and glosses every tag once: a whole-index answer's legend of
+    near-identical sentences was 1,325 characters of its 3,706 (ADR-0321). Boards found are said
+    apart from the counting changes: a **Found Board** is not a **Counting change**
+    (CONTEXT.md), and the index's "9,322 more job sites found" was listed as one."""
 
     def __init__(self, marked: list[dict[str, Any]]) -> None:
         self.days: dict[str, list[str]] = {}
         for change in marked:
             self.days.setdefault(change["label"], []).append(change["ts"][:10])
+        self.found = {
+            change["label"] for change in marked if change["kind"] == _FOUND_BOARDS
+        }
         self.unsized = [
             label
             for label in self.days
@@ -213,10 +223,13 @@ class _Changes:
         self.numbers.setdefault(label, len(self.numbers) + 1)
         return f"[{self.numbers[label]}]"
 
-    def causes(self, move: dict[str, Any]) -> str:
-        """``move``'s sized causes, one per label with its sizes summed, by number."""
+    def causes(self, move: dict[str, Any], found: bool | None = None) -> str:
+        """``move``'s sized causes, one per label with its sizes summed, by number: only its
+        Boards found, or only the rest, where ``found`` says which."""
         summed: dict[str, int] = {}
         for cause in move.get("not_hiring") or []:
+            if found is not None and (cause["kind"] == _FOUND_BOARDS) != found:
+                continue
             summed[cause["label"]] = summed.get(cause["label"], 0) + cause["size"]
         return ", ".join(
             f"{self.number(label)} {_signed(size)}"
@@ -247,15 +260,28 @@ class _Changes:
         numbered. It numbers nothing: every label it names was numbered as it was used."""
         if not self.numbers:
             return []
-        legend = (
-            "Counting changes, HeadStart's own changes to how it counts, each adding, dropping "
-            "or moving jobs in the counts, none of it hiring: "
-            + "; ".join(
-                f"[{n}] {self._dated(label, full)}" for label, n in self.numbers.items()
+        counting = [
+            (label, n) for label, n in self.numbers.items() if label not in self.found
+        ]
+        found = [(label, n) for label, n in self.numbers.items() if label in self.found]
+        lines = []
+        if counting:
+            lines.append(
+                "Counting changes, HeadStart's own changes to how it counts, each adding, "
+                "dropping or moving jobs in the counts, none of it hiring: "
+                + "; ".join(
+                    f"[{n}] {self._dated(label, full)}" for label, n in counting
+                )
+                + "."
             )
-            + "."
-        )
-        glossed = dict(tag for label in self.numbers for tag in _tagged(label))
+        if found:
+            lines.append(
+                "Boards found, not a counting change: Boards HeadStart began reading, whose "
+                "existing postings it counted at once, none of it hiring: "
+                + "; ".join(f"[{n}] {self._dated(label, full)}" for label, n in found)
+                + "."
+            )
+        glossed = dict(tag for label, _ in counting for tag in _tagged(label))
         glossary = [f"{tag} = we {did}" for tag, did in glossed.items()]
         if any(label.startswith(GROWTH_RESCALED_WHEN) for label in self.numbers):
             glossary.append(
@@ -263,7 +289,7 @@ class _Changes:
                 "below zero, HeadStart scaled the line's earlier growth down instead, and this "
                 "is the growth that scaling removed"
             )
-        return [legend] + (["Tags: " + "; ".join(glossary) + "."] if glossary else [])
+        return lines + (["Tags: " + "; ".join(glossary) + "."] if glossary else [])
 
 
 @dataclass(frozen=True)
@@ -469,12 +495,22 @@ def _total(
     explained = []
     if split.net is not None:
         explained.append(f"postings opened and closed account for {_signed(split.net)}")
-    if split.sized:
+    found = sum(
+        cause["size"]
+        for cause in move.get("not_hiring") or []
+        if cause["kind"] == _FOUND_BOARDS
+    )
+    if split.sized - found:
         explained.append(
-            f"counting changes HeadStart sized for {_signed(split.sized)} "
-            f"({changes.causes(move)})"
+            f"counting changes HeadStart sized for {_signed(split.sized - found)} "
+            f"({changes.causes(move, found=False)})"
         )
-    elif move.get("turnover") or new:
+    if found:
+        explained.append(
+            f"Boards found, whose existing postings HeadStart counted when it began reading "
+            f"them, for {_signed(found)} ({changes.causes(move, found=True)})"
+        )
+    if not split.sized and (move.get("turnover") or new):
         explained.append("HeadStart sized none of it as re-counting")
     contains = _rest_contains(payload, bool(labels), changes, window)
     if split.rest and split.net is not None:

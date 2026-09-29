@@ -70,7 +70,8 @@
     "openings": 10,
     "lines": {
      "a": 10
-    }
+    },
+    "served": 10
    }
   ],
   "evicted": [],

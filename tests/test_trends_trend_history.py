@@ -230,6 +230,7 @@ def test_the_index_sizes_each_board_found_by_the_line_it_lands_in(tmp_path):
             "boards": 1,
             "openings": 1,
             "lines": {"software-engineering": 1},
+            "served": 1,
         }
     ]
     assert history.unnetted_answer(TrendQuestion())["discovered"] == found
@@ -457,6 +458,53 @@ def _record_stock(state: Path, ts: str, by_family: dict[str, int]) -> None:
         dedup_version=1,
     )
     trend_history.record_tick(state, ts, levels, {}, methodology)
+
+
+def test_the_share_denominator_takes_out_every_job_a_found_board_brought(tmp_path):
+    """The share's denominator is every served job, so a found Board's backlog comes out of it
+    whole, non-tech and every category included (#889 review). Netted by the view's own lines'
+    openings, All tech roles read a share of −4.17% over a week of −1.35% hiring, and Software
+    Engineering by level −17.2% on −7.3%."""
+    methodology = trend_history.Methodology("f", 1, 1, 1, 1)
+    acme = {("greenhouse:acme", "stock", role_taxonomy.NON_TECH, "all"): 100}
+    newco = {
+        ("lever:newco", "stock", "software-engineering", "mid"): 10,
+        ("lever:newco", "stock", "qa-test", "mid"): 20,
+        ("lever:newco", "stock", role_taxonomy.NON_TECH, "all"): 70,
+    }
+    for days, swe, found in (
+        (0, 100, False),
+        (1, 100, False),
+        (2, 100, True),
+        (4, 110, True),
+    ):
+        levels = {
+            **acme,
+            ("greenhouse:acme", "stock", "software-engineering", "mid"): swe,
+        }
+        trend_history.record_tick(
+            tmp_path,
+            _stamp(days),
+            {**levels, **(newco if found else {})},
+            {},
+            methodology,
+        )
+    history = TrendHistory.load(tmp_path, _NO_CONFIG)
+    index = history.unnetted_answer(TrendQuestion())
+    assert [(f["openings"], f["served"]) for f in index["discovered"]] == [(30, 100)]
+    total = line_reading.read_answer(index).total.move
+    # 130 netted tech openings over 300 served jobs at the start, 140 over 310 now.
+    assert (total.hiring, total.share.denominator_start) == (10, 300)
+    assert total.share.percent == pytest.approx((140 / 310) / (130 / 300) * 100 - 100)
+    # A view narrowed to some ATSes holds no non-tech in its denominator: the index counts
+    # non-tech as one row over every ATS.
+    lever = history.unnetted_answer(TrendQuestion(ats=("greenhouse", "lever")))
+    assert [(f["openings"], f["served"]) for f in lever["discovered"]] == [(30, 30)]
+    by_level = history.unnetted_answer(TrendQuestion(family="software-engineering"))
+    assert [(f["openings"], f["served"]) for f in by_level["discovered"]] == [(10, 100)]
+    swe = line_reading.read_answer(by_level).total.move
+    assert (swe.hiring, swe.share.denominator_start) == (10, 300)
+    assert swe.share.percent == pytest.approx((120 / 310) / (110 / 300) * 100 - 100)
 
 
 def test_a_hidden_family_is_the_last_series_and_reads_as_other(tmp_path):

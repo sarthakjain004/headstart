@@ -49,6 +49,7 @@ from headstart.trends.netting import (
     _count_jumps,
     _hiring_turnover,
     _is_whole,
+    _Jump,
     _Line,
     _line_company,
     _line_notes,
@@ -57,6 +58,7 @@ from headstart.trends.netting import (
     _summed_picks,
     _View,
     _viewed,
+    drawn_nowhere,
     js_round,
     note_size,
 )
@@ -826,12 +828,12 @@ class _Reader:
             whole_company=self._is_whole_company(line),
             estimated=exact.estimated,
             netted=netted,
-            # A quiet step (the index's Boards found) moves the line but breaks nothing drawn.
+            # The index's Boards found move the line but break nothing drawn.
             steps_at=tuple(
                 sorted(
                     j
                     for j, jump in _count_jumps(self.view, line).items()
-                    if not all(self.notes[k]["quiet"] for k in jump.notes)
+                    if not self.jump_drawn_nowhere(jump)
                 )
             ),
             index_base=None
@@ -1007,6 +1009,7 @@ class _Reader:
         whole = replace(
             view,
             drilled=False,
+            notes=view.served_notes,
             pick_series=view.company_totals if several else {},
             pick_parts={},
             _jump_cache={},
@@ -1045,7 +1048,7 @@ class _Reader:
             return self.register_removal(n["company"], n["i"])
         if n["join"]:
             return self.register_joining(n["company"], n["i"])
-        if n["quiet"]:
+        if drawn_nowhere(n):
             return self.register_found_through_window()
         if n["found"]:
             change = f"found@{stamps[n['i']]}/{n['company']}"
@@ -1101,14 +1104,18 @@ class _Reader:
         )
         return change
 
+    def jump_drawn_nowhere(self, jump: _Jump) -> bool:
+        """Whether ``jump`` is only the index's Boards found, which no line breaks at."""
+        return all(drawn_nowhere(self.notes[k]) for k in jump.notes)
+
     def register_found_through_window(self) -> str:
         """The index's Boards found through the window, one change for every run they land on
         (ADR-0304): they land on nearly every run, so the change is dated at their first and
         drawn nowhere."""
         change = "found@window"
         # the Boards taken out; a run's handful left in the line is not (SMALLEST_STEP_TAKEN_OUT)
-        quiet = [n for n in self.notes if n["quiet"] and n["withhold"]] or [
-            n for n in self.notes if n["quiet"]
+        quiet = [n for n in self.notes if drawn_nowhere(n) and n["withhold"]] or [
+            n for n in self.notes if drawn_nowhere(n)
         ]
         boards = sum(n["boards"] for n in quiet)
         self._register(
@@ -1411,14 +1418,14 @@ class _Split:
         nothing by the change that made the step, the nearest one landing at or after ``c``. A
         run only the index's Boards found land on is none: they add openings, which never cut a
         line (ADR-0304)."""
-        notes = self.reader.notes
-
-        def found_only(j: int) -> bool:
-            jump = self.trace.jumps.get(j)
-            return bool(jump) and all(notes[k]["quiet"] for k in jump.notes)
-
+        jumps = self.trace.jumps
         at = min(
-            (j for j in self.trace.withheld if j >= c and not found_only(j)),
+            (
+                j
+                for j in self.trace.withheld
+                if j >= c
+                and not (j in jumps and self.reader.jump_drawn_nowhere(jumps[j]))
+            ),
             default=None,
         )
         if at is None:

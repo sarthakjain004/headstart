@@ -4114,7 +4114,13 @@ def test_a_board_found_after_its_company_began_is_marked(company_trends, monkeyp
     )
     d = _answer(company_trends, "company=workday:citi/2")
     assert d["discovered"] == [
-        {"ts": _T2, "company": "workday:citi/2", "boards": 1, "openings": 3}
+        {
+            "ts": _T2,
+            "company": "workday:citi/2",
+            "boards": 1,
+            "openings": 3,
+            "served": 3,
+        }
     ]
     comparable = _answer(company_trends, "company=workday:citi/2&coverage=comparable")
     assert comparable["discovered"] == []
@@ -4145,8 +4151,16 @@ def test_a_board_that_brought_no_tech_openings_is_not_marked(
     arrivals = dict(history._board_arrivals)
     arrivals["workday:hpe/new"] = (_T2, 0)  # its first tick held only non-tech
     monkeypatch.setattr(history, "_board_arrivals", arrivals)
+    served = {**history._served_arrivals, "workday:hpe/new": 4}
+    monkeypatch.setattr(history, "_served_arrivals", served)
     d = _answer(company_trends, "company=workday:hpe/a")
-    assert d["discovered"] == []
+    # Its non-tech jobs still land in the share denominator, which takes them out (#889
+    # review), but no line moves and nothing is marked.
+    assert d["discovered"] == [
+        {"ts": _T2, "company": "workday:hpe/a", "boards": 0, "openings": 0, "served": 4}
+    ]
+    _, reading = line_reading.trends_payload(d)
+    assert [c.kind for c in reading.marked_changes] == []
 
 
 def test_search_narrows_to_the_boards_a_trend_hands_over(app):
