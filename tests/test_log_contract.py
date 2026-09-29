@@ -1274,6 +1274,7 @@ def _index_paths(**over: object) -> argparse.Namespace:
         upgrades="data/state/pending_upgrades.txt",
         unauthoritative_boards="data/state/unauthoritative_boards.json",
         unauthoritative_ids="data/state/unauthoritative_board_ids.txt",
+        non_english_ids="data/state/pending_non_english.txt",
         dormant_boards="data/state/dormant_boards.json",
         unconfirmed="data/state/unconfirmed_ids.txt",
         eviction_queue="data/state/eviction_queue.tsv",

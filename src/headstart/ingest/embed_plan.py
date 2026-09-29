@@ -66,8 +66,9 @@ _PRIORITY = REPO_ROOT / "data" / "state" / "board_priority.csv"
 # Rides to the merge stage inside the corpus-state artifact it already downloads (ADR-0050).
 _UPGRADES = PENDING_UPGRADES_PATH
 _OUT = REPO_ROOT / "data" / "embeddings" / "assignments"
-#: Served rows that failed the English gate on 2026-09-29, re-gated once (ADR-0286): most were
-#: embedded before the gate existed, so no re-evaluation would otherwise reach them.
+#: Served rows that failed the English gate on 2026-09-29 (ADR-0286), re-gated on each run that
+#: reads them: most were embedded before the gate existed, so no re-evaluation would otherwise
+#: reach them. The answer is deterministic, so one that passes simply stays.
 _REGATE = REPO_ROOT / "config" / "regate_english.txt"
 
 # Measured CPU seconds-per-Doc per Bucket. Hardcoded (not derived from live CI logs) for Phase 1
@@ -226,13 +227,13 @@ def main() -> int:
     ap.add_argument(
         "--non-english-out",
         default=str(PENDING_NON_ENGLISH_PATH),
-        help="where to list held ids whose text no longer passes the English gate, for the "
+        help="where to list embedded ids whose text no longer passes the English gate, for the "
         "merge stage to drop (ADR-0286)",
     )
     ap.add_argument(
         "--regate",
         default=str(_REGATE),
-        help="held ids to put through the English gate once more this run (ADR-0286)",
+        help="embedded ids to put through the English gate on every run that reads them (ADR-0286)",
     )
     ap.add_argument(
         "--max-shards",
@@ -314,9 +315,10 @@ def main() -> int:
                 continue
             upgrading = bool(described or is_edit)
         if not is_english(job.get("title") or "", job.get("description") or ""):
-            # A held Job re-evaluated here is served, on an English vector, while its text
-            # now fails the gate a new Job must pass. List it for the merge to drop from the
-            # store; sync then evicts its row like any Job that left (ADR-0286).
+            # An embedded Job re-evaluated here is served, on an English vector, while its
+            # text now fails the gate a new Job must pass. List it for the merge to drop from
+            # the store; sync then evicts its row like any Job that left, even on a
+            # scope-excluded Board, since the scrape returned it (ADR-0286).
             if jid in prior:
                 non_english.append(jid)
             dropped += 1
@@ -371,7 +373,7 @@ def main() -> int:
     )
     if non_english:
         _log.info(
-            f"held Jobs no longer English: {len(non_english)} listed for the merge to drop "
+            f"embedded Jobs no longer English: {len(non_english)} listed for the merge to drop "
             "(ADR-0286)"
         )
 

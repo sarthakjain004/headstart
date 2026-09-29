@@ -54,7 +54,7 @@ def _run(store: Path, fragments: Path) -> None:
         str(store),
         "--fragments",
         str(fragments),
-        "--drop-ids",
+        "--non-english-ids",
         str(store.parent / "pending_non_english.txt"),
     ]
     try:
@@ -214,7 +214,7 @@ def _run_with_upgrades(store: Path, fragments: Path, upgrades: Path) -> None:
         str(fragments),
         "--evict-ids",
         str(upgrades),
-        "--drop-ids",
+        "--non-english-ids",
         str(store.parent / "pending_non_english.txt"),
     ]
     try:

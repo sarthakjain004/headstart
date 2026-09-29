@@ -4,8 +4,9 @@
 The English gate (`doc_prep.is_english`) runs when a Job is first embedded, and never again on a
 row already served. A description that arrived or changed after the embed, or a row embedded
 before the gate existed, can leave a non-English posting in an English-only index (#706).
-`embed_plan` re-gates every held Job it re-evaluates since ADR-0286. This list names the rows
-already served that no re-evaluation would reach, so `embed_plan` re-gates them once too.
+`embed_plan` re-gates every embedded Job it re-evaluates since ADR-0286. This list names the rows
+already served that no re-evaluation would reach, so `embed_plan` re-gates them too, on each run
+that reads them; the answer is deterministic, so a listed Job that passes simply stays.
 
 Only rows with a description are listed: on a bare title the language guess is too noisy to
 evict on. ``--exclude`` leaves out Boards whose text reads non-English for a reason of our own:
@@ -14,7 +15,7 @@ fixed separately under #706).
 
 Reads the served table straight off HF by column (no 4 GB pull), so it needs an HF token:
 
-    HF_HUB_DISABLE_XET=1 PYTHONPATH=src python scripts/filter/list_non_english_served.py
+    PYTHONPATH=src python scripts/embed/list_non_english_served.py
 """
 
 from __future__ import annotations
@@ -22,7 +23,8 @@ from __future__ import annotations
 import argparse
 import os
 from collections import Counter
-from concurrent.futures import ProcessPoolExecutor
+from collections.abc import Iterator
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
 from headstart.ingest.doc_prep import is_english
@@ -41,18 +43,16 @@ def non_english(rows: list[tuple[str, str, str]]) -> list[str]:
     ]
 
 
-def _served_rows(version: int | None) -> list[tuple[str, str, str]]:
+def _served_batches(version: int | None) -> Iterator[list[tuple[str, str, str]]]:
     import lance
     from huggingface_hub import get_token
 
-    os.environ.setdefault("HF_HUB_DISABLE_XET", "1")
     ds = lance.dataset(
         _TABLE, version=version, storage_options={"hf_token": get_token()}
     )
     print(f"served table v{ds.version}, {ds.count_rows():,} rows", flush=True)
-    rows = []
-    for batch in ds.to_batches(columns=["id", "title", "description"], batch_size=8192):
-        rows.extend(
+    for batch in ds.to_batches(columns=["id", "title", "description"], batch_size=5000):
+        yield [
             # `is_english` reads the first 500 characters; holding only those keeps memory small.
             (job_id, title or "", (description or "")[:500])
             for job_id, title, description in zip(
@@ -61,8 +61,7 @@ def _served_rows(version: int | None) -> list[tuple[str, str, str]]:
                 batch.column("description").to_pylist(),
                 strict=True,
             )
-        )
-    return rows
+        ]
 
 
 def main() -> int:
@@ -77,16 +76,28 @@ def main() -> int:
         help="an id prefix to leave out, e.g. avature:ea: (repeatable)",
     )
     args = ap.parse_args()
-    rows = _served_rows(args.version)
-    chunks = [rows[i : i + 5000] for i in range(0, len(rows), 5000)]
+    # Each batch is gated as it arrives and each failing id written as it is found, so a slow
+    # read or a crash loses nothing already gated; the sorted list replaces it at the end.
+    partial = args.out.with_suffix(".partial")
     ids: list[str] = []
-    with ProcessPoolExecutor(max_workers=args.workers) as pool:
-        for n, found in enumerate(pool.map(non_english, chunks), 1):
+    with (
+        ProcessPoolExecutor(max_workers=args.workers) as pool,
+        partial.open("w") as sink,
+    ):
+        futures = [
+            pool.submit(non_english, rows) for rows in _served_batches(args.version)
+        ]
+        for n, future in enumerate(as_completed(futures), 1):
+            found = [
+                i for i in future.result() if not i.startswith(tuple(args.exclude))
+            ]
             ids.extend(found)
+            sink.write("".join(f"{i}\n" for i in found))
+            sink.flush()
             if n % 20 == 0:
-                print(f"  {n * 5000:,} rows gated, {len(ids):,} fail", flush=True)
-    ids = sorted(i for i in ids if not i.startswith(tuple(args.exclude)))
-    args.out.write_text("".join(f"{i}\n" for i in ids), encoding="utf-8")
+                print(f"  {n} batches gated, {len(ids):,} fail", flush=True)
+    args.out.write_text("".join(f"{i}\n" for i in sorted(ids)), encoding="utf-8")
+    partial.unlink()
     print(f"{len(ids):,} ids -> {args.out}", flush=True)
     print(Counter(i.split(":", 1)[0] for i in ids).most_common(10), flush=True)
     return 0

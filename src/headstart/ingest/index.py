@@ -102,6 +102,7 @@ from headstart.embedding_conventions import PROD_TABLE
 from headstart.ingest import (
     DORMANT_BOARDS_PATH,
     EVICTION_QUEUE_PATH,
+    PENDING_NON_ENGLISH_PATH,
     PENDING_UPGRADES_PATH,
     REPO_ROOT,
     UNAUTHORITATIVE_BOARD_IDS_PATH,
@@ -782,6 +783,15 @@ def sync(args: argparse.Namespace) -> int:
     rejected = {
         job_id
         for job_id in read_id_list(Path(args.unauthoritative_ids)) - corpus_ids
+        if lower_key(resolve_board(job_id, live)) in excluded_keys
+    }
+    # The same holds for an embedded Job this run dropped because its text now fails the English
+    # gate (ADR-0286): the scrape returned it, so it was seen, and embed_merge took its vector out.
+    # Without this, a row on a scope-excluded Board keeps serving its old English vector — the very
+    # Boards (never authoritative, #695) the re-gate was meant to reach.
+    rejected |= {
+        job_id
+        for job_id in read_id_list(Path(args.non_english_ids)) & corpus_ids
         if lower_key(resolve_board(job_id, live)) in excluded_keys
     }
     fresh = corpus_ids & row_of.keys()
@@ -1566,6 +1576,13 @@ def main() -> int:
         default=str(UNAUTHORITATIVE_BOARD_IDS_PATH),
         help="ids the scrape returned on those Boards, written by scrape_join; any the tech "
         "filter rejected take the grace period despite the Board's exclusion (ADR-0243)",
+    )
+    p_sync.add_argument(
+        "--non-english-ids",
+        default=str(PENDING_NON_ENGLISH_PATH),
+        help="embedded Job ids this run dropped for failing the English gate, written by "
+        "embed_plan; any on a scope-excluded Board take the grace period like a tech-filter "
+        "rejection (ADR-0286)",
     )
     p_sync.add_argument(
         "--dormant-boards",
