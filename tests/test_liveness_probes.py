@@ -2069,7 +2069,11 @@ def _first_host_asked(monkeypatch, ats, tenant, url):
     monkeypatch.setattr(
         cl.http,
         "session",
-        lambda: SimpleNamespace(request=lambda method, target, **kw: record(target)),
+        # A jar too: cornerstone clears the tenant's cookies before its first page read.
+        lambda: SimpleNamespace(
+            request=lambda method, target, **kw: record(target),
+            cookies=SimpleNamespace(clear=lambda domain=None: None),
+        ),
     )
     monkeypatch.setattr(
         cl,
