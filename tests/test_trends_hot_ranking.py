@@ -401,6 +401,66 @@ def test_a_row_says_whether_its_employer_label_is_only_the_default() -> None:
     }
 
 
+def test_a_row_counts_its_postings_first_seen_in_the_window_by_posted_date() -> None:
+    """ADR-0351: Starbucks' opened was mostly postings posted months before HeadStart first saw
+    them. A posting counts as found late past FOUND_LATE_DAYS; an undated or unreadable one, as
+    fresh; one first seen outside the window's turnover, or on a Board no company holds, not
+    at all. A Board key holding a colon is matched whole (ADR-0049)."""
+    directory = {
+        "eightfold:starbucks.eightfold.ai": _company(
+            "Starbucks", "eightfold:starbucks.eightfold.ai"
+        ),
+        "workday:acme/Site:One": _company("Acme", "workday:acme/Site:One"),
+    }
+    seen = "2026-09-24T10:00:00+00:00"
+    first_seen = [
+        ("eightfold:starbucks.eightfold.ai:1", seen, "2026-05-05"),
+        ("eightfold:starbucks.eightfold.ai:2", seen, "2026-09-09T00:00:00.000-04:00"),
+        # 14 days before first sight is not past it
+        ("eightfold:starbucks.eightfold.ai:3", seen, "2026-09-10"),
+        ("eightfold:starbucks.eightfold.ai:4", seen, None),
+        ("eightfold:starbucks.eightfold.ai:5", seen, "21-Apr-2026"),
+        # first seen before turnover began, or never
+        (
+            "eightfold:starbucks.eightfold.ai:6",
+            "2026-09-18T00:00:00+00:00",
+            "2026-01-01",
+        ),
+        ("eightfold:starbucks.eightfold.ai:7", None, "2026-01-01"),
+        ("WORKDAY:ACME/SITE:ONE:REQ:9", seen, "2026-01-01"),
+        ("lever:nobody:1", seen, "2026-01-01"),
+    ]
+    history = _History(
+        dict.fromkeys(directory, 500),
+        {key: _Move(net=5, opened=5) for key in directory},
+    )
+    payload = hot_ranking.rank(history, directory, first_seen)
+    rows = {row["key"]: row for row in payload["lenses"]["expansion"]}
+    starbucks = rows["eightfold:starbucks.eightfold.ai"]
+    assert (starbucks["opened_fresh"], starbucks["opened_found_late"]) == (3, 2)
+    acme = rows["workday:acme/Site:One"]
+    assert (acme["opened_fresh"], acme["opened_found_late"]) == (0, 1)
+    assert payload["counts"]["found_late_days"] == hot_ranking.FOUND_LATE_DAYS == 14
+
+
+def test_a_row_whose_postings_or_turnover_went_unread_dates_nothing() -> None:
+    """None, not 0, where the Space could not read the postings, or the company's turnover was
+    not counted: 0 would state a week nobody dated."""
+    directory = {"gh:a": _company("A", "gh:a"), "gh:b": _company("B", "gh:b")}
+    history = _History(
+        {"gh:a": 500, "gh:b": 500},
+        {"gh:a": _Move(net=5, opened=5), "gh:b": _Move(net=5, opened=None)},
+    )
+    unread = hot_ranking.rank(history, directory)["lenses"]["expansion"]
+    assert all(r["opened_fresh"] is r["opened_found_late"] is None for r in unread)
+    rows = {
+        r["key"]: r
+        for r in hot_ranking.rank(history, directory, [])["lenses"]["expansion"]
+    }
+    assert (rows["gh:a"]["opened_fresh"], rows["gh:a"]["opened_found_late"]) == (0, 0)
+    assert rows["gh:b"]["opened_fresh"] is rows["gh:b"]["opened_found_late"] is None
+
+
 def test_the_payload_names_the_operators_the_tab_hides_unless_asked() -> None:
     """ADR-0238: staffing firms and job boards, never IT services. The page, and any other
     reader of ``/hot``, hides by this one list."""

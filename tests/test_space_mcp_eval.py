@@ -712,6 +712,47 @@ def test_the_expected_order_flags_what_hiring_now_flags(ev):
     assert disowned(net=10, opened=600, closed=500)  # more opened than open now
     assert disowned("rate", net=10, opened=10, closed=5, stock=30)  # small base
     assert not disowned("opened_less_closed", net=900, opened=10, closed=5)
+    # opened mostly found late, on every Lens (ADR-0351)
+    starbucks = {"net": 50, "opened": 50, "closed": 0, "opened_found_late": 28}
+    assert disowned("opened_less_closed", **starbucks, opened_fresh=22)
+    assert not disowned("opened_less_closed", **starbucks, opened_fresh=25)
+    assert not disowned("opened_less_closed", **starbucks, opened_fresh=None)
+
+
+def test_hot_top_fails_an_answer_that_reports_a_found_late_row_as_hiring(ev):
+    """Round-4 critique P1-1 (ADR-0351): Starbucks' 50 opened were mostly posted months before
+    HeadStart first saw them. An answer naming it without saying so fails; one that says so, or
+    leaves it out, passes."""
+    space = _hot_space()
+    rows = space.answers[SpaceRoute.HOT]["lenses"]["expansion"]
+    rows[4].update(
+        company="Starbucks", opened=50, opened_fresh=22, opened_found_late=28
+    )
+    top = (
+        "Acme Robotics, Borealis Data, Cobalt Payments, Ember Health and Fjord Security"
+    )
+    expect = {"lens": "expansion", "top": 5}
+
+    reported = ev.verify_hot_top(
+        expect, _transcript(ev, answer=f"{top} lead; Starbucks opened 50."), space
+    )
+    said = ev.verify_hot_top(
+        expect,
+        _transcript(
+            ev,
+            answer=f"{top} lead. Starbucks' 50 opened were mostly found late, posted "
+            "weeks before HeadStart saw them.",
+        ),
+        space,
+    )
+    left_out = ev.verify_hot_top(expect, _transcript(ev, answer=f"{top} lead."), space)
+
+    assert not reported.passed
+    assert "reports Starbucks as hiring" in reported.detail
+    assert said.passed, said.detail
+    assert left_out.passed, left_out.detail
+    # Listed after the unflagged rows, so the top five are the others.
+    assert "Starbucks" not in left_out.detail
 
 
 def test_flagged_headline_reads_a_row_that_gives_its_place_on_the_page(ev):

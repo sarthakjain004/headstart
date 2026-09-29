@@ -9,8 +9,9 @@ and the final answer, and judged by the task's verifier. ``trend_sign`` and ``ho
 the Space's public read routes themselves, as the server does, so they check the answer against
 the Space's own figures rather than against what the agent was told; ``trend_sign`` also needs
 the answer to say when opened and closed cover only part of the window, and ``hot_top`` fails an
-answer that leads with a row hiring_now flagged. ``tool_args`` (``search_args`` in the brief's
-fixed schema) checks the arguments instead and trusts the Space to apply them: ``strict=1`` makes
+answer that leads with a row hiring_now flagged, or names a row whose opened was mostly found
+late without saying so. ``tool_args`` (``search_args`` in the brief's fixed schema) checks the
+arguments instead and trusts the Space to apply them: ``strict=1`` makes
 it refuse any it would drop. ``title_keyword_rows`` checks the arguments, then reads the rows that
 call returned back from ``/job`` and needs the keyword where a word starts in every title, the
 keyword's own rule (ADR-0299, ADR-0325). ``sponsorship_polarity`` reads back every row the calls
@@ -675,12 +676,29 @@ def _days_between(start: str, end: str) -> float:
     ).total_seconds() / 86400
 
 
+def _found_late(row: dict[str, Any]) -> bool:
+    """Whether most of ``row``'s postings opened were found late, posted weeks before HeadStart
+    first saw them (ADR-0351): of 10 or more opened, its served postings first seen in the window
+    and posted long before are at least half, and those posted since fewer than half."""
+    opened, fresh, late = (
+        row.get("opened"),
+        row.get("opened_fresh"),
+        row.get("opened_found_late"),
+    )
+    if opened is None or fresh is None or late is None or opened < 10:
+        return False
+    return 2 * fresh < opened <= 2 * late
+
+
 def _disowned(
     row: dict[str, Any], lens: str, window: dict[str, Any], min_stock: int
 ) -> bool:
     """Whether hiring_now flags ``row`` on ``lens`` (ADR-0321), worked out here from /hot's own
     fields rather than borrowed from the tool, so a bug in the tool's order cannot hide here.
-    Opened less closed flags nothing: nothing questions its figure."""
+    Every Lens flags opened mostly found late (ADR-0351); Opened less closed flags nothing else,
+    since nothing else questions its figure."""
+    if _found_late(row):
+        return True
     if lens == "opened_less_closed":
         return False
     net, opened, closed = row.get("net"), row.get("opened"), row.get("closed")
@@ -727,26 +745,51 @@ def expected_hot_order(
     return rows[:limit]
 
 
+#: Words by which an answer says a company's postings opened were not newly posted (ADR-0351).
+_FOUND_LATE_SAID = re.compile(
+    r"found late|posted (?:weeks|months|long|well) (?:before|earlier|ago)|posted earlier"
+    r"|older postings|not newly posted|backfill|listed again|re-?listed|re-?posted",
+    re.IGNORECASE,
+)
+
+
+def unflagged_found_late(answer: str, rows: list[dict[str, Any]]) -> list[str]:
+    """The companies among ``rows`` whose opened was mostly found late (ADR-0351) that the
+    answer names without saying so anywhere: reported as hiring this week."""
+    if _FOUND_LATE_SAID.search(answer):
+        return []
+    return [row["company"] for row in rows if _found_late(row) and _named(answer, row)]
+
+
 def verify_hot_top(
     expect: dict[str, Any], transcript: Transcript, space: Space
 ) -> Verdict:
     """At least N-1 of the top N on the Lens named, in the order a correct hiring_now answer
-    lists them (`expected_hot_order`, at the call's own `limit`), and the answer does not lead
-    with a row the tool flagged on that Lens."""
+    lists them (`expected_hot_order`, at the call's own `limit`), the answer does not lead with
+    a row the tool flagged on that Lens, and it names no row listed whose opened was mostly
+    found late without saying so (ADR-0351)."""
     lens = expect.get("lens") or hiring_now.DEFAULT_LENS
     top = int(expect.get("top") or 5)
     calls = _hiring_now_calls(transcript, lens)
     schema = BY_NAME["hiring_now"].input_schema
     limit = (calls[0] if calls else tool_arguments.with_defaults(schema, {}))["limit"]
-    rows = expected_hot_order(space.read(SpaceRoute.HOT), lens, limit)[:top]
+    listed = expected_hot_order(space.read(SpaceRoute.HOT), lens, limit)
+    rows = listed[:top]
     need = max(len(rows) - 1, 0)
     named = [row["company"] for row in rows if _named(transcript.final_answer, row)]
     headline = flagged_headline(transcript, lens)
+    found_late = unflagged_found_late(transcript.final_answer, listed)
     return Verdict(
-        len(named) >= need and headline is None,
+        len(named) >= need and headline is None and not found_late,
         f"names {len(named)} of the top {len(rows)} on {lens} (needs {need}): "
         f"{', '.join(r['company'] for r in rows)}"
-        + (f"; leads with {headline!r}, a row hiring_now flagged" if headline else ""),
+        + (f"; leads with {headline!r}, a row hiring_now flagged" if headline else "")
+        + (
+            f"; reports {', '.join(found_late)} as hiring, though most of what each opened "
+            "was found late"
+            if found_late
+            else ""
+        ),
     )
 
 

@@ -379,8 +379,14 @@ the site's numbers and opened less closed.
   - it opened more postings than are open now;
   - on `rate`, it has under 50 openings (a small base).
 
-  `opened_less_closed` flags nothing, because none of these questions its figure, and it keeps its
+  `opened_less_closed` flags none of these, because none questions its figure, and it keeps its
   own order.
+- **Every Lens flags opened that was mostly found late (ADR-0351).** `/hot` gives each row, of
+  its served postings first seen since turnover began, how many were posted within 14 days of
+  first sight (`opened_fresh`, undated ones included) and how many longer before
+  (`opened_found_late`). A row with 10 or more opened is flagged when the fresh are fewer than
+  half its opened and the found late at least half. Starbucks stood #3 on the default Lens on
+  2026-09-29 on 50 opened; 28 of those postings were posted more than 14 days earlier.
 - **Flagged rows go last on the site's Lenses.** Every row `/hot` serves on `expansion`, `volume`
   or `rate` is listed unflagged first, each group in the site's order, and then cut to `limit`.
   Each row gives its place on the page ("site #7"). On 2026-09-29 the page's Expansion list began
