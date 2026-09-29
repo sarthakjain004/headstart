@@ -2838,27 +2838,71 @@ def test_workday_titled_stub_warns_because_it_would_serve_a_dead_link(caplog):
     assert [r.levelno for r in caplog.records] == [logging.INFO, logging.INFO]
 
 
-def test_workday_stub_posting_parses_to_a_job_the_tech_gate_drops():
-    """The real shape of a no-`externalPath` item, and why the loss costs nothing downstream.
+def test_workday_stub_posting_is_not_a_job():
+    """The real shape of a no-`externalPath` item, and why it must not become a Job.
 
-    Captured live 2026-09-09 from `accenture/avanadecareers` (27 of 605 postings): the listing
-    serves `bulletFields` and *nothing else* — no title, no path, no location. So `parse` yields
-    an "Untitled" Job whose url falls back to the board root, and `tech_filter.classify` drops it
-    before the description store or the index can see it. `_posting_key` still reads the req id
-    off `bulletFields`, so the id is stable rather than churning (ADR-0097)."""
+    Captured live 2026-09-09 from `accenture/avanadecareers` (27 of 605 postings) and again
+    2026-09-29 from `walmart/WalmartExternal` (43 of 860 in the pinned Technology slice): the
+    listing serves `bulletFields` and *nothing else* — no title, no path, no location. There is
+    nothing to show and nowhere to link, so `parse` yields no Job for it.
+
+    It used to yield an "Untitled" Job with the board root as its url, on the premise that
+    `tech_filter.classify` dropped it. That held only while a stub had no department. Since
+    ADR-0252 an item read inside a one-family slice carries that family (`jobFamilyGroup`, set by
+    `_exhaust`), so on a pinned Board the stub read `Technology`, passed the gate, and 48 rows were
+    served as "Untitled" with a dead link (audit TN-05, ADR-0348)."""
     from headstart.jobs.tech_filter import classify
     from headstart.scrapers.workday import WorkdayScraper
 
-    scraper = WorkdayScraper("https://accenture.wd103.myworkdayjobs.com/avanadecareers")
-    (job,) = scraper.parse([{"bulletFields": ["R00322521"]}], "2026-09-09T00:00:00Z")
-    assert job.id.endswith(":R00322521")
-    assert job.title == "Untitled"
-    # The board root, not a job link — `parse`'s fallback when `external_path` is empty. Harmless
-    # only because the title is "Untitled" and the tech gate drops it; `_report_detail_losses`
-    # warns if a titled stub ever appears, which is when this url would really ship.
-    assert job.url == "https://accenture.wd103.myworkdayjobs.com/avanadecareers"
-    assert job.description is None
-    assert not classify(job.title, job.department).is_tech
+    scraper = WorkdayScraper("https://walmart.wd504.myworkdayjobs.com/WalmartExternal")
+    stub = {"bulletFields": ["R-2646910"]}
+    # what `_exhaust` does to a stub read inside the pinned Technology slice
+    in_a_family_slice = {**stub, "jobFamilyGroup": "Technology"}
+
+    # the premise the old test defended is gone: the gate no longer stops this shape
+    assert classify("Untitled", "Technology").is_tech
+    assert scraper.parse([stub], "2026-09-29T00:00:00Z") == []
+    assert scraper.parse([in_a_family_slice], "2026-09-29T00:00:00Z") == []
+
+
+def test_workday_stub_is_skipped_beside_real_postings_and_counted(caplog):
+    """A stub costs the Board none of its real postings, and the skip says how many it was."""
+    from headstart.scrapers.workday import WorkdayScraper
+
+    scraper = WorkdayScraper("https://acme.wd1.myworkdayjobs.com/careers", "Acme")
+    real = {
+        "title": "Backend Engineer",
+        "externalPath": "/job/Remote/Backend-Engineer_R-100",
+        "bulletFields": ["R-100"],
+    }
+    stubs = [
+        {"bulletFields": ["R-101"]},
+        {"bulletFields": ["R-102"], "jobFamilyGroup": "Tech"},
+    ]
+    caplog.set_level(logging.INFO, logger="headstart.scrapers.workday")
+
+    jobs = scraper.parse([stubs[0], real, stubs[1]], "2026-09-29T00:00:00Z")
+
+    assert [j.title for j in jobs] == ["Backend Engineer"]
+    assert (
+        jobs[0].url
+        == "https://acme.wd1.myworkdayjobs.com/careers/job/Remote/Backend-Engineer_R-100"
+    )
+    assert "2 of 3 listed row(s) had no title and no externalPath" in caplog.text
+
+
+def test_workday_titled_item_without_a_path_is_still_a_job():
+    """Only the stub shape is dropped. A titled item with no `externalPath` was never observed
+    (0 of 38 stubs on 22 Boards, 2026-09-09; 0 of 43 on Walmart, 2026-09-29), so it keeps its
+    old behaviour and the `titled_stubs` tripwire in `_report_detail_losses` still watches it."""
+    from headstart.scrapers.workday import WorkdayScraper
+
+    scraper = WorkdayScraper("https://acme.wd1.myworkdayjobs.com/careers", "Acme")
+    (job,) = scraper.parse(
+        [{"title": "Data Engineer", "bulletFields": ["R-7"]}], "2026-09-29T00:00:00Z"
+    )
+    assert job.title == "Data Engineer"
+    assert job.url == "https://acme.wd1.myworkdayjobs.com/careers"
 
 
 def test_only_the_first_board_past_the_share_spends_an_annotation(monkeypatch, caplog):
