@@ -169,7 +169,8 @@ def _trend(payload: dict[str, Any], keys: list[str], old: dict[str, int]) -> lis
     lines = [
         f"Tech openings now: {reading.get('openings', move['latest']):,}, as Trends counts them"
         + (
-            f"; search also serves {non_tech:,} jobs on its Boards that the tech filter sets "
+            f"; search also serves {non_tech:,} job{'' if non_tech == 1 else 's'} on its "
+            "Boards that the tech filter sets "
             "aside."
             if non_tech
             else "."
@@ -363,6 +364,14 @@ def _old_by_category(
     return old
 
 
+def _non_tech_line(left_out: int) -> str:
+    return (
+        f"{left_out:,} more jobs on its Boards are roles HeadStart's classifier is confident "
+        "are not tech: search_jobs leaves them out unless include_non_tech is true, and so "
+        "does this profile (ADR-0349)."
+    )
+
+
 def _age_line(total: int, old: int) -> str:
     return (
         f"{old:,} of its {total:,} served jobs were posted over a year ago (the posted date, "
@@ -416,6 +425,8 @@ def answer(client: SpaceClient, arguments: dict[str, Any]) -> str:
     lines = _company_lines(picks, board_keys, by_name, others[:OTHERS_SHOWN])
     lines.append(scraped_text.SCRAPED_NOTE)
     lines += _trend(trends, [pick.key for pick in picks], old)
+    if left_out := facets.get("non_tech_left_out"):
+        lines.append(_non_tech_line(left_out))
     if old_total > 0:
         lines.append(_age_line(total, old_total))
     lines.append(_locations(places))

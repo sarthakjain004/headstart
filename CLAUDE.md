@@ -20,7 +20,10 @@ HeadStart surfaces job openings read directly from company ATS boards.
   keeps the tech subset in `data/jobs/tech/{ats}.jsonl`, and everything downstream (feed, embedding,
   index, UI) reads that. Post-hoc saves no scraping, but it is the only layer that is uniform across
   ATSes and recall-safe — no tech job dropped, some non-tech creep tolerated — which is exactly what
-  the embedding-cost/recall goal needs. Company selection barely helps: boards are mixed.
+  the embedding-cost/recall goal needs. Company selection barely helps: boards are mixed. Its creep
+  (some served rows are not tech) is left out of Search by default, not removed: the rows the
+  role-family head confidently calls non-tech carry a column, `is_confident_non_tech`, that
+  `role_trends` stamps each tick, and `include_non_tech` shows them (ADR-0349).
 - **Search corpus: English-only for now.** The AI semantic-search layer pre-filters non-English
   descriptions out *before* embedding — an explicit language-detection gate at ingestion
   (e.g. `langdetect` / fastText LID over `title + description`), not something the embedding
@@ -345,7 +348,7 @@ These guidelines are working if: fewer unnecessary changes in diffs, fewer rewri
   If you change what the pipeline runs, change it there and update `.github/workflows/pipeline.yml`
   to match. Don't add a pipeline stage to `scripts/`. Helper modules used *only* by the pipeline
   live there too (`binpack`, `board_failures`, `board_freshness`, `board_naming`,
-  `corpus`, `dedup_evictions`, `derived_meta`, `doc_prep`, `held_refetch`, `index_plan`,
+  `confident_non_tech_stamp`, `corpus`, `dedup_evictions`, `derived_meta`, `doc_prep`, `held_refetch`, `index_plan`,
   `job_facts`, `job_turnover`, `observability`, `role_assignments`, `role_family_classifier`, `shard_plan`,
   `shard_speedup`).
   Logic the curated-feed path (`python -m headstart` → `headstart.scrapers.harvest`) also reaches

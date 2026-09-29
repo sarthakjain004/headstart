@@ -310,6 +310,76 @@ def test_hiring_nows_head_of_2026_09_29_is_labelled(
 @pytest.mark.parametrize(
     ("board", "company"),
     [
+        ("wp_job_openings:digitalxnode.com", "DigitalXNode"),
+        ("freshteam:remotestar-team", "RemoteStar"),
+        ("teamtailor:sperton", "Sperton Global AS"),
+        ("ashby:hirehangar", "Hire Hangar"),
+        ("teamtailor:whyhirewrong", "WhyHireWrong?"),
+        ("pyjamahr:umanist-staffing-llc", "Umanist Staffing LLC"),
+        ("zoho:helixworkforce.zohorecruit.com", "Helix Workforce"),
+        ("pyjamahr:viraaj-hr-solutions", "viraaj hr solutions"),
+        ("workable:two95-international-inc-3", "Two95 International Inc."),
+        ("pyjamahr:knowfinity-academy-llp", "Knowfinity Academy LLP"),
+        ("pyjamahr:octorudra-hr-llp", "OctoRudra HR LLP"),
+        ("zoho:zerotoonesearch.zohorecruit.eu", "Zero to One search"),
+        ("zoho:stafide.zohorecruit.com", "STAFIDE"),
+        ("zoho:sabenzait.zohorecruit.com", "Sabenza IT & Recruitment"),
+        ("zoho:allaboutexpats.zohorecruit.com", "All About Expats"),
+        ("zoho:govserviceshub.zohorecruit.in", "GovServicesHub"),
+        ("teamtailor:worksterjobs", "Workster Jobs"),
+        ("zoho:cliqhr.zohorecruit.in", "CLIQHR Recruitment Services (GTS Pvt Ltd.)"),
+        ("workable:hunt-st", "Hunt St"),
+        ("recruitee:decircletalentpartner", "deCircle"),
+        ("workable:crossbordertalents", "Cross Border Talents"),
+        ("smartrecruiters:CrossBorderTalents1", "Cross Border Talents"),
+        ("zoho:redtech-recruit.zohorecruit.eu", "RedTech Recruitment Ltd."),
+        ("teamtailor:onhiresnew", "OnHires"),
+        ("ashby:onhires", "OnHires"),
+        (
+            "zoho:biztekpeople.zohorecruit.com",
+            "BizTek People, Inc. | APA International Placement Consultants",
+        ),
+        ("zoho:flexondemand.zohorecruit.com", "Flex On-Demand Consultants"),
+        ("pyjamahr:yo-hr-consultancy", "YO HR Consultancy"),
+        ("wp_job_openings:pakistanrecruitment.com", "Pakistan Recruitment"),
+        ("jazzhr:huntresstalent", "Huntress Talent"),
+        ("greenhouse:attaintalent", "Attain Talent"),
+        ("pyjamahr:the-corporate", "TheCorporate LLC"),
+        ("zoho:nakunj.zohorecruit.com", "Nakunj Inc"),
+        ("smartrecruiters:kgstechnologygroupinc", "KGS Technology Group Inc"),
+        ("workable:joinremotely", "Remotely"),
+        ("pyjamahr:hrbaires", "HRBaires"),
+        ("workable:globaldevgroup", "Globaldev Group"),
+        ("zoho:talproindia.zohorecruit.in", "Talpro India Private Limited"),
+    ],
+)
+def test_the_mcp_critiques_round_4_staffing_firms_are_labelled(
+    board: str, company: str
+) -> None:
+    """Staffing firms and recruiters that led search rows and requirements samples as
+    employers, each adjudicated from its live postings (ADR-0335, 2026-09-29)."""
+    assert classify(board, company) == "staffing"
+
+
+@pytest.mark.parametrize(
+    ("board", "company"),
+    [
+        # The joined forms leave the ordinary word, or the other company, alone.
+        ("greenhouse:huntress", "Huntress"),
+        ("greenhouse:attain", "Attain"),
+        ("workable:remotely", "Remotely Works"),
+        ("greenhouse:helix", "Helix"),
+    ],
+)
+def test_round_4_entries_leave_their_parts_to_employers(
+    board: str, company: str
+) -> None:
+    assert classify(board, company) == "employer"
+
+
+@pytest.mark.parametrize(
+    ("board", "company"),
+    [
         (
             "icims:careers-odysseyconsult.icims.com",
             "Odyssey Systems Consulting Group, Ltd.",

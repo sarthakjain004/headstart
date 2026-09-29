@@ -309,13 +309,15 @@ def coverage(cache: Cache, titles: Iterable[str | None]) -> float:
     return sum(k in cache.title_logits for k in keys) / len(keys) if keys else 1.0
 
 
-def decide_rows(
+def decide_rows_scored(
     cache: Cache, head: Head, titles: list[str | None], row_logits: np.ndarray
-) -> list[str]:
-    """Each served row's family, from its title's cached logits plus its own row logits. A row
-    whose title no run has encoded yet is ``UNCLASSIFIED``; the warm-up gate keeps a table with
-    many of those out of the ledger."""
-    families = [UNCLASSIFIED] * len(titles)
+) -> list[tuple[str, float]]:
+    """Each served row's ``(family, top probability)``, from its title's cached logits plus its
+    own row logits. A row whose title no run has encoded yet is ``(UNCLASSIFIED, 0.0)``; the
+    warm-up gate keeps a table with many of those out of the ledger, and a row with no
+    probability is never confident (ADR-0349). The developer-title rule (ADR-0305) changes only
+    the family: the probability stays the head's own."""
+    scored = [(UNCLASSIFIED, 0.0)] * len(titles)
     known = [
         (i, logits)
         for i, title in enumerate(titles)
@@ -326,8 +328,8 @@ def decide_rows(
         decided = head.decide(
             np.stack([logits for _, logits in known]), row_logits[rows]
         )
-        for i, (family, _) in zip(rows, decided, strict=True):
+        for i, (family, probability) in zip(rows, decided, strict=True):
             if family == UNCLASSIFIED and names_a_software_developer(titles[i]):
                 family = SOFTWARE_ENGINEERING
-            families[i] = family
-    return families
+            scored[i] = (family, probability)
+    return scored

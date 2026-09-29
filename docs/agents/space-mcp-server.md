@@ -257,9 +257,17 @@ the filter costing the most.
   are converted at HeadStart's fixed rates, a currency with no rate left out. A keyword in
   descriptions can only match jobs with a stored description; the answer says how many of the
   matches have one, as the page does.
-- **Its totals run higher than `read_trends`'.** A search counts every job the index serves; the
-  trends count only the jobs the role-family classifier places in a tech category, leaving out
-  those it calls non-tech (`ingest/role_trends.py`).
+- **Jobs the classifier is confident are not tech are left out by default.** The role-family head
+  calls about one served job in four non-tech; those it calls so with a top probability of at
+  least 0.9 (11.9% of rows: a store's front-end cashier, a plant's process engineer) carry a
+  column `role_trends` stamps each tick, and a search, its total, `role_requirements`' sample and `company_profile` leave
+  them out unless `include_non_tech` is true, as the site does unless its "Include non-tech
+  roles" switch is on. The scope line says how many were left out, and a search only they match says so
+  and how to see them. `get_job` opens any job, and `read_trends` counts non-tech apart already
+  (ADR-0349).
+- **Its totals still run higher than `read_trends`'.** A search counts every job the index serves
+  except those; the trends count only the jobs the role-family classifier places in a tech
+  category, leaving out everything it calls non-tech, at any probability (`ingest/role_trends.py`).
 - **`similar_to` a job id** ranks by that job's own stored vector instead of a `query`, and leaves
   the job itself out; every filter applies as usual, and the total excludes it too. It cannot be
   sent with `query` (ADR-0277). `exclude_company` leaves out every job whose company name contains
@@ -501,6 +509,9 @@ server changes.
    recorded with `scripts/eval/record_space_mcp_eval_calls.py`: `tests/test_space_mcp_eval.py`
    replays it, so a change to a tool's output that breaks a verifier fails its own PR (ADR-0334).
    Re-record when a tool starts reading the Space differently; the replay names the URL it lacks.
+   A task may accept a path its tool's description steers away from ("For X use `a`, never
+   `b`"), as one `any_of` path, but may never require it: the same test fails a task that does
+   (ADR-0354).
 6. A new parameter on `/search` or `/facets` goes into `job_search.REQUEST_PARAMETERS` too:
    `strict=1`, which every tool sends, refuses a name that set does not hold (ADR-0334).
 

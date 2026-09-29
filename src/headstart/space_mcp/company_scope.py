@@ -11,7 +11,7 @@ third:
   and only when the Space says the suggestion matches it exactly or by alias; anything looser is
   answered with the suggestions, never guessed.
 
-A **key** — any Board key, such as ``lever:razorpay`` or the ``ats:slug`` start of a result id — is
+A **key** — any Board key, such as ``ashby:openai`` or the ``ats:slug`` start of a result id — is
 looked up exactly (`/companies/lookup`), and stands for every Board of its company, as the
 browser's Trends and Hot hand-offs do. A colon alone does not make a key: 15 of the directory's
 38,673 names carry one ("dmg::media", "Ed:Za", measured 2026-09-28). So a value shaped like a key

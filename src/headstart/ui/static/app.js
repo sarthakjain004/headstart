@@ -299,6 +299,10 @@ function currentFilters(){
   const f = {};
   if (el('remote').checked) f.remote = 'true';
   if (el('hassalary').checked) f.has_salary = 'true';
+  // Off by default: the server leaves out the roles its classifier is confident are not tech
+  // (ADR-0349), and this is what asks for them. Sent like the other switches, so a Saved Set
+  // and an alert keep it.
+  if (el('includenontech').checked) f.include_non_tech = 'true';
   if (el('maxyears').value) f.max_years = el('maxyears').value;
   if (el('ats').value) f.ats = el('ats').value;
   if (el('etype').value) f.etype = el('etype').value;
@@ -324,7 +328,7 @@ function currentFilters(){
   if (el('salcur') && (f.salary_min || f.salary_max)) f.salary_currency = el('salcur').value;
   return f;
 }
-const LABELS = { remote:'Remote', has_salary:'Shows salary', max_years:'Your experience',
+const LABELS = { remote:'Remote', has_salary:'Shows salary', include_non_tech:'Non-tech roles', max_years:'Your experience',
   kw:'Keyword', kw_in:'Look in',
   ats:'Source', etype:'Type', country:'Country', india:'India', location:'Location', company:'Company',
   posted_within:'Posted ≤', seen_within:'First seen ≤',
@@ -335,13 +339,13 @@ const LABELS = { remote:'Remote', has_salary:'Shows salary', max_years:'Your exp
 const chipValue = (key, value, f) =>
   (key === 'salary_min' || key === 'salary_max')
     ? `${f.salary_currency || ''} ${salFmt(value)}`.trim()
-    : (value === 'true' ? 'yes' : value);
+    : (key === 'include_non_tech' ? 'included' : (value === 'true' ? 'yes' : value));
 // `salary_currency` is deliberately absent: it has a default (USD) rather than an empty
 // state, so clearAll() blanking it would leave the picker showing nothing. Clearing the two
 // bounds already switches the bracket off, which is what "clear" has to mean here.
 // `kw_in` is likewise absent: it has a default (Title), not an empty state — dropping the
 // keyword is what switches the scope off, so dropFilter maps it onto `kw` below.
-const CONTROL = { remote:'remote', has_salary:'hassalary', max_years:'maxyears', ats:'ats', kw:'kw',
+const CONTROL = { remote:'remote', has_salary:'hassalary', include_non_tech:'includenontech', max_years:'maxyears', ats:'ats', kw:'kw',
   etype:'etype', country:'country', india:'india', location:'location', company:'company',
   posted_within:'posted', seen_within:'seen', salary_min:'salmin', salary_max:'salmax' };
 function drawActive(){
@@ -711,6 +715,7 @@ async function fetchPage(){
   const facets = await facetsPromise;
   if (request !== searchRequest) return;
   drawKeywordNote(facets);
+  drawNonTechNote(facets);
   if(!rows.length){
     if (page === 1){
       el('results').innerHTML = '<div class="empty"><div class="big">Nothing matched</div>' +
@@ -822,6 +827,12 @@ function whyNothing(facets){
   if (!key && searched && searched.mode === 'title' && searched.q)
     return `No job title has every word of “${esc(searched.q)}”. Try fewer words, or ` +
       '<button class="linkish" data-match-by-meaning>match by meaning</button> instead.';
+  // What the default left out: the roles the classifier is confident are not tech (ADR-0349).
+  const hidden = facets && facets.non_tech_left_out;
+  if (!key && hidden > 0)
+    return `The ${hidden.toLocaleString()} that match ${hidden === 1 ? 'is a role' : 'are roles'} our classifier ` +
+      'is confident are not tech, which are left out. <button class="linkish" data-include-non-tech>include ' +
+      `${hidden === 1 ? 'it' : 'them'}</button> to see ${hidden === 1 ? 'it' : 'them'}.`;
   if (!key) return 'Try loosening a filter, or describe the role more broadly.';
   const label = LABELS[key] || key;
   return `Your <b>${esc(label)}</b> filter is the one ruling everything out — ` +
@@ -871,6 +882,16 @@ function applyFacets(facets){
   countSwitch('hassalary', f.has_salary);
   countYears(f.max_years);
   syncSegmentedSelects();   // the counts just written onto the options, onto their radios
+}
+
+// How many roles the default leaves out of THIS search, under the switch that shows them
+// (ADR-0349). `non_tech_left_out` is absent when they are included, or the table has no stamp to
+// hide by, so the note then says nothing rather than a stale number.
+function drawNonTechNote(facets){
+  const note = el('nontech-hidden'); if (!note) return;
+  const n = facets && facets.non_tech_left_out;
+  note.textContent = typeof n === 'number' && n > 0
+    ? ` ${n.toLocaleString()} ${n === 1 ? 'is' : 'are'} left out of this search.` : '';
 }
 
 // The Keyword filter's disclaimer (ADR-0104). Not every Job carries a description — none indexed
@@ -4564,10 +4585,11 @@ if (el('sets-strip')) el('sets-strip').addEventListener('click', e => {
 // advice) say what they do in data attributes, read by this one listener: an inline onclick
 // is refused by the Content-Security-Policy (#595).
 document.addEventListener('click', e => {
-  const b = e.target.closest('button[data-drop-filter], button[data-goto-page], button[data-match-by-meaning]');
+  const b = e.target.closest('button[data-drop-filter], button[data-goto-page], button[data-match-by-meaning], button[data-include-non-tech]');
   if (!b) return;
   if (b.dataset.dropFilter) dropFilter(b.dataset.dropFilter);
   else if (b.dataset.gotoPage) goToPage(Number(b.dataset.gotoPage));
+  else if (b.dataset.includeNonTech !== undefined) { el('includenontech').checked = true; go(); }
   else { setQueryMode('meaning'); go(); }
 });
 // Stars appear in three containers (Search, Matches, Saved); one document-level listener

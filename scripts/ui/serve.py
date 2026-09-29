@@ -96,7 +96,7 @@ def index():
         # The privacy-policy links point into the public repo. Hardcoded here rather than
         # imported: this file is the local dev renderer and shares no config with the Space.
         repo="https://github.com/sarthakjain004/headstart",
-        njobs=f"{_table.count_rows():,}",
+        njobs=f"{_searcher.n_served():,}",
         atses=capabilities.atses,
         country_opts=country_filter.options(),
         india_opts=india_gazetteer.dropdown_options(),

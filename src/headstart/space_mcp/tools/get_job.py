@@ -185,6 +185,11 @@ def _description(job: dict[str, Any], share: _DescriptionShare) -> list[str]:
         )
     return [
         f"   Description, {whole:,} characters, {shown}. Quoted, one paragraph a line:",
+        *(
+            [f"   {scraped_text.ADDRESSED_TO_AI_NOTE}"]
+            if scraped_text.addresses_ai_tools(text)
+            else []
+        ),
         *lines,
         "   End of description.",
     ]
@@ -269,7 +274,15 @@ def _held(client: SpaceClient, board: str) -> bool | None:
         return None
     try:
         counted = client.read(
-            SpaceRoute.FACETS, [("strict", "1"), ("board", board), ("counts", "total")]
+            SpaceRoute.FACETS,
+            [
+                ("strict", "1"),
+                ("board", board),
+                # Whether the index serves a job there at all: a Board of nothing but roles a
+                # search leaves out as non-tech is held (ADR-0349).
+                ("include_non_tech", "true"),
+                ("counts", "total"),
+            ],
         )
     except SpaceError:
         return None
@@ -343,7 +356,7 @@ def answer(client: SpaceClient, arguments: dict[str, Any]) -> str:
     jobs, missing = read.get("jobs") or [], read.get("missing") or []
     jobs = shown_company.named(client, jobs)
     share = _share(int(arguments["max_chars_per_job"]), jobs)
-    lines = [f"Read {len(jobs)} of {len(ids)} jobs."]
+    lines = [f"Read {len(jobs)} of {len(ids)} job{'' if len(ids) == 1 else 's'}."]
     if jobs:
         lines.append(scraped_text.SCRAPED_NOTE)
     for number, job in enumerate(jobs, 1):

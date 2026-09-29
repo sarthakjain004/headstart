@@ -937,6 +937,9 @@ jobs:
         # a cold model download (~450 MB), the classifier's 12-minute encoding budget and the
         # count (ADR-0220). Skipped without the corpus artifact: the title cache rides it, and a
         # fill here would encode into a cache the skipped `data/state` upload never publishes.
+        # It also stamps `is_confident_non_tech` on the served table (ADR-0349), the column Search
+        # leaves out by default: written here, after prune and before `refresh-indexes` and the
+        # publication below, and untouched whenever this step degrades or is skipped.
         if: needs.scrape-plan.outputs.run == 'true' && steps.corpus.outcome == 'success'
         continue-on-error: true
         timeout-minutes: 20

@@ -136,8 +136,8 @@ Board no source names is served under its humanised tenant (`nvidia.wd5.myworkda
 a vendor's code (Oracle's pods, ADP's GUIDs). A name is a display value, never an identity, which
 is why `CompanyPrefs` is keyed by **board_key** and never by company name.
 
-The liveness pipeline has probed **318,205 ledger rows**: 196,688 live, 115,265 dead, 6,252 unknown
-— rows, not boards; they collapse to 190,056 Unique Boards once duplicate spellings of the same
+The liveness pipeline has probed **318,208 ledger rows**: 196,691 live, 115,265 dead, 6,252 unknown
+— rows, not boards; they collapse to 190,059 Unique Boards once duplicate spellings of the same
 board are folded together and the 4 with a `dead` row newer than their newest `live` row are dropped (`CONTEXT.md` §Counting
 Boards).
 
@@ -189,7 +189,7 @@ flowchart TB
         D1["<b>discover</b><br/>Common Crawl · Wayback<br/>careers-page fingerprint"]
         D2["<b>merge</b><br/>union + dedupe per ATS"]
         D3["<b>validate</b><br/>liveness-probe each board"]
-        D4[("<b>liveness ledger</b><br/>196,688 live rows of 318,205<br/>git-tracked, authoritative")]
+        D4[("<b>liveness ledger</b><br/>196,691 live rows of 318,208<br/>git-tracked, authoritative")]
         D1 --> D2 --> D3 --> D4
     end
 
@@ -292,19 +292,19 @@ table in lockstep with the committed ledger:
 
 | | boards | |
 | --- | ---: | --- |
-| live rows in the ledger | 196,688 | a row, not a board — 6,628 of them are duplicate spellings |
+| live rows in the ledger | 196,691 | a row, not a board — 6,628 of them are duplicate spellings |
 | − `registry.DISABLED_ATS` | −25,488 | all of it `join` |
 | − `excluded_and_parked.EXCLUDED_BOARDS` | −219 | vendor and customer test/sandbox/demo/dev boards and one historical feed, confirmed by reading their postings |
 | − alias ledger | −1,695 | one board under a second hostname or label, a career section or career site another of the same tenant already covers, an Eightfold career site its backing ATS board already serves, or a Radancy front another front already lists (ADR-0111, ADR-0182, ADR-0186, ADR-0202, ADR-0205, ADR-0222, ADR-0254, ADR-0265, ADR-0301) |
 | − case-variant dedupe | −6,625 | `company/External` and `company/external` are one board (ADR-0023) |
 | − newer `dead` row | −4 | a board is read only if no `dead` row is newer than its newest `live` one; all 4 re-probed dead (ADR-0219) |
 | − `excluded_and_parked.PARKED_BOARDS` | −347 | real boards withheld for now — six for scrape cost, two for near-duplicate spam, six Jibe clients whose every posting is on a Workday or Oracle board already held, 288 whose every posting is on an iCIMS board we scrape (ADR-0240), five employee-only Radancy fronts (ADR-0246), 31 Happydance fronts whose Backing Board is held (ADR-0264), four Phenom skins over a board already held (CLAUDE.md's Phenom landing rule), one Radancy front whose robots.txt disallows everything, one WP Job Openings content site whose "postings" are mostly articles (ADR-0266), three login-walled iCIMS internal portals (#810) |
-| = **Scrapable Board** | **162,310** | |
+| = **Scrapable Board** | **162,313** | |
 
 That order matters: excluding before deduping reads −219 and −6,625, deduping first reads −216,
-because three excluded boards were themselves duplicates. Both land on 162,310.
+because three excluded boards were themselves duplicates. Both land on 162,313.
 
-Of those, **108,984 are currently hiring** — the 53,326 live-but-empty boards are skipped as having
+Of those, **108,987 are currently hiring** — the 53,326 live-but-empty boards are skipped as having
 nothing to read. A run takes a bounded slice and splits it between a scored head (top boards by a
 sticky measure of tech-job yield, large enough to hold every board that yields tech) and a tail
 that rotates through everything else, the boards looked at longest ago first, so
@@ -351,6 +351,7 @@ fails if this table drifts from it.
 | `salary_source` | string | `field` \| `regex` \| null — how it was derived; no seniority-style tier exists for salary (ADR-0082) |
 | `salary_known` | bool | whether `min_salary_annual` is known; materialized and bitmap-indexed for the “Shows salary” filter (ADR-0173) |
 | `department` | string | raw ATS text, served by `/job` (ADR-0277). Not read from this table by any filter, sort, or downstream logic — the tech filter reads it off the *raw scrape record*, before a row ever reaches this table |
+| `is_confident_non_tech` | bool | true where the role-family head calls the Job `non-tech` with a top probability of at least 0.9 (`confident_non_tech_filter.PROBABILITY`, ADR-0349): Search, Browse and their counts leave such rows out unless a request sends `include_non_tech`, while `/job` and Trends still read them. Written by `role_trends` each tick, as a column of its own rather than a row rewrite, and recomputed whole, so a retitled Job stops being hidden the next tick. Never null: a new row is false until the tick that follows it stamps it, and a table from before the column has none, so Search hides nothing there. Bitmap-indexed |
 | `url` | string | the job-detail link |
 | `requisition` | string | the ATS's own requisition id, kept only on rows whose Board `data/validate/eightfold_backing.csv` names — an Eightfold career site, or a Board behind one (any site of a Workday tenant). On an Eightfold row it is the id its backing Board states (`atsJobId`, or `displayJobId` over Oracle); on a backing row, that Board's own. **Nullable**: null everywhere else and on rows not re-scraped since the column arrived, and null never matches. Not served to the API; `index sync`/`prune` read it to serve a posting once when an Eightfold career site and its backing Board both list it (ADR-0210) |
 | `posted_at` | string | **the company's** posting date as the ATS states it — inconsistent in shape across ATSes (`2026-01-09T00:46:44.672+00:00`, `2026-07-03`; a RippleHire row not re-read since 2026-09-29 may still carry `03-Jul-2026`) and null on a meaningful share of rows. An ISO date more than one day after the row's `first_seen` day is served as that day (a repost or closing date), and a pre-2000 sentinel is served as null (ADR-0268) |
@@ -376,6 +377,7 @@ Two rows, fetched live from the index:
   "salary": "180000-300000 USD 1 YEAR",
   "min_salary_annual": 180000, "max_salary_annual": 300000, "salary_currency": "USD",
   "salary_known": true,
+  "is_confident_non_tech": false,
   "url": "https://jobs.ashbyhq.com/character/b063d44b-e1fd-4777-8079-573706a589a0",
   "requisition": null,                                    // null off the paired Boards
   "posted_at": "2025-12-08T19:38:59.867+00:00",
@@ -397,6 +399,7 @@ Two rows, fetched live from the index:
   "salary": "108000-125000 MYR 1 YEAR",
   "min_salary_annual": 108000, "max_salary_annual": 125000, "salary_currency": "MYR",
   "salary_known": true,
+  "is_confident_non_tech": false,
   "url": "https://jobs.smartrecruiters.com/xplor/744000140844907",
   "requisition": null,                                    // null off the paired Boards
   "posted_at": "2026-07-31T07:57:53.720Z",                 // not every ATS's date is ISO
