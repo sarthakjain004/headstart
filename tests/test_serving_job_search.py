@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import types
+from contextlib import contextmanager
 from dataclasses import replace
 
 import pytest
@@ -2152,10 +2153,20 @@ def test_exclude_company_drops_every_name_containing_it_and_keeps_nameless_rows(
 _OPERATOR_BOARDS = {"staffing": ("lever:beta",), "aggregator": ("LEVER:Gamma",)}
 
 
+@contextmanager
+def _operators_loaded(searcher, boards):
+    """``searcher`` with ``boards`` loaded, and none again after: the fixtures are shared."""
+    searcher.load_operator_boards(boards)
+    try:
+        yield searcher
+    finally:
+        searcher.load_operator_boards(None)
+
+
 @pytest.fixture
-def operated(families_served, monkeypatch):
-    monkeypatch.setattr(families_served, "operator_boards", _OPERATOR_BOARDS)
-    return families_served
+def operated(families_served):
+    with _operators_loaded(families_served, _OPERATOR_BOARDS) as searcher:
+        yield searcher
 
 
 def test_operators_keep_only_the_boards_of_the_operators_named(operated):
@@ -2189,18 +2200,16 @@ def test_the_counts_say_how_many_rows_operators_left_out(operated):
     assert "operators_left_out" not in operated.facets({})
 
 
-def test_only_the_boards_the_table_serves_are_kept_case_folded(
-    families_served, monkeypatch
-):
+def test_only_the_boards_the_table_serves_are_kept_case_folded(families_served):
     """Every Board named is one more alternative each id is matched against, and a directory
     names Boards long since empty (ADR-0335)."""
     boards = {**_OPERATOR_BOARDS, "services": ("lever:ghost", "lever:be")}
-    monkeypatch.setattr(families_served, "operator_boards", boards)
-    assert families_served.operator_boards == {
-        "staffing": ("lever:beta",),
-        "aggregator": ("lever:gamma",),
-        "services": (),
-    }
+    with _operators_loaded(families_served, boards):
+        assert families_served.operator_boards == {
+            "staffing": ("lever:beta",),
+            "aggregator": ("lever:gamma",),
+            "services": (),
+        }
 
 
 def test_an_unknown_operator_is_refused_even_without_strict(operated):
@@ -2216,13 +2225,15 @@ def test_operators_without_a_directory_is_the_deployments_state(families_served)
     assert len(families_served.run({"operators": "employer"})) == 5
 
 
-def test_a_requirements_sample_leaves_out_the_operators_not_named(sampled, monkeypatch):
-    monkeypatch.setattr(sampled, "operator_boards", {"staffing": ("lever:acme",)})
-    counted = _requirements(sampled, q="data engineer", operators="employer,services")
-    assert (counted["matching"], counted["operators_left_out"]) == (2, 3)
-    assert counted["distinct"] == 2
-    family = _requirements(sampled, family="data-engineering", operators="employer")
-    assert (family["matching"], family["operators_left_out"]) == (1, 2)
+def test_a_requirements_sample_leaves_out_the_operators_not_named(sampled):
+    with _operators_loaded(sampled, {"staffing": ("lever:acme",)}):
+        counted = _requirements(
+            sampled, q="data engineer", operators="employer,services"
+        )
+        assert (counted["matching"], counted["operators_left_out"]) == (2, 3)
+        assert counted["distinct"] == 2
+        family = _requirements(sampled, family="data-engineering", operators="employer")
+        assert (family["matching"], family["operators_left_out"]) == (1, 2)
     assert _requirements(sampled, q="data engineer")["operators_left_out"] is None
 
 

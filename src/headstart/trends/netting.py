@@ -162,12 +162,18 @@ def dedup_touched(boards) -> bool:
     return False
 
 
+def re_sorts_levels(fields, bands: bool) -> bool:
+    """Whether a counting change of ``fields`` re-sorts a Level breakdown's lines: an
+    extraction change, on a view split by Level."""
+    return bands and _DERIVATIONS in fields
+
+
 def moves_lines(fields, bands: bool) -> bool:
     """Whether a counting change of ``fields`` moves every line it reaches: a line-moving change,
     or on a Level breakdown an extraction change, which re-sorts the levels."""
-    return any(f in LINE_MOVING_FIELDS or f == NEW_BECAME_INFLOW for f in fields) or (
-        bands and _DERIVATIONS in fields
-    )
+    return any(
+        f in LINE_MOVING_FIELDS or f == NEW_BECAME_INFLOW for f in fields
+    ) or re_sorts_levels(fields, bands)
 
 
 def left_out_runs(epochs: list[dict], stamps: list[str]) -> tuple[set[int], set[int]]:
@@ -422,7 +428,7 @@ def _notes(answer: dict, served: bool = False) -> list[dict]:
                 f in LINE_MOVING_FIELDS or f in (_DEDUP, NEW_BECAME_INFLOW)
                 for f in fields
             ),
-            "re_sorts_levels": bands and _DERIVATIONS in fields,
+            "re_sorts_levels": re_sorts_levels(fields, bands),
             "dedup_only": dedup_only,
             "kind": "duplicates" if dedup_only and metric == "new" else "counting",
         }

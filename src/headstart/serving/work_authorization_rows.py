@@ -24,6 +24,7 @@ from typing import Any
 
 from headstart import log
 from headstart.jobs import work_authorization
+from headstart.search_filters.compiler import ids_in_clause
 
 _log = log.get(__name__)
 
@@ -32,20 +33,12 @@ _log = log.get(__name__)
 READ_BATCH_ROWS = 8_192
 
 
-def _ids_in(ids: list[str]) -> str:
-    """``id IN (…)`` over ``ids``, each quote doubled; a clause keeping nothing for none."""
-    if not ids:
-        return "id IN ('')"
-    return "id IN (" + ", ".join("'" + i.replace("'", "''") + "'" for i in ids) + ")"
-
-
 class WorkAuthorizationRows:
     """Each stance's Jobs in the served ``table``, read once (ADR-0333)."""
 
     def __init__(self, table: Any) -> None:
         self._table = table
         self._clauses: dict[str, str] = {}
-        self._counts: dict[str, int] = {}
         self._ready = threading.Event()
         self._failed = False
         self._started = False
@@ -77,11 +70,7 @@ class WorkAuthorizationRows:
     def clause(self, stance: str) -> str:
         """A where-clause keeping ``stance``'s Jobs. Only once :meth:`wait` has said the read
         finished; a stance none holds keeps nothing."""
-        return self._clauses.get(stance, _ids_in([]))
-
-    def counts(self) -> dict[str, int]:
-        """How many served Jobs hold each stance, once read."""
-        return dict(self._counts)
+        return self._clauses.get(stance, ids_in_clause([]))
 
     def _read(self) -> None:
         ids: dict[str, list[str]] = {s: [] for s in work_authorization.STANCES}
@@ -108,11 +97,10 @@ class WorkAuthorizationRows:
             )
             ids = {s: [] for s in work_authorization.STANCES}
             self._failed = True
-        self._counts = {stance: len(found) for stance, found in ids.items()}
-        self._clauses = {stance: _ids_in(found) for stance, found in ids.items()}
+        self._clauses = {stance: ids_in_clause(found) for stance, found in ids.items()}
         _log.info(
             "work authorization stances read from %d descriptions: %s",
             read,
-            self._counts,
+            {stance: len(found) for stance, found in ids.items()},
         )
         self._ready.set()

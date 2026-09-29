@@ -131,6 +131,8 @@ _PERIOD_OF_MULTIPLIER = {
     12: "month",
     1: "year",
 }
+#: How many of each `SalarySpan.period` make a year: what a Tier-2 figure was multiplied by.
+PERIODS_A_YEAR = {period: mult for mult, period in _PERIOD_OF_MULTIPLIER.items()}
 
 
 @dataclass(frozen=True, slots=True)

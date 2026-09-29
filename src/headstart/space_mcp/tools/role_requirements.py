@@ -156,14 +156,13 @@ def _work_authorization_line(counted: dict[str, Any]) -> str | None:
     held, described = counted.get("work_authorization"), counted["described"]
     if not held or not described:
         return None
+    counted = ", ".join(
+        f"{words} in {held[stance]:,} ({_share(held[stance], described)})"
+        for stance, words in search_arguments.STANCE_WORDS.items()
+    )
     return (
         f"Of the {described:,} with a description, read by HeadStart's rules (not a field, "
-        f"and they can err): {held['offers_sponsorship']:,} offer visa sponsorship "
-        f"({_share(held['offers_sponsorship'], described)}), "
-        f"{held['refuses_sponsorship']:,} refuse it or require citizenship "
-        f"({_share(held['refuses_sponsorship'], described)}), "
-        f"{held['offers_relocation']:,} offer relocation help "
-        f"({_share(held['offers_relocation'], described)})."
+        f"and they can err), the description {counted}."
     )
 
 

@@ -153,7 +153,7 @@ def _shown_categories(payload: dict[str, Any]) -> list[dict[str, Any]]:
     return categories
 
 
-def _trend(payload: dict[str, Any], keys: str, old: dict[str, int]) -> list[str]:
+def _trend(payload: dict[str, Any], keys: list[str], old: dict[str, int]) -> list[str]:
     reading = payload.get("reading")
     if reading is None:
         why = payload.get("reading_error") or "no reason given"
@@ -182,7 +182,7 @@ def _trend(payload: dict[str, Any], keys: str, old: dict[str, int]) -> list[str]
             if recounted
             else ""
         )
-        + f"; read_trends with companies [{keys}] breaks the change down.",
+        + f"; read_trends with companies [{', '.join(keys)}] breaks the change down.",
     ]
     if categories := _shown_categories(payload):
         shown = categories[:CATEGORIES_SHOWN]
@@ -327,6 +327,14 @@ def _total(client: SpaceClient, params: list[tuple[str, str]]) -> int | None:
         return None
 
 
+#: The parameter that keeps only jobs `search_jobs` counts by default: those posted within
+#: its default window.
+_WITHIN_DEFAULT_AGE = (
+    search_arguments.SPACE_NAME["max_age_days"],
+    str(search_arguments.DEFAULT_MAX_AGE_DAYS),
+)
+
+
 def _old_by_category(
     client: SpaceClient,
     boards: list[tuple[str, str]],
@@ -336,14 +344,14 @@ def _old_by_category(
     """How many of each listed category's served jobs are over a year old, as `search_jobs`
     counts a category within a company: every age less the default window."""
     counted = [*boards, ("strict", "1"), ("counts", "total")]
-    within = (
-        search_arguments.SPACE_NAME["max_age_days"],
-        str(search_arguments.DEFAULT_MAX_AGE_DAYS),
-    )
     asked = {
         line["name"]: (
             pool.submit(_total, client, [*counted, ("family", line["name"])]),
-            pool.submit(_total, client, [*counted, ("family", line["name"]), within]),
+            pool.submit(
+                _total,
+                client,
+                [*counted, ("family", line["name"]), _WITHIN_DEFAULT_AGE],
+            ),
         )
         for line in _shown_categories(trends)[:CATEGORIES_SHOWN]
     }
@@ -382,14 +390,12 @@ def answer(client: SpaceClient, arguments: dict[str, Any]) -> str:
     boards = [("board", board) for board in board_keys]
     keys = [("company", pick.key) for pick in picks]
     since = (_now() - timedelta(days=TREND_DAYS)).isoformat(timespec="seconds")
-    within = (
-        search_arguments.SPACE_NAME["max_age_days"],
-        str(search_arguments.DEFAULT_MAX_AGE_DAYS),
-    )
     with ThreadPoolExecutor(max_workers=8) as pool:
         facets = pool.submit(client.read, SpaceRoute.FACETS, [("strict", "1"), *boards])
         recent = pool.submit(
-            _total, client, [("strict", "1"), *boards, within, ("counts", "total")]
+            _total,
+            client,
+            [("strict", "1"), *boards, _WITHIN_DEFAULT_AGE, ("counts", "total")],
         )
         trends = pool.submit(client.read, SpaceRoute.TRENDS, [("since", since), *keys])
         places = pool.submit(client.read, SpaceRoute.COMPANIES_LOCATIONS, boards)
@@ -409,7 +415,7 @@ def answer(client: SpaceClient, arguments: dict[str, Any]) -> str:
         old = _old_by_category(client, boards, trends, pool) if old_total > 0 else {}
     lines = _company_lines(picks, board_keys, by_name, others[:OTHERS_SHOWN])
     lines.append(scraped_text.SCRAPED_NOTE)
-    lines += _trend(trends, ", ".join(pick.key for pick in picks), old)
+    lines += _trend(trends, [pick.key for pick in picks], old)
     if old_total > 0:
         lines.append(_age_line(total, old_total))
     lines.append(_locations(places))
