@@ -1,0 +1,530 @@
+{
+ "content": [
+  {
+   "id": "744000147417559",
+   "name": "Professional Services Consultant",
+   "uuid": "fce1ff9c-d873-474b-8974-e5e8cabd7af4",
+   "jobAdId": "63507906-49fa-45fc-9e3a-5bb64dae2f02",
+   "defaultJobAd": true,
+   "refNumber": "REF268Y",
+   "company": {
+    "identifier": "CheckPointSoftwareTechnologies2",
+    "name": "Check Point Software Technologies"
+   },
+   "releasedDate": "2026-09-04T05:48:26.229Z",
+   "location": {
+    "city": "Sydney",
+    "region": "NSW",
+    "country": "au",
+    "remote": false,
+    "hybrid": true,
+    "latitude": "-33.8622503",
+    "longitude": "151.207684",
+    "fullLocation": "Sydney, NSW, Australia"
+   },
+   "industry": {
+    "id": "security_systems_services",
+    "label": "Security Systems Services"
+   },
+   "department": {},
+   "function": {
+    "id": "information_technology",
+    "label": "Information Technology"
+   },
+   "typeOfEmployment": {
+    "id": "permanent",
+    "label": "Full-time"
+   },
+   "experienceLevel": {
+    "id": "mid_senior_level",
+    "label": "Mid-Senior Level"
+   },
+   "customField": [
+    {
+     "fieldId": "6a21aa1206dc5007efef6da3",
+     "fieldLabel": "Employment Percentage",
+     "valueId": "100",
+     "valueLabel": "100%"
+    },
+    {
+     "fieldId": "6a21a72e57f3707f05fe7c96",
+     "fieldLabel": "CP Department",
+     "valueId": "82",
+     "valueLabel": "Check Point Services"
+    },
+    {
+     "fieldId": "6a21a7d2311f6c9c65f6d0c9",
+     "fieldLabel": "Office Location",
+     "valueId": "6102",
+     "valueLabel": "New South Wales, Australia"
+    },
+    {
+     "fieldId": "6a2a844349a1a3a8872e7750",
+     "fieldLabel": "Evergreen Job",
+     "valueId": "40ae5ac9-c6b9-47c0-8b02-b9dbc9714f14",
+     "valueLabel": "Yes"
+    },
+    {
+     "fieldId": "6a21ad5ef46fc3803795b44e",
+     "fieldLabel": "HRP",
+     "valueId": "9528",
+     "valueLabel": "Ronit Gillon"
+    },
+    {
+     "fieldId": "6a21b4a18c40edfe81d1d604",
+     "fieldLabel": "Career site Category",
+     "valueId": "12",
+     "valueLabel": "Technical Services"
+    },
+    {
+     "fieldId": "6a21ad14311f6c9c65f6d0ca",
+     "fieldLabel": "Referral Category",
+     "valueId": "0",
+     "valueLabel": "Standard Position"
+    },
+    {
+     "fieldId": "6a21a7591f561247defa7adb",
+     "fieldLabel": "Team",
+     "valueId": "9041882",
+     "valueLabel": "CP Professional Services Delivery, APAC (Richard Woodland)"
+    },
+    {
+     "fieldId": "COUNTRY",
+     "fieldLabel": "Country/Region",
+     "valueId": "au",
+     "valueLabel": "Australia"
+    },
+    {
+     "fieldId": "69fb2260d32371e2f69d4e72",
+     "fieldLabel": "Brands",
+     "valueId": "default",
+     "valueLabel": "Check Point Software Technologies"
+    },
+    {
+     "fieldId": "6a21a824214450174406f79c",
+     "fieldLabel": "Employment Type",
+     "valueId": "9",
+     "valueLabel": "Employee"
+    },
+    {
+     "fieldId": "6a33ccaa0f2acdd461645977",
+     "fieldLabel": "C-Level",
+     "valueId": "6107",
+     "valueLabel": "Sharon Schusheim"
+    },
+    {
+     "fieldId": "6a21a790b89f6c3d3b565ae2",
+     "fieldLabel": "Region",
+     "valueId": "300",
+     "valueLabel": "APAC"
+    }
+   ],
+   "visibility": "PUBLIC",
+   "ref": "https://api.smartrecruiters.com/v1/companies/CheckPointSoftwareTechnologies2/postings/744000147417559",
+   "language": {
+    "code": "en",
+    "label": "English",
+    "labelNative": "English (US)"
+   }
+  },
+  {
+   "id": "744000146721549",
+   "name": "Professional Services Consultant",
+   "uuid": "b5e6ab34-7e87-43ef-b7c1-f4e00e6cdcbe",
+   "jobAdId": "ba7a71fc-4b6e-480c-bd14-c94dbbbea683",
+   "defaultJobAd": true,
+   "refNumber": "REF315M",
+   "company": {
+    "identifier": "CheckPointSoftwareTechnologies2",
+    "name": "Check Point Software Technologies"
+   },
+   "releasedDate": "2026-09-01T13:29:00.256Z",
+   "location": {
+    "city": "Dallas",
+    "region": "TX",
+    "country": "us",
+    "remote": true,
+    "hybrid": false,
+    "latitude": "32.7766642",
+    "longitude": "-96.79698789999999",
+    "fullLocation": "Dallas, TX, United States"
+   },
+   "industry": {
+    "id": "computer_software",
+    "label": "Computer Software"
+   },
+   "department": {},
+   "function": {
+    "id": "consulting",
+    "label": "Consulting"
+   },
+   "typeOfEmployment": {
+    "id": "permanent",
+    "label": "Full-time"
+   },
+   "experienceLevel": {
+    "id": "mid_senior_level",
+    "label": "Mid-Senior Level"
+   },
+   "customField": [
+    {
+     "fieldId": "6a21aa1206dc5007efef6da3",
+     "fieldLabel": "Employment Percentage",
+     "valueId": "100",
+     "valueLabel": "100%"
+    },
+    {
+     "fieldId": "6a21a72e57f3707f05fe7c96",
+     "fieldLabel": "CP Department",
+     "valueId": "82",
+     "valueLabel": "Check Point Services"
+    },
+    {
+     "fieldId": "6a21a7d2311f6c9c65f6d0c9",
+     "fieldLabel": "Office Location",
+     "valueId": "753",
+     "valueLabel": "Texas, US Remote"
+    },
+    {
+     "fieldId": "6a2a844349a1a3a8872e7750",
+     "fieldLabel": "Evergreen Job",
+     "valueId": "432cfa9d-a08c-4d7a-90ad-6498284f4d8c",
+     "valueLabel": "No"
+    },
+    {
+     "fieldId": "6a21ad5ef46fc3803795b44e",
+     "fieldLabel": "HRP",
+     "valueId": "23056",
+     "valueLabel": "Chanel Chapman"
+    },
+    {
+     "fieldId": "6a21b4a18c40edfe81d1d604",
+     "fieldLabel": "Career site Category",
+     "valueId": "26",
+     "valueLabel": "Cyber Security Services"
+    },
+    {
+     "fieldId": "6a86a07dbc112cc8da711786",
+     "fieldLabel": "Sub-Region",
+     "valueId": "4",
+     "valueLabel": "Americas"
+    },
+    {
+     "fieldId": "6a21ad14311f6c9c65f6d0ca",
+     "fieldLabel": "Referral Category",
+     "valueId": "0",
+     "valueLabel": "Standard Position"
+    },
+    {
+     "fieldId": "6a21a7591f561247defa7adb",
+     "fieldLabel": "Team",
+     "valueId": "9045638",
+     "valueLabel": "PS Delivery Team (Charles Singleton)"
+    },
+    {
+     "fieldId": "COUNTRY",
+     "fieldLabel": "Country/Region",
+     "valueId": "us",
+     "valueLabel": "United States"
+    },
+    {
+     "fieldId": "69fb2260d32371e2f69d4e72",
+     "fieldLabel": "Brands",
+     "valueId": "default",
+     "valueLabel": "Check Point Software Technologies"
+    },
+    {
+     "fieldId": "6a21a824214450174406f79c",
+     "fieldLabel": "Employment Type",
+     "valueId": "9",
+     "valueLabel": "Employee"
+    },
+    {
+     "fieldId": "6a33ccaa0f2acdd461645977",
+     "fieldLabel": "C-Level",
+     "valueId": "6107",
+     "valueLabel": "Sharon Schusheim"
+    },
+    {
+     "fieldId": "6a21a790b89f6c3d3b565ae2",
+     "fieldLabel": "Region",
+     "valueId": "200",
+     "valueLabel": "WH"
+    }
+   ],
+   "visibility": "PUBLIC",
+   "ref": "https://api.smartrecruiters.com/v1/companies/CheckPointSoftwareTechnologies2/postings/744000146721549",
+   "creator": {
+    "name": "Julie Beltman"
+   },
+   "language": {
+    "code": "en",
+    "label": "English",
+    "labelNative": "English (US)"
+   }
+  },
+  {
+   "id": "744000152219359",
+   "name": "Software Developer \u2013 WAF Learning Engine & Machine Learning",
+   "uuid": "dfb6fbf3-f52e-4b17-ada2-dd431d209b3c",
+   "jobAdId": "b3fa510a-130c-4de8-b708-b945a033d89e",
+   "defaultJobAd": true,
+   "refNumber": "REF396R",
+   "company": {
+    "identifier": "CheckPointSoftwareTechnologies2",
+    "name": "Check Point Software Technologies"
+   },
+   "releasedDate": "2026-09-28T15:50:27.276Z",
+   "location": {
+    "city": "Tel Aviv-Yafo",
+    "region": "Tel Aviv District",
+    "country": "il",
+    "remote": false,
+    "hybrid": true,
+    "latitude": "32.0852999",
+    "longitude": "34.78176759999999",
+    "fullLocation": "Tel Aviv-Yafo, Tel Aviv District, Israel"
+   },
+   "industry": {
+    "id": "computer_software",
+    "label": "Computer Software"
+   },
+   "department": {},
+   "function": {
+    "id": "engineering",
+    "label": "Engineering"
+   },
+   "typeOfEmployment": {
+    "id": "permanent",
+    "label": "Full-time"
+   },
+   "experienceLevel": {
+    "id": "mid_senior_level",
+    "label": "Mid-Senior Level"
+   },
+   "customField": [
+    {
+     "fieldId": "6a21aa1206dc5007efef6da3",
+     "fieldLabel": "Employment Percentage",
+     "valueId": "100",
+     "valueLabel": "100%"
+    },
+    {
+     "fieldId": "6a21a72e57f3707f05fe7c96",
+     "fieldLabel": "CP Department",
+     "valueId": "28",
+     "valueLabel": "Products - R&D"
+    },
+    {
+     "fieldId": "6a21a7d2311f6c9c65f6d0c9",
+     "fieldLabel": "Office Location",
+     "valueId": "97203",
+     "valueLabel": "Tel-Aviv"
+    },
+    {
+     "fieldId": "6a2a844349a1a3a8872e7750",
+     "fieldLabel": "Evergreen Job",
+     "valueId": "432cfa9d-a08c-4d7a-90ad-6498284f4d8c",
+     "valueLabel": "No"
+    },
+    {
+     "fieldId": "6a21ad5ef46fc3803795b44e",
+     "fieldLabel": "HRP",
+     "valueId": "26236",
+     "valueLabel": "Elise Aronowitz"
+    },
+    {
+     "fieldId": "6a21b4a18c40edfe81d1d604",
+     "fieldLabel": "Career site Category",
+     "valueId": "10",
+     "valueLabel": "R&D"
+    },
+    {
+     "fieldId": "6a86a07dbc112cc8da711786",
+     "fieldLabel": "Sub-Region",
+     "valueId": "12",
+     "valueLabel": "Israel"
+    },
+    {
+     "fieldId": "6a21ad14311f6c9c65f6d0ca",
+     "fieldLabel": "Referral Category",
+     "valueId": "0",
+     "valueLabel": "Standard Position"
+    },
+    {
+     "fieldId": "6a21a7591f561247defa7adb",
+     "fieldLabel": "Team",
+     "valueId": "9045079",
+     "valueLabel": "WAF Engine (Alexander Melamud)"
+    },
+    {
+     "fieldId": "COUNTRY",
+     "fieldLabel": "Country/Region",
+     "valueId": "il",
+     "valueLabel": "Israel"
+    },
+    {
+     "fieldId": "69fb2260d32371e2f69d4e72",
+     "fieldLabel": "Brands",
+     "valueId": "default",
+     "valueLabel": "Check Point Software Technologies"
+    },
+    {
+     "fieldId": "6a21a824214450174406f79c",
+     "fieldLabel": "Employment Type",
+     "valueId": "9",
+     "valueLabel": "Employee"
+    },
+    {
+     "fieldId": "6a33ccaa0f2acdd461645977",
+     "fieldLabel": "C-Level",
+     "valueId": "27227",
+     "valueLabel": "Nataly Kremer"
+    },
+    {
+     "fieldId": "6a21a790b89f6c3d3b565ae2",
+     "fieldLabel": "Region",
+     "valueId": "100",
+     "valueLabel": "IL"
+    }
+   ],
+   "visibility": "PUBLIC",
+   "ref": "https://api.smartrecruiters.com/v1/companies/CheckPointSoftwareTechnologies2/postings/744000152219359",
+   "language": {
+    "code": "en",
+    "label": "English",
+    "labelNative": "English (US)"
+   }
+  },
+  {
+   "id": "744000152075679",
+   "name": "Legal Counsel, Privacy",
+   "uuid": "75c04261-892e-42c3-95e3-bb97c5678d5c",
+   "jobAdId": "3ef71b9f-8eb5-456d-9104-b35337dff1f7",
+   "defaultJobAd": true,
+   "refNumber": "25914",
+   "company": {
+    "identifier": "CheckPointSoftwareTechnologies2",
+    "name": "Check Point Software Technologies"
+   },
+   "releasedDate": "2026-09-28T05:35:55.580Z",
+   "location": {
+    "city": "Tel Aviv/ Hybrid (Israel)",
+    "country": "il",
+    "remote": false,
+    "hybrid": false,
+    "fullLocation": "Tel Aviv/ Hybrid (Israel), , Israel"
+   },
+   "industry": {
+    "id": "computer_software",
+    "label": "Computer Software"
+   },
+   "department": {},
+   "function": {
+    "id": "engineering",
+    "label": "Engineering"
+   },
+   "typeOfEmployment": {
+    "id": "permanent",
+    "label": "Full-time"
+   },
+   "experienceLevel": {
+    "id": "mid_senior_level",
+    "label": "Mid-Senior Level"
+   },
+   "customField": [
+    {
+     "fieldId": "6a21aa1206dc5007efef6da3",
+     "fieldLabel": "Employment Percentage",
+     "valueId": "100",
+     "valueLabel": "100%"
+    },
+    {
+     "fieldId": "6a21a72e57f3707f05fe7c96",
+     "fieldLabel": "CP Department",
+     "valueId": "21",
+     "valueLabel": "Finance"
+    },
+    {
+     "fieldId": "6a21a7d2311f6c9c65f6d0c9",
+     "fieldLabel": "Office Location",
+     "valueId": "97203",
+     "valueLabel": "Tel-Aviv"
+    },
+    {
+     "fieldId": "6a2a844349a1a3a8872e7750",
+     "fieldLabel": "Evergreen Job",
+     "valueId": "432cfa9d-a08c-4d7a-90ad-6498284f4d8c",
+     "valueLabel": "No"
+    },
+    {
+     "fieldId": "6a21ad5ef46fc3803795b44e",
+     "fieldLabel": "HRP",
+     "valueId": "9007",
+     "valueLabel": "Michal Azulai"
+    },
+    {
+     "fieldId": "6a21a6c13e011671c4023fd1",
+     "fieldLabel": "Confidential",
+     "valueId": "0",
+     "valueLabel": "No"
+    },
+    {
+     "fieldId": "6a21b4a18c40edfe81d1d604",
+     "fieldLabel": "Career site Category",
+     "valueId": "1",
+     "valueLabel": "Legal"
+    },
+    {
+     "fieldId": "6a21ad14311f6c9c65f6d0ca",
+     "fieldLabel": "Referral Category",
+     "valueId": "0",
+     "valueLabel": "Standard Position"
+    },
+    {
+     "fieldId": "6a21a7591f561247defa7adb",
+     "fieldLabel": "Team",
+     "valueId": "272000",
+     "valueLabel": "Legal (Shira Yashar)"
+    },
+    {
+     "fieldId": "COUNTRY",
+     "fieldLabel": "Country/Region",
+     "valueId": "il",
+     "valueLabel": "Israel"
+    },
+    {
+     "fieldId": "69fb2260d32371e2f69d4e72",
+     "fieldLabel": "Brands",
+     "valueId": "default",
+     "valueLabel": "Check Point Software Technologies"
+    },
+    {
+     "fieldId": "6a21a824214450174406f79c",
+     "fieldLabel": "Employment Type",
+     "valueId": "9",
+     "valueLabel": "Employee"
+    },
+    {
+     "fieldId": "6a33ccaa0f2acdd461645977",
+     "fieldLabel": "C-Level",
+     "valueId": "22823",
+     "valueLabel": "Roei Golan"
+    },
+    {
+     "fieldId": "6a21a790b89f6c3d3b565ae2",
+     "fieldLabel": "Region",
+     "valueId": "100",
+     "valueLabel": "IL"
+    }
+   ],
+   "visibility": "PUBLIC",
+   "ref": "https://api.smartrecruiters.com/v1/companies/CheckPointSoftwareTechnologies2/postings/744000152075679",
+   "language": {
+    "code": "en",
+    "label": "English",
+    "labelNative": "English (US)"
+   }
+  }
+ ]
+}

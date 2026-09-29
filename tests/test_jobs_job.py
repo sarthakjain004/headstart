@@ -40,6 +40,7 @@ def test_job_round_trips_to_dict():
         "employment_type",
         "salary",
         "requisition",
+        "job_function",
     }
 
 

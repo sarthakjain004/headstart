@@ -34,6 +34,12 @@ class Job:
     # requisition, and a row on that Board carries the same id. None on every other ATS; the store
     # keeps it only on the paired Boards (`doc_prep.stored_facts`).
     requisition: str | None = None
+    # The ATS's own job-function taxonomy label, stated beside the company's department
+    # (SmartRecruiters' `function.label`: "Engineering", "Sales", "Information Technology").
+    # The served row shows it as the department when none is stated (`doc_prep.stored_facts`),
+    # but the tech gate never reads it: an "Engineering" function is civil and construction work
+    # as often as software (ADR-0291).
+    job_function: str | None = None
 
     def __post_init__(self) -> None:
         # The one point every scraper's Jobs pass through, so the display text is cleaned once

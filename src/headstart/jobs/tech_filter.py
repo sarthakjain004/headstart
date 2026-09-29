@@ -103,7 +103,20 @@ from headstart.boards.board_identity import board_end
 # That is an upper bound, because the served rows are tech only and a Board's non-tech postings can
 # keep it in. On a live scrape of 24 Boards, 16 were Dormant and 10,369 of their served rows would
 # go; the six controls lost none.
-TECH_FILTER_VERSION = 6
+# 7 (2026-09-29, `git log 50e02fb7..72b06c47 -- src/headstart/jobs src/headstart/scrapers src/headstart/ingest`):
+# #570's options A and D (ADR-0291).
+# SmartRecruiters' `_department_of` falls back only to the Information Technology function, no
+# longer to "Engineering" (rule 4 promoted civil and construction work) or to Sales and
+# Manufacturing (rule 2 vetoed a generic "…Engineer"). `_NON_TECH_ROLE` reads plurals
+# ("Security Officers", "Electricians"). On the served table (v298, 498,848 rows) **-3,081 out**:
+# 2,755 SmartRecruiters rows the Engineering function promoted (aecom2 651, boschgroup 488,
+# cityofnewyork 232) and 329 plurals (311 security staff), 3 of them both. **+377 in** on the 244
+# SmartRecruiters Boards walked live, a floor; a random 60 of them labelled 3 tech, 15 borderline,
+# 42 not. On 180 sampled Engineering-function rows two labellers found 13 tech and 153 not. The
+# served `department` is unchanged: a function the gate no longer reads still shows there, via
+# `Job.job_function`. The blind hold-out and the labelled set are unchanged. See
+# docs/tech-filter/2026-09-29_the-smartrecruiters-function-fallback.md.
+TECH_FILTER_VERSION = 7
 
 # 1. Strong, software-specific signals. A match here means tech regardless of any disqualifier.
 _STRONG_TERMS = [
@@ -701,7 +714,9 @@ _NON_TECH_ROLE = re.compile(
     # `cnc` is the machine shop — except in JD Edwards, where "CNC" is the ERP's own system
     # administration layer ("JD Edwards CNC Administrator", "Edwards CNC" in `IT Services`).
     r"|(?<!edwards )(?<!jde )cnc"
-    r")\b",
+    # `s?`: a bare closing `\b` refused "Welder" and "Security Officer" but promoted "Welders"
+    # and "Security Officers" (#570; 329 served rows on v298, 274 of them one guard firm's).
+    r")s?\b",
     re.IGNORECASE,
 )
 

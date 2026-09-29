@@ -644,7 +644,7 @@ def test_a_non_software_department_still_vetoes_a_generic_title():
 
 def test_the_version_counter_moved_with_the_line():
     """`role_trends` reads this to tell "we changed who counts" from "the market moved"."""
-    assert TECH_FILTER_VERSION == 6, (
+    assert TECH_FILTER_VERSION == 7, (
         "bump this and its comment together — the comment carries the commit range and the "
         "measured effect, and a bump without one is what CLAUDE.md's DERIVATIONS_VERSION rule "
         "exists to stop"
@@ -1243,3 +1243,46 @@ def test_second_review_keeps(title, department):
 )
 def test_second_review_refuses(title, department):
     assert is_tech(title, department or None) is False, f"non-tech kept -> {title!r}"
+
+
+# --- TECH_FILTER_VERSION 7: the role veto reads plurals (#570, option D) -----------------------
+
+
+@pytest.mark.parametrize(
+    "title,department",
+    [
+        ("Welders", "Engineering"),
+        ("Mig Welders", "Engineering"),
+        ("Electricians", "Engineering"),
+        ("Field Electricians", "Engineering"),
+        ("Carpenters", "Engineering"),
+        ("Plumbers", "Engineering"),
+        # 274 of the 329 served rows this refused on v298: one guard firm's "Security Operations"
+        ("Flex Unarmed Security Officers - $19.00/hr", "Security Operations"),
+        ("Security Guards", "Security/Law Enforcement"),
+        ("Bus Drivers", "Security/Law Enforcement"),
+        ("Content Creators", "Technology"),
+        ("Team Lead Account Executives", "Engineering"),
+    ],
+)
+def test_version_7_the_role_veto_refuses_a_plural(title, department):
+    assert is_tech(title, department) is False, f"non-tech kept -> {title!r}"
+
+
+@pytest.mark.parametrize(
+    "title,department",
+    [
+        # `technician` is deliberately not a veto word, in either number
+        ("Maintenance Technician", "Engineering"),
+        ("Maintenance Technicians", "Engineering"),
+        # the veto does read "Drivers" here; the strong software signal outranks it (rule 1)
+        ("Drivers Software Engineer", "Engineering"),
+        # the plural `s?` must not reach a longer word the veto never meant: a vague title in a
+        # tech department is promoted unless the veto matches, and "custodian" + "ship" or
+        # "cook" + "stown" is no custodian or cook
+        ("Custodianship Lead", "Information Technology"),
+        ("Cookstown Site Lead", "Information Technology"),
+    ],
+)
+def test_version_7_plural_veto_does_not_reach_its_neighbours(title, department):
+    assert is_tech(title, department) is True, f"RECALL VIOLATION -> {title!r}"
