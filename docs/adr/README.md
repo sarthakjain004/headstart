@@ -312,6 +312,7 @@ supersedes it and note the supersession in both.
 | [0342](0342-the-sponsorship-eval-judges-apart-from-the-spaces-rules.md) | The sponsorship eval judges apart from the Space's rules (amends 0334) | 2026-09-29 |
 | [0343](0343-a-country-needs-fifteen-unplaced-jobs-and-a-cut-country-is-read-whole.md) | A country needs fifteen unplaced Jobs, and a cut country is read whole | 2026-09-29 |
 | [0344](0344-the-location-filter-reads-accents-and-a-citys-other-spellings-as-one-place.md) | The location filter reads accents and a city's other spellings as one place | 2026-09-29 |
+| [0346](0346-a-radancy-403-is-the-runners-ip-refused-so-a-front-takes-the-spare-egress-and-not-a-browser.md) | A Radancy 403 is the runner's IP refused, so a front takes the spare egress and not a browser | 2026-09-29 |
 | [0347](0347-the-india-country-tag-reads-whole-words-and-the-shapes-only-india-writes.md) | The India country tag reads whole words and the shapes only India writes | 2026-09-29 |
 | [0348](0348-a-workday-listing-item-with-no-title-and-no-link-is-not-a-job.md) | A Workday listing item with no title and no link is not a Job | 2026-09-29 |
 
