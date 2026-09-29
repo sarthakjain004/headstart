@@ -253,7 +253,7 @@ def account_clause(
     return " AND ".join(c for c in clauses if c) or None
 
 
-def _keyword_terms(kw: str) -> list[str]:
+def _keyword_terms(kw: str, *, word_start: bool = True) -> list[str]:
     """The Keyword filter's terms as regex patterns: a quoted phrase is one, every other
     whitespace-separated word another, capped at :data:`_KEYWORD_MAX_TERMS`.
 
@@ -262,11 +262,15 @@ def _keyword_terms(kw: str) -> list[str]:
     because `\\b` never matches after "c++"; anchoring only a term that *starts* with a letter or
     digit, and never its end, keeps "c++", ".net" and "c#" matching and "java" finding JavaScript.
     Each term is cut at 60 characters as typed, as the substring rule cut it.
+
+    ``word_start=False`` leaves the anchor off (ADR-0320): the pattern then matches every text the
+    anchored one does, and some more, and Rust's engine finds it about five times faster.
     """
     terms = []
     for phrase, word in _KEYWORD_TOKEN.findall(kw.translate(_CURLY_QUOTES)):
         if words := (phrase or word)[:60].lower().split():
-            start = _WORD_START if words[0][0] in _WORD_CHARS else ""
+            anchored = word_start and words[0][0] in _WORD_CHARS
+            start = _WORD_START if anchored else ""
             body = _PHRASE_GAP.join(_escape_regex(w) for w in words)
             terms.append("(?i)" + start + body)
     return terms[:_KEYWORD_MAX_TERMS]
@@ -332,7 +336,7 @@ def _next_day(value: str) -> str:
 
 
 def _keyword_clauses(
-    *, kw: str | None, kw_in: str | None, has_description: bool
+    *, kw: str | None, kw_in: str | None, has_description: bool, word_start: bool = True
 ) -> list[str]:
     """The Keyword filter's clauses (ADR-0104) — one per term, OR'd across the scope's columns."""
     filters: list[str] = []
@@ -341,11 +345,33 @@ def _keyword_clauses(
         # absent compiles to nothing at all — dark, never an error — like every optional-column
         # filter in this module.
         columns = _keyword_columns(kw_in, has_description)
-        for term in _keyword_terms(kw) if columns else ():
+        terms = _keyword_terms(kw, word_start=word_start) if columns else ()
+        for term in terms:
             filters.append(
                 "(" + " OR ".join(f"regexp_like({c}, '{term}')" for c in columns) + ")"
             )
     return filters
+
+
+def keyword_clause(
+    filters: SearchFilters, capabilities: IndexCapabilities, *, word_start: bool = True
+) -> str | None:
+    """The rail's Keyword filter (``kw`` in ``kw_in``) alone, as :func:`build_filter` compiles it,
+    or None when it compiles to nothing.
+
+    ``word_start=False`` compiles it without the word-start anchor (ADR-0320): every row the
+    Keyword filter keeps, and a few more ("relocation" also inside "nonrelocation"). Over
+    descriptions that finds candidates about five times faster, measured on the served table, so
+    :mod:`headstart.serving.description_matches` finds them with it and applies this exact clause
+    to those rows alone.
+    """
+    clauses = _keyword_clauses(
+        kw=filters.kw,
+        kw_in=filters.kw_in,
+        has_description=capabilities.has_description,
+        word_start=word_start,
+    )
+    return " AND ".join(clauses) if clauses else None
 
 
 def _salary_clauses(
