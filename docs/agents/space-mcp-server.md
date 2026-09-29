@@ -348,6 +348,9 @@ the site's numbers and opened less closed.
   Each row gives its place on the page ("site #7"). On 2026-09-29 the page's Expansion list began
   with Bosch Group, +442 on 23 postings opened and 33 closed; the answer began with Capital One,
   site #7.
+- **Rate leaves out churn.** `rate` ranks only companies whose net change was above 0 and whose
+  closures were counted (ADR-0309). The answer says how many of the companies ranked it left out
+  for each reason.
 - **Operators.** `operator` is who posts the jobs:
   - `employer`: the company itself, and any company not on the curated list;
   - `services`: an IT services firm posting client work;

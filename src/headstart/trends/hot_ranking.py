@@ -23,8 +23,9 @@ the netting could not size: Bosch Group led it at +442 on 23 opened and 33 close
 ``volume``: the jobs **Opened** over the same runs (ADR-0227). *Where the most opportunity is
 right now.* Always led by the largest employers.
 
-``rate``: the jobs Opened as a share of the company's openings now. *Who is moving fast for
-their size*, the only lens that surfaces a small company a user would never otherwise find.
+``rate``: the jobs Opened as a share of the company's openings now, among companies that grew.
+*Who is moving fast for their size*, the only lens that surfaces a small company a user would
+never otherwise find.
 
 ## What is left out, and counted rather than silently applied
 
@@ -39,6 +40,10 @@ their size*, the only lens that surfaces a small company a user would never othe
   told from the same jobs listed again, so its rate measures churn rather than hiring. New York
   Life led Rate on 2026-09-28 at 2,016%: 504 opened against 25 open now, at a net change of −47.
   The other Lenses still rank it, and its row there says its closures were not counted.
+- **From Rate, a company whose net change was 0 or less** (ADR-0309, option 1 of #835). What it
+  opened only replaced what closed, so its rate measures churn rather than growth. On 2026-09-29
+  30 of Rate's 100 rows were such churn, CSB second at 60% on a net change of 0 and Bluelight
+  Consulting ninth at 41% on −101. Expansion already ranks only a net change above 0.
 - **From Opened less closed, a company whose closures went uncounted on any of its Boards.** Its
   closed count is then low, and its opened less closed high by as much.
 
@@ -157,7 +162,7 @@ def rank(
         "expansion": _top(candidates, "net"),
         "opened_less_closed": _top(candidates, "opened_less_closed"),
         "volume": _top(candidates, "opened"),
-        "rate": _top(candidates, "rate"),
+        "rate": _top([row for row in candidates if row["net"] > 0], "rate"),
     }
     shown = {row["key"]: row for lens in lenses.values() for row in lens}
     operators = Counter(row["operator"] for row in shown.values())
@@ -186,6 +191,9 @@ def rank(
             for row in candidates
             if row["closed"] is not None and row["closures_uncounted_boards"]
         ),
+        # Left out of Rate too, apart from those: they have a rate, but their net change was 0
+        # or less.
+        "not_growing": sum(1 for row in candidates if row["rate"] and row["net"] <= 0),
         "services": operators["services"],
         "staffing": operators["staffing"],
         "aggregator": operators["aggregator"],

@@ -1983,6 +1983,7 @@ def _hot(rows, turnover_from="2026-09-21T12:00:00+00:00"):
             "unnamed": 9,
             "closures_uncounted": 23,
             "closures_partly_uncounted": 7,
+            "not_growing": 9,
             "services": 30,
             "staffing": 12,
             "aggregator": 1,
@@ -2229,6 +2230,29 @@ def test_the_rate_lens_says_it_left_out_companies_whose_closures_were_not_counte
     assert "23 whose closures were not counted" in rate
     volume = server.call(FakeSpace(hot=_hot(rows)), "hiring_now", {"lens": "volume"})
     assert "closures were not counted" not in volume
+
+
+def test_a_lenss_own_exclusions_are_said_as_part_of_the_companies_ranked():
+    """ "Ranked 2,196 companies; not ranked: … 334 whose closures were not counted" read the 334
+    as outside the 2,196, which already held them. And CSB ranked second on Rate on a net change
+    of 0 (ADR-0309)."""
+    rows = [_hot_row(n) for n in range(1, 4)]
+    rate = server.call(FakeSpace(hot=_hot(rows)), "hiring_now", {"lens": "rate"})
+    [line] = [line for line in rate.split("\n") if line.startswith("Ranked ")]
+    not_ranked, of_those = line.split(" Of those ")
+    assert "closures" not in not_ranked
+    assert of_those == (
+        "2,341, rate leaves out 23 whose closures were not counted, so their postings opened "
+        "may be the same postings listed again; 9 whose net change was 0 or less, so what they "
+        "opened only replaced what closed."
+    )
+    default = server.call(FakeSpace(hot=_hot(rows)), "hiring_now", {})
+    assert (
+        "Of those 2,341, opened_less_closed leaves out 23 whose closures were not counted"
+        in default
+    )
+    volume = server.call(FakeSpace(hot=_hot(rows)), "hiring_now", {"lens": "volume"})
+    assert "Of those" not in volume
 
 
 def test_a_count_the_space_did_not_measure_is_not_shown_as_zero():

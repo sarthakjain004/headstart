@@ -36,8 +36,8 @@ from headstart.space_mcp.turnover_span import span_sentence
 COMPANY_FIELD = 60
 
 #: A Rate row whose company has fewer openings than this many times the ranking's floor is
-#: flagged: at 25 openings each posting opened moves its rate 4 points, and New York Life read
-#: 2016% off 25.
+#: flagged: at 25 openings each posting opened moves its rate 4 points. RadNet read 48% on
+#: 2026-09-29: 12 postings opened on 25 openings.
 SMALL_BASE_FLOORS = 2
 
 
@@ -80,6 +80,9 @@ _LEFT_OUT = {
     ),
     "closures_partly_uncounted": (
         "whose closures went uncounted on some of their Boards, so their closed runs low"
+    ),
+    "not_growing": (
+        "whose net change was 0 or less, so what they opened only replaced what closed"
     ),
 }
 
@@ -132,7 +135,7 @@ LENSES = {
         ranks="postings opened as a share of the company's openings now",
         in_site_order=True,
         checks=(*_SITE_CHECKS, Flag.SMALL_BASE),
-        left_out=("closures_uncounted",),
+        left_out=("closures_uncounted", "not_growing"),
     ),
 }
 
@@ -272,9 +275,12 @@ def _row(rank: int, listed: ListedRow, moved: bool) -> str:
 
 
 def _not_ranked(
-    lens: Lens, counts: dict[str, Any], hidden_here: int, hidden: set[str]
+    name: str, lens: Lens, counts: dict[str, Any], hidden_here: int, hidden: set[str]
 ) -> str:
-    """What the ranking left out, and why, as one line."""
+    """What the ranking left out, and why, as one line. A Lens's own exclusions are companies
+    the ranking holds, so they are said as a part of them: listed among the companies not
+    ranked, "Ranked 2,196 companies; not ranked: … 334 whose closures were not counted" read
+    the 334 as outside the 2,196, which already held them."""
     left_out = [
         f"{counts.get('too_new', 0):,} counted for under 3 days",
         (
@@ -282,18 +288,23 @@ def _not_ranked(
             f"{counts.get('min_stock', 25)} openings"
         ),
         f"{counts.get('unnamed', 0):,} Boards no directory company holds",
-        *(f"{counts.get(key, 0):,} {_LEFT_OUT[key]}" for key in lens.left_out),
     ]
     if hidden_here:
         left_out.append(
             f"{hidden_here} {' and '.join(sorted(hidden))} rows hidden, as the site's tab hides "
             "them (include_hidden_operators shows them)"
         )
-    return (
-        f"Ranked {counts.get('ranked', 0):,} companies; not ranked: "
-        + "; ".join(left_out)
-        + "."
-    )
+    ranked = counts.get("ranked", 0)
+    said = f"Ranked {ranked:,} companies; not ranked: " + "; ".join(left_out) + "."
+    if lens.left_out:
+        said += (
+            f" Of those {ranked:,}, {name} leaves out "
+            + "; ".join(
+                f"{counts.get(key, 0):,} {_LEFT_OUT[key]}" for key in lens.left_out
+            )
+            + "."
+        )
+    return said
 
 
 def answer(client: SpaceClient, arguments: dict[str, Any]) -> str:
@@ -340,6 +351,7 @@ def answer(client: SpaceClient, arguments: dict[str, Any]) -> str:
             lines.append(f"{carried} of these rows {summary}")
     lines.append(
         _not_ranked(
+            name,
             lens,
             hot.get("counts") or {},
             listing.hidden,
@@ -366,8 +378,9 @@ TOOL = SpaceTool(
         "on every Board: the one Lens with no re-counting in its figure, so it flags nothing. "
         "The site's other Lenses: `expansion` (net change in tech openings, less the counting "
         "steps HeadStart could size; it can still hold re-counting), `volume` (postings "
-        "opened) or `rate` (postings opened as a share of the company's openings now). On "
-        "those, a row is flagged where its net is not backed by its postings opened and "
+        "opened) or `rate` (postings opened as a share of the company's openings now, only for "
+        "companies whose net change was above 0 and whose closures were counted). On those, a "
+        "row is flagged where its net is not backed by its postings opened and "
         "closed, its closures went uncounted on any Board, it opened more postings than are "
         "open now, or, on rate, its base is small, and flagged rows are listed after the rest. "
         "Whole tech index; companies under 25 openings or counted for under 3 days are not "
