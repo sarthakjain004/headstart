@@ -14,6 +14,7 @@ from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+import lancedb
 import pyarrow as pa
 import pytest
 
@@ -724,7 +725,6 @@ _ROWS = [
 @pytest.fixture(scope="module")
 def jobs_table(tmp_path_factory):
     """The served schema, the flags the index derives, and the rows above."""
-    lancedb = pytest.importorskip("lancedb")
     from headstart.search_filters import (
         employment_type_filter,
         experience_filter,
@@ -936,12 +936,41 @@ def test_the_read_keeps_every_filter_no_count_lifts(jobs_table):
     assert "ats = " not in read
 
 
+@pytest.mark.parametrize(
+    "filters, extra_where",
+    [
+        # A real Board (ashby:vector): hiding it keeps nearly every row in the read.
+        (
+            SearchFilters(kw="golang", kw_in="both"),
+            account_clause([], ["ashby:vector"], mine=False),
+        ),
+        (SearchFilters(kw="golang", kw_in="both", company="description"), None),
+    ],
+    ids=["hidden-board-vector", "company-description"],
+)
+def test_the_read_never_copies_a_column_only_a_quoted_term_names(
+    jobs_table, filters, extra_where
+):
+    """The read keeps the columns the counts name, and a word inside a quoted term names none.
+    Matched over the whole clause, hiding ashby:vector copied the 768-float `vector` column of
+    every row read into memory: 1,293 MB against 25 MB for "engineer" on the served table."""
+    table = _RecordingTable(jobs_table)
+    out = facets.counts(table, filters, _MATERIALIZED, extra_where=extra_where)
+    (read,) = table.selected
+    assert not {"vector", "description"} & set(read)
+    assert out == _whole_table(
+        jobs_table, filters, _MATERIALIZED, extra_where, out["facets"]
+    )
+
+
 class _RecordingTable:
-    """A real table that records every clause reaching it, counted or read."""
+    """A real table that records every clause reaching it, counted or read, and the columns
+    each read selects."""
 
     def __init__(self, table):
         self._table = table
         self.seen: list[str | None] = []
+        self.selected: list[list[str]] = []
         self.schema = table.schema
 
     def count_rows(self, filter=None):
@@ -958,6 +987,13 @@ class _RecordingTable:
             def where(self, clause):
                 table.seen.append(clause)
                 return _Query(self._query.where(clause))
+
+            def with_row_id(self, asked):
+                return _Query(self._query.with_row_id(asked))
+
+            def select(self, columns):
+                table.selected.append(columns)
+                return _Query(self._query.select(columns))
 
             def __getattr__(self, name):
                 return getattr(self._query, name)

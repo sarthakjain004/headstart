@@ -1429,8 +1429,7 @@ class JobSearch:
             # and page 2 with no tiebreaker, zero recurred with one). `id` is unique per row,
             # so it breaks every tie deterministically. Plain dicts, not `lancedb.query.
             # ColumnOrdering` instances — lancedb's pydantic layer coerces either (verified
-            # 2026-08-20), and a dict keeps `job_search.py` importable without lancedb installed
-            # (the quality job's `.[dev]` extra omits it — lancedb only ships in `.[embed]`).
+            # 2026-08-20).
             # Do NOT add this ordering to the query branch above — passing any explicit
             # `order_by` alongside a vector search was measured to override ranking by
             # similarity entirely, not merely break ties within it.
