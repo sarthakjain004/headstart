@@ -26,10 +26,14 @@ from __future__ import annotations
 
 import argparse
 import json
+from collections import defaultdict
+from collections.abc import Iterator
+from itertools import zip_longest
 from pathlib import Path
+from typing import NamedTuple
 
 from headstart import log
-from headstart.boards.board_identity import board_of
+from headstart.boards.board_identity import ats_of, board_of
 from headstart.boards.priority_ledger import load_scores
 from headstart.embedding_conventions import MODEL, MODEL_CODE_REVISION, MODEL_REVISION
 from headstart.ingest import PENDING_UPGRADES_PATH, REPO_ROOT, observability, shard_plan
@@ -84,21 +88,31 @@ _MAX_SHARDS = 15  # == pipeline.yml `max-parallel`; Phase 1 runs one shard per l
 # plans the shards they ran on six of the seven (36218633315 would take 2, not 1). Keeping 300 s
 # would have halved the fan-out on the same work.
 _TARGET_SECONDS = 165.0
-# The most edited Jobs re-embedded per run (ADR-0285). An ordinary run edits about 190 (#638's
-# measurement after the Zoho fix, #639); the bound is for a scraper change that rewrites every
-# description of an ATS at once. The rest are re-embedded when their Board is next in a Slice,
-# since their stored fingerprint still differs.
+# The most edited Jobs re-embedded per run (ADR-0285). ADR-0207's change ledger averaged about
+# 285 replaced descriptions a run from 2026-09-24 to 2026-09-29, bursts included; the bound is for
+# a scraper change that rewrites every description of an ATS at once. It is spent across ATSes in
+# turn (`_edits_in_turn`). The rest are re-embedded when their Board is next in a Slice, since
+# their stored fingerprint still differs.
 _MAX_EDIT_REEMBEDS = 2000
 
 
-def _prior_rows(path: Path) -> tuple[set[str], set[str], dict[str, str]]:
-    """``(embedded ids, ids whose vector was built without a description, {id: doc_hash})`` — all
-    empty on a first run (no meta.jsonl yet).
+class PriorRows(NamedTuple):
+    """What the prior store's ``meta.jsonl`` says about the vectors it holds."""
 
-    ``doc_hash`` is the fingerprint of the text each vector encodes (ADR-0285); a row embedded
-    before it existed has none until ``update_meta`` stamps it.
+    #: Every embedded id.
+    ids: set[str]
+    #: The ids whose vector was built without a description (ADR-0050).
+    degraded: set[str]
+    #: ``{id: doc_hash}``, the fingerprint of the raw title and description each vector was built
+    #: from (ADR-0285); a row embedded before it existed has none until ``update_meta`` stamps it.
+    hashes: dict[str, str]
 
-    The second set is what makes a title-only vector repairable (ADR-0050), and it is now read
+
+def _prior_rows(path: Path) -> PriorRows:
+    """The prior store's embedded ids, degraded ids and fingerprints — all empty on a first run
+    (no meta.jsonl yet).
+
+    ``degraded`` is what makes a title-only vector repairable (ADR-0050), and it is now read
     straight from ``has_description`` on every row. It used to be **inferred** where the flag was
     absent — every row written before ADR-0050 — by assuming degraded on any ATS with a detail
     pass. That guess conflated "this ATS fetches descriptions separately" with "that fetch
@@ -108,7 +122,7 @@ def _prior_rows(path: Path) -> tuple[set[str], set[str], dict[str, str]]:
     (ADR-0062), so there is nothing left to guess about.
     """
     if not path.exists():
-        return set(), set(), {}
+        return PriorRows(set(), set(), {})
     ids: set[str] = set()
     degraded: set[str] = set()
     hashes: dict[str, str] = {}
@@ -123,7 +137,22 @@ def _prior_rows(path: Path) -> tuple[set[str], set[str], dict[str, str]]:
                 degraded.add(row["id"])
             if row.get("doc_hash"):
                 hashes[row["id"]] = row["doc_hash"]
-    return ids, degraded, hashes
+    return PriorRows(ids, degraded, hashes)
+
+
+def _edits_in_turn(edits: list[dict], scores: dict[str, float]) -> Iterator[dict]:
+    """Edited Jobs in the order the re-embed cap is spent on them (ADR-0285's amendment): one ATS
+    at a time in turn, and within an ATS its highest-priority Boards first.
+
+    Corpus order is ATS-file order, so a backlog on one ATS used to spend the whole cap before a
+    later file was read: on 2026-09-29, SuccessFactors' 9,070 pending re-embeds left Workday's
+    1,911, WP Job Openings' 1,511 and Zoho's 929 with none. Board priority alone would not have
+    helped, because SuccessFactors also holds the highest-scored Boards among them."""
+    by_ats: dict[str, list[dict]] = defaultdict(list)
+    for job in sorted(edits, key=lambda j: -scores.get(board_of(j["id"]), 0.0)):
+        by_ats[ats_of(job["id"])].append(job)
+    for turn in zip_longest(*by_ats.values()):
+        yield from (job for job in turn if job is not None)
 
 
 def _load_tokenizer():
@@ -221,6 +250,14 @@ def main() -> int:
     scanned = already = dropped = 0
     edited = deferred = 0
     progress = observability.PreparationProgress(_log)
+    edits: list[dict] = []  # planned after the scan, by `_edits_in_turn`
+
+    def add_doc(job: dict) -> None:
+        ids.append(job["id"])
+        docs.append(build_doc(job))
+        metas.append(to_meta(job))
+        boards.append(board_of(job["id"]))
+
     for job in iter_jobs(args.source):
         scanned += 1
         jid = job.get("id") or ""
@@ -233,14 +270,21 @@ def main() -> int:
             # has changed since, which `doc_hash` shows (ADR-0285): an edited posting, or a
             # clone that was rewritten. `embed_plan` skips by id, so nothing else reaches them.
             described = jid in degraded and (job.get("description") or "").strip()
-            stored = hashes.get(jid)
+            # No description over a vector built from one is a failed fetch, not an edit.
+            # Re-embedding it would build a title-only vector that ADR-0050 rebuilds once the
+            # text is back (ADR-0285's amendment).
+            stored = (
+                hashes.get(jid)
+                if jid in degraded or (job.get("description") or "").strip()
+                else None
+            )
             is_edit = not described and stored is not None and stored != doc_hash(job)
             if not (described or is_edit):
                 already += 1
                 progress.report(scanned, len(docs), already, dropped)
                 continue
-            if is_edit and edited >= _MAX_EDIT_REEMBEDS:
-                deferred += 1
+            if is_edit:
+                edits.append(job)
                 progress.report(scanned, len(docs), already, dropped)
                 continue
             upgrading = True
@@ -254,12 +298,17 @@ def main() -> int:
         # those would be held on every run forever while `index sync` churned their rows.
         if upgrading:
             upgrades.append(jid)
-            edited += is_edit
-        ids.append(jid)
-        docs.append(build_doc(job))
-        metas.append(to_meta(job))
-        boards.append(board_of(jid))
+        add_doc(job)
         progress.report(scanned, len(docs), already, dropped)
+    for job in _edits_in_turn(edits, scores):
+        if edited >= _MAX_EDIT_REEMBEDS:
+            deferred += 1
+        elif not is_english(job.get("title") or "", job.get("description") or ""):
+            dropped += 1
+        else:
+            upgrades.append(job["id"])
+            edited += 1
+            add_doc(job)
     _log.info(
         f"new Docs: {len(docs)} (scanned {scanned}, already {already}, non-English {dropped}, "
         f"upgraded {len(upgrades)})"

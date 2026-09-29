@@ -355,7 +355,7 @@ def test_a_fetch_that_only_read_non_ascii_as_question_marks_keeps_the_held_text(
     changes: dict = {}
     done = ud.reconcile(jobs, store, changes)
 
-    assert (done.question_marked, done.learned, done.replaced) == (1, 0, 0)
+    assert (done.kept_over_question_marks, done.learned, done.replaced) == (1, 0, 0)
     assert done.rederive_ids == [] and changes == {}
     assert ud.read_store(store) == {"zwayam:careers.microland.com:1": held}
     assert _rows(jobs)[0]["description"] == held
@@ -379,7 +379,7 @@ def test_any_other_difference_beside_a_question_mark_still_replaces(tmp_path, fr
     _corpus(jobs, [_job("zwayam:a:1", fresh)])
     done = ud.reconcile(jobs, store, {})
 
-    assert (done.question_marked, done.replaced) == (0, 1)
+    assert (done.kept_over_question_marks, done.replaced) == (0, 1)
     assert ud.read_store(store)["zwayam:a:1"] == fresh
 
 
@@ -395,7 +395,7 @@ def test_a_fetch_that_restores_the_characters_replaces_a_question_marked_text(
     _corpus(jobs, [_job("zwayam:a:1", "The customer’s strategy.")])
     done = ud.reconcile(jobs, store, {})
 
-    assert (done.question_marked, done.replaced) == (0, 1)
+    assert (done.kept_over_question_marks, done.replaced) == (0, 1)
     assert ud.read_store(store)["zwayam:a:1"] == "The customer’s strategy."
 
 

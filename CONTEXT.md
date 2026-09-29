@@ -262,7 +262,7 @@ A **Job** absent from its **Board**'s most recent scrape but not yet from a seco
 _Avoid_: confusing it with the ADR-0046 collapse guard's per-**Board** cap, which ADR-0101 removed — it ran *after* this one, so everything it withheld had already been absent twice, and no `held` figure exists in a log written since. _Avoid_: reading it as a deletion queue — most Unconfirmed ids reappear on the next scrape and are never evicted at all.
 
 **Doc**:
-The one string built per **Job** for embedding — its `title` + cleaned `description`, prefixed `search_document:` (ADR-0005) — encoded into a single vector. A Doc is a transient in-memory string assembled at embed time, not a file; the Job's other fields still ride alongside the vector as **Search index** metadata (ADR-0006).
+The one string built per **Job** for embedding — its `title` + cleaned `description`, prefixed `search_document:` (ADR-0005) — encoded into a single vector. A Doc is a transient in-memory string assembled at embed time, not a file; the Job's other fields still ride alongside the vector as **Search index** metadata (ADR-0006). The `doc_hash` each stored row carries (ADR-0285) is not a hash of its Doc: it fingerprints the raw `title` and `description` the Doc was built from, so a change to how Docs are assembled re-embeds nothing.
 _Avoid_: document — reads as a file; the embedding code's own vocabulary (`build_doc`, `docs`) already settled on "doc".
 
 **Bucket**:

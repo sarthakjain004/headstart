@@ -19,6 +19,7 @@ from __future__ import annotations
 import json
 import re
 import urllib.parse
+from datetime import datetime
 from typing import Any
 
 from headstart.jobs.job import Job, html_to_text, is_remote
@@ -68,6 +69,19 @@ def _location(j: dict) -> str | None:
     if country and country.lower() not in ", ".join(parts).lower():
         parts.append(country)
     return ", ".join(parts) or None
+
+
+def _iso_date(value: str | None) -> str | None:
+    """``jobPostingDate``'s ``26-Dec-2022`` as ISO ``2022-12-26``; anything else as given.
+
+    The fallback when a detail record carries no ``publishDetails.CAREER_SITE`` timestamp, as on
+    nttltd (6 of 6 details, 2026-09-29). Left raw, it was the one non-ISO ``posted_at`` in the
+    served table (765 rows on 2026-09-29), and no date filter can read a non-ISO date (ADR-0268's
+    amendment)."""
+    try:
+        return datetime.strptime(value, "%d-%b-%Y").date().isoformat()  # noqa: DTZ007
+    except (TypeError, ValueError):
+        return value
 
 
 class RippleHireScraper(BaseScraper):
@@ -302,8 +316,9 @@ class RippleHireScraper(BaseScraper):
                     url=self.job_url(j.get("jobSeq"), j.get("_board_token")),
                     # `publishDetails.CAREER_SITE` is a real ISO-8601 timestamp for the same
                     # posting `jobPostingDate` gives non-ISO ("23-Jun-2020") — prefer it per
-                    # Job.posted_at's own contract ("ISO-8601 if the source provides it").
-                    posted_at=(
+                    # Job.posted_at's own contract ("ISO-8601 if the source provides it"), and
+                    # turn the fallback's day into ISO too.
+                    posted_at=_iso_date(
                         (detail.get("publishDetails") or {}).get("CAREER_SITE")
                         or detail.get("jobPostingDate")
                         or detail.get("careerSiteDate")

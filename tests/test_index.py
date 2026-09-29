@@ -724,6 +724,15 @@ def test_sync_refreshes_materialized_search_flags_with_their_sources(
         ("2026-12-04", "2026-09-10T00:00:00+00:00", "2026-09-10"),
         # A date on or before the day we first saw it is the ATS's own, kept as written.
         ("2026-08-23T23:59:59Z", "2026-08-23T00:00:00+00:00", "2026-08-23T23:59:59Z"),
+        # One day later is a company east of UTC dating our UTC day in its own zone: kept.
+        (
+            "2026-08-24T03:00:00+09:00",
+            "2026-08-23T20:00:00+00:00",
+            "2026-08-24T03:00:00+09:00",
+        ),
+        ("2026-09-01", "2026-08-31T22:00:00+00:00", "2026-09-01"),
+        # Two days later is a repost again.
+        ("2026-08-25", "2026-08-23T20:00:00+00:00", "2026-08-23"),
         ("2021-03-01", "2026-09-01T00:00:00+00:00", "2021-03-01"),
         # A row from before `first_seen` existed has nothing to bound it by.
         ("2026-12-04", None, "2026-12-04"),

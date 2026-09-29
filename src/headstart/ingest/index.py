@@ -87,7 +87,7 @@ import zlib
 from collections import Counter
 from collections.abc import Iterator
 from collections.abc import Set as AbstractSet
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any, NamedTuple
 
@@ -260,20 +260,24 @@ def _schema(dim: int) -> pa.Schema:
 
 
 def _served_posted_at(posted_at: str | None, first_seen: str | None) -> str | None:
-    """The posting date a row serves: the ATS's own, but never after the day we first saw it
-    and never a pre-2000 sentinel (ADR-0268).
+    """The posting date a row serves: the ATS's own, but never more than a day after the day we
+    first saw it and never a pre-2000 sentinel (ADR-0268).
 
     SuccessFactors, Workday and others move ``posted_at`` forward on a repost or refresh, and a
     few ATSes put a closing date or a null sentinel (``0001-01-01``) there. We held the posting
-    on ``first_seen``, so it was posted on or before that day. Only ISO-shaped dates are
-    touched; a non-ISO string is already kept out of the date filters by its guard.
+    on ``first_seen``, so it was posted on or before that day, and a later date is served as that
+    day. One day later is kept as written: ``first_seen`` is our UTC stamp, and a company east of
+    UTC dates the same day one later in its own zone. Only ISO-shaped dates are touched; a
+    non-ISO string is already kept out of the date filters by its guard.
     """
     if not posted_date_guard.is_comparable(posted_at):
         return posted_at
     if posted_at[:4] < "2000":
         return None
-    if first_seen and posted_at[:10] > first_seen[:10]:
-        return first_seen[:10]
+    if first_seen:
+        latest = date.fromisoformat(first_seen[:10]) + timedelta(days=1)
+        if posted_at[:10] > latest.isoformat():
+            return first_seen[:10]
     return posted_at
 
 
@@ -529,8 +533,11 @@ def _refresh_metadata(
     writes nothing.
 
     Deliberately unconditional rather than gated on a version watermark: the invariant is "the
-    table's metadata equals the store's", so this also self-heals drift from any other cause. Rows
-    added moments ago in this same sync are skipped — they were built from these very dicts.
+    table's metadata is what :func:`_served_meta` makes of the store's", so this also self-heals
+    drift from any other cause. That is the store's metadata as written, except ``posted_at``,
+    which the row's own ``first_seen`` bounds (ADR-0268, superseding ADR-0061's plain equality in
+    part). Rows added moments ago in this same sync are skipped — they were built from these very
+    dicts.
 
     ``first_seen`` is carried across (re-stamping would resurface every refreshed Job as a new
     listing to the alerts watermark, ADR-0031), and the vector is taken from the store, which is
