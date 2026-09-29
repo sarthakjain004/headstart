@@ -19,6 +19,7 @@ from datetime import UTC, date, datetime, timedelta
 from typing import NamedTuple
 
 from headstart.search_filters import (
+    confident_non_tech_filter,
     country_filter,
     employment_type_filter,
     experience_filter,
@@ -131,6 +132,10 @@ class SearchFilters:
     # A text-derived work-authorisation stance (ADR-0333): the Jobs whose description offers visa
     # sponsorship, refuses it, or offers relocation, as `jobs.work_authorization` reads it.
     work_authorization: str | None = None
+    # Whether to show the Jobs the role-family head confidently calls non-tech, which Search
+    # leaves out unless asked (ADR-0349). The one field whose unset value compiles a clause: the
+    # rows are hidden by default, and this switch is what shows them.
+    include_non_tech: bool = False
 
 
 @dataclass(frozen=True)
@@ -158,6 +163,8 @@ class IndexCapabilities:
     has_salary_known: bool = False
     has_posted_at_comparable: bool = False
     has_experience_filter_flags: bool = False
+    # The tick-stamped ``is_confident_non_tech`` column (ADR-0349). Without it nothing is hidden.
+    has_confident_non_tech_flag: bool = False
     # The where-clause keeping one work-authorisation stance's Jobs (ADR-0333), read from the
     # descriptions once a process; None where no such read is loaded, which compiles no clause.
     work_authorization_clause: Callable[[str], str] | None = None
@@ -767,4 +774,9 @@ def build_filter(filters: SearchFilters, capabilities: IndexCapabilities) -> str
         clauses.append(
             capabilities.work_authorization_clause(filters.work_authorization)
         )
+    hides_non_tech = confident_non_tech_filter.clause(
+        filters.include_non_tech, capabilities.has_confident_non_tech_flag
+    )
+    if hides_non_tech:
+        clauses.append(hides_non_tech)
     return " AND ".join(clauses) if clauses else None

@@ -1553,6 +1553,7 @@ def test_compact_rebuilds_the_measured_search_indexes(tmp_path):
         "experience_at_most_2",
         "experience_at_most_5",
         "experience_at_most_10",
+        "is_confident_non_tech",
         "vector",
     }
 
@@ -1608,8 +1609,135 @@ def test_refresh_indexes_builds_the_first_set_without_compacting(tmp_path):
 
     assert idx.refresh_indexes(argparse.Namespace(db=str(db))) == 0
     refreshed = lancedb.connect(str(db)).open_table(idx.PROD_TABLE)
-    assert len(list(refreshed.list_indices())) == 17
+    assert len(list(refreshed.list_indices())) == 18
     assert all(
         refreshed.index_stats(index.name).num_unindexed_rows == 0
         for index in refreshed.list_indices()
     )
+
+
+# ---- the non-tech stamp (ADR-0349) ----
+
+
+def _served_table(tmp_path: Path):
+    return lancedb.connect(str(tmp_path / "db")).open_table(idx.PROD_TABLE)
+
+
+def _stamp_ids(tmp_path: Path) -> set[str]:
+    rows = (
+        _served_table(tmp_path)
+        .search()
+        .where("is_confident_non_tech = true")
+        .select(["id"])
+        .limit(100)
+        .to_list()
+    )
+    return {r["id"] for r in rows}
+
+
+_TEN = [f"greenhouse:a:{n}" for n in range(10)]
+
+
+def test_a_new_table_and_a_new_row_start_visible(tmp_path, monkeypatch):
+    _sync(tmp_path, monkeypatch, ["greenhouse:a:1"])
+    row = _served_table(tmp_path).search().limit(1).to_list()[0]
+    assert (
+        row["is_confident_non_tech"] is False
+    )  # never null: not yet stamped is visible
+
+
+def test_sync_adds_the_stamp_to_a_table_that_predates_it_with_every_row_visible(
+    tmp_path, monkeypatch
+):
+    import pyarrow as pa
+
+    old_schema = pa.schema(
+        [f for f in idx._schema(_DIM) if f.name != "is_confident_non_tech"]
+    )
+    table = lancedb.connect(str(tmp_path / "db")).create_table(
+        idx.PROD_TABLE, schema=old_schema
+    )
+    table.add([{"id": "greenhouse:untouched:0", "vector": [0.0] * _DIM}])
+
+    assert _sync(tmp_path, monkeypatch, ["greenhouse:a:1"]) == 0
+
+    rows = {r["id"]: r for r in _served_table(tmp_path).search().limit(10).to_list()}
+    assert rows["greenhouse:untouched:0"]["is_confident_non_tech"] is False
+    assert rows["greenhouse:a:1"]["is_confident_non_tech"] is False
+
+
+def test_a_stamp_is_not_a_stale_row_and_a_refresh_writes_nothing_for_it(
+    tmp_path, monkeypatch, caplog
+):
+    from headstart.ingest import confident_non_tech_stamp
+
+    _sync(tmp_path, monkeypatch, _TEN)
+    confident_non_tech_stamp.stamp(_served_table(tmp_path), {_TEN[3]})
+    caplog.set_level("INFO")
+    _sync(tmp_path, monkeypatch, _TEN)
+    assert any("already matches the store" in r.getMessage() for r in caplog.records)
+    assert _stamp_ids(tmp_path) == {_TEN[3]}
+
+
+def test_a_refresh_that_rewrites_a_row_keeps_its_stamp(tmp_path, monkeypatch):
+    from headstart.ingest import confident_non_tech_stamp
+
+    _sync(tmp_path, monkeypatch, _TEN)
+    confident_non_tech_stamp.stamp(_served_table(tmp_path), {_TEN[3], _TEN[4]})
+    # every row's stored metadata moves, so every row is deleted and added again
+    _sync(tmp_path, monkeypatch, _TEN, meta_over={"min_years": 3})
+    table = _served_table(tmp_path)
+    assert table.count_rows() == len(_TEN)
+    assert table.search().limit(1).to_list()[0]["min_years"] == 3
+    assert _stamp_ids(tmp_path) == {_TEN[3], _TEN[4]}
+    assert table.count_rows(filter="is_confident_non_tech IS NULL") == 0
+
+
+def test_a_re_embedded_row_is_visible_until_the_next_tick_stamps_it(
+    tmp_path, monkeypatch
+):
+    """A re-embed deletes the row and adds it again like a new one (ADR-0050): visible until the
+    tick that follows in the same run."""
+    from headstart.ingest import confident_non_tech_stamp
+
+    _sync(tmp_path, monkeypatch, _TEN)
+    confident_non_tech_stamp.stamp(_served_table(tmp_path), {_TEN[3]})
+    _sync(tmp_path, monkeypatch, _TEN, upgrades=[_TEN[3]])
+    assert _stamp_ids(tmp_path) == set()
+
+
+def test_compact_carries_the_stamp_and_adds_it_to_a_table_without_one(tmp_path):
+    import pyarrow as pa
+
+    db = tmp_path / "db"
+    old = pa.schema([f for f in idx._schema(_DIM) if f.name != "is_confident_non_tech"])
+    table = lancedb.connect(str(db)).create_table(idx.PROD_TABLE, schema=old)
+    table.add(
+        [
+            {
+                "id": f"greenhouse:a:{n}",
+                "ats": "greenhouse",
+                "vector": [float(n), 0, 0, 1],
+            }
+            for n in range(300)
+        ]
+    )
+    assert idx.compact(argparse.Namespace(db=str(db))) == 0
+    rebuilt = lancedb.connect(str(db)).open_table(idx.PROD_TABLE)
+    assert rebuilt.count_rows(filter="is_confident_non_tech = false") == 300
+
+    from headstart.ingest import confident_non_tech_stamp
+
+    confident_non_tech_stamp.stamp(rebuilt, {"greenhouse:a:7"})
+    assert idx.compact(argparse.Namespace(db=str(db))) == 0
+    again = lancedb.connect(str(db)).open_table(idx.PROD_TABLE)
+    stamped = (
+        again.search().where("is_confident_non_tech = true").select(["id"]).to_list()
+    )
+    assert [r["id"] for r in stamped] == ["greenhouse:a:7"]
+    assert any("is_confident_non_tech" in i.columns for i in again.list_indices())
+
+
+def test_the_row_the_index_writes_is_visible_and_the_schema_lists_the_stamp():
+    assert idx._served_meta({"title": "x"}, None)["is_confident_non_tech"] is False
+    assert "is_confident_non_tech" in idx._schema(_DIM).names

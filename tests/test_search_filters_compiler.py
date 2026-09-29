@@ -822,3 +822,23 @@ def test_a_work_authorization_stance_compiles_to_the_clause_its_read_names():
         == "id IN ('lever:a:1')"
     )
     assert _clause(work_authorization="offers_sponsorship") is None
+
+
+def test_confident_non_tech_rows_are_hidden_unless_the_caller_includes_them():
+    # ADR-0349: hidden by default, once the table carries the column the tick stamps.
+    hidden = "(is_confident_non_tech IS NULL OR is_confident_non_tech = false)"
+    assert _clause(has_confident_non_tech_flag=True) == hidden
+    assert _clause(include_non_tech=True, has_confident_non_tech_flag=True) is None
+
+
+def test_a_table_without_the_stamp_hides_nothing_and_does_not_error():
+    assert _clause() is None
+    assert _clause(include_non_tech=True) is None
+
+
+def test_the_non_tech_clause_narrows_beside_every_other_filter():
+    both = _clause(remote=True, has_confident_non_tech_flag=True)
+    assert both == (
+        "remote = true AND "
+        "(is_confident_non_tech IS NULL OR is_confident_non_tech = false)"
+    )

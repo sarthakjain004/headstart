@@ -29,6 +29,7 @@ from headstart.boards.board_operator import OPERATORS
 from headstart.embedding_conventions import encode_query
 from headstart.jobs import work_authorization
 from headstart.search_filters import (
+    confident_non_tech_filter,
     country_filter,
     employment_type_filter,
     experience_filter,
@@ -246,6 +247,13 @@ def refusal(exc: ValueError | ScopeUnavailable) -> tuple[dict[str, str], int]:
     return {"error": "invalid filter", "detail": str(exc)}, 400
 
 
+def _asks_for_non_tech(args: Mapping[str, str]) -> bool:
+    """Whether the request sent ``include_non_tech`` (``true`` as the page's switches say it, or
+    ``1``): Jobs the head confidently calls non-tech are left out otherwise (ADR-0349). One
+    reading for :meth:`JobSearch.parse_filters` and the routes that scope by Board alone."""
+    return args.get("include_non_tech") in ("true", "1")
+
+
 def _is_strict(args: Mapping[str, str]) -> bool:
     """Whether the request asked for ``strict=1``: every value this module would otherwise drop,
     re-scope or widen with only a log line is refused instead (ADR-0253). An agent sends it; the
@@ -289,6 +297,7 @@ REQUEST_PARAMETERS = frozenset(
         "required_years_at_least",
         "exclude_company",
         "work_authorization",
+        "include_non_tech",
         # the ranking, the order and the page
         "q",
         "like",
@@ -1106,6 +1115,7 @@ class JobSearch:
             has_salary_known=salary_known_filter.has_flags(names),
             has_posted_at_comparable=posted_date_guard.has_flags(names),
             has_experience_filter_flags=experience_filter.has_flags(names),
+            has_confident_non_tech_flag=confident_non_tech_filter.has_flags(names),
             work_authorization_clause=self.work_authorization.clause,
         )
         list_indices = getattr(table, "list_indices", None)
@@ -1166,6 +1176,11 @@ class JobSearch:
                 ("min_salary_annual", has_min_salary_annual),
                 ("description", has_description),
                 (india_filter.COLUMN, has_country),
+                # Not slower without it but off: nothing is left out of Search (ADR-0349).
+                (
+                    confident_non_tech_filter.COLUMN,
+                    confident_non_tech_filter.has_flags(names),
+                ),
             )
             if not live
         ]
@@ -1285,6 +1300,7 @@ class JobSearch:
             exclude_company=(args.get("exclude_company") or "").strip() or None,
             work_authorization=(args.get("work_authorization") or "").strip().lower()
             or None,
+            include_non_tech=_asks_for_non_tech(args),
         )
         if filters.work_authorization:
             self._check_work_authorization(filters.work_authorization)
@@ -1425,7 +1441,8 @@ class JobSearch:
         if not reads_descriptions(filters, self.capabilities):
             return _FamilyScope(family, table, table, filters)
         keyword = self._description_matches.where(
-            SearchFilters(kw=filters.kw, kw_in=filters.kw_in), None
+            SearchFilters(kw=filters.kw, kw_in=filters.kw_in, include_non_tech=True),
+            None,
         )
         return _FamilyScope(
             family,
@@ -1540,6 +1557,17 @@ class JobSearch:
         if operators:
             everyone = self._total(args, filters, unkept)
             counted = {**counted, "operators_left_out": everyone - counted["total"]}
+        if (
+            self.capabilities.has_confident_non_tech_flag
+            and not filters.include_non_tech
+        ):
+            # What the default leaves out of this request's rows: the total with the switch on,
+            # less the total (ADR-0349). Absent where nothing is left out by default, so an
+            # answer never claims a hiding the table cannot do.
+            shown = self._total(
+                args, replace(filters, include_non_tech=True), extra_where
+            )
+            counted = {**counted, "non_tech_left_out": shown - counted["total"]}
         elapsed_ms = (time.monotonic() - started) * 1000
         if elapsed_ms > SLOW_SEARCH_MS:
             # The strip is ~46 counts, the most expensive request the Space serves; shapes only,
@@ -1928,6 +1956,14 @@ class JobSearch:
             )
         return rows[0]["vector"]
 
+    def _non_tech_clause(self, args: Mapping[str, str]) -> str | None:
+        """The clause leaving the head's confidently non-tech Jobs out of a read that names Boards
+        alone (:meth:`locations`, :meth:`levels`), as a search's filters leave them out (ADR-0349),
+        or None when asked for them or the table has no stamp."""
+        return confident_non_tech_filter.clause(
+            _asks_for_non_tech(args), self.capabilities.has_confident_non_tech_flag
+        )
+
     def n_seen_within(self, hours: int) -> int | None:
         """How many Jobs entered the index in the last ``hours`` — ``None`` without the column.
 
@@ -1951,7 +1987,7 @@ class JobSearch:
         :mod:`headstart.serving.location_counts`. A request naming no Board, too many, or a
         ``limit`` outside 1 to :data:`MAX_LOCATIONS` is a :class:`ValueError`: without Boards it
         would read every row's location."""
-        where = _named_boards_clause(args)
+        where = with_extra(_named_boards_clause(args), self._non_tech_clause(args))
         limit = _int_arg(args)("limit")
         limit = LOCATIONS_SHOWN if limit is None else limit
         if not 1 <= limit <= MAX_LOCATIONS:
@@ -1962,7 +1998,10 @@ class JobSearch:
         """The Trends level bands of the served jobs on ``board=`` (repeatable, required) — see
         :mod:`headstart.serving.level_counts`. A request naming no Board, or too many, is a
         :class:`ValueError`, as :meth:`locations` refuses one."""
-        return level_counts.bands(self._table, _named_boards_clause(args))
+        return level_counts.bands(
+            self._table,
+            with_extra(_named_boards_clause(args), self._non_tech_clause(args)),
+        )
 
     def requirements(
         self,

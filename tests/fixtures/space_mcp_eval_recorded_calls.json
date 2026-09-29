@@ -553,7 +553,7 @@
    },
    "body": "{\"blocking\":null,\"description_coverage\":null,\"facets\":{},\"newest_tick\":\"2026-09-29T12:46:15+00:00\",\"total\":8}\n"
   },
-  "https://imposeidon-headstart-search.hf.space/facets?strict=1&board=greenhouse%3Anonexistentco&counts=total": {
+  "https://imposeidon-headstart-search.hf.space/facets?strict=1&board=greenhouse%3Anonexistentco&include_non_tech=true&counts=total": {
    "status": 200,
    "headers": {
     "content-type": "application/json",

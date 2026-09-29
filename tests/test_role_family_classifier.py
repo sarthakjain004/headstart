@@ -358,3 +358,29 @@ def test_the_shipped_head_agrees_with_the_curated_family_list():
     head.check_families(
         role_taxonomy.load_families(repo / "config" / "role_families.json")
     )
+
+
+def test_scored_rows_carry_the_top_probability_beside_the_family(tmp_path):
+    """ADR-0349: the non-tech switch needs how sure the head was, not only what it said."""
+    head = _head(tmp_path)
+    cache = rfc.Cache(
+        7,
+        {
+            "qa engineer": np.array([0, 10.0, 0], np.float32),
+            "python developer": np.array([1.0, 1.0, 1.0], np.float32),  # an abstain
+        },
+    )
+    titles = ["QA Engineer", "QA Engineer", "Python Developer", "Never Encoded"]
+    rows = head.row_logits(
+        np.array([[1.0, 0.0], _NON_TECH_ROW, [1.0, 0.0], [1.0, 0.0]], np.float32)
+    )
+    scored = rfc.decide_rows_scored(cache, head, titles, rows)
+    assert [family for family, _ in scored] == rfc.decide_rows(
+        cache, head, titles, rows
+    )
+    assert scored[0][0] == "qa-test" and scored[0][1] > 0.99
+    assert scored[1][0] == "non-tech" and scored[1][1] > 0.99
+    # the developer-title rule fills an abstain, and the probability stays the head's own
+    assert scored[2][0] == rfc.SOFTWARE_ENGINEERING and scored[2][1] < head.cutoff
+    # a title no run has encoded has no probability: never confident
+    assert scored[3] == (rfc.UNCLASSIFIED, 0.0)

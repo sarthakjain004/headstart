@@ -269,7 +269,15 @@ def _held(client: SpaceClient, board: str) -> bool | None:
         return None
     try:
         counted = client.read(
-            SpaceRoute.FACETS, [("strict", "1"), ("board", board), ("counts", "total")]
+            SpaceRoute.FACETS,
+            [
+                ("strict", "1"),
+                ("board", board),
+                # Whether the index serves a job there at all: a Board of nothing but roles a
+                # search leaves out as non-tech is held (ADR-0349).
+                ("include_non_tech", "true"),
+                ("counts", "total"),
+            ],
         )
     except SpaceError:
         return None

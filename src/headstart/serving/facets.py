@@ -197,8 +197,13 @@ def counts(
     # every count is the one the list would show. Counted the other way, each of ~80 counts re-ran
     # its `LIKE` over the description column, and one request took 103 s on the Space's two vCPUs.
     # A lone total (ADR-0274) is one count, which reading the rows first would only lengthen.
+    # `include_non_tech`, so that what is asked is the keyword's clause and not the default's
+    # hiding of non-tech rows (ADR-0349), which every request compiles.
     reads_keyword_rows = not only_total and bool(
-        build_filter(SearchFilters(kw=filters.kw, kw_in=filters.kw_in), capabilities)
+        build_filter(
+            SearchFilters(kw=filters.kw, kw_in=filters.kw_in, include_non_tech=True),
+            capabilities,
+        )
     )
     lift_keyword = {"kw": None, "kw_in": None} if reads_keyword_rows else {}
     # Without the keyword's rows read first, every count is of the table itself.

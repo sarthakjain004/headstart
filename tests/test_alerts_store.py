@@ -909,3 +909,13 @@ def test_a_listing_a_write_lands_during_is_not_kept(counting_api):
     assert "saved/b.json" not in st._list_files("r", "t")
     counting_api.list_repo_files = listing
     assert "saved/b.json" in st._list_files("r", "t")
+
+
+def test_a_set_saved_with_non_tech_roles_included_keeps_that_for_its_digest_too():
+    """ADR-0349: the digest lists the same jobs the set does, roles the classifier is confident
+    are not tech included when the set asked for them."""
+    saved = st.SavedSet.create(
+        "ada@example.com", "cashier", "cashier", {"include_non_tech": "true"}
+    )
+    assert saved.search_filters == {"include_non_tech": "true"}
+    assert "include_non_tech" in st.ALLOWED_SEARCH_FILTERS

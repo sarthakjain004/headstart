@@ -2286,3 +2286,168 @@ def test_a_read_by_id_says_what_its_whole_description_states(families_served):
         "stances": ["offers_sponsorship"],
         "mentions": ["We sponsor visas."],
     }
+
+
+# ---- the Jobs the head confidently calls non-tech are left out unless asked (ADR-0349) ----
+
+
+@pytest.fixture
+def non_tech_served(tmp_path_factory):
+    """Eight Jobs on one Board, two of them stamped `is_confident_non_tech` and one row with no
+    stamp at all (NULL), which counts as visible."""
+    lancedb = pytest.importorskip("lancedb")
+    pa = pytest.importorskip("pyarrow")
+    rows = [
+        {
+            "id": f"lever:acme:{n}",
+            "title": f"Engineer {n}",
+            "company": "Acme",
+            "location": "Berlin",
+            "remote": True,
+            "ats": "lever",
+            "first_seen": f"2026-09-2{n}T00:00:00+00:00",
+            "url": f"https://jobs.lever.co/acme/{n}",
+            "posted_at": f"2026-09-2{n}",
+            "employment_type": "Full-time",
+            "min_years": None,
+            "is_confident_non_tech": None if n == 8 else n in (2, 5),
+            "vector": [1.0 - 0.1 * n, 0.1 * n, 0.0, 0.0],
+        }
+        for n in range(1, 9)
+    ]
+    schema = pa.schema(
+        [
+            ("id", pa.string()),
+            ("title", pa.string()),
+            ("company", pa.string()),
+            ("location", pa.string()),
+            ("remote", pa.bool_()),
+            ("ats", pa.string()),
+            ("first_seen", pa.string()),
+            ("url", pa.string()),
+            ("posted_at", pa.string()),
+            ("employment_type", pa.string()),
+            ("min_years", pa.int32()),
+            ("is_confident_non_tech", pa.bool_()),
+            ("vector", pa.list_(pa.float32(), 4)),
+        ]
+    )
+    np = pytest.importorskip("numpy")
+
+    class _Encoder:
+        def encode(self, texts, normalize_embeddings=False):
+            return np.array([[1.0, 0.0, 0.0, 0.0]], dtype="float32")
+
+    db = lancedb.connect(tmp_path_factory.mktemp("non_tech"))
+    table = db.create_table("jobs", data=pa.Table.from_pylist(rows, schema=schema))
+    return JobSearch(_Encoder(), table)
+
+
+_VISIBLE = {f"lever:acme:{n}" for n in (1, 3, 4, 6, 7, 8)}
+_EVERY = {f"lever:acme:{n}" for n in range(1, 9)}
+
+
+def _served_ids(rows):
+    return {row["id"] for row in rows}
+
+
+def test_the_stamp_is_learned_from_the_schema():
+    searcher, table = _searcher()
+    assert searcher.capabilities.has_confident_non_tech_flag is False
+    table.schema = types.SimpleNamespace(
+        names=["ats", "title", "is_confident_non_tech"]
+    )
+    assert JobSearch(_Model(), table).capabilities.has_confident_non_tech_flag is True
+
+
+def test_a_table_without_the_stamp_hides_nothing_and_says_so_at_boot(caplog):
+    searcher, table = _searcher()
+    searcher.run({"q": "x"})
+    assert table.last_where is None
+    _, table = _searcher()
+    with caplog.at_level(logging.WARNING, logger="headstart.serving.job_search"):
+        caplog.clear()
+        JobSearch(_Model(), table)
+    assert "is_confident_non_tech" in caplog.records[0].getMessage()
+
+
+def test_a_browse_and_a_ranked_search_leave_the_stamped_rows_out(non_tech_served):
+    assert _served_ids(non_tech_served.run({"k": "20"})) == _VISIBLE
+    assert _served_ids(non_tech_served.run({"q": "engineer", "k": "20"})) == _VISIBLE
+    assert _served_ids(non_tech_served.run({"like": "lever:acme:1", "k": "20"})) == (
+        _VISIBLE - {"lever:acme:1"}
+    )
+
+
+@pytest.mark.parametrize("asked", ["true", "1"])
+def test_include_non_tech_shows_every_row(non_tech_served, asked):
+    rows = non_tech_served.run({"include_non_tech": asked, "k": "20"})
+    assert _served_ids(rows) == _EVERY
+    ranked = non_tech_served.run(
+        {"q": "engineer", "include_non_tech": asked, "k": "20"}
+    )
+    assert _served_ids(ranked) == _EVERY
+
+
+def test_anything_else_for_include_non_tech_is_not_asking(non_tech_served):
+    assert _served_ids(
+        non_tech_served.run({"include_non_tech": "false", "k": "20"})
+    ) == (_VISIBLE)
+
+
+def test_the_counts_agree_with_the_list_and_say_how_many_were_left_out(non_tech_served):
+    counted = non_tech_served.facets({})
+    assert counted["total"] == len(_VISIBLE) == 6
+    assert counted["non_tech_left_out"] == 2
+    assert counted["facets"]["remote"][0]["count"] == 6
+    including = non_tech_served.facets({"include_non_tech": "true"})
+    assert including["total"] == 8
+    assert "non_tech_left_out" not in including
+    only_total = non_tech_served.facets({"counts": "total"})
+    assert (only_total["total"], only_total["non_tech_left_out"]) == (6, 2)
+
+
+def test_a_table_without_the_stamp_reports_nothing_left_out():
+    searcher, _ = _searcher()
+    assert "non_tech_left_out" not in searcher.facets({})
+
+
+def test_a_search_that_only_non_tech_rows_match_says_what_hid_them(non_tech_served):
+    counted = non_tech_served.facets({"company": "acme", "title_words": "engineer 2"})
+    assert counted["total"] == 0 and counted["non_tech_left_out"] == 1
+
+
+def test_strict_accepts_include_non_tech(non_tech_served):
+    rows = non_tech_served.run({"strict": "1", "include_non_tech": "true", "k": "20"})
+    assert _served_ids(rows) == _EVERY
+    from headstart.serving.job_search import REQUEST_PARAMETERS
+
+    assert "include_non_tech" in REQUEST_PARAMETERS
+
+
+def test_a_read_by_id_opens_a_stamped_job_and_a_listing_still_holds_it(non_tech_served):
+    """get_job, Saved and the like ask for a Job by id: hiding it there would lose a posting the
+    user already has."""
+    assert set(non_tech_served.jobs_by_id(["lever:acme:2", "lever:acme:5"])) == {
+        "lever:acme:2",
+        "lever:acme:5",
+    }
+    assert non_tech_served.indexed(["lever:acme:2", "lever:acme:9"]) == {"lever:acme:2"}
+
+
+def test_a_companys_places_and_levels_leave_the_stamped_rows_out_too(non_tech_served):
+    from werkzeug.datastructures import MultiDict
+
+    board = ("board", "lever:acme")
+    assert non_tech_served.locations(MultiDict([board]))["jobs"] == 6
+    every = MultiDict([board, ("include_non_tech", "true")])
+    assert non_tech_served.locations(every)["jobs"] == 8
+    assert non_tech_served.levels(MultiDict([board]))["jobs"] == 6
+    assert (
+        non_tech_served.levels(MultiDict([board, ("include_non_tech", "1")]))["jobs"]
+        == 8
+    )
+
+
+def test_the_doors_new_jobs_count_what_a_search_shows(non_tech_served):
+    assert non_tech_served.n_seen_within(10**6) == 6

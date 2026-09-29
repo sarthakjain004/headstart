@@ -372,6 +372,11 @@ def _nothing_matched(
             f"0 jobs: the {left_out:,} that match are all posted by companies `operators` "
             "leaves out; name them in operators to see them."
         )
+    if left_out := facets.get("non_tech_left_out"):
+        return (
+            f"0 jobs: the {left_out:,} that match are roles HeadStart's classifier is confident "
+            "are not tech, which are left out; send include_non_tech true to see them."
+        )
     blocking = facets.get("blocking")
     if blocking == "company" and scope is not None and scope.substring is not None:
         return (
@@ -471,7 +476,12 @@ def answer(client: SpaceClient, arguments: dict[str, Any]) -> str:
     total = int(facets.get("total") or 0)
     k, page = int(arguments["limit"]), int(arguments["page"])
     lines = [
-        search_arguments.scope_line(arguments, scope, facets.get("operators_left_out"))
+        search_arguments.scope_line(
+            arguments,
+            scope,
+            facets.get("operators_left_out"),
+            facets.get("non_tech_left_out"),
+        )
     ]
     if note := search_arguments.query_constraints_note(arguments.get("query") or ""):
         lines.append(note)
@@ -553,6 +563,8 @@ TOOL = SpaceTool(
         "text, tell the user so, since it also takes in any other employer whose "
         "name contains that text. `sort` salary orders by "
         "the low end of each stated range; without a currency it is ordered in USD. "
+        "Jobs HeadStart's classifier is confident are not tech (a cashier, a process engineer) "
+        "are left out unless `include_non_tech` is true; the answer says how many. "
         "Postings over `max_age_days` old (365 unless sent) are left out; totals count "
         "every other job the index serves, so they run higher than read_trends', "
         "which counts only jobs its classifier places in a tech category. "
@@ -644,6 +656,7 @@ TOOL = SpaceTool(
             },
             "max_age_days": search_arguments.PROPERTIES["max_age_days"],
             "operators": search_arguments.PROPERTIES["operators"],
+            "include_non_tech": search_arguments.PROPERTIES["include_non_tech"],
             "exclude_company": {
                 "type": "string",
                 "maxLength": 100,

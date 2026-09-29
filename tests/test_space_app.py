@@ -1009,7 +1009,7 @@ def test_a_caller_cannot_claim_the_in_process_mark_with_a_header(auth_app, monke
 
 # ---- the app's own mark on every reply (ADR-0253) ----
 
-_OWN_REPLY = "app; agent-api=16"
+_OWN_REPLY = "app; agent-api=17"
 
 
 def test_a_routes_own_answer_is_marked(auth_app):
@@ -5416,3 +5416,14 @@ def test_a_non_string_query_is_refused_not_a_500(sets_app, hub, monkeypatch):
     client = _signed_in(sets_app, monkeypatch)
     r = client.post("/subscribe", json={"query": 5}, base_url=_HTTPS)
     assert r.status_code < 500
+
+
+def test_include_non_tech_is_a_parameter_both_routes_read_even_when_strict(app):
+    """ADR-0349: a strict caller naming the switch is accepted, and this fixture's table has no
+    stamp, so nothing is left out and /facets says nothing of it."""
+    client = app.app.test_client()
+    for route in ("/search", "/facets"):
+        for asked in ("true", "1"):
+            r = client.get(f"{route}?include_non_tech={asked}&strict=1")
+            assert r.status_code == 200, (route, asked)
+    assert "non_tech_left_out" not in client.get("/facets").get_json()
