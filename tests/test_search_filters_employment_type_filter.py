@@ -1,4 +1,9 @@
-from headstart.search_filters.employment_type_filter import RULES, clause, flags
+from headstart.search_filters.employment_type_filter import (
+    RAW_CLAUSES,
+    RULES,
+    clause,
+    flags,
+)
 
 
 def test_flags_preserve_the_existing_overlapping_substring_rules():
@@ -258,8 +263,6 @@ def test_the_sql_fallback_agrees_on_unstated_values():
     same verdict as `flags` (with no title, the one thing the fallback cannot read)."""
     import sqlite3
 
-    from headstart.search_filters.employment_type_filter import RAW_CLAUSES
-
     db = sqlite3.connect(":memory:")
     values = (
         None,
@@ -286,8 +289,6 @@ def test_the_sql_fallback_agrees_on_unstated_values():
 
 
 def test_the_full_time_clause_is_the_raw_rule_or_no_other_type():
-    from headstart.search_filters.employment_type_filter import RAW_CLAUSES
-
     assert RAW_CLAUSES["part-time"] == RULES["part-time"].raw_clause()
     assert RAW_CLAUSES["full-time"].startswith("(" + RULES["full-time"].raw_clause())
     assert "coalesce(employment_type, '')" in RAW_CLAUSES["full-time"]

@@ -601,9 +601,8 @@ TOOL = SpaceTool(
                 "type": "string",
                 "enum": list(employment_type_filter.RULES),
                 "description": (
-                    "full-time also keeps jobs whose source states no type (a large share, "
-                    "whole employers among them); part-time, contract and internship keep "
-                    "only jobs that say so."
+                    "full-time also keeps jobs whose source states no type; part-time, "
+                    "contract and internship keep only jobs that say so."
                 ),
             },
             "country": search_arguments.PROPERTIES["country"],
