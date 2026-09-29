@@ -930,3 +930,181 @@ def test_an_entry_word_outranks_associate():
 )
 def test_a_ladder_named_after_the_discipline_reads_as_its_level(title, years):
     assert from_seniority(None, title) == ExperienceSpan(years, None, "seniority")
+
+
+# --- The third pass and the wrong reads it came with (ADR-0350) -----------------------------------
+# Sentences quoted from the served table as audited on 2026-09-29.
+
+
+def _regex(lo, hi=None):
+    return ExperienceSpan(lo, hi, "regex")
+
+
+# --- the third pass: recall that cannot move an answer Tier 2 already gave (ADR-0066) -------------------
+@pytest.mark.parametrize(
+    "text, expected",
+    [
+        (
+            "Minimum of five (5) years of specialized experience and knowledge of hardware",
+            _regex(5),
+        ),
+        ("Twenty (20) years of experience in software engineering", _regex(20)),
+        ("Six (6)+ years of experience in cloud", _regex(6)),
+        ("5 (five) years experience in networking", _regex(5)),
+        ("Zero (0) to two (2) years of minimum oil and gas experience", _regex(0, 2)),
+        ("three (3) to five (5) years of professional experience", _regex(3, 5)),
+        (
+            "1+ years of computer/server hardware troubleshooting or related IT experience",
+            _regex(1),
+        ),
+        ("5+ years of expertise in Java", _regex(5)),
+        ("Exp: 14+ Years", _regex(14)),
+        ("8+Yrs of exp", _regex(8)),
+    ],
+)
+def test_the_third_pass_reads_what_the_first_two_cannot(text, expected):
+    assert from_description(text) == expected
+
+
+def test_the_third_pass_never_changes_an_answer_the_first_two_gave():
+    # "5+ years of experience" answers in pass one; the spelled-out sentence after it must not pull it to 2.
+    assert from_description(
+        "5+ years of experience. Master's: two (2) years of experience"
+    ) == _regex(5)
+
+
+def test_a_degree_that_stands_for_years_is_not_a_requirement_in_the_third_pass():
+    assert from_description(
+        "Master's degree can be substituted for two (2) years' experience. Shall have a minimum of six (6) years' experience as an engineer"
+    ) == _regex(6)
+    assert (
+        from_description(
+            "Four (4) years of additional SWE experience on projects with similar software processes may be substituted for a bachelor's degree."
+        )
+        is None
+    )
+
+
+def test_the_long_gap_does_not_cross_a_sentence():
+    assert (
+        from_description(
+            "3 years at the company. Then we build many things together and have fun. Our experience"
+        )
+        is None
+    )
+
+
+# --- the second-pass classes: a wrong read becomes the right one --------------------------------------------
+@pytest.mark.parametrize(
+    "text, expected",
+    [
+        ("Min 2.5 years previous experience in collections", _regex(2)),
+        ("0.5 years of experience in Software Testing", _regex(0)),
+        ("1.5 - 3.5 years of experience", _regex(1, 4)),
+        (
+            "$126,600 to $160,000 yearly gross. Salary range is based on years of experience",
+            None,
+        ),
+        ("Up to 7.000 year training budget. 3 years of experience", _regex(3)),
+    ],
+)
+def test_a_number_is_a_whole_token_and_a_decimal_rounds_down(text, expected):
+    assert from_description(text) == expected
+
+
+@pytest.mark.parametrize(
+    "text, expected",
+    [
+        ("Candidates with less than 2 years of experience", _regex(0, 2)),
+        ("no more than 2 years of full-time work experience", _regex(0, 2)),
+        ("A maximum of 3 years full-time work experience", _regex(0, 3)),
+        ("no less than 5 years of relevant experience", _regex(5)),
+        ("not less than 2 years of experience", _regex(2)),
+        ("Maximum 8-12 years Experience of Mechanical design", _regex(8, 12)),
+        (
+            "Candidates with less than 5 years of experience are not eligible for this role.",
+            _regex(5),
+        ),
+        (
+            "minimum of 6 years of experience in software development with a maximum of 10 years",
+            _regex(6),
+        ),
+        ("Minimum 5+ years and up to 20 years of professional experience", _regex(5)),
+    ],
+)
+def test_a_ceiling_is_not_a_floor(text, expected):
+    assert from_description(text) == expected
+
+
+@pytest.mark.parametrize(
+    "text, expected",
+    [
+        (
+            "Typically requires a 4 year degree in a relevant field. 5 years of related experience",
+            _regex(5),
+        ),
+        ("Minimum 2yr Degree 10+ years' experience", _regex(10)),
+        (
+            "Completion of 2 years of post-secondary engineering program. 5 years experience",
+            _regex(5),
+        ),
+        ("3 years of college teaching experience", _regex(3)),
+        (
+            "5+ years of Engineering /Full-time Diploma or equivalent business experience",
+            _regex(5),
+        ),
+        (
+            "EXPERIENCE REQUIRED MINIMUM 3 Years Diploma / Certificate in Biomedical Engineering",
+            _regex(3),
+        ),
+    ],
+)
+def test_an_education_is_not_experience(text, expected):
+    assert from_description(text) == expected
+
+
+@pytest.mark.parametrize(
+    "text, expected",
+    [
+        ("Must be at least 18 years of age. 3 years experience", _regex(3)),
+        ("Adults (18 years or older). 4 years of experience", _regex(4)),
+        ("5 years and above experience in Java", _regex(5)),
+        ("3+ years of Agentic AI industry experience", _regex(3)),
+    ],
+)
+def test_an_age_is_not_a_requirement_and_or_above_is_a_floor(text, expected):
+    assert from_description(text) == expected
+
+
+@pytest.mark.parametrize(
+    "text, expected",
+    [
+        ("resident in the UK for the past 5 years. 8+ years of experience", _regex(8)),
+        (
+            "3 out of the past 5 years. Bachelor's degree. 8+ years of overall experience",
+            _regex(8),
+        ),
+        ("within last 5 years) Fourteen (14) years experience", _regex(14)),
+        ("Minimum of the past 2 years working with M365 Administration", _regex(2)),
+    ],
+)
+def test_a_window_of_time_is_not_a_requirement(text, expected):
+    assert from_description(text) == expected
+
+
+def test_a_contract_length_is_not_a_requirement():
+    assert from_description(
+        "(1 year contract) Data engineer. 3 years experience"
+    ) == _regex(3)
+    assert from_description(
+        "Experience Needed: 6+ years Contract: Long Term"
+    ) == _regex(6)
+
+
+def test_a_degree_substitution_is_not_the_requirement():
+    assert from_description(
+        "(Additional 4 years of experience may substitute degree) - 8 years of experience in software development"
+    ) == _regex(8)
+    assert from_description(
+        "Requires a bachelor's degree and 5+ years of relevant experience, additional years of experience may be considered in lieu of a degree"
+    ) == _regex(5)
