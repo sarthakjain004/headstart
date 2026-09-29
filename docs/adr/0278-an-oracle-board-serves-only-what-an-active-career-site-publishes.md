@@ -4,7 +4,7 @@
 [ADR-0053](0053-scope-eviction-on-scrape-outcome.md) (Unauthoritative Boards),
 [ADR-0083](0083-evict-only-on-a-second-consecutive-absence.md) (grace period),
 [ADR-0200](0200-a-board-scraped-empty-is-in-the-eviction-scope.md) (an empty Board is in scope),
-[ADR-0281](0281-a-lever-board-whose-hosted-pages-are-off-serves-nothing.md) (the Lever case) ·
+ADR-0281 in PR #845 (the same case on Lever) ·
 **Issue:** #873
 
 ## Context
@@ -26,14 +26,32 @@ Two things were not known when the scraper was built:
   requisitions, and `CX_6001` publishes 13 of them. Every link was fetched: the 13 opened, and
   the other 52 went to `/errors/404` (65 of 65 matched).
 
-MEASUREMENT_PLACEHOLDER
+**How many.** On 2026-09-29 every one of the 1,752 Scrapable Oracle Boards was asked for its
+sites. 856 had every site active, 727 had some inactive, 19 had none active, 144 answered an empty
+site list and 6 answered 503. On each Board with an inactive site, the host-wide listing was then
+compared with what its active sites publish, using the scraper's own walks, and every requisition
+no active site publishes had its link fetched:
+
+| | Boards | listed | not on an active site | links dead | served rows on them (v320) |
+|---|---:|---:|---:|---:|---:|
+| no active site | 19 (6 list any) | 354 | 354 | 354 of 354 | 38 (`egcu` only) |
+| some sites inactive | 727 (25 affected) | 32,547 on the 25 | 1,736 | 1,730 of 1,736 | 229 on 5 Boards |
+
+- The 6 links that did not die are on 3 Boards (`fa-eoqj` 2, `fa-eozb` 1, `hdow` 3). They
+  redirect to an active site's job page, and none is served. Whether that page shows the posting
+  was not checked.
+- Up to three links of postings an active site does publish were sampled on each Board with some
+  sites inactive: 1,889 opened, and none went to `/errors/404`. (Three more, on one host, answered
+  403, as that host's pages do to our client.)
+- The 144 Boards that answer an empty site list listed no requisitions either (143 read, one
+  unreadable).
 
 ## Decision
 
 `OracleScraper` asks `recruitingCESites` once per scrape, then:
 
 - **No active site: serve nothing.** It logs `no active career site` and returns `[]`. That is
-  the same as ADR-0281's Lever case. The listing did answer, so the Board stays in the eviction
+  the same as the Lever case in PR #845 (ADR-0281). The listing did answer, so the Board stays in the eviction
   scope (ADR-0200), and its rows evict through ADR-0083's two consecutive absences. The Board is
   not marked truncated, because an Unauthoritative Board keeps its rows (ADR-0053). It is not a
   gone-strike either: the API still answers, and a Board that turns a site back on is served on
@@ -44,8 +62,7 @@ MEASUREMENT_PLACEHOLDER
 - **Every site active: read host-wide, as before.** No `siteNumber`, no extra page.
 - **Sites unreadable: read host-wide, as before.** One attempt (`_fetch_once`). A 5xx, a 429, a
   request that raises, a body that is not the expected JSON, or an empty site list all fall back
-  to the old read. A transient failure can neither empty nor narrow a Board. (The 144 tenants that
-  answered an empty site list all listed no postings either.)
+  to the old read. A transient failure can neither empty nor narrow a Board.
 
 Job links are unchanged. The UI already sends `CX_1` to whichever active site publishes the
 posting, so there is nothing to re-point.
@@ -64,11 +81,21 @@ posting, so there is nothing to re-point.
 
 ## Consequences
 
-CONSEQUENCES_PLACEHOLDER
-
+- **267 served rows evict, on 6 Boards (served table v320), and every one of them is a dead
+  link:** `iaheme.fa.ocs` 176, `egcu.fa.us6` 38 (Masimo), `ejgk.fa.em2` 32, `eiej.fa.em2` 15,
+  `hdjq.fa.us2` 4 and `eknh.fa.em2` 2. They leave over each Board's next two scrapes. Nine Boards
+  now serve nothing though their listing is not empty: the 6 with no active site that list
+  anything, and 3 whose active sites publish none of what they list (`egtq.fa.us2`,
+  `fa-emza-saasfaprod1`, `login-emza-saasfaprod1`).
+- Across the 31 affected Boards, 2,090 − 267 = 1,823 requisitions that were listed but not served
+  leave the scrape too.
+- 23 requisitions arrive that the host-wide walk missed (`eofd.fa.us6` 22, `eluq.fa.us2` 1).
+  They are on an active site, and 6 of 6 sampled links open.
 - Each scrape spends one more GET per Oracle Board (`recruitingCESites`). A Board with every site
   active, or with a single active site, reads the same number of listing pages as before. A Board
-  with several active sites reads one walk per site.
+  with several active sites reads one walk per site: across the 727 Boards with an inactive site,
+  1,680 listing pages became 2,680. Against that, 2,090 detail fetches are no longer made, one per
+  dropped requisition.
 - `scripts/validate/eightfold_backing_boards.py` reads an Oracle backing Board through the same
   method, so a front is buried only onto what the Oracle Board serves.
 - Masimo is hiring on Danaher's Workday Board (`danaher.wd1.myworkdayjobs.com/DanaherJobs`, held),
