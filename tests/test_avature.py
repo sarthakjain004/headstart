@@ -11,9 +11,12 @@ import json
 import pathlib
 import re
 
+import pytest
 from fake_fetcher import FakeFetcher, FakeResponse
 
-from headstart.scrapers.avature import listing_rows, page_fields
+from headstart.ingest import board_failures
+from headstart.scrapers.avature import _page_title, listing_rows, page_fields
+from headstart.scrapers.base import BoardUnreadable
 from headstart.scrapers.pacer import Pacer
 from headstart.scrapers.registry import get_scraper
 
@@ -241,8 +244,9 @@ def test_a_posting_is_read_at_its_english_alternate_when_the_english_sitemap_is_
         "avature", "ea", fetcher=FakeFetcher(route), have_details=set()
     )
     scraper.pacer = Pacer(0)
-    [job] = scraper.parse(scraper.fetch_raw(), _SCRAPED_AT)
-    assert job.url == _EA_EN
+    jobs = scraper.parse(scraper.fetch_raw(), _SCRAPED_AT)
+    assert [job.url for job in jobs] == [_EA_EN]
+    assert scraper.truncated is None  # `es_ES` answered, so the portal was read
 
 
 def test_a_posting_with_no_english_alternate_or_already_in_english_keeps_its_url():
@@ -257,6 +261,35 @@ def test_a_posting_with_no_english_alternate_or_already_in_english_keeps_its_url
     [kept] = listing_rows(british)
     assert "/es_CO/" in colombian["url"]
     assert "/en_GB/" in kept["url"]
+
+
+#: tsmc's `de_DE` sitemap entry for a posting titled "製程整合工程師 (台南)" (2026-09-29): a title
+#: with no Latin letter mints no slug, as 28 of its 801 JobDetail URLs have none.
+_TSMC_NO_SLUG_ENTRY = (
+    '<urlset xmlns:xhtml="http://www.w3.org/1999/xhtml"><url>'
+    "<loc>https://careers.tsmc.com/de_DE/careers/JobDetail/389</loc>"
+    '<xhtml:link rel="alternate" href="https://careers.tsmc.com/en_US/careers/JobDetail/389" '
+    'hreflang="x-default"/>'
+    '<xhtml:link rel="alternate" href="https://careers.tsmc.com/de_DE/careers/JobDetail/389" '
+    'hreflang="de-DE"/>'
+    '<xhtml:link rel="alternate" href="https://careers.tsmc.com/en_US/careers/JobDetail/389" '
+    'hreflang="en-US"/>'
+    "</url></urlset>"
+)
+
+
+def test_a_job_url_with_no_title_slug_is_listed():
+    """28 of tsmc's 801 postings were never listed: the URL pattern required a slug."""
+    rows = listing_rows(_TSMC_NO_SLUG_ENTRY)
+    assert rows == [
+        {
+            "id": "389",
+            "url": "https://careers.tsmc.com/en_US/careers/JobDetail/389",
+            "slug_title": "",
+        }
+    ]
+    scraper = _scraper(_route())
+    assert re.fullmatch(scraper.url_shape, rows[0]["url"])
 
 
 def test_json_ld_layout():
@@ -351,80 +384,151 @@ _EMPTY_ROBOTS = (
     "Sitemap: https://acme.avature.net/careers/sitemap_index.xml\n"
     "Sitemap: https://acme.avature.net/CalendarInvitation/sitemap_index.xml\n"
 )
-_EMPTY_INDEX = (
+_CAREERS_INDEX = (
     "<sitemapindex><sitemap><loc>https://acme.avature.net/careers/sitemap.xml</loc>"
     "</sitemap></sitemapindex>"
 )
+_CAREERS_SEARCH = "https://acme.avature.net/careers/SearchJobs"
+_LINKS_A_POSTING = (
+    '<a href="https://acme.avature.net/careers/JobDetail/Engineer/123">Engineer</a>'
+)
+#: Where an internal portal's search page lands (emiratesjobs's `HiringManager`, 2026-09-29).
+_AT_LOGIN = FakeResponse(
+    200, "<form>Sign in</form>", url="https://acme.avature.net/careers/Login/"
+)
 
 
-def _empty_listing_scraper(search_jobs: FakeResponse):
-    """A tenant whose sitemaps all answer an empty 200 body; its search page is ``search_jobs``."""
+def _acme(routes: dict[str, FakeResponse], robots: str = _EMPTY_ROBOTS):
+    """A tenant whose every sitemap answers the empty 200 body Avature answers at random, unless
+    ``routes`` answers the URL. A search page ``routes`` does not name is gone (404), as a
+    utility portal's (`CalendarInvitation`) is."""
 
     def route(method, url, kwargs):
         if url.endswith("robots.txt"):
-            return FakeResponse(200, _EMPTY_ROBOTS)
+            return FakeResponse(200, robots)
+        if url in routes:
+            return routes[url]
         if url == "https://acme.avature.net/careers/sitemap_index.xml":
-            return FakeResponse(200, _EMPTY_INDEX)
-        if url == "https://acme.avature.net/careers/SearchJobs":
-            return search_jobs
-        return FakeResponse(
-            200, ""
-        )  # every sitemap: the empty body Avature answers at random
+            return FakeResponse(200, _CAREERS_INDEX)
+        if url.endswith("/SearchJobs"):
+            return FakeResponse(404, "")
+        return FakeResponse(200, "")
 
-    scraper = get_scraper(
-        "avature", "acme", fetcher=FakeFetcher(route), have_details=set()
-    )
+    fetcher = FakeFetcher(route)
+    scraper = get_scraper("avature", "acme", fetcher=fetcher, have_details=set())
     scraper.pacer = Pacer(0)
+    scraper.fake = fetcher
     return scraper
 
 
 def test_an_empty_sitemap_body_over_a_portal_that_lists_postings_is_unread():
     """mantech (420 served rows) read one such run in 31: two in a row evict every row."""
-    from headstart.ingest import board_failures
-    from headstart.scrapers.base import BoardUnreadable
-
-    page = (
-        '<a href="https://acme.avature.net/careers/JobDetail/Engineer/123">Engineer</a>'
-    )
-    scraper = _empty_listing_scraper(FakeResponse(200, page))
-    try:
+    scraper = _acme({_CAREERS_SEARCH: FakeResponse(200, _LINKS_A_POSTING)})
+    with pytest.raises(BoardUnreadable, match="unread, not empty") as raised:
         scraper.fetch_raw()
-    except BoardUnreadable as exc:
-        assert "unread, not empty" in str(exc)
-        assert not board_failures.is_gone(f"{type(exc).__name__}: {exc}")
-    else:
-        raise AssertionError("an empty sitemap body read as an empty Board")
+    assert not board_failures.is_gone(f"{type(raised.value).__name__}: {raised.value}")
 
 
-def test_empty_sitemaps_under_a_search_page_with_no_postings_are_an_empty_board():
-    """A utility portal answers an empty body every time; its search page 404s or links none."""
-    for search in (FakeResponse(404, ""), FakeResponse(200, "<p>0 results</p>")):
-        assert _empty_listing_scraper(search).fetch_raw() == []
+@pytest.mark.parametrize("status", [406, 429, 503, 403, 202])
+def test_a_search_page_that_did_not_answer_leaves_an_empty_listing_unread(status):
+    """#880's check read only a 200: Avature's own 406 wall, a 429 or a 5xx read as a 404 did, so
+    the Board read empty and entered the eviction scope."""
+    scraper = _acme({_CAREERS_SEARCH: FakeResponse(status, "")})
+    with pytest.raises(BoardUnreadable, match=f"HTTP {status}"):
+        scraper.fetch_raw()
+
+
+@pytest.mark.parametrize(
+    "search",
+    [
+        # maximus's `careers`: "402 results", rendered client-side, so no link on the page.
+        FakeResponse(200, "<p>402 results</p>"),
+        # emiratesjobs's `careersmarketplace` hands off to the employer's own site.
+        FakeResponse(
+            200, "<p>Search and apply</p>", url="https://www.acme.com/search-and-apply/"
+        ),
+    ],
+)
+def test_a_search_page_that_is_neither_gone_nor_a_login_leaves_an_empty_listing_unread(
+    search,
+):
+    """emiratesjobs (215 served rows) read 0 postings on 2026-09-29: its job portal's 1,470-
+    posting sitemap answered empty, and its search page, which links none, read as an answer."""
+    scraper = _acme({_CAREERS_SEARCH: search})
+    with pytest.raises(BoardUnreadable, match="which is no login"):
+        scraper.fetch_raw()
+
+
+@pytest.mark.parametrize(
+    "search", [FakeResponse(404, ""), FakeResponse(410, ""), _AT_LOGIN]
+)
+def test_empty_sitemaps_under_a_gone_or_login_search_page_are_an_empty_board(search):
+    """A utility portal reads empty every run; its search page 404s (mantech's `veterans`,
+    maximus's `CalendarInvitation`) or lands on a login (emiratesjobs's `HiringManager`)."""
+    scraper = _acme({_CAREERS_SEARCH: search})
+    assert scraper.fetch_raw() == []
+    assert scraper.truncated is None
 
 
 def test_a_well_formed_sitemap_with_no_postings_never_asks_the_search_page():
-    def route(method, url, kwargs):
-        if url.endswith("robots.txt"):
-            return FakeResponse(200, _EMPTY_ROBOTS)
-        if url.endswith("sitemap_index.xml"):
-            return FakeResponse(200, _EMPTY_INDEX)
-        if url.endswith("SearchJobs"):
-            raise AssertionError(
-                "the search page was asked for a well-formed empty listing"
-            )
-        return FakeResponse(200, "<urlset></urlset>")
-
-    scraper = get_scraper(
-        "avature", "acme", fetcher=FakeFetcher(route), have_details=set()
+    scraper = _acme(
+        {
+            "https://acme.avature.net/careers/sitemap.xml": FakeResponse(
+                200, "<urlset></urlset>"
+            ),
+            "https://acme.avature.net/CalendarInvitation/sitemap_index.xml": FakeResponse(
+                200, "<sitemapindex></sitemapindex>"
+            ),
+        }
     )
-    scraper.pacer = Pacer(0)
     assert scraper.fetch_raw() == []
+    assert not [url for url in scraper.fake.urls() if url.endswith("SearchJobs")]
+
+
+#: A second portal that lists a posting while `careers` reads empty (deloitteus's `careersDOT`).
+_SIBLING_ROBOTS = (
+    _EMPTY_ROBOTS + "Sitemap: https://acme.avature.net/contractors/sitemap_index.xml\n"
+)
+_SIBLING = {
+    "https://acme.avature.net/contractors/sitemap_index.xml": FakeResponse(
+        200,
+        "<sitemapindex><sitemap><loc>https://acme.avature.net/contractors/sitemap.xml"
+        "</loc></sitemap></sitemapindex>",
+    ),
+    "https://acme.avature.net/contractors/sitemap.xml": FakeResponse(
+        200,
+        "<urlset><url><loc>https://acme.avature.net/contractors/JobDetail/"
+        "Data-Engineer/77</loc></url></urlset>",
+    ),
+}
+
+
+def test_a_portal_read_empty_beside_one_that_lists_postings_truncates_the_board():
+    """deloitteus's `careers` sitemap read 0 bytes twice, then 1,304 ids, while `careersDOT`
+    listed 45: the 45 read as the whole Board, and two such runs evict the rest."""
+    scraper = _acme(
+        {**_SIBLING, _CAREERS_SEARCH: FakeResponse(200, _LINKS_A_POSTING)},
+        robots=_SIBLING_ROBOTS,
+    )
+    assert [row["id"] for row in scraper.fetch_raw()] == ["77"]
+    assert "links postings" in scraper.truncated
+
+
+def test_a_utility_portal_read_empty_beside_one_that_lists_postings_leaves_it_authoritative():
+    """ea's `CalendarInvitation` reads empty every run; its search page 404s."""
+    careers = {
+        "https://acme.avature.net/careers/sitemap.xml": FakeResponse(
+            200, "<urlset></urlset>"
+        ),
+        "https://acme.avature.net/CalendarInvitation/SearchJobs": FakeResponse(404, ""),
+    }
+    scraper = _acme({**_SIBLING, **careers}, robots=_SIBLING_ROBOTS)
+    assert [row["id"] for row in scraper.fetch_raw()] == ["77"]
+    assert scraper.truncated is None
 
 
 def test_a_page_title_wrapped_in_chrome_reads_the_json_ld_title():
     """#876: metlife's `og:title` ends in a call to action; its JSON-LD states the bare title."""
-    from headstart.scrapers.avature import _page_title
-
     assert (
         _page_title(
             "Principal Data and AI Product Engineer | Apply Now",
@@ -439,3 +543,24 @@ def test_a_page_title_wrapped_in_chrome_reads_the_json_ld_title():
     same = "Engine Overhaul Engineer III - TE.01 | EEMC"
     assert _page_title(same, same) == same
     assert _page_title(None, "Data Engineer") == "Data Engineer"
+
+
+def test_a_call_to_action_leaves_the_title_whatever_the_json_ld_says():
+    """15 of metlife's 80 served titles kept "| Apply Now": their JSON-LD title is worded
+    otherwise, or does not parse (captured pages, 2026-09-29)."""
+    layouts = _FIXTURE["layouts"]
+    assert page_fields(layouts["metlife_ml"])["title"] == "Head of Platform"
+    assert (
+        page_fields(layouts["metlife_ml_unparsed_json_ld"])["title"]
+        == "IT Infrastructure L2\\L3 Engineer"
+    )
+    assert _page_title("Ingénieur logiciel | Postuler", "") == "Ingénieur logiciel"
+
+
+def test_a_details_block_holding_only_css_falls_through_to_the_collapsible_sections():
+    """#876's own Board: workmyway's details block is one `<style>` block, so every served row's
+    description was CSS, and once `<style>` was dropped it was None."""
+    description = page_fields(_FIXTURE["layouts"]["workmyway_careers"])["description"]
+    assert description.startswith("Role Highlights")
+    assert "We are looking for an experienced Engineering Manager" in description
+    assert "{" not in description
