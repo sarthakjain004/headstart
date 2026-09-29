@@ -59,9 +59,10 @@ It needs no account, token or sign-in.
   2026-09-29), which is why the deadline sits under it.
 - **Other sites.** A request from a web page on any other site is refused with a 403. That means an
   `Origin` other than claude.ai, claude.com or the Space's own.
-- **Size, boot and sleep.** Answers are capped as the local server's are, and the Space's boot and
-  sleep apply. While the Space starts, the URL answers with Hugging Face's own error instead of a
-  sentence, so ask again in a few minutes.
+- **Size, boot and sleep.** Answers are capped as the local server's are. A pipeline restart or a
+  deploy does not interrupt the URL, because the old boot answers until the new one is up
+  (measured 2026-09-28, ADR-0267). While the Space wakes from sleep, the URL answers with Hugging
+  Face's own error instead of a sentence, so ask again in a few minutes.
 
 ## Install it
 
@@ -312,9 +313,10 @@ To list the jobs behind any of these, pass the key to `search_jobs` as `company`
 - **No per-category Hiring now.** Ranking every company within one category costs about 11 ms a
   company at the Space; `read_trends` with a `category` and named `companies` answers it for the
   companies you name.
-- **A cold Space takes minutes.** The Space restarts after every pipeline run and sleeps when idle;
-  a boot measured 4 min 13 s on 2026-09-28. A call waits at most 45 s, then says the Space is
-  starting — ask again in a few minutes.
+- **A cold Space takes minutes.** The Space restarts after every pipeline run, but the old boot
+  answers until the new one is up (measured 2026-09-28, ADR-0267). It also sleeps when idle, and
+  waking it takes a boot, measured at 4 min 13 s on 2026-09-28. A call waits at most 45 s, then
+  says the Space is starting — ask again in a few minutes.
 - **An older Space is refused, not trusted.** Every reply from the app states the agent contract it
   serves; a Space older than this server is reported as needing a deploy, because it would ignore
   the strictness that keeps a mistyped filter from quietly widening a search.
