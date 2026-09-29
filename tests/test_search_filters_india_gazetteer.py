@@ -17,6 +17,7 @@ from headstart.search_filters.india_gazetteer import (
     REGIONS,
     STATES,
     SUBDIVISIONS,
+    TOWNS,
     _anchored,
     _rx,
     classify,
@@ -99,6 +100,70 @@ _ROWS = [
         False,
         set(),
     ),  # Illinois; why the IND form is '% - ind', not '% ind'
+    # ADR-0347: "india" is a whole word, so a longer word that contains it is not the country.
+    ("Xindian District, New Taipei", False, set()),
+    ("Florida; Indian Harbour Beach", False, set()),
+    ("Little India, Singapore", False, set()),
+    # ADR-0347: a state name that is also a place elsewhere, and city aliases hidden mid-word
+    ("Debrecen, Hajdú-Bihar, Hungary", False, set()),
+    ("DEBRECEN, HAJDÚ BIHAR, Hungary", False, set()),
+    ("Delhi New York", False, set()),
+    ("Boardman, OR; Delhi, LA (Delhi Plant)", False, set()),
+    ("Madras, OR, United States", False, set()),
+    ("Inashiki-gun, Ibaraki, Japan", False, set()),  # 'nashik'
+    ("Istanbul Kagithane", False, set()),  # 'thane'
+    ("US / Cananda", False, set()),  # 'anand'
+    ("Maladzyechna, Minsk Region, Belarus", False, set()),  # 'malad'
+    # "Hyderabad, PK" stays tagged: its one row is an India job (the posting requires authorization
+    # to work in India), so the ", pk" veto that looked obvious would have dropped a real row.
+    ("Hyderabad, PK", True, {"hyderabad"}),
+    # ADR-0347: a bare "Town, IN" is Indiana far more often than India, and only shapes India
+    # alone uses read as the country tag
+    ("Indianapolis, IN, IN", False, set()),
+    ("Muscatatuck, IN", False, set()),
+    ("Evansville, IN or Baltimore, MD, IN", False, set()),
+    ("Crane, IN, Indi, Un", False, set()),
+    # SuccessFactors' cut "Indonesia", not the ISO code
+    ("Others, Bant, In", False, set()),
+    ("Jakarta, Othe, In", False, set()),
+    ("Whitestown, IN, 46077", False, set()),  # a five-digit ZIP; an Indian PIN has six
+    # ADR-0347: a town name is a whole word, so it cannot hide inside a longer place
+    ("Korbach, Germany", False, set()),  # 'korba'
+    ("Kota Kinabalu, Malaysia", False, set()),  # 'kota' stays out of the list
+    # ADR-0347: shapes that only India uses
+    ("KA, IN", True, set()),  # a subdivision code at the start of the string
+    ("MH, IN, 410208", True, set()),  # ...and an Indian PIN after the country
+    ("Jamnagar, GJ, IN, 361004", True, set()),
+    ("IN, 201301", True, set()),
+    ("Singahalli, Autoliv Asia - AAS, IN", True, set()),  # "Town, Plant, IN"
+    ("Chakan, Chakan_MahTower, IN", True, set()),
+    ("CHEYYAR CC, Cheyyar-MSPT, IN", True, set()),
+    ("IND, Alwaye-South 1", True, set()),  # 'IND,' as a prefix
+    ("IND, Remote", True, set()),
+    (
+        "Remote, IN",
+        True,
+        set(),
+    ),  # "Remote, <ISO country>"; not "Remote, IN, US" or a state list
+    ("Remote, IN, US", False, set()),
+    ("Remote - CA; Remote - IN; Remote - KY; United States of America", False, set()),
+    # ADR-0347: towns read off the country-less rows of the 2026-09-29 table
+    ("Mundra", True, set()),
+    # a tidied "Chakan, Chakan, IN" is "Chakan, IN", which no shape reads: only the town does
+    ("Chakan, IN", True, set()),
+    ("Chakan, Chakan, IN", True, set()),
+    ("Sri City, Andh, IN", True, set()),
+    ("Miraroad", True, set()),
+    ("Sahnewal", True, set()),
+    ("Parwanoo-Hmachal", True, set()),
+    ("Barrackpore; Malda; Siliguri", True, set()),
+    ("Kanchipuram, IN", True, set()),
+    ("Arunachal Pradesh, IN", True, set()),
+    ("Chh Sambhajinagar", True, {"aurangabad"}),
+    ("Bengalore, IN", True, {"bengaluru"}),  # observed typos of a city already held
+    ("gurugarm", True, {"gurgaon", "delhi ncr"}),
+    ("gaziabad", True, {"ghaziabad", "delhi ncr"}),
+    ("manglore", True, {"mangaluru"}),
 ]
 
 
@@ -134,13 +199,14 @@ def test_where_india_is_unchanged_by_classify_s_addition():
     a transcription slip would go unnoticed (one did, while drafting this test: `surat`/`thane`
     swapped, caught only because this assertion failed against the real output). ADR-0024/
     ADR-0086/ADR-0138 cite 3,068 chars; the `goa`/`anand`/`INDIA_EXCLUDE` guards below moved it
-    to 3,301, the whole-string alpha-2 "IN" (`IN_EXACT`) to 3,327, and the Pakistan guard on
-    `hyderabad` (ADR-0322) to 3,419.
+    to 3,301, the whole-string alpha-2 "IN" (`IN_EXACT`) to 3,327, the Pakistan guard on
+    `hyderabad` (ADR-0322) to 3,419, and the whole-word, tail and town rules with the guards
+    beside them (ADR-0347) to 4,357.
     """
     clause = where("india")
-    assert len(clause) == 3419
+    assert len(clause) == 4357
     assert hashlib.sha256(clause.encode()).hexdigest() == (
-        "c3990aee94c58193821ecd9738341c706a43c33112c6266627df583dae5b333d"
+        "7bdef221610cc1e3a711e7961dc74aa8e7d638a63b3f6b777fdbcf0847a436e1"
     ), (
         "the compiled clause moved — if this is a deliberate CITIES/STATES/etc. data change, "
         "recompute the hash (hashlib.sha256(where('india').encode()).hexdigest()) and update "
@@ -162,6 +228,16 @@ def test_classify_agrees_with_the_country_level_rule_on_every_oracle_row():
 def test_classify_of_no_location_is_none():
     assert classify(None) is None
     assert classify("") is None
+
+
+def test_the_country_code_after_a_plant_or_town_is_read_in_upper_case_only():
+    """SuccessFactors cuts every part of a location to four letters, so "In" is India *or*
+    Indonesia there ("Ramanagara, Karn, In" against "Others, Bant, In"; the first is a made-up
+    string in the real shape), while the ISO code is "IN". The three-part tail reads only the
+    code (ADR-0347)."""
+    assert classify("Ramanagara, Karn, IN") == "IN"
+    assert classify("Ramanagara, Karn, In") is None
+    assert classify("Jakarta, Othe, In") is None
 
 
 @pytest.fixture(scope="module")
@@ -201,7 +277,9 @@ def test_unknown_place_is_none():
 
 
 def test_alias_hygiene():
-    aliases = [a for aliases in CITIES.values() for a in aliases] + list(STATES)
+    aliases = (
+        [a for aliases in CITIES.values() for a in aliases] + list(STATES) + list(TOWNS)
+    )
     for a in aliases:
         # `_` joins `%` here: the aliases are substrings in a regex alternation now, and the
         # LIKE-to-regex equivalence holds only because none of them carries a LIKE wildcard.
@@ -215,6 +293,12 @@ def test_alias_hygiene():
     # kota=Dakota, agra=Agrate Brianza, erode=Wernigerode.
     for trap in ("kota", "agra", "erode"):
         assert trap not in aliases, f"vetoed trap alias reintroduced: {trap}"
+    # ADR-0347: each of these names an Indian place and also a place, a person or a word
+    # elsewhere, so no untagged row read India on the strength of it (kota: Kota Kinabalu and
+    # Kota Bharu; kalina: a Polish village; blore: an English village; parsa: Nepal's district;
+    # shalimar: Florida; patan: Nepal's city; mirzapur: Bangladesh; hassan: a given name).
+    for trap in ("kalina", "blore", "parsa", "shalimar", "patan", "mirzapur", "hassan"):
+        assert trap not in aliases, f"unvetted ambiguous alias added: {trap}"
 
 
 def test_country_tag_terms_are_sql_safe():
@@ -248,7 +332,7 @@ def test_ind_is_never_a_bare_substring():
         # 'ind%' pins only the left, which would claim Indore and every "Industrial Area".
         head, _, tail = form.partition("ind")
         assert head in ("", "%(", "% - "), form
-        assert tail == "" or tail[0] in " -)", form
+        assert tail == "" or tail[0] in " -,)", form
 
 
 def test_dropdown_entries_resolve():
