@@ -23,6 +23,11 @@ why the old ``host/CX_2`` slug override is gone — it could only ever shrink a 
 hardcoded ``CX_1`` default was wrong for **929 of 1,331** hiring boards, and wrong *silently*:
 a bad site number still answers 200 with a well-formed envelope.
 
+**The whole Board includes what no candidate can open.** The host-wide listing also carries
+requisitions that only *inactive* sites publish, and their links go to ``/errors/404``. So a
+tenant with an inactive site is read one active site at a time, and a tenant with no active site
+serves nothing (ADR-0303).
+
 **The listing carries almost nothing, and the description it does carry is truncated.** Across
 15,189 requisitions, ``LegalEmployer``, ``Department``, ``JobFunction`` and ``JobType`` are 0.0%
 non-null and ``JobSchedule`` is 1.1% — so every field but title, location, id and date has to come
@@ -45,6 +50,7 @@ from typing import Any
 
 from headstart.boards import company_name
 from headstart.jobs.job import Job, host_of, html_to_text, is_remote, requisition_of
+from headstart.network import http
 from headstart.network.fetcher import Fetcher
 from headstart.scrapers.base import (
     BaseScraper,
@@ -76,6 +82,10 @@ _NEWEST_FIRST = "POSTING_DATES_DESC"
 #: out, so peak in-flight is the product (see `base.py`'s note), and because 16 is what icims and
 #: zwayam already use — no special justification needed for a value the repo already runs.
 _DETAIL_WORKERS = 16
+
+#: The one ``StatusCode`` a Candidate Experience site answers on. A posting no active site publishes
+#: has no working link: the careers UI sends it to ``/errors/404`` (ADR-0303).
+_ACTIVE_SITE = "ORA_ACTIVE"
 
 
 #: The two workplace-type codes this repo has actually observed meaning something unambiguous.
@@ -209,6 +219,8 @@ class OracleScraper(BaseScraper):
             0  # advanced by `fetch_raw`; `url()` renders whatever page it is on
         )
         self._sort_by: str | None = None  # `url()`'s order; None is the API's default
+        # `url()`'s `siteNumber`; None reads the whole host
+        self._site: str | None = None
 
     @staticmethod
     def slug_from(tenant: str, url: str) -> str:
@@ -295,15 +307,48 @@ class OracleScraper(BaseScraper):
         return self._site_name(seo.strip())
 
     def url(self) -> str:
-        # No `siteNumber`: it filters the Board down to one site, and omitting it returns the
-        # union of every site (module docstring). `findReqs` still needs its other params inside
-        # the finder string, comma-separated — the careers UI's own calls use literal commas.
+        # No `siteNumber` unless `_site` is set: it filters the Board down to one site, and
+        # omitting it returns the union of every site (module docstring). It is set only to read
+        # a tenant's active sites one by one, when some other site is inactive (ADR-0303).
+        # `findReqs` still needs its other params inside the finder string, comma-separated —
+        # the careers UI's own calls use literal commas.
         return (
             f"https://{self.slug}/hcmRestApi/resources/latest/"
             f"recruitingCEJobRequisitions?onlyData=true&expand=requisitionList"
-            f"&finder=findReqs;limit={_PAGE_SIZE},offset={self._offset}"
+            f"&finder=findReqs;"
+            + (f"siteNumber={self._site}," if self._site else "")
+            + f"limit={_PAGE_SIZE},offset={self._offset}"
             + (f",sortBy={self._sort_by}" if self._sort_by else "")
         )
+
+    def sites_url(self) -> str:
+        """The tenant's Candidate Experience sites, each with its ``StatusCode``."""
+        return (
+            f"https://{self.slug}/hcmRestApi/resources/latest/"
+            "recruitingCESites?onlyData=true&fields=SiteNumber,StatusCode"
+        )
+
+    def _sites(self) -> dict[str, bool] | None:
+        """Each Candidate Experience site's number, and whether it is active — or None when the
+        sites could not be read, which leaves the Board read as it always was.
+
+        One attempt (`_fetch_once`): a 5xx, a 429, a request that raises or a body this cannot
+        read is None, so a transient failure never narrows or empties a Board (ADR-0303). So is
+        an empty site list: the tenants that answered one all listed no postings either.
+        """
+        try:
+            response = self._fetch_once(
+                "GET", self.sites_url(), accept="application/json"
+            )
+            if response.status_code != 200:
+                return None
+            sites = {
+                site["SiteNumber"]: site.get("StatusCode") == _ACTIVE_SITE
+                for site in response.json()["items"]
+            }
+        except (http.RequestsError, ValueError, KeyError, TypeError):
+            return None
+        return sites or None
 
     def _listing(self) -> list[dict]:
         """Page through the requisition list until the board runs out.
@@ -418,6 +463,36 @@ class OracleScraper(BaseScraper):
             )
         return reqs, total, itemless_page
 
+    def _servable_listing(self) -> list[dict]:
+        """The requisitions a candidate can open: what the tenant's active sites publish.
+
+        The host-wide listing also carries requisitions no active site publishes, and each of
+        those links to `/errors/404`. So a tenant with an inactive site is read one active site
+        at a time, and one with no active site serves nothing (ADR-0303). `[]`, not a raise: the
+        tenant answered, so its rows evict through ADR-0083's two absences (ADR-0200).
+        """
+        sites = self._sites()
+        active = [number for number, on in (sites or {}).items() if on]
+        if sites is not None and not active:
+            self._log.info(
+                f"{self.board_key()}: no active career site ({', '.join(sites)} all "
+                "inactive) — every posting links to /errors/404, so serving none (ADR-0303)"
+            )
+            return []
+        if sites is None or len(active) == len(sites):
+            return self._listing()
+        # Each site through `_listing`, so each walk keeps its own paging and truncation rules.
+        reqs: list[dict] = []
+        seen: set[Any] = set()
+        for site in active:
+            self._site = site
+            for requisition in self._listing():
+                if requisition.get("Id") not in seen:
+                    seen.add(requisition.get("Id"))
+                    reqs.append(requisition)
+        self._site = None
+        return reqs
+
     def fetch_raw(self) -> Any:
         # Every listed posting gets its detail payload, with no ADR-0048 `needs_detail` skip. That
         # optimisation is only safe where the detail fetch supplies the description and nothing
@@ -426,7 +501,7 @@ class OracleScraper(BaseScraper):
         # `department` (Category 76.2% / JobFunction 45.0%, both 0.0% on the listing) and most of
         # `remote`. Skipping it for an already-described Job would blank three fields that had
         # values. jazzhr and zoho hit the same fork and made the same call.
-        reqs = self._listing()
+        reqs = self._servable_listing()
         # Reported, not marked truncated: a missing detail payload costs this Job its
         # description and derived fields, but the Job itself is still listed and still
         # emitted, so the Board's list is whole (ADR-0053 is about the list, not the fields).
@@ -476,6 +551,10 @@ class OracleScraper(BaseScraper):
         with its Apply controls for the correct site, a wrong site and a nonexistent ``CX_9999``
         alike — all three redirect to ``CX_1`` and resolve the job by id. ``CX_1`` is written here
         because that is where the app lands anyway, not because the Board is known to use it.
+
+        More exactly, the app redirects to an *active* site that publishes the posting, whatever
+        site the link names, and to ``/errors/404`` when no active site does (ADR-0303) — which
+        is why :meth:`_servable_listing` lists only what an active site publishes.
         """
         return (
             f"https://{self.slug}/hcmUI/CandidateExperience/en/sites/CX_1/job/{job_id}"

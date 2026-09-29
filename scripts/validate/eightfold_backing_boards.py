@@ -270,7 +270,7 @@ def _oracle(slug: str) -> list[Posting]:
     # The listing carries no department (it is detail-only), so the verdict reads the title.
     return [
         Posting(frozenset({str(r["Id"])}), is_tech(r.get("Title"), None))
-        for r in OracleScraper(slug)._listing()
+        for r in OracleScraper(slug)._servable_listing()
         if r.get("Id")
     ]
 

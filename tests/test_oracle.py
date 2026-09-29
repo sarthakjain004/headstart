@@ -23,6 +23,7 @@ import pytest
 from fake_fetcher import FakeFetcher, FakeResponse
 
 from headstart.jobs.job import html_to_text
+from headstart.network import http
 from headstart.scrapers.oracle import OracleScraper
 from headstart.scrapers.registry import get_scraper
 
@@ -496,6 +497,8 @@ def test_fetch_raw_pairs_each_detail_with_its_requisition_on_either_transport(
     def route(method: str, url: str, kwargs: dict) -> FakeResponse:
         if "/recruitingCEJobRequisitions?" in url:
             return FakeResponse(text=json.dumps(_listing()))
+        if "/recruitingCESites?" in url:
+            return FakeResponse(404)  # sites unread: the Board is read whole
         requisition_id = _requisition_id_in(url)
         return FakeResponse(text=json.dumps(detail_answers[requisition_id]))
 
@@ -609,6 +612,120 @@ def test_a_later_page_with_no_items_is_not_read_as_the_counter_over_stating(capl
     assert "page at offset 200 carried no `items` (keys ['error'])" in logged
     assert "walk stopped at 200 of 450" in logged
     assert "over-states" not in logged
+
+
+# --- only what an active career site publishes (ADR-0303) -----------------------------------
+
+
+def _site_statuses(**status_by_site: str) -> str:
+    return json.dumps(
+        {
+            "items": [
+                {"SiteNumber": number, "StatusCode": status}
+                for number, status in status_by_site.items()
+            ]
+        }
+    )
+
+
+def _tenant(sites, listed: dict[str | None, list[str]]) -> FakeFetcher:
+    """A tenant whose sites endpoint answers ``sites`` (a body, a status or an exception to
+    raise), whose host-wide listing holds ``listed[None]`` and each site's ``listed[site]``. Every
+    detail request finds nothing: which requisitions are served is what is under test."""
+
+    def route(method: str, url: str, kwargs: dict) -> FakeResponse | Exception:
+        if "/recruitingCESites?" in url:
+            if isinstance(sites, str):
+                return FakeResponse(text=sites)
+            return sites if isinstance(sites, Exception) else FakeResponse(sites)
+        if "/recruitingCEJobRequisitions?" in url:
+            site = (
+                url.split("siteNumber=")[1].split(",")[0]
+                if "siteNumber" in url
+                else None
+            )
+            offset = int(url.split("offset=")[1].split(",")[0])
+            ids = listed[site]
+            page = [{"Id": i, "Title": f"job {i}"} for i in ids[offset : offset + 200]]
+            return FakeResponse(
+                text=json.dumps(
+                    {"items": [{"TotalJobsCount": len(ids), "requisitionList": page}]}
+                )
+            )
+        return FakeResponse(text=json.dumps({"items": []}))
+
+    return FakeFetcher(route)
+
+
+def _served(fetcher: FakeFetcher) -> list[str]:
+    jobs = OracleScraper(HOST, "Effx", fetcher=fetcher).fetch()
+    return sorted(job.id.rsplit(":", 1)[1] for job in jobs)
+
+
+def test_a_tenant_with_no_active_career_site_serves_nothing(caplog):
+    """`egcu.fa.us6` (Masimo) on 2026-09-29: both its sites were `ORA_INACTIVE` while the
+    host-wide listing still held 102 requisitions, and every link we served went to
+    `/errors/404`. It serves none, so its rows evict (ADR-0303), and reads no page to learn it."""
+    fetcher = _tenant(
+        _site_statuses(CX="ORA_INACTIVE", CX_1="ORA_INACTIVE"),
+        {None: ["2901", "3799", "3993"]},
+    )
+    with caplog.at_level(logging.INFO, logger="headstart.scrapers.oracle"):
+        assert _served(fetcher) == []
+    assert (
+        f"oracle:{HOST}: no active career site (CX, CX_1 all inactive)" in caplog.text
+    )
+    assert not [url for url in fetcher.urls() if "JobRequisition" in url]
+
+
+def test_a_tenant_with_an_inactive_site_serves_only_what_its_active_site_publishes():
+    """`eknh.fa.em2` on 2026-09-29: the host-wide listing held 65 requisitions and its one active
+    site, CX_6001, 13. The 13 links opened; the other 52 went to `/errors/404`."""
+    fetcher = _tenant(
+        _site_statuses(CX="ORA_INACTIVE", CX_1001="ORA_INACTIVE", CX_6001="ORA_ACTIVE"),
+        {None: ["1", "2", "3", "4", "5"], "CX_6001": ["2", "4"]},
+    )
+    assert _served(fetcher) == ["2", "4"]
+    listings = [url for url in fetcher.urls() if "/recruitingCEJobRequisitions?" in url]
+    assert listings and all("siteNumber=CX_6001," in url for url in listings)
+
+
+def test_every_active_site_is_read_and_a_posting_on_two_is_served_once():
+    """`edmn.fa.us2` runs three active sites beside nine inactive ones."""
+    fetcher = _tenant(
+        _site_statuses(CX_1="ORA_ACTIVE", CX_5002="ORA_INACTIVE", CX_6001="ORA_ACTIVE"),
+        {
+            None: ["1", "2", "3", "4", "5"],
+            "CX_1": ["1", "2", "3"],
+            "CX_6001": ["3", "4"],
+        },
+    )
+    assert _served(fetcher) == ["1", "2", "3", "4"]
+
+
+def test_a_tenant_whose_sites_are_all_active_is_still_read_host_wide():
+    fetcher = _tenant(
+        _site_statuses(CX="ORA_ACTIVE", CX_1="ORA_ACTIVE"), {None: ["1", "2", "3"]}
+    )
+    assert _served(fetcher) == ["1", "2", "3"]
+    assert not [url for url in fetcher.urls() if "siteNumber" in url]
+
+
+@pytest.mark.parametrize(
+    "sites",
+    [
+        503,
+        429,
+        404,
+        http.RequestsError("timed out"),
+        "<html>not json</html>",
+        json.dumps({"items": []}),  # every tenant answering this listed no postings
+    ],
+)
+def test_a_tenant_whose_sites_cannot_be_read_is_read_host_wide(sites):
+    """A transient failure must neither empty nor narrow a Board."""
+    fetcher = _tenant(sites, {None: ["1", "2", "3"]})
+    assert _served(fetcher) == ["1", "2", "3"]
 
 
 # --- the Board's company name ---------------------------------------------------------------
