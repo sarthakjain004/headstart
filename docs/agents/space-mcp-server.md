@@ -264,6 +264,13 @@ the filter costing the most.
   the job itself out; every filter applies as usual, and the total excludes it too. It cannot be
   sent with `query` (ADR-0277). `exclude_company` leaves out every job whose company name contains
   the text (the company box, negated), so similar jobs need not all be that employer's (ADR-0322).
+- **Visa sponsorship and relocation are `work_authorization`, never `keyword`.** Of 100
+  descriptions mentioning sponsorship read by hand, 80 refused it. `offers_sponsorship`,
+  `refuses_sponsorship` and `offers_relocation` keep the jobs whose description states that, as
+  the negation-aware rules of `headstart.jobs.work_authorization` read it; the Space reads every
+  description once after a restart (about a minute, and a request before then is refused as not
+  ready). A keyword about visas, citizenship or relocation adds a line saying its matches often
+  refuse it (ADR-0333).
 
 **`get_job`** — up to 5 postings in full, by the ids `search_jobs` prints: title, company, place,
 remote, employment type, department, the experience the posting states and the years read from
@@ -289,6 +296,11 @@ it, salary, posted and first-seen dates, the link, and the description.
   to be no HeadStart id (ADR-0331). A native id can hold a colon ("REQ: 228", ADR-0049), so
   each shorter `ats:slug` prefix is tried before an id is called none.
 - A company named only by its Board's host is shown by its directory name, as in `search_jobs`.
+- **What it says of visas and relocation**, before the description: the work-authorisation
+  stances the rules read from the whole description, and a `Mentions:` line quoting (as data) up
+  to five of its sentences about sponsorship, visas, work authorisation, citizenship or
+  relocation, so a model can judge the polarity itself. Those lines are charged to the
+  descriptions' budget (ADR-0333).
 
 **`read_trends`** — how tech hiring changed over a window. **Hiring is postings opened and closed,
 and their net; the change in openings listed is not hiring** (ADR-0272). Whole index by default;

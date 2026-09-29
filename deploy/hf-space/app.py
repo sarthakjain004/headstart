@@ -740,7 +740,10 @@ def _keep_static_for_the_boot(response):
 # /requirements groups a short and a long name of one employer as one requisition (ADR-0338).
 # 15: `operators` on /search, /facets and /requirements, `operators_left_out` on /facets and
 # /requirements, and each /hot row's `operator_unverified` (ADR-0335).
-_AGENT_API_VERSION = 15
+# 16: `work_authorization` (offers_sponsorship, refuses_sponsorship, offers_relocation) on /search
+# and /facets, each /job's `work_authorization` stances and mentions, and /requirements'
+# `work_authorization` counts, all read from descriptions by rules (ADR-0333).
+_AGENT_API_VERSION = 16
 
 
 @app.after_request

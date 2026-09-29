@@ -33,6 +33,7 @@ on:
       - "src/headstart/jobs/job.py"
       - "src/headstart/jobs/requisition_copies.py"
       - "src/headstart/jobs/salary.py"
+      - "src/headstart/jobs/work_authorization.py"
       - "src/headstart/mcp_protocol/**"
       - "src/headstart/search_filters/**"
       - "src/headstart/serving/**"

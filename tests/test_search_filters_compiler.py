@@ -809,3 +809,16 @@ def test_exclude_company_is_the_company_box_negated_keeping_nameless_rows():
     assert _clause(exclude_company="O'Reilly 100%") == (
         "(company IS NULL OR NOT (lower(company) LIKE '%o''reilly 100\\%%'))"
     )
+
+
+def test_a_work_authorization_stance_compiles_to_the_clause_its_read_names():
+    # ADR-0333: the stance's Jobs are read from descriptions once a process; the compiler only
+    # asks for the clause naming them.
+    named = {"offers_sponsorship": "id IN ('lever:a:1')"}
+    assert (
+        _clause(
+            work_authorization="offers_sponsorship", work_authorization_clause=named.get
+        )
+        == "id IN ('lever:a:1')"
+    )
+    assert _clause(work_authorization="offers_sponsorship") is None

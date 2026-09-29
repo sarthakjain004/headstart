@@ -27,6 +27,7 @@ from urllib.parse import urlsplit
 from headstart import log
 from headstart.boards.board_operator import Operator
 from headstart.embedding_conventions import encode_query
+from headstart.jobs import work_authorization
 from headstart.search_filters import (
     country_filter,
     employment_type_filter,
@@ -61,6 +62,7 @@ from headstart.serving.description_matches import (
     DescriptionMatches,
     reads_descriptions,
 )
+from headstart.serving.work_authorization_rows import WorkAuthorizationRows
 
 # In the Space nothing calls `setup()` (ADR-0153's app.py boots straight into serving), which
 # is why the one boot line below is a WARNING — `logging.lastResort` carries WARNING and above
@@ -186,6 +188,10 @@ JOB_ID_MAX_CHARS = 300
 #: one whole.
 JOB_DESCRIPTION_LIMIT = 12_000
 
+#: How long a request naming a work-authorisation stance waits for the process's one read of
+#: the descriptions (ADR-0333) before it is refused as not ready yet.
+WORK_AUTHORIZATION_WAIT_S = 10.0
+
 
 # The sort control's values, mapped to the column each orders by (issue #275). A whitelist
 # because the result reaches an ORDER BY; "rel" is deliberately absent, since relevance is the
@@ -281,6 +287,7 @@ REQUEST_PARAMETERS = frozenset(
         "max_age_days",
         "required_years_at_least",
         "exclude_company",
+        "work_authorization",
         # the ranking, the order and the page
         "q",
         "like",
@@ -1013,6 +1020,12 @@ def _job_row(row: Mapping[str, Any]) -> dict[str, Any]:
     result["description"] = description[:JOB_DESCRIPTION_LIMIT] or None
     result["description_chars"] = len(description)
     result["description_cut"] = len(description) > JOB_DESCRIPTION_LIMIT
+    # Read from the whole description, not the cut one: a visa sentence often closes it.
+    held = work_authorization.stances(description)
+    result["work_authorization"] = {
+        "stances": [s for s in work_authorization.STANCES if s in held],
+        "mentions": work_authorization.mentions(description),
+    }
     return result
 
 
@@ -1060,6 +1073,8 @@ class JobSearch:
         # synced since, `build_filter` falls back to `india_gazetteer.where("india")`'s slower-but-correct
         # regex alternation rather than erroring on a column that isn't there yet.
         has_country = india_filter.has_column(names)
+        # Each text-derived work-authorisation stance's Jobs (ADR-0333), read from `warm` on.
+        self.work_authorization = WorkAuthorizationRows(table)
         self.capabilities = IndexCapabilities(
             # the ATSes actually present in the index — feeds the dropdown and the whitelist
             atses=sorted(
@@ -1099,6 +1114,7 @@ class JobSearch:
             has_salary_known=salary_known_filter.has_flags(names),
             has_posted_at_comparable=posted_date_guard.has_flags(names),
             has_experience_filter_flags=experience_filter.has_flags(names),
+            work_authorization_clause=self.work_authorization.clause,
         )
         list_indices = getattr(table, "list_indices", None)
         self.has_vector_index = bool(
@@ -1274,7 +1290,11 @@ class JobSearch:
             max_age_days=_int("max_age_days"),
             required_years_at_least=_int("required_years_at_least"),
             exclude_company=(args.get("exclude_company") or "").strip() or None,
+            work_authorization=(args.get("work_authorization") or "").strip().lower()
+            or None,
         )
+        if filters.work_authorization:
+            self._check_work_authorization(filters.work_authorization)
         # The one place a request is parsed, and so the one place a dropped filter can be
         # reported without `facets.counts` repeating it once per option — see the helper. Under
         # `strict=1` it is refused instead (ADR-0253).
@@ -1356,6 +1376,26 @@ class JobSearch:
             keeps_employers=keeps_employers,
         )
         return built
+
+    def _check_work_authorization(self, stance: str) -> None:
+        """Refuse a stance the rules do not know (:class:`ValueError`, whatever ``strict`` says:
+        the page never sends one), and one asked before this process has read the descriptions
+        (:class:`ScopeUnavailable`, ADR-0333)."""
+        if stance not in work_authorization.STANCES:
+            raise ValueError(
+                f"work_authorization {stance!r} is not known; known: "
+                f"{_listed(work_authorization.STANCES)}"
+            )
+        if not self.work_authorization.wait(WORK_AUTHORIZATION_WAIT_S):
+            raise ScopeUnavailable(
+                "work_authorization is read from the job descriptions once after each "
+                "restart, which takes about a minute and has not finished; try again shortly"
+            )
+        if self.work_authorization.failed:
+            raise ScopeUnavailable(
+                "work_authorization could not be read from the job descriptions on this "
+                "deployment"
+            )
 
     def _family_scope(
         self, args: Mapping[str, str], filters: SearchFilters
@@ -1818,7 +1858,9 @@ class JobSearch:
         return rows
 
     def warm(self) -> None:
-        """Preload default responses plus one semantic pass every fresh process serves first."""
+        """Preload default responses plus one semantic pass every fresh process serves first, and
+        start reading the work-authorisation stances, which finishes in the background."""
+        self.work_authorization.start()
         self.run({})
         self.facets({})
         self.run({"q": "software engineer"})

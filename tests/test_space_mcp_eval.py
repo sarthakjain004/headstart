@@ -791,6 +791,110 @@ def test_title_keyword_rows_checks_the_arguments_first(ev):
     )
 
 
+# --- sponsorship_polarity ------------------------------------------------------------------
+
+_POLARITY_EXPECT = {"refusal": "refuses_sponsorship", "at_least": 1}
+
+
+def _stance_space(*jobs):
+    """`/job` answering ``jobs``, as (id, title, company, stances), to every read."""
+    served = [
+        {"id": i, "title": t, "company": c, "work_authorization": {"stances": s}}
+        for i, t, c, s in jobs
+    ]
+    return FakeSpace({SpaceRoute.JOB: {"jobs": served, "missing": []}})
+
+
+_POLARITY_JOBS = (
+    (
+        "teamtailor:threemagmbh:07fb",
+        "Backend Engineer",
+        "Threema AG",
+        ["offers_sponsorship"],
+    ),
+    ("ashby:webai:daf8", "Platform Engineer", "webAI", ["refuses_sponsorship"]),
+    ('ashby:webai:"quoted"', "Data Engineer", "webAI", []),
+)
+
+
+def test_sponsorship_polarity_passes_an_answer_naming_only_jobs_that_do_not_refuse(ev):
+    transcript = _transcript(
+        ev,
+        [
+            (
+                "search_jobs",
+                {"work_authorization": "offers_sponsorship"},
+                _RUST_ROWS,
+                False,
+            )
+        ],
+        answer="Backend Engineer at Threema AG offers H-1B sponsorship.",
+    )
+    space = _stance_space(*_POLARITY_JOBS)
+
+    verdict = ev.verify_sponsorship_polarity(_POLARITY_EXPECT, transcript, space)
+
+    assert verdict.passed, verdict.detail
+    assert (
+        "names 1 of the 3 jobs read back; none states refuses_sponsorship"
+        in verdict.detail
+    )
+
+
+def test_sponsorship_polarity_fails_an_answer_naming_a_job_that_refuses(ev):
+    transcript = _transcript(
+        ev,
+        [("search_jobs", {"keyword": "sponsorship"}, _RUST_ROWS, False)],
+        answer=(
+            "These mention sponsorship: Backend Engineer (Threema AG), and "
+            "ashby:webai:daf8, the Platform Engineer role at webAI."
+        ),
+    )
+    space = _stance_space(*_POLARITY_JOBS)
+
+    verdict = ev.verify_sponsorship_polarity(_POLARITY_EXPECT, transcript, space)
+
+    assert not verdict.passed
+    assert "1 of them state refuses_sponsorship: 'Platform Engineer' at 'webAI'" in (
+        verdict.detail
+    )
+
+
+def test_sponsorship_polarity_fails_an_answer_naming_no_job(ev):
+    transcript = _transcript(
+        ev,
+        [
+            (
+                "search_jobs",
+                {"work_authorization": "offers_sponsorship"},
+                _RUST_ROWS,
+                False,
+            )
+        ],
+        answer="Several companies sponsor visas.",
+    )
+    verdict = ev.verify_sponsorship_polarity(
+        _POLARITY_EXPECT, transcript, _stance_space(*_POLARITY_JOBS)
+    )
+    assert not verdict.passed and "fewer than 1" in verdict.detail
+
+
+def test_sponsorship_polarity_reads_get_job_rows_and_needs_some(ev):
+    empty = _transcript(ev, [], answer="Threema AG")
+    assert not ev.verify_sponsorship_polarity(
+        _POLARITY_EXPECT, empty, _stance_space()
+    ).passed
+    read = _transcript(
+        ev,
+        [("get_job", {"ids": ["teamtailor:threemagmbh:07fb"]}, _RUST_ROWS, False)],
+        answer="Threema AG's Backend Engineer role sponsors visas.",
+    )
+    verdict = ev.verify_sponsorship_polarity(
+        _POLARITY_EXPECT, read, _stance_space(*_POLARITY_JOBS)
+    )
+    assert verdict.passed, verdict.detail
+
+
 @pytest.mark.parametrize(
     ("text", "term", "starts"),
     [

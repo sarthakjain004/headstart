@@ -465,6 +465,13 @@
         "tool_results_all": ["ask for this id alone"]
       },
       "why": "Round-2 critique inj03 (ADR-0323): two ids share get_job's 18,000-character budget, so the 9,699-character CareMessage description is cut at its 9,000 share, and the answer says to read that id alone, not to raise max_chars_per_job past what the share allows. Data-dependent: both were open on 2026-09-29."
+    },
+    {
+      "id": "t36",
+      "prompt": "I'm an international student finishing a computer science degree and will need a work visa. Find me three software engineering jobs in the United States that offer visa sponsorship.",
+      "verifier": "sponsorship_polarity",
+      "expect": {"refusal": "refuses_sponsorship", "at_least": 1},
+      "why": "Round-3 critique P0-1 (ADR-0333): a keyword search for 'sponsorship' in descriptions led with jobs refusing it (36 of 40 sampled did), and t13 passed while checking only that a description search ran. The verifier judges the answer's truth, not its arguments: every row the search_jobs and get_job calls listed is read back from /job, and no job the answer names may be one whose whole description the Space reads as refusing sponsorship (refuses_sponsorship, 0.97 precision on 660 hand-read descriptions). The work_authorization offers_sponsorship filter is the way to pass; a keyword answer passes only if every job it names was checked."
     }
   ],
   "heldout_sha256": "801e7149bc71c42e7b346dcf089ea20f87d1e0035d989b3dba8ffb50fe055e4d"

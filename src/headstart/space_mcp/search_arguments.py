@@ -11,6 +11,7 @@ import re
 from typing import Any, get_args
 
 from headstart.boards.board_operator import Operator
+from headstart.jobs import work_authorization
 from headstart.mcp_protocol.messages import ToolFailure
 from headstart.search_filters import (
     country_filter,
@@ -44,6 +45,7 @@ SPACE_NAME = {
     "max_age_days": "max_age_days",
     "required_years_at_least": "required_years_at_least",
     "exclude_company": "exclude_company",
+    "work_authorization": "work_authorization",
 }
 #: Sent as the literal "true" `parse_filters` compares against; the company and the keyword are
 #: sent by their own rules below, and `max_age_days` 0 (any age) as nothing.
@@ -84,8 +86,10 @@ PROPERTIES: dict[str, dict[str, Any]] = {
         "type": "string",
         "maxLength": 100,
         "description": (
-            "A company name (matched as a substring), or a Board key from "
-            "an earlier answer such as 'lever:razorpay'."
+            "A company name, matched as the site's company box matches (any company name "
+            "containing the text), or a Board key from an earlier answer such as "
+            "'lever:razorpay'. In search_jobs beside `category` it needs a directory "
+            "company: a key such as 'greenhouse:stripe', or an exact name."
         ),
     },
     "remote": {"type": "boolean", "description": "Remote jobs only."},
@@ -95,7 +99,8 @@ PROPERTIES: dict[str, dict[str, Any]] = {
         "maximum": 30,
         "description": (
             "The user's own years of experience ('3+ years' is 3): keeps "
-            "jobs asking for at most this many."
+            "jobs asking for at most this many, and jobs that state no experience "
+            "(their rows say 'experience not stated')."
         ),
     },
     "country": {
@@ -142,6 +147,30 @@ PROPERTIES: dict[str, dict[str, Any]] = {
             "unlisted company counts as an employer."
         ),
     },
+    "work_authorization": {
+        "type": "string",
+        "enum": list(work_authorization.STANCES),
+        "description": (
+            "Use this, not `keyword`, for visa sponsorship or relocation: a description "
+            "that mentions sponsorship usually refuses it. offers_sponsorship: the "
+            "description offers or may offer visa sponsorship and nothing in it refuses "
+            "it; refuses_sponsorship: it refuses sponsorship ('now or in the future', "
+            "'Visa Sponsorship: No') or requires citizenship; offers_relocation: it offers "
+            "relocation help. Text-derived, not a field the employer set: HeadStart's rules "
+            "(headstart.jobs.work_authorization) read each sponsorship, citizenship and "
+            "relocation sentence with its negation. On 660 hand-read descriptions "
+            "(ADR-0333) about 1 in 35 jobs it names is wrong: precision 0.97 for "
+            "offers_sponsorship and refuses_sponsorship, 0.99 for offers_relocation; it "
+            "finds about 96% of each. A posting without a description never matches."
+        ),
+    },
+}
+
+#: How the scope line names each work-authorisation stance.
+_STANCE_WORDS = {
+    work_authorization.OFFERS_SPONSORSHIP: "offers visa sponsorship",
+    work_authorization.REFUSES_SPONSORSHIP: "refuses visa sponsorship",
+    work_authorization.OFFERS_RELOCATION: "offers relocation help",
 }
 
 
@@ -330,6 +359,11 @@ def scope_line(
         )
     elif max_age == 0:
         said.append("any age (max_age_days 0)")
+    if stance := arguments.get("work_authorization"):
+        said.append(
+            f"description {_STANCE_WORDS.get(stance, stance)} (work_authorization "
+            f"{stance}: read from the text by HeadStart's rules, not a field; they can err)"
+        )
     if keyword := (arguments.get("keyword") or "").strip():
         said.append(
             f"keyword {scraped_text.quoted(keyword)} in {arguments.get('keyword_in') or 'title'}"
