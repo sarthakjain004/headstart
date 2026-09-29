@@ -940,7 +940,9 @@ def _not_offering(job: dict[str, Any], labels: dict[str, str]) -> str | None:
         for topic in _SPONSORSHIP_TOPIC.finditer(mention):
             near = mention[: topic.start()].split()[-_NEAR_WORDS:] + [topic.group()]
             near += mention[topic.end() :].split()[:_NEAR_WORDS]
-            hedge = mention[: topic.start()].split()[-_HEDGE_NEAR_WORDS:] + [topic.group()]
+            hedge = mention[: topic.start()].split()[-_HEDGE_NEAR_WORDS:] + [
+                topic.group()
+            ]
             hedge += mention[topic.end() :].split()[:_HEDGE_NEAR_WORDS]
             if _HEDGED.search(" ".join(hedge)):
                 return f"hedged: says {mention[:80]!r}"
