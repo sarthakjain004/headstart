@@ -354,8 +354,9 @@ _BROKEN_OFF = "skipped after the 5xx break-off"
 # detail URL to fetch — so `_report_detail_losses` reports it on its own line rather than in the
 # mid-crawl tally. Measured live 2026-09-09 (docs/workday/2026-09-09_parser-shaped-detail-losses.md):
 # on every one measured (38 stubs over 31,028 postings on 22 Boards) such an item carried
-# ``bulletFields`` and nothing else, so the Job it makes is titled "Untitled" and
-# `tech_filter.classify` drops it before the description store or the index ever see it.
+# ``bulletFields`` and nothing else. `parse` makes no Job of it (ADR-0348): it once did, titled
+# "Untitled", on the premise that `tech_filter.classify` dropped it, and ADR-0252's slice family
+# made that premise false (Walmart, 2026-09-29: 43 stubs of 860, 41 served as "Untitled").
 _NO_DETAIL_URL = "no externalPath"
 
 # ``remoteType`` is freeform; map the unambiguous values. "hybrid"/"flexible"
@@ -1310,9 +1311,10 @@ class WorkdayScraper(BaseScraper):
         (`accenture/avanadecareers`, 24-30 every run, ~5% of its board) and 90 Boards saw it in
         exactly one run. Probed live, such an item is unrecoverable — the API's own req-id search
         returns the same stub, the CXS detail 404s, and 0 of 27 appear in the site's sitemap — so
-        this is reported, not retried. It is also uncosted: the Job it makes is titled "Untitled",
-        which `tech_filter.classify` drops, so it never reaches the description store or the index.
-        Full write-up: ``docs/workday/2026-09-09_parser-shaped-detail-losses.md``.
+        this is reported, not retried. It is also uncosted, because :meth:`parse` makes no Job of
+        it (ADR-0348): the 2026-09-09 write-up relied on the tech gate dropping the "Untitled" Job
+        it used to make, which ADR-0252's slice family stopped doing. Full write-up:
+        ``docs/workday/2026-09-09_parser-shaped-detail-losses.md``.
 
         The parenthesis is formatted by that shared helper rather than here. This function used to
         build its own, and the two had drifted within a commit — ``unclassified`` against
@@ -1349,9 +1351,9 @@ class WorkdayScraper(BaseScraper):
         no_url = classes.pop(_NO_DETAIL_URL, 0)
         if no_url:
             # Says only what this pass establishes: the listing gave no detail URL, so nothing was
-            # fetched. What *becomes* of such a posting downstream (measured: dropped at the tech
-            # gate, because a stub has no title) is a claim about other modules on a 22-Board
-            # sample, and belongs in the write-up, not asserted per Board in a scrape log.
+            # fetched. What *becomes* of such a posting downstream (`parse` skips it, ADR-0348) is
+            # a claim about another method, and belongs in the write-up, not asserted per Board
+            # in a scrape log.
             _log.info(
                 f"{self.board_key()}: {no_url} posting(s) carried no externalPath — the listing "
                 "gave no detail URL, so none was fetched (not a fetch failure; see "
@@ -1789,8 +1791,15 @@ class WorkdayScraper(BaseScraper):
         )
 
         jobs: list[Job] = []
+        stubs = 0
         for item in raw:
             external_path = item.get("externalPath") or ""
+            if not external_path and not (item.get("title") or "").strip():
+                # A stub names a requisition and nothing else: no title to show, no link to
+                # give. It cannot be left to the tech gate — a stub read inside a one-family
+                # slice carries that family since ADR-0252, so it passes (ADR-0348).
+                stubs += 1
+                continue
             ats_id = _posting_key(item)
             detail = item.get("_detail") or {}
             location = _location_from(item.get("locationsText"), detail)
@@ -1827,6 +1836,9 @@ class WorkdayScraper(BaseScraper):
                     requisition=ats_id,
                 )
             )
+        self.note_unread_rows(
+            stubs, len(raw), "had no title and no externalPath (ADR-0348)"
+        )
         return jobs
 
     def _salary_field(self, raw: Any) -> str | None:
