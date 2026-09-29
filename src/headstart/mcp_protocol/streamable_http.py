@@ -100,6 +100,24 @@ def refusal(
     return _reply(status, messages.error_reply(request_id, status, message))
 
 
+def tool_call(body: bytes) -> tuple[str, dict[str, Any]] | None:
+    """The tool a ``tools/call`` request in ``body`` names, and its arguments (``{}`` when it
+    sends none), or None for any other body: another method, a notification's shape, a batch or
+    no JSON at all. A route reads it before :func:`answer` does, to decide which place the call
+    waits for (ADR-0325); :func:`answer` still judges the request itself."""
+    try:
+        message = json.loads(body)
+    except ValueError:
+        return None
+    if not isinstance(message, dict) or message.get("method") != "tools/call":
+        return None
+    params = message.get("params")
+    if not isinstance(params, dict) or not isinstance(params.get("name"), str):
+        return None
+    arguments = params.get("arguments")
+    return params["name"], arguments if isinstance(arguments, dict) else {}
+
+
 def answer(
     headers: Mapping[str, str],
     body: bytes,

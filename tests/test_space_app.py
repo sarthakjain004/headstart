@@ -700,6 +700,7 @@ def test_the_mcp_limits_are_pinned(auth_app):
     assert auth_app._MCP_AT_ONCE_EACH == 2
     # ADR-0325: one description-keyword search at a time, on a place of its own.
     assert (auth_app._MCP_SCANS_AT_ONCE, auth_app._MCP_SCAN_RETRY_S) == (1, 20)
+    assert auth_app._MCP_SCAN_HELD_PAST_ANSWER_S == 120
 
 
 def test_mcp_answers_anyone_with_the_wall_on_and_only_by_post(auth_app):
@@ -849,6 +850,38 @@ def test_a_description_scan_takes_its_own_place_and_never_a_fast_one(
     r = _post_mcp(client, _DESCRIPTION_SCAN)
     assert r.status_code == 200 and "result" in r.json
     assert not scan._held  # given back once answered
+
+
+def test_a_scan_place_is_held_until_reads_past_their_deadline_finish(
+    auth_app, monkeypatch
+):
+    """ADR-0325: a scan's call answers at its 45 s deadline while its reads run on, burning a CPU,
+    so the next scan waits for them rather than starting beside them."""
+    import time
+
+    from headstart.space_mcp import space_client
+
+    scan = concurrency_limit.ConcurrencyLimit(1, 1)
+    abandoned = space_client.AbandonedReads()
+    monkeypatch.setattr(auth_app, "_MCP_SCAN_PLACES", scan)
+    monkeypatch.setattr(auth_app, "_MCP_ABANDONED_READS", abandoned)
+    monkeypatch.setattr(auth_app, "_MCP_PLACE_WAIT_S", 0.01)
+    client = auth_app.app.test_client()
+    with abandoned.changed:
+        abandoned.running = 1  # a read a call stopped waiting for is still running
+
+    assert _post_mcp(client, _DESCRIPTION_SCAN).status_code == 200
+    assert scan._held  # answered, but the place is still held
+    _mcp_refusal_says(_post_mcp(client, _DESCRIPTION_SCAN), 503, "at a time")
+
+    with abandoned.changed:
+        abandoned.running = 0
+        abandoned.changed.notify_all()
+    deadline = time.monotonic() + 5
+    while scan._held and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert not scan._held
+    assert _post_mcp(client, _DESCRIPTION_SCAN).status_code == 200
 
 
 def test_an_mcp_place_is_given_back_when_answering_fails(auth_app, monkeypatch):

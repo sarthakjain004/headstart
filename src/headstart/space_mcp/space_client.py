@@ -135,27 +135,43 @@ def urllib_fetch(url: str, headers: Mapping[str, str], timeout_s: float) -> Repl
 IN_PROCESS_READ = "headstart.space_mcp.in_process_read"
 
 
-def wsgi_fetch(wsgi_app: Callable, abandoned_cap: int = ABANDONED_READS_CAP) -> Fetch:
+class AbandonedReads:
+    """The in-process reads whose call stopped waiting and which are still running (ADR-0276):
+    the count :func:`wsgi_fetch` caps at ``cap``, and a wait until none is left, which the Space's
+    `/mcp` route holds its description-scan place for (ADR-0325). ``changed`` guards ``running``
+    and is notified whenever it falls."""
+
+    def __init__(self, cap: int = ABANDONED_READS_CAP) -> None:
+        self.cap = cap
+        self.running = 0
+        self.changed = threading.Condition()
+
+    def wait_until_none(self, timeout_s: float | None = None) -> bool:
+        """True once no abandoned read is running; False if ``timeout_s`` passed first."""
+        with self.changed:
+            return self.changed.wait_for(lambda: self.running == 0, timeout=timeout_s)
+
+
+def wsgi_fetch(wsgi_app: Callable, abandoned: AbandonedReads | None = None) -> Fetch:
     """The :data:`Fetch` for this server when the Space itself serves it (ADR-0267): each read is
     a request to ``wsgi_app`` in process, with no cookie, so no Account reaches an answer.
     Werkzeug is imported here, not at the top: the stdio install has no Werkzeug.
 
     **``timeout_s`` holds** (ADR-0276). Each read runs on a thread of its own and is waited for at
     most ``timeout_s``; past it the call stops waiting with :class:`DeadlinePassed`. The read
-    cannot be stopped, so it runs on to its end with a CPU busy all the while: while
-    ``abandoned_cap`` such reads are still running, a new read is refused at once with
-    :class:`SpaceBusy` instead of being started."""
+    cannot be stopped, so it runs on to its end with a CPU busy all the while, counted in
+    ``abandoned``: while ``abandoned.cap`` such reads are still running, a new read is refused at
+    once with :class:`SpaceBusy` instead of being started."""
     from werkzeug.test import Client
 
     client = Client(wsgi_app, use_cookies=False)
-    lock = threading.Lock()
-    abandoned = 0  # reads whose call stopped waiting, still running
+    reads = abandoned or AbandonedReads()
+    lock = reads.changed
 
     def fetch(url: str, headers: Mapping[str, str], timeout_s: float) -> Reply:
-        nonlocal abandoned
         path, query = urllib.parse.urlsplit(url)[2:4]
         with lock:
-            if abandoned >= abandoned_cap:
+            if reads.running >= reads.cap:
                 raise SpaceBusy(_STILL_FINISHING)
         finished = threading.Event()
         outcome: list[Any] = []  # the answer, or what the read raised
@@ -163,7 +179,6 @@ def wsgi_fetch(wsgi_app: Callable, abandoned_cap: int = ABANDONED_READS_CAP) -> 
         started = time.monotonic()
 
         def read() -> None:
-            nonlocal abandoned
             try:
                 # In an empty context, so the read gets an app context of its own: Flask reuses
                 # one already pushed on the thread, which would share the outer request's `g`.
@@ -182,7 +197,8 @@ def wsgi_fetch(wsgi_app: Callable, abandoned_cap: int = ABANDONED_READS_CAP) -> 
                 with lock:
                     finished.set()
                     if given_up:
-                        abandoned -= 1
+                        reads.running -= 1
+                        lock.notify_all()
             if given_up:
                 _log.warning(
                     "%s: a read past its call's deadline finished after %.0f s",
@@ -195,8 +211,8 @@ def wsgi_fetch(wsgi_app: Callable, abandoned_cap: int = ABANDONED_READS_CAP) -> 
             with lock:
                 if not finished.is_set():
                     given_up = True
-                    abandoned += 1
-                    running = abandoned
+                    reads.running += 1
+                    running = reads.running
             if given_up:
                 _log.warning(
                     "%s: no answer within %.0f s; %d reads past their deadline running",

@@ -111,7 +111,7 @@ def test_the_instructions_stay_under_the_clients_cut():
 def test_the_instructions_tell_the_model_to_retry_an_edge_failure():
     """ADR-0325: Hugging Face's edge answers some hosted calls with its own page, which says 500
     under an HTTP 502, and no MCP client retries a failed POST."""
-    sentence = server.EDGE_RETRY_INSTRUCTION
+    sentence = server._INSTRUCTIONS_EDGE_RETRY
     assert sentence in server.INSTRUCTIONS
     for words in ("Hugging Face error page", "500", "502", "only reads", "up to twice"):
         assert words in sentence, words

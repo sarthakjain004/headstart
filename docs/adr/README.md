@@ -291,7 +291,7 @@ supersedes it and note the supersession in both.
 | [0322](0322-a-category-spans-the-index-and-an-agent-filters-by-age-experience-and-employer.md) | A category spans the whole index, and an agent filters by age, required experience and employer | 2026-09-29 |
 | [0323](0323-an-agent-sees-one-posting-once-under-a-company-name.md) | An agent sees one posting once, under a company's name, and a company's places by country | 2026-09-29 |
 | [0324](0324-an-agent-reads-what-a-roles-postings-ask-for-counted-over-a-sample.md) | An agent reads what a role's postings ask for, counted over a sample | 2026-09-29 |
-| [0325](0325-the-model-retries-an-edge-failure-and-a-description-scan-runs-alone.md) | The model retries an edge failure, a description scan runs alone, and the hosted eval waits for its server | 2026-09-29 |
+| [0325](0325-the-model-retries-an-edge-failure-and-a-description-scan-runs-alone.md) | The model retries an edge failure, and a description scan runs alone | 2026-09-29 |
 | [0330](0330-trends-are-recomputed-from-recorded-job-facts-whenever-a-rule-changes.md) | Trends are recomputed from recorded Job facts whenever a rule changes | 2026-09-29 |
 
 *ADR-0037 was removed from the repository on 2026-09-24 by the owner's decision; its number is not

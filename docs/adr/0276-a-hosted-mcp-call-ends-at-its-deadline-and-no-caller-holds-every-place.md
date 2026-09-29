@@ -18,7 +18,7 @@ found three faults in how `POST /mcp` behaves under load. This ADR settles them.
 the eval to run against the hosted endpoint. That run could not happen as this ADR shipped it:
 Claude Code's `-p` left the hosted server "pending", so every task failed with no tool call.
 [ADR-0325](0325-the-model-retries-an-edge-failure-and-a-description-scan-runs-alone.md) fixes the
-runner and records the first hosted run that reached the tools.
+runner.
 
 1. **The deadline did not hold in process.** A tool call builds a `SpaceClient` with a 90 s
    deadline. On the Space its reads go through `space_client.wsgi_fetch`, which called the app

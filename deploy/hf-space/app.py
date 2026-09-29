@@ -1797,8 +1797,12 @@ def role_requirements():
 # HTTP, each reading the routes above in process, with no cookie. Anyone may add it to Claude by
 # URL. The Origins it answers: none (a server-side client such as claude.ai's connector or Claude
 # Code), Claude's two web origins, and this Space's own; any other is a page on another site,
-# refused with a 403, because HF's edge reflects every Origin in its CORS preflight.
-_MCP_SERVER = space_mcp_server.build_server(env={}, fetch=space_client.wsgi_fetch(app))
+# refused with a 403, because HF's edge reflects every Origin in its CORS preflight. The reads a
+# call stopped waiting for run on, counted in `_MCP_ABANDONED_READS` (ADR-0276, ADR-0325).
+_MCP_ABANDONED_READS = space_client.AbandonedReads()
+_MCP_SERVER = space_mcp_server.build_server(
+    env={}, fetch=space_client.wsgi_fetch(app, _MCP_ABANDONED_READS)
+)
 _MCP_ORIGINS = frozenset(
     {"https://claude.ai", "https://claude.com", space_client.SPACE_URL}
 )
@@ -1830,12 +1834,16 @@ _MCP_PLACE_WAIT_S = 10
 # second at once finishes neither sooner, and under a cold cache both pass the 45 s deadline.
 # Out of the 4 places above, it never holds one for a fast call to queue behind: a fast search
 # took 5.2 s alone and 7.7 s beside a scan. It waits 10 s like any call, then is told to retry
-# in about the time one scan takes.
+# in about the time one scan takes. The place is given back only once no read is running past
+# its call's deadline: a scan's call answers at 45 s, but its reads run on, and a scan started
+# then would share the CPU with them. It waits at most 120 s for them, past the slowest read
+# measured (118.6 s, ADR-0276), so a read that never ends cannot keep the place forever.
 _MCP_SCANS_AT_ONCE = 1
 _MCP_SCAN_PLACES = concurrency_limit.ConcurrencyLimit(
     _MCP_SCANS_AT_ONCE, _MCP_SCANS_AT_ONCE
 )
 _MCP_SCAN_RETRY_S = 20
+_MCP_SCAN_HELD_PAST_ANSWER_S = 120
 
 # Each distinct Origin `/mcp` has received this boot, logged once, so the first real connection
 # shows what Anthropic's clients send. Bounded, since the header is the caller's to write.
@@ -1866,20 +1874,34 @@ def _note_mcp_origin(origin: str | None, address: str) -> None:
 
 def _scans_descriptions(body: bytes) -> bool:
     """Whether this `/mcp` POST is a search_jobs call matching its keyword in descriptions
-    (ADR-0325), read from the body before the protocol module reads it. A body that does not
-    parse is not one; the protocol module refuses it."""
-    try:
-        message = json.loads(body)
-    except ValueError:
-        return False
-    params = message.get("params") if isinstance(message, dict) else None
+    (ADR-0325), read before `streamable_http.answer` judges the request."""
+    called = streamable_http.tool_call(body)
     return (
-        isinstance(params, dict)
-        and message.get("method") == "tools/call"
-        and params.get("name") == "search_jobs"
-        and isinstance(params.get("arguments"), dict)
-        and space_mcp_search_jobs.scans_descriptions(params["arguments"])
+        called is not None
+        and called[0] == space_mcp_search_jobs.TOOL.name
+        and space_mcp_search_jobs.scans_descriptions(called[1])
     )
+
+
+def _give_back_scan_place(caller: str) -> None:
+    """Give the description-scan place back once no in-process read is running past its call's
+    deadline (ADR-0325): at once when none is, else from a thread that waits for them."""
+
+    def once_reads_finish() -> None:
+        if not _MCP_ABANDONED_READS.wait_until_none(_MCP_SCAN_HELD_PAST_ANSWER_S):
+            print(
+                f"[mcp] scan place given back with reads still running after "
+                f"{_MCP_SCAN_HELD_PAST_ANSWER_S} s",
+                flush=True,
+            )
+        _MCP_SCAN_PLACES.give_back(caller)
+
+    if _MCP_ABANDONED_READS.wait_until_none(0):
+        _MCP_SCAN_PLACES.give_back(caller)
+    else:
+        threading.Thread(
+            target=once_reads_finish, name="mcp-scan-place", daemon=True
+        ).start()
 
 
 def _mcp_refusal(body: bytes, status: int, message: str, wait_s: int):
@@ -1911,9 +1933,10 @@ def mcp():
             f"retry in {wait_s} s.",
             wait_s,
         )
-    places = _MCP_SCAN_PLACES if _scans_descriptions(body) else _MCP_PLACES
+    scan = _scans_descriptions(body)
+    places = _MCP_SCAN_PLACES if scan else _MCP_PLACES
     refused = places.take(caller, _MCP_PLACE_WAIT_S)
-    if refused and places is _MCP_SCAN_PLACES:
+    if refused and scan:
         return _mcp_refusal(
             body,
             503,
@@ -1939,7 +1962,10 @@ def mcp():
             request.headers, body, _MCP_SERVER, _MCP_ORIGINS
         )
     finally:
-        places.give_back(caller)
+        if scan:
+            _give_back_scan_place(caller)
+        else:
+            places.give_back(caller)
     return Response(out, status, headers)
 
 
