@@ -456,6 +456,27 @@ test('the Other row is the reading\'s lines past CHART_MAX, added together', () 
   assert.equal(ct[1], '3.0k');
 });
 
+test('a hidden family is never listed: it folds into a bare Other row, uncounted and inert', () => {
+  const { t, nodes, fetches } = loadApp();
+  // Five lines, the fifth ("low") a hidden family's: fewer than CHART_MAX, and still in Other.
+  const hidden = golden('a_hidden_family_folds_into_other_among_fewer_than_eight_lines');
+  t.set(hidden, null);
+  t.setUnit('count', false);
+  t.draw();
+  const html = nodes['trends-legend'].innerHTML;
+  assert.equal(row(html, 'low'), '');                          // no row of its own
+  assert.equal(row(html, 'ok') === '', false);                 // the listed lines are unchanged
+  const other = row(html, '__other__');
+  assert.match(other, /Other/);
+  assert.doesNotMatch(other, /smaller/);                       // it names no category to count
+  assert.equal(other.match(/<span class="ct">([^<]+)<\/span>/)[1], String(hidden.reading.other.move.latest));
+  assert.match(nodes['trends-scope'].textContent, /^4 categories/);   // five lines, four listed
+  assert.equal(t.chartedAndOther(hidden).charted.length, 4);
+  t.click('low');                                              // a name the page does not list
+  same(fetches, []);
+  assert.deepEqual(t.checkReading(hidden.reading), []);        // the page's checker agrees
+});
+
 test('the roles marker opens the roles it names; the row opens the levels that add up to it', () => {
   const { t } = loadApp();
   t.set(fixture(), null);

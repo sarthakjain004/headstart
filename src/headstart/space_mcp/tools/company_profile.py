@@ -164,9 +164,11 @@ def _trend(payload: dict[str, Any], key: str) -> list[str]:
         )
         + f"; read_trends with companies [{key}] breaks the change down.",
     ]
+    # A hidden family's line comes last as "Other" (ADR-0306), so the mix still adds up.
+    unlisted = set(payload.get("unlisted_series") or ())
     categories = sorted(
         (line for line in reading.get("lines") or [] if line["move"]["latest"] > 0),
-        key=lambda line: -line["move"]["latest"],
+        key=lambda line: (line["name"] in unlisted, -line["move"]["latest"]),
     )
     if categories:
         shown = categories[:CATEGORIES_SHOWN]

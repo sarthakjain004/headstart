@@ -1242,6 +1242,26 @@ def test_lines_rank_by_their_net_and_a_cut_says_how_to_see_them_all():
     assert "By category, largest net of opened and closed first:" in full
 
 
+def test_a_hidden_family_is_the_last_line_and_reads_as_other_however_big_it_is():
+    """ADR-0306: its line stays, so the lines add up to the whole, but it is never ranked among the
+    categories and its name is not said: the Space labels it Other."""
+    lines = [
+        _line(
+            "hidden-family",
+            "Other",
+            _move(100, 900, 800, turnover={"opened": 800, "closed": 0, "net": 800}),
+        ),
+        *_category_lines(3),
+    ]
+    payload = _trends(lines)
+    payload["unlisted_series"] = ["hidden-family"]
+    text = server.call(FakeSpace(trends=payload), "read_trends", {"detail": "full"})
+    listed = [
+        line.split(":")[0].strip() for line in text.split("\n") if line.startswith("  ")
+    ]
+    assert listed == ["Family 2", "Family 1", "Family 0", "Other"]
+
+
 def test_turnover_that_covers_part_of_the_window_says_so_and_the_rest_may_hold_hiring():
     payload = _trends(
         [],
@@ -2066,6 +2086,29 @@ def test_a_profile_lists_categories_largest_first_with_their_turnover():
     assert "Family 0 10 ·" not in categories  # the 13th and 14th are cut
     assert categories.endswith(" · …2 more.")
     assert "Gone" not in categories  # no openings left now
+
+
+def test_a_profile_lists_a_hidden_family_last_as_other():
+    trends = _profile_trends(n_categories=2)
+    trends["reading"]["lines"].insert(
+        0,
+        _line(
+            "hidden-family",
+            "Other",
+            _move(50, 500, 0, turnover={"opened": 3, "closed": 1}),
+        ),
+    )
+    trends["unlisted_series"] = ["hidden-family"]
+    text = server.call(
+        _profile_space(trends=trends), "company_profile", {"company": "Stripe"}
+    )
+    categories = next(
+        line for line in text.split("\n") if line.startswith("Job categories now")
+    )
+    assert categories == (
+        "Job categories now, largest first: Family 1 20 (1 opened, 0 closed) · Family 0 10 · "
+        "Other 500 (3 opened, 1 closed)."
+    )
 
 
 def test_a_profile_rolls_its_places_up_by_country_quoting_each_as_written():

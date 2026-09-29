@@ -548,7 +548,12 @@ def answer(client: SpaceClient, arguments: dict[str, Any]) -> str:
             named=f"{category_label} as a whole" if whole else None,
         )
     ranked_from = payload.get("reading") or {}
-    ranked = sorted(ranked_from.get("lines") or [], key=lambda line: -_rank(line))
+    # A hidden family's line comes last as "Other", so the lines still add up to the whole.
+    unlisted = set(payload.get("unlisted_series") or ())
+    ranked = sorted(
+        ranked_from.get("lines") or [],
+        key=lambda line: (line["name"] in unlisted, -_rank(line)),
+    )
     shown = ranked if full else ranked[:CONCISE_LINES]
     if shown:
         new = payload.get("metric") == "new"

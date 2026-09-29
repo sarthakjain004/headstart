@@ -443,6 +443,72 @@ def test_duplicate_removal_touches_a_company_by_its_boards(boards, touched):
     assert netting.dedup_touched(boards) is touched
 
 
+def _record_stock(state: Path, ts: str, by_family: dict[str, int]) -> None:
+    """One tick of one Board holding ``by_family`` openings, in the current layout."""
+    levels = {
+        ("greenhouse:acme", "stock", family, "mid"): count
+        for family, count in by_family.items()
+    }
+    methodology = trend_history.Methodology(
+        family_list_fingerprint="f",
+        family_classifier_version=1,
+        tech_filter_version=1,
+        derivations_version=1,
+        dedup_version=1,
+    )
+    trend_history.record_tick(state, ts, levels, {}, methodology)
+
+
+def test_a_hidden_family_is_the_last_series_and_reads_as_other(tmp_path):
+    """The largest line by far is the hidden one; it must still come last, under a name that
+    gives nothing away, and the answer says which series the readers do not list."""
+    config = tmp_path / "config"
+    config.mkdir()
+    (config / "role_families.json").write_text(
+        json.dumps(
+            {
+                "families": [
+                    {"name": "software-engineering", "label": "Software Engineering"},
+                    {"name": "frontend-web", "label": "Frontend & Web"},
+                    {"name": "mystery", "label": "Mystery", "hidden": True},
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    state = tmp_path / "state"
+    _record_stock(
+        state,
+        _stamp(0),
+        {"software-engineering": 50, "frontend-web": 10, "mystery": 200},
+    )
+    answer = TrendHistory.load(state, config).unnetted_answer(TrendQuestion())
+    assert [(s["name"], s["label"]) for s in answer["series"]] == [
+        ("software-engineering", "Software Engineering"),
+        ("frontend-web", "Frontend & Web"),
+        ("mystery", "Other"),
+    ]
+    assert answer["unlisted_series"] == ["mystery"]
+    # the hidden family stays in the whole: the total still counts its 200
+    assert answer["totals"][-1] == 260
+
+
+def test_with_no_hidden_family_every_series_stays_listed_by_size(tmp_path):
+    config = tmp_path / "config"
+    config.mkdir()
+    (config / "role_families.json").write_text(
+        json.dumps(
+            {"families": [{"name": "a", "label": "A"}, {"name": "b", "label": "B"}]}
+        ),
+        encoding="utf-8",
+    )
+    state = tmp_path / "state"
+    _record_stock(state, _stamp(0), {"a": 1, "b": 5})
+    answer = TrendHistory.load(state, config).unnetted_answer(TrendQuestion())
+    assert [s["name"] for s in answer["series"]] == ["b", "a"]
+    assert answer["unlisted_series"] == []
+
+
 def _write_opened_history(state: Path) -> None:
     """One Board over 16 daily ticks: a 10-job backlog, then two jobs opened a day from day 3,
     the first tick that books turnover (ADR-0227)."""

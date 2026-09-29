@@ -144,7 +144,8 @@ def test_categories_are_the_spaces_own_role_families():
         if "category" in tool.input_schema["properties"]
     ]
     assert schemas and all(
-        s["enum"] == [family["name"] for family in families] for s in schemas
+        s["enum"] == [family["name"] for family in families if not family.get("hidden")]
+        for s in schemas
     )
 
 

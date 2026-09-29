@@ -1,5 +1,4 @@
 {
- "description": "No pick. A line whose first count is under 5 is not indexed, however it grows: a measured 0 (not the first truthy 5), a 0 before 50, a 4 before 20. A line from 8 is indexed on its count, whatever the denominator does.",
  "answer_input": {
   "metric": "stock",
   "coverage": "all",
@@ -88,7 +87,7 @@
    },
    {
     "name": "low",
-    "label": "low",
+    "label": "Other",
     "points": [
      4,
      20,
@@ -99,6 +98,9 @@
     ],
     "latest": 40
    }
+  ],
+  "unlisted_series": [
+   "low"
   ]
  },
  "reading": {
@@ -298,7 +300,7 @@
    },
    {
     "name": "low",
-    "label": "low",
+    "label": "Other",
     "whole_company": false,
     "estimated": false,
     "move": {
@@ -333,8 +335,36 @@
     "arrived_by": null
    }
   ],
-  "other": null,
-  "charted": 5,
+  "other": {
+   "name": "__other__",
+   "label": "",
+   "whole_company": false,
+   "estimated": false,
+   "move": {
+    "start": 4,
+    "latest": 40,
+    "hiring": 36,
+    "not_hiring": [],
+    "not_hiring_total": 0,
+    "percent": null,
+    "percent_withheld": "under 20 openings at the start",
+    "span_days": 5.0,
+    "per_week": 50,
+    "turnover": null,
+    "share": {
+     "start": 4.0,
+     "latest": 13.333333333333334,
+     "denominator_start": 100,
+     "denominator_latest": 300,
+     "percent": null
+    }
+   },
+   "netted": [],
+   "steps_at": [],
+   "index_base": null,
+   "arrived_by": null
+  },
+  "charted": 4,
   "company_lines": [
    {
     "name": "__total__",
