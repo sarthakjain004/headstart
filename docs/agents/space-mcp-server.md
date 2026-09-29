@@ -206,9 +206,18 @@ the filter costing the most.
 - **What a row says.** Each row gives the posting's age ("posted 2026-09-24 (5 days ago)") and
   flags one over a year old; its employment type as the employer wrote it, beside the
   `employment_type` values it counts as (`type "FULL_TIME" (full-time)`); and every scraped field,
-  the id included, quoted. Rows on one page with the same company and title, brackets aside (one
-  posting copied per country), are listed under the first as `also #N`, giving only what differs;
-  every id and link stays, and paging is the Space's.
+  the id included, quoted.
+- **Copies of one posting are listed once** (ADR-0323). A row repeating one above it on the page
+  is listed under it as `also #N`, giving only what differs; every id and link stays, and paging is
+  the Space's. A copy is the same company and title, brackets aside (one posting copied per
+  country), or the same title and first place under another spelling of the company, as one
+  posting on two of its Boards: Eversource's Radancy front says "EVERSOURCE" and its Workday Board
+  "Eversource Energy". On 16 live pages of 40 rows (2026-09-29) that second rule grouped two
+  pairs, both true copies.
+- **A company named only by its Board's host** ("aah.wd5.myworkdayjobs.com/external", an Oracle
+  pod, or nothing) is shown by the Company directory's name for its Board, marked
+  `(directory name)`; a Board the directory does not name either reads "no company name"
+  (ADR-0323).
 - **What the filters mean.** `max_years` also keeps jobs that state no experience, and marks them
   "experience not stated". `salary_min` keeps a job whose stated range reaches the bound (the top
   of the range counts), `salary_max` one whose range starts at or below it, and other currencies
@@ -231,11 +240,15 @@ it, salary, posted and first-seen dates, the link, and the description.
   stripped. No line of it can close its quotes or pass for a line of the answer (ADR-0277).
 - `max_chars_per_job` (default 8,000, at most 12,000) caps each description, and the jobs of one
   call share 18,000 characters, so five come back at about 3,600 each; ask for one id to read a
-  long posting whole. The Space serves at most the first 12,000 characters of a description,
-  which cuts about one in a hundred (the 99th percentile was 11,860 on 2026-09-29).
+  long posting whole. A cut description says which to change: when the shared budget cut it,
+  "ask for this id alone"; when `max_chars_per_job` did, how far to raise it. The Space serves at
+  most the first 12,000 characters of a description, which cuts about one in a hundred (the 99th
+  percentile was 11,860 on 2026-09-29).
 - **Whether it may have closed.** A posting its Board's latest scrape missed says so: HeadStart
-  removes it only if the next scrape misses it too (ADR-0083). An id not in the index is reported
-  as most likely closed, for that reason.
+  removes it only if the next scrape misses it too (ADR-0083). An id not in the index now has
+  closed, or was never an id. When the Board its id names serves no job at all, the answer says it
+  is not a HeadStart id (ADR-0323).
+- A company named only by its Board's host is shown by its directory name, as in `search_jobs`.
 
 **`read_trends`** — how tech hiring changed over a window. **Hiring is postings opened and closed,
 and their net; the change in openings listed is not hiring** (ADR-0272). Whole index by default;
@@ -308,12 +321,17 @@ company, its Boards and any other directory company the name may mean. It gives:
 - the last 30 days: postings **opened and closed** first (counted since 2026-09-25, when turnover
   counting began), then the change in openings with its re-counting part named;
 - its job categories now, largest first, each with the postings opened and closed in it;
-- the ten places its served jobs name most, as each employer wrote them — "Seattle, WA" and
-  "Seattle, Washington, USA" are two places — with how many distinct places and how many jobs name
-  none (`/companies/locations`, ADR-0275);
-- how many of its served jobs are remote, of each employment type, open to someone with at most
-  0, 2, 5 or 10 years (a job stating no experience counts at every level), state a salary, were
-  posted in the last day, week, month or quarter, and are new to HeadStart this day or week.
+- where its served jobs are, by country, up to eight countries, each with its three commonest
+  places as written: "Dublin" and "Dublin, Ireland" both count in Ireland. A place is read as
+  `search_jobs`' `country` reads it, so a country's figure is what that filter would count; a job
+  naming two countries counts in both, and the jobs whose place names no country ("N/A",
+  "Remote") are counted apart (`/companies/locations`, ADR-0275, ADR-0323);
+- its levels, in the Trends Level view's bands (internships, 0–1, 2–4, 5–7 and 8+ years, not
+  stated), each job counted once (`/companies/levels`, ADR-0323);
+- how many of its served jobs are remote, of each employment type, state a salary, were posted in
+  the last day, week, month or quarter, and are new to HeadStart this day or week. A line whose
+  every count is 0 is left out: a Board that states no employment type would otherwise read as
+  hiring no full-time staff.
 
 To list the jobs behind any of these, pass the key to `search_jobs` as `company`.
 
@@ -371,8 +389,10 @@ since a public route can never carry one person's data.
 
 `src/headstart/space_mcp/` — `tools/` (one module per tool, and `REGISTRY`), `space_tool.py` (what a
 tool is), `server.py` (serves the registry), `space_client.py` (the one way it reaches the Space),
-`company_scope.py`, `role_families.py` and `scraped_text.py` — on the shared protocol module in
-`src/headstart/mcp_protocol/` (`messages.py`, and the `stdio.py` and `streamable_http.py`
-transports). The hosted route is `/mcp` in `deploy/hf-space/app.py`, and the one route only the
-tools read, `/companies/locations`, is answered by `src/headstart/serving/location_counts.py`. Tests:
+`company_scope.py`, `company_names.py`, `posting_copies.py`, `role_families.py` and
+`scraped_text.py` — on the shared protocol module in `src/headstart/mcp_protocol/` (`messages.py`,
+and the `stdio.py` and `streamable_http.py` transports). The hosted route is `/mcp` in
+`deploy/hf-space/app.py`, and the two routes only the tools read, `/companies/locations` and
+`/companies/levels`, are answered by `src/headstart/serving/location_counts.py` and
+`level_counts.py`. Tests:
 `tests/test_space_mcp_*.py` and `tests/test_mcp_protocol_*.py`.

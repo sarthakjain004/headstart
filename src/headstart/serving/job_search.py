@@ -46,7 +46,7 @@ from headstart.search_filters.compiler import (
     build_filter,
     with_extra,
 )
-from headstart.serving import facets, location_counts
+from headstart.serving import facets, level_counts, location_counts
 
 # In the Space nothing calls `setup()` (ADR-0153's app.py boots straight into serving), which
 # is why the one boot line below is a WARNING — `logging.lastResort` carries WARNING and above
@@ -1368,8 +1368,8 @@ class JobSearch:
         )
         if not rows:
             raise ValueError(
-                f"no job with id {job_id!r} is in the index. HeadStart removes a posting once "
-                "two consecutive scrapes of its Board miss it, so it has most likely closed"
+                f"no job with id {job_id!r} is in the index now: it has closed, or was never an "
+                "id. HeadStart removes a posting once two consecutive scrapes of its Board miss it"
             )
         return rows[0]["vector"]
 
@@ -1404,3 +1404,12 @@ class JobSearch:
         if not 1 <= limit <= MAX_LOCATIONS:
             raise ValueError(f"limit must be from 1 to {MAX_LOCATIONS}")
         return location_counts.top(self._table, where, limit)
+
+    def levels(self, args: Mapping[str, str]) -> dict[str, Any]:
+        """The Trends level bands of the served jobs on ``board=`` (repeatable, required) — see
+        :mod:`headstart.serving.level_counts`. A request naming no Board, or too many, is a
+        :class:`ValueError`, as :meth:`locations` refuses one."""
+        where = scoped_boards_clause(args)
+        if where is None:
+            raise ValueError("name at least one Board with board=")
+        return level_counts.bands(self._table, where)

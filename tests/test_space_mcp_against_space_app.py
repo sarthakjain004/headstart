@@ -407,7 +407,11 @@ def test_get_job_reads_a_posting_and_names_the_missing_at_the_app(
     assert 'department "Engineering"' in text
     assert '"Build the payments API."\n"Own it end to end."' in text
     assert "latest scrape did not find it" in text
-    assert 'Not in the index: "greenhouse:gone:9".' in text
+    # The fixture table counts 1 on every filtered count, so its Board reads as served.
+    assert (
+        'Not in the index now: "greenhouse:gone:9". Each has closed, or was never'
+        in text
+    )
     assert "Data as of the trends tick" in text
 
 
@@ -471,11 +475,11 @@ def test_a_profile_reads_every_route_for_every_board_of_its_company(
     companies_app, scoped_boards
 ):
     """HPE is one Tenant split into two Workday sites: either site's key means both, in the
-    facet counts and in the locations alike."""
+    facet counts, the locations and the levels alike."""
     text = server.call(
         _client(companies_app), "company_profile", {"company": "workday:hpe/b"}
     )
-    assert len(scoped_boards) == 2 and all(
+    assert len(scoped_boards) == 3 and all(
         sorted(boards) == ["workday:hpe/a", "workday:hpe/b"] for boards in scoped_boards
     )
     assert text.startswith('Company: "Hpe" (workday:hpe/a, 2 Boards,')
@@ -483,7 +487,12 @@ def test_a_profile_reads_every_route_for_every_board_of_its_company(
     assert "Job categories now, largest first:" in text
     # The fixture table answers its two rows, Berlin and Remote, to every scan, and 1 to every
     # filtered count.
-    assert '"Berlin" 1 · "Remote" 1' in text
+    assert (
+        'Germany 1 ("Berlin" 1). No country is read from the places of 1 ("Remote" 1).'
+        in text
+    )
+    # Its two rows state no experience, each counted once.
+    assert "Experience not stated 2" in text
     assert "Of the 1 jobs search serves on its Boards" in text
     assert (
         "search also serves 7 jobs on its Boards that the tech filter sets aside"
@@ -500,7 +509,7 @@ _EACH_TOOL = [
     ("read_trends", {"days": 7}, "Newest trends tick"),
     ("hiring_now", {}, "No company qualified on this Lens this week."),
     ("find_company", {"name": "Citi"}, "key workday:citi/2"),
-    ("company_profile", {"company": "workday:hpe/b"}, '"Berlin" 1'),
+    ("company_profile", {"company": "workday:hpe/b"}, 'Germany 1 ("Berlin" 1)'),
 ]
 
 _MODERN_META = {
