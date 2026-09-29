@@ -43,6 +43,19 @@ the last, but the Space still worked out every one, one at a time. Table view bu
 7. **An ATS selection holding most index rows is answered as every ATS's cells less the rows left
    out.** Unticking one Source went from ~180 to ~95 ms here. Answers hash the same as main's on
    60 random ATS, window, family and metric questions over the real history.
+8. **Every Source but one is answered ahead, and asked for on intent** (added 2026-09-29, second
+   pass). The background pass also answers every Source but one under each Measure, the boxes in
+   the order the page lists them: 100 answers, what a first untick asks for. The page asks for
+   the box the pointer or the focus rests on for 100 ms when its click would leave every Source
+   but one on a view nothing else narrows. That answer is kept, so asking costs the Space nothing
+   and is not counted. Any other selection waits for the click.
+9. **A line's reading works out each change once** (second pass). ADR-0270's netting of the
+   index view made the reading 4-7x costlier: it rebuilt a change's label, and re-sorted the
+   line's scalings, on every run of every line. A note's change and a run's growth-rescaled cause
+   are now kept once worked out, and the scalings sorted once a line. Only the first call ever
+   registered anything, so the order of marked changes, and every figure, is unchanged: 200
+   seeded questions (both Measures, both Job sites, drills, Role and Company breakdowns, 0-3
+   picks, Source subsets, windows, an unknown category) hash the same as main's.
 
 ## Options not taken
 
@@ -58,9 +71,14 @@ the last, but the Space still worked out every one, one at a time. Table view bu
 - **A larger read limit for signed-in Accounts, or a separate bucket for prefetches**: the first
   weakens the bound for each Account created, and the second is a header anyone can send. Item 4
   exempts only what costs the Space nothing.
-- **Asking ahead for a Source box the pointer rests on**: a pointer sweeping 50 boxes would spend
-  the reader's limit on answers the Space must work out, and a refused click is worse than a slow
-  one.
+- **Asking ahead for any Source box the pointer rests on**: a pointer sweeping 50 boxes would
+  spend the reader's limit on answers the Space must work out, and a refused click is worse than a
+  slow one. Item 8 asks only where the Space already holds the answer.
+- **A columnar rewrite of `unnetted_answer`** (declined by ADR-0261 too): after item 9 it is the
+  larger half of a first-time answer, 85-190 ms here, building a dict a row. It is the next lever
+  for a view nobody has asked for, and a larger change to the numbers' own code than this.
+- **Suggesting companies without the 150 ms wait after a keystroke**: it saves at most that wait,
+  and asking on every key spends the reader's read limit while they type.
 - **Asking ahead for every charted drill**: still left to the pointer resting on a row
   (ADR-0261). With the drills now kept on the Space, that costs one round trip.
 
@@ -81,7 +99,20 @@ median):
 | Source untick, a view already asked for | 252-255 | 253-256 |
 | Measure, Unit, Back, re-tick, company pick | 12-22 | 12-22 |
 
-What it costs: ~18 s of the Space's CPU after each boot for the background answers. About 0.3 MB
+The second pass (items 8 and 9), measured the same way on 2026-09-29 over the history as of
+04:04 UTC (1,011 ticks), main and this change run one after the other on an idle machine:
+
+| | main | second pass |
+| --- | ---: | ---: |
+| First Source untick, first visitor / later visitors | 1,354 / 257, 251 | 55 / 47, 47 |
+| A second untick, first visitor / later | 1,284 / 255, 256 | 940 / 252, 254 |
+| The opening views, answered before the Space serves | 3.2 s | 2.0 s |
+| The background pass | 13.4 s | 24.0 s (with the 100 Source views) |
+
+On this Mac's CPU a reading took 41 ms for the opening view (was 80) and 48 for New (was 131-141).
+
+What it costs: ~18 s of the Space's CPU after each boot for the background answers, ~70 s with
+the second pass. About 0.3 MB
 a drawn top-level view for the neighbours, mostly read back from the browser as the reader moves
 between them. Kept answers can be read without limit, as the page's scripts can. A preset's
 window starts up to one pipeline run earlier than "N days before now". A Source untick is still

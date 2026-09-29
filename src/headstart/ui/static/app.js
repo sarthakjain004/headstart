@@ -2330,13 +2330,14 @@ function setRangePreset(v){
 // filter on?" then said yes: the trigger read "0 ATS", the chart named itself "0 of the ATS
 // sources", and the short-history note blamed a narrow selection — all three over the
 // unfiltered figure. Answering `null` states once, here, what the request already did.
-function trendAtsSelected(){
+// `flip` is a box read as its click would leave it, for asking ahead (askSourceAhead).
+function trendAtsSelected(flip = null){
   const menu = el('trends-ats-menu'); if (!menu) return null;
   // Only the boxes on show: one a pick narrowed away is no part of the reader's selection, and
   // sending its unchecked state emptied the chart with nothing on screen to say why.
   const boxes = [...menu.querySelectorAll('input[type=checkbox]')]
     .filter(b => !(b.parentElement && b.parentElement.hidden));
-  const checked = boxes.filter(b => b.checked).map(b => b.value);
+  const checked = boxes.filter(b => b === flip ? !b.checked : b.checked).map(b => b.value);
   return checked.length && checked.length !== boxes.length ? checked : null;
 }
 
@@ -2352,6 +2353,8 @@ function trendAtsLabel(){
 // How soon after a Source box the next counts as the same burst, and how long a burst waits
 // after its last box before it asks (ADR-0269).
 const ATS_SETTLE = 300;
+// How long the pointer or the focus rests on a Source box before its answer is asked for ahead.
+const SOURCE_INTENT = 100;
 function toggleAtsPopover(force){
   const open = force ?? el('trends-ats-menu').hidden;
   el('trends-ats-menu').hidden = !open;
@@ -2360,9 +2363,10 @@ function toggleAtsPopover(force){
 
 // The /trends question for the panel's state, with `metric` as the Measure: every request for the
 // panel is built here, so two builds of one view are the same URL.
-// `picks`, `split`, `coverage` and `days` default to the panel's own; a prefetch passes the ones a
-// click would set.
-function trendsQuery(family, metric, picks = trendPicks, split = trendSplit, coverage = trendCoverage, days = trendDays){
+// `picks`, `split`, `coverage`, `days` and `ats` default to the panel's own; a prefetch passes the
+// ones a click would set.
+function trendsQuery(family, metric, picks = trendPicks, split = trendSplit, coverage = trendCoverage, days = trendDays,
+  ats = trendAtsSelected()){
   const q = new URLSearchParams();
   picks.forEach(p => q.append('company', p.key));
   if (family) { q.set('family', family); q.set('split', split); }
@@ -2374,7 +2378,6 @@ function trendsQuery(family, metric, picks = trendPicks, split = trendSplit, cov
     if (range.since) q.set('base', range.since);
   } else if (range.since) q.set('since', range.since);
   if (range.until) q.set('until', range.until);
-  const ats = trendAtsSelected();
   if (ats) ats.forEach(a => q.append('ats', a));
   return q;
 }
@@ -4078,6 +4081,28 @@ if (el('trends-ats-trigger')) {
       atsSettle = setTimeout(() => loadTrends(trendDrill), ATS_SETTLE);
     else loadTrends(trendDrill);
   });
+  // The box the pointer or the focus rests on, asked for ahead (prefetchIntent) when its click
+  // would leave every Source but one on a view nothing else narrows: the Space answers those
+  // ahead (ADR-0269), so asking costs it nothing and is not counted. Any other selection is the
+  // Space's to work out, so it waits for the click.
+  let sourceAheadTimer = null;
+  const restOnSource = target => {
+    clearTimeout(sourceAheadTimer);
+    const label = target.closest && target.closest('label');
+    const box = label && label.querySelector('input[type=checkbox]');
+    if (box) sourceAheadTimer = setTimeout(() => askSourceAhead(box), SOURCE_INTENT);
+  };
+  const askSourceAhead = box => {
+    const shown = [...el('trends-ats-menu').querySelectorAll('input[type=checkbox]')]
+      .filter(b => !(b.parentElement && b.parentElement.hidden)).length;
+    const ats = trendAtsSelected(box);
+    const typed = ['trends-since', 'trends-until'].some(id => el(id) && el(id).value);
+    if (!ats || ats.length !== shown - 1 || trendDrill || trendPicks.length || typed
+      || trendDays !== 'all' || trendCoverage !== 'all') return;
+    prefetchIntent(trendsQuery(null, trendMetric, trendPicks, trendSplit, trendCoverage, trendDays, ats));
+  };
+  el('trends-ats-menu').addEventListener('pointerover', e => restOnSource(e.target));
+  el('trends-ats-menu').addEventListener('focusin', e => restOnSource(e.target));
   document.addEventListener('click', e => {
     if (!el('trends-ats-menu').hidden && !e.target.closest('#trends-ats')) toggleAtsPopover(false);
   });
