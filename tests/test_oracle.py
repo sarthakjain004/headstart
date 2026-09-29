@@ -659,3 +659,93 @@ def test_the_board_page_is_the_candidate_experience_root():
 )
 def test_the_company_is_the_default_sites_title(title, expected):
     assert OracleScraper(HOST).company_from_page(_titled(title)) == expected
+
+
+# The default site's settings: its SEO organization name, where the title names no one (#703).
+
+
+def _root(title: str, site: str = "CX_1001") -> str:
+    return (
+        f'<html><head><title>{title}</title></head><body data-sitenumber="{site}">'
+        "</body></html>"
+    )
+
+
+def _settings(site_name: str, seo_name: str | None) -> str:
+    return json.dumps(
+        {"app": {"siteName": site_name, "seoConfiguration": {"name": seo_name}}}
+    )
+
+
+def _scraper_answering(settings: FakeResponse) -> tuple[OracleScraper, FakeFetcher]:
+    fetcher = FakeFetcher(lambda method, url, kwargs: settings)
+    return OracleScraper(HOST, fetcher=fetcher), fetcher
+
+
+def test_a_site_titled_as_a_page_is_named_by_its_seo_organization_name():
+    # fa-elpm-saasfaprod1 on 2026-09-29: site CX titles itself "Candidate Experience site", and
+    # its settings name the employer its postings do (Patterson-UTI Drilling).
+    scraper, fetcher = _scraper_answering(
+        FakeResponse(text=_settings("Candidate Experience site", "Patterson-UTI"))
+    )
+    assert (
+        scraper.company_from_page(_root("Candidate Experience site", "CX"))
+        == "Patterson-UTI"
+    )
+    assert [r.url for r in fetcher.requests] == [
+        f"https://{HOST}/hcmRestApi/CandidateExperience/en/siteSettings/CX"
+    ]
+
+
+@pytest.mark.parametrize(
+    ("seo_name", "expected"),
+    [
+        # names the 2026-09-29 census read where they differ from the site's own name
+        ("onsemi", "onsemi"),
+        ("Legrand Group", "Legrand Group"),
+        # the page labels tenants typed around a name come off, as they do from a title
+        ("The Kroger Co. Careers", "The Kroger Co."),
+        ("Macy's Jobs", "Macy's"),
+        ("St. Olaf College | Careers", "St. Olaf College"),
+        # and a label alone is still refused
+        ("Career Site", None),
+        ("", None),
+        (None, None),
+    ],
+)
+def test_the_seo_organization_name_passes_the_title_guards(seo_name, expected):
+    scraper, _ = _scraper_answering(
+        FakeResponse(text=_settings("Candidate Experience site", seo_name))
+    )
+    assert scraper.company_from_page(_root("Candidate Experience site")) == expected
+
+
+def test_an_seo_name_that_repeats_the_site_name_names_no_one():
+    # The template fills the SEO name with the site's own name unless the tenant set one: 710 of
+    # the 751 Boards the census read (2026-09-29), "Candidate Experience site" among them.
+    scraper, _ = _scraper_answering(
+        FakeResponse(text=_settings("Hill Minimal 112022", "Hill Minimal 112022"))
+    )
+    assert scraper.company_from_page(_root("Hill Minimal 112022")) is None
+
+
+def test_a_title_that_names_the_board_asks_for_no_settings():
+    scraper, fetcher = _scraper_answering(FakeResponse(status_code=500))
+    assert scraper.company_from_page(_root("Ricoh Careers")) == "Ricoh"
+    assert fetcher.requests == []
+
+
+@pytest.mark.parametrize(
+    "settings",
+    [FakeResponse(status_code=404, text="{}"), FakeResponse(text="<html></html>")],
+)
+def test_settings_that_do_not_answer_name_no_one(settings):
+    scraper, _ = _scraper_answering(settings)
+    assert scraper.company_from_page(_root("Candidate Experience site")) is None
+
+
+def test_a_page_without_a_site_number_asks_for_no_settings():
+    # egcu.fa.us6: both sites inactive, the root answers "Page not found" with no site number.
+    scraper, fetcher = _scraper_answering(FakeResponse(status_code=500))
+    assert scraper.company_from_page(_titled("Page not found")) is None
+    assert fetcher.requests == []

@@ -110,6 +110,10 @@ _LEFTOVER = re.compile(
 #: The template writes the site name into ``<title>`` as a JavaScript string: ``\'``, ``\/`` and
 #: ``\uXXXX`` arrive literally ("Texas Children\'s Careers").
 _JS_UNICODE = re.compile(r"\\u([0-9A-Fa-f]{4})")
+#: The default site the root redirected to, which its settings are asked for by. On 2026-09-29 it
+#: was on 751 of 752 roots of named Boards (the other answered 403) and 60 of 62 of unnamed ones
+#: (the others: "Page not found", "Subscription Suspension Outage").
+_SITE_NUMBER = re.compile(r'data-sitenumber="([^"]+)"')
 
 
 def is_pod_host(slug: str) -> bool:
@@ -231,24 +235,64 @@ class OracleScraper(BaseScraper):
 
     def board_page(self) -> str:
         """The Candidate Experience root, which redirects to the tenant's default site and titles
-        it with the site's name. One GET per Board; a name is the one thing no listing or detail
-        payload states — ``LegalEmployer`` was null on all 108 detail payloads read from 40
+        it with the site's name. One GET per Board, and a second for the site's settings where
+        the title names no one (:meth:`company_from_page`); a name is the one thing no listing or
+        detail payload states — ``LegalEmployer`` was null on all 108 detail payloads read from 40
         Boards on 2026-09-25."""
         return f"https://{self.slug}/hcmUI/CandidateExperience/"
 
     def company_from_page(self, page: str | None) -> str | None:
-        """The site's name, JavaScript-unescaped, unless the title or what the wrapper left is
-        a page label (:data:`_PAGE_TITLE`, :data:`_LEFTOVER`)."""
+        """The site's name, JavaScript-unescaped, else the SEO organization name the site's
+        settings state (ADR-0217).
+
+        The title goes first because it is the brand ("Nokia" against "Nokia Corporation"). The
+        settings are one more GET, made only when the title names no one. Where the tenant set no
+        SEO name, the template fills it with the site's own name, which the title already refused:
+        710 of the 751 Boards read on 2026-09-29. The other 41, and 3 of the 61 whose title names
+        no one, name their employer.
+        """
         title = company_name.title_of(page)
         if title:
             title = _JS_UNICODE.sub(lambda m: chr(int(m.group(1), 16)), title)
             title = title.replace("\\'", "'").replace("\\/", "/")
-        if not title or _PAGE_TITLE.match(title):
+        return self._site_name(title) or self._seo_name(page)
+
+    def _site_name(self, text: str | None) -> str | None:
+        """A name the site states, unless it or what a wrapper left is a page label
+        (:data:`_PAGE_TITLE`, :data:`_LEFTOVER`)."""
+        if not text or _PAGE_TITLE.match(text):
             return None
-        name = company_name.from_title(self.ats, title, self.slug)
+        name = company_name.from_title(self.ats, text, self.slug)
         if name and (_PAGE_TITLE.match(name) or _LEFTOVER.search(name)):
             return None
         return name
+
+    def _seo_name(self, page: str | None) -> str | None:
+        """``seoConfiguration.name`` of the default site's settings, unless it repeats the site's
+        name. Read through the title guards, not `company_name.from_field`: tenants typed page
+        labels around it ("The Kroger Co. Careers", "Macy's Jobs", "St. Olaf College | Careers")."""
+        site = _SITE_NUMBER.search(page or "")
+        if not site:
+            return None
+        response = self._fetch_once(
+            "GET",
+            f"https://{self.slug}/hcmRestApi/CandidateExperience/en/siteSettings/"
+            f"{site.group(1)}",
+            accept="application/json",
+        )
+        if response.status_code != 200:
+            return None
+        try:
+            app = json.loads(response.text).get("app") or {}
+        except json.JSONDecodeError:
+            return None
+        seo = (app.get("seoConfiguration") or {}).get("name")
+        if (
+            not isinstance(seo, str)
+            or seo.strip() == (app.get("siteName") or "").strip()
+        ):
+            return None
+        return self._site_name(seo.strip())
 
     def url(self) -> str:
         # No `siteNumber`: it filters the Board down to one site, and omitting it returns the
