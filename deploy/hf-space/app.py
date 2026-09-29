@@ -745,7 +745,7 @@ def _keep_static_for_the_boot(response):
 # `work_authorization` counts, all read from descriptions by rules (ADR-0333).
 # 17: `include_non_tech` on /search, /facets, /requirements, /companies/locations and
 # /companies/levels: the jobs the role-family head confidently calls non-tech are left out unless
-# it is sent, and /facets says how many as `non_tech_left_out` (ADR-0349).
+# it is sent, and /facets and /requirements say how many as `non_tech_left_out` (ADR-0349).
 _AGENT_API_VERSION = 17
 
 
@@ -2119,12 +2119,13 @@ def index():
         # (ADR-0112). Every number is read rather than written, and every one is EXACT —
         # a tile that can only be approximated does not go on this page. Two table
         # queries: the row count the signed-in header already makes, and the freshness
-        # window (~5 ms each, ADR-0084's primitive). `n_new` is None on a table with no
+        # window (~5 ms each, ADR-0084's primitive), both over the Jobs a search lists, so the
+        # tiles and a search agree (ADR-0349). `n_new` is None on a table with no
         # `first_seen` column, and the template drops the tile rather than guess.
         return render_template(
             "signin.html",
             google_client_id=_GOOGLE_CLIENT_ID,
-            njobs=f"{_table.count_rows():,}",
+            njobs=f"{_searcher.n_served():,}",
             n_atses=len(capabilities.atses),
             n_new=_searcher.n_seen_within(_DOOR_NEW_HOURS),
             new_days=_DOOR_NEW_HOURS // 24,
@@ -2163,7 +2164,7 @@ def index():
             # What the Trends tab's date presets are measured back from (ADR-0269).
             "trends_newest_tick": _HISTORY.ticks[-1] if _HISTORY.ticks else None,
         },
-        njobs=f"{_table.count_rows():,}",
+        njobs=f"{_searcher.n_served():,}",
         atses=capabilities.atses,
         country_opts=country_filter.options(),
         india_opts=india_gazetteer.dropdown_options(),

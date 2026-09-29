@@ -66,6 +66,13 @@ def _neutral_rows(n):
     return np.zeros((n, _ROW_DIM), np.float32)
 
 
+def _families(cache, head, titles, row_logits):
+    """Each row's family, without the probability `decide_rows_scored` gives beside it."""
+    return [
+        family for family, _ in rfc.decide_rows_scored(cache, head, titles, row_logits)
+    ]
+
+
 def _stub_encoder(monkeypatch, calls=None):
     """Titles naming "software" go to the first family, "qa" to the second, "clerk" to non-tech;
     anything else is equidistant, so the head cannot place it."""
@@ -203,7 +210,7 @@ def test_fill_encodes_only_missing_titles_and_saves_each_chunk(tmp_path, monkeyp
     assert added == 4  # "" (from None), "engineer ii", "qa lead", "store clerk"
     assert calls == [["", "engineer ii"], ["qa lead", "store clerk"]]
     assert saved == [3, 5]
-    assert rfc.decide_rows(cache, head, titles, head.row_logits(_neutral_rows(5))) == [
+    assert _families(cache, head, titles, head.row_logits(_neutral_rows(5))) == [
         "software-engineering",
         "qa-test",
         "non-tech",
@@ -228,7 +235,7 @@ def test_a_row_whose_title_no_run_has_encoded_counts_as_unclassified(tmp_path):
     head = _head(tmp_path)
     cache = rfc.Cache(7, {"qa engineer": np.array([0, 10.0, 0], np.float32)})
     rows = head.row_logits(np.array([[1.0, 0.0], _NON_TECH_ROW], np.float32))
-    assert rfc.decide_rows(cache, head, ["Staff Engineer", "QA Engineer"], rows) == [
+    assert _families(cache, head, ["Staff Engineer", "QA Engineer"], rows) == [
         rfc.UNCLASSIFIED,
         "non-tech",  # the row part outvotes the qa title
     ]
@@ -285,7 +292,7 @@ def test_a_developer_title_the_head_abstains_on_is_software_engineering(tmp_path
         "Technical Lead",
     ]
     rows = head.row_logits(_neutral_rows(len(titles)))
-    assert rfc.decide_rows(cache, head, titles, rows) == [
+    assert _families(cache, head, titles, rows) == [
         "software-engineering",
         "software-engineering",
         rfc.UNCLASSIFIED,
@@ -298,7 +305,7 @@ def test_a_family_the_head_decides_is_never_overruled_by_a_developer_title(tmp_p
     qa_title = np.array([0, 10.0, 0], np.float32)
     cache = rfc.Cache(7, {"qa developer": qa_title})
     rows = head.row_logits(np.array([[1.0, 0.0], _NON_TECH_ROW], np.float32))
-    assert rfc.decide_rows(cache, head, ["QA Developer", "QA Developer"], rows) == [
+    assert _families(cache, head, ["QA Developer", "QA Developer"], rows) == [
         "qa-test",
         "non-tech",  # the row part outvotes the title, and the rule only fills abstains
     ]
@@ -309,7 +316,7 @@ def test_a_developer_title_no_run_has_encoded_stays_unclassified(tmp_path):
     the warm-up gate keeps a table with many of those out of the ledger."""
     head = _head(tmp_path)
     rows = head.row_logits(_neutral_rows(1))
-    assert rfc.decide_rows(rfc.Cache(7, {}), head, ["Python Developer"], rows) == [
+    assert _families(rfc.Cache(7, {}), head, ["Python Developer"], rows) == [
         rfc.UNCLASSIFIED
     ]
 
@@ -375,9 +382,6 @@ def test_scored_rows_carry_the_top_probability_beside_the_family(tmp_path):
         np.array([[1.0, 0.0], _NON_TECH_ROW, [1.0, 0.0], [1.0, 0.0]], np.float32)
     )
     scored = rfc.decide_rows_scored(cache, head, titles, rows)
-    assert [family for family, _ in scored] == rfc.decide_rows(
-        cache, head, titles, rows
-    )
     assert scored[0][0] == "qa-test" and scored[0][1] > 0.99
     assert scored[1][0] == "non-tech" and scored[1][1] > 0.99
     # the developer-title rule fills an abstain, and the probability stays the head's own

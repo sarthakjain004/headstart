@@ -1964,6 +1964,16 @@ class JobSearch:
             _asks_for_non_tech(args), self.capabilities.has_confident_non_tech_flag
         )
 
+    def n_served(self) -> int:
+        """How many Jobs a search with no filter lists: the served rows, less those the default
+        leaves out as confidently non-tech (ADR-0349). What the door's and the header's job
+        counts say, so they agree with the total a search shows and with :meth:`n_seen_within`.
+        One :meth:`count_rows`, 0.5 ms on the bitmap column."""
+        where = build_filter(SearchFilters(), self.capabilities)
+        return (
+            self._table.count_rows(filter=where) if where else self._table.count_rows()
+        )
+
     def n_seen_within(self, hours: int) -> int | None:
         """How many Jobs entered the index in the last ``hours`` — ``None`` without the column.
 
@@ -2076,9 +2086,34 @@ class JobSearch:
             left_out = (
                 len(everyone) if everyone is not None else self._count(unkept)
             ) - matching
+        non_tech_left_out = None
+        if (
+            self.capabilities.has_confident_non_tech_flag
+            and not filters.include_non_tech
+        ):
+            # What the default hid, counted as the sample counts: the same request with the
+            # switch on, its Jobs in the category and under `operators=` (ADR-0349).
+            admitted = with_extra(
+                build_filter(
+                    replace(filters, include_non_tech=True), self.capabilities
+                ),
+                scoped_boards_clause(args),
+            )
+            if family:
+                shown = self._in_family(
+                    admitted, self._family_array(family, assignments)
+                )
+                if operators:
+                    shown = [i for i in shown if operators.keeps(i)]
+                shown_matching = len(shown)
+            else:
+                _, admitted_where = self._narrowed_by_operators(args, admitted)
+                shown_matching = self._count(admitted_where)
+            non_tech_left_out = shown_matching - matching
         answer = {
             "matching": matching,
             "operators_left_out": left_out,
+            "non_tech_left_out": non_tech_left_out,
             "order": "closest" if query else "newest",
             "sample_size": REQUIREMENTS_SAMPLE,
             "category_window": (

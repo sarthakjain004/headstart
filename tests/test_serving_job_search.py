@@ -2451,3 +2451,114 @@ def test_a_companys_places_and_levels_leave_the_stamped_rows_out_too(non_tech_se
 
 def test_the_doors_new_jobs_count_what_a_search_shows(non_tech_served):
     assert non_tech_served.n_seen_within(10**6) == 6
+
+
+def test_the_door_and_header_count_what_a_search_lists(non_tech_served):
+    """ADR-0349: the total the page prints, the new-jobs tile and a search agree on one set."""
+    assert non_tech_served.n_served() == 6
+    assert (
+        non_tech_served.n_served()
+        == non_tech_served.facets({"counts": "total"})["total"]
+    )
+    assert non_tech_served.n_served() == non_tech_served.n_seen_within(10**6)
+
+
+def test_a_table_without_the_stamp_counts_every_row():
+    searcher, _ = _searcher()
+    assert searcher.n_served() == 1
+
+
+@pytest.fixture(scope="module")
+def sampled_with_stamp(tmp_path_factory):
+    """The `sampled` table with the non-tech stamp on jobs 4 (a data-engineering job) and 5."""
+    lancedb = pytest.importorskip("lancedb")
+    pa = pytest.importorskip("pyarrow")
+    vectors = [
+        [1.0, 0.0, 0.0, 0.0],
+        [0.9, 0.1, 0.0, 0.0],
+        [0.7, 0.3, 0.0, 0.0],
+        [0.2, 0.8, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+    ]
+    ids = [
+        "lever:acme:1",
+        "lever:acme:2",
+        "lever:acme:3",
+        "lever:beta:4",
+        "lever:gamma:5",
+    ]
+    rows = [
+        {
+            "id": job_id,
+            "title": f"Engineer {n}",
+            "company": job_id.split(":")[1].title(),
+            "location": "Berlin, Germany",
+            "remote": False,
+            "ats": "lever",
+            "first_seen": f"2026-09-2{n}T00:00:00+00:00",
+            "min_years": n,
+            "description": "Python, SQL and Spark on AWS.",
+            "is_confident_non_tech": n >= 4,
+            "vector": vector,
+        }
+        for n, (job_id, vector) in enumerate(zip(ids, vectors, strict=True), start=1)
+    ]
+    schema = pa.schema(
+        [
+            ("id", pa.string()),
+            ("title", pa.string()),
+            ("company", pa.string()),
+            ("location", pa.string()),
+            ("remote", pa.bool_()),
+            ("ats", pa.string()),
+            ("first_seen", pa.string()),
+            ("min_years", pa.int32()),
+            ("description", pa.string()),
+            ("is_confident_non_tech", pa.bool_()),
+            ("vector", pa.list_(pa.float32(), 4)),
+        ]
+    )
+    db = lancedb.connect(tmp_path_factory.mktemp("sampled_stamped"))
+    table = db.create_table("jobs", data=pa.Table.from_pylist(rows, schema=schema))
+    search = JobSearch(_Model(), table)
+    search._query_vector = lambda _query: [1.0, 0.0, 0.0, 0.0]
+    return search
+
+
+def test_a_requirements_sample_leaves_out_non_tech_roles_and_counts_them(
+    sampled_with_stamp,
+):
+    """ADR-0349: /requirements reads the default like a search, and says what it left out."""
+    from werkzeug.datastructures import MultiDict
+
+    default = sampled_with_stamp.requirements(MultiDict({"q": "engineer"}), _FAMILIES)
+    assert (default["matching"], default["non_tech_left_out"]) == (3, 2)
+    included = sampled_with_stamp.requirements(
+        MultiDict({"q": "engineer", "include_non_tech": "true"}), _FAMILIES
+    )
+    assert (included["matching"], included["non_tech_left_out"]) == (5, None)
+
+
+def test_a_categorys_sample_counts_the_stamped_jobs_it_left_out_too(sampled_with_stamp):
+    from werkzeug.datastructures import MultiDict
+
+    args = {"family": "data-engineering"}
+    default = sampled_with_stamp.requirements(MultiDict(args), _FAMILIES)
+    assert (default["matching"], default["non_tech_left_out"]) == (2, 1)
+    included = sampled_with_stamp.requirements(
+        MultiDict({**args, "include_non_tech": "1"}), _FAMILIES
+    )
+    assert (included["matching"], included["non_tech_left_out"]) == (3, None)
+
+
+def test_a_requirements_sample_of_a_table_without_the_stamp_says_nothing_left_out(
+    sampled,
+):
+    from werkzeug.datastructures import MultiDict
+
+    assert (
+        sampled.requirements(MultiDict({"q": "engineer"}), _FAMILIES)[
+            "non_tech_left_out"
+        ]
+        is None
+    )

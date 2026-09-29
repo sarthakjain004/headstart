@@ -66,7 +66,7 @@ SPACE_URL = "https://imposeidon-headstart-search.hf.space"
 #: `job_search.SORT_FLOOR` (ADR-0338); since 15, `operators`, `operators_left_out` and
 #: `/hot`'s `operator_unverified` (ADR-0335); since 16, `work_authorization` on `/search` and
 #: `/facets`, and on each `/job` and `/requirements` answer (ADR-0333); since 17,
-#: `include_non_tech` and `/facets`' `non_tech_left_out` (ADR-0349). The app states the one
+#: `include_non_tech` and `non_tech_left_out` on `/facets` and `/requirements` (ADR-0349). The app states the one
 #: it serves on every reply.
 AGENT_API = 17
 

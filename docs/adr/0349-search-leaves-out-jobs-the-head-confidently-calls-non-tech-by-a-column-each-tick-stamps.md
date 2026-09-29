@@ -53,6 +53,9 @@ everything.
   the head, the family list and the title cache have decided every row it stamps the confident ones
   through `ingest/confident_non_tech_stamp.py`, before `refresh-indexes` and `index_publish` in the
   same merge job. Its decision is recomputed whole each tick.
+- **`decide_rows` is `decide_rows_scored`.** The head's probability had to reach the tick, so
+  `role_family_classifier.decide_rows_scored` returns each row's family with it, and `decide_rows`,
+  which only `role_trends` called, is gone.
 - **The clause is `(is_confident_non_tech IS NULL OR is_confident_non_tech = false)`**: a row with
   no verdict is visible, so nothing is hidden on no evidence. A table from before the column has
   `has_confident_non_tech_flag` false, and Search then compiles no clause and does not error.
@@ -61,15 +64,16 @@ everything.
   shows it as "Include non-tech roles", off by default, sent with the other filters, kept by a Saved
   Set and its email digest, and shown as a removable pill. The MCP argument has the same name and
   description in `search_jobs`, and the Space's agent contract is now version 17. `role_requirements`
-  and `company_profile` take no argument for it and read the default.
+  takes it too, with the same schema; `company_profile` takes none and reads the default.
 
 ### What the stamp leaves alone, and what it changes
 
 Hidden by default, because they compile through `build_filter` or scope by Board with the same
 clause: `/search` (ranked, browsed, `like=`), `/facets` and every option count, the Blocking filter's
 recounts, `/requirements`, `/companies/locations`, `/companies/levels` (so `company_profile`'s
-places, levels and openings agree with `search_jobs`), the door's new-jobs count, and a Subscription's
-digest (its filters go to `/search`).
+places, levels and openings hide the same rows `search_jobs` does; how a place is spelled is a separate
+matter, ADR-0344), the door's and the header's job counts (`JobSearch.n_served`, the visible set, which
+the door's new-jobs count already was), and a Subscription's digest (its filters go to `/search`).
 
 Not hidden, and why:
 
@@ -79,11 +83,12 @@ Not hidden, and why:
 - **Trends, Hiring now and the role-assignment snapshot**: they count non-tech apart already, and
   the family tables (ADR-0322) hold tech families only.
 
-`/facets` says what a request left out as `non_tech_left_out` (the total with the switch on, less the
-total), present only where the table has the column and the request did not include them, so an answer
-never claims a hiding that did not happen. The site prints it under the switch and in the empty
-state, and the MCP tools print it in a search's scope line, its nothing-matched line and
-`company_profile`.
+`/facets` and `/requirements` say what a request left out as `non_tech_left_out` (the count with the
+switch on, less the count), present only where the table has the column and the request did not include
+them, so an answer never claims a hiding that did not happen. `/requirements` counts it as it counts
+its sample, within the category and under `operators=`. The site prints it under the switch and in the
+empty state, and the MCP tools print it in a search's scope line, its nothing-matched line, a
+requirements answer's scope line and `company_profile`.
 
 ### It fails safe, in the direction of showing
 

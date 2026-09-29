@@ -333,10 +333,3 @@ def decide_rows_scored(
                 family = SOFTWARE_ENGINEERING
             scored[i] = (family, probability)
     return scored
-
-
-def decide_rows(
-    cache: Cache, head: Head, titles: list[str | None], row_logits: np.ndarray
-) -> list[str]:
-    """Each served row's family: :func:`decide_rows_scored` without the probability."""
-    return [family for family, _ in decide_rows_scored(cache, head, titles, row_logits)]

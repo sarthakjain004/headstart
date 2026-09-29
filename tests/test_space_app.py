@@ -5427,3 +5427,15 @@ def test_include_non_tech_is_a_parameter_both_routes_read_even_when_strict(app):
             r = client.get(f"{route}?include_non_tech={asked}&strict=1")
             assert r.status_code == 200, (route, asked)
     assert "non_tech_left_out" not in client.get("/facets").get_json()
+
+
+def test_the_door_and_the_signed_in_header_count_the_jobs_a_search_lists(
+    app, auth_app, monkeypatch
+):
+    """ADR-0349: not the served rows: the ones the default leaves out as non-tech are no job
+    a visitor can list, and the tile beside them (jobs new this week) already drops them."""
+    monkeypatch.setattr(auth_app._searcher, "n_served", lambda: 1234)
+    door = auth_app.app.test_client().get("/").data.decode()
+    assert '<div class="v">1,234</div><div class="k">tech jobs indexed' in door
+    monkeypatch.setattr(app._searcher, "n_served", lambda: 4321)
+    assert b"<b>4,321</b> jobs indexed" in app.app.test_client().get("/").data

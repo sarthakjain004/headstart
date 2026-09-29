@@ -3379,6 +3379,7 @@ def test_requirements_filters_are_search_jobs_own():
         "max_years",
         "max_age_days",
         "operators",
+        "include_non_tech",
     ):
         assert mine[name] == search[name], name
 
@@ -3762,3 +3763,32 @@ def test_a_profile_says_how_many_of_its_roles_are_left_out_as_not_tech():
     )
     plain = server.call(_profile_space(), "company_profile", {"company": "Stripe"})
     assert "not tech" not in plain
+
+
+def test_a_requirements_answer_says_how_many_non_tech_postings_it_left_out():
+    """ADR-0349: the sample is thinned by the Space's default like a search, and says so."""
+    space = FakeSpace(requirements=_requirements(non_tech_left_out=3_100))
+    text = server.call(space, "role_requirements", {"query": "engineer"})
+    assert (
+        "3,100 jobs HeadStart's classifier is confident are not tech (a cashier, a process "
+        "engineer) left out, as the site leaves them out (send include_non_tech true to "
+        "include them)"
+    ) in text
+    assert all(
+        "include_non_tech" not in dict(p) for p in space.params_of(R.REQUIREMENTS)
+    )
+    plain = server.call(
+        FakeSpace(requirements=_requirements()),
+        "role_requirements",
+        {"query": "engineer"},
+    )
+    assert "not tech" not in plain
+
+
+def test_role_requirements_sends_include_non_tech_and_says_they_are_in():
+    space = FakeSpace(requirements=_requirements())
+    text = server.call(
+        space, "role_requirements", {"query": "cashier", "include_non_tech": True}
+    )
+    assert ("include_non_tech", "true") in space.params_of(R.REQUIREMENTS)[0]
+    assert "non-tech roles included (include_non_tech)" in text

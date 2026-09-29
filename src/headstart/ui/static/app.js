@@ -884,6 +884,16 @@ function applyFacets(facets){
   syncSegmentedSelects();   // the counts just written onto the options, onto their radios
 }
 
+// How many roles the default leaves out of THIS search, under the switch that shows them
+// (ADR-0349). `non_tech_left_out` is absent when they are included, or the table has no stamp to
+// hide by, so the note then says nothing rather than a stale number.
+function drawNonTechNote(facets){
+  const note = el('nontech-hidden'); if (!note) return;
+  const n = facets && facets.non_tech_left_out;
+  note.textContent = typeof n === 'number' && n > 0
+    ? ` ${n.toLocaleString()} ${n === 1 ? 'is' : 'are'} left out of this search.` : '';
+}
+
 // The Keyword filter's disclaimer (ADR-0104). Not every Job carries a description — none indexed
 // before the column existed do, nor any whose detail pass found nothing — so a keyword looked for
 // in descriptions can only ever match the share that has one. Quantified rather than static:
@@ -897,16 +907,6 @@ function applyFacets(facets){
 // Written on EVERY fetch, like drawSortNote: a note left over from the previous search is worse
 // than none. Three states, kept distinct — /facets failed (no numbers to show, say the fact
 // plainly), the column does not exist yet (`null`), and a real count.
-// How many roles the default leaves out of THIS search, under the switch that shows them
-// (ADR-0349). `non_tech_left_out` is absent when they are included, or the table has no stamp to
-// hide by, so the note then says nothing rather than a stale number.
-function drawNonTechNote(facets){
-  const note = el('nontech-hidden'); if (!note) return;
-  const n = facets && facets.non_tech_left_out;
-  note.textContent = typeof n === 'number' && n > 0
-    ? ` ${n.toLocaleString()} ${n === 1 ? 'is' : 'are'} left out of this search.` : '';
-}
-
 function drawKeywordNote(facets){
   const note = el('kwnote'), scope = el('kwin');
   const needs = (CFG.keyword_scopes || {})[scope.value];

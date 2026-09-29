@@ -260,9 +260,9 @@ the filter costing the most.
 - **Jobs the classifier is confident are not tech are left out by default.** The role-family head
   calls about one served job in four non-tech; those it calls so with a top probability of at
   least 0.9 (11.9% of rows: a store's front-end cashier, a plant's process engineer) carry a
-  column `role_trends` stamps each tick, and a search, its total and `company_profile` leave them
-  out unless `include_non_tech` is true, as the site does unless its "Include non-tech roles"
-  switch is on. The scope line says how many were left out, and a search only they match says so
+  column `role_trends` stamps each tick, and a search, its total, `role_requirements`' sample and `company_profile` leave
+  them out unless `include_non_tech` is true, as the site does unless its "Include non-tech
+  roles" switch is on. The scope line says how many were left out, and a search only they match says so
   and how to see them. `get_job` opens any job, and `read_trends` counts non-tech apart already
   (ADR-0349).
 - **Its totals still run higher than `read_trends`'.** A search counts every job the index serves

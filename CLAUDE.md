@@ -21,9 +21,9 @@ HeadStart surfaces job openings read directly from company ATS boards.
   index, UI) reads that. Post-hoc saves no scraping, but it is the only layer that is uniform across
   ATSes and recall-safe — no tech job dropped, some non-tech creep tolerated — which is exactly what
   the embedding-cost/recall goal needs. Company selection barely helps: boards are mixed. Its creep
-  (about one served row in four is not tech) is left out of Search by default, not removed: the rows
-  the role-family head confidently calls non-tech (top probability 0.9 or more, 11.9% of rows) carry a
-  column `role_trends` stamps each tick, and `include_non_tech` shows them (ADR-0349).
+  (some served rows are not tech) is left out of Search by default, not removed: the rows the
+  role-family head confidently calls non-tech carry a column, `is_confident_non_tech`, that
+  `role_trends` stamps each tick, and `include_non_tech` shows them (ADR-0349).
 - **Search corpus: English-only for now.** The AI semantic-search layer pre-filters non-English
   descriptions out *before* embedding — an explicit language-detection gate at ingestion
   (e.g. `langdetect` / fastText LID over `title + description`), not something the embedding
