@@ -467,6 +467,24 @@ def _labelled(
     return None
 
 
+def _page_title(og_title: str | None, ld_title: str) -> str | None:
+    """`og:title`, unless it wraps the posting's own JSON-LD title in page chrome.
+
+    metlife's `og:title` is "Technology Data Analyst | Apply Now" while its JSON-LD says
+    "Technology Data Analyst" (80 served rows, #876). Tenants whose `og:title` holds the whole
+    title with no JSON-LD one (mgl's "Developer | Equities Algorithmic Trading") or states the
+    same one (emiratesjobs) keep it."""
+    if og_title and ld_title:
+        og_key, ld_key = _title_key(og_title), _title_key(ld_title)
+        if ld_key and ld_key != og_key and ld_key in og_key:
+            return ld_title
+    return og_title or ld_title or None
+
+
+def _title_key(title: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "", title.lower())
+
+
 def page_fields(page: str) -> dict[str, Any]:
     """Everything one job page states, read through its stable surfaces first."""
     og = {
@@ -488,8 +506,7 @@ def page_fields(page: str) -> dict[str, Any]:
     )
     remote_text = _labelled(labels, _REMOTE)
     return {
-        "title": og.get("title")
-        or _plain_text(str(ld.get("title") or ""))
+        "title": _page_title(og.get("title"), _plain_text(str(ld.get("title") or "")))
         or _labelled(labels, _TITLE),
         "company": og.get("site_name")
         or hiring_organization(node.get("hiringOrganization")),

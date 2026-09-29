@@ -61,6 +61,12 @@ def requisition_of(value: Any) -> str | None:
 
 
 _TAGS = re.compile(r"<[^>]+>")
+#: Blocks whose content is never posting text. A `<style>` block's rules otherwise survive tag
+#: stripping as words: 756 served descriptions opened with CSS on 2026-09-29 (successfactors,
+#: cornerstone, wp_job_openings, radancy, avature, zoho; #876).
+_NON_TEXT_BLOCKS = re.compile(
+    r"<(style|script)\b[^>]*>.*?</\1\s*>", re.IGNORECASE | re.DOTALL
+)
 #: A UTF-8 two-byte sequence read as Latin-1: its lead byte shows as "Ã" or "Â", its continuation
 #: byte as one character in U+0080-U+00BF ("é" -> "Ã©", "°" -> "Â°").
 _MOJIBAKE = re.compile("[\u00c2\u00c3][\u0080-\u00bf]")
@@ -137,7 +143,7 @@ def html_to_text(value: str | None) -> str | None:
     """
     if not value:
         return None
-    text = _TAGS.sub(" ", html.unescape(value))
+    text = _TAGS.sub(" ", _NON_TEXT_BLOCKS.sub(" ", html.unescape(value)))
     return _WS.sub(" ", html.unescape(text)).strip() or None
 
 

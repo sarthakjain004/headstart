@@ -419,3 +419,23 @@ def test_a_well_formed_sitemap_with_no_postings_never_asks_the_search_page():
     )
     scraper.pacer = Pacer(0)
     assert scraper.fetch_raw() == []
+
+
+def test_a_page_title_wrapped_in_chrome_reads_the_json_ld_title():
+    """#876: metlife's `og:title` ends in a call to action; its JSON-LD states the bare title."""
+    from headstart.scrapers.avature import _page_title
+
+    assert (
+        _page_title(
+            "Principal Data and AI Product Engineer | Apply Now",
+            "Principal, Data and AI Product Engineer",
+        )
+        == "Principal, Data and AI Product Engineer"
+    )
+    # A title that is the employer's own keeps it: no JSON-LD title, or the same one.
+    assert _page_title("Developer | Equities Algorithmic Trading", "") == (
+        "Developer | Equities Algorithmic Trading"
+    )
+    same = "Engine Overhaul Engineer III - TE.01 | EEMC"
+    assert _page_title(same, same) == same
+    assert _page_title(None, "Data Engineer") == "Data Engineer"
