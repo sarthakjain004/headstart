@@ -54,11 +54,14 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterable
-from typing import Final, Literal
+from typing import Final, Literal, get_args
 
 from headstart.boards.board_identity import tenant
 
 Operator = Literal["employer", "services", "staffing", "aggregator"]
+
+#: Every Operator, in :data:`Operator`'s order: the values a search's ``operators`` keeps (ADR-0335).
+OPERATORS: Final[tuple[str, ...]] = get_args(Operator)
 
 #: Boards that re-post other companies' postings. They are not employers at all, so they are
 #: separated from `services` — a user excluding staffing firms may still want Capgemini's own

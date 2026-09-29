@@ -8,9 +8,9 @@ holds what only a filter narrows by (ADR-0338).
 from __future__ import annotations
 
 import re
-from typing import Any, get_args
+from typing import Any
 
-from headstart.boards.board_operator import Operator
+from headstart.boards.board_operator import OPERATORS
 from headstart.jobs import work_authorization
 from headstart.mcp_protocol.messages import ToolFailure
 from headstart.search_filters import (
@@ -55,9 +55,6 @@ _SENT_ELSEWHERE = (*FLAGS, "company", "keyword", "keyword_in")
 #: `max_age_days` when the caller sends none (ADR-0322): a relevance search led with Jobs posted
 #: in 2022 (round-2 critique P1-6). 0 is any age, and is not sent.
 DEFAULT_MAX_AGE_DAYS = 365
-
-#: Who posts a job, as the Hiring now tab labels its companies (ADR-0335).
-OPERATORS: tuple[str, ...] = get_args(Operator)
 
 #: The Operators a search keeps when the caller names none: those the Hiring now tab shows
 #: unless asked (ADR-0238), so a search and the tab leave out the same staffing firms and job
@@ -121,7 +118,10 @@ PROPERTIES: dict[str, dict[str, Any]] = {
     "location": {
         "type": "string",
         "maxLength": 60,
-        "description": "Text the job's location contains, any country.",
+        "description": (
+            "Text the job's location contains, any country. Accents and a city's other "
+            "spellings read alike: Zurich finds Zürich, Bangalore finds Bengaluru."
+        ),
     },
     "max_age_days": {
         "type": "integer",
@@ -166,10 +166,11 @@ PROPERTIES: dict[str, dict[str, Any]] = {
     },
 }
 
-#: How the scope line names each work-authorisation stance.
-_STANCE_WORDS = {
+#: How an answer names each work-authorisation stance a description holds, in
+#: `work_authorization.STANCES`' order: the search scope line and role_requirements' counts.
+STANCE_WORDS = {
     work_authorization.OFFERS_SPONSORSHIP: "offers visa sponsorship",
-    work_authorization.REFUSES_SPONSORSHIP: "refuses visa sponsorship",
+    work_authorization.REFUSES_SPONSORSHIP: "refuses visa sponsorship or requires citizenship",
     work_authorization.OFFERS_RELOCATION: "offers relocation help",
 }
 
@@ -361,7 +362,7 @@ def scope_line(
         said.append("any age (max_age_days 0)")
     if stance := arguments.get("work_authorization"):
         said.append(
-            f"description {_STANCE_WORDS.get(stance, stance)} (work_authorization "
+            f"description {STANCE_WORDS.get(stance, stance)} (work_authorization "
             f"{stance}: read from the text by HeadStart's rules, not a field; they can err)"
         )
     if keyword := (arguments.get("keyword") or "").strip():

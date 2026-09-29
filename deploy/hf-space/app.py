@@ -278,7 +278,7 @@ def _operator_boards(
     return {operator: tuple(named) for operator, named in boards.items()}
 
 
-_searcher.operator_boards = _operator_boards(_HISTORY)
+_searcher.load_operator_boards(_operator_boards(_HISTORY))
 
 
 def _with_predecessors(
@@ -1992,20 +1992,17 @@ def mcp():
     _note_mcp_origin(request.headers.get("Origin"), address)
     body = request.stream.read(streamable_http.MAX_BODY_BYTES + 1)
     handshake = streamable_http.is_handshake(body)
-    if _from_anthropic(address):
-        caller, who = "anthropic", "Anthropic's range"
-        limit, per_minute = (
-            (_ANTHROPIC_HANDSHAKE_LIMIT, _ANTHROPIC_HANDSHAKE_REQUESTS)
-            if handshake
-            else (_ANTHROPIC_LIMIT, _ANTHROPIC_LIMIT_REQUESTS)
-        )
-    else:
-        caller, who = address, "one address"
-        limit, per_minute = (
-            (_MCP_HANDSHAKE_LIMIT, _MCP_HANDSHAKE_REQUESTS)
-            if handshake
-            else (_MCP_LIMIT, _MCP_LIMIT_REQUESTS)
-        )
+    anthropic = _from_anthropic(address)
+    caller, who = (
+        ("anthropic", "Anthropic's range") if anthropic else (address, "one address")
+    )
+    # Connecting is counted apart from calling (ADR-0334), the range apart from one address.
+    limit, per_minute = {
+        (True, True): (_ANTHROPIC_HANDSHAKE_LIMIT, _ANTHROPIC_HANDSHAKE_REQUESTS),
+        (True, False): (_ANTHROPIC_LIMIT, _ANTHROPIC_LIMIT_REQUESTS),
+        (False, True): (_MCP_HANDSHAKE_LIMIT, _MCP_HANDSHAKE_REQUESTS),
+        (False, False): (_MCP_LIMIT, _MCP_LIMIT_REQUESTS),
+    }[anthropic, handshake]
     wait_s = limit.admit(caller)
     if wait_s:
         asked = "connection requests" if handshake else "requests"

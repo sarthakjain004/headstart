@@ -14,7 +14,9 @@ fixed schema) checks the arguments instead and trusts the Space to apply them: `
 it refuse any it would drop. ``title_keyword_rows`` checks the arguments, then reads the rows that
 call returned back from ``/job`` and needs the keyword where a word starts in every title, the
 keyword's own rule (ADR-0299, ADR-0325). ``sponsorship_polarity`` reads back every row the calls
-listed and fails an answer naming a job whose description refuses sponsorship (ADR-0333).
+listed and fails an answer naming a job that does not offer sponsorship, judged apart from the
+Space's rules: by a person's label where the job has one, else by a negation check of its own
+(ADR-0333). ``all_of`` and ``any_of`` combine checks.
 A run whose server was not connected at its start is not judged: it is an error, left out of the
 summary's scores and named on a line of its own, first.
 
@@ -820,6 +822,24 @@ def verify_blocking_named(
 #: The most row ids one verdict reads back from `/job`: eight reads.
 POLARITY_IDS_READ = 40
 
+#: The descriptions a person labelled when ADR-0333 measured the Space's rules (#947): a job's
+#: label is the verdict's truth wherever the answer names a labelled job.
+LABELLED_DESCRIPTIONS = (
+    _ROOT / "tests" / "fixtures" / "work_authorization_labelled.jsonl"
+)
+#: The labels of a job that does offer sponsorship; "mixed" offers it in one place.
+_OFFERING_LABELS = ("offers", "mixed")
+#: The eval's own reading of an unlabelled job, deliberately simpler than the Space's rules so it
+#: does not share their errors: a quoted sentence with a negating word within :data:`_NEAR_WORDS`
+#: words of one about sponsorship. Near, since "We support visa sponsorship … the right person
+#: and not" (coera, 2026-09-29) offers it.
+_SPONSORSHIP_TOPIC = re.compile(r"(?i)\w*(?:sponsor|visa|h-?1-?b|citizen)\w*")
+_NEAR_WORDS = 5
+_NEGATED = re.compile(
+    r"(?i)\b(?:no|not|never|unable|cannot|without|nor|refus\w*)\b|n['’]t\b|"
+    r"citizenship (?:is )?required|must (?:be|hold) (?:a )?(?:u\.?s\.?|united states) citizen"
+)
+
 
 def _named_in(answer: str, job: dict[str, Any]) -> bool:
     """Whether ``answer`` names ``job``: by its id, or by both its title and its company."""
@@ -829,15 +849,50 @@ def _named_in(answer: str, job: dict[str, Any]) -> bool:
     return bool(title and company) and _found(answer, title) and _found(answer, company)
 
 
+def _sponsorship_labels() -> dict[str, str]:
+    """Each hand-labelled job's sponsorship label, by id."""
+    lines = LABELLED_DESCRIPTIONS.read_text(encoding="utf-8").splitlines()
+    return {row["id"]: row["sponsorship"] for row in map(json.loads, lines) if row}
+
+
+def _not_offering(job: dict[str, Any], labels: dict[str, str]) -> str | None:
+    """Why the eval reads ``job`` as not offering sponsorship, or None: its label where a
+    person gave it one, else the first sentence `/job` quotes about sponsorship that negates."""
+    if (label := labels.get(str(job.get("id")))) is not None:
+        return None if label in _OFFERING_LABELS else f"labelled {label} by hand"
+    for mention in (job.get("work_authorization") or {}).get("mentions") or []:
+        for topic in _SPONSORSHIP_TOPIC.finditer(mention):
+            near = mention[: topic.start()].split()[-_NEAR_WORDS:] + [topic.group()]
+            near += mention[topic.end() :].split()[:_NEAR_WORDS]
+            if _NEGATED.search(" ".join(near)):
+                return f"says {mention[:80]!r}"
+    return None
+
+
+def _said_not_offering(answer: str, job: dict[str, Any]) -> bool:
+    """Whether a line of ``answer`` naming ``job`` says it does not offer sponsorship."""
+    return any(
+        _named_in(line, job) and _NEGATED.search(line) for line in answer.splitlines()
+    )
+
+
 def verify_sponsorship_polarity(
     expect: dict[str, Any], transcript: Transcript, space: Space
 ) -> Verdict:
-    """The truth of a "which jobs sponsor visas" answer (ADR-0333): every row a search_jobs or
-    get_job result listed is read back from the Space's `/job`, and of those the final answer
-    names (by id, or by title and company), none may be one whose description refuses what the
-    answer offers, ``expect["refusal"]`` among the stances `/job` reads from the whole
-    description. At least ``expect["at_least"]`` must be named. A job the answer names as
-    refusing is judged the same, so the prompt must ask only for jobs that offer it."""
+    """The truth of a "which jobs sponsor visas" answer (ADR-0333), judged apart from the
+    Space's rules: every row a search_jobs or get_job result listed is read back from `/job`, and
+    none the final answer names (by id, or by title and company) may be one the eval reads as not
+    offering sponsorship. A job a person labelled (:data:`LABELLED_DESCRIPTIONS`) is judged by
+    its label; any other by :data:`_NEGATED` near a sponsorship word in the sentences `/job`
+    quotes.
+    With ``expect["said_ok"]``, a job named on a line saying it does not offer sponsorship is
+    fine: the answer reported it truly. At least ``expect["at_least"]`` must be named.
+
+    It catches a named job a person labelled refusing or silent, and one whose quoted sentence
+    about sponsorship negates ("not available", "without sponsorship", "citizenship required").
+    It cannot catch an unlabelled job whose refusal no quoted sentence states, and it fails a
+    right answer whose job offers sponsorship in a sentence that also negates ("no matter your
+    visa status, we sponsor")."""
     ids: list[str] = []
     for call in transcript.calls:
         if call.name in ("search_jobs", "get_job") and call.succeeded:
@@ -848,25 +903,31 @@ def verify_sponsorship_polarity(
     for start in range(0, min(len(ids), POLARITY_IDS_READ), get_job.MAX_IDS):
         chunk = ids[start : min(start + get_job.MAX_IDS, POLARITY_IDS_READ)]
         jobs += space.read(SpaceRoute.JOB, [("id", i) for i in chunk]).get("jobs") or []
-    named = [job for job in jobs if _named_in(transcript.final_answer, job)]
-    refusal = expect["refusal"]
+    answer = transcript.final_answer
+    named = [job for job in jobs if _named_in(answer, job)]
+    labels = _sponsorship_labels()
     wrong = [
-        job
+        (job, why)
         for job in named
-        if refusal in ((job.get("work_authorization") or {}).get("stances") or [])
+        if (why := _not_offering(job, labels))
+        and not (expect.get("said_ok") and _said_not_offering(answer, job))
     ]
-    enough = len(named) >= int(expect.get("at_least") or 1)
+    at_least = int(expect.get("at_least", 1))
+    enough = len(named) >= at_least
     return Verdict(
         enough and not wrong,
         f"the answer names {len(named)} of the {len(jobs)} jobs read back"
-        + (f", fewer than {expect.get('at_least')}" if not enough else "")
+        + (f", fewer than {at_least}" if not enough else "")
         + (
-            f"; {len(wrong)} of them state {refusal}: "
+            f"; {len(wrong)} of them do not offer sponsorship: "
             + "; ".join(
-                f"{job.get('title')!r} at {job.get('company')!r}" for job in wrong[:5]
+                f"{job.get('title')!r} at {job.get('company')!r} ({why})"
+                for job, why in wrong[:5]
             )
             if wrong
-            else f"; none states {refusal}"
+            else "; each offers sponsorship as far as the eval reads it"
+            if named
+            else ""
         ),
     )
 
@@ -950,6 +1011,25 @@ def verify_any_of(
     return Verdict(False, " | ".join(failed))
 
 
+# --- all_of --------------------------------------------------------------------------------
+
+
+def verify_all_of(
+    expect: dict[str, Any], transcript: Transcript, space: Space
+) -> Verdict:
+    """Every one of ``expect["checks"]`` (each ``{"verifier", "expect"}``): one path judged on
+    more than one truth."""
+    said = []
+    for n, check in enumerate(expect["checks"], 1):
+        verdict = VERIFIERS[check["verifier"]](
+            check.get("expect") or {}, transcript, space
+        )
+        if not verdict.passed:
+            return Verdict(False, f"check {n} ({check['verifier']}): {verdict.detail}")
+        said.append(f"check {n} ({check['verifier']}): {verdict.detail}")
+    return Verdict(True, " & ".join(said))
+
+
 VERIFIERS: dict[str, Verifier] = {
     "tool_args": verify_tool_args,
     # The brief's fixed name, which the sealed held-out file uses; the same check.
@@ -961,6 +1041,7 @@ VERIFIERS: dict[str, Verifier] = {
     "blocking_named": verify_blocking_named,
     "mentions": verify_mentions,
     "any_of": verify_any_of,
+    "all_of": verify_all_of,
 }
 
 

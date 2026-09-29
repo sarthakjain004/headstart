@@ -24,6 +24,7 @@ from headstart.search_filters import (
     experience_filter,
     fx,
     india_filter,
+    location_spelling,
     posted_date_guard,
     salary_known_filter,
 )
@@ -158,6 +159,9 @@ class IndexCapabilities:
     has_salary_known: bool = False
     has_posted_at_comparable: bool = False
     has_experience_filter_flags: bool = False
+    # The folded words the table's `location` values spell with accents (ADR-0344), read once a
+    # process; empty reads every term as typed, so an unaccented "zurich" no longer finds "Zürich".
+    accented_words: Collection[str] = ()
     # The where-clause keeping one work-authorisation stance's Jobs (ADR-0333), read from the
     # descriptions once a process; None where no such read is loaded, which compiles no clause.
     work_authorization_clause: Callable[[str], str] | None = None
@@ -167,7 +171,8 @@ def _like(term: str) -> str:
     r"""A user term made safe for a quoted LIKE pattern: metacharacters escaped, quotes doubled.
 
     Doubling quotes keeps the term inside its literal; escaping `%`, `_` and `\` is what keeps it
-    *meaning* what was typed, the substring match `location` and `company` use. Unescaped, a term
+    *meaning* what was typed, the substring match `company` uses (`location` reads its term through
+    :mod:`headstart.search_filters.location_spelling` since ADR-0344, as literally). Unescaped, a term
     is silently promoted to a wildcard pattern — measured on the local 318,003-row snapshot of
     the served table (2026-09-06): company "100%" matched 30 rows where exactly 1 is right,
     location "new_york" 9,004 against 8, and the keyword "c_" 199,591 rows — 63% of the table —
@@ -187,6 +192,16 @@ def _like(term: str) -> str:
     return _escape_like(term[:60]).lower()
 
 
+def _location_clause(term: str, accented: Collection[str]) -> str:
+    """The where-fragment for a location term: the regex :mod:`headstart.search_filters
+    .location_spelling` reads it as, or the plain substring ``LIKE`` when it reads it as typed
+    (ADR-0344). The regex's quotes are doubled so it stays inside its SQL literal."""
+    regex = location_spelling.pattern(term, accented)
+    if regex is None:
+        return f"lower(location) LIKE '%{_like(term)}%'"
+    return f"regexp_like(location, '{regex.replace(chr(39), chr(39) * 2)}')"
+
+
 def _escape_like(term: str) -> str:
     r"""LIKE metacharacters escaped and quotes doubled — case and length left alone.
 
@@ -198,6 +213,17 @@ def _escape_like(term: str) -> str:
     for char in ("\\", "%", "_"):
         term = term.replace(char, "\\" + char)
     return term.replace("'", "''")
+
+
+def ids_in_clause(ids: Collection[str]) -> str:
+    """``id IN (…)`` over ``ids``, each quote doubled; a clause keeping nothing for none.
+
+    Not :func:`_escape_like`'s escaping, and deliberately: this is an equality test, where ``%``
+    and ``_`` are ordinary characters, so escaping them would stop a real id containing one from
+    matching itself."""
+    if not ids:
+        return "id IN ('')"
+    return "id IN (" + ", ".join("'" + i.replace("'", "''") + "'" for i in ids) + ")"
 
 
 def board_clause(boards: Collection[str], *, exclude: bool) -> str | None:
@@ -698,7 +724,7 @@ def build_filter(filters: SearchFilters, capabilities: IndexCapabilities) -> str
         if country_clause:
             clauses.append(country_clause)
     if filters.location:
-        clauses.append(f"lower(location) LIKE '%{_like(filters.location)}%'")
+        clauses.append(_location_clause(filters.location, capabilities.accented_words))
     if filters.company:
         clauses.append(f"lower(company) LIKE '%{_like(filters.company)}%'")
     # These five append in order, and that order is part of the string this returns —

@@ -4707,12 +4707,21 @@ def test_operators_on_search_read_the_directorys_operators(
     history = _company_history(trends_app, monkeypatch, tmp_path, companies=companies)
     boards = trends_app._operator_boards(history)
     assert boards == {"staffing": ("lever:beta",), "aggregator": ("lever:jobgether",)}
-    monkeypatch.setattr(trends_app._searcher, "operator_boards", boards)
-    client = trends_app.app.test_client()
-    counted = client.get("/facets?operators=employer,services&counts=total&strict=1")
-    assert counted.status_code == 200 and "operators_left_out" in counted.get_json()
-    refused = client.get("/search?operators=recruiter")
-    assert refused.status_code == 400 and "recruiter" in refused.get_json()["detail"]
+    searcher = trends_app._searcher
+    booted = searcher.operator_boards
+    searcher.load_operator_boards(boards)
+    try:
+        client = trends_app.app.test_client()
+        counted = client.get(
+            "/facets?operators=employer,services&counts=total&strict=1"
+        )
+        assert counted.status_code == 200 and "operators_left_out" in counted.get_json()
+        refused = client.get("/search?operators=recruiter")
+        assert (
+            refused.status_code == 400 and "recruiter" in refused.get_json()["detail"]
+        )
+    finally:
+        searcher.load_operator_boards(booted)
 
 
 def test_a_hot_ranking_that_fails_darkens_hot_only(trends_app, monkeypatch, tmp_path):

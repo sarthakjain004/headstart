@@ -4,9 +4,9 @@
 `tests/fixtures/space_mcp_eval_recorded_calls.json` holds, per task, runs a right agent could
 make: its tool calls and its final answer. This script makes each run's calls against the live
 Space, keeps every reply the tools and the verifiers read, judges the run as the eval would and
-prints each call's first lines and the verdict as it goes. Then it writes the replies and the
-moment they were read back into the fixture, which `tests/test_space_mcp_eval.py` replays with no
-network.
+prints each call's first lines and the verdict as it goes. After each task it writes the replies
+read so far and the moment they were read back into the fixture, which
+`tests/test_space_mcp_eval.py` replays with no network.
 
 Re-record when a run's calls change or a tool starts reading another route. When the data has
 moved (a count, a company's name), the verdict line says which answer to edit.
@@ -29,8 +29,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import space_mcp_eval as ev
 
-from headstart.space_mcp import space_client
 from headstart.space_mcp.space_client import (
+    AGENT_API,
     SPACE_URL,
     Reply,
     SpaceClient,
@@ -63,11 +63,9 @@ def main() -> int:
                 time.sleep(wait_s)
             sent.append(time.monotonic())
         reply = urllib_fetch(url, headers, timeout_s)
-        if (
-            reply is not None
-            and reply.headers.get("x-headstart")
-            and reply.status < 429
-        ):
+        if reply is None or not reply.headers.get("x-headstart"):
+            return reply
+        if reply.status < 429:
             with lock:
                 replies[url] = {
                     "status": reply.status,
@@ -76,12 +74,17 @@ def main() -> int:
                     },
                     "body": reply.body.decode("utf-8"),
                 }
-        return reply
+        # A PR that raises the agent contract is recorded against the Space as deployed, one
+        # contract behind this checkout, so the app's reply is stamped with the checkout's own,
+        # as the replay stamps it.
+        return Reply(
+            reply.status,
+            {**reply.headers, "x-headstart": f"app; agent-api={AGENT_API}"},
+            reply.body,
+        )
 
-    # A PR that raises the agent contract is recorded against the Space as deployed, one
-    # contract behind this checkout; the replay stamps every reply with the checkout's own.
-    space_client.AGENT_API = 0
     now = datetime.now(UTC).replace(microsecond=0)
+    fixture["recorded_at"] = now.isoformat()
     failed = 0
     with ev.tools_clock_at(now):
         for task_id, runs in fixture["runs"].items():
@@ -97,11 +100,11 @@ def main() -> int:
                 )
                 failed += outcome != "pass"
                 print(f"{task_id} run {n} {outcome.upper()} · {detail}\n", flush=True)
-    fixture["recorded_at"] = now.isoformat()
-    fixture["replies"] = dict(sorted(replies.items()))
-    ev.RECORDED_CALLS.write_text(
-        json.dumps(fixture, ensure_ascii=False, indent=1) + "\n", encoding="utf-8"
-    )
+            fixture["replies"] = dict(sorted(replies.items()))
+            ev.RECORDED_CALLS.write_text(
+                json.dumps(fixture, ensure_ascii=False, indent=1) + "\n",
+                encoding="utf-8",
+            )
     print(
         f"{len(replies)} replies written to {ev.RECORDED_CALLS}; {failed} runs not passing",
         flush=True,

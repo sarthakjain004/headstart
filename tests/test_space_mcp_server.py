@@ -426,6 +426,11 @@ def test_the_floor_this_server_states_is_the_spaces():
     from headstart.serving import job_search
 
     assert search_jobs.SORT_FLOOR == job_search.SORT_FLOOR
+    # Both the description and the `sort` property state it, from the one constant.
+    floor = f"{job_search.SORT_FLOOR:.2f}"
+    sort = search_jobs.TOOL.input_schema["properties"]["sort"]["description"]
+    assert floor in search_jobs.TOOL.description
+    assert f"scoring at least {floor} among its 2,000 closest" in sort
 
 
 def test_a_browse_sort_is_global_and_a_salary_sort_without_currency_says_usd():
@@ -3606,6 +3611,8 @@ def test_a_stance_is_sent_as_the_spaces_filter_and_named_in_the_scope():
         ('"visa sponsorship"', "80 refused it and 11 offered it"),
         ("H-1B", "80 refused it and 11 offered it"),
         ("citizenship", "80 refused it and 11 offered it"),
+        ("right to work", "80 refused it and 11 offered it"),
+        ("visa relocation", "80 refused it and 11 offered it"),
         ("relocation", "14 said none is offered"),
     ],
 )
@@ -3679,6 +3686,7 @@ def test_role_requirements_give_each_stances_share_of_the_sample():
     )
     assert (
         "Of the 259 with a description, read by HeadStart's rules (not a field, and they can "
-        "err): 26 offer visa sponsorship (10%), 130 refuse it or require citizenship (50%), "
-        "13 offer relocation help (5%)." in text
+        "err), the description offers visa sponsorship in 26 (10%), refuses visa "
+        "sponsorship or requires citizenship in 130 (50%), offers relocation help in 13 "
+        "(5%)." in text
     )

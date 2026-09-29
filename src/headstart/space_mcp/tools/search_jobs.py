@@ -21,7 +21,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, date, datetime
 from typing import Any
 
-from headstart.jobs import requisition_copies
+from headstart.jobs import requisition_copies, work_authorization
 from headstart.mcp_protocol.messages import ToolFailure
 from headstart.search_filters import (
     employment_type_filter,
@@ -102,12 +102,10 @@ _DESCRIPTION_PAST_DEADLINE = (
 )
 
 
-#: A keyword about work authorisation, and what hand-read descriptions say of each kind
-#: (ADR-0333): a description matching one usually says the opposite of what the user hopes.
-_SPONSORSHIP_WORD = re.compile(
-    r"(?i)sponsor|visa|clearance|citizen|authori[sz]ation|authori[sz]ed|immigra|h-?1-?b"
-)
-_RELOCATION_WORD = re.compile(r"(?i)relocat")
+#: A keyword about work authorisation is one the stance rules' own prefilter matches, and
+#: what hand-read descriptions say of each kind (ADR-0333): a description matching one usually
+#: says the opposite of what the user hopes. Relocation is its "reloca"; the rest is sponsorship.
+_WORK_AUTHORIZATION_WORD = re.compile(work_authorization.PREFILTER)
 _SPONSORSHIP_KEYWORD_NOTE = (
     "A description matching this keyword often refuses sponsorship rather than offering it: "
     "of 100 hand-read descriptions mentioning sponsorship, 80 refused it and 11 offered it "
@@ -127,11 +125,10 @@ def _keyword_note(arguments: dict[str, Any]) -> str | None:
     keyword = (arguments.get("keyword") or "").strip()
     if not keyword:
         return None
-    if _SPONSORSHIP_WORD.search(keyword):
+    found = [m.group().lower() for m in _WORK_AUTHORIZATION_WORD.finditer(keyword)]
+    if any(not word.startswith("reloca") for word in found):
         return _SPONSORSHIP_KEYWORD_NOTE
-    if _RELOCATION_WORD.search(keyword):
-        return _RELOCATION_KEYWORD_NOTE
-    return None
+    return _RELOCATION_KEYWORD_NOTE if found else None
 
 
 def _params(
@@ -548,7 +545,7 @@ TOOL = SpaceTool(
         "Omit `query` to list the "
         "newest jobs that match the filters; `similar_to` a job id ranks by that "
         "job instead. With a `query`, `sort` orders only its "
-        "closest matches (similarity 0.67+) — for a global order (the highest salary or "
+        f"closest matches (similarity {SORT_FLOOR:.2f}+) — for a global order (the highest salary or "
         "newest anywhere) omit `query` and narrow with `keyword` and the filters. "
         "`company` matches as the site's company box does (any company name containing "
         "the text); beside `category` it needs a directory company: a key such as "
@@ -684,8 +681,8 @@ TOOL = SpaceTool(
                 "default": "relevance",
                 "description": (
                     "salary orders by the low end of each stated range, in salary_currency "
-                    "or else USD. With `query`, any sort orders only the 2,000 closest "
-                    "matches."
+                    "or else USD. With `query`, any sort orders only the matches scoring "
+                    f"at least {SORT_FLOOR:.2f} among its {SORT_WINDOW:,} closest."
                 ),
             },
             "limit": {
