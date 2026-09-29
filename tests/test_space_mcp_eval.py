@@ -1732,6 +1732,78 @@ def test_only_takes_several_task_ids(ev, monkeypatch, capsys):
         ev.main(["--only", "t07,t99", "--dry-run"])
 
 
+# --- country_split (ADR-0355) ----------------------------------------------------------------
+
+_T37 = {
+    "countries": ["IN", "DE"],
+    "must_any": [
+        {"category": "ai-ml-data-science"},
+        {"keyword": {"op": "contains", "value": "ai"}},
+    ],
+}
+
+
+class _CountrySpace:
+    """`/facets` answering each country's total, recording what each read sent."""
+
+    def __init__(self, totals):
+        self.totals = totals
+        self.asked = []
+
+    def read(self, route, params=()):
+        assert route == SpaceRoute.FACETS
+        self.asked.append(list(params))
+        return {"total": self.totals[dict(params)["country"]]}
+
+
+def test_country_split_needs_each_countrys_facets_total_beside_its_name(ev):
+    space = _CountrySpace({"IN": 12345, "DE": 2345})
+    full = ("search_jobs", {"category": "ai-ml-data-science", "detail": "full"}, "…")
+    passed = ev.verify_country_split(
+        _T37,
+        _transcript(ev, [full], "India has 12,345 open AI roles; Germany 2345."),
+        space,
+    )
+    assert passed.passed, passed.detail
+    # Each read is the call's filters with that country as its only place, a total alone.
+    sent = [dict(params) for params in space.asked]
+    assert [s["country"] for s in sent] == ["IN", "DE"]
+    assert all(s["family"] == "ai-ml-data-science" for s in sent)
+    assert all(s["counts"] == "total" and "page" not in s for s in sent)
+
+
+def test_country_split_fails_a_figure_that_is_not_the_countrys_own(ev):
+    space = _CountrySpace({"IN": 12345, "DE": 2345})
+    full = ("search_jobs", {"category": "ai-ml-data-science", "detail": "full"}, "…")
+    failed = ev.verify_country_split(
+        _T37, _transcript(ev, [full], "India 12,345 and Germany 2,300."), space
+    )
+    assert not failed.passed and "Germany is 2,345" in failed.detail
+
+
+def test_country_split_passes_a_search_per_country_with_its_place_replaced(ev):
+    """One search per country is a right path too: each call's own country is replaced."""
+    space = _CountrySpace({"IN": 900, "DE": 80})
+    calls = [
+        ("search_jobs", {"keyword": "ai", "country": "IN"}, "…"),
+        ("search_jobs", {"keyword": "ai", "india_place": "pune"}, "…"),
+    ]
+    verdict = ev.verify_country_split(
+        _T37, _transcript(ev, calls, "900 in India against 80 in Germany."), space
+    )
+    assert verdict.passed, verdict.detail
+    assert all("india" not in dict(p) and dict(p)["kw"] == "ai" for p in space.asked)
+
+
+def test_country_split_needs_a_search_for_the_category(ev):
+    space = _CountrySpace({"IN": 1, "DE": 1})
+    anything = ("search_jobs", {"query": "ai engineer", "detail": "full"}, "…")
+    failed = ev.verify_country_split(
+        _T37, _transcript(ev, [anything], "India 1, Germany 1."), space
+    )
+    assert not failed.passed and "no successful search_jobs call meets" in failed.detail
+
+
 # --- the verifier self-test: recorded tool results (ADR-0334) ---------------------------------
 
 _RECORDED = (

@@ -17,6 +17,7 @@ from headstart.mcp_protocol.messages import ToolFailure
 from headstart.search_filters import (
     country_filter,
     country_gazetteer,
+    employment_type_filter,
     india_filter,
     india_gazetteer,
 )
@@ -92,6 +93,39 @@ PROPERTIES: dict[str, dict[str, Any]] = {
         ),
     },
     "remote": {"type": "boolean", "description": "Remote jobs only."},
+    "employment_type": {
+        "type": "string",
+        "enum": list(employment_type_filter.RULES),
+        "description": (
+            "full-time also keeps jobs whose source states no type; part-time, "
+            "contract and internship keep only jobs that say so."
+        ),
+    },
+    "salary_min": {
+        "type": "integer",
+        "minimum": 0,
+        "description": (
+            "Annual; needs salary_currency (30 lakh = 3000000 INR). Keeps a job whose "
+            "stated range reaches it; other currencies are converted at fixed rates."
+        ),
+    },
+    "salary_max": {
+        "type": "integer",
+        "minimum": 0,
+        "description": (
+            "Annual; needs salary_currency. Keeps a job whose stated range starts at "
+            "or below it."
+        ),
+    },
+    "salary_currency": {
+        "type": "string",
+        "maxLength": 3,
+        "description": "ISO 4217 code, such as USD, INR, EUR, GBP.",
+    },
+    "has_salary": {
+        "type": "boolean",
+        "description": "Only jobs that state a salary.",
+    },
     "max_years": {
         "type": "integer",
         "minimum": 0,
@@ -194,6 +228,23 @@ STANCE_WORDS = {
     work_authorization.REFUSES_SPONSORSHIP: "refuses visa sponsorship or requires citizenship",
     work_authorization.OFFERS_RELOCATION: "offers relocation help",
 }
+
+
+def refuse_unreadable_salary(arguments: dict[str, Any]) -> None:
+    """A :class:`ToolFailure` for salary bounds no range could meet, or sent with no currency,
+    which the Space would read as USD."""
+    low, high = arguments.get("salary_min"), arguments.get("salary_max")
+    if low is not None and high is not None and low > high:
+        raise ToolFailure(
+            f"salary_min {low:,} is above salary_max {high:,}, so no range could be read as "
+            "both; send the lower figure as salary_min."
+        )
+    if (low is not None or high is not None) and not arguments.get("salary_currency"):
+        raise ToolFailure(
+            "salary_min and salary_max need salary_currency: an unqualified bound is read as "
+            "USD, so 30 lakh would become $3,000,000. For 30 lakh send salary_min 3000000 with "
+            "salary_currency INR."
+        )
 
 
 def read_country(asked: Any) -> Any:

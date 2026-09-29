@@ -520,6 +520,21 @@
       "verifier": "operator_mix",
       "expect": {},
       "why": "Round-4 critique P1-2 (ADR-0352): DigitalXNode, a recruiter's WP Job Openings site, led the DevOps requirements sample with 15 postings, so one agency's wording spoke for the role and it was presented as the top employer. The verifier reads every role_requirements result's companies line and fails a company the curated lists (board_operator.classify, read by the eval itself) call a staffing firm or job board unless that call's operators kept it, and, unless a company was named, one counted more than role_requirements.PER_COMPANY (8) postings. It trusts the curated lists: a new agency no list names passes until the curation pass labels it."
+    },
+    {
+      "id": "t38",
+      "prompt": "Right now, how many AI and machine-learning jobs are open in India, and how many in Germany? Give me both numbers.",
+      "verifier": "country_split",
+      "expect": {
+        "countries": ["IN", "DE"],
+        "must_any": [
+          {"category": "ai-ml-data-science"},
+          {"keyword": {"op": "contains", "value": "ai"}},
+          {"keyword": {"op": "contains", "value": "ml"}},
+          {"keyword": {"op": "contains", "value": "machine learning"}}
+        ]
+      },
+      "why": "Round-4 critique P2-6 (ADR-0355): a journalist's comparison took one search per country. search_jobs at detail full now says where every matching job is, by country, over the whole match. The verifier reads /facets once per country with the filters of a search_jobs call the agent made (its country and india_place replaced) and needs each total stated beside the country's name, so a figure read from the places line is held to the country filter's own count; a search per country passes too."
     }
   ],
   "heldout_sha256": "801e7149bc71c42e7b346dcf089ea20f87d1e0035d989b3dba8ffb50fe055e4d"

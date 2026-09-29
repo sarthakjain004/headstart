@@ -43,7 +43,8 @@ SAMPLE_SIZE = 300
 PER_COMPANY = 8
 
 #: The Search filters this tool takes, each as `search_jobs` takes it; `max_age_days` too, so a
-#: sample leaves out what search leaves out by default (ADR-0338).
+#: sample leaves out what search leaves out by default (ADR-0338); and the employment type, the
+#: work-authorisation stance and pay, so internships or sponsoring roles can be sampled (ADR-0355).
 _FILTERS = (
     "company",
     "remote",
@@ -53,6 +54,12 @@ _FILTERS = (
     "max_years",
     "max_age_days",
     "include_non_tech",
+    "employment_type",
+    "work_authorization",
+    "salary_min",
+    "salary_max",
+    "salary_currency",
+    "has_salary",
 )
 
 
@@ -281,6 +288,7 @@ def _refuse_by_policy(arguments: dict[str, Any]) -> None:
             "Name a role in `query` ('data engineer'), a job `category`, or both: the answer "
             "counts what those postings ask for."
         )
+    search_arguments.refuse_unreadable_salary(arguments)
 
 
 def answer(client: SpaceClient, arguments: dict[str, Any]) -> str:

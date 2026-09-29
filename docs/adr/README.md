@@ -321,6 +321,7 @@ supersedes it and note the supersession in both.
 | [0352](0352-a-relevance-page-and-a-requirements-sample-take-a-few-postings-of-each-company.md) | A relevance page and a requirements sample take a few postings of each company | 2026-09-29 |
 | [0353](0353-a-sponsorship-offer-is-read-against-the-jobs-place-and-title-and-a-hedged-one-may-offer.md) | A sponsorship offer is read against the job's place and title, and a hedged one only may offer | 2026-09-29 |
 | [0354](0354-an-eval-task-may-accept-but-never-require-the-path-its-tool-steers-away-from.md) | An eval task may accept, but never require, the path its tool steers away from (amends 0334) | 2026-09-29 |
+| [0355](0355-a-search-says-where-every-matching-job-is-and-a-requirements-sample-takes-type-stance-and-pay.md) | A search says where every matching job is, and a requirements sample takes type, stance and pay | 2026-09-29 |
 | [0357](0357-the-owner-keeps-the-smallest-stated-experience-and-get-job-names-the-others.md) | The owner keeps the smallest stated experience, and get_job names the others (re-affirms 0079) | 2026-09-29 |
 
 *ADR-0037 was removed from the repository on 2026-09-24 by the owner's decision; its number is not

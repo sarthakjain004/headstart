@@ -15,6 +15,7 @@ from dataclasses import replace
 import pytest
 
 from headstart.search_filters.compiler import account_clause, build_filter, with_extra
+from headstart.serving import location_counts
 from headstart.serving.job_absence import WHY_NOT_SERVED
 from headstart.serving.job_search import (
     FACET_CACHE_SIZE,
@@ -420,9 +421,17 @@ def test_warm_uses_the_same_normalized_key_as_the_first_browser_request(monkeypa
     monkeypatch.setattr(
         facets, "counts", lambda *_args, **_kwargs: {"total": 1, "facets": {}}
     )
+    # ADR-0355: warming reads every served location's countries once.
+    read_places = []
+    monkeypatch.setattr(
+        location_counts,
+        "places",
+        lambda table, where, india: read_places.append(where) or {"jobs": 1},
+    )
     searcher, table = _searcher()
     table.search_calls = 0
     searcher.warm()
+    assert read_places == [None]
     assert table.search_calls == 2
     searcher.run({"q": "", "k": "20", "page": "1"})
     assert table.search_calls == 2
@@ -2113,6 +2122,47 @@ def families_served(tmp_path_factory):
 
 def _ids(rows):
     return [row["id"] for row in rows]
+
+
+@pytest.mark.parametrize(
+    "asked",
+    [
+        {},
+        {"remote": "true"},
+        {"family": "ai-ml"},
+        {"kw": "visa", "kw_in": "description"},
+        {"family": "ai-ml", "kw": "sponsorship", "kw_in": "description"},
+    ],
+    ids=["index", "filter", "category", "keyword", "category-keyword"],
+)
+def test_places_count_every_matching_job_as_country_would(families_served, asked):
+    """ADR-0355: `places=1` reads the rows the total counts, so its jobs are the total and each
+    country's count is the total with `country=` added: over the index, a filter, a category's
+    family table and a description keyword's rows."""
+    counted = families_served.facets({**asked, "places": "1", "counts": "total"})
+    places = counted["places"]
+    assert places["jobs"] == counted["total"]
+    assert places["countries"], asked
+    for country in places["countries"]:
+        alone = families_served.facets(
+            {**asked, "country": country["code"], "counts": "total"}
+        )
+        assert country["jobs"] == alone["total"], (asked, country["code"])
+
+
+def test_places_are_asked_by_one_value_and_cached_apart(families_served):
+    with pytest.raises(ValueError, match="places 'yes' is not known"):
+        families_served.facets({"places": "yes"})
+    plain = families_served.facets({"counts": "total"})
+    placed = families_served.facets({"counts": "total", "places": "1"})
+    assert "places" not in plain and placed["places"]["countries"][0] == {
+        "code": "DE",
+        "jobs": 3,
+        "places": [
+            {"location": "Berlin", "count": 2},
+            {"location": "Munich", "count": 1},
+        ],
+    }
 
 
 def test_a_category_across_the_index_lists_and_counts_exactly_its_jobs(

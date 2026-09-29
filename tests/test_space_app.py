@@ -1009,7 +1009,7 @@ def test_a_caller_cannot_claim_the_in_process_mark_with_a_header(auth_app, monke
 
 # ---- the app's own mark on every reply (ADR-0253) ----
 
-_OWN_REPLY = "app; agent-api=20"
+_OWN_REPLY = "app; agent-api=21"
 
 
 def test_a_routes_own_answer_is_marked(auth_app):
@@ -3389,9 +3389,9 @@ def test_locations_are_counted_over_the_named_boards_only(app, monkeypatch):
     scoped = []
     real = app.job_search.location_counts.top
 
-    def recording(table, where, limit):
+    def recording(table, where, limit, india_materialized):
         scoped.append((where, limit))
-        return real(table, where, limit)
+        return real(table, where, limit, india_materialized)
 
     monkeypatch.setattr(app.job_search.location_counts, "top", recording)
     r = app.app.test_client().get(
@@ -3419,8 +3419,21 @@ def test_locations_are_counted_over_the_named_boards_only(app, monkeypatch):
             {"code": "DE", "jobs": 1, "places": [{"location": "Berlin", "count": 1}]}
         ],
         "no_country": {"jobs": 1, "places": [{"location": "Remote", "count": 1}]},
-        "places_unread": 0,
     }
+
+
+def test_facets_say_where_the_matching_jobs_are_when_asked(app):
+    """ADR-0355: `places=1` is a parameter strict requests may send, and adds `places`."""
+    client = app.app.test_client()
+    placed = client.get("/facets?places=1&counts=total&strict=1")
+    assert placed.status_code == 200
+    # The fake table answers its two rows, Berlin and Remote, whatever it is asked.
+    assert placed.get_json()["places"]["countries"] == [
+        {"code": "DE", "jobs": 1, "places": [{"location": "Berlin", "count": 1}]}
+    ]
+    assert "places" not in client.get("/facets?counts=total&strict=1").get_json()
+    refused = client.get("/facets?places=yes")
+    assert refused.status_code == 400 and "places" in refused.get_json()["detail"]
 
 
 @pytest.mark.parametrize(

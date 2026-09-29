@@ -5,7 +5,9 @@ describe one query and nothing the Space would drop is dropped silently. The ans
 searched, how the rows are ordered (a sort with a query orders only those of the 2,000 closest
 matches that score at least the floor, `JobSearch.run`, ADR-0338), the rows themselves with every scraped field quoted, and — when nothing matches —
 which filter is to blame, named as this tool names it. A concise answer asks `/facets` for the
-total alone (``counts=total``, ADR-0274); only ``detail=full`` pays for every option's count.
+total alone (``counts=total``, ADR-0274); only ``detail=full`` pays for every option's count, and
+for where every matching job is (``places=1``, ADR-0355): the jobs in each country, as ``country``
+would total them, with each country's top cities, over the whole match rather than a sample.
 
 A row carries its posting's age, flagged past a year, and its employment type as scraped beside
 the `employment_type` values it counts as, and its company as the Company directory names it when
@@ -32,6 +34,7 @@ from headstart.search_filters import (
 )
 from headstart.space_mcp import (
     company_scope,
+    job_places,
     role_families,
     scraped_text,
     search_arguments,
@@ -81,6 +84,10 @@ _FACET_ORDER = (
     "ats",
 )
 _FACET_OPTIONS_SHOWN = 12
+
+#: How many countries a full answer lists where its matching jobs are (ADR-0355): enough that a
+#: comparison of two large markets finds both; send `country` for any other one.
+COUNTRIES_SHOWN = 15
 
 #: A company or location past this is cut; a title keeps `scraped_text.FIELD_LIMIT`.
 SHORT_FIELD = 60
@@ -192,16 +199,7 @@ def _refuse_by_policy(arguments: dict[str, Any]) -> None:
         raise ToolFailure(
             "similar_to ranks by one job and query by a description of the role; send one."
         )
-    bounded = (
-        arguments.get("salary_min") is not None
-        or arguments.get("salary_max") is not None
-    )
-    low, high = arguments.get("salary_min"), arguments.get("salary_max")
-    if low is not None and high is not None and low > high:
-        raise ToolFailure(
-            f"salary_min {low:,} is above salary_max {high:,}, so no range could be read as "
-            "both; send the lower figure as salary_min."
-        )
+    search_arguments.refuse_unreadable_salary(arguments)
     floor, ceiling = (
         arguments.get("required_years_at_least"),
         arguments.get("max_years"),
@@ -211,12 +209,6 @@ def _refuse_by_policy(arguments: dict[str, Any]) -> None:
             f"required_years_at_least {floor} is above max_years {ceiling}: no job asks for "
             "at least one and at most the other. max_years is the user's own experience; "
             "required_years_at_least a floor on what the job asks."
-        )
-    if bounded and not arguments.get("salary_currency"):
-        raise ToolFailure(
-            "salary_min and salary_max need salary_currency: an unqualified bound is read as "
-            "USD, so 30 lakh would become $3,000,000. For 30 lakh send salary_min 3000000 with "
-            "salary_currency INR."
         )
     if arguments.get("keyword_in") and not (arguments.get("keyword") or "").strip():
         raise ToolFailure("keyword_in only scopes a keyword; send keyword too.")
@@ -530,7 +522,7 @@ def answer(client: SpaceClient, arguments: dict[str, Any]) -> str:
     full = arguments.get("detail") == "full"
     # Concise prints only the total, so it asks for nothing else (ADR-0274): under a description
     # keyword every option's count re-scans the matches, 98.7 s against 10.6 s for the page.
-    counted = params if full else [*params, ("counts", "total")]
+    counted = [*params, ("places", "1")] if full else [*params, ("counts", "total")]
     try:
         with ThreadPoolExecutor(max_workers=2) as pool:
             rows_asked = pool.submit(client.read, SpaceRoute.SEARCH, params)
@@ -557,6 +549,12 @@ def answer(client: SpaceClient, arguments: dict[str, Any]) -> str:
         lines.append(coverage)
     if note := _keyword_note(arguments):
         lines.append(note)
+    if full and total and (places := facets.get("places")):
+        # Above the rows, so the size guard, which cuts from the end, never cuts it.
+        lines.append(
+            job_places.said(places, f"the {total:,} matching jobs", COUNTRIES_SHOWN)
+            + " A country's count is the total search_jobs gives with that `country`."
+        )
     if not rows:
         lines.insert(
             0,
@@ -678,42 +676,14 @@ TOOL = SpaceTool(
                     "experience is unknown are left out."
                 ),
             },
-            "employment_type": {
-                "type": "string",
-                "enum": list(employment_type_filter.RULES),
-                "description": (
-                    "full-time also keeps jobs whose source states no type; part-time, "
-                    "contract and internship keep only jobs that say so."
-                ),
-            },
+            "employment_type": search_arguments.PROPERTIES["employment_type"],
             "country": search_arguments.PROPERTIES["country"],
             "india_place": search_arguments.PROPERTIES["india_place"],
             "location": search_arguments.PROPERTIES["location"],
-            "salary_min": {
-                "type": "integer",
-                "minimum": 0,
-                "description": (
-                    "Annual; needs salary_currency (30 lakh = 3000000 INR). Keeps a job whose "
-                    "stated range reaches it; other currencies are converted at fixed rates."
-                ),
-            },
-            "salary_max": {
-                "type": "integer",
-                "minimum": 0,
-                "description": (
-                    "Annual; needs salary_currency. Keeps a job whose stated range starts at "
-                    "or below it."
-                ),
-            },
-            "salary_currency": {
-                "type": "string",
-                "maxLength": 3,
-                "description": "ISO 4217 code, such as USD, INR, EUR, GBP.",
-            },
-            "has_salary": {
-                "type": "boolean",
-                "description": "Only jobs that state a salary.",
-            },
+            "salary_min": search_arguments.PROPERTIES["salary_min"],
+            "salary_max": search_arguments.PROPERTIES["salary_max"],
+            "salary_currency": search_arguments.PROPERTIES["salary_currency"],
+            "has_salary": search_arguments.PROPERTIES["has_salary"],
             "posted_within_days": {
                 "type": "integer",
                 "minimum": 1,
@@ -798,13 +768,18 @@ TOOL = SpaceTool(
                 "type": "string",
                 "enum": ["concise", "full"],
                 "default": "concise",
-                "description": "full adds the count behind each filter's options.",
+                "description": (
+                    "full adds the count behind each filter's options, and where every "
+                    "matching job is: the jobs in each country (what `country` would total, "
+                    "a job naming two in both) with its top cities, over the whole match."
+                ),
             },
         },
         "additionalProperties": False,
     },
     when_to_use=(
-        "Use search_jobs to find openings: put the role in `query`, and years, pay, place, company and dates in their own fields — never in `query`."
+        "Use search_jobs to find openings: put the role in `query`, and years, pay, place, company and dates in their own fields — never in `query`. "
+        "`detail` full counts matches per country."
     ),
     answer=answer,
     max_chars=30_000,

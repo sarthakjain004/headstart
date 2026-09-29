@@ -26,6 +26,7 @@ import pytest
 from headstart.jobs import work_authorization
 from headstart.mcp_protocol import messages, tool_arguments
 from headstart.mcp_protocol.messages import ToolFailure
+from headstart.search_filters import country_filter
 from headstart.serving.job_absence import WHY_NOT_SERVED
 from headstart.space_mcp import scraped_text, server, shown_company
 from headstart.space_mcp import space_client as sc
@@ -778,10 +779,62 @@ def test_nothing_matching_with_no_single_blocker_blames_the_scope():
 def test_full_detail_adds_the_facet_counts_capped_per_dimension():
     space = _search_space([_job(1)])
     text = server.call(space, "search_jobs", {"detail": "full"})
-    assert space.params_of(R.FACETS) == space.params_of(R.SEARCH)
+    # ADR-0355: the same filters, and where every matching job is.
+    assert space.params_of(R.FACETS) == [
+        [*space.params_of(R.SEARCH)[0], ("places", "1")]
+    ]
     assert "  remote=true: 212\n" in text
     assert "  max_years=0: 31 · max_years any: 1,904\n" in text
     assert "ats=ats0: 100" in text and "…8 more" in text
+
+
+def _places(countries: int) -> dict:
+    return {
+        "jobs": 1904,
+        "unstated": 40,
+        "countries": [
+            {
+                "code": code,
+                "jobs": 900 - 10 * n,
+                "places": [
+                    {"location": f"{code} city {i}", "count": 30 - i} for i in range(3)
+                ],
+            }
+            for n, code in enumerate(country_filter.CODES[:countries])
+        ],
+        "no_country": {
+            "jobs": 23,
+            "places": [
+                {"location": "Remote", "count": 20},
+                {"location": "N/A", "count": 3},
+            ],
+        },
+    }
+
+
+def test_full_detail_says_where_every_matching_job_is_by_country_with_its_cities():
+    """P2-6 (round-4 critique): how many in India against Germany is one call, over the whole
+    match, each country's count what `country` would total (ADR-0355)."""
+    space = FakeSpace(search=[_job(1)], facets={**_facets(1904), "places": _places(17)})
+    text = server.call(space, "search_jobs", {"query": "ml engineer", "detail": "full"})
+    assert (
+        "Where the 1,904 matching jobs are, by country as search_jobs' `country` reads each "
+        "place (a job naming two countries counts in both), with its top places, a first "
+        'place\'s spellings merged: United States 900 ("US city 0" 30 · "US city 1" 29 · '
+        '"US city 2" 28) · India 890 ("IN city 0" 30 ·' in text
+    )
+    assert " · …2 more countries." in text  # fifteen are listed
+    assert (
+        'No country is read from the places of 23 ("Remote" 20 · "N/A" 3). 40 name no place. '
+        "A country's count is the total search_jobs gives with that `country`." in text
+    )
+
+
+def test_a_concise_search_asks_for_no_places_and_says_none():
+    space = FakeSpace(search=[_job(1)], facets={**_facets(1), "places": _places(2)})
+    text = server.call(space, "search_jobs", {})
+    assert ("places", "1") not in space.params_of(R.FACETS)[0]
+    assert "Where the" not in text
 
 
 @pytest.fixture
@@ -1012,6 +1065,33 @@ def test_a_search_answer_stays_inside_its_budget(limit, budget):
         _search_space(rows, total=9_999), "search_jobs", {"limit": limit}
     )
     assert len(text) <= budget
+
+
+def test_a_full_search_answer_keeps_its_places_when_its_worst_case_is_cut():
+    """ADR-0355: fifteen countries, each place at its clip, beside every facet line and forty
+    rows at theirs, run past the budget; the guard cuts rows from the end, and the places line
+    stands above them."""
+    long = "x" * 5_000
+    rows = [
+        _job(
+            n,
+            title=f"{n} {long}",
+            company=long,
+            location=long,
+            employment_type=long,
+            url="https://x.io/" + "a" * 287,
+        )
+        for n in range(40)
+    ]
+    places = _places(40)
+    for country in [*places["countries"], places["no_country"]]:
+        for place in country["places"]:
+            place["location"] = long
+    space = FakeSpace(search=rows, facets={**_facets(9_999), "places": places})
+    text = server.call(space, "search_jobs", {"limit": 40, "detail": "full"})
+    assert len(text) <= server.BY_NAME["search_jobs"].max_chars
+    assert "answer cut to fit" in text
+    assert "Where the 9,999 matching jobs are" in text and "…25 more countries" in text
 
 
 def test_similar_to_is_sent_as_like_in_place_of_a_query_and_said():
@@ -3048,7 +3128,6 @@ def _locations(n=3):
                 {"location": "Remote", "count": 3},
             ],
         },
-        "places_unread": 0,
     }
 
 
@@ -3635,8 +3714,47 @@ def test_requirements_filters_are_search_jobs_own():
         "max_age_days",
         "operators",
         "include_non_tech",
+        "employment_type",
+        "work_authorization",
+        "salary_min",
+        "salary_max",
+        "salary_currency",
+        "has_salary",
     ):
         assert mine[name] == search[name], name
+
+
+def test_requirements_sample_internships_sponsoring_roles_and_a_pay_band():
+    """P2-6 (round-4 critique): "what do internships ask for" and "what do sponsoring roles
+    pay" were refused (`p1_21`); each is now a Search filter the sample takes (ADR-0355)."""
+    space = FakeSpace(requirements=_requirements())
+    text = server.call(
+        space,
+        "role_requirements",
+        {
+            "category": "software-engineering",
+            "employment_type": "internship",
+            "work_authorization": "offers_sponsorship",
+            "salary_min": 50000,
+            "salary_currency": "USD",
+        },
+    )
+    sent = dict(space.params_of(R.REQUIREMENTS)[0])
+    assert sent["etype"] == "internship"
+    assert sent["work_authorization"] == "offers_sponsorship"
+    assert (sent["salary_min"], sent["salary_currency"]) == ("50000", "USD")
+    assert "employment_type internship" in text
+    assert "description offers visa sponsorship" in text
+    assert "salary range reaching 50,000 USD a year or more" in text
+
+
+def test_a_requirements_pay_bound_needs_its_currency_as_search_does():
+    with pytest.raises(ToolFailure, match="need salary_currency"):
+        server.call(
+            FakeSpace(requirements=_requirements()),
+            "role_requirements",
+            {"query": "data engineer", "salary_min": 3000000},
+        )
 
 
 def test_requirements_need_a_role_or_a_category():

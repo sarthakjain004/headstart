@@ -226,6 +226,11 @@ the filter costing the most.
   answer asks the Space for the total alone (`/facets?counts=total`, ADR-0274), since every option's
   count re-scans the matches: under a description keyword the full strip took 98.7 s against
   10.6 s for the page itself.
+- `detail: "full"` also says where every matching job is (`/facets?places=1`, ADR-0355): up to 15
+  countries, most jobs first, each with its three top cities, then the jobs whose places name no
+  country. It reads every match, not a sample, and a country's count is exactly what `country`
+  would total with the same filters (each place read by the filter's own rule, India by its
+  column), so "India against Germany" is one call. The whole index took 0.69 s warm locally.
 - **What a row says.** Each row gives the posting's age ("posted 2026-09-24 (5 days ago)") and
   flags one over a year old; its employment type as the employer wrote it, beside the
   `employment_type` values it counts as (`type "FULL_TIME" (full-time)`); and every scraped field,
@@ -463,8 +468,10 @@ of them, for a career switcher's "what does a data engineer typically need" (ADR
   sampled, 8 counted"; a company named like an agency and on no curated list is tagged
   "operator unverified". 8 left out a median 1.4% of 11 live samples; 5 left out 5.9% and
   reshaped every sample's ordinary head.
-- **Filters.** `company`, `country`, `india_place`, `location`, `remote` and `max_years`, the same
-  schema as `search_jobs`' and read the same way.
+- **Filters.** `company`, `country`, `india_place`, `location`, `remote`, `max_years`,
+  `max_age_days`, `operators`, `employment_type`, `work_authorization` and the salary filters, the
+  same schema as `search_jobs`' and read the same way, so "what do internships ask for" and "what
+  do sponsoring roles pay" are samples too (ADR-0355).
 - **Skills.** The tech skills the sampled descriptions mention, from a fixed list of about 380
   (`config/tech_skills.json`, matched by `serving/tech_skills.py`), each as a share of the sampled
   postings that carry a description, with how many distinct employers mention it. A posting counts
