@@ -361,6 +361,16 @@ _Avoid_: reading `listed` as **Opened** — a **Found Board**'s backlog is liste
 One **Board** a run's scrape read, kept in `data/facts/board_reads/`: whether the read was authoritative, truncated (and why) or an error, whether its absences counted (`in_scope`), the lines it returned, the total it stated where its scraper reports one, and its seconds. With the **Job facts** it tells a Board that was read and had nothing from a Board nobody read.
 _Avoid_: **Scraped Board** — that is a Board read at least once, ever; a Board read is one read, in one run.
 
+**Restatement** (ADR-0330):
+The whole Trends history recomputed from the **Job facts** under today's rules, one tick per run that recorded facts, all under today's **Methodology** (`ingest.restate_run`, written to `data/restated/`). What a rule change moves is the past, not a step in the line: a Board outside today's keep-set is gone from the past too, and a version today's tech filter rejects never counted.
+_Avoid_: the salary filter's sense of "restate", which converts a user's bounds across currencies (ADR-0117).
+
+**Job version** (ADR-0330):
+One stretch of a **Job**'s listing with the same raw fields, from the run whose facts listed or changed it to the run whose facts next changed it, unlisted it or took it off-Board. The versions open at a run are that run's **Listed set**.
+
+**Served interval** (ADR-0330):
+When a **Job version** counted under today's rules, in runs: from when it was listed until its Board's next authoritative read after it was unlisted (the grace period, ADR-0083), a change, an off-Board exit, a **Dormant** stretch, or a copy of it that `index prune` would keep taking over.
+
 **Job vector archive** (ADR-0330):
 The description vectors of Jobs the embedding store dropped (`embed_prune`), kept at half precision in `data/facts/job_vectors/`, one file per **Tick**, each naming the embedder that made them. What lets a later classifier head re-sort a closed Job without re-embedding it; the text itself stays in the **Description store**.
 
