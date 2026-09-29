@@ -79,10 +79,10 @@ connector is a **URL** that Anthropic's cloud calls [^1][^2]. How should HeadSta
 
 - Boot and memory barely change: 68 ms and 14 MB against a 4 min 13 s boot.
 - Each tool call runs the same routes a browser search does.
-- A tool-wording change becomes a Space deploy. Deploys roll with no downtime (measured
-  2026-09-28), so the cost is build time, not availability. Whether the pipeline's
-  `restart_space` also rolls has not been measured. If it does not, claude.ai sees HF edge errors
-  during each boot.
+- A tool-wording change becomes a Space deploy. Deploys roll with no downtime, so the cost is
+  build time, not availability. When this was written, that claim had not been measured, and
+  neither had whether the pipeline's `restart_space` rolls. Both were measured on 2026-09-28, and
+  both roll. The numbers are in ADR-0267's 2026-09-29 amendment.
 
 **Rate limit:**
 
