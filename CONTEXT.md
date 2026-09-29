@@ -337,6 +337,17 @@ _Avoid_: calling the aggregate `role_trends.parquet` the history — it was a su
 A **Board** whose first **Board delta** lands its whole existing backlog at once, because the index started counting it, not because it hired. Its arrival is **Recounted**, never **Opened**, and a Trends line leaves it out of the net change.
 _Avoid_: reading a found Board's first tick as growth.
 
+**Job fact** (ADR-0330):
+A row recording what a scrape saw of one **Job**, tech or not, kept in `data/facts/jobs/`, one file per run: `listed` when it is first listed (or listed again), `changed` when a raw field a rule reads moved, and `unlisted` when an authoritative read of its **Board** no longer lists it. A listed or changed fact carries those raw fields as the scrape emitted them. Facts are what a rule reads, never what it decided, so a later rule can be run over them and past Trends recomputed under it. The description is not among them: its text is in the **Description store**, and only for tech Jobs.
+_Avoid_: reading `unlisted` as **Closed** — it is one absence on one authoritative read, where Closed follows the grace period and the tech subset; and reading a Board no fact names as quiet, since a Board this run did not read writes nothing.
+
+**Board read** (ADR-0330):
+One **Board** a run's scrape read, kept in `data/facts/board_reads/`: whether the read was authoritative, short (and why) or an error, the lines it returned, the total it stated where its ATS states one, and its seconds. With the **Job facts** it tells a Board that was read and had nothing from a Board nobody read.
+
+**Listed set** (ADR-0330):
+Every currently listed Job id with its **Board** and a hash of its raw fields, in `data/facts/listed_jobs.parquet`. State, not history: `scrape_join` diffs each run against it to write the run's **Job facts** and rewrites it, and `merge` uploads both in one commit.
+_Avoid_: reading it as the tech stock — it holds every listed Job, tech or not.
+
 **Methodology** (ADR-0164, ADR-0230):
 What decides what a count means: the family list, the classifier head, the tech filter, the derivations and the dedup rules, each with its own version stamp. It travels in every tick's delta file (ADR-0230); `trends_epochs.csv`, which recorded a row only where a stamp moved, retired with step 6.
 _Avoid_: `centroid_version` or "series version" — both are gone since ADR-0230 step 6; a counting change is a tick whose Methodology moved.

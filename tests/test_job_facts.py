@@ -1,0 +1,238 @@
+"""Tests for the Job facts writer (headstart.ingest.job_facts, ADR-0330).
+
+The facts are what each scrape saw, recorded once: a Job first listed, changed, or no longer listed
+by an authoritative read of its Board. A Board the run did not read, or read short, is no evidence,
+so its Jobs stay listed and write nothing.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import pyarrow.parquet as pq
+import pytest
+
+from headstart.ingest import job_facts as jf
+from headstart.ingest.observability import ShardReport
+
+BOARD_A = "greenhouse:acme"
+BOARD_B = "lever:globex"
+
+
+def _job(job_id: str, title: str = "Backend Engineer", **fields) -> dict:
+    return {
+        "id": job_id,
+        "ats": job_id.split(":", 1)[0],
+        "company": "Acme",
+        "title": title,
+        "location": "Remote",
+        "remote": True,
+        "department": "Engineering",
+        "url": f"https://example.com/{job_id}",
+        "posted_at": "2026-09-01",
+        "scraped_at": "2026-09-29T06:00:00+00:00",
+        "description": "Build things.",
+        **fields,
+    }
+
+
+def _run(
+    tmp_path: Path,
+    stamp: str,
+    jobs: list[tuple[str, dict]],
+    scope: set[str],
+    reads: list[jf.BoardRead] | None = None,
+) -> jf.Recorded:
+    lines = jf.ScrapedLines(tmp_path / "scratch.parquet")
+    for board, job in jobs:
+        lines.see(board, job)
+    return jf.record(lines.close(), tmp_path / "facts", stamp, reads or [], scope, {})
+
+
+def _facts(tmp_path: Path, stamp: str) -> dict[str, dict]:
+    table = pq.read_table(tmp_path / "facts" / jf.JOB_FACTS / jf.file_name(stamp))
+    return {row["id"]: row for row in table.to_pylist()}
+
+
+def _listed(tmp_path: Path) -> set[str]:
+    return set(pq.read_table(tmp_path / "facts" / jf.LISTED_JOBS)["id"].to_pylist())
+
+
+T1 = "2026-09-29T06:00:00+00:00"
+T2 = "2026-09-29T07:00:00+00:00"
+T3 = "2026-09-29T08:00:00+00:00"
+
+
+def test_a_first_run_lists_every_job_with_its_raw_fields(tmp_path):
+    recorded = _run(
+        tmp_path,
+        T1,
+        [
+            (BOARD_A, _job(f"{BOARD_A}:1")),
+            (BOARD_B, _job(f"{BOARD_B}:2", description=None)),
+        ],
+        {BOARD_A, BOARD_B},
+    )
+
+    assert (recorded.listed, recorded.changed, recorded.unlisted) == (2, 0, 0)
+    facts = _facts(tmp_path, T1)
+    assert facts[f"{BOARD_A}:1"]["kind"] == "listed"
+    assert facts[f"{BOARD_A}:1"]["title"] == "Backend Engineer"
+    assert facts[f"{BOARD_A}:1"]["remote"] is True
+    assert facts[f"{BOARD_A}:1"]["has_description"] is True
+    assert facts[f"{BOARD_B}:2"]["has_description"] is False
+    assert _listed(tmp_path) == {f"{BOARD_A}:1", f"{BOARD_B}:2"}
+
+
+def test_a_job_whose_raw_fields_moved_is_a_changed_fact_carrying_the_new_values(
+    tmp_path,
+):
+    _run(tmp_path, T1, [(BOARD_A, _job(f"{BOARD_A}:1"))], {BOARD_A})
+    recorded = _run(
+        tmp_path, T2, [(BOARD_A, _job(f"{BOARD_A}:1", department="Data"))], {BOARD_A}
+    )
+
+    assert (recorded.listed, recorded.changed, recorded.unlisted) == (0, 1, 0)
+    assert _facts(tmp_path, T2)[f"{BOARD_A}:1"]["department"] == "Data"
+
+
+def test_a_description_edit_alone_is_not_a_fact(tmp_path):
+    _run(tmp_path, T1, [(BOARD_A, _job(f"{BOARD_A}:1"))], {BOARD_A})
+    recorded = _run(
+        tmp_path,
+        T2,
+        [(BOARD_A, _job(f"{BOARD_A}:1", description="Build other things."))],
+        {BOARD_A},
+    )
+
+    assert (recorded.listed, recorded.changed, recorded.unlisted) == (0, 0, 0)
+    assert _facts(tmp_path, T2) == {}
+
+
+def test_a_job_an_authoritative_read_missed_is_unlisted_and_leaves_the_listed_set(
+    tmp_path,
+):
+    _run(
+        tmp_path,
+        T1,
+        [(BOARD_A, _job(f"{BOARD_A}:1")), (BOARD_A, _job(f"{BOARD_A}:2"))],
+        {BOARD_A},
+    )
+    recorded = _run(tmp_path, T2, [(BOARD_A, _job(f"{BOARD_A}:1"))], {BOARD_A})
+
+    assert recorded.unlisted == 1
+    fact = _facts(tmp_path, T2)[f"{BOARD_A}:2"]
+    assert fact["kind"] == "unlisted"
+    assert fact["board"] == BOARD_A
+    assert fact["title"] is None
+    assert _listed(tmp_path) == {f"{BOARD_A}:1"}
+
+
+def test_a_board_read_short_or_not_read_is_no_evidence_its_jobs_went(tmp_path):
+    _run(
+        tmp_path,
+        T1,
+        [(BOARD_A, _job(f"{BOARD_A}:1")), (BOARD_B, _job(f"{BOARD_B}:2"))],
+        {BOARD_A, BOARD_B},
+    )
+    # BOARD_A was read short (out of scope), BOARD_B not read at all.
+    recorded = _run(tmp_path, T2, [], set())
+
+    assert (recorded.listed, recorded.changed, recorded.unlisted) == (0, 0, 0)
+    assert _listed(tmp_path) == {f"{BOARD_A}:1", f"{BOARD_B}:2"}
+
+
+def test_a_board_read_clean_with_no_jobs_unlists_everything_it_held(tmp_path):
+    _run(tmp_path, T1, [(BOARD_A, _job(f"{BOARD_A}:1"))], {BOARD_A})
+    recorded = _run(tmp_path, T2, [], {BOARD_A})
+
+    assert recorded.unlisted == 1
+    assert _listed(tmp_path) == set()
+
+
+def test_the_scope_is_matched_case_folded_like_index_sync(tmp_path):
+    _run(tmp_path, T1, [(BOARD_A, _job(f"{BOARD_A}:1"))], {BOARD_A})
+    recorded = _run(tmp_path, T2, [], {BOARD_A.upper()})
+
+    assert recorded.unlisted == 1
+
+
+def test_a_job_listed_again_after_it_went_is_listed_once_more(tmp_path):
+    _run(tmp_path, T1, [(BOARD_A, _job(f"{BOARD_A}:1"))], {BOARD_A})
+    _run(tmp_path, T2, [], {BOARD_A})
+    recorded = _run(tmp_path, T3, [(BOARD_A, _job(f"{BOARD_A}:1"))], {BOARD_A})
+
+    assert recorded.listed == 1
+    assert _facts(tmp_path, T3)[f"{BOARD_A}:1"]["kind"] == "listed"
+
+
+def test_an_id_the_scrape_returned_twice_is_one_fact(tmp_path):
+    recorded = _run(
+        tmp_path,
+        T1,
+        [
+            (BOARD_A, _job(f"{BOARD_A}:1")),
+            (BOARD_A, _job(f"{BOARD_A}:1", title="Other")),
+        ],
+        {BOARD_A},
+    )
+
+    assert recorded.listed == 1
+    assert _facts(tmp_path, T1)[f"{BOARD_A}:1"]["title"] == "Backend Engineer"
+
+
+def test_every_file_names_its_run_and_scope_rule(tmp_path, monkeypatch):
+    monkeypatch.setenv("GITHUB_SHA", "abc123")
+    monkeypatch.setenv("GITHUB_RUN_ID", "42")
+    _run(tmp_path, T1, [(BOARD_A, _job(f"{BOARD_A}:1"))], {BOARD_A})
+
+    for path in (
+        tmp_path / "facts" / jf.JOB_FACTS / jf.file_name(T1),
+        tmp_path / "facts" / jf.BOARD_READS / jf.file_name(T1),
+        tmp_path / "facts" / jf.LISTED_JOBS,
+    ):
+        meta = pq.read_schema(path).metadata
+        assert meta[b"stamp"] == T1.encode()
+        assert meta[b"scope_version"] == str(jf.SCOPE_VERSION).encode()
+        assert meta[b"code_sha"] == b"abc123"
+        assert meta[b"run_id"] == b"42"
+
+
+def test_no_staged_file_is_left_behind(tmp_path):
+    _run(tmp_path, T1, [(BOARD_A, _job(f"{BOARD_A}:1"))], {BOARD_A})
+
+    assert not list((tmp_path / "facts").rglob("*.tmp"))
+
+
+@pytest.mark.parametrize(
+    ("report", "outcome", "reason"),
+    [
+        (ShardReport(boards_ok=[BOARD_A]), "authoritative", None),
+        (
+            ShardReport(boards_ok=[BOARD_A], truncated={BOARD_A: "listing cap"}),
+            "short",
+            "listing cap",
+        ),
+        (ShardReport(errors={BOARD_A: "HTTPError: 503"}), "error", "HTTPError: 503"),
+    ],
+)
+def test_a_board_read_records_its_outcome(report, outcome, reason):
+    report.observations[BOARD_A] = {"stated_total": 12}
+    report.board_seconds[BOARD_A] = 1.5
+
+    (read,) = jf.board_reads([report], {"greenhouse:acme": 3})
+
+    assert (read.scraper_key, read.board, read.outcome, read.reason) == (
+        BOARD_A,
+        "greenhouse:acme",
+        outcome,
+        reason,
+    )
+    assert (read.lines, read.stated_total, read.seconds) == (3, 12, 1.5)
+
+
+def test_the_fields_hash_is_stable_and_ignores_fields_no_rule_reads():
+    job = _job(f"{BOARD_A}:1")
+
+    assert jf.fields_hash(job) == jf.fields_hash(dict(job, scraped_at="later"))
+    assert jf.fields_hash(job) != jf.fields_hash(dict(job, title="Frontend Engineer"))

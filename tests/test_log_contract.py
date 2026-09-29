@@ -1858,6 +1858,7 @@ def test_pipeline_reports_fresh_coverage_beside_each_publication_receipt():
         "embedding_store",
         "lancedb_index",
         "description_store",
+        "job_facts",
         "pipeline_state",
     ):
         assert f"'{key}=not_reached'" in workflow

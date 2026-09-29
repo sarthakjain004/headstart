@@ -61,6 +61,8 @@ def _run(
         str(ledger or out.parent / "no-such-ledger"),
         "--scrape-health",
         str(out.parent / "scrape_health.json"),
+        "--facts",
+        str(out.parent / "facts"),
     ]
     try:
         assert js.main() == 0
@@ -560,6 +562,66 @@ def test_the_ids_an_unauthoritative_board_returned_are_recorded(tmp_path):
 
     recorded = (tmp_path / "unauthoritative_board_ids.txt").read_text(encoding="utf-8")
     assert recorded.split() == ["freshteam:abnhire:1", "freshteam:abnhire:2"]
+
+
+def test_the_join_records_the_runs_job_facts_over_the_eviction_scope(
+    tmp_path, monkeypatch
+):
+    """ADR-0330. Every line is a Job fact, tech or not, and a Job goes unlisted only where the
+    run's read of its Board was authoritative: a short read is no evidence, as it is for sync."""
+    import pyarrow.parquet as pq
+
+    from headstart.ingest import job_facts
+
+    def lines(*ids: str) -> list[str]:
+        return [json.dumps({"id": i, "title": "Engineer"}) for i in ids]
+
+    frags = tmp_path / "frags"
+    _shard(
+        frags,
+        0,
+        {
+            "greenhouse.jsonl": lines(
+                "greenhouse:acme:1", "greenhouse:acme:2", "greenhouse:big:3"
+            )
+        },
+    )
+    observability.write_shard(
+        frags / "shard-0", ShardReport(boards_ok=["greenhouse:acme", "greenhouse:big"])
+    )
+    monkeypatch.setattr(job_facts, "now_stamp", lambda: "2026-09-29T06:00:00+00:00")
+    _run(frags, tmp_path / "jobs")
+
+    # The next run: acme dropped its id 2, big was read short and returned nothing.
+    frags2 = tmp_path / "frags2"
+    _shard(frags2, 0, {"greenhouse.jsonl": lines("greenhouse:acme:1")})
+    observability.write_shard(
+        frags2 / "shard-0",
+        ShardReport(
+            boards_ok=["greenhouse:acme", "greenhouse:big"],
+            truncated={"greenhouse:big": "listing cap"},
+        ),
+    )
+    monkeypatch.setattr(job_facts, "now_stamp", lambda: "2026-09-29T07:00:00+00:00")
+    _run(frags2, tmp_path / "jobs")
+
+    facts_dir = tmp_path / "facts"
+    runs = sorted((facts_dir / job_facts.JOB_FACTS).glob("*.parquet"))
+    assert len(runs) == 2
+    last = pq.read_table(runs[-1]).to_pylist()
+    assert [(row["id"], row["kind"]) for row in last] == [
+        ("greenhouse:acme:2", "unlisted")
+    ]
+    listed = set(pq.read_table(facts_dir / job_facts.LISTED_JOBS)["id"].to_pylist())
+    assert listed == {"greenhouse:acme:1", "greenhouse:big:3"}
+    reads = pq.read_table(max((facts_dir / job_facts.BOARD_READS).glob("*.parquet")))
+    assert dict(
+        zip(reads["scraper_key"].to_pylist(), reads["outcome"].to_pylist())
+    ) == {
+        "greenhouse:acme": "authoritative",
+        "greenhouse:big": "short",
+    }
+    assert not list(facts_dir.rglob("*.tmp"))
 
 
 def test_the_join_names_the_shards_whose_reports_never_arrived(caplog):

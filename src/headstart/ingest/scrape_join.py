@@ -20,6 +20,10 @@ For the same reason it judges which Boards are Dormant, reading each line's ``po
 parse the union already does (ADR-0250). ``filter_tech`` leaves those Boards' rows out of the Tech
 subset.
 
+And it records the run's Job facts (ADR-0330): every line, tech or not, goes to
+:class:`~headstart.ingest.job_facts.ScrapedLines` as it streams, and ``data/facts/`` gains what
+was first listed, changed and no longer listed since the last run, and which Boards were read.
+
 Run: python -m headstart.ingest.scrape_join [--shards DIR] [--out DIR]
 """
 
@@ -39,6 +43,7 @@ from headstart.ingest import (
     UNAUTHORITATIVE_BOARD_IDS_PATH,
     UNAUTHORITATIVE_BOARDS_PATH,
     board_dormancy,
+    job_facts,
     observability,
     shard_speedup,
     write_id_list,
@@ -142,6 +147,36 @@ def _judge_dormant(
     )
 
 
+def _record_facts(
+    scraped: job_facts.ScrapedLines,
+    facts_dir: Path,
+    stamp: str,
+    reports: list[ShardReport],
+    boards: set[str],
+    unauthoritative: set[str],
+    live: dict[str, str],
+) -> None:
+    """Write the run's Job facts (ADR-0330). Its scope is the eviction scope ``index sync`` uses:
+    the Boards this union covered, less the Unauthoritative ones."""
+    path = scraped.close()
+    try:
+        recorded = job_facts.record(
+            path,
+            facts_dir,
+            stamp,
+            job_facts.board_reads(reports, scraped.board_lines),
+            {b for b in boards if lower_key(b) not in unauthoritative},
+            live,
+        )
+    finally:
+        path.unlink(missing_ok=True)
+    _log.info(
+        f"Job facts: {recorded.listed} listed, {recorded.changed} changed, "
+        f"{recorded.unlisted} no longer listed, {recorded.reads} Board read(s); "
+        f"{recorded.still_listed} listed now -> {facts_dir}"
+    )
+
+
 def write_scraped_boards(boards: set[str], path: Path) -> None:
     """Persist the Boards this run's union covered — the eviction scope itself (ADR-0161).
 
@@ -224,6 +259,12 @@ def main() -> int:
         help="small coverage/loss verdict carried to the publication summary",
     )
     ap.add_argument(
+        "--facts",
+        default=str(job_facts.FACTS_DIR),
+        help="where the run's Job facts, Board reads and the Listed set are kept (ADR-0330; "
+        "default: data/facts)",
+    )
+    ap.add_argument(
         "--expected-shards",
         type=int,
         default=0,
@@ -262,6 +303,9 @@ def main() -> int:
     }
     seen_on_unauthoritative: list[str] = []
     dates = board_dormancy.PostedDates()
+    facts_dir = Path(args.facts)
+    stamp = job_facts.now_stamp()
+    scraped = job_facts.ScrapedLines(facts_dir / "scraped_lines.parquet.tmp")
 
     total = 0
     for ats_file, sources in sorted(per_ats.items()):
@@ -292,6 +336,7 @@ def main() -> int:
                             )
                             if lower_key(board) in unauthoritative:
                                 seen_on_unauthoritative.append(job_id)
+                            scraped.see(board, record)
                             n += 1
         total += n
         _log.info(f"{ats_file}: {n} lines from {len(sources)} shard(s)")
@@ -326,6 +371,7 @@ def main() -> int:
     # Before the telemetry below, like the unauthoritative-Board write: this is the eviction
     # signal, and an empty file is the honest record of a run that joined nothing.
     write_scraped_boards(boards, Path(args.scraped_boards))
+    _record_facts(scraped, facts_dir, stamp, reports, boards, unauthoritative, live)
     _update_speedup(reports, Path(args.speedup_ledger))
     health = observability.ScrapeHealth.from_reports(
         reports, expected_reports=args.expected_shards or None

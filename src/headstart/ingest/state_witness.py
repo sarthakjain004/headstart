@@ -53,6 +53,7 @@ WITNESS_PATH = "data/state/published_dirs.json"
 ROOTS: tuple[str, ...] = (
     "data/descriptions",
     "data/embeddings/jobs",
+    "data/facts",
     "data/lancedb",
     "data/state",
 )
