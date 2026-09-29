@@ -15,7 +15,7 @@ re-observed FACT_FIELD, so once a Board is rescraped its now-populated raw ``Job
 from the stored one and `refresh_row`'s `salary_inputs_moved` reprocesses it — no version sweep
 required. A bump is for when unchanged input starts parsing differently; here the input itself
 changes from ``None`` to a real string. The same holds for ``pay_input_ranges`` and for
-``employment_type`` read from ``metadata`` (``_employment_type``): both are FACT_FIELDS.
+``employment_type`` read from ``metadata`` (``_employment_type``): all three are FACT_FIELDS.
 """
 
 from __future__ import annotations

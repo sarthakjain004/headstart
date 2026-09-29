@@ -112,6 +112,18 @@ def test_greenhouse_employment_type_reads_the_tenants_metadata_field(name, value
     assert _greenhouse_employment_type(md) == value
 
 
+def test_greenhouse_employment_type_matches_a_padded_name():
+    md = [
+        {
+            "id": 1,
+            "name": " Employment Type ",
+            "value": "Full-time",
+            "value_type": "single_select",
+        }
+    ]
+    assert _greenhouse_employment_type(md) == "Full-time"
+
+
 def test_greenhouse_employment_type_ignores_lookalike_fields():
     """`Employment Level` sits beside `Employment Type` on glassboxltd and is not a type."""
     md = [
