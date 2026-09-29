@@ -39,6 +39,7 @@ sys.path.insert(0, str(_ROOT / "src"))
 from headstart.scrapers.registry import DISABLED_ATS, SCRAPERS
 from headstart.search_filters import (
     country_gazetteer,
+    employment_type_filter,
     fx,
     india_gazetteer,
     posted_date_guard,
@@ -252,13 +253,9 @@ def _title_has_words(title: str | None, words: str) -> bool:
 
 
 def _etype_ok(value: str | None, canonical: str) -> bool:
-    v = (value or "").lower()
-    return {
-        "full-time": ("full" in v or ("permanent" in v and "part" not in v)),
-        "part-time": "part" in v,
-        "contract": ("contract" in v or "freelance" in v),
-        "internship": "intern" in v,
-    }[canonical]
+    """The raw value satisfies the filter's own rule, so a served row whose materialized flag
+    disagrees with its text is caught (the rules grew past a restatement here, ADR-0337)."""
+    return employment_type_filter.RULES[canonical].matches(value)
 
 
 def run_checks(base: str, atses: list[str]) -> list[dict]:

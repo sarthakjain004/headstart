@@ -31,15 +31,25 @@ def test_international_is_not_an_internship():
 def test_raw_clauses_keep_the_filter_contract():
     assert RULES["full-time"].raw_clause() == (
         "(lower(employment_type) LIKE '%full%' OR "
+        "lower(employment_type) LIKE '%\\_ft%' ESCAPE '\\' OR "
+        "lower(employment_type) LIKE '%temps plein%' OR "
+        "lower(employment_type) LIKE '%tiempo completo%' OR "
+        "lower(employment_type) LIKE '%vollzeit%' OR "
+        "lower(employment_type) LIKE '%全职%' OR "
         "(lower(employment_type) LIKE '%permanent%' AND "
         "lower(employment_type) NOT LIKE '%part%') OR "
         "(lower(employment_type) LIKE '%regular%' AND "
         "lower(employment_type) NOT LIKE '%part%') OR "
-        "lower(employment_type) IN ('salaried_ft', 'hourly_ft', 'f', 'ft', "
-        "'fte', 'cdi', 'tiempo completo', '全职'))"
+        "(lower(employment_type) LIKE '%cdi%' AND "
+        "lower(employment_type) NOT LIKE '%part%') OR "
+        "(lower(employment_type) LIKE '%fte%' AND "
+        "lower(employment_type) NOT LIKE '%after%') OR "
+        "lower(employment_type) IN ('f', 'ft'))"
     )
     assert RULES["internship"].raw_clause() == (
-        "(lower(employment_type) LIKE '%intern%' AND "
+        "((lower(employment_type) LIKE '%intern%' OR "
+        "lower(employment_type) LIKE '%co-op%' OR "
+        "lower(employment_type) LIKE '%coop%') AND "
         "lower(employment_type) NOT LIKE '%international%')"
     )
 
@@ -71,23 +81,16 @@ def test_raw_clauses_agree_with_the_python_flags():
         "International Internship",
         "Part-time contract",
         "",
-        "Regular",
-        "Regular Part-time",
+        # ADR-0337's terms, and the LIKE wildcard an unescaped "_ft" would be.
         "SALARIED_FT",
-        "Fte",
-        "Fte-something",
-        "Freelance",
-        "Temporary",
-        "fulltime_fixed_term",
         "HOURLY_PT",
-        "全职",
-        "F",
-        "ft",
-        "CDI",
+        "Software",
+        "Regular",
+        "Regular Part-Time",
+        "Second Shift (afternoon)",
+        "fulltime_fixed_term",
+        "Co-op",
         "Tiempo completo",
-        "Fixed Term",
-        "HOURLY_FT",
-        "Regular Part-time",
     )
     for value in values:
         for rule in RULES.values():
@@ -98,6 +101,43 @@ def test_raw_clauses_agree_with_the_python_flags():
             assert bool(sql) is rule.matches(value), (value, rule.column)
 
 
+def test_raw_values_that_read_as_none_are_mapped_where_unambiguous():
+    """ADR-0337: the served table's top raw values that set no flag."""
+    full = {
+        "is_full_time": True,
+        "is_part_time": False,
+        "is_contract": False,
+        "is_internship": False,
+    }
+    for value in (
+        "SALARIED_FT",
+        "HOURLY_FT",
+        "Regular",
+        "INTL Regular FT",
+        "CDI",
+        "FTE",
+        "Tiempo completo",
+        "Temps plein",
+        "Vollzeit",
+        "全职",
+    ):
+        assert flags(value) == full, value
+    assert flags("HOURLY_PT")["is_part_time"] is True
+    assert flags("Regular Part-Time")["is_full_time"] is False
+    assert flags("Second Shift (afternoon)")["is_full_time"] is False
+    assert flags("Fixed Term")["is_contract"] is True
+    assert flags("fulltime_fixed_term") == {**full, "is_contract": True}
+    assert flags("Co-op")["is_internship"] is True
+    # Left unread: ambiguous at the source. ("Temporary" and "F" were here until ADR-0340 read
+    # them: Temporary as contract, F as a whole value.)
+    for value in ("OTHER", "Employee"):
+        assert not any(flags(value).values()), value
+
+
+def test_an_underscore_term_is_escaped_in_its_like_pattern():
+    assert "LIKE '%\\_ft%' ESCAPE '\\'" in RULES["full-time"].raw_clause()
+
+
 def test_clause_prefers_the_flag_and_ignores_an_unknown_value():
     assert clause("contract", True) == "is_contract = true"
     assert clause("contract", False) == RULES["contract"].raw_clause()
@@ -105,58 +145,19 @@ def test_clause_prefers_the_flag_and_ignores_an_unknown_value():
     assert clause(None, False) is None
 
 
-def test_values_that_read_as_full_time_but_carry_no_full_or_permanent():
-    """Measured 2026-09-29 on the served table: 10,790 flagless rows held these (Radancy, TikTok,
-    ByteDance, Rippling, Applied Materials)."""
-    for value in (
-        "Regular",
-        "Regular Employee",
-        "Regular - Permanent",
-        "SALARIED_FT",
-        "HOURLY_FT",
-        "F",
-        "FT",
-        "fte",
-        "CDI",
-        "Tiempo completo",
-        "全职",
-    ):
-        assert flags(value)["is_full_time"] is True, value
-    assert flags("Regular Part-time")["is_full_time"] is False
-    assert flags("Regular Part-time")["is_part_time"] is True
+def test_a_single_letter_code_counts_only_as_the_whole_value():
+    """Radancy's "F" (Applied Materials, 1,009 rows) and a bare "FT" (ADP): a substring rule
+    would read "soft", "left" and "effort" as full-time."""
+    assert flags("F")["is_full_time"] is True
+    assert flags("ft")["is_full_time"] is True
+    for value in ("Freelance", "Software", "Left", "Effort", "Soft skills"):
+        assert RULES["full-time"].matches(value) is False, value
 
 
-def test_short_codes_match_only_as_the_whole_value():
-    for value in (
-        "Freelance",
-        "Software",
-        "Left",
-        "Fte-something",
-        "Cdi Lyon",
-        "Effort",
-    ):
-        assert flags(value)["is_full_time"] is False, value
-    assert flags("Freelance")["is_contract"] is True
-
-
-def test_temporary_and_fixed_term_count_as_contract():
-    for value in (
-        "Temporary",
-        "TEMPORARY",
-        "Fixed Term",
-        "Fixed-Term",
-        "fulltime_fixed_term",
-    ):
+def test_temporary_counts_as_contract():
+    for value in ("Temporary", "TEMPORARY", "Temporary Employee"):
         assert flags(value)["is_contract"] is True, value
-    # hours and duration are independent: a fixed-term full-time job is both
-    assert flags("fulltime_fixed_term")["is_full_time"] is True
-    assert flags("parttime_fixed_term")["is_part_time"] is True
     assert flags("Permanent")["is_contract"] is False
-
-
-def test_rippling_part_time_codes():
-    assert flags("SALARIED_PT")["is_part_time"] is True
-    assert flags("HOURLY_PT")["is_part_time"] is True
 
 
 def test_a_title_says_internship_when_the_employment_type_does_not():
@@ -169,7 +170,6 @@ def test_a_title_says_internship_when_the_employment_type_does_not():
     assert (
         flags("Full time", "Machine Learning Interns (Summer)")["is_internship"] is True
     )
-    # the ATS's own word still counts, with or without a title
     assert flags("Intern")["is_internship"] is True
     assert flags("Intern", "Engineer")["is_internship"] is True
 
@@ -214,4 +214,4 @@ def test_no_flag_is_a_response_field():
     from headstart.serving.job_search import JOB_DETAIL_COLUMNS, RESULT_COLUMNS
 
     served = set(RESULT_COLUMNS) | set(JOB_DETAIL_COLUMNS)
-    assert served.isdisjoint(c for rule in RULES.values() for c in [rule.column])
+    assert served.isdisjoint(rule.column for rule in RULES.values())

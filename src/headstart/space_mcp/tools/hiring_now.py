@@ -13,11 +13,12 @@ size, so re-counting it could not size stays in (ADR-0272). Bosch Group led Expa
 with 23 postings opened and 33 closed. So each row states opened less closed beside its net, and
 the site's three older Lenses flag every artifact that questions what they rank by: a net more
 than its postings opened and closed could make, closures that went uncounted on all or some of
-its Boards, more postings opened than are open now, and on Rate a base too small to read. There
-every flagged row `/hot` serves is listed after every unflagged one, each group in the site's
-order, before the answer is cut to its `limit`, and every row then gives its place on the page.
-Opened less closed ranks by a figure none of those questions, so it flags nothing and keeps its
-order (`LENSES`).
+its Boards, more postings opened than are open now, and on Rate a base too small to read.
+Opened less closed ranks by a figure none of those questions (`LENSES`). Every Lens flags a
+row whose operator is unverified (ADR-0335): an employer only because no curated list names
+it, while its name reads like a staffing firm's, as Vrinda International's did at #3. Every
+flagged row `/hot` serves is listed after every unflagged one, each group in the site's order,
+before the answer is cut to its `limit`, and every row then gives its place on the page.
 """
 
 from __future__ import annotations
@@ -53,6 +54,7 @@ class Flag(StrEnum):
     # A few words a row; the line under the rows says what each means.
     CLOSURES_UNCOUNTED = "closures not counted"
     CLOSURES_PARTLY_UNCOUNTED = "closures counted on only some Boards"
+    OPERATOR_UNVERIFIED = "operator unverified"
 
 
 #: What the line under the rows says of each flag, after "N of these rows".
@@ -72,6 +74,10 @@ _FLAG_SUMMARY = {
     Flag.SMALL_BASE: (
         "rank on a small base, where a few postings move the rate far: weigh them by their "
         "postings opened, not the percentage."
+    ),
+    Flag.OPERATOR_UNVERIFIED: (
+        "are named like a staffing firm or recruiter, and HeadStart has not checked who posts "
+        "for them: 'employer' is only its default, so do not report them as employers hiring."
     ),
 }
 
@@ -96,9 +102,9 @@ class Lens:
 
     #: What it ranks, as the header says it.
     ranks: str
-    #: Listed in the page's order, flagged rows after the rest: the site's older Lenses.
+    #: One of the site's older Lenses, which rank by a figure that can hold re-counting.
     in_site_order: bool
-    #: The flags that question the figure it ranks by.
+    #: The flags that question the figure it ranks by, or who posts for the row.
     checks: tuple[Flag, ...]
     #: `/hot`'s counts of companies it leaves out beyond every Lens's (`_LEFT_OUT`).
     left_out: tuple[str, ...] = ()
@@ -109,6 +115,7 @@ _SITE_CHECKS = (
     Flag.OPENED_OVER_OPEN_NOW,
     Flag.CLOSURES_UNCOUNTED,
     Flag.CLOSURES_PARTLY_UNCOUNTED,
+    Flag.OPERATOR_UNVERIFIED,
 )
 
 #: The Lens answered unless another is asked for: the one whose figure holds no re-counting.
@@ -122,7 +129,8 @@ LENSES = {
             "counted on every Board, largest first"
         ),
         in_site_order=False,
-        checks=(),
+        # Its figure holds no re-counting, but who posts for a row is a question on every Lens.
+        checks=(Flag.OPERATOR_UNVERIFIED,),
         left_out=("closures_uncounted", "closures_partly_uncounted"),
     ),
     "expansion": Lens(
@@ -217,6 +225,7 @@ def _flags(
         Flag.CLOSURES_UNCOUNTED: bool(opened) and row.get("closed") is None,
         Flag.CLOSURES_PARTLY_UNCOUNTED: row.get("closed") is not None
         and bool(row.get("closures_uncounted_boards")),
+        Flag.OPERATOR_UNVERIFIED: bool(row.get("operator_unverified")),
     }
     return tuple(flag for flag in lens.checks if carried[flag])
 
@@ -232,10 +241,9 @@ def _said(flag: Flag, row: dict[str, Any]) -> str:
 
 
 def _listing(hot: dict[str, Any], lens: str, limit: int, show_hidden: bool) -> _Listing:
-    """The rows the page shows on ``lens``, with their flags, the first ``limit`` of them. On
-    the site's older Lenses every flagged row `/hot` serves goes after every unflagged one before
-    the cut, so a small ``limit`` still leads with real rows; sorting is stable, so each group
-    keeps the site's order."""
+    """The rows the page shows on ``lens``, with their flags, the first ``limit`` of them. Every
+    flagged row `/hot` serves goes after every unflagged one before the cut, so a small ``limit``
+    still leads with real rows; sorting is stable, so each group keeps the site's order."""
     hidden = set(hot.get("hidden_by_default") or ())
     ranked = hot.get("lenses", {}).get(lens) or []
     rows = [r for r in ranked if show_hidden or r.get("operator") not in hidden]
@@ -245,8 +253,7 @@ def _listing(hot: dict[str, Any], lens: str, limit: int, show_hidden: bool) -> _
         ListedRow(place, row, _flags(row, LENSES[lens], pace, min_stock))
         for place, row in enumerate(rows, start=1)
     ]
-    if LENSES[lens].in_site_order:
-        listed.sort(key=lambda listed_row: bool(listed_row.flags))
+    listed.sort(key=lambda listed_row: bool(listed_row.flags))
     shown = listed[:limit]
     moved = [r.page_place for r in shown] != list(range(1, len(shown) + 1))
     return _Listing(shown, len(ranked) - len(rows), moved)
@@ -378,20 +385,23 @@ TOOL = SpaceTool(
         "marked FLAG: its net is re-counting or its opened cannot be trusted. Companies are "
         "ranked over the trailing week on one Lens. The default, `opened_less_closed`, ranks "
         "postings opened less postings closed, only for companies whose closures were counted "
-        "on every Board: the one Lens with no re-counting in its figure, so it flags nothing. "
+        "on every Board: the one Lens with no re-counting in its figure. "
         "The site's other Lenses: `expansion` (net change in tech openings, less the counting "
         "steps HeadStart could size; it can still hold re-counting), `volume` (postings "
         "opened) or `rate` (postings opened as a share of the company's openings now, only for "
         "companies whose net change was above 0 and whose closures were counted). On those, a "
         "row is flagged where its net is not backed by its postings opened and "
         "closed, its closures went uncounted on any Board, it opened more postings than are "
-        "open now, or, on rate, its base is small, and flagged rows are listed after the rest. "
+        "open now, or, on rate, its base is small. "
         "Whole tech index; companies under 25 openings or counted for under 3 days are not "
         "ranked. Each "
         "row's operator says who posts: employer (the company itself, and any company not on "
         "HeadStart's curated list), services (an IT services firm posting client work it "
         "staffs with its own engineers), staffing (a staffing agency posting its clients' "
-        "contracts) or aggregator (a job board re-posting other companies' jobs). Staffing and "
+        "contracts) or aggregator (a job board re-posting other companies' jobs). On every "
+        "Lens a row is flagged operator unverified when it is an employer only by that default "
+        "and its name reads like an agency's. Flagged rows are listed after the rest. "
+        "Staffing and "
         "aggregator rows are left out unless asked for, as on the site. Each row carries a key "
         "that search_jobs and read_trends accept."
     ),

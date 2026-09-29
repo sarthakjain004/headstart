@@ -53,7 +53,9 @@ of the company's change, as the trend does.
 Staffing firms and job boards are ranked like any company, and the payload's
 ``hidden_by_default`` (``HIDDEN_BY_DEFAULT``) names them as the Operators the tab hides unless
 asked (ADR-0238), never IT services, which employ the people they post for. The page, and any
-other reader of ``/hot``, hides by that one list.
+other reader of ``/hot``, hides by that one list. A row's ``operator_unverified`` says it is an
+employer only because no list names it, while its name reads like an agency's
+(``board_operator.unverified``, ADR-0335).
 """
 
 from __future__ import annotations
@@ -63,6 +65,7 @@ from collections.abc import Mapping
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
+from headstart.boards import board_operator
 from headstart.boards.board_identity import ats_of
 from headstart.trends import line_reading
 
@@ -137,6 +140,10 @@ def rank(
                 "boards": list(entry["boards"]),
                 "atses": sorted({ats_of(board) for board in entry["boards"]}),
                 "operator": entry["operator"],
+                # An employer only by default, named like an agency (ADR-0335).
+                "operator_unverified": board_operator.unverified(
+                    entry["boards"], entry["name"]
+                ),
                 "stock": open_now,
                 "net": move.hiring,
                 "opened": opened,

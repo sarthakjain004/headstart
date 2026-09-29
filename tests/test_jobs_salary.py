@@ -2344,3 +2344,47 @@ def test_every_plausible_annual_figure_fits_the_served_int32_columns():
     # `min_salary_annual`/`max_salary_annual` are int32 in `index._schema()`; COP's ceiling scaled
     # from USD's (2.5 billion) would not fit.
     assert max(salary_module._MAX_PLAUSIBLE_ANNUAL.values()) <= 2**31 - 1
+
+
+# --- ADR-0337: both ends of a range whose ceiling repeats its currency ----------------------------
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        # Served as a floor of 572,000 from the ceiling alone before.
+        (
+            "The estimated base salary range for this role is USD$225.00 - USD$275.00 per hour.",
+            SalarySpan(468_000, 572_000, "USD", "regex"),
+        ),
+        (
+            "The estimated base salary range for this role is CAD$22.50 - CAD$27.50 per hour.",
+            SalarySpan(45_760, 58_240, "CAD", "regex"),
+        ),
+        (
+            "We offer a pay range of $80-to-$150 per hour, with the rate set by skill.",
+            SalarySpan(166_400, 312_000, "USD", "regex"),
+        ),
+        (
+            "the expected pay range is USD $23.00--$27.50 per hour. The comp",
+            SalarySpan(47_840, 58_240, "USD", "regex"),
+        ),
+        (
+            "the salary range for this position is USD$110,000.00 - USD$138,000.00 . Additionally",
+            SalarySpan(110_000, 138_000, "USD", "regex"),
+        ),
+    ],
+)
+def test_a_range_keeps_both_ends_when_its_ceiling_restates_the_currency(text, expected):
+    assert from_description(text) == expected
+
+
+def test_a_description_figure_carries_the_period_it_was_stated_in():
+    hourly = from_description("Pay: $25.00 - $30.00 per hour")
+    assert hourly is not None and hourly.period == "hour"
+    annual = from_description("Salary: $120,000 - $150,000")
+    assert annual is not None and annual.period == "year"
+    # Tier 1 leaves it None: the field's own text says its period.
+    assert from_field("50000-70000 USD per-year-salary", "lever").period is None
+    # The period is not part of a span's identity.
+    assert SalarySpan(1, 2, "USD", "regex", "hour") == SalarySpan(1, 2, "USD", "regex")

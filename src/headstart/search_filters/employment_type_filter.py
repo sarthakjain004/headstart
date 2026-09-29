@@ -19,6 +19,15 @@ from collections.abc import Collection
 from typing import NamedTuple
 
 
+def _contains(term: str) -> str:
+    """The LIKE pattern matching ``term`` anywhere. An underscore is LIKE's any-character
+    wildcard, so a term holding one ("_ft") escapes it, or "%_ft%" would match "software"."""
+    if "_" not in term:
+        return f"'%{term}%'"
+    escaped = term.replace("_", "\\_")
+    return f"'%{escaped}%' ESCAPE '\\'"
+
+
 class EmploymentTypeRule(NamedTuple):
     column: str
     #: The Facet's label for this canonical value.
@@ -32,9 +41,9 @@ class EmploymentTypeRule(NamedTuple):
     #: Lance answers `TRIM(lower(x))` with "not supported SQL" (lance-datafusion 7.0.0, measured
     #: 2026-09-29), and the fallback clause must match the Python verdict.
     whole_values: tuple[str, ...] = ()
-    #: Words in the *title* that count as well as the raw value. Read only by
-    #: the materialized flag: the SQL fallback for a table without the columns cannot pattern-match
-    #: a title, so it keeps the raw-value clause.
+    #: Words in the *title* that count as well as the raw value. Read only by the materialized
+    #: flag: the SQL fallback for a table without the columns cannot pattern-match a title, so it
+    #: keeps the raw-value clause.
     title_pattern: re.Pattern[str] | None = None
 
     def matches(self, value: str | None, title: str | None = None) -> bool:
@@ -52,9 +61,9 @@ class EmploymentTypeRule(NamedTuple):
 
     def raw_clause(self, column: str = "employment_type") -> str:
         lowered = f"lower({column})"
-        arms = [f"{lowered} LIKE '%{term}%'" for term in self.includes]
+        arms = [f"{lowered} LIKE {_contains(term)}" for term in self.includes]
         arms += [
-            f"({lowered} LIKE '%{term}%' AND {lowered} NOT LIKE '%{veto}%')"
+            f"({lowered} LIKE {_contains(term)} AND {lowered} NOT LIKE {_contains(veto)})"
             for term, veto in self.includes_unless
         ]
         if self.whole_values:
@@ -63,7 +72,7 @@ class EmploymentTypeRule(NamedTuple):
             )
         included = " OR ".join(arms)
         excluded = " AND ".join(
-            f"{lowered} NOT LIKE '%{term}%'" for term in self.excludes
+            f"{lowered} NOT LIKE {_contains(term)}" for term in self.excludes
         )
         clause = f"({included})" if len(arms) > 1 else included
         if excluded:
@@ -76,47 +85,43 @@ RULES = {
     # Personio's "permanent / part-time" are part-time jobs. Every "permanent" value carrying
     # "part" but not "full" in a 228k-row corpus (2026-07) was one of those, so "part" vetoes it.
     #
-    # Measured on the served table 2026-09-29: 10,790 rows held a value that read as full time
-    # and set no flag. "regular" is Radancy's, TikTok's and ByteDance's word for it (4,910 rows,
-    # "Regular Part-time" is vetoed like "permanent"), "salaried_ft"/"hourly_ft" Rippling's (2,902),
-    # "F" Applied Materials' (1,009), and "CDI" (French permanent contract), "Tiempo completo" and
-    # "全职" follow the "permanent" convention. Their descriptions say "part-time" as rarely as
-    # stated full-time rows' do (0.0-0.2% against 0.8%).
+    # ADR-0337 mapped the raw values the served table's top 130 read as none (500,134 rows,
+    # 2026-09-29) where their meaning is unambiguous. "regular" and "cdi" (France's permanent
+    # contract) read as "permanent" does: 4,894 rows are plain "Regular" (Radancy, TikTok,
+    # ByteDance), none titled part-time, and "Regular Part-Time" exists, so "part" vetoes them.
+    # "fte" is vetoed by "after" ("Second Shift (afternoon)"). Rippling's "SALARIED_FT"/"HOURLY_FT"
+    # (2,904 rows) and "_PT", and the French, Spanish, German and Chinese words for full-time.
+    # Fixed-term is a contract ("fulltime_fixed_term", "Fixed Term", 830 rows), and a co-op
+    # (a student's work term, 72 rows) an internship. Left unread:
+    # iCIMS's "OTHER" (4,840, 330 of them titled intern), Radancy's "F" (a letter the substring
+    # rules cannot tell from any word), "Temporary" (136 of 480 titled intern), "Employee",
+    # "Salary", "Professional" and the like.
     "full-time": EmploymentTypeRule(
         "is_full_time",
         "Full-time",
-        ("full",),
-        includes_unless=(("permanent", "part"), ("regular", "part")),
-        whole_values=(
-            "salaried_ft",
-            "hourly_ft",
-            "f",
-            "ft",
-            "fte",
-            "cdi",
-            "tiempo completo",
-            "全职",
+        ("full", "_ft", "temps plein", "tiempo completo", "vollzeit", "全职"),
+        includes_unless=(
+            ("permanent", "part"),
+            ("regular", "part"),
+            ("cdi", "part"),
+            ("fte", "after"),
         ),
+        # Radancy's "F" (Applied Materials, 1,009 rows) and a bare "FT" (ADP, ~95): whole values,
+        # since a substring rule cannot tell them from any word (ADR-0340).
+        whole_values=("f", "ft"),
     ),
-    "part-time": EmploymentTypeRule(
-        "is_part_time",
-        "Part-time",
-        ("part",),
-        whole_values=("salaried_pt", "hourly_pt"),
-    ),
-    # Temporary and fixed-term jobs are time-limited like contracts. The two kinds stack with
-    # hours: "fulltime_fixed_term" is full-time and contract.
+    "part-time": EmploymentTypeRule("is_part_time", "Part-time", ("part", "_pt")),
     "contract": EmploymentTypeRule(
-        "is_contract", "Contract", ("contract", "freelance", "temporary", "fixed")
+        "is_contract", "Contract", ("contract", "freelance", "fixed", "temporary")
     ),
     # The title says "Intern" where Workday's timeType says "Full time" and Greenhouse says
     # nothing: 9,354 of 11,993 intern-titled rows were unflagged (2026-09-29). A whole word, so
-    # "International", "Internal" and "Internet" never match; 40 of 40 unflagged titles read
-    # were real internships, and "Internship Program" titles are the postings themselves.
+    # "International", "Internal" and "Internet" never match; 40 of 40 unflagged titles read were
+    # real internships, and "Internship Program" titles are the postings themselves (ADR-0340).
     "internship": EmploymentTypeRule(
         "is_internship",
         "Internship",
-        ("intern",),
+        ("intern", "co-op", "coop"),
         ("international",),
         title_pattern=re.compile(r"\bintern(?:ship)?s?\b", re.IGNORECASE),
     ),

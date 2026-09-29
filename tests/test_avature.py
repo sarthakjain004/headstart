@@ -564,3 +564,94 @@ def test_a_details_block_holding_only_css_falls_through_to_the_collapsible_secti
     assert description.startswith("Role Highlights")
     assert "We are looking for an experienced Engineering Manager" in description
     assert "{" not in description
+
+
+# --- employment type: the labels and markup shapes tenants state it in ------------------------
+
+#: Synthetic rows in the shape of dhlconsulting's and lenovo's real ones, for the label table.
+_ROW = (
+    '<div class="article__content__view__field "> '
+    '<div class="article__content__view__field__label"> {label} </div> '
+    '<div class="article__content__view__field__value"> {value} </div> </div>'
+)
+
+
+def _page_with(*pairs: tuple[str, str]) -> str:
+    rows = " ".join(_ROW.format(label=k, value=v) for k, v in pairs)
+    return f"<html><body><article>{rows}</article></body></html>"
+
+
+_LABEL_FIXTURE = json.loads(
+    (
+        pathlib.Path(__file__).parent
+        / "fixtures"
+        / "avature_employment_type_labels.json"
+    ).read_text()
+)
+
+
+@pytest.mark.parametrize(
+    ("name", "expected"),
+    [
+        ("bravura_individual_contractor", "Individual Contractor"),  # fieldSet
+        ("bravura_permanent", "Permanent"),  # fieldSet
+        ("colorado_faculty", "Faculty"),  # fieldSet; its "Schedule" says Full-Time
+        ("lululemoninc_time_type", "Full-time"),  # data-map="item-title"
+        ("astellasjapan_employment_class", "Permanent"),
+        ("dhlconsulting_working_time", "Full-time"),
+        ("lenovo_working_time", "Full-time"),
+    ],
+)
+def test_employment_type_is_read_from_real_pages_the_reader_missed(name, expected):
+    """Each fixture is the label rows of a captured job page (2026-09-29, blank-type before)."""
+    page = f"<html><body>{_LABEL_FIXTURE[name]}</body></html>"
+    assert page_fields(page)["employment_type"] == expected
+
+
+@pytest.mark.parametrize(
+    ("label", "value"),
+    [
+        ("Working time", "Full-time"),
+        ("Working Pattern", "Full time"),
+        ("Working Schedule", "Full time"),
+        ("Position Type", "Contract (12-18 month contract)"),
+        ("Position Type", "Employee Regular"),
+        ("Position Type", "Full Time"),
+        ("Type of Contract", "Permanent"),
+        ("Employment Class", "Permanent"),
+        ("Full-time/Part-time", "Full Time, Part Time, Part Time/Job Share"),
+        ("Post Type", "Regular"),
+        ("Pay Class", "Regular Full-Time"),
+        ("Hire Type", "Temporary"),
+        ("Hire Type", "Employee"),
+        ("Job Type", "Full Time"),
+        ("Job Type", "Fixed Term"),
+    ],
+)
+def test_a_type_label_states_the_employment_type(label, value):
+    fields = page_fields(_page_with((label, value)))
+    assert fields["employment_type"] == value
+
+
+@pytest.mark.parametrize(
+    ("label", "value"),
+    [
+        ("Job Type", "Experienced"),
+        ("Job Type", "Store Support Centre"),
+        ("Job Type", "Non Consulting"),
+        ("Position Type", "Professional"),
+        ("Post Type", "Internal"),
+        ("Working time", "40 hours per week"),
+        ("Working time", "Rotation"),
+        ("Hours", "Full time role, 40 hours per week."),
+        ("Scheduled Weekly Hours", "40"),
+        ("Core hours", "9:00 AM - 4:30 PM (Mon-Fri)"),
+    ],
+)
+def test_a_label_that_is_not_an_employment_type_states_none(label, value):
+    assert page_fields(_page_with((label, value)))["employment_type"] is None
+
+
+def test_an_employment_type_label_beats_a_job_type_that_looks_like_one():
+    page = _page_with(("Job Type", "Full Time"), ("Employment Type", "Permanent"))
+    assert page_fields(page)["employment_type"] == "Permanent"

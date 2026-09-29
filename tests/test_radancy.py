@@ -369,6 +369,208 @@ def test_meta_places_split_on_the_pipe() -> None:
     )
 
 
+# --- employment type: a vocabulary gate and the visible labels (2026-09-29) ---------------------
+
+
+def _jsonld_page(employment_type: object, body: str = "") -> str:
+    node = {
+        "@type": "JobPosting",
+        "title": "Engineer",
+        "employmentType": employment_type,
+    }
+    return '<script type="application/ld+json">' + json.dumps(node) + "</script>" + body
+
+
+# The first 17 are real `employmentType` values tenants wrote into their JSON-LD (28 pages in the
+# 2026-09-29 probe): capitalonecareers.com's org codes, arm, cargill, kaiser, citizensbank's
+# shift code, boeing's "9" and tenet's department names. The rest are invented department and
+# job-family names that hold an employment word but name no type (the review's false keeps).
+@pytest.mark.parametrize(
+    "junk",
+    [
+        "SG",
+        "BU",
+        "SI",
+        "DT",
+        "FBENG",
+        "DE",
+        "MA",
+        "DP",
+        "TP",
+        "Established",
+        "Standard",
+        "Professional",
+        "1ST",
+        "9",
+        "Information Systems",
+        "AI Engineering",
+        "Software Engineering",
+        "Full Stack Engineering",
+        "Fixed Income",
+        "Contract Management",
+        "Real Time Systems",
+        "Time and Attendance",
+        "Time Off",
+        "Temp Staffing Ops",
+        "Intern Programs",
+        "Part Sales",
+        "Regular Shift 1",
+        "Full Cycle Recruiting",
+        "International",
+        "Timeshare",
+        "Contractual",
+        "Time",
+        "Term",
+        "f",
+        "",
+    ],
+)
+def test_a_jsonld_employment_type_that_is_no_type_is_dropped(junk: str) -> None:
+    fields = _page_fields(_jsonld_page(junk))
+    assert fields is not None
+    assert fields["employment_type"] is None
+
+
+@pytest.mark.parametrize(
+    "kept",
+    [
+        "F",  # jobs.appliedmaterials.com, 1,009 rows: this tenant means Full time
+        "Full time",
+        "Full-Time",
+        "FULL_TIME",
+        "Regular",
+        "Permanent",
+        "Regular Full-Time",
+        "Temporary",
+        "Contract",
+        "Part-time",
+        "PART_TIME",
+        "CONTRACTOR",
+        "Intern",
+        "Internship",
+        "Seasonal",
+        "Fixed Term",
+        "Salaried Full Time",
+        "Full/Part Time",
+        "Per Diem",
+    ],
+)
+def test_a_jsonld_employment_type_that_names_a_type_is_kept(kept: str) -> None:
+    fields = _page_fields(_jsonld_page(kept))
+    assert fields is not None
+    assert fields["employment_type"] == kept
+
+
+def test_a_list_employment_type_is_gated_per_element() -> None:
+    fields = _page_fields(_jsonld_page(["FULL_TIME", "SG"]))
+    assert fields is not None
+    assert fields["employment_type"] == "FULL_TIME"
+    fields = _page_fields(_jsonld_page(["FULL_TIME", "CONTRACTOR"]))
+    assert fields is not None
+    assert fields["employment_type"] == "FULL_TIME, CONTRACTOR"
+    fields = _page_fields(_jsonld_page(["SG", "BU"]))
+    assert fields is not None
+    assert fields["employment_type"] is None
+
+
+def test_a_jsonld_page_with_no_type_reads_the_visible_label() -> None:
+    body = (
+        '<span class="job-info job-type"><b>Job Type: </b>Full time</span>'
+        '<span class="job-info job-type"><b>Site Location: </b>Broadmoor Campus</span>'
+    )
+    fields = _page_fields(_jsonld_page(None, body))
+    assert fields is not None
+    assert fields["employment_type"] == "Full time"
+
+
+def test_junk_jsonld_falls_back_to_the_visible_label() -> None:
+    body = '<span class="job-info job-type"><b>Job Type: </b>Full time</span>'
+    fields = _page_fields(_jsonld_page("SG", body))
+    assert fields is not None
+    assert fields["employment_type"] == "Full time"
+
+
+def test_a_real_jsonld_type_wins_over_the_visible_label() -> None:
+    body = '<span class="job-info"><b>Job Type: </b>Part time</span>'
+    fields = _page_fields(_jsonld_page("FULL_TIME", body))
+    assert fields is not None
+    assert fields["employment_type"] == "FULL_TIME"
+
+
+def test_a_visible_label_is_gated_like_jsonld() -> None:
+    body = '<span class="job-info"><b>Job Type: </b>Clinical</span>'
+    fields = _page_fields(_jsonld_page(None, body))
+    assert fields is not None
+    assert fields["employment_type"] is None
+
+
+_EVOTEC_SPANS = (
+    '<span class="job-status job-info">\r\n <b>Contract type</b>\r\n Permanent\r\n </span>'
+    '<span class="job-type job-info">\r\n <b>Working hours</b>\r\n Full time\r\n </span>'
+    '<span class="job-type job-info"><b>Remote type</b> On-site</span>'
+)
+_RCHSD_DL = (
+    '<div class="job-description__desc-job-info job-schedule">\r\n'
+    '<dt class="job-description__desc-term job-term-schedule">Schedule</dt>\r\n'
+    '<dd class="job-description__desc-detail job-detail-schedule">Full-Time</dd>\r\n</div>'
+)
+_JABIL_DL = (
+    '<div class="job-description__desc-job-info job-time-type">'
+    '<dt class="job-description__desc-term job-term-time-type">Time Type</dt>'
+    '<dd class="job-description__desc-detail job-detail-time-type">Full Time</dd></div>'
+)
+
+
+def test_a_meta_only_page_reads_the_visible_hours_over_the_contract_type() -> None:
+    # careers.evotec.com states both; the hours ("Full time") say more than "Permanent".
+    page = '<meta name="gtm_tbcn_jobtitle" content="Process Engineer">' + _EVOTEC_SPANS
+    fields = _page_fields(page)
+    assert fields is not None
+    assert fields["employment_type"] == "Full time"
+
+
+def test_a_meta_only_page_reads_a_definition_list_schedule() -> None:
+    for dl, value in ((_RCHSD_DL, "Full-Time"), (_JABIL_DL, "Full Time")):
+        page = '<meta name="gtm_tbcn_jobtitle" content="Operator">' + dl
+        fields = _page_fields(page)
+        assert fields is not None
+        assert fields["employment_type"] == value
+
+
+def test_the_contract_type_alone_is_read_when_no_hours_are_stated() -> None:
+    body = '<span class="job-status job-info"><b>Contract type</b> Permanent</span>'
+    fields = _page_fields(_jsonld_page(None, body))
+    assert fields is not None
+    assert fields["employment_type"] == "Permanent"
+
+
+def test_a_label_value_in_nested_tags_and_nbsp_is_read() -> None:
+    body = (
+        '<div><dt class="job-term-schedule">Schedule</dt>'
+        '<dd class="job-detail-schedule">\n<span>Full&nbsp;time</span>\n</dd></div>'
+    )
+    fields = _page_fields(_jsonld_page(None, body))
+    assert fields is not None
+    assert fields["employment_type"] == "Full time"
+    body = '<span class="job-info"><b>Job Type</b> <a href="#">Full time</a></span>'
+    fields = _page_fields(_jsonld_page(None, body))
+    assert fields is not None
+    assert fields["employment_type"] == "Full time"
+
+
+def test_a_job_info_span_need_not_lead_with_its_class() -> None:
+    body = '<span id="t" data-x="1" class="x job-info"><b>Time Type</b>Full Time</span>'
+    fields = _page_fields(_jsonld_page(None, body))
+    assert fields is not None
+    assert fields["employment_type"] == "Full Time"
+
+
+def test_a_meta_only_page_with_no_label_has_no_type() -> None:
+    fields = _page_fields('<meta name="gtm_tbcn_jobtitle" content="Nurse">')
+    assert fields is not None
+    assert fields["employment_type"] is None
+
+
 # --- robots.txt, requisition, and a sitemap that lists nothing (critique 2026-09-28) -----------
 
 # www.intel-jobs.com/robots.txt, verbatim (2026-09-28): the whole site is disallowed.

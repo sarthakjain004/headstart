@@ -264,6 +264,23 @@ def _derive_from_history(
 _COMPANY_BOARDS, _HOT = _derive_from_history(_HISTORY)
 
 
+def _operator_boards(
+    history: trend_history.TrendHistory,
+) -> dict[str, tuple[str, ...]]:
+    """Each Operator's Boards but the employers', from the Company directory the Hot ranking
+    reads, so ``operators=`` on /search, /facets and /requirements leaves out the Boards the
+    Hiring now tab hides (ADR-0335). Empty without a directory: every Board is then an
+    employer's, as ``board_operator.classify`` defaults."""
+    boards: dict[str, list[str]] = {}
+    for entry in history.companies.values():
+        if entry["operator"] != "employer":
+            boards.setdefault(entry["operator"], []).extend(entry["boards"])
+    return {operator: tuple(named) for operator, named in boards.items()}
+
+
+_searcher.operator_boards = _operator_boards(_HISTORY)
+
+
 def _with_predecessors(
     family_ids: dict[str, list[str]] | None, successors: dict[str, str]
 ) -> dict[str, list[str]] | None:
@@ -721,7 +738,12 @@ def _keep_static_for_the_boot(response):
 # 13: `strict=1` on /search and /facets refuses a parameter neither reads, naming it (ADR-0334).
 # 14: a sorted /search under `q` or `like` orders only rows scoring at least SORT_FLOOR, and
 # /requirements groups a short and a long name of one employer as one requisition (ADR-0338).
-_AGENT_API_VERSION = 14
+# 15: `operators` on /search, /facets and /requirements, `operators_left_out` on /facets and
+# /requirements, and each /hot row's `operator_unverified` (ADR-0335).
+# 16: `work_authorization` (offers_sponsorship, refuses_sponsorship, offers_relocation) on /search
+# and /facets, each /job's `work_authorization` stances and mentions, and /requirements'
+# `work_authorization` counts, all read from descriptions by rules (ADR-0333).
+_AGENT_API_VERSION = 16
 
 
 @app.after_request

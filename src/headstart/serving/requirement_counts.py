@@ -33,7 +33,7 @@ from typing import Any
 
 from headstart.boards.board_identity import board_of
 from headstart.boards.company_name import FROM_DIRECTORY, with_directory_name
-from headstart.jobs import requisition_copies
+from headstart.jobs import requisition_copies, work_authorization
 from headstart.search_filters import country_filter, country_gazetteer
 from headstart.serving.count_ranking import most_first
 from headstart.serving.tech_skills import Vocabulary
@@ -198,6 +198,16 @@ def _on_its_board(
     return {**with_directory_name(dict(job), board, name), "board": board}
 
 
+def _work_authorization(jobs: list[Mapping[str, Any]]) -> dict[str, int]:
+    """How many of ``jobs`` hold each work-authorisation stance its description states."""
+    held = Counter(
+        stance
+        for job in jobs
+        for stance in work_authorization.stances(job.get("description"))
+    )
+    return {stance: held[stance] for stance in work_authorization.STANCES}
+
+
 def summarize(
     jobs: Iterable[Mapping[str, Any]],
     vocabulary: Vocabulary,
@@ -222,6 +232,8 @@ def summarize(
         "experience": _experience(jobs),
         "salary": _salary(jobs),
         "remote": sum(bool(job.get("remote")) for job in jobs),
+        # Each text-derived stance (ADR-0333), over the Jobs with a description.
+        "work_authorization": _work_authorization(jobs),
         "companies": _companies(jobs),
         "countries": countries,
         "no_country": no_country,

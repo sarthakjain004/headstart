@@ -283,6 +283,22 @@ EXCEPTIONS: Final[frozenset[str]] = frozenset(
     }
 )
 
+#: Employers adjudicated from their own postings whose names still read like an agency's
+#: (:func:`unverified`), spelled as SERVICES is, so `hiring_now` stops flagging them. Not a
+#: label: `classify` never reads it (ADR-0335).
+VERIFIED_EMPLOYERS: Final[frozenset[str]] = frozenset()
+
+#: The words that make a company's name read like a staffing firm's or a recruiter's, each at
+#: the start of a word. A lead, never a label: of the 12 employer-labelled companies it named on
+#: the Hiring now tab of 2026-09-29, 4 were agencies, 3 could not be told from their postings,
+#: and 5 were a defence contractor, a government contractor, two consultancies and an
+#: automotive services firm (ADR-0335). The
+#: module docstring's measurement found the same of name vocabulary: too loose to label by.
+_AGENCY_NAME = re.compile(
+    r"(?<![a-z0-9])(?:consult\w*|staffing|recruit\w*|hr|manpower|placements?|talents?"
+    r"|international)(?![a-z0-9])"
+)
+
 _SPLIT = re.compile(r"[^a-z0-9]+")
 _TRAILING_DIGITS = re.compile(r"\d+$")
 
@@ -347,3 +363,19 @@ def company_operator(boards: Iterable[str], name: str) -> Operator:
         (op for op in ("aggregator", "staffing", "services") if op in found),
         "employer",
     )
+
+
+def unverified(boards: Iterable[str], name: str) -> bool:
+    """Whether a company is an employer only by default and its name, or a Board's tenant, reads
+    like an agency's (``_AGENCY_NAME``): nobody has read its postings, and its name says someone
+    should (ADR-0335). Vrinda International ranked third on the Hiring now tab as an employer
+    while posting clinical psychologists in Oman. A company on any list here, as an Operator, an
+    exception or a verified employer, is not unverified."""
+    boards = list(boards)
+    if company_operator(boards, name) != "employer":
+        return False
+    forms = _forms(name).union(*(_forms(tenant(board)) for board in boards))
+    if forms & (EXCEPTIONS | VERIFIED_EMPLOYERS):
+        return False
+    texts = [name.lower(), *(tenant(board).lower() for board in boards)]
+    return any(_AGENCY_NAME.search(text) for text in texts)

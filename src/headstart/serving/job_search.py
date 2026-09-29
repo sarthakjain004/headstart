@@ -21,11 +21,13 @@ from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
 from threading import Lock
-from typing import Any
+from typing import Any, get_args
 from urllib.parse import urlsplit
 
 from headstart import log
+from headstart.boards.board_operator import Operator
 from headstart.embedding_conventions import encode_query
+from headstart.jobs import work_authorization
 from headstart.search_filters import (
     country_filter,
     employment_type_filter,
@@ -44,6 +46,7 @@ from headstart.search_filters.compiler import (
     SearchFilters,
     account_clause,
     board_clause,
+    board_pattern_clause,
     build_filter,
     with_extra,
 )
@@ -59,6 +62,7 @@ from headstart.serving.description_matches import (
     DescriptionMatches,
     reads_descriptions,
 )
+from headstart.serving.work_authorization_rows import WorkAuthorizationRows
 
 # In the Space nothing calls `setup()` (ADR-0153's app.py boots straight into serving), which
 # is why the one boot line below is a WARNING — `logging.lastResort` carries WARNING and above
@@ -184,6 +188,10 @@ JOB_ID_MAX_CHARS = 300
 #: one whole.
 JOB_DESCRIPTION_LIMIT = 12_000
 
+#: How long a request naming a work-authorisation stance waits for the process's one read of
+#: the descriptions (ADR-0333) before it is refused as not ready yet.
+WORK_AUTHORIZATION_WAIT_S = 10.0
+
 
 # The sort control's values, mapped to the column each orders by (issue #275). A whitelist
 # because the result reaches an ORDER BY; "rel" is deliberately absent, since relevance is the
@@ -246,7 +254,8 @@ def _is_strict(args: Mapping[str, str]) -> bool:
 
 #: Every parameter ``/search`` and ``/facets`` read (ADR-0334): the filters
 #: :meth:`JobSearch.parse_filters` reads, the ranking and the page, ``/facets``' ``counts``, the
-#: scope the app adds (``board``, ``family``, ``role``, ``mine``), its answers' version ``v``,
+#: scope the app adds (``board``, ``family``, ``role``, ``mine``), the Operators kept
+#: (``operators``, ADR-0335), its answers' version ``v``,
 #: and ``strict`` itself. Under ``strict=1`` any other name is refused, so a parameter renamed
 #: on one side cannot drop its filter silently (round-3 critique P2-8). A parameter added to
 #: either route is added here, or a strict caller sending it is refused.
@@ -278,6 +287,7 @@ REQUEST_PARAMETERS = frozenset(
         "max_age_days",
         "required_years_at_least",
         "exclude_company",
+        "work_authorization",
         # the ranking, the order and the page
         "q",
         "like",
@@ -291,6 +301,7 @@ REQUEST_PARAMETERS = frozenset(
         "family",
         "role",
         "mine",
+        "operators",
         "v",
         "strict",
     }
@@ -377,6 +388,27 @@ def scoped_boards_clause(args) -> str | None:
     if len(boards) > MAX_SCOPED_BOARDS:
         raise ValueError(f"at most {MAX_SCOPED_BOARDS} boards")
     return board_clause(boards, exclude=False)
+
+
+#: Who posts a Board (`boards.board_operator`): the values ``operators=`` keeps (ADR-0335).
+OPERATORS: tuple[str, ...] = get_args(Operator)
+
+
+def asked_operators(args: Mapping[str, str]) -> frozenset[str] | None:
+    """The Operators ``operators=`` keeps (comma-separated), or None when it names none, or all
+    of them, which keeps every row. An Operator not in :data:`OPERATORS` is a
+    :class:`ValueError`, whether or not the request is strict: a misspelt keep-list would
+    otherwise keep less than asked, silently."""
+    named = {
+        part.strip().lower()
+        for part in (args.get("operators") or "").split(",")
+        if part.strip()
+    }
+    if unknown := sorted(named - set(OPERATORS)):
+        raise ValueError(
+            f"operators {', '.join(unknown)} not known; known: {_listed(OPERATORS)}"
+        )
+    return frozenset(named) if named and named != set(OPERATORS) else None
 
 
 def _named_boards_clause(args) -> str:
@@ -647,6 +679,27 @@ class _FamilyScope:
     @property
     def keyword_matched_first(self) -> bool:
         return self.rows is not self.table
+
+
+#: A clause no row meets: what a keep-list naming no Board keeps.
+_NO_ROW = "false"
+
+
+@dataclass(frozen=True)
+class _OperatorsWhere:
+    """``operators=`` as one request applies it (ADR-0335): the clause over whole Boards keeping
+    its rows (None for every row), and the Boards whose rows it leaves out, or keeps where the
+    list names no employer."""
+
+    kept: str | None
+    #: Case-folded Board keys, each ending at its colon.
+    named: tuple[str, ...]
+    keeps_employers: bool
+
+    def keeps(self, job_id: str) -> bool:
+        """Whether a Job's row is kept: :attr:`kept` read in Python, for ids already found."""
+        on_named = job_id.lower().startswith(self.named)
+        return on_named is not self.keeps_employers
 
 
 def _family_asked(args: Mapping[str, str]) -> str | None:
@@ -967,6 +1020,12 @@ def _job_row(row: Mapping[str, Any]) -> dict[str, Any]:
     result["description"] = description[:JOB_DESCRIPTION_LIMIT] or None
     result["description_chars"] = len(description)
     result["description_cut"] = len(description) > JOB_DESCRIPTION_LIMIT
+    # Read from the whole description, not the cut one: a visa sentence often closes it.
+    held = work_authorization.stances(description)
+    result["work_authorization"] = {
+        "stances": [s for s in work_authorization.STANCES if s in held],
+        "mentions": work_authorization.mentions(description),
+    }
     return result
 
 
@@ -1014,6 +1073,8 @@ class JobSearch:
         # synced since, `build_filter` falls back to `india_gazetteer.where("india")`'s slower-but-correct
         # regex alternation rather than erroring on a column that isn't there yet.
         has_country = india_filter.has_column(names)
+        # Each text-derived work-authorisation stance's Jobs (ADR-0333), read from `warm` on.
+        self.work_authorization = WorkAuthorizationRows(table)
         self.capabilities = IndexCapabilities(
             # the ATSes actually present in the index — feeds the dropdown and the whitelist
             atses=sorted(
@@ -1053,6 +1114,7 @@ class JobSearch:
             has_salary_known=salary_known_filter.has_flags(names),
             has_posted_at_comparable=posted_date_guard.has_flags(names),
             has_experience_filter_flags=experience_filter.has_flags(names),
+            work_authorization_clause=self.work_authorization.clause,
         )
         list_indices = getattr(table, "list_indices", None)
         self.has_vector_index = bool(
@@ -1068,6 +1130,7 @@ class JobSearch:
         #: The family tables a category across the whole index reads (ADR-0322); the app sets
         #: them once it has loaded the role assignments. None: ``family=`` needs ``board=``.
         self.families: FamilyTables | None = None
+        self.operator_boards = None
         # Facets ignore the semantic query and the served table is immutable for this process's
         # lifetime (the Space restarts when a new table lands). Cache only the parsed structured
         # filters, bounded so arbitrary public requests cannot grow memory without limit.
@@ -1227,7 +1290,11 @@ class JobSearch:
             max_age_days=_int("max_age_days"),
             required_years_at_least=_int("required_years_at_least"),
             exclude_company=(args.get("exclude_company") or "").strip() or None,
+            work_authorization=(args.get("work_authorization") or "").strip().lower()
+            or None,
         )
+        if filters.work_authorization:
+            self._check_work_authorization(filters.work_authorization)
         # The one place a request is parsed, and so the one place a dropped filter can be
         # reported without `facets.counts` repeating it once per option — see the helper. Under
         # `strict=1` it is refused instead (ADR-0253).
@@ -1236,6 +1303,99 @@ class JobSearch:
             _refuse_what_strict_forbids(filters, kw_in, sort, self.capabilities)
         _warn_unknown_filters(filters, kw_in, sort, self.capabilities)
         return filters
+
+    @property
+    def operator_boards(self) -> Mapping[str, tuple[str, ...]] | None:
+        """Each Operator's Boards that hold a served row, from the Company directory the Hiring
+        now tab ranks (ADR-0335); the app sets it. A Board no entry names is an employer's, as
+        `board_operator.classify` defaults. None: ``operators=`` cannot be applied."""
+        return self._operator_boards
+
+    @operator_boards.setter
+    def operator_boards(self, boards: Mapping[str, Collection[str]] | None) -> None:
+        # Only the Boards this table serves: each one named is one more alternative every row's
+        # id is matched against, and the directory names Boards long since empty. Keeping the
+        # 33 of 101 with a row halved the newest-first page's cost (253 to 109 ms, 2026-09-29).
+        self._operators_wheres: dict[frozenset[str], _OperatorsWhere] = {}
+        if boards is None:
+            self._operator_boards = None
+            return
+        named = sorted({board.lower() for held in boards.values() for board in held})
+        served: set[str] = set()
+        if named:
+            clause = board_pattern_clause(named, exclude=False)
+            prefixes = tuple(board + ":" for board in named)
+            rows = (
+                self._table.search()
+                .where(clause)
+                .select(["id"])
+                .limit(max(1, self._count(None)))
+                .to_list()
+            )
+            for row in rows:
+                folded = row["id"].lower()
+                served.update(p[:-1] for p in prefixes if folded.startswith(p))
+        self._operator_boards = {
+            operator: tuple(sorted({b.lower() for b in held} & served))
+            for operator, held in boards.items()
+        }
+
+    def _operators_where(self, args: Mapping[str, str]) -> _OperatorsWhere | None:
+        """What ``operators=`` keeps, as a clause over whole Boards, or None when it keeps every
+        row (ADR-0335). Without :attr:`operator_boards` a strict request is refused and any
+        other widened, as a category without its tables is."""
+        kept = asked_operators(args)
+        if kept is None:
+            return None
+        if self.operator_boards is None:
+            if _is_strict(args):
+                raise ScopeUnavailable(
+                    "operators= needs the company directory, which this deployment has not "
+                    "loaded"
+                )
+            _log.warning("scope widened: operators= with no company directory loaded")
+            return None
+        if (built := self._operators_wheres.get(kept)) is not None:
+            return built
+        # An employer is every Board no other Operator names, so a list keeping employers
+        # names the Boards it leaves out, and any other names the Boards it keeps.
+        keeps_employers = "employer" in kept
+        named = sorted(
+            {
+                board
+                for operator, boards in self.operator_boards.items()
+                if operator != "employer" and (operator in kept) != keeps_employers
+                for board in boards
+            }
+        )
+        on_named = board_pattern_clause(named, exclude=False) or _NO_ROW
+        off_named = f"NOT {on_named}" if named else None
+        built = self._operators_wheres[kept] = _OperatorsWhere(
+            kept=off_named if keeps_employers else on_named,
+            named=tuple(board + ":" for board in named),
+            keeps_employers=keeps_employers,
+        )
+        return built
+
+    def _check_work_authorization(self, stance: str) -> None:
+        """Refuse a stance the rules do not know (:class:`ValueError`, whatever ``strict`` says:
+        the page never sends one), and one asked before this process has read the descriptions
+        (:class:`ScopeUnavailable`, ADR-0333)."""
+        if stance not in work_authorization.STANCES:
+            raise ValueError(
+                f"work_authorization {stance!r} is not known; known: "
+                f"{_listed(work_authorization.STANCES)}"
+            )
+        if not self.work_authorization.wait(WORK_AUTHORIZATION_WAIT_S):
+            raise ScopeUnavailable(
+                "work_authorization is read from the job descriptions once after each "
+                "restart, which takes about a minute and has not finished; try again shortly"
+            )
+        if self.work_authorization.failed:
+            raise ScopeUnavailable(
+                "work_authorization could not be read from the job descriptions on this "
+                "deployment"
+            )
 
     def _family_scope(
         self, args: Mapping[str, str], filters: SearchFilters
@@ -1323,6 +1483,8 @@ class JobSearch:
         apart from the full strip; any other value but ``all`` is refused.
 
         A ``like=`` Job is left out of every count, as :meth:`run` leaves it out of the list.
+        ``operators=`` narrows every count, and ``operators_left_out`` counts the rows it left
+        out (ADR-0335).
         """
         _refuse_unknown_parameters(args)
         filters = self.parse_filters(args)
@@ -1334,7 +1496,16 @@ class JobSearch:
         only_total = asked == "total"
         if like := _like_id(args):
             extra_where = with_extra(extra_where, _other_than(like))
-        cache_key = (filters, extra_where, only_total, _family_asked(args))
+        # `operators=` narrows every count, and what it left out is the total without it, less
+        # the total with it: a count the scalar indexes answer, where counting the left-out
+        # Boards' rows would match every id again (ADR-0335).
+        operators = self._operators_where(args)
+        unkept = extra_where
+        if operators:
+            extra_where = with_extra(extra_where, operators.kept)
+        # `operators` too: a list leaving nothing out keeps the where-clause as it was, and
+        # still answers with its count.
+        cache_key = (filters, extra_where, only_total, _family_asked(args), operators)
         cached = _cache_get(
             self._facet_cache,
             self._facet_cache_lock,
@@ -1362,6 +1533,9 @@ class JobSearch:
         )
         if scope and scope.keyword_matched_first:
             counted = self._keyword_figures(scope, counted, extra_where)
+        if operators:
+            everyone = self._total(args, filters, unkept)
+            counted = {**counted, "operators_left_out": everyone - counted["total"]}
         elapsed_ms = (time.monotonic() - started) * 1000
         if elapsed_ms > SLOW_SEARCH_MS:
             # The strip is ~46 counts, the most expensive request the Space serves; shapes only,
@@ -1380,6 +1554,24 @@ class JobSearch:
             FACET_CACHE_SIZE,
         )
         return counted
+
+    def _total(
+        self, args: Mapping[str, str], filters: SearchFilters, extra_where: str | None
+    ) -> int:
+        """How many rows ``filters`` admit under ``extra_where``, read as :meth:`run` reads
+        them: the family table for a category, a description keyword's rows once found, else
+        the served table. The total alone: no option and no Blocking filter."""
+        scope = self._family_scope(args, filters)
+        table = scope.rows if scope else self._table
+        if scope:
+            where = with_extra(
+                build_filter(scope.filters, self.capabilities), extra_where
+            )
+        elif reads_descriptions(filters, self.capabilities):
+            where = self._description_matches.where(filters, extra_where)
+        else:
+            where = with_extra(build_filter(filters, self.capabilities), extra_where)
+        return table.count_rows(filter=where) if where else table.count_rows()
 
     def _query_vector(self, query: str) -> Any:
         with self._query_vector_cache_lock:
@@ -1416,6 +1608,8 @@ class JobSearch:
         ranked = bool(query or like)
         _int = _int_arg(args)
         filters = self.parse_filters(args)
+        if operators := self._operators_where(args):
+            extra_where = with_extra(extra_where, operators.kept)
         # Narrowed as `facets` narrows it, so both ask the same where-clause.
         narrowed = with_extra(extra_where, _other_than(like)) if like else extra_where
         # A category across the whole index reads its family table (ADR-0322): a browse lists
@@ -1664,7 +1858,9 @@ class JobSearch:
         return rows
 
     def warm(self) -> None:
-        """Preload default responses plus one semantic pass every fresh process serves first."""
+        """Preload default responses plus one semantic pass every fresh process serves first, and
+        start reading the work-authorisation stances, which finishes in the background."""
+        self.work_authorization.start()
         self.run({})
         self.facets({})
         self.run({"q": "software engineer"})
@@ -1780,7 +1976,8 @@ class JobSearch:
         the filters and family admit, which a query does not narrow. Only the sample's
         descriptions are read, by id. A :class:`ValueError` names what the request got wrong; a
         family without role assignments loaded is :class:`ScopeUnavailable`. Scoped by Boards and
-        filters only, so no Account's follow or hide list reaches it."""
+        filters only, so no Account's follow or hide list reaches it; ``operators=`` narrows it
+        as it narrows a search, and ``operators_left_out`` counts what it left out (ADR-0335)."""
         query = (args.get("q") or "").strip()
         family = (args.get("family") or "").strip()
         if not query and not family:
@@ -1799,7 +1996,11 @@ class JobSearch:
         where = with_extra(
             build_filter(filters, self.capabilities), scoped_boards_clause(args)
         )
-        cache_key = (filters, where, query, family)
+        operators = self._operators_where(args)
+        unkept = where
+        if operators:
+            where = with_extra(where, operators.kept)
+        cache_key = (filters, where, query, family, operators)
         cached = _cache_get(
             self._requirements_cache,
             self._requirements_cache_lock,
@@ -1809,11 +2010,17 @@ class JobSearch:
         if cached is not None:
             return cached
         started = time.monotonic()
-        # A family implies assignments: its absence was refused above.
-        in_family = (
-            self._in_family(where, self._family_array(family, assignments))
+        # A family implies assignments: its absence was refused above. Its Jobs are found once
+        # without `operators=`, which is then read off their ids (ADR-0335).
+        everyone = (
+            self._in_family(unkept, self._family_array(family, assignments))
             if family
             else None
+        )
+        in_family = (
+            [i for i in everyone if operators.keeps(i)]
+            if everyone is not None and operators
+            else everyone
         )
         if query:
             ids, scores = self._closest_ids(query, where, in_family)
@@ -1821,8 +2028,15 @@ class JobSearch:
         else:
             ids, scores = in_family[:REQUIREMENTS_SAMPLE], []
             matching = len(in_family)
+        # The Jobs the filters admit that `operators=` left out.
+        left_out = None
+        if operators:
+            left_out = (
+                len(everyone) if everyone is not None else self._count(unkept)
+            ) - matching
         answer = {
             "matching": matching,
+            "operators_left_out": left_out,
             "order": "closest" if query else "newest",
             "sample_size": REQUIREMENTS_SAMPLE,
             "category_window": (

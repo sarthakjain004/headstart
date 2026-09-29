@@ -1,0 +1,9 @@
+{
+ "bravura_individual_contractor": "</div> <div class=\"fieldSet \"> <p class=\"fieldSetLabel\"> Working pattern<span>:</span> </p> <div class=\"fieldSetValue\"> Full time </div> </div> <div class=\"fieldSet \"> <p class=\"fieldSetLabel\"> Contract Type<span>:</span> </p> <div class=\"fieldSetValue\"> Individual Contractor </div> </div>",
+ "bravura_permanent": "</div> <div class=\"fieldSet \"> <p class=\"fieldSetLabel\"> Working pattern<span>:</span> </p> <div class=\"fieldSetValue\"> Full time </div> </div> <div class=\"fieldSet \"> <p class=\"fieldSetLabel\"> Contract Type<span>:</span> </p> <div class=\"fieldSetValue\"> Permanent </div> </div>",
+ "colorado_faculty": "</div> <div class=\"fieldSet \"> <p class=\"fieldSetLabel\">Employment Type:</p> <div class=\"fieldSetValue\"> Faculty </div> </div> <div class=\"fieldSet \"> <p class=\"fieldSetLabel\">Schedule:</p> <div class=\"fieldSetValue\"> Full-Time </div> </div>",
+ "astellasjapan_employment_class": "<p class=\"paragraph\"> <span> <strong> Employment Class: </strong> </span> <span> Permanent </span> </p> </div>",
+ "dhlconsulting_working_time": "</div> <div class=\"article__content__view__field \"> <div class=\"article__content__view__field__label\"> Working time: </div> <div class=\"article__content__view__field__value\"> Full-time </div>",
+ "lululemoninc_time_type": "<p class=\"paragraph \"> <span data-map=\"item-title\"> <strong> Time Type: </strong> </span> <span data-map=\"item-value\"> Full-time </span> </p> </div>",
+ "lenovo_working_time": "</div> <div class=\"article__content__view__field \"> <div class=\"article__content__view__field__label\"> Working time: </div> <div class=\"article__content__view__field__value\"> Full-time </div>"
+}

@@ -23,6 +23,7 @@ import tomllib
 
 import pytest
 
+from headstart.jobs import work_authorization
 from headstart.mcp_protocol import messages, tool_arguments
 from headstart.mcp_protocol.messages import ToolFailure
 from headstart.serving.job_absence import WHY_NOT_SERVED
@@ -309,6 +310,8 @@ def test_search_sends_both_routes_the_same_strict_query_in_the_spaces_own_names(
         ("max_age_days", "90"),
         ("required_years_at_least", "2"),
         ("exclude_company", "Acme"),
+        # The default: the Operators the Hiring now tab shows (ADR-0335).
+        ("operators", "employer,services"),
         ("etype", "full-time"),
         ("india", "bengaluru"),
         ("country", "IN"),
@@ -480,6 +483,43 @@ def test_nothing_matching_names_the_blocking_filter_as_this_tool_names_it(
 def test_the_scope_line_names_the_country_code():
     text = server.call(_search_space([_job(1)]), "search_jobs", {"country": "DE"})
     assert "Scope: country DE · posted in the last 365 days, the default;" in text
+
+
+def _operators_sent(space):
+    return [dict(params).get("operators") for params in space.params_of(R.SEARCH)]
+
+
+def test_a_search_leaves_out_staffing_firms_and_job_boards_and_says_how_many():
+    """P1-1 of the round-3 critique: Jobgether held 6 of 8 rows of a sorted search (ADR-0335)."""
+    space = FakeSpace(search=[_job(1)], facets=_facets(1, operators_left_out=1_803))
+    text = server.call(space, "search_jobs", {"query": "data analyst"})
+    assert _operators_sent(space) == ["employer,services"]
+    assert dict(space.params_of(R.FACETS)[0])["operators"] == "employer,services"
+    assert (
+        "staffing firms and job boards left out, as the site's Hiring now tab hides "
+        "them: 1,803 jobs (name them in operators to include them)."
+    ) in text
+
+
+def test_operators_are_sent_as_named_and_not_at_all_when_every_one_is():
+    space = _search_space([_job(1)])
+    every = ["aggregator", "staffing", "services", "employer"]
+    server.call(space, "search_jobs", {"operators": every})
+    server.call(space, "search_jobs", {"operators": ["staffing", "employer"]})
+    # A company named is asked for whoever posts for it, unless another list is sent.
+    server.call(space, "search_jobs", {"company": "Jobgether"})
+    server.call(
+        space, "search_jobs", {"company": "Jobgether", "operators": ["aggregator"]}
+    )
+    assert _operators_sent(space) == [None, "employer,staffing", None, "aggregator"]
+    with pytest.raises(ToolFailure, match="send at least one of"):
+        server.BY_NAME["search_jobs"].answer(space, {"operators": []})
+
+
+def test_nothing_left_but_what_operators_left_out_is_said():
+    space = FakeSpace(search=[], facets=_facets(0, operators_left_out=12))
+    text = server.call(space, "search_jobs", {"query": "x", "remote": True})
+    assert "0 jobs: the 12 that match are all posted by companies `operators`" in text
 
 
 @pytest.mark.parametrize(
@@ -787,7 +827,8 @@ def test_one_posting_on_two_boards_under_two_spellings_is_listed_once():
         ),
     ]
     text = server.call(_search_space(rows), "search_jobs", {"query": "x"})
-    assert "first city and countries under another spelling of the company" in text
+    assert "first city and countries under another spelling of the company;" in text
+    assert "countries and stated pay under a shorter or longer name of it" in text
     assert 'also #2: 0.88 "Eversource Energy" · "Berlin, CT; Westwood, MA;' in text
     # Another place under the other spelling is not the same posting.
     assert ' 3. 0.87 "IT Associate Software Engineer" · "Eversource Energy"' in text
@@ -976,6 +1017,57 @@ def test_a_posting_is_read_whole_with_every_scraped_field_quoted():
         "   End of description."
     ) in text
     assert text.endswith("Data as of the trends tick 2026-09-28T06:23:08+00:00.")
+
+
+_HOURLY = (
+    "Salary Range: The estimated base salary range for this role is "
+    "USD$225.00 - USD$275.00 per hour. We include salary ranges where required."
+)
+
+
+def test_a_salary_read_from_an_hourly_rate_says_it_was_annualised():
+    """ADR-0337: the served table holds no period, so the description is read again."""
+    posting = _posting(
+        1,
+        ats="workday",
+        description=_HOURLY,
+        min_salary_annual=468_000,
+        max_salary_annual=572_000,
+        salary_currency="USD",
+        salary_source="regex",
+    )
+    text = server.call(_job_space([posting]), "get_job", {"ids": [posting["id"]]})
+    assert (
+        "Salary: read from the description as USD 468,000–572,000 a year, "
+        "annualised from an hourly rate at 2,080 hours a year."
+    ) in text
+
+
+def test_an_annual_or_disagreeing_salary_says_nothing_of_a_rate():
+    # A figure the description states a year.
+    annual = _posting(
+        1,
+        description="Salary: $120,000 - $150,000 a year.",
+        min_salary_annual=120_000,
+        max_salary_annual=150_000,
+        salary_currency="USD",
+        salary_source="regex",
+    )
+    # A served figure the re-read does not give (not re-derived yet, or a cut description).
+    stale = _posting(
+        2,
+        ats="workday",
+        description=_HOURLY,
+        min_salary_annual=572_000,
+        max_salary_annual=None,
+        salary_currency="USD",
+        salary_source="regex",
+    )
+    text = server.call(
+        _job_space([annual, stale]), "get_job", {"ids": [annual["id"], stale["id"]]}
+    )
+    assert "annualised" not in text
+    assert "Salary: read from the description as USD 572,000 a year." in text
 
 
 def test_a_missing_id_is_explained_by_the_sentence_the_space_uses():
@@ -1249,6 +1341,11 @@ def test_a_get_job_answer_stays_inside_its_budget(found):
             description_chars=20_000,
             description_cut=True,
             unconfirmed=True,
+            # Every stance, and five mentions of quote marks, which escaping doubles.
+            work_authorization={
+                "stances": list(work_authorization.STANCES),
+                "mentions": ['"' * work_authorization.MENTION_CHARS] * 5,
+            },
         )
         for n in range(found)
     ]
@@ -2405,6 +2502,33 @@ def test_on_the_sites_lenses_flagged_rows_follow_the_unflagged_in_the_sites_orde
     assert "1 of these rows had their closures go uncounted" in text
 
 
+def test_an_unverified_operator_is_flagged_and_listed_last_on_every_lens():
+    """jr05 of the round-3 critique: Vrinda International, a staffing agency no list named,
+    ranked #3 as an employer on the default Lens (ADR-0335)."""
+    rows = [
+        _hot_row(1),
+        _hot_row(2, company="Vrinda International", operator_unverified=True),
+        _hot_row(3),
+    ]
+    for lens in ("opened_less_closed", "expansion"):
+        text = server.call(FakeSpace(hot=_hot(rows)), "hiring_now", {"lens": lens})
+        listed = _listed(text)
+        assert [line.split('"')[1] for line in listed] == [
+            "Company 1",
+            "Company 3",
+            "Vrinda International",
+        ]
+        assert listed[2].startswith(" 3. site #2 · ")
+        assert listed[2].endswith(
+            "employer · 398 open now · net +48 · opened 90 · closed 40 "
+            "(opened less closed +50) · rate 22% · FLAG operator unverified"
+        )
+        assert (
+            "1 of these rows are named like a staffing firm or recruiter, and HeadStart has "
+            "not checked who posts for them" in text
+        )
+
+
 def test_the_sites_order_is_kept_and_unnumbered_when_no_flagged_row_leads():
     rows = [_hot_row(1), _hot_row(2), _hot_row(3, net=435, opened=20, closed=32)]
     text = server.call(FakeSpace(hot=_hot(rows)), "hiring_now", {"lens": "expansion"})
@@ -2470,7 +2594,15 @@ def test_a_count_the_space_did_not_measure_is_not_shown_as_zero():
 
 def test_a_hiring_now_answer_stays_inside_its_budget():
     rows = [
-        _hot_row(n, company="y" * 5_000, stock=30, net=500, rate=300, closed=None)
+        _hot_row(
+            n,
+            company="y" * 5_000,
+            stock=30,
+            net=500,
+            rate=300,
+            closed=None,
+            operator_unverified=True,
+        )
         for n in range(60)
     ]
     text = _answer(
@@ -2482,7 +2614,15 @@ def test_a_hiring_now_answer_stays_inside_its_budget():
 def test_a_reordered_hiring_now_answer_stays_inside_its_budget():
     """The worst case with every row moved, so each also carries "site #N · "."""
     flagged = [
-        _hot_row(n, company="y" * 5_000, stock=30, net=500, rate=300, closed=None)
+        _hot_row(
+            n,
+            company="y" * 5_000,
+            stock=30,
+            net=500,
+            rate=300,
+            closed=None,
+            operator_unverified=True,
+        )
         for n in range(60)
     ]
     real = [_hot_row(100 + n, company="z" * 5_000, net=10) for n in range(30)]
@@ -3179,6 +3319,7 @@ def test_requirements_send_the_role_the_category_and_the_filters_in_the_spaces_n
             ("country", "DE"),
             ("location", "Berlin"),
             ("max_age_days", "365"),
+            ("operators", "employer,services"),
         ]
     ]
 
@@ -3196,6 +3337,23 @@ def test_requirements_leave_out_what_search_leaves_out_by_age_unless_told_otherw
     assert sent == ["365", None]
 
 
+def test_a_requirements_answer_says_how_many_postings_operators_left_out():
+    """P1-1 of the round-3 critique: DigitalXNode and FindMyJob.lk led a DevOps sample."""
+    space = FakeSpace(requirements=_requirements(operators_left_out=412))
+    text = server.call(space, "role_requirements", {"category": "devops"})
+    assert (
+        " · staffing firms and job boards left out, as the site's Hiring now tab hides "
+        "them: 412 jobs"
+    ) in text
+    every = ["employer", "services", "staffing", "aggregator"]
+    plain = server.call(
+        FakeSpace(requirements=_requirements()),
+        "role_requirements",
+        {"category": "devops", "operators": every},
+    )
+    assert "left out, as the site's Hiring now tab" not in plain
+
+
 def test_requirements_filters_are_search_jobs_own():
     """The same schema, so a filter reads the same way in both tools."""
     mine = server.BY_NAME["role_requirements"].input_schema["properties"]
@@ -3208,6 +3366,7 @@ def test_requirements_filters_are_search_jobs_own():
         "location",
         "max_years",
         "max_age_days",
+        "operators",
     ):
         assert mine[name] == search[name], name
 
@@ -3420,3 +3579,106 @@ def test_live_each_tool_answers_from_the_deployed_space():
         text = server.call(sc.SpaceClient(base=base), tool.name, arguments)
         assert text.strip(), tool.name
         assert len(text) <= tool.max_chars, tool.name
+
+
+# ---- work_authorization: visa sponsorship and relocation (ADR-0333) ----------------------
+
+
+def test_a_stance_is_sent_as_the_spaces_filter_and_named_in_the_scope():
+    space = _search_space([_job(1)])
+    text = server.call(
+        space,
+        "search_jobs",
+        {"query": "backend engineer", "work_authorization": "offers_sponsorship"},
+    )
+    assert ("work_authorization", "offers_sponsorship") in space.params_of(R.SEARCH)[0]
+    assert (
+        "description offers visa sponsorship (work_authorization offers_sponsorship: read "
+        "from the text by HeadStart's rules, not a field; they can err)" in text
+    )
+    assert "often refuses sponsorship" not in text
+
+
+@pytest.mark.parametrize(
+    ("keyword", "said"),
+    [
+        ("sponsorship", "80 refused it and 11 offered it"),
+        ('"visa sponsorship"', "80 refused it and 11 offered it"),
+        ("H-1B", "80 refused it and 11 offered it"),
+        ("citizenship", "80 refused it and 11 offered it"),
+        ("relocation", "14 said none is offered"),
+    ],
+)
+def test_a_keyword_about_visas_or_relocation_warns_its_matches_often_refuse(
+    keyword, said
+):
+    space = _search_space([_job(1)])
+    text = server.call(
+        space,
+        "search_jobs",
+        {"query": "software engineer", "keyword": keyword, "keyword_in": "description"},
+    )
+    assert said in text and "work_authorization offers_" in text
+
+
+def test_a_keyword_about_something_else_earns_no_warning():
+    space = _search_space([_job(1)])
+    text = server.call(space, "search_jobs", {"keyword": "kubernetes"})
+    assert "hand-read descriptions" not in text
+
+
+def test_search_jobs_says_to_use_the_stance_not_the_keyword_for_visas():
+    tool = server.BY_NAME["search_jobs"]
+    assert "use `work_authorization`, never `keyword`" in tool.description
+    stance = tool.input_schema["properties"]["work_authorization"]
+    assert stance["enum"] == list(work_authorization.STANCES)
+    assert "headstart.jobs.work_authorization" in stance["description"]
+    assert "Text-derived" in stance["description"]
+
+
+def test_get_job_quotes_what_a_description_says_of_visas_before_the_description():
+    posting = _posting(
+        1,
+        work_authorization={
+            "stances": ["refuses_sponsorship"],
+            "mentions": [
+                'Visa sponsorship is "not" available.',
+                "Relocation: Not available.",
+            ],
+        },
+    )
+    text = server.call(_job_space([posting]), "get_job", {"ids": [posting["id"]]})
+    lines = text.splitlines()
+    stance = next(i for i, line in enumerate(lines) if "Work authorisation" in line)
+    assert lines[stance] == (
+        "   Work authorisation read from the whole description by HeadStart's rules (they "
+        "can err): refuses_sponsorship."
+    )
+    assert lines[stance + 1] == (
+        '   Mentions: "Visa sponsorship is \\"not\\" available." · "Relocation: Not available."'
+    )
+    assert lines[stance + 2].startswith("   Description,")
+
+
+def test_get_job_says_none_read_when_a_description_states_no_stance():
+    posting = _posting(1, work_authorization={"stances": [], "mentions": []})
+    text = server.call(_job_space([posting]), "get_job", {"ids": [posting["id"]]})
+    assert "(they can err): none." in text and "Mentions:" not in text
+
+
+def test_role_requirements_give_each_stances_share_of_the_sample():
+    counted = _requirements(
+        work_authorization={
+            "offers_sponsorship": 26,
+            "refuses_sponsorship": 130,
+            "offers_relocation": 13,
+        }
+    )
+    text = server.call(
+        FakeSpace(requirements=counted), "role_requirements", {"query": "data engineer"}
+    )
+    assert (
+        "Of the 259 with a description, read by HeadStart's rules (not a field, and they can "
+        "err): 26 offer visa sponsorship (10%), 130 refuse it or require citizenship (50%), "
+        "13 offer relocation help (5%)." in text
+    )

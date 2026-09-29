@@ -28,7 +28,8 @@ field from its markup: schema.org microdata (``itemprop="title"`` / ``"descripti
 ``og:title``, a ``<title>`` of the form "{Job Title} Job Details | {Co}", and per-tenant
 ``joblayouttoken`` label/value spans (City / State/Province / Posting Start Date, and the
 department and employment-type labels in :data:`_DEPARTMENT_LABELS` /
-:data:`_EMPLOYMENT_TYPE_LABELS`) — each field falls back independently, since tenants mix the
+:data:`_EMPLOYMENT_TYPE_LABELS`; an employment type a tenant types into the description instead is
+read by :func:`_typed_employment_type`) — each field falls back independently, since tenants mix the
 shapes. The reader tries a JSON-LD ``JobPosting``
 first, and this docstring used to say classic RMK pages embed one; no page measured does today:
 none of 50 pages from the 10 largest Boards nor the probe pages of 195 more (ADR-0196), and none of
@@ -987,7 +988,9 @@ def _page_fields(page: str, url: str | None = None) -> dict[str, Any]:
     if not fields.get("posted_at"):
         fields["posted_at"] = _csb_posted_at(page)
     if not fields.get("employment_type"):
-        fields["employment_type"] = _label_value(page, *_EMPLOYMENT_TYPE_LABELS)
+        fields["employment_type"] = _label_value(
+            page, *_EMPLOYMENT_TYPE_LABELS, accept=_HAS_LETTER
+        ) or _typed_employment_type(fields.get("description"))
     fields["department"] = _label_value(page, *_DEPARTMENT_LABELS)
     requisition = _INTERNAL_ID.search(page)
     fields["requisition"] = requisition_of(requisition and requisition.group(1))
@@ -1103,22 +1106,70 @@ def _matched_content(page: str, open_match: re.Match) -> str:
 _DEPARTMENT_LABELS = ("Department:", "Departamento:", "Job Category:", "Job Function:")
 _EMPLOYMENT_TYPE_LABELS = (
     "Employment Type:",
+    "Type of employment:",
     "Full Time / Part Time:",
     "Position Type:",
     "Contract Type:",
+    "Type of Contract:",
     "Job Type:",
+    "Job Type for Job Posting:",
+    "Workload:",
 )
+# Read only where a tenant types the line into the description (borealisgroup "Hours:", buhlergroup
+# "Duration:", 2026-09-29): as a token label either would be too loose to trust unchecked.
+_BODY_ONLY_EMPLOYMENT_TYPE_LABELS = ("Hours:", "Duration:")
+# What a stated employment type looks like. A line whose value has none of these (a code such as
+# "Employment type = 2997", a figure, prose) is not one.
+_EMPLOYMENT_TYPE_VALUE = re.compile(
+    r"\b(?:full|part)[\s-]*time\b|permanent|unlimited|temporary|contract|regular|intern(?:ship)?\b"
+    r"|fixed[\s-]term|freelance",
+    re.IGNORECASE,
+)
+# A token value with no letter is a code or a figure ("2997" under "Employment type:" on
+# careers.technipfmc.com, "100%" under "Workload:" on jobs.wingd.com), never a type.
+_HAS_LETTER = re.compile(r"[^\W\d_]")
+_BLOCK_END = re.compile(r"<br\s*/?>|</(?:p|li|div|tr|h\d)>", re.IGNORECASE)
+_TAG = re.compile(r"<[^>]*>")
 
 
-def _label_value(page: str, *labels: str) -> str | None:
-    """The value span following the first present ``joblayouttoken`` label."""
+def _label_value(
+    page: str, *labels: str, accept: re.Pattern[str] | None = None
+) -> str | None:
+    """The value span following the first present ``joblayouttoken`` label, whose value
+    ``accept`` (when given) must match."""
     for label in labels:
         match = re.search(
             rf'joblayouttoken-label"[^>]*>\s*{re.escape(label)}\s*</span>\s*<span[^>]*>([^<]*)',
             page,
+            re.IGNORECASE,
         )
-        if match and match.group(1).strip():
-            return unescape(match.group(1)).strip()
+        value = unescape(match.group(1)).strip() if match else ""
+        if value and (accept is None or accept.search(value)):
+            return value
+    return None
+
+
+def _typed_employment_type(description: str | None) -> str | None:
+    """The value of the first 'Label: value' line of ``description`` naming an employment type.
+
+    Tenants type the line into the posting body with no label span ("Position Type:
+    Employee Regular", "Contract Type: Permanent"). Labels are tried in vocabulary order, and a
+    value is taken only if it looks like an employment type
+    (:data:`_EMPLOYMENT_TYPE_VALUE`), never a bare code or figure."""
+    if not description:
+        return None
+    text = unescape(_TAG.sub("", _BLOCK_END.sub("\n", description))).replace(
+        "\xa0", " "
+    )
+    for label in (*_EMPLOYMENT_TYPE_LABELS, *_BODY_ONLY_EMPLOYMENT_TYPE_LABELS):
+        for match in re.finditer(
+            rf"^[ \t]*{re.escape(label)}[ \t]*(.{{1,60}})$",
+            text,
+            re.IGNORECASE | re.MULTILINE,
+        ):
+            value = match.group(1).strip()
+            if _EMPLOYMENT_TYPE_VALUE.search(value):
+                return value
     return None
 
 

@@ -153,6 +153,23 @@ def test_the_answer_carries_no_description_text():
     assert [s["skill"] for s in counted["skills"]] == ["Python"]
 
 
+def test_each_work_authorization_stance_is_counted_over_the_described_jobs():
+    # ADR-0333: the stances the rules read from each counted Job's description.
+    counted = _summary(
+        [
+            _job(1, description="Python. Visa sponsorship is available for this role."),
+            _job(2, description="Python. We cannot sponsor visas."),
+            _job(3, description="Python. Relocation assistance provided."),
+            _job(4, description=None),
+        ]
+    )
+    assert counted["work_authorization"] == {
+        "offers_sponsorship": 1,
+        "refuses_sponsorship": 1,
+        "offers_relocation": 1,
+    }
+
+
 def test_minimum_years_are_banded_and_kept_apart_by_source():
     jobs = [
         _job(1, min_years=0, experience_source="regex"),
