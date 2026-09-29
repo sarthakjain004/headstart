@@ -6,6 +6,7 @@ stubs `sys.modules` to import `app.py` at all, and CI installs no extras. So a p
 Space needs *at request time* is asserted here, against the requirements file itself.
 """
 
+import tomllib
 from pathlib import Path
 
 _SPACE_REQUIREMENTS = (
@@ -76,3 +77,18 @@ def test_the_server_app_py_runs_is_installed_and_pinned():
     boot."""
     lines = [entry.strip() for entry in _SPACE_REQUIREMENTS.read_text().splitlines()]
     assert any(line.startswith("waitress==") for line in lines)
+
+
+def test_the_tests_run_the_waitress_the_space_runs():
+    """The `dev` extra pins waitress to the Space's version, or CI would test whatever
+    waitress release is newest while the Space runs the pinned one (ADR-0279)."""
+    pyproject = Path(__file__).resolve().parents[1] / "pyproject.toml"
+    dev = tomllib.loads(pyproject.read_text())["project"]["optional-dependencies"][
+        "dev"
+    ]
+    space = [
+        line.strip()
+        for line in _SPACE_REQUIREMENTS.read_text().splitlines()
+        if line.strip().startswith("waitress")
+    ]
+    assert [entry for entry in dev if entry.startswith("waitress")] == space

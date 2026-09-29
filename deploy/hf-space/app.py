@@ -20,6 +20,7 @@ import secrets
 import threading
 import time
 import traceback
+import urllib.parse
 from collections import OrderedDict
 from dataclasses import replace
 from datetime import datetime, timedelta
@@ -430,7 +431,7 @@ _HARDENING_HEADERS = {
     "Referrer-Policy": "strict-origin-when-cross-origin",
 }
 
-#: What the page may load and run (#595, ADR-0282), bar `script-src`'s nonce. Scripts: this
+#: What the page may load and run (#595, ADR-0298), bar `script-src`'s nonce. Scripts: this
 #: Space's own files, Google's sign-in library, and an inline script only with this response's
 #: nonce, so no inline handler or injected script runs. Styles keep 'unsafe-inline': the page
 #: and the résumé builder write style attributes and `<style>` elements, the print frame's among
@@ -466,6 +467,34 @@ def _content_security_policy(nonce: str | None) -> str:
     return "; ".join(("default-src 'self'", f"script-src {scripts}", *_CSP_REST))
 
 
+_REQUEST_STARTED_KEY = "headstart.request_started"
+
+
+# These two are registered before every other hook, so a request's time spans all of them: the
+# start is stamped before the wall and the limits can refuse it, and Flask runs the after-hooks
+# in reverse, so the line is printed after every other one has run.
+@app.before_request
+def _note_the_start():
+    request.environ[_REQUEST_STARTED_KEY] = time.monotonic()
+
+
+@app.after_request
+def _log_the_request(response):
+    """One line per request in the Space run log, as the development server printed and waitress
+    does not: that log is how an edge outage is told from the app failing. The path only, since a
+    query string carries a search's words, and spelled as in a URL: waitress hands it over
+    percent-decoded, and a decoded `%0A` would print a line of its own. A read `/mcp` makes in
+    process is not a request anyone sent."""
+    if not request.environ.get(space_client.IN_PROCESS_READ):
+        path = urllib.parse.quote(request.path, safe="/:@!$&'()*+,;=")
+        took_s = time.monotonic() - request.environ[_REQUEST_STARTED_KEY]
+        print(
+            f'"{request.method} {path}" {response.status_code} {took_s:.3f}s',
+            flush=True,
+        )
+    return response
+
+
 @app.after_request
 def _hardening_headers(response):
     """Headers only: a gzipped body, a 304 and the cache headers pass through untouched."""
@@ -487,7 +516,8 @@ def _request_json_object() -> dict:
 @app.before_request
 def _end_a_week_old_session():
     """Sign out a session ``_SESSION_LIFETIME`` after its sign-in, on every path (#593). It is
-    registered first, so the wall, ADR-0262's limit and ``/me`` all see such a caller signed out."""
+    registered before the wall, so the wall, ADR-0262's limit and ``/me`` all see such a caller
+    signed out."""
     if _AUTH_ON and session.get("email") and not _signed_in_recently():
         session.clear()
 
@@ -2079,49 +2109,20 @@ def index():
     )
 
 
-_STARTED = "headstart.started"
-
-
-@app.before_request
-def _note_the_start():
-    request.environ[_STARTED] = time.monotonic()
-
-
-@app.after_request
-def _log_the_request(response):
-    """One run-log line per request, as the development server printed and waitress does not:
-    the run log is how an edge outage is told from the app failing. The path only, since a query
-    string carries a search's words. A read `/mcp` makes in process is not a request anyone sent.
-    Kept on the environ, not on `g`, which an in-process read shares with the `/mcp` request."""
-    if not request.environ.get(space_client.IN_PROCESS_READ):
-        started = request.environ.get(_STARTED, time.monotonic())
-        print(
-            f'"{request.method} {request.path}" {response.status_code} '
-            f"{time.monotonic() - started:.3f}s",
-            flush=True,
-        )
-    return response
-
-
-# How `python app.py` (start.sh) serves (#595): waitress, where it used to be Werkzeug's
-# development server. One process, on purpose: the résumé-read guard (`_PARSING`), every
-# `RateLimit`, the `/mcp` places and the kept Trends and facet answers live in this process's
-# memory, and a second worker process would keep a second copy of each.
+# How `python app.py` (start.sh) serves (#595, ADR-0279): waitress, where it used to be
+# Werkzeug's development server. One process, on purpose: the résumé-read guard (`_PARSING`),
+# every `RateLimit`, the `/mcp` places and the kept Trends and facet answers live in this
+# process's memory, and a second worker process would keep a second copy of each.
 #
 # 16 threads on the Space's 2 vCPUs. No more than two requests can compute at once, so the other
-# threads are there to wait: a résumé read waits on the router for up to 120 s, each Saved set or
-# Profile write on an HF commit, and a `/mcp` request up to 10 s for one of its 4 places or its
-# one description-scan place (ADR-0325). With all 5 taken and four more queued, 7 threads are
-# still left for the page. The development server started a thread per connection with no
-# bound. Waitress reads each request
-# whole before a thread takes it, so a client that never finishes sending holds a connection,
-# not a thread: 40 such clients cost the development server 41 threads and waitress none
-# (measured locally, 2026-09-29).
+# threads are there to wait: on the router for a résumé read, on an HF commit for each Saved set
+# or Profile write, and up to `_MCP_PLACE_WAIT_S` for a `/mcp` place. ADR-0279 works the
+# count out from `_MCP_AT_ONCE` and `_MCP_SCANS_AT_ONCE`, so a change to either revisits it.
 #
 # `clear_untrusted_proxy_headers` is off because waitress 3 otherwise deletes `X-Forwarded-For`
 # whenever no trusted proxy is named, and `_client_address` reads the caller from that header
 # (ADR-0262): without it, every caller would count as the edge's one address.
-_SERVE = {
+_WAITRESS_SETTINGS = {
     "host": "0.0.0.0",
     "port": 7860,
     "threads": 16,
@@ -2131,7 +2132,8 @@ _SERVE = {
 
 if __name__ == "__main__":
     print(
-        f"serving on port {_SERVE['port']} with waitress, {_SERVE['threads']} threads",
+        f"serving on port {_WAITRESS_SETTINGS['port']} with waitress, "
+        f"{_WAITRESS_SETTINGS['threads']} threads",
         flush=True,
     )
-    waitress.serve(app, **_SERVE)
+    waitress.serve(app, **_WAITRESS_SETTINGS)
