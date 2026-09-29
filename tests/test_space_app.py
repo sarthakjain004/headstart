@@ -696,6 +696,8 @@ def test_the_mcp_limits_are_pinned(auth_app):
     assert auth_app._ANTHROPIC_LIMIT_REQUESTS == 300
     assert (auth_app._MCP_AT_ONCE, auth_app._MCP_PLACE_WAIT_S) == (4, 10)
     assert auth_app._MCP_AT_ONCE_EACH == 2
+    # ADR-0325: one description-keyword search at a time, on a place of its own.
+    assert (auth_app._MCP_SCANS_AT_ONCE, auth_app._MCP_SCAN_RETRY_S) == (1, 20)
 
 
 def test_mcp_answers_anyone_with_the_wall_on_and_only_by_post(auth_app):
@@ -787,6 +789,64 @@ def test_one_caller_cannot_hold_every_mcp_place(
     assert _post_mcp(client, headers=other).status_code == 200
     places.give_back(caller)
     assert _post_mcp(client, headers={"X-Forwarded-For": address}).status_code == 200
+
+
+def _search_call(**arguments):
+    return {
+        "jsonrpc": "2.0",
+        "id": _MCP_LIST["id"],
+        "method": "tools/call",
+        "params": {"name": "search_jobs", "arguments": arguments},
+    }
+
+
+_DESCRIPTION_SCAN = _search_call(keyword="visa", keyword_in="description")
+
+
+@pytest.mark.parametrize(
+    "message, scans",
+    [
+        (_DESCRIPTION_SCAN, True),
+        (_search_call(keyword="visa", keyword_in="both"), True),
+        (_search_call(keyword="rust"), False),  # a title keyword, the default scope
+        (_search_call(keyword="rust", keyword_in="title"), False),
+        (_search_call(keyword="  ", keyword_in="description"), False),  # no keyword
+        (_search_call(query="engineer"), False),
+        (_MCP_LIST, False),
+        ({"method": "tools/call", "params": {"name": "get_job"}}, False),
+        ([_DESCRIPTION_SCAN], False),  # not one request: the protocol module refuses it
+    ],
+)
+def test_a_description_scan_is_told_from_the_body(auth_app, message, scans):
+    assert auth_app._scans_descriptions(json.dumps(message).encode()) is scans
+    assert auth_app._scans_descriptions(b"not json") is False
+
+
+def test_a_description_scan_takes_its_own_place_and_never_a_fast_one(
+    auth_app, monkeypatch
+):
+    """ADR-0325: a scan waits only for the one scan place, so it never holds one of the 4 places
+    a fast call would queue behind, and a full house of fast calls does not keep it out."""
+    fast = concurrency_limit.ConcurrencyLimit(2, 2)
+    scan = concurrency_limit.ConcurrencyLimit(1, 1)
+    monkeypatch.setattr(auth_app, "_MCP_PLACES", fast)
+    monkeypatch.setattr(auth_app, "_MCP_SCAN_PLACES", scan)
+    monkeypatch.setattr(auth_app, "_MCP_PLACE_WAIT_S", 0.01)
+    client = auth_app.app.test_client()
+
+    scan.take("198.51.100.9", 0)  # another caller's scan is running
+    r = _post_mcp(client, _DESCRIPTION_SCAN)
+    _mcp_refusal_says(r, 503, "1 description-keyword search at a time")
+    assert r.headers["Retry-After"] == "20"
+    assert _post_mcp(client).status_code == 200  # a fast call does not wait for it
+    scan.give_back("198.51.100.9")
+
+    for _ in range(2):  # every fast place held
+        fast.take("198.51.100.9", 0)
+    assert _post_mcp(client).status_code == 503
+    r = _post_mcp(client, _DESCRIPTION_SCAN)
+    assert r.status_code == 200 and "result" in r.json
+    assert not scan._held  # given back once answered
 
 
 def test_an_mcp_place_is_given_back_when_answering_fails(auth_app, monkeypatch):
