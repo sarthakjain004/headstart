@@ -10,14 +10,22 @@ filter actually responsible instead of leaving the user to guess.
 from __future__ import annotations
 
 import re
+from dataclasses import replace
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+import pyarrow as pa
 import pytest
 
+from headstart.ingest.index import _schema
 from headstart.search_filters.compiler import (
+    KEYWORD_DEFAULT_SCOPE,
+    KEYWORD_SCOPES,
     IndexCapabilities,
     SearchFilters,
+    account_clause,
     build_filter,
+    with_extra,
 )
 from headstart.serving import facets
 
@@ -40,6 +48,32 @@ class _CountingTable:
     ):  # lancedb's own parameter name, shadowing built-in
         self.seen.append(filter)
         return self._rule(filter)
+
+    # The Keyword filter's one read of the table (#834) needs the served columns to project, and
+    # finds no rows here: this fake has a rule, not rows, so every count that keeps a keyword is 0.
+    schema = _schema(2)
+
+    def search(self):
+        return _NoRows(self)
+
+
+class _NoRows:
+    """`_CountingTable.search()`: records the keyword's clause and reads back no rows."""
+
+    def __init__(self, table: _CountingTable):
+        self._table = table
+        self._columns: list[str] = []
+
+    def where(self, clause):
+        self._table.seen.append(clause)
+        return self
+
+    def select(self, columns):
+        self._columns = columns
+        return self
+
+    def to_arrow(self):
+        return _schema(2).empty_table().select(self._columns)
 
 
 _CAPABILITY_FIELDS = set(IndexCapabilities.__dataclass_fields__)
@@ -249,10 +283,8 @@ def test_only_the_total_counts_no_option_but_keeps_the_totals_three_answers():
         "blocking": None,
         "description_coverage": {"covered": 42, "total": 42},
     }
-    full = facets.counts(_CountingTable(), *args)
-    assert {
-        key: full[key] for key in ("total", "blocking", "description_coverage")
-    } == {key: out[key] for key in ("total", "blocking", "description_coverage")}
+    # That these equal the full strip's is `test_a_lone_total_is_the_full_strips`, on a real
+    # table: the full strip counts over the keyword's rows (#834), which this fake has none of.
 
 
 def test_only_the_total_still_names_the_blocking_filter_when_nothing_matched():
@@ -498,3 +530,431 @@ def test_facets_never_imports_job_search():
             if module.split(".")[0] == "headstart":
                 imported |= {f"{module}.{alias.name}" for alias in node.names}
     assert "headstart.serving.job_search" not in imported
+
+
+# ---- the Keyword filter read once, over a real table (#834) ----
+#
+# A keyword is applied by reading its rows once and counting every option over them. These pin
+# that each count is still the one the list would show: exactly what counting the compiled
+# where-clause over the whole table gives, which is what `counts` did before.
+
+_NOW = datetime.now(UTC)
+
+
+def _hours_ago(h: float) -> str:
+    return (_NOW - timedelta(hours=h)).isoformat(timespec="seconds")
+
+
+def _days_ago(d: int) -> str:
+    return (_NOW - timedelta(days=d)).strftime("%Y-%m-%d")
+
+
+# (ats, company, title, description, location, remote, employment_type, min_years,
+#  min/max salary, currency, posted_at, first_seen). Keyword matches in the title only, the
+# description only, both, and neither; null descriptions, titles and locations; India by the
+# country column and by a city only the gazetteer knows; salaries in three currencies and none;
+# ISO, datetime-shaped, non-ISO and missing posting dates; recent and old first sightings.
+_ROWS = [
+    (
+        "greenhouse",
+        "Acme",
+        "Senior Golang Engineer",
+        "Go services",
+        "Berlin, Germany",
+        True,
+        "Full-time",
+        5,
+        90000,
+        140000,
+        "USD",
+        _days_ago(1),
+        _hours_ago(1),
+    ),
+    (
+        "greenhouse",
+        "Acme",
+        "Backend Developer",
+        "We write golang and rust",
+        "Bengaluru, Karnataka",
+        False,
+        "Full-time",
+        2,
+        1500000,
+        None,
+        "INR",
+        _days_ago(3),
+        _hours_ago(5),
+    ),
+    (
+        "greenhouse",
+        "Beta",
+        "Rust Developer",
+        None,
+        "Remote - India",
+        True,
+        "Contract",
+        None,
+        None,
+        None,
+        None,
+        "21-Apr-2026",
+        _hours_ago(20),
+    ),
+    (
+        "lever",
+        "Beta",
+        "Data Engineer",
+        "python, go, rust",
+        "Koramangala",
+        False,
+        "Permanent / part-time",
+        0,
+        60000,
+        80000,
+        "EUR",
+        _days_ago(10) + "T12:00:00Z",
+        _hours_ago(30),
+    ),
+    (
+        "lever",
+        "Gamma",
+        "Staff Engineer (C_ lang)",
+        "c_ and c++",
+        "New York, NY",
+        None,
+        "Internship",
+        10,
+        200000,
+        260000,
+        "USD",
+        _days_ago(60),
+        _hours_ago(24 * 5),
+    ),
+    (
+        "lever",
+        "Gamma",
+        "Golang Intern",
+        "",
+        None,
+        False,
+        "intern",
+        0,
+        None,
+        None,
+        None,
+        None,
+        None,
+    ),
+    (
+        "workday",
+        "Delta",
+        None,
+        "golang backend",
+        "Pune, India",
+        False,
+        None,
+        3,
+        45000,
+        50000,
+        "GBP",
+        _days_ago(400),
+        _hours_ago(24 * 30),
+    ),
+    (
+        "workday",
+        "Delta",
+        "Frontend Developer",
+        "React",
+        "London, UK",
+        True,
+        "Full-time",
+        1,
+        70000,
+        None,
+        "USD",
+        _days_ago(2),
+        _hours_ago(3),
+    ),
+    (
+        "workday",
+        "Acme",
+        "Senior Rust Developer",
+        "RUST and GOLANG",
+        "Berlin",
+        False,
+        "Full-time",
+        7,
+        None,
+        None,
+        None,
+        _days_ago(5),
+        _hours_ago(7),
+    ),
+    (
+        "greenhouse",
+        "Epsilon 100%",
+        "Platform Engineer",
+        "kubernetes, go",
+        "Hyderabad",
+        None,
+        "Contract",
+        None,
+        120000,
+        150000,
+        "USD",
+        _days_ago(20),
+        _hours_ago(2),
+    ),
+]
+
+
+@pytest.fixture(scope="module")
+def jobs_table(tmp_path_factory):
+    """The served schema, the flags the index derives, and the rows above."""
+    lancedb = pytest.importorskip("lancedb")
+    from headstart.search_filters import (
+        employment_type_filter,
+        experience_filter,
+        india_filter,
+        posted_date_guard,
+        salary_known_filter,
+    )
+
+    rows = []
+    for n, (
+        ats,
+        company,
+        title,
+        description,
+        location,
+        remote,
+        etype,
+        years,
+        lo,
+        hi,
+        cur,
+        posted,
+        seen,
+    ) in enumerate(_ROWS):
+        rows.append(
+            {
+                "id": f"{ats}:{company.split()[0].lower()}:{n}",
+                "ats": ats,
+                "company": company,
+                "title": title,
+                "description": description,
+                "description_stored": description is not None,
+                "location": location,
+                "country": india_filter.country(location),
+                "remote": remote,
+                "employment_type": etype,
+                **employment_type_filter.flags(etype),
+                "min_years": years,
+                **experience_filter.flags(years),
+                "min_salary_annual": lo,
+                "max_salary_annual": hi,
+                "salary_currency": cur,
+                **salary_known_filter.flags(lo),
+                "posted_at": posted,
+                **posted_date_guard.flags(posted),
+                "first_seen": seen,
+                "vector": [0.0, 1.0],
+            }
+        )
+    db = lancedb.connect(tmp_path_factory.mktemp("facets_db"))
+    return db.create_table("jobs", pa.Table.from_pylist(rows, schema=_schema(2)))
+
+
+_MATERIALIZED = IndexCapabilities(
+    atses=["greenhouse", "lever", "workday"],
+    currencies=["EUR", "GBP", "INR", "USD"],
+    has_first_seen=True,
+    has_min_salary_annual=True,
+    has_description=True,
+    has_country=True,
+    has_employment_type_flags=True,
+    has_description_stored=True,
+    has_salary_known=True,
+    has_posted_at_comparable=True,
+    has_experience_filter_flags=True,
+)
+# The same table read through the raw clauses a table without the ADR-0173 flags compiles to:
+# the gazetteer's regex, the `posted_at LIKE` guard, `min_years`, the employment-type LIKEs.
+_RAW = replace(
+    _MATERIALIZED,
+    has_country=False,
+    has_employment_type_flags=False,
+    has_description_stored=False,
+    has_salary_known=False,
+    has_posted_at_comparable=False,
+    has_experience_filter_flags=False,
+)
+
+_KEYWORDS = [
+    {"kw": "golang", "kw_in": "both"},
+    {"kw": "go rust", "kw_in": "description"},
+    {"kw": "c_", "kw_in": "title"},
+    {"kw": "developer", "kw_in": "both"},
+    {"kw": "zzqx", "kw_in": "both"},
+    {},
+]
+_FILTERS = [
+    {},
+    {"remote": True, "ats": "lever"},
+    {"india": "india", "max_years": 2},
+    {"india": "bengaluru"},
+    {"country": "DE"},
+    {"country": "IN", "max_years": 5},
+    {"salary_min": 100000, "has_salary": True},
+    {"salary_min": 40000, "salary_max": 90000, "salary_currency": "EUR"},
+    {"posted_within": 7, "posted_sortable": True, "seen_within": 24},
+    {"posted_after": _days_ago(30), "posted_before": _days_ago(1)},
+    {"max_years": 0, "etype": "full-time"},
+    {"title_words": "senior", "company": "acme", "location": "berlin"},
+    {"ats": "workday", "remote": True, "etype": "internship"},
+]
+
+
+def _whole_table(table, filters, capabilities, extra_where, options):
+    """What counting each compiled clause over the whole table gives, as `counts` did before
+    #834: the total, every option in ``options``, the blocking filter and the coverage."""
+
+    def n(f):
+        where = with_extra(build_filter(f, capabilities), extra_where)
+        return table.count_rows(filter=where) if where else table.count_rows()
+
+    total = n(filters)
+    blocking, best = None, 0
+    for key, value in vars(filters).items() if not total else ():
+        if (
+            key in facets.NEVER_BLOCKING
+            or value is None
+            or value is False
+            or value == ""
+        ):
+            continue
+        recovered = n(
+            replace(filters, **{key: False if isinstance(value, bool) else None})
+        )
+        if recovered > best:
+            blocking, best = key, recovered
+    unkeyed = replace(filters, kw=None, kw_in=None)
+    covered = facets._with_description(
+        with_extra(build_filter(unkeyed, capabilities), extra_where),
+        capabilities.has_description_stored,
+    )
+    scope = KEYWORD_SCOPES[filters.kw_in or KEYWORD_DEFAULT_SCOPE]
+    return {
+        "total": total,
+        "facets": {
+            dimension: [
+                {**o, "count": n(replace(filters, **{dimension: o["value"]}))}
+                for o in opts
+            ]
+            for dimension, opts in options.items()
+        },
+        "blocking": blocking,
+        "description_coverage": (
+            {"covered": table.count_rows(filter=covered), "total": n(unkeyed)}
+            if filters.kw and "description" in scope.columns
+            else None
+        ),
+    }
+
+
+@pytest.mark.parametrize("capabilities", [_MATERIALIZED, _RAW], ids=["flags", "raw"])
+@pytest.mark.parametrize(
+    "keyword", _KEYWORDS, ids=lambda k: "-".join(k.values()) or "none"
+)
+@pytest.mark.parametrize("others", _FILTERS, ids=lambda f: "-".join(f) or "none")
+def test_every_count_is_the_one_the_whole_table_gives(
+    jobs_table, capabilities, keyword, others
+):
+    filters = SearchFilters(**keyword, **others)
+    out = facets.counts(jobs_table, filters, capabilities)
+    assert out == _whole_table(jobs_table, filters, capabilities, None, out["facets"])
+
+
+@pytest.mark.parametrize(
+    "extra_where",
+    [
+        account_clause(["greenhouse:acme"], [], mine=True),
+        account_clause([], ["workday:acme", "lever:gamma"], mine=False),
+    ],
+    ids=["following", "hiding"],
+)
+@pytest.mark.parametrize(
+    "keyword", _KEYWORDS[:2] + _KEYWORDS[4:5], ids=lambda k: k["kw"]
+)
+def test_the_account_clause_narrows_the_keyword_rows_the_same_way(
+    jobs_table, keyword, extra_where
+):
+    filters = SearchFilters(**keyword, remote=False)
+    out = facets.counts(jobs_table, filters, _MATERIALIZED, extra_where=extra_where)
+    assert out == _whole_table(
+        jobs_table, filters, _MATERIALIZED, extra_where, out["facets"]
+    )
+
+
+def test_a_keyword_reaches_the_table_once_per_request(jobs_table):
+    """#834: every option's count carried the keyword's `LIKE` over the description column, so
+    one request scanned it about 80 times and took 103 s on the Space. Now the keyword's rows
+    are read once, and only the two coverage counts, which lift the keyword, count the table."""
+    table = _RecordingTable(jobs_table)
+    facets.counts(table, SearchFilters(kw="golang", kw_in="both"), _MATERIALIZED)
+    keyed = [w for w in table.seen if w and "golang" in w]
+    assert keyed == [
+        "(lower(title) LIKE '%golang%' OR lower(description) LIKE '%golang%')"
+    ]
+    assert len(table.seen) == 3  # the read, and the coverage's two counts
+
+
+def test_the_read_keeps_every_filter_no_count_lifts(jobs_table):
+    """A filter every count keeps narrows the read, so the description is scanned only where
+    it can matter; a listed dimension, whose "Any" row lifts it, cannot."""
+    table = _RecordingTable(jobs_table)
+    filters = SearchFilters(kw="golang", kw_in="both", remote=True, ats="greenhouse")
+    facets.counts(table, filters, _MATERIALIZED)
+    (read,) = [w for w in table.seen if w and "golang" in w]
+    assert "remote = true" in read
+    assert "ats = " not in read
+
+
+class _RecordingTable:
+    """A real table that records every clause reaching it, counted or read."""
+
+    def __init__(self, table):
+        self._table = table
+        self.seen: list[str | None] = []
+        self.schema = table.schema
+
+    def count_rows(self, filter=None):
+        self.seen.append(filter)
+        return self._table.count_rows(filter=filter)
+
+    def search(self):
+        table = self
+
+        class _Query:
+            def __init__(self, query):
+                self._query = query
+
+            def where(self, clause):
+                table.seen.append(clause)
+                return _Query(self._query.where(clause))
+
+            def __getattr__(self, name):
+                return getattr(self._query, name)
+
+        return _Query(self._table.search())
+
+
+@pytest.mark.parametrize(
+    "keyword", _KEYWORDS, ids=lambda k: "-".join(k.values()) or "none"
+)
+def test_a_lone_total_is_the_full_strips(jobs_table, keyword):
+    """ADR-0274's count-only answer reads no rows first, and says what the full strip says."""
+    filters = SearchFilters(**keyword, remote=True, ats="workday")
+    full = facets.counts(jobs_table, filters, _MATERIALIZED)
+    alone = facets.counts(jobs_table, filters, _MATERIALIZED, only_total=True)
+    assert alone == {**full, "facets": {}}
