@@ -29,12 +29,20 @@ need ``ASP.NET_SessionId``, whose value is the JWT's ``aud`` (14 of 14 US-pod te
 it, 40 of 40 tenants 200 with it). A page for a site id that does not exist redirects to
 ``/ui/error``; ``myhr-ece`` has no site 1, so ids 1-3 are tried before a Board is called
 siteless — the answer an LMS-only corp gives for every id (``csod.com`` hosts both products).
+The liveness probe calls a siteless tenant DEAD. A Scrapable Board had a career site when it was
+probed, so the scraper reads a siteless answer once more and then raises ``BoardUnreadable``: the
+Board is Unauthoritative that run and keeps what it serves (ADR-0053), and a tenant that really
+left goes through the ledger re-probe (#869).
 On 6 tenants (metso, transgourmet, …) the pod answers the search with 404
 ``ResourceNotFound`` while the career-site page and its sites are live; the page itself renders
 "Current Openings" with nothing listed, so that site is read as empty, not as a failure.
-The page's cookies are dropped from the pooled session as soon as it is read: with them in the
-jar, the explicit session header 401s on US-pod tenants (6 of 6 trials; jar alone 12 of 12 and
-header alone 12 of 12 answer 200), and re-reading the page redirects to ``/ui/error``.
+The tenant's cookies are kept out of the pooled session's jar. With them in it, the explicit
+session header 401s on US-pod tenants (6 of 6 trials; jar alone 12 of 12 and header alone 12 of
+12 answer 200), and a live tenant's page redirects to ``/ui/error``. The tenant's own
+``ASP.NET_SessionId`` and ``cscx`` together do that (sacmi: each alone and every other pair
+answered 200). With the jar seeded by one page GET, 3 of 4 tenants read as siteless twice, and
+82, 0 and 57 postings once it was cleared (2026-09-29). A posting page's GET puts both cookies
+back (3 of 3), so the jar is cleared before every page read as well as after it.
 
 **The listing** is ``POST {pod}rec-job-search/external/jobs``, filtered by ``careerSitePageId``
 (``careerSiteId`` is ignored; both are sent, as the page does). ``pageSize`` clamps silently at
@@ -200,6 +208,11 @@ class CornerstoneScraper(BaseScraper):
         """Read the token and API pod off the first career-site page that serves them. False
         when every id tried redirects to `/ui/error`: the tenant has no career site."""
         for site in range(1, _PAGE_ATTEMPTS + 1):
+            # Each read starts from a jar without the tenant's cookies. With its own
+            # `ASP.NET_SessionId` and `cscx` in the jar, a live tenant's page redirects to
+            # `/ui/error` too, and a posting page's GET (`_read_company`) puts both back
+            # (module docstring).
+            self.board_fetcher.clear_cookies(domain=f"{self.slug}.csod.com")
             response = self._fetch(
                 "GET",
                 self._page_url(site),
@@ -218,8 +231,7 @@ class CornerstoneScraper(BaseScraper):
                 )
             context = json.loads(match.group(1))
             # Drop the page's cookies from the pooled session at once: with them in the jar,
-            # US-pod tenant hosts 401 the explicit session header (6 of 6 trials) and a later
-            # re-read of this page redirects to `/ui/error` (module docstring).
+            # US-pod tenant hosts 401 the explicit session header (6 of 6 trials).
             self.board_fetcher.clear_cookies(domain=f"{self.slug}.csod.com")
             self._token = context["token"]
             self._pod = context["endpoints"]["cloud"]
@@ -346,6 +358,7 @@ class CornerstoneScraper(BaseScraper):
         # when probed. CI read 14 such Boards as empty on 2026-09-27/28 (12 of them in one run),
         # and all 14 answered their page from a clean address, alone, twice and 12 at once; 4
         # of them served rows. An empty read is in eviction scope (ADR-0200). So ask once more,
+        # from a jar cleared of the tenant's cookies as every page read is (`_read_context`),
         # then raise: the Board is Unauthoritative this run and keeps its rows (ADR-0053, #702).
         # A departed tenant still leaves through the ledger re-probe, which reads `listing()`.
         rows = self.listing()

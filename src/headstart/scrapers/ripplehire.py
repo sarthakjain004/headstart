@@ -31,7 +31,7 @@ from headstart.scrapers.base import (
     DetailWithoutDescription,
 )
 
-#: The session token the careers page redirects onto. Public: the liveness probe reads the
+#: The session token the careers URL redirects onto. Public: the liveness probe reads the
 #: same token before it asks for a count (ADR-0203).
 CAREERS_TOKEN = re.compile(r"token=([A-Za-z0-9_-]+)")
 _PAGE_SIZE = 100
@@ -83,14 +83,12 @@ class RippleHireScraper(BaseScraper):
     #: The per-site token the careers URL redirects with; `fetch_raw` reads it before the Detail
     #: pass, and every detail URL carries it.
     _board_token: str | None = None
-    #: Where the last careers GET landed, for the error that names a token-less landing.
-    _landed: str = ""
 
     def url(self) -> str:
         return f"https://{self.slug}.ripplehire.com/candidate/careers"
 
     def search_url(self) -> str:
-        """The job-search endpoint the careers page's token unlocks."""
+        """The job-search endpoint the careers URL's token unlocks."""
         return f"https://{self.slug}.ripplehire.com/candidate/candidatejobsearch"
 
     def job_url(self, job_seq: Any = None, token: str | None = None) -> str:
@@ -100,7 +98,7 @@ class RippleHireScraper(BaseScraper):
         body. The token is one per site (the careers URL redirected with the same one on
         repeated GETs) and is required: a made-up token rendered an empty page, and the plain
         careers URL drops the hash and lands on the list. A row read without a token keeps the
-        careers page."""
+        careers URL."""
         if job_seq is None or not token:
             return self.url()
         return (
@@ -116,10 +114,10 @@ class RippleHireScraper(BaseScraper):
         only when no detail record named the company first (:meth:`fetch_raw`)."""
         return self.url()
 
-    def _careers_token(self) -> re.Match[str] | None:
-        """Step 1: the careers URL redirects to /candidate/?token=…; the token it lands on, or
-        None when it lands without one. The pooled session follows the redirect and keeps the
-        session cookie for the search call."""
+    def _careers_token(self) -> tuple[str | None, str]:
+        """Step 1: the careers URL redirects to /candidate/?token=…. The token it lands on (None
+        when it lands without one) and the URL it landed on. The pooled session follows the
+        redirect and keeps the session cookie for the search call."""
         response = self._fetch(
             "GET",
             self.url(),
@@ -128,23 +126,25 @@ class RippleHireScraper(BaseScraper):
         )
         # An HTTP error here must raise, not read as an empty board (ADR-0058 needs the 404).
         response.raise_for_status()
-        self._landed = response.url
-        return CAREERS_TOKEN.search(response.url)
+        m = CAREERS_TOKEN.search(response.url)
+        return (m.group(1) if m else None), response.url
 
     def fetch_raw(self) -> Any:
         # A 200 that lands on /candidate/careers with no token is NOT an empty Board. Runs
-        # 36470443904-36482634879 (2026-09-28) read 13-17 live Boards that way per run, and each
-        # "clean" empty read evicted rows after the ADR-0083 grace period (197 by then, ltimindtree's
-        # 715 one read away); the same 11 Boards redirected to a token from a clean address. A
-        # departed tenant mostly fails DNS, which raises already. So ask once more, then raise:
-        # the Board is Unauthoritative this run and keeps its rows (ADR-0053), as #702 asks.
-        m = self._careers_token() or self._careers_token()
-        if not m:
+        # 36470443904-36482634879 (2026-09-28) read 13-17 Scrapable Boards that way per run, and
+        # each "clean" empty read evicted rows after the ADR-0083 grace period (197 by then,
+        # ltimindtree's 715 one read away); the same 11 Boards redirected to a token from a clean
+        # address. A departed tenant mostly fails DNS, which raises already. So raise: the Board is
+        # Unauthoritative this run and keeps its rows (ADR-0053), as #702 asks. Asking again does
+        # not help: in those runs `board_page` GET the same URL 0.23-0.41 s after each token-less
+        # landing, and on the 42 landings on Boards whose tokened page states a name, it stated
+        # none.
+        token, landed = self._careers_token()
+        if not token:
             raise BoardUnreadable(
-                f"{self.board_key()}: careers page landed on {self._landed[:80]} twice, with no "
+                f"{self.board_key()}: careers URL landed on {landed[:80]}, with no "
                 "/candidate/?token= — unread, not empty"
             )
-        token = m.group(1)
         api = self.search_url()
         headers = {
             "User-Agent": USER_AGENT,
@@ -177,7 +177,7 @@ class RippleHireScraper(BaseScraper):
             except ValueError:
                 # A non-JSON body (a 5xx/403 HTML page) already fails the Board; raise it as
                 # the HTTP error it is so the log names the status, not a JSONDecodeError. A
-                # JSON error body still reaches the `jobVoList` lines below, as before.
+                # JSON error body reaches the `jobVoList` lines below.
                 response.raise_for_status()
                 raise
             if page == 0:
@@ -185,9 +185,14 @@ class RippleHireScraper(BaseScraper):
                 # no `totalJobCount`, and testing the shortfall against it reads `< 0`.
                 total = data.get("totalJobCount", 0)
                 if "jobVoList" not in data:
-                    self.note_unreadable_board(
-                        "a `jobVoList`",
-                        f"HTTP {response.status_code}, keys {sorted(data)[:5]}",
+                    # Unread, not empty: a Board with nothing open answers `jobVoList: []`
+                    # (19 of 19 held at 0 jobs, 2026-09-29). A JSON error body raises as the
+                    # HTTP error it is, like the non-JSON one above.
+                    response.raise_for_status()
+                    raise BoardUnreadable(
+                        f"{self.board_key()}: search page 0 answered HTTP "
+                        f"{response.status_code} with no `jobVoList`, keys "
+                        f"{sorted(data)[:5]} — unread, not empty"
                     )
             elif "jobVoList" not in data:
                 self._log.info(
