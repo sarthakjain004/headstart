@@ -188,3 +188,20 @@ def test_http_url_keeps_only_web_links():
     assert http_url("HTTP://Example.com") == "HTTP://Example.com"
     for bad in ("javascript:alert(1)", "data:text/html,x", "ftp://x", "", None):
         assert http_url(bad) == ""
+
+
+def test_html_to_text_drops_style_and_script_blocks_with_their_content():
+    """#876: a `<style>` block's rules survived tag stripping as words, and 756 served
+    descriptions opened with CSS. The posting's own text around it is kept."""
+    from headstart.jobs.job import html_to_text
+
+    blob = (
+        "<style>.article__content {color: red;}</style><p>Build data pipelines.</p>"
+        "<SCRIPT type='text/javascript'>var x = 1;</SCRIPT><p>Remote friendly.</p>"
+    )
+    assert html_to_text(blob) == "Build data pipelines. Remote friendly."
+    # Entity-encoded HTML is unescaped first, so its style block goes too.
+    assert (
+        html_to_text("&lt;style&gt;p {margin:0}&lt;/style&gt;&lt;p&gt;Hi&lt;/p&gt;")
+        == "Hi"
+    )
