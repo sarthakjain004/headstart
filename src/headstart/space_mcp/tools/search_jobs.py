@@ -458,6 +458,16 @@ def _coverage_line(arguments: dict[str, Any], facets: dict[str, Any]) -> str | N
     )
 
 
+def _matched(total: int, arguments: dict[str, Any]) -> str:
+    """The headline's count. A ranking is named in it, since the total was once read as the
+    number of jobs like the query when it counted every job the filters allow."""
+    if (arguments.get("similar_to") or "").strip():
+        return f"{total:,} jobs match these filters; similar_to only ranks them and does not narrow this count."
+    if (arguments.get("query") or "").strip():
+        return f"{total:,} jobs match these filters; the query only ranks them and does not narrow this count."
+    return f"{total:,} jobs match these filters."
+
+
 def answer(client: SpaceClient, arguments: dict[str, Any]) -> str:
     _refuse_by_policy(arguments)
     scope = None
@@ -484,13 +494,13 @@ def answer(client: SpaceClient, arguments: dict[str, Any]) -> str:
             0,
             _nothing_matched(client, facets, scope, arguments)
             if total == 0
-            else f"{total:,} jobs match these filters, but page {page} is past them.",
+            else f"{_matched(total, arguments)} Page {page} is past them.",
         )
     else:
         first = (page - 1) * k + 1
         lines.insert(
             0,
-            f"{total:,} jobs match these filters. Showing {first:,}–{first + len(rows) - 1:,}.",
+            f"{_matched(total, arguments)} Showing {first:,}–{first + len(rows) - 1:,}.",
         )
         lines.append(_order_line(arguments))
         lines.append(scraped_text.SCRAPED_NOTE)
@@ -527,7 +537,8 @@ TOOL = SpaceTool(
         "and dates go in their own fields, never in `query`. `query` ranks jobs by "
         "similarity but never narrows them: the total counts every job the filters "
         "allow, and less similar rows follow the close ones. To require a word (a "
-        "language, 'ML', a title word), use `keyword`; in descriptions it can match only "
+        "language, 'ML', a title word), use `keyword`: each word must start a word, and a "
+        "quoted phrase keeps its words together. In descriptions it can match only "
         "jobs with a stored description, and the answer says how many have one. "
         "`max_years` is the user's own "
         "experience ('3+ years' is 3): it keeps jobs asking for at most that many, and "
@@ -644,7 +655,11 @@ TOOL = SpaceTool(
             "keyword": {
                 "type": "string",
                 "maxLength": 60,
-                "description": "An exact word or phrase the job must contain.",
+                "description": (
+                    "Words the job must contain, each at the start of a word: 'ai' finds "
+                    "AI and AIOps but not Retail, 'java' also finds JavaScript. Put a phrase "
+                    "in double quotes to keep its words together, in order: '\"ai engineer\"'."
+                ),
             },
             "keyword_in": {
                 "type": "string",

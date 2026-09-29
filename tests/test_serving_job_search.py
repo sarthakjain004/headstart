@@ -540,7 +540,7 @@ def test_keyword_filter_reaches_the_where_clause_and_its_scope_is_whitelisted():
     searcher, table = _searcher()
     searcher.run({"q": "x", "kw": "kubernetes", "kw_in": "nonsense"})
     assert (
-        "(lower(title) LIKE '%kubernetes%')" in table.last_where
+        "(regexp_like(title, '(?i)(^|[^a-z0-9])kubernetes'))" in table.last_where
     )  # unknown scope -> title
 
 

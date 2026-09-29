@@ -29,7 +29,7 @@ el('search-go').addEventListener('click', () => go());
 
 /* ---- the search bar's match mode (ADR-0263). "By meaning" ranks every job by how close it is to
    the words; "Words in the job title" keeps only the jobs whose title holds every word (the
-   Keyword filter's substring rule, sent as `title_words`) and ranks those the same way. The
+   Keyword filter's word-start rule, sent as `title_words`) and ranks those the same way. The
    radios are the one place the mode lives: readSearch, the hash and a Saved Set read them. ---- */
 const MEANING_PROMPT = { placeholder: el('q').placeholder, label: el('q').getAttribute('aria-label') };
 const TITLE_PROMPT = { placeholder: 'Words the job title must have — e.g. staff backend engineer',
@@ -47,7 +47,7 @@ function drawQueryMode(){
   el('q').placeholder = prompt.placeholder;
   el('q').setAttribute('aria-label', prompt.label);
   if (el('qmode-note')) el('qmode-note').textContent = title
-    ? 'Every word must be in the title, inside longer words too (“java” also finds JavaScript).' : '';
+    ? 'Every word must start a word in the title (“java” also finds JavaScript); quote a phrase to keep it together.' : '';
 }
 // A switch re-runs what is typed at once, so trying the other mode is the one click.
 document.querySelectorAll('input[name="qmode"]').forEach(r => r.addEventListener('change', () => {

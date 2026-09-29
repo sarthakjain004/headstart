@@ -370,10 +370,27 @@ def test_a_browse_sort_is_global_and_a_salary_sort_without_currency_says_usd():
 
 def test_the_header_counts_and_the_footer_pages():
     space = _search_space([_job(n) for n in range(10)], total=37)
-    text = server.call(space, "search_jobs", {"query": "backend"})
+    text = server.call(space, "search_jobs", {"keyword": "backend"})
     assert text.startswith("37 jobs match these filters. Showing 1–10.")
     assert "More: page=2." in text
     assert text.endswith("Data as of the trends tick 2026-09-28T06:23:08+00:00.")
+
+
+@pytest.mark.parametrize(
+    ("ranking", "named"),
+    [
+        ({"query": "ai engineer"}, "the query"),
+        ({"similar_to": "lever:x:1"}, "similar_to"),
+    ],
+)
+def test_the_header_says_a_ranking_does_not_narrow_the_count(ranking, named):
+    """A total read as "AI jobs" when the query only ranked every job the filters allow."""
+    space = _search_space([_job(n) for n in range(10)], total=28_948)
+    text = server.call(space, "search_jobs", ranking)
+    assert text.startswith(
+        f"28,948 jobs match these filters; {named} only ranks them and does not narrow "
+        "this count. Showing 1–10."
+    )
 
 
 def test_the_last_reachable_page_says_so():
@@ -537,7 +554,7 @@ def test_copies_of_one_posting_on_a_page_are_listed_under_the_first_keeping_ever
         ),
         _job(4, title="backend developer", company="anyone ai", location="Lima"),
     ]
-    text = server.call(_search_space(rows, total=40), "search_jobs", {"query": "x"})
+    text = server.call(_search_space(rows, total=40), "search_jobs", {"keyword": "x"})
     assert text.startswith("40 jobs match these filters. Showing 1–4.")
     assert "listed under it as 'also #N', with only what differs" in text
     body = text[text.index(" 1. ") :]

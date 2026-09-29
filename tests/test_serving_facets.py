@@ -348,7 +348,7 @@ def test_description_coverage_uses_the_materialized_presence_flag():
 def test_a_keyword_can_be_named_as_the_blocker_but_its_scope_never_can():
     # Everything matches until the keyword is applied; dropping it recovers 100.
     def rule(where):
-        return 0 if where and "LIKE '%rust%'" in where else 100
+        return 0 if where and "[^a-z0-9])rust'" in where else 100
 
     out = facets.counts(_CountingTable(rule), *_kwargs(kw="rust", kw_in="title"))
     assert out["total"] == 0
@@ -904,7 +904,10 @@ def test_a_keyword_reaches_the_table_once_per_request(jobs_table):
     facets.counts(table, SearchFilters(kw="golang", kw_in="both"), _MATERIALIZED)
     keyed = [w for w in table.seen if w and "golang" in w]
     assert keyed == [
-        "(lower(title) LIKE '%golang%' OR lower(description) LIKE '%golang%')"
+        (
+            "(regexp_like(title, '(?i)(^|[^a-z0-9])golang') OR "
+            "regexp_like(description, '(?i)(^|[^a-z0-9])golang'))"
+        )
     ]
     assert len(table.seen) == 3  # the read, and the coverage's two counts
 
