@@ -2,7 +2,9 @@
 
 **Status:** accepted; its places amended by
 [ADR-0325](0325-the-model-retries-an-edge-failure-and-a-description-scan-runs-alone.md) (a
-description scan has a place of its own) · **Date:** 2026-09-29 · **Amends:**
+description scan has a place of its own), and its "still finishing" sentence by
+[ADR-0320](0320-a-description-keywords-rows-are-found-once-literal-first-and-named-by-row-id.md) ·
+**Date:** 2026-09-29 · **Amends:**
 [ADR-0267](0267-the-space-hosts-the-mcp-server-at-a-url-anyone-can-add.md) (its budgets and its
 refusal bodies) · **Relates to:**
 [ADR-0262](0262-a-caller-with-no-session-reads-the-public-routes-sixty-times-a-minute.md) (how a

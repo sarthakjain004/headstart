@@ -5,7 +5,9 @@ read a posting in full, see how the number of openings is changing, see which co
 hiring hardest this week, and see what a role's postings ask for.
 The Space hosts it at a URL anyone can add to Claude, and it also runs on your own machine as a
 subprocess of your agent client. Either way it answers from the deployed Space's own read routes,
-so every number is the one the website shows. The decision and its alternatives are ADR-0253,
+so every number is the one the website shows. It calls only postings opened and closed hiring,
+though: the website's Trends table still calls a category's change in openings "Hiring", re-counting
+included (ADR-0272, ADR-0321). The decision and its alternatives are ADR-0253,
 ADR-0258, ADR-0267, `docs/mcp/2026-09-28_space-mcp-server-plan.md` and
 `docs/mcp/2026-09-28_hosted-mcp-endpoint-options.md`; this file is the how-to.
 
@@ -53,13 +55,20 @@ It needs no account, token or sign-in.
   and about twice that beside another (measured 2026-09-29), so it runs on a place of its own,
   one for all callers. It never takes one of the 4 places above, so fast calls never wait behind
   it. When another scan is running, it waits up to 10 s and then gets a 503 asking it to retry in
-  about 20 s, or to match the keyword in titles instead.
+  about 20 s, or to match the keyword in titles instead. The Space finds a description keyword's
+  rows once and keeps them (ADR-0320): the page, its total and the next page share one finding,
+  so a repeat or a second page reads no description. A first search looks for the keyword's
+  literal first and reads the exact word rule only on those rows: on a local copy of the table it
+  took 2 s where the plain scans took 8 s (ADR-0320).
 - **How refusals look.** Every refusal is a JSON-RPC error carrying the request's `id`, with the
   HTTP status as its `code` and a sentence as its `message`, plus `Retry-After`. Claude Code shows
   it to the model as `Streamable HTTP error: Error POSTing to endpoint: {…}` and does not retry.
 - **How long.** A tool call gets 45 s. Past that the call answers "HeadStart did not answer within
   this call's 45 s…" and asks for narrower filters or the concise detail: a description keyword
-  with `detail: "full"` is the likeliest to meet it. The work it started runs on to its end, so
+  with `detail: "full"` is the likeliest to meet it. A `search_jobs` call with a description
+  keyword says instead that reading descriptions is the slow part, that the Space keeps what the
+  read finds so the same call in a minute or two is usually quick, or to look in titles or add a
+  company (ADR-0320). The work it started runs on to its end, so
   while two such reads are still running, a new call is told HeadStart is still finishing earlier
   searches. Claude Code and the MCP Inspector give up on any request at 60 s (measured
   2026-09-29), which is why the deadline sits under it.
@@ -265,20 +274,34 @@ category, seniority `level`, watched `role` or `company`.
     dropped, duplicates removed, counting changes HeadStart did not size) and any hiring before
     turnover began.
 
-  The whole index sizes none of its counting changes, so its rest is most of the change: on
-  2026-09-29 the 30-day window listed +111,851 openings while postings opened and closed netted
-  −514.
-- **Turnover's gaps are said.** It began on 2026-09-25 18:16, so for now it covers only part of
-  any window. It leaves out the runs where a counting change landed. Some closures go uncounted,
-  so closed can run low.
-- **Each counting change is named once**, numbered, and figures refer to it by number.
+  The whole index sizes its counting changes (ADR-0270) and, from the first per-Board count on
+  2026-09-13, its Boards found (ADR-0304), but not its duplicate removals. Before ADR-0304, on
+  2026-09-29, the 30-day window listed +111,929 openings, counting changes were sized at −22,693,
+  postings opened and closed netted −923, and the unsized rest was +135,545.
+- **A window turnover covers only part of leads with one plain sentence** (ADR-0321). Turnover
+  began on 2026-09-25 18:16, so every view whose window starts earlier, a company breakdown
+  included, first says "HeadStart can measure hiring, as postings opened and closed, only from
+  2026-09-25 18:16: 3.4 of this window's 30.0 days. Over the whole window it cannot say whether
+  hiring rose or fell". A window that ends before turnover began says it has no hiring figure at
+  all.
+- **Turnover's other gaps are said next, before any figure.** It leaves out the runs inside its
+  span where a counting change landed. Some closures go uncounted, so closed can run low; the
+  answer gives the Boards as "N of M". On 2026-09-29 all 12,407 of the index's Boards had such a
+  run, so the answer says closed runs low.
+- **Each counting change is named once**, numbered, by short tags ("[4] category list + duplicate
+  check + category sorting"), and figures refer to it by number. One line glosses each tag once,
+  and "growth rescaled by [n]": where taking change [n] out would have left a line below zero,
+  HeadStart scaled the line's earlier growth down instead.
+- **A retired category names its successor.** A window from before the category list changed on
+  2026-09-25 reads the old categories: "Security Engineering (retired; now Security)". Its jobs
+  were re-sorted, so it does not line up with the successor's figures in a later window.
 - **The closing line is an arithmetic check.** It says each line's parts add up to its change.
   That checks sums, not that any figure is hiring.
 - **The site's own "hiring" figure appears only with `detail: full`**, labelled as including the
   unsized change.
-- **The window.** It is `days` back from now, or `since`/`until` dates. The answer says when the
-  history starts later than asked. A company's counts begin 2026-09-13, when per-Board counting
-  began.
+- **The window.** It is `days` back from now, or `since`/`until` dates; a date after today is
+  refused. The answer says when the history starts later than asked. A company's counts begin
+  2026-09-13, when per-Board counting began.
 - **Coverage.** `coverage: comparable` counts only the Boards tracked at the window's start, as
   the site's toggle does. The default `all` is what the site lists.
 - **Measure.** `measure: new` reads postings first seen in the trailing 7 days, the site's New
@@ -286,16 +309,29 @@ category, seniority `level`, watched `role` or `company`.
 - **A role breakdown** is the watched roles within a category, not the category. The answer also
   gives the category's own figures, and says when a category has no watched roles.
 
-**`hiring_now`** — companies ranked over the trailing week on one Lens: `expansion` (the site's
-net change, less the counting steps it could size), `volume` (postings opened) or `rate`
-(postings opened as a share of openings). Rows keep the site's order and numbers, and each row
-also gives opened less closed.
+**`hiring_now`** — companies ranked over the trailing week on one Lens. The default,
+`opened_less_closed`, ranks postings opened less postings closed, only for companies whose
+closures were counted on every Board, so its figure holds no re-counting (ADR-0321). The site's
+other Lenses are `expansion` (the site's net change, less the counting steps it could size),
+`volume` (postings opened) and `rate` (postings opened as a share of openings). Every row gives
+the site's numbers and opened less closed.
 
-- **Net not backed by postings opened.** A row is flagged when its net is more than its postings
-  opened and closed could make, even at their pace over the whole week. Such a net is mostly
-  re-counting, so report the row's opened and closed.
-- **Small base.** On `rate`, a row with under 50 openings is flagged, and so is one with more
-  postings opened than are open now.
+- **The site's Lenses apply every check that questions what they rank by.** On `expansion`,
+  `volume` and `rate` a row is flagged when:
+  - its net is more than its postings opened and closed could make, sign by sign, even at their
+    pace over the whole week. Such a net is mostly re-counting, so report the row's opened and
+    closed;
+  - its closures were not counted, on all or only some of its Boards;
+  - it opened more postings than are open now;
+  - on `rate`, it has under 50 openings (a small base).
+
+  `opened_less_closed` flags nothing, because none of these questions its figure, and it keeps its
+  own order.
+- **Flagged rows go last on the site's Lenses.** Every row `/hot` serves on `expansion`, `volume`
+  or `rate` is listed unflagged first, each group in the site's order, and then cut to `limit`.
+  Each row gives its place on the page ("site #7"). On 2026-09-29 the page's Expansion list began
+  with Bosch Group, +442 on 23 postings opened and 33 closed; the answer began with Capital One,
+  site #7.
 - **Operators.** `operator` is who posts the jobs:
   - `employer`: the company itself, and any company not on the curated list;
   - `services`: an IT services firm posting client work;

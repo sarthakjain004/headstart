@@ -83,9 +83,8 @@ _log = log.get(__name__, __spec__)
 #: 8 — the Eightfold fronts the first pairs file left out: 25 pairs across 22 fronts
 #:     (ADR-0210's amendment).
 #: 9 — Radancy ``subset-reqs`` aliases, the signal's first ledger for Radancy: 5 fronts (ADR-0265).
-#: 10 — Recruitee ``redirect`` aliases, the signal's first ledger for Recruitee: 357 labels
-#:     (ADR-0301).
-DEDUP_VERSION = 10
+#: 11 — Taleo Enterprise ``subset-reqs`` from a twin host onto its linked host: 14 sections (ADR-0307).
+DEDUP_VERSION = 11
 
 
 @dataclass(frozen=True, slots=True)

@@ -34,7 +34,12 @@ from headstart.space_mcp import (
     role_families,
     scraped_text,
 )
-from headstart.space_mcp.space_client import SpaceClient, SpaceRoute
+from headstart.space_mcp.space_client import (
+    CALL_DEADLINE_S,
+    DeadlinePassed,
+    SpaceClient,
+    SpaceRoute,
+)
 from headstart.space_mcp.space_tool import SpaceTool
 
 #: `sort` as this tool spells it -> as `/search` does; relevance is the query's own order.
@@ -107,6 +112,17 @@ TYPE_FIELD = 30
 
 #: A posting older than this many days is flagged in its row: it may well have closed.
 STALE_DAYS = 365
+
+#: Said in place of the client's deadline sentence when a description keyword ran past it. The
+#: description read is the slow part, not the other filters, and the Space keeps what it read
+#: once the read finishes (ADR-0320), so the same call soon after is quick.
+_DESCRIPTION_PAST_DEADLINE = (
+    f"HeadStart did not answer within this call's {CALL_DEADLINE_S:g} s, so it stopped "
+    "waiting. Reading job descriptions for the keyword is the slow part. HeadStart finishes that "
+    "read after this call ends and keeps its matches unless there are very many, so the same "
+    "call in a minute or two is usually quick. Or look for the keyword in titles "
+    "(keyword_in: title), or add a company."
+)
 
 
 #: Every place the Space's India filter names: the whole country, its region, its cities.
@@ -481,10 +497,15 @@ def answer(client: SpaceClient, arguments: dict[str, Any]) -> str:
     # Concise prints only the total, so it asks for nothing else (ADR-0274): under a description
     # keyword every option's count re-scans the matches, 98.7 s against 10.6 s for the page.
     counted = params if full else [*params, ("counts", "total")]
-    with ThreadPoolExecutor(max_workers=2) as pool:
-        rows_asked = pool.submit(client.read, SpaceRoute.SEARCH, params)
-        facets_asked = pool.submit(client.read, SpaceRoute.FACETS, counted)
-        rows, facets = rows_asked.result(), facets_asked.result()
+    try:
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            rows_asked = pool.submit(client.read, SpaceRoute.SEARCH, params)
+            facets_asked = pool.submit(client.read, SpaceRoute.FACETS, counted)
+            rows, facets = rows_asked.result(), facets_asked.result()
+    except DeadlinePassed as exc:
+        if scans_descriptions(arguments):
+            raise ToolFailure(_DESCRIPTION_PAST_DEADLINE) from exc
+        raise
     rows = company_names.named(client, rows)
     total = int(facets.get("total") or 0)
     k, page = int(arguments["limit"]), int(arguments["page"])

@@ -13,6 +13,12 @@ counting changes, each label once. Where turnover is missing or partial it says 
 ``steps_at``, ``reference``, ``points``, ``day_markers``) are left out, which takes a 406 kB
 payload down to a few hundred words. A reading that fails the Space's arithmetic check is still
 reported, saying so; one the Space could not read at all reports no figures.
+
+Every view's header says when turnover covers less than the window, before any figure: HeadStart
+began counting it on 2026-09-25, so over a longer window it cannot say whether hiring rose
+(ADR-0321). A company breakdown has no first row, and it read "OpenAI: 9 opened, 5 closed" over 14
+days with no word that they were 3.4 days'. A counting change is named by short tags, glossed
+once, and a line of a category HeadStart has since retired names the category that took it over.
 """
 
 from __future__ import annotations
@@ -26,6 +32,12 @@ from headstart.mcp_protocol.messages import ToolFailure
 from headstart.space_mcp import company_scope, role_families, scraped_text
 from headstart.space_mcp.space_client import SpaceClient, SpaceRoute
 from headstart.space_mcp.space_tool import SpaceTool
+from headstart.space_mcp.turnover_span import span_sentence
+from headstart.trends.netting import (
+    GROWTH_RESCALED_WHEN,
+    METHODOLOGY_WORDS,
+    NEW_BECAME_INFLOW,
+)
 
 #: `breakdown` as this tool spells it -> `/trends`' `split` (None: the default per-category view).
 SPLITS = {"category": None, "level": "bands", "role": "roles", "company": "company"}
@@ -41,6 +53,18 @@ _SHORT_SPAN = 0.9
 
 #: A window that starts more than this many days after the asked start says so.
 _LATE_START_DAYS = 1.0
+
+#: Each counting change's field (`netting.METHODOLOGY_WORDS`) as the short tag a legend names it
+#: by; the glossary line says each tag's words once. A field missing here is named by its words.
+_CHANGE_TAGS = {
+    "tech_filter_version": "tech filter",
+    "dedup_version": "duplicate check",
+    "family_map_fingerprint": "category list",
+    "family_classifier_version": "category sorting",
+    "centroid_version": "category redraw",
+    "derivations_version": "experience reading",
+    NEW_BECAME_INFLOW: "new-this-week definition",
+}
 
 
 def _now() -> datetime:
@@ -96,6 +120,13 @@ def _window(arguments: dict[str, Any]) -> tuple[str, str | None]:
     and `until` (a date, through its last second)."""
     since_day = _date("since", arguments.get("since"))
     until_day = _date("until", arguments.get("until"))
+    today = _now().date().isoformat()
+    for name, day in (("since", since_day), ("until", until_day)):
+        if day and day > today:
+            raise ToolFailure(
+                f"`{name}` {day} is in the future (today is {today}, UTC); trend counts run "
+                "only up to now."
+            )
     since = (
         f"{since_day}T00:00:00+00:00"
         if since_day
@@ -134,10 +165,34 @@ def _pick(
         return list(pool.map(lambda v: company_scope.for_trends(client, v), values))
 
 
+def _tagged(label: str) -> list[tuple[str, str]]:
+    """``(tag, words)`` for each thing a counting change's label says HeadStart did, in the
+    label's order ("we changed our list of job categories and sorted jobs…" is category list,
+    then category sorting). None for a label not in the Space's "we …" form, or one saying
+    anything these words do not cover: a Space newer than this server may have words for a field
+    it does not, and that label is then said whole rather than cut short."""
+    if not label.startswith("we "):
+        return []
+    did_part = label.removeprefix("we ").split(", so some jobs ")[0]
+    found = sorted(
+        (did_part.find(did), _CHANGE_TAGS.get(field, did), did)
+        for field, (did, _) in METHODOLOGY_WORDS.items()
+        if did in did_part
+    )
+    rest = did_part
+    for _, _, did in found:
+        rest = rest.replace(did, "", 1)
+    if not found or rest.replace(",", "").replace(" and ", "").strip():
+        return []
+    return [(tag, did) for _, tag, did in found]
+
+
 class _Changes:
     """The counting changes an answer names, numbered once each by label: a window repeats
     labels ("we got better at spotting tech jobs…" four times in 30 days), so each is said once
-    and every figure refers to it by number, with the sizes of one label summed."""
+    and every figure refers to it by number, with the sizes of one label summed. The legend names
+    each by short tags and glosses every tag once: a whole-index answer's legend of near-identical
+    sentences was 1,325 characters of its 3,706 (ADR-0321)."""
 
     def __init__(self, marked: list[dict[str, Any]]) -> None:
         self.days: dict[str, list[str]] = {}
@@ -151,6 +206,10 @@ class _Changes:
         self.numbers: dict[str, int] = {}
 
     def number(self, label: str) -> str:
+        """``label``'s number, given on first use. A rescaled growth refers to its change by
+        number, so its change is numbered first."""
+        if label.startswith(GROWTH_RESCALED_WHEN):
+            self.number(label.removeprefix(GROWTH_RESCALED_WHEN))
         self.numbers.setdefault(label, len(self.numbers) + 1)
         return f"[{self.numbers[label]}]"
 
@@ -165,22 +224,46 @@ class _Changes:
             if size
         )
 
-    def legend(self, full: bool) -> str | None:
+    def _named(self, label: str) -> str:
+        """``label`` as the legend names it: a rescaled growth by its change's number, a label
+        in the Space's "we …" form by its tags, anything else whole."""
+        if label.startswith(GROWTH_RESCALED_WHEN):
+            parent = self.numbers[label.removeprefix(GROWTH_RESCALED_WHEN)]
+            return f"growth rescaled by [{parent}]"
+        tags = _tagged(label)
+        return " + ".join(tag for tag, _ in tags) if tags else label
+
+    def _dated(self, label: str, full: bool) -> str:
+        days = self.days.get(label)
+        if not days:
+            return self._named(label)
+        if full or len(days) == 1:
+            return f"{self._named(label)} ({', '.join(dict.fromkeys(days))})"
+        span = days[0] if days[0] == days[-1] else f"{days[0]} to {days[-1]}"
+        return f"{self._named(label)} ({len(days)} times, {span})"
+
+    def legend(self, full: bool) -> list[str]:
+        """The legend, then the glossary of the tags it used; no lines when nothing is
+        numbered. It numbers nothing: every label it names was numbered as it was used."""
         if not self.numbers:
-            return None
-
-        def said(label: str) -> str:
-            days = self.days.get(label)
-            if not days:
-                return label
-            if full or len(days) == 1:
-                return f"{label} ({', '.join(days)})"
-            span = days[0] if days[0] == days[-1] else f"{days[0]} to {days[-1]}"
-            return f"{label} ({len(days)} times, {span})"
-
-        return "Counting changes: " + "; ".join(
-            f"[{n}] {said(label)}" for label, n in self.numbers.items()
+            return []
+        legend = (
+            "Counting changes, HeadStart's own changes to how it counts, each adding, dropping "
+            "or moving jobs in the counts, none of it hiring: "
+            + "; ".join(
+                f"[{n}] {self._dated(label, full)}" for label, n in self.numbers.items()
+            )
+            + "."
         )
+        glossed = dict(tag for label in self.numbers for tag in _tagged(label))
+        glossary = [f"{tag} = we {did}" for tag, did in glossed.items()]
+        if any(label.startswith(GROWTH_RESCALED_WHEN) for label in self.numbers):
+            glossary.append(
+                "growth rescaled by [n] = where taking change [n] out would have left a line "
+                "below zero, HeadStart scaled the line's earlier growth down instead, and this "
+                "is the growth that scaling removed"
+            )
+        return [legend] + (["Tags: " + "; ".join(glossary) + "."] if glossary else [])
 
 
 @dataclass(frozen=True)
@@ -291,33 +374,51 @@ def _rest_contains(
     return held[0] if len(held) == 1 else ", ".join(held[:-1]) + " and " + held[-1]
 
 
+def _turnover_lead(payload: dict[str, Any], window: dict[str, str]) -> list[str]:
+    """The plain sentence every view leads with when turnover covers less than its window, before
+    any figure (ADR-0321): turnover began on 2026-09-25, so a longer window cannot say whether
+    hiring rose, and a company breakdown gave four days' opened and closed as two weeks'."""
+    began = payload.get("turnover_since")
+    span = span_sentence(began, window["from"], window["to"])
+    if span is None:
+        return []
+    if began >= window["to"]:
+        span += " The openings listed below mix hiring with re-counting."
+    return [span]
+
+
 def _turnover_notes(
     payload: dict[str, Any], window: dict[str, str], labels: dict[str, str]
 ) -> list[str]:
-    """What turnover leaves out of this window: the runs before HeadStart counted it, the runs a
-    counting change landed on, and closures a partial read could not see."""
-    notes = []
+    """What turnover leaves out inside the span it covers, said in every view before any figure
+    (ADR-0321): the runs of that span a counting change landed on, and the Boards whose closures
+    a partial read could not see, with how many of how many. None where the window holds no
+    turnover."""
     began = payload.get("turnover_since")
-    if began and began > window["from"]:
+    if not began or began >= window["to"]:
+        return []
+    counted_from = max(began, window["from"])
+    notes = []
+    left_out = [
+        run
+        for run in payload.get("turnover_left_out") or []
+        if counted_from <= run <= window["to"]
+    ]
+    if left_out:
         notes.append(
-            f"Opened and closed are counted only from {_at(began)}, when HeadStart began "
-            f"counting them: {_days(began, window['to']):.1f} of the window's "
-            f"{_days(window['from'], window['to']):.1f} days"
-        )
-    if left_out := payload.get("turnover_left_out"):
-        notes.append(
-            f"they leave out the {len(left_out)} runs a counting change landed on"
+            f"opened and closed leave out the {len(left_out)} runs a counting change "
+            "landed on"
         )
     in_scope = payload.get("boards_in_scope") or {}
     for pick, boards in sorted((payload.get("closures_unseen") or {}).items()):
         if not boards:
             continue
-        # The index's own count is of every Board with such a run: it has no fair "of".
-        of = f" of {in_scope[pick]:,}" if pick and pick in in_scope else ""
+        of = f" of {in_scope[pick]:,}" if pick in in_scope else ""
         whose = f" of {labels.get(pick, pick)}" if pick else " in scope"
+        every = in_scope.get(pick) == boards
         notes.append(
             f"closures went uncounted on some run on {boards:,}{of} Boards{whose}, "
-            "so closed can run low"
+            f"so closed {'runs' if every else 'can run'} low"
         )
     if payload.get("closures_uncounted") and any(labels):
         notes.append(
@@ -358,7 +459,6 @@ def _total(
         )
     elif turnover := _turnover(move):
         out.append(f"{who}hiring, as postings opened and closed: {turnover}.")
-        out += _turnover_notes(payload, window, labels)
     else:
         out.append(f"{who}opened and closed are not counted in this view.")
     if not new:
@@ -408,7 +508,11 @@ def _label(line: dict[str, Any], breakdown: str) -> str:
     # are HeadStart's words.
     if breakdown == "company" or line.get("whole_company"):
         return scraped_text.quoted(line.get("label"))
-    return str(line.get("label"))
+    label = str(line.get("label"))
+    # A window from before the category list changed reads its retired categories (ADR-0321).
+    if breakdown == "category" and (successor := role_families.successor(line["name"])):
+        return f"{label} (retired; now {role_families.label(successor)})"
+    return label
 
 
 def _roles_head(payload: dict[str, Any], category: str, label: str) -> list[str]:
@@ -424,11 +528,23 @@ def _roles_head(payload: dict[str, Any], category: str, label: str) -> list[str]
     if not total:
         return []
     change = _signed(total["latest"] - total["start"])
+    # Said from the lines themselves: since ADR-0270 and ADR-0304 a role's line has its counting
+    # changes and Boards found sized, which this once denied.
+    moves = [line["move"] for line in payload["reading"].get("lines") or []]
+    turnover = (
+        "Opened and closed are given per watched role"
+        if any(move.get("turnover") for move in moves)
+        else "Opened and closed are not counted per watched role"
+    )
+    sized = (
+        "HeadStart sizes only part of their re-counting"
+        if any(move.get("not_hiring_total") for move in moves)
+        else "HeadStart sizes no re-counting on them"
+    )
     roles = (
         f"Watched roles within {label}, added together (not the whole category): listed "
-        f"{total['start']:,} → {total['latest']:,} ({change}). Opened and closed are not "
-        "counted per watched role, and HeadStart sizes no re-counting on them, so each "
-        "role's change mixes hiring with re-counting."
+        f"{total['start']:,} → {total['latest']:,} ({change}). {turnover}, and {sized}, so "
+        "each role's change in openings listed mixes hiring with re-counting."
     )
     return [roles]
 
@@ -532,11 +648,16 @@ def answer(client: SpaceClient, arguments: dict[str, Any]) -> str:
         for company in payload.get("companies") or []
     }
     lines = head
+    source = whole or payload
+    new = payload.get("metric") == "new"
+    # Under measure new there are no opened and closed, and the answer says so.
+    if not new:
+        lines += _turnover_lead(source, window)
+        lines += _turnover_notes(source, window, labels)
     if picks and breakdown == "company":
         lines.append(scraped_text.SCRAPED_NOTE)
     if breakdown == "role":
         lines += _roles_head(payload, category, category_label)
-    source = whole or payload
     if reading.get("total"):
         lines += _total(
             reading["total"]["move"],
@@ -556,7 +677,6 @@ def answer(client: SpaceClient, arguments: dict[str, Any]) -> str:
     )
     shown = ranked if full else ranked[:CONCISE_LINES]
     if shown:
-        new = payload.get("metric") == "new"
         by = (
             "largest net of opened and closed first"
             if any((line["move"].get("turnover") or {}) for line in shown)
@@ -575,8 +695,15 @@ def answer(client: SpaceClient, arguments: dict[str, Any]) -> str:
             )
             for line in shown
         ]
-    if legend := changes.legend(full):
-        lines.append(legend + ".")
+        if breakdown == "category" and any(
+            role_families.successor(line["name"]) for line in shown
+        ):
+            lines.append(
+                "A category marked retired is from HeadStart's list before it changed; it "
+                "names the current category that took it over, but its jobs were re-sorted, "
+                "so it does not line up with that category's figures in a later window."
+            )
+    lines += changes.legend(full)
     checked = [r for r in (payload.get("reading"), whole and whole.get("reading")) if r]
     violations = [v for r in checked for v in r.get("violations") or []]
     if all(r.get("reconciles", True) for r in checked):

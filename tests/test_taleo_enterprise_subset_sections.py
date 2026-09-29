@@ -10,6 +10,7 @@ from __future__ import annotations
 import importlib.util
 import sys
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import pytest
 
@@ -87,6 +88,123 @@ def test_the_same_reqs_on_two_tenants_are_not_a_subset(mod):
         )
         == {}
     )
+
+
+PRUITT = "https://pruitthealth.taleo.net/careersection"
+PRUITT_TWIN = "https://pruitthealthcareers.taleo.net/careersection"
+HCA = "https://hyundaicapital.taleo.net/careersection"
+HCA_TWIN = "https://careerglobalhc.taleo.net/careersection"
+
+
+def test_a_twin_hosts_mirror_is_buried_onto_the_linked_host(mod):
+    """#888: `pruitthealthcareers.taleo.net` answers every section of `pruitthealth.taleo.net`
+    with the same requisitions, so each posting was served once per host. Sections 1 and 2
+    overlap without either containing the other, so on one host both stay; each twin section
+    goes to the linked host's section at the same path."""
+    one, two = {"1", "2", "3"}, {"2", "3", "4"}
+    buried = mod.burials(
+        {
+            f"{PRUITT}/1": one,
+            f"{PRUITT}/2": two,
+            f"{PRUITT_TWIN}/1": one,
+            f"{PRUITT_TWIN}/2": two,
+        }
+    )
+    assert buried == {
+        f"{PRUITT_TWIN}/1": f"{PRUITT}/1",
+        f"{PRUITT_TWIN}/2": f"{PRUITT}/2",
+    }
+
+
+def test_a_same_path_twin_is_buried_whatever_the_walks_read(mod):
+    """`pruitthealth`'s section 1 read 1,417 on both hosts in five of six walks and 1,367 against
+    1,392 in the sixth. Containment would then leave the twin unburied, and its ~1,400 postings
+    would be served for a run and evicted again. The same path is the same section, so the
+    twin goes to it whatever either walk read, an empty section included."""
+    assert mod.burials(
+        {
+            f"{PRUITT}/1": {"1", "2"},
+            f"{PRUITT_TWIN}/1": {"1", "2", "3"},
+            f"{PRUITT}/campus": set(),
+            f"{PRUITT_TWIN}/campus": set(),
+        }
+    ) == {
+        f"{PRUITT_TWIN}/1": f"{PRUITT}/1",
+        f"{PRUITT_TWIN}/campus": f"{PRUITT}/campus",
+    }
+
+
+def test_the_linked_host_is_kept_where_its_twin_sorts_first(mod):
+    """Hyundai Capital America's careers page links `hyundaicapital.taleo.net/careersection/hca`.
+    Mirrors elsewhere keep the lowest URL, which is the twin `careerglobalhc` here. The twin's
+    `ex` has no row on the linked host and goes to the section that lists all its reqs; the
+    twin's `hcca` goes to the linked `hcca`, which is itself buried onto `hca`, and follows it."""
+    reqs = {"1", "2"}
+    buried = mod.burials(
+        {
+            f"{HCA}/hca": reqs,
+            f"{HCA}/hcca": reqs,
+            f"{HCA_TWIN}/ex": reqs,
+            f"{HCA_TWIN}/hca": reqs,
+            f"{HCA_TWIN}/hcca": reqs,
+        }
+    )
+    assert buried == {
+        f"{HCA}/hcca": f"{HCA}/hca",
+        f"{HCA_TWIN}/ex": f"{HCA}/hca",
+        f"{HCA_TWIN}/hca": f"{HCA}/hca",
+        f"{HCA_TWIN}/hcca": f"{HCA}/hca",
+    }
+
+
+def test_a_twin_section_listing_a_req_of_its_own_is_kept(mod):
+    """Without a same-path row, containment decides, as within one host: a twin section the
+    linked host does not wholly list stays, and the linked section is never buried onto it."""
+    assert (
+        mod.burials({f"{HCA}/hca": {"1", "2"}, f"{HCA_TWIN}/ex": {"1", "2", "3"}}) == {}
+    )
+
+
+def test_a_twin_section_buried_onto_a_twin_section_that_stays_stays_with_it(mod):
+    """The per-host election buries the twin's `x` onto the twin's `ex`, which lists a req the
+    linked host does not and so stays on the twin host. `x` has no same-path row, so it stays
+    buried onto `ex`, which is scraped. The twin's `hcca`, buried onto `ex` the same way, has a
+    same-path row and goes there."""
+    buried = mod.burials(
+        {
+            f"{HCA}/hca": {"1", "2"},
+            f"{HCA}/hcca": {"1"},
+            f"{HCA_TWIN}/ex": {"1", "2", "9"},
+            f"{HCA_TWIN}/x": {"1"},
+            f"{HCA_TWIN}/hcca": {"1"},
+        }
+    )
+    assert buried == {
+        f"{HCA}/hcca": f"{HCA}/hca",
+        f"{HCA_TWIN}/x": f"{HCA_TWIN}/ex",
+        f"{HCA_TWIN}/hcca": f"{HCA}/hca",
+    }
+
+
+def test_a_twin_section_is_never_buried_onto_a_non_public_section(mod):
+    assert (
+        mod.burials({f"{PRUITT}/internal": {"1", "2"}, f"{PRUITT_TWIN}/1": {"1"}}) == {}
+    )
+
+
+def test_every_twin_host_has_a_live_ledger_row_on_each_side(mod):
+    """A misspelt host in `TWIN_HOSTS` would bury nothing and say nothing."""
+    from headstart.boards import liveness_ledger
+
+    live_hosts = {
+        urlsplit(v.url).hostname.lower()
+        for v in liveness_ledger.load(
+            liveness_ledger.dir_for(ROOT) / "taleo_enterprise.csv"
+        ).values()
+        if v.status == liveness_ledger.LIVE
+    }
+    named = set(mod.TWIN_HOSTS) | set(mod.TWIN_HOSTS.values())
+    assert sorted(named - live_hosts) == []
 
 
 def _liveness_dir(root: Path, sections: dict[str, str]) -> Path:

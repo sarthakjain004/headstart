@@ -53,6 +53,10 @@ from headstart.serving import (
     requirement_counts,
     tech_skills,
 )
+from headstart.serving.description_matches import (
+    DescriptionMatches,
+    reads_descriptions,
+)
 
 # In the Space nothing calls `setup()` (ADR-0153's app.py boots straight into serving), which
 # is why the one boot line below is a WARNING — `logging.lastResort` carries WARNING and above
@@ -882,6 +886,9 @@ class JobSearch:
         )
         self._requirements_cache_lock = Lock()
         self._family_arrays: dict[str, Any] = {}
+        # A description keyword's rows, found once and shared by the ranked page, the facet
+        # total and every later page (ADR-0320).
+        self._description_matches = DescriptionMatches(table, self.capabilities)
         # The four flags above are each a whole feature silently switched off: an un-migrated
         # table ignores every `seen_within`/`first_seen_after` bound, the salary bracket and
         # `has_salary`, the Keyword filter's description scope, and the `seen`/`salary` sorts
@@ -1066,6 +1073,11 @@ class JobSearch:
             self.capabilities,
             extra_where=extra_where,
             only_total=only_total,
+            table_where=(
+                lambda varied: self._description_matches.where(varied, extra_where)
+            )
+            if reads_descriptions(filters, self.capabilities)
+            else None,
         )
         elapsed_ms = (time.monotonic() - started) * 1000
         if elapsed_ms > SLOW_SEARCH_MS:
@@ -1120,9 +1132,13 @@ class JobSearch:
         ranked = bool(query or like)
         _int = _int_arg(args)
         filters = self.parse_filters(args)
-        where = with_extra(build_filter(filters, self.capabilities), extra_where)
-        if like:
-            where = with_extra(where, _other_than(like))
+        # Narrowed as `facets` narrows it, so both ask the same where-clause.
+        narrowed = with_extra(extra_where, _other_than(like)) if like else extra_where
+        if reads_descriptions(filters, self.capabilities):
+            # Its rows found once, and shared with the facet counts (ADR-0320).
+            where = self._description_matches.where(filters, narrowed)
+        else:
+            where = with_extra(build_filter(filters, self.capabilities), narrowed)
         # Whitelisted to a column name, never taken from the query string — this reaches an
         # ORDER BY. An unknown value is no sort at all, which is the existing behaviour.
         sort = SORT_COLUMNS.get((args.get("sort") or "").strip())

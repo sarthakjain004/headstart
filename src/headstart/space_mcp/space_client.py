@@ -56,9 +56,9 @@ SPACE_URL = "https://imposeidon-headstart-search.hf.space"
 #: suggestion's `match` and `board_keys`; since 2, `counts=total` on `/facets` (ADR-0274); since
 #: 3, `country` (ADR-0273); since 4, `/job` and `like=` (ADR-0277); since 5,
 #: `/companies/locations` (ADR-0275); since 6, its places by country and `/companies/levels`
-#: (ADR-0323); since 7, `/requirements` (ADR-0324). The app states the one it serves on every
-#: reply.
-AGENT_API = 7
+#: (ADR-0323); since 7, `/requirements` (ADR-0324); since 8, `/hot`'s `opened_less_closed`
+#: lens (ADR-0321). The app states the one it serves on every reply.
+AGENT_API = 8
 
 #: The measured boot, said when a call gives up waiting for one.
 BOOT_MEASURED = "a boot measured 4 min 13 s on 2026-09-28"
@@ -258,7 +258,8 @@ _PAST_DEADLINE = (
 #: Said when too many reads that outlived their call are still running to start another.
 _STILL_FINISHING = (
     "HeadStart is still finishing earlier searches that ran past their time limit; try again "
-    "in a minute, with narrower filters if this is a description-keyword search."
+    "in a minute. A description-keyword search that finishes keeps its matches unless there are "
+    "very many, so the same search is then usually quick."
 )
 
 

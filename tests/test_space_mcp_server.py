@@ -30,6 +30,7 @@ from headstart.space_mcp import space_client as sc
 from headstart.space_mcp.tools import (
     REGISTRY,
     company_profile,
+    hiring_now,
     read_trends,
     search_jobs,
 )
@@ -166,6 +167,40 @@ def test_in_process_a_read_may_take_the_calls_whole_deadline_and_says_when_it_di
     assert reply["result"]["isError"] is True
     assert reply["result"]["content"][0]["text"] == sc._PAST_DEADLINE
     assert timeouts and timeouts[0] > 20 and timeouts[0] <= sc.CALL_DEADLINE_S
+
+
+@pytest.mark.parametrize(
+    "keyword_in, advice",
+    [
+        ("description", "Reading job descriptions for the keyword is the slow part"),
+        ("both", "Reading job descriptions for the keyword is the slow part"),
+        ("title", "Narrow the filters"),
+    ],
+)
+def test_a_description_keyword_past_the_deadline_says_the_description_read_is_the_slow_part(
+    keyword_in, advice
+):
+    """ADR-0320: narrowing the other filters was the wrong advice for the description read."""
+
+    def past_the_deadline(url, headers, timeout_s):
+        raise sc.DeadlinePassed(sc._PAST_DEADLINE)
+
+    hosted = server.build_server(env={}, fetch=past_the_deadline)
+    arguments = {"keyword": "visa", "keyword_in": keyword_in, "country": "DE"}
+    reply = messages.handle(
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {"name": "search_jobs", "arguments": arguments},
+        },
+        hosted,
+    )
+    assert reply["result"]["isError"] is True
+    said = reply["result"]["content"][0]["text"]
+    assert advice in said
+    if keyword_in != "title":
+        assert "keyword_in: title" in said and "Narrow the filters" not in said
 
 
 def test_a_real_client_handshake_over_a_real_subprocess():
@@ -1207,9 +1242,11 @@ def test_trends_lead_with_postings_opened_and_closed_and_never_call_the_rest_hir
     # From the first per-Board count on, the index sizes its Boards found (ADR-0304).
     assert "Boards dropped or read differently, duplicate postings removed" in text
     assert "Boards found" not in text
-    # Two Marked changes with one label are one counting change, said once.
-    assert f"[1] {_FILTER} (2 times, 2026-09-17 to 2026-09-21)" in text
-    assert text.count(_FILTER) == 1
+    # Two Marked changes with one label are one counting change, said once, by its tag, and the
+    # tag is glossed once (ADR-0321).
+    assert "[1] tech filter (2 times, 2026-09-17 to 2026-09-21)." in text
+    assert "Tags: tech filter = we got better at spotting tech jobs." in text
+    assert text.count("got better at spotting tech jobs") == 1
     assert "hiring +111,851" not in text and "+42" not in text
     assert "Figures reconcile" not in text
     assert "It checks sums, not that any figure is hiring." in text
@@ -1267,17 +1304,184 @@ def test_turnover_that_covers_part_of_the_window_says_so_and_the_rest_may_hold_h
         [],
         total=_line("__total__", "", _move(1_000, 900, -100)),
         turnover_since="2026-09-25T18:16:48+00:00",
-        turnover_left_out=["a", "b"],
+        # Only the runs inside turnover's span count: the first is before it began.
+        turnover_left_out=[
+            "2026-09-17T15:26:29+00:00",
+            "2026-09-25T18:16:48+00:00",
+            "2026-09-28T01:10:43+00:00",
+        ],
         closures_unseen={"": 312},
     )
     text = server.call(FakeSpace(trends=payload), "read_trends", {})
-    assert (
-        "Opened and closed are counted only from 2026-09-25 18:16, when HeadStart began "
-        "counting them: 2.5 of the window's 14.8 days; they leave out the 2 runs a counting "
-        "change landed on; closures went uncounted on some run on 312 Boards in scope, so "
-        "closed can run low." in text
+    lead = (
+        "HeadStart can measure hiring, as postings opened and closed, only from 2026-09-25 "
+        "18:16: 2.5 of this window's 14.8 days. Over the whole window it cannot say whether "
+        "hiring rose or fell; the opened and closed below are those 2.5 days'."
     )
+    assert lead in text
+    # The plain sentence comes before any figure (ADR-0321).
+    assert text.index(lead) < text.index("Hiring, as postings opened and closed")
+    notes = (
+        "Opened and closed leave out the 2 runs a counting change landed on; closures went "
+        "uncounted on some run on 312 Boards in scope, so closed can run low."
+    )
+    # What turnover leaves out is said before the net it qualifies.
+    assert text.index(notes) < text.index("Hiring, as postings opened and closed")
     assert "plus any hiring before 2026-09-25 18:16" in text
+
+
+def test_every_board_with_uncounted_closures_is_said_with_its_count_on_the_index():
+    """Review of #865: every one of the index's 12,407 Boards had a run whose closures went
+    uncounted, and the answer said "on 12,407 Boards in scope" with no "of"."""
+    payload = _trends(
+        [],
+        total=_line("__total__", "", _move(1_000, 900, -100)),
+        turnover_since="2026-09-25T18:16:48+00:00",
+        closures_unseen={"": 12_407},
+        closures_uncounted=[""],
+        boards_in_scope={"": 12_407},
+    )
+    text = server.call(FakeSpace(trends=payload), "read_trends", {})
+    assert (
+        "Closures went uncounted on some run on 12,407 of 12,407 Boards in scope, so closed "
+        "runs low." in text
+    )
+
+
+def test_a_company_breakdown_says_turnover_covers_part_of_the_window():
+    """rc06: "OpenAI: 9 opened, 5 closed" over 14 days, with no word that turnover covered the
+    last 3.4 of them: a company breakdown has no first row to carry the note (ADR-0321)."""
+    lines = [
+        _line("ashby:openai", "OpenAI", _move(372, 445, 73), whole_company=True),
+        _line("greenhouse:stripe", "Stripe", _move(199, 220, 21), whole_company=True),
+    ]
+    payload = _trends(
+        lines,
+        turnover_since="2026-09-25T18:16:48+00:00",
+        closures_unseen={"ashby:openai": 1},
+        boards_in_scope={"ashby:openai": 1},
+        companies=[
+            {"key": "ashby:openai", "label": "OpenAI"},
+            {"key": "greenhouse:stripe", "label": "Stripe"},
+        ],
+    )
+    lookup = {"companies": [_suggestion("ashby:openai", "OpenAI")]}
+    text = server.call(
+        FakeSpace(trends=payload, companies_lookup=lookup),
+        "read_trends",
+        {"companies": ["ashby:openai", "greenhouse:stripe"], "days": 14},
+    )
+    lead = (
+        "HeadStart can measure hiring, as postings opened and closed, only from 2026-09-25 "
+        "18:16: 2.5 of this window's 14.8 days."
+    )
+    assert lead in text
+    assert text.index(lead) < text.index('"OpenAI": 64 opened')
+    assert (
+        'Closures went uncounted on some run on 1 of 1 Boards of "OpenAI", so closed runs '
+        "low." in text
+    )
+
+
+def test_a_window_before_turnover_began_says_it_cannot_tell_whether_hiring_rose():
+    """mr04: 1 to 7 Sept, three weeks before turnover began, gave openings listed only."""
+    payload = _trends(
+        [_line("se", "Software Engineering", _move(100, 110, 10, turnover=None))],
+        total=_line("__total__", "", _move(1_000, 1_100, 100, turnover=None)),
+        turnover_since="2026-09-30T00:00:00+00:00",
+    )
+    text = server.call(FakeSpace(trends=payload), "read_trends", {"days": 14})
+    assert (
+        "HeadStart can measure hiring, as postings opened and closed, only from 2026-09-30 "
+        "00:00, after this window ends: over this window it cannot say whether hiring rose "
+        "or fell. The openings listed below mix hiring with re-counting." in text
+    )
+
+
+def test_a_window_inside_turnover_needs_no_lead():
+    payload = _trends(
+        [], total=_line("__total__", "", _move(1_000, 900, -100)), turnover_since=None
+    )
+    text = server.call(FakeSpace(trends=payload), "read_trends", {})
+    assert "HeadStart can measure hiring" not in text
+
+
+def test_a_retired_category_on_an_old_window_names_its_successor():
+    """mr04: an old window's lines carried the retired taxonomy ("Security Engineering"), which
+    cannot be lined up with today's categories."""
+    lines = [
+        _line("security-engineering", "Security Engineering", _move(9_160, 9_882, 722)),
+        _line("software-engineering", "Software Engineering", _move(100, 90, -10)),
+    ]
+    text = server.call(FakeSpace(trends=_trends(lines)), "read_trends", {})
+    assert "  Security Engineering (retired; now Security): " in text
+    assert "  Software Engineering: " in text
+    assert (
+        "A category marked retired is from HeadStart's list before it changed" in text
+    )
+    current = server.call(FakeSpace(trends=_trends([lines[1]])), "read_trends", {})
+    assert "retired" not in current
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [{"since": "2027-01-01"}, {"since": "2026-09-01", "until": "2026-10-05"}],
+)
+def test_a_window_in_the_future_is_refused(arguments):
+    """ec10: `since` 2027-01-01 answered "No trend counts fall between 2027-01-01 and now"."""
+    with pytest.raises(ToolFailure, match="is in the future"):
+        server.call(FakeSpace(), "read_trends", arguments)
+
+
+def test_a_label_with_words_this_server_does_not_know_is_said_whole():
+    """A Space newer than a uvx install can name a field this server has no tag for; the label
+    is then said whole, never cut to the tags it does know."""
+    newer = "we got better at spotting tech jobs and learned a new trick, so some jobs moved"
+    lines = _category_lines(2)
+    lines[0]["move"] = _move(100, 90, -20, [(newer, 4)])
+    text = server.call(
+        FakeSpace(
+            trends=_trends(lines, marked=[_marked("2026-09-17T15:26:29+00:00", newer)])
+        ),
+        "read_trends",
+        {"detail": "full"},
+    )
+    assert f"[1] {newer} (2026-09-17)" in text
+    assert "Tags:" not in text
+
+
+def test_a_full_legend_names_each_day_once():
+    """Review of #865: "(2026-09-24, 2026-09-24)"."""
+    lines = _category_lines(2)
+    lines[0]["move"] = _move(100, 90, -20, [(_FILTER, 4)])
+    marked = [
+        _marked("2026-09-24T11:32:57+00:00", _FILTER),
+        _marked("2026-09-24T16:23:40+00:00", _FILTER),
+    ]
+    text = server.call(
+        FakeSpace(trends=_trends(lines, marked=marked)),
+        "read_trends",
+        {"detail": "full"},
+    )
+    assert "[1] tech filter (2026-09-24)." in text
+
+
+def test_growth_rescaled_names_its_change_by_number_and_is_explained():
+    """mr07: "[8] growth rescaled when …" repeated its change's whole label and was never
+    explained."""
+    lines = _category_lines(2)
+    lines[0]["move"] = _move(
+        100, 90, -20, [(_FILTER, 4), ("growth rescaled when " + _FILTER, 6)]
+    )
+    text = server.call(
+        FakeSpace(trends=_trends(lines)), "read_trends", {"detail": "full"}
+    )
+    assert "sized re-counting +10 ([1] +4, [2] +6)" in text
+    assert "[1] tech filter (2026-09-17); [2] growth rescaled by [1]." in text
+    assert (
+        "growth rescaled by [n] = where taking change [n] out would have left a line below "
+        "zero" in text
+    )
 
 
 def test_a_companys_sized_causes_are_said_once_each_with_their_sizes_summed():
@@ -1302,7 +1506,7 @@ def test_a_companys_sized_causes_are_said_once_each_with_their_sizes_summed():
         {"companies": ["Stripe"], "days": 14},
     )
     assert "counting changes HeadStart sized for +6 ([1] +9, [2] -3)" in text
-    assert text.count(_FILTER) == 1
+    assert text.count("got better at spotting tech jobs") == 1
     # +18 listed = +22 opened less closed + 6 sized − 10 the rest.
     assert "the other -10, the unsized rest, is not a hiring figure" in text
     assert "a Board dropped or read differently from before" in text
@@ -1464,6 +1668,23 @@ def test_a_role_breakdown_is_watched_roles_within_the_category_beside_its_own_to
     assert "  AI Engineer: listed 5,089 → 5,856 (+767)" in text
 
 
+def test_a_role_breakdown_says_what_re_counting_is_sized_on_its_roles():
+    """Review of #865: it said "HeadStart sizes no re-counting on them" beside "AI Engineer:
+    … sized re-counting +928" (ADR-0270, ADR-0304)."""
+    sized = _move(5_093, 5_842, -179, [(_FILTER, 928)], turnover=None)
+    roles = _trends(
+        [_line("ai", "AI Engineer", sized)],
+        total=_line("__total__", "", _move(14_682, 15_910, 1_228, turnover=None)),
+        family_label="AI, ML & Data Science",
+    )
+    space = _role_space(roles, _move(38_568, 36_296, -2_272))
+    text = server.call(
+        space, "read_trends", {"category": "ai-ml-data-science", "breakdown": "role"}
+    )
+    assert "HeadStart sizes only part of their re-counting" in text
+    assert "sizes no re-counting" not in text
+
+
 def test_a_category_with_no_watched_roles_says_so_and_gives_its_own_total():
     """ec10: IT Support by role answered a header and "Figures reconcile." only."""
     roles = _trends([], family_label="IT Support", watch_parents=["ai-ml-data-science"])
@@ -1505,7 +1726,8 @@ def test_full_detail_numbers_each_lines_causes_and_gives_the_sites_own_figure():
         {"detail": "full"},
     )
     assert "sized re-counting +10 ([1] +10)" in text
-    assert "[1] job categories re-sorted; [2] " + _FILTER in text
+    # A label not in the Space's "we …" form keeps its words; one in it is named by its tag.
+    assert "[1] job categories re-sorted; [2] tech filter (2026-09-17)." in text
     assert (
         "The Trends tab shows +25 (+2.5%, about +12 a week) as hiring: the change less the "
         "sized steps, the unsized change included." in text
@@ -1676,7 +1898,12 @@ def _hot(rows, turnover_from="2026-09-21T12:00:00+00:00"):
             "to": "2026-09-28T06:23:08+00:00",
             "turnover_from": turnover_from,
         },
-        "lenses": {"expansion": rows, "volume": rows[::-1], "rate": rows},
+        "lenses": {
+            "expansion": rows,
+            "opened_less_closed": rows,
+            "volume": rows[::-1],
+            "rate": rows,
+        },
         "counts": {
             "ranked": 2341,
             "too_new": 40,
@@ -1684,6 +1911,7 @@ def _hot(rows, turnover_from="2026-09-21T12:00:00+00:00"):
             "min_stock": 25,
             "unnamed": 9,
             "closures_uncounted": 23,
+            "closures_partly_uncounted": 7,
             "services": 30,
             "staffing": 12,
             "aggregator": 1,
@@ -1728,14 +1956,14 @@ def test_every_row_gives_opened_less_closed_beside_the_sites_net():
     assert "FLAG" not in text
 
 
-def test_a_net_not_backed_by_postings_opened_is_flagged_in_the_sites_order():
+def test_a_net_not_backed_by_postings_opened_is_flagged():
     """mr01: Bosch Group ranked first at net +435 with 20 opened and 32 closed."""
     rows = [
         _hot_row(1, net=435, opened=20, closed=32),
         _hot_row(2, net=80, opened=73, closed=None),
         _hot_row(3, net=100, opened=0, closed=1),
     ]
-    text = server.call(FakeSpace(hot=_hot(rows)), "hiring_now", {})
+    text = server.call(FakeSpace(hot=_hot(rows)), "hiring_now", {"lens": "expansion"})
     listed = [
         line for line in text.split("\n") if line[:3].strip().rstrip(".").isdigit()
     ]
@@ -1750,7 +1978,7 @@ def test_a_net_not_backed_by_postings_opened_is_flagged_in_the_sites_order():
     )
     assert "FLAG" in listed[1] and "FLAG" in listed[2]
     assert (
-        "3 of these rows have a net larger than their postings opened and closed"
+        "3 of these rows have a net their postings opened and closed could not make"
         in text
     )
 
@@ -1765,14 +1993,148 @@ def test_the_flag_allows_for_turnover_counted_over_part_of_the_window():
     text = server.call(
         FakeSpace(hot=_hot(rows, turnover_from="2026-09-25T04:00:00+00:00")),
         "hiring_now",
-        {},
+        {"lens": "expansion"},
     )
-    listed = [line for line in text.split("\n") if line.startswith((" 1.", " 2."))]
-    assert "FLAG" in listed[0] and "FLAG" not in listed[1]
+    first, second = _listed(text)
+    net_flag = hiring_now.Flag.NET_NOT_BACKED
+    assert net_flag in first and net_flag not in second
+    # read_trends' words for the same span (turnover_span).
     assert (
-        "Opened and closed are counted only from 2026-09-25 04:00, when HeadStart began "
-        "counting them: 3.1 of the window's 7.0 days." in text
+        "HeadStart can measure hiring, as postings opened and closed, only from 2026-09-25 "
+        "04:00: 3.1 of this window's 7.0 days." in text
     )
+
+
+@pytest.mark.parametrize(
+    ("net", "opened", "closed", "flagged"),
+    [
+        # AgileEngine on 2026-09-29: a gain against the sign of opened less closed.
+        (100, 306, 321, True),
+        # Capital One: a gain its postings opened could make, in the sign of opened less closed.
+        (90, 83, 75, False),
+        # A loss larger than its postings closed could make.
+        (-400, 90, 40, True),
+        # A loss its closures, uncounted, cannot judge.
+        (-400, 90, None, False),
+    ],
+)
+def test_a_net_is_judged_sign_by_sign(net, opened, closed, flagged):
+    """Review of #865: |net| against opened + closed let a gain on more closed than opened
+    through."""
+    row = _hot_row(1, net=net, opened=opened, closed=closed)
+    text = server.call(
+        FakeSpace(hot=_hot([row], turnover_from="2026-09-25T04:00:00+00:00")),
+        "hiring_now",
+        {"lens": "expansion"},
+    )
+    assert (hiring_now.Flag.NET_NOT_BACKED in _listed(text)[0]) is flagged
+
+
+def _listed(text):
+    return [line for line in text.split("\n") if line[:3].strip().rstrip(".").isdigit()]
+
+
+def test_the_default_lens_ranks_opened_less_closed_and_says_who_it_left_out():
+    """ADR-0321: the one Lens with no re-counting in its figure leads, in its own order."""
+    rows = [_hot_row(1, opened=40, closed=10), _hot_row(2, opened=30, closed=12)]
+    hot = _hot(rows)
+    hot["lenses"]["opened_less_closed"] = rows
+    space = FakeSpace(hot=hot)
+    text = server.call(space, "hiring_now", {})
+    assert text.startswith(
+        "Hiring now, opened_less_closed: postings opened less postings closed, only for "
+        "companies whose closures were counted on every Board, largest first,"
+    )
+    assert "site's order" not in text and "site #" not in text
+    assert [line.split('"')[1] for line in _listed(text)] == ["Company 1", "Company 2"]
+    assert (
+        "23 whose closures were not counted, so their postings opened may be the same "
+        "postings listed again; 7 whose closures went uncounted on some of their Boards, so "
+        "their closed runs low" in text
+    )
+    assert hiring_now.TOOL.input_schema["properties"]["lens"]["default"] == (
+        "opened_less_closed"
+    )
+
+
+def test_the_default_lens_flags_nothing_and_says_whose_net_a_row_gives():
+    """Its figure is opened less closed, which no flag questions; a flag there, on the site's
+    net, made the eval fail a correct answer (review of #896)."""
+    rows = [_hot_row(1, net=400, opened=40, closed=10), _hot_row(2)]
+    text = server.call(FakeSpace(hot=_hot(rows)), "hiring_now", {})
+    assert [line.split('"')[1] for line in _listed(text)] == ["Company 1", "Company 2"]
+    assert "FLAG" not in text
+    assert (
+        "A row's net is the site's change in openings, which can hold re-counting; this Lens "
+        "ranks by opened less closed, so report that." in text
+    )
+
+
+def test_a_small_limit_on_a_site_lens_still_leads_with_a_real_row():
+    """Review of #896: flagged rows were moved only inside the first `limit`, so `limit` 1 on
+    Expansion gave Bosch alone."""
+    rows = [_hot_row(1, net=442, opened=23, closed=33), _hot_row(2), _hot_row(3)]
+    text = server.call(
+        FakeSpace(hot=_hot(rows)), "hiring_now", {"lens": "expansion", "limit": 1}
+    )
+    [only] = _listed(text)
+    assert only.startswith(' 1. site #2 · "Company 2"')
+
+
+def test_a_closed_count_read_on_only_some_boards_is_flagged_on_a_site_lens():
+    """Review of #896: RTX sat #3 on Volume, closed read on 1 of 4 Boards, unflagged, while
+    the default Lens leaves such a company out."""
+    rows = [_hot_row(1, closures_uncounted_boards=3, boards_in_scope=4), _hot_row(2)]
+    text = server.call(FakeSpace(hot=_hot(rows)), "hiring_now", {"lens": "volume"})
+    flagged = next(line for line in _listed(text) if "Company 1" in line)
+    assert "FLAG closures counted on only some Boards" in flagged
+    assert (
+        "1 of these rows had their closures counted on only some of their Boards"
+        in text
+    )
+
+
+def test_on_the_sites_lenses_flagged_rows_follow_the_unflagged_in_the_sites_order():
+    """mr08/mr10: Expansion led with Bosch, which its own flag disowned, and Volume with New
+    York Life, 504 opened against 25 open now and closures not counted, unflagged."""
+    rows = [
+        _hot_row(1, stock=25, net=-27, opened=504, closed=None, rate=None),
+        _hot_row(2),
+        _hot_row(3, net=435, opened=20, closed=32),
+        _hot_row(4),
+    ]
+    hot = _hot(rows)
+    hot["lenses"]["volume"] = rows
+    text = server.call(FakeSpace(hot=hot), "hiring_now", {"lens": "volume"})
+    listed = _listed(text)
+    assert [line.split('"')[1] for line in listed] == [
+        "Company 2",
+        "Company 4",
+        "Company 1",
+        "Company 3",
+    ]
+    assert listed[0].startswith(" 1. site #2 · ")
+    assert listed[2].startswith(" 3. site #1 · ")
+    assert (
+        "FLAG more postings opened than are open now · FLAG closures not counted"
+        in listed[2]
+    )
+    assert (
+        "Flagged rows are listed after the unflagged ones, each group in the site's order; "
+        "site #N is the row's place on the page." in text
+    )
+    assert "1 of these rows had their closures go uncounted" in text
+
+
+def test_the_sites_order_is_kept_and_unnumbered_when_no_flagged_row_leads():
+    rows = [_hot_row(1), _hot_row(2), _hot_row(3, net=435, opened=20, closed=32)]
+    text = server.call(FakeSpace(hot=_hot(rows)), "hiring_now", {"lens": "expansion"})
+    assert "site #" not in text and "Flagged rows are listed after" not in text
+    assert [line.split('"')[1] for line in _listed(text)] == [
+        "Company 1",
+        "Company 2",
+        "Company 3",
+    ]
 
 
 def test_a_rate_row_on_a_small_base_is_flagged():
@@ -1783,8 +2145,8 @@ def test_a_rate_row_on_a_small_base_is_flagged():
     ]
     text = server.call(FakeSpace(hot=_hot(rows)), "hiring_now", {"lens": "rate"})
     assert (
-        "FLAG small base: at 25 openings each posting opened moves the rate 4 points · "
-        "FLAG more postings opened than are open now" in text
+        "FLAG more postings opened than are open now · FLAG closures not counted · FLAG "
+        "small base: at 25 openings each posting opened moves the rate 4 points" in text
     )
     assert "1 of these rows rank on a small base" in text
 
@@ -1812,6 +2174,22 @@ def test_a_hiring_now_answer_stays_inside_its_budget():
     text = _answer(
         "hiring_now", FakeSpace(hot=_hot(rows)), {"limit": 50, "lens": "rate"}
     )
+    assert len(text) <= server.BY_NAME["hiring_now"].max_chars
+
+
+def test_a_reordered_hiring_now_answer_stays_inside_its_budget():
+    """The worst case with every row moved, so each also carries "site #N · "."""
+    flagged = [
+        _hot_row(n, company="y" * 5_000, stock=30, net=500, rate=300, closed=None)
+        for n in range(60)
+    ]
+    real = [_hot_row(100 + n, company="z" * 5_000, net=10) for n in range(30)]
+    text = _answer(
+        "hiring_now",
+        FakeSpace(hot=_hot(flagged + real)),
+        {"limit": 50, "lens": "rate"},
+    )
+    assert "site #61 · " in text
     assert len(text) <= server.BY_NAME["hiring_now"].max_chars
 
 

@@ -113,7 +113,10 @@ belong in README and CONTEXT.md, where `tests/test_board_counts.py` checks them.
   `subset-reqs`). Nothing scrapes a buried section, so the script is the only thing that notices
   when one starts listing a req of its own, or when the section it is buried onto dies. It re-reads
   every buried section and rewrites the file; `dedupe_boards.py` refuses `--apply` for this ATS
-  (ADR-0186).
+  (ADR-0186). The same run buries each **Twin host**'s sections onto its linked host, the one the
+  company's own site links to: one Taleo customer can be served under two hosts
+  (`pruitthealthcareers` and `pruitthealth`), and the script's `TWIN_HOSTS` names each pair
+  (ADR-0307). Add a pair there when a second host answers a held section with the same req ids.
 - **Eightfold: re-run `scripts/validate/eightfold_backing_boards.py` after every refresh of the
   eightfold ledger or of a ledger it reads (workday, successfactors, oracle, taleo_enterprise,
   greenhouse).** An Eightfold career site is often a front over the company's real ATS Board, so a

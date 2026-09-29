@@ -623,9 +623,10 @@ workday:vhr_otsuka/MegaFood,MegaFood,"og:description ""MegaFood has been craftin
 # Boards still serving an empty company or their humanised tenant on served table v320 (#703),
 # each read from the Board's own pages on 2026-09-29. Oracle: the Boards whose default site titles
 # itself as a page and whose settings state no SEO name (ADR-0302). Five Taleo Enterprise sections
-# list the same requisitions as a section of another host, and only one of each pair is here, so
-# the directory does not sum a mirrored pair: hyundaicapital (careerglobalhc), elsewedyelectric
-# (aa010), hkmu's two sections (ouhk's) and pruitthealth (pruitthealthcareers).
+# list the same requisitions as a section of another host. Only the kept host's section is here:
+# the twin host's is buried in data/validate/aliases/taleo_enterprise.csv (ADR-0307), onto
+# hyundaicapital (careerglobalhc), aa010 (elsewedyelectric), hkmu's two sections (ouhk's) and
+# pruitthealth (pruitthealthcareers).
 oracle:eiej.fa.em2.oraclecloud.com,REDCON,"4 of 5 reqs read (e.g. 10049, 11537) state ""the HSE procedures and policies established by REDCON""; default site CX_8001 titles itself ""REDCON - Candidate Career site"" (2026-09-29)"
 oracle:ejis.fa.us6.oraclecloud.com,Mount Sinai Health System,"5 of 5 reqs read (e.g. 3035512) carry CorporateDescriptionStr ""The Mount Sinai Health System is committed to fostering an environment""; default site CX titles itself ""Candidate Experience site"" (2026-09-29)"
 oracle:fa-eocc-saasfaprod1.fa.ocs.oraclecloud.com,Hutchinson,"siteSettings talent-community box reads ""Hutchinson Talent Community"" and links hutchinson.com; req 8811 names ""la Division O-Rings & Bonded Seals (ORBS) du Groupe Hutchinson""; all 14 sites title themselves ""Candidate Experience site"" (2026-09-29)"
@@ -671,7 +672,7 @@ oracle:egpa.fa.em3.oraclecloud.com,Croydon Council,"5 of 5 reqs read (e.g. 1752)
 taleo_enterprise:https://easyjet.taleo.net/careersection/2,easyJet,"Career section titles itself ""easyJet Careers | Apply"", footer reads ""© 2014 easyJet""; 4 of 4 postings read write easyJet (e.g. 254708 ""Make it easyJet holidays"") (2026-09-29)"
 taleo_enterprise:https://molgroup.taleo.net/careersection/external,MOL Group,"Career section titles itself ""MOL Group - eRecruiter""; posting 274899 reads ""Join MOL Group as a Group M&S Finance Business Partner"" (2026-09-29)"
 taleo_enterprise:https://hyundaicapital.taleo.net/careersection/hca,Hyundai Capital America,"4 of 4 postings read (e.g. 121547) open ""Hyundai Capital America (HCA) helps people move forward""; career section title ""Job Search"" (2026-09-29)"
-taleo_enterprise:https://elsewedyelectric.taleo.net/careersection/swd_external,Elsewedy Electric,"Career section meta description reads ""Elsewedy Electric is a world leader in products and services for energy, digital and infrastructure"", footer ""Copyright 2019 ElsewedyElectric.com""; title ""Support"", logo alt ""logo"" (2026-09-29)"
+taleo_enterprise:https://aa010.taleo.net/careersection/swd_external,Elsewedy Electric,"Career section meta description reads ""Elsewedy Electric is a world leader in products and services for energy, digital and infrastructure"", footer ""Copyright 2019 ElsewedyElectric.com""; title ""Support"", logo alt ""logo"" (2026-09-29, the same shell on aa010 and on its twin host elsewedyelectric)"
 taleo_enterprise:https://aa270.taleo.net/careersection/in,Texas Workforce Commission,"10 of 10 postings read name ""Texas Workforce Commission"" (e.g. 36803 ""WHO WE ARE: Texas Workforce Commission connects people with careers across the state""); organization field ""TEXAS WORKFORCE COMMISSION""; career section title ""Job Search"" (2026-09-29)"
 taleo_enterprise:https://stonybrooku.taleo.net/careersection/12external,Stony Brook University,"4 of 4 postings read (e.g. 740637) state ""Stony Brook University is committed to excellence in diversity""; organization field ""Stony Brook University""; career section title ""SBHU"" (2026-09-29)"
 taleo_enterprise:https://stonybrooku.taleo.net/careersection/sbsh,Stony Brook University,"Section header lists ""STONY BROOK UNIVERSITY / STONY BROOK UNIVERSITY HOSPITAL / LONG ISLAND STATE VETERANS HOME / STONY BROOK SOUTHAMPTON HOSPITAL""; 4 of 4 postings read (e.g. 738506) state ""Stony Brook Southampton Hospital as part of Stony Brook Medicine""; title ""SBHU"" (2026-09-29)"
