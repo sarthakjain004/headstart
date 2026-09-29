@@ -110,7 +110,37 @@ Before ADR-0299 (`lower() LIKE`), the unquoted visa call took 11.4–12.8 s, "re
 through `JobSearch` on the served table, with this and with the compiled clause (two ranked by a
 query over the table's vector index, pages 2 and 3, a posted and a salary sort, `both`, a Blocking
 filter, a too-common keyword), gave the same rows, totals and full facet strips, on LanceDB 0.33
-and 0.36. These are local measurements; the hosted Space's are to be read after the deploy.
+and 0.36.
+
+**On the hosted Space.** Through the hosted `/mcp`, 2026-09-29, one call at a time from one
+address, `search_jobs` with the arguments shown, one call each. "Before" is the replica serving
+main just before this deploy; "after" is the replica that booted with this change at about
+06:58 UTC, in the order the calls ran:
+
+| Call | Before | After |
+| --- | --- | --- |
+| 1. "software engineer", "visa sponsorship" (quoted) in descriptions, DE | 14.3 s | 21.9 s |
+| 2. its page 2 | 12.8 s | 0.9 s |
+| 3. "relocation" in descriptions, NL | 16.2 s | 16.1 s |
+| 4. its page 2 | | 0.7 s |
+| 5. "software engineer", "visa sponsorship" unquoted, DE | | 1.2 s |
+| 6. "kubernetes" in descriptions, the whole index | 6.8 s | 7.0 s |
+| 7. "backend engineer", "sponsorship" in descriptions, US | | 15.1 s |
+| 8. "data engineer", "relocation" in titles or descriptions | | 6.0 s |
+| 9. "software engineer", "work permit" (quoted) in descriptions, DE | | 2.8 s |
+| 10. "relocation" in descriptions, SE | | 4.5 s |
+| 11. "backend engineer", "visa" in descriptions, GB | | 8.7 s |
+| 12. "security clearance" (quoted) in descriptions, US | | 7.8 s |
+| 13. call 10's page 2 | | 0.8 s |
+| 14. call 3 again | | 0.8 s |
+
+None of these 14 description calls reached the 45 s deadline. A page 2 or a repeat (calls 2, 4, 13,
+14) took 0.7–0.9 s, against 12.8 s for the one page 2 measured before. Call 5, a different keyword
+over the Germany rows call 1 had found, took 1.2 s. Other first searches took 2.8–21.9 s. The two
+slowest were the first two after the boot, and call 7 took 15.1 s: the United States keeps more
+than 100,000 rows, so its literal is read over the whole table. The before column is four calls,
+and the Space served other agents at the same time, so each figure is evidence, not a
+distribution.
 
 ## Options rejected
 
