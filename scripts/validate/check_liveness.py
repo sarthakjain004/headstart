@@ -3100,7 +3100,12 @@ def p_jazzhr(t, u):
 
 
 def p_oracle(t, u):
-    """The requisition listing, the same surface `OracleScraper.url()` reads.
+    """The host-wide requisition listing, the surface `OracleScraper._listing` reads.
+
+    **It counts more than the scraper serves on a Board with an inactive Candidate Experience
+    site.** The scraper serves only what an active site publishes, and nothing from a Board with
+    no active site; this probe still counts the whole host (ADR-0278 says why). On 2026-09-29
+    that was 31 of 1,752 Scrapable Boards.
 
     **No `siteNumber`.** It is a filter, not an address: a site number narrows the board to one
     of the tenant's sites, and omitting it returns the whole host — the exact union of every

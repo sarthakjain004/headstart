@@ -22,8 +22,10 @@ from pathlib import Path
 import pytest
 from fake_fetcher import FakeFetcher, FakeResponse
 
+from headstart.boards.company_ref import CompanyRef
 from headstart.jobs.job import html_to_text
 from headstart.network import http
+from headstart.scrapers import harvest
 from headstart.scrapers.oracle import OracleScraper
 from headstart.scrapers.registry import get_scraper
 
@@ -614,7 +616,7 @@ def test_a_later_page_with_no_items_is_not_read_as_the_counter_over_stating(capl
     assert "over-states" not in logged
 
 
-# --- only what an active career site publishes (ADR-0278) -----------------------------------
+# --- only what an active Candidate Experience site publishes (ADR-0278) ---------------------
 
 
 def _site_statuses(**status_by_site: str) -> str:
@@ -628,10 +630,11 @@ def _site_statuses(**status_by_site: str) -> str:
     )
 
 
-def _tenant(sites, listed: dict[str | None, list[str]]) -> FakeFetcher:
+def _tenant(sites, listed: dict[str | None, list[str | None]]) -> FakeFetcher:
     """A tenant whose sites endpoint answers ``sites`` (a body, a status or an exception to
-    raise), whose host-wide listing holds ``listed[None]`` and each site's ``listed[site]``. Every
-    detail request finds nothing: which requisitions are served is what is under test."""
+    raise), whose host-wide listing holds ``listed[None]`` and each site's ``listed[site]`` (a
+    None there is a requisition with no ``Id``). Every detail request finds nothing: which
+    requisitions are served is what is under test."""
 
     def route(method: str, url: str, kwargs: dict) -> FakeResponse | Exception:
         if "/recruitingCESites?" in url:
@@ -646,7 +649,10 @@ def _tenant(sites, listed: dict[str | None, list[str]]) -> FakeFetcher:
             )
             offset = int(url.split("offset=")[1].split(",")[0])
             ids = listed[site]
-            page = [{"Id": i, "Title": f"job {i}"} for i in ids[offset : offset + 200]]
+            page = [
+                {"Title": "no id"} if i is None else {"Id": i, "Title": f"job {i}"}
+                for i in ids[offset : offset + 200]
+            ]
             return FakeResponse(
                 text=json.dumps(
                     {"items": [{"TotalJobsCount": len(ids), "requisitionList": page}]}
@@ -662,7 +668,7 @@ def _served(fetcher: FakeFetcher) -> list[str]:
     return sorted(job.id.rsplit(":", 1)[1] for job in jobs)
 
 
-def test_a_tenant_with_no_active_career_site_serves_nothing(caplog):
+def test_a_tenant_with_no_active_candidate_experience_site_serves_nothing(caplog):
     """`egcu.fa.us6` (Masimo) on 2026-09-29: both its sites were `ORA_INACTIVE` while the
     host-wide listing still held 102 requisitions, and every link we served went to
     `/errors/404`. It serves none, so its rows evict (ADR-0278), and reads no page to learn it."""
@@ -673,7 +679,8 @@ def test_a_tenant_with_no_active_career_site_serves_nothing(caplog):
     with caplog.at_level(logging.INFO, logger="headstart.scrapers.oracle"):
         assert _served(fetcher) == []
     assert (
-        f"oracle:{HOST}: no active career site (CX, CX_1 all inactive)" in caplog.text
+        f"oracle:{HOST}: no active Candidate Experience site (CX, CX_1 all inactive)"
+        in caplog.text
     )
     assert not [url for url in fetcher.urls() if "JobRequisition" in url]
 
@@ -703,6 +710,44 @@ def test_every_active_site_is_read_and_a_posting_on_two_is_served_once():
     assert _served(fetcher) == ["1", "2", "3", "4"]
 
 
+def test_the_per_site_walk_keeps_every_requisition_with_no_id():
+    """The host-wide walk keeps a requisition with no ``Id``; one site walk after another must
+    too, rather than keeping only the first as a duplicate of "no id"."""
+    fetcher = _tenant(
+        _site_statuses(CX="ORA_INACTIVE", CX_1="ORA_ACTIVE"),
+        {None: ["1", None, None], "CX_1": ["1", None, None]},
+    )
+    raw = OracleScraper(HOST, "Effx", fetcher=fetcher).fetch_raw()
+    assert [r.get("Id") for r in raw["requisitionList"]] == ["1", None, None]
+
+
+def test_a_tenant_with_no_active_site_is_an_answered_empty_board_in_the_eviction_scope(
+    monkeypatch, tmp_path
+):
+    """The Board outcome `harvest` reports (docs/agents/source-contracts.md): no error, so the
+    Board is answered and stays in the eviction scope (ADR-0200), and not truncated, which would
+    keep its dead rows served (ADR-0053). Zero Jobs, so its rows go Unconfirmed, then evict."""
+    fetcher = _tenant(
+        _site_statuses(CX="ORA_INACTIVE", CX_1="ORA_INACTIVE"), {None: ["1", "2"]}
+    )
+    monkeypatch.setattr(
+        harvest,
+        "get_scraper",
+        lambda ats, slug, *a, **k: OracleScraper(slug, "Effx", fetcher=fetcher),
+    )
+    outcomes = []
+    result = harvest.scrape_all(
+        [CompanyRef("oracle", HOST)],
+        jobs_dir=tmp_path,
+        on_board=lambda key, jobs, error, seconds, truncated: outcomes.append(
+            (key, jobs, error, truncated)
+        ),
+    )
+    assert outcomes == [(f"oracle:{HOST}", 0, None, None)]
+    assert result.errors == {}
+    assert result.truncated == {}
+
+
 def test_a_tenant_whose_sites_are_all_active_is_still_read_host_wide():
     fetcher = _tenant(
         _site_statuses(CX="ORA_ACTIVE", CX_1="ORA_ACTIVE"), {None: ["1", "2", "3"]}
@@ -720,10 +765,20 @@ def test_a_tenant_whose_sites_are_all_active_is_still_read_host_wide():
         http.RequestsError("timed out"),
         "<html>not json</html>",
         json.dumps({"items": []}),  # every tenant answering this listed no postings
+        # Oracle dropping, renaming or blanking the field, or ignoring `fields=`, must not read
+        # as every site switched off: that would empty every Oracle Board at once.
+        json.dumps({"items": [{"SiteNumber": "CX"}]}),
+        json.dumps({"items": [{"SiteNumber": "CX", "StatusCode": None}]}),
+        _site_statuses(CX="ORA_INACTIVE", CX_1="ORA_SUSPENDED"),
+        json.dumps({"items": [{"SiteNumber": None, "StatusCode": "ORA_INACTIVE"}]}),
+        json.dumps({"items": [{"StatusCode": "ORA_INACTIVE"}]}),
+        json.dumps({"items": {"CX": "ORA_INACTIVE"}}),
+        json.dumps([{"SiteNumber": "CX", "StatusCode": "ORA_INACTIVE"}]),
     ],
 )
 def test_a_tenant_whose_sites_cannot_be_read_is_read_host_wide(sites):
-    """A transient failure must neither empty nor narrow a Board."""
+    """A transient failure, or a site list this cannot read, must neither empty nor narrow a
+    Board."""
     fetcher = _tenant(sites, {None: ["1", "2", "3"]})
     assert _served(fetcher) == ["1", "2", "3"]
 

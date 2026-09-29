@@ -1,4 +1,4 @@
-# ADR-0278: An Oracle Board serves only what an active career site publishes
+# ADR-0278: An Oracle Board serves only what an active Candidate Experience site publishes
 
 **Status:** accepted · **Date:** 2026-09-29 · **Relates to:**
 [ADR-0053](0053-scope-eviction-on-scrape-outcome.md) (Unauthoritative Boards),
@@ -50,7 +50,7 @@ no active site publishes had its link fetched:
 
 `OracleScraper` asks `recruitingCESites` once per scrape, then:
 
-- **No active site: serve nothing.** It logs `no active career site` and returns `[]`. That is
+- **No active site: serve nothing.** It logs `no active Candidate Experience site` and returns `[]`. That is
   the same as the Lever case in PR #845 (ADR-0281). The listing did answer, so the Board stays in the eviction
   scope (ADR-0200), and its rows evict through ADR-0083's two consecutive absences. The Board is
   not marked truncated, because an Unauthoritative Board keeps its rows (ADR-0053). It is not a
@@ -61,8 +61,11 @@ no active site publishes had its link fetched:
   truncation rules. A posting on two sites is served once.
 - **Every site active: read host-wide, as before.** No `siteNumber`, no extra page.
 - **Sites unreadable: read host-wide, as before.** One attempt (`_fetch_once`). A 5xx, a 429, a
-  request that raises, a body that is not the expected JSON, or an empty site list all fall back
-  to the old read. A transient failure can neither empty nor narrow a Board.
+  request that raises, or any body that is not a non-empty list of sites, each with a number and
+  a `StatusCode` of `ORA_ACTIVE` or `ORA_INACTIVE`, falls back to the old read. So a transient
+  failure can neither empty nor narrow a Board, and neither can Oracle dropping, renaming or
+  blanking the field: read as "inactive", that would empty every Oracle Board at once. Every site
+  of all 1,752 Boards stated one of the two values on 2026-09-29.
 
 Job links are unchanged. The UI already sends `CX_1` to whichever active site publishes the
 posting, so there is nothing to re-point.
@@ -78,6 +81,14 @@ posting, so there is nothing to re-point.
   answered 0.
 - **Park the Board or mark its ledger row dead.** Nothing would bring it back when the tenant
   turns a site on again, and the liveness probe reads the listing, which still answers.
+- **Teach the liveness probe (`p_oracle`) the same rule.** #873 named it as the other way to see
+  an inactive site. The probe decides whether a Board is scraped at all, and a Board with no
+  active site must stay Scrapable, or nothing would notice a site coming back on. So the probe
+  would only change the ledger's `jobs` count. Counting what active sites publish would need the
+  per-site walk on every probe, not one `limit=1` request. It would also move the ledger and its
+  Board figures, a separate change for the owner. So the probe keeps counting the host-wide
+  listing, and on the 31 affected Boards it counts more than the scraper serves. Nine of them
+  count as Hiring Boards and serve nothing. Its docstring says so.
 
 ## Consequences
 

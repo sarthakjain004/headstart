@@ -24,9 +24,9 @@ hardcoded ``CX_1`` default was wrong for **929 of 1,331** hiring boards, and wro
 a bad site number still answers 200 with a well-formed envelope.
 
 **The whole Board includes what no candidate can open.** The host-wide listing also carries
-requisitions that only *inactive* sites publish, and their links go to ``/errors/404``. So a
-tenant with an inactive site is read one active site at a time, and a tenant with no active site
-serves nothing (ADR-0278).
+requisitions that only *inactive* Candidate Experience sites publish, and their links go to
+``/errors/404``. So a tenant with an inactive site is read one active site at a time, and a
+tenant with no active site serves nothing (ADR-0278).
 
 **The listing carries almost nothing, and the description it does carry is truncated.** Across
 15,189 requisitions, ``LegalEmployer``, ``Department``, ``JobFunction`` and ``JobType`` are 0.0%
@@ -83,9 +83,12 @@ _NEWEST_FIRST = "POSTING_DATES_DESC"
 #: zwayam already use — no special justification needed for a value the repo already runs.
 _DETAIL_WORKERS = 16
 
-#: The one ``StatusCode`` a Candidate Experience site answers on. A posting no active site publishes
-#: has no working link: the careers UI sends it to ``/errors/404`` (ADR-0278).
-_ACTIVE_SITE = "ORA_ACTIVE"
+#: The ``StatusCode`` `recruitingCESites` gives a Candidate Experience site that is switched on, and
+#: the one it gives a site that is switched off. A posting no active site publishes has no working
+#: link: the careers UI sends it to ``/errors/404`` (ADR-0278). Every site of all 1,752 Scrapable
+#: Boards carried one of the two on 2026-09-29, so any other value is a response this cannot read.
+_ACTIVE_STATUS = "ORA_ACTIVE"
+_INACTIVE_STATUS = "ORA_INACTIVE"
 
 
 #: The two workplace-type codes this repo has actually observed meaning something unambiguous.
@@ -134,6 +137,13 @@ def is_pod_host(slug: str) -> bool:
     (``www.coherent.com``) — names no Board this scraper can read, and lands in no ledger (#627).
     """
     return slug.lower().endswith(".oraclecloud.com")
+
+
+def _union_by_id(reqs: list[dict], more: list[dict]) -> list[dict]:
+    """``reqs``, then each of ``more`` whose ``Id`` they do not already hold. A requisition with
+    no ``Id`` is kept, as the host-wide walk keeps it: there is nothing to match it on."""
+    seen = {r.get("Id") for r in reqs if r.get("Id") is not None}
+    return reqs + [r for r in more if r.get("Id") is None or r.get("Id") not in seen]
 
 
 def _description_html(detail: dict) -> str | None:
@@ -309,7 +319,8 @@ class OracleScraper(BaseScraper):
     def url(self) -> str:
         # No `siteNumber` unless `_site` is set: it filters the Board down to one site, and
         # omitting it returns the union of every site (module docstring). It is set only to read
-        # a tenant's active sites one by one, when some other site is inactive (ADR-0278).
+        # a tenant's active Candidate Experience sites one by one, when another is inactive
+        # (ADR-0278).
         # `findReqs` still needs its other params inside the finder string, comma-separated —
         # the careers UI's own calls use literal commas.
         return (
@@ -321,7 +332,7 @@ class OracleScraper(BaseScraper):
             + (f",sortBy={self._sort_by}" if self._sort_by else "")
         )
 
-    def sites_url(self) -> str:
+    def _sites_url(self) -> str:
         """The tenant's Candidate Experience sites, each with its ``StatusCode``."""
         return (
             f"https://{self.slug}/hcmRestApi/resources/latest/"
@@ -330,25 +341,33 @@ class OracleScraper(BaseScraper):
 
     def _sites(self) -> dict[str, bool] | None:
         """Each Candidate Experience site's number, and whether it is active — or None when the
-        sites could not be read, which leaves the Board read as it always was.
+        sites could not be read, which leaves the Board read host-wide as it always was.
 
-        One attempt (`_fetch_once`): a 5xx, a 429, a request that raises or a body this cannot
-        read is None, so a transient failure never narrows or empties a Board (ADR-0278). So is
-        an empty site list: the tenants that answered one all listed no postings either.
+        One attempt (`_fetch_once`). None for a 5xx, a 429, a request that raises, and any body
+        that is not a non-empty list of sites each stating a number and one of the two known
+        statuses: a transient failure, or Oracle renaming or dropping the field, must never
+        narrow or empty a Board (ADR-0278). The tenants that answered an empty list all listed
+        no postings either.
         """
         try:
             response = self._fetch_once(
-                "GET", self.sites_url(), accept="application/json"
+                "GET", self._sites_url(), accept="application/json"
             )
             if response.status_code != 200:
                 return None
-            sites = {
-                site["SiteNumber"]: site.get("StatusCode") == _ACTIVE_SITE
+            statuses = {
+                site["SiteNumber"]: site["StatusCode"]
                 for site in response.json()["items"]
             }
         except (http.RequestsError, ValueError, KeyError, TypeError):
             return None
-        return sites or None
+        known = {_ACTIVE_STATUS, _INACTIVE_STATUS}
+        if not statuses or not all(
+            isinstance(number, str) and status in known
+            for number, status in statuses.items()
+        ):
+            return None
+        return {number: status == _ACTIVE_STATUS for number, status in statuses.items()}
 
     def _listing(self) -> list[dict]:
         """Page through the requisition list until the board runs out.
@@ -388,8 +407,7 @@ class OracleScraper(BaseScraper):
             self._sort_by = _NEWEST_FIRST
             newest, _, _ = self._walk()
             self._sort_by = None
-            seen = {requisition.get("Id") for requisition in reqs}
-            reqs += [r for r in newest if r.get("Id") not in seen]
+            reqs = _union_by_id(reqs, newest)
             self.mark_truncated_unless_negligible(
                 len(reqs),
                 total,
@@ -464,7 +482,8 @@ class OracleScraper(BaseScraper):
         return reqs, total, itemless_page
 
     def _servable_listing(self) -> list[dict]:
-        """The requisitions a candidate can open: what the tenant's active sites publish.
+        """The requisitions a candidate can open: what the tenant's active Candidate Experience
+        sites publish.
 
         The host-wide listing also carries requisitions no active site publishes, and each of
         those links to `/errors/404`. So a tenant with an inactive site is read one active site
@@ -472,25 +491,26 @@ class OracleScraper(BaseScraper):
         tenant answered, so its rows evict through ADR-0083's two absences (ADR-0200).
         """
         sites = self._sites()
-        active = [number for number, on in (sites or {}).items() if on]
-        if sites is not None and not active:
+        if sites is None:
+            return self._listing()
+        active = [number for number, on in sites.items() if on]
+        if not active:
             self._log.info(
-                f"{self.board_key()}: no active career site ({', '.join(sites)} all "
-                "inactive) — every posting links to /errors/404, so serving none (ADR-0278)"
+                f"{self.board_key()}: no active Candidate Experience site "
+                f"({', '.join(sites)} all inactive) — every posting links to /errors/404, "
+                "so serving none (ADR-0278)"
             )
             return []
-        if sites is None or len(active) == len(sites):
+        if len(active) == len(sites):
             return self._listing()
         # Each site through `_listing`, so each walk keeps its own paging and truncation rules.
         reqs: list[dict] = []
-        seen: set[Any] = set()
-        for site in active:
-            self._site = site
-            for requisition in self._listing():
-                if requisition.get("Id") not in seen:
-                    seen.add(requisition.get("Id"))
-                    reqs.append(requisition)
-        self._site = None
+        try:
+            for site in active:
+                self._site = site
+                reqs = _union_by_id(reqs, self._listing())
+        finally:
+            self._site = None
         return reqs
 
     def fetch_raw(self) -> Any:
