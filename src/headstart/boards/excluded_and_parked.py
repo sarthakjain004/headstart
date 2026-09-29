@@ -382,6 +382,16 @@ EXCLUDED_BOARDS: frozenset[str] = frozenset(
         # onerror=alert(100)>`), as do 3 of its 28 titles; the rest read "Java Developer CRM Deal
         # renmaed Director", "Accountant       oppoo", "job publish Kosovo", "test 3".
         "zoho:zohocorp2.zohorecruit.com",
+        # `hrpresales.zohorecruit.com` is Zoho Recruit's HR presales demo account, read live
+        # 2026-09-29: 60 postings under the company "ZOHO", stock titles repeated ("Accountant"
+        # 27 times, "Registered Nurse" 9, "Software Engineer" 6), Zoho Recruit's own template
+        # descriptions ("We're looking for a passionate Software Engineer to design, develop and
+        # install software solutions"), sales demos named after prospects ("Accountant - Timac
+        # Agro", "Accountant - 5ire", "Accountant - Lakshmi Interiors"), "TEST", "Bootstrap
+        # Evanglist" and "Nanny", places such as "Chennai, Bihar", dated 2022-09 onward. Its
+        # 2022-23 "Software Engineer" rows in Toronto led a "software engineer" search in Canada
+        # (the round-2 MCP critique's st04).
+        "zoho:hrpresales.zohorecruit.com",
         # Blackstone's own test sites; the second is named for what it serves. Workday slugs
         # ARE the careers URL, so these keys are longer than the rest.
         "workday:https://blackstone.wd1.myworkdayjobs.com/marni_test_site",
