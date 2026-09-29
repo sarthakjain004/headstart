@@ -12,6 +12,7 @@ materialized Search filter's own facts live in its module (ADR-0193); this compi
 
 from __future__ import annotations
 
+import re
 from collections.abc import Collection
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
@@ -59,9 +60,22 @@ KEYWORD_DEFAULT_SCOPE = "title"
 # `has_description` says whether it does. A name rather than a set: a second such column would
 # need its own runtime fact, so it could not simply be listed here.
 _OPTIONAL_KEYWORD_COLUMN = "description"
-# Enough for "senior backend kubernetes aws remote"; a bound because every term is one more LIKE
-# per scoped column on every count the facet strip issues.
+# Enough for "senior backend kubernetes aws remote"; a bound because every term is one more
+# regex per scoped column on every count the facet strip issues.
 _KEYWORD_MAX_TERMS = 5
+# The Keyword filter's word rule (ADR-0299). A term matches where a word *starts*: after the
+# column's start or any character that is not a letter or digit (so `_`, `/` and `-` separate
+# words, as they do in "IN_Senior Associate_AI/ML Engineer"). A quoted phrase is one term whose
+# words stay together, in order, across any run of such characters.
+_WORD_START = "(^|[^a-z0-9])"
+_PHRASE_GAP = "[^a-z0-9]+"
+_WORD_CHARS = frozenset("abcdefghijklmnopqrstuvwxyz0123456789")
+# Exactly the characters Rust's `regex::escape` escapes, which DataFusion's regex engine is.
+_REGEX_META = frozenset("\\.+*?()|[]{}^$#&-~")
+# A quoted phrase, or a run of anything else that is neither space nor quote; a stray quote is
+# skipped. Curly quotes are what a phone's keyboard types for the same thing.
+_KEYWORD_TOKEN = re.compile(r'"([^"]*)"|([^\s"]+)')
+_CURLY_QUOTES = str.maketrans("\u201c\u201d", '""')
 
 
 @dataclass(frozen=True)
@@ -138,7 +152,7 @@ def _like(term: str) -> str:
     r"""A user term made safe for a quoted LIKE pattern: metacharacters escaped, quotes doubled.
 
     Doubling quotes keeps the term inside its literal; escaping `%`, `_` and `\` is what keeps it
-    *meaning* what was typed, which is the substring match ADR-0104 specifies. Unescaped, a term
+    *meaning* what was typed, the substring match `location` and `company` use. Unescaped, a term
     is silently promoted to a wildcard pattern — measured on the local 318,003-row snapshot of
     the served table (2026-09-06): company "100%" matched 30 rows where exactly 1 is right,
     location "new_york" 9,004 against 8, and the keyword "c_" 199,591 rows — 63% of the table —
@@ -240,15 +254,28 @@ def account_clause(
 
 
 def _keyword_terms(kw: str) -> list[str]:
-    """The Keyword filter's terms: whitespace-split, each escaped by :func:`_like`, capped.
+    """The Keyword filter's terms as regex patterns: a quoted phrase is one, every other
+    whitespace-separated word another, capped at :data:`_KEYWORD_MAX_TERMS`.
 
-    Substring, not whole-word, and deliberately so (ADR-0104): a word-boundary regex has no
-    lookarounds in DataFusion's Rust engine, so `\\b` silently never matches `c++`, `.net` or
-    `c#` — and a keyword box that cannot find "c++" is a worse failure than "java" also matching
-    "javascript". Substring is also exactly how `location` and `company` already match, so this
-    adds no second escaping path to reason about.
+    Each pattern is anchored at a word start (ADR-0299), which ADR-0104's substring rule was not:
+    "ai" found DOMAIN, Retail and SailPoint, and "ml" found HTML. ADR-0104 rejected whole words
+    because `\\b` never matches after "c++"; anchoring only a term that *starts* with a letter or
+    digit, and never its end, keeps "c++", ".net" and "c#" matching and "java" finding JavaScript.
+    Each term is cut at 60 characters as typed, as the substring rule cut it.
     """
-    return [_like(t) for t in kw.split() if t][:_KEYWORD_MAX_TERMS]
+    terms = []
+    for phrase, word in _KEYWORD_TOKEN.findall(kw.translate(_CURLY_QUOTES)):
+        if words := (phrase or word)[:60].lower().split():
+            start = _WORD_START if words[0][0] in _WORD_CHARS else ""
+            body = _PHRASE_GAP.join(_escape_regex(w) for w in words)
+            terms.append("(?i)" + start + body)
+    return terms[:_KEYWORD_MAX_TERMS]
+
+
+def _escape_regex(text: str) -> str:
+    """``text`` as a literal inside a quoted regex pattern: metacharacters escaped, quotes doubled."""
+    escaped = "".join("\\" + c if c in _REGEX_META else c for c in text)
+    return escaped.replace("'", "''")
 
 
 def _keyword_columns(scope: str | None, has_description: bool) -> tuple[str, ...]:
@@ -316,7 +343,7 @@ def _keyword_clauses(
         columns = _keyword_columns(kw_in, has_description)
         for term in _keyword_terms(kw) if columns else ():
             filters.append(
-                "(" + " OR ".join(f"lower({c}) LIKE '%{term}%'" for c in columns) + ")"
+                "(" + " OR ".join(f"regexp_like({c}, '{term}')" for c in columns) + ")"
             )
     return filters
 

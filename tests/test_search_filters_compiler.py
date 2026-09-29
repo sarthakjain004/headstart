@@ -186,27 +186,43 @@ def test_country_compiles_through_the_country_filter_and_india_through_its_colum
     )
 
 
+def _starts(column: str, pattern: str) -> str:
+    """One term's clause as ADR-0299 compiles it: case-insensitive, anchored at a word start."""
+    return f"regexp_like({column}, '(?i)(^|[^a-z0-9]){pattern}')"
+
+
 def test_keyword_defaults_to_the_title_scope():
-    assert _clause(kw="kubernetes") == "(lower(title) LIKE '%kubernetes%')"
+    assert _clause(kw="kubernetes") == f"({_starts('title', 'kubernetes')})"
 
 
 def test_keyword_terms_are_anded_and_each_may_land_in_any_scoped_column():
     clause = _clause(kw="Senior Kubernetes", kw_in="both", has_description=True)
     assert clause == (
-        "(lower(title) LIKE '%senior%' OR lower(description) LIKE '%senior%') AND "
-        "(lower(title) LIKE '%kubernetes%' OR lower(description) LIKE '%kubernetes%')"
+        f"({_starts('title', 'senior')} OR {_starts('description', 'senior')}) AND "
+        f"({_starts('title', 'kubernetes')} OR {_starts('description', 'kubernetes')})"
     )
+
+
+def test_a_quoted_phrase_is_one_term_whose_words_stay_together():
+    """ADR-0299: quotes keep a phrase's words together, in order, across any separator."""
+    assert _clause(kw='"AI Engineer" python') == (
+        f"({_starts('title', 'ai[^a-z0-9]+engineer')}) AND ({_starts('title', 'python')})"
+    )
+    # A phone's curly quotes are the same quotes; a stray one quotes nothing.
+    assert _clause(kw="“AI Engineer”") == _clause(kw='"AI Engineer"')
+    assert _clause(kw='"AI Engineer') == _clause(kw="AI Engineer")
+    assert _clause(kw='"" "  "') is None
 
 
 def test_title_words_hold_every_word_in_the_title_beside_the_rails_keyword():
     """ADR-0263: the search bar's Title words mode compiles as a title-scoped keyword of its own,
     ANDed with whatever the rail's Keyword filter says — even a description-scoped one."""
     assert _clause(title_words="Staff Rust") == (
-        "(lower(title) LIKE '%staff%') AND (lower(title) LIKE '%rust%')"
+        f"({_starts('title', 'staff')}) AND ({_starts('title', 'rust')})"
     )
     assert _clause(
         kw="tokio", kw_in="description", title_words="rust", has_description=True
-    ) == ("(lower(description) LIKE '%tokio%') AND (lower(title) LIKE '%rust%')")
+    ) == (f"({_starts('description', 'tokio')}) AND ({_starts('title', 'rust')})")
 
 
 def test_keyword_description_scope_stays_dark_without_the_column():
@@ -215,26 +231,37 @@ def test_keyword_description_scope_stays_dark_without_the_column():
     assert _clause(kw="rust", kw_in="description", has_description=False) is None
     # ...and `both` degrades to the column that IS there rather than to nothing.
     assert _clause(kw="rust", kw_in="both", has_description=False) == (
-        "(lower(title) LIKE '%rust%')"
+        f"({_starts('title', 'rust')})"
     )
 
 
 def test_keyword_description_scope_compiles_once_the_column_exists():
     assert _clause(kw="rust", kw_in="description", has_description=True) == (
-        "(lower(description) LIKE '%rust%')"
+        f"({_starts('description', 'rust')})"
     )
 
 
 def test_keyword_quotes_are_doubled_like_every_other_term():
-    assert _clause(kw="O'Reilly") == "(lower(title) LIKE '%o''reilly%')"
+    assert _clause(kw="O'Reilly") == "(" + _starts("title", "o''reilly") + ")"
 
 
-def test_keyword_metacharacters_are_escaped_like_every_other_term():
-    # The widening is worst here: unescaped, the keyword "c_" matched 199,591 of the served
-    # table's 318,003 rows — 63% — where the literal reading matches 243.
-    assert _clause(kw="c_ 100%", kw_in="both", has_description=True) == (
-        r"(lower(title) LIKE '%c\_%' OR lower(description) LIKE '%c\_%') AND "
-        r"(lower(title) LIKE '%100\%%' OR lower(description) LIKE '%100\%%')"
+def test_keyword_regex_metacharacters_are_escaped():
+    # Unescaped, "c++" is a regex error and ".net" matches any character before "net".
+    # A term that starts with punctuation has no word start to anchor to, so ".net" is not anchored.
+    plus, dot, hash_, slash = r"c\+\+", r"\.net", r"c\#", r"a\\b"
+    assert _clause(kw=r"c++ .net c# a\b") == (
+        "(" + _starts("title", plus) + ") AND "
+        "(regexp_like(title, '(?i)" + dot + "')) AND "
+        "(" + _starts("title", hash_) + ") AND "
+        "(" + _starts("title", slash) + ")"
+    )
+
+
+def test_keyword_like_wildcards_are_plain_characters_now():
+    # LIKE's `_` and `%` are not regex metacharacters, so they reach the pattern as typed: the
+    # keyword "c_" once matched 63% of the served table as an unescaped LIKE (ADR-0104).
+    assert _clause(kw="c_ 100%") == (
+        f"({_starts('title', 'c_')}) AND ({_starts('title', '100%')})"
     )
 
 
@@ -253,6 +280,88 @@ def test_keyword_terms_are_capped():
 
 def test_a_scope_without_a_keyword_filters_nothing():
     assert _clause(kw_in="description", has_description=True) is None
+
+
+# Titles the served table really held (v277, 2026-09-29) beside the ones they were wrongly
+# matched with: "ai" found inside DOMAIN, Retail and SailPoint, and "ml" inside HTML.
+_KEYWORD_TITLES = [
+    "AI Engineer",
+    "Senior AI Engineer",
+    "AI Engineering Lead",
+    "Engineer, AI Platform",
+    "AIOps Engineer",
+    "IN_Senior Associate_AI/ML Engineer_Data",
+    "System Engineer – OIL & GAS DOMAIN",
+    "Senior Lead Engineer, Retail Inventory",
+    "Returnship - IAM SailPoint Developer Engineer",
+    "Senior Frontend Developer (HTML/CSS)",
+    "ML Engineer",
+    "C++ Developer",
+    "ASP.NET Developer",
+    "C# Engineer",
+    "Node.js Developer",
+    "JavaScript Developer",
+]
+
+
+@pytest.fixture(scope="module")
+def keyword_table(tmp_path_factory):
+    # lancedb is in the `embed` extra; see the gazetteer tests for why it is skipped, not required.
+    lancedb = pytest.importorskip("lancedb")
+    pa = pytest.importorskip("pyarrow")
+    db = lancedb.connect(tmp_path_factory.mktemp("keyword_db"))
+    n = len(_KEYWORD_TITLES)
+    return db.create_table(
+        "jobs",
+        pa.table(
+            {
+                "title": _KEYWORD_TITLES,
+                "description": [None] * n,
+                "ats": ["greenhouse"] * n,
+            }
+        ),
+    )
+
+
+def _titles_matching(table, **filters) -> set[str]:
+    where = _clause(has_description=True, **filters)
+    return set(table.search().where(where).to_arrow()["title"].to_pylist())
+
+
+@pytest.mark.parametrize(
+    ("kw", "expected"),
+    [
+        (
+            "AI Engineer",
+            {
+                "AI Engineer",
+                "Senior AI Engineer",
+                "AI Engineering Lead",
+                "Engineer, AI Platform",
+                "AIOps Engineer",
+                "IN_Senior Associate_AI/ML Engineer_Data",
+            },
+        ),
+        ('"AI Engineer"', {"AI Engineer", "Senior AI Engineer", "AI Engineering Lead"}),
+        ("ml", {"ML Engineer", "IN_Senior Associate_AI/ML Engineer_Data"}),
+        ("c++", {"C++ Developer"}),
+        (".net", {"ASP.NET Developer"}),
+        ("c#", {"C# Engineer"}),
+        ("node.js", {"Node.js Developer"}),
+        ("java", {"JavaScript Developer"}),
+    ],
+)
+def test_a_keyword_matches_where_a_word_starts_not_inside_one(
+    keyword_table, kw, expected
+):
+    """ADR-0299: every word must start a word in the title, so "ai" no longer finds DOMAIN,
+    Retail or SailPoint, while "c++", ".net" and "c#" — why ADR-0104 rejected whole words — still
+    match, and "java" still finds JavaScript."""
+    assert _titles_matching(keyword_table, kw=kw) == expected
+
+
+def test_a_description_keyword_is_safe_on_a_null_description(keyword_table):
+    assert _titles_matching(keyword_table, kw="engineer", kw_in="description") == set()
 
 
 def test_keyword_scope_options_come_from_the_map_in_order_with_labels_and_needs():
