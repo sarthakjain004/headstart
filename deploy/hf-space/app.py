@@ -718,7 +718,10 @@ def _keep_static_for_the_boot(response):
 # (ADR-0332).
 # 12: /trends gives a category's opened and closed as the index's line for it, in the category's
 # own view too; only its level lines leave out an extraction change's runs (ADR-0336).
-_AGENT_API_VERSION = 12
+# 13: `strict=1` on /search and /facets refuses a parameter neither reads, naming it (ADR-0334).
+# 14: a sorted /search under `q` or `like` orders only rows scoring at least SORT_FLOOR, and
+# /requirements groups a short and a long name of one employer as one requisition (ADR-0338).
+_AGENT_API_VERSION = 14
 
 
 @app.after_request
@@ -1864,15 +1867,39 @@ _ANTHROPIC_NETWORK = ipaddress.ip_network("160.79.104.0/21")
 _ANTHROPIC_LIMIT_REQUESTS = 300
 _ANTHROPIC_LIMIT = rate_limit.RateLimit(_ANTHROPIC_LIMIT_REQUESTS, _LIMIT_WINDOW_S)
 
+# Connecting is counted apart from calling (ADR-0334). A client sends `initialize`, a
+# notification and `tools/list` (or `server/discover`) before its first call, and pings between;
+# counted against the 30 above, a caller that had spent them on calls got an empty tool list,
+# and a model with no tools then invented HeadStart figures (round-3 critique P1-4). Each is
+# answered in about a millisecond from constants built at start-up (212 of the 365 `/mcp` POSTs
+# in the run log of 2026-09-29), so it waits for no place below either. Limited, not exempt:
+# the endpoint takes no credential. 120 a minute is a connection every two seconds from one
+# address, a campus NAT's worth; the range gets ten times that, as it does for calls.
+_MCP_HANDSHAKE_REQUESTS = 120
+_MCP_HANDSHAKE_LIMIT = rate_limit.RateLimit(_MCP_HANDSHAKE_REQUESTS, _LIMIT_WINDOW_S)
+_ANTHROPIC_HANDSHAKE_REQUESTS = 1200
+_ANTHROPIC_HANDSHAKE_LIMIT = rate_limit.RateLimit(
+    _ANTHROPIC_HANDSHAKE_REQUESTS, _LIMIT_WINDOW_S
+)
+
 # At most 4 `/mcp` requests at once across every caller, on the Space's 2 vCPU: each fans out to
 # two to four reads on threads, so 4 costs about what four people searching in the page at once
 # do. At most 2 of them from one caller (ADR-0276), counted as the request limit counts it, so
 # Anthropic's range is one caller: a call can hold its place for its whole 45 s deadline, and
 # one caller's slow searches must not hold every place. One more waits up to 10 s for a place,
 # then is told to retry.
+#
+# ADR-0334 measured these against the live Space on 2026-09-29 and kept 4: its reads are CPU-bound
+# on the 2 vCPUs (country counts took 1.3 s alone and 2.4-2.8 s four at once; ranked searches 0.1
+# s alone and 0.6 s six at once), so a fifth place would slow every call it runs beside and
+# answer no more of them. What it changed is the range's share: it stands for every claude.ai user,
+# so it may hold 3 of the 4, and one place is always left for a caller outside it.
 _MCP_AT_ONCE = 4
 _MCP_AT_ONCE_EACH = 2
-_MCP_PLACES = concurrency_limit.ConcurrencyLimit(_MCP_AT_ONCE, _MCP_AT_ONCE_EACH)
+_ANTHROPIC_AT_ONCE = 3
+_MCP_PLACES = concurrency_limit.ConcurrencyLimit(
+    _MCP_AT_ONCE, _MCP_AT_ONCE_EACH, {"anthropic": _ANTHROPIC_AT_ONCE}
+)
 _MCP_PLACE_WAIT_S = 10
 
 # A description-keyword search takes one place of its own, and there is one (ADR-0325). It is
@@ -1942,22 +1969,36 @@ def mcp():
     address = _client_address()
     _note_mcp_origin(request.headers.get("Origin"), address)
     body = request.stream.read(streamable_http.MAX_BODY_BYTES + 1)
+    handshake = streamable_http.is_handshake(body)
     if _from_anthropic(address):
         caller, who = "anthropic", "Anthropic's range"
-        wait_s = _ANTHROPIC_LIMIT.admit(caller)
-        per_minute = _ANTHROPIC_LIMIT_REQUESTS
+        limit, per_minute = (
+            (_ANTHROPIC_HANDSHAKE_LIMIT, _ANTHROPIC_HANDSHAKE_REQUESTS)
+            if handshake
+            else (_ANTHROPIC_LIMIT, _ANTHROPIC_LIMIT_REQUESTS)
+        )
     else:
         caller, who = address, "one address"
-        wait_s = _MCP_LIMIT.admit(caller)
-        per_minute = _MCP_LIMIT_REQUESTS
+        limit, per_minute = (
+            (_MCP_HANDSHAKE_LIMIT, _MCP_HANDSHAKE_REQUESTS)
+            if handshake
+            else (_MCP_LIMIT, _MCP_LIMIT_REQUESTS)
+        )
+    wait_s = limit.admit(caller)
     if wait_s:
+        asked = "connection requests" if handshake else "requests"
         return _mcp_refusal(
             body,
             429,
-            f"Too many requests: at most {per_minute} in {_LIMIT_WINDOW_S} s from {who}; "
+            f"Too many {asked}: at most {per_minute} in {_LIMIT_WINDOW_S} s from {who}; "
             f"retry in {wait_s} s.",
             wait_s,
         )
+    if handshake:
+        status, headers, out = streamable_http.answer(
+            request.headers, body, _MCP_SERVER, _MCP_ORIGINS
+        )
+        return Response(out, status, headers)
     scan = _scans_descriptions(body)
     places = _MCP_SCAN_PLACES if scan else _MCP_PLACES
     asked = time.monotonic()
@@ -1975,7 +2016,7 @@ def mcp():
         return _mcp_refusal(
             body,
             429,
-            f"Too many requests at once: at most {_MCP_AT_ONCE_EACH} at a time from {who}; "
+            f"Too many requests at once: at most {places.share(caller)} at a time from {who}; "
             "retry when one of them is answered.",
             _MCP_PLACE_WAIT_S,
         )

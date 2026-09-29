@@ -127,6 +127,26 @@ def tool_call(body: bytes) -> RequestedTool | None:
     )
 
 
+#: The requests a client sends to connect and learn the tools, in either era. Each answer is a
+#: constant built at start-up, so none reads the Space.
+_HANDSHAKE_METHODS = frozenset({"initialize", "server/discover", "ping", "tools/list"})
+
+
+def is_handshake(body: bytes) -> bool:
+    """Whether ``body`` is one message a client sends to connect rather than to call a tool:
+    ``initialize``, ``server/discover``, ``ping``, ``tools/list``, or a notification (any
+    message without an id, which :func:`answer` acknowledges with a 202 and never dispatches).
+    A route reads it before :func:`answer` does, to count it apart from tool calls (ADR-0334);
+    anything else, a batch or no JSON at all is not one."""
+    try:
+        message = json.loads(body)
+    except ValueError:
+        return False
+    if not isinstance(message, dict) or not isinstance(message.get("method"), str):
+        return False
+    return message.get("id") is None or message["method"] in _HANDSHAKE_METHODS
+
+
 def answer(
     headers: Mapping[str, str],
     body: bytes,

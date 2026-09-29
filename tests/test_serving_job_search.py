@@ -21,6 +21,7 @@ from headstart.serving.job_search import (
     REQUIREMENTS_CATEGORY_WINDOW,
     RESULT_COLUMNS,
     SORT_COLUMNS,
+    SORT_FLOOR,
     JobSearch,
     RoleAssignments,
     ScopeUnavailable,
@@ -1009,6 +1010,28 @@ def test_sorting_a_ranked_search_keeps_the_query_and_reorders_the_window():
     assert table.last_k == searcher.max_k * searcher.max_page  # the whole window
 
 
+def test_a_sorted_search_reorders_only_the_rows_above_the_floor():
+    """cs03 of the round-3 critique: the 2,000-row window reached 0.55 under narrow filters,
+    and a date sort led with a Database Administrator for "junior data analyst" (ADR-0338).
+    A browse or a relevance order keeps every row."""
+    below = 1 - SORT_FLOOR + 0.01
+    rows = [
+        {**_ROW, "id": "close-old", "posted_at": "2026-01-01"},
+        {**_ROW, "id": "far-new", "posted_at": "2026-09-01", "_distance": below},
+        {
+            **_ROW,
+            "id": "at-floor",
+            "posted_at": "2026-05-01",
+            "_distance": 1 - SORT_FLOOR,
+        },
+    ]
+    searcher = JobSearch(_Model(), _Table(rows))
+    out = searcher.run({"q": "data analyst", "sort": "posted", "k": "3"})
+    assert [r["id"] for r in out] == ["at-floor", "close-old"]
+    ranked = JobSearch(_Model(), _Table(rows)).run({"q": "data analyst", "k": "3"})
+    assert len(ranked) == 3
+
+
 def test_sorting_a_ranked_search_still_paginates_without_repeating():
     rows = [
         {**_ROW, "id": c, "posted_at": f"2026-0{i + 1}-01"}
@@ -1381,6 +1404,44 @@ def test_strict_accepts_what_the_table_serves():
         }
     )
     assert "darwinbox" in table.last_where
+
+
+def test_strict_refuses_a_parameter_neither_route_reads_naming_it():
+    """Round-3 critique P2-8 (ADR-0334): `/facets?strict=1&bogus_param=x` counted the whole
+    index, so a parameter renamed on one side would drop its filter silently."""
+    from werkzeug.datastructures import MultiDict
+
+    searcher, _ = _strict_searcher()
+    for ask in (searcher.run, searcher.facets):
+        for args, named in (
+            ({"bogus_param": "x"}, "unknown parameter 'bogus_param'"),
+            ({"india_place": "pune", "kw": "go"}, "unknown parameter 'india_place'"),
+            ({"b": "1", "a": "2"}, "unknown parameters 'a', 'b'"),
+        ):
+            with pytest.raises(ValueError) as refused:
+                ask({**args, "strict": "1"})
+            body, status = refusal(refused.value)
+            assert status == 400 and named in body["detail"], body["detail"]
+            assert "known: " in body["detail"] and "salary_min" in body["detail"]
+            searcher.run(args)  # without strict: ignored, as before
+        # A repeated parameter, as `board=` is, is one name.
+        ask(MultiDict([("strict", "1"), ("board", "a"), ("board", "b"), ("k", "5")]))
+
+
+def test_every_parameter_the_search_module_reads_is_one_strict_knows():
+    """A parameter added to the parser but not to `REQUEST_PARAMETERS` would be refused under
+    `strict=1`, which is every agent's call: this names it in the PR that adds it."""
+    import re
+    from pathlib import Path
+
+    from headstart.serving import job_search
+
+    source = Path(job_search.__file__).read_text(encoding="utf-8")
+    read = set(re.findall(r'args\.get(?:list)?\("([a-z_]+)"', source))
+    read |= set(re.findall(r'_int\("([a-z_]+)"\)', source))
+    assert read and read <= job_search.REQUEST_PARAMETERS, (
+        read - job_search.REQUEST_PARAMETERS
+    )
 
 
 @pytest.mark.parametrize(

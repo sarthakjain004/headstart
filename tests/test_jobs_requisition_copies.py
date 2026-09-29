@@ -1,9 +1,10 @@
 """Which served Jobs copy one requisition — `headstart.jobs.requisition_copies` (ADR-0274,
-ADR-0323, ADR-0331, ADR-0332).
+ADR-0323, ADR-0331, ADR-0332, ADR-0338).
 
 Contracts: the same company and title stem, brackets aside, anywhere; rows naming no company only
 on one Board; another spelling of the company only with the same words once legal and generic
-words drop, the same first city and the same countries; each group led by its first row, in page
+words drop, the same first city and the same countries; a name whose words begin the other's
+only with the same countries and the same stated pay range; each group led by its first row, in page
 order.
 """
 
@@ -99,6 +100,60 @@ def test_other_companies_or_places_are_not_copies(one, other, place, elsewhere):
     rows = [
         _row(1, company=one, location=place),
         _row(2, company=other, location=elsewhere, board="workday:x/y"),
+    ]
+    assert groups(rows) == [[0], [1]]
+
+
+_TSMC_PAY = {
+    "min_salary_annual": 90000.0,
+    "max_salary_annual": 142200.0,
+    "salary_currency": "USD",
+}
+
+
+def test_one_posting_under_a_short_and_a_long_name_is_one_group():
+    """The round-3 critique's `ng02` rows 6 and 7: TSMC on SuccessFactors and on Avature."""
+    title = "Software Engineer (New Graduate) - North America Software Center"
+    long_name = "TSMC - Taiwan Semiconductor Manufacturing Company Limited"
+    rows = [
+        {
+            **_row(1, title, "TSMC", "Vancouver, WA, US", "successfactors:ro.x"),
+            **_TSMC_PAY,
+        },
+        {**_row(2, title, long_name, "USA-Washington", "avature:tsmc"), **_TSMC_PAY},
+    ]
+    assert groups(rows) == [[0, 1]]
+
+
+@pytest.mark.parametrize(
+    ("one", "other"),
+    [
+        # No stated pay on either: a longer name is as often another company.
+        ({}, {}),
+        # Another range.
+        (_TSMC_PAY, {**_TSMC_PAY, "max_salary_annual": 150000.0}),
+        # The same figures in another currency.
+        (_TSMC_PAY, {**_TSMC_PAY, "salary_currency": "CAD"}),
+    ],
+)
+def test_a_short_and_a_long_name_need_one_stated_pay_range(one, other):
+    rows = [
+        {**_row(1, company="GE", location="Boston, MA, US"), **one},
+        {
+            **_row(2, company="GE HealthCare", location="Boston, MA", board="wd:x/y"),
+            **other,
+        },
+    ]
+    assert groups(rows) == [[0], [1]]
+
+
+def test_a_short_and_a_long_name_need_the_same_countries():
+    rows = [
+        {**_row(1, company="TSMC", location="Vancouver, WA, US"), **_TSMC_PAY},
+        {
+            **_row(2, company="TSMC Arizona", location="Hsinchu", board="wd:x/y"),
+            **_TSMC_PAY,
+        },
     ]
     assert groups(rows) == [[0], [1]]
 

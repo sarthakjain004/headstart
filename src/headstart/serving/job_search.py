@@ -244,6 +244,72 @@ def _is_strict(args: Mapping[str, str]) -> bool:
     return args.get("strict") == "1"
 
 
+#: Every parameter ``/search`` and ``/facets`` read (ADR-0334): the filters
+#: :meth:`JobSearch.parse_filters` reads, the ranking and the page, ``/facets``' ``counts``, the
+#: scope the app adds (``board``, ``family``, ``role``, ``mine``), its answers' version ``v``,
+#: and ``strict`` itself. Under ``strict=1`` any other name is refused, so a parameter renamed
+#: on one side cannot drop its filter silently (round-3 critique P2-8). A parameter added to
+#: either route is added here, or a strict caller sending it is refused.
+REQUEST_PARAMETERS = frozenset(
+    {
+        # the filters
+        "remote",
+        "has_salary",
+        "max_years",
+        "ats",
+        "etype",
+        "india",
+        "country",
+        "location",
+        "company",
+        "salary_min",
+        "salary_max",
+        "salary_currency",
+        "posted_within",
+        "posted_after",
+        "posted_before",
+        "seen_within",
+        "seen_after",
+        "seen_before",
+        "first_seen_after",
+        "kw",
+        "kw_in",
+        "title_words",
+        "max_age_days",
+        "required_years_at_least",
+        "exclude_company",
+        # the ranking, the order and the page
+        "q",
+        "like",
+        "sort",
+        "k",
+        "page",
+        # /facets alone
+        "counts",
+        # the app's scope and answers
+        "board",
+        "family",
+        "role",
+        "mine",
+        "v",
+        "strict",
+    }
+)
+
+
+def _refuse_unknown_parameters(args: Mapping[str, str]) -> None:
+    """Under ``strict=1``, a :class:`ValueError` naming each parameter ``/search`` and
+    ``/facets`` do not read (:data:`REQUEST_PARAMETERS`); without it, nothing."""
+    if not _is_strict(args):
+        return
+    if unknown := sorted(set(args) - REQUEST_PARAMETERS):
+        raise ValueError(
+            f"unknown parameter{'s' if len(unknown) > 1 else ''} "
+            f"{', '.join(repr(name) for name in unknown)}; known: "
+            f"{_listed(sorted(REQUEST_PARAMETERS))}"
+        )
+
+
 def _listed(values: Collection[str]) -> str:
     """``values`` for a refusal's sentence: what the request could have said instead."""
     return ", ".join(values) if values else "none"
@@ -287,6 +353,14 @@ REQUIREMENTS_SAMPLE = 300
 REQUIREMENTS_CATEGORY_WINDOW = 2_000
 #: How many requirements answers one boot keeps; the table does not change until the next boot.
 REQUIREMENTS_CACHE_SIZE = 64
+
+#: The least similarity a row needs to be re-ordered by a sort under a query or ``like=``
+#: (ADR-0338). The 2,000-row window is always full, so under narrow filters it reached rows of
+#: other roles: "junior data analyst", remote and at most a year of experience, reached 0.55 and
+#: a date sort led with a Database Administrator. Measured on 20 live queries (2026-09-29): 16
+#: windows stay above 0.67 and keep every row; in the other 4 the share of rows on the role went
+#: from 26% to 76% (that query), 46% to 93%, 1% to 86% and 6% to 36%. 0.68 cut a broad window.
+SORT_FLOOR = 0.67
 
 
 def scoped_boards_clause(args) -> str | None:
@@ -1250,6 +1324,7 @@ class JobSearch:
 
         A ``like=`` Job is left out of every count, as :meth:`run` leaves it out of the list.
         """
+        _refuse_unknown_parameters(args)
         filters = self.parse_filters(args)
         asked = (args.get("counts") or "").strip() or FACET_COUNTS[0]
         if asked not in FACET_COUNTS:
@@ -1333,6 +1408,7 @@ class JobSearch:
         out (ADR-0277); ``ValueError`` when it comes with ``q`` or names no served Job.
         """
         started = time.monotonic()
+        _refuse_unknown_parameters(args)
         query = (args.get("q") or "").strip()
         # `like=` ranks by one Job's own stored vector instead of an encoded query, and leaves
         # that Job out (ADR-0277); from here on it is a ranked search like any other.
@@ -1474,6 +1550,10 @@ class JobSearch:
             # matches" — the alternative, scanning by date, answers a question the user did
             # not ask by throwing their query away.
             window = search.limit(self.max_k * self.max_page).to_list()
+            # Only rows at least :data:`SORT_FLOOR` similar are re-ordered (ADR-0338): the window
+            # is always full, so under narrow filters its tail held other roles, which a date or
+            # salary sort then led with.
+            window = [r for r in window if round(1 - r["_distance"], 3) >= SORT_FLOOR]
             # `reverse=True`, so the stand-in for a missing value has to be the smallest thing
             # in its own type — `""` for the date columns, -inf for a numeric one — which puts
             # rows that have no value last either way.
