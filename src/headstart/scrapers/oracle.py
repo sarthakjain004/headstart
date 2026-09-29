@@ -23,6 +23,11 @@ why the old ``host/CX_2`` slug override is gone — it could only ever shrink a 
 hardcoded ``CX_1`` default was wrong for **929 of 1,331** hiring boards, and wrong *silently*:
 a bad site number still answers 200 with a well-formed envelope.
 
+**The whole Board includes what no candidate can open.** The host-wide listing also carries
+requisitions that only *inactive* Candidate Experience sites publish, and their links go to
+``/errors/404``. So a tenant with an inactive site is read one active site at a time, and a
+tenant with no active site serves nothing (ADR-0278).
+
 **The listing carries almost nothing, and the description it does carry is truncated.** Across
 15,189 requisitions, ``LegalEmployer``, ``Department``, ``JobFunction`` and ``JobType`` are 0.0%
 non-null and ``JobSchedule`` is 1.1% — so every field but title, location, id and date has to come
@@ -45,6 +50,7 @@ from typing import Any
 
 from headstart.boards import company_name
 from headstart.jobs.job import Job, host_of, html_to_text, is_remote, requisition_of
+from headstart.network import http
 from headstart.network.fetcher import Fetcher
 from headstart.scrapers.base import (
     BaseScraper,
@@ -76,6 +82,13 @@ _NEWEST_FIRST = "POSTING_DATES_DESC"
 #: out, so peak in-flight is the product (see `base.py`'s note), and because 16 is what icims and
 #: zwayam already use — no special justification needed for a value the repo already runs.
 _DETAIL_WORKERS = 16
+
+#: The ``StatusCode`` `recruitingCESites` gives a Candidate Experience site that is switched on, and
+#: the one it gives a site that is switched off. A posting no active site publishes has no working
+#: link: the careers UI sends it to ``/errors/404`` (ADR-0278). Every site of all 1,752 Scrapable
+#: Boards carried one of the two on 2026-09-29, so any other value is a response this cannot read.
+_ACTIVE_STATUS = "ORA_ACTIVE"
+_INACTIVE_STATUS = "ORA_INACTIVE"
 
 
 #: The two workplace-type codes this repo has actually observed meaning something unambiguous.
@@ -124,6 +137,13 @@ def is_pod_host(slug: str) -> bool:
     (``www.coherent.com``) — names no Board this scraper can read, and lands in no ledger (#627).
     """
     return slug.lower().endswith(".oraclecloud.com")
+
+
+def _union_by_id(reqs: list[dict], more: list[dict]) -> list[dict]:
+    """``reqs``, then each of ``more`` whose ``Id`` they do not already hold. A requisition with
+    no ``Id`` is kept, as the host-wide walk keeps it: there is nothing to match it on."""
+    seen = {r.get("Id") for r in reqs if r.get("Id") is not None}
+    return reqs + [r for r in more if r.get("Id") is None or r.get("Id") not in seen]
 
 
 def _description_html(detail: dict) -> str | None:
@@ -209,6 +229,8 @@ class OracleScraper(BaseScraper):
             0  # advanced by `fetch_raw`; `url()` renders whatever page it is on
         )
         self._sort_by: str | None = None  # `url()`'s order; None is the API's default
+        # `url()`'s `siteNumber`; None reads the whole host
+        self._site: str | None = None
 
     @staticmethod
     def slug_from(tenant: str, url: str) -> str:
@@ -295,15 +317,57 @@ class OracleScraper(BaseScraper):
         return self._site_name(seo.strip())
 
     def url(self) -> str:
-        # No `siteNumber`: it filters the Board down to one site, and omitting it returns the
-        # union of every site (module docstring). `findReqs` still needs its other params inside
-        # the finder string, comma-separated — the careers UI's own calls use literal commas.
+        # No `siteNumber` unless `_site` is set: it filters the Board down to one site, and
+        # omitting it returns the union of every site (module docstring). It is set only to read
+        # a tenant's active Candidate Experience sites one by one, when another is inactive
+        # (ADR-0278).
+        # `findReqs` still needs its other params inside the finder string, comma-separated —
+        # the careers UI's own calls use literal commas.
         return (
             f"https://{self.slug}/hcmRestApi/resources/latest/"
             f"recruitingCEJobRequisitions?onlyData=true&expand=requisitionList"
-            f"&finder=findReqs;limit={_PAGE_SIZE},offset={self._offset}"
+            f"&finder=findReqs;"
+            + (f"siteNumber={self._site}," if self._site else "")
+            + f"limit={_PAGE_SIZE},offset={self._offset}"
             + (f",sortBy={self._sort_by}" if self._sort_by else "")
         )
+
+    def _sites_url(self) -> str:
+        """The tenant's Candidate Experience sites, each with its ``StatusCode``."""
+        return (
+            f"https://{self.slug}/hcmRestApi/resources/latest/"
+            "recruitingCESites?onlyData=true&fields=SiteNumber,StatusCode"
+        )
+
+    def _sites(self) -> dict[str, bool] | None:
+        """Each Candidate Experience site's number, and whether it is active — or None when the
+        sites could not be read, which leaves the Board read host-wide as it always was.
+
+        One attempt (`_fetch_once`). None for a 5xx, a 429, a request that raises, and any body
+        that is not a non-empty list of sites each stating a number and one of the two known
+        statuses: a transient failure, or Oracle renaming or dropping the field, must never
+        narrow or empty a Board (ADR-0278). The tenants that answered an empty list all listed
+        no postings either.
+        """
+        try:
+            response = self._fetch_once(
+                "GET", self._sites_url(), accept="application/json"
+            )
+            if response.status_code != 200:
+                return None
+            statuses = {
+                site["SiteNumber"]: site["StatusCode"]
+                for site in response.json()["items"]
+            }
+        except (http.RequestsError, ValueError, KeyError, TypeError):
+            return None
+        known = {_ACTIVE_STATUS, _INACTIVE_STATUS}
+        if not statuses or not all(
+            isinstance(number, str) and status in known
+            for number, status in statuses.items()
+        ):
+            return None
+        return {number: status == _ACTIVE_STATUS for number, status in statuses.items()}
 
     def _listing(self) -> list[dict]:
         """Page through the requisition list until the board runs out.
@@ -343,8 +407,7 @@ class OracleScraper(BaseScraper):
             self._sort_by = _NEWEST_FIRST
             newest, _, _ = self._walk()
             self._sort_by = None
-            seen = {requisition.get("Id") for requisition in reqs}
-            reqs += [r for r in newest if r.get("Id") not in seen]
+            reqs = _union_by_id(reqs, newest)
             self.mark_truncated_unless_negligible(
                 len(reqs),
                 total,
@@ -418,6 +481,38 @@ class OracleScraper(BaseScraper):
             )
         return reqs, total, itemless_page
 
+    def _servable_listing(self) -> list[dict]:
+        """The requisitions a candidate can open: what the tenant's active Candidate Experience
+        sites publish.
+
+        The host-wide listing also carries requisitions no active site publishes, and each of
+        those links to `/errors/404`. So a tenant with an inactive site is read one active site
+        at a time, and one with no active site serves nothing (ADR-0278). `[]`, not a raise: the
+        tenant answered, so its rows evict through ADR-0083's two absences (ADR-0200).
+        """
+        sites = self._sites()
+        if sites is None:
+            return self._listing()
+        active = [number for number, on in sites.items() if on]
+        if not active:
+            self._log.info(
+                f"{self.board_key()}: no active Candidate Experience site "
+                f"({', '.join(sites)} all inactive) — every posting links to /errors/404, "
+                "so serving none (ADR-0278)"
+            )
+            return []
+        if len(active) == len(sites):
+            return self._listing()
+        # Each site through `_listing`, so each walk keeps its own paging and truncation rules.
+        reqs: list[dict] = []
+        try:
+            for site in active:
+                self._site = site
+                reqs = _union_by_id(reqs, self._listing())
+        finally:
+            self._site = None
+        return reqs
+
     def fetch_raw(self) -> Any:
         # Every listed posting gets its detail payload, with no ADR-0048 `needs_detail` skip. That
         # optimisation is only safe where the detail fetch supplies the description and nothing
@@ -426,7 +521,7 @@ class OracleScraper(BaseScraper):
         # `department` (Category 76.2% / JobFunction 45.0%, both 0.0% on the listing) and most of
         # `remote`. Skipping it for an already-described Job would blank three fields that had
         # values. jazzhr and zoho hit the same fork and made the same call.
-        reqs = self._listing()
+        reqs = self._servable_listing()
         # Reported, not marked truncated: a missing detail payload costs this Job its
         # description and derived fields, but the Job itself is still listed and still
         # emitted, so the Board's list is whole (ADR-0053 is about the list, not the fields).
@@ -476,6 +571,10 @@ class OracleScraper(BaseScraper):
         with its Apply controls for the correct site, a wrong site and a nonexistent ``CX_9999``
         alike — all three redirect to ``CX_1`` and resolve the job by id. ``CX_1`` is written here
         because that is where the app lands anyway, not because the Board is known to use it.
+
+        More exactly, the app redirects to an *active* site that publishes the posting, whatever
+        site the link names, and to ``/errors/404`` when no active site does (ADR-0278) — which
+        is why :meth:`_servable_listing` lists only what an active site publishes.
         """
         return (
             f"https://{self.slug}/hcmUI/CandidateExperience/en/sites/CX_1/job/{job_id}"
