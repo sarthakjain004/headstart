@@ -1616,7 +1616,7 @@ def test_smartrecruiters_location_collapses_blank_region_comma_segment():
         },
         SCRAPED_AT,
     )
-    assert jobs[0].location == "Singapore, Singapore"
+    assert jobs[0].location == "Singapore"
 
 
 def test_smartrecruiters_location_with_region_is_unaffected():
@@ -2838,27 +2838,71 @@ def test_workday_titled_stub_warns_because_it_would_serve_a_dead_link(caplog):
     assert [r.levelno for r in caplog.records] == [logging.INFO, logging.INFO]
 
 
-def test_workday_stub_posting_parses_to_a_job_the_tech_gate_drops():
-    """The real shape of a no-`externalPath` item, and why the loss costs nothing downstream.
+def test_workday_stub_posting_is_not_a_job():
+    """The real shape of a no-`externalPath` item, and why it must not become a Job.
 
-    Captured live 2026-09-09 from `accenture/avanadecareers` (27 of 605 postings): the listing
-    serves `bulletFields` and *nothing else* — no title, no path, no location. So `parse` yields
-    an "Untitled" Job whose url falls back to the board root, and `tech_filter.classify` drops it
-    before the description store or the index can see it. `_posting_key` still reads the req id
-    off `bulletFields`, so the id is stable rather than churning (ADR-0097)."""
+    Captured live 2026-09-09 from `accenture/avanadecareers` (27 of 605 postings) and again
+    2026-09-29 from `walmart/WalmartExternal` (43 of 860 in the pinned Technology slice): the
+    listing serves `bulletFields` and *nothing else* — no title, no path, no location. There is
+    nothing to show and nowhere to link, so `parse` yields no Job for it.
+
+    It used to yield an "Untitled" Job with the board root as its url, on the premise that
+    `tech_filter.classify` dropped it. That held only while a stub had no department. Since
+    ADR-0252 an item read inside a one-family slice carries that family (`jobFamilyGroup`, set by
+    `_exhaust`), so on a pinned Board the stub read `Technology`, passed the gate, and 48 rows were
+    served as "Untitled" with a dead link (audit TN-05, ADR-0348)."""
     from headstart.jobs.tech_filter import classify
     from headstart.scrapers.workday import WorkdayScraper
 
-    scraper = WorkdayScraper("https://accenture.wd103.myworkdayjobs.com/avanadecareers")
-    (job,) = scraper.parse([{"bulletFields": ["R00322521"]}], "2026-09-09T00:00:00Z")
-    assert job.id.endswith(":R00322521")
-    assert job.title == "Untitled"
-    # The board root, not a job link — `parse`'s fallback when `external_path` is empty. Harmless
-    # only because the title is "Untitled" and the tech gate drops it; `_report_detail_losses`
-    # warns if a titled stub ever appears, which is when this url would really ship.
-    assert job.url == "https://accenture.wd103.myworkdayjobs.com/avanadecareers"
-    assert job.description is None
-    assert not classify(job.title, job.department).is_tech
+    scraper = WorkdayScraper("https://walmart.wd504.myworkdayjobs.com/WalmartExternal")
+    stub = {"bulletFields": ["R-2646910"]}
+    # what `_exhaust` does to a stub read inside the pinned Technology slice
+    in_a_family_slice = {**stub, "jobFamilyGroup": "Technology"}
+
+    # the premise the old test defended is gone: the gate no longer stops this shape
+    assert classify("Untitled", "Technology").is_tech
+    assert scraper.parse([stub], "2026-09-29T00:00:00Z") == []
+    assert scraper.parse([in_a_family_slice], "2026-09-29T00:00:00Z") == []
+
+
+def test_workday_stub_is_skipped_beside_real_postings_and_counted(caplog):
+    """A stub costs the Board none of its real postings, and the skip says how many it was."""
+    from headstart.scrapers.workday import WorkdayScraper
+
+    scraper = WorkdayScraper("https://acme.wd1.myworkdayjobs.com/careers", "Acme")
+    real = {
+        "title": "Backend Engineer",
+        "externalPath": "/job/Remote/Backend-Engineer_R-100",
+        "bulletFields": ["R-100"],
+    }
+    stubs = [
+        {"bulletFields": ["R-101"]},
+        {"bulletFields": ["R-102"], "jobFamilyGroup": "Tech"},
+    ]
+    caplog.set_level(logging.INFO, logger="headstart.scrapers.workday")
+
+    jobs = scraper.parse([stubs[0], real, stubs[1]], "2026-09-29T00:00:00Z")
+
+    assert [j.title for j in jobs] == ["Backend Engineer"]
+    assert (
+        jobs[0].url
+        == "https://acme.wd1.myworkdayjobs.com/careers/job/Remote/Backend-Engineer_R-100"
+    )
+    assert "2 of 3 listed row(s) had no title and no externalPath" in caplog.text
+
+
+def test_workday_titled_item_without_a_path_is_still_a_job():
+    """Only the stub shape is dropped. A titled item with no `externalPath` was never observed
+    (0 of 38 stubs on 22 Boards, 2026-09-09; 0 of 43 on Walmart, 2026-09-29), so it keeps its
+    old behaviour and the `titled_stubs` tripwire in `_report_detail_losses` still watches it."""
+    from headstart.scrapers.workday import WorkdayScraper
+
+    scraper = WorkdayScraper("https://acme.wd1.myworkdayjobs.com/careers", "Acme")
+    (job,) = scraper.parse(
+        [{"title": "Data Engineer", "bulletFields": ["R-7"]}], "2026-09-29T00:00:00Z"
+    )
+    assert job.title == "Data Engineer"
+    assert job.url == "https://acme.wd1.myworkdayjobs.com/careers"
 
 
 def test_only_the_first_board_past_the_share_spends_an_annotation(monkeypatch, caplog):
@@ -3178,7 +3222,7 @@ def test_freshteam_parse():
     # branch is Singapore, but preferred_remote_job_locations names India + Vietnam: the wrong
     # branch country must NOT ride along next to the real ones (that's the false-positive/
     # false-negative bug), and multiple places join with "; " like workday's multi-location strings.
-    assert platform.location == "India, India; Vietnam, Viet Nam"
+    assert platform.location == "India; Vietnam, Viet Nam"
     assert "Singapore" not in platform.location
     assert platform.remote is True
     assert platform.employment_type == "Fixed Term Contract"  # job_type 8
@@ -5883,6 +5927,144 @@ def test_successfactors_department_and_location_labels_still_read_after_case_fol
         fields = _page_fields(page)
         assert fields["department"] == "Platform"
         assert fields["location"] and "Pune" in fields["location"]
+
+
+# jobs.hii-tsd.com job 1432741500, live 2026-09-29: the tenant filled the country and region
+# fields with names, and the microdata cuts them to two and four characters ("Un", "Mich"),
+# while the page's own "Location:" line states them whole.
+_SF_CUT_MICRODATA = (
+    '<span itemprop="jobLocation"><span itemprop="address">'
+    '<meta itemprop="addressLocality" content="Warren, MI">'
+    '<meta itemprop="addressRegion" content="Mich">'
+    '<meta itemprop="addressCountry" content="Un"></span></span>'
+)
+_SF_GEO_LINE = (
+    '<p id="job-location" class="jobLocation "><strong>Location:</strong>\n\t\t'
+    '<span class="jobGeoLocation">Warren, MI, Michigan, United States\n\t\t</span></p>'
+)
+
+
+def test_successfactors_a_country_cut_to_two_letters_is_read_whole_off_the_location_line():
+    """A cut country ("Un" for the United States, "In" for India) is not a place a search can
+    find (`San Jose, Cali, Un` was 153 served rows): where the page also states the full
+    location, that is the location."""
+    from headstart.scrapers.successfactors import _page_fields
+
+    page = _sf_page("Systems Admin | HII") + _SF_CUT_MICRODATA + _SF_GEO_LINE
+    assert _page_fields(page)["location"] == "Warren, MI, Michigan, United States"
+
+
+def test_successfactors_a_cut_location_with_no_fuller_line_is_kept_for_the_feed_to_fill():
+    from headstart.scrapers.successfactors import _page_fields
+
+    page = _sf_page("Systems Admin | HII") + _SF_CUT_MICRODATA
+    assert _page_fields(page)["location"] == "Warren, MI, Mich, Un"
+    # a line that states less than the microdata (Sonae's is the locality alone) is not fuller
+    short = _SF_GEO_LINE.replace("Warren, MI, Michigan, United States", "Warren")
+    assert (
+        _page_fields(_sf_page("Systems Admin | HII") + _SF_CUT_MICRODATA + short)[
+            "location"
+        ]
+        == "Warren, MI, Mich, Un"
+    )
+
+
+def test_successfactors_a_location_that_is_not_cut_is_never_replaced_by_the_location_line():
+    from headstart.scrapers.successfactors import _page_fields
+
+    page = (
+        _sf_page("Systems Admin | HII")
+        + _SF_CUT_MICRODATA.replace('content="Un"', 'content="US"')
+        + _SF_GEO_LINE
+    )
+    assert _page_fields(page)["location"] == "Warren, MI, Mich, US"
+
+
+def test_successfactors_cut_country_shapes():
+    from headstart.scrapers.successfactors import _is_cut_location
+
+    for cut in (
+        "Warren, MI, Mich, Un",
+        "Pune, Othe, In",
+        "Asan, Othe, Ko",
+        "MAIA, Port, Po",
+    ):
+        assert _is_cut_location(cut), cut
+    for whole in (
+        "Warren, MI, US",
+        "Toronto, ON, CA",
+        "Pune, Maharashtra, India",
+        "Kuala Lumpur, MY, 50450",
+        "Remote",
+        "",
+        None,
+    ):
+        assert not _is_cut_location(whole), whole
+
+
+def test_successfactors_fetch_raw_fills_a_cut_location_from_the_feed(monkeypatch):
+    """A page whose location is cut and states no fuller line takes the feed's whole one
+    (jobs.boehringer-ingelheim.com: 68 of 68 cut ids carried a whole `g:location`, 2026-09-29);
+    a page's whole location is never replaced, and a cut one the feed has no item for stays."""
+    scraper = _successfactors_board(
+        monkeypatch,
+        sitemap=(
+            "urlset",
+            "".join(
+                f"<loc>https://careers.voith.com/job/Engineer/{i}/</loc>"
+                for i in (1, 2, 3)
+            ),
+            None,
+        ),
+        search=([], None, None),
+        rss=([], {}, None),
+        sitemal={
+            "1": {
+                "title": "Feed title",
+                "location": "Ridgefield, CT, United States, Connecticut",
+            },
+            "2": {"title": "Feed title", "location": "Somewhere, Elsewhere"},
+        },
+        job_page=lambda url: FakeResponse(
+            text={
+                "/1/": _successfactors_job_page("Page title") + _SF_CUT_MICRODATA,
+                "/2/": _successfactors_job_page("Page title", location="Chennai"),
+                "/3/": _successfactors_job_page("Page title") + _SF_CUT_MICRODATA,
+            }[url[-3:]]
+        ),
+    )
+
+    by_id = {item["id"]: item["fields"] for item in scraper.fetch_raw()}
+
+    assert by_id["1"]["location"] == "Ridgefield, CT, United States, Connecticut"
+    assert by_id["1"]["title"] == "Page title"
+    assert by_id["2"]["location"] == "Chennai"
+    assert by_id["3"]["location"] == "Warren, MI, Mich, Un"
+    assert scraper.truncated is None
+
+
+def test_successfactors_a_page_whose_location_is_not_cut_does_not_fetch_the_feed(
+    monkeypatch,
+):
+    reads: list[int] = []
+    scraper = _successfactors_board(
+        monkeypatch,
+        sitemap=(
+            "urlset",
+            "<loc>https://careers.voith.com/job/Engineer/1/</loc>",
+            None,
+        ),
+        search=([], None, None),
+        rss=([], {}, None),
+        job_page=lambda url: FakeResponse(
+            text=_successfactors_job_page("Page title", location="Chennai")
+        ),
+    )
+    monkeypatch.setattr(scraper, "_sitemal_fields", lambda: reads.append(1) or {})
+
+    scraper.fetch_raw()
+
+    assert reads == []
 
 
 def test_successfactors_a_label_span_outranks_the_description_line():

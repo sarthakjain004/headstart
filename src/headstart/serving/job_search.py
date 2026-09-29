@@ -36,6 +36,7 @@ from headstart.search_filters import (
     fx,
     india_filter,
     india_gazetteer,
+    location_spelling,
     posted_date_guard,
     salary_known_filter,
 )
@@ -1030,6 +1031,20 @@ def _job_row(row: Mapping[str, Any]) -> dict[str, Any]:
     return result
 
 
+def _accented_location_words(table: Any) -> frozenset[str]:
+    """The words the table's ``location`` values spell with accents, as
+    :func:`~headstart.search_filters.location_spelling.accented_words` writes them: the one scan of
+    the rows that carry a non-ASCII character, 12,167 of 500,167 on the table of 2026-09-29."""
+    rows = (
+        table.search()
+        .where(r"regexp_like(location, '[^\x00-\x7F]')")
+        .select(["location"])
+        .limit(WHITELIST_SCAN_ROWS)
+        .to_list()
+    )
+    return frozenset(location_spelling.accented_words(r["location"] for r in rows))
+
+
 class JobSearch:
     """The serving-path search behind one method: parse → filter → rank → project.
 
@@ -1116,6 +1131,11 @@ class JobSearch:
             has_posted_at_comparable=posted_date_guard.has_flags(names),
             has_experience_filter_flags=experience_filter.has_flags(names),
             has_confident_non_tech_flag=confident_non_tech_filter.has_flags(names),
+            # What the location filter folds a term against (ADR-0344), learned as `atses` is,
+            # so it follows the table rather than a list someone must refresh.
+            accented_words=(
+                _accented_location_words(table) if "location" in names else ()
+            ),
             work_authorization_clause=self.work_authorization.clause,
         )
         list_indices = getattr(table, "list_indices", None)

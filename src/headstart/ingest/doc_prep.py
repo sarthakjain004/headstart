@@ -25,6 +25,7 @@ import re
 from headstart.boards import eightfold_backing
 from headstart.embedding_conventions import DOC_PREFIX
 from headstart.ingest.derived_meta import derive
+from headstart.jobs.location import from_description
 
 _MD_LINK = re.compile(r"\[([^\]]+)\]\([^)]+\)")  # [text](url) -> text
 # Emphasis / heading / quote markers (keep `_`: tech terms). A `#` right after a letter is kept
@@ -92,8 +93,16 @@ def stored_facts(job: dict) -> dict:
     ever match on it, and a new value in the store rewrites the served row, vector and all, so
     stamping every row of the ATSes that state one (six when measured on v654) would rewrite
     ~216k rows on the first run for no dedup. Widen it by adding pairs, or by dropping this check.
+
+    ``location`` is the scrape's, and where the ATS stated none, the place an explicit ``Location:``
+    line in the Job's description states (:func:`headstart.jobs.location.from_description`, ADR-0345).
+    It lives here rather than in ``Job`` because a held Job's scrape carries no description
+    (ADR-0208): ``update_descriptions`` writes the stored text back into the corpus row, which is
+    what this reads. A fact, not a derivation: it is read off the corpus row every run, so it needs
+    no ``DERIVATIONS_VERSION`` bump.
     """
     facts = {field: job.get(field) for field in META_FIELDS}
+    facts["location"] = facts["location"] or from_description(job.get("description"))
     if facts["requisition"] and not eightfold_backing.in_scope(job["id"]):
         facts["requisition"] = None
     return facts
@@ -439,7 +448,25 @@ def build_doc(job: dict) -> str:
 # 142 move, all Tier 2: 120 none -> regex ("USD$110,000.00 - USD$138,000.00" at BlackRock,
 # Perseus, Arc'teryx) and 22 regain an end ("USD$225.00 - USD$275.00 per hour", served as a floor
 # of 572,000, is 468,000-572,000).
-DERIVATIONS_VERSION = 23
+# v24 (ADR-0347): `search_filters/india_gazetteer.py` reads "india" as a whole word (bar Little
+# India, Singapore), guards Hungary's Hajdú-Bihar, Delhi's namesakes in New York and Louisiana,
+# Madras, Oregon and four city aliases hidden mid-word, reads the ISO country code beside an Indian
+# subdivision code, PIN or plant name or after an "IND," prefix, and adds 76 whole-word `TOWNS`, 12
+# aliases on cities already held, two state names and "Remote, IN" as a whole string.
+# The range since the v23 bump at `4e3291c7` is `git log 4e3291c7..9650226d --
+# src/headstart/search_filters/india_gazetteer.py`: this change alone, three commits (ADR-0322's
+# Pakistan guard, `78a77a6f`, precedes v23). `location` is unchanged on every row it moves, so
+# `refresh_row`'s fact resync never reaches them; only this sweep does. Measured old (main's `classify()`, 82,756
+# rows tagged) vs new on all 500,167 rows of the served table read 2026-09-29 (v18), per ADR-0066:
+# 392 rows move, 339 null -> "IN" and 53 "IN" -> null. Gained: 172 on a `TOWNS` name (Mundra 24,
+# Sahnewal 9, Siliguri 8, Dadra 7), 68 on "Town, Plant, IN" (Singahalli 26, Cheyyar 14, Chakan 14),
+# 32 on a subdivision code or PIN ("KA, IN" 12, "Jamnagar, GJ, IN, 361004" 5), 23 on "Remote, IN",
+# 37 on a city alias (Chh Sambhajinagar 10, "gurugarm" 6, "gaziabad" 6), 3 on a state name, 2 on an
+# "IND," prefix and 2 whose "India" sat beside an Indiana or British Indian Ocean word that used to
+# veto it. Lost: 17 Hajdú-Bihar, 17 on "india" inside a longer word (Xindian 14, Indian Harbour
+# Beach 3), 8 Delhi (New York, Louisiana), 5 Inashiki, 2 Little India (Singapore) and 4 more one
+# each (Maladzyechna, Kagithane, Madras OR, "Cananda").
+DERIVATIONS_VERSION = 24
 
 
 def to_meta(job: dict) -> dict:
@@ -465,5 +492,6 @@ def to_meta(job: dict) -> dict:
     # Planner-only too: the text this vector encodes, so an edit can be told from a re-read of
     # the same posting and re-embedded (ADR-0285).
     meta["doc_hash"] = doc_hash(job)
-    meta.update(derive(job))
+    # `country` reads the location the row serves, the description's when the ATS stated none.
+    meta.update(derive({**job, "location": meta["location"]}))
     return meta

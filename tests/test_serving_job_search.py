@@ -2288,6 +2288,82 @@ def test_a_read_by_id_says_what_its_whole_description_states(families_served):
     }
 
 
+# ---- location: accents folded, a city's other spellings tried (ADR-0344) ----
+
+
+@pytest.fixture(scope="module")
+def located(tmp_path_factory):
+    """A real LanceDB table whose locations spell places with and without accents."""
+    lancedb = pytest.importorskip("lancedb")
+    pa = pytest.importorskip("pyarrow")
+    places = [
+        "Zürich, Switzerland",
+        "Zurich, Switzerland",
+        "Bengaluru, Karnataka, India",
+        "Bangalore, India",
+        "London, UK",
+        "Kraków, Poland",
+    ]
+    rows = [
+        {
+            "id": f"lever:acme:{n}",
+            "title": f"Engineer {n}",
+            "company": "Acme",
+            "location": place,
+            "remote": False,
+            "ats": "lever",
+            "first_seen": f"2026-09-2{n}T00:00:00+00:00",
+            "url": f"https://jobs.lever.co/acme/{n}",
+            "vector": [1.0, 0.0, 0.0, 0.0],
+        }
+        for n, place in enumerate(places, start=1)
+    ]
+    schema = pa.schema(
+        [
+            ("id", pa.string()),
+            ("title", pa.string()),
+            ("company", pa.string()),
+            ("location", pa.string()),
+            ("remote", pa.bool_()),
+            ("ats", pa.string()),
+            ("first_seen", pa.string()),
+            ("url", pa.string()),
+            ("vector", pa.list_(pa.float32(), 4)),
+        ]
+    )
+    db = lancedb.connect(tmp_path_factory.mktemp("located"))
+    table = db.create_table("jobs", data=pa.Table.from_pylist(rows, schema=schema))
+    return JobSearch(_Model(), table)
+
+
+def test_the_words_the_table_spells_with_accents_are_learned_at_boot(located):
+    assert set(located.capabilities.accented_words) == {"zUrich", "krakOw"}
+
+
+def test_a_location_reaches_every_spelling_of_the_place(located):
+    def places(term):
+        return sorted(r["location"] for r in located.run({"location": term}))
+
+    assert places("zurich") == ["Zurich, Switzerland", "Zürich, Switzerland"]
+    assert places("Zürich") == ["Zurich, Switzerland", "Zürich, Switzerland"]
+    assert places("krakow") == ["Kraków, Poland"]
+    assert places("Bangalore") == ["Bangalore, India", "Bengaluru, Karnataka, India"]
+    assert places("london") == ["London, UK"]
+
+
+def test_the_facet_total_counts_the_rows_the_location_lists(located):
+    for term in ("zurich", "Bengaluru", "london"):
+        listed = located.run({"location": term})
+        counted = located.facets({"location": term, "counts": "total"})
+        assert counted["total"] == len(listed)
+
+
+def test_a_table_with_no_location_column_learns_no_accented_words():
+    table = _Table([dict(_ROW)])
+    assert "location" not in table.schema.names
+    assert JobSearch(_Model(), table).capabilities.accented_words == ()
+
+
 # ---- the Jobs the head confidently calls non-tech are left out unless asked (ADR-0349) ----
 
 
@@ -2562,3 +2638,76 @@ def test_a_requirements_sample_of_a_table_without_the_stamp_says_nothing_left_ou
         ]
         is None
     )
+
+
+def test_a_location_and_the_default_hide_compose_on_a_real_table():
+    """ADR-0344 folds the term and ADR-0349 hides the stamped rows: both clauses reach the table
+    together, and the rows, the total and the count left out agree on the one set."""
+    import tempfile
+
+    lancedb = pytest.importorskip("lancedb")
+    pa = pytest.importorskip("pyarrow")
+    places = [
+        ("Zürich, Switzerland", False),
+        ("Zurich, Switzerland", True),
+        ("Zürich, Switzerland", None),
+        ("Bangalore, India", True),
+        ("London, UK", False),
+    ]
+    rows = [
+        {
+            "id": f"lever:acme:{n}",
+            "title": f"Engineer {n}",
+            "company": "Acme",
+            "location": place,
+            "remote": False,
+            "ats": "lever",
+            "first_seen": f"2026-09-2{n}T00:00:00+00:00",
+            "url": f"https://jobs.lever.co/acme/{n}",
+            "is_confident_non_tech": stamped,
+            "vector": [1.0, 0.0, 0.0, 0.0],
+        }
+        for n, (place, stamped) in enumerate(places, start=1)
+    ]
+    schema = pa.schema(
+        [
+            ("id", pa.string()),
+            ("title", pa.string()),
+            ("company", pa.string()),
+            ("location", pa.string()),
+            ("remote", pa.bool_()),
+            ("ats", pa.string()),
+            ("first_seen", pa.string()),
+            ("url", pa.string()),
+            ("is_confident_non_tech", pa.bool_()),
+            ("vector", pa.list_(pa.float32(), 4)),
+        ]
+    )
+    with tempfile.TemporaryDirectory() as directory:
+        table = lancedb.connect(directory).create_table(
+            "jobs", data=pa.Table.from_pylist(rows, schema=schema)
+        )
+        searcher = JobSearch(_Model(), table)
+        assert set(searcher.capabilities.accented_words) == {"zUrich"}
+        where = build_filter(
+            searcher.parse_filters({"location": "zurich"}), searcher.capabilities
+        )
+        assert where.endswith(
+            "AND (is_confident_non_tech IS NULL OR is_confident_non_tech = false)"
+        )
+        # the folded term is a character-class regex on `location`, then the hide, joined by AND
+        assert where.startswith("regexp_like(location, '(?i)[z")
+
+        def ids(**args):
+            return {
+                r["id"] for r in searcher.run({"location": "zurich", "k": "20", **args})
+            }
+
+        assert ids() == {"lever:acme:1", "lever:acme:3"}
+        assert ids(include_non_tech="true") == {
+            "lever:acme:1",
+            "lever:acme:2",
+            "lever:acme:3",
+        }
+        counted = searcher.facets({"location": "zurich", "counts": "total"})
+        assert (counted["total"], counted["non_tech_left_out"]) == (2, 1)

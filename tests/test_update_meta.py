@@ -895,6 +895,39 @@ def test_a_requisition_is_stored_only_on_a_board_the_eightfold_pairs_name(
     assert facts[other["id"]]["requisition"] is None
 
 
+def test_a_location_the_ats_left_out_is_the_one_its_description_states(tmp_path):
+    """ADR-0345: both places a fact reaches the store — a new Job's meta and the facts refresh of
+    one already held — read the same place off the corpus row the description store was written
+    back into, and only where the scrape stated none. Being a fact, it reaches a row already held
+    with no version sweep, and moves `country` with it."""
+    from headstart.ingest.doc_prep import to_meta
+
+    described = {
+        "id": "keka:acme:1",
+        "description": "Role Overview Location: Pune Experience: 3 years",
+    }
+    stated = {**described, "id": "keka:acme:2", "location": "Berlin, Germany"}
+    plain = {"id": "keka:acme:3", "description": "Remote first, no place named."}
+    assert to_meta(described)["location"] == "Pune"
+    assert to_meta(described)["country"] == "IN"
+    assert to_meta(stated)["location"] == "Berlin, Germany"
+    assert to_meta(plain)["location"] is None
+    (tmp_path / "keka.jsonl").write_text(
+        "".join(json.dumps(job) + "\n" for job in (described, stated, plain)),
+        encoding="utf-8",
+    )
+    facts = um.corpus_facts(tmp_path)
+    assert facts[described["id"]]["location"] == "Pune"
+    assert facts[stated["id"]]["location"] == "Berlin, Germany"
+    assert facts[plain["id"]]["location"] is None
+    held = _meta(id=described["id"], ats="keka", location=None, country=None)
+    row, facts_changed, _ = um.refresh_row(
+        held, facts[described["id"]], {}, sweep=False
+    )
+    assert facts_changed
+    assert (row["location"], row["country"]) == ("Pune", "IN")
+
+
 def test_a_lost_derivation_is_named_per_ats_with_its_ids(tmp_path, caplog):
     """`lost` on an ordinary run mirrored the next run's `gained` (up to 17 a run, 2026-09-26): a
     field-sourced answer goes when the raw field changes to one nothing parses. The line names the

@@ -310,6 +310,12 @@ supersedes it and note the supersession in both.
 | [0340](0340-the-employment-type-flags-read-the-title-and-more-raw-values.md) | The employment-type flags read the title and more raw values | 2026-09-29 |
 | [0341](0341-a-job-that-states-no-employment-type-is-full-time-to-the-filter.md) | A job that states no employment type is full-time to the filter | 2026-09-29 |
 | [0342](0342-the-sponsorship-eval-judges-apart-from-the-spaces-rules.md) | The sponsorship eval judges apart from the Space's rules (amends 0334) | 2026-09-29 |
+| [0343](0343-a-country-needs-fifteen-unplaced-jobs-and-a-cut-country-is-read-whole.md) | A country needs fifteen unplaced Jobs, and a cut country is read whole | 2026-09-29 |
+| [0344](0344-the-location-filter-reads-accents-and-a-citys-other-spellings-as-one-place.md) | The location filter reads accents and a city's other spellings as one place | 2026-09-29 |
+| [0345](0345-a-location-the-ats-left-out-is-the-one-the-description-states.md) | A location the ATS left out is the one the description states | 2026-09-29 |
+| [0346](0346-a-radancy-403-is-the-runners-ip-refused-so-a-front-takes-the-spare-egress-and-not-a-browser.md) | A Radancy 403 is the runner's IP refused, so a front takes the spare egress and not a browser | 2026-09-29 |
+| [0347](0347-the-india-country-tag-reads-whole-words-and-the-shapes-only-india-writes.md) | The India country tag reads whole words and the shapes only India writes | 2026-09-29 |
+| [0348](0348-a-workday-listing-item-with-no-title-and-no-link-is-not-a-job.md) | A Workday listing item with no title and no link is not a Job | 2026-09-29 |
 | [0349](0349-search-leaves-out-jobs-the-head-confidently-calls-non-tech-by-a-column-each-tick-stamps.md) | Search leaves out the Jobs the role-family head confidently calls non-tech, by a column each Trends tick stamps (amends 0057) | 2026-09-29 |
 
 *ADR-0037 was removed from the repository on 2026-09-24 by the owner's decision; its number is not

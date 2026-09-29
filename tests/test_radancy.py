@@ -18,6 +18,7 @@ import pytest
 from fake_fetcher import FakeFetcher, FakeResponse
 
 from headstart.jobs.salary import from_field
+from headstart.network import http
 from headstart.scrapers import front_duplication, radancy
 from headstart.scrapers.front_duplication import ScrapableBoardIndex
 from headstart.scrapers.radancy import (
@@ -645,3 +646,33 @@ def test_a_sitemap_listing_nothing_on_a_front_stating_postings_is_truncated() ->
     scraper = get_scraper("radancy", _HOST, fetcher=FakeFetcher(route))
     assert scraper.fetch() == []
     assert scraper.truncated == "the sitemap lists 0 of the 4 postings the front states"
+
+
+# --- the runner's egress wall (ADR-0346) ---------------------------------------------------
+
+
+def test_a_403_marks_the_radancy_group_walled_and_is_retried() -> None:
+    """Akamai refuses a runner's IP with a bare 403 (2026-09-29: 26,000-39,000 of ~115,000 job
+    pages a run, uneven across shards). Marking is what moves the group onto the spare egress,
+    and a status outside `TRANSIENT` would be marked but never retried."""
+    binding = get_scraper(
+        "radancy", _HOST, fetcher=FakeFetcher(_route)
+    ).board_fetcher.egress_binding()
+
+    assert binding["egress_group"] == "radancy"
+    assert 403 in binding["egress_on"]
+    assert binding["egress_on"] <= http.TRANSIENT
+
+
+def test_every_request_a_front_gets_carries_the_egress_opt_in() -> None:
+    """The opt-in is inert on a request that bypasses the base fetch seam, so read the kwargs the
+    fetcher received: robots.txt, the sitemap, the stated total and each job page."""
+    fetcher = FakeFetcher(_route)
+    get_scraper("radancy", _HOST, fetcher=fetcher).fetch()
+
+    kinds = {url.rsplit("/", 1)[1] for url in fetcher.urls()}
+    assert {"robots.txt", "sitemap.xml", "search-jobs"} < kinds
+    assert len(fetcher.requests) == 3 + len(_FIXTURE["pages"])
+    for request in fetcher.requests:
+        assert request.kwargs["egress_group"] == "radancy", request.url
+        assert 403 in request.kwargs["egress_on"], request.url
