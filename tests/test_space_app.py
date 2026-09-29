@@ -468,6 +468,8 @@ _READ_ROUTES = (
     "/companies/lookup",
     "/job",
     "/companies/locations",
+    "/companies/levels",
+    "/requirements",
 )
 _DOOR_PATHS = (
     "/",
@@ -900,7 +902,7 @@ def test_a_caller_cannot_claim_the_in_process_mark_with_a_header(auth_app, monke
 
 # ---- the app's own mark on every reply (ADR-0253) ----
 
-_OWN_REPLY = "app; agent-api=5"
+_OWN_REPLY = "app; agent-api=8"
 
 
 def test_a_routes_own_answer_is_marked(auth_app):
@@ -3305,6 +3307,12 @@ def test_locations_are_counted_over_the_named_boards_only(app, monkeypatch):
             {"location": "Berlin", "count": 1},
             {"location": "Remote", "count": 1},
         ],
+        # Each place's country, as `country=` reads it (ADR-0323).
+        "countries": [
+            {"code": "DE", "jobs": 1, "places": [{"location": "Berlin", "count": 1}]}
+        ],
+        "no_country": {"jobs": 1, "places": [{"location": "Remote", "count": 1}]},
+        "places_unread": 0,
     }
 
 
@@ -3316,6 +3324,69 @@ def test_locations_need_a_board_and_a_bounded_limit(app, query):
     r = app.app.test_client().get(f"/companies/locations?{query}")
     assert r.status_code == 400, query
     assert r.get_json()["error"] == "invalid filter"
+
+
+# ---- a company's levels (ADR-0323) ----
+
+
+def test_levels_are_counted_over_the_named_boards_in_the_trends_bands(app, monkeypatch):
+    scoped = []
+    real = app.job_search.level_counts.bands
+
+    def recording(table, where):
+        scoped.append(where)
+        return real(table, where)
+
+    monkeypatch.setattr(app.job_search.level_counts, "bands", recording)
+    r = app.app.test_client().get(
+        "/companies/levels?board=workday:hpe/a&board=workday:hpe/b&remote=true"
+    )
+    assert r.status_code == 200
+    assert scoped == [
+        "(lower(id) LIKE 'workday:hpe/a:%' OR lower(id) LIKE 'workday:hpe/b:%')"
+    ]
+    # The fake table's two rows state no experience.
+    answer = r.get_json()
+    assert answer["jobs"] == 2 and answer["capped"] is False
+    assert [(b["band"], b["count"]) for b in answer["bands"]] == [
+        ("intern", 0),
+        ("entry", 0),
+        ("mid", 0),
+        ("senior", 0),
+        ("staff", 0),
+        ("unspecified", 2),
+    ]
+
+
+@pytest.mark.parametrize("query", ["", "board=%20"])
+def test_levels_need_a_board(app, query):
+    r = app.app.test_client().get(f"/companies/levels?{query}")
+    assert r.status_code == 400, query
+    assert r.get_json()["error"] == "invalid filter"
+
+
+# ---- what a role's postings ask for (ADR-0324) ----
+
+
+def test_requirements_count_a_sample_and_carry_no_description_text(app):
+    """The fake table answers its two rows to every read; one carries a description."""
+    r = app.app.test_client().get("/requirements?q=backend+engineer&strict=1")
+    assert r.status_code == 200
+    body = r.get_json()
+    assert (body["order"], body["sampled"], body["described"]) == ("closest", 2, 1)
+    assert body["newest_tick"] is None and body["vocabulary_size"] >= 300
+    assert "Build the payments API" not in r.get_data(as_text=True)
+
+
+@pytest.mark.parametrize(
+    ("query", "status"),
+    [("", 400), ("q=x&n=5", 400), ("q=x&n=x", 400), ("family=security", 503)],
+)
+def test_requirements_refuse_what_they_cannot_count(app, query, status):
+    """No role or category, a sample outside its bounds, or a category on a deployment without
+    role assignments (the fixture pulls none)."""
+    r = app.app.test_client().get(f"/requirements?{query}")
+    assert r.status_code == status, query
 
 
 def test_facets_carry_the_newest_trends_tick(company_trends, trends_app, app):

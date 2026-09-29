@@ -2,7 +2,9 @@
 """Write Taleo Enterprise's alias ledger: career sections another section already lists (ADR-0186).
 
 A Taleo Enterprise Board is one career section, `{zone}.taleo.net/careersection/{section}`, and a
-tenant's sections serve some or all of the tenant's requisitions under one tenant-wide req id.
+tenant's sections serve some or all of the tenant's requisitions under one tenant-wide req id. The
+tenant is the section URL's host; a twin host is a second host of one Taleo customer (the last rule
+below).
 `index_plan.evict_duplicate` groups only within a Board, so a req listed on 15 sections is served
 15 times. `dedupe_boards.py` cannot see it: no section redirects to another.
 
@@ -24,6 +26,15 @@ the kept section's own job URLs are the ones served. The rules, all in `burials`
   links (MOL Group's `internal`, Hyatt's `wallstreet_internal`, #794). The public sections elect
   among themselves; a non-public section is then buried onto the largest kept public section
   that lists all its reqs, and left unburied when none does (ADR-0186's amendment).
+- **A twin host's section goes to its linked host** (ADR-0307, #888). One Taleo customer can be
+  served under two hosts with every section and req id the same (`pruitthealthcareers.taleo.net`
+  serves `pruitthealth.taleo.net`'s), which a per-host comparison never sees. `TWIN_HOSTS` names
+  each twin host and its linked host, the one the company's own careers site links to. After the
+  per-host election, a twin section is buried onto the linked host's section at the same path,
+  whatever the two walks read: the same path is the same section, and a walk of it can come back
+  short. A twin section with no such row that the per-host election left unburied is buried onto
+  the largest kept public section of the linked host that lists all its reqs. The twin sections
+  buried onto either follow it. Nothing of the linked host is ever buried onto its twin.
 
 Reads every `live` row of the liveness ledger, including the sections the last run buried (the alias
 ledger leaves their liveness rows in place), so each run re-derives every verdict and a buried
@@ -41,7 +52,7 @@ from collections.abc import Callable, Collection, Mapping
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import UTC, datetime
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, urlunsplit
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT / "src"))
@@ -53,26 +64,74 @@ from headstart.scrapers.taleo_enterprise import TaleoEnterpriseScraper
 
 ATS = "taleo_enterprise"
 SIGNAL = "subset-reqs"
+#: ``{twin host: linked host}``: one Taleo customer served under two hosts, every section and req id
+#: the same on both (#888, measured 2026-09-29; ADR-0307 has each pair's evidence). The linked host
+#: is the one the company's own careers site links to, else the lower name. Only sections on live
+#: ledger rows are compared, so a twin section the linked host has no row for
+#: (`percepta.taleo.net/careersection/10000`) is still scraped from the twin.
+TWIN_HOSTS = {
+    "careerglobalhc.taleo.net": "hyundaicapital.taleo.net",
+    "daimler.taleo.net": "tas-daimler.taleo.net",
+    "elsewedyelectric.taleo.net": "aa010.taleo.net",
+    "gb-corporation.taleo.net": "ghabbour.taleo.net",
+    "manpower.taleo.net": "manpowergroup.taleo.net",
+    "ouhk.taleo.net": "hkmu.taleo.net",
+    "percepta.taleo.net": "ttec.taleo.net",
+    "pruitthealthcareers.taleo.net": "pruitthealth.taleo.net",
+}
 #: Sections read at once. Each walks its own pages one after another, so this is also the most
 #: requests in flight — the scraper's own detail width, measured clean at 16 (2026-09-13).
 _WORKERS = 16
 
 
 def burials(reqs_by_section: Mapping[str, Collection[str]]) -> dict[str, str]:
-    """``{buried section: kept section}`` for every section another one of its tenant contains.
+    """``{buried section: kept section}`` for every section another one of its tenant contains, and
+    every twin host's section its linked host lists.
 
-    ``reqs_by_section`` maps a section's canonical URL to its full requisition ids; the tenant is
-    the URL's host. The election is `alias_ledger.bury_contained_keeping_public`: ADR-0186's, shared
-    with ADP Recruiting Management's (ADR-0202) and iCIMS's, where a non-public section is never
-    the kept one (module docstring)."""
+    ``reqs_by_section`` maps a section's canonical URL to its full requisition ids. Within a host
+    the election is `alias_ledger.bury_contained_keeping_public`: ADR-0186's, shared with ADP
+    Recruiting Management's (ADR-0202) and iCIMS's, where a non-public section is never the kept
+    one. Then each twin host's sections go to its linked host (module docstring)."""
 
-    return alias_ledger.bury_contained_keeping_public(
-        reqs_by_section,
-        lambda section: urlsplit(section).hostname,
-        lambda section: is_non_public(
-            TaleoEnterpriseScraper(section).board_key().lower()
-        ),
+    def host(section: str) -> str:
+        return urlsplit(section).hostname
+
+    def non_public(section: str) -> bool:
+        return is_non_public(TaleoEnterpriseScraper(section).board_key().lower())
+
+    buried = alias_ledger.bury_contained_keeping_public(
+        reqs_by_section, host, non_public
     )
+    linked_public_kept = {
+        s: frozenset(reqs)
+        for s, reqs in reqs_by_section.items()
+        if reqs
+        and s not in buried
+        and host(s) in TWIN_HOSTS.values()
+        and not non_public(s)
+    }
+    for section, reqs in reqs_by_section.items():
+        linked = TWIN_HOSTS.get(host(section))
+        if linked is None:
+            continue
+        same_path = urlunsplit(urlsplit(section)._replace(netloc=linked))
+        if same_path in reqs_by_section:
+            buried[section] = same_path
+        elif reqs and section not in buried:
+            onto = alias_ledger.largest_containing(
+                reqs,
+                {s: own for s, own in linked_public_kept.items() if host(s) == linked},
+            )
+            if onto is not None:
+                buried[section] = onto
+
+    def survivor(section: str) -> str:
+        # Every link leads from a twin host to its linked host or within one host, so this ends.
+        while section in buried:
+            section = buried[section]
+        return section
+
+    return {dup: survivor(keep) for dup, keep in buried.items()}
 
 
 def write_aliases(

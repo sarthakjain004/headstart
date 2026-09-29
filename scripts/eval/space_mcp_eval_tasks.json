@@ -45,10 +45,10 @@
     },
     {
       "id": "t04",
-      "prompt": "Which companies are expanding their tech hiring fastest this week?",
+      "prompt": "Which companies opened more tech jobs than they closed this week?",
       "verifier": "hot_top",
-      "expect": {"lens": "expansion", "top": 5},
-      "why": "Plan §9: the top five equal /hot's, hidden Operators out. The verifier reads /hot itself, drops the hidden_by_default Operators, and needs at least four of the top five named. Round-2 critique P1-3 (ADR-0325): the first company the answer names among the hiring_now rows must not be one the tool flagged as re-counting."
+      "expect": {"lens": "opened_less_closed", "top": 5},
+      "why": "Plan §9, ADR-0321: the top five equal /hot's, hidden Operators out, on hiring_now's default Lens, postings opened less closed; Expansion's leader on 2026-09-29, Bosch Group, was re-counting its own flag disowned. The verifier reads /hot itself, drops the hidden_by_default Operators, and needs at least four of the top five named. Round-2 critique P1-3 (ADR-0325): the first company the answer names among the hiring_now rows must not be one the tool flagged as re-counting."
     },
     {
       "id": "t05",
@@ -263,6 +263,89 @@
         }
       },
       "why": "ADR-0275: a company's category mix and seniority mix together are one company_profile call; read_trends answers one of them per call. One call must name Stripe, by name or by its key greenhouse:stripe."
+    },
+    {
+      "id": "t22",
+      "prompt": "A friend sent me the job id greenhouse:nonexistentco:12345. Is it still open?",
+      "verifier": "mentions",
+      "expect": {
+        "all": [["not a HeadStart", "never", "no job", "not an id", "isn't a", "is not a", "doesn't exist", "does not exist", "invalid"]],
+        "tool_results_all": ["Not a HeadStart id"]
+      },
+      "why": "Round-2 critique (js10b, ADR-0323): an id whose Board serves no job was never a HeadStart id, not a posting that 'most likely closed'. get_job says so when the Board it names serves nothing, and the answer must not report it as closed but as not an id."
+    },
+    {
+      "id": "t23",
+      "prompt": "Which countries is Stripe hiring tech people in, and where most?",
+      "verifier": "mentions",
+      "expect": {
+        "all": [["United States", "US", "U.S."], "Ireland"],
+        "tool_results_all": ["by country as search_jobs' `country` reads each place"]
+      },
+      "why": "Round-2 critique rc02b (ADR-0323): company_profile rolls a company's places up by country, so \"Dublin\" and \"Dublin, Ireland\" count as one Ireland. On 2026-09-29 Stripe's served jobs were in the United States (98), Canada (26) and Ireland (23) first; the answer must name the United States and Ireland from that roll-up."
+    },
+    {
+      "id": "t24",
+      "prompt": "I'm thinking of switching into data engineering. What skills do data engineer postings usually ask for, and how many years of experience?",
+      "verifier": "tool_args",
+      "expect": {
+        "tool": "role_requirements",
+        "must_any": [
+          {"query": {"op": "contains", "value": "data engineer"}},
+          {"category": "data-engineering"}
+        ]
+      },
+      "why": "Critique round 2 P1-10 (ADR-0324): what a role's postings ask for is one role_requirements call, counted over a sample, not five get_job reads. The role goes in query, or the category in category."
+    },
+    {
+      "id": "t25",
+      "prompt": "Which skills are most in demand for machine learning engineers in Germany?",
+      "verifier": "tool_args",
+      "expect": {
+        "tool": "role_requirements",
+        "must": {"country": "DE"},
+        "must_any": [
+          {"query": {"op": "contains", "value": "machine learning"}},
+          {"category": "ai-ml-data-science"}
+        ],
+        "query_must_not_contain": ["germany", "deutschland"]
+      },
+      "why": "ADR-0324: skills in demand are role_requirements' counts, and the place is its country filter (ADR-0273), never words in query."
+    },
+    {
+      "id": "t26",
+      "prompt": "What do cybersecurity job postings typically require? Say how many postings your answer is based on.",
+      "verifier": "mentions",
+      "expect": {
+        "all": [["300", "three hundred"]],
+        "tool_results_all": ["counted over 300 postings"]
+      },
+      "why": "ADR-0324: the answer must state its sample honestly. role_requirements counts over 300 postings and says so in its first line; the final answer must carry that number."
+    },
+    {
+      "id": "t27",
+      "prompt": "Find jobs in the Netherlands whose descriptions mention relocation, and show me the second page of results too.",
+      "verifier": "tool_args",
+      "expect": {
+        "tool": "search_jobs",
+        "must": {
+          "country": "NL",
+          "keyword": {"op": "contains", "value": "relocation"},
+          "keyword_in": {"op": "in", "value": ["description", "both"]},
+          "page": {"op": ">=", "value": 2}
+        }
+      },
+      "why": "Round-2 critique P0-2 (ADR-0320): two country-scoped \"relocation\" searches in descriptions both hit the 45 s deadline. The rows a description keyword keeps are now found once and kept, so the second page must come back as a successful call, not a deadline sentence."
+    },
+    {
+      "id": "t28",
+      "prompt": "Did tech hiring rise or fall between 1 and 7 September 2026?",
+      "verifier": "mentions",
+      "expect": {
+        "any": ["cannot say", "can't say", "cannot tell", "can't tell", "not able to say", "unable to say", "no hiring figure", "doesn't measure", "does not measure", "only since", "only from"],
+        "tool_results_all": ["cannot say whether hiring rose or fell"]
+      },
+      "why": "ADR-0321, critique round 2 P1-2: HeadStart counts postings opened and closed only from 2026-09-25 18:16, so a window before it has no hiring figure, only openings listed, which mix hiring with re-counting. The trend answer must lead with that, and the final answer must pass it on rather than call the change in openings a rise."
     }
   ],
   "heldout_sha256": "801e7149bc71c42e7b346dcf089ea20f87d1e0035d989b3dba8ffb50fe055e4d"

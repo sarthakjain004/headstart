@@ -271,17 +271,25 @@ supersedes it and note the supersession in both.
 | [0273](0273-a-country-filter-matches-every-way-a-location-names-a-country.md) | A country filter matches every way a location names a country | 2026-09-29 |
 | [0274](0274-an-agent-asks-facets-for-the-total-alone-and-names-a-category-in-its-own-words.md) | An agent asks `/facets` for the total alone, and names a category in its own words | 2026-09-29 |
 | [0275](0275-an-agent-looks-a-company-up-and-reads-its-hiring-profile.md) | An agent looks a company up and reads its hiring profile | 2026-09-29 |
-| [0276](0276-a-hosted-mcp-call-ends-at-its-deadline-and-no-caller-holds-every-place.md) | A hosted MCP call ends at its deadline, and no caller holds every place (places amended by 0325) | 2026-09-29 |
+| [0276](0276-a-hosted-mcp-call-ends-at-its-deadline-and-no-caller-holds-every-place.md) | A hosted MCP call ends at its deadline, and no caller holds every place (places amended by 0325, its "still finishing" sentence by 0320) | 2026-09-29 |
 | [0277](0277-an-agent-reads-a-posting-by-id-and-finds-jobs-like-one.md) | An agent reads a posting by id, and finds jobs like one | 2026-09-29 |
+| [0281](0281-a-lever-board-whose-hosted-pages-are-off-serves-nothing.md) | A Lever Board whose hosted pages are off serves nothing | 2026-09-29 |
 | [0285](0285-a-vector-is-rebuilt-when-its-postings-text-changes.md) | A vector is rebuilt when its posting's text changes | 2026-09-29 |
 | [0290](0290-a-merge-deploys-the-space-only-when-it-changes-what-the-space-loads.md) | A merge deploys the Space only when it changes what the Space loads | 2026-09-29 |
 | [0292](0292-the-description-store-is-not-reaped-until-a-last-listed-signal-exists.md) | The description store is not reaped until a "last listed" signal exists | 2026-09-29 |
 | [0298](0298-the-space-runs-only-its-own-scripts-and-google-sign-in.md) | The Space runs only its own scripts and Google's sign-in | 2026-09-29 |
 | [0299](0299-a-keyword-word-matches-where-a-word-starts-and-quotes-keep-a-phrase.md) | A keyword word matches where a word starts, and quotes keep a phrase together | 2026-09-29 |
+| [0301](0301-a-recruitee-label-that-redirects-to-another-is-an-alias.md) | A Recruitee label that redirects to another is an alias | 2026-09-29 |
 | [0302](0302-an-oracle-board-whose-title-names-no-one-is-named-by-its-sites-seo-name.md) | An Oracle Board whose title names no one is named by its site's SEO name | 2026-09-29 |
 | [0303](0303-a-zwayam-board-is-read-from-the-api-cluster-that-holds-it.md) | A Zwayam Board is read from the API cluster that holds it | 2026-09-29 |
 | [0304](0304-the-index-view-takes-boards-found-out-of-each-line-by-its-own-openings.md) | The index view takes Boards found out of each line by its own openings | 2026-09-29 |
 | [0305](0305-an-abstained-row-whose-title-names-a-developer-is-software-engineering.md) | An abstained row whose title names a developer is software engineering | 2026-09-29 |
+| [0306](0306-a-hidden-family-is-counted-and-folded-into-other-never-listed.md) | A hidden family is counted and folded into Other, never listed | 2026-09-29 |
+| [0307](0307-a-taleo-section-its-twin-host-mirrors-is-buried-onto-the-linked-host.md) | A Taleo section its twin host mirrors is buried onto the linked host | 2026-09-29 |
+| [0320](0320-a-description-keywords-rows-are-found-once-literal-first-and-named-by-row-id.md) | A description keyword's rows are found once, literal first, and named by row id | 2026-09-29 |
+| [0321](0321-an-agent-reads-hiring-now-by-opened-less-closed-and-every-trend-says-its-turnover-span.md) | An agent reads Hiring now by opened less closed, and every trend view states its turnover span first | 2026-09-29 |
+| [0323](0323-an-agent-sees-one-posting-once-under-a-company-name.md) | An agent sees one posting once, under a company's name, and a company's places by country | 2026-09-29 |
+| [0324](0324-an-agent-reads-what-a-roles-postings-ask-for-counted-over-a-sample.md) | An agent reads what a role's postings ask for, counted over a sample | 2026-09-29 |
 | [0325](0325-the-model-retries-an-edge-failure-and-a-description-scan-runs-alone.md) | The model retries an edge failure, a description scan runs alone, and the hosted eval waits for its server | 2026-09-29 |
 | [0330](0330-trends-are-recomputed-from-recorded-job-facts-whenever-a-rule-changes.md) | Trends are recomputed from recorded Job facts whenever a rule changes | 2026-09-29 |
 

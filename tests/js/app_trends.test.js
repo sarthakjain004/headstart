@@ -456,6 +456,27 @@ test('the Other row is the reading\'s lines past CHART_MAX, added together', () 
   assert.equal(ct[1], '3.0k');
 });
 
+test('a hidden family is never listed: it folds into a bare Other row, uncounted and inert', () => {
+  const { t, nodes, fetches } = loadApp();
+  // Five lines, the fifth ("low") a hidden family's: fewer than CHART_MAX, and still in Other.
+  const hidden = golden('a_hidden_family_folds_into_other_among_fewer_than_eight_lines');
+  t.set(hidden, null);
+  t.setUnit('count', false);
+  t.draw();
+  const html = nodes['trends-legend'].innerHTML;
+  assert.equal(row(html, 'low'), '');                          // no row of its own
+  assert.equal(row(html, 'ok') === '', false);                 // the listed lines are unchanged
+  const other = row(html, '__other__');
+  assert.match(other, /Other/);
+  assert.doesNotMatch(other, /smaller/);                       // it names no category to count
+  assert.equal(other.match(/<span class="ct">([^<]+)<\/span>/)[1], String(hidden.reading.other.move.latest));
+  assert.match(nodes['trends-scope'].textContent, /^4 categories/);   // five lines, four listed
+  assert.equal(t.chartedAndOther(hidden).charted.length, 4);
+  t.click('low');                                              // a name the page does not list
+  same(fetches, []);
+  assert.deepEqual(t.checkReading(hidden.reading), []);        // the page's checker agrees
+});
+
 test('the roles marker opens the roles it names; the row opens the levels that add up to it', () => {
   const { t } = loadApp();
   t.set(fixture(), null);
@@ -2564,6 +2585,17 @@ test('the index gets a hiring net from its turnover, and table columns too', () 
   t.set(fewer);
   t.draw();
   assert.match(nodes['trends-verdict'].innerHTML, /about 10 more closed than opened — about 40 opened, 50 closed\./);
+});
+
+test('Opening more than closing leads with opened less closed and gives both counts', () => {
+  // ADR-0321: the Lens ranks only companies whose closures were counted on every Board, so a
+  // row always has both counts.
+  const { t } = loadApp();
+  const wipro = { net: 68, opened: 344, closed: 251, stock: 2891, rate: 12, opened_less_closed: 93 };
+  const m = t.hotMeasure.opened_less_closed(wipro);
+  assert.equal(m.big, '+93');
+  assert.match(m.unit, /more tech roles opened than closed this week/);
+  assert.equal(m.sub, '344 opened · 251 closed · 2891 open now');
 });
 
 test('a Hot row shows the week’s opened and closed, and Volume leads with opened', () => {

@@ -234,6 +234,49 @@ def test_rate_leaves_out_a_company_whose_closures_were_not_counted() -> None:
     assert payload["counts"]["closures_uncounted"] == 1
 
 
+def test_opened_less_closed_ranks_only_companies_whose_closures_were_all_counted() -> (
+    None
+):
+    """ADR-0321: Bosch Group led Expansion at +442 on 23 opened and 33 closed. This Lens ranks
+    by opened less closed, and a closed count missing on any Board would make it high."""
+    directory = {
+        "a:counted": _company("Counted", "a:counted"),
+        "b:uncounted": _company("Uncounted", "b:uncounted"),
+        "c:partly": _company("Partly", "c:partly", "c:partly-2"),
+        "d:shrinking": _company("Shrinking", "d:shrinking"),
+        "e:bigger": _company("Bigger", "e:bigger"),
+    }
+    history = _History(
+        {key: 100 for key in directory},
+        {
+            "a:counted": _Move(net=442, opened=30, closed=10),
+            "b:uncounted": _Move(net=5, opened=50, closed=None),
+            "c:partly": _Move(
+                net=5,
+                opened=40,
+                closed=5,
+                closures_uncounted_boards=1,
+                boards_in_scope=2,
+            ),
+            "d:shrinking": _Move(net=-5, opened=5, closed=10),
+            "e:bigger": _Move(net=1, opened=60, closed=20),
+        },
+    )
+    payload = hot_ranking.rank(history, directory)
+    assert _keys(payload, "opened_less_closed") == ["e:bigger", "a:counted"]
+    assert [
+        row["opened_less_closed"] for row in payload["lenses"]["opened_less_closed"]
+    ] == [
+        40,
+        20,
+    ]
+    rows = {row["key"]: row for lens in payload["lenses"].values() for row in lens}
+    assert rows["b:uncounted"]["opened_less_closed"] is None
+    assert rows["c:partly"]["opened_less_closed"] is None
+    assert payload["counts"]["closures_uncounted"] == 1
+    assert payload["counts"]["closures_partly_uncounted"] == 1
+
+
 def test_a_company_counted_for_under_three_days_is_too_new_to_rank() -> None:
     """SiTime, counted from Sep 23, ranked on Hot while its trend called it too new to read."""
     directory = {

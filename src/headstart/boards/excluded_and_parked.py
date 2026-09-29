@@ -382,6 +382,16 @@ EXCLUDED_BOARDS: frozenset[str] = frozenset(
         # onerror=alert(100)>`), as do 3 of its 28 titles; the rest read "Java Developer CRM Deal
         # renmaed Director", "Accountant       oppoo", "job publish Kosovo", "test 3".
         "zoho:zohocorp2.zohorecruit.com",
+        # `hrpresales.zohorecruit.com` is Zoho Recruit's HR presales demo account, read live
+        # 2026-09-29: 60 postings under the company "ZOHO", stock titles repeated ("Accountant"
+        # 27 times, "Registered Nurse" 9, "Software Engineer" 6), Zoho Recruit's own template
+        # descriptions ("We're looking for a passionate Software Engineer to design, develop and
+        # install software solutions"), sales demos named after prospects ("Accountant - Timac
+        # Agro", "Accountant - 5ire", "Accountant - Lakshmi Interiors"), "TEST", "Bootstrap
+        # Evanglist" and "Nanny", places such as "Chennai, Bihar", dated 2022-09 onward. Its
+        # 2022-23 "Software Engineer" rows in Toronto led a "software engineer" search in Canada
+        # (rows 1-3 on 2026-09-29).
+        "zoho:hrpresales.zohorecruit.com",
         # Blackstone's own test sites; the second is named for what it serves. Workday slugs
         # ARE the careers URL, so these keys are longer than the rest.
         "workday:https://blackstone.wd1.myworkdayjobs.com/marni_test_site",
@@ -1032,6 +1042,24 @@ PARKED_BOARDS: frozenset[str] = frozenset(
         "radancy:internal.jobs.chsinc.com",
         "radancy:internal.santanderjobsus.com",
         "radancy:internalcareers.primark.com",
+        # iCIMS internal portals whose job pages are employee-only (#810): each page answers "You
+        # must log in to access this page". All 20 internal-labelled iCIMS portals were measured on
+        # 2026-09-29. Three are walled: scsk12's (3 of 3 job pages sampled), and East Penn's
+        # `internal9v` (1 of 1) and `internala5` (2 of 2). Three stay because their sampled pages
+        # opened without a sign-in: beaumonthospital (0 of 3 walled), gnapartners (0 of 3) and
+        # knowledgeservices (0 of 1). The other 14 listed no posting, so none could be sampled, and
+        # they stay too.
+        # scsk12's portal lists 556 postings, and 555 sit under the same job id on the district's
+        # public portals: 252 on `instructional-scsk12` and 309 on `schoolsupportapply-scsk12`.
+        # ADR-0254's `subset-reqs` election buries an internal portal only onto one public portal
+        # that lists all of its postings. No single one does here, and one posting is
+        # internal-only, so unparked, those 555 would be read twice and served twice wherever they
+        # pass the tech filter. East Penn's three postings are on none of its 12 public portals,
+        # and none is a tech role.
+        # Un-park a portal if its job pages open to outside applicants.
+        "icims:internal-instructional-scsk12.icims.com",
+        "icims:internal9v-eastpennmanufacturing.icims.com",
+        "icims:internala5-eastpennmanufacturing.icims.com",
         # A front whose robots.txt is `Disallow: /` (2026-09-28): nothing on it may be read.
         # Un-park if its robots.txt opens the sitemap.
         "radancy:www.intel-jobs.com",

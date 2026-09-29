@@ -72,6 +72,10 @@ METHODOLOGY_WORDS = {
     ),
 }
 
+# How a line's growth that a counting change's scaling took out is labelled: this, then the
+# change's own label (`line_reading`). The MCP's legend reads a label by it (ADR-0321).
+GROWTH_RESCALED_WHEN = "growth rescaled when "
+
 
 def _joined(phrases: list[str], last: str) -> str:
     """ "a, b and c": ``phrases`` joined, ``last`` before the final one."""

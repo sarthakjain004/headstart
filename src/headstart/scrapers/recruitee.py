@@ -18,7 +18,7 @@ from typing import Any
 
 from headstart.jobs import salary
 from headstart.jobs.job import Job, html_to_text, remote_from_workplace
-from headstart.scrapers.base import BaseScraper
+from headstart.scrapers.base import USER_AGENT, BaseScraper
 
 
 def _offer_url(tenant: str, offer: dict) -> str:
@@ -123,6 +123,43 @@ class RecruiteeScraper(BaseScraper):
 
     def url(self) -> str:
         return f"https://{self.slug}.recruitee.com/api/offers/"
+
+    def alias_key(self) -> str | None:
+        """The base redirect probe, except that a settled 429 or 5xx is no verdict (ADR-0301).
+
+        Every label shares one origin's per-address rate limit (37 of 48 requests answered 429
+        at 24 concurrent, 2026-09-29), and the fetch settles a 429 on the label's own URL rather
+        than raising. The base would key that as the label itself, "no redirect", so a
+        rate-limited ``--apply`` dropped a buried label's row unreported. None makes
+        ``alias_ledger.resolve`` report it as ``unreachable``."""
+        try:
+            resp = self.board_fetcher.fetch(
+                "GET",
+                self.url(),
+                direct=True,
+                headers={"User-Agent": USER_AGENT},
+                timeout=30,
+                allow_redirects=True,
+                stream=True,
+                egress_board=self.board_key(),
+            )
+            resp.close()
+            if resp.status_code == 429 or resp.status_code >= 500:
+                return None
+            return self.alias_key_of_landing(resp.url)
+        except Exception:  # noqa: BLE001 - any failure to reach it is "no verdict", not a crash
+            return None
+
+    @staticmethod
+    def alias_key_of_landing(landing_url: str) -> str | None:
+        """The ``{label}`` of the ``{label}.recruitee.com`` host the offers API lands on — this
+        ledger's own slug, so ``alias_ledger.resolve`` can compare it (ADR-0301). A renamed
+        account keeps its old label, whose offers API answers 302 to the new label's
+        (``thesjefgroup`` to ``elockers``, 2026-09-29). A landing off Recruitee keeps its whole
+        host, which no slug matches."""
+        host = BaseScraper.alias_key_of_landing(landing_url)
+        label, _, domain = (host or "").partition(".")
+        return label if domain == "recruitee.com" else host
 
     def job_url(self, offer: dict) -> str:
         """Delegates to the module-level :func:`_offer_url`, which does the real construction

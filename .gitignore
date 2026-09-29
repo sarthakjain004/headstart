@@ -53,6 +53,8 @@ config/*
 !config/company_names.csv
 # Rows whose vector encodes another posting's text, re-embedded once (ADR-0285).
 !config/stale_shared_vectors.txt
+# The tech skills an agent's requirements view counts in descriptions (ADR-0324).
+!config/tech_skills.json
 
 # Regenerable pipeline scratch — run logs and superseded intermediates; safe to delete
 data/scratch/

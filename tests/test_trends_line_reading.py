@@ -107,11 +107,42 @@ def test_every_netted_line_ends_on_its_measured_latest_count(path: Path) -> None
 @pytest.mark.parametrize("path", GOLDEN, ids=[p.stem for p in GOLDEN])
 def test_other_is_the_lines_past_the_charted_ones(path: Path) -> None:
     reading = json.loads(path.read_text(encoding="utf-8"))["reading"]
-    folded = reading["lines"][LINES_CHARTED:]
+    folded = reading["lines"][reading["charted"] :]
     assert (reading["other"] is None) == (not folded)
     if folded:
         for k in ("start", "latest", "hiring", "not_hiring_total"):
             assert reading["other"]["move"][k] == sum(f["move"][k] for f in folded)
+
+
+def _reading_with_its_last_line_hidden() -> dict:
+    """Five lines, fewer than the eight a page charts, the last one a hidden family's."""
+    answer = _golden("index_bases_read_off_the_first_count")["answer_input"]
+    answer["unlisted_series"] = [answer["series"][-1]["name"]]
+    return read_answer(answer).to_json()
+
+
+def test_a_hidden_line_is_in_other_even_among_fewer_lines_than_a_page_charts() -> None:
+    reading = _reading_with_its_last_line_hidden()
+    assert len(reading["lines"]) == 5 and reading["charted"] == 4 < LINES_CHARTED
+    hidden = reading["lines"][-1]
+    assert reading["other"]["move"]["latest"] == hidden["move"]["latest"]
+    # the hidden line still counts: every total and the rows-add-up check keep it
+    assert reading["openings"] == sum(r["move"]["latest"] for r in reading["lines"])
+    assert check_reading(reading) == []
+
+
+def test_the_served_payload_names_the_unlisted_series_the_page_folds() -> None:
+    answer = _golden("a_hidden_family_folds_into_other_among_fewer_than_eight_lines")[
+        "answer_input"
+    ]
+    payload, _ = trends_payload(answer)
+    assert payload["unlisted_series"] == [answer["series"][-1]["name"]]
+
+
+def test_the_checker_catches_a_hidden_line_left_out_of_other() -> None:
+    reading = _reading_with_its_last_line_hidden()
+    reading["other"] = None
+    assert any("other row: missing" in v for v in check_reading(reading))
 
 
 # ---- the payload the Space serves ---------------------------------------------------------------

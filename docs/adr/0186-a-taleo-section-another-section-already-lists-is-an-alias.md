@@ -187,3 +187,9 @@ nothing scrapes it, so none of its links is served (Hyatt's `clearwater_internal
 internal-only reqs would be scraped and served. A section whose name carries no token
 (`dasstateoh/oh_int`, "Internal Career Portal") is still read as public — the token list's known
 gap, recorded in ADR-0223.
+
+## Amendment (2026-09-29): a twin host's sections are compared too (#888)
+
+Each cross-host pair under Consequences is one Taleo customer served under two hosts. The same
+writer now buries a twin host's section onto its linked host's section at the same path, or onto
+one that lists all its reqs, for the pairs named in its `TWIN_HOSTS`: [ADR-0307](0307-a-taleo-section-its-twin-host-mirrors-is-buried-onto-the-linked-host.md).
