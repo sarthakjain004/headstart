@@ -255,6 +255,38 @@ test('a named-roles breakdown is narrowed: only its other Measure is asked for, 
   assert.deepStrictEqual(asked.slice(1).map(a => a.url), ['/trends?family=software-engineering&split=roles&metric=new&v=b00t']);
 });
 
+/** A Source box as the menu's pointerover sees it: the event's target sits in the box's label. */
+const restOn = (nodes, box) => nodes['trends-ats-menu'].listeners.pointerover.forEach(fn => fn({
+  target: { closest: sel => sel === 'label' ? { querySelector: () => box } : null } }));
+
+test('a Source box the pointer rests on is asked for ahead when it leaves every Source but one', async () => {
+  const { t, nodes, asked, run } = versionedApp();
+  const boxes = fakeAtsMenu(nodes, [['greenhouse', true], ['lever', true], ['workday', true]]);
+  await t.load(null);
+  run();
+  asked.length = 0;
+  restOn(nodes, boxes[1]);
+  assert.deepStrictEqual(asked, []);   // only once it rests there
+  run();
+  assert.deepStrictEqual(asked, [{ url: '/trends?ats=greenhouse&ats=workday&v=b00t', priority: 'low' }]);
+  // The click then asks for exactly that URL, which the browser now holds.
+  boxes[1].checked = false;
+  nodes['trends-ats-menu'].fire('change');
+  assert.strictEqual(asked.at(-1).url, asked[0].url);
+});
+
+test('a Source box whose click narrows further is not asked for ahead', async () => {
+  // Every Source but two is the Space's to work out: asking ahead would spend the reader's limit.
+  const { t, nodes, asked, run } = versionedApp();
+  const boxes = fakeAtsMenu(nodes, [['greenhouse', true], ['lever', false], ['workday', true]]);
+  await t.load(null);
+  run();
+  asked.length = 0;
+  restOn(nodes, boxes[0]);
+  run();
+  assert.deepStrictEqual(asked, []);
+});
+
 test('under Save-Data nothing is asked ahead', async () => {
   const { t, asked, ctx } = versionedApp();
   ctx.navigator = { connection: { saveData: true } };

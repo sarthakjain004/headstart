@@ -99,6 +99,14 @@ carrying a contact URL; the other half is a SuccessFactors denylist on the strin
 tenant's Origin still returns the one named in `domain`. Earlier notes here called them part of the
 key; they are not.
 
+**Verify against both API clusters, not only `public.zwayam.com`** (measured 2026-09-29,
+[ADR-0303](../adr/0303-a-zwayam-board-is-read-from-the-api-cluster-that-holds-it.md)). A second
+cluster, `apic2.zwayam.com`, holds its own tenants, and each cluster answers `data: null` for a
+host the other holds. The POST above, sent to `public`, reads every `apic2` Board as dead:
+`careers.utthunga.com` (47 postings) and every live `*.cluster2.openings.co` host did. A career
+site's own bundle names its cluster as `APIENDPOINTNEW`. The directory endpoint in step 2b was read
+on `public` only.
+
 ## Step 2b — the tenant directory (the other channel, and a permission question)
 
 Zwayam's career-site Angular bundle calls an **unauthenticated tenant-directory endpoint** keyed by

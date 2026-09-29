@@ -7,7 +7,7 @@ description arrives as the row's own served ``vector`` (nomic, title plus cleane
 which the index already holds, so it costs no encoding. When the head's top probability is below
 the manifest's cutoff, the row is ``unclassified-tech``: a family forced onto a row the head cannot
 place would count as a trend in the wrong line. One exception, measured rather than assumed
-(ADR-0303): an abstained row whose title names a developer, programmer or software engineer is
+(ADR-0305): an abstained row whose title names a developer, programmer or software engineer is
 ``software-engineering``. Forcing the head's own top pick on the abstained rows was right on 43% of
 those a reader could place; this rule was right on 84% of the ones it fires on.
 
@@ -52,7 +52,7 @@ _log = log.get(__name__, __spec__)
 UNCLASSIFIED = "unclassified-tech"
 SOFTWARE_ENGINEERING = "software-engineering"
 # Bump when a word below changes: it goes into the tick's Methodology (`classifier_version`), so
-# the rows the change moves are a declared counting change, not a hiring trend (ADR-0303).
+# the rows the change moves are a declared counting change, not a hiring trend (ADR-0305).
 DEVELOPER_TITLE_RULE_VERSION = 1
 _DEVELOPER_TITLE = re.compile(r"\b(?:developers?|programmers?|software engineers?)\b")
 # Developer relations and consumer-product developers name a developer without doing software

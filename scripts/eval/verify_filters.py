@@ -202,6 +202,21 @@ def _inr_bound_in(row: dict, bound: int, *, is_floor: bool) -> int | None:
     return int(here) if is_floor else int(here) + 1
 
 
+def _title_has_words(title: str | None, words: str) -> bool:
+    """ADR-0299's keyword rule, restated here rather than imported from the compiler it checks:
+    every word, or quoted phrase, starts a word in the title (after its start or any character
+    that is not a letter or digit); a phrase's words follow each other across such characters."""
+    text = (title or "").lower()
+    for phrase, word in re.findall(r'"([^"]*)"|([^\s"]+)', words.lower()):
+        parts = (phrase or word).split()
+        anchor = r"(?<![a-z0-9])" if parts and parts[0][0].isalnum() else ""
+        if parts and not re.search(
+            anchor + "[^a-z0-9]+".join(map(re.escape, parts)), text
+        ):
+            return False
+    return True
+
+
 def _etype_ok(value: str | None, canonical: str) -> bool:
     v = (value or "").lower()
     return {
@@ -455,15 +470,14 @@ def run_checks(base: str, atses: list[str]) -> list[dict]:
                 "",
             )
         )
-    # The search bar's Title words mode (ADR-0263): every word, as a substring of the title.
-    for words in ("rust", "staff frontend", "c++"):
+    # The search bar's Title words mode (ADR-0263): every word starts a word of the title
+    # (ADR-0299). "ai" is the case that found DOMAIN, Retail and SailPoint as a substring.
+    for words in ("rust", "staff frontend", "c++", "ai", '"ai engineer"'):
         cases.append(
             (
                 f"title_words={words}",
                 {"q": words, "title_words": words, "k": 25},
-                lambda r, w=words: all(
-                    t in (r.get("title") or "").lower() for t in w.split()
-                ),
+                lambda r, w=words: _title_has_words(r.get("title"), w),
                 "",
             )
         )
@@ -472,7 +486,7 @@ def run_checks(base: str, atses: list[str]) -> list[dict]:
             "combo title_words=engineer+remote",
             {"q": "engineer", "title_words": "engineer", "remote": "true", "k": 25},
             lambda r: (
-                "engineer" in (r.get("title") or "").lower() and r.get("remote") is True
+                _title_has_words(r.get("title"), "engineer") and r.get("remote") is True
             ),
             "",
         )

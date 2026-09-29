@@ -1,4 +1,4 @@
-# ADR-0303: An abstained row whose title names a developer is software engineering
+# ADR-0305: An abstained row whose title names a developer is software engineering
 
 **Status:** accepted · **Date:** 2026-09-29 · **Extends:**
 [ADR-0220](0220-a-trained-title-classifier-decides-a-role-family.md) (the head abstains below its

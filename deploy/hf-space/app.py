@@ -1513,7 +1513,7 @@ def _trends_kept(question: trend_history.TrendQuestion) -> bool:
 
 # Each /trends body this boot has answered, least recently asked for first, and the one lock
 # answering takes (`_served_trends`). At most _TRENDS_KEPT answers of at most ~0.6 MB, JSON and
-# gzip together: room for the 144 answered ahead (`_answer_views_a_click_away`) and several
+# gzip together: room for the ~190 answered ahead (`_answer_views_a_click_away`) and several
 # hundred more a boot's readers ask for.
 _TRENDS_ANSWERED: OrderedDict[tuple, tuple[bytes, bytes]] = OrderedDict()
 _TRENDS_ANSWERING = threading.Lock()
@@ -1624,8 +1624,10 @@ def _answer_opening_views() -> None:
 def _answer_views_a_click_away() -> None:
     """Every top-level view the tab's controls reach, and each charted category's levels under
     each, answered in the background once the opening views are (ADR-0269): both Measures,
-    both Job sites and every date preset, 16 views and 128 drills. The page asks ahead for a
-    drawn view's neighbours, and these are they, so a click on any of those controls is read
+    both Job sites and every date preset, 16 views and 128 drills. Then every Source but one
+    under each Measure, what a first untick in the Source picker asks for, in the order the
+    page lists them. The page asks ahead for a drawn view's neighbours and for the Source box
+    the pointer rests on, and these are they, so a click on any of those controls is read
     from the browser, and the asking ahead from these kept answers. A thread, so the Space
     starts serving without waiting for them; one answer at a time under the one lock, so a
     reader's own new question waits behind at most one. Never fatal, as the opening views."""
@@ -1650,6 +1652,14 @@ def _answer_views_a_click_away() -> None:
             body, _ = _served_trends(_HISTORY, view)
             for line in json.loads(body)["series"][:_CHART_MAX]:
                 _served_trends(_HISTORY, replace(view, family=line["name"]))
+        atses = _searcher.capabilities.atses
+        for left_out in atses:
+            for metric in ("stock", "new"):
+                every_but_one = tuple(ats for ats in atses if ats != left_out)
+                _served_trends(
+                    _HISTORY,
+                    trend_history.TrendQuestion(metric=metric, ats=every_but_one),
+                )
     except Exception as exc:  # noqa: BLE001 - the request path reports its own failure
         print(
             f"trends: views a click away not answered ({type(exc).__name__}: {exc})",
@@ -1982,6 +1992,30 @@ def index():
         saved_on=_SETS_ON,  # same prerequisites — see the _SETS_ON comment
         profile_on=_SETS_ON,  # likewise (the parse button 503s on its own if the router is down)
     )
+
+
+_STARTED = "headstart.started"
+
+
+@app.before_request
+def _note_the_start():
+    request.environ[_STARTED] = time.monotonic()
+
+
+@app.after_request
+def _log_the_request(response):
+    """One run-log line per request, as the development server printed and waitress does not:
+    the run log is how an edge outage is told from the app failing. The path only, since a query
+    string carries a search's words. A read `/mcp` makes in process is not a request anyone sent.
+    Kept on the environ, not on `g`, which an in-process read shares with the `/mcp` request."""
+    if not request.environ.get(space_client.IN_PROCESS_READ):
+        started = request.environ.get(_STARTED, time.monotonic())
+        print(
+            f'"{request.method} {request.path}" {response.status_code} '
+            f"{time.monotonic() - started:.3f}s",
+            flush=True,
+        )
+    return response
 
 
 # How `python app.py` (start.sh) serves (#595): waitress, where it used to be Werkzeug's

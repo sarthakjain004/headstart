@@ -65,8 +65,8 @@
         <h2>Keywords</h2>
         <div class="f"><label for="kw">Must contain</label>
           <input id="kw" type="text" placeholder="e.g. kubernetes terraform" aria-describedby="kwnote">
-          <span class="tip">Every word (up to five) must appear. Matches inside words too — "java"
-            also finds JavaScript.</span></div>
+          <span class="tip">Every word (up to five) must start a word — "java" also finds
+            JavaScript, "ai" doesn't find Retail. Put a phrase in quotes to keep it together.</span></div>
         {# A select of three is two clicks; its options as one row of radios is one. The hidden
            select stays the value everything reads (see syncSegmentedSelects). #}
         <div class="f"><span class="flabel" id="kwin-lbl">Look in</span>

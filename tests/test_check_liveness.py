@@ -583,6 +583,14 @@ def test_the_quota_403_key_matches_the_gate_key(cl):
     )
 
 
+def test_both_zwayam_api_clusters_share_one_metered_gate(cl):
+    """`p_zwayam` asks apic2.zwayam.com for every Board public.zwayam.com does not hold, and the
+    two share one per-IP quota (walling apic2 walled public, 2026-09-29, ADR-0303). So a 403 from
+    either must rotate, and both must pace and rotate as one gate."""
+    assert cl._gate_key("apic2.zwayam.com") == cl._gate_key("public.zwayam.com")
+    assert cl._is_quota_403("apic2.zwayam.com", _Resp(403))
+
+
 def test_a_bare_quota_403_moves_egress_instead_of_falling_through(cl, egress):
     egress.available = True
     gate = cl._HostGate(8, 0.25, "public.zwayam.com")

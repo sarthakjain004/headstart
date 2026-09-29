@@ -40,6 +40,7 @@ from urllib.parse import parse_qs, quote
 import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
+from werkzeug.datastructures import MultiDict
 
 from headstart.llm_router import RouterUnavailable
 from headstart.serving import concurrency_limit, rate_limit
@@ -2985,6 +2986,30 @@ def test_every_view_a_click_away_is_answered_ahead(company_trends, trends_app):
                     assert history.answer_key(drill) in kept
 
 
+def test_every_source_but_one_is_answered_ahead_in_the_pages_order(
+    company_trends, trends_app, monkeypatch
+):
+    """ADR-0269: a first untick in the Source picker asks for every Source but one, the boxes in
+    the order the page lists them, so each such view is kept for both Measures."""
+    atses = ("greenhouse", "lever", "workday")
+    monkeypatch.setattr(
+        trends_app._searcher,
+        "capabilities",
+        replace(trends_app._searcher.capabilities, atses=atses),
+    )
+    trends_app._answer_views_a_click_away()
+    for left_out in atses:
+        for metric in ("stock", "new"):
+            asked = MultiDict(
+                [("ats", a) for a in atses if a != left_out]
+                + ([("metric", metric)] if metric == "new" else [])
+            )
+            assert trends_app._trends_kept(trends_app._trends_question(asked))
+    assert not trends_app._trends_kept(
+        trends_app._trends_question(MultiDict([("ats", "greenhouse")]))
+    )
+
+
 def test_a_kept_trends_answer_is_not_counted_against_the_callers_limit(
     trends_app, monkeypatch
 ):
@@ -4954,6 +4979,26 @@ def test_waitress_counts_each_forwarded_address_as_its_own_caller(app, monkeypat
         assert status(base, "203.0.113.1") != 429
         assert status(base, "203.0.113.1") == 429
         assert status(base, "203.0.113.2") != 429
+
+
+def test_each_request_leaves_one_line_in_the_run_log(app, capsys):
+    """#595: waitress prints no request lines, where the development server printed one per
+    request, and the run log is how an edge outage is told from the app failing. The line
+    names no query string, which carries a search's words."""
+    client = app.app.test_client()
+    client.get("/me")
+    client.get("/search?q=secret+words")
+    from headstart.space_mcp import space_client
+
+    client.get("/me", environ_overrides={space_client.IN_PROCESS_READ: True})
+    lines = [
+        line for line in capsys.readouterr().out.splitlines() if line.startswith('"')
+    ]
+    assert [line.rsplit(" ", 1)[0] for line in lines] == [
+        '"GET /me" 200',
+        '"GET /search" 200',
+    ]
+    assert all(re.fullmatch(r'"GET /\w+" 200 \d+\.\d{3}s', line) for line in lines)
 
 
 def test_the_hardening_headers_leave_a_gzipped_static_304_alone(sets_app, monkeypatch):
