@@ -24,7 +24,8 @@ experiment/ats-provider-expansion/artifacts/research_successfactors.md + 2026-07
 The list surfaces otherwise carry no indexable fields — the one exception is surface 3's own
 ``g:job_function`` (:func:`_job_functions_from`), read for free since that surface's whole body
 is already being paid for; a bounded detail pass fetches every job page and extracts every other
-field from its markup: schema.org microdata (``itemprop="title"`` / ``"description"``),
+field from its markup: schema.org microdata (``itemprop="title"`` / ``"description"``, the latter
+backed up by a "Job Description:" label token, :func:`_label_description`),
 ``og:title``, a ``<title>`` of the form "{Job Title} Job Details | {Co}", and per-tenant
 ``joblayouttoken`` label/value spans (City / State/Province / Posting Start Date, and the
 department and employment-type labels in :data:`_DEPARTMENT_LABELS` /
@@ -977,7 +978,7 @@ def _page_fields(page: str, url: str | None = None) -> dict[str, Any]:
     if not fields.get("title"):
         fields["title"] = _csb_title(page)
     if not fields.get("description"):
-        fields["description"] = _csb_description(page)
+        fields["description"] = _csb_description(page) or _label_description(page)
     if not fields.get("location"):
         fields["location"] = _csb_location(page)
     if not fields.get("location") and url and fields.get("title"):
@@ -1097,6 +1098,32 @@ def _csb_description(page: str) -> str | None:
         )
     ]
     return "\n".join(kept) or None
+
+
+#: The label a tenant's job layout puts its whole posting under, where the page has no
+#: ``itemprop="description"`` at all: seagatecareers.com, 135 of 135 tech pages (2026-09-29).
+_DESCRIPTION_LABELS = ("Job Description:",)
+
+
+def _label_description(page: str) -> str | None:
+    """The inner HTML of the value span after a :data:`_DESCRIPTION_LABELS` token, or None.
+
+    Only the fallback for :func:`_csb_description`: a page that states an ``itemprop`` description
+    keeps it, so a page read before this existed reads exactly as it did. Found by the same
+    label-then-value-span shape :func:`_label_value` reads, but the value is the whole posting, so
+    its span is closed by tag counting (:func:`_matched_content`) rather than at the first ``<``.
+    A value with no text in it reads None."""
+    for label in _DESCRIPTION_LABELS:
+        match = re.search(
+            rf'joblayouttoken-label"[^>]*>\s*{re.escape(label)}\s*</span>\s*<(span)\b[^>]*>',
+            page,
+            re.IGNORECASE,
+        )
+        if match:
+            content = _matched_content(page, match)
+            if html_to_text(content):
+                return content
+    return None
 
 
 def _matched_content(page: str, open_match: re.Match) -> str:
