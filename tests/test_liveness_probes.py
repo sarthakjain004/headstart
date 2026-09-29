@@ -1769,6 +1769,64 @@ def test_phenom_and_zwayam_ask_the_host_their_scrapers_read(monkeypatch):
     assert posted == ["https://careers.acme.com/widgets", "https://careers.acme.com"]
 
 
+def _zwayam_clusters_answering(monkeypatch, answers):
+    """Route `p_zwayam`'s POSTs by API host: `answers[host]` is a body dict, or an int status."""
+    asked = []
+
+    def _fetch(method, url, **kwargs):
+        host = urllib.parse.urlsplit(url).hostname
+        asked.append(host)
+        answer = answers[host]
+        if isinstance(answer, int):
+            return SimpleNamespace(status_code=answer)
+        return SimpleNamespace(status_code=200, json=lambda: answer)
+
+    monkeypatch.setattr(cl, "_fetch", _fetch)
+    return asked
+
+
+_ZWAYAM_NULL = {"code": 200, "data": None}
+
+
+def test_zwayam_probe_reads_a_board_the_second_api_cluster_holds(monkeypatch):
+    """Each API cluster answers `data: null` for a Board the other holds: careers.utthunga.com
+    listed nothing on public.zwayam.com and 47 on apic2.zwayam.com (2026-09-29), and its ledger
+    row read dead. DEAD needs every cluster's null."""
+    asked = _zwayam_clusters_answering(
+        monkeypatch,
+        {
+            "public.zwayam.com": _ZWAYAM_NULL,
+            "apic2.zwayam.com": {"code": 200, "data": {"totalCount": 47}},
+        },
+    )
+    assert cl.p_zwayam("careers.utthunga.com", "https://careers.utthunga.com") == (
+        cl.LIVE,
+        47,
+    )
+    assert asked == ["public.zwayam.com", "apic2.zwayam.com"]
+
+
+def test_zwayam_probe_is_dead_only_when_every_cluster_says_so(monkeypatch):
+    both_null = {"public.zwayam.com": _ZWAYAM_NULL, "apic2.zwayam.com": _ZWAYAM_NULL}
+    _zwayam_clusters_answering(monkeypatch, both_null)
+    assert cl.p_zwayam("gone.example", "https://gone.example") == (cl.DEAD, None)
+
+    walled = {"public.zwayam.com": _ZWAYAM_NULL, "apic2.zwayam.com": 403}
+    _zwayam_clusters_answering(monkeypatch, walled)
+    assert cl.p_zwayam("gone.example", "https://gone.example") == (cl.UNKNOWN, None)
+
+
+def test_zwayam_probe_asks_the_second_cluster_nothing_for_a_board_the_first_holds(
+    monkeypatch,
+):
+    asked = _zwayam_clusters_answering(
+        monkeypatch,
+        {"public.zwayam.com": {"code": 200, "data": {"totalCount": 0}}},
+    )
+    assert cl.p_zwayam("careers.acme.com", "https://careers.acme.com") == (cl.LIVE, 0)
+    assert asked == ["public.zwayam.com"]
+
+
 def test_workday_probe_asks_each_data_centre_the_scrapers_listing(monkeypatch):
     posted = []
 
