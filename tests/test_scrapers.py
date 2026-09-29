@@ -11999,7 +11999,7 @@ def _titled(title: str, status: int = 200):
     Local to these tests rather than a fixture: they differ only in the title and the status,
     and hand-rolling that same pair of fields per test is what a reviewer flagged.
     """
-    return SimpleNamespace(status_code=status, text=f"<title>{title}</title>")
+    return FakeResponse(status, f"<title>{title}</title>")
 
 
 class _StatedPage:
@@ -13059,9 +13059,7 @@ def _lever_hosted_pages(board: int | Exception, posting: int | Exception):
         if url == _LEVER_LISTING:
             return FakeResponse(text=listing)
         answer = board if url == _LEVER_BOARD_PAGE else posting
-        if isinstance(answer, Exception):
-            return answer
-        return FakeResponse(answer, "<title>Acme</title>")
+        return answer if isinstance(answer, Exception) else _titled("Acme", answer)
 
     return FakeFetcher(route)
 
@@ -13111,6 +13109,55 @@ def test_lever_asks_no_posting_page_when_the_board_page_answers():
     jobs = LeverScraper("acme", fetcher=fetcher).fetch()
     assert [job.url for job in jobs] == [_LEVER_POSTING]
     assert [r.url for r in fetcher.requests] == [_LEVER_LISTING, _LEVER_BOARD_PAGE]
+
+
+def test_a_lever_board_serving_nothing_is_a_clean_complete_scrape(
+    monkeypatch, tmp_path
+):
+    """ADR-0281's `[]` is a Board outcome, not a failure: the Board completes without an error or
+    a truncation, so it lands in `boards_ok` and the eviction scope (ADR-0200) and its rows evict
+    after two consecutive absences (ADR-0083). A raise or a truncation would keep every dead link
+    served (ADR-0053)."""
+    from headstart.boards.company_ref import CompanyRef
+    from headstart.ingest import scrape_run
+    from headstart.scrapers import harvest
+    from headstart.scrapers.lever import LeverScraper
+
+    scraper = LeverScraper("acme", fetcher=_lever_hosted_pages(board=404, posting=404))
+    monkeypatch.setattr(harvest, "get_scraper", lambda *a, **k: scraper)
+    progress = scrape_run._Progress(1)
+    result = harvest.scrape_all(
+        [CompanyRef("lever", "acme")], jobs_dir=tmp_path, on_board=progress.on_board
+    )
+    assert (progress.boards_ok, progress.errors, progress.truncated) == (
+        ["lever:acme"],
+        {},
+        {},
+    )
+    assert (result.errors, result.truncated, result.unique) == ({}, {}, 0)
+
+
+def test_lever_keeps_one_answer_per_hosted_page_and_nothing_else():
+    """The hosted-pages check and the company-name read share one GET per page. A request that
+    asks for something else (a stream, another method or Accept) is not answered from it."""
+    from headstart.scrapers.lever import LeverScraper
+
+    fetcher = _lever_hosted_pages(board=200, posting=200)
+    scraper = LeverScraper("acme", fetcher=fetcher)
+    scraper._fetch_once("GET", _LEVER_BOARD_PAGE)
+    scraper._fetch_once("GET", _LEVER_BOARD_PAGE, stream=False)
+    scraper._fetch_once("GET", _LEVER_BOARD_PAGE, stream=True)
+    scraper._fetch_once("GET", _LEVER_BOARD_PAGE, accept="application/json")
+    scraper._fetch_once("HEAD", _LEVER_BOARD_PAGE)
+    assert [
+        (r.method, r.kwargs.get("stream"), r.kwargs["headers"]["Accept"])
+        for r in fetcher.requests
+    ] == [
+        ("GET", None, "text/html"),
+        ("GET", True, "text/html"),
+        ("GET", None, "application/json"),
+        ("HEAD", None, "text/html"),
+    ]
 
 
 def _ashby_graphql(name: str | None) -> str:

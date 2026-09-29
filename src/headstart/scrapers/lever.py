@@ -136,8 +136,8 @@ class LeverScraper(BaseScraper):
         self, slug: str, company: str | None = None, fetcher: Fetcher | None = None
     ) -> None:
         super().__init__(slug, company, fetcher)
-        # The hosted pages `_fetch_once` has answered this scrape, by URL.
-        self._pages: dict[str, Any] = {}
+        # Each hosted page's answer this scrape, by URL (`_hosted_page`).
+        self._responses: dict[str, Any] = {}
 
     def url(self) -> str:
         return self.listing_url_on(GLOBAL_API_HOST)
@@ -167,7 +167,7 @@ class LeverScraper(BaseScraper):
         if page is not None or not self._first_posting:
             return super().company_from_page(page)
         try:
-            response = self._fetch_once("GET", self._first_posting)
+            response = self._hosted_page(self._first_posting)
         except http.RequestsError as exc:
             # Said here: base's own line after this names only the board page's answer.
             self._log.info(
@@ -182,17 +182,35 @@ class LeverScraper(BaseScraper):
             self.ats, hiring_organization((posting or {}).get("hiringOrganization"))
         )
 
-    def _fetch_once(self, method: str, url: str, **kwargs: Any) -> Any:
-        """Base's one-attempt fetch, asked once per URL: :meth:`hosted_pages_disabled` and the
-        company-name read ask for the same board page and posting page, so the second asker reads
-        the first one's answer rather than spending a request. A request that raised is not kept."""
-        if url not in self._pages:
-            self._pages[url] = super()._fetch_once(method, url, **kwargs)
-        return self._pages[url]
+    def _hosted_page(self, url: str) -> Any:
+        """One hosted page (the board page or a posting), asked once per scrape: the hosted-pages
+        check and the company-name read both want the board page and the first posting, so the
+        second asker reads the first one's answer. Sent through base's :meth:`_fetch_once`: one
+        attempt that never walls the ATS, which suits a check that reads any failure as enabled.
+        A request that raised is not kept."""
+        if url not in self._responses:
+            self._responses[url] = super()._fetch_once("GET", url)
+        return self._responses[url]
 
-    def hosted_pages_disabled(self) -> bool:
+    def _fetch_once(
+        self, method: str, url: str, *, accept: str = "text/html", **kwargs: Any
+    ) -> Any:
+        """Base's company-name fetch, answered by :meth:`_hosted_page` when it is a plain GET of a
+        whole page, which is what :meth:`resolve_company` sends for the board page. Anything else
+        (another method or Accept, a stream, another option) is a different answer, so it goes to
+        base and is not kept."""
+        if (
+            method == "GET"
+            and accept == "text/html"
+            and kwargs in ({}, {"stream": False})
+        ):
+            return self._hosted_page(url)
+        return super()._fetch_once(method, url, accept=accept, **kwargs)
+
+    def _hosted_pages_disabled(self) -> bool:
         """Whether this Board's hosted pages are switched off: its board page answers 404, and so
-        does one listed posting's ``hostedUrl`` (ADR-0281).
+        does one listed posting's ``hostedUrl`` (ADR-0281). Reads `_api_host` and `_first_posting`,
+        so only :meth:`fetch_raw` asks, once it has set both.
 
         The posting is asked only when the board page 404s, because `veeva`'s board page 404s while
         its postings answer. Only a 404 counts: a 5xx, a 429 or a request that raises reads as
@@ -202,7 +220,7 @@ class LeverScraper(BaseScraper):
             if not page:
                 return False
             try:
-                if self._fetch_once("GET", page).status_code != 404:
+                if self._hosted_page(page).status_code != 404:
                     return False
             except http.RequestsError:
                 return False
@@ -222,7 +240,7 @@ class LeverScraper(BaseScraper):
             self._first_posting = next(
                 (p.get("hostedUrl") for p in postings if p.get("hostedUrl")), None
             )
-            if postings and self.hosted_pages_disabled():
+            if postings and self._hosted_pages_disabled():
                 # `[]`, not a raise: the listing answered, so the Board stays in the eviction
                 # scope and its rows evict after ADR-0083's two consecutive absences (ADR-0200).
                 # Checked every scrape, so a Board that turns its pages back on is served again.
