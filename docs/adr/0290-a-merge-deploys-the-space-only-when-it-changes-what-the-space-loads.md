@@ -79,8 +79,10 @@ inside a function, which runs only when a request calls it. Such a module would 
 check and never deploy, and the second check would advise a `!` pattern for it. So a third check
 reads every loaded module, and `app.py`, for imports inside a function. Each must name a module
 the load already holds, or one listed in the test as never reached by a request, with the reason.
-The one listed is `scrapers.registry`, above. The test also refuses a `paths` entry not written in
-double quotes, which it would otherwise skip.
+The one listed is `scrapers.registry`, above. The check reads `import` and `from … import`
+statements only, so a module loaded by `importlib.import_module` stays invisible to it; no module
+the Space loads calls that today. The test also refuses a `paths` entry not written in double
+quotes, which it would otherwise skip.
 
 **A concurrency group, with `cancel-in-progress`.** A deploy that starts while an earlier one is
 still uploading cancels the earlier one. The group is keyed by ref (added 2026-09-29, the #850

@@ -24,9 +24,9 @@ dependencies = ["curl_cffi>=0.9", "requests>=2.32"]
 # need them actually RUN in CI rather than silently importorskip-ing: the Space's filter builder
 # and server and the Digest spreadsheet are otherwise covered nowhere automatic (ADR-0035). All
 # four are small and pure-Python. waitress is pinned to the Space's own version
-# (deploy/hf-space/requirements.txt), so the tests run the server the Space runs.
-# The index/schema and Subscription adapter checks also need their
-# runtime libraries; include these without pulling the transformer/torch stack into quality CI.
+# (deploy/hf-space/requirements.txt), so the tests run the server the Space runs. The
+# index/schema and Subscription adapter checks also need their runtime libraries; include these
+# without pulling the transformer/torch stack into quality CI.
 # huggingface_hub is held below 2.0, here and in pipeline.yml's installs: 2.0.0 (2026-09-24) is
 # unmeasured here, and transformers<5.13 already holds the embed jobs on 1.x.
 dev = ["pytest", "ruff==0.16.8", "flask", "waitress==3.0.2", "xlsxwriter", "openpyxl", "lancedb", "pyarrow", "huggingface_hub<2", "langdetect", "playwright", "tldextract>=5.1", "dnspython>=2.6", "certifi"]

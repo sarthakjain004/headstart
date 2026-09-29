@@ -7,7 +7,7 @@ on:
     branches: [main]
     # ADR-0290: only a change the Space loads deploys it, since every deploy boots a new
     # container for about six minutes. That means the headstart modules deploy/hf-space/app.py
-    # imports at load, plus ui/ and all of config/, which it reads some files of. The copy below
+    # imports at load, plus ui/ and all of config/, which it reads files from. The copy below
     # still ships the whole package (ADR-0156), so any other change rides along with the next
     # deploy. tests/test_space_deploy_trigger.py loads the app and fails if a module it loads is
     # missing here, if a module it never loads is listed, or if a function of a loaded module
