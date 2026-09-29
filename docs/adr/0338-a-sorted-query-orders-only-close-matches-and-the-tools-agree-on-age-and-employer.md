@@ -139,7 +139,7 @@ pay stay apart, as ADR-0331 wants.
   typo matches when the name matched exactly or by alias.
 - `max_age_days: 0` reads "any age (max_age_days 0)" in the scope line.
 
-The agent contract goes to 12. A sorted `/search` answers fewer rows, and `/requirements` groups
+The agent contract goes to 14. A sorted `/search` answers fewer rows, and `/requirements` groups
 by the new copy rule.
 
 ## Consequences
