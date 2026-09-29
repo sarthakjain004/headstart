@@ -30,6 +30,13 @@ EXCLUDED_BOARDS: frozenset[str] = frozenset(
         # exists only on the dev instance. One label is too few to justify a `dev` arm in
         # `_AVATURE_NONPROD`; its posting, not its name, is the evidence.
         "avature:devwoolworths1",
+        # Emirates Group's Avature SIT copy, read 2026-09-29: `emiratesgroupcareers` lists 2,313
+        # sitemap ids that include "TEST OUTSTATION ROLE" and "ONB UAT ..." rows, and its
+        # `careersmarketplace/SearchJobs` redirects to `emiratesgroupcareers.sit.emirates.dev`, an
+        # environment host behind a login. Its held sibling `avature:emiratesjobs` redirects to
+        # the production site `www.emiratesgroupcareers.com`. The label carries no marker for
+        # `_AVATURE_NONPROD`; the redirect chain is the evidence.
+        "avature:emiratesgroupcareers",
         # Jobvite's own automation tenant, found by reading its board rather than its slug:
         # `jobs.jobvite.com/jvauto` titles itself "Jobvite Automation Careers" and serves exactly
         # 10,000 postings whose titles are generated ids ("0000AAABBB_0Ja700iin3"). The round
