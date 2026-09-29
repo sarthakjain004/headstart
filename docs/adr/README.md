@@ -310,6 +310,7 @@ supersedes it and note the supersession in both.
 | [0340](0340-the-employment-type-flags-read-the-title-and-more-raw-values.md) | The employment-type flags read the title and more raw values | 2026-09-29 |
 | [0341](0341-a-job-that-states-no-employment-type-is-full-time-to-the-filter.md) | A job that states no employment type is full-time to the filter | 2026-09-29 |
 | [0342](0342-the-sponsorship-eval-judges-apart-from-the-spaces-rules.md) | The sponsorship eval judges apart from the Space's rules (amends 0334) | 2026-09-29 |
+| [0347](0347-the-india-country-tag-reads-whole-words-and-the-shapes-only-india-writes.md) | The India country tag reads whole words and the shapes only India writes | 2026-09-29 |
 
 *ADR-0037 was removed from the repository on 2026-09-24 by the owner's decision; its number is not
 reused.*
