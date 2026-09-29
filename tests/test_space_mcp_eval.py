@@ -975,6 +975,66 @@ def test_sponsorship_polarity_with_said_ok_passes_a_job_reported_as_not_offering
     assert verdict("50 jobs mention sponsorship.").passed
 
 
+_HEDGED_JOB = (
+    "workday:amgen/Careers:R-1",
+    "Software Engineer",
+    "Amgen",
+    ["Sponsorship Sponsorship for this role is not guaranteed."],
+)
+_HEDGED_ROWS = (
+    '1. "Software Engineer"\n   id "workday:amgen/Careers:R-1"\n' + _RUST_ROWS
+)
+
+
+def _hedged_verdict(ev, answer, expect=_POLARITY_EXPECT):
+    transcript = _transcript(
+        ev,
+        [
+            (
+                "search_jobs",
+                {"work_authorization": "offers_sponsorship"},
+                _HEDGED_ROWS,
+                False,
+            )
+        ],
+        answer=answer,
+    )
+    space = _stance_space(_HEDGED_JOB, *_POLARITY_JOBS)
+    return ev.verify_sponsorship_polarity(expect, transcript, space)
+
+
+def test_sponsorship_polarity_passes_a_job_named_only_to_say_it_was_dropped(ev):
+    # Round-4 critique P1-4's t36 r1: the answer named Amgen only to drop it (ADR-0353).
+    answer = (
+        "Backend Engineer at Threema AG sponsors H-1B visas.\n"
+        "I dropped an Amgen listing (Software Engineer) because its description says "
+        "'Sponsorship for this role is not guaranteed'."
+    )
+    assert _hedged_verdict(ev, answer, {"at_least": 1, "said_ok": True}).passed
+
+
+def test_sponsorship_polarity_passes_a_hedged_offer_only_when_the_answer_says_so(ev):
+    assert not _hedged_verdict(
+        ev, "Software Engineer at Amgen offers visa sponsorship."
+    ).passed
+    assert _hedged_verdict(
+        ev, "Software Engineer at Amgen: sponsorship is possible but not guaranteed."
+    ).passed
+
+
+@pytest.mark.parametrize(
+    "mention",
+    [
+        "Sponsorship for this role is not guaranteed.",
+        "Visa sponsorship may be available for select positions.",
+        "Sponsorship decisions are made on a case-by-case basis.",
+    ],
+)
+def test_sponsorship_polarity_reads_a_hedge_before_a_negation(ev, mention):
+    job = {"id": "lever:acme:1", "work_authorization": {"mentions": [mention]}}
+    assert ev._not_offering(job, {}).startswith("hedged")
+
+
 def test_sponsorship_polarity_fails_an_answer_naming_no_job(ev):
     transcript = _transcript(
         ev,
