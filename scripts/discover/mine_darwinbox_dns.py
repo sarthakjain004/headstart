@@ -25,8 +25,9 @@ failing OS resolver writes every real tenant ``dead`` (21 of 21 on 2026-09-29).
 
 ``.in`` and ``.com`` are separate namespaces, so the sieve asks both hosts of every label. A
 Board's identity is the *label* (``DarwinboxScraper.board_key`` is ``darwinbox:{tenant}`` and the
-scraper tries ``.in`` then ``.com``), so a label already held on the other TLD is a collision to
-report, never a second row.
+scraper tries ``.in`` then ``.com``). This script reads no ledger and reports no collision: a hit
+is matched to the committed ledger by that key when it is staged for landing, outside the miner,
+so a label held on one TLD lands once, never as a second row on the other.
 
 Speed comes from a hand-rolled UDP client (one socket per nameserver, every query in flight,
 keyed by DNS transaction id), as in ``eightfold_dns_sweep.py``, extended to read the answer's
@@ -127,7 +128,8 @@ def parse_answer(payload: bytes) -> tuple[str, list[str], list[str]] | None:
             elif rtype == _QTYPE_A and rdlen == 4:
                 addrs.append(socket.inet_ntoa(payload[pos : pos + 4]))
             pos += rdlen
-    except (ValueError, IndexError, struct.error):
+    except (ValueError, IndexError, struct.error, OSError):
+        # OSError is inet_ntoa refusing an A record cut short of four octets
         return None
     if (
         not cnames and not addrs
@@ -316,7 +318,6 @@ async def sieve(
     wildcards = await derive_wildcards(clients, tlds, sem)
     counts: dict[str, int] = {}
     started = time.monotonic()
-    fh = out.open("a", encoding="utf-8")
 
     async def one(idx: int, label: str, tld: str) -> tuple[str, str, str, str]:
         answer = await answer_for(clients, idx, f"{label}.{APEX}.{tld}", sem)
@@ -329,48 +330,49 @@ async def sieve(
     it = iter(enumerate(pairs))
     inflight: set[asyncio.Task] = set()
     finished = 0
-    while True:
-        while len(inflight) < window:
-            nxt = next(it, None)
-            if nxt is None:
+    # The file closes (and so flushes) on every way out — a Ctrl-C or a canary abort included.
+    with out.open("a", encoding="utf-8") as fh:
+        while True:
+            while len(inflight) < window:
+                nxt = next(it, None)
+                if nxt is None:
+                    break
+                i, (label, tld) = nxt
+                inflight.add(asyncio.ensure_future(one(i, label, tld)))
+            if not inflight:
                 break
-            i, (label, tld) = nxt
-            inflight.add(asyncio.ensure_future(one(i, label, tld)))
-        if not inflight:
-            break
-        done_now, inflight = await asyncio.wait(
-            inflight, return_when=asyncio.FIRST_COMPLETED
-        )
-        for task in done_now:
-            label, tld, verdict, detail = task.result()
-            counts[verdict] = counts.get(verdict, 0) + 1
-            finished += 1
-            fh.write(f"{label}\t{tld}\t{verdict}\t{detail}\n")
-            if verdict in ("cf", "a", "other"):
-                print(f"HIT {verdict} {label}.{APEX}.{tld} {detail}", flush=True)
-            if finished % 5000 == 0:
-                fh.flush()
-                rate = finished / max(time.monotonic() - started, 1e-9)
-                print(
-                    f"  ... {finished}/{len(pairs)} asked, {counts}, {rate:.0f}/s",
-                    flush=True,
-                )
-            if finished % _CANARY_EVERY == 0:
-                for attempt in range(3):
-                    if await canaries_hold(clients, wildcards, sem):
-                        break
+            done_now, inflight = await asyncio.wait(
+                inflight, return_when=asyncio.FIRST_COMPLETED
+            )
+            for task in done_now:
+                label, tld, verdict, detail = task.result()
+                counts[verdict] = counts.get(verdict, 0) + 1
+                finished += 1
+                fh.write(f"{label}\t{tld}\t{verdict}\t{detail}\n")
+                if verdict in ("cf", "a", "other"):
+                    fh.flush()  # a tenant found is on disk before it is printed
+                    print(f"HIT {verdict} {label}.{APEX}.{tld} {detail}", flush=True)
+                if finished % 5000 == 0:
+                    fh.flush()
+                    rate = finished / max(time.monotonic() - started, 1e-9)
                     print(
-                        f"  canary failed, pausing 30s (try {attempt + 1}/3)",
+                        f"  ... {finished}/{len(pairs)} asked, {counts}, {rate:.0f}/s",
                         flush=True,
                     )
-                    await asyncio.sleep(30)
-                else:
-                    fh.close()
-                    raise SystemExit(
-                        "canaries keep failing: the link is dropping lookups; "
-                        "re-run to resume (fails are asked again)"
-                    )
-    fh.close()
+                if finished % _CANARY_EVERY == 0:
+                    for attempt in range(3):
+                        if await canaries_hold(clients, wildcards, sem):
+                            break
+                        print(
+                            f"  canary failed, pausing 30s (try {attempt + 1}/3)",
+                            flush=True,
+                        )
+                        await asyncio.sleep(30)
+                    else:
+                        raise SystemExit(
+                            "canaries keep failing: the link is dropping lookups; "
+                            "re-run to resume (fails are asked again)"
+                        )
     return counts
 
 
