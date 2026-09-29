@@ -75,6 +75,7 @@ from urllib.parse import urljoin
 
 from headstart.boards import company_name
 from headstart.jobs.job import Job, html_to_text, is_remote, requisition_of
+from headstart.jobs.location import is_place
 from headstart.network import http
 from headstart.scrapers.base import (
     USER_AGENT,
@@ -157,6 +158,32 @@ _RICH_TEXT = re.compile(
 )
 #: The last resort, for fully custom templates (frequentis, whose JSON-LD does not parse).
 _MAIN = re.compile(r"<main\b[^>]*>(.*?)</main>", re.DOTALL | re.IGNORECASE)
+
+#: `<dt>` and `<dd>` label rows (totalenergies). Read for the location only: the same rows also
+#: state a "Type of contract", which no scheme above has ever read for that tenant.
+_LOCATION_DEFINITION_ROWS = re.compile(
+    r'class="article__content__view__field__label[^"]*"[^>]*>(.*?)</dt>\s*'
+    r'<dd[^>]*class="article__content__view__field__value[^"]*"[^>]*>(.*?)</dd>',
+    re.DOTALL,
+)
+#: The field Avature itself classes as the location, whatever the tenant labels it: macquarie's
+#: "Additional office locations", and electronic arts, whose row has no label element, only
+#: `<strong>Locations</strong>: Vancouver, ...` in the value, followed by a list of further places
+#: (`MultipleDataSetFields`) that this reads none of.
+_LOCATION_FIELD = re.compile(
+    r'class="article__content__view__field[^"]*\bfield--locations?\b[^"]*"[^>]*>\s*'
+    r'(?:<div[^>]*class="article__content__view__field__label[^"]*"[^>]*>.*?</div>\s*)?'
+    r'<div[^>]*class="article__content__view__field__value[^"]*"[^>]*>(.*?)</div>',
+    re.DOTALL,
+)
+_FIELD_LABEL_IN_VALUE = re.compile(r"^\s*locations?\s*:\s*", re.IGNORECASE)
+#: Deloitte's "Same job available in 46 locations": every place in a header list, with no label.
+_HEADER_LOCATIONS = re.compile(
+    r'class="article__header--locations[^"]*"[^>]*>(.*?)</div>\s*</div>', re.DOTALL
+)
+_PARAGRAPH = re.compile(r"<p\b[^>]*>(.*?)</p>", re.DOTALL)
+_TITLE_ELEMENT = re.compile(r"<title[^>]*>(.*?)</title>", re.IGNORECASE | re.DOTALL)
+_WS = re.compile(r"\s+")
 
 #: Label vocabularies, most specific first: tenants name one idea several ways ("Advertising
 #: location", "Job Posting Location - City, State", "Country/Region", "Región", "勤務地").
@@ -581,6 +608,42 @@ def _title_key(title: str) -> str:
     return re.sub(r"[^a-z0-9]+", "", title.lower())
 
 
+def _location_field(page: str) -> str | None:
+    """The value of the row Avature classes `field--location(s)`, its own label text cut off."""
+    match = _LOCATION_FIELD.search(page)
+    if match is None:
+        return None
+    value = match.group(1).split("<ul", 1)[0]
+    return _FIELD_LABEL_IN_VALUE.sub("", _plain_text(value)).strip() or None
+
+
+def _header_locations(page: str) -> str | None:
+    """Every place of a job's "Same job available in N locations" list, "; "-joined."""
+    match = _HEADER_LOCATIONS.search(page)
+    if match is None:
+        return None
+    places = (_plain_text(p) for p in _PARAGRAPH.findall(match.group(1)))
+    return "; ".join(dict.fromkeys(p for p in places if p)) or None
+
+
+def _title_location(page: str, title: str | None) -> str | None:
+    """The place in the page's `<title>`, which Avature writes "{title} - {location} - {id}[ -
+    {site}]": `Software Engineer II - Kuala Lumpur, Malaysia - 19849 - MetLife`.
+
+    The slot is empty when the requisition states none (`... - - 366896`) and some tenants put a
+    subtitle there instead (`... - EA SPORTS NHL - 215808`), so the text after the title is taken
+    only when it is a place the gazetteer knows (:func:`headstart.jobs.location.is_place`).
+    """
+    element = _TITLE_ELEMENT.search(page)
+    if element is None or not title:
+        return None
+    text = _WS.sub(" ", html.unescape(element.group(1))).strip()
+    if not text.startswith(f"{title} - "):
+        return None
+    slot = text[len(title) + 3 :].split(" - ")[0].strip()
+    return slot if is_place(slot) else None
+
+
 def page_fields(page: str) -> dict[str, Any]:
     """Everything one job page states, read through its stable surfaces first."""
     og = {
@@ -602,14 +665,26 @@ def page_fields(page: str) -> dict[str, Any]:
         "\n".join(_COLLAPSIBLE_DETAILS.findall(page)),
         next(iter(_MAIN.findall(page)), None),
     )
+    definition_labels: dict[str, str] = {}
+    for label, value in _LOCATION_DEFINITION_ROWS.findall(page):
+        definition_labels.setdefault(
+            _plain_text(label).rstrip(":").strip(), _plain_text(value)
+        )
     remote_text = _labelled(labels, _REMOTE)
     typed_labels = {k: v for k, v in labels.items() if _EMPLOYMENT_VALUE.search(v)}
+    title = _page_title(
+        og.get("title"), _plain_text(str(ld.get("title") or ""))
+    ) or _labelled(labels, _TITLE)
     return {
-        "title": _page_title(og.get("title"), _plain_text(str(ld.get("title") or "")))
-        or _labelled(labels, _TITLE),
+        "title": title,
         "company": og.get("site_name")
         or hiring_organization(node.get("hiringOrganization")),
-        "location": ld.get("location") or _labelled(labels, _LOCATION),
+        "location": ld.get("location")
+        or _labelled(labels, _LOCATION)
+        or _labelled(definition_labels, _LOCATION)
+        or _location_field(page)
+        or _header_locations(page)
+        or _title_location(page, title),
         "department": _labelled(labels, _DEPARTMENT)
         or node.get("occupationalCategory")
         or None,

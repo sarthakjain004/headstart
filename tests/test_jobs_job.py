@@ -141,6 +141,20 @@ def test_job_location_drops_tags_and_lists_lines():
     assert _job(location="&lt;Remote&gt; &#x7c; UK").location == "<Remote> | UK"
 
 
+def test_job_location_loses_template_tokens_and_repeated_places():
+    """15,628 served rows on 2026-09-29 (ADR-0345): greenhouse's BLANK template, a city said
+    twice, a place listed twice."""
+    assert (
+        _job(location="BLANK,BLANK,Multiple Locations").location == "Multiple Locations"
+    )
+    assert _job(location="Mumbai, Mumbai, India").location == "Mumbai, India"
+    assert _job(location="Pune, IN; Pune, IN").location == "Pune, IN"
+    assert _job(location="BLANK,BLANK").location is None
+    # a country shared by two places is not a repeat
+    shared = "Boston, Massachusetts, USA; Irvine, California, USA"
+    assert _job(location=shared).location == shared
+
+
 def test_a_requisition_is_stored_as_trimmed_text_or_none():
     """Two rows match only on equal strings (ADR-0210), whether the ATS stated a number or text."""
     assert requisition_of(3560628) == "3560628"

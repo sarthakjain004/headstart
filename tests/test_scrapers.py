@@ -1255,9 +1255,9 @@ def test_workable_multi_location_rows_collapse_into_one_job():
     assert len(jobs) == 2  # 4 rows, one shortcode grouped -> one Job
     multi = next(j for j in jobs if j.id == "workable:zyte:6DCFF04CD6")
     assert multi.location == (
-        "Sao Paulo, Sao Paulo, Brazil; "
+        "Sao Paulo, Brazil; "
         "Montevideo, Montevideo Department, Uruguay; "
-        "Buenos Aires, Buenos Aires, Argentina"
+        "Buenos Aires, Argentina"
     )
     single = next(j for j in jobs if j.id == "workable:zyte:OTHERJOB01")
     assert single.location == "Remote"
@@ -1616,7 +1616,7 @@ def test_smartrecruiters_location_collapses_blank_region_comma_segment():
         },
         SCRAPED_AT,
     )
-    assert jobs[0].location == "Singapore, Singapore"
+    assert jobs[0].location == "Singapore"
 
 
 def test_smartrecruiters_location_with_region_is_unaffected():
@@ -3178,7 +3178,7 @@ def test_freshteam_parse():
     # branch is Singapore, but preferred_remote_job_locations names India + Vietnam: the wrong
     # branch country must NOT ride along next to the real ones (that's the false-positive/
     # false-negative bug), and multiple places join with "; " like workday's multi-location strings.
-    assert platform.location == "India, India; Vietnam, Viet Nam"
+    assert platform.location == "India; Vietnam, Viet Nam"
     assert "Singapore" not in platform.location
     assert platform.remote is True
     assert platform.employment_type == "Fixed Term Contract"  # job_type 8
@@ -4509,7 +4509,7 @@ def test_teamtailor_location_keeps_every_place():
     jobs = get_scraper("teamtailor", "wspcentraleurope", "WSP").parse(
         _load("teamtailor_wspcentraleurope_two_places.json"), SCRAPED_AT
     )
-    assert jobs[0].location == "Bern, Bern, CH; Zürich, Zürich, CH"
+    assert jobs[0].location == "Bern, CH; Zürich, CH"
 
 
 def test_teamtailor_parse_with_no_rss_enrichment_falls_back_to_the_location_guess():

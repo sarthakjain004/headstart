@@ -655,3 +655,145 @@ def test_a_label_that_is_not_an_employment_type_states_none(label, value):
 def test_an_employment_type_label_beats_a_job_type_that_looks_like_one():
     page = _page_with(("Job Type", "Full Time"), ("Employment Type", "Permanent"))
     assert page_fields(page)["employment_type"] == "Permanent"
+
+
+# --- a location the page states outside the label rows (ADR-0345) -----------------------------
+# Each snippet is the markup of a real job page read on 2026-09-29, trimmed to the place.
+
+
+def _page_titled(title: str, og_title: str, body: str = "") -> str:
+    return (
+        f"<html><head><title>{title}</title>"
+        f'<meta property="og:title" content="{og_title}"></head>'
+        f"<body><article>{body}</article></body></html>"
+    )
+
+
+def test_deloitte_lists_every_place_a_job_is_available_in():
+    body = (
+        '<a class="link toggleLocations toggleLocations--show">'
+        "Same job available in 3 locations</a>"
+        '<div class="article__header--locations article__header--locations-none" >'
+        '<div class="fluid-cols fluid-cols--cols2">'
+        '<p class="paragraph">Atlanta, Georgia, United States</p>'
+        '<p class="paragraph">Austin, Texas, United States</p>'
+        '<p class="paragraph">Baltimore, Maryland, United States</p>'
+        "</div></div>"
+    )
+    page = _page_titled("Architect Manager - - 366896", "Architect Manager", body)
+    assert page_fields(page)["location"] == (
+        "Atlanta, Georgia, United States; Austin, Texas, United States; "
+        "Baltimore, Maryland, United States"
+    )
+
+
+def test_the_field_avature_calls_location_is_read_under_any_label():
+    # macquarie labels it "Additional office locations"
+    body = (
+        '<div class="article__content__view__field field--location '
+        'regular-field-label--hidden">'
+        '<div class="article__content__view__field__label">'
+        "Additional office locations</div>"
+        '<div class="article__content__view__field__value"> Sydney </div></div>'
+    )
+    assert page_fields(_page_titled("Engineer - - 23759", "Engineer", body))[
+        "location"
+    ] == ("Sydney")
+
+
+def test_a_location_field_written_as_one_rich_text_value_loses_its_label_and_extra_rows():
+    # electronic arts: the label sits inside the value, and further places follow as a list
+    body = (
+        '<div class="article__content__view__field field--locations regular-fields">'
+        '<div class="article__content__view__field__value">'
+        "<strong>Locations</strong>: Vancouver, British Columbia, Canada&nbsp; "
+        '<ul class="MultipleDataSetFields"><li class="MultipleDataSetField">'
+        '<span class="MultipleDataSetFieldLabel">Location:</span> '
+        '<span class="MultipleDataSetFieldValue">Toronto</span></li></ul>'
+        "</div></div>"
+    )
+    page = _page_titled("Engineer - EA SPORTS NHL - 215808", "Engineer", body)
+    assert page_fields(page)["location"] == "Vancouver, British Columbia, Canada"
+
+
+@pytest.mark.parametrize(
+    ("title", "og_title", "place"),
+    [
+        (
+            "Software Engineer II - Kuala Lumpur, Malaysia - 19849 - MetLife",
+            "Software Engineer II | Apply Now",
+            "Kuala Lumpur, Malaysia",
+        ),
+        (
+            "Field Engineer - Maryland, Columbia - 3080",
+            "Field Engineer",
+            "Maryland, Columbia",
+        ),
+        (
+            "Windows Consultant - Charlotte, NC - WorkMyWay",
+            "Windows Consultant",
+            "Charlotte, NC",
+        ),
+        (
+            "Sr. Process Engineer - Columbia, South Carolina, United States - 1037 - AESC",
+            "Sr. Process Engineer",
+            "Columbia, South Carolina, United States",
+        ),
+    ],
+)
+def test_the_place_avature_puts_in_the_page_title_is_the_location(
+    title, og_title, place
+):
+    assert page_fields(_page_titled(title, og_title))["location"] == place
+
+
+@pytest.mark.parametrize(
+    ("title", "og_title"),
+    [
+        # the slot is empty
+        ("Front Office Engineer - - 23759 - Macquarie Group", "Front Office Engineer"),
+        # a subtitle of the title, not a place
+        (
+            "Game Modes Engineer - EA SPORTS NHL - 215808 - Electronic Arts",
+            "Game Modes Engineer - EA SPORTS NHL",
+        ),
+        ("Engineer - Python, SQL - 123 - Acme", "Engineer"),
+        # no separator after the title
+        (
+            "Lead Engineer - Job detail | Careers Portal - TotalEnergies",
+            "Lead Engineer",
+        ),
+    ],
+)
+def test_a_page_title_that_names_no_place_states_no_location(title, og_title):
+    assert page_fields(_page_titled(title, og_title))["location"] is None
+
+
+def test_a_definition_list_states_the_location_and_nothing_else():
+    # totalenergies: dt/dd rows. Only the place is read from them: their "Type of contract" would
+    # otherwise move employment_type on rows this change does not concern.
+    rows = "".join(
+        f'<dl class="article__content__view__field ">'
+        f'<dt class="article__content__view__field__label"> {k} </dt>'
+        f'<dd class="article__content__view__field__value"> {v} </dd></dl>'
+        for k, v in (
+            ("Country", "Malaysia"),
+            ("City", "KUALA LUMPUR"),
+            ("Type of contract", "Regular position"),
+        )
+    )
+    fields = page_fields(
+        _page_titled("Lead Engineer - Job detail", "Lead Engineer", rows)
+    )
+    assert fields["location"] == "KUALA LUMPUR"
+    assert fields["employment_type"] is None
+
+
+def test_a_label_row_still_beats_every_other_surface():
+    body = (
+        '<div class="article__content__view__field__label">Location</div>'
+        '<div class="article__content__view__field__value">Pune, India</div>'
+        '<p class="paragraph">Mumbai, India</p>'
+    )
+    page = _page_titled("Engineer - Berlin, Germany - 12", "Engineer", body)
+    assert page_fields(page)["location"] == "Pune, India"

@@ -18,6 +18,7 @@ from fake_fetcher import FakeFetcher, FakeResponse
 
 from headstart.scrapers.base import BoardUnreadable
 from headstart.scrapers.registry import get_scraper
+from headstart.scrapers.wp_job_openings import page_fields
 
 _FIXTURES = pathlib.Path(__file__).parent / "fixtures"
 
@@ -290,3 +291,44 @@ def test_slug_from_reads_the_host_off_either_column() -> None:
     cls = type(get_scraper("wp_job_openings", "finac.io"))
     assert cls.slug_from("finac.io", "https://finac.io/jobs/") == "finac.io"
     assert cls.slug_from("Finac.io", "") == "finac.io"
+
+
+def _page_with_json_ld(job_location: Any) -> str:
+    node = {
+        "@type": "JobPosting",
+        "title": "PHP Developer",
+        "jobLocation": job_location,
+    }
+    return '<script type="application/ld+json">' + json.dumps(node) + "</script>"
+
+
+def test_a_postal_address_object_is_the_location() -> None:
+    # websenor.com's JobPosting (2026-09-29) states its place as a PostalAddress, not a string:
+    # 100 of its 139 served rows read no location.
+    page = _page_with_json_ld(
+        {
+            "@type": "Place",
+            "address": {
+                "@type": "PostalAddress",
+                "streetAddress": "Bhive Garuda, Aicobo Nagar, 1st Stage",
+                "addressLocality": "BTM 1st Stage",
+                "addressRegion": "Karnataka",
+                "postalCode": "560068",
+                "addressCountry": "IN",
+            },
+        }
+    )
+    assert page_fields(page)["location"] == "BTM 1st Stage, Karnataka, IN"
+
+
+def test_a_string_address_is_still_the_location() -> None:
+    # the plugin's own JSON-LD: the tenant's typed text
+    page = _page_with_json_ld({"@type": "Place", "address": "Pune, India"})
+    assert page_fields(page)["location"] == "Pune, India"
+
+
+def test_an_empty_postal_address_is_no_location() -> None:
+    page = _page_with_json_ld(
+        {"@type": "Place", "address": {"@type": "PostalAddress", "addressLocality": ""}}
+    )
+    assert page_fields(page)["location"] is None

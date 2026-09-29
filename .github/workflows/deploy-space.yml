@@ -31,6 +31,7 @@ on:
       - "src/headstart/boards/company_ref.py"
       - "src/headstart/jobs/__init__.py"
       - "src/headstart/jobs/job.py"
+      - "src/headstart/jobs/location.py"
       - "src/headstart/jobs/requisition_copies.py"
       - "src/headstart/jobs/salary.py"
       - "src/headstart/jobs/work_authorization.py"
