@@ -434,11 +434,9 @@ def test_get_job_reads_a_posting_and_names_the_missing_at_the_app(
     assert 'department "Engineering"' in text
     assert '"Build the payments API."\n"Own it end to end."' in text
     assert "latest scrape did not find it" in text
-    # The fixture table counts 1 on every filtered count, so its Board reads as served.
-    assert (
-        'Not in the index now: "greenhouse:gone:9". Each has closed, or was never'
-        in text
-    )
+    # The directory lacks its Board, but the fixture table counts 1 on every filtered count,
+    # so the index serves it.
+    assert 'Not in the index now: "greenhouse:gone:9". Most often it has closed' in text
     assert "Data as of the trends tick" in text
 
 

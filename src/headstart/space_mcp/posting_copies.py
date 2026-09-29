@@ -1,15 +1,18 @@
 """Which rows of one search page are copies of one posting, so the page lists each once
-(ADR-0274, widened by ADR-0323).
+(ADR-0274, widened by ADR-0323 and ADR-0331).
 
 Two kinds of copy reach a page:
 
-- **One posting per country** on one Board: the same company and title, brackets aside —
-  "Backend Developer (Peru)", "Backend Developer (Chile)" at "Anyone AI" — placed apart.
+- **One posting per country**: the same company and title, brackets aside — "Backend Developer
+  (Peru)", "Backend Developer (Chile)" at "Anyone AI" — placed apart. Rows naming no company are
+  copies only on one Board: two unnamed Boards are not one company.
 - **One posting on two Boards** of its employer, such as a Radancy career front and the Workday
-  Board behind it: the same title and place under two spellings of the company, "EVERSOURCE" and
-  "Eversource Energy" (the round-2 critique, 2026-09-29). Two spellings are one company when, their
-  legal suffixes dropped, one's words begin the other's; that is loose, so it also needs the
-  same title stem and the same first place, the city a location string names first.
+  Board behind it, under two spellings of the company: "EVERSOURCE" and "Eversource Energy" (the
+  round-2 critique, 2026-09-29). Two spellings are one company when they are the same words once
+  legal forms and three generic words ("Group", "Technologies", "Energy") drop. That is looser
+  than one spelling, so it also needs the same title stem, the same first place (the city a
+  location string names first) and the same countries, as the `country` filter's gazetteer reads
+  the whole location.
 
 Grouping only lists a copy under the row it repeats: every row keeps its number, id and link, and
 paging is the Space's.
@@ -20,8 +23,15 @@ from __future__ import annotations
 import re
 from typing import Any
 
-#: Words a company's name can carry or drop between two of its Boards.
-_LEGAL_WORDS = frozenset(
+from headstart.boards.board_identity import board_of
+from headstart.search_filters import country_gazetteer
+
+#: Words that tell no two companies apart: legal forms, and the three generic words measured
+#: dropping between two Boards of one employer ("Rakuten Group", "L3Harris Technologies",
+#: "Eversource Energy"). Each generic word also joins a different company to its namesake
+#: ("Siemens Energy" to "Siemens"), which the same title, city and countries must then all
+#: match too (ADR-0331).
+_GENERIC_WORDS = frozenset(
     {
         "the",
         "inc",
@@ -33,6 +43,7 @@ _LEGAL_WORDS = frozenset(
         "corp",
         "corporation",
         "company",
+        "companies",
         "plc",
         "gmbh",
         "ag",
@@ -42,6 +53,9 @@ _LEGAL_WORDS = frozenset(
         "pvt",
         "lp",
         "llp",
+        "group",
+        "technologies",
+        "energy",
     }
 )
 
@@ -58,13 +72,7 @@ def title_stem(title: Any) -> str:
 
 def _company_words(company: Any) -> tuple[str, ...]:
     words = _WORD.findall(str(company or "").casefold())
-    return tuple(word for word in words if word not in _LEGAL_WORDS)
-
-
-def _one_company(a: Any, b: Any) -> bool:
-    """Two spellings of one company: one's words, legal suffixes dropped, begin the other's."""
-    short, long = sorted((_company_words(a), _company_words(b)), key=len)
-    return bool(short) and long[: len(short)] == short
+    return tuple(word for word in words if word not in _GENERIC_WORDS)
 
 
 def _first_place(location: Any) -> tuple[str, ...]:
@@ -73,21 +81,39 @@ def _first_place(location: Any) -> tuple[str, ...]:
     return tuple(_WORD.findall(first.split(",", 1)[0].casefold()))
 
 
+def _one_place(one: Any, other: Any) -> bool:
+    """The same first city, in the same countries."""
+    place = _first_place(one)
+    return (
+        bool(place)
+        and place == _first_place(other)
+        and country_gazetteer.classify(str(one or ""))
+        == country_gazetteer.classify(str(other or ""))
+    )
+
+
 def _copies(head: dict[str, Any], row: dict[str, Any]) -> bool:
     stem = title_stem(head.get("title"))
     if not stem or stem != title_stem(row.get("title")):
         return False
-    one, other = head.get("company"), row.get("company")
+    one = str(head.get("company") or "").casefold().strip()
+    other = str(row.get("company") or "").casefold().strip()
     if not one or not other:
-        # Two Boards that name no company are not thereby one company.
-        return False
-    if str(one).casefold().strip() == str(other).casefold().strip():
+        return not one and not other and _same_board(head, row)
+    if one == other:
         return True
-    place = _first_place(head.get("location"))
+    words = _company_words(one)
     return (
-        bool(place)
-        and place == _first_place(row.get("location"))
-        and _one_company(one, other)
+        bool(words)
+        and words == _company_words(other)
+        and _one_place(head.get("location"), row.get("location"))
+    )
+
+
+def _same_board(head: dict[str, Any], row: dict[str, Any]) -> bool:
+    return (
+        board_of(str(head.get("id") or "")).casefold()
+        == board_of(str(row.get("id") or "")).casefold()
     )
 
 

@@ -44,6 +44,10 @@ def quoted(value: Any, limit: int = FIELD_LIMIT) -> str:
     return json.dumps(text, ensure_ascii=False)
 
 
+#: What ends a paragraph :func:`quoted_paragraphs` cut: this server's mark, not the text's.
+CUT_MARK = "…"
+
+
 def quoted_paragraphs(value: Any, limit: int) -> tuple[list[str], bool]:
     """A long scraped text, such as a description, as one quoted line per paragraph (ADR-0277),
     and whether it was cut. Each line is what :func:`quoted` makes of one paragraph, unclipped, so
@@ -60,7 +64,7 @@ def quoted_paragraphs(value: Any, limit: int) -> tuple[list[str], bool]:
         if len(line) + 1 > room:
             keep = room - 4  # the two quotes, the ellipsis and the line break
             while keep > 0:
-                line = json.dumps(text[:keep].rstrip() + "…", ensure_ascii=False)
+                line = json.dumps(text[:keep].rstrip() + CUT_MARK, ensure_ascii=False)
                 if len(line) + 1 <= room:
                     lines.append(line)
                     break

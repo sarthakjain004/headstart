@@ -1,5 +1,5 @@
 """Where a set of Boards' served jobs are: the `location` values they carry most (ADR-0275), and
-the countries those name (ADR-0323).
+the countries those name (ADR-0323, ADR-0331).
 
 The Search rail has no location facet, and :mod:`headstart.serving.facets` cannot give one: it
 counts a filter's fixed options, and `location` is free text that each employer writes, with no
@@ -12,15 +12,17 @@ Asia's 884 in 21 ms, Stripe's 221 in 21 ms.
 A location is the served string, with its whitespace collapsed, so "Dublin" and "Dublin, Ireland"
 are two places, as the employers wrote them. What merges them is the country each names, read by
 the ``country`` filter's own gazetteer (`search_filters.country_gazetteer.classify`, ADR-0273), so
-a profile's "Ireland 19" counts exactly the jobs ``country=IE`` would. A job naming two countries
-counts in both; a place naming none ("N/A", "Remote") is counted apart. The gazetteer costs about
-1.6 ms a distinct place (Amazon's 1,257 in 2.0 s, measured 2026-09-29), so each place is read
-once per process (:data:`_COUNTRIES_CACHED`) and at most :data:`MAX_PLACES_READ` of a scan's
-places, most jobs first, are read at all.
+a profile's "Ireland 19" counts exactly the jobs ``country=IE`` would, and, within a country, the
+city each names first: "Dublin" and "Dublin, Ireland" are one "Dublin" under Ireland. A job naming
+two countries counts in both; a place naming none ("N/A", "Remote") is counted apart. The
+gazetteer costs about 1.6 ms a distinct place (Amazon's 1,257 in 2.0 s, measured 2026-09-29), so
+each place is read once per process (:data:`_COUNTRIES_CACHED`) and at most
+:data:`MAX_PLACES_READ` of a scan's places, most jobs first, are read at all.
 """
 
 from __future__ import annotations
 
+import re
 from collections import Counter
 from functools import lru_cache
 from typing import Any
@@ -36,7 +38,7 @@ MAX_ROWS = 50_000
 #: and no other Board over 816 (2026-09-29); past this, ``places_unread`` counts the jobs left out.
 MAX_PLACES_READ = 2_000
 
-#: How many of a country's places, and of the places naming no country, each lists.
+#: How many of a country's cities, and of the places naming no country, each lists.
 PLACES_PER_COUNTRY = 3
 
 #: Distinct places whose countries this process remembers. The served table names 85,712.
@@ -46,6 +48,30 @@ _COUNTRIES_CACHED = 100_000
 @lru_cache(maxsize=_COUNTRIES_CACHED)
 def _countries_of(place: str) -> frozenset[str]:
     return frozenset(country_gazetteer.classify(place))
+
+
+def scoped_rows(table: Any, where: str, columns: list[str]) -> list[dict[str, Any]]:
+    """The ``columns`` of the rows ``where`` selects, at most :data:`MAX_ROWS` of them: the one
+    scan a company's locations and its levels (`level_counts`) each make."""
+    return (
+        table.search()
+        .where(where, prefilter=True)
+        .select(columns)
+        .limit(MAX_ROWS)
+        .to_list()
+    )
+
+
+#: What separates two places in one location string: "Berlin, CT; Westwood, MA".
+_PLACES_SEPARATOR = re.compile(r"[;|]")
+
+
+def _city(place: str, code: str) -> str:
+    """The city ``place`` names first — before its first comma — when that names no country but
+    ``code``: "Dublin" of "Dublin, Ireland" under IE. A first part naming another country
+    ("London" of "London, Dublin" under IE) leaves the whole place, as written."""
+    head = _PLACES_SEPARATOR.split(place, maxsplit=1)[0].split(",", 1)[0].strip()
+    return head if head and _countries_of(head) <= {code} else place
 
 
 def _ranked(counted: Counter[str]) -> list[tuple[str, int]]:
@@ -62,16 +88,20 @@ def _places(ranked: list[tuple[str, int]]) -> list[dict[str, Any]]:
 
 def _by_country(ranked: list[tuple[str, int]]) -> dict[str, Any]:
     """``ranked`` places rolled up by the countries they name: each country's jobs and its top
-    places, most jobs first, ties by code; the jobs whose place names no country, with its top
-    places; and the jobs at places past :data:`MAX_PLACES_READ`, whose country was not read."""
+    cities, most jobs first, ties by code, a city spelled as its commonest place writes it; the
+    jobs whose place names no country, with its top places; and the jobs at places past
+    :data:`MAX_PLACES_READ`, whose country was not read."""
     jobs: Counter[str] = Counter()
     places: dict[str, Counter[str]] = {}
+    spelled: dict[tuple[str, str], str] = {}
     no_country: Counter[str] = Counter()
     for place, count in ranked[:MAX_PLACES_READ]:
         codes = _countries_of(place)
         for code in codes:
             jobs[code] += count
-            places.setdefault(code, Counter())[place] += count
+            city = _city(place, code)
+            written = spelled.setdefault((code, city.casefold()), city)
+            places.setdefault(code, Counter())[written] += count
         if not codes:
             no_country[place] += count
     return {
@@ -93,13 +123,7 @@ def top(table: Any, where: str, limit: int) -> dict[str, Any]:
 
     ``jobs`` is how many rows were counted, ``unstated`` how many of them name no location, and
     ``distinct`` how many different locations they name."""
-    rows = (
-        table.search()
-        .where(where, prefilter=True)
-        .select(["location"])
-        .limit(MAX_ROWS)
-        .to_list()
-    )
+    rows = scoped_rows(table, where, ["location"])
     counted: Counter[str] = Counter()
     for row in rows:
         if place := " ".join(str(row.get("location") or "").split()):

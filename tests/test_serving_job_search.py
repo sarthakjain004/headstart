@@ -14,6 +14,7 @@ from dataclasses import replace
 import pytest
 
 from headstart.search_filters.compiler import account_clause, build_filter, with_extra
+from headstart.serving.job_absence import WHY_NOT_SERVED
 from headstart.serving.job_search import (
     FACET_CACHE_SIZE,
     QUERY_VECTOR_CACHE_SIZE,
@@ -1662,11 +1663,12 @@ def test_like_applies_every_filter_as_a_query_does(served):
     assert [r["id"] for r in rows] == ["lever:acme:3", "lever:o'brien:5"]
 
 
-def test_like_naming_no_served_job_says_it_has_closed_or_was_never_an_id(served):
-    with pytest.raises(
-        ValueError, match="in the index now: it has closed, or was never an id"
-    ):
+def test_like_naming_no_served_job_says_why_it_may_be_gone(served):
+    with pytest.raises(ValueError) as refused:
         served.run({"like": "lever:gone:9"})
+    assert str(refused.value) == (
+        "no job with id 'lever:gone:9' is in the index now. " + WHY_NOT_SERVED
+    )
 
 
 def test_a_read_by_id_serves_the_detail_and_cuts_a_long_description(served):

@@ -72,6 +72,6 @@ def test_each_row_counts_once_in_its_trends_band_and_every_band_is_listed():
 
 
 def test_a_scan_that_reaches_its_bound_says_so(monkeypatch):
-    monkeypatch.setattr(level_counts, "MAX_ROWS", 2)
+    monkeypatch.setattr(location_counts, "MAX_ROWS", 2)
     answer = level_counts.bands(_Scan([_row(1), _row(2), _row(3)]), "x")
     assert answer["jobs"] == 2 and answer["capped"] is True

@@ -6,6 +6,9 @@
 [ADR-0277](0277-an-agent-reads-a-posting-by-id-and-finds-jobs-like-one.md) (`get_job`),
 [ADR-0273](0273-a-country-filter-matches-every-way-a-location-names-a-country.md) (the gazetteer),
 [ADR-0185](0185-trends-narrow-to-companies-picked-from-a-directory-of-boards.md) (the Company directory)
+· **Amended by:** [ADR-0331](0331-a-copy-needs-one-companys-words-and-a-missing-id-gets-one-account.md) —
+the copy rule, the naming fallback, the missing-id account and the city roll-up, after the code
+review of #897
 
 ## Context
 
