@@ -10856,9 +10856,9 @@ def test_ripplehire_marks_its_page_cap_but_not_a_board_that_ended():
     assert capped.truncated and f"{rh._MAX_PAGES}-page cap" in capped.truncated
 
 
-def _ripple_landings(*landed: str):
-    """A RippleHire Board whose careers GETs land on ``landed`` in turn; the search answers one
-    Job (with its jobDesc, so no detail pass). Returns the scraper and the GETs it made."""
+def _ripple_landings(landed: str):
+    """A RippleHire Board whose careers GET lands on ``landed``; the search answers one Job (with
+    its jobDesc, so no detail pass). Returns the scraper and the GETs it made."""
     from headstart.scrapers import ripplehire as rh
 
     gets: list[str] = []
@@ -10867,37 +10867,68 @@ def _ripple_landings(*landed: str):
     def route(method, url, kwargs):
         if method == "GET":
             gets.append(url)
-            return FakeResponse(url=landed[len(gets) - 1])
+            return FakeResponse(url=landed)
         return _RippleResp(page, 1)
 
     return rh.RippleHireScraper("acme", fetcher=FakeFetcher(route)), gets
 
 
-def test_ripplehire_a_careers_page_with_no_token_is_unread_not_empty():
-    """#702: CI read live Boards whose careers GET landed on /candidate/careers with no token,
-    and the old `[]` evicted their rows after the grace period. Twice token-less must raise, so
-    the Board is Unauthoritative (ADR-0053) and keeps what it serves."""
+def test_ripplehire_a_careers_url_that_lands_without_a_token_is_unread_not_empty():
+    """#702: CI read Scrapable Boards whose careers GET landed on /candidate/careers with no
+    token, and the old `[]` evicted their rows after the grace period. A token-less landing must
+    raise, so the Board is Unauthoritative (ADR-0053) and keeps what it serves. Once: a second GET
+    0.23-0.41 s later reached no tokened page in any of the 42 cases CI logged (#839 follow-up)."""
     from headstart.ingest import board_failures
     from headstart.scrapers.base import BoardUnreadable
 
     careers = "https://acme.ripplehire.com/candidate/careers"
-    scraper, gets = _ripple_landings(careers, careers)
+    scraper, gets = _ripple_landings(careers)
     with pytest.raises(BoardUnreadable, match="unread, not empty") as raised:
         scraper.fetch_raw()
-    assert len(gets) == 2
+    assert len(gets) == 1
+    assert careers in str(raised.value)
     # Recorded as harvest records it, it is no gone strike: an unread Board is not a 404.
     reason = f"{type(raised.value).__name__}: {raised.value}"
     assert not board_failures.is_gone(reason)
 
 
-def test_ripplehire_a_second_careers_get_that_lands_on_a_token_reads_the_board():
-    scraper, gets = _ripple_landings(
-        "https://acme.ripplehire.com/candidate/careers",
-        "https://acme.ripplehire.com/candidate/?token=TOK",
+def _ripple_search_answers(search: FakeResponse):
+    """A RippleHire Board whose careers GET lands on a token and whose search answers `search`."""
+    from headstart.scrapers import ripplehire as rh
+
+    def route(method, url, kwargs):
+        if method == "GET":
+            return FakeResponse(url="https://acme.ripplehire.com/candidate/?token=TOK")
+        return search
+
+    return rh.RippleHireScraper("acme", fetcher=FakeFetcher(route))
+
+
+def test_ripplehire_a_first_search_page_with_no_joblist_is_unread_not_empty():
+    """A Board with nothing open answers `jobVoList: []` (19 of 19 held at 0 jobs, 2026-09-29), so
+    a first page without the key is a page this scraper could not read. It used to return `[]`,
+    which is in eviction scope (ADR-0200)."""
+    from headstart.ingest import board_failures
+    from headstart.scrapers.base import BoardUnreadable
+
+    scraper = _ripple_search_answers(FakeResponse(200, '{"message": "busy"}'))
+    with pytest.raises(BoardUnreadable, match="unread, not empty") as raised:
+        scraper.fetch_raw()
+    assert not board_failures.is_gone(f"{type(raised.value).__name__}: {raised.value}")
+
+
+def test_ripplehire_a_json_error_body_on_the_first_search_page_raises_its_status():
+    """A JSON body was parsed before `raise_for_status`, so a JSON 503 read as an empty Board."""
+    scraper = _ripple_search_answers(FakeResponse(503, '{"error": "unavailable"}'))
+    with pytest.raises(http.RequestsError, match="HTTP 503"):
+        scraper.fetch_raw()
+
+
+def test_ripplehire_an_empty_joblist_is_still_an_empty_board():
+    scraper = _ripple_search_answers(
+        FakeResponse(200, '{"jobVoList": [], "totalJobCount": 0}')
     )
-    rows = scraper.fetch_raw()
-    assert len(gets) == 2
-    assert [r["jobSeq"] for r in rows] == [1]
+    assert scraper.fetch_raw() == []
 
 
 # --- oracle: the requisition list is paged, not one shot -------------------------------------
