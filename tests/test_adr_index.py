@@ -62,3 +62,21 @@ def test_adr_numbers_are_unique_across_files():
         seen.setdefault(p.name[:4], []).append(p.name)
     clashes = {n: v for n, v in seen.items() if len(v) > 1}
     assert clashes == {}, f"duplicate ADR numbers: {clashes}"
+
+
+def test_every_adr_the_code_cites_exists():
+    """A comment citing an ADR that was never written sends its reader nowhere, and reads as
+    authority. `app.py` cited ADR-0282 for the Space's CSP, a number taken by no ADR, where the
+    decision is ADR-0298 (#870's review)."""
+    repo = _ADR_DIR.parents[1]
+    files = _files()
+    sources = [repo / "deploy" / "hf-space" / "app.py", *(repo / "src").rglob("*.py")]
+    missing = sorted(
+        f"{source.relative_to(repo)}: ADR-{number}"
+        for source in sources
+        for number in set(
+            re.findall(r"ADR-(\d{4})", source.read_text(encoding="utf-8"))
+        )
+        if number not in files
+    )
+    assert missing == [], f"cites an ADR with no file: {missing}"

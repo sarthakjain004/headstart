@@ -26,7 +26,10 @@ ledger module or the alerts sender.
 Space also loads 4 of the 15 modules in `alerts`, 4 of the 13 in `boards` and 2 of the 6 in `jobs`.
 It loads nothing from `scrapers`, `network` or `ingest`. One function in `boards.board_identity`
 imports `scrapers.registry` when called, but the Space calls only `ats_of`, `lower_key` and
-`tenant` from that module. The Space also reads `src/headstart/ui/` and `config/` as files.
+`tenant` from that module. The Space also reads files from `src/headstart/ui/` and `config/`.
+Of `config/`'s eight entries it reads four files (2026-09-29): `fx_rates.json`,
+`role_families.json` and `role_watchlist.json` at load, and `tech_skills.json` when a request
+asks what postings require.
 
 **What a deploy costs.** Every deploy boots a new container, and a boot is long. #842's image
 built in 17 s from cached layers. Its container logged its startup at 22:20:17 UTC on 2026-09-28
@@ -67,10 +70,24 @@ module. It fails if a loaded module is outside `paths`, which is the staleness A
 a change that would reach the Space only when some later change deployed it. It also fails if
 `paths` covers a module the Space never loads, which is the restart for nothing that this ADR
 removes. Files under `ui/`, `config/` and `deploy/hf-space/` are checked by path, since
-`sys.modules` cannot see them.
+`sys.modules` cannot see them. All of `config/` is listed, though the Space reads only some of
+its files, because which ones no load shows. The entries it does not read changed in 14 commits
+from 2026-08-01 to 2026-09-29, 11 of them to `company_names.csv`.
+
+*Added 2026-09-29 (the #850 review).* `sys.modules` after the load cannot see an import made
+inside a function, which runs only when a request calls it. Such a module would pass the first
+check and never deploy, and the second check would advise a `!` pattern for it. So a third check
+reads every loaded module, and `app.py`, for imports inside a function. Each must name a module
+the load already holds, or one listed in the test as never reached by a request, with the reason.
+The one listed is `scrapers.registry`, above. The check reads `import` and `from … import`
+statements only, so a module loaded by `importlib.import_module` stays invisible to it; no module
+the Space loads calls that today. The test also refuses a `paths` entry not written in double
+quotes, which it would otherwise skip.
 
 **A concurrency group, with `cancel-in-progress`.** A deploy that starts while an earlier one is
-still uploading cancels the earlier one. The newer checkout holds every earlier change, and
+still uploading cancels the earlier one. The group is keyed by ref (added 2026-09-29, the #850
+review), since only a newer checkout of the same ref holds the earlier one's changes: a
+`workflow_dispatch` from a branch must not cancel main's deploy. The newer checkout holds every earlier change, and
 `upload_folder` makes one commit, so a cancelled run leaves the Space on either the old commit or
 the new one, never a mix. This buys little, and the gain is stated here so that nobody counts on
 it. A run takes a median 17 s, and only 3 of the 62 runs on 2026-09-28 started while an earlier
@@ -95,8 +112,10 @@ downtime.
 ## Consequences
 
 - A PR that makes the Space import a new module fails the test until `paths` names that module.
-  A PR that adds a module the Space never loads to a package listed by a `**` glob fails the test
-  until the module gets a `!` negation.
+  So does a PR that imports a new module inside a function of a loaded one, until the import
+  moves to module level or the module is listed as never reached by a request. A PR that adds a
+  module the Space never loads to a package listed by a `**` glob fails the test until the module
+  gets a `!` negation.
 - On 2026-09-28, 34 of the 62 deploys would not have happened.
 - A deploy that does run still rolls: the old container serves until the new one answers.
   ADR-0267's §Risks records the measurements (#837).

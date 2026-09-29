@@ -273,6 +273,7 @@ supersedes it and note the supersession in both.
 | [0275](0275-an-agent-looks-a-company-up-and-reads-its-hiring-profile.md) | An agent looks a company up and reads its hiring profile | 2026-09-29 |
 | [0276](0276-a-hosted-mcp-call-ends-at-its-deadline-and-no-caller-holds-every-place.md) | A hosted MCP call ends at its deadline, and no caller holds every place (places amended by 0325, its "still finishing" sentence by 0320) | 2026-09-29 |
 | [0277](0277-an-agent-reads-a-posting-by-id-and-finds-jobs-like-one.md) | An agent reads a posting by id, and finds jobs like one | 2026-09-29 |
+| [0279](0279-the-space-serves-through-waitress-one-process-sixteen-threads.md) | The Space serves through waitress, in one process with sixteen threads | 2026-09-29 |
 | [0280](0280-ashby-declares-how-a-link-writes-its-slug.md) | Ashby declares how a link writes its slug | 2026-09-29 |
 | [0281](0281-a-lever-board-whose-hosted-pages-are-off-serves-nothing.md) | A Lever Board whose hosted pages are off serves nothing | 2026-09-29 |
 | [0285](0285-a-vector-is-rebuilt-when-its-postings-text-changes.md) | A vector is rebuilt when its posting's text changes | 2026-09-29 |

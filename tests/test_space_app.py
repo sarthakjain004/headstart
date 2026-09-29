@@ -41,6 +41,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 from werkzeug.datastructures import MultiDict
+from werkzeug.test import EnvironBuilder
 
 from headstart.llm_router import RouterUnavailable
 from headstart.serving import concurrency_limit, rate_limit
@@ -5057,7 +5058,7 @@ def test_no_template_or_script_writes_an_inline_handler_or_an_unnonced_script():
 
 def test_python_app_py_serves_through_waitress_not_the_dev_server():
     """#595: `start.sh` runs `python app.py`, whose main block started Werkzeug's development
-    server. It serves the one app object through waitress, in one process, with `_SERVE`."""
+    server. It serves the one app object through waitress, in one process, with `_WAITRESS_SETTINGS`."""
     tree = ast.parse(APP.read_text(encoding="utf-8"))
     main = next(
         node
@@ -5065,7 +5066,7 @@ def test_python_app_py_serves_through_waitress_not_the_dev_server():
         if isinstance(node, ast.If)
         and ast.unparse(node.test) == "__name__ == '__main__'"
     )
-    assert "waitress.serve(app, **_SERVE)" in ast.unparse(main)
+    assert "waitress.serve(app, **_WAITRESS_SETTINGS)" in ast.unparse(main)
     assert "app.run" not in ast.unparse(main)
 
 
@@ -5074,7 +5075,7 @@ def _served_by_waitress(module):
     """``module``'s app behind a real waitress server with the Space's own settings, on a free
     loopback port instead of 7860."""
     server = waitress.create_server(
-        module.app, **{**module._SERVE, "host": "127.0.0.1", "port": 0}
+        module.app, **{**module._WAITRESS_SETTINGS, "host": "127.0.0.1", "port": 0}
     )
     thread = threading.Thread(target=server.run, daemon=True)
     thread.start()
@@ -5130,6 +5131,58 @@ def test_each_request_leaves_one_line_in_the_run_log(app, capsys):
         '"GET /search" 200',
     ]
     assert all(re.fullmatch(r'"GET /\w+" 200 \d+\.\d{3}s', line) for line in lines)
+
+
+def _request_lines(capsys) -> list[str]:
+    return [
+        line for line in capsys.readouterr().out.splitlines() if line.startswith('"')
+    ]
+
+
+def test_a_path_cannot_write_a_line_of_its_own_into_the_space_run_log(app, capsys):
+    """Waitress hands the app its path percent-decoded, so a `%0A` in it is a line break, and
+    the line is printed for a caller the wall refuses too. On the Space (2026-09-29),
+    `/x%0A"GET /forged" 200 0.001s` printed a second line that read as a request of its own.
+    The path is logged as a URL spells it, which leaves an ordinary path as it was sent."""
+    client = app.app.test_client()
+    sent = "/x%0A%22GET%20/forged%22%20200%200.001s%1B%5B31m%E2%80%A8"
+    client.get(sent)
+    client.get("/file=../.env")
+    lines = _request_lines(capsys)
+    assert [line.rsplit(" ", 1)[0] for line in lines] == [
+        f'"GET {sent}" 404',
+        '"GET /file=../.env" 404',
+    ]
+
+
+def test_a_request_the_wall_refuses_is_timed_from_its_arrival(auth_app, capsys):
+    """The start is stamped before the wall and the limits run, so a request they refuse is
+    timed like any other rather than read as 0 s. Called as WSGI, since the test client's
+    response holds a copy of the environ the app wrote to."""
+    environ = EnvironBuilder(path="/sets").get_environ()
+    statuses = []
+    auth_app.app(environ, lambda status, headers: statuses.append(status))
+    assert statuses == ["401 UNAUTHORIZED"]
+    assert auth_app._REQUEST_STARTED_KEY in environ
+    assert [line.rsplit(" ", 1)[0] for line in _request_lines(capsys)] == [
+        '"GET /sets" 401'
+    ]
+
+
+def test_a_request_the_limit_refuses_is_timed_across_the_limit(
+    auth_app, capsys, monkeypatch
+):
+    now = [100.0]
+
+    class SlowRefusal:
+        def admit(self, caller):
+            now[0] += 2.5
+            return 7
+
+    monkeypatch.setattr(auth_app.time, "monotonic", lambda: now[0])
+    monkeypatch.setattr(auth_app, "_READ_LIMIT", SlowRefusal())
+    assert auth_app.app.test_client().get("/hot").status_code == 429
+    assert _request_lines(capsys) == ['"GET /hot" 429 2.500s']
 
 
 def test_the_hardening_headers_leave_a_gzipped_static_304_alone(sets_app, monkeypatch):
