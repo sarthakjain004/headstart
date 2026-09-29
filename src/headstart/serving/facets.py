@@ -379,7 +379,9 @@ NEVER_BLOCKING = frozenset(
 #: Filters only an agent sends (ADR-0322). Unlike :data:`NEVER_BLOCKING` they may be named: an
 #: agent's answer names the filter costing everything as the agent spelled it. The page has no
 #: control for them and never sends them, so its empty state never meets one.
-AGENT_ONLY = frozenset({"max_age_days", "required_years_at_least", "exclude_company"})
+AGENT_ONLY = frozenset(
+    {"max_age_days", "required_years_at_least", "exclude_company", "work_authorization"}
+)
 
 
 def _blocking(

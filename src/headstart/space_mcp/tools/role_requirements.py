@@ -150,6 +150,23 @@ def _skill_lines(counted: dict[str, Any]) -> list[str]:
     return lines
 
 
+def _work_authorization_line(counted: dict[str, Any]) -> str | None:
+    """How many sampled descriptions offer or refuse visa sponsorship and offer relocation, as
+    HeadStart's rules read them (ADR-0333)."""
+    held, described = counted.get("work_authorization"), counted["described"]
+    if not held or not described:
+        return None
+    return (
+        f"Of the {described:,} with a description, read by HeadStart's rules (not a field, "
+        f"and they can err): {held['offers_sponsorship']:,} offer visa sponsorship "
+        f"({_share(held['offers_sponsorship'], described)}), "
+        f"{held['refuses_sponsorship']:,} refuse it or require citizenship "
+        f"({_share(held['refuses_sponsorship'], described)}), "
+        f"{held['offers_relocation']:,} offer relocation help "
+        f"({_share(held['offers_relocation'], described)})."
+    )
+
+
 def _experience_line(counted: dict[str, Any]) -> str:
     experience = counted["experience"]
     bands = " · ".join(
@@ -271,6 +288,8 @@ def answer(client: SpaceClient, arguments: dict[str, Any]) -> str:
             f"Remote: {counted['remote']:,} of {counted['distinct']:,} "
             f"({_share(counted['remote'], counted['distinct'])})."
         )
+        if stances := _work_authorization_line(counted):
+            lines.append(stances)
         lines.append(_company_line(counted))
         lines.append(_country_line(counted))
         lines.append(

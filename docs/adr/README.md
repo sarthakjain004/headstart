@@ -301,6 +301,7 @@ supersedes it and note the supersession in both.
 | [0330](0330-trends-are-recomputed-from-recorded-job-facts-whenever-a-rule-changes.md) | Trends are recomputed from recorded Job facts whenever a rule changes | 2026-09-29 |
 | [0331](0331-a-copy-needs-one-companys-words-and-a-missing-id-gets-one-account.md) | A copy needs one company's words, and a missing id gets one account of why (amends 0323) | 2026-09-29 |
 | [0332](0332-a-requirements-sample-counts-each-requisition-once-under-its-directory-name.md) | A requirements sample counts each requisition once, under its directory name | 2026-09-29 |
+| [0333](0333-visa-sponsorship-and-relocation-are-read-from-descriptions-by-rules-at-query-time.md) | Visa sponsorship and relocation are read from descriptions by rules, at query time | 2026-09-29 |
 | [0334](0334-connecting-is-counted-apart-and-the-eval-judges-truth-not-one-path.md) | Connecting is counted apart, and the eval judges truth, not one path | 2026-09-29 |
 | [0335](0335-an-agent-leaves-out-staffing-firms-and-job-boards-and-an-unchecked-agency-name-is-flagged.md) | An agent leaves out staffing firms and job boards, and an unchecked agency name is flagged | 2026-09-29 |
 | [0336](0336-a-categorys-turnover-is-one-figure-in-every-view.md) | A category's turnover is one figure in every view (amends 0227) | 2026-09-29 |

@@ -13,7 +13,8 @@ answer that leads with a row hiring_now flagged. ``tool_args`` (``search_args`` 
 fixed schema) checks the arguments instead and trusts the Space to apply them: ``strict=1`` makes
 it refuse any it would drop. ``title_keyword_rows`` checks the arguments, then reads the rows that
 call returned back from ``/job`` and needs the keyword where a word starts in every title, the
-keyword's own rule (ADR-0299, ADR-0325).
+keyword's own rule (ADR-0299, ADR-0325). ``sponsorship_polarity`` reads back every row the calls
+listed and fails an answer naming a job whose description refuses sponsorship (ADR-0333).
 A run whose server was not connected at its start is not judged: it is an error, left out of the
 summary's scores and named on a line of its own, first.
 
@@ -814,6 +815,60 @@ def verify_blocking_named(
     )
 
 
+# --- sponsorship_polarity ------------------------------------------------------------------
+
+#: The most row ids one verdict reads back from `/job`: eight reads.
+POLARITY_IDS_READ = 40
+
+
+def _named_in(answer: str, job: dict[str, Any]) -> bool:
+    """Whether ``answer`` names ``job``: by its id, or by both its title and its company."""
+    if _found(answer, str(job.get("id") or "")):
+        return True
+    title, company = str(job.get("title") or ""), str(job.get("company") or "")
+    return bool(title and company) and _found(answer, title) and _found(answer, company)
+
+
+def verify_sponsorship_polarity(
+    expect: dict[str, Any], transcript: Transcript, space: Space
+) -> Verdict:
+    """The truth of a "which jobs sponsor visas" answer (ADR-0333): every row a search_jobs or
+    get_job result listed is read back from the Space's `/job`, and of those the final answer
+    names (by id, or by title and company), none may be one whose description refuses what the
+    answer offers, ``expect["refusal"]`` among the stances `/job` reads from the whole
+    description. At least ``expect["at_least"]`` must be named. A job the answer names as
+    refusing is judged the same, so the prompt must ask only for jobs that offer it."""
+    ids: list[str] = []
+    for call in transcript.calls:
+        if call.name in ("search_jobs", "get_job") and call.succeeded:
+            ids += [i for i in _row_ids(call.result or "") if i not in ids]
+    if not ids:
+        return Verdict(False, "no search_jobs or get_job result lists a job id")
+    jobs: list[dict[str, Any]] = []
+    for start in range(0, min(len(ids), POLARITY_IDS_READ), get_job.MAX_IDS):
+        chunk = ids[start : min(start + get_job.MAX_IDS, POLARITY_IDS_READ)]
+        jobs += space.read(SpaceRoute.JOB, [("id", i) for i in chunk]).get("jobs") or []
+    named = [job for job in jobs if _named_in(transcript.final_answer, job)]
+    refusal = expect["refusal"]
+    wrong = [
+        job
+        for job in named
+        if refusal in ((job.get("work_authorization") or {}).get("stances") or [])
+    ]
+    enough = len(named) >= int(expect.get("at_least") or 1)
+    return Verdict(
+        enough and not wrong,
+        f"the answer names {len(named)} of the {len(jobs)} jobs read back"
+        + (f", fewer than {expect.get('at_least')}" if not enough else "")
+        + (
+            f"; {len(wrong)} of them state {refusal}: "
+            + "; ".join(f"{job.get('title')!r} at {job.get('company')!r}" for job in wrong[:5])
+            if wrong
+            else f"; none states {refusal}"
+        ),
+    )
+
+
 # --- mentions ------------------------------------------------------------------------------
 
 
@@ -898,6 +953,7 @@ VERIFIERS: dict[str, Verifier] = {
     # The brief's fixed name, which the sealed held-out file uses; the same check.
     "search_args": verify_tool_args,
     "title_keyword_rows": verify_title_keyword_rows,
+    "sponsorship_polarity": verify_sponsorship_polarity,
     "trend_sign": verify_trend_sign,
     "hot_top": verify_hot_top,
     "blocking_named": verify_blocking_named,

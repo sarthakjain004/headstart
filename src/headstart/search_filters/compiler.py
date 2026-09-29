@@ -13,7 +13,7 @@ materialized Search filter's own facts live in its module (ADR-0193); this compi
 from __future__ import annotations
 
 import re
-from collections.abc import Collection
+from collections.abc import Callable, Collection
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from typing import NamedTuple
@@ -128,6 +128,9 @@ class SearchFilters:
     required_years_at_least: int | None = None
     # The company box negated: no company name containing this text.
     exclude_company: str | None = None
+    # A text-derived work-authorisation stance (ADR-0333): the Jobs whose description offers visa
+    # sponsorship, refuses it, or offers relocation, as `jobs.work_authorization` reads it.
+    work_authorization: str | None = None
 
 
 @dataclass(frozen=True)
@@ -155,6 +158,9 @@ class IndexCapabilities:
     has_salary_known: bool = False
     has_posted_at_comparable: bool = False
     has_experience_filter_flags: bool = False
+    # The where-clause keeping one work-authorisation stance's Jobs (ADR-0333), read from the
+    # descriptions once a process; None where no such read is loaded, which compiles no clause.
+    work_authorization_clause: Callable[[str], str] | None = None
 
 
 def _like(term: str) -> str:
@@ -745,5 +751,9 @@ def build_filter(filters: SearchFilters, capabilities: IndexCapabilities) -> str
         clauses.append(
             f"(company IS NULL OR NOT (lower(company) LIKE "
             f"'%{_like(filters.exclude_company)}%'))"
+        )
+    if filters.work_authorization and capabilities.work_authorization_clause:
+        clauses.append(
+            capabilities.work_authorization_clause(filters.work_authorization)
         )
     return " AND ".join(clauses) if clauses else None

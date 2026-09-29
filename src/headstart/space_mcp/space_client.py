@@ -64,8 +64,10 @@ SPACE_URL = "https://imposeidon-headstart-search.hf.space"
 #: view (ADR-0336); since 13, `strict=1` refusing a parameter name the Space does not read
 #: (ADR-0334); since 14, a sorted `/search` under a query ordering only rows scoring at least
 #: `job_search.SORT_FLOOR` (ADR-0338); since 15, `operators`, `operators_left_out` and
-#: `/hot`'s `operator_unverified` (ADR-0335). The app states the one it serves on every reply.
-AGENT_API = 15
+#: `/hot`'s `operator_unverified` (ADR-0335); since 16, `work_authorization` on `/search` and
+#: `/facets`, and on each `/job` and `/requirements` answer (ADR-0333). The app states the one
+#: it serves on every reply.
+AGENT_API = 16
 
 #: The measured boot, said when a call gives up waiting for one.
 BOOT_MEASURED = "a boot measured 4 min 13 s on 2026-09-28"

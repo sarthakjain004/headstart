@@ -16,6 +16,7 @@ the first of them, with only what differs; every id and link stays.
 
 from __future__ import annotations
 
+import re
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, date, datetime
 from typing import Any
@@ -99,6 +100,38 @@ _DESCRIPTION_PAST_DEADLINE = (
     "call in a minute or two is usually quick. Or look for the keyword in titles "
     "(keyword_in: title), or add a company."
 )
+
+
+#: A keyword about work authorisation, and what hand-read descriptions say of each kind
+#: (ADR-0333): a description matching one usually says the opposite of what the user hopes.
+_SPONSORSHIP_WORD = re.compile(
+    r"(?i)sponsor|visa|clearance|citizen|authori[sz]ation|authori[sz]ed|immigra|h-?1-?b"
+)
+_RELOCATION_WORD = re.compile(r"(?i)relocat")
+_SPONSORSHIP_KEYWORD_NOTE = (
+    "A description matching this keyword often refuses sponsorship rather than offering it: "
+    "of 100 hand-read descriptions mentioning sponsorship, 80 refused it and 11 offered it "
+    "(2026-09-29). Send work_authorization offers_sponsorship instead, or read each job with "
+    "get_job (its Mentions line) before saying it offers sponsorship."
+)
+_RELOCATION_KEYWORD_NOTE = (
+    "A description matching this keyword does not always offer relocation: of 63 hand-read "
+    "descriptions mentioning relocation, 38 offered it, 14 said none is offered and 11 said "
+    "neither (2026-09-29). Send work_authorization offers_relocation instead, or read each "
+    "job with get_job before saying it offers relocation."
+)
+
+
+def _keyword_note(arguments: dict[str, Any]) -> str | None:
+    """The warning a keyword about visas or relocation earns: its matches often refuse it."""
+    keyword = (arguments.get("keyword") or "").strip()
+    if not keyword:
+        return None
+    if _SPONSORSHIP_WORD.search(keyword):
+        return _SPONSORSHIP_KEYWORD_NOTE
+    if _RELOCATION_WORD.search(keyword):
+        return _RELOCATION_KEYWORD_NOTE
+    return None
 
 
 def _params(
@@ -447,6 +480,8 @@ def answer(client: SpaceClient, arguments: dict[str, Any]) -> str:
         lines.append(note)
     if coverage := _coverage_line(arguments, facets):
         lines.append(coverage)
+    if note := _keyword_note(arguments):
+        lines.append(note)
     if not rows:
         lines.insert(
             0,
@@ -508,11 +543,9 @@ TOOL = SpaceTool(
         "language, 'ML', a title word), use `keyword`: each word must start a word, and a "
         "quoted phrase keeps its words together. In descriptions it can match only "
         "jobs with a stored description, and the answer says how many have one. "
-        "`max_years` is the user's own "
-        "experience ('3+ years' is 3): it keeps jobs asking for at most that many, and "
-        "jobs that state no experience ('experience not stated'). `salary_min` keeps a "
-        "job whose stated range reaches it, `salary_max` one whose range starts at or "
-        "below it; other currencies are converted at fixed rates. Omit `query` to list the "
+        "For visa sponsorship or relocation use `work_authorization`, never `keyword`: a "
+        "description that mentions sponsorship usually refuses it. "
+        "Omit `query` to list the "
         "newest jobs that match the filters; `similar_to` a job id ranks by that "
         "job instead. With a `query`, `sort` orders only its "
         "closest matches (similarity 0.67+) — for a global order (the highest salary or "
@@ -574,12 +607,18 @@ TOOL = SpaceTool(
             "salary_min": {
                 "type": "integer",
                 "minimum": 0,
-                "description": "Annual; needs salary_currency (30 lakh = 3000000 INR).",
+                "description": (
+                    "Annual; needs salary_currency (30 lakh = 3000000 INR). Keeps a job whose "
+                    "stated range reaches it; other currencies are converted at fixed rates."
+                ),
             },
             "salary_max": {
                 "type": "integer",
                 "minimum": 0,
-                "description": "Annual; needs salary_currency.",
+                "description": (
+                    "Annual; needs salary_currency. Keeps a job whose stated range starts at "
+                    "or below it."
+                ),
             },
             "salary_currency": {
                 "type": "string",
@@ -618,7 +657,10 @@ TOOL = SpaceTool(
                 "description": (
                     "Words the job must contain, each at the start of a word: 'ai' finds "
                     "AI and AIOps but not Retail, 'java' also finds JavaScript. Put a phrase "
-                    "in double quotes to keep its words together, in order: '\"ai engineer\"'."
+                    "in double quotes to keep its words together, in order: '\"ai engineer\"'. "
+                    "In descriptions it can match only jobs with a stored description, and "
+                    "the answer says how many have one. Not for visas or relocation: see "
+                    "`work_authorization`."
                 ),
             },
             "keyword_in": {
@@ -626,6 +668,7 @@ TOOL = SpaceTool(
                 "enum": ["title", "description", "both"],
                 "description": "Where keyword must appear; title by default.",
             },
+            "work_authorization": search_arguments.PROPERTIES["work_authorization"],
             "ats": {
                 "type": "string",
                 "maxLength": 40,
@@ -635,6 +678,11 @@ TOOL = SpaceTool(
                 "type": "string",
                 "enum": list(SORTS),
                 "default": "relevance",
+                "description": (
+                    "salary orders by the low end of each stated range, in salary_currency "
+                    "or else USD. With `query`, any sort orders only the 2,000 closest "
+                    "matches."
+                ),
             },
             "limit": {
                 "type": "integer",

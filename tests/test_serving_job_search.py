@@ -2224,3 +2224,52 @@ def test_a_requirements_sample_leaves_out_the_operators_not_named(sampled, monke
     family = _requirements(sampled, family="data-engineering", operators="employer")
     assert (family["matching"], family["operators_left_out"]) == (1, 2)
     assert _requirements(sampled, q="data engineer")["operators_left_out"] is None
+# ---- work_authorization: text-derived stances as a filter (ADR-0333) ----
+
+
+def _stances_read(searcher):
+    searcher.work_authorization.start()
+    assert searcher.work_authorization.wait(30)
+    return searcher
+
+
+def test_a_stance_keeps_the_jobs_whose_description_states_it(families_served):
+    search = _stances_read(families_served)
+    offers = {"work_authorization": "offers_sponsorship"}
+    assert _ids(search.run(offers)) == ["lever:beta:4", "lever:acme:1"]
+    assert search.facets({**offers, "counts": "total"})["total"] == 2
+    refuses = {"work_authorization": "refuses_sponsorship"}
+    assert _ids(search.run(refuses)) == ["lever:acme:2"]
+    # Within a category's family table too, and beside a description keyword.
+    assert _ids(search.run({**offers, "family": "ai-ml"})) == ["lever:acme:1"]
+    assert search.facets({**offers, "family": "ai-ml"})["total"] == 1
+    keyed = {**offers, "kw": "offered", "kw_in": "description"}
+    assert _ids(search.run(keyed)) == ["lever:beta:4"]
+    assert search.facets(keyed)["total"] == 1
+
+
+def test_a_stance_costing_everything_is_named_as_the_blocking_filter(families_served):
+    search = _stances_read(families_served)
+    counted = search.facets(
+        {"work_authorization": "offers_relocation", "remote": "true"}
+    )
+    assert counted["total"] == 0 and counted["blocking"] == "work_authorization"
+
+
+def test_an_unknown_stance_is_refused_naming_the_known_ones(families_served):
+    with pytest.raises(ValueError, match="offers_sponsorship, refuses_sponsorship"):
+        families_served.run({"work_authorization": "sponsors"})
+
+
+def test_a_stance_asked_before_the_read_finishes_is_not_ready(served, monkeypatch):
+    monkeypatch.setattr("headstart.serving.job_search.WORK_AUTHORIZATION_WAIT_S", 0.01)
+    with pytest.raises(ScopeUnavailable, match="has not finished"):
+        served.run({"work_authorization": "offers_sponsorship"})
+
+
+def test_a_read_by_id_says_what_its_whole_description_states(families_served):
+    job = families_served.jobs_by_id(["lever:acme:1"])["lever:acme:1"]
+    assert job["work_authorization"] == {
+        "stances": ["offers_sponsorship"],
+        "mentions": ["We sponsor visas."],
+    }

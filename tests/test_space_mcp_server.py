@@ -23,6 +23,7 @@ import tomllib
 
 import pytest
 
+from headstart.jobs import work_authorization
 from headstart.mcp_protocol import messages, tool_arguments
 from headstart.mcp_protocol.messages import ToolFailure
 from headstart.serving.job_absence import WHY_NOT_SERVED
@@ -1340,6 +1341,11 @@ def test_a_get_job_answer_stays_inside_its_budget(found):
             description_chars=20_000,
             description_cut=True,
             unconfirmed=True,
+            # Every stance, and five mentions of quote marks, which escaping doubles.
+            work_authorization={
+                "stances": list(work_authorization.STANCES),
+                "mentions": ['"' * work_authorization.MENTION_CHARS] * 5,
+            },
         )
         for n in range(found)
     ]
@@ -3573,3 +3579,106 @@ def test_live_each_tool_answers_from_the_deployed_space():
         text = server.call(sc.SpaceClient(base=base), tool.name, arguments)
         assert text.strip(), tool.name
         assert len(text) <= tool.max_chars, tool.name
+
+
+# ---- work_authorization: visa sponsorship and relocation (ADR-0333) ----------------------
+
+
+def test_a_stance_is_sent_as_the_spaces_filter_and_named_in_the_scope():
+    space = _search_space([_job(1)])
+    text = server.call(
+        space,
+        "search_jobs",
+        {"query": "backend engineer", "work_authorization": "offers_sponsorship"},
+    )
+    assert ("work_authorization", "offers_sponsorship") in space.params_of(R.SEARCH)[0]
+    assert (
+        "description offers visa sponsorship (work_authorization offers_sponsorship: read "
+        "from the text by HeadStart's rules, not a field; they can err)" in text
+    )
+    assert "often refuses sponsorship" not in text
+
+
+@pytest.mark.parametrize(
+    ("keyword", "said"),
+    [
+        ("sponsorship", "80 refused it and 11 offered it"),
+        ('"visa sponsorship"', "80 refused it and 11 offered it"),
+        ("H-1B", "80 refused it and 11 offered it"),
+        ("citizenship", "80 refused it and 11 offered it"),
+        ("relocation", "14 said none is offered"),
+    ],
+)
+def test_a_keyword_about_visas_or_relocation_warns_its_matches_often_refuse(
+    keyword, said
+):
+    space = _search_space([_job(1)])
+    text = server.call(
+        space,
+        "search_jobs",
+        {"query": "software engineer", "keyword": keyword, "keyword_in": "description"},
+    )
+    assert said in text and "work_authorization offers_" in text
+
+
+def test_a_keyword_about_something_else_earns_no_warning():
+    space = _search_space([_job(1)])
+    text = server.call(space, "search_jobs", {"keyword": "kubernetes"})
+    assert "hand-read descriptions" not in text
+
+
+def test_search_jobs_says_to_use_the_stance_not_the_keyword_for_visas():
+    tool = server.BY_NAME["search_jobs"]
+    assert "use `work_authorization`, never `keyword`" in tool.description
+    stance = tool.input_schema["properties"]["work_authorization"]
+    assert stance["enum"] == list(work_authorization.STANCES)
+    assert "headstart.jobs.work_authorization" in stance["description"]
+    assert "Text-derived" in stance["description"]
+
+
+def test_get_job_quotes_what_a_description_says_of_visas_before_the_description():
+    posting = _posting(
+        1,
+        work_authorization={
+            "stances": ["refuses_sponsorship"],
+            "mentions": [
+                'Visa sponsorship is "not" available.',
+                "Relocation: Not available.",
+            ],
+        },
+    )
+    text = server.call(_job_space([posting]), "get_job", {"ids": [posting["id"]]})
+    lines = text.splitlines()
+    stance = next(i for i, line in enumerate(lines) if "Work authorisation" in line)
+    assert lines[stance] == (
+        "   Work authorisation read from the whole description by HeadStart's rules (they "
+        "can err): refuses_sponsorship."
+    )
+    assert lines[stance + 1] == (
+        '   Mentions: "Visa sponsorship is \\"not\\" available." · "Relocation: Not available."'
+    )
+    assert lines[stance + 2].startswith("   Description,")
+
+
+def test_get_job_says_none_read_when_a_description_states_no_stance():
+    posting = _posting(1, work_authorization={"stances": [], "mentions": []})
+    text = server.call(_job_space([posting]), "get_job", {"ids": [posting["id"]]})
+    assert "(they can err): none." in text and "Mentions:" not in text
+
+
+def test_role_requirements_give_each_stances_share_of_the_sample():
+    counted = _requirements(
+        work_authorization={
+            "offers_sponsorship": 26,
+            "refuses_sponsorship": 130,
+            "offers_relocation": 13,
+        }
+    )
+    text = server.call(
+        FakeSpace(requirements=counted), "role_requirements", {"query": "data engineer"}
+    )
+    assert (
+        "Of the 259 with a description, read by HeadStart's rules (not a field, and they can "
+        "err): 26 offer visa sponsorship (10%), 130 refuse it or require citizenship (50%), "
+        "13 offer relocation help (5%)." in text
+    )
