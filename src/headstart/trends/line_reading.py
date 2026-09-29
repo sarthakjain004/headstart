@@ -520,6 +520,8 @@ class _Reader:
         # every change named on any line, and the change a growth cause belongs to
         self.changes: dict[str, MarkedChange] = {}
         self.parent_of: dict[str, str] = {}
+        # Each note's change, once worked out: a line's every run asks for its owner's again.
+        self._note_changes: dict[int, str] = {}
         # The first row's first counted run (`_first_row`): a line first counted after it began
         # inside the window, and says so where that withholds its percentage.
         self.first_run: int | None = None
@@ -1010,7 +1012,13 @@ class _Reader:
 
     def register_note_change(self, k: int) -> str:
         """The change note ``k`` belongs to, registered: a settling run and a week-later echo
-        belong to their Counting change."""
+        belong to their Counting change. Worked out once a note: only the first call registers
+        anything, so later ones answer the same id without its label built again."""
+        if k not in self._note_changes:
+            self._note_changes[k] = self._note_change(k)
+        return self._note_changes[k]
+
+    def _note_change(self, k: int) -> str:
         n = self.notes[k]
         stamps = self.stamps
         if n["evicted"]:
@@ -1207,6 +1215,12 @@ class _Split:
         self.steps = _line_notes(self.view, line)
         self.causes: dict[str, float] = defaultdict(float)
         self.estimated = False
+        # The trace's scalings, latest run first, sorted once (`scaled` reads them every run),
+        # and each run's growth-rescaled cause once worked out (`_growth_rescaled_by`).
+        self._scalings = sorted(
+            trace.ratios.items(), key=lambda op: op[0], reverse=True
+        )
+        self._rescaled: dict[int, str] = {}
 
     def add(self, change: str, size: float) -> None:
         if abs(size) > _NOISE:
@@ -1268,15 +1282,9 @@ class _Split:
         among those scalings, each by its own share of it."""
         if abs(amount) <= _NOISE:
             return
-        ops = sorted(
-            (
-                (j, scaling)
-                for j, scaling in self.trace.ratios.items()
-                if j > after and j != landing
-            ),
-            key=lambda op: op[0],
-            reverse=True,
-        )
+        ops = [
+            (j, scaling) for j, scaling in self._scalings if j > after and j != landing
+        ]
         kept = 1.0
         weights = []
         for j, scaling in ops:
@@ -1301,7 +1309,13 @@ class _Split:
 
     def _growth_rescaled_by(self, j: int) -> str:
         """The growth a counting change scaled away where shifting it out would have taken the
-        line below zero: its own cause, beside the change's own size at its runs."""
+        line below zero: its own cause, beside the change's own size at its runs. Worked out
+        once a run, as ``register_note_change`` is."""
+        if j not in self._rescaled:
+            self._rescaled[j] = self._rescaled_cause(j)
+        return self._rescaled[j]
+
+    def _rescaled_cause(self, j: int) -> str:
         jump = self.trace.jumps.get(j)
         owner = self._owner(list(jump.notes) if jump else [])
         if owner is None:

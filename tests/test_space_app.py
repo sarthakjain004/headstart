@@ -40,6 +40,7 @@ from urllib.parse import parse_qs, quote
 import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
+from werkzeug.datastructures import MultiDict
 
 from headstart.llm_router import RouterUnavailable
 from headstart.serving import concurrency_limit, rate_limit
@@ -2983,6 +2984,30 @@ def test_every_view_a_click_away_is_answered_ahead(company_trends, trends_app):
                 for line in answer["series"][: trends_app._CHART_MAX]:
                     drill = replace(view, family=line["name"])
                     assert history.answer_key(drill) in kept
+
+
+def test_every_source_but_one_is_answered_ahead_in_the_pages_order(
+    company_trends, trends_app, monkeypatch
+):
+    """ADR-0269: a first untick in the Source picker asks for every Source but one, the boxes in
+    the order the page lists them, so each such view is kept for both Measures."""
+    atses = ("greenhouse", "lever", "workday")
+    monkeypatch.setattr(
+        trends_app._searcher,
+        "capabilities",
+        replace(trends_app._searcher.capabilities, atses=atses),
+    )
+    trends_app._answer_views_a_click_away()
+    for left_out in atses:
+        for metric in ("stock", "new"):
+            asked = MultiDict(
+                [("ats", a) for a in atses if a != left_out]
+                + ([("metric", metric)] if metric == "new" else [])
+            )
+            assert trends_app._trends_kept(trends_app._trends_question(asked))
+    assert not trends_app._trends_kept(
+        trends_app._trends_question(MultiDict([("ats", "greenhouse")]))
+    )
 
 
 def test_a_kept_trends_answer_is_not_counted_against_the_callers_limit(
