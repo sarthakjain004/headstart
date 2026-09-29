@@ -108,6 +108,28 @@ def test_location_quotes_are_doubled():
     assert _clause(location="O'Fallon") == "lower(location) LIKE '%o''fallon%'"
 
 
+def test_a_location_read_as_typed_stays_the_plain_substring_like():
+    """ADR-0344: a term with no accent, no word the table spells with accents and no renamed
+    place keeps the `LIKE` — the cheaper predicate on a ranked page."""
+    words = frozenset({"zUrich", "sAo"})
+    assert _clause(location="London", accented_words=words) == (
+        "lower(location) LIKE '%london%'"
+    )
+
+
+def test_a_location_the_spelling_rules_change_compiles_to_one_regexp_like():
+    """ADR-0344: an accent typed, a word the table spells with accents, or a renamed place."""
+    words = frozenset({"zUrich", "sAo"})
+    for term in ("Zurich", "Zürich", "Bangalore", "St. Louis"):
+        clause = _clause(location=term, accented_words=words)
+        assert clause.startswith("regexp_like(location, '(?i)"), term
+        assert clause.count("regexp_like(") == 1
+    assert (
+        _clause(location="Zurich") == "lower(location) LIKE '%zurich%'"
+    )  # no words known
+    assert _clause(location="O'Fallon zurich", accented_words=words).count("''") == 1
+
+
 def test_like_metacharacters_are_escaped_so_a_term_matches_literally():
     r"""Quote doubling stops injection; this stops the quieter failure, a widened match.
 
