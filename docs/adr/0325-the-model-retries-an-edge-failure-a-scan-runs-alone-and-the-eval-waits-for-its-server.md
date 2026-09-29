@@ -126,7 +126,9 @@ what cost claude.ai users their share. The range still shares 2 fast places. At 
 those turn over many times a minute. A caller can now hold 2 fast places and the scan place at
 once, 3 of 5. The CPU is bounded tighter than before, at 1 scan against ADR-0276's possible 4.
 *Flip:* `_MCP_SCANS_AT_ONCE`. A full-text index on descriptions would make a scan a fast call and
-retire the place (ADR-0274 names it). A larger fast share for the range is the other flip ADR-0276
+retire the place (ADR-0274 names it). ADR-0320, merged after these measurements, finds a scan's
+rows once and reads the literal first; re-measure one scan alone and two at once before changing
+the count. A larger fast share for the range is the other flip ADR-0276
 names, for when a 429 "at once" from the range shows up in use.
 
 **4. The hosted eval waits for its server and judges truth.**
