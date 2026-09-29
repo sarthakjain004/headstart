@@ -48,6 +48,14 @@ cache new Boards automatically, but needs plumbing across three stages, a first 
 from whatever tech postings one run saw, and nobody reviews it. A committed file is reviewed in a
 diff before any user sees a name, and the one-off script reads every posting type, not only tech.
 
+> **Amended 2026-09-29 (#710, #872 and its code review).** "Until the script is re-run" is now a
+> landing rule in CLAUDE.md: every change to the Workday ledger re-runs the script with
+> `--new-since origin/main`, which reads only the Boards that became Hiring since that ref. It
+> keys on Hiring rather than on held, so a Board landed with no postings is read by the re-probe
+> that finds it hiring; keyed on held, 24 Boards landed at 0 postings would never have been read.
+> The Hiring Boards the ADR-0216 sweep skipped because they were not then serving a slug (3,923 on
+> 2026-09-29) are still uncached; scheduling that sweep is #922.
+
 **Curation fills what the cascade cannot.** `config/company_names.csv` (ADR-0212) gains an entry,
 with evidence read from the Board's own og tags, sidebar logo alt, approot and posting text, for
 every residue Board that states its name somewhere, and for Boards of 50+ rows the cascade named

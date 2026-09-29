@@ -37,6 +37,17 @@ employer the Board's own postings state (5 detail payloads read per Board).
   the site's own name, so 710 of the 751 named Oracle Boards read the same day carry the title
   again. The other 41 all name their employer through the title guards below, as do the 3
   empty-company Boards (onsemi, Legrand Group, Patterson-UTI). That is 44 of 44.
+
+  > **Corrected 2026-09-29 (code review of #878).** A census of all 1,753 Oracle Scrapable
+  > Boards, fetched through the scraper's own request, found 73 whose SEO name differs from the
+  > site name. The guards passed 72 of them, and two were not employers: "SEO Optimization"
+  > (`iaiigs`, a placeholder) and "Carreiras Magazine Luiza" (`iaaywd`, "Careers" in Portuguese).
+  > Neither Board reached the SEO name, because each one's title names it first. `_LEFTOVER` now
+  > refuses both, along with the page labels in other languages that the same census found
+  > served whole from titles: "Sitio de experiencia de candidatos", "Portal de Empleo", "Sito
+  > Carriere BPER", "Werken bij Profource". That change renames 26 Boards, none with a served row
+  > on table v45. 22 lose a label they were named by. Four move to an SEO name that their own
+  > postings state: Profource, Coocique R.L, Tajin and Andreani.
 - **Tenants typed page labels around the SEO name.** "The Kroger Co. Careers", "Macy's Jobs" and
   "St. Olaf College | Careers" would be served as they stand through `from_field`. The Oracle
   title guards (`from_title`, `_PAGE_TITLE`, `_LEFTOVER`) turn them into "The Kroger Co.",

@@ -139,10 +139,12 @@ __all__ = [
 #: Per ATS, the wrapper its board title puts around the company name. Anchored, so a title
 #: without the expected shape falls through to ``None`` rather than being mangled into one.
 #: "Careers at {Name}" or "{Name} Careers" — eightfold and keka wrap their titles identically,
-#: so they share one tuple rather than two that must be kept in step by hand.
+#: so they share one tuple rather than two that must be kept in step by hand. A separator before
+#: "Careers" is the wrapper's, not the name's: "Louisiana State University - Careers" (Workday's
+#: og:title) and gem's "mimic robotics - Careers" were served with their " -" until 2026-09-29.
 _CAREERS_WRAPPER = (
     re.compile(r"^Careers?\s+at\s+(?P<name>.+?)$", re.IGNORECASE),
-    re.compile(r"^(?P<name>.+?)\s+Careers$", re.IGNORECASE),
+    re.compile(r"^(?P<name>.+?)(?:\s*[-–—|:])?\s+Careers$", re.IGNORECASE),
 )
 
 # A jibe title's name part where nothing else fences it: refuses text naming a page rather than an

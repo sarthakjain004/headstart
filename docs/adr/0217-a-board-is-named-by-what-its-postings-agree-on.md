@@ -47,6 +47,11 @@ ATS, the field is site-level on most Boards elsewhere:
    Jibe's `customer0` states "iCIMS Talent Acquisition": iCIMS hiring on its own client, which the
    alias set (a bare "iCIMS") does not refuse. A SuccessFactors job-title suffix is page text, so
    it takes `from_title` and a `successfactors` pattern.
+
+   > **Amended 2026-09-29 by [ADR-0302](0302-an-oracle-board-whose-title-names-no-one-is-named-by-its-sites-seo-name.md).**
+   > One field takes the title guards instead: Oracle's `seoConfiguration.name`. Tenants typed
+   > page labels around it ("The Kroger Co. Careers", "Macy's Jobs"), which `from_field` would
+   > serve whole. Keka's portal `name` already did the same, for the same reason.
 5. **When in doubt, refuse.** A doubtful name falls to ADR-0212's curated map or humanised
    fallback rather than being served. Examples:
    - SuccessFactors instance ids and filler: "PMIProd", "erstegro01P2", "Apply now!", "Group".
