@@ -112,7 +112,7 @@ TOOL = SpaceTool(
             "name": {
                 "type": "string",
                 "maxLength": 100,
-                "description": "The company's name, or a Board key such as 'lever:razorpay'.",
+                "description": "The company's name, or a Board key such as 'ashby:openai'.",
             },
             "limit": {
                 "type": "integer",

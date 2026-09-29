@@ -348,7 +348,12 @@ def answer(client: SpaceClient, arguments: dict[str, Any]) -> str:
     if listing.moved:
         lines.append(
             "Flagged rows are listed after the unflagged ones, each group in the site's order; "
-            "site #N is the row's place on the page."
+            "site #N is the row's place on the site's page with staffing firms and job boards "
+            + (
+                "shown too, so it differs from their place with them hidden."
+                if arguments.get("include_hidden_operators")
+                else "hidden, as the tab hides them by default."
+            )
         )
     lines += [
         _row(rank, listed, listing.moved)

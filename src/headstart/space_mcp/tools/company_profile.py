@@ -169,7 +169,8 @@ def _trend(payload: dict[str, Any], keys: list[str], old: dict[str, int]) -> lis
     lines = [
         f"Tech openings now: {reading.get('openings', move['latest']):,}, as Trends counts them"
         + (
-            f"; search also serves {non_tech:,} jobs on its Boards that the tech filter sets "
+            f"; search also serves {non_tech:,} job{'' if non_tech == 1 else 's'} on its "
+            "Boards that the tech filter sets "
             "aside."
             if non_tech
             else "."

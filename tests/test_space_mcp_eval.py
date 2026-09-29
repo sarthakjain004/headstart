@@ -6,6 +6,7 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -1099,6 +1100,88 @@ def test_the_iteration_tasks_use_known_verifiers_and_real_arguments(ev):
     assert len(tasks_file["heldout_sha256"]) == 64
 
 
+#: A tool description's steer away from one argument path: "For visa sponsorship or relocation
+#: use `work_authorization`, never `keyword`" (search_jobs).
+_STEER = re.compile(r"For ([^.`]+?) use `(\w+)`, never `(\w+)`")
+
+
+def _steers():
+    """(tool, topic stems, the argument steered away from) for every steer a tool states."""
+    found = []
+    for tool in REGISTRY:
+        for topics, _, avoided in _STEER.findall(tool.description):
+            stems = {
+                w[:5] for w in re.findall(r"[a-z]+", topics) if w not in ("or", "and")
+            }
+            found.append((tool.name, stems, avoided))
+    return found
+
+
+def _demands(check, steer):
+    """Whether ``check`` passes only an answer that took the path ``steer`` steers away from:
+    a tool_args check whose rules require the steered-away argument on a steered topic, an
+    all_of holding such a check, or an any_of every path of which is one."""
+    tool, stems, avoided = steer
+    verifier, expect = check["verifier"], check.get("expect") or {}
+    if verifier == "any_of":
+        return all(_demands(c, steer) for c in expect["checks"])
+    if verifier == "all_of":
+        return any(_demands(c, steer) for c in expect["checks"])
+    if verifier not in ("tool_args", "search_args") or expect.get("tool") != tool:
+        return False
+
+    def on_topic(rules):
+        value = json.dumps((rules or {}).get(avoided), ensure_ascii=False).casefold()
+        return avoided in (rules or {}) and any(stem in value for stem in stems)
+
+    alternatives = expect.get("must_any") or []
+    return (
+        on_topic(expect.get("must"))
+        or bool(alternatives)
+        and all(on_topic(a) for a in alternatives)
+    )
+
+
+def test_no_task_demands_the_path_its_tools_description_steers_away_from(ev):
+    """Round-4 critique P1-4: t27 demanded `keyword: relocation` while search_jobs' description
+    says to use `work_authorization`, never `keyword`, for relocation, so an agent that followed
+    the tool failed the task; t13 had the same fault in round 3 (SP7). A task may accept that
+    path, as one of its any_of paths, but may not require it."""
+    steers = _steers()
+    assert [(t, a) for t, _, a in steers] == [("search_jobs", "keyword")]
+    tasks = json.loads(ev.ITERATION_TASKS.read_text(encoding="utf-8"))["tasks"]
+    for task in tasks:
+        for steer in steers:
+            assert not _demands(task, steer), task["id"]
+
+    # The check itself: round 4's t27 fails it, and its any_of form passes.
+    keyword_path = {
+        "verifier": "tool_args",
+        "expect": {
+            "tool": "search_jobs",
+            "must": {
+                "country": "NL",
+                "keyword": {"op": "contains", "value": "relocation"},
+            },
+        },
+    }
+    filter_path = {
+        "verifier": "tool_args",
+        "expect": {
+            "tool": "search_jobs",
+            "must": {"work_authorization": "offers_relocation"},
+        },
+    }
+    assert _demands(keyword_path, steers[0])
+    assert _demands(
+        {"verifier": "all_of", "expect": {"checks": [keyword_path]}}, steers[0]
+    )
+    assert not _demands(
+        {"verifier": "any_of", "expect": {"checks": [filter_path, keyword_path]}},
+        steers[0],
+    )
+
+
 def test_the_sentences_the_harness_reads_are_the_servers_own(ev):
     # The server's sentences, as written in its source.
     package = _SCRIPT.parents[2] / "src" / "headstart" / "space_mcp"
@@ -1242,8 +1325,15 @@ def test_an_http_run_waits_for_the_server_and_one_left_pending_is_not_judged(
     assert record["verdict"] == "error" and "pending" in record["detail"]
     assert record["server_status"] == "pending" and record["repeat"] == 2
     assert record["transcript"].endswith("run_t03_r2_transcript.jsonl")
-    assert claude.envs[-1] == {"HOME": "/x", "MCP_CONNECTION_NONBLOCKING": "false"}
-    assert ev.run_env({"HOME": "/x"}, None) == {"HOME": "/x"}  # stdio: unchanged
+    assert claude.envs[-1] == {
+        "HOME": "/x",
+        "MCP_TIMEOUT": "60000",
+        "MCP_CONNECTION_NONBLOCKING": "false",
+    }
+    # Round-4 critique P1-4: a slow network left 44 of 123 runs pending; every run waits up to
+    # 60 s for its server, unless the caller set its own wait.
+    assert ev.run_env({"HOME": "/x"}, None) == {"HOME": "/x", "MCP_TIMEOUT": "60000"}
+    assert ev.run_env({"MCP_TIMEOUT": "5000"}, None) == {"MCP_TIMEOUT": "5000"}
 
 
 def _record(task_id, verdict):
