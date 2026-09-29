@@ -466,7 +466,26 @@ def build_doc(job: dict) -> str:
 # veto it. Lost: 17 Hajdú-Bihar, 17 on "india" inside a longer word (Xindian 14, Indian Harbour
 # Beach 3), 8 Delhi (New York, Louisiana), 5 Inashiki, 2 Little India (Singapore) and 4 more one
 # each (Maladzyechna, Kagithane, Madras OR, "Cananda").
-DERIVATIONS_VERSION = 24
+# v25 (ADR-0350): `jobs/experience.py` reads a third pass where the first two find nothing ("five (5)
+# years" collapsed to its digits, a 46-80 character gap before "experience", "expertise"/"exp" for
+# "experience"), reads a number as a whole token (no "160,000" tail, no decimal fraction: "2.5 years" is
+# 2), reads "less than"/"maximum"/"no more than" and their kin as a 0..N ceiling like "up to", and
+# skips an education ("4 year degree"), an age ("18 years of age"), a contract length, a widened window
+# ("for the past 5 years") and years that stand in for a degree. The range since the v23 bump at
+# `4e3291c7` is `git log 4e3291c7..0977989e -- src/headstart/jobs/experience.py`: this change alone, one
+# commit (`salary.py` is untouched). Measured old (main's `extract()`, which reproduces the served value
+# on all 497,733 rows with a description) vs new on the served table at version 326, 499,841 rows, read
+# off HF on 2026-09-29 at 16:57 UTC, per ADR-0066: 11,212 rows move (2.25%), none at the field tier. By
+# tier: none -> regex 4,426, seniority -> regex 5,005 (2,123 of them by three years or more), regex ->
+# none 167, regex -> seniority 229, and regex -> regex 1,385 (752 floors fall, 609 rise, 24 change only
+# the ceiling). By cause, read off the text around the old and new match: the third pass 9,431 gained
+# ("five (5)" 8,083, the long gap 952, expertise 396), and of the rows that lose or change a value 392
+# degree substitution, 328 ceiling word, 253 decimal or thousands, 240 education, 72 window, 54 age, 16
+# contract, 426 with no single rule. The third pass alone (the same module with and without it) changes
+# 9,518 rows, all none or seniority -> regex and none where the first two passes still answer;
+# ADR-0079's smallest floor is untouched. Hand-read at 25 rows a class: 23, 25 and 22 right for the three
+# widenings and 17 to 24 for the guards that move an answer (the table and the misses are in ADR-0350).
+DERIVATIONS_VERSION = 25
 
 
 def to_meta(job: dict) -> dict:

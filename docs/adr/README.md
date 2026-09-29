@@ -316,6 +316,7 @@ supersedes it and note the supersession in both.
 | [0346](0346-a-radancy-403-is-the-runners-ip-refused-so-a-front-takes-the-spare-egress-and-not-a-browser.md) | A Radancy 403 is the runner's IP refused, so a front takes the spare egress and not a browser | 2026-09-29 |
 | [0347](0347-the-india-country-tag-reads-whole-words-and-the-shapes-only-india-writes.md) | The India country tag reads whole words and the shapes only India writes | 2026-09-29 |
 | [0348](0348-a-workday-listing-item-with-no-title-and-no-link-is-not-a-job.md) | A Workday listing item with no title and no link is not a Job | 2026-09-29 |
+| [0350](0350-experience-widenings-run-last-and-a-ceiling-an-education-an-age-or-a-window-is-not-a-floor.md) | Experience widenings run last, and a ceiling, an education, an age or a window is not a floor | 2026-09-29 |
 
 *ADR-0037 was removed from the repository on 2026-09-24 by the owner's decision; its number is not
 reused.*
