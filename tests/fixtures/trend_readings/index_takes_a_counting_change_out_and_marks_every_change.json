@@ -253,6 +253,7 @@
    }
   ],
   "other": null,
+  "charted": 2,
   "company_lines": [
    {
     "name": "__total__",
@@ -310,7 +311,8 @@
     "boards": null,
     "sizes": {
      "__total__": -3700
-    }
+    },
+    "drawn": true
    },
    {
     "id": "counting@2026-08-13T12:00:00+00:00",
@@ -325,7 +327,8 @@
     ],
     "company": null,
     "boards": null,
-    "sizes": {}
+    "sizes": {},
+    "drawn": true
    }
   ],
   "day_markers": [

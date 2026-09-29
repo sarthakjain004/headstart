@@ -1,8 +1,10 @@
-"""Where a set of Boards' served jobs are — `headstart.serving.location_counts` (ADR-0275).
+"""Where a set of Boards' served jobs are — `headstart.serving.location_counts` (ADR-0275,
+ADR-0323).
 
 Contracts: one filtered scan that reads only the `location` column, bounded; places counted as
 served, whitespace collapsed and nothing else merged; empty locations counted apart; most first,
-ties by name; and a scan that reaches its bound says so.
+ties by name; a scan that reaches its bound says so; and every place rolled up by the countries
+the ``country`` filter reads in it, a place naming none counted apart.
 """
 
 from __future__ import annotations
@@ -65,7 +67,61 @@ def test_places_are_counted_as_served_most_first_ties_by_name():
             {"location": "Seattle, WA", "count": 2},
             {"location": "Austin", "count": 1},
         ],
+        "countries": [
+            {
+                "code": "US",
+                "jobs": 4,
+                "places": [
+                    {"location": "Seattle, WA", "count": 2},
+                    {"location": "Austin", "count": 1},
+                    {"location": "seattle, wa", "count": 1},
+                ],
+            },
+            {"code": "IN", "jobs": 2, "places": [{"location": "Pune", "count": 2}]},
+        ],
+        "no_country": {"jobs": 0, "places": []},
+        "places_unread": 0,
     }
+
+
+def test_places_roll_up_by_country_a_multi_country_place_in_each():
+    rows = ["Dublin", "Dublin, Ireland", "Dublin", "N/A", "N/A", "Remote"]
+    rows += ["London, UK; Berlin, Germany", "Cork, Ireland", "Galway, Ireland"]
+    answer = location_counts.top(_Scan(rows), "x", 10)
+    assert answer["countries"] == [
+        {
+            "code": "IE",
+            "jobs": 5,
+            "places": [
+                {"location": "Dublin", "count": 2},
+                {"location": "Cork, Ireland", "count": 1},
+                {"location": "Dublin, Ireland", "count": 1},
+            ],
+        },
+        {
+            "code": "DE",
+            "jobs": 1,
+            "places": [{"location": "London, UK; Berlin, Germany", "count": 1}],
+        },
+        {
+            "code": "GB",
+            "jobs": 1,
+            "places": [{"location": "London, UK; Berlin, Germany", "count": 1}],
+        },
+    ]
+    assert answer["no_country"] == {
+        "jobs": 3,
+        "places": [{"location": "N/A", "count": 2}, {"location": "Remote", "count": 1}],
+    }
+
+
+def test_places_past_the_read_bound_are_counted_as_unread(monkeypatch):
+    monkeypatch.setattr(location_counts, "MAX_PLACES_READ", 1)
+    answer = location_counts.top(_Scan(["Pune", "Pune", "Austin"]), "x", 10)
+    assert answer["countries"] == [
+        {"code": "IN", "jobs": 2, "places": [{"location": "Pune", "count": 2}]}
+    ]
+    assert answer["places_unread"] == 1
 
 
 def test_a_scan_that_reaches_its_bound_says_so(monkeypatch):
@@ -81,4 +137,7 @@ def test_no_rows_is_an_empty_answer_not_an_error():
         "distinct": 0,
         "capped": False,
         "locations": [],
+        "countries": [],
+        "no_country": {"jobs": 0, "places": []},
+        "places_unread": 0,
     }

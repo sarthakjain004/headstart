@@ -58,7 +58,13 @@ def _taxonomy() -> tuple[dict[str, str], tuple[tuple[str, str, str], ...]] | Non
     each retired one followed to the current family that took it over. None when unreadable."""
     try:
         taxonomy = json.loads(FILE.read_text(encoding="utf-8"))
-        labels = {family["name"]: family["label"] for family in taxonomy["families"]}
+        # A hidden family (ADR-0306) is counted but never offered: not in the enum, and a caller
+        # who names it is told there is no such category.
+        labels = {
+            family["name"]: family["label"]
+            for family in taxonomy["families"]
+            if not family.get("hidden")
+        }
         retired = {
             family["name"]: (family["label"], family["successor"])
             for family in taxonomy.get("retired", [])
@@ -95,6 +101,15 @@ def label(name: str) -> str | None:
     """A current family's label, or None."""
     taxonomy = _taxonomy()
     return taxonomy[0].get(name) if taxonomy else None
+
+
+def successor(name: str) -> str | None:
+    """The current family that took a retired family ``name`` over; None for a current or an
+    unknown id, or without the file. An old window's lines carry retired ids (ADR-0321)."""
+    taxonomy = _taxonomy()
+    if taxonomy is None or name in taxonomy[0]:
+        return None
+    return next((now for old, _, now in taxonomy[1] if old == name), None)
 
 
 def _words(text: str) -> tuple[str, ...]:

@@ -33,6 +33,7 @@ from headstart.space_mcp.tools import (
     get_job,
     hiring_now,
     read_trends,
+    role_requirements,
     search_jobs,
 )
 
@@ -44,4 +45,5 @@ REGISTRY: tuple[SpaceTool, ...] = (
     hiring_now.TOOL,
     find_company.TOOL,
     company_profile.TOOL,
+    role_requirements.TOOL,
 )

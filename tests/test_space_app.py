@@ -468,6 +468,8 @@ _READ_ROUTES = (
     "/companies/lookup",
     "/job",
     "/companies/locations",
+    "/companies/levels",
+    "/requirements",
 )
 _DOOR_PATHS = (
     "/",
@@ -696,6 +698,8 @@ def test_the_mcp_limits_are_pinned(auth_app):
     assert auth_app._ANTHROPIC_LIMIT_REQUESTS == 300
     assert (auth_app._MCP_AT_ONCE, auth_app._MCP_PLACE_WAIT_S) == (4, 10)
     assert auth_app._MCP_AT_ONCE_EACH == 2
+    # ADR-0325: one description-keyword search at a time, on a place of its own.
+    assert (auth_app._MCP_SCANS_AT_ONCE, auth_app._MCP_SCAN_RETRY_S) == (1, 20)
 
 
 def test_mcp_answers_anyone_with_the_wall_on_and_only_by_post(auth_app):
@@ -789,6 +793,64 @@ def test_one_caller_cannot_hold_every_mcp_place(
     assert _post_mcp(client, headers={"X-Forwarded-For": address}).status_code == 200
 
 
+def _search_call(**arguments):
+    return {
+        "jsonrpc": "2.0",
+        "id": _MCP_LIST["id"],
+        "method": "tools/call",
+        "params": {"name": "search_jobs", "arguments": arguments},
+    }
+
+
+_DESCRIPTION_SCAN = _search_call(keyword="visa", keyword_in="description")
+
+
+@pytest.mark.parametrize(
+    "message, scans",
+    [
+        (_DESCRIPTION_SCAN, True),
+        (_search_call(keyword="visa", keyword_in="both"), True),
+        (_search_call(keyword="rust"), False),  # a title keyword, the default scope
+        (_search_call(keyword="rust", keyword_in="title"), False),
+        (_search_call(keyword="  ", keyword_in="description"), False),  # no keyword
+        (_search_call(query="engineer"), False),
+        (_MCP_LIST, False),
+        ({"method": "tools/call", "params": {"name": "get_job"}}, False),
+        ([_DESCRIPTION_SCAN], False),  # not one request: the protocol module refuses it
+    ],
+)
+def test_a_description_scan_is_told_from_the_body(auth_app, message, scans):
+    assert auth_app._scans_descriptions(json.dumps(message).encode()) is scans
+    assert auth_app._scans_descriptions(b"not json") is False
+
+
+def test_a_description_scan_takes_its_own_place_and_never_a_fast_one(
+    auth_app, monkeypatch
+):
+    """ADR-0325: a scan waits only for the one scan place, so it never holds one of the 4 places
+    a fast call would queue behind, and a full house of fast calls does not keep it out."""
+    fast = concurrency_limit.ConcurrencyLimit(2, 2)
+    scan = concurrency_limit.ConcurrencyLimit(1, 1)
+    monkeypatch.setattr(auth_app, "_MCP_PLACES", fast)
+    monkeypatch.setattr(auth_app, "_MCP_SCAN_PLACES", scan)
+    monkeypatch.setattr(auth_app, "_MCP_PLACE_WAIT_S", 0.01)
+    client = auth_app.app.test_client()
+
+    scan.take("198.51.100.9", 0)  # another caller's scan is running
+    r = _post_mcp(client, _DESCRIPTION_SCAN)
+    _mcp_refusal_says(r, 503, "1 description-keyword search at a time")
+    assert r.headers["Retry-After"] == "20"
+    assert _post_mcp(client).status_code == 200  # a fast call does not wait for it
+    scan.give_back("198.51.100.9")
+
+    for _ in range(2):  # every fast place held
+        fast.take("198.51.100.9", 0)
+    assert _post_mcp(client).status_code == 503
+    r = _post_mcp(client, _DESCRIPTION_SCAN)
+    assert r.status_code == 200 and "result" in r.json
+    assert not scan._held  # given back once answered
+
+
 def test_an_mcp_place_is_given_back_when_answering_fails(auth_app, monkeypatch):
     places = concurrency_limit.ConcurrencyLimit(1, 1)
     monkeypatch.setattr(auth_app, "_MCP_PLACES", places)
@@ -840,7 +902,7 @@ def test_a_caller_cannot_claim_the_in_process_mark_with_a_header(auth_app, monke
 
 # ---- the app's own mark on every reply (ADR-0253) ----
 
-_OWN_REPLY = "app; agent-api=5"
+_OWN_REPLY = "app; agent-api=8"
 
 
 def test_a_routes_own_answer_is_marked(auth_app):
@@ -3245,6 +3307,12 @@ def test_locations_are_counted_over_the_named_boards_only(app, monkeypatch):
             {"location": "Berlin", "count": 1},
             {"location": "Remote", "count": 1},
         ],
+        # Each place's country, as `country=` reads it (ADR-0323).
+        "countries": [
+            {"code": "DE", "jobs": 1, "places": [{"location": "Berlin", "count": 1}]}
+        ],
+        "no_country": {"jobs": 1, "places": [{"location": "Remote", "count": 1}]},
+        "places_unread": 0,
     }
 
 
@@ -3256,6 +3324,69 @@ def test_locations_need_a_board_and_a_bounded_limit(app, query):
     r = app.app.test_client().get(f"/companies/locations?{query}")
     assert r.status_code == 400, query
     assert r.get_json()["error"] == "invalid filter"
+
+
+# ---- a company's levels (ADR-0323) ----
+
+
+def test_levels_are_counted_over_the_named_boards_in_the_trends_bands(app, monkeypatch):
+    scoped = []
+    real = app.job_search.level_counts.bands
+
+    def recording(table, where):
+        scoped.append(where)
+        return real(table, where)
+
+    monkeypatch.setattr(app.job_search.level_counts, "bands", recording)
+    r = app.app.test_client().get(
+        "/companies/levels?board=workday:hpe/a&board=workday:hpe/b&remote=true"
+    )
+    assert r.status_code == 200
+    assert scoped == [
+        "(lower(id) LIKE 'workday:hpe/a:%' OR lower(id) LIKE 'workday:hpe/b:%')"
+    ]
+    # The fake table's two rows state no experience.
+    answer = r.get_json()
+    assert answer["jobs"] == 2 and answer["capped"] is False
+    assert [(b["band"], b["count"]) for b in answer["bands"]] == [
+        ("intern", 0),
+        ("entry", 0),
+        ("mid", 0),
+        ("senior", 0),
+        ("staff", 0),
+        ("unspecified", 2),
+    ]
+
+
+@pytest.mark.parametrize("query", ["", "board=%20"])
+def test_levels_need_a_board(app, query):
+    r = app.app.test_client().get(f"/companies/levels?{query}")
+    assert r.status_code == 400, query
+    assert r.get_json()["error"] == "invalid filter"
+
+
+# ---- what a role's postings ask for (ADR-0324) ----
+
+
+def test_requirements_count_a_sample_and_carry_no_description_text(app):
+    """The fake table answers its two rows to every read; one carries a description."""
+    r = app.app.test_client().get("/requirements?q=backend+engineer&strict=1")
+    assert r.status_code == 200
+    body = r.get_json()
+    assert (body["order"], body["sampled"], body["described"]) == ("closest", 2, 1)
+    assert body["newest_tick"] is None and body["vocabulary_size"] >= 300
+    assert "Build the payments API" not in r.get_data(as_text=True)
+
+
+@pytest.mark.parametrize(
+    ("query", "status"),
+    [("", 400), ("q=x&n=5", 400), ("q=x&n=x", 400), ("family=security", 503)],
+)
+def test_requirements_refuse_what_they_cannot_count(app, query, status):
+    """No role or category, a sample outside its bounds, or a category on a deployment without
+    role assignments (the fixture pulls none)."""
+    r = app.app.test_client().get(f"/requirements?{query}")
+    assert r.status_code == status, query
 
 
 def test_facets_carry_the_newest_trends_tick(company_trends, trends_app, app):

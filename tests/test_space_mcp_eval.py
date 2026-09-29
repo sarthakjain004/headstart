@@ -148,6 +148,30 @@ def test_parse_reads_calls_results_errors_and_the_final_answer(ev):
     assert transcript.run_error is None
 
 
+def test_parse_reads_the_servers_status_at_the_runs_start(ev):
+    connected = ev.parse(_transcript_lines())
+    # Claude Code 2.1.212's -p over HTTP without MCP_CONNECTION_NONBLOCKING=false.
+    pending = ev.parse(_init_line("pending"))
+
+    assert connected.server_status == "connected" and ev.unconnected(connected) is None
+    assert pending.server_status == "pending"
+    assert "pending at the run's start" in ev.unconnected(pending)
+    assert "not named" in ev.unconnected(ev.parse([]))
+
+
+def _init_line(status):
+    return [
+        json.dumps(
+            {
+                "type": "system",
+                "subtype": "init",
+                "tools": [],
+                "mcp_servers": [{"name": "headstart-space", "status": status}],
+            }
+        )
+    ]
+
+
 def test_parse_says_a_run_without_a_result_event_was_cut_off(ev):
     transcript = ev.parse(_transcript_lines(ended=False))
 
@@ -457,6 +481,80 @@ def test_trend_sign_calls_a_large_net_by_its_sign_only(ev):
     ).passed
 
 
+def test_trend_sign_fails_a_hiring_figure_turnover_and_sized_causes_cannot_make(ev):
+    """Review of #865: the sign alone passed an answer quoting the whole change in openings
+    listed as hiring, when its sign happened to match."""
+    move = {
+        "hiring": 900,
+        "not_hiring_total": -50,
+        "turnover": {"opened": 100, "closed": 20, "net": 80},
+    }
+    space = _trends_space(reading={"total": {"move": move}, "lines": []})
+    quoted_the_listed_change = "Hiring rose: net +111,929 openings this month."
+    within = "Hiring rose: net +80, 100 opened and 20 closed."
+
+    failed = ev.verify_trend_sign(
+        _T03, _transcript(ev, answer=quoted_the_listed_change), space
+    )
+    assert not failed.passed and "more than the 170 opened, closed" in failed.detail
+    assert ev.verify_trend_sign(_T03, _transcript(ev, answer=within), space).passed
+
+
+def _span_space(began="2026-09-25T18:16:40+00:00"):
+    """Stripe over 14 days to 2026-09-29 04:04, with opened and closed counted since ``began``:
+    3.4 of the window's 14.4 days."""
+    move = {"hiring": 4, "turnover": {"opened": 8, "closed": 4, "net": 4}}
+    window = {"from": "2026-09-14T18:00:00+00:00", "to": "2026-09-29T04:04:35+00:00"}
+    return FakeSpace(
+        {
+            SpaceRoute.COMPANIES_SUGGEST: {"companies": [_STRIPE]},
+            SpaceRoute.TRENDS: {
+                "reading": {"total": {"move": move}, "lines": [], "window": window},
+                "turnover_since": began,
+            },
+        }
+    )
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        "Up: net +4, counted only since 2026-09-25.",
+        "Up (net +4), though HeadStart counts postings only since Sept 25.",
+        "Up: net +4. Opened and closed cover only 25th September onwards.",
+        "Up, net +4 over the last 3.4 days it has counted.",
+        "Up: net +4, across about three days of counting.",
+        "Up: net +4 (counted for 3.4 of the window's 14.4 days).",
+    ],
+)
+def test_trend_sign_passes_an_answer_that_states_the_turnover_span(ev, answer):
+    verdict = ev.verify_trend_sign(_T03, _transcript(ev, answer=answer), _span_space())
+
+    assert verdict.passed, verdict.detail
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        "Stripe is hiring more: net +4 over two weeks.",
+        "Up: net +4 over the last 14 days.",  # the window, not the days counted
+        "Up: net +4 since September 14.",  # the window's start, not counting's
+    ],
+)
+def test_trend_sign_fails_an_answer_silent_on_the_turnover_span(ev, answer):
+    verdict = ev.verify_trend_sign(_T03, _transcript(ev, answer=answer), _span_space())
+
+    assert not verdict.passed
+    assert "counted only since 2026-09-25 (3.4 days)" in verdict.detail
+
+
+def test_trend_sign_needs_no_span_when_turnover_covers_the_window(ev):
+    space = _span_space(began="2026-09-01T00:00:00+00:00")
+    answer = "Stripe is hiring more: net +4 over two weeks."
+
+    assert ev.verify_trend_sign(_T03, _transcript(ev, answer=answer), space).passed
+
+
 @pytest.mark.parametrize(
     ("answer", "direction"),
     [
@@ -512,6 +610,214 @@ def test_hot_top_drops_hidden_operators_and_needs_n_minus_one(ev):
     assert passed.passed, passed.detail
     assert "Staffing Hub" not in passed.detail  # hidden, so not one of the top five
     assert not failed.passed
+
+
+# The shape hiring_now printed on 2026-09-29 (round-2 critique mr08), trimmed.
+_HIRING_NOW = """\
+Hiring now, expansion: ...
+ 1. "Acme Robotics" · key workday:c1 · employer · 958 open now · net +442 · opened 23 · \
+closed 33 (opened less closed -10) · rate 2% · FLAG net not backed by postings opened: \
+mostly re-counting, not hiring
+ 2. "Borealis Data" · key workday:c3 · employer · 714 open now · net +100 · opened 304 · \
+closed 218 (opened less closed +86) · rate 43%
+ 3. "Cobalt Payments, Inc." · key workday:c4 · employer · 144 open now · net +94"""
+
+
+def _hot_answer(ev, answer):
+    return _transcript(
+        ev, [("hiring_now", {"lens": "expansion"}, _HIRING_NOW, False)], answer
+    )
+
+
+def test_hot_top_fails_an_answer_that_leads_with_a_row_hiring_now_flagged(ev):
+    expect = {"lens": "expansion", "top": 5}
+    in_site_order = (
+        "Acme Robotics, Borealis Data, Cobalt Payments and Dune Analytics lead."
+    )
+    unflagged_first = (
+        "Borealis Data leads, then Cobalt Payments and Dune Analytics; Acme Robotics ranks "
+        "first on the site, but that is re-counting."
+    )
+
+    led = ev.verify_hot_top(expect, _hot_answer(ev, in_site_order), _hot_space())
+    passed = ev.verify_hot_top(expect, _hot_answer(ev, unflagged_first), _hot_space())
+
+    assert not led.passed and "leads with 'Acme Robotics'" in led.detail
+    assert passed.passed, passed.detail
+
+
+def test_flagged_headline_reads_only_the_rows_hiring_now_printed(ev):
+    no_call = _transcript(ev, answer="Acme Robotics leads.")
+    by_key = _hot_answer(ev, "workday:c1 leads.")
+    suffix = _hot_answer(ev, "Cobalt Payments leads, then Acme Robotics.")
+
+    assert ev.flagged_headline(no_call) is None
+    assert ev.flagged_headline(by_key) == "Acme Robotics"
+    assert ev.flagged_headline(suffix) is None
+
+
+def test_hot_top_judges_the_order_hiring_now_lists_so_a_disowned_leader_is_not_needed(
+    ev,
+):
+    """ADR-0321: on the site's older Lenses a flagged row is listed after the unflagged ones,
+    so an answer that leads with real rows names the tool's top five, not the page's."""
+    space = _hot_space()
+    rows = space.answers[SpaceRoute.HOT]["lenses"]["expansion"]
+    # Acme's net is re-counting: +442 on 23 opened and 33 closed.
+    rows[0].update(stock=958, net=442, opened=23, closed=33)
+    answer = "Borealis Data, Cobalt Payments, Dune Analytics, Ember Health and Fjord Security."
+    verdict = ev.verify_hot_top(
+        {"lens": "expansion", "top": 5}, _transcript(ev, answer=answer), space
+    )
+    assert verdict.passed, verdict.detail
+    assert "Acme Robotics" not in verdict.detail
+
+
+def test_hot_top_judges_at_the_calls_own_limit(ev):
+    """A `limit: 2` call lists two rows, so the answer is judged on those two (review of
+    #896), in the order worked out from /hot here, not by hiring_now."""
+    space = _hot_space()
+    rows = space.answers[SpaceRoute.HOT]["lenses"]["expansion"]
+    rows[0].update(stock=958, net=442, opened=23, closed=33)
+    answer = "Borealis Data leads, then Cobalt Payments."
+    transcript = _transcript(
+        ev, [("hiring_now", {"lens": "expansion", "limit": 2}, "", False)], answer
+    )
+    verdict = ev.verify_hot_top({"lens": "expansion", "top": 5}, transcript, space)
+    assert verdict.passed, verdict.detail
+    assert "top 2 on expansion" in verdict.detail
+
+
+def test_the_expected_order_flags_what_hiring_now_flags(ev):
+    """The eval's own flag rules, row by row: each is what ADR-0321 says a site Lens flags."""
+    window = {
+        "base": "2026-09-22T00:00:00+00:00",
+        "to": "2026-09-29T00:00:00+00:00",
+        "turnover_from": "2026-09-25T12:00:00+00:00",
+    }
+
+    def disowned(lens="expansion", **row):
+        return ev._disowned({"stock": 500, **row}, lens, window, 25)
+
+    assert disowned(
+        net=100, opened=306, closed=321
+    )  # a gain against opened less closed
+    assert not disowned(net=90, opened=83, closed=75)
+    assert disowned(net=10, opened=40, closed=None)  # closures not counted
+    assert disowned(net=10, opened=40, closed=5, closures_uncounted_boards=1)
+    assert disowned(net=10, opened=600, closed=500)  # more opened than open now
+    assert disowned("rate", net=10, opened=10, closed=5, stock=30)  # small base
+    assert not disowned("opened_less_closed", net=900, opened=10, closed=5)
+
+
+def test_flagged_headline_reads_a_row_that_gives_its_place_on_the_page(ev):
+    """ADR-0321: a reordered row starts "site #N · "."""
+    moved = _HIRING_NOW.replace(' 1. "Acme', ' 3. site #1 · "Acme')
+    transcript = _transcript(
+        ev, [("hiring_now", {}, moved, False)], "Acme Robotics leads."
+    )
+    assert ev.flagged_headline(transcript) == "Acme Robotics"
+
+
+# --- title_keyword_rows --------------------------------------------------------------------
+
+_RUST_ROWS = r"""3 jobs match these filters. Showing 1–3.
+ 1. "Senior Rust Engineer" · "Threema AG" · remote
+    id "teamtailor:threemagmbh:07fb" · "https://example.com/1"
+ 2. "Rust-based Platform Engineer" · "webAI" · remote
+    id "ashby:webai:daf8" · "https://example.com/2"
+    also #3: "Contract"
+      id "ashby:webai:\"quoted\"" · "https://example.com/3"
+"""
+_RUST_EXPECT = {
+    "tool": "search_jobs",
+    "must": {"keyword": {"op": "contains", "value": "rust"}},
+    "word": "rust",
+}
+
+
+def _job_space(*titles):
+    ids = ["teamtailor:threemagmbh:07fb", "ashby:webai:daf8", 'ashby:webai:"quoted"']
+    jobs = [{"id": i, "title": t} for i, t in zip(ids, titles, strict=True)]
+    return FakeSpace({SpaceRoute.JOB: {"jobs": jobs, "missing": []}})
+
+
+def test_title_keyword_rows_reads_back_every_row_the_call_returned(ev):
+    transcript = _transcript(
+        ev, [("search_jobs", {"keyword": "Rust"}, _RUST_ROWS, False)]
+    )
+    space = _job_space(
+        "Senior Rust Engineer", "Rust-based Platform Engineer", "Rust Contractor"
+    )
+
+    verdict = ev.verify_title_keyword_rows(_RUST_EXPECT, transcript, space)
+
+    assert verdict.passed, verdict.detail
+    route, params = space.asked[-1]
+    assert route is SpaceRoute.JOB
+    assert [v for _, v in params] == [
+        "teamtailor:threemagmbh:07fb",
+        "ashby:webai:daf8",
+        'ashby:webai:"quoted"',
+    ]
+
+
+def test_title_keyword_rows_fails_a_row_matching_only_inside_a_word(ev):
+    transcript = _transcript(
+        ev, [("search_jobs", {"keyword": "rust"}, _RUST_ROWS, False)]
+    )
+    space = _job_space("Senior Rust Engineer", "Director, Data Trust", "Thrusters Lead")
+
+    verdict = ev.verify_title_keyword_rows(_RUST_EXPECT, transcript, space)
+
+    assert not verdict.passed
+    assert (
+        "1 of 3 rows" in verdict.detail and "'Director, Data Trust'" in verdict.detail
+    )
+
+
+def test_title_keyword_rows_checks_the_arguments_first(ev):
+    transcript = _transcript(
+        ev, [("search_jobs", {"query": "rust"}, _RUST_ROWS, False)]
+    )
+
+    verdict = ev.verify_title_keyword_rows(_RUST_EXPECT, transcript, FakeSpace({}))
+
+    assert (
+        not verdict.passed and "no search_jobs call meets every rule" in verdict.detail
+    )
+
+
+@pytest.mark.parametrize(
+    ("text", "term", "starts"),
+    [
+        ("Senior Rust Engineer", "rust", True),
+        ("Rust-based systems", "rust", True),
+        ("RUST developer", "rust", True),
+        (
+            "Rustacean wanted",
+            "rust",
+            True,
+        ),  # ADR-0299 anchors a term's start, not its end
+        (
+            "IN_Senior Associate_AI/ML Engineer",
+            "ai",
+            True,
+        ),  # `_` and `/` separate words
+        ("Director, Data Trust", "rust", False),
+        ("Hall-Effect Thrusters", "rust", False),
+        ("HTML and XML", "ml", False),
+        ("ML Engineer", "ml", True),
+        ("Senior C++ Developer", "c++", True),
+        (
+            "ASP.NET Developer",
+            ".net",
+            True,
+        ),  # a term starting with punctuation is not anchored
+    ],
+)
+def test_starts_a_word(ev, text, term, starts):
+    assert ev.starts_a_word(text, term) is starts
 
 
 # --- blocking_named ------------------------------------------------------------------------
@@ -616,6 +922,7 @@ def test_the_sentences_the_harness_reads_are_the_servers_own(ev):
         assert marker in text, marker
     assert "The filter costing the most is `" in text
     assert ev._COMPANY_BLOCKING in text
+    assert ev._HOT_FLAG in text  # how hiring_now marks a row it disowns
 
 
 def _heldout(tmp_path, text):
@@ -704,6 +1011,86 @@ def test_the_http_mode_registers_the_hosted_endpoint_and_nothing_else(
     assert ev.main(["--dry-run", "--http", url]) == 0
     out = capsys.readouterr().out
     assert f'"url": "{url}"' in out and "headstart.space_mcp" not in out
+
+
+class _FakeClaude:
+    """A `subprocess.Popen` stand-in that prints ``lines`` and records the env it was given."""
+
+    def __init__(self, lines):
+        self.lines = lines
+        self.envs = []
+
+    def __call__(self, argv, **kwargs):
+        self.envs.append(kwargs["env"])
+        self.stdout = iter(line + "\n" for line in self.lines)
+        return self
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def wait(self):
+        return 0
+
+    def kill(self):
+        pass
+
+
+def test_an_http_run_waits_for_the_server_and_one_left_pending_is_not_judged(
+    ev, monkeypatch, tmp_path
+):
+    """Round-2 critique P1-8: Claude Code's -p left the hosted server "pending", so every task
+    failed with 0 calls and was scored as the model's miss."""
+    claude = _FakeClaude(_init_line("pending"))
+    monkeypatch.setattr(ev.subprocess, "Popen", claude)
+    monkeypatch.setattr(ev, "_ROOT", tmp_path)
+    task = {"id": "t03", "prompt": "p", "verifier": "trend_sign", "expect": _T03}
+    url = "https://imposeidon-headstart-search.hf.space/mcp"
+
+    def space():
+        raise AssertionError("a run with no tools reached the verifier")
+
+    record = ev.run_task(task, {"HOME": "/x"}, tmp_path / "run", space, url, 2)
+
+    assert record["verdict"] == "error" and "pending" in record["detail"]
+    assert record["server_status"] == "pending" and record["repeat"] == 2
+    assert record["transcript"].endswith("run_t03_r2_transcript.jsonl")
+    assert claude.envs[-1] == {"HOME": "/x", "MCP_CONNECTION_NONBLOCKING": "false"}
+    assert ev.run_env({"HOME": "/x"}, None) == {"HOME": "/x"}  # stdio: unchanged
+
+
+def _record(task_id, verdict):
+    return {
+        "id": task_id,
+        "verdict": verdict,
+        "tool_calls": 1,
+        "largest_tool_result_chars": 10,
+        "refusals": 0,
+        "refusals_corrected": 0,
+    }
+
+
+def test_the_summary_names_the_tasks_it_could_not_judge_first(ev):
+    lines = ev.summary([_record("t01", "pass"), _record("t05", "error")])
+
+    assert lines[0] == "not judged: 1 of 2 (t05) — MISSED"
+    assert lines[1].startswith("correct: 1 of 2")
+    assert ev.summary([_record("t01", "pass")])[0] == "not judged: 0 of 1 — met"
+
+
+def test_tally_counts_each_tasks_passes_across_repeats(ev):
+    passes = [
+        [_record("t01", "pass"), _record("t02", "fail")],
+        [_record("t01", "pass"), _record("t02", "pass")],
+        [_record("t01", "error"), _record("t02", "pass")],
+    ]
+
+    assert ev.tally(passes) == [
+        "t01: 2 of 3 passed (pass, pass, error)",
+        "t02: 2 of 3 passed (fail, pass, pass)",
+    ]
 
 
 def test_the_run_allows_every_registered_tool_and_nothing_else(ev):

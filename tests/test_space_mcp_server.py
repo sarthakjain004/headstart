@@ -30,6 +30,7 @@ from headstart.space_mcp import space_client as sc
 from headstart.space_mcp.tools import (
     REGISTRY,
     company_profile,
+    hiring_now,
     read_trends,
     search_jobs,
 )
@@ -166,6 +167,40 @@ def test_in_process_a_read_may_take_the_calls_whole_deadline_and_says_when_it_di
     assert reply["result"]["isError"] is True
     assert reply["result"]["content"][0]["text"] == sc._PAST_DEADLINE
     assert timeouts and timeouts[0] > 20 and timeouts[0] <= sc.CALL_DEADLINE_S
+
+
+@pytest.mark.parametrize(
+    "keyword_in, advice",
+    [
+        ("description", "Reading job descriptions for the keyword is the slow part"),
+        ("both", "Reading job descriptions for the keyword is the slow part"),
+        ("title", "Narrow the filters"),
+    ],
+)
+def test_a_description_keyword_past_the_deadline_says_the_description_read_is_the_slow_part(
+    keyword_in, advice
+):
+    """ADR-0320: narrowing the other filters was the wrong advice for the description read."""
+
+    def past_the_deadline(url, headers, timeout_s):
+        raise sc.DeadlinePassed(sc._PAST_DEADLINE)
+
+    hosted = server.build_server(env={}, fetch=past_the_deadline)
+    arguments = {"keyword": "visa", "keyword_in": keyword_in, "country": "DE"}
+    reply = messages.handle(
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {"name": "search_jobs", "arguments": arguments},
+        },
+        hosted,
+    )
+    assert reply["result"]["isError"] is True
+    said = reply["result"]["content"][0]["text"]
+    assert advice in said
+    if keyword_in != "title":
+        assert "keyword_in: title" in said and "Narrow the filters" not in said
 
 
 def test_a_real_client_handshake_over_a_real_subprocess():
@@ -572,6 +607,104 @@ def test_a_page_with_no_copies_says_nothing_about_them():
     assert "also #" not in text and "listed under it" not in text
 
 
+def test_one_posting_on_two_boards_under_two_spellings_is_listed_once():
+    """The round-2 critique's Eversource page: its Radancy front and its Workday Board."""
+    rows = [
+        _job(
+            1,
+            id="radancy:jobs.eversource.com:101283120016",
+            title="IT Associate Software Engineer (Hybrid)",
+            company="EVERSOURCE",
+            location="Berlin, CT, United States of America; Westwood, Massachusetts",
+        ),
+        _job(
+            2,
+            id="workday:eversource/externalsite:R-031045",
+            title="IT Associate Software Engineer (Hybrid)",
+            company="Eversource Energy",
+            location="Berlin, CT; Westwood, MA; Manchester, NH",
+        ),
+        _job(
+            3,
+            title="IT Associate Software Engineer",
+            company="Eversource Energy",
+            location="Hartford, CT",
+        ),
+    ]
+    text = server.call(_search_space(rows), "search_jobs", {"query": "x"})
+    assert "or the same title and place under another spelling of the company" in text
+    assert 'also #2: 0.88 "Eversource Energy" · "Berlin, CT; Westwood, MA;' in text
+    # Another place under the other spelling is not the same posting.
+    assert ' 3. 0.87 "IT Associate Software Engineer" · "Eversource Energy"' in text
+    for job_id in (
+        "radancy:jobs.eversource.com:101283120016",
+        "workday:eversource/externalsite:R-031045",
+    ):
+        assert f'id "{job_id}"' in text
+
+
+@pytest.mark.parametrize(
+    ("one", "other"),
+    [
+        ("Booz Allen", "Booz Allen Hamilton"),
+        ("Staples Inc.", "Staples, Inc."),
+        ("The Toro Company", "Toro"),
+    ],
+)
+def test_spellings_of_one_company_are_its_words_less_legal_suffixes(one, other):
+    rows = [
+        _job(1, title="Data Engineer", company=one, location="McLean, VA"),
+        _job(2, title="Data Engineer", company=other, location="McLean, Virginia"),
+    ]
+    text = server.call(_search_space(rows), "search_jobs", {})
+    assert "also #2" in text
+
+
+@pytest.mark.parametrize(
+    ("one", "other"),
+    [("Meta", "Metaview"), ("Bosch", "Boschung")],
+)
+def test_other_companies_are_not_copies_even_at_one_title_and_place(one, other):
+    rows = [
+        _job(1, title="Data Engineer", company=one, location="London"),
+        _job(2, title="Data Engineer", company=other, location="London"),
+    ]
+    text = server.call(_search_space(rows), "search_jobs", {})
+    assert "also #" not in text
+
+
+def test_a_row_named_only_by_its_board_host_shows_the_directory_name():
+    rows = [
+        _job(
+            1,
+            id="oracle:hcbt.fa.em2.oraclecloud.com:5",
+            company="hcbt.fa.em2.oraclecloud.com",
+        ),
+        _job(2),
+    ]
+    kotak = _suggestion("oracle:hcbt.fa.em2.oraclecloud.com", "Kotak")
+    space = _search_space(rows, companies_lookup={"companies": [kotak]})
+    text = server.call(space, "search_jobs", {})
+    assert ' 1. 0.89 "Backend Engineer 1" · "Kotak" (directory name) · ' in text
+    assert 'oraclecloud.com"' not in text.split("id ")[0]
+    assert ' 2. 0.88 "Backend Engineer 2" · "Razorpay" · ' in text
+    assert space.params_of(R.COMPANIES_LOOKUP) == [
+        [("board", "oracle:hcbt.fa.em2.oraclecloud.com")]
+    ]
+
+
+def test_a_directory_the_space_cannot_read_leaves_the_rows_unnamed_not_failed():
+    rows = [
+        _job(1, id="oracle:x.fa.us2.oraclecloud.com:5", company="", title="SRE"),
+        _job(2, id="oracle:y.fa.us2.oraclecloud.com:6", company="", title="SRE"),
+    ]
+    space = _search_space(rows, companies_lookup=sc.SpaceFailed("down"))
+    text = server.call(space, "search_jobs", {})
+    assert ' 1. 0.89 "SRE" · no company name · ' in text
+    # Two Boards that name no company are not thereby one company.
+    assert ' 2. 0.88 "SRE" · no company name · ' in text
+
+
 def test_a_category_label_reaches_the_space_as_its_id_and_is_said_with_its_label():
     stripe = _suggestion("greenhouse:stripe", "Stripe")
     space = _search_space([_job(1)], companies_suggest={"companies": [stripe]})
@@ -665,7 +798,9 @@ def _posting(n, **overrides):
     return job
 
 
-def _job_space(jobs, **answers):
+def _job_space(jobs, unheld=(), **answers):
+    """`/job` over ``jobs``; `/facets` counts one job on every Board but those in ``unheld``."""
+
     def read(params):
         asked = [value for key, value in params if key == "id"]
         found = {job["id"]: job for job in jobs}
@@ -676,7 +811,11 @@ def _job_space(jobs, **answers):
             "newest_tick": "2026-09-28T06:23:08+00:00",
         }
 
-    return FakeSpace(job=read, **answers)
+    def count(params):
+        board = dict(params)["board"]
+        return {"total": 0 if board in unheld else 1}
+
+    return FakeSpace(job=read, **({"facets": count} | answers))
 
 
 def test_a_posting_is_read_whole_with_every_scraped_field_quoted():
@@ -700,15 +839,87 @@ def test_a_posting_is_read_whole_with_every_scraped_field_quoted():
     assert text.endswith("Data as of the trends tick 2026-09-28T06:23:08+00:00.")
 
 
-def test_a_missing_id_is_most_likely_closed():
+def test_a_missing_id_has_closed_or_was_never_an_id():
     space = _job_space([_posting(1)])
     text = server.call(
-        space, "get_job", {"ids": ["lever:razorpay:0001", "greenhouse:gone:9"]}
+        space,
+        "get_job",
+        {
+            "ids": [
+                "lever:razorpay:0001",
+                "greenhouse:stripe:0000",
+                "greenhouse:stripe:9",
+            ]
+        },
     )
-    assert text.startswith("Read 1 of 2 jobs.")
-    assert 'Not in the index: "greenhouse:gone:9".' in text
-    assert "two consecutive scrapes of its Board miss it" in text
-    assert "most likely closed" in text
+    assert text.startswith("Read 1 of 3 jobs.")
+    assert (
+        'Not in the index now: "greenhouse:stripe:0000", "greenhouse:stripe:9". Each has '
+        "closed, or was never an id: HeadStart removes a posting once two consecutive "
+        "scrapes of its Board miss it."
+    ) in text
+    # Its Board is asked about once, for its total alone.
+    assert space.params_of(R.FACETS) == [
+        [("strict", "1"), ("board", "greenhouse:stripe"), ("counts", "total")]
+    ]
+    assert "likely" not in text
+
+
+def test_a_missing_id_whose_board_serves_nothing_was_not_a_headstart_id():
+    space = _job_space([], unheld={"greenhouse:nonexistentco"})
+    text = server.call(
+        space,
+        "get_job",
+        {"ids": ["greenhouse:nonexistentco:12", "greenhouse:stripe:0000"]},
+    )
+    assert (
+        'Not in the index now: "greenhouse:stripe:0000". Each has closed, or was never an id'
+        in text
+    )
+    assert (
+        'Not a HeadStart id: "greenhouse:nonexistentco:12". HeadStart serves no job on the '
+        'Board it names, "greenhouse:nonexistentco"; copy ids whole from search_jobs.'
+    ) in text
+
+
+def test_a_board_count_the_space_cannot_give_leaves_the_plain_sentence():
+    space = _job_space([], facets=sc.SpaceFailed("down"))
+    text = server.call(space, "get_job", {"ids": ["greenhouse:x:1"]})
+    assert 'Not in the index now: "greenhouse:x:1". Each has closed' in text
+    assert "Not a HeadStart id" not in text
+
+
+def test_a_company_named_only_by_its_board_host_is_shown_by_its_directory_name():
+    aah = _posting(
+        1,
+        id="workday:aah/External:R244133",
+        company="aah.wd5.myworkdayjobs.com/external",
+    )
+    pod = _posting(2, id="oracle:egud.fa.us2.oraclecloud.com:7", company="")
+    named = _posting(3, id="ashby:checkout.com:9", company="Checkout.com")
+    advocate = _suggestion("workday:aah/External", "Advocate Health")
+
+    def lookup(params):
+        boards = [value for key, value in params if key == "board"]
+        if boards != ["workday:aah/External"]:
+            raise sc.InvalidRequest("unknown company")
+        return {"companies": [advocate]}
+
+    space = _job_space([aah, pod, named], companies_lookup=lookup)
+    text = server.call(space, "get_job", {"ids": [aah["id"], pod["id"], named["id"]]})
+    assert '1. "Backend Engineer 1" at "Advocate Health" (directory name)' in text
+    assert '2. "Backend Engineer 2" at no company name' in text
+    assert '3. "Backend Engineer 3" at "Checkout.com"\n' in text
+    assert "myworkdayjobs" not in text.split("id ")[0]
+    # One lookup of both Boards, refused for the pod, then each alone.
+    assert [p for p in space.params_of(R.COMPANIES_LOOKUP)] == [
+        [
+            ("board", "workday:aah/External"),
+            ("board", "oracle:egud.fa.us2.oraclecloud.com"),
+        ],
+        [("board", "workday:aah/External")],
+        [("board", "oracle:egud.fa.us2.oraclecloud.com")],
+    ]
 
 
 def test_an_unconfirmed_posting_says_it_may_have_closed_and_unknown_says_nothing():
@@ -762,9 +973,40 @@ def test_a_long_description_says_how_much_is_shown_and_how_to_read_more():
         {"ids": ["lever:razorpay:0001"], "max_chars_per_job": 1_000},
     )
     assert (
-        "Description, 20,000 characters, the first 997 shown; ask for fewer ids" in text
+        "Description, 20,000 characters, the first 997 shown; raise max_chars_per_job up "
+        "to 12,000 to read more."
+    ) in text
+
+
+def test_a_description_cut_by_the_shared_budget_says_to_ask_for_that_id_alone():
+    """Asked 12,000 for two, each shows 9,000: raising max_chars_per_job cannot help."""
+    jobs = [
+        _posting(n, description="y" * 9_699, description_chars=9_699) for n in (1, 2)
+    ]
+    text = server.call(
+        _job_space(jobs),
+        "get_job",
+        {"ids": [j["id"] for j in jobs], "max_chars_per_job": 12_000},
     )
-    assert "raise max_chars_per_job up to 12,000, to read more." in text
+    assert text.count("the first 8,997 shown; ask for this id alone to read more.") == 2
+    assert "raise max_chars_per_job" not in text
+
+
+def test_a_description_cut_below_its_share_says_both_ways_to_read_more():
+    jobs = [
+        _posting(n, description="y" * 9_699, description_chars=9_699) for n in (1, 2)
+    ]
+    text = server.call(
+        _job_space(jobs),
+        "get_job",
+        {"ids": [j["id"] for j in jobs], "max_chars_per_job": 2_000},
+    )
+    assert (
+        text.count(
+            "raise max_chars_per_job up to 9,000, or ask for this id alone, to read more."
+        )
+        == 2
+    )
 
 
 def test_a_description_the_space_cut_says_so():
@@ -801,7 +1043,10 @@ def test_five_postings_share_the_description_budget():
         {"ids": [j["id"] for j in jobs], "max_chars_per_job": 12_000},
     )
     assert (
-        text.count("12,000 characters, the first 3,597 shown; ask for fewer ids") == 5
+        text.count(
+            "12,000 characters, the first 3,597 shown; ask for this id alone to read more."
+        )
+        == 5
     )
 
 
@@ -832,11 +1077,12 @@ def test_a_get_job_answer_stays_inside_its_budget(found):
         )
         for n in range(found)
     ]
-    missing = [f"gone:{n}:" + "m" * 290 for n in range(5 - found)]
+    missing = [f"gone{n}:" + "b" * 200 + ":" + "m" * 90 for n in range(5 - found)]
     tool = server.BY_NAME["get_job"]
     text = _answer(
         "get_job",
-        _job_space(jobs),
+        # No Board of a missing id serves a job: the longest way to say it.
+        _job_space(jobs, unheld={i.rsplit(":", 1)[0] for i in missing}),
         {"ids": [j["id"] for j in jobs] + missing, "max_chars_per_job": 12_000},
     )
     assert len(text) <= tool.max_chars
@@ -993,10 +1239,14 @@ def test_trends_lead_with_postings_opened_and_closed_and_never_call_the_rest_hir
     assert "Postings opened and closed account for -514" in text
     assert "HeadStart sized none of it as re-counting" in text
     assert "the other +112,365, the unsized rest, is not a hiring figure" in text
-    assert "Boards found or dropped, duplicate postings removed" in text
-    # Two Marked changes with one label are one counting change, said once.
-    assert f"[1] {_FILTER} (2 times, 2026-09-17 to 2026-09-21)" in text
-    assert text.count(_FILTER) == 1
+    # From the first per-Board count on, the index sizes its Boards found (ADR-0304).
+    assert "Boards dropped or read differently, duplicate postings removed" in text
+    assert "Boards found" not in text
+    # Two Marked changes with one label are one counting change, said once, by its tag, and the
+    # tag is glossed once (ADR-0321).
+    assert "[1] tech filter (2 times, 2026-09-17 to 2026-09-21)." in text
+    assert "Tags: tech filter = we got better at spotting tech jobs." in text
+    assert text.count("got better at spotting tech jobs") == 1
     assert "hiring +111,851" not in text and "+42" not in text
     assert "Figures reconcile" not in text
     assert "It checks sums, not that any figure is hiring." in text
@@ -1029,22 +1279,209 @@ def test_lines_rank_by_their_net_and_a_cut_says_how_to_see_them_all():
     assert "By category, largest net of opened and closed first:" in full
 
 
+def test_a_hidden_family_is_the_last_line_and_reads_as_other_however_big_it_is():
+    """ADR-0306: its line stays, so the lines add up to the whole, but it is never ranked among the
+    categories and its name is not said: the Space labels it Other."""
+    lines = [
+        _line(
+            "hidden-family",
+            "Other",
+            _move(100, 900, 800, turnover={"opened": 800, "closed": 0, "net": 800}),
+        ),
+        *_category_lines(3),
+    ]
+    payload = _trends(lines)
+    payload["unlisted_series"] = ["hidden-family"]
+    text = server.call(FakeSpace(trends=payload), "read_trends", {"detail": "full"})
+    listed = [
+        line.split(":")[0].strip() for line in text.split("\n") if line.startswith("  ")
+    ]
+    assert listed == ["Family 2", "Family 1", "Family 0", "Other"]
+
+
 def test_turnover_that_covers_part_of_the_window_says_so_and_the_rest_may_hold_hiring():
     payload = _trends(
         [],
         total=_line("__total__", "", _move(1_000, 900, -100)),
         turnover_since="2026-09-25T18:16:48+00:00",
-        turnover_left_out=["a", "b"],
+        # Only the runs inside turnover's span count: the first is before it began.
+        turnover_left_out=[
+            "2026-09-17T15:26:29+00:00",
+            "2026-09-25T18:16:48+00:00",
+            "2026-09-28T01:10:43+00:00",
+        ],
         closures_unseen={"": 312},
     )
     text = server.call(FakeSpace(trends=payload), "read_trends", {})
-    assert (
-        "Opened and closed are counted only from 2026-09-25 18:16, when HeadStart began "
-        "counting them: 2.5 of the window's 14.8 days; they leave out the 2 runs a counting "
-        "change landed on; closures went uncounted on some run on 312 Boards in scope, so "
-        "closed can run low." in text
+    lead = (
+        "HeadStart can measure hiring, as postings opened and closed, only from 2026-09-25 "
+        "18:16: 2.5 of this window's 14.8 days. Over the whole window it cannot say whether "
+        "hiring rose or fell; the opened and closed below are those 2.5 days'."
     )
+    assert lead in text
+    # The plain sentence comes before any figure (ADR-0321).
+    assert text.index(lead) < text.index("Hiring, as postings opened and closed")
+    notes = (
+        "Opened and closed leave out the 2 runs a counting change landed on; closures went "
+        "uncounted on some run on 312 Boards in scope, so closed can run low."
+    )
+    # What turnover leaves out is said before the net it qualifies.
+    assert text.index(notes) < text.index("Hiring, as postings opened and closed")
     assert "plus any hiring before 2026-09-25 18:16" in text
+
+
+def test_every_board_with_uncounted_closures_is_said_with_its_count_on_the_index():
+    """Review of #865: every one of the index's 12,407 Boards had a run whose closures went
+    uncounted, and the answer said "on 12,407 Boards in scope" with no "of"."""
+    payload = _trends(
+        [],
+        total=_line("__total__", "", _move(1_000, 900, -100)),
+        turnover_since="2026-09-25T18:16:48+00:00",
+        closures_unseen={"": 12_407},
+        closures_uncounted=[""],
+        boards_in_scope={"": 12_407},
+    )
+    text = server.call(FakeSpace(trends=payload), "read_trends", {})
+    assert (
+        "Closures went uncounted on some run on 12,407 of 12,407 Boards in scope, so closed "
+        "runs low." in text
+    )
+
+
+def test_a_company_breakdown_says_turnover_covers_part_of_the_window():
+    """rc06: "OpenAI: 9 opened, 5 closed" over 14 days, with no word that turnover covered the
+    last 3.4 of them: a company breakdown has no first row to carry the note (ADR-0321)."""
+    lines = [
+        _line("ashby:openai", "OpenAI", _move(372, 445, 73), whole_company=True),
+        _line("greenhouse:stripe", "Stripe", _move(199, 220, 21), whole_company=True),
+    ]
+    payload = _trends(
+        lines,
+        turnover_since="2026-09-25T18:16:48+00:00",
+        closures_unseen={"ashby:openai": 1},
+        boards_in_scope={"ashby:openai": 1},
+        companies=[
+            {"key": "ashby:openai", "label": "OpenAI"},
+            {"key": "greenhouse:stripe", "label": "Stripe"},
+        ],
+    )
+    lookup = {"companies": [_suggestion("ashby:openai", "OpenAI")]}
+    text = server.call(
+        FakeSpace(trends=payload, companies_lookup=lookup),
+        "read_trends",
+        {"companies": ["ashby:openai", "greenhouse:stripe"], "days": 14},
+    )
+    lead = (
+        "HeadStart can measure hiring, as postings opened and closed, only from 2026-09-25 "
+        "18:16: 2.5 of this window's 14.8 days."
+    )
+    assert lead in text
+    assert text.index(lead) < text.index('"OpenAI": 64 opened')
+    assert (
+        'Closures went uncounted on some run on 1 of 1 Boards of "OpenAI", so closed runs '
+        "low." in text
+    )
+
+
+def test_a_window_before_turnover_began_says_it_cannot_tell_whether_hiring_rose():
+    """mr04: 1 to 7 Sept, three weeks before turnover began, gave openings listed only."""
+    payload = _trends(
+        [_line("se", "Software Engineering", _move(100, 110, 10, turnover=None))],
+        total=_line("__total__", "", _move(1_000, 1_100, 100, turnover=None)),
+        turnover_since="2026-09-30T00:00:00+00:00",
+    )
+    text = server.call(FakeSpace(trends=payload), "read_trends", {"days": 14})
+    assert (
+        "HeadStart can measure hiring, as postings opened and closed, only from 2026-09-30 "
+        "00:00, after this window ends: over this window it cannot say whether hiring rose "
+        "or fell. The openings listed below mix hiring with re-counting." in text
+    )
+
+
+def test_a_window_inside_turnover_needs_no_lead():
+    payload = _trends(
+        [], total=_line("__total__", "", _move(1_000, 900, -100)), turnover_since=None
+    )
+    text = server.call(FakeSpace(trends=payload), "read_trends", {})
+    assert "HeadStart can measure hiring" not in text
+
+
+def test_a_retired_category_on_an_old_window_names_its_successor():
+    """mr04: an old window's lines carried the retired taxonomy ("Security Engineering"), which
+    cannot be lined up with today's categories."""
+    lines = [
+        _line("security-engineering", "Security Engineering", _move(9_160, 9_882, 722)),
+        _line("software-engineering", "Software Engineering", _move(100, 90, -10)),
+    ]
+    text = server.call(FakeSpace(trends=_trends(lines)), "read_trends", {})
+    assert "  Security Engineering (retired; now Security): " in text
+    assert "  Software Engineering: " in text
+    assert (
+        "A category marked retired is from HeadStart's list before it changed" in text
+    )
+    current = server.call(FakeSpace(trends=_trends([lines[1]])), "read_trends", {})
+    assert "retired" not in current
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [{"since": "2027-01-01"}, {"since": "2026-09-01", "until": "2026-10-05"}],
+)
+def test_a_window_in_the_future_is_refused(arguments):
+    """ec10: `since` 2027-01-01 answered "No trend counts fall between 2027-01-01 and now"."""
+    with pytest.raises(ToolFailure, match="is in the future"):
+        server.call(FakeSpace(), "read_trends", arguments)
+
+
+def test_a_label_with_words_this_server_does_not_know_is_said_whole():
+    """A Space newer than a uvx install can name a field this server has no tag for; the label
+    is then said whole, never cut to the tags it does know."""
+    newer = "we got better at spotting tech jobs and learned a new trick, so some jobs moved"
+    lines = _category_lines(2)
+    lines[0]["move"] = _move(100, 90, -20, [(newer, 4)])
+    text = server.call(
+        FakeSpace(
+            trends=_trends(lines, marked=[_marked("2026-09-17T15:26:29+00:00", newer)])
+        ),
+        "read_trends",
+        {"detail": "full"},
+    )
+    assert f"[1] {newer} (2026-09-17)" in text
+    assert "Tags:" not in text
+
+
+def test_a_full_legend_names_each_day_once():
+    """Review of #865: "(2026-09-24, 2026-09-24)"."""
+    lines = _category_lines(2)
+    lines[0]["move"] = _move(100, 90, -20, [(_FILTER, 4)])
+    marked = [
+        _marked("2026-09-24T11:32:57+00:00", _FILTER),
+        _marked("2026-09-24T16:23:40+00:00", _FILTER),
+    ]
+    text = server.call(
+        FakeSpace(trends=_trends(lines, marked=marked)),
+        "read_trends",
+        {"detail": "full"},
+    )
+    assert "[1] tech filter (2026-09-24)." in text
+
+
+def test_growth_rescaled_names_its_change_by_number_and_is_explained():
+    """mr07: "[8] growth rescaled when …" repeated its change's whole label and was never
+    explained."""
+    lines = _category_lines(2)
+    lines[0]["move"] = _move(
+        100, 90, -20, [(_FILTER, 4), ("growth rescaled when " + _FILTER, 6)]
+    )
+    text = server.call(
+        FakeSpace(trends=_trends(lines)), "read_trends", {"detail": "full"}
+    )
+    assert "sized re-counting +10 ([1] +4, [2] +6)" in text
+    assert "[1] tech filter (2026-09-17); [2] growth rescaled by [1]." in text
+    assert (
+        "growth rescaled by [n] = where taking change [n] out would have left a line below "
+        "zero" in text
+    )
 
 
 def test_a_companys_sized_causes_are_said_once_each_with_their_sizes_summed():
@@ -1069,7 +1506,7 @@ def test_a_companys_sized_causes_are_said_once_each_with_their_sizes_summed():
         {"companies": ["Stripe"], "days": 14},
     )
     assert "counting changes HeadStart sized for +6 ([1] +9, [2] -3)" in text
-    assert text.count(_FILTER) == 1
+    assert text.count("got better at spotting tech jobs") == 1
     # +18 listed = +22 opened less closed + 6 sized − 10 the rest.
     assert "the other -10, the unsized rest, is not a hiring figure" in text
     assert "a Board dropped or read differently from before" in text
@@ -1231,6 +1668,23 @@ def test_a_role_breakdown_is_watched_roles_within_the_category_beside_its_own_to
     assert "  AI Engineer: listed 5,089 → 5,856 (+767)" in text
 
 
+def test_a_role_breakdown_says_what_re_counting_is_sized_on_its_roles():
+    """Review of #865: it said "HeadStart sizes no re-counting on them" beside "AI Engineer:
+    … sized re-counting +928" (ADR-0270, ADR-0304)."""
+    sized = _move(5_093, 5_842, -179, [(_FILTER, 928)], turnover=None)
+    roles = _trends(
+        [_line("ai", "AI Engineer", sized)],
+        total=_line("__total__", "", _move(14_682, 15_910, 1_228, turnover=None)),
+        family_label="AI, ML & Data Science",
+    )
+    space = _role_space(roles, _move(38_568, 36_296, -2_272))
+    text = server.call(
+        space, "read_trends", {"category": "ai-ml-data-science", "breakdown": "role"}
+    )
+    assert "HeadStart sizes only part of their re-counting" in text
+    assert "sizes no re-counting" not in text
+
+
 def test_a_category_with_no_watched_roles_says_so_and_gives_its_own_total():
     """ec10: IT Support by role answered a header and "Figures reconcile." only."""
     roles = _trends([], family_label="IT Support", watch_parents=["ai-ml-data-science"])
@@ -1272,7 +1726,8 @@ def test_full_detail_numbers_each_lines_causes_and_gives_the_sites_own_figure():
         {"detail": "full"},
     )
     assert "sized re-counting +10 ([1] +10)" in text
-    assert "[1] job categories re-sorted; [2] " + _FILTER in text
+    # A label not in the Space's "we …" form keeps its words; one in it is named by its tag.
+    assert "[1] job categories re-sorted; [2] tech filter (2026-09-17)." in text
     assert (
         "The Trends tab shows +25 (+2.5%, about +12 a week) as hiring: the change less the "
         "sized steps, the unsized change included." in text
@@ -1443,7 +1898,12 @@ def _hot(rows, turnover_from="2026-09-21T12:00:00+00:00"):
             "to": "2026-09-28T06:23:08+00:00",
             "turnover_from": turnover_from,
         },
-        "lenses": {"expansion": rows, "volume": rows[::-1], "rate": rows},
+        "lenses": {
+            "expansion": rows,
+            "opened_less_closed": rows,
+            "volume": rows[::-1],
+            "rate": rows,
+        },
         "counts": {
             "ranked": 2341,
             "too_new": 40,
@@ -1451,6 +1911,7 @@ def _hot(rows, turnover_from="2026-09-21T12:00:00+00:00"):
             "min_stock": 25,
             "unnamed": 9,
             "closures_uncounted": 23,
+            "closures_partly_uncounted": 7,
             "services": 30,
             "staffing": 12,
             "aggregator": 1,
@@ -1495,14 +1956,14 @@ def test_every_row_gives_opened_less_closed_beside_the_sites_net():
     assert "FLAG" not in text
 
 
-def test_a_net_not_backed_by_postings_opened_is_flagged_in_the_sites_order():
+def test_a_net_not_backed_by_postings_opened_is_flagged():
     """mr01: Bosch Group ranked first at net +435 with 20 opened and 32 closed."""
     rows = [
         _hot_row(1, net=435, opened=20, closed=32),
         _hot_row(2, net=80, opened=73, closed=None),
         _hot_row(3, net=100, opened=0, closed=1),
     ]
-    text = server.call(FakeSpace(hot=_hot(rows)), "hiring_now", {})
+    text = server.call(FakeSpace(hot=_hot(rows)), "hiring_now", {"lens": "expansion"})
     listed = [
         line for line in text.split("\n") if line[:3].strip().rstrip(".").isdigit()
     ]
@@ -1517,7 +1978,7 @@ def test_a_net_not_backed_by_postings_opened_is_flagged_in_the_sites_order():
     )
     assert "FLAG" in listed[1] and "FLAG" in listed[2]
     assert (
-        "3 of these rows have a net larger than their postings opened and closed"
+        "3 of these rows have a net their postings opened and closed could not make"
         in text
     )
 
@@ -1532,14 +1993,148 @@ def test_the_flag_allows_for_turnover_counted_over_part_of_the_window():
     text = server.call(
         FakeSpace(hot=_hot(rows, turnover_from="2026-09-25T04:00:00+00:00")),
         "hiring_now",
-        {},
+        {"lens": "expansion"},
     )
-    listed = [line for line in text.split("\n") if line.startswith((" 1.", " 2."))]
-    assert "FLAG" in listed[0] and "FLAG" not in listed[1]
+    first, second = _listed(text)
+    net_flag = hiring_now.Flag.NET_NOT_BACKED
+    assert net_flag in first and net_flag not in second
+    # read_trends' words for the same span (turnover_span).
     assert (
-        "Opened and closed are counted only from 2026-09-25 04:00, when HeadStart began "
-        "counting them: 3.1 of the window's 7.0 days." in text
+        "HeadStart can measure hiring, as postings opened and closed, only from 2026-09-25 "
+        "04:00: 3.1 of this window's 7.0 days." in text
     )
+
+
+@pytest.mark.parametrize(
+    ("net", "opened", "closed", "flagged"),
+    [
+        # AgileEngine on 2026-09-29: a gain against the sign of opened less closed.
+        (100, 306, 321, True),
+        # Capital One: a gain its postings opened could make, in the sign of opened less closed.
+        (90, 83, 75, False),
+        # A loss larger than its postings closed could make.
+        (-400, 90, 40, True),
+        # A loss its closures, uncounted, cannot judge.
+        (-400, 90, None, False),
+    ],
+)
+def test_a_net_is_judged_sign_by_sign(net, opened, closed, flagged):
+    """Review of #865: |net| against opened + closed let a gain on more closed than opened
+    through."""
+    row = _hot_row(1, net=net, opened=opened, closed=closed)
+    text = server.call(
+        FakeSpace(hot=_hot([row], turnover_from="2026-09-25T04:00:00+00:00")),
+        "hiring_now",
+        {"lens": "expansion"},
+    )
+    assert (hiring_now.Flag.NET_NOT_BACKED in _listed(text)[0]) is flagged
+
+
+def _listed(text):
+    return [line for line in text.split("\n") if line[:3].strip().rstrip(".").isdigit()]
+
+
+def test_the_default_lens_ranks_opened_less_closed_and_says_who_it_left_out():
+    """ADR-0321: the one Lens with no re-counting in its figure leads, in its own order."""
+    rows = [_hot_row(1, opened=40, closed=10), _hot_row(2, opened=30, closed=12)]
+    hot = _hot(rows)
+    hot["lenses"]["opened_less_closed"] = rows
+    space = FakeSpace(hot=hot)
+    text = server.call(space, "hiring_now", {})
+    assert text.startswith(
+        "Hiring now, opened_less_closed: postings opened less postings closed, only for "
+        "companies whose closures were counted on every Board, largest first,"
+    )
+    assert "site's order" not in text and "site #" not in text
+    assert [line.split('"')[1] for line in _listed(text)] == ["Company 1", "Company 2"]
+    assert (
+        "23 whose closures were not counted, so their postings opened may be the same "
+        "postings listed again; 7 whose closures went uncounted on some of their Boards, so "
+        "their closed runs low" in text
+    )
+    assert hiring_now.TOOL.input_schema["properties"]["lens"]["default"] == (
+        "opened_less_closed"
+    )
+
+
+def test_the_default_lens_flags_nothing_and_says_whose_net_a_row_gives():
+    """Its figure is opened less closed, which no flag questions; a flag there, on the site's
+    net, made the eval fail a correct answer (review of #896)."""
+    rows = [_hot_row(1, net=400, opened=40, closed=10), _hot_row(2)]
+    text = server.call(FakeSpace(hot=_hot(rows)), "hiring_now", {})
+    assert [line.split('"')[1] for line in _listed(text)] == ["Company 1", "Company 2"]
+    assert "FLAG" not in text
+    assert (
+        "A row's net is the site's change in openings, which can hold re-counting; this Lens "
+        "ranks by opened less closed, so report that." in text
+    )
+
+
+def test_a_small_limit_on_a_site_lens_still_leads_with_a_real_row():
+    """Review of #896: flagged rows were moved only inside the first `limit`, so `limit` 1 on
+    Expansion gave Bosch alone."""
+    rows = [_hot_row(1, net=442, opened=23, closed=33), _hot_row(2), _hot_row(3)]
+    text = server.call(
+        FakeSpace(hot=_hot(rows)), "hiring_now", {"lens": "expansion", "limit": 1}
+    )
+    [only] = _listed(text)
+    assert only.startswith(' 1. site #2 · "Company 2"')
+
+
+def test_a_closed_count_read_on_only_some_boards_is_flagged_on_a_site_lens():
+    """Review of #896: RTX sat #3 on Volume, closed read on 1 of 4 Boards, unflagged, while
+    the default Lens leaves such a company out."""
+    rows = [_hot_row(1, closures_uncounted_boards=3, boards_in_scope=4), _hot_row(2)]
+    text = server.call(FakeSpace(hot=_hot(rows)), "hiring_now", {"lens": "volume"})
+    flagged = next(line for line in _listed(text) if "Company 1" in line)
+    assert "FLAG closures counted on only some Boards" in flagged
+    assert (
+        "1 of these rows had their closures counted on only some of their Boards"
+        in text
+    )
+
+
+def test_on_the_sites_lenses_flagged_rows_follow_the_unflagged_in_the_sites_order():
+    """mr08/mr10: Expansion led with Bosch, which its own flag disowned, and Volume with New
+    York Life, 504 opened against 25 open now and closures not counted, unflagged."""
+    rows = [
+        _hot_row(1, stock=25, net=-27, opened=504, closed=None, rate=None),
+        _hot_row(2),
+        _hot_row(3, net=435, opened=20, closed=32),
+        _hot_row(4),
+    ]
+    hot = _hot(rows)
+    hot["lenses"]["volume"] = rows
+    text = server.call(FakeSpace(hot=hot), "hiring_now", {"lens": "volume"})
+    listed = _listed(text)
+    assert [line.split('"')[1] for line in listed] == [
+        "Company 2",
+        "Company 4",
+        "Company 1",
+        "Company 3",
+    ]
+    assert listed[0].startswith(" 1. site #2 · ")
+    assert listed[2].startswith(" 3. site #1 · ")
+    assert (
+        "FLAG more postings opened than are open now · FLAG closures not counted"
+        in listed[2]
+    )
+    assert (
+        "Flagged rows are listed after the unflagged ones, each group in the site's order; "
+        "site #N is the row's place on the page." in text
+    )
+    assert "1 of these rows had their closures go uncounted" in text
+
+
+def test_the_sites_order_is_kept_and_unnumbered_when_no_flagged_row_leads():
+    rows = [_hot_row(1), _hot_row(2), _hot_row(3, net=435, opened=20, closed=32)]
+    text = server.call(FakeSpace(hot=_hot(rows)), "hiring_now", {"lens": "expansion"})
+    assert "site #" not in text and "Flagged rows are listed after" not in text
+    assert [line.split('"')[1] for line in _listed(text)] == [
+        "Company 1",
+        "Company 2",
+        "Company 3",
+    ]
 
 
 def test_a_rate_row_on_a_small_base_is_flagged():
@@ -1550,8 +2145,8 @@ def test_a_rate_row_on_a_small_base_is_flagged():
     ]
     text = server.call(FakeSpace(hot=_hot(rows)), "hiring_now", {"lens": "rate"})
     assert (
-        "FLAG small base: at 25 openings each posting opened moves the rate 4 points · "
-        "FLAG more postings opened than are open now" in text
+        "FLAG more postings opened than are open now · FLAG closures not counted · FLAG "
+        "small base: at 25 openings each posting opened moves the rate 4 points" in text
     )
     assert "1 of these rows rank on a small base" in text
 
@@ -1579,6 +2174,22 @@ def test_a_hiring_now_answer_stays_inside_its_budget():
     text = _answer(
         "hiring_now", FakeSpace(hot=_hot(rows)), {"limit": 50, "lens": "rate"}
     )
+    assert len(text) <= server.BY_NAME["hiring_now"].max_chars
+
+
+def test_a_reordered_hiring_now_answer_stays_inside_its_budget():
+    """The worst case with every row moved, so each also carries "site #N · "."""
+    flagged = [
+        _hot_row(n, company="y" * 5_000, stock=30, net=500, rate=300, closed=None)
+        for n in range(60)
+    ]
+    real = [_hot_row(100 + n, company="z" * 5_000, net=10) for n in range(30)]
+    text = _answer(
+        "hiring_now",
+        FakeSpace(hot=_hot(flagged + real)),
+        {"limit": 50, "lens": "rate"},
+    )
+    assert "site #61 · " in text
     assert len(text) <= server.BY_NAME["hiring_now"].max_chars
 
 
@@ -1731,12 +2342,50 @@ def _profile_trends(n_categories=3):
 
 
 def _locations(n=3):
+    """``n`` countries of three places each, as `/companies/locations` rolls them up."""
+
+    def places(code):
+        return [{"location": f"{code} place {i}", "count": 30 - i} for i in range(3)]
+
+    codes = ["US", "IE", "GB", "DE", "FR", "IN", "CA", "SG", "JP", "AU", "BR"][:n]
     return {
         "jobs": 224,
         "unstated": 21,
         "distinct": 97,
         "capped": False,
-        "locations": [{"location": f"Place {i}", "count": 30 - i} for i in range(n)],
+        "locations": [],
+        "countries": [
+            {"code": code, "jobs": 100 - i, "places": places(code)}
+            for i, code in enumerate(codes)
+        ],
+        "no_country": {
+            "jobs": 23,
+            "places": [
+                {"location": "N/A", "count": 20},
+                {"location": "Remote", "count": 3},
+            ],
+        },
+        "places_unread": 0,
+    }
+
+
+def _levels(*counts):
+    labels = [
+        ("intern", "Internships"),
+        ("entry", "Entry level (0–1 yrs)"),
+        ("mid", "Mid level (2–4 yrs)"),
+        ("senior", "Senior (5–7 yrs)"),
+        ("staff", "Staff and above (8+ yrs)"),
+        ("unspecified", "Experience not stated"),
+    ]
+    counts = counts or (3, 12, 40, 60, 20, 89)
+    return {
+        "jobs": sum(counts),
+        "capped": False,
+        "bands": [
+            {"band": band, "label": label, "count": count}
+            for (band, label), count in zip(labels, counts, strict=True)
+        ],
     }
 
 
@@ -1750,6 +2399,7 @@ def _profile_space(**answers):
         "facets": _profile_facets(),
         "trends": _profile_trends(),
         "companies_locations": _locations(),
+        "companies_levels": _levels(),
     }
     return FakeSpace(**{**defaults, **answers})
 
@@ -1770,9 +2420,8 @@ def test_a_profile_reads_the_company_as_read_trends_does_and_scopes_every_read_t
     assert space.params_of(R.TRENDS) == [
         [("since", "2026-08-30T00:00:00+00:00"), ("company", "greenhouse:stripe")]
     ]
-    assert space.params_of(R.COMPANIES_LOCATIONS) == [
-        [("board", "greenhouse:stripe"), ("limit", "10")]
-    ]
+    assert space.params_of(R.COMPANIES_LOCATIONS) == [[("board", "greenhouse:stripe")]]
+    assert space.params_of(R.COMPANIES_LEVELS) == [[("board", "greenhouse:stripe")]]
     assert text.startswith(
         'Company: "Stripe" (greenhouse:stripe, 1 Board, 218 tech openings). A name is read '
         "as the directory's largest company of that name"
@@ -1817,25 +2466,76 @@ def test_a_profile_lists_categories_largest_first_with_their_turnover():
     assert "Gone" not in categories  # no openings left now
 
 
-def test_a_profile_quotes_the_places_as_the_employer_wrote_them():
-    text = server.call(_profile_space(), "company_profile", {"company": "Stripe"})
+def test_a_profile_lists_a_hidden_family_last_as_other():
+    trends = _profile_trends(n_categories=2)
+    trends["reading"]["lines"].insert(
+        0,
+        _line(
+            "hidden-family",
+            "Other",
+            _move(50, 500, 0, turnover={"opened": 3, "closed": 1}),
+        ),
+    )
+    trends["unlisted_series"] = ["hidden-family"]
+    text = server.call(
+        _profile_space(trends=trends), "company_profile", {"company": "Stripe"}
+    )
+    categories = next(
+        line for line in text.split("\n") if line.startswith("Job categories now")
+    )
+    assert categories == (
+        "Job categories now, largest first: Family 1 20 (1 opened, 0 closed) · Family 0 10 · "
+        "Other 500 (3 opened, 1 closed)."
+    )
+
+
+def test_a_profile_rolls_its_places_up_by_country_quoting_each_as_written():
+    """rc02b: "N/A" 23, "Dublin" 15 and "Dublin, Ireland" 4 were three separate places."""
+    text = server.call(
+        _profile_space(companies_locations=_locations(10)),
+        "company_profile",
+        {"company": "Stripe"},
+    )
     assert (
-        "Top locations of its 224 served jobs, as the employer wrote them (97 distinct, 21 "
-        'naming none): "Place 0" 30 · "Place 1" 29 · "Place 2" 28.' in text
+        "Where its 224 served jobs are, by country as search_jobs' `country` reads each "
+        "place (a job naming two countries counts in both), with its top places as written: "
+        'United States 100 ("US place 0" 30 · "US place 1" 29 · "US place 2" 28) · '
+        'Ireland 99 ("IE place 0" 30 ·' in text
+    )
+    assert "Singapore 93" in text and "Japan" not in text  # eight countries are listed
+    assert " · …2 more countries." in text
+    assert (
+        'No country is read from the places of 23 ("N/A" 20 · "Remote" 3). 21 name no '
+        "place." in text
+    )
+
+
+def test_a_profile_whose_places_name_no_country_says_so():
+    locations = {**_locations(0), "unstated": 0}
+    text = server.call(
+        _profile_space(companies_locations=locations),
+        "company_profile",
+        {"company": "Stripe"},
+    )
+    assert (
+        "Where its 224 served jobs are: no place names a country the `country` filter "
+        'reads. No country is read from the places of 23 ("N/A" 20 · "Remote" 3).'
+        in text
     )
 
 
 def test_a_profile_breaks_its_served_jobs_down_in_this_tools_words():
     text = server.call(_profile_space(), "company_profile", {"company": "Stripe"})
+    # Its Board states no employment type, so that line would read as no full-time jobs.
+    assert "employment type" not in text
+    assert "open to someone with at most" not in text
+    assert "a line whose every count is 0 left out" in text
     for line in (
         "  remote: 29",
         (
-            "  employment type: full-time 0 · part-time 0 · contract 0 · internship 0 (a job "
-            "whose Board states no type counts in none)"
-        ),
-        (
-            "  open to someone with at most: 0 years 18 · 2 years 63 · 5 years 167 · 10 years "
-            "224 (a job stating no experience counts at every level)"
+            "  level, each job once, in the Trends Level view's bands: Internships 3 · "
+            "Entry level (0–1 yrs) 12 · Mid level (2–4 yrs) 40 · Senior (5–7 yrs) 60 · "
+            "Staff and above (8+ yrs) 20 · Experience not stated 89"
         ),
         "  salary stated: 15",
         (
@@ -1888,7 +2588,7 @@ def test_a_profile_with_no_trend_reading_still_gives_the_rest():
         "No trend: the Space could not read this company's counts (KeyError: x)."
         in text
     )
-    assert "Top locations of its 224 served jobs" in text
+    assert "Where its 224 served jobs are" in text
 
 
 def test_a_company_profile_answer_stays_inside_its_budget():
@@ -1902,7 +2602,10 @@ def test_a_company_profile_answer_stays_inside_its_budget():
     for line in trends["reading"]["lines"]:
         line["label"] = "Systems Administration & IT Ops"
     locations = _locations(10)
-    for place in locations["locations"]:
+    for country in locations["countries"]:
+        for place in country["places"]:
+            place["location"] = long
+    for place in locations["no_country"]["places"]:
         place["location"] = long
     space = _profile_space(
         companies_suggest={"companies": [big, *others]},
@@ -1911,6 +2614,236 @@ def test_a_company_profile_answer_stays_inside_its_budget():
     )
     text = _answer("company_profile", space, {"company": long[:100]})
     assert len(text) <= server.BY_NAME["company_profile"].max_chars
+
+
+# ---- role_requirements --------------------------------------------------------------------
+
+
+def _requirements(sampled=300, matching=12_400, **overrides):
+    """A `/requirements` answer in the route's shape (ADR-0324)."""
+    answer = {
+        "matching": matching,
+        "order": "closest",
+        "closest_score": 0.87,
+        "farthest_score": 0.81,
+        "sampled": sampled,
+        "described": sampled - 4 if sampled else 0,
+        "skills": [
+            {"skill": "SQL", "kind": "data", "postings": 219, "employers": 162},
+            {"skill": "Python", "kind": "language", "postings": 215, "employers": 160},
+            {"skill": "Spark", "kind": "data", "postings": 143, "employers": 105},
+            {"skill": "AWS", "kind": "cloud", "postings": 140, "employers": 106},
+        ],
+        "kinds": {
+            "language": "Languages",
+            "data": "Data engineering and analytics",
+            "cloud": "Cloud",
+        },
+        "vocabulary_size": 376,
+        "experience": {
+            "stated": {"0-1": 10, "2-4": 122, "5-7": 53, "8+": 8},
+            "estimated_from_title": 42,
+            "not_stated": 65,
+        },
+        "salary": {
+            "stating": 59,
+            "currencies": [
+                {
+                    "currency": "USD",
+                    "postings": 51,
+                    "p25": 122500,
+                    "median": 126800,
+                    "p75": 132704,
+                }
+            ],
+        },
+        "remote": 47,
+        "companies": [
+            {"company": "Capgemini", "board": "workday:capgemini", "postings": 13}
+        ],
+        "countries": [
+            {"code": "IN", "name": "India", "postings": 88},
+            {"code": "US", "name": "United States", "postings": 86},
+        ],
+        "no_country": 11,
+        "categories": [
+            {"family": "data-engineering", "postings": 238},
+            {"family": "software-engineering", "postings": 2},
+            {"family": "unclassified-tech", "postings": 5},
+        ],
+        "newest_tick": "2026-09-29T04:04:35+00:00",
+    }
+    answer.update(overrides)
+    return answer
+
+
+def test_requirements_send_the_role_the_category_and_the_filters_in_the_spaces_names():
+    space = FakeSpace(requirements=_requirements())
+    server.call(
+        space,
+        "role_requirements",
+        {
+            "query": "data engineer",
+            "category": "AI/ML",
+            "country": "DE",
+            "remote": True,
+            "location": "Berlin",
+            "max_years": 3,
+        },
+    )
+    assert space.params_of(R.REQUIREMENTS) == [
+        [
+            ("strict", "1"),
+            ("n", "300"),
+            ("q", "data engineer"),
+            ("family", "ai-ml-data-science"),
+            ("remote", "true"),
+            ("country", "DE"),
+            ("location", "Berlin"),
+            ("max_years", "3"),
+        ]
+    ]
+
+
+def test_requirements_need_a_role_or_a_category():
+    with pytest.raises(ToolFailure, match="Name a role in `query`"):
+        server.call(FakeSpace(), "role_requirements", {"country": "DE"})
+
+
+def test_requirements_say_what_was_counted_over_how_many_and_how_picked():
+    space = FakeSpace(requirements=_requirements())
+    text = server.call(space, "role_requirements", {"query": "data engineer"})
+    assert text.startswith(
+        'What postings closest to "data engineer" ask for: counted over 300 postings, '
+        "of 12,400 that the filters admit."
+    )
+    assert "ranks postings but does not narrow them" in text
+    assert "0.87 (the closest) to 0.81 (the farthest counted)" in text
+    # Unclassified tech is hidden (ADR-0306): its 5 count with the 55 in no tech category.
+    assert (
+        "Data Engineering (data-engineering) 238 · Software Engineering "
+        "(software-engineering) 2; other or no tech category: 60." in text
+    )
+    assert "nclassified" not in text
+    assert "  Data engineering and analytics: SQL 74% (162 employers)" in text
+    assert "  Languages: Python 73% (160 employers)" in text
+    assert "0–1: 10 · 2–4: 122 · 5–7: 53 · 8+: 8" in text
+    assert "USD, 51 postings: 122,500 / 126,800 / 132,704" in text
+    assert "Remote: 47 of 300 (16%)." in text
+    assert '"Capgemini" (key "workday:capgemini") 13' in text
+    assert "India (IN) 88 · United States (US) 86; no known country: 11." in text
+    assert "376 tech skills" in text
+    assert text.endswith("Data as of the trends tick 2026-09-29T04:04:35+00:00.")
+
+
+def test_a_category_alone_is_its_newest_postings_and_lists_no_category_mix():
+    space = FakeSpace(
+        requirements=_requirements(
+            order="newest", closest_score=None, farthest_score=None
+        )
+    )
+    text = server.call(space, "role_requirements", {"category": "security"})
+    assert text.startswith(
+        "What the newest postings in Security (security) ask for: counted over 300 "
+        "postings, of 12,400 in the category that the filters admit."
+    )
+    assert "Similarity" not in text and "Job categories" not in text
+
+
+def test_a_query_within_a_category_says_when_the_window_held_fewer():
+    space = FakeSpace(requirements=_requirements(sampled=120))
+    text = server.call(
+        space,
+        "role_requirements",
+        {"query": "data engineer", "category": "data-engineering"},
+    )
+    assert "Only 120 of the category's postings are among the 2,000 closest" in text
+
+
+def test_a_company_key_scopes_every_board_and_a_name_is_the_company_box():
+    key_space = FakeSpace(
+        requirements=_requirements(),
+        companies_lookup={"companies": [_suggestion("lever:razorpay", "Razorpay")]},
+    )
+    server.call(
+        key_space,
+        "role_requirements",
+        {"query": "backend engineer", "company": "lever:razorpay"},
+    )
+    assert ("board", "lever:razorpay") in key_space.params_of(R.REQUIREMENTS)[0]
+    name_space = FakeSpace(requirements=_requirements())
+    text = server.call(
+        name_space, "role_requirements", {"query": "sre", "company": "Stripe"}
+    )
+    assert ("company", "Stripe") in name_space.params_of(R.REQUIREMENTS)[0]
+    assert 'company name contains "Stripe"' in text
+
+
+def test_nothing_to_count_says_so_and_offers_the_companies_a_name_may_mean():
+    space = FakeSpace(
+        requirements=_requirements(sampled=0, matching=0, skills=[]),
+        companies_suggest={
+            "companies": [_suggestion("greenhouse:stripe", "Stripe", "typo")]
+        },
+    )
+    text = server.call(
+        space, "role_requirements", {"query": "sre", "company": "Strpie"}
+    )
+    assert "No postings to count" in text and "greenhouse:stripe" in text
+
+
+def test_a_role_requirements_answer_stays_inside_its_budget():
+    """The most the route lists, every scraped field at its clip and every category named."""
+    long = "x" * 5_000
+    kinds = {f"kind{i}": "A kind label of some length" for i in range(17)}
+    skills = [
+        {
+            "skill": "Infrastructure as code and more",
+            "kind": f"kind{i % 17}",
+            "postings": 300,
+            "employers": 300,
+        }
+        for i in range(40)
+    ]
+    companies = [
+        {"company": long, "board": f"workday:{'b' * 280}", "postings": 300}
+        for _ in range(10)
+    ]
+    countries = [
+        {"code": "CD", "name": "Congo, The Democratic Republic of the", "postings": 300}
+        for _ in range(10)
+    ]
+    categories = [
+        {"family": "systems-administration-it-operations", "postings": 12}
+        for _ in range(25)
+    ]
+    currencies = [
+        {
+            "currency": "IDR",
+            "postings": 300,
+            "p25": 999_999_999,
+            "median": 999_999_999,
+            "p75": 999_999_999,
+        }
+        for _ in range(5)
+    ]
+    space = FakeSpace(
+        requirements=_requirements(
+            sampled=500,
+            skills=skills,
+            kinds=kinds,
+            companies=companies,
+            countries=countries,
+            categories=categories,
+            salary={"stating": 500, "currencies": currencies},
+        )
+    )
+    text = _answer(
+        "role_requirements",
+        space,
+        {"query": long[:200], "location": long[:60], "country": "US", "max_years": 30},
+    )
+    assert len(text) <= server.BY_NAME["role_requirements"].max_chars
 
 
 def test_an_answer_past_its_tools_budget_is_cut_on_lines_and_keeps_its_last(
@@ -1942,6 +2875,7 @@ LIVE_ARGUMENTS = {
     "get_job": {"ids": ["greenhouse:no-such-board:0"]},
     "find_company": {"name": "Stripe"},
     "company_profile": {"company": "greenhouse:stripe"},
+    "role_requirements": {"query": "data engineer"},
 }
 
 

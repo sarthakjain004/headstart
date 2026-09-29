@@ -379,7 +379,7 @@ def test_hot_rows_the_tab_hides_are_left_out_by_the_apps_own_list(
         "hidden_by_default": ["staffing", "aggregator"],
     }
     monkeypatch.setattr(companies_app, "_HOT", hot)
-    text = server.call(_client(companies_app), "hiring_now", {})
+    text = server.call(_client(companies_app), "hiring_now", {"lens": "expansion"})
     assert '"Acme"' in text and '"Temps Inc"' not in text
     assert "1 aggregator and staffing rows hidden" in text
 
@@ -407,7 +407,11 @@ def test_get_job_reads_a_posting_and_names_the_missing_at_the_app(
     assert 'department "Engineering"' in text
     assert '"Build the payments API."\n"Own it end to end."' in text
     assert "latest scrape did not find it" in text
-    assert 'Not in the index: "greenhouse:gone:9".' in text
+    # The fixture table counts 1 on every filtered count, so its Board reads as served.
+    assert (
+        'Not in the index now: "greenhouse:gone:9". Each has closed, or was never'
+        in text
+    )
     assert "Data as of the trends tick" in text
 
 
@@ -471,11 +475,11 @@ def test_a_profile_reads_every_route_for_every_board_of_its_company(
     companies_app, scoped_boards
 ):
     """HPE is one Tenant split into two Workday sites: either site's key means both, in the
-    facet counts and in the locations alike."""
+    facet counts, the locations and the levels alike."""
     text = server.call(
         _client(companies_app), "company_profile", {"company": "workday:hpe/b"}
     )
-    assert len(scoped_boards) == 2 and all(
+    assert len(scoped_boards) == 3 and all(
         sorted(boards) == ["workday:hpe/a", "workday:hpe/b"] for boards in scoped_boards
     )
     assert text.startswith('Company: "Hpe" (workday:hpe/a, 2 Boards,')
@@ -483,12 +487,44 @@ def test_a_profile_reads_every_route_for_every_board_of_its_company(
     assert "Job categories now, largest first:" in text
     # The fixture table answers its two rows, Berlin and Remote, to every scan, and 1 to every
     # filtered count.
-    assert '"Berlin" 1 · "Remote" 1' in text
+    assert (
+        'Germany 1 ("Berlin" 1). No country is read from the places of 1 ("Remote" 1).'
+        in text
+    )
+    # Its two rows state no experience, each counted once.
+    assert "Experience not stated 2" in text
     assert "Of the 1 jobs search serves on its Boards" in text
     assert (
         "search also serves 7 jobs on its Boards that the tech filter sets aside"
         in text
     )
+
+
+def test_requirements_reach_the_app_as_a_role_and_its_filters(companies_app, parsed):
+    """The fixture table answers its two rows to every read: the sample is both, one of them
+    described, and the filters reach the app as the search filters they name (ADR-0324)."""
+    text = server.call(
+        _client(companies_app),
+        "role_requirements",
+        {"query": "backend engineer", "remote": True, "country": "DE"},
+    )
+    assert parsed[-1].remote is True and parsed[-1].country == "DE"
+    assert text.startswith(
+        'What postings closest to "backend engineer" ask for: counted over 2 postings, of 1 '
+    )
+    assert "as a share of the 1 sampled postings with a description" in text
+    assert "Remote: 2 of 2 (100%)." in text
+
+
+def test_a_requirements_category_without_role_assignments_is_the_deployments_state(
+    companies_app,
+):
+    """The fixture pulls no role assignments, so the app cannot sample a category, and says so
+    as a deployment's state rather than an empty answer."""
+    with pytest.raises(ToolFailure, match="role assignments"):
+        server.call(
+            _client(companies_app), "role_requirements", {"category": "security"}
+        )
 
 
 # ---- the Space's own /mcp, in both protocol eras (ADR-0267) ----
@@ -500,7 +536,8 @@ _EACH_TOOL = [
     ("read_trends", {"days": 7}, "Newest trends tick"),
     ("hiring_now", {}, "No company qualified on this Lens this week."),
     ("find_company", {"name": "Citi"}, "key workday:citi/2"),
-    ("company_profile", {"company": "workday:hpe/b"}, '"Berlin" 1'),
+    ("company_profile", {"company": "workday:hpe/b"}, 'Germany 1 ("Berlin" 1)'),
+    ("role_requirements", {"query": "backend engineer"}, "counted over 2 postings"),
 ]
 
 _MODERN_META = {

@@ -107,11 +107,42 @@ def test_every_netted_line_ends_on_its_measured_latest_count(path: Path) -> None
 @pytest.mark.parametrize("path", GOLDEN, ids=[p.stem for p in GOLDEN])
 def test_other_is_the_lines_past_the_charted_ones(path: Path) -> None:
     reading = json.loads(path.read_text(encoding="utf-8"))["reading"]
-    folded = reading["lines"][LINES_CHARTED:]
+    folded = reading["lines"][reading["charted"] :]
     assert (reading["other"] is None) == (not folded)
     if folded:
         for k in ("start", "latest", "hiring", "not_hiring_total"):
             assert reading["other"]["move"][k] == sum(f["move"][k] for f in folded)
+
+
+def _reading_with_its_last_line_hidden() -> dict:
+    """Five lines, fewer than the eight a page charts, the last one a hidden family's."""
+    answer = _golden("index_bases_read_off_the_first_count")["answer_input"]
+    answer["unlisted_series"] = [answer["series"][-1]["name"]]
+    return read_answer(answer).to_json()
+
+
+def test_a_hidden_line_is_in_other_even_among_fewer_lines_than_a_page_charts() -> None:
+    reading = _reading_with_its_last_line_hidden()
+    assert len(reading["lines"]) == 5 and reading["charted"] == 4 < LINES_CHARTED
+    hidden = reading["lines"][-1]
+    assert reading["other"]["move"]["latest"] == hidden["move"]["latest"]
+    # the hidden line still counts: every total and the rows-add-up check keep it
+    assert reading["openings"] == sum(r["move"]["latest"] for r in reading["lines"])
+    assert check_reading(reading) == []
+
+
+def test_the_served_payload_names_the_unlisted_series_the_page_folds() -> None:
+    answer = _golden("a_hidden_family_folds_into_other_among_fewer_than_eight_lines")[
+        "answer_input"
+    ]
+    payload, _ = trends_payload(answer)
+    assert payload["unlisted_series"] == [answer["series"][-1]["name"]]
+
+
+def test_the_checker_catches_a_hidden_line_left_out_of_other() -> None:
+    reading = _reading_with_its_last_line_hidden()
+    reading["other"] = None
+    assert any("other row: missing" in v for v in check_reading(reading))
 
 
 # ---- the payload the Space serves ---------------------------------------------------------------
@@ -199,11 +230,18 @@ def _narrowed(answer: dict, first: int, end: int) -> dict:
 
 def _runs(change: dict, answer: dict) -> set[str] | None:
     """The runs a change lands on in the full window: its own, a counting change's settling run
-    and, under New, a tech-filter change's week-later echo. None for a change whose own run is
+    and, under New, a tech-filter change's week-later echo; for the index's Boards found through
+    the window (ADR-0304), every run they are taken out on. None for a change whose own run is
     outside the window, which no narrower window holds whole."""
     stamps = answer["stamps"]
     if change["ts"] not in stamps:
         return None
+    if not change.get("drawn", True):
+        return {
+            f["ts"]
+            for f in answer["discovered"]
+            if f.get("lines") is not None and f["openings"] >= 5
+        }
     i = stamps.index(change["ts"])
     runs = {change["ts"]}
     if change["kind"] == CauseKind.COUNTING:
@@ -468,6 +506,51 @@ def test_with_no_pick_a_counting_change_is_taken_out_and_every_change_is_marked(
     assert [d["changes"] for d in reading["day_markers"]] == [
         [filter_change["id"], extraction["id"]]
     ]
+
+
+def test_with_no_pick_boards_found_come_out_of_each_line_by_their_own_openings() -> (
+    None
+):
+    """The index takes each run's Boards found out of every line by the openings they brought it
+    (ADR-0304): 9,253 Boards with 68,535 openings read as a week's hiring. Found on nearly every
+    run, they are one Marked change, dated at their first run and drawn nowhere, and no line
+    breaks at them. On a counting change's run the found openings are theirs, the rest the
+    change's; two openings on one run are left in the line."""
+    reading = _golden("index_takes_boards_found_out_of_each_line_by_its_own_openings")[
+        "reading"
+    ]
+    moves = {line["name"]: line for line in [reading["total"], *reading["lines"]]}
+
+    def causes(name):
+        return {c["change"]: c["size"] for c in moves[name]["move"]["not_hiring"]}
+
+    counting = "counting@2026-09-24T00:00:00+00:00"
+    assert moves["software-engineering"]["move"]["hiring"] == 35
+    assert causes("software-engineering") == {"found@window": 110, counting: -205}
+    assert causes("web-development") == {"found@window": 40, counting: -18}
+    assert moves["data-engineering"]["move"]["hiring"] == 4
+    assert causes("data-engineering") == {counting: 1}
+    assert causes("__total__") == {"found@window": 150, counting: -222}
+    for line in moves.values():
+        assert line["steps_at"] == [4, 5], line["name"]
+    found = next(c for c in reading["marked_changes"] if c["id"] == "found@window")
+    assert found["label"] == "5 more job sites found through Sep 25"
+    assert (found["ts"], found["kind"], found["drawn"]) == (
+        "2026-09-22T00:00:00+00:00",
+        CauseKind.FOUND_BOARDS,
+        False,
+    )
+    assert found["sizes"] == {"__total__": 150}
+    assert [d["changes"] for d in reading["day_markers"]] == [[counting]]
+
+
+def test_the_checker_catches_a_found_change_drawn_nowhere_named_by_a_marker() -> None:
+    def breaking(r):
+        r["day_markers"][0]["changes"].append("found@window")
+
+    assert _broken(
+        "index_takes_boards_found_out_of_each_line_by_its_own_openings", breaking
+    ) == ["marked change found@window: named by 1 day markers, not none"]
 
 
 def test_a_line_first_counted_inside_the_window_says_when() -> None:

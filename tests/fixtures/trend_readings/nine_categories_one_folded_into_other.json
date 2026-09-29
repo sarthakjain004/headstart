@@ -673,6 +673,7 @@
    "index_base": null,
    "arrived_by": null
   },
+  "charted": 8,
   "company_lines": [
    {
     "name": "greenhouse:acme",
@@ -730,7 +731,8 @@
     "boards": null,
     "sizes": {
      "greenhouse:acme": 90
-    }
+    },
+    "drawn": true
    }
   ],
   "day_markers": [

@@ -16,6 +16,7 @@ from headstart.search_filters.compiler import (
     account_clause,
     board_clause,
     build_filter,
+    keyword_clause,
 )
 from headstart.search_filters.employment_type_filter import (
     RULES as EMPLOYMENT_TYPE_RULES,
@@ -362,6 +363,27 @@ def test_a_keyword_matches_where_a_word_starts_not_inside_one(
 
 def test_a_description_keyword_is_safe_on_a_null_description(keyword_table):
     assert _titles_matching(keyword_table, kw="engineer", kw_in="description") == set()
+
+
+def test_the_keyword_alone_and_its_literal_without_the_word_start():
+    """ADR-0320: the literal matches every row the keyword does, and is found faster."""
+    caps = IndexCapabilities(
+        atses=(), has_first_seen=True, has_min_salary_annual=True, has_description=True
+    )
+    filters = SearchFilters(
+        kw='"visa sponsorship" .net', kw_in="description", remote=True
+    )
+    exact = keyword_clause(filters, caps)
+    assert exact == (
+        r"(regexp_like(description, '(?i)(^|[^a-z0-9])visa[^a-z0-9]+sponsorship')) AND "
+        r"(regexp_like(description, '(?i)\.net'))"
+    )
+    assert build_filter(filters, caps) == f"remote = true AND {exact}"
+    assert keyword_clause(filters, caps, word_start=False) == (
+        r"(regexp_like(description, '(?i)visa[^a-z0-9]+sponsorship')) AND "
+        r"(regexp_like(description, '(?i)\.net'))"
+    )
+    assert keyword_clause(SearchFilters(remote=True, title_words="rust"), caps) is None
 
 
 def test_keyword_scope_options_come_from_the_map_in_order_with_labels_and_needs():

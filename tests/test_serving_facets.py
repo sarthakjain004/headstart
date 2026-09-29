@@ -72,8 +72,12 @@ class _NoRows:
         self._columns = columns
         return self
 
+    def with_row_id(self, _asked):
+        return self
+
     def to_arrow(self):
-        return _schema(2).empty_table().select(self._columns)
+        empty = _schema(2).empty_table().select(self._columns)
+        return empty.append_column("_rowid", pa.array([], pa.uint64()))
 
 
 _CAPABILITY_FIELDS = set(IndexCapabilities.__dataclass_fields__)
@@ -138,6 +142,7 @@ def test_counts_never_need_the_query_or_the_encoder():
     `extra_where` (ADR-0171) is keyword-only and is a *clause*, not a query — it exists so the
     Account's follow/hide narrowing reaches the counts as well as the list they describe.
     `only_total` (ADR-0274) is keyword-only too, and says how much to count, not what.
+    `table_where` (ADR-0320) compiles filters to a clause keeping the same rows, not a query.
     """
     import inspect
 
@@ -148,9 +153,11 @@ def test_counts_never_need_the_query_or_the_encoder():
         "capabilities",
         "extra_where",
         "only_total",
+        "table_where",
     ]
     assert params["extra_where"].kind is inspect.Parameter.KEYWORD_ONLY
     assert params["only_total"].kind is inspect.Parameter.KEYWORD_ONLY
+    assert params["table_where"].kind is inspect.Parameter.KEYWORD_ONLY
     assert not {"q", "query", "model", "encoder"} & set(params), "no query, no encoder"
     a, b = _CountingTable(), _CountingTable()
     without = facets.counts(a, *_kwargs())

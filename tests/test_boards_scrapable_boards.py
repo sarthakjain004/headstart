@@ -93,6 +93,33 @@ def test_parked_boards_name_a_live_board_and_are_dropped(monkeypatch):
     )
 
 
+def test_login_walled_icims_internal_portals_are_parked_and_sampled_open_ones_kept():
+    """#810: the three iCIMS internal portals measured behind a sign-in on 2026-09-29 are parked.
+    The public portals of the same customers stay Scrapable, and so do the internal portals whose
+    sampled job pages opened without one. That a parked key names a live Board and is dropped is
+    ``test_parked_boards_name_a_live_board_and_are_dropped``'s job."""
+    walled = {
+        "icims:internal-instructional-scsk12.icims.com",
+        "icims:internal9v-eastpennmanufacturing.icims.com",
+        "icims:internala5-eastpennmanufacturing.icims.com",
+    }
+    assert walled <= PARKED_BOARDS, (
+        f"login-walled portals not parked: {sorted(walled - PARKED_BOARDS)}"
+    )
+
+    ledger = Path(__file__).resolve().parents[1] / "data" / "validate" / "liveness"
+    selected = {c.lowercase_identity for c in load(ledger, min_jobs=0)}
+    kept = {
+        "icims:instructional-scsk12.icims.com",
+        "icims:schoolsupportapply-scsk12.icims.com",
+        "icims:careers-eastpennmanufacturing.icims.com",
+        "icims:internal-beaumonthospital.icims.com",
+        "icims:internal-gnapartners.icims.com",
+        "icims:internal-knowledgeservices.icims.com",
+    }
+    assert kept <= selected, f"no longer Scrapable: {sorted(kept - selected)}"
+
+
 def test_excluded_boards_are_dropped_but_look_alikes_are_kept(tmp_path):
     """The deny-list drops vendor test Boards without touching real ones that merely read
     like tests — `greenhouse:stage` is KKR's board, and dropping it would cost 128 real jobs."""

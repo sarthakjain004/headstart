@@ -217,6 +217,34 @@ def test_comparable_coverage_serves_the_removals_on_its_cohorts_boards_only(tmp_
     assert history.unnetted_answer(comparable)["evicted"] == [cohorts]
 
 
+def test_the_index_sizes_each_board_found_by_the_line_it_lands_in(tmp_path):
+    """A Board first counted after the window's first run lands its backlog in the index's lines
+    at once; the answer sizes it line by line from the Board's first deltas (ADR-0304). The
+    ledger's first tick is every Board's baseline, not a Board found."""
+    _write_ticks(tmp_path)
+    history = TrendHistory.load(tmp_path, _NO_CONFIG)
+    found = [
+        {
+            "ts": _stamp(3),
+            "company": None,
+            "boards": 1,
+            "openings": 1,
+            "lines": {"software-engineering": 1},
+        }
+    ]
+    assert history.unnetted_answer(TrendQuestion())["discovered"] == found
+    by_level = history.unnetted_answer(TrendQuestion(family="software-engineering"))
+    assert [f["lines"] for f in by_level["discovered"]] == [{"entry": 1}]
+    # Not a Board of the ATS picked, not in a comparable cohort, and not under New.
+    for question in (
+        TrendQuestion(ats=("greenhouse",)),
+        TrendQuestion(coverage="comparable"),
+        TrendQuestion(metric="new"),
+        TrendQuestion(since=_stamp(3)),
+    ):
+        assert history.unnetted_answer(question)["discovered"] == [], question
+
+
 def test_an_unreadable_ledger_is_an_empty_history(tmp_path):
     directory = tmp_path / "role_trend_board_deltas"
     directory.mkdir()
@@ -413,6 +441,72 @@ def test_duplicate_removal_touches_a_company_by_its_boards(boards, touched):
     """ADR-0227: the Boards duplicate removal can move. Hot kept a copy of this rule, pinned
     here to trend_netting's, until ADR-0230 ranked it from the history; now it has none."""
     assert netting.dedup_touched(boards) is touched
+
+
+def _record_stock(state: Path, ts: str, by_family: dict[str, int]) -> None:
+    """One tick of one Board holding ``by_family`` openings, in the current layout."""
+    levels = {
+        ("greenhouse:acme", "stock", family, "mid"): count
+        for family, count in by_family.items()
+    }
+    methodology = trend_history.Methodology(
+        family_list_fingerprint="f",
+        family_classifier_version=1,
+        tech_filter_version=1,
+        derivations_version=1,
+        dedup_version=1,
+    )
+    trend_history.record_tick(state, ts, levels, {}, methodology)
+
+
+def test_a_hidden_family_is_the_last_series_and_reads_as_other(tmp_path):
+    """The largest line by far is the hidden one; it must still come last, under a name that
+    gives nothing away, and the answer says which series the readers do not list."""
+    config = tmp_path / "config"
+    config.mkdir()
+    (config / "role_families.json").write_text(
+        json.dumps(
+            {
+                "families": [
+                    {"name": "software-engineering", "label": "Software Engineering"},
+                    {"name": "frontend-web", "label": "Frontend & Web"},
+                    {"name": "mystery", "label": "Mystery", "hidden": True},
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    state = tmp_path / "state"
+    _record_stock(
+        state,
+        _stamp(0),
+        {"software-engineering": 50, "frontend-web": 10, "mystery": 200},
+    )
+    answer = TrendHistory.load(state, config).unnetted_answer(TrendQuestion())
+    assert [(s["name"], s["label"]) for s in answer["series"]] == [
+        ("software-engineering", "Software Engineering"),
+        ("frontend-web", "Frontend & Web"),
+        ("mystery", "Other"),
+    ]
+    assert answer["unlisted_series"] == ["mystery"]
+    # the hidden family stays in the whole: the total still counts its 200
+    assert answer["totals"][-1] == 260
+
+
+def test_with_no_hidden_family_every_series_stays_listed_by_size(tmp_path):
+    config = tmp_path / "config"
+    config.mkdir()
+    (config / "role_families.json").write_text(
+        json.dumps(
+            {"families": [{"name": "a", "label": "A"}, {"name": "b", "label": "B"}]}
+        ),
+        encoding="utf-8",
+    )
+    state = tmp_path / "state"
+    _record_stock(state, _stamp(0), {"a": 1, "b": 5})
+    answer = TrendHistory.load(state, config).unnetted_answer(TrendQuestion())
+    assert [s["name"] for s in answer["series"]] == ["b", "a"]
+    assert answer["unlisted_series"] == []
 
 
 def _write_opened_history(state: Path) -> None:

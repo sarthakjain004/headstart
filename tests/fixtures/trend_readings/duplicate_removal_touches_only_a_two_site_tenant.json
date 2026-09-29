@@ -183,6 +183,7 @@
    }
   ],
   "other": null,
+  "charted": 2,
   "company_lines": [
    {
     "name": "workday:acme/a",
@@ -267,7 +268,8 @@
     "boards": null,
     "sizes": {
      "workday:acme/a": -20
-    }
+    },
+    "drawn": true
    }
   ],
   "day_markers": [

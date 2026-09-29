@@ -1,0 +1,376 @@
+{
+ "description": "With no pick a counting change that takes more out of a small category than its history held cuts the line, and the growth before the cut is that change's, not the Boards found on a run between them (ADR-0304): the nearest step after the cut was only Boards found, whose openings never cut a line.",
+ "answer_input": {
+  "stamps": [
+   "2026-09-20T00:00:00+00:00",
+   "2026-09-21T00:00:00+00:00",
+   "2026-09-22T00:00:00+00:00",
+   "2026-09-23T00:00:00+00:00",
+   "2026-09-24T00:00:00+00:00",
+   "2026-09-25T00:00:00+00:00"
+  ],
+  "totals": [
+   10000,
+   10000,
+   10000,
+   10000,
+   10000,
+   10000
+  ],
+  "series": [
+   {
+    "name": "a",
+    "label": "a",
+    "points": [
+     3,
+     30,
+     40,
+     40,
+     5,
+     5
+    ],
+    "latest": 5
+   },
+   {
+    "name": "b",
+    "label": "b",
+    "points": [
+     500,
+     500,
+     500,
+     500,
+     535,
+     535
+    ],
+    "latest": 535
+   }
+  ],
+  "epochs": [
+   {
+    "ts": "2026-09-24T00:00:00+00:00",
+    "changed": [
+     "we changed our list of job categories, so some jobs moved to a different category"
+    ],
+    "fields": [
+     "family_map_fingerprint"
+    ]
+   }
+  ],
+  "metric": "stock",
+  "coverage": "all",
+  "new_window_days": 7,
+  "family": null,
+  "split_by": "family",
+  "companies": [],
+  "discovered": [
+   {
+    "ts": "2026-09-22T00:00:00+00:00",
+    "company": null,
+    "boards": 2,
+    "openings": 10,
+    "lines": {
+     "a": 10
+    }
+   }
+  ],
+  "evicted": [],
+  "pick_series": {},
+  "pick_parts": {},
+  "pick_turnover": {},
+  "counted_since": {},
+  "non_tech": [
+   0,
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "watch_parents": [],
+  "uncounted": [],
+  "company_totals": {}
+ },
+ "reading": {
+  "window": {
+   "from": "2026-09-20T00:00:00+00:00",
+   "to": "2026-09-25T00:00:00+00:00"
+  },
+  "picked": false,
+  "total": {
+   "name": "__total__",
+   "label": "",
+   "whole_company": false,
+   "estimated": false,
+   "move": {
+    "start": 503,
+    "latest": 540,
+    "hiring": 27,
+    "not_hiring": [
+     {
+      "change": "found@window",
+      "kind": "found_boards",
+      "label": "2 more job sites found through Sep 25",
+      "size": 10
+     }
+    ],
+    "not_hiring_total": 10,
+    "percent": 5.263157894736842,
+    "percent_withheld": null,
+    "span_days": 5.0,
+    "per_week": 38,
+    "turnover": null,
+    "share": {
+     "start": 5.124875124875125,
+     "latest": 5.4,
+     "denominator_start": 10010,
+     "denominator_latest": 10000,
+     "percent": 5.3684210526315885
+    }
+   },
+   "netted": [
+    513,
+    540,
+    540,
+    540,
+    540,
+    540
+   ],
+   "steps_at": [
+    4,
+    5
+   ],
+   "index_base": 513,
+   "arrived_by": null,
+   "points": [
+    503,
+    530,
+    540,
+    540,
+    540,
+    540
+   ]
+  },
+  "lines": [
+   {
+    "name": "a",
+    "label": "a",
+    "whole_company": false,
+    "estimated": false,
+    "move": {
+     "start": 3,
+     "latest": 5,
+     "hiring": 0,
+     "not_hiring": [
+      {
+       "change": "found@window",
+       "kind": "found_boards",
+       "label": "2 more job sites found through Sep 25",
+       "size": 10
+      },
+      {
+       "change": "counting@2026-09-24T00:00:00+00:00",
+       "kind": "counting",
+       "label": "we changed our list of job categories, so some jobs moved to a different category",
+       "size": -35
+      },
+      {
+       "change": "growth_scaled_by_counting@2026-09-24T00:00:00+00:00",
+       "kind": "growth_scaled_by_a_change",
+       "label": "growth rescaled when we changed our list of job categories, so some jobs moved to a different category",
+       "size": 27
+      }
+     ],
+     "not_hiring_total": 2,
+     "percent": null,
+     "percent_withheld": "mostly_recounted",
+     "span_days": 5.0,
+     "per_week": 0,
+     "turnover": null,
+     "share": {
+      "start": 0.04995004995004995,
+      "latest": 0.05,
+      "denominator_start": 10010,
+      "denominator_latest": 10000,
+      "percent": null
+     }
+    },
+    "netted": [
+     null,
+     5,
+     5,
+     5,
+     5,
+     5
+    ],
+    "steps_at": [
+     4,
+     5
+    ],
+    "index_base": null,
+    "arrived_by": null
+   },
+   {
+    "name": "b",
+    "label": "b",
+    "whole_company": false,
+    "estimated": false,
+    "move": {
+     "start": 500,
+     "latest": 535,
+     "hiring": 0,
+     "not_hiring": [
+      {
+       "change": "counting@2026-09-24T00:00:00+00:00",
+       "kind": "counting",
+       "label": "we changed our list of job categories, so some jobs moved to a different category",
+       "size": 35
+      }
+     ],
+     "not_hiring_total": 35,
+     "percent": 0.0,
+     "percent_withheld": null,
+     "span_days": 5.0,
+     "per_week": 0,
+     "turnover": null,
+     "share": {
+      "start": 5.344655344655345,
+      "latest": 5.35,
+      "denominator_start": 10010,
+      "denominator_latest": 10000,
+      "percent": 0.09999999999999361
+     }
+    },
+    "netted": [
+     535,
+     535,
+     535,
+     535,
+     535,
+     535
+    ],
+    "steps_at": [
+     4,
+     5
+    ],
+    "index_base": 535,
+    "arrived_by": null
+   }
+  ],
+  "other": null,
+  "charted": 2,
+  "company_lines": [
+   {
+    "name": "__total__",
+    "label": "All tech roles",
+    "whole_company": false,
+    "estimated": false,
+    "move": {
+     "start": 503,
+     "latest": 540,
+     "hiring": 27,
+     "not_hiring": [
+      {
+       "change": "found@window",
+       "kind": "found_boards",
+       "label": "2 more job sites found through Sep 25",
+       "size": 10
+      }
+     ],
+     "not_hiring_total": 10,
+     "percent": 5.263157894736842,
+     "percent_withheld": null,
+     "span_days": 5.0,
+     "per_week": 38,
+     "turnover": null,
+     "share": {
+      "start": 5.124875124875125,
+      "latest": 5.4,
+      "denominator_start": 10010,
+      "denominator_latest": 10000,
+      "percent": 5.3684210526315885
+     }
+    },
+    "netted": [],
+    "steps_at": [],
+    "index_base": null,
+    "arrived_by": null
+   }
+  ],
+  "breakdown": {
+   "closing": {
+    "start": 0,
+    "latest": 0,
+    "hiring": 27,
+    "not_hiring": [
+     {
+      "change": "moved_between_categories",
+      "kind": "counting",
+      "label": "moved between categories by a counting change",
+      "size": -27
+     }
+    ],
+    "not_hiring_total": -27,
+    "percent": null,
+    "percent_withheld": "a closing row has no start",
+    "span_days": 0.0,
+    "per_week": null,
+    "turnover": null,
+    "share": null
+   }
+  },
+  "marked_changes": [
+   {
+    "id": "found@window",
+    "kind": "found_boards",
+    "ts": "2026-09-22T00:00:00+00:00",
+    "label": "2 more job sites found through Sep 25",
+    "fields": [],
+    "changed": [],
+    "company": null,
+    "boards": 2,
+    "sizes": {
+     "__total__": 10
+    },
+    "drawn": false
+   },
+   {
+    "id": "counting@2026-09-24T00:00:00+00:00",
+    "kind": "counting",
+    "ts": "2026-09-24T00:00:00+00:00",
+    "label": "we changed our list of job categories, so some jobs moved to a different category",
+    "fields": [
+     "family_map_fingerprint"
+    ],
+    "changed": [
+     "we changed our list of job categories, so some jobs moved to a different category"
+    ],
+    "company": null,
+    "boards": null,
+    "sizes": {},
+    "drawn": true
+   }
+  ],
+  "day_markers": [
+   {
+    "day": "2026-09-24",
+    "at": "2026-09-24T00:00:00+00:00",
+    "changes": [
+     "counting@2026-09-24T00:00:00+00:00"
+    ]
+   }
+  ],
+  "reference": [
+   10010,
+   10010,
+   10000,
+   10000,
+   10000,
+   10000
+  ],
+  "openings": 540,
+  "served_jobs": null,
+  "non_tech_jobs": null,
+  "reconciles": true,
+  "violations": []
+ }
+}

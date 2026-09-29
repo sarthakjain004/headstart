@@ -201,6 +201,7 @@
    }
   ],
   "other": null,
+  "charted": 1,
   "company_lines": [
    {
     "name": "__total__",
@@ -262,7 +263,8 @@
     "boards": null,
     "sizes": {
      "__total__": 400
-    }
+    },
+    "drawn": true
    }
   ],
   "day_markers": [

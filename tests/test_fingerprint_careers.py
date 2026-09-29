@@ -878,6 +878,31 @@ def test_zwayam_job_check_reads_every_page_from_the_cluster_holding_the_board():
     assert asked == [f"https://{api}/jobs/search" for api in API_HOSTS] + [held_on] * 2
 
 
+def test_a_zwayam_403_on_either_cluster_stops_calls_to_both(monkeypatch):
+    """The API clusters share one per-IP quota: `apic2` walled, `public` then refused 5/5 (#890)."""
+    from headstart.scrapers.zwayam import API_HOSTS, search_request
+
+    sent = []
+
+    class WalledSession:
+        def post(self, url, **_kwargs):
+            sent.append(url)
+            return type("Response", (), {"status_code": 403})()
+
+    monkeypatch.setattr(fp, "_post_banned", set())
+    monkeypatch.setattr(fp, "session", WalledSession)
+    walled_cluster = "apic2.zwayam.com"
+    assert walled_cluster in API_HOSTS
+
+    def listing_post(api_host):
+        return fp.post_json(*search_request("careers.acme.com", api_host=api_host))
+
+    assert listing_post(walled_cluster) == (None, "http403")
+    for api_host in API_HOSTS:
+        assert listing_post(api_host) == (None, "throttled")
+    assert sent == [f"https://{walled_cluster}/jobs/search"]
+
+
 def test_frozen_mixed_employer_wrapper_is_never_a_mapping(monkeypatch):
     monkeypatch.setattr(fp, "cname_chain", lambda _: [])
     monkeypatch.setattr(

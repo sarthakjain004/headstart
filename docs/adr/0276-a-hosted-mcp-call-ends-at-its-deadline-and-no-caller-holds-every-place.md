@@ -1,6 +1,10 @@
 # ADR-0276: A hosted MCP call ends at its deadline, and no caller holds every place
 
-**Status:** accepted · **Date:** 2026-09-29 · **Amends:**
+**Status:** accepted; its places amended by
+[ADR-0325](0325-the-model-retries-an-edge-failure-and-a-description-scan-runs-alone.md) (a
+description scan has a place of its own), and its "still finishing" sentence by
+[ADR-0320](0320-a-description-keywords-rows-are-found-once-literal-first-and-named-by-row-id.md) ·
+**Date:** 2026-09-29 · **Amends:**
 [ADR-0267](0267-the-space-hosts-the-mcp-server-at-a-url-anyone-can-add.md) (its budgets and its
 refusal bodies) · **Relates to:**
 [ADR-0262](0262-a-caller-with-no-session-reads-the-public-routes-sixty-times-a-minute.md) (how a
@@ -11,8 +15,10 @@ caller is counted), [ADR-0253](0253-an-agent-reads-the-spaces-read-routes-throug
 
 An independent critique of the hosted MCP server (2026-09-29, round 1, items P0-4, P1-7 and P1-8)
 found three faults in how `POST /mcp` behaves under load. This ADR settles them. P1-8 asked for
-the eval to run against the hosted endpoint, and `docs/mcp/2026-09-29_hosted-mcp-eval-results.md`
-records that run.
+the eval to run against the hosted endpoint. That run could not happen as this ADR shipped it:
+Claude Code's `-p` left the hosted server "pending", so every task failed with no tool call.
+[ADR-0325](0325-the-model-retries-an-edge-failure-and-a-description-scan-runs-alone.md) fixes the
+runner and records the first hosted run that reached the tools.
 
 1. **The deadline did not hold in process.** A tool call builds a `SpaceClient` with a 90 s
    deadline. On the Space its reads go through `space_client.wsgi_fetch`, which called the app

@@ -78,6 +78,7 @@ from headstart.serving import (
 )
 from headstart.space_mcp import server as space_mcp_server
 from headstart.space_mcp import space_client
+from headstart.space_mcp.tools import search_jobs as space_mcp_search_jobs
 from headstart.trends import hot_ranking, line_reading, trend_history
 
 DATASET = os.environ.get("HF_DATASET", "imPoseidon/headstart-index")
@@ -284,6 +285,9 @@ _FAMILY_IDS = _with_predecessors(
     job_search.load_family_ids(_STATE / "data" / "state" / "role_assignments.parquet"),
     _FAMILY_SUCCESSOR,
 )
+# The families the taxonomy lists now, retired ones left out: what `/requirements` names a
+# sampled Job's category by, and accepts as `family=` (ADR-0324).
+_CURRENT_FAMILIES = _KNOWN_FAMILIES - frozenset(_FAMILY_SUCCESSOR)
 # Email alerts (ADR-0035) — invite-only, so all three must be set before the panel appears:
 # the Google client id the sign-in button needs, and a token scoped to the Subscriptions
 # dataset alone (never the index token, which is read-only by design).
@@ -373,11 +377,12 @@ app.session_interface = _AnswersLeaveTheSessionAlone()
 #
 # The read routes answer anyone as well, so that anyone can use HeadStart's MCP server
 # (ADR-0258): Search and its Facet counts, Trends, Hot, the two company lookups, a Job read
-# by id (ADR-0277) and a company's locations (ADR-0275). None writes, and none serves one
-# Account's records to another: a signed-in caller's own session still applies its follow/hide
-# clause to /search and /facets (`_company_where`), and an anonymous one gets none. Every Account
-# route stays behind the wall, and the page at `/` still shows the door until its visitor signs
-# in. Every caller is rate-limited on them (`_limit_each_caller`).
+# by id (ADR-0277), a company's locations (ADR-0275) and levels (ADR-0323), and what a role's
+# postings ask for (ADR-0324). None writes, and none serves one Account's records to another: a
+# signed-in caller's own session still applies its follow/hide clause to /search and /facets
+# (`_company_where`), and an anonymous one gets none. Every Account route stays behind the wall,
+# and the page at `/` still shows the door until its visitor signs in. Every caller is
+# rate-limited on them (`_limit_each_caller`).
 _READ_ROUTES = frozenset(
     {
         "/search",
@@ -388,6 +393,8 @@ _READ_ROUTES = frozenset(
         "/companies/lookup",
         "/job",
         "/companies/locations",
+        "/companies/levels",
+        "/requirements",
     }
 )
 _PUBLIC_PATHS = {
@@ -658,7 +665,11 @@ def _keep_static_for_the_boot(response):
 # 4: /job (a Job read by id, with its description and whether the latest scrape missed it), and
 # `like=` on /search and /facets (ADR-0277).
 # 5: /companies/locations (ADR-0275).
-_AGENT_API_VERSION = 5
+# 6: each location's country on /companies/locations, and /companies/levels (ADR-0323).
+# 7: /requirements, what a sample of a role's or a category's postings ask for (ADR-0324).
+# 8: the `opened_less_closed` lens on /hot, its rows' `opened_less_closed` and the count
+# `closures_partly_uncounted` (ADR-0321).
+_AGENT_API_VERSION = 8
 
 
 @app.after_request
@@ -795,7 +806,7 @@ def _answer_response(body: bytes, gzipped: bytes | None = None) -> Response:
 def hot_companies():
     """The actively-hiring companies ranked at boot (``_rank_hot``), or 503 with nothing ranked.
 
-    Served whole rather than paged or filtered server-side: it is three lenses of at most 100
+    Served whole rather than paged or filtered server-side: it is four lenses of at most 100
     rows each, so the lens switch and the "show staffing" toggle are instant in the browser and
     cost no round trip. 503 rather than an empty 200, so the tab can tell "not built yet" from
     "built, and nothing qualified".
@@ -812,7 +823,7 @@ def read_jobs():
     search field plus the description (cut at ``description_limit``), department, the raw stated
     experience and ``unconfirmed`` — whether the latest scrape of its Board missed it, or null
     where this deployment does not know. An id the table does not hold is listed in ``missing``,
-    not refused: a posting HeadStart evicted has most likely closed, which is an answer."""
+    not refused: it has closed, or was never an id, and either is an answer."""
     ids = list(
         dict.fromkeys(i.strip() for i in request.args.getlist("id") if i.strip())
     )
@@ -1748,6 +1759,34 @@ def company_locations():
         return jsonify(body), status
 
 
+@app.route("/companies/levels")
+def company_levels():
+    """How many served jobs on the ``?board=`` Boards (repeatable, 1 to 200) are in each Trends
+    level band, for an agent's company profile (ADR-0323): ``JobSearch.levels`` documents the
+    answer. Scoped by Boards alone, as ``/companies/locations`` is; naming no Board is a 400."""
+    try:
+        return jsonify(_searcher.levels(request.args))
+    except ValueError as exc:
+        body, status = job_search.refusal(exc)
+        return jsonify(body), status
+
+
+@app.route("/requirements")
+def role_requirements():
+    """What a sample of the served jobs for a role (``q=``) and/or a category (``family=``) ask
+    for, for an agent's requirements view (ADR-0324): ``JobSearch.requirements`` documents the
+    sample and ``requirement_counts`` the counts. Takes every search filter and ``board=``, and
+    ``n=`` (50 to 500, default 300). Scoped by Boards and filters alone, so no Account's follow
+    or hide list reaches it. Counts only: no description text is served."""
+    try:
+        answer = _searcher.requirements(request.args, _FAMILY_IDS, _CURRENT_FAMILIES)
+    except (ValueError, job_search.ScopeUnavailable) as exc:
+        body, status = job_search.refusal(exc)
+        return jsonify(body), status
+    ticks = _HISTORY.ticks
+    return jsonify({**answer, "newest_tick": ticks[-1] if ticks else None})
+
+
 # HeadStart's MCP server, hosted (ADR-0267): the tools of `headstart.space_mcp` over Streamable
 # HTTP, each reading the routes above in process, with no cookie. Anyone may add it to Claude by
 # URL. The Origins it answers: none (a server-side client such as claude.ai's connector or Claude
@@ -1780,6 +1819,18 @@ _MCP_AT_ONCE_EACH = 2
 _MCP_PLACES = concurrency_limit.ConcurrencyLimit(_MCP_AT_ONCE, _MCP_AT_ONCE_EACH)
 _MCP_PLACE_WAIT_S = 10
 
+# A description-keyword search takes one place of its own, and there is one (ADR-0325). It is
+# CPU-bound: 16-18 s alone on the Space and 29-36 s beside another (measured 2026-09-29), so a
+# second at once finishes neither sooner, and under a cold cache both pass the 45 s deadline.
+# Out of the 4 places above, it never holds one for a fast call to queue behind: a fast search
+# took 5.2 s alone and 7.7 s beside a scan. It waits 10 s like any call, then is told to retry
+# in about the time one scan takes.
+_MCP_SCANS_AT_ONCE = 1
+_MCP_SCAN_PLACES = concurrency_limit.ConcurrencyLimit(
+    _MCP_SCANS_AT_ONCE, _MCP_SCANS_AT_ONCE
+)
+_MCP_SCAN_RETRY_S = 20
+
 # Each distinct Origin `/mcp` has received this boot, logged once, so the first real connection
 # shows what Anthropic's clients send. Bounded, since the header is the caller's to write.
 _MCP_ORIGINS_SEEN: set[str] = set()
@@ -1804,6 +1855,24 @@ def _note_mcp_origin(origin: str | None, address: str) -> None:
         f"{'allowed' if allowed else 'refused'}, "
         f"from Anthropic's range: {_from_anthropic(address)}",
         flush=True,
+    )
+
+
+def _scans_descriptions(body: bytes) -> bool:
+    """Whether this `/mcp` POST is a search_jobs call matching its keyword in descriptions
+    (ADR-0325), read from the body before the protocol module reads it. A body that does not
+    parse is not one; the protocol module refuses it."""
+    try:
+        message = json.loads(body)
+    except ValueError:
+        return False
+    params = message.get("params") if isinstance(message, dict) else None
+    return (
+        isinstance(params, dict)
+        and message.get("method") == "tools/call"
+        and params.get("name") == "search_jobs"
+        and isinstance(params.get("arguments"), dict)
+        and space_mcp_search_jobs.scans_descriptions(params["arguments"])
     )
 
 
@@ -1836,7 +1905,17 @@ def mcp():
             f"retry in {wait_s} s.",
             wait_s,
         )
-    refused = _MCP_PLACES.take(caller, _MCP_PLACE_WAIT_S)
+    places = _MCP_SCAN_PLACES if _scans_descriptions(body) else _MCP_PLACES
+    refused = places.take(caller, _MCP_PLACE_WAIT_S)
+    if refused and places is _MCP_SCAN_PLACES:
+        return _mcp_refusal(
+            body,
+            503,
+            f"HeadStart runs {_MCP_SCANS_AT_ONCE} description-keyword search at a time, and "
+            f"another is running; retry in about {_MCP_SCAN_RETRY_S} s, or match the keyword "
+            "in titles (keyword_in: title), which is fast.",
+            _MCP_SCAN_RETRY_S,
+        )
     if refused is concurrency_limit.Refused.CALLER:
         return _mcp_refusal(
             body,
@@ -1854,7 +1933,7 @@ def mcp():
             request.headers, body, _MCP_SERVER, _MCP_ORIGINS
         )
     finally:
-        _MCP_PLACES.give_back(caller)
+        places.give_back(caller)
     return Response(out, status, headers)
 
 
@@ -2025,9 +2104,10 @@ def _log_the_request(response):
 #
 # 16 threads on the Space's 2 vCPUs. No more than two requests can compute at once, so the other
 # threads are there to wait: a résumé read waits on the router for up to 120 s, each Saved set or
-# Profile write on an HF commit, and a `/mcp` request up to 10 s for one of its 4 places. With
-# every `/mcp` place taken and four more queued, 8 threads are still left for the page. The
-# development server started a thread per connection with no bound. Waitress reads each request
+# Profile write on an HF commit, and a `/mcp` request up to 10 s for one of its 4 places or its
+# one description-scan place (ADR-0325). With all 5 taken and four more queued, 7 threads are
+# still left for the page. The development server started a thread per connection with no
+# bound. Waitress reads each request
 # whole before a thread takes it, so a client that never finishes sending holds a connection,
 # not a thread: 40 such clients cost the development server 41 threads and waitress none
 # (measured locally, 2026-09-29).

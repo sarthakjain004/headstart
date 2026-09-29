@@ -456,6 +456,27 @@ test('the Other row is the reading\'s lines past CHART_MAX, added together', () 
   assert.equal(ct[1], '3.0k');
 });
 
+test('a hidden family is never listed: it folds into a bare Other row, uncounted and inert', () => {
+  const { t, nodes, fetches } = loadApp();
+  // Five lines, the fifth ("low") a hidden family's: fewer than CHART_MAX, and still in Other.
+  const hidden = golden('a_hidden_family_folds_into_other_among_fewer_than_eight_lines');
+  t.set(hidden, null);
+  t.setUnit('count', false);
+  t.draw();
+  const html = nodes['trends-legend'].innerHTML;
+  assert.equal(row(html, 'low'), '');                          // no row of its own
+  assert.equal(row(html, 'ok') === '', false);                 // the listed lines are unchanged
+  const other = row(html, '__other__');
+  assert.match(other, /Other/);
+  assert.doesNotMatch(other, /smaller/);                       // it names no category to count
+  assert.equal(other.match(/<span class="ct">([^<]+)<\/span>/)[1], String(hidden.reading.other.move.latest));
+  assert.match(nodes['trends-scope'].textContent, /^4 categories/);   // five lines, four listed
+  assert.equal(t.chartedAndOther(hidden).charted.length, 4);
+  t.click('low');                                              // a name the page does not list
+  same(fetches, []);
+  assert.deepEqual(t.checkReading(hidden.reading), []);        // the page's checker agrees
+});
+
 test('the roles marker opens the roles it names; the row opens the levels that add up to it', () => {
   const { t } = loadApp();
   t.set(fixture(), null);
@@ -2049,6 +2070,35 @@ test('with no pick a counting change is taken out of the lines, and the Marked c
   assert.match(nodes['trends-foot'].textContent, /Lines break at the marked jumps, and percentages skip them\./);
 });
 
+test('with no pick the Boards found come out of each line, listed once and drawn nowhere', () => {
+  // 68,535 openings on 9,253 Boards found in one week read as the index's hiring (#857). They
+  // land on nearly every run, so they are one Marked change, with no marker and no line break.
+  const { t, nodes } = loadApp();
+  t.setPicks([]);
+  t.set(golden('index_takes_boards_found_out_of_each_line_by_its_own_openings'), null);
+  t.setUnit('count', false);
+  t.draw();
+  assert.match(nodes['trends-legend'].innerHTML, /software-engineering[\s\S]*\+35 openings/);
+  assert.match(nodes['trends-changes'].innerHTML, /<li><b>Sep 22 00:00<\/b> 5 more job sites found through Sep 25 — All tech roles \+150 openings<\/li>/);
+  const svg = nodes['trends-chart'].innerHTML;
+  assert.equal((svg.match(/class="found-marker"/g) || []).length, 0);
+  assert.equal((svg.match(/class="epoch-marker"/g) || []).length, 1);
+  same(t.checkReading(golden('index_takes_boards_found_out_of_each_line_by_its_own_openings').reading), []);
+});
+
+test('with no pick a window under 3 days states each line in openings, never too new', () => {
+  // The index is no company: a one-day window read every one of its lines "too new" (#857).
+  const { t, nodes } = loadApp();
+  t.setPicks([]);
+  const d = golden('index_takes_a_counting_change_out_and_marks_every_change');
+  for (const line of [d.reading.total, ...d.reading.lines]) Object.assign(line.move, { span_days: 1, per_week: null });
+  t.set(d, null);
+  t.setUnit('count', false);
+  t.draw();
+  assert.doesNotMatch(nodes['trends-legend'].innerHTML, /too new/);
+  assert.match(nodes['trends-legend'].innerHTML, /software-engineering[\s\S]*\+400 openings/);
+});
+
 // ---- critique round 12 ------------------------------------------------------------------------
 test('a whole company’s line takes a counting change out by openings, as Hot does', () => {
   const { t, nodes } = loadApp();
@@ -2535,6 +2585,17 @@ test('the index gets a hiring net from its turnover, and table columns too', () 
   t.set(fewer);
   t.draw();
   assert.match(nodes['trends-verdict'].innerHTML, /about 10 more closed than opened — about 40 opened, 50 closed\./);
+});
+
+test('Opening more than closing leads with opened less closed and gives both counts', () => {
+  // ADR-0321: the Lens ranks only companies whose closures were counted on every Board, so a
+  // row always has both counts.
+  const { t } = loadApp();
+  const wipro = { net: 68, opened: 344, closed: 251, stock: 2891, rate: 12, opened_less_closed: 93 };
+  const m = t.hotMeasure.opened_less_closed(wipro);
+  assert.equal(m.big, '+93');
+  assert.match(m.unit, /more tech roles opened than closed this week/);
+  assert.equal(m.sub, '344 opened · 251 closed · 2891 open now');
 });
 
 test('a Hot row shows the week’s opened and closed, and Volume leads with opened', () => {

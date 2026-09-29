@@ -104,6 +104,7 @@ def counts(
     *,
     extra_where: str | None = None,
     only_total: bool = False,
+    table_where: Callable[[SearchFilters], str | None] | None = None,
 ) -> dict[str, Any]:
     """Every facet's per-option count, plus the total, for one request's filters.
 
@@ -127,12 +128,23 @@ def counts(
     and ``description_coverage`` are as above. An agent that prints only the total asks this,
     because each option re-scanned every row the other filters match until #834, so under a
     description keyword the full strip was measured at 98.7 s against 10.6 s for the ranked page.
+
+    ``table_where`` compiles a variation of ``filters`` for a count or a read of ``table`` itself,
+    in place of :func:`build_filter` narrowed by ``extra_where``; it must keep the same rows. A
+    description-keyword request passes :meth:`headstart.serving.description_matches.
+    DescriptionMatches.where`, which names them by row id once found (ADR-0320). A count over the
+    keyword's rows read into memory never takes it: a row id there names a different row.
     """
 
     def where_for(**overrides: Any) -> str | None:
         return with_extra(
             build_filter(replace(filters, **overrides), capabilities), extra_where
         )
+
+    def table_where_for(**overrides: Any) -> str | None:
+        if table_where is None:
+            return where_for(**overrides)
+        return table_where(replace(filters, **overrides))
 
     # (dimension, option value, label, the kwargs that option overrides). Built in full first
     # and counted second, so every count can go out at once.
@@ -191,15 +203,17 @@ def counts(
         )
     )
     unkeyed_count = {"kw": None, "kw_in": None} if keyword else {}
+    # Without the keyword's rows read first, every count is of the table itself.
+    count_where = where_for if keyword else table_where_for
 
     # `total` rides the same pool rather than being counted first — it is one more count, and
     # serialising it ahead of the rest would add its latency to every request for no reason.
     counted = (
         []
         if only_total
-        else [(d, v, lbl, where_for(**ov, **unkeyed_count)) for d, v, lbl, ov in plan]
+        else [(d, v, lbl, count_where(**ov, **unkeyed_count)) for d, v, lbl, ov in plan]
     )
-    total_where = where_for(**unkeyed_count)
+    total_where = count_where(**unkeyed_count)
     with ThreadPoolExecutor(max_workers=_WORKERS) as pool:
         # The Keyword filter's disclaimer (ADR-0104): of the rows the *other* filters match, how
         # many carry a description at all. Not a facet — there is no option to pick — but the
@@ -209,7 +223,7 @@ def counts(
         # has a description by construction — and the rail would read "N of N" on a table where
         # almost nothing has text. None while the column does not exist yet, which the UI reads
         # as "not available", distinct from a genuine zero.
-        unkeyed = where_for(kw=None, kw_in=None)
+        unkeyed = table_where_for(kw=None, kw_in=None)
         keyword_scope = filters.kw_in or KEYWORD_DEFAULT_SCOPE
         needs_description_coverage = bool(
             filters.kw
@@ -232,7 +246,7 @@ def counts(
         keyed = (
             _keyword_rows(
                 table,
-                where_for(**dict.fromkeys(listed)),
+                table_where_for(**dict.fromkeys(listed)),
                 [total_where, *(c[3] for c in counted)],
             )
             if keyword
@@ -256,9 +270,9 @@ def counts(
             filters,
             total,
             lambda key, unset: (
-                _count(keyed, where_for(**{key: unset}, **unkeyed_count))
+                _count(keyed, count_where(**{key: unset}, **unkeyed_count))
                 if key in listed
-                else _count(table, where_for(**{key: unset}))
+                else _count(table, table_where_for(**{key: unset}))
             ),
         ),
         "description_coverage": (
@@ -292,7 +306,10 @@ def _keyword_rows(table: Any, read: str, wheres: list[str | None]) -> Any:
     columns = [
         c for c in table.schema.names if re.search(rf"\b{re.escape(c)}\b", named)
     ]
-    rows = table.search().where(read).select(columns).to_arrow()
+    # The row id is asked for and dropped: LanceDB 0.36 cannot plan a read whose filter names
+    # rows by `_rowid` (ADR-0320) unless the id is in the plan, and a memory table cannot hold it.
+    rows = table.search().where(read).with_row_id(True).select(columns).to_arrow()
+    rows = rows.drop_columns(["_rowid"])
     return lancedb.connect("memory://").create_table("keyword_rows", data=rows)
 
 
