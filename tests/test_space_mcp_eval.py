@@ -153,10 +153,13 @@ def test_parse_reads_the_servers_status_at_the_runs_start(ev):
     # Claude Code 2.1.212's -p over HTTP without MCP_CONNECTION_NONBLOCKING=false.
     pending = ev.parse(_init_line("pending"))
 
-    assert connected.server_status == "connected" and ev.unconnected(connected) is None
+    assert (
+        connected.server_status == "connected"
+        and ev.why_not_connected(connected) is None
+    )
     assert pending.server_status == "pending"
-    assert "pending at the run's start" in ev.unconnected(pending)
-    assert "not named" in ev.unconnected(ev.parse([]))
+    assert "pending at the run's start" in ev.why_not_connected(pending)
+    assert "not named" in ev.why_not_connected(ev.parse([]))
 
 
 def _init_line(status):
@@ -922,7 +925,6 @@ def test_the_sentences_the_harness_reads_are_the_servers_own(ev):
         assert marker in text, marker
     assert "The filter costing the most is `" in text
     assert ev._COMPANY_BLOCKING in text
-    assert ev._HOT_FLAG in text  # how hiring_now marks a row it disowns
 
 
 def _heldout(tmp_path, text):
@@ -1072,11 +1074,17 @@ def _record(task_id, verdict):
     }
 
 
-def test_the_summary_names_the_tasks_it_could_not_judge_first(ev):
-    lines = ev.summary([_record("t01", "pass"), _record("t05", "error")])
+def test_the_summary_scores_only_judged_runs_and_names_the_rest_first(ev):
+    """Round-2 critique P1-8: a run whose server never connected says nothing about the model,
+    so it is not counted wrong; it is reported apart."""
+    records = [_record("t01", "pass"), _record("t02", "fail"), _record("t05", "error")]
+    records[2]["tool_calls"] = 0
 
-    assert lines[0] == "not judged: 1 of 2 (t05) — MISSED"
-    assert lines[1].startswith("correct: 1 of 2")
+    lines = ev.summary(records)
+
+    assert lines[0] == "not judged: 1 of 3 (t05) — MISSED"
+    assert lines[1] == "correct: 1 of 2 judged (bar: at most one wrong) — met"
+    assert lines[2].startswith("median tool calls: 1 ")  # the unjudged 0 is not counted
     assert ev.summary([_record("t01", "pass")])[0] == "not judged: 0 of 1 — met"
 
 
@@ -1087,10 +1095,19 @@ def test_tally_counts_each_tasks_passes_across_repeats(ev):
         [_record("t01", "error"), _record("t02", "pass")],
     ]
 
-    assert ev.tally(passes) == [
-        "t01: 2 of 3 passed (pass, pass, error)",
-        "t02: 2 of 3 passed (fail, pass, pass)",
-    ]
+    assert (
+        ev.tally(passes)
+        == [
+            "t01: 2 of 2 judged passed (pass, pass, error)",  # the unjudged run is not scored
+            "t02: 2 of 3 judged passed (fail, pass, pass)",
+        ]
+    )
+
+
+def test_a_summary_with_nothing_judged_meets_no_bar(ev):
+    lines = ev.summary([_record("t01", "error"), _record("t02", "error")])
+
+    assert all(line.endswith("MISSED") for line in lines), lines
 
 
 def test_the_run_allows_every_registered_tool_and_nothing_else(ev):

@@ -701,6 +701,7 @@ def test_the_mcp_limits_are_pinned(auth_app):
     assert auth_app._MCP_AT_ONCE_EACH == 2
     # ADR-0325: one description-keyword search at a time, on a place of its own.
     assert (auth_app._MCP_SCANS_AT_ONCE, auth_app._MCP_SCAN_RETRY_S) == (1, 20)
+    assert auth_app._MCP_FINISHING_RETRY_S == 60
 
 
 def test_mcp_answers_anyone_with_the_wall_on_and_only_by_post(auth_app):
@@ -850,6 +851,34 @@ def test_a_description_scan_takes_its_own_place_and_never_a_fast_one(
     r = _post_mcp(client, _DESCRIPTION_SCAN)
     assert r.status_code == 200 and "result" in r.json
     assert not scan._held  # given back once answered
+
+
+def test_a_scan_waits_for_reads_past_their_deadline_before_it_starts(
+    auth_app, monkeypatch
+):
+    """ADR-0325: a call answers at its 45 s deadline while its reads run on, burning a CPU, so a
+    scan does not start beside them; a fast call is not held up by them."""
+    import threading
+
+    from headstart.space_mcp import space_client
+
+    scan = concurrency_limit.ConcurrencyLimit(1, 1)
+    abandoned = space_client.AbandonedReads()
+    monkeypatch.setattr(auth_app, "_MCP_SCAN_PLACES", scan)
+    monkeypatch.setattr(auth_app, "_MCP_ABANDONED_READS", abandoned)
+    monkeypatch.setattr(auth_app, "_MCP_PLACE_WAIT_S", 0.01)
+    client = auth_app.app.test_client()
+    still_running = threading.Event()
+    abandoned.give_up(still_running)  # a read whose call stopped waiting runs on
+
+    r = _post_mcp(client, _DESCRIPTION_SCAN)
+    _mcp_refusal_says(r, 503, "still finishing an earlier search")
+    assert r.headers["Retry-After"] == "60"
+    assert not scan._held  # refused scans hold nothing
+    assert _post_mcp(client).status_code == 200
+
+    abandoned.finish(still_running)
+    assert _post_mcp(client, _DESCRIPTION_SCAN).status_code == 200
 
 
 def test_an_mcp_place_is_given_back_when_answering_fails(auth_app, monkeypatch):

@@ -498,7 +498,7 @@ def scans_descriptions(arguments: dict[str, Any]) -> bool:
 def _coverage_line(arguments: dict[str, Any], facets: dict[str, Any]) -> str | None:
     """How many jobs a description keyword could match at all: the page's own warning."""
     coverage = facets.get("description_coverage")
-    if (arguments.get("keyword_in") or "title") == "title" or not coverage:
+    if not scans_descriptions(arguments) or not coverage:
         return None
     return (
         f"Descriptions are stored for {coverage['covered']:,} of the {coverage['total']:,} "

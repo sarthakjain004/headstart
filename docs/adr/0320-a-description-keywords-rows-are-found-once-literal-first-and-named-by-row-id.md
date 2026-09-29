@@ -9,7 +9,7 @@ description column), [ADR-0299](0299-a-keyword-word-matches-where-a-word-starts-
 [ADR-0274](0274-an-agent-asks-facets-for-the-total-alone-and-names-a-category-in-its-own-words.md)
 (the count-only total, and its deferred full-text index),
 [ADR-0276](0276-a-hosted-mcp-call-ends-at-its-deadline-and-no-caller-holds-every-place.md) (the
-45 s deadline), [ADR-0325](0325-the-model-retries-an-edge-failure-and-a-description-scan-runs-alone.md)
+45 s deadline), [ADR-0325](0325-the-model-retries-an-edge-failure-a-scan-runs-alone-and-the-eval-waits-for-its-server.md)
 (the one scan place) · no schema, index or stored-data change
 
 ## Context

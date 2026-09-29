@@ -14,8 +14,8 @@ fixed schema) checks the arguments instead and trusts the Space to apply them: `
 it refuse any it would drop. ``title_keyword_rows`` checks the arguments, then reads the rows that
 call returned back from ``/job`` and needs the keyword where a word starts in every title, the
 keyword's own rule (ADR-0299, ADR-0325).
-A run whose server was not connected at its start is not judged: it is an error, named first in
-the summary.
+A run whose server was not connected at its start is not judged: it is an error, left out of the
+summary's scores and named on a line of its own, first.
 
 It invokes Claude Code, the MCP client under test, not an LLM API from project code, so it does
 not route through the llm-router. The plan lists that reading for the owner (§12, item 8).
@@ -76,7 +76,7 @@ from headstart.space_mcp.space_client import (
     SpaceRoute,
 )
 from headstart.space_mcp.space_tool import ANSWER_CEILING_CHARS
-from headstart.space_mcp.tools import REGISTRY, hiring_now
+from headstart.space_mcp.tools import REGISTRY, get_job, hiring_now
 
 ITERATION_TASKS = _ROOT / "scripts" / "eval" / "space_mcp_eval_tasks.json"
 ARTIFACTS = _ROOT / "experiment" / "space-mcp-eval" / "artifacts"
@@ -223,7 +223,7 @@ class Space(Protocol):
 Verifier = Callable[[dict[str, Any], Transcript, Space], Verdict]
 
 
-def unconnected(transcript: Transcript) -> str | None:
+def why_not_connected(transcript: Transcript) -> str | None:
     """Why the model had no tools in this run, or None when the server was connected at its
     start. Such a run says nothing about the model or the tools, so it is not judged."""
     if transcript.server_status == "connected":
@@ -234,10 +234,18 @@ def unconnected(transcript: Transcript) -> str | None:
     )
 
 
+def _found_at(text: str, term: str | list[str]) -> int | None:
+    """Where ``term`` first appears in ``text``, case-blind, or None; a list is alternatives, and
+    the earliest of them counts."""
+    terms = term if isinstance(term, list) else [term]
+    folded = text.casefold()
+    found = [at for t in terms if t and (at := folded.find(t.casefold())) >= 0]
+    return min(found, default=None)
+
+
 def _found(text: str, term: str | list[str]) -> bool:
     """``term`` in ``text``, case-blind; a list is alternatives, any one of which will do."""
-    terms = term if isinstance(term, list) else [term]
-    return any(t and t.casefold() in text.casefold() for t in terms)
+    return _found_at(text, term) is not None
 
 
 # --- tool_args (and search_args, its name in the brief's fixed schema) ---------------------
@@ -301,7 +309,7 @@ def _misses(expect: dict[str, Any], arguments: dict[str, Any]) -> list[str]:
     return misses
 
 
-def _meeting_call(
+def _call_meeting_the_rules(
     expect: dict[str, Any], transcript: Transcript
 ) -> tuple[ToolCall | None, Verdict]:
     """The first successful call of ``expect["tool"]`` whose arguments meet every rule, and the
@@ -334,15 +342,13 @@ def verify_tool_args(
     """One successful call of ``expect["tool"]`` (search_jobs by default) whose arguments meet
     every ``must`` rule, one ``must_any`` alternative when given, and ``query_must_not_contain``.
     An argument the call left out is judged at its schema default, as the server reads it."""
-    return _meeting_call(expect, transcript)[1]
+    return _call_meeting_the_rules(expect, transcript)[1]
 
 
 # --- title_keyword_rows --------------------------------------------------------------------
 
 #: A row's id as search_jobs prints it: `id "greenhouse:stripe:123"`, JSON-quoted.
 _ROW_ID = re.compile(r'\bid ("(?:[^"\\]|\\.)*")')
-#: How many ids one /job read takes (the route's own cap, ADR-0277).
-_JOB_READ_IDS = 5
 
 
 def _row_ids(result: str) -> list[str]:
@@ -365,15 +371,15 @@ def verify_title_keyword_rows(
     has ``expect["word"]`` in its title where a word starts. The rows are read back from the
     Space's `/job` by the ids the call printed, so the check does not trust the tool's own
     rendering."""
-    call, verdict = _meeting_call(expect, transcript)
+    call, verdict = _call_meeting_the_rules(expect, transcript)
     if call is None:
         return verdict
     ids = _row_ids(call.result or "")
     if not ids:
         return Verdict(False, f"{verdict.detail}; its result lists no row ids")
     titles: dict[str, str] = {}
-    for start in range(0, len(ids), _JOB_READ_IDS):
-        chunk = ids[start : start + _JOB_READ_IDS]
+    for start in range(0, len(ids), get_job.MAX_IDS):  # the ids one /job read takes
+        chunk = ids[start : start + get_job.MAX_IDS]
         read = space.read(SpaceRoute.JOB, [("id", i) for i in chunk])
         titles |= {
             job["id"]: str(job.get("title") or "") for job in read.get("jobs") or []
@@ -576,29 +582,23 @@ _COMPANY_SUFFIX = re.compile(
 )
 
 
+def _names(company: str, key: str) -> list[str]:
+    """The ways an answer may name a company: as written, without its legal suffix, or by key."""
+    return [company, _COMPANY_SUFFIX.sub("", company), key]
+
+
 def _named(answer: str, row: dict[str, Any]) -> bool:
-    company = str(row.get("company") or "")
     return _found(
-        answer, [company, _COMPANY_SUFFIX.sub("", company), str(row.get("key") or "")]
+        answer, _names(str(row.get("company") or ""), str(row.get("key") or ""))
     )
 
 
 #: A hiring_now row as the tool prints it: rank, its place on the page when reordered (ADR-0321),
-#: quoted company, key, then the rest, where `_HOT_FLAG` marks a row the tool itself says is not
-#: hiring.
+#: quoted company, key, then the rest, where `hiring_now.FLAG_MARK` marks a row the tool itself
+#: says is not hiring.
 _HOT_ROW = re.compile(
     r'^\s*\d+\. (?:site #\d+ · )?("(?:[^"\\]|\\.)*") · key (\S+) · (.*)$', re.MULTILINE
 )
-_HOT_FLAG = " · FLAG "
-
-
-def _first_named_at(answer: str, names: list[str]) -> int | None:
-    found = [
-        at
-        for name in names
-        if name and (at := answer.casefold().find(name.casefold())) >= 0
-    ]
-    return min(found, default=None)
 
 
 def _hiring_now_calls(transcript: Transcript, lens: str | None) -> list[dict[str, Any]]:
@@ -622,20 +622,14 @@ def flagged_headline(transcript: Transcript, lens: str | None = None) -> str | N
     ``lens``, when named), when the tool flagged that row; else None. Leading with a row the tool
     disowns is the answer's fault, whatever order the ranking itself has."""
     rows = [
-        (json.loads(company), key, _HOT_FLAG in f" · {rest}")
+        (json.loads(company), key, hiring_now.FLAG_MARK in f" · {rest}")
         for call in _hiring_now_calls(transcript, lens)
         for company, key, rest in _HOT_ROW.findall(call["result"])
     ]
     named = [
         (at, company, flagged)
         for company, key, flagged in rows
-        if (
-            at := _first_named_at(
-                transcript.final_answer,
-                [company, _COMPANY_SUFFIX.sub("", company), key],
-            )
-        )
-        is not None
+        if (at := _found_at(transcript.final_answer, _names(company, key))) is not None
     ]
     if not named:
         return None
@@ -923,12 +917,12 @@ def run_task(
     prefix: Path,
     space: Callable[[], Space],
     http_url: str | None = None,
-    repeat: int | None = None,
+    repeat: int = 1,
 ) -> dict[str, Any]:
     """Run one task, saving its transcript as it streams, and return its result record. A run
     whose server was not connected at its start is an error, not judged: the model had no
-    tools. ``repeat`` numbers the run when a task runs more than once."""
-    stem = f"{prefix.name}_{task['id']}" + (f"_r{repeat}" if repeat else "")
+    tools. ``repeat`` numbers the pass this run belongs to."""
+    stem = f"{prefix.name}_{task['id']}_r{repeat}"
     transcript_path = prefix.with_name(f"{stem}_transcript.jsonl")
     stderr_path = prefix.with_name(f"{stem}_stderr.log")
     lines: list[str] = []
@@ -965,7 +959,7 @@ def run_task(
             proc.wait()
     wall_s = time.monotonic() - started
     transcript = parse(lines)
-    if reason := unconnected(transcript):
+    if reason := why_not_connected(transcript):
         outcome, detail = "error", reason
     else:
         outcome, detail = judge(task, transcript, space())
@@ -990,25 +984,31 @@ def run_task(
 def summary(records: list[dict[str, Any]]) -> list[str]:
     """§9's bar over one run's records: at most one task wrong (11 of 12, 3 of 4), a median of at
     most three tool calls, no result past ~10,000 tokens, and every refusal corrected next call.
-    A task not judged (its server was not connected, or its verifier could not read the Space)
-    counts as wrong, and is named first, since the run cannot vouch for it."""
-    n = len(records)
-    correct = sum(r["verdict"] == "pass" for r in records)
+    The bars score only the runs that were judged. A run not judged (its server was not
+    connected, or its verifier could not read the Space) says nothing about the model, so it is
+    named on a line of its own, first, and that line is missed while any is left. With nothing
+    judged, no bar is met."""
     unjudged = [r["id"] for r in records if r["verdict"] == "error"]
-    median = statistics.median(r["tool_calls"] for r in records) if records else 0
-    largest = max((r["largest_tool_result_chars"] for r in records), default=0)
-    refusals = sum(r["refusals"] for r in records)
-    corrected = sum(r["refusals_corrected"] for r in records)
+    judged = [r for r in records if r["verdict"] != "error"]
+    n = len(judged)
+    correct = sum(r["verdict"] == "pass" for r in judged)
+    median = statistics.median(r["tool_calls"] for r in judged) if judged else 0
+    largest = max((r["largest_tool_result_chars"] for r in judged), default=0)
+    refusals = sum(r["refusals"] for r in judged)
+    corrected = sum(r["refusals_corrected"] for r in judged)
 
     def mark(met: bool) -> str:
-        return "met" if met else "MISSED"
+        return "met" if met and judged else "MISSED"
 
     tokens = f"{LARGE_RESULT_CHARS:,}, about 10,000 tokens"
     return [
-        f"not judged: {len(unjudged)} of {n}"
+        f"not judged: {len(unjudged)} of {len(records)}"
         + (f" ({', '.join(unjudged)})" if unjudged else "")
-        + f" — {mark(not unjudged)}",
-        f"correct: {correct} of {n} (bar: at most one wrong) — {mark(correct >= n - 1)}",
+        + f" — {'MISSED' if unjudged else 'met'}",
+        (
+            f"correct: {correct} of {n} judged (bar: at most one wrong) — "
+            f"{mark(correct >= n - 1)}"
+        ),
         (
             f"median tool calls: {median:g} (bar: at most {MEDIAN_CALLS_BAR}) — "
             f"{mark(median <= MEDIAN_CALLS_BAR)}"
@@ -1025,13 +1025,15 @@ def summary(records: list[dict[str, Any]]) -> list[str]:
 
 
 def tally(passes: list[list[dict[str, Any]]]) -> list[str]:
-    """Each task's verdicts across passes: "t03: 2 of 3 passed (pass, fail, pass)"."""
+    """Each task's verdicts across passes, scored over its judged runs only, as the summary is:
+    "t03: 1 of 2 judged passed (pass, fail, error)"."""
     by_task: dict[str, list[str]] = {}
     for records in passes:
         for record in records:
             by_task.setdefault(record["id"], []).append(record["verdict"])
     return [
-        f"{task}: {verdicts.count('pass')} of {len(verdicts)} passed ({', '.join(verdicts)})"
+        f"{task}: {verdicts.count('pass')} of {len(verdicts) - verdicts.count('error')} "
+        f"judged passed ({', '.join(verdicts)})"
         for task, verdicts in by_task.items()
     ]
 
@@ -1128,28 +1130,23 @@ def main(argv: list[str] | None = None) -> int:
             passes.append([])
             for task in tasks:
                 record = run_task(
-                    task,
-                    env,
-                    prefix,
-                    lambda: SpaceClient(base=base),
-                    args.http,
-                    repeat if args.repeat > 1 else None,
+                    task, env, prefix, lambda: SpaceClient(base=base), args.http, repeat
                 )
                 passes[-1].append(record)
                 results.write(json.dumps(record, ensure_ascii=False) + "\n")
                 results.flush()
                 print(
-                    f"{record['id']}{f' r{repeat}' if args.repeat > 1 else ''} "
-                    f"{record['verdict'].upper()} · {record['tool_calls']} calls · "
+                    f"{record['id']} r{repeat} {record['verdict'].upper()} · "
+                    f"{record['tool_calls']} calls · "
                     f"largest result {record['largest_tool_result_chars']:,} chars · "
                     f"{record['wall_s']:.0f}s · {record['detail']}",
                     flush=True,
                 )
-    for repeat, records in enumerate(passes, 1):
-        heading = f"\npass {repeat} of {args.repeat}:" if args.repeat > 1 else ""
-        print(heading + "\n" + "\n".join(summary(records)), flush=True)
-    if args.repeat > 1:
-        print("\n" + "\n".join(tally(passes)), flush=True)
+            print(
+                f"\npass {repeat} of {args.repeat}:\n" + "\n".join(summary(passes[-1])),
+                flush=True,
+            )
+    print("\n" + "\n".join(tally(passes)), flush=True)
     return 0
 
 

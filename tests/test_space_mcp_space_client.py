@@ -278,7 +278,7 @@ def test_while_abandoned_reads_are_at_the_cap_a_new_read_is_refused_unstarted(
     slow_app, caplog
 ):
     caplog.set_level(logging.WARNING, logger=sc.__name__)
-    fetch = sc.wsgi_fetch(slow_app, abandoned_cap=1)
+    fetch = sc.wsgi_fetch(slow_app, sc.AbandonedReads(cap=1))
     with pytest.raises(sc.DeadlinePassed):
         fetch(f"{sc.SPACE_URL}/facets", {}, 0.05)
     with pytest.raises(sc.SpaceBusy, match="still finishing"):
@@ -289,9 +289,35 @@ def test_while_abandoned_reads_are_at_the_cap_a_new_read_is_refused_unstarted(
     assert fetch(f"{sc.SPACE_URL}/hot", {}, 5).status == 200
 
 
+def test_abandoned_reads_say_when_the_last_one_has_finished(slow_app):
+    """ADR-0325: the Space's /mcp route holds its description-scan place until the reads a call
+    stopped waiting for have finished, since they keep a CPU busy."""
+    abandoned = sc.AbandonedReads(cap=2)
+    fetch = sc.wsgi_fetch(slow_app, abandoned)
+    with pytest.raises(sc.DeadlinePassed):
+        fetch(f"{sc.SPACE_URL}/facets", {}, 0.05)
+
+    assert abandoned.running == 1
+    assert not abandoned.wait_until_none(0.05)
+    slow_app.finish()
+    assert abandoned.wait_until_none(5) and abandoned.running == 0
+
+
+def test_a_read_is_abandoned_only_if_its_call_gave_up_before_it_finished():
+    abandoned = sc.AbandonedReads(cap=1)
+    in_time, too_late = threading.Event(), threading.Event()
+
+    assert not abandoned.finish(in_time)  # finished while its call still waited
+    assert abandoned.give_up(in_time) is None
+    assert abandoned.give_up(too_late) == 1 and abandoned.full()
+    assert (
+        abandoned.finish(too_late) and abandoned.running == 0 and not abandoned.full()
+    )
+
+
 def test_an_in_process_read_in_time_answers_and_counts_nothing_abandoned(slow_app):
     slow_app.release.set()
-    fetch = sc.wsgi_fetch(slow_app, abandoned_cap=1)
+    fetch = sc.wsgi_fetch(slow_app, sc.AbandonedReads(cap=1))
     for _ in range(3):
         assert fetch(f"{sc.SPACE_URL}/hot", {}, 5).status == 200
 

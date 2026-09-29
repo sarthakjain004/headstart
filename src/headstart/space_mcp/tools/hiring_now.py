@@ -35,6 +35,9 @@ from headstart.space_mcp.turnover_span import span_sentence
 #: A company name past this is cut, as search cuts one.
 COMPANY_FIELD = 60
 
+#: What precedes each flag on a row: the eval reads it to tell a row the tool disowns (ADR-0325).
+FLAG_MARK = " · FLAG "
+
 #: A Rate row whose company has fewer openings than this many times the ranking's floor is
 #: flagged: at 25 openings each posting opened moves its rate 4 points, and New York Life read
 #: 2016% off 25.
@@ -267,7 +270,7 @@ def _row(rank: int, listed: ListedRow, moved: bool) -> str:
             else ""
         )
         + f" · rate {rate}"
-        + "".join(f" · FLAG {_said(flag, row)}" for flag in listed.flags)
+        + "".join(f"{FLAG_MARK}{_said(flag, row)}" for flag in listed.flags)
     )
 
 

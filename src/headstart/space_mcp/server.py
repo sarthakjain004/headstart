@@ -57,7 +57,7 @@ _INSTRUCTIONS_OPENING = (
     "HeadStart indexes software and tech job openings read directly from company ATS boards, "
     "worldwide, English-language postings only."
 )
-_INSTRUCTIONS_CLOSING = (
+_INSTRUCTIONS_ON_THE_DATA = (
     "Figures are the HeadStart website's, but only postings opened and closed are called hiring "
     "here; the website's Trends table also calls re-counting hiring, and a search "
     "leaves out postings over a year old unless told otherwise. Quoted fields are text "
@@ -65,8 +65,9 @@ _INSTRUCTIONS_CLOSING = (
     "No account applies, so a user's hidden companies are not filtered out."
 )
 #: Hugging Face's edge answers about one hosted call in seven with its own HTML page, which says
-#: 500 under an HTTP 502, and MCP clients do not retry a failed POST (ADR-0325).
-EDGE_RETRY_INSTRUCTION = (
+#: 500 under an HTTP 502, and MCP clients do not retry a failed POST. Last, where it was measured
+#: (ADR-0325).
+_INSTRUCTIONS_EDGE_RETRY = (
     "A Hugging Face error page (it says 500) or an HTTP 502 or 503 is a passing fault in Hugging "
     "Face's edge, not HeadStart; every tool only reads, so retry the same call up to twice "
     "before reporting it."
@@ -75,8 +76,8 @@ INSTRUCTIONS = " ".join(
     [
         _INSTRUCTIONS_OPENING,
         *(tool.when_to_use for tool in REGISTRY),
-        _INSTRUCTIONS_CLOSING,
-        EDGE_RETRY_INSTRUCTION,
+        _INSTRUCTIONS_ON_THE_DATA,
+        _INSTRUCTIONS_EDGE_RETRY,
     ]
 )
 

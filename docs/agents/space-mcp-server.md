@@ -62,6 +62,9 @@ It needs no account, token or sign-in.
   literal first and reads the exact word rule only on those rows. On the hosted Space (14 calls,
   one each, 2026-09-29, ADR-0320) a repeat or a next page took 0.7–0.9 s where the one page 2
   measured before had taken 12.8 s, and a first search 1.2–21.9 s, none near the 45 s deadline.
+  Nor does a scan start while a read that outlived its call's 45 s is still running, any
+  call's: it waits for that within the same 10 s, then gets a 503 asking it to retry in about a
+  minute.
 - **How refusals look.** Every refusal is a JSON-RPC error carrying the request's `id`, with the
   HTTP status as its `code` and a sentence as its `message`, plus `Retry-After`. Claude Code shows
   it to the model as `Streamable HTTP error: Error POSTing to endpoint: {…}` and does not retry.

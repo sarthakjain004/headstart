@@ -26,7 +26,7 @@ import base64
 import binascii
 import json
 from collections.abc import Collection, Mapping
-from typing import Any
+from typing import Any, NamedTuple
 
 from . import messages
 from .messages import Server
@@ -98,6 +98,33 @@ def refusal(
         message_in = None
     request_id = message_in.get("id") if isinstance(message_in, dict) else None
     return _reply(status, messages.error_reply(request_id, status, message))
+
+
+class RequestedTool(NamedTuple):
+    """The tool a ``tools/call`` request names, and the arguments it sends."""
+
+    name: str
+    arguments: dict[str, Any]
+
+
+def tool_call(body: bytes) -> RequestedTool | None:
+    """The tool a ``tools/call`` request in ``body`` names, with its arguments (``{}`` when it
+    sends none), or None for any other body: another method, a batch or no JSON at all. A route
+    reads it before :func:`answer` does, to decide which place the call waits for (ADR-0325);
+    :func:`answer` still judges the request itself."""
+    try:
+        message = json.loads(body)
+    except ValueError:
+        return None
+    if not isinstance(message, dict) or message.get("method") != "tools/call":
+        return None
+    params = message.get("params")
+    if not isinstance(params, dict) or not isinstance(params.get("name"), str):
+        return None
+    arguments = params.get("arguments")
+    return RequestedTool(
+        params["name"], arguments if isinstance(arguments, dict) else {}
+    )
 
 
 def answer(
