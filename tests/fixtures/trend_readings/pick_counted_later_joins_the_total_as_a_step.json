@@ -187,6 +187,7 @@
    }
   ],
   "other": null,
+  "charted": 1,
   "company_lines": [
    {
     "name": "greenhouse:acme",
@@ -236,7 +237,7 @@
      ],
      "not_hiring_total": 500,
      "percent": null,
-     "percent_withheld": "a window under 3 days",
+     "percent_withheld": "first counted on Sep 15",
      "span_days": 1.0,
      "per_week": null,
      "turnover": null,
@@ -269,7 +270,8 @@
     "boards": null,
     "sizes": {
      "workday:amd/x": 500
-    }
+    },
+    "drawn": true
    }
   ],
   "day_markers": [

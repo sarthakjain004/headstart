@@ -18,7 +18,8 @@ So no single value is served. Three steps turn the Board's values into one name,
    itself: the run must appear as a proper noun in the board page's ``og:title`` or
    ``og:description`` (whose casing is kept, so "NVIDIA USA" is served as the page writes it), or
    have four or more of its letters inside the Board's own ``{tenant}/{site}``. A one-word run
-   must not be generic ("Bank", "Health"), and no run ends on "of", "and", "&" or "the".
+   must not be generic ("Bank", "Health"), and no run ends on "of", "and", "&" or "the". No run
+   starts on a bare number or a "&" or "-" left between codes ("01 & 04 Woodward").
 3. **Vote**: the top checked run wins if it covers 40% of the named postings, or is the only
    checked run there is. Airbus's nine entities all check to "Airbus"; Northrop's division codes
    check to nothing, and the Board gets no name here.
@@ -62,10 +63,11 @@ RESOLVED_NAMES = Path("data/validate/company_names/workday.csv")
 
 #: A leading entity code: digits (with hyphens: "20-2450790", or before one: "0090-"), an
 #: uppercase code carrying digits ("US101", "IL00", "LE30006", ".IN1", "FR15450216965"), or
-#: ``UPPER_UPPER`` ("QLYS_US"). A brand that starts with a digit is not a code: "3M" carries no
+#: ``UPPER_UPPER`` ("QLYS_US"), or digits joined to the name by an underscore ("001_BCBSA", whose
+#: "BCBSA" is left to be read). A brand that starts with a digit is not a code: "3M" carries no
 #: following space, and "7-Eleven" is a single digit hard against its hyphen.
 _CODE = re.compile(
-    r"^(?:(?:\d{2,}\s*|\d\s+)-\s*(?=[A-Za-z])"
+    r"^(?:\d+_(?=[A-Za-z])|(?:\d{2,}\s*|\d\s+)-\s*(?=[A-Za-z])"
     r"|(?:\d[\d\-.]*|[.A-Z_]*[A-Z_]\d+[A-Z0-9_.]*|[A-Z]{2,}_[A-Z]{2,})\s+)"
 )
 #: A short uppercase code hyphened onto the name: "ADUS-Adobe", "CFC- Chatham Financial",
@@ -74,6 +76,10 @@ _HYPHEN_CODE = re.compile(r"^[A-Z]{2,6}\s*-\s*(?=[A-Z])")
 #: A word that is itself a code, left in front of the name: "AMC OU Ambarella", "SII Saulsbury",
 #: "embIND Embitel". The run a Board vouches for may start after any leading run of these.
 _CODE_WORD = re.compile(r"[A-Z0-9_.&]{2,}|[a-z]{2,4}[A-Z]{2,4}")
+#: A word with no letter or digit ("&", "-"), which joins codes to each other or to the name:
+#: "01 & 04 Woodward, Inc.", "6J6 - Zoetis LLC". It is skipped with the codes, and a run never
+#: starts or ends on one.
+_JOINER = re.compile(r"[^\w]+")
 _LEGAL = re.compile(
     r"(?:[\s,]+(?:inc|incorporated|llc|l\.l\.c|llp|ltd|limited|plc|corp|corporation|co|company"
     r"|gmbh|ag|sa|s\.a|sas|sau|s\.a\.u|s\.p\.a|spa|s\.r\.l|srl|bv|b\.v|nv|n\.v|ab|aps|as|a/s|oy"
@@ -172,7 +178,8 @@ def _og(page: str | None, prop: str) -> str | None:
     )
     if not match:
         return None
-    return html.unescape(match.group(1)).strip() or None
+    # Twice: some pages escape an ampersand twice ("Core &amp;amp; Main", coreandmain, 2026-09-29).
+    return html.unescape(html.unescape(match.group(1))).strip() or None
 
 
 def clean(entity: str | None) -> str:
@@ -203,17 +210,27 @@ def _checked_run(name: str, prose: str, board_letters: str) -> str | None:
     own spelling ("8x8"), which is what is returned — or
     four or more of the run's letters sit inside the Board's ``{tenant}/{site}``. The run may start
     after words that are themselves codes the cleaning left ("AMC OU Ambarella"). A legal form the
-    prose wrote after the name ("U-Haul co") is dropped from what is returned.
+    prose wrote after the name ("U-Haul co") is dropped from what is returned, unless it ends
+    the name after a joining word ("Cohen & Co").
     """
     words = name.split()
     codes = 0
-    while codes < len(words) - 1 and _CODE_WORD.fullmatch(words[codes]):
+    while codes < len(words) - 1 and (
+        _CODE_WORD.fullmatch(words[codes]) or _JOINER.fullmatch(words[codes])
+    ):
         codes += 1
     starts = range(codes + 1)
     for length in range(len(words), 0, -1):
         for start in starts:
             span = words[start : start + length]
             if len(span) < length:
+                continue
+            # A run starting on a bare number is still a code ("& 04 Woodward" left "04").
+            if (
+                span[0].isdigit()
+                or _JOINER.fullmatch(span[0])
+                or _JOINER.fullmatch(span[-1])
+            ):
                 continue
             lowered = [w.lower().strip(",.") for w in span]
             if length == 1 and lowered[0] in _GENERIC_ALONE | _GENERIC:
@@ -227,7 +244,11 @@ def _checked_run(name: str, prose: str, board_letters: str) -> str | None:
                 r"(?<!\w)" + re.escape(phrase) + r"(?!\w)", prose, re.IGNORECASE
             ):
                 if any(c.isupper() or c.isdigit() for c in match.group(0)):
-                    return _LEGAL.sub("", match.group(0))
+                    kept = _LEGAL.sub("", match.group(0))
+                    # Unless that leaves half a name: "Cohen & Co" is not "Cohen &".
+                    if kept.split()[-1].lower() in _DANGLING:
+                        return match.group(0)
+                    return kept
             letters = re.sub(r"[^a-z]", "", phrase.lower())
             if len(letters) >= 4 and letters in board_letters:
                 return phrase
@@ -262,7 +283,8 @@ def _wrapped_title(title: str | None) -> str | None:
     for pattern in company_name._CAREERS_WRAPPER:
         match = pattern.match(title or "")
         if match:
-            return match.group("name").strip()
+            # "Louisiana State University - Careers" leaves its separator behind.
+            return match.group("name").rstrip(" -–—|:")
     return None
 
 

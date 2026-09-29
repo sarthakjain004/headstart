@@ -190,3 +190,33 @@ def test_a_bug_in_handle_is_a_500_and_the_endpoint_keeps_answering(monkeypatch):
     assert status == 500 and reply["error"]["code"] == -32603
     monkeypatch.undo()
     assert _post(_INITIALIZE)[0] == 200
+
+
+# ---- a refusal before answering (ADR-0276) ----
+
+
+@pytest.mark.parametrize("status", [429, 503])
+def test_a_refusal_is_a_json_rpc_error_carrying_the_request_id(status):
+    body = json.dumps(_modern("tools/call", request_id=7, name="search")).encode()
+    got, headers, reply = streamable_http.refusal(body, status, "Too many requests.")
+    assert got == status and headers["Content-Type"] == "application/json"
+    assert json.loads(reply) == {
+        "jsonrpc": "2.0",
+        "id": 7,
+        "error": {"code": status, "message": "Too many requests."},
+    }
+
+
+@pytest.mark.parametrize(
+    "body", [b"{not json", b"[1, 2]", json.dumps({"method": "x"}).encode()]
+)
+def test_a_refusal_without_a_readable_id_carries_none(body):
+    _, _, reply = streamable_http.refusal(body, 429, "Too many requests.")
+    assert json.loads(reply)["id"] is None
+
+
+def test_a_refusals_code_is_outside_the_ranges_json_rpc_and_mcp_reserve():
+    # -32768 to -32000 is JSON-RPC's; MCP's own codes and its legacy band sit inside it.
+    for status in (429, 503):
+        _, _, reply = streamable_http.refusal(b"{}", status, "busy")
+        assert not -32768 <= json.loads(reply)["error"]["code"] <= -32000

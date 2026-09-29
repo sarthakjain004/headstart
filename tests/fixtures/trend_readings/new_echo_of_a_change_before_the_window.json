@@ -165,6 +165,7 @@
    }
   ],
   "other": null,
+  "charted": 1,
   "company_lines": [
    {
     "name": "greenhouse:acme",
@@ -218,7 +219,8 @@
     "boards": null,
     "sizes": {
      "greenhouse:acme": -40
-    }
+    },
+    "drawn": true
    }
   ],
   "day_markers": [

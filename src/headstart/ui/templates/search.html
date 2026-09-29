@@ -4,7 +4,7 @@
       <input id="q" type="text" autofocus aria-label="Describe the role you want"
              placeholder="Describe the role you want — e.g. backend engineer at a climate startup">
     </div>
-    <button class="go" onclick="go()">Search</button>
+    <button class="go" id="search-go">Search</button>
   </div>
   {# How the search bar's words are matched (ADR-0263): by meaning, or as words every job title
      must hold. One row of native radios beside the box: one click, arrow keys to walk it, and
@@ -23,9 +23,9 @@
   <a class="skip" href="#results">Skip the filters, go to results</a>
   <div class="hint">
     <span>Try:</span>
-    <button class="chip" onclick="tryIt(this)">backend engineer at a climate startup</button>
-    <button class="chip" onclick="tryIt(this)">ML infrastructure, PyTorch</button>
-    <button class="chip" onclick="tryIt(this)">frontend engineer, design systems</button>
+    <button class="chip">backend engineer at a climate startup</button>
+    <button class="chip">ML infrastructure, PyTorch</button>
+    <button class="chip">frontend engineer, design systems</button>
   </div>
 </section>
 
@@ -65,8 +65,8 @@
         <h2>Keywords</h2>
         <div class="f"><label for="kw">Must contain</label>
           <input id="kw" type="text" placeholder="e.g. kubernetes terraform" aria-describedby="kwnote">
-          <span class="tip">Every word (up to five) must appear. Matches inside words too — "java"
-            also finds JavaScript.</span></div>
+          <span class="tip">Every word (up to five) must start a word — "java" also finds
+            JavaScript, "ai" doesn't find Retail. Put a phrase in quotes to keep it together.</span></div>
         {# A select of three is two clicks; its options as one row of radios is one. The hidden
            select stays the value everything reads (see syncSegmentedSelects). #}
         <div class="f"><span class="flabel" id="kwin-lbl">Look in</span>
@@ -148,6 +148,13 @@
 
       <div class="set">
         <h2>Where</h2>
+        <div class="f"><label for="country">Country</label>
+          <span class="tip" id="country-tip">Matches every way a job names the country: its name,
+            its states or provinces, its cities and its codes, so "Austin, TX" is in the United
+            States and "München" is in Germany.</span>
+          <select id="country" aria-describedby="country-tip"><option value="">Anywhere</option>
+            {% for value, label in country_opts %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+          </select></div>
         <div class="f"><label for="india">India — city or region</label>
           <span class="tip" id="india-tip">Picking an Indian city also matches its neighbourhoods and other
             spellings. Location below matches any place in the world, just without that. Jobs from
@@ -197,12 +204,12 @@
           </select></div>
       </div>
 
-      <button class="clear" onclick="clearAll()">Clear all filters</button>
+      <button class="clear" id="clear-all">Clear all filters</button>
     </aside>
   <div class="search-results">
     <div class="toolbar">
       {% if sets_on %}
-      <button class="ghost" id="savebtn" onclick="saveSearchToggle()">Save this search</button>
+      <button class="ghost" id="savebtn">Save this search</button>
       {% endif %}
       <span class="spacer"></span>
       {# Sort as a one-click row of options, not a <select> to open first (issue #755). The
@@ -222,7 +229,7 @@
     {% if sets_on %}
     <div class="row saverow" id="saverow" style="display:none">
       <input id="savename" type="text" placeholder="Name this search — e.g. backend roles" maxlength="60">
-      <button class="ghost" onclick="saveSearch()">Save</button>
+      <button class="ghost" id="savego">Save</button>
       <span class="note" id="savemsg" role="status"></span>
       <span class="note">Keyword filters and numeric salary brackets aren't saved yet.</span>
     </div>

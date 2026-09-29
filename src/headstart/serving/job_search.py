@@ -26,6 +26,7 @@ from urllib.parse import urlsplit
 from headstart import log
 from headstart.embedding_conventions import encode_query
 from headstart.search_filters import (
+    country_filter,
     employment_type_filter,
     experience_filter,
     fx,
@@ -45,7 +46,17 @@ from headstart.search_filters.compiler import (
     build_filter,
     with_extra,
 )
-from headstart.serving import facets
+from headstart.serving import (
+    facets,
+    level_counts,
+    location_counts,
+    requirement_counts,
+    tech_skills,
+)
+from headstart.serving.description_matches import (
+    DescriptionMatches,
+    reads_descriptions,
+)
 
 # In the Space nothing calls `setup()` (ADR-0153's app.py boots straight into serving), which
 # is why the one boot line below is a WARNING — `logging.lastResort` carries WARNING and above
@@ -70,6 +81,9 @@ SLOW_SEARCH_MS = 2000
 ANN_NPROBES = 80
 ANN_REFINE_FACTOR = 2
 FACET_CACHE_SIZE = 128
+#: What `/facets` may be asked to count (``counts=``, ADR-0274): every option's count, the default
+#: the page reads, or only the total, for an agent that prints nothing else.
+FACET_COUNTS = ("all", "total")
 FACET_CACHE_TTL_SECONDS = 60
 BROWSE_CACHE_SIZE = 64
 BROWSE_CACHE_TTL_SECONDS = 60
@@ -143,6 +157,30 @@ RESULT_COLUMNS = (
     "first_seen",
     "url",
 )
+
+#: What a Job read by id (`/job`, ADR-0277) carries beyond :data:`RESULT_COLUMNS`: the stored
+#: description and the raw fields a search row leaves out. Intersected with the live schema like
+#: the search projection, since `description` and `description_stored` arrive by migration.
+JOB_DETAIL_COLUMNS = (
+    "department",
+    "experience",
+    "max_years",
+    "description_stored",
+    "description",
+)
+
+#: The most Jobs one read by id may name (ADR-0277).
+MAX_JOB_IDS = 5
+
+#: The longest a Job id may be in a read by id or in ``like=``. The longest served id was 180
+#: characters on 2026-09-29 (a Workday slug); the bound keeps a crafted id out of a where-clause.
+JOB_ID_MAX_CHARS = 300
+
+#: The most of one description a read by id serves (ADR-0277). 11,860 characters was the 99th
+#: percentile of 2,991 stored descriptions on 2026-09-29 (median 5,229, longest 22,806), so the
+#: cut reaches about one description in a hundred, and a 30,000-character MCP answer still fits
+#: one whole.
+JOB_DESCRIPTION_LIMIT = 12_000
 
 
 # The sort control's values, mapped to the column each orders by (issue #275). A whitelist
@@ -234,6 +272,21 @@ def request_account_clause(
 #: the largest measured is Hyatt's 83 (2026-09-24); the bound keeps a query string from growing
 #: the where-clause without limit.
 MAX_SCOPED_BOARDS = 200
+
+#: How many locations :meth:`JobSearch.locations` lists by default, and at most (ADR-0275).
+LOCATIONS_SHOWN = 10
+MAX_LOCATIONS = 50
+
+#: How many Jobs :meth:`JobSearch.requirements` counts over by default, and the sizes a request
+#: may ask for with ``n=`` (ADR-0324).
+REQUIREMENTS_SAMPLE = 300
+REQUIREMENTS_SAMPLE_MIN = 50
+REQUIREMENTS_SAMPLE_MAX = 500
+#: How many of a query's closest Jobs a requirements view reads to find its sample within one
+#: category: the window a sorted search re-orders (`max_k * max_page`).
+REQUIREMENTS_CATEGORY_WINDOW = 2_000
+#: How many requirements answers one boot keeps; the table does not change until the next boot.
+REQUIREMENTS_CACHE_SIZE = 64
 
 
 def scoped_boards_clause(args) -> str | None:
@@ -398,6 +451,26 @@ def scoped_jobs_clause(
     return None
 
 
+def _family_lookup(
+    family_ids: Mapping[str, Sequence[str]], current: Collection[str]
+) -> Callable[[str], str | None]:
+    """The current role family holding a Job id, found by bisecting each family's ids, sorted
+    case-folded as :func:`load_family_ids` sorts them."""
+    pools = [(name, family_ids[name]) for name in current if name in family_ids]
+
+    def family_of(job_id: str) -> str | None:
+        folded = job_id.lower()
+        for name, pool in pools:
+            at = bisect_left(pool, folded, key=str.lower)
+            while at < len(pool) and pool[at].lower() == folded:
+                if pool[at] == job_id:
+                    return name
+                at += 1
+        return None
+
+    return family_of
+
+
 def _ids_on_boards(pool: Sequence[str], prefixes: list[str]) -> list[str]:
     """The ids in ``pool`` (sorted case-folded) that fall on one of the Board ``prefixes``."""
     ids: list[str] = []
@@ -412,6 +485,32 @@ def _ids_on_boards(pool: Sequence[str], prefixes: list[str]) -> list[str]:
 def _ids_in_clause(ids: list[str]) -> str:
     """``id IN (…)`` over ``ids``, each quote doubled."""
     return "id IN (" + ", ".join("'" + i.replace("'", "''") + "'" for i in ids) + ")"
+
+
+def _checked_job_id(job_id: str, name: str) -> str:
+    if len(job_id) > JOB_ID_MAX_CHARS:
+        raise ValueError(
+            f"{name} must be a job id of at most {JOB_ID_MAX_CHARS} characters"
+        )
+    return job_id
+
+
+def _like_id(args: Mapping[str, str]) -> str | None:
+    """The Job ``like=`` ranks by (ADR-0277), or None. Refused beside ``q``: one ranking replaces
+    the other, and neither narrows what matches, so honouring both is not possible."""
+    like = (args.get("like") or "").strip()
+    if not like:
+        return None
+    if (args.get("q") or "").strip():
+        raise ValueError(
+            "like ranks by one job and q by a query; send one of them, not both"
+        )
+    return _checked_job_id(like, "like")
+
+
+def _other_than(job_id: str) -> str:
+    """Every Job but ``job_id``: a ``like=`` search never lists or counts its own Job."""
+    return "id <> '" + job_id.replace("'", "''") + "'"
 
 
 # TEMPORARY (2026-07-07) — INTENDED FOR REMOVAL. Darwinbox rows scraped before the
@@ -506,8 +605,8 @@ def _warn_unknown_filters(
     bad parameter from any crawler with a stale link. :meth:`JobSearch.parse_filters` parses a
     request exactly once, so this is said exactly once.
 
-    At most one line per parameter it checks — six a request (ats, employment_type, india,
-    salary_currency, kw_in, sort).
+    At most one line per parameter it checks — seven a request (ats, employment_type, india,
+    country, salary_currency, kw_in, sort).
 
     Rendered through ``%r`` and clipped: the value comes from the query string, so it is never
     the format string itself and cannot open a second line in the log.
@@ -521,6 +620,10 @@ def _warn_unknown_filters(
         )
     if india and india not in _INDIA_PLACES:
         _log.warning("filter dropped: india %.40r is not a known place", india)
+    if filters.country and filters.country not in country_filter.CODES:
+        _log.warning(
+            "filter dropped: country %.40r is not a known code", filters.country
+        )
     # `build_filter`'s bracket fallback: an unserved currency is re-scoped to the default, and
     # with the default unserved too the bracket compiles to nothing. Only once a bound is set —
     # the currency alone is a modifier, not a filter.
@@ -576,6 +679,11 @@ def _refuse_what_strict_forbids(
         raise ValueError(
             f"india {india!r} is not a known place; known: {_listed(_INDIA_PLACES)}"
         )
+    if filters.country and filters.country not in country_filter.CODES:
+        raise ValueError(
+            f"country {filters.country!r} is not a supported ISO 3166-1 alpha-2 code; "
+            f"supported: {_listed(country_filter.CODES)}"
+        )
     if kw_in and kw_in not in KEYWORD_SCOPES:
         raise ValueError(
             f"kw_in {kw_in!r} is not a known scope; known: {_listed(KEYWORD_SCOPES)}"
@@ -627,7 +735,7 @@ def _refuse_an_unserved_currency(
     )
 
 
-def _result_row(row: Mapping[str, Any], query: str) -> dict[str, Any]:
+def _result_row(row: Mapping[str, Any], ranked: bool) -> dict[str, Any]:
     """One served result: every :data:`RESULT_COLUMNS` value, plus ``score`` after the id.
 
     Built from that one tuple rather than a hand-written dict beside it (ADR-0194), so the
@@ -638,12 +746,26 @@ def _result_row(row: Mapping[str, Any], query: str) -> dict[str, Any]:
     """
     result: dict[str, Any] = {
         "id": row.get("id"),
-        "score": round(1 - row["_distance"], 3) if query else None,
+        "score": round(1 - row["_distance"], 3) if ranked else None,
     }
     result.update(
         {column: row.get(column) for column in RESULT_COLUMNS if column != "id"}
     )
     result["url"] = _canonical_url(row.get("ats"), row.get("url"), row.get("id"))
+    return result
+
+
+def _job_row(row: Mapping[str, Any]) -> dict[str, Any]:
+    """One Job read by id (ADR-0277): a search row's fields without ``score``, then
+    :data:`JOB_DETAIL_COLUMNS`, the description cut at :data:`JOB_DESCRIPTION_LIMIT`.
+    ``description_chars`` is its whole length, so a reader knows how much the cut left out."""
+    result: dict[str, Any] = {column: row.get(column) for column in RESULT_COLUMNS}
+    result["url"] = _canonical_url(row.get("ats"), row.get("url"), row.get("id"))
+    result.update({column: row.get(column) for column in JOB_DETAIL_COLUMNS})
+    description = row.get("description") or ""
+    result["description"] = description[:JOB_DESCRIPTION_LIMIT] or None
+    result["description_chars"] = len(description)
+    result["description_cut"] = len(description) > JOB_DESCRIPTION_LIMIT
     return result
 
 
@@ -738,11 +860,15 @@ class JobSearch:
         #: :data:`RESULT_COLUMNS` narrowed to what this table actually has — see that constant
         #: for why the intersection is mandatory rather than defensive.
         self.projection = tuple(c for c in RESULT_COLUMNS if c in names)
+        #: What :meth:`jobs_by_id` asks for: the projection plus the detail columns present.
+        self.job_projection = self.projection + tuple(
+            c for c in JOB_DETAIL_COLUMNS if c in names
+        )
         # Facets ignore the semantic query and the served table is immutable for this process's
         # lifetime (the Space restarts when a new table lands). Cache only the parsed structured
         # filters, bounded so arbitrary public requests cannot grow memory without limit.
         self._facet_cache: OrderedDict[
-            tuple[SearchFilters, str | None], tuple[float, dict[str, Any]]
+            tuple[SearchFilters, str | None, bool], tuple[float, dict[str, Any]]
         ] = OrderedDict()
         self._facet_cache_lock = Lock()
         self._browse_cache: OrderedDict[tuple[Any, ...], tuple[float, list[dict]]] = (
@@ -753,6 +879,16 @@ class JobSearch:
         # depend only on this process's immutable model, so they need a size bound but no TTL.
         self._query_vector_cache: OrderedDict[str, Any] = OrderedDict()
         self._query_vector_cache_lock = Lock()
+        # Requirements answers (ADR-0324) and each asked family's ids as one Arrow array, both for
+        # this boot's immutable table, so neither needs a TTL.
+        self._requirements_cache: OrderedDict[tuple[Any, ...], dict[str, Any]] = (
+            OrderedDict()
+        )
+        self._requirements_cache_lock = Lock()
+        self._family_arrays: dict[str, Any] = {}
+        # A description keyword's rows, found once and shared by the ranked page, the facet
+        # total and every later page (ADR-0320).
+        self._description_matches = DescriptionMatches(table, self.capabilities)
         # The four flags above are each a whole feature silently switched off: an un-migrated
         # table ignores every `seen_within`/`first_seen_after` bound, the salary bracket and
         # `has_salary`, the Keyword filter's description scope, and the `seen`/`salary` sorts
@@ -850,12 +986,14 @@ class JobSearch:
         ats = (args.get("ats") or "").strip() or None
         etype = (args.get("etype") or "").strip() or None
         india = (args.get("india") or "").strip().lower() or None
+        country = (args.get("country") or "").strip().upper() or None
         filters = SearchFilters(
             remote=args.get("remote") == "true",
             max_years=_int("max_years"),
             ats=ats,
             etype=etype,
             india=india,
+            country=country,
             location=(args.get("location") or "").strip() or None,
             company=(args.get("company") or "").strip() or None,
             has_salary=args.get("has_salary") == "true",
@@ -904,9 +1042,22 @@ class JobSearch:
         Here rather than in the route so the table and the runtime schema facts stay behind
         this object; a caller reaching for ``_table`` to count would be the same class of leak
         that ``parse_filters`` exists to prevent on the filter side.
+
+        ``counts=total`` in ``args`` counts no option (:data:`FACET_COUNTS`, ADR-0274), cached
+        apart from the full strip; any other value but ``all`` is refused.
+
+        A ``like=`` Job is left out of every count, as :meth:`run` leaves it out of the list.
         """
         filters = self.parse_filters(args)
-        cache_key = (filters, extra_where)
+        asked = (args.get("counts") or "").strip() or FACET_COUNTS[0]
+        if asked not in FACET_COUNTS:
+            raise ValueError(
+                f"counts {asked!r} is not known; known: {_listed(FACET_COUNTS)}"
+            )
+        only_total = asked == "total"
+        if like := _like_id(args):
+            extra_where = with_extra(extra_where, _other_than(like))
+        cache_key = (filters, extra_where, only_total)
         cached = _cache_get(
             self._facet_cache,
             self._facet_cache_lock,
@@ -921,6 +1072,12 @@ class JobSearch:
             filters,
             self.capabilities,
             extra_where=extra_where,
+            only_total=only_total,
+            table_where=(
+                lambda varied: self._description_matches.where(varied, extra_where)
+            )
+            if reads_descriptions(filters, self.capabilities)
+            else None,
         )
         elapsed_ms = (time.monotonic() - started) * 1000
         if elapsed_ms > SLOW_SEARCH_MS:
@@ -928,8 +1085,9 @@ class JobSearch:
             # never the keyword text (ADR-0032).
             _log.warning(
                 f"slow facets {elapsed_ms:.0f} ms: blocking={counted.get('blocking') is not None} "
-                f"india={bool(filters.india)} kw_scope={filters.kw_in} "
-                f"extra_where={extra_where is not None}"
+                f"india={bool(filters.india)} country={bool(filters.country)} "
+                f"kw_scope={filters.kw_in} "
+                f"extra_where={extra_where is not None} only_total={only_total}"
             )
         _cache_put(
             self._facet_cache,
@@ -962,12 +1120,25 @@ class JobSearch:
         here is **Account state** — the follow/hide lists (ADR-0171) — not a control the user set
         on this request. Keeping it out of `SearchFilters` is what stops a Saved Set freezing a
         follow list at the moment it was saved.
+
+        ``like=<id>`` ranks by that Job's own stored vector in place of ``q``, and leaves the Job
+        out (ADR-0277); ``ValueError`` when it comes with ``q`` or names no served Job.
         """
         started = time.monotonic()
         query = (args.get("q") or "").strip()
+        # `like=` ranks by one Job's own stored vector instead of an encoded query, and leaves
+        # that Job out (ADR-0277); from here on it is a ranked search like any other.
+        like = _like_id(args)
+        ranked = bool(query or like)
         _int = _int_arg(args)
         filters = self.parse_filters(args)
-        where = with_extra(build_filter(filters, self.capabilities), extra_where)
+        # Narrowed as `facets` narrows it, so both ask the same where-clause.
+        narrowed = with_extra(extra_where, _other_than(like)) if like else extra_where
+        if reads_descriptions(filters, self.capabilities):
+            # Its rows found once, and shared with the facet counts (ADR-0320).
+            where = self._description_matches.where(filters, narrowed)
+        else:
+            where = with_extra(build_filter(filters, self.capabilities), narrowed)
         # Whitelisted to a column name, never taken from the query string — this reaches an
         # ORDER BY. An unknown value is no sort at all, which is the existing behaviour.
         sort = SORT_COLUMNS.get((args.get("sort") or "").strip())
@@ -1007,7 +1178,7 @@ class JobSearch:
         page = max(1, min(1 if page is None else page, self.max_page))
         offset = (page - 1) * k
         browse_key = (filters, sort, k, page, extra_where)
-        if not query:
+        if not ranked:
             cached = _cache_get(
                 self._browse_cache,
                 self._browse_cache_lock,
@@ -1018,9 +1189,9 @@ class JobSearch:
                 return cached
 
         encode_ms = 0.0  # a cache hit costs ~0 too; the slow line says which it was
-        if query:
+        if ranked:
             encode_started = time.monotonic()
-            vector = self._query_vector(query)
+            vector = self._query_vector(query) if query else self._stored_vector(like)
             encode_ms = (time.monotonic() - encode_started) * 1000
             search = self._table.search(vector).metric("cosine")
             if self.has_vector_index:
@@ -1041,9 +1212,9 @@ class JobSearch:
         # error that briefly bought a `_rowid` here, on a probe whose projection was the thing
         # at fault.)
         search = search.select(
-            [*self.projection, "_distance"] if query else [*self.projection]
+            [*self.projection, "_distance"] if ranked else [*self.projection]
         )
-        if not query and not sort:
+        if not ranked and not sort:
             # `first_seen` alone is not a stable sort key: pipeline runs stamp it once per
             # sync batch, so thousands of rows tie on the exact same timestamp, and `offset`
             # pagination over a tied sort silently repeats and drops rows across pages
@@ -1070,7 +1241,7 @@ class JobSearch:
             ordering.append({"column_name": "id", "ascending": True})
             search = search.order_by(ordering)
 
-        if sort and query:
+        if sort and ranked:
             # Sorting a *ranked* result set, issue #275. The comment above is the constraint:
             # an `order_by` on the vector branch does not tie-break similarity, it replaces
             # it — so asking LanceDB to do this would silently discard the query. Instead take
@@ -1121,9 +1292,9 @@ class JobSearch:
                     ]
                 )
             rows = search.limit(k).offset(offset).to_list()
-            path = "ranked" if query else "browse"
+            path = "ranked" if ranked else "browse"
 
-        result = [_result_row(r, query) for r in rows]
+        result = [_result_row(r, ranked) for r in rows]
         elapsed_ms = (time.monotonic() - started) * 1000
         if elapsed_ms > SLOW_SEARCH_MS:
             # Shapes only: the query text is the user's and is never logged (ADR-0032). The path
@@ -1131,10 +1302,10 @@ class JobSearch:
             _log.warning(
                 f"slow search {elapsed_ms:.0f} ms: path={path} encode_ms={encode_ms:.0f} "
                 f"indexed={self.has_vector_index} page={page} k={k} sort={sort} "
-                f"query={bool(query)} extra_where={extra_where is not None} "
+                f"query={bool(query)} like={bool(like)} extra_where={extra_where is not None} "
                 f"where_len={len(where or '')}"
             )
-        if not query:
+        if not ranked:
             _cache_put(
                 self._browse_cache,
                 self._browse_cache_lock,
@@ -1223,6 +1394,45 @@ class JobSearch:
         )
         return {r["id"] for r in rows}
 
+    def jobs_by_id(self, ids: Sequence[str]) -> dict[str, dict[str, Any]]:
+        """Up to :data:`MAX_JOB_IDS` served Jobs, whole enough to read (``/job``, ADR-0277),
+        keyed by id; an id the table does not hold is simply absent. ``ValueError`` on no id,
+        too many, or one past :data:`JOB_ID_MAX_CHARS`, which the route answers as 400.
+
+        One id-equality scan asking only for :attr:`job_projection`: the table has no index on
+        ``id``, and none is needed — 18–20 ms for one to five ids on the 514,163-row table
+        (measured 2026-09-29 on a local copy)."""
+        wanted = list(dict.fromkeys(i for i in ids if i))
+        if not wanted or len(wanted) > MAX_JOB_IDS:
+            raise ValueError(f"name 1 to {MAX_JOB_IDS} job ids")
+        for job_id in wanted:
+            _checked_job_id(job_id, "id")
+        rows = (
+            self._table.search()
+            .where(_ids_in_clause(wanted))
+            .select([*self.job_projection])
+            .limit(len(wanted))
+            .to_list()
+        )
+        return {row["id"]: _job_row(row) for row in rows}
+
+    def _stored_vector(self, job_id: str) -> Any:
+        """``job_id``'s own stored vector, which ``like=`` ranks by; ``ValueError`` when the
+        table does not hold it. 12 ms on the table above."""
+        rows = (
+            self._table.search()
+            .where(_ids_in_clause([job_id]))
+            .select(["vector"])
+            .limit(1)
+            .to_list()
+        )
+        if not rows:
+            raise ValueError(
+                f"no job with id {job_id!r} is in the index now: it has closed, or was never an "
+                "id. HeadStart removes a posting once two consecutive scrapes of its Board miss it"
+            )
+        return rows[0]["vector"]
+
     def n_seen_within(self, hours: int) -> int | None:
         """How many Jobs entered the index in the last ``hours`` — ``None`` without the column.
 
@@ -1238,4 +1448,183 @@ class JobSearch:
             return None
         return self._table.count_rows(
             filter=build_filter(SearchFilters(seen_within=hours), self.capabilities)
+        )
+
+    def locations(self, args: Mapping[str, str]) -> dict[str, Any]:
+        """The locations the served jobs on ``board=`` (repeatable, required) carry most, at most
+        ``limit=`` of them (default :data:`LOCATIONS_SHOWN`) — see
+        :mod:`headstart.serving.location_counts`. A request naming no Board, too many, or a
+        ``limit`` outside 1 to :data:`MAX_LOCATIONS` is a :class:`ValueError`: without Boards it
+        would read every row's location."""
+        where = scoped_boards_clause(args)
+        if where is None:
+            raise ValueError("name at least one Board with board=")
+        limit = _int_arg(args)("limit")
+        limit = LOCATIONS_SHOWN if limit is None else limit
+        if not 1 <= limit <= MAX_LOCATIONS:
+            raise ValueError(f"limit must be from 1 to {MAX_LOCATIONS}")
+        return location_counts.top(self._table, where, limit)
+
+    def levels(self, args: Mapping[str, str]) -> dict[str, Any]:
+        """The Trends level bands of the served jobs on ``board=`` (repeatable, required) — see
+        :mod:`headstart.serving.level_counts`. A request naming no Board, or too many, is a
+        :class:`ValueError`, as :meth:`locations` refuses one."""
+        where = scoped_boards_clause(args)
+        if where is None:
+            raise ValueError("name at least one Board with board=")
+        return level_counts.bands(self._table, where)
+
+    def requirements(
+        self,
+        args: Mapping[str, str],
+        family_ids: Mapping[str, Sequence[str]] | None,
+        current_families: Collection[str],
+    ) -> dict[str, Any]:
+        """What a sample of the Jobs matching ``args`` asks for (``/requirements``, ADR-0324).
+
+        ``q=`` (a role) and/or ``family=`` (a role family) choose the Jobs, narrowed by every
+        search filter and ``board=``. With ``q`` the sample is the ``n=`` Jobs closest to it
+        (with ``family`` too, the family's among the :data:`REQUIREMENTS_CATEGORY_WINDOW`
+        closest); with ``family`` alone, the family's ``n`` newest to HeadStart.
+        :func:`requirement_counts.summarize` counts it, and ``matching`` is how many Jobs the
+        filters and family admit, which a query does not narrow. Only the sample's descriptions
+        are read, by id. A :class:`ValueError` names what the request got wrong; a family without
+        role assignments loaded is :class:`ScopeUnavailable`. Scoped by Boards and filters only,
+        so no Account's follow or hide list reaches it."""
+        query = (args.get("q") or "").strip()
+        family = (args.get("family") or "").strip()
+        if not query and not family:
+            raise ValueError("name a role with q=, a category with family=, or both")
+        if family:
+            if family_ids is None:
+                raise ScopeUnavailable(
+                    "family= needs the role assignments, which this deployment has not loaded"
+                )
+            if family not in current_families:
+                raise ValueError(
+                    f"family {family!r} is not a configured family; configured: "
+                    f"{_listed(sorted(current_families))}"
+                )
+        size = _int_arg(args)("n")
+        size = REQUIREMENTS_SAMPLE if size is None else size
+        if not REQUIREMENTS_SAMPLE_MIN <= size <= REQUIREMENTS_SAMPLE_MAX:
+            raise ValueError(
+                f"n must be from {REQUIREMENTS_SAMPLE_MIN} to {REQUIREMENTS_SAMPLE_MAX}"
+            )
+        filters = self.parse_filters(args)
+        where = with_extra(
+            build_filter(filters, self.capabilities), scoped_boards_clause(args)
+        )
+        cache_key = (filters, where, query, family, size)
+        with self._requirements_cache_lock:
+            if (cached := self._requirements_cache.get(cache_key)) is not None:
+                self._requirements_cache.move_to_end(cache_key)
+                return cached
+        started = time.monotonic()
+        in_family = (
+            self._in_family(where, self._family_array(family, family_ids))
+            if family
+            else None
+        )
+        if query:
+            ids, scores = self._closest_ids(query, where, size, in_family)
+            matching = len(in_family) if in_family is not None else self._count(where)
+        else:
+            ids, scores = in_family[:size], []
+            matching = len(in_family)
+        answer = {
+            "matching": matching,
+            "order": "closest" if query else "newest",
+            "closest_score": scores[0] if scores else None,
+            "farthest_score": scores[-1] if scores else None,
+            **requirement_counts.summarize(
+                self._rows_for_requirements(ids),
+                tech_skills.vocabulary(),
+                _family_lookup(family_ids, current_families) if family_ids else None,
+            ),
+        }
+        elapsed_ms = (time.monotonic() - started) * 1000
+        if elapsed_ms > SLOW_SEARCH_MS:
+            # Shapes only, never the query (ADR-0032).
+            _log.warning(
+                f"slow requirements {elapsed_ms:.0f} ms: query={bool(query)} "
+                f"family={bool(family)} n={size} where_len={len(where or '')}"
+            )
+        with self._requirements_cache_lock:
+            self._requirements_cache[cache_key] = answer
+            while len(self._requirements_cache) > REQUIREMENTS_CACHE_SIZE:
+                self._requirements_cache.popitem(last=False)
+        return answer
+
+    def _count(self, where: str | None) -> int:
+        return (
+            self._table.count_rows(filter=where) if where else self._table.count_rows()
+        )
+
+    def _family_array(
+        self, family: str, family_ids: Mapping[str, Sequence[str]] | None
+    ) -> Any:
+        """``family``'s served ids as one Arrow array, built once per family per boot."""
+        import pyarrow as pa
+
+        if family not in self._family_arrays:
+            self._family_arrays[family] = pa.array(
+                list((family_ids or {}).get(family, ())), pa.string()
+            )
+        return self._family_arrays[family]
+
+    def _in_family(self, where: str | None, members: Any) -> list[str]:
+        """The ids of every Job ``where`` admits that is in ``members``, newest to HeadStart
+        first (ties by id): one filtered scan of two columns. Its length is the family's
+        matching count."""
+        import pyarrow.compute as pc
+
+        dated = self.capabilities.has_first_seen
+        search = self._table.search()
+        if where:
+            search = search.where(where, prefilter=True)
+        table = (
+            search.select(["id", "first_seen"] if dated else ["id"])
+            .limit(max(1, self._count(None)))
+            .to_arrow()
+        )
+        table = table.filter(pc.is_in(table["id"], value_set=members))
+        ordering = [("id", "ascending")]
+        if dated:
+            ordering.insert(0, ("first_seen", "descending"))
+        return table.sort_by(ordering)["id"].to_pylist()
+
+    def _closest_ids(
+        self, query: str, where: str | None, size: int, in_family: list[str] | None
+    ) -> tuple[list[str], list[float]]:
+        """The ``size`` Jobs closest to ``query`` that ``where`` admits (given ``in_family``,
+        those in it among the category window), and their similarity to it."""
+        search = self._table.search(self._query_vector(query)).metric("cosine")
+        if self.has_vector_index:
+            search = search.nprobes(ANN_NPROBES).refine_factor(ANN_REFINE_FACTOR)
+        if where:
+            search = search.where(where, prefilter=True)
+        window = size if in_family is None else REQUIREMENTS_CATEGORY_WINDOW
+        rows = search.select(["id", "_distance"]).limit(window).to_list()
+        if in_family is not None:
+            members = set(in_family)
+            rows = [row for row in rows if row["id"] in members]
+        rows = rows[:size]
+        return [row["id"] for row in rows], [
+            round(1 - row["_distance"], 3) for row in rows
+        ]
+
+    def _rows_for_requirements(self, ids: list[str]) -> list[dict[str, Any]]:
+        """The columns :mod:`requirement_counts` reads, descriptions included, for ``ids``
+        alone: one id-equality read, as :meth:`jobs_by_id` reads."""
+        if not ids:
+            return []
+        names = set(self._table.schema.names)
+        columns = ["id", *(c for c in requirement_counts.COLUMNS if c in names)]
+        return (
+            self._table.search()
+            .where(_ids_in_clause(ids))
+            .select(columns)
+            .limit(len(ids))
+            .to_list()
         )

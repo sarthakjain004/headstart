@@ -3122,11 +3122,13 @@ def test_workday_leaves_instance_when_none_serves(monkeypatch):
 
 
 class _AliasResp:
-    """A settled `http.fetch` response, for `alias_key` — needs `.url` (where it landed) and
-    `.close()` (the real method streams and discards the body unread)."""
+    """A settled `http.fetch` response, for `alias_key` — needs `.url` (where it landed),
+    `.status_code` (the answer it settled on) and `.close()` (the real method streams and
+    discards the body unread)."""
 
-    def __init__(self, url):
+    def __init__(self, url, status_code=200):
         self.url = url
+        self.status_code = status_code
 
     def close(self):
         pass
@@ -11064,6 +11066,57 @@ def test_zwayam_unregistered_host_yields_no_jobs():
     null_body = FakeResponse(text=json.dumps({"code": 200, "data": None}))
     scraper = _zwayam_answering("careers.not-a-board.example", null_body)
     assert scraper.parse(scraper.fetch_raw(), SCRAPED_AT) == []
+
+
+def test_zwayam_reads_every_call_from_the_api_cluster_that_holds_the_board():
+    """Zwayam runs two API clusters, and each answers `data: null` for a Board the other holds:
+    careers.utthunga.com listed nothing on public.zwayam.com and 47 on apic2.zwayam.com
+    (2026-09-29). The config call 403s on the wrong cluster, so the config and detail calls must
+    follow the search to the Board's cluster, or every description is lost."""
+    from headstart.scrapers import zwayam as zwayam_module
+
+    apic2 = "https://apic2.zwayam.com/"
+    page = {
+        "code": 200,
+        "data": {
+            "totalCount": 1,
+            "hasMoreData": False,
+            "data": [
+                {"_source": {"id": 1, "jobTitle": "Backend Engineer", "jobUrl": "a"}}
+            ],
+        },
+    }
+
+    def route(method, url, kwargs):
+        if url == zwayam_module._API:
+            return FakeResponse(text=json.dumps({"code": 200, "data": None}))
+        if url == apic2 + "jobs/search":
+            return FakeResponse(text=json.dumps(page))
+        if url == apic2 + "data-service/v2/public-configurations":
+            return FakeResponse(
+                text=json.dumps({"responseObject": {"company": {"id": 15256}}})
+            )
+        if url == apic2 + "jobs-service/v1/jobs/careersite":
+            return _zwayam_detail_response(kwargs["json"]["jobUrl"])
+        if "zwayam.com" in url:
+            return FakeResponse(403, "Access Denied")
+        return FakeResponse(text='<base href="/utthunga/">')
+
+    fetcher = FakeFetcher(route)
+    scraper = zwayam_module.ZwayamScraper("careers.utthunga.com", fetcher=fetcher)
+    scraper.config_pacer = Pacer(0.0)
+    jobs = scraper.parse(scraper.fetch_raw(), SCRAPED_AT)
+    assert [(j.title, j.description) for j in jobs] == [
+        ("Backend Engineer", "detail text for a")
+    ]
+
+    # A Board the first cluster holds costs the second nothing.
+    held, held_fetcher = _zwayam_served_board(
+        [{"id": 1, "jobTitle": "Backend Engineer", "jobUrl": "a"}],
+        _zwayam_detail_response,
+    )
+    held.fetch_raw()
+    assert not [url for url in held_fetcher.urls() if "apic2" in url]
 
 
 def test_zwayam_link_base_tells_the_three_frontend_generations_apart():

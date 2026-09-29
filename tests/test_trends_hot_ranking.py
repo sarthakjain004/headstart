@@ -211,6 +211,72 @@ def test_rate_is_the_weeks_openings_as_a_share_of_openings_now() -> None:
     assert [row["rate"] for row in payload["lenses"]["rate"]] == [75, 30]
 
 
+def test_rate_leaves_out_a_company_whose_closures_were_not_counted() -> None:
+    """New York Life led Rate at 2,016% (#835): 504 opened on 25 open now, a net change of −47,
+    and its closures not counted, so its jobs Opened were the same jobs listed again. It is
+    counted as left out of Rate, and keeps its row on Volume."""
+    directory = {
+        "eightfold:churn": _company("Churn", "eightfold:churn"),
+        "b:grower": _company("Grower", "b:grower"),
+    }
+    history = _History(
+        {"eightfold:churn": 25, "b:grower": 40},
+        {
+            "eightfold:churn": _Move(net=-47, opened=504, closed=None),
+            "b:grower": _Move(net=12, opened=20, closed=8),
+        },
+    )
+    payload = hot_ranking.rank(history, directory)
+    assert _keys(payload, "rate") == ["b:grower"]
+    assert _keys(payload, "volume") == ["eightfold:churn", "b:grower"]
+    churn = payload["lenses"]["volume"][0]
+    assert (churn["opened"], churn["closed"], churn["rate"]) == (504, None, None)
+    assert payload["counts"]["closures_uncounted"] == 1
+
+
+def test_opened_less_closed_ranks_only_companies_whose_closures_were_all_counted() -> (
+    None
+):
+    """ADR-0321: Bosch Group led Expansion at +442 on 23 opened and 33 closed. This Lens ranks
+    by opened less closed, and a closed count missing on any Board would make it high."""
+    directory = {
+        "a:counted": _company("Counted", "a:counted"),
+        "b:uncounted": _company("Uncounted", "b:uncounted"),
+        "c:partly": _company("Partly", "c:partly", "c:partly-2"),
+        "d:shrinking": _company("Shrinking", "d:shrinking"),
+        "e:bigger": _company("Bigger", "e:bigger"),
+    }
+    history = _History(
+        {key: 100 for key in directory},
+        {
+            "a:counted": _Move(net=442, opened=30, closed=10),
+            "b:uncounted": _Move(net=5, opened=50, closed=None),
+            "c:partly": _Move(
+                net=5,
+                opened=40,
+                closed=5,
+                closures_uncounted_boards=1,
+                boards_in_scope=2,
+            ),
+            "d:shrinking": _Move(net=-5, opened=5, closed=10),
+            "e:bigger": _Move(net=1, opened=60, closed=20),
+        },
+    )
+    payload = hot_ranking.rank(history, directory)
+    assert _keys(payload, "opened_less_closed") == ["e:bigger", "a:counted"]
+    assert [
+        row["opened_less_closed"] for row in payload["lenses"]["opened_less_closed"]
+    ] == [
+        40,
+        20,
+    ]
+    rows = {row["key"]: row for lens in payload["lenses"].values() for row in lens}
+    assert rows["b:uncounted"]["opened_less_closed"] is None
+    assert rows["c:partly"]["opened_less_closed"] is None
+    assert payload["counts"]["closures_uncounted"] == 1
+    assert payload["counts"]["closures_partly_uncounted"] == 1
+
+
 def test_a_company_counted_for_under_three_days_is_too_new_to_rank() -> None:
     """SiTime, counted from Sep 23, ranked on Hot while its trend called it too new to read."""
     directory = {

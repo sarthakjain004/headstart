@@ -210,6 +210,7 @@
    }
   ],
   "other": null,
+  "charted": 2,
   "company_lines": [
    {
     "name": "taleo_enterprise:hdr/1",
@@ -267,7 +268,8 @@
     "boards": null,
     "sizes": {
      "taleo_enterprise:hdr/1": 45
-    }
+    },
+    "drawn": true
    }
   ],
   "day_markers": [

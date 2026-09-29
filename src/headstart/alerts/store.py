@@ -101,6 +101,7 @@ ALLOWED_SEARCH_FILTERS = frozenset(
         "ats",
         "etype",
         "india",
+        "country",
         "location",
         "company",
         "has_salary",

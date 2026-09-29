@@ -36,7 +36,13 @@ import numpy as np
 from headstart.boards.board_identity import ats_of
 from headstart.boards.board_operator import company_operator
 from headstart.trends import company_suggestions, netting
-from headstart.trends.role_taxonomy import BAND_LABELS, NON_TECH, WATCH_PREFIX
+from headstart.trends.role_taxonomy import (
+    BAND_LABELS,
+    HIDDEN_FAMILY_LABEL,
+    NON_TECH,
+    WATCH_PREFIX,
+    hidden_families,
+)
 
 # The `new` flow window (ADR-0051), in days: how long a found Board's backlog is held out of
 # `new`, and how far a `new` view's counting changes echo. The pipeline counts `new` over the
@@ -593,6 +599,9 @@ class TrendHistory:
         self._new_measured: set[str] = set()
         self._openings: Counter[str] = Counter()
         self._board_arrivals: dict[str, tuple[str, int]] = {}
+        # Every Board's rows at its first tick after the ledger's own first, tick-ordered: the
+        # backlog a Board found later lands with, by category and level (`_index_found`).
+        self._found_rows: dict[str, np.ndarray] = {}
         self._new_hold: dict[str, str] = {}
         # `_new_hold` as tick indexes, with the mapping they were read from (`_hold_ticks`).
         self._hold_ticks_read: tuple[dict[str, str], np.ndarray] | None = None
@@ -612,6 +621,7 @@ class TrendHistory:
         self._watch: dict[str, dict[str, str]] = {}
         self._family_labels: dict[str, str] = {}
         self._family_successor: dict[str, str] = {}
+        self._hidden_families: frozenset[str] = frozenset()
 
     # ---- loading -------------------------------------------------------------------------
 
@@ -630,6 +640,7 @@ class TrendHistory:
         history._watch = watched_roles(config_dir / "role_watchlist.json")
         history._family_labels = family_labels(config_dir / "role_families.json")
         history._family_successor = family_successors(config_dir / "role_families.json")
+        history._hidden_families = hidden_families(config_dir / "role_families.json")
         history._evictions = _load_evictions(state_dir / _DEDUP_EVICTIONS)
         history._companies = _load_directory(state_dir / _DIRECTORY)
         history._company_of = {
@@ -833,6 +844,20 @@ class TrendHistory:
         self._board_arrivals = {
             boards[b]: (self._ticks[first[b]], int(arrived[b]))
             for b in np.nonzero(first < len(self._ticks))[0].tolist()
+        }
+        # The same first ticks' rows, every family but non-tech, so the index can take a found
+        # Board's backlog out of each line it reaches (ADR-0304). A Board at the ledger's own
+        # first tick is its baseline, which continues the archive, not a Board found.
+        found_rows = (
+            stock
+            & (d["family"] != self._families.code(NON_TECH))
+            & (d["tick"] == first[d["board"]])
+            & (d["tick"] > self._first_delta)
+        )
+        order = np.argsort(d["tick"][found_rows], kind="stable")
+        self._found_rows = {
+            name: d[name][found_rows][order]
+            for name in ("tick", "board", "family", "band", "ats", "delta")
         }
         # When each Board may count toward `new`: its first tick plus the flow window (ADR-0185).
         # Every Board, the first tick's baseline included: the ledger's first week reads a
@@ -1304,11 +1329,18 @@ class TrendHistory:
         if counting_from and stamps and stamps[-1] >= counting_from:
             stamps = [ts for ts in stamps if ts >= counting_from]
 
+        # A hidden family (ADR-0306) keeps its line in the answer, so every total still adds up,
+        # but it goes last whatever its size and wears the Other label: the page and the reading
+        # fold everything past the lines they list, so it always lands in the Other row.
+        unlisted = self._hidden_families if key == "family" else frozenset()
+
         def _series_label(name: str) -> str:
             if key == "company":
                 return company_labels[name]
             if key == "band":
                 return BAND_LABELS.get(name, name)
+            if name in unlisted:
+                return HIDDEN_FAMILY_LABEL
             if name in self._watch:
                 return self._watch[name]["label"]
             return self._family_labels.get(name, name)
@@ -1343,7 +1375,7 @@ class TrendHistory:
                 for name, points in series.items()
             )
         ]
-        out.sort(key=lambda s: -(s["latest"] or 0))
+        out.sort(key=lambda s: (s["name"] in unlisted, -(s["latest"] or 0)))
         # Each pick's own line under a view that sums several, so the page takes a company's
         # steps out of that company's part of the sum only.
         pick_series: dict[str, list[int | None]] = {}
@@ -1450,9 +1482,10 @@ class TrendHistory:
                 for board, pick in scope.items()
                 if self._in_cohort(board, base_stamp)
             }
-        # With no pick the lines keep a counting change's jump, marked, but its turnover is not
-        # hiring. The index leaves out, Board by Board, the runs each company's own line leaves
-        # out, so the index's opened and closed are the sum of what every company's view shows.
+        # With no pick a counting change's turnover is not hiring either (its jump is netted out
+        # of the lines, ADR-0270). The index leaves out, Board by Board, the runs each company's
+        # own line leaves out, so the index's opened and closed are the sum of what every
+        # company's view shows.
         left_out: tuple[set[int], set[int]] = (
             netting.left_out_runs(epochs, stamps, key == "band")
             if company_of is None
@@ -1522,6 +1555,24 @@ class TrendHistory:
         closures_unseen = (
             self._closures_unseen(unscoped, stamps) if with_turnover else {}
         )
+        # Boards first counted inside the window land their backlogs in the index's lines at
+        # once: 68,535 openings on 9,253 Boards in one week, most of the index's rise. The index
+        # takes each out of the lines it lands in (ADR-0304). A pick's are `found` above;
+        # comparable coverage holds no Board found later; and under New a found Board's backlog
+        # is Recounted, never Opened, once New is the inflow.
+        index_found = (
+            self._index_found(
+                stamps,
+                ats,
+                # A watched role's line is its own rows, which re-count its category's.
+                (lambda row, pick: row["family"])
+                if family and split == "roles"
+                else line_of,
+                {line["name"] for line in out},
+            )
+            if company_of is None and coverage != "comparable" and metric == "stock"
+            else []
+        )
         payload = {
             "coverage": coverage,
             # How long a posting counts as new: the page says it, and netting under New takes a
@@ -1534,6 +1585,7 @@ class TrendHistory:
             "metric": metric,
             "stamps": stamps,
             "series": out,
+            "unlisted_series": [s["name"] for s in out if s["name"] in unlisted],
             "totals": [totals.get(ts) for ts in stamps],
             "non_tech": [non_tech.get(ts) for ts in stamps],
             "split_by": key,
@@ -1566,7 +1618,8 @@ class TrendHistory:
             "discovered": [
                 {"ts": ts, "company": pick, "boards": n, "openings": openings}
                 for (ts, pick), (n, openings) in sorted(found.items())
-            ],
+            ]
+            + index_found,
             # Duplicate rows removed from each pick's Boards, per charted run (#649). Under
             # comparable coverage, from the cohort's Boards only: a Board found later is out of
             # the cohort, but a removal on a cohort Board still halves what it counted (ADR-0233;
@@ -1599,6 +1652,54 @@ class TrendHistory:
             else {},
         }
         return payload
+
+    def _index_found(
+        self, stamps: list[str], ats: list[str], line_of, names: set[str]
+    ) -> list[dict]:
+        """The Boards first counted after the window's first run, per charted run, as the index's
+        lines hold them (ADR-0304): ``[{ts, company: None, boards, openings, lines}]``, with
+        ``lines`` each line's openings from those Boards and ``openings`` their sum, the first
+        row's. A Board lands on the first charted run at or after its first tick, as a pick's
+        does. ``line_of(row, "")`` names the line a row belongs to, as for turnover."""
+        rows = self._found_rows
+        if not stamps or not len(rows.get("tick", ())):
+            return []
+        first = bisect_left(self._ticks, stamps[0])
+        last = bisect_left(self._ticks, stamps[-1])
+        lo, hi = np.searchsorted(rows["tick"], [first + 1, last + 1])
+        families, bands, atses = (
+            self._families.names,
+            self._bands.names,
+            self._atses.names,
+        )
+        runs: dict[int, tuple[set[int], Counter[str]]] = {}
+        for tick, board, family, band, ats_code, delta in zip(
+            *(
+                rows[c][lo:hi].tolist()
+                for c in ("tick", "board", "family", "band", "ats", "delta")
+            )
+        ):
+            if not delta or (ats and atses[ats_code] not in ats):
+                continue
+            line = line_of({"family": families[family], "band": bands[band]}, "")
+            if line not in names:
+                continue
+            k = bisect_left(stamps, self._ticks[tick])
+            if not 0 < k < len(stamps):
+                continue
+            found, lines = runs.setdefault(k, (set(), Counter()))
+            found.add(board)
+            lines[line] += delta
+        return [
+            {
+                "ts": stamps[k],
+                "company": None,
+                "boards": len(found),
+                "openings": sum(lines.values()),
+                "lines": dict(lines),
+            }
+            for k, (found, lines) in sorted(runs.items())
+        ]
 
     # ---- the rows a question reads -----------------------------------------------------------
 

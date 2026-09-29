@@ -8,12 +8,17 @@ company's own line read by the same code as the trend a row opens (ADR-0233). A 
 change is therefore the hiring its "See trend" reads from the window's base, by construction
 rather than by a mirrored rule.
 
-## Three lenses, because "actively hiring" is three questions
+## Four lenses, because "actively hiring" is more than one question
 
 ``expansion``: the net change in tech openings over the trailing week, with the steps that are
 not hiring (counting changes, found Boards, duplicate removals) netted out. *Who is actually
 growing.* Over the 7 days to 2026-09-21 Amazon opened **1,396** roles at a net change of
 **+20**: churn at a near-constant size, which only this lens says.
+
+``opened_less_closed``: the jobs **Opened** less the jobs **Closed** over the same runs, only for
+a company whose closures were counted on every Board of it (ADR-0321). *Who opened more postings
+than it closed*, with no re-counting in the figure at all. Expansion's net still holds re-counting
+the netting could not size: Bosch Group led it at +442 on 23 opened and 33 closed.
 
 ``volume``: the jobs **Opened** over the same runs (ADR-0227). *Where the most opportunity is
 right now.* Always led by the largest employers.
@@ -30,6 +35,12 @@ their size*, the only lens that surfaces a small company a user would never othe
   nothing counted in the window has no line to read, and is counted with these.
 - **A Board no directory entry holds.** The directory names only companies someone can name
   (ADR-0212), so such a Board cannot be a row.
+- **From Rate, a company whose closures were not counted** (#835). Its jobs Opened cannot be
+  told from the same jobs listed again, so its rate measures churn rather than hiring. New York
+  Life led Rate on 2026-09-28 at 2,016%: 504 opened against 25 open now, at a net change of −47.
+  The other Lenses still rank it, and its row there says its closures were not counted.
+- **From Opened less closed, a company whose closures went uncounted on any of its Boards.** Its
+  closed count is then low, and its opened less closed high by as much.
 
 A found Board inside the window needs no rule here: its backlog is a step the history nets out
 of the company's change, as the trend does.
@@ -81,7 +92,7 @@ def rank(
     :func:`headstart.trends.line_reading.read_company_moves`. ``directory`` is the Company
     directory, ``{company key: {name, boards, operator}}``.
 
-    Every candidate company is scored once and the three lenses sort the same rows, so a company
+    Every candidate company is scored once and every lens sorts the same rows, so a company
     cannot appear as an employer on one lens and a services firm on another.
     """
     openings = history.openings()
@@ -131,14 +142,20 @@ def rank(
                 "closures_uncounted_boards": company.closures_uncounted_boards,
                 "boards_in_scope": company.boards_in_scope,
                 # Percent rather than a fraction: it is a display value, and rounding it here
-                # keeps every consumer from inventing its own precision. None, as opened is,
-                # where the company's turnover was not counted.
-                "rate": None if opened is None else round(100 * opened / open_now),
+                # keeps every consumer from inventing its own precision. None, as closed is,
+                # where the company's turnover or its closures were not counted.
+                "rate": None if closed is None else round(100 * opened / open_now),
+                # None unless every Board's closures were counted: a partial closed count
+                # makes this figure high by what it missed.
+                "opened_less_closed": None
+                if closed is None or company.closures_uncounted_boards
+                else opened - closed,
             }
         )
     # Ties break on the key, so the same history always ranks the same list.
     lenses = {
         "expansion": _top(candidates, "net"),
+        "opened_less_closed": _top(candidates, "opened_less_closed"),
         "volume": _top(candidates, "opened"),
         "rate": _top(candidates, "rate"),
     }
@@ -157,6 +174,17 @@ def rank(
             1
             for board, n in openings.items()
             if n >= MIN_STOCK and board not in in_directory
+        ),
+        # Left out of Rate and Opened less closed: they opened jobs, but their closures were
+        # not counted.
+        "closures_uncounted": sum(
+            1 for row in candidates if row["opened"] and row["closed"] is None
+        ),
+        # Left out of Opened less closed only: their closures went uncounted on some Board.
+        "closures_partly_uncounted": sum(
+            1
+            for row in candidates
+            if row["closed"] is not None and row["closures_uncounted_boards"]
         ),
         "services": operators["services"],
         "staffing": operators["staffing"],

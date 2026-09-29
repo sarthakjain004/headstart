@@ -16,6 +16,7 @@ import hmac
 import ipaddress
 import json
 import os
+import secrets
 import threading
 import time
 import traceback
@@ -25,6 +26,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 import lancedb
+import waitress
 from flask import (
     Flask,
     Response,
@@ -62,14 +64,21 @@ from headstart.alerts.store import (
     subscription_id,
 )
 from headstart.mcp_protocol import streamable_http
-from headstart.search_filters import fx, india_gazetteer
+from headstart.search_filters import country_filter, fx, india_gazetteer
 from headstart.search_filters.compiler import (
     KEYWORD_DEFAULT_SCOPE,
     keyword_scope_options,
 )
-from headstart.serving import facets, job_search, profile_extract, rate_limit
+from headstart.serving import (
+    concurrency_limit,
+    facets,
+    job_search,
+    profile_extract,
+    rate_limit,
+)
 from headstart.space_mcp import server as space_mcp_server
 from headstart.space_mcp import space_client
+from headstart.space_mcp.tools import search_jobs as space_mcp_search_jobs
 from headstart.trends import hot_ranking, line_reading, trend_history
 
 DATASET = os.environ.get("HF_DATASET", "imPoseidon/headstart-index")
@@ -130,6 +139,9 @@ def _pull_index(attempts: int = 5) -> None:
                     # duplicate removals per run and Board (#649), so a company's line can leave
                     # them out exactly — small, and absent until a run writes one
                     "data/state/dedup_evictions.csv",
+                    # the ids the latest scrape of their Board missed (ADR-0083), which `/job`
+                    # reports (ADR-0277) — ~100 KB, published in the table's own commit
+                    "data/state/unconfirmed_ids.txt",
                 ],
                 token=os.environ.get("HF_TOKEN"),
             )
@@ -167,6 +179,21 @@ _searcher = job_search.JobSearch(_model, _table)
 # from this process's freshly-opened table before accepting traffic; every pipeline publication
 # restarts the Space, so a new table necessarily gets new caches.
 _searcher.warm()
+
+# The served Jobs the latest scrape of their Board missed (ADR-0083): still served, and evicted
+# only if the next scrape of that Board misses them too. `index_publish` commits this file with
+# the table, so it describes exactly the table above. None when the pull found no file, so `/job`
+# reports "not known" rather than "not missed" (ADR-0277).
+_UNCONFIRMED_FILE = _STATE / "data" / "state" / "unconfirmed_ids.txt"
+_UNCONFIRMED: frozenset[str] | None = (
+    frozenset(
+        line.strip()
+        for line in _UNCONFIRMED_FILE.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    )
+    if _UNCONFIRMED_FILE.is_file()
+    else None
+)
 
 # Role trends (ADR-0040): everything /trends and the company picker answer from, read by one
 # module, `headstart.trends.trend_history` (ADR-0230). Same dark-until-ready shape as the two above:
@@ -258,6 +285,9 @@ _FAMILY_IDS = _with_predecessors(
     job_search.load_family_ids(_STATE / "data" / "state" / "role_assignments.parquet"),
     _FAMILY_SUCCESSOR,
 )
+# The families the taxonomy lists now, retired ones left out: what `/requirements` names a
+# sampled Job's category by, and accepts as `family=` (ADR-0324).
+_CURRENT_FAMILIES = _KNOWN_FAMILIES - frozenset(_FAMILY_SUCCESSOR)
 # Email alerts (ADR-0035) — invite-only, so all three must be set before the panel appears:
 # the Google client id the sign-in button needs, and a token scoped to the Subscriptions
 # dataset alone (never the index token, which is read-only by design).
@@ -346,12 +376,13 @@ app.session_interface = _AnswersLeaveTheSessionAlone()
 # is the one static file the door loads: its brand mark and its favicon (ADR-0249).
 #
 # The read routes answer anyone as well, so that anyone can use HeadStart's MCP server
-# (ADR-0258): Search and its Facet counts, Trends, Hot and the two company lookups. None
-# writes, and none serves one Account's records to another: a signed-in caller's own session
-# still applies its follow/hide clause to /search and /facets (`_company_where`), and an
-# anonymous one gets none. Every Account route stays behind the wall, and the page at `/`
-# still shows the door until its visitor signs in. Every caller is rate-limited on them
-# (`_limit_each_caller`).
+# (ADR-0258): Search and its Facet counts, Trends, Hot, the two company lookups, a Job read
+# by id (ADR-0277), a company's locations (ADR-0275) and levels (ADR-0323), and what a role's
+# postings ask for (ADR-0324). None writes, and none serves one Account's records to another: a
+# signed-in caller's own session still applies its follow/hide clause to /search and /facets
+# (`_company_where`), and an anonymous one gets none. Every Account route stays behind the wall,
+# and the page at `/` still shows the door until its visitor signs in. Every caller is
+# rate-limited on them (`_limit_each_caller`).
 _READ_ROUTES = frozenset(
     {
         "/search",
@@ -360,6 +391,10 @@ _READ_ROUTES = frozenset(
         "/hot",
         "/companies/suggest",
         "/companies/lookup",
+        "/job",
+        "/companies/locations",
+        "/companies/levels",
+        "/requirements",
     }
 )
 _PUBLIC_PATHS = {
@@ -385,13 +420,46 @@ _REPO = "https://github.com/sarthakjain004/headstart"
 # for no reason the visitor can see reads as broken rather than as honest.
 _DOOR_NEW_HOURS = 168
 
-#: Set on every answer (#595). Framing is limited, not forbidden: huggingface.co's Space page
-#: iframes this app, and its sign-in door is how a visitor there reaches the direct URL.
+#: Set on every answer (#595).
 _HARDENING_HEADERS = {
     "X-Content-Type-Options": "nosniff",
     "Referrer-Policy": "strict-origin-when-cross-origin",
-    "Content-Security-Policy": "frame-ancestors 'self' https://huggingface.co",
 }
+
+#: What the page may load and run (#595, ADR-0282), bar `script-src`'s nonce. Scripts: this
+#: Space's own files, Google's sign-in library, and an inline script only with this response's
+#: nonce, so no inline handler or injected script runs. Styles keep 'unsafe-inline': the page
+#: and the résumé builder write style attributes and `<style>` elements, the print frame's among
+#: them, and a style cannot run code. Google's origins are the ones its sign-in guide names.
+#: Framing is limited, not forbidden: huggingface.co's Space page iframes this app, and its
+#: sign-in door is how a visitor there reaches the direct URL.
+_CSP_SCRIPTS = "'self' https://accounts.google.com/gsi/client"
+_CSP_REST = (
+    "style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style",
+    "connect-src 'self' https://accounts.google.com/gsi/",
+    "frame-src https://accounts.google.com/gsi/",
+    "object-src 'none'",
+    "base-uri 'none'",
+    "form-action 'self'",
+    "frame-ancestors 'self' https://huggingface.co",
+)
+
+
+def _csp_nonce() -> str:
+    """This response's script nonce, made the first time a template asks for it."""
+    if "csp_nonce" not in g:
+        g.csp_nonce = secrets.token_urlsafe(16)
+    return g.csp_nonce
+
+
+@app.context_processor
+def _templates_get_the_csp_nonce():
+    return {"csp_nonce": _csp_nonce()}
+
+
+def _content_security_policy(nonce: str | None) -> str:
+    scripts = _CSP_SCRIPTS + (f" 'nonce-{nonce}'" if nonce else "")
+    return "; ".join(("default-src 'self'", f"script-src {scripts}", *_CSP_REST))
 
 
 @app.after_request
@@ -399,6 +467,9 @@ def _hardening_headers(response):
     """Headers only: a gzipped body, a 304 and the cache headers pass through untouched."""
     for name, value in _HARDENING_HEADERS.items():
         response.headers.setdefault(name, value)
+    response.headers.setdefault(
+        "Content-Security-Policy", _content_security_policy(g.get("csp_nonce"))
+    )
     return response
 
 
@@ -435,7 +506,7 @@ def _require_sign_in():
     return None
 
 
-# How often one caller may read `_READ_ROUTES` (ADR-0262): 60 requests in any 60 s, the six
+# How often one caller may read `_READ_ROUTES` (ADR-0262): 60 requests in any 60 s, the read
 # routes together. The page's own busiest minute fits: a Search is two requests (/search and
 # /facets, again on each page turn), and the Trends tab asks twice for a quick burst of boxes in
 # its Source picker; what it asks ahead for is kept, and a kept answer is not counted (ADR-0269).
@@ -588,7 +659,17 @@ def _keep_static_for_the_boot(response):
 # too old for it from one that serves it, rather than have a newer argument silently ignored.
 # 1: `strict=1` on /search and /facets, `match` and `board_keys` on each /companies/suggest item,
 # /companies/lookup, and `newest_tick` on /facets.
-_AGENT_API_VERSION = 1
+# 2: `counts=total` on /facets, the total without any option's count (ADR-0274).
+# 3: `country` (an ISO 3166-1 alpha-2 code, ADR-0273) on /search and /facets, refused under
+# `strict=1` when unknown.
+# 4: /job (a Job read by id, with its description and whether the latest scrape missed it), and
+# `like=` on /search and /facets (ADR-0277).
+# 5: /companies/locations (ADR-0275).
+# 6: each location's country on /companies/locations, and /companies/levels (ADR-0323).
+# 7: /requirements, what a sample of a role's or a category's postings ask for (ADR-0324).
+# 8: the `opened_less_closed` lens on /hot, its rows' `opened_less_closed` and the count
+# `closures_partly_uncounted` (ADR-0321).
+_AGENT_API_VERSION = 8
 
 
 @app.after_request
@@ -725,7 +806,7 @@ def _answer_response(body: bytes, gzipped: bytes | None = None) -> Response:
 def hot_companies():
     """The actively-hiring companies ranked at boot (``_rank_hot``), or 503 with nothing ranked.
 
-    Served whole rather than paged or filtered server-side: it is three lenses of at most 100
+    Served whole rather than paged or filtered server-side: it is four lenses of at most 100
     rows each, so the lens switch and the "show staffing" toggle are instant in the browser and
     cost no round trip. 503 rather than an empty 200, so the tab can tell "not built yet" from
     "built, and nothing qualified".
@@ -734,6 +815,38 @@ def hot_companies():
         return jsonify({"error": "no hot list on this deployment yet"}), 503
     body = _json_body(_HOT)
     return _answer_response(body, _gzip(body))
+
+
+@app.route("/job")
+def read_jobs():
+    """Up to five served Jobs by ``id=`` (repeatable), whole enough to read (ADR-0277): each
+    search field plus the description (cut at ``description_limit``), department, the raw stated
+    experience and ``unconfirmed`` — whether the latest scrape of its Board missed it, or null
+    where this deployment does not know. An id the table does not hold is listed in ``missing``,
+    not refused: it has closed, or was never an id, and either is an answer."""
+    ids = list(
+        dict.fromkeys(i.strip() for i in request.args.getlist("id") if i.strip())
+    )
+    try:
+        found = _searcher.jobs_by_id(ids)
+    except ValueError as exc:
+        return jsonify(error="invalid request", detail=str(exc)), 400
+    ticks = _HISTORY.ticks
+    return jsonify(
+        {
+            "jobs": [
+                {
+                    **found[i],
+                    "unconfirmed": None if _UNCONFIRMED is None else i in _UNCONFIRMED,
+                }
+                for i in ids
+                if i in found
+            ],
+            "missing": [i for i in ids if i not in found],
+            "description_limit": job_search.JOB_DESCRIPTION_LIMIT,
+            "newest_tick": ticks[-1] if ticks else None,
+        }
+    )
 
 
 @app.route("/facets")
@@ -750,6 +863,9 @@ def search_facets():
     ``newest_tick`` is the newest Trends tick, or null (ADR-0253). The pipeline writes the table
     and the tick in one run and this process loaded both at one boot, so it dates the data an
     answer came from. The page does not read it.
+
+    ``counts=total`` counts no option (ADR-0274): the total, ``blocking`` and
+    ``description_coverage`` only, for an agent that prints nothing else. The page never sends it.
     """
     try:
         counted = _searcher.facets(
@@ -821,7 +937,7 @@ def save_profile():
 
 
 # Accounts with a parse in flight. The cap check reads the counter before the router call and
-# writes it after, and `app.run` serves requests on threads — so parallel parses would all read
+# writes it after, and waitress serves requests on threads — so parallel parses would all read
 # the same count and all pass the cap, each spending a router call. One read per Account at a
 # time closes that window; the Space is a single process, so an in-process set is authoritative.
 _PARSING: set[str] = set()
@@ -1408,7 +1524,7 @@ def _trends_kept(question: trend_history.TrendQuestion) -> bool:
 
 # Each /trends body this boot has answered, least recently asked for first, and the one lock
 # answering takes (`_served_trends`). At most _TRENDS_KEPT answers of at most ~0.6 MB, JSON and
-# gzip together: room for the 144 answered ahead (`_answer_views_a_click_away`) and several
+# gzip together: room for the ~190 answered ahead (`_answer_views_a_click_away`) and several
 # hundred more a boot's readers ask for.
 _TRENDS_ANSWERED: OrderedDict[tuple, tuple[bytes, bytes]] = OrderedDict()
 _TRENDS_ANSWERING = threading.Lock()
@@ -1519,8 +1635,10 @@ def _answer_opening_views() -> None:
 def _answer_views_a_click_away() -> None:
     """Every top-level view the tab's controls reach, and each charted category's levels under
     each, answered in the background once the opening views are (ADR-0269): both Measures,
-    both Job sites and every date preset, 16 views and 128 drills. The page asks ahead for a
-    drawn view's neighbours, and these are they, so a click on any of those controls is read
+    both Job sites and every date preset, 16 views and 128 drills. Then every Source but one
+    under each Measure, what a first untick in the Source picker asks for, in the order the
+    page lists them. The page asks ahead for a drawn view's neighbours and for the Source box
+    the pointer rests on, and these are they, so a click on any of those controls is read
     from the browser, and the asking ahead from these kept answers. A thread, so the Space
     starts serving without waiting for them; one answer at a time under the one lock, so a
     reader's own new question waits behind at most one. Never fatal, as the opening views."""
@@ -1545,6 +1663,14 @@ def _answer_views_a_click_away() -> None:
             body, _ = _served_trends(_HISTORY, view)
             for line in json.loads(body)["series"][:_CHART_MAX]:
                 _served_trends(_HISTORY, replace(view, family=line["name"]))
+        atses = _searcher.capabilities.atses
+        for left_out in atses:
+            for metric in ("stock", "new"):
+                every_but_one = tuple(ats for ats in atses if ats != left_out)
+                _served_trends(
+                    _HISTORY,
+                    trend_history.TrendQuestion(metric=metric, ats=every_but_one),
+                )
     except Exception as exc:  # noqa: BLE001 - the request path reports its own failure
         print(
             f"trends: views a click away not answered ({type(exc).__name__}: {exc})",
@@ -1620,6 +1746,47 @@ def lookup_companies():
     return jsonify(companies=_HISTORY.describe_companies(list(dict.fromkeys(keys))))
 
 
+@app.route("/companies/locations")
+def company_locations():
+    """The locations the served jobs on the ``?board=`` Boards (repeatable, 1 to 200) name most,
+    most first, for an agent's company profile (ADR-0275): ``JobSearch.locations`` documents
+    the answer. ``?limit=`` defaults to 10, at most 50. Scoped by Boards alone, so no Account's
+    follow or hide list reaches it; a request naming no Board is a 400."""
+    try:
+        return jsonify(_searcher.locations(request.args))
+    except ValueError as exc:
+        body, status = job_search.refusal(exc)
+        return jsonify(body), status
+
+
+@app.route("/companies/levels")
+def company_levels():
+    """How many served jobs on the ``?board=`` Boards (repeatable, 1 to 200) are in each Trends
+    level band, for an agent's company profile (ADR-0323): ``JobSearch.levels`` documents the
+    answer. Scoped by Boards alone, as ``/companies/locations`` is; naming no Board is a 400."""
+    try:
+        return jsonify(_searcher.levels(request.args))
+    except ValueError as exc:
+        body, status = job_search.refusal(exc)
+        return jsonify(body), status
+
+
+@app.route("/requirements")
+def role_requirements():
+    """What a sample of the served jobs for a role (``q=``) and/or a category (``family=``) ask
+    for, for an agent's requirements view (ADR-0324): ``JobSearch.requirements`` documents the
+    sample and ``requirement_counts`` the counts. Takes every search filter and ``board=``, and
+    ``n=`` (50 to 500, default 300). Scoped by Boards and filters alone, so no Account's follow
+    or hide list reaches it. Counts only: no description text is served."""
+    try:
+        answer = _searcher.requirements(request.args, _FAMILY_IDS, _CURRENT_FAMILIES)
+    except (ValueError, job_search.ScopeUnavailable) as exc:
+        body, status = job_search.refusal(exc)
+        return jsonify(body), status
+    ticks = _HISTORY.ticks
+    return jsonify({**answer, "newest_tick": ticks[-1] if ticks else None})
+
+
 # HeadStart's MCP server, hosted (ADR-0267): the tools of `headstart.space_mcp` over Streamable
 # HTTP, each reading the routes above in process, with no cookie. Anyone may add it to Claude by
 # URL. The Origins it answers: none (a server-side client such as claude.ai's connector or Claude
@@ -1643,10 +1810,26 @@ _ANTHROPIC_LIMIT = rate_limit.RateLimit(_ANTHROPIC_LIMIT_REQUESTS, _LIMIT_WINDOW
 
 # At most 4 `/mcp` requests at once across every caller, on the Space's 2 vCPU: each fans out to
 # two to four reads on threads, so 4 costs about what four people searching in the page at once
-# do. One more waits up to 10 s for a place, then is told to retry.
+# do. At most 2 of them from one caller (ADR-0276), counted as the request limit counts it, so
+# Anthropic's range is one caller: a call can hold its place for its whole 45 s deadline, and
+# one caller's slow searches must not hold every place. One more waits up to 10 s for a place,
+# then is told to retry.
 _MCP_AT_ONCE = 4
-_MCP_PLACES = threading.BoundedSemaphore(_MCP_AT_ONCE)
+_MCP_AT_ONCE_EACH = 2
+_MCP_PLACES = concurrency_limit.ConcurrencyLimit(_MCP_AT_ONCE, _MCP_AT_ONCE_EACH)
 _MCP_PLACE_WAIT_S = 10
+
+# A description-keyword search takes one place of its own, and there is one (ADR-0325). It is
+# CPU-bound: 16-18 s alone on the Space and 29-36 s beside another (measured 2026-09-29), so a
+# second at once finishes neither sooner, and under a cold cache both pass the 45 s deadline.
+# Out of the 4 places above, it never holds one for a fast call to queue behind: a fast search
+# took 5.2 s alone and 7.7 s beside a scan. It waits 10 s like any call, then is told to retry
+# in about the time one scan takes.
+_MCP_SCANS_AT_ONCE = 1
+_MCP_SCAN_PLACES = concurrency_limit.ConcurrencyLimit(
+    _MCP_SCANS_AT_ONCE, _MCP_SCANS_AT_ONCE
+)
+_MCP_SCAN_RETRY_S = 20
 
 # Each distinct Origin `/mcp` has received this boot, logged once, so the first real connection
 # shows what Anthropic's clients send. Bounded, since the header is the caller's to write.
@@ -1675,9 +1858,29 @@ def _note_mcp_origin(origin: str | None, address: str) -> None:
     )
 
 
-def _mcp_refusal(status: int, detail: str, wait_s: int):
-    error = "too many requests" if status == 429 else "busy"
-    return jsonify(error=error, detail=detail), status, {"Retry-After": str(wait_s)}
+def _scans_descriptions(body: bytes) -> bool:
+    """Whether this `/mcp` POST is a search_jobs call matching its keyword in descriptions
+    (ADR-0325), read from the body before the protocol module reads it. A body that does not
+    parse is not one; the protocol module refuses it."""
+    try:
+        message = json.loads(body)
+    except ValueError:
+        return False
+    params = message.get("params") if isinstance(message, dict) else None
+    return (
+        isinstance(params, dict)
+        and message.get("method") == "tools/call"
+        and params.get("name") == "search_jobs"
+        and isinstance(params.get("arguments"), dict)
+        and space_mcp_search_jobs.scans_descriptions(params["arguments"])
+    )
+
+
+def _mcp_refusal(body: bytes, status: int, message: str, wait_s: int):
+    """A JSON-RPC error carrying the request's id, with `Retry-After` (ADR-0276): an MCP client
+    shows its message to the model, in either protocol era."""
+    status, headers, out = streamable_http.refusal(body, status, message)
+    return Response(out, status, {**headers, "Retry-After": str(wait_s)})
 
 
 @app.route("/mcp", methods=["POST"])
@@ -1685,28 +1888,53 @@ def mcp():
     """One MCP message over Streamable HTTP, answered by `streamable_http.answer` (ADR-0267)."""
     address = _client_address()
     _note_mcp_origin(request.headers.get("Origin"), address)
+    body = request.stream.read(streamable_http.MAX_BODY_BYTES + 1)
     if _from_anthropic(address):
-        wait_s = _ANTHROPIC_LIMIT.admit("anthropic")
-        limit = f"{_ANTHROPIC_LIMIT_REQUESTS} requests in {_LIMIT_WINDOW_S} s from Anthropic"
+        caller, who = "anthropic", "Anthropic's range"
+        wait_s = _ANTHROPIC_LIMIT.admit(caller)
+        per_minute = _ANTHROPIC_LIMIT_REQUESTS
     else:
-        wait_s = _MCP_LIMIT.admit(address)
-        limit = (
-            f"{_MCP_LIMIT_REQUESTS} requests in {_LIMIT_WINDOW_S} s from one address"
-        )
+        caller, who = address, "one address"
+        wait_s = _MCP_LIMIT.admit(caller)
+        per_minute = _MCP_LIMIT_REQUESTS
     if wait_s:
-        return _mcp_refusal(429, f"at most {limit}; retry in {wait_s} s", wait_s)
-    if not _MCP_PLACES.acquire(timeout=_MCP_PLACE_WAIT_S):
-        return _mcp_refusal(503, "HeadStart is busy; retry shortly", _MCP_PLACE_WAIT_S)
+        return _mcp_refusal(
+            body,
+            429,
+            f"Too many requests: at most {per_minute} in {_LIMIT_WINDOW_S} s from {who}; "
+            f"retry in {wait_s} s.",
+            wait_s,
+        )
+    places = _MCP_SCAN_PLACES if _scans_descriptions(body) else _MCP_PLACES
+    refused = places.take(caller, _MCP_PLACE_WAIT_S)
+    if refused and places is _MCP_SCAN_PLACES:
+        return _mcp_refusal(
+            body,
+            503,
+            f"HeadStart runs {_MCP_SCANS_AT_ONCE} description-keyword search at a time, and "
+            f"another is running; retry in about {_MCP_SCAN_RETRY_S} s, or match the keyword "
+            "in titles (keyword_in: title), which is fast.",
+            _MCP_SCAN_RETRY_S,
+        )
+    if refused is concurrency_limit.Refused.CALLER:
+        return _mcp_refusal(
+            body,
+            429,
+            f"Too many requests at once: at most {_MCP_AT_ONCE_EACH} at a time from {who}; "
+            "retry when one of them is answered.",
+            _MCP_PLACE_WAIT_S,
+        )
+    if refused:
+        return _mcp_refusal(
+            body, 503, "HeadStart is busy; retry shortly.", _MCP_PLACE_WAIT_S
+        )
     try:
-        status, headers, body = streamable_http.answer(
-            request.headers,
-            request.stream.read(streamable_http.MAX_BODY_BYTES + 1),
-            _MCP_SERVER,
-            _MCP_ORIGINS,
+        status, headers, out = streamable_http.answer(
+            request.headers, body, _MCP_SERVER, _MCP_ORIGINS
         )
     finally:
-        _MCP_PLACES.release()
-    return Response(body, status, headers)
+        places.give_back(caller)
+    return Response(out, status, headers)
 
 
 @app.route("/auth/google", methods=["POST"])
@@ -1808,6 +2036,7 @@ def index():
         },
         njobs=f"{_table.count_rows():,}",
         atses=capabilities.atses,
+        country_opts=country_filter.options(),
         india_opts=india_gazetteer.dropdown_options(),
         has_first_seen=capabilities.has_first_seen,
         # the Keyword filter (ADR-0104): its scopes from the one map, and whether the served
@@ -1844,5 +2073,59 @@ def index():
     )
 
 
+_STARTED = "headstart.started"
+
+
+@app.before_request
+def _note_the_start():
+    request.environ[_STARTED] = time.monotonic()
+
+
+@app.after_request
+def _log_the_request(response):
+    """One run-log line per request, as the development server printed and waitress does not:
+    the run log is how an edge outage is told from the app failing. The path only, since a query
+    string carries a search's words. A read `/mcp` makes in process is not a request anyone sent.
+    Kept on the environ, not on `g`, which an in-process read shares with the `/mcp` request."""
+    if not request.environ.get(space_client.IN_PROCESS_READ):
+        started = request.environ.get(_STARTED, time.monotonic())
+        print(
+            f'"{request.method} {request.path}" {response.status_code} '
+            f"{time.monotonic() - started:.3f}s",
+            flush=True,
+        )
+    return response
+
+
+# How `python app.py` (start.sh) serves (#595): waitress, where it used to be Werkzeug's
+# development server. One process, on purpose: the résumé-read guard (`_PARSING`), every
+# `RateLimit`, the `/mcp` places and the kept Trends and facet answers live in this process's
+# memory, and a second worker process would keep a second copy of each.
+#
+# 16 threads on the Space's 2 vCPUs. No more than two requests can compute at once, so the other
+# threads are there to wait: a résumé read waits on the router for up to 120 s, each Saved set or
+# Profile write on an HF commit, and a `/mcp` request up to 10 s for one of its 4 places or its
+# one description-scan place (ADR-0325). With all 5 taken and four more queued, 7 threads are
+# still left for the page. The development server started a thread per connection with no
+# bound. Waitress reads each request
+# whole before a thread takes it, so a client that never finishes sending holds a connection,
+# not a thread: 40 such clients cost the development server 41 threads and waitress none
+# (measured locally, 2026-09-29).
+#
+# `clear_untrusted_proxy_headers` is off because waitress 3 otherwise deletes `X-Forwarded-For`
+# whenever no trusted proxy is named, and `_client_address` reads the caller from that header
+# (ADR-0262): without it, every caller would count as the edge's one address.
+_SERVE = {
+    "host": "0.0.0.0",
+    "port": 7860,
+    "threads": 16,
+    "clear_untrusted_proxy_headers": False,
+}
+
+
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=7860)
+    print(
+        f"serving on port {_SERVE['port']} with waitress, {_SERVE['threads']} threads",
+        flush=True,
+    )
+    waitress.serve(app, **_SERVE)

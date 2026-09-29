@@ -13,7 +13,7 @@ from dataclasses import replace
 
 import pytest
 
-from headstart.search_filters.compiler import account_clause, build_filter
+from headstart.search_filters.compiler import account_clause, build_filter, with_extra
 from headstart.serving.job_search import (
     FACET_CACHE_SIZE,
     QUERY_VECTOR_CACHE_SIZE,
@@ -174,6 +174,22 @@ def test_an_unknown_india_place_is_warned_about_and_a_known_one_is_not(caplog):
     ]
 
 
+def test_a_country_is_read_as_an_upper_case_code_and_an_unknown_one_is_warned_about(
+    caplog,
+):
+    searcher, _ = _searcher()
+    with caplog.at_level(logging.WARNING, logger="headstart.serving.job_search"):
+        caplog.clear()
+        assert searcher.parse_filters({"country": " de "}).country == "DE"
+        assert searcher.parse_filters({"country": "IN"}).country == "IN"
+        assert searcher.parse_filters({"country": ""}).country is None
+        assert not caplog.records
+        searcher.parse_filters({"country": "zz"})
+    assert [r.getMessage() for r in caplog.records] == [
+        "filter dropped: country 'ZZ' is not a known code"
+    ]
+
+
 def test_boot_names_unmaterialized_flags_a_capped_whitelist_and_unpriced_currencies(
     caplog, monkeypatch
 ):
@@ -250,7 +266,15 @@ def test_facets_cache_the_filter_set_not_the_semantic_query(monkeypatch):
 
     calls = []
 
-    def counted(_table, filters, _capabilities, *, extra_where=None):
+    def counted(
+        _table,
+        filters,
+        _capabilities,
+        *,
+        extra_where=None,
+        only_total=False,
+        table_where=None,
+    ):
         calls.append((filters, extra_where))
         return {"total": len(calls), "facets": {}}
 
@@ -271,7 +295,15 @@ def test_facet_cache_keeps_account_clauses_separate(monkeypatch):
 
     calls = []
 
-    def counted(_table, _filters, _capabilities, *, extra_where=None):
+    def counted(
+        _table,
+        _filters,
+        _capabilities,
+        *,
+        extra_where=None,
+        only_total=False,
+        table_where=None,
+    ):
         calls.append(extra_where)
         return {"total": len(calls), "facets": {}}
 
@@ -281,6 +313,37 @@ def test_facet_cache_keeps_account_clauses_separate(monkeypatch):
     second = searcher.facets({}, extra_where="account = 2")
     assert first is not second
     assert calls == ["account = 1", "account = 2"]
+
+
+def test_counts_total_asks_for_the_total_alone_and_is_cached_apart(monkeypatch):
+    """ADR-0274: an agent printing only the total sends `counts=total`; the page never does."""
+    from headstart.serving import facets
+
+    calls = []
+
+    def counted(
+        _table,
+        _filters,
+        _capabilities,
+        *,
+        extra_where=None,
+        only_total=False,
+        table_where=None,
+    ):
+        calls.append(only_total)
+        return {"total": 1, "facets": {} if only_total else {"remote": []}}
+
+    monkeypatch.setattr(facets, "counts", counted)
+    searcher, _ = _searcher()
+    total = searcher.facets({"remote": "true", "counts": "total"})
+    full = searcher.facets({"remote": "true"})
+    assert searcher.facets({"remote": "true", "counts": "total"}) is total
+    assert searcher.facets({"remote": "true", "counts": "all"}) is full
+    assert calls == [True, False]
+    with pytest.raises(
+        ValueError, match="counts 'some' is not known; known: all, total"
+    ):
+        searcher.facets({"counts": "some"})
 
 
 def test_facet_cache_expires_so_recency_counts_keep_moving(monkeypatch):
@@ -501,7 +564,7 @@ def test_keyword_filter_reaches_the_where_clause_and_its_scope_is_whitelisted():
     searcher, table = _searcher()
     searcher.run({"q": "x", "kw": "kubernetes", "kw_in": "nonsense"})
     assert (
-        "(lower(title) LIKE '%kubernetes%')" in table.last_where
+        "(regexp_like(title, '(?i)(^|[^a-z0-9])kubernetes'))" in table.last_where
     )  # unknown scope -> title
 
 
@@ -1263,6 +1326,7 @@ def _strict_searcher(currencies=("INR",)):
         ({"ats": "workdya"}, ["'workdya'", "darwinbox"]),
         ({"etype": "gig"}, ["'gig'", "full-time, part-time, contract, internship"]),
         ({"india": "atlantis"}, ["'atlantis'", "india, delhi ncr", "bengaluru"]),
+        ({"country": "uk"}, ["'UK'", "ISO 3166-1 alpha-2", "US, IN, GB"]),
         ({"kw": "go", "kw_in": "body"}, ["'body'", "title, description, both"]),
         ({"kw_in": "body"}, ["'body'"]),  # refused with or without a keyword to scope
         ({"sort": "newest"}, ["'newest'", "posted, seen, salary"]),
@@ -1303,6 +1367,7 @@ def test_strict_accepts_what_the_table_serves():
             "ats": "darwinbox",
             "etype": "full-time",
             "india": "bengaluru",
+            "country": "IN",
             "kw": "go",
             "kw_in": "title",
             "salary_min": "5",
@@ -1441,3 +1506,403 @@ def test_a_refusal_is_a_400_with_detail_or_a_503():
         {"error": "no role assignments"},
         503,
     )
+
+
+# ---- a Job read by id, and `like=` (ADR-0277) ----
+
+
+def test_like_leaves_its_job_out_of_the_list_and_the_counts_alike(monkeypatch):
+    """The page's total and its rows must describe one search: `like=`'s own Job is excluded by
+    the same clause on both paths, quote doubled."""
+    from headstart.serving import facets
+
+    counted = []
+    monkeypatch.setattr(
+        facets,
+        "counts",
+        lambda _t, _f, _c, *, extra_where=None, **_: counted.append(extra_where) or {},
+    )
+    table = _Table([dict(_ROW, id="a:b:2", vector=[0.1, 0.2])])
+    searcher = JobSearch(_Model(), table)
+    args = {"like": "o'brien:x:1", "remote": "true"}
+    searcher.facets(args, extra_where="account")
+    searcher.run(args, extra_where="account")
+    assert counted == ["(account) AND id <> 'o''brien:x:1'"]
+    # the list narrowed by the very clause the counts were (ADR-0320 shares it)
+    assert table.last_where == "(remote = true) AND (account) AND id <> 'o''brien:x:1'"
+
+
+def test_like_ranks_by_the_stored_vector_and_never_encodes(monkeypatch):
+    table = _Table([dict(_ROW, id="a:b:1", vector=[0.1, 0.2])])
+    searcher = JobSearch(_Model(), table)
+    monkeypatch.setattr(searcher, "_query_vector", None)  # any encode would raise
+    (row,) = searcher.run({"like": "a:b:1"})
+    assert table.last_query == [0.1, 0.2]
+    assert row["score"] == 0.75
+
+
+@pytest.mark.parametrize(
+    ("args", "words"),
+    [
+        ({"like": "a:b:1", "q": "backend"}, "send one of them"),
+        ({"like": "x" * 301}, "at most 300 characters"),
+    ],
+)
+def test_like_is_refused_beside_a_query_or_past_the_id_bound(args, words):
+    searcher, _ = _searcher()
+    for path in (searcher.run, searcher.facets):
+        with pytest.raises(ValueError, match=words):
+            path(args)
+
+
+@pytest.mark.parametrize(
+    ("ids", "words"),
+    [([], "1 to 5"), (["", ""], "1 to 5"), ([f"a:b:{n}" for n in range(6)], "1 to 5")],
+)
+def test_a_read_by_id_names_one_to_five_ids(ids, words):
+    searcher, _ = _searcher()
+    with pytest.raises(ValueError, match=words):
+        searcher.jobs_by_id(ids)
+    with pytest.raises(ValueError, match="at most 300"):
+        searcher.jobs_by_id(["x" * 301])
+
+
+def test_a_read_by_id_asks_for_the_detail_columns_the_table_has():
+    table = _Table([dict(_ROW, id="a:b:1")])
+    table.schema = types.SimpleNamespace(
+        names=["ats", "title", "first_seen", "description", "department", "vector"]
+    )
+    JobSearch(_Model(), table).jobs_by_id(["a:b:1", "o'brien:x:1", "a:b:1"])
+    assert table.last_where == "id IN ('a:b:1', 'o''brien:x:1')"
+    assert table.last_select == [
+        "title",
+        "ats",
+        "first_seen",
+        "department",
+        "description",
+    ]
+    assert table.last_k == 2
+
+
+@pytest.fixture(scope="module")
+def served(tmp_path_factory):
+    """A real LanceDB table of five Jobs whose 4-dimensional vectors fall away from job 1 in
+    order, so `like=` can be read against the exact ranking it must give."""
+    lancedb = pytest.importorskip("lancedb")
+    pa = pytest.importorskip("pyarrow")
+    vectors = {
+        "lever:acme:1": [1.0, 0.0, 0.0, 0.0],
+        "lever:acme:2": [0.9, 0.1, 0.0, 0.0],
+        "lever:acme:3": [0.7, 0.3, 0.0, 0.0],
+        "lever:beta:4": [0.2, 0.8, 0.0, 0.0],
+        "lever:o'brien:5": [0.0, 0.0, 1.0, 0.0],
+    }
+    rows = [
+        {
+            "id": job_id,
+            "title": f"Engineer {n}",
+            "company": "Acme",
+            "location": "Berlin",
+            "remote": n % 2 == 1,
+            "ats": "lever",
+            "first_seen": "2026-09-2{n}T00:00:00+00:00",
+            "url": f"https://jobs.lever.co/acme/{n}",
+            "department": "Engineering" if n == 1 else None,
+            "experience": "3-5 years" if n == 1 else None,
+            "min_years": 3 if n == 1 else None,
+            "max_years": 5 if n == 1 else None,
+            "description": ("x" * 12_500) if n == 1 else (None if n == 5 else "Short."),
+            "description_stored": n != 5,
+            "vector": vector,
+        }
+        for n, (job_id, vector) in enumerate(vectors.items(), start=1)
+    ]
+    schema = pa.schema(
+        [
+            ("id", pa.string()),
+            ("title", pa.string()),
+            ("company", pa.string()),
+            ("location", pa.string()),
+            ("remote", pa.bool_()),
+            ("ats", pa.string()),
+            ("first_seen", pa.string()),
+            ("url", pa.string()),
+            ("department", pa.string()),
+            ("experience", pa.string()),
+            ("min_years", pa.int32()),
+            ("max_years", pa.int32()),
+            ("description", pa.string()),
+            ("description_stored", pa.bool_()),
+            ("vector", pa.list_(pa.float32(), 4)),
+        ]
+    )
+    db = lancedb.connect(tmp_path_factory.mktemp("served"))
+    table = db.create_table("jobs", data=pa.Table.from_pylist(rows, schema=schema))
+    return JobSearch(_Model(), table)
+
+
+def test_like_ranks_by_that_jobs_vector_leaving_it_out(served):
+    rows = served.run({"like": "lever:acme:1"})
+    assert [r["id"] for r in rows] == [
+        "lever:acme:2",
+        "lever:acme:3",
+        "lever:beta:4",
+        "lever:o'brien:5",
+    ]
+    assert rows[0]["score"] > rows[1]["score"] > rows[2]["score"]
+
+
+def test_like_applies_every_filter_as_a_query_does(served):
+    rows = served.run({"like": "lever:acme:1", "remote": "true"})
+    assert [r["id"] for r in rows] == ["lever:acme:3", "lever:o'brien:5"]
+
+
+def test_like_naming_no_served_job_says_it_has_closed_or_was_never_an_id(served):
+    with pytest.raises(
+        ValueError, match="in the index now: it has closed, or was never an id"
+    ):
+        served.run({"like": "lever:gone:9"})
+
+
+def test_a_read_by_id_serves_the_detail_and_cuts_a_long_description(served):
+    found = served.jobs_by_id(["lever:acme:1", "lever:gone:9", "lever:o'brien:5"])
+    assert set(found) == {"lever:acme:1", "lever:o'brien:5"}
+    job = found["lever:acme:1"]
+    assert (job["department"], job["experience"], job["max_years"]) == (
+        "Engineering",
+        "3-5 years",
+        5,
+    )
+    assert len(job["description"]) == 12_000
+    assert job["description_chars"] == 12_500 and job["description_cut"] is True
+    assert "score" not in job and "vector" not in job
+    bare = found["lever:o'brien:5"]
+    assert bare["description"] is None and bare["description_chars"] == 0
+    assert bare["description_stored"] is False and bare["description_cut"] is False
+
+
+# ---- what a sample of Jobs asks for: /requirements (ADR-0324) ----
+
+_FAMILIES = {
+    "data-engineering": sorted(
+        ["lever:acme:1", "lever:acme:2", "lever:beta:4"], key=str.lower
+    ),
+    "security": ["lever:acme:3"],
+}
+
+
+@pytest.fixture(scope="module")
+def sampled(tmp_path_factory):
+    """A real LanceDB table of five Jobs, three of them data engineering, whose vectors fall
+    away from job 1 in order, each with a description naming skills and the columns the
+    requirements counts read."""
+    lancedb = pytest.importorskip("lancedb")
+    pa = pytest.importorskip("pyarrow")
+    vectors = [
+        [1.0, 0.0, 0.0, 0.0],
+        [0.9, 0.1, 0.0, 0.0],
+        [0.7, 0.3, 0.0, 0.0],
+        [0.2, 0.8, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+    ]
+    ids = [
+        "lever:acme:1",
+        "lever:acme:2",
+        "lever:acme:3",
+        "lever:beta:4",
+        "lever:gamma:5",
+    ]
+    rows = [
+        {
+            "id": job_id,
+            "company": job_id.split(":")[1].title(),
+            "location": "Berlin, Germany" if n % 2 else "Austin, TX",
+            "remote": n == 1,
+            "ats": "lever",
+            "first_seen": f"2026-09-2{n}T00:00:00+00:00",
+            "min_years": n,
+            "experience_source": "regex",
+            "min_salary_annual": 100_000 * n,
+            "max_salary_annual": None,
+            "salary_currency": "USD",
+            "description": "Python, SQL and Spark on AWS." if n != 3 else "SIEM work.",
+            "vector": vector,
+        }
+        for n, (job_id, vector) in enumerate(zip(ids, vectors, strict=True), start=1)
+    ]
+    schema = pa.schema(
+        [
+            ("id", pa.string()),
+            ("company", pa.string()),
+            ("location", pa.string()),
+            ("remote", pa.bool_()),
+            ("ats", pa.string()),
+            ("first_seen", pa.string()),
+            ("min_years", pa.int32()),
+            ("experience_source", pa.string()),
+            ("min_salary_annual", pa.int32()),
+            ("max_salary_annual", pa.int32()),
+            ("salary_currency", pa.string()),
+            ("description", pa.string()),
+            ("vector", pa.list_(pa.float32(), 4)),
+        ]
+    )
+    db = lancedb.connect(tmp_path_factory.mktemp("sampled"))
+    table = db.create_table("jobs", data=pa.Table.from_pylist(rows, schema=schema))
+    search = JobSearch(_Model(), table)
+    search._query_vector = lambda _query: [1.0, 0.0, 0.0, 0.0]
+    return search
+
+
+def _query_string(args: dict):
+    from werkzeug.datastructures import MultiDict
+
+    return MultiDict(list(args.items()))
+
+
+def _requirements(search, **args):
+    return search.requirements(
+        _query_string({"strict": "1", **args}), _FAMILIES, set(_FAMILIES)
+    )
+
+
+def test_a_query_samples_the_closest_jobs_and_counts_every_match(sampled):
+    counted = _requirements(sampled, q="data engineer")
+    assert counted["order"] == "closest" and counted["matching"] == 5
+    assert counted["sampled"] == 5 and counted["closest_score"] == 1.0
+    assert counted["closest_score"] >= counted["farthest_score"]
+    python = next(s for s in counted["skills"] if s["skill"] == "Python")
+    assert (python["postings"], python["employers"]) == (4, 3)
+    assert counted["categories"] == [
+        {"family": "data-engineering", "postings": 3},
+        {"family": "security", "postings": 1},
+    ]
+
+
+def test_a_query_is_narrowed_by_the_filters_and_the_boards(sampled):
+    counted = _requirements(sampled, q="data engineer", board="lever:acme")
+    assert counted["matching"] == 3 and counted["sampled"] == 3
+    remote = _requirements(sampled, q="data engineer", remote="true")
+    assert remote["matching"] == 1 and remote["remote"] == 1
+
+
+def test_a_category_alone_samples_its_newest_jobs(sampled, monkeypatch):
+    read = []
+    real = sampled._rows_for_requirements
+    monkeypatch.setattr(
+        sampled, "_rows_for_requirements", lambda ids: read.append(ids) or real(ids)
+    )
+    counted = _requirements(sampled, family="data-engineering")
+    assert counted["order"] == "newest" and counted["closest_score"] is None
+    assert counted["matching"] == 3
+    # Newest to HeadStart first, and only the sample's descriptions are read.
+    assert read == [["lever:beta:4", "lever:acme:2", "lever:acme:1"]]
+
+
+def test_a_query_within_a_category_keeps_only_its_jobs(sampled):
+    counted = _requirements(sampled, q="data engineer", family="data-engineering")
+    assert counted["matching"] == 3 and counted["sampled"] == 3
+    assert counted["categories"] == [{"family": "data-engineering", "postings": 3}]
+
+
+def test_the_counts_come_from_the_sampled_columns(sampled):
+    counted = _requirements(sampled, family="data-engineering", n="60")
+    assert counted["experience"]["stated"] == {"0-1": 1, "2-4": 2, "5-7": 0, "8+": 0}
+    usd = counted["salary"]["currencies"][0]
+    assert (usd["currency"], usd["postings"], usd["median"]) == ("USD", 3, 200_000)
+    assert {c["code"] for c in counted["countries"]} == {"DE", "US"}
+
+
+@pytest.mark.parametrize(
+    ("args", "words"),
+    [
+        ({}, "q=, a category with family="),
+        ({"family": "cooking"}, "not a configured family"),
+        ({"q": "x", "n": "10"}, "n must be from 50 to 500"),
+        ({"q": "x", "country": "ZZ"}, "country"),
+    ],
+)
+def test_a_requirements_request_is_refused_in_words(sampled, args, words):
+    with pytest.raises(ValueError, match=words):
+        _requirements(sampled, **args)
+
+
+def test_a_category_without_role_assignments_is_the_deployments_state(sampled):
+    with pytest.raises(ScopeUnavailable):
+        sampled.requirements(_query_string({"family": "security"}), None, {"security"})
+
+
+def test_a_requirements_answer_is_kept_for_the_boot(sampled, monkeypatch):
+    first = _requirements(sampled, q="kept answer")
+    monkeypatch.setattr(
+        sampled, "_closest_ids", lambda *a: pytest.fail("asked the table again")
+    )
+    assert _requirements(sampled, q="kept answer") is first
+
+
+class _DescriptionReads:
+    """A real table, counting the where-clauses that read the description column."""
+
+    def __init__(self, table):
+        self._table = table
+        self.reads = 0
+
+    def __getattr__(self, name):
+        return getattr(self._table, name)
+
+    def _saw(self, where):
+        self.reads += bool(where and "regexp_like(description" in where)
+
+    def count_rows(self, filter=None):
+        self._saw(filter)
+        return self._table.count_rows(filter=filter)
+
+    def search(self, *args, **kwargs):
+        return _ReadsQuery(self, self._table.search(*args, **kwargs))
+
+
+class _ReadsQuery:
+    def __init__(self, table, query):
+        self._table, self._query = table, query
+
+    def where(self, clause, *args, **kwargs):
+        self._table._saw(clause)
+        return _ReadsQuery(self._table, self._query.where(clause, *args, **kwargs))
+
+    def __getattr__(self, name):
+        attribute = getattr(self._query, name)
+        if not callable(attribute):
+            return attribute
+
+        def chained(*args, **kwargs):
+            out = attribute(*args, **kwargs)
+            return _ReadsQuery(self._table, out) if hasattr(out, "where") else out
+
+        return chained
+
+
+@pytest.mark.parametrize(
+    "ranking", [{}, {"like": "lever:acme:1"}], ids=["browse", "like"]
+)
+def test_a_description_keyword_is_read_once_for_the_page_its_total_and_page_2(
+    served, ranking
+):
+    """ADR-0320: `search_jobs` asks the page and the total at once, then page 2. The keyword
+    reads descriptions twice in all (its literal, then the exact clause over the literal's
+    rows), not once per route and page; and the answers are the compiled clause's."""
+    table = _DescriptionReads(served._table)
+    searcher = JobSearch(_Model(), table)
+    asked = {**ranking, "kw": "short", "kw_in": "description", "k": "1"}
+    first = searcher.run(asked)
+    total = searcher.facets({**asked, "counts": "total"})["total"]
+    second = searcher.run({**asked, "page": "2"})
+    assert table.reads == 2
+    assert total == 3  # "Short." in jobs 2 to 4; job 1, the like= one, has none
+    plain = JobSearch(_Model(), served._table)
+    plain._description_matches.where = lambda filters, extra: with_extra(
+        build_filter(filters, plain.capabilities), extra
+    )
+    assert [r["id"] for r in first] == [r["id"] for r in plain.run(asked)]
+    assert [r["id"] for r in second] == [
+        r["id"] for r in plain.run({**asked, "page": "2"})
+    ]

@@ -7,6 +7,8 @@
 - Amended by: [ADR-0050](0050-persist-descriptions-across-runs.md) — descriptions are persisted,
   so a targeted re-embed no longer needs a re-scrape; `meta.jsonl` records `has_description`, a
   narrow content-change detector short of the full hash deferred here
+- Amended by: [ADR-0285](0285-a-vector-is-rebuilt-when-its-postings-text-changes.md) — the
+  content hash deferred below is built, sized by ADR-0207's measured edit churn
 - Builds on [ADR-0014](0014-search-index-ingestion-and-freshness.md) (scrape-diff eviction) and
   [ADR-0019](0019-tech-corpus-search-index.md) (the id-keyed store + `--resume` semantics)
 

@@ -6,7 +6,10 @@ branch, a model trained to place job titles that name the same occupation near e
 description arrives as the row's own served ``vector`` (nomic, title plus cleaned description),
 which the index already holds, so it costs no encoding. When the head's top probability is below
 the manifest's cutoff, the row is ``unclassified-tech``: a family forced onto a row the head cannot
-place would count as a trend in the wrong line.
+place would count as a trend in the wrong line. One exception, measured rather than assumed
+(ADR-0305): an abstained row whose title names a developer, programmer or software engineer is
+``software-engineering``. Forcing the head's own top pick on the abstained rows was right on 43% of
+those a reader could place; this rule was right on 84% of the ones it fires on.
 
 Because the head is linear, its logits split into a **title part** (``JobBERT(title) @ W_title``)
 and a **row part** (``vector @ W_row + bias``). The title part is what costs an encoding, so
@@ -32,6 +35,7 @@ from __future__ import annotations
 
 import functools
 import json
+import re
 import time
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
@@ -46,6 +50,16 @@ _log = log.get(__name__, __spec__)
 
 # the abstain family: tech, but the head cannot place it
 UNCLASSIFIED = "unclassified-tech"
+SOFTWARE_ENGINEERING = "software-engineering"
+# Bump when a word below changes: it goes into the tick's Methodology (`classifier_version`), so
+# the rows the change moves are a declared counting change, not a hiring trend (ADR-0305).
+DEVELOPER_TITLE_RULE_VERSION = 1
+_DEVELOPER_TITLE = re.compile(r"\b(?:developers?|programmers?|software engineers?)\b")
+# Developer relations and consumer-product developers name a developer without doing software
+# engineering; both showed up in the abstained rows the rule would otherwise have moved.
+_NOT_SOFTWARE_DEVELOPER = re.compile(
+    r"\bdeveloper (?:advocate|relations|evangelist)|\bproduct developer\b"
+)
 _ENCODE_BATCH = 128
 _FILL_CHUNK = 4096  # titles decided between two cache saves
 
@@ -54,6 +68,23 @@ def normalise(title: str | None) -> str:
     """The cache key and the head's input: lowercased, whitespace collapsed. Training and serving
     both go through this, so a title never meets the head in a form it was not trained on."""
     return " ".join((title or "").lower().split())
+
+
+def names_a_software_developer(title: str | None) -> bool:
+    """Whether ``title`` names a developer, programmer or software engineer, DevRel and consumer
+    product developers aside. Only ever asked about a row the head abstained on."""
+    key = normalise(title)
+    return bool(_DEVELOPER_TITLE.search(key)) and not _NOT_SOFTWARE_DEVELOPER.search(
+        key
+    )
+
+
+def classifier_version(head: Head) -> str:
+    """What a tick's Methodology calls how its families were decided: the head's version and the
+    developer-title rule's, so a change to either is a counting change. The title cache and the
+    assignment snapshot stay keyed by ``head.version`` alone, because a rule never invalidates
+    what the head decided."""
+    return f"{head.version}+developer-title-rule-{DEVELOPER_TITLE_RULE_VERSION}"
 
 
 class Head:
@@ -296,5 +327,7 @@ def decide_rows(
             np.stack([logits for _, logits in known]), row_logits[rows]
         )
         for i, (family, _) in zip(rows, decided, strict=True):
+            if family == UNCLASSIFIED and names_a_software_developer(titles[i]):
+                family = SOFTWARE_ENGINEERING
             families[i] = family
     return families

@@ -827,6 +827,82 @@ def test_zwayam_api_rejects_null_and_generic_count_objects():
     assert hits[0][:2] == ("zwayam", "careers.acme.com")
 
 
+def test_zwayam_api_signature_asks_every_cluster_the_scraper_asks():
+    """A Board on the last cluster is found there; the others answer `data: null` (ADR-0303)."""
+    from fingerprint_deep import api_signatures
+
+    from headstart.scrapers.zwayam import API_HOSTS
+
+    asked = []
+
+    def post(url, headers, body):
+        if url.endswith("/widgets"):
+            return {"code": 200}, ""
+        asked.append(url)
+        if url == f"https://{API_HOSTS[-1]}/jobs/search":
+            return {"code": 200, "data": {"totalCount": 47, "data": []}}, ""
+        return {"code": 200, "data": None}, ""
+
+    hits, _ = api_signatures("careers.acme.com", "", None, post)
+    assert asked == [f"https://{api}/jobs/search" for api in API_HOSTS]
+    assert hits == [("zwayam", "careers.acme.com", asked[-1])]
+
+
+def test_zwayam_job_check_reads_every_page_from_the_cluster_holding_the_board():
+    from fingerprint_job_evidence import check_jobs
+
+    from headstart.scrapers.zwayam import API_HOSTS
+
+    held_on = f"https://{API_HOSTS[-1]}/jobs/search"
+    asked = []
+
+    def post(url, headers, body):
+        asked.append(url)
+        if url != held_on:
+            return {"code": 200, "data": None}, ""
+        return {"code": 200, "data": {"data": [{"_source": {"jobUrl": "role-1"}}]}}, ""
+
+    def check(source):
+        asked.clear()
+        return check_jobs(
+            "zwayam", "careers.acme.com", {source}, lambda u: ("", u, "http404"), post
+        )
+
+    assert check("https://careers.acme.com/jobview/role-1") == (
+        "matched-job",
+        ["https://careers.acme.com/jobview/role-1"],
+    )
+    assert check("https://careers.acme.com/jobview/missing")[0] == (
+        "no-match-in-bounded-sample"
+    )
+    assert asked == [f"https://{api}/jobs/search" for api in API_HOSTS] + [held_on] * 2
+
+
+def test_a_zwayam_403_on_either_cluster_stops_calls_to_both(monkeypatch):
+    """The API clusters share one per-IP quota: `apic2` walled, `public` then refused 5/5 (#890)."""
+    from headstart.scrapers.zwayam import API_HOSTS, search_request
+
+    sent = []
+
+    class WalledSession:
+        def post(self, url, **_kwargs):
+            sent.append(url)
+            return type("Response", (), {"status_code": 403})()
+
+    monkeypatch.setattr(fp, "_post_banned", set())
+    monkeypatch.setattr(fp, "session", WalledSession)
+    walled_cluster = "apic2.zwayam.com"
+    assert walled_cluster in API_HOSTS
+
+    def listing_post(api_host):
+        return fp.post_json(*search_request("careers.acme.com", api_host=api_host))
+
+    assert listing_post(walled_cluster) == (None, "http403")
+    for api_host in API_HOSTS:
+        assert listing_post(api_host) == (None, "throttled")
+    assert sent == [f"https://{walled_cluster}/jobs/search"]
+
+
 def test_frozen_mixed_employer_wrapper_is_never_a_mapping(monkeypatch):
     monkeypatch.setattr(fp, "cname_chain", lambda _: [])
     monkeypatch.setattr(
@@ -1104,6 +1180,17 @@ def test_a_lever_link_keeps_its_slugs_casing():
     }
 
 
+def test_a_pyjamahr_link_is_lower_cased_to_the_slug_the_api_answers():
+    """PyjamaHR reads a slug case-sensitively, and every slug it has is lower-case: 3 of 3 tenants
+    re-cased (`8Byte`, `1-Percent-Group`, `7th-Sky-Technologies-LLC`) answer `count: 0`, and none
+    of the 676 slugs in its jobs sitemap carries a capital (2026-09-29). A kept capital names no
+    Board (ADR-0271)."""
+    page = '<a href="https://jobs.pyjamahr.com/8Byte">Jobs</a>'
+    assert {(ats, tenant) for ats, _kind, tenant, _n in fp.scan(page, "8byte.ai")} == {
+        ("pyjamahr", "8byte")
+    }
+
+
 def test_script_urls_resolve_relative_srcs_against_the_pages_base_href():
     page_url = "https://careers.acme.com/jobs/view/123"
     with_base = '<head><base href="/app/"><script src="main.js"></script></head>'
@@ -1221,3 +1308,16 @@ def test_filtered_scan_equals_the_scan_that_runs_every_pattern(monkeypatch):
     assert {name for name, found in unfiltered.items() if not found} == {"none"}
     assert {ats for ats, *_rest in unfiltered["kelvin"]} == {"keka"}
     assert {ats for ats, *_rest in unfiltered["long-s"]} == {"smartrecruiters"}
+
+
+def test_an_ashby_board_name_with_a_space_is_kept_whole():
+    """#864: `Blackpoint%20Cyber` was cut to `blackpoint`, a Board that 404s; `+` is a space too."""
+    for link in ("Blackpoint%20Cyber", "Blackpoint+Cyber"):
+        found = {
+            (ats, tenant)
+            for ats, _kind, tenant, _n in fp.scan(
+                f'<a href="https://jobs.ashbyhq.com/{link}">Jobs</a>',
+                "blackpointcyber.com",
+            )
+        }
+        assert ("ashby", "blackpoint cyber") in found, link

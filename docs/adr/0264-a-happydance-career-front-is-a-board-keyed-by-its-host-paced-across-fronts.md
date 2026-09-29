@@ -45,10 +45,11 @@ of 29 fronts. The root sitemap was never walled.
 
 **Front duplication is logged every run, as for Radancy** (`front_duplication`, now shared by
 both scrapers; it also resolves Workday's `wdN.myworkdaysite.com/recruiting/{tenant}/{site}`
-spelling). **Which fronts are landed is left open for the owner.** Radancy lands every front and
-logs the cost; Phenom lands none whose Backing Board is held. Until the owner chooses, the 31
-held-backed fronts are probed into the ledger and parked in `PARKED_BOARDS` (the Jibe precedent,
-ADR-0189), so choosing Radancy's rule is deleting those entries. Three fronts land:
+spelling). **A front whose Backing Board is held stays parked** — Phenom's rule, not Radancy's, by the
+owner's decision of 2026-09-28: every sampled share below is at or near 100%, so landing them
+would serve the same postings twice and add almost nothing. The 31 held-backed fronts are probed
+into the ledger and parked in `PARKED_BOARDS` (the Jibe precedent, ADR-0189), so a front whose
+Backing Board dies can be landed by deleting its entry. Three fronts land:
 `careers.cognizant.com` (2,040 postings, Backing Boards unscrapable Taleo sections and an
 unsupported host), `www.fidelitytalentsource.com` (79, Fidelity's staffing arm, which takes the
 application in a Beamery form on the front; 3 of 24 sampled titles are also on Fidelity's
@@ -98,8 +99,8 @@ with no loss, 1,486 of them tech (`is_tech(title, department)`); at 73,657 bytes
 
 ## Alternatives considered
 
-- **Land every front and log duplication (Radancy's rule).** The owner has not decided it for
-  Happydance; parking keeps the choice one deletion away and the fronts measured each probe.
+- **Land every front and log duplication (Radancy's rule).** Rejected by the owner on
+  2026-09-28: the measured shares are near 100%, unlike Radancy's partial overlap.
 - **Leave held-backed fronts out of the pool (Phenom's rule).** Loses the re-probe that would show
   a Backing Board dying, as Hilti's Avature tenant once looked dead to a survey that missed its
   portal sitemaps.

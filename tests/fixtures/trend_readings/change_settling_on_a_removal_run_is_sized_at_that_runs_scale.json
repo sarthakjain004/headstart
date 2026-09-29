@@ -151,6 +151,7 @@
    }
   ],
   "other": null,
+  "charted": 1,
   "company_lines": [
    {
     "name": "eightfold:micron",
@@ -212,7 +213,8 @@
     "boards": null,
     "sizes": {
      "eightfold:micron": 250
-    }
+    },
+    "drawn": true
    },
    {
     "id": "removed@2026-09-16T00:00:00+00:00/eightfold:micron",
@@ -225,7 +227,8 @@
     "boards": null,
     "sizes": {
      "eightfold:micron": -1100
-    }
+    },
+    "drawn": true
    }
   ],
   "day_markers": [

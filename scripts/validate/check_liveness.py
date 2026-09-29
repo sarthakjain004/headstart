@@ -162,6 +162,7 @@ from headstart.scrapers.zoho import (  # the listing's jobs <input>, single sour
     JOBS_INPUT as _ZOHO_JOBS,
 )
 from headstart.scrapers.zwayam import (  # request shape + dead-vs-failed line, single source
+    API_HOSTS,
     body_error_code,
     search_request,
 )
@@ -411,6 +412,11 @@ _SPANNING = (
     # a WARP address answers 200 meanwhile. `p_avature` reads that 406 as UNKNOWN and rests or
     # rotates this gate; it never settles a Board.
     "avature.net",
+    # zwayam.com: `p_zwayam` asks both API clusters (`API_HOSTS`, ADR-0303), and they share one
+    # per-IP quota. Measured 2026-09-29 from one IP: 700 requests to apic2.zwayam.com walled it,
+    # and public.zwayam.com, which answered 200 before the drive and was sent nothing during it,
+    # then refused 5 of 5. Two gates would each rotate the one address the other is on.
+    "zwayam.com",
 )
 _GATES = {
     # host: (max in-flight, seconds between request starts)
@@ -808,14 +814,15 @@ def _fetch(method, url, **kw):
 # refusal used to fall straight through to UNKNOWN with no gate trip and no rotation.
 #
 # Keyed by `_gate_key`, which is also the spare-egress group, so one entry covers every board on
-# the host. zwayam qualifies on both counts: every tenant is probed through the one shared API
-# (`search_request` sends `careers.infoedge.com`, `adani.openings.co` and `careers.practo.com`
-# alike to `public.zwayam.com`), and the wall is a cumulative request quota, not a concurrency
-# limit.
+# the host. zwayam qualifies on both counts: every tenant is probed through the two API clusters,
+# which share one quota (`search_request` sends `careers.infoedge.com`, `adani.openings.co` and
+# `careers.practo.com` alike to `public.zwayam.com`, then to `apic2.zwayam.com` if it holds none),
+# and the wall is a cumulative request quota, not a concurrency limit.
 #
-# The entry is the **exact host**, because `zwayam.com` is not in `_SPANNING` and `_gate_key`
-# therefore returns `public.zwayam.com` unchanged. Writing the registrable domain here instead
-# looks right and silently never matches — `test_the_quota_403_key_matches_the_gate_key` pins it.
+# The entry is whatever `_gate_key` makes of each API host the probe asks (`API_HOSTS`). Both
+# clusters sit under `zwayam.com` in `_SPANNING`, because they share the quota, so that is one
+# entry. Writing a host that `_gate_key` does not return looks right and silently never matches —
+# `test_the_quota_403_key_matches_the_gate_key` pins it.
 #
 # Read off the scraper's own request rather than spelled out, for the reason `p_zwayam` already
 # imports `search_request`: a hardcoded copy is a copy that can drift, and this module has drifted
@@ -829,7 +836,10 @@ def _fetch(method, url, **kw):
 #     direct route cleared 12/25.** Rotation is what clears it.
 # Before this, a full 3,239-board sweep walled partway through its first quartile and returned
 # 2,816 UNKNOWN — quartiles 2-4 were 809/809 unknown each.
-_QUOTA_403 = frozenset({urllib.parse.urlsplit(search_request("probe")[0]).netloc})
+_QUOTA_403 = frozenset(
+    _gate_key(urllib.parse.urlsplit(search_request("probe", api_host=api)[0]).netloc)
+    for api in API_HOSTS
+)
 
 
 # A bot wall's interstitial, served as 429. Cloudflare labels its own with a header; Vercel's
@@ -1273,7 +1283,8 @@ def _hinted_first(hinted, choices):
     return (hinted, *(choice for choice in choices if choice != hinted))
 
 
-# --- per-ATS probes: return (verdict, jobs) ---
+# --- per-ATS probes: return (verdict, jobs), or (verdict, jobs, url) when the Board answered at
+# another url than the row's, which the ledger then records (`p_workday`, #661) ---
 # Each reads the Board through `_scraper_for_row`/`_slug_of`, except `p_eightfold`, which ADR-0203
 # left as it was. Where a probe asks a different URL than the scraper's `url()` (a smaller page,
 # no descriptions), it says why beside it.
@@ -1790,11 +1801,17 @@ def p_workday(t, u):
         return total, status
 
     # Probe the hinted DC, then sweep the rest (tenant may have migrated). Any 200 -> LIVE, found.
+    # A DC other than the hinted one comes back as the row's new url, so `checked_at` dates the DC
+    # as well as the Board and ADR-0219's newest-row rule elects one that answers (#661). Only the
+    # url: the tenant keys the ledger, and respelling it would land a second row for the Board.
+    hinted = m.group("instance")
     statuses = []
-    for inst in _hinted_first(m.group("instance"), _WD_INSTANCES):
+    for inst in _hinted_first(hinted, _WD_INSTANCES):
         total, status = probe(inst)
         if total is not None:
-            return LIVE, total
+            if inst == hinted:
+                return LIVE, total
+            return LIVE, total, u[: m.start("instance")] + inst + u[m.end("instance") :]
         statuses.append(status)
     # No DC served it live. DEAD only if *every* probe conclusively said "not here"; a single
     # inconclusive probe (timeout/dns/5xx) leaves a live instance unruled-out -> UNKNOWN. This makes
@@ -2981,7 +2998,7 @@ def p_jobvite(t, u):
 
 
 def p_zwayam(t, u):
-    """One POST to the shared API, which selects the Board by hostname — the slug.
+    """One POST per API cluster until one holds the Board, which it selects by hostname — the slug.
 
     Read the BODY, never the status: a hostname that is no longer a registered Board answers
     HTTP 200 with `"data": null`, identical in every other respect to a live one — and a
@@ -2991,8 +3008,20 @@ def p_zwayam(t, u):
     dead-vs-failed line from its `body_error_code`, so neither can drift; an earlier version
     imported only the body helpers and re-declared the headers, and had already drifted on the
     User-Agent.
+
+    The clusters in `API_HOSTS` are asked in the scraper's order. A cluster answers `data: null`
+    for a Board another cluster holds, so DEAD needs every one to say so.
     """
-    url, headers, body = search_request(_slug_of("zwayam", t, u))
+    host = _slug_of("zwayam", t, u)
+    for api_host in API_HOSTS:
+        verdict = _zwayam_cluster_verdict(*search_request(host, api_host=api_host))
+        if verdict != (DEAD, None):
+            return verdict
+    return DEAD, None
+
+
+def _zwayam_cluster_verdict(url, headers, body):
+    """`p_zwayam`'s verdict from one API cluster."""
     try:
         r = _fetch("POST", url, data=body, headers=headers)
     except http.RequestsError as e:
@@ -3420,7 +3449,8 @@ def main():
                 verdict, jobs = DEAD, None
             else:
                 try:
-                    verdict, jobs = PROBES[ats](tenant, url)
+                    verdict, jobs, *answering_url = PROBES[ats](tenant, url)
+                    url = answering_url[0] if answering_url else url
                 except Exception as e:  # noqa: BLE001
                     _note(f"probe-raised-{type(e).__name__}")
                     verdict, jobs = UNKNOWN, None

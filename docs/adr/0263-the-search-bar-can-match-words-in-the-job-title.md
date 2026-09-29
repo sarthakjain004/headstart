@@ -5,7 +5,7 @@
 filter and its substring rule), [ADR-0084](0084-facet-counts-are-filter-shaped-not-query-shaped.md)
 (a count is a where-clause), [ADR-0173](0173-rebuild-the-search-indexes-with-the-table.md) (the
 indexes, NGRAM FTS measured), [ADR-0168](0168-delete-the-orphaned-blobs-dont-ask-for-them-to-be-collected.md) (HF
-storage) · adds `SearchFilters.title_words`; no schema, index or stored-data change
+storage) · adds `SearchFilters.title_words`; no schema, index or stored-data change · **Amended by:** [ADR-0299](0299-a-keyword-word-matches-where-a-word-starts-and-quotes-keep-a-phrase.md) — a title word matches where a word starts, and quoted text (option B) keeps a phrase together
 
 ## Context
 

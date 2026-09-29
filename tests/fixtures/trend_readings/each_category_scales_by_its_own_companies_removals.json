@@ -297,6 +297,7 @@
    }
   ],
   "other": null,
+  "charted": 2,
   "company_lines": [
    {
     "name": "greenhouse:acme",
@@ -385,7 +386,8 @@
     "boards": null,
     "sizes": {
      "eightfold:micron": 50
-    }
+    },
+    "drawn": true
    },
    {
     "id": "removed@2026-09-15T00:00:00+00:00/eightfold:micron",
@@ -398,7 +400,8 @@
     "boards": null,
     "sizes": {
      "eightfold:micron": -1050
-    }
+    },
+    "drawn": true
    }
   ],
   "day_markers": [

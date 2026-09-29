@@ -210,6 +210,7 @@
    }
   ],
   "other": null,
+  "charted": 2,
   "company_lines": [
    {
     "name": "workday:nvidia",
@@ -263,7 +264,8 @@
     "boards": null,
     "sizes": {
      "workday:nvidia": 355
-    }
+    },
+    "drawn": true
    }
   ],
   "day_markers": [

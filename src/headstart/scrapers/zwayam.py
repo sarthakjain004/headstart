@@ -1,10 +1,21 @@
 """Zwayam job-board scraper (Info Edge / Naukri Talent Cloud).
 
-Zwayam serves every tenant's Board from one shared API host, ``public.zwayam.com``, and selects
+Zwayam serves every tenant's Board from a shared API host, ``public.zwayam.com``, and selects
 the Board by the **career-site hostname** — so this scraper's slug is a host
 (``careers.persistent.com``, ``impetus.openings.co``), the way zoho's and eightfold's are, not a
 bare tenant label. Discovery of those hosts is a separate problem with its own writeup:
 ``docs/discovery/zwayam-tenant-discovery.md``.
+
+**There are two API clusters, and each holds only its own tenants** (:data:`API_HOSTS`, measured
+2026-09-29, ADR-0303). ``careers.utthunga.com``'s own bundle
+names ``apic2.zwayam.com`` as its API (``APIENDPOINTNEW``), where the other career sites' bundles
+name ``public.zwayam.com``. The same search bytes, sent to the other host, answer ``data: null``
+exactly as for a host no cluster holds: Utthunga lists 47 postings on ``apic2`` and nothing on
+``public``, and Microland lists 1,141 on ``public`` and nothing on ``apic2``. The config call
+answers HTTP 403 on the wrong cluster, and the detail call needs that cluster's company id. So
+the scraper finds a Board's cluster with page 0, trying ``public`` first, and then makes every
+call on that cluster. A Board on ``public`` costs no extra request. A Board on ``apic2`` costs one
+more each run, and a host neither cluster holds costs one more to read as dead.
 
 Four things about the protocol are not what the earlier capture in
 ``experiment/ats-provider-expansion/artifacts/research_zwayam.md`` recorded, each measured against
@@ -61,13 +72,14 @@ The per-job detail endpoint (``jobs-service/v1/jobs/careersite``, JSON POST of `
 was measured behind a listing row with none), so it is fetched for **every row not on the
 ADR-0050 skip-list** and wins over the listing text. The listing fields stand only when the
 detail answers with no text; a failed detail call — or a failed config call, which fails every
-detail on the Board — ships no description, so the next run retries it. The store bounds the cost: each Job's detail is fetched once in its lifetime (~15 KB a
-response, so the first pass over the 22,456-posting corpus moves ~340 MB; steady state is new
-postings only). What the detail holds is the tenant's own paste, junk included — one measured
-posting carries an AI-chat UI's class markup verbatim, and ``html_to_text``'s
-unescape-before-strip order (a deliberate Darwinbox accommodation, per its docstring) lets an
-escaped ``&gt;`` inside such an attribute leak fragments of it into the text. Tenant data
-quality, logged here so the next reader doesn't chase it as a scraper bug.
+detail on the Board — ships no description, so the next run retries it. The store bounds the
+cost: a held Job's detail is fetched again only every 7 days (ADR-0211's rotation). A response is
+~15 KB, so the first pass over the 22,456-posting corpus moves ~340 MB, and steady state is new
+postings plus about 1/170 of the held ones a run. What the detail holds is the tenant's own paste,
+junk included — one measured posting carries an AI-chat UI's class markup verbatim, and
+``html_to_text``'s unescape-before-strip order (a deliberate Darwinbox accommodation, per its
+docstring) lets an escaped ``&gt;`` inside such an attribute leak fragments of it into the text.
+Tenant data quality, logged here so the next reader doesn't chase it as a scraper bug.
 
 **Three frontend generations, three job-link shapes.** The API is one host, but the careers sites
 in front of it are not one SPA — classified live across all 224 hiring Boards (2026-08-27):
@@ -107,7 +119,7 @@ by rotating rather than by pacing. The other binding
 costs are **bytes and detail latency**: a 10-row page is 70-200 KB and a
 detail ~15 KB, so the first full pass moves ~680 MB and its 22,456 details take ~45 minutes of
 aggregate wall-clock at the ceiling — once, since the ADR-0050 store prunes every later run to
-new postings.
+new postings and the held ones the ADR-0211 rotation has due.
 """
 
 from __future__ import annotations
@@ -134,6 +146,11 @@ from headstart.scrapers.pacer import Pacer
 
 _log = log.get(__name__)
 
+#: The API clusters, in the order a Board is looked up (module docstring). Each answers
+#: ``data: null`` for a Board it does not hold. ``api.zwayam.com`` answers as ``public`` does and
+#: ``cluster2.zwayam.com`` as ``apic2`` does, so neither is a third cluster. The endpoints below
+#: are written on the first; :func:`_on` moves one to another cluster.
+API_HOSTS = ("public.zwayam.com", "apic2.zwayam.com")
 _API = "https://public.zwayam.com/jobs/search"
 #: Resolves a Board host to its tenant record; the detail endpoint needs the numeric ``id`` from
 #: here (measured: base64 400s, another tenant's or a nonexistent id 404s), which is this call's
@@ -268,17 +285,25 @@ def body_error_code(payload: dict) -> object | None:
     return code if code is not None and code != 200 else None
 
 
-def search_request(host: str, start: int = 0) -> tuple[str, dict[str, str], bytes]:
+def _on(api_host: str, url: str) -> str:
+    """``url``, one of the endpoints above, on the API cluster ``api_host``."""
+    return url.replace(f"//{API_HOSTS[0]}/", f"//{api_host}/", 1)
+
+
+def search_request(
+    host: str, start: int = 0, api_host: str = API_HOSTS[0]
+) -> tuple[str, dict[str, str], bytes]:
     """``(url, headers, body)`` for one page of ``host``'s Board — the whole request, in one place.
 
     Public because ``check_liveness``'s ``p_zwayam`` asks the same question the scrape does, and a
     probe that asks it *differently* classifies Boards the scrape then handles differently. It
     previously imported only the body helpers and re-declared the headers, which is exactly how the
     two drift: its copy already sent a different ``User-Agent``, the one header measured to decide
-    whether this endpoint answers at all.
+    whether this endpoint answers at all. ``api_host`` is the cluster asked; only the URL's host
+    changes with it (:data:`API_HOSTS`).
     """
     return (
-        _API,
+        _on(api_host, _API),
         {
             "User-Agent": USER_AGENT,
             "Accept": "application/json, text/plain, */*",
@@ -385,8 +410,8 @@ class ZwayamScraper(BaseScraper):
     ats = "zwayam"
     #: zwayam meters **cumulative requests per IP** over a window and refuses with a bare 403 — no
     #: `Retry-After`, no `cf-mitigated`, no interstitial body. Every tenant is probed through the
-    #: one shared API (`public.zwayam.com`), so one origin carries the whole ATS and the quota is
-    #: spent within a single run: 47-71% of attempted Boards failed in each of the five runs
+    #: two API clusters (`API_HOSTS`), which share one quota (ADR-0303), so one origin carries the
+    #: whole ATS and the quota is spent within a single run: 47-71% of attempted Boards failed in each of the five runs
     #: 35175065218-35188643520, 55-73% of every run's board errors.
     #:
     #: Opted in on the **mechanism**, which is the bar this attribute's own docstring sets after
@@ -404,7 +429,7 @@ class ZwayamScraper(BaseScraper):
     #: not inert (the caution above about direct `http.fetch` calls does not apply). Three of the
     #: four hit the metered API — `_page` (`_API`), `_config` (`_CONFIG_API`) and
     #: `detail_request` (`_DETAIL_API`, sent by `run_detail_pass` through `_fetch`), all on
-    #: `public.zwayam.com`. The fourth, `_link_base`, GETs the Board's own
+    #: the Board's API cluster (`API_HOSTS`). The fourth, `_link_base`, GETs the Board's own
     #: customer domain and passes `marks_wall=False` for that reason; see the note there.
     #:
     #: `_DETAIL_API`'s documented UA-rule 403 (above) is a malformed-request 403, not a quota one.
@@ -426,8 +451,9 @@ class ZwayamScraper(BaseScraper):
         r"https://[^/]+(?:(?:/[\w.-]+)*/jobview/|/job-view/|/#!/job-view/)[\w.%~-]+$"
     )
     #: The detail POST supplies every Job's description (the listing's own text can be silently
-    #: truncated — module docstring); the ADR-0050 skip-list prunes it to new postings. True so
-    #: the embed planner knows a zwayam vector can have been built before its text arrived.
+    #: truncated — module docstring); the ADR-0050 skip-list prunes it to new postings and due
+    #: re-fetches. True so the embed planner knows a zwayam vector can have been built before its
+    #: text arrived.
     has_detail_pass = True
     #: A judgement call, not a measured optimum — say so plainly, because the two probe numbers
     #: it rests on are **not** a width sweep: 32-wide measured 9.3 responses/s and 16-wide 7.8,
@@ -461,6 +487,8 @@ class ZwayamScraper(BaseScraper):
         # asked again.
         self._config_asked = False
         self._resolved_config: tuple[int | None, str | None] = (None, None)
+        # The API cluster holding this Board, found by `_first_page` before any other call.
+        self._api_host = API_HOSTS[0]
 
     @staticmethod
     def slug_from(tenant: str, url: str) -> str:
@@ -481,8 +509,19 @@ class ZwayamScraper(BaseScraper):
         (ADR-0153)."""
         return f"{link_base}{quote(native_job_url, safe='')}"
 
+    def _first_page(self) -> dict[str, Any]:
+        """Page 0 from the first cluster whose answer carries ``data``, which then serves every
+        later call for this Board (module docstring). A host no cluster holds returns the last
+        ``data: null``, which reads as an unregistered host as before."""
+        for api_host in API_HOSTS:
+            self._api_host = api_host
+            payload = self._page(0)
+            if payload.get("data"):
+                break
+        return payload
+
     def _page(self, start: int) -> dict[str, Any]:
-        url, headers, body = search_request(self.slug, start)
+        url, headers, body = search_request(self.slug, start, self._api_host)
         response = self._fetch(
             "POST",
             url,
@@ -584,7 +623,7 @@ class ZwayamScraper(BaseScraper):
         try:
             response = self._fetch(
                 "POST",
-                _CONFIG_API,
+                _on(self._api_host, _CONFIG_API),
                 data=_multipart({"companyUrl": self.slug}),
                 headers={
                     "User-Agent": USER_AGENT,
@@ -627,7 +666,7 @@ class ZwayamScraper(BaseScraper):
             # a loss like any other failed detail, so each retries next run.
             raise DetailLost("no company id")
         return DetailRequest(
-            _DETAIL_API,
+            _on(self._api_host, _DETAIL_API),
             method="POST",
             headers={
                 "User-Agent": _DETAIL_USER_AGENT,
@@ -660,7 +699,7 @@ class ZwayamScraper(BaseScraper):
         rows: list[dict] = []
         total: int | None = None
         for page in range(_MAX_PAGES):
-            payload = self._page(len(rows))
+            payload = self._page(len(rows)) if page else self._first_page()
             data = payload.get("data")
             if not data:
                 # A hostname that is not a registered Board answers 200 with data: null (and a
@@ -697,7 +736,7 @@ class ZwayamScraper(BaseScraper):
         # Detail pass for every row the ADR-0050 store does not already hold text for: the
         # listing's own fields can be silently truncated (module docstring), so the detail is
         # the only text trusted as complete. Steady state, `needs_detail` prunes this to the
-        # Board's new postings.
+        # Board's new postings and the held ones the ADR-0211 rotation has due.
         # Two skips: the tech gate (ADR-0017) drops what `filter_tech` would drop anyway, and
         # `skip_held` (ADR-0048) drops what the description store already holds. The gate is
         # exact here — `parse` reads `jobTitle` and `departmentName` off this same listing row

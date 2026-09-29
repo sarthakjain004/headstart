@@ -1,4 +1,6 @@
+import importlib.util
 import runpy
+import sys
 from pathlib import Path
 
 import pytest
@@ -43,3 +45,37 @@ def test_company_from_row_keeps_the_tenant_where_the_scraper_keys_on_it():
 def test_company_from_row_refuses_an_ats_with_no_scraper():
     with pytest.raises(KeyError):
         company_from_row("no-such-ats", "acme", "")
+
+
+def _load_script(name: str, relative: str):
+    spec = importlib.util.spec_from_file_location(
+        name, Path(__file__).resolve().parents[1] / relative
+    )
+    module = importlib.util.module_from_spec(spec)
+    # A slots dataclass looks its own module up while it is built.
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_both_fingerprinters_keep_the_slug_case_their_scrapers_declare():
+    """The two fingerprinters used to hold one hand-kept set each, and #813 updated one of them:
+    the other kept verifying live mixed-case Lever Boards as dead (#824, #827, ADR-0271)."""
+    declared = {ats for ats, cls in SCRAPERS.items() if cls.keeps_slug_case}
+    for relative in (
+        "scripts/resolve/fingerprint.py",
+        "scripts/discover/fingerprint_careers.py",
+    ):
+        fingerprinter = _load_script(f"keeps_slug_case_{Path(relative).stem}", relative)
+        detected = set(fingerprinter.PATTERNS)
+        assert fingerprinter.KEEPS_SLUG_CASE & detected == declared & detected, relative
+
+
+def test_only_atses_measured_to_lose_a_board_when_lower_cased_keep_slug_case():
+    """Add an ATS here only with a live measurement showing a lower-cased slug loses its Board, and
+    record it in ADR-0271. Being case-sensitive is not enough: PyjamaHR is, but its slugs are all
+    lower-case, so lower-casing a captured one is what finds the Board."""
+    assert {ats for ats, cls in SCRAPERS.items() if cls.keeps_slug_case} == {
+        "lever",
+        "smartrecruiters",
+    }

@@ -80,7 +80,14 @@ from functools import lru_cache
 from pathlib import Path
 from re import _constants as re_constants
 from re import _parser as re_parser
-from urllib.parse import parse_qs, urlencode, urljoin, urlsplit, urlunsplit
+from urllib.parse import (
+    parse_qs,
+    unquote_plus,
+    urlencode,
+    urljoin,
+    urlsplit,
+    urlunsplit,
+)
 
 import certifi
 from curl_cffi import requests as _requests
@@ -103,6 +110,7 @@ from headstart.boards.board_identity import board_key, lower_key
 from headstart.boards.company_ref import CompanyRef
 from headstart.scrapers import registry
 from headstart.scrapers.adp_recruiting import SLUG as ADP_RECRUITING_SLUG
+from headstart.scrapers.zwayam import API_HOSTS as ZWAYAM_API_HOSTS
 
 try:
     import dns.resolver
@@ -164,8 +172,9 @@ PATTERNS: dict[str, tuple[str, list[str]]] = {
     "ashby": (
         "ats",
         [
-            r"api\.ashbyhq\.com/posting-api/job-board/([a-zA-Z0-9_-]+)",
-            r"jobs\.ashbyhq\.com/(?:embed\?[^\"'\s]{0,80}?board=)?([a-zA-Z0-9_-]+)",
+            # An Ashby Board name may hold a space, linked as %20 or + (#864).
+            r"api\.ashbyhq\.com/posting-api/job-board/((?:[a-zA-Z0-9_-]|%20|\+)+)",
+            r"jobs\.ashbyhq\.com/(?:embed\?[^\"'\s]{0,80}?board=)?((?:[a-zA-Z0-9_-]|%20|\+)+)",
         ],
     ),
     "zoho": (
@@ -587,11 +596,12 @@ BLOCK = {
     "http",
     "https",
 }
-# SmartRecruiters board ids keep their capitals (8,736 of 12,644 ledger tenants carry them), so
-# lower-casing would mint a second, non-matching row for a board we already hold. Lever's is about
-# the fetch: `jobs.lever.co/Onehouse` lists and `.../onehouse` 404s (2026-09-28), so a lowercased
-# slug verifies as a dead Board.
-CASE_SENSITIVE = {"smartrecruiters", "pyjamahr", "lever"}
+# ATSes whose captured slug keeps its capitals; every other slug is lower-cased. Each scraper
+# declares it as `keeps_slug_case`, and resolve/fingerprint.py reads the same attribute, so the two
+# fingerprinters cannot disagree on an ATS both detect (ADR-0271).
+KEEPS_SLUG_CASE = frozenset(
+    ats for ats, cls in registry.SCRAPERS.items() if cls.keeps_slug_case
+)
 
 # Each provider's own registrable domains, so scanning the provider's own site (or a company that
 # IS the provider — zoho.com is in this very seed) doesn't self-match its infra as a tenant board.
@@ -1070,7 +1080,9 @@ def scan(
                     tok = got[0] if got else ""
                 else:
                     raw = (m.group(1) if m.lastindex else "") or ""
-                    tok = raw if ats in CASE_SENSITIVE else raw.lower()
+                    if ats == "ashby":
+                        raw = unquote_plus(raw)  # the ledger spells "Blackpoint Cyber"
+                    tok = raw if ats in KEEPS_SLUG_CASE else raw.lower()
                     if tok:
                         lo = tok.lower()
                         # 3-60 chars: a 1-2 char token is almost always minified-JS debris (a
@@ -1114,6 +1126,8 @@ def get(url: str, cap: int = PAGE_CAP) -> tuple[str, str, str]:
 def post_json(url: str, headers: dict, body) -> tuple[dict | None, str]:
     """One bounded public listing POST; stop shared-API probing after a throttle response."""
     host = urlsplit(url).hostname or ""
+    # Zwayam's API clusters share one per-IP quota, so a wall on either bans both (ADR-0303).
+    quota_hosts = ZWAYAM_API_HOSTS if host in ZWAYAM_API_HOSTS else (host,)
     with _post_host_gate(host):
         if host in _post_banned:
             return None, "throttled"
@@ -1123,9 +1137,9 @@ def post_json(url: str, headers: dict, body) -> tuple[dict | None, str]:
                 url, headers=headers, timeout=7, verify=certifi.where(), **kwargs
             )
             if response.status_code == 429 or (
-                host == "public.zwayam.com" and response.status_code == 403
+                host in ZWAYAM_API_HOSTS and response.status_code == 403
             ):
-                _post_banned.add(host)
+                _post_banned.update(quota_hosts)
             if response.status_code != 200:
                 return None, f"http{response.status_code}"
             data = response.json()
@@ -2098,7 +2112,7 @@ def cmd_verify(args) -> None:
             if row["ats"] not in probes:
                 row["verification"] = "no-liveness-probe"
                 return row
-            verdict, jobs = probes[row["ats"]](row["tenant"], row["verify_url"])
+            verdict, jobs, *_ = probes[row["ats"]](row["tenant"], row["verify_url"])
         except Exception as exc:  # noqa: BLE001
             row["verification"] = f"listing-unreachable:{type(exc).__name__}"
             return row

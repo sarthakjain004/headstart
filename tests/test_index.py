@@ -822,6 +822,15 @@ def test_a_requisition_reaches_a_row_indexed_before_the_column_existed(
     ]
 
 
+def test_a_stores_doc_hash_never_reaches_the_served_table(tmp_path, monkeypatch):
+    """ADR-0285's fingerprint is planner-only, like `has_description`: LanceDB rejects a column
+    its schema lacks, so an add carrying it would fail every sync."""
+    _sync(tmp_path, monkeypatch, ["greenhouse:a:1"], meta_over={"doc_hash": "abc"})
+    table = lancedb.connect(str(tmp_path / "db")).open_table(idx.PROD_TABLE)
+    assert "doc_hash" not in table.schema.names
+    assert table.count_rows() == 1
+
+
 # ---- the description column (ADR-0104) ----
 
 

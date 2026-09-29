@@ -1,5 +1,5 @@
 {
- "description": "With no pick the index keeps a counting change's jump, marked, and its turnover arrives with those runs already left out.",
+ "description": "With no pick the index takes a counting change's jump out, sized on the first row (ADR-0270), and its turnover arrives with those runs already left out.",
  "answer_input": {
   "stamps": [
    "2026-09-13T00:00:00+00:00",
@@ -104,34 +104,44 @@
    "move": {
     "start": 900,
     "latest": 1300,
-    "hiring": 400,
-    "not_hiring": [],
-    "not_hiring_total": 0,
-    "percent": 44.44444444444444,
+    "hiring": 0,
+    "not_hiring": [
+     {
+      "change": "counting@2026-09-15T00:00:00+00:00",
+      "kind": "counting",
+      "label": "we got better at spotting tech jobs, so some jobs were added to or dropped from the counts",
+      "size": 400
+     }
+    ],
+    "not_hiring_total": 400,
+    "percent": 0.0,
     "percent_withheld": null,
     "span_days": 3.0,
-    "per_week": 933,
+    "per_week": 0,
     "turnover": {
      "opened": 50,
      "closed": 40,
      "net": 10
     },
     "share": {
-     "start": 9.0,
+     "start": 13.0,
      "latest": 13.0,
      "denominator_start": 10000,
      "denominator_latest": 10000,
-     "percent": 44.44444444444444
+     "percent": 0.0
     }
    },
    "netted": [
-    900,
-    900,
+    1300,
+    1300,
     1300,
     1300
    ],
-   "steps_at": [],
-   "index_base": 900,
+   "steps_at": [
+    2,
+    3
+   ],
+   "index_base": 1300,
    "arrived_by": null,
    "points": [
     900,
@@ -149,53 +159,112 @@
     "move": {
      "start": 900,
      "latest": 1300,
-     "hiring": 400,
-     "not_hiring": [],
-     "not_hiring_total": 0,
-     "percent": 44.44444444444444,
+     "hiring": 0,
+     "not_hiring": [
+      {
+       "change": "counting@2026-09-15T00:00:00+00:00",
+       "kind": "counting",
+       "label": "we got better at spotting tech jobs, so some jobs were added to or dropped from the counts",
+       "size": 400
+      }
+     ],
+     "not_hiring_total": 400,
+     "percent": 0.0,
      "percent_withheld": null,
      "span_days": 3.0,
-     "per_week": 933,
+     "per_week": 0,
      "turnover": {
       "opened": 50,
       "closed": 40,
       "net": 10
      },
      "share": {
-      "start": 9.0,
+      "start": 13.0,
       "latest": 13.0,
       "denominator_start": 10000,
       "denominator_latest": 10000,
-      "percent": 44.44444444444444
+      "percent": 0.0
      }
     },
     "netted": [
-     900,
-     900,
+     1300,
+     1300,
      1300,
      1300
     ],
-    "steps_at": [],
-    "index_base": 900,
+    "steps_at": [
+     2,
+     3
+    ],
+    "index_base": 1300,
     "arrived_by": null
    }
   ],
   "other": null,
-  "company_lines": [],
-  "breakdown": null,
+  "charted": 1,
+  "company_lines": [
+   {
+    "name": "__total__",
+    "label": "All tech roles",
+    "whole_company": false,
+    "estimated": false,
+    "move": {
+     "start": 900,
+     "latest": 1300,
+     "hiring": 0,
+     "not_hiring": [
+      {
+       "change": "counting@2026-09-15T00:00:00+00:00",
+       "kind": "counting",
+       "label": "we got better at spotting tech jobs, so some jobs were added to or dropped from the counts",
+       "size": 400
+      }
+     ],
+     "not_hiring_total": 400,
+     "percent": 0.0,
+     "percent_withheld": null,
+     "span_days": 3.0,
+     "per_week": 0,
+     "turnover": {
+      "opened": 50,
+      "closed": 40,
+      "net": 10
+     },
+     "share": {
+      "start": 13.0,
+      "latest": 13.0,
+      "denominator_start": 10000,
+      "denominator_latest": 10000,
+      "percent": 0.0
+     }
+    },
+    "netted": [],
+    "steps_at": [],
+    "index_base": null,
+    "arrived_by": null
+   }
+  ],
+  "breakdown": {
+   "closing": null
+  },
   "marked_changes": [
    {
     "id": "counting@2026-09-15T00:00:00+00:00",
     "kind": "counting",
     "ts": "2026-09-15T00:00:00+00:00",
     "label": "we got better at spotting tech jobs, so some jobs were added to or dropped from the counts",
-    "fields": [],
+    "fields": [
+     "tech_filter_version"
+    ],
     "changed": [
      "we got better at spotting tech jobs, so some jobs were added to or dropped from the counts"
     ],
     "company": null,
     "boards": null,
-    "sizes": {}
+    "sizes": {
+     "__total__": 400
+    },
+    "drawn": true
    }
   ],
   "day_markers": [

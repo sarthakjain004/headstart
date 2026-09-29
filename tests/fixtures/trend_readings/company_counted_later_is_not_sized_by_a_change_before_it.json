@@ -164,7 +164,7 @@
      "not_hiring": [],
      "not_hiring_total": 0,
      "percent": null,
-     "percent_withheld": "a window under 3 days",
+     "percent_withheld": "first counted on Sep 16",
      "span_days": 1.0,
      "per_week": null,
      "turnover": null,
@@ -189,6 +189,7 @@
    }
   ],
   "other": null,
+  "charted": 2,
   "company_lines": [
    {
     "name": "greenhouse:acme",
@@ -238,7 +239,7 @@
      "not_hiring": [],
      "not_hiring_total": 0,
      "percent": null,
-     "percent_withheld": "a window under 3 days",
+     "percent_withheld": "first counted on Sep 16",
      "span_days": 1.0,
      "per_week": null,
      "turnover": null,
@@ -273,7 +274,8 @@
     "boards": null,
     "sizes": {
      "greenhouse:acme": 10
-    }
+    },
+    "drawn": true
    }
   ],
   "day_markers": [

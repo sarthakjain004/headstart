@@ -334,8 +334,41 @@
    }
   ],
   "other": null,
-  "company_lines": [],
-  "breakdown": null,
+  "charted": 5,
+  "company_lines": [
+   {
+    "name": "__total__",
+    "label": "All tech roles",
+    "whole_company": false,
+    "estimated": false,
+    "move": {
+     "start": 62,
+     "latest": 246,
+     "hiring": 184,
+     "not_hiring": [],
+     "not_hiring_total": 0,
+     "percent": 296.7741935483871,
+     "percent_withheld": null,
+     "span_days": 5.0,
+     "per_week": 258,
+     "turnover": null,
+     "share": {
+      "start": 62.0,
+      "latest": 82.0,
+      "denominator_start": 100,
+      "denominator_latest": 300,
+      "percent": 32.25806451612903
+     }
+    },
+    "netted": [],
+    "steps_at": [],
+    "index_base": null,
+    "arrived_by": null
+   }
+  ],
+  "breakdown": {
+   "closing": null
+  },
   "marked_changes": [],
   "day_markers": [],
   "reference": [

@@ -74,6 +74,14 @@ belong in README and CONTEXT.md, where `tests/test_board_counts.py` checks them.
   `data/validate/aliases/icims.csv` with both, and it is the only thing that notices when a buried
   portal starts listing a posting of its own. `dedupe_boards.py` refuses `--apply` for this
   ATS.
+- **Recruitee: re-run `scripts/validate/dedupe_boards.py --ats recruitee --workers 4 --apply`
+  after every refresh of its ledger.** A renamed account keeps its old label, whose offers API
+  answers 302 to the new one (`thesjefgroup` → `elockers`), so both labels probe live and every
+  posting is served twice. The scan rewrites `data/validate/aliases/recruitee.csv` with
+  `redirect` rows only, so `--apply` is safe, and it is the only thing that notices a buried label
+  that stops redirecting. Keep `--workers 4`: Recruitee rate-limits per address, and a label
+  that answers 429 is reported `unreachable`. `--apply` writes only what the scan resolved, so
+  apply a run whose summary shows no `unreachable` (ADR-0301).
 - **Jibe lands a vanity career site as its client id, and parks clients on Boards already held.**
   A Board is `{client}.jibeapply.com`; resolve a vanity host (`careers.costco.com`) to its client
   with `scripts/discover/mine_jibe.py --vanity`, which reads the rows' `client_code`, else the
@@ -105,7 +113,10 @@ belong in README and CONTEXT.md, where `tests/test_board_counts.py` checks them.
   `subset-reqs`). Nothing scrapes a buried section, so the script is the only thing that notices
   when one starts listing a req of its own, or when the section it is buried onto dies. It re-reads
   every buried section and rewrites the file; `dedupe_boards.py` refuses `--apply` for this ATS
-  (ADR-0186).
+  (ADR-0186). The same run buries each **Twin host**'s sections onto its linked host, the one the
+  company's own site links to: one Taleo customer can be served under two hosts
+  (`pruitthealthcareers` and `pruitthealth`), and the script's `TWIN_HOSTS` names each pair
+  (ADR-0307). Add a pair there when a second host answers a held section with the same req ids.
 - **Eightfold: re-run `scripts/validate/eightfold_backing_boards.py` after every refresh of the
   eightfold ledger or of a ledger it reads (workday, successfactors, oracle, taleo_enterprise,
   greenhouse).** An Eightfold career site is often a front over the company's real ATS Board, so a
@@ -122,6 +133,12 @@ belong in README and CONTEXT.md, where `tests/test_board_counts.py` checks them.
   `WFNPJL…`, `… BVT4` or `TEST CODE`. Read that client's postings before you exclude it: the name
   is a lead, not proof. `WFN - The McDonnel Group` is a real employer, and a test client can
   carry no such name at all.
+- **Workday: re-run `scripts/validate/workday_company_names.py --new-since origin/main` after
+  landing Workday rows,** on the landing branch, and commit what it adds to
+  `data/validate/company_names/workday.csv`. A Board not on file names itself live on every run,
+  one extra GET each, and its name can move between runs (ADR-0216). `--new-since` reads only the
+  Boards the ledger did not hold at that ref; without it the script reads every uncached Hiring
+  Board, 3,923 on 2026-09-29.
 - **Radancy holds canonical front hosts only — no alias, QA or employee-only host.** A Radancy
   TalentBrew front is a Career front, not an ATS (ADR-0246); its Board is its host. Land the host its
   own sitemap's job URLs carry (`scripts/discover/mine_radancy.py` resolves it): vanity and country
@@ -132,10 +149,10 @@ belong in README and CONTEXT.md, where `tests/test_board_counts.py` checks them.
   of the ledger. A front is landed whether or not its Backing Board is held — the opposite of
   Phenom's rule, by the owner's decision of 2026-09-26; each run logs its Front duplication
   instead.
-- **Happydance parks a front whose Backing Board is held, until the owner decides.** A Happydance
-  site (Ph.Creative) is a Career front like Radancy's (ADR-0264); its Board is its host. Whether to
-  land held-backed fronts (Radancy's rule) or not (Phenom's) is open, so they sit in
-  `PARKED_BOARDS` with the measured share in the ADR. Resolve the Backing Board by apply URL, and
+- **Happydance parks a front whose Backing Board is held.** A Happydance site (Ph.Creative) is a
+  Career front like Radancy's (ADR-0264); its Board is its host. Held-backed fronts follow Phenom's
+  rule, not Radancy's (owner, 2026-09-28): they sit in `PARKED_BOARDS` with the measured share in
+  the ADR. Resolve the Backing Board by apply URL, and
   by employer where the front takes the application itself (Greenhouse embeds share its job ids).
 - **WP Job Openings lands a site under the host its own REST API names.** Its Boards are
   companies' own WordPress sites (ADR-0266). Land hosts through

@@ -74,6 +74,7 @@ from typing import Any, NamedTuple
 from headstart import log
 from headstart.boards.board_identity import ats_of
 from headstart.ingest import (
+    DESCRIPTION_CHANGES_PATH,
     PENDING_REDERIVE_PATH,
     REPO_ROOT,
     read_id_list,
@@ -86,8 +87,14 @@ from headstart.ingest.derived_meta import (
     salary_fields,
     salary_meta,
 )
-from headstart.ingest.doc_prep import DERIVATIONS_VERSION, META_FIELDS, stored_facts
-from headstart.ingest.update_descriptions import read_store
+from headstart.ingest.doc_prep import (
+    DERIVATIONS_VERSION,
+    META_FIELDS,
+    STALE_DOC_HASH,
+    doc_hash,
+    stored_facts,
+)
+from headstart.ingest.update_descriptions import read_changes, read_store
 from headstart.jobs.experience import from_field, from_seniority
 from headstart.jobs.salary import from_field as salary_from_field
 from headstart.scrapers import registry
@@ -99,6 +106,11 @@ _STORE = REPO_ROOT / "data" / "embeddings" / "jobs"
 _JOBS = REPO_ROOT / "data" / "jobs" / "tech"
 _DESCRIPTIONS = REPO_ROOT / "data" / "descriptions"
 _WATERMARK = REPO_ROOT / "data" / "state" / "derivations.json"
+#: Rows whose vector is shared with a row of another title in served table v298 (2026-09-29):
+#: the clone-then-edit vectors #694 found. Stamped `doc_hash` "stale" so they are re-embedded
+#: once (ADR-0285), as are the Jobs ADR-0207's change ledger records an edit for; both are inert
+#: for every row that already carries a fingerprint.
+_STALE_VECTORS = REPO_ROOT / "config" / "stale_shared_vectors.txt"
 
 #: Small batches bound process-transfer memory and spread expensive descriptions across workers.
 #: Progress remains every 50,000 written rows, independently of dispatch size.
@@ -124,8 +136,8 @@ _FACT_WITH_OVERLAY = ("remote",)
 #: Columns re-observed from the scrape every run — **derived** from the canonical metadata list, so
 #: a new served column is refreshed automatically instead of needing a second edit here that whoever
 #: adds it has no reason to know about. `title` is included for display: the vector keeps encoding
-#: the title it was built from until a doc-drift upgrade exists (ADR-0021), and a current title over
-#: a slightly stale vector beats a stale title.
+#: the title it was built from until `embed_plan` sees its `doc_hash` differ and re-embeds it
+#: (ADR-0285), and a current title over a stale vector for one run beats a stale title.
 FACT_FIELDS = tuple(
     f for f in META_FIELDS if f not in _IDENTITY and f not in _FACT_WITH_OVERLAY
 )
@@ -208,10 +220,14 @@ def corpus_facts(jobs_dir: Path) -> dict[str, dict]:
                 line = line.strip()
                 if not line:
                     continue
-                stored = stored_facts(json.loads(line))
+                job = json.loads(line)
+                stored = stored_facts(job)
                 facts[stored["id"]] = {
                     f: stored[f] for f in (*FACT_FIELDS, *_FACT_WITH_OVERLAY)
                 }
+                # Not a fact (`refresh_row` reads FACT_FIELDS only): the fingerprint a row
+                # embedded before ADR-0285 is stamped with, the text `embed_plan` also hashes.
+                facts[stored["id"]]["doc_hash"] = doc_hash(job)
     return facts
 
 
@@ -428,6 +444,8 @@ class _ChunkArgs(NamedTuple):
     sweep: bool
     pending: set[str]
     detail_pass: frozenset[str]
+    #: This chunk's ids on the one-off stale-vector list (ADR-0285).
+    stale: frozenset[str] = frozenset()
 
 
 def _row_batches(meta_path: Path, size: int) -> Iterator[list[dict]]:
@@ -458,6 +476,7 @@ def _chunk_args(
     pending: set[str],
     detail_pass: frozenset[str],
     deadline: float | None = None,
+    stale: set[str] | None = None,
 ) -> Iterator[_ChunkArgs]:
     """Pair each row batch with only the `facts`/`descriptions`/`pending` entries it needs."""
     for batch in batches:
@@ -473,6 +492,7 @@ def _chunk_args(
             sweep=sweep and (deadline is None or monotonic() < deadline),
             pending=pending & ids if pending else set(),
             detail_pass=detail_pass,
+            stale=frozenset(stale & ids) if stale else frozenset(),
         )
 
 
@@ -493,6 +513,8 @@ class _ChunkResult(NamedTuple):
     swept_without_text: int
     #: ``{"experience" | "salary": [Job id]}`` for every "lost" row.
     lost: dict[str, list[str]]
+    #: Rows given the ``doc_hash`` they never had (ADR-0285).
+    fingerprinted: int = 0
 
 
 def _refresh_chunk(args: _ChunkArgs) -> _ChunkResult:
@@ -502,7 +524,7 @@ def _refresh_chunk(args: _ChunkArgs) -> _ChunkResult:
     built from a picklable `_ChunkArgs` so it works under `spawn`, not just `fork`.
     """
     out_rows: list[dict] = []
-    fact_hits = derived_hits = backfilled = 0
+    fact_hits = derived_hits = backfilled = fingerprinted = 0
     exp_delta: Counter[str] = Counter()
     sal_delta: Counter[str] = Counter()
     country_delta: Counter[str] = Counter()
@@ -549,6 +571,19 @@ def _refresh_chunk(args: _ChunkArgs) -> _ChunkResult:
         if row.get("has_description") is None:
             row["has_description"] = has_description_for(meta, args.detail_pass)
             backfilled += 1
+        # The same once-only rule for `doc_hash` (ADR-0285), on rows embedded before it existed:
+        # what the vector encodes is only known at embed time, so the text this run scraped is
+        # the best stand-in, and from here an edit shows as a changed fingerprint. A row known to
+        # encode another posting's text is stamped "stale", which no real fingerprint equals, so
+        # `embed_plan` re-embeds it when its Board is next read. A row carrying one keeps it:
+        # only a re-embed may change it.
+        if row.get("doc_hash") is None:
+            if meta["id"] in args.stale:
+                row["doc_hash"] = STALE_DOC_HASH
+                fingerprinted += 1
+            elif (fact := args.facts.get(meta["id"])) is not None:
+                row["doc_hash"] = fact["doc_hash"]
+                fingerprinted += 1
         out_rows.append(row)
     return _ChunkResult(
         out_rows,
@@ -561,6 +596,7 @@ def _refresh_chunk(args: _ChunkArgs) -> _ChunkResult:
         unswept,
         swept_without_text,
         lost,
+        fingerprinted,
     )
 
 
@@ -609,6 +645,8 @@ def refresh(
     watermark: Path,
     pending_rederive: Path | None = None,
     sweep_budget_seconds: float = _SWEEP_BUDGET_SECONDS,
+    stale_vectors: Path | None = None,
+    description_changes: Path | None = None,
 ) -> int:
     if not 0 <= sweep_budget_seconds < float("inf"):
         raise ValueError("sweep budget must be finite and nonnegative")
@@ -621,6 +659,11 @@ def refresh(
     sweep = DERIVATIONS_VERSION > stored_version
     facts = corpus_facts(jobs_dir)
     pending = read_id_list(pending_rederive) if pending_rederive else set()
+    # Known to encode text they no longer carry (ADR-0285): the shared-vector list, and every Job
+    # whose held description was replaced since ADR-0207 began counting (the vector predates it).
+    stale = read_id_list(stale_vectors) if stale_vectors else set()
+    if description_changes:
+        stale |= set(read_changes(description_changes))
     if sweep:
         descriptions = held_descriptions(descriptions_dir)
     elif pending:
@@ -648,7 +691,7 @@ def refresh(
     # Outside the uploaded store: even SIGKILL must not leave a partial file
     # where the workflow's folder upload could publish it.
     tmp = store.parent / f".{store.name}-meta.jsonl.refresh"
-    rows = fact_hits = derived_hits = backfilled = 0
+    rows = fact_hits = derived_hits = backfilled = fingerprinted = 0
     exp_delta: Counter[str] = Counter()
     sal_delta: Counter[str] = Counter()
     country_delta: Counter[str] = Counter()
@@ -677,6 +720,7 @@ def refresh(
                 pending,
                 detail_pass,
                 deadline,
+                stale,
             )
             chunk_results = (
                 _parallel_chunks(pool, args_iter, workers)
@@ -690,6 +734,7 @@ def refresh(
                 fact_hits += chunk.fact_hits
                 derived_hits += chunk.derived_hits
                 backfilled += chunk.backfilled
+                fingerprinted += chunk.fingerprinted
                 exp_delta.update(chunk.exp_delta)
                 sal_delta.update(chunk.sal_delta)
                 country_delta.update(chunk.country_delta)
@@ -710,6 +755,9 @@ def refresh(
         f"{derived_hits} with changed derivations, "
         f"{backfilled} given a has_description they never had"
     )
+    if fingerprinted:
+        # Its own line: `scripts/runlog/fanout_merge.py` parses the one above (log contract).
+        _log.info(f"{fingerprinted} row(s) given a doc_hash they never had (ADR-0285)")
     if swept_without_text:
         # Stamped at the new version all the same, from field and title only (`_KEEP` holds a
         # description-sourced value) — so a lost ATS dir in the store reads here, not nowhere.
@@ -800,6 +848,20 @@ def main() -> int:
         help="ids whose description arrived after they were embedded (ADR-0062); "
         "re-derived at an unchanged version, then cleared",
     )
+    parser.add_argument(
+        "--stale-vectors",
+        type=Path,
+        default=_STALE_VECTORS,
+        help="ids whose vector encodes another posting's text, stamped doc_hash 'stale' so "
+        "embed_plan re-embeds them once (ADR-0285)",
+    )
+    parser.add_argument(
+        "--description-changes",
+        type=Path,
+        default=DESCRIPTION_CHANGES_PATH,
+        help="ADR-0207's per-Job edit ledger; an edited Job with no doc_hash is stamped 'stale' "
+        "too (ADR-0285)",
+    )
     args = parser.parse_args()
     return refresh(
         args.store,
@@ -808,6 +870,8 @@ def main() -> int:
         args.watermark,
         args.pending_rederive,
         args.sweep_budget_seconds,
+        args.stale_vectors,
+        args.description_changes,
     )
 
 

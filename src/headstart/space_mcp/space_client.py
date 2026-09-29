@@ -1,7 +1,8 @@
 """How the Space MCP server reaches the Space: read routes only, over HTTPS or in process.
 
 :class:`SpaceClient` is built once per tool call, which is what gives a call its **deadline**
-(90 s in all) and lets it know whether **the app has already answered in this call**. Its one
+(:data:`CALL_DEADLINE_S` in all) and lets it know whether **the app has already answered in this
+call**. Its one
 method, :meth:`SpaceClient.read`, takes a route from a closed set and query parameters, and
 answers the decoded JSON or raises a :class:`SpaceError` whose message is a sentence for the model.
 There is no way to name a path, a verb or a body: the client is read-only by its shape, which is
@@ -20,7 +21,9 @@ promise.
 **Waiting.** A boot measured 4 min 13 s (2026-09-28, the Space's own run log), longer than any
 agent should sit silently, so a call waits at most ``deadline_s`` and then says the Space is
 starting. A timeout *after* the app has answered in this call is a failure, not a boot: a slow
-route is not re-sent to a free CPU Space three more times.
+route is not re-sent to a free CPU Space three more times. In process (:func:`wsgi_fetch`) there
+is no boot to wait out, and a read still running at the deadline ends the call with a sentence
+saying so (ADR-0276).
 
 **Logs** name the route, the status, the attempt and the milliseconds — never a parameter, which
 may be someone's search.
@@ -50,11 +53,25 @@ _log = log.get(__name__)
 SPACE_URL = "https://imposeidon-headstart-search.hf.space"
 
 #: The agent contract this server needs (ADR-0253): `strict=1`, `/companies/lookup`, and each
-#: suggestion's `match` and `board_keys`. The app states the one it serves on every reply.
-AGENT_API = 1
+#: suggestion's `match` and `board_keys`; since 2, `counts=total` on `/facets` (ADR-0274); since
+#: 3, `country` (ADR-0273); since 4, `/job` and `like=` (ADR-0277); since 5,
+#: `/companies/locations` (ADR-0275); since 6, its places by country and `/companies/levels`
+#: (ADR-0323); since 7, `/requirements` (ADR-0324); since 8, `/hot`'s `opened_less_closed`
+#: lens (ADR-0321). The app states the one it serves on every reply.
+AGENT_API = 8
 
 #: The measured boot, said when a call gives up waiting for one.
 BOOT_MEASURED = "a boot measured 4 min 13 s on 2026-09-28"
+
+#: How long one tool call may take in all, over HTTPS or in process (ADR-0276). Claude Code and
+#: the MCP Inspector stop waiting for a request at 60 s (measured 2026-09-29), and the hosted
+#: route may first wait 10 s for a place, so an answer later than this reaches no one.
+CALL_DEADLINE_S = 45.0
+
+#: How many in-process reads that outlived their call may still be running before no new read
+#: starts (ADR-0276). A thread cannot be stopped, so each keeps a CPU busy until it finishes, and
+#: the Space has two.
+ABANDONED_READS_CAP = 2
 
 _MARKER = "x-headstart"
 _AGENT_API_IN_MARKER = re.compile(r"agent-api=(\d+)")
@@ -69,6 +86,10 @@ class SpaceRoute(StrEnum):
     HOT = "/hot"
     COMPANIES_SUGGEST = "/companies/suggest"
     COMPANIES_LOOKUP = "/companies/lookup"
+    JOB = "/job"
+    COMPANIES_LOCATIONS = "/companies/locations"
+    COMPANIES_LEVELS = "/companies/levels"
+    REQUIREMENTS = "/requirements"
 
 
 @dataclass(frozen=True)
@@ -81,7 +102,8 @@ class Reply:
 
 
 #: The port: ``(url, headers, timeout_s) -> Reply``. It answers every HTTP status as a
-#: :class:`Reply` and raises ``OSError`` (``TimeoutError`` included) only when no answer came back.
+#: :class:`Reply` and raises ``OSError`` (``TimeoutError`` included) only when no answer came back
+#: — or a :class:`SpaceError` when it knows why none will: :func:`wsgi_fetch` does, in process.
 Fetch = Callable[[str, Mapping[str, str], float], Reply]
 
 
@@ -111,26 +133,79 @@ def urllib_fetch(url: str, headers: Mapping[str, str], timeout_s: float) -> Repl
 IN_PROCESS_READ = "headstart.space_mcp.in_process_read"
 
 
-def wsgi_fetch(wsgi_app: Callable) -> Fetch:
+def wsgi_fetch(wsgi_app: Callable, abandoned_cap: int = ABANDONED_READS_CAP) -> Fetch:
     """The :data:`Fetch` for this server when the Space itself serves it (ADR-0267): each read is
     a request to ``wsgi_app`` in process, with no cookie, so no Account reaches an answer.
-    ``timeout_s`` has no hold on an in-process call; the outer ``/mcp`` request's own limits bound
-    it. Werkzeug is imported here, not at the top: the stdio install has no Werkzeug."""
+    Werkzeug is imported here, not at the top: the stdio install has no Werkzeug.
+
+    **``timeout_s`` holds** (ADR-0276). Each read runs on a thread of its own and is waited for at
+    most ``timeout_s``; past it the call stops waiting with :class:`DeadlinePassed`. The read
+    cannot be stopped, so it runs on to its end with a CPU busy all the while: while
+    ``abandoned_cap`` such reads are still running, a new read is refused at once with
+    :class:`SpaceBusy` instead of being started."""
     from werkzeug.test import Client
 
     client = Client(wsgi_app, use_cookies=False)
+    lock = threading.Lock()
+    abandoned = 0  # reads whose call stopped waiting, still running
 
     def fetch(url: str, headers: Mapping[str, str], timeout_s: float) -> Reply:
-        parts = urllib.parse.urlsplit(url)
-        # In an empty context, so the read gets an app context of its own: Flask reuses one
-        # already pushed on the thread, which would share the outer `/mcp` request's `g`.
-        answer = contextvars.Context().run(
-            client.get,
-            parts.path,
-            query_string=parts.query,
-            headers=dict(headers),
-            environ_overrides={IN_PROCESS_READ: True},
-        )
+        nonlocal abandoned
+        path, query = urllib.parse.urlsplit(url)[2:4]
+        with lock:
+            if abandoned >= abandoned_cap:
+                raise SpaceBusy(_STILL_FINISHING)
+        finished = threading.Event()
+        outcome: list[Any] = []  # the answer, or what the read raised
+        given_up = False
+        started = time.monotonic()
+
+        def read() -> None:
+            nonlocal abandoned
+            try:
+                # In an empty context, so the read gets an app context of its own: Flask reuses
+                # one already pushed on the thread, which would share the outer request's `g`.
+                outcome.append(
+                    contextvars.Context().run(
+                        client.get,
+                        path,
+                        query_string=query,
+                        headers=dict(headers),
+                        environ_overrides={IN_PROCESS_READ: True},
+                    )
+                )
+            except Exception as exc:  # noqa: BLE001 — raised again on the waiting thread
+                outcome.append(exc)
+            finally:
+                with lock:
+                    finished.set()
+                    if given_up:
+                        abandoned -= 1
+            if given_up:
+                _log.warning(
+                    "%s: a read past its call's deadline finished after %.0f s",
+                    path,
+                    time.monotonic() - started,
+                )
+
+        threading.Thread(target=read, name="space-mcp-read", daemon=True).start()
+        if not finished.wait(timeout_s):
+            with lock:
+                if not finished.is_set():
+                    given_up = True
+                    abandoned += 1
+                    running = abandoned
+            if given_up:
+                _log.warning(
+                    "%s: no answer within %.0f s; %d reads past their deadline running",
+                    path,
+                    timeout_s,
+                    running,
+                )
+                raise DeadlinePassed(_PAST_DEADLINE)
+        answer = outcome[0]
+        if isinstance(answer, Exception):
+            raise answer
         named = {k.lower(): v for k, v in answer.headers.items()}
         return Reply(answer.status_code, named, _decoded(named, answer.get_data()))
 
@@ -163,6 +238,29 @@ class SpaceFailed(SpaceError):
 
 class RateLimited(SpaceError):
     pass
+
+
+class DeadlinePassed(SpaceError):
+    pass
+
+
+class SpaceBusy(SpaceError):
+    pass
+
+
+#: Said when a call stops waiting for a read at its deadline.
+_PAST_DEADLINE = (
+    f"HeadStart did not answer within this call's {CALL_DEADLINE_S:g} s, so it stopped "
+    "waiting. Narrow the filters, or ask for the concise detail, and try again: a description "
+    "keyword over a broad search is the slowest kind."
+)
+
+#: Said when too many reads that outlived their call are still running to start another.
+_STILL_FINISHING = (
+    "HeadStart is still finishing earlier searches that ran past their time limit; try again "
+    "in a minute. A description-keyword search that finishes keeps its matches unless there are "
+    "very many, so the same search is then usually quick."
+)
 
 
 class RequestBudget:
@@ -220,7 +318,7 @@ class SpaceClient:
         base: str = SPACE_URL,
         fetch: Fetch = urllib_fetch,
         budget: RequestBudget | None = None,
-        deadline_s: float = 90.0,
+        deadline_s: float = CALL_DEADLINE_S,
         attempt_timeout_s: float = 20.0,
         waits: Sequence[float] = (5.0, 10.0, 20.0, 30.0),
         clock: Callable[[], float] = time.monotonic,
@@ -254,6 +352,8 @@ class SpaceClient:
             attempt += 1
             remaining = self._deadline - self._clock()
             if remaining <= 0:
+                if self._app_answered:  # the app is up; this call's reads used the time
+                    raise DeadlinePassed(_PAST_DEADLINE)
                 raise SpaceWaking(
                     "The HeadStart Space is starting. It restarts after each pipeline run and "
                     f"sleeps when idle, and {BOOT_MEASURED}; try again in a few minutes."

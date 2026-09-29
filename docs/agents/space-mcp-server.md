@@ -1,10 +1,13 @@
 # The Space MCP server — search, trends and hiring now for an agent
 
 An MCP server that lets an agent read HeadStart the way the website does: find open tech jobs,
-see how the number of openings is changing, and see which companies are hiring hardest this week.
+read a posting in full, see how the number of openings is changing, see which companies are
+hiring hardest this week, and see what a role's postings ask for.
 The Space hosts it at a URL anyone can add to Claude, and it also runs on your own machine as a
 subprocess of your agent client. Either way it answers from the deployed Space's own read routes,
-so every number is the one the website shows. The decision and its alternatives are ADR-0253,
+so every number is the one the website shows. It calls only postings opened and closed hiring,
+though: the website's Trends table still calls a category's change in openings "Hiring", re-counting
+included (ADR-0272, ADR-0321). The decision and its alternatives are ADR-0253,
 ADR-0258, ADR-0267, `docs/mcp/2026-09-28_space-mcp-server-plan.md` and
 `docs/mcp/2026-09-28_hosted-mcp-endpoint-options.md`; this file is the how-to.
 
@@ -38,13 +41,51 @@ It needs no account, token or sign-in.
     https://imposeidon-headstart-search.hf.space/mcp --transport http --method tools/list
   ```
 
-**Limits.** 30 requests a minute from one address, and 300 a minute shared by everyone arriving
-from Anthropic's published range (`160.79.104.0/21`, which is every claude.ai user); a refusal is a
-429 with `Retry-After`. At most 4 requests are answered at once across all callers; one more waits
-up to 10 s, then gets a 503 with `Retry-After`. A request from a web page on any other site (an
-`Origin` other than claude.ai, claude.com or the Space's own) is refused with a 403. Answers are
-capped as the local server's are, and the Space's boot and sleep apply: while it starts, the URL
-answers with Hugging Face's own error instead of a sentence, so ask again in a few minutes.
+**Limits** (ADR-0267, ADR-0276, ADR-0325).
+
+- **How often.** 30 requests a minute from one address, and 300 a minute shared by everyone arriving
+  from Anthropic's published range (`160.79.104.0/21`, which is every claude.ai user). Past it the
+  answer is a 429.
+- **How many at once.** At most 4 requests are answered at once across all callers, and at most 2
+  of them from one caller. Anthropic's range counts as one caller here too, because nothing in a
+  claude.ai request identifies the person. A request waits up to 10 s for a place. If its caller
+  already holds 2, it then gets a 429. If every place is held, it gets a 503.
+- **One description search at a time.** A `search_jobs` call with `keyword_in` set to
+  `description` or `both` scans every description the filters leave. It takes 16–18 s alone
+  and about twice that beside another (measured 2026-09-29), so it runs on a place of its own,
+  one for all callers. It never takes one of the 4 places above, so fast calls never wait behind
+  it. When another scan is running, it waits up to 10 s and then gets a 503 asking it to retry in
+  about 20 s, or to match the keyword in titles instead. The Space finds a description keyword's
+  rows once and keeps them (ADR-0320): the page, its total and the next page share one finding,
+  so a repeat or a second page reads no description. A first search looks for the keyword's
+  literal first and reads the exact word rule only on those rows: on a local copy of the table it
+  took 2 s where the plain scans took 8 s (ADR-0320).
+- **How refusals look.** Every refusal is a JSON-RPC error carrying the request's `id`, with the
+  HTTP status as its `code` and a sentence as its `message`, plus `Retry-After`. Claude Code shows
+  it to the model as `Streamable HTTP error: Error POSTing to endpoint: {…}` and does not retry.
+- **How long.** A tool call gets 45 s. Past that the call answers "HeadStart did not answer within
+  this call's 45 s…" and asks for narrower filters or the concise detail: a description keyword
+  with `detail: "full"` is the likeliest to meet it. A `search_jobs` call with a description
+  keyword says instead that reading descriptions is the slow part, that the Space keeps what the
+  read finds so the same call in a minute or two is usually quick, or to look in titles or add a
+  company (ADR-0320). The work it started runs on to its end, so
+  while two such reads are still running, a new call is told HeadStart is still finishing earlier
+  searches. Claude Code and the MCP Inspector give up on any request at 60 s (measured
+  2026-09-29), which is why the deadline sits under it.
+- **Other sites.** A request from a web page on any other site is refused with a 403. That means an
+  `Origin` other than claude.ai, claude.com or the Space's own.
+- **Size, boot and sleep.** Answers are capped as the local server's are. A pipeline restart or a
+  deploy does not interrupt the URL, because the old boot answers until the new one is up
+  (measured 2026-09-28, ADR-0267). While the Space wakes from sleep, the URL answers with Hugging
+  Face's own error instead of a sentence, so ask again in a few minutes.
+- **Hugging Face's edge fails some calls.** About one hosted call in seven came back as Hugging
+  Face's HTML error page (HTTP 502; the page itself says 500) on 2026-09-29, and an unrelated
+  Space failed the same way, so the request never reached HeadStart. No MCP client retries a
+  failed POST. The server's instructions tell the model that the page is a passing fault and that
+  every tool only reads, so it may retry the same call up to twice (ADR-0325). The
+  [installed server](#install-it) does not have this problem: it reaches the Space over HTTPS
+  itself and retries an edge reply for up to the call's 45 s, so the model sees one only when the
+  edge fails that whole time. Use it where you can run a command.
 
 ## Install it
 
@@ -98,9 +139,9 @@ connection is not left waiting on the download (it exits when its input ends):
 uvx --from https://github.com/sarthakjain004/headstart/archive/refs/heads/main.tar.gz headstart-space-mcp < /dev/null
 ```
 
-Installed this way the package carries no `config/`, so the tools' `category` is a free string
-rather than the list of role families; the server says so once on stderr when it starts. A name
-that is not a role family is still refused, by the Space.
+The wheel carries the list of role families (`pyproject.toml` force-includes
+`config/role_families.json`, ADR-0274), so installed this way the tools' `category` lists every
+family, as it does from a checkout and on the hosted server.
 
 ### From a checkout
 
@@ -148,35 +189,233 @@ the filter costing the most.
 
 - `company` is the site's company box: any company name *containing* the text. A Board key from an
   earlier answer (`lever:razorpay`, or the start of a result id) means every Board of that company.
+  When no company name contains the text ("Strpie"), the answer offers up to five directory
+  companies it may mean, with their keys.
 - `category` narrows one company's jobs to a job category, so it needs a directory company: a key,
   or an exact name, which is then read as the directory's largest company of that name — the
-  answer says so.
+  answer says so. The schema lists the current ids; a label ("AI, ML & Data Science"), a close name
+  ("AI/ML", "machine learning") or a retired id (`python-development`) is read as the id, and a
+  name that fits several categories or none is refused with the ids and labels to choose from
+  (ADR-0274). `read_trends` reads `category` the same way.
 - A salary bound needs `salary_currency` (30 lakh is `salary_min: 3000000`, `salary_currency: INR`).
+- **Place, three ways.** `country` is an ISO 3166-1 alpha-2 code (`US`, `GB`, `DE`, `IN`; the
+  schema lists the 94 it knows). It matches every way a job's location names the country — its
+  name, its states or provinces, its cities, its codes — so "Austin, TX" is in `US` and "München"
+  in `DE`; `IN` is the same rule as `india_place: "india"`. `india_place` narrows to an Indian city
+  or region. `location` is plain text the location contains, for a city outside India or a place
+  the gazetteer does not know. A location naming several countries is in each of them. How it
+  matches, its measured precision and recall, and its costs: ADR-0273.
 - **With a `query`, `sort` orders only the 2,000 closest matches.** For the highest salary or the
   newest anywhere, omit `query` and narrow with `keyword` and the filters.
-- `detail: "full"` adds how many jobs each filter option would give.
+- `detail: "full"` adds how many jobs each filter option would give, each option written as the
+  argument that selects it (`max_years=0: 2,334`, `first_seen_within_hours=24: 374`). A concise
+  answer asks the Space for the total alone (`/facets?counts=total`, ADR-0274), since every option's
+  count re-scans the matches: under a description keyword the full strip took 98.7 s against
+  10.6 s for the page itself.
+- **What a row says.** Each row gives the posting's age ("posted 2026-09-24 (5 days ago)") and
+  flags one over a year old; its employment type as the employer wrote it, beside the
+  `employment_type` values it counts as (`type "FULL_TIME" (full-time)`); and every scraped field,
+  the id included, quoted.
+- **Copies of one posting are listed once** (ADR-0323). A row repeating one above it on the page
+  is listed under it as `also #N`, giving only what differs; every id and link stays, and paging is
+  the Space's. A copy is the same company and title, brackets aside (one posting copied per
+  country), or the same title and first place under another spelling of the company, as one
+  posting on two of its Boards: Eversource's Radancy front says "EVERSOURCE" and its Workday Board
+  "Eversource Energy". On 16 live pages of 40 rows (2026-09-29) that second rule grouped two
+  pairs, both true copies.
+- **A company named only by its Board's host** ("aah.wd5.myworkdayjobs.com/external", an Oracle
+  pod, or nothing) is shown by the Company directory's name for its Board, marked
+  `(directory name)`; a Board the directory does not name either reads "no company name"
+  (ADR-0323).
+- **What the filters mean.** `max_years` also keeps jobs that state no experience, and marks them
+  "experience not stated". `salary_min` keeps a job whose stated range reaches the bound (the top
+  of the range counts), `salary_max` one whose range starts at or below it, and other currencies
+  are converted at HeadStart's fixed rates, a currency with no rate left out. A keyword in
+  descriptions can only match jobs with a stored description; the answer says how many of the
+  matches have one, as the page does.
+- **Its totals run higher than `read_trends`'.** A search counts every job the index serves; the
+  trends count only the jobs the role-family classifier places in a tech category, leaving out
+  those it calls non-tech (`ingest/role_trends.py`).
+- **`similar_to` a job id** ranks by that job's own stored vector instead of a `query`, and leaves
+  the job itself out; every filter applies as usual, and the total excludes it too. It cannot be
+  sent with `query` (ADR-0277).
 
-**`read_trends`** — how the number of open tech jobs changed over a window, with the changes that
-are not hiring (counting changes, newly found boards, duplicate removals) separated out. Whole
-index by default; or one `category`; or up to 10 `companies` (keys or exact names). `breakdown`
-lists the lines by category, seniority `level`, watched `role` or `company`. A company's counts
-begin 2026-09-13, when per-Board counting began, and the answer says so when you ask for more.
+**`get_job`** — up to 5 postings in full, by the ids `search_jobs` prints: title, company, place,
+remote, employment type, department, the experience the posting states and the years read from
+it, salary, posted and first-seen dates, the link, and the description.
 
-**`hiring_now`** — companies ranked over the trailing week on one Lens: `expansion` (net growth),
-`volume` (jobs opened) or `rate` (jobs opened as a share of openings). Staffing firms and job
-boards are left out unless you ask for them, as on the site. Each row carries a key the other two
-tools accept.
+- **The description is scraped text an employer wrote**, so it arrives as data: one JSON-quoted
+  line per paragraph between a header and an "End of description." line, with control characters
+  stripped. No line of it can close its quotes or pass for a line of the answer (ADR-0277).
+- `max_chars_per_job` (default 8,000, at most 12,000) caps each description, and the jobs of one
+  call share 18,000 characters, so five come back at about 3,600 each; ask for one id to read a
+  long posting whole. A cut description says which to change: when the shared budget cut it,
+  "ask for this id alone"; when `max_chars_per_job` did, how far to raise it. The Space serves at
+  most the first 12,000 characters of a description, which cuts about one in a hundred (the 99th
+  percentile was 11,860 on 2026-09-29).
+- **Whether it may have closed.** A posting its Board's latest scrape missed says so: HeadStart
+  removes it only if the next scrape misses it too (ADR-0083). An id not in the index now has
+  closed, or was never an id. When the Board its id names serves no job at all, the answer says it
+  is not a HeadStart id (ADR-0323).
+- A company named only by its Board's host is shown by its directory name, as in `search_jobs`.
+
+**`read_trends`** — how tech hiring changed over a window. **Hiring is postings opened and closed,
+and their net; the change in openings listed is not hiring** (ADR-0272). Whole index by default;
+or one `category`; or up to 10 `companies` (keys or exact names). `breakdown` lists the lines by
+category, seniority `level`, watched `role` or `company`.
+
+- **Hiring comes first.** An answer leads with "Hiring, as postings opened and closed: O opened,
+  C closed, net N".
+- **Then the change in openings listed, split three ways.** An answer then gives "Openings listed:
+  A → B" and splits that change into three parts:
+  - what turnover accounts for;
+  - what the counting changes HeadStart sized account for;
+  - **the unsized rest**, which is not a hiring figure. It holds re-counting (Boards found or
+    dropped, duplicates removed, counting changes HeadStart did not size) and any hiring before
+    turnover began.
+
+  The whole index sizes its counting changes (ADR-0270) and, from the first per-Board count on
+  2026-09-13, its Boards found (ADR-0304), but not its duplicate removals. Before ADR-0304, on
+  2026-09-29, the 30-day window listed +111,929 openings, counting changes were sized at −22,693,
+  postings opened and closed netted −923, and the unsized rest was +135,545.
+- **A window turnover covers only part of leads with one plain sentence** (ADR-0321). Turnover
+  began on 2026-09-25 18:16, so every view whose window starts earlier, a company breakdown
+  included, first says "HeadStart can measure hiring, as postings opened and closed, only from
+  2026-09-25 18:16: 3.4 of this window's 30.0 days. Over the whole window it cannot say whether
+  hiring rose or fell". A window that ends before turnover began says it has no hiring figure at
+  all.
+- **Turnover's other gaps are said next, before any figure.** It leaves out the runs inside its
+  span where a counting change landed. Some closures go uncounted, so closed can run low; the
+  answer gives the Boards as "N of M". On 2026-09-29 all 12,407 of the index's Boards had such a
+  run, so the answer says closed runs low.
+- **Each counting change is named once**, numbered, by short tags ("[4] category list + duplicate
+  check + category sorting"), and figures refer to it by number. One line glosses each tag once,
+  and "growth rescaled by [n]": where taking change [n] out would have left a line below zero,
+  HeadStart scaled the line's earlier growth down instead.
+- **A retired category names its successor.** A window from before the category list changed on
+  2026-09-25 reads the old categories: "Security Engineering (retired; now Security)". Its jobs
+  were re-sorted, so it does not line up with the successor's figures in a later window.
+- **The closing line is an arithmetic check.** It says each line's parts add up to its change.
+  That checks sums, not that any figure is hiring.
+- **The site's own "hiring" figure appears only with `detail: full`**, labelled as including the
+  unsized change.
+- **The window.** It is `days` back from now, or `since`/`until` dates; a date after today is
+  refused. The answer says when the history starts later than asked. A company's counts begin
+  2026-09-13, when per-Board counting began.
+- **Coverage.** `coverage: comparable` counts only the Boards tracked at the window's start, as
+  the site's toggle does. The default `all` is what the site lists.
+- **Measure.** `measure: new` reads postings first seen in the trailing 7 days, the site's New
+  this week. It is not a count of postings opened.
+- **A role breakdown** is the watched roles within a category, not the category. The answer also
+  gives the category's own figures, and says when a category has no watched roles.
+
+**`hiring_now`** — companies ranked over the trailing week on one Lens. The default,
+`opened_less_closed`, ranks postings opened less postings closed, only for companies whose
+closures were counted on every Board, so its figure holds no re-counting (ADR-0321). The site's
+other Lenses are `expansion` (the site's net change, less the counting steps it could size),
+`volume` (postings opened) and `rate` (postings opened as a share of openings). Every row gives
+the site's numbers and opened less closed.
+
+- **The site's Lenses apply every check that questions what they rank by.** On `expansion`,
+  `volume` and `rate` a row is flagged when:
+  - its net is more than its postings opened and closed could make, sign by sign, even at their
+    pace over the whole week. Such a net is mostly re-counting, so report the row's opened and
+    closed;
+  - its closures were not counted, on all or only some of its Boards;
+  - it opened more postings than are open now;
+  - on `rate`, it has under 50 openings (a small base).
+
+  `opened_less_closed` flags nothing, because none of these questions its figure, and it keeps its
+  own order.
+- **Flagged rows go last on the site's Lenses.** Every row `/hot` serves on `expansion`, `volume`
+  or `rate` is listed unflagged first, each group in the site's order, and then cut to `limit`.
+  Each row gives its place on the page ("site #7"). On 2026-09-29 the page's Expansion list began
+  with Bosch Group, +442 on 23 postings opened and 33 closed; the answer began with Capital One,
+  site #7.
+- **Operators.** `operator` is who posts the jobs:
+  - `employer`: the company itself, and any company not on the curated list;
+  - `services`: an IT services firm posting client work;
+  - `staffing`: a staffing agency;
+  - `aggregator`: a job board.
+
+  Staffing firms and job boards are left out unless you ask for them, as on the site.
+- **Keys.** Each row carries a key the other two tools accept.
+
+**`find_company`** — look a company up by `name`, typos, prefixes and known aliases allowed. It
+lists every Company directory entry the name may mean, best match first, each with its key, its
+Boards, its tech openings and how it matched (exact name, alias, prefix, every word, one typo, or
+spaces ignored). It picks none of them: one employer can be several entries (one per ATS, or a
+regional arm), and anything but an exact name or alias is a guess to confirm with the user. As in
+the site's picker, of the entries sharing one name only the largest is listed; a smaller one is
+reached by its Board key, which `find_company` also looks up exactly.
+
+**`company_profile`** — one company's hiring, for a recruiter or a researcher. `company` is a key
+from `find_company` or an exact name, read as `read_trends` reads one; the answer names the
+company, its Boards and any other directory company the name may mean. It gives:
+
+- its tech openings now, and the jobs its Boards serve that the tech filter sets aside;
+- the last 30 days: postings **opened and closed** first (counted since 2026-09-25, when turnover
+  counting began), then the change in openings with its re-counting part named;
+- its job categories now, largest first, each with the postings opened and closed in it;
+- where its served jobs are, by country, up to eight countries, each with its three commonest
+  places as written: "Dublin" and "Dublin, Ireland" both count in Ireland. A place is read as
+  `search_jobs`' `country` reads it, so a country's figure is what that filter would count; a job
+  naming two countries counts in both, and the jobs whose place names no country ("N/A",
+  "Remote") are counted apart (`/companies/locations`, ADR-0275, ADR-0323);
+- its levels, in the Trends Level view's bands (internships, 0–1, 2–4, 5–7 and 8+ years, not
+  stated), each job counted once (`/companies/levels`, ADR-0323);
+- how many of its served jobs are remote, of each employment type, state a salary, were posted in
+  the last day, week, month or quarter, and are new to HeadStart this day or week. A line whose
+  every count is 0 is left out: a Board that states no employment type would otherwise read as
+  hiring no full-time staff.
+
+To list the jobs behind any of these, pass the key to `search_jobs` as `company`.
+
+**`role_requirements`** — what postings for a role or a job category ask for, counted over a sample
+of them, for a career switcher's "what does a data engineer typically need" (ADR-0324). It reads
+`/requirements`, one route, and returns counts only.
+
+- **The sample.** `query` is the role, as in `search_jobs`; the sample is the 300 postings closest
+  to it among those the filters admit. `category` alone samples the category's 300 newest postings
+  across the whole index; with `query` too, the closest within the category among the 2,000
+  closest to the query. The answer's first line says which, over how many, of how many: "counted
+  over 300 postings, of 514,163 that the filters admit". A query does not narrow, so that total is
+  every posting the filters admit; the answer gives the similarity range of the sample instead.
+- **Filters.** `company` (a name matched as the company box matches, or a Board key), `country`,
+  `india_place`, `location`, `remote` and `max_years`, each meaning what it means in
+  `search_jobs`.
+- **Skills.** The tech skills the sampled descriptions mention, from a fixed list of about 380
+  (`config/tech_skills.json`, matched by `serving/tech_skills.py`), each as a share of the sampled
+  postings that carry a description, with how many distinct employers mention it. A posting counts
+  once per skill. A mention can be an employer describing itself ("committed to AI, computer vision
+  and sensor fusion" in every posting of one company), which is why the employers figure is there:
+  a large share from few employers is boilerplate, not demand. The skill an employer is named after
+  (Salesforce at Salesforce) is not counted for its own postings.
+- **The rest.** Minimum years in bands (0–1, 2–4, 5–7, 8+), kept apart by source: stated by the
+  posting, estimated from the title's seniority, or not stated. Salary quartiles per currency, a
+  year, over the middle of each stated range. The remote share, the companies with the most
+  sampled postings (with a key), the countries their locations name (ADR-0273), and, for a query,
+  the job categories of the sample.
+- **No description text.** Descriptions are scraped and read only on the Space; the answer carries
+  counts, the list's own skill names and quoted company names.
+- **Cost.** The Space reads the sample's descriptions by id, never the whole column, and keeps each
+  answer for the boot. Measured on a local copy of the served table (514,163 rows, 2026-09-29):
+  0.4–1.0 s a sample of 300, 3.9 s under a `country` whose place pattern is long (Germany).
 
 ## What it cannot tell you, and why
 
-- **No job descriptions.** No Space route serves one; titles, companies and locations are what an
-  answer carries, each quoted as scraped text.
+- **No last-seen date.** The served table has no per-Job "last seen"; `get_job` says only whether
+  its Board's latest scrape missed the posting (ADR-0277).
+- **A description as stored, not as posted.** Most ATSes' descriptions are stored with their line
+  breaks collapsed, so a posting often reads as one paragraph, and one that is longer than 12,000
+  characters is cut there.
 - **No per-category Hiring now.** Ranking every company within one category costs about 11 ms a
   company at the Space; `read_trends` with a `category` and named `companies` answers it for the
   companies you name.
-- **A cold Space takes minutes.** The Space restarts after every pipeline run and sleeps when idle;
-  a boot measured 4 min 13 s on 2026-09-28. A call waits at most 90 s, then says the Space is
-  starting — ask again in a few minutes.
+- **A cold Space takes minutes.** The Space restarts after every pipeline run, but the old boot
+  answers until the new one is up (measured 2026-09-28, ADR-0267). It also sleeps when idle, and
+  waking it takes a boot, measured at 4 min 13 s on 2026-09-28. A call waits at most 45 s, then
+  says the Space is starting — ask again in a few minutes.
 - **An older Space is refused, not trusted.** Every reply from the app states the agent contract it
   serves; a Space older than this server is reported as needing a deploy, because it would ignore
   the strictness that keeps a mistyped filter from quietly widening a search.
@@ -190,7 +429,9 @@ server changes.
    holds the answer function and ends with `TOOL = SpaceTool(...)`: title, description (the rule
    that matters most first; at most 2,048 characters), a closed input schema in the portable JSON
    Schema keywords, the one `when_to_use` sentence the server's instructions will carry, and
-   `max_chars`, the answer's size at the tool's largest input.
+   `max_chars`, the answer's size at the tool's largest input. An argument whose caller's words
+   need reading before the schema check (a category's label) names its reader in
+   `argument_readers`, as `category` does with `role_families.resolve`.
 2. Add `<tool_name>.TOOL` to `REGISTRY` in `src/headstart/space_mcp/tools/__init__.py`. The server
    lists it, puts its `when_to_use` in its instructions, checks its arguments against its schema,
    fills its defaults, and cuts any answer past its `max_chars`.
@@ -215,7 +456,11 @@ since a public route can never carry one person's data.
 
 `src/headstart/space_mcp/` — `tools/` (one module per tool, and `REGISTRY`), `space_tool.py` (what a
 tool is), `server.py` (serves the registry), `space_client.py` (the one way it reaches the Space),
-`company_scope.py`, `role_families.py` and `scraped_text.py` — on the shared protocol module in
-`src/headstart/mcp_protocol/` (`messages.py`, and the `stdio.py` and `streamable_http.py`
-transports). The hosted route is `/mcp` in `deploy/hf-space/app.py`. Tests:
+`company_scope.py`, `company_names.py`, `posting_copies.py`, `role_families.py` and
+`scraped_text.py` — on the shared protocol module in `src/headstart/mcp_protocol/` (`messages.py`,
+and the `stdio.py` and `streamable_http.py` transports). The hosted route is `/mcp` in
+`deploy/hf-space/app.py`, and the three routes only the tools read are `/companies/locations` and
+`/companies/levels`, answered by `src/headstart/serving/location_counts.py` and `level_counts.py`,
+and `/requirements`, answered by `JobSearch.requirements` with `serving/requirement_counts.py` and
+`serving/tech_skills.py`. Tests:
 `tests/test_space_mcp_*.py` and `tests/test_mcp_protocol_*.py`.

@@ -178,7 +178,7 @@
   </p>
 
 </div>
-<script>
+<script nonce="{{ csp_nonce }}">
 // Embedded in another site's page — huggingface.co/spaces/… frames this app — the door
 // cannot work in place, for two independent reasons, so it offers the way out instead.
 // 1. Google's sign-in needs the `identity-credentials-get` permission from the embedding
@@ -226,6 +226,11 @@ function gsiFailed(){
     'Google sign-in didn\u2019t load \u2014 a content blocker may be stopping it. Allow accounts.google.com and reload.';
 }
 if (EMBEDDED) offerNewTab();   // before Google's script loads — the door is usable at once
+// Google's script below reports here rather than through inline onload/onerror attributes,
+// which the Content-Security-Policy refuses (#595). Neither event bubbles, but a capturing
+// listener on the document hears both.
+document.addEventListener('load', e => { if (e.target.id === 'gsi-client') initSignin(); }, true);
+document.addEventListener('error', e => { if (e.target.id === 'gsi-client') gsiFailed(); }, true);
 </script>
-<script src="https://accounts.google.com/gsi/client" async onload="initSignin()" onerror="gsiFailed()"></script>
+<script id="gsi-client" src="https://accounts.google.com/gsi/client" async></script>
 </body></html>

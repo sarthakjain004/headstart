@@ -19,3 +19,10 @@ def test_a_lever_slug_keeps_the_casing_the_page_links_it_in():
     postings and `.../cesiumastro` answers "Document not found" (measured 2026-09-28)."""
     html = '<a href="https://jobs.lever.co/CesiumAstro">Careers</a>'
     assert ("lever", "CesiumAstro") in fingerprint.detect(html)
+
+
+def test_an_ashby_board_name_with_a_space_is_kept_whole():
+    """#864: `Blackpoint%20Cyber` was cut to `blackpoint`, a Board that 404s."""
+    html = '<a href="https://jobs.ashbyhq.com/Blackpoint%20Cyber">Jobs</a>'
+    assert ("ashby", "blackpoint cyber") in fingerprint.detect(html)
+    assert ("ashby", "blackpoint") not in fingerprint.detect(html)

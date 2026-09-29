@@ -7,7 +7,9 @@ rejection of topology C, an MCP endpoint served by the Space, and its deploy-tri
 [ADR-0258](0258-the-spaces-read-routes-answer-anyone.md) (the public read routes the tools read),
 [ADR-0262](0262-a-caller-with-no-session-reads-the-public-routes-sixty-times-a-minute.md) (how a
 caller is counted), [ADR-0137](0137-an-agent-reads-a-resume-by-running-the-resume-tabs-own-javascript.md)
-(the hand-written protocol loop)
+(the hand-written protocol loop) · **Amended by:**
+[ADR-0290](0290-a-merge-deploys-the-space-only-when-it-changes-what-the-space-loads.md) (the deploy
+trigger lists only what the Space loads)
 
 ## Context
 
@@ -21,9 +23,9 @@ every caller's address) and staying local-only (C, which serves no web or mobile
 
 ADR-0253 rejected a Space route because every change to a tool's wording would restart the Space,
 costing about four minutes of availability, and because it added an internet-facing JSON-RPC
-surface. Both objections have weakened. Deploys now roll with no downtime (measured 2026-09-28),
-and since ADR-0258 the read routes answer anyone, so `/mcp` exposes nothing an anonymous caller
-cannot already read.
+surface. Both objections have weakened. Deploys now roll with no downtime (not measured when this
+was written; measured since, see the 2026-09-29 amendment), and since ADR-0258 the read routes
+answer anyone, so `/mcp` exposes nothing an anonymous caller cannot already read.
 
 ## Decision
 
@@ -126,10 +128,12 @@ boot of 4 min 13 s. Each tool call runs the same routes a browser search does.
 
 ## Risks, stated plainly
 
-- **A booting Space answers with HF's edge error, not a sentence.** The stdio server waits out a
-  boot and says the Space is starting. A hosted client meets the edge directly. Whether the
-  pipeline's `restart_space` rolls like a deploy has not been measured; if it does not, claude.ai
-  sees errors for about four minutes after each pipeline run.
+- **A Space waking from sleep answers with HF's edge error, not a sentence.** The stdio server
+  waits out a boot and says the Space is starting. A hosted client meets the edge directly. A
+  pipeline `restart_space` and a deploy both roll: the old boot answers until the new one is up
+  (see the 2026-09-29 amendment). So a hosted client meets the edge's error while the Space wakes
+  after 48 idle hours, which takes a boot of about four minutes, or while HF's edge itself fails,
+  as it did from about 22:13 to 22:58 UTC on 2026-09-28.
 - **The Anthropic range is one budget.** At 300 a minute, heavy claude.ai use could meet it and
   refuse everyone there together. The Space's logs will show 429s if it does.
 - **The Origin log is the only evidence of what Anthropic sends** until a real connection is made.
@@ -149,3 +153,32 @@ boot of 4 min 13 s. Each tool call runs the same routes a browser search does.
   tools/call for every tool against the real app, legacy and stateless. `tests/test_space_app.py`
   covers the public-path set, POST only, the limits, and the in-process exemption.
 - PRIVACY.md says `/mcp` counts addresses as the read routes do.
+
+## Amendment (2026-09-29): a restart and a deploy both roll (#837)
+
+This ADR said deploys roll with no downtime, but it cited no measurement, and it left the
+pipeline's `restart_space` unmeasured. Both have now been measured by polling `POST /mcp` every
+5 s. Each is one sample.
+
+- **A pipeline `restart_space` rolls.** The restart at 21:54:10 UTC on 2026-09-28 was polled 307
+  times from 21:37:43 to 22:03:17. The Space's stage read `RUNNING_APP_STARTING` from 21:54:14 to
+  22:00:07. The old boot answered throughout, and the new boot was first seen at 22:00:37. Two
+  polls failed, at 21:58:14 and 22:01:17. Each was a single HF edge 502, and the next poll was
+  answered.
+- **A deploy rolls, and so do two in a row.** #849 was committed to the Space at 22:58:39 UTC and
+  #843 at 23:04:37, while #849's container was still booting. This poll also recorded which
+  replica answered (`x-proxied-replica`), and every 30 s it polled two popular RUNNING Spaces as a
+  control for HF's edge. It made 266 polls from 22:58:39 to 23:30. The old replica gave every app
+  answer until 23:10:54, and the new one gave every app answer from 23:10:59, with no gap at the
+  swap. 26 polls failed. All were HF edge 502s, never more than 3 in a row. The control Spaces
+  failed at a similar rate in the same window (8 of 88 polls).
+- **An HF edge incident is not a deploy.** From 22:13:45 to about 22:58, most polls failed,
+  across the deploys of #839, #842 and #847. The container that was up (#842's, polled from
+  22:26 to 22:40) logged a 200 for every request that reached it, and the failures went on after
+  its boot was up. At 22:41, four popular RUNNING
+  Spaces answered 502 or 503 from here, and four of five check-host.net nodes got a 502 from
+  ours. HF's edge was failing across Spaces, not only ours.
+
+What a hosted client still meets: a Space waking from sleep (§Risks) and HF's own edge failures.
+Both are outside this repository. [ADR-0290](0290-a-merge-deploys-the-space-only-when-it-changes-what-the-space-loads.md)
+(#836) makes deploys rarer. Deploys roll, so the gain is fewer boots, not less downtime.

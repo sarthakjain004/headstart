@@ -7,9 +7,15 @@ allowed. The run's stream-json transcript is saved line by line as it arrives, t
 tool calls (name and arguments), tool results (their characters and whether they were errors)
 and the final answer, and judged by the task's verifier. ``trend_sign`` and ``hot_top`` re-read
 the Space's public read routes themselves, as the server does, so they check the answer against
-the Space's own figures rather than against what the agent was told. ``tool_args`` (``search_args``
-in the brief's fixed schema) checks the arguments instead and trusts the Space to apply them:
-``strict=1`` makes it refuse any it would drop.
+the Space's own figures rather than against what the agent was told; ``trend_sign`` also needs
+the answer to say when opened and closed cover only part of the window, and ``hot_top`` fails an
+answer that leads with a row hiring_now flagged. ``tool_args`` (``search_args`` in the brief's
+fixed schema) checks the arguments instead and trusts the Space to apply them: ``strict=1`` makes
+it refuse any it would drop. ``title_keyword_rows`` checks the arguments, then reads the rows that
+call returned back from ``/job`` and needs the keyword where a word starts in every title, the
+keyword's own rule (ADR-0299, ADR-0325).
+A run whose server was not connected at its start is not judged: it is an error, named first in
+the summary.
 
 It invokes Claude Code, the MCP client under test, not an LLM API from project code, so it does
 not route through the llm-router. The plan lists that reading for the owner (§12, item 8).
@@ -28,7 +34,13 @@ Run (a live run needs only the network and a signed-in ``claude``):
   python scripts/eval/space_mcp_eval.py --dry-run
   python scripts/eval/space_mcp_eval.py --only t03
   python scripts/eval/space_mcp_eval.py --heldout <sealed file>
+  python scripts/eval/space_mcp_eval.py --http https://imposeidon-headstart-search.hf.space/mcp
+  python scripts/eval/space_mcp_eval.py --repeat 3
 ``HEADSTART_SPACE_URL``, when set, points both the server and the verifiers at another Space.
+``--http`` registers the hosted Streamable HTTP endpoint (ADR-0267) in place of the stdio server,
+and runs ``claude`` with ``MCP_CONNECTION_NONBLOCKING=false`` so it waits for that server to
+connect; the verifiers still read ``HEADSTART_SPACE_URL`` or the deployed Space. ``--repeat N``
+runs the set N times and tallies each task.
 """
 
 from __future__ import annotations
@@ -64,7 +76,7 @@ from headstart.space_mcp.space_client import (
     SpaceRoute,
 )
 from headstart.space_mcp.space_tool import ANSWER_CEILING_CHARS
-from headstart.space_mcp.tools import REGISTRY
+from headstart.space_mcp.tools import REGISTRY, hiring_now
 
 ITERATION_TASKS = _ROOT / "scripts" / "eval" / "space_mcp_eval_tasks.json"
 ARTIFACTS = _ROOT / "experiment" / "space-mcp-eval" / "artifacts"
@@ -75,7 +87,7 @@ TOOL_PREFIX = f"mcp__{NAME}__"
 LARGE_RESULT_CHARS = ANSWER_CEILING_CHARS
 #: §9's bar for median tool calls.
 MEDIAN_CALLS_BAR = 3
-#: A run is killed past this: each tool call waits at most 90 s for the Space.
+#: A run is killed past this: each tool call waits at most 45 s for the Space (ADR-0276).
 TASK_TIMEOUT_S = 600
 
 #: Tool errors that are the Space or the setup failing, not the tool refusing the arguments the
@@ -89,6 +101,8 @@ _INFRASTRUCTURE_ERRORS = (
     "with non-JSON",
     "requests this minute",
     "Not on this deployment yet",
+    "did not answer within",
+    "still finishing earlier searches",
 )
 
 
@@ -122,6 +136,9 @@ class Transcript:
     cost_usd: float | None = None
     #: Why the run did not end in a successful result, or None when it did.
     run_error: str | None = None
+    #: The server's status in the run's init event ("connected", "pending", "failed"), or None
+    #: when the init event did not name it.
+    server_status: str | None = None
 
 
 def _text(content: Any) -> str:
@@ -151,6 +168,14 @@ def parse(lines: Iterable[str]) -> Transcript:
         kind = event.get("type")
         if kind == "system" and event.get("subtype") == "init":
             transcript.model = event.get("model")
+            transcript.server_status = next(
+                (
+                    server.get("status")
+                    for server in event.get("mcp_servers") or []
+                    if server.get("name") == NAME
+                ),
+                None,
+            )
         elif kind in ("assistant", "user"):
             content = (event.get("message") or {}).get("content")
             for block in content if isinstance(content, list) else ():
@@ -196,6 +221,17 @@ class Space(Protocol):
 
 
 Verifier = Callable[[dict[str, Any], Transcript, Space], Verdict]
+
+
+def unconnected(transcript: Transcript) -> str | None:
+    """Why the model had no tools in this run, or None when the server was connected at its
+    start. Such a run says nothing about the model or the tools, so it is not judged."""
+    if transcript.server_status == "connected":
+        return None
+    return (
+        f"the {NAME} server was {transcript.server_status or 'not named'} at the run's start, "
+        "so the model had no tools: not judged"
+    )
 
 
 def _found(text: str, term: str | list[str]) -> bool:
@@ -265,31 +301,92 @@ def _misses(expect: dict[str, Any], arguments: dict[str, Any]) -> list[str]:
     return misses
 
 
-def verify_tool_args(
-    expect: dict[str, Any], transcript: Transcript, space: Space
-) -> Verdict:
-    """One successful call of ``expect["tool"]`` (search_jobs by default) whose arguments meet
-    every ``must`` rule, one ``must_any`` alternative when given, and ``query_must_not_contain``.
-    An argument the call left out is judged at its schema default, as the server reads it."""
+def _meeting_call(
+    expect: dict[str, Any], transcript: Transcript
+) -> tuple[ToolCall | None, Verdict]:
+    """The first successful call of ``expect["tool"]`` whose arguments meet every rule, and the
+    tool_args verdict on the transcript."""
     tool = expect.get("tool") or "search_jobs"
     schema = BY_NAME[tool].input_schema
     calls = [c for c in transcript.calls if c.name == tool and c.succeeded]
     if not calls:
-        return Verdict(False, f"no successful {tool} call")
+        return None, Verdict(False, f"no successful {tool} call")
     judged = [
         (call, _misses(expect, tool_arguments.with_defaults(schema, call.arguments)))
         for call in calls
     ]
     for call, misses in judged:
         if not misses:
-            return Verdict(
+            return call, Verdict(
                 True, f"{tool} {json.dumps(call.arguments, ensure_ascii=False)}"
             )
     call, misses = min(judged, key=lambda pair: len(pair[1]))
-    return Verdict(
+    return None, Verdict(
         False,
         f"no {tool} call meets every rule; closest "
         f"{json.dumps(call.arguments, ensure_ascii=False)}: {'; '.join(misses)}",
+    )
+
+
+def verify_tool_args(
+    expect: dict[str, Any], transcript: Transcript, space: Space
+) -> Verdict:
+    """One successful call of ``expect["tool"]`` (search_jobs by default) whose arguments meet
+    every ``must`` rule, one ``must_any`` alternative when given, and ``query_must_not_contain``.
+    An argument the call left out is judged at its schema default, as the server reads it."""
+    return _meeting_call(expect, transcript)[1]
+
+
+# --- title_keyword_rows --------------------------------------------------------------------
+
+#: A row's id as search_jobs prints it: `id "greenhouse:stripe:123"`, JSON-quoted.
+_ROW_ID = re.compile(r'\bid ("(?:[^"\\]|\\.)*")')
+#: How many ids one /job read takes (the route's own cap, ADR-0277).
+_JOB_READ_IDS = 5
+
+
+def _row_ids(result: str) -> list[str]:
+    return list(dict.fromkeys(json.loads(quoted) for quoted in _ROW_ID.findall(result)))
+
+
+def starts_a_word(text: str, term: str) -> bool:
+    """``term`` in ``text`` case-blind where a word starts, ADR-0299's keyword rule restated
+    rather than imported: after the text's start or a character that is not a letter or digit,
+    when the term begins with one, and with its end not anchored. So "rust" is in "Rust-based" and
+    "Rustacean", not in "Trust"; "ml" is not in "HTML"."""
+    anchor = r"(?<![a-z0-9])" if re.match(r"[a-z0-9]", term, re.IGNORECASE) else ""
+    return re.search(anchor + re.escape(term), text, re.IGNORECASE) is not None
+
+
+def verify_title_keyword_rows(
+    expect: dict[str, Any], transcript: Transcript, space: Space
+) -> Verdict:
+    """tool_args's check, then the truth behind it: every row the call that meets it returned
+    has ``expect["word"]`` in its title where a word starts. The rows are read back from the
+    Space's `/job` by the ids the call printed, so the check does not trust the tool's own
+    rendering."""
+    call, verdict = _meeting_call(expect, transcript)
+    if call is None:
+        return verdict
+    ids = _row_ids(call.result or "")
+    if not ids:
+        return Verdict(False, f"{verdict.detail}; its result lists no row ids")
+    titles: dict[str, str] = {}
+    for start in range(0, len(ids), _JOB_READ_IDS):
+        chunk = ids[start : start + _JOB_READ_IDS]
+        read = space.read(SpaceRoute.JOB, [("id", i) for i in chunk])
+        titles |= {
+            job["id"]: str(job.get("title") or "") for job in read.get("jobs") or []
+        }
+    word = expect["word"]
+    without = [title for title in titles.values() if not starts_a_word(title, word)]
+    unread = len(ids) - len(titles)
+    return Verdict(
+        bool(titles) and not without,
+        f"{len(titles) - len(without)} of {len(titles)} rows read back have {word!r} where a "
+        f"word starts in the title"
+        + (f" ({unread} no longer in the index)" if unread else "")
+        + (f"; not: {'; '.join(repr(t) for t in without[:5])}" if without else ""),
     )
 
 
@@ -320,27 +417,56 @@ _ECHO = re.compile(r"\bmore or less\b|\bmore or fewer\b", re.IGNORECASE)
 _SIGNED_HIRING = re.compile(
     r"(?<!not )\bhiring(?:\s+(?:is|was|of|at))?\W{0,3}([+−-])\s?\d", re.IGNORECASE
 )
+#: Postings opened less closed as read_trends writes it and answers quote it: "net −514",
+#: "a net of +2" (ADR-0272).
+_SIGNED_NET = re.compile(
+    r"\bnet(?:\s+(?:of|is|was))?\W{0,3}([+−-])\s?\d", re.IGNORECASE
+)
+#: A net of opened less closed within this share of everything opened and closed may be called
+#: flat as well as by its sign: −514 on 34,578 opened and closed is 1.5%.
+FLAT_SHARE = 0.05
 
 
 def stated_direction(answer: str) -> tuple[str | None, str | None]:
     """The direction an answer states ("up", "down" or "flat") and the text that states it.
 
-    A quoted signed hiring figure decides first: it is the netted figure itself, where a
-    direction word may describe raw openings ("openings fell, but hiring is +3"). Otherwise the
-    first direction word decides; answers lead with their verdict."""
-    if signed := _SIGNED_HIRING.search(answer):
-        return ("up" if signed.group(1) == "+" else "down"), signed.group(0)
+    A quoted signed figure decides first: the net of postings opened and closed, then a signed
+    hiring figure, where a direction word may describe raw openings ("openings fell, but hiring
+    is +3"). Otherwise the first direction word decides; answers lead with their verdict."""
+    for signed_figure in (_SIGNED_NET, _SIGNED_HIRING):
+        if signed := signed_figure.search(answer):
+            return ("up" if signed.group(1) == "+" else "down"), signed.group(0)
     match = _DIRECTION_RE.search(_ECHO.sub(" ", answer))
     if match is None:
         return None, None
     return _DIRECTION[match.group(1).lower()], match.group(1)
 
 
+#: A signed hiring figure an answer states, with its number: "net −514", "hiring +1,234".
+_STATED_FIGURE = re.compile(
+    r"(?<!not )\b(?:net|hiring)(?:\s+(?:of|is|was|at))?\W{0,3}[+−-]\s?(\d[\d,]*)",
+    re.IGNORECASE,
+)
+
+
+def stated_figure(answer: str) -> int | None:
+    """The size of the first signed hiring figure the answer states, or None."""
+    stated = _STATED_FIGURE.search(answer)
+    return int(stated.group(1).replace(",", "")) if stated else None
+
+
+def _sign(value: int) -> str:
+    return "up" if value > 0 else "down" if value < 0 else "flat"
+
+
 def verify_trend_sign(
     expect: dict[str, Any], transcript: Transcript, space: Space
 ) -> Verdict:
-    """The sign of the Space's own netted hiring for these companies, category and days, against
-    the direction the final answer states."""
+    """The direction of hiring for these companies, category and days, as the Space's own
+    postings opened and closed give it (ADR-0272), against the direction the final answer
+    states. Where the reading has no net of opened and closed, its netted hiring decides, and
+    the verdict says so. A net within FLAT_SHARE of everything opened and closed may be called
+    flat too."""
     picks = [company_scope.for_trends(space, c) for c in expect.get("companies") or []]
     days = int(expect.get("days") or 30)
     since = (datetime.now(UTC) - timedelta(days=days)).isoformat(timespec="seconds")
@@ -350,7 +476,8 @@ def verify_trend_sign(
     params += [("company", pick.key) for pick in picks]
     # No `split`: the reading's total is the same under every breakdown, and the total is all
     # this checks. Built here, not borrowed from read_trends, so a bug there cannot hide here.
-    reading = space.read(SpaceRoute.TRENDS, params).get("reading")
+    payload = space.read(SpaceRoute.TRENDS, params)
+    reading = payload.get("reading")
     if reading is None:
         return Verdict(
             False, "the Space could not read this trend, so there is no sign to check"
@@ -360,12 +487,84 @@ def verify_trend_sign(
         move = reading["lines"][0]["move"]
     if move is None:
         return Verdict(False, "the reading has neither a total nor a single line")
-    hiring = move.get("hiring") or 0
-    want = "up" if hiring > 0 else "down" if hiring < 0 else "flat"
     said, word = stated_direction(transcript.final_answer)
+    turnover = move.get("turnover") or {}
+    if turnover.get("net") is None:
+        hiring = move.get("hiring") or 0
+        return Verdict(
+            said == _sign(hiring),
+            f"no net of opened and closed; the Space's hiring is {hiring:+,} "
+            f"({_sign(hiring)}); the answer says {said} ({word!r})",
+        )
+    net = turnover["net"]
+    want = {_sign(net)}
+    if abs(net) <= FLAT_SHARE * (turnover["opened"] + turnover["closed"]):
+        want.add("flat")
+    span_missing = _unstated_span(
+        transcript.final_answer,
+        payload.get("turnover_since"),
+        reading.get("window") or {},
+    )
+    # Faithfulness, not only the sign (critique of #865): no hiring figure can be larger than
+    # everything opened and closed plus the re-counting HeadStart sized. The +111,929 change in
+    # openings listed over 30 days is.
+    stated = stated_figure(transcript.final_answer)
+    bound = (
+        turnover["opened"] + turnover["closed"] + abs(move.get("not_hiring_total") or 0)
+    )
+    overstated = stated is not None and stated > bound
     return Verdict(
-        said == want,
-        f"the Space's hiring is {hiring:+,} ({want}); the answer says {said} ({word!r})",
+        said in want and span_missing is None and not overstated,
+        f"postings opened less closed is {net:+,} ({' or '.join(sorted(want))}); the "
+        f"answer says {said} ({word!r})"
+        + (f"; {span_missing}" if span_missing else "")
+        + (
+            f"; it states hiring of {stated:,}, more than the {bound:,} opened, closed and "
+            "sized re-counting could make"
+            if overstated
+            else ""
+        ),
+    )
+
+
+_MONTHS = (
+    "jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec",
+)  # fmt: skip
+_NUMBER_WORDS = {
+    "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7,
+}  # fmt: skip
+#: A number of days: "3.4 days", "four-day", or the tool's own "3.4 of the window's 14.0 days".
+_DAYS_SAID = re.compile(
+    r"\b(\d+(?:\.\d+)?|" + "|".join(_NUMBER_WORDS) + r")"
+    r"(?=[\s-]*days?\b|\s+of\s+(?:the|its|this)\b)",
+    re.IGNORECASE,
+)
+
+
+def _unstated_span(
+    answer: str, began: str | None, window: dict[str, str]
+) -> str | None:
+    """Why the answer fails to say that opened and closed cover only part of the window, or None
+    when it says so or they cover all of it. It says so by naming the day counting began (any
+    usual spelling of the date) or the days counted, within a day."""
+    if not began or not window.get("from") or began <= window["from"]:
+        return None
+    start = datetime.fromisoformat(began)
+    counted = (datetime.fromisoformat(window["to"]) - start).total_seconds() / 86400
+    month, day = _MONTHS[start.month - 1], start.day
+    dated = (
+        rf"{start:%Y-%m-%d}|\b{month}[a-z]*\.?\s+{day}(?:st|nd|rd|th)?\b"
+        rf"|\b{day}(?:st|nd|rd|th)?\s+(?:of\s+)?{month}"
+    )
+    if re.search(dated, answer, re.IGNORECASE):
+        return None
+    for said in _DAYS_SAID.findall(answer):
+        days = _NUMBER_WORDS.get(said.lower()) or float(said)
+        if abs(days - counted) <= 1:
+            return None
+    return (
+        f"the answer does not say opened and closed are counted only since {began[:10]} "
+        f"({counted:.1f} days)"
     )
 
 
@@ -384,25 +583,144 @@ def _named(answer: str, row: dict[str, Any]) -> bool:
     )
 
 
-def verify_hot_top(
-    expect: dict[str, Any], transcript: Transcript, space: Space
-) -> Verdict:
-    """At least N-1 of /hot's top N on the Lens named, after the Operators the Hiring now tab
-    hides."""
-    lens, top = expect.get("lens") or "expansion", int(expect.get("top") or 5)
-    hot = space.read(SpaceRoute.HOT)
+#: A hiring_now row as the tool prints it: rank, its place on the page when reordered (ADR-0321),
+#: quoted company, key, then the rest, where `_HOT_FLAG` marks a row the tool itself says is not
+#: hiring.
+_HOT_ROW = re.compile(
+    r'^\s*\d+\. (?:site #\d+ · )?("(?:[^"\\]|\\.)*") · key (\S+) · (.*)$', re.MULTILINE
+)
+_HOT_FLAG = " · FLAG "
+
+
+def _first_named_at(answer: str, names: list[str]) -> int | None:
+    found = [
+        at
+        for name in names
+        if name and (at := answer.casefold().find(name.casefold())) >= 0
+    ]
+    return min(found, default=None)
+
+
+def _hiring_now_calls(transcript: Transcript, lens: str | None) -> list[dict[str, Any]]:
+    """Each successful hiring_now call's arguments as the server read them, on ``lens`` only
+    when one is named."""
+    schema = BY_NAME["hiring_now"].input_schema
+    called = [
+        (call, tool_arguments.with_defaults(schema, call.arguments))
+        for call in transcript.calls
+        if call.name == "hiring_now" and call.succeeded
+    ]
+    return [
+        {**arguments, "result": call.result or ""}
+        for call, arguments in called
+        if lens is None or arguments["lens"] == lens
+    ]
+
+
+def flagged_headline(transcript: Transcript, lens: str | None = None) -> str | None:
+    """The company the final answer names first among the hiring_now rows it was shown (on
+    ``lens``, when named), when the tool flagged that row; else None. Leading with a row the tool
+    disowns is the answer's fault, whatever order the ranking itself has."""
+    rows = [
+        (json.loads(company), key, _HOT_FLAG in f" · {rest}")
+        for call in _hiring_now_calls(transcript, lens)
+        for company, key, rest in _HOT_ROW.findall(call["result"])
+    ]
+    named = [
+        (at, company, flagged)
+        for company, key, flagged in rows
+        if (
+            at := _first_named_at(
+                transcript.final_answer,
+                [company, _COMPANY_SUFFIX.sub("", company), key],
+            )
+        )
+        is not None
+    ]
+    if not named:
+        return None
+    _, company, flagged = min(named)
+    return company if flagged else None
+
+
+def _days_between(start: str, end: str) -> float:
+    return (
+        datetime.fromisoformat(end) - datetime.fromisoformat(start)
+    ).total_seconds() / 86400
+
+
+def _disowned(
+    row: dict[str, Any], lens: str, window: dict[str, Any], min_stock: int
+) -> bool:
+    """Whether hiring_now flags ``row`` on ``lens`` (ADR-0321), worked out here from /hot's own
+    fields rather than borrowed from the tool, so a bug in the tool's order cannot hide here.
+    Opened less closed flags nothing: nothing questions its figure."""
+    if lens == "opened_less_closed":
+        return False
+    net, opened, closed = row.get("net"), row.get("opened"), row.get("closed")
+    stock = row.get("stock") or 0
+    if (opened and closed is None) or (
+        closed is not None and row.get("closures_uncounted_boards")
+    ):
+        return True
+    if stock and ((opened or 0) > stock or (lens == "rate" and stock < 2 * min_stock)):
+        return True
+    if not net or opened is None:
+        return False
+    base, to, began = window.get("base"), window.get("to"), window.get("turnover_from")
+    pace = (
+        _days_between(base, to) / _days_between(began, to)
+        if base and to and began and base < began < to
+        else 1.0
+    )
+    if net > opened * pace:
+        return True
+    if closed is None:
+        return False
+    turnover_net = opened - closed
+    return -net > closed * pace or (
+        net * turnover_net < 0 and abs(net) > abs(turnover_net) * pace
+    )
+
+
+def expected_hot_order(
+    hot: dict[str, Any], lens: str, limit: int
+) -> list[dict[str, Any]]:
+    """The rows a correct hiring_now answer on ``lens`` lists first, from /hot itself: the
+    page's rows after the Operators the Hiring now tab hides, and on the site's older Lenses
+    every row a flag disowns after the rest, then the first ``limit``."""
     hidden = set(hot.get("hidden_by_default") or ())
     rows = [
         row
         for row in (hot.get("lenses") or {}).get(lens) or []
         if row.get("operator") not in hidden
-    ][:top]
+    ]
+    window = hot.get("window") or {}
+    min_stock = (hot.get("counts") or {}).get("min_stock", 25)
+    rows.sort(key=lambda row: _disowned(row, lens, window, min_stock))
+    return rows[:limit]
+
+
+def verify_hot_top(
+    expect: dict[str, Any], transcript: Transcript, space: Space
+) -> Verdict:
+    """At least N-1 of the top N on the Lens named, in the order a correct hiring_now answer
+    lists them (`expected_hot_order`, at the call's own `limit`), and the answer does not lead
+    with a row the tool flagged on that Lens."""
+    lens = expect.get("lens") or hiring_now.DEFAULT_LENS
+    top = int(expect.get("top") or 5)
+    calls = _hiring_now_calls(transcript, lens)
+    schema = BY_NAME["hiring_now"].input_schema
+    limit = (calls[0] if calls else tool_arguments.with_defaults(schema, {}))["limit"]
+    rows = expected_hot_order(space.read(SpaceRoute.HOT), lens, limit)[:top]
     need = max(len(rows) - 1, 0)
     named = [row["company"] for row in rows if _named(transcript.final_answer, row)]
+    headline = flagged_headline(transcript, lens)
     return Verdict(
-        len(named) >= need,
-        f"names {len(named)} of /hot's top {len(rows)} on {lens} (needs {need}): "
-        f"{', '.join(r['company'] for r in rows)}",
+        len(named) >= need and headline is None,
+        f"names {len(named)} of the top {len(rows)} on {lens} (needs {need}): "
+        f"{', '.join(r['company'] for r in rows)}"
+        + (f"; leads with {headline!r}, a row hiring_now flagged" if headline else ""),
     )
 
 
@@ -489,6 +807,7 @@ VERIFIERS: dict[str, Verifier] = {
     "tool_args": verify_tool_args,
     # The brief's fixed name, which the sealed held-out file uses; the same check.
     "search_args": verify_tool_args,
+    "title_keyword_rows": verify_title_keyword_rows,
     "trend_sign": verify_trend_sign,
     "hot_top": verify_hot_top,
     "blocking_named": verify_blocking_named,
@@ -499,10 +818,13 @@ VERIFIERS: dict[str, Verifier] = {
 # --- running -------------------------------------------------------------------------------
 
 
-def mcp_config(env: dict[str, str]) -> dict[str, Any]:
-    """The one server a run may use: this checkout's ``python -m headstart.space_mcp``. Another
+def mcp_config(env: dict[str, str], http_url: str | None = None) -> dict[str, Any]:
+    """The one server a run may use: this checkout's ``python -m headstart.space_mcp``, or with
+    ``http_url`` the Streamable HTTP endpoint at that URL (ADR-0267's hosted ``/mcp``). Another
     Space's URL, when set, is written as ``${HEADSTART_SPACE_URL}``, which Claude Code expands
     from its own environment."""
+    if http_url:
+        return {"mcpServers": {NAME: {"type": "http", "url": http_url}}}
     server_env = {"PYTHONPATH": str(_ROOT / "src")}
     if env.get(URL_VAR):
         server_env[URL_VAR] = "${" + URL_VAR + "}"
@@ -585,24 +907,42 @@ def judge(
     return ("pass" if verdict.passed else "fail"), verdict.detail
 
 
+def run_env(env: dict[str, str], http_url: str | None) -> dict[str, str]:
+    """The environment ``claude`` runs in. Claude Code 2.1.212's ``-p`` does not wait for an
+    HTTP server to connect: the run starts with it "pending" and no tools, and every task fails
+    with 0 calls (round-2 critique, 2026-09-29). ``MCP_CONNECTION_NONBLOCKING=false`` makes it
+    wait (ADR-0325)."""
+    if http_url:
+        return {**env, "MCP_CONNECTION_NONBLOCKING": "false"}
+    return env
+
+
 def run_task(
-    task: dict[str, Any], env: dict[str, str], prefix: Path, space: Callable[[], Space]
+    task: dict[str, Any],
+    env: dict[str, str],
+    prefix: Path,
+    space: Callable[[], Space],
+    http_url: str | None = None,
+    repeat: int | None = None,
 ) -> dict[str, Any]:
-    """Run one task, saving its transcript as it streams, and return its result record."""
-    transcript_path = prefix.with_name(f"{prefix.name}_{task['id']}_transcript.jsonl")
-    stderr_path = prefix.with_name(f"{prefix.name}_{task['id']}_stderr.log")
+    """Run one task, saving its transcript as it streams, and return its result record. A run
+    whose server was not connected at its start is an error, not judged: the model had no
+    tools. ``repeat`` numbers the run when a task runs more than once."""
+    stem = f"{prefix.name}_{task['id']}" + (f"_r{repeat}" if repeat else "")
+    transcript_path = prefix.with_name(f"{stem}_transcript.jsonl")
+    stderr_path = prefix.with_name(f"{stem}_stderr.log")
     lines: list[str] = []
     started = time.monotonic()
     with tempfile.TemporaryDirectory(prefix="space-mcp-eval-") as scratch:
         config_path = Path(scratch) / "mcp.json"
-        config_path.write_text(json.dumps(mcp_config(env)), encoding="utf-8")
+        config_path.write_text(json.dumps(mcp_config(env, http_url)), encoding="utf-8")
         with (
             transcript_path.open("w", encoding="utf-8") as saved,
             stderr_path.open("w", encoding="utf-8") as stderr,
             subprocess.Popen(
                 command(task["prompt"], str(config_path)),
                 cwd=scratch,  # no CLAUDE.md, project MCP servers or memory of this repo
-                env=env,
+                env=run_env(env, http_url),
                 stdout=subprocess.PIPE,
                 stderr=stderr,
                 text=True,
@@ -625,9 +965,13 @@ def run_task(
             proc.wait()
     wall_s = time.monotonic() - started
     transcript = parse(lines)
-    outcome, detail = judge(task, transcript, space())
+    if reason := unconnected(transcript):
+        outcome, detail = "error", reason
+    else:
+        outcome, detail = judge(task, transcript, space())
     return {
         "id": task["id"],
+        "repeat": repeat,
         "verifier": task["verifier"],
         "verdict": outcome,
         "detail": detail,
@@ -635,6 +979,7 @@ def run_task(
         "wall_s": round(wall_s, 1),
         "timed_out": timed_out.is_set(),
         "run_error": transcript.run_error,
+        "server_status": transcript.server_status,
         "model": transcript.model,
         "cost_usd": transcript.cost_usd,
         "final_answer": transcript.final_answer,
@@ -644,9 +989,12 @@ def run_task(
 
 def summary(records: list[dict[str, Any]]) -> list[str]:
     """§9's bar over one run's records: at most one task wrong (11 of 12, 3 of 4), a median of at
-    most three tool calls, no result past ~10,000 tokens, and every refusal corrected next call."""
+    most three tool calls, no result past ~10,000 tokens, and every refusal corrected next call.
+    A task not judged (its server was not connected, or its verifier could not read the Space)
+    counts as wrong, and is named first, since the run cannot vouch for it."""
     n = len(records)
     correct = sum(r["verdict"] == "pass" for r in records)
+    unjudged = [r["id"] for r in records if r["verdict"] == "error"]
     median = statistics.median(r["tool_calls"] for r in records) if records else 0
     largest = max((r["largest_tool_result_chars"] for r in records), default=0)
     refusals = sum(r["refusals"] for r in records)
@@ -657,6 +1005,9 @@ def summary(records: list[dict[str, Any]]) -> list[str]:
 
     tokens = f"{LARGE_RESULT_CHARS:,}, about 10,000 tokens"
     return [
+        f"not judged: {len(unjudged)} of {n}"
+        + (f" ({', '.join(unjudged)})" if unjudged else "")
+        + f" — {mark(not unjudged)}",
         f"correct: {correct} of {n} (bar: at most one wrong) — {mark(correct >= n - 1)}",
         (
             f"median tool calls: {median:g} (bar: at most {MEDIAN_CALLS_BAR}) — "
@@ -670,6 +1021,18 @@ def summary(records: list[dict[str, Any]]) -> list[str]:
             f"refusals corrected within one call: {corrected} of {refusals} — "
             f"{mark(corrected == refusals)}"
         ),
+    ]
+
+
+def tally(passes: list[list[dict[str, Any]]]) -> list[str]:
+    """Each task's verdicts across passes: "t03: 2 of 3 passed (pass, fail, pass)"."""
+    by_task: dict[str, list[str]] = {}
+    for records in passes:
+        for record in records:
+            by_task.setdefault(record["id"], []).append(record["verdict"])
+    return [
+        f"{task}: {verdicts.count('pass')} of {len(verdicts)} passed ({', '.join(verdicts)})"
+        for task, verdicts in by_task.items()
     ]
 
 
@@ -688,10 +1051,15 @@ def load_heldout(path: Path, sealed: str | None) -> list[dict[str, Any]]:
     return json.loads(raw)["tasks"]
 
 
-def _dry_run(tasks: list[dict[str, Any]], sealed: bool, env: dict[str, str]) -> None:
+def _dry_run(
+    tasks: list[dict[str, Any]],
+    sealed: bool,
+    env: dict[str, str],
+    http_url: str | None = None,
+) -> None:
     config_path = "<a scratch directory>/mcp.json"
     print(f"MCP config ({config_path}):", flush=True)
-    print(json.dumps(mcp_config(env), indent=2), flush=True)
+    print(json.dumps(mcp_config(env, http_url), indent=2), flush=True)
     for task in tasks:
         prompt = "<sealed prompt>" if sealed else task["prompt"]
         print(f"\n{task['id']} [{task['verifier']}]", flush=True)
@@ -710,6 +1078,19 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--only", help="run one task id")
     parser.add_argument("--dry-run", action="store_true", help="print, run nothing")
+    parser.add_argument(
+        "--http",
+        metavar="URL",
+        help="register the Streamable HTTP endpoint at URL (the Space's /mcp) instead of "
+        "this checkout's stdio server",
+    )
+    parser.add_argument(
+        "--repeat",
+        type=int,
+        default=1,
+        metavar="N",
+        help="run the whole set N times, one pass after another, and tally each task",
+    )
     args = parser.parse_args(argv)
 
     if args.heldout:
@@ -729,29 +1110,46 @@ def main(argv: list[str] | None = None) -> int:
 
     env = dict(os.environ)
     if args.dry_run:
-        _dry_run(tasks, sealed=bool(args.heldout), env=env)
+        _dry_run(tasks, sealed=bool(args.heldout), env=env, http_url=args.http)
         return 0
     base = (env.get(URL_VAR) or "").strip() or SPACE_URL
 
     ARTIFACTS.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now(UTC).strftime("%Y-%m-%dT%H%MZ")
-    prefix = ARTIFACTS / f"{stamp}_{label}"
+    prefix = ARTIFACTS / f"{stamp}_{label}{'_http' if args.http else ''}"
     results_path = prefix.with_name(f"{prefix.name}_results.jsonl")
-    print(f"{len(tasks)} {label} tasks; results to {results_path}", flush=True)
-    records = []
+    print(
+        f"{len(tasks)} {label} tasks × {args.repeat}; results to {results_path}",
+        flush=True,
+    )
+    passes: list[list[dict[str, Any]]] = []
     with results_path.open("a", encoding="utf-8") as results:
-        for task in tasks:
-            record = run_task(task, env, prefix, lambda: SpaceClient(base=base))
-            records.append(record)
-            results.write(json.dumps(record, ensure_ascii=False) + "\n")
-            results.flush()
-            print(
-                f"{record['id']} {record['verdict'].upper()} · {record['tool_calls']} calls · "
-                f"largest result {record['largest_tool_result_chars']:,} chars · "
-                f"{record['wall_s']:.0f}s · {record['detail']}",
-                flush=True,
-            )
-    print("\n" + "\n".join(summary(records)), flush=True)
+        for repeat in range(1, args.repeat + 1):
+            passes.append([])
+            for task in tasks:
+                record = run_task(
+                    task,
+                    env,
+                    prefix,
+                    lambda: SpaceClient(base=base),
+                    args.http,
+                    repeat if args.repeat > 1 else None,
+                )
+                passes[-1].append(record)
+                results.write(json.dumps(record, ensure_ascii=False) + "\n")
+                results.flush()
+                print(
+                    f"{record['id']}{f' r{repeat}' if args.repeat > 1 else ''} "
+                    f"{record['verdict'].upper()} · {record['tool_calls']} calls · "
+                    f"largest result {record['largest_tool_result_chars']:,} chars · "
+                    f"{record['wall_s']:.0f}s · {record['detail']}",
+                    flush=True,
+                )
+    for repeat, records in enumerate(passes, 1):
+        heading = f"\npass {repeat} of {args.repeat}:" if args.repeat > 1 else ""
+        print(heading + "\n" + "\n".join(summary(records)), flush=True)
+    if args.repeat > 1:
+        print("\n" + "\n".join(tally(passes)), flush=True)
     return 0
 
 

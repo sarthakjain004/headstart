@@ -108,8 +108,32 @@ def test_the_instructions_stay_under_the_clients_cut():
     assert len(server.INSTRUCTIONS) <= server.INSTRUCTIONS_LIMIT
 
 
+def test_the_instructions_tell_the_model_to_retry_an_edge_failure():
+    """ADR-0325: Hugging Face's edge answers some hosted calls with its own page, which says 500
+    under an HTTP 502, and no MCP client retries a failed POST."""
+    sentence = server.EDGE_RETRY_INSTRUCTION
+    assert sentence in server.INSTRUCTIONS
+    for words in ("Hugging Face error page", "500", "502", "only reads", "up to twice"):
+        assert words in sentence, words
+    assert len(sentence) <= 200
+
+
 def test_a_tools_budget_is_under_the_clients_warning(tool):
     assert 0 < tool.max_chars <= space_tool.ANSWER_CEILING_CHARS
+
+
+def test_an_argument_reader_reads_an_argument_the_schema_names(tool):
+    assert set(tool.argument_readers) <= set(tool.input_schema["properties"])
+
+
+def test_every_tool_with_a_category_reads_a_label_as_its_id():
+    """The enum lists ids, and the server checks arguments against it, so a label reaches the
+    tool only through the reader (ADR-0274)."""
+    with_category = [t for t in REGISTRY if "category" in t.input_schema["properties"]]
+    assert with_category and all(
+        t.argument_readers.get("category") is role_families.resolve
+        for t in with_category
+    )
 
 
 def test_categories_are_the_spaces_own_role_families():
@@ -120,17 +144,18 @@ def test_categories_are_the_spaces_own_role_families():
         if "category" in tool.input_schema["properties"]
     ]
     assert schemas and all(
-        s["enum"] == [family["name"] for family in families] for s in schemas
+        s["enum"] == [family["name"] for family in families if not family.get("hidden")]
+        for s in schemas
     )
 
 
 def test_without_the_families_file_category_is_a_free_string(monkeypatch, tmp_path):
     monkeypatch.setattr(role_families, "FILE", tmp_path / "missing.json")
-    role_families.names.cache_clear()
+    role_families._taxonomy.cache_clear()
     try:
         schema = role_families.schema("A category.")
     finally:
-        role_families.names.cache_clear()
+        role_families._taxonomy.cache_clear()
     assert "enum" not in schema and schema["type"] == "string"
 
 
@@ -138,10 +163,10 @@ def test_the_families_are_read_once_so_a_missing_file_warns_once(
     monkeypatch, tmp_path, caplog
 ):
     monkeypatch.setattr(role_families, "FILE", tmp_path / "missing.json")
-    role_families.names.cache_clear()
+    role_families._taxonomy.cache_clear()
     try:
         role_families.schema("One.")
         role_families.schema("Two.")
     finally:
-        role_families.names.cache_clear()
+        role_families._taxonomy.cache_clear()
     assert caplog.text.count("role families not readable") == 1

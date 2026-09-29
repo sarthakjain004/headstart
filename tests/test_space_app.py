@@ -15,6 +15,7 @@ attempt a real network call. Auth requests ride `base_url="https://localhost"` b
 session cookie is `Secure` and the test client honours that over plain http.
 """
 
+import ast
 import csv
 import gzip
 import importlib.util
@@ -26,6 +27,8 @@ import sys
 import tempfile
 import threading
 import types
+import urllib.error
+import urllib.request
 import weakref
 from collections import defaultdict
 from contextlib import contextmanager
@@ -37,12 +40,14 @@ from urllib.parse import parse_qs, quote
 import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
+from werkzeug.datastructures import MultiDict
 
 from headstart.llm_router import RouterUnavailable
-from headstart.serving import rate_limit
+from headstart.serving import concurrency_limit, rate_limit
 from headstart.trends import line_reading, netting, trend_history
 
 pytest.importorskip("flask")  # in [dev] so this runs in CI; guards a bare env
+waitress = pytest.importorskip("waitress")  # likewise; app.py serves through it (#595)
 old_layout_converter = pytest.importorskip("old_layout_trends_state_converter")
 
 APP = Path(__file__).resolve().parents[1] / "deploy" / "hf-space" / "app.py"
@@ -112,6 +117,9 @@ class _Table:
                 "first_seen": "2026-08-10T00:00:00+00:00",
                 "url": "https://example.test/1",
                 "id": "greenhouse:acme:1",
+                "department": "Engineering",
+                "description": "Build the payments API.\nOwn it end to end.",
+                "vector": [0.1, 0.2],
             },
             {
                 "_distance": 0.2,
@@ -127,6 +135,7 @@ class _Table:
                 "first_seen": "2026-08-11T00:00:00+00:00",
                 "url": "https://example.test/2",
                 "id": "lever:beta:2",
+                "vector": [0.2, 0.1],
             },
         ]
 
@@ -457,6 +466,10 @@ _READ_ROUTES = (
     "/hot",
     "/companies/suggest",
     "/companies/lookup",
+    "/job",
+    "/companies/locations",
+    "/companies/levels",
+    "/requirements",
 )
 _DOOR_PATHS = (
     "/",
@@ -569,10 +582,10 @@ def test_the_read_limit_is_sixty_requests_a_minute(auth_app):
 
 def test_an_anonymous_caller_past_the_limit_is_told_when_to_retry(auth_app):
     client = auth_app.app.test_client()
-    # The six routes share one count: ten requests on each spend it.
-    for path in _READ_ROUTES:
-        for _ in range(10):
-            assert not _refused(client.get(path)), path
+    # The read routes share one count: sixty requests spread across them spend it.
+    for n in range(auth_app._READ_LIMIT_REQUESTS):
+        path = _READ_ROUTES[n % len(_READ_ROUTES)]
+        assert not _refused(client.get(path)), path
     r = client.get("/search?q=")
     assert r.status_code == 429
     assert r.json["error"] == "too many requests"
@@ -680,10 +693,13 @@ def _post_mcp(client, message=_MCP_LIST, **kwargs):
 
 
 def test_the_mcp_limits_are_pinned(auth_app):
-    # Pinned: each number is a decision ADR-0267 reasons out, not a tuning knob.
+    # Pinned: each number is a decision ADR-0267 or ADR-0276 reasons out, not a tuning knob.
     assert (auth_app._MCP_LIMIT_REQUESTS, auth_app._LIMIT_WINDOW_S) == (30, 60)
     assert auth_app._ANTHROPIC_LIMIT_REQUESTS == 300
     assert (auth_app._MCP_AT_ONCE, auth_app._MCP_PLACE_WAIT_S) == (4, 10)
+    assert auth_app._MCP_AT_ONCE_EACH == 2
+    # ADR-0325: one description-keyword search at a time, on a place of its own.
+    assert (auth_app._MCP_SCANS_AT_ONCE, auth_app._MCP_SCAN_RETRY_S) == (1, 20)
 
 
 def test_mcp_answers_anyone_with_the_wall_on_and_only_by_post(auth_app):
@@ -702,15 +718,23 @@ def test_mcp_refuses_a_page_on_another_site(auth_app):
     assert _post_mcp(client, headers={"Origin": "https://claude.ai"}).status_code == 200
 
 
+def _mcp_refusal_says(r, status, words):
+    """`r` is ADR-0276's refusal: `status`, `Retry-After`, the app's marker, and a JSON-RPC error
+    carrying the posted request's id whose message holds `words`."""
+    assert r.status_code == status and r.headers["X-HeadStart"] == _OWN_REPLY
+    assert float(r.headers["Retry-After"]) > 0
+    assert r.json["jsonrpc"] == "2.0" and r.json["id"] == _MCP_LIST["id"]
+    assert r.json["error"]["code"] == status and words in r.json["error"]["message"]
+
+
 def test_one_address_past_the_mcp_limit_is_told_when_to_retry(auth_app):
     client = auth_app.app.test_client()
     caller = {"X-Forwarded-For": "198.51.100.1"}
     for n in range(auth_app._MCP_LIMIT_REQUESTS):
         assert _post_mcp(client, headers=caller).status_code == 200, n
     r = _post_mcp(client, headers=caller)
-    assert r.status_code == 429 and r.headers["X-HeadStart"] == _OWN_REPLY
+    _mcp_refusal_says(r, 429, "from one address; retry in")
     assert 1 <= int(r.headers["Retry-After"]) <= 60
-    assert "from one address" in r.json["detail"]
     other = {"X-Forwarded-For": "198.51.100.2"}
     assert _post_mcp(client, headers=other).status_code == 200
 
@@ -724,7 +748,7 @@ def test_anthropics_range_shares_one_larger_mcp_budget(auth_app):
         r = _post_mcp(client, headers={"X-Forwarded-For": address})
         assert r.status_code == 200, n
     r = _post_mcp(client, headers={"X-Forwarded-For": "160.79.111.254"})
-    assert r.status_code == 429 and "from Anthropic" in r.json["detail"]
+    _mcp_refusal_says(r, 429, "from Anthropic's range")
     outside = {"X-Forwarded-For": "160.79.112.1"}
     assert _post_mcp(client, headers=outside).status_code == 200
 
@@ -732,13 +756,111 @@ def test_anthropics_range_shares_one_larger_mcp_budget(auth_app):
 def test_a_busy_mcp_endpoint_says_so_rather_than_queueing_forever(
     auth_app, monkeypatch
 ):
-    monkeypatch.setattr(auth_app, "_MCP_PLACES", threading.BoundedSemaphore(1))
+    places = concurrency_limit.ConcurrencyLimit(1, 1)
+    monkeypatch.setattr(auth_app, "_MCP_PLACES", places)
     monkeypatch.setattr(auth_app, "_MCP_PLACE_WAIT_S", 0.01)
-    auth_app._MCP_PLACES.acquire()
+    places.take("198.51.100.9", 0)
     r = _post_mcp(auth_app.app.test_client())
-    assert r.status_code == 503 and r.headers["Retry-After"]
-    auth_app._MCP_PLACES.release()
+    _mcp_refusal_says(r, 503, "busy")
+    places.give_back("198.51.100.9")
     assert _post_mcp(auth_app.app.test_client()).status_code == 200
+
+
+@pytest.mark.parametrize(
+    "address, caller, who",
+    [
+        ("198.51.100.3", "198.51.100.3", "from one address"),
+        # Every claude.ai user shares Anthropic's range, so the range holds one caller's share.
+        ("160.79.104.9", "anthropic", "from Anthropic's range"),
+    ],
+)
+def test_one_caller_cannot_hold_every_mcp_place(
+    auth_app, monkeypatch, address, caller, who
+):
+    places = concurrency_limit.ConcurrencyLimit(
+        auth_app._MCP_AT_ONCE, auth_app._MCP_AT_ONCE_EACH
+    )
+    monkeypatch.setattr(auth_app, "_MCP_PLACES", places)
+    monkeypatch.setattr(auth_app, "_MCP_PLACE_WAIT_S", 0.01)
+    for _ in range(auth_app._MCP_AT_ONCE_EACH):  # two slow calls still being answered
+        assert places.take(caller, 0) is None
+    client = auth_app.app.test_client()
+    r = _post_mcp(client, headers={"X-Forwarded-For": address})
+    _mcp_refusal_says(r, 429, f"at most 2 at a time {who}")
+    other = {"X-Forwarded-For": "198.51.100.4"}
+    assert _post_mcp(client, headers=other).status_code == 200
+    places.give_back(caller)
+    assert _post_mcp(client, headers={"X-Forwarded-For": address}).status_code == 200
+
+
+def _search_call(**arguments):
+    return {
+        "jsonrpc": "2.0",
+        "id": _MCP_LIST["id"],
+        "method": "tools/call",
+        "params": {"name": "search_jobs", "arguments": arguments},
+    }
+
+
+_DESCRIPTION_SCAN = _search_call(keyword="visa", keyword_in="description")
+
+
+@pytest.mark.parametrize(
+    "message, scans",
+    [
+        (_DESCRIPTION_SCAN, True),
+        (_search_call(keyword="visa", keyword_in="both"), True),
+        (_search_call(keyword="rust"), False),  # a title keyword, the default scope
+        (_search_call(keyword="rust", keyword_in="title"), False),
+        (_search_call(keyword="  ", keyword_in="description"), False),  # no keyword
+        (_search_call(query="engineer"), False),
+        (_MCP_LIST, False),
+        ({"method": "tools/call", "params": {"name": "get_job"}}, False),
+        ([_DESCRIPTION_SCAN], False),  # not one request: the protocol module refuses it
+    ],
+)
+def test_a_description_scan_is_told_from_the_body(auth_app, message, scans):
+    assert auth_app._scans_descriptions(json.dumps(message).encode()) is scans
+    assert auth_app._scans_descriptions(b"not json") is False
+
+
+def test_a_description_scan_takes_its_own_place_and_never_a_fast_one(
+    auth_app, monkeypatch
+):
+    """ADR-0325: a scan waits only for the one scan place, so it never holds one of the 4 places
+    a fast call would queue behind, and a full house of fast calls does not keep it out."""
+    fast = concurrency_limit.ConcurrencyLimit(2, 2)
+    scan = concurrency_limit.ConcurrencyLimit(1, 1)
+    monkeypatch.setattr(auth_app, "_MCP_PLACES", fast)
+    monkeypatch.setattr(auth_app, "_MCP_SCAN_PLACES", scan)
+    monkeypatch.setattr(auth_app, "_MCP_PLACE_WAIT_S", 0.01)
+    client = auth_app.app.test_client()
+
+    scan.take("198.51.100.9", 0)  # another caller's scan is running
+    r = _post_mcp(client, _DESCRIPTION_SCAN)
+    _mcp_refusal_says(r, 503, "1 description-keyword search at a time")
+    assert r.headers["Retry-After"] == "20"
+    assert _post_mcp(client).status_code == 200  # a fast call does not wait for it
+    scan.give_back("198.51.100.9")
+
+    for _ in range(2):  # every fast place held
+        fast.take("198.51.100.9", 0)
+    assert _post_mcp(client).status_code == 503
+    r = _post_mcp(client, _DESCRIPTION_SCAN)
+    assert r.status_code == 200 and "result" in r.json
+    assert not scan._held  # given back once answered
+
+
+def test_an_mcp_place_is_given_back_when_answering_fails(auth_app, monkeypatch):
+    places = concurrency_limit.ConcurrencyLimit(1, 1)
+    monkeypatch.setattr(auth_app, "_MCP_PLACES", places)
+
+    def broken(*args):
+        raise RuntimeError("a bug below the route")
+
+    monkeypatch.setattr(auth_app.streamable_http, "answer", broken)
+    assert _post_mcp(auth_app.app.test_client()).status_code == 500
+    assert not places._held
 
 
 def test_the_mcp_tools_reads_are_not_counted_against_the_read_limit(
@@ -780,7 +902,7 @@ def test_a_caller_cannot_claim_the_in_process_mark_with_a_header(auth_app, monke
 
 # ---- the app's own mark on every reply (ADR-0253) ----
 
-_OWN_REPLY = "app; agent-api=1"
+_OWN_REPLY = "app; agent-api=8"
 
 
 def test_a_routes_own_answer_is_marked(auth_app):
@@ -2926,6 +3048,30 @@ def test_every_view_a_click_away_is_answered_ahead(company_trends, trends_app):
                     assert history.answer_key(drill) in kept
 
 
+def test_every_source_but_one_is_answered_ahead_in_the_pages_order(
+    company_trends, trends_app, monkeypatch
+):
+    """ADR-0269: a first untick in the Source picker asks for every Source but one, the boxes in
+    the order the page lists them, so each such view is kept for both Measures."""
+    atses = ("greenhouse", "lever", "workday")
+    monkeypatch.setattr(
+        trends_app._searcher,
+        "capabilities",
+        replace(trends_app._searcher.capabilities, atses=atses),
+    )
+    trends_app._answer_views_a_click_away()
+    for left_out in atses:
+        for metric in ("stock", "new"):
+            asked = MultiDict(
+                [("ats", a) for a in atses if a != left_out]
+                + ([("metric", metric)] if metric == "new" else [])
+            )
+            assert trends_app._trends_kept(trends_app._trends_question(asked))
+    assert not trends_app._trends_kept(
+        trends_app._trends_question(MultiDict([("ats", "greenhouse")]))
+    )
+
+
 def test_a_kept_trends_answer_is_not_counted_against_the_callers_limit(
     trends_app, monkeypatch
 ):
@@ -3126,6 +3272,121 @@ def test_lookup_takes_one_to_ten_boards(company_trends):
         assert r.get_json()["error"] == "invalid lookup"
     ten = "&".join(["board=workday:hpe/a"] * 10)
     assert company_trends.get(f"/companies/lookup?{ten}").status_code == 200
+
+
+# ---- a company's locations (ADR-0275) ----
+
+
+def test_locations_are_counted_over_the_named_boards_only(app, monkeypatch):
+    """The Board clause is the whole scope: no Account's list and no other filter reaches it."""
+    scoped = []
+    real = app.job_search.location_counts.top
+
+    def recording(table, where, limit):
+        scoped.append((where, limit))
+        return real(table, where, limit)
+
+    monkeypatch.setattr(app.job_search.location_counts, "top", recording)
+    r = app.app.test_client().get(
+        "/companies/locations?board=workday:hpe/a&board=workday:hpe/b&limit=3&remote=true"
+    )
+    assert r.status_code == 200
+    assert scoped == [
+        (
+            "(lower(id) LIKE 'workday:hpe/a:%' OR lower(id) LIKE 'workday:hpe/b:%')",
+            3,
+        )
+    ]
+    # The fake table answers its two rows, Berlin and Remote, whatever it is asked.
+    assert r.get_json() == {
+        "jobs": 2,
+        "unstated": 0,
+        "distinct": 2,
+        "capped": False,
+        "locations": [
+            {"location": "Berlin", "count": 1},
+            {"location": "Remote", "count": 1},
+        ],
+        # Each place's country, as `country=` reads it (ADR-0323).
+        "countries": [
+            {"code": "DE", "jobs": 1, "places": [{"location": "Berlin", "count": 1}]}
+        ],
+        "no_country": {"jobs": 1, "places": [{"location": "Remote", "count": 1}]},
+        "places_unread": 0,
+    }
+
+
+@pytest.mark.parametrize(
+    "query",
+    ["", "board=%20", "board=a:b&limit=0", "board=a:b&limit=51", "board=a:b&limit=x"],
+)
+def test_locations_need_a_board_and_a_bounded_limit(app, query):
+    r = app.app.test_client().get(f"/companies/locations?{query}")
+    assert r.status_code == 400, query
+    assert r.get_json()["error"] == "invalid filter"
+
+
+# ---- a company's levels (ADR-0323) ----
+
+
+def test_levels_are_counted_over_the_named_boards_in_the_trends_bands(app, monkeypatch):
+    scoped = []
+    real = app.job_search.level_counts.bands
+
+    def recording(table, where):
+        scoped.append(where)
+        return real(table, where)
+
+    monkeypatch.setattr(app.job_search.level_counts, "bands", recording)
+    r = app.app.test_client().get(
+        "/companies/levels?board=workday:hpe/a&board=workday:hpe/b&remote=true"
+    )
+    assert r.status_code == 200
+    assert scoped == [
+        "(lower(id) LIKE 'workday:hpe/a:%' OR lower(id) LIKE 'workday:hpe/b:%')"
+    ]
+    # The fake table's two rows state no experience.
+    answer = r.get_json()
+    assert answer["jobs"] == 2 and answer["capped"] is False
+    assert [(b["band"], b["count"]) for b in answer["bands"]] == [
+        ("intern", 0),
+        ("entry", 0),
+        ("mid", 0),
+        ("senior", 0),
+        ("staff", 0),
+        ("unspecified", 2),
+    ]
+
+
+@pytest.mark.parametrize("query", ["", "board=%20"])
+def test_levels_need_a_board(app, query):
+    r = app.app.test_client().get(f"/companies/levels?{query}")
+    assert r.status_code == 400, query
+    assert r.get_json()["error"] == "invalid filter"
+
+
+# ---- what a role's postings ask for (ADR-0324) ----
+
+
+def test_requirements_count_a_sample_and_carry_no_description_text(app):
+    """The fake table answers its two rows to every read; one carries a description."""
+    r = app.app.test_client().get("/requirements?q=backend+engineer&strict=1")
+    assert r.status_code == 200
+    body = r.get_json()
+    assert (body["order"], body["sampled"], body["described"]) == ("closest", 2, 1)
+    assert body["newest_tick"] is None and body["vocabulary_size"] >= 300
+    assert "Build the payments API" not in r.get_data(as_text=True)
+
+
+@pytest.mark.parametrize(
+    ("query", "status"),
+    [("", 400), ("q=x&n=5", 400), ("q=x&n=x", 400), ("family=security", 503)],
+)
+def test_requirements_refuse_what_they_cannot_count(app, query, status):
+    """No role or category, a sample outside its bounds, or a category on a deployment without
+    role assignments (the fixture pulls none)."""
+    r = app.app.test_client().get(f"/requirements?{query}")
+    assert r.status_code == status, query
 
 
 def test_facets_carry_the_newest_trends_tick(company_trends, trends_app, app):
@@ -3902,6 +4163,52 @@ def test_search_narrows_to_the_boards_a_trend_hands_over(app):
     client = app.app.test_client()
     assert client.get("/search?" + many).status_code == 400
     assert client.get("/facets?" + many).status_code == 400
+
+
+# ---- a Job read by id, and like= (ADR-0277) ----
+
+
+def test_a_job_read_by_id_answers_its_detail_and_lists_what_is_missing(app):
+    r = app.app.test_client().get(
+        "/job?id=greenhouse:acme:1&id=gone:x:9&id=greenhouse:acme:1"
+    )
+    assert r.status_code == 200
+    body = r.get_json()
+    (job,) = body["jobs"]
+    assert job["id"] == "greenhouse:acme:1" and job["title"] == "Backend Engineer"
+    assert job["department"] == "Engineering"
+    assert job["description"] == "Build the payments API.\nOwn it end to end."
+    assert job["description_chars"] == 42 and job["description_cut"] is False
+    assert job["unconfirmed"] is None  # no grace set pulled on this deployment
+    assert body["missing"] == ["gone:x:9"]
+    assert body["description_limit"] == 12_000 and body["newest_tick"] is None
+
+
+def test_a_job_read_by_id_says_whether_the_latest_scrape_missed_it(app, monkeypatch):
+    monkeypatch.setattr(app, "_UNCONFIRMED", frozenset({"lever:beta:2"}))
+    body = app.app.test_client().get("/job?id=greenhouse:acme:1&id=lever:beta:2").json
+    assert [(j["id"], j["unconfirmed"]) for j in body["jobs"]] == [
+        ("greenhouse:acme:1", False),
+        ("lever:beta:2", True),
+    ]
+
+
+def test_a_job_read_by_id_names_one_to_five_ids(app):
+    client = app.app.test_client()
+    six = "&".join(f"id=a:b:{n}" for n in range(6))
+    for query in ("", "id=%20", six, "id=" + "x" * 301):
+        r = client.get(f"/job?{query}")
+        assert r.status_code == 400, query
+        assert r.get_json()["error"] == "invalid request"
+
+
+def test_like_with_a_query_is_refused_on_both_routes(app):
+    client = app.app.test_client()
+    for route in ("/search", "/facets"):
+        r = client.get(f"{route}?like=greenhouse:acme:1&q=backend")
+        assert r.status_code == 400, route
+        assert "send one of them" in r.get_json()["detail"]
+    assert client.get("/search?like=greenhouse:acme:1").status_code == 200
 
 
 # ---- strict=1 through the real app (ADR-0253) ----
@@ -4688,10 +4995,141 @@ def test_every_response_carries_the_hardening_headers(sets_app, monkeypatch):
     ):
         assert r.headers["X-Content-Type-Options"] == "nosniff"
         assert r.headers["Referrer-Policy"] == "strict-origin-when-cross-origin"
-        assert (
-            r.headers["Content-Security-Policy"]
-            == "frame-ancestors 'self' https://huggingface.co"
+        policy = _csp(r)
+        assert policy["frame-ancestors"] == "'self' https://huggingface.co"
+        assert policy["script-src"] == "'self' https://accounts.google.com/gsi/client"
+
+
+def _csp(response) -> dict[str, str]:
+    """The response's Content-Security-Policy, directive -> its sources."""
+    return dict(
+        part.strip().split(" ", 1)
+        for part in response.headers["Content-Security-Policy"].split(";")
+    )
+
+
+_SCRIPT_TAG = re.compile(r"<script\b([^>]*)>", re.IGNORECASE)
+_INLINE_HANDLER = re.compile(r"<[a-zA-Z][^<>]*?\son[a-z]+\s*=", re.DOTALL)
+_GOOGLE_SIGN_IN = "https://accounts.google.com/gsi/client"
+
+
+@pytest.mark.parametrize("signed_in", [False, True], ids=["door", "app"])
+def test_every_inline_script_on_the_page_carries_this_response_s_nonce(
+    sets_app, monkeypatch, signed_in
+):
+    """#595: the policy runs an inline script only with the nonce its own response names, so
+    the page's four inline scripts must carry it, each response a fresh one."""
+    client = (
+        _signed_in(sets_app, monkeypatch) if signed_in else sets_app.app.test_client()
+    )
+    nonces = []
+    for _ in range(2):
+        r = client.get("/", base_url=_HTTPS)
+        sources = _csp(r)["script-src"].split()
+        nonce = next(s for s in sources if s.startswith("'nonce-"))[7:-1]
+        assert "'unsafe-inline'" not in sources and "'unsafe-eval'" not in sources
+        page = r.get_data(as_text=True)
+        tags = _SCRIPT_TAG.findall(page)
+        inline = [attrs for attrs in tags if "src=" not in attrs]
+        assert inline and all(f'nonce="{nonce}"' in attrs for attrs in inline)
+        for attrs in tags:
+            src = re.search(r'src="([^"]+)"', attrs)
+            assert src is None or src[1].startswith(("/static/", _GOOGLE_SIGN_IN))
+        assert not _INLINE_HANDLER.search(page)
+        nonces.append(nonce)
+    assert nonces[0] != nonces[1]
+
+
+def test_no_template_or_script_writes_an_inline_handler_or_an_unnonced_script():
+    """#595: the policy refuses every inline `on…=` handler, and an inline script without the
+    nonce, so a template or a script that draws HTML must use neither. Includes the templates
+    a page renders only when its tab is configured, which the page tests above may not reach."""
+    ui = Path(__file__).resolve().parents[1] / "src" / "headstart" / "ui"
+    files = [*(ui / "templates").glob("*.html"), *(ui / "static").rglob("*.js")]
+    assert len(files) > 10
+    for path in files:
+        text = path.read_text(encoding="utf-8")
+        assert not _INLINE_HANDLER.search(text), path.name
+        if path.suffix == ".html":
+            for attrs in _SCRIPT_TAG.findall(text):
+                assert "src=" in attrs or 'nonce="{{ csp_nonce }}"' in attrs, path.name
+
+
+def test_python_app_py_serves_through_waitress_not_the_dev_server():
+    """#595: `start.sh` runs `python app.py`, whose main block started Werkzeug's development
+    server. It serves the one app object through waitress, in one process, with `_SERVE`."""
+    tree = ast.parse(APP.read_text(encoding="utf-8"))
+    main = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.If)
+        and ast.unparse(node.test) == "__name__ == '__main__'"
+    )
+    assert "waitress.serve(app, **_SERVE)" in ast.unparse(main)
+    assert "app.run" not in ast.unparse(main)
+
+
+@contextmanager
+def _served_by_waitress(module):
+    """``module``'s app behind a real waitress server with the Space's own settings, on a free
+    loopback port instead of 7860."""
+    server = waitress.create_server(
+        module.app, **{**module._SERVE, "host": "127.0.0.1", "port": 0}
+    )
+    thread = threading.Thread(target=server.run, daemon=True)
+    thread.start()
+    try:
+        yield f"http://127.0.0.1:{server.effective_port}"
+    finally:
+        # closed from its own loop thread: closing it from this one races that thread's select
+        server.trigger.pull_trigger(server.close)
+        thread.join(timeout=5)
+        server.task_dispatcher.shutdown()
+
+
+def test_waitress_counts_each_forwarded_address_as_its_own_caller(app, monkeypatch):
+    """HF's edge names the caller in `X-Forwarded-For` (ADR-0262). Waitress 3 deletes that
+    header unless a trusted proxy is named, and then every anonymous caller would be the
+    edge's one address, sharing one budget. The count is kept across waitress's threads."""
+    monkeypatch.setattr(
+        app, "_READ_LIMIT", rate_limit.RateLimit(1, app._LIMIT_WINDOW_S)
+    )
+
+    def status(base, address):
+        request = urllib.request.Request(
+            base + "/hot", headers={"X-Forwarded-For": f"198.51.100.9, {address}"}
         )
+        try:
+            with urllib.request.urlopen(request, timeout=10) as reply:
+                return reply.status
+        except urllib.error.HTTPError as exc:
+            exc.close()
+            return exc.code
+
+    with _served_by_waitress(app) as base:
+        assert status(base, "203.0.113.1") != 429
+        assert status(base, "203.0.113.1") == 429
+        assert status(base, "203.0.113.2") != 429
+
+
+def test_each_request_leaves_one_line_in_the_run_log(app, capsys):
+    """#595: waitress prints no request lines, where the development server printed one per
+    request, and the run log is how an edge outage is told from the app failing. The line
+    names no query string, which carries a search's words."""
+    client = app.app.test_client()
+    client.get("/me")
+    client.get("/search?q=secret+words")
+    from headstart.space_mcp import space_client
+
+    client.get("/me", environ_overrides={space_client.IN_PROCESS_READ: True})
+    lines = [
+        line for line in capsys.readouterr().out.splitlines() if line.startswith('"')
+    ]
+    assert [line.rsplit(" ", 1)[0] for line in lines] == [
+        '"GET /me" 200',
+        '"GET /search" 200',
+    ]
+    assert all(re.fullmatch(r'"GET /\w+" 200 \d+\.\d{3}s', line) for line in lines)
 
 
 def test_the_hardening_headers_leave_a_gzipped_static_304_alone(sets_app, monkeypatch):

@@ -200,6 +200,65 @@ def test_listing_rows_skip_pages_that_are_not_postings():
     assert rows[0]["slug_title"] == "Senior Software Engineer VAULT"
 
 
+#: ea's `es_ES` sitemap entry for one posting (2026-09-29), trimmed to three of its 12 alternates.
+_EA_ES_ENTRY = (
+    '<urlset xmlns:xhtml="http://www.w3.org/1999/xhtml"><url>'
+    "<loc>https://jobs.ea.com/es_ES/careers/JobDetail/Software-Engineer/215808</loc>"
+    '<xhtml:link rel="alternate" href="https://jobs.ea.com/en_US/careers/JobDetail/'
+    'Software-Engineer/215808" hreflang="x-default"/>'
+    '<xhtml:link rel="alternate" href="https://jobs.ea.com/en_US/careers/JobDetail/'
+    'Software-Engineer/215808" hreflang="en-US"/>'
+    '<xhtml:link rel="alternate" href="https://jobs.ea.com/es_ES/careers/JobDetail/'
+    'Software-Engineer/215808" hreflang="es-ES"/>'
+    "</url></urlset>"
+)
+_EA_EN = "https://jobs.ea.com/en_US/careers/JobDetail/Software-Engineer/215808"
+
+
+def test_a_posting_is_read_at_its_english_alternate_when_the_english_sitemap_is_empty():
+    """ea's `en_US` sitemap answered 200 with an empty body and its `es_ES` one did not, so the
+    postings were served from Spanish pages that failed the English gate (#706)."""
+    robots = "Sitemap: https://jobs.ea.com/careers/sitemap_index.xml\n"
+    index = (
+        "<sitemapindex>"
+        "<sitemap><loc>https://jobs.ea.com/en_US/careers/sitemap.xml</loc></sitemap>"
+        "<sitemap><loc>https://jobs.ea.com/es_ES/careers/sitemap.xml</loc></sitemap>"
+        "</sitemapindex>"
+    )
+
+    def route(method, url, kwargs):
+        if url.endswith("robots.txt"):
+            return FakeResponse(200, robots)
+        if url.endswith("sitemap_index.xml"):
+            return FakeResponse(200, index)
+        if url == "https://jobs.ea.com/es_ES/careers/sitemap.xml":
+            return FakeResponse(200, _EA_ES_ENTRY)
+        if url == _EA_EN:
+            return FakeResponse(200, _FIXTURE["page"][_TECH])
+        return FakeResponse(200, "")  # the empty `en_US` sitemap, and any other page
+
+    scraper = get_scraper(
+        "avature", "ea", fetcher=FakeFetcher(route), have_details=set()
+    )
+    scraper.pacer = Pacer(0)
+    [job] = scraper.parse(scraper.fetch_raw(), _SCRAPED_AT)
+    assert job.url == _EA_EN
+
+
+def test_a_posting_with_no_english_alternate_or_already_in_english_keeps_its_url():
+    only_spanish = (
+        "<urlset><url><loc>https://manpowergroupco.avature.net/es_CO/careers/JobDetail/"
+        "ASESOR-SVR/57090</loc></url></urlset>"
+    )
+    british = _EA_ES_ENTRY.replace(
+        "/es_ES/careers/JobDetail/", "/en_GB/careers/JobDetail/"
+    )
+    [colombian] = listing_rows(only_spanish)
+    [kept] = listing_rows(british)
+    assert "/es_CO/" in colombian["url"]
+    assert "/en_GB/" in kept["url"]
+
+
 def test_json_ld_layout():
     fields = page_fields(_FIXTURE["layouts"]["ashfieldhealthcare_careers"])
     assert fields["title"] == "Medical Scientific Liaison Manager (m/w/d)"
@@ -284,3 +343,99 @@ def test_the_requisition_is_the_pages_reference_label():
     assert page_fields(layouts["bradyplus_careersmarketplace"])["requisition"] == "3053"
     assert page_fields(layouts["ashfieldhealthcare_careers"])["requisition"] == "23234"
     assert page_fields(layouts["astellasjapan_careers"])["requisition"] is None
+
+
+# --- an empty sitemap body is not an empty listing -------------------------------------------
+
+_EMPTY_ROBOTS = (
+    "Sitemap: https://acme.avature.net/careers/sitemap_index.xml\n"
+    "Sitemap: https://acme.avature.net/CalendarInvitation/sitemap_index.xml\n"
+)
+_EMPTY_INDEX = (
+    "<sitemapindex><sitemap><loc>https://acme.avature.net/careers/sitemap.xml</loc>"
+    "</sitemap></sitemapindex>"
+)
+
+
+def _empty_listing_scraper(search_jobs: FakeResponse):
+    """A tenant whose sitemaps all answer an empty 200 body; its search page is ``search_jobs``."""
+
+    def route(method, url, kwargs):
+        if url.endswith("robots.txt"):
+            return FakeResponse(200, _EMPTY_ROBOTS)
+        if url == "https://acme.avature.net/careers/sitemap_index.xml":
+            return FakeResponse(200, _EMPTY_INDEX)
+        if url == "https://acme.avature.net/careers/SearchJobs":
+            return search_jobs
+        return FakeResponse(
+            200, ""
+        )  # every sitemap: the empty body Avature answers at random
+
+    scraper = get_scraper(
+        "avature", "acme", fetcher=FakeFetcher(route), have_details=set()
+    )
+    scraper.pacer = Pacer(0)
+    return scraper
+
+
+def test_an_empty_sitemap_body_over_a_portal_that_lists_postings_is_unread():
+    """mantech (420 served rows) read one such run in 31: two in a row evict every row."""
+    from headstart.ingest import board_failures
+    from headstart.scrapers.base import BoardUnreadable
+
+    page = (
+        '<a href="https://acme.avature.net/careers/JobDetail/Engineer/123">Engineer</a>'
+    )
+    scraper = _empty_listing_scraper(FakeResponse(200, page))
+    try:
+        scraper.fetch_raw()
+    except BoardUnreadable as exc:
+        assert "unread, not empty" in str(exc)
+        assert not board_failures.is_gone(f"{type(exc).__name__}: {exc}")
+    else:
+        raise AssertionError("an empty sitemap body read as an empty Board")
+
+
+def test_empty_sitemaps_under_a_search_page_with_no_postings_are_an_empty_board():
+    """A utility portal answers an empty body every time; its search page 404s or links none."""
+    for search in (FakeResponse(404, ""), FakeResponse(200, "<p>0 results</p>")):
+        assert _empty_listing_scraper(search).fetch_raw() == []
+
+
+def test_a_well_formed_sitemap_with_no_postings_never_asks_the_search_page():
+    def route(method, url, kwargs):
+        if url.endswith("robots.txt"):
+            return FakeResponse(200, _EMPTY_ROBOTS)
+        if url.endswith("sitemap_index.xml"):
+            return FakeResponse(200, _EMPTY_INDEX)
+        if url.endswith("SearchJobs"):
+            raise AssertionError(
+                "the search page was asked for a well-formed empty listing"
+            )
+        return FakeResponse(200, "<urlset></urlset>")
+
+    scraper = get_scraper(
+        "avature", "acme", fetcher=FakeFetcher(route), have_details=set()
+    )
+    scraper.pacer = Pacer(0)
+    assert scraper.fetch_raw() == []
+
+
+def test_a_page_title_wrapped_in_chrome_reads_the_json_ld_title():
+    """#876: metlife's `og:title` ends in a call to action; its JSON-LD states the bare title."""
+    from headstart.scrapers.avature import _page_title
+
+    assert (
+        _page_title(
+            "Principal Data and AI Product Engineer | Apply Now",
+            "Principal, Data and AI Product Engineer",
+        )
+        == "Principal, Data and AI Product Engineer"
+    )
+    # A title that is the employer's own keeps it: no JSON-LD title, or the same one.
+    assert _page_title("Developer | Equities Algorithmic Trading", "") == (
+        "Developer | Equities Algorithmic Trading"
+    )
+    same = "Engine Overhaul Engineer III - TE.01 | EEMC"
+    assert _page_title(same, same) == same
+    assert _page_title(None, "Data Engineer") == "Data Engineer"

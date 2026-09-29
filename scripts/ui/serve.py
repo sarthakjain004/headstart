@@ -20,7 +20,7 @@ from flask import Flask, jsonify, render_template, request
 import headstart
 from headstart.alerts.store import MAX_COMPANIES, CompanyPrefs
 from headstart.embedding_conventions import PROD_TABLE, load_encoder
-from headstart.search_filters import fx, india_gazetteer
+from headstart.search_filters import country_filter, fx, india_gazetteer
 from headstart.search_filters.compiler import (
     KEYWORD_DEFAULT_SCOPE,
     keyword_scope_options,
@@ -97,6 +97,7 @@ def index():
         repo="https://github.com/sarthakjain004/headstart",
         njobs=f"{_table.count_rows():,}",
         atses=capabilities.atses,
+        country_opts=country_filter.options(),
         india_opts=india_gazetteer.dropdown_options(),
         has_first_seen=capabilities.has_first_seen,
         # the "Highest salary" sort option — dark until the ADR-0082 columns exist on the

@@ -255,6 +255,38 @@ test('a named-roles breakdown is narrowed: only its other Measure is asked for, 
   assert.deepStrictEqual(asked.slice(1).map(a => a.url), ['/trends?family=software-engineering&split=roles&metric=new&v=b00t']);
 });
 
+/** A Source box as the menu's pointerover sees it: the event's target sits in the box's label. */
+const restOn = (nodes, box) => nodes['trends-ats-menu'].listeners.pointerover.forEach(fn => fn({
+  target: { closest: sel => sel === 'label' ? { querySelector: () => box } : null } }));
+
+test('a Source box the pointer rests on is asked for ahead when it leaves every Source but one', async () => {
+  const { t, nodes, asked, run } = versionedApp();
+  const boxes = fakeAtsMenu(nodes, [['greenhouse', true], ['lever', true], ['workday', true]]);
+  await t.load(null);
+  run();
+  asked.length = 0;
+  restOn(nodes, boxes[1]);
+  assert.deepStrictEqual(asked, []);   // only once it rests there
+  run();
+  assert.deepStrictEqual(asked, [{ url: '/trends?ats=greenhouse&ats=workday&v=b00t', priority: 'low' }]);
+  // The click then asks for exactly that URL, which the browser now holds.
+  boxes[1].checked = false;
+  nodes['trends-ats-menu'].fire('change');
+  assert.strictEqual(asked.at(-1).url, asked[0].url);
+});
+
+test('a Source box whose click narrows further is not asked for ahead', async () => {
+  // Every Source but two is the Space's to work out: asking ahead would spend the reader's limit.
+  const { t, nodes, asked, run } = versionedApp();
+  const boxes = fakeAtsMenu(nodes, [['greenhouse', true], ['lever', false], ['workday', true]]);
+  await t.load(null);
+  run();
+  asked.length = 0;
+  restOn(nodes, boxes[0]);
+  run();
+  assert.deepStrictEqual(asked, []);
+});
+
 test('under Save-Data nothing is asked ahead', async () => {
   const { t, asked, ctx } = versionedApp();
   ctx.navigator = { connection: { saveData: true } };
@@ -422,6 +454,27 @@ test('the Other row is the reading\'s lines past CHART_MAX, added together', () 
   // The legend compacts counts — `45,174` is six characters taken out of the label beside it —
   // so this reads the compact form. Still the SUM (2000 + 1000), not the label text.
   assert.equal(ct[1], '3.0k');
+});
+
+test('a hidden family is never listed: it folds into a bare Other row, uncounted and inert', () => {
+  const { t, nodes, fetches } = loadApp();
+  // Five lines, the fifth ("low") a hidden family's: fewer than CHART_MAX, and still in Other.
+  const hidden = golden('a_hidden_family_folds_into_other_among_fewer_than_eight_lines');
+  t.set(hidden, null);
+  t.setUnit('count', false);
+  t.draw();
+  const html = nodes['trends-legend'].innerHTML;
+  assert.equal(row(html, 'low'), '');                          // no row of its own
+  assert.equal(row(html, 'ok') === '', false);                 // the listed lines are unchanged
+  const other = row(html, '__other__');
+  assert.match(other, /Other/);
+  assert.doesNotMatch(other, /smaller/);                       // it names no category to count
+  assert.equal(other.match(/<span class="ct">([^<]+)<\/span>/)[1], String(hidden.reading.other.move.latest));
+  assert.match(nodes['trends-scope'].textContent, /^4 categories/);   // five lines, four listed
+  assert.equal(t.chartedAndOther(hidden).charted.length, 4);
+  t.click('low');                                              // a name the page does not list
+  same(fetches, []);
+  assert.deepEqual(t.checkReading(hidden.reading), []);        // the page's checker agrees
 });
 
 test('the roles marker opens the roles it names; the row opens the levels that add up to it', () => {
@@ -820,7 +873,7 @@ test('a short history with no ATS filter keeps the generic too-few-updates messa
 
 test('a methodology epoch draws a marker at its matching stamp', () => {
   const { t, nodes } = loadApp();
-  t.set(golden('index_marks_counting_changes_and_takes_nothing_out'), null);
+  t.set(golden('index_takes_a_counting_change_out_and_marks_every_change'), null);
   t.draw();
   const svg = nodes['trends-chart'].innerHTML;
   assert.match(svg, /class="epoch-marker"/);
@@ -1995,11 +2048,55 @@ test('under Share a small line is no tile riser, and a short window gives no ope
 
 test('markers on one day are drawn as one, titled with every change', () => {
   const { t, nodes } = loadApp();
-  t.set(golden('index_marks_counting_changes_and_takes_nothing_out'), null);
+  t.set(golden('index_takes_a_counting_change_out_and_marks_every_change'), null);
   t.draw();
   const svg = nodes['trends-chart'].innerHTML;
   assert.equal((svg.match(/class="epoch-marker"/g) || []).length, 1);
-  assert.match(svg, /Aug 13 00:00 we got better at spotting tech jobs, so some jobs were added to or dropped from the counts\nAug 13 12:00 we redrew our job categories, so some jobs moved to a different category/, 'each change at its own time');
+  // With no pick a change is sized on the first row (ADR-0270); one that moved no line is not.
+  assert.match(svg, /Aug 13 00:00 we got better at spotting tech jobs, so some jobs were added to or dropped from the counts — All tech roles −3,700 openings\nAug 13 12:00 we read experience and salary from job posts more accurately, so some jobs moved to a different experience level</, 'each change at its own time');
+});
+
+test('with no pick a counting change is taken out of the lines, and the Marked changes list sizes it', () => {
+  // Software Engineering read −36,426 (−34.4%) over a week, all of it three marked changes
+  // (#833).
+  const { t, nodes } = loadApp();
+  t.setPicks([]);
+  t.set(golden('index_takes_a_counting_change_out_and_marks_every_change'), null);
+  t.setUnit('count', false);
+  t.draw();
+  assert.match(nodes['trends-legend'].innerHTML, /software-engineering[\s\S]*\+400 openings/);
+  assert.match(nodes['trends-changes'].innerHTML, /<li><b>Aug 13 00:00<\/b> we got better at spotting tech jobs, so some jobs were added to or dropped from the counts — All tech roles −3,700 openings<\/li>/);
+  assert.match(nodes['trends-changes'].innerHTML, /<li><b>Aug 13 12:00<\/b> we read experience and salary from job posts more accurately, so some jobs moved to a different experience level<\/li>/);
+  assert.match(nodes['trends-foot'].textContent, /Lines break at the marked jumps, and percentages skip them\./);
+});
+
+test('with no pick the Boards found come out of each line, listed once and drawn nowhere', () => {
+  // 68,535 openings on 9,253 Boards found in one week read as the index's hiring (#857). They
+  // land on nearly every run, so they are one Marked change, with no marker and no line break.
+  const { t, nodes } = loadApp();
+  t.setPicks([]);
+  t.set(golden('index_takes_boards_found_out_of_each_line_by_its_own_openings'), null);
+  t.setUnit('count', false);
+  t.draw();
+  assert.match(nodes['trends-legend'].innerHTML, /software-engineering[\s\S]*\+35 openings/);
+  assert.match(nodes['trends-changes'].innerHTML, /<li><b>Sep 22 00:00<\/b> 5 more job sites found through Sep 25 — All tech roles \+150 openings<\/li>/);
+  const svg = nodes['trends-chart'].innerHTML;
+  assert.equal((svg.match(/class="found-marker"/g) || []).length, 0);
+  assert.equal((svg.match(/class="epoch-marker"/g) || []).length, 1);
+  same(t.checkReading(golden('index_takes_boards_found_out_of_each_line_by_its_own_openings').reading), []);
+});
+
+test('with no pick a window under 3 days states each line in openings, never too new', () => {
+  // The index is no company: a one-day window read every one of its lines "too new" (#857).
+  const { t, nodes } = loadApp();
+  t.setPicks([]);
+  const d = golden('index_takes_a_counting_change_out_and_marks_every_change');
+  for (const line of [d.reading.total, ...d.reading.lines]) Object.assign(line.move, { span_days: 1, per_week: null });
+  t.set(d, null);
+  t.setUnit('count', false);
+  t.draw();
+  assert.doesNotMatch(nodes['trends-legend'].innerHTML, /too new/);
+  assert.match(nodes['trends-legend'].innerHTML, /software-engineering[\s\S]*\+400 openings/);
 });
 
 // ---- critique round 12 ------------------------------------------------------------------------
@@ -2490,6 +2587,17 @@ test('the index gets a hiring net from its turnover, and table columns too', () 
   assert.match(nodes['trends-verdict'].innerHTML, /about 10 more closed than opened — about 40 opened, 50 closed\./);
 });
 
+test('Opening more than closing leads with opened less closed and gives both counts', () => {
+  // ADR-0321: the Lens ranks only companies whose closures were counted on every Board, so a
+  // row always has both counts.
+  const { t } = loadApp();
+  const wipro = { net: 68, opened: 344, closed: 251, stock: 2891, rate: 12, opened_less_closed: 93 };
+  const m = t.hotMeasure.opened_less_closed(wipro);
+  assert.equal(m.big, '+93');
+  assert.match(m.unit, /more tech roles opened than closed this week/);
+  assert.equal(m.sub, '344 opened · 251 closed · 2891 open now');
+});
+
 test('a Hot row shows the week’s opened and closed, and Volume leads with opened', () => {
   const { t } = loadApp();
   const amazon = { net: -3, opened: 1396, closed: 1399, stock: 9081, rate: 15 };
@@ -2731,17 +2839,9 @@ test('the page catches each broken invariant with the checker\'s own sentence', 
   same(broken('duplicate_removal_scales_the_history_before_it', r => { r.company_lines[0].move.share.start *= 1.5; }),
     ['company line eightfold:micron: its share at the start is not its netted count over the netted denominator',
       'company line eightfold:micron: its share\'s change is not its latest share over its start']);
-  same(broken('index_marks_counting_changes_and_takes_nothing_out', r => {
-    const move = r.lines[0].move;
-    move.hiring -= 5;
-    move.not_hiring = [{ change: 'counting@x', kind: 'counting', label: 'x', size: 5 }];
-  }), [
-    'line software-engineering: its Not hiring reads 0, its causes sum to 5',
-    'line software-engineering: its weekly rate is not its hiring over its days',
-    'line software-engineering: its share at the start is not its netted count over the netted denominator',
-    'line software-engineering: its percentage is not hiring over the netted start',
-    'line software-engineering: with no pick, something was taken out',
-  ]);
+  same(broken('index_takes_a_counting_change_out_and_marks_every_change', r => {
+    r.marked_changes[0].sizes.__total__ += 1;
+  }), ['company line __total__: its Not hiring is not its Marked changes']);
   same(broken('refit_moving_more_than_a_category_held_closes_the_table', r => {
     r.breakdown.closing.not_hiring[0].kind = 'growth_scaled_by_a_change';
   }), ['closing row: it is not one figure moved between categories by a counting change']);
@@ -2915,8 +3015,9 @@ test('over every golden reading, each company\'s Not hiring is the reading\'s, a
   for (const name of GOLDEN_NAMES) {
     const { nodes, d } = drawGolden(name);
     const verdict = nodes['trends-verdict'].innerHTML;
-    // The tracked roles have no company line: their sentence names no figure.
-    if (!d.companies || /roles matched by job title/.test(verdict)) continue;
+    // The tracked roles have no company line: their sentence names no figure. Nor does the
+    // index's, which gives its turnover alone.
+    if (!(d.companies || []).length || /roles matched by job title/.test(verdict)) continue;
     const sentences = [...verdict.matchAll(/<li><b>([^<]*)<\/b>: ([^<]*)(<details class="verdict-why"><summary>Not hiring: ([^<]*)<\/summary>)?/g)];
     const listed = listedSizes(nodes['trends-changes'].innerHTML);
     const lines = d.reading.company_lines;

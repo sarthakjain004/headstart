@@ -19,9 +19,10 @@ import test_space_app as space_tests
 from test_space_app import auth_app, trends_app  # noqa: F401 — fixtures, reused
 
 from headstart.mcp_protocol.messages import ToolFailure
+from headstart.serving import job_search
 from headstart.space_mcp import server
 from headstart.space_mcp import space_client as sc
-from headstart.space_mcp.tools import read_trends
+from headstart.space_mcp.tools import company_profile, get_job, read_trends
 
 #: A day after the fixture history's last tick (`test_space_app._T3`, 2026-08-13), so a window
 #: counted back from "now" means the same ticks whatever day the suite runs.
@@ -37,6 +38,7 @@ def companies_app(trends_app, monkeypatch, tmp_path):  # noqa: F811 — the impo
     """The trends app with the three-company history installed, and the globals boot derives
     from a history rebuilt from it by the app's own `_derive_from_history`."""
     monkeypatch.setattr(read_trends, "_now", lambda: _FIXTURE_NOW)
+    monkeypatch.setattr(company_profile, "_now", lambda: _FIXTURE_NOW)
     history = space_tests._company_history(trends_app, monkeypatch, tmp_path)
     company_boards, hot = trends_app._derive_from_history(history)
     monkeypatch.setattr(trends_app, "_COMPANY_BOARDS", company_boards)
@@ -93,6 +95,28 @@ def test_search_arguments_reach_the_app_as_the_filters_they_name(companies_app, 
     assert "Ordered by similarity to the query" in text
 
 
+def test_a_concise_search_asks_the_app_for_the_total_alone(companies_app, monkeypatch):
+    """ADR-0274: `counts=total` reaches the app, which counts no option; `detail=full` still
+    gets every option's count."""
+    answered = []
+    real = companies_app._searcher.facets
+
+    def recording(args, **kwargs):
+        counted = real(args, **kwargs)
+        answered.append((args.get("counts"), counted))
+        return counted
+
+    monkeypatch.setattr(companies_app._searcher, "facets", recording)
+    client = _client(companies_app)
+    concise = server.call(client, "search_jobs", {"query": "engineer"})
+    full = server.call(client, "search_jobs", {"query": "engineer", "detail": "full"})
+    [(asked, total_only), (asked_full, strip)] = answered
+    assert asked == "total" and total_only["facets"] == {} and total_only["total"]
+    assert asked_full is None and strip["facets"]["remote"]
+    assert strip["total"] == total_only["total"]
+    assert "remote=true: " in full and "remote=true: " not in concise
+
+
 def test_a_company_name_is_the_company_boxs_substring_at_the_app(companies_app, parsed):
     text = server.call(_client(companies_app), "search_jobs", {"company": "Citi"})
     assert parsed and all(f.company == "Citi" for f in parsed)
@@ -126,7 +150,7 @@ def test_a_whole_index_trend_is_reported_without_its_drawing_arrays(companies_ap
         _client(companies_app), "read_trends", {"detail": "full", "days": 7}
     )
     assert "The whole index." in text and "Window " in text
-    assert "reconcile" in text
+    assert "arithmetic check passed" in text and "Openings listed: " in text
     assert "netted" not in text and "steps_at" not in text
 
 
@@ -136,10 +160,17 @@ def test_a_trend_category_the_app_does_not_know_is_refused(companies_app):
     app's `family_known` instead; called past the schema, as that install's calls arrive."""
     client = _client(companies_app)
     known = server.call(client, "read_trends", {"category": "software-engineering"})
-    assert "Category: " in known and "reconcile" in known
+    assert "Category: " in known and "arithmetic check" in known
     with pytest.raises(ToolFailure, match="'nonsense-family'"):
         read_trends.answer(
-            client, {"category": "nonsense-family", "days": 30, "detail": "concise"}
+            client,
+            {
+                "category": "nonsense-family",
+                "days": 30,
+                "detail": "concise",
+                "coverage": "all",
+                "measure": "openings",
+            },
         )
 
 
@@ -174,8 +205,8 @@ def test_a_window_with_no_counts_says_so_rather_than_reconciling_nothing(
     """A window that starts after the fixture's last tick (2026-08-13) holds none of them."""
     monkeypatch.setattr(read_trends, "_now", lambda: datetime(2026, 9, 1, tzinfo=UTC))
     text = server.call(_client(companies_app), "read_trends", {"days": 3})
-    assert "No trend counts fall in the last 3 days" in text
-    assert "reconcile" not in text
+    assert "No trend counts fall between 2026-08-29 and now" in text
+    assert "arithmetic" not in text
 
 
 def test_the_read_routes_answer_anyone_with_the_wall_on(auth_app):  # noqa: F811
@@ -210,6 +241,7 @@ def test_every_search_argument_reaches_the_app_as_the_filter_it_names(salaried, 
             "max_years": 5,
             "employment_type": "contract",
             "india_place": "bengaluru",
+            "country": "IN",
             "location": "Pune",
             "salary_min": 3_000_000,
             "salary_max": 9_000_000,
@@ -231,6 +263,7 @@ def test_every_search_argument_reaches_the_app_as_the_filter_it_names(salaried, 
             "max_years",
             "etype",
             "india",
+            "country",
             "location",
             "salary_min",
             "salary_max",
@@ -249,6 +282,7 @@ def test_every_search_argument_reaches_the_app_as_the_filter_it_names(salaried, 
         "max_years": 5,
         "etype": "contract",
         "india": "bengaluru",
+        "country": "IN",
         "location": "Pune",
         "salary_min": 3_000_000,
         "salary_max": 9_000_000,
@@ -268,7 +302,7 @@ def test_a_salary_bound_on_a_migrated_table_reaches_it(salaried, parsed):
         {"salary_min": 3_000_000, "salary_currency": "INR", "sort": "salary"},
     )
     assert parsed[0].salary_min == 3_000_000
-    assert "salary at least 3,000,000 INR a year" in text
+    assert "salary range reaching 3,000,000 INR a year or more" in text
     assert "highest salary first, in INR across every match" in text
 
 
@@ -345,9 +379,152 @@ def test_hot_rows_the_tab_hides_are_left_out_by_the_apps_own_list(
         "hidden_by_default": ["staffing", "aggregator"],
     }
     monkeypatch.setattr(companies_app, "_HOT", hot)
-    text = server.call(_client(companies_app), "hiring_now", {})
+    text = server.call(_client(companies_app), "hiring_now", {"lens": "expansion"})
     assert '"Acme"' in text and '"Temps Inc"' not in text
     assert "1 aggregator and staffing rows hidden" in text
+
+
+# ---- get_job and similar_to (ADR-0277) ----
+
+
+def test_get_job_restates_the_spaces_own_bounds():
+    assert get_job.MAX_IDS == job_search.MAX_JOB_IDS
+    assert get_job.ID_MAX_CHARS == job_search.JOB_ID_MAX_CHARS
+    assert get_job.SPACE_DESCRIPTION_LIMIT == job_search.JOB_DESCRIPTION_LIMIT
+
+
+def test_get_job_reads_a_posting_and_names_the_missing_at_the_app(
+    companies_app, monkeypatch
+):
+    monkeypatch.setattr(companies_app, "_UNCONFIRMED", frozenset({"greenhouse:acme:1"}))
+    text = server.call(
+        _client(companies_app),
+        "get_job",
+        {"ids": ["greenhouse:acme:1", "greenhouse:gone:9"]},
+    )
+    assert text.startswith("Read 1 of 2 jobs.")
+    assert '1. "Backend Engineer" at "Acme"' in text
+    assert 'department "Engineering"' in text
+    assert '"Build the payments API."\n"Own it end to end."' in text
+    assert "latest scrape did not find it" in text
+    # The fixture table counts 1 on every filtered count, so its Board reads as served.
+    assert (
+        'Not in the index now: "greenhouse:gone:9". Each has closed, or was never'
+        in text
+    )
+    assert "Data as of the trends tick" in text
+
+
+def test_similar_to_reaches_the_app_as_like_on_both_routes(companies_app, monkeypatch):
+    asked = []
+
+    def recorded(name):
+        real = getattr(companies_app._searcher, name)
+
+        def recording(args, *rest, **kwargs):
+            asked.append((name, args.get("like"), args.get("q")))
+            return real(args, *rest, **kwargs)
+
+        return recording
+
+    for name in ("run", "facets"):
+        monkeypatch.setattr(companies_app._searcher, name, recorded(name))
+    text = server.call(
+        _client(companies_app), "search_jobs", {"similar_to": "greenhouse:acme:1"}
+    )
+    assert sorted(asked) == [
+        ("facets", "greenhouse:acme:1", None),
+        ("run", "greenhouse:acme:1", None),
+    ]
+    assert 'Ordered by similarity to job "greenhouse:acme:1" (itself left out)' in text
+
+
+# ---- a company looked up, and its profile (ADR-0275) ----
+
+
+def test_find_company_offers_one_entry_per_name_as_the_picker_does(companies_app):
+    """Three directory companies are named Citi; the picker offers only the largest, and so
+    does the tool, saying a smaller one of the same name is reached by its Board key."""
+    text = server.call(_client(companies_app), "find_company", {"name": "Citi"})
+    assert '1 directory company for "Citi"' in text
+    assert "key workday:citi/2 · exact name · 44 tech openings" in text
+    assert "eightfold:citi.eightfold.ai" not in text
+    assert "only the largest is listed" in text
+
+
+def test_a_search_whose_company_matched_nothing_offers_the_directory_companies(
+    companies_app, monkeypatch
+):
+    """The fixture table matches every clause, so the app's nothing-matched answer is staged.
+    The fixture's names are too short for a typo match (five letters), so "Hp" is a prefix."""
+    monkeypatch.setattr(companies_app._searcher, "run", lambda args, **_: [])
+    monkeypatch.setattr(
+        companies_app._searcher,
+        "facets",
+        lambda args, **_: {"total": 0, "facets": {}, "blocking": "company"},
+    )
+    text = server.call(_client(companies_app), "search_jobs", {"company": "Hp"})
+    assert 'no company name contains "Hp"' in text
+    assert (
+        '"Hpe" — key workday:hpe/a, workday, 2 Board(s), 13 openings, prefix match'
+        in text
+    )
+
+
+def test_a_profile_reads_every_route_for_every_board_of_its_company(
+    companies_app, scoped_boards
+):
+    """HPE is one Tenant split into two Workday sites: either site's key means both, in the
+    facet counts, the locations and the levels alike."""
+    text = server.call(
+        _client(companies_app), "company_profile", {"company": "workday:hpe/b"}
+    )
+    assert len(scoped_boards) == 3 and all(
+        sorted(boards) == ["workday:hpe/a", "workday:hpe/b"] for boards in scoped_boards
+    )
+    assert text.startswith('Company: "Hpe" (workday:hpe/a, 2 Boards,')
+    assert "Its Boards: workday:hpe/a, workday:hpe/b." in text
+    assert "Job categories now, largest first:" in text
+    # The fixture table answers its two rows, Berlin and Remote, to every scan, and 1 to every
+    # filtered count.
+    assert (
+        'Germany 1 ("Berlin" 1). No country is read from the places of 1 ("Remote" 1).'
+        in text
+    )
+    # Its two rows state no experience, each counted once.
+    assert "Experience not stated 2" in text
+    assert "Of the 1 jobs search serves on its Boards" in text
+    assert (
+        "search also serves 7 jobs on its Boards that the tech filter sets aside"
+        in text
+    )
+
+
+def test_requirements_reach_the_app_as_a_role_and_its_filters(companies_app, parsed):
+    """The fixture table answers its two rows to every read: the sample is both, one of them
+    described, and the filters reach the app as the search filters they name (ADR-0324)."""
+    text = server.call(
+        _client(companies_app),
+        "role_requirements",
+        {"query": "backend engineer", "remote": True, "country": "DE"},
+    )
+    assert parsed[-1].remote is True and parsed[-1].country == "DE"
+    assert text.startswith(
+        'What postings closest to "backend engineer" ask for: counted over 2 postings, of 1 '
+    )
+    assert "as a share of the 1 sampled postings with a description" in text
+    assert "Remote: 2 of 2 (100%)." in text
+
+
+def test_a_requirements_category_without_role_assignments_is_the_deployments_state(
+    companies_app,
+):
+    """The fixture pulls no role assignments, so the app cannot sample a category, and says so
+    as a deployment's state rather than an empty answer."""
+    with pytest.raises(ToolFailure, match="role assignments"):
+        server.call(
+            _client(companies_app), "role_requirements", {"category": "security"}
+        )
 
 
 # ---- the Space's own /mcp, in both protocol eras (ADR-0267) ----
@@ -355,8 +532,12 @@ def test_hot_rows_the_tab_hides_are_left_out_by_the_apps_own_list(
 #: One call of each registered tool, and a phrase its answer carries.
 _EACH_TOOL = [
     ("search_jobs", {"query": "backend engineer"}, '"Backend Engineer"'),
+    ("get_job", {"ids": ["greenhouse:acme:1"]}, '"Build the payments API."'),
     ("read_trends", {"days": 7}, "Newest trends tick"),
     ("hiring_now", {}, "No company qualified on this Lens this week."),
+    ("find_company", {"name": "Citi"}, "key workday:citi/2"),
+    ("company_profile", {"company": "workday:hpe/b"}, 'Germany 1 ("Berlin" 1)'),
+    ("role_requirements", {"query": "backend engineer"}, "counted over 2 postings"),
 ]
 
 _MODERN_META = {

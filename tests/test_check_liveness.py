@@ -583,6 +583,14 @@ def test_the_quota_403_key_matches_the_gate_key(cl):
     )
 
 
+def test_both_zwayam_api_clusters_share_one_metered_gate(cl):
+    """`p_zwayam` asks apic2.zwayam.com for every Board public.zwayam.com does not hold, and the
+    two share one per-IP quota (walling apic2 walled public, 2026-09-29, ADR-0303). So a 403 from
+    either must rotate, and both must pace and rotate as one gate."""
+    assert cl._gate_key("apic2.zwayam.com") == cl._gate_key("public.zwayam.com")
+    assert cl._is_quota_403("apic2.zwayam.com", _Resp(403))
+
+
 def test_a_bare_quota_403_moves_egress_instead_of_falling_through(cl, egress):
     egress.available = True
     gate = cl._HostGate(8, 0.25, "public.zwayam.com")
@@ -684,6 +692,37 @@ def test_an_unknown_reprobe_keeps_a_live_verdict(cl, tmp_path, monkeypatch):
     after = cl.liveness_ledger.load(ledger / "greenhouse.csv")
     assert after["stripe"] == live
     assert after["newco"].status == cl.UNKNOWN
+
+
+def test_a_workday_row_records_the_data_centre_that_answered(cl, tmp_path, monkeypatch):
+    """#661: a Board found on another data centre than its row's url names lands with that data
+    centre in its url, so `checked_at` dates the data centre too and ADR-0219's newest-row rule
+    elects one that answers. The tenant, which keys the ledger, stays as it was: respelling it
+    would land a second row for the Board."""
+    pool, ledger = tmp_path / "pool", tmp_path / "ledger"
+    pool.mkdir()
+    tenant = "acme.wd1.myworkdayjobs.com/External"
+    (pool / "workday.csv").write_text(
+        f"tenant,url\n{tenant},https://acme.wd1.myworkdayjobs.com/External\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        cl,
+        "_post",
+        lambda url, body, headers: (
+            (200, {"total": 4}) if ".wd5." in url else (422, None)
+        ),
+    )
+    monkeypatch.setattr(cl, "PASSES", [(1, 1)])
+    monkeypatch.setattr(
+        "sys.argv",
+        ["check_liveness", "--dir", str(pool), "--ledger-dir", str(ledger), "workday"],
+    )
+    cl.main()
+    after = cl.liveness_ledger.load(ledger / "workday.csv")
+    assert list(after) == [tenant]
+    assert after[tenant].url == "https://acme.wd5.myworkdayjobs.com/External"
+    assert (after[tenant].status, after[tenant].jobs) == (cl.LIVE, 4)
 
 
 def test_an_oracle_pool_row_lands_under_the_pod_host_its_scraper_reads(

@@ -87,8 +87,10 @@ for `ci.yml`/`bot.yml`/`deploy-space.yml`); a workflow-level `concurrency: group
 `ingest.scrape_run`/`embed_run --resume` paths are retained for local/single-job runs (see below).
 
 `.github/workflows/deploy-space.yml` (`deploy-space`): pushes `deploy/hf-space/` (plus the
-whole `src/headstart` package and `config/`, copied in — ADR-0156) to the Space on any main push touching those paths
-(plus manual dispatch). **Never let tooling call `create_repo` on the Space** — HF now answers
+whole `src/headstart` package and `config/`, copied in — ADR-0156) to the Space on any main push touching a
+module the Space loads or a file it reads, and on manual dispatch. A change anywhere else ships
+with the next deploy (ADR-0290, pinned by `tests/test_space_deploy_trigger.py`), since every deploy
+boots a new container for about six minutes. **Never let tooling call `create_repo` on the Space** — HF now answers
 Docker-Space create attempts with a `402 Payment Required` (new free Docker Spaces are PRO-only;
 ours predates the policy and keeps running). The `hf upload` CLI pre-creates and so 402s; use
 `HfApi().upload_folder(...)` against the existing repo, as the workflow does (2026-07-20, PR #44).

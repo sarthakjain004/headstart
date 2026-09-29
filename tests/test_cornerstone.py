@@ -364,13 +364,47 @@ def test_a_401_that_survives_the_refresh_fails_the_board():
         scraper.fetch_raw()
 
 
-def test_a_corp_with_no_career_site_reads_as_no_jobs():
+def test_a_board_whose_career_site_pages_all_redirect_is_unread_not_empty():
     """An LMS-only corp answers `302 /ui/error` for every career-site page (5 tenants x ids
-    1-6); three ids are tried because `myhr-ece` starts at 2."""
-    jobs, fake, _ = _scrape("ama-assn", home_status={1: 302, 2: 302, 3: 302})
-    assert jobs == []
-    assert _home_fetches(fake) == 3
+    1-6); three ids are tried because `myhr-ece` starts at 2. `p_cornerstone` calls that DEAD, so
+    a Scrapable Board answering it is unread (#702): CI read 14 live Boards that way on
+    2026-09-27/28, and an empty read is in eviction scope (ADR-0200). Asked twice, then raised,
+    so the Board is Unauthoritative (ADR-0053) and keeps what it serves."""
+    from headstart.ingest import board_failures
+    from headstart.scrapers.base import BoardUnreadable
+
+    fake = _FakeCsod("ama-assn", _boards()["ama-assn"])
+    fake.home_status = {1: 302, 2: 302, 3: 302}
+    scraper = CornerstoneScraper("ama-assn", fetcher=fake)
+    with pytest.raises(BoardUnreadable, match="unread, not empty") as raised:
+        scraper.fetch_raw()
+    assert _home_fetches(fake) == 6
     assert not [url for url in fake.urls() if "/careersites/" in url]
+    # Recorded as harvest records it, it is no gone strike: an unread Board is not a 404.
+    assert not board_failures.is_gone(f"{type(raised.value).__name__}: {raised.value}")
+
+
+class _RedirectsFirst(_FakeCsod):
+    """Redirects the first `redirects` career-site page reads to `/ui/error`, then answers each as
+    recorded — a Board CI could not read once."""
+
+    def __init__(self, slug: str, redirects: int) -> None:
+        super().__init__(slug, _boards()[slug])
+        self.redirects = redirects
+
+    def _answer(self, method, url, kwargs):
+        if "/home?c=" in url and self.redirects:
+            self.redirects -= 1
+            return _csod_response(302, "", {"location": "/ui/error"})
+        return super()._answer(method, url, kwargs)
+
+
+def test_a_second_read_that_finds_the_career_site_reads_the_board():
+    fake = _RedirectsFirst("ama-assn", redirects=3)
+    scraper = CornerstoneScraper("ama-assn", fetcher=fake)
+    jobs = scraper.parse(scraper.fetch_raw(), SCRAPED_AT)
+    assert sorted(_by_id(jobs)) == ["4070", "4125", "4144", "4152"]
+    assert _home_fetches(fake) == 4
 
 
 def test_the_token_is_read_from_the_next_site_when_site_1_redirects():

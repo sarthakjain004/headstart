@@ -68,6 +68,13 @@ the USD bounds for a currency with none of its own. Giving them their own bounds
 stored answers, which this refactor must not do. The served counts do not warrant it yet: of
 143,288 served rows with a derived salary in the 2026-09-23 snapshot, 7 are SGD and 1 is NZD.
 
+> **Amended 2026-09-29 (#698, `DERIVATIONS_VERSION` 22).** SGD and NZD now have bounds of their
+> own, and so do the thirteen codes that joined `_CURRENCY_CODES` beside them (MYR, JPY, PHP, NGN,
+> RON, HUF, SAR, CNY, PKR, QAR, COP, NOK, TWD): every code that at least 10 served rows stated in
+> `salary` while `salary_currency` stayed null. The bounds and their evidence sit beside
+> `_MIN_PLAUSIBLE_ANNUAL` in `jobs/salary.py`. The test in point 4 now covers 30 currencies;
+> `config/fx_rates.json` gained NGN, PKR, QAR and COP at its own `as_of` date.
+
 ## Measurement
 
 Stored data must read the same, so everything was measured against the merge-base

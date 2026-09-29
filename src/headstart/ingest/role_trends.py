@@ -388,7 +388,7 @@ def main() -> int:
     # Methodology differs from the one before it is a counting change.
     methodology = trend_history.Methodology(
         family_list_fingerprint=role_taxonomy.family_list_fingerprint(args.families),
-        family_classifier_version=head.version,
+        family_classifier_version=role_family_classifier.classifier_version(head),
         tech_filter_version=tech_filter.TECH_FILTER_VERSION,
         derivations_version=DERIVATIONS_VERSION,
         dedup_version=DEDUP_VERSION,

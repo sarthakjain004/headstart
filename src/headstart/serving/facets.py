@@ -40,9 +40,13 @@ deliberately nowhere to pass one.
 
 from __future__ import annotations
 
+import re
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from typing import Any
+
+import lancedb
 
 from headstart.search_filters import (
     employment_type_filter,
@@ -99,6 +103,8 @@ def counts(
     capabilities: IndexCapabilities,
     *,
     extra_where: str | None = None,
+    only_total: bool = False,
+    table_where: Callable[[SearchFilters], str | None] | None = None,
 ) -> dict[str, Any]:
     """Every facet's per-option count, plus the total, for one request's filters.
 
@@ -117,12 +123,28 @@ def counts(
     the same counting machinery already pays for. ``description_coverage`` is the Keyword
     filter's disclaimer (ADR-0104): ``{"covered": int, "total": int}`` counted with the keyword
     lifted only while the active keyword scope uses descriptions; otherwise ``None``.
+
+    ``only_total`` counts no option (ADR-0274): ``facets`` is ``{}``, and the total, ``blocking``
+    and ``description_coverage`` are as above. An agent that prints only the total asks this,
+    because each option re-scanned every row the other filters match until #834, so under a
+    description keyword the full strip was measured at 98.7 s against 10.6 s for the ranked page.
+
+    ``table_where`` compiles a variation of ``filters`` for a count or a read of ``table`` itself,
+    in place of :func:`build_filter` narrowed by ``extra_where``; it must keep the same rows. A
+    description-keyword request passes :meth:`headstart.serving.description_matches.
+    DescriptionMatches.where`, which names them by row id once found (ADR-0320). A count over the
+    keyword's rows read into memory never takes it: a row id there names a different row.
     """
 
     def where_for(**overrides: Any) -> str | None:
         return with_extra(
             build_filter(replace(filters, **overrides), capabilities), extra_where
         )
+
+    def table_where_for(**overrides: Any) -> str | None:
+        if table_where is None:
+            return where_for(**overrides)
+        return table_where(replace(filters, **overrides))
 
     # (dimension, option value, label, the kwargs that option overrides). Built in full first
     # and counted second, so every count can go out at once.
@@ -160,16 +182,39 @@ def counts(
     # current filters intact reports the *constrained* total, so an active 2-hour window makes
     # "Any time" read smaller than the 24-hour option nested inside it: the unconstrained choice
     # looking narrower than its own subset, which is worse than showing no number at all.
-    for dimension in sorted(dimensions):
-        if dimension in ("remote", "has_salary"):
-            continue  # switches, not option lists — "off" is the absence of the row, not a row
+    listed = sorted(dimensions - {"remote", "has_salary"})
+    for dimension in listed:
+        # remote and has_salary are switches, not option lists — "off" is the absence of the row,
+        # not a row
         add(dimension, None, "Any", **{dimension: None})
+
+    # The Keyword filter is applied ONCE (#834). Every count here keeps each filter but the one
+    # dimension it varies, so the rows matching the keyword and every other filter are read up
+    # front, and each count that keeps the keyword runs over them, compiled without it:
+    # `(A AND keyword AND B)` over the table is `(A AND B)` over those rows, by the same engine, so
+    # every count is the one the list would show. Counted the other way, each of ~80 counts re-ran
+    # its `LIKE` over the description column, and one request took 103 s on the Space's two vCPUs.
+    # A lone total (ADR-0274) is one count, which reading the rows first would only lengthen.
+    keyword = (
+        None
+        if only_total
+        else build_filter(
+            SearchFilters(kw=filters.kw, kw_in=filters.kw_in), capabilities
+        )
+    )
+    unkeyed_count = {"kw": None, "kw_in": None} if keyword else {}
+    # Without the keyword's rows read first, every count is of the table itself.
+    count_where = where_for if keyword else table_where_for
 
     # `total` rides the same pool rather than being counted first — it is one more count, and
     # serialising it ahead of the rest would add its latency to every request for no reason.
-    counted = [(d, v, lbl, where_for(**ov)) for d, v, lbl, ov in plan]
+    counted = (
+        []
+        if only_total
+        else [(d, v, lbl, count_where(**ov, **unkeyed_count)) for d, v, lbl, ov in plan]
+    )
+    total_where = count_where(**unkeyed_count)
     with ThreadPoolExecutor(max_workers=_WORKERS) as pool:
-        totals = pool.submit(_count, table, where_for())
         # The Keyword filter's disclaimer (ADR-0104): of the rows the *other* filters match, how
         # many carry a description at all. Not a facet — there is no option to pick — but the
         # same rules apply: decided by the where-clause alone, so it rides this pool, and counted
@@ -178,7 +223,7 @@ def counts(
         # has a description by construction — and the rail would read "N of N" on a table where
         # almost nothing has text. None while the column does not exist yet, which the UI reads
         # as "not available", distinct from a genuine zero.
-        unkeyed = where_for(kw=None, kw_in=None)
+        unkeyed = table_where_for(kw=None, kw_in=None)
         keyword_scope = filters.kw_in or KEYWORD_DEFAULT_SCOPE
         needs_description_coverage = bool(
             filters.kw
@@ -197,7 +242,18 @@ def counts(
             if capabilities.has_description and needs_description_coverage
             else None
         )
-        results = list(pool.map(lambda c: _count(table, c[3]), counted))
+        # Read while the coverage counts, which lift the keyword, run over the whole table.
+        keyed = (
+            _keyword_rows(
+                table,
+                table_where_for(**dict.fromkeys(listed)),
+                [total_where, *(c[3] for c in counted)],
+            )
+            if keyword
+            else table
+        )
+        totals = pool.submit(_count, keyed, total_where)
+        results = list(pool.map(lambda c: _count(keyed, c[3]), counted))
 
     facets: dict[str, list[dict[str, Any]]] = {}
     for (dimension, value, label, _), n in zip(counted, results, strict=True):
@@ -209,7 +265,16 @@ def counts(
     return {
         "total": total,
         "facets": facets,
-        "blocking": _blocking(table, filters, capabilities, total, extra_where),
+        # Only a listed dimension's recount is inside the rows read; any other counts the table.
+        "blocking": _blocking(
+            filters,
+            total,
+            lambda key, unset: (
+                _count(keyed, count_where(**{key: unset}, **unkeyed_count))
+                if key in listed
+                else _count(table, table_where_for(**{key: unset}))
+            ),
+        ),
         "description_coverage": (
             {"covered": coverage[0].result(), "total": coverage[1].result()}
             if coverage
@@ -226,6 +291,26 @@ def _with_description(where: str | None, materialized: bool) -> str:
 
 def _count(table: Any, where: str | None) -> int:
     return table.count_rows(filter=where) if where else table.count_rows()
+
+
+def _keyword_rows(table: Any, read: str, wheres: list[str | None]) -> Any:
+    """The rows ``read`` matches, as an in-memory table holding every column ``wheres`` name.
+
+    One scan of the keyword's columns, the description among them, in place of one per count.
+    Only the named columns are kept, never the description or the vector, so even a keyword
+    matching most of the table stays small: "engineer" in titles or descriptions matched 406,954
+    of 514,163 rows. A name inside a quoted term only keeps one more column. Each call connects
+    its own in-memory database, so concurrent requests never share a table.
+    """
+    named = " ".join(w for w in wheres if w)
+    columns = [
+        c for c in table.schema.names if re.search(rf"\b{re.escape(c)}\b", named)
+    ]
+    # The row id is asked for and dropped: LanceDB 0.36 cannot plan a read whose filter names
+    # rows by `_rowid` (ADR-0320) unless the id is in the plan, and a memory table cannot hold it.
+    rows = table.search().where(read).with_row_id(True).select(columns).to_arrow()
+    rows = rows.drop_columns(["_rowid"])
+    return lancedb.connect("memory://").create_table("keyword_rows", data=rows)
 
 
 # Keys :func:`_blocking` may never name. The runtime facts in `IndexCapabilities` are not even
@@ -270,20 +355,19 @@ NEVER_BLOCKING = frozenset(
 
 
 def _blocking(
-    table: Any,
     filters: SearchFilters,
-    capabilities: IndexCapabilities,
     total: int,
-    extra_where: str | None,
+    recount: Callable[[str, Any], int],
 ) -> str | None:
     """Which single active filter is costing the user everything, when nothing matched.
 
     Only computed on a zero total, where it is the whole answer and the request is otherwise
     doing no work anyway. It drops each active filter in turn and keeps the one that recovers
     the most rows; ``None`` when nothing matched even with every filter dropped, because then
-    no filter is to blame and saying one is would be a lie. Every recount keeps
-    ``extra_where`` (the Account clause) applied, as :func:`counts` does for the total: a filter
-    whose removal only recovers rows the Account clause hides would remove nothing on screen.
+    no filter is to blame and saying one is would be a lie. ``recount(key, unset)`` counts the
+    request with that one filter set to ``unset``. Every recount keeps ``extra_where`` (the
+    Account clause) applied, as :func:`counts` does for the total: a filter whose removal only
+    recovers rows the Account clause hides would remove nothing on screen.
     """
     if total:
         return None
@@ -303,13 +387,7 @@ def _blocking(
         # "Unset" is False for the two switches and None for everything else — build_filter
         # reads both as absent, but a bool kwarg given None would be a lie about its type.
         unset = False if isinstance(getattr(filters, key), bool) else None
-        n = _count(
-            table,
-            with_extra(
-                build_filter(replace(filters, **{key: unset}), capabilities),
-                extra_where,
-            ),
-        )
+        n = recount(key, unset)
         if n > best_n:
             best, best_n = key, n
     return best

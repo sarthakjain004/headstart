@@ -9,7 +9,10 @@ the latest value stays the real one and the history before a step is brought to 
 ``line_reading``'s private implementation (ADR-0233), which reads how ``_net`` took each step out
 (``_NetTrace``) into a line's hiring and its named causes; the Trends tab and Hot both read that.
 
-With no pick nothing is taken out: the index chart keeps a counting change's jump, marked.
+With no pick a counting change is taken out as under a pick (ADR-0270): the index is a view
+whose Boards any counting change can move, duplicate removal included. A Found Board is taken out
+of each index line by the openings it brought that line (ADR-0304), a step on nearly every run,
+so it is not drawn. A duplicate removal is sized per company, and the index keeps it.
 """
 
 from __future__ import annotations
@@ -68,6 +71,10 @@ METHODOLOGY_WORDS = {
         None,
     ),
 }
+
+# How a line's growth that a counting change's scaling took out is labelled: this, then the
+# change's own label (`line_reading`). The MCP's legend reads a label by it (ADR-0321).
+GROWTH_RESCALED_WHEN = "growth rescaled when "
 
 
 def _joined(phrases: list[str], last: str) -> str:
@@ -283,14 +290,19 @@ class _View:
 def _notes(answer: dict) -> list[dict]:
     """Every point in the window where lines move for a reason that is not hiring.
 
-    - A counting change (ADR-0164) is listed on every chart with no pick. Under a pick it is
-      listed only where it moves the lines, and taken out of them: a taxonomy refit, a
+    - A counting change (ADR-0164) is taken out of the lines it moves: a taxonomy refit, a
       family-list or family-assignment change, a tech-filter change (Wipro's "+74.7%" held about
       +25% from the Sep 17 filter step alone), an extraction change on a Level breakdown, or
       duplicate removal (ADR-0188) at a pick it can touch. The run after each change is left out
-      too, since a change can land over two runs (Amazon's Sep 17: +308, then −439).
+      too, since a change can land over two runs (Amazon's Sep 17: +308, then −439). Under a pick
+      it is listed only where it moves the lines. With no pick it is taken out the same way
+      (ADR-0270), duplicate removal included, since the index holds every Board it can touch,
+      and every other change is still listed, marked and taken out of nothing: Software
+      Engineering read −36,426 (−34.4%) over a week, all of it three counting changes.
     - Under New a tech-filter change is also taken out a week later, when its openings age out.
-    - A Board found later lands its backlog at once (``discovered``).
+    - A Board found later lands its backlog at once (``discovered``). On the index each run's
+      Boards found are one step with each line's own size (``lines``, ADR-0304), and quiet: they
+      land on nearly every run, so no marker is drawn for them and no line breaks there.
     - Duplicate rows removed at a pick's Boards (``evicted``, #649), sized exactly, per Board.
     - In a view that sums several picks, one counted from a later date joins the sum at once.
     """
@@ -300,6 +312,8 @@ def _notes(answer: dict) -> list[dict]:
     picked = bool(companies)
     bands = bool(answer.get("family")) and answer.get("split_by") == "band"
     touched = [c["key"] for c in companies if dedup_touched(c.get("board_keys") or [])]
+    # The index holds every Board, so duplicate removal can always move some of it.
+    dedup_moves = bool(touched) or not picked
     notes: list[dict] = []
 
     def note(**given) -> dict:
@@ -325,6 +339,10 @@ def _notes(answer: dict) -> list[dict]:
             "bands_only": False,
             "dedup_only": False,
             "whole_only": False,
+            # each line's own size, where a step is known line by line (the index's Found
+            # Boards, ADR-0304), and whether it is left off the chart (`quiet`)
+            "sizes": None,
+            "quiet": False,
         }
         out.update(given)
         return out
@@ -351,7 +369,7 @@ def _notes(answer: dict) -> list[dict]:
                         i=k,
                         epoch=True,
                         echo=True,
-                        withhold=picked,
+                        withhold=True,
                         fields=[_TECH_FILTER],
                         source=epoch["ts"],
                         touched=touched,
@@ -372,16 +390,24 @@ def _notes(answer: dict) -> list[dict]:
         # The same fields, which its label is said from (`change_label`): a label joined from
         # each field's own sentence repeated "so some jobs …" once a field.
         named = [f for f in fields if not picked or f != _DEDUP or touched]
-        if not picked:
-            notes.append(note(i=i, epoch=True, changed=said, named=named))
-            continue
+        # With no pick a change the lines keep is still marked, on its own run.
+        marker = note(
+            i=i,
+            epoch=True,
+            fields=fields,
+            changed=said,
+            named=named,
+            source=epoch["ts"],
+        )
         lines_move = moves_lines(fields, bands)
-        dedup = not lines_move and bool(touched) and _DEDUP in fields
+        dedup = not lines_move and dedup_moves and _DEDUP in fields
         if not (lines_move or dedup):
+            if not picked:
+                notes.append(marker)
             continue
         dedup_only = fields == [_DEDUP]
         shared = {
-            "companies": touched if dedup else None,
+            "companies": touched if dedup and picked else None,
             # An extraction change re-sorts a category's levels, never its total.
             "bands_only": not any(
                 f in LINE_MOVING_FIELDS or f in (_DEDUP, NEW_BECAME_INFLOW)
@@ -406,6 +432,8 @@ def _notes(answer: dict) -> list[dict]:
                     **shared,
                 )
             )
+        elif not picked:
+            notes.append(marker)
         # Only for a change inside the window: at its first run the change's own jump is not on
         # the chart, so its settling run cannot be told from an ordinary one.
         if i > 0 and i + 1 < len(stamps):
@@ -424,6 +452,8 @@ def _notes(answer: dict) -> list[dict]:
                 company=found["company"],
                 size=found["openings"],
                 boards=found["boards"],
+                sizes=found.get("lines"),
+                quiet=found.get("lines") is not None,
             )
         )
     # Duplicates removed are sized per Board, not per category, so only a whole company's line
@@ -514,8 +544,20 @@ def _line_notes(view: _View, line: _Line) -> list[int]:
             or (n["companies"] is not None and line.company not in n["companies"])
         ):
             continue
+        # a step known line by line reaches only the lines it moved
+        if n["sizes"] is not None and not note_size(n, line, whole):
+            continue
         out.append(k)
     return out
+
+
+def note_size(n: dict, line: _Line, whole: bool) -> float | None:
+    """The openings note ``n`` moves ``line`` by, where that is known: each line's own where the
+    note carries them (the first row's is their sum), else the note's size on a whole company's
+    line; None where it is not known, and the run's whole jump is the step."""
+    if n["sizes"] is not None:
+        return n["size"] if line.name == _TOTAL else n["sizes"].get(line.name, 0)
+    return n["size"] if whole else None
 
 
 def _summed_picks(view: _View, line: _Line) -> list[_Line] | None:
@@ -592,8 +634,10 @@ def _dup_ratios_for(view: _View, line: _Line) -> dict[int, float]:
 def _jumps(view: _View, line: _Line) -> dict[int, _Jump]:
     """Where each step taken out of ``line`` lands on its points (a step on a gap lands on the
     next measured point), with the level on either side of it. ``lift`` is a step's size when it
-    is known exactly and the line is a whole company's: found openings, duplicate removals.
-    Taking out that size rather than the run's whole jump keeps the run's ordinary hiring in."""
+    is known exactly for the line (``note_size``): found openings and duplicate removals on a
+    whole company's line, and on an index line the openings its Found Boards brought it
+    (ADR-0304). Taking out that size rather than the run's whole jump keeps the run's ordinary
+    hiring in."""
     whole = _is_whole(view, line)
     steps: dict[int, dict] = {}
     for k in _line_notes(view, line):
@@ -601,10 +645,11 @@ def _jumps(view: _View, line: _Line) -> dict[int, _Jump]:
         at = steps.setdefault(
             n["i"], {"size": 0, "sized": True, "kinds": set(), "notes": ()}
         )
-        if n["size"] is None:
+        size = note_size(n, line, whole)
+        if size is None:
             at["sized"] = False
         else:
-            at["size"] += n["size"]
+            at["size"] += size
         at["kinds"].add(n["kind"])
         at["notes"] += (k,)
     jumps: dict[int, _Jump] = {}
@@ -627,7 +672,7 @@ def _jumps(view: _View, line: _Line) -> dict[int, _Jump]:
             )
         if v is None:
             continue
-        lift = pending["size"] if pending and whole and pending["sized"] else None
+        lift = pending["size"] if pending and pending["sized"] else None
         # Removing duplicates cannot add openings. A rise over a duplicates-only step with no
         # known size is that run's ordinary hiring, and stays in the line.
         hiring = (

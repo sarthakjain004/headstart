@@ -44,6 +44,11 @@ class SpaceTool:
     annotations: Mapping[str, bool] = field(
         default_factory=lambda: dict(READ_ONLY_ANNOTATIONS)
     )
+    #: Per argument, how the words a caller sent are read before the schema check: a category's
+    #: label or retired id becomes the id its enum lists (`role_families.resolve`, ADR-0274). A
+    #: reader hands back a value it cannot read unchanged, for the check to refuse, or raises a
+    #: `ToolFailure` saying what it accepts.
+    argument_readers: Mapping[str, Callable[[Any], Any]] = field(default_factory=dict)
 
     def listing(self) -> dict[str, Any]:
         """The tool as `tools/list` serves it."""

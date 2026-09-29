@@ -42,6 +42,13 @@ a fresh copy of every ``base.jsonl.gz`` — ~362 MB measured 2026-08-26, against
 sized it at when the store was new — the mistake ``data/lancedb`` was moved away from when it
 filled the 100 GB quota in ~45 runs.
 
+**A fetch that only lost characters is not an edit** (ADR-0211's 2026-09-29 amendment). Zwayam's
+microland tenant now stores `?` where the text it served before had `’` or `–`: a re-fetch comes
+back the same length, with a held non-ASCII character read as `?` at each difference and nothing
+else changed (5 of 5 live, 2026-09-29). The held text is kept over such a fetch, since the owner's
+"a different description replaces the held one" rule is about edits, and this is a worse rendering
+of the same text. Any other difference, a `?` beside a real edit included, still replaces it.
+
 **Replacements are counted** (ADR-0207). A fetch whose text differs from the held text replaces
 it, and every run logs, per ATS in its corpus, how many held descriptions were replaced and how
 many of those went back to the text held before the last replacement, which is the shape of a
@@ -49,10 +56,11 @@ fetch path flipping between two renderings rather than an edit. The per-Job coun
 small state ledger, ``data/state/description_changes.tsv.gz``, not on the store's records, whose
 ``{id, description}`` shape every reader of the store relies on.
 
-**The skip-list leaves out Jobs due a re-fetch** (ADR-0211). Five Scrapers skip a held Job's
-detail, so an edit there was never fetched. :mod:`~headstart.ingest.held_refetch` picks the held
-Jobs of those ATSes whose last fetch is a period old, and this module publishes the skip-list
-without them, beside the due set (``data/state/refetch_due.txt``) and the ledger of last fetches
+**The skip-list leaves out Jobs due a re-fetch** (ADR-0211). The Scrapers of
+:data:`~headstart.ingest.held_refetch.ATSES` skip a held Job's detail, so an edit there was never
+fetched. :mod:`~headstart.ingest.held_refetch` picks the held Jobs of those ATSes whose last fetch
+is a period old, and this module publishes the skip-list without them, beside the due set
+(``data/state/refetch_due.txt``) and the ledger of last fetches
 (``data/state/description_checked.tsv.gz``) it reads back next run.
 
 The skip-list falls out of the store rather than out of the embedding store: a Job is skipped when
@@ -260,6 +268,19 @@ class Reconciled(NamedTuple):
     #: — see the comment at the branch that counts it.
     unrecorded: int
     rederive_ids: list[str]
+    #: Fetches that differed from the held text only where a held non-ASCII character came back
+    #: as ``?``. The held text was kept, and none of them is in ``learned`` or ``replaced``.
+    question_marked: int
+
+
+def _question_marked(held: str, fresh: str) -> bool:
+    """Whether ``fresh`` is ``held`` with some of its non-ASCII characters read back as ``?``,
+    one for one, and no other change: a worse rendering of the held text, not an edit."""
+    return (
+        held != fresh
+        and len(held) == len(fresh)
+        and all(h == f or (f == "?" and ord(h) > 127) for h, f in zip(held, fresh))
+    )
 
 
 def reconcile(
@@ -280,7 +301,7 @@ def reconcile(
     """
     held = read_store(ats_dir)
     learned: list[dict] = []
-    filled = unrecorded = replaced = reverted = 0
+    filled = unrecorded = replaced = reverted = question_marked = 0
     if changes is None:
         changes = {}
 
@@ -297,10 +318,13 @@ def reconcile(
             job = _parse(line, jobs_path, lineno)
             job_id = job["id"]
             fresh = (job.get("description") or "").strip()
-            if fresh:
+            before = held.get(job_id)
+            if fresh and before is not None and _question_marked(before, fresh):
+                job["description"] = before
+                question_marked += 1
+            elif fresh:
                 # Fresh text always wins: a re-fetch is more current than the store, and this is
                 # the only path by which an edited posting reaches it.
-                before = held.get(job_id)
                 if before != fresh:
                     learned.append({"id": job_id, "description": fresh})
                 if before is not None and before != fresh:
@@ -341,6 +365,7 @@ def reconcile(
         reverted,
         unrecorded,
         [r["id"] for r in learned],
+        question_marked,
     )
 
 
@@ -571,6 +596,11 @@ def _update_store() -> int:
             f"{ats}: replaced {done.replaced:,} held description(s) with different text, "
             f"{done.reverted:,} of them back to the text held before"
         )
+        if done.question_marked:
+            _log.info(
+                f"{ats}: kept {done.question_marked:,} held description(s) over a fetch that "
+                "read their non-ASCII characters as '?' and changed nothing else (ADR-0211)"
+            )
     write_changes(Path(args.changes), changes)
     due = held_refetch.plan(
         {ats: _ats_held_ids(store / ats) for ats in held_refetch.ATSES},

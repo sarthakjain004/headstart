@@ -138,7 +138,7 @@ def search(slug: str, workers: int) -> list[tuple[str, int]]:
         for done in as_completed(
             [pool.submit(probe, a) for a in SLUG_ADDRESSABLE if a in PROBES]
         ):
-            ats, (verdict, jobs) = done.result()
+            ats, (verdict, jobs, *_) = done.result()
             if verdict == "live" and (jobs or 0) > 0:
                 found.append((ats, jobs))
     return sorted(found, key=lambda x: -x[1])
@@ -217,7 +217,7 @@ def main() -> int:
         # probing, and a curated line must not be trusted to assert it for free
         try:
             src_url = ledger(old_ats).get(old_slug)
-            src_verdict, _ = PROBES[old_ats](
+            src_verdict, *_ = PROBES[old_ats](
                 old_slug, src_url.url if src_url else old_slug
             )
         except Exception:  # noqa: BLE001 - treat an unreachable source as unproven
@@ -244,7 +244,7 @@ def main() -> int:
             )
             continue
         try:
-            verdict, jobs = PROBES[new_ats](new_slug, new_slug)
+            verdict, jobs, *_ = PROBES[new_ats](new_slug, new_slug)
         except Exception:  # noqa: BLE001 - an unreachable target is not a confirmed move
             verdict, jobs = "error", None
         if verdict != liveness_ledger.LIVE or not (jobs or 0):

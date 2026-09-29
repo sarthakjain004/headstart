@@ -16,7 +16,8 @@ revision is the same error, since its body carries none.
 
 **Status.** A notification is a 202 with no body. A modern error maps to the status 2026-07-28
 names (an unknown method 404, a malformed or unsupported request 400); a legacy one rides a 200,
-as that era's servers answer it.
+as that era's servers answer it. A request the route refuses before answering it (a rate limit, a
+full house) is :func:`refusal`'s, in either era.
 """
 
 from __future__ import annotations
@@ -81,6 +82,22 @@ def _status(reply: dict[str, Any], modern: bool) -> int:
     if code == messages.METHOD_NOT_FOUND:
         return 404
     return 500 if code == messages.INTERNAL_ERROR else 400
+
+
+def refusal(
+    body: bytes, status: int, message: str
+) -> tuple[int, dict[str, str], bytes]:
+    """A request the endpoint will not answer now — past a rate limit (429) or with every place
+    taken (503) — as a JSON-RPC error carrying the request's id when its body names one
+    (ADR-0276). Neither revision defines a code for this, and MCP reserves -32000 to -32099, so
+    the code is the HTTP status itself, which JSON-RPC leaves to the application. The caller adds
+    ``Retry-After``."""
+    try:
+        message_in = json.loads(body)
+    except ValueError:
+        message_in = None
+    request_id = message_in.get("id") if isinstance(message_in, dict) else None
+    return _reply(status, messages.error_reply(request_id, status, message))
 
 
 def answer(

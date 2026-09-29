@@ -15,6 +15,7 @@ from pathlib import Path
 import pytest
 
 import headstart.ingest.embed_plan as pe
+from headstart.ingest.doc_prep import STALE_DOC_HASH, doc_hash, to_meta
 
 # The gate is per-test, not module-level. It used to be module-level, on the premise that
 # importing this module needs langdetect — measurably false: `doc_prep` imports langdetect lazily
@@ -220,7 +221,7 @@ def test_prior_rows_reads_the_flag_where_it_exists(tmp_path):
         + _meta_row("eightfold:acme:2", "eightfold", has_description=False),
         encoding="utf-8",
     )
-    embedded, degraded = pe._prior_rows(meta)
+    embedded, degraded, _ = pe._prior_rows(meta)
     assert embedded == {"eightfold:acme:1", "eightfold:acme:2"}
     assert degraded == {"eightfold:acme:2"}
 
@@ -237,7 +238,7 @@ def test_prior_rows_no_longer_guesses_from_the_ats(tmp_path):
         + _meta_row("greenhouse:acme:2", "greenhouse"),
         encoding="utf-8",
     )
-    _, degraded = pe._prior_rows(meta)
+    _, degraded, _ = pe._prior_rows(meta)
     assert degraded == set(), "an absent flag is not evidence of a title-only vector"
 
 
@@ -424,3 +425,103 @@ def test_the_tokenizer_loads_at_the_pinned_revisions(monkeypatch):
     assert seen["model"] == ec.MODEL
     assert seen["revision"] == ec.MODEL_REVISION
     assert seen["code_revision"] == ec.MODEL_CODE_REVISION
+
+
+# --- ADR-0285: a vector whose text changed is re-embedded ----------------------------------------
+
+
+def _plan_upgrades(tmp_path, monkeypatch, jobs: list[dict], meta: str) -> list[str]:
+    """Run the planner over ``jobs`` against the prior store ``meta``; return the upgrade list."""
+    monkeypatch.setattr(pe, "_load_tokenizer", lambda: _FakeTok())
+    tech = tmp_path / "tech"
+    tech.mkdir(exist_ok=True)
+    (tech / "greenhouse.jsonl").write_text(
+        "".join(json.dumps(j) + "\n" for j in jobs), encoding="utf-8"
+    )
+    (tmp_path / "meta.jsonl").write_text(meta, encoding="utf-8")
+    upgrades = tmp_path / "pending_upgrades.txt"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "embed_plan",
+            "--source",
+            str(tech),
+            "--prior-meta",
+            str(tmp_path / "meta.jsonl"),
+            "--priority",
+            str(tmp_path / "none.csv"),
+            "--out-dir",
+            str(tmp_path / "assignments"),
+            "--upgrades-out",
+            str(upgrades),
+        ],
+    )
+    assert pe.main() == 0
+    return upgrades.read_text().split()
+
+
+_JOB = {
+    "id": "greenhouse:acme:1",
+    "ats": "greenhouse",
+    "title": "Backend Engineer",
+    "description": "We are hiring a backend engineer to build distributed systems.",
+}
+
+
+def test_prior_rows_reads_each_rows_doc_hash(tmp_path):
+    meta = tmp_path / "meta.jsonl"
+    meta.write_text(
+        _meta_row("greenhouse:a:1", "greenhouse", doc_hash="abc")
+        + _meta_row("greenhouse:a:2", "greenhouse"),
+        encoding="utf-8",
+    )
+    assert pe._prior_rows(meta)[2] == {"greenhouse:a:1": "abc"}
+
+
+def test_doc_hash_follows_the_title_and_description_not_their_padding():
+    edited = {**_JOB, "description": _JOB["description"] + " Remote is fine."}
+    assert doc_hash(_JOB) == doc_hash({**_JOB, "title": " Backend Engineer "})
+    assert doc_hash(_JOB) != doc_hash(edited)
+    assert doc_hash(_JOB) != doc_hash({**_JOB, "title": "Staff Engineer"})
+    assert to_meta(_JOB)["doc_hash"] == doc_hash(_JOB)
+
+
+def test_an_edited_posting_is_re_embedded(tmp_path, monkeypatch):
+    """#694: the clone-then-edit case. The store holds the fingerprint of the text the vector was
+    built from; the posting now says something else, so its vector is rebuilt."""
+    pytest.importorskip("langdetect", reason=_NEEDS_LANGDETECT)
+    embedded = {**_JOB, "title": "Process Engineer IV"}
+    meta = _meta_row(_JOB["id"], "greenhouse", doc_hash=doc_hash(embedded))
+    assert _plan_upgrades(tmp_path, monkeypatch, [_JOB], meta) == [_JOB["id"]]
+
+
+def test_an_unchanged_posting_is_not_re_embedded(tmp_path, monkeypatch):
+    pytest.importorskip("langdetect", reason=_NEEDS_LANGDETECT)
+    meta = _meta_row(_JOB["id"], "greenhouse", doc_hash=doc_hash(_JOB))
+    assert _plan_upgrades(tmp_path, monkeypatch, [_JOB], meta) == []
+
+
+def test_a_row_with_no_fingerprint_yet_is_left_alone(tmp_path, monkeypatch):
+    """Embedded before ADR-0285: `update_meta` stamps it first, so nothing re-embeds on a guess."""
+    pytest.importorskip("langdetect", reason=_NEEDS_LANGDETECT)
+    meta = _meta_row(_JOB["id"], "greenhouse")
+    assert _plan_upgrades(tmp_path, monkeypatch, [_JOB], meta) == []
+
+
+def test_a_row_stamped_stale_is_re_embedded(tmp_path, monkeypatch):
+    pytest.importorskip("langdetect", reason=_NEEDS_LANGDETECT)
+    meta = _meta_row(_JOB["id"], "greenhouse", doc_hash=STALE_DOC_HASH)
+    assert _plan_upgrades(tmp_path, monkeypatch, [_JOB], meta) == [_JOB["id"]]
+
+
+def test_edit_re_embeds_stop_at_the_cap(tmp_path, monkeypatch, caplog):
+    """A scraper change can rewrite every description of an ATS at once; the rest wait for their
+    Board's next read, still carrying a fingerprint that differs."""
+    pytest.importorskip("langdetect", reason=_NEEDS_LANGDETECT)
+    monkeypatch.setattr(pe, "_MAX_EDIT_REEMBEDS", 1)
+    jobs = [{**_JOB, "id": f"greenhouse:acme:{n}"} for n in range(3)]
+    meta = "".join(_meta_row(j["id"], "greenhouse", doc_hash="old") for j in jobs)
+    caplog.set_level("INFO")
+    assert len(_plan_upgrades(tmp_path, monkeypatch, jobs, meta)) == 1
+    assert any("2 more deferred" in r.getMessage() for r in caplog.records)

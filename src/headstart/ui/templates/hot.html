@@ -5,13 +5,18 @@
   </div>
 
   {# The lens IS the question being asked, so it is a labelled radio group rather than a sort
-     dropdown: the three produce barely-overlapping lists, and a user who reads "Growing" knows
+     dropdown: the lenses produce barely-overlapping lists, and a user who reads "Growing" knows
      what the number under it means. Radios, not buttons, so arrow keys move between them. #}
   <div class="hot-lenses" role="radiogroup" aria-label="What actively hiring means">
     <label class="lens">
       <input type="radio" name="hot-lens" value="expansion" checked>
       <span class="lens-name">Growing</span>
-      <span class="lens-why">opening more than they close</span>
+      <span class="lens-why">more open roles than a week ago</span>
+    </label>
+    <label class="lens">
+      <input type="radio" name="hot-lens" value="opened_less_closed">
+      <span class="lens-name">Opening more than closing</span>
+      <span class="lens-why">roles opened minus roles closed</span>
     </label>
     <label class="lens">
       <input type="radio" name="hot-lens" value="volume">
@@ -44,6 +49,9 @@
      sentence; closed counts running low replaces the per-row "not counted on N of M boards". #}
   <p class="kind">Only companies HeadStart reads can appear here. Companies we have just started
     tracking are left out, and jobs we find later at a company don't count as new hiring.
-    Closed counts can be low, because some sites don't show when a job closes.
+    Closed counts can be low, because some sites don't show when a job closes. Fastest leaves
+    out companies whose closures are not counted, since their new jobs may be old ones posted
+    again, and Opening more than closing leaves out any company with a site whose closures are
+    not counted.
     <a href="#good-to-know">Good to know →</a></p>
 </section>

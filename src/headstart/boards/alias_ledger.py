@@ -234,14 +234,21 @@ def bury_contained_keeping_public(
     for board, ids in ids_by_board.items():
         if board in public or not ids:
             continue
-        hosts = [
-            b
-            for b, own in kept.items()
-            if group_of(b) == group_of(board) and own >= set(ids)
-        ]
-        if hosts:
-            buried[board] = min(hosts, key=lambda b: (-len(kept[b]), b))
+        onto = largest_containing(
+            ids, {b: own for b, own in kept.items() if group_of(b) == group_of(board)}
+        )
+        if onto is not None:
+            buried[board] = onto
     return buried
+
+
+def largest_containing(
+    ids: Collection[str], candidates: Mapping[str, frozenset[str]]
+) -> str | None:
+    """The candidate Board whose ids include all of ``ids``: the largest, then the lowest key.
+    None when no candidate lists them all."""
+    hosts = [b for b, own in candidates.items() if own >= set(ids)]
+    return min(hosts, key=lambda b: (-len(candidates[b]), b)) if hosts else None
 
 
 def path_for(liveness_dir: str | Path, ats: str) -> Path:

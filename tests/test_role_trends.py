@@ -1000,7 +1000,7 @@ def test_every_tick_writes_one_file_stamped_with_how_it_was_counted(
         "family_list_fingerprint": role_taxonomy.family_list_fingerprint(
             tmp_path / "families.json"
         ),
-        "family_classifier_version": 1,
+        "family_classifier_version": "1+developer-title-rule-1",
         "tech_filter_version": tech_filter.TECH_FILTER_VERSION,
         "derivations_version": DERIVATIONS_VERSION,
         "dedup_version": index_plan.DEDUP_VERSION,
